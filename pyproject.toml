@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "pubmed-search"
 version = "0.1.0"
-description = "Standalone PubMed/Entrez search library for medical literature"
+description = "Standalone PubMed/Entrez search library with MCP server for medical literature"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
@@ -19,7 +19,9 @@ keywords = [
     "literature",
     "medical",
     "research",
-    "search"
+    "search",
+    "mcp",
+    "model-context-protocol"
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -40,10 +42,19 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+mcp = [
+    "mcp>=1.0.0",
+]
 dev = [
     "pytest>=7.0",
     "pytest-asyncio>=0.21",
 ]
+all = [
+    "pubmed-search[mcp,dev]",
+]
+
+[project.scripts]
+pubmed-search-mcp = "pubmed_search.mcp:main"
 
 [project.urls]
 Homepage = "https://github.com/u9401066/pubmed-search-mcp"

@@ -1,135 +1,165 @@
-# PubMed Search
+# PubMed Search MCP
 
-A standalone Python library for searching PubMed and interacting with NCBI Entrez APIs.
-
-Designed to be used as a submodule in other projects (e.g., `med-paper-assistant`).
+A standalone Python library and MCP (Model Context Protocol) server for PubMed literature search.
 
 ## Features
 
-- **PubMed Search**: Search with various strategies (recent, relevance, most cited)
-- **Date Filtering**: Precise date range filtering with multiple date types
-- **Related Articles**: Discover related articles using PubMed's algorithm
-- **Citation Network**: Find citing articles and references
-- **PDF Download**: Download full-text PDFs from PubMed Central Open Access
-- **Batch Processing**: Efficiently process large result sets using NCBI History Server
-- **MeSH Validation**: Validate MeSH terms
-- **Citation Matching**: Find articles by citation details
+- **Search PubMed**: Full-text and advanced query support
+- **Related Articles**: Find papers related to a given PMID
+- **Citing Articles**: Find papers that cite a given PMID
+- **Parallel Search**: Generate multiple queries for comprehensive searches
+- **PDF Access**: Get open-access PDF URLs from PubMed Central
+- **MCP Integration**: Use with VS Code + GitHub Copilot or any MCP client
 
 ## Installation
 
-### As a standalone package
+### Basic Installation (Library Only)
 
 ```bash
-pip install -e .
+pip install pubmed-search
 ```
 
-### As a Git submodule
+### With MCP Server Support
 
 ```bash
-# In your project
-git submodule add https://github.com/u9401066/pubmed-search-mcp integrations/pubmed-search-mcp
-pip install -e integrations/pubmed-search-mcp
+pip install "pubmed-search[mcp]"
 ```
 
-## Quick Start
+### From Source
+
+```bash
+git clone https://github.com/u9401066/pubmed-search-mcp.git
+cd pubmed-search-mcp
+pip install -e ".[all]"
+```
+
+## Usage
+
+### As a Python Library
 
 ```python
-from pubmed_search import PubMedClient, SearchStrategy
+from pubmed_search import PubMedClient
 
-# Initialize client (email required by NCBI)
 client = PubMedClient(email="your@email.com")
 
-# Basic search
-results = client.search("diabetes treatment", limit=5)
-for article in results:
-    print(f"{article.pmid}: {article.title}")
+# Search for papers
+results = client.search("anesthesia complications", max_results=10)
+for paper in results:
+    print(f"{paper['pmid']}: {paper['title']}")
 
-# Search with date range (YYYY/MM/DD format)
-results = client.search(
-    "COVID-19 vaccine",
-    limit=10,
-    date_from="2024/01/01",
-    date_to="2024/12/31",
-    date_type="edat"  # Entrez date (when added to PubMed)
-)
+# Get related articles
+related = client.find_related("12345678", max_results=5)
 
-# Search with strategy
-results = client.search(
-    "machine learning diagnosis",
-    limit=10,
-    strategy=SearchStrategy.RECENT
-)
-
-# Find related articles
-related = client.find_related("12345678", limit=5)
-
-# Find citing articles
-citing = client.find_citing("12345678", limit=10)
-
-# Download PDF (if available from PMC Open Access)
-pdf_bytes = client.download_pdf("12345678")
-if pdf_bytes:
-    with open("article.pdf", "wb") as f:
-        f.write(pdf_bytes)
+# Get citing articles
+citing = client.find_citing("12345678")
 ```
 
-## Low-Level API
+### As an MCP Server
 
-For advanced operations, use the `LiteratureSearcher` class directly:
+#### VS Code Configuration
+
+Add to your `.vscode/mcp.json`:
+
+```json
+{
+  "servers": {
+    "pubmed-search": {
+      "type": "stdio",
+      "command": "pubmed-search-mcp",
+      "args": ["your@email.com"]
+    }
+  }
+}
+```
+
+Or using Python module:
+
+```json
+{
+  "servers": {
+    "pubmed-search": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["-m", "pubmed_search.mcp", "your@email.com"]
+    }
+  }
+}
+```
+
+#### Running Standalone
+
+```bash
+# Using the console script
+pubmed-search-mcp your@email.com
+
+# Or using Python
+python -m pubmed_search.mcp your@email.com
+```
+
+## MCP Tools
+
+| Tool | Description |
+|------|-------------|
+| `search_literature` | Search PubMed for medical literature |
+| `find_related_articles` | Find articles related to a given PMID |
+| `find_citing_articles` | Find articles that cite a given PMID |
+| `fetch_article_details` | Get full details for specific PMIDs |
+| `generate_search_queries` | Generate multiple queries for parallel search |
+| `merge_search_results` | Merge and deduplicate results |
+| `expand_search_queries` | Expand search with synonyms/related terms |
+| `configure_search_strategy` | Set up reusable search criteria |
+| `get_search_strategy` | Get current search strategy |
+| `download_pdf` | Get PDF URL from PubMed Central |
+
+## API Documentation
+
+### PubMedClient
+
+The main client class for interacting with PubMed.
+
+```python
+from pubmed_search import PubMedClient
+
+client = PubMedClient(
+    email="your@email.com",  # Required by NCBI
+    api_key=None,            # Optional: NCBI API key for higher rate limits
+    tool="pubmed-search"     # Tool name for NCBI tracking
+)
+```
+
+### Low-level Entrez API
+
+For more control, use the low-level Entrez interface:
 
 ```python
 from pubmed_search.entrez import LiteratureSearcher
 
 searcher = LiteratureSearcher(email="your@email.com")
 
-# Get raw dictionaries instead of SearchResult objects
-results = searcher.search("cancer therapy", limit=10)
-
-# Use History Server for large result sets
-history = searcher.search_with_history("diabetes")
-print(f"Total results: {history['count']}")
-
-# Fetch in batches
-for start in range(0, min(history['count'], 1000), 100):
-    batch = searcher.fetch_batch_from_history(
-        history['webenv'],
-        history['query_key'],
-        start,
-        100
-    )
-    # Process batch...
-
-# Validate MeSH terms
-valid = searcher.validate_mesh_terms(["Diabetes Mellitus", "Insulin"])
-
-# Export citations
-medline_format = searcher.export_citations(["12345678", "87654321"], format="medline")
-```
-
-## Date Type Options
-
-When searching, you can specify which date field to use:
-
-- `edat` (default): **Entrez date** - when the article was added to PubMed. Best for finding newly published articles.
-- `pdat`: **Publication date** - the official publication date.
-- `mdat`: **Modification date** - when the record was last modified.
-
-## API Key
-
-For higher rate limits (10 requests/second instead of 3), register for an NCBI API key:
-
-1. Go to https://www.ncbi.nlm.nih.gov/account/
-2. Create an account or sign in
-3. Go to Settings → API Key Management
-4. Generate a new key
-
-```python
-client = PubMedClient(
-    email="your@email.com",
-    api_key="your_api_key_here"
+# Advanced search with filters
+results = searcher.search_advanced(
+    term="propofol sedation",
+    filter_humans=True,
+    filter_english=True,
+    date_range=("2020", "2024"),
+    max_results=50
 )
 ```
 
 ## License
 
-MIT License
+MIT License - see [LICENSE](LICENSE)
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Run tests: `pytest`
+5. Submit a pull request
+
+## Links
+
+- [GitHub Repository](https://github.com/u9401066/pubmed-search-mcp)
+- [PyPI Package](https://pypi.org/project/pubmed-search/)
+- [NCBI Entrez Programming Utilities](https://www.ncbi.nlm.nih.gov/books/NBK25497/)
