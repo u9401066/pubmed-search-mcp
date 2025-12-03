@@ -1,6 +1,15 @@
 # PubMed Search MCP
 
-A standalone Python library and MCP (Model Context Protocol) server for PubMed literature search. Can be used independently or as a Git submodule in other projects.
+> **AI Agent 的專業文獻研究助理** - 不只是 API 包裝器
+
+A Domain-Driven Design (DDD) based MCP server that serves as an intelligent research assistant for AI agents, providing task-oriented literature search and analysis capabilities.
+
+## 🎯 設計理念
+
+- **Agent-First** - 為 AI Agent 設計，輸出優化為機器決策
+- **任務導向** - Tool 以研究任務為單位，而非底層 API
+- **DDD 架構** - 以文獻研究領域知識為核心建模
+- **上下文感知** - 透過 Resources 維持研究狀態
 
 ## Features
 
@@ -12,6 +21,25 @@ A standalone Python library and MCP (Model Context Protocol) server for PubMed l
 - **MCP Integration**: Use with VS Code + GitHub Copilot or any MCP client
 - **Remote Server**: Deploy as HTTP service for multi-machine access
 - **Submodule Ready**: Use as a Git submodule in larger projects
+
+## 🛠️ MCP Tools
+
+### 探索型 (Discovery)
+| Tool | 說明 |
+|------|------|
+| `search_literature` | 搜尋 PubMed 文獻 |
+| `find_related_articles` | 尋找相關文章 |
+| `find_citing_articles` | 尋找引用文章 |
+| `generate_search_queries` | 生成多重搜尋策略 |
+
+### 分析型 (Analysis)
+| Tool | 說明 |
+|------|------|
+| `fetch_article_details` | 取得文章完整資訊 |
+| `merge_search_results` | 合併去重搜尋結果 |
+| `expand_search_queries` | 擴展搜尋策略 |
+
+詳細 API 文件請參考 [ROADMAP.md](ROADMAP.md)。
 
 ## Installation
 

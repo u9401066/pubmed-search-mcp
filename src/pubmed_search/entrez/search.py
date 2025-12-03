@@ -4,11 +4,50 @@ Entrez Search Module - Core Search Functionality
 Provides search and fetch operations using esearch and efetch.
 """
 
+import time
+import logging
 from Bio import Entrez
 from typing import List, Dict, Any, Optional
 import re
 
 from .base import SearchStrategy
+
+logger = logging.getLogger(__name__)
+
+# Retry settings for transient NCBI errors
+MAX_RETRIES = 3
+RETRY_DELAY = 2  # seconds
+
+
+def _retry_on_error(func):
+    """Decorator to retry Entrez operations on transient errors."""
+    def wrapper(*args, **kwargs):
+        last_error = None
+        for attempt in range(MAX_RETRIES):
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                error_str = str(e)
+                # Check for transient NCBI errors
+                if any(msg in error_str for msg in [
+                    "Database is not supported",
+                    "Backend failed",
+                    "temporarily unavailable",
+                    "Service unavailable",
+                    "rate limit",
+                    "Too Many Requests"
+                ]):
+                    last_error = e
+                    wait_time = RETRY_DELAY * (attempt + 1)
+                    logger.warning(f"NCBI transient error (attempt {attempt + 1}/{MAX_RETRIES}): {error_str}")
+                    logger.info(f"Retrying in {wait_time} seconds...")
+                    time.sleep(wait_time)
+                else:
+                    # Non-transient error, don't retry
+                    raise
+        # All retries exhausted
+        raise last_error
+    return wrapper
 
 
 class SearchMixin:
@@ -87,12 +126,8 @@ class SearchMixin:
             if article_type:
                 full_query += f" AND \"{article_type}\"[pt]"
             
-            # Step 1: Search for IDs
-            handle = Entrez.esearch(db="pubmed", term=full_query, retmax=limit * 2, sort=sort_param)
-            record = Entrez.read(handle)
-            handle.close()
-            
-            id_list = record["IdList"]
+            # Step 1: Search for IDs with retry
+            id_list = self._search_ids_with_retry(full_query, limit * 2, sort_param)
             
             results = self.fetch_details(id_list)
             
@@ -100,6 +135,62 @@ class SearchMixin:
 
         except Exception as e:
             return [{"error": str(e)}]
+
+    def _search_ids_with_retry(self, query: str, retmax: int, sort: str) -> List[str]:
+        """Search for PubMed IDs with retry on transient errors."""
+        last_error = None
+        for attempt in range(MAX_RETRIES):
+            try:
+                handle = Entrez.esearch(db="pubmed", term=query, retmax=retmax, sort=sort)
+                record = Entrez.read(handle)
+                handle.close()
+                return record["IdList"]
+            except Exception as e:
+                error_str = str(e)
+                if any(msg in error_str.lower() for msg in [
+                    "database is not supported",
+                    "backend failed",
+                    "temporarily unavailable",
+                    "service unavailable",
+                    "rate limit",
+                    "too many requests",
+                    "server error"
+                ]):
+                    last_error = e
+                    wait_time = RETRY_DELAY * (attempt + 1)
+                    logger.warning(f"NCBI transient error (attempt {attempt + 1}/{MAX_RETRIES}): {error_str}")
+                    time.sleep(wait_time)
+                else:
+                    raise
+        raise last_error if last_error else Exception("Search failed after retries")
+
+    def _fetch_with_retry(self, id_list: List[str]):
+        """Fetch PubMed articles with retry on transient errors."""
+        last_error = None
+        for attempt in range(MAX_RETRIES):
+            try:
+                handle = Entrez.efetch(db="pubmed", id=id_list, retmode="xml")
+                papers = Entrez.read(handle)
+                handle.close()
+                return papers
+            except Exception as e:
+                error_str = str(e)
+                if any(msg in error_str.lower() for msg in [
+                    "database is not supported",
+                    "backend failed",
+                    "temporarily unavailable",
+                    "service unavailable",
+                    "rate limit",
+                    "too many requests",
+                    "server error"
+                ]):
+                    last_error = e
+                    wait_time = RETRY_DELAY * (attempt + 1)
+                    logger.warning(f"NCBI transient error (attempt {attempt + 1}/{MAX_RETRIES}): {error_str}")
+                    time.sleep(wait_time)
+                else:
+                    raise
+        raise last_error if last_error else Exception("Fetch failed after retries")
 
     def fetch_details(self, id_list: List[str]) -> List[Dict[str, Any]]:
         """
@@ -119,9 +210,7 @@ class SearchMixin:
             return []
 
         try:
-            handle = Entrez.efetch(db="pubmed", id=id_list, retmode="xml")
-            papers = Entrez.read(handle)
-            handle.close()
+            papers = self._fetch_with_retry(id_list)
             
             results = []
             if 'PubmedArticle' in papers:
