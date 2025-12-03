@@ -242,52 +242,70 @@ def register_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         Gather search intelligence for a topic - returns RAW MATERIALS for Agent to decide.
         
         This tool provides the BUILDING BLOCKS for search, not finished queries.
-        The Agent decides how to combine them into effective search queries.
+        The Agent decides how to use them.
         
-        **TWO USAGE PATTERNS**:
+        ═══════════════════════════════════════════════════════════════════════
+        USAGE MODES
+        ═══════════════════════════════════════════════════════════════════════
         
-        1. KEYWORD MODE - Simple topic search:
-           Call once with topic: "remimazolam sedation"
-           
-        2. PICO MODE - Clinical question:
-           For questions like "Does remimazolam reduce delirium in ICU vs propofol?"
-           First parse into PICO elements yourself:
-           - P (Population): "ICU patients"
-           - I (Intervention): "remimazolam"
-           - C (Comparison): "propofol"  
-           - O (Outcome): "delirium"
-           Then call this tool MULTIPLE TIMES, once per element:
-           - generate_search_queries("ICU patients")
-           - generate_search_queries("remimazolam")
-           - generate_search_queries("propofol")
-           - generate_search_queries("delirium")
-           Finally combine the mesh_terms/synonyms with AND/OR logic.
+        Mode 1: KEYWORD (single call)
+        ─────────────────────────────
+        User says: "搜尋 remimazolam"
+        → Call generate_search_queries(topic="remimazolam")
+        → Get mesh_terms + synonyms
+        → Build query → search_literature
         
-        **WHAT YOU GET**:
-        - corrected_topic: Spell-checked (use if check_spelling=True)
-        - keywords: Significant words extracted
-        - mesh_terms: MeSH preferred terms + synonyms
-        - all_synonyms: Flattened list for easy OR expansion
-        - suggested_queries: Pre-built examples (optional reference)
+        Mode 2: PICO (multiple calls) 
+        ─────────────────────────────
+        User says: "remimazolam 在 ICU 鎮靜比 propofol 好嗎？"
         
-        **CLINICAL FILTERS** (add to your final query):
-        - therapy[filter]: Treatment studies
-        - diagnosis[filter]: Diagnostic studies
-        - prognosis[filter]: Outcome studies
-        - etiology[filter]: Causation studies
+        Step 1: Agent parses PICO from user's question:
+          P = "ICU patients"
+          I = "remimazolam" 
+          C = "propofol"
+          O = "sedation outcomes"
+        
+        Step 2: Call this tool for EACH element (can be parallel):
+          generate_search_queries(topic="ICU patients")
+          generate_search_queries(topic="remimazolam")
+          generate_search_queries(topic="propofol")
+          generate_search_queries(topic="sedation outcomes")
+        
+        Step 3: Combine results with Boolean logic:
+          (P_terms) AND (I_terms OR C_terms) AND (O_terms)
+          
+        Step 4: Apply Clinical Query filter if appropriate:
+          + therapy[filter]     ← for treatment comparison
+          + diagnosis[filter]   ← for diagnostic accuracy
+          + prognosis[filter]   ← for outcome prediction
+          + etiology[filter]    ← for causation
+        
+        ═══════════════════════════════════════════════════════════════════════
+        
+        Features:
+        - Spelling correction via NCBI ESpell
+        - MeSH term lookup for standardized vocabulary
+        - Synonym expansion from MeSH database
+        - Keyword extraction
         
         Args:
-            topic: Search topic or SINGLE PICO element 
-                   (e.g., "remimazolam" or "ICU patients")
-            strategy: Affects suggested_queries style
-                - "comprehensive": Multiple angles (default)
-                - "focused": Adds RCT filter for evidence
-                - "exploratory": Broader synonyms
-            check_spelling: Check/correct spelling (default: True)
-            include_suggestions: Include example queries (default: True)
+            topic: Search topic - can be single keyword or PICO element
+                   Examples: "remimazolam", "ICU patients", "postoperative delirium"
+            strategy: Affects suggested_queries (if included)
+                - "comprehensive": Multiple angles, includes reviews (default)
+                - "focused": Adds RCT filter for high evidence
+                - "exploratory": Broader search with more synonyms
+            check_spelling: Whether to check/correct spelling (default: True)
+            include_suggestions: Include pre-built query suggestions (default: True)
+                Set to False if Agent will build its own queries
             
         Returns:
-            JSON with raw materials for query building
+            JSON with RAW MATERIALS:
+            - corrected_topic: Spell-checked topic (Agent decides whether to use)
+            - keywords: Extracted significant keywords
+            - mesh_terms: MeSH data with preferred terms and synonyms
+            - all_synonyms: Flattened list of all synonyms for easy use
+            - suggested_queries: Optional pre-built queries (Agent can ignore)
         """
         logger.info(f"Generating search queries for topic: {topic}, strategy: {strategy}")
         
