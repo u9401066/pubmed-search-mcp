@@ -149,12 +149,161 @@ session://context          # 當前研究上下文 (for debugging)
 - [x] **重構**: Session/Cache/ReadingList 改為內部機制
 - [x] **精簡**: 僅保留 7 個搜尋工具
 
-### Phase 3: Agent 優化 🎯 (下一步)
-- [ ] 結構化輸出格式
-- [ ] 智慧洞察生成
-- [ ] 建議行動系統
+### Phase 2.5: 搜尋智慧 ✅ (已完成)
+- [x] ESpell 拼字校正 (NCBI API)
+- [x] MeSH 詞彙查詢 (文字模式解析)
+- [x] 同義詞擴展
+- [x] **設計決策**: 返回原始素材 (Raw Materials)，讓 Agent 決定如何組合
 
-### Phase 4: 進階分析
+---
+
+## 搜尋策略系統 (Search Strategy System)
+
+### 設計哲學
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  User 描述場景 (自然語言)                                          │
+│  "remimazolam 在 ICU 鎮靜的效果比 propofol 好嗎？"                  │
+└──────────────────────────────────────────────────────────────────┘
+                              ↓
+┌──────────────────────────────────────────────────────────────────┐
+│  Agent 接收後：                                                    │
+│  1. 呼叫工具取得「素材」(MeSH, synonyms, filters)                   │
+│  2. 自行組合查詢 OR 交給 minimind 組合                              │
+│  3. 執行搜尋                                                       │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+**核心原則**: 工具提供素材，Agent 做決策
+
+### Phase A: Clinical Query Filters ✅ (已有)
+
+PubMed Clinical Queries 是用預定義的搜尋策略實現，可透過 filter 使用：
+
+| Filter | 用途 | 範例 |
+|--------|------|------|
+| `therapy[filter]` | 治療相關 | `remimazolam AND therapy[filter]` |
+| `diagnosis[filter]` | 診斷相關 | `sedation AND diagnosis[filter]` |
+| `etiology[filter]` | 病因相關 | `delirium AND etiology[filter]` |
+| `prognosis[filter]` | 預後相關 | `ICU sedation AND prognosis[filter]` |
+
+**實作方式**: 直接在 search_literature 的 query 中使用
+
+### Phase B: PICO 解析器 🎯 (規劃中)
+
+PubMed 沒有 PICO API，但我們可以自己實作：
+
+```python
+# 使用者輸入 (自然語言)
+"Does remimazolam reduce delirium in ICU patients compared to propofol?"
+
+# PICO 解析 (可用 LLM 或規則)
+{
+    "P": "ICU patients",           # Population
+    "I": "remimazolam",            # Intervention  
+    "C": "propofol",               # Comparison
+    "O": "delirium"                # Outcome
+}
+
+# 返回素材給 Agent
+{
+    "pico": {...},
+    "mesh_terms": {
+        "P": ["Intensive Care Units"[MeSH], "Critical Illness"[MeSH]],
+        "I": ["remimazolam"[Supplementary Concept]],
+        "C": ["Propofol"[MeSH]],
+        "O": ["Delirium"[MeSH], "Emergence Delirium"[MeSH]]
+    },
+    "suggested_strategy": "therapy",  # 建議用 therapy filter
+    "example_queries": [...]           # 參考用
+}
+```
+
+**設計選項**:
+- A) 規則式解析 (關鍵字匹配)
+- B) 輕量 LLM 解析 (minimind)
+- C) 提供結構讓 Agent 填 (PICO 範本)
+
+### Phase C: 策略模板 (規劃中)
+
+```python
+STRATEGY_TEMPLATES = {
+    "systematic_review": {
+        # 高召回率，符合 PRISMA
+        "approach": "exhaustive",
+        "fields": ["tiab", "mh"],
+        "boolean": "OR for synonyms, AND for concepts",
+        "filters": [],  # 不加限制
+        "expected": "需要篩選大量結果"
+    },
+    "clinical_evidence": {
+        # 高品質證據
+        "approach": "precision",
+        "fields": ["tiab"],
+        "boolean": "AND",
+        "filters": ["randomized controlled trial[pt]", "meta-analysis[pt]"],
+        "expected": "少量高品質文獻"
+    },
+    "quick_overview": {
+        # 快速瀏覽
+        "approach": "balanced",
+        "fields": ["ti"],
+        "boolean": "AND",
+        "filters": ["review[pt]"],
+        "expected": "綜述文章"
+    }
+}
+```
+
+### Phase D: 查詢建構器 (規劃中)
+
+提供 PubMed 查詢語法的「積木」，讓 Agent 組合：
+
+```python
+# 返回的素材
+{
+    "building_blocks": {
+        "field_tags": ["[ti]", "[tiab]", "[mh]", "[pt]", "[au]"],
+        "boolean": ["AND", "OR", "NOT"],
+        "filters": {
+            "publication_type": ["review[pt]", "randomized controlled trial[pt]"],
+            "clinical": ["therapy[filter]", "diagnosis[filter]"],
+            "date": ["\"last 5 years\"[dp]"],
+            "species": ["humans[mh]"]
+        },
+        "proximity": ["\"term1 term2\"[tiab:~N]"]
+    },
+    "examples": {
+        "high_precision": "(remimazolam)[ti] AND (sedation)[ti]",
+        "high_recall": "(remimazolam OR \"CNS 7056\")[tiab] AND (sedation OR sedatives)[tiab]"
+    }
+}
+```
+
+### 實作優先順序
+
+| 優先級 | 功能 | 複雜度 | 價值 |
+|--------|------|--------|------|
+| 1 | Clinical Query Filters 文檔化 | 低 | 高 - 立即可用 |
+| 2 | 查詢建構器 (Building Blocks) | 中 | 高 - 讓 Agent 靈活組合 |
+| 3 | 策略模板 | 中 | 中 - 常見情境加速 |
+| 4 | PICO 解析器 | 高 | 高 - 結構化問題拆解 |
+
+---
+
+## 實作路線圖 (總覽)
+
+### Phase 3: 搜尋策略工具 🎯 (進行中)
+- [ ] 文檔化 Clinical Query Filters 使用方式
+- [ ] 實作 `get_search_building_blocks` 工具
+- [ ] 策略模板系統
+
+### Phase 4: PICO 與進階
+- [ ] PICO 解析器 (規則式或 LLM)
+- [ ] 查詢結果品質評估
+
+### Phase 5: 進階分析
 - [ ] 引用網絡分析 (`trace_lineage`)
 - [ ] 研究比較 (`compare_studies`)
 - [ ] 共識與爭議分析 (`find_consensus`)
