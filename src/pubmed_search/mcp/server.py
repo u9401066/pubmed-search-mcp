@@ -27,38 +27,47 @@ from .session_tools import register_session_tools, register_session_resources
 logger = logging.getLogger(__name__)
 
 SERVER_INSTRUCTIONS = """
-PubMed Search MCP Server - Literature search tools for medical research.
+PubMed Search MCP Server - AI Agent 的文獻搜尋助理
 
-## Core Search Tools
-- search_literature: Search PubMed with various filters and date options
-- find_related_articles: Find articles related to a given PMID
-- find_citing_articles: Find articles that cite a given PMID
-- fetch_article_details: Get detailed information for PMIDs
-- generate_search_queries: Generate multiple queries for parallel searching
-- merge_search_results: Merge and deduplicate parallel search results
-- expand_search_queries: Expand search with synonyms, related concepts, etc.
+## 🔍 搜尋工具
 
-## Session Management (maintain context across conversations)
-- get_session_status: Check current session and cached articles
-- start_research_session: Begin a new research topic
-- list_sessions / switch_session: Manage multiple research projects
-- get_cached_article / check_cached_pmids: Retrieve cached data (no API call)
-- add_to_reading_list / get_reading_list: Prioritize articles to read
-- exclude_article: Mark articles as not relevant
-- get_search_history: Review past searches
+### 基本搜尋
+- search_literature: 搜尋 PubMed 文獻
+- find_related_articles: 尋找相關文章 (by PMID)
+- find_citing_articles: 尋找引用文章 (by PMID)
+- fetch_article_details: 取得文章詳細資訊
 
-## Resources (session state for Agent context)
-- session://current - Current session summary
-- session://reading-list - Prioritized reading list
-- session://cache-stats - Cache statistics
+### 批次搜尋 (系統性文獻回顧)
+- generate_search_queries: 產生多個搜尋策略
+- merge_search_results: 合併去重搜尋結果
+- expand_search_queries: 擴展搜尋策略
 
-## Recommended Workflow
-1. get_session_status() - Check existing context
-2. start_research_session(topic) - If new topic
-3. generate_search_queries(topic) then search in parallel
-4. merge_search_results to combine
-5. add_to_reading_list for important articles
-6. Cached articles can be retrieved without API calls
+---
+
+## 📋 使用流程
+
+### 快速搜尋
+```
+search_literature(query="topic", limit=10)
+```
+
+### 深入探索 (找到重要論文後)
+```
+find_related_articles(pmid="12345678")  # 相關文章
+find_citing_articles(pmid="12345678")   # 後續研究
+```
+
+### 系統性搜尋 (文獻回顧)
+```
+1. generate_search_queries(topic="research question")
+2. 並行呼叫 search_literature() (每個 query 各一次)
+3. merge_search_results(results_json="{...}")
+4. expand_search_queries() 若需更多
+```
+
+---
+
+NOTE: Cache 和 Session 是內部機制，自動運作，無需管理。
 """
 
 DEFAULT_EMAIL = "pubmed-search@example.com"
