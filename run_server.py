@@ -71,6 +71,12 @@ def main():
         default=int(os.environ.get("MCP_PORT", "8765")),
         help="Server port (default: 8765)"
     )
+    parser.add_argument(
+        "--no-security",
+        action="store_true",
+        default=True,
+        help="Disable DNS rebinding protection (default: True for remote access)"
+    )
     
     args = parser.parse_args()
     
@@ -81,8 +87,9 @@ def main():
     logger.info(f"  Transport: {args.transport}")
     logger.info(f"  Host: {args.host}")
     logger.info(f"  Port: {args.port}")
+    logger.info(f"  DNS Rebinding Protection: {'Disabled' if args.no_security else 'Enabled'}")
     
-    server = create_server(email=args.email, api_key=args.api_key)
+    server = create_server(email=args.email, api_key=args.api_key, disable_security=args.no_security)
     
     # Run server with selected transport
     logger.info(f"Starting server at http://{args.host}:{args.port}")
@@ -95,13 +102,60 @@ def main():
     
     # Run the server using uvicorn directly for proper host/port control
     import uvicorn
+    from starlette.applications import Starlette
+    from starlette.responses import JSONResponse
+    from starlette.routing import Route, Mount
     
     if args.transport == "sse":
-        app = server.sse_app()
+        mcp_app = server.sse_app()
     else:
-        app = server.streamable_http_app()
+        mcp_app = server.streamable_http_app()
     
-    uvicorn.run(app, host=args.host, port=args.port)
+    # Add health check and info endpoints
+    async def health(request):
+        return JSONResponse({"status": "ok", "service": "pubmed-search-mcp"})
+    
+    async def info(request):
+        return JSONResponse({
+            "service": "PubMed Search MCP Server",
+            "version": "0.1.0",
+            "transport": args.transport,
+            "endpoints": {
+                "sse": "/sse",
+                "messages": "/messages",
+                "health": "/health"
+            },
+            "usage": {
+                "vscode_mcp_json": {
+                    "type": "sse",
+                    "url": f"http://YOUR_SERVER_IP:{args.port}/sse"
+                }
+            }
+        })
+    
+    # Add middleware to handle host header issues
+    from starlette.middleware import Middleware
+    from starlette.middleware.trustedhost import TrustedHostMiddleware
+    
+    # Combine routes
+    routes = [
+        Route("/", info),
+        Route("/health", health),
+        Mount("/", app=mcp_app),
+    ]
+    
+    # Allow all hosts
+    app = Starlette(routes=routes)
+    
+    # Run with settings to accept any host
+    uvicorn.run(
+        app, 
+        host=args.host, 
+        port=args.port,
+        proxy_headers=True,
+        forwarded_allow_ips="*",
+        server_header=False
+    )
 
 
 if __name__ == "__main__":

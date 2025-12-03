@@ -1,6 +1,6 @@
 # PubMed Search MCP
 
-A standalone Python library and MCP (Model Context Protocol) server for PubMed literature search.
+A standalone Python library and MCP (Model Context Protocol) server for PubMed literature search. Can be used independently or as a Git submodule in other projects.
 
 ## Features
 
@@ -11,6 +11,7 @@ A standalone Python library and MCP (Model Context Protocol) server for PubMed l
 - **PDF Access**: Get open-access PDF URLs from PubMed Central
 - **MCP Integration**: Use with VS Code + GitHub Copilot or any MCP client
 - **Remote Server**: Deploy as HTTP service for multi-machine access
+- **Submodule Ready**: Use as a Git submodule in larger projects
 
 ## Installation
 
@@ -32,6 +33,22 @@ pip install "pubmed-search[mcp]"
 git clone https://github.com/u9401066/pubmed-search-mcp.git
 cd pubmed-search-mcp
 pip install -e ".[all]"
+```
+
+### As a Git Submodule
+
+```bash
+# Add as submodule to your project
+git submodule add https://github.com/u9401066/pubmed-search-mcp.git src/pubmed_search
+
+# Install dependencies
+pip install biopython requests mcp
+```
+
+Then import in your code:
+```python
+from src.pubmed_search import PubMedClient
+# or add src to your Python path
 ```
 
 ## Usage

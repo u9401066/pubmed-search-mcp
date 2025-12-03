@@ -10,6 +10,7 @@ import sys
 from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 from ..entrez import LiteratureSearcher
 from .tools import register_search_tools
@@ -41,7 +42,8 @@ DEFAULT_EMAIL = "pubmed-search@example.com"
 def create_server(
     email: str = DEFAULT_EMAIL,
     api_key: Optional[str] = None,
-    name: str = "pubmed-search"
+    name: str = "pubmed-search",
+    disable_security: bool = False
 ) -> FastMCP:
     """
     Create and configure the PubMed Search MCP server.
@@ -50,6 +52,7 @@ def create_server(
         email: Email address for NCBI Entrez API (required by NCBI).
         api_key: Optional NCBI API key for higher rate limits.
         name: Server name.
+        disable_security: Disable DNS rebinding protection (needed for remote access).
         
     Returns:
         Configured FastMCP server instance.
@@ -59,8 +62,18 @@ def create_server(
     # Initialize searcher
     searcher = LiteratureSearcher(email=email, api_key=api_key)
     
+    # Configure transport security
+    # Disable DNS rebinding protection for remote access
+    if disable_security:
+        transport_security = TransportSecuritySettings(
+            enable_dns_rebinding_protection=False
+        )
+        logger.info("DNS rebinding protection disabled for remote access")
+    else:
+        transport_security = None
+    
     # Create MCP server
-    mcp = FastMCP(name, instructions=SERVER_INSTRUCTIONS)
+    mcp = FastMCP(name, instructions=SERVER_INSTRUCTIONS, transport_security=transport_security)
     
     # Register tools
     logger.info("Registering search tools...")
