@@ -10,6 +10,7 @@ A standalone Python library and MCP (Model Context Protocol) server for PubMed l
 - **Parallel Search**: Generate multiple queries for comprehensive searches
 - **PDF Access**: Get open-access PDF URLs from PubMed Central
 - **MCP Integration**: Use with VS Code + GitHub Copilot or any MCP client
+- **Remote Server**: Deploy as HTTP service for multi-machine access
 
 ## Installation
 
@@ -43,18 +44,18 @@ from pubmed_search import PubMedClient
 client = PubMedClient(email="your@email.com")
 
 # Search for papers
-results = client.search("anesthesia complications", max_results=10)
+results = client.search("anesthesia complications", limit=10)
 for paper in results:
-    print(f"{paper['pmid']}: {paper['title']}")
+    print(f"{paper.pmid}: {paper.title}")
 
 # Get related articles
-related = client.find_related("12345678", max_results=5)
+related = client.find_related("12345678", limit=5)
 
 # Get citing articles
 citing = client.find_citing("12345678")
 ```
 
-### As an MCP Server
+### As an MCP Server (Local - stdio)
 
 #### VS Code Configuration
 
@@ -96,6 +97,42 @@ pubmed-search-mcp your@email.com
 python -m pubmed_search.mcp your@email.com
 ```
 
+### As a Remote MCP Server (HTTP/SSE)
+
+For serving multiple machines, run the server in HTTP mode:
+
+```bash
+# Quick start
+./start.sh
+
+# Or with custom options
+python run_server.py --transport sse --port 8765 --email your@email.com
+
+# Using Docker
+docker compose up -d
+```
+
+#### Remote Client Configuration
+
+On other machines, configure `.vscode/mcp.json`:
+
+```json
+{
+  "servers": {
+    "pubmed-search": {
+      "type": "sse",
+      "url": "http://YOUR_SERVER_IP:8765/sse"
+    }
+  }
+}
+```
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed deployment instructions including:
+- systemd service setup
+- Docker deployment
+- Nginx reverse proxy
+- Security considerations
+
 ## MCP Tools
 
 | Tool | Description |
@@ -107,9 +144,6 @@ python -m pubmed_search.mcp your@email.com
 | `generate_search_queries` | Generate multiple queries for parallel search |
 | `merge_search_results` | Merge and deduplicate results |
 | `expand_search_queries` | Expand search with synonyms/related terms |
-| `configure_search_strategy` | Set up reusable search criteria |
-| `get_search_strategy` | Get current search strategy |
-| `download_pdf` | Get PDF URL from PubMed Central |
 
 ## API Documentation
 

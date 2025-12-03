@@ -1,0 +1,17 @@
+services:
+  pubmed-mcp:
+    build: .
+    ports:
+      - "8765:8765"
+    environment:
+      - NCBI_EMAIL=${NCBI_EMAIL:-pubmed-search@example.com}
+      - NCBI_API_KEY=${NCBI_API_KEY:-}
+      - MCP_PORT=8765
+      - MCP_HOST=0.0.0.0
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8765/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
