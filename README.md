@@ -22,7 +22,7 @@ A Domain-Driven Design (DDD) based MCP server that serves as an intelligent rese
 - **Remote Server**: Deploy as HTTP service for multi-machine access
 - **Submodule Ready**: Use as a Git submodule in larger projects
 
-## 🛠️ MCP Tools (10 個搜尋工具)
+## 🛠️ MCP Tools (8 個搜尋工具)
 
 ### 探索型 (Discovery)
 | Tool | 說明 |
@@ -35,7 +35,8 @@ A Domain-Driven Design (DDD) based MCP server that serves as an intelligent rese
 ### 批次搜尋 (Parallel Search)
 | Tool | 說明 |
 |------|------|
-| `generate_search_queries` | 產生多個搜尋策略 |
+| `parse_pico` | 🆕 解析 PICO 臨床問題 (搜尋入口) |
+| `generate_search_queries` | 產生多個搜尋策略 (ESpell + MeSH) |
 | `merge_search_results` | 合併去重搜尋結果 |
 | `expand_search_queries` | 擴展搜尋策略 |
 
@@ -56,10 +57,10 @@ find_related_articles(pmid="12345678")   # 相關文章
 find_citing_articles(pmid="12345678")    # 引用這篇的後續研究
 ```
 
-### 深度搜尋 (系統性文獻回顧)
+### 深度搜尋 - 關鍵字導向
 ```
 1. generate_search_queries(topic="remimazolam vs propofol ICU")
-   → 產生 5-6 個不同角度的搜尋策略
+   → 產生 5-6 個不同角度的搜尋策略 (含 MeSH 擴展)
 
 2. 並行呼叫 search_literature() (每個 query 各一次)
    → 分別執行各策略
@@ -68,6 +69,24 @@ find_citing_articles(pmid="12345678")    # 引用這篇的後續研究
    → 合併去重，標記多策略命中的高相關論文
 
 4. expand_search_queries() → 若需更多結果
+```
+
+### 深度搜尋 - PICO 臨床問題 🆕
+```
+1. parse_pico(description="remimazolam 在 ICU 比 propofol 好嗎？會減少 delirium 嗎？")
+   → 解析成 P/I/C/O 結構 + 建議的 Clinical Query filter
+
+2. 對每個 PICO 元素並行呼叫 generate_search_queries()
+   → P: ICU patients → MeSH + synonyms
+   → I: remimazolam → MeSH + synonyms
+   → C: propofol → MeSH + synonyms
+   → O: delirium → MeSH + synonyms
+
+3. Agent 組合查詢策略 (高精確/高召回)
+   → 高精確: (P) AND (I) AND (C) AND (O)
+   → 高召回: (P) AND (I OR C) AND (O)
+
+4. 並行執行 search_literature() + merge_search_results()
 ```
 
 ---

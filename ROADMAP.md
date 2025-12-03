@@ -177,22 +177,39 @@ session://context          # 當前研究上下文 (for debugging)
 
 **核心原則**: 工具提供素材，Agent 做決策
 
-### Phase A: Clinical Query Filters ✅ (已有)
+### Phase A: Clinical Query Filters ⚠️ (需要重新實作)
 
-PubMed Clinical Queries 是用預定義的搜尋策略實現，可透過 filter 使用：
+> **重要發現 (2024-12-03)**: `therapy[filter]` 語法 **不存在於 PubMed API**！
+> Clinical Study Categories 是複雜的搜尋策略，不是簡單的 filter tag。
 
-| Filter | 用途 | 範例 |
-|--------|------|------|
-| `therapy[filter]` | 治療相關 | `remimazolam AND therapy[filter]` |
-| `diagnosis[filter]` | 診斷相關 | `sedation AND diagnosis[filter]` |
-| `etiology[filter]` | 病因相關 | `delirium AND etiology[filter]` |
-| `prognosis[filter]` | 預後相關 | `ICU sedation AND prognosis[filter]` |
+#### 正確的 Clinical Query 實作方式
 
-**實作方式**: 直接在 search_literature 的 query 中使用
+PubMed Clinical Queries 是 **預定義的複雜搜尋策略**，需要展開成完整的 search string：
 
-### Phase B: PICO 解析器 🎯 (規劃中) - 另一種連續技！
+| Filter | 實際搜尋策略 (simplified) |
+|--------|---------------------------|
+| Therapy (sensitive) | `((clinical[tiab] AND trial[tiab]) OR clinical trials as topic[mh] OR clinical trial[pt] OR random*[tiab] OR random allocation[mh] OR therapeutic use[sh])` |
+| Therapy (specific) | `(randomized controlled trial[pt] OR (randomized[tiab] AND controlled[tiab] AND trial[tiab]))` |
+| Diagnosis (sensitive) | `(sensitivity and specificity[mh] OR diagnosis[sh] OR diagnostic*[tiab] OR diagnosis[tiab])` |
+| Prognosis (sensitive) | `(prognosis[mh] OR mortality[mh] OR survival analysis[mh] OR disease progression[mh])` |
 
-PubMed 沒有 PICO API，但我們可以自己實作。
+測試結果：
+```bash
+# 錯誤語法 (返回 0 結果)
+hip fracture AND therapy[filter]  # ❌ 0 results
+
+# 正確語法 (返回大量結果)
+hip fracture AND (randomized controlled trial[pt] OR clinical trial[pt])  # ✅ 3,254 results
+hip fracture AND ((clinical[tiab] AND trial[tiab]) OR ...)  # ✅ 18,894 results
+```
+
+**待辦**: 實作 `clinical_queries.py` 模組，將 filter name 展開為完整搜尋策略
+
+### Phase B: PICO 解析器 ✅ (已完成)
+
+> **實作日期**: 2024-12-03
+> **工具名稱**: `parse_pico()`
+
 PICO 是觸發「連續技」的另一個入口：
 
 ```
@@ -339,7 +356,10 @@ STRATEGY_TEMPLATES = {
 ## 實作路線圖 (總覽)
 
 ### Phase 3: 搜尋策略工具 🎯 (進行中)
-- [ ] 文檔化 Clinical Query Filters 使用方式
+- [x] PICO 解析器 (`parse_pico` 工具)
+- [x] MeSH 搜尋準確度改善 (二階段搜尋)
+- [ ] ⚠️ Clinical Query Filters 模組 (需要重新實作)
+  - `therapy[filter]` 語法不存在，需展開為完整策略
 - [ ] 實作 `get_search_building_blocks` 工具
 - [ ] 策略模板系統
 
@@ -366,7 +386,10 @@ STRATEGY_TEMPLATES = {
 | 2024-12-03 | 結構化 JSON 輸出 | 優化 Agent 決策效率 |
 | 2024-12-03 | Session/Cache 內部化 | Agent 不需管理基礎設施，專注搜尋任務 |
 | 2024-12-03 | 移除 Curation 工具 | 專注做好搜尋，文獻管理由其他工具處理 |
-| 2024-12-03 | 7 個精簡工具 | 減少 Agent 認知負擔，工具職責明確 |
+| 2024-12-03 | 8 個精簡工具 | 減少 Agent 認知負擔，工具職責明確 |
+| 2024-12-03 | MeSH 二階段搜尋 | 先精確匹配，再 quoted 搜尋，避免錯誤 MeSH term |
+| 2024-12-03 | parse_pico 工具 | PICO 結構化問題拆解，搜尋入口之一 |
+| 2024-12-03 | ⚠️ Clinical Query 重新實作 | `therapy[filter]` 語法不存在，需展開為複雜搜尋策略 |
 
 ---
 
