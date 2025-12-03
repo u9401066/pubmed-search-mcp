@@ -91,10 +91,22 @@ class SearchStrategyGenerator:
         """
         Get MeSH information for a term including synonyms.
         
+        Uses multiple search strategies for best results:
+        1. First try term[MeSH Terms] for exact MeSH matching
+        2. Fall back to quoted search if needed
+        
         Returns:
             Dict with mesh_id, preferred_term, synonyms, tree_numbers
         """
-        def _search_mesh():
+        def _search_mesh_exact():
+            """Try exact MeSH term search first."""
+            handle = Entrez.esearch(db="mesh", term=f'{term}[MeSH Terms]', retmax=1)
+            result = Entrez.read(handle)
+            handle.close()
+            return result
+        
+        def _search_mesh_quoted():
+            """Fall back to quoted search."""
             handle = Entrez.esearch(db="mesh", term=f'"{term}"', retmax=1)
             result = Entrez.read(handle)
             handle.close()
@@ -152,9 +164,15 @@ class SearchStrategyGenerator:
             return result
         
         try:
-            result = self._retry_operation(_search_mesh)
-            
+            # Strategy 1: Try exact MeSH term search first
+            result = self._retry_operation(_search_mesh_exact)
             mesh_ids = result.get("IdList", [])
+            
+            # Strategy 2: Fall back to quoted search
+            if not mesh_ids:
+                result = self._retry_operation(_search_mesh_quoted)
+                mesh_ids = result.get("IdList", [])
+            
             if not mesh_ids:
                 return None
             
