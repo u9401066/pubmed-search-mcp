@@ -99,6 +99,11 @@ def create_server(
     # Initialize searcher
     searcher = LiteratureSearcher(email=email, api_key=api_key)
     
+    # Initialize strategy generator for intelligent query generation
+    from ..entrez.strategy import SearchStrategyGenerator
+    strategy_generator = SearchStrategyGenerator(email=email, api_key=api_key)
+    logger.info("Strategy generator initialized (ESpell + MeSH)")
+    
     # Initialize session manager
     session_data_dir = data_dir or DEFAULT_DATA_DIR
     session_manager = SessionManager(data_dir=session_data_dir)
@@ -117,9 +122,10 @@ def create_server(
     # Create MCP server
     mcp = FastMCP(name, instructions=SERVER_INSTRUCTIONS, transport_security=transport_security)
     
-    # Set session manager for automatic caching in search tools
-    from .tools import set_session_manager
+    # Set session manager and strategy generator for search tools
+    from .tools import set_session_manager, set_strategy_generator
     set_session_manager(session_manager)
+    set_strategy_generator(strategy_generator)
     
     # Register tools
     logger.info("Registering search tools...")
@@ -130,9 +136,10 @@ def create_server(
     register_session_tools(mcp, session_manager)
     register_session_resources(mcp, session_manager)
     
-    # Store references for later use (e.g., updating cache after search)
+    # Store references for later use
     mcp._session_manager = session_manager
     mcp._searcher = searcher
+    mcp._strategy_generator = strategy_generator
     
     logger.info("PubMed Search MCP Server initialized successfully")
     

@@ -15,17 +15,25 @@ from typing import Optional, List, Dict, Any
 from mcp.server.fastmcp import FastMCP
 
 from ..entrez import LiteratureSearcher
+from ..entrez.strategy import SearchStrategyGenerator
 
 logger = logging.getLogger(__name__)
 
-# Global reference for session manager (set by server.py after initialization)
+# Global references (set by server.py after initialization)
 _session_manager = None
+_strategy_generator = None
 
 
 def set_session_manager(session_manager):
     """Set the session manager for automatic caching."""
     global _session_manager
     _session_manager = session_manager
+
+
+def set_strategy_generator(generator: SearchStrategyGenerator):
+    """Set the strategy generator for intelligent query generation."""
+    global _strategy_generator
+    _strategy_generator = generator
 
 
 def _cache_results(results: list, query: str = None):
@@ -227,94 +235,111 @@ def register_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
     def generate_search_queries(
         topic: str,
         strategy: str = "comprehensive",
-        include_mesh: bool = True
+        check_spelling: bool = True,
+        include_suggestions: bool = True
     ) -> str:
         """
-        Generate multiple search queries for a topic for parallel searching.
+        Gather search intelligence for a topic - returns RAW MATERIALS for Agent to decide.
         
-        This tool returns multiple search queries. The Agent should call search_literature
-        in parallel for each query, then use merge_search_results to combine results.
+        This tool provides the BUILDING BLOCKS for search, not finished queries.
+        The Agent (or a lightweight LLM like minimind) decides how to use them:
+        - Use MeSH preferred terms to build standardized queries
+        - Use synonyms for query expansion
+        - Apply spelling corrections or not
+        - Generate custom query combinations
+        
+        Features:
+        - Spelling correction via NCBI ESpell
+        - MeSH term lookup for standardized vocabulary
+        - Synonym expansion from MeSH database
+        - Keyword extraction
         
         Args:
             topic: Search topic (e.g., "remimazolam ICU sedation")
-            strategy: Search strategy
-                - "comprehensive": Full search, multiple angles
-                - "focused": Fewer but more precise queries
-                - "exploratory": Broader related concepts
-            include_mesh: Whether to include MeSH terms search
+            strategy: Affects suggested_queries (if included)
+                - "comprehensive": Multiple angles, includes reviews (default)
+                - "focused": Adds RCT filter for high evidence
+                - "exploratory": Broader search with more synonyms
+            check_spelling: Whether to check/correct spelling (default: True)
+            include_suggestions: Include pre-built query suggestions (default: True)
+                Set to False if Agent will build its own queries
             
         Returns:
-            JSON with multiple queries for parallel execution
+            JSON with RAW MATERIALS:
+            - corrected_topic: Spell-checked topic (Agent decides whether to use)
+            - keywords: Extracted significant keywords
+            - mesh_terms: MeSH data with preferred terms and synonyms
+            - all_synonyms: Flattened list of all synonyms for easy use
+            - suggested_queries: Optional pre-built queries (Agent can ignore)
         """
         logger.info(f"Generating search queries for topic: {topic}, strategy: {strategy}")
         
+        # Use intelligent strategy generator if available
+        if _strategy_generator:
+            try:
+                result = _strategy_generator.generate_strategies(
+                    topic=topic,
+                    strategy=strategy,
+                    use_mesh=True,
+                    check_spelling=check_spelling,
+                    include_suggestions=include_suggestions
+                )
+                
+                # Add usage hint (Agent can ignore)
+                result["_hint"] = {
+                    "usage": "Use mesh_terms and all_synonyms to build your own queries, or use suggested_queries as reference",
+                    "example_mesh_query": f'"{{preferred_term}}"[MeSH Terms]',
+                    "example_synonym_query": f'({{synonym}})[Title/Abstract]'
+                }
+                
+                return json.dumps(result, indent=2, ensure_ascii=False)
+                
+            except Exception as e:
+                logger.warning(f"Strategy generator failed, using fallback: {e}")
+        
+        # Fallback: basic strategy generation
         words = topic.lower().split()
         queries = []
         
-        # Query 1: Exact title search
         queries.append({
             "id": "q1_title",
             "query": f"({topic})[Title]",
             "purpose": "Exact title match",
-            "expected": "High relevance, fewer results"
+            "priority": 1
         })
         
-        # Query 2: Title/Abstract search
         queries.append({
             "id": "q2_tiab",
             "query": f"({topic})[Title/Abstract]",
-            "purpose": "Title or abstract contains keywords",
-            "expected": "Medium relevance, moderate results"
+            "purpose": "Title or abstract",
+            "priority": 2
         })
         
-        # Query 3: AND query
-        and_query = " AND ".join(words)
+        if len(words) > 1:
+            and_query = " AND ".join(words)
+            queries.append({
+                "id": "q3_and",
+                "query": f"({and_query})",
+                "purpose": "All keywords required",
+                "priority": 2
+            })
+        
         queries.append({
-            "id": "q3_and",
-            "query": f"({and_query})",
-            "purpose": "All keywords must appear",
-            "expected": "Strict filtering"
+            "id": "q4_mesh",
+            "query": f"({topic})[MeSH Terms]",
+            "purpose": "MeSH standardized",
+            "priority": 2
         })
-        
-        if strategy in ["comprehensive", "exploratory"]:
-            if len(words) >= 2:
-                main_word = words[0]
-                context_words = " OR ".join(words[1:])
-                queries.append({
-                    "id": "q4_partial",
-                    "query": f"({main_word} AND ({context_words}))",
-                    "purpose": "Main keyword + any context word",
-                    "expected": "Looser matching"
-                })
-        
-        if include_mesh:
-            queries.append({
-                "id": "q5_mesh",
-                "query": f"({topic})[MeSH Terms]",
-                "purpose": "MeSH standardized terms",
-                "expected": "Medical concept standardized match"
-            })
-        
-        if strategy == "exploratory":
-            queries.append({
-                "id": "q6_review",
-                "query": f"({words[0]})[Title] AND review[Publication Type]",
-                "purpose": "Find related Review articles",
-                "expected": "Overview of the field"
-            })
         
         result = {
             "topic": topic,
             "strategy": strategy,
+            "spelling": None,
+            "mesh_terms": [],
             "queries_count": len(queries),
             "queries": queries,
-            "instruction": "Call search_literature in parallel for each query, then call merge_search_results to combine.",
-            "example": {
-                "parallel_calls": [
-                    f"search_literature(query=\"{q['query']}\", limit=20)" 
-                    for q in queries[:2]
-                ] + ["..."]
-            }
+            "instruction": "Execute search_literature in PARALLEL for each query, then merge_search_results",
+            "note": "Using fallback generator (MeSH lookup unavailable)"
         }
         
         return json.dumps(result, indent=2, ensure_ascii=False)
@@ -324,21 +349,30 @@ def register_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         """
         Merge multiple search results and remove duplicates.
         
-        After running multiple search_literature calls in parallel, use this tool to merge results.
+        After running search_literature calls in parallel, use this to combine results.
+        
+        Accepts TWO formats:
+        
+        Format 1 (Simple - just PMIDs):
+        [
+            ["12345", "67890"],
+            ["67890", "11111", "22222"]
+        ]
+        
+        Format 2 (With query IDs):
+        [
+            {"query_id": "q1_title", "pmids": ["12345", "67890"]},
+            {"query_id": "q2_tiab", "pmids": ["67890", "11111"]}
+        ]
         
         Args:
-            results_json: JSON array of search results, each containing:
-                - query_id: Search ID (from generate_search_queries)
-                - pmids: List of PMIDs
-                
-                Example:
-                [
-                    {"query_id": "q1_title", "pmids": ["12345", "67890"]},
-                    {"query_id": "q2_tiab", "pmids": ["67890", "11111"]}
-                ]
+            results_json: JSON array of search results (see formats above)
                 
         Returns:
-            Merged results with deduplicated PMID list and source analysis
+            Merged results with:
+            - unique_pmids: Deduplicated list
+            - high_relevance_pmids: Found in multiple searches (more relevant)
+            - statistics: Counts and duplicates removed
         """
         logger.info("Merging search results")
         
@@ -349,37 +383,51 @@ def register_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         
         pmid_sources = {}
         all_pmids = []
+        by_query = {}
         
-        for result in results:
-            query_id = result.get("query_id", "unknown")
-            pmids = result.get("pmids", [])
+        for i, result in enumerate(results):
+            # Support both formats
+            if isinstance(result, list):
+                # Format 1: Simple list of PMIDs
+                query_id = f"search_{i+1}"
+                pmids = result
+            elif isinstance(result, dict):
+                # Format 2: With query_id
+                query_id = result.get("query_id", f"search_{i+1}")
+                pmids = result.get("pmids", [])
+            else:
+                continue
+            
+            by_query[query_id] = len(pmids)
             
             for pmid in pmids:
                 pmid = str(pmid).strip()
+                if not pmid:
+                    continue
                 if pmid not in pmid_sources:
                     pmid_sources[pmid] = []
                     all_pmids.append(pmid)
                 pmid_sources[pmid].append(query_id)
         
-        multi_source = {pmid: sources for pmid, sources in pmid_sources.items() if len(sources) > 1}
+        # Find PMIDs that appeared in multiple searches (higher relevance)
+        high_relevance = [pmid for pmid, sources in pmid_sources.items() if len(sources) > 1]
         
-        by_query = {}
-        for result in results:
-            query_id = result.get("query_id", "unknown")
-            by_query[query_id] = len(result.get("pmids", []))
+        # Sort: high relevance first, then others
+        sorted_pmids = high_relevance + [p for p in all_pmids if p not in high_relevance]
         
         output = {
             "total_unique": len(all_pmids),
-            "total_with_duplicates": sum(by_query.values()),
+            "total_before_dedup": sum(by_query.values()),
             "duplicates_removed": sum(by_query.values()) - len(all_pmids),
-            "by_query": by_query,
-            "appeared_in_multiple_queries": {
-                "count": len(multi_source),
-                "pmids": list(multi_source.keys())[:10],
-                "note": "These articles were found by multiple search strategies, likely more relevant"
+            "high_relevance": {
+                "count": len(high_relevance),
+                "pmids": high_relevance[:20],
+                "note": "Found by multiple search strategies - likely more relevant"
             },
-            "unique_pmids": all_pmids,
-            "next_step": "Use fetch_article_details(pmids=...) to get detailed information"
+            "by_source": by_query,
+            "unique_pmids": sorted_pmids,
+            "pmids_csv": ",".join(sorted_pmids[:50]),
+            "next_step": f"fetch_article_details(pmids=\"{','.join(sorted_pmids[:20])}\")"
         }
         
         return json.dumps(output, indent=2, ensure_ascii=False)
@@ -388,164 +436,134 @@ def register_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
     def expand_search_queries(
         topic: str,
         existing_query_ids: str = "",
-        expansion_type: str = "synonyms"
+        expansion_type: str = "mesh"
     ) -> str:
         """
-        Expand search queries when initial results are insufficient.
+        Expand search when initial results are insufficient.
         
-        This tool generates additional search strategies that don't overlap with initial queries.
+        Uses NCBI MeSH database to find synonyms and related terms.
         
         Args:
             topic: Original search topic
             existing_query_ids: Comma-separated IDs of already executed queries
                               Example: "q1_title,q2_tiab,q3_and"
-            expansion_type: Expansion type
-                - "synonyms": Synonym expansion (e.g., sedation → conscious sedation)
-                - "related": Related concepts (e.g., ICU → critical care)
-                - "broader": Broader search (relax constraints)
-                - "narrower": More precise search (add constraints like RCT only)
+            expansion_type: How to expand
+                - "mesh": Use MeSH synonyms (default, recommended)
+                - "broader": Relax constraints (OR instead of AND)
+                - "narrower": Add filters (RCT, recent years)
             
         Returns:
             New search queries for parallel execution
         """
         logger.info(f"Expanding search for topic: {topic}, type: {expansion_type}")
         
-        existing = set(existing_query_ids.split(",")) if existing_query_ids else set()
-        words = topic.lower().split()
+        existing = set(x.strip() for x in existing_query_ids.split(",") if x.strip())
         queries = []
         query_counter = len(existing) + 1
         
-        if expansion_type == "synonyms":
+        # Use intelligent MeSH-based expansion if available
+        if expansion_type == "mesh" and _strategy_generator:
+            try:
+                result = _strategy_generator.expand_with_mesh(
+                    topic=topic,
+                    existing_queries=list(existing)
+                )
+                
+                if result.get("queries"):
+                    result["instruction"] = "Execute these in PARALLEL, then merge with previous results"
+                    return json.dumps(result, indent=2, ensure_ascii=False)
+                    
+            except Exception as e:
+                logger.warning(f"MeSH expansion failed: {e}")
+        
+        # Fallback expansion logic
+        words = topic.lower().split()
+        
+        if expansion_type in ["mesh", "synonyms"]:
+            # Basic synonym map (fallback when MeSH unavailable)
             synonym_map = {
-                "sedation": ["conscious sedation", "procedural sedation", "moderate sedation"],
-                "icu": ["intensive care unit", "critical care unit", "CCU"],
-                "anesthesia": ["anaesthesia", "anesthetic", "anaesthetic"],
-                "pain": ["analgesia", "analgesic", "nociception"],
-                "surgery": ["surgical", "operative", "perioperative"],
+                "sedation": ["conscious sedation", "procedural sedation"],
+                "icu": ["intensive care unit", "critical care"],
+                "anesthesia": ["anaesthesia", "anesthetic"],
                 "ventilation": ["mechanical ventilation", "respiratory support"],
-                "hypotension": ["low blood pressure", "hemodynamic instability"],
-                "mortality": ["death", "survival", "fatality"],
-                "machine learning": ["ML", "artificial intelligence", "AI", "deep learning"],
             }
             
             for word in words:
-                word_lower = word.lower()
-                if word_lower in synonym_map:
-                    for synonym in synonym_map[word_lower][:2]:
-                        new_topic = topic.replace(word, synonym)
-                        query_id = f"q{query_counter}_syn_{word_lower[:3]}"
-                        if query_id not in existing:
+                if word in synonym_map:
+                    for syn in synonym_map[word][:2]:
+                        new_topic = topic.replace(word, syn)
+                        qid = f"q{query_counter}_syn"
+                        if qid not in existing:
                             queries.append({
-                                "id": query_id,
+                                "id": qid,
                                 "query": f"({new_topic})[Title/Abstract]",
-                                "purpose": f"Synonym expansion: {word} → {synonym}",
-                                "expected": "Find articles using different terminology"
+                                "purpose": f"Synonym: {word} → {syn}",
+                                "priority": 3
                             })
                             query_counter += 1
-                            
-        elif expansion_type == "related":
-            related_concepts = {
-                "sedation": ["analgesia", "anxiolysis", "hypnotic"],
-                "icu": ["emergency department", "operating room", "PACU"],
-                "remimazolam": ["midazolam", "propofol", "dexmedetomidine"],
-                "propofol": ["remimazolam", "etomidate", "ketamine"],
-            }
-            
-            for word in words:
-                word_lower = word.lower()
-                if word_lower in related_concepts:
-                    for related in related_concepts[word_lower][:2]:
-                        other_words = [w for w in words if w.lower() != word_lower]
-                        if other_words:
-                            new_topic = f"{related} {' '.join(other_words)}"
-                            query_id = f"q{query_counter}_rel_{word_lower[:3]}"
-                            if query_id not in existing:
-                                queries.append({
-                                    "id": query_id,
-                                    "query": f"({new_topic})[Title/Abstract]",
-                                    "purpose": f"Related concept: {word} → {related}",
-                                    "expected": "Find related but different topic articles"
-                                })
-                                query_counter += 1
                                 
         elif expansion_type == "broader":
             if len(words) >= 2:
                 or_query = " OR ".join(words)
-                query_id = f"q{query_counter}_broad_or"
-                if query_id not in existing:
+                qid = f"q{query_counter}_broad"
+                if qid not in existing:
                     queries.append({
-                        "id": query_id,
+                        "id": qid,
                         "query": f"({or_query})[Title/Abstract]",
-                        "purpose": "Broader search: any keyword",
-                        "expected": "More results, may be less relevant"
+                        "purpose": "Any keyword (broader)",
+                        "priority": 4
                     })
                     query_counter += 1
             
-            main_word = words[0]
-            query_id = f"q{query_counter}_broad_main"
-            if query_id not in existing:
+            qid = f"q{query_counter}_allfields"
+            if qid not in existing:
                 queries.append({
-                    "id": query_id,
-                    "query": f"({main_word})[Title]",
-                    "purpose": f"Main keyword only: {main_word}",
-                    "expected": "Broader results"
+                    "id": qid,
+                    "query": f"({topic})[All Fields]",
+                    "purpose": "Search all fields",
+                    "priority": 5
                 })
                 query_counter += 1
                     
         elif expansion_type == "narrower":
-            query_id = f"q{query_counter}_narrow_rct"
-            if query_id not in existing:
+            qid = f"q{query_counter}_rct"
+            if qid not in existing:
                 queries.append({
-                    "id": query_id,
-                    "query": f"({topic})[Title] AND (randomized controlled trial[pt] OR RCT[tiab])",
-                    "purpose": "RCT studies only",
-                    "expected": "High quality evidence"
+                    "id": qid,
+                    "query": f"({topic}) AND randomized controlled trial[pt]",
+                    "purpose": "RCT only - high evidence",
+                    "priority": 1
                 })
                 query_counter += 1
             
-            query_id = f"q{query_counter}_narrow_meta"
-            if query_id not in existing:
+            qid = f"q{query_counter}_meta"
+            if qid not in existing:
                 queries.append({
-                    "id": query_id,
-                    "query": f"({topic})[Title/Abstract] AND (meta-analysis[pt] OR systematic review[pt])",
-                    "purpose": "Meta-analysis/SR only",
-                    "expected": "Synthesized evidence"
+                    "id": qid,
+                    "query": f"({topic}) AND (meta-analysis[pt] OR systematic review[pt])",
+                    "purpose": "Meta-analysis/Systematic Review",
+                    "priority": 1
                 })
                 query_counter += 1
                 
             current_year = datetime.now().year
-            query_id = f"q{query_counter}_narrow_recent"
-            if query_id not in existing:
+            qid = f"q{query_counter}_recent"
+            if qid not in existing:
                 queries.append({
-                    "id": query_id,
-                    "query": f"({topic})[Title] AND ({current_year-2}:{current_year}[dp])",
+                    "id": qid,
+                    "query": f"({topic})[Title] AND {current_year-2}:{current_year}[dp]",
                     "purpose": "Last 2 years only",
-                    "expected": "Most recent research"
+                    "priority": 2
                 })
                 query_counter += 1
-        
-        if not queries:
-            query_id = f"q{query_counter}_allfields"
-            queries.append({
-                "id": query_id,
-                "query": f"({topic})[All Fields]",
-                "purpose": "Search all fields",
-                "expected": "Broadest possible search"
-            })
         
         result = {
             "topic": topic,
             "expansion_type": expansion_type,
             "existing_queries": list(existing),
-            "new_queries_count": len(queries),
+            "queries_count": len(queries),
             "queries": queries,
-            "instruction": "Execute these new queries in parallel, then merge with previous results using merge_search_results",
-            "available_expansion_types": [
-                {"type": "synonyms", "description": "Synonym expansion"},
-                {"type": "related", "description": "Related concepts"},
-                {"type": "broader", "description": "Relax constraints"},
-                {"type": "narrower", "description": "More precise search"},
-            ]
+            "instruction": "Execute in PARALLEL, then merge_search_results with previous"
         }
         
         return json.dumps(result, indent=2, ensure_ascii=False)
