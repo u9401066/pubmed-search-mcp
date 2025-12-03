@@ -3,6 +3,8 @@ PubMed Search MCP Tools
 
 Core search tools: search_literature, find_related_articles, find_citing_articles, 
 generate_search_queries, merge_search_results, expand_search_queries
+
+Note: Search results are automatically cached via session manager when available.
 """
 
 import json
@@ -15,6 +17,28 @@ from mcp.server.fastmcp import FastMCP
 from ..entrez import LiteratureSearcher
 
 logger = logging.getLogger(__name__)
+
+# Global reference for session manager (set by server.py after initialization)
+_session_manager = None
+
+
+def set_session_manager(session_manager):
+    """Set the session manager for automatic caching."""
+    global _session_manager
+    _session_manager = session_manager
+
+
+def _cache_results(results: list, query: str = None):
+    """Cache search results if session manager is available."""
+    if _session_manager and results and not results[0].get('error'):
+        try:
+            _session_manager.add_to_cache(results)
+            if query:
+                pmids = [r.get('pmid') for r in results if r.get('pmid')]
+                _session_manager.add_search_record(query, pmids)
+            logger.debug(f"Cached {len(results)} articles")
+        except Exception as e:
+            logger.warning(f"Failed to cache results: {e}")
 
 
 def format_search_results(results: list, include_doi: bool = True) -> str:
@@ -76,6 +100,8 @@ def register_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         """
         Search for medical literature based on a query using PubMed.
         
+        Results are automatically cached to avoid redundant API calls.
+        
         Args:
             query: The search query (e.g., "diabetes treatment guidelines").
             limit: The maximum number of results to return.
@@ -101,6 +127,9 @@ def register_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 article_type, strategy,
                 date_from=date_from, date_to=date_to, date_type=date_type
             )
+            
+            # Cache results
+            _cache_results(results, query)
                 
             return format_search_results(results[:limit])
         except Exception as e:
