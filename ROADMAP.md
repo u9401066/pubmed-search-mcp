@@ -156,25 +156,35 @@ evidence_synthesis          # 證據綜合
 - [x] 遠端部署支援
 - [x] 錯誤重試機制
 
-### Phase 2: DDD 重構 🎯 (下一步)
-- [ ] 定義領域模型 (Domain Model)
-- [ ] 實作 Research Session 聚合根
-- [ ] 重構為任務導向 Tools
-- [ ] 實作 Resources (狀態管理)
+### Phase 2: Session & Cache ✅ (已完成)
+- [x] 定義領域模型 (Domain Model)
+- [x] 實作 Research Session 聚合根 (`session.py`)
+- [x] 文章快取系統 (避免重複 API 呼叫)
+- [x] 閱讀清單管理 (優先順序)
+- [x] 搜尋歷史記錄
+- [x] Session 持久化 (JSON 檔案)
+- [x] 10 個 Session 管理 Tools
+- [x] 3 個 MCP Resources
 
-### Phase 3: Agent 優化
+### Phase 3: Agent 優化 🎯 (下一步)
 - [ ] 結構化輸出格式
 - [ ] 智慧洞察生成
 - [ ] 建議行動系統
 - [ ] Prompts 流程引導
 
-### Phase 4: 進階分析
+### Phase 4: 全文存取
+- [ ] Unpaywall API 整合
+- [ ] PMC 全文下載
+- [ ] 機構 Proxy 支援
+- [ ] PDF 解析 (標題、摘要提取)
+
+### Phase 5: 進階分析
 - [ ] 引用網絡分析
 - [ ] 研究趨勢分析
 - [ ] 知識缺口識別
 - [ ] 證據品質評估
 
-### Phase 5: 整合擴展
+### Phase 6: 整合擴展
 - [ ] 多資料庫支援 (Cochrane, ClinicalTrials.gov)
 - [ ] 引用管理器整合 (Zotero, EndNote)
 - [ ] 本地知識庫 (向量資料庫)
@@ -189,6 +199,9 @@ evidence_synthesis          # 證據綜合
 | 2024-12-03 | 任務導向 Tool 設計 | 減少 Agent 的認知負擔 |
 | 2024-12-03 | 結構化 JSON 輸出 | 優化 Agent 決策效率 |
 | 2024-12-03 | Research Session 作為聚合根 | 維持研究上下文一致性 |
+| 2024-12-03 | 實作 Session + Cache | Agent 識別已搜尋文章，避免重複 API 呼叫 |
+| 2024-12-03 | JSON 檔案持久化 | 簡單可靠，無需額外依賴 (SQLite 留作未來選項) |
+| 2024-12-03 | 閱讀清單優先順序 | Agent 可排序重要文章，追蹤閱讀進度 |
 
 ---
 

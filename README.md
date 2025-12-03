@@ -27,7 +27,7 @@ A Domain-Driven Design (DDD) based MCP server that serves as an intelligent rese
 ### 探索型 (Discovery)
 | Tool | 說明 |
 |------|------|
-| `search_literature` | 搜尋 PubMed 文獻 |
+| `search_literature` | 搜尋 PubMed 文獻 (自動快取) |
 | `find_related_articles` | 尋找相關文章 |
 | `find_citing_articles` | 尋找引用文章 |
 | `generate_search_queries` | 生成多重搜尋策略 |
@@ -38,6 +38,27 @@ A Domain-Driven Design (DDD) based MCP server that serves as an intelligent rese
 | `fetch_article_details` | 取得文章完整資訊 |
 | `merge_search_results` | 合併去重搜尋結果 |
 | `expand_search_queries` | 擴展搜尋策略 |
+
+### Session 管理 (Context Management)
+| Tool | 說明 |
+|------|------|
+| `get_session_status` | 取得當前研究 session 狀態 |
+| `start_research_session` | 開始新的研究主題 |
+| `list_sessions` | 列出所有研究 sessions |
+| `switch_session` | 切換到不同的 session |
+| `get_cached_article` | 從快取取得文章 (無需 API) |
+| `check_cached_pmids` | 檢查哪些 PMID 已快取 |
+| `add_to_reading_list` | 加入閱讀清單 (含優先順序) |
+| `get_reading_list` | 取得閱讀清單 |
+| `exclude_article` | 標記文章為不相關 |
+| `get_search_history` | 取得搜尋歷史 |
+
+### MCP Resources
+| Resource URI | 說明 |
+|--------------|------|
+| `session://current` | 當前 session 摘要 |
+| `session://reading-list` | 閱讀清單 |
+| `session://cache-stats` | 快取統計 |
 
 詳細 API 文件請參考 [ROADMAP.md](ROADMAP.md)。
 
