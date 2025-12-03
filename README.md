@@ -22,49 +22,57 @@ A Domain-Driven Design (DDD) based MCP server that serves as an intelligent rese
 - **Remote Server**: Deploy as HTTP service for multi-machine access
 - **Submodule Ready**: Use as a Git submodule in larger projects
 
-## 🛠️ MCP Tools
+## 🛠️ MCP Tools (10 個搜尋工具)
 
 ### 探索型 (Discovery)
 | Tool | 說明 |
 |------|------|
-| `search_literature` | 搜尋 PubMed 文獻 (自動快取) |
-| `find_related_articles` | 尋找相關文章 |
-| `find_citing_articles` | 尋找引用文章 |
-| `generate_search_queries` | 生成多重搜尋策略 |
+| `search_literature` | 搜尋 PubMed 文獻 |
+| `find_related_articles` | 尋找相關文章 (by PMID) |
+| `find_citing_articles` | 尋找引用文章 (by PMID) |
+| `fetch_article_details` | 取得文章完整資訊 |
 
-### 分析型 (Analysis)
+### 批次搜尋 (Parallel Search)
 | Tool | 說明 |
 |------|------|
-| `fetch_article_details` | 取得文章完整資訊 |
+| `generate_search_queries` | 產生多個搜尋策略 |
 | `merge_search_results` | 合併去重搜尋結果 |
 | `expand_search_queries` | 擴展搜尋策略 |
 
-### Session 管理 (Context Management)
-| Tool | 說明 |
-|------|------|
-| `get_session_status` | 取得當前研究 session 狀態 |
-| `start_research_session` | 開始新的研究主題 |
-| `list_sessions` | 列出所有研究 sessions |
-| `switch_session` | 切換到不同的 session |
-| `get_cached_article` | 從快取取得文章 (無需 API) |
-| `check_cached_pmids` | 檢查哪些 PMID 已快取 |
-| `add_to_reading_list` | 加入閱讀清單 (含優先順序) |
-| `get_reading_list` | 取得閱讀清單 |
-| `exclude_article` | 標記文章為不相關 |
-| `get_search_history` | 取得搜尋歷史 |
+> **設計原則**: 專注搜尋。Session/Cache/Reading List 皆為**內部機制**，自動運作，Agent 無需管理。
 
-### MCP Resources
-| Resource URI | 說明 |
-|--------------|------|
-| `session://current` | 當前 session 摘要 |
-| `session://reading-list` | 閱讀清單 |
-| `session://cache-stats` | 快取統計 |
+---
 
-詳細 API 文件請參考 [ROADMAP.md](ROADMAP.md)。
+## 📋 Agent 使用流程
 
-## Installation
+### 快速搜尋
+```
+search_literature(query="remimazolam ICU sedation", limit=10)
+```
 
-### Basic Installation (Library Only)
+### 深入探索 (找到重要論文後)
+```
+find_related_articles(pmid="12345678")   # 相關文章
+find_citing_articles(pmid="12345678")    # 引用這篇的後續研究
+```
+
+### 深度搜尋 (系統性文獻回顧)
+```
+1. generate_search_queries(topic="remimazolam vs propofol ICU")
+   → 產生 5-6 個不同角度的搜尋策略
+
+2. 並行呼叫 search_literature() (每個 query 各一次)
+   → 分別執行各策略
+
+3. merge_search_results(results_json="...")
+   → 合併去重，標記多策略命中的高相關論文
+
+4. expand_search_queries() → 若需更多結果
+```
+
+---
+
+## Installation### Basic Installation (Library Only)
 
 ```bash
 pip install pubmed-search
