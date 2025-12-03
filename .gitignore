@@ -68,3 +68,4 @@ venv.bak/
 
 # macOS
 .DS_Store
+server.log
