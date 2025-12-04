@@ -18,7 +18,7 @@ Or in mcp.json:
     }
 
 Usage for integration:
-    from pubmed_search.mcp import create_server, register_search_tools
+    from pubmed_search.mcp import create_server, register_all_tools
     
     # Option 1: Create standalone server
     server = create_server(email="your@email.com")
@@ -27,10 +27,13 @@ Usage for integration:
     # Option 2: Register tools to existing server
     from pubmed_search import LiteratureSearcher
     searcher = LiteratureSearcher(email="your@email.com")
-    register_search_tools(your_mcp_server, searcher)
+    register_all_tools(your_mcp_server, searcher)
 """
 
 from .server import create_server, main
-from .tools import register_search_tools
+from .tools import register_all_tools
 
-__all__ = ["create_server", "register_search_tools", "main"]
+# Backward compatibility alias
+register_search_tools = register_all_tools
+
+__all__ = ["create_server", "register_all_tools", "register_search_tools", "main"]
