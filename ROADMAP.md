@@ -46,17 +46,32 @@
 
 ## MCP 元件設計
 
-### 現有 Tools (7 個搜尋工具)
+### 現有 Tools (8 個搜尋工具)
 
-| Tool | 任務 | 說明 |
-|------|------|------|
-| `search_literature` | 基本搜尋 | PubMed 文獻搜尋，支援日期/類型篩選 |
-| `find_related_articles` | 探索相關 | 找相似主題文章 |
-| `find_citing_articles` | 追蹤引用 | 找後續研究 |
-| `fetch_article_details` | 取得詳情 | 取得完整文章資訊 |
-| `generate_search_queries` | 批次策略 | 產生多角度搜尋 query |
-| `merge_search_results` | 合併結果 | 去重 + 標記高相關性 |
-| `expand_search_queries` | 擴展策略 | 同義詞/相關概念擴展 |
+#### 模組結構 (DDD 重構完成 - 2024-12-04)
+
+```
+src/pubmed_search/mcp/tools/
+├── __init__.py      # register_all_tools 入口
+├── _common.py       # 共用函數 (format, cache)
+├── discovery.py     # 探索型 (4 tools)
+├── strategy.py      # 策略型 (2 tools)
+├── pico.py          # PICO 解析 (1 tool)
+└── merge.py         # 結果合併 (1 tool)
+```
+
+#### 工具清單
+
+| Tool | 模組 | 任務 | 說明 |
+|------|------|------|------|
+| `search_literature` | discovery | 基本搜尋 | PubMed 文獻搜尋，支援日期/類型篩選 |
+| `find_related_articles` | discovery | 探索相關 | 找相似主題文章 |
+| `find_citing_articles` | discovery | 追蹤引用 | 找後續研究 |
+| `fetch_article_details` | discovery | 取得詳情 | 取得完整文章資訊 |
+| `generate_search_queries` | strategy | 批次策略 | 產生多角度搜尋 query (ESpell + MeSH) |
+| `expand_search_queries` | strategy | 擴展策略 | 同義詞/相關概念擴展 |
+| `parse_pico` | pico | PICO 解析 | 臨床問題結構化拆解 |
+| `merge_search_results` | merge | 合併結果 | 去重 + 標記高相關性 |
 
 ### 內部機制 (對 Agent 透明)
 
@@ -382,6 +397,8 @@ STRATEGY_TEMPLATES = {
 
 | 日期 | 決策 | 理由 |
 |------|------|------|
+| 2024-12-04 | DDD 模組化 tools 重構 | 按領域分類：discovery, strategy, pico, merge |
+| 2024-12-04 | 移除 `register_search_tools` 別名 | 統一使用 `register_all_tools` |
 | 2024-12-03 | 採用 DDD 架構 | 更好地反映文獻研究領域知識 |
 | 2024-12-03 | 結構化 JSON 輸出 | 優化 Agent 決策效率 |
 | 2024-12-03 | Session/Cache 內部化 | Agent 不需管理基礎設施，專注搜尋任務 |
