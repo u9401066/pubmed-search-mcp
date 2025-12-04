@@ -69,3 +69,6 @@ venv.bak/
 # macOS
 .DS_Store
 server.log
+
+# Internal documents (not for public)
+docs/competitor-analysis.md
