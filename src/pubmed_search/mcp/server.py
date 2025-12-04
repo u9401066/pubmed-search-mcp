@@ -21,7 +21,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 
 from ..entrez import LiteratureSearcher
 from ..session import SessionManager
-from .tools import register_search_tools
+from .tools import register_all_tools, set_session_manager, set_strategy_generator
 from .session_tools import register_session_tools, register_session_resources
 
 logger = logging.getLogger(__name__)
@@ -123,13 +123,12 @@ def create_server(
     mcp = FastMCP(name, instructions=SERVER_INSTRUCTIONS, transport_security=transport_security)
     
     # Set session manager and strategy generator for search tools
-    from .tools import set_session_manager, set_strategy_generator
     set_session_manager(session_manager)
     set_strategy_generator(strategy_generator)
     
     # Register tools
     logger.info("Registering search tools...")
-    register_search_tools(mcp, searcher)
+    register_all_tools(mcp, searcher)
     
     # Register session tools and resources
     logger.info("Registering session tools...")
