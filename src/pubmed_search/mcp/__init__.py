@@ -33,7 +33,4 @@ Usage for integration:
 from .server import create_server, main
 from .tools import register_all_tools
 
-# Backward compatibility alias
-register_search_tools = register_all_tools
-
-__all__ = ["create_server", "register_all_tools", "register_search_tools", "main"]
+__all__ = ["create_server", "register_all_tools", "main"]
