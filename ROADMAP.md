@@ -145,6 +145,7 @@ arxiv-mcp-server 目前只有 **1 個 Prompt**: `deep-paper-analysis`
 | `find_related_articles` | 找相似文章 (PubMed 演算法) | ✅ v0.1.0 |
 | `find_citing_articles` | 找引用這篇的文章 (forward) | ✅ v0.1.0 |
 | `get_article_references` | 取得參考文獻列表 (backward) | ✅ v0.1.6 |
+| `get_citation_metrics` | 引用指標 (iCite RCR/Percentile) | ✅ v0.1.7 |
 | `trace_lineage` | 追蹤研究脈絡 (引用網絡) | ⏳ |
 | `visualize_citation_network` | 視覺化引用網絡 (Mermaid) | ⏳ |
 
