@@ -11,6 +11,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Research Prompts (Summarize, Literature Review, Clinical Relevance)
 - Research trend analysis (keyword frequency, publication trends)
 - Chart generation (PNG output)
+- Citation Network visualization (Mermaid)
+
+---
+
+## [0.1.6] - 2025-12-08
+
+### Added - Citation Network: Get Article References
+
+- **`get_article_references` MCP Tool** - Get the bibliography of any article
+  - Uses PubMed ELink API (`pubmed_pubmed_refs`)
+  - Returns papers THIS article cites (backward in time)
+  - Complements existing `find_citing_articles` (forward in time)
+  - Usage: Agent extracts PMID from user query/upload, then calls this tool
+
+### Citation Network Tools (Complete Set)
+
+| Tool | Direction | Description |
+|------|-----------|-------------|
+| `find_related_articles` | Similar | PubMed's similarity algorithm |
+| `find_citing_articles` | Forward | Papers that cite this article |
+| `get_article_references` | Backward | This article's bibliography |
 
 ---
 

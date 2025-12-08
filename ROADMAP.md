@@ -41,6 +41,9 @@
 | v0.1.1 | 2025-12-08 | Cache 優化、force_refresh |
 | v0.1.2 | 2025-12-08 | Export 系統 (RIS/BibTeX/CSV)、HTTP 下載端點 |
 | v0.1.3 | 2025-12-08 | pylatexenc 整合、ISSN/Language/PubType 欄位 |
+| v0.1.4 | 2025-12-08 | Query Analysis (estimated_count, pubmed_translation) |
+| v0.1.5 | 2025-12-08 | HTTPS 部署 (Nginx + TLS + Rate Limiting) |
+| v0.1.6 | 2025-12-08 | Citation Network: `get_article_references` |
 
 ---
 
@@ -136,11 +139,13 @@ arxiv-mcp-server 目前只有 **1 個 Prompt**: `deep-paper-analysis`
 ### Phase 8: 進階分析 ⭐
 > **參考**: pubmed-mcp-server, BioMCP
 
-| Tool | 說明 |
-|------|------|
-| `find_similar_articles` | 找類似文章 (補充 find_related) |
-| `get_references` | 取得參考文獻列表 |
-| `trace_lineage` | 追蹤研究脈絡 (引用網絡) |
+| Tool | 說明 | 狀態 |
+|------|------|:----:|
+| `find_related_articles` | 找相似文章 (PubMed 演算法) | ✅ v0.1.0 |
+| `find_citing_articles` | 找引用這篇的文章 (forward) | ✅ v0.1.0 |
+| `get_article_references` | 取得參考文獻列表 (backward) | ✅ v0.1.6 |
+| `trace_lineage` | 追蹤研究脈絡 (引用網絡) | ⏳ |
+| `visualize_citation_network` | 視覺化引用網絡 (Mermaid) | ⏳ |
 
 ### Phase 9: 資料庫擴展 (PubMed 生態系)
 > **原則**: 使用各資料庫官方 API，不另創統一 DSL

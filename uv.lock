@@ -668,10 +668,11 @@ wheels = [
 
 [[package]]
 name = "pubmed-search-mcp"
-version = "0.1.1"
+version = "0.1.6"
 source = { editable = "." }
 dependencies = [
     { name = "biopython" },
+    { name = "pylatexenc" },
     { name = "requests" },
 ]
 
@@ -694,6 +695,7 @@ requires-dist = [
     { name = "biopython", specifier = ">=1.81" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.0.0" },
     { name = "pubmed-search-mcp", extras = ["mcp", "dev"], marker = "extra == 'all'" },
+    { name = "pylatexenc", specifier = ">=2.10" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.21" },
     { name = "requests", specifier = ">=2.28.0" },
@@ -878,6 +880,12 @@ wheels = [
 crypto = [
     { name = "cryptography" },
 ]
+
+[[package]]
+name = "pylatexenc"
+version = "2.10"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/5d/ab/34ec41718af73c00119d0351b7a2531d2ebddb51833a36448fc7b862be60/pylatexenc-2.10.tar.gz", hash = "sha256:3dd8fd84eb46dc30bee1e23eaab8d8fb5a7f507347b23e5f38ad9675c84f40d3", size = 162597, upload-time = "2021-04-06T07:56:07.854Z" }
 
 [[package]]
 name = "pytest"
