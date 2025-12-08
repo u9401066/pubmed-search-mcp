@@ -107,7 +107,8 @@ uvx pubmed-search-mcp
 |------|------|
 | `search_literature` | 搜尋 PubMed 文獻 |
 | `find_related_articles` | 尋找相關文章 (by PMID) |
-| `find_citing_articles` | 尋找引用文章 (by PMID) |
+| `find_citing_articles` | 尋找引用文章 (by PMID, forward) |
+| `get_article_references` | 🆕 取得參考文獻 (by PMID, backward) |
 | `fetch_article_details` | 取得文章完整資訊 |
 
 ### 批次搜尋 (Parallel Search)
@@ -173,8 +174,9 @@ search_literature(query='("Intensive Care Units"[MeSH]) AND (remimazolam[tiab] O
 
 ### 深入探索 (找到重要論文後)
 ```
-find_related_articles(pmid="12345678")   # 相關文章
-find_citing_articles(pmid="12345678")    # 引用這篇的後續研究
+find_related_articles(pmid="12345678")   # 相關文章 (PubMed 演算法)
+find_citing_articles(pmid="12345678")    # 引用這篇的後續研究 (forward in time)
+get_article_references(pmid="12345678")  # 這篇的參考文獻 (backward in time)
 ```
 
 ---
@@ -632,7 +634,8 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed deployment instructions includin
 |------|-------------|
 | `search_literature` | Search PubMed for medical literature |
 | `find_related_articles` | Find articles related to a given PMID |
-| `find_citing_articles` | Find articles that cite a given PMID |
+| `find_citing_articles` | Find articles that cite a given PMID (forward) |
+| `get_article_references` | Get this article's bibliography (backward) |
 | `fetch_article_details` | Get full details for specific PMIDs |
 | `generate_search_queries` | Generate multiple queries for parallel search |
 | `merge_search_results` | Merge and deduplicate results |

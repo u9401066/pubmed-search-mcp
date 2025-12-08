@@ -95,7 +95,8 @@ search_literature(query='("Intensive Care Units"[MeSH]) AND (remimazolam OR CNS7
 流程:
 ```
 find_related_articles(pmid="12345678")  # PubMed 演算法找相似文章
-find_citing_articles(pmid="12345678")   # 引用這篇的後續研究
+find_citing_articles(pmid="12345678")   # 引用這篇的後續研究 (forward)
+get_article_references(pmid="12345678") # 這篇文章的參考文獻 (backward)
 ```
 
 ═══════════════════════════════════════════════════════════════════════════════
@@ -119,7 +120,8 @@ find_citing_articles(pmid="12345678")   # 引用這篇的後續研究
 
 ### 探索
 - find_related_articles: 相似文章 (by PMID)
-- find_citing_articles: 引用文章 (by PMID)
+- find_citing_articles: 引用這篇的文章 (by PMID, forward in time)
+- get_article_references: 這篇的參考文獻 (by PMID, backward in time)
 - fetch_article_details: 文章詳細資訊
 
 ### 匯出

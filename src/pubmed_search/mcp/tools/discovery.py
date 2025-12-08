@@ -3,8 +3,9 @@ Discovery Tools - Search and explore PubMed literature.
 
 Tools:
 - search_literature: Basic PubMed search
-- find_related_articles: Find related papers
-- find_citing_articles: Find citing papers
+- find_related_articles: Find related papers (similar articles)
+- find_citing_articles: Find papers that cite this article (forward in time)
+- get_article_references: Get this article's bibliography (backward in time)
 - fetch_article_details: Get full article details
 """
 
@@ -219,6 +220,41 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             return output
         except Exception as e:
             logger.error(f"Find citing articles failed: {e}")
+            return f"Error: {e}"
+
+    @mcp.tool()
+    def get_article_references(pmid: str, limit: int = 20) -> str:
+        """
+        Get the references (bibliography) of a PubMed article.
+        
+        Returns the list of articles that this paper cites in its bibliography.
+        This is the OPPOSITE of find_citing_articles:
+        - get_article_references: Papers THIS article cites (backward in time)
+        - find_citing_articles: Papers that cite THIS article (forward in time)
+        
+        Args:
+            pmid: PubMed ID of the source article.
+            limit: Maximum number of references to return.
+            
+        Returns:
+            List of referenced articles with details.
+        """
+        logger.info(f"Getting references for PMID: {pmid}")
+        try:
+            results = searcher.get_article_references(pmid, limit)
+            
+            if not results:
+                return f"No references found for PMID {pmid}. (Article may not be indexed in PMC or references not available.)"
+            
+            if "error" in results[0]:
+                return f"Error getting references: {results[0]['error']}"
+            
+            output = f"📚 **References of PMID {pmid}** ({len(results)} found)\n\n"
+            output += "These are the papers cited BY this article (its bibliography):\n\n"
+            output += format_search_results(results)
+            return output
+        except Exception as e:
+            logger.error(f"Get article references failed: {e}")
             return f"Error: {e}"
 
     @mcp.tool()
