@@ -56,7 +56,8 @@
 | `research_questions` | 研究問題建議 | ⭐⭐ |
 | `evidence_synthesis` | 證據綜合 (系統性回顧) | ⭐⭐ |
 | `clinical_relevance` | 臨床相關性分析 (PubMed 專屬!) | ⭐⭐⭐ |
-| `mesh_analysis` | MeSH 詞彙分析 (我們獨特!) | ⭐⭐ |
+
+> **Note**: MeSH 查詢已內建於 `generate_search_queries()` 工具，自動提供 preferred terms 和 synonyms。
 
 ### Phase 7: 研究分析功能 ⭐⭐
 > **參考**: pubmearch, pubmed-mcp-server
