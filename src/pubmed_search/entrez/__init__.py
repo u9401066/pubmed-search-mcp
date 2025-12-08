@@ -10,6 +10,7 @@ Module Structure:
     citation.py     - Citation network (related, citing, references)
     batch.py        - Batch processing with History Server
     utils.py        - Utility functions (spell check, MeSH, export)
+    icite.py        - NIH iCite citation metrics integration
 
 Usage:
     from pubmed_search.entrez import LiteratureSearcher
@@ -24,6 +25,7 @@ from .pdf import PDFMixin
 from .citation import CitationMixin
 from .batch import BatchMixin
 from .utils import UtilsMixin
+from .icite import ICiteMixin
 
 
 class LiteratureSearcher(
@@ -32,6 +34,7 @@ class LiteratureSearcher(
     CitationMixin,
     BatchMixin,
     UtilsMixin,
+    ICiteMixin,
     EntrezBase
 ):
     """

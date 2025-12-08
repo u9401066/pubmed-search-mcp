@@ -88,6 +88,26 @@ def _record_search_only(results: list, query: str):
             logger.warning(f"Failed to record search: {e}")
 
 
+def get_last_search_pmids() -> List[str]:
+    """Get PMIDs from the most recent search.
+    
+    Returns:
+        List of PMIDs from last search, or empty list if none.
+    """
+    if not _session_manager:
+        return []
+    
+    try:
+        session = _session_manager.get_or_create_session()
+        if session.search_history:
+            last_search = session.search_history[-1]
+            return last_search.pmids
+        return []
+    except Exception as e:
+        logger.warning(f"Failed to get last search PMIDs: {e}")
+        return []
+
+
 def format_search_results(results: list, include_doi: bool = True) -> str:
     """Format search results for display."""
     if not results:

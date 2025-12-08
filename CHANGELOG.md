@@ -15,6 +15,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.7] - 2025-12-08
+
+### Added - NIH iCite Citation Metrics Integration
+
+- **`get_citation_metrics` MCP Tool** - Get field-normalized citation data
+  - Uses NIH iCite API (official, no API key required)
+  - Returns citation metrics for any PMID(s)
+  - Supports "last" keyword to analyze previous search results
+
+- **Citation Metrics Available**:
+  | Metric | Description |
+  |--------|-------------|
+  | `citation_count` | Total citations |
+  | `relative_citation_ratio` (RCR) | Field-normalized (1.0 = average) |
+  | `nih_percentile` | Percentile ranking (0-100) |
+  | `citations_per_year` | Citation velocity |
+  | `apt` | Approximate Potential to Translate (clinical relevance) |
+
+- **Sorting & Filtering**:
+  - Sort by any metric: `sort_by="relative_citation_ratio"`
+  - Filter by thresholds: `min_citations=10`, `min_rcr=1.0`, `min_percentile=50`
+
+- **New Module**: `src/pubmed_search/entrez/icite.py`
+  - `ICiteMixin` class with methods:
+    - `get_citation_metrics()` - Fetch metrics from iCite
+    - `enrich_with_citations()` - Add metrics to article list
+    - `sort_by_citations()` - Sort by any metric
+    - `filter_by_citations()` - Filter by thresholds
+
+### Example Usage
+
+```
+# Get citation metrics for specific PMIDs
+get_citation_metrics(pmids="28968381,28324054")
+
+# Analyze last search results, sorted by impact
+get_citation_metrics(pmids="last", sort_by="relative_citation_ratio")
+
+# Filter to high-impact articles only
+get_citation_metrics(pmids="last", min_rcr=1.5, min_percentile=75)
+```
+
+---
+
 ## [0.1.6] - 2025-12-08
 
 ### Added - Citation Network: Get Article References

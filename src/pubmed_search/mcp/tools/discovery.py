@@ -7,6 +7,7 @@ Tools:
 - find_citing_articles: Find papers that cite this article (forward in time)
 - get_article_references: Get this article's bibliography (backward in time)
 - fetch_article_details: Get full article details
+- get_citation_metrics: Get NIH iCite citation metrics (RCR, percentile)
 """
 
 import logging
@@ -283,3 +284,140 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         except Exception as e:
             logger.error(f"Fetch details failed: {e}")
             return f"Error: {e}"
+
+    @mcp.tool()
+    def get_citation_metrics(
+        pmids: str,
+        sort_by: str = "citation_count",
+        min_citations: int = None,
+        min_rcr: float = None,
+        min_percentile: float = None
+    ) -> str:
+        """
+        Get citation metrics from NIH iCite for articles.
+        
+        Returns field-normalized citation data including:
+        - citation_count: Total number of citations
+        - relative_citation_ratio (RCR): Field-normalized metric (1.0 = average)
+        - nih_percentile: Percentile ranking (0-100)
+        - citations_per_year: Citation velocity
+        - apt: Approximate Potential to Translate (clinical relevance 0-1)
+        
+        Can sort and filter results by citation metrics.
+        
+        Args:
+            pmids: Comma-separated list of PubMed IDs (e.g., "12345678,87654321")
+                   OR "last" to use PMIDs from the last search
+            sort_by: Metric to sort by:
+                - "citation_count": Raw citation count (default)
+                - "relative_citation_ratio": Field-normalized (recommended)
+                - "nih_percentile": Percentile ranking
+                - "citations_per_year": Citation velocity
+            min_citations: Filter out articles with fewer citations
+            min_rcr: Filter out articles with RCR below threshold (e.g., 1.0 = average)
+            min_percentile: Filter out articles below percentile (e.g., 50 = top half)
+            
+        Returns:
+            Articles with citation metrics, sorted and filtered as requested.
+        """
+        import json
+        
+        logger.info(f"Getting citation metrics for: {pmids}")
+        
+        try:
+            # Handle "last" keyword
+            if pmids.strip().lower() == "last":
+                from ._common import get_last_search_pmids
+                pmid_list = get_last_search_pmids()
+                if not pmid_list:
+                    return "No previous search results found. Please search first or provide PMIDs."
+            else:
+                pmid_list = [p.strip() for p in pmids.split(",")]
+            
+            if not pmid_list:
+                return "No PMIDs provided."
+            
+            # Get metrics from iCite
+            metrics = searcher.get_citation_metrics(pmid_list)
+            
+            if not metrics:
+                return f"No citation data found for PMIDs: {pmids}. Articles may be too recent or not indexed in iCite."
+            
+            # Convert to list for sorting/filtering
+            articles = [{"pmid": pmid, "icite": data} for pmid, data in metrics.items()]
+            
+            # Apply filters
+            if min_citations is not None:
+                articles = [a for a in articles 
+                           if (a["icite"].get("citation_count") or 0) >= min_citations]
+            
+            if min_rcr is not None:
+                articles = [a for a in articles 
+                           if (a["icite"].get("relative_citation_ratio") or 0) >= min_rcr]
+            
+            if min_percentile is not None:
+                articles = [a for a in articles 
+                           if (a["icite"].get("nih_percentile") or 0) >= min_percentile]
+            
+            if not articles:
+                return "No articles match the specified filters."
+            
+            # Sort
+            def get_sort_value(a):
+                val = a["icite"].get(sort_by)
+                return val if val is not None else -1
+            
+            articles = sorted(articles, key=get_sort_value, reverse=True)
+            
+            # Format output
+            output = f"📊 **Citation Metrics** ({len(articles)} articles)\n"
+            output += f"Sorted by: {sort_by}\n"
+            
+            if min_citations or min_rcr or min_percentile:
+                filters = []
+                if min_citations: filters.append(f"citations≥{min_citations}")
+                if min_rcr: filters.append(f"RCR≥{min_rcr}")
+                if min_percentile: filters.append(f"percentile≥{min_percentile}")
+                output += f"Filters: {', '.join(filters)}\n"
+            
+            output += "\n"
+            
+            for i, article in enumerate(articles, 1):
+                icite = article["icite"]
+                pmid = icite.get("pmid", article["pmid"])
+                title = icite.get("title", "Unknown")[:80]
+                year = icite.get("year", "?")
+                journal = icite.get("journal", "Unknown")
+                
+                citations = icite.get("citation_count", 0) or 0
+                rcr = icite.get("relative_citation_ratio")
+                percentile = icite.get("nih_percentile")
+                cpy = icite.get("citations_per_year")
+                apt = icite.get("apt")
+                
+                output += f"**{i}. [{pmid}]** {title}...\n"
+                output += f"   📅 {year} | 📰 {journal}\n"
+                output += f"   📈 Citations: **{citations}**"
+                
+                if rcr is not None:
+                    output += f" | RCR: **{rcr:.2f}**"
+                if percentile is not None:
+                    output += f" | Percentile: **{percentile:.1f}%**"
+                if cpy is not None:
+                    output += f" | {cpy:.1f}/yr"
+                if apt is not None and apt > 0.5:
+                    output += f" | 🏥 APT: {apt:.2f}"
+                
+                output += "\n\n"
+            
+            # Add legend
+            output += "---\n"
+            output += "**Legend**: RCR=Relative Citation Ratio (1.0=field average), "
+            output += "APT=Approximate Potential to Translate (clinical relevance)\n"
+            
+            return output
+            
+        except Exception as e:
+            logger.error(f"Get citation metrics failed: {e}")
+            return f"Error: {e}"
+
