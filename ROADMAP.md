@@ -64,14 +64,13 @@
 - 向量資料庫 (ChromaDB)
 - 概念搜尋而非關鍵字
 
-#### 統一查詢語言 (BioMCP 設計)
-- Query DSL: `mesh:diabetes AND date:>2023`
-- Schema 查詢、Query 解釋
-
 #### 多資料庫整合
 - ClinicalTrials.gov
 - Cochrane
 - PMC 全文
+
+> **注意**: BioMCP 的「統一查詢語言」(`gene:BRAF`, `mesh:diabetes`) 是為了跨多資料庫設計。
+> 我們專注於 PubMed，直接使用 **PubMed 官方語法**，不需要另創 DSL。
 
 ---
 
