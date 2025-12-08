@@ -2,6 +2,37 @@
 
 > 本文件記錄**待實作**功能。已完成功能請參閱 [CHANGELOG.md](CHANGELOG.md)。
 
+## 願景
+
+**PubMed 為核心，可擴展至其他生醫資料庫**
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    pubmed-search-mcp                        │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│   ┌─────────────────────────────────────────────────────┐   │
+│   │              Core: PubMed/NCBI Entrez               │   │
+│   │  • 官方 Entrez API                                   │   │
+│   │  • 官方查詢語法 [MeSH], [tiab], [dp]                 │   │
+│   │  • MeSH 標準詞彙、PICO 結構化查詢                     │   │
+│   └─────────────────────────────────────────────────────┘   │
+│                           ↓                                 │
+│   ┌─────────────────────────────────────────────────────┐   │
+│   │           Future Extensions (Phase 9+)              │   │
+│   │  • PMC 全文 (同為 NCBI，共用 Entrez)                 │   │
+│   │  • ClinicalTrials.gov (NCBI 合作)                   │   │
+│   │  • Cochrane Library (系統性回顧)                     │   │
+│   └─────────────────────────────────────────────────────┘   │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**設計原則**：
+- ✅ 使用各資料庫**官方 API 和語法**（不另創 DSL）
+- ✅ PubMed 功能優先完善，再逐步擴展
+- ✅ 擴展時保持 API 一致性
+
 ## 版本歷程
 
 | 版本 | 日期 | 主要功能 |
@@ -56,21 +87,38 @@
 | `get_references` | 取得參考文獻列表 |
 | `trace_lineage` | 追蹤研究脈絡 (引用網絡) |
 
-### Phase 9: 長期願景
-> **參考**: BioMCP, zotero-mcp
+### Phase 9: 資料庫擴展 (PubMed 生態系)
+> **原則**: 使用各資料庫官方 API，不另創統一 DSL
 
-#### 語義搜尋
+#### PMC 全文整合 (NCBI)
+| Tool | 說明 | API |
+|------|------|-----|
+| `search_pmc_fulltext` | 全文搜尋 | NCBI Entrez (共用) |
+| `get_pmc_fulltext` | 取得全文 XML/PDF | PMC OA Service |
+
+#### ClinicalTrials.gov 整合
+| Tool | 說明 | API |
+|------|------|-----|
+| `search_trials` | 搜尋臨床試驗 | ClinicalTrials.gov API v2 |
+| `get_trial_details` | 取得試驗詳情 | 官方 REST API |
+
+> **語法**: 使用 ClinicalTrials.gov 官方查詢語法，如 `AREA[Condition]diabetes`
+
+#### Cochrane Library (選擇性)
+| Tool | 說明 |
+|------|------|
+| `search_cochrane_reviews` | 搜尋系統性回顧 |
+
+### Phase 10: 長期願景
+
+#### 語義搜尋增強
 - Embedding 模型整合 (all-MiniLM-L6-v2)
 - 向量資料庫 (ChromaDB)
-- 概念搜尋而非關鍵字
+- 概念搜尋 + 傳統關鍵字搜尋混合
 
-#### 多資料庫整合
-- ClinicalTrials.gov
-- Cochrane
-- PMC 全文
-
-> **注意**: BioMCP 的「統一查詢語言」(`gene:BRAF`, `mesh:diabetes`) 是為了跨多資料庫設計。
-> 我們專注於 PubMed，直接使用 **PubMed 官方語法**，不需要另創 DSL。
+#### 跨資料庫關聯
+- PubMed ↔ ClinicalTrials.gov 文獻-試驗關聯
+- PubMed ↔ PMC 摘要-全文連結
 
 ---
 
