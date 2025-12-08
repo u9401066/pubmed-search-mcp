@@ -13,7 +13,7 @@ import logging
 from mcp.server.fastmcp import FastMCP
 
 from ...entrez import LiteratureSearcher
-from ._common import format_search_results, _cache_results
+from ._common import format_search_results, _cache_results, check_cache
 
 logger = logging.getLogger(__name__)
 
@@ -31,12 +31,14 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         date_to: str = None,
         date_type: str = "edat",
         article_type: str = None, 
-        strategy: str = "relevance"
+        strategy: str = "relevance",
+        force_refresh: bool = False
     ) -> str:
         """
         Search for medical literature based on a query using PubMed.
         
         Results are automatically cached to avoid redundant API calls.
+        Repeated searches with the same query will return cached results.
         
         Args:
             query: The search query (e.g., "diabetes treatment guidelines").
@@ -52,20 +54,31 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             article_type: Optional article type (e.g., "Review", "Clinical Trial", "Meta-Analysis").
             strategy: Search strategy ("recent", "most_cited", "relevance", "impact"). 
                      Default is "relevance".
+            force_refresh: If True, bypass cache and fetch fresh results from API.
         """
         logger.info(f"Searching literature: query='{query}', limit={limit}, strategy='{strategy}'")
         try:
             if not query:
                 return "Error: Query is required."
 
+            # Check cache first (unless force_refresh or filters applied)
+            has_filters = any([min_year, max_year, date_from, date_to, article_type])
+            if not force_refresh and not has_filters:
+                cached = check_cache(query, limit)
+                if cached:
+                    logger.info(f"Returning {len(cached)} cached results for '{query}'")
+                    return format_search_results(cached[:limit]) + "\n\n_(cached results)_"
+
+            # No cache hit - call API
             results = searcher.search(
                 query, limit, min_year, max_year, 
                 article_type, strategy,
                 date_from=date_from, date_to=date_to, date_type=date_type
             )
             
-            # Cache results
-            _cache_results(results, query)
+            # Cache results (only for queries without filters)
+            if not has_filters:
+                _cache_results(results, query)
                 
             return format_search_results(results[:limit])
         except Exception as e:
