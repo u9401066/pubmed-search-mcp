@@ -1,8 +1,79 @@
 # PubMed Search MCP
 
+[![PyPI version](https://badge.fury.io/py/pubmed-search-mcp.svg)](https://badge.fury.io/py/pubmed-search-mcp)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![MCP](https://img.shields.io/badge/MCP-Compatible-green.svg)](https://modelcontextprotocol.io/)
+[![Smithery](https://smithery.ai/badge/pubmed-search-mcp)](https://smithery.ai/server/pubmed-search-mcp)
+
 > **AI Agent 的專業文獻研究助理** - 不只是 API 包裝器
 
 A Domain-Driven Design (DDD) based MCP server that serves as an intelligent research assistant for AI agents, providing task-oriented literature search and analysis capabilities.
+
+## 🚀 Quick Install
+
+### Via Smithery (Recommended for Claude Desktop)
+
+```bash
+npx -y @smithery/cli install pubmed-search-mcp --client claude
+```
+
+### Via pip
+
+```bash
+pip install pubmed-search-mcp
+```
+
+### Via uv
+
+```bash
+uv add pubmed-search-mcp
+```
+
+### Via uvx (Zero Install)
+
+```bash
+uvx pubmed-search-mcp
+```
+
+## ⚙️ Configuration
+
+### Claude Desktop (`claude_desktop_config.json`)
+
+```json
+{
+  "mcpServers": {
+    "pubmed-search": {
+      "command": "uvx",
+      "args": ["pubmed-search-mcp"],
+      "env": {
+        "NCBI_EMAIL": "your@email.com"
+      }
+    }
+  }
+}
+```
+
+### VS Code / Cursor (`.vscode/mcp.json`)
+
+```json
+{
+  "servers": {
+    "pubmed-search": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["pubmed-search-mcp"],
+      "env": {
+        "NCBI_EMAIL": "your@email.com"
+      }
+    }
+  }
+}
+```
+
+> **Note**: `NCBI_EMAIL` is required by NCBI API policy. Optionally set `NCBI_API_KEY` for higher rate limits.
+
+---
 
 ## 🎯 設計理念
 
