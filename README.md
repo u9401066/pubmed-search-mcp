@@ -351,31 +351,47 @@ src/pubmed_search/
 | **Rate Limit** | 自動遵守 NCBI API 限制 (0.34s/0.1s) |
 | **MeSH Lookup** | `generate_search_queries()` 自動查詢 NCBI MeSH 資料庫 |
 | **ESpell** | 自動拼字校正 (`remifentanyl` → `remifentanil`) |
+| **Query Analysis** | 🆕 每個 suggested query 顯示 PubMed 實際解讀方式 |
 
-### MeSH 自動擴展
+### MeSH 自動擴展 + Query Analysis
 
-當呼叫 `generate_search_queries("propofol sedation")` 時，內部自動：
+當呼叫 `generate_search_queries("remimazolam sedation")` 時，內部自動：
 
 1. **ESpell 校正** - 修正拼字錯誤
 2. **MeSH 查詢** - `Entrez.esearch(db="mesh")` 取得標準詞彙
 3. **同義詞提取** - 從 MeSH Entry Terms 取得同義詞
+4. **🆕 Query Analysis** - 分析 PubMed 如何解讀每個 query
 
 ```json
 {
   "mesh_terms": [
     {
-      "input": "propofol",
-      "preferred": "Propofol",
-      "synonyms": ["Diprivan", "2,6-Diisopropylphenol"]
-    },
-    {
-      "input": "sedation",
-      "preferred": "Deep Sedation",
-      "synonyms": ["Conscious Sedation", "Procedural Sedation"]
+      "input": "remimazolam",
+      "preferred": "remimazolam [Supplementary Concept]",
+      "synonyms": ["CNS 7056", "ONO 2745"]
     }
   ],
-  "all_synonyms": ["Diprivan", "2,6-Diisopropylphenol", "Conscious Sedation", ...]
+  "all_synonyms": ["CNS 7056", "ONO 2745", ...],
+  "suggested_queries": [
+    {
+      "id": "q1_title",
+      "query": "(remimazolam sedation)[Title]",
+      "purpose": "Exact title match - highest precision",
+      "estimated_count": 8,
+      "pubmed_translation": "\"remimazolam sedation\"[Title]"
+    },
+    {
+      "id": "q3_and",
+      "query": "(remimazolam AND sedation)",
+      "purpose": "All keywords required",
+      "estimated_count": 561,
+      "pubmed_translation": "(\"remimazolam\"[Supplementary Concept] OR \"remimazolam\"[All Fields]) AND (\"sedate\"[All Fields] OR ...)"
+    }
+  ]
 }
+```
+
+> **Query Analysis 的價值**: Agent 以為 `remimazolam AND sedation` 只搜這兩個詞，但 PubMed 實際會展開成 Supplementary Concept + 同義詞，結果從 8 篇變成 561 篇。這讓 Agent 理解 **意圖** 與 **實際搜尋** 的差異。
 ```
 
 ---
