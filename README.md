@@ -349,6 +349,34 @@ src/pubmed_search/
 | **Session** | 自動建立、自動切換 |
 | **Cache** | 搜尋結果自動快取，避免重複 API |
 | **Rate Limit** | 自動遵守 NCBI API 限制 (0.34s/0.1s) |
+| **MeSH Lookup** | `generate_search_queries()` 自動查詢 NCBI MeSH 資料庫 |
+| **ESpell** | 自動拼字校正 (`remifentanyl` → `remifentanil`) |
+
+### MeSH 自動擴展
+
+當呼叫 `generate_search_queries("propofol sedation")` 時，內部自動：
+
+1. **ESpell 校正** - 修正拼字錯誤
+2. **MeSH 查詢** - `Entrez.esearch(db="mesh")` 取得標準詞彙
+3. **同義詞提取** - 從 MeSH Entry Terms 取得同義詞
+
+```json
+{
+  "mesh_terms": [
+    {
+      "input": "propofol",
+      "preferred": "Propofol",
+      "synonyms": ["Diprivan", "2,6-Diisopropylphenol"]
+    },
+    {
+      "input": "sedation",
+      "preferred": "Deep Sedation",
+      "synonyms": ["Conscious Sedation", "Procedural Sedation"]
+    }
+  ],
+  "all_synonyms": ["Diprivan", "2,6-Diisopropylphenol", "Conscious Sedation", ...]
+}
+```
 
 ---
 
