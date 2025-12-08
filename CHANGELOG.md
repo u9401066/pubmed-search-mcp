@@ -15,6 +15,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.1] - 2025-12-08
+
+### Added
+- Cache lookup before API calls - repeated searches return cached results
+- `force_refresh` parameter for `search_literature` to bypass cache
+- `find_cached_search()` method in SessionManager
+
+### Changed
+- Search results now show "(cached results)" when returned from cache
+- Queries with filters (date, article_type) are not cached to ensure fresh results
+
+---
+
 ## [0.1.0] - 2024-12-05
 
 ### Added
