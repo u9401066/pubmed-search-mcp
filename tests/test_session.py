@@ -241,3 +241,54 @@ class TestSessionManager:
         session = manager.get_current_session()
         assert len(session.search_history) == 1
         assert session.search_history[0]["query"] == "diabetes"
+    
+    def test_find_cached_search(self, temp_dir, mock_article_data):
+        """Test finding cached search results."""
+        manager = SessionManager(data_dir=str(temp_dir))
+        manager.get_or_create_session("test")
+        
+        # Add articles and record search
+        manager.add_to_cache([mock_article_data])
+        manager.add_search_record("diabetes treatment", [mock_article_data["pmid"]])
+        
+        # Should find cached results
+        cached = manager.find_cached_search("diabetes treatment")
+        assert cached is not None
+        assert len(cached) == 1
+        assert cached[0]["pmid"] == mock_article_data["pmid"]
+        
+        # Case insensitive
+        cached2 = manager.find_cached_search("DIABETES TREATMENT")
+        assert cached2 is not None
+        
+        # Different query should return None
+        not_cached = manager.find_cached_search("cancer therapy")
+        assert not_cached is None
+    
+    def test_find_cached_search_with_limit(self, temp_dir):
+        """Test cache lookup respects limit parameter."""
+        manager = SessionManager(data_dir=str(temp_dir))
+        manager.get_or_create_session("test")
+        
+        # Add 3 articles
+        articles = [
+            {"pmid": "111", "title": "Article 1", "authors": [], "abstract": "", "journal": "", "year": "2024"},
+            {"pmid": "222", "title": "Article 2", "authors": [], "abstract": "", "journal": "", "year": "2024"},
+            {"pmid": "333", "title": "Article 3", "authors": [], "abstract": "", "journal": "", "year": "2024"},
+        ]
+        manager.add_to_cache(articles)
+        manager.add_search_record("test query", ["111", "222", "333"])
+        
+        # Request more than cached - should return None
+        cached = manager.find_cached_search("test query", limit=5)
+        assert cached is None
+        
+        # Request exactly what's cached - should work
+        cached = manager.find_cached_search("test query", limit=3)
+        assert cached is not None
+        assert len(cached) == 3
+        
+        # Request less than cached - should return limited
+        cached = manager.find_cached_search("test query", limit=2)
+        assert cached is not None
+        assert len(cached) == 2

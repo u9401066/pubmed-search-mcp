@@ -432,6 +432,49 @@ class SessionManager:
         session.touch()
         self._save_session(session)
     
+    def find_cached_search(self, query: str, limit: int = None) -> Optional[List[Dict]]:
+        """
+        Find cached results for a query.
+        
+        Returns cached articles if the same query was performed in this session.
+        Only returns cache hit if we have enough results.
+        
+        Args:
+            query: Search query string
+            limit: Required number of results (returns None if cache has fewer)
+            
+        Returns:
+            List of cached articles if found, None otherwise
+        """
+        session = self.get_current_session()
+        if not session:
+            return None
+        
+        # Normalize query for comparison
+        normalized_query = query.strip().lower()
+        
+        # Find matching search record
+        for record in reversed(session.search_history):  # Most recent first
+            if record["query"].strip().lower() == normalized_query:
+                pmids = record.get("pmids", [])
+                
+                # Check if we have enough cached results
+                if limit and len(pmids) < limit:
+                    continue
+                    
+                # Retrieve cached articles
+                cached_articles = []
+                for pmid in pmids[:limit] if limit else pmids:
+                    if pmid in session.article_cache:
+                        cached_articles.append(session.article_cache[pmid])
+                
+                # Only return if we have all requested articles
+                if cached_articles and (not limit or len(cached_articles) >= limit):
+                    logger.info(f"Cache hit for query '{query}': {len(cached_articles)} articles")
+                    return cached_articles[:limit] if limit else cached_articles
+        
+        return None
+
     def add_to_reading_list(self, pmid: str, priority: int = 3, notes: str = ""):
         """Add article to reading list."""
         session = self.get_or_create_session()

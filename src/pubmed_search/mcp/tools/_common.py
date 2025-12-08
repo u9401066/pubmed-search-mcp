@@ -3,12 +3,12 @@ Common utilities for MCP tools.
 
 Shared functions:
 - Session manager and strategy generator setup
-- Result caching
+- Result caching and cache lookup
 - Output formatting
 """
 
 import logging
-from typing import Optional
+from typing import Optional, List, Dict
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +32,27 @@ def set_strategy_generator(generator):
 def get_strategy_generator():
     """Get the current strategy generator."""
     return _strategy_generator
+
+
+def check_cache(query: str, limit: int = None) -> Optional[List[Dict]]:
+    """
+    Check if search results exist in cache.
+    
+    Args:
+        query: Search query string
+        limit: Required number of results
+        
+    Returns:
+        Cached results if found, None otherwise
+    """
+    if not _session_manager:
+        return None
+    
+    try:
+        return _session_manager.find_cached_search(query, limit)
+    except Exception as e:
+        logger.warning(f"Cache lookup failed: {e}")
+        return None
 
 
 def _cache_results(results: list, query: str = None):
