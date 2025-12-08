@@ -418,14 +418,99 @@ STRATEGY_TEMPLATES = {
 - [ ] PICO 解析器 (規則式或 LLM)
 - [ ] 查詢結果品質評估
 
-### Phase 5: 發布準備 ⭐⭐⭐ (競品學習)
+### Phase 5: 發布準備 ✅ (已完成)
 > **參考**: mcp-simple-pubmed, arxiv-mcp-server, pubmedmcp
 
-- [ ] **PyPI 發布** - `pip install pubmed-search-mcp`
-- [ ] **Smithery 整合** - 一鍵安裝到 Claude Desktop
-- [ ] **uvx 支援** - `uvx pubmed-search-mcp` 零配置運行
-- [ ] **README 完善** - 安裝說明、使用範例、API 文檔
-- [ ] **smithery.yaml** 配置檔
+- [x] **PyPI 發布** - `pip install pubmed-search-mcp` (v0.1.1)
+- [x] **Smithery 整合** - smithery.yaml 已配置
+- [x] **uvx 支援** - `uvx pubmed-search-mcp` 零配置運行
+- [x] **README 完善** - 安裝說明、使用範例、徽章
+- [x] **CHANGELOG** - 版本變更記錄
+- [x] **GitHub Topics** - SEO 關鍵字設定
+- [x] **Cache 優化** - 搜尋前查詢快取避免重複 API
+
+### Phase 5.5: 文獻匯出系統 🎯 (進行中)
+> **目標**: 不透過 Agent token，直接提供下載連結
+
+#### 設計原則
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Agent 呼叫 prepare_export()                                    │
+│       ↓                                                          │
+│  MCP Server 準備檔案到暫存目錄                                    │
+│       ↓                                                          │
+│  返回下載 URL (不傳輸檔案內容！)                                   │
+│       ↓                                                          │
+│  用戶直接從 HTTP 端點下載                                         │
+│       ↓                                                          │
+│  Session 結束後自動清理暫存                                       │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+#### 新增 Tools
+
+| Tool | 功能 | 輸出 |
+|------|------|------|
+| `get_fulltext_links` | 取得單篇全文連結 | PMC/DOI/出版商 URLs |
+| `prepare_export` | 準備批量匯出檔案 | 下載 URL + 統計 |
+| `prepare_batch_pdf` | 批量準備 PMC PDF | ZIP URL + 無 OA 列表 |
+| `get_export_status` | 查詢匯出進度 | 進度 % |
+
+#### 匯出格式支援
+
+| 格式 | 用途 | 實作優先度 |
+|------|------|:----------:|
+| **RIS** | EndNote, Zotero 匯入 | ⭐⭐⭐ |
+| **BibTeX** | LaTeX 引用 | ⭐⭐⭐ |
+| **CSV/XLSX** | Excel 檢視、篩選 | ⭐⭐⭐ |
+| **MEDLINE** | 原始 PubMed 格式 | ⭐⭐ |
+| **JSON** | 程式化處理 | ⭐⭐ |
+
+#### HTTP 端點設計
+
+```
+GET /download/export/{session_id}/{filename}
+    → 下載匯出檔案 (RIS, BibTeX, CSV)
+
+GET /download/pdf/{pmid}
+    → 下載單篇 PMC PDF (如果有)
+
+GET /download/batch/{session_id}.zip
+    → 下載批量 PDF ZIP 包
+
+GET /export/status/{session_id}
+    → 查詢匯出狀態 (JSON)
+```
+
+#### 批量處理流程
+
+```python
+# 場景：PICO 搜尋返回 300 篇
+
+# Step 1: 搜尋（結果自動快取在 session）
+search_literature("remimazolam ICU delirium", limit=300)
+
+# Step 2: 準備匯出（不傳資料，只返回 URL）
+prepare_export(format="ris")
+# → {"download_url": "http://server:8765/download/export/sess123/citations.ris",
+#    "article_count": 287, "file_size": "45KB"}
+
+# Step 3: 批量 PDF（只處理 PMC Open Access）
+prepare_batch_pdf(max_articles=50)
+# → {"download_url": "http://server:8765/download/batch/sess123.zip",
+#    "stats": {"pmc_available": 23, "no_oa_access": 264},
+#    "no_pdf_articles": [{"pmid": "123", "doi": "10.1xxx", "title": "..."}]}
+```
+
+#### 實作步驟
+- [ ] 1. 新增 `exports/` 模組
+- [ ] 2. 實作 `get_fulltext_links` tool
+- [ ] 3. 實作 RIS/BibTeX/CSV 匯出邏輯
+- [ ] 4. 實作 `prepare_export` tool
+- [ ] 5. 新增 HTTP 下載端點到 `run_server.py`
+- [ ] 6. 實作 `prepare_batch_pdf` tool (PMC OA)
+- [ ] 7. Session 結束自動清理暫存
+- [ ] 8. 測試 + 文檔
 
 ### Phase 6: Research Prompts ⭐⭐⭐ (競品學習)
 > **參考**: arxiv-mcp-server (1.9k⭐ 的關鍵功能)
@@ -469,11 +554,11 @@ STRATEGY_TEMPLATES = {
 - [ ] **get_references** - 取得參考文獻列表
 - [ ] **trace_lineage** - 追蹤研究脈絡
 
-#### 多輸出格式
-- [ ] **RIS 格式** - EndNote 匯入
-- [ ] **BibTeX 格式** - LaTeX 引用
-- [ ] **APA/MLA 格式** - 學術引用格式
-- [ ] **MEDLINE 格式** - 原始格式
+#### 多輸出格式 → 已移至 Phase 5.5
+~~- [ ] **RIS 格式** - EndNote 匯入~~
+~~- [ ] **BibTeX 格式** - LaTeX 引用~~
+~~- [ ] **APA/MLA 格式** - 學術引用格式~~
+~~- [ ] **MEDLINE 格式** - 原始格式~~
 
 ### Phase 9: 長期願景 (競品學習)
 > **參考**: BioMCP, zotero-mcp, papersgpt-for-zotero
