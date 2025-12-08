@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "pubmed-search"
+name = "pubmed-search-mcp"
 version = "0.1.0"
-description = "Standalone PubMed/Entrez search library with MCP server for medical literature"
+description = "MCP server for PubMed literature search with MeSH, PICO, and intelligent query expansion"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
@@ -50,7 +50,7 @@ dev = [
     "pytest-asyncio>=0.21",
 ]
 all = [
-    "pubmed-search[mcp,dev]",
+    "pubmed-search-mcp[mcp,dev]",
 ]
 
 [project.scripts]
@@ -74,3 +74,9 @@ include = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
+markers = [
+    "integration: marks tests as integration tests (may make real API calls)",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
