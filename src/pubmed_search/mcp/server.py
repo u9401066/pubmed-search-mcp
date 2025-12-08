@@ -123,6 +123,7 @@ get_article_references(pmid="12345678") # 這篇文章的參考文獻 (backward)
 - find_citing_articles: 引用這篇的文章 (by PMID, forward in time)
 - get_article_references: 這篇的參考文獻 (by PMID, backward in time)
 - fetch_article_details: 文章詳細資訊
+- get_citation_metrics: 引用指標 (iCite RCR/Percentile, 可排序篩選)
 
 ### 匯出
 - prepare_export: 匯出引用格式

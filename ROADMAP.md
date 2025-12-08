@@ -44,6 +44,7 @@
 | v0.1.4 | 2025-12-08 | Query Analysis (estimated_count, pubmed_translation) |
 | v0.1.5 | 2025-12-08 | HTTPS 部署 (Nginx + TLS + Rate Limiting) |
 | v0.1.6 | 2025-12-08 | Citation Network: `get_article_references` |
+| v0.1.7 | 2025-12-08 | iCite 引用指標 (RCR/Percentile/Sort/Filter) |
 
 ---
 

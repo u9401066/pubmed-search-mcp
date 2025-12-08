@@ -100,7 +100,7 @@ uvx pubmed-search-mcp
 - **Remote Server**: Deploy as HTTP service for multi-machine access
 - **Submodule Ready**: Use as a Git submodule in larger projects
 
-## 🛠️ MCP Tools (11 個工具)
+## 🛠️ MCP Tools (12 個工具)
 
 ### 探索型 (Discovery)
 | Tool | 說明 |
@@ -108,13 +108,14 @@ uvx pubmed-search-mcp
 | `search_literature` | 搜尋 PubMed 文獻 |
 | `find_related_articles` | 尋找相關文章 (by PMID) |
 | `find_citing_articles` | 尋找引用文章 (by PMID, forward) |
-| `get_article_references` | 🆕 取得參考文獻 (by PMID, backward) |
+| `get_article_references` | 取得參考文獻 (by PMID, backward) |
 | `fetch_article_details` | 取得文章完整資訊 |
+| `get_citation_metrics` | 🆕 取得引用指標 (iCite RCR/Percentile) |
 
 ### 批次搜尋 (Parallel Search)
 | Tool | 說明 |
 |------|------|
-| `parse_pico` | 🆕 解析 PICO 臨床問題 (搜尋入口) |
+| `parse_pico` | 解析 PICO 臨床問題 (搜尋入口) |
 | `generate_search_queries` | 產生多個搜尋策略 (ESpell + MeSH) |
 | `merge_search_results` | 合併去重搜尋結果 |
 | `expand_search_queries` | 擴展搜尋策略 |
