@@ -236,7 +236,8 @@ class SearchStrategyGenerator:
         strategy: str = "comprehensive",
         use_mesh: bool = True,
         check_spelling: bool = True,
-        include_suggestions: bool = True
+        include_suggestions: bool = True,
+        analyze_queries: bool = True
     ) -> Dict[str, Any]:
         """
         Gather search intelligence for a topic - returns RAW MATERIALS for Agent to decide.
@@ -247,12 +248,21 @@ class SearchStrategyGenerator:
         - Use corrected spelling or not
         - Generate its own query combinations
         
+        NEW: When analyze_queries=True, each suggested query includes:
+        - estimated_count: How many results PubMed would return
+        - pubmed_translation: How PubMed actually interprets the query
+        
+        This helps the Agent understand the difference between:
+        - What the Agent thinks the query means
+        - What PubMed actually searches for
+        
         Args:
             topic: Research topic
             strategy: "comprehensive", "focused", or "exploratory" (for suggestions)
             use_mesh: Whether to lookup MeSH terms
             check_spelling: Whether to check spelling
             include_suggestions: Whether to include pre-built query suggestions
+            analyze_queries: Whether to analyze how PubMed interprets each query
             
         Returns:
             Dict with raw materials (spelling, mesh_terms, keywords) and optional suggestions
@@ -429,6 +439,18 @@ class SearchStrategyGenerator:
                 "priority": 1
             })
             query_id += 1
+        
+        # Step 4: Analyze how PubMed interprets each query (optional but recommended)
+        if analyze_queries:
+            for q in queries:
+                try:
+                    analysis = self.analyze_query(q["query"])
+                    q["estimated_count"] = analysis.get("count", 0)
+                    q["pubmed_translation"] = analysis.get("translated_query", q["query"])
+                except Exception as e:
+                    logger.warning(f"Query analysis failed for {q['id']}: {e}")
+                    q["estimated_count"] = None
+                    q["pubmed_translation"] = None
         
         result["suggested_queries"] = queries
         

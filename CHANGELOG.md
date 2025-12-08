@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - Query Analysis Integration
+- **PubMed Query Interpretation** in `generate_search_queries()`
+  - `estimated_count`: How many results PubMed would return for each suggested query
+  - `pubmed_translation`: How PubMed actually interprets the query (vs Agent's understanding)
+  - Helps Agent understand the gap between intended query and PubMed's actual search
+
 ### Planned
 - Research Prompts (Summarize, Literature Review, Clinical Relevance)
 - Research trend analysis (keyword frequency, publication trends)
