@@ -14,6 +14,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.5] - 2025-12-08
+
+### Added - HTTPS Deployment (Enterprise Security)
+
+- **Nginx Reverse Proxy** (`nginx/nginx.conf`)
+  - TLS 1.2/1.3 termination with SSL certificates
+  - Rate limiting (30 req/s)
+  - Security headers (XSS, CSRF protection)
+  - SSE optimization (24h timeout, no buffering)
+
+- **Docker HTTPS Deployment** (`docker-compose.https.yml`)
+  - Nginx + MCP service orchestration
+  - Internal network isolation
+  - Health checks
+
+- **SSL Certificate Scripts**
+  - `scripts/generate-ssl-certs.sh` - Generate self-signed certs for development
+  - `scripts/start-https-docker.sh` - Docker HTTPS management (up/down/logs/restart)
+  - `scripts/start-https-local.sh` - Local HTTPS via Uvicorn SSL
+
+- **HTTPS Endpoints**
+  - `https://localhost/` - MCP root
+  - `https://localhost/sse` - SSE connection
+  - `https://localhost/health` - Health check
+  - `https://localhost/exports` - Export files
+
+### Changed
+- Updated DEPLOYMENT.md with comprehensive HTTPS deployment guide
+- Added HTTPS section to README.md
+
+---
+
 ## [0.1.4] - 2025-12-08
 
 ### Added - Query Analysis Integration

@@ -392,7 +392,100 @@ src/pubmed_search/
 ```
 
 > **Query Analysis 的價值**: Agent 以為 `remimazolam AND sedation` 只搜這兩個詞，但 PubMed 實際會展開成 Supplementary Concept + 同義詞，結果從 8 篇變成 561 篇。這讓 Agent 理解 **意圖** 與 **實際搜尋** 的差異。
+
+---
+
+## 🔒 HTTPS Deployment | HTTPS 部署 ⭐ NEW
+
+為生產環境啟用 HTTPS 安全通訊，滿足企業資安需求。
+
+### Architecture | 架構
+
 ```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        HTTPS Deployment                             │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│   ┌─────────────┐                                                   │
+│   │   Client    │                                                   │
+│   │ (AI Agent)  │                                                   │
+│   └──────┬──────┘                                                   │
+│          │ HTTPS (TLS 1.2/1.3)                                      │
+│          ▼                                                          │
+│   ┌──────────────────────────────────────────────────────────┐      │
+│   │                    Nginx Reverse Proxy                    │      │
+│   │  ┌─────────────────────────────────────────────────────┐ │      │
+│   │  │ • TLS Termination (SSL Certificates)                │ │      │
+│   │  │ • Rate Limiting (30 req/s)                          │ │      │
+│   │  │ • Security Headers (XSS, CSRF protection)           │ │      │
+│   │  │ • SSE Optimization (long-lived connections)         │ │      │
+│   │  └─────────────────────────────────────────────────────┘ │      │
+│   └──────────────────────────┬───────────────────────────────┘      │
+│                              │ HTTP (internal)                      │
+│                              ▼                                      │
+│              ┌──────────────────────────┐                           │
+│              │   PubMed Search MCP      │                           │
+│              │   (Port 8765)            │                           │
+│              └──────────────────────────┘                           │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+
+External Endpoints (HTTPS):
+└── https://localhost/        → MCP SSE (via Nginx :443)
+    └── https://localhost/sse → SSE Connection
+```
+
+### Quick Start | 快速開始
+
+```bash
+# Step 1: 生成 SSL 憑證
+./scripts/generate-ssl-certs.sh
+
+# Step 2: 啟動 HTTPS 服務 (Docker)
+./scripts/start-https-docker.sh up
+
+# 其他命令
+./scripts/start-https-docker.sh down     # 停止服務
+./scripts/start-https-docker.sh logs     # 查看日誌
+```
+
+### HTTPS Endpoints | HTTPS 端點
+
+| Service | URL | Description |
+|---------|-----|-------------|
+| MCP SSE | `https://localhost/` | MCP Server root |
+| MCP SSE | `https://localhost/sse` | SSE connection endpoint |
+| Health | `https://localhost/health` | Health check |
+| Exports | `https://localhost/exports` | Export files list |
+
+### Claude Desktop Configuration (HTTPS)
+
+```json
+{
+  "mcpServers": {
+    "pubmed-search": {
+      "url": "https://localhost/sse"
+    }
+  }
+}
+```
+
+> 📖 **詳細部署說明請參考 [DEPLOYMENT.md](DEPLOYMENT.md)**
+
+---
+
+## 🔐 Security | 安全性
+
+### Security Features | 安全特性
+
+| Layer | Feature | Description |
+|-------|---------|-------------|
+| **HTTPS** | TLS 1.2/1.3 encryption | All traffic encrypted via Nginx |
+| **Rate Limiting** | 30 req/s | Nginx level protection |
+| **Security Headers** | XSS/CSRF protection | X-Frame-Options, X-Content-Type-Options |
+| **SSE Optimization** | 24h timeout | Long-lived connections for real-time |
+| **No Database** | Stateless | No SQL injection risk |
+| **No Secrets** | In-memory only | No credentials stored |
 
 ---
 

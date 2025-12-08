@@ -1,0 +1,49 @@
+# PubMed Search MCP Server - HTTPS Deployment
+# Uses Nginx reverse proxy for TLS termination
+
+services:
+  # ==========================================================================
+  # Nginx Reverse Proxy (HTTPS)
+  # ==========================================================================
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "443:443"      # HTTPS
+      - "80:80"        # HTTP (redirects to HTTPS)
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      pubmed-mcp:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:80/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # ==========================================================================
+  # PubMed Search MCP Server
+  # ==========================================================================
+  pubmed-mcp:
+    build: .
+    expose:
+      - "8765"  # Internal only, not exposed to host
+    environment:
+      - NCBI_EMAIL=${NCBI_EMAIL:-pubmed-search@example.com}
+      - NCBI_API_KEY=${NCBI_API_KEY:-}
+      - MCP_PORT=8765
+      - MCP_HOST=0.0.0.0
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8765/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+networks:
+  default:
+    name: pubmed-mcp-network
