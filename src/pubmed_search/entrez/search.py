@@ -10,7 +10,7 @@ from Bio import Entrez
 from typing import List, Dict, Any, Optional
 import re
 
-from .base import SearchStrategy
+from .base import SearchStrategy, _rate_limit
 
 logger = logging.getLogger(__name__)
 
@@ -141,6 +141,7 @@ class SearchMixin:
         last_error = None
         for attempt in range(MAX_RETRIES):
             try:
+                _rate_limit()  # Rate limiting before API call
                 handle = Entrez.esearch(db="pubmed", term=query, retmax=retmax, sort=sort)
                 record = Entrez.read(handle)
                 handle.close()
@@ -169,6 +170,7 @@ class SearchMixin:
         last_error = None
         for attempt in range(MAX_RETRIES):
             try:
+                _rate_limit()  # Rate limiting before API call
                 handle = Entrez.efetch(db="pubmed", id=id_list, retmode="xml")
                 papers = Entrez.read(handle)
                 handle.close()
@@ -244,7 +246,7 @@ class SearchMixin:
         # Extract abstract
         abstract_text = self._extract_abstract(article_data)
         
-        # Extract Journal info
+        # Extract Journal info (includes ISSN)
         journal_info = self._extract_journal_info(article_data)
         
         # Extract identifiers (DOI, PMC ID)
@@ -256,6 +258,12 @@ class SearchMixin:
         # Extract keywords and MeSH terms
         keywords = self._extract_keywords(medline_citation)
         mesh_terms = self._extract_mesh_terms(medline_citation)
+        
+        # Extract language
+        language = self._extract_language(article_data)
+        
+        # Extract publication types
+        publication_types = self._extract_publication_types(article_data)
 
         return {
             "pmid": pmid,
@@ -267,6 +275,8 @@ class SearchMixin:
             "mesh_terms": mesh_terms,
             "doi": doi,
             "pmc_id": pmc_id,
+            "language": language,
+            "publication_types": publication_types,
             **journal_info
         }
 
@@ -309,6 +319,9 @@ class SearchMixin:
         pub_date = journal_issue.get('PubDate', {})
         
         year = pub_date.get('Year', '')
+        month = pub_date.get('Month', '')
+        day = pub_date.get('Day', '')
+        
         if not year and 'MedlineDate' in pub_date:
             year_match = re.search(r'(\d{4})', pub_date['MedlineDate'])
             if year_match:
@@ -316,16 +329,56 @@ class SearchMixin:
         
         pagination = article_data.get('Pagination', {})
         
+        # Extract ISSN (electronic preferred, then print)
+        issn = ''
+        if 'ISSN' in journal_data:
+            issn_data = journal_data['ISSN']
+            if isinstance(issn_data, str):
+                issn = issn_data
+            elif hasattr(issn_data, '__str__'):
+                issn = str(issn_data)
+        
+        # Format publication date
+        pub_date_str = ""
+        if year:
+            pub_date_str = year
+            if month:
+                pub_date_str = f"{year}/{month}"
+                if day:
+                    pub_date_str = f"{year}/{month}/{day}"
+        
         return {
             "journal": journal_data.get('Title', 'Unknown Journal'),
             "journal_abbrev": journal_data.get('ISOAbbreviation', ''),
+            "issn": issn,
             "year": year,
-            "month": pub_date.get('Month', ''),
-            "day": pub_date.get('Day', ''),
+            "month": month,
+            "day": day,
+            "pub_date": pub_date_str,
             "volume": journal_issue.get('Volume', ''),
             "issue": journal_issue.get('Issue', ''),
             "pages": pagination.get('MedlinePgn', '')
         }
+
+    def _extract_language(self, article_data: Dict) -> str:
+        """Extract article language from article data."""
+        language = article_data.get('Language', [])
+        if isinstance(language, list) and language:
+            return language[0]
+        elif isinstance(language, str):
+            return language
+        return "eng"
+
+    def _extract_publication_types(self, article_data: Dict) -> List[str]:
+        """Extract publication types from article data."""
+        pub_types = []
+        pub_type_list = article_data.get('PublicationTypeList', [])
+        for pt in pub_type_list:
+            if hasattr(pt, '__str__'):
+                pub_types.append(str(pt))
+            elif isinstance(pt, str):
+                pub_types.append(pt)
+        return pub_types
 
     def _extract_identifiers(self, pubmed_data: Dict) -> tuple:
         """Extract DOI and PMC ID from article identifiers."""

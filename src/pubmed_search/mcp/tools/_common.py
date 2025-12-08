@@ -29,6 +29,11 @@ def set_strategy_generator(generator):
     _strategy_generator = generator
 
 
+def get_session_manager():
+    """Get the current session manager."""
+    return _session_manager
+
+
 def get_strategy_generator():
     """Get the current strategy generator."""
     return _strategy_generator
@@ -66,6 +71,21 @@ def _cache_results(results: list, query: str = None):
             logger.debug(f"Cached {len(results)} articles")
         except Exception as e:
             logger.warning(f"Failed to cache results: {e}")
+
+
+def _record_search_only(results: list, query: str):
+    """Record search in history without caching article details.
+    
+    Used for filtered searches where we don't want to pollute the cache
+    but still want to support 'last' export feature.
+    """
+    if _session_manager and results and not results[0].get('error'):
+        try:
+            pmids = [r.get('pmid') for r in results if r.get('pmid')]
+            _session_manager.add_search_record(query, pmids)
+            logger.debug(f"Recorded search '{query}' with {len(pmids)} PMIDs")
+        except Exception as e:
+            logger.warning(f"Failed to record search: {e}")
 
 
 def format_search_results(results: list, include_doi: bool = True) -> str:

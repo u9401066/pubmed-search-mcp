@@ -13,9 +13,70 @@ import logging
 from mcp.server.fastmcp import FastMCP
 
 from ...entrez import LiteratureSearcher
-from ._common import format_search_results, _cache_results, check_cache
+from ._common import format_search_results, _cache_results, _record_search_only, check_cache
 
 logger = logging.getLogger(__name__)
+
+# Known journal names that might be confused with topics
+# Format: {lowercase_name: (journal_title, ISSN, hint)}
+AMBIGUOUS_JOURNAL_NAMES = {
+    "anesthesiology": ("Anesthesiology", "1528-1175", "journal[ta]"),
+    "anesthesia": ("Anesthesia & Analgesia", None, "anesthesia[ta]"),
+    "lancet": ("The Lancet", "1474-547X", "lancet[ta]"),
+    "nature": ("Nature", "1476-4687", "nature[ta]"),
+    "science": ("Science", "1095-9203", "science[ta]"),
+    "cell": ("Cell", "1097-4172", "cell[ta]"),
+    "circulation": ("Circulation", "1524-4539", "circulation[ta]"),
+    "neurology": ("Neurology", "1526-632X", "neurology[ta]"),
+    "pediatrics": ("Pediatrics", "1098-4275", "pediatrics[ta]"),
+    "radiology": ("Radiology", "1527-1315", "radiology[ta]"),
+    "surgery": ("Surgery", "1532-7361", "surgery[ta]"),
+    "medicine": ("Medicine", "1536-5964", "medicine[ta]"),
+    "chest": ("Chest", "1931-3543", "chest[ta]"),
+    "gut": ("Gut", "1468-3288", "gut[ta]"),
+    "brain": ("Brain", "1460-2156", "brain[ta]"),
+    "blood": ("Blood", "1528-0020", "blood[ta]"),
+    "pain": ("Pain", "1872-6623", "pain[ta]"),
+    "sleep": ("Sleep", "1550-9109", "sleep[ta]"),
+    "critical care": ("Critical Care", "1466-609X", "critical care[ta]"),
+    "intensive care": ("Intensive Care Medicine", "1432-1238", "intensive care[ta]"),
+}
+
+
+def _detect_ambiguous_terms(query: str) -> list:
+    """Detect if query contains terms that could be journal names."""
+    query_lower = query.lower()
+    ambiguous = []
+    
+    for term, (journal, issn, hint) in AMBIGUOUS_JOURNAL_NAMES.items():
+        # Check if the term appears as a standalone word
+        if term in query_lower:
+            # Simple check: is it likely being used as a topic rather than journal?
+            # If query has other substantive terms, it's probably a topic search
+            other_terms = query_lower.replace(term, "").strip()
+            if len(other_terms.split()) <= 2:  # Few other terms = might mean journal
+                ambiguous.append({
+                    "term": term,
+                    "journal": journal,
+                    "hint": hint
+                })
+    
+    return ambiguous
+
+
+def _format_ambiguity_hint(ambiguous_terms: list, query: str) -> str:
+    """Format a concise hint about ambiguous terms."""
+    if not ambiguous_terms:
+        return ""
+    
+    hints = []
+    for item in ambiguous_terms[:2]:  # Limit to 2 hints
+        term = item["term"]
+        journal = item["journal"]
+        hint = item["hint"]
+        hints.append(f'"{term}" = journal "{journal}"? Use: {hint}')
+    
+    return "\n\n⚠️ **Tip**: " + " | ".join(hints)
 
 
 def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
@@ -60,6 +121,9 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         try:
             if not query:
                 return "Error: Query is required."
+            
+            # Detect ambiguous terms (journal vs topic)
+            ambiguous = _detect_ambiguous_terms(query)
 
             # Check cache first (unless force_refresh or filters applied)
             has_filters = any([min_year, max_year, date_from, date_to, article_type])
@@ -67,7 +131,9 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 cached = check_cache(query, limit)
                 if cached:
                     logger.info(f"Returning {len(cached)} cached results for '{query}'")
-                    return format_search_results(cached[:limit]) + "\n\n_(cached results)_"
+                    result = format_search_results(cached[:limit]) + "\n\n_(cached results)_"
+                    result += _format_ambiguity_hint(ambiguous, query)
+                    return result
 
             # No cache hit - call API
             results = searcher.search(
@@ -79,8 +145,18 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             # Cache results (only for queries without filters)
             if not has_filters:
                 _cache_results(results, query)
+            else:
+                # Always record search history for "last" export feature
+                _record_search_only(results, query)
+            
+            result = format_search_results(results[:limit])
+            
+            # Add hint about potential journal name confusion 
+            # Always show for single-word queries or when results suggest broad topic
+            if ambiguous:
+                result += _format_ambiguity_hint(ambiguous, query)
                 
-            return format_search_results(results[:limit])
+            return result
         except Exception as e:
             logger.error(f"Search failed: {e}")
             return f"Error: {e}"

@@ -34,7 +34,7 @@ from .entrez import (
     UtilsMixin,
 )
 
-__version__ = "0.1.0"
+__version__ = "0.1.3"
 
 __all__ = [
     # High-level API

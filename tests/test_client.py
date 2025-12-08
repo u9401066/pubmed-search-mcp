@@ -92,6 +92,12 @@ class TestPubMedClient:
     
     def test_client_with_api_key(self, mock_email):
         """Test client initialization with API key."""
+        from Bio import Entrez
+        
         client = PubMedClient(email=mock_email, api_key="test_key")
         # API key is stored in the underlying searcher
         assert client.searcher is not None
+        
+        # IMPORTANT: Clear the invalid API key to not affect other tests
+        # Entrez.api_key is global state
+        Entrez.api_key = None

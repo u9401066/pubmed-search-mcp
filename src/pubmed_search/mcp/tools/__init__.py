@@ -6,6 +6,7 @@ Tools organized by domain:
 - strategy: Query generation and expansion
 - pico: PICO clinical question parsing
 - merge: Search results merging
+- export: Citation export and fulltext access
 
 Usage:
     from .tools import register_all_tools
@@ -21,6 +22,7 @@ from .discovery import register_discovery_tools
 from .strategy import register_strategy_tools
 from .pico import register_pico_tools
 from .merge import register_merge_tools
+from .export import register_export_tools
 
 
 def register_all_tools(mcp: FastMCP, searcher: LiteratureSearcher):
@@ -29,6 +31,7 @@ def register_all_tools(mcp: FastMCP, searcher: LiteratureSearcher):
     register_strategy_tools(mcp, searcher)
     register_pico_tools(mcp)
     register_merge_tools(mcp, searcher)
+    register_export_tools(mcp, searcher)
 
 
 __all__ = [
