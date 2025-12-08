@@ -80,7 +80,13 @@ uvx pubmed-search-mcp
 - **Agent-First** - 為 AI Agent 設計，輸出優化為機器決策
 - **任務導向** - Tool 以研究任務為單位，而非底層 API
 - **DDD 架構** - 以文獻研究領域知識為核心建模
-- **上下文感知** - 透過 Resources 維持研究狀態
+- **上下文感知** - 透過 Session 維持研究狀態
+
+**定位**：PubMed 專精的 AI 研究助理
+- ✅ MeSH 專業詞彙整合 ← 其他來源沒有
+- ✅ PICO 結構化查詢 ← 醫學專業
+- ✅ ESpell 拼字校正 ← 自動糾錯
+- ✅ 批次並行搜尋 ← 高效率
 
 ## Features
 
@@ -285,7 +291,35 @@ merge_search_results(...)
 
 ---
 
-## Installation### Basic Installation (Library Only)
+## 🏗️ Architecture (DDD)
+
+```
+src/pubmed_search/
+├── mcp/
+│   └── tools/
+│       ├── discovery.py    # 探索型 (search, related, citing, details)
+│       ├── strategy.py     # 策略型 (generate_queries, expand)
+│       ├── pico.py         # PICO 解析
+│       ├── merge.py        # 結果合併
+│       └── export.py       # 匯出工具
+├── entrez/                 # NCBI Entrez API 封裝
+├── exports/                # 匯出格式 (RIS, BibTeX, CSV)
+└── session.py              # Session 管理 (內部機制)
+```
+
+### 內部機制 (對 Agent 透明)
+
+| 機制 | 說明 |
+|------|------|
+| **Session** | 自動建立、自動切換 |
+| **Cache** | 搜尋結果自動快取，避免重複 API |
+| **Rate Limit** | 自動遵守 NCBI API 限制 (0.34s/0.1s) |
+
+---
+
+## Installation
+
+### Basic Installation (Library Only)
 
 ```bash
 pip install pubmed-search
