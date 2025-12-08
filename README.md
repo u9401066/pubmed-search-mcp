@@ -136,6 +136,41 @@ uvx pubmed-search-mcp
 search_literature(query="remimazolam ICU sedation", limit=10)
 ```
 
+### 使用 PubMed 官方語法
+```
+# MeSH 標準詞彙
+search_literature(query='"Diabetes Mellitus"[MeSH]')
+
+# 欄位限定
+search_literature(query='(BRAF[Gene Name]) AND (melanoma[Title/Abstract])')
+
+# 日期範圍
+search_literature(query='COVID-19[Title] AND 2024[dp]')
+
+# 文章類型
+search_literature(query='propofol sedation AND Review[pt]')
+
+# 組合搜尋
+search_literature(query='("Intensive Care Units"[MeSH]) AND (remimazolam[tiab] OR "CNS 7056"[tiab])')
+```
+
+### PubMed 官方欄位標籤 (Field Tags)
+
+| 標籤 | 說明 | 範例 |
+|------|------|------|
+| `[Title]` 或 `[ti]` | 標題 | `COVID-19[ti]` |
+| `[Title/Abstract]` 或 `[tiab]` | 標題+摘要 | `sedation[tiab]` |
+| `[MeSH]` 或 `[mh]` | MeSH 標準詞彙 | `"Diabetes Mellitus"[MeSH]` |
+| `[MeSH Major Topic]` 或 `[majr]` | MeSH 主要主題 | `"Anesthesia"[majr]` |
+| `[Author]` 或 `[au]` | 作者 | `Smith J[au]` |
+| `[Journal]` 或 `[ta]` | 期刊縮寫 | `Nature[ta]` |
+| `[Publication Type]` 或 `[pt]` | 文章類型 | `Review[pt]`, `Clinical Trial[pt]` |
+| `[Date - Publication]` 或 `[dp]` | 出版日期 | `2024[dp]`, `2020:2024[dp]` |
+| `[Gene Name]` | 基因名稱 | `BRAF[Gene Name]` |
+| `[Substance Name]` | 物質名稱 | `propofol[Substance Name]` |
+
+> **完整語法參考**: [PubMed Search Field Tags](https://pubmed.ncbi.nlm.nih.gov/help/#search-tags)
+
 ### 深入探索 (找到重要論文後)
 ```
 find_related_articles(pmid="12345678")   # 相關文章
