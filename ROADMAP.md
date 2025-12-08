@@ -49,13 +49,67 @@
 ### Phase 6: Research Prompts ⭐⭐⭐
 > **參考**: arxiv-mcp-server (1.9k⭐ 的關鍵功能)
 
-| Prompt | 說明 | 優先度 |
-|--------|------|:------:|
-| `summarize_paper` | 論文快速摘要 | ⭐⭐⭐ |
-| `literature_review` | 文獻回顧生成 | ⭐⭐⭐ |
-| `research_questions` | 研究問題建議 | ⭐⭐ |
-| `evidence_synthesis` | 證據綜合 (系統性回顧) | ⭐⭐ |
-| `clinical_relevance` | 臨床相關性分析 (PubMed 專屬!) | ⭐⭐⭐ |
+#### arxiv-mcp-server 的 Prompts 分析
+
+arxiv-mcp-server 目前只有 **1 個 Prompt**: `deep-paper-analysis`
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  arxiv-mcp-server 的 Prompt 設計                                    │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  Prompt: deep-paper-analysis                                        │
+│  ─────────────────────────                                          │
+│  輸入: paper_id (arXiv ID)                                          │
+│  輸出: 一個長文字 prompt，引導 Agent 如何分析論文                      │
+│                                                                      │
+│  內容包含:                                                           │
+│  1. AVAILABLE TOOLS 說明 (read_paper, download_paper, search_papers)│
+│  2. <workflow-for-paper-analysis> XML 結構                          │
+│     - <preparation> 準備步驟                                         │
+│     - <comprehensive-analysis> 摘要框架                              │
+│     - <research-context> 研究背景                                    │
+│     - <methodology-analysis> 方法論分析                              │
+│     - <results-analysis> 結果分析                                    │
+│     - <practical-implications> 實務意涵                              │
+│     - <theoretical-implications> 理論意涵                            │
+│     - <future-directions> 未來方向                                   │
+│     - <broader-impact> 廣泛影響                                      │
+│  3. OUTPUT_STRUCTURE 輸出格式指引                                    │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**關鍵發現**: arxiv 的 Prompt 本質上是一個**分析框架模板**，讓 Agent 知道該如何分析論文。
+
+#### 我們 vs arxiv-mcp-server 比較
+
+| 項目 | arxiv-mcp-server | 我們 (pubmed-search-mcp) |
+|------|------------------|-------------------------|
+| **搜尋智慧** | 基本關鍵字搜尋 | ✅ ESpell + MeSH + PICO |
+| **語意理解** | Agent 自行處理 | ✅ `parse_pico()` 結構化解析 |
+| **搜尋策略** | 無 | ✅ `generate_search_queries()` 自動產生 |
+| **同義詞擴展** | 無 | ✅ MeSH Entry Terms 自動擴展 |
+| **分析 Prompt** | ✅ 有 (XML 結構框架) | ❌ 無 |
+| **PDF 下載** | ✅ 有 + Markdown 轉換 | ❌ 無 (只有 PMC 連結) |
+
+#### 結論：我們的優勢是「搜尋」，他們的優勢是「分析框架」
+
+我們已經有:
+- ✅ **PICO 解析** - Agent 可用自然語言描述問題，自動拆解
+- ✅ **MeSH 擴展** - 自動找到標準醫學詞彙和同義詞
+- ✅ **批次搜尋** - 並行執行多策略搜尋
+
+我們缺少的:
+- ❌ **分析框架 Prompt** - 引導 Agent 如何系統性分析文獻
+
+#### 建議：新增醫學文獻專用 Prompts
+
+| Prompt | 說明 | 醫學特色 |
+|--------|------|----------|
+| `analyze_clinical_paper` | 臨床研究論文分析 | PICO/證據等級/偏差評估 |
+| `systematic_review_guide` | 系統性回顧指引 | PRISMA 流程/納入排除標準 |
+| `drug_safety_review` | 藥物安全性回顧 | 副作用/交互作用/警語 |
 
 > **Note**: MeSH 查詢已內建於 `generate_search_queries()` 工具，自動提供 preferred terms 和 synonyms。
 

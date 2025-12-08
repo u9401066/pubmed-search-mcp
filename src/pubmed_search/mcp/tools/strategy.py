@@ -81,6 +81,8 @@ def register_strategy_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         - Spelling correction via NCBI ESpell
         - MeSH term lookup for standardized vocabulary
         - Synonym expansion from MeSH database
+        - **Query analysis**: Shows how PubMed actually interprets each query
+          (Agent's understanding vs PubMed's actual interpretation)
         
         Args:
             topic: Search topic - can be a single keyword or PICO element
@@ -97,7 +99,9 @@ def register_strategy_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             - keywords: Extracted significant keywords
             - mesh_terms: MeSH data with preferred terms and synonyms
             - all_synonyms: Flattened list of all synonyms
-            - suggested_queries: Optional pre-built queries
+            - suggested_queries: Optional pre-built queries with:
+              - estimated_count: How many results PubMed would return
+              - pubmed_translation: How PubMed actually interprets the query
         """
         logger.info(f"Generating search queries for topic: {topic}, strategy: {strategy}")
         
@@ -111,14 +115,16 @@ def register_strategy_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                     strategy=strategy,
                     use_mesh=True,
                     check_spelling=check_spelling,
-                    include_suggestions=include_suggestions
+                    include_suggestions=include_suggestions,
+                    analyze_queries=True  # Enable PubMed query analysis
                 )
                 
                 # Add usage hint (Agent can ignore)
                 result["_hint"] = {
                     "usage": "Use mesh_terms and all_synonyms to build your own queries, or use suggested_queries as reference",
                     "example_mesh_query": f'"{{preferred_term}}"[MeSH Terms]',
-                    "example_synonym_query": f'({{synonym}})[Title/Abstract]'
+                    "example_synonym_query": f'({{synonym}})[Title/Abstract]',
+                    "note": "Check pubmed_translation to see how PubMed actually interprets each query"
                 }
                 
                 return json.dumps(result, indent=2, ensure_ascii=False)
