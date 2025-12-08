@@ -11,7 +11,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Research Prompts (Summarize, Literature Review, Clinical Relevance)
 - Research trend analysis (keyword frequency, publication trends)
 - Chart generation (PNG output)
-- Multiple output formats (RIS, BibTeX, APA)
+
+---
+
+## [0.1.3] - 2025-12-08
+
+### Added - Enhanced Export Formats
+
+- **Reference Manager Compatibility**
+  - RIS format: EndNote, Zotero, Mendeley compatible
+  - BibTeX format: LaTeX-ready with special character handling
+  - CSV format: Excel-friendly with comprehensive metadata
+
+- **New Export Fields**
+  - ISSN (journal identifier)
+  - Language (publication language)
+  - Publication Type (Review, Clinical Trial, etc.)
+  - First Author (for quick citation reference)
+  - Author Count (collaboration indicator)
+  - Publication Date (formatted)
+  - DOI URL and PMC URL direct links
+
+- **pylatexenc Integration**
+  - Professional Unicode → LaTeX conversion
+  - Handles Nordic characters (ø, æ, å), umlauts (ü, ö, ä)
+  - Proper escaping for BibTeX special characters
+
+### Changed
+- RIS author format: `"Last, First Middle"` (was `"First Last"`)
+- BibTeX author format: `{Last, First}` with LaTeX character conversion
+- CSV headers: Standardized for reference manager import
+
+### Fixed
+- HTML tags in abstracts (`<sup>`, `<sub>`) now converted to plain text
+- Special characters in author names properly escaped in BibTeX
+
+---
+
+## [0.1.2] - 2025-12-08
+
+### Added - Export System
+- **Export Tools**
+  - `prepare_export` - Export citations in RIS, BibTeX, CSV, MEDLINE, JSON formats
+  - `get_article_fulltext_links` - Get PMC/DOI links for article full text
+  - `analyze_fulltext_access` - Analyze open access availability for article sets
+
+- **HTTP Download Endpoints**
+  - `/exports` - List all available export files
+  - `/download/{filename}` - Direct file download (bypass agent, save tokens)
+  - Large exports (>20 articles) auto-saved to /tmp/pubmed_exports/
+
+- **Smart Hints**
+  - Journal name disambiguation (anesthesiology = journal "Anesthesiology"?)
+  - Detects 20+ common journals that may be confused with topics
+
+### Changed
+- Rate limiting for NCBI API compliance (0.34s without key, 0.1s with key)
+- SERVER_INSTRUCTIONS improved with search workflow guidance
+
+### Fixed
+- Test isolation: Entrez.api_key cleanup between tests
 
 ---
 

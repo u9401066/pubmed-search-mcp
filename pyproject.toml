@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pubmed-search-mcp"
-version = "0.1.1"
+version = "0.1.3"
 description = "MCP server for PubMed literature search with MeSH, PICO, and intelligent query expansion"
 readme = "README.md"
 license = "MIT"
@@ -39,6 +39,7 @@ classifiers = [
 dependencies = [
     "biopython>=1.81",
     "requests>=2.28.0",
+    "pylatexenc>=2.10",  # Unicode to LaTeX conversion for BibTeX export
 ]
 
 [project.optional-dependencies]

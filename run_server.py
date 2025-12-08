@@ -103,8 +103,12 @@ def main():
     # Run the server using uvicorn directly for proper host/port control
     import uvicorn
     from starlette.applications import Starlette
-    from starlette.responses import JSONResponse
+    from starlette.responses import JSONResponse, FileResponse, Response
     from starlette.routing import Route, Mount
+    from pathlib import Path
+    
+    # Export directory
+    EXPORT_DIR = Path("/tmp/pubmed_exports")
     
     if args.transport == "sse":
         mcp_app = server.sse_app()
@@ -118,12 +122,14 @@ def main():
     async def info(request):
         return JSONResponse({
             "service": "PubMed Search MCP Server",
-            "version": "0.1.0",
+            "version": "0.1.2",
             "transport": args.transport,
             "endpoints": {
                 "sse": "/sse",
                 "messages": "/messages",
-                "health": "/health"
+                "health": "/health",
+                "downloads": "/download/{filename}",
+                "list_exports": "/exports"
             },
             "usage": {
                 "vscode_mcp_json": {
@@ -133,6 +139,55 @@ def main():
             }
         })
     
+    async def list_exports(request):
+        """List available export files."""
+        if not EXPORT_DIR.exists():
+            return JSONResponse({"files": [], "message": "No exports yet"})
+        
+        files = []
+        for f in EXPORT_DIR.iterdir():
+            if f.is_file():
+                stat = f.stat()
+                files.append({
+                    "filename": f.name,
+                    "size_bytes": stat.st_size,
+                    "download_url": f"/download/{f.name}"
+                })
+        
+        return JSONResponse({
+            "export_dir": str(EXPORT_DIR),
+            "files": sorted(files, key=lambda x: x["filename"], reverse=True)
+        })
+    
+    async def download_file(request):
+        """Download an export file."""
+        filename = request.path_params["filename"]
+        filepath = EXPORT_DIR / filename
+        
+        # Security: prevent directory traversal
+        if ".." in filename or "/" in filename:
+            return JSONResponse({"error": "Invalid filename"}, status_code=400)
+        
+        if not filepath.exists():
+            return JSONResponse({"error": "File not found"}, status_code=404)
+        
+        # Determine content type
+        ext = filepath.suffix.lower()
+        content_types = {
+            ".csv": "text/csv",
+            ".ris": "application/x-research-info-systems",
+            ".bib": "application/x-bibtex",
+            ".json": "application/json",
+            ".txt": "text/plain"
+        }
+        content_type = content_types.get(ext, "application/octet-stream")
+        
+        return FileResponse(
+            str(filepath),
+            media_type=content_type,
+            filename=filename
+        )
+    
     # Add middleware to handle host header issues
     from starlette.middleware import Middleware
     from starlette.middleware.trustedhost import TrustedHostMiddleware
@@ -141,11 +196,16 @@ def main():
     routes = [
         Route("/", info),
         Route("/health", health),
+        Route("/exports", list_exports),
+        Route("/download/{filename}", download_file),
         Mount("/", app=mcp_app),
     ]
     
     # Allow all hosts
     app = Starlette(routes=routes)
+    
+    logger.info(f"Download endpoint: http://{args.host}:{args.port}/download/{{filename}}")
+    logger.info(f"List exports: http://{args.host}:{args.port}/exports")
     
     # Run with settings to accept any host
     uvicorn.run(

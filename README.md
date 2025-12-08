@@ -89,11 +89,12 @@ uvx pubmed-search-mcp
 - **Citing Articles**: Find papers that cite a given PMID
 - **Parallel Search**: Generate multiple queries for comprehensive searches
 - **PDF Access**: Get open-access PDF URLs from PubMed Central
+- **Export Formats**: RIS, BibTeX, CSV, MEDLINE, JSON (EndNote/Zotero/Mendeley compatible)
 - **MCP Integration**: Use with VS Code + GitHub Copilot or any MCP client
 - **Remote Server**: Deploy as HTTP service for multi-machine access
 - **Submodule Ready**: Use as a Git submodule in larger projects
 
-## 🛠️ MCP Tools (8 個搜尋工具)
+## 🛠️ MCP Tools (11 個工具)
 
 ### 探索型 (Discovery)
 | Tool | 說明 |
@@ -110,6 +111,13 @@ uvx pubmed-search-mcp
 | `generate_search_queries` | 產生多個搜尋策略 (ESpell + MeSH) |
 | `merge_search_results` | 合併去重搜尋結果 |
 | `expand_search_queries` | 擴展搜尋策略 |
+
+### 匯出工具 (Export)
+| Tool | 說明 |
+|------|------|
+| `prepare_export` | 匯出引用格式 (RIS/BibTeX/CSV/MEDLINE/JSON) |
+| `get_article_fulltext_links` | 取得全文連結 (PMC/DOI) |
+| `analyze_fulltext_access` | 分析開放取用可用性 |
 
 > **設計原則**: 專注搜尋。Session/Cache/Reading List 皆為**內部機制**，自動運作，Agent 無需管理。
 
@@ -423,6 +431,33 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed deployment instructions includin
 | `generate_search_queries` | Generate multiple queries for parallel search |
 | `merge_search_results` | Merge and deduplicate results |
 | `expand_search_queries` | Expand search with synonyms/related terms |
+| `prepare_export` | Export citations in RIS/BibTeX/CSV/MEDLINE/JSON |
+| `get_article_fulltext_links` | Get PMC/DOI full-text links |
+| `analyze_fulltext_access` | Analyze open access availability |
+
+## 📤 Export Formats
+
+Export your search results in formats compatible with major reference managers:
+
+| Format | Compatible With | Use Case |
+|--------|-----------------|----------|
+| **RIS** | EndNote, Zotero, Mendeley | Universal import |
+| **BibTeX** | LaTeX, Overleaf, JabRef | Academic writing |
+| **CSV** | Excel, Google Sheets | Data analysis |
+| **MEDLINE** | PubMed native format | Archiving |
+| **JSON** | Programmatic access | Custom processing |
+
+### Exported Fields
+- **Core**: PMID, Title, Authors, Journal, Year, Volume, Issue, Pages
+- **Identifiers**: DOI, PMC ID, ISSN
+- **Content**: Abstract (HTML tags cleaned)
+- **Metadata**: Language, Publication Type, Keywords
+- **Access**: DOI URL, PMC URL, Full-text availability
+
+### Special Character Handling
+- BibTeX exports use **pylatexenc** for proper LaTeX encoding
+- Nordic characters (ø, æ, å), umlauts (ü, ö, ä), and accents are correctly converted
+- Example: `Søren Hansen` → `S{\o}ren Hansen`
 
 ## API Documentation
 
