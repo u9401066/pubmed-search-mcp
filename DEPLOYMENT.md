@@ -1,8 +1,39 @@
 # PubMed Search MCP Server - 遠端服務部署指南
 
-## 概述
+## 📋 目錄
 
-此文件說明如何將 PubMed Search MCP Server 部署為遠端服務，讓其他主機可以連接使用。
+- [部署模式總覽](#-部署模式總覽)
+- [快速開始](#快速開始)
+- [HTTPS 部署 (推薦)](#-https-部署--https-deployment)
+- [Docker 部署](#-docker-部署)
+- [客戶端配置](#客戶端配置)
+- [安全建議](#安全建議)
+
+---
+
+## 🎯 部署模式總覽
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                           Deployment Options                                  │
+├─────────────────┬─────────────────┬─────────────────┬────────────────────────┤
+│   HTTP (Dev)    │   MCP SSE       │   MCP stdio     │   HTTPS (Production)   │
+│   (Port 8765)   │   (Port 8765)   │   (Local)       │   (Nginx + TLS)        │
+├─────────────────┼─────────────────┼─────────────────┼────────────────────────┤
+│ ✅ Quick test   │ ✅ Remote MCP   │ ✅ Claude       │ ✅ Production deploy   │
+│                 │    clients      │    Desktop      │ ✅ Secure connections  │
+│                 │ ✅ Docker/Cloud │ ✅ VS Code      │ ✅ Rate limiting       │
+│                 │                 │    Copilot      │ ✅ TLS 1.2/1.3         │
+└─────────────────┴─────────────────┴─────────────────┴────────────────────────┘
+```
+
+| Mode | Protocol | Port | Best For |
+|------|----------|------|----------|
+| **stdio** | MCP stdio | - | Local Claude Desktop, VS Code Copilot |
+| **sse** | MCP over SSE | 8765 | Remote MCP clients, Docker deployment |
+| **https** | HTTPS (Nginx) | 443 | Production with TLS encryption 🔒 |
+
+---
 
 ## 快速開始
 
@@ -107,6 +138,160 @@ CMD ["python", "run_server.py", "--transport", "sse", "--port", "8765"]
 docker build -t pubmed-mcp .
 docker run -d -p 8765:8765 -e NCBI_EMAIL=your@email.com pubmed-mcp
 ```
+
+---
+
+## 🔒 HTTPS 部署 | HTTPS Deployment
+
+為生產環境提供安全的 HTTPS 連線，使用 Nginx 反向代理處理 TLS 終止。
+
+### 架構 | Architecture
+
+```
+                    HTTPS (TLS 1.2/1.3)
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────┐
+│              Nginx Reverse Proxy                     │
+│  ┌────────────────────────────────────────────────┐ │
+│  │ • TLS Termination (SSL Certificates)           │ │
+│  │ • Rate Limiting (30 req/s)                     │ │
+│  │ • Security Headers (XSS, CSRF protection)      │ │
+│  │ • SSE Optimization (24h timeout, no buffer)    │ │
+│  └────────────────────────────────────────────────┘ │
+└───────────────────────────┬─────────────────────────┘
+                            │ HTTP (internal)
+                            ▼
+              ┌──────────────────────────┐
+              │   PubMed Search MCP      │
+              │   (Port 8765)            │
+              │                          │
+              │ • /sse                   │
+              │ • /messages              │
+              │ • /exports               │
+              └──────────────────────────┘
+```
+
+### 快速開始 | Quick Start
+
+#### Option 1: Docker Deployment (推薦)
+
+```bash
+# Step 1: 生成 SSL 憑證
+chmod +x scripts/generate-ssl-certs.sh
+./scripts/generate-ssl-certs.sh
+
+# Step 2: 啟動 HTTPS 服務
+./scripts/start-https-docker.sh up
+
+# 其他命令
+./scripts/start-https-docker.sh down     # 停止服務
+./scripts/start-https-docker.sh logs     # 查看日誌
+./scripts/start-https-docker.sh restart  # 重啟服務
+./scripts/start-https-docker.sh status   # 查看狀態
+```
+
+**端點 | Endpoints:**
+
+| Service | URL | Description |
+|---------|-----|-------------|
+| MCP SSE | `https://localhost/` | MCP Server root |
+| MCP SSE | `https://localhost/sse` | SSE connection |
+| Health | `https://localhost/health` | Health check |
+| Exports | `https://localhost/exports` | Export files |
+
+#### Option 2: Local Development (無 Docker)
+
+使用 Uvicorn 原生 SSL 支援進行本地測試。
+
+```bash
+# Step 1: 生成 SSL 憑證
+./scripts/generate-ssl-certs.sh
+
+# Step 2: 啟動 HTTPS 服務
+./scripts/start-https-local.sh
+
+# 停止服務
+./scripts/start-https-local.sh stop
+```
+
+**端點 | Endpoints:**
+
+| Service | URL | Description |
+|---------|-----|-------------|
+| MCP SSE | `https://localhost:8443/` | MCP Server |
+| MCP SSE | `https://localhost:8443/sse` | SSE connection |
+
+### Claude Desktop 設定 (HTTPS)
+
+```json
+{
+  "mcpServers": {
+    "pubmed-search": {
+      "url": "https://localhost/sse"
+    }
+  }
+}
+```
+
+生產環境使用實際網域：
+
+```json
+{
+  "mcpServers": {
+    "pubmed-search": {
+      "url": "https://mcp.your-domain.com/sse"
+    }
+  }
+}
+```
+
+### 信任自簽憑證 | Trust Self-Signed Certificates
+
+**Linux (Ubuntu/Debian):**
+```bash
+sudo cp nginx/ssl/ca.crt /usr/local/share/ca-certificates/pubmed-mcp-dev.crt
+sudo update-ca-certificates
+```
+
+**macOS:**
+```bash
+sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain nginx/ssl/ca.crt
+```
+
+**Windows:**
+```
+雙擊 ca.crt → 安裝憑證 → 本機電腦 → 受信任的根憑證授權
+```
+
+### 相關檔案 | Files
+
+| File | Description |
+|------|-------------|
+| `nginx/nginx.conf` | Nginx 設定 (TLS, rate limiting, SSE optimization) |
+| `docker-compose.https.yml` | Docker Compose for HTTPS deployment |
+| `scripts/generate-ssl-certs.sh` | 生成自簽 SSL 憑證 |
+| `scripts/start-https-docker.sh` | Docker HTTPS 啟動腳本 |
+| `scripts/start-https-local.sh` | 本地 HTTPS 啟動腳本 |
+
+---
+
+## 🐳 Docker 部署
+
+### Docker Compose (HTTP)
+
+```bash
+# 啟動服務
+docker-compose up -d
+
+# 查看日誌
+docker-compose logs -f
+
+# 停止服務
+docker-compose down
+```
+
+---
 
 ## 客戶端配置
 
