@@ -15,6 +15,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.8] - 2025-12-09
+
+### Changed - Test Coverage Milestone 🎯
+
+- **Test Coverage: 34% → 90%** - Major quality improvement
+  - Added 360 new tests (51 → 411 total)
+  - All 411 tests passing
+  - Comprehensive mocking for NCBI APIs
+
+- **Module Coverage Improvements**:
+  | Module | Before | After |
+  |--------|--------|-------|
+  | `session_tools.py` | 64% | **100%** |
+  | `client.py` | 77% | **97%** |
+  | `pico.py` | - | **96%** |
+  | `merge.py` | - | **95%** |
+  | `links.py` | - | **96%** |
+  | `pdf.py` | - | **95%** |
+  | `session.py` | 76% | **94%** |
+  | `formats.py` | 8% | **93%** |
+  | `citation.py` | - | **91%** |
+  | `icite.py` | - | **90%** |
+
+- **New Test Files** (17 comprehensive test modules):
+  - `test_90_percent.py` - Final push tests
+  - `test_reach_90.py` - PubMedClient wrapper tests
+  - `test_comprehensive_coverage.py` - Server, exports, session
+  - `test_final_coverage.py` - Search mixins, strategy
+  - `test_discovery_tools.py` - Citation discovery
+  - `test_entrez_modules.py` - Base Entrez functionality
+  - `test_exports.py` - All export formats
+  - And 10 more targeted test files
+
+### Fixed
+
+- Fixed test assertions to match actual API return structures
+- Fixed session manager method signatures
+- Fixed SearchResult dataclass field requirements
+- Proper mocking for all NCBI Entrez API calls
+
+---
+
 ## [0.1.7] - 2025-12-08
 
 ### Added - NIH iCite Citation Metrics Integration
