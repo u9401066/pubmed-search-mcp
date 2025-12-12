@@ -15,6 +15,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.10] - 2025-12-12
+
+### Added
+- **Author Affiliations** - `authors_full` now includes `affiliations` list
+  - Extracts from PubMed `AffiliationInfo` elements
+  - Example: `{"last_name": "Smith", "fore_name": "John", "affiliations": ["Harvard Medical School..."]}`
+  - Enables downstream tools (zotero-keeper) to store institutional information
+
+### Changed
+- `_extract_authors()` now parses `AffiliationInfo` for each author
+- Affiliations only included when available (backward compatible)
+
+---
+
 ## [0.1.9] - 2025-12-12
 
 ### Added
