@@ -4,7 +4,7 @@ PubMed Client - High-level wrapper for PubMed API interactions.
 This module provides a clean, user-friendly interface for PubMed searches.
 """
 
-from typing import List, Dict, Any, Optional
+from typing import Any, Self  # Python 3.11+
 from dataclasses import dataclass
 from enum import Enum
 
@@ -25,8 +25,8 @@ class SearchResult:
     """Result from a PubMed search."""
     pmid: str
     title: str
-    authors: List[str]
-    authors_full: List[Dict[str, str]]
+    authors: list[str]
+    authors_full: list[dict[str, str]]
     abstract: str
     journal: str
     journal_abbrev: str
@@ -38,8 +38,8 @@ class SearchResult:
     pages: str = ""
     doi: str = ""
     pmc_id: str = ""
-    keywords: List[str] = None
-    mesh_terms: List[str] = None
+    keywords: list[str] | None = None
+    mesh_terms: list[str] | None = None
     
     def __post_init__(self):
         if self.keywords is None:
@@ -48,7 +48,7 @@ class SearchResult:
             self.mesh_terms = []
     
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "SearchResult":
+    def from_dict(cls, data: dict[str, Any]) -> Self:
         """Create from dictionary."""
         return cls(
             pmid=data.get("pmid", ""),
@@ -70,7 +70,7 @@ class SearchResult:
             mesh_terms=data.get("mesh_terms", []),
         )
     
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
             "pmid": self.pmid,
@@ -106,7 +106,7 @@ class PubMedClient:
         ...     print(f"{article.pmid}: {article.title}")
     """
     
-    def __init__(self, email: str = "your.email@example.com", api_key: Optional[str] = None):
+    def __init__(self, email: str = "your.email@example.com", api_key: str | None = None):
         """
         Initialize PubMed client.
         
@@ -125,14 +125,14 @@ class PubMedClient:
         self,
         query: str,
         limit: int = 5,
-        min_year: Optional[int] = None,
-        max_year: Optional[int] = None,
-        article_type: Optional[str] = None,
+        min_year: int | None = None,
+        max_year: int | None = None,
+        article_type: str | None = None,
         strategy: SearchStrategy = SearchStrategy.RELEVANCE,
-        date_from: Optional[str] = None,
-        date_to: Optional[str] = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
         date_type: str = "edat",
-    ) -> List[SearchResult]:
+    ) -> list[SearchResult]:
         """
         Search PubMed for articles.
         
@@ -168,14 +168,14 @@ class PubMedClient:
         self,
         query: str,
         limit: int = 5,
-        min_year: Optional[int] = None,
-        max_year: Optional[int] = None,
-        article_type: Optional[str] = None,
+        min_year: int | None = None,
+        max_year: int | None = None,
+        article_type: str | None = None,
         strategy: str = "relevance",
-        date_from: Optional[str] = None,
-        date_to: Optional[str] = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
         date_type: str = "edat",
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Search PubMed and return raw dictionaries.
         
@@ -194,7 +194,7 @@ class PubMedClient:
             date_type=date_type,
         )
     
-    def fetch_by_pmid(self, pmid: str) -> Optional[SearchResult]:
+    def fetch_by_pmid(self, pmid: str) -> SearchResult | None:
         """
         Fetch article details by PMID.
         
@@ -209,7 +209,7 @@ class PubMedClient:
             return SearchResult.from_dict(results[0])
         return None
     
-    def fetch_by_pmids(self, pmids: List[str]) -> List[SearchResult]:
+    def fetch_by_pmids(self, pmids: list[str]) -> list[SearchResult]:
         """
         Fetch details for multiple PMIDs.
         
@@ -222,13 +222,13 @@ class PubMedClient:
         results = self._searcher.fetch_details(pmids)
         return [SearchResult.from_dict(r) for r in results if "error" not in r]
     
-    def fetch_by_pmids_raw(self, pmids: List[str]) -> List[Dict[str, Any]]:
+    def fetch_by_pmids_raw(self, pmids: list[str]) -> list[dict[str, Any]]:
         """
         Fetch details for multiple PMIDs and return raw dictionaries.
         """
         return self._searcher.fetch_details(pmids)
     
-    def fetch_details(self, pmids: List[str]) -> List[Dict[str, Any]]:
+    def fetch_details(self, pmids: list[str]) -> list[dict[str, Any]]:
         """
         Fetch details for multiple PMIDs (returns dicts).
         
@@ -243,7 +243,7 @@ class PubMedClient:
         """
         return self._searcher.fetch_details(pmids)
     
-    def find_related(self, pmid: str, limit: int = 5) -> List[SearchResult]:
+    def find_related(self, pmid: str, limit: int = 5) -> list[SearchResult]:
         """
         Find related articles.
         
@@ -257,7 +257,7 @@ class PubMedClient:
         results = self._searcher.find_related_articles(pmid, limit=limit)
         return [SearchResult.from_dict(r) for r in results if "error" not in r]
     
-    def find_citing(self, pmid: str, limit: int = 10) -> List[SearchResult]:
+    def find_citing(self, pmid: str, limit: int = 10) -> list[SearchResult]:
         """
         Find articles that cite this one.
         
@@ -271,7 +271,7 @@ class PubMedClient:
         results = self._searcher.find_citing_articles(pmid, limit=limit)
         return [SearchResult.from_dict(r) for r in results if "error" not in r]
     
-    def download_pdf(self, pmid: str, output_path: Optional[str] = None) -> Optional[bytes]:
+    def download_pdf(self, pmid: str, output_path: str | None = None) -> bytes | None:
         """
         Download PDF if available from PMC.
         
@@ -284,7 +284,7 @@ class PubMedClient:
         """
         return self._searcher.download_pdf(pmid, output_path)
     
-    def get_pmc_url(self, pmid: str) -> Optional[str]:
+    def get_pmc_url(self, pmid: str) -> str | None:
         """
         Get PMC full text URL if available.
         
