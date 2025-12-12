@@ -15,6 +15,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.11] - 2025-12-12
+
+### Changed
+- **Python 3.11+ Modern Syntax** - Full adoption of Python 3.11 typing features
+  - `Self` type from `typing` (PEP 673) for `from_dict()` classmethod
+  - Union syntax: `X | None` instead of `Optional[X]` (PEP 604)
+  - Built-in generics: `list[str]` instead of `List[str]` (PEP 585)
+  - Cleaner, more readable type annotations throughout `client.py`
+
+### Added
+- **GitHub Actions CI/CD** - Auto-publish to PyPI on tag push
+  - `.github/workflows/publish.yml` triggered by `v*` tags
+  - Uses `pypa/gh-action-pypi-publish` with trusted publishing
+
+---
+
 ## [0.1.10] - 2025-12-12
 
 ### Added
