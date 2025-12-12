@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - `_extract_authors()` now parses `AffiliationInfo` for each author
 - Affiliations only included when available (backward compatible)
+- **Python version requirement**: `>=3.10` → `>=3.11` (align with zotero-keeper and MCP ecosystem)
 
 ---
 
