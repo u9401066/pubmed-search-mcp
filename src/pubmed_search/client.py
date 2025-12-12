@@ -228,6 +228,21 @@ class PubMedClient:
         """
         return self._searcher.fetch_details(pmids)
     
+    def fetch_details(self, pmids: List[str]) -> List[Dict[str, Any]]:
+        """
+        Fetch details for multiple PMIDs (returns dicts).
+        
+        Alias for fetch_by_pmids_raw(). This is the recommended method
+        for integrations that need dict format (e.g., zotero-keeper).
+        
+        Args:
+            pmids: List of PubMed IDs.
+            
+        Returns:
+            List of article dictionaries.
+        """
+        return self._searcher.fetch_details(pmids)
+    
     def find_related(self, pmid: str, limit: int = 5) -> List[SearchResult]:
         """
         Find related articles.
