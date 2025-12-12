@@ -15,6 +15,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.9] - 2025-12-12
+
+### Added
+- `PubMedClient.fetch_details()` - New method that returns dicts directly
+  - Alias for `fetch_by_pmids_raw()` for better API consistency
+  - Recommended for integrations needing dict format (e.g., zotero-keeper)
+  - `fetch_by_pmids()` still returns `SearchResult` objects for type safety
+
+### Fixed
+- API consistency: Added `fetch_details()` as alias for `fetch_by_pmids_raw()`
+- Integration compatibility with zotero-keeper MCP
+
+---
+
 ## [0.1.8] - 2025-12-09
 
 ### Changed - Test Coverage Milestone 🎯
