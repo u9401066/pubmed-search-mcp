@@ -291,12 +291,23 @@ class SearchMixin:
                     last_name = author['LastName']
                     fore_name = author.get('ForeName', '')
                     initials = author.get('Initials', '')
+                    
+                    # Extract affiliations if available
+                    affiliations = []
+                    if 'AffiliationInfo' in author:
+                        for aff_info in author['AffiliationInfo']:
+                            if 'Affiliation' in aff_info:
+                                affiliations.append(aff_info['Affiliation'])
+                    
                     authors.append(f"{last_name} {fore_name}".strip())
-                    authors_full.append({
+                    author_entry = {
                         "last_name": last_name,
                         "fore_name": fore_name,
                         "initials": initials
-                    })
+                    }
+                    if affiliations:
+                        author_entry["affiliations"] = affiliations
+                    authors_full.append(author_entry)
                 elif 'CollectiveName' in author:
                     authors.append(author['CollectiveName'])
                     authors_full.append({"collective_name": author['CollectiveName']})
