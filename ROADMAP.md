@@ -45,6 +45,7 @@
 | v0.1.5 | 2025-12-08 | HTTPS 部署 (Nginx + TLS + Rate Limiting) |
 | v0.1.6 | 2025-12-08 | Citation Network: `get_article_references` |
 | v0.1.7 | 2025-12-08 | iCite 引用指標 (RCR/Percentile/Sort/Filter) |
+| v0.1.12 | 2025-12-14 | Citation Tree 視覺化 (6 種輸出格式，含 Mermaid) |
 
 ---
 
@@ -146,8 +147,9 @@ arxiv-mcp-server 目前只有 **1 個 Prompt**: `deep-paper-analysis`
 | `find_citing_articles` | 找引用這篇的文章 (forward) | ✅ v0.1.0 |
 | `get_article_references` | 取得參考文獻列表 (backward) | ✅ v0.1.6 |
 | `get_citation_metrics` | 引用指標 (iCite RCR/Percentile) | ✅ v0.1.7 |
+| `build_citation_tree` | 建構引用網絡樹 (6 種輸出格式) | ✅ v0.1.12 |
+| `suggest_citation_tree` | 建議是否建構引用樹 | ✅ v0.1.12 |
 | `trace_lineage` | 追蹤研究脈絡 (引用網絡) | ⏳ |
-| `visualize_citation_network` | 視覺化引用網絡 (Mermaid) | ⏳ |
 
 ### Phase 9: 資料庫擴展 (PubMed 生態系)
 > **原則**: 使用各資料庫官方 API，不另創統一 DSL

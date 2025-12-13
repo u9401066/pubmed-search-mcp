@@ -101,7 +101,7 @@ uvx pubmed-search-mcp
 - **Remote Server**: Deploy as HTTP service for multi-machine access
 - **Submodule Ready**: Use as a Git submodule in larger projects
 
-## 🛠️ MCP Tools (12 個工具)
+## 🛠️ MCP Tools (14 個工具)
 
 ### 探索型 (Discovery)
 | Tool | 說明 |
@@ -111,7 +111,9 @@ uvx pubmed-search-mcp
 | `find_citing_articles` | 尋找引用文章 (by PMID, forward) |
 | `get_article_references` | 取得參考文獻 (by PMID, backward) |
 | `fetch_article_details` | 取得文章完整資訊 |
-| `get_citation_metrics` | 🆕 取得引用指標 (iCite RCR/Percentile) |
+| `get_citation_metrics` | 取得引用指標 (iCite RCR/Percentile) |
+| `build_citation_tree` | 🆕 建構引用網絡樹 (支援 6 種視覺化格式) |
+| `suggest_citation_tree` | 🆕 建議是否建構引用樹 |
 
 ### 批次搜尋 (Parallel Search)
 | Tool | 說明 |
@@ -340,7 +342,8 @@ src/pubmed_search/
 │       ├── strategy.py     # 策略型 (generate_queries, expand)
 │       ├── pico.py         # PICO 解析
 │       ├── merge.py        # 結果合併
-│       └── export.py       # 匯出工具
+│       ├── export.py       # 匯出工具
+│       └── citation_tree.py # 🆕 引用網絡視覺化 (6 種格式)
 ├── entrez/                 # NCBI Entrez API 封裝
 ├── exports/                # 匯出格式 (RIS, BibTeX, CSV)
 └── session.py              # Session 管理 (內部機制)
@@ -639,6 +642,8 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed deployment instructions includin
 | `find_citing_articles` | Find articles that cite a given PMID (forward) |
 | `get_article_references` | Get this article's bibliography (backward) |
 | `fetch_article_details` | Get full details for specific PMIDs |
+| `build_citation_tree` | Build citation network tree (6 output formats) |
+| `suggest_citation_tree` | Suggest citation tree after fetching article |
 | `generate_search_queries` | Generate multiple queries for parallel search |
 | `merge_search_results` | Merge and deduplicate results |
 | `expand_search_queries` | Expand search with synonyms/related terms |

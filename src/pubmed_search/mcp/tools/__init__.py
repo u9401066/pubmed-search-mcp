@@ -23,6 +23,7 @@ from .strategy import register_strategy_tools
 from .pico import register_pico_tools
 from .merge import register_merge_tools
 from .export import register_export_tools
+from .citation_tree import register_citation_tree_tools
 
 
 def register_all_tools(mcp: FastMCP, searcher: LiteratureSearcher):
@@ -32,6 +33,7 @@ def register_all_tools(mcp: FastMCP, searcher: LiteratureSearcher):
     register_pico_tools(mcp)
     register_merge_tools(mcp, searcher)
     register_export_tools(mcp, searcher)
+    register_citation_tree_tools(mcp, searcher)
 
 
 __all__ = [
