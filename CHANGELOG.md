@@ -7,11 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Citation Tree Tools** - Build visual citation networks from any article
+  - `build_citation_tree(pmid, depth, direction, output_format)` - Main tree builder
+  - `suggest_citation_tree(pmid)` - Lightweight suggestion after fetching article
+  - **6 Output Formats** supported:
+    | Format | Library | Use Case |
+    |--------|---------|----------|
+    | `cytoscape` | Cytoscape.js | Academic research, bioinformatics |
+    | `g6` | AntV G6 | Modern web apps, large graphs |
+    | `d3` | D3.js | Flexible viz, Observable notebooks |
+    | `vis` | vis-network | Quick prototypes |
+    | `graphml` | GraphML XML | Gephi, VOSviewer, yEd, Pajek |
+    | `mermaid` | Mermaid.js | ⭐ VS Code Markdown preview |
+  - **Features**:
+    - BFS traversal with configurable depth (1-3 levels)
+    - Direction control: forward (citing), backward (references), or both
+    - Max 100 nodes safety limit
+    - Color-coded nodes: root (red), citing (cyan), reference (green)
+
 ### Planned
 - Research Prompts (Summarize, Literature Review, Clinical Relevance)
 - Research trend analysis (keyword frequency, publication trends)
 - Chart generation (PNG output)
-- Citation Network visualization (Mermaid)
 
 ---
 

@@ -144,6 +144,16 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 date_from=date_from, date_to=date_to, date_type=date_type
             )
             
+            # Extract total count from metadata (if present)
+            total_count = None
+            if results and "_search_metadata" in results[0]:
+                total_count = results[0]["_search_metadata"].get("total_count")
+                # Remove metadata from results before caching/formatting
+                del results[0]["_search_metadata"]
+                # If this was a metadata-only result, remove the empty dict
+                if not any(k for k in results[0].keys() if not k.startswith("_")):
+                    results = results[1:] if len(results) > 1 else []
+            
             # Cache results (only for queries without filters)
             if not has_filters:
                 _cache_results(results, query)
@@ -151,7 +161,13 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 # Always record search history for "last" export feature
                 _record_search_only(results, query)
             
-            result = format_search_results(results[:limit])
+            # Format results with total count info
+            returned_count = len(results[:limit])
+            if total_count is not None and total_count > returned_count:
+                result = f"📊 Found **{returned_count}** results (of **{total_count}** total in PubMed)\n\n"
+            else:
+                result = f"📊 Found **{returned_count}** results\n\n"
+            result += format_search_results(results[:limit])
             
             # Add hint about potential journal name confusion 
             # Always show for single-word queries or when results suggest broad topic

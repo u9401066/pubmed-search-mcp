@@ -127,17 +127,31 @@ class SearchMixin:
                 full_query += f" AND \"{article_type}\"[pt]"
             
             # Step 1: Search for IDs with retry
-            id_list = self._search_ids_with_retry(full_query, limit * 2, sort_param)
+            id_list, total_count = self._search_ids_with_retry(full_query, limit * 2, sort_param)
             
             results = self.fetch_details(id_list)
             
-            return results[:limit]
+            # Attach total count to results for caller to access
+            final_results = results[:limit]
+            # Store metadata in a way that doesn't break existing code
+            if final_results:
+                final_results[0]["_search_metadata"] = {"total_count": total_count}
+            elif total_count > 0:
+                # No detailed results but we have a count
+                final_results = [{"_search_metadata": {"total_count": total_count}}]
+            
+            return final_results
 
         except Exception as e:
             return [{"error": str(e)}]
 
-    def _search_ids_with_retry(self, query: str, retmax: int, sort: str) -> List[str]:
-        """Search for PubMed IDs with retry on transient errors."""
+    def _search_ids_with_retry(self, query: str, retmax: int, sort: str) -> tuple:
+        """Search for PubMed IDs with retry on transient errors.
+        
+        Returns:
+            Tuple of (id_list, total_count) where total_count is the total number
+            of articles matching the query in PubMed (not limited by retmax).
+        """
         last_error = None
         for attempt in range(MAX_RETRIES):
             try:
@@ -145,7 +159,8 @@ class SearchMixin:
                 handle = Entrez.esearch(db="pubmed", term=query, retmax=retmax, sort=sort)
                 record = Entrez.read(handle)
                 handle.close()
-                return record["IdList"]
+                total_count = int(record.get("Count", 0))
+                return record["IdList"], total_count
             except Exception as e:
                 error_str = str(e)
                 if any(msg in error_str.lower() for msg in [
