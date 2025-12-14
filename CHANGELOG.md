@@ -14,6 +14,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.13] - 2025-12-14
+
+### Changed
+- **License: MIT → Apache 2.0** - Unified license with zotero-keeper ecosystem
+  - All upstream dependencies are Apache 2.0 compatible:
+    - biopython (Biopython License / BSD-like)
+    - requests (Apache 2.0)
+    - pylatexenc (MIT)
+    - mcp (MIT)
+  - Updated `LICENSE` file with full Apache 2.0 text
+  - Updated `pyproject.toml` license field and classifier
+
+### Architecture Review
+- **DDD Structure Verified** - No refactoring needed
+  - Application Layer: `mcp/tools/` (14 tools across 6 modules)
+  - Infrastructure Layer: `entrez/`, `exports/`
+  - Clean separation of concerns maintained
+  - Mixin pattern for Entrez API (`LiteratureSearcher` inherits 6 mixins)
+
+---
+
 ## [0.1.12] - 2025-12-14
 
 ### Added
