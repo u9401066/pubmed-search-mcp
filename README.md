@@ -11,6 +11,8 @@
 
 A Domain-Driven Design (DDD) based MCP server that serves as an intelligent research assistant for AI agents, providing task-oriented literature search and analysis capabilities.
 
+**🌐 Language**: **English** | [繁體中文](README.zh-TW.md)
+
 ## 🚀 Quick Install
 
 ### Via Smithery (Recommended for Claude Desktop)
@@ -772,7 +774,7 @@ results = searcher.search_advanced(
 
 ## License
 
-MIT License - see [LICENSE](LICENSE)
+see [LICENSE](LICENSE)
 
 ## Contributing
 
