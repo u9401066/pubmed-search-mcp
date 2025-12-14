@@ -7,11 +7,13 @@
 [![Smithery](https://smithery.ai/badge/pubmed-search-mcp)](https://smithery.ai/server/pubmed-search-mcp)
 [![Test Coverage](https://img.shields.io/badge/coverage-90%25-brightgreen.svg)](https://github.com/u9401066/pubmed-search-mcp)
 
-> **AI Agent 的專業文獻研究助理** - 不只是 API 包裝器
+> **Professional Literature Research Assistant for AI Agents** - More than just an API wrapper
 
 A Domain-Driven Design (DDD) based MCP server that serves as an intelligent research assistant for AI agents, providing task-oriented literature search and analysis capabilities.
 
 **🌐 Language**: **English** | [繁體中文](README.zh-TW.md)
+
+---
 
 ## 🚀 Quick Install
 
@@ -38,6 +40,8 @@ uv add pubmed-search-mcp
 ```bash
 uvx pubmed-search-mcp
 ```
+
+---
 
 ## ⚙️ Configuration
 
@@ -78,18 +82,20 @@ uvx pubmed-search-mcp
 
 ---
 
-## 🎯 設計理念
+## 🎯 Design Philosophy
 
-- **Agent-First** - 為 AI Agent 設計，輸出優化為機器決策
-- **任務導向** - Tool 以研究任務為單位，而非底層 API
-- **DDD 架構** - 以文獻研究領域知識為核心建模
-- **上下文感知** - 透過 Session 維持研究狀態
+- **Agent-First** - Designed for AI Agents, output optimized for machine decision-making
+- **Task-Oriented** - Tools organized by research tasks, not low-level APIs
+- **DDD Architecture** - Core modeling based on literature research domain knowledge
+- **Context-Aware** - Maintains research state through Session
 
-**定位**：PubMed 專精的 AI 研究助理
-- ✅ MeSH 專業詞彙整合 ← 其他來源沒有
-- ✅ PICO 結構化查詢 ← 醫學專業
-- ✅ ESpell 拼字校正 ← 自動糾錯
-- ✅ 批次並行搜尋 ← 高效率
+**Positioning**: PubMed-specialized AI research assistant
+- ✅ MeSH vocabulary integration - Not available from other sources
+- ✅ PICO structured queries - Medical specialty
+- ✅ ESpell spelling correction - Auto-correction
+- ✅ Batch parallel search - High efficiency
+
+---
 
 ## Features
 
@@ -103,156 +109,164 @@ uvx pubmed-search-mcp
 - **Remote Server**: Deploy as HTTP service for multi-machine access
 - **Submodule Ready**: Use as a Git submodule in larger projects
 
-## 🛠️ MCP Tools (14 個工具)
+---
 
-### 探索型 (Discovery)
-| Tool | 說明 | 方向 |
-|------|------|------|
-| `search_literature` | 搜尋 PubMed 文獻 | - |
-| `find_related_articles` | 尋找主題相似文章 (PubMed 演算法) | 相似性 |
-| `find_citing_articles` | 尋找引用此文的論文 (後續研究) | Forward ➡️ |
-| `get_article_references` | 取得此文的參考文獻 (研究基礎) | Backward ⬅️ |
-| `fetch_article_details` | 取得文章完整資訊 | - |
-| `get_citation_metrics` | 取得引用指標 (iCite RCR/Percentile) | - |
-| `build_citation_tree` | 🆕 建構引用網絡樹 (6 種格式) | Both ↔️ |
-| `suggest_citation_tree` | 🆕 評估是否值得建構引用樹 | - |
+## 🛠️ MCP Tools (14 Tools)
 
-### 批次搜尋 (Parallel Search)
-| Tool | 說明 |
-|------|------|
-| `parse_pico` | 解析 PICO 臨床問題 (搜尋入口) |
-| `generate_search_queries` | 產生多個搜尋策略 (ESpell + MeSH) |
-| `merge_search_results` | 合併去重搜尋結果 |
-| `expand_search_queries` | 擴展搜尋策略 |
+### Discovery Tools
 
-### 匯出工具 (Export)
-| Tool | 說明 |
-|------|------|
-| `prepare_export` | 匯出引用格式 (RIS/BibTeX/CSV/MEDLINE/JSON) |
-| `get_article_fulltext_links` | 取得全文連結 (PMC/DOI) |
-| `analyze_fulltext_access` | 分析開放取用可用性 |
+| Tool | Description | Direction |
+|------|-------------|-----------|
+| `search_literature` | Search PubMed literature | - |
+| `find_related_articles` | Find similar articles (PubMed algorithm) | Similarity |
+| `find_citing_articles` | Find papers citing this article (follow-up research) | Forward ➡️ |
+| `get_article_references` | Get this article's references (research foundation) | Backward ⬅️ |
+| `fetch_article_details` | Get full article information | - |
+| `get_citation_metrics` | Get citation metrics (iCite RCR/Percentile) | - |
+| `build_citation_tree` | Build citation network tree (6 formats) | Both ↔️ |
+| `suggest_citation_tree` | Evaluate if building citation tree is worthwhile | - |
 
-> **設計原則**: 專注搜尋。Session/Cache/Reading List 皆為**內部機制**，自動運作，Agent 無需管理。
+### Parallel Search Tools
+
+| Tool | Description |
+|------|-------------|
+| `parse_pico` | Parse PICO clinical questions (search entry point) |
+| `generate_search_queries` | Generate multiple search strategies (ESpell + MeSH) |
+| `merge_search_results` | Merge and deduplicate search results |
+| `expand_search_queries` | Expand search strategies |
+
+### Export Tools
+
+| Tool | Description |
+|------|-------------|
+| `prepare_export` | Export citation formats (RIS/BibTeX/CSV/MEDLINE/JSON) |
+| `get_article_fulltext_links` | Get full-text links (PMC/DOI) |
+| `analyze_fulltext_access` | Analyze open access availability |
+
+> **Design Principle**: Focus on search. Session/Cache/Reading List are all **internal mechanisms** that operate automatically - Agents don't need to manage them.
 
 ---
 
-## 📋 Agent 使用流程
+## 📋 Agent Usage Workflow
 
-### 快速搜尋 (Simple Search)
-```
+### Simple Search
+
+```python
 search_literature(query="remimazolam ICU sedation", limit=10)
 ```
 
-### 使用 PubMed 官方語法
-```
-# MeSH 標準詞彙
+### Using PubMed Official Syntax
+
+```python
+# MeSH standard vocabulary
 search_literature(query='"Diabetes Mellitus"[MeSH]')
 
-# 欄位限定
+# Field-specific search
 search_literature(query='(BRAF[Gene Name]) AND (melanoma[Title/Abstract])')
 
-# 日期範圍
+# Date range
 search_literature(query='COVID-19[Title] AND 2024[dp]')
 
-# 文章類型
+# Publication type
 search_literature(query='propofol sedation AND Review[pt]')
 
-# 組合搜尋
+# Combined search
 search_literature(query='("Intensive Care Units"[MeSH]) AND (remimazolam[tiab] OR "CNS 7056"[tiab])')
 ```
 
-### PubMed 官方欄位標籤 (Field Tags)
+### PubMed Official Field Tags
 
-| 標籤 | 說明 | 範例 |
-|------|------|------|
-| `[Title]` 或 `[ti]` | 標題 | `COVID-19[ti]` |
-| `[Title/Abstract]` 或 `[tiab]` | 標題+摘要 | `sedation[tiab]` |
-| `[MeSH]` 或 `[mh]` | MeSH 標準詞彙 | `"Diabetes Mellitus"[MeSH]` |
-| `[MeSH Major Topic]` 或 `[majr]` | MeSH 主要主題 | `"Anesthesia"[majr]` |
-| `[Author]` 或 `[au]` | 作者 | `Smith J[au]` |
-| `[Journal]` 或 `[ta]` | 期刊縮寫 | `Nature[ta]` |
-| `[Publication Type]` 或 `[pt]` | 文章類型 | `Review[pt]`, `Clinical Trial[pt]` |
-| `[Date - Publication]` 或 `[dp]` | 出版日期 | `2024[dp]`, `2020:2024[dp]` |
-| `[Gene Name]` | 基因名稱 | `BRAF[Gene Name]` |
-| `[Substance Name]` | 物質名稱 | `propofol[Substance Name]` |
+| Tag | Description | Example |
+|-----|-------------|---------|
+| `[Title]` or `[ti]` | Title | `COVID-19[ti]` |
+| `[Title/Abstract]` or `[tiab]` | Title + Abstract | `sedation[tiab]` |
+| `[MeSH]` or `[mh]` | MeSH standard vocabulary | `"Diabetes Mellitus"[MeSH]` |
+| `[MeSH Major Topic]` or `[majr]` | MeSH major topic | `"Anesthesia"[majr]` |
+| `[Author]` or `[au]` | Author | `Smith J[au]` |
+| `[Journal]` or `[ta]` | Journal abbreviation | `Nature[ta]` |
+| `[Publication Type]` or `[pt]` | Publication type | `Review[pt]`, `Clinical Trial[pt]` |
+| `[Date - Publication]` or `[dp]` | Publication date | `2024[dp]`, `2020:2024[dp]` |
+| `[Gene Name]` | Gene name | `BRAF[Gene Name]` |
+| `[Substance Name]` | Substance name | `propofol[Substance Name]` |
 
-> **完整語法參考**: [PubMed Search Field Tags](https://pubmed.ncbi.nlm.nih.gov/help/#search-tags)
+> **Full syntax reference**: [PubMed Search Field Tags](https://pubmed.ncbi.nlm.nih.gov/help/#search-tags)
 
-### 深入探索 (找到重要論文後)
-```
-find_related_articles(pmid="12345678")   # 相關文章 (PubMed 演算法)
-find_citing_articles(pmid="12345678")    # 引用這篇的後續研究 (forward in time)
-get_article_references(pmid="12345678")  # 這篇的參考文獻 (backward in time)
+### Deep Exploration (After finding important papers)
+
+```python
+find_related_articles(pmid="12345678")   # Related articles (PubMed algorithm)
+find_citing_articles(pmid="12345678")    # Papers citing this one (forward in time)
+get_article_references(pmid="12345678")  # This paper's references (backward in time)
 ```
 
 ---
 
-## 🔬 Citation Discovery Guide | 引用探索指南
+## 🔬 Citation Discovery Guide
 
-找到重要論文後，有 **5 種工具** 可以探索相關文獻。選擇正確的工具能大幅提升研究效率：
+After finding an important paper, there are **5 tools** to explore related literature. Choosing the right tool can greatly improve research efficiency:
 
-### 工具對比表
+### Tool Comparison
 
-| 工具 | 方向 | 資料來源 | 用途 | API 呼叫量 |
-|------|------|----------|------|------------|
-| `find_related_articles` | 相似性 | PubMed algorithm | 找主題/方法相似的文章 | 1 次 |
-| `find_citing_articles` | Forward ➡️ | PMC citations | 找引用此文的後續研究 | 1 次 |
-| `get_article_references` | Backward ⬅️ | PMC references | 找此文引用的參考文獻 | 1 次 |
-| `build_citation_tree` | Both ↔️ | PMC (BFS 遍歷) | 建構完整引用網絡圖 | 多次 (深度相關) |
-| `suggest_citation_tree` | - | 文章資訊 | 評估是否值得建樹 | 1 次 |
+| Tool | Direction | Data Source | Use Case | API Calls |
+|------|-----------|-------------|----------|-----------|
+| `find_related_articles` | Similarity | PubMed algorithm | Find topic/method similar articles | 1 |
+| `find_citing_articles` | Forward ➡️ | PMC citations | Find follow-up research | 1 |
+| `get_article_references` | Backward ⬅️ | PMC references | Find foundational papers | 1 |
+| `build_citation_tree` | Both ↔️ | PMC (BFS traversal) | Build complete citation network | Multiple |
+| `suggest_citation_tree` | - | Article info | Evaluate if tree building is worthwhile | 1 |
 
-### 使用場景決策樹
+### Usage Decision Tree
 
 ```
-找到一篇重要論文 (PMID: 12345678)
+Found an important paper (PMID: 12345678)
     │
-    ├── 想找「類似主題」的文章？
+    ├── Want to find "similar topic" articles?
     │   └── ✅ find_related_articles(pmid="12345678")
-    │       → PubMed 演算法根據 MeSH、關鍵詞、引用模式找相似文章
+    │       → PubMed algorithm finds similar articles by MeSH, keywords, citation patterns
     │
-    ├── 想知道「後續研究怎麼發展」？
+    ├── Want to know "how subsequent research developed"?
     │   └── ✅ find_citing_articles(pmid="12345678")
-    │       → 找出引用這篇的所有論文 (時間軸: 向後 → 現在)
+    │       → Find all papers citing this one (timeline: forward → now)
     │
-    ├── 想了解「這篇文章的基礎是什麼」？
+    ├── Want to understand "what this article is based on"?
     │   └── ✅ get_article_references(pmid="12345678")
-    │       → 取得這篇文章的參考文獻清單 (時間軸: 向前 ← 過去)
+    │       → Get this article's reference list (timeline: backward ← past)
     │
-    └── 想建立「完整的研究脈絡網絡」？
+    └── Want to build "complete research context network"?
         │
-        ├── 先評估: suggest_citation_tree(pmid="12345678")
-        │   → 看引用數、被引數，決定是否值得建樹
+        ├── First evaluate: suggest_citation_tree(pmid="12345678")
+        │   → Check citation count to decide if tree building is worthwhile
         │
-        └── 建構網絡: build_citation_tree(pmid="12345678", depth=2)
-            → 輸出 Mermaid/Cytoscape/GraphML 等格式
+        └── Build network: build_citation_tree(pmid="12345678", depth=2)
+            → Output Mermaid/Cytoscape/GraphML formats
 ```
 
-### 實際範例
+### Practical Examples
 
-#### 情境 1：快速找相關論文
+#### Scenario 1: Quick related paper search
 ```python
-# 找到一篇 remimazolam 的重要 RCT，想看看有沒有類似研究
+# Found an important RCT on remimazolam, want to see similar studies
 find_related_articles(pmid="33475315", limit=10)
 ```
 
-#### 情境 2：追蹤研究影響力
+#### Scenario 2: Track research impact
 ```python
-# 這篇 2020 年的論文影響了哪些後續研究？
+# What subsequent research did this 2020 paper influence?
 find_citing_articles(pmid="33475315", limit=20)
 ```
 
-#### 情境 3：理解研究基礎
+#### Scenario 3: Understand research foundation
 ```python
-# 這篇文章引用了哪些關鍵文獻？找出 foundation papers
+# What key literature did this article cite? Find foundation papers
 get_article_references(pmid="33475315", limit=30)
 ```
 
-#### 情境 4：建立研究脈絡圖 (Literature Review)
+#### Scenario 4: Build research context map (Literature Review)
 ```python
-# Step 1: 評估是否值得建樹
+# Step 1: Evaluate if tree building is worthwhile
 suggest_citation_tree(pmid="33475315")
 
-# Step 2: 建構 2 層引用網絡，輸出 Mermaid 格式 (可在 VS Code 預覽)
+# Step 2: Build 2-level citation network, output Mermaid format (previewable in VS Code)
 build_citation_tree(
     pmid="33475315",
     depth=2,
@@ -261,82 +275,84 @@ build_citation_tree(
 )
 ```
 
-### Citation Tree 輸出格式
+### Citation Tree Output Formats
 
-| 格式 | 用途 | 工具 |
-|------|------|------|
-| `mermaid` | VS Code Markdown 預覽 | 內建 Mermaid 擴充 |
-| `cytoscape` | 學術標準、生物資訊 | Cytoscape.js |
-| `g6` | 現代網頁視覺化 | AntV G6 |
-| `d3` | 靈活客製化 | D3.js force layout |
-| `vis` | 快速原型 | vis-network |
-| `graphml` | 桌面分析軟體 | Gephi, VOSviewer, yEd |
+| Format | Use Case | Tool |
+|--------|----------|------|
+| `mermaid` | VS Code Markdown preview | Built-in Mermaid extension |
+| `cytoscape` | Academic standard, bioinformatics | Cytoscape.js |
+| `g6` | Modern web visualization | AntV G6 |
+| `d3` | Flexible customization | D3.js force layout |
+| `vis` | Rapid prototyping | vis-network |
+| `graphml` | Desktop analysis software | Gephi, VOSviewer, yEd |
 
 ---
 
-## 🔍 深度搜尋：兩種入口模式
+## 🔍 Deep Search: Two Entry Modes
 
-本工具提供兩種深度搜尋入口，最終都透過 **並行搜尋 + 合併去重** 完成：
+This tool provides two deep search entry points, both completed through **parallel search + merge deduplication**:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                         深度搜尋流程圖                                    │
+│                      Deep Search Flowchart                               │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                          │
 │   ┌───────────────────┐         ┌───────────────────┐                   │
-│   │  關鍵字導向入口     │         │  PICO 臨床問題入口  │                   │
-│   │  (知道要搜什麼)     │         │  (有臨床問題描述)   │                   │
-│   └─────────┬─────────┘         └─────────┬─────────┘                   │
+│   │  Keyword Entry    │         │  PICO Clinical    │                   │
+│   │  (Know what to    │         │  Question Entry   │                   │
+│   │   search)         │         │  (Have clinical   │                   │
+│   └─────────┬─────────┘         │   description)    │                   │
+│             │                   └─────────┬─────────┘                   │
 │             │                             │                              │
 │             │                             ▼                              │
 │             │                   ┌───────────────────┐                   │
 │             │                   │   parse_pico()    │                   │
-│             │                   │   解析 P/I/C/O    │                   │
+│             │                   │   Parse P/I/C/O   │                   │
 │             │                   └─────────┬─────────┘                   │
 │             │                             │                              │
 │             ▼                             ▼                              │
 │   ┌─────────────────────────────────────────────────────────────┐       │
 │   │              generate_search_queries()                       │       │
-│   │              (ESpell 校正 + MeSH 擴展 + 同義詞)                │       │
+│   │              (ESpell correction + MeSH expansion + synonyms) │       │
 │   │                                                              │       │
-│   │   關鍵字模式: 呼叫 1 次                                        │       │
-│   │   PICO 模式:  對每個元素 (P/I/C/O) 各呼叫 1 次 (並行)          │       │
+│   │   Keyword mode: 1 call                                       │       │
+│   │   PICO mode: 1 call per element (P/I/C/O) in parallel        │       │
 │   └──────────────────────────┬──────────────────────────────────┘       │
 │                              │                                           │
 │                              ▼                                           │
 │   ┌─────────────────────────────────────────────────────────────┐       │
-│   │              Agent 組合查詢策略                               │       │
+│   │              Agent combines query strategies                 │       │
 │   │                                                              │       │
-│   │   • 使用返回的 suggested_queries                              │       │
-│   │   • 或用 mesh_terms + all_synonyms 自行組合                   │       │
-│   │   • PICO 模式: 用 Boolean 邏輯組合 (P) AND (I) AND (O)        │       │
+│   │   • Use returned suggested_queries                           │       │
+│   │   • Or combine mesh_terms + all_synonyms yourself            │       │
+│   │   • PICO mode: Use Boolean logic (P) AND (I) AND (O)         │       │
 │   └──────────────────────────┬──────────────────────────────────┘       │
 │                              │                                           │
 │                              ▼                                           │
 │   ┌─────────────────────────────────────────────────────────────┐       │
-│   │              search_literature() × N (並行執行)               │       │
+│   │              search_literature() × N (parallel execution)    │       │
 │   └──────────────────────────┬──────────────────────────────────┘       │
 │                              │                                           │
 │                              ▼                                           │
 │   ┌─────────────────────────────────────────────────────────────┐       │
 │   │              merge_search_results()                          │       │
-│   │              合併去重 + 標記高相關性文章                        │       │
+│   │              Merge + dedupe + mark high-relevance articles   │       │
 │   └─────────────────────────────────────────────────────────────┘       │
 │                                                                          │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 入口 1️⃣：關鍵字導向 (Keyword Search)
+### Entry 1️⃣: Keyword-Oriented
 
-**適用場景**: 已知要搜尋的關鍵字或主題
+**Use Case**: Already know the keywords or topic to search
 
 ```python
-# Step 1: 取得搜尋素材 (ESpell + MeSH + 同義詞)
+# Step 1: Get search materials (ESpell + MeSH + synonyms)
 generate_search_queries(topic="remimazolam ICU sedation")
 
-# 返回內容:
+# Returns:
 {
-  "corrected_topic": "remimazolam icu sedation",   # 拼字校正
+  "corrected_topic": "remimazolam icu sedation",   # Spelling corrected
   "mesh_terms": [
     {"input": "remimazolam", "preferred": "remimazolam [Supplementary Concept]", 
      "synonyms": ["CNS 7056", "ONO 2745"]},
@@ -353,27 +369,27 @@ generate_search_queries(topic="remimazolam ICU sedation")
   ]
 }
 
-# Step 2: 並行執行搜尋
-search_literature(query="(remimazolam icu sedation)[Title]")          # 並行
-search_literature(query="(remimazolam icu sedation)[Title/Abstract]") # 並行
-search_literature(query="\"Deep Sedation\"[MeSH Terms]")              # 並行
+# Step 2: Execute searches in parallel
+search_literature(query="(remimazolam icu sedation)[Title]")          # parallel
+search_literature(query="(remimazolam icu sedation)[Title/Abstract]") # parallel
+search_literature(query="\"Deep Sedation\"[MeSH Terms]")              # parallel
 ...
 
-# Step 3: 合併結果
+# Step 3: Merge results
 merge_search_results(results_json='[["pmid1","pmid2"],["pmid2","pmid3"]]')
-# → unique_pmids: 去重後的 PMID 列表
-# → high_relevance_pmids: 多策略命中的高相關文章
+# → unique_pmids: Deduplicated PMID list
+# → high_relevance_pmids: High-relevance articles hit by multiple strategies
 ```
 
-### 入口 2️⃣：PICO 臨床問題 (Clinical Question)
+### Entry 2️⃣: PICO Clinical Question
 
-**適用場景**: 有臨床問題需要拆解成結構化搜尋
+**Use Case**: Have a clinical question that needs to be decomposed into structured search
 
 ```python
-# Step 1: 解析 PICO 結構
-parse_pico(description="remimazolam 在 ICU 鎮靜比 propofol 好嗎？會減少 delirium 嗎？")
+# Step 1: Parse PICO structure
+parse_pico(description="Is remimazolam better than propofol for ICU sedation? Does it reduce delirium?")
 
-# 返回內容:
+# Returns:
 {
   "pico": {
     "P": "ICU patients requiring sedation",
@@ -381,91 +397,86 @@ parse_pico(description="remimazolam 在 ICU 鎮靜比 propofol 好嗎？會減�
     "C": "propofol", 
     "O": "delirium incidence"
   },
-  "question_type": "therapy",  # 建議的 Clinical Query filter
-  "next_steps": "對每個 PICO 元素呼叫 generate_search_queries()"
+  "question_type": "therapy",  # Suggested Clinical Query filter
+  "next_steps": "Call generate_search_queries() for each PICO element"
 }
 
-# Step 2: 對每個 PICO 元素取得搜尋素材 (並行!)
+# Step 2: Get search materials for each PICO element (in parallel!)
 generate_search_queries(topic="ICU patients")  # P → MeSH: "Intensive Care Units"
 generate_search_queries(topic="remimazolam")   # I → MeSH: "remimazolam [Supplementary Concept]"
 generate_search_queries(topic="propofol")      # C → MeSH: "Propofol"
 generate_search_queries(topic="delirium")      # O → MeSH: "Delirium"
 
-# Step 3: Agent 組合查詢 (使用 Boolean 邏輯)
-# 高精確度: (P) AND (I) AND (C) AND (O)
+# Step 3: Agent combines queries (using Boolean logic)
+# High precision: (P) AND (I) AND (C) AND (O)
 query_precise = '("Intensive Care Units"[MeSH] OR ICU[tiab]) AND ' \
                 '(remimazolam[tiab] OR "CNS 7056"[tiab]) AND ' \
                 '(propofol[tiab] OR Diprivan[tiab]) AND ' \
                 '(delirium[tiab] OR "Emergence Delirium"[MeSH])'
 
-# 高召回率: (P) AND (I OR C) AND (O)
+# High recall: (P) AND (I OR C) AND (O)
 query_recall = '(ICU[tiab]) AND (remimazolam[tiab] OR propofol[tiab]) AND (delirium[tiab])'
 
-# Step 4: 並行搜尋 + 合併
-search_literature(query=query_precise)  # 並行
-search_literature(query=query_recall)   # 並行
+# Step 4: Parallel search + merge
+search_literature(query=query_precise)  # parallel
+search_literature(query=query_recall)   # parallel
 merge_search_results(...)
 ```
 
-### 兩種入口對比
+### Two Entry Points Comparison
 
-| 特性 | 關鍵字導向 | PICO 臨床問題 |
-|------|-----------|---------------|
-| **入口工具** | `generate_search_queries(topic)` | `parse_pico(description)` |
-| **適用場景** | 知道要搜什麼詞 | 有臨床問題需要拆解 |
-| **MeSH 擴展** | 1 次呼叫 | 4 次呼叫 (P/I/C/O 各一次) |
-| **查詢組合** | 使用 suggested_queries | Agent 用 Boolean 組合 |
-| **範例輸入** | "remimazolam ICU sedation" | "remimazolam 在 ICU 比 propofol 好嗎？" |
+| Feature | Keyword-Oriented | PICO Clinical Question |
+|---------|------------------|------------------------|
+| **Entry Tool** | `generate_search_queries(topic)` | `parse_pico(description)` |
+| **Use Case** | Know what keywords to search | Have clinical question to decompose |
+| **MeSH Expansion** | 1 call | 4 calls (one for P/I/C/O each) |
+| **Query Combination** | Use suggested_queries | Agent combines with Boolean |
+| **Example Input** | "remimazolam ICU sedation" | "Is remimazolam better than propofol in ICU?" |
 
-> **設計哲學**: 工具提供素材 (MeSH terms, synonyms)，Agent 做決策 (如何組合查詢)
+> **Design Philosophy**: Tools provide materials (MeSH terms, synonyms), Agent makes decisions (how to combine queries)
 
 ---
 
 ## 🏗️ Architecture (DDD)
 
-本專案採用 **Domain-Driven Design (DDD)** 架構，以文獻研究領域知識為核心建模。
+This project uses **Domain-Driven Design (DDD)** architecture, with literature research domain knowledge as the core model.
 
 ```
 src/pubmed_search/
 ├── mcp/
 │   └── tools/
-│       ├── discovery.py    # 探索型 (search, related, citing, details)
-│       ├── strategy.py     # 策略型 (generate_queries, expand)
-│       ├── pico.py         # PICO 解析
-│       ├── merge.py        # 結果合併
-│       ├── export.py       # 匯出工具
-│       └── citation_tree.py # 引用網絡視覺化 (6 種格式)
-├── entrez/                 # NCBI Entrez API 封裝
-├── exports/                # 匯出格式 (RIS, BibTeX, CSV)
-└── session.py              # Session 管理 (內部機制)
+│       ├── discovery.py    # Discovery (search, related, citing, details)
+│       ├── strategy.py     # Strategy (generate_queries, expand)
+│       ├── pico.py         # PICO parsing
+│       ├── merge.py        # Result merging
+│       ├── export.py       # Export tools
+│       └── citation_tree.py # Citation network visualization (6 formats)
+├── entrez/                 # NCBI Entrez API wrapper
+├── exports/                # Export formats (RIS, BibTeX, CSV)
+└── session.py              # Session management (internal mechanism)
 ```
 
-### 內部機制 (對 Agent 透明)
+### Internal Mechanisms (Transparent to Agent)
 
-| 機制 | 說明 |
-|------|------|
-| **Session** | 自動建立、自動切換 |
-| **Cache** | 搜尋結果自動快取，避免重複 API |
-| **Rate Limit** | 自動遵守 NCBI API 限制 (0.34s/0.1s) |
-| **MeSH Lookup** | `generate_search_queries()` 自動查詢 NCBI MeSH 資料庫 |
-| **ESpell** | 自動拼字校正 (`remifentanyl` → `remifentanil`) |
-| **Query Analysis** | 每個 suggested query 顯示 PubMed 實際解讀方式 |
+| Mechanism | Description |
+|-----------|-------------|
+| **Session** | Auto-create, auto-switch |
+| **Cache** | Auto-cache search results, avoid duplicate API calls |
+| **Rate Limit** | Auto-comply with NCBI API limits (0.34s/0.1s) |
+| **MeSH Lookup** | `generate_search_queries()` auto-queries NCBI MeSH database |
+| **ESpell** | Auto spelling correction (`remifentanyl` → `remifentanil`) |
+| **Query Analysis** | Each suggested query shows how PubMed actually interprets it |
 
-> 📖 **完整架構說明**：[ARCHITECTURE.md](ARCHITECTURE.md)
-> - DDD 分層架構圖
-> - MCP 工具分類詳解
-> - Citation Discovery 工具關係圖
-> - 資料流程圖
-> - 技術決策記錄 (ADR)
+> 📖 **Full architecture documentation**: [ARCHITECTURE.md](ARCHITECTURE.md)
 
-### MeSH 自動擴展 + Query Analysis
+### MeSH Auto-Expansion + Query Analysis
 
-當呼叫 `generate_search_queries("remimazolam sedation")` 時，內部自動：
+When calling `generate_search_queries("remimazolam sedation")`, internally it:
 
-1. **ESpell 校正** - 修正拼字錯誤
-2. **MeSH 查詢** - `Entrez.esearch(db="mesh")` 取得標準詞彙
-3. **同義詞提取** - 從 MeSH Entry Terms 取得同義詞
-4. **🆕 Query Analysis** - 分析 PubMed 如何解讀每個 query
+1. **ESpell Correction** - Fix spelling errors
+2. **MeSH Query** - `Entrez.esearch(db="mesh")` to get standard vocabulary
+3. **Synonym Extraction** - Get synonyms from MeSH Entry Terms
+4. **Query Analysis** - Analyze how PubMed interprets each query
 
 ```json
 {
@@ -496,24 +507,24 @@ src/pubmed_search/
 }
 ```
 
-> **Query Analysis 的價值**: Agent 以為 `remimazolam AND sedation` 只搜這兩個詞，但 PubMed 實際會展開成 Supplementary Concept + 同義詞，結果從 8 篇變成 561 篇。這讓 Agent 理解 **意圖** 與 **實際搜尋** 的差異。
+> **Value of Query Analysis**: Agent thinks `remimazolam AND sedation` only searches these two words, but PubMed actually expands to Supplementary Concept + synonyms, results go from 8 to 561. This helps Agent understand the difference between **intent** and **actual search**.
 
 ---
 
-## 🔒 HTTPS Deployment | HTTPS 部署
+## 🔒 HTTPS Deployment
 
-為生產環境啟用 HTTPS 安全通訊，滿足企業資安需求。
+Enable HTTPS secure communication for production environments.
 
-### Quick Start | 快速開始
+### Quick Start
 
 ```bash
-# Step 1: 生成 SSL 憑證
+# Step 1: Generate SSL certificates
 ./scripts/generate-ssl-certs.sh
 
-# Step 2: 啟動 HTTPS 服務 (Docker)
+# Step 2: Start HTTPS service (Docker)
 ./scripts/start-https-docker.sh up
 
-# 驗證部署
+# Verify deployment
 curl -k https://localhost/
 ```
 
@@ -537,15 +548,15 @@ curl -k https://localhost/
 }
 ```
 
-> 📖 **完整說明**：
-> - 架構設計 → [ARCHITECTURE.md](ARCHITECTURE.md)
-> - 部署指南 → [DEPLOYMENT.md](DEPLOYMENT.md)
+> 📖 **Full documentation**:
+> - Architecture → [ARCHITECTURE.md](ARCHITECTURE.md)
+> - Deployment guide → [DEPLOYMENT.md](DEPLOYMENT.md)
 
 ---
 
-## 🔐 Security | 安全性
+## 🔐 Security
 
-### Security Features | 安全特性
+### Security Features
 
 | Layer | Feature | Description |
 |-------|---------|-------------|
@@ -558,7 +569,7 @@ curl -k https://localhost/
 
 ---
 
-## Installation
+## 📦 Installation
 
 ### Basic Installation (Library Only)
 
@@ -596,7 +607,9 @@ from src.pubmed_search import PubMedClient
 # or add src to your Python path
 ```
 
-## Usage
+---
+
+## 📚 Usage
 
 ### As a Python Library
 
@@ -689,29 +702,9 @@ On other machines, configure `.vscode/mcp.json`:
 }
 ```
 
-See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed deployment instructions including:
-- systemd service setup
-- Docker deployment
-- Nginx reverse proxy
-- Security considerations
+See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed deployment instructions.
 
-## MCP Tools
-
-| Tool | Description |
-|------|-------------|
-| `search_literature` | Search PubMed for medical literature |
-| `find_related_articles` | Find articles related to a given PMID |
-| `find_citing_articles` | Find articles that cite a given PMID (forward) |
-| `get_article_references` | Get this article's bibliography (backward) |
-| `fetch_article_details` | Get full details for specific PMIDs |
-| `build_citation_tree` | Build citation network tree (6 output formats) |
-| `suggest_citation_tree` | Suggest citation tree after fetching article |
-| `generate_search_queries` | Generate multiple queries for parallel search |
-| `merge_search_results` | Merge and deduplicate results |
-| `expand_search_queries` | Expand search with synonyms/related terms |
-| `prepare_export` | Export citations in RIS/BibTeX/CSV/MEDLINE/JSON |
-| `get_article_fulltext_links` | Get PMC/DOI full-text links |
-| `analyze_fulltext_access` | Analyze open access availability |
+---
 
 ## 📤 Export Formats
 
@@ -737,7 +730,9 @@ Export your search results in formats compatible with major reference managers:
 - Nordic characters (ø, æ, å), umlauts (ü, ö, ä), and accents are correctly converted
 - Example: `Søren Hansen` → `S{\o}ren Hansen`
 
-## API Documentation
+---
+
+## 📖 API Documentation
 
 ### PubMedClient
 
@@ -772,11 +767,13 @@ results = searcher.search_advanced(
 )
 ```
 
-## License
+---
 
-see [LICENSE](LICENSE)
+## 📄 License
 
-## Contributing
+Apache License 2.0 - see [LICENSE](LICENSE)
+
+## 🤝 Contributing
 
 1. Fork the repository
 2. Create a feature branch
@@ -784,7 +781,7 @@ see [LICENSE](LICENSE)
 4. Run tests: `pytest`
 5. Submit a pull request
 
-## Links
+## 🔗 Links
 
 - [GitHub Repository](https://github.com/u9401066/pubmed-search-mcp)
 - [PyPI Package](https://pypi.org/project/pubmed-search/)
