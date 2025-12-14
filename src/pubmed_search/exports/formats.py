@@ -13,7 +13,7 @@ import csv
 import io
 import json
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 from datetime import datetime
 
 # For LaTeX special character handling
@@ -355,7 +355,7 @@ def export_bibtex(articles: List[Dict[str, Any]], include_abstract: bool = True)
         if article.get("pmid"):
             entry_lines.append(f"  pmid = {{{article['pmid']}}},")
             entry_lines.append(f"  eprint = {{{article['pmid']}}},")
-            entry_lines.append(f"  eprinttype = {{pubmed}},")
+            entry_lines.append("  eprinttype = {pubmed},")
         
         # PMC
         if article.get("pmc_id"):

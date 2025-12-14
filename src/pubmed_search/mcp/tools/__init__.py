@@ -15,7 +15,7 @@ Usage:
 
 from mcp.server.fastmcp import FastMCP
 from ...entrez import LiteratureSearcher
-from ...entrez.strategy import SearchStrategyGenerator
+from ...entrez.strategy import SearchStrategyGenerator  # noqa: F401 (re-exported)
 
 from ._common import set_session_manager, set_strategy_generator
 from .discovery import register_discovery_tools

@@ -233,7 +233,7 @@ def _to_graphml(nodes: List[Dict], edges: List[Dict], root_title: str) -> str:
         '  <key id="level" for="node" attr.name="level" attr.type="int"/>',
         '  <key id="direction" for="node" attr.name="direction" attr.type="string"/>',
         '  <key id="edge_type" for="edge" attr.name="edge_type" attr.type="string"/>',
-        f'  <graph id="citation_tree" edgedefault="directed">',
+        '  <graph id="citation_tree" edgedefault="directed">',
         f'    <!-- Citation tree for: {_escape_xml(root_title[:80])} -->'
     ]
     

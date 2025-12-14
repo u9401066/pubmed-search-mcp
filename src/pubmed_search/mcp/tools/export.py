@@ -12,20 +12,17 @@ import logging
 import tempfile
 import os
 from datetime import datetime
-from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
 
 from ...entrez import LiteratureSearcher
 from ...exports import (
     export_articles,
-    get_fulltext_links,
     get_fulltext_links_with_lookup,
-    get_batch_fulltext_links,
     summarize_access,
     SUPPORTED_FORMATS,
 )
-from ._common import get_session_manager, format_search_results
+from ._common import get_session_manager
 
 logger = logging.getLogger(__name__)
 
@@ -106,7 +103,7 @@ def register_export_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                     "status": "success",
                     "article_count": len(articles),
                     "format": format_lower,
-                    "message": f"Large export saved to file",
+                    "message": "Large export saved to file",
                     "file_path": file_path,
                     "instructions": "Use 'cat' or open the file to view contents"
                 })

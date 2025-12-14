@@ -122,8 +122,8 @@ def register_strategy_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 # Add usage hint (Agent can ignore)
                 result["_hint"] = {
                     "usage": "Use mesh_terms and all_synonyms to build your own queries, or use suggested_queries as reference",
-                    "example_mesh_query": f'"{{preferred_term}}"[MeSH Terms]',
-                    "example_synonym_query": f'({{synonym}})[Title/Abstract]',
+                    "example_mesh_query": '"{preferred_term}"[MeSH Terms]',
+                    "example_synonym_query": '({synonym})[Title/Abstract]',
                     "note": "Check pubmed_translation to see how PubMed actually interprets each query"
                 }
                 

@@ -336,7 +336,6 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         Returns:
             Articles with citation metrics, sorted and filtered as requested.
         """
-        import json
         
         logger.info(f"Getting citation metrics for: {pmids}")
         
@@ -391,9 +390,12 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             
             if min_citations or min_rcr or min_percentile:
                 filters = []
-                if min_citations: filters.append(f"citations≥{min_citations}")
-                if min_rcr: filters.append(f"RCR≥{min_rcr}")
-                if min_percentile: filters.append(f"percentile≥{min_percentile}")
+                if min_citations:
+                    filters.append(f"citations≥{min_citations}")
+                if min_rcr:
+                    filters.append(f"RCR≥{min_rcr}")
+                if min_percentile:
+                    filters.append(f"percentile≥{min_percentile}")
                 output += f"Filters: {', '.join(filters)}\n"
             
             output += "\n"

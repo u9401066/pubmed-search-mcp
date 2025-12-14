@@ -11,7 +11,7 @@ Provides URLs for:
 """
 
 import logging
-from typing import Dict, Any, Optional, List, TYPE_CHECKING
+from typing import Dict, Any, List, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ..client import LiteratureSearcher

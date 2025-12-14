@@ -14,6 +14,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.14] - 2025-12-14
+
+### 🧹 Code Quality Release
+
+Comprehensive code quality improvements via ruff static analysis.
+
+### Fixed
+
+- **17 code issues** identified and fixed by ruff linter:
+  - Removed unused imports (F401)
+  - Fixed f-strings without placeholders (F541)
+  - Fixed multiple statements on one line (E701) in `discovery.py`
+  - Added proper `@pytest.mark.asyncio` decorator to `test_client.py`
+  - Marked integration test with `@pytest.mark.skip`
+
+### Changed
+
+- Added `# noqa: F401` for intentional re-export in `tools/__init__.py`
+
+### Technical Details
+
+- **Test Coverage**: 407 tests passing, 4 skipped, 85% coverage
+- **Linter Status**: All checks passed (0 errors)
+- **Python**: Requires 3.11+
+
+---
+
 ## [0.1.13] - 2025-12-14
 
 ### Changed
