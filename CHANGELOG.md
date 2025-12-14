@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Planned
+- Research Prompts (Summarize, Literature Review, Clinical Relevance)
+- Research trend analysis (keyword frequency, publication trends)
+- Chart generation (PNG output)
+
+---
+
+## [0.1.12] - 2025-12-14
+
 ### Added
 - **Citation Tree Tools** - Build visual citation networks from any article
   - `build_citation_tree(pmid, depth, direction, output_format)` - Main tree builder
@@ -26,10 +35,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Max 100 nodes safety limit
     - Color-coded nodes: root (red), citing (cyan), reference (green)
 
-### Planned
-- Research Prompts (Summarize, Literature Review, Clinical Relevance)
-- Research trend analysis (keyword frequency, publication trends)
-- Chart generation (PNG output)
+- **Documentation Restructure**
+  - New [ARCHITECTURE.md](ARCHITECTURE.md) - DDD design, data flows, ADRs
+  - Simplified README.md HTTPS section with links to detailed docs
+  - Added Citation Discovery Guide with tool comparison table
+  - Decision tree for choosing the right citation tool
 
 ---
 

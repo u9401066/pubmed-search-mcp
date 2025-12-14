@@ -104,16 +104,16 @@ uvx pubmed-search-mcp
 ## 🛠️ MCP Tools (14 個工具)
 
 ### 探索型 (Discovery)
-| Tool | 說明 |
-|------|------|
-| `search_literature` | 搜尋 PubMed 文獻 |
-| `find_related_articles` | 尋找相關文章 (by PMID) |
-| `find_citing_articles` | 尋找引用文章 (by PMID, forward) |
-| `get_article_references` | 取得參考文獻 (by PMID, backward) |
-| `fetch_article_details` | 取得文章完整資訊 |
-| `get_citation_metrics` | 取得引用指標 (iCite RCR/Percentile) |
-| `build_citation_tree` | 🆕 建構引用網絡樹 (支援 6 種視覺化格式) |
-| `suggest_citation_tree` | 🆕 建議是否建構引用樹 |
+| Tool | 說明 | 方向 |
+|------|------|------|
+| `search_literature` | 搜尋 PubMed 文獻 | - |
+| `find_related_articles` | 尋找主題相似文章 (PubMed 演算法) | 相似性 |
+| `find_citing_articles` | 尋找引用此文的論文 (後續研究) | Forward ➡️ |
+| `get_article_references` | 取得此文的參考文獻 (研究基礎) | Backward ⬅️ |
+| `fetch_article_details` | 取得文章完整資訊 | - |
+| `get_citation_metrics` | 取得引用指標 (iCite RCR/Percentile) | - |
+| `build_citation_tree` | 🆕 建構引用網絡樹 (6 種格式) | Both ↔️ |
+| `suggest_citation_tree` | 🆕 評估是否值得建構引用樹 | - |
 
 ### 批次搜尋 (Parallel Search)
 | Tool | 說明 |
@@ -182,6 +182,93 @@ find_related_articles(pmid="12345678")   # 相關文章 (PubMed 演算法)
 find_citing_articles(pmid="12345678")    # 引用這篇的後續研究 (forward in time)
 get_article_references(pmid="12345678")  # 這篇的參考文獻 (backward in time)
 ```
+
+---
+
+## 🔬 Citation Discovery Guide | 引用探索指南
+
+找到重要論文後，有 **5 種工具** 可以探索相關文獻。選擇正確的工具能大幅提升研究效率：
+
+### 工具對比表
+
+| 工具 | 方向 | 資料來源 | 用途 | API 呼叫量 |
+|------|------|----------|------|------------|
+| `find_related_articles` | 相似性 | PubMed algorithm | 找主題/方法相似的文章 | 1 次 |
+| `find_citing_articles` | Forward ➡️ | PMC citations | 找引用此文的後續研究 | 1 次 |
+| `get_article_references` | Backward ⬅️ | PMC references | 找此文引用的參考文獻 | 1 次 |
+| `build_citation_tree` | Both ↔️ | PMC (BFS 遍歷) | 建構完整引用網絡圖 | 多次 (深度相關) |
+| `suggest_citation_tree` | - | 文章資訊 | 評估是否值得建樹 | 1 次 |
+
+### 使用場景決策樹
+
+```
+找到一篇重要論文 (PMID: 12345678)
+    │
+    ├── 想找「類似主題」的文章？
+    │   └── ✅ find_related_articles(pmid="12345678")
+    │       → PubMed 演算法根據 MeSH、關鍵詞、引用模式找相似文章
+    │
+    ├── 想知道「後續研究怎麼發展」？
+    │   └── ✅ find_citing_articles(pmid="12345678")
+    │       → 找出引用這篇的所有論文 (時間軸: 向後 → 現在)
+    │
+    ├── 想了解「這篇文章的基礎是什麼」？
+    │   └── ✅ get_article_references(pmid="12345678")
+    │       → 取得這篇文章的參考文獻清單 (時間軸: 向前 ← 過去)
+    │
+    └── 想建立「完整的研究脈絡網絡」？
+        │
+        ├── 先評估: suggest_citation_tree(pmid="12345678")
+        │   → 看引用數、被引數，決定是否值得建樹
+        │
+        └── 建構網絡: build_citation_tree(pmid="12345678", depth=2)
+            → 輸出 Mermaid/Cytoscape/GraphML 等格式
+```
+
+### 實際範例
+
+#### 情境 1：快速找相關論文
+```python
+# 找到一篇 remimazolam 的重要 RCT，想看看有沒有類似研究
+find_related_articles(pmid="33475315", limit=10)
+```
+
+#### 情境 2：追蹤研究影響力
+```python
+# 這篇 2020 年的論文影響了哪些後續研究？
+find_citing_articles(pmid="33475315", limit=20)
+```
+
+#### 情境 3：理解研究基礎
+```python
+# 這篇文章引用了哪些關鍵文獻？找出 foundation papers
+get_article_references(pmid="33475315", limit=30)
+```
+
+#### 情境 4：建立研究脈絡圖 (Literature Review)
+```python
+# Step 1: 評估是否值得建樹
+suggest_citation_tree(pmid="33475315")
+
+# Step 2: 建構 2 層引用網絡，輸出 Mermaid 格式 (可在 VS Code 預覽)
+build_citation_tree(
+    pmid="33475315",
+    depth=2,
+    direction="both",
+    output_format="mermaid"
+)
+```
+
+### Citation Tree 輸出格式
+
+| 格式 | 用途 | 工具 |
+|------|------|------|
+| `mermaid` | VS Code Markdown 預覽 | 內建 Mermaid 擴充 |
+| `cytoscape` | 學術標準、生物資訊 | Cytoscape.js |
+| `g6` | 現代網頁視覺化 | AntV G6 |
+| `d3` | 靈活客製化 | D3.js force layout |
+| `vis` | 快速原型 | vis-network |
+| `graphml` | 桌面分析軟體 | Gephi, VOSviewer, yEd |
 
 ---
 
@@ -334,6 +421,8 @@ merge_search_results(...)
 
 ## 🏗️ Architecture (DDD)
 
+本專案採用 **Domain-Driven Design (DDD)** 架構，以文獻研究領域知識為核心建模。
+
 ```
 src/pubmed_search/
 ├── mcp/
@@ -343,7 +432,7 @@ src/pubmed_search/
 │       ├── pico.py         # PICO 解析
 │       ├── merge.py        # 結果合併
 │       ├── export.py       # 匯出工具
-│       └── citation_tree.py # 🆕 引用網絡視覺化 (6 種格式)
+│       └── citation_tree.py # 引用網絡視覺化 (6 種格式)
 ├── entrez/                 # NCBI Entrez API 封裝
 ├── exports/                # 匯出格式 (RIS, BibTeX, CSV)
 └── session.py              # Session 管理 (內部機制)
@@ -358,7 +447,14 @@ src/pubmed_search/
 | **Rate Limit** | 自動遵守 NCBI API 限制 (0.34s/0.1s) |
 | **MeSH Lookup** | `generate_search_queries()` 自動查詢 NCBI MeSH 資料庫 |
 | **ESpell** | 自動拼字校正 (`remifentanyl` → `remifentanil`) |
-| **Query Analysis** | 🆕 每個 suggested query 顯示 PubMed 實際解讀方式 |
+| **Query Analysis** | 每個 suggested query 顯示 PubMed 實際解讀方式 |
+
+> 📖 **完整架構說明**：[ARCHITECTURE.md](ARCHITECTURE.md)
+> - DDD 分層架構圖
+> - MCP 工具分類詳解
+> - Citation Discovery 工具關係圖
+> - 資料流程圖
+> - 技術決策記錄 (ADR)
 
 ### MeSH 自動擴展 + Query Analysis
 
@@ -402,45 +498,9 @@ src/pubmed_search/
 
 ---
 
-## 🔒 HTTPS Deployment | HTTPS 部署 ⭐ NEW
+## 🔒 HTTPS Deployment | HTTPS 部署
 
 為生產環境啟用 HTTPS 安全通訊，滿足企業資安需求。
-
-### Architecture | 架構
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        HTTPS Deployment                             │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                     │
-│   ┌─────────────┐                                                   │
-│   │   Client    │                                                   │
-│   │ (AI Agent)  │                                                   │
-│   └──────┬──────┘                                                   │
-│          │ HTTPS (TLS 1.2/1.3)                                      │
-│          ▼                                                          │
-│   ┌──────────────────────────────────────────────────────────┐      │
-│   │                    Nginx Reverse Proxy                    │      │
-│   │  ┌─────────────────────────────────────────────────────┐ │      │
-│   │  │ • TLS Termination (SSL Certificates)                │ │      │
-│   │  │ • Rate Limiting (30 req/s)                          │ │      │
-│   │  │ • Security Headers (XSS, CSRF protection)           │ │      │
-│   │  │ • SSE Optimization (long-lived connections)         │ │      │
-│   │  └─────────────────────────────────────────────────────┘ │      │
-│   └──────────────────────────┬───────────────────────────────┘      │
-│                              │ HTTP (internal)                      │
-│                              ▼                                      │
-│              ┌──────────────────────────┐                           │
-│              │   PubMed Search MCP      │                           │
-│              │   (Port 8765)            │                           │
-│              └──────────────────────────┘                           │
-│                                                                     │
-└─────────────────────────────────────────────────────────────────────┘
-
-External Endpoints (HTTPS):
-└── https://localhost/        → MCP SSE (via Nginx :443)
-    └── https://localhost/sse → SSE Connection
-```
 
 ### Quick Start | 快速開始
 
@@ -451,21 +511,19 @@ External Endpoints (HTTPS):
 # Step 2: 啟動 HTTPS 服務 (Docker)
 ./scripts/start-https-docker.sh up
 
-# 其他命令
-./scripts/start-https-docker.sh down     # 停止服務
-./scripts/start-https-docker.sh logs     # 查看日誌
+# 驗證部署
+curl -k https://localhost/
 ```
 
-### HTTPS Endpoints | HTTPS 端點
+### HTTPS Endpoints
 
 | Service | URL | Description |
 |---------|-----|-------------|
-| MCP SSE | `https://localhost/` | MCP Server root |
-| MCP SSE | `https://localhost/sse` | SSE connection endpoint |
+| MCP SSE | `https://localhost/sse` | SSE connection (MCP) |
+| Messages | `https://localhost/messages` | MCP POST |
 | Health | `https://localhost/health` | Health check |
-| Exports | `https://localhost/exports` | Export files list |
 
-### Claude Desktop Configuration (HTTPS)
+### Claude Desktop Configuration
 
 ```json
 {
@@ -477,7 +535,9 @@ External Endpoints (HTTPS):
 }
 ```
 
-> 📖 **詳細部署說明請參考 [DEPLOYMENT.md](DEPLOYMENT.md)**
+> 📖 **完整說明**：
+> - 架構設計 → [ARCHITECTURE.md](ARCHITECTURE.md)
+> - 部署指南 → [DEPLOYMENT.md](DEPLOYMENT.md)
 
 ---
 
