@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pubmed-search-mcp"
-version = "0.1.14"
+version = "0.1.15"
 description = "MCP server for PubMed literature search with MeSH, PICO, and intelligent query expansion"
 readme = "README.md"
 license = "Apache-2.0"
@@ -40,18 +40,16 @@ dependencies = [
     "biopython>=1.81",
     "requests>=2.28.0",
     "pylatexenc>=2.10",  # Unicode to LaTeX conversion for BibTeX export
+    "mcp>=1.0.0",  # MCP protocol - required for MCP server functionality
 ]
 
 [project.optional-dependencies]
-mcp = [
-    "mcp>=1.0.0",
-]
 dev = [
     "pytest>=7.0",
     "pytest-asyncio>=0.21",
 ]
 all = [
-    "pubmed-search-mcp[mcp,dev]",
+    "pubmed-search-mcp[dev]",
 ]
 
 [project.scripts]
