@@ -150,8 +150,8 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 total_count = results[0]["_search_metadata"].get("total_count")
                 # Remove metadata from results before caching/formatting
                 del results[0]["_search_metadata"]
-                # If this was a metadata-only result, remove the empty dict
-                if not any(k for k in results[0].keys() if not k.startswith("_")):
+                # If this was a metadata-only result (no actual article data), remove it
+                if len(results[0]) == 0 or (len(results[0]) == 1 and "error" not in results[0]):
                     results = results[1:] if len(results) > 1 else []
             
             # Cache results (only for queries without filters)
@@ -163,8 +163,15 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             
             # Format results with total count info
             returned_count = len(results[:limit])
-            if total_count is not None and total_count > returned_count:
-                result = f"📊 Found **{returned_count}** results (of **{total_count}** total in PubMed)\n\n"
+            
+            # Always show total_count if available, even when returned_count == 0
+            if total_count is not None:
+                if returned_count == 0:
+                    result = f"📊 PubMed 共有 **{total_count}** 篇符合條件，但無法取得詳細資料\n\n"
+                elif total_count > returned_count:
+                    result = f"📊 Found **{returned_count}** results (of **{total_count}** total in PubMed)\n\n"
+                else:
+                    result = f"📊 Found **{returned_count}** results\n\n"
             else:
                 result = f"📊 Found **{returned_count}** results\n\n"
             result += format_search_results(results[:limit])
@@ -173,6 +180,12 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             # Always show for single-word queries or when results suggest broad topic
             if ambiguous:
                 result += _format_ambiguity_hint(ambiguous, query)
+            
+            # Add session persistence hint for large result sets
+            if returned_count >= 5:
+                pmids_list = [r.get('pmid') for r in results[:limit] if r.get('pmid')]
+                result += f"\n---\n💾 **Session 已暫存 {len(pmids_list)} 篇 PMIDs**"
+                result += f"\n🔖 後續可用: `get_session_pmids()` 或 `pmids='last'`"
                 
             return result
         except Exception as e:
