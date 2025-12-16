@@ -2,19 +2,25 @@
 Discovery Tools - Search and explore PubMed literature.
 
 Tools:
-- search_literature: Basic PubMed search
+- search_literature: Basic PubMed search (supports alternate sources internally)
 - find_related_articles: Find related papers (similar articles)
 - find_citing_articles: Find papers that cite this article (forward in time)
 - get_article_references: Get this article's bibliography (backward in time)
 - fetch_article_details: Get full article details
 - get_citation_metrics: Get NIH iCite citation metrics (RCR, percentile)
+
+Internal Features:
+- Multi-source search: PubMed (default), Semantic Scholar, OpenAlex
+- Cross-search fallback when PubMed results are insufficient
 """
 
 import logging
+from typing import Literal
 
 from mcp.server.fastmcp import FastMCP
 
 from ...entrez import LiteratureSearcher
+from ...sources import search_alternate_source, cross_search
 from ._common import format_search_results, _cache_results, _record_search_only, check_cache
 
 logger = logging.getLogger(__name__)
@@ -84,6 +90,9 @@ def _format_ambiguity_hint(ambiguous_terms: list, query: str) -> str:
 def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
     """Register discovery tools for exploring PubMed."""
     
+    # Supported alternate sources
+    ALTERNATE_SOURCES = ("semantic_scholar", "openalex")
+    
     @mcp.tool()
     def search_literature(
         query: str, 
@@ -95,7 +104,11 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         date_type: str = "edat",
         article_type: str = None, 
         strategy: str = "relevance",
-        force_refresh: bool = False
+        force_refresh: bool = False,
+        source: Literal["pubmed", "semantic_scholar", "openalex"] = "pubmed",
+        open_access_only: bool = False,
+        cross_search_fallback: bool = False,
+        cross_search_threshold: int = 3,
     ) -> str:
         """
         Search for medical literature based on a query using PubMed.
@@ -119,11 +132,29 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                      Default is "relevance".
             force_refresh: If True, bypass cache and fetch fresh results from API.
         """
-        logger.info(f"Searching literature: query='{query}', limit={limit}, strategy='{strategy}'")
+        # === Internal parameters (not shown in docstring) ===
+        # source: Search source ("pubmed", "semantic_scholar", "openalex")
+        # open_access_only: Only return open access papers (for alternate sources)
+        # cross_search_fallback: Auto-search alternate sources if PubMed < threshold
+        # cross_search_threshold: Minimum results before triggering cross-search
+        
+        logger.info(f"Searching literature: query='{query}', limit={limit}, source='{source}', strategy='{strategy}'")
         try:
             if not query:
                 return "Error: Query is required."
             
+            # === Handle alternate sources (internal feature) ===
+            if source in ALTERNATE_SOURCES:
+                return _search_alternate_source_internal(
+                    query=query,
+                    source=source,
+                    limit=limit,
+                    min_year=min_year,
+                    max_year=max_year,
+                    open_access_only=open_access_only,
+                )
+            
+            # === PubMed search (default) ===
             # Detect ambiguous terms (journal vs topic)
             ambiguous = _detect_ambiguous_terms(query)
 
@@ -186,11 +217,121 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 pmids_list = [r.get('pmid') for r in results[:limit] if r.get('pmid')]
                 result += f"\n---\n💾 **Session 已暫存 {len(pmids_list)} 篇 PMIDs**"
                 result += f"\n🔖 後續可用: `get_session_pmids()` 或 `pmids='last'`"
+            
+            # === Cross-search fallback (when PubMed results insufficient) ===
+            if cross_search_fallback and returned_count < cross_search_threshold:
+                result += _perform_cross_search_fallback(
+                    query=query,
+                    existing_results=results[:limit],
+                    limit=limit - returned_count,
+                    min_year=min_year,
+                    max_year=max_year,
+                    open_access_only=open_access_only,
+                )
                 
             return result
         except Exception as e:
             logger.error(f"Search failed: {e}")
             return f"Error: {e}"
+    
+    def _search_alternate_source_internal(
+        query: str,
+        source: str,
+        limit: int,
+        min_year: int | None,
+        max_year: int | None,
+        open_access_only: bool,
+    ) -> str:
+        """Internal: Search alternate sources (Semantic Scholar, OpenAlex)."""
+        try:
+            results = search_alternate_source(
+                query=query,
+                source=source,
+                limit=limit,
+                min_year=min_year,
+                max_year=max_year,
+                open_access_only=open_access_only,
+            )
+            
+            source_name = {
+                "semantic_scholar": "Semantic Scholar",
+                "openalex": "OpenAlex",
+            }.get(source, source)
+            
+            if not results:
+                return f"📊 No results found from {source_name} for '{query}'."
+            
+            # Format header
+            returned_count = len(results)
+            oa_note = " (Open Access only)" if open_access_only else ""
+            result = f"📊 Found **{returned_count}** results from **{source_name}**{oa_note}\n\n"
+            
+            # Format results
+            result += format_search_results(results)
+            
+            # Note about source
+            result += f"\n---\n📚 Source: {source_name}"
+            if source == "openalex":
+                result += " | Has citation counts & open access info"
+            elif source == "semantic_scholar":
+                result += " | Has influential citations & TLDR"
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Alternate source search failed: {e}")
+            return f"Error searching {source}: {e}"
+    
+    def _perform_cross_search_fallback(
+        query: str,
+        existing_results: list,
+        limit: int,
+        min_year: int | None,
+        max_year: int | None,
+        open_access_only: bool,
+    ) -> str:
+        """Internal: Perform cross-search when PubMed results insufficient."""
+        if limit <= 0:
+            return ""
+        
+        try:
+            cross_results = cross_search(
+                query=query,
+                sources=["openalex"],  # OpenAlex is more reliable for fallback
+                limit_per_source=limit,
+                min_year=min_year,
+                max_year=max_year,
+                open_access_only=open_access_only,
+                deduplicate=True,
+            )
+            
+            if not cross_results.get("results"):
+                return ""
+            
+            # Filter out papers already in PubMed results (by PMID or title)
+            existing_pmids = {r.get("pmid") for r in existing_results if r.get("pmid")}
+            existing_titles = {r.get("title", "").lower()[:50] for r in existing_results}
+            
+            new_results = []
+            for paper in cross_results["results"]:
+                if paper.get("pmid") in existing_pmids:
+                    continue
+                if paper.get("title", "").lower()[:50] in existing_titles:
+                    continue
+                new_results.append(paper)
+            
+            if not new_results:
+                return ""
+            
+            # Format supplemental results
+            output = f"\n\n---\n🔄 **Cross-search results from OpenAlex** ({len(new_results)} additional)\n\n"
+            output += format_search_results(new_results[:limit])
+            
+            return output
+            
+        except Exception as e:
+            logger.warning(f"Cross-search fallback failed: {e}")
+            return ""
 
     @mcp.tool()
     def find_related_articles(pmid: str, limit: int = 5) -> str:

@@ -14,6 +14,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.16] - 2025-12-15
+
+### 🔍 Multi-Source Academic Search (Internal)
+
+Added internal support for Semantic Scholar and OpenAlex as alternate search sources.
+External API unchanged - this is an internal enhancement ("掛羊頭賣狗肉").
+
+### Added
+
+- **Multi-Source Search Module** (`sources/`)
+  - `SemanticScholarClient` - Semantic Scholar Graph API v1 client (318 lines)
+  - `OpenAlexClient` - OpenAlex API client (340 lines)
+  - Cross-search orchestration with deduplication (319 lines)
+  - All using `urllib` (no extra dependencies)
+
+- **Internal Parameters in `search_literature`** (not exposed in MCP API docs)
+  - `source`: Switch between "pubmed", "semantic_scholar", "openalex"
+  - `open_access_only`: Filter for open access papers
+  - `cross_search_fallback`: Auto-search OpenAlex when PubMed < threshold
+  - `cross_search_threshold`: Minimum results before fallback (default: 3)
+
+- **API Documentation**
+  - `docs/OPENALEX_API.md` - OpenAlex API reference (265 lines)
+  - `docs/SEMANTIC_SCHOLAR_API.md` - Semantic Scholar API reference (272 lines)
+
+### Technical Details
+
+- **Architecture**: Internal sources module, MCP tool API unchanged
+- **Dependencies**: Zero new dependencies (urllib only)
+- **Rate Limiting**: Built-in rate limiters for both APIs
+- **Normalization**: Both sources output PubMed-compatible format
+
+---
+
 ## [0.1.14] - 2025-12-14
 
 ### 🧹 Code Quality Release

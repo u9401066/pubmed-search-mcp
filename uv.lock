@@ -534,17 +534,17 @@ wheels = [
 
 [[package]]
 name = "pubmed-search-mcp"
-version = "0.1.13"
+version = "0.1.16"
 source = { editable = "." }
 dependencies = [
     { name = "biopython" },
+    { name = "mcp" },
     { name = "pylatexenc" },
     { name = "requests" },
 ]
 
 [package.optional-dependencies]
 all = [
-    { name = "mcp" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
 ]
@@ -552,21 +552,18 @@ dev = [
     { name = "pytest" },
     { name = "pytest-asyncio" },
 ]
-mcp = [
-    { name = "mcp" },
-]
 
 [package.metadata]
 requires-dist = [
     { name = "biopython", specifier = ">=1.81" },
-    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.0.0" },
-    { name = "pubmed-search-mcp", extras = ["mcp", "dev"], marker = "extra == 'all'" },
+    { name = "mcp", specifier = ">=1.0.0" },
+    { name = "pubmed-search-mcp", extras = ["dev"], marker = "extra == 'all'" },
     { name = "pylatexenc", specifier = ">=2.10" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.21" },
     { name = "requests", specifier = ">=2.28.0" },
 ]
-provides-extras = ["mcp", "dev", "all"]
+provides-extras = ["dev", "all"]
 
 [[package]]
 name = "pycparser"
