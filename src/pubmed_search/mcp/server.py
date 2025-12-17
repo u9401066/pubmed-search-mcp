@@ -235,6 +235,110 @@ def create_server(
     return mcp
 
 
+def start_http_api_background(session_manager, searcher, port: int = 8765):
+    """
+    Start HTTP API server in background thread for MCP-to-MCP communication.
+    
+    This allows other MCP servers (like mdpaper) to access cached articles
+    directly via HTTP, even when running in stdio mode.
+    """
+    import threading
+    from http.server import HTTPServer, BaseHTTPRequestHandler
+    import json
+    
+    class MCPAPIHandler(BaseHTTPRequestHandler):
+        """Simple HTTP handler for MCP-to-MCP API."""
+        
+        def log_message(self, format, *args):
+            # Suppress HTTP access logs to avoid polluting stdio
+            pass
+        
+        def _send_json(self, data: dict, status: int = 200):
+            self.send_response(status)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(json.dumps(data).encode())
+        
+        def do_GET(self):
+            path = self.path
+            
+            # Health check
+            if path == '/health':
+                self._send_json({"status": "ok", "service": "pubmed-search-mcp-api"})
+                return
+            
+            # Get single cached article
+            if path.startswith('/api/cached_article/'):
+                pmid = path.split('/')[-1].split('?')[0]
+                session = session_manager.get_current_session()
+                
+                if session and pmid in session.article_cache:
+                    self._send_json({
+                        "source": "pubmed",
+                        "verified": True,
+                        "data": session.article_cache[pmid]
+                    })
+                    return
+                
+                # Try to fetch if not in cache
+                if searcher:
+                    try:
+                        articles = searcher.fetch_details([pmid])
+                        if articles:
+                            session_manager.add_to_cache(articles)
+                            self._send_json({
+                                "source": "pubmed",
+                                "verified": True,
+                                "data": articles[0]
+                            })
+                            return
+                    except Exception as e:
+                        self._send_json({"detail": f"PubMed API error: {str(e)}"}, 502)
+                        return
+                
+                self._send_json({"detail": f"Article PMID:{pmid} not found"}, 404)
+                return
+            
+            # Get session summary
+            if path == '/api/session/summary':
+                self._send_json(session_manager.get_session_summary())
+                return
+            
+            # Root - API info
+            if path == '/' or path == '':
+                self._send_json({
+                    "service": "pubmed-search-mcp HTTP API",
+                    "mode": "background (stdio MCP + HTTP API)",
+                    "endpoints": {
+                        "/health": "Health check",
+                        "/api/cached_article/{pmid}": "Get cached article",
+                        "/api/session/summary": "Session info"
+                    }
+                })
+                return
+            
+            self._send_json({"error": "Not found"}, 404)
+    
+    def run_server():
+        try:
+            httpd = HTTPServer(('127.0.0.1', port), MCPAPIHandler)
+            logger.info(f"[HTTP API] Started on http://127.0.0.1:{port}")
+            httpd.serve_forever()
+        except OSError as e:
+            if e.errno == 10048:  # Port already in use (Windows)
+                logger.warning(f"[HTTP API] Port {port} already in use, skipping")
+            else:
+                logger.error(f"[HTTP API] Failed to start: {e}")
+        except Exception as e:
+            logger.error(f"[HTTP API] Failed to start: {e}")
+    
+    # Start in daemon thread (won't block main process)
+    thread = threading.Thread(target=run_server, daemon=True)
+    thread.start()
+    return thread
+
+
 def main():
     """Run the MCP server."""
     import os
@@ -257,8 +361,21 @@ def main():
     else:
         api_key = os.environ.get("NCBI_API_KEY")
     
-    # Create and run server
+    # Get HTTP API port from environment (default: 8765)
+    http_api_port = int(os.environ.get("PUBMED_HTTP_API_PORT", "8765"))
+    
+    # Create server
     server = create_server(email=email, api_key=api_key)
+    
+    # Start background HTTP API for MCP-to-MCP communication
+    # This runs alongside the stdio MCP server
+    start_http_api_background(
+        server._session_manager, 
+        server._searcher,
+        port=http_api_port
+    )
+    
+    # Run stdio MCP server (blocks)
     server.run()
 
 

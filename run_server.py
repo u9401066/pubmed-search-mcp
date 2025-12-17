@@ -115,6 +115,10 @@ def main():
     else:
         mcp_app = server.streamable_http_app()
     
+    # Get session manager for HTTP API endpoints
+    session_manager = server._mcp._session_manager
+    searcher = server._mcp._searcher
+    
     # Add health check and info endpoints
     async def health(request):
         return JSONResponse({"status": "ok", "service": "pubmed-search-mcp"})
@@ -125,11 +129,24 @@ def main():
             "version": "0.1.2",
             "transport": args.transport,
             "endpoints": {
-                "sse": "/sse",
-                "messages": "/messages",
-                "health": "/health",
-                "downloads": "/download/{filename}",
-                "list_exports": "/exports"
+                "mcp": {
+                    "sse": "/sse",
+                    "messages": "/messages"
+                },
+                "api": {
+                    "cached_article": "/api/cached_article/{pmid}",
+                    "cached_articles": "/api/cached_articles?pmids=...",
+                    "session_summary": "/api/session/summary"
+                },
+                "utility": {
+                    "health": "/health",
+                    "downloads": "/download/{filename}",
+                    "list_exports": "/exports"
+                }
+            },
+            "mcp_to_mcp": {
+                "description": "Other MCP servers can call /api/* endpoints directly",
+                "example": f"GET http://localhost:{args.port}/api/cached_article/12345678"
             },
             "usage": {
                 "vscode_mcp_json": {
@@ -188,6 +205,98 @@ def main():
             filename=filename
         )
     
+    # ===== MCP-to-MCP HTTP API Endpoints =====
+    # These endpoints allow other MCP servers (like mdpaper) to access
+    # cached article data directly without going through the Agent.
+    
+    async def api_get_cached_article(request):
+        """
+        Get cached article by PMID.
+        
+        MCP-to-MCP endpoint: Other MCP servers call this directly.
+        """
+        pmid = request.path_params["pmid"]
+        fetch_if_missing = request.query_params.get("fetch_if_missing", "true").lower() == "true"
+        
+        # Try cache first
+        session = session_manager.get_current_session()
+        if session and pmid in session.article_cache:
+            logger.info(f"[API] Cache hit for PMID {pmid}")
+            return JSONResponse({
+                "source": "pubmed",
+                "verified": True,
+                "data": session.article_cache[pmid]
+            })
+        
+        # Fetch if requested
+        if fetch_if_missing and searcher:
+            logger.info(f"[API] Cache miss for PMID {pmid}, fetching from PubMed")
+            try:
+                articles = searcher.fetch_details([pmid])
+                if articles:
+                    session_manager.add_to_cache(articles)
+                    return JSONResponse({
+                        "source": "pubmed",
+                        "verified": True,
+                        "data": articles[0]
+                    })
+            except Exception as e:
+                logger.error(f"[API] Failed to fetch PMID {pmid}: {e}")
+                return JSONResponse(
+                    {"detail": f"PubMed API error: {str(e)}"}, 
+                    status_code=502
+                )
+        
+        return JSONResponse(
+            {"detail": f"Article PMID:{pmid} not found in cache"},
+            status_code=404
+        )
+    
+    async def api_get_multiple_articles(request):
+        """Get multiple cached articles by PMIDs."""
+        pmids_param = request.query_params.get("pmids", "")
+        fetch_if_missing = request.query_params.get("fetch_if_missing", "false").lower() == "true"
+        
+        pmid_list = [p.strip() for p in pmids_param.split(",") if p.strip()]
+        
+        if not pmid_list:
+            return JSONResponse({"error": "No PMIDs provided"}, status_code=400)
+        
+        found = {}
+        missing = []
+        
+        session = session_manager.get_current_session()
+        
+        for pmid in pmid_list:
+            if session and pmid in session.article_cache:
+                found[pmid] = session.article_cache[pmid]
+            else:
+                missing.append(pmid)
+        
+        if fetch_if_missing and missing and searcher:
+            try:
+                articles = searcher.fetch_details(missing)
+                for article in articles:
+                    pmid = article.get('pmid', '')
+                    if pmid:
+                        found[pmid] = article
+                        if pmid in missing:
+                            missing.remove(pmid)
+                session_manager.add_to_cache(articles)
+            except Exception as e:
+                logger.warning(f"[API] Failed to fetch some articles: {e}")
+        
+        return JSONResponse({
+            "found": found,
+            "missing": missing,
+            "total_requested": len(pmid_list),
+            "total_found": len(found)
+        })
+    
+    async def api_session_summary(request):
+        """Get current session summary for MCP-to-MCP."""
+        return JSONResponse(session_manager.get_session_summary())
+    
     # Add middleware to handle host header issues
     from starlette.middleware import Middleware
     from starlette.middleware.trustedhost import TrustedHostMiddleware
@@ -198,6 +307,10 @@ def main():
         Route("/health", health),
         Route("/exports", list_exports),
         Route("/download/{filename}", download_file),
+        # MCP-to-MCP HTTP API endpoints
+        Route("/api/cached_article/{pmid}", api_get_cached_article),
+        Route("/api/cached_articles", api_get_multiple_articles),
+        Route("/api/session/summary", api_session_summary),
         Mount("/", app=mcp_app),
     ]
     
@@ -206,6 +319,10 @@ def main():
     
     logger.info(f"Download endpoint: http://{args.host}:{args.port}/download/{{filename}}")
     logger.info(f"List exports: http://{args.host}:{args.port}/exports")
+    logger.info(f"[MCP-to-MCP API]")
+    logger.info(f"  GET /api/cached_article/{{pmid}} - Get single article")
+    logger.info(f"  GET /api/cached_articles?pmids=... - Get multiple articles")
+    logger.info(f"  GET /api/session/summary - Get session info")
     
     # Run with settings to accept any host
     uvicorn.run(
