@@ -52,6 +52,84 @@
 
 ## 待實作功能
 
+### 🔥 Phase 5.5: 搜尋紀錄驗證機制 (優先！) ⭐⭐⭐⭐⭐
+> **需求**: Agent 可能幻覺搜尋結果，需要提供可驗證的審計軌跡
+
+#### 問題背景
+
+```
+❌ 問題場景：
+   Agent: "我搜尋了 PubMed，結果是 0 篇"
+   User: "你真的有搜嗎？證據呢？"
+   Agent: "..." (無法證明)
+
+✅ 解決方案：
+   Agent: "搜尋完成，Session ID: c2ff294e，可用 verify_search 驗證"
+   User: verify_search(session_id="c2ff294e", search_index=3)
+   MCP: "✅ 確認：2025-12-17 21:39:20 執行查詢 'xxx'，返回 20 筆結果"
+```
+
+#### 設計原則
+
+| 原則 | 說明 |
+|------|------|
+| **有狀態** | Session 必須持久化，不能是無狀態 API |
+| **不可篡改** | 搜尋紀錄一旦寫入就不能被 Agent 修改 |
+| **可驗證** | 提供工具讓人類或其他系統驗證搜尋確實發生 |
+| **跨 MCP** | mdpaper MCP 可以向 pubmed-search MCP 驗證搜尋 |
+
+#### 新增工具
+
+| Tool | 說明 | 狀態 |
+|------|------|:----:|
+| `verify_search` | 驗證特定搜尋是否真實執行 | ⏳ |
+| `get_search_audit_log` | 取得完整審計日誌（含時間戳、查詢、結果） | ⏳ |
+| `export_session_proof` | 匯出 session 證明檔（JSON + 校驗碼） | ⏳ |
+
+#### HTTP API 端點（供 mdpaper 驗證用）
+
+| Endpoint | 說明 |
+|----------|------|
+| `GET /api/session/{session_id}/verify` | 驗證 session 存在 |
+| `GET /api/session/{session_id}/searches` | 取得該 session 所有搜尋紀錄 |
+| `GET /api/session/{session_id}/search/{index}` | 取得特定搜尋的詳細資料 |
+
+#### 審計日誌格式
+
+```json
+{
+  "session_id": "c2ff294e705e",
+  "search_index": 7,
+  "timestamp": "2025-12-17T21:21:24.123456",
+  "query": "(video laryngoscopy OR direct laryngoscopy) AND lip injury",
+  "result_count": 20,
+  "pmids": ["40981509", "40642178", ...],
+  "api_response_hash": "sha256:abc123...",  // NCBI 回應的 hash，防篡改
+  "verified": true
+}
+```
+
+#### 與 mdpaper 整合
+
+```
+mdpaper save_reference_mcp(pmid="12345678")
+  ↓
+mdpaper → pubmed-search HTTP API: GET /api/session/verify?pmid=12345678
+  ↓
+pubmed-search: ✅ PMID 12345678 在 session c2ff294e 的搜尋 #7 中找到
+  ↓
+mdpaper: 儲存文獻，標記為「已驗證來源」
+```
+
+#### 實作優先順序
+
+1. **Step 1**: 增強 `search_history` 紀錄（加入 pmids、timestamp、response_hash）
+2. **Step 2**: 新增 `verify_search` MCP 工具
+3. **Step 3**: 新增 HTTP API 驗證端點
+4. **Step 4**: 新增 `export_session_proof` 工具
+
+---
+
 ### Phase 6: Research Prompts ⭐⭐⭐
 > **參考**: arxiv-mcp-server (1.9k⭐ 的關鍵功能)
 
