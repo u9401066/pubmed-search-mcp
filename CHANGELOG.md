@@ -14,6 +14,81 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.18] - 2025-12-15
+
+### 📚 CORE API & NCBI Extended Databases Integration
+
+Added two major data source integrations:
+1. **CORE** - 200M+ open access research papers from institutional repositories
+2. **NCBI Extended** - Gene, PubChem, and ClinVar databases
+
+### Added
+
+- **CORE API Client** (`sources/core.py` - 400+ lines)
+  - `search()` - Search 200M+ metadata records with field-specific queries
+  - `search_fulltext()` - Search within 42M+ full text papers
+  - `get_work()` - Get work details by CORE ID
+  - `get_fulltext()` - Retrieve full text content
+  - `search_by_doi()` / `search_by_pmid()` - Find papers by identifier
+  - Supports optional API key for higher rate limits (5000/day)
+
+- **NCBI Extended Client** (`sources/ncbi_extended.py` - 400+ lines)
+  - **Gene Database**:
+    - `search_gene()` - Search by gene name/symbol
+    - `get_gene()` - Get gene details by ID
+    - `get_gene_pubmed_links()` - Get linked PubMed articles
+  - **PubChem Database**:
+    - `search_compound()` - Search chemical compounds
+    - `get_compound()` - Get compound details (formula, SMILES, etc.)
+    - `get_compound_pubmed_links()` - Get linked PubMed articles
+  - **ClinVar Database**:
+    - `search_clinvar()` - Search clinical variants
+    - Returns pathogenicity, conditions, gene associations
+
+- **MCP Tools for CORE** (`mcp/tools/core.py`)
+  - `search_core` - Search 200M+ open access papers
+  - `search_core_fulltext` - Search within paper content
+  - `get_core_paper` - Get paper details
+  - `get_core_fulltext` - 📄 Get full text content
+  - `find_in_core` - Find papers by DOI/PMID
+
+- **MCP Tools for NCBI Extended** (`mcp/tools/ncbi_extended.py`)
+  - `search_gene` - 🧬 Search Gene database
+  - `get_gene_details` - Get gene information
+  - `get_gene_literature` - Get gene-linked PubMed articles
+  - `search_compound` - 💊 Search PubChem
+  - `get_compound_details` - Get compound information
+  - `get_compound_literature` - Get compound-linked articles
+  - `search_clinvar` - 🔬 Search clinical variants
+
+- **Sources Module Integration**
+  - `SearchSource.CORE` enum value
+  - `get_core_client()` factory function
+  - `get_ncbi_extended_client()` factory function
+  - `cross_search()` now includes CORE by default
+
+- **Tests** (`tests/test_core_ncbi_extended.py` - 17 tests)
+  - Unit tests for CORE client
+  - Unit tests for NCBI Extended client
+  - MCP tools registration tests
+  - Sources integration tests
+
+### Technical Details
+
+- **CORE API**: 
+  - Base URL: `https://api.core.ac.uk/v3`
+  - Rate limits: 100/day (no key), 1000/day (free key), 5000/day (academic)
+  - Environment variable: `CORE_API_KEY`
+
+- **NCBI E-utilities**:
+  - Uses existing Entrez infrastructure
+  - Environment variables: `NCBI_EMAIL`, `NCBI_API_KEY`
+  - Rate limits: 3/sec (no key), 10/sec (with key)
+
+- **Dependencies**: Zero new dependencies (urllib only)
+
+---
+
 ## [0.1.17] - 2025-12-15
 
 ### 🇪🇺 Europe PMC Integration

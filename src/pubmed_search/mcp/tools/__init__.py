@@ -7,6 +7,9 @@ Tools organized by domain:
 - pico: PICO clinical question parsing
 - merge: Search results merging
 - export: Citation export and fulltext access
+- europe_pmc: Europe PMC fulltext access
+- core: CORE open access repository search
+- ncbi_extended: Gene, PubChem, ClinVar databases
 
 Usage:
     from .tools import register_all_tools
@@ -25,6 +28,8 @@ from .merge import register_merge_tools
 from .export import register_export_tools
 from .citation_tree import register_citation_tree_tools
 from .europe_pmc import register_europe_pmc_tools
+from .core import register_core_tools
+from .ncbi_extended import register_ncbi_extended_tools
 
 
 def register_all_tools(mcp: FastMCP, searcher: LiteratureSearcher):
@@ -36,6 +41,8 @@ def register_all_tools(mcp: FastMCP, searcher: LiteratureSearcher):
     register_export_tools(mcp, searcher)
     register_citation_tree_tools(mcp, searcher)
     register_europe_pmc_tools(mcp)
+    register_core_tools(mcp)
+    register_ncbi_extended_tools(mcp)
 
 
 __all__ = [

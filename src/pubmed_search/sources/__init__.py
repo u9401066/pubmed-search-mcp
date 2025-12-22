@@ -2,7 +2,8 @@
 Multi-Source Academic Search
 
 Internal module for searching across multiple academic databases.
-Aggregates results from PubMed, Semantic Scholar, OpenAlex, and Europe PMC.
+Aggregates results from PubMed, Semantic Scholar, OpenAlex, Europe PMC, CORE,
+and extended NCBI databases (Gene, PubChem, ClinVar).
 
 This module is NOT exposed as separate MCP tools - it's used internally
 by existing tools via the `source` parameter.
@@ -15,10 +16,13 @@ Architecture:
                                 │
     ┌───────────────────────────▼─────────────────────────────┐
     │              MultiSourceSearcher                         │
-    │     ┌──────────┬──────────┬──────────┬─────────────┐    │
-    │     │  PubMed  │ Sem.S2   │ OpenAlex │ Europe PMC  │    │
-    │     │ (default)│  (alt)   │  (alt)   │ (fulltext!) │    │
-    │     └──────────┴──────────┴──────────┴─────────────┘    │
+    │  ┌──────────┬──────────┬──────────┬──────────┬───────┐  │
+    │  │  PubMed  │ Sem.S2   │ OpenAlex │ EuropePMC│  CORE │  │
+    │  │ (default)│  (alt)   │  (alt)   │(fulltext)│(200M+)│  │
+    │  └──────────┴──────────┴──────────┴──────────┴───────┘  │
+    │  ┌─────────────────────────────────────────────────────┐│
+    │  │        NCBI Extended: Gene | PubChem | ClinVar     ││
+    │  └─────────────────────────────────────────────────────┘│
     └─────────────────────────────────────────────────────────┘
 """
 
@@ -33,6 +37,8 @@ logger = logging.getLogger(__name__)
 _semantic_scholar_client = None
 _openalex_client = None
 _europe_pmc_client = None
+_core_client = None
+_ncbi_extended_client = None
 
 
 class SearchSource(Enum):
@@ -41,6 +47,7 @@ class SearchSource(Enum):
     SEMANTIC_SCHOLAR = "semantic_scholar"
     OPENALEX = "openalex"
     EUROPE_PMC = "europe_pmc"
+    CORE = "core"
     ALL = "all"
 
 
@@ -71,9 +78,32 @@ def get_europe_pmc_client(email: str | None = None):
     return _europe_pmc_client
 
 
+def get_core_client(api_key: str | None = None):
+    """Get or create CORE client (lazy initialization)."""
+    global _core_client
+    if _core_client is None:
+        from .core import COREClient
+        import os
+        _core_client = COREClient(api_key=api_key or os.environ.get("CORE_API_KEY"))
+    return _core_client
+
+
+def get_ncbi_extended_client(email: str | None = None, api_key: str | None = None):
+    """Get or create NCBI Extended client (lazy initialization)."""
+    global _ncbi_extended_client
+    if _ncbi_extended_client is None:
+        from .ncbi_extended import NCBIExtendedClient
+        import os
+        _ncbi_extended_client = NCBIExtendedClient(
+            email=email or os.environ.get("NCBI_EMAIL"),
+            api_key=api_key or os.environ.get("NCBI_API_KEY"),
+        )
+    return _ncbi_extended_client
+
+
 def search_alternate_source(
     query: str,
-    source: Literal["semantic_scholar", "openalex", "europe_pmc"],
+    source: Literal["semantic_scholar", "openalex", "europe_pmc", "core"],
     limit: int = 10,
     min_year: int | None = None,
     max_year: int | None = None,
@@ -88,16 +118,16 @@ def search_alternate_source(
     1. User explicitly requests a different source
     2. PubMed returns few results and cross-search is enabled
     3. User wants open access papers (OpenAlex/DOAJ filter)
-    4. User needs full text access (Europe PMC)
+    4. User needs full text access (Europe PMC, CORE)
     
     Args:
         query: Search query
-        source: Target source (semantic_scholar, openalex, or europe_pmc)
+        source: Target source (semantic_scholar, openalex, europe_pmc, or core)
         limit: Maximum results
         min_year: Minimum publication year
         max_year: Maximum publication year  
         open_access_only: Only return open access papers
-        has_fulltext: Only return papers with full text (Europe PMC)
+        has_fulltext: Only return papers with full text (Europe PMC, CORE)
         email: Email for APIs
         
     Returns:
@@ -136,6 +166,17 @@ def search_alternate_source(
             )
             return result.get("results", [])
         
+        elif source == "core":
+            client = get_core_client()
+            result = client.search(
+                query=query,
+                limit=limit,
+                year_from=min_year,
+                year_to=max_year,
+                has_fulltext=has_fulltext,
+            )
+            return result.get("results", [])
+        
         else:
             logger.warning(f"Unknown source: {source}")
             return []
@@ -164,12 +205,12 @@ def cross_search(
     
     Args:
         query: Search query
-        sources: List of sources (default: ["semantic_scholar", "openalex", "europe_pmc"])
+        sources: List of sources (default: ["semantic_scholar", "openalex", "europe_pmc", "core"])
         limit_per_source: Max results per source
         min_year: Minimum publication year
         max_year: Maximum publication year
         open_access_only: Only return open access papers
-        has_fulltext: Only return papers with full text (Europe PMC)
+        has_fulltext: Only return papers with full text (Europe PMC, CORE)
         email: Email for APIs
         deduplicate: Remove duplicate papers (by DOI/PMID)
         
@@ -180,7 +221,7 @@ def cross_search(
         - stats: Search statistics
     """
     if sources is None:
-        sources = ["semantic_scholar", "openalex", "europe_pmc"]
+        sources = ["semantic_scholar", "openalex", "europe_pmc", "core"]
     
     all_results = []
     by_source = {}
@@ -199,7 +240,7 @@ def cross_search(
                 min_year=min_year,
                 max_year=max_year,
                 open_access_only=open_access_only,
-                has_fulltext=has_fulltext if source == "europe_pmc" else False,
+                has_fulltext=has_fulltext if source in ("europe_pmc", "core") else False,
                 email=email,
             )
             
@@ -381,6 +422,8 @@ __all__ = [
     "get_semantic_scholar_client",
     "get_openalex_client",
     "get_europe_pmc_client",
+    "get_core_client",
+    "get_ncbi_extended_client",
     "get_fulltext_xml",
     "get_fulltext_parsed",
 ]
