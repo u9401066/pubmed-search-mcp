@@ -345,6 +345,11 @@ def create_server(
     register_session_tools(mcp, session_manager)
     register_session_resources(mcp, session_manager)
     
+    # Register prompts (research workflow templates)
+    logger.info("Registering research prompts...")
+    from .prompts import register_prompts
+    register_prompts(mcp)
+    
     # Store references for later use
     mcp._session_manager = session_manager
     mcp._searcher = searcher
