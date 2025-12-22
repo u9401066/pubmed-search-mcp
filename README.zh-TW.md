@@ -10,6 +10,11 @@
 
 基於 Domain-Driven Design (DDD) 架構的 MCP 伺服器，作為 AI Agent 的智慧研究助理，提供任務導向的文獻搜尋與分析能力。
 
+**✨ 包含內容：**
+- 🔧 **35+ 個 MCP 工具** - 完整的 PubMed、Europe PMC、CORE 和 NCBI 資料庫存取
+- 📚 **9 個 Claude Skills** - AI Agent 可直接使用的工作流程指南
+- 📖 **Copilot 整合指南** - VS Code GitHub Copilot 使用說明
+
 **🌐 語言**: [English](README.md) | **繁體中文**
 
 ---
@@ -93,6 +98,69 @@ uvx pubmed-search-mcp
 - ✅ PICO 結構化查詢 ← 醫學專業
 - ✅ ESpell 拼字校正 ← 自動糾錯
 - ✅ 批次並行搜尋 ← 高效率
+
+---
+
+## 🤖 Claude Skills（AI Agent 工作流程）
+
+本專案在 `.claude/skills/` 目錄中包含 **9 個 Claude Skill 檔案**，教導 AI Agent 如何有效使用 MCP 工具。這些 Skill 提供：
+
+- **逐步工作流程** 含決策樹
+- **程式碼範例** 可直接使用
+- **最佳實踐** 針對各種研究情境
+
+### 可用的 Skills
+
+| Skill | 說明 | 觸發詞範例 |
+|-------|------|------------|
+| `pubmed-quick-search` | 基本 PubMed 搜尋 | 「搜尋」、「找論文」 |
+| `pubmed-systematic-search` | MeSH 擴展、系統性搜尋 | 「系統性回顧」、「完整搜尋」 |
+| `pubmed-pico-search` | PICO 臨床問題分解 | 「A比B好嗎」、「PICO」 |
+| `pubmed-paper-exploration` | 引用樹、相關文章 | 「引用文章」、「相關研究」 |
+| `pubmed-gene-drug-research` | Gene、PubChem、ClinVar 整合 | 「基因功能」、「藥物化合物」 |
+| `pubmed-fulltext-access` | Europe PMC、CORE 全文取得 | 「全文」、「PDF」、「開放取用」 |
+| `pubmed-export-citations` | RIS、BibTeX、CSV 匯出 | 「匯出」、「EndNote」、「Zotero」 |
+| `pubmed-multi-source-search` | 跨資料庫搜尋策略 | 「所有來源」、「跨資料庫」 |
+| `pubmed-mcp-tools-reference` | 35+ 工具完整參考 | 「所有工具」、「有哪些功能」 |
+
+### 使用 Skills
+
+**Claude Desktop / Claude Code 用戶：**
+```
+# Skills 會自動從 .claude/skills/ 載入
+# 直接用自然語言詢問：
+"幫我系統性搜尋 remimazolam 的文獻"
+"這篇論文有誰引用？"
+```
+
+**VS Code GitHub Copilot 用戶：**
+```
+# .github/copilot-instructions.md 提供指導
+# Copilot 會自動套用 skill 模式
+```
+
+### Skill 檔案結構
+
+每個 Skill 檔案的結構：
+
+```yaml
+---
+name: pubmed-quick-search
+description: Quick PubMed search. Triggers: search, 搜尋...
+---
+# 快速 PubMed 搜尋
+
+## 描述
+...
+
+## 工作流程
+...
+
+## 程式碼範例
+...
+```
+
+> 📁 **Skill 檔案位置**: `.claude/skills/pubmed-*/SKILL.md`
 
 ---
 
@@ -478,7 +546,35 @@ citing = client.find_citing("12345678")
 
 ---
 
-## 🔗 相關連結
+## � 專案結構
+
+```
+pubmed-search-mcp/
+├── src/pubmed_search/          # 核心函式庫
+│   ├── mcp/                    # MCP 伺服器和工具
+│   │   ├── tools/              # 35+ 個 MCP 工具
+│   │   └── prompts.py          # MCP prompt 範本
+│   ├── sources/                # 多來源客戶端
+│   └── exports/                # 匯出格式
+├── .claude/skills/             # 🆕 Claude Skill 檔案
+│   ├── pubmed-quick-search/
+│   ├── pubmed-systematic-search/
+│   ├── pubmed-pico-search/
+│   ├── pubmed-paper-exploration/
+│   ├── pubmed-gene-drug-research/
+│   ├── pubmed-fulltext-access/
+│   ├── pubmed-export-citations/
+│   ├── pubmed-multi-source-search/
+│   └── pubmed-mcp-tools-reference/
+├── .github/
+│   └── copilot-instructions.md # 🆕 VS Code Copilot 指南
+├── README.md                   # English documentation
+└── README.zh-TW.md            # 繁體中文文件
+```
+
+---
+
+## �🔗 相關連結
 
 - [GitHub Repository](https://github.com/u9401066/pubmed-search-mcp)
 - [PyPI Package](https://pypi.org/project/pubmed-search/)

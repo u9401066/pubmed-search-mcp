@@ -11,6 +11,11 @@
 
 A Domain-Driven Design (DDD) based MCP server that serves as an intelligent research assistant for AI agents, providing task-oriented literature search and analysis capabilities.
 
+**✨ What's Included:**
+- 🔧 **35+ MCP Tools** - Comprehensive PubMed, Europe PMC, CORE, and NCBI database access
+- 📚 **9 Claude Skills** - Ready-to-use workflow guides for AI agents
+- 📖 **Copilot Instructions** - VS Code GitHub Copilot integration guide
+
 **🌐 Language**: **English** | [繁體中文](README.zh-TW.md)
 
 ---
@@ -111,6 +116,71 @@ uvx pubmed-search-mcp
 - **Multi-Source Search**: PubMed, Europe PMC (33M+), CORE (200M+), Semantic Scholar, OpenAlex
 - **Full Text Access**: Direct XML/text retrieval from Europe PMC and CORE
 - **NCBI Extended**: Gene, PubChem compound, and ClinVar clinical variant databases
+- **Claude Skills**: 9 pre-built workflow guides for AI agent development
+- **Copilot Integration**: GitHub Copilot instructions for VS Code users
+
+---
+
+## 🤖 Claude Skills (AI Agent Workflows)
+
+This project includes **9 Claude Skill files** in `.claude/skills/` that teach AI agents how to effectively use the MCP tools. These skills provide:
+
+- **Step-by-step workflows** with decision trees
+- **Code examples** ready for immediate use
+- **Best practices** for each research scenario
+
+### Available Skills
+
+| Skill | Description | Trigger Examples |
+|-------|-------------|------------------|
+| `pubmed-quick-search` | Basic PubMed search | "search for", "find papers" |
+| `pubmed-systematic-search` | MeSH expansion, comprehensive search | "systematic review", "comprehensive" |
+| `pubmed-pico-search` | PICO clinical question decomposition | "is A better than B?", "PICO" |
+| `pubmed-paper-exploration` | Citation tree, related articles | "citing articles", "related papers" |
+| `pubmed-gene-drug-research` | Gene, PubChem, ClinVar integration | "gene function", "drug compound" |
+| `pubmed-fulltext-access` | Europe PMC, CORE full text retrieval | "full text", "PDF", "open access" |
+| `pubmed-export-citations` | RIS, BibTeX, CSV export | "export", "EndNote", "Zotero" |
+| `pubmed-multi-source-search` | Cross-database search strategy | "all sources", "multi-database" |
+| `pubmed-mcp-tools-reference` | Complete 35+ tools reference | "all tools", "what can you do" |
+
+### Using Skills
+
+**For Claude Desktop / Claude Code:**
+```
+# Skills are automatically loaded from .claude/skills/
+# Just ask naturally:
+"Help me do a systematic search for remimazolam"
+"What are the citing articles for this paper?"
+```
+
+**For VS Code GitHub Copilot:**
+```
+# The .github/copilot-instructions.md provides guidance
+# Copilot will use the skill patterns automatically
+```
+
+### Skill File Structure
+
+Each skill file follows this structure:
+
+```yaml
+---
+name: pubmed-quick-search
+description: Quick PubMed search. Triggers: search, find papers...
+---
+# Quick PubMed Search
+
+## Description
+...
+
+## Workflow
+...
+
+## Code Examples
+...
+```
+
+> 📁 **Skill files location**: `.claude/skills/pubmed-*/SKILL.md`
 
 ---
 
@@ -834,7 +904,35 @@ Apache License 2.0 - see [LICENSE](LICENSE)
 4. Run tests: `pytest`
 5. Submit a pull request
 
-## 🔗 Links
+## � Project Structure
+
+```
+pubmed-search-mcp/
+├── src/pubmed_search/          # Core library
+│   ├── mcp/                    # MCP server and tools
+│   │   ├── tools/              # 35+ MCP tools
+│   │   └── prompts.py          # MCP prompt templates
+│   ├── sources/                # Multi-source clients
+│   └── exports/                # Export formatters
+├── .claude/skills/             # 🆕 Claude Skill files
+│   ├── pubmed-quick-search/
+│   ├── pubmed-systematic-search/
+│   ├── pubmed-pico-search/
+│   ├── pubmed-paper-exploration/
+│   ├── pubmed-gene-drug-research/
+│   ├── pubmed-fulltext-access/
+│   ├── pubmed-export-citations/
+│   ├── pubmed-multi-source-search/
+│   └── pubmed-mcp-tools-reference/
+├── .github/
+│   └── copilot-instructions.md # 🆕 VS Code Copilot guide
+├── README.md                   # English documentation
+└── README.zh-TW.md            # 繁體中文文件
+```
+
+---
+
+## �🔗 Links
 
 - [GitHub Repository](https://github.com/u9401066/pubmed-search-mcp)
 - [PyPI Package](https://pypi.org/project/pubmed-search/)
