@@ -108,10 +108,13 @@ uvx pubmed-search-mcp
 - **MCP Integration**: Use with VS Code + GitHub Copilot or any MCP client
 - **Remote Server**: Deploy as HTTP service for multi-machine access
 - **Submodule Ready**: Use as a Git submodule in larger projects
+- **Multi-Source Search**: PubMed, Europe PMC (33M+), CORE (200M+), Semantic Scholar, OpenAlex
+- **Full Text Access**: Direct XML/text retrieval from Europe PMC and CORE
+- **NCBI Extended**: Gene, PubChem compound, and ClinVar clinical variant databases
 
 ---
 
-## 🛠️ MCP Tools (14 Tools)
+## 🛠️ MCP Tools (35+ Tools)
 
 ### Discovery Tools
 
@@ -142,6 +145,47 @@ uvx pubmed-search-mcp
 | `prepare_export` | Export citation formats (RIS/BibTeX/CSV/MEDLINE/JSON) |
 | `get_article_fulltext_links` | Get full-text links (PMC/DOI) |
 | `analyze_fulltext_access` | Analyze open access availability |
+
+### 🇪🇺 Europe PMC Tools (Full Text Access)
+
+| Tool | Description |
+|------|-------------|
+| `search_europe_pmc` | Search 33M+ publications with OA/fulltext filters |
+| `get_fulltext` | 📄 Get parsed full text (structured sections) |
+| `get_fulltext_xml` | Get raw JATS XML |
+| `get_text_mined_terms` | 🔬 Get annotations (genes, diseases, chemicals) |
+| `get_europe_pmc_citations` | Citation network (citing/references) |
+
+### 📚 CORE Tools (200M+ Open Access Papers)
+
+| Tool | Description |
+|------|-------------|
+| `search_core` | Search 200M+ open access papers |
+| `search_core_fulltext` | Search within paper content (42M+ full texts) |
+| `get_core_paper` | Get paper details by CORE ID |
+| `get_core_fulltext` | 📄 Get full text content |
+| `find_in_core` | Find papers by DOI/PMID |
+
+### 🧬 NCBI Extended Database Tools
+
+| Tool | Description |
+|------|-------------|
+| `search_gene` | 🧬 Search NCBI Gene database |
+| `get_gene_details` | Get gene information |
+| `get_gene_literature` | Get gene-linked PubMed articles |
+| `search_compound` | 💊 Search PubChem compounds |
+| `get_compound_details` | Get compound info (formula, SMILES) |
+| `get_compound_literature` | Get compound-linked PubMed articles |
+| `search_clinvar` | 🔬 Search ClinVar clinical variants |
+
+### Session Management Tools
+
+| Tool | Description |
+|------|-------------|
+| `get_session_pmids` | Get cached PMID list from searches |
+| `list_search_history` | List search history |
+| `get_cached_article` | Get article from cache (no API call) |
+| `get_session_summary` | Get session status summary |
 
 > **Design Principle**: Focus on search. Session/Cache/Reading List are all **internal mechanisms** that operate automatically - Agents don't need to manage them.
 
@@ -445,15 +489,24 @@ This project uses **Domain-Driven Design (DDD)** architecture, with literature r
 src/pubmed_search/
 ├── mcp/
 │   └── tools/
-│       ├── discovery.py    # Discovery (search, related, citing, details)
-│       ├── strategy.py     # Strategy (generate_queries, expand)
-│       ├── pico.py         # PICO parsing
-│       ├── merge.py        # Result merging
-│       ├── export.py       # Export tools
-│       └── citation_tree.py # Citation network visualization (6 formats)
-├── entrez/                 # NCBI Entrez API wrapper
-├── exports/                # Export formats (RIS, BibTeX, CSV)
-└── session.py              # Session management (internal mechanism)
+│       ├── discovery.py     # Discovery (search, related, citing, details)
+│       ├── strategy.py      # Strategy (generate_queries, expand)
+│       ├── pico.py          # PICO parsing
+│       ├── merge.py         # Result merging
+│       ├── export.py        # Export tools
+│       ├── citation_tree.py # Citation network visualization (6 formats)
+│       ├── europe_pmc.py    # Europe PMC full text access
+│       ├── core.py          # CORE open access search
+│       └── ncbi_extended.py # Gene, PubChem, ClinVar
+├── sources/                 # Multi-source search
+│   ├── europe_pmc.py        # Europe PMC client (33M+ papers)
+│   ├── core.py              # CORE client (200M+ papers)
+│   ├── ncbi_extended.py     # Gene, PubChem, ClinVar
+│   ├── semantic_scholar.py  # Semantic Scholar client
+│   └── openalex.py          # OpenAlex client
+├── entrez/                  # NCBI Entrez API wrapper
+├── exports/                 # Export formats (RIS, BibTeX, CSV)
+└── session.py               # Session management (internal mechanism)
 ```
 
 ### Internal Mechanisms (Transparent to Agent)

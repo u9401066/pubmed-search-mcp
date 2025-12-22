@@ -96,7 +96,7 @@ uvx pubmed-search-mcp
 
 ---
 
-## 🛠️ MCP 工具（14 個）
+## 🛠️ MCP 工具（35+ 個）
 
 ### 探索型工具 (Discovery)
 
@@ -127,6 +127,47 @@ uvx pubmed-search-mcp
 | `prepare_export` | 匯出引用格式（RIS/BibTeX/CSV/MEDLINE/JSON）|
 | `get_article_fulltext_links` | 取得全文連結（PMC/DOI）|
 | `analyze_fulltext_access` | 分析開放取用可用性 |
+
+### 🇪🇺 Europe PMC 工具（全文存取）
+
+| 工具 | 說明 |
+|------|------|
+| `search_europe_pmc` | 搜尋 33M+ 文獻（支援 OA/全文篩選）|
+| `get_fulltext` | 📄 取得解析後全文（結構化段落）|
+| `get_fulltext_xml` | 取得原始 JATS XML |
+| `get_text_mined_terms` | 🔬 取得標註（基因、疾病、化合物）|
+| `get_europe_pmc_citations` | 引用網絡（citing/references）|
+
+### 📚 CORE 工具（200M+ 開放取用論文）
+
+| 工具 | 說明 |
+|------|------|
+| `search_core` | 搜尋 200M+ 開放取用論文 |
+| `search_core_fulltext` | 在論文內容中搜尋（42M+ 全文）|
+| `get_core_paper` | 取得論文詳情 |
+| `get_core_fulltext` | 📄 取得全文內容 |
+| `find_in_core` | 用 DOI/PMID 尋找開放版本 |
+
+### 🧬 NCBI 延伸資料庫工具
+
+| 工具 | 說明 |
+|------|------|
+| `search_gene` | 🧬 搜尋 NCBI Gene 資料庫 |
+| `get_gene_details` | 取得基因詳情 |
+| `get_gene_literature` | 取得基因相關 PubMed 文章 |
+| `search_compound` | 💊 搜尋 PubChem 化合物 |
+| `get_compound_details` | 取得化合物資訊（分子式/SMILES）|
+| `get_compound_literature` | 取得化合物相關文章 |
+| `search_clinvar` | 🔬 搜尋 ClinVar 臨床變異 |
+
+### Session 管理工具
+
+| 工具 | 說明 |
+|------|------|
+| `get_session_pmids` | 取得暫存的 PMID 列表 |
+| `list_search_history` | 列出搜尋歷史 |
+| `get_cached_article` | 從快取取得文章（不消耗 API）|
+| `get_session_summary` | Session 狀態摘要 |
 
 > **設計原則**: 專注搜尋。Session/Cache/Reading List 皆為**內部機制**，自動運作，Agent 無需管理。
 
@@ -290,15 +331,24 @@ merge_search_results(...)
 src/pubmed_search/
 ├── mcp/
 │   └── tools/
-│       ├── discovery.py    # 探索型（search, related, citing）
-│       ├── strategy.py     # 策略型（generate_queries, expand）
-│       ├── pico.py         # PICO 解析
-│       ├── merge.py        # 結果合併
-│       ├── export.py       # 匯出工具
-│       └── citation_tree.py # 引用網絡視覺化
-├── entrez/                 # NCBI Entrez API 封裝
-├── exports/                # 匯出格式（RIS, BibTeX, CSV）
-└── session.py              # Session 管理（內部機制）
+│       ├── discovery.py     # 探索型（search, related, citing）
+│       ├── strategy.py      # 策略型（generate_queries, expand）
+│       ├── pico.py          # PICO 解析
+│       ├── merge.py         # 結果合併
+│       ├── export.py        # 匯出工具
+│       ├── citation_tree.py # 引用網絡視覺化
+│       ├── europe_pmc.py    # Europe PMC 全文存取
+│       ├── core.py          # CORE 開放取用搜尋
+│       └── ncbi_extended.py # Gene, PubChem, ClinVar
+├── sources/                 # 多來源搜尋
+│   ├── europe_pmc.py        # Europe PMC 客戶端 (33M+ 論文)
+│   ├── core.py              # CORE 客戶端 (200M+ 論文)
+│   ├── ncbi_extended.py     # Gene, PubChem, ClinVar
+│   ├── semantic_scholar.py  # Semantic Scholar 客戶端
+│   └── openalex.py          # OpenAlex 客戶端
+├── entrez/                  # NCBI Entrez API 封裝
+├── exports/                 # 匯出格式（RIS, BibTeX, CSV）
+└── session.py               # Session 管理（內部機制）
 ```
 
 ### 內部機制（對 Agent 透明）
