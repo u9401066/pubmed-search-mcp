@@ -2,7 +2,7 @@
 Multi-Source Academic Search
 
 Internal module for searching across multiple academic databases.
-Aggregates results from PubMed, Semantic Scholar, and OpenAlex.
+Aggregates results from PubMed, Semantic Scholar, OpenAlex, and Europe PMC.
 
 This module is NOT exposed as separate MCP tools - it's used internally
 by existing tools via the `source` parameter.
@@ -15,10 +15,10 @@ Architecture:
                                 │
     ┌───────────────────────────▼─────────────────────────────┐
     │              MultiSourceSearcher                         │
-    │     ┌─────────────┬─────────────┬──────────────┐        │
-    │     │   PubMed    │ Semantic S2 │  OpenAlex    │        │
-    │     │  (default)  │  (alt)      │   (alt)      │        │
-    │     └─────────────┴─────────────┴──────────────┘        │
+    │     ┌──────────┬──────────┬──────────┬─────────────┐    │
+    │     │  PubMed  │ Sem.S2   │ OpenAlex │ Europe PMC  │    │
+    │     │ (default)│  (alt)   │  (alt)   │ (fulltext!) │    │
+    │     └──────────┴──────────┴──────────┴─────────────┘    │
     └─────────────────────────────────────────────────────────┘
 """
 
@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 # Lazy imports to avoid startup overhead
 _semantic_scholar_client = None
 _openalex_client = None
+_europe_pmc_client = None
 
 
 class SearchSource(Enum):
@@ -39,6 +40,7 @@ class SearchSource(Enum):
     PUBMED = "pubmed"
     SEMANTIC_SCHOLAR = "semantic_scholar"
     OPENALEX = "openalex"
+    EUROPE_PMC = "europe_pmc"
     ALL = "all"
 
 
@@ -60,13 +62,23 @@ def get_openalex_client(email: str | None = None):
     return _openalex_client
 
 
+def get_europe_pmc_client(email: str | None = None):
+    """Get or create Europe PMC client (lazy initialization)."""
+    global _europe_pmc_client
+    if _europe_pmc_client is None:
+        from .europe_pmc import EuropePMCClient
+        _europe_pmc_client = EuropePMCClient(email=email)
+    return _europe_pmc_client
+
+
 def search_alternate_source(
     query: str,
-    source: Literal["semantic_scholar", "openalex"],
+    source: Literal["semantic_scholar", "openalex", "europe_pmc"],
     limit: int = 10,
     min_year: int | None = None,
     max_year: int | None = None,
     open_access_only: bool = False,
+    has_fulltext: bool = False,
     email: str | None = None,
 ) -> list[dict[str, Any]]:
     """
@@ -76,15 +88,17 @@ def search_alternate_source(
     1. User explicitly requests a different source
     2. PubMed returns few results and cross-search is enabled
     3. User wants open access papers (OpenAlex/DOAJ filter)
+    4. User needs full text access (Europe PMC)
     
     Args:
         query: Search query
-        source: Target source (semantic_scholar or openalex)
+        source: Target source (semantic_scholar, openalex, or europe_pmc)
         limit: Maximum results
         min_year: Minimum publication year
         max_year: Maximum publication year  
         open_access_only: Only return open access papers
-        email: Email for OpenAlex polite pool
+        has_fulltext: Only return papers with full text (Europe PMC)
+        email: Email for APIs
         
     Returns:
         List of normalized paper dictionaries
@@ -110,6 +124,18 @@ def search_alternate_source(
                 open_access_only=open_access_only,
             )
         
+        elif source == "europe_pmc":
+            client = get_europe_pmc_client(email)
+            result = client.search(
+                query=query,
+                limit=limit,
+                min_year=min_year,
+                max_year=max_year,
+                open_access_only=open_access_only,
+                has_fulltext=has_fulltext,
+            )
+            return result.get("results", [])
+        
         else:
             logger.warning(f"Unknown source: {source}")
             return []
@@ -126,6 +152,7 @@ def cross_search(
     min_year: int | None = None,
     max_year: int | None = None,
     open_access_only: bool = False,
+    has_fulltext: bool = False,
     email: str | None = None,
     deduplicate: bool = True,
 ) -> dict[str, Any]:
@@ -137,11 +164,12 @@ def cross_search(
     
     Args:
         query: Search query
-        sources: List of sources (default: ["semantic_scholar", "openalex"])
+        sources: List of sources (default: ["semantic_scholar", "openalex", "europe_pmc"])
         limit_per_source: Max results per source
         min_year: Minimum publication year
         max_year: Maximum publication year
         open_access_only: Only return open access papers
+        has_fulltext: Only return papers with full text (Europe PMC)
         email: Email for APIs
         deduplicate: Remove duplicate papers (by DOI/PMID)
         
@@ -152,7 +180,7 @@ def cross_search(
         - stats: Search statistics
     """
     if sources is None:
-        sources = ["semantic_scholar", "openalex"]
+        sources = ["semantic_scholar", "openalex", "europe_pmc"]
     
     all_results = []
     by_source = {}
@@ -171,6 +199,7 @@ def cross_search(
                 min_year=min_year,
                 max_year=max_year,
                 open_access_only=open_access_only,
+                has_fulltext=has_fulltext if source == "europe_pmc" else False,
                 email=email,
             )
             
@@ -308,6 +337,41 @@ def get_paper_from_any_source(
     return None
 
 
+def get_fulltext_xml(pmcid: str, email: str | None = None) -> str | None:
+    """
+    Get full text XML from Europe PMC.
+    
+    This is the UNIQUE feature of Europe PMC - direct full text access!
+    
+    Args:
+        pmcid: PMC ID (e.g., "PMC7096777" or just "7096777")
+        email: Contact email
+        
+    Returns:
+        Full text XML string or None
+    """
+    client = get_europe_pmc_client(email)
+    return client.get_fulltext_xml(pmcid)
+
+
+def get_fulltext_parsed(pmcid: str, email: str | None = None) -> dict[str, Any]:
+    """
+    Get parsed full text from Europe PMC.
+    
+    Args:
+        pmcid: PMC ID
+        email: Contact email
+        
+    Returns:
+        Dict with structured content (title, abstract, sections, references)
+    """
+    client = get_europe_pmc_client(email)
+    xml = client.get_fulltext_xml(pmcid)
+    if xml:
+        return client.parse_fulltext_xml(xml)
+    return {"error": "Full text not available"}
+
+
 # Export for convenience
 __all__ = [
     "SearchSource",
@@ -316,4 +380,7 @@ __all__ = [
     "get_paper_from_any_source",
     "get_semantic_scholar_client",
     "get_openalex_client",
+    "get_europe_pmc_client",
+    "get_fulltext_xml",
+    "get_fulltext_parsed",
 ]

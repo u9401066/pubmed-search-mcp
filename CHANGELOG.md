@@ -14,6 +14,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.17] - 2025-12-15
+
+### 🇪🇺 Europe PMC Integration
+
+Added Europe PMC as a new data source with unique fulltext XML retrieval capabilities.
+This provides access to 33M+ publications and 6.5M open access fulltext articles.
+
+### Added
+
+- **Europe PMC Client** (`sources/europe_pmc.py` - 500+ lines)
+  - `search()` - Full-text search with OA/fulltext filters
+  - `get_article()` - Get article by source/ID
+  - `get_fulltext_xml()` - **Unique feature**: Direct JATS XML fulltext retrieval
+  - `get_references()` / `get_citations()` - Citation network traversal
+  - `get_text_mined_terms()` - Text-mined annotations (genes, diseases, chemicals)
+  - `parse_fulltext_xml()` - Parse JATS XML into structured sections
+
+- **Sources Module Integration**
+  - `SearchSource.EUROPE_PMC` enum value
+  - `get_europe_pmc_client()` factory function
+  - `search_alternate_source()` support for "europe_pmc"
+  - `cross_search()` now includes europe_pmc by default
+  - `get_fulltext_xml()` and `get_fulltext_parsed()` convenience functions
+
+- **Tests** (`tests/test_europe_pmc.py` - 17 tests)
+  - Unit tests with mocked responses
+  - Integration tests with real API calls
+  - Sources module integration tests
+
+### Technical Details
+
+- **API**: No API key required, 1000 req/hour rate limit
+- **Base URL**: `https://www.ebi.ac.uk/europepmc/webservices/rest`
+- **Dependencies**: Zero new dependencies (urllib only)
+- **Normalization**: Europe PMC results converted to PubMed-compatible format
+
+---
+
 ## [0.1.16] - 2025-12-15
 
 ### 🔍 Multi-Source Academic Search (Internal)
