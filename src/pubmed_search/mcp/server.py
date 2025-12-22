@@ -108,6 +108,31 @@ get_article_references(pmid="12345678") # 這篇文章的參考文獻 (backward)
 - analyze_fulltext_access(pmids): 分析哪些文章有免費全文
 
 ═══════════════════════════════════════════════════════════════════════════════
+🇪🇺 Europe PMC 工具 (全文存取 + 文本挖掘)
+═══════════════════════════════════════════════════════════════════════════════
+
+Europe PMC 提供 33M+ 文獻，6.5M 開放取用全文。最適合：找全文、歐洲研究。
+
+### 搜尋與全文
+- search_europe_pmc(query, open_access_only=True): 搜尋 Europe PMC
+- get_fulltext(pmcid): 📄 取得解析後的全文 (分段顯示)
+- get_fulltext_xml(pmcid): 取得原始 JATS XML
+
+### 文本挖掘與引用
+- get_text_mined_terms(pmid/pmcid): 🔬 取得標註 (基因、疾病、藥物)
+- get_europe_pmc_citations(pmid/pmcid, direction): 引用網路
+
+### 使用範例
+```
+# 找到文章後，直接閱讀全文
+search_europe_pmc("CRISPR gene therapy", has_fulltext=True, limit=5)
+get_fulltext(pmcid="PMC7096777", sections="introduction,results")
+
+# 找出文章提到的所有基因
+get_text_mined_terms(pmid="12345678", semantic_type="GENE_PROTEIN")
+```
+
+═══════════════════════════════════════════════════════════════════════════════
 💾 Session 管理工具 (解決記憶滿載問題)
 ═══════════════════════════════════════════════════════════════════════════════
 
@@ -134,6 +159,7 @@ get_article_references(pmid="12345678") # 這篇文章的參考文獻 (backward)
 
 ### 搜尋
 - search_literature: 基本 PubMed 搜尋
+- search_europe_pmc: Europe PMC 搜尋 (含 OA/全文篩選)
 - generate_search_queries: 產生 MeSH 擴展搜尋策略
 - parse_pico: 解析 PICO 臨床問題
 - merge_search_results: 合併多個搜尋結果
@@ -145,6 +171,12 @@ get_article_references(pmid="12345678") # 這篇文章的參考文獻 (backward)
 - get_article_references: 這篇的參考文獻 (by PMID, backward in time)
 - fetch_article_details: 文章詳細資訊
 - get_citation_metrics: 引用指標 (iCite RCR/Percentile, 可排序篩選)
+
+### 全文與文本挖掘 (Europe PMC)
+- get_fulltext: 📄 取得解析後全文 (分段顯示)
+- get_fulltext_xml: 取得原始 JATS XML
+- get_text_mined_terms: 🔬 取得標註 (基因、疾病、藥物)
+- get_europe_pmc_citations: Europe PMC 引用網路
 
 ### 匯出
 - prepare_export: 匯出引用格式

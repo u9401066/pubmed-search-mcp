@@ -232,6 +232,126 @@ class TestEuropePMCClient:
         assert parsed["references"][0]["label"] == "1"
 
 
+class TestEuropePMCMCPTools:
+    """Tests for Europe PMC MCP Tools."""
+    
+    @pytest.fixture
+    def mcp(self):
+        """Create MCP instance with Europe PMC tools."""
+        from mcp.server.fastmcp import FastMCP
+        from pubmed_search.mcp.tools.europe_pmc import register_europe_pmc_tools
+        mcp = FastMCP('test')
+        register_europe_pmc_tools(mcp)
+        return mcp
+    
+    def test_tools_registered(self, mcp):
+        """Test all Europe PMC tools are registered."""
+        tools = mcp._tool_manager._tools
+        assert "search_europe_pmc" in tools
+        assert "get_fulltext" in tools
+        assert "get_fulltext_xml" in tools
+        assert "get_text_mined_terms" in tools
+        assert "get_europe_pmc_citations" in tools
+    
+    def test_search_europe_pmc_tool(self, mcp):
+        """Test search_europe_pmc tool returns formatted results."""
+        from unittest.mock import patch
+        
+        mock_result = {
+            "hit_count": 100,
+            "results": [
+                {
+                    "pmid": "12345678",
+                    "pmc_id": "PMC1234567",
+                    "title": "Test Article",
+                    "authors": ["Smith J", "Jones M"],
+                    "year": "2024",
+                    "journal": "Test Journal",
+                    "is_open_access": True,
+                    "has_fulltext": True,
+                    "abstract": "This is a test abstract.",
+                }
+            ]
+        }
+        
+        with patch('pubmed_search.mcp.tools.europe_pmc.get_europe_pmc_client') as mock:
+            mock.return_value.search.return_value = mock_result
+            tool = mcp._tool_manager._tools['search_europe_pmc']
+            result = tool.fn(query="test", limit=5)
+            
+            assert "Europe PMC Search Results" in result
+            assert "12345678" in result
+            assert "Test Article" in result
+            assert "OA" in result
+    
+    def test_get_fulltext_tool(self, mcp):
+        """Test get_fulltext tool parses XML correctly."""
+        from unittest.mock import patch
+        
+        mock_xml = """<?xml version="1.0"?>
+        <article><front><article-meta>
+        <title-group><article-title>Test Title</article-title></title-group>
+        </article-meta></front>
+        <body><sec><title>Introduction</title><p>Test content</p></sec></body>
+        </article>"""
+        
+        mock_parsed = {
+            "title": "Test Title",
+            "sections": [{"title": "Introduction", "content": "Test content"}],
+            "references": []
+        }
+        
+        with patch('pubmed_search.mcp.tools.europe_pmc.get_europe_pmc_client') as mock:
+            mock.return_value.get_fulltext_xml.return_value = mock_xml
+            mock.return_value.parse_fulltext_xml.return_value = mock_parsed
+            
+            tool = mcp._tool_manager._tools['get_fulltext']
+            result = tool.fn(pmcid="PMC1234567")
+            
+            assert "Test Title" in result
+            assert "Introduction" in result
+    
+    def test_get_fulltext_not_found(self, mcp):
+        """Test get_fulltext handles missing fulltext."""
+        from unittest.mock import patch
+        
+        with patch('pubmed_search.mcp.tools.europe_pmc.get_europe_pmc_client') as mock:
+            mock.return_value.get_fulltext_xml.return_value = None
+            
+            tool = mcp._tool_manager._tools['get_fulltext']
+            result = tool.fn(pmcid="PMC9999999")
+            
+            assert "not available" in result.lower()
+    
+    def test_get_text_mined_terms_requires_id(self, mcp):
+        """Test get_text_mined_terms requires pmid or pmcid."""
+        tool = mcp._tool_manager._tools['get_text_mined_terms']
+        result = tool.fn()
+        assert "provide" in result.lower()
+    
+    def test_get_europe_pmc_citations_tool(self, mcp):
+        """Test get_europe_pmc_citations tool."""
+        from unittest.mock import patch
+        
+        mock_citations = [
+            {
+                "title": "Citing Paper",
+                "authors": ["Author A"],
+                "year": "2024",
+                "pmid": "11111111",
+            }
+        ]
+        
+        with patch('pubmed_search.mcp.tools.europe_pmc.get_europe_pmc_client') as mock:
+            mock.return_value.get_citations.return_value = mock_citations
+            
+            tool = mcp._tool_manager._tools['get_europe_pmc_citations']
+            result = tool.fn(pmid="12345678", direction="citing")
+            
+            assert "Citing" in result
+            assert "Citing Paper" in result
+
+
 class TestEuropePMCIntegration:
     """Integration tests for Europe PMC (require network)."""
     

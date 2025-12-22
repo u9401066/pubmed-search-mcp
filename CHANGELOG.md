@@ -31,17 +31,23 @@ This provides access to 33M+ publications and 6.5M open access fulltext articles
   - `get_text_mined_terms()` - Text-mined annotations (genes, diseases, chemicals)
   - `parse_fulltext_xml()` - Parse JATS XML into structured sections
 
+- **MCP Tools for Europe PMC** (`mcp/tools/europe_pmc.py`)
+  - `search_europe_pmc` - Search with OA/fulltext/sort filters
+  - `get_fulltext` - 📄 Get parsed fulltext (structured sections)
+  - `get_fulltext_xml` - Get raw JATS XML
+  - `get_text_mined_terms` - 🔬 Get annotations (genes, diseases, chemicals)
+  - `get_europe_pmc_citations` - Citation network (citing/references)
+
 - **Sources Module Integration**
   - `SearchSource.EUROPE_PMC` enum value
   - `get_europe_pmc_client()` factory function
   - `search_alternate_source()` support for "europe_pmc"
   - `cross_search()` now includes europe_pmc by default
-  - `get_fulltext_xml()` and `get_fulltext_parsed()` convenience functions
 
-- **Tests** (`tests/test_europe_pmc.py` - 17 tests)
-  - Unit tests with mocked responses
+- **Tests** (`tests/test_europe_pmc.py` - 23 tests)
+  - Unit tests for client with mocked responses
+  - Unit tests for MCP tools
   - Integration tests with real API calls
-  - Sources module integration tests
 
 ### Technical Details
 
