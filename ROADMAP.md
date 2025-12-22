@@ -233,13 +233,67 @@ arxiv-mcp-server 目前只有 **1 個 Prompt**: `deep-paper-analysis`
 ### Phase 9: 資料庫擴展 (PubMed 生態系)
 > **原則**: 使用各資料庫官方 API，不另創統一 DSL
 
-#### PMC 全文整合 (NCBI)
+#### 🔥 Phase 9.1: 全文取得 API 整合 ⭐⭐⭐⭐⭐ (NEW!)
+
+> **目標**: 讓使用者能取得全文，而不只是摘要
+
+##### Europe PMC 整合 (最高優先！)
+| Tool | 說明 | API Endpoint |
+|------|------|--------------|
+| `search_europe_pmc` | 搜尋 Europe PMC (33M 文章) | `GET /search?query=xxx` |
+| `get_fulltext_xml` | 取得全文 XML (6.5M OA) | `GET /{pmcid}/fullTextXML` |
+| `get_article_references` | 取得參考文獻 | `GET /{source}/{id}/references` |
+| `get_article_citations` | 取得引用文章 | `GET /{source}/{id}/citations` |
+| `get_text_mined_terms` | 取得文字探勘結果 (基因/疾病/化學物) | Annotations API |
+
+**Europe PMC 優勢**:
+- 🆓 免費、無需 API Key
+- 📄 **全文 XML API** - 唯一可直接取得全文內容的 API
+- 🔗 引用網絡 (含歐洲資助研究)
+- 📊 文字探勘標註 (Genes, Diseases, Chemicals)
+- 🌍 PubMed Central International 聯盟成員
+
+##### Unpaywall 整合 (全文連結專家)
+| Tool | 說明 | API Endpoint |
+|------|------|--------------|
+| `find_oa_links` | 找 OA 全文連結 | `GET /v2/{doi}` |
+
+**整合方式**: 增強 `get_article_fulltext_links()` 工具
+
+**Unpaywall 優勢**:
+- 🔍 專門找開放存取版本
+- 📎 返回最佳 PDF URL
+- 🏷️ 標示 OA 類型 (gold/green/bronze/hybrid)
+
+##### CORE 整合 (最大全文庫)
+| Tool | 說明 | API Endpoint |
+|------|------|--------------|
+| `search_core` | 搜尋 CORE (42M 全文) | `GET /search` |
+| `get_core_fulltext` | 取得全文 | `GET /outputs/{id}` |
+
+**CORE 優勢**:
+- 📚 42M 全文、405M 論文索引
+- 🌐 聚合 14K+ 資料提供者
+- 🔍 支援全文搜尋
+
+##### bioRxiv/medRxiv 整合 (預印本)
+| Tool | 說明 | API Endpoint |
+|------|------|--------------|
+| `search_preprints` | 搜尋預印本 | `GET /details/{server}/{interval}` |
+| `track_preprint_publication` | 追蹤預印本是否已正式發表 | `GET /pubs/{server}/{doi}` |
+
+**bioRxiv/medRxiv 優勢**:
+- 🧬 最新研究 (預印本)
+- 📄 有 JATS XML 路徑
+- 🔗 預印本 → 正式發表追蹤
+
+#### Phase 9.2: PMC 全文整合 (NCBI)
 | Tool | 說明 | API |
 |------|------|-----|
 | `search_pmc_fulltext` | 全文搜尋 | NCBI Entrez (共用) |
 | `get_pmc_fulltext` | 取得全文 XML/PDF | PMC OA Service |
 
-#### ClinicalTrials.gov 整合
+#### Phase 9.3: ClinicalTrials.gov 整合
 | Tool | 說明 | API |
 |------|------|-----|
 | `search_trials` | 搜尋臨床試驗 | ClinicalTrials.gov API v2 |
@@ -247,7 +301,7 @@ arxiv-mcp-server 目前只有 **1 個 Prompt**: `deep-paper-analysis`
 
 > **語法**: 使用 ClinicalTrials.gov 官方查詢語法，如 `AREA[Condition]diabetes`
 
-#### Cochrane Library (選擇性)
+#### Phase 9.4: Cochrane Library (選擇性)
 | Tool | 說明 |
 |------|------|
 | `search_cochrane_reviews` | 搜尋系統性回顧 |

@@ -13,11 +13,11 @@
 - ✅ 導入 Claude Skills 系統 (13 skills)
 - ✅ 導入憲法-子法架構
 - ✅ 建立 Memory Bank 記憶系統
+- ✅ 專案結構一致性檢查完成
 
 ## Doing
 
-- 📝 專案結構一致性檢查
-- 📝 Memory Bank 初始化
+- (暫無)
 
 ## Next
 
