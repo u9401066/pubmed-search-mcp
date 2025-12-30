@@ -130,6 +130,165 @@ mdpaper: 儲存文獻，標記為「已驗證來源」
 
 ---
 
+### 🔥 Phase 5.6: Information Collection Node 優化 ⭐⭐⭐⭐⭐
+> **需求**: 將repo優化為高效的Information Collection Node，提升與MCP Agent的互動體驗
+
+#### 當前問題分析
+
+| 問題 | 說明 | 影響 |
+|------|------|------|
+| **資訊驗證缺失** | Agent可能虛構搜尋結果，無法驗證真實性 | 可信度低 |
+| **上下文感知不足** | 每次搜尋獨立，無法利用歷史資訊 | 效率低 |
+| **批次處理低效** | 無法並行處理多個搜尋請求 | 速度慢 |
+| **品質評估缺失** | 所有結果權重相同，無法區分品質 | 準確性差 |
+| **互動格式原始** | 純文字回應，Agent難以解析 | 整合困難 |
+
+#### 新增核心功能
+
+##### 1. 智能上下文感知系統 ⭐⭐⭐⭐⭐
+```python
+# 基於歷史搜尋的智能推薦
+get_contextual_suggestions(current_topic, session_history)
+expand_search_based_on_findings(previous_results, gaps_identified)
+suggest_related_research(articles_found, research_gaps)
+
+# Agent互動示例
+Agent: "搜尋remimazolam ICU sedation"
+MCP: "🔍 發現3篇相關文獻，基於您的搜尋歷史，建議擴展至:
+     - 關鍵字: 'delirium prevention', 'hemodynamic stability'
+     - 時間範圍: 2019-2024 (近期研究較多)
+     - 研究類型: RCT > case series"
+```
+
+##### 2. 批次智能處理 ⭐⭐⭐⭐
+```python
+# 批次處理多個搜尋
+batch_search([
+    {"query": "remimazolam vs propofol", "priority": "high"},
+    {"query": "ICU sedation complications", "priority": "medium"},
+    {"query": "delirium prevention strategies", "priority": "low"}
+], parallel_execution=True)
+
+# Agent互動示例
+Agent: "我需要全面研究remimazolam，請並行執行:
+       1. 臨床試驗比較研究 2. 安全性分析
+       3. 藥理機制研究 4. 監護室應用案例"
+MCP: "🚀 已啟動4個並行搜尋，預計3分鐘完成
+     [████████░░] 50% - 臨床試驗完成"
+```
+
+##### 3. 多維度來源品質評估 ⭐⭐⭐⭐
+```python
+# 來源品質評估
+assess_source_quality(pmid) -> QualityScore {
+    journal_impact_factor: float,
+    evidence_level: str,  # "Level I", "Level II" etc.
+    citation_count: int,
+    study_design: str,   # "RCT", "Meta-analysis", "Case report"
+    peer_review_status: bool
+}
+
+# Agent互動示例
+Agent: "搜尋remimazolam安全性"
+MCP: "📊 找到47篇文獻，品質分佈:
+     🟢 高品質 (IF>5): 8篇 (Level I/II)
+     🟡 中品質 (IF 2-5): 23篇
+     🔴 參考級 (IF<2): 16篇
+     建議重點關注高品質文獻?"
+```
+
+##### 4. 動態搜尋策略調整 ⭐⭐⭐
+```python
+# 基於結果的策略調整
+adaptive_search_strategy(initial_results, quality_threshold=0.7):
+    if low_relevance_rate:
+        return expand_keywords_with_synonyms()
+    if insufficient_high_quality:
+        return broaden_date_range()
+    if too_many_results:
+        return add_specific_filters()
+```
+
+##### 5. 改進MCP Agent互動格式 ⭐⭐⭐⭐⭐
+```json
+{
+  "search_metadata": {
+    "session_id": "abc123",
+    "timestamp": "2025-12-30T10:30:00Z",
+    "query_analysis": {
+      "original_query": "remimazolam sedation",
+      "corrected_terms": ["remimazolam", "sedation"],
+      "mesh_expansion": ["Deep Sedation", "Conscious Sedation"],
+      "synonyms_found": ["CNS 7056", "ONO 2745"]
+    }
+  },
+  "quality_assessment": {
+    "high_quality_papers": 8,
+    "avg_impact_factor": 3.2,
+    "evidence_levels": {"Level I": 3, "Level II": 5, "Level III": 7}
+  },
+  "next_steps_suggestions": [
+    "expand_to_delirium_prevention",
+    "narrow_to_RCT_studies_only",
+    "focus_on_hemodynamic_effects"
+  ],
+  "results": [...]
+}
+```
+
+##### 6. 對話式搜尋流程 ⭐⭐⭐⭐
+```python
+# 支援對話式搜尋
+interactive_search_session() -> SearchSession
+
+session.start_topic("remimazolam ICU sedation")
+session.add_constraint("include_RCT_only")
+session.add_timeframe("2020-2024")
+session.set_quality_threshold(0.8)
+
+# Agent可以逐步完善搜尋
+agent: "搜尋結果品質不夠高"
+session.refine_search(quality_threshold=0.9)
+agent: "需要更多臨床數據"
+session.expand_search(include_observational=True)
+```
+
+##### 7. 主動式資訊推送 ⭐⭐⭐
+```python
+# 監控新文獻並主動推送
+monitor_new_publications(keywords=["remimazolam"], 
+                        quality_threshold=0.8,
+                        notify_agent=True)
+
+# Agent會收到推送通知
+# "🆕 新文獻推送: 'Remimazolam vs Propofol in ICU: 
+#   Meta-analysis' - 高品質 (IF=8.2, Level I)"
+```
+
+#### 新增MCP工具
+
+| Tool | 說明 | 優先級 |
+|------|------|:------:|
+| `batch_search` | 批次並行搜尋多個查詢 | ⭐⭐⭐⭐⭐ |
+| `assess_source_quality` | 多維度品質評估 | ⭐⭐⭐⭐ |
+| `get_contextual_suggestions` | 上下文感知建議 | ⭐⭐⭐⭐⭐ |
+| `adaptive_search_strategy` | 動態策略調整 | ⭐⭐⭐ |
+| `interactive_search_session` | 對話式搜尋流程 | ⭐⭐⭐⭐ |
+| `monitor_new_publications` | 主動推送新文獻 | ⭐⭐⭐ |
+| `build_knowledge_graph` | 跨會話知識圖譜 | ⭐⭐ |
+| `score_literature_importance` | AI驅動重要性評分 | ⭐⭐⭐ |
+
+#### 實作優先順序
+
+1. **Step 1**: 改進MCP回應格式 (結構化JSON輸出)
+2. **Step 2**: 批次搜尋功能 (並行處理)
+3. **Step 3**: 來源品質評估系統
+4. **Step 4**: 上下文感知建議
+5. **Step 5**: 對話式搜尋流程
+6. **Step 6**: 主動推送機制
+
+---
+
 ### Phase 6: Research Prompts ⭐⭐⭐
 > **參考**: arxiv-mcp-server (1.9k⭐ 的關鍵功能)
 
