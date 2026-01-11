@@ -13,16 +13,16 @@ Features:
 
 import json
 import logging
-from typing import Any, Union
+from typing import Union
 
-from mcp.server import Server
+from mcp.server.fastmcp import FastMCP
 
 from ._common import InputNormalizer, ResponseFormatter
 
 logger = logging.getLogger(__name__)
 
 
-def register_core_tools(mcp: Server) -> None:
+def register_core_tools(mcp: FastMCP) -> None:
     """Register CORE API tools with MCP server."""
     
     @mcp.tool()
@@ -81,7 +81,7 @@ def register_core_tools(mcp: Server) -> None:
         has_fulltext = InputNormalizer.normalize_bool(has_fulltext, default=False)
         
         try:
-            from ..sources.core import get_core_client
+            from ..sources.core import get_core_client  # type: ignore[import-not-found]
             
             client = get_core_client()
             result = client.search(
@@ -164,7 +164,7 @@ def register_core_tools(mcp: Server) -> None:
         year_to = InputNormalizer.normalize_year(year_to)
         
         try:
-            from ..sources.core import get_core_client
+            from ..sources.core import get_core_client  # type: ignore[import-not-found]
             
             client = get_core_client()
             result = client.search_fulltext(
@@ -216,7 +216,7 @@ def register_core_tools(mcp: Server) -> None:
         core_id = str(core_id).strip()
         
         try:
-            from ..sources.core import get_core_client
+            from ..sources.core import get_core_client  # type: ignore[import-not-found]
             
             client = get_core_client()
             result = client.get_work(core_id)
@@ -258,7 +258,7 @@ def register_core_tools(mcp: Server) -> None:
         core_id = str(core_id).strip()
         
         try:
-            from ..sources.core import get_core_client
+            from ..sources.core import get_core_client  # type: ignore[import-not-found]
             
             client = get_core_client()
             fulltext = client.get_fulltext(core_id)
@@ -326,7 +326,7 @@ def register_core_tools(mcp: Server) -> None:
                 identifier = normalized
         
         try:
-            from ..sources.core import get_core_client
+            from ..sources.core import get_core_client  # type: ignore[import-not-found]
             
             client = get_core_client()
             

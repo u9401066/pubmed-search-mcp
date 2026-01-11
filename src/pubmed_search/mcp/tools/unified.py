@@ -49,7 +49,7 @@ Features:
 
 import json
 import logging
-from typing import Any, Literal, Union
+from typing import Literal, Union
 
 from mcp.server.fastmcp import FastMCP
 
@@ -59,7 +59,6 @@ from ...unified.result_aggregator import (
     ResultAggregator, 
     RankingConfig, 
     AggregationStats,
-    DeduplicationStrategy,
 )
 from ...models.unified_article import UnifiedArticle
 from ...sources import (
@@ -67,7 +66,7 @@ from ...sources import (
     get_crossref_client,
     get_unpaywall_client,
 )
-from ._common import format_search_results, _cache_results, InputNormalizer, ResponseFormatter
+from ._common import InputNormalizer, ResponseFormatter
 
 logger = logging.getLogger(__name__)
 
@@ -179,7 +178,7 @@ def _search_pubmed(
     try:
         results = searcher.search(
             query=query,
-            max_results=limit,
+            limit=limit,
             min_year=min_year,
             max_year=max_year,
         )

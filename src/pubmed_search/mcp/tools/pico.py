@@ -7,7 +7,6 @@ Tools:
 
 import json
 import logging
-from typing import Union
 
 from mcp.server.fastmcp import FastMCP
 

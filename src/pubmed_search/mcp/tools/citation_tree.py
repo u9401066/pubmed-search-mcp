@@ -417,8 +417,8 @@ def register_citation_tree_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         
         try:
             # Normalize inputs using InputNormalizer
-            pmid = InputNormalizer.normalize_pmid_single(pmid)
-            if not pmid:
+            normalized_pmid = InputNormalizer.normalize_pmid_single(pmid)
+            if not normalized_pmid:
                 return ResponseFormatter.error(
                     "Invalid or missing PMID",
                     suggestion="Provide a valid PubMed ID",
@@ -426,14 +426,13 @@ def register_citation_tree_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                     tool_name="build_citation_tree"
                 )
             
-            depth = InputNormalizer.normalize_limit(depth, default=2, min_val=1, max_val=MAX_DEPTH)
-            limit_per_level = InputNormalizer.normalize_limit(limit_per_level, default=5, min_val=1, max_val=20)
-            include_details = InputNormalizer.normalize_bool(include_details, default=True)
+            normalized_depth = InputNormalizer.normalize_limit(depth, default=2, min_val=1, max_val=MAX_DEPTH)
+            normalized_limit = InputNormalizer.normalize_limit(limit_per_level, default=5, min_val=1, max_val=20)
             
             # Validate output format
             valid_formats = ["cytoscape", "g6", "d3", "vis", "graphml", "mermaid"]
-            output_format = output_format.lower().strip() if output_format else "cytoscape"
-            if output_format not in valid_formats:
+            normalized_format = output_format.lower().strip() if output_format else "cytoscape"
+            if normalized_format not in valid_formats:
                 return ResponseFormatter.error(
                     f"Invalid output format: '{output_format}'",
                     suggestion=f"Use one of: {', '.join(valid_formats)}",
@@ -443,8 +442,8 @@ def register_citation_tree_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             
             # Validate direction
             valid_directions = ["forward", "backward", "both"]
-            direction = direction.lower().strip() if direction else "both"
-            if direction not in valid_directions:
+            normalized_direction = direction.lower().strip() if direction else "both"
+            if normalized_direction not in valid_directions:
                 return ResponseFormatter.error(
                     f"Invalid direction: '{direction}'",
                     suggestion=f"Use one of: {', '.join(valid_directions)}",
@@ -456,7 +455,7 @@ def register_citation_tree_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             nodes: List[Dict[str, Any]] = []
             edges: List[Dict[str, Any]] = []
             seen_pmids: Set[str] = set()
-            stats = {
+            stats: Dict[str, Any] = {
                 "total_nodes": 0,
                 "total_edges": 0,
                 "citing_articles": 0,
@@ -465,10 +464,10 @@ def register_citation_tree_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             }
             
             # Fetch root article
-            root_articles = searcher.fetch_details([pmid])
+            root_articles = searcher.fetch_details([normalized_pmid])
             if not root_articles or "error" in root_articles[0]:
                 return ResponseFormatter.error(
-                    f"Could not fetch article with PMID: {pmid}",
+                    f"Could not fetch article with PMID: {normalized_pmid}",
                     suggestion="Verify the PMID is correct",
                     example='fetch_article_details(pmids="33475315")',
                     tool_name="build_citation_tree"
@@ -477,7 +476,7 @@ def register_citation_tree_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             root_article = root_articles[0]
             root_node = _make_node(root_article, level=0, direction="root")
             nodes.append(root_node)
-            seen_pmids.add(pmid)
+            seen_pmids.add(normalized_pmid)
             stats["total_nodes"] = 1
             stats["levels"]["0"] = 1
             
@@ -494,7 +493,7 @@ def register_citation_tree_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                     edge_type: 'cites' or 'cited_by'
                     direction_name: 'citing' or 'reference' for stats
                 """
-                if current_depth > depth:
+                if current_depth > normalized_depth:
                     return
                 
                 next_level_pmids = []
@@ -507,7 +506,7 @@ def register_citation_tree_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                     
                     # Fetch related articles
                     try:
-                        related = fetch_func(parent_pmid, limit_per_level)
+                        related = fetch_func(parent_pmid, normalized_limit)
                     except Exception as e:
                         logger.warning(f"Error fetching for {parent_pmid}: {e}")
                         continue
@@ -546,17 +545,17 @@ def register_citation_tree_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                         next_level_pmids.append(article_pmid)
                 
                 # Continue to next level
-                if next_level_pmids and current_depth < depth:
+                if next_level_pmids and current_depth < normalized_depth:
                     traverse(next_level_pmids, current_depth + 1, 
                             fetch_func, edge_type, direction_name)
             
             # Build forward tree (citing articles)
-            if direction in ["forward", "both"]:
-                traverse([pmid], 1, searcher.get_citing_articles, "cites", "citing")
+            if normalized_direction in ["forward", "both"]:
+                traverse([normalized_pmid], 1, searcher.get_citing_articles, "cites", "citing")
             
             # Build backward tree (references)
-            if direction in ["backward", "both"]:
-                traverse([pmid], 1, searcher.get_article_references, "cited_by", "reference")
+            if normalized_direction in ["backward", "both"]:
+                traverse([normalized_pmid], 1, searcher.get_article_references, "cited_by", "reference")
             
             # Convert to requested output format
             root_title = root_article.get("title", "Unknown")
@@ -595,31 +594,35 @@ def register_citation_tree_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             }
             
             # Convert internal format to requested output format
-            if output_format == "cytoscape":
+            graph_data: Union[Dict[str, Any], str]
+            if normalized_format == "cytoscape":
                 graph_data = _to_cytoscape(nodes, edges)
-            elif output_format == "g6":
+            elif normalized_format == "g6":
                 graph_data = _to_g6(nodes, edges)
-            elif output_format == "d3":
+            elif normalized_format == "d3":
                 graph_data = _to_d3(nodes, edges)
-            elif output_format == "vis":
+            elif normalized_format == "vis":
                 graph_data = _to_vis(nodes, edges)
-            elif output_format == "graphml":
+            elif normalized_format == "graphml":
                 graph_data = _to_graphml(nodes, edges, root_title)
-            elif output_format == "mermaid":
+            elif normalized_format == "mermaid":
                 graph_data = _to_mermaid(nodes, edges, root_title)
+            else:
+                # Default to cytoscape if format is not recognized (should not happen)
+                graph_data = _to_cytoscape(nodes, edges)
             
             # Build result
             result = {
-                "format": output_format,
-                "format_info": format_info[output_format],
+                "format": normalized_format,
+                "format_info": format_info[normalized_format],
                 "graph": graph_data,
                 "metadata": {
-                    "root_pmid": pmid,
+                    "root_pmid": normalized_pmid,
                     "root_title": root_title,
                     "root_year": root_article.get("year", "?"),
-                    "depth": depth,
-                    "direction": direction,
-                    "limit_per_level": limit_per_level,
+                    "depth": normalized_depth,
+                    "direction": normalized_direction,
+                    "limit_per_level": normalized_limit,
                     "statistics": stats
                 },
                 "available_formats": list(format_info.keys())
@@ -629,19 +632,19 @@ def register_citation_tree_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             summary = f"""🌳 **Citation Tree Built Successfully**
 
 📄 **Root Paper**: {root_title[:80]}...
-   PMID: {pmid} | Year: {root_article.get('year', '?')}
+   PMID: {normalized_pmid} | Year: {root_article.get('year', '?')}
 
 📊 **Statistics**:
    - Total Nodes: {stats['total_nodes']}
    - Total Edges: {stats['total_edges']}
    - Citing Articles (forward): {stats.get('citing_articles', 0)}
    - Reference Articles (backward): {stats.get('reference_articles', 0)}
-   - Depth: {depth} levels
+   - Depth: {normalized_depth} levels
 
-🎨 **Output Format**: {format_info[output_format]['name']}
-   {format_info[output_format]['description']}
+🎨 **Output Format**: {format_info[normalized_format]['name']}
+   {format_info[normalized_format]['description']}
 
-📌 **Other Available Formats**: {', '.join(f for f in format_info.keys() if f != output_format)}
+📌 **Other Available Formats**: {', '.join(f for f in format_info.keys() if f != normalized_format)}
 
 ---
 
@@ -672,8 +675,8 @@ def register_citation_tree_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             Suggestion with article info and tree-building options.
         """
         # Normalize PMID
-        pmid = InputNormalizer.normalize_pmid_single(pmid)
-        if not pmid:
+        normalized_pmid = InputNormalizer.normalize_pmid_single(pmid)
+        if not normalized_pmid:
             return ResponseFormatter.error(
                 "Invalid or missing PMID",
                 suggestion="Provide a valid PubMed ID",
@@ -681,13 +684,13 @@ def register_citation_tree_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 tool_name="suggest_citation_tree"
             )
         
-        logger.info(f"Checking citation tree potential for PMID: {pmid}")
+        logger.info(f"Checking citation tree potential for PMID: {normalized_pmid}")
         
         try:
             # Get basic article info
-            articles = searcher.fetch_details([pmid.strip()])
+            articles = searcher.fetch_details([normalized_pmid.strip()])
             if not articles or "error" in articles[0]:
-                return f"Could not fetch article {pmid}"
+                return f"Could not fetch article {normalized_pmid}"
             
             article = articles[0]
             title = article.get("title", "Unknown")
@@ -699,7 +702,7 @@ def register_citation_tree_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             
             output = f"""📄 **Article**: {title[:80]}...
 📅 Year: {year} | 📰 {journal}
-🔗 PMID: {pmid}
+🔗 PMID: {normalized_pmid}
 
 ---
 
@@ -709,21 +712,21 @@ Would you like to explore this paper's citation network?
 
 1️⃣ **Quick Overview** (recommended first):
    ```
-   build_citation_tree(pmid="{pmid}", depth=1, direction="both")
+   build_citation_tree(pmid="{normalized_pmid}", depth=1, direction="both")
    ```
    - Shows direct citations and references only
    - Fast (~10 API calls)
 
 2️⃣ **Standard Tree** (most useful):
    ```
-   build_citation_tree(pmid="{pmid}", depth=2, direction="both")
+   build_citation_tree(pmid="{normalized_pmid}", depth=2, direction="both")
    ```
    - 2 levels: citations of citations, references of references
    - Good balance of depth and speed (~50 API calls)
 
 3️⃣ **Deep Exploration** (comprehensive):
    ```
-   build_citation_tree(pmid="{pmid}", depth=3, direction="both", limit_per_level=3)
+   build_citation_tree(pmid="{normalized_pmid}", depth=3, direction="both", limit_per_level=3)
    ```
    - 3 levels deep - full research landscape
    - Slower but thorough (~100+ API calls)
@@ -743,7 +746,7 @@ Would you like to explore this paper's citation network?
 
 Example with format:
 ```
-build_citation_tree(pmid="{pmid}", depth=2, output_format="mermaid")
+build_citation_tree(pmid="{normalized_pmid}", depth=2, output_format="mermaid")
 ```
 
 ---

@@ -11,16 +11,16 @@ These tools complement PubMed search for comprehensive biomedical research.
 
 import json
 import logging
-from typing import Any, Union
+from typing import Union
 
-from mcp.server import Server
+from mcp.server.fastmcp import FastMCP
 
 from ._common import InputNormalizer, ResponseFormatter
 
 logger = logging.getLogger(__name__)
 
 
-def register_ncbi_extended_tools(mcp: Server) -> None:
+def register_ncbi_extended_tools(mcp: FastMCP) -> None:
     """Register NCBI Extended database tools with MCP server."""
     
     # =========================================================================
@@ -66,7 +66,7 @@ def register_ncbi_extended_tools(mcp: Server) -> None:
         organism = organism.strip() if organism else None
         
         try:
-            from ..sources.ncbi_extended import get_ncbi_extended_client
+            from ..sources.ncbi_extended import get_ncbi_extended_client  # type: ignore[import-not-found]
             
             client = get_ncbi_extended_client()
             results = client.search_gene(
@@ -116,7 +116,7 @@ def register_ncbi_extended_tools(mcp: Server) -> None:
         gene_id = str(gene_id).strip()
         
         try:
-            from ..sources.ncbi_extended import get_ncbi_extended_client
+            from ..sources.ncbi_extended import get_ncbi_extended_client  # type: ignore[import-not-found]
             
             client = get_ncbi_extended_client()
             result = client.get_gene(gene_id)
@@ -165,7 +165,7 @@ def register_ncbi_extended_tools(mcp: Server) -> None:
         limit = InputNormalizer.normalize_limit(limit, default=20, max_val=100)
         
         try:
-            from ..sources.ncbi_extended import get_ncbi_extended_client
+            from ..sources.ncbi_extended import get_ncbi_extended_client  # type: ignore[import-not-found]
             
             client = get_ncbi_extended_client()
             pmids = client.get_gene_pubmed_links(gene_id, limit=limit)
@@ -229,7 +229,7 @@ def register_ncbi_extended_tools(mcp: Server) -> None:
         limit = InputNormalizer.normalize_limit(limit, default=10, max_val=50)
         
         try:
-            from ..sources.ncbi_extended import get_ncbi_extended_client
+            from ..sources.ncbi_extended import get_ncbi_extended_client  # type: ignore[import-not-found]
             
             client = get_ncbi_extended_client()
             results = client.search_compound(
@@ -278,7 +278,7 @@ def register_ncbi_extended_tools(mcp: Server) -> None:
         cid = str(cid).strip()
         
         try:
-            from ..sources.ncbi_extended import get_ncbi_extended_client
+            from ..sources.ncbi_extended import get_ncbi_extended_client  # type: ignore[import-not-found]
             
             client = get_ncbi_extended_client()
             result = client.get_compound(cid)
@@ -326,7 +326,7 @@ def register_ncbi_extended_tools(mcp: Server) -> None:
         limit = InputNormalizer.normalize_limit(limit, default=20, max_val=100)
         
         try:
-            from ..sources.ncbi_extended import get_ncbi_extended_client
+            from ..sources.ncbi_extended import get_ncbi_extended_client  # type: ignore[import-not-found]
             
             client = get_ncbi_extended_client()
             pmids = client.get_compound_pubmed_links(cid, limit=limit)
@@ -390,7 +390,7 @@ def register_ncbi_extended_tools(mcp: Server) -> None:
         limit = InputNormalizer.normalize_limit(limit, default=10, max_val=50)
         
         try:
-            from ..sources.ncbi_extended import get_ncbi_extended_client
+            from ..sources.ncbi_extended import get_ncbi_extended_client  # type: ignore[import-not-found]
             
             client = get_ncbi_extended_client()
             results = client.search_clinvar(

@@ -20,12 +20,12 @@ Phase 2.1 Updates:
 """
 
 import logging
-from typing import Optional, Union
+from typing import Optional, Union, Dict, Any, List
 
 from mcp.server.fastmcp import FastMCP
 
 from ...sources import get_europe_pmc_client
-from ._common import format_search_results, InputNormalizer, ResponseFormatter
+from ._common import InputNormalizer, ResponseFormatter
 
 logger = logging.getLogger(__name__)
 
@@ -37,8 +37,8 @@ def register_europe_pmc_tools(mcp: FastMCP):
     def search_europe_pmc(
         query: str,
         limit: int = 10,
-        min_year: int = None,
-        max_year: int = None,
+        min_year: Optional[int] = None,
+        max_year: Optional[int] = None,
         open_access_only: bool = False,
         has_fulltext: bool = False,
         sort: str = "relevance",
@@ -115,7 +115,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
             articles = result["results"]
             
             # Format header
-            output = f"📚 **Europe PMC Search Results**\n"
+            output = "📚 **Europe PMC Search Results**\n"
             output += f"Found **{len(articles)}** results"
             if total > len(articles):
                 output += f" (of {total:,} total)"
@@ -196,7 +196,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
     @mcp.tool()
     def get_fulltext(
         pmcid: Union[str, int],
-        sections: str = None,
+        sections: Optional[str] = None,
     ) -> str:
         """
         Get parsed fulltext content from Europe PMC.
@@ -214,7 +214,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
             Structured fulltext with title, sections, and references.
         """
         # Phase 2.1: Input normalization
-        pmcid_normalized = InputNormalizer.normalize_pmcid(pmcid)
+        pmcid_normalized = InputNormalizer.normalize_pmcid(str(pmcid) if pmcid else None)
         if not pmcid_normalized:
             return ResponseFormatter.error(
                 error="Invalid PMC ID format",
@@ -312,7 +312,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
             JATS XML document as string, or error message.
         """
         # Phase 2.1: Input normalization
-        pmcid_normalized = InputNormalizer.normalize_pmcid(pmcid)
+        pmcid_normalized = InputNormalizer.normalize_pmcid(str(pmcid) if pmcid else None)
         if not pmcid_normalized:
             return ResponseFormatter.error(
                 error="Invalid PMC ID format",
@@ -358,9 +358,9 @@ def register_europe_pmc_tools(mcp: FastMCP):
 
     @mcp.tool()
     def get_text_mined_terms(
-        pmid: Union[str, int] = None,
-        pmcid: Union[str, int] = None,
-        semantic_type: str = None,
+        pmid: Optional[Union[str, int]] = None,
+        pmcid: Optional[Union[str, int]] = None,
+        semantic_type: Optional[str] = None,
     ) -> str:
         """
         Get text-mined annotations from Europe PMC.
@@ -424,7 +424,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
                 )
             
             # Group by semantic type
-            by_type = {}
+            by_type: Dict[str, List[Dict[str, Any]]] = {}
             for term in terms:
                 term_type = term.get("semantic_type", "OTHER")
                 if term_type not in by_type:
@@ -451,7 +451,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
                 output += f"### {emoji} {term_type} ({len(type_terms)})\n\n"
                 
                 # Deduplicate and count
-                term_counts = {}
+                term_counts: Dict[str, int] = {}
                 for t in type_terms:
                     name = t.get("term", t.get("name", "Unknown"))
                     term_counts[name] = term_counts.get(name, 0) + 1
@@ -483,8 +483,8 @@ def register_europe_pmc_tools(mcp: FastMCP):
 
     @mcp.tool()
     def get_europe_pmc_citations(
-        pmid: Union[str, int] = None,
-        pmcid: Union[str, int] = None,
+        pmid: Optional[Union[str, int]] = None,
+        pmcid: Optional[Union[str, int]] = None,
         direction: str = "citing",
         limit: int = 20,
     ) -> str:

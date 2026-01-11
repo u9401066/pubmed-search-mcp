@@ -20,7 +20,7 @@ Phase 2.1 Updates:
 """
 
 import logging
-from typing import Literal, Union, List
+from typing import Literal, Union, List, Optional, Dict, Any
 
 from mcp.server.fastmcp import FastMCP
 
@@ -34,7 +34,6 @@ from ._common import (
     # Phase 2.1 imports
     InputNormalizer,
     ResponseFormatter,
-    apply_key_aliases,
 )
 
 logger = logging.getLogger(__name__)
@@ -111,12 +110,12 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
     def search_literature(
         query: str, 
         limit: int = 5, 
-        min_year: int = None, 
-        max_year: int = None,
-        date_from: str = None,
-        date_to: str = None,
+        min_year: Optional[int] = None, 
+        max_year: Optional[int] = None,
+        date_from: Optional[str] = None,
+        date_to: Optional[str] = None,
         date_type: str = "edat",
-        article_type: str = None, 
+        article_type: Optional[str] = None, 
         strategy: str = "relevance",
         force_refresh: bool = False,
         source: Literal["pubmed", "semantic_scholar", "openalex"] = "pubmed",
@@ -159,9 +158,11 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             
             # === Handle alternate sources (internal feature) ===
             if source in ALTERNATE_SOURCES:
+                # Cast to narrow type (we've already checked source is in ALTERNATE_SOURCES)
+                alt_source: Literal["semantic_scholar", "openalex"] = source  # type: ignore[assignment]
                 return _search_alternate_source_internal(
                     query=query,
-                    source=source,
+                    source=alt_source,
                     limit=limit,
                     min_year=min_year,
                     max_year=max_year,
@@ -230,7 +231,7 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             if returned_count >= 5:
                 pmids_list = [r.get('pmid') for r in results[:limit] if r.get('pmid')]
                 result += f"\n---\n💾 **Session 已暫存 {len(pmids_list)} 篇 PMIDs**"
-                result += f"\n🔖 後續可用: `get_session_pmids()` 或 `pmids='last'`"
+                result += "\n🔖 後續可用: `get_session_pmids()` 或 `pmids='last'`"
             
             # === Cross-search fallback (when PubMed results insufficient) ===
             if cross_search_fallback and returned_count < cross_search_threshold:
@@ -250,7 +251,7 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
     
     def _search_alternate_source_internal(
         query: str,
-        source: str,
+        source: Literal["semantic_scholar", "openalex"],
         limit: int,
         min_year: int | None,
         max_year: int | None,
@@ -584,9 +585,9 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
     def get_citation_metrics(
         pmids: Union[str, List, int],
         sort_by: str = "citation_count",
-        min_citations: int = None,
-        min_rcr: float = None,
-        min_percentile: float = None
+        min_citations: Optional[int] = None,
+        min_rcr: Optional[float] = None,
+        min_percentile: Optional[float] = None
     ) -> str:
         """
         Get citation metrics from NIH iCite for articles.
@@ -660,7 +661,7 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 )
             
             # Convert to list for sorting/filtering
-            articles = [{"pmid": pmid, "icite": data} for pmid, data in metrics.items()]
+            articles: List[Dict[str, Any]] = [{"pmid": pmid, "icite": data} for pmid, data in metrics.items()]
             
             # Apply filters
             if min_citations is not None:

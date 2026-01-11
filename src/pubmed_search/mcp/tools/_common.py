@@ -302,8 +302,8 @@ class ResponseFormatter:
     @staticmethod
     def success(
         data: Any,
-        message: str = None,
-        metadata: Dict = None,
+        message: Optional[str] = None,
+        metadata: Optional[Dict] = None,
         output_format: str = "markdown"
     ) -> str:
         """
@@ -351,9 +351,9 @@ class ResponseFormatter:
     @staticmethod
     def error(
         error: Union[Exception, str],
-        suggestion: str = None,
-        example: str = None,
-        tool_name: str = None,
+        suggestion: Optional[str] = None,
+        example: Optional[str] = None,
+        tool_name: Optional[str] = None,
         output_format: str = "markdown"
     ) -> str:
         """
@@ -404,9 +404,9 @@ class ResponseFormatter:
     
     @staticmethod
     def no_results(
-        query: str = None,
-        suggestions: List[str] = None,
-        alternative_tools: List[str] = None
+        query: Optional[str] = None,
+        suggestions: Optional[List[str]] = None,
+        alternative_tools: Optional[List[str]] = None
     ) -> str:
         """
         Format a 'no results' response with helpful suggestions.
@@ -440,7 +440,7 @@ class ResponseFormatter:
     def partial_success(
         successful: List[Any],
         failed: List[Dict],
-        message: str = None
+        message: Optional[str] = None
     ) -> str:
         """
         Format a partial success response (some items succeeded, some failed).
@@ -552,7 +552,7 @@ def get_strategy_generator():
     return _strategy_generator
 
 
-def check_cache(query: str, limit: int = None) -> Optional[List[Dict]]:
+def check_cache(query: str, limit: Optional[int] = None) -> Optional[List[Dict]]:
     """
     Check if search results exist in cache.
     
@@ -573,7 +573,7 @@ def check_cache(query: str, limit: int = None) -> Optional[List[Dict]]:
         return None
 
 
-def _cache_results(results: list, query: str = None):
+def _cache_results(results: list, query: Optional[str] = None):
     """Cache search results if session manager is available."""
     if _session_manager and results and not results[0].get('error'):
         try:

@@ -7,6 +7,7 @@ Tools:
 
 import json
 import logging
+from typing import Dict, List
 
 from mcp.server.fastmcp import FastMCP
 
@@ -69,9 +70,9 @@ def register_merge_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 tool_name="merge_search_results"
             )
         
-        pmid_sources = {}
-        all_pmids = []
-        by_query = {}
+        pmid_sources: Dict[str, List[str]] = {}
+        all_pmids: List[str] = []
+        by_query: Dict[str, int] = {}
         
         for i, result in enumerate(results):
             # Support both formats
