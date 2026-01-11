@@ -1,26 +1,47 @@
 # Phase 2.1: Agent-Friendly Tool Refactoring
 
-> **目標**: 讓 38 個 MCP Tools 對 Agent（尤其是較弱的模型）更友善
+> **目標**: 讓 34 個 MCP Tools 對 Agent（尤其是較弱的模型）更友善
+> 
+> **狀態**: ✅ **已完成** (2025-01-11)
+
+---
+
+## 📊 完成摘要
+
+| 階段 | 狀態 | 提交 |
+|------|------|------|
+| Phase 2.1.1 InputNormalizer | ✅ 完成 | `98f0b52` |
+| Phase 2.1.3 discovery.py (6 tools) | ✅ 完成 | `deef9bb` |
+| Phase 2.1.3 export.py (3 tools) | ✅ 完成 | `deef9bb` |
+| Phase 2.1.3 europe_pmc.py (5 tools) | ✅ 完成 | `deef9bb` |
+| Phase 2.1.3 core.py (5 tools) | ✅ 完成 | `d5ef678` |
+| Phase 2.1.3 ncbi_extended.py (7 tools) | ✅ 完成 | `d5ef678` |
+| Phase 2.1.3 citation_tree.py (2 tools) | ✅ 完成 | `d5ef678` |
+| Phase 2.1.3 strategy.py (2 tools) | ✅ 完成 | `d5ef678` |
+| Phase 2.1.3 pico.py (1 tool) | ✅ 完成 | `d5ef678` |
+| Phase 2.1.3 merge.py (1 tool) | ✅ 完成 | `d5ef678` |
+| Phase 2.1.3 unified.py (2 tools) | ✅ 完成 | `d5ef678` |
+
+**總計: 34/34 工具已套用 InputNormalizer + ResponseFormatter**
 
 ---
 
 ## 🔍 現況分析
 
-### 工具清單 (38 tools by module)
+### 工具清單 (34 tools by module)
 
-| Module | Tools | 用途 |
-|--------|-------|------|
-| **discovery** (6) | search_literature, find_related_articles, find_citing_articles, get_article_references, fetch_article_details, get_citation_metrics | 核心搜尋 |
-| **ncbi_extended** (7) | search_gene, get_gene_details, get_gene_literature, search_compound, get_compound_details, get_compound_literature, search_clinvar | NCBI 擴展 |
-| **europe_pmc** (5) | search_europe_pmc, get_fulltext, get_fulltext_xml, get_text_mined_terms, get_europe_pmc_citations | Europe PMC |
-| **core** (5) | search_core, search_core_fulltext, get_core_paper, get_core_fulltext, find_in_core | CORE OA |
-| **session_tools** (4) | get_session_pmids, list_search_history, get_cached_article, get_session_summary | Session |
-| **export** (3) | prepare_export, get_article_fulltext_links, analyze_fulltext_access | 匯出 |
-| **citation_tree** (2) | build_citation_tree, suggest_citation_tree | 引用網絡 |
-| **unified** (2) | unified_search, analyze_search_query | 統一搜尋 |
-| **strategy** (2) | generate_search_queries, expand_search_queries | 搜尋策略 |
-| **pico** (1) | parse_pico | PICO 解析 |
-| **merge** (1) | merge_search_results | 結果合併 |
+| Module | Tools | 用途 | 狀態 |
+|--------|-------|------|------|
+| **discovery** (6) | search_literature, find_related_articles, find_citing_articles, get_article_references, fetch_article_details, get_citation_metrics | 核心搜尋 | ✅ |
+| **ncbi_extended** (7) | search_gene, get_gene_details, get_gene_literature, search_compound, get_compound_details, get_compound_literature, search_clinvar | NCBI 擴展 | ✅ |
+| **europe_pmc** (5) | search_europe_pmc, get_fulltext, get_fulltext_xml, get_text_mined_terms, get_europe_pmc_citations | Europe PMC | ✅ |
+| **core** (5) | search_core, search_core_fulltext, get_core_paper, get_core_fulltext, find_in_core | CORE OA | ✅ |
+| **export** (3) | prepare_export, get_article_fulltext_links, analyze_fulltext_access | 匯出 | ✅ |
+| **citation_tree** (2) | build_citation_tree, suggest_citation_tree | 引用網絡 | ✅ |
+| **unified** (2) | unified_search, analyze_search_query | 統一搜尋 | ✅ |
+| **strategy** (2) | generate_search_queries, expand_search_queries | 搜尋策略 | ✅ |
+| **pico** (1) | parse_pico | PICO 解析 | ✅ |
+| **merge** (1) | merge_search_results | 結果合併 | ✅ |
 
 ---
 
