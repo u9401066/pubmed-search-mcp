@@ -49,7 +49,7 @@ Features:
 
 import json
 import logging
-from typing import Any, Literal
+from typing import Any, Literal, Union
 
 from mcp.server.fastmcp import FastMCP
 
@@ -67,7 +67,7 @@ from ...sources import (
     get_crossref_client,
     get_unpaywall_client,
 )
-from ._common import format_search_results, _cache_results
+from ._common import format_search_results, _cache_results, InputNormalizer, ResponseFormatter
 
 logger = logging.getLogger(__name__)
 
@@ -418,13 +418,13 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
     @mcp.tool()
     def unified_search(
         query: str,
-        limit: int = 10,
-        min_year: int = None,
-        max_year: int = None,
+        limit: Union[int, str] = 10,
+        min_year: Union[int, str, None] = None,
+        max_year: Union[int, str, None] = None,
         ranking: Literal["balanced", "impact", "recency", "quality"] = "balanced",
         output_format: Literal["markdown", "json"] = "markdown",
-        include_oa_links: bool = True,
-        show_analysis: bool = True,
+        include_oa_links: Union[bool, str] = True,
+        show_analysis: Union[bool, str] = True,
     ) -> str:
         """
         🔍 Unified Search - Single entry point for multi-source academic search.
@@ -486,6 +486,22 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         logger.info(f"Unified search: query='{query}', limit={limit}, ranking='{ranking}'")
         
         try:
+            # === Step 0: Normalize Inputs ===
+            query = InputNormalizer.normalize_query(query)
+            if not query:
+                return ResponseFormatter.error(
+                    "Empty query",
+                    suggestion="Provide a search query",
+                    example='unified_search(query="machine learning in anesthesia")',
+                    tool_name="unified_search"
+                )
+            
+            limit = InputNormalizer.normalize_limit(limit, default=10, max_val=100)
+            min_year = InputNormalizer.normalize_year(min_year)
+            max_year = InputNormalizer.normalize_year(max_year)
+            include_oa_links = InputNormalizer.normalize_bool(include_oa_links, default=True)
+            show_analysis = InputNormalizer.normalize_bool(show_analysis, default=True)
+            
             # === Step 1: Analyze Query ===
             analyzer = QueryAnalyzer()
             analysis = analyzer.analyze(query)
@@ -591,6 +607,16 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             - Recommended sources
             - Recommended strategies
         """
+        # Normalize input
+        query = InputNormalizer.normalize_query(query)
+        if not query:
+            return ResponseFormatter.error(
+                "Empty query",
+                suggestion="Provide a search query to analyze",
+                example='analyze_search_query(query="remimazolam vs propofol")',
+                tool_name="analyze_search_query"
+            )
+        
         try:
             analyzer = QueryAnalyzer()
             analysis = analyzer.analyze(query)

@@ -7,8 +7,11 @@ Tools:
 
 import json
 import logging
+from typing import Union
 
 from mcp.server.fastmcp import FastMCP
+
+from ._common import InputNormalizer, ResponseFormatter
 
 logger = logging.getLogger(__name__)
 
@@ -19,10 +22,10 @@ def register_pico_tools(mcp: FastMCP):
     @mcp.tool()
     def parse_pico(
         description: str,
-        p: str = None,
-        i: str = None,
-        c: str = None,
-        o: str = None
+        p: str | None = None,
+        i: str | None = None,
+        c: str | None = None,
+        o: str | None = None
     ) -> str:
         """
         Parse a clinical question into PICO elements OR accept pre-parsed PICO.
@@ -94,6 +97,17 @@ def register_pico_tools(mcp: FastMCP):
             - next_steps: Instructions for the workflow
             - example_queries: Reference query patterns
         """
+        # Normalize inputs
+        description = InputNormalizer.normalize_query(description) if description else ""
+        
+        if not description and not any([p, i, c, o]):
+            return ResponseFormatter.error(
+                "Missing input",
+                suggestion="Provide either a description or PICO elements",
+                example='parse_pico(description="remimazolam 在 ICU 比 propofol 好嗎？")',
+                tool_name="parse_pico"
+            )
+        
         logger.info(f"Parsing PICO from: {description[:50] if description else 'structured input'}...")
         
         # If structured PICO provided, use it directly

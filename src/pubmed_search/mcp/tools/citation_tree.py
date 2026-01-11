@@ -16,9 +16,10 @@ Supports multiple output formats:
 
 import logging
 import json
-from typing import Dict, Any, List, Set
+from typing import Dict, Any, List, Set, Union
 from mcp.server.fastmcp import FastMCP
 from ...entrez import LiteratureSearcher
+from ._common import InputNormalizer, ResponseFormatter
 
 logger = logging.getLogger(__name__)
 
@@ -352,11 +353,11 @@ def register_citation_tree_tools(mcp: FastMCP, searcher: LiteratureSearcher):
     
     @mcp.tool()
     def build_citation_tree(
-        pmid: str,
-        depth: int = 2,
+        pmid: Union[str, int],
+        depth: Union[int, str] = 2,
         direction: str = "both",
-        limit_per_level: int = 5,
-        include_details: bool = True,
+        limit_per_level: Union[int, str] = 5,
+        include_details: Union[bool, str] = True,
         output_format: str = "cytoscape"
     ) -> str:
         """
@@ -415,54 +416,41 @@ def register_citation_tree_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         logger.info(f"Building citation tree for PMID: {pmid}, depth={depth}, direction={direction}, format={output_format}")
         
         try:
-            # Validate inputs
-            pmid = pmid.strip()
-            if "," in pmid:
-                return json.dumps({
-                    "error": "Only ONE PMID accepted at a time. Please call separately for each paper.",
-                    "hint": "This prevents API overload and ensures complete trees."
-                }, indent=2)
+            # Normalize inputs using InputNormalizer
+            pmid = InputNormalizer.normalize_pmid_single(pmid)
+            if not pmid:
+                return ResponseFormatter.error(
+                    "Invalid or missing PMID",
+                    suggestion="Provide a valid PubMed ID",
+                    example='build_citation_tree(pmid="33475315", depth=2)',
+                    tool_name="build_citation_tree"
+                )
             
-            if not pmid.isdigit():
-                return json.dumps({
-                    "error": f"Invalid PMID format: '{pmid}'. PMID should be numeric.",
-                    "example": "12345678"
-                }, indent=2)
+            depth = InputNormalizer.normalize_limit(depth, default=2, min_val=1, max_val=MAX_DEPTH)
+            limit_per_level = InputNormalizer.normalize_limit(limit_per_level, default=5, min_val=1, max_val=20)
+            include_details = InputNormalizer.normalize_bool(include_details, default=True)
             
             # Validate output format
             valid_formats = ["cytoscape", "g6", "d3", "vis", "graphml", "mermaid"]
-            output_format = output_format.lower().strip()
+            output_format = output_format.lower().strip() if output_format else "cytoscape"
             if output_format not in valid_formats:
-                return json.dumps({
-                    "error": f"Invalid output format: '{output_format}'",
-                    "valid_formats": valid_formats,
-                    "recommendations": {
-                        "cytoscape": "Academic standard, Cytoscape.js",
-                        "g6": "Modern, AntV G6, best for large graphs",
-                        "d3": "Most flexible, D3.js, Observable notebooks",
-                        "vis": "Simple, vis-network, quick prototypes",
-                        "graphml": "Desktop tools: Gephi, VOSviewer, yEd",
-                        "mermaid": "VS Code Markdown preview, documentation"
-                    }
-                }, indent=2)
-            
-            # Enforce depth limit
-            if depth < 1:
-                depth = 1
-            if depth > MAX_DEPTH:
-                return json.dumps({
-                    "error": f"Maximum depth is {MAX_DEPTH}. Requested: {depth}",
-                    "reason": f"Depth {depth} would require too many API calls (~{5**depth}+)",
-                    "suggestion": f"Use depth={MAX_DEPTH} or less"
-                }, indent=2)
+                return ResponseFormatter.error(
+                    f"Invalid output format: '{output_format}'",
+                    suggestion=f"Use one of: {', '.join(valid_formats)}",
+                    example='build_citation_tree(pmid="12345678", output_format="mermaid")',
+                    tool_name="build_citation_tree"
+                )
             
             # Validate direction
             valid_directions = ["forward", "backward", "both"]
+            direction = direction.lower().strip() if direction else "both"
             if direction not in valid_directions:
-                return json.dumps({
-                    "error": f"Invalid direction: '{direction}'",
-                    "valid_options": valid_directions
-                }, indent=2)
+                return ResponseFormatter.error(
+                    f"Invalid direction: '{direction}'",
+                    suggestion=f"Use one of: {', '.join(valid_directions)}",
+                    example='build_citation_tree(pmid="12345678", direction="both")',
+                    tool_name="build_citation_tree"
+                )
             
             # Initialize data structures
             nodes: List[Dict[str, Any]] = []
@@ -479,10 +467,12 @@ def register_citation_tree_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             # Fetch root article
             root_articles = searcher.fetch_details([pmid])
             if not root_articles or "error" in root_articles[0]:
-                return json.dumps({
-                    "error": f"Could not fetch article with PMID: {pmid}",
-                    "detail": root_articles[0].get("error") if root_articles else "No results"
-                }, indent=2)
+                return ResponseFormatter.error(
+                    f"Could not fetch article with PMID: {pmid}",
+                    suggestion="Verify the PMID is correct",
+                    example='fetch_article_details(pmids="33475315")',
+                    tool_name="build_citation_tree"
+                )
             
             root_article = root_articles[0]
             root_node = _make_node(root_article, level=0, direction="root")
@@ -660,14 +650,15 @@ def register_citation_tree_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             
         except Exception as e:
             logger.error(f"Build citation tree failed: {e}")
-            return json.dumps({
-                "error": str(e),
-                "pmid": pmid
-            }, indent=2)
+            return ResponseFormatter.error(
+                e,
+                suggestion="Check PMID and try again with smaller depth",
+                tool_name="build_citation_tree"
+            )
 
 
     @mcp.tool()
-    def suggest_citation_tree(pmid: str) -> str:
+    def suggest_citation_tree(pmid: Union[str, int]) -> str:
         """
         After fetching article details, suggest whether to build a citation tree.
         
@@ -680,6 +671,16 @@ def register_citation_tree_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         Returns:
             Suggestion with article info and tree-building options.
         """
+        # Normalize PMID
+        pmid = InputNormalizer.normalize_pmid_single(pmid)
+        if not pmid:
+            return ResponseFormatter.error(
+                "Invalid or missing PMID",
+                suggestion="Provide a valid PubMed ID",
+                example='suggest_citation_tree(pmid="33475315")',
+                tool_name="suggest_citation_tree"
+            )
+        
         logger.info(f"Checking citation tree potential for PMID: {pmid}")
         
         try:

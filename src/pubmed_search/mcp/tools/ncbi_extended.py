@@ -11,9 +11,11 @@ These tools complement PubMed search for comprehensive biomedical research.
 
 import json
 import logging
-from typing import Any
+from typing import Any, Union
 
 from mcp.server import Server
+
+from ._common import InputNormalizer, ResponseFormatter
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +31,7 @@ def register_ncbi_extended_tools(mcp: Server) -> None:
     async def search_gene(
         query: str,
         organism: str | None = None,
-        limit: int = 10,
+        limit: Union[int, str] = 10,
     ) -> str:
         """
         Search NCBI Gene database for gene information.
@@ -50,6 +52,19 @@ def register_ncbi_extended_tools(mcp: Server) -> None:
         Returns:
             JSON with gene records including symbols, names, locations
         """
+        # Normalize inputs
+        query = InputNormalizer.normalize_query(query)
+        if not query:
+            return ResponseFormatter.error(
+                "Empty query",
+                suggestion="Provide a gene name or symbol",
+                example='search_gene(query="BRCA1", organism="human")',
+                tool_name="search_gene"
+            )
+        
+        limit = InputNormalizer.normalize_limit(limit, default=10, max_val=50)
+        organism = organism.strip() if organism else None
+        
         try:
             from ..sources.ncbi_extended import get_ncbi_extended_client
             
@@ -57,8 +72,18 @@ def register_ncbi_extended_tools(mcp: Server) -> None:
             results = client.search_gene(
                 query=query,
                 organism=organism,
-                limit=min(limit, 50),
+                limit=limit,
             )
+            
+            if not results:
+                return ResponseFormatter.no_results(
+                    query=f"{query}" + (f" (organism: {organism})" if organism else ""),
+                    suggestions=[
+                        "Try the official gene symbol (e.g., TP53 instead of p53)",
+                        "Remove organism filter for broader search",
+                        "Check gene name spelling"
+                    ]
+                )
             
             return json.dumps({
                 "count": len(results),
@@ -67,10 +92,10 @@ def register_ncbi_extended_tools(mcp: Server) -> None:
             
         except Exception as e:
             logger.error(f"Gene search failed: {e}")
-            return json.dumps({"error": str(e)})
+            return ResponseFormatter.error(e, tool_name="search_gene")
     
     @mcp.tool()
-    async def get_gene_details(gene_id: str) -> str:
+    async def get_gene_details(gene_id: Union[str, int]) -> str:
         """
         Get detailed information about a gene by NCBI Gene ID.
         
@@ -80,6 +105,16 @@ def register_ncbi_extended_tools(mcp: Server) -> None:
         Returns:
             JSON with gene details including symbol, name, summary, location
         """
+        # Normalize input
+        if gene_id is None:
+            return ResponseFormatter.error(
+                "Missing gene_id",
+                suggestion="Provide an NCBI Gene ID",
+                example='get_gene_details(gene_id="672")',
+                tool_name="get_gene_details"
+            )
+        gene_id = str(gene_id).strip()
+        
         try:
             from ..sources.ncbi_extended import get_ncbi_extended_client
             
@@ -89,16 +124,21 @@ def register_ncbi_extended_tools(mcp: Server) -> None:
             if result:
                 return json.dumps(result, indent=2, ensure_ascii=False)
             else:
-                return json.dumps({"error": f"Gene {gene_id} not found"})
+                return ResponseFormatter.no_results(
+                    suggestions=[
+                        f"Gene ID '{gene_id}' not found",
+                        "Use search_gene to find valid Gene IDs"
+                    ]
+                )
                 
         except Exception as e:
             logger.error(f"Get gene details failed: {e}")
-            return json.dumps({"error": str(e)})
+            return ResponseFormatter.error(e, tool_name="get_gene_details")
     
     @mcp.tool()
     async def get_gene_literature(
-        gene_id: str,
-        limit: int = 20,
+        gene_id: Union[str, int],
+        limit: Union[int, str] = 20,
     ) -> str:
         """
         Get PubMed articles linked to a gene.
@@ -113,11 +153,30 @@ def register_ncbi_extended_tools(mcp: Server) -> None:
         Returns:
             JSON with linked PubMed IDs
         """
+        # Normalize inputs
+        if gene_id is None:
+            return ResponseFormatter.error(
+                "Missing gene_id",
+                suggestion="Provide an NCBI Gene ID",
+                example='get_gene_literature(gene_id="672", limit=20)',
+                tool_name="get_gene_literature"
+            )
+        gene_id = str(gene_id).strip()
+        limit = InputNormalizer.normalize_limit(limit, default=20, max_val=100)
+        
         try:
             from ..sources.ncbi_extended import get_ncbi_extended_client
             
             client = get_ncbi_extended_client()
-            pmids = client.get_gene_pubmed_links(gene_id, limit=min(limit, 100))
+            pmids = client.get_gene_pubmed_links(gene_id, limit=limit)
+            
+            if not pmids:
+                return ResponseFormatter.no_results(
+                    suggestions=[
+                        f"No linked publications found for Gene ID '{gene_id}'",
+                        "Try search_literature with gene name instead"
+                    ]
+                )
             
             return json.dumps({
                 "gene_id": gene_id,
@@ -128,7 +187,7 @@ def register_ncbi_extended_tools(mcp: Server) -> None:
             
         except Exception as e:
             logger.error(f"Get gene literature failed: {e}")
-            return json.dumps({"error": str(e)})
+            return ResponseFormatter.error(e, tool_name="get_gene_literature")
     
     # =========================================================================
     # PubChem Database Tools
@@ -137,7 +196,7 @@ def register_ncbi_extended_tools(mcp: Server) -> None:
     @mcp.tool()
     async def search_compound(
         query: str,
-        limit: int = 10,
+        limit: Union[int, str] = 10,
     ) -> str:
         """
         Search PubChem for chemical compounds.
@@ -157,14 +216,36 @@ def register_ncbi_extended_tools(mcp: Server) -> None:
         Returns:
             JSON with compound records including names, formulas, properties
         """
+        # Normalize inputs
+        query = InputNormalizer.normalize_query(query)
+        if not query:
+            return ResponseFormatter.error(
+                "Empty query",
+                suggestion="Provide a compound or drug name",
+                example='search_compound(query="aspirin")',
+                tool_name="search_compound"
+            )
+        
+        limit = InputNormalizer.normalize_limit(limit, default=10, max_val=50)
+        
         try:
             from ..sources.ncbi_extended import get_ncbi_extended_client
             
             client = get_ncbi_extended_client()
             results = client.search_compound(
                 query=query,
-                limit=min(limit, 50),
+                limit=limit,
             )
+            
+            if not results:
+                return ResponseFormatter.no_results(
+                    query=query,
+                    suggestions=[
+                        "Try the generic name instead of brand name",
+                        "Check compound name spelling",
+                        "Try alternative drug names or synonyms"
+                    ]
+                )
             
             return json.dumps({
                 "count": len(results),
@@ -173,10 +254,10 @@ def register_ncbi_extended_tools(mcp: Server) -> None:
             
         except Exception as e:
             logger.error(f"Compound search failed: {e}")
-            return json.dumps({"error": str(e)})
+            return ResponseFormatter.error(e, tool_name="search_compound")
     
     @mcp.tool()
-    async def get_compound_details(cid: str) -> str:
+    async def get_compound_details(cid: Union[str, int]) -> str:
         """
         Get detailed information about a compound by PubChem CID.
         
@@ -186,6 +267,16 @@ def register_ncbi_extended_tools(mcp: Server) -> None:
         Returns:
             JSON with compound details including formula, SMILES, properties
         """
+        # Normalize input
+        if cid is None:
+            return ResponseFormatter.error(
+                "Missing cid",
+                suggestion="Provide a PubChem Compound ID",
+                example='get_compound_details(cid="2244")',
+                tool_name="get_compound_details"
+            )
+        cid = str(cid).strip()
+        
         try:
             from ..sources.ncbi_extended import get_ncbi_extended_client
             
@@ -195,16 +286,21 @@ def register_ncbi_extended_tools(mcp: Server) -> None:
             if result:
                 return json.dumps(result, indent=2, ensure_ascii=False)
             else:
-                return json.dumps({"error": f"Compound {cid} not found"})
+                return ResponseFormatter.no_results(
+                    suggestions=[
+                        f"Compound CID '{cid}' not found",
+                        "Use search_compound to find valid CIDs"
+                    ]
+                )
                 
         except Exception as e:
             logger.error(f"Get compound details failed: {e}")
-            return json.dumps({"error": str(e)})
+            return ResponseFormatter.error(e, tool_name="get_compound_details")
     
     @mcp.tool()
     async def get_compound_literature(
-        cid: str,
-        limit: int = 20,
+        cid: Union[str, int],
+        limit: Union[int, str] = 20,
     ) -> str:
         """
         Get PubMed articles linked to a compound.
@@ -218,11 +314,30 @@ def register_ncbi_extended_tools(mcp: Server) -> None:
         Returns:
             JSON with linked PubMed IDs
         """
+        # Normalize inputs
+        if cid is None:
+            return ResponseFormatter.error(
+                "Missing cid",
+                suggestion="Provide a PubChem Compound ID",
+                example='get_compound_literature(cid="2244", limit=20)',
+                tool_name="get_compound_literature"
+            )
+        cid = str(cid).strip()
+        limit = InputNormalizer.normalize_limit(limit, default=20, max_val=100)
+        
         try:
             from ..sources.ncbi_extended import get_ncbi_extended_client
             
             client = get_ncbi_extended_client()
-            pmids = client.get_compound_pubmed_links(cid, limit=min(limit, 100))
+            pmids = client.get_compound_pubmed_links(cid, limit=limit)
+            
+            if not pmids:
+                return ResponseFormatter.no_results(
+                    suggestions=[
+                        f"No linked publications found for CID '{cid}'",
+                        "Try search_literature with compound name instead"
+                    ]
+                )
             
             return json.dumps({
                 "compound_cid": cid,
@@ -233,7 +348,7 @@ def register_ncbi_extended_tools(mcp: Server) -> None:
             
         except Exception as e:
             logger.error(f"Get compound literature failed: {e}")
-            return json.dumps({"error": str(e)})
+            return ResponseFormatter.error(e, tool_name="get_compound_literature")
     
     # =========================================================================
     # ClinVar Database Tools
@@ -242,7 +357,7 @@ def register_ncbi_extended_tools(mcp: Server) -> None:
     @mcp.tool()
     async def search_clinvar(
         query: str,
-        limit: int = 10,
+        limit: Union[int, str] = 10,
     ) -> str:
         """
         Search ClinVar for clinical variants.
@@ -262,14 +377,36 @@ def register_ncbi_extended_tools(mcp: Server) -> None:
         Returns:
             JSON with variant records including significance and conditions
         """
+        # Normalize inputs
+        query = InputNormalizer.normalize_query(query)
+        if not query:
+            return ResponseFormatter.error(
+                "Empty query",
+                suggestion="Provide a gene name, variant, or disease",
+                example='search_clinvar(query="BRCA1")',
+                tool_name="search_clinvar"
+            )
+        
+        limit = InputNormalizer.normalize_limit(limit, default=10, max_val=50)
+        
         try:
             from ..sources.ncbi_extended import get_ncbi_extended_client
             
             client = get_ncbi_extended_client()
             results = client.search_clinvar(
                 query=query,
-                limit=min(limit, 50),
+                limit=limit,
             )
+            
+            if not results:
+                return ResponseFormatter.no_results(
+                    query=query,
+                    suggestions=[
+                        "Try the official gene symbol",
+                        "Try the disease name without abbreviations",
+                        "Check variant notation format (e.g., NM_000059.3:c.5946delT)"
+                    ]
+                )
             
             return json.dumps({
                 "count": len(results),
@@ -278,4 +415,4 @@ def register_ncbi_extended_tools(mcp: Server) -> None:
             
         except Exception as e:
             logger.error(f"ClinVar search failed: {e}")
-            return json.dumps({"error": str(e)})
+            return ResponseFormatter.error(e, tool_name="search_clinvar")

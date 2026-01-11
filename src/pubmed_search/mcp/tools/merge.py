@@ -11,6 +11,7 @@ import logging
 from mcp.server.fastmcp import FastMCP
 
 from ...entrez import LiteratureSearcher
+from ._common import ResponseFormatter
 
 logger = logging.getLogger(__name__)
 
@@ -50,10 +51,23 @@ def register_merge_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         """
         logger.info("Merging search results")
         
+        if not results_json or not results_json.strip():
+            return ResponseFormatter.error(
+                "Empty results_json",
+                suggestion="Provide JSON array of search results to merge",
+                example='merge_search_results(results_json=\'[["12345", "67890"], ["67890", "11111"]]\')',
+                tool_name="merge_search_results"
+            )
+        
         try:
             results = json.loads(results_json)
         except json.JSONDecodeError as e:
-            return f"Error: Invalid JSON format - {e}"
+            return ResponseFormatter.error(
+                f"Invalid JSON format: {e}",
+                suggestion="Ensure results_json is valid JSON array",
+                example='[["12345", "67890"], ["67890", "11111"]]',
+                tool_name="merge_search_results"
+            )
         
         pmid_sources = {}
         all_pmids = []

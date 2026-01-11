@@ -9,11 +9,12 @@ Tools:
 import json
 import logging
 from datetime import datetime
+from typing import Union
 
 from mcp.server.fastmcp import FastMCP
 
 from ...entrez import LiteratureSearcher
-from ._common import get_strategy_generator
+from ._common import get_strategy_generator, InputNormalizer, ResponseFormatter
 
 logger = logging.getLogger(__name__)
 
@@ -25,8 +26,8 @@ def register_strategy_tools(mcp: FastMCP, searcher: LiteratureSearcher):
     def generate_search_queries(
         topic: str,
         strategy: str = "comprehensive",
-        check_spelling: bool = True,
-        include_suggestions: bool = True
+        check_spelling: Union[bool, str] = True,
+        include_suggestions: Union[bool, str] = True
     ) -> str:
         """
         Gather search intelligence for a topic - returns RAW MATERIALS for Agent to decide.
@@ -103,6 +104,25 @@ def register_strategy_tools(mcp: FastMCP, searcher: LiteratureSearcher):
               - estimated_count: How many results PubMed would return
               - pubmed_translation: How PubMed actually interprets the query
         """
+        # Normalize inputs
+        topic = InputNormalizer.normalize_query(topic)
+        if not topic:
+            return ResponseFormatter.error(
+                "Empty topic",
+                suggestion="Provide a search topic",
+                example='generate_search_queries(topic="remimazolam sedation")',
+                tool_name="generate_search_queries"
+            )
+        
+        check_spelling = InputNormalizer.normalize_bool(check_spelling, default=True)
+        include_suggestions = InputNormalizer.normalize_bool(include_suggestions, default=True)
+        
+        # Validate strategy
+        valid_strategies = ["comprehensive", "focused", "exploratory"]
+        strategy = strategy.lower().strip() if strategy else "comprehensive"
+        if strategy not in valid_strategies:
+            strategy = "comprehensive"  # Default fallback
+        
         logger.info(f"Generating search queries for topic: {topic}, strategy: {strategy}")
         
         _strategy_generator = get_strategy_generator()
@@ -202,6 +222,22 @@ def register_strategy_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         Returns:
             New search queries for parallel execution
         """
+        # Normalize inputs
+        topic = InputNormalizer.normalize_query(topic)
+        if not topic:
+            return ResponseFormatter.error(
+                "Empty topic",
+                suggestion="Provide the original search topic",
+                example='expand_search_queries(topic="remimazolam", expansion_type="mesh")',
+                tool_name="expand_search_queries"
+            )
+        
+        # Validate expansion_type
+        valid_types = ["mesh", "synonyms", "broader", "narrower"]
+        expansion_type = expansion_type.lower().strip() if expansion_type else "mesh"
+        if expansion_type not in valid_types:
+            expansion_type = "mesh"  # Default fallback
+        
         logger.info(f"Expanding search for topic: {topic}, type: {expansion_type}")
         
         _strategy_generator = get_strategy_generator()
