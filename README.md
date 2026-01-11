@@ -12,7 +12,7 @@
 A Domain-Driven Design (DDD) based MCP server that serves as an intelligent research assistant for AI agents, providing task-oriented literature search and analysis capabilities.
 
 **✨ What's Included:**
-- 🔧 **35+ MCP Tools** - Comprehensive PubMed, Europe PMC, CORE, and NCBI database access
+- 🔧 **21 MCP Tools** - Streamlined PubMed, Europe PMC, CORE, and NCBI database access
 - 📚 **9 Claude Skills** - Ready-to-use workflow guides for AI agents
 - 📖 **Copilot Instructions** - VS Code GitHub Copilot integration guide
 

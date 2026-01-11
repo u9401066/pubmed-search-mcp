@@ -2,38 +2,52 @@
 Europe PMC Tools - Access Europe PMC for fulltext and search.
 
 Tools:
-- search_europe_pmc: Search Europe PMC (33M+ articles, 6.5M OA)
-- get_fulltext: Get parsed fulltext content from Europe PMC
-- get_fulltext_xml: Get raw JATS XML fulltext
+- get_fulltext: 🔥 Enhanced multi-source fulltext retrieval
+  - Supports PMID, PMC ID, or DOI input
+  - Auto-tries: Europe PMC → Unpaywall → CORE
+  - Returns fulltext content + PDF links
 - get_text_mined_terms: Get text-mined annotations (genes, diseases, chemicals)
-- get_europe_pmc_citations: Get citation network from Europe PMC
 
-Europe PMC unique features:
-- Direct fulltext XML access via /{pmcid}/fullTextXML
-- Text mining annotations (genes, diseases, chemicals, organisms)
-- 33M+ publications, 6.5M open access fulltext
-- No API key required
+Internal (not registered):
+- search_europe_pmc: Use unified_search instead
+- get_fulltext_xml: Use get_fulltext instead
+- get_europe_pmc_citations: Use find_citing_articles instead
 
-Phase 2.1 Updates:
-- InputNormalizer for flexible input handling
-- ResponseFormatter for consistent error messages
+Phase 2.2 Updates (v0.1.21):
+- Multi-source fulltext: Europe PMC, Unpaywall, CORE
+- Flexible input: PMID, PMC ID, or DOI
+- PDF link aggregation from all sources
 """
 
 import logging
-from typing import Optional, Union, Dict, Any, List
+from typing import Optional, Union
 
 from mcp.server.fastmcp import FastMCP
 
 from ...sources import get_europe_pmc_client
+from ...sources.unpaywall import get_unpaywall_client
+from ...sources.core import get_core_client
 from ._common import InputNormalizer, ResponseFormatter
+
+from typing import Dict, Any, List
 
 logger = logging.getLogger(__name__)
 
 
 def register_europe_pmc_tools(mcp: FastMCP):
-    """Register Europe PMC tools for fulltext access and search."""
+    """
+    Register Europe PMC tools for fulltext access and text mining.
     
-    @mcp.tool()
+    Note: search_europe_pmc is NOT registered - use unified_search instead.
+    Only registers:
+    - get_fulltext: Get parsed fulltext content
+    - get_text_mined_terms: Get text-mined annotations
+    """
+    
+    # NOTE: search_europe_pmc is NOT registered as a tool.
+    # Use unified_search(sources=["europe_pmc"]) instead.
+    # Keeping the function for internal use by unified_search.
+    # @mcp.tool()  # REMOVED - integrated into unified_search
     def search_europe_pmc(
         query: str,
         limit: int = 10,
@@ -195,109 +209,308 @@ def register_europe_pmc_tools(mcp: FastMCP):
 
     @mcp.tool()
     def get_fulltext(
-        pmcid: Union[str, int],
+        identifier: Optional[str] = None,
+        pmcid: Optional[Union[str, int]] = None,
+        pmid: Optional[Union[str, int]] = None,
+        doi: Optional[str] = None,
         sections: Optional[str] = None,
+        include_pdf_links: bool = True,
     ) -> str:
         """
-        Get parsed fulltext content from Europe PMC.
+        🔥 Enhanced multi-source fulltext retrieval.
         
-        Returns structured fulltext with sections (Introduction, Methods, Results, etc.).
-        Only works for articles available in PubMed Central (PMC).
+        Automatically tries multiple sources to find the best fulltext:
+        1. Europe PMC (if PMC ID available)
+        2. Unpaywall (finds OA versions via DOI)
+        3. CORE (200M+ open access papers)
+        
+        Accepts flexible input - provide ANY ONE of:
+        - identifier: Auto-detects PMID, PMC ID, or DOI
+        - pmcid: Direct PMC ID
+        - pmid: PubMed ID (will lookup PMC ID)
+        - doi: DOI (will search Unpaywall/CORE)
         
         Args:
-            pmcid: PubMed Central ID (accepts: "PMC7096777", "7096777", 7096777).
-            sections: Comma-separated section names to include (e.g., "introduction,methods").
-                      If not specified, returns all sections.
-                      Common sections: introduction, methods, results, discussion, conclusion.
+            identifier: Auto-detect format - PMID, PMC ID, or DOI
+                       Examples: "PMC7096777", "12345678", "10.1001/jama.2024.1234"
+            pmcid: PubMed Central ID (e.g., "PMC7096777", "7096777")
+            pmid: PubMed ID (e.g., "12345678")
+            doi: DOI (e.g., "10.1001/jama.2024.1234")
+            sections: Filter sections (e.g., "introduction,methods,results")
+            include_pdf_links: Include PDF download links (default: True)
             
         Returns:
-            Structured fulltext with title, sections, and references.
+            Fulltext content with PDF links from all available sources.
+            
+        Example:
+            get_fulltext(identifier="PMC7096777")
+            get_fulltext(doi="10.1038/s41586-021-03819-2")
+            get_fulltext(pmid="12345678", sections="introduction,discussion")
         """
-        # Phase 2.1: Input normalization
-        pmcid_normalized = InputNormalizer.normalize_pmcid(str(pmcid) if pmcid else None)
-        if not pmcid_normalized:
-            return ResponseFormatter.error(
-                error="Invalid PMC ID format",
-                suggestion="Provide a valid PMC ID number",
-                example='get_fulltext(pmcid="PMC7096777")',
-                tool_name="get_fulltext"
-            )
         
-        logger.info(f"Getting fulltext for: {pmcid_normalized}")
+        # Phase 2.2: Smart identifier detection
+        detected_pmcid = pmcid
+        detected_doi = doi
+        detected_pmid = pmid
         
-        try:
-            client = get_europe_pmc_client()
-            
-            # Get XML
-            xml = client.get_fulltext_xml(pmcid_normalized)
-            if not xml:
-                return ResponseFormatter.no_results(
-                    query=pmcid_normalized,
-                    suggestions=[
-                        "Article may not be in PMC",
-                        "Article may not be open access",
-                        "Try get_article_fulltext_links to check availability"
-                    ]
-                )
-            
-            # Parse XML
-            parsed = client.parse_fulltext_xml(xml)
-            if not parsed:
-                return f"Failed to parse fulltext for {pmcid_normalized}."
-            
-            # Format output
-            output = f"📖 **Fulltext: {parsed.get('title', 'Unknown Title')}**\n"
-            output += f"🆔 {pmcid_normalized}\n\n"
-            
-            # Filter sections if requested
-            all_sections = parsed.get("sections", [])
-            if sections:
-                requested = [s.strip().lower() for s in sections.split(",")]
-                filtered_sections = []
-                for sec in all_sections:
-                    sec_title = sec.get("title", "").lower()
-                    # Match partial names (e.g., "intro" matches "introduction")
-                    if any(req in sec_title or sec_title in req for req in requested):
-                        filtered_sections.append(sec)
-                all_sections = filtered_sections
-            
-            if not all_sections:
-                # If no sections found, return raw content summary
-                output += "⚠️ No structured sections found. Article may have different structure.\n\n"
-                # Try to show any content we have
-                if parsed.get("abstract"):
-                    output += f"**Abstract**\n{parsed['abstract']}\n\n"
+        if identifier:
+            identifier = str(identifier).strip()
+            # Detect format
+            if identifier.upper().startswith("PMC") or (identifier.isdigit() and len(identifier) > 6):
+                if identifier.upper().startswith("PMC"):
+                    detected_pmcid = identifier
+                else:
+                    # Could be PMID or PMC number - assume PMID if < 8 digits
+                    if len(identifier) <= 8:
+                        detected_pmid = identifier
+                    else:
+                        detected_pmcid = f"PMC{identifier}"
+            elif identifier.startswith("10.") or "doi.org" in identifier:
+                # DOI format
+                detected_doi = identifier.replace("https://doi.org/", "").replace("http://doi.org/", "")
+            elif identifier.isdigit():
+                detected_pmid = identifier
             else:
-                # Format sections
-                for sec in all_sections:
-                    title = sec.get("title", "Untitled Section")
-                    content = sec.get("content", "")
-                    
-                    if content:
-                        output += f"## {title}\n\n"
-                        # Truncate very long sections
-                        if len(content) > 5000:
-                            output += content[:5000]
-                            output += f"\n\n... _{len(content) - 5000} characters truncated_\n\n"
-                        else:
-                            output += content + "\n\n"
-            
-            # Add reference count
-            refs = parsed.get("references", [])
-            if refs:
-                output += f"---\n📚 **References**: {len(refs)} citations\n"
-            
-            return output
-            
-        except Exception as e:
-            logger.error(f"Get fulltext failed: {e}")
+                # Try as PMID
+                detected_pmid = identifier
+        
+        # Normalize inputs
+        if detected_pmcid:
+            detected_pmcid = InputNormalizer.normalize_pmcid(str(detected_pmcid))
+        if detected_pmid:
+            detected_pmid = InputNormalizer.normalize_pmid_single(detected_pmid)
+        
+        if not any([detected_pmcid, detected_pmid, detected_doi]):
             return ResponseFormatter.error(
-                error=e,
-                suggestion="Check if the PMC ID is correct and the article is open access",
+                error="No valid identifier provided",
+                suggestion="Provide pmcid, pmid, doi, or auto-detect identifier",
+                example='get_fulltext(identifier="PMC7096777") or get_fulltext(doi="10.1038/...")',
                 tool_name="get_fulltext"
             )
+        
+        logger.info(f"Getting fulltext: pmcid={detected_pmcid}, pmid={detected_pmid}, doi={detected_doi}")
+        
+        # Collect results from all sources
+        fulltext_content = None
+        pdf_links: List[Dict[str, Any]] = []
+        sources_tried = []
+        article_title = None
+        
+        # === SOURCE 1: Europe PMC (best for structured fulltext) ===
+        if detected_pmcid:
+            sources_tried.append("Europe PMC")
+            try:
+                client = get_europe_pmc_client()
+                xml = client.get_fulltext_xml(detected_pmcid)
+                if xml:
+                    parsed = client.parse_fulltext_xml(xml)
+                    if parsed:
+                        fulltext_content = _format_sections(parsed, sections)
+                        article_title = parsed.get("title")
+                        # Add PMC PDF link
+                        pmc_num = detected_pmcid.replace("PMC", "")
+                        pdf_links.append({
+                            "source": "PubMed Central",
+                            "url": f"https://www.ncbi.nlm.nih.gov/pmc/articles/PMC{pmc_num}/pdf/",
+                            "type": "pdf",
+                            "access": "open_access"
+                        })
+            except Exception as e:
+                logger.warning(f"Europe PMC failed: {e}")
+        
+        # === SOURCE 2: Unpaywall (best for finding OA via DOI) ===
+        if detected_doi:
+            sources_tried.append("Unpaywall")
+            try:
+                unpaywall = get_unpaywall_client()
+                oa_info = unpaywall.get_oa_status(detected_doi)
+                if oa_info and oa_info.get("is_oa"):
+                    # Get title if we don't have it
+                    if not article_title:
+                        article_title = oa_info.get("title")
+                    
+                    # Collect all OA links
+                    best_loc = oa_info.get("best_oa_location", {})
+                    if best_loc:
+                        if best_loc.get("url_for_pdf"):
+                            pdf_links.append({
+                                "source": f"Unpaywall ({best_loc.get('host_type', 'unknown')})",
+                                "url": best_loc["url_for_pdf"],
+                                "type": "pdf",
+                                "access": oa_info.get("oa_status", "open_access"),
+                                "version": best_loc.get("version", "unknown"),
+                                "license": best_loc.get("license")
+                            })
+                        elif best_loc.get("url"):
+                            pdf_links.append({
+                                "source": f"Unpaywall ({best_loc.get('host_type', 'unknown')})",
+                                "url": best_loc["url"],
+                                "type": "landing_page",
+                                "access": oa_info.get("oa_status", "open_access")
+                            })
+                    
+                    # Add alternative locations
+                    for loc in oa_info.get("oa_locations", [])[:3]:  # Top 3
+                        if loc != best_loc and loc.get("url_for_pdf"):
+                            pdf_links.append({
+                                "source": f"Unpaywall ({loc.get('host_type', 'repository')})",
+                                "url": loc["url_for_pdf"],
+                                "type": "pdf",
+                                "access": "alternative",
+                                "version": loc.get("version")
+                            })
+            except Exception as e:
+                logger.warning(f"Unpaywall failed: {e}")
+        
+        # === SOURCE 3: CORE (200M+ open access papers) ===
+        if detected_doi and not fulltext_content:
+            sources_tried.append("CORE")
+            try:
+                core = get_core_client()
+                # Search by DOI
+                results = core.search(f'doi:"{detected_doi}"', limit=1)
+                if results and results.get("results"):
+                    work = results["results"][0]
+                    if not article_title:
+                        article_title = work.get("title")
+                    
+                    # Get fulltext if available
+                    if work.get("fullText"):
+                        fulltext_content = _format_core_fulltext(work, sections)
+                    
+                    # Add download links
+                    if work.get("downloadUrl"):
+                        pdf_links.append({
+                            "source": "CORE",
+                            "url": work["downloadUrl"],
+                            "type": "pdf",
+                            "access": "open_access"
+                        })
+                    if work.get("sourceFulltextUrls"):
+                        for url in work["sourceFulltextUrls"][:2]:
+                            pdf_links.append({
+                                "source": "CORE (source)",
+                                "url": url,
+                                "type": "fulltext",
+                                "access": "open_access"
+                            })
+            except Exception as e:
+                logger.warning(f"CORE failed: {e}")
+        
+        # === BUILD OUTPUT ===
+        if not fulltext_content and not pdf_links:
+            return ResponseFormatter.no_results(
+                query=f"pmcid={detected_pmcid}, pmid={detected_pmid}, doi={detected_doi}",
+                suggestions=[
+                    "Article may not be open access",
+                    "Try searching with DOI for Unpaywall lookup",
+                    "Check if article is available in PubMed Central",
+                    f"Sources tried: {', '.join(sources_tried)}"
+                ]
+            )
+        
+        # Format output
+        output = f"📖 **{article_title or 'Fulltext Retrieved'}**\n"
+        output += f"🔍 Sources checked: {', '.join(sources_tried)}\n\n"
+        
+        # PDF Links section
+        if pdf_links and include_pdf_links:
+            output += "## 📥 PDF/Fulltext Links\n\n"
+            # Deduplicate by URL
+            seen_urls = set()
+            for link in pdf_links:
+                if link["url"] not in seen_urls:
+                    seen_urls.add(link["url"])
+                    icon = "📄" if link["type"] == "pdf" else "🔗"
+                    access_badge = {
+                        "gold": "🥇 Gold OA",
+                        "green": "🟢 Green OA", 
+                        "hybrid": "🔶 Hybrid",
+                        "bronze": "🟤 Bronze",
+                        "open_access": "🔓 Open Access",
+                        "alternative": "📋 Alternative"
+                    }.get(link.get("access", ""), "")
+                    
+                    output += f"- {icon} **{link['source']}** {access_badge}\n"
+                    output += f"  {link['url']}\n"
+                    if link.get("version"):
+                        output += f"  _Version: {link['version']}_\n"
+                    if link.get("license"):
+                        output += f"  _License: {link['license']}_\n"
+            output += "\n"
+        
+        # Fulltext content
+        if fulltext_content:
+            output += "## 📝 Content\n\n"
+            output += fulltext_content
+        elif pdf_links:
+            output += "_Structured fulltext not available. Use the PDF links above to access the article._\n"
+        
+        return output
+    
+    def _format_sections(parsed: Dict[str, Any], sections_filter: Optional[str]) -> str:
+        """Format parsed Europe PMC sections."""
+        all_sections = parsed.get("sections", [])
+        
+        if sections_filter:
+            requested = [s.strip().lower() for s in sections_filter.split(",")]
+            filtered = []
+            for sec in all_sections:
+                sec_title = sec.get("title", "").lower()
+                if any(req in sec_title or sec_title in req for req in requested):
+                    filtered.append(sec)
+            all_sections = filtered
+        
+        if not all_sections:
+            if parsed.get("abstract"):
+                return f"**Abstract**\n{parsed['abstract']}\n\n"
+            return ""
+        
+        output = ""
+        for sec in all_sections:
+            title = sec.get("title", "Untitled Section")
+            content = sec.get("content", "")
+            if content:
+                output += f"### {title}\n\n"
+                if len(content) > 5000:
+                    output += content[:5000]
+                    output += f"\n\n_... {len(content) - 5000} characters truncated_\n\n"
+                else:
+                    output += content + "\n\n"
+        
+        refs = parsed.get("references", [])
+        if refs:
+            output += f"---\n📚 **References**: {len(refs)} citations\n"
+        
+        return output
+    
+    def _format_core_fulltext(work: Dict[str, Any], sections_filter: Optional[str]) -> str:
+        """Format CORE fulltext."""
+        fulltext = work.get("fullText", "")
+        if not fulltext:
+            return ""
+        
+        # CORE fulltext is usually plain text, not structured
+        if sections_filter:
+            # Try to extract requested sections by searching for keywords
+            output = ""
+            for section in sections_filter.split(","):
+                section = section.strip().lower()
+                # Simple section extraction (CORE doesn't have structured sections)
+                # Just show that we have content
+                if section in fulltext.lower():
+                    output += f"_Contains '{section}' section_\n"
+            if output:
+                output += "\n"
+        
+        # Truncate if too long
+        if len(fulltext) > 10000:
+            return fulltext[:10000] + f"\n\n_... {len(fulltext) - 10000} characters truncated_"
+        return fulltext
 
-    @mcp.tool()
+    # NOTE: get_fulltext_xml is NOT registered as a tool.
+    # Use get_fulltext instead - it provides better parsed output.
+    # @mcp.tool()  # REMOVED - use get_fulltext instead
     def get_fulltext_xml(pmcid: Union[str, int]) -> str:
         """
         Get raw JATS XML fulltext from Europe PMC.
@@ -481,7 +694,9 @@ def register_europe_pmc_tools(mcp: FastMCP):
                 tool_name="get_text_mined_terms"
             )
 
-    @mcp.tool()
+    # NOTE: get_europe_pmc_citations is NOT registered as a tool.
+    # Use find_citing_articles or get_article_references instead.
+    # @mcp.tool()  # REMOVED - use find_citing_articles instead
     def get_europe_pmc_citations(
         pmid: Optional[Union[str, int]] = None,
         pmcid: Optional[Union[str, int]] = None,

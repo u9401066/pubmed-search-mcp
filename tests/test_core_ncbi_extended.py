@@ -323,8 +323,9 @@ class TestAllToolsRegistration:
         
         tool_names = [t.name for t in mcp._tool_manager.list_tools()]
         
-        # CORE tools
-        assert "search_core" in tool_names
+        # CORE tools are now integrated into unified_search
+        # search_core is internal, unified_search handles multi-source
+        assert "unified_search" in tool_names
         
         # NCBI Extended tools
         assert "search_gene" in tool_names
@@ -347,7 +348,7 @@ class TestServerIntegration:
         
         tool_names = [t.name for t in server._tool_manager.list_tools()]
         
-        # Verify new tools are included
-        assert "search_core" in tool_names
+        # Verify tools are included (search_core integrated into unified_search)
+        assert "unified_search" in tool_names
         assert "search_gene" in tool_names
         assert "search_compound" in tool_names

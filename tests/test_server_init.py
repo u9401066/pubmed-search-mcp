@@ -67,8 +67,9 @@ class TestToolRegistration:
             register_discovery_tools,
             register_strategy_tools,
             register_pico_tools,
-            register_merge_tools,
-            register_export_tools
+            register_export_tools,
+            register_unified_search_tools,
+            register_europe_pmc_tools,
         )
         
         mcp = MagicMock()
@@ -80,8 +81,9 @@ class TestToolRegistration:
         register_discovery_tools(mcp, searcher)
         register_strategy_tools(mcp, searcher)
         register_pico_tools(mcp)
-        register_merge_tools(mcp, searcher)
         register_export_tools(mcp, searcher)
+        register_unified_search_tools(mcp, searcher)
+        register_europe_pmc_tools(mcp)
     
     def test_register_all_tools_function(self):
         """Test register_all_tools aggregator function."""

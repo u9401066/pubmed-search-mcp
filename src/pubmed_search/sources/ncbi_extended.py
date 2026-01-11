@@ -16,8 +16,6 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Any
-from xml.etree import ElementTree
 
 logger = logging.getLogger(__name__)
 

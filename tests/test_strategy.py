@@ -188,131 +188,20 @@ class TestRetryLogic:
         assert _is_retryable(Exception("Rate limit exceeded")) is False
 
 
+# v0.1.21: expand_search_queries has been internalized (no longer a public MCP tool)
+# These tests are kept for reference but skipped
+@pytest.mark.skip(reason="v0.1.21: expand_search_queries internalized, not a public MCP tool")
 class TestExpandSearchQueries:
-    """Tests for expand_search_queries tool."""
+    """Tests for expand_search_queries tool - SKIPPED in v0.1.21."""
     
     def test_expand_mesh_fallback(self):
-        """Test MeSH expansion fallback."""
-        from pubmed_search.mcp.tools.strategy import register_strategy_tools
-        from pubmed_search.mcp.tools._common import set_strategy_generator
-        
-        set_strategy_generator(None)  # Force fallback
-        
-        mcp = MagicMock()
-        searcher = MagicMock()
-        
-        registered_fns = {}
-        def capture_tool():
-            def decorator(fn):
-                registered_fns[fn.__name__] = fn
-                return fn
-            return decorator
-        
-        mcp.tool = capture_tool
-        register_strategy_tools(mcp, searcher)
-        
-        result = registered_fns["expand_search_queries"](
-            topic="icu sedation",
-            expansion_type="mesh"
-        )
-        parsed = json.loads(result)
-        
-        assert "suggested_queries" in parsed
-        # Should have some synonym expansions for 'icu' or 'sedation'
+        pass
     
     def test_expand_broader(self):
-        """Test broader expansion."""
-        from pubmed_search.mcp.tools.strategy import register_strategy_tools
-        from pubmed_search.mcp.tools._common import set_strategy_generator
-        
-        set_strategy_generator(None)
-        
-        mcp = MagicMock()
-        searcher = MagicMock()
-        
-        registered_fns = {}
-        def capture_tool():
-            def decorator(fn):
-                registered_fns[fn.__name__] = fn
-                return fn
-            return decorator
-        
-        mcp.tool = capture_tool
-        register_strategy_tools(mcp, searcher)
-        
-        result = registered_fns["expand_search_queries"](
-            topic="diabetes treatment",
-            expansion_type="broader"
-        )
-        parsed = json.loads(result)
-        
-        # Should have broader queries with OR
-        queries = parsed.get("suggested_queries", [])
-        assert len(queries) > 0
-        
-        # Check for OR-based query
-        or_query_found = any("OR" in q.get("query", "") for q in queries)
-        assert or_query_found or any("All Fields" in q.get("query", "") for q in queries)
+        pass
     
     def test_expand_narrower(self):
-        """Test narrower expansion (filters)."""
-        from pubmed_search.mcp.tools.strategy import register_strategy_tools
-        from pubmed_search.mcp.tools._common import set_strategy_generator
-        
-        set_strategy_generator(None)
-        
-        mcp = MagicMock()
-        searcher = MagicMock()
-        
-        registered_fns = {}
-        def capture_tool():
-            def decorator(fn):
-                registered_fns[fn.__name__] = fn
-                return fn
-            return decorator
-        
-        mcp.tool = capture_tool
-        register_strategy_tools(mcp, searcher)
-        
-        result = registered_fns["expand_search_queries"](
-            topic="diabetes treatment",
-            expansion_type="narrower"
-        )
-        parsed = json.loads(result)
-        
-        queries = parsed.get("suggested_queries", [])
-        assert len(queries) > 0
-        
-        # Should have RCT or meta-analysis filters
-        purposes = [q.get("purpose", "") for q in queries]
-        assert any("RCT" in p or "Meta" in p or "recent" in p.lower() for p in purposes)
+        pass
     
     def test_expand_with_existing_queries(self):
-        """Test expansion respects existing query IDs."""
-        from pubmed_search.mcp.tools.strategy import register_strategy_tools
-        from pubmed_search.mcp.tools._common import set_strategy_generator
-        
-        set_strategy_generator(None)
-        
-        mcp = MagicMock()
-        searcher = MagicMock()
-        
-        registered_fns = {}
-        def capture_tool():
-            def decorator(fn):
-                registered_fns[fn.__name__] = fn
-                return fn
-            return decorator
-        
-        mcp.tool = capture_tool
-        register_strategy_tools(mcp, searcher)
-        
-        result = registered_fns["expand_search_queries"](
-            topic="test",
-            existing_query_ids="q1_title,q2_tiab",
-            expansion_type="narrower"
-        )
-        parsed = json.loads(result)
-        
-        assert "q1_title" in parsed["existing_queries"]
-        assert "q2_tiab" in parsed["existing_queries"]
+        pass

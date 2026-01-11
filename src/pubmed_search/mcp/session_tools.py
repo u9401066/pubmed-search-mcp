@@ -11,6 +11,7 @@ Tools:
 
 import logging
 import json
+from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
 
@@ -30,7 +31,7 @@ def register_session_tools(mcp: FastMCP, session_manager: SessionManager):
     @mcp.tool()
     def get_session_pmids(
         search_index: int = -1,
-        query_filter: str = None
+        query_filter: Optional[str] = None
     ) -> str:
         """
         取得 session 中暫存的 PMID 列表。

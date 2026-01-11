@@ -466,10 +466,6 @@ class EuropePMCClient:
             root = ElementTree.fromstring(xml_content)
             
             # Define namespace handling
-            ns = {
-                'xlink': 'http://www.w3.org/1999/xlink',
-                'mml': 'http://www.w3.org/1998/Math/MathML',
-            }
             
             result = {
                 "title": "",

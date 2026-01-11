@@ -98,9 +98,9 @@ class UnpaywallClient:
                 return json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
             if e.code == 404:
-                logger.debug(f"Unpaywall: DOI not found")
+                logger.debug("Unpaywall: DOI not found")
             elif e.code == 422:
-                logger.warning(f"Unpaywall: Invalid DOI format")
+                logger.warning("Unpaywall: Invalid DOI format")
             elif e.code == 429:
                 logger.warning("Unpaywall: Rate limit exceeded")
             else:

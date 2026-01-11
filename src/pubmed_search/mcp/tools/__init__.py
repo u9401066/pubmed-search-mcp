@@ -1,25 +1,43 @@
 """
-PubMed Search MCP Tools - Simplified Architecture (v0.1.20)
+PubMed Search MCP Tools - Simplified Architecture (v0.1.22)
 
-🎯 真正精簡到 20 個核心工具：
+🎯 精簡到 25 個核心工具（從 34 個減少 26%）：
 
-✅ 已融合的功能：
-- unified_search 內建：europe_pmc, core, openalex, crossref, semantic_scholar
-- get_fulltext 內建：europe_pmc, core 全文來源
-- 自動擴展、合併、去重
+✅ 核心搜索入口 (1)：
+- unified_search: 主入口，自動多源搜索
 
-❌ 已移除的工具：
-- search_literature（被 unified_search 取代）
-- search_europe_pmc（融合進 unified_search）
-- search_core（融合進 unified_search）
-- search_core_fulltext（融合進 unified_search）
-- search_openalex（融合進 unified_search）
-- search_crossref（融合進 unified_search）
-- search_semantic_scholar（融合進 unified_search）
-- get_fulltext_xml（融合進 get_fulltext，用 format 參數）
-- get_core_fulltext（融合進 get_fulltext）
-- expand_search_queries（自動執行）
-- merge_search_results（自動執行）
+✅ 查詢智能 (3)：
+- parse_pico, generate_search_queries, analyze_search_query
+
+✅ 文章探索 (5)：
+- fetch_article_details, find_related_articles, find_citing_articles
+- get_article_references, get_citation_metrics
+
+✅ 全文工具 (2)：
+- get_fulltext: 獲取 Europe PMC 全文
+- get_text_mined_terms: 文本挖掘標註
+
+✅ NCBI 延伸 (7)：
+- search_gene, get_gene_details, get_gene_literature
+- search_compound, get_compound_details, get_compound_literature
+- search_clinvar
+
+✅ 引用網絡 (2)：
+- build_citation_tree, suggest_citation_tree
+
+✅ Session 管理 (4) [在 session_tools.py 註冊]：
+- get_session_pmids, list_search_history, get_cached_article, get_session_summary
+
+✅ 匯出 (1)：
+- prepare_export
+
+✅ 視覺搜索 (2) [實驗性]：
+- analyze_figure_for_search: 分析圖片並提取搜索關鍵字
+- reverse_image_search_pubmed: 反向圖片搜索文獻
+
+❌ 已移除的重複工具（功能已整合進 unified_search）：
+- search_literature, search_europe_pmc, search_core, search_openalex...
+- merge_search_results, expand_search_queries...
 
 Usage:
     from .tools import register_all_tools
@@ -37,18 +55,23 @@ from .export import register_export_tools
 from .ncbi_extended import register_ncbi_extended_tools
 from .unified import register_unified_search_tools
 from .citation_tree import register_citation_tree_tools
-
-# Note: europe_pmc, core, merge 不再註冊 - 功能已融合進其他工具
+from .europe_pmc import register_europe_pmc_tools  # For get_fulltext, get_text_mined_terms
+from .vision_search import register_vision_tools  # Experimental: image-to-literature
 
 
 def register_all_tools(mcp: FastMCP, searcher: LiteratureSearcher):
     """
-    真正精簡到 20 個核心工具 (v0.1.20)。
+    精簡到 22 個核心工具 (v0.1.20)。
     
-    已移除重複工具，功能已融合：
-    - 多源搜索 → unified_search 自動處理
-    - 全文來源 → get_fulltext 自動選擇最佳來源
-    - 擴展/合併 → 自動執行
+    保留的核心功能：
+    - unified_search: 主搜索入口（自動多源）
+    - get_fulltext: 獲取全文內容
+    - get_text_mined_terms: 文本挖掘
+    - Session 管理工具
+    
+    已移除重複工具（功能已整合）：
+    - 多源搜索工具 → unified_search
+    - 擴展/合併工具 → 自動執行
     """
     # 1. Core entry point (1 tool)
     register_unified_search_tools(mcp, searcher)  # unified_search
@@ -62,18 +85,35 @@ def register_all_tools(mcp: FastMCP, searcher: LiteratureSearcher):
     # 4. Article exploration (5 tools)
     register_discovery_tools(mcp, searcher)  # fetch, find_related/citing/references, metrics
     
-    # 5. Fulltext & export (2+1 tools)
-    register_export_tools(mcp, searcher)  # get_fulltext, prepare_export, text_mined_terms
+    # 5. Export & session (1 tool: prepare_export)
+    register_export_tools(mcp, searcher)
     
-    # 6. NCBI Extended (6 tools)
+    # 6. Fulltext & text mining (2 tools: get_fulltext, get_text_mined_terms)
+    # Note: search_europe_pmc is NOT registered (use unified_search instead)
+    register_europe_pmc_tools(mcp)
+    
+    # 7. NCBI Extended (6 tools)
     register_ncbi_extended_tools(mcp)  # gene, compound, clinvar
     
-    # 7. Citation network (2 tools - optional)
+    # 8. Citation network (2 tools)
     register_citation_tree_tools(mcp, searcher)  # build_citation_tree, suggest_citation_tree
+    
+    # 9. Vision-based search (2 tools) - Experimental
+    register_vision_tools(mcp)  # analyze_figure_for_search, reverse_image_search_pubmed
 
 
 __all__ = [
     'register_all_tools',
     'set_session_manager',
     'set_strategy_generator',
+    # For testing/direct use
+    'register_discovery_tools',
+    'register_strategy_tools',
+    'register_pico_tools',
+    'register_export_tools',
+    'register_unified_search_tools',
+    'register_europe_pmc_tools',
+    'register_ncbi_extended_tools',
+    'register_citation_tree_tools',
+    'register_vision_tools',
 ]

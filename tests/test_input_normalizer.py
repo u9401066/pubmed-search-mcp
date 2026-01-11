@@ -300,6 +300,128 @@ class TestInputNormalizerQuery:
         assert InputNormalizer.normalize_query(None) == ""
 
 
+class TestInputNormalizerDOI:
+    """Tests for DOI normalization (v0.1.21)."""
+    
+    def test_doi_simple(self):
+        """Simple DOI should work."""
+        from pubmed_search.mcp.tools._common import InputNormalizer
+        
+        result = InputNormalizer.normalize_doi("10.1234/example.123")
+        assert result == "10.1234/example.123"
+    
+    def test_doi_with_prefix(self):
+        """DOI with doi: prefix should work."""
+        from pubmed_search.mcp.tools._common import InputNormalizer
+        
+        result = InputNormalizer.normalize_doi("doi:10.1234/example.123")
+        assert result == "10.1234/example.123"
+    
+    def test_doi_with_prefix_space(self):
+        """DOI with 'DOI: ' prefix should work."""
+        from pubmed_search.mcp.tools._common import InputNormalizer
+        
+        result = InputNormalizer.normalize_doi("DOI: 10.1234/example.123")
+        assert result == "10.1234/example.123"
+    
+    def test_doi_url_https(self):
+        """DOI URL with https://doi.org should work."""
+        from pubmed_search.mcp.tools._common import InputNormalizer
+        
+        result = InputNormalizer.normalize_doi("https://doi.org/10.1234/example.123")
+        assert result == "10.1234/example.123"
+    
+    def test_doi_url_dx(self):
+        """DOI URL with dx.doi.org should work."""
+        from pubmed_search.mcp.tools._common import InputNormalizer
+        
+        result = InputNormalizer.normalize_doi("http://dx.doi.org/10.1234/example.123")
+        assert result == "10.1234/example.123"
+    
+    def test_doi_invalid(self):
+        """Invalid DOI should return None."""
+        from pubmed_search.mcp.tools._common import InputNormalizer
+        
+        assert InputNormalizer.normalize_doi("invalid-doi") is None
+        assert InputNormalizer.normalize_doi("12345678") is None
+        assert InputNormalizer.normalize_doi(None) is None
+
+
+class TestInputNormalizerIdentifier:
+    """Tests for auto-detect identifier normalization (v0.1.21)."""
+    
+    def test_identifier_pmid_digits(self):
+        """Pure digits should be detected as PMID."""
+        from pubmed_search.mcp.tools._common import InputNormalizer
+        
+        result = InputNormalizer.normalize_identifier("12345678")
+        assert result["type"] == "pmid"
+        assert result["value"] == "12345678"
+    
+    def test_identifier_pmid_prefix(self):
+        """PMID: prefix should be detected as PMID."""
+        from pubmed_search.mcp.tools._common import InputNormalizer
+        
+        result = InputNormalizer.normalize_identifier("PMID:12345678")
+        assert result["type"] == "pmid"
+        assert result["value"] == "12345678"
+    
+    def test_identifier_pmid_int(self):
+        """Integer should be detected as PMID."""
+        from pubmed_search.mcp.tools._common import InputNormalizer
+        
+        result = InputNormalizer.normalize_identifier(12345678)
+        assert result["type"] == "pmid"
+        assert result["value"] == "12345678"
+    
+    def test_identifier_pmcid(self):
+        """PMC ID should be detected."""
+        from pubmed_search.mcp.tools._common import InputNormalizer
+        
+        result = InputNormalizer.normalize_identifier("PMC7096777")
+        assert result["type"] == "pmcid"
+        assert result["value"] == "PMC7096777"
+    
+    def test_identifier_pmcid_lowercase(self):
+        """Lowercase PMC ID should be detected."""
+        from pubmed_search.mcp.tools._common import InputNormalizer
+        
+        result = InputNormalizer.normalize_identifier("pmc7096777")
+        assert result["type"] == "pmcid"
+        assert result["value"] == "PMC7096777"
+    
+    def test_identifier_doi(self):
+        """DOI should be detected."""
+        from pubmed_search.mcp.tools._common import InputNormalizer
+        
+        result = InputNormalizer.normalize_identifier("10.1038/nature12373")
+        assert result["type"] == "doi"
+        assert result["value"] == "10.1038/nature12373"
+    
+    def test_identifier_doi_url(self):
+        """DOI URL should be detected."""
+        from pubmed_search.mcp.tools._common import InputNormalizer
+        
+        result = InputNormalizer.normalize_identifier("https://doi.org/10.1038/s41586")
+        assert result["type"] == "doi"
+        assert result["value"] == "10.1038/s41586"
+    
+    def test_identifier_none(self):
+        """None should return type=None."""
+        from pubmed_search.mcp.tools._common import InputNormalizer
+        
+        result = InputNormalizer.normalize_identifier(None)
+        assert result["type"] is None
+        assert result["value"] is None
+    
+    def test_identifier_preserves_original(self):
+        """Original value should be preserved."""
+        from pubmed_search.mcp.tools._common import InputNormalizer
+        
+        result = InputNormalizer.normalize_identifier("PMID:12345678")
+        assert result["original"] == "PMID:12345678"
+
+
 class TestResponseFormatter:
     """Tests for response formatting."""
     

@@ -355,6 +355,46 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         Find articles related to a given PubMed article.
         Uses PubMed's "Related Articles" feature to find similar papers.
         
+        ═══════════════════════════════════════════════════════════════
+        🔗 CITATION NETWORK EXPLORATION WORKFLOW
+        ═══════════════════════════════════════════════════════════════
+        
+        This is ONE of THREE tools for exploring citation networks:
+        
+        1️⃣ find_related_articles() ← YOU ARE HERE
+           │  📌 Algorithm-based similarity (like PubMed "Similar Articles")
+           │  📌 Finds papers with similar topics, MeSH terms, authors
+           │  📌 Good for: Discovering related research you might have missed
+           └─► Returns: Similar papers (not based on citations)
+        
+        2️⃣ find_citing_articles()
+           │  📌 Forward citation search (who cited THIS paper?)
+           │  📌 Finds papers published AFTER the source article
+           │  📌 Good for: Tracking impact, finding follow-up studies
+           └─► Returns: Papers that cite this article
+        
+        3️⃣ get_article_references()
+           │  📌 Backward citation search (what did THIS paper cite?)
+           │  📌 Finds papers published BEFORE the source article
+           │  📌 Good for: Finding foundational papers, methodology sources
+           └─► Returns: This article's bibliography
+        
+        ═══════════════════════════════════════════════════════════════
+        EXAMPLE WORKFLOW:
+        ═══════════════════════════════════════════════════════════════
+        
+        Step 1: Start with a key paper
+            find_related_articles(pmid="23132851")
+            → Find similar research directions
+        
+        Step 2: Explore backward (foundations)
+            get_article_references(pmid="23132851")
+            → Find the foundational papers it builds on
+        
+        Step 3: Explore forward (impact)
+            find_citing_articles(pmid="23132851")
+            → Find how the field developed after this paper
+        
         Args:
             pmid: PubMed ID of the source article (accepts: "12345678", "PMID:12345678", 12345678).
             limit: Maximum number of related articles to return (1-50, default: 5).
@@ -411,6 +451,36 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         """
         Find articles that cite a given PubMed article.
         Uses PubMed Central's citation data to find papers that reference this article.
+        
+        ═══════════════════════════════════════════════════════════════
+        📈 FORWARD CITATION SEARCH (Impact Tracking)
+        ═══════════════════════════════════════════════════════════════
+        
+        Direction: Source Paper → Papers that cite it (FORWARD in time)
+        
+        USE CASES:
+        ──────────
+        - 🔬 Track research impact: Who built on this work?
+        - 📊 Find follow-up studies: What happened after this discovery?
+        - 🔄 Identify controversies: Papers that challenge or refute findings
+        - 📚 Literature review: Ensure you have the latest developments
+        
+        COMPLEMENTARY TOOLS:
+        ────────────────────
+        - get_article_references(): BACKWARD search (what this paper cited)
+        - find_related_articles(): Similar papers (topic-based, not citation-based)
+        
+        ═══════════════════════════════════════════════════════════════
+        EXAMPLE:
+        ═══════════════════════════════════════════════════════════════
+        
+        # Find papers that cite a landmark CRISPR paper
+        find_citing_articles(pmid="23287718", limit=20)
+        → Returns papers published AFTER 2012 that reference this work
+        
+        # Then analyze citation metrics
+        get_citation_metrics(pmids="last")
+        → See which citing papers are most influential
         
         Args:
             pmid: PubMed ID of the source article (accepts: "12345678", "PMID:12345678", 12345678).
@@ -473,6 +543,35 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         This is the OPPOSITE of find_citing_articles:
         - get_article_references: Papers THIS article cites (backward in time)
         - find_citing_articles: Papers that cite THIS article (forward in time)
+        
+        ═══════════════════════════════════════════════════════════════
+        📚 BACKWARD CITATION SEARCH (Foundation Discovery)
+        ═══════════════════════════════════════════════════════════════
+        
+        Direction: Source Paper → Papers it cited (BACKWARD in time)
+        
+        USE CASES:
+        ──────────
+        - 🏛️ Find foundational papers: Core works the field builds on
+        - ⚗️ Methodology sources: Papers describing techniques used
+        - 📖 Background reading: Build understanding of a topic
+        - 🔍 Verify claims: Check sources for specific assertions
+        
+        ═══════════════════════════════════════════════════════════════
+        EXAMPLE WORKFLOW:
+        ═══════════════════════════════════════════════════════════════
+        
+        # Start with a recent review article
+        get_article_references(pmid="38123456", limit=50)
+        → Get the bibliography of this review
+        
+        # Find most-cited foundational papers
+        get_citation_metrics(pmids="last", sort_by="citation_count")
+        → Identify which references are the most influential
+        
+        # Read a foundational paper
+        fetch_article_details(pmids="12345678")
+        → Get full details of an important reference
         
         Args:
             pmid: PubMed ID of the source article (accepts: "12345678", "PMID:12345678", 12345678).

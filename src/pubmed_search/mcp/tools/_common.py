@@ -7,11 +7,23 @@ Shared functions:
 - Output formatting
 - Input normalization (Phase 2.1)
 - Response formatting (Phase 2.1)
+- Exception handling integration (Phase 2.2)
 """
 
 import logging
 import re
 from typing import Optional, List, Dict, Any, Union
+
+# Import core exceptions for unified error handling
+from pubmed_search.core import (
+    PubMedSearchError,
+    APIError,
+    ValidationError,
+    DataError,
+    ErrorContext,
+    is_retryable_error,
+    get_retry_delay,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -284,6 +296,126 @@ class InputNormalizer:
         
         return query
 
+    @staticmethod
+    def normalize_doi(value: Union[str, None]) -> Optional[str]:
+        """
+        Normalize DOI to standard format.
+        
+        Supports:
+        - "10.1234/example.123"
+        - "doi:10.1234/example.123"
+        - "DOI: 10.1234/example.123"
+        - "https://doi.org/10.1234/example.123"
+        - "http://dx.doi.org/10.1234/example.123"
+        
+        Returns:
+            Clean DOI string (e.g., "10.1234/example.123") or None if invalid
+        """
+        if value is None:
+            return None
+        
+        if not isinstance(value, str):
+            value = str(value)
+        
+        value = value.strip()
+        
+        # Remove common URL prefixes
+        url_prefixes = [
+            'https://doi.org/',
+            'http://doi.org/',
+            'https://dx.doi.org/',
+            'http://dx.doi.org/',
+        ]
+        for prefix in url_prefixes:
+            if value.lower().startswith(prefix):
+                value = value[len(prefix):]
+                break
+        
+        # Remove doi: prefix
+        if value.lower().startswith('doi:'):
+            value = value[4:].strip()
+        
+        # Validate DOI format (must start with 10.)
+        if value.startswith('10.') and '/' in value:
+            return value
+        
+        return None
+
+    @staticmethod
+    def normalize_identifier(
+        value: Union[str, int, None]
+    ) -> Dict[str, Optional[str]]:
+        """
+        Auto-detect and normalize identifier type (PMID, PMC ID, or DOI).
+        
+        Supports:
+        - "12345678" → PMID
+        - "PMID:12345678" → PMID
+        - "PMC1234567" → PMC ID
+        - "10.1234/example" → DOI
+        - "https://doi.org/10.1234/example" → DOI
+        
+        Returns:
+            Dict with keys: type, value, original
+            - type: "pmid", "pmcid", "doi", or None if unrecognized
+            - value: Normalized identifier value
+            - original: Original input value
+        """
+        result: Dict[str, Optional[str]] = {
+            "type": None,
+            "value": None,
+            "original": str(value) if value is not None else None
+        }
+        
+        if value is None:
+            return result
+        
+        if isinstance(value, int):
+            # Assume integer is PMID
+            result["type"] = "pmid"
+            result["value"] = str(value)
+            return result
+        
+        if not isinstance(value, str):
+            value = str(value)
+        
+        value = value.strip()
+        
+        # Check for DOI patterns first (most specific)
+        if value.startswith('10.') or 'doi.org/' in value.lower() or value.lower().startswith('doi:'):
+            doi = InputNormalizer.normalize_doi(value)
+            if doi:
+                result["type"] = "doi"
+                result["value"] = doi
+                return result
+        
+        # Check for PMC ID patterns
+        if value.lower().startswith('pmc') or value.lower().startswith('pmcid'):
+            pmcid = InputNormalizer.normalize_pmcid(value)
+            if pmcid:
+                result["type"] = "pmcid"
+                result["value"] = pmcid
+                return result
+        
+        # Check for PMID patterns (including explicit prefix)
+        if value.lower().startswith('pmid'):
+            pmid = InputNormalizer.normalize_pmid_single(value)
+            if pmid:
+                result["type"] = "pmid"
+                result["value"] = pmid
+                return result
+        
+        # Default: try as PMID if it's all digits
+        cleaned = re.sub(r'\D', '', value)
+        if cleaned and len(cleaned) >= 6 and len(cleaned) <= 10:
+            # Likely a PMID (typically 7-8 digits)
+            result["type"] = "pmid"
+            result["value"] = cleaned
+            return result
+        
+        # Unable to detect type
+        return result
+
 
 # ============================================================================
 # Phase 2.1: Response Formatter - Agent-Friendly Output
@@ -359,6 +491,8 @@ class ResponseFormatter:
         """
         Format an error response with helpful suggestions.
         
+        Integrates with core exception hierarchy for rich error messages.
+        
         Args:
             error: The error exception or message
             suggestion: Helpful suggestion for fixing the error
@@ -371,7 +505,17 @@ class ResponseFormatter:
         """
         import json
         
+        # Use core exception's formatting if available
+        if isinstance(error, PubMedSearchError):
+            if output_format == "json":
+                return json.dumps(error.to_dict(), ensure_ascii=False, indent=2)
+            return error.to_agent_message()
+        
         error_msg = str(error)
+        
+        # Check if this is a retryable error
+        retryable = is_retryable_error(error) if isinstance(error, Exception) else False
+        retry_delay = get_retry_delay(error, 0) if retryable and isinstance(error, Exception) else None
         
         if output_format == "json":
             result = {
@@ -384,6 +528,10 @@ class ResponseFormatter:
                 result["suggestion"] = suggestion
             if example:
                 result["example"] = example
+            if retryable:
+                result["retryable"] = True
+                if retry_delay:
+                    result["retry_after"] = retry_delay
             return json.dumps(result, ensure_ascii=False, indent=2)
         
         # Markdown format
@@ -399,6 +547,12 @@ class ResponseFormatter:
         
         if example:
             parts.append(f"\n📝 **Example**: `{example}`")
+        
+        if retryable:
+            if retry_delay:
+                parts.append(f"\n🔄 Retryable: Wait {retry_delay:.1f}s and try again")
+            else:
+                parts.append("\n🔄 Retryable: This error may be transient")
         
         return "\n".join(parts)
     

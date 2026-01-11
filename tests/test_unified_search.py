@@ -163,8 +163,9 @@ class TestIntegrationWithServer:
         mcp = create_server()
         tool_count = len(mcp._tool_manager._tools)
         
-        # Should have at least 35+ tools (including unified)
-        assert tool_count >= 35
+        # v0.1.21: Consolidated from 35+ to ~21-25 tools
+        # Many tools integrated into unified_search
+        assert tool_count >= 21
 
 
 class TestSourceSearchFunctions:

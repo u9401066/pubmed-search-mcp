@@ -14,6 +14,279 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.24] - 2025-01-12
+
+### 📚 Enhanced Tool Documentation for Agent Understanding
+
+Improved MCP tool descriptions with comprehensive workflows, step-by-step
+instructions, and usage examples. This makes it easier for AI agents to
+understand when and how to use each tool.
+
+### Enhanced
+
+- **Citation Network Tools** - Complete workflow documentation:
+  - `find_related_articles`: Added 3-tool citation network exploration guide
+  - `find_citing_articles`: Added forward citation search use cases
+  - `get_article_references`: Added backward citation search workflow
+
+- **Vision Search Tools** - Detailed 5-step workflow:
+  - `reverse_image_search_pubmed`: Complete workflow from image to literature
+  - Added search type explanations (comprehensive, methodology, results, structure, medical)
+
+### Documentation
+
+- Added `docs/research/REFERENCE_REPOSITORIES.md`:
+  - Detailed analysis of 6 key Python libraries for literature search
+  - scholarly, habanero, pyalex, metapub, bioservices, wos-starter
+  - Learning points, integration suggestions, code examples
+  - Web of Science Starter API documentation
+
+### Reference Libraries Studied
+
+| Library | Key Feature | Learning Priority |
+|---------|-------------|-------------------|
+| metapub | FindIt PDF discovery | **Extreme** |
+| habanero | Content negotiation | High |
+| pyalex | Pipe operations | Medium |
+| scholarly | Proxy rotation | Medium |
+| bioservices | Multi-service framework | Medium |
+| wos-starter | Times Cited data | Low |
+
+---
+
+## [0.1.23] - 2025-01-11
+
+### 🖼️ Vision-to-Literature Search (Experimental)
+
+New feature: Search PubMed using images! Analyze scientific figures,
+medical images, or molecular structures to find related literature.
+
+### Added
+
+- **New Tools** (`vision_search.py`):
+  - `analyze_figure_for_search`: Analyze an image and extract search terms
+  - `reverse_image_search_pubmed`: Specialized prompts for different image types
+
+- **MCP ImageContent Protocol Support**:
+  - Returns images using standard MCP `ImageContent` type
+  - Agent uses vision capabilities to analyze
+  - Supports URL, base64, and data URI inputs
+
+### Workflow
+
+```mermaid
+graph LR
+    A[User provides image] --> B[MCP returns ImageContent]
+    B --> C[Agent vision analysis]
+    C --> D[Extract search terms]
+    D --> E[unified_search]
+    E --> F[Related literature]
+```
+
+### Search Types
+
+| Type | Focus |
+|------|-------|
+| `comprehensive` | General analysis |
+| `methodology` | Lab equipment, techniques |
+| `results` | Charts, graphs, data |
+| `structure` | Molecular/chemical structures |
+| `medical` | Clinical imaging |
+
+### Example
+
+```python
+# From URL
+analyze_figure_for_search(url="https://journal.com/figure1.png")
+
+# From base64
+analyze_figure_for_search(image="data:image/png;base64,...")
+
+# With context
+analyze_figure_for_search(
+    url="https://example.com/western_blot.jpg",
+    context="Looking for similar protein expression studies"
+)
+```
+
+---
+
+## [0.1.22] - 2025-01-12
+
+### 🚀 Python 3.12+ Performance & Error Handling
+
+Major infrastructure upgrade with Python 3.12+ features.
+
+### Added
+
+- **New Core Module** (`src/pubmed_search/core/`):
+  - **Unified Exception Hierarchy**: 
+    - `PubMedSearchError` - Base with context, severity, retryable flags
+    - `APIError` → `RateLimitError`, `NetworkError`, `ServiceUnavailableError`
+    - `ValidationError` → `InvalidPMIDError`, `InvalidQueryError`, `InvalidParameterError`
+    - `DataError` → `NotFoundError`, `ParseError`
+    - `ConfigurationError`
+  - **Agent-Friendly Error Formatting**:
+    - `to_agent_message()` - Emoji-rich, structured error messages
+    - `to_dict()` - JSON-serializable error info
+    - `is_retryable_error()` - Automatic retry detection
+    - `get_retry_delay()` - Exponential backoff calculation
+
+- **Async Utilities** (`core/async_utils.py`):
+  - `RateLimiter` - Token bucket rate limiting for API compliance
+  - `async_retry` - Decorator with exponential backoff + jitter
+  - `gather_with_errors[T]` - TaskGroup-based parallel execution
+  - `batch_process[T, R]` - Batch processing with rate limiting
+  - `CircuitBreaker` - Fault tolerance pattern
+  - `AsyncConnectionPool[T]` - Generic connection pooling
+  - `timeout_with_fallback[T]` - Timeout with fallback value
+
+- **Tests**: `tests/test_core_module.py` - Comprehensive core module tests
+
+### Changed
+
+- **Python Version**: `>=3.11` → `>=3.12`
+  - Type parameter syntax (PEP 695): `async def gather_with_errors[T](...)`
+  - ExceptionGroup (PEP 654) for multi-error handling
+  - `asyncio.TaskGroup` for structured concurrency
+  - `slots=True` and `frozen=True` dataclasses for efficiency
+
+### Python 3.12+ Features Used
+
+```python
+# Type parameter syntax (PEP 695)
+async def gather_with_errors[T](*coros: Awaitable[T]) -> list[T]: ...
+
+# Frozen dataclass with slots
+@dataclass(frozen=True, slots=True)
+class ErrorContext:
+    tool_name: str | None = None
+    suggestion: str | None = None
+
+# TaskGroup for structured concurrency
+async with asyncio.TaskGroup() as tg:
+    for coro in coros:
+        tg.create_task(coro)
+```
+
+---
+
+## [0.1.21] - 2025-01-11
+
+### 🔥 Enhanced Fulltext Retrieval
+
+Major upgrade to `get_fulltext` tool with multi-source support.
+
+### Added
+
+- **New InputNormalizer methods for flexible identifier handling**:
+  - `normalize_doi()`: Normalizes DOI formats (10.xxx, doi:xxx, https://doi.org/xxx)
+  - `normalize_identifier()`: Auto-detects identifier type (PMID/PMC ID/DOI)
+
+### Changed
+
+- **`get_fulltext` now supports flexible input**:
+  - PMC ID: `get_fulltext(pmcid="PMC7096777")`
+  - PMID: `get_fulltext(pmid="12345678")`
+  - DOI: `get_fulltext(doi="10.1038/...")`
+  - Auto-detect: `get_fulltext(identifier="anything")`
+
+- **Multi-source fulltext retrieval**:
+  1. **Europe PMC** - Structured fulltext with sections
+  2. **Unpaywall** - Finds OA versions via DOI (gold/green/hybrid)
+  3. **CORE** - 200M+ open access papers
+
+- **PDF link aggregation**:
+  - Collects PDF links from all sources
+  - Shows OA status (Gold 🥇, Green 🟢, Hybrid 🔶)
+  - Includes version info and license
+
+### Example Output
+
+```markdown
+📖 **Article Title**
+🔍 Sources checked: Europe PMC, Unpaywall, CORE
+
+## 📥 PDF/Fulltext Links
+
+- 📄 **PubMed Central** 🔓 Open Access
+  https://www.ncbi.nlm.nih.gov/pmc/articles/PMC.../pdf/
+- 📄 **Unpaywall (repository)** 🟢 Green OA
+  https://repository.example.com/paper.pdf
+  _Version: acceptedVersion_
+- 📄 **CORE**
+  https://core.ac.uk/download/...
+
+## 📝 Content
+
+### Introduction
+...
+```
+
+---
+
+## [0.1.20] - 2025-01-26
+
+### 🎯 Tool Simplification: 34 → 25 Tools (-26%)
+
+Major architectural simplification for better Agent UX.
+
+### Changed
+
+- **Unified Search Entry Point**: `unified_search` now handles all multi-source searches
+  - Integrated: `search_literature`, `search_europe_pmc`, `search_core`, `search_openalex`
+  - Auto-executes: `merge_search_results`, `expand_search_queries`
+  
+- **Streamlined Fulltext Tools**:
+  - `get_fulltext` retained (Europe PMC)
+  - `get_text_mined_terms` retained (text mining annotations)
+  - Removed redundant: `get_fulltext_xml`, `search_europe_pmc`, `get_europe_pmc_citations`
+
+### Removed (Functionality Integrated)
+
+- `search_literature` → Use `unified_search`
+- `search_europe_pmc` → Use `unified_search(sources=["europe_pmc"])`
+- `search_core`, `search_core_fulltext` → Use `unified_search(sources=["core"])`
+- `search_openalex` → Use `unified_search(sources=["openalex"])`
+- `merge_search_results` → Auto-executed by unified_search
+- `expand_search_queries` → Auto-executed by unified_search
+- `get_fulltext_xml` → Use `get_fulltext`
+- `get_europe_pmc_citations` → Use `find_citing_articles`
+
+### Tool Categories (25 Total)
+
+| Category | Tools | Count |
+|----------|-------|-------|
+| Search Entry | `unified_search` | 1 |
+| Query Intelligence | `parse_pico`, `generate_search_queries`, `analyze_search_query` | 3 |
+| Article Exploration | `fetch_article_details`, `find_related_articles`, `find_citing_articles`, `get_article_references`, `get_citation_metrics` | 5 |
+| Fulltext | `get_fulltext`, `get_text_mined_terms` | 2 |
+| NCBI Extended | `search_gene`, `get_gene_details`, `get_gene_literature`, `search_compound`, `get_compound_details`, `get_compound_literature`, `search_clinvar` | 7 |
+| Citation Network | `build_citation_tree`, `suggest_citation_tree` | 2 |
+| Session Management | `get_session_pmids`, `list_search_history`, `get_cached_article`, `get_session_summary` | 4 |
+| Export | `prepare_export` | 1 |
+
+---
+
+## [0.1.19] - 2025-01-26
+
+### 🔧 InputNormalizer + Mypy Fixes
+
+Stable release with comprehensive type safety improvements.
+
+### Added
+
+- **InputNormalizer** class in `_common.py` for consistent input handling
+- Type-safe normalization for: PMIDs, queries, limits, years, booleans
+
+### Fixed
+
+- All 77 mypy type errors resolved
+- All 12 ruff linting errors fixed
+- Proper `Optional[T]` type annotations throughout
+
+---
+
 ## [0.1.18] - 2025-12-15
 
 ### 📚 CORE API & NCBI Extended Databases Integration

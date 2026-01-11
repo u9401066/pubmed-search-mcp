@@ -33,15 +33,15 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Literal
+from typing import Any
 
 # Import from sibling module
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from models.unified_article import UnifiedArticle, OpenAccessStatus
+from models.unified_article import UnifiedArticle
 
 
 class RankingDimension(Enum):
