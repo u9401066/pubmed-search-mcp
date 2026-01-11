@@ -199,7 +199,8 @@ def register_strategy_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         
         return json.dumps(result, indent=2, ensure_ascii=False)
 
-    @mcp.tool()
+    # ❌ REMOVED v0.1.20: Auto-executed by unified_search when results < 10
+    # @mcp.tool()
     def expand_search_queries(
         topic: str,
         existing_query_ids: str = "",

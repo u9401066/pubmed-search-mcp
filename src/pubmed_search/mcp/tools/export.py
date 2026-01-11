@@ -147,7 +147,8 @@ def register_export_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 tool_name="prepare_export"
             )
     
-    @mcp.tool()
+    # ❌ REMOVED v0.1.20: Merged into unified get_fulltext tool
+    # @mcp.tool()
     def get_article_fulltext_links(pmid: Union[str, int]) -> str:
         """
         Get fulltext links for a single article.
@@ -198,7 +199,8 @@ def register_export_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 tool_name="get_article_fulltext_links"
             )
     
-    @mcp.tool()
+    # ❌ REMOVED v0.1.20: Auto-handled by unified get_fulltext
+    # @mcp.tool()
     def analyze_fulltext_access(pmids: Union[str, List, int]) -> str:
         """
         Analyze fulltext availability for multiple articles.

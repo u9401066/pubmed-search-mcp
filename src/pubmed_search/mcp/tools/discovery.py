@@ -106,7 +106,8 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
     # Supported alternate sources
     ALTERNATE_SOURCES = ("semantic_scholar", "openalex")
     
-    @mcp.tool()
+    # ❌ REMOVED v0.1.20: Replaced by unified_search which auto-handles multi-source
+    # @mcp.tool()
     def search_literature(
         query: str, 
         limit: int = 5, 
