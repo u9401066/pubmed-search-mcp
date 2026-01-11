@@ -30,6 +30,7 @@ from .citation_tree import register_citation_tree_tools
 from .europe_pmc import register_europe_pmc_tools
 from .core import register_core_tools
 from .ncbi_extended import register_ncbi_extended_tools
+from .unified import register_unified_search_tools
 
 
 def register_all_tools(mcp: FastMCP, searcher: LiteratureSearcher):
@@ -43,6 +44,7 @@ def register_all_tools(mcp: FastMCP, searcher: LiteratureSearcher):
     register_europe_pmc_tools(mcp)
     register_core_tools(mcp)
     register_ncbi_extended_tools(mcp)
+    register_unified_search_tools(mcp, searcher)  # MVP: Unified Search Gateway
 
 
 __all__ = [
