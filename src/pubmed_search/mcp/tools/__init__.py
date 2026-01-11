@@ -1,17 +1,25 @@
 """
 PubMed Search MCP Tools - Simplified Architecture (v0.1.20)
 
-Streamlined to 20 core tools for better Agent experience:
-- Core: unified_search (main entry), parse_pico (advanced)
-- Query: generate_search_queries, analyze_search_query (optional)
-- Articles: fetch_article_details, find_related/citing/references, get_citation_metrics
-- Fulltext: get_fulltext (unified), get_text_mined_terms
-- NCBI: search_gene/compound, get_gene/compound_details, search_clinvar
-- Session: get_session_pmids, list_search_history, prepare_export
+🎯 真正精簡到 20 個核心工具：
 
-Backend tools (auto-used by unified_search):
-- europe_pmc, core, openalex, crossref, semantic_scholar
-- merge_search_results, expand_search_queries
+✅ 已融合的功能：
+- unified_search 內建：europe_pmc, core, openalex, crossref, semantic_scholar
+- get_fulltext 內建：europe_pmc, core 全文來源
+- 自動擴展、合併、去重
+
+❌ 已移除的工具：
+- search_literature（被 unified_search 取代）
+- search_europe_pmc（融合進 unified_search）
+- search_core（融合進 unified_search）
+- search_core_fulltext（融合進 unified_search）
+- search_openalex（融合進 unified_search）
+- search_crossref（融合進 unified_search）
+- search_semantic_scholar（融合進 unified_search）
+- get_fulltext_xml（融合進 get_fulltext，用 format 參數）
+- get_core_fulltext（融合進 get_fulltext）
+- expand_search_queries（自動執行）
+- merge_search_results（自動執行）
 
 Usage:
     from .tools import register_all_tools
@@ -20,7 +28,6 @@ Usage:
 
 from mcp.server.fastmcp import FastMCP
 from ...entrez import LiteratureSearcher
-from ...entrez.strategy import SearchStrategyGenerator  # noqa: F401 (re-exported)
 
 from ._common import set_session_manager, set_strategy_generator
 from .discovery import register_discovery_tools
@@ -29,52 +36,40 @@ from .pico import register_pico_tools
 from .export import register_export_tools
 from .ncbi_extended import register_ncbi_extended_tools
 from .unified import register_unified_search_tools
-
-# Backend tools - not directly exposed but used internally
-from .merge import register_merge_tools
 from .citation_tree import register_citation_tree_tools
-from .europe_pmc import register_europe_pmc_tools
-from .core import register_core_tools
+
+# Note: europe_pmc, core, merge 不再註冊 - 功能已融合進其他工具
 
 
 def register_all_tools(mcp: FastMCP, searcher: LiteratureSearcher):
     """
-    Register streamlined core tools (v0.1.20).
+    真正精簡到 20 個核心工具 (v0.1.20)。
     
-    20 core tools exposed:
-    - unified_search (main entry with auto-analysis, multi-source, ranking)
-    - parse_pico (advanced PICO parsing)
-    - generate_search_queries, analyze_search_query (query materials)
-    - 5 article tools (details, related, citing, references, metrics)
-    - 2 fulltext tools (get_fulltext unified, text_mined_terms)
-    - 6 NCBI tools (gene, compound, clinvar)
-    - 3 session tools (pmids, history, export)
-    
-    Backend tools automatically used by unified_search:
-    - Multi-source search (europe_pmc, core, openalex, crossref, semantic_scholar)
-    - Result merging and expansion
+    已移除重複工具，功能已融合：
+    - 多源搜索 → unified_search 自動處理
+    - 全文來源 → get_fulltext 自動選擇最佳來源
+    - 擴展/合併 → 自動執行
     """
-    # Core entry points
-    register_unified_search_tools(mcp, searcher)  # unified_search (main)
-    register_pico_tools(mcp)  # parse_pico (advanced)
+    # 1. Core entry point (1 tool)
+    register_unified_search_tools(mcp, searcher)  # unified_search
     
-    # Query materials (optional, for advanced users)
+    # 2. Advanced PICO (1 tool)
+    register_pico_tools(mcp)  # parse_pico
+    
+    # 3. Query materials (2 tools)
     register_strategy_tools(mcp, searcher)  # generate_search_queries, analyze_search_query
     
-    # Article exploration
+    # 4. Article exploration (5 tools)
     register_discovery_tools(mcp, searcher)  # fetch, find_related/citing/references, metrics
     
-    # Fulltext & export
-    register_export_tools(mcp, searcher)  # get_fulltext (unified), prepare_export, session tools
+    # 5. Fulltext & export (2+1 tools)
+    register_export_tools(mcp, searcher)  # get_fulltext, prepare_export, text_mined_terms
     
-    # NCBI Extended
-    register_ncbi_extended_tools(mcp)  # gene, compound, clinvar (6 tools)
+    # 6. NCBI Extended (6 tools)
+    register_ncbi_extended_tools(mcp)  # gene, compound, clinvar
     
-    # Backend tools (not directly exposed but registered for internal use)
-    register_merge_tools(mcp, searcher)  # Used by unified_search
-    register_citation_tree_tools(mcp, searcher)  # Optional citation network
-    register_europe_pmc_tools(mcp)  # Backend for fulltext
-    register_core_tools(mcp)  # Backend for fulltext
+    # 7. Citation network (2 tools - optional)
+    register_citation_tree_tools(mcp, searcher)  # build_citation_tree, suggest_citation_tree
 
 
 __all__ = [
