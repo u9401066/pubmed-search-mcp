@@ -39,6 +39,8 @@ _openalex_client = None
 _europe_pmc_client = None
 _core_client = None
 _ncbi_extended_client = None
+_crossref_client = None
+_unpaywall_client = None
 
 
 class SearchSource(Enum):
@@ -99,6 +101,30 @@ def get_ncbi_extended_client(email: str | None = None, api_key: str | None = Non
             api_key=api_key or os.environ.get("NCBI_API_KEY"),
         )
     return _ncbi_extended_client
+
+
+def get_crossref_client(email: str | None = None):
+    """Get or create CrossRef client (lazy initialization)."""
+    global _crossref_client
+    if _crossref_client is None:
+        from .crossref import CrossRefClient
+        import os
+        _crossref_client = CrossRefClient(
+            email=email or os.environ.get("CROSSREF_EMAIL"),
+        )
+    return _crossref_client
+
+
+def get_unpaywall_client(email: str | None = None):
+    """Get or create Unpaywall client (lazy initialization)."""
+    global _unpaywall_client
+    if _unpaywall_client is None:
+        from .unpaywall import UnpaywallClient
+        import os
+        _unpaywall_client = UnpaywallClient(
+            email=email or os.environ.get("UNPAYWALL_EMAIL"),
+        )
+    return _unpaywall_client
 
 
 def search_alternate_source(
@@ -424,6 +450,8 @@ __all__ = [
     "get_europe_pmc_client",
     "get_core_client",
     "get_ncbi_extended_client",
+    "get_crossref_client",
+    "get_unpaywall_client",
     "get_fulltext_xml",
     "get_fulltext_parsed",
 ]
