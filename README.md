@@ -102,6 +102,49 @@ uvx pubmed-search-mcp
 
 ---
 
+## 📡 External APIs & Data Sources
+
+This MCP server integrates with multiple academic databases and APIs:
+
+### Core Data Sources
+
+| Source | Coverage | API Key | Rate Limit | Description |
+|--------|----------|---------|------------|-------------|
+| **NCBI PubMed** | 36M+ articles | Optional | 3/s → 10/s | Primary biomedical literature |
+| **NCBI Entrez** | Multi-DB | Optional | 3/s → 10/s | Gene, PubChem, ClinVar |
+| **Europe PMC** | 33M+ | Not required | Generous | Full text XML access |
+| **CORE** | 200M+ | Optional | 100/day → 5K/day | Open access aggregator |
+| **Semantic Scholar** | 200M+ | Optional | 100/s → 1K/s | AI-powered recommendations |
+| **OpenAlex** | 250M+ | Not required | 100K/day | Open scholarly metadata |
+| **NIH iCite** | PubMed | Not required | Generous | Citation metrics (RCR) |
+
+### Environment Variables
+
+```bash
+# Required
+NCBI_EMAIL=your@email.com          # Required by NCBI policy
+
+# Optional - For higher rate limits
+NCBI_API_KEY=your_ncbi_api_key     # Get from: https://www.ncbi.nlm.nih.gov/account/settings/
+CORE_API_KEY=your_core_api_key     # Get from: https://core.ac.uk/services/api
+S2_API_KEY=your_s2_api_key         # Get from: https://www.semanticscholar.org/product/api
+
+# Optional - Network settings
+HTTP_PROXY=http://proxy:8080       # HTTP proxy for API requests
+HTTPS_PROXY=https://proxy:8080     # HTTPS proxy for API requests
+```
+
+### Python Dependencies
+
+```
+biopython>=1.81        # NCBI Entrez E-utilities
+requests>=2.28.0       # HTTP client
+pylatexenc>=2.10       # Unicode to LaTeX (BibTeX export)
+mcp>=1.0.0             # Model Context Protocol
+```
+
+---
+
 ## Features
 
 - **Search PubMed**: Full-text and advanced query support
