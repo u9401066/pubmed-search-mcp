@@ -12,16 +12,30 @@ Tools:
 Internal Features:
 - Multi-source search: PubMed (default), Semantic Scholar, OpenAlex
 - Cross-search fallback when PubMed results are insufficient
+
+Phase 2.1 Updates:
+- InputNormalizer for flexible input handling
+- ResponseFormatter for consistent error messages
+- KEY_ALIASES for parameter name tolerance
 """
 
 import logging
-from typing import Literal
+from typing import Literal, Union, List
 
 from mcp.server.fastmcp import FastMCP
 
 from ...entrez import LiteratureSearcher
 from ...sources import search_alternate_source, cross_search
-from ._common import format_search_results, _cache_results, _record_search_only, check_cache
+from ._common import (
+    format_search_results, 
+    _cache_results, 
+    _record_search_only, 
+    check_cache,
+    # Phase 2.1 imports
+    InputNormalizer,
+    ResponseFormatter,
+    apply_key_aliases,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -334,67 +348,122 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             return ""
 
     @mcp.tool()
-    def find_related_articles(pmid: str, limit: int = 5) -> str:
+    def find_related_articles(pmid: Union[str, int], limit: int = 5) -> str:
         """
         Find articles related to a given PubMed article.
         Uses PubMed's "Related Articles" feature to find similar papers.
         
         Args:
-            pmid: PubMed ID of the source article.
-            limit: Maximum number of related articles to return.
+            pmid: PubMed ID of the source article (accepts: "12345678", "PMID:12345678", 12345678).
+            limit: Maximum number of related articles to return (1-50, default: 5).
             
         Returns:
             List of related articles with details.
         """
-        logger.info(f"Finding related articles for PMID: {pmid}")
+        # Phase 2.1: Input normalization
+        normalized_pmid = InputNormalizer.normalize_pmid_single(pmid)
+        if not normalized_pmid:
+            return ResponseFormatter.error(
+                error="Invalid PMID format",
+                suggestion="Provide a valid PMID number",
+                example='find_related_articles(pmid="12345678")',
+                tool_name="find_related_articles"
+            )
+        
+        normalized_limit = InputNormalizer.normalize_limit(limit, default=5, min_val=1, max_val=50)
+        
+        logger.info(f"Finding related articles for PMID: {normalized_pmid}")
         try:
-            results = searcher.get_related_articles(pmid, limit)
+            results = searcher.get_related_articles(normalized_pmid, normalized_limit)
             
             if not results:
-                return f"No related articles found for PMID {pmid}."
+                return ResponseFormatter.no_results(
+                    query=f"PMID {normalized_pmid}",
+                    suggestions=[
+                        "Check if the PMID is correct",
+                        "Try find_citing_articles to see papers citing this article",
+                        "Try get_article_references to see this article's bibliography"
+                    ]
+                )
             
             if "error" in results[0]:
-                return f"Error finding related articles: {results[0]['error']}"
+                return ResponseFormatter.error(
+                    error=results[0]['error'],
+                    suggestion="Check if the PMID exists in PubMed",
+                    tool_name="find_related_articles"
+                )
             
-            output = f"📚 **Related Articles for PMID {pmid}** ({len(results)} found)\n\n"
+            output = f"📚 **Related Articles for PMID {normalized_pmid}** ({len(results)} found)\n\n"
             output += format_search_results(results)
             return output
         except Exception as e:
             logger.error(f"Find related articles failed: {e}")
-            return f"Error: {e}"
+            return ResponseFormatter.error(
+                error=e,
+                suggestion="Check PMID format and try again",
+                tool_name="find_related_articles"
+            )
 
     @mcp.tool()
-    def find_citing_articles(pmid: str, limit: int = 10) -> str:
+    def find_citing_articles(pmid: Union[str, int], limit: int = 10) -> str:
         """
         Find articles that cite a given PubMed article.
         Uses PubMed Central's citation data to find papers that reference this article.
         
         Args:
-            pmid: PubMed ID of the source article.
-            limit: Maximum number of citing articles to return.
+            pmid: PubMed ID of the source article (accepts: "12345678", "PMID:12345678", 12345678).
+            limit: Maximum number of citing articles to return (1-100, default: 10).
             
         Returns:
             List of citing articles with details.
         """
-        logger.info(f"Finding citing articles for PMID: {pmid}")
+        # Phase 2.1: Input normalization
+        normalized_pmid = InputNormalizer.normalize_pmid_single(pmid)
+        if not normalized_pmid:
+            return ResponseFormatter.error(
+                error="Invalid PMID format",
+                suggestion="Provide a valid PMID number",
+                example='find_citing_articles(pmid="12345678")',
+                tool_name="find_citing_articles"
+            )
+        
+        normalized_limit = InputNormalizer.normalize_limit(limit, default=10, min_val=1, max_val=100)
+        
+        logger.info(f"Finding citing articles for PMID: {normalized_pmid}")
         try:
-            results = searcher.get_citing_articles(pmid, limit)
+            results = searcher.get_citing_articles(normalized_pmid, normalized_limit)
             
             if not results:
-                return f"No citing articles found for PMID {pmid}. (Article may not be indexed in PMC or has no citations yet.)"
+                return ResponseFormatter.no_results(
+                    query=f"PMID {normalized_pmid}",
+                    suggestions=[
+                        "Article may not be indexed in PMC",
+                        "Article may have no citations yet",
+                        "Try find_related_articles for similar papers",
+                        "Try get_article_references to see its bibliography"
+                    ]
+                )
             
             if "error" in results[0]:
-                return f"Error finding citing articles: {results[0]['error']}"
+                return ResponseFormatter.error(
+                    error=results[0]['error'],
+                    suggestion="Check if the PMID exists and is indexed in PMC",
+                    tool_name="find_citing_articles"
+                )
             
-            output = f"📖 **Articles Citing PMID {pmid}** ({len(results)} found)\n\n"
+            output = f"📖 **Articles Citing PMID {normalized_pmid}** ({len(results)} found)\n\n"
             output += format_search_results(results)
             return output
         except Exception as e:
             logger.error(f"Find citing articles failed: {e}")
-            return f"Error: {e}"
+            return ResponseFormatter.error(
+                error=e,
+                suggestion="Check PMID format and try again",
+                tool_name="find_citing_articles"
+            )
 
     @mcp.tool()
-    def get_article_references(pmid: str, limit: int = 20) -> str:
+    def get_article_references(pmid: Union[str, int], limit: int = 20) -> str:
         """
         Get the references (bibliography) of a PubMed article.
         
@@ -404,60 +473,116 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         - find_citing_articles: Papers that cite THIS article (forward in time)
         
         Args:
-            pmid: PubMed ID of the source article.
-            limit: Maximum number of references to return.
+            pmid: PubMed ID of the source article (accepts: "12345678", "PMID:12345678", 12345678).
+            limit: Maximum number of references to return (1-100, default: 20).
             
         Returns:
             List of referenced articles with details.
         """
-        logger.info(f"Getting references for PMID: {pmid}")
+        # Phase 2.1: Input normalization
+        normalized_pmid = InputNormalizer.normalize_pmid_single(pmid)
+        if not normalized_pmid:
+            return ResponseFormatter.error(
+                error="Invalid PMID format",
+                suggestion="Provide a valid PMID number",
+                example='get_article_references(pmid="12345678")',
+                tool_name="get_article_references"
+            )
+        
+        normalized_limit = InputNormalizer.normalize_limit(limit, default=20, min_val=1, max_val=100)
+        
+        logger.info(f"Getting references for PMID: {normalized_pmid}")
         try:
-            results = searcher.get_article_references(pmid, limit)
+            results = searcher.get_article_references(normalized_pmid, normalized_limit)
             
             if not results:
-                return f"No references found for PMID {pmid}. (Article may not be indexed in PMC or references not available.)"
+                return ResponseFormatter.no_results(
+                    query=f"PMID {normalized_pmid}",
+                    suggestions=[
+                        "Article may not be indexed in PMC",
+                        "References may not be available for this article",
+                        "Try find_citing_articles to see papers citing this article"
+                    ]
+                )
             
             if "error" in results[0]:
-                return f"Error getting references: {results[0]['error']}"
+                return ResponseFormatter.error(
+                    error=results[0]['error'],
+                    suggestion="Check if the PMID exists and is indexed in PMC",
+                    tool_name="get_article_references"
+                )
             
-            output = f"📚 **References of PMID {pmid}** ({len(results)} found)\n\n"
+            output = f"📚 **References of PMID {normalized_pmid}** ({len(results)} found)\n\n"
             output += "These are the papers cited BY this article (its bibliography):\n\n"
             output += format_search_results(results)
             return output
         except Exception as e:
             logger.error(f"Get article references failed: {e}")
-            return f"Error: {e}"
+            return ResponseFormatter.error(
+                error=e,
+                suggestion="Check PMID format and try again",
+                tool_name="get_article_references"
+            )
 
     @mcp.tool()
-    def fetch_article_details(pmids: str) -> str:
+    def fetch_article_details(pmids: Union[str, List, int]) -> str:
         """
         Fetch detailed information for one or more PubMed articles.
         
         Args:
-            pmids: Comma-separated list of PubMed IDs (e.g., "12345678,87654321").
+            pmids: PubMed IDs - accepts multiple formats:
+                   - "12345678" (single)
+                   - "12345678,87654321" (comma-separated)
+                   - "PMID:12345678" (with prefix)
+                   - ["12345678", "87654321"] (list)
+                   - 12345678 (integer)
             
         Returns:
             Detailed information for each article.
         """
-        logger.info(f"Fetching details for PMIDs: {pmids}")
+        # Phase 2.1: Input normalization
+        normalized_pmids = InputNormalizer.normalize_pmids(pmids)
+        
+        if not normalized_pmids:
+            return ResponseFormatter.error(
+                error="No valid PMIDs provided",
+                suggestion="Provide one or more valid PMID numbers",
+                example='fetch_article_details(pmids="12345678,87654321")',
+                tool_name="fetch_article_details"
+            )
+        
+        logger.info(f"Fetching details for PMIDs: {normalized_pmids}")
         try:
-            pmid_list = [p.strip() for p in pmids.split(",")]
-            results = searcher.fetch_details(pmid_list)
+            results = searcher.fetch_details(normalized_pmids)
             
             if not results:
-                return f"No articles found for PMIDs: {pmids}"
+                return ResponseFormatter.no_results(
+                    query=f"PMIDs: {', '.join(normalized_pmids)}",
+                    suggestions=[
+                        "Check if the PMIDs are correct",
+                        "Use search_literature to find valid PMIDs"
+                    ]
+                )
             
             if "error" in results[0]:
-                return f"Error fetching details: {results[0]['error']}"
+                return ResponseFormatter.error(
+                    error=results[0]['error'],
+                    suggestion="Check if the PMIDs exist in PubMed",
+                    tool_name="fetch_article_details"
+                )
             
             return format_search_results(results, include_doi=True)
         except Exception as e:
             logger.error(f"Fetch details failed: {e}")
-            return f"Error: {e}"
+            return ResponseFormatter.error(
+                error=e,
+                suggestion="Check PMID format and try again",
+                tool_name="fetch_article_details"
+            )
 
     @mcp.tool()
     def get_citation_metrics(
-        pmids: str,
+        pmids: Union[str, List, int],
         sort_by: str = "citation_count",
         min_citations: int = None,
         min_rcr: float = None,
@@ -476,8 +601,11 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         Can sort and filter results by citation metrics.
         
         Args:
-            pmids: Comma-separated list of PubMed IDs (e.g., "12345678,87654321")
-                   OR "last" to use PMIDs from the last search
+            pmids: PubMed IDs - accepts multiple formats:
+                   - "12345678,87654321" (comma-separated)
+                   - ["12345678", "87654321"] (list)
+                   - "PMID:12345678" (with prefix)
+                   - "last" to use PMIDs from the last search
             sort_by: Metric to sort by:
                 - "citation_count": Raw citation count (default)
                 - "relative_citation_ratio": Field-normalized (recommended)
@@ -490,27 +618,46 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         Returns:
             Articles with citation metrics, sorted and filtered as requested.
         """
+        # Phase 2.1: Input normalization
+        normalized_pmids = InputNormalizer.normalize_pmids(pmids)
         
-        logger.info(f"Getting citation metrics for: {pmids}")
+        logger.info(f"Getting citation metrics for: {normalized_pmids}")
         
         try:
             # Handle "last" keyword
-            if pmids.strip().lower() == "last":
+            if normalized_pmids == ['last']:
                 from ._common import get_last_search_pmids
                 pmid_list = get_last_search_pmids()
                 if not pmid_list:
-                    return "No previous search results found. Please search first or provide PMIDs."
+                    return ResponseFormatter.error(
+                        error="No previous search results found",
+                        suggestion="Search first or provide PMIDs directly",
+                        example='get_citation_metrics(pmids="12345678,87654321")',
+                        tool_name="get_citation_metrics"
+                    )
             else:
-                pmid_list = [p.strip() for p in pmids.split(",")]
+                pmid_list = normalized_pmids
             
             if not pmid_list:
-                return "No PMIDs provided."
+                return ResponseFormatter.error(
+                    error="No valid PMIDs provided",
+                    suggestion="Provide PMIDs or use 'last' for recent search results",
+                    example='get_citation_metrics(pmids="12345678")',
+                    tool_name="get_citation_metrics"
+                )
             
             # Get metrics from iCite
             metrics = searcher.get_citation_metrics(pmid_list)
             
             if not metrics:
-                return f"No citation data found for PMIDs: {pmids}. Articles may be too recent or not indexed in iCite."
+                return ResponseFormatter.no_results(
+                    query=f"PMIDs: {', '.join(pmid_list[:5])}{'...' if len(pmid_list) > 5 else ''}",
+                    suggestions=[
+                        "Articles may be too recent (iCite needs time to index)",
+                        "Check if PMIDs are correct",
+                        "Try fetch_article_details to verify the articles exist"
+                    ]
+                )
             
             # Convert to list for sorting/filtering
             articles = [{"pmid": pmid, "icite": data} for pmid, data in metrics.items()]

@@ -5,6 +5,10 @@ Provides:
 - prepare_export: Export search results to various formats
 - get_fulltext_links: Get fulltext URLs for an article
 - summarize_fulltext_access: Analyze fulltext availability
+
+Phase 2.1 Updates:
+- InputNormalizer for flexible PMID input
+- ResponseFormatter for consistent error messages
 """
 
 import json
@@ -12,6 +16,7 @@ import logging
 import tempfile
 import os
 from datetime import datetime
+from typing import Union, List
 
 from mcp.server.fastmcp import FastMCP
 
@@ -22,7 +27,7 @@ from ...exports import (
     summarize_access,
     SUPPORTED_FORMATS,
 )
-from ._common import get_session_manager
+from ._common import get_session_manager, InputNormalizer, ResponseFormatter
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +40,7 @@ def register_export_tools(mcp: FastMCP, searcher: LiteratureSearcher):
     
     @mcp.tool()
     def prepare_export(
-        pmids: str,
+        pmids: Union[str, List, int],
         format: str = "ris",
         include_abstract: bool = True
     ) -> str:
@@ -53,8 +58,11 @@ def register_export_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         - json: Programmatic access
         
         Args:
-            pmids: Comma-separated PubMed IDs (e.g., "12345678,87654321")
-                   OR "last" to use results from last search
+            pmids: PubMed IDs - accepts multiple formats:
+                   - "12345678,87654321" (comma-separated)
+                   - ["12345678", "87654321"] (list)
+                   - "PMID:12345678" (with prefix)
+                   - "last" to use results from last search
             format: Export format (ris, bibtex, csv, medline, json)
             include_abstract: Whether to include abstracts (default: True)
             
@@ -62,38 +70,52 @@ def register_export_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             Formatted citation text ready for download or copy.
             For large exports (>20 articles), returns a file path instead.
         """
-        # Resolve PMIDs
-        pmid_list = _resolve_pmids(pmids)
+        # Phase 2.1: Input normalization
+        normalized_pmids = InputNormalizer.normalize_pmids(pmids)
+        normalized_abstract = InputNormalizer.normalize_bool(include_abstract, default=True)
+        
+        # Handle "last" keyword
+        if normalized_pmids == ['last']:
+            pmid_list = _resolve_pmids("last")
+        else:
+            pmid_list = normalized_pmids
         
         if not pmid_list:
-            return json.dumps({
-                "status": "error",
-                "message": "No PMIDs provided. Use 'last' for last search results or provide comma-separated PMIDs."
-            })
+            return ResponseFormatter.error(
+                error="No valid PMIDs provided",
+                suggestion="Use 'last' for last search results or provide PMIDs",
+                example='prepare_export(pmids="12345678,87654321", format="ris")',
+                tool_name="prepare_export"
+            )
         
         # Validate format
         format_lower = format.lower()
         if format_lower not in SUPPORTED_FORMATS:
-            return json.dumps({
-                "status": "error",
-                "message": f"Unsupported format: {format}. Supported: {SUPPORTED_FORMATS}"
-            })
+            return ResponseFormatter.error(
+                error=f"Unsupported format: {format}",
+                suggestion=f"Use one of: {', '.join(SUPPORTED_FORMATS)}",
+                example='prepare_export(pmids="last", format="ris")',
+                tool_name="prepare_export"
+            )
         
         try:
             # Fetch article details
             articles = searcher.fetch_details(pmid_list)
             
             if not articles:
-                return json.dumps({
-                    "status": "error",
-                    "message": "Failed to fetch article details"
-                })
+                return ResponseFormatter.no_results(
+                    query=f"PMIDs: {', '.join(pmid_list[:5])}",
+                    suggestions=[
+                        "Check if the PMIDs are correct",
+                        "Use search_literature to find valid PMIDs"
+                    ]
+                )
             
             # Export to format
             exported_text = export_articles(
                 articles,
                 format=format_lower,
-                include_abstract=include_abstract
+                include_abstract=normalized_abstract
             )
             
             # For large exports, save to file and return path
@@ -119,13 +141,14 @@ def register_export_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             
         except Exception as e:
             logger.exception("Error preparing export")
-            return json.dumps({
-                "status": "error",
-                "message": str(e)
-            })
+            return ResponseFormatter.error(
+                error=e,
+                suggestion="Check PMIDs and format, then try again",
+                tool_name="prepare_export"
+            )
     
     @mcp.tool()
-    def get_article_fulltext_links(pmid: str) -> str:
+    def get_article_fulltext_links(pmid: Union[str, int]) -> str:
         """
         Get fulltext links for a single article.
         
@@ -136,17 +159,28 @@ def register_export_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         - DOI (publisher page)
         
         Args:
-            pmid: PubMed ID of the article
+            pmid: PubMed ID (accepts: "12345678", "PMID:12345678", 12345678)
             
         Returns:
             JSON with available links and access type.
         """
+        # Phase 2.1: Input normalization
+        normalized_pmid = InputNormalizer.normalize_pmid_single(pmid)
+        
+        if not normalized_pmid:
+            return ResponseFormatter.error(
+                error="Invalid PMID format",
+                suggestion="Provide a valid PMID number",
+                example='get_article_fulltext_links(pmid="12345678")',
+                tool_name="get_article_fulltext_links"
+            )
+        
         try:
             # Use API lookup to get PMC status
-            links = get_fulltext_links_with_lookup(pmid, searcher)
+            links = get_fulltext_links_with_lookup(normalized_pmid, searcher)
             
             # Add article title if available
-            articles = searcher.fetch_details([pmid])
+            articles = searcher.fetch_details([normalized_pmid])
             if articles:
                 links["title"] = articles[0].get("title", "")[:100]
                 links["doi_url"] = f"https://doi.org/{articles[0].get('doi')}" if articles[0].get("doi") else None
@@ -157,14 +191,15 @@ def register_export_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             })
             
         except Exception as e:
-            logger.exception(f"Error getting fulltext links for {pmid}")
-            return json.dumps({
-                "status": "error",
-                "message": str(e)
-            })
+            logger.exception(f"Error getting fulltext links for {normalized_pmid}")
+            return ResponseFormatter.error(
+                error=e,
+                suggestion="Check if the PMID is correct",
+                tool_name="get_article_fulltext_links"
+            )
     
     @mcp.tool()
-    def analyze_fulltext_access(pmids: str) -> str:
+    def analyze_fulltext_access(pmids: Union[str, List, int]) -> str:
         """
         Analyze fulltext availability for multiple articles.
         
@@ -172,8 +207,11 @@ def register_export_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         have free full text available via PMC.
         
         Args:
-            pmids: Comma-separated PubMed IDs (e.g., "12345678,87654321")
-                   OR "last" to use results from last search
+            pmids: PubMed IDs - accepts multiple formats:
+                   - "12345678,87654321" (comma-separated)
+                   - ["12345678", "87654321"] (list)
+                   - "PMID:12345678" (with prefix)
+                   - "last" to use results from last search
                    
         Returns:
             Summary statistics with lists of:
@@ -181,24 +219,35 @@ def register_export_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             - Subscription-required articles
             - Abstract-only articles
         """
-        # Resolve PMIDs
-        pmid_list = _resolve_pmids(pmids)
+        # Phase 2.1: Input normalization
+        normalized_pmids = InputNormalizer.normalize_pmids(pmids)
+        
+        # Handle "last" keyword
+        if normalized_pmids == ['last']:
+            pmid_list = _resolve_pmids("last")
+        else:
+            pmid_list = normalized_pmids
         
         if not pmid_list:
-            return json.dumps({
-                "status": "error",
-                "message": "No PMIDs provided."
-            })
+            return ResponseFormatter.error(
+                error="No valid PMIDs provided",
+                suggestion="Use 'last' for last search results or provide PMIDs",
+                example='analyze_fulltext_access(pmids="12345678,87654321")',
+                tool_name="analyze_fulltext_access"
+            )
         
         try:
             # Fetch article details to get PMC info
             articles = searcher.fetch_details(pmid_list)
             
             if not articles:
-                return json.dumps({
-                    "status": "error",
-                    "message": "Failed to fetch article details"
-                })
+                return ResponseFormatter.no_results(
+                    query=f"PMIDs: {', '.join(pmid_list[:5])}",
+                    suggestions=[
+                        "Check if the PMIDs are correct",
+                        "Use search_literature to find valid PMIDs"
+                    ]
+                )
             
             # Analyze access
             summary = summarize_access(articles)
@@ -210,10 +259,11 @@ def register_export_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             
         except Exception as e:
             logger.exception("Error analyzing fulltext access")
-            return json.dumps({
-                "status": "error",
-                "message": str(e)
-            })
+            return ResponseFormatter.error(
+                error=e,
+                suggestion="Check PMIDs and try again",
+                tool_name="analyze_fulltext_access"
+            )
 
 
 def _resolve_pmids(pmids: str) -> list:

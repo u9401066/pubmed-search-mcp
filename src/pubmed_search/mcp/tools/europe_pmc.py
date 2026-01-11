@@ -13,15 +13,19 @@ Europe PMC unique features:
 - Text mining annotations (genes, diseases, chemicals, organisms)
 - 33M+ publications, 6.5M open access fulltext
 - No API key required
+
+Phase 2.1 Updates:
+- InputNormalizer for flexible input handling
+- ResponseFormatter for consistent error messages
 """
 
 import logging
-from typing import Optional
+from typing import Optional, Union
 
 from mcp.server.fastmcp import FastMCP
 
 from ...sources import get_europe_pmc_client
-from ._common import format_search_results
+from ._common import format_search_results, InputNormalizer, ResponseFormatter
 
 logger = logging.getLogger(__name__)
 
@@ -47,9 +51,9 @@ def register_europe_pmc_tools(mcp: FastMCP):
         
         Args:
             query: Search query (supports standard boolean operators AND, OR, NOT).
-            limit: Maximum number of results (default 10, max 1000).
-            min_year: Filter by minimum publication year.
-            max_year: Filter by maximum publication year.
+            limit: Maximum number of results (1-100, default: 10).
+            min_year: Filter by minimum publication year (e.g., 2020).
+            max_year: Filter by maximum publication year (e.g., 2024).
             open_access_only: Only return open access papers.
             has_fulltext: Only return papers with fulltext available in Europe PMC.
             sort: Sort order - "relevance" (default), "date" (newest first), or "cited" (most cited).
@@ -57,7 +61,23 @@ def register_europe_pmc_tools(mcp: FastMCP):
         Returns:
             Search results with titles, abstracts, and fulltext availability.
         """
-        logger.info(f"Searching Europe PMC: query='{query}', limit={limit}")
+        # Phase 2.1: Input normalization
+        normalized_query = InputNormalizer.normalize_query(query)
+        if not normalized_query:
+            return ResponseFormatter.error(
+                error="Query is required",
+                suggestion="Provide a search query",
+                example='search_europe_pmc(query="COVID-19 treatment")',
+                tool_name="search_europe_pmc"
+            )
+        
+        normalized_limit = InputNormalizer.normalize_limit(limit, default=10, min_val=1, max_val=100)
+        normalized_min_year = InputNormalizer.normalize_year(min_year)
+        normalized_max_year = InputNormalizer.normalize_year(max_year)
+        normalized_oa_only = InputNormalizer.normalize_bool(open_access_only, default=False)
+        normalized_fulltext = InputNormalizer.normalize_bool(has_fulltext, default=False)
+        
+        logger.info(f"Searching Europe PMC: query='{normalized_query}', limit={normalized_limit}")
         
         try:
             client = get_europe_pmc_client()
@@ -71,17 +91,25 @@ def register_europe_pmc_tools(mcp: FastMCP):
             sort_param = sort_map.get(sort, None)
             
             result = client.search(
-                query=query,
-                limit=limit,
-                min_year=min_year,
-                max_year=max_year,
-                open_access_only=open_access_only,
-                has_fulltext=has_fulltext,
+                query=normalized_query,
+                limit=normalized_limit,
+                min_year=normalized_min_year,
+                max_year=normalized_max_year,
+                open_access_only=normalized_oa_only,
+                has_fulltext=normalized_fulltext,
                 sort=sort_param,
             )
             
             if not result.get("results"):
-                return f"No results found in Europe PMC for '{query}'."
+                return ResponseFormatter.no_results(
+                    query=normalized_query,
+                    suggestions=[
+                        "Try broader search terms",
+                        "Remove year filters",
+                        "Disable open_access_only filter",
+                        "Try search_literature for PubMed instead"
+                    ]
+                )
             
             total = result.get("hit_count", len(result["results"]))
             articles = result["results"]
@@ -93,12 +121,12 @@ def register_europe_pmc_tools(mcp: FastMCP):
                 output += f" (of {total:,} total)"
             
             filters = []
-            if open_access_only:
+            if normalized_oa_only:
                 filters.append("Open Access")
-            if has_fulltext:
+            if normalized_fulltext:
                 filters.append("Fulltext available")
-            if min_year or max_year:
-                year_range = f"{min_year or '...'}-{max_year or '...'}"
+            if normalized_min_year or normalized_max_year:
+                year_range = f"{normalized_min_year or '...'}-{normalized_max_year or '...'}"
                 filters.append(year_range)
             if filters:
                 output += f" | Filters: {', '.join(filters)}"
@@ -159,11 +187,15 @@ def register_europe_pmc_tools(mcp: FastMCP):
             
         except Exception as e:
             logger.error(f"Europe PMC search failed: {e}")
-            return f"Error searching Europe PMC: {e}"
+            return ResponseFormatter.error(
+                error=e,
+                suggestion="Check query syntax and try again",
+                tool_name="search_europe_pmc"
+            )
 
     @mcp.tool()
     def get_fulltext(
-        pmcid: str,
+        pmcid: Union[str, int],
         sections: str = None,
     ) -> str:
         """
@@ -173,7 +205,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
         Only works for articles available in PubMed Central (PMC).
         
         Args:
-            pmcid: PubMed Central ID (e.g., "PMC7096777" or just "7096777").
+            pmcid: PubMed Central ID (accepts: "PMC7096777", "7096777", 7096777).
             sections: Comma-separated section names to include (e.g., "introduction,methods").
                       If not specified, returns all sections.
                       Common sections: introduction, methods, results, discussion, conclusion.
@@ -181,20 +213,32 @@ def register_europe_pmc_tools(mcp: FastMCP):
         Returns:
             Structured fulltext with title, sections, and references.
         """
-        logger.info(f"Getting fulltext for: {pmcid}")
+        # Phase 2.1: Input normalization
+        pmcid_normalized = InputNormalizer.normalize_pmcid(pmcid)
+        if not pmcid_normalized:
+            return ResponseFormatter.error(
+                error="Invalid PMC ID format",
+                suggestion="Provide a valid PMC ID number",
+                example='get_fulltext(pmcid="PMC7096777")',
+                tool_name="get_fulltext"
+            )
+        
+        logger.info(f"Getting fulltext for: {pmcid_normalized}")
         
         try:
             client = get_europe_pmc_client()
             
-            # Normalize PMCID
-            pmcid_normalized = pmcid.strip()
-            if not pmcid_normalized.upper().startswith("PMC"):
-                pmcid_normalized = f"PMC{pmcid_normalized}"
-            
             # Get XML
             xml = client.get_fulltext_xml(pmcid_normalized)
             if not xml:
-                return f"Fulltext not available for {pmcid_normalized}. The article may not be in PMC or not open access."
+                return ResponseFormatter.no_results(
+                    query=pmcid_normalized,
+                    suggestions=[
+                        "Article may not be in PMC",
+                        "Article may not be open access",
+                        "Try get_article_fulltext_links to check availability"
+                    ]
+                )
             
             # Parse XML
             parsed = client.parse_fulltext_xml(xml)
@@ -247,10 +291,14 @@ def register_europe_pmc_tools(mcp: FastMCP):
             
         except Exception as e:
             logger.error(f"Get fulltext failed: {e}")
-            return f"Error getting fulltext: {e}"
+            return ResponseFormatter.error(
+                error=e,
+                suggestion="Check if the PMC ID is correct and the article is open access",
+                tool_name="get_fulltext"
+            )
 
     @mcp.tool()
-    def get_fulltext_xml(pmcid: str) -> str:
+    def get_fulltext_xml(pmcid: Union[str, int]) -> str:
         """
         Get raw JATS XML fulltext from Europe PMC.
         
@@ -258,24 +306,35 @@ def register_europe_pmc_tools(mcp: FastMCP):
         the raw XML structure for custom parsing or analysis.
         
         Args:
-            pmcid: PubMed Central ID (e.g., "PMC7096777" or just "7096777").
+            pmcid: PubMed Central ID (accepts: "PMC7096777", "7096777", 7096777).
             
         Returns:
             JATS XML document as string, or error message.
         """
-        logger.info(f"Getting fulltext XML for: {pmcid}")
+        # Phase 2.1: Input normalization
+        pmcid_normalized = InputNormalizer.normalize_pmcid(pmcid)
+        if not pmcid_normalized:
+            return ResponseFormatter.error(
+                error="Invalid PMC ID format",
+                suggestion="Provide a valid PMC ID number",
+                example='get_fulltext_xml(pmcid="PMC7096777")',
+                tool_name="get_fulltext_xml"
+            )
+        
+        logger.info(f"Getting fulltext XML for: {pmcid_normalized}")
         
         try:
             client = get_europe_pmc_client()
             
-            # Normalize PMCID
-            pmcid_normalized = pmcid.strip()
-            if not pmcid_normalized.upper().startswith("PMC"):
-                pmcid_normalized = f"PMC{pmcid_normalized}"
-            
             xml = client.get_fulltext_xml(pmcid_normalized)
             if not xml:
-                return f"Fulltext XML not available for {pmcid_normalized}."
+                return ResponseFormatter.no_results(
+                    query=pmcid_normalized,
+                    suggestions=[
+                        "Article may not be in PMC",
+                        "Article may not be open access"
+                    ]
+                )
             
             # Return with size info
             output = f"<!-- JATS XML for {pmcid_normalized} ({len(xml):,} bytes) -->\n\n"
@@ -291,12 +350,16 @@ def register_europe_pmc_tools(mcp: FastMCP):
             
         except Exception as e:
             logger.error(f"Get fulltext XML failed: {e}")
-            return f"Error getting fulltext XML: {e}"
+            return ResponseFormatter.error(
+                error=e,
+                suggestion="Check if the PMC ID is correct",
+                tool_name="get_fulltext_xml"
+            )
 
     @mcp.tool()
     def get_text_mined_terms(
-        pmid: str = None,
-        pmcid: str = None,
+        pmid: Union[str, int] = None,
+        pmcid: Union[str, int] = None,
         semantic_type: str = None,
     ) -> str:
         """
@@ -306,8 +369,8 @@ def register_europe_pmc_tools(mcp: FastMCP):
         chemicals, organisms, and more. Useful for identifying key concepts.
         
         Args:
-            pmid: PubMed ID of the article.
-            pmcid: PMC ID (alternative to PMID, use one or the other).
+            pmid: PubMed ID of the article (accepts: "12345678", 12345678).
+            pmcid: PMC ID (alternative to PMID, accepts: "PMC7096777", "7096777").
             semantic_type: Filter by entity type. Options:
                 - "GENE_PROTEIN": Genes and proteins
                 - "DISEASE": Diseases and conditions  
@@ -319,29 +382,46 @@ def register_europe_pmc_tools(mcp: FastMCP):
         Returns:
             List of text-mined entities with counts and sections.
         """
-        logger.info(f"Getting text-mined terms for PMID={pmid}, PMCID={pmcid}")
+        # Phase 2.1: Input normalization
+        normalized_pmid = InputNormalizer.normalize_pmid_single(pmid) if pmid else None
+        normalized_pmcid = InputNormalizer.normalize_pmcid(str(pmcid)) if pmcid else None
+        
+        logger.info(f"Getting text-mined terms for PMID={normalized_pmid}, PMCID={normalized_pmcid}")
         
         try:
-            if not pmid and not pmcid:
-                return "Please provide either pmid or pmcid."
+            if not normalized_pmid and not normalized_pmcid:
+                return ResponseFormatter.error(
+                    error="Either pmid or pmcid is required",
+                    suggestion="Provide a PMID or PMC ID",
+                    example='get_text_mined_terms(pmid="12345678")',
+                    tool_name="get_text_mined_terms"
+                )
             
             client = get_europe_pmc_client()
             
             # Determine source and ID
-            if pmid:
+            if normalized_pmid:
                 source = "MED"
-                article_id = pmid
+                article_id = normalized_pmid
             else:
                 source = "PMC"
-                # Normalize PMCID
-                article_id = pmcid.strip()
-                if article_id.upper().startswith("PMC"):
-                    article_id = article_id[3:]
+                # Extract digits from normalized PMCID (PMC7096777 -> 7096777)
+                if normalized_pmcid and normalized_pmcid.startswith("PMC"):
+                    article_id = normalized_pmcid[3:]
+                else:
+                    article_id = normalized_pmcid or ""
             
-            terms = client.get_text_mined_terms(source, article_id, semantic_type)
+            terms = client.get_text_mined_terms(source, str(article_id), semantic_type)
             
             if not terms:
-                return f"No text-mined terms found for {source}:{article_id}."
+                id_str = f"PMID:{normalized_pmid}" if normalized_pmid else f"PMC:{normalized_pmcid}"
+                return ResponseFormatter.no_results(
+                    query=id_str,
+                    suggestions=[
+                        "Article may not have text-mining data",
+                        "Try a different article"
+                    ]
+                )
             
             # Group by semantic type
             by_type = {}
@@ -395,12 +475,16 @@ def register_europe_pmc_tools(mcp: FastMCP):
             
         except Exception as e:
             logger.error(f"Get text-mined terms failed: {e}")
-            return f"Error getting text-mined terms: {e}"
+            return ResponseFormatter.error(
+                error=e,
+                suggestion="Check the ID and try again",
+                tool_name="get_text_mined_terms"
+            )
 
     @mcp.tool()
     def get_europe_pmc_citations(
-        pmid: str = None,
-        pmcid: str = None,
+        pmid: Union[str, int] = None,
+        pmcid: Union[str, int] = None,
         direction: str = "citing",
         limit: int = 20,
     ) -> str:
@@ -411,46 +495,64 @@ def register_europe_pmc_tools(mcp: FastMCP):
         references this paper cites (backward).
         
         Args:
-            pmid: PubMed ID of the source article.
-            pmcid: PMC ID (alternative to PMID).
+            pmid: PubMed ID of the source article (accepts: "12345678", 12345678).
+            pmcid: PMC ID (alternative to PMID, accepts: "PMC7096777", "7096777").
             direction: Citation direction:
                 - "citing": Papers that cite this article (forward in time, default)
                 - "references": Papers this article cites (backward, its bibliography)
-            limit: Maximum number of results (default 20).
+            limit: Maximum number of results (1-100, default: 20).
             
         Returns:
             List of citing or referenced articles.
         """
-        logger.info(f"Getting {direction} for PMID={pmid}, PMCID={pmcid}")
+        # Phase 2.1: Input normalization
+        normalized_pmid = InputNormalizer.normalize_pmid_single(pmid) if pmid else None
+        normalized_pmcid = InputNormalizer.normalize_pmcid(str(pmcid)) if pmcid else None
+        normalized_limit = InputNormalizer.normalize_limit(limit, default=20, min_val=1, max_val=100)
+        
+        logger.info(f"Getting {direction} for PMID={normalized_pmid}, PMCID={normalized_pmcid}")
         
         try:
-            if not pmid and not pmcid:
-                return "Please provide either pmid or pmcid."
+            if not normalized_pmid and not normalized_pmcid:
+                return ResponseFormatter.error(
+                    error="Either pmid or pmcid is required",
+                    suggestion="Provide a PMID or PMC ID",
+                    example='get_europe_pmc_citations(pmid="12345678")',
+                    tool_name="get_europe_pmc_citations"
+                )
             
             client = get_europe_pmc_client()
             
             # Determine source and ID
-            if pmid:
+            if normalized_pmid:
                 source = "MED"
-                article_id = pmid
+                article_id = normalized_pmid
             else:
                 source = "PMC"
-                article_id = pmcid.strip()
-                if article_id.upper().startswith("PMC"):
-                    article_id = article_id[3:]
+                if normalized_pmcid and normalized_pmcid.startswith("PMC"):
+                    article_id = normalized_pmcid[3:]
+                else:
+                    article_id = normalized_pmcid or ""
             
             # Get citations or references
             if direction == "references":
-                results = client.get_references(source, article_id, limit=limit)
+                results = client.get_references(source, str(article_id), limit=normalized_limit)
                 direction_label = "References (Bibliography)"
                 direction_desc = "papers cited BY this article"
             else:
-                results = client.get_citations(source, article_id, limit=limit)
+                results = client.get_citations(source, str(article_id), limit=normalized_limit)
                 direction_label = "Citing Articles"
                 direction_desc = "papers that cite this article"
             
             if not results:
-                return f"No {direction} found for {source}:{article_id}."
+                id_str = f"PMID:{normalized_pmid}" if normalized_pmid else f"PMC:{normalized_pmcid}"
+                return ResponseFormatter.no_results(
+                    query=id_str,
+                    suggestions=[
+                        f"Article may have no {direction}",
+                        "Try find_citing_articles or get_article_references for PubMed data"
+                    ]
+                )
             
             # Format output
             id_str = f"PMID:{pmid}" if pmid else f"PMC:{pmcid}"
@@ -495,4 +597,8 @@ def register_europe_pmc_tools(mcp: FastMCP):
             
         except Exception as e:
             logger.error(f"Get Europe PMC citations failed: {e}")
-            return f"Error getting citations: {e}"
+            return ResponseFormatter.error(
+                error=e,
+                suggestion="Check the ID and direction parameter",
+                tool_name="get_europe_pmc_citations"
+            )
