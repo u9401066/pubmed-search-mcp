@@ -35,6 +35,11 @@ PubMed Search MCP Tools - Simplified Architecture (v0.1.22)
 - analyze_figure_for_search: 分析圖片並提取搜索關鍵字
 - reverse_image_search_pubmed: 反向圖片搜索文獻
 
+✅ 機構訂閱 (3) [新增 v0.1.25]：
+- configure_institutional_access: 設定機構 Link Resolver
+- get_institutional_link: 產生機構訂閱連結 (OpenURL)
+- list_resolver_presets: 列出可用的預設機構
+
 ❌ 已移除的重複工具（功能已整合進 unified_search）：
 - search_literature, search_europe_pmc, search_core, search_openalex...
 - merge_search_results, expand_search_queries...
@@ -57,17 +62,19 @@ from .unified import register_unified_search_tools
 from .citation_tree import register_citation_tree_tools
 from .europe_pmc import register_europe_pmc_tools  # For get_fulltext, get_text_mined_terms
 from .vision_search import register_vision_tools  # Experimental: image-to-literature
+from .openurl import register_openurl_tools  # Institutional access (OpenURL)
 
 
 def register_all_tools(mcp: FastMCP, searcher: LiteratureSearcher):
     """
-    精簡到 22 個核心工具 (v0.1.20)。
+    精簡到 25 個核心工具 (v0.1.25)。
     
     保留的核心功能：
     - unified_search: 主搜索入口（自動多源）
     - get_fulltext: 獲取全文內容
     - get_text_mined_terms: 文本挖掘
     - Session 管理工具
+    - OpenURL 機構訂閱連結
     
     已移除重複工具（功能已整合）：
     - 多源搜索工具 → unified_search
@@ -100,6 +107,9 @@ def register_all_tools(mcp: FastMCP, searcher: LiteratureSearcher):
     
     # 9. Vision-based search (2 tools) - Experimental
     register_vision_tools(mcp)  # analyze_figure_for_search, reverse_image_search_pubmed
+    
+    # 10. Institutional access (3 tools) - OpenURL/Link Resolver
+    register_openurl_tools(mcp)  # configure_institutional_access, get_institutional_link, list_resolver_presets
 
 
 __all__ = [
@@ -116,4 +126,5 @@ __all__ = [
     'register_ncbi_extended_tools',
     'register_citation_tree_tools',
     'register_vision_tools',
+    'register_openurl_tools',
 ]

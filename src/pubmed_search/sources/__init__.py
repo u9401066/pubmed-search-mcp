@@ -41,6 +41,7 @@ _core_client = None
 _ncbi_extended_client = None
 _crossref_client = None
 _unpaywall_client = None
+_openurl_builder = None
 
 
 class SearchSource(Enum):
@@ -125,6 +126,27 @@ def get_unpaywall_client(email: str | None = None):
             email=email or os.environ.get("UNPAYWALL_EMAIL"),
         )
     return _unpaywall_client
+
+
+def get_openurl_builder(resolver_base: str | None = None, preset: str | None = None):
+    """Get or create OpenURL builder (lazy initialization)."""
+    global _openurl_builder
+    if _openurl_builder is None:
+        from .openurl import OpenURLBuilder, get_openurl_config
+        import os
+        
+        # Try preset first, then resolver_base, then env var
+        if preset:
+            _openurl_builder = OpenURLBuilder.from_preset(preset, resolver_base)
+        elif resolver_base or os.environ.get("OPENURL_RESOLVER"):
+            _openurl_builder = OpenURLBuilder(
+                resolver_base=resolver_base or os.environ.get("OPENURL_RESOLVER") or ""
+            )
+        else:
+            # Return a builder that will check config at runtime
+            config = get_openurl_config()
+            _openurl_builder = config.get_builder()
+    return _openurl_builder
 
 
 def search_alternate_source(
@@ -452,6 +474,7 @@ __all__ = [
     "get_ncbi_extended_client",
     "get_crossref_client",
     "get_unpaywall_client",
+    "get_openurl_builder",
     "get_fulltext_xml",
     "get_fulltext_parsed",
 ]

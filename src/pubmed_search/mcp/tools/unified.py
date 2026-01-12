@@ -66,6 +66,7 @@ from ...sources import (
     get_crossref_client,
     get_unpaywall_client,
 )
+from ...sources.openurl import get_openurl_link, get_openurl_config
 from ._common import InputNormalizer, ResponseFormatter
 
 logger = logging.getLogger(__name__)
@@ -365,6 +366,22 @@ def _format_unified_results(
                 output_parts.append(f"**OA**: ✅ [{article.oa_status.value}]({oa_link.url})")
             else:
                 output_parts.append(f"**OA**: ✅ {article.oa_status.value}")
+        
+        # Institutional access link (OpenURL)
+        openurl_config = get_openurl_config()
+        if openurl_config.enabled and (openurl_config.resolver_base or openurl_config.preset):
+            openurl = get_openurl_link({
+                "pmid": article.pmid,
+                "doi": article.doi,
+                "title": article.title,
+                "journal": article.journal,
+                "year": article.year,
+                "volume": article.volume,
+                "issue": article.issue,
+                "pages": article.pages,
+            })
+            if openurl:
+                output_parts.append(f"**Library**: 🏛️ [Find via Library]({openurl})")
         
         # Citation metrics
         if article.citation_metrics:

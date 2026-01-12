@@ -14,6 +14,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.25] - 2025-01-14
+
+### 🏛️ Institutional Access / OpenURL Link Resolver Integration
+
+New feature: Access paywalled articles through your institutional library subscription
+using OpenURL link resolvers!
+
+### Added
+
+- **New Module** (`sources/openurl.py`):
+  - `OpenURLBuilder`: Build OpenURL links from article metadata
+  - `OpenURLConfig`: Configuration management with environment variable support
+  - `configure_openurl()`: Programmatic configuration
+  - Pre-configured presets for common institutions (台大、成大、Harvard、MIT...)
+
+- **New MCP Tools** (`mcp/tools/openurl.py`):
+  - `configure_institutional_access`: Set up your library's link resolver
+  - `get_institutional_link`: Generate OpenURL for any article
+  - `list_resolver_presets`: List available institution presets
+
+### Configuration
+
+```bash
+# Environment variable
+export OPENURL_RESOLVER="https://your.library.edu/openurl"
+export OPENURL_PRESET="ntu"  # Or use preset name
+
+# Or configure via MCP tool
+configure_institutional_access(preset="ntu")
+configure_institutional_access(resolver_url="https://...")
+```
+
+### Available Presets
+
+| Region | Institutions |
+|--------|--------------|
+| 🇹🇼 台灣 | ntu (台大), ncku (成大), nthu (清大), nycu (陽明交大) |
+| 🇺🇸 USA | harvard, stanford, mit, yale |
+| 🇬🇧 UK | oxford, cambridge |
+| 🔧 Generic | sfx, 360link, primo |
+
+### Workflow
+
+```
+1. Configure your resolver:
+   configure_institutional_access(preset="ntu")
+
+2. Search for articles:
+   unified_search("propofol pharmacokinetics")
+
+3. Get library access link:
+   get_institutional_link(pmid="38353755")
+   → Opens your library's login to access full text
+```
+
+---
+
 ## [0.1.24] - 2025-01-12
 
 ### 📚 Enhanced Tool Documentation for Agent Understanding
