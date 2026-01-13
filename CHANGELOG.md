@@ -12,6 +12,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Research trend analysis (keyword frequency, publication trends)
 - Chart generation (PNG output)
 
+### Added (WIP)
+- **Microsoft Copilot Studio Integration**:
+  - `run_copilot.py`: Dedicated launcher for Copilot Studio
+  - `CopilotStudioMiddleware`: Converts 202→200 responses for compatibility
+  - `json_response=True` parameter for `Accept: application/json` support
+  - ngrok integration with fixed domain support
+  - `copilot-studio/README.md`: Setup documentation
+
+### Changed (WIP)
+- `src/pubmed_search/mcp/server.py`: Added `json_response` parameter to `create_server()`
+- Renamed internal `_session_manager` to `_pubmed_session_manager` to avoid FastMCP conflict
+
 ---
 
 ## [0.1.25] - 2025-01-14

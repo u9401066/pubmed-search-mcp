@@ -1,0 +1,87 @@
+# PubMed Search MCP - OpenAPI Schema for Microsoft Copilot Studio
+# 
+# This schema is used to create a custom MCP connector in Power Apps
+# for integration with Microsoft Copilot Studio and Microsoft 365 Copilot.
+#
+# Usage:
+#   1. Deploy PubMed Search MCP to a public HTTPS URL
+#   2. Update the 'host' field below with your server domain
+#   3. Import this file in Power Apps > Custom Connectors
+#   4. Add the connector to your Copilot Studio agent
+#
+# Reference: https://learn.microsoft.com/en-us/microsoft-copilot-studio/mcp-add-existing-server-to-agent
+
+swagger: '2.0'
+info:
+  title: PubMed Search MCP
+  description: |
+    Professional medical literature research assistant powered by MCP (Model Context Protocol).
+    
+    Features:
+    • Search 33M+ PubMed articles with MeSH term expansion
+    • PICO clinical question analysis
+    • Full text access via Europe PMC & CORE (200M+ papers)
+    • Gene, compound, and clinical variant research (NCBI databases)
+    • Citation network exploration
+    • Export to RIS, BibTeX, CSV formats
+    
+    This MCP server provides 35+ tools for comprehensive literature research.
+  version: 0.1.18
+  contact:
+    name: PubMed Search MCP
+    url: https://github.com/u9401066/pubmed-search-mcp
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
+# ⚠️ UPDATE THIS with your deployed server domain
+host: your-server.example.com
+basePath: /
+schemes:
+  - https
+
+# Security definitions (optional - remove if not using authentication)
+securityDefinitions:
+  apiKey:
+    type: apiKey
+    in: header
+    name: X-API-Key
+    description: Optional API key for authentication
+
+paths:
+  /mcp:
+    post:
+      summary: PubMed Search MCP Server
+      description: |
+        MCP endpoint for PubMed literature search and analysis.
+        
+        Available tool categories:
+        - Core Search: search_literature, search_europe_pmc, search_core
+        - Discovery: find_related_articles, find_citing_articles, build_citation_tree
+        - Analysis: parse_pico, generate_search_queries, merge_search_results
+        - Full Text: get_fulltext, get_fulltext_xml, get_core_fulltext
+        - NCBI Extended: search_gene, search_compound, search_clinvar
+        - Export: prepare_export (RIS, BibTeX, CSV)
+      
+      # This special header tells Copilot Studio this is an MCP endpoint
+      x-ms-agentic-protocol: mcp-streamable-1.0
+      
+      operationId: InvokeMCP
+      consumes:
+        - application/json
+      produces:
+        - application/json
+      responses:
+        '200':
+          description: MCP response with tool results
+          schema:
+            type: object
+        '400':
+          description: Invalid request
+        '500':
+          description: Server error
+
+# Tags for documentation
+tags:
+  - name: MCP
+    description: Model Context Protocol endpoint

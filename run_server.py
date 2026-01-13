@@ -57,8 +57,8 @@ def main():
     parser.add_argument(
         "--transport",
         choices=["sse", "streamable-http"],
-        default="sse",
-        help="Transport protocol (default: sse)"
+        default="streamable-http",
+        help="Transport protocol (default: streamable-http, recommended for Copilot Studio)"
     )
     parser.add_argument(
         "--host",
@@ -116,23 +116,43 @@ def main():
         mcp_app = server.streamable_http_app()
     
     # Get session manager for HTTP API endpoints
-    session_manager = server._mcp._session_manager
-    searcher = server._mcp._searcher
+    # Note: Use _pubmed_session_manager (not _session_manager which is used by MCP SDK)
+    session_manager = server._pubmed_session_manager
+    searcher = server._searcher
     
     # Add health check and info endpoints
     async def health(request):
         return JSONResponse({"status": "ok", "service": "pubmed-search-mcp"})
     
     async def info(request):
+        # Build endpoint info based on transport
+        if args.transport == "streamable-http":
+            mcp_endpoints = {
+                "streamable_http": "/mcp",
+                "method": "POST"
+            }
+            copilot_studio = {
+                "compatible": True,
+                "server_url": f"https://YOUR_DOMAIN/mcp",
+                "transport": "mcp-streamable-1.0",
+                "note": "Replace YOUR_DOMAIN with your public HTTPS domain"
+            }
+        else:
+            mcp_endpoints = {
+                "sse": "/sse",
+                "messages": "/messages"
+            }
+            copilot_studio = {
+                "compatible": False,
+                "note": "SSE deprecated for Copilot Studio since Aug 2025. Use --transport streamable-http"
+            }
+        
         return JSONResponse({
             "service": "PubMed Search MCP Server",
-            "version": "0.1.2",
+            "version": "0.1.18",
             "transport": args.transport,
             "endpoints": {
-                "mcp": {
-                    "sse": "/sse",
-                    "messages": "/messages"
-                },
+                "mcp": mcp_endpoints,
                 "api": {
                     "cached_article": "/api/cached_article/{pmid}",
                     "cached_articles": "/api/cached_articles?pmids=...",
@@ -144,15 +164,10 @@ def main():
                     "list_exports": "/exports"
                 }
             },
+            "microsoft_copilot_studio": copilot_studio,
             "mcp_to_mcp": {
                 "description": "Other MCP servers can call /api/* endpoints directly",
                 "example": f"GET http://localhost:{args.port}/api/cached_article/12345678"
-            },
-            "usage": {
-                "vscode_mcp_json": {
-                    "type": "sse",
-                    "url": f"http://YOUR_SERVER_IP:{args.port}/sse"
-                }
             }
         })
     
@@ -301,24 +316,56 @@ def main():
     from starlette.middleware import Middleware
     from starlette.middleware.trustedhost import TrustedHostMiddleware
     
-    # Combine routes
-    routes = [
-        Route("/", info),
-        Route("/health", health),
-        Route("/exports", list_exports),
-        Route("/download/{filename}", download_file),
+    # For streamable-http, we need to add routes to the MCP app directly
+    # because it has a lifespan handler that must be preserved
+    # The MCP app already has /mcp route, we just add our utility routes
+    
+    # Add additional routes to the MCP app
+    from starlette.routing import Route as StarletteRoute
+    
+    # Insert our routes at the beginning of mcp_app.routes
+    additional_routes = [
+        StarletteRoute("/", info),
+        StarletteRoute("/health", health),
+        StarletteRoute("/exports", list_exports),
+        StarletteRoute("/download/{filename}", download_file),
         # MCP-to-MCP HTTP API endpoints
-        Route("/api/cached_article/{pmid}", api_get_cached_article),
-        Route("/api/cached_articles", api_get_multiple_articles),
-        Route("/api/session/summary", api_session_summary),
-        Mount("/", app=mcp_app),
+        StarletteRoute("/api/cached_article/{pmid}", api_get_cached_article),
+        StarletteRoute("/api/cached_articles", api_get_multiple_articles),
+        StarletteRoute("/api/session/summary", api_session_summary),
     ]
     
-    # Allow all hosts
-    app = Starlette(routes=routes)
+    # Prepend our routes to the MCP app's routes
+    # This way /mcp still works (from MCP SDK) and our routes work too
+    mcp_app.routes = additional_routes + list(mcp_app.routes)
     
+    # Use mcp_app directly (preserves lifespan handling)
+    app = mcp_app
+    
+    # Log appropriate endpoints based on transport
     logger.info(f"Download endpoint: http://{args.host}:{args.port}/download/{{filename}}")
     logger.info(f"List exports: http://{args.host}:{args.port}/exports")
+    
+    if args.transport == "streamable-http":
+        logger.info(f"")
+        logger.info(f"═══════════════════════════════════════════════════════")
+        logger.info(f"  Microsoft Copilot Studio Compatible!")
+        logger.info(f"═══════════════════════════════════════════════════════")
+        logger.info(f"  MCP Endpoint: http://{args.host}:{args.port}/mcp")
+        logger.info(f"  Transport:    Streamable HTTP (POST /mcp)")
+        logger.info(f"")
+        logger.info(f"  For Copilot Studio, use HTTPS URL:")
+        logger.info(f"    Server URL: https://your-domain.com/mcp")
+        logger.info(f"═══════════════════════════════════════════════════════")
+    else:
+        logger.info(f"")
+        logger.info(f"  ⚠️  SSE transport - Deprecated for Copilot Studio")
+        logger.info(f"  SSE endpoint: http://{args.host}:{args.port}/sse")
+        logger.info(f"  Message endpoint: http://{args.host}:{args.port}/messages")
+        logger.info(f"")
+        logger.info(f"  For Copilot Studio, use: --transport streamable-http")
+    
+    logger.info(f"")
     logger.info(f"[MCP-to-MCP API]")
     logger.info(f"  GET /api/cached_article/{{pmid}} - Get single article")
     logger.info(f"  GET /api/cached_articles?pmids=... - Get multiple articles")

@@ -714,9 +714,40 @@ curl -k https://localhost/
 }
 ```
 
-> 📖 **Full documentation**:
+---
+
+## 🏢 Microsoft Copilot Studio Integration
+
+Integrate PubMed Search MCP with **Microsoft 365 Copilot** (Word, Teams, Outlook)!
+
+### Quick Start
+
+```bash
+# Start with Streamable HTTP transport (required by Copilot Studio)
+python run_server.py --transport streamable-http --port 8765
+
+# Or use the dedicated script with ngrok
+./scripts/start-copilot-studio.sh --with-ngrok
+```
+
+### Copilot Studio Configuration
+
+| Field | Value |
+|-------|-------|
+| **Server name** | `PubMed Search` |
+| **Server URL** | `https://your-server.com/mcp` |
+| **Authentication** | `None` (or API Key) |
+
+> 📖 **Full documentation**: [copilot-studio/README.md](copilot-studio/README.md)
+>
+> ⚠️ **Note**: SSE transport deprecated since Aug 2025. Use `streamable-http`.
+
+---
+
+> 📖 **More documentation**:
 > - Architecture → [ARCHITECTURE.md](ARCHITECTURE.md)
 > - Deployment guide → [DEPLOYMENT.md](DEPLOYMENT.md)
+> - Copilot Studio → [copilot-studio/README.md](copilot-studio/README.md)
 
 ---
 

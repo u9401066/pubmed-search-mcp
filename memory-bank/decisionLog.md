@@ -8,6 +8,32 @@
 | 2025-01 | 多來源整合 (Semantic Scholar, OpenAlex) | 補充 PubMed 的引用分析能力 |
 | 2025-01 | 導入 Claude Skills 系統 | 標準化 AI 輔助開發流程 |
 | 2025-01 | 導入憲法-子法架構 | 建立專案治理框架 |
+| 2026-01 | Streamable HTTP 取代 SSE | Copilot Studio 不支援 SSE (deprecated Aug 2025) |
+| 2026-01 | 添加 json_response 參數 | Copilot Studio 要求 Accept: application/json |
+| 2026-01 | 202→200 Middleware | Copilot Studio 無法處理 202 Accepted |
+
+---
+
+## [2026-01] Microsoft Copilot Studio 整合
+
+### 背景
+用戶希望在 Word Copilot 中使用 PubMed Search MCP 進行文獻搜尋。
+
+### 技術挑戰
+1. SSE transport 已於 2025-08 deprecated，需改用 Streamable HTTP
+2. Copilot Studio 發送 `Accept: application/json` 而非 `text/event-stream`
+3. MCP SDK 對 notification 回傳 202 Accepted，Copilot Studio 無法處理
+
+### 解決方案
+1. 使用 FastMCP 的 `streamable_http_app()` 
+2. 添加 `json_response=True` 參數
+3. 創建 CopilotStudioMiddleware 轉換 202→200
+4. 使用 ngrok 固定網域提供公開 HTTPS 端點
+
+### 相關檔案
+- `run_copilot.py`: 專用啟動器
+- `copilot-studio/`: 整合文檔
+- `scripts/start-copilot-ngrok.sh`: ngrok 腳本
 
 ---
 

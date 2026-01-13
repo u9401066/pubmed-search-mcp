@@ -289,7 +289,8 @@ def create_server(
     api_key: Optional[str] = None,
     name: str = "pubmed-search",
     disable_security: bool = False,
-    data_dir: Optional[str] = None
+    data_dir: Optional[str] = None,
+    json_response: bool = False
 ) -> FastMCP:
     """
     Create and configure the PubMed Search MCP server.
@@ -300,6 +301,7 @@ def create_server(
         name: Server name.
         disable_security: Disable DNS rebinding protection (needed for remote access).
         data_dir: Directory for session data persistence. Default: ~/.pubmed-search-mcp
+        json_response: Use JSON responses instead of SSE (for Copilot Studio compatibility).
         
     Returns:
         Configured FastMCP server instance.
@@ -330,7 +332,12 @@ def create_server(
         transport_security = None
     
     # Create MCP server
-    mcp = FastMCP(name, instructions=SERVER_INSTRUCTIONS, transport_security=transport_security)
+    mcp = FastMCP(
+        name, 
+        instructions=SERVER_INSTRUCTIONS, 
+        transport_security=transport_security,
+        json_response=json_response
+    )
     
     # Set session manager and strategy generator for search tools
     set_session_manager(session_manager)
@@ -351,7 +358,9 @@ def create_server(
     register_prompts(mcp)
     
     # Store references for later use
-    mcp._session_manager = session_manager
+    # Note: Use _pubmed_session_manager to avoid conflicting with FastMCP's _session_manager
+    # which is used by streamable_http_app() for StreamableHTTPSessionManager
+    mcp._pubmed_session_manager = session_manager
     mcp._searcher = searcher
     mcp._strategy_generator = strategy_generator
     

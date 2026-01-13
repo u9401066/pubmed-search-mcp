@@ -3,6 +3,7 @@
 ## 📋 目錄
 
 - [部署模式總覽](#-部署模式總覽)
+- [Microsoft Copilot Studio 整合](#-microsoft-copilot-studio-整合) ⭐ NEW
 - [快速開始](#快速開始)
 - [HTTPS 部署 (推薦)](#-https-部署--https-deployment)
 - [Docker 部署](#-docker-部署)
@@ -17,21 +18,130 @@
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │                           Deployment Options                                  │
 ├─────────────────┬─────────────────┬─────────────────┬────────────────────────┤
-│   HTTP (Dev)    │   MCP SSE       │   MCP stdio     │   HTTPS (Production)   │
-│   (Port 8765)   │   (Port 8765)   │   (Local)       │   (Nginx + TLS)        │
+│   HTTP (Dev)    │   Streamable    │   MCP stdio     │   HTTPS (Production)   │
+│   (Port 8765)   │   HTTP (8765)   │   (Local)       │   (Nginx + TLS)        │
 ├─────────────────┼─────────────────┼─────────────────┼────────────────────────┤
-│ ✅ Quick test   │ ✅ Remote MCP   │ ✅ Claude       │ ✅ Production deploy   │
-│                 │    clients      │    Desktop      │ ✅ Secure connections  │
-│                 │ ✅ Docker/Cloud │ ✅ VS Code      │ ✅ Rate limiting       │
-│                 │                 │    Copilot      │ ✅ TLS 1.2/1.3         │
+│ ✅ Quick test   │ ✅ Copilot      │ ✅ Claude       │ ✅ Production deploy   │
+│                 │    Studio       │    Desktop      │ ✅ Secure connections  │
+│                 │ ✅ M365 Copilot │ ✅ VS Code      │ ✅ Rate limiting       │
+│                 │ ✅ Docker/Cloud │    Copilot      │ ✅ TLS 1.2/1.3         │
 └─────────────────┴─────────────────┴─────────────────┴────────────────────────┘
 ```
 
 | Mode | Protocol | Port | Best For |
 |------|----------|------|----------|
 | **stdio** | MCP stdio | - | Local Claude Desktop, VS Code Copilot |
-| **sse** | MCP over SSE | 8765 | Remote MCP clients, Docker deployment |
+| **streamable-http** | Streamable HTTP | 8765 | **Microsoft Copilot Studio**, M365 Copilot ⭐ |
+| **sse** | MCP over SSE | 8765 | Other remote MCP clients (deprecated in some platforms) |
 | **https** | HTTPS (Nginx) | 443 | Production with TLS encryption 🔒 |
+
+---
+
+## 🏢 Microsoft Copilot Studio 整合
+
+將 PubMed Search MCP 整合到 **Microsoft 365 Copilot** (Word, Teams, etc.)！
+
+### 架構
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Microsoft 365                                 │
+│  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐            │
+│  │  Word   │  │  Teams  │  │ Outlook │  │ Copilot │            │
+│  └────┬────┘  └────┬────┘  └────┬────┘  └────┬────┘            │
+│       └────────────┴────────────┴────────────┘                  │
+│                           │                                      │
+│                    Copilot Studio                                │
+│                    (Declarative Agent)                           │
+└───────────────────────────┬─────────────────────────────────────┘
+                            │ Streamable HTTP
+                            ▼
+              ┌──────────────────────────┐
+              │   PubMed Search MCP      │
+              │   /mcp endpoint          │
+              │                          │
+              │ • 35+ Tools              │
+              │ • PICO Analysis          │
+              │ • Full Text Access       │
+              │ • Citation Export        │
+              └──────────────────────────┘
+```
+
+### 需求
+
+| 項目 | 需求 |
+|------|------|
+| Transport | **Streamable HTTP** (SSE 已於 2025/8 起停用) |
+| URL | 公開可訪問的 HTTPS URL |
+| Endpoint | `/mcp` |
+| 認證 | None, API Key, 或 OAuth 2.0 |
+
+### 快速開始
+
+#### 方法 1：使用 ngrok 快速測試
+
+```bash
+# 啟動腳本 (含 ngrok)
+./scripts/start-copilot-studio.sh --with-ngrok
+
+# 輸出類似：
+# ✅ Server ready for Copilot Studio!
+# Server URL: https://abc123.ngrok.io/mcp
+```
+
+#### 方法 2：部署到雲端
+
+```bash
+# Railway (推薦，有免費額度)
+railway up
+
+# 或 Azure Container Apps
+az containerapp create \
+  --name pubmed-mcp \
+  --resource-group myRG \
+  --image u9401066/pubmed-search-mcp \
+  --target-port 8765 \
+  --env-vars MCP_TRANSPORT=streamable-http
+```
+
+### Copilot Studio 設定步驟
+
+1. 前往 [Copilot Studio](https://web.powerva.microsoft.com/)
+2. 創建或選擇 Agent → **Tools** → **Add a tool** → **New tool**
+3. 選擇 **Model Context Protocol**
+4. 填入：
+
+| 欄位 | 值 |
+|------|-----|
+| Server name | `PubMed Search` |
+| Server description | `搜尋 PubMed 醫學文獻 (3300萬+)、MeSH 擴展、PICO 臨床分析、Europe PMC/CORE 全文、基因/化合物研究、引用匯出` |
+| Server URL | `https://your-server.com/mcp` |
+| Authentication | `None` (或配置 API Key) |
+
+5. **Create** → **Add to agent** → **Publish**
+
+### 在 Word Copilot 中使用
+
+發布後，在 Word 中：
+1. 打開 **Copilot** 側邊欄
+2. 選擇 **PubMed Search** Agent
+3. 開始對話：
+   - 「搜尋 diabetes treatment 的最新研究」
+   - 「分析這個臨床問題：Aspirin vs Clopidogrel 預防中風」
+   - 「找出 BRCA1 基因相關的文獻」
+
+### 可用工具 (35+)
+
+Copilot Studio 會自動發現所有工具：
+
+| 類別 | 工具 |
+|------|------|
+| **搜尋** | `search_literature`, `search_europe_pmc`, `search_core` |
+| **分析** | `parse_pico`, `generate_search_queries`, `merge_search_results` |
+| **發現** | `find_related_articles`, `find_citing_articles`, `build_citation_tree` |
+| **全文** | `get_fulltext`, `get_fulltext_xml`, `get_core_fulltext` |
+| **NCBI** | `search_gene`, `search_compound`, `search_clinvar` |
+| **匯出** | `prepare_export` (RIS, BibTeX, CSV) |
 
 ---
 
@@ -55,18 +165,21 @@ pip install -e ".[all]"
 ### 2. 啟動服務
 
 ```bash
-# SSE 傳輸模式 (推薦，相容性較好)
-python run_server.py --transport sse --port 8765 --email your@email.com
-
-# 或使用 streamable-http 模式
+# Streamable HTTP 模式 (推薦 - Copilot Studio 相容)
 python run_server.py --transport streamable-http --port 8765 --email your@email.com
+
+# SSE 模式 (⚠️ 已於 2025/8 起在 Copilot Studio 棄用)
+python run_server.py --transport sse --port 8765 --email your@email.com
 ```
 
 ### 3. 測試連接
 
 ```bash
-# 使用測試客戶端
-python test_client.py http://localhost:8765/sse
+# Streamable HTTP 模式
+curl -X POST http://localhost:8765/mcp
+
+# SSE 模式
+curl http://localhost:8765/sse
 ```
 
 ## 部署選項
@@ -78,8 +191,8 @@ python test_client.py http://localhost:8765/sse
 export NCBI_EMAIL="your@email.com"
 export NCBI_API_KEY="your_api_key"  # 可選，提高請求限制
 
-# 啟動服務
-python run_server.py --transport sse --port 8765
+# 啟動服務 (預設 streamable-http)
+python run_server.py --port 8765
 ```
 
 ### 選項 2: 使用 systemd (生產環境)
@@ -97,7 +210,7 @@ User=your_user
 WorkingDirectory=/path/to/pubmed-search-mcp
 Environment=NCBI_EMAIL=your@email.com
 Environment=NCBI_API_KEY=your_api_key
-ExecStart=/path/to/pubmed-search-mcp/.venv/bin/python run_server.py --transport sse --port 8765
+ExecStart=/path/to/pubmed-search-mcp/.venv/bin/python run_server.py --transport streamable-http --port 8765
 Restart=always
 RestartSec=10
 

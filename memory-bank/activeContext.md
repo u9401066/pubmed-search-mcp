@@ -5,45 +5,48 @@
 ## 🎯 當前焦點
 
 <!-- 一句話描述正在做什麼 -->
-- 導入 Claude Skills 系統並初始化 Memory Bank
+- 整合 Microsoft Copilot Studio MCP 支援
 
 ## 📝 進行中的變更
 
 <!-- 具體的檔案和修改 -->
 | 檔案 | 變更內容 |
 |------|----------|
-| `memory-bank/*.md` | 初始化專案 Memory Bank |
-| `CONSTITUTION.md` | 導入專案憲法 |
-| `.claude/skills/` | 導入 13 個 Claude Skills |
-| `.github/bylaws/` | 導入 4 個子法 |
+| `run_copilot.py` | 新增 Copilot Studio 專用啟動器 |
+| `copilot-studio/` | 新增 Copilot Studio 整合文檔 |
+| `scripts/start-copilot-ngrok.sh` | ngrok tunnel 腳本 |
+| `src/pubmed_search/mcp/server.py` | 新增 `json_response` 參數支援 |
 
 ## ⚠️ 待解決
 
 <!-- 遇到的問題或阻礙 -->
-- 需確認 architect.md, systemPatterns.md, decisionLog.md 內容
+- Copilot Studio 連線測試中，出現 SystemError
+- 需要確認 202→200 middleware 是否解決問題
 
 ## 💡 重要決定
 
 <!-- 本次工作階段做的決定 -->
-- 採用 template-is-all-you-need 的治理框架
-- Memory Bank 作為跨對話記憶系統
+- 使用 Streamable HTTP 取代 SSE (SSE 已 deprecated)
+- 添加 `json_response=True` 支援 Copilot Studio 的 `Accept: application/json`
+- 添加 CopilotStudioMiddleware 轉換 202→200 回應
+- 使用 ngrok 固定網域 `kmuh-ai.ngrok.dev`
 
 ## 📁 相關檔案
 
 <!-- 涉及的檔案路徑 -->
 ```
-CONSTITUTION.md
-.claude/skills/
-.github/bylaws/
-memory-bank/
+run_copilot.py
+copilot-studio/README.md
+scripts/start-copilot-ngrok.sh
+src/pubmed_search/mcp/server.py
 ```
 
 ## 🔜 下一步
 
 <!-- 接下來要做什麼 -->
-1. 更新 architect.md, systemPatterns.md
-2. Git commit 所有變更
-3. 確認 CI/CD 流程
+1. 確認 Copilot Studio 連線成功
+2. 測試工具呼叫功能
+3. 文檔完善
 
 ---
-*Last updated: 2025-01-XX*
+*Last updated: 2026-01-13*
