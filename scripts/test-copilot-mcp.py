@@ -179,16 +179,19 @@ def test_mcp_server(base_url: str):
         print_error(f"Error: {e}")
     
     # =========================================================================
-    # Step 4: Call a simple tool
+    # Step 4: Call a simple tool (search_pubmed for Copilot mode)
     # =========================================================================
-    print_step(4, "Call 'get_session_summary' tool (simple test)")
+    print_step(4, "Call 'search_pubmed' tool (simple test)")
     
     call_payload = {
         "jsonrpc": "2.0",
         "method": "tools/call",
         "params": {
-            "name": "get_session_summary",
-            "arguments": {}
+            "name": "search_pubmed",
+            "arguments": {
+                "query": "COVID-19 vaccine efficacy",
+                "limit": 3
+            }
         },
         "id": "3"
     }
@@ -204,10 +207,14 @@ def test_mcp_server(base_url: str):
             data = resp.json()
             if "result" in data:
                 print_success("Tool call succeeded!")
-                print(f"Response:")
-                print_json(data)
+                # Show content summary
+                content = data.get("result", {}).get("content", [])
+                if content and len(content) > 0:
+                    text = content[0].get("text", "")[:500]
+                    print(f"Result preview: {text}...")
             elif "error" in data:
                 print_error(f"Tool error: {data['error']}")
+                print_json(data)
         else:
             print_error(f"HTTP {resp.status_code}: {resp.text[:500]}")
             
@@ -215,18 +222,17 @@ def test_mcp_server(base_url: str):
         print_error(f"Error: {e}")
     
     # =========================================================================
-    # Step 5: Call search_literature (real test)
+    # Step 5: Call get_article (real test)
     # =========================================================================
-    print_step(5, "Call 'search_literature' tool")
+    print_step(5, "Call 'get_article' tool")
     
     search_payload = {
         "jsonrpc": "2.0",
         "method": "tools/call",
         "params": {
-            "name": "search_literature",
+            "name": "get_article",
             "arguments": {
-                "query": "COVID-19 vaccine",
-                "limit": 3
+                "pmid": "33301246"
             }
         },
         "id": "4"
@@ -242,7 +248,7 @@ def test_mcp_server(base_url: str):
         if resp.status_code == 200:
             data = resp.json()
             if "result" in data:
-                print_success("Search succeeded!")
+                print_success("Article fetch succeeded!")
                 # Show content summary
                 content = data.get("result", {}).get("content", [])
                 if content and len(content) > 0:

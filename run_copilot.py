@@ -3,11 +3,20 @@
 PubMed Search MCP Server - Copilot Studio Mode
 
 Simple launcher for Microsoft Copilot Studio integration.
-Includes middleware to handle Copilot Studio compatibility issues.
+Includes middleware and simplified tool schemas for compatibility.
+
+⚠️ Copilot Studio Known Limitations (as of 2025):
+- Schema truncation with anyOf/oneOf (multi-type arrays)
+- exclusiveMinimum must be boolean, not integer
+- Reference types ($ref) not supported
+- Enum inputs interpreted as string
+
+This launcher uses a simplified tool set with single-type parameters.
 
 Usage:
     python run_copilot.py
     python run_copilot.py --port 8765
+    python run_copilot.py --full-tools  # Use all tools (may have issues)
 """
 
 import argparse
@@ -17,13 +26,92 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
-from pubmed_search.mcp.server import create_server
+from pubmed_search.mcp.server import create_server, DEFAULT_EMAIL
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
+
+
+def create_copilot_server(email: str, api_key: str = None, use_full_tools: bool = False):
+    """
+    Create MCP server optimized for Copilot Studio.
+    
+    Args:
+        email: NCBI email
+        api_key: NCBI API key (optional)
+        use_full_tools: If True, use all tools (may have schema issues)
+                       If False, use simplified Copilot-compatible tools
+    
+    Returns:
+        FastMCP server instance
+    """
+    from mcp.server.fastmcp import FastMCP
+    from mcp.server.transport_security import TransportSecuritySettings
+    from pubmed_search.entrez import LiteratureSearcher
+    from pubmed_search.session import SessionManager
+    from pubmed_search.mcp.tools._common import set_session_manager, set_strategy_generator
+    
+    logger.info("Initializing PubMed Search MCP Server (Copilot Studio mode)...")
+    
+    # Initialize core components
+    searcher = LiteratureSearcher(email=email, api_key=api_key)
+    
+    from pubmed_search.entrez.strategy import SearchStrategyGenerator
+    strategy_generator = SearchStrategyGenerator(email=email, api_key=api_key)
+    
+    session_manager = SessionManager()
+    
+    # Create MCP server with Copilot Studio settings
+    mcp = FastMCP(
+        "pubmed-search-copilot",
+        instructions="""PubMed Search MCP Server - Copilot Studio Edition
+
+Available tools:
+- search_pubmed: Search for scientific literature
+- get_article: Get article details by PMID
+- find_related: Find related articles
+- find_citations: Find articles that cite a paper
+- get_references: Get reference list of an article
+- analyze_clinical_question: Parse PICO elements
+- expand_search_terms: Get MeSH terms and synonyms
+- get_fulltext: Get full text from Europe PMC
+- export_citations: Export in RIS/BibTeX/CSV format
+- search_gene: Search NCBI Gene database
+- search_compound: Search PubChem compounds
+""",
+        transport_security=TransportSecuritySettings(
+            enable_dns_rebinding_protection=False
+        ),
+        json_response=True,
+        stateless_http=True,  # Required for Copilot Studio
+    )
+    
+    # Set global references
+    set_session_manager(session_manager)
+    set_strategy_generator(strategy_generator)
+    
+    # Register tools
+    if use_full_tools:
+        logger.warning("Using FULL tool set - may have schema compatibility issues!")
+        from pubmed_search.mcp.tools import register_all_tools
+        from pubmed_search.mcp.session_tools import register_session_tools, register_session_resources
+        register_all_tools(mcp, searcher)
+        register_session_tools(mcp, session_manager)
+        register_session_resources(mcp, session_manager)
+    else:
+        logger.info("Using SIMPLIFIED Copilot-compatible tool set")
+        from pubmed_search.mcp.copilot_tools import register_copilot_compatible_tools
+        register_copilot_compatible_tools(mcp, searcher)
+    
+    # Store references
+    mcp._pubmed_session_manager = session_manager
+    mcp._searcher = searcher
+    mcp._strategy_generator = strategy_generator
+    
+    return mcp
 
 
 class CopilotStudioMiddleware:
@@ -79,30 +167,30 @@ def main():
     parser = argparse.ArgumentParser(description="Run PubMed Search MCP for Copilot Studio")
     parser.add_argument("--port", type=int, default=int(os.environ.get("MCP_PORT", "8765")))
     parser.add_argument("--host", default=os.environ.get("MCP_HOST", "0.0.0.0"))
-    parser.add_argument("--email", default=os.environ.get("NCBI_EMAIL", "pubmed-search@example.com"))
+    parser.add_argument("--email", default=os.environ.get("NCBI_EMAIL", DEFAULT_EMAIL))
     parser.add_argument("--api-key", default=os.environ.get("NCBI_API_KEY"))
-    parser.add_argument("--stateless", action="store_true", default=True,
-                       help="Use stateless mode (no session, recommended for Copilot Studio)")
+    parser.add_argument("--full-tools", action="store_true", default=False,
+                       help="Use full tool set (may have schema issues with Copilot Studio)")
     args = parser.parse_args()
 
     logger.info("Creating PubMed Search MCP Server for Copilot Studio...")
-    # Copilot Studio compatibility settings (matching Microsoft's official samples):
-    # - json_response=True: Return JSON instead of SSE streams
-    # - stateless_http=True: No session management (sessionIdGenerator: undefined)
-    server = create_server(
+    
+    # Create server with appropriate tool set
+    server = create_copilot_server(
         email=args.email, 
-        api_key=args.api_key, 
-        disable_security=True,
-        json_response=True,
-        stateless_http=args.stateless  # Microsoft 官方範例使用 stateless 模式
+        api_key=args.api_key,
+        use_full_tools=args.full_tools
     )
     
     # Get the streamable-http app directly from FastMCP
-    # This includes lifespan handling and the /mcp endpoint
     app = server.streamable_http_app()
     
     # Wrap with Copilot Studio compatibility middleware
     app = CopilotStudioMiddleware(app)
+    
+    # Get tool count for display
+    tool_count = len(server._tool_manager.list_tools())
+    tool_mode = "FULL (may have issues)" if args.full_tools else "SIMPLIFIED (Copilot-compatible)"
     
     logger.info(f"")
     logger.info(f"═══════════════════════════════════════════════════════")
@@ -110,7 +198,8 @@ def main():
     logger.info(f"═══════════════════════════════════════════════════════")
     logger.info(f"  Local:  http://{args.host}:{args.port}/mcp")
     logger.info(f"  ngrok:  https://kmuh-ai.ngrok.dev/mcp")
-    logger.info(f"  Mode:   {'Stateless' if args.stateless else 'Stateful'} (json_response=True)")
+    logger.info(f"  Tools:  {tool_count} ({tool_mode})")
+    logger.info(f"  Mode:   Stateless HTTP (json_response=True)")
     logger.info(f"  Middleware: 202→200 conversion enabled")
     logger.info(f"═══════════════════════════════════════════════════════")
     logger.info(f"")

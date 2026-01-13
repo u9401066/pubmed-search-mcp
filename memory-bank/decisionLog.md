@@ -13,6 +13,59 @@
 | 2026-01 | 202→200 Middleware | Copilot Studio 無法處理 202 Accepted |
 | 2026-01 | Stateless HTTP 模式 | Microsoft 官方 MCP 範例使用 `sessionIdGenerator: undefined` |
 | 2026-01 | Python 3.12 升級 | 支援 Python 3.12+ 泛型語法，使用 uv 管理虛擬環境 |
+| 2026-01-13 | **建立簡化 Copilot 工具集** | **解決 anyOf schema truncation 問題** |
+
+---
+
+## [2026-01-13] Copilot Studio Schema 相容性修復
+
+### 背景
+儘管 MCP 伺服器本地測試通過，Copilot Studio 仍回報 "SystemError"。
+
+### 根本原因發現
+查閱 Microsoft 官方 troubleshooting 文檔發現 Known Issues：
+1. `anyOf` 多類型陣列會導致 schema truncation
+2. `exclusiveMinimum` 必須是 Boolean 非 integer
+3. Reference type ($ref) 不支援
+4. Enum type 被解釋為 string
+
+**我們的問題**: 25/31 個工具使用了 `Union[int, str]`、`Union[bool, str]`、`Optional[str]` 等類型，
+在 JSON Schema 中轉換成 `anyOf: [{"type": "integer"}, {"type": "string"}]`，被 Copilot Studio 截斷。
+
+### 解決方案
+建立 `src/pubmed_search/mcp/copilot_tools.py` 模組：
+- 11 個簡化工具，僅使用單一類型 (`str`, `int`, `bool`)
+- 內部使用 `InputNormalizer` 處理彈性輸入
+- 避免任何 `anyOf`、`oneOf`、`$ref` 模式
+
+### 新工具集
+```
+search_pubmed          - 搜尋 PubMed
+get_article           - 取得文章詳情
+find_related          - 尋找相關文章
+find_citations        - 尋找引用文章
+get_references        - 取得參考文獻
+analyze_clinical_question - 解析 PICO
+expand_search_terms   - MeSH 擴展
+get_fulltext          - 取得全文
+export_citations      - 匯出引用
+search_gene           - 搜尋基因
+search_compound       - 搜尋化合物
+```
+
+### 使用方式
+```bash
+# Copilot 相容模式（預設）
+python run_copilot.py --port 8765
+
+# 完整工具集（可能有問題）
+python run_copilot.py --port 8765 --full-tools
+```
+
+### 驗證結果
+- Schema 測試：11/11 工具無 anyOf ✅
+- 連線測試：search_pubmed, get_article 正常 ✅
+- 待驗證：Copilot Studio 實際連線
 
 ---
 

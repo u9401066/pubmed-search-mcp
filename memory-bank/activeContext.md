@@ -5,51 +5,70 @@
 ## 🎯 當前焦點
 
 <!-- 一句話描述正在做什麼 -->
-- 完善 Microsoft Copilot Studio MCP 整合（Stateless 模式）
+- **已解決** Copilot Studio Schema 相容性問題 - 建立簡化工具集
 
 ## 📝 進行中的變更
 
 <!-- 具體的檔案和修改 -->
 | 檔案 | 變更內容 |
 |------|----------|
-| `run_copilot.py` | 新增 `--stateless` 參數，預設為 True |
-| `src/pubmed_search/mcp/server.py` | 新增 `stateless_http` 參數 |
-| `scripts/test-copilot-mcp.py` | 新增 MCP 相容性測試腳本 |
-| `copilot-studio/openapi-schema.yaml` | 更新 host 為 `kmuh-ai.ngrok.dev` |
+| `run_copilot.py` | 重構使用 `create_copilot_server()` 函數，支援 `--full-tools` 參數 |
+| `src/pubmed_search/mcp/copilot_tools.py` | **新增** - 11 個 Copilot 相容工具，避免 `anyOf` 多類型 |
+| `scripts/test-copilot-mcp.py` | 更新測試工具名稱為 `search_pubmed`, `get_article` |
 
-## ⚠️ 待解決
+## ✅ 已解決問題
 
-<!-- 遇到的問題或阻礙 -->
-- ✅ MCP 伺服器測試通過 (5/5 步驟成功)
-- ⏳ Copilot Studio 實際連線測試中
+<!-- 根本原因和解決方案 -->
+**根本原因**：
+Copilot Studio 不支援 JSON Schema 中的 `anyOf` 多類型定義
+- 原本使用 `Union[int, str]`、`Union[bool, str]`、`Optional[str]`
+- 這些在 JSON Schema 中變成 `anyOf: [{"type": "integer"}, {"type": "string"}]`
+- Microsoft 文檔明確指出：「schema definition is truncated when type is an array」
 
-## 💡 重要決定
+**解決方案**：
+- 建立 `copilot_tools.py` 模組，使用單一類型參數
+- 11 個簡化工具：search_pubmed, get_article, find_related, find_citations 等
+- 所有參數僅使用 `str`, `int`, `bool` 單一類型
+- 內部用 `InputNormalizer` 處理類型轉換
 
-<!-- 本次工作階段做的決定 -->
-- **Stateless 模式**: 依據 Microsoft 官方範例，使用 `stateless_http=True`
-- 使用 Streamable HTTP 取代 SSE (SSE 已 deprecated)
-- 添加 `json_response=True` 支援 Copilot Studio 的 `Accept: application/json`
-- 添加 CopilotStudioMiddleware 轉換 202→200 回應
-- 使用 ngrok 固定網域 `kmuh-ai.ngrok.dev`
-- Python 虛擬環境升級至 3.12 (使用 uv)
+## 💡 關鍵發現
 
-## 📁 相關檔案
+<!-- 本次工作階段的重要發現 -->
+- 原本 25/31 個工具有 `anyOf` 問題
+- Copilot Studio Known Issues 清單：
+  1. `exclusiveMinimum` 必須是 Boolean（不是 integer）
+  2. 多類型陣列會導致 schema truncation
+  3. Reference type ($ref) 不支援
+  4. Enum type 被解釋為 string
 
-<!-- 涉及的檔案路徑 -->
+## 📁 新增/修改檔案
+
 ```
-run_copilot.py
-copilot-studio/README.md
-copilot-studio/openapi-schema.yaml
-scripts/test-copilot-mcp.py
-src/pubmed_search/mcp/server.py
+run_copilot.py                           # 重構
+src/pubmed_search/mcp/copilot_tools.py   # 新增 - 11 個 Copilot 相容工具
+scripts/test-copilot-mcp.py              # 更新測試工具名稱
 ```
 
 ## 🔜 下一步
 
 <!-- 接下來要做什麼 -->
-1. ✅ MCP 相容性測試通過
-2. ⏳ 在 Copilot Studio 實際測試連線
-3. 如有問題，檢查 response size 或 timeout 限制
+1. ✅ Schema 相容性測試通過（11/11 工具無 anyOf）
+2. ✅ MCP 連線測試通過（search_pubmed, get_article 正常）
+3. ⏳ **請用戶在 Copilot Studio 實際測試**
+4. 如有新問題，檢查 Copilot Studio 錯誤 log
+
+## 🚀 使用方式
+
+```bash
+# 啟動 Copilot Studio 相容模式（預設 11 個工具）
+python run_copilot.py --port 8765
+
+# 啟動完整工具集（可能有問題）
+python run_copilot.py --port 8765 --full-tools
+
+# 測試
+python scripts/test-copilot-mcp.py http://localhost:8765/mcp
+```
 
 ---
-*Last updated: 2026-01-13*
+*Last updated: 2026-01-13 - Schema compatibility fix*
