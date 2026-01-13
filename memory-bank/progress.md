@@ -22,11 +22,13 @@
 ## Doing
 
 - 🔄 Microsoft Copilot Studio MCP 整合
-  - Streamable HTTP transport 實作完成
-  - `json_response=True` 參數支援
-  - CopilotStudioMiddleware (202→200 轉換)
-  - ngrok tunnel 設定 (`kmuh-ai.ngrok.dev`)
-  - 測試中：Copilot Studio 連線
+  - ✅ Streamable HTTP transport 實作完成
+  - ✅ `json_response=True` 參數支援
+  - ✅ `stateless_http=True` 參數 (依 Microsoft 官方範例)
+  - ✅ CopilotStudioMiddleware (202→200 轉換)
+  - ✅ ngrok tunnel 設定 (`kmuh-ai.ngrok.dev`)
+  - ✅ MCP 相容性測試通過 (36 tools, 5/5 steps)
+  - ⏳ Copilot Studio 實際連線測試中
 
 ## Next
 

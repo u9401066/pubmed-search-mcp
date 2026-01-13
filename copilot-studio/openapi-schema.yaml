@@ -35,18 +35,10 @@ info:
     url: https://www.apache.org/licenses/LICENSE-2.0
 
 # ⚠️ UPDATE THIS with your deployed server domain
-host: your-server.example.com
+host: kmuh-ai.ngrok.dev
 basePath: /
 schemes:
   - https
-
-# Security definitions (optional - remove if not using authentication)
-securityDefinitions:
-  apiKey:
-    type: apiKey
-    in: header
-    name: X-API-Key
-    description: Optional API key for authentication
 
 paths:
   /mcp:

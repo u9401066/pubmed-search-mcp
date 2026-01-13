@@ -17,12 +17,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `run_copilot.py`: Dedicated launcher for Copilot Studio
   - `CopilotStudioMiddleware`: Converts 202→200 responses for compatibility
   - `json_response=True` parameter for `Accept: application/json` support
-  - ngrok integration with fixed domain support
+  - `stateless_http=True` parameter matching Microsoft's official MCP samples
+  - ngrok integration with fixed domain support (`kmuh-ai.ngrok.dev`)
   - `copilot-studio/README.md`: Setup documentation
+  - `scripts/test-copilot-mcp.py`: MCP compatibility test script
 
 ### Changed (WIP)
-- `src/pubmed_search/mcp/server.py`: Added `json_response` parameter to `create_server()`
+- `src/pubmed_search/mcp/server.py`: Added `json_response` and `stateless_http` parameters to `create_server()`
 - Renamed internal `_session_manager` to `_pubmed_session_manager` to avoid FastMCP conflict
+- Upgraded to Python 3.12+ (using uv for virtual environment management)
 
 ---
 

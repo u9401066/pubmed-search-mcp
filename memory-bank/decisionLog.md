@@ -11,6 +11,8 @@
 | 2026-01 | Streamable HTTP 取代 SSE | Copilot Studio 不支援 SSE (deprecated Aug 2025) |
 | 2026-01 | 添加 json_response 參數 | Copilot Studio 要求 Accept: application/json |
 | 2026-01 | 202→200 Middleware | Copilot Studio 無法處理 202 Accepted |
+| 2026-01 | Stateless HTTP 模式 | Microsoft 官方 MCP 範例使用 `sessionIdGenerator: undefined` |
+| 2026-01 | Python 3.12 升級 | 支援 Python 3.12+ 泛型語法，使用 uv 管理虛擬環境 |
 
 ---
 

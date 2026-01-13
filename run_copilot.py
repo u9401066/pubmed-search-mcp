@@ -81,15 +81,20 @@ def main():
     parser.add_argument("--host", default=os.environ.get("MCP_HOST", "0.0.0.0"))
     parser.add_argument("--email", default=os.environ.get("NCBI_EMAIL", "pubmed-search@example.com"))
     parser.add_argument("--api-key", default=os.environ.get("NCBI_API_KEY"))
+    parser.add_argument("--stateless", action="store_true", default=True,
+                       help="Use stateless mode (no session, recommended for Copilot Studio)")
     args = parser.parse_args()
 
     logger.info("Creating PubMed Search MCP Server for Copilot Studio...")
-    # json_response=True enables Accept: application/json (required by Copilot Studio)
+    # Copilot Studio compatibility settings (matching Microsoft's official samples):
+    # - json_response=True: Return JSON instead of SSE streams
+    # - stateless_http=True: No session management (sessionIdGenerator: undefined)
     server = create_server(
         email=args.email, 
         api_key=args.api_key, 
         disable_security=True,
-        json_response=True  # Copilot Studio compatibility
+        json_response=True,
+        stateless_http=args.stateless  # Microsoft 官方範例使用 stateless 模式
     )
     
     # Get the streamable-http app directly from FastMCP
@@ -105,6 +110,7 @@ def main():
     logger.info(f"═══════════════════════════════════════════════════════")
     logger.info(f"  Local:  http://{args.host}:{args.port}/mcp")
     logger.info(f"  ngrok:  https://kmuh-ai.ngrok.dev/mcp")
+    logger.info(f"  Mode:   {'Stateless' if args.stateless else 'Stateful'} (json_response=True)")
     logger.info(f"  Middleware: 202→200 conversion enabled")
     logger.info(f"═══════════════════════════════════════════════════════")
     logger.info(f"")

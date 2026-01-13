@@ -290,7 +290,8 @@ def create_server(
     name: str = "pubmed-search",
     disable_security: bool = False,
     data_dir: Optional[str] = None,
-    json_response: bool = False
+    json_response: bool = False,
+    stateless_http: bool = False
 ) -> FastMCP:
     """
     Create and configure the PubMed Search MCP server.
@@ -302,6 +303,7 @@ def create_server(
         disable_security: Disable DNS rebinding protection (needed for remote access).
         data_dir: Directory for session data persistence. Default: ~/.pubmed-search-mcp
         json_response: Use JSON responses instead of SSE (for Copilot Studio compatibility).
+        stateless_http: Use stateless HTTP mode (no session management, for Copilot Studio).
         
     Returns:
         Configured FastMCP server instance.
@@ -336,7 +338,8 @@ def create_server(
         name, 
         instructions=SERVER_INSTRUCTIONS, 
         transport_security=transport_security,
-        json_response=json_response
+        json_response=json_response,
+        stateless_http=stateless_http  # Stateless mode for Copilot Studio
     )
     
     # Set session manager and strategy generator for search tools
