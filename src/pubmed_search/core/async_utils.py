@@ -24,7 +24,6 @@ from collections.abc import Sequence
 from functools import wraps
 
 from .exceptions import (
-    PubMedSearchError,
     RateLimitError,
     is_retryable_error,
     get_retry_delay,

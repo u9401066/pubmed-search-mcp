@@ -174,8 +174,13 @@ def _search_pubmed(
     limit: int,
     min_year: int | None,
     max_year: int | None,
-) -> list[UnifiedArticle]:
-    """Search PubMed and convert to UnifiedArticle."""
+) -> tuple[list[UnifiedArticle], int | None]:
+    """Search PubMed and convert to UnifiedArticle.
+    
+    Returns:
+        Tuple of (articles, total_count) where total_count is the total
+        number of matching articles in PubMed (not just returned count).
+    """
     try:
         results = searcher.search(
             query=query,
@@ -184,14 +189,24 @@ def _search_pubmed(
             max_year=max_year,
         )
         
+        # Extract total_count from metadata (if present)
+        total_count = None
+        if results and "_search_metadata" in results[0]:
+            total_count = results[0]["_search_metadata"].get("total_count")
+            del results[0]["_search_metadata"]
+            # Remove empty dict if only metadata was present
+            if not results[0] or results[0] == {}:
+                results = results[1:] if len(results) > 1 else []
+        
         articles = []
         for r in results:
-            articles.append(UnifiedArticle.from_pubmed(r))
+            if r and "error" not in r:  # Skip error entries
+                articles.append(UnifiedArticle.from_pubmed(r))
         
-        return articles
+        return articles, total_count
     except Exception as e:
         logger.error(f"PubMed search failed: {e}")
-        return []
+        return [], None
 
 
 def _search_openalex(
@@ -199,8 +214,12 @@ def _search_openalex(
     limit: int,
     min_year: int | None,
     max_year: int | None,
-) -> list[UnifiedArticle]:
-    """Search OpenAlex and convert to UnifiedArticle."""
+) -> tuple[list[UnifiedArticle], int | None]:
+    """Search OpenAlex and convert to UnifiedArticle.
+    
+    Returns:
+        Tuple of (articles, total_count).
+    """
     try:
         results = search_alternate_source(
             query=query,
@@ -214,10 +233,11 @@ def _search_openalex(
         for r in results:
             articles.append(UnifiedArticle.from_openalex(r))
         
-        return articles
+        # OpenAlex doesn't return total count in our current implementation
+        return articles, None
     except Exception as e:
         logger.error(f"OpenAlex search failed: {e}")
-        return []
+        return [], None
 
 
 def _search_semantic_scholar(
@@ -225,8 +245,12 @@ def _search_semantic_scholar(
     limit: int,
     min_year: int | None,
     max_year: int | None,
-) -> list[UnifiedArticle]:
-    """Search Semantic Scholar and convert to UnifiedArticle."""
+) -> tuple[list[UnifiedArticle], int | None]:
+    """Search Semantic Scholar and convert to UnifiedArticle.
+    
+    Returns:
+        Tuple of (articles, total_count).
+    """
     try:
         results = search_alternate_source(
             query=query,
@@ -240,59 +264,128 @@ def _search_semantic_scholar(
         for r in results:
             articles.append(UnifiedArticle.from_semantic_scholar(r))
         
-        return articles
+        # Semantic Scholar doesn't return total count in our current implementation
+        return articles, None
     except Exception as e:
         logger.error(f"Semantic Scholar search failed: {e}")
-        return []
+        return [], None
 
 
 def _enrich_with_crossref(articles: list[UnifiedArticle]) -> None:
-    """Enrich articles with CrossRef metadata (in-place)."""
+    """Enrich articles with CrossRef metadata (in-place, parallel)."""
     try:
         client = get_crossref_client()
-        for article in articles:
-            if article.doi and not article.citation_metrics:
-                work = client.get_work(article.doi)
-                if work:
-                    crossref_article = UnifiedArticle.from_crossref(work)
-                    article.merge_from(crossref_article)
+        
+        # Filter articles that need enrichment
+        articles_to_enrich = [
+            (i, article) for i, article in enumerate(articles)
+            if article.doi and not article.citation_metrics
+        ]
+        
+        if not articles_to_enrich:
+            return
+        
+        # Limit to avoid too many parallel requests
+        MAX_PARALLEL = 10
+        articles_to_enrich = articles_to_enrich[:MAX_PARALLEL]
+        
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        
+        def fetch_crossref(idx_article: tuple[int, UnifiedArticle]) -> tuple[int, dict | None]:
+            idx, article = idx_article
+            try:
+                doi = article.doi
+                if not doi:
+                    return (idx, None)
+                work = client.get_work(doi)
+                return (idx, work)
+            except Exception:
+                return (idx, None)
+        
+        # Parallel fetch
+        with ThreadPoolExecutor(max_workers=min(5, len(articles_to_enrich))) as executor:
+            futures = {executor.submit(fetch_crossref, item): item for item in articles_to_enrich}
+            
+            for future in as_completed(futures):
+                try:
+                    idx, work = future.result()
+                    if work:
+                        crossref_article = UnifiedArticle.from_crossref(work)
+                        articles[idx].merge_from(crossref_article)
+                except Exception as e:
+                    logger.debug(f"CrossRef enrichment skipped: {e}")
+                    
     except Exception as e:
         logger.warning(f"CrossRef enrichment failed: {e}")
 
 
 def _enrich_with_unpaywall(articles: list[UnifiedArticle]) -> None:
-    """Enrich articles with Unpaywall OA links (in-place)."""
+    """Enrich articles with Unpaywall OA links (in-place, parallel)."""
     try:
         client = get_unpaywall_client()
-        for article in articles:
-            if article.doi and not article.has_open_access:
-                oa_info = client.enrich_article(article.doi)
-                if oa_info.get("is_oa"):
-                    from ...models.unified_article import OpenAccessLink, OpenAccessStatus
-                    article.is_open_access = True
+        
+        # Filter articles that need enrichment
+        articles_to_enrich = [
+            (i, article) for i, article in enumerate(articles)
+            if article.doi and not article.has_open_access
+        ]
+        
+        if not articles_to_enrich:
+            return
+        
+        # Limit to avoid too many parallel requests
+        MAX_PARALLEL = 10
+        articles_to_enrich = articles_to_enrich[:MAX_PARALLEL]
+        
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        
+        def fetch_unpaywall(idx_article: tuple[int, UnifiedArticle]) -> tuple[int, dict | None]:
+            idx, article = idx_article
+            try:
+                doi = article.doi
+                if not doi:
+                    return (idx, None)
+                oa_info = client.enrich_article(doi)
+                return (idx, oa_info if oa_info.get("is_oa") else None)
+            except Exception:
+                return (idx, None)
+        
+        # Parallel fetch
+        with ThreadPoolExecutor(max_workers=min(5, len(articles_to_enrich))) as executor:
+            futures = {executor.submit(fetch_unpaywall, item): item for item in articles_to_enrich}
+            
+            for future in as_completed(futures):
+                try:
+                    idx, oa_info = future.result()
+                    if oa_info:
+                        from ...models.unified_article import OpenAccessLink, OpenAccessStatus
+                        articles[idx].is_open_access = True
+                        
+                        # Map OA status
+                        status_map = {
+                            "gold": OpenAccessStatus.GOLD,
+                            "green": OpenAccessStatus.GREEN,
+                            "hybrid": OpenAccessStatus.HYBRID,
+                            "bronze": OpenAccessStatus.BRONZE,
+                        }
+                        articles[idx].oa_status = status_map.get(
+                            oa_info.get("oa_status", "unknown"),
+                            OpenAccessStatus.UNKNOWN
+                        )
+                        
+                        # Add OA links
+                        for link_data in oa_info.get("oa_links", []):
+                            if link_data.get("url"):
+                                articles[idx].oa_links.append(OpenAccessLink(
+                                    url=link_data["url"],
+                                    version=link_data.get("version", "unknown"),
+                                    host_type=link_data.get("host_type"),
+                                    license=link_data.get("license"),
+                                    is_best=link_data.get("is_best", False),
+                                ))
+                except Exception as e:
+                    logger.debug(f"Unpaywall enrichment skipped: {e}")
                     
-                    # Map OA status
-                    status_map = {
-                        "gold": OpenAccessStatus.GOLD,
-                        "green": OpenAccessStatus.GREEN,
-                        "hybrid": OpenAccessStatus.HYBRID,
-                        "bronze": OpenAccessStatus.BRONZE,
-                    }
-                    article.oa_status = status_map.get(
-                        oa_info.get("oa_status", "unknown"),
-                        OpenAccessStatus.UNKNOWN
-                    )
-                    
-                    # Add OA links
-                    for link_data in oa_info.get("oa_links", []):
-                        if link_data.get("url"):
-                            article.oa_links.append(OpenAccessLink(
-                                url=link_data["url"],
-                                version=link_data.get("version", "unknown"),
-                                host_type=link_data.get("host_type"),
-                                license=link_data.get("license"),
-                                is_best=link_data.get("is_best", False),
-                            ))
     except Exception as e:
         logger.warning(f"Unpaywall enrichment failed: {e}")
 
@@ -306,6 +399,7 @@ def _format_unified_results(
     analysis: AnalyzedQuery,
     stats: AggregationStats,
     include_analysis: bool = True,
+    pubmed_total_count: int | None = None,
 ) -> str:
     """Format unified search results for MCP response."""
     output_parts = []
@@ -319,7 +413,12 @@ def _format_unified_results(
             pico_str = ", ".join(f"{k}={v}" for k, v in analysis.pico.to_dict().items() if v)
             output_parts.append(f"**PICO**: {pico_str}")
         output_parts.append(f"**Sources**: {', '.join(stats.by_source.keys())}")
-        output_parts.append(f"**Results**: {stats.unique_articles} unique ({stats.duplicates_removed} duplicates removed)")
+        
+        # Show total count info with PubMed total
+        results_str = f"{stats.unique_articles} unique ({stats.duplicates_removed} duplicates removed)"
+        if pubmed_total_count is not None and pubmed_total_count > stats.unique_articles:
+            results_str = f"📊 返回 **{stats.unique_articles}** 篇 (PubMed 總共 **{pubmed_total_count}** 篇符合) | {stats.duplicates_removed} 去重"
+        output_parts.append(f"**Results**: {results_str}")
         output_parts.append("")
     
     # Articles
@@ -538,40 +637,67 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             else:
                 config = DispatchStrategy.get_ranking_config(analysis)
             
-            # === Step 4: Search Each Source ===
+            # === Step 4: Search Each Source (Parallel) ===
             all_results: list[list[UnifiedArticle]] = []
+            pubmed_total_count: int | None = None
             
-            for source in sources:
+            # Use ThreadPoolExecutor for parallel search
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            
+            def search_source(source: str) -> tuple[str, list[UnifiedArticle], int | None]:
+                """Search a single source and return (source_name, articles, total_count)."""
+                effective_min_year = min_year or analysis.year_from
+                effective_max_year = max_year or analysis.year_to
+                
                 if source == "pubmed":
-                    results = _search_pubmed(
+                    articles, total_count = _search_pubmed(
                         searcher, query, limit,
-                        min_year or analysis.year_from,
-                        max_year or analysis.year_to,
+                        effective_min_year,
+                        effective_max_year,
                     )
-                    all_results.append(results)
-                    logger.info(f"PubMed: {len(results)} results")
+                    return ("pubmed", articles, total_count)
                 
                 elif source == "openalex":
-                    results = _search_openalex(
+                    articles, total_count = _search_openalex(
                         query, limit,
-                        min_year or analysis.year_from,
-                        max_year or analysis.year_to,
+                        effective_min_year,
+                        effective_max_year,
                     )
-                    all_results.append(results)
-                    logger.info(f"OpenAlex: {len(results)} results")
+                    return ("openalex", articles, total_count)
                 
                 elif source == "semantic_scholar":
-                    results = _search_semantic_scholar(
+                    articles, total_count = _search_semantic_scholar(
                         query, limit,
-                        min_year or analysis.year_from,
-                        max_year or analysis.year_to,
+                        effective_min_year,
+                        effective_max_year,
                     )
-                    all_results.append(results)
-                    logger.info(f"Semantic Scholar: {len(results)} results")
+                    return ("semantic_scholar", articles, total_count)
                 
                 elif source == "crossref":
                     # CrossRef is used for enrichment, not primary search
-                    pass
+                    return ("crossref", [], None)
+                
+                return (source, [], None)
+            
+            # Filter out crossref from parallel search (it's enrichment only)
+            search_sources = [s for s in sources if s != "crossref"]
+            
+            # Execute searches in parallel
+            with ThreadPoolExecutor(max_workers=len(search_sources)) as executor:
+                futures = {executor.submit(search_source, s): s for s in search_sources}
+                
+                for future in as_completed(futures):
+                    source_name = futures[future]
+                    try:
+                        name, articles, total_count = future.result()
+                        if articles:
+                            all_results.append(articles)
+                        if name == "pubmed" and total_count is not None:
+                            pubmed_total_count = total_count
+                        logger.info(f"{name}: {len(articles)} results" + 
+                                   (f" (total: {total_count})" if total_count else ""))
+                    except Exception as e:
+                        logger.error(f"Search failed for {source_name}: {e}")
             
             # === Step 5: Aggregate and Deduplicate ===
             aggregator = ResultAggregator(config)
@@ -598,7 +724,7 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             if output_format == "json":
                 return _format_as_json(ranked, analysis, stats)
             else:
-                return _format_unified_results(ranked, analysis, stats, show_analysis)
+                return _format_unified_results(ranked, analysis, stats, show_analysis, pubmed_total_count)
         
         except Exception as e:
             logger.error(f"Unified search failed: {e}", exc_info=True)

@@ -586,17 +586,32 @@ class QueryAnalyzer:
         if identifiers and len(keywords) < 3:
             return QueryComplexity.SIMPLE
         
-        # SIMPLE: Very short query (1-2 words)
+        # SIMPLE: Very short query (1-2 words) without comparison
         if len(keywords) <= 2 and not pico:
-            return QueryComplexity.SIMPLE
+            # Check if it's a genuine comparison (e.g., "A vs B")
+            has_real_comparison = bool(re.search(
+                r'\b\w+\s+(?:vs\.?|versus)\s+\w+', query_lower
+            ))
+            if not has_real_comparison:
+                return QueryComplexity.SIMPLE
         
-        # COMPLEX: Has PICO structure
-        if pico and pico.intervention:
+        # COMPLEX: Has PICO structure with at least intervention AND (comparison OR outcome)
+        if pico and pico.intervention and (pico.comparison or pico.outcome):
             return QueryComplexity.COMPLEX
         
-        # COMPLEX: Has comparison structure
-        if any(kw in query_lower for kw in ["vs", "versus", "compared"]):
-            return QueryComplexity.COMPLEX
+        # COMPLEX: Has genuine comparison structure (A vs B pattern, not just "vs" anywhere)
+        # Must have actual entities on both sides
+        comparison_match = re.search(
+            r'\b(\w{3,})\s+(?:vs\.?|versus|compared?\s+(?:to|with))\s+(\w{3,})', 
+            query_lower
+        )
+        if comparison_match:
+            # Only COMPLEX if both sides are substantive words (not "the vs that")
+            left = comparison_match.group(1)
+            right = comparison_match.group(2)
+            stopwords = {'the', 'this', 'that', 'with', 'and', 'for', 'from'}
+            if left not in stopwords and right not in stopwords:
+                return QueryComplexity.COMPLEX
         
         # AMBIGUOUS: Very broad single term
         if len(keywords) == 1 and keywords[0].lower() in {
@@ -605,11 +620,12 @@ class QueryAnalyzer:
         }:
             return QueryComplexity.AMBIGUOUS
         
-        # MODERATE: Default for multi-term queries
+        # MODERATE: Default for multi-term queries (3+ keywords)
         if len(keywords) >= 3:
             return QueryComplexity.MODERATE
         
-        return QueryComplexity.MODERATE
+        # Default: SIMPLE for 2-keyword queries without special structure
+        return QueryComplexity.SIMPLE
     
     def _recommend_sources(
         self,

@@ -17,10 +17,6 @@ from typing import Optional, List, Dict, Any, Union
 # Import core exceptions for unified error handling
 from pubmed_search.core import (
     PubMedSearchError,
-    APIError,
-    ValidationError,
-    DataError,
-    ErrorContext,
     is_retryable_error,
     get_retry_delay,
 )

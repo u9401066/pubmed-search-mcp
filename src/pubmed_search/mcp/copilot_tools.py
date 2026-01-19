@@ -19,7 +19,7 @@ from typing import Literal
 from mcp.server.fastmcp import FastMCP
 
 from ..entrez import LiteratureSearcher
-from .tools._common import InputNormalizer, ResponseFormatter, get_session_manager
+from .tools._common import InputNormalizer, ResponseFormatter
 
 logger = logging.getLogger(__name__)
 

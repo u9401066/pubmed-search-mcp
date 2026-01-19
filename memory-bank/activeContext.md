@@ -5,7 +5,7 @@
 ## 🎯 當前焦點
 
 <!-- 一句話描述正在做什麼 -->
-- **已解決** Copilot Studio Schema 相容性問題 - 建立簡化工具集
+- **ROADMAP 更新** - 加入 Agent 友善標準 + Token 效率優化 (Phase 5.8)
 
 ## 📝 進行中的變更
 
@@ -52,10 +52,12 @@ scripts/test-copilot-mcp.py              # 更新測試工具名稱
 ## 🔜 下一步
 
 <!-- 接下來要做什麼 -->
-1. ✅ Schema 相容性測試通過（11/11 工具無 anyOf）
-2. ✅ MCP 連線測試通過（search_pubmed, get_article 正常）
-3. ⏳ **請用戶在 Copilot Studio 實際測試**
-4. 如有新問題，檢查 Copilot Studio 錯誤 log
+1. ⏳ 實作 Token 效率優化 (Phase 5.8)
+   - `output_format="compact"` 參數
+   - `UnifiedArticle.to_compact_dict()` 方法
+2. ⏳ 競品學習功能 (Phase 5.7)
+   - Think/Plan Tool 概念
+   - 統一查詢語法
 
 ## 🚀 使用方式
 
@@ -71,4 +73,4 @@ python scripts/test-copilot-mcp.py http://localhost:8765/mcp
 ```
 
 ---
-*Last updated: 2026-01-13 - Schema compatibility fix*
+*Last updated: 2026-01-20 - ROADMAP Agent Friendly + Token Efficiency*

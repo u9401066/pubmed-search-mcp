@@ -2058,7 +2058,419 @@ academic-mcp/
 | 2024-12-05 | 新增 BioMCP (genomoncology) ⭐367 - 生醫全局型 (24 Tools + 10 數據源 + 統一查詢語言) |
 | 2024-12-05 | 新增 pubmedmcp (grll) ⭐84 - PubMed 極簡版 + uvx 一鍵運行 (直接競品) |
 | 2024-12-05 | 新增 pubmed-mcp-server (cyanheads) ⭐36 - TypeScript + 圖表生成 + 研究計劃 (直接競品) |
-| | |
+| 2025-01-28 | 新增 第二批 4 個 repos：suppr-mcp, findpapers, EasyPubMed, paperscraper |
+
+---
+
+## 📊 第二批分析（用戶指定 repos - 2025-01）
+
+### 1. WildDataX/suppr-mcp ⭐???
+
+**類型**: MCP Server (商業服務)
+**語言**: TypeScript/Node.js
+
+**重要發現**：
+- ⚠️ **這是商業付費服務** - 需要 API Key，不是開源工具
+- 底層服務是「超能文獻 Suppr」（suppr.wilddata.cn）
+- 主要功能：翻譯 + AI 語義搜尋
+
+**Tools 清單**:
+| Tool | 功能 |
+|------|------|
+| `create_translation` | 創建文檔翻譯任務 |
+| `get_translation` | 獲取翻譯結果 |
+| `list_translations` | 列出翻譯歷史 |
+| `search_documents` | PubMed 語義搜尋 |
+
+**技術特點**:
+```typescript
+// 主要返回欄位
+interface PubMedResult {
+  pmid: string;
+  doi: string;
+  title: string;
+  abstract: string;
+  authors: string[];
+}
+```
+
+**可學習**:
+- ❌ 商業服務，不可借鏡
+- 但「翻譯 + 搜尋」組合是個思路
+
+**與我們的差異**:
+| 維度 | suppr-mcp | 我們 |
+|------|-----------|------|
+| 價格 | 付費 API | 免費開源 |
+| 功能數 | 4 | 21+ |
+| 離線使用 | ✗ | ✓ |
+
+---
+
+### 2. jonatasgrosman/findpapers ⭐???
+
+**類型**: Python Library（非 MCP）
+**語言**: Python
+
+**重要發現**：
+- ⚠️ **這是 Python 函式庫**，不是 MCP Server
+- 專為系統性文獻回顧設計
+- 支援 7 個資料庫！
+
+**支援資料庫**:
+| 資料庫 | 說明 |
+|--------|------|
+| ACM | 計算機科學 |
+| arXiv | 預印本 |
+| bioRxiv | 生物預印本 |
+| IEEE | 電機工程 |
+| medRxiv | 醫學預印本 |
+| PubMed | 生醫文獻 |
+| Scopus | 跨領域索引 |
+
+**CLI 工具**:
+```bash
+findpapers search -q "query" -o results.json
+findpapers refine results.json
+findpapers download results.json -o pdfs/
+findpapers generate_bibtex results.json -o refs.bib
+```
+
+**亮點功能**:
+- ✅ **掠奪性期刊檢測** - 內建黑名單比對
+- ✅ **論文去重** - 跨資料庫相似度閾值
+- ✅ **BibTeX 自動生成**
+
+**可學習**:
+- 🎯 掠奪性期刊檢測是好功能
+- 🎯 跨資料庫去重演算法
+
+**程式碼片段**:
+```python
+# PubMed searcher 實作
+class PubMedSearcher:
+    def __init__(self):
+        self.base_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
+    
+    def search(self, query, limit=100):
+        # 使用 esearch + efetch 標準流程
+        pass
+```
+
+---
+
+### 3. naivenaive/EasyPubMed ⭐???
+
+**類型**: Chrome Extension（非 MCP）
+**語言**: JavaScript
+
+**重要發現**：
+- ⚠️ **這是瀏覽器擴充套件**，不是 MCP Server
+- 增強 PubMed 網站 UI
+- 很受歡迎的實用工具
+
+**核心功能**:
+| 功能 | 說明 |
+|------|------|
+| Journal Info | 顯示 IF、JCR/CAS 分區、引用數 |
+| PDF Retrieval | 透過 Unpaywall/Sci-Hub 取得全文 |
+| Translation | 整合 DeepL/Google/Baidu 翻譯 |
+| Reference Manager | 匯出到 EndNote/Zotero |
+| Filter Manager | 自訂期刊篩選器 |
+| Literature Detector | 在任何網頁偵測 DOI/PMID |
+
+**可學習**:
+- 🎯 期刊 IF/分區顯示是用戶剛需
+- 🎯 Unpaywall 整合取得 OA 連結
+- 🎯 多翻譯源選擇
+
+**與我們的比較**:
+- EasyPubMed 是「被動增強」（在網站上）
+- 我們是「主動查詢」（透過 AI 對話）
+- 不同場景，不直接競爭
+
+---
+
+### 4. jannisborn/paperscraper ⭐400+
+
+**類型**: Python Library（非 MCP）
+**語言**: Python
+**版本**: v0.3.3
+
+**重要發現**：
+- ⚠️ **這是 Python 爬蟲庫**，不是 MCP Server
+- 被學術論文引用，有一定知名度
+- 功能相當完整
+
+**支援來源**:
+| 來源 | 功能 |
+|------|------|
+| PubMed | 搜尋 + 全文 |
+| arXiv | 搜尋 + PDF |
+| bioRxiv | 搜尋 |
+| medRxiv | 搜尋 |
+| chemRxiv | 搜尋 |
+| Google Scholar | 搜尋 |
+
+**亮點功能**:
+- ✅ **全文取得** - BioC-PMC, eLife, Elsevier/Wiley API 多重 fallback
+- ✅ **引用搜尋** - 透過 Semantic Scholar API
+- ✅ **期刊 IF 查詢** - Impactor class + 模糊匹配
+- ✅ **作者 Email 提取** - 從 PubMed 文章
+
+**程式碼亮點**:
+```python
+from paperscraper import search_papers
+
+# 多來源搜尋
+papers = search_papers(
+    "machine learning drug discovery",
+    sources=["pubmed", "arxiv", "biorxiv"],
+    start_date="2023-01-01",
+    limit=100
+)
+
+# 期刊 IF 查詢
+from paperscraper.impact import Impactor
+impactor = Impactor()
+if_score = impactor.search("nature medicine")  # 模糊匹配
+```
+
+**可學習**:
+- 🎯 多重 fallback 取全文機制
+- 🎯 期刊 IF 模糊查詢
+- 🎯 作者聯繫資訊提取
+
+---
+
+## 🔍 第二批分析總結
+
+### 類型分布
+
+| Repo | 類型 | 是 MCP？ | 直接競品？ |
+|------|------|----------|-----------|
+| suppr-mcp | MCP Server | ✓ | ❌ 商業服務 |
+| findpapers | Python Library | ✗ | ❌ 函式庫 |
+| EasyPubMed | Chrome Extension | ✗ | ❌ 瀏覽器擴充 |
+| paperscraper | Python Library | ✗ | ❌ 函式庫 |
+
+**重要結論**：
+> 用戶指定的這 4 個 repos 中，只有 suppr-mcp 是 MCP Server，但它是商業服務。
+> 其他 3 個都是 Python 函式庫或瀏覽器擴充，不是我們的直接競品。
+
+### 可借鏡功能
+
+| 功能 | 來源 | 可行性 |
+|------|------|--------|
+| 掠奪性期刊檢測 | findpapers | ⭐⭐⭐ 高 |
+| 期刊 IF/分區顯示 | EasyPubMed | ⭐⭐⭐ 高 |
+| 多重全文 Fallback | paperscraper | ⭐⭐⭐ 已有 |
+| 作者 Email 提取 | paperscraper | ⭐⭐ 中 |
+| 跨資料庫去重 | findpapers | ⭐⭐ 已有 merge_search_results |
+
+---
+
+# 2025 年 8-9 月更新
+
+> **更新日期**: 2025-09-15
+
+## 🔥 重大發現：cyanheads/pubmed-mcp-server
+
+**版本**: v1.4.4 (2025-09-15)
+**星星**: 36★ (持續成長中)
+**語言**: TypeScript
+
+### 這是我們的直接競品！
+
+**5 個 MCP Tools**:
+| Tool | 功能 | 與我們比較 |
+|------|------|-----------|
+| `pubmed_search_articles` | PubMed 搜尋 | ≈ `search_literature` |
+| `pubmed_fetch_contents` | 取得文章詳情 | ≈ `get_article_details` |
+| `pubmed_article_connections` | 相關文章/引用 | ≈ `find_related_articles` |
+| `pubmed_research_agent` | ⭐ **研究計劃生成器** | 🆕 我們沒有 |
+| `pubmed_generate_chart` | ⭐ **圖表生成 (PNG)** | 🆕 我們沒有 |
+
+### 主要更新 (2025 v1.4.x)
+
+1. **OpenTelemetry 整合** - 分散式追蹤
+2. **Hono HTTP 框架** - 取代 Express
+3. **OAuth 2.1 認證** - JWT + OAuth 雙模式
+4. **ESLint + Vitest** - 完整測試框架
+5. **Multi-stage Docker build** - 最佳化容器
+
+### 🎯 可學習功能
+
+| 功能 | 說明 | 優先級 |
+|------|------|:------:|
+| **Research Agent** | 4 階段結構化研究計劃生成 | ⭐⭐⭐ |
+| **Chart Generation** | Chart.js 生成 PNG 圖表 | ⭐⭐ |
+| **OpenTelemetry** | 分散式追蹤 | ⭐ |
+
+**Research Agent 4 階段**:
+```
+Phase 1: 問題定義與設計
+Phase 2: 數據收集與處理
+Phase 3: 分析與解讀
+Phase 4: 傳播與迭代
+```
+
+---
+
+## 🔥 BioMCP 大幅擴展 (v0.6.5)
+
+**星星**: 367★
+**重大更新**: 從 ~10 工具擴展到 **24 個工具**！
+
+### 新增整合
+
+| 整合 | 新增工具數 | 功能 |
+|------|:----------:|------|
+| **OpenFDA** | 12 | 不良事件、藥物標籤、醫療器材 |
+| **NCI Clinical Trials** | 6 | 組織、介入、生物標記 |
+| **BioThings** | 3 | gene_getter, drug_getter, disease_getter |
+| **AlphaGenome** | 1 | 變異效應預測 |
+| **cBioPortal** | 自動 | 基因搜尋自動整合 |
+
+### 🎯 最值得學習的功能
+
+#### 1. Think Tool (強制性)
+
+```python
+# BioMCP 的 Think Tool 必須先執行！
+# 這是一種 "先計劃再行動" 的架構
+
+# ❌ 直接搜尋會被警告
+search(query="BRAF mutation")
+
+# ✅ 必須先 think
+think(topic="I need to understand BRAF mutation...")
+search(query="BRAF mutation")
+```
+
+**Think Tool 實現思路**:
+- 強制用戶在搜尋前思考需求
+- 產生更精確的搜尋策略
+- 類似我們的 `generate_search_queries` 但更強制
+
+#### 2. 統一查詢語言
+
+```python
+# BioMCP 的統一查詢語法
+search("gene:BRAF")           # 基因
+search("drug:pembrolizumab")  # 藥物
+search("disease:melanoma")    # 疾病
+search("trial:NCT12345678")   # 臨床試驗
+```
+
+**可學習點**:
+- 簡化多來源查詢
+- 統一輸入格式
+- 自動路由到正確的 API
+
+#### 3. Performance 優化
+
+- Connection pooling
+- Request batching
+- Smart caching
+
+---
+
+## 🔥 zotero-mcp 更新 (751★)
+
+### 新功能：語義搜尋
+
+```python
+# ChromaDB 向量資料庫
+zotero_semantic_search(
+    query="machine learning for drug discovery",
+    embedding_model="default",  # MiniLM, OpenAI, Gemini
+    include_fulltext=True       # PDF 全文
+)
+```
+
+### 新功能：ChatGPT Connector
+
+```python
+# ChatGPT 介面包裝器
+zotero_chatgpt_search()  # 專為 ChatGPT 優化
+zotero_chatgpt_fetch()   # 簡化輸出格式
+```
+
+### 可學習
+
+| 功能 | 技術 | 我們可用 |
+|------|------|----------|
+| 語義搜尋 | ChromaDB + Embeddings | ⭐⭐ 可考慮 |
+| ChatGPT 包裝 | 簡化介面 | ⭐ 已有 copilot_tools |
+| PDF 註釋提取 | pdfannots | ⭐⭐ 可考慮 |
+
+---
+
+## 📊 競品星星更新
+
+| Repo | 上次記錄 | 現在 | 變化 |
+|------|:--------:|:----:|:----:|
+| arxiv-mcp-server | 1.9k | 1.9k | - |
+| papersgpt-for-zotero | 2k | 2k | - |
+| zotero-mcp | 751 | 751 | - |
+| paper-search-mcp | 469 | 469 | - |
+| BioMCP | 367 | 367 | - |
+| mcp-simple-pubmed | 142 | 142 | - |
+| pubmearch | 142 | 142 | - |
+| pubmedmcp | 84 | 84 | - |
+| **cyanheads/pubmed-mcp-server** | N/A | 36 | 🆕 |
+
+---
+
+## 🎯 Action Items (基於此次更新)
+
+### 高優先級
+
+1. **Think/Plan Tool 概念**
+   - 參考 BioMCP 的 Think Tool
+   - 結合我們的 `generate_search_queries`
+   - 考慮強制性或建議性
+
+2. **Research Agent**
+   - 參考 cyanheads 的結構化研究計劃
+   - 4 階段方法論可借鏡
+
+3. **統一查詢語法**
+   - `gene:BRAF`, `drug:propofol` 格式
+   - 自動路由到正確的搜尋工具
+
+### 中優先級
+
+4. **圖表生成**
+   - Chart.js 生成 PNG
+   - 視覺化搜尋結果/趨勢
+
+5. **語義搜尋 (Local)**
+   - ChromaDB 向量存儲
+   - 搜尋結果本地緩存
+
+### 低優先級
+
+6. **OpenTelemetry**
+   - 分散式追蹤
+   - 效能監控
+
+---
+
+## 🔍 真正的 PubMed MCP 競品
+
+經過完整分析，真正的 PubMed MCP Server 競品只有：
+
+| Repo | 星星 | 工具數 | 獨特功能 |
+|------|:----:|:------:|----------|
+| **我們** | 0 | **35+** | MeSH/PICO/Citation Tree/多源 |
+| cyanheads | 36 | 5 | Research Agent/Chart |
+| mcp-simple-pubmed | 142 | 3 | 極簡 |
+| pubmedmcp | 84 | 2 | uvx 一鍵 |
+| pubmearch | 142 | 3 | 熱點追蹤 |
+
+**結論**：我們的功能最完整，但星星最少。需要加強推廣！
 
 ---
 

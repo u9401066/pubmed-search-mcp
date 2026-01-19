@@ -12,11 +12,8 @@ import logging
 from mcp.server.fastmcp import FastMCP
 
 from ...sources.openurl import (
-    OpenURLBuilder,
-    OpenURLConfig,
     configure_openurl,
     get_openurl_config,
-    get_openurl_link,
     list_presets,
 )
 
@@ -424,7 +421,7 @@ Test your connection:
         
         test_url = builder.build_from_article(test_article)
         if test_url:
-            output.append(f"✅ **URL Generated**")
+            output.append("✅ **URL Generated**")
             output.append(f"\n[🔗 Click to test in browser]({test_url})")
             output.append(f"\n<details><summary>Full URL</summary>\n\n```\n{test_url}\n```\n</details>")
         else:
@@ -439,7 +436,7 @@ Test your connection:
             result = await _test_resolver_url(test_url)
             
             if result["reachable"]:
-                output.append(f"✅ **Reachable**")
+                output.append("✅ **Reachable**")
                 if result["status_code"]:
                     output.append(f"   HTTP Status: {result['status_code']}")
                 if result["response_time_ms"]:
@@ -448,7 +445,7 @@ Test your connection:
                     output.append(f"   Note: {result['error']}")
                     output.append("\n   ℹ️ HTTP 4xx/5xx is normal - resolver responded but needs valid session")
             else:
-                output.append(f"⚠️ **Not Reachable**")
+                output.append("⚠️ **Not Reachable**")
                 output.append(f"   Error: {result['error']}")
                 output.append("\n   Possible causes:")
                 output.append("   - Need VPN to access institutional network")
@@ -475,8 +472,6 @@ Test your connection:
 """)
         
         return "\n".join(output)
-        
-        return "\n".join(lines)
 
 
 def _format_article(article: dict) -> str:

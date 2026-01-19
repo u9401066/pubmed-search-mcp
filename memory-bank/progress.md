@@ -1,10 +1,13 @@
-# Progress (Updated: 2026-01-13)
+# Progress (Updated: 2026-01-20)
 
 ## Done
 
 - ✅ 達成 90% 測試覆蓋率 (411 tests)
 - ✅ v0.1.8 發布到 PyPI
 - ✅ v0.1.10-v0.1.24 功能更新
+- ✅ ROADMAP 更新：Agent 友善標準定義 + Token 效率優化 (Phase 5.8)
+- ✅ 競品分析更新 (2025 Aug-Sep findings)
+- ✅ Ruff lint 修復 (13 errors fixed)
   - Citation Tree 視覺化
   - 多來源整合 (Semantic Scholar, OpenAlex, CORE, Europe PMC)
   - HTTP API 背景服務
@@ -21,18 +24,15 @@
 
 ## Doing
 
-- 🔄 Microsoft Copilot Studio MCP 整合
-  - ✅ Streamable HTTP transport 實作完成
-  - ✅ `json_response=True` 參數支援
-  - ✅ `stateless_http=True` 參數 (依 Microsoft 官方範例)
-  - ✅ CopilotStudioMiddleware (202→200 轉換)
-  - ✅ ngrok tunnel 設定 (`kmuh-ai.ngrok.dev`)
-  - ✅ MCP 相容性測試通過 (36 tools, 5/5 steps)
-  - ⏳ Copilot Studio 實際連線測試中
+- 🔄 Token 效率優化 (Phase 5.8)
+  - ⏳ 設計 compact output format
+  - ⏳ `to_compact_dict()` 方法
+- 🔄 競品學習功能 (Phase 5.7)
+  - ⏳ Think/Plan Tool 概念
 
 ## Next
 
-- Copilot Studio 整合完成
-- 更多測試覆蓋
+- Token 效率優化實作
+- Phase 5.7 功能實作
 - 文件網站建立
 - 多語言 README 完善
