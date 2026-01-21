@@ -5,72 +5,51 @@
 ## 🎯 當前焦點
 
 <!-- 一句話描述正在做什麼 -->
-- **ROADMAP 更新** - 加入 Agent 友善標準 + Token 效率優化 (Phase 5.8)
+- **ToolUniverse PR #64 維護** - 程式碼品質檢查完成，準備更新 PR
 
 ## 📝 進行中的變更
 
 <!-- 具體的檔案和修改 -->
 | 檔案 | 變更內容 |
 |------|----------|
-| `run_copilot.py` | 重構使用 `create_copilot_server()` 函數，支援 `--full-tools` 參數 |
-| `src/pubmed_search/mcp/copilot_tools.py` | **新增** - 11 個 Copilot 相容工具，避免 `anyOf` 多類型 |
-| `scripts/test-copilot-mcp.py` | 更新測試工具名稱為 `search_pubmed`, `get_article` |
+| `src/pubmed_search/session.py` | 修復 bandit B324 (MD5 usedforsecurity=False) |
+| `CONTRIBUTING.md` | 新增開源貢獻者指南 |
+| `docs/TOOLUNIVERSE_*.md` | 新增 ToolUniverse PR 相關文件 |
 
 ## ✅ 已解決問題
 
 <!-- 根本原因和解決方案 -->
-**根本原因**：
-Copilot Studio 不支援 JSON Schema 中的 `anyOf` 多類型定義
-- 原本使用 `Union[int, str]`、`Union[bool, str]`、`Optional[str]`
-- 這些在 JSON Schema 中變成 `anyOf: [{"type": "integer"}, {"type": "string"}]`
-- Microsoft 文檔明確指出：「schema definition is truncated when type is an array」
+**程式碼品質檢查結果**：
+- ✅ ruff check: All checks passed
+- ✅ ruff format: 55 files formatted  
+- ✅ pytest: 565 passed, 13 skipped
+- ✅ bandit: High severity 已修復 (MD5 usedforsecurity=False)
 
-**解決方案**：
-- 建立 `copilot_tools.py` 模組，使用單一類型參數
-- 11 個簡化工具：search_pubmed, get_article, find_related, find_citations 等
-- 所有參數僅使用 `str`, `int`, `bool` 單一類型
-- 內部用 `InputNormalizer` 處理類型轉換
+**ToolUniverse PR #64 狀態**：
+- PR 已提交，等待 review
+- "1 workflow awaiting approval" = 正常（首次貢獻者需維護者批准 CI）
 
 ## 💡 關鍵發現
 
 <!-- 本次工作階段的重要發現 -->
-- 原本 25/31 個工具有 `anyOf` 問題
-- Copilot Studio Known Issues 清單：
-  1. `exclusiveMinimum` 必須是 Boolean（不是 integer）
-  2. 多類型陣列會導致 schema truncation
-  3. Reference type ($ref) 不支援
-  4. Enum type 被解釋為 string
+- ToolUniverse PR #64 已提交，等待 maintainer review
+- 程式碼品質檢查全部通過 (ruff, pytest, bandit)
+- GitHub Topics 建議新增: pubmed-api, ncbi-api, ai-agent
 
 ## 📁 新增/修改檔案
 
-```
-run_copilot.py                           # 重構
-src/pubmed_search/mcp/copilot_tools.py   # 新增 - 11 個 Copilot 相容工具
-scripts/test-copilot-mcp.py              # 更新測試工具名稱
+```text
+CONTRIBUTING.md                           # 新增 - 開源貢獻者指南
+src/pubmed_search/session.py              # 修復 bandit B324
+docs/TOOLUNIVERSE_*.md                    # 新增 - PR 相關文件
 ```
 
 ## 🔜 下一步
 
 <!-- 接下來要做什麼 -->
-1. ⏳ 實作 Token 效率優化 (Phase 5.8)
-   - `output_format="compact"` 參數
-   - `UnifiedArticle.to_compact_dict()` 方法
-2. ⏳ 競品學習功能 (Phase 5.7)
-   - Think/Plan Tool 概念
-   - 統一查詢語法
-
-## 🚀 使用方式
-
-```bash
-# 啟動 Copilot Studio 相容模式（預設 11 個工具）
-python run_copilot.py --port 8765
-
-# 啟動完整工具集（可能有問題）
-python run_copilot.py --port 8765 --full-tools
-
-# 測試
-python scripts/test-copilot-mcp.py http://localhost:8765/mcp
-```
+1. ⏳ medical-calc-mcp ToolUniverse PR 準備
+2. ⏳ Token 效率優化 (Phase 5.8)
+3. ⏳ 競品學習功能 (Phase 5.7)
 
 ---
-*Last updated: 2026-01-20 - ROADMAP Agent Friendly + Token Efficiency*
+*Last updated: 2026-01-21 - ToolUniverse PR #64 + 品質檢查*
