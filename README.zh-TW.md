@@ -11,8 +11,8 @@
 基於 Domain-Driven Design (DDD) 架構的 MCP 伺服器，作為 AI Agent 的智慧研究助理，提供任務導向的文獻搜尋與分析能力。
 
 **✨ 包含內容：**
-- 🔧 **35+ 個 MCP 工具** - 完整的 PubMed、Europe PMC、CORE 和 NCBI 資料庫存取
-- 📚 **9 個 Claude Skills** - AI Agent 可直接使用的工作流程指南
+- 🔧 **21 個 MCP 工具** - 精簡的 PubMed、Europe PMC、CORE 和 NCBI 資料庫存取
+- 📚 **22 個 Claude Skills** - AI Agent 可直接使用的工作流程指南（Claude Code 專屬）
 - 📖 **Copilot 整合指南** - VS Code GitHub Copilot 使用說明
 
 **🌐 語言**: [English](README.md) | **繁體中文**
@@ -103,17 +103,19 @@ uvx pubmed-search-mcp
 
 ## 🤖 Claude Skills（AI Agent 工作流程）
 
-本專案在 `.claude/skills/` 目錄中包含 **9 個 Claude Skill 檔案**，教導 AI Agent 如何有效使用 MCP 工具。這些 Skill 提供：
+本專案在 `.claude/skills/` 目錄中包含 **22 個 Claude Skill 檔案**，教導 AI Agent 如何有效使用 MCP 工具。這些 Skill 提供：
 
 - **逐步工作流程** 含決策樹
 - **程式碼範例** 可直接使用
 - **最佳實踐** 針對各種研究情境
 
-### 可用的 Skills
+> ⚠️ **注意**：Skill 檔案（`.claude/skills/*/SKILL.md`）是 **Claude Code 專屬功能**。它們可在 Claude Desktop 和 VS Code + Claude 擴充套件中使用。其他工具如 ToolUniverse 使用不同的整合機制（JSON 配置 + Python 類別）。
+
+### PubMed 研究 Skills（9 個）
 
 | Skill | 說明 | 觸發詞範例 |
 |-------|------|------------|
-| `pubmed-quick-search` | 基本 PubMed 搜尋 | 「搜尋」、「找論文」 |
+| `pubmed-quick-search` | 含進階篩選的 PubMed 搜尋 | 「搜尋」、「找論文」 |
 | `pubmed-systematic-search` | MeSH 擴展、系統性搜尋 | 「系統性回顧」、「完整搜尋」 |
 | `pubmed-pico-search` | PICO 臨床問題分解 | 「A比B好嗎」、「PICO」 |
 | `pubmed-paper-exploration` | 引用樹、相關文章 | 「引用文章」、「相關研究」 |
@@ -122,6 +124,24 @@ uvx pubmed-search-mcp
 | `pubmed-export-citations` | RIS、BibTeX、CSV 匯出 | 「匯出」、「EndNote」、「Zotero」 |
 | `pubmed-multi-source-search` | 跨資料庫搜尋策略 | 「所有來源」、「跨資料庫」 |
 | `pubmed-mcp-tools-reference` | 35+ 工具完整參考 | 「所有工具」、「有哪些功能」 |
+
+### 開發工具 Skills（13 個）
+
+| Skill | 說明 | 觸發詞範例 |
+|-------|------|------------|
+| `code-refactor` | 主動式程式碼重構、DDD 架構 | 「RF」、「refactor」、「重構」 |
+| `code-reviewer` | 全面程式碼審查 | 「CR」、「review」、「審查」 |
+| `ddd-architect` | DDD 架構規範 | 「DDD」、「arch」、「新功能」 |
+| `git-precommit` | Pre-commit 工作流程編排 | 「GIT」、「push」、「commit」 |
+| `git-doc-updater` | Git commit 前自動更新文件 | 「docs」、「sync docs」 |
+| `memory-updater` | Memory Bank 維護 | 「MB」、「memory」、「記憶」 |
+| `memory-checkpoint` | 摘要前儲存上下文 | 「CP」、「checkpoint」、「存檔」 |
+| `readme-updater` | README 與程式碼同步 | 「readme」、「更新說明」 |
+| `readme-i18n` | 多語言 README 維護 | 「i18n」、「翻譯」、「translate」 |
+| `changelog-updater` | CHANGELOG 自動更新 | 「CL」、「changelog」、「版本」 |
+| `roadmap-updater` | ROADMAP 狀態更新 | 「RM」、「roadmap」、「路線」 |
+| `test-generator` | 完整測試套件生成 | 「TG」、「test」、「測試」 |
+| `project-init` | 從範本初始化新專案 | 「init」、「new」、「新專案」 |
 
 ### 使用 Skills
 
@@ -143,7 +163,7 @@ uvx pubmed-search-mcp
 
 每個 Skill 檔案的結構：
 
-```yaml
+```markdown
 ---
 name: pubmed-quick-search
 description: Quick PubMed search. Triggers: search, 搜尋...
@@ -160,7 +180,7 @@ description: Quick PubMed search. Triggers: search, 搜尋...
 ...
 ```
 
-> 📁 **Skill 檔案位置**: `.claude/skills/pubmed-*/SKILL.md`
+> 📁 **Skill 檔案位置**: `.claude/skills/*/SKILL.md`
 
 ---
 

@@ -65,12 +65,20 @@ LANGUAGE_FILTERS = {
 
 # Clinical Query Filters (validated PubMed search strategies)
 # Reference: https://www.ncbi.nlm.nih.gov/pubmed/clinical
+# Correct syntax: (Category/Scope[filter]) where Scope is Broad or Narrow
 CLINICAL_QUERY_FILTERS = {
-    "therapy": 'therapy[Filter]',
-    "diagnosis": 'diagnosis[Filter]',
-    "prognosis": 'prognosis[Filter]',
-    "etiology": 'etiology[Filter]',
-    "clinical_prediction": 'clinical prediction guides[Filter]',
+    # Broad = high sensitivity (more results, may include less relevant)
+    # Narrow = high specificity (fewer results, more precise)
+    "therapy": '(Therapy/Broad[filter])',
+    "therapy_narrow": '(Therapy/Narrow[filter])',
+    "diagnosis": '(Diagnosis/Broad[filter])',
+    "diagnosis_narrow": '(Diagnosis/Narrow[filter])',
+    "prognosis": '(Prognosis/Broad[filter])',
+    "prognosis_narrow": '(Prognosis/Narrow[filter])',
+    "etiology": '(Etiology/Broad[filter])',
+    "etiology_narrow": '(Etiology/Narrow[filter])',
+    "clinical_prediction": '(Clinical Prediction Guides/Broad[filter])',
+    "clinical_prediction_narrow": '(Clinical Prediction Guides/Narrow[filter])',
 }
 
 # MeSH Subheadings (abbreviations for /subheading syntax)

@@ -5,51 +5,60 @@
 ## 🎯 當前焦點
 
 <!-- 一句話描述正在做什麼 -->
-- **ToolUniverse PR 文件完善** - 新增 medical-calc-mcp PR 指南與 PR #64 更新指南
+- **Phase 2.2 完成** - ICD 自動偵測、Preprint 搜尋整合、Advanced Filters 修復
 
 ## 📝 進行中的變更
 
 <!-- 具體的檔案和修改 -->
 | 檔案 | 變更內容 |
 |------|----------|
-| `docs/TOOLUNIVERSE_MEDICAL_CALC_PR_GUIDE.md` | 新增 - medical-calc-mcp 提交指南 (270 行) |
-| `docs/TOOLUNIVERSE_PR_UPDATE.md` | 新增 - PR #64 更新指南 (79 行) |
-| `uv.lock` | 依賴更新 - FastAPI >=0.128.0, annotated-doc 0.0.4 |
+| `src/pubmed_search/sources/preprints.py` | 新增 - arXiv, medRxiv, bioRxiv 搜尋整合 |
+| `src/pubmed_search/mcp/tools/unified.py` | 更新 - ICD 自動偵測、include_preprints 參數 |
+| `src/pubmed_search/mcp/resources.py` | 更新 - ICD↔MeSH 雙向轉換工具 |
+| `tests/test_preprints.py` | 新增 - 7 個 preprint/ICD 測試 |
+| `README.md` | 更新 - Phase 2.2 功能說明 |
 
 ## ✅ 已解決問題
 
 <!-- 根本原因和解決方案 -->
-**ToolUniverse 提交文件**：
-- ✅ medical-calc-mcp PR 完整指南 (121 醫學計算器)
-- ✅ PR #64 更新範本 (測試報告、GitHub Topics)
-- ✅ FastAPI 依賴版本更新
+**Clinical Query Filter 語法**：
+- 問題：`therapy[Filter]` 返回 0 結果
+- 解決：改為 `(Therapy/Broad[filter])` 格式
 
-**程式碼品質檢查結果**：
-- ✅ ruff check: All checks passed
-- ✅ pytest: 565 passed, 13 skipped
-- ✅ bandit: High severity 已修復
+**Preprint 搜尋**：
+- ✅ arXiv API 整合 (Atom XML 解析)
+- ✅ medRxiv/bioRxiv API 整合 (JSON)
+- ✅ 統一 PreprintSearcher 介面
+
+**ICD 自動偵測**：
+- ✅ ICD-10 正則: `r'\b([A-Z]\d{2}(?:\.\d{1,4})?)\b'`
+- ✅ ICD-9 正則: `r'\b(\d{3}(?:\.\d{1,2})?)\b'`
+- ✅ 自動擴展為 MeSH 詞彙
 
 ## 💡 關鍵發現
 
 <!-- 本次工作階段的重要發現 -->
-- ToolUniverse PR #64 等待 maintainer review
-- medical-calc-mcp 準備提交 (121 計算器)
-- FastAPI 版本需 >=0.128.0 for annotated-doc
+- arXiv 使用 Atom XML 格式，需特殊解析
+- medRxiv/bioRxiv 共用 API 結構
+- ICD 代碼可包含小數點 (如 E11.9)
+- PubMed Clinical Query 有 Broad/Narrow 變體
 
 ## 📁 新增/修改檔案
 
 ```text
-docs/TOOLUNIVERSE_MEDICAL_CALC_PR_GUIDE.md  # 新增 - medical-calc-mcp 提交指南
-docs/TOOLUNIVERSE_PR_UPDATE.md              # 新增 - PR #64 更新範本
-uv.lock                                      # 依賴更新
+src/pubmed_search/sources/preprints.py    # 新增 - preprint 搜尋客戶端
+src/pubmed_search/mcp/tools/unified.py    # 更新 - ICD 偵測 + preprint 參數
+src/pubmed_search/mcp/resources.py        # 更新 - ICD↔MeSH 轉換
+tests/test_preprints.py                    # 新增 - 7 個測試
+README.md                                  # 更新 - Phase 2.2 功能
 ```
 
 ## 🔜 下一步
 
 <!-- 接下來要做什麼 -->
-1. ⏳ 提交 medical-calc-mcp 到 ToolUniverse
+1. ⏳ Git commit + push
 2. ⏳ Token 效率優化 (Phase 5.8)
 3. ⏳ 競品學習功能 (Phase 5.7)
 
 ---
-*Last updated: 2026-01-21 - ToolUniverse PR 文件完善*
+*Last updated: 2026-01-21 - Phase 2.2 ICD + Preprint 整合完成*

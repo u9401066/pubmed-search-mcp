@@ -24,6 +24,11 @@
 - ✅ ToolUniverse PR #64 提交
 - ✅ 新增 medical-calc-mcp PR 指南文件
 - ✅ FastAPI 依賴更新 (>=0.128.0)
+- ✅ **Phase 2.2 功能完成**
+  - ICD 自動偵測整合至 unified_search (ICD-10/ICD-9 → MeSH 擴展)
+  - Preprint 搜尋整合 (arXiv, medRxiv, bioRxiv)
+  - Advanced Filters 修復 (Clinical Query 語法: Therapy/Broad[filter])
+  - MCP Resources 模組 (filter docs, ICD↔MeSH 雙向轉換)
 
 ## Doing
 

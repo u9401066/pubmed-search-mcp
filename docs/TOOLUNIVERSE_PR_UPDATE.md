@@ -26,6 +26,46 @@
 
 ---
 
+## 📚 關於 Claude Skills (`.claude/skills/`)
+
+本專案包含 **22 個 Skill 檔案**，這是 **Claude Code 專屬功能**，用於指導 AI agent 如何使用工具：
+
+```
+.claude/skills/
+├── pubmed-quick-search/SKILL.md      # 快速文獻搜尋
+├── pubmed-systematic-search/SKILL.md # 系統性搜尋
+├── pubmed-pico-search/SKILL.md       # PICO 臨床問題
+├── pubmed-paper-exploration/SKILL.md # 論文探索
+├── pubmed-gene-drug-research/SKILL.md # 基因/藥物研究
+├── ... (共 22 個 skills)
+```
+
+### ⚠️ ToolUniverse 整合說明
+
+**ToolUniverse 目前不支援 skill.md 機制**。TU 使用不同的整合方式：
+- **TU 方式**: JSON 配置檔 + Python 工具類別（`tools/medical/` 目錄結構）
+- **Claude 方式**: `.claude/skills/*/SKILL.md` Markdown 工作流程指南
+
+**對 ToolUniverse PR 的影響**：
+- PR 只需要提交 `tools/medical/pubmed_search_mcp.json` 配置檔
+- skill.md 檔案是額外的 Claude 整合功能，不需要加入 TU
+- 未來如果 TU 支援類似機制，可以再整合
+
+### 📝 建議 PR 描述補充
+
+```markdown
+## Additional AI Agent Support
+
+This tool also includes **22 Claude Skill files** (`.claude/skills/`) that provide:
+- Step-by-step workflow guidance for AI agents
+- Decision trees for search strategy selection
+- Code examples ready for immediate use
+
+> Note: Skill files are Claude Code-specific. ToolUniverse uses JSON configs for tool integration, which is already provided in this PR.
+```
+
+---
+
 ## 🏷️ GitHub Topics 建議新增
 
 在 GitHub repo 設定頁面加入：

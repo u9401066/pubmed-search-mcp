@@ -49,6 +49,7 @@ Features:
 
 import json
 import logging
+import re
 from typing import Literal, Union
 
 from mcp.server.fastmcp import FastMCP
@@ -72,9 +73,88 @@ from ...sources import (
     get_unpaywall_client,
 )
 from ...sources.openurl import get_openurl_link, get_openurl_config
+from ...sources.preprints import PreprintSearcher
+from ..resources import lookup_icd_to_mesh, ICD10_TO_MESH, ICD9_TO_MESH
 from ._common import InputNormalizer, ResponseFormatter
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# ICD Code Detection and Conversion
+# ============================================================================
+
+
+# ICD-10 pattern: Letter + 2-3 digits + optional dot + more digits
+ICD10_PATTERN = re.compile(r'\b([A-Z]\d{2}(?:\.\d{1,4})?)\b', re.IGNORECASE)
+# ICD-9 pattern: 3-5 digits with optional dot
+ICD9_PATTERN = re.compile(r'\b(\d{3}(?:\.\d{1,2})?)\b')
+
+
+def detect_and_expand_icd_codes(query: str) -> tuple[str, list[dict]]:
+    """
+    Detect ICD codes in query and expand to MeSH terms.
+    
+    Args:
+        query: Search query that may contain ICD codes
+        
+    Returns:
+        Tuple of (expanded_query, icd_matches)
+        - expanded_query: Query with ICD codes replaced/augmented by MeSH terms
+        - icd_matches: List of detected ICD codes and their mappings
+    """
+    icd_matches: list[dict] = []
+    
+    # Detect ICD-10 codes
+    for match in ICD10_PATTERN.finditer(query):
+        code = match.group(1).upper()
+        result = lookup_icd_to_mesh(code)
+        if result:
+            icd_matches.append({
+                "code": code,
+                "type": "ICD-10",
+                "mesh": result["mesh"],
+                "description": result.get("description", ""),
+            })
+    
+    # Detect ICD-9 codes (3-digit numeric)
+    for match in ICD9_PATTERN.finditer(query):
+        code = match.group(1)
+        # Only consider valid ICD-9 ranges (001-999)
+        try:
+            base = int(code.split('.')[0])
+            if 1 <= base <= 999:
+                result = lookup_icd_to_mesh(code)
+                if result:
+                    icd_matches.append({
+                        "code": code,
+                        "type": "ICD-9",
+                        "mesh": result["mesh"],
+                        "description": result.get("description", ""),
+                    })
+        except ValueError:
+            pass
+    
+    if not icd_matches:
+        return query, []
+    
+    # Build expanded query
+    # Replace ICD codes with MeSH terms in the query
+    expanded_query = query
+    for icd in icd_matches:
+        mesh_term = icd["mesh"]
+        # Replace or augment the ICD code with MeSH
+        expanded_query = re.sub(
+            rf'\b{re.escape(icd["code"])}\b',
+            f'("{mesh_term}"[MeSH] OR {icd["code"]})',
+            expanded_query,
+            flags=re.IGNORECASE
+        )
+    
+    logger.info(f"ICD codes detected: {[i['code'] for i in icd_matches]}")
+    logger.info(f"Expanded query: {expanded_query}")
+    
+    return expanded_query, icd_matches
 
 
 # ============================================================================
@@ -439,9 +519,11 @@ def _format_unified_results(
     stats: AggregationStats,
     include_analysis: bool = True,
     pubmed_total_count: int | None = None,
+    icd_matches: list | None = None,
+    preprint_results: dict | None = None,
 ) -> str:
     """Format unified search results for MCP response."""
-    output_parts = []
+    output_parts: list[str] = []
 
     # Header with analysis summary
     if include_analysis:
@@ -455,6 +537,12 @@ def _format_unified_results(
                 f"{k}={v}" for k, v in analysis.pico.to_dict().items() if v
             )
             output_parts.append(f"**PICO**: {pico_str}")
+        
+        # ICD code expansion info
+        if icd_matches:
+            icd_info = ", ".join([f"{m['code']}→{m['mesh']}" for m in icd_matches])
+            output_parts.append(f"**ICD Expansion**: {icd_info}")
+        
         output_parts.append(f"**Sources**: {', '.join(stats.by_source.keys())}")
 
         # Show total count info with PubMed total
@@ -561,6 +649,26 @@ def _format_unified_results(
         output_parts.append(f"\n*Sources: {', '.join(sources)}*")
         output_parts.append("")
 
+    # === Preprint Results Section ===
+    if preprint_results and preprint_results.get("total", 0) > 0:
+        output_parts.append("\n---")
+        output_parts.append("\n## 📄 Preprints (Not Peer-Reviewed)\n")
+        for src, papers in preprint_results.get("by_source", {}).items():
+            if papers:
+                output_parts.append(f"### {src.upper()} ({len(papers)} results)")
+                for j, paper in enumerate(papers[:5], 1):  # Show max 5 per source
+                    output_parts.append(f"\n**{j}. {paper.get('title', 'N/A')}**")
+                    if paper.get("authors"):
+                        authors_str = ", ".join(paper["authors"][:3])
+                        if len(paper["authors"]) > 3:
+                            authors_str += " et al."
+                        output_parts.append(f"*{authors_str}* ({paper.get('published', 'N/A')})")
+                    if paper.get("pdf_url"):
+                        output_parts.append(f"PDF: {paper['pdf_url']}")
+                    if paper.get("source_url"):
+                        output_parts.append(f"Link: {paper['source_url']}")
+                output_parts.append("")
+
     return "\n".join(output_parts)
 
 
@@ -605,6 +713,8 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         species: Union[str, None] = None,
         language: Union[str, None] = None,
         clinical_query: Union[str, None] = None,
+        # Preprint search (Phase 2.2)
+        include_preprints: Union[bool, str] = False,
     ) -> str:
         """
         🔍 Unified Search - Single entry point for multi-source academic search.
@@ -621,6 +731,8 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         4. Deduplicates and merges results
         5. Ranks by configurable criteria
         6. Enriches with OA links (Unpaywall)
+        7. Auto-detects ICD-9/10 codes and expands to MeSH terms
+        8. Optionally searches preprints (arXiv, medRxiv, bioRxiv)
 
         ═══════════════════════════════════════════════════════════════════
         EXAMPLES:
@@ -649,8 +761,19 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             unified_search("breast cancer screening", sex="female", species="humans")
             → Female human studies only
 
+        ICD Code Auto-Detection:
+            unified_search("E11 complications")
+            → Auto-expands E11 to "Diabetes Mellitus, Type 2"[MeSH]
+
+            unified_search("I21 treatment outcomes")
+            → Auto-expands I21 to "Myocardial Infarction"[MeSH]
+
+        Preprint Search:
+            unified_search("COVID-19 vaccine efficacy", include_preprints=True)
+            → Also searches arXiv, medRxiv, bioRxiv
+
         Args:
-            query: Your search query (natural language or structured)
+            query: Your search query (natural language, ICD codes, or structured)
             limit: Maximum results per source (default 10)
             min_year: Filter by minimum publication year
             max_year: Filter by maximum publication year
@@ -670,15 +793,23 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             species: Species filter (PubMed only). Options: "humans", "animals"
             language: Language filter (PubMed only). Options: "english", "chinese", etc.
             clinical_query: Clinical query filter (PubMed only). Options:
-                           "therapy", "diagnosis", "prognosis", "etiology", "clinical_prediction"
+                           "therapy" (broad), "therapy_narrow" (high specificity),
+                           "diagnosis", "diagnosis_narrow",
+                           "prognosis", "prognosis_narrow",
+                           "etiology", "etiology_narrow",
+                           "clinical_prediction", "clinical_prediction_narrow"
                            These are validated PubMed clinical query strategies for EBM.
+            include_preprints: Also search preprint servers (arXiv, medRxiv, bioRxiv)
+                              Default: False. Set True for cutting-edge research.
 
         Returns:
             Formatted search results with:
             - Query analysis (complexity, intent, PICO)
+            - ICD code expansions (if detected)
             - Search statistics (sources, dedup count)
             - Ranked articles with metadata
             - Open access links where available
+            - Preprints (if include_preprints=True)
         """
         logger.info(
             f"Unified search: query='{query}', limit={limit}, ranking='{ranking}'"
@@ -702,6 +833,17 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 include_oa_links, default=True
             )
             show_analysis = InputNormalizer.normalize_bool(show_analysis, default=True)
+            include_preprints = InputNormalizer.normalize_bool(
+                include_preprints, default=False
+            )
+
+            # === Step 0.5: ICD Code Detection and Expansion ===
+            icd_matches: list[dict] = []
+            original_query = query
+            expanded_query, icd_matches = detect_and_expand_icd_codes(query)
+            if icd_matches:
+                query = expanded_query
+                logger.info(f"ICD codes detected: {[i['code'] for i in icd_matches]}")
 
             # === Step 1: Analyze Query ===
             analyzer = QueryAnalyzer()
@@ -728,6 +870,7 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             # === Step 4: Search Each Source (Parallel) ===
             all_results: list[list[UnifiedArticle]] = []
             pubmed_total_count: int | None = None
+            preprint_results: dict = {}
 
             # Build advanced filters dict for cleaner passing
             advanced_filters = {
@@ -807,6 +950,21 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                     except Exception as e:
                         logger.error(f"Search failed for {source_name}: {e}")
 
+            # === Step 4.5: Search Preprints (if enabled) ===
+            if include_preprints:
+                try:
+                    preprint_searcher = PreprintSearcher()
+                    # Use original query for preprints (without MeSH expansion)
+                    preprint_query = query.split("[MeSH]")[0].replace('"', '').strip() if "[MeSH]" in query else query
+                    preprint_results = preprint_searcher.search_medical_preprints(
+                        query=preprint_query,
+                        limit=min(limit, 10),  # Cap preprint results
+                    )
+                    logger.info(f"Preprints: {preprint_results.get('total', 0)} results")
+                except Exception as e:
+                    logger.warning(f"Preprint search failed: {e}")
+                    preprint_results = {}
+
             # === Step 5: Aggregate and Deduplicate ===
             aggregator = ResultAggregator(config)
             articles, stats = aggregator.aggregate(all_results)
@@ -837,7 +995,8 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 return _format_as_json(ranked, analysis, stats)
             else:
                 return _format_unified_results(
-                    ranked, analysis, stats, show_analysis, pubmed_total_count
+                    ranked, analysis, stats, show_analysis, pubmed_total_count,
+                    icd_matches, preprint_results if include_preprints else None
                 )
 
         except Exception as e:

@@ -13,7 +13,7 @@ A Domain-Driven Design (DDD) based MCP server that serves as an intelligent rese
 
 **✨ What's Included:**
 - 🔧 **21 MCP Tools** - Streamlined PubMed, Europe PMC, CORE, and NCBI database access
-- 📚 **9 Claude Skills** - Ready-to-use workflow guides for AI agents
+- 📚 **22 Claude Skills** - Ready-to-use workflow guides for AI agents (Claude Code-specific)
 - 📖 **Copilot Instructions** - VS Code GitHub Copilot integration guide
 
 **🌐 Language**: **English** | [繁體中文](README.zh-TW.md)
@@ -222,21 +222,31 @@ mcp>=1.0.0             # Model Context Protocol
 - **Claude Skills**: 9 pre-built workflow guides for AI agent development
 - **Copilot Integration**: GitHub Copilot instructions for VS Code users
 
+### New in Phase 2.2
+
+- **Unified Search**: Single entry point for multi-source search with auto-dispatching
+- **Advanced Filters**: Age group, sex, species, language, clinical query filters
+- **ICD Code Auto-Detection**: Query with ICD-9/10 codes auto-expands to MeSH terms
+- **Preprint Search**: arXiv, medRxiv, bioRxiv integration via `include_preprints=True`
+- **MCP Resources**: Filter documentation and ICD↔MeSH mapping via URI scheme
+
 ---
 
 ## 🤖 Claude Skills (AI Agent Workflows)
 
-This project includes **9 Claude Skill files** in `.claude/skills/` that teach AI agents how to effectively use the MCP tools. These skills provide:
+This project includes **22 Claude Skill files** in `.claude/skills/` that teach AI agents how to effectively use the MCP tools. These skills provide:
 
 - **Step-by-step workflows** with decision trees
 - **Code examples** ready for immediate use
 - **Best practices** for each research scenario
 
-### Available Skills
+> ⚠️ **Note**: Skill files (`.claude/skills/*/SKILL.md`) are a **Claude Code-specific feature**. They work with Claude Desktop and VS Code + Claude extension. Other tools like ToolUniverse use different integration mechanisms (JSON configs + Python classes).
+
+### PubMed Research Skills (9)
 
 | Skill | Description | Trigger Examples |
 |-------|-------------|------------------|
-| `pubmed-quick-search` | Basic PubMed search | "search for", "find papers" |
+| `pubmed-quick-search` | Basic PubMed search with advanced filters | "search for", "find papers" |
 | `pubmed-systematic-search` | MeSH expansion, comprehensive search | "systematic review", "comprehensive" |
 | `pubmed-pico-search` | PICO clinical question decomposition | "is A better than B?", "PICO" |
 | `pubmed-paper-exploration` | Citation tree, related articles | "citing articles", "related papers" |
@@ -245,6 +255,24 @@ This project includes **9 Claude Skill files** in `.claude/skills/` that teach A
 | `pubmed-export-citations` | RIS, BibTeX, CSV export | "export", "EndNote", "Zotero" |
 | `pubmed-multi-source-search` | Cross-database search strategy | "all sources", "multi-database" |
 | `pubmed-mcp-tools-reference` | Complete 35+ tools reference | "all tools", "what can you do" |
+
+### Development Utility Skills (13)
+
+| Skill | Description | Trigger Examples |
+|-------|-------------|------------------|
+| `code-refactor` | Proactive code refactoring, DDD architecture | "RF", "refactor", "重構" |
+| `code-reviewer` | Comprehensive code review | "CR", "review", "審查" |
+| `ddd-architect` | DDD architecture enforcement | "DDD", "arch", "新功能" |
+| `git-precommit` | Pre-commit workflow orchestration | "GIT", "push", "commit" |
+| `git-doc-updater` | Auto-update docs before Git commits | "docs", "sync docs" |
+| `memory-updater` | Memory Bank maintenance | "MB", "memory", "記憶" |
+| `memory-checkpoint` | Save context before summarization | "CP", "checkpoint", "存檔" |
+| `readme-updater` | README sync with code changes | "readme", "更新說明" |
+| `readme-i18n` | Multilingual README maintenance | "i18n", "翻譯", "translate" |
+| `changelog-updater` | CHANGELOG auto-update | "CL", "changelog", "版本" |
+| `roadmap-updater` | ROADMAP status update | "RM", "roadmap", "路線" |
+| `test-generator` | Comprehensive test generation | "TG", "test", "測試" |
+| `project-init` | Initialize new projects from template | "init", "new", "新專案" |
 
 ### Using Skills
 
@@ -266,7 +294,7 @@ This project includes **9 Claude Skill files** in `.claude/skills/` that teach A
 
 Each skill file follows this structure:
 
-```yaml
+```markdown
 ---
 name: pubmed-quick-search
 description: Quick PubMed search. Triggers: search, find papers...
@@ -283,7 +311,7 @@ description: Quick PubMed search. Triggers: search, find papers...
 ...
 ```
 
-> 📁 **Skill files location**: `.claude/skills/pubmed-*/SKILL.md`
+> 📁 **Skill files location**: `.claude/skills/*/SKILL.md`
 
 ---
 

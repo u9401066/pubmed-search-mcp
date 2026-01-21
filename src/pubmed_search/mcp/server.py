@@ -23,6 +23,7 @@ from ..entrez import LiteratureSearcher
 from ..session import SessionManager
 from .tools import register_all_tools, set_session_manager, set_strategy_generator
 from .session_tools import register_session_tools, register_session_resources
+from .resources import register_resources, register_icd_tools
 
 logger = logging.getLogger(__name__)
 
@@ -355,6 +356,11 @@ def create_server(
     logger.info("Registering session tools...")
     register_session_tools(mcp, session_manager)
     register_session_resources(mcp, session_manager)
+
+    # Register filter/tool documentation resources and ICD conversion tools
+    logger.info("Registering resources and ICD tools...")
+    register_resources(mcp)
+    register_icd_tools(mcp)
 
     # Register prompts (research workflow templates)
     logger.info("Registering research prompts...")
