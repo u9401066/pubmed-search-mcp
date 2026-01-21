@@ -1,10 +1,10 @@
-# Progress (Updated: 2026-01-20)
+# Progress (Updated: 2026-01-21)
 
 ## Done
 
 - ✅ 達成 90% 測試覆蓋率 (411 tests)
 - ✅ v0.1.8 發布到 PyPI
-- ✅ v0.1.10-v0.1.24 功能更新
+- ✅ v0.1.10-v0.1.25 功能更新
 - ✅ ROADMAP 更新：Agent 友善標準定義 + Token 效率優化 (Phase 5.8)
 - ✅ 競品分析更新 (2025 Aug-Sep findings)
 - ✅ Ruff lint 修復 (13 errors fixed)
@@ -21,6 +21,9 @@
 - ✅ 建立 Memory Bank 記憶系統
 - ✅ 專案結構一致性檢查完成
 - ✅ MCP SDK 升級至 1.25.0
+- ✅ ToolUniverse PR #64 提交
+- ✅ 新增 medical-calc-mcp PR 指南文件
+- ✅ FastAPI 依賴更新 (>=0.128.0)
 
 ## Doing
 
@@ -32,6 +35,7 @@
 
 ## Next
 
+- medical-calc-mcp ToolUniverse PR 提交
 - Token 效率優化實作
 - Phase 5.7 功能實作
 - 文件網站建立

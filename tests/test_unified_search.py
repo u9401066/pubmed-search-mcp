@@ -186,7 +186,8 @@ class TestSourceSearchFunctions:
             max_year=2024,
         )
         
-        assert results == []
+        # Returns tuple of (articles, total_count)
+        assert results == ([], None)
         mock_searcher.search.assert_called_once()
     
     def test_search_pubmed_handles_exception(self):
@@ -204,7 +205,8 @@ class TestSourceSearchFunctions:
             max_year=None,
         )
         
-        assert results == []  # Should return empty list, not raise
+        # Should return empty tuple, not raise
+        assert results == ([], None)
 
 
 class TestFormatFunctions:

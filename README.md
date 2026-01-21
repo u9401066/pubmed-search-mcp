@@ -50,6 +50,8 @@ uvx pubmed-search-mcp
 
 ## ⚙️ Configuration
 
+This MCP server works with **any MCP-compatible AI tool**. Choose your preferred client:
+
 ### Claude Desktop (`claude_desktop_config.json`)
 
 ```json
@@ -64,6 +66,15 @@ uvx pubmed-search-mcp
     }
   }
 }
+```
+
+### Claude Code (Terminal)
+
+```bash
+# Add MCP server to Claude Code
+claude mcp add pubmed-search -- uvx pubmed-search-mcp
+
+# Or manually edit ~/.claude/claude_desktop_config.json
 ```
 
 ### VS Code / Cursor (`.vscode/mcp.json`)
@@ -81,6 +92,55 @@ uvx pubmed-search-mcp
     }
   }
 }
+```
+
+### Cline (`cline_mcp_settings.json`)
+
+```json
+{
+  "mcpServers": {
+    "pubmed-search": {
+      "command": "uvx",
+      "args": ["pubmed-search-mcp"],
+      "env": {
+        "NCBI_EMAIL": "your@email.com"
+      },
+      "alwaysAllow": [],
+      "disabled": false
+    }
+  }
+}
+```
+
+> **Tip**: In Cline, click "MCP Servers" → "Configure" → "Configure MCP Servers" to edit this file.
+
+### OpenCode / Crush (`.opencode.json`)
+
+```json
+{
+  "mcpServers": {
+    "pubmed-search": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["pubmed-search-mcp"],
+      "env": {
+        "NCBI_EMAIL": "your@email.com"
+      }
+    }
+  }
+}
+```
+
+### Antigravity / Other MCP Clients
+
+Any MCP-compatible client can use this server via stdio transport:
+
+```bash
+# Command
+uvx pubmed-search-mcp
+
+# Or if installed via pip
+pubmed-search-mcp
 ```
 
 > **Note**: `NCBI_EMAIL` is required by NCBI API policy. Optionally set `NCBI_API_KEY` for higher rate limits.
