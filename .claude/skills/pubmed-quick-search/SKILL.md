@@ -96,6 +96,77 @@ search_literature(
 )
 ```
 
+### 進階臨床篩選 (Phase 2.1 新功能)
+
+#### 年齡群篩選
+```python
+# 只找老年人研究
+search_literature(query="diabetes treatment", age_group="aged")
+
+# 只找兒童研究
+search_literature(query="asthma", age_group="child")
+
+# 可用選項：
+# newborn (0-1月), infant (1-23月), preschool (2-5歲)
+# child (6-12歲), adolescent (13-18歲), young_adult (19-24歲)
+# adult (19+), middle_aged (45-64歲), aged (65+), aged_80 (80+)
+```
+
+#### 性別篩選
+```python
+# 只找女性研究
+search_literature(query="breast cancer", sex="female")
+
+# 只找男性研究
+search_literature(query="prostate cancer", sex="male")
+```
+
+#### 物種篩選
+```python
+# 只找人類研究
+search_literature(query="gene therapy", species="humans")
+
+# 只找動物研究
+search_literature(query="CRISPR", species="animals")
+```
+
+#### 語言篩選
+```python
+# 只找英文論文
+search_literature(query="COVID-19", language="english")
+
+# 只找中文論文
+search_literature(query="針灸", language="chinese")
+```
+
+#### 臨床證據篩選 (Clinical Queries)
+```python
+# 治療效果研究 (RCT 優先)
+search_literature(query="remimazolam", clinical_query="therapy")
+
+# 診斷研究
+search_literature(query="lung cancer", clinical_query="diagnosis")
+
+# 預後研究
+search_literature(query="heart failure", clinical_query="prognosis")
+
+# 病因學研究
+search_literature(query="diabetes", clinical_query="etiology")
+```
+
+#### 組合篩選
+```python
+# 找老年女性的糖尿病治療 RCT
+search_literature(
+    query="diabetes treatment",
+    age_group="aged",
+    sex="female",
+    species="humans",
+    clinical_query="therapy",
+    min_year=2020
+)
+```
+
 ---
 
 ## 輸出格式

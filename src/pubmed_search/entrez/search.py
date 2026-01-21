@@ -18,6 +18,88 @@ logger = logging.getLogger(__name__)
 MAX_RETRIES = 3
 RETRY_DELAY = 2  # seconds
 
+# ============================================================================
+# PubMed Advanced Filters - Based on official PubMed Help documentation
+# https://pubmed.ncbi.nlm.nih.gov/help/
+# ============================================================================
+
+# Age Group Filters (MeSH-based)
+AGE_GROUP_FILTERS = {
+    "newborn": '"Infant, Newborn"[MeSH]',  # 0-1 month
+    "infant": '"Infant"[MeSH]',  # 1-23 months
+    "preschool": '"Child, Preschool"[MeSH]',  # 2-5 years
+    "child": '"Child"[MeSH]',  # 6-12 years
+    "adolescent": '"Adolescent"[MeSH]',  # 13-18 years
+    "young_adult": '"Young Adult"[MeSH]',  # 19-24 years
+    "adult": '"Adult"[MeSH]',  # 19+ years (general)
+    "middle_aged": '"Middle Aged"[MeSH]',  # 45-64 years
+    "aged": '"Aged"[MeSH]',  # 65+ years
+    "aged_80": '"Aged, 80 and over"[MeSH]',  # 80+ years
+}
+
+# Sex Filters (MeSH-based)
+SEX_FILTERS = {
+    "male": '"Male"[MeSH]',
+    "female": '"Female"[MeSH]',
+}
+
+# Species Filters
+SPECIES_FILTERS = {
+    "humans": '"Humans"[MeSH]',
+    "animals": '"Animals"[MeSH]',
+}
+
+# Language Filters (common languages)
+LANGUAGE_FILTERS = {
+    "english": "eng[la]",
+    "chinese": "chi[la]",
+    "japanese": "jpn[la]",
+    "german": "ger[la]",
+    "french": "fre[la]",
+    "spanish": "spa[la]",
+    "korean": "kor[la]",
+    "italian": "ita[la]",
+    "portuguese": "por[la]",
+    "russian": "rus[la]",
+}
+
+# Clinical Query Filters (validated PubMed search strategies)
+# Reference: https://www.ncbi.nlm.nih.gov/pubmed/clinical
+CLINICAL_QUERY_FILTERS = {
+    "therapy": 'therapy[Filter]',
+    "diagnosis": 'diagnosis[Filter]',
+    "prognosis": 'prognosis[Filter]',
+    "etiology": 'etiology[Filter]',
+    "clinical_prediction": 'clinical prediction guides[Filter]',
+}
+
+# MeSH Subheadings (abbreviations for /subheading syntax)
+# Reference: https://www.nlm.nih.gov/mesh/subhierarchy.html
+MESH_SUBHEADINGS = {
+    "therapy": "/therapy",
+    "diagnosis": "/diagnosis",
+    "drug_therapy": "/drug therapy",
+    "adverse_effects": "/adverse effects",
+    "surgery": "/surgery",
+    "prevention": "/prevention & control",
+    "etiology": "/etiology",
+    "epidemiology": "/epidemiology",
+    "mortality": "/mortality",
+    "complications": "/complications",
+    "physiopathology": "/physiopathology",
+    "metabolism": "/metabolism",
+    "genetics": "/genetics",
+    "pharmacology": "/pharmacology",
+    "therapeutic_use": "/therapeutic use",
+    "toxicity": "/toxicity",
+    "administration": "/administration & dosage",
+    "methods": "/methods",
+    "instrumentation": "/instrumentation",
+    "nursing": "/nursing",
+    "rehabilitation": "/rehabilitation",
+    "classification": "/classification",
+}
+
 
 def _retry_on_error(func):
     """Decorator to retry Entrez operations on transient errors."""
@@ -78,6 +160,12 @@ class SearchMixin:
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
         date_type: str = "edat",
+        # Advanced filters (Phase 2.1)
+        age_group: Optional[str] = None,
+        sex: Optional[str] = None,
+        species: Optional[str] = None,
+        language: Optional[str] = None,
+        clinical_query: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
         Search PubMed for articles using a specific strategy.
@@ -95,6 +183,17 @@ class SearchMixin:
                        - "edat" (default): Entrez date (when added to PubMed) - best for finding new articles
                        - "pdat": Publication date
                        - "mdat": Modification date
+            age_group: Age group filter. Options:
+                       "newborn" (0-1mo), "infant" (1-23mo), "preschool" (2-5y),
+                       "child" (6-12y), "adolescent" (13-18y), "young_adult" (19-24y),
+                       "adult" (19+), "middle_aged" (45-64y), "aged" (65+), "aged_80" (80+)
+            sex: Sex filter. Options: "male", "female"
+            species: Species filter. Options: "humans", "animals"
+            language: Language filter. Options: "english", "chinese", "japanese",
+                      "german", "french", "spanish", "korean", etc.
+            clinical_query: Clinical query filter. Options:
+                           "therapy", "diagnosis", "prognosis", "etiology", "clinical_prediction"
+                           These are validated PubMed clinical query strategies.
 
         Returns:
             List of dictionaries containing article details.
@@ -132,6 +231,60 @@ class SearchMixin:
 
             if article_type:
                 full_query += f' AND "{article_type}"[pt]'
+
+            # === Advanced Filters (Phase 2.1) ===
+
+            # Age group filter
+            if age_group:
+                age_key = age_group.lower().replace(" ", "_").replace("-", "_")
+                if age_key in AGE_GROUP_FILTERS:
+                    full_query += f" AND {AGE_GROUP_FILTERS[age_key]}"
+                else:
+                    logger.warning(
+                        f"Unknown age_group: {age_group}. "
+                        f"Valid options: {', '.join(AGE_GROUP_FILTERS.keys())}"
+                    )
+
+            # Sex filter
+            if sex:
+                sex_key = sex.lower()
+                if sex_key in SEX_FILTERS:
+                    full_query += f" AND {SEX_FILTERS[sex_key]}"
+                else:
+                    logger.warning(
+                        f"Unknown sex: {sex}. Valid options: male, female"
+                    )
+
+            # Species filter
+            if species:
+                species_key = species.lower()
+                if species_key in SPECIES_FILTERS:
+                    full_query += f" AND {SPECIES_FILTERS[species_key]}"
+                else:
+                    logger.warning(
+                        f"Unknown species: {species}. Valid options: humans, animals"
+                    )
+
+            # Language filter
+            if language:
+                lang_key = language.lower()
+                if lang_key in LANGUAGE_FILTERS:
+                    full_query += f" AND {LANGUAGE_FILTERS[lang_key]}"
+                else:
+                    # Try direct language code (e.g., "eng", "chi")
+                    full_query += f" AND {lang_key}[la]"
+                    logger.info(f"Using direct language code: {lang_key}[la]")
+
+            # Clinical query filter (validated PubMed search strategies)
+            if clinical_query:
+                cq_key = clinical_query.lower().replace(" ", "_").replace("-", "_")
+                if cq_key in CLINICAL_QUERY_FILTERS:
+                    full_query += f" AND {CLINICAL_QUERY_FILTERS[cq_key]}"
+                else:
+                    logger.warning(
+                        f"Unknown clinical_query: {clinical_query}. "
+                        f"Valid options: {', '.join(CLINICAL_QUERY_FILTERS.keys())}"
+                    )
 
             # Step 1: Search for IDs with retry
             id_list, total_count = self._search_ids_with_retry(

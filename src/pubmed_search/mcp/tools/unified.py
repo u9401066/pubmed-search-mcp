@@ -181,12 +181,20 @@ def _search_pubmed(
     limit: int,
     min_year: int | None,
     max_year: int | None,
+    **advanced_filters,
 ) -> tuple[list[UnifiedArticle], int | None]:
     """Search PubMed and convert to UnifiedArticle.
 
     Returns:
         Tuple of (articles, total_count) where total_count is the total
         number of matching articles in PubMed (not just returned count).
+
+    Advanced Filters (passed via **advanced_filters):
+        age_group: newborn, infant, child, adolescent, adult, aged, etc.
+        sex: male, female
+        species: humans, animals
+        language: english, chinese, japanese, etc.
+        clinical_query: therapy, diagnosis, prognosis, etiology
     """
     try:
         results = searcher.search(
@@ -194,6 +202,7 @@ def _search_pubmed(
             limit=limit,
             min_year=min_year,
             max_year=max_year,
+            **advanced_filters,  # Pass all advanced filters
         )
 
         # Extract total_count from metadata (if present)
@@ -590,6 +599,12 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         output_format: Literal["markdown", "json"] = "markdown",
         include_oa_links: Union[bool, str] = True,
         show_analysis: Union[bool, str] = True,
+        # Advanced filters (Phase 2.1)
+        age_group: Union[str, None] = None,
+        sex: Union[str, None] = None,
+        species: Union[str, None] = None,
+        language: Union[str, None] = None,
+        clinical_query: Union[str, None] = None,
     ) -> str:
         """
         🔍 Unified Search - Single entry point for multi-source academic search.
@@ -627,6 +642,13 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             unified_search("CRISPR gene therapy cancer", ranking="quality")
             → All sources, quality-ranked, OA links
 
+        Advanced clinical filters:
+            unified_search("diabetes treatment", age_group="aged", clinical_query="therapy")
+            → Only elderly population studies with therapy filter
+
+            unified_search("breast cancer screening", sex="female", species="humans")
+            → Female human studies only
+
         Args:
             query: Your search query (natural language or structured)
             limit: Maximum results per source (default 10)
@@ -640,6 +662,16 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             output_format: "markdown" (human-readable) or "json" (programmatic)
             include_oa_links: Enrich results with open access links (default True)
             show_analysis: Include query analysis in output (default True)
+            age_group: Age group filter (PubMed only). Options:
+                       "newborn" (0-1mo), "infant" (1-23mo), "preschool" (2-5y),
+                       "child" (6-12y), "adolescent" (13-18y), "young_adult" (19-24y),
+                       "adult" (19+), "middle_aged" (45-64y), "aged" (65+), "aged_80" (80+)
+            sex: Sex filter (PubMed only). Options: "male", "female"
+            species: Species filter (PubMed only). Options: "humans", "animals"
+            language: Language filter (PubMed only). Options: "english", "chinese", etc.
+            clinical_query: Clinical query filter (PubMed only). Options:
+                           "therapy", "diagnosis", "prognosis", "etiology", "clinical_prediction"
+                           These are validated PubMed clinical query strategies for EBM.
 
         Returns:
             Formatted search results with:
@@ -697,6 +729,17 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             all_results: list[list[UnifiedArticle]] = []
             pubmed_total_count: int | None = None
 
+            # Build advanced filters dict for cleaner passing
+            advanced_filters = {
+                k: v for k, v in {
+                    "age_group": age_group,
+                    "sex": sex,
+                    "species": species,
+                    "language": language,
+                    "clinical_query": clinical_query,
+                }.items() if v is not None
+            }
+
             # Use ThreadPoolExecutor for parallel search
             from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -714,6 +757,7 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                         limit,
                         effective_min_year,
                         effective_max_year,
+                        **advanced_filters,  # Cleaner: pass all advanced filters
                     )
                     return ("pubmed", articles, total_count)
 

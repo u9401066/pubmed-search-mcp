@@ -153,6 +153,43 @@ generate_search_queries(topic="...", strategy="exploratory")
 
 ---
 
+## 進階臨床篩選 (Phase 2.1 新功能)
+
+系統性搜尋可結合進階篩選：
+
+```python
+# 步驟 1: 產生搜尋素材
+materials = generate_search_queries(topic="diabetes treatment elderly")
+
+# 步驟 2: 執行搜尋，加入進階篩選
+results = []
+for sq in materials["suggested_queries"]:
+    r = search_literature(
+        query=sq["query"],
+        limit=50,
+        age_group="aged",           # 只找老年人
+        species="humans",           # 只找人類
+        clinical_query="therapy",   # 治療研究
+        language="english"          # 英文
+    )
+    results.append(r["pmids"])
+
+# 步驟 3: 合併
+merged = merge_search_results(results_json=json.dumps(results))
+```
+
+### 可用的進階篩選
+
+| 篩選類型 | 參數 | 可用值 |
+|---------|------|--------|
+| 年齡群 | `age_group` | newborn, infant, child, adolescent, adult, aged, aged_80 |
+| 性別 | `sex` | male, female |
+| 物種 | `species` | humans, animals |
+| 語言 | `language` | english, chinese, japanese, etc. |
+| 臨床查詢 | `clinical_query` | therapy, diagnosis, prognosis, etiology |
+
+---
+
 ## 完整範例
 
 ```python

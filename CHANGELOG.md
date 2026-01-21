@@ -12,20 +12,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Research trend analysis (keyword frequency, publication trends)
 - Chart generation (PNG output)
 
-### Added (WIP)
-- **Microsoft Copilot Studio Integration**:
-  - `run_copilot.py`: Dedicated launcher for Copilot Studio
-  - `CopilotStudioMiddleware`: Converts 202→200 responses for compatibility
-  - `json_response=True` parameter for `Accept: application/json` support
-  - `stateless_http=True` parameter matching Microsoft's official MCP samples
-  - ngrok integration with fixed domain support (`kmuh-ai.ngrok.dev`)
-  - `copilot-studio/README.md`: Setup documentation
-  - `scripts/test-copilot-mcp.py`: MCP compatibility test script
+---
 
-### Changed (WIP)
-- `src/pubmed_search/mcp/server.py`: Added `json_response` and `stateless_http` parameters to `create_server()`
-- Renamed internal `_session_manager` to `_pubmed_session_manager` to avoid FastMCP conflict
-- Upgraded to Python 3.12+ (using uv for virtual environment management)
+## [0.1.26] - 2026-01-21
+
+### 🏥 Advanced Clinical Filters (Phase 2.1)
+
+New feature: PubMed advanced filters for precise clinical research!
+Based on official PubMed Help documentation.
+
+### Added
+
+- **Advanced Filter Parameters** in `search_literature()` and `unified_search()`:
+  - `age_group`: Filter by age group (newborn, infant, child, adolescent, adult, aged, aged_80...)
+  - `sex`: Filter by sex (male, female)
+  - `species`: Filter by species (humans, animals)
+  - `language`: Filter by publication language (english, chinese, japanese...)
+  - `clinical_query`: PubMed Clinical Queries (therapy, diagnosis, prognosis, etiology)
+
+- **New Constants** (`entrez/search.py`):
+  - `AGE_GROUP_FILTERS`: 10 MeSH-based age group filters
+  - `SEX_FILTERS`: Male/Female MeSH filters
+  - `SPECIES_FILTERS`: Humans/Animals filters
+  - `LANGUAGE_FILTERS`: 10 common language codes
+  - `CLINICAL_QUERY_FILTERS`: 5 validated clinical query strategies
+  - `MESH_SUBHEADINGS`: 22 MeSH subheadings for future use
+
+### Usage Examples
+
+```python
+# Find elderly diabetes treatment RCTs
+search_literature(
+    query="diabetes treatment",
+    age_group="aged",
+    species="humans",
+    clinical_query="therapy",
+    min_year=2020
+)
+
+# Female breast cancer screening studies
+unified_search(
+    query="breast cancer screening",
+    sex="female",
+    language="english"
+)
+```
+
+### Updated Skills
+
+- `pubmed-quick-search/SKILL.md`: Added advanced filter examples
+- `pubmed-systematic-search/SKILL.md`: Added clinical filter workflow
+- `pubmed-mcp-tools-reference/SKILL.md`: Added filter parameter table
 
 ---
 

@@ -396,6 +396,16 @@ analyze_fulltext_access → get_europe_pmc_fulltext 或 get_core_fulltext
 | `article_type` | 文章類型 | "Review", "Clinical Trial", "Meta-Analysis" |
 | `strategy` | 排序策略 | "relevance", "recent", "most_cited" |
 
+### 進階篩選參數 (Phase 2.1 新功能)
+
+| 參數 | 說明 | 可用值 |
+|------|------|--------|
+| `age_group` | 年齡群 | newborn, infant, preschool, child, adolescent, young_adult, adult, middle_aged, aged, aged_80 |
+| `sex` | 性別 | male, female |
+| `species` | 物種 | humans, animals |
+| `language` | 語言 | english, chinese, japanese, german, french, spanish, korean, italian, portuguese, russian |
+| `clinical_query` | 臨床查詢 | therapy, diagnosis, prognosis, etiology, clinical_prediction |
+
 ### PubMed 欄位標籤
 
 | 標籤 | 說明 |
