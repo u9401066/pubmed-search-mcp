@@ -35,12 +35,12 @@ SUPPORTED_FORMATS = ["cytoscape", "g6", "d3", "vis", "graphml", "mermaid"]
 def _make_node(article: Dict[str, Any], level: int, direction: str) -> Dict[str, Any]:
     """
     Create internal node representation from article data.
-    
+
     Args:
         article: Article dict with pmid, title, authors, year, journal
         level: Depth level (0=root, 1=first level, etc.)
         direction: 'citing' (forward), 'reference' (backward), or 'root'
-    
+
     Returns:
         Internal node format (converted to specific format later)
     """
@@ -51,10 +51,10 @@ def _make_node(article: Dict[str, Any], level: int, direction: str) -> Dict[str,
     authors = article.get("authors", [])
     first_author = authors[0] if authors else "Unknown"
     doi = article.get("doi", "")
-    
+
     # Truncate title for label
     short_title = title[:60] + "..." if len(title) > 60 else title
-    
+
     return {
         "pmid": pmid,
         "label": f"{first_author} ({year})",
@@ -67,52 +67,50 @@ def _make_node(article: Dict[str, Any], level: int, direction: str) -> Dict[str,
         "doi": doi,
         "level": level,
         "direction": direction,
-        "node_type": "root" if level == 0 else direction
+        "node_type": "root" if level == 0 else direction,
     }
 
 
 def _make_edge(source_pmid: str, target_pmid: str, edge_type: str) -> Dict[str, Any]:
     """Create internal edge representation."""
-    return {
-        "source": source_pmid,
-        "target": target_pmid,
-        "edge_type": edge_type
-    }
+    return {"source": source_pmid, "target": target_pmid, "edge_type": edge_type}
 
 
 # ============================================================================
 # Format Converters
 # ============================================================================
 
+
 def _to_cytoscape(nodes: List[Dict], edges: List[Dict]) -> Dict[str, Any]:
     """
     Convert to Cytoscape.js format.
     Academic standard, used in bioinformatics and medical research.
-    
+
     Format: {elements: {nodes: [{data: {...}}], edges: [{data: {...}}]}}
     """
     cy_nodes = []
     for node in nodes:
-        cy_nodes.append({
-            "data": {
-                "id": f"pmid_{node['pmid']}",
-                **node
-            },
-            "classes": [node["direction"], f"level-{node['level']}"]
-        })
-    
+        cy_nodes.append(
+            {
+                "data": {"id": f"pmid_{node['pmid']}", **node},
+                "classes": [node["direction"], f"level-{node['level']}"],
+            }
+        )
+
     cy_edges = []
     for edge in edges:
-        cy_edges.append({
-            "data": {
-                "id": f"e_{edge['source']}_{edge['target']}",
-                "source": f"pmid_{edge['source']}",
-                "target": f"pmid_{edge['target']}",
-                "edge_type": edge["edge_type"]
-            },
-            "classes": [edge["edge_type"]]
-        })
-    
+        cy_edges.append(
+            {
+                "data": {
+                    "id": f"e_{edge['source']}_{edge['target']}",
+                    "source": f"pmid_{edge['source']}",
+                    "target": f"pmid_{edge['target']}",
+                    "edge_type": edge["edge_type"],
+                },
+                "classes": [edge["edge_type"]],
+            }
+        )
+
     return {"nodes": cy_nodes, "edges": cy_edges}
 
 
@@ -121,35 +119,39 @@ def _to_g6(nodes: List[Dict], edges: List[Dict]) -> Dict[str, Any]:
     Convert to AntV G6 format.
     Modern, high-performance, great for large graphs.
     GitHub: https://github.com/antvis/G6 (11k+ stars)
-    
+
     Format: {nodes: [{id, label, ...}], edges: [{source, target, ...}]}
     """
     g6_nodes = []
     for node in nodes:
-        g6_nodes.append({
-            "id": node["pmid"],
-            "label": node["label"],
-            "data": node,
-            # G6 styling hints
-            "type": "circle" if node["level"] == 0 else "rect",
-            "style": {
-                "fill": "#ff6b6b" if node["direction"] == "root" else 
-                        "#4ecdc4" if node["direction"] == "citing" else "#95e1d3"
+        g6_nodes.append(
+            {
+                "id": node["pmid"],
+                "label": node["label"],
+                "data": node,
+                # G6 styling hints
+                "type": "circle" if node["level"] == 0 else "rect",
+                "style": {
+                    "fill": "#ff6b6b"
+                    if node["direction"] == "root"
+                    else "#4ecdc4"
+                    if node["direction"] == "citing"
+                    else "#95e1d3"
+                },
             }
-        })
-    
+        )
+
     g6_edges = []
     for edge in edges:
-        g6_edges.append({
-            "source": edge["source"],
-            "target": edge["target"],
-            "data": {"type": edge["edge_type"]},
-            "style": {
-                "stroke": "#aaa",
-                "endArrow": True
+        g6_edges.append(
+            {
+                "source": edge["source"],
+                "target": edge["target"],
+                "data": {"type": edge["edge_type"]},
+                "style": {"stroke": "#aaa", "endArrow": True},
             }
-        })
-    
+        )
+
     return {"nodes": g6_nodes, "edges": g6_edges}
 
 
@@ -157,30 +159,36 @@ def _to_d3(nodes: List[Dict], edges: List[Dict]) -> Dict[str, Any]:
     """
     Convert to D3.js force graph format.
     Most flexible, works with Observable notebooks.
-    
+
     Format: {nodes: [{id, ...}], links: [{source, target, ...}]}
     """
     d3_nodes = []
     node_ids = set()
     for node in nodes:
         node_ids.add(node["pmid"])
-        d3_nodes.append({
-            "id": node["pmid"],
-            "group": 0 if node["level"] == 0 else (1 if node["direction"] == "citing" else 2),
-            **node
-        })
-    
+        d3_nodes.append(
+            {
+                "id": node["pmid"],
+                "group": 0
+                if node["level"] == 0
+                else (1 if node["direction"] == "citing" else 2),
+                **node,
+            }
+        )
+
     d3_links = []
     for edge in edges:
         # D3 uses 'links' not 'edges', and nodes must exist
         if edge["source"] in node_ids and edge["target"] in node_ids:
-            d3_links.append({
-                "source": edge["source"],
-                "target": edge["target"],
-                "value": 1,
-                "type": edge["edge_type"]
-            })
-    
+            d3_links.append(
+                {
+                    "source": edge["source"],
+                    "target": edge["target"],
+                    "value": 1,
+                    "type": edge["edge_type"],
+                }
+            )
+
     return {"nodes": d3_nodes, "links": d3_links}
 
 
@@ -189,31 +197,44 @@ def _to_vis(nodes: List[Dict], edges: List[Dict]) -> Dict[str, Any]:
     Convert to vis-network format.
     Simple and easy to use, good for quick prototypes.
     GitHub: https://github.com/visjs/vis-network (3.5k stars)
-    
+
     Format: {nodes: [{id, label, ...}], edges: [{from, to, ...}]}
     """
     vis_nodes = []
     for node in nodes:
-        color = "#ff6b6b" if node["level"] == 0 else \
-                "#4ecdc4" if node["direction"] == "citing" else "#95e1d3"
-        vis_nodes.append({
-            "id": int(node["pmid"]) if node["pmid"].isdigit() else node["pmid"],
-            "label": node["label"],
-            "title": node["title"],  # tooltip
-            "color": color,
-            "level": node["level"],
-            "data": node
-        })
-    
+        color = (
+            "#ff6b6b"
+            if node["level"] == 0
+            else "#4ecdc4"
+            if node["direction"] == "citing"
+            else "#95e1d3"
+        )
+        vis_nodes.append(
+            {
+                "id": int(node["pmid"]) if node["pmid"].isdigit() else node["pmid"],
+                "label": node["label"],
+                "title": node["title"],  # tooltip
+                "color": color,
+                "level": node["level"],
+                "data": node,
+            }
+        )
+
     vis_edges = []
     for edge in edges:
-        vis_edges.append({
-            "from": int(edge["source"]) if edge["source"].isdigit() else edge["source"],
-            "to": int(edge["target"]) if edge["target"].isdigit() else edge["target"],
-            "arrows": "to",
-            "title": edge["edge_type"]
-        })
-    
+        vis_edges.append(
+            {
+                "from": int(edge["source"])
+                if edge["source"].isdigit()
+                else edge["source"],
+                "to": int(edge["target"])
+                if edge["target"].isdigit()
+                else edge["target"],
+                "arrows": "to",
+                "title": edge["edge_type"],
+            }
+        )
+
     return {"nodes": vis_nodes, "edges": vis_edges}
 
 
@@ -221,7 +242,7 @@ def _to_graphml(nodes: List[Dict], edges: List[Dict], root_title: str) -> str:
     """
     Convert to GraphML format (XML string).
     For desktop tools: Gephi, VOSviewer, Pajek, yEd.
-    
+
     Returns: XML string (not JSON)
     """
     lines = [
@@ -235,60 +256,65 @@ def _to_graphml(nodes: List[Dict], edges: List[Dict], root_title: str) -> str:
         '  <key id="direction" for="node" attr.name="direction" attr.type="string"/>',
         '  <key id="edge_type" for="edge" attr.name="edge_type" attr.type="string"/>',
         '  <graph id="citation_tree" edgedefault="directed">',
-        f'    <!-- Citation tree for: {_escape_xml(root_title[:80])} -->'
+        f"    <!-- Citation tree for: {_escape_xml(root_title[:80])} -->",
     ]
-    
+
     for node in nodes:
         lines.append(f'    <node id="{node["pmid"]}">')
         lines.append(f'      <data key="label">{_escape_xml(node["label"])}</data>')
-        lines.append(f'      <data key="title">{_escape_xml(node["title"][:200])}</data>')
+        lines.append(
+            f'      <data key="title">{_escape_xml(node["title"][:200])}</data>'
+        )
         lines.append(f'      <data key="year">{node["year"]}</data>')
         lines.append(f'      <data key="journal">{_escape_xml(node["journal"])}</data>')
         lines.append(f'      <data key="level">{node["level"]}</data>')
         lines.append(f'      <data key="direction">{node["direction"]}</data>')
-        lines.append('    </node>')
-    
+        lines.append("    </node>")
+
     for i, edge in enumerate(edges):
-        lines.append(f'    <edge id="e{i}" source="{edge["source"]}" target="{edge["target"]}">')
+        lines.append(
+            f'    <edge id="e{i}" source="{edge["source"]}" target="{edge["target"]}">'
+        )
         lines.append(f'      <data key="edge_type">{edge["edge_type"]}</data>')
-        lines.append('    </edge>')
-    
-    lines.append('  </graph>')
-    lines.append('</graphml>')
-    
-    return '\n'.join(lines)
+        lines.append("    </edge>")
+
+    lines.append("  </graph>")
+    lines.append("</graphml>")
+
+    return "\n".join(lines)
 
 
 def _escape_xml(text: str) -> str:
     """Escape special XML characters."""
-    return (text
-            .replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-            .replace('"', "&quot;")
-            .replace("'", "&apos;"))
+    return (
+        text.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+        .replace("'", "&apos;")
+    )
 
 
 def _to_mermaid(nodes: List[Dict], edges: List[Dict], root_title: str) -> str:
     """
     Convert to Mermaid diagram format.
     Can be directly previewed in VS Code Markdown or rendered by Mermaid.js.
-    
+
     Returns: Mermaid diagram code string (ready for ```mermaid block)
     """
     lines = [
         "graph TD",
         f"    %% Citation Tree: {_escape_mermaid(root_title[:50])}...",
-        ""
+        "",
     ]
-    
+
     # Define nodes with styling
     for node in nodes:
         pmid = node["pmid"]
         # Create readable label: "Author (Year)<br/>Short Title"
         label = f"{_escape_mermaid(node['first_author'])} ({node['year']})"
-        short_title = _escape_mermaid(node['short_title'][:40])
-        
+        short_title = _escape_mermaid(node["short_title"][:40])
+
         # Use different shapes based on direction
         if node["direction"] == "root":
             # Root: stadium shape (rounded rectangle)
@@ -299,9 +325,9 @@ def _to_mermaid(nodes: List[Dict], edges: List[Dict], root_title: str) -> str:
         else:  # reference
             # Reference: rounded rectangle
             lines.append(f'    pmid_{pmid}("{label}<br/>{short_title}...")')
-    
+
     lines.append("")
-    
+
     # Define edges
     for edge in edges:
         source = f"pmid_{edge['source']}"
@@ -312,35 +338,40 @@ def _to_mermaid(nodes: List[Dict], edges: List[Dict], root_title: str) -> str:
         else:  # cited_by / references
             # Root points to reference
             lines.append(f"    {source} --> {target}")
-    
+
     lines.append("")
-    
+
     # Add styling
     lines.append("    %% Styling")
     for node in nodes:
         pmid = node["pmid"]
         if node["direction"] == "root":
-            lines.append(f"    style pmid_{pmid} fill:#ff6b6b,stroke:#c0392b,stroke-width:3px,color:#fff")
+            lines.append(
+                f"    style pmid_{pmid} fill:#ff6b6b,stroke:#c0392b,stroke-width:3px,color:#fff"
+            )
         elif node["direction"] == "citing":
-            lines.append(f"    style pmid_{pmid} fill:#4ecdc4,stroke:#16a085,color:#fff")
+            lines.append(
+                f"    style pmid_{pmid} fill:#4ecdc4,stroke:#16a085,color:#fff"
+            )
         else:  # reference
             lines.append(f"    style pmid_{pmid} fill:#95e1d3,stroke:#27ae60")
-    
+
     return "\n".join(lines)
 
 
 def _escape_mermaid(text: str) -> str:
     """Escape special Mermaid characters."""
-    return (text
-            .replace('"', "'")
-            .replace("[", "(")
-            .replace("]", ")")
-            .replace("{", "(")
-            .replace("}", ")")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-            .replace("#", "")
-            .replace("&", "and"))
+    return (
+        text.replace('"', "'")
+        .replace("[", "(")
+        .replace("]", ")")
+        .replace("{", "(")
+        .replace("}", ")")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace("#", "")
+        .replace("&", "and")
+    )
 
 
 # ============================================================================
@@ -350,7 +381,7 @@ def _escape_mermaid(text: str) -> str:
 
 def register_citation_tree_tools(mcp: FastMCP, searcher: LiteratureSearcher):
     """Register citation tree tools."""
-    
+
     @mcp.tool()
     def build_citation_tree(
         pmid: Union[str, int],
@@ -358,18 +389,18 @@ def register_citation_tree_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         direction: str = "both",
         limit_per_level: Union[int, str] = 5,
         include_details: Union[bool, str] = True,
-        output_format: str = "cytoscape"
+        output_format: str = "cytoscape",
     ) -> str:
         """
         Build a citation tree (network) from a single article.
-        
+
         🌳 Creates a visual citation network showing research lineage:
         - Forward (citing): Who cites this paper? (newer research)
         - Backward (references): What does this paper cite? (foundational work)
-        
+
         ⚠️ IMPORTANT: Only accepts ONE PMID at a time to control API load.
         For multiple papers, call this tool separately for each.
-        
+
         📊 Output Formats (output_format parameter):
         - "cytoscape": Cytoscape.js format (default, academic standard)
         - "g6": AntV G6 format (modern, high-performance)
@@ -377,9 +408,9 @@ def register_citation_tree_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         - "vis": vis-network format (simple, quick prototypes)
         - "graphml": GraphML XML (desktop tools: Gephi, yEd, VOSviewer)
         - "mermaid": Mermaid diagram (VS Code preview, Markdown) ⭐NEW
-        
+
         Args:
-            pmid: Single PubMed ID (e.g., "12345678"). 
+            pmid: Single PubMed ID (e.g., "12345678").
                   Only ONE PMID accepted - do NOT pass multiple.
             depth: How many levels to traverse (1-3, default 2).
                    - depth=1: Direct citations/references only
@@ -398,23 +429,25 @@ def register_citation_tree_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                    - "vis": vis-network (simple and easy)
                    - "graphml": GraphML XML (Gephi, VOSviewer, yEd, Pajek)
                    - "mermaid": Mermaid diagram (preview in VS Code Markdown)
-            
+
         Returns:
             JSON string with graph data in the requested format.
             Includes metadata and statistics regardless of format.
-            
+
         Example usage:
             # Build 2-level tree for a paper (default Cytoscape.js format)
             build_citation_tree(pmid="33475315", depth=2, direction="both")
-            
+
             # Use AntV G6 format for modern web visualization
             build_citation_tree(pmid="33475315", depth=2, output_format="g6")
-            
+
             # Export GraphML for Gephi analysis
             build_citation_tree(pmid="33475315", depth=2, output_format="graphml")
         """
-        logger.info(f"Building citation tree for PMID: {pmid}, depth={depth}, direction={direction}, format={output_format}")
-        
+        logger.info(
+            f"Building citation tree for PMID: {pmid}, depth={depth}, direction={direction}, format={output_format}"
+        )
+
         try:
             # Normalize inputs using InputNormalizer
             normalized_pmid = InputNormalizer.normalize_pmid_single(pmid)
@@ -423,23 +456,29 @@ def register_citation_tree_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                     "Invalid or missing PMID",
                     suggestion="Provide a valid PubMed ID",
                     example='build_citation_tree(pmid="33475315", depth=2)',
-                    tool_name="build_citation_tree"
+                    tool_name="build_citation_tree",
                 )
-            
-            normalized_depth = InputNormalizer.normalize_limit(depth, default=2, min_val=1, max_val=MAX_DEPTH)
-            normalized_limit = InputNormalizer.normalize_limit(limit_per_level, default=5, min_val=1, max_val=20)
-            
+
+            normalized_depth = InputNormalizer.normalize_limit(
+                depth, default=2, min_val=1, max_val=MAX_DEPTH
+            )
+            normalized_limit = InputNormalizer.normalize_limit(
+                limit_per_level, default=5, min_val=1, max_val=20
+            )
+
             # Validate output format
             valid_formats = ["cytoscape", "g6", "d3", "vis", "graphml", "mermaid"]
-            normalized_format = output_format.lower().strip() if output_format else "cytoscape"
+            normalized_format = (
+                output_format.lower().strip() if output_format else "cytoscape"
+            )
             if normalized_format not in valid_formats:
                 return ResponseFormatter.error(
                     f"Invalid output format: '{output_format}'",
                     suggestion=f"Use one of: {', '.join(valid_formats)}",
                     example='build_citation_tree(pmid="12345678", output_format="mermaid")',
-                    tool_name="build_citation_tree"
+                    tool_name="build_citation_tree",
                 )
-            
+
             # Validate direction
             valid_directions = ["forward", "backward", "both"]
             normalized_direction = direction.lower().strip() if direction else "both"
@@ -448,9 +487,9 @@ def register_citation_tree_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                     f"Invalid direction: '{direction}'",
                     suggestion=f"Use one of: {', '.join(valid_directions)}",
                     example='build_citation_tree(pmid="12345678", direction="both")',
-                    tool_name="build_citation_tree"
+                    tool_name="build_citation_tree",
                 )
-            
+
             # Initialize data structures
             nodes: List[Dict[str, Any]] = []
             edges: List[Dict[str, Any]] = []
@@ -460,9 +499,9 @@ def register_citation_tree_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 "total_edges": 0,
                 "citing_articles": 0,
                 "reference_articles": 0,
-                "levels": {}
+                "levels": {},
             }
-            
+
             # Fetch root article
             root_articles = searcher.fetch_details([normalized_pmid])
             if not root_articles or "error" in root_articles[0]:
@@ -470,22 +509,27 @@ def register_citation_tree_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                     f"Could not fetch article with PMID: {normalized_pmid}",
                     suggestion="Verify the PMID is correct",
                     example='fetch_article_details(pmids="33475315")',
-                    tool_name="build_citation_tree"
+                    tool_name="build_citation_tree",
                 )
-            
+
             root_article = root_articles[0]
             root_node = _make_node(root_article, level=0, direction="root")
             nodes.append(root_node)
             seen_pmids.add(normalized_pmid)
             stats["total_nodes"] = 1
             stats["levels"]["0"] = 1
-            
+
             # BFS traversal for each direction
-            def traverse(start_pmids: List[str], current_depth: int, 
-                        fetch_func, edge_type: str, direction_name: str):
+            def traverse(
+                start_pmids: List[str],
+                current_depth: int,
+                fetch_func,
+                edge_type: str,
+                direction_name: str,
+            ):
                 """
                 BFS traversal helper.
-                
+
                 Args:
                     start_pmids: PMIDs to expand
                     current_depth: Current depth level
@@ -495,41 +539,47 @@ def register_citation_tree_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 """
                 if current_depth > normalized_depth:
                     return
-                
+
                 next_level_pmids = []
                 level_key = str(current_depth)
-                
+
                 for parent_pmid in start_pmids:
                     if stats["total_nodes"] >= MAX_TOTAL_NODES:
                         logger.warning(f"Reached max nodes limit ({MAX_TOTAL_NODES})")
                         break
-                    
+
                     # Fetch related articles
                     try:
                         related = fetch_func(parent_pmid, normalized_limit)
                     except Exception as e:
                         logger.warning(f"Error fetching for {parent_pmid}: {e}")
                         continue
-                    
+
                     if not related or (related and "error" in related[0]):
                         continue
-                    
+
                     for article in related:
                         article_pmid = str(article.get("pmid", ""))
                         if not article_pmid or article_pmid in seen_pmids:
                             continue
-                        
+
                         if stats["total_nodes"] >= MAX_TOTAL_NODES:
                             break
-                        
+
                         # Add node
-                        node = _make_node(article, level=current_depth, direction=direction_name)
+                        node = _make_node(
+                            article, level=current_depth, direction=direction_name
+                        )
                         nodes.append(node)
                         seen_pmids.add(article_pmid)
                         stats["total_nodes"] += 1
-                        stats[f"{direction_name}_articles"] = stats.get(f"{direction_name}_articles", 0) + 1
-                        stats["levels"][level_key] = stats["levels"].get(level_key, 0) + 1
-                        
+                        stats[f"{direction_name}_articles"] = (
+                            stats.get(f"{direction_name}_articles", 0) + 1
+                        )
+                        stats["levels"][level_key] = (
+                            stats["levels"].get(level_key, 0) + 1
+                        )
+
                         # Add edge
                         if edge_type == "cites":
                             # citing article -> root (citing article cites root)
@@ -537,62 +587,79 @@ def register_citation_tree_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                         else:  # cited_by / references
                             # root -> reference (root cites reference)
                             edge = _make_edge(parent_pmid, article_pmid, edge_type)
-                        
+
                         edges.append(edge)
                         stats["total_edges"] += 1
-                        
+
                         # Queue for next level
                         next_level_pmids.append(article_pmid)
-                
+
                 # Continue to next level
                 if next_level_pmids and current_depth < normalized_depth:
-                    traverse(next_level_pmids, current_depth + 1, 
-                            fetch_func, edge_type, direction_name)
-            
+                    traverse(
+                        next_level_pmids,
+                        current_depth + 1,
+                        fetch_func,
+                        edge_type,
+                        direction_name,
+                    )
+
             # Build forward tree (citing articles)
             if normalized_direction in ["forward", "both"]:
-                traverse([normalized_pmid], 1, searcher.get_citing_articles, "cites", "citing")
-            
+                traverse(
+                    [normalized_pmid],
+                    1,
+                    searcher.get_citing_articles,
+                    "cites",
+                    "citing",
+                )
+
             # Build backward tree (references)
             if normalized_direction in ["backward", "both"]:
-                traverse([normalized_pmid], 1, searcher.get_article_references, "cited_by", "reference")
-            
+                traverse(
+                    [normalized_pmid],
+                    1,
+                    searcher.get_article_references,
+                    "cited_by",
+                    "reference",
+                )
+
             # Convert to requested output format
             root_title = root_article.get("title", "Unknown")
-            
+
             format_info = {
                 "cytoscape": {
                     "name": "Cytoscape.js",
                     "description": "Academic standard, bioinformatics",
-                    "usage": "cy.add(result.graph)"
+                    "usage": "cy.add(result.graph)",
                 },
                 "g6": {
                     "name": "AntV G6",
                     "description": "Modern, high-performance, TypeScript",
-                    "usage": "graph.data(result.graph); graph.render();"
+                    "usage": "graph.data(result.graph); graph.render();",
                 },
                 "d3": {
                     "name": "D3.js Force Graph",
                     "description": "Most flexible, Observable notebooks",
-                    "usage": "forceSimulation(result.graph.nodes)"
+                    "usage": "forceSimulation(result.graph.nodes)",
                 },
                 "vis": {
                     "name": "vis-network",
                     "description": "Simple, easy prototypes",
-                    "usage": "new vis.Network(container, result.graph)"
+                    "usage": "new vis.Network(container, result.graph)",
                 },
                 "graphml": {
                     "name": "GraphML (XML)",
                     "description": "Gephi, VOSviewer, yEd, Pajek",
-                    "usage": "Import XML file into desktop tool"
+                    "usage": "Import XML file into desktop tool",
                 },
                 "mermaid": {
                     "name": "Mermaid Diagram",
                     "description": "VS Code Markdown preview, documentation",
-                    "usage": "Paste into ```mermaid code block in Markdown"
-                }
+                    "usage": "Paste into ```mermaid code block in Markdown",
+                },
             }
-            
+
             # Convert internal format to requested output format
             graph_data: Union[Dict[str, Any], str]
             if normalized_format == "cytoscape":
@@ -610,7 +677,7 @@ def register_citation_tree_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             else:
                 # Default to cytoscape if format is not recognized (should not happen)
                 graph_data = _to_cytoscape(nodes, edges)
-            
+
             # Build result
             result = {
                 "format": normalized_format,
@@ -623,54 +690,53 @@ def register_citation_tree_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                     "depth": normalized_depth,
                     "direction": normalized_direction,
                     "limit_per_level": normalized_limit,
-                    "statistics": stats
+                    "statistics": stats,
                 },
-                "available_formats": list(format_info.keys())
+                "available_formats": list(format_info.keys()),
             }
-            
+
             # Add summary as human-readable output first
             summary = f"""🌳 **Citation Tree Built Successfully**
 
 📄 **Root Paper**: {root_title[:80]}...
-   PMID: {normalized_pmid} | Year: {root_article.get('year', '?')}
+   PMID: {normalized_pmid} | Year: {root_article.get("year", "?")}
 
 📊 **Statistics**:
-   - Total Nodes: {stats['total_nodes']}
-   - Total Edges: {stats['total_edges']}
-   - Citing Articles (forward): {stats.get('citing_articles', 0)}
-   - Reference Articles (backward): {stats.get('reference_articles', 0)}
+   - Total Nodes: {stats["total_nodes"]}
+   - Total Edges: {stats["total_edges"]}
+   - Citing Articles (forward): {stats.get("citing_articles", 0)}
+   - Reference Articles (backward): {stats.get("reference_articles", 0)}
    - Depth: {normalized_depth} levels
 
-🎨 **Output Format**: {format_info[normalized_format]['name']}
-   {format_info[normalized_format]['description']}
+🎨 **Output Format**: {format_info[normalized_format]["name"]}
+   {format_info[normalized_format]["description"]}
 
-📌 **Other Available Formats**: {', '.join(f for f in format_info.keys() if f != normalized_format)}
+📌 **Other Available Formats**: {", ".join(f for f in format_info.keys() if f != normalized_format)}
 
 ---
 
 """
             return summary + json.dumps(result, indent=2, ensure_ascii=False)
-            
+
         except Exception as e:
             logger.error(f"Build citation tree failed: {e}")
             return ResponseFormatter.error(
                 e,
                 suggestion="Check PMID and try again with smaller depth",
-                tool_name="build_citation_tree"
+                tool_name="build_citation_tree",
             )
-
 
     @mcp.tool()
     def suggest_citation_tree(pmid: Union[str, int]) -> str:
         """
         After fetching article details, suggest whether to build a citation tree.
-        
+
         This is a lightweight check that can be called after fetch_article_details
         to help decide if building a citation tree would be useful.
-        
+
         Args:
             pmid: PubMed ID of the article
-            
+
         Returns:
             Suggestion with article info and tree-building options.
         """
@@ -681,25 +747,25 @@ def register_citation_tree_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 "Invalid or missing PMID",
                 suggestion="Provide a valid PubMed ID",
                 example='suggest_citation_tree(pmid="33475315")',
-                tool_name="suggest_citation_tree"
+                tool_name="suggest_citation_tree",
             )
-        
+
         logger.info(f"Checking citation tree potential for PMID: {normalized_pmid}")
-        
+
         try:
             # Get basic article info
             articles = searcher.fetch_details([normalized_pmid.strip()])
             if not articles or "error" in articles[0]:
                 return f"Could not fetch article {normalized_pmid}"
-            
+
             article = articles[0]
             title = article.get("title", "Unknown")
             year = article.get("year", "?")
             journal = article.get("journal", "Unknown")
-            
+
             # Quick check for citation potential
             # (In a full implementation, we'd check actual citation counts)
-            
+
             output = f"""📄 **Article**: {title[:80]}...
 📅 Year: {year} | 📰 {journal}
 🔗 PMID: {normalized_pmid}
@@ -755,7 +821,7 @@ build_citation_tree(pmid="{normalized_pmid}", depth=2, output_format="mermaid")
 then increase depth if needed.
 """
             return output
-            
+
         except Exception as e:
             logger.error(f"Suggest citation tree failed: {e}")
             return f"Error: {e}"

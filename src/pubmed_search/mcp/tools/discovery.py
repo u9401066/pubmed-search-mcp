@@ -27,9 +27,9 @@ from mcp.server.fastmcp import FastMCP
 from ...entrez import LiteratureSearcher
 from ...sources import search_alternate_source, cross_search
 from ._common import (
-    format_search_results, 
-    _cache_results, 
-    _record_search_only, 
+    format_search_results,
+    _cache_results,
+    _record_search_only,
     check_cache,
     # Phase 2.1 imports
     InputNormalizer,
@@ -68,7 +68,7 @@ def _detect_ambiguous_terms(query: str) -> list:
     """Detect if query contains terms that could be journal names."""
     query_lower = query.lower()
     ambiguous = []
-    
+
     for term, (journal, issn, hint) in AMBIGUOUS_JOURNAL_NAMES.items():
         # Check if the term appears as a standalone word
         if term in query_lower:
@@ -76,12 +76,8 @@ def _detect_ambiguous_terms(query: str) -> list:
             # If query has other substantive terms, it's probably a topic search
             other_terms = query_lower.replace(term, "").strip()
             if len(other_terms.split()) <= 2:  # Few other terms = might mean journal
-                ambiguous.append({
-                    "term": term,
-                    "journal": journal,
-                    "hint": hint
-                })
-    
+                ambiguous.append({"term": term, "journal": journal, "hint": hint})
+
     return ambiguous
 
 
@@ -89,34 +85,34 @@ def _format_ambiguity_hint(ambiguous_terms: list, query: str) -> str:
     """Format a concise hint about ambiguous terms."""
     if not ambiguous_terms:
         return ""
-    
+
     hints = []
     for item in ambiguous_terms[:2]:  # Limit to 2 hints
         term = item["term"]
         journal = item["journal"]
         hint = item["hint"]
         hints.append(f'"{term}" = journal "{journal}"? Use: {hint}')
-    
+
     return "\n\n⚠️ **Tip**: " + " | ".join(hints)
 
 
 def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
     """Register discovery tools for exploring PubMed."""
-    
+
     # Supported alternate sources
     ALTERNATE_SOURCES = ("semantic_scholar", "openalex")
-    
+
     # ❌ REMOVED v0.1.20: Replaced by unified_search which auto-handles multi-source
     # @mcp.tool()
     def search_literature(
-        query: str, 
-        limit: int = 5, 
-        min_year: Optional[int] = None, 
+        query: str,
+        limit: int = 5,
+        min_year: Optional[int] = None,
         max_year: Optional[int] = None,
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
         date_type: str = "edat",
-        article_type: Optional[str] = None, 
+        article_type: Optional[str] = None,
         strategy: str = "relevance",
         force_refresh: bool = False,
         source: Literal["pubmed", "semantic_scholar", "openalex"] = "pubmed",
@@ -126,10 +122,10 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
     ) -> str:
         """
         Search for medical literature based on a query using PubMed.
-        
+
         Results are automatically cached to avoid redundant API calls.
         Repeated searches with the same query will return cached results.
-        
+
         Args:
             query: The search query (e.g., "diabetes treatment guidelines").
             limit: The maximum number of results to return.
@@ -142,7 +138,7 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                        - "pdat": Publication date
                        - "mdat": Modification date
             article_type: Optional article type (e.g., "Review", "Clinical Trial", "Meta-Analysis").
-            strategy: Search strategy ("recent", "most_cited", "relevance", "impact"). 
+            strategy: Search strategy ("recent", "most_cited", "relevance", "impact").
                      Default is "relevance".
             force_refresh: If True, bypass cache and fetch fresh results from API.
         """
@@ -151,12 +147,14 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         # open_access_only: Only return open access papers (for alternate sources)
         # cross_search_fallback: Auto-search alternate sources if PubMed < threshold
         # cross_search_threshold: Minimum results before triggering cross-search
-        
-        logger.info(f"Searching literature: query='{query}', limit={limit}, source='{source}', strategy='{strategy}'")
+
+        logger.info(
+            f"Searching literature: query='{query}', limit={limit}, source='{source}', strategy='{strategy}'"
+        )
         try:
             if not query:
                 return "Error: Query is required."
-            
+
             # === Handle alternate sources (internal feature) ===
             if source in ALTERNATE_SOURCES:
                 # Cast to narrow type (we've already checked source is in ALTERNATE_SOURCES)
@@ -169,7 +167,7 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                     max_year=max_year,
                     open_access_only=open_access_only,
                 )
-            
+
             # === PubMed search (default) ===
             # Detect ambiguous terms (journal vs topic)
             ambiguous = _detect_ambiguous_terms(query)
@@ -180,17 +178,25 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 cached = check_cache(query, limit)
                 if cached:
                     logger.info(f"Returning {len(cached)} cached results for '{query}'")
-                    result = format_search_results(cached[:limit]) + "\n\n_(cached results)_"
+                    result = (
+                        format_search_results(cached[:limit]) + "\n\n_(cached results)_"
+                    )
                     result += _format_ambiguity_hint(ambiguous, query)
                     return result
 
             # No cache hit - call API
             results = searcher.search(
-                query, limit, min_year, max_year, 
-                article_type, strategy,
-                date_from=date_from, date_to=date_to, date_type=date_type
+                query,
+                limit,
+                min_year,
+                max_year,
+                article_type,
+                strategy,
+                date_from=date_from,
+                date_to=date_to,
+                date_type=date_type,
             )
-            
+
             # Extract total count from metadata (if present)
             total_count = None
             if results and "_search_metadata" in results[0]:
@@ -198,19 +204,21 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 # Remove metadata from results before caching/formatting
                 del results[0]["_search_metadata"]
                 # If this was a metadata-only result (no actual article data), remove it
-                if len(results[0]) == 0 or (len(results[0]) == 1 and "error" not in results[0]):
+                if len(results[0]) == 0 or (
+                    len(results[0]) == 1 and "error" not in results[0]
+                ):
                     results = results[1:] if len(results) > 1 else []
-            
+
             # Cache results (only for queries without filters)
             if not has_filters:
                 _cache_results(results, query)
             else:
                 # Always record search history for "last" export feature
                 _record_search_only(results, query)
-            
+
             # Format results with total count info
             returned_count = len(results[:limit])
-            
+
             # Always show total_count if available, even when returned_count == 0
             if total_count is not None:
                 if returned_count == 0:
@@ -222,18 +230,18 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             else:
                 result = f"📊 Found **{returned_count}** results\n\n"
             result += format_search_results(results[:limit])
-            
-            # Add hint about potential journal name confusion 
+
+            # Add hint about potential journal name confusion
             # Always show for single-word queries or when results suggest broad topic
             if ambiguous:
                 result += _format_ambiguity_hint(ambiguous, query)
-            
+
             # Add session persistence hint for large result sets
             if returned_count >= 5:
-                pmids_list = [r.get('pmid') for r in results[:limit] if r.get('pmid')]
+                pmids_list = [r.get("pmid") for r in results[:limit] if r.get("pmid")]
                 result += f"\n---\n💾 **Session 已暫存 {len(pmids_list)} 篇 PMIDs**"
                 result += "\n🔖 後續可用: `get_session_pmids()` 或 `pmids='last'`"
-            
+
             # === Cross-search fallback (when PubMed results insufficient) ===
             if cross_search_fallback and returned_count < cross_search_threshold:
                 result += _perform_cross_search_fallback(
@@ -244,12 +252,12 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                     max_year=max_year,
                     open_access_only=open_access_only,
                 )
-                
+
             return result
         except Exception as e:
             logger.error(f"Search failed: {e}")
             return f"Error: {e}"
-    
+
     def _search_alternate_source_internal(
         query: str,
         source: Literal["semantic_scholar", "openalex"],
@@ -268,36 +276,36 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 max_year=max_year,
                 open_access_only=open_access_only,
             )
-            
+
             source_name = {
                 "semantic_scholar": "Semantic Scholar",
                 "openalex": "OpenAlex",
             }.get(source, source)
-            
+
             if not results:
                 return f"📊 No results found from {source_name} for '{query}'."
-            
+
             # Format header
             returned_count = len(results)
             oa_note = " (Open Access only)" if open_access_only else ""
             result = f"📊 Found **{returned_count}** results from **{source_name}**{oa_note}\n\n"
-            
+
             # Format results
             result += format_search_results(results)
-            
+
             # Note about source
             result += f"\n---\n📚 Source: {source_name}"
             if source == "openalex":
                 result += " | Has citation counts & open access info"
             elif source == "semantic_scholar":
                 result += " | Has influential citations & TLDR"
-            
+
             return result
-            
+
         except Exception as e:
             logger.error(f"Alternate source search failed: {e}")
             return f"Error searching {source}: {e}"
-    
+
     def _perform_cross_search_fallback(
         query: str,
         existing_results: list,
@@ -309,7 +317,7 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         """Internal: Perform cross-search when PubMed results insufficient."""
         if limit <= 0:
             return ""
-        
+
         try:
             cross_results = cross_search(
                 query=query,
@@ -320,14 +328,16 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 open_access_only=open_access_only,
                 deduplicate=True,
             )
-            
+
             if not cross_results.get("results"):
                 return ""
-            
+
             # Filter out papers already in PubMed results (by PMID or title)
             existing_pmids = {r.get("pmid") for r in existing_results if r.get("pmid")}
-            existing_titles = {r.get("title", "").lower()[:50] for r in existing_results}
-            
+            existing_titles = {
+                r.get("title", "").lower()[:50] for r in existing_results
+            }
+
             new_results = []
             for paper in cross_results["results"]:
                 if paper.get("pmid") in existing_pmids:
@@ -335,16 +345,16 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 if paper.get("title", "").lower()[:50] in existing_titles:
                     continue
                 new_results.append(paper)
-            
+
             if not new_results:
                 return ""
-            
+
             # Format supplemental results
             output = f"\n\n---\n🔄 **Cross-search results from OpenAlex** ({len(new_results)} additional)\n\n"
             output += format_search_results(new_results[:limit])
-            
+
             return output
-            
+
         except Exception as e:
             logger.warning(f"Cross-search fallback failed: {e}")
             return ""
@@ -354,51 +364,51 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         """
         Find articles related to a given PubMed article.
         Uses PubMed's "Related Articles" feature to find similar papers.
-        
+
         ═══════════════════════════════════════════════════════════════
         🔗 CITATION NETWORK EXPLORATION WORKFLOW
         ═══════════════════════════════════════════════════════════════
-        
+
         This is ONE of THREE tools for exploring citation networks:
-        
+
         1️⃣ find_related_articles() ← YOU ARE HERE
            │  📌 Algorithm-based similarity (like PubMed "Similar Articles")
            │  📌 Finds papers with similar topics, MeSH terms, authors
            │  📌 Good for: Discovering related research you might have missed
            └─► Returns: Similar papers (not based on citations)
-        
+
         2️⃣ find_citing_articles()
            │  📌 Forward citation search (who cited THIS paper?)
            │  📌 Finds papers published AFTER the source article
            │  📌 Good for: Tracking impact, finding follow-up studies
            └─► Returns: Papers that cite this article
-        
+
         3️⃣ get_article_references()
            │  📌 Backward citation search (what did THIS paper cite?)
            │  📌 Finds papers published BEFORE the source article
            │  📌 Good for: Finding foundational papers, methodology sources
            └─► Returns: This article's bibliography
-        
+
         ═══════════════════════════════════════════════════════════════
         EXAMPLE WORKFLOW:
         ═══════════════════════════════════════════════════════════════
-        
+
         Step 1: Start with a key paper
             find_related_articles(pmid="23132851")
             → Find similar research directions
-        
+
         Step 2: Explore backward (foundations)
             get_article_references(pmid="23132851")
             → Find the foundational papers it builds on
-        
+
         Step 3: Explore forward (impact)
             find_citing_articles(pmid="23132851")
             → Find how the field developed after this paper
-        
+
         Args:
             pmid: PubMed ID of the source article (accepts: "12345678", "PMID:12345678", 12345678).
             limit: Maximum number of related articles to return (1-50, default: 5).
-            
+
         Returns:
             List of related articles with details.
         """
@@ -409,32 +419,34 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 error="Invalid PMID format",
                 suggestion="Provide a valid PMID number",
                 example='find_related_articles(pmid="12345678")',
-                tool_name="find_related_articles"
+                tool_name="find_related_articles",
             )
-        
-        normalized_limit = InputNormalizer.normalize_limit(limit, default=5, min_val=1, max_val=50)
-        
+
+        normalized_limit = InputNormalizer.normalize_limit(
+            limit, default=5, min_val=1, max_val=50
+        )
+
         logger.info(f"Finding related articles for PMID: {normalized_pmid}")
         try:
             results = searcher.get_related_articles(normalized_pmid, normalized_limit)
-            
+
             if not results:
                 return ResponseFormatter.no_results(
                     query=f"PMID {normalized_pmid}",
                     suggestions=[
                         "Check if the PMID is correct",
                         "Try find_citing_articles to see papers citing this article",
-                        "Try get_article_references to see this article's bibliography"
-                    ]
+                        "Try get_article_references to see this article's bibliography",
+                    ],
                 )
-            
+
             if "error" in results[0]:
                 return ResponseFormatter.error(
-                    error=results[0]['error'],
+                    error=results[0]["error"],
                     suggestion="Check if the PMID exists in PubMed",
-                    tool_name="find_related_articles"
+                    tool_name="find_related_articles",
                 )
-            
+
             output = f"📚 **Related Articles for PMID {normalized_pmid}** ({len(results)} found)\n\n"
             output += format_search_results(results)
             return output
@@ -443,7 +455,7 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             return ResponseFormatter.error(
                 error=e,
                 suggestion="Check PMID format and try again",
-                tool_name="find_related_articles"
+                tool_name="find_related_articles",
             )
 
     @mcp.tool()
@@ -451,41 +463,41 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         """
         Find articles that cite a given PubMed article.
         Uses PubMed Central's citation data to find papers that reference this article.
-        
+
         ═══════════════════════════════════════════════════════════════
         📈 FORWARD CITATION SEARCH (Impact Tracking)
         ═══════════════════════════════════════════════════════════════
-        
+
         Direction: Source Paper → Papers that cite it (FORWARD in time)
-        
+
         USE CASES:
         ──────────
         - 🔬 Track research impact: Who built on this work?
         - 📊 Find follow-up studies: What happened after this discovery?
         - 🔄 Identify controversies: Papers that challenge or refute findings
         - 📚 Literature review: Ensure you have the latest developments
-        
+
         COMPLEMENTARY TOOLS:
         ────────────────────
         - get_article_references(): BACKWARD search (what this paper cited)
         - find_related_articles(): Similar papers (topic-based, not citation-based)
-        
+
         ═══════════════════════════════════════════════════════════════
         EXAMPLE:
         ═══════════════════════════════════════════════════════════════
-        
+
         # Find papers that cite a landmark CRISPR paper
         find_citing_articles(pmid="23287718", limit=20)
         → Returns papers published AFTER 2012 that reference this work
-        
+
         # Then analyze citation metrics
         get_citation_metrics(pmids="last")
         → See which citing papers are most influential
-        
+
         Args:
             pmid: PubMed ID of the source article (accepts: "12345678", "PMID:12345678", 12345678).
             limit: Maximum number of citing articles to return (1-100, default: 10).
-            
+
         Returns:
             List of citing articles with details.
         """
@@ -496,15 +508,17 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 error="Invalid PMID format",
                 suggestion="Provide a valid PMID number",
                 example='find_citing_articles(pmid="12345678")',
-                tool_name="find_citing_articles"
+                tool_name="find_citing_articles",
             )
-        
-        normalized_limit = InputNormalizer.normalize_limit(limit, default=10, min_val=1, max_val=100)
-        
+
+        normalized_limit = InputNormalizer.normalize_limit(
+            limit, default=10, min_val=1, max_val=100
+        )
+
         logger.info(f"Finding citing articles for PMID: {normalized_pmid}")
         try:
             results = searcher.get_citing_articles(normalized_pmid, normalized_limit)
-            
+
             if not results:
                 return ResponseFormatter.no_results(
                     query=f"PMID {normalized_pmid}",
@@ -512,17 +526,17 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                         "Article may not be indexed in PMC",
                         "Article may have no citations yet",
                         "Try find_related_articles for similar papers",
-                        "Try get_article_references to see its bibliography"
-                    ]
+                        "Try get_article_references to see its bibliography",
+                    ],
                 )
-            
+
             if "error" in results[0]:
                 return ResponseFormatter.error(
-                    error=results[0]['error'],
+                    error=results[0]["error"],
                     suggestion="Check if the PMID exists and is indexed in PMC",
-                    tool_name="find_citing_articles"
+                    tool_name="find_citing_articles",
                 )
-            
+
             output = f"📖 **Articles Citing PMID {normalized_pmid}** ({len(results)} found)\n\n"
             output += format_search_results(results)
             return output
@@ -531,52 +545,52 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             return ResponseFormatter.error(
                 error=e,
                 suggestion="Check PMID format and try again",
-                tool_name="find_citing_articles"
+                tool_name="find_citing_articles",
             )
 
     @mcp.tool()
     def get_article_references(pmid: Union[str, int], limit: int = 20) -> str:
         """
         Get the references (bibliography) of a PubMed article.
-        
+
         Returns the list of articles that this paper cites in its bibliography.
         This is the OPPOSITE of find_citing_articles:
         - get_article_references: Papers THIS article cites (backward in time)
         - find_citing_articles: Papers that cite THIS article (forward in time)
-        
+
         ═══════════════════════════════════════════════════════════════
         📚 BACKWARD CITATION SEARCH (Foundation Discovery)
         ═══════════════════════════════════════════════════════════════
-        
+
         Direction: Source Paper → Papers it cited (BACKWARD in time)
-        
+
         USE CASES:
         ──────────
         - 🏛️ Find foundational papers: Core works the field builds on
         - ⚗️ Methodology sources: Papers describing techniques used
         - 📖 Background reading: Build understanding of a topic
         - 🔍 Verify claims: Check sources for specific assertions
-        
+
         ═══════════════════════════════════════════════════════════════
         EXAMPLE WORKFLOW:
         ═══════════════════════════════════════════════════════════════
-        
+
         # Start with a recent review article
         get_article_references(pmid="38123456", limit=50)
         → Get the bibliography of this review
-        
+
         # Find most-cited foundational papers
         get_citation_metrics(pmids="last", sort_by="citation_count")
         → Identify which references are the most influential
-        
+
         # Read a foundational paper
         fetch_article_details(pmids="12345678")
         → Get full details of an important reference
-        
+
         Args:
             pmid: PubMed ID of the source article (accepts: "12345678", "PMID:12345678", 12345678).
             limit: Maximum number of references to return (1-100, default: 20).
-            
+
         Returns:
             List of referenced articles with details.
         """
@@ -587,34 +601,38 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 error="Invalid PMID format",
                 suggestion="Provide a valid PMID number",
                 example='get_article_references(pmid="12345678")',
-                tool_name="get_article_references"
+                tool_name="get_article_references",
             )
-        
-        normalized_limit = InputNormalizer.normalize_limit(limit, default=20, min_val=1, max_val=100)
-        
+
+        normalized_limit = InputNormalizer.normalize_limit(
+            limit, default=20, min_val=1, max_val=100
+        )
+
         logger.info(f"Getting references for PMID: {normalized_pmid}")
         try:
             results = searcher.get_article_references(normalized_pmid, normalized_limit)
-            
+
             if not results:
                 return ResponseFormatter.no_results(
                     query=f"PMID {normalized_pmid}",
                     suggestions=[
                         "Article may not be indexed in PMC",
                         "References may not be available for this article",
-                        "Try find_citing_articles to see papers citing this article"
-                    ]
+                        "Try find_citing_articles to see papers citing this article",
+                    ],
                 )
-            
+
             if "error" in results[0]:
                 return ResponseFormatter.error(
-                    error=results[0]['error'],
+                    error=results[0]["error"],
                     suggestion="Check if the PMID exists and is indexed in PMC",
-                    tool_name="get_article_references"
+                    tool_name="get_article_references",
                 )
-            
+
             output = f"📚 **References of PMID {normalized_pmid}** ({len(results)} found)\n\n"
-            output += "These are the papers cited BY this article (its bibliography):\n\n"
+            output += (
+                "These are the papers cited BY this article (its bibliography):\n\n"
+            )
             output += format_search_results(results)
             return output
         except Exception as e:
@@ -622,14 +640,14 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             return ResponseFormatter.error(
                 error=e,
                 suggestion="Check PMID format and try again",
-                tool_name="get_article_references"
+                tool_name="get_article_references",
             )
 
     @mcp.tool()
     def fetch_article_details(pmids: Union[str, List, int]) -> str:
         """
         Fetch detailed information for one or more PubMed articles.
-        
+
         Args:
             pmids: PubMed IDs - accepts multiple formats:
                    - "12345678" (single)
@@ -637,48 +655,48 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                    - "PMID:12345678" (with prefix)
                    - ["12345678", "87654321"] (list)
                    - 12345678 (integer)
-            
+
         Returns:
             Detailed information for each article.
         """
         # Phase 2.1: Input normalization
         normalized_pmids = InputNormalizer.normalize_pmids(pmids)
-        
+
         if not normalized_pmids:
             return ResponseFormatter.error(
                 error="No valid PMIDs provided",
                 suggestion="Provide one or more valid PMID numbers",
                 example='fetch_article_details(pmids="12345678,87654321")',
-                tool_name="fetch_article_details"
+                tool_name="fetch_article_details",
             )
-        
+
         logger.info(f"Fetching details for PMIDs: {normalized_pmids}")
         try:
             results = searcher.fetch_details(normalized_pmids)
-            
+
             if not results:
                 return ResponseFormatter.no_results(
                     query=f"PMIDs: {', '.join(normalized_pmids)}",
                     suggestions=[
                         "Check if the PMIDs are correct",
-                        "Use search_literature to find valid PMIDs"
-                    ]
+                        "Use search_literature to find valid PMIDs",
+                    ],
                 )
-            
+
             if "error" in results[0]:
                 return ResponseFormatter.error(
-                    error=results[0]['error'],
+                    error=results[0]["error"],
                     suggestion="Check if the PMIDs exist in PubMed",
-                    tool_name="fetch_article_details"
+                    tool_name="fetch_article_details",
                 )
-            
+
             return format_search_results(results, include_doi=True)
         except Exception as e:
             logger.error(f"Fetch details failed: {e}")
             return ResponseFormatter.error(
                 error=e,
                 suggestion="Check PMID format and try again",
-                tool_name="fetch_article_details"
+                tool_name="fetch_article_details",
             )
 
     @mcp.tool()
@@ -687,20 +705,20 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         sort_by: str = "citation_count",
         min_citations: Optional[int] = None,
         min_rcr: Optional[float] = None,
-        min_percentile: Optional[float] = None
+        min_percentile: Optional[float] = None,
     ) -> str:
         """
         Get citation metrics from NIH iCite for articles.
-        
+
         Returns field-normalized citation data including:
         - citation_count: Total number of citations
         - relative_citation_ratio (RCR): Field-normalized metric (1.0 = average)
         - nih_percentile: Percentile ranking (0-100)
         - citations_per_year: Citation velocity
         - apt: Approximate Potential to Translate (clinical relevance 0-1)
-        
+
         Can sort and filter results by citation metrics.
-        
+
         Args:
             pmids: PubMed IDs - accepts multiple formats:
                    - "12345678,87654321" (comma-separated)
@@ -715,81 +733,93 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             min_citations: Filter out articles with fewer citations
             min_rcr: Filter out articles with RCR below threshold (e.g., 1.0 = average)
             min_percentile: Filter out articles below percentile (e.g., 50 = top half)
-            
+
         Returns:
             Articles with citation metrics, sorted and filtered as requested.
         """
         # Phase 2.1: Input normalization
         normalized_pmids = InputNormalizer.normalize_pmids(pmids)
-        
+
         logger.info(f"Getting citation metrics for: {normalized_pmids}")
-        
+
         try:
             # Handle "last" keyword
-            if normalized_pmids == ['last']:
+            if normalized_pmids == ["last"]:
                 from ._common import get_last_search_pmids
+
                 pmid_list = get_last_search_pmids()
                 if not pmid_list:
                     return ResponseFormatter.error(
                         error="No previous search results found",
                         suggestion="Search first or provide PMIDs directly",
                         example='get_citation_metrics(pmids="12345678,87654321")',
-                        tool_name="get_citation_metrics"
+                        tool_name="get_citation_metrics",
                     )
             else:
                 pmid_list = normalized_pmids
-            
+
             if not pmid_list:
                 return ResponseFormatter.error(
                     error="No valid PMIDs provided",
                     suggestion="Provide PMIDs or use 'last' for recent search results",
                     example='get_citation_metrics(pmids="12345678")',
-                    tool_name="get_citation_metrics"
+                    tool_name="get_citation_metrics",
                 )
-            
+
             # Get metrics from iCite
             metrics = searcher.get_citation_metrics(pmid_list)
-            
+
             if not metrics:
                 return ResponseFormatter.no_results(
                     query=f"PMIDs: {', '.join(pmid_list[:5])}{'...' if len(pmid_list) > 5 else ''}",
                     suggestions=[
                         "Articles may be too recent (iCite needs time to index)",
                         "Check if PMIDs are correct",
-                        "Try fetch_article_details to verify the articles exist"
-                    ]
+                        "Try fetch_article_details to verify the articles exist",
+                    ],
                 )
-            
+
             # Convert to list for sorting/filtering
-            articles: List[Dict[str, Any]] = [{"pmid": pmid, "icite": data} for pmid, data in metrics.items()]
-            
+            articles: List[Dict[str, Any]] = [
+                {"pmid": pmid, "icite": data} for pmid, data in metrics.items()
+            ]
+
             # Apply filters
             if min_citations is not None:
-                articles = [a for a in articles 
-                           if (a["icite"].get("citation_count") or 0) >= min_citations]
-            
+                articles = [
+                    a
+                    for a in articles
+                    if (a["icite"].get("citation_count") or 0) >= min_citations
+                ]
+
             if min_rcr is not None:
-                articles = [a for a in articles 
-                           if (a["icite"].get("relative_citation_ratio") or 0) >= min_rcr]
-            
+                articles = [
+                    a
+                    for a in articles
+                    if (a["icite"].get("relative_citation_ratio") or 0) >= min_rcr
+                ]
+
             if min_percentile is not None:
-                articles = [a for a in articles 
-                           if (a["icite"].get("nih_percentile") or 0) >= min_percentile]
-            
+                articles = [
+                    a
+                    for a in articles
+                    if (a["icite"].get("nih_percentile") or 0) >= min_percentile
+                ]
+
             if not articles:
                 return "No articles match the specified filters."
-            
+
             # Sort
             def get_sort_value(a):
                 val = a["icite"].get(sort_by)
                 return val if val is not None else -1
-            
+
             articles = sorted(articles, key=get_sort_value, reverse=True)
-            
+
             # Format output
             output = f"📊 **Citation Metrics** ({len(articles)} articles)\n"
             output += f"Sorted by: {sort_by}\n"
-            
+
             if min_citations or min_rcr or min_percentile:
                 filters = []
                 if min_citations:
@@ -799,26 +829,26 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 if min_percentile:
                     filters.append(f"percentile≥{min_percentile}")
                 output += f"Filters: {', '.join(filters)}\n"
-            
+
             output += "\n"
-            
+
             for i, article in enumerate(articles, 1):
                 icite = article["icite"]
                 pmid = icite.get("pmid", article["pmid"])
                 title = icite.get("title", "Unknown")[:80]
                 year = icite.get("year", "?")
                 journal = icite.get("journal", "Unknown")
-                
+
                 citations = icite.get("citation_count", 0) or 0
                 rcr = icite.get("relative_citation_ratio")
                 percentile = icite.get("nih_percentile")
                 cpy = icite.get("citations_per_year")
                 apt = icite.get("apt")
-                
+
                 output += f"**{i}. [{pmid}]** {title}...\n"
                 output += f"   📅 {year} | 📰 {journal}\n"
                 output += f"   📈 Citations: **{citations}**"
-                
+
                 if rcr is not None:
                     output += f" | RCR: **{rcr:.2f}**"
                 if percentile is not None:
@@ -827,17 +857,16 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                     output += f" | {cpy:.1f}/yr"
                 if apt is not None and apt > 0.5:
                     output += f" | 🏥 APT: {apt:.2f}"
-                
+
                 output += "\n\n"
-            
+
             # Add legend
             output += "---\n"
             output += "**Legend**: RCR=Relative Citation Ratio (1.0=field average), "
             output += "APT=Approximate Potential to Translate (clinical relevance)\n"
-            
+
             return output
-            
+
         except Exception as e:
             logger.error(f"Get citation metrics failed: {e}")
             return f"Error: {e}"
-

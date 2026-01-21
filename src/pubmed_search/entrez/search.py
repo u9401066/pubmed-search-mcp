@@ -21,6 +21,7 @@ RETRY_DELAY = 2  # seconds
 
 def _retry_on_error(func):
     """Decorator to retry Entrez operations on transient errors."""
+
     def wrapper(*args, **kwargs):
         last_error = None
         for attempt in range(MAX_RETRIES):
@@ -29,17 +30,22 @@ def _retry_on_error(func):
             except Exception as e:
                 error_str = str(e)
                 # Check for transient NCBI errors
-                if any(msg in error_str for msg in [
-                    "Database is not supported",
-                    "Backend failed",
-                    "temporarily unavailable",
-                    "Service unavailable",
-                    "rate limit",
-                    "Too Many Requests"
-                ]):
+                if any(
+                    msg in error_str
+                    for msg in [
+                        "Database is not supported",
+                        "Backend failed",
+                        "temporarily unavailable",
+                        "Service unavailable",
+                        "rate limit",
+                        "Too Many Requests",
+                    ]
+                ):
                     last_error = e
                     wait_time = RETRY_DELAY * (attempt + 1)
-                    logger.warning(f"NCBI transient error (attempt {attempt + 1}/{MAX_RETRIES}): {error_str}")
+                    logger.warning(
+                        f"NCBI transient error (attempt {attempt + 1}/{MAX_RETRIES}): {error_str}"
+                    )
                     logger.info(f"Retrying in {wait_time} seconds...")
                     time.sleep(wait_time)
                 else:
@@ -47,34 +53,35 @@ def _retry_on_error(func):
                     raise
         # All retries exhausted
         raise last_error
+
     return wrapper
 
 
 class SearchMixin:
     """
     Mixin providing core search functionality.
-    
+
     Methods:
         search: Search PubMed with various filters and strategies
         fetch_details: Fetch complete article details by PMID
         filter_results: Filter results by sample size
     """
-    
+
     def search(
-        self, 
-        query: str, 
-        limit: int = 5, 
-        min_year: Optional[int] = None, 
-        max_year: Optional[int] = None, 
-        article_type: Optional[str] = None, 
+        self,
+        query: str,
+        limit: int = 5,
+        min_year: Optional[int] = None,
+        max_year: Optional[int] = None,
+        article_type: Optional[str] = None,
         strategy: str = "relevance",
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
-        date_type: str = "edat"
+        date_type: str = "edat",
     ) -> List[Dict[str, Any]]:
         """
         Search PubMed for articles using a specific strategy.
-        
+
         Args:
             query: Search query string.
             limit: Maximum number of results to return.
@@ -88,14 +95,14 @@ class SearchMixin:
                        - "edat" (default): Entrez date (when added to PubMed) - best for finding new articles
                        - "pdat": Publication date
                        - "mdat": Modification date
-            
+
         Returns:
             List of dictionaries containing article details.
         """
         try:
             # Map strategy to PubMed sort parameter
             sort_param = "relevance"
-            
+
             if strategy == SearchStrategy.RECENT.value:
                 sort_param = "pub_date"
             elif strategy == SearchStrategy.MOST_CITED.value:
@@ -106,10 +113,10 @@ class SearchMixin:
                 sort_param = "relevance"  # Best proxy without IF data
             elif strategy == SearchStrategy.AGENT_DECIDED.value:
                 sort_param = "relevance"
-            
+
             # Construct advanced query
             full_query = query
-            
+
             # Date range handling - prefer precise dates over year-only
             if date_from or date_to:
                 # Use precise date format: YYYY/MM/DD
@@ -122,15 +129,17 @@ class SearchMixin:
                 # Legacy year-only format
                 date_range = f"{min_year or 1900}/01/01:{max_year or 3000}/12/31[dp]"
                 full_query += f" AND {date_range}"
-                
+
             if article_type:
-                full_query += f" AND \"{article_type}\"[pt]"
-            
+                full_query += f' AND "{article_type}"[pt]'
+
             # Step 1: Search for IDs with retry
-            id_list, total_count = self._search_ids_with_retry(full_query, limit * 2, sort_param)
-            
+            id_list, total_count = self._search_ids_with_retry(
+                full_query, limit * 2, sort_param
+            )
+
             results = self.fetch_details(id_list)
-            
+
             # Attach total count to results for caller to access
             final_results = results[:limit]
             # Store metadata in a way that doesn't break existing code
@@ -139,7 +148,7 @@ class SearchMixin:
             elif total_count > 0:
                 # No detailed results but we have a count
                 final_results = [{"_search_metadata": {"total_count": total_count}}]
-            
+
             return final_results
 
         except Exception as e:
@@ -147,7 +156,7 @@ class SearchMixin:
 
     def _search_ids_with_retry(self, query: str, retmax: int, sort: str) -> tuple:
         """Search for PubMed IDs with retry on transient errors.
-        
+
         Returns:
             Tuple of (id_list, total_count) where total_count is the total number
             of articles matching the query in PubMed (not limited by retmax).
@@ -156,25 +165,32 @@ class SearchMixin:
         for attempt in range(MAX_RETRIES):
             try:
                 _rate_limit()  # Rate limiting before API call
-                handle = Entrez.esearch(db="pubmed", term=query, retmax=retmax, sort=sort)
+                handle = Entrez.esearch(
+                    db="pubmed", term=query, retmax=retmax, sort=sort
+                )
                 record = Entrez.read(handle)
                 handle.close()
                 total_count = int(record.get("Count", 0))
                 return record["IdList"], total_count
             except Exception as e:
                 error_str = str(e)
-                if any(msg in error_str.lower() for msg in [
-                    "database is not supported",
-                    "backend failed",
-                    "temporarily unavailable",
-                    "service unavailable",
-                    "rate limit",
-                    "too many requests",
-                    "server error"
-                ]):
+                if any(
+                    msg in error_str.lower()
+                    for msg in [
+                        "database is not supported",
+                        "backend failed",
+                        "temporarily unavailable",
+                        "service unavailable",
+                        "rate limit",
+                        "too many requests",
+                        "server error",
+                    ]
+                ):
                     last_error = e
                     wait_time = RETRY_DELAY * (attempt + 1)
-                    logger.warning(f"NCBI transient error (attempt {attempt + 1}/{MAX_RETRIES}): {error_str}")
+                    logger.warning(
+                        f"NCBI transient error (attempt {attempt + 1}/{MAX_RETRIES}): {error_str}"
+                    )
                     time.sleep(wait_time)
                 else:
                     raise
@@ -192,18 +208,23 @@ class SearchMixin:
                 return papers
             except Exception as e:
                 error_str = str(e)
-                if any(msg in error_str.lower() for msg in [
-                    "database is not supported",
-                    "backend failed",
-                    "temporarily unavailable",
-                    "service unavailable",
-                    "rate limit",
-                    "too many requests",
-                    "server error"
-                ]):
+                if any(
+                    msg in error_str.lower()
+                    for msg in [
+                        "database is not supported",
+                        "backend failed",
+                        "temporarily unavailable",
+                        "service unavailable",
+                        "rate limit",
+                        "too many requests",
+                        "server error",
+                    ]
+                ):
                     last_error = e
                     wait_time = RETRY_DELAY * (attempt + 1)
-                    logger.warning(f"NCBI transient error (attempt {attempt + 1}/{MAX_RETRIES}): {error_str}")
+                    logger.warning(
+                        f"NCBI transient error (attempt {attempt + 1}/{MAX_RETRIES}): {error_str}"
+                    )
                     time.sleep(wait_time)
                 else:
                     raise
@@ -212,10 +233,10 @@ class SearchMixin:
     def fetch_details(self, id_list: List[str]) -> List[Dict[str, Any]]:
         """
         Fetch complete details for a list of PMIDs.
-        
+
         Args:
             id_list: List of PubMed IDs.
-            
+
         Returns:
             List of dictionaries containing article details including:
             - pmid, title, authors, authors_full
@@ -228,13 +249,13 @@ class SearchMixin:
 
         try:
             papers = self._fetch_with_retry(id_list)
-            
+
             results = []
-            if 'PubmedArticle' in papers:
-                for article in papers['PubmedArticle']:
+            if "PubmedArticle" in papers:
+                for article in papers["PubmedArticle"]:
                     result = self._parse_pubmed_article(article)
                     results.append(result)
-            
+
             return results
         except Exception as e:
             return [{"error": str(e)}]
@@ -242,41 +263,41 @@ class SearchMixin:
     def _parse_pubmed_article(self, article: Dict) -> Dict[str, Any]:
         """
         Parse a single PubMed article record into a structured dictionary.
-        
+
         Args:
             article: Raw PubMed article data from Entrez.
-            
+
         Returns:
             Structured article data dictionary.
         """
-        medline_citation = article['MedlineCitation']
-        article_data = medline_citation['Article']
-        pubmed_data = article.get('PubmedData', {})
-        
-        title = article_data.get('ArticleTitle', 'No title')
-        
+        medline_citation = article["MedlineCitation"]
+        article_data = medline_citation["Article"]
+        pubmed_data = article.get("PubmedData", {})
+
+        title = article_data.get("ArticleTitle", "No title")
+
         # Extract authors with full details
         authors, authors_full = self._extract_authors(article_data)
-        
+
         # Extract abstract
         abstract_text = self._extract_abstract(article_data)
-        
+
         # Extract Journal info (includes ISSN)
         journal_info = self._extract_journal_info(article_data)
-        
+
         # Extract identifiers (DOI, PMC ID)
         doi, pmc_id = self._extract_identifiers(pubmed_data)
-        
+
         # Extract PMID
-        pmid = str(medline_citation.get('PMID', ''))
-        
+        pmid = str(medline_citation.get("PMID", ""))
+
         # Extract keywords and MeSH terms
         keywords = self._extract_keywords(medline_citation)
         mesh_terms = self._extract_mesh_terms(medline_citation)
-        
+
         # Extract language
         language = self._extract_language(article_data)
-        
+
         # Extract publication types
         publication_types = self._extract_publication_types(article_data)
 
@@ -292,47 +313,47 @@ class SearchMixin:
             "pmc_id": pmc_id,
             "language": language,
             "publication_types": publication_types,
-            **journal_info
+            **journal_info,
         }
 
     def _extract_authors(self, article_data: Dict) -> tuple:
         """Extract author information from article data."""
         authors = []
         authors_full = []
-        
-        if 'AuthorList' in article_data:
-            for author in article_data['AuthorList']:
-                if 'LastName' in author:
-                    last_name = author['LastName']
-                    fore_name = author.get('ForeName', '')
-                    initials = author.get('Initials', '')
-                    
+
+        if "AuthorList" in article_data:
+            for author in article_data["AuthorList"]:
+                if "LastName" in author:
+                    last_name = author["LastName"]
+                    fore_name = author.get("ForeName", "")
+                    initials = author.get("Initials", "")
+
                     # Extract affiliations if available
                     affiliations = []
-                    if 'AffiliationInfo' in author:
-                        for aff_info in author['AffiliationInfo']:
-                            if 'Affiliation' in aff_info:
-                                affiliations.append(aff_info['Affiliation'])
-                    
+                    if "AffiliationInfo" in author:
+                        for aff_info in author["AffiliationInfo"]:
+                            if "Affiliation" in aff_info:
+                                affiliations.append(aff_info["Affiliation"])
+
                     authors.append(f"{last_name} {fore_name}".strip())
                     author_entry = {
                         "last_name": last_name,
                         "fore_name": fore_name,
-                        "initials": initials
+                        "initials": initials,
                     }
                     if affiliations:
                         author_entry["affiliations"] = affiliations
                     authors_full.append(author_entry)
-                elif 'CollectiveName' in author:
-                    authors.append(author['CollectiveName'])
-                    authors_full.append({"collective_name": author['CollectiveName']})
-        
+                elif "CollectiveName" in author:
+                    authors.append(author["CollectiveName"])
+                    authors_full.append({"collective_name": author["CollectiveName"]})
+
         return authors, authors_full
 
     def _extract_abstract(self, article_data: Dict) -> str:
         """Extract abstract text from article data."""
-        if 'Abstract' in article_data and 'AbstractText' in article_data['Abstract']:
-            abstract_parts = article_data['Abstract']['AbstractText']
+        if "Abstract" in article_data and "AbstractText" in article_data["Abstract"]:
+            abstract_parts = article_data["Abstract"]["AbstractText"]
             if isinstance(abstract_parts, list):
                 return " ".join([str(part) for part in abstract_parts])
             return str(abstract_parts)
@@ -340,30 +361,30 @@ class SearchMixin:
 
     def _extract_journal_info(self, article_data: Dict) -> Dict[str, str]:
         """Extract journal information from article data."""
-        journal_data = article_data.get('Journal', {})
-        journal_issue = journal_data.get('JournalIssue', {})
-        pub_date = journal_issue.get('PubDate', {})
-        
-        year = pub_date.get('Year', '')
-        month = pub_date.get('Month', '')
-        day = pub_date.get('Day', '')
-        
-        if not year and 'MedlineDate' in pub_date:
-            year_match = re.search(r'(\d{4})', pub_date['MedlineDate'])
+        journal_data = article_data.get("Journal", {})
+        journal_issue = journal_data.get("JournalIssue", {})
+        pub_date = journal_issue.get("PubDate", {})
+
+        year = pub_date.get("Year", "")
+        month = pub_date.get("Month", "")
+        day = pub_date.get("Day", "")
+
+        if not year and "MedlineDate" in pub_date:
+            year_match = re.search(r"(\d{4})", pub_date["MedlineDate"])
             if year_match:
                 year = year_match.group(1)
-        
-        pagination = article_data.get('Pagination', {})
-        
+
+        pagination = article_data.get("Pagination", {})
+
         # Extract ISSN (electronic preferred, then print)
-        issn = ''
-        if 'ISSN' in journal_data:
-            issn_data = journal_data['ISSN']
+        issn = ""
+        if "ISSN" in journal_data:
+            issn_data = journal_data["ISSN"]
             if isinstance(issn_data, str):
                 issn = issn_data
-            elif hasattr(issn_data, '__str__'):
+            elif hasattr(issn_data, "__str__"):
                 issn = str(issn_data)
-        
+
         # Format publication date
         pub_date_str = ""
         if year:
@@ -372,23 +393,23 @@ class SearchMixin:
                 pub_date_str = f"{year}/{month}"
                 if day:
                     pub_date_str = f"{year}/{month}/{day}"
-        
+
         return {
-            "journal": journal_data.get('Title', 'Unknown Journal'),
-            "journal_abbrev": journal_data.get('ISOAbbreviation', ''),
+            "journal": journal_data.get("Title", "Unknown Journal"),
+            "journal_abbrev": journal_data.get("ISOAbbreviation", ""),
             "issn": issn,
             "year": year,
             "month": month,
             "day": day,
             "pub_date": pub_date_str,
-            "volume": journal_issue.get('Volume', ''),
-            "issue": journal_issue.get('Issue', ''),
-            "pages": pagination.get('MedlinePgn', '')
+            "volume": journal_issue.get("Volume", ""),
+            "issue": journal_issue.get("Issue", ""),
+            "pages": pagination.get("MedlinePgn", ""),
         }
 
     def _extract_language(self, article_data: Dict) -> str:
         """Extract article language from article data."""
-        language = article_data.get('Language', [])
+        language = article_data.get("Language", [])
         if isinstance(language, list) and language:
             return language[0]
         elif isinstance(language, str):
@@ -398,9 +419,9 @@ class SearchMixin:
     def _extract_publication_types(self, article_data: Dict) -> List[str]:
         """Extract publication types from article data."""
         pub_types = []
-        pub_type_list = article_data.get('PublicationTypeList', [])
+        pub_type_list = article_data.get("PublicationTypeList", [])
         for pt in pub_type_list:
-            if hasattr(pt, '__str__'):
+            if hasattr(pt, "__str__"):
                 pub_types.append(str(pt))
             elif isinstance(pt, str):
                 pub_types.append(pt)
@@ -408,66 +429,64 @@ class SearchMixin:
 
     def _extract_identifiers(self, pubmed_data: Dict) -> tuple:
         """Extract DOI and PMC ID from article identifiers."""
-        doi = ''
-        pmc_id = ''
-        
-        article_ids = pubmed_data.get('ArticleIdList', [])
+        doi = ""
+        pmc_id = ""
+
+        article_ids = pubmed_data.get("ArticleIdList", [])
         for aid in article_ids:
-            if hasattr(aid, 'attributes'):
-                if aid.attributes.get('IdType') == 'doi':
+            if hasattr(aid, "attributes"):
+                if aid.attributes.get("IdType") == "doi":
                     doi = str(aid)
-                elif aid.attributes.get('IdType') == 'pmc':
+                elif aid.attributes.get("IdType") == "pmc":
                     pmc_id = str(aid)
-        
+
         return doi, pmc_id
 
     def _extract_keywords(self, medline_citation: Dict) -> List[str]:
         """Extract keywords from MedlineCitation."""
         keywords = []
-        if 'KeywordList' in medline_citation:
-            for kw_list in medline_citation['KeywordList']:
+        if "KeywordList" in medline_citation:
+            for kw_list in medline_citation["KeywordList"]:
                 keywords.extend([str(kw) for kw in kw_list])
         return keywords
 
     def _extract_mesh_terms(self, medline_citation: Dict) -> List[str]:
         """Extract MeSH terms from MedlineCitation."""
         mesh_terms = []
-        if 'MeshHeadingList' in medline_citation:
-            for mesh in medline_citation['MeshHeadingList']:
-                if 'DescriptorName' in mesh:
-                    mesh_terms.append(str(mesh['DescriptorName']))
+        if "MeshHeadingList" in medline_citation:
+            for mesh in medline_citation["MeshHeadingList"]:
+                if "DescriptorName" in mesh:
+                    mesh_terms.append(str(mesh["DescriptorName"]))
         return mesh_terms
 
     def filter_results(
-        self, 
-        results: List[Dict[str, Any]], 
-        min_sample_size: Optional[int] = None
+        self, results: List[Dict[str, Any]], min_sample_size: Optional[int] = None
     ) -> List[Dict[str, Any]]:
         """
         Filter results based on abstract content.
-        
+
         Args:
             results: List of paper details.
             min_sample_size: Minimum number of participants mentioned.
-            
+
         Returns:
             Filtered list of papers meeting the criteria.
         """
         if not min_sample_size:
             return results
-            
+
         filtered = []
         patterns = [
             r"n\s*=\s*(\d+)",
             r"(\d+)\s*patients",
             r"(\d+)\s*participants",
-            r"(\d+)\s*subjects"
+            r"(\d+)\s*subjects",
         ]
-        
+
         for paper in results:
-            abstract = paper.get('abstract', '').lower()
+            abstract = paper.get("abstract", "").lower()
             max_n = 0
-            
+
             for p in patterns:
                 matches = re.findall(p, abstract)
                 for m in matches:
@@ -477,8 +496,8 @@ class SearchMixin:
                             max_n = val
                     except ValueError:
                         pass
-            
+
             if max_n >= min_sample_size:
                 filtered.append(paper)
-                
+
         return filtered

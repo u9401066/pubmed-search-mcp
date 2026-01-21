@@ -60,7 +60,9 @@ from .export import register_export_tools
 from .ncbi_extended import register_ncbi_extended_tools
 from .unified import register_unified_search_tools
 from .citation_tree import register_citation_tree_tools
-from .europe_pmc import register_europe_pmc_tools  # For get_fulltext, get_text_mined_terms
+from .europe_pmc import (
+    register_europe_pmc_tools,
+)  # For get_fulltext, get_text_mined_terms
 from .vision_search import register_vision_tools  # Experimental: image-to-literature
 from .openurl import register_openurl_tools  # Institutional access (OpenURL)
 
@@ -68,63 +70,71 @@ from .openurl import register_openurl_tools  # Institutional access (OpenURL)
 def register_all_tools(mcp: FastMCP, searcher: LiteratureSearcher):
     """
     精簡到 25 個核心工具 (v0.1.25)。
-    
+
     保留的核心功能：
     - unified_search: 主搜索入口（自動多源）
     - get_fulltext: 獲取全文內容
     - get_text_mined_terms: 文本挖掘
     - Session 管理工具
     - OpenURL 機構訂閱連結
-    
+
     已移除重複工具（功能已整合）：
     - 多源搜索工具 → unified_search
     - 擴展/合併工具 → 自動執行
     """
     # 1. Core entry point (1 tool)
     register_unified_search_tools(mcp, searcher)  # unified_search
-    
+
     # 2. Advanced PICO (1 tool)
     register_pico_tools(mcp)  # parse_pico
-    
+
     # 3. Query materials (2 tools)
-    register_strategy_tools(mcp, searcher)  # generate_search_queries, analyze_search_query
-    
+    register_strategy_tools(
+        mcp, searcher
+    )  # generate_search_queries, analyze_search_query
+
     # 4. Article exploration (5 tools)
-    register_discovery_tools(mcp, searcher)  # fetch, find_related/citing/references, metrics
-    
+    register_discovery_tools(
+        mcp, searcher
+    )  # fetch, find_related/citing/references, metrics
+
     # 5. Export & session (1 tool: prepare_export)
     register_export_tools(mcp, searcher)
-    
+
     # 6. Fulltext & text mining (2 tools: get_fulltext, get_text_mined_terms)
     # Note: search_europe_pmc is NOT registered (use unified_search instead)
     register_europe_pmc_tools(mcp)
-    
+
     # 7. NCBI Extended (6 tools)
     register_ncbi_extended_tools(mcp)  # gene, compound, clinvar
-    
+
     # 8. Citation network (2 tools)
-    register_citation_tree_tools(mcp, searcher)  # build_citation_tree, suggest_citation_tree
-    
+    register_citation_tree_tools(
+        mcp, searcher
+    )  # build_citation_tree, suggest_citation_tree
+
     # 9. Vision-based search (2 tools) - Experimental
     register_vision_tools(mcp)  # analyze_figure_for_search, reverse_image_search_pubmed
-    
+
     # 10. Institutional access (3 tools) - OpenURL/Link Resolver
-    register_openurl_tools(mcp)  # configure_institutional_access, get_institutional_link, list_resolver_presets
+    register_openurl_tools(
+        mcp
+    )  # configure_institutional_access, get_institutional_link, list_resolver_presets
 
 
 __all__ = [
-    'register_all_tools',
-    'set_session_manager',
-    'set_strategy_generator',
+    "register_all_tools",
+    "set_session_manager",
+    "set_strategy_generator",
     # For testing/direct use
-    'register_discovery_tools',
-    'register_strategy_tools',
-    'register_pico_tools',
-    'register_export_tools',
-    'register_unified_search_tools',
-    'register_europe_pmc_tools',
-    'register_ncbi_extended_tools',
-    'register_citation_tree_tools',
-    'register_vision_tools',
-    'register_openurl_tools',
+    "register_discovery_tools",
+    "register_strategy_tools",
+    "register_pico_tools",
+    "register_export_tools",
+    "register_unified_search_tools",
+    "register_europe_pmc_tools",
+    "register_ncbi_extended_tools",
+    "register_citation_tree_tools",
+    "register_vision_tools",
+    "register_openurl_tools",
 ]

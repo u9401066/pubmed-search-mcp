@@ -12,16 +12,16 @@ from mcp.server.fastmcp import FastMCP
 
 def register_prompts(mcp: FastMCP) -> None:
     """Register all research prompts with MCP server."""
-    
+
     # =========================================================================
     # 🔍 Search Workflows
     # =========================================================================
-    
+
     @mcp.prompt()
     def quick_search(topic: str) -> str:
         """
         Quick literature search - just find some papers on a topic.
-        
+
         Use when: User says "find papers about...", "search for...", "any articles on..."
         """
         return f"""# Quick Search Workflow
@@ -47,7 +47,7 @@ Found X papers on "{topic}":
     def systematic_search(topic: str) -> str:
         """
         Systematic/comprehensive search using MeSH and synonyms.
-        
+
         Use when: User asks for "systematic search", "comprehensive review",
         "find all papers", or needs thorough coverage.
         """
@@ -95,7 +95,7 @@ Example: "heart attack" → "Myocardial Infarction"[MeSH] → finds all related 
     def pico_search(clinical_question: str) -> str:
         """
         PICO-based clinical question search.
-        
+
         Use when: User asks comparative questions like "Is A better than B?",
         "Does X reduce Y?", "In patients with Z, what is the effect of..."
         """
@@ -160,12 +160,12 @@ Question: "Is remimazolam better than propofol for ICU sedation?"
     # =========================================================================
     # 📚 Deep Exploration Workflows
     # =========================================================================
-    
+
     @mcp.prompt()
     def explore_paper(pmid: str) -> str:
         """
         Deep exploration starting from a key paper.
-        
+
         Use when: User found an important paper and wants to explore the research landscape.
         """
         return f"""# Deep Paper Exploration Workflow
@@ -227,7 +227,7 @@ get_core_fulltext(core_id="...")  # CORE - plain text
     def gene_drug_research(gene_or_drug: str) -> str:
         """
         Research workflow for genes or drugs/compounds.
-        
+
         Use when: User asks about a specific gene (BRCA1, TP53) or drug (propofol, aspirin).
         """
         return f"""# Gene/Drug Research Workflow
@@ -302,12 +302,12 @@ than keyword searches. Use both for comprehensive coverage.
     # =========================================================================
     # 📤 Export & Full Text Workflows
     # =========================================================================
-    
+
     @mcp.prompt()
     def export_results() -> str:
         """
         Export search results to reference manager formats.
-        
+
         Use when: User wants to save, export, or cite the papers found.
         """
         return """# Export Workflow
@@ -360,7 +360,7 @@ get_core_fulltext(core_id="123456789")
     def find_open_access(topic: str) -> str:
         """
         Find open access versions of papers on a topic.
-        
+
         Use when: User needs free full-text access to papers.
         """
         return f"""# Find Open Access Papers Workflow
@@ -413,12 +413,12 @@ get_core_fulltext(core_id="...")
     # =========================================================================
     # 🔬 Advanced Research Workflows
     # =========================================================================
-    
+
     @mcp.prompt()
     def literature_review(topic: str) -> str:
         """
         Comprehensive literature review workflow.
-        
+
         Use when: User needs a thorough literature review for a research topic.
         """
         return f"""# Literature Review Workflow
@@ -504,7 +504,7 @@ prepare_export(pmids="<final_list>", format="ris", include_abstract=True)
     def text_mining_workflow(pmid_or_pmcid: str) -> str:
         """
         Extract structured information from papers using text mining.
-        
+
         Use when: User wants to extract genes, diseases, chemicals mentioned in papers.
         """
         return f"""# Text Mining Workflow

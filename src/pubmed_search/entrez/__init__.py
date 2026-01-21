@@ -14,7 +14,7 @@ Module Structure:
 
 Usage:
     from pubmed_search.entrez import LiteratureSearcher
-    
+
     searcher = LiteratureSearcher(email="your@email.com")
     results = searcher.search("diabetes treatment", limit=10)
 """
@@ -29,36 +29,31 @@ from .icite import ICiteMixin
 
 
 class LiteratureSearcher(
-    SearchMixin,
-    PDFMixin,
-    CitationMixin,
-    BatchMixin,
-    UtilsMixin,
-    ICiteMixin,
-    EntrezBase
+    SearchMixin, PDFMixin, CitationMixin, BatchMixin, UtilsMixin, ICiteMixin, EntrezBase
 ):
     """
     Complete literature search interface combining all Entrez functionality.
-    
+
     This class uses mixins to provide a clean, modular API while maintaining
     backward compatibility with the original LiteratureSearcher interface.
-    
+
     Example:
         >>> searcher = LiteratureSearcher(email="researcher@example.com")
         >>> results = searcher.search("machine learning diagnosis", limit=5)
         >>> for paper in results:
         ...     print(paper['title'])
     """
+
     pass
 
 
 __all__ = [
-    'LiteratureSearcher',
-    'EntrezBase',
-    'SearchStrategy',
-    'SearchMixin',
-    'PDFMixin',
-    'CitationMixin',
-    'BatchMixin',
-    'UtilsMixin',
+    "LiteratureSearcher",
+    "EntrezBase",
+    "SearchStrategy",
+    "SearchMixin",
+    "PDFMixin",
+    "CitationMixin",
+    "BatchMixin",
+    "UtilsMixin",
 ]

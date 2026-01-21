@@ -13,6 +13,7 @@ from .entrez import LiteratureSearcher
 
 class SearchStrategy(Enum):
     """Search strategy options for literature search."""
+
     RECENT = "recent"
     MOST_CITED = "most_cited"
     RELEVANCE = "relevance"
@@ -23,6 +24,7 @@ class SearchStrategy(Enum):
 @dataclass
 class SearchResult:
     """Result from a PubMed search."""
+
     pmid: str
     title: str
     authors: list[str]
@@ -40,13 +42,13 @@ class SearchResult:
     pmc_id: str = ""
     keywords: list[str] | None = None
     mesh_terms: list[str] | None = None
-    
+
     def __post_init__(self):
         if self.keywords is None:
             self.keywords = []
         if self.mesh_terms is None:
             self.mesh_terms = []
-    
+
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Self:
         """Create from dictionary."""
@@ -69,7 +71,7 @@ class SearchResult:
             keywords=data.get("keywords", []),
             mesh_terms=data.get("mesh_terms", []),
         )
-    
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
         return {
@@ -96,31 +98,33 @@ class SearchResult:
 class PubMedClient:
     """
     PubMed API client for literature search.
-    
+
     Wraps the Entrez functionality and provides a clean interface.
-    
+
     Example:
         >>> client = PubMedClient(email="researcher@example.com")
         >>> results = client.search("diabetes treatment", limit=5)
         >>> for article in results:
         ...     print(f"{article.pmid}: {article.title}")
     """
-    
-    def __init__(self, email: str = "your.email@example.com", api_key: str | None = None):
+
+    def __init__(
+        self, email: str = "your.email@example.com", api_key: str | None = None
+    ):
         """
         Initialize PubMed client.
-        
+
         Args:
             email: Email address required by NCBI Entrez API.
             api_key: Optional NCBI API key for higher rate limits.
         """
         self._searcher = LiteratureSearcher(email=email, api_key=api_key)
-    
+
     @property
     def searcher(self) -> LiteratureSearcher:
         """Get the underlying LiteratureSearcher for advanced operations."""
         return self._searcher
-    
+
     def search(
         self,
         query: str,
@@ -135,7 +139,7 @@ class PubMedClient:
     ) -> list[SearchResult]:
         """
         Search PubMed for articles.
-        
+
         Args:
             query: Search query string.
             limit: Maximum number of results.
@@ -146,7 +150,7 @@ class PubMedClient:
             date_from: Precise start date in YYYY/MM/DD format.
             date_to: Precise end date in YYYY/MM/DD format.
             date_type: Date field to search (edat, pdat, mdat).
-            
+
         Returns:
             List of SearchResult objects.
         """
@@ -161,9 +165,9 @@ class PubMedClient:
             date_to=date_to,
             date_type=date_type,
         )
-        
+
         return [SearchResult.from_dict(r) for r in results if "error" not in r]
-    
+
     def search_raw(
         self,
         query: str,
@@ -178,7 +182,7 @@ class PubMedClient:
     ) -> list[dict[str, Any]]:
         """
         Search PubMed and return raw dictionaries.
-        
+
         Same as search() but returns dicts instead of SearchResult objects.
         Useful for JSON serialization.
         """
@@ -193,14 +197,14 @@ class PubMedClient:
             date_to=date_to,
             date_type=date_type,
         )
-    
+
     def fetch_by_pmid(self, pmid: str) -> SearchResult | None:
         """
         Fetch article details by PMID.
-        
+
         Args:
             pmid: PubMed ID.
-            
+
         Returns:
             SearchResult or None if not found.
         """
@@ -208,89 +212,89 @@ class PubMedClient:
         if results and "error" not in results[0]:
             return SearchResult.from_dict(results[0])
         return None
-    
+
     def fetch_by_pmids(self, pmids: list[str]) -> list[SearchResult]:
         """
         Fetch details for multiple PMIDs.
-        
+
         Args:
             pmids: List of PubMed IDs.
-            
+
         Returns:
             List of SearchResult objects.
         """
         results = self._searcher.fetch_details(pmids)
         return [SearchResult.from_dict(r) for r in results if "error" not in r]
-    
+
     def fetch_by_pmids_raw(self, pmids: list[str]) -> list[dict[str, Any]]:
         """
         Fetch details for multiple PMIDs and return raw dictionaries.
         """
         return self._searcher.fetch_details(pmids)
-    
+
     def fetch_details(self, pmids: list[str]) -> list[dict[str, Any]]:
         """
         Fetch details for multiple PMIDs (returns dicts).
-        
+
         Alias for fetch_by_pmids_raw(). This is the recommended method
         for integrations that need dict format (e.g., zotero-keeper).
-        
+
         Args:
             pmids: List of PubMed IDs.
-            
+
         Returns:
             List of article dictionaries.
         """
         return self._searcher.fetch_details(pmids)
-    
+
     def find_related(self, pmid: str, limit: int = 5) -> list[SearchResult]:
         """
         Find related articles.
-        
+
         Args:
             pmid: Source PMID.
             limit: Maximum number of results.
-            
+
         Returns:
             List of related articles.
         """
         results = self._searcher.find_related_articles(pmid, limit=limit)
         return [SearchResult.from_dict(r) for r in results if "error" not in r]
-    
+
     def find_citing(self, pmid: str, limit: int = 10) -> list[SearchResult]:
         """
         Find articles that cite this one.
-        
+
         Args:
             pmid: Source PMID.
             limit: Maximum number of results.
-            
+
         Returns:
             List of citing articles.
         """
         results = self._searcher.find_citing_articles(pmid, limit=limit)
         return [SearchResult.from_dict(r) for r in results if "error" not in r]
-    
+
     def download_pdf(self, pmid: str, output_path: str | None = None) -> bytes | None:
         """
         Download PDF if available from PMC.
-        
+
         Args:
             pmid: PubMed ID.
             output_path: Optional path to save the PDF.
-            
+
         Returns:
             PDF content as bytes or None.
         """
         return self._searcher.download_pdf(pmid, output_path)
-    
+
     def get_pmc_url(self, pmid: str) -> str | None:
         """
         Get PMC full text URL if available.
-        
+
         Args:
             pmid: PubMed ID.
-            
+
         Returns:
             URL to PMC full text, or None.
         """

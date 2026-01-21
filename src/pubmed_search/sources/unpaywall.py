@@ -42,21 +42,21 @@ DEFAULT_EMAIL = "pubmed-search-mcp@example.com"
 class UnpaywallClient:
     """
     Unpaywall API client for finding open access versions of articles.
-    
+
     Usage:
         client = UnpaywallClient(email="your@email.com")
-        
+
         # Check if article has OA version
         oa_info = client.get_oa_status("10.1001/jama.2024.12345")
-        
+
         if oa_info and oa_info["is_oa"]:
             print(f"OA link: {oa_info['best_oa_location']['url']}")
-    
+
     Note:
         Email is required. Unpaywall uses it to track usage and
         contact you if there are issues.
     """
-    
+
     def __init__(
         self,
         email: str | None = None,
@@ -64,7 +64,7 @@ class UnpaywallClient:
     ):
         """
         Initialize Unpaywall client.
-        
+
         Args:
             email: Contact email (required by Unpaywall ToS)
             timeout: Request timeout in seconds
@@ -74,25 +74,25 @@ class UnpaywallClient:
         self._last_request_time = 0.0
         # Rate limit: be polite, max 10 req/sec
         self._min_interval = 0.1
-    
+
     def _rate_limit(self) -> None:
         """Simple rate limiting."""
         elapsed = time.time() - self._last_request_time
         if elapsed < self._min_interval:
             time.sleep(self._min_interval - elapsed)
         self._last_request_time = time.time()
-    
+
     def _make_request(self, url: str) -> dict[str, Any] | None:
         """Make HTTP request to Unpaywall API."""
         self._rate_limit()
-        
+
         headers = {
             "User-Agent": f"pubmed-search-mcp/1.0 (mailto:{self._email})",
             "Accept": "application/json",
         }
-        
+
         request = urllib.request.Request(url, headers=headers)
-        
+
         try:
             with urllib.request.urlopen(request, timeout=self._timeout) as response:
                 return json.loads(response.read().decode("utf-8"))
@@ -112,17 +112,17 @@ class UnpaywallClient:
         except Exception as e:
             logger.error(f"Unpaywall request failed: {e}")
             return None
-    
+
     def get_oa_status(self, doi: str) -> dict[str, Any] | None:
         """
         Get open access status and links for a DOI.
-        
+
         Args:
             doi: DOI string (with or without https://doi.org/ prefix)
-            
+
         Returns:
             OA information dict or None if DOI not found
-            
+
         Example:
             >>> client.get_oa_status("10.1001/jama.2024.12345")
             {
@@ -141,21 +141,21 @@ class UnpaywallClient:
         """
         doi = self._normalize_doi(doi)
         url = f"{UNPAYWALL_API_BASE}/{urllib.parse.quote(doi, safe='')}?email={urllib.parse.quote(self._email)}"
-        
+
         data = self._make_request(url)
         if not data:
             return None
-        
+
         # Normalize response
         return self._normalize_response(data)
-    
+
     def get_best_oa_link(self, doi: str) -> str | None:
         """
         Get the best available OA link for a DOI.
-        
+
         Args:
             doi: DOI string
-            
+
         Returns:
             Best OA URL or None if not available
         """
@@ -165,46 +165,46 @@ class UnpaywallClient:
             if best:
                 return best.get("url") or best.get("url_for_pdf")
         return None
-    
+
     def get_pdf_link(self, doi: str) -> str | None:
         """
         Get direct PDF link if available.
-        
+
         Args:
             doi: DOI string
-            
+
         Returns:
             PDF URL or None
         """
         oa_info = self.get_oa_status(doi)
         if not oa_info or not oa_info.get("is_oa"):
             return None
-        
+
         # Check best location first
         best = oa_info.get("best_oa_location", {})
         if best.get("url_for_pdf"):
             return best["url_for_pdf"]
-        
+
         # Check all locations for PDF
         for loc in oa_info.get("oa_locations", []):
             if loc.get("url_for_pdf"):
                 return loc["url_for_pdf"]
-        
+
         return None
-    
+
     def batch_get_oa_status(
         self,
         dois: list[str],
     ) -> dict[str, dict[str, Any] | None]:
         """
         Get OA status for multiple DOIs.
-        
+
         Note: Makes sequential requests with rate limiting.
         For large batches, consider using Unpaywall's data dump instead.
-        
+
         Args:
             dois: List of DOIs
-            
+
         Returns:
             Dict mapping DOI -> OA info (None if not found)
         """
@@ -212,36 +212,36 @@ class UnpaywallClient:
         for doi in dois:
             results[doi] = self.get_oa_status(doi)
         return results
-    
+
     def enrich_article(
         self,
         doi: str,
     ) -> dict[str, Any]:
         """
         Get OA enrichment data for an article.
-        
+
         Returns structured data suitable for merging with UnifiedArticle.
-        
+
         Args:
             doi: DOI string
-            
+
         Returns:
             Dict with OA fields for article enrichment
         """
         oa_info = self.get_oa_status(doi)
-        
+
         result = {
             "is_oa": False,
             "oa_status": "unknown",
             "oa_links": [],
         }
-        
+
         if not oa_info:
             return result
-        
+
         result["is_oa"] = oa_info.get("is_oa", False)
         result["oa_status"] = oa_info.get("oa_status", "unknown")
-        
+
         # Build OA links list
         for loc in oa_info.get("oa_locations", []):
             link = {
@@ -254,9 +254,9 @@ class UnpaywallClient:
             }
             if link["url"]:
                 result["oa_links"].append(link)
-        
+
         return result
-    
+
     def _normalize_response(self, data: dict[str, Any]) -> dict[str, Any]:
         """Normalize Unpaywall API response."""
         return {
@@ -273,24 +273,24 @@ class UnpaywallClient:
             "is_paratext": data.get("is_paratext", False),
             "updated": data.get("updated"),
         }
-    
+
     @staticmethod
     def _normalize_doi(doi: str) -> str:
         """Normalize DOI string."""
         doi = doi.strip()
         for prefix in ["https://doi.org/", "http://doi.org/", "doi:"]:
             if doi.lower().startswith(prefix.lower()):
-                doi = doi[len(prefix):]
+                doi = doi[len(prefix) :]
         return doi
-    
+
     @staticmethod
     def get_oa_status_description(status: str) -> str:
         """
         Get human-readable description of OA status.
-        
+
         Args:
             status: OA status code (gold, green, hybrid, bronze, closed)
-            
+
         Returns:
             Description string
         """
@@ -318,6 +318,7 @@ def get_unpaywall_client(email: str | None = None) -> UnpaywallClient:
     global _unpaywall_client
     if _unpaywall_client is None:
         import os
+
         _unpaywall_client = UnpaywallClient(
             email=email or os.environ.get("UNPAYWALL_EMAIL")
         )

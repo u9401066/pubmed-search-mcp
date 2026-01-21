@@ -29,7 +29,7 @@ from .links import (
 __all__ = [
     # Format exporters
     "export_ris",
-    "export_bibtex", 
+    "export_bibtex",
     "export_csv",
     "export_medline",
     "export_json",

@@ -31,14 +31,16 @@ from enum import Enum, auto
 
 class ErrorSeverity(Enum):
     """Severity levels for errors."""
-    WARNING = auto()      # Recoverable, can continue
-    ERROR = auto()        # Failed but can retry
-    CRITICAL = auto()     # Cannot continue
-    TRANSIENT = auto()    # Temporary, should retry automatically
+
+    WARNING = auto()  # Recoverable, can continue
+    ERROR = auto()  # Failed but can retry
+    CRITICAL = auto()  # Cannot continue
+    TRANSIENT = auto()  # Temporary, should retry automatically
 
 
 class ErrorCategory(Enum):
     """Categories for error classification."""
+
     API = "api"
     VALIDATION = "validation"
     DATA = "data"
@@ -50,9 +52,10 @@ class ErrorCategory(Enum):
 class ErrorContext:
     """
     Rich context for error messages.
-    
+
     Uses Python 3.10+ slots for memory efficiency.
     """
+
     tool_name: str | None = None
     operation: str | None = None
     input_value: Any = None
@@ -66,16 +69,16 @@ class ErrorContext:
 class PubMedSearchError(Exception):
     """
     Base exception for all PubMed Search errors.
-    
+
     Provides:
     - Structured error context
     - Severity classification
     - Retry guidance
     - Agent-friendly formatting
     """
-    
-    __slots__ = ('context', 'severity', 'category', 'retryable')
-    
+
+    __slots__ = ("context", "severity", "category", "retryable")
+
     def __init__(
         self,
         message: str,
@@ -90,7 +93,7 @@ class PubMedSearchError(Exception):
         self.severity = severity
         self.category = category
         self.retryable = retryable
-    
+
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         result: dict[str, Any] = {
@@ -108,11 +111,11 @@ class PubMedSearchError(Exception):
         if self.context.retry_after:
             result["retry_after_seconds"] = self.context.retry_after
         return result
-    
+
     def to_agent_message(self) -> str:
         """Format for Agent consumption (Markdown)."""
         parts = [f"❌ **Error**: {self}"]
-        
+
         if self.context.suggestion:
             parts.append(f"💡 **Suggestion**: {self.context.suggestion}")
         if self.context.example:
@@ -122,7 +125,7 @@ class PubMedSearchError(Exception):
                 parts.append(f"🔄 Retry after {self.context.retry_after:.1f} seconds")
             else:
                 parts.append("🔄 This error is retryable")
-        
+
         return "\n".join(parts)
 
 
@@ -130,9 +133,10 @@ class PubMedSearchError(Exception):
 # API Errors
 # =============================================================================
 
+
 class APIError(PubMedSearchError):
     """Base class for API-related errors."""
-    
+
     def __init__(
         self,
         message: str,
@@ -151,7 +155,7 @@ class APIError(PubMedSearchError):
 
 class RateLimitError(APIError):
     """Raised when API rate limit is exceeded."""
-    
+
     def __init__(
         self,
         message: str = "API rate limit exceeded",
@@ -177,7 +181,7 @@ class RateLimitError(APIError):
 
 class NetworkError(APIError):
     """Raised for network connectivity issues."""
-    
+
     def __init__(
         self,
         message: str = "Network connection failed",
@@ -189,7 +193,7 @@ class NetworkError(APIError):
 
 class ServiceUnavailableError(APIError):
     """Raised when the external service is temporarily unavailable."""
-    
+
     def __init__(
         self,
         message: str = "Service temporarily unavailable",
@@ -205,9 +209,10 @@ class ServiceUnavailableError(APIError):
 # Validation Errors
 # =============================================================================
 
+
 class ValidationError(PubMedSearchError):
     """Base class for validation errors."""
-    
+
     def __init__(
         self,
         message: str,
@@ -225,7 +230,7 @@ class ValidationError(PubMedSearchError):
 
 class InvalidPMIDError(ValidationError):
     """Raised when PMID format is invalid."""
-    
+
     def __init__(
         self,
         pmid: Any,
@@ -248,7 +253,7 @@ class InvalidPMIDError(ValidationError):
 
 class InvalidQueryError(ValidationError):
     """Raised when search query is invalid."""
-    
+
     def __init__(
         self,
         query: str | None,
@@ -272,7 +277,7 @@ class InvalidQueryError(ValidationError):
 
 class InvalidParameterError(ValidationError):
     """Raised when a parameter value is invalid."""
-    
+
     def __init__(
         self,
         param_name: str,
@@ -294,7 +299,7 @@ class InvalidParameterError(ValidationError):
         )
         super().__init__(
             f"Invalid parameter '{param_name}': {value!r} (expected {expected})",
-            context=ctx
+            context=ctx,
         )
 
 
@@ -302,9 +307,10 @@ class InvalidParameterError(ValidationError):
 # Data Errors
 # =============================================================================
 
+
 class DataError(PubMedSearchError):
     """Base class for data-related errors."""
-    
+
     def __init__(
         self,
         message: str,
@@ -322,7 +328,7 @@ class DataError(PubMedSearchError):
 
 class NotFoundError(DataError):
     """Raised when requested data is not found."""
-    
+
     def __init__(
         self,
         resource: str,
@@ -333,7 +339,7 @@ class NotFoundError(DataError):
         msg = f"{resource} not found"
         if identifier:
             msg = f"{resource} not found: {identifier}"
-        
+
         ctx = context or ErrorContext()
         ctx = ErrorContext(
             tool_name=ctx.tool_name,
@@ -350,7 +356,7 @@ class NotFoundError(DataError):
 
 class ParseError(DataError):
     """Raised when data parsing fails."""
-    
+
     def __init__(
         self,
         message: str,
@@ -368,9 +374,10 @@ class ParseError(DataError):
 # Configuration Errors
 # =============================================================================
 
+
 class ConfigurationError(PubMedSearchError):
     """Raised for configuration-related errors."""
-    
+
     def __init__(
         self,
         message: str,
@@ -390,15 +397,16 @@ class ConfigurationError(PubMedSearchError):
 # Multi-Error Handling (Python 3.11+ ExceptionGroup)
 # =============================================================================
 
+
 def create_error_group(
     message: str,
     errors: list[Exception],
 ) -> ExceptionGroup[Exception]:
     """
     Create an ExceptionGroup from multiple errors.
-    
+
     Python 3.11+ feature for handling multiple concurrent errors.
-    
+
     Example:
         try:
             async with asyncio.TaskGroup() as tg:
@@ -416,7 +424,7 @@ def is_retryable_error(error: Exception) -> bool:
     """Check if an error should be retried."""
     if isinstance(error, PubMedSearchError):
         return error.retryable
-    
+
     # Check for common transient error messages
     error_str = str(error).lower()
     transient_patterns = [
@@ -435,24 +443,25 @@ def is_retryable_error(error: Exception) -> bool:
 def get_retry_delay(error: Exception, attempt: int) -> float:
     """
     Calculate retry delay with exponential backoff.
-    
+
     Args:
         error: The exception that occurred
         attempt: Current attempt number (0-based)
-    
+
     Returns:
         Delay in seconds before next retry
     """
     base_delay = 1.0
-    
+
     # Check for specific retry-after in error
     if isinstance(error, PubMedSearchError) and error.context.retry_after:
         base_delay = error.context.retry_after
-    
+
     # Exponential backoff with jitter
     import random
-    delay = base_delay * (2 ** attempt)
+
+    delay = base_delay * (2**attempt)
     jitter = random.uniform(0, 0.1 * delay)
-    
+
     # Cap at 30 seconds
     return min(delay + jitter, 30.0)

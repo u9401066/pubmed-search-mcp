@@ -19,31 +19,31 @@ logger = logging.getLogger(__name__)
 
 def register_merge_tools(mcp: FastMCP, searcher: LiteratureSearcher):
     """Register result merging tools."""
-    
+
     @mcp.tool()
     def merge_search_results(results_json: str) -> str:
         """
         Merge multiple search results and remove duplicates.
-        
+
         After running search_literature calls in parallel, use this to combine results.
-        
+
         Accepts TWO formats:
-        
+
         Format 1 (Simple - just PMIDs):
         [
             ["12345", "67890"],
             ["67890", "11111", "22222"]
         ]
-        
+
         Format 2 (With query IDs):
         [
             {"query_id": "q1_title", "pmids": ["12345", "67890"]},
             {"query_id": "q2_tiab", "pmids": ["67890", "11111"]}
         ]
-        
+
         Args:
             results_json: JSON array of search results (see formats above)
-                
+
         Returns:
             Merged results with:
             - unique_pmids: Deduplicated list
@@ -51,15 +51,15 @@ def register_merge_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             - statistics: Counts and duplicates removed
         """
         logger.info("Merging search results")
-        
+
         if not results_json or not results_json.strip():
             return ResponseFormatter.error(
                 "Empty results_json",
                 suggestion="Provide JSON array of search results to merge",
                 example='merge_search_results(results_json=\'[["12345", "67890"], ["67890", "11111"]]\')',
-                tool_name="merge_search_results"
+                tool_name="merge_search_results",
             )
-        
+
         try:
             results = json.loads(results_json)
         except json.JSONDecodeError as e:
@@ -67,28 +67,28 @@ def register_merge_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 f"Invalid JSON format: {e}",
                 suggestion="Ensure results_json is valid JSON array",
                 example='[["12345", "67890"], ["67890", "11111"]]',
-                tool_name="merge_search_results"
+                tool_name="merge_search_results",
             )
-        
+
         pmid_sources: Dict[str, List[str]] = {}
         all_pmids: List[str] = []
         by_query: Dict[str, int] = {}
-        
+
         for i, result in enumerate(results):
             # Support both formats
             if isinstance(result, list):
                 # Format 1: Simple list of PMIDs
-                query_id = f"search_{i+1}"
+                query_id = f"search_{i + 1}"
                 pmids = result
             elif isinstance(result, dict):
                 # Format 2: With query_id
-                query_id = result.get("query_id", f"search_{i+1}")
+                query_id = result.get("query_id", f"search_{i + 1}")
                 pmids = result.get("pmids", [])
             else:
                 continue
-            
+
             by_query[query_id] = len(pmids)
-            
+
             for pmid in pmids:
                 pmid = str(pmid).strip()
                 if not pmid:
@@ -97,13 +97,17 @@ def register_merge_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                     pmid_sources[pmid] = []
                     all_pmids.append(pmid)
                 pmid_sources[pmid].append(query_id)
-        
+
         # Find PMIDs that appeared in multiple searches (higher relevance)
-        high_relevance = [pmid for pmid, sources in pmid_sources.items() if len(sources) > 1]
-        
+        high_relevance = [
+            pmid for pmid, sources in pmid_sources.items() if len(sources) > 1
+        ]
+
         # Sort: high relevance first, then others
-        sorted_pmids = high_relevance + [p for p in all_pmids if p not in high_relevance]
-        
+        sorted_pmids = high_relevance + [
+            p for p in all_pmids if p not in high_relevance
+        ]
+
         output = {
             "total_unique": len(all_pmids),
             "total_before_dedup": sum(by_query.values()),
@@ -111,12 +115,12 @@ def register_merge_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             "high_relevance": {
                 "count": len(high_relevance),
                 "pmids": high_relevance[:20],
-                "note": "Found by multiple search strategies - likely more relevant"
+                "note": "Found by multiple search strategies - likely more relevant",
             },
             "by_source": by_query,
             "unique_pmids": sorted_pmids,
             "pmids_csv": ",".join(sorted_pmids[:50]),
-            "next_step": f"fetch_article_details(pmids=\"{','.join(sorted_pmids[:20])}\")"
+            "next_step": f'fetch_article_details(pmids="{",".join(sorted_pmids[:20])}")',
         }
-        
+
         return json.dumps(output, indent=2, ensure_ascii=False)

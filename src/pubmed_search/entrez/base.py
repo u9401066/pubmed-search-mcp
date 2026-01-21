@@ -13,6 +13,7 @@ from typing import Optional
 
 class SearchStrategy(Enum):
     """Search strategy options for literature search."""
+
     RECENT = "recent"
     MOST_CITED = "most_cited"
     RELEVANCE = "relevance"
@@ -38,47 +39,49 @@ def _rate_limit():
 class EntrezBase:
     """
     Base class for Entrez API interactions.
-    
+
     Handles configuration and provides shared utilities for all Entrez operations.
-    
+
     Attributes:
         email: Email address required by NCBI Entrez API.
         api_key: Optional NCBI API key for higher rate limits.
     """
-    
-    def __init__(self, email: str = "your.email@example.com", api_key: Optional[str] = None):
+
+    def __init__(
+        self, email: str = "your.email@example.com", api_key: Optional[str] = None
+    ):
         """
         Initialize Entrez configuration.
-        
+
         Args:
             email: Email address required by NCBI Entrez API.
             api_key: Optional NCBI API key for higher rate limits (10/sec vs 3/sec).
         """
         global _min_request_interval
-        
+
         Entrez.email = email
         if api_key:
             Entrez.api_key = api_key
             _min_request_interval = 0.1  # 10 requests/second with API key
         else:
             _min_request_interval = 0.34  # ~3 requests/second without API key
-            
+
         Entrez.max_tries = 3
         Entrez.sleep_between_tries = 15
-        
+
         self._email = email
         self._api_key = api_key
-    
+
     def _rate_limited_call(self, func, *args, **kwargs):
         """Execute a function with rate limiting."""
         _rate_limit()
         return func(*args, **kwargs)
-    
+
     @property
     def email(self) -> str:
         """Get configured email."""
         return self._email
-    
+
     @property
     def api_key(self) -> Optional[str]:
         """Get configured API key."""

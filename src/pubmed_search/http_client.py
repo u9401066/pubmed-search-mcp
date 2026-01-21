@@ -9,10 +9,10 @@ This module provides a centralized HTTP client that:
 
 Usage:
     from pubmed_search.http_client import http_get, http_post, configure_proxy
-    
+
     # Configure proxy (optional)
     configure_proxy("http://proxy:8080")
-    
+
     # Make requests
     response = http_get("https://api.example.com/data")
 """
@@ -46,29 +46,27 @@ def configure_proxy(
 ) -> None:
     """
     Configure HTTP/HTTPS proxy settings.
-    
+
     Args:
         http_proxy: HTTP proxy URL (e.g., "http://proxy:8080")
         https_proxy: HTTPS proxy URL (e.g., "https://proxy:8080")
-        
+
     Also reads from environment variables:
         - HTTP_PROXY / http_proxy
         - HTTPS_PROXY / https_proxy
     """
     # Priority: explicit args > environment variables
     _config["http_proxy"] = (
-        http_proxy 
-        or os.environ.get("HTTP_PROXY") 
-        or os.environ.get("http_proxy")
+        http_proxy or os.environ.get("HTTP_PROXY") or os.environ.get("http_proxy")
     )
     _config["https_proxy"] = (
-        https_proxy 
-        or os.environ.get("HTTPS_PROXY") 
-        or os.environ.get("https_proxy")
+        https_proxy or os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
     )
-    
+
     if _config["http_proxy"] or _config["https_proxy"]:
-        logger.info(f"Proxy configured: HTTP={_config['http_proxy']}, HTTPS={_config['https_proxy']}")
+        logger.info(
+            f"Proxy configured: HTTP={_config['http_proxy']}, HTTPS={_config['https_proxy']}"
+        )
 
 
 def configure_client(
@@ -78,7 +76,7 @@ def configure_client(
 ) -> None:
     """
     Configure HTTP client settings.
-    
+
     Args:
         timeout: Request timeout in seconds
         user_agent: User-Agent header value
@@ -95,7 +93,7 @@ def configure_client(
 def get_proxy_status() -> dict[str, str | None]:
     """
     Get current proxy configuration status.
-    
+
     Returns:
         Dict with http_proxy and https_proxy values
     """
@@ -114,14 +112,14 @@ def _get_domain(url: str) -> str:
 def _rate_limit(domain: str, min_interval: float = 0.5) -> None:
     """
     Apply rate limiting for a domain.
-    
+
     Args:
         domain: The domain to rate limit
         min_interval: Minimum seconds between requests
     """
     if domain not in _rate_limits:
         _rate_limits[domain] = {"last_request": 0, "interval": min_interval}
-    
+
     state = _rate_limits[domain]
     elapsed = time.time() - state["last_request"]
     if elapsed < state["interval"]:
@@ -132,7 +130,7 @@ def _rate_limit(domain: str, min_interval: float = 0.5) -> None:
 def set_rate_limit(domain: str, min_interval: float) -> None:
     """
     Set rate limit for a specific domain.
-    
+
     Args:
         domain: The domain (e.g., "api.semanticscholar.org")
         min_interval: Minimum seconds between requests
@@ -146,17 +144,17 @@ def set_rate_limit(domain: str, min_interval: float) -> None:
 def _build_opener() -> urllib.request.OpenerDirector:
     """Build URL opener with proxy support."""
     handlers = []
-    
+
     proxy_dict = {}
     if _config["http_proxy"]:
         proxy_dict["http"] = _config["http_proxy"]
     if _config["https_proxy"]:
         proxy_dict["https"] = _config["https_proxy"]
-    
+
     if proxy_dict:
         proxy_handler = urllib.request.ProxyHandler(proxy_dict)
         handlers.append(proxy_handler)
-    
+
     return urllib.request.build_opener(*handlers)
 
 
@@ -169,35 +167,37 @@ def http_get(
 ) -> dict | str | None:
     """
     Make HTTP GET request with proxy support.
-    
+
     Args:
         url: The URL to request
         headers: Additional headers
         expect_json: Parse response as JSON
         rate_limit_interval: Minimum seconds between requests to same domain
         timeout: Request timeout (uses global default if None)
-        
+
     Returns:
         Parsed JSON dict, response string, or None on error
     """
     domain = _get_domain(url)
     _rate_limit(domain, rate_limit_interval)
-    
+
     # Build request
     request = urllib.request.Request(url)
-    request.add_header("User-Agent", f"{_config['user_agent']} (mailto:{_config['contact_email']})")
-    
+    request.add_header(
+        "User-Agent", f"{_config['user_agent']} (mailto:{_config['contact_email']})"
+    )
+
     if expect_json:
         request.add_header("Accept", "application/json")
-    
+
     if headers:
         for key, value in headers.items():
             request.add_header(key, value)
-    
+
     # Make request with opener
     opener = _build_opener()
     request_timeout = timeout or _config["timeout"]
-    
+
     try:
         with opener.open(request, timeout=request_timeout) as response:
             content = response.read().decode("utf-8")
@@ -229,7 +229,7 @@ def http_post(
 ) -> dict | str | None:
     """
     Make HTTP POST request with proxy support.
-    
+
     Args:
         url: The URL to request
         data: Form data (application/x-www-form-urlencoded)
@@ -238,13 +238,13 @@ def http_post(
         expect_json: Parse response as JSON
         rate_limit_interval: Minimum seconds between requests
         timeout: Request timeout
-        
+
     Returns:
         Parsed JSON dict, response string, or None on error
     """
     domain = _get_domain(url)
     _rate_limit(domain, rate_limit_interval)
-    
+
     # Build request
     if json_data:
         encoded_data = json.dumps(json_data).encode("utf-8")
@@ -255,24 +255,26 @@ def http_post(
     else:
         encoded_data = None
         content_type = None
-    
+
     request = urllib.request.Request(url, data=encoded_data, method="POST")
-    request.add_header("User-Agent", f"{_config['user_agent']} (mailto:{_config['contact_email']})")
-    
+    request.add_header(
+        "User-Agent", f"{_config['user_agent']} (mailto:{_config['contact_email']})"
+    )
+
     if content_type:
         request.add_header("Content-Type", content_type)
-    
+
     if expect_json:
         request.add_header("Accept", "application/json")
-    
+
     if headers:
         for key, value in headers.items():
             request.add_header(key, value)
-    
+
     # Make request with opener
     opener = _build_opener()
     request_timeout = timeout or _config["timeout"]
-    
+
     try:
         with opener.open(request, timeout=request_timeout) as response:
             content = response.read().decode("utf-8")

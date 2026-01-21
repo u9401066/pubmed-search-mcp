@@ -5,7 +5,7 @@ This module provides a Model Context Protocol (MCP) server for PubMed search.
 
 Usage as standalone server:
     python -m pubmed_search.mcp
-    
+
 Or in mcp.json:
     {
         "servers": {
@@ -19,11 +19,11 @@ Or in mcp.json:
 
 Usage for integration:
     from pubmed_search.mcp import create_server, register_all_tools
-    
+
     # Option 1: Create standalone server
     server = create_server(email="your@email.com")
     server.run()
-    
+
     # Option 2: Register tools to existing server
     from pubmed_search import LiteratureSearcher
     searcher = LiteratureSearcher(email="your@email.com")

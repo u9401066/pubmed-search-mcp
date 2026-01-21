@@ -6,10 +6,10 @@ Designed to be used as a submodule in other projects.
 
 Usage:
     from pubmed_search import PubMedClient, SearchResult
-    
+
     client = PubMedClient(email="your@email.com")
     results = client.search("diabetes treatment", limit=10)
-    
+
     for article in results:
         print(f"{article.pmid}: {article.title}")
 
@@ -39,7 +39,7 @@ __version__ = "0.1.5"
 __all__ = [
     # High-level API
     "PubMedClient",
-    "SearchResult", 
+    "SearchResult",
     "SearchStrategy",
     # Low-level Entrez API
     "LiteratureSearcher",
