@@ -159,7 +159,7 @@ class TestCommonRemainingPaths:
     
     def test_format_results_with_doi(self):
         """Test formatting with DOI."""
-        from pubmed_search.mcp.tools._common import format_search_results
+        from pubmed_search.mcp_server.tools._common import format_search_results
         
         results = [
             {
@@ -323,7 +323,7 @@ class TestMergeRemainingPaths:
     
     def test_merge_tools_register(self):
         """Test merge tools registration."""
-        from pubmed_search.mcp.tools.merge import register_merge_tools
+        from pubmed_search.mcp_server.tools.merge import register_merge_tools
         from pubmed_search.client import LiteratureSearcher
         
         mock_mcp = Mock()
@@ -340,7 +340,7 @@ class TestServerRemainingPaths:
     
     def test_server_default_data_dir(self):
         """Test server default data directory."""
-        from pubmed_search.mcp.server import DEFAULT_DATA_DIR
+        from pubmed_search.mcp_server.server import DEFAULT_DATA_DIR
         
         assert "pubmed" in DEFAULT_DATA_DIR.lower() or ".pubmed" in DEFAULT_DATA_DIR
 

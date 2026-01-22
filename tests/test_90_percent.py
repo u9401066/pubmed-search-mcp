@@ -66,7 +66,7 @@ class TestSessionToolsMissingLines:
     
     def test_register_session_tools_passes(self):
         """Test session tools registration just passes (no tools)."""
-        from pubmed_search.mcp.session_tools import register_session_tools
+        from pubmed_search.mcp_server.session_tools import register_session_tools
         from pubmed_search.session import SessionManager
         
         mock_mcp = Mock()
@@ -80,7 +80,7 @@ class TestSessionToolsMissingLines:
     
     def test_register_session_resources(self):
         """Test session resources registration."""
-        from pubmed_search.mcp.session_tools import register_session_resources
+        from pubmed_search.mcp_server.session_tools import register_session_resources
         from pubmed_search.session import SessionManager
         
         mock_mcp = Mock()
@@ -100,7 +100,7 @@ class TestCommonMissingLines:
     
     def test_format_results_empty(self):
         """Test formatting empty results."""
-        from pubmed_search.mcp.tools._common import format_search_results
+        from pubmed_search.mcp_server.tools._common import format_search_results
         
         result = format_search_results([])
         assert "No results" in result or result == ""
@@ -135,7 +135,7 @@ class TestExportToolsMissingLines:
     
     def test_register_export_tools(self):
         """Test export tools registration."""
-        from pubmed_search.mcp.tools.export import register_export_tools
+        from pubmed_search.mcp_server.tools.export import register_export_tools
         from pubmed_search.client import LiteratureSearcher
         
         mock_mcp = Mock()
@@ -155,7 +155,7 @@ class TestStrategyMissingLines:
     
     def test_register_strategy_tools(self):
         """Test strategy tools registration."""
-        from pubmed_search.mcp.tools.strategy import register_strategy_tools
+        from pubmed_search.mcp_server.tools.strategy import register_strategy_tools
         from pubmed_search.client import LiteratureSearcher
         
         mock_mcp = Mock()
@@ -176,7 +176,7 @@ class TestMainModule:
     def test_main_module_import(self):
         """Test main module can be imported."""
         # Import the module - that's enough
-        from pubmed_search.mcp import __main__ as main_module
+        from pubmed_search.mcp_server import __main__ as main_module
         # Module exists and can be imported
         assert main_module is not None
 
@@ -378,7 +378,7 @@ class TestMergeToolsMissingLines:
     
     def test_register_merge_tools(self):
         """Test merge tools registration."""
-        from pubmed_search.mcp.tools.merge import register_merge_tools
+        from pubmed_search.mcp_server.tools.merge import register_merge_tools
         from pubmed_search.client import LiteratureSearcher
         
         mock_mcp = Mock()

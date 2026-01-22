@@ -30,7 +30,7 @@ import sys
 # Add src to path for development
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
-from pubmed_search.mcp.server import create_server
+from pubmed_search.mcp_server.server import create_server
 
 # Configure logging
 logging.basicConfig(

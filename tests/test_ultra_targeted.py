@@ -74,7 +74,7 @@ class TestDiscoveryCacheHit:
     
     def test_discovery_with_cache_hint(self):
         """Test discovery returns cache hint."""
-        from pubmed_search.mcp.tools._common import format_search_results
+        from pubmed_search.mcp_server.tools._common import format_search_results
         
         articles = [
             {"pmid": "123", "title": "Test", "authors": ["A"], "year": "2024", "journal": "J", "abstract": ""}
@@ -91,7 +91,7 @@ class TestServerRegisterTools:
     
     def test_register_all_tools(self):
         """Test registering all tools."""
-        from pubmed_search.mcp.tools import register_all_tools
+        from pubmed_search.mcp_server.tools import register_all_tools
         from pubmed_search.client import LiteratureSearcher
         
         mock_mcp = Mock()
@@ -108,11 +108,11 @@ class TestCommonCheckCache:
     
     def test_check_cache_function(self):
         """Test check_cache when available."""
-        from pubmed_search.mcp.tools import _common
+        from pubmed_search.mcp_server.tools import _common
         
         # Check if check_cache exists
         if hasattr(_common, 'check_cache'):
-            from pubmed_search.mcp.tools._common import check_cache, set_session_manager
+            from pubmed_search.mcp_server.tools._common import check_cache, set_session_manager
             
             set_session_manager(None)
             result = check_cache("test", 5)
@@ -187,7 +187,7 @@ class TestExportWithLargeFile:
     
     def test_export_file_path_creation(self):
         """Test export file path creation."""
-        from pubmed_search.mcp.tools.export import _save_export_file
+        from pubmed_search.mcp_server.tools.export import _save_export_file
         import os
         
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -318,7 +318,7 @@ class TestPicoExtraction:
     
     def test_pico_module_callable(self):
         """Test PICO module is callable."""
-        from pubmed_search.mcp.tools.pico import register_pico_tools
+        from pubmed_search.mcp_server.tools.pico import register_pico_tools
         
         mock_mcp = Mock()
         mock_mcp.tool = Mock(return_value=lambda f: f)

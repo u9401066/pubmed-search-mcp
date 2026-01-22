@@ -211,7 +211,7 @@ class TestDiscoveryToolEdgeCases:
     
     def test_discovery_tool_format(self):
         """Test discovery tool result formatting."""
-        from pubmed_search.mcp.tools._common import format_search_results
+        from pubmed_search.mcp_server.tools._common import format_search_results
         
         results = [
             {
@@ -243,7 +243,7 @@ class TestSessionToolsInternals:
     
     def test_session_tools_module(self):
         """Test session_tools module contents."""
-        from pubmed_search.mcp import session_tools
+        from pubmed_search.mcp_server import session_tools
         
         # Check module has expected functions
         assert hasattr(session_tools, 'register_session_tools')
@@ -255,7 +255,7 @@ class TestPicoElementExtraction:
     
     def test_pico_parse_question(self):
         """Test PICO parsing of clinical question."""
-        from pubmed_search.mcp.tools.pico import register_pico_tools
+        from pubmed_search.mcp_server.tools.pico import register_pico_tools
         
         # Just verify the module works
         assert callable(register_pico_tools)

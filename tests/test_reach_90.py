@@ -211,7 +211,7 @@ class TestSessionToolsResourceFunction:
     
     def test_session_resources_get_context_with_session(self):
         """Test get_research_context resource with active session."""
-        from pubmed_search.mcp.session_tools import register_session_resources
+        from pubmed_search.mcp_server.session_tools import register_session_resources
         from pubmed_search.session import SessionManager
         
         mock_mcp = Mock()
@@ -246,7 +246,7 @@ class TestSessionToolsResourceFunction:
     
     def test_session_resources_get_context_no_session(self):
         """Test get_research_context resource with no session."""
-        from pubmed_search.mcp.session_tools import register_session_resources
+        from pubmed_search.mcp_server.session_tools import register_session_resources
         from pubmed_search.session import SessionManager
         
         mock_mcp = Mock()
@@ -280,7 +280,7 @@ class TestServerMainLines:
     
     def test_server_instructions_content(self):
         """Test SERVER_INSTRUCTIONS has correct content."""
-        from pubmed_search.mcp.server import SERVER_INSTRUCTIONS
+        from pubmed_search.mcp_server.server import SERVER_INSTRUCTIONS
         
         # Should contain key workflow information
         assert "PubMed" in SERVER_INSTRUCTIONS
@@ -288,7 +288,7 @@ class TestServerMainLines:
     
     def test_default_data_dir_value(self):
         """Test DEFAULT_DATA_DIR is properly set."""
-        from pubmed_search.mcp.server import DEFAULT_DATA_DIR
+        from pubmed_search.mcp_server.server import DEFAULT_DATA_DIR
         
         # Should be a string path
         assert isinstance(DEFAULT_DATA_DIR, str)
@@ -300,14 +300,14 @@ class TestCommonToolsLines:
     
     def test_format_search_results_no_results(self):
         """Test format_search_results with empty list."""
-        from pubmed_search.mcp.tools._common import format_search_results
+        from pubmed_search.mcp_server.tools._common import format_search_results
         
         result = format_search_results([])
         assert "No results" in result or result.strip() == ""
     
     def test_format_search_results_with_articles(self):
         """Test format_search_results with articles."""
-        from pubmed_search.mcp.tools._common import format_search_results
+        from pubmed_search.mcp_server.tools._common import format_search_results
         
         articles = [
             {

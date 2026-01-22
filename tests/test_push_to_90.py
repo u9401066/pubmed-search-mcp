@@ -155,7 +155,7 @@ class TestServerMainPath:
     def test_main_with_env_vars(self):
         """Test main gets email from env."""
         import os
-        from pubmed_search.mcp import server
+        from pubmed_search.mcp_server import server
         
         # Verify main function exists
         assert hasattr(server, 'main')
@@ -167,7 +167,7 @@ class TestCommonCachePaths:
     
     def test_cache_results_no_manager(self):
         """Test caching when no session manager."""
-        from pubmed_search.mcp.tools._common import _cache_results, set_session_manager
+        from pubmed_search.mcp_server.tools._common import _cache_results, set_session_manager
         
         set_session_manager(None)
         
@@ -176,7 +176,7 @@ class TestCommonCachePaths:
     
     def test_record_search_no_manager(self):
         """Test recording search when no session manager."""
-        from pubmed_search.mcp.tools._common import _record_search_only, set_session_manager
+        from pubmed_search.mcp_server.tools._common import _record_search_only, set_session_manager
         
         set_session_manager(None)
         
@@ -189,8 +189,8 @@ class TestExportHelperFunctions:
     
     def test_resolve_pmids_with_large_list(self):
         """Test resolving large PMID list truncation."""
-        from pubmed_search.mcp.tools.export import _resolve_pmids
-        from pubmed_search.mcp.tools._common import set_session_manager
+        from pubmed_search.mcp_server.tools.export import _resolve_pmids
+        from pubmed_search.mcp_server.tools._common import set_session_manager
         
         # Create large list > 100
         large_pmid_list = [str(i) for i in range(150)]
@@ -201,7 +201,7 @@ class TestExportHelperFunctions:
     
     def test_get_file_extension_unknown(self):
         """Test file extension for unknown format."""
-        from pubmed_search.mcp.tools.export import _get_file_extension
+        from pubmed_search.mcp_server.tools.export import _get_file_extension
         
         result = _get_file_extension("unknown_format")
         
@@ -214,7 +214,7 @@ class TestDiscoveryErrorPaths:
     
     def test_discovery_module_imports(self):
         """Test discovery module imports correctly."""
-        from pubmed_search.mcp.tools.discovery import register_discovery_tools
+        from pubmed_search.mcp_server.tools.discovery import register_discovery_tools
         
         assert callable(register_discovery_tools)
 
@@ -246,7 +246,7 @@ class TestSessionToolsRegister:
     
     def test_register_session_tools(self):
         """Test session tools registration."""
-        from pubmed_search.mcp.session_tools import register_session_tools
+        from pubmed_search.mcp_server.session_tools import register_session_tools
         from pubmed_search.session import SessionManager
         import tempfile
         
@@ -261,7 +261,7 @@ class TestSessionToolsRegister:
     
     def test_register_session_resources(self):
         """Test session resources registration."""
-        from pubmed_search.mcp.session_tools import register_session_resources
+        from pubmed_search.mcp_server.session_tools import register_session_resources
         from pubmed_search.session import SessionManager
         import tempfile
         
@@ -280,7 +280,7 @@ class TestMergeModulePaths:
     
     def test_merge_tool_register(self):
         """Test merge tools registration."""
-        from pubmed_search.mcp.tools.merge import register_merge_tools
+        from pubmed_search.mcp_server.tools.merge import register_merge_tools
         
         assert callable(register_merge_tools)
 
@@ -290,7 +290,7 @@ class TestPicoModulePaths:
     
     def test_pico_register(self):
         """Test pico tools registration."""
-        from pubmed_search.mcp.tools.pico import register_pico_tools
+        from pubmed_search.mcp_server.tools.pico import register_pico_tools
         
         assert callable(register_pico_tools)
 
@@ -300,7 +300,7 @@ class TestStrategyToolPaths:
     
     def test_strategy_tool_register(self):
         """Test strategy tools registration."""
-        from pubmed_search.mcp.tools.strategy import register_strategy_tools
+        from pubmed_search.mcp_server.tools.strategy import register_strategy_tools
         
         assert callable(register_strategy_tools)
 

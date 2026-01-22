@@ -12,7 +12,7 @@ class TestMCPServerInit:
     
     def test_server_module_imports(self):
         """Test that server module can be imported."""
-        from pubmed_search.mcp import server
+        from pubmed_search.mcp_server import server
         assert server is not None
     
     def test_literature_searcher_creation(self):
@@ -42,12 +42,12 @@ class TestSessionTools:
     
     def test_session_tools_module_imports(self):
         """Test that session_tools module can be imported."""
-        from pubmed_search.mcp import session_tools
+        from pubmed_search.mcp_server import session_tools
         assert session_tools is not None
     
     def test_register_session_tools(self):
         """Test registering session tools."""
-        from pubmed_search.mcp.session_tools import register_session_tools
+        from pubmed_search.mcp_server.session_tools import register_session_tools
         
         mcp = MagicMock()
         mcp.tool = lambda: lambda f: f
@@ -63,7 +63,7 @@ class TestToolRegistration:
     
     def test_all_tools_registered(self):
         """Test that all tools are registered."""
-        from pubmed_search.mcp.tools import (
+        from pubmed_search.mcp_server.tools import (
             register_discovery_tools,
             register_strategy_tools,
             register_pico_tools,
@@ -87,7 +87,7 @@ class TestToolRegistration:
     
     def test_register_all_tools_function(self):
         """Test register_all_tools aggregator function."""
-        from pubmed_search.mcp.tools import register_all_tools
+        from pubmed_search.mcp_server.tools import register_all_tools
         
         mcp = MagicMock()
         mcp.tool = lambda: lambda f: f
@@ -120,7 +120,7 @@ class TestToolsInit:
     
     def test_tools_init_exports(self):
         """Test that tools __init__ exports expected functions."""
-        from pubmed_search.mcp import tools
+        from pubmed_search.mcp_server import tools
         
         assert hasattr(tools, 'register_all_tools')
         assert hasattr(tools, 'set_session_manager')

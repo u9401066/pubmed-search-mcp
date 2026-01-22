@@ -18,7 +18,7 @@ Or in mcp.json:
     }
 
 Usage for integration:
-    from pubmed_search.mcp import create_server, register_all_tools
+    from pubmed_search.mcp_server import create_server, register_all_tools
 
     # Option 1: Create standalone server
     server = create_server(email="your@email.com")

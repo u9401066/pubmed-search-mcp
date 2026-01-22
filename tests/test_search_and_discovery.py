@@ -91,7 +91,7 @@ class TestDiscoveryToolsComplete:
     @pytest.fixture
     def registered_tools(self):
         """Register discovery tools and capture them."""
-        from pubmed_search.mcp.tools.discovery import register_discovery_tools
+        from pubmed_search.mcp_server.tools.discovery import register_discovery_tools
         
         mcp = MagicMock()
         searcher = MagicMock()
@@ -295,7 +295,7 @@ class TestExportToolsFunctions:
     @pytest.fixture
     def registered_export_tools(self):
         """Register export tools and capture them."""
-        from pubmed_search.mcp.tools.export import register_export_tools
+        from pubmed_search.mcp_server.tools.export import register_export_tools
         
         mcp = MagicMock()
         searcher = MagicMock()

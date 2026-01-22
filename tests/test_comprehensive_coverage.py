@@ -152,7 +152,7 @@ class TestServerCreateServer:
     
     def test_create_server_basic(self):
         """Test creating server with basic parameters."""
-        from pubmed_search.mcp.server import create_server
+        from pubmed_search.mcp_server.server import create_server
         from pubmed_search.client import LiteratureSearcher
         from pubmed_search.entrez.strategy import SearchStrategyGenerator
         from pubmed_search.session import SessionManager
@@ -175,7 +175,7 @@ class TestServerCreateServer:
     
     def test_create_server_with_security_disabled(self):
         """Test creating server with security disabled."""
-        from pubmed_search.mcp.server import create_server
+        from pubmed_search.mcp_server.server import create_server
         from pubmed_search.client import LiteratureSearcher
         from pubmed_search.entrez.strategy import SearchStrategyGenerator
         from pubmed_search.session import SessionManager
@@ -201,7 +201,7 @@ class TestServerCreateServer:
     
     def test_create_server_with_api_key(self):
         """Test creating server with API key."""
-        from pubmed_search.mcp.server import create_server
+        from pubmed_search.mcp_server.server import create_server
         from pubmed_search.client import LiteratureSearcher
         from pubmed_search.entrez.strategy import SearchStrategyGenerator
         from pubmed_search.session import SessionManager
@@ -231,8 +231,8 @@ class TestExportToolsFunctions:
     
     def test_resolve_pmids_last(self):
         """Test resolving 'last' to get previous search PMIDs."""
-        from pubmed_search.mcp.tools.export import _resolve_pmids
-        from pubmed_search.mcp.tools._common import set_session_manager
+        from pubmed_search.mcp_server.tools.export import _resolve_pmids
+        from pubmed_search.mcp_server.tools._common import set_session_manager
         
         # Mock session manager with search history
         mock_session = Mock()
@@ -252,8 +252,8 @@ class TestExportToolsFunctions:
     
     def test_resolve_pmids_last_no_history(self):
         """Test resolving 'last' with no search history."""
-        from pubmed_search.mcp.tools.export import _resolve_pmids
-        from pubmed_search.mcp.tools._common import set_session_manager
+        from pubmed_search.mcp_server.tools.export import _resolve_pmids
+        from pubmed_search.mcp_server.tools._common import set_session_manager
         
         # Mock session manager with empty history
         mock_session = Mock()
@@ -273,7 +273,7 @@ class TestExportToolsFunctions:
     
     def test_resolve_pmids_comma_separated(self):
         """Test resolving comma-separated PMIDs."""
-        from pubmed_search.mcp.tools.export import _resolve_pmids
+        from pubmed_search.mcp_server.tools.export import _resolve_pmids
         
         result = _resolve_pmids("123, 456, 789")
         
@@ -281,7 +281,7 @@ class TestExportToolsFunctions:
     
     def test_save_export_file(self):
         """Test saving export file."""
-        from pubmed_search.mcp.tools.export import _save_export_file, EXPORT_DIR
+        from pubmed_search.mcp_server.tools.export import _save_export_file, EXPORT_DIR
         
         with tempfile.TemporaryDirectory() as tmpdir:
             with patch('pubmed_search.mcp.tools.export.EXPORT_DIR', tmpdir):
@@ -295,7 +295,7 @@ class TestExportToolsFunctions:
     
     def test_get_file_extension(self):
         """Test getting file extensions for formats."""
-        from pubmed_search.mcp.tools.export import _get_file_extension
+        from pubmed_search.mcp_server.tools.export import _get_file_extension
         
         assert _get_file_extension("ris") == "ris"
         assert _get_file_extension("bibtex") == "bib"
@@ -410,7 +410,7 @@ class TestCommonModuleMoreCoverage:
     
     def test_format_search_results_empty(self):
         """Test formatting empty results."""
-        from pubmed_search.mcp.tools._common import format_search_results
+        from pubmed_search.mcp_server.tools._common import format_search_results
         
         result = format_search_results([])
         
@@ -419,7 +419,7 @@ class TestCommonModuleMoreCoverage:
     
     def test_get_strategy_generator(self):
         """Test getting strategy generator."""
-        from pubmed_search.mcp.tools._common import get_strategy_generator, set_strategy_generator
+        from pubmed_search.mcp_server.tools._common import get_strategy_generator, set_strategy_generator
         
         mock_generator = Mock()
         set_strategy_generator(mock_generator)
@@ -438,7 +438,7 @@ class TestDiscoveryToolsMoreCoverage:
     def test_search_literature_with_force_refresh(self):
         """Test search_literature with force_refresh."""
         # This tests the force_refresh parameter path
-        from pubmed_search.mcp.tools._common import set_session_manager
+        from pubmed_search.mcp_server.tools._common import set_session_manager
         
         # Set no session manager
         set_session_manager(None)

@@ -223,7 +223,7 @@ class TestCommonModuleFinalCoverage:
     
     def test_cache_results_with_session(self):
         """Test caching results with active session."""
-        from pubmed_search.mcp.tools._common import _cache_results, set_session_manager
+        from pubmed_search.mcp_server.tools._common import _cache_results, set_session_manager
         from pubmed_search.session import SessionManager
         
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -242,7 +242,7 @@ class TestCommonModuleFinalCoverage:
     
     def test_record_search_only_with_session(self):
         """Test recording search without caching."""
-        from pubmed_search.mcp.tools._common import _record_search_only, set_session_manager
+        from pubmed_search.mcp_server.tools._common import _record_search_only, set_session_manager
         from pubmed_search.session import SessionManager
         
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -257,7 +257,7 @@ class TestCommonModuleFinalCoverage:
     
     def test_get_last_search_pmids_with_history(self):
         """Test getting last search PMIDs."""
-        from pubmed_search.mcp.tools._common import get_last_search_pmids, set_session_manager
+        from pubmed_search.mcp_server.tools._common import get_last_search_pmids, set_session_manager
         
         # Mock session with search_history containing objects with pmids attribute
         mock_search_record = Mock()
@@ -280,7 +280,7 @@ class TestCommonModuleFinalCoverage:
     
     def test_get_last_search_pmids_no_history(self):
         """Test getting last search PMIDs with no history."""
-        from pubmed_search.mcp.tools._common import get_last_search_pmids, set_session_manager
+        from pubmed_search.mcp_server.tools._common import get_last_search_pmids, set_session_manager
         from pubmed_search.session import SessionManager
         
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -300,7 +300,7 @@ class TestServerMainFunction:
     
     def test_server_default_email(self):
         """Test server module has default email."""
-        from pubmed_search.mcp import server
+        from pubmed_search.mcp_server import server
         
         assert hasattr(server, 'DEFAULT_EMAIL')
         assert "@" in server.DEFAULT_EMAIL
@@ -311,15 +311,15 @@ class TestExportToolsEdgeCases:
     
     def test_get_file_extension_medline(self):
         """Test file extension for MEDLINE format."""
-        from pubmed_search.mcp.tools.export import _get_file_extension
+        from pubmed_search.mcp_server.tools.export import _get_file_extension
         
         result = _get_file_extension("medline")
         assert result == "txt"
     
     def test_resolve_pmids_with_dataclass_history(self):
         """Test resolving PMIDs from SearchRecord dataclass."""
-        from pubmed_search.mcp.tools.export import _resolve_pmids
-        from pubmed_search.mcp.tools._common import set_session_manager
+        from pubmed_search.mcp_server.tools.export import _resolve_pmids
+        from pubmed_search.mcp_server.tools._common import set_session_manager
         from pubmed_search.session import SearchRecord
         
         # Mock session manager with SearchRecord in history

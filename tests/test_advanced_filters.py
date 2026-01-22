@@ -81,7 +81,7 @@ def test_advanced_filters():
             print(f"  - {r['title'][:60]}...")
 
     print()
-    print('✅ All advanced filter tests completed!')
+    print('??All advanced filter tests completed!')
 
 
 if __name__ == '__main__':

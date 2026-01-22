@@ -28,16 +28,16 @@ async def test_mcp_server(url: str = "http://localhost:8765/sse"):
         async with ClientSession(*streams) as session:
             # Initialize the session
             await session.initialize()
-            print("✓ Connected and initialized successfully!")
+            print("??Connected and initialized successfully!")
             
             # List available tools
-            print("\n📋 Available tools:")
+            print("\n?? Available tools:")
             tools = await session.list_tools()
             for tool in tools.tools:
                 print(f"  - {tool.name}: {tool.description[:60]}...")
             
             # Test search_literature
-            print("\n🔍 Testing search_literature...")
+            print("\n?? Testing search_literature...")
             result = await session.call_tool(
                 "search_literature",
                 arguments={
@@ -50,7 +50,7 @@ async def test_mcp_server(url: str = "http://localhost:8765/sse"):
                 if hasattr(content, 'text'):
                     print(content.text[:500])
             
-            print("\n✓ All tests passed!")
+            print("\n??All tests passed!")
 
 
 if __name__ == "__main__":

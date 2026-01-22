@@ -143,7 +143,7 @@ class TestServerModulePaths:
     
     def test_server_constants(self):
         """Test server module constants."""
-        from pubmed_search.mcp import server
+        from pubmed_search.mcp_server import server
         
         assert hasattr(server, 'DEFAULT_EMAIL')
         assert hasattr(server, 'SERVER_INSTRUCTIONS')
@@ -151,7 +151,7 @@ class TestServerModulePaths:
     
     def test_server_instructions_content(self):
         """Test server instructions are defined."""
-        from pubmed_search.mcp.server import SERVER_INSTRUCTIONS
+        from pubmed_search.mcp_server.server import SERVER_INSTRUCTIONS
         
         assert len(SERVER_INSTRUCTIONS) > 0
         assert "PubMed" in SERVER_INSTRUCTIONS or "search" in SERVER_INSTRUCTIONS.lower()
@@ -162,7 +162,7 @@ class TestSessionToolsPaths:
     
     def test_session_tools_module_structure(self):
         """Test session_tools module structure."""
-        from pubmed_search.mcp import session_tools
+        from pubmed_search.mcp_server import session_tools
         
         # Check expected attributes
         assert hasattr(session_tools, 'register_session_tools')
@@ -174,7 +174,7 @@ class TestCommonModuleEdgeCases:
     
     def test_format_search_results_with_error(self):
         """Test formatting results containing an error."""
-        from pubmed_search.mcp.tools._common import format_search_results
+        from pubmed_search.mcp_server.tools._common import format_search_results
         
         results = [{"error": "API failure"}]
         formatted = format_search_results(results)
@@ -183,7 +183,7 @@ class TestCommonModuleEdgeCases:
     
     def test_format_search_results_normal(self):
         """Test formatting normal results."""
-        from pubmed_search.mcp.tools._common import format_search_results
+        from pubmed_search.mcp_server.tools._common import format_search_results
         
         results = [
             {
@@ -208,7 +208,7 @@ class TestDiscoveryModuleEdgeCases:
     
     def test_get_references_tool(self):
         """Test that get_references tool function exists."""
-        from pubmed_search.mcp.tools import discovery
+        from pubmed_search.mcp_server.tools import discovery
         
         # Check the module has expected content
         assert hasattr(discovery, 'register_discovery_tools')
@@ -219,7 +219,7 @@ class TestExportModuleEdgeCases:
     
     def test_export_tool_module_structure(self):
         """Test export tool module structure."""
-        from pubmed_search.mcp.tools import export
+        from pubmed_search.mcp_server.tools import export
         
         assert hasattr(export, 'register_export_tools')
         assert hasattr(export, 'SUPPORTED_FORMATS')
@@ -245,7 +245,7 @@ class TestPicoModuleEdgeCases:
     
     def test_pico_module_structure(self):
         """Test pico module structure."""
-        from pubmed_search.mcp.tools import pico
+        from pubmed_search.mcp_server.tools import pico
         
         assert hasattr(pico, 'register_pico_tools')
 

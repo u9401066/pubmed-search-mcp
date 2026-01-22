@@ -265,14 +265,14 @@ class TestServerModule:
     
     def test_server_module_structure(self):
         """Test server module has expected structure."""
-        from pubmed_search.mcp import server
+        from pubmed_search.mcp_server import server
         
         # Check for expected attributes
         assert hasattr(server, 'logging')
     
     def test_create_mcp_if_exists(self):
         """Test create_mcp function if it exists."""
-        from pubmed_search.mcp import server
+        from pubmed_search.mcp_server import server
         
         # If create_mcp exists, test it
         if hasattr(server, 'create_mcp'):
@@ -335,7 +335,7 @@ class TestCommonModuleCoverage:
     
     def test_format_search_results_with_multiple(self):
         """Test formatting multiple search results."""
-        from pubmed_search.mcp.tools._common import format_search_results
+        from pubmed_search.mcp_server.tools._common import format_search_results
         
         articles = [
             {"pmid": "123", "title": "Article 1", "authors": ["A", "B"], "year": "2024", "journal": "J1", "abstract": "Abstract 1"},
@@ -350,7 +350,7 @@ class TestCommonModuleCoverage:
     
     def test_cache_results(self):
         """Test _cache_results function."""
-        from pubmed_search.mcp.tools._common import _cache_results, set_session_manager
+        from pubmed_search.mcp_server.tools._common import _cache_results, set_session_manager
         
         # With no session manager
         set_session_manager(None)
@@ -359,7 +359,7 @@ class TestCommonModuleCoverage:
     
     def test_record_search_only(self):
         """Test _record_search_only function."""
-        from pubmed_search.mcp.tools._common import _record_search_only, set_session_manager
+        from pubmed_search.mcp_server.tools._common import _record_search_only, set_session_manager
         
         # With no session manager
         set_session_manager(None)

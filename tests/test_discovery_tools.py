@@ -12,7 +12,7 @@ class TestAmbiguousTermDetection:
     
     def test_detect_ambiguous_journal_name(self):
         """Test detection of journal names that could be topics."""
-        from pubmed_search.mcp.tools.discovery import _detect_ambiguous_terms
+        from pubmed_search.mcp_server.tools.discovery import _detect_ambiguous_terms
         
         # Single word that's a journal name
         result = _detect_ambiguous_terms("anesthesiology")
@@ -21,7 +21,7 @@ class TestAmbiguousTermDetection:
         
     def test_detect_ambiguous_with_other_terms(self):
         """Test that journal names with many other terms are not flagged."""
-        from pubmed_search.mcp.tools.discovery import _detect_ambiguous_terms
+        from pubmed_search.mcp_server.tools.discovery import _detect_ambiguous_terms
         
         # Many other terms = probably a topic search
         result = _detect_ambiguous_terms("anesthesiology patient safety monitoring guidelines review")
@@ -30,14 +30,14 @@ class TestAmbiguousTermDetection:
         
     def test_detect_multiple_ambiguous(self):
         """Test detection of multiple ambiguous terms."""
-        from pubmed_search.mcp.tools.discovery import _detect_ambiguous_terms
+        from pubmed_search.mcp_server.tools.discovery import _detect_ambiguous_terms
         
         result = _detect_ambiguous_terms("lancet cell")
         assert len(result) >= 1  # At least one should be detected
         
     def test_no_ambiguous_terms(self):
         """Test query with no ambiguous terms."""
-        from pubmed_search.mcp.tools.discovery import _detect_ambiguous_terms
+        from pubmed_search.mcp_server.tools.discovery import _detect_ambiguous_terms
         
         result = _detect_ambiguous_terms("diabetes mellitus treatment")
         assert len(result) == 0
@@ -48,25 +48,25 @@ class TestAmbiguityHint:
     
     def test_format_ambiguity_hint_empty(self):
         """Test formatting empty hint."""
-        from pubmed_search.mcp.tools.discovery import _format_ambiguity_hint
+        from pubmed_search.mcp_server.tools.discovery import _format_ambiguity_hint
         
         result = _format_ambiguity_hint([], "test query")
         assert result == ""
         
     def test_format_ambiguity_hint_single(self):
         """Test formatting single ambiguous term hint."""
-        from pubmed_search.mcp.tools.discovery import _format_ambiguity_hint
+        from pubmed_search.mcp_server.tools.discovery import _format_ambiguity_hint
         
         ambiguous = [{"term": "anesthesiology", "journal": "Anesthesiology", "hint": "journal[ta]"}]
         result = _format_ambiguity_hint(ambiguous, "anesthesiology")
         
-        assert "тЪая╕П" in result
+        assert "?ая?" in result
         assert "Tip" in result
         assert "Anesthesiology" in result
         
     def test_format_ambiguity_hint_max_two(self):
         """Test that only 2 hints are shown max."""
-        from pubmed_search.mcp.tools.discovery import _format_ambiguity_hint
+        from pubmed_search.mcp_server.tools.discovery import _format_ambiguity_hint
         
         ambiguous = [
             {"term": "a", "journal": "A", "hint": "a"},
@@ -97,7 +97,7 @@ class TestSearchLiteratureTool:
     
     def test_discovery_tools_register(self, mock_mcp, mock_searcher):
         """Test discovery tools registration doesn't error."""
-        from pubmed_search.mcp.tools.discovery import register_discovery_tools
+        from pubmed_search.mcp_server.tools.discovery import register_discovery_tools
         
         # Just test that registration doesn't error
         register_discovery_tools(mock_mcp, mock_searcher)
@@ -109,7 +109,7 @@ class TestFindRelatedArticlesTool:
     
     def test_find_related_returns_results(self):
         """Test finding related articles returns formatted output."""
-        from pubmed_search.mcp.tools.discovery import register_discovery_tools
+        from pubmed_search.mcp_server.tools.discovery import register_discovery_tools
         
         mcp = MagicMock()
         mcp.tool = lambda: lambda f: f
@@ -127,7 +127,7 @@ class TestFindCitingArticlesTool:
     
     def test_find_citing_no_results(self):
         """Test finding citing articles with no results."""
-        from pubmed_search.mcp.tools.discovery import register_discovery_tools
+        from pubmed_search.mcp_server.tools.discovery import register_discovery_tools
         
         mcp = MagicMock()
         mcp.tool = lambda: lambda f: f
@@ -143,7 +143,7 @@ class TestGetArticleReferencesTool:
     
     def test_get_references_with_error(self):
         """Test getting references with API error."""
-        from pubmed_search.mcp.tools.discovery import register_discovery_tools
+        from pubmed_search.mcp_server.tools.discovery import register_discovery_tools
         
         mcp = MagicMock()
         mcp.tool = lambda: lambda f: f
@@ -159,7 +159,7 @@ class TestFetchArticleDetailsTool:
     
     def test_fetch_details_multiple_pmids(self):
         """Test fetching details for multiple PMIDs."""
-        from pubmed_search.mcp.tools.discovery import register_discovery_tools
+        from pubmed_search.mcp_server.tools.discovery import register_discovery_tools
         
         mcp = MagicMock()
         mcp.tool = lambda: lambda f: f
@@ -178,7 +178,7 @@ class TestGetCitationMetricsTool:
     
     def test_get_metrics_empty_pmids(self):
         """Test getting metrics with no PMIDs."""
-        from pubmed_search.mcp.tools.discovery import register_discovery_tools
+        from pubmed_search.mcp_server.tools.discovery import register_discovery_tools
         
         mcp = MagicMock()
         mcp.tool = lambda: lambda f: f
@@ -190,7 +190,7 @@ class TestGetCitationMetricsTool:
         
     def test_get_metrics_with_filters(self):
         """Test getting metrics with filter parameters."""
-        from pubmed_search.mcp.tools.discovery import register_discovery_tools
+        from pubmed_search.mcp_server.tools.discovery import register_discovery_tools
         
         mcp = MagicMock()
         mcp.tool = lambda: lambda f: f
