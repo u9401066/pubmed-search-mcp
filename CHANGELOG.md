@@ -14,6 +14,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.28] - 2026-01-22
+
+### 🔧 Python Version Compatibility
+
+Lowered Python version requirement for broader compatibility with ToolUniverse.
+
+### Changed
+
+- **Python Version**: Lowered `requires-python` from `>=3.12` to `>=3.10`
+- Verified all syntax is Python 3.10+ compatible (union types `|`, generic types)
+- MCP SDK only requires Python >=3.10
+
+---
+
 ## [0.1.27] - 2026-01-22
 
 ### 🧹 Cleanup & ToolUniverse Integration

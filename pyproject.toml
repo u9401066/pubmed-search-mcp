@@ -4,11 +4,11 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pubmed-search-mcp"
-version = "0.1.27"
+version = "0.1.28"
 description = "MCP server for PubMed literature search with MeSH, PICO, and intelligent query expansion"
 readme = "README.md"
 license = "Apache-2.0"
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 authors = [
     { name = "u9401066", email = "u9401066@gap.kmu.edu.tw" }
 ]
