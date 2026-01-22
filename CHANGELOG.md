@@ -14,6 +14,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.29] - 2026-01-22
+
+### 📦 Complete API Export
+
+Enhanced `__init__.py` to export all useful classes and functions for easy import.
+
+### Added
+
+Now you can import directly from `pubmed_search`:
+
+```python
+# NCBI Extended (Gene, PubChem, ClinVar)
+from pubmed_search import NCBIExtendedClient
+
+# Europe PMC (fulltext, text mining)
+from pubmed_search import EuropePMCClient
+
+# Export citations
+from pubmed_search import export_articles, export_ris, export_bibtex
+
+# OpenURL / Institutional access
+from pubmed_search import get_openurl_link, list_openurl_presets
+
+# Strategy & Query Analysis
+from pubmed_search import SearchStrategyGenerator, QueryAnalyzer
+```
+
+**New Exports:**
+- `NCBIExtendedClient` - Gene, PubChem, ClinVar databases
+- `EuropePMCClient` - Fulltext XML, text-mined annotations
+- `export_articles`, `export_ris`, `export_bibtex`, `export_csv`, `export_medline`, `export_json`
+- `get_openurl_link`, `list_openurl_presets`, `configure_openurl`
+- `SearchStrategyGenerator`, `QueryAnalyzer`, `ResultAggregator`
+- Multi-source client getters: `get_semantic_scholar_client`, `get_openalex_client`, etc.
+
+---
+
 ## [0.1.28] - 2026-01-22
 
 ### 🔧 Python Version Compatibility
