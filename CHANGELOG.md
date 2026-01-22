@@ -14,6 +14,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.27] - 2026-01-22
+
+### 🧹 Cleanup & ToolUniverse Integration
+
+Repository cleanup and ToolUniverse integration finalized.
+
+### Changed
+
+- **Removed** `tooluniverse-integration/` folder (now in ToolUniverse repo)
+- **Removed** `CHANGELOG_0.1.20.md` (legacy, content in main CHANGELOG)
+- **Updated** `.gitignore`: Added `.mypy_cache/`, `.ruff_cache/` exclusions
+
+### ToolUniverse Integration (25 Tools)
+
+Complete integration with [ToolUniverse](https://github.com/HarvardLab/ToolUniverse):
+- All 25 MCP tools now available as ToolUniverse Local Tools
+- Thin wrapper pattern: delegates to `pubmed-search-mcp` package
+- Categories: Search, Query Intelligence, Article Exploration, Full Text, NCBI Extended, Citation Network, Export, Vision Search, Institutional Access
+
+---
+
 ## [0.1.26] - 2026-01-21
 
 ### 🏥 Advanced Clinical Filters (Phase 2.1)

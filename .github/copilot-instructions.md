@@ -2,6 +2,45 @@
 
 This document provides guidance for AI assistants working with the PubMed Search MCP server.
 
+---
+
+## ⚡ 開發環境規範 (CRITICAL)
+
+### 套件管理：使用 UV (NOT pip)
+
+本專案**必須**使用 [UV](https://github.com/astral-sh/uv) 管理所有 Python 依賴：
+
+```bash
+# ❌ 禁止使用
+pip install <package>
+pip install -r requirements.txt
+
+# ✅ 正確使用
+uv add <package>           # 新增依賴
+uv add --dev <package>     # 新增開發依賴
+uv remove <package>        # 移除依賴
+uv sync                    # 同步依賴
+uv run pytest              # 透過 uv 執行命令
+uv run python script.py    # 透過 uv 執行 Python
+```
+
+### 程式碼品質工具
+
+```bash
+uv run ruff check .        # Lint 檢查
+uv run ruff format .       # 格式化
+uv run mypy src/           # 型別檢查
+uv run pytest              # 測試
+uv run pytest --cov        # 覆蓋率
+```
+
+### 依賴管理檔案
+
+- `pyproject.toml` - 主要依賴定義
+- `uv.lock` - 鎖定版本 (自動生成，勿手動編輯)
+
+---
+
 ## 🎯 Project Overview
 
 PubMed Search MCP is a **professional literature research assistant** that provides:

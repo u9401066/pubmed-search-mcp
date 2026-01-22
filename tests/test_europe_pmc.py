@@ -240,7 +240,7 @@ class TestEuropePMCMCPTools:
         """Create MCP instance with Europe PMC tools."""
         from mcp.server.fastmcp import FastMCP
         from pubmed_search.mcp.tools.europe_pmc import register_europe_pmc_tools
-        mcp = FastMCP('test')
+        mcp = FastMCP(name='test')
         register_europe_pmc_tools(mcp)
         return mcp
     

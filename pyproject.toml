@@ -4,13 +4,13 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pubmed-search-mcp"
-version = "0.1.26"
+version = "0.1.27"
 description = "MCP server for PubMed literature search with MeSH, PICO, and intelligent query expansion"
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.12"
 authors = [
-    { name = "Eric", email = "u9401066@gmail.com" }
+    { name = "u9401066", email = "u9401066@gap.kmu.edu.tw" }
 ]
 keywords = [
     "pubmed",
@@ -41,6 +41,8 @@ dependencies = [
     "pylatexenc>=2.10",  # Unicode to LaTeX conversion for BibTeX export
     "mcp>=1.0.0",  # MCP protocol - required for MCP server functionality
     "fastapi>=0.128.0",
+    "httpx>=0.28.1",
+    "pywin32>=311",
 ]
 
 [project.optional-dependencies]
@@ -73,9 +75,27 @@ include = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 markers = [
     "integration: marks tests as integration tests (may make real API calls)",
+    "slow: marks tests as slow running",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning",
+]
+
+[dependency-groups]
+dev = [
+    "deptry>=0.24.0",
+    "mypy>=1.19",
+    "pytest>=9.0",
+    "pytest-asyncio>=0.26",
+    "pytest-cov>=7.0",
+    "ruff>=0.14",
+    "pytest-benchmark>=5.1.0",
+    "mutmut>=3.2.0",
+    "bandit>=1.8.0",
+    "safety>=3.2.10",
+    "pytest-timeout>=2.3.1",
 ]

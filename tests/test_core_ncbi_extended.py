@@ -268,7 +268,7 @@ class TestCOREMCPTools:
         from mcp.server.fastmcp import FastMCP
         from src.pubmed_search.mcp.tools.core import register_core_tools
         
-        mcp = FastMCP("test")
+        mcp = FastMCP(name="test")
         register_core_tools(mcp)
         
         # Check tools are registered
@@ -288,7 +288,7 @@ class TestNCBIExtendedMCPTools:
         from mcp.server.fastmcp import FastMCP
         from src.pubmed_search.mcp.tools.ncbi_extended import register_ncbi_extended_tools
         
-        mcp = FastMCP("test")
+        mcp = FastMCP(name="test")
         register_ncbi_extended_tools(mcp)
         
         # Check tools are registered
@@ -317,7 +317,7 @@ class TestAllToolsRegistration:
         from src.pubmed_search.mcp.tools import register_all_tools
         from src.pubmed_search.entrez import LiteratureSearcher
         
-        mcp = FastMCP("test")
+        mcp = FastMCP(name="test")
         searcher = LiteratureSearcher(email="test@example.com")
         register_all_tools(mcp, searcher)
         

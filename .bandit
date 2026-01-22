@@ -1,0 +1,27 @@
+# Bandit Security Configuration
+# Configuration for security vulnerability scanning
+
+[bandit]
+# Directories to exclude from scanning
+exclude_dirs = [
+    '/tests',
+    '/.venv',
+    '/venv',
+    '/__pycache__',
+    '/docs',
+    '/scripts'
+]
+
+# Test IDs to skip (if any)
+skips = [
+    # B101: assert_used - We use asserts in tests, which is fine
+    # B601: paramiko_calls - Not applicable
+]
+
+# Severity level threshold
+# Possible values: LOW, MEDIUM, HIGH
+severity = "MEDIUM"
+
+# Confidence level threshold
+# Possible values: LOW, MEDIUM, HIGH
+confidence = "MEDIUM"

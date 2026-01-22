@@ -74,7 +74,7 @@ from ...sources import (
 )
 from ...sources.openurl import get_openurl_link, get_openurl_config
 from ...sources.preprints import PreprintSearcher
-from ..resources import lookup_icd_to_mesh, ICD10_TO_MESH, ICD9_TO_MESH
+from ..resources import lookup_icd_to_mesh
 from ._common import InputNormalizer, ResponseFormatter
 
 logger = logging.getLogger(__name__)
@@ -839,7 +839,6 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
 
             # === Step 0.5: ICD Code Detection and Expansion ===
             icd_matches: list[dict] = []
-            original_query = query
             expanded_query, icd_matches = detect_and_expand_icd_codes(query)
             if icd_matches:
                 query = expanded_query

@@ -46,6 +46,10 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 
+# Linter / Type checker caches
+.mypy_cache/
+.ruff_cache/
+
 # Translations
 *.mo
 *.pot

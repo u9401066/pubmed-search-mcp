@@ -103,7 +103,7 @@ class TestToolRegistration:
         """register_unified_search_tools should add unified_search tool."""
         from pubmed_search.mcp.tools.unified import register_unified_search_tools
         
-        mcp = FastMCP("test")
+        mcp = FastMCP(name="test")
         mock_searcher = Mock()
         
         register_unified_search_tools(mcp, mock_searcher)
@@ -115,7 +115,7 @@ class TestToolRegistration:
         """register_unified_search_tools should add analyze_search_query tool."""
         from pubmed_search.mcp.tools.unified import register_unified_search_tools
         
-        mcp = FastMCP("test")
+        mcp = FastMCP(name="test")
         mock_searcher = Mock()
         
         register_unified_search_tools(mcp, mock_searcher)
@@ -127,7 +127,7 @@ class TestToolRegistration:
         """unified_search tool should have a description."""
         from pubmed_search.mcp.tools.unified import register_unified_search_tools
         
-        mcp = FastMCP("test")
+        mcp = FastMCP(name="test")
         mock_searcher = Mock()
         
         register_unified_search_tools(mcp, mock_searcher)
