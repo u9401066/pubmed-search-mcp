@@ -76,6 +76,15 @@ src/pubmed_search/
   - `prepare_export(source="official")` uses official NCBI API (default)
   - `prepare_export(source="local")` uses local formatting (for BibTeX, CSV)
 - **Python 3.10 Compatibility** - Fixed `TypeVar` syntax and `ExceptionGroup` fallback
+- **ClinicalTrials.gov Integration** - Auto-display related ongoing trials
+  - unified_search now shows relevant clinical trials at the end
+  - Uses free public API (no API key required)
+  - Status indicators: 🟢 RECRUITING, 🟡 ACTIVE, ✅ COMPLETED
+- **Study Type Badge Display** - Evidence level badges from PubMed publication_types
+  - 🟢 Meta-Analysis (1a), Systematic Review (1a), RCT (1b)
+  - 🟡 Clinical Trial (1b-2b)
+  - 🟠 Case Report (4)
+  - Data from PubMed API, not inference
 
 ### Fixed
 

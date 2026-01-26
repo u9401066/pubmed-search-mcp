@@ -529,6 +529,8 @@ def _format_unified_results(
     pubmed_total_count: int | None = None,
     icd_matches: list | None = None,
     preprint_results: dict | None = None,
+    include_trials: bool = True,
+    original_query: str = "",
 ) -> str:
     """Format unified search results for MCP response."""
     output_parts: list[str] = []
@@ -587,6 +589,21 @@ def _format_unified_results(
             ids.append(f"PMC: {article.pmc}")
         if ids:
             output_parts.append(" | ".join(ids))
+
+        # Study type badge (from PubMed publication_types, not hard-coded inference)
+        from pubmed_search.domain.entities.article import ArticleType
+        if article.article_type and article.article_type != ArticleType.UNKNOWN:
+            # Evidence level badge based on study type
+            type_badges = {
+                ArticleType.META_ANALYSIS: "🟢 Meta-Analysis (1a)",
+                ArticleType.SYSTEMATIC_REVIEW: "🟢 Systematic Review (1a)",
+                ArticleType.RANDOMIZED_CONTROLLED_TRIAL: "🟢 RCT (1b)",
+                ArticleType.CLINICAL_TRIAL: "🟡 Clinical Trial (1b-2b)",
+                ArticleType.REVIEW: "⚪ Review",
+                ArticleType.CASE_REPORT: "🟠 Case Report (4)",
+            }
+            badge = type_badges.get(article.article_type, f"📄 {article.article_type.value}")
+            output_parts.append(f"**Type**: {badge}")
 
         # Authors and journal
         output_parts.append(f"**Authors**: {article.author_string}")
@@ -678,6 +695,21 @@ def _format_unified_results(
                     if paper.get("source_url"):
                         output_parts.append(f"Link: {paper['source_url']}")
                 output_parts.append("")
+
+    # === Related Clinical Trials (optional) ===
+    if include_trials and original_query:
+        try:
+            from pubmed_search.infrastructure.sources.clinical_trials import (
+                format_trials_section,
+                search_related_trials,
+            )
+            # Get first few words of query for trial search
+            trial_query = " ".join(original_query.split()[:5])
+            trials = search_related_trials(trial_query, limit=3)
+            if trials:
+                output_parts.append(format_trials_section(trials, max_display=3))
+        except Exception as e:
+            logger.debug(f"Clinical trials search skipped: {e}")
 
     return "\n".join(output_parts)
 
@@ -1019,6 +1051,8 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                     pubmed_total_count,
                     icd_matches,
                     preprint_results if include_preprints else None,
+                    include_trials=True,
+                    original_query=analysis.original_query,
                 )
 
         except Exception as e:

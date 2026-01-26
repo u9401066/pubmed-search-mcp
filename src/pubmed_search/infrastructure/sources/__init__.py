@@ -42,6 +42,7 @@ _ncbi_extended_client = None
 _crossref_client = None
 _unpaywall_client = None
 _openurl_builder = None
+_clinical_trials_client = None
 
 
 class SearchSource(Enum):
