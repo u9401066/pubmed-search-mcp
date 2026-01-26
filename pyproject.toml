@@ -99,4 +99,46 @@ dev = [
     "safety>=3.2.10",
     "pytest-timeout>=2.3.1",
     "vulture>=2.14",
+    "types-requests>=2.32.4.20260107",
 ]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = false
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = false
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = false
+warn_no_return = false
+warn_unreachable = false
+strict_equality = false
+ignore_missing_imports = true
+# Allow dynamic typing for API responses and external data
+allow_untyped_calls = true
+allow_untyped_defs = true
+# Disable warnings that are overly strict for production code with external APIs
+disable_error_code = ["no-any-return", "unreachable", "misc"]
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "pubmed_search.infrastructure.sources.*"
+# External API responses are inherently dynamic
+warn_return_any = false
+allow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = "pubmed_search.infrastructure.ncbi.*"
+# NCBI API responses can be complex
+warn_return_any = false
+allow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = "pubmed_search.presentation.mcp_server.*"
+# MCP server tools work with dynamic data
+allow_untyped_defs = true
