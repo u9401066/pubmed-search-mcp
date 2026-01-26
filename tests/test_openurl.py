@@ -201,8 +201,8 @@ class TestIntegrationWithUnifiedSearch:
         assert config.enabled is True
 
 
-# Network tests (marked as slow, skip by default)
-@pytest.mark.slow
+# Network tests (require external connectivity, skip in CI)
+@pytest.mark.integration
 class TestNetworkConnectivity:
     """Test actual network connectivity to resolvers."""
 

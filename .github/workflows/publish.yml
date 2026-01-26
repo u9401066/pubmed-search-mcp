@@ -27,7 +27,7 @@ jobs:
       - name: Run tests
         env:
           NCBI_EMAIL: test@example.com
-        run: uv run pytest -v
+        run: uv run pytest -v -m "not integration"
       
       - name: Run ruff check
         run: uv run ruff check .
