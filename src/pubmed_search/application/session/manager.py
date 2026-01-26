@@ -429,7 +429,9 @@ class SessionManager:
             return False
         return pmid in session.article_cache
 
-    def add_search_record(self, query: str, pmids: List[str], filters: Optional[Dict] = None):
+    def add_search_record(
+        self, query: str, pmids: List[str], filters: Optional[Dict] = None
+    ):
         """Record a search in history."""
         session = self.get_or_create_session()
         record = {
@@ -443,7 +445,9 @@ class SessionManager:
         session.touch()
         self._save_session(session)
 
-    def find_cached_search(self, query: str, limit: Optional[int] = None) -> Optional[List[Dict]]:
+    def find_cached_search(
+        self, query: str, limit: Optional[int] = None
+    ) -> Optional[List[Dict]]:
         """
         Find cached results for a query.
 
