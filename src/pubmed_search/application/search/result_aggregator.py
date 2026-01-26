@@ -2,7 +2,7 @@
 ResultAggregator - Multi-Source Result Merging and Ranking
 
 This module provides intelligent result aggregation from multiple academic sources:
-1. Deduplication (DOI > PMID > Title fuzzy match)
+1. Deduplication (DOI > PMID > Title fuzzy match) using Union-Find for O(n) complexity
 2. Multi-dimensional ranking (relevance, quality, recency, impact, source_trust)
 3. Score normalization and weighting
 
@@ -31,18 +31,64 @@ Example:
 
 from __future__ import annotations
 
+import math
 import re
-
-# Import from sibling module
-import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from pubmed_search.domain.entities.article import UnifiedArticle
+if TYPE_CHECKING:
+    from pubmed_search.domain.entities.article import UnifiedArticle
+
+# Lazy import to avoid circular dependency
+_UnifiedArticle = None
+
+
+def _get_unified_article():
+    """Lazy import UnifiedArticle to avoid circular imports."""
+    global _UnifiedArticle
+    if _UnifiedArticle is None:
+        from pubmed_search.domain.entities.article import UnifiedArticle
+
+        _UnifiedArticle = UnifiedArticle
+    return _UnifiedArticle
+
+
+# =============================================================================
+# Constants
+# =============================================================================
+
+# Article type quality weights (higher = better quality evidence)
+ARTICLE_TYPE_WEIGHTS: dict[str, float] = {
+    "meta-analysis": 0.30,
+    "systematic-review": 0.25,
+    "randomized-controlled-trial": 0.20,
+    "clinical-trial": 0.15,
+    "review": 0.10,
+    "journal-article": 0.05,
+    "preprint": 0.02,
+    "other": 0.0,
+    "unknown": 0.0,
+}
+
+# Default source trust levels
+DEFAULT_SOURCE_TRUST: dict[str, float] = {
+    "pubmed": 1.0,
+    "crossref": 0.9,
+    "openalex": 0.85,
+    "semantic_scholar": 0.85,
+    "europe_pmc": 0.9,
+    "core": 0.7,
+    "arxiv": 0.6,
+    "medrxiv": 0.65,
+    "biorxiv": 0.65,
+}
+
+
+# =============================================================================
+# Enums
+# =============================================================================
 
 
 class RankingDimension(Enum):
@@ -66,12 +112,17 @@ class DeduplicationStrategy(Enum):
 
     STRICT: Only DOI/PMID exact matches are considered duplicates
     MODERATE: DOI/PMID + normalized title match
-    AGGRESSIVE: Include fuzzy title matching (Levenshtein distance)
+    AGGRESSIVE: Include fuzzy title matching (shorter title threshold)
     """
 
     STRICT = "strict"
     MODERATE = "moderate"
     AGGRESSIVE = "aggressive"
+
+
+# =============================================================================
+# Data Classes
+# =============================================================================
 
 
 @dataclass
@@ -101,20 +152,13 @@ class RankingConfig:
     # Recency settings
     recency_half_life_years: float = 5.0  # Score halves every N years
 
-    # Quality indicators
+    # Quality indicators (optional custom weights)
     quality_journal_weights: dict[str, float] = field(default_factory=dict)
     quality_article_type_weights: dict[str, float] = field(default_factory=dict)
 
     # Source trust levels (0-1)
     source_trust_levels: dict[str, float] = field(
-        default_factory=lambda: {
-            "pubmed": 1.0,
-            "crossref": 0.9,
-            "openalex": 0.85,
-            "semantic_scholar": 0.85,
-            "europe_pmc": 0.9,
-            "core": 0.7,
-        }
+        default_factory=lambda: DEFAULT_SOURCE_TRUST.copy()
     )
 
     # Minimum score to include in results
@@ -122,6 +166,9 @@ class RankingConfig:
 
     # Maximum results to return
     max_results: int | None = None
+
+    # Title match minimum length (for deduplication)
+    title_min_length: int = 20
 
     @classmethod
     def default(cls) -> RankingConfig:
@@ -183,6 +230,12 @@ class RankingConfig:
             "source_trust": self.source_trust_weight / total,
         }
 
+    def get_article_type_weight(self, article_type: str) -> float:
+        """Get weight for article type, using custom or default."""
+        if self.quality_article_type_weights:
+            return self.quality_article_type_weights.get(article_type, 0.0)
+        return ARTICLE_TYPE_WEIGHTS.get(article_type, 0.0)
+
 
 @dataclass
 class AggregationStats:
@@ -193,6 +246,9 @@ class AggregationStats:
     duplicates_removed: int = 0
     merged_records: int = 0
     by_source: dict[str, int] = field(default_factory=dict)
+    dedup_by_doi: int = 0
+    dedup_by_pmid: int = 0
+    dedup_by_title: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
@@ -202,7 +258,73 @@ class AggregationStats:
             "duplicates_removed": self.duplicates_removed,
             "merged_records": self.merged_records,
             "by_source": self.by_source,
+            "dedup_by_doi": self.dedup_by_doi,
+            "dedup_by_pmid": self.dedup_by_pmid,
+            "dedup_by_title": self.dedup_by_title,
         }
+
+
+# =============================================================================
+# Union-Find for O(n) Deduplication
+# =============================================================================
+
+
+class UnionFind:
+    """
+    Union-Find (Disjoint Set Union) data structure for efficient deduplication.
+
+    Time Complexity:
+    - find: O(α(n)) ≈ O(1) amortized (inverse Ackermann)
+    - union: O(α(n)) ≈ O(1) amortized
+
+    This replaces the O(n²) nested loop in the original implementation.
+    """
+
+    def __init__(self, n: int):
+        """Initialize with n elements (0 to n-1)."""
+        self.parent = list(range(n))
+        self.rank = [0] * n
+        self.size = [1] * n
+
+    def find(self, x: int) -> int:
+        """Find root with path compression."""
+        if self.parent[x] != x:
+            self.parent[x] = self.find(self.parent[x])
+        return self.parent[x]
+
+    def union(self, x: int, y: int) -> bool:
+        """
+        Union by rank. Returns True if x and y were in different sets.
+        """
+        px, py = self.find(x), self.find(y)
+        if px == py:
+            return False
+
+        # Union by rank
+        if self.rank[px] < self.rank[py]:
+            px, py = py, px
+        self.parent[py] = px
+        self.size[px] += self.size[py]
+
+        if self.rank[px] == self.rank[py]:
+            self.rank[px] += 1
+
+        return True
+
+    def get_groups(self) -> dict[int, list[int]]:
+        """Get all groups as {root: [members]}."""
+        groups: dict[int, list[int]] = {}
+        for i in range(len(self.parent)):
+            root = self.find(i)
+            if root not in groups:
+                groups[root] = []
+            groups[root].append(i)
+        return groups
+
+
+# =============================================================================
+# ResultAggregator
+# =============================================================================
 
 
 class ResultAggregator:
@@ -210,7 +332,7 @@ class ResultAggregator:
     Aggregates and ranks results from multiple sources.
 
     Responsibilities:
-    1. Deduplicate articles across sources
+    1. Deduplicate articles across sources (O(n) with Union-Find)
     2. Merge data from same article in different sources
     3. Calculate multi-dimensional ranking scores
     4. Sort and filter results
@@ -219,7 +341,7 @@ class ResultAggregator:
         aggregator = ResultAggregator()
 
         # Aggregate from multiple sources
-        articles = aggregator.aggregate([
+        articles, stats = aggregator.aggregate([
             pubmed_results,
             crossref_results,
             openalex_results,
@@ -248,6 +370,7 @@ class ResultAggregator:
         Aggregate articles from multiple sources.
 
         Deduplicates and merges articles, preserving the best data from each source.
+        Uses Union-Find algorithm for O(n) deduplication.
 
         Args:
             article_lists: List of article lists from different sources
@@ -272,8 +395,8 @@ class ResultAggregator:
         if not all_articles:
             return [], stats
 
-        # Deduplicate
-        unique_articles = self._deduplicate(all_articles, strategy)
+        # Deduplicate using Union-Find
+        unique_articles = self._deduplicate_union_find(all_articles, strategy, stats)
 
         stats.unique_articles = len(unique_articles)
         stats.duplicates_removed = stats.total_input - stats.unique_articles
@@ -313,6 +436,7 @@ class ResultAggregator:
                 + scores.get("source_trust", 0.5) * weights["source_trust"]
             )
 
+            # Store scores in article (UnifiedArticle has these fields)
             article._ranking_score = final_score
             article._relevance_score = scores.get("relevance", 0.5)
             article._quality_score = scores.get("quality", 0.5)
@@ -320,7 +444,7 @@ class ResultAggregator:
         # Sort by score (descending)
         sorted_articles = sorted(
             articles,
-            key=lambda a: a._ranking_score or 0,
+            key=lambda a: getattr(a, "_ranking_score", 0) or 0,
             reverse=True,
         )
 
@@ -329,7 +453,7 @@ class ResultAggregator:
             sorted_articles = [
                 a
                 for a in sorted_articles
-                if (a._ranking_score or 0) >= config.min_score
+                if (getattr(a, "_ranking_score", 0) or 0) >= config.min_score
             ]
 
         # Limit results
@@ -359,103 +483,93 @@ class ResultAggregator:
         ranked = self.rank(articles, config, query)
         return ranked, stats
 
-    def _deduplicate(
+    # =========================================================================
+    # Deduplication (Union-Find based)
+    # =========================================================================
+
+    def _deduplicate_union_find(
         self,
         articles: list[UnifiedArticle],
         strategy: DeduplicationStrategy,
+        stats: AggregationStats,
     ) -> list[UnifiedArticle]:
         """
-        Deduplicate articles using specified strategy.
+        Deduplicate articles using Union-Find for O(n) complexity.
 
-        Priority for keeping articles:
-        1. Articles with more identifiers
-        2. Articles with more metadata
-        3. Articles from higher-trust sources
+        Algorithm:
+        1. Build indexes (DOI, PMID, Title) - O(n)
+        2. For each index, union articles with same key - O(n × α(n))
+        3. Get groups and merge - O(n)
 
-        When duplicates are found, data is merged.
+        Total: O(n) instead of O(n²)
         """
-        # Build index for deduplication
-        doi_index: dict[str, list[UnifiedArticle]] = {}
-        pmid_index: dict[str, list[UnifiedArticle]] = {}
-        title_index: dict[str, list[UnifiedArticle]] = {}
+        n = len(articles)
+        if n == 0:
+            return []
 
-        for article in articles:
-            # Index by DOI
+        uf = UnionFind(n)
+
+        # Build indexes and union
+        doi_to_idx: dict[str, int] = {}
+        pmid_to_idx: dict[str, int] = {}
+        title_to_idx: dict[str, int] = {}
+
+        min_title_len = self._config.title_min_length
+        use_title = strategy in (
+            DeduplicationStrategy.MODERATE,
+            DeduplicationStrategy.AGGRESSIVE,
+        )
+
+        # Adjust title threshold for aggressive mode
+        if strategy == DeduplicationStrategy.AGGRESSIVE:
+            min_title_len = 15
+
+        for i, article in enumerate(articles):
+            # DOI matching
             if article.doi:
                 normalized_doi = self._normalize_doi(article.doi)
-                if normalized_doi not in doi_index:
-                    doi_index[normalized_doi] = []
-                doi_index[normalized_doi].append(article)
+                if normalized_doi in doi_to_idx:
+                    if uf.union(i, doi_to_idx[normalized_doi]):
+                        stats.dedup_by_doi += 1
+                else:
+                    doi_to_idx[normalized_doi] = i
 
-            # Index by PMID
+            # PMID matching
             if article.pmid:
-                if article.pmid not in pmid_index:
-                    pmid_index[article.pmid] = []
-                pmid_index[article.pmid].append(article)
+                if article.pmid in pmid_to_idx:
+                    if uf.union(i, pmid_to_idx[article.pmid]):
+                        stats.dedup_by_pmid += 1
+                else:
+                    pmid_to_idx[article.pmid] = i
 
-            # Index by normalized title
-            if strategy in (
-                DeduplicationStrategy.MODERATE,
-                DeduplicationStrategy.AGGRESSIVE,
-            ):
+            # Title matching (if enabled)
+            if use_title and article.title:
                 normalized_title = self._normalize_title(article.title)
-                if (
-                    normalized_title and len(normalized_title) > 20
-                ):  # Skip very short titles
-                    if normalized_title not in title_index:
-                        title_index[normalized_title] = []
-                    title_index[normalized_title].append(article)
+                if len(normalized_title) >= min_title_len:
+                    if normalized_title in title_to_idx:
+                        if uf.union(i, title_to_idx[normalized_title]):
+                            stats.dedup_by_title += 1
+                    else:
+                        title_to_idx[normalized_title] = i
 
-        # Find and merge duplicates
-        processed: set[int] = set()
+        # Get groups and merge
+        groups = uf.get_groups()
         unique: list[UnifiedArticle] = []
 
-        for article in articles:
-            article_id = id(article)
-            if article_id in processed:
-                continue
+        for _root, member_indices in groups.items():
+            if len(member_indices) == 1:
+                unique.append(articles[member_indices[0]])
+            else:
+                # Multiple duplicates - select primary and merge
+                duplicates = [articles[i] for i in member_indices]
+                primary = self._select_primary(duplicates)
 
-            # Find all duplicates of this article
-            duplicates: list[UnifiedArticle] = [article]
+                for dup in duplicates:
+                    if dup is not primary:
+                        primary.merge_from(dup)
+                        stats.merged_records += 1
 
-            # Check DOI matches
-            if article.doi:
-                normalized_doi = self._normalize_doi(article.doi)
-                for dup in doi_index.get(normalized_doi, []):
-                    if id(dup) != article_id and id(dup) not in processed:
-                        duplicates.append(dup)
-
-            # Check PMID matches
-            if article.pmid:
-                for dup in pmid_index.get(article.pmid, []):
-                    if (
-                        id(dup) not in [id(d) for d in duplicates]
-                        and id(dup) not in processed
-                    ):
-                        duplicates.append(dup)
-
-            # Check title matches (if enabled)
-            if strategy in (
-                DeduplicationStrategy.MODERATE,
-                DeduplicationStrategy.AGGRESSIVE,
-            ):
-                normalized_title = self._normalize_title(article.title)
-                if normalized_title and len(normalized_title) > 20:
-                    for dup in title_index.get(normalized_title, []):
-                        if (
-                            id(dup) not in [id(d) for d in duplicates]
-                            and id(dup) not in processed
-                        ):
-                            duplicates.append(dup)
-
-            # Merge duplicates into primary article
-            primary = self._select_primary(duplicates)
-            for dup in duplicates:
-                if id(dup) != id(primary):
-                    primary.merge_from(dup)
-                processed.add(id(dup))
-
-            unique.append(primary)
+                unique.append(primary)
 
         return unique
 
@@ -469,37 +583,33 @@ class ResultAggregator:
         3. Higher source trust
         """
 
-        def score(article: UnifiedArticle) -> tuple:
+        def score(article: UnifiedArticle) -> tuple[int, int, float]:
             # Count identifiers
             id_count = sum(
-                [
-                    1
-                    for x in [
-                        article.pmid,
-                        article.doi,
-                        article.pmc,
-                        article.openalex_id,
-                        article.s2_id,
-                        article.core_id,
-                    ]
-                    if x
+                1
+                for x in [
+                    article.pmid,
+                    article.doi,
+                    article.pmc,
+                    getattr(article, "openalex_id", None),
+                    getattr(article, "s2_id", None),
+                    getattr(article, "core_id", None),
                 ]
+                if x
             )
 
             # Count metadata completeness
             meta_count = sum(
-                [
-                    1
-                    for x in [
-                        article.abstract,
-                        article.journal,
-                        article.year,
-                        article.volume,
-                        article.issue,
-                        article.pages,
-                    ]
-                    if x
+                1
+                for x in [
+                    article.abstract,
+                    article.journal,
+                    article.year,
+                    article.volume,
+                    article.issue,
+                    article.pages,
                 ]
+                if x
             )
 
             # Source trust
@@ -509,6 +619,10 @@ class ResultAggregator:
 
         return max(articles, key=score)
 
+    # =========================================================================
+    # Scoring Functions
+    # =========================================================================
+
     def _calculate_dimension_scores(
         self,
         article: UnifiedArticle,
@@ -516,24 +630,13 @@ class ResultAggregator:
         query: str | None,
     ) -> dict[str, float]:
         """Calculate scores for each ranking dimension."""
-        scores = {}
-
-        # Relevance score (requires query)
-        scores["relevance"] = self._calculate_relevance(article, query)
-
-        # Quality score
-        scores["quality"] = self._calculate_quality(article, config)
-
-        # Recency score
-        scores["recency"] = self._calculate_recency(article, config)
-
-        # Impact score
-        scores["impact"] = self._calculate_impact(article)
-
-        # Source trust score
-        scores["source_trust"] = self._calculate_source_trust(article, config)
-
-        return scores
+        return {
+            "relevance": self._calculate_relevance(article, query),
+            "quality": self._calculate_quality(article, config),
+            "recency": self._calculate_recency(article, config),
+            "impact": self._calculate_impact(article),
+            "source_trust": self._calculate_source_trust(article, config),
+        }
 
     def _calculate_relevance(
         self,
@@ -557,23 +660,19 @@ class ResultAggregator:
         # Check title match
         title_lower = article.title.lower() if article.title else ""
         title_terms = set(re.findall(r"\b\w{3,}\b", title_lower))
-        title_overlap = (
-            len(query_terms & title_terms) / len(query_terms) if query_terms else 0
-        )
+        title_overlap = len(query_terms & title_terms) / len(query_terms)
 
         # Check abstract match
         abstract_lower = article.abstract.lower() if article.abstract else ""
         abstract_terms = set(re.findall(r"\b\w{3,}\b", abstract_lower))
-        abstract_overlap = (
-            len(query_terms & abstract_terms) / len(query_terms) if query_terms else 0
-        )
+        abstract_overlap = len(query_terms & abstract_terms) / len(query_terms)
 
         # Check keyword/MeSH match
-        keywords_lower = " ".join(article.keywords + article.mesh_terms).lower()
+        keywords = getattr(article, "keywords", []) or []
+        mesh_terms = getattr(article, "mesh_terms", []) or []
+        keywords_lower = " ".join(keywords + mesh_terms).lower()
         keywords_terms = set(re.findall(r"\b\w{3,}\b", keywords_lower))
-        keywords_overlap = (
-            len(query_terms & keywords_terms) / len(query_terms) if query_terms else 0
-        )
+        keywords_overlap = len(query_terms & keywords_terms) / len(query_terms)
 
         # Weighted combination (title most important)
         relevance = (
@@ -592,47 +691,41 @@ class ResultAggregator:
 
         Factors:
         - Article type (meta-analysis > RCT > review > other)
-        - Journal (if weights provided)
         - Has peer review (assumed for journal articles)
         - Metadata completeness
+        - Open access (small boost)
         """
         score = 0.5  # Base score
 
         # Article type boost
-        type_weights = {
-            "meta-analysis": 0.3,
-            "systematic-review": 0.25,
-            "randomized-controlled-trial": 0.2,
-            "clinical-trial": 0.15,
-            "review": 0.1,
-            "journal-article": 0.05,
-        }
-        article_type = article.article_type.value if article.article_type else "unknown"
-        score += type_weights.get(article_type, 0)
+        article_type = (
+            article.article_type.value
+            if hasattr(article, "article_type") and article.article_type
+            else "unknown"
+        )
+        score += config.get_article_type_weight(article_type)
 
         # Metadata completeness boost
         completeness = (
             sum(
-                [
-                    1
-                    for x in [
-                        article.abstract,
-                        article.doi,
-                        article.journal,
-                        article.volume,
-                        article.issue,
-                        article.pages,
-                        article.year,
-                    ]
-                    if x
+                1
+                for x in [
+                    article.abstract,
+                    article.doi,
+                    article.journal,
+                    article.volume,
+                    article.issue,
+                    article.pages,
+                    article.year,
                 ]
+                if x
             )
             / 7
         )
         score += completeness * 0.1
 
         # Open access boost (small)
-        if article.has_open_access:
+        if getattr(article, "has_open_access", False):
             score += 0.05
 
         return min(score, 1.0)
@@ -671,31 +764,29 @@ class ResultAggregator:
         - Relative Citation Ratio
         - Raw citation count
         """
-        if not article.citation_metrics:
+        metrics = getattr(article, "citation_metrics", None)
+        if not metrics:
             return 0.3  # Unknown impact gets low-neutral score
 
-        metrics = article.citation_metrics
-
         # Use NIH percentile if available (0-100 → 0-1)
-        if metrics.nih_percentile is not None:
-            return metrics.nih_percentile / 100
+        nih_percentile = getattr(metrics, "nih_percentile", None)
+        if nih_percentile is not None:
+            return nih_percentile / 100
 
         # Use RCR if available (normalize: 2.0 = average, 4.0 = excellent)
-        if metrics.relative_citation_ratio is not None:
+        rcr = getattr(metrics, "relative_citation_ratio", None)
+        if rcr is not None:
             # Sigmoid-like transformation
-            rcr = metrics.relative_citation_ratio
             score = rcr / (rcr + 2.0)  # 0 → 0, 2 → 0.5, 4 → 0.67, 10 → 0.83
             return min(score, 1.0)
 
         # Use raw citation count (log scale)
-        if metrics.citation_count is not None:
-            import math
-
-            count = metrics.citation_count
-            if count <= 0:
+        citation_count = getattr(metrics, "citation_count", None)
+        if citation_count is not None:
+            if citation_count <= 0:
                 return 0.1
             # Log transformation: 1 → 0.1, 10 → 0.4, 100 → 0.7, 1000 → 1.0
-            score = math.log10(count + 1) / 3
+            score = math.log10(citation_count + 1) / 3
             return min(score, 1.0)
 
         return 0.3
@@ -714,12 +805,17 @@ class ResultAggregator:
         base_trust = config.source_trust_levels.get(article.primary_source, 0.5)
 
         # Boost for multi-source verification
-        num_sources = len(article.sources)
+        sources = getattr(article, "sources", []) or []
+        num_sources = len(sources)
         if num_sources > 1:
             boost = min(0.1 * (num_sources - 1), 0.2)  # Max 0.2 boost
             base_trust = min(base_trust + boost, 1.0)
 
         return base_trust
+
+    # =========================================================================
+    # Utility Methods
+    # =========================================================================
 
     @staticmethod
     def _normalize_doi(doi: str) -> str:
@@ -748,7 +844,9 @@ class ResultAggregator:
         return title
 
 
-# Convenience functions
+# =============================================================================
+# Convenience Functions
+# =============================================================================
 
 
 def aggregate_results(
