@@ -592,6 +592,7 @@ def _format_unified_results(
 
         # Study type badge (from PubMed publication_types, not hard-coded inference)
         from pubmed_search.domain.entities.article import ArticleType
+
         if article.article_type and article.article_type != ArticleType.UNKNOWN:
             # Evidence level badge based on study type
             type_badges = {
@@ -602,7 +603,9 @@ def _format_unified_results(
                 ArticleType.REVIEW: "⚪ Review",
                 ArticleType.CASE_REPORT: "🟠 Case Report (4)",
             }
-            badge = type_badges.get(article.article_type, f"📄 {article.article_type.value}")
+            badge = type_badges.get(
+                article.article_type, f"📄 {article.article_type.value}"
+            )
             output_parts.append(f"**Type**: {badge}")
 
         # Authors and journal
@@ -703,6 +706,7 @@ def _format_unified_results(
                 format_trials_section,
                 search_related_trials,
             )
+
             # Get first few words of query for trial search
             trial_query = " ".join(original_query.split()[:5])
             trials = search_related_trials(trial_query, limit=3)

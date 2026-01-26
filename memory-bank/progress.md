@@ -2,6 +2,17 @@
 
 ## Done
 
+- ✅ **ClinicalTrials.gov 整合** (2026-01-26)
+  - unified_search 自動顯示相關臨床試驗
+  - 免費 API，無需 API key
+  - 狀態指示：🟢 RECRUITING, 🟡 ACTIVE, ✅ COMPLETED
+- ✅ **Study Type Badge 顯示** (2026-01-26)
+  - 從 PubMed publication_types 取得（非推斷）
+  - 🟢 Meta-Analysis (1a), RCT (1b), 🟡 Clinical Trial, 🟠 Case Report
+- ✅ **ResultAggregator 重構** (2026-01-26)
+  - Union-Find O(n) 去重算法
+  - 多維排序：relevance, quality, recency, impact, source_trust
+  - 66 tests, 96% coverage
 - ✅ **README i18n 同步** (2026-01-26)
   - 中英文版本結構完全對齊
   - Middleware 架構圖、PICO 流程圖、搜尋模式比較
