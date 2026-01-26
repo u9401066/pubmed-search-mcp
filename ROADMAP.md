@@ -237,6 +237,290 @@ class UnifiedArticle:
 
 ## 待實作功能
 
+### 🔥 Phase 5.9: Meta-Analysis 搜尋中介層 ⭐⭐⭐⭐⭐ (NEW!)
+> **目標**: 提供 Systematic Review / Meta-Analysis 等級的完整搜尋工作流程
+
+#### 架構設計
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    Meta-Analysis Search Middleware                       │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  ┌─────────────────────────────────────────────────────────────────┐    │
+│  │                 1. Protocol Definition Layer                     │    │
+│  │  • PICO/PICOS 解析 ✅                                            │    │
+│  │  • 納入/排除標準定義                                              │    │
+│  │  • 研究類型限制 (RCT-only, etc.)                                 │    │
+│  │  • 語言/日期/地區限制                                             │    │
+│  └─────────────────────────────────────────────────────────────────┘    │
+│                               ↓                                          │
+│  ┌─────────────────────────────────────────────────────────────────┐    │
+│  │              2. Multi-Database Search Layer                      │    │
+│  │                                                                   │    │
+│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐   │    │
+│  │  │ PubMed  │ │Europe   │ │ CORE    │ │OpenAlex │ │Semantic │   │    │
+│  │  │   ✅    │ │PMC ✅   │ │   ✅    │ │   🆕    │ │Scholar  │   │    │
+│  │  └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘   │    │
+│  │       │           │           │           │           │         │    │
+│  │       └───────────┴───────────┴───────────┴───────────┘         │    │
+│  │                               ↓                                  │    │
+│  │                    Strategy Translator                           │    │
+│  │         (PubMed 語法 → 各資料庫原生語法)                         │    │
+│  └─────────────────────────────────────────────────────────────────┘    │
+│                               ↓                                          │
+│  ┌─────────────────────────────────────────────────────────────────┐    │
+│  │            3. Result Aggregation Layer (v0.2.0 ✅)               │    │
+│  │  • Union-Find O(n) 去重                                          │    │
+│  │  • 多維度排序 (relevance, quality, recency, impact)              │    │
+│  │  • 來源信任度評分                                                 │    │
+│  │  • 統計追蹤 (dedup_by_doi/pmid/title)                            │    │
+│  └─────────────────────────────────────────────────────────────────┘    │
+│                               ↓                                          │
+│  ┌─────────────────────────────────────────────────────────────────┐    │
+│  │             4. PRISMA Flow Tracking Layer                        │    │
+│  │                                                                   │    │
+│  │  Identification    →    Screening    →    Eligibility    →    Included │
+│  │  (n=X from DBs)        (n=Y remain)      (n=Z eligible)     (n=W final)│
+│  │        ↓                    ↓                  ↓                       │
+│  │  - Duplicates         - Title/Abstract    - Full text              │    │
+│  │    removed (n=)         excluded (n=)       excluded (n=)         │    │
+│  └─────────────────────────────────────────────────────────────────┘    │
+│                               ↓                                          │
+│  ┌─────────────────────────────────────────────────────────────────┐    │
+│  │              5. Evidence Classification Layer                    │    │
+│  │                                                                   │    │
+│  │  Level I   : Meta-Analyses, Systematic Reviews                   │    │
+│  │  Level II  : Randomized Controlled Trials (RCT)                  │    │
+│  │  Level III : Cohort Studies, Controlled Trials                   │    │
+│  │  Level IV  : Case-Control Studies                                │    │
+│  │  Level V   : Case Series, Case Reports, Expert Opinion           │    │
+│  └─────────────────────────────────────────────────────────────────┘    │
+│                               ↓                                          │
+│  ┌─────────────────────────────────────────────────────────────────┐    │
+│  │              6. Reproducibility & Export Layer                   │    │
+│  │  • 搜尋策略報告 (可重現)                                          │    │
+│  │  • PRISMA 流程圖 (Mermaid/SVG)                                   │    │
+│  │  • 篩選工作表 (Excel/CSV)                                        │    │
+│  │  • 證據等級分布統計                                               │    │
+│  └─────────────────────────────────────────────────────────────────┘    │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+#### 新增 MCP 工具
+
+##### 5.9.1 Protocol 定義工具
+
+| Tool | 說明 | 輸入 | 輸出 |
+|------|------|------|------|
+| `create_review_protocol` | 建立系統性回顧協議 | PICO, 納入/排除標準 | protocol_id, 標準化協議 |
+| `define_inclusion_criteria` | 定義納入標準 | study_types, languages, date_range | criteria_json |
+| `define_exclusion_criteria` | 定義排除標準 | exclusion_reasons | criteria_json |
+| `validate_protocol` | 驗證協議完整性 | protocol_id | validation_report |
+
+##### 5.9.2 多資料庫搜尋工具
+
+| Tool | 說明 | 新功能 |
+|------|------|--------|
+| `search_openalex` | 搜尋 OpenAlex (250M+ 作品) | 概念搜尋、作者網絡 |
+| `search_semantic_scholar` | 搜尋 Semantic Scholar (200M+) | TLDR 摘要、引用意圖 |
+| `translate_search_strategy` | 轉換搜尋策略到各資料庫語法 | PubMed → OpenAlex/S2 |
+| `execute_multi_db_search` | 平行執行多資料庫搜尋 | 自動去重、來源追蹤 |
+
+##### 5.9.3 PRISMA 流程工具
+
+| Tool | 說明 | 輸出格式 |
+|------|------|----------|
+| `init_prisma_flow` | 初始化 PRISMA 流程追蹤 | flow_id |
+| `record_identification` | 記錄搜尋識別結果 | counts by database |
+| `record_screening` | 記錄篩選結果 | included/excluded counts |
+| `record_eligibility` | 記錄資格判定 | reasons for exclusion |
+| `get_prisma_diagram` | 產生 PRISMA 2020 流程圖 | Mermaid, SVG, JSON |
+| `export_prisma_checklist` | 匯出 PRISMA 2020 檢核表 | Markdown, PDF |
+
+##### 5.9.4 證據分級工具
+
+| Tool | 說明 | 依據 |
+|------|------|------|
+| `classify_study_type` | 自動分類研究類型 | PubMed Publication Types |
+| `classify_evidence_level` | 分類證據等級 (I-V) | Oxford CEBM |
+| `get_evidence_summary` | 證據等級分布統計 | 金字塔圖表資料 |
+| `filter_by_evidence_level` | 依證據等級篩選 | level >= II |
+
+##### 5.9.5 品質評估工具
+
+| Tool | 說明 | 工具支援 |
+|------|------|----------|
+| `prepare_quality_assessment` | 準備品質評估工作表 | RoB 2, ROBINS-I, NOS |
+| `get_rob2_template` | 取得 RoB 2 偏差風險評估模板 | RCT 專用 |
+| `get_robins_template` | 取得 ROBINS-I 評估模板 | 非隨機研究 |
+| `get_nos_template` | 取得 Newcastle-Ottawa 量表 | 觀察性研究 |
+
+##### 5.9.6 可重現性與匯出工具
+
+| Tool | 說明 | 格式 |
+|------|------|------|
+| `generate_search_report` | 產生完整搜尋策略報告 | Markdown, DOCX |
+| `export_screening_worksheet` | 匯出篩選工作表 | Excel, CSV |
+| `export_data_extraction_form` | 匯出資料擷取表單 | Excel template |
+| `generate_forest_plot_data` | 產生 Forest Plot 資料 | JSON, CSV |
+| `get_review_timeline` | 取得回顧時程 | Gantt chart data |
+
+#### 資料庫覆蓋計畫
+
+| 資料庫 | 文獻數 | API 狀態 | 優先級 | 整合狀態 |
+|--------|--------|----------|:------:|:--------:|
+| **PubMed** | 36M | ✅ 免費 | ⭐⭐⭐⭐⭐ | ✅ 已有 |
+| **Europe PMC** | 45M | ✅ 免費 | ⭐⭐⭐⭐⭐ | ✅ 已有 |
+| **CORE** | 270M | ✅ 免費 | ⭐⭐⭐⭐ | ✅ 已有 |
+| **OpenAlex** | 250M | ✅ 免費 | ⭐⭐⭐⭐⭐ | 🆕 計畫中 |
+| **Semantic Scholar** | 215M | ✅ 免費 | ⭐⭐⭐⭐ | 🆕 計畫中 |
+| **CrossRef** | 150M | ✅ 免費 | ⭐⭐⭐ | 🆕 計畫中 |
+| EMBASE | 40M | 💰 需訂閱 | - | ❌ |
+| Web of Science | 100M | 💰 需訂閱 | - | ❌ |
+| Scopus | 90M | 💰 需訂閱 | - | ❌ |
+| Cochrane | 2M | ⚠️ 有限 | ⭐⭐⭐ | 未來考慮 |
+
+#### 工作流程示例
+
+```python
+# 1. 建立系統性回顧協議
+protocol = create_review_protocol(
+    title="Remimazolam vs Propofol for ICU Sedation",
+    pico={
+        "population": "Adult ICU patients requiring sedation",
+        "intervention": "Remimazolam",
+        "comparator": "Propofol",
+        "outcome": "Sedation adequacy, adverse events, delirium"
+    },
+    inclusion_criteria={
+        "study_types": ["RCT", "Controlled Clinical Trial"],
+        "languages": ["en", "zh"],
+        "date_range": "2015-2025"
+    },
+    exclusion_criteria={
+        "reasons": ["pediatric", "animal study", "case report", "review"]
+    }
+)
+
+# 2. 執行多資料庫搜尋 (PRISMA Identification)
+identification = execute_multi_db_search(
+    protocol_id=protocol.id,
+    databases=["pubmed", "europe_pmc", "core", "openalex", "semantic_scholar"],
+    parallel=True
+)
+# → Records from databases: pubmed=234, europe_pmc=456, core=123, ...
+
+# 3. 自動去重 (已整合 Union-Find O(n))
+# → Duplicates removed: 312
+
+# 4. 記錄篩選結果 (PRISMA Screening)
+screening = record_screening(
+    flow_id=identification.flow_id,
+    screened=501,
+    excluded=380,
+    exclusion_reasons={"irrelevant": 200, "wrong_population": 100, "wrong_intervention": 80}
+)
+
+# 5. 資格判定 (PRISMA Eligibility)
+eligibility = record_eligibility(
+    flow_id=identification.flow_id,
+    assessed=121,
+    excluded=85,
+    exclusion_reasons={"no_comparator": 40, "inadequate_outcome": 30, "high_rob": 15}
+)
+
+# 6. 最終納入
+included = record_inclusion(
+    flow_id=identification.flow_id,
+    studies=36,
+    reports=42
+)
+
+# 7. 產生 PRISMA 流程圖
+prisma_diagram = get_prisma_diagram(
+    flow_id=identification.flow_id,
+    format="mermaid"  # or "svg", "json"
+)
+
+# 8. 匯出
+export_screening_worksheet(flow_id=identification.flow_id, format="excel")
+generate_search_report(protocol_id=protocol.id, format="markdown")
+```
+
+#### PRISMA 2020 流程圖輸出 (Mermaid)
+
+```mermaid
+flowchart TD
+    subgraph Identification
+        A1[Records from databases<br/>PubMed n=234<br/>Europe PMC n=456<br/>CORE n=123<br/>OpenAlex n=189<br/>Semantic Scholar n=156]
+        A2[Records removed before screening<br/>Duplicates n=312<br/>Ineligible by automation n=45]
+    end
+    
+    subgraph Screening
+        B1[Records screened<br/>n=501]
+        B2[Records excluded<br/>n=380]
+    end
+    
+    subgraph Eligibility
+        C1[Reports sought for retrieval<br/>n=121]
+        C2[Reports not retrieved<br/>n=6]
+        C3[Reports assessed for eligibility<br/>n=115]
+        C4[Reports excluded with reasons<br/>No comparator n=40<br/>Inadequate outcome n=30<br/>High risk of bias n=15]
+    end
+    
+    subgraph Included
+        D1[Studies included in review<br/>n=36]
+        D2[Reports included in review<br/>n=42]
+    end
+    
+    A1 --> A2 --> B1
+    B1 --> B2
+    B1 --> C1
+    C1 --> C2
+    C1 --> C3
+    C3 --> C4
+    C3 --> D1
+    D1 --> D2
+```
+
+#### 實作優先順序
+
+| Phase | 內容 | 優先級 | 依賴 |
+|-------|------|:------:|------|
+| 5.9.1 | OpenAlex + Semantic Scholar 整合 | ⭐⭐⭐⭐⭐ | - |
+| 5.9.2 | 多資料庫搜尋策略翻譯器 | ⭐⭐⭐⭐⭐ | 5.9.1 |
+| 5.9.3 | PRISMA 流程追蹤 | ⭐⭐⭐⭐⭐ | - |
+| 5.9.4 | 證據等級分類 | ⭐⭐⭐⭐ | - |
+| 5.9.5 | 品質評估模板 | ⭐⭐⭐ | - |
+| 5.9.6 | 可重現性報告匯出 | ⭐⭐⭐⭐ | 5.9.3 |
+
+#### 與現有架構整合
+
+```
+src/pubmed_search/
+├── application/
+│   ├── search/
+│   │   ├── result_aggregator.py    # ✅ v0.2.0 完成 (Union-Find)
+│   │   └── strategy/
+│   │       └── translator.py       # 🆕 搜尋策略翻譯器
+│   ├── review/                     # 🆕 系統性回顧模組
+│   │   ├── protocol.py             # 協議管理
+│   │   ├── prisma_flow.py          # PRISMA 流程追蹤
+│   │   ├── evidence_classifier.py  # 證據分級
+│   │   └── quality_assessment.py   # 品質評估
+│   └── export/
+│       ├── prisma_diagram.py       # 🆕 PRISMA 圖表
+│       └── screening_worksheet.py  # 🆕 篩選工作表
+├── infrastructure/
+│   ├── sources/
+│   │   ├── openalex/               # 🆕 OpenAlex 客戶端
+│   │   └── semantic_scholar/       # 🆕 Semantic Scholar 客戶端
+```
+
+---
+
 ### 🔥 Phase 5.7: 從競品學習的功能 ⭐⭐⭐⭐⭐ (NEW!)
 > **來源**: 2025 年 8-9 月競品分析 - 詳見 [docs/competitor-analysis.md](docs/competitor-analysis.md)
 
