@@ -193,3 +193,20 @@ python run_copilot.py --port 8765 --full-tools
 - 標準化 AI 輔助開發流程
 - 跨對話記憶保持專案脈絡
 - Skills 自動化常見任務
+| 2026-01-26 | CI/CD Pipeline 現代化：使用 UV 替代 pip + 完整品質檢查 | 問題：原 publish.yml 使用 pip/python -m build，未進行品質檢查，導致可能發布有問題的代碼。
+
+解決方案：
+1. 改用 uv（符合專案標準，更快更可靠）
+2. 添加 test job（先測試再發布）
+3. 集成 ruff check + format check
+4. 只有所有檢查通過才允許發布
+
+影響：
+- 提升代碼品質保證
+- 防止有問題的版本發布到 PyPI
+- 建立 production-level CI 標準
+
+技術決策：
+- uv build 替代 python -m build
+- needs: test 確保執行順序
+- 保持 trusted publishing（無需 API token） |

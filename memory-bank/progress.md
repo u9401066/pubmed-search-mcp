@@ -2,85 +2,19 @@
 
 ## Done
 
-- ✅ **HTTP Client 重構 + 測試修復** (2026-01-26)
-  - 新增異常層級：RateLimitError, NetworkError, ServiceUnavailableError, ParseError
-  - @with_retry decorator（指數退避，最多 3 次重試）
-  - 40+ 測試檔案 DDD 路徑批量修復
-  - 測試結果：672 passed, 14 skipped ✅
-- ✅ **ClinicalTrials.gov 整合** (2026-01-26)
-  - unified_search 自動顯示相關臨床試驗
-  - 免費 API，無需 API key
-  - 狀態指示：🟢 RECRUITING, 🟡 ACTIVE, ✅ COMPLETED
-- ✅ **Study Type Badge 顯示** (2026-01-26)
-  - 從 PubMed publication_types 取得（非推斷）
-  - 🟢 Meta-Analysis (1a), RCT (1b), 🟡 Clinical Trial, 🟠 Case Report
-- ✅ **ResultAggregator 重構** (2026-01-26)
-  - Union-Find O(n) 去重算法
-  - 多維排序：relevance, quality, recency, impact, source_trust
-  - 66 tests, 96% coverage
-- ✅ **README i18n 同步** (2026-01-26)
-  - 中英文版本結構完全對齊
-  - Middleware 架構圖、PICO 流程圖、搜尋模式比較
-  - 英文 670 行，中文 663 行
-- ✅ 達成 90% 測試覆蓋率 (411 tests)
-- ✅ v0.1.8 發布到 PyPI
-- ✅ v0.1.10-v0.1.29 功能更新
-- ✅ **v0.2.0 DDD 架構重構**
-  - 將整個 `src/pubmed_search/` 重組為 DDD 層次結構
-  - `mcp/` → `presentation/mcp_server/` (避免與 mcp 套件衝突)
-  - `entrez/` → `infrastructure/ncbi/`
-  - `sources/` → `infrastructure/sources/`
-  - `exports/` → `application/export/`
-  - `unified/` → `application/search/`
-  - `models/` → `domain/entities/`
-  - 新增 NCBI Citation Exporter API 官方引用匯出
-- ✅ ROADMAP 更新：Agent 友善標準定義 + Token 效率優化 (Phase 5.8)
-- ✅ 競品分析更新 (2025 Aug-Sep findings)
-- ✅ Ruff lint 修復 (13 errors fixed)
-  - Citation Tree 視覺化
-  - 多來源整合 (Semantic Scholar, OpenAlex, CORE, Europe PMC)
-  - HTTP API 背景服務
-  - OpenURL 機構存取整合
-  - Vision Search 圖片搜尋
-  - Unified Search 統一搜尋介面
-- ✅ Docker 部署支援 (含 HTTPS)
-- ✅ SSE Server 遠端存取 (port 8765)
-- ✅ 導入 Claude Skills 系統 (13+ skills)
-- ✅ 導入憲法-子法架構
-- ✅ 建立 Memory Bank 記憶系統
-- ✅ 專案結構一致性檢查完成
-- ✅ MCP SDK 升級至 1.25.0
-- ✅ ToolUniverse PR #64 提交
-- ✅ 新增 medical-calc-mcp PR 指南文件
-- ✅ FastAPI 依賴更新 (>=0.128.0)
-- ✅ **Phase 2.2 功能完成**
-  - ICD 自動偵測整合至 unified_search (ICD-10/ICD-9 → MeSH 擴展)
-  - Preprint 搜尋整合 (arXiv, medRxiv, bioRxiv)
-  - Advanced Filters 修復 (Clinical Query 語法: Therapy/Broad[filter])
-  - MCP Resources 模組 (filter docs, ICD↔MeSH 雙向轉換)
+- 修復 publish workflow 使用 uv
+- 修復所有 ruff linting 錯誤 (41 個)
+- 格式化所有代碼文件 (43 個)
+- 配置 mypy 為 production-ready
+- 添加 types-requests 依賴
+- 建立完整 CI 測試流程
 
 ## Doing
 
-- 🔄 Token 效率優化 (Phase 5.8)
-  - ⏳ 設計 compact output format
-  - ⏳ `to_compact_dict()` 方法
-- 🔄 MCP 完整性改進
-  - ⏳ 評估 MCP 1.8+ 新功能 (Streamable HTTP, OAuth)
-  - ⏳ 多階段工具選擇機制
-
-## Code Quality Status (2026-01-26)
-
-| 工具 | 狀態 | 發現問題 |
-|------|------|----------|
-| Ruff (F/W) | ✅ | 無致命錯誤，145 個 E501 (行太長) |
-| MyPy | ⚠️ | 型別註解問題 (已知，非阻塞) |
-| Bandit | ⚠️ | B310 urlopen (預期內，API client) |
-| Vulture | ✅ | 3 個未使用變數 |
+- 準備發布 v0.2.2 版本
+- 測試 CI pipeline
 
 ## Next
 
-- medical-calc-mcp ToolUniverse PR 提交
-- Token 效率優化實作
-- Phase 5.7 功能實作
-- 文件網站建立
-- 多語言 README 完善
+- 監控 CI 運行結果
+- 驗證 PyPI 發布成功

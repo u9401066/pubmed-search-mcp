@@ -7,8 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Planned
+- PRISMA flow tracking (init_prisma_flow, record_screening, get_prisma_diagram)
+- Evidence level classification (Oxford CEBM I-V)
+- Quality assessment templates (RoB 2, ROBINS-I, NOS)
+- Research trend analysis (keyword frequency, publication trends)
+- Chart generation (PNG output)
+
+---
+
+## [0.2.2] - 2026-01-26
+
 ### Changed
 
+- **CI/CD Pipeline Modernization** - Production-level quality gates
+  - Migrated from `pip` + `python -m build` to `uv` (faster, more reliable)
+  - Added pre-publish test job: tests, ruff check, ruff format check
+  - Only publishes to PyPI if all quality checks pass
+  - Configured mypy for production-ready type checking
 - **HTTP Client Refactoring** - Unified exception handling + auto-retry mechanism
   - Added exception hierarchy: `RateLimitError`, `NetworkError`, `ServiceUnavailableError`, `ParseError`
   - Added `@with_retry` decorator with exponential backoff (max 3 retries)
@@ -17,6 +33,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Code Quality** - Achieved production-level linting standards
+  - Fixed all 41 ruff linting errors (unused variables, imports, bare except, comparisons)
+  - Auto-formatted 43 files with ruff format
+  - Added types-requests for better type coverage
+  - All 672 tests passing ✅
 - **Test Import Paths** - Mass fix for 40+ test files after DDD refactoring
   - `pubmed_search.client` → `pubmed_search.infrastructure.http`
   - `pubmed_search.entrez` → `pubmed_search.infrastructure.ncbi`
@@ -27,13 +48,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Fix `COREClient` import path (shared → core)
   - Update SessionManager test API calls
   - **Test Results**: 672 passed, 14 skipped ✅ (Before: 322 passed, 121 failed)
-
-### Planned
-- PRISMA flow tracking (init_prisma_flow, record_screening, get_prisma_diagram)
-- Evidence level classification (Oxford CEBM I-V)
-- Quality assessment templates (RoB 2, ROBINS-I, NOS)
-- Research trend analysis (keyword frequency, publication trends)
-- Chart generation (PNG output)
 
 ---
 
