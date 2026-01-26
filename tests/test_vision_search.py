@@ -5,7 +5,6 @@ Tests for vision-based search tools.
 import pytest
 import base64
 from unittest.mock import AsyncMock, patch, MagicMock
-import httpx
 
 from pubmed_search.mcp_server.tools.vision_search import (
     is_valid_url,

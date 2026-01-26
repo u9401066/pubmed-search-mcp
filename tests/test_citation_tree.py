@@ -7,7 +7,6 @@ from pubmed_search.mcp_server.tools.citation_tree import (
     _make_node, _make_edge,
     _to_cytoscape, _to_g6, _to_d3, _to_vis, _to_graphml
 )
-import json
 
 def test_basic_apis():
     """Test the underlying citation APIs."""

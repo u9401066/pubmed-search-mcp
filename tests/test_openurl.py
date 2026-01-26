@@ -5,7 +5,6 @@ Tests for the institutional access / OpenURL link resolver functionality.
 """
 
 import pytest
-import os
 
 
 class TestOpenURLBuilder:

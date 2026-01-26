@@ -6,7 +6,6 @@ This script tests the MCP server running in SSE mode.
 """
 
 import asyncio
-import json
 import sys
 import os
 

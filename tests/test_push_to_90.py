@@ -4,7 +4,6 @@ Final targeted tests to push coverage from 86% to 90%.
 
 import pytest
 from unittest.mock import Mock, patch, MagicMock
-import json
 
 
 class TestSearchFetchWithRetry:
@@ -154,7 +153,6 @@ class TestServerMainPath:
     
     def test_main_with_env_vars(self):
         """Test main gets email from env."""
-        import os
         from pubmed_search.mcp_server import server
         
         # Verify main function exists
@@ -190,7 +188,6 @@ class TestExportHelperFunctions:
     def test_resolve_pmids_with_large_list(self):
         """Test resolving large PMID list truncation."""
         from pubmed_search.mcp_server.tools.export import _resolve_pmids
-        from pubmed_search.mcp_server.tools._common import set_session_manager
         
         # Create large list > 100
         large_pmid_list = [str(i) for i in range(150)]

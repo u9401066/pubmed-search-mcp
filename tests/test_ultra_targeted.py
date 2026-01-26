@@ -2,10 +2,8 @@
 Ultra-targeted tests to push from 88% to 90% coverage.
 """
 
-import pytest
 from unittest.mock import Mock, patch, MagicMock
 import tempfile
-import json
 
 
 class TestSessionReadingList:

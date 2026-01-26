@@ -78,16 +78,16 @@ def test_mcp_server(base_url: str):
     }
     
     print(f"Request URL: {base_url}")
-    print(f"Request Headers:")
+    print("Request Headers:")
     for k, v in headers.items():
         print(f"  {k}: {v}")
-    print(f"Request Body:")
+    print("Request Body:")
     print_json(init_payload)
     
     try:
         resp = session.post(base_url, json=init_payload, headers=headers, timeout=30)
         print(f"\nResponse Status: {resp.status_code}")
-        print(f"Response Headers:")
+        print("Response Headers:")
         for k, v in resp.headers.items():
             print(f"  {k}: {v}")
         
@@ -101,7 +101,7 @@ def test_mcp_server(base_url: str):
             data = resp.json()
             server_info = data.get("result", {}).get("serverInfo", {})
             print_success(f"Server: {server_info.get('name')} v{server_info.get('version')}")
-            print(f"Response (truncated):")
+            print("Response (truncated):")
             print_json(data)
         else:
             print_error(f"HTTP {resp.status_code}: {resp.text[:500]}")
@@ -130,7 +130,7 @@ def test_mcp_server(base_url: str):
         "method": "notifications/initialized"
     }
     
-    print(f"Request Body:")
+    print("Request Body:")
     print_json(notif_payload)
     
     try:
@@ -158,7 +158,7 @@ def test_mcp_server(base_url: str):
         "id": "2"
     }
     
-    print(f"Request Body:")
+    print("Request Body:")
     print_json(tools_payload)
     
     try:
@@ -196,7 +196,7 @@ def test_mcp_server(base_url: str):
         "id": "3"
     }
     
-    print(f"Request Body:")
+    print("Request Body:")
     print_json(call_payload)
     
     try:
@@ -238,7 +238,7 @@ def test_mcp_server(base_url: str):
         "id": "4"
     }
     
-    print(f"Request Body:")
+    print("Request Body:")
     print_json(search_payload)
     
     try:
@@ -270,15 +270,15 @@ def test_mcp_server(base_url: str):
     print(f"{'='*60}")
     print(f"Server URL: {base_url}")
     print(f"Session ID: {session_id or 'N/A'}")
-    print(f"\nIf all steps passed, your MCP server is ready for Copilot Studio!")
-    print(f"\nTo add to Copilot Studio:")
-    print(f"  1. Go to copilotstudio.microsoft.com")
-    print(f"  2. Open your Agent > Tools > Add a tool > New tool")
-    print(f"  3. Select 'Model Context Protocol'")
-    print(f"  4. Enter:")
-    print(f"     - Server name: PubMed Search")
+    print("\nIf all steps passed, your MCP server is ready for Copilot Studio!")
+    print("\nTo add to Copilot Studio:")
+    print("  1. Go to copilotstudio.microsoft.com")
+    print("  2. Open your Agent > Tools > Add a tool > New tool")
+    print("  3. Select 'Model Context Protocol'")
+    print("  4. Enter:")
+    print("     - Server name: PubMed Search")
     print(f"     - Server URL: {base_url}")
-    print(f"     - Authentication: None")
+    print("     - Authentication: None")
     
     return True
 
@@ -286,7 +286,7 @@ def test_mcp_server(base_url: str):
 if __name__ == "__main__":
     url = sys.argv[1] if len(sys.argv) > 1 else "https://kmuh-ai.ngrok.dev/mcp"
     
-    print(f"""
+    print("""
 ╔══════════════════════════════════════════════════════════════╗
 ║  Copilot Studio MCP Compatibility Test                       ║
 ║  Simulates the exact communication flow of Copilot Studio    ║

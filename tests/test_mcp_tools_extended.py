@@ -4,7 +4,7 @@ Tests for MCP Tools - merge, pico, strategy, and export tools.
 
 import pytest
 import json
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import MagicMock
 
 
 class TestMergeTools:

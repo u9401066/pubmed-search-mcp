@@ -2,9 +2,7 @@
 Tests for MCP Server and related components.
 """
 
-import pytest
-import json
-from unittest.mock import Mock, patch, MagicMock, AsyncMock
+from unittest.mock import MagicMock
 
 
 class TestMCPServerInit:
@@ -139,10 +137,6 @@ class TestEntrezInit:
     def test_literature_searcher_inheritance(self):
         """Test LiteratureSearcher has correct inheritance."""
         from pubmed_search.entrez import LiteratureSearcher
-        from pubmed_search.entrez.base import EntrezBase
-        from pubmed_search.entrez.citation import CitationMixin
-        from pubmed_search.entrez.batch import BatchMixin
-        from pubmed_search.entrez.icite import ICiteMixin
         
         # Check MRO includes all mixins
         mro_names = [cls.__name__ for cls in LiteratureSearcher.__mro__]

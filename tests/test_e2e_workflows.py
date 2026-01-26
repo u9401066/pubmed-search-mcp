@@ -6,7 +6,7 @@ Run with: pytest tests/test_e2e_workflows.py -v
 """
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock
 from pubmed_search import PubMedClient
 
 

@@ -3,8 +3,7 @@ Tests for Entrez modules - citation, icite, batch, pdf.
 """
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
-import json
+from unittest.mock import patch, MagicMock
 
 
 class TestCitationMixin:

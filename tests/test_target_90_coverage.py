@@ -3,9 +3,7 @@ Final targeted tests to reach 90% coverage.
 Focus on uncovered lines in remaining files.
 """
 
-import pytest
-from unittest.mock import Mock, patch, MagicMock
-import json
+from unittest.mock import patch, MagicMock
 import tempfile
 
 

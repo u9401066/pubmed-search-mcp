@@ -3,7 +3,7 @@ Tests for search.py module and discovery tools functions.
 """
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import patch, MagicMock
 import json
 
 

@@ -2,8 +2,7 @@
 Tests for MCP Server initialization and registration.
 """
 
-import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock
 
 
 class TestServerImports:

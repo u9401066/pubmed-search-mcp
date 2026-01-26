@@ -1,6 +1,5 @@
 """Final targeted tests to reach 90% coverage."""
-import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 import tempfile
 import json
 
@@ -10,7 +9,7 @@ class TestClientPubMedClient:
     
     def test_pubmed_client_search(self):
         """Test PubMedClient.search() method."""
-        from pubmed_search.client import PubMedClient, SearchStrategy
+        from pubmed_search.client import PubMedClient
         
         with patch('pubmed_search.client.LiteratureSearcher') as mock_searcher_class:
             mock_searcher = Mock()

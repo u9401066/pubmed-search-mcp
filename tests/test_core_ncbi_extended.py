@@ -2,9 +2,6 @@
 Tests for CORE API and NCBI Extended Database integration.
 """
 
-import json
-import pytest
-from unittest.mock import patch, MagicMock
 
 # =============================================================================
 # CORE API Client Tests

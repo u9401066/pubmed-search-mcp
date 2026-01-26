@@ -2,8 +2,7 @@
 Tests for Entrez utility functions.
 """
 
-import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import patch, MagicMock
 
 
 class TestUtilsMixin:

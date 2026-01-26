@@ -3,7 +3,6 @@ Tests for Export modules - formats.py and links.py.
 """
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
 import json
 
 
@@ -40,7 +39,7 @@ class TestExportFormats:
         
     def test_convert_to_latex_fallback(self):
         """Test LaTeX conversion fallback without pylatexenc."""
-        from pubmed_search.exports.formats import _convert_to_latex, HAS_PYLATEXENC
+        from pubmed_search.exports.formats import _convert_to_latex
         
         # Test basic characters even if pylatexenc is available
         result = _convert_to_latex("test")

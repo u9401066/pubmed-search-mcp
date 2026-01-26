@@ -7,9 +7,8 @@ Run with: pytest tests/test_performance.py -v --benchmark-only
 
 import pytest
 import time
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 from pubmed_search import PubMedClient
-from pubmed_search.entrez import LiteratureSearcher
 
 
 # ============================================================
@@ -145,7 +144,6 @@ class TestMemoryUsage:
     
     def test_large_result_set_memory(self, mock_searcher):
         """Large result sets should not cause memory issues."""
-        import sys
         
         # Create large mock result
         large_results = [

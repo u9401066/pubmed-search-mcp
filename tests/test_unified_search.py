@@ -8,7 +8,7 @@ This tests the unified search gateway which provides:
 """
 
 import pytest
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import Mock
 from mcp.server.fastmcp import FastMCP
 
 

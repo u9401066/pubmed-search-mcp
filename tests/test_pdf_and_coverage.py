@@ -3,8 +3,7 @@ Tests for PDF module and additional entrez tests for high coverage.
 """
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
-import json
+from unittest.mock import patch, MagicMock
 
 
 class TestPDFMixin:
@@ -303,7 +302,6 @@ class TestServerCoverage:
     
     def test_server_imports(self):
         """Test that server module has expected components."""
-        from pubmed_search.mcp_server import server
         
         # Should have create_mcp function or similar
         # This tests the imports at module level

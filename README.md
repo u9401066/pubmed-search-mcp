@@ -4,7 +4,6 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![MCP](https://img.shields.io/badge/MCP-Compatible-green.svg)](https://modelcontextprotocol.io/)
-[![Smithery](https://smithery.ai/badge/pubmed-search-mcp)](https://smithery.ai/server/pubmed-search-mcp)
 [![Test Coverage](https://img.shields.io/badge/coverage-90%25-brightgreen.svg)](https://github.com/u9401066/pubmed-search-mcp)
 
 > **Professional Literature Research Assistant for AI Agents** - More than just an API wrapper
@@ -21,18 +20,6 @@ A Domain-Driven Design (DDD) based MCP server that serves as an intelligent rese
 ---
 
 ## 🚀 Quick Install
-
-### Via Smithery (Recommended for Claude Desktop)
-
-```bash
-npx -y @smithery/cli install pubmed-search-mcp --client claude
-```
-
-### Via pip
-
-```bash
-pip install pubmed-search-mcp
-```
 
 ### Via uv
 
@@ -51,31 +38,6 @@ uvx pubmed-search-mcp
 ## ⚙️ Configuration
 
 This MCP server works with **any MCP-compatible AI tool**. Choose your preferred client:
-
-### Claude Desktop (`claude_desktop_config.json`)
-
-```json
-{
-  "mcpServers": {
-    "pubmed-search": {
-      "command": "uvx",
-      "args": ["pubmed-search-mcp"],
-      "env": {
-        "NCBI_EMAIL": "your@email.com"
-      }
-    }
-  }
-}
-```
-
-### Claude Code (Terminal)
-
-```bash
-# Add MCP server to Claude Code
-claude mcp add pubmed-search -- uvx pubmed-search-mcp
-
-# Or manually edit ~/.claude/claude_desktop_config.json
-```
 
 ### VS Code / Cursor (`.vscode/mcp.json`)
 
@@ -114,22 +76,6 @@ claude mcp add pubmed-search -- uvx pubmed-search-mcp
 
 > **Tip**: In Cline, click "MCP Servers" → "Configure" → "Configure MCP Servers" to edit this file.
 
-### OpenCode / Crush (`.opencode.json`)
-
-```json
-{
-  "mcpServers": {
-    "pubmed-search": {
-      "type": "stdio",
-      "command": "uvx",
-      "args": ["pubmed-search-mcp"],
-      "env": {
-        "NCBI_EMAIL": "your@email.com"
-      }
-    }
-  }
-}
-```
 
 ### Antigravity / Other MCP Clients
 
@@ -139,8 +85,6 @@ Any MCP-compatible client can use this server via stdio transport:
 # Command
 uvx pubmed-search-mcp
 
-# Or if installed via pip
-pubmed-search-mcp
 ```
 
 > **Note**: `NCBI_EMAIL` is required by NCBI API policy. Optionally set `NCBI_API_KEY` for higher rate limits.
@@ -149,16 +93,26 @@ pubmed-search-mcp
 
 ## 🎯 Design Philosophy
 
-- **Agent-First** - Designed for AI Agents, output optimized for machine decision-making
-- **Task-Oriented** - Tools organized by research tasks, not low-level APIs
-- **DDD Architecture** - Core modeling based on literature research domain knowledge
-- **Context-Aware** - Maintains research state through Session
+> **Core Positioning**: The **intelligent middleware** between AI Agents and academic search engines.
 
-**Positioning**: PubMed-specialized AI research assistant
-- ✅ MeSH vocabulary integration - Not available from other sources
-- ✅ PICO structured queries - Medical specialty
-- ✅ ESpell spelling correction - Auto-correction
-- ✅ Batch parallel search - High efficiency
+### Why This Server?
+
+Other tools give you raw API access. We give you **vocabulary translation + intelligent routing**:
+
+| Challenge | Our Solution |
+|-----------|-------------|
+| Agent uses ICD codes, PubMed needs MeSH | ✅ **Auto ICD→MeSH conversion** |
+| Multiple databases, different APIs | ✅ **Unified Search** single entry point |
+| Clinical questions need structured search | ✅ **PICO parser** with Boolean builder |
+| Typos in medical terms | ✅ **ESpell auto-correction** |
+| Too many results from one source | ✅ **Parallel multi-source** with dedup |
+
+### Key Differentiators
+
+1. **Vocabulary Translation Layer** - Agent speaks naturally, we translate to each database's terminology (MeSH, ICD-10, text-mined entities)
+2. **Unified Search Gateway** - One `unified_search()` call, auto-dispatch to PubMed/Europe PMC/CORE/OpenAlex
+3. **PICO-Aware** - Parse clinical questions into structured (P)opulation/(I)ntervention/(C)omparison/(O)utcome
+4. **Agent-First Design** - Output optimized for machine decision-making, not human reading
 
 ---
 
@@ -168,15 +122,19 @@ This MCP server integrates with multiple academic databases and APIs:
 
 ### Core Data Sources
 
-| Source | Coverage | API Key | Rate Limit | Description |
-|--------|----------|---------|------------|-------------|
-| **NCBI PubMed** | 36M+ articles | Optional | 3/s → 10/s | Primary biomedical literature |
-| **NCBI Entrez** | Multi-DB | Optional | 3/s → 10/s | Gene, PubChem, ClinVar |
-| **Europe PMC** | 33M+ | Not required | Generous | Full text XML access |
-| **CORE** | 200M+ | Optional | 100/day → 5K/day | Open access aggregator |
-| **Semantic Scholar** | 200M+ | Optional | 100/s → 1K/s | AI-powered recommendations |
-| **OpenAlex** | 250M+ | Not required | 100K/day | Open scholarly metadata |
-| **NIH iCite** | PubMed | Not required | Generous | Citation metrics (RCR) |
+| Source | Coverage | Vocabulary | Auto-Convert | Description |
+|--------|----------|------------|--------------|-------------|
+| **NCBI PubMed** | 36M+ articles | MeSH | ✅ Native | Primary biomedical literature |
+| **NCBI Entrez** | Multi-DB | MeSH | ✅ Native | Gene, PubChem, ClinVar |
+| **Europe PMC** | 33M+ | Text-mined | ✅ Extraction | Full text XML access |
+| **CORE** | 200M+ | None | ➡️ Free-text | Open access aggregator |
+| **Semantic Scholar** | 200M+ | S2 Fields | ➡️ Free-text | AI-powered recommendations |
+| **OpenAlex** | 250M+ | Concepts | ➡️ Free-text | Open scholarly metadata |
+| **NIH iCite** | PubMed | N/A | N/A | Citation metrics (RCR) |
+
+> **🔑 Key**: ✅ = Full vocabulary support | ➡️ = Query pass-through (no controlled vocabulary)
+>
+> **ICD Codes**: Auto-detected and converted to MeSH before PubMed search
 
 ### Environment Variables
 
@@ -194,491 +152,275 @@ HTTP_PROXY=http://proxy:8080       # HTTP proxy for API requests
 HTTPS_PROXY=https://proxy:8080     # HTTPS proxy for API requests
 ```
 
-### Python Dependencies
+
+## 🔄 How It Works: The Middleware Architecture
 
 ```
-biopython>=1.81        # NCBI Entrez E-utilities
-requests>=2.28.0       # HTTP client
-pylatexenc>=2.10       # Unicode to LaTeX (BibTeX export)
-mcp>=1.0.0             # Model Context Protocol
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              AI AGENT                                        │
+│                                                                              │
+│   "Find papers about I10 hypertension treatment in diabetic patients"       │
+│                                                                              │
+└─────────────────────────────────┬───────────────────────────────────────────┘
+                                  │
+                                  ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     🔄 PUBMED SEARCH MCP (MIDDLEWARE)                        │
+│  ┌─────────────────────────────────────────────────────────────────────────┐│
+│  │  1️⃣ VOCABULARY TRANSLATION                                              ││
+│  │     • ICD-10 "I10" → MeSH "Hypertension"                                ││
+│  │     • "diabetic" → MeSH "Diabetes Mellitus"                             ││
+│  │     • ESpell: "hypertention" → "hypertension"                           ││
+│  └─────────────────────────────────────────────────────────────────────────┘│
+│  ┌─────────────────────────────────────────────────────────────────────────┐│
+│  │  2️⃣ INTELLIGENT ROUTING                                                 ││
+│  │     ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐             ││
+│  │     │ PubMed   │  │Europe PMC│  │   CORE   │  │ OpenAlex │             ││
+│  │     │  36M+    │  │   33M+   │  │  200M+   │  │  250M+   │             ││
+│  │     │  (MeSH)  │  │(fulltext)│  │  (OA)    │  │(metadata)│             ││
+│  │     └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘             ││
+│  │          └──────────────┴──────────────┴──────────────┘                 ││
+│  │                              ▼                                          ││
+│  │  3️⃣ RESULT AGGREGATION: Dedupe + Rank + Enrich                         ││
+│  └─────────────────────────────────────────────────────────────────────────┘│
+└─────────────────────────────────┬───────────────────────────────────────────┘
+                                  │
+                                  ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         UNIFIED RESULTS                                      │
+│   • 150 unique papers (deduplicated from 4 sources)                          │
+│   • Ranked by relevance + citation impact (RCR)                              │
+│   • Full text links enriched from Europe PMC                                 │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Features
+## 🛠️ MCP Tools Overview
 
-- **Search PubMed**: Full-text and advanced query support
-- **Related Articles**: Find papers related to a given PMID
-- **Citing Articles**: Find papers that cite a given PMID
-- **Parallel Search**: Generate multiple queries for comprehensive searches
-- **PDF Access**: Get open-access PDF URLs from PubMed Central
-- **Export Formats**: RIS, BibTeX, CSV, MEDLINE, JSON (EndNote/Zotero/Mendeley compatible)
-- **MCP Integration**: Use with VS Code + GitHub Copilot or any MCP client
-- **Remote Server**: Deploy as HTTP service for multi-machine access
-- **Submodule Ready**: Use as a Git submodule in larger projects
-- **Multi-Source Search**: PubMed, Europe PMC (33M+), CORE (200M+), Semantic Scholar, OpenAlex
-- **Full Text Access**: Direct XML/text retrieval from Europe PMC and CORE
-- **NCBI Extended**: Gene, PubChem compound, and ClinVar clinical variant databases
-- **Claude Skills**: 9 pre-built workflow guides for AI agent development
-- **Copilot Integration**: GitHub Copilot instructions for VS Code users
+### 🔍 Search Tools
 
-### New in Phase 2.2
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      SEARCH ENTRY POINTS                         │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│   unified_search()          ← 🌟 RECOMMENDED: Auto-routing       │
+│        │                                                         │
+│        ├── Quick search     → Direct multi-source query          │
+│        ├── PICO mode        → Clinical question decomposition    │
+│        └── Systematic mode  → MeSH expansion + parallel search   │
+│                                                                  │
+├─────────────────────────────────────────────────────────────────┤
+│   SPECIALIZED SEARCH (when you need specific source)            │
+│                                                                  │
+│   search_literature()       → PubMed only (MeSH support)         │
+│   search_europe_pmc()       → Europe PMC (fulltext/OA filters)   │
+│   search_core()             → CORE 200M+ open access             │
+│   search_gene()             → NCBI Gene database                 │
+│   search_compound()         → PubChem compounds                  │
+│   search_clinvar()          → ClinVar variants                   │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
 
-- **Unified Search**: Single entry point for multi-source search with auto-dispatching
-- **Advanced Filters**: Age group, sex, species, language, clinical query filters
-- **ICD Code Auto-Detection**: Query with ICD-9/10 codes auto-expands to MeSH terms
-- **Preprint Search**: arXiv, medRxiv, bioRxiv integration via `include_preprints=True`
-- **MCP Resources**: Filter documentation and ICD↔MeSH mapping via URI scheme
+### 🔬 Discovery Tools (After Finding Key Papers)
+
+```
+                        Found important paper (PMID)
+                                   │
+           ┌───────────────────────┼───────────────────────┐
+           │                       │                       │
+           ▼                       ▼                       ▼
+    ┌─────────────┐        ┌─────────────┐        ┌─────────────┐
+    │  BACKWARD   │        │  SIMILAR    │        │  FORWARD    │
+    │  ◀──────    │        │  ≈≈≈≈≈≈     │        │  ──────▶    │
+    │             │        │             │        │             │
+    │ get_article │        │find_related │        │find_citing  │
+    │ _references │        │ _articles   │        │ _articles   │
+    │             │        │             │        │             │
+    │ Foundation  │        │  Similar    │        │ Follow-up   │
+    │  papers     │        │   topic     │        │  research   │
+    └─────────────┘        └─────────────┘        └─────────────┘
+
+    build_citation_tree() → Full network visualization (6 formats)
+```
+
+### 📚 Full Text & Export
+
+| Category | Tools |
+|----------|-------|
+| **Full Text** | `get_fulltext` (Europe PMC), `get_core_fulltext` (CORE), `get_fulltext_xml` |
+| **Text Mining** | `get_text_mined_terms` → Extract genes, diseases, chemicals |
+| **Export** | `prepare_export` → RIS/BibTeX/CSV/MEDLINE/JSON |
+| **Metrics** | `get_citation_metrics` → iCite RCR, citation percentile |
+
+---
+
+## 📋 Agent Usage Examples
+
+### 1️⃣ Quick Search (Simplest)
+
+```python
+# Agent just asks naturally - middleware handles everything
+unified_search(query="remimazolam ICU sedation", limit=20)
+
+# Or with clinical codes - auto-converted to MeSH
+unified_search(query="I10 treatment in E11.9 patients")
+#                     ↑ ICD-10           ↑ ICD-10
+#                     Hypertension       Type 2 Diabetes
+```
+
+### 2️⃣ PICO Clinical Question
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│  "Is remimazolam better than propofol for ICU sedation?"                │
+└─────────────────────────────────┬───────────────────────────────────────┘
+                                  │
+                                  ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         parse_pico()                                     │
+│  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐                     │
+│  │    P    │  │    I    │  │    C    │  │    O    │                     │
+│  │  ICU    │  │remimaz- │  │propofol │  │sedation │                     │
+│  │patients │  │  olam   │  │         │  │outcomes │                     │
+│  └────┬────┘  └────┬────┘  └────┬────┘  └────┬────┘                     │
+└───────┼────────────┼────────────┼────────────┼──────────────────────────┘
+        │            │            │            │
+        ▼            ▼            ▼            ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│              generate_search_queries() × 4 (parallel)                    │
+│                                                                          │
+│  P → "Intensive Care Units"[MeSH]                                        │
+│  I → "remimazolam" [Supplementary Concept], "CNS 7056"                   │
+│  C → "Propofol"[MeSH], "Diprivan"                                        │
+│  O → "Conscious Sedation"[MeSH], "Deep Sedation"[MeSH]                   │
+└─────────────────────────────────┬───────────────────────────────────────┘
+                                  │
+                                  ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│              Agent combines with Boolean logic                           │
+│                                                                          │
+│  (P) AND (I) AND (C) AND (O)  ← High precision                           │
+│  (P) AND (I OR C) AND (O)     ← High recall                              │
+└─────────────────────────────────┬───────────────────────────────────────┘
+                                  │
+                                  ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│              unified_search() × N (parallel multi-source)                │
+│                                                                          │
+│  PubMed ──┬── Europe PMC ──┬── CORE ──► merge_search_results()           │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+```python
+# Step 1: Parse clinical question
+parse_pico("Is remimazolam better than propofol for ICU sedation?")
+# Returns: P=ICU patients, I=remimazolam, C=propofol, O=sedation outcomes
+
+# Step 2: Get MeSH for each element (parallel!)
+generate_search_queries(topic="ICU patients")   # P
+generate_search_queries(topic="remimazolam")    # I
+generate_search_queries(topic="propofol")       # C
+generate_search_queries(topic="sedation")       # O
+
+# Step 3: Agent combines with Boolean
+query = '("Intensive Care Units"[MeSH]) AND (remimazolam OR "CNS 7056") AND propofol AND sedation'
+
+# Step 4: Search and merge
+unified_search(query=query, sources=["pubmed", "europe_pmc", "core"])
+```
+
+### 3️⃣ Explore from Key Paper
+
+```python
+# Found landmark paper PMID: 33475315
+find_related_articles(pmid="33475315")   # Similar methodology
+find_citing_articles(pmid="33475315")    # Who built on this?
+get_article_references(pmid="33475315")  # What's the foundation?
+
+# Build complete research map
+build_citation_tree(pmid="33475315", depth=2, output_format="mermaid")
+```
+
+### 4️⃣ Gene/Drug Research
+
+```python
+# Research a gene
+search_gene(query="BRCA1", organism="human")
+get_gene_literature(gene_id="672", limit=20)
+
+# Research a drug compound
+search_compound(query="propofol")
+get_compound_literature(cid="4943", limit=20)
+```
+
+### 5️⃣ Export Results
+
+```python
+# Export last search results
+prepare_export(pmids="last", format="ris")      # → EndNote/Zotero
+prepare_export(pmids="last", format="bibtex")   # → LaTeX
+
+# Check open access availability
+analyze_fulltext_access(pmids="last")
+```
+
+---
+
+## 🔍 Search Mode Comparison
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        SEARCH MODE DECISION TREE                         │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│   "What kind of search do I need?"                                       │
+│         │                                                                │
+│         ├── Know exactly what to search?                                 │
+│         │   └── unified_search(query="topic keywords")                   │
+│         │       → Quick, auto-routing to best sources                    │
+│         │                                                                │
+│         ├── Have a clinical question (A vs B)?                           │
+│         │   └── parse_pico() → unified_search(mode="pico")               │
+│         │       → Structured P/I/C/O search with Boolean                 │
+│         │                                                                │
+│         ├── Need comprehensive systematic coverage?                      │
+│         │   └── generate_search_queries() → parallel search              │
+│         │       → MeSH expansion, multiple strategies, merge             │
+│         │                                                                │
+│         └── Exploring from a key paper?                                  │
+│             └── find_related/citing/references → build_citation_tree     │
+│                 → Citation network, research context                     │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+| Mode | Entry Point | Best For | Auto-Features |
+|------|-------------|----------|---------------|
+| **Quick** | `unified_search()` | Fast topic search | ICD→MeSH, multi-source, dedup |
+| **PICO** | `parse_pico()` | Clinical questions | P/I/C/O decomposition, Boolean |
+| **Systematic** | `generate_search_queries()` | Literature reviews | MeSH expansion, synonyms |
+| **Exploration** | `find_*_articles()` | From key paper | Citation network, related |
 
 ---
 
 ## 🤖 Claude Skills (AI Agent Workflows)
 
-This project includes **22 Claude Skill files** in `.claude/skills/` that teach AI agents how to effectively use the MCP tools. These skills provide:
-
-- **Step-by-step workflows** with decision trees
-- **Code examples** ready for immediate use
-- **Best practices** for each research scenario
-
-> ⚠️ **Note**: Skill files (`.claude/skills/*/SKILL.md`) are a **Claude Code-specific feature**. They work with Claude Desktop and VS Code + Claude extension. Other tools like ToolUniverse use different integration mechanisms (JSON configs + Python classes).
-
-### PubMed Research Skills (9)
-
-| Skill | Description | Trigger Examples |
-|-------|-------------|------------------|
-| `pubmed-quick-search` | Basic PubMed search with advanced filters | "search for", "find papers" |
-| `pubmed-systematic-search` | MeSH expansion, comprehensive search | "systematic review", "comprehensive" |
-| `pubmed-pico-search` | PICO clinical question decomposition | "is A better than B?", "PICO" |
-| `pubmed-paper-exploration` | Citation tree, related articles | "citing articles", "related papers" |
-| `pubmed-gene-drug-research` | Gene, PubChem, ClinVar integration | "gene function", "drug compound" |
-| `pubmed-fulltext-access` | Europe PMC, CORE full text retrieval | "full text", "PDF", "open access" |
-| `pubmed-export-citations` | RIS, BibTeX, CSV export | "export", "EndNote", "Zotero" |
-| `pubmed-multi-source-search` | Cross-database search strategy | "all sources", "multi-database" |
-| `pubmed-mcp-tools-reference` | Complete 35+ tools reference | "all tools", "what can you do" |
-
-### Development Utility Skills (13)
-
-| Skill | Description | Trigger Examples |
-|-------|-------------|------------------|
-| `code-refactor` | Proactive code refactoring, DDD architecture | "RF", "refactor", "重構" |
-| `code-reviewer` | Comprehensive code review | "CR", "review", "審查" |
-| `ddd-architect` | DDD architecture enforcement | "DDD", "arch", "新功能" |
-| `git-precommit` | Pre-commit workflow orchestration | "GIT", "push", "commit" |
-| `git-doc-updater` | Auto-update docs before Git commits | "docs", "sync docs" |
-| `memory-updater` | Memory Bank maintenance | "MB", "memory", "記憶" |
-| `memory-checkpoint` | Save context before summarization | "CP", "checkpoint", "存檔" |
-| `readme-updater` | README sync with code changes | "readme", "更新說明" |
-| `readme-i18n` | Multilingual README maintenance | "i18n", "翻譯", "translate" |
-| `changelog-updater` | CHANGELOG auto-update | "CL", "changelog", "版本" |
-| `roadmap-updater` | ROADMAP status update | "RM", "roadmap", "路線" |
-| `test-generator` | Comprehensive test generation | "TG", "test", "測試" |
-| `project-init` | Initialize new projects from template | "init", "new", "新專案" |
-
-### Using Skills
-
-**For Claude Desktop / Claude Code:**
-```
-# Skills are automatically loaded from .claude/skills/
-# Just ask naturally:
-"Help me do a systematic search for remimazolam"
-"What are the citing articles for this paper?"
-```
-
-**For VS Code GitHub Copilot:**
-```
-# The .github/copilot-instructions.md provides guidance
-# Copilot will use the skill patterns automatically
-```
-
-### Skill File Structure
-
-Each skill file follows this structure:
-
-```markdown
----
-name: pubmed-quick-search
-description: Quick PubMed search. Triggers: search, find papers...
----
-# Quick PubMed Search
-
-## Description
-...
-
-## Workflow
-...
-
-## Code Examples
-...
-```
-
-> 📁 **Skill files location**: `.claude/skills/*/SKILL.md`
-
----
-
-## 🛠️ MCP Tools (35+ Tools)
-
-### Discovery Tools
-
-| Tool | Description | Direction |
-|------|-------------|-----------|
-| `search_literature` | Search PubMed literature | - |
-| `find_related_articles` | Find similar articles (PubMed algorithm) | Similarity |
-| `find_citing_articles` | Find papers citing this article (follow-up research) | Forward ➡️ |
-| `get_article_references` | Get this article's references (research foundation) | Backward ⬅️ |
-| `fetch_article_details` | Get full article information | - |
-| `get_citation_metrics` | Get citation metrics (iCite RCR/Percentile) | - |
-| `build_citation_tree` | Build citation network tree (6 formats) | Both ↔️ |
-| `suggest_citation_tree` | Evaluate if building citation tree is worthwhile | - |
-
-### Parallel Search Tools
-
-| Tool | Description |
-|------|-------------|
-| `parse_pico` | Parse PICO clinical questions (search entry point) |
-| `generate_search_queries` | Generate multiple search strategies (ESpell + MeSH) |
-| `merge_search_results` | Merge and deduplicate search results |
-| `expand_search_queries` | Expand search strategies |
-
-### Export Tools
-
-| Tool | Description |
-|------|-------------|
-| `prepare_export` | Export citation formats (RIS/BibTeX/CSV/MEDLINE/JSON) |
-| `get_article_fulltext_links` | Get full-text links (PMC/DOI) |
-| `analyze_fulltext_access` | Analyze open access availability |
-
-### 🇪🇺 Europe PMC Tools (Full Text Access)
-
-| Tool | Description |
-|------|-------------|
-| `search_europe_pmc` | Search 33M+ publications with OA/fulltext filters |
-| `get_fulltext` | 📄 Get parsed full text (structured sections) |
-| `get_fulltext_xml` | Get raw JATS XML |
-| `get_text_mined_terms` | 🔬 Get annotations (genes, diseases, chemicals) |
-| `get_europe_pmc_citations` | Citation network (citing/references) |
-
-### 📚 CORE Tools (200M+ Open Access Papers)
-
-| Tool | Description |
-|------|-------------|
-| `search_core` | Search 200M+ open access papers |
-| `search_core_fulltext` | Search within paper content (42M+ full texts) |
-| `get_core_paper` | Get paper details by CORE ID |
-| `get_core_fulltext` | 📄 Get full text content |
-| `find_in_core` | Find papers by DOI/PMID |
-
-### 🧬 NCBI Extended Database Tools
-
-| Tool | Description |
-|------|-------------|
-| `search_gene` | 🧬 Search NCBI Gene database |
-| `get_gene_details` | Get gene information |
-| `get_gene_literature` | Get gene-linked PubMed articles |
-| `search_compound` | 💊 Search PubChem compounds |
-| `get_compound_details` | Get compound info (formula, SMILES) |
-| `get_compound_literature` | Get compound-linked PubMed articles |
-| `search_clinvar` | 🔬 Search ClinVar clinical variants |
-
-### Session Management Tools
-
-| Tool | Description |
-|------|-------------|
-| `get_session_pmids` | Get cached PMID list from searches |
-| `list_search_history` | List search history |
-| `get_cached_article` | Get article from cache (no API call) |
-| `get_session_summary` | Get session status summary |
-
-> **Design Principle**: Focus on search. Session/Cache/Reading List are all **internal mechanisms** that operate automatically - Agents don't need to manage them.
-
----
-
-## 📋 Agent Usage Workflow
-
-### Simple Search
-
-```python
-search_literature(query="remimazolam ICU sedation", limit=10)
-```
-
-### Using PubMed Official Syntax
-
-```python
-# MeSH standard vocabulary
-search_literature(query='"Diabetes Mellitus"[MeSH]')
-
-# Field-specific search
-search_literature(query='(BRAF[Gene Name]) AND (melanoma[Title/Abstract])')
-
-# Date range
-search_literature(query='COVID-19[Title] AND 2024[dp]')
-
-# Publication type
-search_literature(query='propofol sedation AND Review[pt]')
-
-# Combined search
-search_literature(query='("Intensive Care Units"[MeSH]) AND (remimazolam[tiab] OR "CNS 7056"[tiab])')
-```
-
-### PubMed Official Field Tags
-
-| Tag | Description | Example |
-|-----|-------------|---------|
-| `[Title]` or `[ti]` | Title | `COVID-19[ti]` |
-| `[Title/Abstract]` or `[tiab]` | Title + Abstract | `sedation[tiab]` |
-| `[MeSH]` or `[mh]` | MeSH standard vocabulary | `"Diabetes Mellitus"[MeSH]` |
-| `[MeSH Major Topic]` or `[majr]` | MeSH major topic | `"Anesthesia"[majr]` |
-| `[Author]` or `[au]` | Author | `Smith J[au]` |
-| `[Journal]` or `[ta]` | Journal abbreviation | `Nature[ta]` |
-| `[Publication Type]` or `[pt]` | Publication type | `Review[pt]`, `Clinical Trial[pt]` |
-| `[Date - Publication]` or `[dp]` | Publication date | `2024[dp]`, `2020:2024[dp]` |
-| `[Gene Name]` | Gene name | `BRAF[Gene Name]` |
-| `[Substance Name]` | Substance name | `propofol[Substance Name]` |
-
-> **Full syntax reference**: [PubMed Search Field Tags](https://pubmed.ncbi.nlm.nih.gov/help/#search-tags)
-
-### Deep Exploration (After finding important papers)
-
-```python
-find_related_articles(pmid="12345678")   # Related articles (PubMed algorithm)
-find_citing_articles(pmid="12345678")    # Papers citing this one (forward in time)
-get_article_references(pmid="12345678")  # This paper's references (backward in time)
-```
-
----
-
-## 🔬 Citation Discovery Guide
-
-After finding an important paper, there are **5 tools** to explore related literature. Choosing the right tool can greatly improve research efficiency:
-
-### Tool Comparison
-
-| Tool | Direction | Data Source | Use Case | API Calls |
-|------|-----------|-------------|----------|-----------|
-| `find_related_articles` | Similarity | PubMed algorithm | Find topic/method similar articles | 1 |
-| `find_citing_articles` | Forward ➡️ | PMC citations | Find follow-up research | 1 |
-| `get_article_references` | Backward ⬅️ | PMC references | Find foundational papers | 1 |
-| `build_citation_tree` | Both ↔️ | PMC (BFS traversal) | Build complete citation network | Multiple |
-| `suggest_citation_tree` | - | Article info | Evaluate if tree building is worthwhile | 1 |
-
-### Usage Decision Tree
-
-```
-Found an important paper (PMID: 12345678)
-    │
-    ├── Want to find "similar topic" articles?
-    │   └── ✅ find_related_articles(pmid="12345678")
-    │       → PubMed algorithm finds similar articles by MeSH, keywords, citation patterns
-    │
-    ├── Want to know "how subsequent research developed"?
-    │   └── ✅ find_citing_articles(pmid="12345678")
-    │       → Find all papers citing this one (timeline: forward → now)
-    │
-    ├── Want to understand "what this article is based on"?
-    │   └── ✅ get_article_references(pmid="12345678")
-    │       → Get this article's reference list (timeline: backward ← past)
-    │
-    └── Want to build "complete research context network"?
-        │
-        ├── First evaluate: suggest_citation_tree(pmid="12345678")
-        │   → Check citation count to decide if tree building is worthwhile
-        │
-        └── Build network: build_citation_tree(pmid="12345678", depth=2)
-            → Output Mermaid/Cytoscape/GraphML formats
-```
-
-### Practical Examples
-
-#### Scenario 1: Quick related paper search
-```python
-# Found an important RCT on remimazolam, want to see similar studies
-find_related_articles(pmid="33475315", limit=10)
-```
-
-#### Scenario 2: Track research impact
-```python
-# What subsequent research did this 2020 paper influence?
-find_citing_articles(pmid="33475315", limit=20)
-```
-
-#### Scenario 3: Understand research foundation
-```python
-# What key literature did this article cite? Find foundation papers
-get_article_references(pmid="33475315", limit=30)
-```
-
-#### Scenario 4: Build research context map (Literature Review)
-```python
-# Step 1: Evaluate if tree building is worthwhile
-suggest_citation_tree(pmid="33475315")
-
-# Step 2: Build 2-level citation network, output Mermaid format (previewable in VS Code)
-build_citation_tree(
-    pmid="33475315",
-    depth=2,
-    direction="both",
-    output_format="mermaid"
-)
-```
-
-### Citation Tree Output Formats
-
-| Format | Use Case | Tool |
-|--------|----------|------|
-| `mermaid` | VS Code Markdown preview | Built-in Mermaid extension |
-| `cytoscape` | Academic standard, bioinformatics | Cytoscape.js |
-| `g6` | Modern web visualization | AntV G6 |
-| `d3` | Flexible customization | D3.js force layout |
-| `vis` | Rapid prototyping | vis-network |
-| `graphml` | Desktop analysis software | Gephi, VOSviewer, yEd |
-
----
-
-## 🔍 Deep Search: Two Entry Modes
-
-This tool provides two deep search entry points, both completed through **parallel search + merge deduplication**:
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                      Deep Search Flowchart                               │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                          │
-│   ┌───────────────────┐         ┌───────────────────┐                   │
-│   │  Keyword Entry    │         │  PICO Clinical    │                   │
-│   │  (Know what to    │         │  Question Entry   │                   │
-│   │   search)         │         │  (Have clinical   │                   │
-│   └─────────┬─────────┘         │   description)    │                   │
-│             │                   └─────────┬─────────┘                   │
-│             │                             │                              │
-│             │                             ▼                              │
-│             │                   ┌───────────────────┐                   │
-│             │                   │   parse_pico()    │                   │
-│             │                   │   Parse P/I/C/O   │                   │
-│             │                   └─────────┬─────────┘                   │
-│             │                             │                              │
-│             ▼                             ▼                              │
-│   ┌─────────────────────────────────────────────────────────────┐       │
-│   │              generate_search_queries()                       │       │
-│   │              (ESpell correction + MeSH expansion + synonyms) │       │
-│   │                                                              │       │
-│   │   Keyword mode: 1 call                                       │       │
-│   │   PICO mode: 1 call per element (P/I/C/O) in parallel        │       │
-│   └──────────────────────────┬──────────────────────────────────┘       │
-│                              │                                           │
-│                              ▼                                           │
-│   ┌─────────────────────────────────────────────────────────────┐       │
-│   │              Agent combines query strategies                 │       │
-│   │                                                              │       │
-│   │   • Use returned suggested_queries                           │       │
-│   │   • Or combine mesh_terms + all_synonyms yourself            │       │
-│   │   • PICO mode: Use Boolean logic (P) AND (I) AND (O)         │       │
-│   └──────────────────────────┬──────────────────────────────────┘       │
-│                              │                                           │
-│                              ▼                                           │
-│   ┌─────────────────────────────────────────────────────────────┐       │
-│   │              search_literature() × N (parallel execution)    │       │
-│   └──────────────────────────┬──────────────────────────────────┘       │
-│                              │                                           │
-│                              ▼                                           │
-│   ┌─────────────────────────────────────────────────────────────┐       │
-│   │              merge_search_results()                          │       │
-│   │              Merge + dedupe + mark high-relevance articles   │       │
-│   └─────────────────────────────────────────────────────────────┘       │
-│                                                                          │
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
-### Entry 1️⃣: Keyword-Oriented
-
-**Use Case**: Already know the keywords or topic to search
-
-```python
-# Step 1: Get search materials (ESpell + MeSH + synonyms)
-generate_search_queries(topic="remimazolam ICU sedation")
-
-# Returns:
-{
-  "corrected_topic": "remimazolam icu sedation",   # Spelling corrected
-  "mesh_terms": [
-    {"input": "remimazolam", "preferred": "remimazolam [Supplementary Concept]", 
-     "synonyms": ["CNS 7056", "ONO 2745"]},
-    {"input": "sedation", "preferred": "Deep Sedation", 
-     "synonyms": ["Sedation, Deep"]}
-  ],
-  "all_synonyms": ["CNS 7056", "ONO 2745", "Sedation, Deep", ...],
-  "suggested_queries": [
-    {"id": "q1_title", "query": "(remimazolam icu sedation)[Title]"},
-    {"id": "q2_tiab", "query": "(remimazolam icu sedation)[Title/Abstract]"},
-    {"id": "q4_mesh", "query": "\"remimazolam [Supplementary Concept]\"[MeSH Terms]"},
-    {"id": "q6_syn", "query": "(CNS 7056)[Title/Abstract]"},
-    ...
-  ]
-}
-
-# Step 2: Execute searches in parallel
-search_literature(query="(remimazolam icu sedation)[Title]")          # parallel
-search_literature(query="(remimazolam icu sedation)[Title/Abstract]") # parallel
-search_literature(query="\"Deep Sedation\"[MeSH Terms]")              # parallel
-...
-
-# Step 3: Merge results
-merge_search_results(results_json='[["pmid1","pmid2"],["pmid2","pmid3"]]')
-# → unique_pmids: Deduplicated PMID list
-# → high_relevance_pmids: High-relevance articles hit by multiple strategies
-```
-
-### Entry 2️⃣: PICO Clinical Question
-
-**Use Case**: Have a clinical question that needs to be decomposed into structured search
-
-```python
-# Step 1: Parse PICO structure
-parse_pico(description="Is remimazolam better than propofol for ICU sedation? Does it reduce delirium?")
-
-# Returns:
-{
-  "pico": {
-    "P": "ICU patients requiring sedation",
-    "I": "remimazolam",
-    "C": "propofol", 
-    "O": "delirium incidence"
-  },
-  "question_type": "therapy",  # Suggested Clinical Query filter
-  "next_steps": "Call generate_search_queries() for each PICO element"
-}
-
-# Step 2: Get search materials for each PICO element (in parallel!)
-generate_search_queries(topic="ICU patients")  # P → MeSH: "Intensive Care Units"
-generate_search_queries(topic="remimazolam")   # I → MeSH: "remimazolam [Supplementary Concept]"
-generate_search_queries(topic="propofol")      # C → MeSH: "Propofol"
-generate_search_queries(topic="delirium")      # O → MeSH: "Delirium"
-
-# Step 3: Agent combines queries (using Boolean logic)
-# High precision: (P) AND (I) AND (C) AND (O)
-query_precise = '("Intensive Care Units"[MeSH] OR ICU[tiab]) AND ' \
-                '(remimazolam[tiab] OR "CNS 7056"[tiab]) AND ' \
-                '(propofol[tiab] OR Diprivan[tiab]) AND ' \
-                '(delirium[tiab] OR "Emergence Delirium"[MeSH])'
-
-# High recall: (P) AND (I OR C) AND (O)
-query_recall = '(ICU[tiab]) AND (remimazolam[tiab] OR propofol[tiab]) AND (delirium[tiab])'
-
-# Step 4: Parallel search + merge
-search_literature(query=query_precise)  # parallel
-search_literature(query=query_recall)   # parallel
-merge_search_results(...)
-```
-
-### Two Entry Points Comparison
-
-| Feature | Keyword-Oriented | PICO Clinical Question |
-|---------|------------------|------------------------|
-| **Entry Tool** | `generate_search_queries(topic)` | `parse_pico(description)` |
-| **Use Case** | Know what keywords to search | Have clinical question to decompose |
-| **MeSH Expansion** | 1 call | 4 calls (one for P/I/C/O each) |
-| **Query Combination** | Use suggested_queries | Agent combines with Boolean |
-| **Example Input** | "remimazolam ICU sedation" | "Is remimazolam better than propofol in ICU?" |
-
-> **Design Philosophy**: Tools provide materials (MeSH terms, synonyms), Agent makes decisions (how to combine queries)
+Pre-built workflow guides in `.claude/skills/`:
+
+| Skill | Description |
+|-------|-------------|
+| `pubmed-quick-search` | Basic search with filters |
+| `pubmed-systematic-search` | MeSH expansion, comprehensive |
+| `pubmed-pico-search` | Clinical question decomposition |
+| `pubmed-paper-exploration` | Citation tree, related articles |
+| `pubmed-gene-drug-research` | Gene/PubChem/ClinVar |
+| `pubmed-fulltext-access` | Europe PMC, CORE full text |
+| `pubmed-export-citations` | RIS/BibTeX/CSV export |
+
+> 📁 **Location**: `.claude/skills/*/SKILL.md` (Claude Code-specific)
 
 ---
 
@@ -717,6 +459,37 @@ src/pubmed_search/
 | **MeSH Lookup** | `generate_search_queries()` auto-queries NCBI MeSH database |
 | **ESpell** | Auto spelling correction (`remifentanyl` → `remifentanil`) |
 | **Query Analysis** | Each suggested query shows how PubMed actually interprets it |
+
+### Vocabulary Translation Layer (Key Feature)
+
+> **Our Core Value**: We are the **intelligent middleware** between Agent and Search Engines, automatically handling vocabulary standardization so Agent doesn't need to know each database's terminology.
+
+Different data sources use different controlled vocabulary systems. This server provides automatic conversion:
+
+| API / Database | Vocabulary System | Auto-Conversion |
+|----------------|-------------------|-----------------|
+| **PubMed / NCBI** | MeSH (Medical Subject Headings) | ✅ Full support via `expand_with_mesh()` |
+| **ICD Codes** | ICD-10-CM / ICD-9-CM | ✅ Auto-detect & convert to MeSH |
+| **Europe PMC** | Text-mined entities (Gene, Disease, Chemical) | ✅ `get_text_mined_terms()` extraction |
+| **OpenAlex** | OpenAlex Concepts (deprecated) | ❌ Free-text only |
+| **Semantic Scholar** | S2 Field of Study | ❌ Free-text only |
+| **CORE** | None | ❌ Free-text only |
+| **CrossRef** | None | ❌ Free-text only |
+
+#### Automatic ICD → MeSH Conversion
+
+When searching with ICD codes (e.g., `I10` for Hypertension), `unified_search()` automatically:
+1. Detects ICD-10/ICD-9 patterns via `detect_and_expand_icd_codes()`
+2. Looks up corresponding MeSH terms from internal mapping (`ICD10_TO_MESH`, `ICD9_TO_MESH`)
+3. Expands query with MeSH synonyms for comprehensive search
+
+```python
+# Agent calls unified_search with clinical terminology
+unified_search(query="I10 treatment outcomes")
+
+# Server auto-expands to PubMed-compatible query
+"(I10 OR Hypertension[MeSH]) treatment outcomes"
+```
 
 > 📖 **Full architecture documentation**: [ARCHITECTURE.md](ARCHITECTURE.md)
 
@@ -849,139 +622,7 @@ python run_server.py --transport streamable-http --port 8765
 | **No Database** | Stateless | No SQL injection risk |
 | **No Secrets** | In-memory only | No credentials stored |
 
----
 
-## 📦 Installation
-
-### Basic Installation (Library Only)
-
-```bash
-pip install pubmed-search
-```
-
-### With MCP Server Support
-
-```bash
-pip install "pubmed-search[mcp]"
-```
-
-### From Source
-
-```bash
-git clone https://github.com/u9401066/pubmed-search-mcp.git
-cd pubmed-search-mcp
-pip install -e ".[all]"
-```
-
-### As a Git Submodule
-
-```bash
-# Add as submodule to your project
-git submodule add https://github.com/u9401066/pubmed-search-mcp.git src/pubmed_search
-
-# Install dependencies
-pip install biopython requests mcp
-```
-
-Then import in your code:
-```python
-from src.pubmed_search import PubMedClient
-# or add src to your Python path
-```
-
----
-
-## 📚 Usage
-
-### As a Python Library
-
-```python
-from pubmed_search import PubMedClient
-
-client = PubMedClient(email="your@email.com")
-
-# Search for papers
-results = client.search("anesthesia complications", limit=10)
-for paper in results:
-    print(f"{paper.pmid}: {paper.title}")
-
-# Get related articles
-related = client.find_related("12345678", limit=5)
-
-# Get citing articles
-citing = client.find_citing("12345678")
-```
-
-### As an MCP Server (Local - stdio)
-
-#### VS Code Configuration
-
-Add to your `.vscode/mcp.json`:
-
-```json
-{
-  "servers": {
-    "pubmed-search": {
-      "type": "stdio",
-      "command": "pubmed-search-mcp",
-      "args": ["your@email.com"]
-    }
-  }
-}
-```
-
-Or using Python module:
-
-```json
-{
-  "servers": {
-    "pubmed-search": {
-      "type": "stdio",
-      "command": "python",
-      "args": ["-m", "pubmed_search.mcp", "your@email.com"]
-    }
-  }
-}
-```
-
-#### Running Standalone
-
-```bash
-# Using the console script
-pubmed-search-mcp your@email.com
-
-# Or using Python
-python -m pubmed_search.mcp your@email.com
-```
-
-### As a Remote MCP Server (HTTP/SSE)
-
-For serving multiple machines, run the server in HTTP mode:
-
-```bash
-# Quick start
-./start.sh
-
-# Or with custom options
-python run_server.py --transport sse --port 8765 --email your@email.com
-
-# Using Docker
-docker compose up -d
-```
-
-#### Remote Client Configuration
-
-On other machines, configure `.vscode/mcp.json`:
-
-```json
-{
-  "servers": {
-    "pubmed-search": {
-      "type": "sse",
-      "url": "http://YOUR_SERVER_IP:8765/sse"
-    }
-  }
-}
 ```
 
 See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed deployment instructions.
@@ -1012,82 +653,13 @@ Export your search results in formats compatible with major reference managers:
 - Nordic characters (ø, æ, å), umlauts (ü, ö, ä), and accents are correctly converted
 - Example: `Søren Hansen` → `S{\o}ren Hansen`
 
----
 
-## 📖 API Documentation
-
-### PubMedClient
-
-The main client class for interacting with PubMed.
-
-```python
-from pubmed_search import PubMedClient
-
-client = PubMedClient(
-    email="your@email.com",  # Required by NCBI
-    api_key=None,            # Optional: NCBI API key for higher rate limits
-    tool="pubmed-search"     # Tool name for NCBI tracking
-)
-```
-
-### Low-level Entrez API
-
-For more control, use the low-level Entrez interface:
-
-```python
-from pubmed_search.entrez import LiteratureSearcher
-
-searcher = LiteratureSearcher(email="your@email.com")
-
-# Advanced search with filters
-results = searcher.search_advanced(
-    term="propofol sedation",
-    filter_humans=True,
-    filter_english=True,
-    date_range=("2020", "2024"),
-    max_results=50
-)
-```
 
 ---
 
 ## 📄 License
 
 Apache License 2.0 - see [LICENSE](LICENSE)
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Run tests: `pytest`
-5. Submit a pull request
-
-## � Project Structure
-
-```
-pubmed-search-mcp/
-├── src/pubmed_search/          # Core library
-│   ├── mcp/                    # MCP server and tools
-│   │   ├── tools/              # 35+ MCP tools
-│   │   └── prompts.py          # MCP prompt templates
-│   ├── sources/                # Multi-source clients
-│   └── exports/                # Export formatters
-├── .claude/skills/             # 🆕 Claude Skill files
-│   ├── pubmed-quick-search/
-│   ├── pubmed-systematic-search/
-│   ├── pubmed-pico-search/
-│   ├── pubmed-paper-exploration/
-│   ├── pubmed-gene-drug-research/
-│   ├── pubmed-fulltext-access/
-│   ├── pubmed-export-citations/
-│   ├── pubmed-multi-source-search/
-│   └── pubmed-mcp-tools-reference/
-├── .github/
-│   └── copilot-instructions.md # 🆕 VS Code Copilot guide
-├── README.md                   # English documentation
-└── README.zh-TW.md            # 繁體中文文件
-```
 
 ---
 

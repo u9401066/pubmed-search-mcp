@@ -26,7 +26,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
-from pubmed_search.mcp_server.server import create_server, DEFAULT_EMAIL
+from pubmed_search.mcp_server.server import DEFAULT_EMAIL
 
 logging.basicConfig(
     level=logging.INFO,
@@ -192,17 +192,17 @@ def main():
     tool_count = len(server._tool_manager.list_tools())
     tool_mode = "FULL (may have issues)" if args.full_tools else "SIMPLIFIED (Copilot-compatible)"
     
-    logger.info(f"")
-    logger.info(f"═══════════════════════════════════════════════════════")
-    logger.info(f"  PubMed Search MCP - Copilot Studio Ready")
-    logger.info(f"═══════════════════════════════════════════════════════")
+    logger.info("")
+    logger.info("═══════════════════════════════════════════════════════")
+    logger.info("  PubMed Search MCP - Copilot Studio Ready")
+    logger.info("═══════════════════════════════════════════════════════")
     logger.info(f"  Local:  http://{args.host}:{args.port}/mcp")
-    logger.info(f"  ngrok:  https://kmuh-ai.ngrok.dev/mcp")
+    logger.info("  ngrok:  https://kmuh-ai.ngrok.dev/mcp")
     logger.info(f"  Tools:  {tool_count} ({tool_mode})")
-    logger.info(f"  Mode:   Stateless HTTP (json_response=True)")
-    logger.info(f"  Middleware: 202→200 conversion enabled")
-    logger.info(f"═══════════════════════════════════════════════════════")
-    logger.info(f"")
+    logger.info("  Mode:   Stateless HTTP (json_response=True)")
+    logger.info("  Middleware: 202→200 conversion enabled")
+    logger.info("═══════════════════════════════════════════════════════")
+    logger.info("")
     
     import uvicorn
     uvicorn.run(app, host=args.host, port=args.port)

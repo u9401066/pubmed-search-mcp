@@ -3,8 +3,7 @@ Tests for utils.py module and additional coverage tests.
 """
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
-import json
+from unittest.mock import patch, MagicMock
 
 
 class TestUtilsMixin:

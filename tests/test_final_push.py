@@ -3,7 +3,6 @@ Final tests to reach 90% coverage.
 Target remaining uncovered lines in key modules.
 """
 
-import pytest
 from unittest.mock import Mock, patch, MagicMock
 import tempfile
 
@@ -54,7 +53,7 @@ class TestSearchRemainingPaths:
     
     def test_search_retry_exhausted(self):
         """Test search when all retries exhausted."""
-        from pubmed_search.entrez.search import SearchMixin, MAX_RETRIES
+        from pubmed_search.entrez.search import SearchMixin
         
         class TestSearcher(SearchMixin):
             def fetch_details(self, pmids):

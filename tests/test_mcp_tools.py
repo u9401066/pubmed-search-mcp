@@ -2,8 +2,7 @@
 Tests for MCP Tools.
 """
 
-import pytest
-from unittest.mock import Mock, patch, AsyncMock
+from unittest.mock import Mock
 
 
 class TestCommonTools:
@@ -35,7 +34,7 @@ class TestCommonTools:
     
     def test_set_session_manager(self):
         """Test setting session manager."""
-        from pubmed_search.mcp_server.tools._common import set_session_manager, _session_manager
+        from pubmed_search.mcp_server.tools._common import set_session_manager
         
         mock_manager = Mock()
         set_session_manager(mock_manager)

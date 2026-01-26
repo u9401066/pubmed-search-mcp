@@ -10,7 +10,6 @@ Python 3.12+ features tested:
 
 import pytest
 import asyncio
-from unittest.mock import Mock, AsyncMock
 
 
 class TestExceptionHierarchy:

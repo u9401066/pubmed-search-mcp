@@ -5,19 +5,15 @@
 ## 🎯 當前焦點
 
 <!-- 一句話描述正在做什麼 -->
-- **v0.2.0 DDD 架構重構完成** - 全面重組目錄結構為 DDD 層次
+- **README i18n 同步完成** - 中英文版本結構完全對齊
 
 ## 📝 進行中的變更
 
 <!-- 具體的檔案和修改 -->
 | 目錄/檔案 | 變更內容 |
 |----------|----------|
-| `src/pubmed_search/domain/` | 新增 - 核心實體 (UnifiedArticle) |
-| `src/pubmed_search/application/` | 新增 - 應用服務 (search, export, session) |
-| `src/pubmed_search/infrastructure/` | 重組 - ncbi/, sources/, http/ |
-| `src/pubmed_search/presentation/mcp_server/` | 重命名 - 避免 mcp 套件衝突 |
-| `src/pubmed_search/shared/` | 新增 - 跨層共用 (exceptions, async_utils) |
-| `src/pubmed_search/__init__.py` | 更新 - 完整導出 + 詳細文檔 |
+| `README.md` | 更新 - Middleware 架構圖、MCP 工具 ASCII 圖、PICO 流程、搜尋模式比較 |
+| `README.zh-TW.md` | 完整同步 - 與英文版結構對齊、670→663 行 |
 
 ## ✅ 已解決問題
 
@@ -67,9 +63,9 @@ src/pubmed_search/
 ## 🔜 下一步
 
 <!-- 接下來要做什麼 -->
-1. ✅ Git commit + push
-2. ⏳ Token 效率優化 (Phase 5.8)
-3. ⏳ Tool Router 設計 (ToolUniverse 整合)
+1. ⏳ Token 效率優化 (Phase 5.8)
+2. ⏳ Tool Router 設計 (ToolUniverse 整合)
+3. ⏳ 測試覆蓋率恢復至 90%+
 
 ---
-*Last updated: 2026-01-26 - v0.2.0 DDD 架構重構完成*
+*Last updated: 2026-01-26 - README i18n 同步完成*

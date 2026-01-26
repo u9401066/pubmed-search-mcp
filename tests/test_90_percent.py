@@ -1,8 +1,6 @@
 """Final push to reach 90% coverage."""
-import pytest
 from unittest.mock import Mock, patch, MagicMock
 import tempfile
-import json
 
 
 class TestClientMissingLines:

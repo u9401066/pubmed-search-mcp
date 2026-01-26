@@ -4,7 +4,6 @@ Tests for preprint sources (arXiv, medRxiv, bioRxiv).
 import pytest
 from src.pubmed_search.sources.preprints import (
     ArXivClient,
-    MedBioRxivClient,
     PreprintSearcher,
     PreprintArticle,
 )

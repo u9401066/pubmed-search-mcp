@@ -2,10 +2,7 @@
 Tests for Session management and Article caching.
 """
 
-import pytest
-import json
 from datetime import datetime, timedelta
-from pathlib import Path
 
 from pubmed_search.session import (
     CachedArticle,

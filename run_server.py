@@ -81,7 +81,7 @@ def main():
     args = parser.parse_args()
     
     # Create server
-    logger.info(f"Creating PubMed Search MCP Server...")
+    logger.info("Creating PubMed Search MCP Server...")
     logger.info(f"  Email: {args.email}")
     logger.info(f"  API Key: {'Set' if args.api_key else 'Not set'}")
     logger.info(f"  Transport: {args.transport}")
@@ -102,9 +102,7 @@ def main():
     
     # Run the server using uvicorn directly for proper host/port control
     import uvicorn
-    from starlette.applications import Starlette
-    from starlette.responses import JSONResponse, FileResponse, Response
-    from starlette.routing import Route, Mount
+    from starlette.responses import JSONResponse, FileResponse
     from pathlib import Path
     
     # Export directory
@@ -133,7 +131,7 @@ def main():
             }
             copilot_studio = {
                 "compatible": True,
-                "server_url": f"https://YOUR_DOMAIN/mcp",
+                "server_url": "https://YOUR_DOMAIN/mcp",
                 "transport": "mcp-streamable-1.0",
                 "note": "Replace YOUR_DOMAIN with your public HTTPS domain"
             }
@@ -313,8 +311,6 @@ def main():
         return JSONResponse(session_manager.get_session_summary())
     
     # Add middleware to handle host header issues
-    from starlette.middleware import Middleware
-    from starlette.middleware.trustedhost import TrustedHostMiddleware
     
     # For streamable-http, we need to add routes to the MCP app directly
     # because it has a lifespan handler that must be preserved
@@ -347,29 +343,29 @@ def main():
     logger.info(f"List exports: http://{args.host}:{args.port}/exports")
     
     if args.transport == "streamable-http":
-        logger.info(f"")
-        logger.info(f"═══════════════════════════════════════════════════════")
-        logger.info(f"  Microsoft Copilot Studio Compatible!")
-        logger.info(f"═══════════════════════════════════════════════════════")
+        logger.info("")
+        logger.info("═══════════════════════════════════════════════════════")
+        logger.info("  Microsoft Copilot Studio Compatible!")
+        logger.info("═══════════════════════════════════════════════════════")
         logger.info(f"  MCP Endpoint: http://{args.host}:{args.port}/mcp")
-        logger.info(f"  Transport:    Streamable HTTP (POST /mcp)")
-        logger.info(f"")
-        logger.info(f"  For Copilot Studio, use HTTPS URL:")
-        logger.info(f"    Server URL: https://your-domain.com/mcp")
-        logger.info(f"═══════════════════════════════════════════════════════")
+        logger.info("  Transport:    Streamable HTTP (POST /mcp)")
+        logger.info("")
+        logger.info("  For Copilot Studio, use HTTPS URL:")
+        logger.info("    Server URL: https://your-domain.com/mcp")
+        logger.info("═══════════════════════════════════════════════════════")
     else:
-        logger.info(f"")
-        logger.info(f"  ⚠️  SSE transport - Deprecated for Copilot Studio")
+        logger.info("")
+        logger.info("  ⚠️  SSE transport - Deprecated for Copilot Studio")
         logger.info(f"  SSE endpoint: http://{args.host}:{args.port}/sse")
         logger.info(f"  Message endpoint: http://{args.host}:{args.port}/messages")
-        logger.info(f"")
-        logger.info(f"  For Copilot Studio, use: --transport streamable-http")
+        logger.info("")
+        logger.info("  For Copilot Studio, use: --transport streamable-http")
     
-    logger.info(f"")
-    logger.info(f"[MCP-to-MCP API]")
-    logger.info(f"  GET /api/cached_article/{{pmid}} - Get single article")
-    logger.info(f"  GET /api/cached_articles?pmids=... - Get multiple articles")
-    logger.info(f"  GET /api/session/summary - Get session info")
+    logger.info("")
+    logger.info("[MCP-to-MCP API]")
+    logger.info("  GET /api/cached_article/{pmid} - Get single article")
+    logger.info("  GET /api/cached_articles?pmids=... - Get multiple articles")
+    logger.info("  GET /api/session/summary - Get session info")
     
     # Run with settings to accept any host
     uvicorn.run(

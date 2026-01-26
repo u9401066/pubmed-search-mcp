@@ -5,7 +5,6 @@ Target: 90% overall coverage.
 
 import pytest
 from unittest.mock import Mock, patch, MagicMock
-import json
 import tempfile
 import os
 
@@ -281,7 +280,7 @@ class TestExportToolsFunctions:
     
     def test_save_export_file(self):
         """Test saving export file."""
-        from pubmed_search.mcp_server.tools.export import _save_export_file, EXPORT_DIR
+        from pubmed_search.mcp_server.tools.export import _save_export_file
         
         with tempfile.TemporaryDirectory() as tmpdir:
             with patch('pubmed_search.mcp.tools.export.EXPORT_DIR', tmpdir):
