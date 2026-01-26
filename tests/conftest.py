@@ -12,6 +12,7 @@ from unittest.mock import Mock
 # Environment Fixtures
 # ============================================================
 
+
 @pytest.fixture
 def temp_dir():
     """Provide a temporary directory for tests."""
@@ -29,6 +30,7 @@ def mock_email():
 # Mock NCBI API Responses
 # ============================================================
 
+
 @pytest.fixture
 def mock_search_response():
     """Mock response from NCBI ESearch."""
@@ -36,7 +38,7 @@ def mock_search_response():
         "IdList": ["12345678", "23456789", "34567890"],
         "Count": "3",
         "QueryKey": "1",
-        "WebEnv": "MOCK_WEB_ENV"
+        "WebEnv": "MOCK_WEB_ENV",
     }
 
 
@@ -50,7 +52,7 @@ def mock_article_data():
         "authors_full": [
             {"lastname": "Smith", "forename": "John", "initials": "J"},
             {"lastname": "Doe", "forename": "Jane", "initials": "J"},
-            {"lastname": "Johnson", "forename": "Alice", "initials": "A"}
+            {"lastname": "Johnson", "forename": "Alice", "initials": "A"},
         ],
         "abstract": "Background: This is a test abstract. Methods: We conducted a study. Results: We found significant results. Conclusion: Drug X is effective.",
         "journal": "Journal of Test Medicine",
@@ -64,7 +66,7 @@ def mock_article_data():
         "doi": "10.1000/test.2024.001",
         "pmc_id": "PMC9876543",
         "keywords": ["drug x", "condition y", "treatment"],
-        "mesh_terms": ["Drug Therapy", "Clinical Trial"]
+        "mesh_terms": ["Drug Therapy", "Clinical Trial"],
     }
 
 
@@ -75,50 +77,51 @@ def mock_mesh_response():
         "IdList": ["D003920"],  # Diabetes Mellitus
         "TranslationSet": [
             {"From": "diabetes", "To": '"Diabetes Mellitus"[MeSH Terms]'}
-        ]
+        ],
     }
 
 
 @pytest.fixture
 def mock_espell_response():
     """Mock response from ESpell."""
-    return {
-        "Query": "diabetis",
-        "CorrectedQuery": "diabetes"
-    }
+    return {"Query": "diabetis", "CorrectedQuery": "diabetes"}
 
 
 # ============================================================
 # Mock Searcher
 # ============================================================
 
+
 @pytest.fixture
 def mock_searcher(mock_article_data, mock_search_response):
     """Create a mock LiteratureSearcher."""
     searcher = Mock()
-    
+
     # Mock search method
     searcher.search.return_value = [mock_article_data]
-    
+
     # Mock fetch_details
     searcher.fetch_details.return_value = [mock_article_data]
-    
+
     # Mock spell_check_query
     searcher.spell_check_query.return_value = "corrected query"
-    
+
     # Mock mesh_lookup (from strategy module)
-    searcher.mesh_lookup = Mock(return_value={
-        "term": "diabetes",
-        "mesh_terms": ["Diabetes Mellitus", "Diabetes Mellitus, Type 2"],
-        "entry_terms": ["diabetic", "diabetes mellitus"]
-    })
-    
+    searcher.mesh_lookup = Mock(
+        return_value={
+            "term": "diabetes",
+            "mesh_terms": ["Diabetes Mellitus", "Diabetes Mellitus, Type 2"],
+            "entry_terms": ["diabetic", "diabetes mellitus"],
+        }
+    )
+
     return searcher
 
 
 # ============================================================
 # Session Fixtures
 # ============================================================
+
 
 @pytest.fixture
 def sample_session_data():
@@ -132,5 +135,5 @@ def sample_session_data():
         "search_history": [],
         "reading_list": {},
         "excluded_pmids": [],
-        "notes": {}
+        "notes": {},
     }

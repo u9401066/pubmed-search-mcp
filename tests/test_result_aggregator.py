@@ -10,9 +10,8 @@ This test module provides comprehensive coverage for:
 6. Edge cases and error handling
 """
 
-import math
 from datetime import datetime
-from unittest.mock import MagicMock, Mock
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -329,9 +328,7 @@ class TestRankingConfig:
 
     def test_get_article_type_weight_custom(self):
         """Test custom article type weights."""
-        config = RankingConfig(
-            quality_article_type_weights={"custom-type": 0.99}
-        )
+        config = RankingConfig(quality_article_type_weights={"custom-type": 0.99})
 
         assert config.get_article_type_weight("custom-type") == 0.99
         assert config.get_article_type_weight("meta-analysis") == 0.0  # Not in custom
@@ -459,7 +456,9 @@ class TestResultAggregator:
         """Test deduplication by PMID."""
         same_pmid = "12345678"
         source1 = [mock_article(pmid=same_pmid, doi="10.1/a", primary_source="pubmed")]
-        source2 = [mock_article(pmid=same_pmid, doi="10.1/b", primary_source="europe_pmc")]
+        source2 = [
+            mock_article(pmid=same_pmid, doi="10.1/b", primary_source="europe_pmc")
+        ]
 
         aggregator = ResultAggregator()
         articles, stats = aggregator.aggregate([source1, source2])
@@ -812,8 +811,14 @@ class TestResultAggregator:
     def test_normalize_doi(self):
         """Test DOI normalization."""
         assert ResultAggregator._normalize_doi("10.1000/test") == "10.1000/test"
-        assert ResultAggregator._normalize_doi("https://doi.org/10.1000/test") == "10.1000/test"
-        assert ResultAggregator._normalize_doi("http://doi.org/10.1000/TEST") == "10.1000/test"
+        assert (
+            ResultAggregator._normalize_doi("https://doi.org/10.1000/test")
+            == "10.1000/test"
+        )
+        assert (
+            ResultAggregator._normalize_doi("http://doi.org/10.1000/TEST")
+            == "10.1000/test"
+        )
         assert ResultAggregator._normalize_doi("doi:10.1000/test") == "10.1000/test"
         assert ResultAggregator._normalize_doi("  10.1000/test  ") == "10.1000/test"
 
@@ -821,7 +826,10 @@ class TestResultAggregator:
         """Test title normalization."""
         assert ResultAggregator._normalize_title("Hello World") == "hello world"
         assert ResultAggregator._normalize_title("Hello, World!") == "hello world"
-        assert ResultAggregator._normalize_title("  Multiple   Spaces  ") == "multiple spaces"
+        assert (
+            ResultAggregator._normalize_title("  Multiple   Spaces  ")
+            == "multiple spaces"
+        )
         assert ResultAggregator._normalize_title("") == ""
         assert ResultAggregator._normalize_title(None) == ""
 
@@ -880,7 +888,10 @@ class TestConstants:
         """Test article type weights are defined."""
         assert "meta-analysis" in ARTICLE_TYPE_WEIGHTS
         assert "journal-article" in ARTICLE_TYPE_WEIGHTS
-        assert ARTICLE_TYPE_WEIGHTS["meta-analysis"] > ARTICLE_TYPE_WEIGHTS["journal-article"]
+        assert (
+            ARTICLE_TYPE_WEIGHTS["meta-analysis"]
+            > ARTICLE_TYPE_WEIGHTS["journal-article"]
+        )
 
     def test_default_source_trust(self):
         """Test default source trust levels."""
