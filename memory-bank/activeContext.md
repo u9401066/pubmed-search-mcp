@@ -5,36 +5,40 @@
 ## 🎯 當前焦點
 
 <!-- 一句話描述正在做什麼 -->
-- **v0.2.0 增強功能完成** - ClinicalTrials.gov 整合 + Study Type 標籤
+- **測試與代碼品質改進** - HTTP Client 重構 + 全面測試路徑修復
 
 ## 📝 進行中的變更
 
 <!-- 具體的檔案和修改 -->
 | 目錄/檔案 | 變更內容 |
 |----------|----------|
-| `infrastructure/sources/clinical_trials.py` | 新增 - ClinicalTrials.gov API 客戶端 |
-| `presentation/mcp_server/tools/unified.py` | 修改 - 整合臨床試驗 + Study Type badge |
-| `CHANGELOG.md` | 更新 - 新增功能記錄 |
-| `ROADMAP.md` | 更新 - 標記已完成的 Phase |
+| `infrastructure/http/client.py` | 重構 - 新增 exceptions + retry decorator |
+| `shared/exceptions.py` | 新增 - 異常層級（RateLimitError, NetworkError...） |
+| `tests/*.py` | 修復 - 40+ 測試檔案 DDD 路徑更新 |
+| `__init__.py` | 修改 - 導出 SearchResult, AggregationStats |
 
 ## ✅ 已解決問題
 
 <!-- 根本原因和解決方案 -->
-**Hard-coded 縮寫詞典**：
-- 問題：原計畫 hard-code 醫學縮寫
-- 解決：改用 PubMed publication_types API 取得研究類型，不做推斷
+**不一致的錯誤處理**：
+- 問題：76 個 `return None` vs 4 個 `raise Exception`
+- 解決：統一使用 `shared.exceptions` 異常層級
 
-**商用產品差異化**：
-- 問題：如何與 OpenEvidence/SciSpace 競爭
-- 解決：整合 ClinicalTrials.gov（**免費 API，競品沒有**）
+**無 Retry 機制**：
+- 問題：網路錯誤、429 rate limit 沒有重試
+- 解決：新增 `@with_retry` decorator（指數退避）
+
+**測試導入路徑錯誤**：
+- 問題：DDD 重構後 40+ 測試檔案路徑過時
+- 解決：批量修復 + SessionManager API 更新
 
 ## 💡 關鍵發現
 
 <!-- 本次工作階段的重要發現 -->
-- PubMed 已返回 `publication_types`，不需要 NLP 推斷
-- ClinicalTrials.gov API v2 是免費公開的，無需 API key
-- 多資料庫整合是我們的核心優勢（7 個 vs 競品 1 個）
-- Union-Find 算法讓去重效率達 O(n)
+- HTTP Client 使用 `spec=PubMedClient` 會限制 mock 屬性（測試陷阱）
+- `sed -i` 批量修復 40+ 檔案比逐一手動修改高效 100 倍
+- SessionManager API 已大幅簡化：`add_to_cache()` 取代 `cache_articles()`
+- 測試結果：**672 passed, 14 skipped** ✅（修復前：322 passed, 121 failed）
 
 ## 📁 新增資料來源
 
@@ -58,4 +62,4 @@
 3. ⏳ Token 效率優化 (Phase 5.8)
 
 ---
-*Last updated: 2026-01-26 - ClinicalTrials.gov 整合完成*
+*Last updated: 2026-01-26 - HTTP Client 重構 + 測試修復完成*

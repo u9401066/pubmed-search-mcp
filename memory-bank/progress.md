@@ -2,6 +2,11 @@
 
 ## Done
 
+- ✅ **HTTP Client 重構 + 測試修復** (2026-01-26)
+  - 新增異常層級：RateLimitError, NetworkError, ServiceUnavailableError, ParseError
+  - @with_retry decorator（指數退避，最多 3 次重試）
+  - 40+ 測試檔案 DDD 路徑批量修復
+  - 測試結果：672 passed, 14 skipped ✅
 - ✅ **ClinicalTrials.gov 整合** (2026-01-26)
   - unified_search 自動顯示相關臨床試驗
   - 免費 API，無需 API key

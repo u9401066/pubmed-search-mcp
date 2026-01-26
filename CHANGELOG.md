@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **HTTP Client Refactoring** - Unified exception handling + auto-retry mechanism
+  - Added exception hierarchy: `RateLimitError`, `NetworkError`, `ServiceUnavailableError`, `ParseError`
+  - Added `@with_retry` decorator with exponential backoff (max 3 retries)
+  - New methods: `http_get()`, `http_post()` (raise exceptions)
+  - Backward compatible: `http_get_safe()`, `http_post_safe()` (return None)
+
+### Fixed
+
+- **Test Import Paths** - Mass fix for 40+ test files after DDD refactoring
+  - `pubmed_search.client` → `pubmed_search.infrastructure.http`
+  - `pubmed_search.entrez` → `pubmed_search.infrastructure.ncbi`
+  - `pubmed_search.sources` → `pubmed_search.infrastructure.sources`
+  - `pubmed_search.mcp` → `pubmed_search.presentation.mcp_server`
+  - `pubmed_search.exports` → `pubmed_search.application.export`
+  - Export `SearchResult`, `AggregationStats` from main module
+  - Fix `COREClient` import path (shared → core)
+  - Update SessionManager test API calls
+  - **Test Results**: 672 passed, 14 skipped ✅ (Before: 322 passed, 121 failed)
+
 ### Planned
 - PRISMA flow tracking (init_prisma_flow, record_screening, get_prisma_diagram)
 - Evidence level classification (Oxford CEBM I-V)

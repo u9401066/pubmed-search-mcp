@@ -13,7 +13,55 @@
 | 2026-01 | 202→200 Middleware | Copilot Studio 無法處理 202 Accepted |
 | 2026-01 | Stateless HTTP 模式 | Microsoft 官方 MCP 範例使用 `sessionIdGenerator: undefined` |
 | 2026-01 | Python 3.12 升級 | 支援 Python 3.12+ 泛型語法，使用 uv 管理虛擬環境 |
+| 2026-01-26 | **HTTP Client 重構 (中度)** | 統一錯誤處理 + 自動重試機制 |
 | 2026-01-13 | **建立簡化 Copilot 工具集** | **解決 anyOf schema truncation 問題** |
+
+---
+
+## [2026-01-26] HTTP Client 重構 (Option B: 中度重構)
+
+### 背景
+HTTP 錯誤處理不一致：76 個 `return None` vs 4 個 `raise Exception`，無法區分錯誤類型。
+
+### 選項評估
+- **Option A (輕度)**: 只添加 logging - 治標不治本
+- **Option B (中度)**: 統一異常層級 + retry - **已選擇**
+- **Option C (重度)**: asyncio 改寫 - 過度工程
+
+### 實作決策
+1. **新增異常層級** (`shared/exceptions.py`):
+   - `RateLimitError` - 429 API rate limit
+   - `NetworkError` - 網路連線問題
+   - `ServiceUnavailableError` - 503/502/504
+   - `ParseError` - JSON/XML 解析失敗
+
+2. **Retry Decorator**:
+   ```python
+   @with_retry(max_retries=3, base_delay=1.0)
+   def http_get(url, ...):
+       # Exponential backoff: 1s, 2s, 4s
+   ```
+
+3. **Backward Compatibility**:
+   - 保留 `http_get_safe()`, `http_post_safe()` 返回 None
+   - 新增 `http_get()`, `http_post()` 拋出異常
+
+### 測試修復
+批量修復 40+ 測試檔案的 DDD 導入路徑：
+- `pubmed_search.client` → `infrastructure.http`
+- `pubmed_search.entrez` → `infrastructure.ncbi`
+- `pubmed_search.mcp` → `presentation.mcp_server`
+- `pubmed_search.sources` → `infrastructure.sources`
+
+### 影響
+- **Before**: 322 passed, 121 failed, 15 errors
+- **After**: **672 passed, 14 skipped** ✅
+
+### 理由
+- 中度重構平衡收益與風險
+- 異常層級讓上層可精細處理錯誤
+- Retry decorator 提高穩定性（處理暫時性網路問題）
+- 保留 backward compatibility 避免破壞現有代碼
 
 ---
 
