@@ -97,6 +97,7 @@ from .infrastructure.ncbi import (
 
 # HTTP Client and PubMed Client
 from .infrastructure.http import PubMedClient
+from .infrastructure.http.pubmed_client import SearchResult
 
 # iCite metrics
 from .infrastructure.ncbi.icite import ICiteMixin
@@ -166,6 +167,7 @@ __all__ = [
     "ICiteMixin",
     # HTTP Client
     "PubMedClient",
+    "SearchResult",
     # ═══════════════════════════════════════════════════════════════════
     # NCBI Extended (Gene, PubChem, ClinVar)
     # ═══════════════════════════════════════════════════════════════════

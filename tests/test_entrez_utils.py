@@ -14,7 +14,7 @@ class TestUtilsMixin:
         
         mixin = UtilsMixin()
         
-        with patch('pubmed_search.entrez.utils.Entrez') as mock_entrez:
+        with patch('pubmed_search.infrastructure.ncbi.utils.Entrez') as mock_entrez:
             mock_handle = MagicMock()
             mock_entrez.espell.return_value = mock_handle
             mock_entrez.read.return_value = mock_espell_response
@@ -29,7 +29,7 @@ class TestUtilsMixin:
         
         mixin = UtilsMixin()
         
-        with patch('pubmed_search.entrez.utils.Entrez') as mock_entrez:
+        with patch('pubmed_search.infrastructure.ncbi.utils.Entrez') as mock_entrez:
             mock_handle = MagicMock()
             mock_entrez.espell.return_value = mock_handle
             mock_entrez.read.return_value = {"Query": "diabetes", "CorrectedQuery": ""}
@@ -44,7 +44,7 @@ class TestUtilsMixin:
         
         mixin = UtilsMixin()
         
-        with patch('pubmed_search.entrez.utils.Entrez') as mock_entrez:
+        with patch('pubmed_search.infrastructure.ncbi.utils.Entrez') as mock_entrez:
             mock_entrez.espell.side_effect = Exception("API Error")
             
             result = mixin.spell_check_query("test query")
@@ -84,7 +84,7 @@ class TestQuickFetchSummary:
         }.get(key, default)
         mock_summary.__getitem__ = mock_summary.get
         
-        with patch('pubmed_search.entrez.utils.Entrez') as mock_entrez:
+        with patch('pubmed_search.infrastructure.ncbi.utils.Entrez') as mock_entrez:
             mock_handle = MagicMock()
             mock_entrez.esummary.return_value = mock_handle
             mock_entrez.read.return_value = [mock_summary]
@@ -105,7 +105,7 @@ class TestValidateMeshTerms:
         
         mixin = UtilsMixin()
         
-        with patch('pubmed_search.entrez.utils.Entrez') as mock_entrez:
+        with patch('pubmed_search.infrastructure.ncbi.utils.Entrez') as mock_entrez:
             mock_handle = MagicMock()
             mock_entrez.esearch.return_value = mock_handle
             mock_entrez.read.return_value = {"IdList": ["D003920"]}

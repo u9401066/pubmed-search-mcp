@@ -9,9 +9,9 @@ class TestClientPubMedClient:
     
     def test_pubmed_client_search(self):
         """Test PubMedClient.search() method."""
-        from pubmed_search.client import PubMedClient
+        from pubmed_search import PubMedClient
         
-        with patch('pubmed_search.client.LiteratureSearcher') as mock_searcher_class:
+        with patch('pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher') as mock_searcher_class:
             mock_searcher = Mock()
             mock_searcher.search.return_value = [
                 {
@@ -35,9 +35,9 @@ class TestClientPubMedClient:
     
     def test_pubmed_client_search_raw(self):
         """Test PubMedClient.search_raw() method."""
-        from pubmed_search.client import PubMedClient
+        from pubmed_search import PubMedClient
         
-        with patch('pubmed_search.client.LiteratureSearcher') as mock_searcher_class:
+        with patch('pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher') as mock_searcher_class:
             mock_searcher = Mock()
             mock_searcher.search.return_value = [{"pmid": "123", "title": "Test"}]
             mock_searcher_class.return_value = mock_searcher
@@ -50,9 +50,9 @@ class TestClientPubMedClient:
     
     def test_pubmed_client_fetch_by_pmid(self):
         """Test PubMedClient.fetch_by_pmid() method."""
-        from pubmed_search.client import PubMedClient
+        from pubmed_search import PubMedClient
         
-        with patch('pubmed_search.client.LiteratureSearcher') as mock_searcher_class:
+        with patch('pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher') as mock_searcher_class:
             mock_searcher = Mock()
             mock_searcher.fetch_details.return_value = [
                 {
@@ -76,9 +76,9 @@ class TestClientPubMedClient:
     
     def test_pubmed_client_fetch_by_pmid_not_found(self):
         """Test PubMedClient.fetch_by_pmid() when not found."""
-        from pubmed_search.client import PubMedClient
+        from pubmed_search import PubMedClient
         
-        with patch('pubmed_search.client.LiteratureSearcher') as mock_searcher_class:
+        with patch('pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher') as mock_searcher_class:
             mock_searcher = Mock()
             mock_searcher.fetch_details.return_value = []
             mock_searcher_class.return_value = mock_searcher
@@ -90,9 +90,9 @@ class TestClientPubMedClient:
     
     def test_pubmed_client_fetch_by_pmids(self):
         """Test PubMedClient.fetch_by_pmids() method."""
-        from pubmed_search.client import PubMedClient
+        from pubmed_search import PubMedClient
         
-        with patch('pubmed_search.client.LiteratureSearcher') as mock_searcher_class:
+        with patch('pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher') as mock_searcher_class:
             mock_searcher = Mock()
             mock_searcher.fetch_details.return_value = [
                 {
@@ -125,9 +125,9 @@ class TestClientPubMedClient:
     
     def test_pubmed_client_fetch_by_pmids_raw(self):
         """Test PubMedClient.fetch_by_pmids_raw() method."""
-        from pubmed_search.client import PubMedClient
+        from pubmed_search import PubMedClient
         
-        with patch('pubmed_search.client.LiteratureSearcher') as mock_searcher_class:
+        with patch('pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher') as mock_searcher_class:
             mock_searcher = Mock()
             mock_searcher.fetch_details.return_value = [{"pmid": "123"}]
             mock_searcher_class.return_value = mock_searcher
@@ -139,9 +139,9 @@ class TestClientPubMedClient:
     
     def test_pubmed_client_find_related(self):
         """Test PubMedClient.find_related() method."""
-        from pubmed_search.client import PubMedClient
+        from pubmed_search import PubMedClient
         
-        with patch('pubmed_search.client.LiteratureSearcher') as mock_searcher_class:
+        with patch('pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher') as mock_searcher_class:
             mock_searcher = Mock()
             mock_searcher.find_related_articles.return_value = [
                 {
@@ -164,9 +164,9 @@ class TestClientPubMedClient:
     
     def test_pubmed_client_find_citing(self):
         """Test PubMedClient.find_citing() method."""
-        from pubmed_search.client import PubMedClient
+        from pubmed_search import PubMedClient
         
-        with patch('pubmed_search.client.LiteratureSearcher') as mock_searcher_class:
+        with patch('pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher') as mock_searcher_class:
             mock_searcher = Mock()
             mock_searcher.find_citing_articles.return_value = [
                 {
@@ -189,9 +189,9 @@ class TestClientPubMedClient:
     
     def test_pubmed_client_get_citation_metrics(self):
         """Test PubMedClient searcher's get_citation_metrics() method."""
-        from pubmed_search.client import PubMedClient
+        from pubmed_search import PubMedClient
         
-        with patch('pubmed_search.client.LiteratureSearcher') as mock_searcher_class:
+        with patch('pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher') as mock_searcher_class:
             mock_searcher = Mock()
             mock_searcher.get_citation_metrics.return_value = {
                 "123": {"citation_count": 50, "rcr": 1.5}
@@ -328,7 +328,7 @@ class TestFormatsMoreLines:
     
     def test_export_functions_exist(self):
         """Test all export functions exist and are callable."""
-        from pubmed_search.exports import formats
+        from pubmed_search.application.export import formats
         
         assert hasattr(formats, 'export_ris')
         assert hasattr(formats, 'export_bibtex')
@@ -349,7 +349,7 @@ class TestSearchResultDataclass:
     
     def test_search_result_from_dict(self):
         """Test SearchResult.from_dict() method."""
-        from pubmed_search.client import SearchResult
+        from pubmed_search import SearchResult
         
         data = {
             "pmid": "123",
@@ -379,7 +379,7 @@ class TestSearchResultDataclass:
     
     def test_search_result_to_dict(self):
         """Test SearchResult.to_dict() method."""
-        from pubmed_search.client import SearchResult
+        from pubmed_search import SearchResult
         
         result = SearchResult(
             pmid="123",
@@ -399,7 +399,7 @@ class TestSearchResultDataclass:
     
     def test_search_result_defaults(self):
         """Test SearchResult default values."""
-        from pubmed_search.client import SearchResult
+        from pubmed_search import SearchResult
         
         result = SearchResult(
             pmid="123",
@@ -424,7 +424,7 @@ class TestSearchStrategyEnum:
     
     def test_search_strategy_values(self):
         """Test SearchStrategy enum values."""
-        from pubmed_search.client import SearchStrategy
+        from pubmed_search import SearchStrategy
         
         assert SearchStrategy.RECENT.value == "recent"
         assert SearchStrategy.MOST_CITED.value == "most_cited"

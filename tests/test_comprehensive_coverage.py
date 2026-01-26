@@ -25,8 +25,8 @@ class TestSearchMixinEdgeCases:
     
     def test_search_with_date_range(self, search_mixin):
         """Test search with precise date range."""
-        with patch('pubmed_search.entrez.search.Entrez.esearch') as mock_esearch, \
-             patch('pubmed_search.entrez.search.Entrez.read') as mock_read:
+        with patch('pubmed_search.infrastructure.ncbi.search.Entrez.esearch') as mock_esearch, \
+             patch('pubmed_search.infrastructure.ncbi.search.Entrez.read') as mock_read:
             
             mock_read.return_value = {"IdList": ["123", "456"]}
             mock_esearch.return_value = MagicMock()
@@ -43,8 +43,8 @@ class TestSearchMixinEdgeCases:
     
     def test_search_with_min_max_year(self, search_mixin):
         """Test search with legacy year range."""
-        with patch('pubmed_search.entrez.search.Entrez.esearch') as mock_esearch, \
-             patch('pubmed_search.entrez.search.Entrez.read') as mock_read:
+        with patch('pubmed_search.infrastructure.ncbi.search.Entrez.esearch') as mock_esearch, \
+             patch('pubmed_search.infrastructure.ncbi.search.Entrez.read') as mock_read:
             
             mock_read.return_value = {"IdList": ["123"]}
             mock_esearch.return_value = MagicMock()
@@ -59,8 +59,8 @@ class TestSearchMixinEdgeCases:
     
     def test_search_with_article_type(self, search_mixin):
         """Test search with article type filter."""
-        with patch('pubmed_search.entrez.search.Entrez.esearch') as mock_esearch, \
-             patch('pubmed_search.entrez.search.Entrez.read') as mock_read:
+        with patch('pubmed_search.infrastructure.ncbi.search.Entrez.esearch') as mock_esearch, \
+             patch('pubmed_search.infrastructure.ncbi.search.Entrez.read') as mock_read:
             
             mock_read.return_value = {"IdList": ["789"]}
             mock_esearch.return_value = MagicMock()
@@ -77,8 +77,8 @@ class TestSearchMixinEdgeCases:
         strategies = ["recent", "most_cited", "relevance", "impact", "agent_decided"]
         
         for strategy in strategies:
-            with patch('pubmed_search.entrez.search.Entrez.esearch') as mock_esearch, \
-                 patch('pubmed_search.entrez.search.Entrez.read') as mock_read:
+            with patch('pubmed_search.infrastructure.ncbi.search.Entrez.esearch') as mock_esearch, \
+                 patch('pubmed_search.infrastructure.ncbi.search.Entrez.read') as mock_read:
                 
                 mock_read.return_value = {"IdList": ["123"]}
                 mock_esearch.return_value = MagicMock()
@@ -88,9 +88,9 @@ class TestSearchMixinEdgeCases:
     
     def test_search_ids_with_retry_transient_error(self, search_mixin):
         """Test retry logic on transient errors."""
-        with patch('pubmed_search.entrez.search.Entrez.esearch') as mock_esearch, \
-             patch('pubmed_search.entrez.search.Entrez.read') as mock_read, \
-             patch('pubmed_search.entrez.search.time.sleep') as mock_sleep:
+        with patch('pubmed_search.infrastructure.ncbi.search.Entrez.esearch') as mock_esearch, \
+             patch('pubmed_search.infrastructure.ncbi.search.Entrez.read') as mock_read, \
+             patch('pubmed_search.infrastructure.ncbi.search.time.sleep') as mock_sleep:
             
             # First call fails, second succeeds
             mock_esearch.side_effect = [
@@ -105,7 +105,7 @@ class TestSearchMixinEdgeCases:
     
     def test_search_error_handling(self, search_mixin):
         """Test search error handling."""
-        with patch('pubmed_search.entrez.search.Entrez.esearch') as mock_esearch:
+        with patch('pubmed_search.infrastructure.ncbi.search.Entrez.esearch') as mock_esearch:
             mock_esearch.side_effect = Exception("Unknown error")
             
             results = search_mixin.search(query="test")
@@ -130,7 +130,7 @@ class TestRetryDecorator:
                 raise Exception("temporarily unavailable")
             return "success"
         
-        with patch('pubmed_search.entrez.search.time.sleep'):
+        with patch('pubmed_search.infrastructure.ncbi.search.time.sleep'):
             result = failing_function()
             assert result == "success"
     
@@ -152,19 +152,19 @@ class TestServerCreateServer:
     def test_create_server_basic(self):
         """Test creating server with basic parameters."""
         from pubmed_search.presentation.mcp_server.server import create_server
-        from pubmed_search.client import LiteratureSearcher
+        from pubmed_search import LiteratureSearcher
         from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
         from pubmed_search.application.session import SessionManager
         
         with patch.object(LiteratureSearcher, '__init__', return_value=None) as mock_searcher_init, \
              patch.object(SearchStrategyGenerator, '__init__', return_value=None) as mock_strategy_init, \
              patch.object(SessionManager, '__init__', return_value=None) as mock_session_init, \
-             patch('pubmed_search.mcp.server.FastMCP') as mock_mcp, \
-             patch('pubmed_search.mcp.server.register_all_tools'), \
-             patch('pubmed_search.mcp.server.register_session_tools'), \
-             patch('pubmed_search.mcp.server.register_session_resources'), \
-             patch('pubmed_search.mcp.server.set_session_manager'), \
-             patch('pubmed_search.mcp.server.set_strategy_generator'):
+             patch('pubmed_search.presentation.mcp_server.server.FastMCP') as mock_mcp, \
+             patch('pubmed_search.presentation.mcp_server.server.register_all_tools'), \
+             patch('pubmed_search.presentation.mcp_server.server.register_session_tools'), \
+             patch('pubmed_search.presentation.mcp_server.server.register_session_resources'), \
+             patch('pubmed_search.presentation.mcp_server.server.set_session_manager'), \
+             patch('pubmed_search.presentation.mcp_server.server.set_strategy_generator'):
             
             mock_mcp.return_value = MagicMock()
             
@@ -175,19 +175,19 @@ class TestServerCreateServer:
     def test_create_server_with_security_disabled(self):
         """Test creating server with security disabled."""
         from pubmed_search.presentation.mcp_server.server import create_server
-        from pubmed_search.client import LiteratureSearcher
+        from pubmed_search import LiteratureSearcher
         from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
         from pubmed_search.application.session import SessionManager
         
         with patch.object(LiteratureSearcher, '__init__', return_value=None), \
              patch.object(SearchStrategyGenerator, '__init__', return_value=None), \
              patch.object(SessionManager, '__init__', return_value=None), \
-             patch('pubmed_search.mcp.server.FastMCP') as mock_mcp, \
-             patch('pubmed_search.mcp.server.register_all_tools'), \
-             patch('pubmed_search.mcp.server.register_session_tools'), \
-             patch('pubmed_search.mcp.server.register_session_resources'), \
-             patch('pubmed_search.mcp.server.set_session_manager'), \
-             patch('pubmed_search.mcp.server.set_strategy_generator'):
+             patch('pubmed_search.presentation.mcp_server.server.FastMCP') as mock_mcp, \
+             patch('pubmed_search.presentation.mcp_server.server.register_all_tools'), \
+             patch('pubmed_search.presentation.mcp_server.server.register_session_tools'), \
+             patch('pubmed_search.presentation.mcp_server.server.register_session_resources'), \
+             patch('pubmed_search.presentation.mcp_server.server.set_session_manager'), \
+             patch('pubmed_search.presentation.mcp_server.server.set_strategy_generator'):
             
             mock_mcp.return_value = MagicMock()
             
@@ -201,19 +201,19 @@ class TestServerCreateServer:
     def test_create_server_with_api_key(self):
         """Test creating server with API key."""
         from pubmed_search.presentation.mcp_server.server import create_server
-        from pubmed_search.client import LiteratureSearcher
+        from pubmed_search import LiteratureSearcher
         from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
         from pubmed_search.application.session import SessionManager
         
         with patch.object(LiteratureSearcher, '__init__', return_value=None) as mock_searcher_init, \
              patch.object(SearchStrategyGenerator, '__init__', return_value=None), \
              patch.object(SessionManager, '__init__', return_value=None), \
-             patch('pubmed_search.mcp.server.FastMCP') as mock_mcp, \
-             patch('pubmed_search.mcp.server.register_all_tools'), \
-             patch('pubmed_search.mcp.server.register_session_tools'), \
-             patch('pubmed_search.mcp.server.register_session_resources'), \
-             patch('pubmed_search.mcp.server.set_session_manager'), \
-             patch('pubmed_search.mcp.server.set_strategy_generator'):
+             patch('pubmed_search.presentation.mcp_server.server.FastMCP') as mock_mcp, \
+             patch('pubmed_search.presentation.mcp_server.server.register_all_tools'), \
+             patch('pubmed_search.presentation.mcp_server.server.register_session_tools'), \
+             patch('pubmed_search.presentation.mcp_server.server.register_session_resources'), \
+             patch('pubmed_search.presentation.mcp_server.server.set_session_manager'), \
+             patch('pubmed_search.presentation.mcp_server.server.set_strategy_generator'):
             
             mock_mcp.return_value = MagicMock()
             
@@ -283,7 +283,7 @@ class TestExportToolsFunctions:
         from pubmed_search.presentation.mcp_server.tools.export import _save_export_file
         
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch('pubmed_search.mcp.tools.export.EXPORT_DIR', tmpdir):
+            with patch('pubmed_search.presentation.mcp_server.tools.export.EXPORT_DIR', tmpdir):
                 content = "TY  - JOUR\nPMID- 12345\nER  -"
                 
                 file_path = _save_export_file(content, "ris", 5)
@@ -386,7 +386,7 @@ class TestClientCoverage:
     
     def test_literature_searcher_init(self):
         """Test LiteratureSearcher initialization."""
-        from pubmed_search.client import LiteratureSearcher
+        from pubmed_search import LiteratureSearcher
         
         searcher = LiteratureSearcher(email="test@example.com")
         
@@ -394,7 +394,7 @@ class TestClientCoverage:
     
     def test_literature_searcher_with_api_key(self):
         """Test LiteratureSearcher with API key."""
-        from pubmed_search.client import LiteratureSearcher
+        from pubmed_search import LiteratureSearcher
         
         searcher = LiteratureSearcher(
             email="test@example.com",
@@ -448,7 +448,7 @@ class TestDiscoveryToolsMoreCoverage:
     
     def test_find_related_normal(self):
         """Test find_related_articles works normally."""
-        from pubmed_search.client import LiteratureSearcher
+        from pubmed_search import LiteratureSearcher
         
         searcher = LiteratureSearcher(email="test@example.com")
         

@@ -41,8 +41,8 @@ class TestSearchAmbiguousTerms:
         
         searcher = TestSearcher()
         
-        with patch('pubmed_search.entrez.search.Entrez.esearch') as mock_esearch, \
-             patch('pubmed_search.entrez.search.Entrez.read') as mock_read:
+        with patch('pubmed_search.infrastructure.ncbi.search.Entrez.esearch') as mock_esearch, \
+             patch('pubmed_search.infrastructure.ncbi.search.Entrez.read') as mock_read:
             
             mock_read.return_value = {"IdList": ["123"]}
             mock_esearch.return_value = MagicMock()
@@ -116,8 +116,8 @@ class TestStrategyBuildQueries:
         """Test building query suggestions."""
         from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
         
-        with patch('pubmed_search.entrez.strategy.Entrez.espell') as mock_espell, \
-             patch('pubmed_search.entrez.strategy.Entrez.read') as mock_read:
+        with patch('pubmed_search.infrastructure.ncbi.strategy.Entrez.espell') as mock_espell, \
+             patch('pubmed_search.infrastructure.ncbi.strategy.Entrez.read') as mock_read:
             
             mock_read.return_value = {"CorrectedQuery": ""}
             mock_espell.return_value = MagicMock()
@@ -139,7 +139,7 @@ class TestClientConvenienceMethods:
     
     def test_literature_searcher_search_method(self):
         """Test LiteratureSearcher.search method."""
-        from pubmed_search.client import LiteratureSearcher
+        from pubmed_search import LiteratureSearcher
         
         searcher = LiteratureSearcher(email="test@example.com")
         
@@ -173,7 +173,7 @@ class TestExportFormatsEdgeCases:
     
     def test_export_ris_no_abstract(self):
         """Test RIS export without abstract."""
-        from pubmed_search.exports.formats import export_ris
+        from pubmed_search.application.export.formats import export_ris
         
         article = {
             "pmid": "123",
@@ -189,7 +189,7 @@ class TestExportFormatsEdgeCases:
     
     def test_export_csv_special_chars(self):
         """Test CSV export with special characters."""
-        from pubmed_search.exports.formats import export_csv
+        from pubmed_search.application.export.formats import export_csv
         
         article = {
             "pmid": "123",
@@ -264,7 +264,7 @@ class TestLinksSummarizeAccess:
     
     def test_summarize_access_mixed(self):
         """Test access summary with mixed availability."""
-        from pubmed_search.exports.links import summarize_access
+        from pubmed_search.application.export.links import summarize_access
         
         articles = [
             {"pmid": "1", "pmc_id": "PMC001"},  # Open access

@@ -21,8 +21,8 @@ class TestPDFMixin:
     
     def test_get_pmc_fulltext_url_found(self, pdf_searcher):
         """Test getting PMC URL when article is available."""
-        with patch('pubmed_search.entrez.pdf.Entrez.elink') as mock_elink, \
-             patch('pubmed_search.entrez.pdf.Entrez.read') as mock_read:
+        with patch('pubmed_search.infrastructure.ncbi.pdf.Entrez.elink') as mock_elink, \
+             patch('pubmed_search.infrastructure.ncbi.pdf.Entrez.read') as mock_read:
             
             mock_read.return_value = [{
                 'LinkSetDb': [{
@@ -40,8 +40,8 @@ class TestPDFMixin:
     
     def test_get_pmc_fulltext_url_not_found(self, pdf_searcher):
         """Test getting PMC URL when article is not in PMC."""
-        with patch('pubmed_search.entrez.pdf.Entrez.elink') as mock_elink, \
-             patch('pubmed_search.entrez.pdf.Entrez.read') as mock_read:
+        with patch('pubmed_search.infrastructure.ncbi.pdf.Entrez.elink') as mock_elink, \
+             patch('pubmed_search.infrastructure.ncbi.pdf.Entrez.read') as mock_read:
             
             mock_read.return_value = [{}]  # No LinkSetDb
             mock_elink.return_value = MagicMock()
@@ -52,7 +52,7 @@ class TestPDFMixin:
     
     def test_get_pmc_fulltext_url_error(self, pdf_searcher):
         """Test getting PMC URL with API error."""
-        with patch('pubmed_search.entrez.pdf.Entrez.elink') as mock_elink:
+        with patch('pubmed_search.infrastructure.ncbi.pdf.Entrez.elink') as mock_elink:
             mock_elink.side_effect = Exception("API Error")
             
             result = pdf_searcher.get_pmc_fulltext_url("12345")
@@ -64,7 +64,7 @@ class TestPDFMixin:
         output_path = tmp_path / "test.pdf"
         
         with patch.object(pdf_searcher, '_get_pmc_id', return_value='123456'), \
-             patch('pubmed_search.entrez.pdf.requests.get') as mock_get:
+             patch('pubmed_search.infrastructure.ncbi.pdf.requests.get') as mock_get:
             
             mock_response = MagicMock()
             mock_response.status_code = 200
@@ -91,7 +91,7 @@ class TestPDFMixin:
         output_path = tmp_path / "test.pdf"
         
         with patch.object(pdf_searcher, '_get_pmc_id', return_value='123456'), \
-             patch('pubmed_search.entrez.pdf.requests.get') as mock_get:
+             patch('pubmed_search.infrastructure.ncbi.pdf.requests.get') as mock_get:
             
             mock_response = MagicMock()
             mock_response.status_code = 200
@@ -107,7 +107,7 @@ class TestPDFMixin:
         output_path = tmp_path / "test.pdf"
         
         with patch.object(pdf_searcher, '_get_pmc_id', return_value='123456'), \
-             patch('pubmed_search.entrez.pdf.requests.get') as mock_get:
+             patch('pubmed_search.infrastructure.ncbi.pdf.requests.get') as mock_get:
             
             mock_get.side_effect = Exception("Network Error")
             
@@ -118,7 +118,7 @@ class TestPDFMixin:
     def test_download_pdf_bytes_success(self, pdf_searcher):
         """Test download_pdf returning bytes."""
         with patch.object(pdf_searcher, '_get_pmc_id', return_value='123456'), \
-             patch('pubmed_search.entrez.pdf.requests.get') as mock_get:
+             patch('pubmed_search.infrastructure.ncbi.pdf.requests.get') as mock_get:
             
             mock_response = MagicMock()
             mock_response.status_code = 200
@@ -143,7 +143,7 @@ class TestPDFMixin:
         output_path = tmp_path / "test.pdf"
         
         with patch.object(pdf_searcher, '_get_pmc_id', return_value='123456'), \
-             patch('pubmed_search.entrez.pdf.requests.get') as mock_get:
+             patch('pubmed_search.infrastructure.ncbi.pdf.requests.get') as mock_get:
             
             mock_response = MagicMock()
             mock_response.status_code = 200
@@ -158,8 +158,8 @@ class TestPDFMixin:
     
     def test_get_pmc_id_found(self, pdf_searcher):
         """Test _get_pmc_id when PMC ID exists."""
-        with patch('pubmed_search.entrez.pdf.Entrez.elink') as mock_elink, \
-             patch('pubmed_search.entrez.pdf.Entrez.read') as mock_read:
+        with patch('pubmed_search.infrastructure.ncbi.pdf.Entrez.elink') as mock_elink, \
+             patch('pubmed_search.infrastructure.ncbi.pdf.Entrez.read') as mock_read:
             
             mock_read.return_value = [{
                 'LinkSetDb': [{
@@ -175,8 +175,8 @@ class TestPDFMixin:
     
     def test_get_pmc_id_not_found(self, pdf_searcher):
         """Test _get_pmc_id when not in PMC."""
-        with patch('pubmed_search.entrez.pdf.Entrez.elink') as mock_elink, \
-             patch('pubmed_search.entrez.pdf.Entrez.read') as mock_read:
+        with patch('pubmed_search.infrastructure.ncbi.pdf.Entrez.elink') as mock_elink, \
+             patch('pubmed_search.infrastructure.ncbi.pdf.Entrez.read') as mock_read:
             
             mock_read.return_value = [{}]
             mock_elink.return_value = MagicMock()
@@ -187,7 +187,7 @@ class TestPDFMixin:
     
     def test_get_pmc_id_error(self, pdf_searcher):
         """Test _get_pmc_id with API error."""
-        with patch('pubmed_search.entrez.pdf.Entrez.elink') as mock_elink:
+        with patch('pubmed_search.infrastructure.ncbi.pdf.Entrez.elink') as mock_elink:
             mock_elink.side_effect = Exception("API Error")
             
             # Should not raise, just return None

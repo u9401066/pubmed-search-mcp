@@ -20,9 +20,9 @@ class TestSearchRetryAndErrorPaths:
         
         searcher = TestSearcher()
         
-        with patch('pubmed_search.entrez.search.Entrez.esearch') as mock_esearch, \
-             patch('pubmed_search.entrez.search.Entrez.read') as mock_read, \
-             patch('pubmed_search.entrez.search.time.sleep'):
+        with patch('pubmed_search.infrastructure.ncbi.search.Entrez.esearch') as mock_esearch, \
+             patch('pubmed_search.infrastructure.ncbi.search.Entrez.read') as mock_read, \
+             patch('pubmed_search.infrastructure.ncbi.search.time.sleep'):
             
             # First two calls fail, third succeeds
             call_count = [0]
@@ -51,8 +51,8 @@ class TestSearchRetryAndErrorPaths:
         
         searcher = TestSearcher()
         
-        with patch('pubmed_search.entrez.search.Entrez.esearch') as mock_esearch, \
-             patch('pubmed_search.entrez.search.time.sleep'):
+        with patch('pubmed_search.infrastructure.ncbi.search.Entrez.esearch') as mock_esearch, \
+             patch('pubmed_search.infrastructure.ncbi.search.time.sleep'):
             
             mock_esearch.side_effect = Exception("Backend failed")
             
@@ -67,7 +67,7 @@ class TestClientEdgeCases:
     
     def test_literature_searcher_full_workflow(self):
         """Test full search workflow."""
-        from pubmed_search.client import LiteratureSearcher
+        from pubmed_search import LiteratureSearcher
         
         searcher = LiteratureSearcher(email="test@example.com")
         
@@ -121,8 +121,8 @@ class TestStrategyGeneratorPaths:
         """Test basic strategy generation."""
         from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
         
-        with patch('pubmed_search.entrez.strategy.Entrez.espell') as mock_espell, \
-             patch('pubmed_search.entrez.strategy.Entrez.read') as mock_read:
+        with patch('pubmed_search.infrastructure.ncbi.strategy.Entrez.espell') as mock_espell, \
+             patch('pubmed_search.infrastructure.ncbi.strategy.Entrez.read') as mock_read:
             
             # Return no correction
             mock_read.return_value = {"CorrectedQuery": ""}
@@ -228,7 +228,7 @@ class TestFormatsModuleEdgeCases:
     
     def test_export_articles_dispatcher(self):
         """Test export_articles function dispatches correctly."""
-        from pubmed_search.exports.formats import export_articles
+        from pubmed_search.application.export.formats import export_articles
         
         articles = [{"pmid": "123", "title": "Test", "authors": ["A"], "journal": "J", "year": "2024"}]
         
@@ -276,8 +276,8 @@ class TestBatchModuleEdgeCases:
         
         searcher = TestSearcher()
         
-        with patch('pubmed_search.entrez.batch.Entrez.esearch') as mock_esearch, \
-             patch('pubmed_search.entrez.batch.Entrez.read') as mock_read:
+        with patch('pubmed_search.infrastructure.ncbi.batch.Entrez.esearch') as mock_esearch, \
+             patch('pubmed_search.infrastructure.ncbi.batch.Entrez.read') as mock_read:
             
             mock_read.return_value = {
                 "WebEnv": "test_webenv",
@@ -311,7 +311,7 @@ class TestLinksModuleEdgeCases:
     
     def test_get_fulltext_links(self):
         """Test get_fulltext_links function."""
-        from pubmed_search.exports.links import get_fulltext_links
+        from pubmed_search.application.export.links import get_fulltext_links
         
         # Test with PMC ID in article dict
         article_with_pmc = {

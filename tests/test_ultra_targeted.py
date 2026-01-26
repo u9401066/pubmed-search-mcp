@@ -90,7 +90,7 @@ class TestServerRegisterTools:
     def test_register_all_tools(self):
         """Test registering all tools."""
         from pubmed_search.presentation.mcp_server.tools import register_all_tools
-        from pubmed_search.client import LiteratureSearcher
+        from pubmed_search import LiteratureSearcher
         
         mock_mcp = Mock()
         mock_mcp.tool = Mock(return_value=lambda f: f)
@@ -130,8 +130,8 @@ class TestSearchFilterLogic:
         
         searcher = TestSearcher()
         
-        with patch('pubmed_search.entrez.search.Entrez.esearch') as mock_esearch, \
-             patch('pubmed_search.entrez.search.Entrez.read') as mock_read:
+        with patch('pubmed_search.infrastructure.ncbi.search.Entrez.esearch') as mock_esearch, \
+             patch('pubmed_search.infrastructure.ncbi.search.Entrez.read') as mock_read:
             
             mock_read.return_value = {"IdList": ["123"]}
             mock_esearch.return_value = MagicMock()
@@ -150,8 +150,8 @@ class TestSearchFilterLogic:
         
         searcher = TestSearcher()
         
-        with patch('pubmed_search.entrez.search.Entrez.esearch') as mock_esearch, \
-             patch('pubmed_search.entrez.search.Entrez.read') as mock_read:
+        with patch('pubmed_search.infrastructure.ncbi.search.Entrez.esearch') as mock_esearch, \
+             patch('pubmed_search.infrastructure.ncbi.search.Entrez.read') as mock_read:
             
             mock_read.return_value = {"IdList": ["123"]}
             mock_esearch.return_value = MagicMock()
@@ -168,8 +168,8 @@ class TestStrategyCornerCases:
         """Test strategy with single word query."""
         from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
         
-        with patch('pubmed_search.entrez.strategy.Entrez.espell') as mock_espell, \
-             patch('pubmed_search.entrez.strategy.Entrez.read') as mock_read:
+        with patch('pubmed_search.infrastructure.ncbi.strategy.Entrez.espell') as mock_espell, \
+             patch('pubmed_search.infrastructure.ncbi.strategy.Entrez.read') as mock_read:
             
             mock_read.return_value = {"CorrectedQuery": ""}
             mock_espell.return_value = MagicMock()
@@ -189,7 +189,7 @@ class TestExportWithLargeFile:
         import os
         
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch('pubmed_search.mcp.tools.export.EXPORT_DIR', tmpdir):
+            with patch('pubmed_search.presentation.mcp_server.tools.export.EXPORT_DIR', tmpdir):
                 content = "test content"
                 file_path = _save_export_file(content, "ris", 10)
                 
@@ -226,7 +226,7 @@ class TestLinksWithDOI:
     
     def test_fulltext_links_doi_only(self):
         """Test fulltext links with DOI only."""
-        from pubmed_search.exports.links import get_fulltext_links
+        from pubmed_search.application.export.links import get_fulltext_links
         
         article = {"pmid": "123", "doi": "10.1000/test"}
         
@@ -240,12 +240,12 @@ class TestClientFindMethods:
     
     def test_find_related_articles(self):
         """Test find_related_articles method."""
-        from pubmed_search.client import LiteratureSearcher
+        from pubmed_search import LiteratureSearcher
         
         searcher = LiteratureSearcher(email="test@example.com")
         
-        with patch('pubmed_search.entrez.citation.Entrez.elink') as mock_elink, \
-             patch('pubmed_search.entrez.citation.Entrez.read') as mock_read, \
+        with patch('pubmed_search.infrastructure.ncbi.citation.Entrez.elink') as mock_elink, \
+             patch('pubmed_search.infrastructure.ncbi.citation.Entrez.read') as mock_read, \
              patch.object(searcher, 'fetch_details', return_value=[{"pmid": "999"}]):
             
             mock_read.return_value = [
@@ -263,7 +263,7 @@ class TestFormatsSpecialCases:
     
     def test_medline_with_keywords(self):
         """Test MEDLINE export with keywords."""
-        from pubmed_search.exports.formats import export_medline
+        from pubmed_search.application.export.formats import export_medline
         
         article = {
             "pmid": "123",

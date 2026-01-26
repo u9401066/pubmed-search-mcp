@@ -92,7 +92,7 @@ def get_core_client(api_key: str | None = None):
     if _core_client is None:
         import os
 
-        from .shared import COREClient
+        from .core import COREClient
 
         _core_client = COREClient(api_key=api_key or os.environ.get("CORE_API_KEY"))
     return _core_client

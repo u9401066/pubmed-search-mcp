@@ -453,11 +453,9 @@ class TestResponseFormatter:
             example="search_literature(query='diabetes')",
             tool_name="search_literature"
         )
-        assert "✅" in result
+        assert "❌" in result
         assert "API failed" in result
-        assert "✅" in result
         assert "Check your query" in result
-        assert "✅" in result
     
     def test_error_json(self):
         """Error response in JSON."""

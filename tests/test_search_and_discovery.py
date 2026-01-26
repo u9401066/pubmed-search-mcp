@@ -23,8 +23,8 @@ class TestSearchModule:
     
     def test_search_basic(self, search_mixin):
         """Test basic search functionality."""
-        with patch('pubmed_search.entrez.search.Entrez.esearch') as mock_esearch, \
-             patch('pubmed_search.entrez.search.Entrez.read') as mock_read, \
+        with patch('pubmed_search.infrastructure.ncbi.search.Entrez.esearch') as mock_esearch, \
+             patch('pubmed_search.infrastructure.ncbi.search.Entrez.read') as mock_read, \
              patch.object(search_mixin, 'fetch_details', return_value=[]):
             
             mock_read.return_value = {"IdList": ["123", "456"], "Count": "2"}
@@ -37,8 +37,8 @@ class TestSearchModule:
     
     def test_search_with_date_filters(self, search_mixin):
         """Test search with date filters."""
-        with patch('pubmed_search.entrez.search.Entrez.esearch') as mock_esearch, \
-             patch('pubmed_search.entrez.search.Entrez.read') as mock_read, \
+        with patch('pubmed_search.infrastructure.ncbi.search.Entrez.esearch') as mock_esearch, \
+             patch('pubmed_search.infrastructure.ncbi.search.Entrez.read') as mock_read, \
              patch.object(search_mixin, 'fetch_details', return_value=[]):
             
             mock_read.return_value = {"IdList": [], "Count": "0"}
@@ -54,8 +54,8 @@ class TestSearchModule:
     
     def test_fetch_details_basic(self, search_mixin):
         """Test fetching article details."""
-        with patch('pubmed_search.entrez.search.Entrez.efetch') as mock_efetch, \
-             patch('pubmed_search.entrez.search.Entrez.read') as mock_read:
+        with patch('pubmed_search.infrastructure.ncbi.search.Entrez.efetch') as mock_efetch, \
+             patch('pubmed_search.infrastructure.ncbi.search.Entrez.read') as mock_read:
             
             mock_read.return_value = {
                 'PubmedArticle': [{
@@ -283,7 +283,7 @@ class TestDiscoveryToolsComplete:
         """Test get_citation_metrics with 'last' keyword."""
         tools, searcher = registered_tools
         
-        with patch('pubmed_search.mcp.tools._common.get_last_search_pmids', return_value=[]):
+        with patch('pubmed_search.presentation.mcp_server.tools._common.get_last_search_pmids', return_value=[]):
             result = tools["get_citation_metrics"](pmids="last")
             
             assert "No previous search" in result
@@ -316,7 +316,7 @@ class TestExportToolsFunctions:
         """Test prepare_export with empty PMIDs."""
         tools, searcher = registered_export_tools
         
-        with patch('pubmed_search.mcp.tools.export._resolve_pmids', return_value=[]):
+        with patch('pubmed_search.presentation.mcp_server.tools.export._resolve_pmids', return_value=[]):
             result = tools["prepare_export"](pmids="", format="ris")
             
             # Result could be JSON or plain text error message

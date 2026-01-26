@@ -18,8 +18,8 @@ class TestSearchFetchWithRetry:
         
         searcher = TestSearcher()
         
-        with patch('pubmed_search.entrez.search.Entrez.efetch') as mock_efetch, \
-             patch('pubmed_search.entrez.search.time.sleep'):
+        with patch('pubmed_search.infrastructure.ncbi.search.Entrez.efetch') as mock_efetch, \
+             patch('pubmed_search.infrastructure.ncbi.search.time.sleep'):
             
             # All calls fail with transient error
             mock_efetch.side_effect = Exception("Backend failed")
@@ -39,7 +39,7 @@ class TestSearchFetchWithRetry:
         
         searcher = TestSearcher()
         
-        with patch('pubmed_search.entrez.search.Entrez.efetch') as mock_efetch:
+        with patch('pubmed_search.infrastructure.ncbi.search.Entrez.efetch') as mock_efetch:
             mock_efetch.side_effect = ValueError("Invalid input")
             
             with pytest.raises(ValueError):
@@ -83,10 +83,10 @@ class TestStrategyExpandSearch:
         """Test strategy generation with MeSH lookup."""
         from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
         
-        with patch('pubmed_search.entrez.strategy.Entrez.esearch') as mock_esearch, \
-             patch('pubmed_search.entrez.strategy.Entrez.esummary') as mock_esummary, \
-             patch('pubmed_search.entrez.strategy.Entrez.read') as mock_read, \
-             patch('pubmed_search.entrez.strategy.Entrez.espell') as mock_espell:
+        with patch('pubmed_search.infrastructure.ncbi.strategy.Entrez.esearch') as mock_esearch, \
+             patch('pubmed_search.infrastructure.ncbi.strategy.Entrez.esummary') as mock_esummary, \
+             patch('pubmed_search.infrastructure.ncbi.strategy.Entrez.read') as mock_read, \
+             patch('pubmed_search.infrastructure.ncbi.strategy.Entrez.espell') as mock_espell:
             
             # Spell check returns no correction
             mock_espell.return_value = MagicMock()
@@ -111,7 +111,7 @@ class TestClientSearchResult:
     
     def test_search_result_creation(self):
         """Test SearchResult instantiation."""
-        from pubmed_search.client import SearchResult
+        from pubmed_search import SearchResult
         
         result = SearchResult(
             pmid="12345",
@@ -129,7 +129,7 @@ class TestClientSearchResult:
     
     def test_search_result_from_dict(self):
         """Test SearchResult.from_dict method."""
-        from pubmed_search.client import SearchResult
+        from pubmed_search import SearchResult
         
         data = {
             "pmid": "67890",
@@ -221,7 +221,7 @@ class TestFormatsHelperFunctions:
     
     def test_escape_bibtex(self):
         """Test BibTeX escaping function if it exists."""
-        from pubmed_search.exports import formats
+        from pubmed_search.application.export import formats
         
         # Check for _escape_bibtex or similar
         if hasattr(formats, '_escape_bibtex'):
@@ -230,7 +230,7 @@ class TestFormatsHelperFunctions:
     
     def test_export_articles_error(self):
         """Test export_articles with error."""
-        from pubmed_search.exports.formats import export_articles
+        from pubmed_search.application.export.formats import export_articles
         
         try:
             result = export_articles([], format="invalid")
@@ -307,8 +307,8 @@ class TestLinksWithLookup:
     
     def test_get_fulltext_links_with_lookup(self):
         """Test get_fulltext_links_with_lookup function."""
-        from pubmed_search.exports.links import get_fulltext_links_with_lookup
-        from pubmed_search.client import LiteratureSearcher
+        from pubmed_search.application.export.links import get_fulltext_links_with_lookup
+        from pubmed_search import LiteratureSearcher
         
         with patch.object(LiteratureSearcher, 'get_pmc_fulltext_url', return_value="https://pmc.ncbi.nlm.nih.gov/PMC123"):
             searcher = LiteratureSearcher(email="test@example.com")

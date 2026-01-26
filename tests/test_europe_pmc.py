@@ -276,7 +276,7 @@ class TestEuropePMCMCPTools:
             "references": []
         }
         
-        with patch('pubmed_search.mcp.tools.europe_pmc.get_europe_pmc_client') as mock:
+        with patch('pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client') as mock:
             mock.return_value.get_fulltext_xml.return_value = mock_xml
             mock.return_value.parse_fulltext_xml.return_value = mock_parsed
             
@@ -290,7 +290,7 @@ class TestEuropePMCMCPTools:
         """Test get_fulltext handles missing fulltext."""
         from unittest.mock import patch
         
-        with patch('pubmed_search.mcp.tools.europe_pmc.get_europe_pmc_client') as mock:
+        with patch('pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client') as mock:
             mock.return_value.get_fulltext_xml.return_value = None
             
             tool = mcp._tool_manager._tools['get_fulltext']
@@ -351,18 +351,18 @@ class TestSourcesIntegration:
     
     def test_get_europe_pmc_client(self):
         """Test client factory."""
-        from pubmed_search.sources import get_europe_pmc_client
+        from pubmed_search.infrastructure.sources import get_europe_pmc_client
         client = get_europe_pmc_client()
         assert client is not None
     
     def test_search_source_enum(self):
         """Test SearchSource enum includes europe_pmc."""
-        from pubmed_search.sources import SearchSource
+        from pubmed_search.infrastructure.sources import SearchSource
         assert SearchSource.EUROPE_PMC.value == "europe_pmc"
     
     def test_search_alternate_source_europe_pmc(self):
         """Test search_alternate_source with europe_pmc."""
-        from pubmed_search.sources import search_alternate_source
+        from pubmed_search.infrastructure.sources import search_alternate_source
         from unittest.mock import patch
         
         mock_result = {
@@ -370,7 +370,7 @@ class TestSourcesIntegration:
             "hit_count": 1
         }
         
-        with patch('pubmed_search.sources.get_europe_pmc_client') as mock_client:
+        with patch('pubmed_search.infrastructure.sources.get_europe_pmc_client') as mock_client:
             mock_client.return_value.search.return_value = mock_result
             results = search_alternate_source(
                 query="test",

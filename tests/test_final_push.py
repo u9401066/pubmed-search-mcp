@@ -12,7 +12,7 @@ class TestClientRemainingMethods:
     
     def test_literature_searcher_class(self):
         """Test LiteratureSearcher class attributes."""
-        from pubmed_search.client import LiteratureSearcher
+        from pubmed_search import LiteratureSearcher
         
         searcher = LiteratureSearcher(email="test@example.com", api_key="key")
         
@@ -36,8 +36,8 @@ class TestSearchRemainingPaths:
         searcher = TestSearcher()
         
         for date_type in ["edat", "pdat", "mdat"]:
-            with patch('pubmed_search.entrez.search.Entrez.esearch') as mock_esearch, \
-                 patch('pubmed_search.entrez.search.Entrez.read') as mock_read:
+            with patch('pubmed_search.infrastructure.ncbi.search.Entrez.esearch') as mock_esearch, \
+                 patch('pubmed_search.infrastructure.ncbi.search.Entrez.read') as mock_read:
                 
                 mock_read.return_value = {"IdList": ["123"]}
                 mock_esearch.return_value = MagicMock()
@@ -61,8 +61,8 @@ class TestSearchRemainingPaths:
         
         searcher = TestSearcher()
         
-        with patch('pubmed_search.entrez.search.Entrez.esearch') as mock_esearch, \
-             patch('pubmed_search.entrez.search.time.sleep'):
+        with patch('pubmed_search.infrastructure.ncbi.search.Entrez.esearch') as mock_esearch, \
+             patch('pubmed_search.infrastructure.ncbi.search.time.sleep'):
             
             # All attempts fail with transient error
             mock_esearch.side_effect = Exception("Service unavailable")
@@ -80,10 +80,10 @@ class TestStrategyRemainingPaths:
         """Test strategy with multi-word complex query."""
         from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
         
-        with patch('pubmed_search.entrez.strategy.Entrez.espell') as mock_espell, \
-             patch('pubmed_search.entrez.strategy.Entrez.read') as mock_read, \
-             patch('pubmed_search.entrez.strategy.Entrez.esearch') as mock_esearch, \
-             patch('pubmed_search.entrez.strategy.Entrez.efetch') as mock_efetch:
+        with patch('pubmed_search.infrastructure.ncbi.strategy.Entrez.espell') as mock_espell, \
+             patch('pubmed_search.infrastructure.ncbi.strategy.Entrez.read') as mock_read, \
+             patch('pubmed_search.infrastructure.ncbi.strategy.Entrez.esearch') as mock_esearch, \
+             patch('pubmed_search.infrastructure.ncbi.strategy.Entrez.efetch') as mock_efetch:
             
             mock_read.return_value = {"CorrectedQuery": "", "IdList": []}
             mock_espell.return_value = MagicMock()
@@ -103,10 +103,10 @@ class TestStrategyRemainingPaths:
         """Test strategy with exploratory strategy."""
         from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
         
-        with patch('pubmed_search.entrez.strategy.Entrez.espell') as mock_espell, \
-             patch('pubmed_search.entrez.strategy.Entrez.read') as mock_read, \
-             patch('pubmed_search.entrez.strategy.Entrez.esearch') as mock_esearch, \
-             patch('pubmed_search.entrez.strategy.Entrez.efetch') as mock_efetch:
+        with patch('pubmed_search.infrastructure.ncbi.strategy.Entrez.espell') as mock_espell, \
+             patch('pubmed_search.infrastructure.ncbi.strategy.Entrez.read') as mock_read, \
+             patch('pubmed_search.infrastructure.ncbi.strategy.Entrez.esearch') as mock_esearch, \
+             patch('pubmed_search.infrastructure.ncbi.strategy.Entrez.efetch') as mock_efetch:
             
             mock_read.return_value = {"CorrectedQuery": "", "IdList": []}
             mock_espell.return_value = MagicMock()
@@ -190,8 +190,8 @@ class TestDiscoveryRemainingPaths:
         
         searcher = TestSearcher()
         
-        with patch('pubmed_search.entrez.citation.Entrez.elink') as mock_elink, \
-             patch('pubmed_search.entrez.citation.Entrez.read') as mock_read:
+        with patch('pubmed_search.infrastructure.ncbi.citation.Entrez.elink') as mock_elink, \
+             patch('pubmed_search.infrastructure.ncbi.citation.Entrez.read') as mock_read:
             
             mock_read.return_value = [
                 {
@@ -215,7 +215,7 @@ class TestExportRemainingPaths:
     
     def test_export_json_detailed(self):
         """Test detailed JSON export."""
-        from pubmed_search.exports.formats import export_json
+        from pubmed_search.application.export.formats import export_json
         
         articles = [
             {
@@ -266,7 +266,7 @@ class TestICiteRemainingPaths:
         
         searcher = TestSearcher()
         
-        with patch('pubmed_search.entrez.icite.requests.get') as mock_get:
+        with patch('pubmed_search.infrastructure.ncbi.icite.requests.get') as mock_get:
             mock_response = Mock()
             mock_response.json.return_value = {
                 "data": [
@@ -297,8 +297,8 @@ class TestPDFRemainingPaths:
         
         searcher = TestSearcher()
         
-        with patch('pubmed_search.entrez.pdf.Entrez.elink') as mock_elink, \
-             patch('pubmed_search.entrez.pdf.Entrez.read') as mock_read:
+        with patch('pubmed_search.infrastructure.ncbi.pdf.Entrez.elink') as mock_elink, \
+             patch('pubmed_search.infrastructure.ncbi.pdf.Entrez.read') as mock_read:
             
             mock_read.return_value = [
                 {
@@ -323,7 +323,7 @@ class TestMergeRemainingPaths:
     def test_merge_tools_register(self):
         """Test merge tools registration."""
         from pubmed_search.presentation.mcp_server.tools.merge import register_merge_tools
-        from pubmed_search.client import LiteratureSearcher
+        from pubmed_search import LiteratureSearcher
         
         mock_mcp = Mock()
         mock_mcp.tool = Mock(return_value=lambda f: f)
@@ -349,7 +349,7 @@ class TestFormatsMoreCases:
     
     def test_export_bibtex_special_chars(self):
         """Test BibTeX with special characters."""
-        from pubmed_search.exports.formats import export_bibtex
+        from pubmed_search.application.export.formats import export_bibtex
         
         article = {
             "pmid": "123",

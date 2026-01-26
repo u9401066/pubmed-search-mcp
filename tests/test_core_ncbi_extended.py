@@ -12,7 +12,7 @@ class TestCOREClient:
     
     def test_client_initialization(self):
         """Test CORE client initialization."""
-        from src.pubmed_search.sources.core import COREClient
+        from pubmed_search.infrastructure.sources.core import COREClient
         
         # Without API key
         client = COREClient()
@@ -26,10 +26,10 @@ class TestCOREClient:
     
     def test_get_core_client_singleton(self):
         """Test singleton pattern."""
-        from src.pubmed_search.sources.core import get_core_client
+        from pubmed_search.infrastructure.sources.core import get_core_client
         
         # Reset singleton
-        import src.pubmed_search.sources.core as core_module
+        import pubmed_search.infrastructure.sources.core as core_module
         core_module._core_client = None
         
         client1 = get_core_client()
@@ -38,7 +38,7 @@ class TestCOREClient:
     
     def test_normalize_work(self):
         """Test work normalization."""
-        from src.pubmed_search.sources.core import COREClient
+        from pubmed_search.infrastructure.sources.core import COREClient
         
         client = COREClient()
         
@@ -72,7 +72,7 @@ class TestCOREClient:
     
     def test_search_method_exists(self):
         """Test search methods exist."""
-        from src.pubmed_search.sources.core import COREClient
+        from pubmed_search.infrastructure.sources.core import COREClient
         
         client = COREClient()
         
@@ -90,7 +90,7 @@ class TestCOREConvenienceFunctions:
     
     def test_search_core_function(self):
         """Test search_core convenience function exists."""
-        from src.pubmed_search.sources.core import search_core, search_core_fulltext
+        from pubmed_search.infrastructure.sources.core import search_core, search_core_fulltext
         
         # Functions should be callable
         assert callable(search_core)
@@ -106,7 +106,7 @@ class TestNCBIExtendedClient:
     
     def test_client_initialization(self):
         """Test client initialization."""
-        from src.pubmed_search.sources.ncbi_extended import NCBIExtendedClient
+        from pubmed_search.infrastructure.sources.ncbi_extended import NCBIExtendedClient
         
         # Without API key
         client = NCBIExtendedClient()
@@ -120,10 +120,10 @@ class TestNCBIExtendedClient:
     
     def test_get_ncbi_extended_client_singleton(self):
         """Test singleton pattern."""
-        from src.pubmed_search.sources.ncbi_extended import get_ncbi_extended_client
+        from pubmed_search.infrastructure.sources.ncbi_extended import get_ncbi_extended_client
         
         # Reset singleton
-        import src.pubmed_search.sources.ncbi_extended as ncbi_module
+        import pubmed_search.infrastructure.sources.ncbi_extended as ncbi_module
         ncbi_module._ncbi_extended_client = None
         
         client1 = get_ncbi_extended_client()
@@ -132,7 +132,7 @@ class TestNCBIExtendedClient:
     
     def test_normalize_gene(self):
         """Test gene normalization."""
-        from src.pubmed_search.sources.ncbi_extended import NCBIExtendedClient
+        from pubmed_search.infrastructure.sources.ncbi_extended import NCBIExtendedClient
         
         client = NCBIExtendedClient()
         
@@ -160,7 +160,7 @@ class TestNCBIExtendedClient:
     
     def test_normalize_compound(self):
         """Test compound normalization."""
-        from src.pubmed_search.sources.ncbi_extended import NCBIExtendedClient
+        from pubmed_search.infrastructure.sources.ncbi_extended import NCBIExtendedClient
         
         client = NCBIExtendedClient()
         
@@ -185,7 +185,7 @@ class TestNCBIExtendedClient:
     
     def test_normalize_clinvar(self):
         """Test ClinVar normalization."""
-        from src.pubmed_search.sources.ncbi_extended import NCBIExtendedClient
+        from pubmed_search.infrastructure.sources.ncbi_extended import NCBIExtendedClient
         
         client = NCBIExtendedClient()
         
@@ -221,17 +221,17 @@ class TestSourcesIntegration:
     
     def test_search_source_enum(self):
         """Test SearchSource enum includes CORE."""
-        from src.pubmed_search.sources import SearchSource
+        from pubmed_search.infrastructure.sources import SearchSource
         
         assert hasattr(SearchSource, 'CORE')
         assert SearchSource.CORE.value == "core"
     
     def test_get_clients(self):
         """Test client getter functions."""
-        from src.pubmed_search.sources import get_core_client, get_ncbi_extended_client
+        from pubmed_search.infrastructure.sources import get_core_client, get_ncbi_extended_client
         
         # Reset singletons
-        import src.pubmed_search.sources as sources
+        import pubmed_search.infrastructure.sources as sources
         sources._core_client = None
         sources._ncbi_extended_client = None
         
@@ -243,7 +243,7 @@ class TestSourcesIntegration:
     
     def test_cross_search_includes_core(self):
         """Test that cross_search default sources include CORE."""
-        from src.pubmed_search.sources import cross_search
+        from pubmed_search.infrastructure.sources import cross_search
         import inspect
         
         # Check the function signature
@@ -263,7 +263,7 @@ class TestCOREMCPTools:
     def test_tools_registered(self):
         """Test that CORE tools can be registered."""
         from mcp.server.fastmcp import FastMCP
-        from src.pubmed_search.mcp.tools.core import register_core_tools
+        from pubmed_search.presentation.mcp_server.tools.core import register_core_tools
         
         mcp = FastMCP(name="test")
         register_core_tools(mcp)
@@ -283,7 +283,7 @@ class TestNCBIExtendedMCPTools:
     def test_tools_registered(self):
         """Test that NCBI Extended tools can be registered."""
         from mcp.server.fastmcp import FastMCP
-        from src.pubmed_search.mcp.tools.ncbi_extended import register_ncbi_extended_tools
+        from pubmed_search.presentation.mcp_server.tools.ncbi_extended import register_ncbi_extended_tools
         
         mcp = FastMCP(name="test")
         register_ncbi_extended_tools(mcp)
@@ -311,8 +311,8 @@ class TestAllToolsRegistration:
     def test_register_all_tools_includes_new_sources(self):
         """Test register_all_tools includes CORE and NCBI Extended."""
         from mcp.server.fastmcp import FastMCP
-        from src.pubmed_search.mcp.tools import register_all_tools
-        from src.pubmed_search.entrez import LiteratureSearcher
+        from pubmed_search.presentation.mcp_server.tools import register_all_tools
+        from pubmed_search.infrastructure.ncbi import LiteratureSearcher
         
         mcp = FastMCP(name="test")
         searcher = LiteratureSearcher(email="test@example.com")
@@ -339,7 +339,7 @@ class TestServerIntegration:
     
     def test_create_server_with_new_tools(self):
         """Test create_server registers new tools."""
-        from src.pubmed_search.mcp.server import create_server
+        from pubmed_search.presentation.mcp_server.server import create_server
         
         server = create_server(email="test@example.com")
         

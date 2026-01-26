@@ -152,7 +152,7 @@ class TestExportsInit:
     
     def test_exports_init_exports(self):
         """Test that exports __init__ exports expected functions."""
-        from pubmed_search.exports import (
+        from pubmed_search.application.export import (
             export_articles,
             get_fulltext_links,
             summarize_access,

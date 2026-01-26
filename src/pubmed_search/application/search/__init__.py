@@ -43,6 +43,7 @@ from .query_analyzer import (
     QueryIntent,
 )
 from .result_aggregator import (
+    AggregationStats,
     RankingConfig,
     RankingDimension,
     ResultAggregator,
@@ -58,4 +59,5 @@ __all__ = [
     "ResultAggregator",
     "RankingConfig",
     "RankingDimension",
+    "AggregationStats",
 ]

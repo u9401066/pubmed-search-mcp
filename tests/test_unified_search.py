@@ -32,7 +32,7 @@ class TestDispatchStrategy:
     @pytest.fixture
     def analyzer(self):
         """Create a QueryAnalyzer for testing."""
-        from pubmed_search.unified import QueryAnalyzer
+        from pubmed_search.application.search import QueryAnalyzer
         return QueryAnalyzer()
     
     def test_simple_lookup_uses_pubmed_only(self, analyzer):
@@ -78,7 +78,7 @@ class TestDispatchStrategy:
     def test_get_ranking_config_returns_config(self, analyzer):
         """get_ranking_config should return a RankingConfig."""
         from pubmed_search.presentation.mcp_server.tools.unified import DispatchStrategy
-        from pubmed_search.unified.result_aggregator import RankingConfig
+        from pubmed_search.application.search.result_aggregator import RankingConfig
         
         analysis = analyzer.analyze("test query")
         config = DispatchStrategy.get_ranking_config(analysis)
@@ -216,8 +216,8 @@ class TestFormatFunctions:
         """_format_as_json should return valid JSON."""
         import json
         from pubmed_search.presentation.mcp_server.tools.unified import _format_as_json
-        from pubmed_search.unified.result_aggregator import AggregationStats
-        from pubmed_search.unified import QueryAnalyzer
+        from pubmed_search.application.search.result_aggregator import AggregationStats
+        from pubmed_search.application.search import QueryAnalyzer
         
         analyzer = QueryAnalyzer()
         analysis = analyzer.analyze("test query")

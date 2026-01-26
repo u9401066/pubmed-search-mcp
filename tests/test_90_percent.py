@@ -8,9 +8,9 @@ class TestClientMissingLines:
     
     def test_fetch_details_empty_pmids(self):
         """Test fetch_details with empty list."""
-        from pubmed_search.client import LiteratureSearcher
+        from pubmed_search import LiteratureSearcher
         
-        with patch('pubmed_search.entrez.base.Entrez') as mock_entrez:
+        with patch('pubmed_search.infrastructure.ncbi.base.Entrez') as mock_entrez:
             mock_entrez.email = None
             searcher = LiteratureSearcher(email="test@example.com")
             
@@ -20,11 +20,11 @@ class TestClientMissingLines:
     
     def test_fetch_details_with_mesh(self):
         """Test fetch_details returning mesh_terms."""
-        from pubmed_search.client import LiteratureSearcher
+        from pubmed_search import LiteratureSearcher
         
-        with patch('pubmed_search.entrez.base.Entrez') as mock_entrez, \
-             patch('pubmed_search.entrez.utils.Entrez.efetch') as mock_efetch, \
-             patch('pubmed_search.entrez.utils.Entrez.read') as mock_read:
+        with patch('pubmed_search.infrastructure.ncbi.base.Entrez') as mock_entrez, \
+             patch('pubmed_search.infrastructure.ncbi.utils.Entrez.efetch') as mock_efetch, \
+             patch('pubmed_search.infrastructure.ncbi.utils.Entrez.read') as mock_read:
             
             mock_entrez.email = None
             mock_efetch.return_value = MagicMock()
@@ -117,8 +117,8 @@ class TestDiscoveryMissingLines:
         
         searcher = TestSearcher()
         
-        with patch('pubmed_search.entrez.citation.Entrez.elink') as mock_elink, \
-             patch('pubmed_search.entrez.citation.Entrez.read') as mock_read:
+        with patch('pubmed_search.infrastructure.ncbi.citation.Entrez.elink') as mock_elink, \
+             patch('pubmed_search.infrastructure.ncbi.citation.Entrez.read') as mock_read:
             
             mock_read.return_value = [{"LinkSetDb": []}]
             mock_elink.return_value = MagicMock()
@@ -134,12 +134,12 @@ class TestExportToolsMissingLines:
     def test_register_export_tools(self):
         """Test export tools registration."""
         from pubmed_search.presentation.mcp_server.tools.export import register_export_tools
-        from pubmed_search.client import LiteratureSearcher
+        from pubmed_search import LiteratureSearcher
         
         mock_mcp = Mock()
         mock_mcp.tool = Mock(return_value=lambda f: f)
         
-        with patch('pubmed_search.entrez.base.Entrez'):
+        with patch('pubmed_search.infrastructure.ncbi.base.Entrez'):
             searcher = LiteratureSearcher(email="test@example.com")
             
             # Only 2 args
@@ -154,12 +154,12 @@ class TestStrategyMissingLines:
     def test_register_strategy_tools(self):
         """Test strategy tools registration."""
         from pubmed_search.presentation.mcp_server.tools.strategy import register_strategy_tools
-        from pubmed_search.client import LiteratureSearcher
+        from pubmed_search import LiteratureSearcher
         
         mock_mcp = Mock()
         mock_mcp.tool = Mock(return_value=lambda f: f)
         
-        with patch('pubmed_search.entrez.base.Entrez'):
+        with patch('pubmed_search.infrastructure.ncbi.base.Entrez'):
             searcher = LiteratureSearcher(email="test@example.com")
             
             # Only 2 args
@@ -192,8 +192,8 @@ class TestSearchMissingLines:
         
         searcher = TestSearcher()
         
-        with patch('pubmed_search.entrez.search.Entrez.esearch') as mock_esearch, \
-             patch('pubmed_search.entrez.search.Entrez.read') as mock_read:
+        with patch('pubmed_search.infrastructure.ncbi.search.Entrez.esearch') as mock_esearch, \
+             patch('pubmed_search.infrastructure.ncbi.search.Entrez.read') as mock_read:
             
             mock_read.return_value = {"IdList": ["123"], "Count": "1"}
             mock_esearch.return_value = MagicMock()
@@ -219,8 +219,8 @@ class TestSearchMissingLines:
         
         searcher = TestSearcher()
         
-        with patch('pubmed_search.entrez.search.Entrez.esearch') as mock_esearch, \
-             patch('pubmed_search.entrez.search.Entrez.read') as mock_read:
+        with patch('pubmed_search.infrastructure.ncbi.search.Entrez.esearch') as mock_esearch, \
+             patch('pubmed_search.infrastructure.ncbi.search.Entrez.read') as mock_read:
             
             mock_read.return_value = {"IdList": ["123", "456"], "Count": "2"}
             mock_esearch.return_value = MagicMock()
@@ -237,7 +237,7 @@ class TestBaseMissingLines:
         """Test EntrezBase with API key."""
         from pubmed_search.infrastructure.ncbi.base import EntrezBase
         
-        with patch('pubmed_search.entrez.base.Entrez') as mock_entrez:
+        with patch('pubmed_search.infrastructure.ncbi.base.Entrez') as mock_entrez:
             mock_entrez.email = None
             mock_entrez.api_key = None
             
@@ -251,7 +251,7 @@ class TestFormatsMissingLines:
     
     def test_export_medline(self):
         """Test MEDLINE format export."""
-        from pubmed_search.exports.formats import export_medline
+        from pubmed_search.application.export.formats import export_medline
         
         articles = [
             {
@@ -270,7 +270,7 @@ class TestFormatsMissingLines:
     
     def test_export_csv_many_columns(self):
         """Test CSV export with all columns."""
-        from pubmed_search.exports.formats import export_csv
+        from pubmed_search.application.export.formats import export_csv
         
         articles = [
             {
@@ -335,7 +335,7 @@ class TestICiteMissingLines:
         
         searcher = TestSearcher()
         
-        with patch('pubmed_search.entrez.icite.requests.get') as mock_get:
+        with patch('pubmed_search.infrastructure.ncbi.icite.requests.get') as mock_get:
             mock_get.side_effect = Exception("Network error")
             
             # Should handle error gracefully
@@ -359,8 +359,8 @@ class TestCitationMissingLines:
         
         searcher = TestSearcher()
         
-        with patch('pubmed_search.entrez.citation.Entrez.elink') as mock_elink, \
-             patch('pubmed_search.entrez.citation.Entrez.read') as mock_read:
+        with patch('pubmed_search.infrastructure.ncbi.citation.Entrez.elink') as mock_elink, \
+             patch('pubmed_search.infrastructure.ncbi.citation.Entrez.read') as mock_read:
             
             # No LinkSetDb at all
             mock_read.return_value = [{}]
@@ -377,12 +377,12 @@ class TestMergeToolsMissingLines:
     def test_register_merge_tools(self):
         """Test merge tools registration."""
         from pubmed_search.presentation.mcp_server.tools.merge import register_merge_tools
-        from pubmed_search.client import LiteratureSearcher
+        from pubmed_search import LiteratureSearcher
         
         mock_mcp = Mock()
         mock_mcp.tool = Mock(return_value=lambda f: f)
         
-        with patch('pubmed_search.entrez.base.Entrez'):
+        with patch('pubmed_search.infrastructure.ncbi.base.Entrez'):
             searcher = LiteratureSearcher(email="test@example.com")
             
             register_merge_tools(mock_mcp, searcher)

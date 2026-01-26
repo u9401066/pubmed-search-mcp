@@ -84,7 +84,7 @@ class TestOpenURLConfig:
         monkeypatch.setenv("OPENURL_RESOLVER", "")
         
         # Reset singleton
-        from pubmed_search.sources import openurl
+        from pubmed_search.infrastructure.sources import openurl
         openurl._openurl_config = None
         
         from pubmed_search.infrastructure.sources.openurl import OpenURLConfig
@@ -102,7 +102,7 @@ class TestOpenURLConfig:
         monkeypatch.setenv("OPENURL_PRESET", "")
         monkeypatch.setenv("OPENURL_RESOLVER", "https://custom.library.edu/openurl")
         
-        from pubmed_search.sources import openurl
+        from pubmed_search.infrastructure.sources import openurl
         openurl._openurl_config = None
         
         from pubmed_search.infrastructure.sources.openurl import OpenURLConfig
@@ -118,7 +118,7 @@ class TestOpenURLConfig:
         """Test disabled config returns None builder."""
         monkeypatch.setenv("OPENURL_ENABLED", "false")
         
-        from pubmed_search.sources import openurl
+        from pubmed_search.infrastructure.sources import openurl
         openurl._openurl_config = None
         
         from pubmed_search.infrastructure.sources.openurl import OpenURLConfig
@@ -153,7 +153,7 @@ class TestConvenienceFunctions:
         monkeypatch.delenv("OPENURL_PRESET", raising=False)
         monkeypatch.delenv("OPENURL_RESOLVER", raising=False)
         
-        from pubmed_search.sources import openurl
+        from pubmed_search.infrastructure.sources import openurl
         openurl._openurl_config = None
         
         from pubmed_search.infrastructure.sources.openurl import configure_openurl, get_openurl_link
@@ -176,7 +176,7 @@ class TestIntegrationWithUnifiedSearch:
         # This would require mocking the searcher, so just test the config
         monkeypatch.setenv("OPENURL_PRESET", "harvard")
         
-        from pubmed_search.sources import openurl
+        from pubmed_search.infrastructure.sources import openurl
         openurl._openurl_config = None
         
         from pubmed_search.infrastructure.sources.openurl import get_openurl_config

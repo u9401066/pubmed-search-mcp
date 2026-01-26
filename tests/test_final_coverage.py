@@ -15,7 +15,7 @@ class TestSearchMixinAdvanced:
     @pytest.fixture
     def searcher(self):
         """Create test searcher."""
-        from pubmed_search.client import LiteratureSearcher
+        from pubmed_search import LiteratureSearcher
         return LiteratureSearcher(email="test@example.com")
     
     def test_fetch_details_empty(self, searcher):
@@ -25,8 +25,8 @@ class TestSearchMixinAdvanced:
     
     def test_fetch_details_single(self, searcher):
         """Test fetch_details with single ID."""
-        with patch('pubmed_search.entrez.search.Entrez.efetch') as mock_efetch, \
-             patch('pubmed_search.entrez.search.Entrez.read') as mock_read:
+        with patch('pubmed_search.infrastructure.ncbi.search.Entrez.efetch') as mock_efetch, \
+             patch('pubmed_search.infrastructure.ncbi.search.Entrez.read') as mock_read:
             
             mock_read.return_value = {'PubmedArticle': [
                 {
@@ -73,8 +73,8 @@ class TestSearchMixinAdvanced:
     
     def test_search_with_all_parameters(self, searcher):
         """Test search with all parameters specified."""
-        with patch('pubmed_search.entrez.search.Entrez.esearch') as mock_esearch, \
-             patch('pubmed_search.entrez.search.Entrez.read') as mock_read, \
+        with patch('pubmed_search.infrastructure.ncbi.search.Entrez.esearch') as mock_esearch, \
+             patch('pubmed_search.infrastructure.ncbi.search.Entrez.read') as mock_read, \
              patch.object(searcher, 'fetch_details', return_value=[{"pmid": "123"}]):
             
             mock_read.return_value = {"IdList": ["123"]}
@@ -351,8 +351,8 @@ class TestStrategyEdgeCases:
         """Test spell check in strategy generator."""
         from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
         
-        with patch('pubmed_search.entrez.strategy.Entrez.espell') as mock_espell, \
-             patch('pubmed_search.entrez.strategy.Entrez.read') as mock_read:
+        with patch('pubmed_search.infrastructure.ncbi.strategy.Entrez.espell') as mock_espell, \
+             patch('pubmed_search.infrastructure.ncbi.strategy.Entrez.read') as mock_read:
             
             mock_read.return_value = {"CorrectedQuery": "diabetes"}
             mock_espell.return_value = MagicMock()
@@ -382,8 +382,8 @@ class TestDiscoveryEdgeCases:
         
         searcher = TestSearcher()
         
-        with patch('pubmed_search.entrez.citation.Entrez.elink') as mock_elink, \
-             patch('pubmed_search.entrez.citation.Entrez.read') as mock_read:
+        with patch('pubmed_search.infrastructure.ncbi.citation.Entrez.elink') as mock_elink, \
+             patch('pubmed_search.infrastructure.ncbi.citation.Entrez.read') as mock_read:
             
             mock_read.return_value = [
                 {
@@ -407,7 +407,7 @@ class TestFormatsCoverage:
     
     def test_export_ris_with_all_fields(self):
         """Test RIS export with comprehensive article data."""
-        from pubmed_search.exports.formats import export_ris
+        from pubmed_search.application.export.formats import export_ris
         
         article = {
             "pmid": "12345",
@@ -435,7 +435,7 @@ class TestFormatsCoverage:
     
     def test_export_json_structure(self):
         """Test JSON export structure."""
-        from pubmed_search.exports.formats import export_json
+        from pubmed_search.application.export.formats import export_json
         
         articles = [
             {"pmid": "123", "title": "Test"},
@@ -455,7 +455,7 @@ class TestLinksCoverage:
     
     def test_summarize_access_full(self):
         """Test summarize_access with various access types."""
-        from pubmed_search.exports.links import summarize_access
+        from pubmed_search.application.export.links import summarize_access
         
         articles = [
             {"pmid": "1", "pmc_id": "PMC001"},  # Has PMC
