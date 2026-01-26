@@ -10,19 +10,19 @@ class TestMCPServerInit:
     
     def test_server_module_imports(self):
         """Test that server module can be imported."""
-        from pubmed_search.mcp_server import server
+        from pubmed_search.presentation.mcp_server import server
         assert server is not None
     
     def test_literature_searcher_creation(self):
         """Test LiteratureSearcher creation with email."""
-        from pubmed_search.entrez import LiteratureSearcher
+        from pubmed_search.infrastructure.ncbi import LiteratureSearcher
         
         searcher = LiteratureSearcher(email="test@example.com")
         assert searcher is not None
     
     def test_literature_searcher_has_mixins(self):
         """Test that LiteratureSearcher has all expected mixins."""
-        from pubmed_search.entrez import LiteratureSearcher
+        from pubmed_search.infrastructure.ncbi import LiteratureSearcher
         
         searcher = LiteratureSearcher(email="test@example.com")
         
@@ -40,12 +40,12 @@ class TestSessionTools:
     
     def test_session_tools_module_imports(self):
         """Test that session_tools module can be imported."""
-        from pubmed_search.mcp_server import session_tools
+        from pubmed_search.presentation.mcp_server import session_tools
         assert session_tools is not None
     
     def test_register_session_tools(self):
         """Test registering session tools."""
-        from pubmed_search.mcp_server.session_tools import register_session_tools
+        from pubmed_search.presentation.mcp_server.session_tools import register_session_tools
         
         mcp = MagicMock()
         mcp.tool = lambda: lambda f: f
@@ -61,7 +61,7 @@ class TestToolRegistration:
     
     def test_all_tools_registered(self):
         """Test that all tools are registered."""
-        from pubmed_search.mcp_server.tools import (
+        from pubmed_search.presentation.mcp_server.tools import (
             register_discovery_tools,
             register_strategy_tools,
             register_pico_tools,
@@ -85,7 +85,7 @@ class TestToolRegistration:
     
     def test_register_all_tools_function(self):
         """Test register_all_tools aggregator function."""
-        from pubmed_search.mcp_server.tools import register_all_tools
+        from pubmed_search.presentation.mcp_server.tools import register_all_tools
         
         mcp = MagicMock()
         mcp.tool = lambda: lambda f: f
@@ -118,7 +118,7 @@ class TestToolsInit:
     
     def test_tools_init_exports(self):
         """Test that tools __init__ exports expected functions."""
-        from pubmed_search.mcp_server import tools
+        from pubmed_search.presentation.mcp_server import tools
         
         assert hasattr(tools, 'register_all_tools')
         assert hasattr(tools, 'set_session_manager')
@@ -130,13 +130,13 @@ class TestEntrezInit:
     
     def test_entrez_init_exports(self):
         """Test that entrez __init__ exports LiteratureSearcher."""
-        from pubmed_search.entrez import LiteratureSearcher
+        from pubmed_search.infrastructure.ncbi import LiteratureSearcher
         
         assert LiteratureSearcher is not None
     
     def test_literature_searcher_inheritance(self):
         """Test LiteratureSearcher has correct inheritance."""
-        from pubmed_search.entrez import LiteratureSearcher
+        from pubmed_search.infrastructure.ncbi import LiteratureSearcher
         
         # Check MRO includes all mixins
         mro_names = [cls.__name__ for cls in LiteratureSearcher.__mro__]

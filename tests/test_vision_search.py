@@ -6,7 +6,7 @@ import pytest
 import base64
 from unittest.mock import AsyncMock, patch, MagicMock
 
-from pubmed_search.mcp_server.tools.vision_search import (
+from pubmed_search.presentation.mcp_server.tools.vision_search import (
     is_valid_url,
     is_base64_image,
     parse_data_uri,

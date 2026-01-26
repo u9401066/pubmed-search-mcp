@@ -90,7 +90,7 @@ class TestCachePerformance:
     
     def test_cache_hit_performance(self, benchmark, mock_searcher):
         """Cached results should be much faster than API calls."""
-        from pubmed_search.session import SessionManager
+        from pubmed_search.application.session import SessionManager
         
         session_mgr = SessionManager()
         session_id = "perf-test-001"
@@ -115,7 +115,7 @@ class TestCachePerformance:
     
     def test_cache_miss_to_hit_ratio(self, mock_searcher):
         """Monitor cache effectiveness."""
-        from pubmed_search.session import SessionManager
+        from pubmed_search.application.session import SessionManager
         
         session_mgr = SessionManager()
         session_id = "cache-test-001"
@@ -284,7 +284,7 @@ class TestScalability:
     
     def test_concurrent_session_handling(self):
         """Handle multiple concurrent sessions efficiently."""
-        from pubmed_search.session import SessionManager
+        from pubmed_search.application.session import SessionManager
         
         session_mgr = SessionManager()
         

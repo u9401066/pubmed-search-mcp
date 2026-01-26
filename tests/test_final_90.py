@@ -10,7 +10,7 @@ class TestSearchFilterResults:
     
     def test_filter_results_by_sample_size(self):
         """Test filtering results by sample size."""
-        from pubmed_search.entrez.search import SearchMixin
+        from pubmed_search.infrastructure.ncbi.search import SearchMixin
         
         class TestSearcher(SearchMixin):
             def fetch_details(self, pmids):
@@ -33,7 +33,7 @@ class TestSearchAmbiguousTerms:
     
     def test_search_with_ambiguous_term(self):
         """Test search handles ambiguous terms."""
-        from pubmed_search.entrez.search import SearchMixin
+        from pubmed_search.infrastructure.ncbi.search import SearchMixin
         
         class TestSearcher(SearchMixin):
             def fetch_details(self, pmids):
@@ -58,7 +58,7 @@ class TestSearchResultParsing:
     
     def test_parse_article_with_abstract_sections(self):
         """Test parsing article with structured abstract."""
-        from pubmed_search.entrez.search import SearchMixin
+        from pubmed_search.infrastructure.ncbi.search import SearchMixin
         
         class TestSearcher(SearchMixin):
             pass
@@ -114,7 +114,7 @@ class TestStrategyBuildQueries:
     
     def test_build_query_suggestions(self):
         """Test building query suggestions."""
-        from pubmed_search.entrez.strategy import SearchStrategyGenerator
+        from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
         
         with patch('pubmed_search.entrez.strategy.Entrez.espell') as mock_espell, \
              patch('pubmed_search.entrez.strategy.Entrez.read') as mock_read:
@@ -156,7 +156,7 @@ class TestSessionStatePersistence:
     
     def test_session_touch(self):
         """Test session touch updates timestamp."""
-        from pubmed_search.session import ResearchSession
+        from pubmed_search.application.session import ResearchSession
         import time
         
         session = ResearchSession(session_id="test")
@@ -209,7 +209,7 @@ class TestDiscoveryToolEdgeCases:
     
     def test_discovery_tool_format(self):
         """Test discovery tool result formatting."""
-        from pubmed_search.mcp_server.tools._common import format_search_results
+        from pubmed_search.presentation.mcp_server.tools._common import format_search_results
         
         results = [
             {
@@ -241,7 +241,7 @@ class TestSessionToolsInternals:
     
     def test_session_tools_module(self):
         """Test session_tools module contents."""
-        from pubmed_search.mcp_server import session_tools
+        from pubmed_search.presentation.mcp_server import session_tools
         
         # Check module has expected functions
         assert hasattr(session_tools, 'register_session_tools')
@@ -253,7 +253,7 @@ class TestPicoElementExtraction:
     
     def test_pico_parse_question(self):
         """Test PICO parsing of clinical question."""
-        from pubmed_search.mcp_server.tools.pico import register_pico_tools
+        from pubmed_search.presentation.mcp_server.tools.pico import register_pico_tools
         
         # Just verify the module works
         assert callable(register_pico_tools)
@@ -306,7 +306,7 @@ class TestBaseRateLimit:
     
     def test_rate_limit_interval(self):
         """Test rate limiting respects interval."""
-        from pubmed_search.entrez.base import _rate_limit
+        from pubmed_search.infrastructure.ncbi.base import _rate_limit
         import time
         
         start = time.time()

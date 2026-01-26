@@ -4,7 +4,8 @@ HTTP Client Module - Unified HTTP client with proxy support.
 This module provides a centralized HTTP client that:
 - Supports HTTP/HTTPS proxy configuration
 - Handles rate limiting
-- Provides consistent error handling
+- Provides consistent error handling with proper exceptions
+- Automatic retry with exponential backoff
 - Works across all data sources
 
 Usage:
@@ -13,9 +14,14 @@ Usage:
     # Configure proxy (optional)
     configure_proxy("http://proxy:8080")
 
-    # Make requests
+    # Make requests (raises exceptions on error)
     response = http_get("https://api.example.com/data")
+
+    # Safe version (returns None on error, for backward compatibility)
+    response = http_get_safe("https://api.example.com/data")
 """
+
+from __future__ import annotations
 
 import json
 import logging
@@ -24,20 +30,113 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from functools import wraps
+from typing import Any, Callable, TypeVar
+
+from pubmed_search.shared.exceptions import (
+    NetworkError,
+    ParseError,
+    RateLimitError,
+    ServiceUnavailableError,
+)
 
 logger = logging.getLogger(__name__)
 
+T = TypeVar("T")
+
 # Global configuration
-_config = {
+_config: dict[str, Any] = {
     "http_proxy": None,
     "https_proxy": None,
     "timeout": 30.0,
     "user_agent": "pubmed-search-mcp/1.0",
     "contact_email": "pubmed-search-mcp@example.com",
+    "max_retries": 3,
+    "retry_base_delay": 1.0,
 }
 
 # Rate limiting state per domain
-_rate_limits: dict[str, dict] = {}
+_rate_limits: dict[str, dict[str, float]] = {}
+
+
+# =============================================================================
+# Retry Decorator
+# =============================================================================
+
+
+def with_retry(
+    max_retries: int | None = None,
+    base_delay: float | None = None,
+    retryable_status_codes: tuple[int, ...] = (429, 500, 502, 503, 504),
+) -> Callable[[Callable[..., T]], Callable[..., T]]:
+    """
+    Decorator for automatic retry with exponential backoff.
+
+    Args:
+        max_retries: Maximum retry attempts (default from config)
+        base_delay: Base delay in seconds (default from config)
+        retryable_status_codes: HTTP status codes to retry on
+
+    Usage:
+        @with_retry(max_retries=3)
+        def fetch_data(url: str) -> dict:
+            return http_get(url)
+    """
+
+    def decorator(func: Callable[..., T]) -> Callable[..., T]:
+        @wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> T:
+            retries = max_retries if max_retries is not None else _config["max_retries"]
+            delay = (
+                base_delay if base_delay is not None else _config["retry_base_delay"]
+            )
+            last_error: Exception | None = None
+
+            for attempt in range(retries + 1):
+                try:
+                    return func(*args, **kwargs)
+                except RateLimitError as e:
+                    last_error = e
+                    wait_time = e.context.retry_after or (delay * (2**attempt))
+                    if attempt < retries:
+                        logger.warning(
+                            f"Rate limited (attempt {attempt + 1}/{retries + 1}), "
+                            f"retrying in {wait_time:.1f}s"
+                        )
+                        time.sleep(wait_time)
+                    else:
+                        raise
+                except ServiceUnavailableError as e:
+                    last_error = e
+                    wait_time = delay * (2**attempt)
+                    if attempt < retries:
+                        logger.warning(
+                            f"Service unavailable (attempt {attempt + 1}/{retries + 1}), "
+                            f"retrying in {wait_time:.1f}s"
+                        )
+                        time.sleep(wait_time)
+                    else:
+                        raise
+                except NetworkError as e:
+                    last_error = e
+                    wait_time = delay * (2**attempt)
+                    if attempt < retries:
+                        logger.warning(
+                            f"Network error (attempt {attempt + 1}/{retries + 1}), "
+                            f"retrying in {wait_time:.1f}s"
+                        )
+                        time.sleep(wait_time)
+                    else:
+                        raise
+
+            # Should not reach here, but just in case
+            if last_error:
+                raise last_error
+            raise RuntimeError("Unexpected retry loop exit")
+
+        return wrapper
+
+    return decorator
 
 
 def configure_proxy(
@@ -164,7 +263,7 @@ def http_get(
     expect_json: bool = True,
     rate_limit_interval: float = 0.5,
     timeout: float | None = None,
-) -> dict | str | None:
+) -> dict[str, Any] | str:
     """
     Make HTTP GET request with proxy support.
 
@@ -176,7 +275,13 @@ def http_get(
         timeout: Request timeout (uses global default if None)
 
     Returns:
-        Parsed JSON dict, response string, or None on error
+        Parsed JSON dict or response string
+
+    Raises:
+        RateLimitError: When rate limited (HTTP 429)
+        ServiceUnavailableError: When service is unavailable (HTTP 5xx)
+        NetworkError: When network connection fails
+        ParseError: When JSON parsing fails
     """
     domain = _get_domain(url)
     _rate_limit(domain, rate_limit_interval)
@@ -206,27 +311,62 @@ def http_get(
             return content
     except urllib.error.HTTPError as e:
         logger.error(f"HTTP error {e.code}: {e.reason} for {url}")
-        return None
+        if e.code == 429:
+            # Try to extract Retry-After header
+            retry_after = float(e.headers.get("Retry-After", 1.0))
+            raise RateLimitError(
+                f"Rate limited by {domain}",
+                retry_after=retry_after,
+            ) from e
+        elif e.code >= 500:
+            raise ServiceUnavailableError(
+                f"HTTP {e.code}: {e.reason}",
+                service=domain,
+            ) from e
+        else:
+            raise NetworkError(f"HTTP {e.code}: {e.reason} for {url}") from e
     except urllib.error.URLError as e:
         logger.error(f"URL error: {e.reason} for {url}")
-        return None
+        raise NetworkError(f"Connection failed: {e.reason}") from e
     except json.JSONDecodeError as e:
         logger.error(f"JSON decode error: {e}")
-        return None
+        raise ParseError("Invalid JSON response", source=domain) from e
+    except TimeoutError as e:
+        logger.error(f"Timeout for {url}")
+        raise NetworkError(f"Request timeout after {request_timeout}s") from e
     except Exception as e:
         logger.error(f"Request error: {e}")
+        raise NetworkError(f"Request failed: {e}") from e
+
+
+def http_get_safe(
+    url: str,
+    headers: dict[str, str] | None = None,
+    expect_json: bool = True,
+    rate_limit_interval: float = 0.5,
+    timeout: float | None = None,
+) -> dict[str, Any] | str | None:
+    """
+    Safe version of http_get that returns None on error.
+
+    For backward compatibility with existing code.
+    Prefer http_get() for new code.
+    """
+    try:
+        return http_get(url, headers, expect_json, rate_limit_interval, timeout)
+    except Exception:
         return None
 
 
 def http_post(
     url: str,
-    data: dict | None = None,
-    json_data: dict | None = None,
+    data: dict[str, Any] | None = None,
+    json_data: dict[str, Any] | None = None,
     headers: dict[str, str] | None = None,
     expect_json: bool = True,
     rate_limit_interval: float = 0.5,
     timeout: float | None = None,
-) -> dict | str | None:
+) -> dict[str, Any] | str:
     """
     Make HTTP POST request with proxy support.
 
@@ -240,7 +380,13 @@ def http_post(
         timeout: Request timeout
 
     Returns:
-        Parsed JSON dict, response string, or None on error
+        Parsed JSON dict or response string
+
+    Raises:
+        RateLimitError: When rate limited (HTTP 429)
+        ServiceUnavailableError: When service is unavailable (HTTP 5xx)
+        NetworkError: When network connection fails
+        ParseError: When JSON parsing fails
     """
     domain = _get_domain(url)
     _rate_limit(domain, rate_limit_interval)
@@ -283,15 +429,53 @@ def http_post(
             return content
     except urllib.error.HTTPError as e:
         logger.error(f"HTTP error {e.code}: {e.reason} for {url}")
-        return None
+        if e.code == 429:
+            retry_after = float(e.headers.get("Retry-After", 1.0))
+            raise RateLimitError(
+                f"Rate limited by {domain}",
+                retry_after=retry_after,
+            ) from e
+        elif e.code >= 500:
+            raise ServiceUnavailableError(
+                f"HTTP {e.code}: {e.reason}",
+                service=domain,
+            ) from e
+        else:
+            raise NetworkError(f"HTTP {e.code}: {e.reason} for {url}") from e
     except urllib.error.URLError as e:
         logger.error(f"URL error: {e.reason} for {url}")
-        return None
+        raise NetworkError(f"Connection failed: {e.reason}") from e
     except json.JSONDecodeError as e:
         logger.error(f"JSON decode error: {e}")
-        return None
+        raise ParseError("Invalid JSON response", source=domain) from e
+    except TimeoutError as e:
+        logger.error(f"Timeout for {url}")
+        raise NetworkError(f"Request timeout after {request_timeout}s") from e
     except Exception as e:
         logger.error(f"Request error: {e}")
+        raise NetworkError(f"Request failed: {e}") from e
+
+
+def http_post_safe(
+    url: str,
+    data: dict[str, Any] | None = None,
+    json_data: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
+    expect_json: bool = True,
+    rate_limit_interval: float = 0.5,
+    timeout: float | None = None,
+) -> dict[str, Any] | str | None:
+    """
+    Safe version of http_post that returns None on error.
+
+    For backward compatibility with existing code.
+    Prefer http_post() for new code.
+    """
+    try:
+        return http_post(
+            url, data, json_data, headers, expect_json, rate_limit_interval, timeout
+        )
+    except Exception:
         return None
 
 

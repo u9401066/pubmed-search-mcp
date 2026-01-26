@@ -95,6 +95,9 @@ from .infrastructure.ncbi import (
     UtilsMixin,
 )
 
+# HTTP Client and PubMed Client
+from .infrastructure.http import PubMedClient
+
 # iCite metrics
 from .infrastructure.ncbi.icite import ICiteMixin
 
@@ -161,6 +164,8 @@ __all__ = [
     "BatchMixin",
     "UtilsMixin",
     "ICiteMixin",
+    # HTTP Client
+    "PubMedClient",
     # ═══════════════════════════════════════════════════════════════════
     # NCBI Extended (Gene, PubChem, ClinVar)
     # ═══════════════════════════════════════════════════════════════════

@@ -27,7 +27,7 @@ class TestSearchRemainingPaths:
     
     def test_search_with_all_date_types(self):
         """Test search with different date types."""
-        from pubmed_search.entrez.search import SearchMixin
+        from pubmed_search.infrastructure.ncbi.search import SearchMixin
         
         class TestSearcher(SearchMixin):
             def fetch_details(self, pmids):
@@ -53,7 +53,7 @@ class TestSearchRemainingPaths:
     
     def test_search_retry_exhausted(self):
         """Test search when all retries exhausted."""
-        from pubmed_search.entrez.search import SearchMixin
+        from pubmed_search.infrastructure.ncbi.search import SearchMixin
         
         class TestSearcher(SearchMixin):
             def fetch_details(self, pmids):
@@ -78,7 +78,7 @@ class TestStrategyRemainingPaths:
     
     def test_strategy_with_complex_query(self):
         """Test strategy with multi-word complex query."""
-        from pubmed_search.entrez.strategy import SearchStrategyGenerator
+        from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
         
         with patch('pubmed_search.entrez.strategy.Entrez.espell') as mock_espell, \
              patch('pubmed_search.entrez.strategy.Entrez.read') as mock_read, \
@@ -101,7 +101,7 @@ class TestStrategyRemainingPaths:
     
     def test_strategy_exploratory(self):
         """Test strategy with exploratory strategy."""
-        from pubmed_search.entrez.strategy import SearchStrategyGenerator
+        from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
         
         with patch('pubmed_search.entrez.strategy.Entrez.espell') as mock_espell, \
              patch('pubmed_search.entrez.strategy.Entrez.read') as mock_read, \
@@ -125,7 +125,7 @@ class TestSessionRemainingPaths:
     
     def test_session_switch_invalid(self):
         """Test switching to invalid session."""
-        from pubmed_search.session import SessionManager
+        from pubmed_search.application.session import SessionManager
         
         with tempfile.TemporaryDirectory() as tmpdir:
             manager = SessionManager(data_dir=tmpdir)
@@ -138,7 +138,7 @@ class TestSessionRemainingPaths:
     
     def test_session_load_from_disk(self):
         """Test loading sessions from disk."""
-        from pubmed_search.session import SessionManager
+        from pubmed_search.application.session import SessionManager
         
         with tempfile.TemporaryDirectory() as tmpdir:
             # Create and save a session
@@ -158,7 +158,7 @@ class TestCommonRemainingPaths:
     
     def test_format_results_with_doi(self):
         """Test formatting with DOI."""
-        from pubmed_search.mcp_server.tools._common import format_search_results
+        from pubmed_search.presentation.mcp_server.tools._common import format_search_results
         
         results = [
             {
@@ -182,7 +182,7 @@ class TestDiscoveryRemainingPaths:
     
     def test_find_citing_method(self):
         """Test find_citing_articles directly."""
-        from pubmed_search.entrez.citation import CitationMixin
+        from pubmed_search.infrastructure.ncbi.citation import CitationMixin
         
         class TestSearcher(CitationMixin):
             def fetch_details(self, pmids):
@@ -243,7 +243,7 @@ class TestBaseRemainingPaths:
     
     def test_search_strategy_all_values(self):
         """Test all SearchStrategy enum values."""
-        from pubmed_search.entrez.base import SearchStrategy
+        from pubmed_search.infrastructure.ncbi.base import SearchStrategy
         
         values = [s.value for s in SearchStrategy]
         
@@ -259,7 +259,7 @@ class TestICiteRemainingPaths:
     
     def test_get_citation_metrics_batch(self):
         """Test iCite batch metrics."""
-        from pubmed_search.entrez.icite import ICiteMixin
+        from pubmed_search.infrastructure.ncbi.icite import ICiteMixin
         
         class TestSearcher(ICiteMixin):
             pass
@@ -290,7 +290,7 @@ class TestPDFRemainingPaths:
     
     def test_get_pmc_fulltext_url(self):
         """Test getting PMC fulltext URL."""
-        from pubmed_search.entrez.pdf import PDFMixin
+        from pubmed_search.infrastructure.ncbi.pdf import PDFMixin
         
         class TestSearcher(PDFMixin):
             pass
@@ -322,7 +322,7 @@ class TestMergeRemainingPaths:
     
     def test_merge_tools_register(self):
         """Test merge tools registration."""
-        from pubmed_search.mcp_server.tools.merge import register_merge_tools
+        from pubmed_search.presentation.mcp_server.tools.merge import register_merge_tools
         from pubmed_search.client import LiteratureSearcher
         
         mock_mcp = Mock()
@@ -339,7 +339,7 @@ class TestServerRemainingPaths:
     
     def test_server_default_data_dir(self):
         """Test server default data directory."""
-        from pubmed_search.mcp_server.server import DEFAULT_DATA_DIR
+        from pubmed_search.presentation.mcp_server.server import DEFAULT_DATA_DIR
         
         assert "pubmed" in DEFAULT_DATA_DIR.lower() or ".pubmed" in DEFAULT_DATA_DIR
 

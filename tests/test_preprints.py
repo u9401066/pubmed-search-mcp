@@ -2,7 +2,7 @@
 Tests for preprint sources (arXiv, medRxiv, bioRxiv).
 """
 import pytest
-from src.pubmed_search.sources.preprints import (
+from pubmed_search.infrastructure.sources.preprints import (
     ArXivClient,
     PreprintSearcher,
     PreprintArticle,

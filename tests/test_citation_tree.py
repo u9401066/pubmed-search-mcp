@@ -2,8 +2,8 @@
 import sys
 sys.path.insert(0, 'src')
 
-from pubmed_search.entrez import LiteratureSearcher
-from pubmed_search.mcp_server.tools.citation_tree import (
+from pubmed_search.infrastructure.ncbi import LiteratureSearcher
+from pubmed_search.presentation.mcp_server.tools.citation_tree import (
     _make_node, _make_edge,
     _to_cytoscape, _to_g6, _to_d3, _to_vis, _to_graphml
 )
@@ -101,7 +101,7 @@ def test_full_tree():
     print("Test 3: Full Citation Tree (depth=1)")
     print("=" * 60)
     
-    from pubmed_search.mcp_server.tools.citation_tree import _make_node, _make_edge
+    from pubmed_search.presentation.mcp_server.tools.citation_tree import _make_node, _make_edge
     
     searcher = LiteratureSearcher()
     pmid = '30676168'

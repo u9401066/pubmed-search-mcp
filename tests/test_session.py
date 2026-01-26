@@ -4,7 +4,7 @@ Tests for Session management and Article caching.
 
 from datetime import datetime, timedelta
 
-from pubmed_search.session import (
+from pubmed_search.application.session import (
     CachedArticle,
     SearchRecord,
     ResearchSession,

@@ -64,8 +64,8 @@ class TestSessionToolsMissingLines:
     
     def test_register_session_tools_passes(self):
         """Test session tools registration just passes (no tools)."""
-        from pubmed_search.mcp_server.session_tools import register_session_tools
-        from pubmed_search.session import SessionManager
+        from pubmed_search.presentation.mcp_server.session_tools import register_session_tools
+        from pubmed_search.application.session import SessionManager
         
         mock_mcp = Mock()
         
@@ -78,8 +78,8 @@ class TestSessionToolsMissingLines:
     
     def test_register_session_resources(self):
         """Test session resources registration."""
-        from pubmed_search.mcp_server.session_tools import register_session_resources
-        from pubmed_search.session import SessionManager
+        from pubmed_search.presentation.mcp_server.session_tools import register_session_resources
+        from pubmed_search.application.session import SessionManager
         
         mock_mcp = Mock()
         mock_mcp.resource = Mock(return_value=lambda f: f)
@@ -98,7 +98,7 @@ class TestCommonMissingLines:
     
     def test_format_results_empty(self):
         """Test formatting empty results."""
-        from pubmed_search.mcp_server.tools._common import format_search_results
+        from pubmed_search.presentation.mcp_server.tools._common import format_search_results
         
         result = format_search_results([])
         assert "No results" in result or result == ""
@@ -109,7 +109,7 @@ class TestDiscoveryMissingLines:
     
     def test_find_related_no_results(self):
         """Test find_related with no results."""
-        from pubmed_search.entrez.citation import CitationMixin
+        from pubmed_search.infrastructure.ncbi.citation import CitationMixin
         
         class TestSearcher(CitationMixin):
             def fetch_details(self, pmids):
@@ -133,7 +133,7 @@ class TestExportToolsMissingLines:
     
     def test_register_export_tools(self):
         """Test export tools registration."""
-        from pubmed_search.mcp_server.tools.export import register_export_tools
+        from pubmed_search.presentation.mcp_server.tools.export import register_export_tools
         from pubmed_search.client import LiteratureSearcher
         
         mock_mcp = Mock()
@@ -153,7 +153,7 @@ class TestStrategyMissingLines:
     
     def test_register_strategy_tools(self):
         """Test strategy tools registration."""
-        from pubmed_search.mcp_server.tools.strategy import register_strategy_tools
+        from pubmed_search.presentation.mcp_server.tools.strategy import register_strategy_tools
         from pubmed_search.client import LiteratureSearcher
         
         mock_mcp = Mock()
@@ -174,7 +174,7 @@ class TestMainModule:
     def test_main_module_import(self):
         """Test main module can be imported."""
         # Import the module - that's enough
-        from pubmed_search.mcp_server import __main__ as main_module
+        from pubmed_search.presentation.mcp_server import __main__ as main_module
         # Module exists and can be imported
         assert main_module is not None
 
@@ -184,7 +184,7 @@ class TestSearchMissingLines:
     
     def test_search_with_article_type_filter(self):
         """Test search with article type filter."""
-        from pubmed_search.entrez.search import SearchMixin
+        from pubmed_search.infrastructure.ncbi.search import SearchMixin
         
         class TestSearcher(SearchMixin):
             def fetch_details(self, pmids):
@@ -208,7 +208,7 @@ class TestSearchMissingLines:
     
     def test_search_impact_strategy(self):
         """Test search with impact strategy."""
-        from pubmed_search.entrez.search import SearchMixin
+        from pubmed_search.infrastructure.ncbi.search import SearchMixin
         
         class TestSearcher(SearchMixin):
             def fetch_details(self, pmids):
@@ -235,7 +235,7 @@ class TestBaseMissingLines:
     
     def test_entrez_base_api_key(self):
         """Test EntrezBase with API key."""
-        from pubmed_search.entrez.base import EntrezBase
+        from pubmed_search.infrastructure.ncbi.base import EntrezBase
         
         with patch('pubmed_search.entrez.base.Entrez') as mock_entrez:
             mock_entrez.email = None
@@ -297,7 +297,7 @@ class TestSessionMissingLines:
     
     def test_session_manager_reading_list(self):
         """Test manager add_to_reading_list."""
-        from pubmed_search.session import SessionManager
+        from pubmed_search.application.session import SessionManager
         
         with tempfile.TemporaryDirectory() as tmpdir:
             manager = SessionManager(data_dir=tmpdir)
@@ -311,7 +311,7 @@ class TestSessionMissingLines:
     
     def test_session_manager_get_summary(self):
         """Test manager get_session_summary."""
-        from pubmed_search.session import SessionManager
+        from pubmed_search.application.session import SessionManager
         
         with tempfile.TemporaryDirectory() as tmpdir:
             manager = SessionManager(data_dir=tmpdir)
@@ -328,7 +328,7 @@ class TestICiteMissingLines:
     
     def test_icite_error_handling(self):
         """Test iCite error handling."""
-        from pubmed_search.entrez.icite import ICiteMixin
+        from pubmed_search.infrastructure.ncbi.icite import ICiteMixin
         
         class TestSearcher(ICiteMixin):
             pass
@@ -351,7 +351,7 @@ class TestCitationMissingLines:
     
     def test_citation_no_linksetdb(self):
         """Test citation when LinkSetDb is empty."""
-        from pubmed_search.entrez.citation import CitationMixin
+        from pubmed_search.infrastructure.ncbi.citation import CitationMixin
         
         class TestSearcher(CitationMixin):
             def fetch_details(self, pmids):
@@ -376,7 +376,7 @@ class TestMergeToolsMissingLines:
     
     def test_register_merge_tools(self):
         """Test merge tools registration."""
-        from pubmed_search.mcp_server.tools.merge import register_merge_tools
+        from pubmed_search.presentation.mcp_server.tools.merge import register_merge_tools
         from pubmed_search.client import LiteratureSearcher
         
         mock_mcp = Mock()

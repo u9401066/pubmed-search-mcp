@@ -12,7 +12,7 @@ class TestSearchRetryAndErrorPaths:
     
     def test_search_with_rate_limit_error(self):
         """Test search retry on rate limit errors."""
-        from pubmed_search.entrez.search import SearchMixin
+        from pubmed_search.infrastructure.ncbi.search import SearchMixin
         
         class TestSearcher(SearchMixin):
             def fetch_details(self, pmids):
@@ -43,7 +43,7 @@ class TestSearchRetryAndErrorPaths:
     
     def test_search_with_backend_failed_error(self):
         """Test search retry on backend failed errors."""
-        from pubmed_search.entrez.search import SearchMixin
+        from pubmed_search.infrastructure.ncbi.search import SearchMixin
         
         class TestSearcher(SearchMixin):
             def fetch_details(self, pmids):
@@ -83,7 +83,7 @@ class TestSessionFindCachedSearch:
     
     def test_find_cached_search_found(self):
         """Test finding cached search results."""
-        from pubmed_search.session import SessionManager
+        from pubmed_search.application.session import SessionManager
         
         with tempfile.TemporaryDirectory() as tmpdir:
             manager = SessionManager(data_dir=tmpdir)
@@ -104,7 +104,7 @@ class TestSessionFindCachedSearch:
     
     def test_session_no_current(self):
         """Test operations with no current session."""
-        from pubmed_search.session import SessionManager
+        from pubmed_search.application.session import SessionManager
         
         manager = SessionManager()  # Memory-only, no data dir
         
@@ -119,7 +119,7 @@ class TestStrategyGeneratorPaths:
     
     def test_generate_strategies_basic(self):
         """Test basic strategy generation."""
-        from pubmed_search.entrez.strategy import SearchStrategyGenerator
+        from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
         
         with patch('pubmed_search.entrez.strategy.Entrez.espell') as mock_espell, \
              patch('pubmed_search.entrez.strategy.Entrez.read') as mock_read:
@@ -141,7 +141,7 @@ class TestServerModulePaths:
     
     def test_server_constants(self):
         """Test server module constants."""
-        from pubmed_search.mcp_server import server
+        from pubmed_search.presentation.mcp_server import server
         
         assert hasattr(server, 'DEFAULT_EMAIL')
         assert hasattr(server, 'SERVER_INSTRUCTIONS')
@@ -149,7 +149,7 @@ class TestServerModulePaths:
     
     def test_server_instructions_content(self):
         """Test server instructions are defined."""
-        from pubmed_search.mcp_server.server import SERVER_INSTRUCTIONS
+        from pubmed_search.presentation.mcp_server.server import SERVER_INSTRUCTIONS
         
         assert len(SERVER_INSTRUCTIONS) > 0
         assert "PubMed" in SERVER_INSTRUCTIONS or "search" in SERVER_INSTRUCTIONS.lower()
@@ -160,7 +160,7 @@ class TestSessionToolsPaths:
     
     def test_session_tools_module_structure(self):
         """Test session_tools module structure."""
-        from pubmed_search.mcp_server import session_tools
+        from pubmed_search.presentation.mcp_server import session_tools
         
         # Check expected attributes
         assert hasattr(session_tools, 'register_session_tools')
@@ -172,7 +172,7 @@ class TestCommonModuleEdgeCases:
     
     def test_format_search_results_with_error(self):
         """Test formatting results containing an error."""
-        from pubmed_search.mcp_server.tools._common import format_search_results
+        from pubmed_search.presentation.mcp_server.tools._common import format_search_results
         
         results = [{"error": "API failure"}]
         formatted = format_search_results(results)
@@ -181,7 +181,7 @@ class TestCommonModuleEdgeCases:
     
     def test_format_search_results_normal(self):
         """Test formatting normal results."""
-        from pubmed_search.mcp_server.tools._common import format_search_results
+        from pubmed_search.presentation.mcp_server.tools._common import format_search_results
         
         results = [
             {
@@ -206,7 +206,7 @@ class TestDiscoveryModuleEdgeCases:
     
     def test_get_references_tool(self):
         """Test that get_references tool function exists."""
-        from pubmed_search.mcp_server.tools import discovery
+        from pubmed_search.presentation.mcp_server.tools import discovery
         
         # Check the module has expected content
         assert hasattr(discovery, 'register_discovery_tools')
@@ -217,7 +217,7 @@ class TestExportModuleEdgeCases:
     
     def test_export_tool_module_structure(self):
         """Test export tool module structure."""
-        from pubmed_search.mcp_server.tools import export
+        from pubmed_search.presentation.mcp_server.tools import export
         
         assert hasattr(export, 'register_export_tools')
         assert hasattr(export, 'SUPPORTED_FORMATS')
@@ -243,7 +243,7 @@ class TestPicoModuleEdgeCases:
     
     def test_pico_module_structure(self):
         """Test pico module structure."""
-        from pubmed_search.mcp_server.tools import pico
+        from pubmed_search.presentation.mcp_server.tools import pico
         
         assert hasattr(pico, 'register_pico_tools')
 
@@ -253,7 +253,7 @@ class TestIciteModuleEdgeCases:
     
     def test_icite_sorting(self):
         """Test iCite result sorting."""
-        from pubmed_search.entrez.icite import ICiteMixin
+        from pubmed_search.infrastructure.ncbi.icite import ICiteMixin
         
         class TestSearcher(ICiteMixin):
             pass
@@ -269,7 +269,7 @@ class TestBatchModuleEdgeCases:
     
     def test_batch_search_with_history(self):
         """Test batch search_with_history method."""
-        from pubmed_search.entrez.batch import BatchMixin
+        from pubmed_search.infrastructure.ncbi.batch import BatchMixin
         
         class TestSearcher(BatchMixin):
             pass
@@ -296,7 +296,7 @@ class TestPdfModuleEdgeCases:
     
     def test_pdf_mixin_methods(self):
         """Test PDFMixin has expected methods."""
-        from pubmed_search.entrez.pdf import PDFMixin
+        from pubmed_search.infrastructure.ncbi.pdf import PDFMixin
         
         class TestSearcher(PDFMixin):
             pass
@@ -333,7 +333,7 @@ class TestBaseModuleEdgeCases:
     
     def test_entrez_base_init(self):
         """Test EntrezBase initialization."""
-        from pubmed_search.entrez.base import EntrezBase
+        from pubmed_search.infrastructure.ncbi.base import EntrezBase
         
         base = EntrezBase(email="test@example.com", api_key="test_key")
         
@@ -344,7 +344,7 @@ class TestBaseModuleEdgeCases:
     
     def test_rate_limit_function(self):
         """Test rate limiting function."""
-        from pubmed_search.entrez.base import _rate_limit
+        from pubmed_search.infrastructure.ncbi.base import _rate_limit
         
         # Call twice in quick succession to trigger rate limiting
         _rate_limit()
@@ -355,7 +355,7 @@ class TestBaseModuleEdgeCases:
     
     def test_search_strategy_enum(self):
         """Test SearchStrategy enum."""
-        from pubmed_search.entrez.base import SearchStrategy
+        from pubmed_search.infrastructure.ncbi.base import SearchStrategy
         
         assert SearchStrategy.RECENT.value == "recent"
         assert SearchStrategy.RELEVANCE.value == "relevance"

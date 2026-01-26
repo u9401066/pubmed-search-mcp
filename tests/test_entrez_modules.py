@@ -23,7 +23,7 @@ class TestCitationMixin:
     
     def test_get_related_articles_success(self, mock_entrez_read):
         """Test getting related articles successfully."""
-        from pubmed_search.entrez.citation import CitationMixin
+        from pubmed_search.infrastructure.ncbi.citation import CitationMixin
         
         class TestSearcher(CitationMixin):
             def fetch_details(self, pmids):
@@ -44,7 +44,7 @@ class TestCitationMixin:
     
     def test_get_related_articles_empty(self):
         """Test getting related articles when none exist."""
-        from pubmed_search.entrez.citation import CitationMixin
+        from pubmed_search.infrastructure.ncbi.citation import CitationMixin
         
         class TestSearcher(CitationMixin):
             def fetch_details(self, pmids):
@@ -63,7 +63,7 @@ class TestCitationMixin:
     
     def test_get_related_articles_error(self):
         """Test getting related articles with error."""
-        from pubmed_search.entrez.citation import CitationMixin
+        from pubmed_search.infrastructure.ncbi.citation import CitationMixin
         
         class TestSearcher(CitationMixin):
             def fetch_details(self, pmids):
@@ -80,7 +80,7 @@ class TestCitationMixin:
     
     def test_get_citing_articles_success(self):
         """Test getting citing articles successfully."""
-        from pubmed_search.entrez.citation import CitationMixin
+        from pubmed_search.infrastructure.ncbi.citation import CitationMixin
         
         class TestSearcher(CitationMixin):
             def fetch_details(self, pmids):
@@ -105,7 +105,7 @@ class TestCitationMixin:
     
     def test_get_article_references_success(self):
         """Test getting article references successfully."""
-        from pubmed_search.entrez.citation import CitationMixin
+        from pubmed_search.infrastructure.ncbi.citation import CitationMixin
         
         class TestSearcher(CitationMixin):
             def fetch_details(self, pmids):
@@ -130,7 +130,7 @@ class TestCitationMixin:
     
     def test_aliases_work(self):
         """Test that alias methods work."""
-        from pubmed_search.entrez.citation import CitationMixin
+        from pubmed_search.infrastructure.ncbi.citation import CitationMixin
         
         class TestSearcher(CitationMixin):
             def fetch_details(self, pmids):
@@ -171,7 +171,7 @@ class TestICiteMixin:
     
     def test_get_citation_metrics_success(self, mock_icite_response):
         """Test getting citation metrics successfully."""
-        from pubmed_search.entrez.icite import ICiteMixin
+        from pubmed_search.infrastructure.ncbi.icite import ICiteMixin
         
         class TestSearcher(ICiteMixin):
             pass
@@ -192,7 +192,7 @@ class TestICiteMixin:
     
     def test_get_citation_metrics_empty(self):
         """Test getting citation metrics with no PMIDs."""
-        from pubmed_search.entrez.icite import ICiteMixin
+        from pubmed_search.infrastructure.ncbi.icite import ICiteMixin
         
         class TestSearcher(ICiteMixin):
             pass
@@ -204,7 +204,7 @@ class TestICiteMixin:
     
     def test_get_citation_metrics_batch(self, mock_icite_response):
         """Test getting citation metrics in batches."""
-        from pubmed_search.entrez.icite import ICiteMixin, MAX_PMIDS_PER_REQUEST
+        from pubmed_search.infrastructure.ncbi.icite import ICiteMixin, MAX_PMIDS_PER_REQUEST
         
         class TestSearcher(ICiteMixin):
             pass
@@ -227,7 +227,7 @@ class TestICiteMixin:
     
     def test_get_citation_metrics_api_error(self):
         """Test getting citation metrics with API error."""
-        from pubmed_search.entrez.icite import ICiteMixin
+        from pubmed_search.infrastructure.ncbi.icite import ICiteMixin
         
         class TestSearcher(ICiteMixin):
             pass
@@ -247,7 +247,7 @@ class TestBatchMixin:
     
     def test_search_with_history_success(self):
         """Test search with history server."""
-        from pubmed_search.entrez.batch import BatchMixin
+        from pubmed_search.infrastructure.ncbi.batch import BatchMixin
         
         class TestSearcher(BatchMixin):
             pass
@@ -272,7 +272,7 @@ class TestBatchMixin:
     
     def test_search_with_history_error(self):
         """Test search with history server error."""
-        from pubmed_search.entrez.batch import BatchMixin
+        from pubmed_search.infrastructure.ncbi.batch import BatchMixin
         
         class TestSearcher(BatchMixin):
             pass
@@ -287,7 +287,7 @@ class TestBatchMixin:
     
     def test_fetch_batch_from_history_success(self):
         """Test fetching batch from history."""
-        from pubmed_search.entrez.batch import BatchMixin
+        from pubmed_search.infrastructure.ncbi.batch import BatchMixin
         
         class TestSearcher(BatchMixin):
             pass
@@ -321,7 +321,7 @@ class TestBatchMixin:
     
     def test_fetch_batch_from_history_error(self):
         """Test fetching batch with error."""
-        from pubmed_search.entrez.batch import BatchMixin
+        from pubmed_search.infrastructure.ncbi.batch import BatchMixin
         
         class TestSearcher(BatchMixin):
             pass

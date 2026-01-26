@@ -97,7 +97,7 @@ class TestSearchMixinAdvanced:
     def test_detect_ambiguous_terms(self, searcher):
         """Test ambiguous term detection."""
         # Test with potentially ambiguous term
-        from pubmed_search.entrez.search import SearchMixin
+        from pubmed_search.infrastructure.ncbi.search import SearchMixin
         
         if hasattr(SearchMixin, '_detect_ambiguous_terms'):
             result = searcher._detect_ambiguous_terms("GI")
@@ -109,7 +109,7 @@ class TestSessionMoreCoverage:
     
     def test_article_cache_operations(self):
         """Test ArticleCache get_many, put_many, and stats."""
-        from pubmed_search.session import ArticleCache
+        from pubmed_search.application.session import ArticleCache
         
         with tempfile.TemporaryDirectory() as tmpdir:
             cache = ArticleCache(cache_dir=tmpdir)
@@ -132,7 +132,7 @@ class TestSessionMoreCoverage:
     
     def test_article_cache_clear(self):
         """Test ArticleCache clear."""
-        from pubmed_search.session import ArticleCache
+        from pubmed_search.application.session import ArticleCache
         
         with tempfile.TemporaryDirectory() as tmpdir:
             cache = ArticleCache(cache_dir=tmpdir)
@@ -144,7 +144,7 @@ class TestSessionMoreCoverage:
     
     def test_article_cache_invalidate(self):
         """Test ArticleCache invalidate."""
-        from pubmed_search.session import ArticleCache
+        from pubmed_search.application.session import ArticleCache
         
         with tempfile.TemporaryDirectory() as tmpdir:
             cache = ArticleCache(cache_dir=tmpdir)
@@ -156,7 +156,7 @@ class TestSessionMoreCoverage:
     
     def test_session_manager_list_sessions(self):
         """Test listing sessions."""
-        from pubmed_search.session import SessionManager
+        from pubmed_search.application.session import SessionManager
         
         with tempfile.TemporaryDirectory() as tmpdir:
             manager = SessionManager(data_dir=tmpdir)
@@ -171,7 +171,7 @@ class TestSessionMoreCoverage:
     
     def test_session_manager_switch_session(self):
         """Test switching sessions."""
-        from pubmed_search.session import SessionManager
+        from pubmed_search.application.session import SessionManager
         
         with tempfile.TemporaryDirectory() as tmpdir:
             manager = SessionManager(data_dir=tmpdir)
@@ -187,7 +187,7 @@ class TestSessionMoreCoverage:
     
     def test_session_manager_get_from_cache(self):
         """Test getting from cache."""
-        from pubmed_search.session import SessionManager
+        from pubmed_search.application.session import SessionManager
         
         with tempfile.TemporaryDirectory() as tmpdir:
             manager = SessionManager(data_dir=tmpdir)
@@ -204,7 +204,7 @@ class TestSessionMoreCoverage:
     
     def test_session_manager_is_searched(self):
         """Test is_searched check."""
-        from pubmed_search.session import SessionManager
+        from pubmed_search.application.session import SessionManager
         
         with tempfile.TemporaryDirectory() as tmpdir:
             manager = SessionManager(data_dir=tmpdir)
@@ -222,8 +222,8 @@ class TestCommonModuleFinalCoverage:
     
     def test_cache_results_with_session(self):
         """Test caching results with active session."""
-        from pubmed_search.mcp_server.tools._common import _cache_results, set_session_manager
-        from pubmed_search.session import SessionManager
+        from pubmed_search.presentation.mcp_server.tools._common import _cache_results, set_session_manager
+        from pubmed_search.application.session import SessionManager
         
         with tempfile.TemporaryDirectory() as tmpdir:
             manager = SessionManager(data_dir=tmpdir)
@@ -241,8 +241,8 @@ class TestCommonModuleFinalCoverage:
     
     def test_record_search_only_with_session(self):
         """Test recording search without caching."""
-        from pubmed_search.mcp_server.tools._common import _record_search_only, set_session_manager
-        from pubmed_search.session import SessionManager
+        from pubmed_search.presentation.mcp_server.tools._common import _record_search_only, set_session_manager
+        from pubmed_search.application.session import SessionManager
         
         with tempfile.TemporaryDirectory() as tmpdir:
             manager = SessionManager(data_dir=tmpdir)
@@ -256,7 +256,7 @@ class TestCommonModuleFinalCoverage:
     
     def test_get_last_search_pmids_with_history(self):
         """Test getting last search PMIDs."""
-        from pubmed_search.mcp_server.tools._common import get_last_search_pmids, set_session_manager
+        from pubmed_search.presentation.mcp_server.tools._common import get_last_search_pmids, set_session_manager
         
         # Mock session with search_history containing objects with pmids attribute
         mock_search_record = Mock()
@@ -279,8 +279,8 @@ class TestCommonModuleFinalCoverage:
     
     def test_get_last_search_pmids_no_history(self):
         """Test getting last search PMIDs with no history."""
-        from pubmed_search.mcp_server.tools._common import get_last_search_pmids, set_session_manager
-        from pubmed_search.session import SessionManager
+        from pubmed_search.presentation.mcp_server.tools._common import get_last_search_pmids, set_session_manager
+        from pubmed_search.application.session import SessionManager
         
         with tempfile.TemporaryDirectory() as tmpdir:
             manager = SessionManager(data_dir=tmpdir)
@@ -299,7 +299,7 @@ class TestServerMainFunction:
     
     def test_server_default_email(self):
         """Test server module has default email."""
-        from pubmed_search.mcp_server import server
+        from pubmed_search.presentation.mcp_server import server
         
         assert hasattr(server, 'DEFAULT_EMAIL')
         assert "@" in server.DEFAULT_EMAIL
@@ -310,16 +310,16 @@ class TestExportToolsEdgeCases:
     
     def test_get_file_extension_medline(self):
         """Test file extension for MEDLINE format."""
-        from pubmed_search.mcp_server.tools.export import _get_file_extension
+        from pubmed_search.presentation.mcp_server.tools.export import _get_file_extension
         
         result = _get_file_extension("medline")
         assert result == "txt"
     
     def test_resolve_pmids_with_dataclass_history(self):
         """Test resolving PMIDs from SearchRecord dataclass."""
-        from pubmed_search.mcp_server.tools.export import _resolve_pmids
-        from pubmed_search.mcp_server.tools._common import set_session_manager
-        from pubmed_search.session import SearchRecord
+        from pubmed_search.presentation.mcp_server.tools.export import _resolve_pmids
+        from pubmed_search.presentation.mcp_server.tools._common import set_session_manager
+        from pubmed_search.application.session import SearchRecord
         
         # Mock session manager with SearchRecord in history
         mock_session = Mock()
@@ -349,7 +349,7 @@ class TestStrategyEdgeCases:
     
     def test_strategy_generator_spell_check(self):
         """Test spell check in strategy generator."""
-        from pubmed_search.entrez.strategy import SearchStrategyGenerator
+        from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
         
         with patch('pubmed_search.entrez.strategy.Entrez.espell') as mock_espell, \
              patch('pubmed_search.entrez.strategy.Entrez.read') as mock_read:
@@ -374,7 +374,7 @@ class TestDiscoveryEdgeCases:
     
     def test_find_citing_articles(self):
         """Test find_citing_articles method."""
-        from pubmed_search.entrez.citation import CitationMixin
+        from pubmed_search.infrastructure.ncbi.citation import CitationMixin
         
         class TestSearcher(CitationMixin):
             def fetch_details(self, pmids):

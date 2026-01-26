@@ -12,7 +12,7 @@ class TestSearchStrategyGenerator:
     @pytest.fixture
     def strategy_generator(self):
         """Create a strategy generator for testing."""
-        from pubmed_search.entrez.strategy import SearchStrategyGenerator
+        from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
         return SearchStrategyGenerator(email="test@example.com")
     
     def test_init(self, strategy_generator):
@@ -173,7 +173,7 @@ class TestRetryLogic:
     
     def test_is_retryable_true(self):
         """Test identifying retryable errors."""
-        from pubmed_search.entrez.strategy import _is_retryable
+        from pubmed_search.infrastructure.ncbi.strategy import _is_retryable
         
         assert _is_retryable(Exception("Database is not supported")) is True
         assert _is_retryable(Exception("Backend failed")) is True
@@ -181,7 +181,7 @@ class TestRetryLogic:
     
     def test_is_retryable_false(self):
         """Test identifying non-retryable errors."""
-        from pubmed_search.entrez.strategy import _is_retryable
+        from pubmed_search.infrastructure.ncbi.strategy import _is_retryable
         
         assert _is_retryable(Exception("Invalid API key")) is False
         assert _is_retryable(Exception("Rate limit exceeded")) is False

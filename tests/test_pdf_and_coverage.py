@@ -12,7 +12,7 @@ class TestPDFMixin:
     @pytest.fixture
     def pdf_searcher(self):
         """Create a test searcher with PDFMixin."""
-        from pubmed_search.entrez.pdf import PDFMixin
+        from pubmed_search.infrastructure.ncbi.pdf import PDFMixin
         
         class TestSearcher(PDFMixin):
             pass
@@ -201,7 +201,7 @@ class TestICiteExtended:
     @pytest.fixture
     def icite_searcher(self):
         """Create a test searcher with ICiteMixin."""
-        from pubmed_search.entrez.icite import ICiteMixin
+        from pubmed_search.infrastructure.ncbi.icite import ICiteMixin
         
         class TestSearcher(ICiteMixin):
             pass
@@ -274,7 +274,7 @@ class TestDiscoveryToolsFunctions:
     
     def test_detect_ambiguous_terms_cell(self):
         """Test detection of 'cell' as potential journal."""
-        from pubmed_search.mcp_server.tools.discovery import _detect_ambiguous_terms
+        from pubmed_search.presentation.mcp_server.tools.discovery import _detect_ambiguous_terms
         
         result = _detect_ambiguous_terms("cell biology")
         # Should detect 'cell' as potential journal name
@@ -282,14 +282,14 @@ class TestDiscoveryToolsFunctions:
     
     def test_detect_ambiguous_terms_nature(self):
         """Test detection of 'nature' as potential journal."""
-        from pubmed_search.mcp_server.tools.discovery import _detect_ambiguous_terms
+        from pubmed_search.presentation.mcp_server.tools.discovery import _detect_ambiguous_terms
         
         result = _detect_ambiguous_terms("nature genetics")
         # 'nature' is a known journal name
     
     def test_ambiguous_names_dictionary(self):
         """Test the AMBIGUOUS_JOURNAL_NAMES dictionary."""
-        from pubmed_search.mcp_server.tools.discovery import AMBIGUOUS_JOURNAL_NAMES
+        from pubmed_search.presentation.mcp_server.tools.discovery import AMBIGUOUS_JOURNAL_NAMES
         
         assert "anesthesiology" in AMBIGUOUS_JOURNAL_NAMES
         assert "lancet" in AMBIGUOUS_JOURNAL_NAMES
@@ -313,6 +313,6 @@ class TestMainModule:
     def test_main_module_importable(self):
         """Test that __main__ module can be imported."""
         try:
-            from pubmed_search.mcp_server import __main__
+            from pubmed_search.presentation.mcp_server import __main__
         except ImportError:
             pass  # OK if fails due to missing dependencies

@@ -10,7 +10,7 @@ class TestUtilsMixin:
     
     def test_spell_check_returns_corrected(self, mock_espell_response):
         """Test spell check returns corrected query."""
-        from pubmed_search.entrez.utils import UtilsMixin
+        from pubmed_search.infrastructure.ncbi.utils import UtilsMixin
         
         mixin = UtilsMixin()
         
@@ -25,7 +25,7 @@ class TestUtilsMixin:
     
     def test_spell_check_returns_original_on_no_correction(self):
         """Test spell check returns original when no correction."""
-        from pubmed_search.entrez.utils import UtilsMixin
+        from pubmed_search.infrastructure.ncbi.utils import UtilsMixin
         
         mixin = UtilsMixin()
         
@@ -40,7 +40,7 @@ class TestUtilsMixin:
     
     def test_spell_check_handles_error(self):
         """Test spell check handles API errors gracefully."""
-        from pubmed_search.entrez.utils import UtilsMixin
+        from pubmed_search.infrastructure.ncbi.utils import UtilsMixin
         
         mixin = UtilsMixin()
         
@@ -58,7 +58,7 @@ class TestQuickFetchSummary:
     
     def test_empty_id_list(self):
         """Test with empty ID list."""
-        from pubmed_search.entrez.utils import UtilsMixin
+        from pubmed_search.infrastructure.ncbi.utils import UtilsMixin
         
         mixin = UtilsMixin()
         result = mixin.quick_fetch_summary([])
@@ -67,7 +67,7 @@ class TestQuickFetchSummary:
     
     def test_fetch_summary_success(self):
         """Test successful summary fetch."""
-        from pubmed_search.entrez.utils import UtilsMixin
+        from pubmed_search.infrastructure.ncbi.utils import UtilsMixin
         
         mixin = UtilsMixin()
         
@@ -101,7 +101,7 @@ class TestValidateMeshTerms:
     
     def test_validate_valid_mesh_term(self):
         """Test validating a real MeSH term."""
-        from pubmed_search.entrez.utils import UtilsMixin
+        from pubmed_search.infrastructure.ncbi.utils import UtilsMixin
         
         mixin = UtilsMixin()
         

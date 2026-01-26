@@ -17,12 +17,12 @@ class TestUnifiedImports:
     
     def test_import_register_function(self):
         """Test importing register_unified_search_tools."""
-        from pubmed_search.mcp_server.tools.unified import register_unified_search_tools
+        from pubmed_search.presentation.mcp_server.tools.unified import register_unified_search_tools
         assert callable(register_unified_search_tools)
     
     def test_import_dispatch_strategy(self):
         """Test importing DispatchStrategy."""
-        from pubmed_search.mcp_server.tools.unified import DispatchStrategy
+        from pubmed_search.presentation.mcp_server.tools.unified import DispatchStrategy
         assert DispatchStrategy is not None
 
 
@@ -37,7 +37,7 @@ class TestDispatchStrategy:
     
     def test_simple_lookup_uses_pubmed_only(self, analyzer):
         """Simple PMID lookup should only use PubMed."""
-        from pubmed_search.mcp_server.tools.unified import DispatchStrategy
+        from pubmed_search.presentation.mcp_server.tools.unified import DispatchStrategy
         
         analysis = analyzer.analyze("PMID:12345678")
         sources = DispatchStrategy.get_sources(analysis)
@@ -47,7 +47,7 @@ class TestDispatchStrategy:
     
     def test_simple_query_uses_pubmed_only(self, analyzer):
         """Simple keyword search should use PubMed only."""
-        from pubmed_search.mcp_server.tools.unified import DispatchStrategy
+        from pubmed_search.presentation.mcp_server.tools.unified import DispatchStrategy
         
         analysis = analyzer.analyze("diabetes treatment")
         sources = DispatchStrategy.get_sources(analysis)
@@ -56,7 +56,7 @@ class TestDispatchStrategy:
     
     def test_complex_comparison_uses_multiple_sources(self, analyzer):
         """Complex comparison queries should use multiple sources."""
-        from pubmed_search.mcp_server.tools.unified import DispatchStrategy
+        from pubmed_search.presentation.mcp_server.tools.unified import DispatchStrategy
         
         analysis = analyzer.analyze("remimazolam vs propofol for ICU sedation")
         sources = DispatchStrategy.get_sources(analysis)
@@ -67,7 +67,7 @@ class TestDispatchStrategy:
     
     def test_moderate_query_uses_crossref(self, analyzer):
         """Moderate queries should use CrossRef for enrichment."""
-        from pubmed_search.mcp_server.tools.unified import DispatchStrategy
+        from pubmed_search.presentation.mcp_server.tools.unified import DispatchStrategy
         
         # A moderate complexity query
         analysis = analyzer.analyze("machine learning anesthesia prediction models")
@@ -77,7 +77,7 @@ class TestDispatchStrategy:
     
     def test_get_ranking_config_returns_config(self, analyzer):
         """get_ranking_config should return a RankingConfig."""
-        from pubmed_search.mcp_server.tools.unified import DispatchStrategy
+        from pubmed_search.presentation.mcp_server.tools.unified import DispatchStrategy
         from pubmed_search.unified.result_aggregator import RankingConfig
         
         analysis = analyzer.analyze("test query")
@@ -87,7 +87,7 @@ class TestDispatchStrategy:
     
     def test_comparison_query_uses_impact_ranking(self, analyzer):
         """Comparison queries should use impact-focused ranking."""
-        from pubmed_search.mcp_server.tools.unified import DispatchStrategy
+        from pubmed_search.presentation.mcp_server.tools.unified import DispatchStrategy
         
         analysis = analyzer.analyze("drug A vs drug B effectiveness")
         config = DispatchStrategy.get_ranking_config(analysis)
@@ -101,7 +101,7 @@ class TestToolRegistration:
     
     def test_registration_adds_unified_search(self):
         """register_unified_search_tools should add unified_search tool."""
-        from pubmed_search.mcp_server.tools.unified import register_unified_search_tools
+        from pubmed_search.presentation.mcp_server.tools.unified import register_unified_search_tools
         
         mcp = FastMCP(name="test")
         mock_searcher = Mock()
@@ -113,7 +113,7 @@ class TestToolRegistration:
     
     def test_registration_adds_analyze_query(self):
         """register_unified_search_tools should add analyze_search_query tool."""
-        from pubmed_search.mcp_server.tools.unified import register_unified_search_tools
+        from pubmed_search.presentation.mcp_server.tools.unified import register_unified_search_tools
         
         mcp = FastMCP(name="test")
         mock_searcher = Mock()
@@ -125,7 +125,7 @@ class TestToolRegistration:
     
     def test_unified_search_tool_has_description(self):
         """unified_search tool should have a description."""
-        from pubmed_search.mcp_server.tools.unified import register_unified_search_tools
+        from pubmed_search.presentation.mcp_server.tools.unified import register_unified_search_tools
         
         mcp = FastMCP(name="test")
         mock_searcher = Mock()
@@ -148,7 +148,7 @@ class TestIntegrationWithServer:
     
     def test_unified_tools_in_full_server(self):
         """Unified tools should be registered in full server."""
-        from pubmed_search.mcp_server import create_server
+        from pubmed_search.presentation.mcp_server import create_server
         
         mcp = create_server()
         tool_names = [t.name for t in mcp._tool_manager._tools.values()]
@@ -158,7 +158,7 @@ class TestIntegrationWithServer:
     
     def test_server_has_expected_tool_count(self):
         """Server should have expected number of tools including unified."""
-        from pubmed_search.mcp_server import create_server
+        from pubmed_search.presentation.mcp_server import create_server
         
         mcp = create_server()
         tool_count = len(mcp._tool_manager._tools)
@@ -173,7 +173,7 @@ class TestSourceSearchFunctions:
     
     def test_search_pubmed_with_mock(self):
         """_search_pubmed should work with mock searcher."""
-        from pubmed_search.mcp_server.tools.unified import _search_pubmed
+        from pubmed_search.presentation.mcp_server.tools.unified import _search_pubmed
         
         mock_searcher = Mock()
         mock_searcher.search.return_value = []
@@ -192,7 +192,7 @@ class TestSourceSearchFunctions:
     
     def test_search_pubmed_handles_exception(self):
         """_search_pubmed should handle exceptions gracefully."""
-        from pubmed_search.mcp_server.tools.unified import _search_pubmed
+        from pubmed_search.presentation.mcp_server.tools.unified import _search_pubmed
         
         mock_searcher = Mock()
         mock_searcher.search.side_effect = Exception("API error")
@@ -215,7 +215,7 @@ class TestFormatFunctions:
     def test_format_as_json_returns_valid_json(self):
         """_format_as_json should return valid JSON."""
         import json
-        from pubmed_search.mcp_server.tools.unified import _format_as_json
+        from pubmed_search.presentation.mcp_server.tools.unified import _format_as_json
         from pubmed_search.unified.result_aggregator import AggregationStats
         from pubmed_search.unified import QueryAnalyzer
         

@@ -366,7 +366,7 @@ class TestSessionWorkflow:
         4. Add notes
         5. Resume session later
         """
-        from pubmed_search.session import SessionManager
+        from pubmed_search.application.session import SessionManager
         
         session_mgr = SessionManager()
         session_id = "research-project-001"
@@ -413,7 +413,7 @@ class TestErrorRecoveryWorkflow:
     
     def test_network_error_recovery(self):
         """Handle network failures gracefully."""
-        from pubmed_search.core.exceptions import SearchError
+        from pubmed_search.infrastructure.sources.core.exceptions import SearchError
         
         mock_client = Mock()
         mock_client.search.side_effect = SearchError("Network timeout")

@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Self  # Python 3.11+
 
-from .infrastructure.ncbi import LiteratureSearcher
+from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
 
 class SearchStrategy(Enum):

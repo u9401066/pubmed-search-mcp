@@ -12,7 +12,7 @@ class TestOpenURLBuilder:
     
     def test_build_from_preset_ntu(self):
         """Test building OpenURL with NTU preset."""
-        from pubmed_search.sources.openurl import OpenURLBuilder
+        from pubmed_search.infrastructure.sources.openurl import OpenURLBuilder
         
         builder = OpenURLBuilder.from_preset("ntu")
         assert "ntu.primo.exlibrisgroup.com" in builder.resolver_base
@@ -23,7 +23,7 @@ class TestOpenURLBuilder:
     
     def test_build_from_preset_harvard(self):
         """Test building OpenURL with Harvard preset."""
-        from pubmed_search.sources.openurl import OpenURLBuilder
+        from pubmed_search.infrastructure.sources.openurl import OpenURLBuilder
         
         builder = OpenURLBuilder.from_preset("harvard")
         assert "hollis.harvard.edu" in builder.resolver_base
@@ -37,7 +37,7 @@ class TestOpenURLBuilder:
     
     def test_build_with_full_metadata(self):
         """Test building OpenURL with complete article metadata."""
-        from pubmed_search.sources.openurl import OpenURLBuilder
+        from pubmed_search.infrastructure.sources.openurl import OpenURLBuilder
         
         builder = OpenURLBuilder(resolver_base="https://test.library.edu/openurl")
         url = builder.build_from_article({
@@ -61,14 +61,14 @@ class TestOpenURLBuilder:
     
     def test_unknown_preset_raises_error(self):
         """Test that unknown preset raises ValueError."""
-        from pubmed_search.sources.openurl import OpenURLBuilder
+        from pubmed_search.infrastructure.sources.openurl import OpenURLBuilder
         
         with pytest.raises(ValueError, match="Unknown preset"):
             OpenURLBuilder.from_preset("unknown_university")
     
     def test_no_resolver_returns_none(self):
         """Test that empty resolver returns None."""
-        from pubmed_search.sources.openurl import OpenURLBuilder
+        from pubmed_search.infrastructure.sources.openurl import OpenURLBuilder
         
         builder = OpenURLBuilder(resolver_base="")
         url = builder.build_from_article({"pmid": "12345678"})
@@ -87,7 +87,7 @@ class TestOpenURLConfig:
         from pubmed_search.sources import openurl
         openurl._openurl_config = None
         
-        from pubmed_search.sources.openurl import OpenURLConfig
+        from pubmed_search.infrastructure.sources.openurl import OpenURLConfig
         config = OpenURLConfig.from_env()
         
         assert config.preset == "ntu"
@@ -105,7 +105,7 @@ class TestOpenURLConfig:
         from pubmed_search.sources import openurl
         openurl._openurl_config = None
         
-        from pubmed_search.sources.openurl import OpenURLConfig
+        from pubmed_search.infrastructure.sources.openurl import OpenURLConfig
         config = OpenURLConfig.from_env()
         
         assert config.resolver_base == "https://custom.library.edu/openurl"
@@ -121,7 +121,7 @@ class TestOpenURLConfig:
         from pubmed_search.sources import openurl
         openurl._openurl_config = None
         
-        from pubmed_search.sources.openurl import OpenURLConfig
+        from pubmed_search.infrastructure.sources.openurl import OpenURLConfig
         config = OpenURLConfig.from_env()
         
         assert config.enabled is False
@@ -133,7 +133,7 @@ class TestConvenienceFunctions:
     
     def test_list_presets(self):
         """Test listing available presets."""
-        from pubmed_search.sources.openurl import list_presets
+        from pubmed_search.infrastructure.sources.openurl import list_presets
         
         presets = list_presets()
         
@@ -156,7 +156,7 @@ class TestConvenienceFunctions:
         from pubmed_search.sources import openurl
         openurl._openurl_config = None
         
-        from pubmed_search.sources.openurl import configure_openurl, get_openurl_link
+        from pubmed_search.infrastructure.sources.openurl import configure_openurl, get_openurl_link
         
         # Configure with preset
         configure_openurl(preset="harvard")
@@ -179,7 +179,7 @@ class TestIntegrationWithUnifiedSearch:
         from pubmed_search.sources import openurl
         openurl._openurl_config = None
         
-        from pubmed_search.sources.openurl import get_openurl_config
+        from pubmed_search.infrastructure.sources.openurl import get_openurl_config
         
         config = get_openurl_config()
         assert config.preset == "harvard"
@@ -195,7 +195,7 @@ class TestNetworkConnectivity:
         """Test Harvard resolver is reachable."""
         import urllib.request
         
-        from pubmed_search.sources.openurl import OpenURLBuilder
+        from pubmed_search.infrastructure.sources.openurl import OpenURLBuilder
         
         builder = OpenURLBuilder.from_preset("harvard")
         url = builder.build_from_article({"pmid": "33317804"})

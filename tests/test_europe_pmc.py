@@ -9,7 +9,7 @@ class TestEuropePMCClient:
     @pytest.fixture
     def client(self):
         """Create a EuropePMCClient instance."""
-        from pubmed_search.sources.europe_pmc import EuropePMCClient
+        from pubmed_search.infrastructure.sources.europe_pmc import EuropePMCClient
         return EuropePMCClient(email="test@example.com")
     
     @pytest.fixture
@@ -238,7 +238,7 @@ class TestEuropePMCMCPTools:
     def mcp(self):
         """Create MCP instance with Europe PMC tools."""
         from mcp.server.fastmcp import FastMCP
-        from pubmed_search.mcp_server.tools.europe_pmc import register_europe_pmc_tools
+        from pubmed_search.presentation.mcp_server.tools.europe_pmc import register_europe_pmc_tools
         mcp = FastMCP(name='test')
         register_europe_pmc_tools(mcp)
         return mcp
@@ -318,7 +318,7 @@ class TestEuropePMCIntegration:
     @pytest.fixture
     def client(self):
         """Create a EuropePMCClient instance."""
-        from pubmed_search.sources.europe_pmc import EuropePMCClient
+        from pubmed_search.infrastructure.sources.europe_pmc import EuropePMCClient
         return EuropePMCClient(email="test@example.com")
     
     @pytest.mark.integration

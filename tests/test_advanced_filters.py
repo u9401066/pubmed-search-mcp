@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from pubmed_search.entrez import LiteratureSearcher
+from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
 
 def test_advanced_filters():

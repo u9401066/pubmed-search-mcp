@@ -11,7 +11,7 @@ class TestSessionReadingList:
     
     def test_add_to_reading_list(self):
         """Test adding article to reading list."""
-        from pubmed_search.session import SessionManager
+        from pubmed_search.application.session import SessionManager
         
         with tempfile.TemporaryDirectory() as tmpdir:
             manager = SessionManager(data_dir=tmpdir)
@@ -25,7 +25,7 @@ class TestSessionReadingList:
     
     def test_exclude_article(self):
         """Test excluding article."""
-        from pubmed_search.session import SessionManager
+        from pubmed_search.application.session import SessionManager
         
         with tempfile.TemporaryDirectory() as tmpdir:
             manager = SessionManager(data_dir=tmpdir)
@@ -38,7 +38,7 @@ class TestSessionReadingList:
     
     def test_get_session_summary(self):
         """Test getting session summary."""
-        from pubmed_search.session import SessionManager
+        from pubmed_search.application.session import SessionManager
         
         with tempfile.TemporaryDirectory() as tmpdir:
             manager = SessionManager(data_dir=tmpdir)
@@ -56,7 +56,7 @@ class TestSessionReadingList:
     
     def test_get_session_summary_no_session(self):
         """Test getting summary with no session."""
-        from pubmed_search.session import SessionManager
+        from pubmed_search.application.session import SessionManager
         
         manager = SessionManager()  # Memory only
         manager._current_session_id = None
@@ -72,7 +72,7 @@ class TestDiscoveryCacheHit:
     
     def test_discovery_with_cache_hint(self):
         """Test discovery returns cache hint."""
-        from pubmed_search.mcp_server.tools._common import format_search_results
+        from pubmed_search.presentation.mcp_server.tools._common import format_search_results
         
         articles = [
             {"pmid": "123", "title": "Test", "authors": ["A"], "year": "2024", "journal": "J", "abstract": ""}
@@ -89,7 +89,7 @@ class TestServerRegisterTools:
     
     def test_register_all_tools(self):
         """Test registering all tools."""
-        from pubmed_search.mcp_server.tools import register_all_tools
+        from pubmed_search.presentation.mcp_server.tools import register_all_tools
         from pubmed_search.client import LiteratureSearcher
         
         mock_mcp = Mock()
@@ -106,11 +106,11 @@ class TestCommonCheckCache:
     
     def test_check_cache_function(self):
         """Test check_cache when available."""
-        from pubmed_search.mcp_server.tools import _common
+        from pubmed_search.presentation.mcp_server.tools import _common
         
         # Check if check_cache exists
         if hasattr(_common, 'check_cache'):
-            from pubmed_search.mcp_server.tools._common import check_cache, set_session_manager
+            from pubmed_search.presentation.mcp_server.tools._common import check_cache, set_session_manager
             
             set_session_manager(None)
             result = check_cache("test", 5)
@@ -122,7 +122,7 @@ class TestSearchFilterLogic:
     
     def test_search_with_date_filter_only_min(self):
         """Test search with only min_year."""
-        from pubmed_search.entrez.search import SearchMixin
+        from pubmed_search.infrastructure.ncbi.search import SearchMixin
         
         class TestSearcher(SearchMixin):
             def fetch_details(self, pmids):
@@ -142,7 +142,7 @@ class TestSearchFilterLogic:
     
     def test_search_with_date_filter_only_max(self):
         """Test search with only max_year."""
-        from pubmed_search.entrez.search import SearchMixin
+        from pubmed_search.infrastructure.ncbi.search import SearchMixin
         
         class TestSearcher(SearchMixin):
             def fetch_details(self, pmids):
@@ -166,7 +166,7 @@ class TestStrategyCornerCases:
     
     def test_strategy_with_single_word(self):
         """Test strategy with single word query."""
-        from pubmed_search.entrez.strategy import SearchStrategyGenerator
+        from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
         
         with patch('pubmed_search.entrez.strategy.Entrez.espell') as mock_espell, \
              patch('pubmed_search.entrez.strategy.Entrez.read') as mock_read:
@@ -185,7 +185,7 @@ class TestExportWithLargeFile:
     
     def test_export_file_path_creation(self):
         """Test export file path creation."""
-        from pubmed_search.mcp_server.tools.export import _save_export_file
+        from pubmed_search.presentation.mcp_server.tools.export import _save_export_file
         import os
         
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -201,7 +201,7 @@ class TestSessionFindCached:
     
     def test_find_cached_search_match(self):
         """Test finding cached search with match."""
-        from pubmed_search.session import SessionManager
+        from pubmed_search.application.session import SessionManager
         
         with tempfile.TemporaryDirectory() as tmpdir:
             manager = SessionManager(data_dir=tmpdir)
@@ -303,7 +303,7 @@ class TestBaseAPIKey:
     
     def test_entrez_base_no_api_key(self):
         """Test EntrezBase without API key."""
-        from pubmed_search.entrez.base import EntrezBase
+        from pubmed_search.infrastructure.ncbi.base import EntrezBase
         
         base = EntrezBase(email="test@example.com")
         
@@ -316,7 +316,7 @@ class TestPicoExtraction:
     
     def test_pico_module_callable(self):
         """Test PICO module is callable."""
-        from pubmed_search.mcp_server.tools.pico import register_pico_tools
+        from pubmed_search.presentation.mcp_server.tools.pico import register_pico_tools
         
         mock_mcp = Mock()
         mock_mcp.tool = Mock(return_value=lambda f: f)

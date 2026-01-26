@@ -17,7 +17,7 @@ class TestExceptionHierarchy:
     
     def test_base_exception_creation(self):
         """PubMedSearchError should be creatable with context."""
-        from pubmed_search.core import PubMedSearchError, ErrorContext
+        from pubmed_search.shared.exceptions import PubMedSearchError, ErrorContext
         
         ctx = ErrorContext(tool_name="test_tool", suggestion="Try again")
         err = PubMedSearchError("Test error", context=ctx)
@@ -28,7 +28,7 @@ class TestExceptionHierarchy:
     
     def test_error_to_dict(self):
         """Error should serialize to dict."""
-        from pubmed_search.core import PubMedSearchError, ErrorContext
+        from pubmed_search.shared.exceptions import PubMedSearchError, ErrorContext
         
         ctx = ErrorContext(tool_name="test", suggestion="hint")
         err = PubMedSearchError("Test", context=ctx)
@@ -40,7 +40,7 @@ class TestExceptionHierarchy:
     
     def test_error_to_agent_message(self):
         """Error should format for agent consumption."""
-        from pubmed_search.core import PubMedSearchError, ErrorContext
+        from pubmed_search.shared.exceptions import PubMedSearchError, ErrorContext
         
         ctx = ErrorContext(suggestion="Try X", example="do_something()")
         err = PubMedSearchError("Failed", context=ctx, retryable=True)
@@ -53,7 +53,7 @@ class TestExceptionHierarchy:
     
     def test_invalid_pmid_error(self):
         """InvalidPMIDError should have correct defaults."""
-        from pubmed_search.core import InvalidPMIDError
+        from pubmed_search.shared.exceptions import InvalidPMIDError
         
         err = InvalidPMIDError("abc123")
         
@@ -64,7 +64,7 @@ class TestExceptionHierarchy:
     
     def test_rate_limit_error(self):
         """RateLimitError should be retryable."""
-        from pubmed_search.core import RateLimitError
+        from pubmed_search.shared.exceptions import RateLimitError
         
         err = RateLimitError(retry_after=5.0)
         
@@ -73,7 +73,7 @@ class TestExceptionHierarchy:
     
     def test_is_retryable_error(self):
         """is_retryable_error should detect retryable errors."""
-        from pubmed_search.core import (
+        from pubmed_search.shared.exceptions import (
             is_retryable_error,
             RateLimitError,
             InvalidPMIDError,
@@ -91,7 +91,7 @@ class TestExceptionHierarchy:
     
     def test_get_retry_delay(self):
         """get_retry_delay should use exponential backoff."""
-        from pubmed_search.core import get_retry_delay, RateLimitError
+        from pubmed_search.shared.exceptions import get_retry_delay, RateLimitError
         
         # First attempt
         delay0 = get_retry_delay(Exception("error"), 0)
@@ -113,7 +113,7 @@ class TestRateLimiter:
     @pytest.mark.asyncio
     async def test_rate_limiter_basic(self):
         """RateLimiter should control request rate."""
-        from pubmed_search.core import RateLimiter
+        from pubmed_search.shared.async_utils import RateLimiter
         
         limiter = RateLimiter(rate=10.0, per=1.0)
         
@@ -126,7 +126,7 @@ class TestRateLimiter:
     @pytest.mark.asyncio
     async def test_rate_limiter_context_manager(self):
         """RateLimiter should work as context manager."""
-        from pubmed_search.core import RateLimiter
+        from pubmed_search.shared.async_utils import RateLimiter
         
         limiter = RateLimiter(rate=10.0)
         
@@ -135,7 +135,7 @@ class TestRateLimiter:
     
     def test_get_rate_limiter(self):
         """get_rate_limiter should return singleton per API."""
-        from pubmed_search.core import get_rate_limiter
+        from pubmed_search.shared.async_utils import get_rate_limiter
         
         limiter1 = get_rate_limiter("ncbi")
         limiter2 = get_rate_limiter("ncbi")
@@ -151,7 +151,7 @@ class TestAsyncRetry:
     @pytest.mark.asyncio
     async def test_retry_success(self):
         """async_retry should return on success."""
-        from pubmed_search.core import async_retry
+        from pubmed_search.shared.async_utils import async_retry
         
         call_count = 0
         
@@ -168,7 +168,7 @@ class TestAsyncRetry:
     @pytest.mark.asyncio
     async def test_retry_on_retryable_error(self):
         """async_retry should retry on retryable errors."""
-        from pubmed_search.core import async_retry
+        from pubmed_search.shared.async_utils import async_retry
         
         call_count = 0
         
@@ -187,7 +187,7 @@ class TestAsyncRetry:
     @pytest.mark.asyncio
     async def test_no_retry_on_non_retryable(self):
         """async_retry should not retry non-retryable errors."""
-        from pubmed_search.core import async_retry
+        from pubmed_search.shared.async_utils import async_retry
         
         call_count = 0
         
@@ -209,7 +209,7 @@ class TestGatherWithErrors:
     @pytest.mark.asyncio
     async def test_gather_all_success(self):
         """gather_with_errors should collect all successes."""
-        from pubmed_search.core import gather_with_errors
+        from pubmed_search.shared.async_utils import gather_with_errors
         
         async def succeed(val: int) -> int:
             return val * 2
@@ -225,7 +225,7 @@ class TestGatherWithErrors:
     @pytest.mark.asyncio
     async def test_gather_with_exceptions(self):
         """gather_with_errors should collect exceptions when requested."""
-        from pubmed_search.core import gather_with_errors
+        from pubmed_search.shared.async_utils import gather_with_errors
         
         async def succeed() -> str:
             return "ok"
@@ -250,7 +250,7 @@ class TestCircuitBreaker:
     @pytest.mark.asyncio
     async def test_circuit_breaker_closed(self):
         """CircuitBreaker should allow requests when closed."""
-        from pubmed_search.core import CircuitBreaker
+        from pubmed_search.shared.async_utils import CircuitBreaker
         
         breaker = CircuitBreaker(failure_threshold=3)
         
@@ -260,7 +260,8 @@ class TestCircuitBreaker:
     @pytest.mark.asyncio
     async def test_circuit_breaker_opens_on_failures(self):
         """CircuitBreaker should open after threshold failures."""
-        from pubmed_search.core import CircuitBreaker, RateLimitError
+        from pubmed_search.shared.async_utils import CircuitBreaker
+        from pubmed_search.shared.exceptions import RateLimitError
         
         breaker = CircuitBreaker(failure_threshold=2, recovery_timeout=0.1)
         
@@ -284,7 +285,7 @@ class TestBatchProcess:
     @pytest.mark.asyncio
     async def test_batch_process_basic(self):
         """batch_process should process items in batches."""
-        from pubmed_search.core import batch_process
+        from pubmed_search.shared.async_utils import batch_process
         
         processed = []
         
@@ -307,7 +308,7 @@ class TestErrorContext:
     
     def test_error_context_slots(self):
         """ErrorContext should use slots for efficiency."""
-        from pubmed_search.core import ErrorContext
+        from pubmed_search.shared.exceptions import ErrorContext
         
         ctx = ErrorContext(tool_name="test")
         # slots means no __dict__
@@ -315,7 +316,7 @@ class TestErrorContext:
     
     def test_error_context_frozen(self):
         """ErrorContext should be immutable."""
-        from pubmed_search.core import ErrorContext
+        from pubmed_search.shared.exceptions import ErrorContext
         
         ctx = ErrorContext(tool_name="test")
         with pytest.raises(AttributeError):

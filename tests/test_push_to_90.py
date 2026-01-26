@@ -11,7 +11,7 @@ class TestSearchFetchWithRetry:
     
     def test_fetch_with_retry_transient_errors(self):
         """Test fetch retry on transient errors."""
-        from pubmed_search.entrez.search import SearchMixin
+        from pubmed_search.infrastructure.ncbi.search import SearchMixin
         
         class TestSearcher(SearchMixin):
             pass
@@ -32,7 +32,7 @@ class TestSearchFetchWithRetry:
     
     def test_fetch_with_retry_non_transient(self):
         """Test fetch doesn't retry on non-transient errors."""
-        from pubmed_search.entrez.search import SearchMixin
+        from pubmed_search.infrastructure.ncbi.search import SearchMixin
         
         class TestSearcher(SearchMixin):
             pass
@@ -51,7 +51,7 @@ class TestSessionCachePaths:
     
     def test_session_get_no_session(self):
         """Test get_from_cache with no current session."""
-        from pubmed_search.session import SessionManager
+        from pubmed_search.application.session import SessionManager
         
         manager = SessionManager()
         
@@ -65,7 +65,7 @@ class TestSessionCachePaths:
     
     def test_article_cache_memory_only(self):
         """Test ArticleCache in memory-only mode."""
-        from pubmed_search.session import ArticleCache
+        from pubmed_search.application.session import ArticleCache
         
         cache = ArticleCache()  # No cache_dir
         
@@ -81,7 +81,7 @@ class TestStrategyExpandSearch:
     
     def test_generate_strategies_with_mesh(self):
         """Test strategy generation with MeSH lookup."""
-        from pubmed_search.entrez.strategy import SearchStrategyGenerator
+        from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
         
         with patch('pubmed_search.entrez.strategy.Entrez.esearch') as mock_esearch, \
              patch('pubmed_search.entrez.strategy.Entrez.esummary') as mock_esummary, \
@@ -153,7 +153,7 @@ class TestServerMainPath:
     
     def test_main_with_env_vars(self):
         """Test main gets email from env."""
-        from pubmed_search.mcp_server import server
+        from pubmed_search.presentation.mcp_server import server
         
         # Verify main function exists
         assert hasattr(server, 'main')
@@ -165,7 +165,7 @@ class TestCommonCachePaths:
     
     def test_cache_results_no_manager(self):
         """Test caching when no session manager."""
-        from pubmed_search.mcp_server.tools._common import _cache_results, set_session_manager
+        from pubmed_search.presentation.mcp_server.tools._common import _cache_results, set_session_manager
         
         set_session_manager(None)
         
@@ -174,7 +174,7 @@ class TestCommonCachePaths:
     
     def test_record_search_no_manager(self):
         """Test recording search when no session manager."""
-        from pubmed_search.mcp_server.tools._common import _record_search_only, set_session_manager
+        from pubmed_search.presentation.mcp_server.tools._common import _record_search_only, set_session_manager
         
         set_session_manager(None)
         
@@ -187,7 +187,7 @@ class TestExportHelperFunctions:
     
     def test_resolve_pmids_with_large_list(self):
         """Test resolving large PMID list truncation."""
-        from pubmed_search.mcp_server.tools.export import _resolve_pmids
+        from pubmed_search.presentation.mcp_server.tools.export import _resolve_pmids
         
         # Create large list > 100
         large_pmid_list = [str(i) for i in range(150)]
@@ -198,7 +198,7 @@ class TestExportHelperFunctions:
     
     def test_get_file_extension_unknown(self):
         """Test file extension for unknown format."""
-        from pubmed_search.mcp_server.tools.export import _get_file_extension
+        from pubmed_search.presentation.mcp_server.tools.export import _get_file_extension
         
         result = _get_file_extension("unknown_format")
         
@@ -211,7 +211,7 @@ class TestDiscoveryErrorPaths:
     
     def test_discovery_module_imports(self):
         """Test discovery module imports correctly."""
-        from pubmed_search.mcp_server.tools.discovery import register_discovery_tools
+        from pubmed_search.presentation.mcp_server.tools.discovery import register_discovery_tools
         
         assert callable(register_discovery_tools)
 
@@ -243,8 +243,8 @@ class TestSessionToolsRegister:
     
     def test_register_session_tools(self):
         """Test session tools registration."""
-        from pubmed_search.mcp_server.session_tools import register_session_tools
-        from pubmed_search.session import SessionManager
+        from pubmed_search.presentation.mcp_server.session_tools import register_session_tools
+        from pubmed_search.application.session import SessionManager
         import tempfile
         
         mock_mcp = Mock()
@@ -258,8 +258,8 @@ class TestSessionToolsRegister:
     
     def test_register_session_resources(self):
         """Test session resources registration."""
-        from pubmed_search.mcp_server.session_tools import register_session_resources
-        from pubmed_search.session import SessionManager
+        from pubmed_search.presentation.mcp_server.session_tools import register_session_resources
+        from pubmed_search.application.session import SessionManager
         import tempfile
         
         mock_mcp = Mock()
@@ -277,7 +277,7 @@ class TestMergeModulePaths:
     
     def test_merge_tool_register(self):
         """Test merge tools registration."""
-        from pubmed_search.mcp_server.tools.merge import register_merge_tools
+        from pubmed_search.presentation.mcp_server.tools.merge import register_merge_tools
         
         assert callable(register_merge_tools)
 
@@ -287,7 +287,7 @@ class TestPicoModulePaths:
     
     def test_pico_register(self):
         """Test pico tools registration."""
-        from pubmed_search.mcp_server.tools.pico import register_pico_tools
+        from pubmed_search.presentation.mcp_server.tools.pico import register_pico_tools
         
         assert callable(register_pico_tools)
 
@@ -297,7 +297,7 @@ class TestStrategyToolPaths:
     
     def test_strategy_tool_register(self):
         """Test strategy tools registration."""
-        from pubmed_search.mcp_server.tools.strategy import register_strategy_tools
+        from pubmed_search.presentation.mcp_server.tools.strategy import register_strategy_tools
         
         assert callable(register_strategy_tools)
 
@@ -323,7 +323,7 @@ class TestBaseEntrezInit:
     
     def test_entrez_base_with_api_key_rate_limit(self):
         """Test rate limit is adjusted with API key."""
-        from pubmed_search.entrez.base import EntrezBase
+        from pubmed_search.infrastructure.ncbi.base import EntrezBase
         
         # With API key
         base = EntrezBase(email="test@example.com", api_key="test_key")
@@ -337,7 +337,7 @@ class TestSearchParseArticle:
     
     def test_parse_pubmed_article_minimal(self):
         """Test parsing minimal article data."""
-        from pubmed_search.entrez.search import SearchMixin
+        from pubmed_search.infrastructure.ncbi.search import SearchMixin
         
         class TestSearcher(SearchMixin):
             pass

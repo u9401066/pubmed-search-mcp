@@ -66,7 +66,7 @@ class TestRealPubMedSearch:
     )
     def test_real_spell_check(self, real_email):
         """Test real ESpell API."""
-        from pubmed_search.entrez import LiteratureSearcher
+        from pubmed_search.infrastructure.ncbi import LiteratureSearcher
         
         searcher = LiteratureSearcher(email=real_email)
         corrected = searcher.spell_check_query("diabetis")
@@ -84,7 +84,7 @@ class TestRealMeSHLookup:
     )
     def test_real_mesh_lookup(self, real_email):
         """Test real MeSH term lookup."""
-        from pubmed_search.entrez import LiteratureSearcher
+        from pubmed_search.infrastructure.ncbi import LiteratureSearcher
         
         searcher = LiteratureSearcher(email=real_email)
         

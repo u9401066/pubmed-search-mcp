@@ -12,7 +12,7 @@ class TestUtilsMixin:
     @pytest.fixture
     def utils_mixin(self):
         """Create a test instance with UtilsMixin."""
-        from pubmed_search.entrez.utils import UtilsMixin
+        from pubmed_search.infrastructure.ncbi.utils import UtilsMixin
         
         class TestSearcher(UtilsMixin):
             pass
@@ -264,14 +264,14 @@ class TestServerModule:
     
     def test_server_module_structure(self):
         """Test server module has expected structure."""
-        from pubmed_search.mcp_server import server
+        from pubmed_search.presentation.mcp_server import server
         
         # Check for expected attributes
         assert hasattr(server, 'logging')
     
     def test_create_mcp_if_exists(self):
         """Test create_mcp function if it exists."""
-        from pubmed_search.mcp_server import server
+        from pubmed_search.presentation.mcp_server import server
         
         # If create_mcp exists, test it
         if hasattr(server, 'create_mcp'):
@@ -284,14 +284,14 @@ class TestSessionModule:
     
     def test_session_manager_create(self):
         """Test SessionManager creation."""
-        from pubmed_search.session import SessionManager
+        from pubmed_search.application.session import SessionManager
         
         manager = SessionManager()
         assert manager is not None
     
     def test_research_session_create(self):
         """Test ResearchSession creation."""
-        from pubmed_search.session import ResearchSession
+        from pubmed_search.application.session import ResearchSession
         
         session = ResearchSession(session_id="test_session")
         assert session is not None
@@ -300,7 +300,7 @@ class TestSessionModule:
     
     def test_cached_article_create(self):
         """Test CachedArticle creation."""
-        from pubmed_search.session import CachedArticle
+        from pubmed_search.application.session import CachedArticle
         
         article = CachedArticle(
             pmid="12345",
@@ -317,7 +317,7 @@ class TestSessionModule:
     
     def test_search_record_create(self):
         """Test SearchRecord creation."""
-        from pubmed_search.session import SearchRecord
+        from pubmed_search.application.session import SearchRecord
         
         record = SearchRecord(
             query="test query",
@@ -334,7 +334,7 @@ class TestCommonModuleCoverage:
     
     def test_format_search_results_with_multiple(self):
         """Test formatting multiple search results."""
-        from pubmed_search.mcp_server.tools._common import format_search_results
+        from pubmed_search.presentation.mcp_server.tools._common import format_search_results
         
         articles = [
             {"pmid": "123", "title": "Article 1", "authors": ["A", "B"], "year": "2024", "journal": "J1", "abstract": "Abstract 1"},
@@ -349,7 +349,7 @@ class TestCommonModuleCoverage:
     
     def test_cache_results(self):
         """Test _cache_results function."""
-        from pubmed_search.mcp_server.tools._common import _cache_results, set_session_manager
+        from pubmed_search.presentation.mcp_server.tools._common import _cache_results, set_session_manager
         
         # With no session manager
         set_session_manager(None)
@@ -358,7 +358,7 @@ class TestCommonModuleCoverage:
     
     def test_record_search_only(self):
         """Test _record_search_only function."""
-        from pubmed_search.mcp_server.tools._common import _record_search_only, set_session_manager
+        from pubmed_search.presentation.mcp_server.tools._common import _record_search_only, set_session_manager
         
         # With no session manager
         set_session_manager(None)

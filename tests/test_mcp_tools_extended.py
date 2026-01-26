@@ -12,7 +12,7 @@ class TestMergeTools:
     
     def test_merge_simple_format(self):
         """Test merging results in simple list format."""
-        from pubmed_search.mcp_server.tools.merge import register_merge_tools
+        from pubmed_search.presentation.mcp_server.tools.merge import register_merge_tools
         
         mcp = MagicMock()
         searcher = MagicMock()
@@ -44,7 +44,7 @@ class TestMergeTools:
     
     def test_merge_query_id_format(self):
         """Test merging results with query IDs."""
-        from pubmed_search.mcp_server.tools.merge import register_merge_tools
+        from pubmed_search.presentation.mcp_server.tools.merge import register_merge_tools
         
         mcp = MagicMock()
         searcher = MagicMock()
@@ -74,7 +74,7 @@ class TestMergeTools:
     
     def test_merge_invalid_json(self):
         """Test merging with invalid JSON."""
-        from pubmed_search.mcp_server.tools.merge import register_merge_tools
+        from pubmed_search.presentation.mcp_server.tools.merge import register_merge_tools
         
         mcp = MagicMock()
         searcher = MagicMock()
@@ -95,7 +95,7 @@ class TestMergeTools:
     
     def test_merge_empty(self):
         """Test merging empty results."""
-        from pubmed_search.mcp_server.tools.merge import register_merge_tools
+        from pubmed_search.presentation.mcp_server.tools.merge import register_merge_tools
         
         mcp = MagicMock()
         searcher = MagicMock()
@@ -122,7 +122,7 @@ class TestPicoTools:
     
     def test_parse_pico_structured(self):
         """Test parsing with pre-structured PICO."""
-        from pubmed_search.mcp_server.tools.pico import register_pico_tools
+        from pubmed_search.presentation.mcp_server.tools.pico import register_pico_tools
         
         mcp = MagicMock()
         
@@ -154,7 +154,7 @@ class TestPicoTools:
     
     def test_parse_pico_needs_parsing(self):
         """Test parsing with natural language description."""
-        from pubmed_search.mcp_server.tools.pico import register_pico_tools
+        from pubmed_search.presentation.mcp_server.tools.pico import register_pico_tools
         
         mcp = MagicMock()
         
@@ -177,7 +177,7 @@ class TestPicoTools:
     
     def test_parse_pico_question_type_therapy(self):
         """Test inferring therapy question type."""
-        from pubmed_search.mcp_server.tools.pico import register_pico_tools
+        from pubmed_search.presentation.mcp_server.tools.pico import register_pico_tools
         
         mcp = MagicMock()
         
@@ -199,7 +199,7 @@ class TestPicoTools:
     
     def test_parse_pico_question_type_diagnosis(self):
         """Test inferring diagnosis question type."""
-        from pubmed_search.mcp_server.tools.pico import register_pico_tools
+        from pubmed_search.presentation.mcp_server.tools.pico import register_pico_tools
         
         mcp = MagicMock()
         
@@ -221,7 +221,7 @@ class TestPicoTools:
     
     def test_parse_pico_question_type_prognosis(self):
         """Test inferring prognosis question type."""
-        from pubmed_search.mcp_server.tools.pico import register_pico_tools
+        from pubmed_search.presentation.mcp_server.tools.pico import register_pico_tools
         
         mcp = MagicMock()
         
@@ -247,8 +247,8 @@ class TestStrategyTools:
     
     def test_generate_search_queries_fallback(self):
         """Test generate_search_queries with fallback (no strategy generator)."""
-        from pubmed_search.mcp_server.tools.strategy import register_strategy_tools
-        from pubmed_search.mcp_server.tools._common import set_strategy_generator
+        from pubmed_search.presentation.mcp_server.tools.strategy import register_strategy_tools
+        from pubmed_search.presentation.mcp_server.tools._common import set_strategy_generator
         
         # Ensure no strategy generator is set
         set_strategy_generator(None)
@@ -277,8 +277,8 @@ class TestStrategyTools:
     
     def test_generate_search_queries_with_generator(self):
         """Test generate_search_queries with strategy generator."""
-        from pubmed_search.mcp_server.tools.strategy import register_strategy_tools
-        from pubmed_search.mcp_server.tools._common import set_strategy_generator
+        from pubmed_search.presentation.mcp_server.tools.strategy import register_strategy_tools
+        from pubmed_search.presentation.mcp_server.tools._common import set_strategy_generator
         
         # Set up mock strategy generator
         mock_generator = MagicMock()
@@ -319,7 +319,7 @@ class TestExportTools:
     
     def test_prepare_export_ris(self):
         """Test prepare_export with RIS format."""
-        from pubmed_search.mcp_server.tools.export import register_export_tools
+        from pubmed_search.presentation.mcp_server.tools.export import register_export_tools
         
         mcp = MagicMock()
         searcher = MagicMock()
@@ -346,7 +346,7 @@ class TestExportTools:
     
     def test_prepare_export_invalid_format(self):
         """Test prepare_export with invalid format."""
-        from pubmed_search.mcp_server.tools.export import register_export_tools
+        from pubmed_search.presentation.mcp_server.tools.export import register_export_tools
         
         mcp = MagicMock()
         searcher = MagicMock()
@@ -389,7 +389,7 @@ class TestCommonToolsExtended:
     
     def test_get_last_search_pmids_empty(self):
         """Test get_last_search_pmids with no session."""
-        from pubmed_search.mcp_server.tools._common import get_last_search_pmids, set_session_manager
+        from pubmed_search.presentation.mcp_server.tools._common import get_last_search_pmids, set_session_manager
         
         set_session_manager(None)
         result = get_last_search_pmids()
@@ -397,7 +397,7 @@ class TestCommonToolsExtended:
     
     def test_get_last_search_pmids_with_session(self):
         """Test get_last_search_pmids with session."""
-        from pubmed_search.mcp_server.tools._common import get_last_search_pmids, set_session_manager
+        from pubmed_search.presentation.mcp_server.tools._common import get_last_search_pmids, set_session_manager
         
         mock_session = MagicMock()
         mock_session.search_history = [
@@ -417,7 +417,7 @@ class TestCommonToolsExtended:
     
     def test_check_cache_no_session(self):
         """Test check_cache with no session manager."""
-        from pubmed_search.mcp_server.tools._common import check_cache, set_session_manager
+        from pubmed_search.presentation.mcp_server.tools._common import check_cache, set_session_manager
         
         set_session_manager(None)
         result = check_cache("test query", 10)
@@ -425,7 +425,7 @@ class TestCommonToolsExtended:
     
     def test_format_search_results_include_doi(self, mock_article_data):
         """Test format_search_results with DOI included."""
-        from pubmed_search.mcp_server.tools._common import format_search_results
+        from pubmed_search.presentation.mcp_server.tools._common import format_search_results
         
         result = format_search_results([mock_article_data], include_doi=True)
         
