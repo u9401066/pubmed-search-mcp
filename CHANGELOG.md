@@ -8,7 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Planned
-- Research Prompts (Summarize, Literature Review, Clinical Relevance)
+- PRISMA flow tracking (init_prisma_flow, record_screening, get_prisma_diagram)
+- Evidence level classification (Oxford CEBM I-V)
+- Quality assessment templates (RoB 2, ROBINS-I, NOS)
 - Research trend analysis (keyword frequency, publication trends)
 - Chart generation (PNG output)
 
@@ -52,6 +54,23 @@ src/pubmed_search/
 - `models/` → `domain/entities/`
 
 ### Added
+
+- **ResultAggregator Refactoring** - O(n) deduplication with Union-Find algorithm
+  - Multi-dimensional ranking: relevance, quality, recency, impact, source_trust
+  - RankingConfig presets: default, impact_focused, recency_focused, quality_focused
+  - DeduplicationStrategy: STRICT, MODERATE, AGGRESSIVE
+  - 66 tests, 96% coverage
+
+- **9 MCP Research Prompts** (Phase 6 Complete):
+  - `quick_search` - 快速主題搜尋
+  - `systematic_search` - MeSH 擴展系統性搜尋
+  - `pico_search` - PICO 臨床問題搜尋
+  - `explore_paper` - 從關鍵論文深入探索
+  - `gene_drug_research` - 基因/藥物研究
+  - `export_results` - 匯出引用
+  - `find_open_access` - 尋找開放存取版本
+  - `literature_review` - 完整文獻回顧流程
+  - `text_mining_workflow` - 文字探勘工作流程
 
 - **NCBI Citation Exporter API** - Official citation export (RIS, MEDLINE, CSL)
   - `prepare_export(source="official")` uses official NCBI API (default)

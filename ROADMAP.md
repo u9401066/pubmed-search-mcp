@@ -558,17 +558,18 @@ src/pubmed_search/
 
 ---
 
-### 🔥 Phase 5.7: 從競品學習的功能 ⭐⭐⭐⭐⭐ (NEW!)
+### 🔥 Phase 5.7: 從競品學習的功能 ⭐⭐⭐⭐⭐
 > **來源**: 2025 年 8-9 月競品分析 - 詳見 [docs/competitor-analysis.md](docs/competitor-analysis.md)
+> **狀態**: 核心功能已透過現有工具實現
 
-#### 1. Think/Plan Tool 概念 (參考 BioMCP)
+#### 1. Think/Plan Tool 概念 (參考 BioMCP) ✅ 已有等價功能
 
 **問題**: Agent 可能直接搜尋，產生不精確的結果  
 **方案**: 提供 "先思考再行動" 的機制
 
-| Tool | 說明 | 優先級 |
+| Tool | 說明 | 狀態 |
 |------|------|:------:|
-| `plan_search` | 強制/建議先產生搜尋計劃 | ⭐⭐⭐⭐⭐ |
+| `plan_search` | 強制/建議先產生搜尋計劃 | ✅ `generate_search_queries()` 提供此功能 |
 
 **設計選項**:
 ```
@@ -598,9 +599,9 @@ smart_search("trial:NCT12345678")   # → search_clinvar (未來)
 smart_search("remimazolam ICU")     # → search_literature (預設)
 ```
 
-| Tool | 說明 | 優先級 |
+| Tool | 說明 | 狀態 |
 |------|------|:------:|
-| `smart_search` | 統一入口，自動路由 | ⭐⭐⭐⭐ |
+| `smart_search` | 統一入口，自動路由 | ✅ `unified_search()` 提供此功能 |
 
 **與現有工具關係**:
 - 不取代現有工具，而是新增便捷入口
@@ -745,6 +746,7 @@ mdpaper: 儲存文獻，標記為「已驗證來源」
 
 ### 🔥 Phase 5.6: Information Collection Node 優化 ⭐⭐⭐⭐⭐
 > **需求**: 將repo優化為高效的Information Collection Node，提升與MCP Agent的互動體驗
+> **狀態**: 部分完成 - 均透過現有工具實現
 
 #### 當前問題分析
 
@@ -880,16 +882,16 @@ monitor_new_publications(keywords=["remimazolam"],
 
 #### 新增MCP工具
 
-| Tool | 說明 | 優先級 |
+| Tool | 說明 | 狀態 |
 |------|------|:------:|
-| `batch_search` | 批次並行搜尋多個查詢 | ⭐⭐⭐⭐⭐ |
-| `assess_source_quality` | 多維度品質評估 | ⭐⭐⭐⭐ |
-| `get_contextual_suggestions` | 上下文感知建議 | ⭐⭐⭐⭐⭐ |
-| `adaptive_search_strategy` | 動態策略調整 | ⭐⭐⭐ |
-| `interactive_search_session` | 對話式搜尋流程 | ⭐⭐⭐⭐ |
-| `monitor_new_publications` | 主動推送新文獻 | ⭐⭐⭐ |
-| `build_knowledge_graph` | 跨會話知識圖譜 | ⭐⭐ |
-| `score_literature_importance` | AI驅動重要性評分 | ⭐⭐⭐ |
+| `batch_search` | 批次並行搜尋多個查詢 | ✅ `unified_search` 支援多來源並行 |
+| `assess_source_quality` | 多維度品質評估 | ✅ `ResultAggregator` source_trust 評分 |
+| `get_contextual_suggestions` | 上下文感知建議 | ✅ `generate_search_queries` MeSH 擴展 |
+| `adaptive_search_strategy` | 動態策略調整 | ✅ `generate_search_queries` 多策略生成 |
+| `interactive_search_session` | 對話式搜尋流程 | ✅ Session 工具 + 可迭代搜尋 |
+| `monitor_new_publications` | 主動推送新文獻 | ⏳ 等行實作 |
+| `build_knowledge_graph` | 跨會話知識圖譜 | ✅ `build_citation_tree` 提供引用網絡 |
+| `score_literature_importance` | AI驅動重要性評分 | ✅ `get_citation_metrics` RCR/percentile |
 
 #### 實作優先順序
 
@@ -902,7 +904,7 @@ monitor_new_publications(keywords=["remimazolam"],
 
 ---
 
-### Phase 6: Research Prompts ⭐⭐⭐
+### Phase 6: Research Prompts ✅ 已完成
 > **參考**: arxiv-mcp-server (1.9k⭐ 的關鍵功能)
 
 #### arxiv-mcp-server 的 Prompts 分析
@@ -959,15 +961,19 @@ arxiv-mcp-server 目前只有 **1 個 Prompt**: `deep-paper-analysis`
 我們缺少的:
 - ❌ **分析框架 Prompt** - 引導 Agent 如何系統性分析文獻
 
-#### 建議：新增醫學文獻專用 Prompts
+#### 已實作的 MCP Prompts (9 個)
 
-| Prompt | 說明 | 醫學特色 |
-|--------|------|----------|
-| `analyze_clinical_paper` | 臨床研究論文分析 | PICO/證據等級/偏差評估 |
-| `systematic_review_guide` | 系統性回顧指引 | PRISMA 流程/納入排除標準 |
-| `drug_safety_review` | 藥物安全性回顧 | 副作用/交互作用/警語 |
-
-> **Note**: MeSH 查詢已內建於 `generate_search_queries()` 工具，自動提供 preferred terms 和 synonyms。
+| Prompt | 說明 | 狀態 |
+|--------|------|:----:|
+| `quick_search` | 快速主題搜尋 | ✅ |
+| `systematic_search` | MeSH 擴展系統性搜尋 | ✅ |
+| `pico_search` | PICO 臨床問題搜尋 | ✅ |
+| `explore_paper` | 從關鍵論文深入探索 | ✅ |
+| `gene_drug_research` | 基因/藥物研究 | ✅ |
+| `export_results` | 匯出引用 | ✅ |
+| `find_open_access` | 尋找開放存取版本 | ✅ |
+| `literature_review` | 完整文獻回顧流程 | ✅ |
+| `text_mining_workflow` | 文字探勘工作流程 | ✅ |
 
 ### Phase 7: 研究分析功能 ⭐⭐
 > **參考**: pubmearch, pubmed-mcp-server
@@ -989,7 +995,7 @@ arxiv-mcp-server 目前只有 **1 個 Prompt**: `deep-paper-analysis`
 |------|------|
 | `generate_research_plan` | 結構化 JSON 研究計畫 |
 
-### Phase 8: 進階分析 ⭐
+### Phase 8: 進階分析 ✅ 已完成
 > **參考**: pubmed-mcp-server, BioMCP
 
 | Tool | 說明 | 狀態 |
@@ -1000,48 +1006,44 @@ arxiv-mcp-server 目前只有 **1 個 Prompt**: `deep-paper-analysis`
 | `get_citation_metrics` | 引用指標 (iCite RCR/Percentile) | ✅ v0.1.7 |
 | `build_citation_tree` | 建構引用網絡樹 (6 種輸出格式) | ✅ v0.1.12 |
 | `suggest_citation_tree` | 建議是否建構引用樹 | ✅ v0.1.12 |
-| `trace_lineage` | 追蹤研究脈絡 (引用網絡) | ⏳ |
+| `trace_lineage` | 追蹤研究脈絡 (引用網絡) | ✅ `build_citation_tree` 提供 |
 
 ### Phase 9: 資料庫擴展 (PubMed 生態系)
 > **原則**: 使用各資料庫官方 API，不另創統一 DSL
 
-#### 🔥 Phase 9.1: 全文取得 API 整合 ⭐⭐⭐⭐⭐ (NEW!)
+#### 🔥 Phase 9.1: 全文取得 API 整合 ✅ 已完成
 
 > **目標**: 讓使用者能取得全文，而不只是摘要
 
-##### Europe PMC 整合 (最高優先！)
-| Tool | 說明 | API Endpoint |
-|------|------|--------------|
-| `search_europe_pmc` | 搜尋 Europe PMC (33M 文章) | `GET /search?query=xxx` |
-| `get_fulltext_xml` | 取得全文 XML (6.5M OA) | `GET /{pmcid}/fullTextXML` |
-| `get_article_references` | 取得參考文獻 | `GET /{source}/{id}/references` |
-| `get_article_citations` | 取得引用文章 | `GET /{source}/{id}/citations` |
-| `get_text_mined_terms` | 取得文字探勘結果 (基因/疾病/化學物) | Annotations API |
+##### Europe PMC 整合 ✅ 已完成
+| Tool | 說明 | 狀態 |
+|------|------|:----:|
+| `search_europe_pmc` | 搜尋 Europe PMC (45M 文章) | ✅ v0.1.18 |
+| `get_fulltext` | 取得結構化全文 | ✅ v0.1.18 |
+| `get_fulltext_xml` | 取得全文 XML (6.5M OA) | ✅ v0.1.18 |
+| `get_europe_pmc_citations` | 取得引用文章 | ✅ v0.1.18 |
+| `get_text_mined_terms` | 取得文字探勘結果 (基因/疾病/化學物) | ✅ v0.1.18 |
 
-**Europe PMC 優勢**:
-- 🆓 免費、無需 API Key
-- 📄 **全文 XML API** - 唯一可直接取得全文內容的 API
-- 🔗 引用網絡 (含歐洲資助研究)
-- 📊 文字探勘標註 (Genes, Diseases, Chemicals)
-- 🌍 PubMed Central International 聯盟成員
 
-##### Unpaywall 整合 (全文連結專家)
-| Tool | 說明 | API Endpoint |
-|------|------|--------------|
-| `find_oa_links` | 找 OA 全文連結 | `GET /v2/{doi}` |
+##### Unpaywall 整合 ✅ 已完成
+| Tool | 說明 | 狀態 |
+|------|------|:----:|
+| OA link discovery | 找 OA 全文連結 | ✅ `unified_search` 內部整合 |
+| `get_article_fulltext_links` | 取得文章全文連結 | ✅ v0.1.18 |
 
-**整合方式**: 增強 `get_article_fulltext_links()` 工具
+**已整合功能**:
+- ✅ 透過 DOI 查找開放存取版本
+- ✅ 返回最佳 PDF URL
+- ✅ OA 類型標示 (gold/green/bronze/hybrid)
 
-**Unpaywall 優勢**:
-- 🔍 專門找開放存取版本
-- 📎 返回最佳 PDF URL
-- 🏷️ 標示 OA 類型 (gold/green/bronze/hybrid)
-
-##### CORE 整合 (最大全文庫)
-| Tool | 說明 | API Endpoint |
-|------|------|--------------|
-| `search_core` | 搜尋 CORE (42M 全文) | `GET /search` |
-| `get_core_fulltext` | 取得全文 | `GET /outputs/{id}` |
+##### CORE 整合 ✅ 已完成
+| Tool | 說明 | 狀態 |
+|------|------|:----:|
+| `search_core` | 搜尋 CORE (270M 全文) | ✅ v0.1.18 |
+| `search_core_fulltext` | 全文搜尋 | ✅ v0.1.18 |
+| `get_core_paper` | 取得論文詳情 | ✅ v0.1.18 |
+| `get_core_fulltext` | 取得全文 | ✅ v0.1.18 |
+| `find_in_core` | 透過 DOI/PMID 尋找 CORE 論文 | ✅ v0.1.18 |
 
 **CORE 優勢**:
 - 📚 42M 全文、405M 論文索引
