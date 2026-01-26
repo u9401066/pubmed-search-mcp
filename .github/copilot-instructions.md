@@ -41,13 +41,53 @@ uv run pytest --cov        # 覆蓋率
 
 ---
 
+## �️ 專案架構 (DDD v0.2.0)
+
+本專案採用 **Domain-Driven Design (DDD)** 分層架構：
+
+```
+src/pubmed_search/
+├── domain/                 # 核心業務邏輯
+│   └── entities/           # 實體 (UnifiedArticle)
+├── application/            # 應用服務/用例
+│   ├── search/             # QueryAnalyzer, ResultAggregator
+│   ├── export/             # 引用匯出 (RIS, BibTeX...)
+│   └── session/            # SessionManager
+├── infrastructure/         # 外部系統整合
+│   ├── ncbi/               # Entrez, iCite, Citation Exporter
+│   ├── sources/            # Europe PMC, CORE, CrossRef...
+│   └── http/               # HTTP 客戶端
+├── presentation/           # 使用者介面
+│   ├── mcp_server/         # MCP 工具、提示、資源
+│   └── api/                # REST API
+└── shared/                 # 跨層共用
+    ├── exceptions.py       # 例外處理
+    └── async_utils.py      # 非同步工具
+```
+
+### 導入規則
+
+```python
+# ✅ 正確：從頂層 pubmed_search 導入
+from pubmed_search import LiteratureSearcher, export_articles
+
+# ✅ 正確：絕對導入
+from pubmed_search.infrastructure.ncbi import LiteratureSearcher
+
+# ❌ 避免：深層相對導入
+from ...infrastructure.ncbi import LiteratureSearcher
+```
+
+---
+
 ## 🎯 Project Overview
 
 PubMed Search MCP is a **professional literature research assistant** that provides:
-- **35+ MCP Tools** for literature search and analysis
+- **25+ MCP Tools** for literature search and analysis
 - **Multi-source search**: PubMed, Europe PMC (33M+), CORE (200M+)
 - **NCBI databases**: Gene, PubChem, ClinVar
 - **Full text access**: Direct XML/text retrieval
+- **Official Citation Export**: NCBI Citation Exporter API (RIS, MEDLINE, CSL)
 
 ---
 

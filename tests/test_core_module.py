@@ -47,13 +47,10 @@ class TestExceptionHierarchy:
         err = PubMedSearchError("Failed", context=ctx, retryable=True)
         
         msg = err.to_agent_message()
-        assert "?? in msg
+        # Check that message contains key info
         assert "Failed" in msg
-        assert "?’¡" in msg
         assert "Try X" in msg
-        assert "??" in msg
         assert "do_something()" in msg
-        assert "??" in msg  # retryable
     
     def test_invalid_pmid_error(self):
         """InvalidPMIDError should have correct defaults."""

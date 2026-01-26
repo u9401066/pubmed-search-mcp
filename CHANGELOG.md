@@ -14,6 +14,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.2.0] - 2026-01-26
+
+### 🏗️ DDD Architecture Refactor
+
+Major restructuring to Domain-Driven Design (DDD) architecture for better maintainability.
+
+### Changed
+
+**Directory Structure Reorganization:**
+```
+src/pubmed_search/
+├── domain/                 # Core business logic
+│   └── entities/           # UnifiedArticle, Author, etc.
+├── application/            # Use cases
+│   ├── search/             # QueryAnalyzer, ResultAggregator
+│   ├── export/             # Citation export (RIS, BibTeX...)
+│   └── session/            # SessionManager
+├── infrastructure/         # External systems
+│   ├── ncbi/               # Entrez, iCite, Citation Exporter
+│   ├── sources/            # Europe PMC, CORE, CrossRef...
+│   └── http/               # HTTP clients
+├── presentation/           # User interfaces
+│   ├── mcp_server/         # MCP tools, prompts, resources
+│   └── api/                # REST API
+└── shared/                 # Cross-cutting concerns
+    ├── exceptions.py
+    └── async_utils.py
+```
+
+**Breaking Changes:**
+- `mcp/` → `presentation/mcp_server/` (避免與 mcp 套件衝突)
+- `entrez/` → `infrastructure/ncbi/`
+- `sources/` → `infrastructure/sources/`
+- `exports/` → `application/export/`
+- `unified/` → `application/search/`
+- `models/` → `domain/entities/`
+
+### Added
+
+- **NCBI Citation Exporter API** - Official citation export (RIS, MEDLINE, CSL)
+  - `prepare_export(source="official")` uses official NCBI API (default)
+  - `prepare_export(source="local")` uses local formatting (for BibTeX, CSV)
+- **Python 3.10 Compatibility** - Fixed `TypeVar` syntax and `ExceptionGroup` fallback
+
+### Fixed
+
+- Import conflicts with `mcp` package resolved by renaming to `mcp_server`
+- Deep relative imports replaced with absolute imports for maintainability
+
+---
+
 ## [0.1.29] - 2026-01-22
 
 ### 📦 Complete API Export

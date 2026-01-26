@@ -5,60 +5,71 @@
 ## 🎯 當前焦點
 
 <!-- 一句話描述正在做什麼 -->
-- **Phase 2.2 完成** - ICD 自動偵測、Preprint 搜尋整合、Advanced Filters 修復
+- **v0.2.0 DDD 架構重構完成** - 全面重組目錄結構為 DDD 層次
 
 ## 📝 進行中的變更
 
 <!-- 具體的檔案和修改 -->
-| 檔案 | 變更內容 |
-|------|----------|
-| `src/pubmed_search/sources/preprints.py` | 新增 - arXiv, medRxiv, bioRxiv 搜尋整合 |
-| `src/pubmed_search/mcp/tools/unified.py` | 更新 - ICD 自動偵測、include_preprints 參數 |
-| `src/pubmed_search/mcp/resources.py` | 更新 - ICD↔MeSH 雙向轉換工具 |
-| `tests/test_preprints.py` | 新增 - 7 個 preprint/ICD 測試 |
-| `README.md` | 更新 - Phase 2.2 功能說明 |
+| 目錄/檔案 | 變更內容 |
+|----------|----------|
+| `src/pubmed_search/domain/` | 新增 - 核心實體 (UnifiedArticle) |
+| `src/pubmed_search/application/` | 新增 - 應用服務 (search, export, session) |
+| `src/pubmed_search/infrastructure/` | 重組 - ncbi/, sources/, http/ |
+| `src/pubmed_search/presentation/mcp_server/` | 重命名 - 避免 mcp 套件衝突 |
+| `src/pubmed_search/shared/` | 新增 - 跨層共用 (exceptions, async_utils) |
+| `src/pubmed_search/__init__.py` | 更新 - 完整導出 + 詳細文檔 |
 
 ## ✅ 已解決問題
 
 <!-- 根本原因和解決方案 -->
-**Clinical Query Filter 語法**：
-- 問題：`therapy[Filter]` 返回 0 結果
-- 解決：改為 `(Therapy/Broad[filter])` 格式
+**mcp 套件命名衝突**：
+- 問題：`mcp/` 目錄與 `mcp` 套件衝突
+- 解決：重命名為 `presentation/mcp_server/`
 
-**Preprint 搜尋**：
-- ✅ arXiv API 整合 (Atom XML 解析)
-- ✅ medRxiv/bioRxiv API 整合 (JSON)
-- ✅ 統一 PreprintSearcher 介面
+**Python 3.10 相容性**：
+- 問題：使用 Python 3.12 語法 (`[T]` type params, `ExceptionGroup`)
+- 解決：改用 `TypeVar("T")` + 添加 `ExceptionGroup` fallback
 
-**ICD 自動偵測**：
-- ✅ ICD-10 正則: `r'\b([A-Z]\d{2}(?:\.\d{1,4})?)\b'`
-- ✅ ICD-9 正則: `r'\b(\d{3}(?:\.\d{1,2})?)\b'`
-- ✅ 自動擴展為 MeSH 詞彙
+**相對導入深度**：
+- 問題：`...infrastructure` 等深層相對導入難維護
+- 解決：改用絕對導入 `from pubmed_search.xxx import`
 
 ## 💡 關鍵發現
 
 <!-- 本次工作階段的重要發現 -->
-- arXiv 使用 Atom XML 格式，需特殊解析
-- medRxiv/bioRxiv 共用 API 結構
-- ICD 代碼可包含小數點 (如 E11.9)
-- PubMed Clinical Query 有 Broad/Narrow 變體
+- DDD 架構提供清晰的關注點分離
+- `presentation/` 層不應有 `..` 相對導入到其他層
+- 絕對導入更容易維護和重構
+- NCBI Citation Exporter API 提供官方引用格式
 
-## 📁 新增/修改檔案
+## 📁 新增/修改目錄結構
 
 ```text
-src/pubmed_search/sources/preprints.py    # 新增 - preprint 搜尋客戶端
-src/pubmed_search/mcp/tools/unified.py    # 更新 - ICD 偵測 + preprint 參數
-src/pubmed_search/mcp/resources.py        # 更新 - ICD↔MeSH 轉換
-tests/test_preprints.py                    # 新增 - 7 個測試
-README.md                                  # 更新 - Phase 2.2 功能
+src/pubmed_search/
+├── domain/
+│   └── entities/article.py          # UnifiedArticle
+├── application/
+│   ├── search/                       # QueryAnalyzer, ResultAggregator
+│   ├── export/                       # formats.py, links.py
+│   └── session/                      # SessionManager
+├── infrastructure/
+│   ├── ncbi/                         # base, search, citation, icite...
+│   ├── sources/                      # europe_pmc, crossref, core...
+│   └── http/                         # client, pubmed_client
+├── presentation/
+│   ├── mcp_server/                   # MCP tools, prompts, resources
+│   └── api/                          # REST API
+└── shared/
+    ├── exceptions.py
+    └── async_utils.py
 ```
 
 ## 🔜 下一步
 
 <!-- 接下來要做什麼 -->
-1. ⏳ Git commit + push
+1. ✅ Git commit + push
 2. ⏳ Token 效率優化 (Phase 5.8)
-3. ⏳ 競品學習功能 (Phase 5.7)
+3. ⏳ Tool Router 設計 (ToolUniverse 整合)
 
 ---
-*Last updated: 2026-01-21 - Phase 2.2 ICD + Preprint 整合完成*
+*Last updated: 2026-01-26 - v0.2.0 DDD 架構重構完成*

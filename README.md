@@ -688,26 +688,23 @@ This project uses **Domain-Driven Design (DDD)** architecture, with literature r
 
 ```
 src/pubmed_search/
-├── mcp/
-│   └── tools/
-│       ├── discovery.py     # Discovery (search, related, citing, details)
-│       ├── strategy.py      # Strategy (generate_queries, expand)
-│       ├── pico.py          # PICO parsing
-│       ├── merge.py         # Result merging
-│       ├── export.py        # Export tools
-│       ├── citation_tree.py # Citation network visualization (6 formats)
-│       ├── europe_pmc.py    # Europe PMC full text access
-│       ├── core.py          # CORE open access search
-│       └── ncbi_extended.py # Gene, PubChem, ClinVar
-├── sources/                 # Multi-source search
-│   ├── europe_pmc.py        # Europe PMC client (33M+ papers)
-│   ├── core.py              # CORE client (200M+ papers)
-│   ├── ncbi_extended.py     # Gene, PubChem, ClinVar
-│   ├── semantic_scholar.py  # Semantic Scholar client
-│   └── openalex.py          # OpenAlex client
-├── entrez/                  # NCBI Entrez API wrapper
-├── exports/                 # Export formats (RIS, BibTeX, CSV)
-└── session.py               # Session management (internal mechanism)
+├── domain/                     # Core business logic
+│   └── entities/article.py     # UnifiedArticle, Author, etc.
+├── application/                # Use cases
+│   ├── search/                 # QueryAnalyzer, ResultAggregator
+│   ├── export/                 # Citation export (RIS, BibTeX...)
+│   └── session/                # SessionManager
+├── infrastructure/             # External systems
+│   ├── ncbi/                   # Entrez, iCite, Citation Exporter
+│   ├── sources/                # Europe PMC, CORE, CrossRef...
+│   └── http/                   # HTTP clients
+├── presentation/               # User interfaces
+│   ├── mcp_server/             # MCP tools, prompts, resources
+│   │   └── tools/              # discovery, strategy, pico, export...
+│   └── api/                    # REST API (Copilot Studio)
+└── shared/                     # Cross-cutting concerns
+    ├── exceptions.py           # Unified error handling
+    └── async_utils.py          # Rate limiter, retry, circuit breaker
 ```
 
 ### Internal Mechanisms (Transparent to Agent)

@@ -5,13 +5,13 @@ A comprehensive library for searching PubMed, NCBI databases, and other academic
 Provides MCP server integration and standalone Python API.
 
 Quick Start:
-    from pubmed_search import PubMedClient, SearchResult
+    from pubmed_search import LiteratureSearcher
 
-    client = PubMedClient(email="your@email.com")
-    results = client.search("diabetes treatment", limit=10)
+    searcher = LiteratureSearcher(email="your@email.com")
+    results = searcher.search("diabetes treatment", limit=10)
 
     for article in results:
-        print(f"{article.pmid}: {article.title}")
+        print(f"{article['pmid']}: {article['title']}")
 
 Extended Usage:
     # NCBI Extended (Gene, PubChem, ClinVar)
@@ -42,106 +42,133 @@ Features:
     - Export: RIS, BibTeX, CSV, MEDLINE, JSON
     - OpenURL institutional link resolver
     - MCP server for AI agent integration
+
+Architecture (DDD):
+    domain/          - Core business logic (entities, value objects)
+    application/     - Use cases (search, export, session)
+    infrastructure/  - External systems (NCBI, Europe PMC, etc.)
+    presentation/    - User interfaces (MCP server, REST API)
+    shared/          - Cross-cutting concerns (exceptions, utils)
 """
 
-from .client import PubMedClient, SearchResult, SearchStrategy
-
+# ═══════════════════════════════════════════════════════════════════
 # Core Entrez API
-from .entrez import (
-    LiteratureSearcher,
-    EntrezBase,
-    SearchMixin,
-    PDFMixin,
-    CitationMixin,
-    BatchMixin,
-    UtilsMixin,
-)
-
-# NCBI Extended (Gene, PubChem, ClinVar)
-from .sources.ncbi_extended import NCBIExtendedClient
-
-# Europe PMC (fulltext, text mining)
-from .sources.europe_pmc import EuropePMCClient
-
-# Multi-source clients
-from .sources import (
-    get_semantic_scholar_client,
-    get_openalex_client,
-    get_europe_pmc_client,
-    get_ncbi_extended_client,
-    get_crossref_client,
-    get_unpaywall_client,
-    SearchSource,
-)
-
+# ═══════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
 # Export functionality
-from .exports import (
-    export_ris,
+# ═══════════════════════════════════════════════════════════════════
+from .application.export import (
+    SUPPORTED_FORMATS,
+    export_articles,
     export_bibtex,
     export_csv,
-    export_medline,
     export_json,
-    export_articles,
-    SUPPORTED_FORMATS,
+    export_medline,
+    export_ris,
     get_fulltext_links,
 )
 
-# OpenURL / Institutional access
-from .sources.openurl import (
-    get_openurl_link,
-    list_presets as list_openurl_presets,
-    configure_openurl,
-    get_openurl_config,
-)
-
-# iCite metrics
-from .entrez.icite import ICiteMixin
-
-# Strategy generator
-from .entrez.strategy import SearchStrategyGenerator
-
-# Unified search components
-from .unified import (
+# ═══════════════════════════════════════════════════════════════════
+# Strategy & Query Analysis
+# ═══════════════════════════════════════════════════════════════════
+from .application.search import (
+    AnalyzedQuery,
     QueryAnalyzer,
     QueryComplexity,
     QueryIntent,
-    AnalyzedQuery,
-    ResultAggregator,
     RankingConfig,
+    ResultAggregator,
 )
 
-__version__ = "0.1.29"
+# ═══════════════════════════════════════════════════════════════════
+# Domain Entities
+# ═══════════════════════════════════════════════════════════════════
+from .domain.entities.article import UnifiedArticle
+from .infrastructure.ncbi import (
+    BatchMixin,
+    CitationMixin,
+    EntrezBase,
+    LiteratureSearcher,
+    PDFMixin,
+    SearchMixin,
+    SearchStrategy,
+    UtilsMixin,
+)
+
+# iCite metrics
+from .infrastructure.ncbi.icite import ICiteMixin
+
+# Strategy generator
+from .infrastructure.ncbi.strategy import SearchStrategyGenerator
+
+# ═══════════════════════════════════════════════════════════════════
+# Multi-source clients (lazy-loaded)
+# ═══════════════════════════════════════════════════════════════════
+from .infrastructure.sources import (
+    SearchSource,
+    get_crossref_client,
+    get_europe_pmc_client,
+    get_ncbi_extended_client,
+    get_openalex_client,
+    get_semantic_scholar_client,
+    get_unpaywall_client,
+)
+
+# ═══════════════════════════════════════════════════════════════════
+# Europe PMC (fulltext, text mining)
+# ═══════════════════════════════════════════════════════════════════
+from .infrastructure.sources.europe_pmc import EuropePMCClient
+
+# ═══════════════════════════════════════════════════════════════════
+# NCBI Extended (Gene, PubChem, ClinVar)
+# ═══════════════════════════════════════════════════════════════════
+from .infrastructure.sources.ncbi_extended import NCBIExtendedClient
+
+# ═══════════════════════════════════════════════════════════════════
+# OpenURL / Institutional access
+# ═══════════════════════════════════════════════════════════════════
+from .infrastructure.sources.openurl import (
+    configure_openurl,
+    get_openurl_config,
+    get_openurl_link,
+)
+from .infrastructure.sources.openurl import (
+    list_presets as list_openurl_presets,
+)
+
+# ═══════════════════════════════════════════════════════════════════
+# Presentation - MCP Server
+# ═══════════════════════════════════════════════════════════════════
+from .presentation.mcp_server import (
+    create_server as create_mcp_server,
+)
+from .presentation.mcp_server import (
+    main as mcp_main,
+)
+
+__version__ = "0.2.0"
 
 __all__ = [
-    # ═══════════════════════════════════════════════════════════════════
-    # High-level API
-    # ═══════════════════════════════════════════════════════════════════
-    "PubMedClient",
-    "SearchResult",
-    "SearchStrategy",
-    
     # ═══════════════════════════════════════════════════════════════════
     # Core Entrez API
     # ═══════════════════════════════════════════════════════════════════
     "LiteratureSearcher",
     "EntrezBase",
+    "SearchStrategy",
     "SearchMixin",
     "PDFMixin",
     "CitationMixin",
     "BatchMixin",
     "UtilsMixin",
     "ICiteMixin",
-    
     # ═══════════════════════════════════════════════════════════════════
     # NCBI Extended (Gene, PubChem, ClinVar)
     # ═══════════════════════════════════════════════════════════════════
     "NCBIExtendedClient",
-    
     # ═══════════════════════════════════════════════════════════════════
     # Europe PMC (fulltext, text mining)
     # ═══════════════════════════════════════════════════════════════════
     "EuropePMCClient",
-    
     # ═══════════════════════════════════════════════════════════════════
     # Multi-source clients (lazy-loaded)
     # ═══════════════════════════════════════════════════════════════════
@@ -152,7 +179,6 @@ __all__ = [
     "get_crossref_client",
     "get_unpaywall_client",
     "SearchSource",
-    
     # ═══════════════════════════════════════════════════════════════════
     # Export functionality
     # ═══════════════════════════════════════════════════════════════════
@@ -164,7 +190,6 @@ __all__ = [
     "export_articles",
     "SUPPORTED_FORMATS",
     "get_fulltext_links",
-    
     # ═══════════════════════════════════════════════════════════════════
     # OpenURL / Institutional access
     # ═══════════════════════════════════════════════════════════════════
@@ -172,7 +197,6 @@ __all__ = [
     "list_openurl_presets",
     "configure_openurl",
     "get_openurl_config",
-    
     # ═══════════════════════════════════════════════════════════════════
     # Strategy & Query Analysis
     # ═══════════════════════════════════════════════════════════════════
@@ -183,4 +207,13 @@ __all__ = [
     "AnalyzedQuery",
     "ResultAggregator",
     "RankingConfig",
+    # ═══════════════════════════════════════════════════════════════════
+    # Domain Entities
+    # ═══════════════════════════════════════════════════════════════════
+    "UnifiedArticle",
+    # ═══════════════════════════════════════════════════════════════════
+    # MCP Server
+    # ═══════════════════════════════════════════════════════════════════
+    "create_mcp_server",
+    "mcp_main",
 ]

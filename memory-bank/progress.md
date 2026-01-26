@@ -1,10 +1,19 @@
-# Progress (Updated: 2026-01-21)
+# Progress (Updated: 2026-01-26)
 
 ## Done
 
 - ✅ 達成 90% 測試覆蓋率 (411 tests)
 - ✅ v0.1.8 發布到 PyPI
-- ✅ v0.1.10-v0.1.25 功能更新
+- ✅ v0.1.10-v0.1.29 功能更新
+- ✅ **v0.2.0 DDD 架構重構**
+  - 將整個 `src/pubmed_search/` 重組為 DDD 層次結構
+  - `mcp/` → `presentation/mcp_server/` (避免與 mcp 套件衝突)
+  - `entrez/` → `infrastructure/ncbi/`
+  - `sources/` → `infrastructure/sources/`
+  - `exports/` → `application/export/`
+  - `unified/` → `application/search/`
+  - `models/` → `domain/entities/`
+  - 新增 NCBI Citation Exporter API 官方引用匯出
 - ✅ ROADMAP 更新：Agent 友善標準定義 + Token 效率優化 (Phase 5.8)
 - ✅ 競品分析更新 (2025 Aug-Sep findings)
 - ✅ Ruff lint 修復 (13 errors fixed)
@@ -35,8 +44,8 @@
 - 🔄 Token 效率優化 (Phase 5.8)
   - ⏳ 設計 compact output format
   - ⏳ `to_compact_dict()` 方法
-- 🔄 競品學習功能 (Phase 5.7)
-  - ⏳ Think/Plan Tool 概念
+- 🔄 Tool Router 設計探索 (ToolUniverse 整合)
+  - ⏳ 多階段 MCP 工具選擇機制
 
 ## Next
 
