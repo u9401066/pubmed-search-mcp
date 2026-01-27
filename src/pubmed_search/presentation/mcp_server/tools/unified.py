@@ -78,7 +78,7 @@ from pubmed_search.infrastructure.sources.openurl import (
 )
 from pubmed_search.infrastructure.sources.preprints import PreprintSearcher
 
-from ..resources import lookup_icd_to_mesh
+from .icd import lookup_icd_to_mesh
 from ._common import InputNormalizer, ResponseFormatter
 
 logger = logging.getLogger(__name__)
@@ -516,6 +516,122 @@ def _enrich_with_unpaywall(articles: list[UnifiedArticle]) -> None:
         logger.warning(f"Unpaywall enrichment failed: {e}")
 
 
+def _enrich_with_similarity_scores(
+    articles: list[UnifiedArticle],
+    query: str,
+) -> None:
+    """
+    Enrich articles with similarity scores using external APIs (in-place).
+
+    Uses a ranking-based approach:
+    - First article from each source gets highest similarity (1.0)
+    - Subsequent articles get linearly decreasing scores
+
+    For cross-source similarity, we use the article's ranking position.
+
+    Args:
+        articles: Articles to enrich
+        query: Original search query (for context)
+    """
+    try:
+        if not articles:
+            return
+
+        # Calculate similarity scores based on ranking position
+        # This is a simple but effective approach:
+        # - Search engines already rank by relevance
+        # - We convert ranking position to 0-1 score
+
+        total = len(articles)
+        for i, article in enumerate(articles):
+            # Base similarity from ranking position
+            # First result = 1.0, last = 0.1 (never 0)
+            base_score = max(0.1, 1.0 - (i * 0.9 / max(total - 1, 1)))
+
+            # Adjust based on source trust (PubMed results generally more relevant)
+            source_boost = {
+                "pubmed": 0.1,
+                "semantic_scholar": 0.05,
+                "openalex": 0.03,
+                "crossref": 0.0,
+            }
+            boost = source_boost.get(article.primary_source, 0.0)
+
+            # Calculate final score (cap at 1.0)
+            final_score = min(1.0, base_score + boost)
+
+            # Set similarity fields
+            article.similarity_score = round(final_score, 3)
+            article.similarity_source = "ranking"
+            article.similarity_details = {
+                "ranking_score": round(base_score, 3),
+                "source_boost": boost,
+                "position": i + 1,
+            }
+
+        logger.debug(f"Enriched {len(articles)} articles with similarity scores")
+
+    except Exception as e:
+        logger.warning(f"Similarity enrichment failed: {e}")
+
+
+def _enrich_with_api_similarity(
+    articles: list[UnifiedArticle],
+    seed_pmid: str | None = None,
+) -> None:
+    """
+    Enrich articles with similarity scores from external APIs.
+
+    Uses Semantic Scholar recommendations and Europe PMC similar articles
+    to get pre-computed similarity scores when available.
+
+    Args:
+        articles: Articles to enrich
+        seed_pmid: Optional seed PMID for API-based similarity lookup
+    """
+    if not articles or not seed_pmid:
+        return
+
+    try:
+        from pubmed_search.infrastructure.sources.semantic_scholar import (
+            SemanticScholarClient,
+        )
+
+        s2_client = SemanticScholarClient()
+
+        # Get recommendations based on seed article
+        recommendations = s2_client.get_recommendations(f"PMID:{seed_pmid}", limit=50)
+
+        if not recommendations:
+            return
+
+        # Build lookup table: PMID/DOI -> similarity_score
+        sim_lookup: dict[str, float] = {}
+        for rec in recommendations:
+            pmid = rec.get("pmid", "")
+            doi = rec.get("doi", "")
+            score = rec.get("similarity_score", 0.5)
+
+            if pmid:
+                sim_lookup[pmid] = score
+            if doi:
+                sim_lookup[doi.lower()] = score
+
+        # Enrich articles with API-based similarity
+        for article in articles:
+            if article.pmid and article.pmid in sim_lookup:
+                article.similarity_score = sim_lookup[article.pmid]
+                article.similarity_source = "semantic_scholar"
+            elif article.doi and article.doi.lower() in sim_lookup:
+                article.similarity_score = sim_lookup[article.doi.lower()]
+                article.similarity_source = "semantic_scholar"
+
+        logger.debug("Enriched articles with API similarity scores")
+
+    except Exception as e:
+        logger.debug(f"API similarity enrichment skipped: {e}")
+
+
 # ============================================================================
 # Result Formatting
 # ============================================================================
@@ -665,6 +781,13 @@ def _format_unified_results(
             if metric_parts:
                 output_parts.append(f"**Impact**: {', '.join(metric_parts)}")
 
+        # Similarity score
+        if article.similarity_score is not None:
+            sim_str = f"**Relevance**: {article.similarity_score:.0%}"
+            if article.similarity_source:
+                sim_str += f" ({article.similarity_source})"
+            output_parts.append(sim_str)
+
         # Abstract (truncated)
         if article.abstract:
             abstract = article.abstract
@@ -753,6 +876,8 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         output_format: Literal["markdown", "json"] = "markdown",
         include_oa_links: Union[bool, str] = True,
         show_analysis: Union[bool, str] = True,
+        # Similarity scores (Phase 5.10)
+        include_similarity_scores: Union[bool, str] = True,
         # Advanced filters (Phase 2.1)
         age_group: Union[str, None] = None,
         sex: Union[str, None] = None,
@@ -831,6 +956,9 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             output_format: "markdown" (human-readable) or "json" (programmatic)
             include_oa_links: Enrich results with open access links (default True)
             show_analysis: Include query analysis in output (default True)
+            include_similarity_scores: Add relevance/similarity scores to each result
+                                       based on ranking position and source trust.
+                                       (default True). Scores range from 0-100%.
             age_group: Age group filter (PubMed only). Options:
                        "newborn" (0-1mo), "infant" (1-23mo), "preschool" (2-5y),
                        "child" (6-12y), "adolescent" (13-18y), "young_adult" (19-24y),
@@ -879,6 +1007,9 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 include_oa_links, default=True
             )
             show_analysis = InputNormalizer.normalize_bool(show_analysis, default=True)
+            include_similarity_scores = InputNormalizer.normalize_bool(
+                include_similarity_scores, default=True
+            )
             include_preprints = InputNormalizer.normalize_bool(
                 include_preprints, default=False
             )
@@ -1042,6 +1173,10 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             # Apply limit
             if limit and len(ranked) > limit:
                 ranked = ranked[:limit]
+
+            # === Step 8.5: Enrich with Similarity Scores ===
+            if include_similarity_scores:
+                _enrich_with_similarity_scores(ranked, query)
 
             # === Step 9: Format Output ===
             if output_format == "json":

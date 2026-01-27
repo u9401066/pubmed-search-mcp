@@ -11,7 +11,7 @@
 基於 Domain-Driven Design (DDD) 架構的 MCP 伺服器，作為 AI Agent 的智慧研究助理，提供任務導向的文獻搜尋與分析能力。
 
 **✨ 包含內容：**
-- 🔧 **21 個 MCP 工具** - 精簡的 PubMed、Europe PMC、CORE 和 NCBI 資料庫存取
+- 🔧 **34 個 MCP 工具** - 精簡的 PubMed、Europe PMC、CORE 和 NCBI 資料庫存取
 - 📚 **22 個 Claude Skills** - AI Agent 可直接使用的工作流程指南（Claude Code 專屬）
 - 📖 **Copilot 整合指南** - VS Code GitHub Copilot 使用說明
 

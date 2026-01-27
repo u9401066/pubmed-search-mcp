@@ -558,6 +558,52 @@ class EuropePMCClient:
             "doi": mixed_citation.findtext(".//pub-id[@pub-id-type='doi']", ""),
         }
 
+    def get_similar_articles(
+        self,
+        pmid: str | None = None,
+        pmcid: str | None = None,
+        limit: int = 10,
+    ) -> list[dict[str, Any]]:
+        """
+        Get similar articles from Europe PMC.
+
+        Uses Europe PMC's SIMILAR query syntax which returns
+        articles ranked by similarity to the seed article.
+
+        Args:
+            pmid: PubMed ID of seed article
+            pmcid: PMC ID of seed article
+            limit: Maximum similar articles
+
+        Returns:
+            List of similar articles with similarity_score (0.0-1.0)
+        """
+        try:
+            if not pmid and not pmcid:
+                logger.warning("get_similar_articles requires pmid or pmcid")
+                return []
+
+            # Build SIMILAR query
+            if pmid:
+                query = f"SIMILAR:{pmid}"
+            else:
+                query = f"SIMILAR:PMC{pmcid.replace('PMC', '')}"
+
+            result = self.search(query=query, limit=limit)
+            articles = result.get("results", [])
+
+            # Add similarity scores based on ranking
+            for i, article in enumerate(articles):
+                # First result = 1.0, decreasing linearly
+                article["similarity_score"] = max(0.0, 1.0 - (i / max(len(articles), 1)))
+                article["similarity_source"] = "europe_pmc"
+
+            return articles
+
+        except Exception as e:
+            logger.error(f"Failed to get similar articles: {e}")
+            return []
+
     def close(self):
         """Close resources (no-op for urllib, but keeps interface consistent)."""
         pass

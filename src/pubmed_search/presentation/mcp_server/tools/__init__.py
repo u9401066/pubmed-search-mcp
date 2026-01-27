@@ -1,7 +1,7 @@
 """
-PubMed Search MCP Tools - Simplified Architecture (v0.1.22)
+PubMed Search MCP Tools - Simplified Architecture (v0.1.26)
 
-🎯 精簡到 25 個核心工具（從 34 個減少 26%）：
+🎯 28 個核心工具：
 
 ✅ 核心搜索入口 (1)：
 - unified_search: 主入口，自動多源搜索
@@ -35,10 +35,15 @@ PubMed Search MCP Tools - Simplified Architecture (v0.1.22)
 - analyze_figure_for_search: 分析圖片並提取搜索關鍵字
 - reverse_image_search_pubmed: 反向圖片搜索文獻
 
-✅ 機構訂閱 (3) [新增 v0.1.25]：
+✅ 機構訂閱 (3)：
 - configure_institutional_access: 設定機構 Link Resolver
 - get_institutional_link: 產生機構訂閱連結 (OpenURL)
 - list_resolver_presets: 列出可用的預設機構
+
+✅ ICD 轉換 (3)：
+- convert_icd_to_mesh: ICD-9/10 轉 MeSH 詞彙
+- convert_mesh_to_icd: MeSH 轉 ICD 代碼
+- search_by_icd: 用 ICD 代碼搜尋 PubMed
 
 ❌ 已移除的重複工具（功能已整合進 unified_search）：
 - search_literature, search_europe_pmc, search_core, search_openalex...
@@ -60,6 +65,7 @@ from .europe_pmc import (
     register_europe_pmc_tools,
 )  # For get_fulltext, get_text_mined_terms
 from .export import register_export_tools
+from .icd import register_icd_tools  # ICD-9/ICD-10 to MeSH conversion
 from .ncbi_extended import register_ncbi_extended_tools
 from .openurl import register_openurl_tools  # Institutional access (OpenURL)
 from .pico import register_pico_tools
@@ -122,6 +128,9 @@ def register_all_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         mcp
     )  # configure_institutional_access, get_institutional_link, list_resolver_presets
 
+    # 11. ICD conversion (3 tools)
+    register_icd_tools(mcp)  # convert_icd_to_mesh, convert_mesh_to_icd, search_by_icd
+
 
 __all__ = [
     "register_all_tools",
@@ -138,4 +147,5 @@ __all__ = [
     "register_citation_tree_tools",
     "register_vision_tools",
     "register_openurl_tools",
+    "register_icd_tools",
 ]

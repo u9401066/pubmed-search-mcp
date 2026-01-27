@@ -16,6 +16,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.2.3] - 2026-01-27
+
+### Added
+
+- **Tool Registration Architecture Refactoring** - Centralized management
+  - New `tool_registry.py` - Central tool registration with `TOOL_CATEGORIES` and validation
+  - New `instructions.py` - AI Agent usage instructions (7KB)
+  - New `tools/icd.py` - ICD conversion tools module (moved from resources.py, 379 lines)
+  - New `TOOLS_INDEX.md` - Complete tool index documentation
+  - `validate_tool_registry()` - Runtime validation to ensure TOOL_CATEGORIES sync with registered tools
+
+- **Automated Tool Statistics Script** (`scripts/count_mcp_tools.py`)
+  - Get actual tool count from FastMCP runtime (equals MCP tools/list response)
+  - Auto-update README.md, README.zh-TW.md, copilot-instructions.md, TOOLS_INDEX.md
+  - Usage: `uv run python scripts/count_mcp_tools.py --update-docs`
+  - Supports `--json`, `--verbose`, `--quiet` output modes
+
+### Changed
+
+- **README Tool Count Sync** - 21 → 34 MCP Tools
+  - Fixed outdated tool count in all documentation
+  - Tool descriptions auto-generated from FastMCP Tool.description
+  
+- **Git Pre-commit Skill Update** - Added `tool-count-sync` step
+  - Now includes mandatory tool statistics sync before commit
+  - Ensures documentation always matches codebase
+
+### Fixed
+
+- **ICD Tools Misplacement** - Moved 379 lines from resources.py to tools/icd.py
+  - Proper module separation following DDD architecture
+  - Fixed import in unified.py to use new location
+
+---
+
 ## [0.2.2] - 2026-01-26
 
 ### Changed

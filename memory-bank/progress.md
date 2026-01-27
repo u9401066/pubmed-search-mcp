@@ -1,20 +1,23 @@
-# Progress (Updated: 2026-01-26)
+# Progress (Updated: 2026-01-27)
 
 ## Done
 
-- 修復 publish workflow 使用 uv
-- 修復所有 ruff linting 錯誤 (41 個)
-- 格式化所有代碼文件 (43 個)
-- 配置 mypy 為 production-ready
-- 添加 types-requests 依賴
-- 建立完整 CI 測試流程
+- v0.2.3 工具註冊架構重構
+  - 新增 `tool_registry.py` - 集中式工具註冊
+  - 新增 `instructions.py` - AI Agent 使用說明
+  - 新增 `tools/icd.py` - ICD 轉換工具模組化
+  - 新增 `TOOLS_INDEX.md` - 工具索引文檔
+- 工具統計自動化腳本 `scripts/count_mcp_tools.py`
+  - 從 FastMCP runtime 取得真實工具數量
+  - 自動更新 README, copilot-instructions, TOOLS_INDEX
+- README 工具數量同步：21 → 34 tools
+- Git pre-commit skill 更新（新增 tool-count-sync 步驟）
 
 ## Doing
 
-- 準備發布 v0.2.2 版本
-- 測試 CI pipeline
+- 發布 v0.2.3 版本
 
 ## Next
 
-- 監控 CI 運行結果
-- 驗證 PyPI 發布成功
+- PRISMA flow tracking
+- Evidence level classification

@@ -242,6 +242,99 @@ class SemanticScholarClient:
             logger.error(f"Failed to get references for {paper_id}: {e}")
             return []
 
+    def get_recommendations(
+        self,
+        paper_id: str,
+        limit: int = 10,
+        fields: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """
+        Get paper recommendations based on a seed paper.
+
+        Uses Semantic Scholar's recommendation API which returns papers
+        similar to the seed paper, with implicit similarity scores based
+        on their ranking in the response.
+
+        Args:
+            paper_id: Paper identifier (S2 ID, DOI:xxx, or PMID:xxx)
+            limit: Maximum recommendations (max 500)
+            fields: Fields to retrieve
+
+        Returns:
+            List of recommended papers with similarity_score (0.0-1.0)
+        """
+        try:
+            encoded_id = urllib.parse.quote(paper_id, safe="")
+            params = {
+                "limit": str(min(limit, 500)),
+                "fields": ",".join(fields or DEFAULT_FIELDS),
+            }
+            # Recommendations endpoint
+            url = f"https://api.semanticscholar.org/recommendations/v1/papers/forpaper/{encoded_id}?{urllib.parse.urlencode(params)}"
+
+            data = self._make_request(url)
+            if not data:
+                return []
+
+            papers = data.get("recommendedPapers", [])
+            results = []
+            for i, paper in enumerate(papers):
+                if paper:
+                    normalized = self._normalize_paper(paper)
+                    # Calculate similarity score based on ranking position
+                    # First result = 1.0, linearly decreasing
+                    normalized["similarity_score"] = max(0.0, 1.0 - (i / max(len(papers), 1)))
+                    normalized["similarity_source"] = "semantic_scholar"
+                    results.append(normalized)
+
+            return results
+
+        except Exception as e:
+            logger.error(f"Failed to get recommendations for {paper_id}: {e}")
+            return []
+
+    def get_paper_embedding_similarity(
+        self,
+        paper_id1: str,
+        paper_id2: str,
+    ) -> float | None:
+        """
+        Calculate embedding similarity between two papers.
+
+        Note: S2 doesn't expose raw embeddings, but we can approximate
+        by checking if paper2 appears in paper1's recommendations.
+
+        Args:
+            paper_id1: First paper identifier
+            paper_id2: Second paper identifier
+
+        Returns:
+            Similarity score 0.0-1.0, or None if not calculable
+        """
+        try:
+            recommendations = self.get_recommendations(paper_id1, limit=100)
+
+            for rec in recommendations:
+                rec_s2_id = rec.get("_s2_id", "")
+                rec_pmid = rec.get("pmid", "")
+                rec_doi = rec.get("doi", "")
+
+                # Check if paper_id2 matches any identifier
+                paper_id2_clean = paper_id2.replace("PMID:", "").replace("DOI:", "")
+                if (
+                    (rec_s2_id and rec_s2_id == paper_id2)
+                    or (rec_pmid and rec_pmid == paper_id2_clean)
+                    or (rec_doi and rec_doi.lower() == paper_id2_clean.lower())
+                ):
+                    return rec.get("similarity_score", 0.5)
+
+            # Not found in recommendations = low similarity
+            return 0.1
+
+        except Exception as e:
+            logger.error(f"Failed to calculate similarity: {e}")
+            return None
+
     def _normalize_paper(self, paper: dict[str, Any]) -> dict[str, Any]:
         """
         Normalize S2 paper to common format compatible with PubMed results.

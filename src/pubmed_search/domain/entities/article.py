@@ -299,6 +299,13 @@ class UnifiedArticle:
     # === Metrics ===
     citation_metrics: CitationMetrics | None = None
 
+    # === Similarity Scores (from external APIs) ===
+    similarity_score: float | None = None  # 0.0-1.0, higher = more similar
+    similarity_source: str | None = None  # e.g., "semantic_scholar", "europe_pmc"
+    similarity_details: dict[str, float] | None = field(
+        default=None, repr=False
+    )  # Multiple sources
+
     # === Source Tracking ===
     sources: list[SourceMetadata] = field(default_factory=list)
 
@@ -1030,6 +1037,15 @@ class UnifiedArticle:
         # Add ranking scores if calculated
         if self._ranking_score is not None:
             result["_ranking_score"] = round(self._ranking_score, 4)
+
+        # Add similarity scores if available
+        if self.similarity_score is not None:
+            result["similarity"] = {
+                "score": self.similarity_score,
+                "source": self.similarity_source,
+            }
+            if self.similarity_details:
+                result["similarity"]["details"] = self.similarity_details
 
         return result
 

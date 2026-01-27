@@ -83,7 +83,7 @@ from ...infrastructure.ncbi import LiteratureSearcher
 ## 🎯 Project Overview
 
 PubMed Search MCP is a **professional literature research assistant** that provides:
-- **25+ MCP Tools** for literature search and analysis
+- **34+ MCP Tools** for literature search and analysis
 - **Multi-source search**: PubMed, Europe PMC (33M+), CORE (200M+)
 - **NCBI databases**: Gene, PubChem, ClinVar
 - **Full text access**: Direct XML/text retrieval
@@ -134,42 +134,115 @@ generate_search_queries(topic="<O>")
 
 ## 📚 Tool Categories
 
-### Core Search Tools
+### 搜尋工具
+*文獻搜索入口*
+
 | Tool | Purpose |
 |------|---------|
-| `search_literature` | PubMed search |
-| `search_europe_pmc` | Europe PMC (with OA/fulltext filters) |
-| `search_core` | CORE 200M+ open access papers |
-| `search_core_fulltext` | Search within paper content |
+| `unified_search` | Unified Search - Single entry point for multi-source academic search. |
 
-### Discovery Tools
-| Tool | Direction | Use Case |
-|------|-----------|----------|
-| `find_related_articles` | Similarity | Similar topic/method |
-| `find_citing_articles` | Forward → | Follow-up research |
-| `get_article_references` | ← Backward | Foundation papers |
-| `build_citation_tree` | Both ↔ | Research landscape |
 
-### Full Text Access
-| Tool | Source | Format |
-|------|--------|--------|
-| `get_fulltext` | Europe PMC | Structured sections |
-| `get_fulltext_xml` | Europe PMC | Raw JATS XML |
-| `get_core_fulltext` | CORE | Plain text |
+### 查詢智能
+*MeSH 擴展、PICO 解析*
 
-### NCBI Extended
-| Tool | Database | Returns |
-|------|----------|---------|
-| `search_gene` | Gene | Gene info, aliases |
-| `get_gene_literature` | Gene→PubMed | Curated PMIDs |
-| `search_compound` | PubChem | Formula, SMILES |
-| `get_compound_literature` | PubChem→PubMed | Curated PMIDs |
-| `search_clinvar` | ClinVar | Clinical variants |
-
-### Text Mining
 | Tool | Purpose |
 |------|---------|
-| `get_text_mined_terms` | Extract genes, diseases, chemicals from papers |
+| `parse_pico` | Parse a clinical question into PICO elements OR accept pre-parsed PICO. |
+| `generate_search_queries` | Gather search intelligence for a topic - returns RAW MATERIALS for Agent to decide. |
+| `analyze_search_query` | Analyze a search query without executing the search. |
+
+
+### 文章探索
+*相關文章、引用網路*
+
+| Tool | Purpose |
+|------|---------|
+| `fetch_article_details` | Fetch detailed information for one or more PubMed articles. |
+| `find_related_articles` | Find articles related to a given PubMed article. |
+| `find_citing_articles` | Find articles that cite a given PubMed article. |
+| `get_article_references` | Get the references (bibliography) of a PubMed article. |
+| `get_citation_metrics` | Get citation metrics from NIH iCite for articles. |
+
+
+### 全文工具
+*全文取得與文本挖掘*
+
+| Tool | Purpose |
+|------|---------|
+| `get_fulltext` | Enhanced multi-source fulltext retrieval. |
+| `get_text_mined_terms` | Get text-mined annotations from Europe PMC. |
+
+
+### NCBI 延伸
+*Gene, PubChem, ClinVar*
+
+| Tool | Purpose |
+|------|---------|
+| `search_gene` | Search NCBI Gene database for gene information. |
+| `get_gene_details` | Get detailed information about a gene by NCBI Gene ID. |
+| `get_gene_literature` | Get PubMed articles linked to a gene. |
+| `search_compound` | Search PubChem for chemical compounds. |
+| `get_compound_details` | Get detailed information about a compound by PubChem CID. |
+| `get_compound_literature` | Get PubMed articles linked to a compound. |
+| `search_clinvar` | Search ClinVar for clinical variants. |
+
+
+### 引用網絡
+*引用樹建構與探索*
+
+| Tool | Purpose |
+|------|---------|
+| `build_citation_tree` | Build a citation tree (network) from a single article. |
+| `suggest_citation_tree` | After fetching article details, suggest whether to build a citation tree. |
+
+
+### 匯出工具
+*引用格式匯出*
+
+| Tool | Purpose |
+|------|---------|
+| `prepare_export` | Export citations to reference manager formats. |
+
+
+### Session 管理
+*PMID 暫存與歷史*
+
+| Tool | Purpose |
+|------|---------|
+| `get_session_pmids` | 取得 session 中暫存的 PMID 列表。 |
+| `list_search_history` | 列出搜尋歷史，方便回顧和取得特定搜尋的 PMIDs。 |
+| `get_cached_article` | 從 session 快取取得文章詳情。 |
+| `get_session_summary` | 取得當前 session 的摘要資訊。 |
+
+
+### 機構訂閱
+*OpenURL Link Resolver*
+
+| Tool | Purpose |
+|------|---------|
+| `configure_institutional_access` | Configure your institution's link resolver for full-text access. |
+| `get_institutional_link` | Generate institutional access link (OpenURL) for an article. |
+| `list_resolver_presets` | List available institutional link resolver presets. |
+| `test_institutional_access` | Test your institutional link resolver configuration. |
+
+
+### 視覺搜索
+*圖片分析與搜索 (實驗性)*
+
+| Tool | Purpose |
+|------|---------|
+| `analyze_figure_for_search` | Analyze a scientific figure or image for literature search. |
+| `reverse_image_search_pubmed` | Reverse image search for scientific literature. |
+
+
+### ICD 轉換
+*ICD-10 與 MeSH 轉換*
+
+| Tool | Purpose |
+|------|---------|
+| `convert_icd_to_mesh` | Convert ICD-9 or ICD-10 code to MeSH term for PubMed search. |
+| `convert_mesh_to_icd` | Convert MeSH term to ICD-9 and ICD-10 codes. |
+| `search_by_icd` | Search PubMed using ICD code (auto-converts to MeSH). |
 
 ---
 

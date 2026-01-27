@@ -1,7 +1,7 @@
 # PubMed Search MCP - Roadmap
 
 > 本文件記錄**待實作**功能。已完成功能請參閱 [CHANGELOG.md](CHANGELOG.md)。
-> **最後更新**: 2026-01-20
+> **最後更新**: 2026-01-27
 
 ---
 
@@ -183,6 +183,339 @@ class UnifiedArticle:
             "oa": self.has_open_access,
             "cite": self.citation_metrics.citation_count if self.citation_metrics else None,
         }
+```
+
+---
+
+### 🔥 Phase 5.10: 智能引用與相似度 API ⭐⭐⭐⭐⭐ (NEW!)
+> **目標**: 整合預計算的引用意圖、主題分類、相似度評分，讓 MCP 回傳 Agent 可直接使用的排序結果
+> **設計理念**: Agent 是瓶頸，MCP 應做「數據密集」工作，Agent 做「判斷密集」決策
+
+#### 為什麼需要這些 API？
+
+```
+❌ 現有問題：
+  Agent 收到 100 篇文章 → Agent 逐一閱讀 → Agent 判斷相關性 → 消耗大量 token
+
+✅ 解決方案：
+  MCP 收到查詢 → 呼叫預計算 API → 返回已排序結果 → Agent 只看 Top 10
+```
+
+**Token 節省估算**：
+- 100 篇 × 400 tokens/篇 = 40,000 tokens (原始)
+- 10 篇 × 200 tokens/篇 = 2,000 tokens (優化後)
+- **節省 95% tokens**
+
+#### 5 個待整合 API
+
+##### 1️⃣ Semantic Scholar Citation Intent API ⭐⭐⭐⭐⭐
+
+> **用途**: 取得預計算的引用意圖，判斷文章如何被引用
+
+```python
+# API Endpoint (已有，需擴展)
+GET /paper/{paper_id}/citations?fields=intents,contexts
+
+# 返回資料
+{
+  "data": [
+    {
+      "citingPaper": {"paperId": "abc123", "title": "..."},
+      "intents": ["methodology", "background"],  # 🔑 引用意圖
+      "contexts": ["We adopted the method from [1]..."]  # 🔑 引用上下文
+    }
+  ]
+}
+```
+
+**引用意圖類型**:
+| Intent | 說明 | 用途 |
+|--------|------|------|
+| `background` | 背景引用 | 了解研究脈絡 |
+| `methodology` | 方法引用 | 找實作參考 |
+| `result` | 結果引用 | 找支持證據 |
+| `comparison` | 比較引用 | 找對照研究 |
+
+**新增工具**:
+| Tool | 說明 | 輸入 | 輸出 |
+|------|------|------|------|
+| `get_citation_intents` | 取得引用意圖統計 | pmid/doi | intents 分布 |
+| `find_methodology_citations` | 找方法論引用 | pmid | 引用此文方法的論文 |
+| `find_supporting_evidence` | 找支持證據 | pmid | 以 result intent 引用的論文 |
+
+**實作位置**: `src/pubmed_search/infrastructure/sources/semantic_scholar.py`
+
+##### 2️⃣ OpenAlex Concepts API ⭐⭐⭐⭐
+
+> **用途**: 取得預分類的主題標籤和評分
+
+```python
+# API Endpoint
+GET /works?filter=doi:{doi}&select=concepts
+
+# 返回資料
+{
+  "results": [{
+    "concepts": [
+      {"id": "C71924100", "display_name": "Medicine", "level": 0, "score": 0.95},
+      {"id": "C154945302", "display_name": "Anesthesiology", "level": 1, "score": 0.87},
+      {"id": "C2779134805", "display_name": "Propofol", "level": 3, "score": 0.72}
+    ]
+  }]
+}
+```
+
+**Concept 層級**:
+| Level | 說明 | 範例 |
+|:-----:|------|------|
+| 0 | 頂層學科 | Medicine, Biology |
+| 1 | 學科分支 | Anesthesiology, Cardiology |
+| 2 | 專業領域 | Critical Care, Pain Management |
+| 3 | 具體概念 | Propofol, Remimazolam |
+
+**新增工具**:
+| Tool | 說明 | 輸入 | 輸出 |
+|------|------|------|------|
+| `get_article_concepts` | 取得文章主題標籤 | pmid/doi | concepts with scores |
+| `search_by_concept` | 依主題搜尋 | concept_id | 相關文章 |
+| `find_concept_overlap` | 計算主題重疊度 | pmid_list | 主題相似度矩陣 |
+
+**實作位置**: `src/pubmed_search/infrastructure/sources/openalex.py`
+
+##### 3️⃣ PubTator Central API ⭐⭐⭐⭐
+
+> **用途**: NCBI 官方 NER，標註基因、疾病、化學物、變異、物種
+
+```python
+# API Endpoint (NCBI 官方)
+GET https://www.ncbi.nlm.nih.gov/research/pubtator3-api/publications/export/biocjson?pmids={pmids}
+
+# 返回資料 (BioC JSON 格式)
+{
+  "passages": [
+    {
+      "text": "Propofol-based sedation in ICU patients...",
+      "annotations": [
+        {"text": "Propofol", "infons": {"type": "Chemical", "identifier": "MESH:D015742"}},
+        {"text": "ICU", "infons": {"type": "CellLine", "identifier": "CVCL:1234"}},
+        {"text": "sedation", "infons": {"type": "Disease", "identifier": "MESH:D000077227"}}
+      ]
+    }
+  ]
+}
+```
+
+**實體類型**:
+| Type | 說明 | 用途 |
+|------|------|------|
+| `Gene` | 基因 | 基因-疾病關聯 |
+| `Disease` | 疾病 | 臨床研究 |
+| `Chemical` | 化學物/藥物 | 藥物研究 |
+| `Species` | 物種 | 動物/人類研究 |
+| `Mutation` | 變異 | 遺傳研究 |
+| `CellLine` | 細胞株 | 實驗研究 |
+
+**新增工具**:
+| Tool | 說明 | 輸入 | 輸出 |
+|------|------|------|------|
+| `get_pubtator_annotations` | 取得 PubTator 標註 | pmid | BioC annotations |
+| `extract_entities` | 批次擷取實體 | pmid_list | entities summary |
+| `find_gene_disease_links` | 找基因-疾病關聯 | gene_symbol | linked diseases |
+
+**實作位置**: `src/pubmed_search/infrastructure/ncbi/pubtator.py` (新檔案)
+
+##### 4️⃣ OpenCitations API ⭐⭐⭐
+
+> **用途**: 開放引用數據，DOI 到 citations/references 映射
+
+```python
+# API Endpoint
+GET https://opencitations.net/index/coci/api/v1/citations/{doi}
+
+# 返回資料
+[
+  {
+    "citing": "10.1234/citing",
+    "cited": "10.1234/cited",
+    "creation": "2023-01-15",
+    "timespan": "P2Y3M"  # ISO 8601 duration (2 years 3 months)
+  }
+]
+```
+
+**新增工具**:
+| Tool | 說明 | 輸入 | 輸出 |
+|------|------|------|------|
+| `get_open_citations` | 取得開放引用 | doi | citing DOIs + dates |
+| `get_open_references` | 取得開放參考文獻 | doi | referenced DOIs |
+| `get_citation_timeline` | 引用時間軸 | doi | citations by year |
+
+**實作位置**: `src/pubmed_search/infrastructure/sources/opencitations.py` (新檔案)
+
+**注意**: OpenCitations 基於 DOI，需與 Crossref 配合使用
+
+##### 5️⃣ Europe PMC Similar Articles API ⭐⭐⭐
+
+> **用途**: 取得文章相似度評分
+
+```python
+# API Endpoint (已有 Europe PMC 客戶端)
+GET https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=SIMILAR:{pmid}
+
+# 返回資料
+{
+  "resultList": {
+    "result": [
+      {"pmid": "12345678", "title": "...", "score": 0.87}  # 🔑 相似度分數
+    ]
+  }
+}
+```
+
+**新增工具**:
+| Tool | 說明 | 輸入 | 輸出 |
+|------|------|------|------|
+| `get_similar_articles` | 取得相似文章 (含分數) | pmid | articles with similarity score |
+| `compute_pairwise_similarity` | 計算兩篇相似度 | pmid1, pmid2 | similarity score |
+
+**實作位置**: `src/pubmed_search/infrastructure/sources/europe_pmc.py` (擴展)
+
+#### 智能引用工具 (包裝 Plan + Search + Rank)
+
+##### `smart_citation_search` ⭐⭐⭐⭐⭐
+
+> **目標**: 一個工具完成「計劃 → 搜尋 → 排序 → 精選」流程
+
+```python
+smart_citation_search(
+    topic="remimazolam vs propofol for ICU sedation",
+    research_goal="methodology",  # background | methodology | evidence | comparison
+    top_k=10,
+    output_format="compact"
+)
+```
+
+**內部流程**:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    smart_citation_search                             │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  1. PLAN (自動)                                                      │
+│     ├── parse_pico() 解析研究問題                                    │
+│     ├── generate_search_queries() 產生搜尋策略                       │
+│     └── 決定 research_goal 對應的排序權重                            │
+│                                                                      │
+│  2. SEARCH (並行)                                                    │
+│     ├── unified_search() 多源搜尋                                    │
+│     ├── get_citation_metrics() iCite RCR                            │
+│     └── get_article_concepts() 主題標籤 (如有 DOI)                  │
+│                                                                      │
+│  3. RANK (預計算指標加權)                                            │
+│     ├── RCR (影響力): 30%                                           │
+│     ├── Citation Intent 匹配: 25%                                    │
+│     ├── Concept 重疊度: 20%                                          │
+│     ├── 發表年份 (越近分數越高): 15%                                 │
+│     └── 來源信任度: 10%                                              │
+│                                                                      │
+│  4. OUTPUT (compact 格式)                                            │
+│     └── Top K 文章 + 排序理由 + 下一步建議                           │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**輸出範例**:
+
+```json
+{
+  "search_summary": {
+    "topic": "remimazolam vs propofol for ICU sedation",
+    "goal": "methodology",
+    "searched_sources": ["pubmed", "semantic_scholar", "openalex"],
+    "total_found": 234,
+    "after_dedup": 189,
+    "returned": 10
+  },
+  "ranking_weights": {
+    "rcr": 0.30, "intent_match": 0.25, "concept_overlap": 0.20,
+    "recency": 0.15, "source_trust": 0.10
+  },
+  "results": [
+    {
+      "rank": 1,
+      "pmid": "38765432",
+      "t": "Comparative pharmacokinetics of remimazolam vs propofol...",
+      "y": 2024,
+      "j": "Anesthesiology",
+      "score": 0.92,
+      "why": "High RCR (3.2), methodology intent match, strong concept overlap"
+    }
+  ],
+  "next_steps": [
+    "Use get_fulltext(pmid='38765432') to read methodology section",
+    "Use find_citing_articles(pmid='38765432') for follow-up studies"
+  ]
+}
+```
+
+##### `unified_search` 擴展：相似度分數
+
+> **問題**: 目前 `unified_search` 不返回相似度分數
+> **解決**: 利用 Semantic Scholar 和 Europe PMC 的相似度 API
+
+```python
+unified_search(
+    query="remimazolam sedation",
+    include_similarity_scores=True  # 新參數
+)
+
+# 輸出新增 similarity_score 欄位
+{
+  "results": [
+    {
+      "pmid": "12345678",
+      "title": "...",
+      "similarity_score": 0.87,  # 🔑 來自 API 的相似度
+      "similarity_source": "semantic_scholar"  # 來源
+    }
+  ]
+}
+```
+
+**相似度來源優先順序**:
+1. Semantic Scholar (如有 S2 ID)
+2. Europe PMC (如有 PMID)
+3. 計算 (TF-IDF on title+abstract, 備用)
+
+#### 實作計劃
+
+| Step | 內容 | 依賴 | 優先級 |
+|------|------|------|:------:|
+| 1 | Semantic Scholar Citation Intent 整合 | - | ⭐⭐⭐⭐⭐ |
+| 2 | OpenAlex Concepts 整合 | - | ⭐⭐⭐⭐ |
+| 3 | PubTator Central 整合 | - | ⭐⭐⭐⭐ |
+| 4 | OpenCitations 整合 | - | ⭐⭐⭐ |
+| 5 | Europe PMC Similar 整合 | - | ⭐⭐⭐ |
+| 6 | `smart_citation_search` 實作 | 1-5 | ⭐⭐⭐⭐⭐ |
+| 7 | `unified_search` 相似度擴展 | 2, 5 | ⭐⭐⭐⭐ |
+
+#### 新增檔案
+
+```
+src/pubmed_search/
+├── infrastructure/
+│   ├── ncbi/
+│   │   └── pubtator.py           # 新增 PubTator Central 客戶端
+│   └── sources/
+│       └── opencitations.py      # 新增 OpenCitations 客戶端
+├── application/
+│   └── search/
+│       └── smart_ranker.py       # 新增智能排序器
+└── presentation/
+    └── mcp_server/
+        └── tools/
+            └── smart_citation.py # 新增 smart_citation_search 工具
 ```
 
 ---
