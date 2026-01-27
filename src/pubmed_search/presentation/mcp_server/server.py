@@ -213,12 +213,19 @@ def start_http_api_background(session_manager, searcher, port: int = 8765):
             logger.info(f"[HTTP API] Started on http://127.0.0.1:{port}")
             httpd.serve_forever()
         except OSError as e:
-            if e.errno == 10048:  # Port already in use (Windows)
-                logger.warning(f"[HTTP API] Port {port} already in use, skipping")
+            # Windows error codes:
+            # 10048 = WSAEADDRINUSE (port already in use)
+            # 10013 = WSAEACCES (permission denied / firewall blocking)
+            # Unix: 98 = EADDRINUSE, 13 = EACCES
+            if e.errno in (10048, 10013, 98, 13):
+                logger.warning(
+                    f"[HTTP API] Port {port} unavailable (errno={e.errno}), "
+                    "HTTP API disabled. MCP server will still work normally."
+                )
             else:
-                logger.error(f"[HTTP API] Failed to start: {e}")
+                logger.warning(f"[HTTP API] Failed to start: {e}")
         except Exception as e:
-            logger.error(f"[HTTP API] Failed to start: {e}")
+            logger.warning(f"[HTTP API] Failed to start: {e}")
 
     # Start in daemon thread (won't block main process)
     thread = threading.Thread(target=run_server, daemon=True)

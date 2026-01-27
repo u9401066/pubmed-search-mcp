@@ -16,6 +16,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.2.6] - 2026-01-27
+
+### Fixed
+
+- **HTTP API Error Handling** - Improved Windows compatibility
+  - Handle WinError 10013 (permission denied) gracefully
+  - Downgrade all HTTP API startup failures from ERROR to WARNING
+  - HTTP API is optional; MCP server works normally without it
+
+---
+
 ## [0.2.5] - 2026-01-27
 
 ### Fixed
