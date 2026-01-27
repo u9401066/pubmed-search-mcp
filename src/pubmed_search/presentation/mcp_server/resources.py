@@ -11,7 +11,6 @@ Resources:
 
 import json
 import logging
-from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
 
@@ -311,5 +310,3 @@ def register_resources(mcp: FastMCP):
         )
 
     logger.info("Registered MCP resources for filters and tools")
-
-

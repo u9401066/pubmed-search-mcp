@@ -173,16 +173,8 @@ class TestServerCreateServer:
             patch.object(SearchStrategyGenerator, "__init__", return_value=None),
             patch.object(SessionManager, "__init__", return_value=None),
             patch("pubmed_search.presentation.mcp_server.server.FastMCP") as mock_mcp,
-            patch("pubmed_search.presentation.mcp_server.server.register_all_tools"),
             patch(
-                "pubmed_search.presentation.mcp_server.server.register_session_tools"
-            ),
-            patch(
-                "pubmed_search.presentation.mcp_server.server.register_session_resources"
-            ),
-            patch("pubmed_search.presentation.mcp_server.server.set_session_manager"),
-            patch(
-                "pubmed_search.presentation.mcp_server.server.set_strategy_generator"
+                "pubmed_search.presentation.mcp_server.server.register_all_mcp_tools"
             ),
         ):
             mock_mcp.return_value = MagicMock()
@@ -203,16 +195,8 @@ class TestServerCreateServer:
             patch.object(SearchStrategyGenerator, "__init__", return_value=None),
             patch.object(SessionManager, "__init__", return_value=None),
             patch("pubmed_search.presentation.mcp_server.server.FastMCP") as mock_mcp,
-            patch("pubmed_search.presentation.mcp_server.server.register_all_tools"),
             patch(
-                "pubmed_search.presentation.mcp_server.server.register_session_tools"
-            ),
-            patch(
-                "pubmed_search.presentation.mcp_server.server.register_session_resources"
-            ),
-            patch("pubmed_search.presentation.mcp_server.server.set_session_manager"),
-            patch(
-                "pubmed_search.presentation.mcp_server.server.set_strategy_generator"
+                "pubmed_search.presentation.mcp_server.server.register_all_mcp_tools"
             ),
         ):
             mock_mcp.return_value = MagicMock()
@@ -233,16 +217,8 @@ class TestServerCreateServer:
             patch.object(SearchStrategyGenerator, "__init__", return_value=None),
             patch.object(SessionManager, "__init__", return_value=None),
             patch("pubmed_search.presentation.mcp_server.server.FastMCP") as mock_mcp,
-            patch("pubmed_search.presentation.mcp_server.server.register_all_tools"),
             patch(
-                "pubmed_search.presentation.mcp_server.server.register_session_tools"
-            ),
-            patch(
-                "pubmed_search.presentation.mcp_server.server.register_session_resources"
-            ),
-            patch("pubmed_search.presentation.mcp_server.server.set_session_manager"),
-            patch(
-                "pubmed_search.presentation.mcp_server.server.set_strategy_generator"
+                "pubmed_search.presentation.mcp_server.server.register_all_mcp_tools"
             ),
         ):
             mock_mcp.return_value = MagicMock()

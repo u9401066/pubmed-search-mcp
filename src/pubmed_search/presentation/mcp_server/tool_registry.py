@@ -184,9 +184,7 @@ def list_registered_tools() -> Dict[str, List[str]]:
     Returns:
         Dict with category names as keys and tool lists as values
     """
-    return {
-        cat_id: cat_info["tools"] for cat_id, cat_info in TOOL_CATEGORIES.items()
-    }
+    return {cat_id: cat_info["tools"] for cat_id, cat_info in TOOL_CATEGORIES.items()}
 
 
 def get_tool_info(tool_name: str) -> Optional[Dict[str, str]]:
@@ -334,7 +332,9 @@ def check_tool_registration(mcp: FastMCP, raise_on_error: bool = False) -> bool:
         logger.error(msg)
         return False
 
-    logger.info(f"Tool registry validated: {len(result['registered'])} tools registered")
+    logger.info(
+        f"Tool registry validated: {len(result['registered'])} tools registered"
+    )
     return True
 
 

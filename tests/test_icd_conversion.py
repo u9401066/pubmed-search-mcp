@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Test ICD to MeSH conversion."""
 
-from pubmed_search.presentation.mcp_server.resources import (
+from pubmed_search.presentation.mcp_server.tools.icd import (
     lookup_icd_to_mesh,
     lookup_mesh_to_icd,
 )

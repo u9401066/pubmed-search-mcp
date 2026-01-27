@@ -1329,7 +1329,7 @@ wheels = [
 
 [[package]]
 name = "pubmed-search-mcp"
-version = "0.2.2"
+version = "0.2.4"
 source = { editable = "." }
 dependencies = [
     { name = "biopython" },

@@ -283,7 +283,9 @@ class SemanticScholarClient:
                     normalized = self._normalize_paper(paper)
                     # Calculate similarity score based on ranking position
                     # First result = 1.0, linearly decreasing
-                    normalized["similarity_score"] = max(0.0, 1.0 - (i / max(len(papers), 1)))
+                    normalized["similarity_score"] = max(
+                        0.0, 1.0 - (i / max(len(papers), 1))
+                    )
                     normalized["similarity_source"] = "semantic_scholar"
                     results.append(normalized)
 

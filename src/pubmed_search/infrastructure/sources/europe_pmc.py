@@ -595,7 +595,9 @@ class EuropePMCClient:
             # Add similarity scores based on ranking
             for i, article in enumerate(articles):
                 # First result = 1.0, decreasing linearly
-                article["similarity_score"] = max(0.0, 1.0 - (i / max(len(articles), 1)))
+                article["similarity_score"] = max(
+                    0.0, 1.0 - (i / max(len(articles), 1))
+                )
                 article["similarity_source"] = "europe_pmc"
 
             return articles
