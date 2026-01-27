@@ -16,6 +16,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.2.5] - 2026-01-27
+
+### Fixed
+
+- **Server Startup Bug** - Fixed AttributeError in `main()` function
+  - Changed `server._session_manager` to `server._pubmed_session_manager`
+  - This bug could cause MCP server startup failure with exit code 1
+
+---
+
 ## [0.2.4] - 2026-01-27
 
 ### Added

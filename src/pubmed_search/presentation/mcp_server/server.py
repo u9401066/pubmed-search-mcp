@@ -257,7 +257,7 @@ def main():
     # Start background HTTP API for MCP-to-MCP communication
     # This runs alongside the stdio MCP server
     start_http_api_background(
-        server._session_manager, server._searcher, port=http_api_port
+        server._pubmed_session_manager, server._searcher, port=http_api_port
     )
 
     # Run stdio MCP server (blocks)
