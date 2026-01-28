@@ -16,6 +16,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.2.7] - 2026-01-28
+
+### Security
+
+- **XML Parsing Security** - Replaced vulnerable `xml.etree.ElementTree` with `defusedxml`
+  - Prevents XXE (XML External Entity) attacks
+  - Affected files: europe_pmc.py, preprints.py
+  - Added `defusedxml>=0.7.1` to dependencies
+
+- **URL Scheme Validation** - Added scheme validation for urlopen calls
+  - Prevents SSRF (Server-Side Request Forgery) attacks
+  - Only allows http/https schemes
+  - Added nosec comments for hardcoded API endpoints (CORE, Europe PMC, CrossRef, etc.)
+
+### Fixed
+
+- **Bandit Security Scan** - Resolved all medium/high severity issues
+  - B310: URL scheme validation added
+  - B314: XML parsing security fixed
+  - 0 security issues remaining
+
+---
+
 ## [0.2.6] - 2026-01-27
 
 ### Fixed

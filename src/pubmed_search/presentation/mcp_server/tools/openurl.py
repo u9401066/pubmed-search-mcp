@@ -511,6 +511,7 @@ def _format_article(article: dict) -> str:
 async def _test_resolver_url(url: str, timeout: int = 10) -> dict:
     """Test if a resolver URL is reachable."""
     import urllib.error
+    import urllib.parse
     import urllib.request
 
     result = {
@@ -519,6 +520,14 @@ async def _test_resolver_url(url: str, timeout: int = 10) -> dict:
         "error": None,
         "response_time_ms": None,
     }
+
+    # Security: Validate URL scheme to prevent SSRF attacks
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        result["error"] = (
+            f"Invalid URL scheme: {parsed.scheme}. Only http/https allowed."
+        )
+        return result
 
     try:
         import time
@@ -529,7 +538,8 @@ async def _test_resolver_url(url: str, timeout: int = 10) -> dict:
             url, headers={"User-Agent": "PubMed-Search-MCP/0.1.25 (OpenURL Test)"}
         )
 
-        with urllib.request.urlopen(req, timeout=timeout) as response:
+        # nosec B310: URL scheme validated above
+        with urllib.request.urlopen(req, timeout=timeout) as response:  # nosec B310
             result["reachable"] = True
             result["status_code"] = response.status
             result["response_time_ms"] = int((time.time() - start) * 1000)

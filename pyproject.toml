@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pubmed-search-mcp"
-version = "0.2.6"
+version = "0.2.7"
 description = "MCP server for PubMed literature search with MeSH, PICO, and intelligent query expansion"
 readme = "README.md"
 license = "Apache-2.0"
@@ -43,6 +43,7 @@ dependencies = [
     "fastapi>=0.128.0",
     "httpx>=0.28.1",
     "pywin32>=311; sys_platform == 'win32'",
+    "defusedxml>=0.7.1",
 ]
 
 [project.optional-dependencies]

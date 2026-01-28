@@ -9,7 +9,9 @@ Provides search capabilities for preprint servers:
 
 import logging
 import re
-import xml.etree.ElementTree as ET
+
+import defusedxml.ElementTree as ET  # Security: prevent XML attacks
+
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Optional

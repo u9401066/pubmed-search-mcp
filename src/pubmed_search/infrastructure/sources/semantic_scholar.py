@@ -86,7 +86,8 @@ class SemanticScholarClient:
             request.add_header("x-api-key", self._api_key)
 
         try:
-            with urllib.request.urlopen(request, timeout=self._timeout) as response:
+            # nosec B310: URL is constructed from hardcoded S2_API_BASE (https)
+            with urllib.request.urlopen(request, timeout=self._timeout) as response:  # nosec B310
                 return json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
             logger.error(f"HTTP error {e.code}: {e.reason}")

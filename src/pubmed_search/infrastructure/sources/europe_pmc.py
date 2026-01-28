@@ -23,7 +23,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from typing import Any
-from xml.etree import ElementTree
+
+import defusedxml.ElementTree as ElementTree  # Security: prevent XML attacks
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +82,8 @@ class EuropePMCClient:
             request.add_header("Accept", "application/json")
 
         try:
-            with urllib.request.urlopen(request, timeout=self._timeout) as response:
+            # nosec B310: URL is constructed from hardcoded EPMC_API_BASE (https)
+            with urllib.request.urlopen(request, timeout=self._timeout) as response:  # nosec B310
                 content = response.read().decode("utf-8")
                 if expect_xml:
                     return content

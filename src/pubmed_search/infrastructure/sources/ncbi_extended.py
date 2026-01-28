@@ -92,7 +92,8 @@ class NCBIExtendedClient:
         )
 
         try:
-            with urllib.request.urlopen(request, timeout=self._timeout) as response:
+            # nosec B310: URL is constructed from hardcoded NCBI_EUTILS_BASE (https)
+            with urllib.request.urlopen(request, timeout=self._timeout) as response:  # nosec B310
                 content = response.read().decode("utf-8")
                 if expect_json:
                     return json.loads(content)

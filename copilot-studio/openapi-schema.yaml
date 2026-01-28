@@ -26,7 +26,7 @@ info:
     • Export to RIS, BibTeX, CSV formats
     
     This MCP server provides 35+ tools for comprehensive literature research.
-  version: 0.2.6
+  version: 0.2.7
   contact:
     name: PubMed Search MCP
     url: https://github.com/u9401066/pubmed-search-mcp

@@ -94,7 +94,8 @@ class UnpaywallClient:
         request = urllib.request.Request(url, headers=headers)
 
         try:
-            with urllib.request.urlopen(request, timeout=self._timeout) as response:
+            # nosec B310: URL is constructed from hardcoded UNPAYWALL_API_BASE (https)
+            with urllib.request.urlopen(request, timeout=self._timeout) as response:  # nosec B310
                 return json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
             if e.code == 404:

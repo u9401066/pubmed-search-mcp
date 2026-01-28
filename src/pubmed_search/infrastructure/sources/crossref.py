@@ -102,7 +102,8 @@ class CrossRefClient:
         request = urllib.request.Request(url, headers=headers)
 
         try:
-            with urllib.request.urlopen(request, timeout=self._timeout) as response:
+            # nosec B310: URL is constructed from hardcoded CROSSREF_API_BASE (https)
+            with urllib.request.urlopen(request, timeout=self._timeout) as response:  # nosec B310
                 data = json.loads(response.read().decode("utf-8"))
                 return data.get("message", data)
         except urllib.error.HTTPError as e:
