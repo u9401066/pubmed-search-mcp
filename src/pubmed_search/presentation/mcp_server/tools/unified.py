@@ -79,7 +79,7 @@ from pubmed_search.infrastructure.sources.openurl import (
 from pubmed_search.infrastructure.sources.preprints import PreprintSearcher
 
 from .icd import lookup_icd_to_mesh
-from ._common import InputNormalizer, ResponseFormatter
+from ._common import InputNormalizer, ResponseFormatter, _record_search_only
 
 logger = logging.getLogger(__name__)
 
@@ -1177,6 +1177,9 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             # === Step 8.5: Enrich with Similarity Scores ===
             if include_similarity_scores:
                 _enrich_with_similarity_scores(ranked, query)
+
+            # === Step 8.6: Record to Session ===
+            _record_search_only(ranked, analysis.original_query)
 
             # === Step 9: Format Output ===
             if output_format == "json":

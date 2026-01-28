@@ -198,19 +198,6 @@ generate_search_queries(topic="<O>")
 | `suggest_citation_tree` | After fetching article details, suggest whether to build a citation tree. |
 
 
-### 研究時間軸 (v0.2.8 新增)
-*研究里程碑偵測與時間演化分析*
-
-| Tool | Purpose |
-|------|---------|
-| `build_research_timeline` | Build research timeline showing key milestones (FDA approval, Phase 3, etc.). |
-| `build_timeline_from_pmids` | Build timeline from a specific list of PMIDs. |
-| `analyze_timeline_milestones` | Analyze milestone distribution and patterns. |
-| `get_timeline_visualization` | Generate Mermaid/TimelineJS/D3 visualization code. |
-| `compare_timelines` | Compare research timelines of multiple topics. |
-| `list_milestone_patterns` | View detection patterns for debugging. |
-
-
 ### 匯出工具
 *引用格式匯出*
 

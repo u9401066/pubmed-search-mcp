@@ -113,11 +113,13 @@ class TimelineBuilder:
         # Step 3: Detect milestones
         events: list[TimelineEvent] = []
 
-        # Sort for first-report detection
-        sorted_articles = sorted(
-            articles,
-            key=lambda a: (a.get("year") or a.get("pub_year") or 9999, a.get("pmid", "")),
-        )
+        # Sort for first-report detection (ensure year is int for proper comparison)
+        def get_sort_key(a: dict) -> tuple:
+            raw_year = a.get("year") or a.get("pub_year") or 9999
+            year = int(raw_year) if raw_year else 9999
+            return (year, str(a.get("pmid", "")))
+        
+        sorted_articles = sorted(articles, key=get_sort_key)
 
         for i, article in enumerate(sorted_articles):
             is_first = i == 0
@@ -207,7 +209,7 @@ class TimelineBuilder:
         """
         # Use searcher to get articles
         try:
-            results = self.searcher.search(topic, max_results=max_results)
+            results = self.searcher.search(topic, limit=max_results)
 
             # If we want citation sorting and have iCite access
             if sort_by_citations and results:
@@ -248,9 +250,11 @@ class TimelineBuilder:
         """Filter articles by publication year."""
         filtered = []
         for article in articles:
-            year = article.get("year") or article.get("pub_year")
-            if not year:
+            raw_year = article.get("year") or article.get("pub_year")
+            if not raw_year:
                 continue
+            # Ensure int for comparison (BioPython may return StringElement)
+            year = int(raw_year)
             if min_year and year < min_year:
                 continue
             if max_year and year > max_year:
@@ -261,7 +265,14 @@ class TimelineBuilder:
     def _create_generic_event(self, article: dict[str, Any]) -> TimelineEvent:
         """Create a generic event for non-milestone articles."""
         pmid = str(article.get("pmid", ""))
-        year = article.get("year") or article.get("pub_year") or 0
+        
+        # Ensure year is int (BioPython may return StringElement)
+        raw_year = article.get("year") or article.get("pub_year") or 0
+        year = int(raw_year) if raw_year else 0
+        
+        # Parse month (may be string like "Jan" or int)
+        raw_month = article.get("month") or article.get("pub_month")
+        month = self._parse_month(raw_month)
 
         authors = article.get("authors", [])
         first_author = None
@@ -274,7 +285,7 @@ class TimelineBuilder:
         return TimelineEvent(
             pmid=pmid,
             year=year,
-            month=article.get("month"),
+            month=month,
             milestone_type=MilestoneType.OTHER,
             title=article.get("title", ""),
             milestone_label="Study",
@@ -284,6 +295,43 @@ class TimelineBuilder:
             citation_count=article.get("citation_count", 0),
             confidence_score=0.0,
         )
+
+    def _parse_month(self, raw_month: Any) -> int | None:
+        """Parse month from various formats (int, string name, string number)."""
+        if not raw_month:
+            return None
+        
+        # If already int
+        if isinstance(raw_month, int):
+            return raw_month if 1 <= raw_month <= 12 else None
+        
+        # Convert to string
+        month_str = str(raw_month).strip()
+        
+        # Try numeric
+        try:
+            month_int = int(month_str)
+            return month_int if 1 <= month_int <= 12 else None
+        except ValueError:
+            pass
+        
+        # Month name mapping
+        month_names = {
+            "jan": 1, "january": 1,
+            "feb": 2, "february": 2,
+            "mar": 3, "march": 3,
+            "apr": 4, "april": 4,
+            "may": 5,
+            "jun": 6, "june": 6,
+            "jul": 7, "july": 7,
+            "aug": 8, "august": 8,
+            "sep": 9, "sept": 9, "september": 9,
+            "oct": 10, "october": 10,
+            "nov": 11, "november": 11,
+            "dec": 12, "december": 12,
+        }
+        
+        return month_names.get(month_str.lower())
 
     def _create_periods(self, events: list[TimelineEvent]) -> list[TimelinePeriod]:
         """

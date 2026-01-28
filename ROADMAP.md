@@ -2146,9 +2146,439 @@ def detect_controversy(topic: str, articles: List[Article]) -> List[Controversy]
 
 ---
 
+## 🔬 Phase 14: 研究缺口偵測 (Research Gap Detection) ⭐⭐⭐⭐⭐ NEW!
+> **核心洞察**: 最有價值的研究問題往往是「沒人做過」的，但這些缺口難以發現
+> **創新點**: 自動偵測尚未被研究的主題交集、方法空白、族群缺失
+> **狀態**: 🔥 高優先級 - 差異化競爭優勢
+
+### 14.1 問題分析
+
+```
+現有工具回答: "關於 X 有哪些研究？"
+我們要回答: "關於 X，還有什麼『沒被研究過』？" ← 創新價值最高！
+
+痛點:
+  1. 研究者花大量時間讀文獻，結果發現問題早已被研究
+  2. 真正的創新機會隱藏在「主題交集的空白」
+  3. 無法系統性發現「方法論的遷移可能性」
+  
+價值:
+  研究缺口 = 論文創新點 = 研究生畢業題目 = 基金申請亮點
+```
+
+### 14.2 研究缺口類型學
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    Research Gap Taxonomy                             │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  Type 1: 主題交集缺口 (Topic Intersection Gap)                      │
+│  ─────────────────────────────────────────────                      │
+│                                                                      │
+│     Topic A                    Topic B                               │
+│       ●●●●                       ●●●●                                │
+│      ●●●●●●                     ●●●●●●                               │
+│     ●●●●●●●●                   ●●●●●●●●                              │
+│      ●●●●●●  ←── 缺口 ──→      ●●●●●●                               │
+│       ●●●●   (未研究交集)       ●●●●                                │
+│        ●●                         ●●                                 │
+│                                                                      │
+│  例: "Remimazolam" (A) + "Pediatric" (B) = 很少研究                 │
+│                                                                      │
+│  ─────────────────────────────────────────────────────────          │
+│                                                                      │
+│  Type 2: 方法論遷移缺口 (Methodological Transfer Gap)               │
+│  ────────────────────────────────────────────────────               │
+│                                                                      │
+│     藥物 A: RCT ✅, Meta ✅, Cost-effectiveness ❌                  │
+│     藥物 B: RCT ✅, Meta ✅, Cost-effectiveness ✅                  │
+│                     ↑                                                │
+│              缺口: 對 A 做 cost-effectiveness 分析                   │
+│                                                                      │
+│  例: Remimazolam 有 RCT，但缺 藥物經濟學分析                        │
+│                                                                      │
+│  ─────────────────────────────────────────────────────────          │
+│                                                                      │
+│  Type 3: 族群缺口 (Population Gap)                                  │
+│  ──────────────────────────────────                                  │
+│                                                                      │
+│     研究 X: Adult ✅, Elderly ✅, Pediatric ❌, Pregnant ❌          │
+│                                        ↑           ↑                 │
+│                               缺口: 特殊族群研究                     │
+│                                                                      │
+│  例: Remimazolam 多為成人研究，兒童、孕婦資料缺乏                   │
+│                                                                      │
+│  ─────────────────────────────────────────────────────────          │
+│                                                                      │
+│  Type 4: 結局指標缺口 (Outcome Gap)                                 │
+│  ───────────────────────────────────                                 │
+│                                                                      │
+│     藥物 X: Efficacy ✅, Safety ✅, QoL ❌, Long-term ❌             │
+│                                     ↑           ↑                    │
+│                            缺口: 長期/生活品質結局                   │
+│                                                                      │
+│  例: 短期鎮靜效果充足，但缺乏長期認知功能追蹤                       │
+│                                                                      │
+│  ─────────────────────────────────────────────────────────          │
+│                                                                      │
+│  Type 5: 地理/時間缺口 (Geographic/Temporal Gap)                    │
+│  ─────────────────────────────────────────────────                  │
+│                                                                      │
+│     研究 X: Asia ✅, Europe ✅, Africa ❌, S.America ❌              │
+│     或: 2010-2020 ✅, 2020-2025 ❌ (新問題未追蹤)                   │
+│                                                                      │
+│  例: 多數 RCT 在歐美進行，亞洲藥動學可能不同                        │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 14.3 新增 MCP 工具規格
+
+#### 核心工具
+
+| Tool | 說明 | 輸入 | 輸出 |
+|------|------|------|------|
+| `detect_research_gaps` | 🔥 主入口：偵測研究缺口 | topic, gap_types | RankedGaps[] |
+| `find_topic_intersection_gaps` | Type 1: 主題交集缺口 | topic_a, topic_b | IntersectionGap[] |
+| `find_method_transfer_opportunities` | Type 2: 方法遷移機會 | topic, reference_topics | MethodGap[] |
+| `analyze_population_coverage` | Type 3: 族群覆蓋分析 | topic | PopulationCoverage |
+| `analyze_outcome_coverage` | Type 4: 結局指標覆蓋 | topic | OutcomeCoverage |
+| `analyze_geographic_coverage` | Type 5: 地理覆蓋分析 | topic | GeoCoverage |
+
+#### 輔助工具
+
+| Tool | 說明 | 輸入 | 輸出 |
+|------|------|------|------|
+| `suggest_research_questions` | 基於缺口生成研究問題 | gaps | ResearchQuestions[] |
+| `estimate_gap_value` | 評估缺口的研究價值 | gap | ValueScore, Reasons |
+| `find_methodology_exemplar` | 找方法論範本論文 | method, similar_drug | ExemplarPapers[] |
+| `check_ongoing_trials` | 檢查是否有進行中試驗填補缺口 | gap | OngoingTrials[] |
+
+### 14.4 演算法設計
+
+#### Type 1: 主題交集缺口偵測
+
+```python
+def find_topic_intersection_gaps(topic_a: str, topic_b: str) -> List[IntersectionGap]:
+    """
+    找出 topic_a 和 topic_b 交集中的研究缺口
+    
+    策略:
+    1. 搜尋 A 的子主題 (MeSH 子樹)
+    2. 搜尋 B 的子主題
+    3. 對每個 (A_sub, B_sub) 組合計算文獻數
+    4. 文獻數極低但相鄰交集有研究 = 研究缺口
+    """
+    
+    # 1. 取得子主題
+    subtopics_a = get_mesh_subtree(topic_a, depth=2)  # e.g., ["procedural sedation", "ICU sedation", "endoscopy sedation"]
+    subtopics_b = get_mesh_subtree(topic_b, depth=2)  # e.g., ["pediatric", "elderly", "obese"]
+    
+    # 2. 矩陣搜尋
+    matrix = {}
+    for sub_a in subtopics_a:
+        for sub_b in subtopics_b:
+            query = f'({sub_a}) AND ({sub_b})'
+            count = get_pubmed_count(query)
+            matrix[(sub_a, sub_b)] = count
+    
+    # 3. 偵測缺口 (鄰近有研究但此交集無)
+    gaps = []
+    for (sub_a, sub_b), count in matrix.items():
+        if count < THRESHOLD:  # e.g., < 5 papers
+            neighbors = get_neighbor_counts(matrix, sub_a, sub_b)
+            if sum(neighbors) > NEIGHBOR_THRESHOLD:  # 鄰近交集有足夠研究
+                gaps.append(IntersectionGap(
+                    topic_a=sub_a,
+                    topic_b=sub_b,
+                    current_count=count,
+                    neighbor_avg=mean(neighbors),
+                    gap_score=calculate_gap_score(count, neighbors),
+                    suggested_query=query
+                ))
+    
+    return sorted(gaps, key=lambda g: g.gap_score, reverse=True)
+```
+
+#### Type 2: 方法論遷移偵測
+
+```python
+def find_method_transfer_opportunities(topic: str, reference_topics: List[str]) -> List[MethodGap]:
+    """
+    找出可從其他主題遷移的方法論
+    
+    策略:
+    1. 分析 reference_topics 使用的研究方法 (publication types)
+    2. 檢查 topic 是否缺少這些方法
+    3. 如果 reference 有但 topic 缺少 = 遷移機會
+    """
+    
+    METHODS = [
+        "Meta-Analysis",
+        "Systematic Review",
+        "Randomized Controlled Trial",
+        "Cost-Benefit Analysis",
+        "Comparative Effectiveness Research",
+        "Network Meta-Analysis",
+        "Individual Patient Data Meta-Analysis",
+        "Umbrella Review"
+    ]
+    
+    # 1. 分析目標主題的方法覆蓋
+    topic_methods = analyze_publication_types(topic)
+    
+    # 2. 分析參考主題的方法覆蓋
+    reference_methods = {}
+    for ref in reference_topics:
+        reference_methods[ref] = analyze_publication_types(ref)
+    
+    # 3. 找出缺口
+    gaps = []
+    for method in METHODS:
+        topic_has = topic_methods.get(method, 0) > THRESHOLD
+        refs_have = [ref for ref, methods in reference_methods.items() 
+                     if methods.get(method, 0) > THRESHOLD]
+        
+        if not topic_has and refs_have:
+            # 找範本論文
+            exemplars = find_exemplar_papers(refs_have[0], method)
+            
+            gaps.append(MethodGap(
+                target_topic=topic,
+                missing_method=method,
+                reference_topics=refs_have,
+                exemplar_papers=exemplars[:3],
+                suggested_study=generate_study_suggestion(topic, method, exemplars),
+                feasibility_score=estimate_feasibility(topic, method)
+            ))
+    
+    return gaps
+```
+
+#### Type 3: 族群覆蓋分析
+
+```python
+POPULATIONS = {
+    "age": ["Infant", "Child", "Adolescent", "Adult", "Aged", "Aged, 80 and over"],
+    "sex": ["Male", "Female"],
+    "special": ["Pregnant Women", "Breastfeeding", "Immunocompromised"],
+    "comorbid": ["Diabetes", "Obesity", "Renal Insufficiency", "Hepatic Insufficiency"],
+    "setting": ["Outpatient", "Inpatient", "ICU", "Emergency"]
+}
+
+def analyze_population_coverage(topic: str) -> PopulationCoverage:
+    """分析研究族群覆蓋度，找出未充分研究的族群"""
+    
+    coverage = {}
+    for category, populations in POPULATIONS.items():
+        coverage[category] = {}
+        for pop in populations:
+            query = f'({topic}) AND ({pop}[MeSH])'
+            count = get_pubmed_count(query)
+            coverage[category][pop] = {
+                "count": count,
+                "adequacy": "adequate" if count > 10 else "limited" if count > 3 else "gap"
+            }
+    
+    # 識別缺口
+    gaps = []
+    for category, pops in coverage.items():
+        for pop, data in pops.items():
+            if data["adequacy"] == "gap":
+                gaps.append(PopulationGap(
+                    population=pop,
+                    category=category,
+                    current_count=data["count"],
+                    clinical_importance=get_clinical_importance(topic, pop),
+                    suggested_study_design=suggest_study_design(topic, pop)
+                ))
+    
+    return PopulationCoverage(
+        topic=topic,
+        coverage_matrix=coverage,
+        gaps=gaps,
+        overall_score=calculate_coverage_score(coverage)
+    )
+```
+
+### 14.5 輸出格式規格
+
+#### detect_research_gaps 輸出範例
+
+```json
+{
+  "topic": "remimazolam",
+  "analysis_date": "2026-01-28",
+  "total_literature": 234,
+  
+  "gaps": [
+    {
+      "rank": 1,
+      "type": "topic_intersection",
+      "title": "Remimazolam in Pediatric Procedural Sedation",
+      "description": "Abundant adult data (n=180), but only 2 pediatric studies",
+      "gap_score": 0.92,
+      "evidence": {
+        "adult_studies": 180,
+        "pediatric_studies": 2,
+        "neighboring_drugs_pediatric": {"propofol": 450, "midazolam": 380}
+      },
+      "value_assessment": {
+        "clinical_need": "high",
+        "feasibility": "moderate",
+        "novelty": "high",
+        "fundability": "high"
+      },
+      "suggested_research_questions": [
+        "What is the optimal remimazolam dosing for pediatric procedural sedation?",
+        "How does remimazolam compare to propofol for pediatric endoscopy?"
+      ],
+      "exemplar_studies": [
+        {
+          "pmid": "31234567",
+          "title": "Propofol dosing in pediatric endoscopy: a systematic review",
+          "why_exemplar": "Similar drug class, pediatric population, same setting"
+        }
+      ],
+      "ongoing_trials": [],
+      "next_steps": [
+        "Check ClinicalTrials.gov for ongoing pediatric studies",
+        "Review propofol pediatric literature for methodology transfer"
+      ]
+    },
+    {
+      "rank": 2,
+      "type": "method_transfer",
+      "title": "Cost-Effectiveness Analysis of Remimazolam",
+      "description": "No pharmacoeconomic studies found; propofol has 23",
+      "gap_score": 0.88,
+      "evidence": {
+        "remimazolam_econ": 0,
+        "propofol_econ": 23,
+        "midazolam_econ": 15
+      },
+      "value_assessment": {
+        "clinical_need": "moderate",
+        "feasibility": "high",
+        "novelty": "high",
+        "fundability": "very_high"
+      },
+      "suggested_research_questions": [
+        "What is the cost-effectiveness of remimazolam vs propofol for outpatient procedures?",
+        "Does flumazenil reversal improve cost-effectiveness?"
+      ],
+      "exemplar_studies": [
+        {
+          "pmid": "30987654",
+          "title": "Cost-effectiveness of propofol-based sedation in ambulatory surgery",
+          "why_exemplar": "Validated methodology, comparable setting"
+        }
+      ]
+    },
+    {
+      "rank": 3,
+      "type": "population_gap",
+      "title": "Remimazolam in Hepatic Impairment",
+      "description": "Only 1 PK study; clinical outcomes unknown",
+      "gap_score": 0.85,
+      "evidence": {
+        "pk_studies": 1,
+        "outcome_studies": 0,
+        "clinical_need": "Drug is ester-metabolized, liver function matters"
+      }
+    },
+    {
+      "rank": 4,
+      "type": "outcome_gap", 
+      "title": "Long-term Cognitive Outcomes After Remimazolam",
+      "description": "Short-term recovery data abundant; no POCD/delirium follow-up > 7 days",
+      "gap_score": 0.78
+    }
+  ],
+  
+  "summary": {
+    "total_gaps_found": 12,
+    "high_value_gaps": 4,
+    "most_promising": "Pediatric procedural sedation",
+    "quick_win": "Cost-effectiveness analysis (data available, methodology established)"
+  }
+}
+```
+
+### 14.6 與現有功能整合
+
+| 現有功能 | 缺口偵測整合方式 |
+|----------|------------------|
+| `generate_search_queries` | 取得 MeSH 子樹用於矩陣搜尋 |
+| `search_literature` | 計算各交集的文獻數量 |
+| `unified_search` | 跨資料庫驗證缺口 |
+| `get_citation_metrics` | 評估現有研究的影響力 |
+| `build_research_timeline` | 追蹤缺口是否正在被填補 |
+| `get_text_mined_terms` | 擷取族群/結局/方法標籤 |
+| ClinicalTrials.gov (Phase 9.3) | 檢查進行中試驗 |
+
+### 14.7 實作階段
+
+| Phase | 內容 | 優先級 | 依賴 |
+|-------|------|:------:|------|
+| 14.1 | `find_topic_intersection_gaps` 基本版 | ⭐⭐⭐⭐⭐ | 無 |
+| 14.2 | `analyze_population_coverage` | ⭐⭐⭐⭐⭐ | 無 |
+| 14.3 | `find_method_transfer_opportunities` | ⭐⭐⭐⭐⭐ | 無 |
+| 14.4 | `detect_research_gaps` 主入口整合 | ⭐⭐⭐⭐⭐ | 14.1-14.3 |
+| 14.5 | `suggest_research_questions` | ⭐⭐⭐⭐ | 14.4 |
+| 14.6 | `estimate_gap_value` 價值評估 | ⭐⭐⭐⭐ | 14.4 |
+| 14.7 | ClinicalTrials.gov 整合 (ongoing trials) | ⭐⭐⭐ | Phase 9.3 |
+| 14.8 | `analyze_outcome_coverage` | ⭐⭐⭐ | 無 |
+| 14.9 | `analyze_geographic_coverage` | ⭐⭐⭐ | 無 |
+
+### 14.8 競品分析
+
+| 產品 | 研究缺口偵測？ | 自動化程度 | 類型覆蓋 | 我們的優勢 |
+|------|:--------------:|:----------:|:--------:|-----------|
+| Connected Papers | ❌ | - | - | 只有引用網絡 |
+| Litmaps | ❌ | - | - | 無 |
+| Semantic Scholar | ❌ | - | - | 無 |
+| Scite.ai | ❌ | - | - | 只有引用分析 |
+| Elicit | 部分 | 低 | Type 1 | 人工導向 |
+| **我們** | ✅ | **高** | **5 Types** | **全自動、多類型** |
+
+### 14.9 學術論文方向
+
+| 論文標題草案 | 目標期刊/會議 | 創新點 |
+|-------------|--------------|--------|
+| "Automated Research Gap Detection: A Multi-Dimensional Framework" | JASIST, Scientometrics | 缺口類型學 + 自動偵測 |
+| "Finding the Unstudied: Topic Intersection Analysis for Research Opportunity Discovery" | JCDL, CIKM | 主題交集缺口演算法 |
+| "From Methodology to Opportunity: Cross-Topic Research Design Transfer in Biomedicine" | JAMIA, JBI | 方法論遷移框架 |
+| "Population Gaps in Clinical Evidence: An Automated Surveillance Approach" | JCE, Ann Intern Med | 族群缺口系統 |
+
+### 14.10 檔案結構規劃
+
+```
+src/pubmed_search/
+├── application/
+│   └── gaps/                          # 新模組
+│       ├── __init__.py
+│       ├── gap_detector.py            # 主入口 ResearchGapDetector
+│       ├── intersection_analyzer.py   # Type 1: 主題交集
+│       ├── method_analyzer.py         # Type 2: 方法遷移
+│       ├── population_analyzer.py     # Type 3: 族群覆蓋
+│       ├── outcome_analyzer.py        # Type 4: 結局覆蓋
+│       ├── geographic_analyzer.py     # Type 5: 地理覆蓋
+│       ├── value_estimator.py         # 價值評估
+│       └── question_generator.py      # 研究問題生成
+└── presentation/
+    └── mcp_server/
+        └── tools/
+            └── gaps.py                 # MCP 工具註冊
+```
+
+---
+
 ## 貢獻指南
 
 歡迎貢獻！目前優先需要：
-1. Phase 11/12 學術方向選擇與深入
-2. Phase 5.9 PRISMA 流程工具
-3. 測試案例
+1. 🔥 Phase 14 研究缺口偵測 (高優先級)
+2. Phase 11/12 學術方向選擇與深入
+3. Phase 5.9 PRISMA 流程工具
+4. 測試案例

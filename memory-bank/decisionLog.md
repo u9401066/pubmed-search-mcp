@@ -210,3 +210,4 @@ python run_copilot.py --port 8765 --full-tools
 - uv build 替代 python -m build
 - needs: test 確保執行順序
 - 保持 trusted publishing（無需 API token） |
+| 2026-01-28 | 在 ROADMAP.md 新增 Phase 14: 研究缺口偵測 (Research Gap Detection)，包含 5 種缺口類型和完整實作規格 | 研究缺口偵測是差異化競爭優勢，目前無競品提供全自動多類型缺口偵測。對研究者有高實用價值（找論文題目、基金申請亮點）。 |

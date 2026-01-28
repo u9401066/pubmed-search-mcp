@@ -358,8 +358,13 @@ class MilestoneDetector:
     ) -> TimelineEvent:
         """Create a TimelineEvent from article data."""
         pmid = str(article.get("pmid", ""))
-        year = article.get("year") or article.get("pub_year") or 0
-        month = article.get("month") or article.get("pub_month")
+        
+        # Ensure year and month are int (BioPython may return StringElement)
+        raw_year = article.get("year") or article.get("pub_year") or 0
+        year = int(raw_year) if raw_year else 0
+        
+        raw_month = article.get("month") or article.get("pub_month")
+        month = self._parse_month(raw_month)
 
         # Extract author info
         authors = article.get("authors", [])
@@ -388,6 +393,43 @@ class MilestoneDetector:
             doi=article.get("doi"),
             confidence_score=confidence,
         )
+
+    def _parse_month(self, raw_month: Any) -> int | None:
+        """Parse month from various formats (int, string name, string number)."""
+        if not raw_month:
+            return None
+        
+        # If already int
+        if isinstance(raw_month, int):
+            return raw_month if 1 <= raw_month <= 12 else None
+        
+        # Convert to string
+        month_str = str(raw_month).strip()
+        
+        # Try numeric
+        try:
+            month_int = int(month_str)
+            return month_int if 1 <= month_int <= 12 else None
+        except ValueError:
+            pass
+        
+        # Month name mapping
+        month_names = {
+            "jan": 1, "january": 1,
+            "feb": 2, "february": 2,
+            "mar": 3, "march": 3,
+            "apr": 4, "april": 4,
+            "may": 5,
+            "jun": 6, "june": 6,
+            "jul": 7, "july": 7,
+            "aug": 8, "august": 8,
+            "sep": 9, "sept": 9, "september": 9,
+            "oct": 10, "october": 10,
+            "nov": 11, "november": 11,
+            "dec": 12, "december": 12,
+        }
+        
+        return month_names.get(month_str.lower())
 
     def _infer_evidence_level(self, article: dict[str, Any]) -> EvidenceLevel:
         """Infer evidence level from publication type."""

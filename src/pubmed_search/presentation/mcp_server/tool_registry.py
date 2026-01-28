@@ -111,6 +111,18 @@ TOOL_CATEGORIES = {
         "description": "ICD-10 與 MeSH 轉換",
         "tools": ["convert_icd_to_mesh", "convert_mesh_to_icd", "search_by_icd"],
     },
+    "timeline": {
+        "name": "研究時間軸",
+        "description": "研究演化追蹤與里程碑偵測",
+        "tools": [
+            "build_research_timeline",
+            "get_timeline_visualization",
+            "analyze_timeline_milestones",
+            "compare_timelines",
+            "list_milestone_patterns",
+            "build_timeline_from_pmids",
+        ],
+    },
 }
 
 

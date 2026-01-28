@@ -16,6 +16,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.2.9] - 2026-01-28
+
+### Fixed
+
+- **Timeline Tools Bug Fixes**
+  - Fixed ResponseFormatter API calls (format_error→error, format_info→no_results)
+  - Fixed search parameter name (max_results→limit) in TimelineBuilder
+  - Fixed BioPython StringElement type conversion for year comparison
+  - Added `_parse_month()` in MilestoneDetector for month string parsing ("Jan"→1)
+
+- **Session Recording**
+  - Fixed `unified_search` not recording results to session
+  - Added `_record_search_only()` call for data consistency
+
+### Added
+
+- **ROADMAP Phase 14: Research Gap Detection** - New innovative direction
+  - 5 gap types: topic intersection, method transfer, population, outcome, geographic
+  - Tools planned: `detect_research_gaps`, `find_topic_intersection_gaps`, etc.
+  - Competitive advantage: No competitor offers automated multi-type gap detection
+
+### Changed
+
+- Tool categories increased from 11 to 12 (added "研究時間軸")
+- Updated tool_registry.py with timeline tools category
+
+---
+
 ## [0.2.8] - 2026-01-28
 
 ### Added

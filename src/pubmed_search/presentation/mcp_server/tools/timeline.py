@@ -85,8 +85,8 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             )
 
             if not timeline.events:
-                return ResponseFormatter.format_info(
-                    f"No timeline events found for: {topic}",
+                return ResponseFormatter.no_results(
+                    query=topic,
                     suggestions=[
                         "Try a more specific topic",
                         "Check spelling",
@@ -103,10 +103,10 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
 
         except Exception as e:
             logger.error(f"Timeline build failed: {e}")
-            return ResponseFormatter.format_error(
-                "Timeline Build Error",
-                str(e),
-                suggestions=["Try a simpler topic", "Check network connection"],
+            return ResponseFormatter.error(
+                error=str(e),
+                suggestion="Try a simpler topic or check network connection",
+                tool_name="build_research_timeline",
             )
 
     @mcp.tool()
@@ -137,10 +137,10 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             pmid_list = InputNormalizer.normalize_pmids(pmids)
 
             if not pmid_list:
-                return ResponseFormatter.format_error(
-                    "Invalid Input",
-                    "No valid PMIDs provided",
-                    suggestions=["Use comma-separated PMIDs", "Use 'last' for previous search"],
+                return ResponseFormatter.error(
+                    error="No valid PMIDs provided",
+                    suggestion="Use comma-separated PMIDs or 'last' for previous search",
+                    tool_name="build_timeline_from_pmids",
                 )
 
             timeline = await builder.build_timeline_from_pmids(
@@ -149,8 +149,8 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             )
 
             if not timeline.events:
-                return ResponseFormatter.format_info(
-                    "No milestones detected in the provided articles",
+                return ResponseFormatter.no_results(
+                    query="provided PMIDs",
                     suggestions=["These may be regular studies without clear milestones"],
                 )
 
@@ -163,7 +163,7 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
 
         except Exception as e:
             logger.error(f"Timeline from PMIDs failed: {e}")
-            return ResponseFormatter.format_error("Timeline Error", str(e))
+            return ResponseFormatter.error(error=str(e), tool_name="build_timeline_from_pmids")
 
     @mcp.tool()
     async def analyze_timeline_milestones(
@@ -197,8 +197,9 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             )
 
             if not timeline.events:
-                return ResponseFormatter.format_info(
-                    f"No milestones found for: {topic}"
+                return ResponseFormatter.no_results(
+                    query=topic,
+                    suggestions=["Try different search terms"],
                 )
 
             # Build analysis
@@ -234,7 +235,7 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
 
         except Exception as e:
             logger.error(f"Milestone analysis failed: {e}")
-            return ResponseFormatter.format_error("Analysis Error", str(e))
+            return ResponseFormatter.error(error=str(e), tool_name="analyze_timeline_milestones")
 
     @mcp.tool()
     async def get_timeline_visualization(
@@ -294,7 +295,7 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
 
         except Exception as e:
             logger.error(f"Visualization failed: {e}")
-            return ResponseFormatter.format_error("Visualization Error", str(e))
+            return ResponseFormatter.error(error=str(e), tool_name="get_timeline_visualization")
 
     @mcp.tool()
     def list_milestone_patterns() -> str:
@@ -362,16 +363,16 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             topic_list = [t.strip() for t in topics.split(",") if t.strip()]
 
             if len(topic_list) < 2:
-                return ResponseFormatter.format_error(
-                    "Invalid Input",
-                    "Need at least 2 topics to compare",
-                    suggestions=["Separate topics with commas"],
+                return ResponseFormatter.error(
+                    error="Need at least 2 topics to compare",
+                    suggestion="Separate topics with commas",
+                    tool_name="compare_timelines",
                 )
 
             if len(topic_list) > 5:
-                return ResponseFormatter.format_error(
-                    "Too Many Topics",
-                    "Maximum 5 topics for comparison",
+                return ResponseFormatter.error(
+                    error="Maximum 5 topics for comparison",
+                    tool_name="compare_timelines",
                 )
 
             comparison = {"topics": [], "summary": {}}
@@ -413,6 +414,6 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
 
         except Exception as e:
             logger.error(f"Timeline comparison failed: {e}")
-            return ResponseFormatter.format_error("Comparison Error", str(e))
+            return ResponseFormatter.error(error=str(e), tool_name="compare_timelines")
 
     logger.info("Registered 6 timeline tools")
