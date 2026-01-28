@@ -1491,9 +1491,664 @@ arxiv-mcp-server 目前只有 **1 個 Prompt**: `deep-paper-analysis`
 
 ---
 
+---
+
+## 🎓 Phase 11: 學術研究方向 (Academic Innovation)
+> **目標**: 探索 MCP 文獻檢索的學術創新空間
+> **狀態**: 規劃中 - 需選擇方向深入
+
+### 11.1 Agent-Context Aware Retrieval ⭐⭐⭐⭐⭐
+> **問題**: Agent 多輪對話中，每次搜尋獨立，無法利用對話上下文
+> **創新**: 利用 MCP 雙向溝通，實現 "Retrieval 感知 Agent 意圖"
+
+```
+傳統 RAG:
+  Query → Retriever → Documents → LLM → Answer
+
+Agent-Context Aware (我們的優勢):
+  Agent State + Dialogue History
+         ↓
+  MCP Server (理解 Agent 當前任務)
+         ↓
+  Context-Aware Retrieval (知道 Agent 需要什麼)
+         ↓
+  Ranked Results (依 Agent 需求排序)
+```
+
+**學術貢獻**:
+- 提出 "Agent-Context Aware Retrieval" 框架
+- 量化對話上下文對檢索效果的提升
+- 適合投稿: ACL, EMNLP, SIGIR
+
+**技術實作**:
+| 功能 | 說明 | 現有基礎 |
+|------|------|----------|
+| `infer_agent_goal` | 從對話歷史推斷 Agent 目標 | Session 系統 |
+| `context_aware_rerank` | 依上下文重排結果 | ResultAggregator |
+| `proactive_suggestion` | 主動建議相關搜尋 | generate_search_queries |
+
+### 11.2 Medical Vocabulary Semantic Alignment ⭐⭐⭐⭐
+> **問題**: MeSH、ICD、SNOMED CT 各有體系，跨系統搜尋困難
+> **創新**: 自動對齊醫學詞彙體系
+
+```
+使用者輸入: "糖尿病視網膜病變"
+         ↓
+  ┌─────────────────────────────────────────┐
+  │     Medical Vocabulary Alignment         │
+  ├─────────────────────────────────────────┤
+  │  MeSH: "Diabetic Retinopathy" [D003930] │
+  │  ICD-10: E11.3, H36.0                    │
+  │  SNOMED CT: 4855003                      │
+  │  UMLS CUI: C0011884                      │
+  └─────────────────────────────────────────┘
+         ↓
+  跨資料庫統一搜尋
+```
+
+**學術貢獻**:
+- 建立 MeSH-ICD-SNOMED 自動對齊模組
+- 評估跨體系搜尋的召回率提升
+- 適合投稿: JAMIA, JBI, AMIA
+
+**技術實作**:
+| 功能 | 說明 | 現有基礎 |
+|------|------|----------|
+| `align_vocabularies` | 多體系詞彙對齊 | ICD ↔ MeSH 工具 |
+| `cross_system_search` | 跨體系搜尋 | unified_search |
+| `term_disambiguation` | 詞義消歧 | generate_search_queries |
+
+### 11.3 Living Systematic Review Automation ⭐⭐⭐⭐⭐
+> **問題**: 傳統 systematic review 發表即過時
+> **創新**: 持續更新的 "活" 系統性回顧
+
+```
+Traditional SR:
+  Search → Screen → Extract → Analyze → Publish → (Outdated) ❌
+
+Living SR (我們的方向):
+  Search → Screen → Extract → Analyze → Publish
+                ↑                           ↓
+                └───── Continuous Update ←──┘
+```
+
+**學術貢獻**:
+- 自動化 screening 輔助 (二分類模型)
+- 自動偵測新文獻並觸發更新
+- 適合投稿: JCE, Cochrane Methods, Research Synthesis Methods
+
+**技術實作**:
+| 功能 | 說明 | 現有基礎 |
+|------|------|----------|
+| `monitor_topic` | 監控主題新文獻 | Session 系統 |
+| `auto_screen` | 半自動篩選 (ML 輔助) | 待實作 |
+| `update_review` | 增量更新回顧 | PRISMA Flow (Phase 5.9) |
+
+### 11.4 Evidence-Grounded Agent Responses ⭐⭐⭐⭐
+> **問題**: LLM 回答缺乏證據支持，無法驗證
+> **創新**: 每句話都有文獻引用
+
+```
+傳統 LLM 回答:
+  "Remimazolam 比 propofol 更安全"  ← 無來源，可能幻覺
+
+Evidence-Grounded 回答:
+  "Remimazolam 比 propofol 更少引起低血壓 [1,2]，
+   但 delirium 風險相似 [3]。"
+   
+   [1] PMID:12345678 (RCT, n=200, RCR=2.1)
+   [2] PMID:23456789 (Meta-analysis, RCR=3.5)
+   [3] PMID:34567890 (Cohort, n=500, RCR=1.8)
+```
+
+**學術貢獻**:
+- 建立 claim-evidence 連結機制
+- 可驗證、可追溯的 Agent 回答
+- 適合投稿: EMNLP, ACL, Nature Medicine
+
+**技術實作**:
+| 功能 | 說明 | 現有基礎 |
+|------|------|----------|
+| `extract_claims` | 從 Agent 回答擷取宣稱 | 待實作 |
+| `find_evidence` | 為宣稱尋找支持文獻 | unified_search |
+| `grade_evidence` | 評估證據強度 | iCite RCR |
+
+### 11.5 Research Frontier Detection ⭐⭐⭐
+> **問題**: 找到重要論文，但不知道研究前沿在哪
+> **創新**: 自動識別研究缺口和前沿
+
+```
+Citation Network Analysis:
+  ┌─────────────────────────────────────────┐
+  │  Highly cited cluster (established)     │
+  │      ○───○───○───○                      │
+  │                    ╲                    │
+  │                     ○ ← Bridge paper    │
+  │                    ╱                    │
+  │  Emerging cluster (frontier)  ⭐        │
+  │      ●───●───●                          │
+  └─────────────────────────────────────────┘
+```
+
+**學術貢獻**:
+- 自動識別 "bridge papers" 連接新舊領域
+- 預測研究前沿方向
+- 適合投稿: Scientometrics, JASIST
+
+**技術實作**:
+| 功能 | 說明 | 現有基礎 |
+|------|------|----------|
+| `find_bridge_papers` | 識別橋接論文 | build_citation_tree |
+| `detect_emerging_topics` | 偵測新興主題 | iCite percentile |
+| `suggest_research_gaps` | 建議研究缺口 | 待實作 |
+
+### 各方向比較
+
+| 方向 | 學術創新度 | 實用價值 | 實作難度 | 現有基礎 | 建議 |
+|------|:----------:|:--------:|:--------:|:--------:|:----:|
+| 11.1 Agent-Context | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐⭐ | 🔥 |
+| 11.2 Vocab Alignment | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐ | ✓ |
+| 11.3 Living SR | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐ | 🔥 |
+| 11.4 Evidence-Grounded | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐ | ★ |
+| 11.5 Frontier Detection | ⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐⭐ | ✓ |
+
+**推薦優先順序**: 11.4 > 11.1 > 11.3 > 11.2 > 11.5
+
+---
+
+## 🧠 Phase 12: 文獻檢索本質探索 (Fundamental Research)
+> **問題**: 文獻檢索的本質是什麼？創新空間在哪？
+> **狀態**: 探索中
+
+### 12.1 已被解決的問題 (紅海)
+
+| 問題 | 解決方案 | 代表產品/論文 |
+|------|----------|---------------|
+| 文獻 Embedding | Dense Retrieval | ColBERT, Sentence-BERT |
+| Citation Tree/Map | Network Analysis | Connected Papers, Litmaps |
+| 全文/部分檢索 | Inverted Index | PubMed, Semantic Scholar |
+| 標準詞對應 | Thesaurus Mapping | MeSH, UMLS |
+| 自動校正 | ESpell, Fuzzy Match | PubMed ESpell |
+| 信心分數 | Citation Metrics | iCite RCR, Altmetric |
+| 領域分類 | Topic Modeling | OpenAlex Concepts |
+| 趨勢分析 | Time Series | PubTrends, Dimensions |
+| 文獻衝突 | Meta-analysis | Consensus, Epistemonikos |
+
+### 12.2 尚未解決的問題 (藍海) 🔥
+
+#### A. 意圖理解層 (Intent Understanding)
+
+```
+問題: 使用者到底想要什麼？
+
+使用者說: "找關於 propofol 的論文"
+真實意圖: 
+  - 臨床醫師 → 用法、劑量、副作用
+  - 研究者 → 機制、新發現
+  - 護理師 → 護理要點、監測
+  - 學生 → 基礎知識、教科書級
+  
+創新點: 
+  1. 意圖分類器 (role-aware retrieval)
+  2. 對話澄清 (clarification questions)
+  3. 個人化學習 (user profile)
+```
+
+**MCP 優勢**: 可以主動詢問、了解 Agent 背景
+
+#### B. 媒介融合層 (Multi-Modal Literature)
+
+```
+問題: 不只是文字，還有圖表、影片、數據
+
+傳統: 文字 → 文獻
+未來: 
+  - 圖片 → 相關文獻 (圖片內容理解)
+  - 影片 → 相關文獻 (手術影片 → 技術論文)
+  - 數據 → 相關文獻 (基因序列 → 相關研究)
+  - 代碼 → 相關文獻 (演算法 → 方法論文)
+  
+現有嘗試:
+  - ✅ 我們有 reverse_image_search_pubmed (實驗性)
+  - ⏳ 影片理解尚無解決方案
+```
+
+**創新方向**: 建立 "媒介 → 文獻" 的橋樑
+
+#### C. 衝突解析層 (Conflict Resolution)
+
+```
+問題: 文獻說法互相矛盾，如何判斷？
+
+Consensus 做了: 人工整理共識
+我們可以做:
+  1. 自動偵測衝突宣稱
+  2. 分析衝突原因 (方法差異、族群差異、時間差異)
+  3. 提供 "證據三角測量" (多來源驗證)
+  
+例: "Vitamin D 預防 COVID?"
+  - 支持: PMID:xxx (RCT, Spain, n=76)
+  - 反對: PMID:yyy (RCT, Brazil, n=240)
+  - 分析: 劑量不同、基線 Vitamin D 不同
+```
+
+**創新方向**: 不只是找文獻，而是 "解讀矛盾"
+
+#### D. 知識演化層 (Knowledge Evolution)
+
+```
+問題: 知識會過時，如何追蹤演化？
+
+例: "COVID-19 傳播途徑"
+  - 2020-01: 飛沫傳播為主
+  - 2020-06: 氣溶膠傳播辯論
+  - 2021-05: 氣溶膠傳播確認
+  - 2022+: 變異株不同傳播特性
+  
+創新點:
+  1. 知識時間線 (knowledge timeline)
+  2. 共識演化追蹤 (consensus evolution)
+  3. "Retracted" 警示 (撤回文獻影響分析)
+```
+
+**MCP 優勢**: 可以提供 "現在的共識是..." 而非過時資訊
+
+#### E. 創意激發層 (Serendipitous Discovery)
+
+```
+問題: 使用者可能只是要找資料，但我們能否激發創意？
+
+傳統: 搜尋 → 找到 → 結束
+創意激發:
+  1. 跨領域連結 (麻醉藥 + 神經科學 = 意識研究)
+  2. 意外發現 (搜尋 A，發現 B 更有趣)
+  3. 研究缺口提示 (這個問題沒人研究過！)
+  4. 合作建議 (這個團隊做過類似研究)
+```
+
+**MCP 優勢**: 可以 "主動推送" 而非被動等待
+
+### 12.3 文獻檢索本質的重新定義
+
+```
+傳統定義:
+  文獻檢索 = Query → Matching Documents
+
+新定義 (我們的方向):
+  文獻檢索 = Understanding + Matching + Synthesizing + Inspiring
+  
+                ┌─────────────────────────────────────────────┐
+                │                                              │
+                │   使用者意圖        知識需求        創意需要  │
+                │       ↓              ↓              ↓       │
+                │   ┌───────────────────────────────────┐     │
+                │   │         MCP 文獻助理              │     │
+                │   │                                   │     │
+                │   │  • 理解 (Understanding)           │     │
+                │   │    - 意圖分類                     │     │
+                │   │    - 對話澄清                     │     │
+                │   │                                   │     │
+                │   │  • 匹配 (Matching)                │     │
+                │   │    - 多源搜尋                     │     │
+                │   │    - 語義對齊                     │     │
+                │   │                                   │     │
+                │   │  • 綜合 (Synthesizing)            │     │
+                │   │    - 衝突解析                     │     │
+                │   │    - 證據分級                     │     │
+                │   │                                   │     │
+                │   │  • 啟發 (Inspiring)               │     │
+                │   │    - 跨領域連結                   │     │
+                │   │    - 研究缺口                     │     │
+                │   └───────────────────────────────────┘     │
+                │                                              │
+                └─────────────────────────────────────────────┘
+```
+
+### 12.4 可能的學術論文方向
+
+| 方向 | 論文標題草案 | 目標會議/期刊 | 難度 |
+|------|-------------|--------------|:----:|
+| Intent | "Role-Aware Literature Retrieval via Agent Dialogue" | SIGIR, EMNLP | ⭐⭐⭐ |
+| Multi-Modal | "From Images to Evidence: Visual Literature Retrieval" | MM, MICCAI | ⭐⭐⭐⭐ |
+| Conflict | "Automatic Detection and Analysis of Contradictory Evidence" | JAMIA, Nature Medicine | ⭐⭐⭐⭐⭐ |
+| Evolution | "Tracking Scientific Consensus Evolution in Real-Time" | JASIST, Scientometrics | ⭐⭐⭐ |
+| Serendipity | "Serendipitous Discovery in Agent-Assisted Literature Search" | CHI, CSCW | ⭐⭐⭐ |
+
+---
+
+## 🕐 Phase 13: 研究時間軸系統 (Research Timeline) ⭐⭐⭐⭐⭐
+> **核心洞察**: 研究有先後順序，知識會演化，但現有工具只提供「靜態快照」
+> **創新點**: 自動建構研究演化時間軸，追蹤里程碑、共識變化、爭議解決
+> **狀態**: 規劃中 - 核心創新方向
+
+### 13.1 問題分析
+
+```
+現有檢索 (靜態快照):
+   Query → Results (按相關性排序) → 看不出知識如何演進
+
+時間軸思維 (動態演化):
+   Query → Timeline → 看到「第一篇」→「突破」→「爭議」→「共識」
+```
+
+### 13.2 時間軸三層結構
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                     Research Timeline Layers                        │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  Layer 1: 里程碑事件 (Milestones)                                   │
+│  ─────────────────────────────────                                  │
+│  • 首次發現/合成                                                    │
+│  • 首次人體試驗                                                     │
+│  • 監管批准 (FDA/EMA/PMDA)                                         │
+│  • 指南納入                                                         │
+│  • 重大突破                                                         │
+│                                                                      │
+│  Layer 2: 知識演化 (Knowledge Evolution)                            │
+│  ───────────────────────────────────────                            │
+│  • 機轉理解的變化                                                   │
+│  • 適應症的擴展/縮小                                                │
+│  • 劑量建議的演變                                                   │
+│  • 副作用認知的更新                                                 │
+│  • 最佳實踐的改變                                                   │
+│                                                                      │
+│  Layer 3: 爭議追蹤 (Controversy Tracking)                           │
+│  ─────────────────────────────────────────                          │
+│  • 衝突宣稱的出現                                                   │
+│  • 對立證據的累積                                                   │
+│  • 共識的形成或崩解                                                 │
+│  • 文獻撤回/更正的影響                                              │
+│  • 爭議的最終解決                                                   │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 13.3 資料來源與可行性
+
+| 時間軸元素 | 資料來源 | API 可用性 | 現有基礎 |
+|-----------|----------|:----------:|----------|
+| 首次發表日期 | PubMed | ✅ | search_literature |
+| 引用爆發點 | iCite 時序資料 | ✅ | get_citation_metrics |
+| FDA 批准 | OpenFDA | ⚠️ 需整合 | 待實作 |
+| EMA 批准 | EMA 公開資料 | ⚠️ 需整合 | 待實作 |
+| 臨床試驗 | ClinicalTrials.gov | ⚠️ Phase 9.3 | 待實作 |
+| 指南文獻 | PubMed [Guideline] | ✅ | publication_types |
+| 系統性回顧 | PubMed [Meta-Analysis] | ✅ | publication_types |
+| 撤回標記 | PubMed Retraction | ✅ | 待實作 |
+| 爭議偵測 | NLP 分析對立宣稱 | ⭐ 創新 | 待實作 |
+
+### 13.4 新增 MCP 工具
+
+#### 核心工具
+
+| Tool | 說明 | 輸入 | 輸出 |
+|------|------|------|------|
+| `build_research_timeline` | 建構完整研究時間軸 | topic, years, layers | Timeline JSON/Mermaid |
+| `detect_milestones` | 自動偵測研究里程碑 | pmids or topic | Milestone events |
+| `track_consensus_evolution` | 追蹤共識如何演化 | topic, claim | Evolution timeline |
+| `detect_controversy` | 偵測矛盾宣稱 | pmids or topic | Conflicting claims |
+| `get_knowledge_status` | 取得知識現狀 | topic or pmid | Current consensus + outdated warnings |
+
+#### 輔助工具
+
+| Tool | 說明 | 輸入 | 輸出 |
+|------|------|------|------|
+| `find_superseding_evidence` | 找取代舊結論的新證據 | old_pmid | Newer contradicting papers |
+| `get_retraction_impact` | 評估撤回文獻的影響 | retracted_pmid | Citing papers, affected conclusions |
+| `compare_guideline_versions` | 比較指南版本差異 | guideline_topic, years | Changes over time |
+
+### 13.5 輸出格式規格
+
+#### Timeline JSON 結構
+
+```json
+{
+  "topic": "remimazolam",
+  "time_range": {"start": 2014, "end": 2026},
+  "total_publications": 234,
+  
+  "timeline": [
+    {
+      "year": 2014,
+      "quarter": "Q2",
+      "event_type": "discovery",
+      "layer": "milestone",
+      "title": "First synthesis of CNS 7056",
+      "description": "Novel ultrashort-acting benzodiazepine synthesized",
+      "evidence": {
+        "pmid": "24837824",
+        "doi": "10.1111/xxx",
+        "citation_count": 89,
+        "rcr": 2.4
+      },
+      "significance": "high",
+      "tags": ["mechanism", "GABA-A", "novel_compound"]
+    },
+    {
+      "year": 2020,
+      "quarter": "Q3",
+      "event_type": "regulatory_approval",
+      "layer": "milestone",
+      "title": "FDA approval for procedural sedation",
+      "description": "First benzodiazepine approved with integrated reversal",
+      "evidence": {
+        "source": "FDA",
+        "nda_number": "212295",
+        "indication": "procedural sedation"
+      },
+      "significance": "critical",
+      "triggered_by": ["2019_phase3_rct_1", "2019_phase3_rct_2"]
+    },
+    {
+      "year": 2024,
+      "quarter": "Q1",
+      "event_type": "controversy_emerged",
+      "layer": "controversy",
+      "title": "Conflicting evidence on ICU delirium risk",
+      "claims": [
+        {
+          "position": "risk_increased",
+          "pmid": "38765432",
+          "study_type": "retrospective_cohort",
+          "sample_size": 500,
+          "finding": "OR 1.8 (95% CI 1.2-2.7)"
+        },
+        {
+          "position": "no_difference",
+          "pmid": "38876543",
+          "study_type": "RCT",
+          "sample_size": 200,
+          "finding": "No significant difference vs propofol"
+        }
+      ],
+      "resolution_status": "ongoing",
+      "methodology_differences": ["study_design", "population", "dose_regimen"]
+    }
+  ],
+  
+  "summary": {
+    "key_milestones": 8,
+    "knowledge_shifts": 3,
+    "active_controversies": 1,
+    "resolved_controversies": 2,
+    "current_consensus": "Safe for short procedures; ICU use requires more evidence",
+    "confidence_level": "moderate",
+    "last_major_update": "2025-06"
+  }
+}
+```
+
+#### Mermaid Timeline 輸出
+
+```mermaid
+timeline
+    title Remimazolam Research Timeline (2014-2026)
+    
+    section Discovery Phase
+        2014 : 🔬 CNS 7056 synthesized
+             : GABA-A mechanism confirmed
+    
+    section Clinical Development
+        2017 : 👤 First-in-human trial
+        2018 : Phase II initiated
+        2019 : 📊 Pivotal Phase III RCTs completed
+    
+    section Regulatory Milestones
+        2020 : ✅ FDA approval (US)
+             : ✅ EMA approval (EU)
+        2021 : ✅ PMDA approval (Japan)
+    
+    section Knowledge Expansion
+        2021-2023 : ICU sedation exploration
+                  : ⚔️ vs Propofol comparisons
+                  : ⚔️ vs Midazolam comparisons
+    
+    section Active Controversies
+        2024 : ⚠️ Delirium risk debate
+             : Conflicting RCT vs Cohort data
+        
+    section Current Status
+        2025 : 📖 Cochrane Review pending
+             : 🔮 ICU guidelines awaited
+```
+
+### 13.6 里程碑自動偵測演算法
+
+```python
+# 里程碑偵測策略
+
+MILESTONE_PATTERNS = {
+    "discovery": [
+        r"first (report|description|synthesis)",
+        r"novel (compound|agent|mechanism)",
+        r"we (discovered|identified|synthesized)",
+        r"(new|novel) class of"
+    ],
+    "first_human": [
+        r"first.in.human",
+        r"phase (I|1) (trial|study)",
+        r"first (clinical|human) (trial|study)"
+    ],
+    "pivotal_trial": [
+        r"phase (III|3)",
+        r"pivotal (trial|study)",
+        r"registration (trial|study)"
+    ],
+    "regulatory": [
+        r"(FDA|EMA|PMDA).*(approv|clear)",
+        r"marketing authorization"
+    ],
+    "guideline": [
+        r"(guideline|recommendation|consensus)",
+        r"publication_type contains 'Guideline'"
+    ],
+    "paradigm_shift": [
+        r"(paradigm|practice).*(shift|chang)",
+        r"(redefined|revolutioniz)",
+        r"standard of care"
+    ]
+}
+
+def detect_milestones(articles: List[Article]) -> List[Milestone]:
+    milestones = []
+    for article in sorted(articles, key=lambda x: x.pub_date):
+        for milestone_type, patterns in MILESTONE_PATTERNS.items():
+            if any(re.search(p, article.title + article.abstract, re.I) for p in patterns):
+                milestones.append(Milestone(
+                    type=milestone_type,
+                    date=article.pub_date,
+                    pmid=article.pmid,
+                    title=article.title,
+                    significance=calculate_significance(article)
+                ))
+    return deduplicate_milestones(milestones)
+```
+
+### 13.7 爭議偵測演算法
+
+```python
+# 爭議偵測策略
+
+CLAIM_EXTRACTION_PROMPT = """
+Extract the main claim from this abstract:
+- Focus on: efficacy, safety, superiority/inferiority comparisons
+- Output: {"claim": "...", "direction": "positive/negative/neutral", "confidence": 0.0-1.0}
+"""
+
+def detect_controversy(topic: str, articles: List[Article]) -> List[Controversy]:
+    # 1. Extract claims from each article
+    claims = [extract_claim(article) for article in articles]
+    
+    # 2. Cluster claims by subject (e.g., "delirium risk")
+    claim_clusters = cluster_by_subject(claims)
+    
+    # 3. Find clusters with opposing directions
+    controversies = []
+    for subject, cluster_claims in claim_clusters.items():
+        positive = [c for c in cluster_claims if c.direction == "positive"]
+        negative = [c for c in cluster_claims if c.direction == "negative"]
+        
+        if positive and negative:
+            controversies.append(Controversy(
+                subject=subject,
+                positive_claims=positive,
+                negative_claims=negative,
+                status=determine_resolution_status(positive, negative),
+                methodology_analysis=analyze_methodology_differences(positive, negative)
+            ))
+    
+    return controversies
+```
+
+### 13.8 與現有功能整合
+
+| 現有功能 | 時間軸整合方式 |
+|----------|----------------|
+| `build_citation_tree` | 識別「開創性論文」→ 時間軸起點 |
+| `get_citation_metrics` | 識別「引用爆發」→ 里程碑事件 |
+| `find_citing_articles` | 追蹤「後續發展」→ 知識演化 |
+| `get_fulltext` | 擷取「結論變化」→ 共識演化 |
+| `unified_search` | 按年份分組 → 發表趨勢 |
+| `get_text_mined_terms` | 識別實體 → 關鍵詞追蹤 |
+
+### 13.9 實作階段
+
+| Phase | 內容 | 優先級 | 依賴 |
+|-------|------|:------:|------|
+| 13.9.1 | `build_research_timeline` 基礎版 (按年份分組) | ⭐⭐⭐⭐⭐ | 無 |
+| 13.9.2 | `detect_milestones` (Pattern matching) | ⭐⭐⭐⭐⭐ | 無 |
+| 13.9.3 | Mermaid/Markdown 輸出格式 | ⭐⭐⭐⭐ | 13.9.1 |
+| 13.9.4 | 監管批准整合 (OpenFDA) | ⭐⭐⭐ | 外部 API |
+| 13.9.5 | `detect_controversy` (NLP) | ⭐⭐⭐⭐⭐ | LLM 整合 |
+| 13.9.6 | `track_consensus_evolution` | ⭐⭐⭐⭐ | 13.9.5 |
+| 13.9.7 | 撤回影響分析 | ⭐⭐⭐ | 無 |
+
+### 13.10 學術論文方向
+
+| 論文標題草案 | 目標會議/期刊 | 創新點 |
+|-------------|--------------|--------|
+| "Automatic Construction of Research Evolution Timelines from Scientific Literature" | JCDL, JASIST | 自動里程碑偵測 |
+| "Tracking Scientific Consensus: A Longitudinal Analysis Framework" | Scientometrics | 共識演化追蹤 |
+| "Controversy Detection and Resolution Tracking in Biomedical Literature" | JAMIA, JBI | 爭議自動偵測 |
+| "When Knowledge Gets Outdated: Real-Time Obsolescence Detection in Medical Literature" | AMIA | 知識過時警示 |
+
+### 13.11 競品分析
+
+| 產品 | 有時間軸？ | 有里程碑？ | 有爭議追蹤？ | 我們的優勢 |
+|------|:----------:|:----------:|:------------:|-----------|
+| Connected Papers | ❌ | ❌ | ❌ | 只有引用網絡 |
+| Litmaps | 部分 | ❌ | ❌ | 只有發表年份 |
+| Semantic Scholar | ❌ | ❌ | ❌ | 只有 citation trend |
+| Consensus | ❌ | ❌ | 部分 | 人工整理，非自動 |
+| **我們** | ✅ | ✅ | ✅ | **完整自動化** |
+
+---
+
 ## 貢獻指南
 
 歡迎貢獻！目前優先需要：
-1. Phase 6 Research Prompts 設計
-2. Phase 7 研究分析功能
+1. Phase 11/12 學術方向選擇與深入
+2. Phase 5.9 PRISMA 流程工具
 3. 測試案例

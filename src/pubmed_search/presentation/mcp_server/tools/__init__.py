@@ -1,7 +1,7 @@
 """
-PubMed Search MCP Tools - Simplified Architecture (v0.1.26)
+PubMed Search MCP Tools - Simplified Architecture (v0.2.8)
 
-🎯 28 個核心工具：
+🎯 34 個核心工具：
 
 ✅ 核心搜索入口 (1)：
 - unified_search: 主入口，自動多源搜索
@@ -24,6 +24,14 @@ PubMed Search MCP Tools - Simplified Architecture (v0.1.26)
 
 ✅ 引用網絡 (2)：
 - build_citation_tree, suggest_citation_tree
+
+✅ 研究時間軸 (6) [NEW in v0.2.8]：
+- build_research_timeline: 建構研究時間軸
+- build_timeline_from_pmids: 從 PMID 列表建構時間軸
+- analyze_timeline_milestones: 分析里程碑分佈
+- get_timeline_visualization: 產生視覺化程式碼
+- list_milestone_patterns: 列出偵測模式
+- compare_timelines: 比較多個主題時間軸
 
 ✅ Session 管理 (4) [在 session_tools.py 註冊]：
 - get_session_pmids, list_search_history, get_cached_article, get_session_summary
@@ -70,18 +78,20 @@ from .ncbi_extended import register_ncbi_extended_tools
 from .openurl import register_openurl_tools  # Institutional access (OpenURL)
 from .pico import register_pico_tools
 from .strategy import register_strategy_tools
+from .timeline import register_timeline_tools  # Research Timeline (v0.2.8)
 from .unified import register_unified_search_tools
 from .vision_search import register_vision_tools  # Experimental: image-to-literature
 
 
 def register_all_tools(mcp: FastMCP, searcher: LiteratureSearcher):
     """
-    精簡到 25 個核心工具 (v0.1.25)。
+    精簡到 34 個核心工具 (v0.2.8)。
 
     保留的核心功能：
     - unified_search: 主搜索入口（自動多源）
     - get_fulltext: 獲取全文內容
     - get_text_mined_terms: 文本挖掘
+    - Timeline tools: 研究時間軸 (v0.2.8 新增)
     - Session 管理工具
     - OpenURL 機構訂閱連結
 
@@ -120,15 +130,20 @@ def register_all_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         mcp, searcher
     )  # build_citation_tree, suggest_citation_tree
 
-    # 9. Vision-based search (2 tools) - Experimental
+    # 9. Research Timeline (6 tools) - NEW in v0.2.8
+    register_timeline_tools(
+        mcp, searcher
+    )  # build_research_timeline, analyze_timeline_milestones, etc.
+
+    # 10. Vision-based search (2 tools) - Experimental
     register_vision_tools(mcp)  # analyze_figure_for_search, reverse_image_search_pubmed
 
-    # 10. Institutional access (3 tools) - OpenURL/Link Resolver
+    # 11. Institutional access (3 tools) - OpenURL/Link Resolver
     register_openurl_tools(
         mcp
     )  # configure_institutional_access, get_institutional_link, list_resolver_presets
 
-    # 11. ICD conversion (3 tools)
+    # 12. ICD conversion (3 tools)
     register_icd_tools(mcp)  # convert_icd_to_mesh, convert_mesh_to_icd, search_by_icd
 
 
@@ -145,6 +160,7 @@ __all__ = [
     "register_europe_pmc_tools",
     "register_ncbi_extended_tools",
     "register_citation_tree_tools",
+    "register_timeline_tools",
     "register_vision_tools",
     "register_openurl_tools",
     "register_icd_tools",

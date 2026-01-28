@@ -1,23 +1,23 @@
-# Progress (Updated: 2026-01-27)
+# Progress (Updated: 2026-01-28)
 
 ## Done
 
 - v0.2.3 工具註冊架構重構
-  - 新增 `tool_registry.py` - 集中式工具註冊
-  - 新增 `instructions.py` - AI Agent 使用說明
-  - 新增 `tools/icd.py` - ICD 轉換工具模組化
-  - 新增 `TOOLS_INDEX.md` - 工具索引文檔
-- 工具統計自動化腳本 `scripts/count_mcp_tools.py`
-  - 從 FastMCP runtime 取得真實工具數量
-  - 自動更新 README, copilot-instructions, TOOLS_INDEX
-- README 工具數量同步：21 → 34 tools
-- Git pre-commit skill 更新（新增 tool-count-sync 步驟）
+- 工具統計自動化腳本 scripts/count_mcp_tools.py
+- **v0.2.8 Research Timeline 功能 (Phase 13.1 MVP)**
+-   - domain/entities/timeline.py - TimelineEvent, ResearchTimeline 實體
+-   - application/timeline/ - TimelineBuilder, MilestoneDetector
+-   - tools/timeline.py - 6 個新 MCP 工具
+-   - 里程碑偵測：FDA/EMA 批准、臨床試驗階段、Meta-Analysis 等
+-   - Mermaid/JSON 視覺化輸出
 
 ## Doing
 
-- 發布 v0.2.3 版本
+- 發布 v0.2.8 版本 (Research Timeline MVP)
 
 ## Next
 
+- Phase 13.2 - NLP 增強里程碑偵測
+- Phase 13.3 - 知識演化分析
 - PRISMA flow tracking
 - Evidence level classification

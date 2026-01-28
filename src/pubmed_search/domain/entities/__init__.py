@@ -13,8 +13,16 @@ from .article import (
     SourceMetadata,
     UnifiedArticle,
 )
+from .timeline import (
+    EvidenceLevel,
+    MilestoneType,
+    ResearchTimeline,
+    TimelineEvent,
+    TimelinePeriod,
+)
 
 __all__ = [
+    # Article entities
     "UnifiedArticle",
     "ArticleType",
     "OpenAccessStatus",
@@ -22,4 +30,10 @@ __all__ = [
     "OpenAccessLink",
     "CitationMetrics",
     "SourceMetadata",
+    # Timeline entities (v0.2.8)
+    "TimelineEvent",
+    "ResearchTimeline",
+    "TimelinePeriod",
+    "MilestoneType",
+    "EvidenceLevel",
 ]

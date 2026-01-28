@@ -11,7 +11,7 @@
 基於 Domain-Driven Design (DDD) 架構的 MCP 伺服器，作為 AI Agent 的智慧研究助理，提供任務導向的文獻搜尋與分析能力。
 
 **✨ 包含內容：**
-- 🔧 **34 個 MCP 工具** - 精簡的 PubMed、Europe PMC、CORE 和 NCBI 資料庫存取
+- 🔧 **40 個 MCP 工具** - 精簡的 PubMed、Europe PMC、CORE、NCBI 資料庫存取，及**研究時間軸**功能
 - 📚 **22 個 Claude Skills** - AI Agent 可直接使用的工作流程指南（Claude Code 專屬）
 - 📖 **Copilot 整合指南** - VS Code GitHub Copilot 使用說明
 
@@ -252,6 +252,17 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS 代理
 | **文字探勘** | `get_text_mined_terms` → 擷取基因、疾病、化學物質 |
 | **匯出** | `prepare_export` → RIS/BibTeX/CSV/MEDLINE/JSON |
 | **指標** | `get_citation_metrics` → iCite RCR, 引用百分位 |
+
+### 🕰️ 研究時間軸 (v0.2.8 新功能)
+
+| 工具 | 說明 |
+|------|------|
+| `build_research_timeline` | 建構時間軸，顯示關鍵里程碑（FDA 核准、Phase 3 等） |
+| `build_timeline_from_pmids` | 從特定 PMID 列表建構時間軸 |
+| `analyze_timeline_milestones` | 分析里程碑分佈 |
+| `get_timeline_visualization` | 產生 Mermaid/JSON 視覺化 |
+| `compare_timelines` | 比較多個主題的時間軸 |
+| `list_milestone_patterns` | 查看里程碑偵測模式 |
 
 ---
 

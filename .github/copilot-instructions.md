@@ -48,11 +48,12 @@ uv run pytest --cov        # 覆蓋率
 ```
 src/pubmed_search/
 ├── domain/                 # 核心業務邏輯
-│   └── entities/           # 實體 (UnifiedArticle)
+│   └── entities/           # 實體 (UnifiedArticle, TimelineEvent)
 ├── application/            # 應用服務/用例
 │   ├── search/             # QueryAnalyzer, ResultAggregator
 │   ├── export/             # 引用匯出 (RIS, BibTeX...)
-│   └── session/            # SessionManager
+│   ├── session/            # SessionManager
+│   └── timeline/           # TimelineBuilder, MilestoneDetector
 ├── infrastructure/         # 外部系統整合
 │   ├── ncbi/               # Entrez, iCite, Citation Exporter
 │   ├── sources/            # Europe PMC, CORE, CrossRef...
@@ -83,10 +84,11 @@ from ...infrastructure.ncbi import LiteratureSearcher
 ## 🎯 Project Overview
 
 PubMed Search MCP is a **professional literature research assistant** that provides:
-- **34+ MCP Tools** for literature search and analysis
+- **40 MCP Tools** for literature search and analysis
 - **Multi-source search**: PubMed, Europe PMC (33M+), CORE (200M+)
 - **NCBI databases**: Gene, PubChem, ClinVar
 - **Full text access**: Direct XML/text retrieval
+- **Research Timeline**: Milestone detection, temporal evolution analysis
 - **Official Citation Export**: NCBI Citation Exporter API (RIS, MEDLINE, CSL)
 
 ---
@@ -194,6 +196,19 @@ generate_search_queries(topic="<O>")
 |------|---------|
 | `build_citation_tree` | Build a citation tree (network) from a single article. |
 | `suggest_citation_tree` | After fetching article details, suggest whether to build a citation tree. |
+
+
+### 研究時間軸 (v0.2.8 新增)
+*研究里程碑偵測與時間演化分析*
+
+| Tool | Purpose |
+|------|---------|
+| `build_research_timeline` | Build research timeline showing key milestones (FDA approval, Phase 3, etc.). |
+| `build_timeline_from_pmids` | Build timeline from a specific list of PMIDs. |
+| `analyze_timeline_milestones` | Analyze milestone distribution and patterns. |
+| `get_timeline_visualization` | Generate Mermaid/TimelineJS/D3 visualization code. |
+| `compare_timelines` | Compare research timelines of multiple topics. |
+| `list_milestone_patterns` | View detection patterns for debugging. |
 
 
 ### 匯出工具

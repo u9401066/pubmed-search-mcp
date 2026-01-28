@@ -11,7 +11,7 @@
 A Domain-Driven Design (DDD) based MCP server that serves as an intelligent research assistant for AI agents, providing task-oriented literature search and analysis capabilities.
 
 **✨ What's Included:**
-- 🔧 **34 MCP Tools** - Streamlined PubMed, Europe PMC, CORE, and NCBI database access
+- 🔧 **40 MCP Tools** - Streamlined PubMed, Europe PMC, CORE, NCBI database access, and **Research Timeline**
 - 📚 **22 Claude Skills** - Ready-to-use workflow guides for AI agents (Claude Code-specific)
 - 📖 **Copilot Instructions** - VS Code GitHub Copilot integration guide
 
@@ -254,6 +254,17 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS proxy for API requests
 | **Text Mining** | `get_text_mined_terms` → Extract genes, diseases, chemicals |
 | **Export** | `prepare_export` → RIS/BibTeX/CSV/MEDLINE/JSON |
 | **Metrics** | `get_citation_metrics` → iCite RCR, citation percentile |
+
+### 🕰️ Research Timeline (NEW in v0.2.8)
+
+| Tool | Description |
+|------|-------------|
+| `build_research_timeline` | Build timeline showing key milestones (FDA approval, Phase 3, etc.) |
+| `build_timeline_from_pmids` | Build timeline from specific PMIDs |
+| `analyze_timeline_milestones` | Analyze milestone distribution |
+| `get_timeline_visualization` | Generate Mermaid/JSON visualization |
+| `compare_timelines` | Compare multiple topic timelines |
+| `list_milestone_patterns` | View detection patterns |
 
 ---
 

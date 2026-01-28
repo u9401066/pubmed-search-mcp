@@ -6,6 +6,7 @@ Contains:
 - discovery: Citation discovery
 - export: Citation export services
 - session: Session management
+- timeline: Research timeline building (v0.2.8)
 """
 
 from .export.formats import SUPPORTED_FORMATS, export_articles
@@ -21,6 +22,7 @@ from .search.query_analyzer import (
     QueryIntent,
 )
 from .search.result_aggregator import RankingConfig, ResultAggregator
+from .timeline import MilestoneDetector, TimelineBuilder
 
 __all__ = [
     # Search
@@ -36,4 +38,7 @@ __all__ = [
     "get_fulltext_links",
     "get_fulltext_links_with_lookup",
     "summarize_access",
+    # Timeline (v0.2.8)
+    "TimelineBuilder",
+    "MilestoneDetector",
 ]

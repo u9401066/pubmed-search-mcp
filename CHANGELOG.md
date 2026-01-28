@@ -16,6 +16,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.2.8] - 2026-01-28
+
+### Added
+
+- **Research Timeline System (Phase 13.1 MVP)** - 6 new MCP tools for temporal research analysis
+  - `build_research_timeline` - Build timeline showing key milestones from a topic
+  - `build_timeline_from_pmids` - Build timeline from specific PMID list
+  - `analyze_timeline_milestones` - Analyze milestone distribution and patterns
+  - `get_timeline_visualization` - Generate Mermaid/TimelineJS/D3 visualization
+  - `compare_timelines` - Compare research timelines of multiple topics
+  - `list_milestone_patterns` - View detection patterns for debugging
+
+- **Milestone Detection Engine**
+  - Pattern-based detection using regex (transparent and extensible)
+  - Detects: FDA/EMA approvals, Phase 1/2/3/4 trials, meta-analyses, guidelines
+  - Detects: Safety alerts, label updates, landmark studies (by citation count)
+  - Evidence level inference (Oxford CEBM simplified)
+
+- **Domain Entities**
+  - `TimelineEvent` - Immutable event with milestone type, confidence score
+  - `ResearchTimeline` - Complete timeline with period grouping
+  - `MilestoneType` - 20+ categorized milestone types
+  - `EvidenceLevel` - Evidence quality classification
+
+- **Visualization Outputs**
+  - Mermaid timeline (renders in VS Code, GitHub, Markdown)
+  - TimelineJS JSON format (for web embedding)
+  - D3.js compatible format (for custom visualization)
+
+### Changed
+
+- Tool count increased from 34 to 40 MCP tools
+
+---
+
 ## [0.2.7] - 2026-01-28
 
 ### Security
