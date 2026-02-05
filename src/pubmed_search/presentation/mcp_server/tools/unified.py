@@ -2,9 +2,11 @@
 Unified Search Tool - Single Entry Point for Multi-Source Academic Search
 
 This is the MVP of the Unified Search Gateway (Phase 2.0).
+Phase 3: Deep+Wide Search with PubTator3 Semantic Enhancement.
 
 Design Philosophy:
     單一入口 + 後端自動分流（像 Google 一樣）
+    每次搜尋都又深又廣！
 
     Old way (Agent must choose):
         search_literature() / search_europe_pmc() / search_core() / ...
@@ -12,13 +14,18 @@ Design Philosophy:
     New way (Single entry point):
         unified_search(query) → Auto-dispatch to best sources
 
-Architecture:
+Architecture (Phase 3 Enhanced):
     User Query
          │
          ▼
     ┌──────────────────┐
     │  QueryAnalyzer   │  ← Determines complexity, detects PICO
     └────────┬─────────┘
+             │
+             ▼
+    ┌──────────────────────┐
+    │  SemanticEnhancer    │  ← NEW: PubTator3 entity resolution
+    └────────┬─────────────┘
              │
              ▼
     ┌──────────────────┐
@@ -33,7 +40,7 @@ Architecture:
              │
              ▼
     ┌──────────────────┐
-    │ ResultAggregator │  ← Dedup + Multi-dimensional ranking
+    │ ResultAggregator │  ← Dedup + 6-dimensional ranking
     └────────┬─────────┘
              │
              ▼
@@ -41,12 +48,14 @@ Architecture:
 
 Features:
     - Automatic query analysis (complexity, intent, PICO)
+    - PubTator3 entity resolution (Gene, Disease, Chemical, etc.)
     - Smart source selection based on query characteristics
     - Multi-source parallel search with deduplication
-    - Configurable ranking (impact/recency/quality focused)
+    - 6-dimensional ranking (relevance, quality, recency, impact, source_trust, entity_match)
     - Transparent operation with analysis metadata
 """
 
+import asyncio
 import json
 import logging
 import re
@@ -64,6 +73,11 @@ from pubmed_search.application.search.result_aggregator import (
     AggregationStats,
     RankingConfig,
     ResultAggregator,
+)
+from pubmed_search.application.search.semantic_enhancer import (
+    EnhancedQuery,
+    SemanticEnhancer,
+    get_semantic_enhancer,
 )
 from pubmed_search.domain.entities.article import UnifiedArticle
 from pubmed_search.infrastructure.ncbi import LiteratureSearcher
@@ -647,6 +661,7 @@ def _format_unified_results(
     preprint_results: dict | None = None,
     include_trials: bool = True,
     original_query: str = "",
+    enhanced_entities: list[str] | None = None,
 ) -> str:
     """Format unified search results for MCP response."""
     output_parts: list[str] = []
@@ -668,6 +683,13 @@ def _format_unified_results(
         if icd_matches:
             icd_info = ", ".join([f"{m['code']}→{m['mesh']}" for m in icd_matches])
             output_parts.append(f"**ICD Expansion**: {icd_info}")
+        
+        # Phase 3: Show PubTator3 resolved entities
+        if enhanced_entities:
+            entity_str = ", ".join(enhanced_entities[:5])  # Show max 5
+            if len(enhanced_entities) > 5:
+                entity_str += f" (+{len(enhanced_entities) - 5} more)"
+            output_parts.append(f"**🧬 Entities**: {entity_str}")
 
         output_parts.append(f"**Sources**: {', '.join(stats.by_source.keys())}")
 
@@ -1029,6 +1051,36 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 f"Query analysis: complexity={analysis.complexity.value}, intent={analysis.intent.value}"
             )
 
+            # === Step 1.5: Semantic Enhancement (Phase 3) ===
+            # Deep+Wide: Every search gets PubTator3 entity resolution
+            enhanced_query: EnhancedQuery | None = None
+            matched_entity_names: list[str] = []
+            
+            try:
+                # Run async enhancement in sync context
+                enhancer = get_semantic_enhancer()
+                loop = asyncio.new_event_loop()
+                try:
+                    enhanced_query = loop.run_until_complete(
+                        asyncio.wait_for(enhancer.enhance(query), timeout=3.0)
+                    )
+                finally:
+                    loop.close()
+                
+                if enhanced_query and enhanced_query.entities:
+                    # Extract entity names for ranking
+                    matched_entity_names = [
+                        e.resolved_name for e in enhanced_query.entities
+                    ]
+                    logger.info(
+                        f"Semantic enhancement: {len(enhanced_query.entities)} entities, "
+                        f"{len(enhanced_query.strategies)} strategies"
+                    )
+            except asyncio.TimeoutError:
+                logger.warning("Semantic enhancement timeout - continuing without")
+            except Exception as e:
+                logger.debug(f"Semantic enhancement skipped: {e}")
+
             # === Step 2: Determine Sources ===
             sources = DispatchStrategy.get_sources(analysis)
             logger.info(f"Selected sources: {sources}")
@@ -1042,6 +1094,10 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 config = RankingConfig.quality_focused()
             else:
                 config = DispatchStrategy.get_ranking_config(analysis)
+            
+            # Phase 3: Pass entity information to ranking config
+            if matched_entity_names:
+                config.matched_entities = matched_entity_names
 
             # === Step 4: Search Each Source (Parallel) ===
             all_results: list[list[UnifiedArticle]] = []
@@ -1195,6 +1251,7 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                     preprint_results if include_preprints else None,
                     include_trials=True,
                     original_query=analysis.original_query,
+                    enhanced_entities=matched_entity_names if matched_entity_names else None,
                 )
 
         except Exception as e:

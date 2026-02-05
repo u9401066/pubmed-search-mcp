@@ -104,6 +104,7 @@ class RankingDimension(Enum):
     RECENCY = "recency"  # How recent is the publication?
     IMPACT = "impact"  # Citation metrics, field influence
     SOURCE_TRUST = "source_trust"  # Trust level of data source
+    ENTITY_MATCH = "entity_match"  # Phase 3: PubTator3 entity matching
 
 
 class DeduplicationStrategy(Enum):
@@ -137,14 +138,16 @@ class RankingConfig:
     - IMPACT_FOCUSED: Emphasizes citation metrics
     - RECENCY_FOCUSED: Emphasizes recent publications
     - QUALITY_FOCUSED: Emphasizes publication quality
+    - ENTITY_FOCUSED: Emphasizes PubTator3 entity matching (Phase 3)
     """
 
     # Dimension weights (should sum to 1.0)
-    relevance_weight: float = 0.30
+    relevance_weight: float = 0.25
     quality_weight: float = 0.20
-    recency_weight: float = 0.20
+    recency_weight: float = 0.15
     impact_weight: float = 0.20
     source_trust_weight: float = 0.10
+    entity_match_weight: float = 0.10  # Phase 3: PubTator3 entity match
 
     # Deduplication settings
     dedup_strategy: DeduplicationStrategy = DeduplicationStrategy.MODERATE
@@ -169,6 +172,9 @@ class RankingConfig:
 
     # Title match minimum length (for deduplication)
     title_min_length: int = 20
+    
+    # Phase 3: Entity context for entity_match scoring
+    matched_entities: list[str] = field(default_factory=list)
 
     @classmethod
     def default(cls) -> RankingConfig:
@@ -180,21 +186,23 @@ class RankingConfig:
         """Get impact-focused configuration (emphasizes citations)."""
         return cls(
             relevance_weight=0.20,
-            quality_weight=0.15,
-            recency_weight=0.15,
+            quality_weight=0.10,
+            recency_weight=0.10,
             impact_weight=0.40,
             source_trust_weight=0.10,
+            entity_match_weight=0.10,
         )
 
     @classmethod
     def recency_focused(cls) -> RankingConfig:
         """Get recency-focused configuration (emphasizes recent publications)."""
         return cls(
-            relevance_weight=0.25,
-            quality_weight=0.15,
+            relevance_weight=0.20,
+            quality_weight=0.10,
             recency_weight=0.40,
             impact_weight=0.10,
             source_trust_weight=0.10,
+            entity_match_weight=0.10,
             recency_half_life_years=3.0,
         )
 
@@ -203,10 +211,23 @@ class RankingConfig:
         """Get quality-focused configuration (emphasizes journal quality)."""
         return cls(
             relevance_weight=0.20,
-            quality_weight=0.40,
-            recency_weight=0.15,
+            quality_weight=0.35,
+            recency_weight=0.10,
             impact_weight=0.15,
             source_trust_weight=0.10,
+            entity_match_weight=0.10,
+        )
+    
+    @classmethod
+    def entity_focused(cls) -> RankingConfig:
+        """Get entity-focused configuration (emphasizes PubTator3 entity matching)."""
+        return cls(
+            relevance_weight=0.20,
+            quality_weight=0.15,
+            recency_weight=0.10,
+            impact_weight=0.15,
+            source_trust_weight=0.10,
+            entity_match_weight=0.30,
         )
 
     def normalized_weights(self) -> dict[str, float]:
@@ -217,6 +238,7 @@ class RankingConfig:
             + self.recency_weight
             + self.impact_weight
             + self.source_trust_weight
+            + self.entity_match_weight
         )
 
         if total == 0:
@@ -228,6 +250,7 @@ class RankingConfig:
             "recency": self.recency_weight / total,
             "impact": self.impact_weight / total,
             "source_trust": self.source_trust_weight / total,
+            "entity_match": self.entity_match_weight / total,
         }
 
     def get_article_type_weight(self, article_type: str) -> float:
@@ -427,13 +450,14 @@ class ResultAggregator:
         for article in articles:
             scores = self._calculate_dimension_scores(article, config, query)
 
-            # Calculate weighted final score
+            # Calculate weighted final score (including entity_match)
             final_score = (
                 scores.get("relevance", 0.5) * weights["relevance"]
                 + scores.get("quality", 0.5) * weights["quality"]
                 + scores.get("recency", 0.5) * weights["recency"]
                 + scores.get("impact", 0.5) * weights["impact"]
                 + scores.get("source_trust", 0.5) * weights["source_trust"]
+                + scores.get("entity_match", 0.5) * weights["entity_match"]
             )
 
             # Store scores in article (UnifiedArticle has these fields)
@@ -636,6 +660,7 @@ class ResultAggregator:
             "recency": self._calculate_recency(article, config),
             "impact": self._calculate_impact(article),
             "source_trust": self._calculate_source_trust(article, config),
+            "entity_match": self._calculate_entity_match(article, config),
         }
 
     def _calculate_relevance(
@@ -812,6 +837,62 @@ class ResultAggregator:
             base_trust = min(base_trust + boost, 1.0)
 
         return base_trust
+
+    def _calculate_entity_match(
+        self,
+        article: UnifiedArticle,
+        config: RankingConfig,
+    ) -> float:
+        """
+        Calculate entity match score based on PubTator3 resolved entities.
+        
+        Phase 3: Checks if article's title/abstract/keywords contain
+        the resolved entity names from semantic enhancement.
+        
+        If no entities were resolved (fallback mode), returns neutral score.
+        """
+        # If no matched entities provided, return neutral score
+        if not config.matched_entities:
+            return 0.5
+            
+        # Combine article text fields for matching
+        article_text = ""
+        if article.title:
+            article_text += article.title.lower() + " "
+        if article.abstract:
+            article_text += article.abstract.lower() + " "
+        
+        # Check keywords/MeSH terms
+        keywords = getattr(article, "keywords", []) or []
+        mesh_terms = getattr(article, "mesh_terms", []) or []
+        article_text += " ".join(keywords + mesh_terms).lower()
+        
+        if not article_text.strip():
+            return 0.5
+            
+        # Count entity matches
+        matched_count = 0
+        total_entities = len(config.matched_entities)
+        
+        for entity_name in config.matched_entities:
+            entity_lower = entity_name.lower()
+            if entity_lower in article_text:
+                matched_count += 1
+                
+        # Calculate score (0-1)
+        if total_entities == 0:
+            return 0.5
+            
+        # Base score from match ratio
+        match_ratio = matched_count / total_entities
+        
+        # Boost if article mentions most/all entities
+        if match_ratio >= 0.8:
+            return min(1.0, 0.7 + match_ratio * 0.3)
+        elif match_ratio >= 0.5:
+            return 0.5 + match_ratio * 0.3
+        else:
+            return 0.3 + match_ratio * 0.4
 
     # =========================================================================
     # Utility Methods

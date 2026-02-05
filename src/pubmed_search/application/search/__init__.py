@@ -48,6 +48,14 @@ from .result_aggregator import (
     RankingDimension,
     ResultAggregator,
 )
+from .semantic_enhancer import (
+    EnhancedQuery,
+    ExpandedTerm,
+    SearchStrategy,
+    SemanticEnhancer,
+    enhance_query,
+    get_semantic_enhancer,
+)
 
 __all__ = [
     # Query Analysis
@@ -55,6 +63,13 @@ __all__ = [
     "QueryComplexity",
     "QueryIntent",
     "AnalyzedQuery",
+    # Semantic Enhancement (Phase 3)
+    "SemanticEnhancer",
+    "EnhancedQuery",
+    "ExpandedTerm",
+    "SearchStrategy",
+    "enhance_query",
+    "get_semantic_enhancer",
     # Result Aggregation
     "ResultAggregator",
     "RankingConfig",
