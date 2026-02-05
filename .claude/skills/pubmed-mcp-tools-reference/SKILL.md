@@ -1,12 +1,14 @@
 ---
 name: pubmed-mcp-tools-reference
-description: Complete reference for all 35+ PubMed Search MCP tools. Triggers: 工具列表, all tools, 完整功能, tool reference, 有哪些工具
+description: Complete reference for all 40 PubMed Search MCP tools. Triggers: 工具列表, all tools, 完整功能, tool reference, 有哪些工具
 ---
 
 # PubMed Search MCP 工具完整參考
 
 ## 描述
-所有 35+ 個 MCP 工具的完整參考，包含參數說明和使用範例。
+所有 40 個 MCP 工具的完整參考，包含參數說明和使用範例。
+
+> **⚠️ 注意**：此文件為快速參考。實際工具以 `count_mcp_tools.py` 輸出為準。
 
 ---
 

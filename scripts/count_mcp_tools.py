@@ -195,6 +195,7 @@ def generate_tool_categories_markdown(stats: dict, tool_details: dict) -> str:
         "institutional",
         "vision",
         "icd",
+        "timeline",
     ]
 
     for cat_key in category_order:
@@ -268,6 +269,7 @@ def generate_tools_index_markdown(stats: dict, tool_details: dict) -> str:
         "institutional",
         "vision",
         "icd",
+        "timeline",
     ]
 
     for cat_key in category_order:

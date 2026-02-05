@@ -74,7 +74,7 @@ uv run python scripts/count_mcp_tools.py --update-docs
   └─ activeContext.md: 已更新
 
 [2/7] MCP 工具統計同步 ✅
-  └─ 工具數量: 34 (11 categories)
+  └─ 工具數量: 40 (12 categories)
   └─ README.md: 已更新
   └─ copilot-instructions.md: 已更新
 

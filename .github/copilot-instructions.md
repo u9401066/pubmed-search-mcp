@@ -246,6 +246,19 @@ generate_search_queries(topic="<O>")
 | `convert_mesh_to_icd` | Convert MeSH term to ICD-9 and ICD-10 codes. |
 | `search_by_icd` | Search PubMed using ICD code (auto-converts to MeSH). |
 
+
+### 研究時間軸
+*研究演化追蹤與里程碑偵測*
+
+| Tool | Purpose |
+|------|---------|
+| `build_research_timeline` | Build a research timeline for a topic showing key milestones. |
+| `get_timeline_visualization` | Generate timeline visualization code. |
+| `analyze_timeline_milestones` | Analyze milestone distribution for a research topic. |
+| `compare_timelines` | Compare research timelines of multiple topics. |
+| `list_milestone_patterns` | List all milestone detection patterns. |
+| `build_timeline_from_pmids` | Build a timeline from a specific list of PMIDs. |
+
 ---
 
 ## 📋 Common Workflows
