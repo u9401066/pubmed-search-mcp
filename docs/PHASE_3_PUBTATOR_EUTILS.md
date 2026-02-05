@@ -1,777 +1,634 @@
-# Phase 3: PubTator3 + E-utilities 智能文獻檢索系統
+# Phase 3: 深度+廣度 專業文獻檢索系統
 
-> **核心理念**: 讓 Agent 用最少的工具調用，獲得最好的文獻答案
-> **設計原則**: 內部豐富、外部精簡、智能優先、優雅降級
+> **核心理念**: 每次搜索都深度+廣度，這是專業工具該有的樣子
+> **設計原則**: 簡單搜索 Agent 有其他工具，我們提供專業級體驗
 > **狀態**: 設計完成，準備實作
 
 ---
 
-## 🎯 高階理念：什麼是「最好的文獻搜索」？
+## 🎯 高階設計理念
+
+### 我們是什麼？
+
+```text
+❌ 我們不是：簡單的 PubMed 代理
+❌ 我們不是：有時快有時慢的搜索工具
+❌ 我們不是：需要 Agent 決定用哪個模式
+
+✅ 我們是：專業級文獻檢索系統
+✅ 我們是：每次都給出最好答案的工具
+✅ 我們是：深度理解 + 廣度覆蓋的智能搜索
+```
 
 ### 核心價值主張
 
-一個**實戰等級**的文獻搜索系統應該：
+**簡單搜索 Agent 有 Google、Bing、Perplexity... 我們存在的意義是提供專業級體驗：**
 
-```text
-1. 精準 (Precision)    → 找到最相關的文獻，不是最多的文獻
-2. 全面 (Recall)       → 不遺漏重要文獻，特別是用不同術語描述的相同概念
-3. 快速 (Speed)        → 快速回應，不讓用戶等待
-4. 智能 (Intelligence) → 理解用戶真正想要什麼，而不只是字面匹配
-5. 可靠 (Reliability)  → 穩定運作，API 失敗時優雅降級
-```
-
-### 搜索策略：深度 vs 廣度
-
-| 模式 | 策略 | 適用場景 | API 預算 |
-|------|------|----------|----------|
-| **快速模式** | 廣度優先 | "找幾篇 propofol 文獻" | 低 (1-2 calls) |
-| **全面模式** | 深度優先 | "系統性回顧 propofol" | 高 (5-10 calls) |
-| **探索模式** | 平衡 | "propofol 有什麼新發現" | 中 (3-5 calls) |
-
-**關鍵洞察**：Agent 不需要每次都用最強的搜索。根據意圖自動選擇策略。
+| 維度 | 一般搜索工具 | PubMed Search MCP |
+|------|-------------|-------------------|
+| **深度** | 字面匹配 | 語義理解 + 實體解析 + 關係網絡 |
+| **廣度** | 單一來源 | 多源覆蓋 + 同義詞展開 + 跨庫路由 |
+| **精準** | 相關性排序 | 證據等級 × 影響力 × 時效性 × 實體匹配 |
+| **專業** | 通用結果 | MeSH 結構化 + PICO 分析 + 引用網絡 |
 
 ---
 
-## 🧠 對應 Agent 需求分析
-
-### Agent 會怎麼使用這個工具？
-
-| Agent 意圖 | 內部處理 | 期望結果 |
-|------------|----------|----------|
-| "找 propofol 相關文獻" | 快速模式：PubMed 基本搜索 | 10 篇相關文章 |
-| "propofol 和 dexmedetomidine 比較" | 全面模式：實體解析 + 語義搜索 | PICO 結構化結果 |
-| "BRCA1 和什麼疾病相關？" | 關係模式：PubTator3 關係查詢 | 疾病列表 + 證據文獻 |
-| "這篇文章的相關研究" | 引用模式：Related + Citing | 引用網絡 |
-| "propofol 最新臨床試驗" | 時效模式：PubMed + ClinVar | 按時間排序結果 |
-
-### 設計決策
-
-**不要讓 Agent 決定用哪個 API**，而是：
+## 🔥 每次搜索自動執行（無例外）
 
 ```text
-Agent: "propofol sedation"
-                ↓
-    ┌─────────────────────────────┐
-    │  QueryAnalyzer (內部智能)    │
-    │  1. 意圖識別：一般搜索       │
-    │  2. 複雜度：簡單             │
-    │  3. 決策：快速模式           │
-    └─────────────────────────────┘
-                ↓
-         直接 PubMed 搜索，不做語義增強（省時）
-                ↓
-         返回 Top 10 結果
-         
-Agent: "propofol versus dexmedetomidine for ICU sedation systematic review"
-                ↓
-    ┌─────────────────────────────┐
-    │  QueryAnalyzer (內部智能)    │
-    │  1. 意圖識別：系統性回顧     │
-    │  2. 複雜度：複雜 (PICO)      │
-    │  3. 決策：全面模式           │
-    └─────────────────────────────┘
-                ↓
-         1. PubTator3 實體解析 (propofol → @CHEMICAL_Propofol)
-         2. MeSH 展開 (sedation → Conscious Sedation, Deep Sedation...)
-         3. 多策略並行搜索
-         4. Union-Find 去重
-         5. 證據等級排序
-                ↓
-         返回結構化結果 + 搜索策略說明
+用戶查詢: "propofol ICU sedation"
+                │
+                ▼
+┌───────────────────────────────────────────────────────────────────────────┐
+│                    🧠 Phase 1: 深度語義理解 (並行, ~300ms)                  │
+├───────────────────────────────────────────────────────────────────────────┤
+│                                                                           │
+│  ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────┐   │
+│  │  🔬 PubTator3        │  │  📊 E-utilities      │  │  🎯 Local       │   │
+│  │  Entity Resolution  │  │  Cross-DB Analysis  │  │  PICO Analysis  │   │
+│  ├─────────────────────┤  ├─────────────────────┤  ├─────────────────┤   │
+│  │ propofol            │  │ egquery("propofol") │  │ P: ICU patients │   │
+│  │  → @CHEMICAL_Propofol│  │   pubmed: 36,000   │  │ I: propofol     │   │
+│  │  → MeSH: D015742    │  │   gene: 5          │  │ C: -            │   │
+│  │  → Synonyms:        │  │   pccompound: 1    │  │ O: sedation     │   │
+│  │    Diprivan         │  │                     │  │                 │   │
+│  │    2,6-diisopropyl  │  │ espell check       │  │ Intent:         │   │
+│  │                     │  │   → OK             │  │   Therapy       │   │
+│  │ sedation            │  │                     │  │                 │   │
+│  │  → @DISEASE_Sedation│  │ Suggestions:       │  │ Complexity:     │   │
+│  │  → MeSH: D000077227 │  │   "查 Gene 可能    │  │   Moderate      │   │
+│  │                     │  │    有 5 筆相關"    │  │                 │   │
+│  └─────────────────────┘  └─────────────────────┘  └─────────────────┘   │
+│                                                                           │
+│  Output: EnhancedQuery {                                                  │
+│    original: "propofol ICU sedation",                                     │
+│    entities: [{propofol, Chemical, D015742}, {sedation, Disease, ...}],   │
+│    synonyms: ["Diprivan", "2,6-diisopropylphenol", "Conscious Sedation"], │
+│    mesh_terms: ["D015742", "D000077227"],                                 │
+│    cross_db_hints: ["gene:5 results available"],                          │
+│  }                                                                        │
+└───────────────────────────────────────────────────────────────────────────┘
+                │
+                ▼
+┌───────────────────────────────────────────────────────────────────────────┐
+│                    🌐 Phase 2: 廣度多源搜索 (並行, ~500ms)                  │
+├───────────────────────────────────────────────────────────────────────────┤
+│                                                                           │
+│  Strategy: 同時執行 4 種搜索策略，取聯集                                   │
+│                                                                           │
+│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐     │
+│  │ 🔵 PubMed    │ │ 🟢 PubMed    │ │ 🟡 PubTator3 │ │ 🟣 Europe PMC│     │
+│  │ Original    │ │ MeSH Expand  │ │ Entity Search│ │ Full-text    │     │
+│  ├──────────────┤ ├──────────────┤ ├──────────────┤ ├──────────────┤     │
+│  │ "propofol   │ │ "Propofol"   │ │ @CHEMICAL_   │ │ propofol AND │     │
+│  │  ICU        │ │  [MeSH] AND  │ │ Propofol AND │ │ (ICU OR      │     │
+│  │  sedation"  │ │ "Conscious   │ │ @DISEASE_    │ │  "intensive  │     │
+│  │             │ │  Sedation"   │ │ Sedation     │ │  care")      │     │
+│  │             │ │  [MeSH] AND  │ │              │ │              │     │
+│  │             │ │ "ICU"        │ │              │ │ (Full-text!) │     │
+│  └──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘     │
+│        │                │                │                │              │
+│        └────────────────┼────────────────┼────────────────┘              │
+│                         ▼                                                 │
+│                  Raw Results Pool                                         │
+│                  (可能有重複)                                             │
+└───────────────────────────────────────────────────────────────────────────┘
+                │
+                ▼
+┌───────────────────────────────────────────────────────────────────────────┐
+│                    🎯 Phase 3: 智能融合排序 (~100ms)                       │
+├───────────────────────────────────────────────────────────────────────────┤
+│                                                                           │
+│  ┌─────────────────────────────────────────────────────────────────────┐ │
+│  │  Step 1: Union-Find 去重 O(n)                                       │ │
+│  │  ─────────────────────────────                                       │ │
+│  │  Priority: DOI > PMID > Title Fuzzy > Entity-aware                  │ │
+│  │                                                                      │ │
+│  │  NEW: Entity-aware 去重                                              │ │
+│  │  - "propofol" 和 "Diprivan" 的文章視為同一概念                       │ │
+│  │  - 用 MeSH ID 作為聚類鍵                                             │ │
+│  └─────────────────────────────────────────────────────────────────────┘ │
+│                                                                           │
+│  ┌─────────────────────────────────────────────────────────────────────┐ │
+│  │  Step 2: 多維度排序                                                  │ │
+│  │  ────────────────────                                                │ │
+│  │                                                                      │ │
+│  │  Score = 0.20 × Relevance     (實體匹配 + 關鍵詞匹配)                │ │
+│  │        + 0.25 × Evidence      (證據等級: Meta > RCT > Cohort)        │ │
+│  │        + 0.15 × Recency       (指數衰減, 半衰期 5 年)                │ │
+│  │        + 0.20 × Impact        (RCR / 引用數)                         │ │
+│  │        + 0.10 × Source Trust  (PubMed > PMC > Preprint)             │ │
+│  │        + 0.10 × Entity Match  (PubTator3 實體精確匹配)               │ │
+│  │                                                                      │ │
+│  └─────────────────────────────────────────────────────────────────────┘ │
+│                                                                           │
+│  ┌─────────────────────────────────────────────────────────────────────┐ │
+│  │  Step 3: 豐富元數據                                                  │ │
+│  │  ────────────────                                                    │ │
+│  │  - 為每篇文章標註識別的實體                                          │ │
+│  │  - 標記證據等級                                                      │ │
+│  │  - 附加搜索策略說明                                                  │ │
+│  └─────────────────────────────────────────────────────────────────────┘ │
+└───────────────────────────────────────────────────────────────────────────┘
+                │
+                ▼
+┌───────────────────────────────────────────────────────────────────────────┐
+│                    📦 返回結果 (總時間 ~800ms - 1.5s)                      │
+├───────────────────────────────────────────────────────────────────────────┤
+│                                                                           │
+│  SearchResult {                                                           │
+│    articles: [...],           // 排序後的文章列表                         │
+│    total_found: 156,          // 總共找到                                 │
+│    unique_after_dedup: 89,    // 去重後                                   │
+│                                                                           │
+│    // 搜索質量指標                                                        │
+│    quality: {                                                             │
+│      semantic_coverage: 0.85,  // 語義覆蓋度                             │
+│      entity_precision: 0.92,   // 實體匹配精度                           │
+│      evidence_distribution: {  // 證據等級分布                           │
+│        "meta-analysis": 3,                                                │
+│        "rct": 12,                                                         │
+│        "cohort": 34,                                                      │
+│      }                                                                    │
+│    },                                                                     │
+│                                                                           │
+│    // 增強資訊                                                            │
+│    enhancement: {                                                         │
+│      entities_detected: ["propofol", "sedation"],                         │
+│      synonyms_used: ["Diprivan", "2,6-diisopropylphenol"],               │
+│      mesh_terms_expanded: ["D015742", "D000077227"],                      │
+│      cross_db_suggestions: ["5 related genes found in Gene DB"],          │
+│    },                                                                     │
+│                                                                           │
+│    // 搜索策略說明 (幫助 Agent 理解)                                      │
+│    strategy_explanation: "執行了 4 種並行搜索策略...",                    │
+│  }                                                                        │
+└───────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## ⚡ 效能優化：限流處理策略
+## ⚡ 限流處理：內部智能排隊
 
 ### API 速率限制
 
-| API | 限制 | 應對策略 |
-|-----|------|----------|
-| PubTator3 | 3 req/sec | 請求合併 + 快取 |
-| NCBI E-utils | 3 req/sec (無 key) / 10 req/sec (有 key) | 使用 API key |
-| Europe PMC | 無官方限制 | 禮貌性延遲 0.1s |
+| API | 限制 | 我們的處理 |
+|-----|------|-----------|
+| **PubTator3** | 3 req/sec | TokenBucket + 請求合併 |
+| **NCBI E-utils** | 3 req/sec (無 key) / 10 req/sec (有 key) | API Key + Semaphore |
+| **Europe PMC** | 無官方限制 | 禮貌性 100ms 間隔 |
 
-### 內部限流架構
-
-```python
-class RateLimitedClient:
-    """統一的限流客戶端基礎類"""
-    
-    def __init__(self, rate_limit: float = 3.0):
-        self._rate_limit = rate_limit
-        self._semaphore = asyncio.Semaphore(rate_limit)
-        self._last_request = 0.0
-        
-    async def execute_with_limit(self, coro):
-        """帶限流的執行"""
-        async with self._semaphore:
-            # 確保間隔
-            elapsed = time.time() - self._last_request
-            if elapsed < 1.0 / self._rate_limit:
-                await asyncio.sleep(1.0 / self._rate_limit - elapsed)
-            self._last_request = time.time()
-            return await coro
-```
-
-### 智能快取層
+### 限流架構
 
 ```python
-class EntityCache:
-    """實體解析快取 - 減少 API 調用"""
+class SmartRateLimiter:
+    """
+    智能限流器 - 最大化吞吐量
     
-    def __init__(self, max_size: int = 1000, ttl: int = 3600):
-        self._cache: dict[str, tuple[Any, float]] = {}
-        self._max_size = max_size
-        self._ttl = ttl
-        
-    async def get_or_fetch(self, key: str, fetch_func) -> Any:
-        """快取命中或執行查詢"""
-        if key in self._cache:
-            value, timestamp = self._cache[key]
-            if time.time() - timestamp < self._ttl:
-                return value  # 快取命中，省一次 API 調用
-                
-        # 快取未命中，執行查詢
-        value = await fetch_func()
-        self._cache[key] = (value, time.time())
-        return value
-```
-
-### 請求預算管理
-
-```python
-@dataclass
-class SearchBudget:
-    """每次搜索的 API 調用預算"""
-    pubtator_calls: int = 3      # PubTator3 最多 3 次調用
-    ncbi_calls: int = 5          # NCBI E-utils 最多 5 次調用
-    total_timeout: float = 10.0  # 總超時 10 秒
-    
-    @classmethod
-    def fast(cls) -> "SearchBudget":
-        """快速模式預算"""
-        return cls(pubtator_calls=0, ncbi_calls=2, total_timeout=3.0)
-        
-    @classmethod
-    def comprehensive(cls) -> "SearchBudget":
-        """全面模式預算"""
-        return cls(pubtator_calls=5, ncbi_calls=10, total_timeout=15.0)
-```
-
-### 優雅降級策略
-
-```python
-async def search_with_fallback(query: str, budget: SearchBudget) -> SearchResult:
-    """帶降級的搜索"""
-    
-    # Level 1: 嘗試完整語義搜索
-    if budget.pubtator_calls > 0:
-        try:
-            result = await semantic_search(query, timeout=budget.total_timeout / 2)
-            if result.is_satisfactory:
-                return result
-        except (TimeoutError, APIError):
-            pass  # 降級到 Level 2
-            
-    # Level 2: 嘗試 MeSH 擴展搜索
-    try:
-        result = await mesh_expanded_search(query, timeout=budget.total_timeout / 2)
-        if result.is_satisfactory:
-            result.degraded_from = "semantic"
-            return result
-    except (TimeoutError, APIError):
-        pass  # 降級到 Level 3
-        
-    # Level 3: 基本 PubMed 搜索（最低保證）
-    result = await basic_pubmed_search(query)
-    result.degraded_from = "mesh_expansion"
-    return result
-```
-
----
-
-## 📊 內部排序策略
-
-### 多維度排序（現有 ResultAggregator 增強）
-
-```python
-@dataclass
-class EnhancedRankingConfig:
-    """增強版排序配置"""
-    
-    # 基礎維度（現有）
-    relevance_weight: float = 0.25
-    quality_weight: float = 0.20
-    recency_weight: float = 0.15
-    impact_weight: float = 0.20
-    source_trust_weight: float = 0.10
-    
-    # 新增維度
-    entity_match_weight: float = 0.10  # PubTator3 實體匹配度
-    
-    # 動態調整
-    @classmethod
-    def for_systematic_review(cls) -> "EnhancedRankingConfig":
-        """系統性回顧：重視全面性和證據等級"""
-        return cls(
-            relevance_weight=0.15,
-            quality_weight=0.35,  # 重視證據等級
-            recency_weight=0.10,
-            impact_weight=0.20,
-            source_trust_weight=0.10,
-            entity_match_weight=0.10
-        )
-        
-    @classmethod
-    def for_latest_research(cls) -> "EnhancedRankingConfig":
-        """最新研究：重視時效性"""
-        return cls(
-            relevance_weight=0.20,
-            quality_weight=0.15,
-            recency_weight=0.35,  # 重視時效
-            impact_weight=0.15,
-            source_trust_weight=0.05,
-            entity_match_weight=0.10
-        )
-```
-
-### 證據等級排序
-
-```python
-EVIDENCE_LEVEL_SCORES = {
-    "meta-analysis": 1.0,
-    "systematic-review": 0.95,
-    "randomized-controlled-trial": 0.85,
-    "clinical-trial": 0.75,
-    "cohort-study": 0.65,
-    "case-control-study": 0.55,
-    "case-report": 0.35,
-    "review": 0.50,
-    "journal-article": 0.40,
-    "preprint": 0.20,
-}
-```
-
----
-
-## 🏗️ 簡化的架構設計
-
-### 避免過度設計：YAGNI 檢查
-
-| 功能 | 必要性 | 決定 |
-|------|--------|------|
-| PubTator3 實體解析 | ⭐⭐⭐⭐⭐ 核心價值 | ✅ Phase 1 |
-| PubTator3 關係查詢 | ⭐⭐⭐⭐ 高價值 | ✅ Phase 1 (簡化版) |
-| PubTator3 BioNER 標註 | ⭐⭐⭐ 有用但非核心 | ⏳ Phase 2 |
-| 智能快取 | ⭐⭐⭐⭐⭐ 性能必須 | ✅ Phase 1 |
-| 降級策略 | ⭐⭐⭐⭐⭐ 可靠性必須 | ✅ Phase 1 |
-| 所有關係類型 | ⭐⭐ 過度 | ❌ 只保留 treat, associate |
-
-### 精簡後的架構
-
-```text
-┌─────────────────────────────────────────────────────────────────────┐
-│                    MCP Tools (對外 40 個，不變)                      │
-│  unified_search(query, semantic_enhance=False)                      │
-│  generate_search_queries(topic, include_relations=False)            │
-└──────────────────────────────┬──────────────────────────────────────┘
-                               │
-                               ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                      SearchOrchestrator (新增)                       │
-│  ┌─────────────────────────────────────────────────────────────┐    │
-│  │  職責：                                                      │    │
-│  │  1. 意圖分析 → 選擇搜索模式（快速/全面/探索）                 │    │
-│  │  2. 預算分配 → 決定 API 調用次數                             │    │
-│  │  3. 降級管理 → API 失敗時優雅降級                            │    │
-│  │  4. 結果組裝 → 合併多來源結果                                │    │
-│  └─────────────────────────────────────────────────────────────┘    │
-└──────────────────────────────┬──────────────────────────────────────┘
-                               │
-          ┌────────────────────┼────────────────────┐
-          ▼                    ▼                    ▼
-┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐
-│ EntityResolver   │  │ QueryExpander    │  │ ResultRanker     │
-│ (PubTator3)      │  │ (MeSH + 同義詞)  │  │ (多維度排序)    │
-│                  │  │                  │  │                  │
-│ - find_entity()  │  │ - expand_mesh()  │  │ - rank()         │
-│ - find_relations │  │ - expand_syns()  │  │ - deduplicate()  │
-│ - get_context()  │  │                  │  │                  │
-└────────┬─────────┘  └────────┬─────────┘  └────────┬─────────┘
-         │                     │                     │
-         └─────────────────────┼─────────────────────┘
-                               │
-                               ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                     Infrastructure Layer                             │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────┐  │
-│  │ PubTatorClient  │  │ NCBIClient      │  │ EntityCache         │  │
-│  │ (異步 + 限流)   │  │ (現有 + 異步化) │  │ (TTL 快取)          │  │
-│  └─────────────────┘  └─────────────────┘  └─────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## 📦 核心模組設計
-
-### 1. SearchOrchestrator (協調器)
-
-```python
-"""
-SearchOrchestrator - 搜索協調器
-
-職責：
-1. 分析意圖，選擇搜索策略
-2. 管理 API 預算
-3. 協調多個組件
-4. 處理降級
-"""
-
-from dataclasses import dataclass
-from enum import Enum
-
-
-class SearchMode(Enum):
-    FAST = "fast"           # 快速：基本 PubMed，無語義
-    ENHANCED = "enhanced"   # 增強：MeSH 展開，無 PubTator3
-    SEMANTIC = "semantic"   # 語義：完整 PubTator3 增強
-
-
-@dataclass
-class SearchIntent:
-    """解析後的搜索意圖"""
-    mode: SearchMode
-    is_pico: bool = False
-    is_systematic: bool = False
-    entities: list[str] = None  # 識別的實體
-    budget: "SearchBudget" = None
-
-
-class SearchOrchestrator:
-    """搜索協調器 - 統一入口"""
+    策略:
+    1. Token Bucket: 平滑請求速率
+    2. 請求合併: 相似請求合併執行
+    3. 優先級隊列: 關鍵請求優先
+    4. 快取: 減少重複請求
+    """
     
     def __init__(
         self,
-        entity_resolver: "EntityResolver",
-        query_expander: "QueryExpander", 
-        result_ranker: "ResultRanker",
-        cache: "EntityCache"
+        rate: float = 3.0,      # requests per second
+        burst: int = 5,          # 允許的突發請求
+        cache_ttl: int = 3600    # 快取 1 小時
     ):
-        self._resolver = entity_resolver
-        self._expander = query_expander
-        self._ranker = result_ranker
-        self._cache = cache
-        
-    async def search(
-        self,
-        query: str,
-        semantic_enhance: bool = False,  # 預設關閉（快速模式）
-        limit: int = 20
-    ) -> "SearchResult":
-        """
-        主搜索入口
-        
-        Args:
-            query: 搜索查詢
-            semantic_enhance: 是否啟用語義增強
-            limit: 結果數量
-            
-        Returns:
-            SearchResult with articles, metadata, and quality indicators
-        """
-        # Step 1: 分析意圖
-        intent = await self._analyze_intent(query, semantic_enhance)
-        
-        # Step 2: 執行搜索（帶降級）
-        if intent.mode == SearchMode.SEMANTIC:
-            result = await self._semantic_search(query, intent, limit)
-        elif intent.mode == SearchMode.ENHANCED:
-            result = await self._enhanced_search(query, intent, limit)
-        else:
-            result = await self._fast_search(query, limit)
-            
-        # Step 3: 排序和後處理
-        result.articles = self._ranker.rank(result.articles, intent)
-        
-        # Step 4: 附加質量指標
-        result.quality = self._assess_quality(result, intent)
-        
-        return result
-        
-    async def _analyze_intent(self, query: str, semantic_enhance: bool) -> SearchIntent:
-        """分析搜索意圖，決定策略"""
-        # 使用現有 QueryAnalyzer 的本地分析
-        from pubmed_search.application.search import QueryAnalyzer
-        
-        analyzer = QueryAnalyzer()
-        analysis = analyzer.analyze(query)
-        
-        # 決定模式
-        if semantic_enhance:
-            mode = SearchMode.SEMANTIC
-        elif analysis.complexity.value in ["complex", "ambiguous"]:
-            mode = SearchMode.ENHANCED
-        else:
-            mode = SearchMode.FAST
-            
-        # 設定預算
-        if mode == SearchMode.SEMANTIC:
-            budget = SearchBudget.comprehensive()
-        elif mode == SearchMode.ENHANCED:
-            budget = SearchBudget(pubtator_calls=0, ncbi_calls=5, total_timeout=8.0)
-        else:
-            budget = SearchBudget.fast()
-            
-        return SearchIntent(
-            mode=mode,
-            is_pico=analysis.pico is not None,
-            is_systematic="systematic" in query.lower() or "review" in query.lower(),
-            budget=budget
-        )
-        
-    async def _semantic_search(self, query: str, intent: SearchIntent, limit: int):
-        """語義搜索（完整 PubTator3）"""
-        try:
-            # 1. 實體解析（帶快取）
-            entities = await self._resolve_entities_cached(query)
-            
-            # 2. 構建語義查詢
-            if entities:
-                semantic_query = self._build_semantic_query(query, entities)
-            else:
-                semantic_query = query
-                
-            # 3. 執行搜索
-            articles = await self._execute_search(semantic_query, limit)
-            
-            return SearchResult(
-                articles=articles,
-                mode=SearchMode.SEMANTIC,
-                entities_found=entities,
-                query_used=semantic_query
-            )
-        except Exception as e:
-            # 降級到 enhanced
-            return await self._enhanced_search(query, intent, limit)
-            
-    async def _resolve_entities_cached(self, query: str) -> list:
-        """解析實體（帶快取）"""
-        cache_key = f"entities:{query.lower()}"
-        
-        async def fetch():
-            return await self._resolver.resolve(query)
-            
-        return await self._cache.get_or_fetch(cache_key, fetch)
-```
-
-### 2. EntityResolver (實體解析器)
-
-```python
-"""
-EntityResolver - PubTator3 實體解析
-
-精簡設計：只保留核心功能
-"""
-
-from dataclasses import dataclass
-
-
-@dataclass
-class ResolvedEntity:
-    """解析後的實體"""
-    original: str           # 原始文字
-    entity_id: str          # PubTator3 ID (e.g., "@CHEMICAL_Propofol")
-    name: str               # 標準名稱
-    type: str               # Gene, Disease, Chemical, Species, Variant
-    mesh_id: str | None     # MeSH ID (如果有)
-    
-    @property
-    def pubmed_query(self) -> str:
-        """轉換為 PubMed 查詢"""
-        if self.mesh_id:
-            return f'"{self.name}"[MeSH Terms]'
-        return f'"{self.name}"'
-
-
-class EntityResolver:
-    """實體解析器"""
-    
-    def __init__(self, pubtator_client: "PubTatorClient"):
-        self._client = pubtator_client
-        
-    async def resolve(self, text: str) -> list[ResolvedEntity]:
-        """
-        解析文本中的實體
-        
-        Args:
-            text: 要解析的文本
-            
-        Returns:
-            識別到的實體列表
-        """
-        # 簡單分詞
-        import re
-        words = re.findall(r'\b[a-zA-Z]{3,}\b', text)
-        stop_words = {"and", "or", "the", "for", "with", "from", "about"}
-        candidates = [w for w in words if w.lower() not in stop_words]
-        
-        if not candidates:
-            return []
-            
-        # 並行查詢 PubTator3
-        import asyncio
-        tasks = [
-            self._client.find_entity(word, limit=1)
-            for word in candidates[:5]  # 最多 5 個詞
-        ]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        
-        # 收集結果
-        entities = []
-        for word, result in zip(candidates, results):
-            if isinstance(result, Exception) or not result:
-                continue
-            match = result[0]
-            entities.append(ResolvedEntity(
-                original=word,
-                entity_id=match.entity_id,
-                name=match.name,
-                type=match.type,
-                mesh_id=match.identifier
-            ))
-            
-        return entities
-        
-    async def get_relations(
-        self,
-        entity_id: str,
-        relation_type: str = "treat"  # 只支持最常用的
-    ) -> list[dict]:
-        """
-        獲取實體關係
-        
-        Args:
-            entity_id: 實體 ID
-            relation_type: 關係類型 (treat, associate)
-            
-        Returns:
-            關係列表
-        """
-        relations = await self._client.find_relations(
-            entity_id,
-            relation_type=relation_type,
-            limit=10
-        )
-        return [
-            {
-                "target": r.target_entity,
-                "type": r.relation_type,
-                "evidence_count": r.evidence_count
-            }
-            for r in relations
-        ]
-```
-
-### 3. PubTatorClient (HTTP 客戶端)
-
-```python
-"""
-PubTatorClient - PubTator3 API 客戶端
-
-特點：
-- 異步
-- 內建限流
-- 優雅降級
-"""
-
-import asyncio
-import time
-from dataclasses import dataclass
-from typing import Literal
-
-import httpx
-
-
-@dataclass
-class EntityMatch:
-    entity_id: str
-    name: str
-    type: str
-    identifier: str | None
-    score: float = 1.0
-
-
-@dataclass
-class RelationMatch:
-    source_entity: str
-    relation_type: str
-    target_entity: str
-    evidence_count: int
-    pmids: list[str]
-
-
-class PubTatorClient:
-    """PubTator3 API 客戶端"""
-    
-    BASE_URL = "https://www.ncbi.nlm.nih.gov/research/pubtator3-api"
-    RATE_LIMIT = 3.0  # requests per second
-    
-    def __init__(self, timeout: float = 15.0):
-        self._timeout = timeout
-        self._last_request = 0.0
+        self._rate = rate
+        self._burst = burst
+        self._tokens = burst
+        self._last_update = time.time()
+        self._cache = TTLCache(maxsize=1000, ttl=cache_ttl)
+        self._pending: dict[str, asyncio.Future] = {}  # 請求合併
         self._lock = asyncio.Lock()
         
-    async def _rate_limit(self):
-        """執行限流"""
+    async def execute(
+        self, 
+        key: str,  # 用於快取和合併的鍵
+        coro_factory,  # 生成協程的工廠函數
+        priority: int = 0  # 優先級 (越高越優先)
+    ):
+        """
+        智能執行請求
+        
+        1. 先查快取
+        2. 檢查是否有相同請求正在執行
+        3. 等待 token
+        4. 執行並快取結果
+        """
+        # 1. 快取命中
+        if key in self._cache:
+            return self._cache[key]
+            
+        # 2. 請求合併 (相同請求共享結果)
         async with self._lock:
-            elapsed = time.time() - self._last_request
-            wait_time = 1.0 / self.RATE_LIMIT - elapsed
-            if wait_time > 0:
-                await asyncio.sleep(wait_time)
-            self._last_request = time.time()
-            
-    async def _request(self, url: str, params: dict) -> dict | None:
-        """帶重試的請求"""
-        await self._rate_limit()
-        
-        for attempt in range(3):
-            try:
-                async with httpx.AsyncClient(timeout=self._timeout) as client:
-                    response = await client.get(url, params=params)
-                    response.raise_for_status()
-                    return response.json()
-            except httpx.HTTPStatusError as e:
-                if e.response.status_code == 429:  # Rate limited
-                    await asyncio.sleep(2 ** attempt)
-                    continue
-                raise
-            except httpx.TimeoutException:
-                if attempt < 2:
-                    continue
-                raise
+            if key in self._pending:
+                # 等待已經在執行的相同請求
+                return await self._pending[key]
                 
-        return None
-        
-    async def find_entity(
-        self,
-        query: str,
-        concept: Literal["gene", "disease", "chemical", "species", "variant"] | None = None,
-        limit: int = 5
-    ) -> list[EntityMatch]:
-        """查找實體"""
-        params = {"query": query, "limit": limit}
-        if concept:
-            params["concept"] = concept
+            # 創建 Future 讓其他相同請求等待
+            future = asyncio.get_event_loop().create_future()
+            self._pending[key] = future
             
-        data = await self._request(f"{self.BASE_URL}/entity/autocomplete/", params)
-        if not data:
-            return []
+        try:
+            # 3. 等待 Token
+            await self._wait_for_token()
             
-        return [
-            EntityMatch(
-                entity_id=item.get("id", ""),
-                name=item.get("name", ""),
-                type=item.get("type", ""),
-                identifier=item.get("identifier"),
-                score=item.get("score", 1.0)
-            )
-            for item in data.get("results", [])
-        ]
-        
-    async def find_relations(
-        self,
-        entity_id: str,
-        relation_type: str | None = None,
-        target_type: str | None = None,
-        limit: int = 20
-    ) -> list[RelationMatch]:
-        """查詢關係"""
-        params = {"e1": entity_id}
-        if relation_type:
-            params["type"] = relation_type
-        if target_type:
-            params["e2"] = target_type
+            # 4. 執行
+            result = await coro_factory()
             
-        data = await self._request(f"{self.BASE_URL}/relations", params)
-        if not data:
-            return []
+            # 5. 快取結果
+            self._cache[key] = result
             
-        return [
-            RelationMatch(
-                source_entity=r.get("source", ""),
-                relation_type=r.get("type", ""),
-                target_entity=r.get("target", ""),
-                evidence_count=r.get("count", 0),
-                pmids=r.get("pmids", [])[:5]
-            )
-            for r in data.get("results", [])[:limit]
-        ]
+            # 6. 通知等待者
+            future.set_result(result)
+            
+            return result
+            
+        except Exception as e:
+            future.set_exception(e)
+            raise
+        finally:
+            async with self._lock:
+                del self._pending[key]
+                
+    async def _wait_for_token(self):
+        """Token Bucket 算法"""
+        async with self._lock:
+            now = time.time()
+            # 補充 token
+            elapsed = now - self._last_update
+            self._tokens = min(self._burst, self._tokens + elapsed * self._rate)
+            self._last_update = now
+            
+            if self._tokens >= 1:
+                self._tokens -= 1
+                return
+                
+        # 等待下一個 token
+        wait_time = (1 - self._tokens) / self._rate
+        await asyncio.sleep(wait_time)
+        self._tokens = 0
+```
 
+### 請求合併示例
 
-# Singleton
-_client: PubTatorClient | None = None
+```python
+# 場景: 同時解析 "propofol" 和 "propofol ICU"
+# 普通方式: 2 次 PubTator3 API 調用
 
+# 我們的方式:
+# 1. "propofol" 請求先到，開始執行
+# 2. "propofol ICU" 請求到，發現 "propofol" 已在執行
+# 3. 只需等待第一個請求完成，共享結果
+# 結果: 只有 1 次 API 調用！
 
-def get_pubtator_client() -> PubTatorClient:
-    global _client
-    if _client is None:
-        _client = PubTatorClient()
-    return _client
+async def resolve_entities_smart(terms: list[str]) -> dict:
+    """智能實體解析 - 自動合併請求"""
+    
+    limiter = get_pubtator_limiter()
+    
+    # 並行執行，但相同實體會自動合併
+    tasks = [
+        limiter.execute(
+            key=f"entity:{term.lower()}",  # 相同 term 會合併
+            coro_factory=lambda t=term: pubtator.find_entity(t)
+        )
+        for term in terms
+    ]
+    
+    results = await asyncio.gather(*tasks)
+    return dict(zip(terms, results))
 ```
 
 ---
 
-## 📋 實作計劃（精簡版）
+## 🛡️ 優雅降級：保持深度的同時確保可靠
 
-### Phase 1: 核心功能 (Week 1)
+### 降級策略
 
-| 優先級 | 任務 | 檔案 |
+```text
+降級不是放棄深度，而是用不同方式達到深度
+```
+
+```python
+class GracefulDegrader:
+    """
+    優雅降級器
+    
+    原則: 
+    1. 總是嘗試最好的方式
+    2. 失敗時用替代方式達到相似效果
+    3. 記錄降級原因，讓 Agent 知道
+    """
+    
+    async def resolve_entities(self, query: str) -> EntityResult:
+        """實體解析 - 三層降級"""
+        
+        # Level 1: PubTator3 (最準確)
+        try:
+            result = await self._pubtator_resolve(query)
+            return EntityResult(
+                entities=result,
+                source="pubtator3",
+                confidence=0.95
+            )
+        except (TimeoutError, APIError) as e:
+            logger.warning(f"PubTator3 failed: {e}, degrading to MeSH")
+            
+        # Level 2: NCBI MeSH (次準確)
+        try:
+            result = await self._mesh_resolve(query)
+            return EntityResult(
+                entities=result,
+                source="ncbi_mesh",
+                confidence=0.80,
+                degraded_from="pubtator3"
+            )
+        except (TimeoutError, APIError) as e:
+            logger.warning(f"MeSH failed: {e}, degrading to local")
+            
+        # Level 3: 本地詞典 (最後保底)
+        result = self._local_resolve(query)
+        return EntityResult(
+            entities=result,
+            source="local_dictionary",
+            confidence=0.50,
+            degraded_from="ncbi_mesh"
+        )
+        
+    async def search_multi_source(self, query: str) -> SearchResult:
+        """多源搜索 - 部分失敗不影響整體"""
+        
+        sources = [
+            ("pubmed", self._search_pubmed),
+            ("europe_pmc", self._search_europe_pmc),
+            ("pubtator3_semantic", self._search_pubtator3),
+        ]
+        
+        results = []
+        failures = []
+        
+        # 並行執行，收集成功的結果
+        tasks = [
+            self._safe_execute(name, func, query)
+            for name, func in sources
+        ]
+        
+        for source, result in await asyncio.gather(*tasks):
+            if result.success:
+                results.extend(result.articles)
+            else:
+                failures.append({
+                    "source": source,
+                    "error": str(result.error)
+                })
+                
+        # 即使部分失敗，仍然返回結果
+        return SearchResult(
+            articles=results,
+            sources_used=[r for r, res in zip(sources, tasks) if res.success],
+            sources_failed=failures,
+            is_partial=len(failures) > 0
+        )
+```
+
+---
+
+## 📊 智能排序：專業級結果排序
+
+### 證據等級金字塔
+
+```text
+                    ┌─────────────┐
+                    │ Meta-       │  Weight: 1.00
+                    │ Analysis    │
+                    ├─────────────┤
+                    │ Systematic  │  Weight: 0.95
+                    │ Review      │
+                    ├─────────────┤
+                    │ RCT         │  Weight: 0.85
+                    ├─────────────┤
+                    │ Clinical    │  Weight: 0.75
+                    │ Trial       │
+                    ├─────────────┤
+                    │ Cohort      │  Weight: 0.65
+                    │ Study       │
+                    ├─────────────┤
+                    │ Case-       │  Weight: 0.55
+                    │ Control     │
+                    ├─────────────┤
+                    │ Case        │  Weight: 0.35
+                    │ Report      │
+                    ├─────────────┤
+                    │ Review      │  Weight: 0.50
+                    │ Article     │
+                    ├─────────────┤
+                    │ Journal     │  Weight: 0.40
+                    │ Article     │
+                    └─────────────┴
+                    │ Preprint    │  Weight: 0.20
+                    └─────────────┘
+```
+
+### 排序公式
+
+```python
+@dataclass
+class DeepSearchRankingConfig:
+    """深度搜索排序配置 - 不可調整，這是專業級預設"""
+    
+    relevance_weight: float = 0.20      # 查詢匹配度
+    evidence_weight: float = 0.25       # 證據等級 (專業核心!)
+    recency_weight: float = 0.15        # 時效性
+    impact_weight: float = 0.20         # 影響力 (引用/RCR)
+    source_trust_weight: float = 0.10   # 來源可信度
+    entity_match_weight: float = 0.10   # 實體精確匹配
+    
+    def calculate_score(self, article: Article, query_context: QueryContext) -> float:
+        """計算文章排序分數"""
+        
+        # 1. 相關性分數 (查詢詞匹配 + 實體匹配)
+        relevance = self._calc_relevance(article, query_context)
+        
+        # 2. 證據等級分數
+        evidence = EVIDENCE_LEVEL_SCORES.get(article.article_type, 0.4)
+        
+        # 3. 時效性分數 (指數衰減)
+        if article.year:
+            age = 2026 - article.year
+            recency = 0.5 ** (age / 5.0)  # 5 年半衰期
+        else:
+            recency = 0.3
+            
+        # 4. 影響力分數
+        if article.rcr:
+            impact = min(article.rcr / 4.0, 1.0)  # RCR 4.0 = 滿分
+        elif article.citation_count:
+            impact = min(math.log10(article.citation_count + 1) / 3, 1.0)
+        else:
+            impact = 0.3
+            
+        # 5. 來源信任度
+        source_trust = SOURCE_TRUST_SCORES.get(article.source, 0.5)
+        
+        # 6. 實體匹配度 (PubTator3 識別的實體與查詢實體的匹配)
+        entity_match = self._calc_entity_match(article, query_context)
+        
+        # 加權總分
+        return (
+            self.relevance_weight * relevance +
+            self.evidence_weight * evidence +
+            self.recency_weight * recency +
+            self.impact_weight * impact +
+            self.source_trust_weight * source_trust +
+            self.entity_match_weight * entity_match
+        )
+```
+
+---
+
+## 🏗️ 精簡架構設計
+
+### 核心模組
+
+```text
+src/pubmed_search/
+├── infrastructure/
+│   ├── pubtator/                 # NEW: PubTator3 整合
+│   │   ├── __init__.py
+│   │   ├── client.py             # 異步 HTTP 客戶端 + 限流
+│   │   └── models.py             # EntityMatch, RelationResult
+│   │
+│   ├── ncbi/                     # EXISTING: 增強
+│   │   ├── ...existing...
+│   │   └── async_utils.py        # NEW: 異步版 E-utilities
+│   │
+│   └── cache/                    # NEW: 智能快取
+│       ├── __init__.py
+│       └── entity_cache.py       # TTL 快取 + 請求合併
+│
+├── application/
+│   └── search/
+│       ├── ...existing...
+│       ├── semantic_enhancer.py  # NEW: 語義增強協調器
+│       └── deep_search.py        # NEW: 深度搜索編排器
+│
+└── presentation/
+    └── mcp_server/
+        └── tools.py              # 更新: unified_search 預設深度
+```
+
+### 資料流
+
+```text
+unified_search(query) 
+        │
+        ▼
+┌─────────────────────────────────────┐
+│  DeepSearchOrchestrator             │
+│  ───────────────────────            │
+│  1. 總是執行深度分析                │
+│  2. 並行多源搜索                    │
+│  3. 智能融合排序                    │
+└─────────────────────────────────────┘
+        │
+        ├──────────────────────────────────┐
+        │                                  │
+        ▼                                  ▼
+┌─────────────────────┐          ┌─────────────────────┐
+│  SemanticEnhancer   │          │  MultiSourceSearcher│
+│  ─────────────────  │          │  ─────────────────  │
+│  - PubTator3 實體   │          │  - PubMed           │
+│  - MeSH 展開       │          │  - Europe PMC       │
+│  - 同義詞收集      │          │  - PubTator3 Search │
+│  - E-utils 跨庫    │          │  - (可選) OpenAlex  │
+└─────────────────────┘          └─────────────────────┘
+        │                                  │
+        └──────────────────────────────────┘
+                        │
+                        ▼
+               ┌─────────────────────┐
+               │  ResultAggregator   │
+               │  ─────────────────  │
+               │  - Union-Find 去重  │
+               │  - 多維度排序      │
+               │  - Entity-aware    │
+               │    聚類            │
+               └─────────────────────┘
+                        │
+                        ▼
+                   SearchResult
+```
+
+---
+
+## 📋 實作計劃
+
+### Week 1: 基礎設施
+
+| 優先級 | 檔案 | 說明 |
 |--------|------|------|
-| P0 | PubTatorClient | `infrastructure/pubtator/client.py` |
-| P0 | EntityCache | `infrastructure/cache/entity_cache.py` |
-| P0 | EntityResolver | `application/search/entity_resolver.py` |
-| P0 | SearchOrchestrator | `application/search/orchestrator.py` |
+| P0 | `infrastructure/pubtator/client.py` | PubTator3 客戶端 + 限流 |
+| P0 | `infrastructure/pubtator/models.py` | 資料模型 |
+| P0 | `infrastructure/cache/entity_cache.py` | TTL 快取 + 請求合併 |
+| P1 | `infrastructure/ncbi/async_utils.py` | 異步 egquery, espell |
 
-### Phase 2: 整合現有 (Week 2)
+### Week 2: 應用層
 
-| 優先級 | 任務 | 檔案 |
+| 優先級 | 檔案 | 說明 |
 |--------|------|------|
-| P0 | unified_search 增強 | `presentation/mcp_server/tools/search.py` |
-| P1 | generate_search_queries 增強 | `presentation/mcp_server/tools/search.py` |
-| P2 | NCBIExtended 異步化 | `infrastructure/sources/ncbi_extended.py` |
+| P0 | `application/search/semantic_enhancer.py` | 語義增強協調器 |
+| P0 | `application/search/deep_search.py` | 深度搜索編排器 |
+| P1 | `application/search/result_aggregator.py` | 增強: Entity-aware 去重 |
 
-### Phase 3: 測試 (Week 3)
+### Week 3: MCP 整合 + 測試
 
-| 任務 | 說明 |
+| 優先級 | 檔案 | 說明 |
+|--------|------|------|
+| P0 | `presentation/mcp_server/tools.py` | 更新 unified_search |
+| P0 | `tests/test_deep_search.py` | 端到端測試 |
+| P1 | `.github/copilot-instructions.md` | 更新文檔 |
+
+---
+
+## 📊 預期效益
+
+### 每次搜索自動獲得
+
+| 功能 | 說明 |
 |------|------|
-| 單元測試 | PubTatorClient, EntityResolver |
-| 整合測試 | 端到端語義搜索 |
-| 降級測試 | API 失敗場景 |
-| 效能測試 | 快取效率、延遲 |
+| ✅ 實體解析 | 自動識別藥物、疾病、基因 |
+| ✅ 同義詞展開 | propofol → Diprivan, 2,6-DIP |
+| ✅ MeSH 結構化 | 自動使用 MeSH 層次結構 |
+| ✅ 多源覆蓋 | PubMed + Europe PMC + PubTator3 |
+| ✅ 證據等級排序 | Meta-analysis 優先 |
+| ✅ 跨庫建議 | "Gene 資料庫有 5 筆相關" |
+
+### 性能指標
+
+| 指標 | 目標 |
+|------|------|
+| 首次搜索延遲 | < 1.5s |
+| 快取命中搜索 | < 500ms |
+| 同義詞召回率 | +30% |
+| 搜索精準度 | +25% |
 
 ---
 
-## 📊 成功指標
+## ✅ 設計確認檢查
 
-| 指標 | 目標 | 測量方式 |
-|------|------|----------|
-| 工具數量 | 40（不變） | `count_mcp_tools.py` |
-| 快速模式延遲 | <1秒 | E2E 測試 |
-| 語義模式延遲 | <3秒 | E2E 測試 |
-| 快取命中率 | >80% | 日誌統計 |
-| 同義詞召回率 | +30% | AB 測試 |
+- [x] 每次搜索都深度+廣度
+- [x] 不需要 Agent 選擇模式
+- [x] 內部智能限流
+- [x] 優雅降級保持可靠
+- [x] 專業級證據排序
+- [x] 工具數量不變 (40)
 
 ---
 
-## ✅ 確認後開始實作
-
-文件更新完成，執行：
-
-```bash
-git add .
-git commit -m "docs: Phase 3 設計完成 - PubTator3 智能搜索架構"
-```
-
-然後開始 Phase 1 實作。
+**狀態**: 設計完成，準備 Git 提交並開始實作
