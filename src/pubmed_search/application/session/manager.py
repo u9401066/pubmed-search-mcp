@@ -268,10 +268,14 @@ class SessionManager:
 
     def _get_sessions_file(self) -> Path:
         """Get the sessions index file path."""
+        if self.data_dir is None:
+            raise RuntimeError("data_dir not configured")
         return self.data_dir / "sessions.json"
 
     def _get_session_file(self, session_id: str) -> Path:
         """Get a specific session file path."""
+        if self.data_dir is None:
+            raise RuntimeError("data_dir not configured")
         return self.data_dir / f"session_{session_id}.json"
 
     def _load_sessions(self):

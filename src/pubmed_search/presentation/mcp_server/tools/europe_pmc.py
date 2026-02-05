@@ -5,6 +5,7 @@ Tools:
 - get_fulltext: 🔥 Enhanced multi-source fulltext retrieval
   - Supports PMID, PMC ID, or DOI input
   - Auto-tries: Europe PMC → Unpaywall → CORE
+  - Extended sources: CrossRef, DOAJ, Zenodo, PubMed LinkOut (15 total)
   - Returns fulltext content + PDF links
 - get_text_mined_terms: Get text-mined annotations (genes, diseases, chemicals)
 
@@ -17,8 +18,13 @@ Phase 2.2 Updates (v0.1.21):
 - Multi-source fulltext: Europe PMC, Unpaywall, CORE
 - Flexible input: PMID, PMC ID, or DOI
 - PDF link aggregation from all sources
+
+Phase 3 Updates (v0.2.8):
+- Extended sources via FulltextDownloader (15 total sources)
+- CrossRef, DOAJ, Zenodo, PubMed LinkOut integration
 """
 
+import asyncio
 import logging
 from typing import Any, Dict, List, Optional, Union
 
@@ -230,6 +236,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
         doi: Optional[str] = None,
         sections: Optional[str] = None,
         include_pdf_links: bool = True,
+        extended_sources: bool = False,
     ) -> str:
         """
         🔥 Enhanced multi-source fulltext retrieval.
@@ -238,6 +245,13 @@ def register_europe_pmc_tools(mcp: FastMCP):
         1. Europe PMC (if PMC ID available)
         2. Unpaywall (finds OA versions via DOI)
         3. CORE (200M+ open access papers)
+
+        With extended_sources=True, also searches:
+        4. CrossRef (publisher links)
+        5. DOAJ (Gold OA journals)
+        6. Zenodo (research repository)
+        7. PubMed LinkOut (external providers)
+        8. Semantic Scholar, OpenAlex, arXiv, bioRxiv, medRxiv
 
         Accepts flexible input - provide ANY ONE of:
         - identifier: Auto-detects PMID, PMC ID, or DOI
@@ -253,6 +267,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
             doi: DOI (e.g., "10.1001/jama.2024.1234")
             sections: Filter sections (e.g., "introduction,methods,results")
             include_pdf_links: Include PDF download links (default: True)
+            extended_sources: Search 15 sources instead of 3 (default: False)
 
         Returns:
             Fulltext content with PDF links from all available sources.
@@ -260,7 +275,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
         Example:
             get_fulltext(identifier="PMC7096777")
             get_fulltext(doi="10.1038/s41586-021-03819-2")
-            get_fulltext(pmid="12345678", sections="introduction,discussion")
+            get_fulltext(pmid="12345678", extended_sources=True)
         """
 
         # Phase 2.2: Smart identifier detection
@@ -429,6 +444,63 @@ def register_europe_pmc_tools(mcp: FastMCP):
                             )
             except Exception as e:
                 logger.warning(f"CORE failed: {e}")
+
+        # === EXTENDED SOURCES (15 total) ===
+        if extended_sources:
+            sources_tried.append("Extended (15 sources)")
+            try:
+                from pubmed_search.infrastructure.sources.fulltext_download import (
+                    FulltextDownloader,
+                )
+
+                # Ensure string types for downloader
+                pmid_str = str(detected_pmid) if detected_pmid else None
+                pmcid_str = str(detected_pmcid) if detected_pmcid else None
+                doi_str = str(detected_doi) if detected_doi else None
+
+                async def _get_extended_links():
+                    downloader = FulltextDownloader()
+                    try:
+                        return await downloader.get_pdf_links(
+                            pmid=pmid_str,
+                            pmcid=pmcid_str,
+                            doi=doi_str,
+                        )
+                    finally:
+                        await downloader.close()
+
+                # Run async function in sync context
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    loop = None
+
+                if loop and loop.is_running():
+                    # Already in async context - create task
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor() as executor:
+                        future = executor.submit(asyncio.run, _get_extended_links())
+                        extended_links = future.result(timeout=30)
+                else:
+                    extended_links = asyncio.run(_get_extended_links())
+
+                # Merge extended links (avoid duplicates)
+                seen_urls = {link["url"] for link in pdf_links}
+                for ext_link in extended_links:
+                    if ext_link.url not in seen_urls:
+                        seen_urls.add(ext_link.url)
+                        pdf_links.append({
+                            "source": ext_link.source.display_name,
+                            "url": ext_link.url,
+                            "type": "pdf" if ext_link.is_direct_pdf else "landing_page",
+                            "access": ext_link.access_type,
+                            "version": ext_link.version,
+                            "license": ext_link.license,
+                        })
+
+                logger.info(f"Extended sources found {len(extended_links)} additional links")
+            except Exception as e:
+                logger.warning(f"Extended sources failed: {e}")
 
         # === BUILD OUTPUT ===
         if not fulltext_content and not pdf_links:

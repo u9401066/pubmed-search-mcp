@@ -16,6 +16,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.2.8.2] - 2026-02-06
+
+### Added
+
+- **FulltextDownloader Enhancement** - Robust PDF download with enterprise features
+  - **Retry with exponential backoff**: Auto-retry on transient failures (429, 500, 502, 503, 504)
+  - **Rate limiting**: `asyncio.Semaphore(5)` limits concurrent requests, global 429 handling
+  - **Streaming download**: 8KB chunk streaming prevents memory overflow on large PDFs
+  - **4 new fulltext sources**: CrossRef Links, DOAJ (Gold OA), Zenodo, PubMed LinkOut
+  - Now supports 15 fulltext sources total (was 11)
+
+- **get_fulltext Tool Enhancement**
+  - New `extended_sources` parameter: Enable all 15 sources (default: 3 core sources)
+  - Source priority: Europe PMC > Unpaywall > CORE > CrossRef > DOAJ > Zenodo > ...
+
+- **Package Import Tests**
+  - 27 comprehensive tests for package exports validation
+  - Tests cover: core imports, infrastructure, domain, application, MCP tools
+  - Verifies circular import prevention
+
+### Fixed
+
+- **Mypy Type Errors**
+  - `session/manager.py`: Fixed `Path | None` operator error with proper null check
+  - `openurl.py`: Added proper type annotation for `result` dict
+
+- **Test File API Signatures**
+  - Updated `test_package_imports.py` to match current API
+  - Fixed `UnifiedArticle` creation (source → primary_source)
+  - Fixed `create_mcp_server` parameters (ncbi_api_key → api_key)
+  - Fixed export function imports (format_ris → export_ris)
+
+### Changed
+
+- FulltextDownloader now uses httpx streaming instead of buffered download
+- Zenodo test allows 403 (Cloudflare protection) as valid response
+
+---
+
 ## [0.2.9] - 2026-01-28
 
 ### Fixed

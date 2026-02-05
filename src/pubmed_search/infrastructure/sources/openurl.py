@@ -391,7 +391,7 @@ def get_fulltext_link_with_fallback(
     Returns:
         Dict with link info: {"url": ..., "source": ..., "type": ...}
     """
-    result = {
+    result: dict[str, Any] = {
         "url": None,
         "source": None,
         "type": "unknown",

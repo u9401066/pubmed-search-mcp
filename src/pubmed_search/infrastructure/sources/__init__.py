@@ -478,6 +478,21 @@ def get_fulltext_parsed(pmcid: str, email: str | None = None) -> dict[str, Any]:
     return {"error": "Full text not available"}
 
 
+# ============================================================================
+# PDF/Fulltext Download (NEW: Multi-source PDF link discovery)
+# ============================================================================
+_fulltext_downloader = None
+
+
+def get_fulltext_downloader():
+    """Get or create FulltextDownloader instance (lazy initialization)."""
+    global _fulltext_downloader
+    if _fulltext_downloader is None:
+        from .fulltext_download import FulltextDownloader
+        _fulltext_downloader = FulltextDownloader()
+    return _fulltext_downloader
+
+
 # Export for convenience
 __all__ = [
     "SearchSource",
@@ -494,4 +509,5 @@ __all__ = [
     "get_openurl_builder",
     "get_fulltext_xml",
     "get_fulltext_parsed",
+    "get_fulltext_downloader",
 ]
