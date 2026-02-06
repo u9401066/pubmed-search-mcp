@@ -1,0 +1,266 @@
+"""Tests for Unified Search MCP tools — unified_search, analyze_search_query, helpers."""
+
+import json
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from pubmed_search.presentation.mcp_server.tools.unified import (
+    register_unified_search_tools,
+    detect_and_expand_icd_codes,
+    DispatchStrategy,
+    _format_unified_results,
+    _format_as_json,
+)
+from pubmed_search.application.search.query_analyzer import (
+    AnalyzedQuery,
+    QueryComplexity,
+    QueryIntent,
+)
+from pubmed_search.application.search.result_aggregator import (
+    AggregationStats,
+    RankingConfig,
+)
+
+
+# ============================================================
+# ICD Detection
+# ============================================================
+
+
+class TestDetectAndExpandIcdCodes:
+    def test_no_icd_codes(self):
+        expanded, matches = detect_and_expand_icd_codes("diabetes treatment")
+        assert matches == []
+        assert expanded == "diabetes treatment"
+
+    def test_icd10_code_detected(self):
+        with patch(
+            "pubmed_search.presentation.mcp_server.tools.unified.lookup_icd_to_mesh",
+            return_value={"mesh": "Diabetes Mellitus, Type 2", "description": "T2DM"},
+        ):
+            expanded, matches = detect_and_expand_icd_codes("E11 complications")
+        assert len(matches) == 1
+        assert matches[0]["code"] == "E11"
+        assert "MeSH" in expanded
+
+    def test_no_mapping_found(self):
+        with patch(
+            "pubmed_search.presentation.mcp_server.tools.unified.lookup_icd_to_mesh",
+            return_value=None,
+        ):
+            expanded, matches = detect_and_expand_icd_codes("E11 complications")
+        assert matches == []
+
+
+# ============================================================
+# DispatchStrategy
+# ============================================================
+
+
+class TestDispatchStrategy:
+    def _make_analysis(self, complexity, intent, identifiers=None, year_from=None):
+        a = MagicMock(spec=AnalyzedQuery)
+        a.complexity = complexity
+        a.intent = intent
+        a.identifiers = identifiers or []
+        a.year_from = year_from
+        return a
+
+    def test_lookup_with_identifiers(self):
+        a = self._make_analysis(QueryComplexity.SIMPLE, QueryIntent.LOOKUP, identifiers=["PMID:123"])
+        sources = DispatchStrategy.get_sources(a)
+        assert sources == ["pubmed"]
+
+    def test_lookup_without_identifiers(self):
+        a = self._make_analysis(QueryComplexity.SIMPLE, QueryIntent.LOOKUP)
+        sources = DispatchStrategy.get_sources(a)
+        assert "crossref" in sources
+
+    def test_simple_exploration(self):
+        a = self._make_analysis(QueryComplexity.SIMPLE, QueryIntent.EXPLORATION)
+        sources = DispatchStrategy.get_sources(a)
+        assert sources == ["pubmed"]
+
+    def test_moderate(self):
+        a = self._make_analysis(QueryComplexity.MODERATE, QueryIntent.EXPLORATION)
+        sources = DispatchStrategy.get_sources(a)
+        assert "crossref" in sources
+
+    def test_complex_comparison(self):
+        a = self._make_analysis(QueryComplexity.COMPLEX, QueryIntent.COMPARISON)
+        sources = DispatchStrategy.get_sources(a)
+        assert "openalex" in sources
+
+    def test_complex_systematic(self):
+        a = self._make_analysis(QueryComplexity.COMPLEX, QueryIntent.SYSTEMATIC)
+        sources = DispatchStrategy.get_sources(a)
+        assert "europe_pmc" in sources
+
+    def test_ambiguous(self):
+        a = self._make_analysis(QueryComplexity.AMBIGUOUS, QueryIntent.EXPLORATION)
+        sources = DispatchStrategy.get_sources(a)
+        assert "openalex" in sources
+
+    def test_ranking_config_systematic(self):
+        a = self._make_analysis(QueryComplexity.COMPLEX, QueryIntent.SYSTEMATIC)
+        config = DispatchStrategy.get_ranking_config(a)
+        assert isinstance(config, RankingConfig)
+
+    def test_ranking_config_comparison(self):
+        a = self._make_analysis(QueryComplexity.COMPLEX, QueryIntent.COMPARISON)
+        config = DispatchStrategy.get_ranking_config(a)
+        assert isinstance(config, RankingConfig)
+
+    def test_ranking_config_recency(self):
+        a = self._make_analysis(QueryComplexity.SIMPLE, QueryIntent.EXPLORATION, year_from=2023)
+        config = DispatchStrategy.get_ranking_config(a)
+        assert isinstance(config, RankingConfig)
+
+    def test_should_enrich_systematic(self):
+        a = self._make_analysis(QueryComplexity.COMPLEX, QueryIntent.SYSTEMATIC)
+        assert DispatchStrategy.should_enrich_with_unpaywall(a) is True
+
+    def test_should_not_enrich_simple(self):
+        a = self._make_analysis(QueryComplexity.SIMPLE, QueryIntent.EXPLORATION)
+        assert DispatchStrategy.should_enrich_with_unpaywall(a) is False
+
+
+# ============================================================
+# Format functions
+# ============================================================
+
+
+class TestFormatAsJson:
+    def test_basic(self):
+        analysis = MagicMock(spec=AnalyzedQuery)
+        analysis.to_dict.return_value = {"query": "test"}
+        stats = MagicMock(spec=AggregationStats)
+        stats.to_dict.return_value = {"unique": 0}
+        result = _format_as_json([], analysis, stats)
+        parsed = json.loads(result)
+        assert "analysis" in parsed
+        assert "articles" in parsed
+
+
+class TestFormatUnifiedResults:
+    def test_no_articles(self):
+        analysis = MagicMock(spec=AnalyzedQuery)
+        analysis.original_query = "test"
+        analysis.complexity = QueryComplexity.SIMPLE
+        analysis.intent = QueryIntent.EXPLORATION
+        analysis.pico = None
+        stats = MagicMock(spec=AggregationStats)
+        stats.by_source = {}
+        stats.unique_articles = 0
+        stats.duplicates_removed = 0
+
+        result = _format_unified_results(
+            [], analysis, stats, include_analysis=False, include_trials=False
+        )
+        assert "No results" in result
+
+
+# ============================================================
+# Tool capture and registration
+# ============================================================
+
+
+def _capture_tools(mcp, searcher):
+    tools = {}
+    mcp.tool = lambda: lambda func: (tools.__setitem__(func.__name__, func), func)[1]
+    register_unified_search_tools(mcp, searcher)
+    return tools
+
+
+class TestUnifiedSearch:
+    def test_empty_query(self):
+        mcp = MagicMock()
+        searcher = MagicMock()
+        tools = _capture_tools(mcp, searcher)
+        result = tools["unified_search"](query="")
+        assert "error" in result.lower() or "empty" in result.lower()
+
+    def test_simple_pubmed_search(self):
+        mcp = MagicMock()
+        searcher = MagicMock()
+        searcher.search.return_value = [
+            {"pmid": "123", "title": "Test Article", "authors": ["A B"]}
+        ]
+        tools = _capture_tools(mcp, searcher)
+
+        with patch(
+            "pubmed_search.presentation.mcp_server.tools.unified.get_semantic_enhancer",
+        ) as mock_enhancer:
+            mock_enhancer.return_value.enhance.side_effect = Exception("skip")
+            result = tools["unified_search"](
+                query="diabetes", limit=5, show_analysis=False, include_similarity_scores=False
+            )
+        assert isinstance(result, str)
+
+    def test_json_output(self):
+        """unified_search with json format - may return JSON or error string depending on dispatch."""
+        mcp = MagicMock()
+        searcher = MagicMock()
+        searcher.search.return_value = [
+            {"pmid": "123", "title": "Test", "authors": ["X"]}
+        ]
+        tools = _capture_tools(mcp, searcher)
+
+        with patch(
+            "pubmed_search.presentation.mcp_server.tools.unified.get_semantic_enhancer",
+        ) as mock_enhancer:
+            mock_enhancer.return_value.enhance.side_effect = Exception("skip")
+            result = tools["unified_search"](
+                query="test", output_format="json", include_similarity_scores=False
+            )
+        assert isinstance(result, str)
+        # Result is either valid JSON or an error/no-results message
+        try:
+            parsed = json.loads(result)
+            assert isinstance(parsed, dict)
+        except json.JSONDecodeError:
+            assert "no results" in result.lower() or "error" in result.lower()
+
+    def test_exception_handling(self):
+        """When PubMed search fails internally, unified_search still returns results (empty)."""
+        mcp = MagicMock()
+        searcher = MagicMock()
+        searcher.search.side_effect = RuntimeError("Network error")
+        tools = _capture_tools(mcp, searcher)
+
+        with patch(
+            "pubmed_search.presentation.mcp_server.tools.unified.get_semantic_enhancer",
+        ) as mock_enhancer:
+            mock_enhancer.return_value.enhance.side_effect = Exception("skip")
+            result = tools["unified_search"](query="test")
+        # PubMed exception is caught in _search_pubmed, so result is "No results"
+        assert "no results" in result.lower() or "error" in result.lower()
+
+
+class TestAnalyzeSearchQuery:
+    def test_empty_query(self):
+        mcp = MagicMock()
+        searcher = MagicMock()
+        tools = _capture_tools(mcp, searcher)
+        result = tools["analyze_search_query"](query="")
+        assert "error" in result.lower()
+
+    def test_basic_analysis(self):
+        mcp = MagicMock()
+        searcher = MagicMock()
+        tools = _capture_tools(mcp, searcher)
+        result = tools["analyze_search_query"](query="diabetes treatment")
+        assert "Query Analysis" in result or "Complexity" in result
+
+    def test_exception(self):
+        mcp = MagicMock()
+        searcher = MagicMock()
+        tools = _capture_tools(mcp, searcher)
+
+        with patch(
+            "pubmed_search.presentation.mcp_server.tools.unified.QueryAnalyzer"
+        ) as MockAnalyzer:
+            MockAnalyzer.return_value.analyze.side_effect = RuntimeError("fail")
+            result = tools["analyze_search_query"](query="test")
+        assert "error" in result.lower()

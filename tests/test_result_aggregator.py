@@ -254,11 +254,12 @@ class TestRankingConfig:
         """Test default configuration."""
         config = RankingConfig.default()
 
-        assert config.relevance_weight == 0.30
+        assert config.relevance_weight == 0.25
         assert config.quality_weight == 0.20
-        assert config.recency_weight == 0.20
+        assert config.recency_weight == 0.15
         assert config.impact_weight == 0.20
         assert config.source_trust_weight == 0.10
+        assert config.entity_match_weight == 0.10
         assert config.dedup_strategy == DeduplicationStrategy.MODERATE
 
     def test_impact_focused_config(self):
@@ -279,7 +280,7 @@ class TestRankingConfig:
         """Test quality-focused configuration."""
         config = RankingConfig.quality_focused()
 
-        assert config.quality_weight == 0.40
+        assert config.quality_weight == 0.35
 
     def test_normalized_weights(self):
         """Test weights normalization."""
@@ -297,11 +298,13 @@ class TestRankingConfig:
             recency_weight=1.0,
             impact_weight=1.0,
             source_trust_weight=1.0,
+            entity_match_weight=1.0,
         )
         weights = config.normalized_weights()
 
-        # Each should be 0.2
-        assert abs(weights["relevance"] - 0.2) < 0.001
+        # Each should be 1/6 ≈ 0.167 (6 weights now)
+        expected = 1.0 / 6.0
+        assert abs(weights["relevance"] - expected) < 0.001
         assert abs(sum(weights.values()) - 1.0) < 0.001
 
     def test_normalized_weights_zero_total(self):
@@ -312,11 +315,12 @@ class TestRankingConfig:
             recency_weight=0,
             impact_weight=0,
             source_trust_weight=0,
+            entity_match_weight=0,
         )
         weights = config.normalized_weights()
 
-        # Should handle gracefully (each = 0)
-        assert all(w == 0 for w in weights.values())
+        # When total=0, code sets total=1.0, so each weight = 0/1 = 0
+        assert all(w == 0.0 for w in weights.values())
 
     def test_get_article_type_weight_default(self):
         """Test default article type weights."""
