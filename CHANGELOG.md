@@ -16,6 +16,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.3.2] - 2026-02-09
+
+### Fixed
+
+- **Critical**: `_record_search_only` was calling `.get()` on `UnifiedArticle` dataclass objects
+  - Error: `'UnifiedArticle' object has no attribute 'get'`
+  - Now handles both dict and dataclass results using `isinstance`/`getattr`
+  - Affects `unified_search` tool when recording search history
+
+---
+
 ## [0.3.1] - 2026-02-09
 
 ### Changed
