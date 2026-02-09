@@ -420,7 +420,7 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS proxy for API requests
 | `convert_mesh_to_icd` | Convert MeSH term to ICD codes |
 | `search_by_icd` | Search PubMed using ICD code (auto-converts) |
 
-### 💾 Session Management & Vision
+### 💾 Session Management
 
 | Tool | Description |
 |------|-------------|
@@ -428,8 +428,13 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS proxy for API requests
 | `list_search_history` | Browse search history |
 | `get_cached_article` | Get article from session cache (no API cost) |
 | `get_session_summary` | Session status overview |
+
+### 👁️ Vision & Image Search
+
+| Tool | Description |
+|------|-------------|
 | `analyze_figure_for_search` | Analyze scientific figure for search |
-| `reverse_image_search_pubmed` | Reverse image search for literature |
+| `search_biomedical_images` | Search biomedical images across Open-i (X-ray, microscopy, photos, diagrams) |
 
 ---
 

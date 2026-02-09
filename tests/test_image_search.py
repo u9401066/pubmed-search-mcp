@@ -323,6 +323,194 @@ class TestOpenIClientSearch:
         assert len(images) == 1
         assert total == 100
 
+    # ═══════════════════════════════════════════════════════════════════════════
+    # New API Parameters Tests (v0.3.4)
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    def test_search_sort_by_date(self, openi_client, sample_openi_response):
+        """sort_by='d' should add favor=d parameter."""
+        with patch.object(
+            openi_client, "_make_request", return_value=sample_openi_response
+        ) as mock_req:
+            openi_client.search("test", sort_by="d")
+            call_url = mock_req.call_args[0][0]
+            assert "favor=d" in call_url
+
+    def test_search_sort_by_relevance(self, openi_client, sample_openi_response):
+        """sort_by='r' should add favor=r parameter."""
+        with patch.object(
+            openi_client, "_make_request", return_value=sample_openi_response
+        ) as mock_req:
+            openi_client.search("test", sort_by="r")
+            call_url = mock_req.call_args[0][0]
+            assert "favor=r" in call_url
+
+    def test_search_invalid_sort_by_ignored(self, openi_client, sample_openi_response):
+        """Invalid sort_by is ignored (no favor param)."""
+        with patch.object(
+            openi_client, "_make_request", return_value=sample_openi_response
+        ) as mock_req:
+            openi_client.search("test", sort_by="invalid")
+            call_url = mock_req.call_args[0][0]
+            assert "favor=" not in call_url
+
+    def test_search_article_type_case_report(self, openi_client, sample_openi_response):
+        """article_type='cr' should add at=cr parameter."""
+        with patch.object(
+            openi_client, "_make_request", return_value=sample_openi_response
+        ) as mock_req:
+            openi_client.search("test", article_type="cr")
+            call_url = mock_req.call_args[0][0]
+            assert "at=cr" in call_url
+
+    def test_search_invalid_article_type_ignored(self, openi_client, sample_openi_response):
+        """Invalid article_type is ignored."""
+        with patch.object(
+            openi_client, "_make_request", return_value=sample_openi_response
+        ) as mock_req:
+            openi_client.search("test", article_type="invalid")
+            call_url = mock_req.call_args[0][0]
+            assert "at=" not in call_url
+
+    def test_search_specialty_radiology(self, openi_client, sample_openi_response):
+        """specialty='r' should add sp=r parameter."""
+        with patch.object(
+            openi_client, "_make_request", return_value=sample_openi_response
+        ) as mock_req:
+            openi_client.search("test", specialty="r")
+            call_url = mock_req.call_args[0][0]
+            assert "sp=r" in call_url
+
+    def test_search_specialty_cardiology(self, openi_client, sample_openi_response):
+        """specialty='c' should add sp=c parameter."""
+        with patch.object(
+            openi_client, "_make_request", return_value=sample_openi_response
+        ) as mock_req:
+            openi_client.search("test", specialty="c")
+            call_url = mock_req.call_args[0][0]
+            assert "sp=c" in call_url
+
+    def test_search_invalid_specialty_ignored(self, openi_client, sample_openi_response):
+        """Invalid specialty is ignored."""
+        with patch.object(
+            openi_client, "_make_request", return_value=sample_openi_response
+        ) as mock_req:
+            openi_client.search("test", specialty="invalid")
+            call_url = mock_req.call_args[0][0]
+            assert "sp=" not in call_url
+
+    def test_search_license_cc_by(self, openi_client, sample_openi_response):
+        """license_type='by' should add lic=by parameter."""
+        with patch.object(
+            openi_client, "_make_request", return_value=sample_openi_response
+        ) as mock_req:
+            openi_client.search("test", license_type="by")
+            call_url = mock_req.call_args[0][0]
+            assert "lic=by" in call_url
+
+    def test_search_license_cc_by_nc(self, openi_client, sample_openi_response):
+        """license_type='bync' should add lic=bync parameter."""
+        with patch.object(
+            openi_client, "_make_request", return_value=sample_openi_response
+        ) as mock_req:
+            openi_client.search("test", license_type="bync")
+            call_url = mock_req.call_args[0][0]
+            assert "lic=bync" in call_url
+
+    def test_search_invalid_license_ignored(self, openi_client, sample_openi_response):
+        """Invalid license_type is ignored."""
+        with patch.object(
+            openi_client, "_make_request", return_value=sample_openi_response
+        ) as mock_req:
+            openi_client.search("test", license_type="invalid")
+            call_url = mock_req.call_args[0][0]
+            assert "lic=" not in call_url
+
+    def test_search_subset_cancer(self, openi_client, sample_openi_response):
+        """subset='c' should add sub=c parameter."""
+        with patch.object(
+            openi_client, "_make_request", return_value=sample_openi_response
+        ) as mock_req:
+            openi_client.search("test", subset="c")
+            call_url = mock_req.call_args[0][0]
+            assert "sub=c" in call_url
+
+    def test_search_invalid_subset_ignored(self, openi_client, sample_openi_response):
+        """Invalid subset is ignored."""
+        with patch.object(
+            openi_client, "_make_request", return_value=sample_openi_response
+        ) as mock_req:
+            openi_client.search("test", subset="invalid")
+            call_url = mock_req.call_args[0][0]
+            assert "sub=" not in call_url
+
+    def test_search_fields_title(self, openi_client, sample_openi_response):
+        """search_fields='t' should add fields=t parameter."""
+        with patch.object(
+            openi_client, "_make_request", return_value=sample_openi_response
+        ) as mock_req:
+            openi_client.search("test", search_fields="t")
+            call_url = mock_req.call_args[0][0]
+            assert "fields=t" in call_url
+
+    def test_search_fields_caption(self, openi_client, sample_openi_response):
+        """search_fields='c' should add fields=c parameter."""
+        with patch.object(
+            openi_client, "_make_request", return_value=sample_openi_response
+        ) as mock_req:
+            openi_client.search("test", search_fields="c")
+            call_url = mock_req.call_args[0][0]
+            assert "fields=c" in call_url
+
+    def test_search_invalid_fields_ignored(self, openi_client, sample_openi_response):
+        """Invalid search_fields is ignored."""
+        with patch.object(
+            openi_client, "_make_request", return_value=sample_openi_response
+        ) as mock_req:
+            openi_client.search("test", search_fields="invalid")
+            call_url = mock_req.call_args[0][0]
+            assert "fields=" not in call_url
+
+    def test_search_video_only(self, openi_client, sample_openi_response):
+        """video_only=True should add vid=1 parameter."""
+        with patch.object(
+            openi_client, "_make_request", return_value=sample_openi_response
+        ) as mock_req:
+            openi_client.search("test", video_only=True)
+            call_url = mock_req.call_args[0][0]
+            assert "vid=1" in call_url
+
+    def test_search_video_only_false(self, openi_client, sample_openi_response):
+        """video_only=False should NOT add vid parameter."""
+        with patch.object(
+            openi_client, "_make_request", return_value=sample_openi_response
+        ) as mock_req:
+            openi_client.search("test", video_only=False)
+            call_url = mock_req.call_args[0][0]
+            assert "vid=" not in call_url
+
+    def test_search_combined_filters(self, openi_client, sample_openi_response):
+        """Multiple filters should be combined in URL."""
+        with patch.object(
+            openi_client, "_make_request", return_value=sample_openi_response
+        ) as mock_req:
+            openi_client.search(
+                "test",
+                image_type="xg",
+                collection="pmc",
+                sort_by="d",
+                article_type="cr",
+                specialty="r",
+                license_type="by",
+            )
+            call_url = mock_req.call_args[0][0]
+            assert "it=xg" in call_url
+            assert "coll=pmc" in call_url
+            assert "favor=d" in call_url
+            assert "at=cr" in call_url
+            assert "sp=r" in call_url
+            assert "lic=by" in call_url
+
 
 # ============================================================================
 # Application Layer Tests
@@ -416,6 +604,157 @@ class TestImageSearchService:
         ]
         result = ImageSearchService._deduplicate(images)
         assert len(result) == 1
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # New API Parameters Tests (v0.3.4)
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    def test_search_with_sort_by(self):
+        """sort_by parameter should be passed to client."""
+        from pubmed_search.application.image_search import ImageSearchService
+
+        service = ImageSearchService()
+        mock_client = MagicMock()
+        mock_client.search.return_value = ([], 0)
+
+        with patch(
+            "pubmed_search.infrastructure.sources.get_openi_client",
+            return_value=mock_client,
+        ):
+            service.search("test", sort_by="d")
+
+        mock_client.search.assert_called_once()
+        call_kwargs = mock_client.search.call_args[1]
+        assert call_kwargs["sort_by"] == "d"
+
+    def test_search_with_article_type(self):
+        """article_type parameter should be passed to client."""
+        from pubmed_search.application.image_search import ImageSearchService
+
+        service = ImageSearchService()
+        mock_client = MagicMock()
+        mock_client.search.return_value = ([], 0)
+
+        with patch(
+            "pubmed_search.infrastructure.sources.get_openi_client",
+            return_value=mock_client,
+        ):
+            service.search("test", article_type="cr")
+
+        call_kwargs = mock_client.search.call_args[1]
+        assert call_kwargs["article_type"] == "cr"
+
+    def test_search_with_specialty(self):
+        """specialty parameter should be passed to client."""
+        from pubmed_search.application.image_search import ImageSearchService
+
+        service = ImageSearchService()
+        mock_client = MagicMock()
+        mock_client.search.return_value = ([], 0)
+
+        with patch(
+            "pubmed_search.infrastructure.sources.get_openi_client",
+            return_value=mock_client,
+        ):
+            service.search("test", specialty="r")
+
+        call_kwargs = mock_client.search.call_args[1]
+        assert call_kwargs["specialty"] == "r"
+
+    def test_search_with_license_type(self):
+        """license_type parameter should be passed to client."""
+        from pubmed_search.application.image_search import ImageSearchService
+
+        service = ImageSearchService()
+        mock_client = MagicMock()
+        mock_client.search.return_value = ([], 0)
+
+        with patch(
+            "pubmed_search.infrastructure.sources.get_openi_client",
+            return_value=mock_client,
+        ):
+            service.search("test", license_type="by")
+
+        call_kwargs = mock_client.search.call_args[1]
+        assert call_kwargs["license_type"] == "by"
+
+    def test_search_with_video_only(self):
+        """video_only parameter should be passed to client."""
+        from pubmed_search.application.image_search import ImageSearchService
+
+        service = ImageSearchService()
+        mock_client = MagicMock()
+        mock_client.search.return_value = ([], 0)
+
+        with patch(
+            "pubmed_search.infrastructure.sources.get_openi_client",
+            return_value=mock_client,
+        ):
+            service.search("test", video_only=True)
+
+        call_kwargs = mock_client.search.call_args[1]
+        assert call_kwargs["video_only"] is True
+
+    def test_search_tracks_applied_filters(self):
+        """applied_filters should track all set filters."""
+        from pubmed_search.application.image_search import ImageSearchService
+
+        service = ImageSearchService()
+        mock_client = MagicMock()
+        mock_client.search.return_value = ([], 0)
+
+        with patch(
+            "pubmed_search.infrastructure.sources.get_openi_client",
+            return_value=mock_client,
+        ):
+            result = service.search(
+                "test",
+                image_type="xg",
+                sort_by="d",
+                article_type="cr",
+                specialty="r",
+                license_type="by",
+            )
+
+        assert result.applied_filters["image_type"] == "xg"
+        assert result.applied_filters["sort_by"] == "d"
+        assert result.applied_filters["article_type"] == "cr"
+        assert result.applied_filters["specialty"] == "r"
+        assert result.applied_filters["license"] == "by"
+
+    def test_search_with_all_new_parameters(self):
+        """All new parameters should be passed to client."""
+        from pubmed_search.application.image_search import ImageSearchService
+
+        service = ImageSearchService()
+        mock_client = MagicMock()
+        mock_client.search.return_value = ([], 0)
+
+        with patch(
+            "pubmed_search.infrastructure.sources.get_openi_client",
+            return_value=mock_client,
+        ):
+            service.search(
+                "test",
+                sort_by="d",
+                article_type="cr",
+                specialty="r",
+                license_type="by",
+                subset="c",
+                search_fields="t",
+                video_only=True,
+                hmp_type="ar",
+            )
+
+        call_kwargs = mock_client.search.call_args[1]
+        assert call_kwargs["sort_by"] == "d"
+        assert call_kwargs["article_type"] == "cr"
+        assert call_kwargs["specialty"] == "r"
+        assert call_kwargs["license_type"] == "by"
+        assert call_kwargs["subset"] == "c"
+        assert call_kwargs["search_fields"] == "t"
+        assert call_kwargs["video_only"] is True
+        assert call_kwargs["hmp_type"] == "ar"
 
 
 # ============================================================================

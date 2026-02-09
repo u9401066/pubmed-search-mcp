@@ -18,7 +18,7 @@ Example:
     >>> advice.is_suitable
     True
     >>> advice.recommended_image_type
-    'xg'
+    'x'
 """
 
 from __future__ import annotations
@@ -41,8 +41,15 @@ class ImageSearchAdvice:
     confidence: float  # 0.0-1.0 confidence in assessment
 
     # Image type recommendation
-    recommended_image_type: str | None = None  # "xg", "mc", "ph", "g"
+    recommended_image_type: str | None = None  # "xg", "mc", "ph", "g", etc.
     image_type_reason: str = ""  # Why this type was recommended
+
+    # Coarse category (粗分類)
+    coarse_category: str | None = None  # "radiology", "microscopy", etc.
+
+    # Collection recommendation
+    recommended_collection: str | None = None  # "pmc", "cxr", "mpx", etc.
+    collection_reason: str = ""
 
     # Warnings and suggestions
     warnings: list[str] = field(default_factory=list)
@@ -127,20 +134,65 @@ class ImageQueryAdvisor:
     }
 
     # ─── Image Type Detection Keywords ──────────────────────────────
+    # 8 positive image type filters from Swagger spec:
+    #   c (CT), g (Graphics), m (MRI), mc (Microscopy),
+    #   p (PET), ph (Photographs), u (Ultrasound), x (X-ray)
+    # 2 exclusion filters: xg (Exclude Graphics), xm (Exclude Multipanel)
+    # See docs/IMAGE_SEARCH_API.md for complete mapping
 
-    # X-ray / Radiology → "xg"
+    # X-ray → "x"
     RADIOLOGY_KEYWORDS = {
         "x-ray", "xray", "x ray", "radiograph", "radiography",
         "chest", "lung", "thorax", "bone", "fracture", "skeletal",
         "spine", "vertebra", "pelvis", "abdomen", "abdominal",
-        "ct", "ct scan", "computed tomography",
-        "mri", "magnetic resonance",
         "mammography", "mammogram",
         "fluoroscopy", "barium",
         "angiography", "angiogram",
         "pneumonia", "pneumothorax", "pleural", "effusion",
         "cardiomegaly", "mediastinal",
         "X光", "胸部", "骨折", "脊椎", "腹部",
+    }
+
+    # MRI → "m"
+    MRI_KEYWORDS = {
+        "mri", "magnetic resonance", "magnetic resonance imaging",
+        "t1 weighted", "t2 weighted", "flair", "dwi", "diffusion",
+        "gadolinium", "contrast enhanced mri",
+        "brain mri", "spine mri", "knee mri",
+        "mr angiography", "mra", "mrcp",
+        "磁振造影", "核磁共振",
+    }
+
+    # CT → "c"
+    CT_KEYWORDS = {
+        "ct", "ct scan", "computed tomography",
+        "ct angiography", "cta", "hrct",
+        "contrast enhanced", "hounsfield",
+        "axial", "coronal", "sagittal",
+        "ct abdomen", "ct chest", "ct head",
+        "ct brain", "ct spine",
+        "電腦斷層", "斷層掃描",
+    }
+
+    # PET → "p"
+    PET_KEYWORDS = {
+        "pet", "pet scan", "pet-ct", "pet/ct",
+        "positron emission", "positron emission tomography",
+        "fdg", "suv", "standardized uptake",
+        "nuclear medicine", "scintigraphy", "spect",
+        "正子造影", "正子掃描",
+    }
+
+    # Ultrasound → "u"
+    ULTRASOUND_KEYWORDS = {
+        "ultrasound", "ultrasonography", "sonography", "sonogram",
+        "echocardiography", "echocardiogram", "echo",
+        "doppler", "b-mode", "m-mode",
+        "transesophageal", "transthoracic",
+        "obstetric ultrasound", "fetal ultrasound",
+        "abdominal ultrasound", "renal ultrasound",
+        "thyroid ultrasound", "breast ultrasound",
+        "超音波", "心臟超音波",
     }
 
     # Microscopy → "mc"
@@ -172,14 +224,51 @@ class ImageQueryAdvisor:
         "照片", "皮膚", "傷口", "內視鏡", "手術",
     }
 
-    # Graphics → "gl"
+    # Graphics → "g"
     GRAPHICS_KEYWORDS = {
         "diagram", "schematic", "illustration", "drawing",
         "flowchart", "flow chart", "algorithm",
         "graph", "chart", "plot", "figure",
         "infographic", "visualization",
         "anatomical diagram", "pathway diagram",
+        "decision tree", "clinical pathway",
         "圖表", "流程圖", "示意圖", "插圖",
+    }
+
+    # ─── Coarse Category Mapping ────────────────────────────────────
+    # Maps image_type → coarse category for agent display
+    # Note: xg/xm are exclusion filters, not positive types
+    COARSE_CATEGORIES = {
+        "x": "radiology",
+        "c": "radiology",
+        "m": "radiology",
+        "p": "radiology",
+        "u": "ultrasound",
+        "mc": "microscopy",
+        "ph": "photo",
+        "g": "graphics",
+        # Exclusion filters — category is "filter"
+        "xg": "filter",
+        "xm": "filter",
+    }
+
+    # ─── Collection Detection Keywords ──────────────────────────────
+
+    CHEST_XRAY_KEYWORDS = {
+        "chest x-ray", "chest xray", "chest radiograph",
+        "cxr", "pa view", "ap view", "lateral chest",
+        "chest film", "胸部X光", "胸片",
+    }
+
+    MEDPIX_KEYWORDS = {
+        "teaching", "clinical case", "case study",
+        "educational", "medpix", "teaching image",
+        "教學", "臨床案例", "教學影像",
+    }
+
+    HISTORY_KEYWORDS = {
+        "history of medicine", "historical", "vintage",
+        "medical history", "antique", "醫學史",
     }
 
     # ─── Temporal Limitation Detection ──────────────────────────────
@@ -233,10 +322,18 @@ class ImageQueryAdvisor:
         suitability_score = self._score_image_suitability(query_lower)
         is_suitable = suitability_score >= 0.3
 
-        # 2. Recommend image type
+        # 2. Recommend image type (all 10 types)
         recommended_type, type_reason = self._recommend_image_type(query_lower)
 
-        # 3. Check image_type mismatch
+        # 3. Determine coarse category
+        coarse_category = self.COARSE_CATEGORIES.get(
+            recommended_type, None
+        ) if recommended_type else None
+
+        # 4. Recommend collection
+        recommended_coll, coll_reason = self._recommend_collection(query_lower)
+
+        # 5. Check image_type mismatch
         if image_type and recommended_type and image_type != recommended_type:
             warnings.append(
                 f"查詢內容偏向 {self._type_label(recommended_type)}，"
@@ -244,12 +341,12 @@ class ImageQueryAdvisor:
                 f"建議用 image_type=\"{recommended_type}\""
             )
 
-        # 4. Temporal relevance check
+        # 6. Temporal relevance check
         temporal_warning = self._check_temporal_relevance(query_lower)
         if temporal_warning:
             warnings.append(temporal_warning)
 
-        # 5. Non-image query suggestions
+        # 7. Non-image query suggestions
         if not is_suitable:
             suggestions.append(
                 "此查詢更適合文獻搜尋。建議改用 unified_search() 或 search_literature()"
@@ -260,7 +357,7 @@ class ImageQueryAdvisor:
                     "請加入 X-ray、histology、CT scan 等關鍵字"
                 )
 
-        # 6. Query enhancement
+        # 8. Query enhancement
         enhanced = self._enhance_query(query_lower, recommended_type)
 
         return ImageSearchAdvice(
@@ -268,6 +365,9 @@ class ImageQueryAdvisor:
             confidence=min(abs(suitability_score), 1.0),
             recommended_image_type=recommended_type,
             image_type_reason=type_reason,
+            coarse_category=coarse_category,
+            recommended_collection=recommended_coll,
+            collection_reason=coll_reason,
             warnings=warnings,
             suggestions=suggestions,
             enhanced_query=enhanced if enhanced != query_lower else None,
@@ -301,9 +401,21 @@ class ImageQueryAdvisor:
         )
         score -= min(negative_hits * 0.25, 0.75)
 
-        # Radiology/Microscopy/Photo keywords are strong positive signals
+        # Radiology/CT/Ultrasound/Microscopy/Photo keywords are strong positive signals
         radiology_hits = sum(
             1 for kw in self.RADIOLOGY_KEYWORDS if kw in query_lower
+        )
+        ct_hits = sum(
+            1 for kw in self.CT_KEYWORDS if kw in query_lower
+        )
+        mri_hits = sum(
+            1 for kw in self.MRI_KEYWORDS if kw in query_lower
+        )
+        pet_hits = sum(
+            1 for kw in self.PET_KEYWORDS if kw in query_lower
+        )
+        us_hits = sum(
+            1 for kw in self.ULTRASOUND_KEYWORDS if kw in query_lower
         )
         microscopy_hits = sum(
             1 for kw in self.MICROSCOPY_KEYWORDS if kw in query_lower
@@ -311,7 +423,8 @@ class ImageQueryAdvisor:
         photo_hits = sum(
             1 for kw in self.PHOTO_KEYWORDS if kw in query_lower
         )
-        type_hits = radiology_hits + microscopy_hits + photo_hits
+        type_hits = (radiology_hits + ct_hits + mri_hits + pet_hits
+                     + us_hits + microscopy_hits + photo_hits)
         score += min(type_hits * 0.2, 0.6)
 
         return max(-1.0, min(1.0, score))
@@ -322,14 +435,42 @@ class ImageQueryAdvisor:
         """
         Recommend the best image_type based on query content.
 
+        Covers all 10 valid Open-i `it` values:
+        xg, x, xm (radiology), mc, m (microscopy),
+        ph, p (photo), g (graphics), u (ultrasound), c (CT).
+
+        Strategy:
+        - Score each of the 5 keyword groups
+        - Map winner to the best specific `it` value
+        - CT and ultrasound have their own dedicated types
+
         Returns:
             (image_type, reason) tuple
         """
-        scores: dict[str, int] = {"xg": 0, "mc": 0, "ph": 0, "g": 0}
+        scores: dict[str, int] = {
+            "x": 0, "c": 0, "m": 0, "p": 0,
+            "u": 0, "mc": 0, "ph": 0, "g": 0,
+        }
 
         for kw in self.RADIOLOGY_KEYWORDS:
             if kw in query_lower:
-                scores["xg"] += 1
+                scores["x"] += 1
+
+        for kw in self.CT_KEYWORDS:
+            if kw in query_lower:
+                scores["c"] += 1
+
+        for kw in self.MRI_KEYWORDS:
+            if kw in query_lower:
+                scores["m"] += 1
+
+        for kw in self.PET_KEYWORDS:
+            if kw in query_lower:
+                scores["p"] += 1
+
+        for kw in self.ULTRASOUND_KEYWORDS:
+            if kw in query_lower:
+                scores["u"] += 1
 
         for kw in self.MICROSCOPY_KEYWORDS:
             if kw in query_lower:
@@ -346,17 +487,57 @@ class ImageQueryAdvisor:
         # Find the highest-scoring type
         max_score = max(scores.values())
         if max_score == 0:
-            return "xg", "未偵測到特定影像類型關鍵字，使用預設 X-ray (xg) 最大覆蓋"
+            # No type-specific keywords → return None (search all types)
+            return None, "未偵測到特定影像類型關鍵字，不指定 image_type（搜尋所有類型）"
 
         best_type = max(scores, key=lambda k: scores[k])
         reasons = {
-            "xg": "偵測到放射學/X光相關關鍵字",
+            "x": "偵測到放射學/X光相關關鍵字",
+            "c": "偵測到 CT/電腦斷層相關關鍵字",
+            "m": "偵測到 MRI/磁振造影相關關鍵字",
+            "p": "偵測到 PET/正子造影相關關鍵字",
+            "u": "偵測到超音波/心臟超音波相關關鍵字",
             "mc": "偵測到顯微鏡/組織學/病理相關關鍵字",
             "ph": "偵測到臨床照片/皮膚/內視鏡相關關鍵字",
             "g": "偵測到圖表/示意圖/流程圖相關關鍵字",
         }
 
         return best_type, reasons.get(best_type, "")
+
+    def _recommend_collection(
+        self, query_lower: str
+    ) -> tuple[str | None, str]:
+        """
+        Recommend the best collection based on query content.
+
+        Valid collections: pmc, cxr, mpx, hmd, usc
+
+        Returns:
+            (collection, reason) tuple. None means all collections.
+        """
+        # Check chest X-ray specific queries
+        cxr_hits = sum(
+            1 for kw in self.CHEST_XRAY_KEYWORDS if kw in query_lower
+        )
+        if cxr_hits >= 2:
+            return "cxr", "查詢高度偏向胸部 X 光，建議使用 cxr 專集"
+
+        # Check teaching/clinical case queries
+        mpx_hits = sum(
+            1 for kw in self.MEDPIX_KEYWORDS if kw in query_lower
+        )
+        if mpx_hits >= 1:
+            return "mpx", "查詢含教學/案例相關詞彙，MedPix 提供高品質教學影像"
+
+        # Check history of medicine
+        hmd_hits = sum(
+            1 for kw in self.HISTORY_KEYWORDS if kw in query_lower
+        )
+        if hmd_hits >= 1:
+            return "hmd", "查詢含醫學史相關詞彙"
+
+        # Default: no collection filter
+        return None, ""
 
     def _check_temporal_relevance(self, query_lower: str) -> str | None:
         """
@@ -411,10 +592,16 @@ class ImageQueryAdvisor:
     def _type_label(image_type: str) -> str:
         """Human-readable label for image type codes."""
         labels = {
-            "xg": "X-ray/放射 (xg)",
-            "mc": "顯微鏡 (mc)",
-            "ph": "臨床照片 (ph)",
-            "g": "圖表/示意圖 (g)",
+            "x": "X-ray/X光 (x)",
+            "c": "CT Scan/電腦斷層 (c)",
+            "m": "MRI/磁振造影 (m)",
+            "mc": "Microscopy/顯微鏡 (mc)",
+            "p": "PET/正子造影 (p)",
+            "ph": "Photographs/臨床照片 (ph)",
+            "u": "Ultrasound/超音波 (u)",
+            "g": "Graphics/圖表 (g)",
+            "xg": "Exclude Graphics/排除圖表 (xg)",
+            "xm": "Exclude Multipanel/排除多格圖 (xm)",
         }
         return labels.get(image_type, image_type)
 

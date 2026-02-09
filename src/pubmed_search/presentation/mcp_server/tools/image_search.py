@@ -2,7 +2,19 @@
 Image Search Tool - Search biomedical images across Open-i and Europe PMC.
 
 Tools:
-- search_biomedical_images: Unified biomedical image search
+- search_biomedical_images: Unified biomedical image search with full API support
+
+Full API Parameters (Open-i):
+- query: Search query (required)
+- image_type: xg/xm/x/u/ph/p/mc/m/g/c
+- collection: pmc/cxr/usc/hmd/mpx
+- sort_by: r/d/o/t/e/g
+- article_type: cr/or/re/sr/...
+- specialty: r/c/ne/pu/d/...
+- license: by/bync/byncnd/byncsa
+- subset: b/c/e/s/x
+- search_fields: t/m/ab/msh/c/a
+- video_only: true/false
 """
 
 import logging
@@ -33,6 +45,14 @@ def register_image_search_tools(mcp: FastMCP):
         collection: Union[str, None] = None,
         open_access_only: Union[bool, str] = True,
         limit: Union[int, str] = 10,
+        # New parameters (v0.3.4)
+        sort_by: Union[str, None] = None,
+        article_type: Union[str, None] = None,
+        specialty: Union[str, None] = None,
+        license_type: Union[str, None] = None,
+        subset: Union[str, None] = None,
+        search_fields: Union[str, None] = None,
+        video_only: Union[bool, str] = False,
     ) -> str:
         """
         🖼️ Search biomedical images across Open-i and Europe PMC.
@@ -43,7 +63,7 @@ def register_image_search_tools(mcp: FastMCP):
         ═══════════════════════════════════════════════════════════════
         SOURCES:
         ═══════════════════════════════════════════════════════════════
-        - Open-i (NLM): X-ray, microscopy, clinical images
+        - Open-i (NLM): X-ray, microscopy, clinical images (~133K)
         - Europe PMC: Figure captions from 33M+ articles (future)
 
         ═══════════════════════════════════════════════════════════════
@@ -54,13 +74,27 @@ def register_image_search_tools(mcp: FastMCP):
             search_biomedical_images("chest pneumonia CT scan")
 
         X-ray only:
-            search_biomedical_images("fracture", image_type="xg")
+            search_biomedical_images("fracture", image_type="x")
 
         Microscopy images:
             search_biomedical_images("histology liver", image_type="mc")
 
         Clinical teaching images (MedPix):
             search_biomedical_images("pneumothorax", collection="mpx")
+
+        Case reports with CC-BY license, sorted by date:
+            search_biomedical_images(
+                "lung cancer",
+                article_type="cr",
+                license_type="by",
+                sort_by="d"
+            )
+
+        Cardiology specialty images:
+            search_biomedical_images("echocardiogram", specialty="c")
+
+        Video content only:
+            search_biomedical_images("surgery technique", video_only=True)
 
         ═══════════════════════════════════════════════════════════════
 
@@ -72,21 +106,78 @@ def register_image_search_tools(mcp: FastMCP):
                 - "europe_pmc": Europe PMC only (future)
                 - "all": Search all sources
             image_type: Filter by image type (Open-i only):
-                - "xg": X-ray / radiology images
-                - "mc": Microscopy images
-                - "ph": Photographs / clinical photos
+                Positive filters:
+                - "c": CT scan images
                 - "g": Graphics / line art / diagrams
-                - "x": X-ray, "u": Ultrasound, "c", "m", "p", "xm": other types
+                - "m": MRI images
+                - "mc": Microscopy / histology images
+                - "p": PET scan images
+                - "ph": Photographs / clinical photos
+                - "u": Ultrasound images
+                - "x": X-ray images
+                Exclusion filters:
+                - "xg": Exclude Graphics (removes graphic images from results)
+                - "xm": Exclude Multipanel (removes multipanel images)
                 - None: All types (default)
             collection: Filter by collection (Open-i only):
                 - "pmc": PubMed Central articles
-                - "mpx": MedPix clinical teaching images
+                - "mpx": MedPix clinical teaching images (high quality)
                 - "cxr": Chest X-ray collection
                 - "hmd": History of Medicine
                 - "usc": USC collection
                 - None: All collections (default)
             open_access_only: Only return open access images (default True)
-            limit: Maximum number of images to return (default 10)
+            limit: Maximum number of images to return (default 10, max 50)
+            sort_by: Sort results by (Open-i only):
+                - "r": Relevance (default)
+                - "d": Date (newest first)
+                - "o": Oldest first
+                - "t": Title
+                - "e": Education relevance
+                - "g": Graphics priority
+            article_type: Filter by article type (Open-i only):
+                - "cr": Case Report
+                - "or": Original Research
+                - "re": Review
+                - "sr": Systematic Review
+                - "ra": Research Article
+                - "ed": Editorial
+                - "lt": Letter
+                - "bk": Book
+                - and more... (see API docs)
+            specialty: Filter by medical specialty (Open-i only):
+                - "r": Radiology
+                - "c": Cardiology
+                - "ne": Neurology
+                - "pu": Pulmonology
+                - "d": Dermatology
+                - "g": Gastroenterology
+                - "or": Orthopedics
+                - "o": Ophthalmology
+                - "s": Surgery
+                - "p": Pediatrics
+                - "id": Infectious Disease
+                - "i": Immunology
+                - and more... (see API docs)
+            license_type: Filter by Creative Commons license (Open-i only):
+                - "by": CC-BY (Attribution)
+                - "bync": CC-BY-NC (Attribution-NonCommercial)
+                - "byncnd": CC-BY-NC-ND (Attribution-NonCommercial-NoDerivs)
+                - "byncsa": CC-BY-NC-SA (Attribution-NonCommercial-ShareAlike)
+            subset: Filter by subject subset (Open-i only):
+                - "b": Behavioral Sciences
+                - "c": Cancer
+                - "e": Ethics
+                - "s": Surgery
+                - "x": Toxicology
+            search_fields: Search in specific fields (Open-i only):
+                - "t": Title only
+                - "m": MeSH terms only
+                - "ab": Abstract only
+                - "msh": MeSH heading only
+                - "c": Caption only
+                - "a": Author only
+            video_only: If True, only return video content (default False)
 
         Returns:
             Formatted image results with URLs, captions, and article metadata
@@ -105,6 +196,7 @@ def register_image_search_tools(mcp: FastMCP):
         open_access_only = InputNormalizer.normalize_bool(
             open_access_only, default=True
         )
+        video_only = InputNormalizer.normalize_bool(video_only, default=False)
 
         # 2. Map sources string to list
         source_map = {
@@ -130,6 +222,13 @@ def register_image_search_tools(mcp: FastMCP):
                 collection=collection,
                 open_access_only=open_access_only,
                 limit=limit,
+                sort_by=sort_by,
+                article_type=article_type,
+                specialty=specialty,
+                license_type=license_type,
+                subset=subset,
+                search_fields=search_fields,
+                video_only=video_only,
             )
         except Exception as e:
             return ResponseFormatter.error(
@@ -155,6 +254,11 @@ def _format_image_results(result: ImageSearchResult) -> str:
     )
     parts.append(f"**Sources**: {', '.join(result.sources_used)}")
 
+    # Show applied filters
+    if result.applied_filters:
+        filter_strs = [f"{k}={v}" for k, v in result.applied_filters.items()]
+        parts.append(f"**Filters**: {', '.join(filter_strs)}")
+
     if result.errors:
         parts.append(f"\n⚠️ Errors: {'; '.join(result.errors)}")
 
@@ -172,6 +276,17 @@ def _format_image_results(result: ImageSearchResult) -> str:
     if result.recommended_image_type:
         parts.append(
             f"- 🎯 建議 image_type: `{result.recommended_image_type}`"
+        )
+
+    if result.coarse_category:
+        parts.append(
+            f"- 📂 粗分類: {result.coarse_category}"
+        )
+
+    if result.recommended_collection:
+        parts.append(
+            f"- 📦 建議 collection: `{result.recommended_collection}` "
+            f"({result.collection_reason})"
         )
 
     if not result.images:
@@ -241,8 +356,11 @@ def _format_image_results(result: ImageSearchResult) -> str:
     # Footer with tips
     parts.append("---")
     parts.append("💡 **Tips**:")
-    parts.append('- Use `image_type="xg"` for X-ray, `"mc"` for microscopy')
+    parts.append('- Use `image_type="x"` for X-ray, `"m"` for MRI, `"mc"` for microscopy, `"c"` for CT')
     parts.append('- Use `collection="mpx"` for MedPix clinical teaching images')
+    parts.append('- Use `sort_by="d"` for newest images, `article_type="cr"` for case reports')
+    parts.append('- Use `specialty="r"` for radiology, `"c"` for cardiology')
+    parts.append('- Use `license_type="by"` for CC-BY licensed images')
     parts.append(
         "- Use `fetch_article_details(pmid=...)` to get full article info"
     )

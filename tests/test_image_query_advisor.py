@@ -103,10 +103,10 @@ class TestImageQueryAdvisorImageType:
     def setup_method(self):
         self.advisor = ImageQueryAdvisor()
 
-    def test_recommend_xg_for_radiology(self):
+    def test_recommend_x_for_xray(self):
         advice = self.advisor.advise("chest X-ray pneumonia")
-        assert advice.recommended_image_type == "xg"
-        assert "放射" in advice.image_type_reason or "X光" in advice.image_type_reason
+        assert advice.recommended_image_type == "x"  # "x" = X-ray
+        assert "X光" in advice.image_type_reason or "放射" in advice.image_type_reason
 
     def test_recommend_mc_for_microscopy(self):
         advice = self.advisor.advise("histology liver biopsy pathology")
@@ -123,11 +123,33 @@ class TestImageQueryAdvisorImageType:
         assert advice.recommended_image_type == "g"
         assert "圖表" in advice.image_type_reason or "示意" in advice.image_type_reason
 
-    def test_default_xg_for_unknown(self):
-        """Queries without specific image type keywords default to xg."""
+    def test_recommend_c_for_ct(self):
+        advice = self.advisor.advise("ct scan computed tomography hrct")
+        assert advice.recommended_image_type == "c"
+        assert "CT" in advice.image_type_reason or "斷層" in advice.image_type_reason
+
+    def test_recommend_u_for_ultrasound(self):
+        advice = self.advisor.advise("ultrasound echocardiography doppler")
+        assert advice.recommended_image_type == "u"
+        assert "超音波" in advice.image_type_reason
+
+    def test_recommend_m_for_mri(self):
+        """MRI queries should recommend 'm' (MRI), not 'mc' (Microscopy)."""
+        advice = self.advisor.advise("brain mri t2 weighted flair")
+        assert advice.recommended_image_type == "m"
+        assert "MRI" in advice.image_type_reason or "磁振" in advice.image_type_reason
+
+    def test_recommend_p_for_pet(self):
+        """PET queries should recommend 'p' (PET), not 'ph' (Photographs)."""
+        advice = self.advisor.advise("pet scan fdg suv")
+        assert advice.recommended_image_type == "p"
+        assert "PET" in advice.image_type_reason or "正子" in advice.image_type_reason
+
+    def test_default_none_for_unknown(self):
+        """Queries without specific image type keywords → None (all types)."""
         advice = self.advisor.advise("heart disease")
-        assert advice.recommended_image_type == "xg"
-        assert "預設" in advice.image_type_reason
+        assert advice.recommended_image_type is None
+        assert "所有類型" in advice.image_type_reason
 
     def test_image_type_mismatch_warning(self):
         """Warning when explicit image_type doesn't match query content."""
@@ -188,6 +210,74 @@ class TestImageQueryAdvisorQueryEnhancement:
         if advice.enhanced_query:
             assert "chest" in advice.enhanced_query
             assert "pneumonia" in advice.enhanced_query
+
+
+class TestImageQueryAdvisorCoarseCategory:
+    """Tests for coarse category classification."""
+
+    def setup_method(self):
+        self.advisor = ImageQueryAdvisor()
+
+    def test_radiology_category_from_xray(self):
+        advice = self.advisor.advise("chest X-ray pneumonia")
+        assert advice.coarse_category == "radiology"
+
+    def test_radiology_category_from_ct(self):
+        advice = self.advisor.advise("ct scan computed tomography hrct")
+        assert advice.coarse_category == "radiology"
+
+    def test_radiology_category_from_mri(self):
+        advice = self.advisor.advise("brain mri t2 weighted flair")
+        assert advice.coarse_category == "radiology"
+
+    def test_radiology_category_from_pet(self):
+        advice = self.advisor.advise("pet scan fdg suv")
+        assert advice.coarse_category == "radiology"
+
+    def test_ultrasound_category(self):
+        advice = self.advisor.advise("ultrasound echocardiography")
+        assert advice.coarse_category == "ultrasound"
+
+    def test_microscopy_category(self):
+        advice = self.advisor.advise("histology liver biopsy pathology")
+        assert advice.coarse_category == "microscopy"
+
+    def test_photo_category(self):
+        advice = self.advisor.advise("skin lesion dermatology clinical photo")
+        assert advice.coarse_category == "photo"
+
+    def test_graphics_category(self):
+        advice = self.advisor.advise("flowchart algorithm diagram")
+        assert advice.coarse_category == "graphics"
+
+    def test_none_category_for_generic(self):
+        advice = self.advisor.advise("heart disease")
+        assert advice.coarse_category is None
+
+
+class TestImageQueryAdvisorCollection:
+    """Tests for collection recommendation."""
+
+    def setup_method(self):
+        self.advisor = ImageQueryAdvisor()
+
+    def test_cxr_collection_for_chest_xray(self):
+        advice = self.advisor.advise("chest x-ray pa view pneumonia")
+        assert advice.recommended_collection == "cxr"
+        assert "胸部" in advice.collection_reason or "cxr" in advice.collection_reason
+
+    def test_mpx_collection_for_teaching(self):
+        advice = self.advisor.advise("clinical case teaching image")
+        assert advice.recommended_collection == "mpx"
+        assert "教學" in advice.collection_reason or "MedPix" in advice.collection_reason
+
+    def test_hmd_collection_for_medical_history(self):
+        advice = self.advisor.advise("history of medicine vintage")
+        assert advice.recommended_collection == "hmd"
+
+    def test_no_collection_for_generic(self):
+        advice = self.advisor.advise("chest pneumonia X-ray")
+        assert advice.recommended_collection is None
 
 
 class TestImageSearchAdviceDataclass:

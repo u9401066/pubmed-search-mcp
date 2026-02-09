@@ -420,7 +420,7 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS 代理
 | `convert_mesh_to_icd` | 將 MeSH 詞彙轉換為 ICD 代碼 |
 | `search_by_icd` | 使用 ICD 代碼搜尋 PubMed（自動轉換） |
 
-### 💾 Session 管理與視覺搜尋
+### 💾 Session 管理
 
 | 工具 | 說明 |
 |------|------|
@@ -428,8 +428,13 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS 代理
 | `list_search_history` | 瀏覽搜尋歷史 |
 | `get_cached_article` | 從 Session 快取取得文章（不消耗 API） |
 | `get_session_summary` | Session 狀態概覽 |
+
+### 👁️ 視覺搜尋與圖片搜尋
+
+| 工具 | 說明 |
+|------|------|
 | `analyze_figure_for_search` | 分析科學圖片以進行搜尋 |
-| `reverse_image_search_pubmed` | 圖片反向搜尋文獻 |
+| `search_biomedical_images` | 跨來源生物醫學圖片搜尋（X光、顯微鏡、照片、圖表） |
 
 ---
 

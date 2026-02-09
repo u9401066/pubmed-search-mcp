@@ -6,6 +6,7 @@ Open-i is the National Library of Medicine's open-access
 biomedical image search engine.
 
 API Documentation: https://openi.nlm.nih.gov/faq
+Swagger Spec: https://openi.nlm.nih.gov/v2/api-docs
 Image Search API Reference: docs/IMAGE_SEARCH_API.md
 
 Limitations:
@@ -18,6 +19,21 @@ Limitations:
   e.g. m=1&n=10 → results 1-10, m=11&n=20 → results 11-20
 - Collection 'coll' values: pmc, cxr, usc, hmd, mpx
 - Response latency: 2-9 seconds
+
+Full API Parameters (13 total):
+- query: Search query string
+- m: Start index (1-based)
+- n: End index
+- it: Image type filter
+- coll: Collection filter
+- favor: Sort/rank by (r=relevance, d=date, etc.)
+- at: Article type filter (cr=case report, etc.)
+- sub: Subject subset filter
+- lic: License filter (by, bync, byncnd, byncsa)
+- sp: Medical specialty filter
+- fields: Search in specific fields
+- vid: Video only (0/1)
+- hmp: HMD publication type filter
 """
 
 import json
@@ -45,16 +61,174 @@ class OpenIClient:
     Uses urllib.request + _make_request() pattern consistent with
     OpenAlexClient, EuropePMCClient, COREClient, etc.
 
+    Supports ALL 13 API parameters from Swagger spec.
+
     Usage:
         client = OpenIClient()
         images, total = client.search("chest pneumonia", image_type="xg")
+        images, total = client.search("surgery", sort_by="d", video_only=True)
     """
 
-    # Valid image type filters per official Swagger spec (2026-02)
-    # See: https://openi.nlm.nih.gov/v2/api-docs
+    # ═══════════════════════════════════════════════════════════════════════════
+    # API Parameter Enums (from Swagger spec https://openi.nlm.nih.gov/v2/api-docs)
+    # ═══════════════════════════════════════════════════════════════════════════
+
+    # Image Type (it) - 8 positive filters + 2 exclusion filters
     VALID_IMAGE_TYPES = {"xg", "xm", "x", "u", "ph", "p", "mc", "m", "g", "c"}
+    IMAGE_TYPE_LABELS = {
+        # Positive filters
+        "c": "CT Scan",
+        "g": "Graphics",
+        "m": "MRI",
+        "mc": "Microscopy",
+        "p": "PET",
+        "ph": "Photographs",
+        "u": "Ultrasound",
+        "x": "X-ray",
+        # Exclusion filters
+        "xg": "Exclude Graphics",
+        "xm": "Exclude Multipanel",
+    }
     DEFAULT_IMAGE_TYPE = None  # None = all types (API does not require 'it')
+
+    # Collection (coll)
     VALID_COLLECTIONS = {"pmc", "cxr", "usc", "hmd", "mpx"}
+    COLLECTION_LABELS = {
+        "pmc": "PubMed Central",
+        "cxr": "Chest X-ray Collection",
+        "usc": "USC Collection",
+        "hmd": "History of Medicine",
+        "mpx": "MedPix Teaching Images",
+    }
+
+    # Sort/Rank By (favor)
+    VALID_SORT_BY = {"r", "o", "d", "e", "g", "oc", "pr", "pg", "t"}
+    SORT_BY_LABELS = {
+        "r": "Relevance",
+        "o": "Oldest first",
+        "d": "Date (newest first)",
+        "e": "Education",
+        "g": "Graphics",
+        "oc": "Open access citation",
+        "pr": "Problem",
+        "pg": "PubMed/Google",
+        "t": "Title",
+    }
+
+    # Article Type (at)
+    VALID_ARTICLE_TYPES = {
+        "ab", "bk", "bf", "cr", "dp", "di", "ed", "ib", "in", "lt",
+        "mr", "ma", "ne", "ob", "pr", "or", "re", "ra", "rw", "sr",
+        "rr", "os", "hs", "ot",
+    }
+    ARTICLE_TYPE_LABELS = {
+        "ab": "Abstract",
+        "bk": "Book",
+        "bf": "Brief communication",
+        "cr": "Case Report",
+        "dp": "Data paper",
+        "di": "Discussion",
+        "ed": "Editorial",
+        "ib": "Image/Video",
+        "in": "Interview",
+        "lt": "Letter",
+        "mr": "Meta-analysis review",
+        "ma": "Meeting abstract",
+        "ne": "News",
+        "ob": "Obituary",
+        "pr": "Protocol",
+        "or": "Original research",
+        "re": "Review",
+        "ra": "Research article",
+        "rw": "Retraction/Withdrawal",
+        "sr": "Systematic review",
+        "rr": "Rapid report",
+        "os": "Observational study",
+        "hs": "Historical study",
+        "ot": "Other",
+    }
+
+    # Subject Subset (sub)
+    VALID_SUBSETS = {"b", "c", "e", "s", "x"}
+    SUBSET_LABELS = {
+        "b": "Behavioral Sciences",
+        "c": "Cancer",
+        "e": "Ethics",
+        "s": "Surgery",
+        "x": "Toxicology",
+    }
+
+    # License (lic) - Creative Commons variants
+    VALID_LICENSES = {"by", "bync", "byncnd", "byncsa"}
+    LICENSE_LABELS = {
+        "by": "CC-BY",
+        "bync": "CC-BY-NC",
+        "byncnd": "CC-BY-NC-ND",
+        "byncsa": "CC-BY-NC-SA",
+    }
+
+    # Medical Specialty (sp)
+    VALID_SPECIALTIES = {
+        "b", "bc", "c", "ca", "cc", "d", "de", "dt", "e", "en", "f",
+        "eh", "g", "ge", "gr", "gy", "h", "i", "id", "im", "n", "ne",
+        "nu", "o", "or", "ot", "p", "py", "pu", "r", "s", "t", "u", "v", "vi",
+    }
+    SPECIALTY_LABELS = {
+        "b": "Behavioral Sciences",
+        "bc": "Biochemistry",
+        "c": "Cardiology",
+        "ca": "Cancer",
+        "cc": "Critical Care",
+        "d": "Dermatology",
+        "de": "Dentistry",
+        "dt": "Diet/Nutrition",
+        "e": "Endocrinology",
+        "en": "ENT (Otolaryngology)",
+        "f": "Family Medicine",
+        "eh": "Environmental Health",
+        "g": "Gastroenterology",
+        "ge": "Genetics",
+        "gr": "Geriatrics",
+        "gy": "Gynecology",
+        "h": "Hematology",
+        "i": "Immunology",
+        "id": "Infectious Disease",
+        "im": "Internal Medicine",
+        "n": "Nephrology",
+        "ne": "Neurology",
+        "nu": "Nursing",
+        "o": "Ophthalmology",
+        "or": "Orthopedics",
+        "ot": "Other",
+        "p": "Pediatrics",
+        "py": "Psychiatry",
+        "pu": "Pulmonology",
+        "r": "Radiology",
+        "s": "Surgery",
+        "t": "Toxicology",
+        "u": "Urology",
+        "v": "Vascular",
+        "vi": "Virology",
+    }
+
+    # Search Fields (fields)
+    VALID_SEARCH_FIELDS = {"t", "m", "ab", "msh", "c", "a"}
+    SEARCH_FIELD_LABELS = {
+        "t": "Title",
+        "m": "MeSH terms",
+        "ab": "Abstract",
+        "msh": "MeSH heading",
+        "c": "Caption",
+        "a": "Author",
+    }
+
+    # HMD Publication Type (hmp) - for History of Medicine collection
+    VALID_HMP_TYPES = {
+        "ad", "ar", "at", "bi", "br", "cr", "ca", "ch", "cg", "cd",
+        "dr", "ep", "ex", "hr", "hu", "lt", "mp", "nw", "pn", "ph",
+        "pi", "po", "pt", "pc", "ps",
+    }
+
     PAGE_SIZE = 10  # Default results per page (m=1, n=10)
 
     def __init__(self, timeout: float = 15.0):
@@ -117,21 +291,52 @@ class OpenIClient:
         image_type: str | None = None,
         collection: str | None = None,
         max_results: int = 10,
+        # New parameters (v0.3.4)
+        sort_by: str | None = None,
+        article_type: str | None = None,
+        specialty: str | None = None,
+        license_type: str | None = None,
+        subset: str | None = None,
+        search_fields: str | None = None,
+        video_only: bool = False,
+        hmp_type: str | None = None,
     ) -> tuple[list[ImageResult], int]:
         """
-        Search for biomedical images.
+        Search for biomedical images with full API support.
 
         Args:
             query: Search query (e.g., "chest pneumonia CT")
             image_type: Image type filter per API spec:
-                        "xg"=X-ray general, "x"=X-ray, "xm"=X-ray misc,
-                        "mc"=Microscopy, "m"=Microscopy alt,
-                        "ph"=Photo, "p"=Photo alt,
-                        "g"=Graphics, "u"=Ultrasound, "c"=CT.
+                        Positive: "c"=CT, "g"=Graphics, "m"=MRI,
+                        "mc"=Microscopy, "p"=PET, "ph"=Photographs,
+                        "u"=Ultrasound, "x"=X-ray.
+                        Exclusion: "xg"=Exclude Graphics, "xm"=Exclude Multipanel.
                         None = all types (default).
             collection: Collection filter ("pmc", "cxr", "usc", "hmd", "mpx", None=all)
             max_results: Maximum number of results to return.
                 Internally calculates pages needed: ceil(max_results / PAGE_SIZE).
+            sort_by: Sort/rank results by (favor parameter):
+                     "r"=relevance, "d"=date (newest), "o"=oldest,
+                     "t"=title, "e"=education, "g"=graphics.
+                     None = default relevance.
+            article_type: Article type filter (at parameter):
+                          "cr"=case report, "or"=original research,
+                          "re"=review, "sr"=systematic review, etc.
+            specialty: Medical specialty filter (sp parameter):
+                       "r"=radiology, "c"=cardiology, "ne"=neurology,
+                       "pu"=pulmonology, "d"=dermatology, etc.
+            license_type: License filter (lic parameter):
+                          "by"=CC-BY, "bync"=CC-BY-NC,
+                          "byncnd"=CC-BY-NC-ND, "byncsa"=CC-BY-NC-SA.
+            subset: Subject subset filter (sub parameter):
+                    "b"=behavioral, "c"=cancer, "e"=ethics,
+                    "s"=surgery, "x"=toxicology.
+            search_fields: Search in specific fields (fields parameter):
+                          "t"=title, "m"=MeSH, "ab"=abstract,
+                          "c"=caption, "a"=author.
+            video_only: If True, only return video content (vid=1).
+            hmp_type: HMD publication type filter (hmp parameter).
+                      Only effective with collection="hmd".
 
         Returns:
             Tuple of (list of ImageResult, total_count)
@@ -149,19 +354,73 @@ class OpenIClient:
         if image_type and image_type not in self.VALID_IMAGE_TYPES:
             logger.warning(
                 f"Invalid image_type '{image_type}', "
-                f"only {self.VALID_IMAGE_TYPES} are effective. Ignoring filter."
+                f"valid: {self.VALID_IMAGE_TYPES}. Ignoring filter."
             )
             image_type = None
-
-        # image_type is optional — None means all types
 
         # Validate collection
         if collection and collection not in self.VALID_COLLECTIONS:
             logger.warning(
                 f"Invalid collection '{collection}', "
-                f"only {self.VALID_COLLECTIONS} are valid. Ignoring filter."
+                f"valid: {self.VALID_COLLECTIONS}. Ignoring filter."
             )
             collection = None
+
+        # Validate sort_by
+        if sort_by and sort_by not in self.VALID_SORT_BY:
+            logger.warning(
+                f"Invalid sort_by '{sort_by}', "
+                f"valid: {self.VALID_SORT_BY}. Ignoring."
+            )
+            sort_by = None
+
+        # Validate article_type
+        if article_type and article_type not in self.VALID_ARTICLE_TYPES:
+            logger.warning(
+                f"Invalid article_type '{article_type}', "
+                f"valid: {self.VALID_ARTICLE_TYPES}. Ignoring."
+            )
+            article_type = None
+
+        # Validate specialty
+        if specialty and specialty not in self.VALID_SPECIALTIES:
+            logger.warning(
+                f"Invalid specialty '{specialty}', "
+                f"valid: {self.VALID_SPECIALTIES}. Ignoring."
+            )
+            specialty = None
+
+        # Validate license_type
+        if license_type and license_type not in self.VALID_LICENSES:
+            logger.warning(
+                f"Invalid license_type '{license_type}', "
+                f"valid: {self.VALID_LICENSES}. Ignoring."
+            )
+            license_type = None
+
+        # Validate subset
+        if subset and subset not in self.VALID_SUBSETS:
+            logger.warning(
+                f"Invalid subset '{subset}', "
+                f"valid: {self.VALID_SUBSETS}. Ignoring."
+            )
+            subset = None
+
+        # Validate search_fields
+        if search_fields and search_fields not in self.VALID_SEARCH_FIELDS:
+            logger.warning(
+                f"Invalid search_fields '{search_fields}', "
+                f"valid: {self.VALID_SEARCH_FIELDS}. Ignoring."
+            )
+            search_fields = None
+
+        # Validate hmp_type
+        if hmp_type and hmp_type not in self.VALID_HMP_TYPES:
+            logger.warning(
+                f"Invalid hmp_type '{hmp_type}', "
+                f"valid: {self.VALID_HMP_TYPES}. Ignoring."
+            )
+            hmp_type = None
 
         # Calculate pages needed
         pages_needed = math.ceil(max_results / self.PAGE_SIZE)
@@ -179,10 +438,28 @@ class OpenIClient:
                 "m": str(start_index),
                 "n": str(end_index),
             }
+
+            # Add optional filters (only if set)
             if image_type:
                 params["it"] = image_type
             if collection:
                 params["coll"] = collection
+            if sort_by:
+                params["favor"] = sort_by
+            if article_type:
+                params["at"] = article_type
+            if specialty:
+                params["sp"] = specialty
+            if license_type:
+                params["lic"] = license_type
+            if subset:
+                params["sub"] = subset
+            if search_fields:
+                params["fields"] = search_fields
+            if video_only:
+                params["vid"] = "1"
+            if hmp_type:
+                params["hmp"] = hmp_type
 
             url = f"{OPENI_API_URL}?{urllib.parse.urlencode(params)}"
             logger.debug(f"Open-i search: {url}")
