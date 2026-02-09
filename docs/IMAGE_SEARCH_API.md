@@ -1,7 +1,7 @@
 # Image Search API Reference
 
 > 生物醫學圖片搜尋 API 參考文件
-> 測試日期: 2026-02-09
+> 初始測試: 2026-02-09 | 最後更新: 2026-02-09 (it 參數行為變更)
 
 ## 概述
 
@@ -43,26 +43,42 @@ Auth: 無需
 |------|------|------|------|
 | `q` | string | 搜尋查詢詞 | `lung cancer` |
 | `m` | int | **起始偏移量** (注意：不是最大結果數) | `1`, `11`, `21` |
-| `it` | string | 圖片類型篩選 (見下方) | `xg`, `mc` |
+| `it` | string | ⚠️ **必填** — 圖片類型篩選 (見下方) | `xg`, `mc`, `ph`, `gl` |
+| `n` | int | 每頁回傳數量 (覆蓋預設 10) | `3`, `20` |
 | `coll` | string | 集合篩選 | `pmc`, `mpx`, `iu` |
 | `fields` | string | 回傳欄位 (未測試) | - |
 
 ### 圖片類型篩選 (`it` 參數)
 
-> ⚠️ **經實測，只有 2 種有效**
+> ⚠️ **2026-02-09 重要發現**: `it` 參數現在是 **必填**！
+> 省略 `it` 參數會回傳 `{"total": 0, "Query-Error": "Invalid request type."}` 
+> 這是 API 行為變更（之前省略 `it` 等同搜尋所有類型）
 
-| 代碼 | 類型 | 結果數量 | 狀態 |
-|------|------|----------|------|
-| `xg` | X-ray | ~47,000 | ✅ **有效** |
-| `mc` | Microscopy | ~26,000 | ✅ **有效** |
-| `gr` | Graph/Chart | ~133,000 (= 無篩選) | ❌ 無效 |
-| `rn` | Radionuclide | ~133,000 (= 無篩選) | ❌ 無效 |
-| `ul` | Ultrasound | ~133,000 (= 無篩選) | ❌ 無效 |
-| `mr` | MRI | ~133,000 (= 無篩選) | ❌ 無效 |
-| `ct` | CT | ~133,000 (= 無篩選) | ❌ 無效 |
-| (任意) | - | ~133,000 (= 無篩選) | ❌ 無效 |
+#### 有效的 `it` 值 (2026-02-09 實測)
 
-**結論**: `gr`, `rn`, `ul`, `mr`, `ct` 甚至隨機字串都回傳與無篩選相同數量，等同無效。
+| 代碼 | 類型 | 結果數量 (q=pneumonia) | 狀態 |
+|------|------|------------------------|------|
+| `xg` | X-ray / 放射影像 | ~1,541,988 | ✅ **有效** — 涵蓋最廣 |
+| `mc` | Microscopy / 顯微鏡 | ~768,198 | ✅ **有效** |
+| `ph` | Photo / 臨床照片 | ~816,743 | ✅ **有效** |
+| `gl` | Graphics / 圖表線稿 | ~0 (q=pneumonia) | ✅ **有效** (query-dependent) |
+
+#### 無效的 `it` 值
+
+| 代碼 | 類型 | 結果 | 狀態 |
+|------|------|------|------|
+| `ct` | CT scan | `Query-Error: "Invalid request type."` | ❌ **回傳錯誤** |
+| `mr` | MRI | `Query-Error: "Invalid request type."` | ❌ **回傳錯誤** |
+| `us` | Ultrasound | `Query-Error: "Invalid request type."` | ❌ **回傳錯誤** |
+| `all` | All types | `Query-Error: "Invalid request type."` | ❌ **回傳錯誤** |
+| (省略) | — | `Query-Error: "Invalid request type."` | ❌ **回傳錯誤** |
+| (空字串) | — | `Query-Error: "Invalid request type."` | ❌ **回傳錯誤** |
+
+> **注意**: 與初始測試 (2026-02-09 早期) 相比，API 行為已改變。
+> 之前 `gr`, `rn`, `ul`, `mr`, `ct` 等回傳等同無篩選的結果。
+> 現在這些值直接回傳錯誤，且省略 `it` 也會錯誤。
+
+**程式碼因應**: `OpenIClient` 預設 `it=xg`（涵蓋最廣），無效值 fallback 到 `xg`。
 
 ### 集合篩選 (`coll` 參數)
 
@@ -81,27 +97,34 @@ m=11  → 回傳第 11-21 筆 (min=11, max=21)
 m=21  → 回傳第 21-31 筆
 ```
 
-- `m` = 起始偏移量（**不是** "最大結果數"）
-- 每頁固定回傳 ~10 筆
+- `m` = 起始偏移量（**不是** "最大結果數"），1-based
+- 預設每頁回傳 ~10 筆
+- 可用 `n` 參數覆蓋每頁數量 (e.g., `n=3` 只回傳 3 筆)
 - 頁間無重疊
 
 ### 查詢格式
 
 ```bash
-# 基本搜尋
-curl "https://openi.nlm.nih.gov/api/search?q=lung+cancer"
+# 基本搜尋 (必須指定 it!)
+curl "https://openi.nlm.nih.gov/api/search?q=lung+cancer&it=xg"
 
 # X-ray 圖片
 curl "https://openi.nlm.nih.gov/api/search?q=pneumonia&it=xg"
 
+# 顯微鏡圖片
+curl "https://openi.nlm.nih.gov/api/search?q=histology&it=mc"
+
+# 臨床照片
+curl "https://openi.nlm.nih.gov/api/search?q=skin+lesion&it=ph"
+
 # MedPix 集合
-curl "https://openi.nlm.nih.gov/api/search?q=chest+pneumonia&coll=mpx"
+curl "https://openi.nlm.nih.gov/api/search?q=chest+pneumonia&it=xg&coll=mpx"
 
 # 第二頁
-curl "https://openi.nlm.nih.gov/api/search?q=lung+cancer&m=11"
+curl "https://openi.nlm.nih.gov/api/search?q=lung+cancer&it=xg&m=11"
 
-# 組合篩選
-curl "https://openi.nlm.nih.gov/api/search?q=fracture&it=xg&coll=pmc&m=1"
+# 組合篩選 + 指定每頁 5 筆
+curl "https://openi.nlm.nih.gov/api/search?q=fracture&it=xg&coll=pmc&m=1&n=5"
 ```
 
 ### 回應結構
@@ -148,8 +171,18 @@ Base: https://openi.nlm.nih.gov
 ### 完整請求範例
 
 ```bash
-# 搜尋 X-ray 胸部影像
+# 搜尋 X-ray 胸部影像 (it 必填!)
 curl -s "https://openi.nlm.nih.gov/api/search?q=chest+pneumonia&it=xg&m=1" | python -m json.tool
+
+# 指定每頁回傳 3 筆
+curl -s "https://openi.nlm.nih.gov/api/search?q=pneumonia&it=xg&n=3&m=1" | python -m json.tool
+
+# 搜尋照片類型 (ph)
+curl -s "https://openi.nlm.nih.gov/api/search?q=skin+lesion&it=ph&m=1" | python -m json.tool
+
+# ❌ 省略 it → 回傳錯誤
+curl -s "https://openi.nlm.nih.gov/api/search?q=pneumonia&m=1" | python -m json.tool
+# → {"total": 0, "Query-Error": "Invalid request type."}
 
 # 預期回應欄位
 # .total → 結果總數
@@ -361,10 +394,10 @@ curl "https://openi.nlm.nih.gov/api/search?q=chest+pneumonia&coll=mpx"
 | 搜尋方式 | 關鍵字 | 圖片說明搜尋 | 全文 XML 解析 |
 | 結果類型 | 個別圖片 | 文章列表 | 個別圖片 |
 | 圖片 URL | ✅ 直接 | ❌ 需二次提取 | ✅ 可建構 |
-| 影像分類 | ✅ xg/mc | ❌ | ❌ |
+| 影像分類 | ✅ xg/mc/ph/gl (必填) | ❌ | ❌ |
 | 索引時效性 | ❌ ~2020 | ✅ 持續更新 | ✅ 持續更新 |
 | 回應速度 | 2-9 秒 | <1 秒 | 1-3 秒 |
-| 適用場景 | X-ray/顯微鏡 | 找含特定圖的文章 | 提取文章所有圖 |
+| 適用場景 | X-ray/Photo/顯微鏡 | 找含特定圖的文章 | 提取文章所有圖 |
 
 ### 推薦策略
 
@@ -441,10 +474,10 @@ class ImageResult:
 
 ## 附錄: 測試記錄
 
-### Open-i 測試 (2026-02-09)
+### Open-i 測試 — Round 1 (2026-02-09 早期，初始探索)
 
 ```
-測試 1 — 圖片類型篩選:
+測試 1 — 圖片類型篩選 (省略 it 時仍可搜尋):
   q=lung+cancer, it=xg → 47,000 (有效)
   q=lung+cancer, it=mc → 26,000 (有效)  
   q=lung+cancer, it=gr → 133,000 (= 無篩選，無效)
@@ -473,6 +506,47 @@ class ImageResult:
 測試 6 — 圖片可存取性:
   thumbnail → 23KB, 可直接下載
   large → 592KB, 可直接下載
+```
+
+### Open-i 測試 — Round 2 (2026-02-09，API 行為變更發現)
+
+> ⚠️ 發現 API 行為變更：`it` 參數從「可選」變為「必填」
+
+```
+觸發原因: E2E 測試 OpenIClient.search("chest pneumonia") 時回傳 0 結果
+
+測試 1 — 省略 it 參數:
+  curl "https://openi.nlm.nih.gov/api/search?q=pneumonia&m=1"
+  → {"total": 0, "Query-Error": "Invalid request type."}
+  結論: it 參數現在是必填！
+
+測試 2 — 逐一測試所有 it 值 (q=pneumonia):
+  it=xg → total=1,541,988 ✅ (X-ray，涵蓋最廣)
+  it=mc → total=768,198   ✅ (Microscopy)
+  it=ph → total=816,743   ✅ (Photo)
+  it=gl → total=0         ✅ (Graphics，但 pneumonia 無此類結果)
+  it=ct → Query-Error     ❌
+  it=mr → Query-Error     ❌
+  it=us → Query-Error     ❌
+  it=all → Query-Error    ❌
+
+測試 3 — n 參數 (控制每頁數量):
+  n=3  → 回傳 3 筆結果 (而非預設 10)
+  n=20 → 回傳 20 筆結果
+  結論: n 參數可控制每頁回傳數量
+
+測試 4 — E2E 驗證修復後:
+  OpenIClient.search("chest pneumonia", max_results=3)
+  → total=1,541,988, images=3 ✅
+  ImageSearchService.search("chest pneumonia CT", limit=3)
+  → total=1,541,988, images=3, sources=["openi"], errors=[] ✅
+
+修復方案:
+  - OpenIClient: 預設 it=xg，無效值 fallback 到 xg
+  - VALID_IMAGE_TYPES: {"xg", "mc"} → {"xg", "mc", "ph", "gl"}
+  - 新增 DEFAULT_IMAGE_TYPE = "xg"
+  - 加入 n 參數動態控制每頁數量
+  - commit a2ef214
 ```
 
 ### Europe PMC 測試 (2026-02-09)
