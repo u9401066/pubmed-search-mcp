@@ -141,13 +141,22 @@ def register_vision_tools(mcp):
 
         This tool enables searching for scientific literature based on images.
 
-        WORKFLOW:
-        ─────────
+        WORKFLOW (Agent MUST follow all steps automatically):
+        ─────────────────────────────────────────────────────────
         1. Provide an image (URL or base64-encoded)
         2. This tool returns the image using MCP ImageContent protocol
         3. YOU (the Agent) analyze the image using your vision capabilities
-        4. Extract relevant search terms from the image
-        5. Call `unified_search()` or `generate_search_queries()` with those terms
+        4. Extract relevant ENGLISH search terms from the image
+        5. IMMEDIATELY call `search_biomedical_images()` or `unified_search()`
+           with the extracted terms - DO NOT wait for user confirmation
+        6. Return both the analysis and search results to the user
+
+        ⚠️ IMPORTANT RULES:
+        ────────────────
+        - ALL search queries must be in ENGLISH (Open-i requirement)
+        - After analyzing the image, proceed to search automatically
+        - Do NOT just describe the image and stop - complete the full workflow
+        - If the image shows a medical condition, extract the medical term in English
 
         SEARCH TYPES:
         ─────────────
@@ -168,8 +177,9 @@ def register_vision_tools(mcp):
 
         IMPORTANT:
         ──────────
-        After analyzing the image, suggest search terms and ask the user
-        if they want to proceed with the literature search.
+        After analyzing the image, IMMEDIATELY search for related literature.
+        Do NOT ask the user "do you want me to search?" — just do it.
+        Use English medical terminology in all search queries.
 
         Args:
             image: Base64-encoded image data OR data URI (data:image/png;base64,...)
@@ -304,7 +314,7 @@ Suggest clinical search terms and relevant MeSH headings.
             prompt = prompts.get(normalized_type, prompts["comprehensive"])
 
             # Build instruction text
-            instruction_text = prompt + "\n\n_After analysis, I'll search PubMed for related literature._"
+            instruction_text = prompt + "\n\n_After analysis, IMMEDIATELY search for related literature using the extracted English terms. Call `search_biomedical_images()` or `unified_search()` without asking for confirmation._"
 
             if context:
                 instruction_text += f"\n\n**User Context**: {context}"

@@ -339,6 +339,125 @@ class TestAdviseImageSearchConvenience:
 
 
 # ============================================================================
+# Non-English Detection & Auto-Translation Tests
+# ============================================================================
+
+
+class TestNonEnglishDetection:
+    """Tests for CJK/non-Latin character detection and auto-translation."""
+
+    def setup_method(self):
+        self.advisor = ImageQueryAdvisor()
+
+    # --- Detection ---
+
+    def test_english_query_not_flagged(self):
+        advice = self.advisor.advise("chest X-ray pneumonia")
+        # English queries should NOT trigger non-English warnings
+        non_english_warnings = [
+            w for w in advice.warnings if "English" in w or "英文" in w or "翻譯" in w
+        ]
+        assert len(non_english_warnings) == 0
+
+    def test_chinese_query_detected(self):
+        advice = self.advisor.advise("喉頭水腫")
+        assert advice.has_warnings
+        has_lang_warning = any(
+            "English" in w or "翻譯" in w for w in advice.warnings
+        )
+        assert has_lang_warning
+
+    def test_japanese_query_detected(self):
+        advice = self.advisor.advise("喉頭浮腫")
+        assert advice.has_warnings
+
+    def test_mixed_cjk_english_detected(self):
+        advice = self.advisor.advise("胸部 pneumonia CT")
+        assert advice.has_warnings
+
+    # --- Auto-Translation ---
+
+    def test_translate_exact_match(self):
+        advice = self.advisor.advise("喉頭水腫")
+        # Should have translated query in suggestions
+        assert advice.enhanced_query is not None
+        assert "laryngeal edema" in advice.enhanced_query
+
+    def test_translate_chest_xray(self):
+        advice = self.advisor.advise("胸部X光")
+        assert advice.enhanced_query is not None
+        assert "chest" in advice.enhanced_query.lower() or "x-ray" in advice.enhanced_query.lower()
+
+    def test_translate_pneumonia(self):
+        advice = self.advisor.advise("肺炎")
+        assert advice.enhanced_query is not None
+        assert "pneumonia" in advice.enhanced_query.lower()
+
+    def test_translate_fracture(self):
+        advice = self.advisor.advise("骨折")
+        assert advice.enhanced_query is not None
+        assert "fracture" in advice.enhanced_query.lower()
+
+    def test_translate_multi_term(self):
+        """Multiple CJK terms should all be translated."""
+        advice = self.advisor.advise("肺炎 骨折")
+        assert advice.enhanced_query is not None
+        assert "pneumonia" in advice.enhanced_query.lower()
+        assert "fracture" in advice.enhanced_query.lower()
+
+    def test_translate_unknown_term_returns_warning(self):
+        """Unknown CJK terms should still trigger translation warning."""
+        advice = self.advisor.advise("罕見疾病名稱")
+        assert advice.has_warnings
+        has_translate_warning = any(
+            "English" in w or "translate" in w.lower() for w in advice.warnings
+        )
+        assert has_translate_warning
+
+    def test_translate_suggestion_includes_search_call(self):
+        """Suggestions should include the search_biomedical_images call."""
+        advice = self.advisor.advise("喉頭水腫")
+        has_search_suggestion = any(
+            "search_biomedical_images" in s for s in advice.suggestions
+        )
+        assert has_search_suggestion
+
+    def test_translate_composite_query(self):
+        """Composite query with known + unknown CJK should partially translate."""
+        advice = self.advisor.advise("肺炎相關影像")
+        assert advice.enhanced_query is not None
+        assert "pneumonia" in advice.enhanced_query.lower()
+
+    # --- _detect_non_english internal ---
+
+    def test_detect_latin_only(self):
+        result = self.advisor._detect_non_english("chest pneumonia")
+        assert result["is_non_english"] is False
+        assert result["detected_script"] == "Latin"
+
+    def test_detect_cjk(self):
+        result = self.advisor._detect_non_english("肺炎")
+        assert result["is_non_english"] is True
+        assert result["detected_script"] == "CJK"
+
+    # --- _try_translate internal ---
+
+    def test_try_translate_known_term(self):
+        result = self.advisor._try_translate("喉頭水腫")
+        assert result == "laryngeal edema"
+
+    def test_try_translate_unknown_term(self):
+        result = self.advisor._try_translate("罕見疾病名稱")
+        assert result is None
+
+    def test_try_translate_compound(self):
+        result = self.advisor._try_translate("肺炎 水腫")
+        assert result is not None
+        assert "pneumonia" in result
+        assert "edema" in result
+
+
+# ============================================================================
 # QueryAnalyzer Image Intent Tests
 # ============================================================================
 

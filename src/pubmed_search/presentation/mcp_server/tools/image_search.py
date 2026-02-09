@@ -60,8 +60,18 @@ def register_image_search_tools(mcp: FastMCP):
         Searches medical/scientific images from multiple sources and returns
         image URLs with metadata (caption, article info, MeSH terms).
 
-        ═══════════════════════════════════════════════════════════════
-        SOURCES:
+        ═══════════════════════════════════════════════════════════════        ⚠️ CRITICAL - LANGUAGE REQUIREMENT:
+        ═══════════════════════════════════════════════════════════
+        Open-i ONLY supports English queries. If the user queries in
+        non-English (Chinese, Japanese, Korean, etc.), you MUST:
+        1. Translate the query to English medical terminology first
+        2. Then call this tool with the English query
+        Example: "喉頭水腫" → "laryngeal edema"
+                 "胸部X光肺炎" → "chest X-ray pneumonia"
+        The tool has built-in translation hints for common CJK medical
+        terms, but YOU should always verify the translation is correct.
+
+        ═══════════════════════════════════════════════════════════        SOURCES:
         ═══════════════════════════════════════════════════════════════
         - Open-i (NLM): X-ray, microscopy, clinical images (~133K)
         - Europe PMC: Figure captions from 33M+ articles (future)
