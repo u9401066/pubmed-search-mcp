@@ -208,53 +208,69 @@ search_clinvar("cystic fibrosis", limit=10)
 🔧 所有可用工具
 ═══════════════════════════════════════════════════════════════════════════════
 
-### 搜尋
-- search_literature: 基本 PubMed 搜尋
-- search_europe_pmc: Europe PMC 搜尋 (含 OA/全文篩選)
-- search_core: CORE 開放取用搜尋 (200M+ 論文)
-- search_core_fulltext: CORE 全文內容搜尋
-- generate_search_queries: 產生 MeSH 擴展搜尋策略
-- parse_pico: 解析 PICO 臨床問題
-- merge_search_results: 合併多個搜尋結果
-- expand_search_queries: 擴展搜尋 (結果不足時)
+### 搜尋工具
+- unified_search: Unified Search - Single entry point for multi-source academic search.
 
-### 探索
-- find_related_articles: 相似文章 (by PMID)
-- find_citing_articles: 引用這篇的文章 (by PMID, forward in time)
-- get_article_references: 這篇的參考文獻 (by PMID, backward in time)
-- fetch_article_details: 文章詳細資訊
-- get_citation_metrics: 引用指標 (iCite RCR/Percentile, 可排序篩選)
+### 查詢智能
+- parse_pico: Parse a clinical question into PICO elements OR accept pre-parsed PICO.
+- generate_search_queries: Gather search intelligence for a topic - returns RAW MATERIALS for Agent to decide.
+- analyze_search_query: Analyze a search query without executing the search.
 
-### 全文與文本挖掘 (Europe PMC)
-- get_fulltext: 📄 取得解析後全文 (分段顯示)
-- get_fulltext_xml: 取得原始 JATS XML
-- get_text_mined_terms: 🔬 取得標註 (基因、疾病、藥物)
-- get_europe_pmc_citations: Europe PMC 引用網路
+### 文章探索
+- fetch_article_details: Fetch detailed information for one or more PubMed articles.
+- find_related_articles: Find articles related to a given PubMed article.
+- find_citing_articles: Find articles that cite a given PubMed article.
+- get_article_references: Get the references (bibliography) of a PubMed article.
+- get_citation_metrics: Get citation metrics from NIH iCite for articles.
 
-### CORE 開放取用 (200M+ 論文)
-- get_core_paper: 取得 CORE 論文詳情
-- get_core_fulltext: 📄 取得 CORE 全文內容
-- find_in_core: 用 DOI/PMID 在 CORE 找開放版本
+### 全文工具
+- get_fulltext: Enhanced multi-source fulltext retrieval.
+- get_text_mined_terms: Get text-mined annotations from Europe PMC.
 
-### NCBI 延伸資料庫 (基因、化合物、變異)
-- search_gene: 🧬 搜尋 NCBI Gene 資料庫
-- get_gene_details: 取得基因詳情
-- get_gene_literature: 取得與基因相關的 PubMed 文章
-- search_compound: 💊 搜尋 PubChem 化合物
-- get_compound_details: 取得化合物詳情
-- get_compound_literature: 取得與化合物相關的 PubMed 文章
-- search_clinvar: 🔬 搜尋 ClinVar 臨床變異
+### NCBI 延伸
+- search_gene: Search NCBI Gene database for gene information.
+- get_gene_details: Get detailed information about a gene by NCBI Gene ID.
+- get_gene_literature: Get PubMed articles linked to a gene.
+- search_compound: Search PubChem for chemical compounds.
+- get_compound_details: Get detailed information about a compound by PubChem CID.
+- get_compound_literature: Get PubMed articles linked to a compound.
+- search_clinvar: Search ClinVar for clinical variants.
 
-### 匯出
-- prepare_export: 匯出引用格式
-- get_article_fulltext_links: 全文連結
-- analyze_fulltext_access: 全文可用性分析
+### 引用網絡
+- build_citation_tree: Build a citation tree (network) from a single article.
+- suggest_citation_tree: After fetching article details, suggest whether to build a citation tree.
+
+### 匯出工具
+- prepare_export: Export citations to reference manager formats.
 
 ### Session 管理
-- get_session_pmids: 取得暫存的 PMID 列表
-- list_search_history: 列出搜尋歷史
-- get_cached_article: 從快取取得文章
-- get_session_summary: Session 狀態摘要
+- get_session_pmids: 取得 session 中暫存的 PMID 列表。
+- list_search_history: 列出搜尋歷史，方便回顧和取得特定搜尋的 PMIDs。
+- get_cached_article: 從 session 快取取得文章詳情。
+- get_session_summary: 取得當前 session 的摘要資訊。
+
+### 機構訂閱
+- configure_institutional_access: Configure your institution's link resolver for full-text access.
+- get_institutional_link: Generate institutional access link (OpenURL) for an article.
+- list_resolver_presets: List available institutional link resolver presets.
+- test_institutional_access: Test your institutional link resolver configuration.
+
+### 視覺搜索
+- analyze_figure_for_search: Analyze a scientific figure or image for literature search.
+- reverse_image_search_pubmed: Reverse image search for scientific literature.
+
+### ICD 轉換
+- convert_icd_to_mesh: Convert ICD-9 or ICD-10 code to MeSH term for PubMed search.
+- convert_mesh_to_icd: Convert MeSH term to ICD-9 and ICD-10 codes.
+- search_by_icd: Search PubMed using ICD code (auto-converts to MeSH).
+
+### 研究時間軸
+- build_research_timeline: Build a research timeline for a topic showing key milestones.
+- get_timeline_visualization: Generate timeline visualization code.
+- analyze_timeline_milestones: Analyze milestone distribution for a research topic.
+- compare_timelines: Compare research timelines of multiple topics.
+- list_milestone_patterns: List all milestone detection patterns.
+- build_timeline_from_pmids: Build a timeline from a specific list of PMIDs.
 
 NOTE: 搜尋結果自動暫存，使用 session 工具可隨時取回，不需依賴 Agent 記憶。
 """

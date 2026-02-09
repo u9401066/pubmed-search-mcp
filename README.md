@@ -21,16 +21,30 @@ A Domain-Driven Design (DDD) based MCP server that serves as an intelligent rese
 
 ## 🚀 Quick Install
 
-### Via uv
+### Prerequisites
+
+- **Python 3.10+** — [Download](https://www.python.org/downloads/)
+- **uv** (recommended) — [Install uv](https://docs.astral.sh/uv/getting-started/installation/)
+  ```bash
+  # macOS / Linux
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  # Windows
+  powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+  ```
+- **NCBI Email** — Required by [NCBI API policy](https://www.ncbi.nlm.nih.gov/books/NBK25497/#chapter2.Usage_Guidelines_and_Requiremen). Any valid email address.
+- **NCBI API Key** *(optional)* — [Get one here](https://www.ncbi.nlm.nih.gov/account/settings/) for higher rate limits (10 req/s vs 3 req/s)
+
+### Install & Run
 
 ```bash
-uv add pubmed-search-mcp
-```
-
-### Via uvx (Zero Install)
-
-```bash
+# Option 1: Zero-install with uvx (recommended for trying out)
 uvx pubmed-search-mcp
+
+# Option 2: Add as project dependency
+uv add pubmed-search-mcp
+
+# Option 3: pip install
+pip install pubmed-search-mcp
 ```
 
 ---
@@ -56,6 +70,111 @@ This MCP server works with **any MCP-compatible AI tool**. Choose your preferred
 }
 ```
 
+### Claude Desktop (`claude_desktop_config.json`)
+
+```json
+{
+  "mcpServers": {
+    "pubmed-search": {
+      "command": "uvx",
+      "args": ["pubmed-search-mcp"],
+      "env": {
+        "NCBI_EMAIL": "your@email.com"
+      }
+    }
+  }
+}
+```
+
+> **Config file location**:
+> - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+> - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+> - Linux: `~/.config/Claude/claude_desktop_config.json`
+
+### Claude Code
+
+```bash
+claude mcp add pubmed-search -- uvx pubmed-search-mcp
+```
+
+Or add to `.mcp.json` in your project root:
+
+```json
+{
+  "mcpServers": {
+    "pubmed-search": {
+      "command": "uvx",
+      "args": ["pubmed-search-mcp"],
+      "env": {
+        "NCBI_EMAIL": "your@email.com"
+      }
+    }
+  }
+}
+```
+
+### Zed AI (`settings.json`)
+
+Zed editor ([z.ai](https://zed.dev)) supports MCP servers natively. Add to your Zed `settings.json`:
+
+```json
+{
+  "context_servers": {
+    "pubmed-search": {
+      "command": "uvx",
+      "args": ["pubmed-search-mcp"],
+      "env": {
+        "NCBI_EMAIL": "your@email.com"
+      }
+    }
+  }
+}
+```
+
+> **Tip**: Open Command Palette → `zed: open settings` to edit, or go to Agent Panel → Settings → "Add Custom Server".
+
+### OpenClaw 🦞 (`~/.openclaw/openclaw.json`)
+
+[OpenClaw](https://docs.openclaw.ai/) uses MCP servers via the [mcp-adapter plugin](https://github.com/androidStern-personal/openclaw-mcp-adapter). Install the adapter first:
+
+```bash
+openclaw plugins install mcp-adapter
+```
+
+Then add to `~/.openclaw/openclaw.json`:
+
+```json
+{
+  "plugins": {
+    "entries": {
+      "mcp-adapter": {
+        "enabled": true,
+        "config": {
+          "servers": [
+            {
+              "name": "pubmed-search",
+              "transport": "stdio",
+              "command": "uvx",
+              "args": ["pubmed-search-mcp"],
+              "env": {
+                "NCBI_EMAIL": "your@email.com"
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}
+```
+
+Restart the gateway after configuration:
+
+```bash
+openclaw gateway restart
+openclaw plugins list  # Should show: mcp-adapter | loaded
+```
+
 ### Cline (`cline_mcp_settings.json`)
 
 ```json
@@ -74,10 +193,7 @@ This MCP server works with **any MCP-compatible AI tool**. Choose your preferred
 }
 ```
 
-> **Tip**: In Cline, click "MCP Servers" → "Configure" → "Configure MCP Servers" to edit this file.
-
-
-### Antigravity / Other MCP Clients
+### Other MCP Clients
 
 Any MCP-compatible client can use this server via stdio transport:
 
@@ -85,9 +201,13 @@ Any MCP-compatible client can use this server via stdio transport:
 # Command
 uvx pubmed-search-mcp
 
+# With environment variable
+NCBI_EMAIL=your@email.com uvx pubmed-search-mcp
 ```
 
-> **Note**: `NCBI_EMAIL` is required by NCBI API policy. Optionally set `NCBI_API_KEY` for higher rate limits.
+> **Note**: `NCBI_EMAIL` is required by NCBI API policy. Optionally set `NCBI_API_KEY` for higher rate limits (10 req/s vs 3 req/s).
+
+> 📖 **Detailed Integration Guides**: See [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) for all environment variables, Copilot Studio setup, Docker deployment, proxy configuration, and troubleshooting.
 
 ---
 
@@ -419,7 +539,9 @@ analyze_fulltext_access(pmids="last")
 
 ## 🤖 Claude Skills (AI Agent Workflows)
 
-Pre-built workflow guides in `.claude/skills/`:
+Pre-built workflow guides in `.claude/skills/`, divided into **Usage Skills** (for using the MCP server) and **Development Skills** (for maintaining the project):
+
+### 📚 Usage Skills (9) — For AI Agents Using This MCP Server
 
 | Skill | Description |
 |-------|-------------|
@@ -430,6 +552,26 @@ Pre-built workflow guides in `.claude/skills/`:
 | `pubmed-gene-drug-research` | Gene/PubChem/ClinVar |
 | `pubmed-fulltext-access` | Europe PMC, CORE full text |
 | `pubmed-export-citations` | RIS/BibTeX/CSV export |
+| `pubmed-multi-source-search` | Cross-database unified search |
+| `pubmed-mcp-tools-reference` | Complete tool reference guide |
+
+### 🔧 Development Skills (13) — For Project Contributors
+
+| Skill | Description |
+|-------|-------------|
+| `changelog-updater` | Auto-update CHANGELOG.md |
+| `code-refactor` | DDD architecture refactoring |
+| `code-reviewer` | Code quality & security review |
+| `ddd-architect` | DDD scaffold for new features |
+| `git-doc-updater` | Sync docs before commits |
+| `git-precommit` | Pre-commit workflow orchestration |
+| `memory-checkpoint` | Save context to Memory Bank |
+| `memory-updater` | Update Memory Bank files |
+| `project-init` | Initialize new projects |
+| `readme-i18n` | Multilingual README sync |
+| `readme-updater` | Sync README with code changes |
+| `roadmap-updater` | Update ROADMAP.md status |
+| `test-generator` | Generate test suites |
 
 > 📁 **Location**: `.claude/skills/*/SKILL.md` (Claude Code-specific)
 

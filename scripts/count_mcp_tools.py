@@ -395,6 +395,237 @@ def update_all_readmes(stats: dict) -> int:
     return updated_count
 
 
+def update_instructions_py(stats: dict, mcp) -> bool:
+    """
+    更新 instructions.py 中的「所有可用工具」區塊。
+
+    只替換最後的工具列表區塊，保留搜尋策略說明等手寫內容。
+    """
+    instructions_path = (
+        Path(__file__).parent.parent
+        / "src"
+        / "pubmed_search"
+        / "presentation"
+        / "mcp_server"
+        / "instructions.py"
+    )
+
+    if not instructions_path.exists():
+        print(f"Warning: {instructions_path} not found")
+        return False
+
+    content = instructions_path.read_text(encoding="utf-8")
+    tool_details = get_tool_details(mcp)
+
+    # 生成新的工具列表區塊
+    new_tool_section = _generate_instructions_tool_list(stats, tool_details)
+
+    # 尋找並替換 "所有可用工具" 區塊（從標題到 NOTE 結尾）
+    pattern = (
+        r"(═{10,}\n🔧 所有可用工具\n═{10,}\n)"
+        r"(.*?)"
+        r"(NOTE: 搜尋結果自動暫存.*?不需依賴 Agent 記憶。)"
+    )
+    match = re.search(pattern, content, re.DOTALL)
+
+    if not match:
+        print(f"Warning: Could not find '所有可用工具' section in {instructions_path}")
+        return False
+
+    # 替換工具列表內容
+    new_content = (
+        content[: match.start(2)]
+        + new_tool_section
+        + "\n"
+        + match.group(3)
+        + content[match.end() :]
+    )
+
+    if new_content != content:
+        instructions_path.write_text(new_content, encoding="utf-8")
+        print(f"✅ Updated {instructions_path.name}: {stats['total_tools']} tools")
+        return True
+
+    print(f"ℹ️  No updates needed in {instructions_path.name}")
+    return False
+
+
+def _generate_instructions_tool_list(stats: dict, tool_details: dict) -> str:
+    """生成 instructions.py 的工具列表內容"""
+    lines = []
+
+    category_order = [
+        "search",
+        "query_intelligence",
+        "discovery",
+        "fulltext",
+        "ncbi_extended",
+        "citation_network",
+        "export",
+        "session",
+        "institutional",
+        "vision",
+        "icd",
+        "timeline",
+    ]
+
+    for cat_key in category_order:
+        if cat_key not in stats["categories"]:
+            continue
+
+        cat = stats["categories"][cat_key]
+        lines.append(f"\n### {cat['name']}")
+
+        for tool_name in cat["tools"]:
+            desc = tool_details.get(tool_name, {}).get("description", "")
+            lines.append(f"- {tool_name}: {desc}")
+
+    lines.append("")
+    return "\n".join(lines)
+
+
+def update_skill_tools_reference(stats: dict, mcp) -> bool:
+    """
+    更新 .claude/skills/pubmed-mcp-tools-reference/SKILL.md。
+
+    從 FastMCP runtime 自動生成完整的工具參考。
+    """
+    skill_path = (
+        Path(__file__).parent.parent
+        / ".claude"
+        / "skills"
+        / "pubmed-mcp-tools-reference"
+        / "SKILL.md"
+    )
+
+    if not skill_path.exists():
+        print(f"Warning: {skill_path} not found")
+        return False
+
+    tool_details = get_tool_details(mcp)
+    new_content = _generate_skill_tools_reference(stats, tool_details)
+
+    old_content = skill_path.read_text(encoding="utf-8")
+    if new_content != old_content:
+        skill_path.write_text(new_content, encoding="utf-8")
+        print(f"✅ Updated {skill_path.name}: {stats['total_tools']} tools")
+        return True
+
+    print(f"ℹ️  No updates needed in {skill_path.name}")
+    return False
+
+
+def _generate_skill_tools_reference(stats: dict, tool_details: dict) -> str:
+    """生成 pubmed-mcp-tools-reference SKILL.md 的完整內容"""
+    total = stats["total_tools"]
+    categories = stats["categories"]
+
+    lines = [
+        "---",
+        "name: pubmed-mcp-tools-reference",
+        f"description: Complete reference for all {total} PubMed Search MCP tools. Triggers: 工具列表, all tools, 完整功能, tool reference, 有哪些工具",
+        "---",
+        "",
+        "# PubMed Search MCP 工具完整參考",
+        "",
+        "## 描述",
+        f"所有 {total} 個 MCP 工具的完整參考，包含參數說明和使用範例。",
+        "",
+        "> **⚠️ 注意**：此文件由 `scripts/count_mcp_tools.py --update-docs` 自動生成。",
+        "> 手動修改會在下次執行時被覆蓋。",
+        "",
+        "---",
+        "",
+        "## 工具分類總覽",
+        "",
+        "| 類別 | 工具數 | 主要用途 |",
+        "|------|--------|----------|",
+    ]
+
+    # 類別總覽表
+    category_order = [
+        "search",
+        "query_intelligence",
+        "discovery",
+        "fulltext",
+        "ncbi_extended",
+        "citation_network",
+        "export",
+        "session",
+        "institutional",
+        "vision",
+        "icd",
+        "timeline",
+    ]
+
+    for cat_key in category_order:
+        if cat_key not in categories:
+            continue
+        cat = categories[cat_key]
+        lines.append(
+            f"| {cat['name']} | {cat['count']} | {cat['description']} |"
+        )
+
+    lines.append("")
+    lines.append("---")
+
+    # 每個類別的工具詳情
+    for cat_key in category_order:
+        if cat_key not in categories:
+            continue
+        cat = categories[cat_key]
+        lines.append("")
+        lines.append(f"## {cat['name']}")
+        lines.append(f"*{cat['description']}*")
+        lines.append("")
+        lines.append("| 工具 | 說明 |")
+        lines.append("|------|------|")
+
+        for tool_name in cat["tools"]:
+            desc = tool_details.get(tool_name, {}).get("description", "")
+            lines.append(f"| `{tool_name}` | {desc} |")
+
+    # 常用工作流程
+    lines.extend([
+        "",
+        "---",
+        "",
+        "## 常用工作流程",
+        "",
+        "### 快速搜尋",
+        "```",
+        "unified_search → fetch_article_details → prepare_export",
+        "```",
+        "",
+        "### 系統性搜尋",
+        "```",
+        "generate_search_queries → unified_search × N → merge results",
+        "```",
+        "",
+        "### PICO 搜尋",
+        "```",
+        "parse_pico → generate_search_queries × 4 → unified_search → merge results",
+        "```",
+        "",
+        "### 論文探索",
+        "```",
+        "fetch_article_details → find_related_articles + find_citing_articles + build_citation_tree",
+        "```",
+        "",
+        "### 全文取得",
+        "```",
+        "get_fulltext (自動嘗試 Europe PMC / CORE / CrossRef)",
+        "```",
+        "",
+        "---",
+        "",
+        f"*Total: {total} tools in {len(categories)} categories*",
+        f"*Auto-generated by `scripts/count_mcp_tools.py --update-docs`*",
+    ])
+
+    return "\n".join(lines) + "\n"
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Count and document MCP tools (from FastMCP runtime)",
@@ -493,6 +724,18 @@ def main():
         # 3. TOOLS_INDEX.md（完整工具索引）
         print("📚 Tools Index:")
         if update_tools_index(stats, mcp):
+            updated_files += 1
+        print()
+
+        # 4. instructions.py（MCP Server 內嵌指南的工具列表）
+        print("🤖 MCP Server Instructions:")
+        if update_instructions_py(stats, mcp):
+            updated_files += 1
+        print()
+
+        # 5. Claude Skill: pubmed-mcp-tools-reference（完整工具參考）
+        print("📖 Skill: pubmed-mcp-tools-reference:")
+        if update_skill_tools_reference(stats, mcp):
             updated_files += 1
 
         print()

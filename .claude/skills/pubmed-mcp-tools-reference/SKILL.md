@@ -8,7 +8,8 @@ description: Complete reference for all 40 PubMed Search MCP tools. Triggers: �
 ## 描述
 所有 40 個 MCP 工具的完整參考，包含參數說明和使用範例。
 
-> **⚠️ 注意**：此文件為快速參考。實際工具以 `count_mcp_tools.py` 輸出為準。
+> **⚠️ 注意**：此文件由 `scripts/count_mcp_tools.py --update-docs` 自動生成。
+> 手動修改會在下次執行時被覆蓋。
 
 ---
 
@@ -16,344 +17,132 @@ description: Complete reference for all 40 PubMed Search MCP tools. Triggers: �
 
 | 類別 | 工具數 | 主要用途 |
 |------|--------|----------|
-| 🔍 PubMed 搜尋 | 6 | 核心文獻搜尋 |
-| 🏥 PICO 臨床搜尋 | 2 | 臨床問題分析 |
-| 🔬 論文探索 | 3 | 引用網絡探索 |
-| 🧬 NCBI Extended | 7 | 基因/化合物/變異 |
-| 🌍 Europe PMC | 4 | 歐洲文獻+全文 |
-| 📚 CORE | 5 | 開放取用全文 |
-| 🤖 Semantic Scholar | 2 | AI 分析+引用 |
-| 📊 OpenAlex | 4 | 學術知識圖譜 |
-| 📤 匯出工具 | 3 | 引用格式匯出 |
+| 搜尋工具 | 1 | 文獻搜索入口 |
+| 查詢智能 | 3 | MeSH 擴展、PICO 解析 |
+| 文章探索 | 5 | 相關文章、引用網路 |
+| 全文工具 | 2 | 全文取得與文本挖掘 |
+| NCBI 延伸 | 7 | Gene, PubChem, ClinVar |
+| 引用網絡 | 2 | 引用樹建構與探索 |
+| 匯出工具 | 1 | 引用格式匯出 |
+| Session 管理 | 4 | PMID 暫存與歷史 |
+| 機構訂閱 | 4 | OpenURL Link Resolver |
+| 視覺搜索 | 2 | 圖片分析與搜索 (實驗性) |
+| ICD 轉換 | 3 | ICD-10 與 MeSH 轉換 |
+| 研究時間軸 | 6 | 研究演化追蹤與里程碑偵測 |
 
 ---
 
-## 🔍 PubMed 搜尋工具
-
-### `search_literature`
-基本 PubMed 搜尋
-
-```python
-search_literature(
-    query="remimazolam sedation",     # 搜尋詞
-    limit=20,                          # 結果數量（預設 5）
-    min_year=2020,                     # 最早年份
-    max_year=2024,                     # 最晚年份
-    date_from="2024/01/01",           # 精確起始日（YYYY/MM/DD）
-    date_to="2024/06/30",             # 精確結束日
-    date_type="edat",                  # edat/pdat/mdat
-    article_type="Review",             # Clinical Trial, Review, Meta-Analysis
-    strategy="relevance"               # relevance, recent, most_cited, impact
-)
-```
-
-### `generate_search_queries`
-產生 MeSH 擴展搜尋策略
-
-```python
-generate_search_queries(
-    topic="remimazolam ICU sedation",  # 主題
-    strategy="comprehensive",           # comprehensive/focused/exploratory
-    check_spelling=True,               # 拼字檢查
-    include_suggestions=True           # 包含建議查詢
-)
-```
-
-### `merge_search_results`
-合併多個搜尋結果並去重
-
-```python
-merge_search_results(
-    results_json='[["12345","67890"],["67890","11111"]]'
-)
-# 或帶 query_id：
-# '[{"query_id":"q1","pmids":["12345"]},{"query_id":"q2","pmids":["67890"]}]'
-```
-
-### `expand_search_queries`
-結果不足時擴展搜尋
-
-```python
-expand_search_queries(
-    topic="remimazolam",
-    existing_query_ids="q1_title,q2_tiab",  # 已執行的查詢
-    expansion_type="mesh"                    # mesh/broader/narrower
-)
-```
-
-### `fetch_article_details`
-取得論文詳細資訊
-
-```python
-fetch_article_details(pmids="30217674,28523456")
-```
-
----
-
-## 🏥 PICO 臨床搜尋工具
-
-### `parse_pico`
-解析臨床問題為 PICO 元素
-
-```python
-# 自然語言解析
-parse_pico(description="remimazolam 在 ICU 比 propofol 好嗎？")
-
-# 或直接提供結構化 PICO
-parse_pico(
-    description="",
-    p="ICU patients",
-    i="remimazolam",
-    c="propofol",
-    o="delirium"
-)
-```
-
----
-
-## 🔬 論文探索工具
-
-### `find_related_articles`
-找相似文章（PubMed Similar Articles）
-
-```python
-find_related_articles(pmid="30217674", limit=10)
-```
-
-### `find_citing_articles`
-找引用這篇的論文
-
-```python
-find_citing_articles(pmid="30217674", limit=20)
-```
-
----
-
-## 🧬 NCBI Extended 工具
-
-### `search_ncbi_gene`
-搜尋 NCBI Gene 資料庫
-
-```python
-search_ncbi_gene(query="BRCA1 breast cancer", limit=10)
-```
-
-### `get_ncbi_gene_info`
-取得基因詳細資訊
-
-```python
-get_ncbi_gene_info(gene_id="672")  # BRCA1
-```
-
-### `search_pubchem_compound`
-搜尋 PubChem 化合物
-
-```python
-search_pubchem_compound(query="remimazolam", limit=10)
-```
-
-### `get_pubchem_compound_info`
-取得化合物詳細資訊
-
-```python
-get_pubchem_compound_info(cid="11526795")
-```
-
-### `search_clinvar`
-搜尋 ClinVar 變異資料庫
-
-```python
-search_clinvar(query="BRCA1 pathogenic", limit=20)
-```
-
-### `get_clinvar_variation`
-取得變異詳細資訊
-
-```python
-get_clinvar_variation(variation_id="17661")
-```
-
-### `get_ncbi_cross_references`
-取得跨資料庫連結
-
-```python
-get_ncbi_cross_references(
-    source_db="gene",
-    target_db="pubmed",
-    ids="672"
-)
-```
-
----
-
-## 🌍 Europe PMC 工具
-
-### `search_europe_pmc`
-搜尋 Europe PMC
-
-```python
-search_europe_pmc(
-    query="remimazolam",
-    limit=30,
-    has_fulltext=True,   # 只找有全文的
-    source="preprint"    # 或 "medline", "pmc"
-)
-```
-
-### `get_europe_pmc_fulltext`
-取得 Europe PMC 全文
-
-```python
-get_europe_pmc_fulltext(pmcid="PMC6939411")
-```
-
-### `get_europe_pmc_citations`
-取得引用資料
-
-```python
-get_europe_pmc_citations(pmid="30217674")
-```
-
-### `get_europe_pmc_references`
-取得參考文獻
-
-```python
-get_europe_pmc_references(pmid="30217674")
-```
-
----
-
-## 📚 CORE 工具
-
-### `search_core`
-搜尋 CORE 開放取用庫
-
-```python
-search_core(query="machine learning radiology", limit=30)
-```
-
-### `search_core_fulltext`
-搜尋全文內容
-
-```python
-search_core_fulltext(query="adverse events remimazolam", limit=20)
-```
-
-### `get_core_paper`
-取得論文詳情
-
-```python
-get_core_paper(core_id="12345678")
-```
-
-### `get_core_fulltext`
-取得全文內容
-
-```python
-get_core_fulltext(core_id="12345678")
-```
-
-### `find_in_core`
-用標題找論文
-
-```python
-find_in_core(title="Remimazolam versus midazolam for procedural sedation")
-```
-
----
-
-## 🤖 Semantic Scholar 工具
-
-### `search_semantic_scholar`
-搜尋 Semantic Scholar
-
-```python
-search_semantic_scholar(
-    query="deep learning medical imaging",
-    limit=30,
-    year="2020-2024",          # 年份範圍
-    fields_of_study="Medicine"  # 領域篩選
-)
-```
-
-### `get_semantic_scholar_paper`
-取得論文詳情（含影響力指標）
-
-```python
-get_semantic_scholar_paper(paper_id="649def34f8be52c8b66281af98ae884c09aef38b")
-```
-
-回傳包含：
-- `citationCount`: 總引用數
-- `influentialCitationCount`: 有影響力的引用數
-- `tldr`: AI 生成摘要
-
----
-
-## 📊 OpenAlex 工具
-
-### `search_openalex`
-搜尋 OpenAlex
-
-```python
-search_openalex(
-    query="CRISPR gene editing",
-    limit=30,
-    from_date="2020-01-01",
-    filter="is_oa:true"  # OpenAlex filter syntax
-)
-```
-
-### `get_openalex_work`
-取得作品詳情
-
-```python
-get_openalex_work(work_id="W2741809807")
-```
-
-### `search_openalex_authors`
-搜尋作者
-
-```python
-search_openalex_authors(query="Jennifer Doudna")
-```
-
-### `get_openalex_author`
-取得作者詳情
-
-```python
-get_openalex_author(author_id="A5023888391")
-```
-
----
-
-## 📤 匯出工具
-
-### `prepare_export`
-匯出引用格式
-
-```python
-prepare_export(
-    pmids="30217674,28523456",  # 或 "last" 使用上次搜尋
-    format="ris",               # ris/bibtex/csv/medline/json
-    include_abstract=True
-)
-```
-
-### `get_article_fulltext_links`
-取得全文連結
-
-```python
-get_article_fulltext_links(pmid="30217674")
-```
-
-### `analyze_fulltext_access`
-批次分析全文可用性
-
-```python
-analyze_fulltext_access(pmids="30217674,28523456")
-# 或 "last" 使用上次搜尋結果
-```
+## 搜尋工具
+*文獻搜索入口*
+
+| 工具 | 說明 |
+|------|------|
+| `unified_search` | Unified Search - Single entry point for multi-source academic search. |
+
+## 查詢智能
+*MeSH 擴展、PICO 解析*
+
+| 工具 | 說明 |
+|------|------|
+| `parse_pico` | Parse a clinical question into PICO elements OR accept pre-parsed PICO. |
+| `generate_search_queries` | Gather search intelligence for a topic - returns RAW MATERIALS for Agent to decide. |
+| `analyze_search_query` | Analyze a search query without executing the search. |
+
+## 文章探索
+*相關文章、引用網路*
+
+| 工具 | 說明 |
+|------|------|
+| `fetch_article_details` | Fetch detailed information for one or more PubMed articles. |
+| `find_related_articles` | Find articles related to a given PubMed article. |
+| `find_citing_articles` | Find articles that cite a given PubMed article. |
+| `get_article_references` | Get the references (bibliography) of a PubMed article. |
+| `get_citation_metrics` | Get citation metrics from NIH iCite for articles. |
+
+## 全文工具
+*全文取得與文本挖掘*
+
+| 工具 | 說明 |
+|------|------|
+| `get_fulltext` | Enhanced multi-source fulltext retrieval. |
+| `get_text_mined_terms` | Get text-mined annotations from Europe PMC. |
+
+## NCBI 延伸
+*Gene, PubChem, ClinVar*
+
+| 工具 | 說明 |
+|------|------|
+| `search_gene` | Search NCBI Gene database for gene information. |
+| `get_gene_details` | Get detailed information about a gene by NCBI Gene ID. |
+| `get_gene_literature` | Get PubMed articles linked to a gene. |
+| `search_compound` | Search PubChem for chemical compounds. |
+| `get_compound_details` | Get detailed information about a compound by PubChem CID. |
+| `get_compound_literature` | Get PubMed articles linked to a compound. |
+| `search_clinvar` | Search ClinVar for clinical variants. |
+
+## 引用網絡
+*引用樹建構與探索*
+
+| 工具 | 說明 |
+|------|------|
+| `build_citation_tree` | Build a citation tree (network) from a single article. |
+| `suggest_citation_tree` | After fetching article details, suggest whether to build a citation tree. |
+
+## 匯出工具
+*引用格式匯出*
+
+| 工具 | 說明 |
+|------|------|
+| `prepare_export` | Export citations to reference manager formats. |
+
+## Session 管理
+*PMID 暫存與歷史*
+
+| 工具 | 說明 |
+|------|------|
+| `get_session_pmids` | 取得 session 中暫存的 PMID 列表。 |
+| `list_search_history` | 列出搜尋歷史，方便回顧和取得特定搜尋的 PMIDs。 |
+| `get_cached_article` | 從 session 快取取得文章詳情。 |
+| `get_session_summary` | 取得當前 session 的摘要資訊。 |
+
+## 機構訂閱
+*OpenURL Link Resolver*
+
+| 工具 | 說明 |
+|------|------|
+| `configure_institutional_access` | Configure your institution's link resolver for full-text access. |
+| `get_institutional_link` | Generate institutional access link (OpenURL) for an article. |
+| `list_resolver_presets` | List available institutional link resolver presets. |
+| `test_institutional_access` | Test your institutional link resolver configuration. |
+
+## 視覺搜索
+*圖片分析與搜索 (實驗性)*
+
+| 工具 | 說明 |
+|------|------|
+| `analyze_figure_for_search` | Analyze a scientific figure or image for literature search. |
+| `reverse_image_search_pubmed` | Reverse image search for scientific literature. |
+
+## ICD 轉換
+*ICD-10 與 MeSH 轉換*
+
+| 工具 | 說明 |
+|------|------|
+| `convert_icd_to_mesh` | Convert ICD-9 or ICD-10 code to MeSH term for PubMed search. |
+| `convert_mesh_to_icd` | Convert MeSH term to ICD-9 and ICD-10 codes. |
+| `search_by_icd` | Search PubMed using ICD code (auto-converts to MeSH). |
+
+## 研究時間軸
+*研究演化追蹤與里程碑偵測*
+
+| 工具 | 說明 |
+|------|------|
+| `build_research_timeline` | Build a research timeline for a topic showing key milestones. |
+| `get_timeline_visualization` | Generate timeline visualization code. |
+| `analyze_timeline_milestones` | Analyze milestone distribution for a research topic. |
+| `compare_timelines` | Compare research timelines of multiple topics. |
+| `list_milestone_patterns` | List all milestone detection patterns. |
+| `build_timeline_from_pmids` | Build a timeline from a specific list of PMIDs. |
 
 ---
 
@@ -361,70 +150,30 @@ analyze_fulltext_access(pmids="30217674,28523456")
 
 ### 快速搜尋
 ```
-search_literature → fetch_article_details → prepare_export
+unified_search → fetch_article_details → prepare_export
 ```
 
 ### 系統性搜尋
 ```
-generate_search_queries → search_literature × N → merge_search_results
+generate_search_queries → unified_search × N → merge results
 ```
 
 ### PICO 搜尋
 ```
-parse_pico → generate_search_queries × 4 → search_literature → merge_search_results
+parse_pico → generate_search_queries × 4 → unified_search → merge results
 ```
 
 ### 論文探索
 ```
-fetch_article_details → find_related_articles + find_citing_articles
+fetch_article_details → find_related_articles + find_citing_articles + build_citation_tree
 ```
 
 ### 全文取得
 ```
-analyze_fulltext_access → get_europe_pmc_fulltext 或 get_core_fulltext
+get_fulltext (自動嘗試 Europe PMC / CORE / CrossRef)
 ```
 
 ---
 
-## 參數快速參考
-
-### 常用篩選參數
-
-| 參數 | 說明 | 範例值 |
-|------|------|--------|
-| `limit` | 結果數量 | 10, 20, 50, 100 |
-| `min_year` | 最早年份 | 2020 |
-| `max_year` | 最晚年份 | 2024 |
-| `article_type` | 文章類型 | "Review", "Clinical Trial", "Meta-Analysis" |
-| `strategy` | 排序策略 | "relevance", "recent", "most_cited" |
-
-### 進階篩選參數 (Phase 2.1 新功能)
-
-| 參數 | 說明 | 可用值 |
-|------|------|--------|
-| `age_group` | 年齡群 | newborn, infant, preschool, child, adolescent, young_adult, adult, middle_aged, aged, aged_80 |
-| `sex` | 性別 | male, female |
-| `species` | 物種 | humans, animals |
-| `language` | 語言 | english, chinese, japanese, german, french, spanish, korean, italian, portuguese, russian |
-| `clinical_query` | 臨床查詢 | therapy, diagnosis, prognosis, etiology, clinical_prediction |
-
-### PubMed 欄位標籤
-
-| 標籤 | 說明 |
-|------|------|
-| `[Title]` | 標題 |
-| `[Title/Abstract]` | 標題或摘要 |
-| `[tiab]` | 同上（縮寫） |
-| `[MeSH]` | MeSH 詞彙 |
-| `[Author]` | 作者 |
-| `[Journal]` | 期刊 |
-| `[PMID]` | PubMed ID |
-
-### Clinical Query Filters
-
-| Filter | 用途 |
-|--------|------|
-| `therapy[filter]` | 治療效果研究 |
-| `diagnosis[filter]` | 診斷研究 |
-| `prognosis[filter]` | 預後研究 |
-| `etiology[filter]` | 病因研究 |
+*Total: 40 tools in 12 categories*
+*Auto-generated by `scripts/count_mcp_tools.py --update-docs`*

@@ -59,19 +59,20 @@ By participating in this project, you agree to maintain a respectful and inclusi
 
 ### Installation
 
+This project uses [UV](https://github.com/astral-sh/uv) for dependency management:
+
 ```bash
-# Create virtual environment
-python -m venv .venv
+# Install all dependencies (including dev tools)
+uv sync
 
-# Activate (Windows)
-.venv\Scripts\activate
-
-# Activate (Linux/macOS)
-source .venv/bin/activate
-
-# Install development dependencies
-pip install -e ".[dev]"
+# Run commands through uv
+uv run pytest              # Run tests
+uv run ruff check .        # Lint
+uv run ruff format .       # Format
+uv run mypy src/           # Type check
 ```
+
+> **Note**: Do NOT use `pip install`. All dependencies are managed via `uv` and defined in `pyproject.toml` with `[dependency-groups]`.
 
 ### Environment Variables (Optional)
 
@@ -85,15 +86,23 @@ This project follows **Domain-Driven Design (DDD)** with an Onion Architecture:
 
 ```
 src/pubmed_search/
-├── mcp/           # Presentation Layer - MCP tools interface
-│   └── tools/     # Individual tool implementations
-├── unified/       # Application Layer - Business orchestration
-├── exports/       # Application Layer - Export functionality
-├── entrez/        # Domain Layer - Core business logic
-├── models/        # Domain Layer - Domain entities
-├── sources/       # Infrastructure Layer - External API clients
-├── core/          # Cross-cutting concerns
-└── api/           # HTTP API (for Copilot Studio)
+├── domain/                 # Core business logic
+│   └── entities/           # UnifiedArticle, TimelineEvent
+├── application/            # Use cases
+│   ├── search/             # QueryAnalyzer, ResultAggregator
+│   ├── export/             # Citation export (RIS, BibTeX...)
+│   ├── session/            # SessionManager
+│   └── timeline/           # TimelineBuilder, MilestoneDetector
+├── infrastructure/         # External systems
+│   ├── ncbi/               # Entrez, iCite, Citation Exporter
+│   ├── sources/            # Europe PMC, CORE, CrossRef...
+│   └── http/               # HTTP clients
+├── presentation/           # User interfaces
+│   ├── mcp_server/         # MCP tools, prompts, resources
+│   └── api/                # REST API (Copilot Studio)
+└── shared/                 # Cross-cutting concerns
+    ├── exceptions.py       # Unified error handling
+    └── async_utils.py      # Rate limiter, retry, circuit breaker
 ```
 
 ### Key Principles
@@ -134,13 +143,13 @@ We use **ruff** for linting and formatting:
 
 ```bash
 # Check for issues
-ruff check src/
+uv run ruff check src/
 
 # Auto-fix issues
-ruff check src/ --fix
+uv run ruff check src/ --fix
 
 # Format code
-ruff format src/
+uv run ruff format src/
 ```
 
 ### Type Hints
@@ -188,16 +197,16 @@ def get_citation_tree(
 
 ```bash
 # Run all tests
-pytest
+uv run pytest
 
 # Run with coverage
-pytest --cov=src/pubmed_search --cov-report=html
+uv run pytest --cov=src/pubmed_search --cov-report=html
 
 # Run specific test file
-pytest tests/test_client.py
+uv run pytest tests/test_client.py
 
 # Run tests matching pattern
-pytest -k "test_search"
+uv run pytest -k "test_search"
 ```
 
 ### Writing Tests
@@ -225,7 +234,7 @@ def test_search_returns_articles(mock_entrez_response):
 We aim for **>85% code coverage**. Run coverage report:
 
 ```bash
-pytest --cov=src/pubmed_search --cov-report=term-missing
+uv run pytest --cov=src/pubmed_search --cov-report=term-missing
 ```
 
 ## Pull Request Process
@@ -245,9 +254,9 @@ pytest --cov=src/pubmed_search --cov-report=term-missing
 
 4. **Run checks locally**:
    ```bash
-   ruff check src/
-   ruff format src/
-   pytest
+   uv run ruff check src/
+   uv run ruff format src/
+   uv run pytest
    ```
 
 5. **Push and create PR**:

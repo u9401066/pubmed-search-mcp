@@ -21,16 +21,30 @@
 
 ## 🚀 快速安裝
 
-### 透過 uv
+### 前置需求
+
+- **Python 3.10+** — [下載](https://www.python.org/downloads/)
+- **uv**（推薦）— [安裝 uv](https://docs.astral.sh/uv/getting-started/installation/)
+  ```bash
+  # macOS / Linux
+  curl -LsSf https://astral.sh/uv/install.sh | sh
+  # Windows
+  powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+  ```
+- **NCBI Email** — [NCBI API 政策](https://www.ncbi.nlm.nih.gov/books/NBK25497/#chapter2.Usage_Guidelines_and_Requiremen)要求，任何有效的電子郵件地址
+- **NCBI API Key**（*選填*）— [在此取得](https://www.ncbi.nlm.nih.gov/account/settings/)，可提高 API 限額（10 req/s vs 3 req/s）
+
+### 安裝與執行
 
 ```bash
-uv add pubmed-search-mcp
-```
-
-### 透過 uvx（免安裝）
-
-```bash
+# 方式 1：使用 uvx 免安裝（推薦新手嘗試用）
 uvx pubmed-search-mcp
+
+# 方式 2：加入專案依賴
+uv add pubmed-search-mcp
+
+# 方式 3：pip 安裝
+pip install pubmed-search-mcp
 ```
 
 ---
@@ -56,6 +70,111 @@ uvx pubmed-search-mcp
 }
 ```
 
+### Claude Desktop (`claude_desktop_config.json`)
+
+```json
+{
+  "mcpServers": {
+    "pubmed-search": {
+      "command": "uvx",
+      "args": ["pubmed-search-mcp"],
+      "env": {
+        "NCBI_EMAIL": "your@email.com"
+      }
+    }
+  }
+}
+```
+
+> **設定檔位置**：
+> - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+> - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+> - Linux: `~/.config/Claude/claude_desktop_config.json`
+
+### Claude Code
+
+```bash
+claude mcp add pubmed-search -- uvx pubmed-search-mcp
+```
+
+或在專案根目錄的 `.mcp.json` 中新增：
+
+```json
+{
+  "mcpServers": {
+    "pubmed-search": {
+      "command": "uvx",
+      "args": ["pubmed-search-mcp"],
+      "env": {
+        "NCBI_EMAIL": "your@email.com"
+      }
+    }
+  }
+}
+```
+
+### Zed AI (`settings.json`)
+
+Zed 編輯器（[z.ai](https://zed.dev)）原生支援 MCP 伺服器。在 Zed 的 `settings.json` 中新增：
+
+```json
+{
+  "context_servers": {
+    "pubmed-search": {
+      "command": "uvx",
+      "args": ["pubmed-search-mcp"],
+      "env": {
+        "NCBI_EMAIL": "your@email.com"
+      }
+    }
+  }
+}
+```
+
+> **提示**：開啟命令面板 → `zed: open settings` 編輯，或前往 Agent Panel → Settings →「Add Custom Server」。
+
+### OpenClaw 🦞 (`~/.openclaw/openclaw.json`)
+
+[OpenClaw](https://docs.openclaw.ai/) 透過 [mcp-adapter 插件](https://github.com/androidStern-personal/openclaw-mcp-adapter)支援 MCP 伺服器。先安裝 adapter：
+
+```bash
+openclaw plugins install mcp-adapter
+```
+
+然後新增到 `~/.openclaw/openclaw.json`：
+
+```json
+{
+  "plugins": {
+    "entries": {
+      "mcp-adapter": {
+        "enabled": true,
+        "config": {
+          "servers": [
+            {
+              "name": "pubmed-search",
+              "transport": "stdio",
+              "command": "uvx",
+              "args": ["pubmed-search-mcp"],
+              "env": {
+                "NCBI_EMAIL": "your@email.com"
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}
+```
+
+設定後重啟 gateway：
+
+```bash
+openclaw gateway restart
+openclaw plugins list  # 應顯示: mcp-adapter | loaded
+```
+
 ### Cline (`cline_mcp_settings.json`)
 
 ```json
@@ -74,18 +193,21 @@ uvx pubmed-search-mcp
 }
 ```
 
-> **提示**：在 Cline 中，點擊「MCP Servers」→「Configure」→「Configure MCP Servers」來編輯此檔案。
-
-### Antigravity / 其他 MCP 客戶端
+### 其他 MCP 客戶端
 
 任何 MCP 相容客戶端都可以透過 stdio transport 使用此伺服器：
 
 ```bash
 # 指令
 uvx pubmed-search-mcp
+
+# 搭配環境變數
+NCBI_EMAIL=your@email.com uvx pubmed-search-mcp
 ```
 
-> **注意**: `NCBI_EMAIL` 是 NCBI API 政策要求的必填項。可選擇性設定 `NCBI_API_KEY` 以獲得更高的 API 限額。
+> **注意**: `NCBI_EMAIL` 是 NCBI API 政策要求的必填項。可選擇性設定 `NCBI_API_KEY` 以獲得更高的 API 限額（10 req/s vs 3 req/s）。
+
+> 📖 **完整整合指南**：詳見 [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md)，包含所有環境變數、Copilot Studio 設定、Docker 部署、代理設定與疑難排解。
 
 ---
 
@@ -417,7 +539,9 @@ analyze_fulltext_access(pmids="last")
 
 ## 🤖 Claude Skills（AI Agent 工作流程）
 
-預建工作流程指南位於 `.claude/skills/`：
+預建工作流程指南位於 `.claude/skills/`，分為**使用 Skills**（使用 MCP server）和**開發 Skills**（維護專案）：
+
+### 📚 使用 Skills (9) — 給使用此 MCP Server 的 AI Agent
 
 | Skill | 說明 |
 |-------|------|
@@ -428,6 +552,26 @@ analyze_fulltext_access(pmids="last")
 | `pubmed-gene-drug-research` | Gene/PubChem/ClinVar |
 | `pubmed-fulltext-access` | Europe PMC, CORE 全文 |
 | `pubmed-export-citations` | RIS/BibTeX/CSV 匯出 |
+| `pubmed-multi-source-search` | 跨資料庫統一搜尋 |
+| `pubmed-mcp-tools-reference` | 完整工具參考指南 |
+
+### 🔧 開發 Skills (13) — 給專案貢獻者
+
+| Skill | 說明 |
+|-------|------|
+| `changelog-updater` | 自動更新 CHANGELOG.md |
+| `code-refactor` | DDD 架構重構 |
+| `code-reviewer` | 程式碼品質與安全審查 |
+| `ddd-architect` | 新功能 DDD 腳手架 |
+| `git-doc-updater` | 提交前同步文件 |
+| `git-precommit` | Pre-commit 工作流程編排 |
+| `memory-checkpoint` | 儲存上下文到 Memory Bank |
+| `memory-updater` | 更新 Memory Bank 檔案 |
+| `project-init` | 初始化新專案 |
+| `readme-i18n` | 多語言 README 同步 |
+| `readme-updater` | 同步 README 與程式碼變更 |
+| `roadmap-updater` | 更新 ROADMAP.md 狀態 |
+| `test-generator` | 產生測試套件 |
 
 > 📁 **位置**: `.claude/skills/*/SKILL.md`（Claude Code 專屬）
 

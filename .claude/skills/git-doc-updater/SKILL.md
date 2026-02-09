@@ -50,11 +50,22 @@ description: Auto-check and update key documentation before Git commits to keep 
 
 ```
 1. 分析本次程式碼變更內容
-2. 識別哪些文檔需要更新
-3. 依序更新各文檔
-4. 顯示更新摘要供用戶確認
-5. 將文檔變更加入 Git staging
+2. 執行 MCP 工具統計同步（若涉及工具變更）
+3. 識別哪些文檔需要更新
+4. 依序更新各文檔
+5. 顯示更新摘要供用戶確認
+6. 將文檔變更加入 Git staging
 ```
+
+### ⚠️ 必要步驟：MCP 工具數量同步
+
+當程式碼涉及 MCP 工具新增、移除或重新命名時，**必須**執行：
+
+```bash
+uv run python scripts/count_mcp_tools.py --update-docs
+```
+
+此腳本自動更新 6 個文件中的工具數量和列表。
 
 ## 更新原則
 

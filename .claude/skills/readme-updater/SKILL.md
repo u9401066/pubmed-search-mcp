@@ -33,6 +33,22 @@ description: Intelligently update README.md to sync with code changes. Triggers:
 | 使用範例 | API 變更 |
 | 專案結構 | 目錄結構變更 |
 | 配置說明 | 新增設定選項 |
+| 工具數量 | MCP 工具變更 |
+
+### ⚠️ 工具數量同步
+
+當 MCP 工具有新增或移除時，**必須**先執行：
+
+```bash
+uv run python scripts/count_mcp_tools.py --update-docs
+```
+
+此腳本會自動更新所有文件中的工具數量和列表，包含：
+- README.md / README.zh-TW.md（工具數量）
+- copilot-instructions.md（工具數量 + 列表）
+- TOOLS_INDEX.md（完整工具索引）
+- instructions.py（MCP Server 內嵌工具列表）
+- pubmed-mcp-tools-reference SKILL（完整工具參考）
 
 ### 3. 保持區塊
 以下區塊不自動修改：

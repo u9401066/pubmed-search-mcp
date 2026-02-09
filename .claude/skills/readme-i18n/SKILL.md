@@ -47,6 +47,15 @@ README.zh-TW.md    # 繁體中文版本（對照翻譯）
 - [ ] 程式碼區塊一致
 - [ ] 連結有效性
 - [ ] 術語一致性
+- [ ] 工具數量一致（執行 count_mcp_tools.py）
+```
+
+### ⚠️ 工具數量同步
+
+若工具有變更，先執行以下腳本確保兩個 README 的數字一致：
+
+```bash
+uv run python scripts/count_mcp_tools.py --update-docs
 ```
 
 ## 術語對照表

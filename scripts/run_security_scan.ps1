@@ -40,7 +40,7 @@ Write-Host "📦 2/3 Running Safety (dependency vulnerability scan)..." -Foregro
 
 try {
     # Generate requirements from UV
-    uv pip compile pyproject.toml -o requirements-check.txt 2>$null
+    uv export --no-hashes --no-dev -o requirements-check.txt 2>$null
     
     # Run safety check
     uv run safety check --file=requirements-check.txt --json --output safety-report.json

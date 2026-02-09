@@ -46,15 +46,6 @@ dependencies = [
     "defusedxml>=0.7.1",
 ]
 
-[project.optional-dependencies]
-dev = [
-    "pytest>=7.0",
-    "pytest-asyncio>=0.21",
-]
-all = [
-    "pubmed-search-mcp[dev]",
-]
-
 [project.scripts]
 pubmed-search-mcp = "pubmed_search.presentation.mcp_server:main"
 

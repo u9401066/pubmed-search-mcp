@@ -8,6 +8,10 @@
 #
 # Usage:
 #   ./scripts/start-copilot-ngrok.sh
+#
+# Environment variables:
+#   NGROK_DOMAIN  - ngrok custom domain (default: kmuh-ai.ngrok.dev)
+#   COPILOT_PORT  - local server port (default: 8765)
 # =============================================================================
 
 set -e
@@ -15,9 +19,9 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
-# Configuration
-NGROK_DOMAIN="kmuh-ai.ngrok.dev"
-PORT=8765
+# Configuration (override via environment variables)
+NGROK_DOMAIN="${NGROK_DOMAIN:-kmuh-ai.ngrok.dev}"
+PORT="${COPILOT_PORT:-8765}"
 
 cd "$PROJECT_DIR"
 
