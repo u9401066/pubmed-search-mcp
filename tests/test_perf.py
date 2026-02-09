@@ -19,7 +19,7 @@ print('-'*40)
 
 start = time.time()
 try:
-    from pubmed_search.unified.query_analyzer import QueryAnalyzer
+    from pubmed_search.application.search.query_analyzer import QueryAnalyzer
     analyzer = QueryAnalyzer()
     analysis = analyzer.analyze(query)
     analyze_time = time.time() - start
@@ -35,7 +35,7 @@ print(f'\nTest 2: PubMed search timing')
 print('-'*40)
 start = time.time()
 try:
-    from pubmed_search.entrez import LiteratureSearcher
+    from pubmed_search.infrastructure.ncbi import LiteratureSearcher
     searcher = LiteratureSearcher()
     results = searcher.search(query='aspirin mechanism', limit=5)
     pubmed_time = time.time() - start
@@ -49,7 +49,7 @@ print(f'\nTest 3: OpenAlex search timing')
 print('-'*40)
 start = time.time()
 try:
-    from pubmed_search.sources.openalex import OpenAlexClient
+    from pubmed_search.infrastructure.sources.openalex import OpenAlexClient
     client = OpenAlexClient()
     results = client.search('aspirin mechanism', limit=5)
     openalex_time = time.time() - start
@@ -63,7 +63,7 @@ print(f'\nTest 4: Semantic Scholar search timing')
 print('-'*40)
 start = time.time()
 try:
-    from pubmed_search.sources.semantic_scholar import SemanticScholarClient
+    from pubmed_search.infrastructure.sources.semantic_scholar import SemanticScholarClient
     client = SemanticScholarClient()
     results = client.search('aspirin mechanism', limit=5)
     s2_time = time.time() - start
