@@ -5,6 +5,12 @@ This module provides tools to build and visualize citation trees,
 tracing the research lineage of a scientific paper both forward
 (who cites this paper) and backward (what this paper cites).
 
+Tool:
+- build_citation_tree: Build and visualize citation network (6 output formats)
+
+Removed in v0.3.1:
+- suggest_citation_tree → Agent can decide directly based on context
+
 Supports multiple output formats:
 - cytoscape: Cytoscape.js compatible JSON (academic standard)
 - g6: AntV G6 format (modern, high-performance)
@@ -729,102 +735,4 @@ def register_citation_tree_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 tool_name="build_citation_tree",
             )
 
-    @mcp.tool()
-    def suggest_citation_tree(pmid: Union[str, int]) -> str:
-        """
-        After fetching article details, suggest whether to build a citation tree.
-
-        This is a lightweight check that can be called after fetch_article_details
-        to help decide if building a citation tree would be useful.
-
-        Args:
-            pmid: PubMed ID of the article
-
-        Returns:
-            Suggestion with article info and tree-building options.
-        """
-        # Normalize PMID
-        normalized_pmid = InputNormalizer.normalize_pmid_single(pmid)
-        if not normalized_pmid:
-            return ResponseFormatter.error(
-                "Invalid or missing PMID",
-                suggestion="Provide a valid PubMed ID",
-                example='suggest_citation_tree(pmid="33475315")',
-                tool_name="suggest_citation_tree",
-            )
-
-        logger.info(f"Checking citation tree potential for PMID: {normalized_pmid}")
-
-        try:
-            # Get basic article info
-            articles = searcher.fetch_details([normalized_pmid.strip()])
-            if not articles or "error" in articles[0]:
-                return f"Could not fetch article {normalized_pmid}"
-
-            article = articles[0]
-            title = article.get("title", "Unknown")
-            year = article.get("year", "?")
-            journal = article.get("journal", "Unknown")
-
-            # Quick check for citation potential
-            # (In a full implementation, we'd check actual citation counts)
-
-            output = f"""📄 **Article**: {title[:80]}...
-📅 Year: {year} | 📰 {journal}
-🔗 PMID: {normalized_pmid}
-
----
-
-🌳 **Citation Tree Options**:
-
-Would you like to explore this paper's citation network?
-
-1️⃣ **Quick Overview** (recommended first):
-   ```
-   build_citation_tree(pmid="{normalized_pmid}", depth=1, direction="both")
-   ```
-   - Shows direct citations and references only
-   - Fast (~10 API calls)
-
-2️⃣ **Standard Tree** (most useful):
-   ```
-   build_citation_tree(pmid="{normalized_pmid}", depth=2, direction="both")
-   ```
-   - 2 levels: citations of citations, references of references
-   - Good balance of depth and speed (~50 API calls)
-
-3️⃣ **Deep Exploration** (comprehensive):
-   ```
-   build_citation_tree(pmid="{normalized_pmid}", depth=3, direction="both", limit_per_level=3)
-   ```
-   - 3 levels deep - full research landscape
-   - Slower but thorough (~100+ API calls)
-
----
-
-📊 **Output Format Options** (output_format parameter):
-
-| Format | Library | Best For |
-|--------|---------|----------|
-| `cytoscape` | Cytoscape.js | Academic research, bioinformatics |
-| `g6` | AntV G6 | Modern web apps, large graphs |
-| `d3` | D3.js | Flexible viz, Observable notebooks |
-| `vis` | vis-network | Quick prototypes, simple use |
-| `graphml` | GraphML XML | Gephi, VOSviewer, yEd, Pajek |
-| `mermaid` | Mermaid.js | ⭐ VS Code preview, Markdown docs |
-
-Example with format:
-```
-build_citation_tree(pmid="{normalized_pmid}", depth=2, output_format="mermaid")
-```
-
----
-
-💡 **Tip**: Start with depth=1 to get a quick sense of the network size,
-then increase depth if needed.
-"""
-            return output
-
-        except Exception as e:
-            logger.error(f"Suggest citation tree failed: {e}")
-            return f"Error: {e}"
+    # suggest_citation_tree removed in v0.3.1 - Agent can decide directly

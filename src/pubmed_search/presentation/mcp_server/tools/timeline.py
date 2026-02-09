@@ -2,12 +2,14 @@
 Timeline MCP Tools - Research Timeline Exploration
 
 Provides tools for building and exploring research timelines:
-- build_research_timeline: Build timeline from a topic
-- build_timeline_from_pmids: Build timeline from specific articles
-- get_timeline_milestones: Get detected milestones
-- format_timeline_mermaid: Generate Mermaid visualization
-- format_timeline_json: Generate JSON for visualization libraries
-- get_milestone_patterns: View detection patterns
+- build_research_timeline: Build timeline from topic OR specific PMIDs
+- analyze_timeline_milestones: Analyze milestone distribution
+- compare_timelines: Compare multiple topics
+
+Removed tools (v0.3.1):
+- build_timeline_from_pmids → merged into build_research_timeline (use pmids param)
+- get_timeline_visualization → use build_research_timeline with output_format
+- list_milestone_patterns → converted to MCP Resource
 
 These tools enable AI agents to:
 1. Understand the temporal evolution of research
@@ -22,7 +24,6 @@ import logging
 from mcp.server.fastmcp import FastMCP
 
 from pubmed_search.application.timeline import MilestoneDetector, TimelineBuilder
-from pubmed_search.application.timeline.milestone_detector import get_milestone_patterns
 from pubmed_search.application.timeline.timeline_builder import format_timeline_text
 from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
@@ -32,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 
 def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
-    """Register timeline exploration tools."""
+    """Register timeline exploration tools (3 tools)."""
 
     # Create shared instances
     detector = MilestoneDetector()
@@ -40,7 +41,8 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
 
     @mcp.tool()
     async def build_research_timeline(
-        topic: str,
+        topic: str | None = None,
+        pmids: str | None = None,
         max_events: int = 30,
         min_year: int | None = None,
         max_year: int | None = None,
@@ -48,7 +50,21 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         output_format: str = "text",
     ) -> str:
         """
-        Build a research timeline for a topic showing key milestones.
+        Build a research timeline for a topic OR specific PMIDs.
+
+        ═══════════════════════════════════════════════════════════════
+        🎯 TWO MODES OF OPERATION
+        ═══════════════════════════════════════════════════════════════
+
+        Mode 1: Search by topic (default)
+            build_research_timeline(topic="remimazolam")
+
+        Mode 2: Build from specific PMIDs
+            build_research_timeline(pmids="12345678,23456789", topic="My Timeline")
+
+        ═══════════════════════════════════════════════════════════════
+        MILESTONE DETECTION
+        ═══════════════════════════════════════════════════════════════
 
         Automatically detects significant milestones including:
         - First reports and mechanism discoveries
@@ -59,34 +75,76 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         - Safety alerts and label updates
         - High-impact landmark studies
 
+        ═══════════════════════════════════════════════════════════════
+        OUTPUT FORMATS (output_format parameter)
+        ═══════════════════════════════════════════════════════════════
+
+        - "text": Human-readable text format (default)
+        - "mermaid": Mermaid timeline (VS Code, GitHub preview)
+        - "json": Full JSON data
+        - "timeline_js": TimelineJS library format
+        - "d3": D3.js visualization format
+
         Args:
             topic: Research topic (drug name, gene, disease, etc.)
+                   Required if pmids not provided.
                    Examples: "remimazolam", "BRCA1", "pembrolizumab melanoma"
+            pmids: Comma-separated PMIDs or "last" for previous search results
+                   If provided, builds timeline from these specific articles.
+                   Example: "12345678,23456789,34567890"
             max_events: Maximum number of events to include (default: 30)
-            min_year: Filter articles from this year (optional)
-            max_year: Filter articles until this year (optional)
+            min_year: Filter articles from this year (optional, topic mode only)
+            max_year: Filter articles until this year (optional, topic mode only)
             include_all: Include non-milestone articles as generic events
-            output_format: Output format - "text", "mermaid", "json"
+            output_format: "text", "mermaid", "json", "timeline_js", or "d3"
 
         Returns:
             Research timeline with detected milestones in requested format.
 
-        Example:
-            build_research_timeline("remimazolam", max_events=20)
-            build_research_timeline("CAR-T therapy", min_year=2015, output_format="mermaid")
+        Examples:
+            # By topic
+            build_research_timeline(topic="remimazolam", max_events=20)
+            build_research_timeline(topic="CAR-T therapy", min_year=2015, output_format="mermaid")
+
+            # By PMIDs
+            build_research_timeline(pmids="12345678,23456789", topic="Propofol Studies")
+            build_research_timeline(pmids="last", topic="Previous Search", output_format="json")
         """
         try:
-            timeline = await builder.build_timeline(
-                topic=topic,
-                max_events=max_events,
-                min_year=min_year,
-                max_year=max_year,
-                include_all=include_all,
-            )
+            # Determine mode: PMIDs or topic search
+            if pmids:
+                # Mode 2: Build from specific PMIDs
+                pmid_list = InputNormalizer.normalize_pmids(pmids)
+                if not pmid_list:
+                    return ResponseFormatter.error(
+                        error="No valid PMIDs provided",
+                        suggestion="Use comma-separated PMIDs or 'last' for previous search",
+                        tool_name="build_research_timeline",
+                    )
+
+                timeline = await builder.build_timeline_from_pmids(
+                    pmids=pmid_list,
+                    topic=topic or "Custom Timeline",
+                )
+            elif topic:
+                # Mode 1: Search by topic
+                timeline = await builder.build_timeline(
+                    topic=topic,
+                    max_events=max_events,
+                    min_year=min_year,
+                    max_year=max_year,
+                    include_all=include_all,
+                )
+            else:
+                return ResponseFormatter.error(
+                    error="Must provide either 'topic' or 'pmids'",
+                    suggestion="Examples: topic='remimazolam' OR pmids='12345678,23456789'",
+                    tool_name="build_research_timeline",
+                )
 
             if not timeline.events:
                 return ResponseFormatter.no_results(
-                    query=topic,
+                    query=topic or "provided PMIDs",
                     suggestions=[
                         "Try a more specific topic",
                         "Check spelling",
@@ -94,10 +152,27 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                     ],
                 )
 
+            # Format output
             if output_format == "mermaid":
                 return timeline.to_mermaid()
             elif output_format == "json":
                 return json.dumps(timeline.to_dict(), indent=2, ensure_ascii=False)
+            elif output_format == "timeline_js":
+                return json.dumps(timeline.to_json_timeline(), indent=2)
+            elif output_format == "d3":
+                d3_data = {
+                    "nodes": [
+                        {
+                            "id": e.pmid,
+                            "year": e.year,
+                            "label": e.milestone_label,
+                            "type": e.milestone_type.value,
+                            "title": e.title,
+                        }
+                        for e in timeline.events
+                    ]
+                }
+                return json.dumps(d3_data, indent=2)
             else:
                 return format_timeline_text(timeline)
 
@@ -108,62 +183,6 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 suggestion="Try a simpler topic or check network connection",
                 tool_name="build_research_timeline",
             )
-
-    @mcp.tool()
-    async def build_timeline_from_pmids(
-        pmids: str,
-        topic: str = "Custom Timeline",
-        output_format: str = "text",
-    ) -> str:
-        """
-        Build a timeline from a specific list of PMIDs.
-
-        Useful when you have pre-selected articles and want to
-        see their temporal relationship and milestones.
-
-        Args:
-            pmids: Comma-separated PMIDs or "last" for previous search results
-                   Example: "12345678,23456789,34567890"
-            topic: Name for the timeline (for display purposes)
-            output_format: "text", "mermaid", or "json"
-
-        Returns:
-            Timeline showing milestones in the provided articles.
-
-        Example:
-            build_timeline_from_pmids("12345678,23456789,34567890", "Propofol Studies")
-        """
-        try:
-            pmid_list = InputNormalizer.normalize_pmids(pmids)
-
-            if not pmid_list:
-                return ResponseFormatter.error(
-                    error="No valid PMIDs provided",
-                    suggestion="Use comma-separated PMIDs or 'last' for previous search",
-                    tool_name="build_timeline_from_pmids",
-                )
-
-            timeline = await builder.build_timeline_from_pmids(
-                pmids=pmid_list,
-                topic=topic,
-            )
-
-            if not timeline.events:
-                return ResponseFormatter.no_results(
-                    query="provided PMIDs",
-                    suggestions=["These may be regular studies without clear milestones"],
-                )
-
-            if output_format == "mermaid":
-                return timeline.to_mermaid()
-            elif output_format == "json":
-                return json.dumps(timeline.to_dict(), indent=2, ensure_ascii=False)
-            else:
-                return format_timeline_text(timeline)
-
-        except Exception as e:
-            logger.error(f"Timeline from PMIDs failed: {e}")
-            return ResponseFormatter.error(error=str(e), tool_name="build_timeline_from_pmids")
 
     @mcp.tool()
     async def analyze_timeline_milestones(
@@ -236,104 +255,6 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         except Exception as e:
             logger.error(f"Milestone analysis failed: {e}")
             return ResponseFormatter.error(error=str(e), tool_name="analyze_timeline_milestones")
-
-    @mcp.tool()
-    async def get_timeline_visualization(
-        topic: str,
-        format: str = "mermaid",
-        max_events: int = 20,
-    ) -> str:
-        """
-        Generate timeline visualization code.
-
-        Supports multiple visualization formats:
-        - mermaid: Mermaid timeline (renders in VS Code, GitHub, etc.)
-        - timeline_js: JSON for TimelineJS library
-        - d3: JSON for D3.js visualization
-
-        Args:
-            topic: Research topic
-            format: Visualization format (mermaid, timeline_js, d3)
-            max_events: Maximum events to include
-
-        Returns:
-            Visualization code in requested format.
-
-        Example:
-            get_timeline_visualization("CRISPR gene therapy", format="mermaid")
-        """
-        try:
-            timeline = await builder.build_timeline(
-                topic=topic,
-                max_events=max_events,
-            )
-
-            if not timeline.events:
-                return f"No events found for visualization of: {topic}"
-
-            if format == "mermaid":
-                return timeline.to_mermaid()
-            elif format == "timeline_js":
-                return json.dumps(timeline.to_json_timeline(), indent=2)
-            elif format == "d3":
-                # D3-friendly format
-                d3_data = {
-                    "nodes": [
-                        {
-                            "id": e.pmid,
-                            "year": e.year,
-                            "label": e.milestone_label,
-                            "type": e.milestone_type.value,
-                            "title": e.title,
-                        }
-                        for e in timeline.events
-                    ]
-                }
-                return json.dumps(d3_data, indent=2)
-            else:
-                return f"Unknown format: {format}. Use: mermaid, timeline_js, or d3"
-
-        except Exception as e:
-            logger.error(f"Visualization failed: {e}")
-            return ResponseFormatter.error(error=str(e), tool_name="get_timeline_visualization")
-
-    @mcp.tool()
-    def list_milestone_patterns() -> str:
-        """
-        List all milestone detection patterns.
-
-        Shows the regex patterns used to identify different types
-        of research milestones. Useful for understanding how
-        milestones are detected and for debugging.
-
-        Returns:
-            List of patterns with their milestone types and confidence scores.
-        """
-        patterns = get_milestone_patterns()
-
-        lines = [
-            "## Milestone Detection Patterns",
-            "",
-            "These patterns are used to identify research milestones:",
-            "",
-        ]
-
-        # Group by milestone type
-        by_type: dict[str, list] = {}
-        for p in patterns:
-            m_type = p["milestone_type"]
-            if m_type not in by_type:
-                by_type[m_type] = []
-            by_type[m_type].append(p)
-
-        for m_type, type_patterns in sorted(by_type.items()):
-            lines.append(f"### {m_type.replace('_', ' ').title()}")
-            for p in type_patterns:
-                lines.append(f"- **{p['label']}** (confidence: {p['confidence']:.0%})")
-                lines.append(f"  - Pattern: `{p['pattern']}`")
-            lines.append("")
-
-        return "\n".join(lines)
 
     @mcp.tool()
     async def compare_timelines(
@@ -416,4 +337,4 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             logger.error(f"Timeline comparison failed: {e}")
             return ResponseFormatter.error(error=str(e), tool_name="compare_timelines")
 
-    logger.info("Registered 6 timeline tools")
+    logger.info("Registered 3 timeline tools")

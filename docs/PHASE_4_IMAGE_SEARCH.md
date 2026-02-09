@@ -2,22 +2,53 @@
 
 > **目標**: 整合 Open-i 和 Europe PMC 圖片搜尋，提供統一的生物醫學圖片搜尋 MCP 工具
 > 
-> **狀態**: 📋 設計中
+> **狀態**: ✅ **已完成** (v0.3.0, 2026-02-09)
 > 
 > **API 參考**: [docs/IMAGE_SEARCH_API.md](IMAGE_SEARCH_API.md)
 
 ---
 
-## 📊 設計概要
+## ✅ 完成摘要
+
+| 階段 | 狀態 | 說明 |
+|------|------|------|
+| Phase 4.1 Open-i MVP | ✅ 完成 | `search_biomedical_images` tool, OpenIClient, ImageResult entity |
+| Phase 4.2 Advisor 智慧化 | ✅ 完成 | `ImageQueryAdvisor` 查詢分析、image_type 推薦、時序警告 |
+| Phase 4.3 Europe PMC XML | 🔜 未來 | 從全文 XML 提取圖片 |
+| Phase 4.4 多來源聚合 | 🔜 未來 | Open-i + Europe PMC 合併去重 |
+
+### 實作成果
+
+- **1 個新 MCP Tool**: `search_biomedical_images`
+- **DDD 分層架構**:
+  - Domain: [image.py](../src/pubmed_search/domain/entities/image.py) (`ImageResult`, `ImageSource`)
+  - Infrastructure: [openi.py](../src/pubmed_search/infrastructure/sources/openi.py) (`OpenIClient`)
+  - Application: [service.py](../src/pubmed_search/application/image_search/service.py) + [advisor.py](../src/pubmed_search/application/image_search/advisor.py)
+  - Presentation: [image_search.py](../src/pubmed_search/presentation/mcp_server/tools/image_search.py)
+- **測試覆蓋**: 44 + 48 = 92 個測試 (unit + advisor)
+- **Live E2E 測試**: 6 個 integration 測試 (`test_integration.py`)
+
+### 關鍵發現 (API 行為變更)
+
+> ⚠️ **2026-02 發現**: Open-i API 的 `it` 參數現在是**必填**！
+> - 省略 `it` → `{"total": 0, "Query-Error": "Invalid request type."}`
+> - 有效值: `xg` (X-ray), `mc` (Microscopy), `ph` (Photo), `gl` (Graphics)
+> - 無效值 (`ct`, `mr`, `us`, `all`) 全部返回錯誤
+> - 詳見 [IMAGE_SEARCH_API.md](IMAGE_SEARCH_API.md) Round 2 測試紀錄
+
+---
+
+## 📊 設計概要 (實際實作)
 
 | 項目 | 說明 |
 |------|------|
 | **新增 MCP Tool** | 1 個 (`search_biomedical_images`) |
-| **新增 Infrastructure** | 1 個 client (`OpenIClient`) + 擴展 `EuropePMCClient` |
-| **新增 Domain** | 1 個 entity (`ImageResult`) |
-| **新增 Application** | 1 個 service (`ImageSearchService`) |
-| **資料來源** | Open-i (NLM), Europe PMC FIG: 搜尋, Europe PMC XML 圖片提取 |
-| **預計影響檔案** | ~5 個新檔案, ~6 個修改 |
+| **新增 Infrastructure** | 1 個 client (`OpenIClient`) |
+| **新增 Domain** | 1 個 entity (`ImageResult`) + 1 個 enum (`ImageSource`) |
+| **新增 Application** | 2 個 module (`ImageSearchService`, `ImageQueryAdvisor`) |
+| **資料來源** | Open-i (NLM) — Phase 4.3+ 將加入 Europe PMC |
+| **智慧化功能** | 查詢適合性評分、image_type 推薦、2020 時序警告 |
+| **測試** | 92 個單元測試 + 6 個 Live E2E 測試 |
 
 ---
 

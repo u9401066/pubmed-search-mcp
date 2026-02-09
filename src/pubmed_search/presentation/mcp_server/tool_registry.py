@@ -74,7 +74,7 @@ TOOL_CATEGORIES = {
     "citation_network": {
         "name": "引用網絡",
         "description": "引用樹建構與探索",
-        "tools": ["build_citation_tree", "suggest_citation_tree"],
+        "tools": ["build_citation_tree"],
     },
     "export": {
         "name": "匯出工具",
@@ -86,7 +86,6 @@ TOOL_CATEGORIES = {
         "description": "PMID 暫存與歷史",
         "tools": [
             "get_session_pmids",
-            "list_search_history",
             "get_cached_article",
             "get_session_summary",
         ],
@@ -104,23 +103,20 @@ TOOL_CATEGORIES = {
     "vision": {
         "name": "視覺搜索",
         "description": "圖片分析與搜索 (實驗性)",
-        "tools": ["analyze_figure_for_search", "reverse_image_search_pubmed"],
+        "tools": ["analyze_figure_for_search"],
     },
     "icd": {
         "name": "ICD 轉換",
         "description": "ICD-10 與 MeSH 轉換",
-        "tools": ["convert_icd_to_mesh", "convert_mesh_to_icd", "search_by_icd"],
+        "tools": ["convert_icd_mesh", "search_by_icd"],
     },
     "timeline": {
         "name": "研究時間軸",
         "description": "研究演化追蹤與里程碑偵測",
         "tools": [
             "build_research_timeline",
-            "get_timeline_visualization",
             "analyze_timeline_milestones",
             "compare_timelines",
-            "list_milestone_patterns",
-            "build_timeline_from_pmids",
         ],
     },
     "image_search": {
@@ -174,7 +170,7 @@ def register_all_mcp_tools(
     logger.info("Registering session tools...")
     register_session_tools(mcp, session_manager)
     register_session_resources(mcp, session_manager)
-    stats["session"] = 4
+    stats["session"] = 3  # get_session_pmids, get_cached_article, get_session_summary
 
     # 3. Resources (filter docs, etc.)
     logger.info("Registering resources...")

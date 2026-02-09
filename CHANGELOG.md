@@ -16,6 +16,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.3.1] - 2026-02-09
+
+### Changed
+
+- **Tool Consolidation: 41 → 34 tools** (-7 tools) — Simplified API surface while preserving all functionality
+  - **Timeline**: 6 → 3 tools
+    - `build_timeline_from_pmids` → merged into `build_research_timeline(pmids=...)` 
+    - `get_timeline_visualization` → merged into `build_research_timeline(output_format=...)` 
+    - `list_milestone_patterns` → removed (static data, Agent can describe)
+  - **Vision**: 2 → 1 tool
+    - `reverse_image_search_pubmed` → merged into `analyze_figure_for_search(search_type=...)`
+  - **ICD**: 3 → 2 tools
+    - `convert_icd_to_mesh` + `convert_mesh_to_icd` → unified `convert_icd_mesh` (auto-detects direction)
+  - **Citation**: 2 → 1 tool
+    - `suggest_citation_tree` → removed (Agent can decide directly)
+  - **Session**: 4 → 3 tools
+    - `list_search_history` → merged into `get_session_summary(include_history=True)`
+  - **OpenURL**: 4 → 2 tools (signature update only, full implementation deferred)
+    - `list_resolver_presets` + `test_institutional_access` → planned merge into `configure_institutional_access`
+
+### Removed
+
+- `build_timeline_from_pmids` — use `build_research_timeline(pmids="123,456")`
+- `get_timeline_visualization` — use `build_research_timeline(output_format="mermaid|timeline_js|d3")`
+- `list_milestone_patterns` — static reference, will be MCP Resource
+- `reverse_image_search_pubmed` — use `analyze_figure_for_search(search_type="medical|methodology|results|structure")`
+- `convert_icd_to_mesh` / `convert_mesh_to_icd` — use `convert_icd_mesh(code=...)` or `convert_icd_mesh(mesh_term=...)`
+- `suggest_citation_tree` — Agent decides based on fetch_article_details results
+- `list_search_history` — use `get_session_summary(include_history=True, history_limit=10)`
+
+### Fixed
+
+- Updated 10+ test files to match consolidated tool API
+- `tool_registry.py` TOOL_CATEGORIES updated for 34 tools / 13 categories
+- All documentation auto-synced via `count_mcp_tools.py --update-docs`
+
+---
+
 ## [0.3.0] - 2026-02-09
 
 ### Added

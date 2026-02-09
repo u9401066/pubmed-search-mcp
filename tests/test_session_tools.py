@@ -109,43 +109,7 @@ class TestGetSessionPmids:
         assert result["success"] is False
 
 
-# ============================================================
-# list_search_history
-# ============================================================
-
-class TestListSearchHistory:
-    def setup_method(self):
-        self.sm = MagicMock()
-        self.tools = _capture_tools(register_session_tools, self.sm)
-        self.fn = self.tools["list_search_history"]
-
-    def test_no_session(self):
-        self.sm.get_current_session.return_value = None
-        result = json.loads(self.fn())
-        assert result["success"] is False
-
-    def test_with_history(self):
-        history = [
-            {"query": "test1", "pmids": ["1"], "timestamp": "2024-01-01T12:00:00Z", "result_count": 1},
-            {"query": "test2", "pmids": ["2", "3"], "timestamp": "2024-01-02T12:00:00Z", "result_count": 2},
-        ]
-        session = _make_session(search_history=history)
-        self.sm.get_current_session.return_value = session
-        result = json.loads(self.fn())
-        assert result["success"] is True
-        assert result["total_searches"] == 2
-        assert len(result["history"]) == 2
-
-    def test_limit(self):
-        history = [{"query": f"q{i}", "pmids": [], "timestamp": "", "result_count": 0} for i in range(20)]
-        self.sm.get_current_session.return_value = _make_session(search_history=history)
-        result = json.loads(self.fn(limit=5))
-        assert len(result["history"]) == 5
-
-    def test_exception(self):
-        self.sm.get_current_session.side_effect = RuntimeError("fail")
-        result = json.loads(self.fn())
-        assert result["success"] is False
+# TestListSearchHistory removed in v0.3.1 - merged into get_session_summary
 
 
 # ============================================================
@@ -211,6 +175,31 @@ class TestGetSessionSummary:
         assert result["has_session"] is True
         assert result["stats"]["cached_articles"] == 2
         assert result["stats"]["total_searches"] == 1
+
+    def test_with_include_history(self):
+        """Test include_history=True (merged from list_search_history in v0.3.1)."""
+        history = [
+            {"query": "test1", "pmids": ["1"], "timestamp": "2024-01-01T12:00:00Z", "result_count": 1},
+            {"query": "test2", "pmids": ["2", "3"], "timestamp": "2024-01-02T12:00:00Z", "result_count": 2},
+        ]
+        cache = {"1": {}, "2": {}, "3": {}}
+        session = _make_session(search_history=history, article_cache=cache)
+        self.sm.get_current_session.return_value = session
+        result = json.loads(self.fn(include_history=True))
+        assert result["success"] is True
+        assert "search_history" in result
+        assert len(result["search_history"]) == 2
+        assert result["search_history"][0]["query"] == "test1"
+        assert result["search_history"][1]["pmid_count"] == 2
+
+    def test_include_history_with_limit(self):
+        """Test include_history with history_limit parameter."""
+        history = [{"query": f"q{i}", "pmids": [], "timestamp": "", "result_count": 0} for i in range(20)]
+        session = _make_session(search_history=history, article_cache={})
+        self.sm.get_current_session.return_value = session
+        result = json.loads(self.fn(include_history=True, history_limit=5))
+        assert result["success"] is True
+        assert len(result["search_history"]) == 5
 
     def test_exception(self):
         self.sm.get_current_session.side_effect = RuntimeError("fail")

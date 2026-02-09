@@ -2,9 +2,12 @@
 MCP Tools for OpenURL / Institutional Link Resolver Integration
 
 Provides tools for:
-- Configuring institutional link resolver
+- Configuring institutional link resolver (with presets list and auto-test)
 - Generating OpenURL links for articles
-- Getting full-text access through library subscriptions
+
+Removed in v0.3.1:
+- list_resolver_presets → integrated into configure_institutional_access()
+- test_institutional_access → integrated into configure_institutional_access(test=True)
 """
 
 import logging
@@ -28,6 +31,7 @@ def register_openurl_tools(mcp: FastMCP) -> None:
         resolver_url: str | None = None,
         preset: str | None = None,
         enable: bool = True,
+        test: bool = True,
     ) -> str:
         """
         Configure your institution's link resolver for full-text access.

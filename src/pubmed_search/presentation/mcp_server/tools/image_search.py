@@ -155,6 +155,22 @@ def _format_image_results(result: ImageSearchResult) -> str:
     if result.errors:
         parts.append(f"\n⚠️ Errors: {'; '.join(result.errors)}")
 
+    # Advisor warnings (intelligent guidance)
+    if result.advisor_warnings:
+        parts.append("")
+        parts.append("### ⚠️ 智慧建議")
+        for w in result.advisor_warnings:
+            parts.append(f"- {w}")
+
+    if result.advisor_suggestions:
+        for s in result.advisor_suggestions:
+            parts.append(f"- 💡 {s}")
+
+    if result.recommended_image_type:
+        parts.append(
+            f"- 🎯 建議 image_type: `{result.recommended_image_type}`"
+        )
+
     if not result.images:
         parts.append("\nNo images found. Try broader search terms.")
         return "\n".join(parts)

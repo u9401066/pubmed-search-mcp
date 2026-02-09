@@ -95,9 +95,9 @@ class TestGetToolsByCategory:
         tools = get_tools_by_category("ncbi_extended")
         assert len(tools) == 7
 
-    def test_timeline_has_6_tools(self):
+    def test_timeline_has_3_tools(self):
         tools = get_tools_by_category("timeline")
-        assert len(tools) == 6
+        assert len(tools) == 3
 
 
 # ============================================================

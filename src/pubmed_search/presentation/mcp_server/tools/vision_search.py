@@ -3,6 +3,12 @@ Vision-based Literature Search Tools.
 
 Experimental feature: Use images to search for related scientific literature.
 
+Tool:
+- analyze_figure_for_search: Analyze figure and extract search terms (5 search types)
+
+Removed in v0.3.1:
+- reverse_image_search_pubmed → Merged into analyze_figure_for_search (use search_type)
+
 Workflow:
 1. User provides image (URL or base64)
 2. MCP returns image to Agent using ImageContent protocol
@@ -124,6 +130,7 @@ def register_vision_tools(mcp):
         image: Optional[str] = None,
         url: Optional[str] = None,
         context: Optional[str] = None,
+        search_type: str = "comprehensive",
     ) -> list[Union[TextContent, ImageContent]]:
         """
         Analyze a scientific figure or image for literature search.
@@ -141,6 +148,14 @@ def register_vision_tools(mcp):
         3. YOU (the Agent) analyze the image using your vision capabilities
         4. Extract relevant search terms from the image
         5. Call `unified_search()` or `generate_search_queries()` with those terms
+
+        SEARCH TYPES:
+        ─────────────
+        - "comprehensive": General analysis, extract all relevant terms (default)
+        - "methodology": Focus on methods, equipment, techniques shown
+        - "results": Focus on data, graphs, statistical findings
+        - "structure": Focus on molecular/chemical structures
+        - "medical": Focus on clinical/medical imaging findings
 
         USE CASES:
         ──────────
@@ -160,6 +175,7 @@ def register_vision_tools(mcp):
             image: Base64-encoded image data OR data URI (data:image/png;base64,...)
             url: URL of the image to analyze
             context: Optional context about what to look for in the image
+            search_type: Type of analysis focus (comprehensive/methodology/results/structure/medical)
 
         Returns:
             List containing:
@@ -168,6 +184,7 @@ def register_vision_tools(mcp):
 
         Example:
             analyze_figure_for_search(url="https://example.com/figure1.png")
+            analyze_figure_for_search(url="https://...", search_type="medical")
             analyze_figure_for_search(image="data:image/png;base64,iVBORw0...")
         """
         results: list[Union[TextContent, ImageContent]] = []
@@ -181,6 +198,7 @@ def register_vision_tools(mcp):
                         "❌ **Error**: Please provide either `image` (base64) or `url`\n\n"
                         "📝 **Examples**:\n"
                         '- `analyze_figure_for_search(url="https://example.com/figure.png")`\n'
+                        '- `analyze_figure_for_search(url="...", search_type="medical")`\n'
                         '- `analyze_figure_for_search(image="data:image/png;base64,...")`'
                     ),
                 )
@@ -222,135 +240,7 @@ def register_vision_tools(mcp):
                 )
             )
 
-            # Add instructions for the Agent
-            instruction_text = """
-🔬 **Figure Analysis Request**
-
-I've provided the image above. Please analyze it and:
-
-1. **Describe** what you see in the image
-2. **Identify** key scientific concepts, methods, or subjects
-3. **Extract** relevant search terms for PubMed/literature search
-
-**After your analysis**, suggest search terms and ask if the user wants to:
-- 🔍 Search with `unified_search(query="your extracted terms")`
-- 📚 Get MeSH expansion with `generate_search_queries(topic="key concept")`
-"""
-
-            if context:
-                instruction_text += f"\n\n**User Context**: {context}"
-
-            results.append(TextContent(type="text", text=instruction_text))
-
-            return results
-
-        except httpx.HTTPStatusError as e:
-            return [
-                TextContent(
-                    type="text",
-                    text=f"❌ **Error fetching image**: HTTP {e.response.status_code}\n\n💡 Check if the URL is accessible.",
-                )
-            ]
-        except Exception as e:
-            logger.exception("Error in analyze_figure_for_search")
-            return [TextContent(type="text", text=f"❌ **Error**: {str(e)}")]
-
-    @mcp.tool()
-    async def reverse_image_search_pubmed(
-        image: Optional[str] = None,
-        url: Optional[str] = None,
-        search_type: str = "comprehensive",
-    ) -> list[Union[TextContent, ImageContent]]:
-        """
-        Reverse image search for scientific literature.
-
-        ═══════════════════════════════════════════════════════════════════════
-        🖼️ REVERSE IMAGE SEARCH FOR PUBMED
-        ═══════════════════════════════════════════════════════════════════════
-
-        Find scientific papers related to an image. This is a streamlined
-        version of analyze_figure_for_search with specific prompts for
-        different image types.
-
-        ═══════════════════════════════════════════════════════════════════════
-        COMPLETE WORKFLOW:
-        ═══════════════════════════════════════════════════════════════════════
-
-        Step 1: Provide image
-        ─────────────────────
-        reverse_image_search_pubmed(url="https://example.com/figure.png")
-
-        Step 2: Agent analyzes image
-        ────────────────────────────
-        Agent uses vision capabilities to identify:
-        - Scientific domain (e.g., molecular biology, clinical)
-        - Key concepts visible in the image
-        - Relevant terminology
-
-        Step 3: Agent extracts search terms
-        ───────────────────────────────────
-        Based on analysis, Agent suggests:
-        - Primary search terms
-        - MeSH terms if identifiable
-        - Alternative queries
-
-        Step 4: User confirms search
-        ────────────────────────────
-        Agent asks: "Would you like to search for: [terms]?"
-
-        Step 5: Execute search
-        ─────────────────────
-        unified_search(query="extracted terms")
-        OR
-        generate_search_queries(topic="key concept")
-
-        ═══════════════════════════════════════════════════════════════════════
-        SEARCH TYPES:
-        ═══════════════════════════════════════════════════════════════════════
-        - "comprehensive": General analysis, extract all relevant terms
-        - "methodology": Focus on methods, equipment, techniques shown
-        - "results": Focus on data, graphs, statistical findings
-        - "structure": Focus on molecular/chemical structures
-        - "medical": Focus on clinical/medical imaging findings
-
-        Args:
-            image: Base64-encoded image or data URI
-            url: Image URL
-            search_type: Type of search focus (default: "comprehensive")
-
-        Returns:
-            Image and tailored analysis instructions
-        """
-        results: list[Union[TextContent, ImageContent]] = []
-
-        if not image and not url:
-            return [
-                TextContent(
-                    type="text", text="❌ Please provide `image` or `url` parameter"
-                )
-            ]
-
-        try:
-            # Get image data
-            if url:
-                mime_type, image_data = await fetch_image_as_base64(url)
-            elif image:
-                if image.startswith("data:image/"):
-                    mime_type, image_data = parse_data_uri(image)
-                else:
-                    mime_type = "image/jpeg"
-                    image_data = image
-
-            # Add image
-            results.append(
-                ImageContent(
-                    type="image",
-                    data=image_data,
-                    mimeType=mime_type,
-                )
-            )
-
-            # Type-specific instructions
+            # Type-specific analysis prompts
             prompts = {
                 "comprehensive": """
 🔬 **Comprehensive Figure Analysis**
@@ -409,21 +299,31 @@ Suggest clinical search terms and relevant MeSH headings.
 """,
             }
 
-            prompt = prompts.get(search_type, prompts["comprehensive"])
+            # Get appropriate prompt (default to comprehensive)
+            normalized_type = search_type.lower().strip()
+            prompt = prompts.get(normalized_type, prompts["comprehensive"])
 
-            results.append(
-                TextContent(
-                    type="text",
-                    text=prompt
-                    + "\n\n_After analysis, I'll search PubMed for related literature._",
-                )
-            )
+            # Build instruction text
+            instruction_text = prompt + "\n\n_After analysis, I'll search PubMed for related literature._"
+
+            if context:
+                instruction_text += f"\n\n**User Context**: {context}"
+
+            results.append(TextContent(type="text", text=instruction_text))
 
             return results
 
+        except httpx.HTTPStatusError as e:
+            return [
+                TextContent(
+                    type="text",
+                    text=f"❌ **Error fetching image**: HTTP {e.response.status_code}\n\n💡 Check if the URL is accessible.",
+                )
+            ]
         except Exception as e:
+            logger.exception("Error in analyze_figure_for_search")
             return [TextContent(type="text", text=f"❌ **Error**: {str(e)}")]
 
-    logger.info(
-        "Registered vision search tools: analyze_figure_for_search, reverse_image_search_pubmed"
-    )
+    # reverse_image_search_pubmed removed in v0.3.1 - merged into analyze_figure_for_search with search_type param
+
+    logger.info("Registered 1 vision search tool: analyze_figure_for_search")

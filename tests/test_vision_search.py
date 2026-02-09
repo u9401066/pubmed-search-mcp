@@ -114,8 +114,8 @@ class TestVisionToolsRegistration:
 
         register_vision_tools(mock_mcp)
 
-        # Should register 2 tools
-        assert mock_mcp.tool.call_count == 2
+        # Should register 1 tool (reverse_image_search_pubmed merged in v0.3.1)
+        assert mock_mcp.tool.call_count == 1
 
 
 class TestAnalyzeFigureForSearch:

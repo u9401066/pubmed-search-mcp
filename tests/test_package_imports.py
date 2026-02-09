@@ -293,8 +293,8 @@ class TestMCPToolsAccessible:
         )
         tools = server._tool_manager.list_tools()
         
-        # Should have 40 tools
-        assert len(tools) >= 35, f"Expected at least 35 tools, got {len(tools)}"
+        # Should have 34 tools (consolidated in v0.3.1)
+        assert len(tools) >= 30, f"Expected at least 30 tools, got {len(tools)}"
 
     def test_key_tools_registered(self):
         """Key tools should be registered."""

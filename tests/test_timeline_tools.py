@@ -176,43 +176,9 @@ class TestBuildResearchTimeline:
 
 
 # ============================================================
-# build_timeline_from_pmids
+# build_timeline_from_pmids - REMOVED in v0.3.1
+# Merged into build_research_timeline with optional 'pmids' parameter
 # ============================================================
-
-class TestBuildTimelineFromPmids:
-    @pytest.mark.asyncio
-    async def test_empty_pmids(self):
-        mcp = MagicMock()
-        searcher = MagicMock()
-        with patch(
-            "pubmed_search.presentation.mcp_server.tools.timeline.TimelineBuilder"
-        ) as _MockTB, patch(
-            "pubmed_search.presentation.mcp_server.tools.timeline.MilestoneDetector"
-        ):
-            tools = _capture_tools(mcp, searcher)
-
-        result = await tools["build_timeline_from_pmids"](pmids="")
-        assert "error" in result.lower()
-
-    @pytest.mark.asyncio
-    async def test_success(self):
-        mcp = MagicMock()
-        searcher = MagicMock()
-        with patch(
-            "pubmed_search.presentation.mcp_server.tools.timeline.TimelineBuilder"
-        ) as MockTB, patch(
-            "pubmed_search.presentation.mcp_server.tools.timeline.MilestoneDetector"
-        ):
-            mock_builder = MockTB.return_value
-            mock_builder.build_timeline_from_pmids = AsyncMock(
-                return_value=_FakeTimeline()
-            )
-            tools = _capture_tools(mcp, searcher)
-
-        result = await tools["build_timeline_from_pmids"](
-            pmids="111,222,333", topic="My Study"
-        )
-        assert isinstance(result, str)
 
 
 # ============================================================
@@ -264,76 +230,15 @@ class TestAnalyzeTimelineMilestones:
 
 
 # ============================================================
-# get_timeline_visualization
+# get_timeline_visualization - REMOVED in v0.3.1
+# Merged into build_research_timeline with output_format parameter
 # ============================================================
-
-class TestGetTimelineVisualization:
-    @pytest.mark.asyncio
-    async def test_mermaid(self):
-        mcp = MagicMock()
-        searcher = MagicMock()
-        with patch(
-            "pubmed_search.presentation.mcp_server.tools.timeline.TimelineBuilder"
-        ) as MockTB, patch(
-            "pubmed_search.presentation.mcp_server.tools.timeline.MilestoneDetector"
-        ):
-            mock_builder = MockTB.return_value
-            mock_builder.build_timeline = AsyncMock(return_value=_FakeTimeline())
-            tools = _capture_tools(mcp, searcher)
-
-        result = await tools["get_timeline_visualization"](
-            topic="test", format="mermaid"
-        )
-        assert "gantt" in result
-
-    @pytest.mark.asyncio
-    async def test_unknown_format(self):
-        mcp = MagicMock()
-        searcher = MagicMock()
-        with patch(
-            "pubmed_search.presentation.mcp_server.tools.timeline.TimelineBuilder"
-        ) as MockTB, patch(
-            "pubmed_search.presentation.mcp_server.tools.timeline.MilestoneDetector"
-        ):
-            mock_builder = MockTB.return_value
-            mock_builder.build_timeline = AsyncMock(return_value=_FakeTimeline())
-            tools = _capture_tools(mcp, searcher)
-
-        result = await tools["get_timeline_visualization"](
-            topic="test", format="unknown"
-        )
-        assert "Unknown format" in result
-
-    @pytest.mark.asyncio
-    async def test_no_events(self):
-        mcp = MagicMock()
-        searcher = MagicMock()
-        with patch(
-            "pubmed_search.presentation.mcp_server.tools.timeline.TimelineBuilder"
-        ) as MockTB, patch(
-            "pubmed_search.presentation.mcp_server.tools.timeline.MilestoneDetector"
-        ):
-            mock_builder = MockTB.return_value
-            mock_builder.build_timeline = AsyncMock(return_value=_FakeTimeline(empty=True))
-            tools = _capture_tools(mcp, searcher)
-
-        result = await tools["get_timeline_visualization"](topic="zzz")
-        assert "no events" in result.lower() or "No events" in result
 
 
 # ============================================================
-# list_milestone_patterns
+# list_milestone_patterns - REMOVED in v0.3.1
+# Moved to MCP Resource or can be queried from TimelineBuilder
 # ============================================================
-
-class TestListMilestonePatterns:
-    def test_returns_markdown(self):
-        mcp = MagicMock()
-        searcher = MagicMock()
-        tools = _capture_tools(mcp, searcher)
-
-        result = tools["list_milestone_patterns"]()
-        assert "Milestone Detection Patterns" in result
-        assert "confidence" in result.lower()
 
 
 # ============================================================

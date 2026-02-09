@@ -298,26 +298,4 @@ class TestBuildCitationTreeTool:
         assert len(result) > 50
 
 
-class TestSuggestCitationTreeTool:
-    def setup_method(self):
-        self.mcp = MagicMock()
-        self.searcher = MagicMock()
-        self.tools = _capture_tools(self.mcp, self.searcher)
-
-    def test_suggest_valid_pmid(self):
-        self.searcher.fetch_details = MagicMock(return_value=[{
-            "pmid": "111", "title": "Important Paper",
-            "year": "2020", "journal": "Nature",
-        }])
-        result = self.tools["suggest_citation_tree"](pmid="111")
-        assert "111" in result
-        assert "citation" in result.lower() or "tree" in result.lower()
-
-    def test_suggest_invalid_pmid(self):
-        result = self.tools["suggest_citation_tree"](pmid="")
-        assert "error" in result.lower() or "invalid" in result.lower()
-
-    def test_suggest_article_not_found(self):
-        self.searcher.fetch_details = MagicMock(return_value=[])
-        result = self.tools["suggest_citation_tree"](pmid="999")
-        assert "not" in result.lower() or "could" in result.lower()
+# TestSuggestCitationTreeTool removed in v0.3.1 - suggest_citation_tree merged (Agent decides directly)

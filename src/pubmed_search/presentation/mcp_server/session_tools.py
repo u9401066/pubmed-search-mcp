@@ -5,8 +5,11 @@ Session Tools - PMID 持久化與 Session 管理
 
 Tools:
 - get_session_pmids: 取得指定搜尋的 PMID 列表
-- list_search_history: 列出搜尋歷史
 - get_cached_article: 從快取取得文章詳情
+- get_session_summary: Session 摘要 (可選包含完整歷史)
+
+Removed in v0.3.1:
+- list_search_history → Merged into get_session_summary(include_history=True)
 """
 
 import json
@@ -130,56 +133,7 @@ def register_session_tools(mcp: FastMCP, session_manager: SessionManager):
             logger.error(f"get_session_pmids failed: {e}")
             return json.dumps({"success": False, "error": str(e)})
 
-    @mcp.tool()
-    def list_search_history(limit: int = 10) -> str:
-        """
-        列出搜尋歷史，方便回顧和取得特定搜尋的 PMIDs。
-
-        Args:
-            limit: 最多顯示幾筆歷史 (預設 10)
-
-        Returns:
-            搜尋歷史列表，包含查詢字串、時間、結果數量
-        """
-        try:
-            session = session_manager.get_current_session()
-            if not session:
-                return json.dumps({"success": False, "error": "No active session"})
-
-            history = session.search_history[-limit:]
-
-            formatted = []
-            total = len(session.search_history)
-            for i, search in enumerate(history):
-                actual_index = total - limit + i if total > limit else i
-                formatted.append(
-                    {
-                        "index": actual_index,
-                        "query": search.get("query", "")[:80],
-                        "timestamp": search.get("timestamp", "")[
-                            :19
-                        ],  # YYYY-MM-DDTHH:MM:SS
-                        "result_count": search.get("result_count", 0),
-                        "pmid_count": len(search.get("pmids", [])),
-                    }
-                )
-
-            return json.dumps(
-                {
-                    "success": True,
-                    "session_id": session.session_id,
-                    "total_searches": total,
-                    "total_cached_articles": len(session.article_cache),
-                    "history": formatted,
-                    "hint": "Use get_session_pmids(index) to get PMIDs for a specific search",
-                },
-                ensure_ascii=False,
-                indent=2,
-            )
-
-        except Exception as e:
-            logger.error(f"list_search_history failed: {e}")
-            return json.dumps({"success": False, "error": str(e)})
+    # list_search_history removed in v0.3.1 - merged into get_session_summary(include_history=True)
 
     @mcp.tool()
     def get_cached_article(pmid: str) -> str:
@@ -229,15 +183,24 @@ def register_session_tools(mcp: FastMCP, session_manager: SessionManager):
             return json.dumps({"success": False, "error": str(e)})
 
     @mcp.tool()
-    def get_session_summary() -> str:
+    def get_session_summary(include_history: bool = False, history_limit: int = 10) -> str:
         """
         取得當前 session 的摘要資訊。
 
         顯示快取狀態、搜尋歷史摘要，幫助 Agent 了解
         目前有哪些資料可用。
 
+        Args:
+            include_history: 是否包含完整搜尋歷史 (預設 False)
+            history_limit: 歷史筆數上限，僅當 include_history=True 時有效 (預設 10)
+
         Returns:
             Session 摘要，包含快取文章數、搜尋次數、最近搜尋等
+
+        Examples:
+            get_session_summary()  # 基本摘要
+            get_session_summary(include_history=True)  # 含完整搜尋歷史
+            get_session_summary(include_history=True, history_limit=20)  # 更多歷史
         """
         try:
             session = session_manager.get_current_session()
@@ -250,7 +213,7 @@ def register_session_tools(mcp: FastMCP, session_manager: SessionManager):
                     }
                 )
 
-            # Get recent searches summary
+            # Get recent searches summary (always included, brief)
             recent_searches = []
             for s in session.search_history[-5:]:
                 recent_searches.append(
@@ -260,31 +223,50 @@ def register_session_tools(mcp: FastMCP, session_manager: SessionManager):
             # Get some cached PMIDs sample
             cached_pmids = list(session.article_cache.keys())
 
-            return json.dumps(
-                {
-                    "success": True,
-                    "has_session": True,
-                    "session_id": session.session_id,
-                    "topic": session.topic,
-                    "created_at": session.created_at,
-                    "stats": {
-                        "cached_articles": len(session.article_cache),
-                        "total_searches": len(session.search_history),
-                        "reading_list_items": len(session.reading_list),
-                        "excluded_articles": len(session.excluded_pmids),
-                    },
-                    "recent_searches": recent_searches,
-                    "cached_pmids_sample": cached_pmids[:20],
-                    "all_cached_pmids_csv": ",".join(cached_pmids[:100]),
-                    "hints": [
-                        "Use get_session_pmids() to get PMIDs from a specific search",
-                        "Use get_cached_article(pmid) to get article details from cache",
-                        "Use pmids='last' with prepare_export or get_citation_metrics",
-                    ],
+            result = {
+                "success": True,
+                "has_session": True,
+                "session_id": session.session_id,
+                "topic": session.topic,
+                "created_at": session.created_at,
+                "stats": {
+                    "cached_articles": len(session.article_cache),
+                    "total_searches": len(session.search_history),
+                    "reading_list_items": len(session.reading_list),
+                    "excluded_articles": len(session.excluded_pmids),
                 },
-                ensure_ascii=False,
-                indent=2,
-            )
+                "recent_searches": recent_searches,
+                "cached_pmids_sample": cached_pmids[:20],
+                "all_cached_pmids_csv": ",".join(cached_pmids[:100]),
+                "hints": [
+                    "Use get_session_pmids() to get PMIDs from a specific search",
+                    "Use get_cached_article(pmid) to get article details from cache",
+                    "Use pmids='last' with prepare_export or get_citation_metrics",
+                ],
+            }
+
+            # Include detailed search history if requested
+            if include_history:
+                history = session.search_history[-history_limit:]
+                total = len(session.search_history)
+                formatted_history = []
+                for i, search in enumerate(history):
+                    actual_index = total - history_limit + i if total > history_limit else i
+                    formatted_history.append(
+                        {
+                            "index": actual_index,
+                            "query": search.get("query", "")[:80],
+                            "timestamp": search.get("timestamp", "")[:19],  # YYYY-MM-DDTHH:MM:SS
+                            "result_count": search.get("result_count", 0),
+                            "pmid_count": len(search.get("pmids", [])),
+                        }
+                    )
+                result["search_history"] = formatted_history
+                result["hints"].append(
+                    "Use get_session_pmids(index) to get PMIDs for a specific search"
+                )
+
+            return json.dumps(result, ensure_ascii=False, indent=2)
 
         except Exception as e:
             logger.error(f"get_session_summary failed: {e}")

@@ -2,9 +2,12 @@
 ICD Conversion Tools - ICD-9/ICD-10 與 MeSH 轉換
 
 Tools:
-- convert_icd_to_mesh: ICD 代碼轉 MeSH 詞彙
-- convert_mesh_to_icd: MeSH 詞彙轉 ICD 代碼
+- convert_icd_mesh: ICD ↔ MeSH 雙向轉換（v0.3.1 合併）
 - search_by_icd: 使用 ICD 代碼搜尋 PubMed
+
+Removed in v0.3.1:
+- convert_icd_to_mesh → merged into convert_icd_mesh
+- convert_mesh_to_icd → merged into convert_icd_mesh
 """
 
 import json
@@ -311,51 +314,61 @@ def get_icd_reference() -> dict:
 
 
 def register_icd_tools(mcp: FastMCP):
-    """Register ICD conversion tools."""
+    """Register ICD conversion tools (2 tools)."""
 
     @mcp.tool()
-    def convert_icd_to_mesh(code: str) -> str:
+    def convert_icd_mesh(
+        code: str | None = None,
+        mesh_term: str | None = None,
+    ) -> str:
         """
-        Convert ICD-9 or ICD-10 code to MeSH term for PubMed search.
+        Convert between ICD codes and MeSH terms (bidirectional).
 
-        Automatically detects ICD version and returns:
-        - MeSH term mapping
-        - Ready-to-use PubMed query
-        - Search suggestion
+        ═══════════════════════════════════════════════════════════════
+        🔄 BIDIRECTIONAL CONVERSION
+        ═══════════════════════════════════════════════════════════════
+
+        ICD → MeSH (provide code):
+            convert_icd_mesh(code="E11")     → Diabetes Mellitus, Type 2
+            convert_icd_mesh(code="I21")     → Myocardial Infarction
+            convert_icd_mesh(code="250")     → Diabetes Mellitus (ICD-9)
+            convert_icd_mesh(code="U07.1")   → COVID-19
+
+        MeSH → ICD (provide mesh_term):
+            convert_icd_mesh(mesh_term="Diabetes Mellitus")
+            convert_icd_mesh(mesh_term="Heart Failure")
+
+        Automatically detects ICD version (ICD-9 vs ICD-10) from code format.
 
         Args:
             code: ICD-9 or ICD-10 code (e.g., "E11", "250", "I21.9")
-
-        Returns:
-            JSON with MeSH mapping and search query
-
-        Example:
-            convert_icd_to_mesh("E11")     → Diabetes Mellitus, Type 2
-            convert_icd_to_mesh("I21")     → Myocardial Infarction
-            convert_icd_to_mesh("250")     → Diabetes Mellitus (ICD-9)
-            convert_icd_to_mesh("U07.1")   → COVID-19
-        """
-        result = lookup_icd_to_mesh(code)
-        return json.dumps(result, indent=2, ensure_ascii=False)
-
-    @mcp.tool()
-    def convert_mesh_to_icd(mesh_term: str) -> str:
-        """
-        Convert MeSH term to ICD-9 and ICD-10 codes.
-
-        Useful for clinical documentation or billing code lookup.
-
-        Args:
             mesh_term: MeSH term (e.g., "Diabetes Mellitus", "Heart Failure")
 
         Returns:
-            JSON with matching ICD-9 and ICD-10 codes
+            JSON with conversion result and ready-to-use PubMed query
 
-        Example:
-            convert_mesh_to_icd("Diabetes Mellitus")
-            convert_mesh_to_icd("Myocardial Infarction")
+        Note: Provide either 'code' OR 'mesh_term', not both.
         """
-        result = lookup_mesh_to_icd(mesh_term)
+        if code and mesh_term:
+            return json.dumps({
+                "success": False,
+                "error": "Provide either 'code' OR 'mesh_term', not both",
+            }, indent=2, ensure_ascii=False)
+
+        if code:
+            result = lookup_icd_to_mesh(code)
+        elif mesh_term:
+            result = lookup_mesh_to_icd(mesh_term)
+        else:
+            return json.dumps({
+                "success": False,
+                "error": "Must provide either 'code' or 'mesh_term'",
+                "examples": {
+                    "icd_to_mesh": 'convert_icd_mesh(code="E11")',
+                    "mesh_to_icd": 'convert_icd_mesh(mesh_term="Diabetes Mellitus")',
+                },
+            }, indent=2, ensure_ascii=False)
+
         return json.dumps(result, indent=2, ensure_ascii=False)
 
     @mcp.tool()
@@ -417,7 +430,7 @@ def register_icd_tools(mcp: FastMCP):
             default=str,
         )
 
-    logger.info("Registered ICD conversion tools (3 tools)")
+    logger.info("Registered ICD conversion tools (2 tools)")
 
 
 __all__ = [

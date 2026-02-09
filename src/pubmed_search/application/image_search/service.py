@@ -27,6 +27,9 @@ class ImageSearchResult:
     sources_used: list[str]
     query: str
     errors: list[str] = field(default_factory=list)
+    advisor_warnings: list[str] = field(default_factory=list)
+    advisor_suggestions: list[str] = field(default_factory=list)
+    recommended_image_type: str | None = None
 
 
 class ImageSearchService:
@@ -75,6 +78,12 @@ class ImageSearchService:
                 query=query or "",
             )
 
+        # Run ImageQueryAdvisor for intelligent guidance
+        from .advisor import ImageQueryAdvisor
+
+        advisor = ImageQueryAdvisor()
+        advice = advisor.advise(query, image_type=image_type)
+
         # Determine sources to search
         active_sources = self._resolve_sources(sources, image_type, collection)
 
@@ -111,6 +120,9 @@ class ImageSearchService:
             sources_used=active_sources,
             query=query,
             errors=errors,
+            advisor_warnings=advice.warnings,
+            advisor_suggestions=advice.suggestions,
+            recommended_image_type=advice.recommended_image_type,
         )
 
     def _resolve_sources(

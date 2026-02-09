@@ -238,14 +238,12 @@ search_clinvar("cystic fibrosis", limit=10)
 
 ### 引用網絡
 - build_citation_tree: Build a citation tree (network) from a single article.
-- suggest_citation_tree: After fetching article details, suggest whether to build a citation tree.
 
 ### 匯出工具
 - prepare_export: Export citations to reference manager formats.
 
 ### Session 管理
 - get_session_pmids: 取得 session 中暫存的 PMID 列表。
-- list_search_history: 列出搜尋歷史，方便回顧和取得特定搜尋的 PMIDs。
 - get_cached_article: 從 session 快取取得文章詳情。
 - get_session_summary: 取得當前 session 的摘要資訊。
 
@@ -257,20 +255,15 @@ search_clinvar("cystic fibrosis", limit=10)
 
 ### 視覺搜索
 - analyze_figure_for_search: Analyze a scientific figure or image for literature search.
-- reverse_image_search_pubmed: Reverse image search for scientific literature.
 
 ### ICD 轉換
-- convert_icd_to_mesh: Convert ICD-9 or ICD-10 code to MeSH term for PubMed search.
-- convert_mesh_to_icd: Convert MeSH term to ICD-9 and ICD-10 codes.
+- convert_icd_mesh: Convert between ICD codes and MeSH terms (bidirectional).
 - search_by_icd: Search PubMed using ICD code (auto-converts to MeSH).
 
 ### 研究時間軸
-- build_research_timeline: Build a research timeline for a topic showing key milestones.
-- get_timeline_visualization: Generate timeline visualization code.
+- build_research_timeline: Build a research timeline for a topic OR specific PMIDs.
 - analyze_timeline_milestones: Analyze milestone distribution for a research topic.
 - compare_timelines: Compare research timelines of multiple topics.
-- list_milestone_patterns: List all milestone detection patterns.
-- build_timeline_from_pmids: Build a timeline from a specific list of PMIDs.
 
 ### 圖片搜尋
 - search_biomedical_images: Search biomedical images across Open-i and Europe PMC.

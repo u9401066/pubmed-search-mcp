@@ -194,6 +194,10 @@ class AnalyzedQuery:
     # Confidence score (0-1)
     confidence: float = 0.5
 
+    # Image search recommendation
+    image_search_recommended: bool = False
+    image_search_reason: str = ""
+
     # Additional metadata
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -218,6 +222,8 @@ class AnalyzedQuery:
             "recommended_sources": self.recommended_sources,
             "recommended_strategies": self.recommended_strategies,
             "confidence": self.confidence,
+            "image_search_recommended": self.image_search_recommended,
+            "image_search_reason": self.image_search_reason,
         }
 
 
@@ -369,6 +375,24 @@ class QueryAnalyzer:
         "效果",
     }
 
+    # Image search intent keywords
+    IMAGE_INTENT_KEYWORDS = {
+        "image", "images", "picture", "photo", "scan", "scans",
+        "x-ray", "xray", "radiograph", "ct scan", "mri",
+        "microscopy", "histology", "pathology", "biopsy",
+        "figure", "diagram", "illustration",
+        "clinical photo", "endoscopy", "fundoscopy",
+        "圖片", "影像", "X光", "顯微鏡", "組織學", "切片",
+    }
+
+    # Visual anatomy keywords (implicit image intent)
+    VISUAL_ANATOMY_KEYWORDS = {
+        "fracture", "pneumonia", "pneumothorax", "effusion",
+        "nodule", "mass", "opacity", "consolidation",
+        "stenosis", "aneurysm", "calcification",
+        "skin lesion", "rash", "wound", "ulcer",
+    }
+
     # Study type keywords
     STUDY_TYPE_KEYWORDS = {
         "rct": "Randomized Controlled Trial",
@@ -425,6 +449,11 @@ class QueryAnalyzer:
         # Recommend strategies
         strategies = self._recommend_strategies(complexity, intent, pico)
 
+        # Detect image search intent
+        image_recommended, image_reason = self._detect_image_intent(
+            normalized, keywords
+        )
+
         # Calculate confidence
         confidence = self._calculate_confidence(
             identifiers, pico, clinical_category, keywords
@@ -444,6 +473,8 @@ class QueryAnalyzer:
             recommended_sources=sources,
             recommended_strategies=strategies,
             confidence=confidence,
+            image_search_recommended=image_recommended,
+            image_search_reason=image_reason,
         )
 
     def _normalize_query(self, query: str) -> str:
@@ -838,6 +869,39 @@ class QueryAnalyzer:
             strategies = ["relevance_search"]
 
         return strategies
+
+    def _detect_image_intent(
+        self, query: str, keywords: list[str]
+    ) -> tuple[bool, str]:
+        """
+        Detect if the query has image search intent.
+
+        Returns:
+            (is_recommended, reason) tuple
+        """
+        query_lower = query.lower()
+        reasons: list[str] = []
+
+        # Check explicit image keywords
+        image_hits = [
+            kw for kw in self.IMAGE_INTENT_KEYWORDS if kw in query_lower
+        ]
+        if image_hits:
+            reasons.append(f"影像關鍵字: {', '.join(image_hits[:3])}")
+
+        # Check visual anatomy keywords (weaker signal)
+        anatomy_hits = [
+            kw for kw in self.VISUAL_ANATOMY_KEYWORDS if kw in query_lower
+        ]
+        if anatomy_hits:
+            reasons.append(f"視覺解剖關鍵字: {', '.join(anatomy_hits[:3])}")
+
+        # Score: explicit image keywords are strong, anatomy is moderate
+        score = len(image_hits) * 2 + len(anatomy_hits)
+
+        if score >= 2:
+            return True, "; ".join(reasons)
+        return False, ""
 
     def _calculate_confidence(
         self,
