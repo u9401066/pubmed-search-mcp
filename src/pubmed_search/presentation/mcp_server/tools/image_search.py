@@ -72,9 +72,11 @@ def register_image_search_tools(mcp: FastMCP):
                 - "europe_pmc": Europe PMC only (future)
                 - "all": Search all sources
             image_type: Filter by image type (Open-i only):
-                - "xg": X-ray images
+                - "xg": X-ray / radiology images (default — broadest coverage)
                 - "mc": Microscopy images
-                - None: All types (default)
+                - "ph": Photographs / clinical photos
+                - "gl": Graphics / line art / diagrams
+                - None: Defaults to "xg"
             collection: Filter by collection (Open-i only):
                 - "pmc": PubMed Central articles
                 - "mpx": MedPix clinical teaching images

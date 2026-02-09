@@ -10,8 +10,10 @@ Image Search API Reference: docs/IMAGE_SEARCH_API.md
 
 Limitations:
 - Index frozen at ~2020 (no newer content)
-- Image type filter: only "xg" (X-ray) and "mc" (Microscopy) work
-- Fixed ~10 results per page
+- Image type filter ('it' param) is REQUIRED by API (as of 2026-02)
+  Valid values: "xg" (X-ray/radiology), "mc" (Microscopy), "ph" (Photo), "gl" (Graphics)
+  Default: "xg" (broadest coverage)
+- Fixed ~10 results per page unless 'n' param specified
 - m parameter is offset, not limit
 - Response latency: 2-9 seconds
 """
@@ -46,8 +48,10 @@ class OpenIClient:
         images, total = client.search("chest pneumonia", image_type="xg")
     """
 
-    # Only these image type filters actually work (tested 2025-02)
-    VALID_IMAGE_TYPES = {"xg", "mc"}
+    # Valid image type filters (tested 2026-02)
+    # "xg" gives broadest coverage (~1.5M results), includes all radiology images
+    VALID_IMAGE_TYPES = {"xg", "mc", "ph", "gl"}
+    DEFAULT_IMAGE_TYPE = "xg"  # Required by API — fallback when user doesn't specify
     VALID_COLLECTIONS = {"pmc", "mpx", "iu"}
     PAGE_SIZE = 10  # Fixed results per page
 
@@ -117,10 +121,11 @@ class OpenIClient:
 
         Args:
             query: Search query (e.g., "chest pneumonia CT")
-            image_type: Image type filter ("xg"=X-ray, "mc"=Microscopy, None=all)
+            image_type: Image type filter ("xg"=X-ray, "mc"=Microscopy, "ph"=Photo, "gl"=Graphics)
+                        Defaults to "xg" if not specified (required by API).
             collection: Collection filter ("pmc", "mpx"=MedPix, "iu"=Indiana, None=all)
             max_results: Maximum number of results to return.
-                Internally calculates pages needed: ceil(max_results / 10).
+                Internally calculates pages needed: ceil(max_results / PAGE_SIZE).
 
         Returns:
             Tuple of (list of ImageResult, total_count)
@@ -138,9 +143,13 @@ class OpenIClient:
         if image_type and image_type not in self.VALID_IMAGE_TYPES:
             logger.warning(
                 f"Invalid image_type '{image_type}', "
-                f"only {self.VALID_IMAGE_TYPES} are effective. Ignoring filter."
+                f"only {self.VALID_IMAGE_TYPES} are effective. Using default."
             )
-            image_type = None
+            image_type = self.DEFAULT_IMAGE_TYPE
+
+        # API requires 'it' parameter (as of 2026-02)
+        if not image_type:
+            image_type = self.DEFAULT_IMAGE_TYPE
 
         # Validate collection
         if collection and collection not in self.VALID_COLLECTIONS:
@@ -162,9 +171,9 @@ class OpenIClient:
             params: dict[str, str] = {
                 "q": query,
                 "m": str(offset),
+                "it": image_type,  # Required by API
+                "n": str(min(max_results - len(all_images), self.PAGE_SIZE)),
             }
-            if image_type:
-                params["it"] = image_type
             if collection:
                 params["coll"] = collection
 
