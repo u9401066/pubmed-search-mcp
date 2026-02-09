@@ -223,7 +223,7 @@ Other tools give you raw API access. We give you **vocabulary translation + inte
 |-----------|-------------|
 | Agent uses ICD codes, PubMed needs MeSH | ✅ **Auto ICD→MeSH conversion** |
 | Multiple databases, different APIs | ✅ **Unified Search** single entry point |
-| Clinical questions need structured search | ✅ **PICO parser** with Boolean builder |
+| Clinical questions need structured search | ✅ **PICO toolkit** (`parse_pico` + `generate_search_queries` for Agent-driven workflow) |
 | Typos in medical terms | ✅ **ESpell auto-correction** |
 | Too many results from one source | ✅ **Parallel multi-source** with dedup |
 | Need to trace research evolution | ✅ **Research Timeline** with milestone detection |
@@ -236,7 +236,7 @@ Other tools give you raw API access. We give you **vocabulary translation + inte
 
 1. **Vocabulary Translation Layer** - Agent speaks naturally, we translate to each database's terminology (MeSH, ICD-10, text-mined entities)
 2. **Unified Search Gateway** - One `unified_search()` call, auto-dispatch to PubMed/Europe PMC/CORE/OpenAlex
-3. **PICO-Aware** - Parse clinical questions into structured (P)opulation/(I)ntervention/(C)omparison/(O)utcome
+3. **PICO Toolkit** - `parse_pico()` decomposes clinical questions into P/I/C/O elements; Agent then calls `generate_search_queries()` per element and builds Boolean query
 4. **Research Timeline** - Automatically detect milestones (FDA approvals, Phase 3 trials, guideline changes) from publication history
 5. **Citation Network Analysis** - Build multi-level citation trees to map an entire research landscape from a single paper
 6. **Full Research Lifecycle** - From search → discovery → full text → analysis → export, all in one server
@@ -449,16 +449,17 @@ unified_search(query="I10 treatment in E11.9 patients")
 
 ### 2️⃣ PICO Clinical Question
 
-**Simple path** — `unified_search` detects comparison structure and shows PICO hints:
+**Simple path** — `unified_search` can search directly (no PICO decomposition):
 
 ```python
-# unified_search detects "A vs B" patterns and displays PICO metadata
+# unified_search searches as-is; detects "A vs B" pattern and shows PICO hints in metadata
 unified_search(query="Is remimazolam better than propofol for ICU sedation?")
-# → Detects comparison structure, shows PICO hints in output, multi-source search
-# Note: For full PICO decomposition + MeSH expansion, use the Advanced path below
+# → Multi-source keyword search + PICO hint metadata in output
+# ⚠️ This does NOT auto-decompose PICO or expand MeSH!
+# For structured PICO search, use the Agent workflow below
 ```
 
-**Advanced path** — Manual PICO decomposition for maximum control:
+**Agent workflow** — PICO decomposition + MeSH expansion (recommended for clinical questions):
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -570,8 +571,8 @@ analyze_fulltext_access(pmids="last")
 │         │       → Quick, auto-routing to best sources                    │
 │         │                                                                │
 │         ├── Have a clinical question (A vs B)?                           │
-│         │   └── parse_pico() → unified_search(mode="pico")               │
-│         │       → Structured P/I/C/O search with Boolean                 │
+│         │   └── parse_pico() → generate_search_queries() × N             │
+│         │       → Agent builds Boolean → unified_search()                │
 │         │                                                                │
 │         ├── Need comprehensive systematic coverage?                      │
 │         │   └── generate_search_queries() → parallel search              │
@@ -587,7 +588,7 @@ analyze_fulltext_access(pmids="last")
 | Mode | Entry Point | Best For | Auto-Features |
 |------|-------------|----------|---------------|
 | **Quick** | `unified_search()` | Fast topic search | ICD→MeSH, multi-source, dedup |
-| **PICO** | `parse_pico()` | Clinical questions | P/I/C/O decomposition, Boolean |
+| **PICO** | `parse_pico()` → Agent | Clinical questions | Agent: decompose → MeSH expand → Boolean |
 | **Systematic** | `generate_search_queries()` | Literature reviews | MeSH expansion, synonyms |
 | **Exploration** | `find_*_articles()` | From key paper | Citation network, related |
 

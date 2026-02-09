@@ -223,7 +223,7 @@ NCBI_EMAIL=your@email.com uvx pubmed-search-mcp
 |------|---------------|
 | Agent 用 ICD 碼，PubMed 要 MeSH | ✅ **自動 ICD→MeSH 轉換** |
 | 多資料庫，不同 API | ✅ **Unified Search** 單一入口 |
-| 臨床問題需結構化搜尋 | ✅ **PICO 解析器** + Boolean 組合 |
+| 臨床問題需結構化搜尋 | ✅ **PICO 工具組** (`parse_pico` + `generate_search_queries`，由 Agent 驅動) |
 | 醫學術語打錯字 | ✅ **ESpell 自動校正** |
 | 單一來源結果太多 | ✅ **平行多源搜尋** + 去重 |
 | 需要追蹤研究演進脈絡 | ✅ **研究時間軸** + 里程碑偵測 |
@@ -236,7 +236,7 @@ NCBI_EMAIL=your@email.com uvx pubmed-search-mcp
 
 1. **詞彙翻譯層** - Agent 自然語言表達，我們翻譯成各資料庫術語 (MeSH, ICD-10, text-mined entities)
 2. **統一搜尋閘道** - 一個 `unified_search()` 呼叫，自動分流到 PubMed/Europe PMC/CORE/OpenAlex
-3. **PICO 感知** - 解析臨床問題為結構化 (P)族群/(I)介入/(C)對照/(O)結果
+3. **PICO 工具組** - `parse_pico()` 將臨床問題分解為 P/I/C/O 元素；Agent 再對每個元素呼叫 `generate_search_queries()` 並組合 Boolean 查詢
 4. **研究時間軸** - 自動偵測里程碑（FDA 核准、Phase 3 試驗、指引變更）從發表歷史中重建研究演進
 5. **引用網路分析** - 從單篇論文建構多層引用樹，繪製完整研究版圖
 6. **完整研究生命週期** - 從搜尋 → 探索 → 全文 → 分析 → 匯出，一站完成
@@ -449,16 +449,17 @@ unified_search(query="I10 treatment in E11.9 patients")
 
 ### 2️⃣ PICO 臨床問題
 
-**簡單路徑** — `unified_search` 偵測比較結構並顯示 PICO 提示：
+**簡單路徑** — `unified_search` 可直接搜尋（不做 PICO 拆解）：
 
 ```python
-# unified_search 偵測「A vs B」模式並在輸出中顯示 PICO metadata
+# unified_search 直接搜尋；偵測「A vs B」模式並在 metadata 中顯示 PICO 提示
 unified_search(query="remimazolam 在 ICU 鎮靜比 propofol 好嗎？")
-# → 偵測比較結構，輸出中顯示 PICO 提示，多源搜尋
-# 注意：完整 PICO 拆解 + MeSH 擴展請用下方進階路徑
+# → 多源關鍵字搜尋 + 輸出中附帶 PICO 提示 metadata
+# ⚠️ 這不會自動拆解 PICO 或擴展 MeSH！
+# 結構化 PICO 搜尋請用下方 Agent 工作流程
 ```
 
-**進階路徑** — 手動 PICO 拆解以獲得最大控制：
+**Agent 工作流程** — PICO 拆解 + MeSH 擴展（臨床問題建議使用）：
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -570,8 +571,8 @@ analyze_fulltext_access(pmids="last")
 │         │       → 快速，自動路由到最佳來源                                 │
 │         │                                                                │
 │         ├── 有臨床問題（A vs B）？                                        │
-│         │   └── parse_pico() → unified_search(mode="pico")               │
-│         │       → 結構化 P/I/C/O 搜尋 + Boolean                          │
+│         │   └── parse_pico() → generate_search_queries() × N             │
+│         │       → Agent 組合 Boolean → unified_search()                 │
 │         │                                                                │
 │         ├── 需要全面系統性覆蓋？                                          │
 │         │   └── generate_search_queries() → 平行搜尋                     │
@@ -587,7 +588,7 @@ analyze_fulltext_access(pmids="last")
 | 模式 | 入口 | 適用情境 | 自動功能 |
 |------|------|----------|----------|
 | **快速** | `unified_search()` | 快速主題搜尋 | ICD→MeSH, 多源, 去重 |
-| **PICO** | `parse_pico()` | 臨床問題 | P/I/C/O 分解, Boolean |
+| **PICO** | `parse_pico()` → Agent | 臨床問題 | Agent: 拆解 → MeSH 擴展 → Boolean |
 | **系統** | `generate_search_queries()` | 文獻回顧 | MeSH 擴展, 同義詞 |
 | **探索** | `find_*_articles()` | 從關鍵論文 | 引用網絡, 相關 |
 
