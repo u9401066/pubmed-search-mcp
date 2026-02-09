@@ -2,19 +2,37 @@
 
 ## Done
 
-- Open-i API 全參數整合完成 (13 params: query, m, n, it, coll, favor, at, sub, lic, sp, fields, vid, hmp)
-- ImageQueryAdvisor 擴展至全部 10 種 image types (xg,x,xm,mc,m,ph,p,g,u,c)
-- 粗分類 (coarse_category) 與 collection 推薦功能
-- docs/IMAGE_SEARCH_API.md 完整重寫含 Swagger 規格
-- README 修正 search_biomedical_images 工具說明
-- 131 測試全部通過
+### 2026-02-09: 圖片搜尋 + Agent-Friendly 改善
+- ✅ Open-i API 全參數整合 (13 params) - commit `46df404`
+- ✅ Agent-friendly 非英文偵測 - commit `ac40d6d`
+  - NON_LATIN_PATTERN 偵測 CJK/Cyrillic/Arabic/Thai
+  - Tool docstring 新增 CRITICAL LANGUAGE REQUIREMENT
+  - Instructions 新增圖片搜尋工作流
+  - Vision tool 自動搜尋引導
+- ✅ 設計決策：Agent vs MCP 職責劃分
+  - 翻譯：Agent 負責 (有 LLM 能力)
+  - MCP：偵測 + 警告，不翻譯
+- ✅ ImageQueryAdvisor 擴展至 10 種 image types
+- ✅ docs/IMAGE_SEARCH_API.md 完整重寫 (Swagger 規格)
+- ✅ ROADMAP 更新：設計原則、Phase 4 完成、版本歷程
+- ✅ 152 測試全部通過
 
 ## Doing
 
-- Git commit & push Open-i 全功能整合
+(無進行中任務)
 
 ## Next
 
-- Europe PMC 圖片搜尋整合 (Phase 4.2)
-- 研究時間軸進階分析
-- 測試覆蓋率提升
+| 優先級 | 項目 | 說明 |
+|:------:|------|------|
+| ⭐⭐⭐⭐⭐ | Token 效率優化 | `output_format="compact"` 省 60% token |
+| ⭐⭐⭐⭐⭐ | 研究時間軸 | 里程碑偵測、知識演化追蹤 |
+| ⭐⭐⭐⭐ | PRISMA 流程追蹤 | Systematic Review 工作流 |
+| ⭐⭐⭐ | 智能引用 API | Semantic Scholar Intent, OpenAlex Concepts |
+
+## Design Decisions Log
+
+| 日期 | 決策 | 原因 |
+|------|------|------|
+| 2026-02-09 | Agent 翻譯，MCP 偵測 | Agent 有 LLM 能力，MCP 維護字典不實際 |
+| 2026-02-09 | 模式選擇由 Agent 決定 | Agent 理解用戶意圖，MCP 提供工具選項 |

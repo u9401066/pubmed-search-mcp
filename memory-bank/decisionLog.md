@@ -211,3 +211,4 @@ python run_copilot.py --port 8765 --full-tools
 - needs: test 確保執行順序
 - 保持 trusted publishing（無需 API token） |
 | 2026-01-28 | 在 ROADMAP.md 新增 Phase 14: 研究缺口偵測 (Research Gap Detection)，包含 5 種缺口類型和完整實作規格 | 研究缺口偵測是差異化競爭優勢，目前無競品提供全自動多類型缺口偵測。對研究者有高實用價值（找論文題目、基金申請亮點）。 |
+| 2026-02-09 | Agent vs MCP 職責劃分：翻譯由 Agent 負責，MCP 只負責偵測+警告 | 1. Agent 有 LLM 翻譯能力，比 MCP 維護字典更好 2. MCP 維護字典更新困難、覆蓋不全 3. 符合「MCP 是工具提供者，Agent 是決策者」原則 4. 非英文偵測使用 NON_LATIN_PATTERN regex，警告 Agent 需要翻譯 |
