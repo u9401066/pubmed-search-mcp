@@ -13,6 +13,7 @@ from .article import (
     SourceMetadata,
     UnifiedArticle,
 )
+from .image import ImageResult, ImageSource
 from .timeline import (
     EvidenceLevel,
     MilestoneType,
@@ -30,6 +31,9 @@ __all__ = [
     "OpenAccessLink",
     "CitationMetrics",
     "SourceMetadata",
+    # Image entities (v0.3.1)
+    "ImageResult",
+    "ImageSource",
     # Timeline entities (v0.2.8)
     "TimelineEvent",
     "ResearchTimeline",

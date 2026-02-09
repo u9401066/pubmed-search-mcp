@@ -123,6 +123,11 @@ TOOL_CATEGORIES = {
             "build_timeline_from_pmids",
         ],
     },
+    "image_search": {
+        "name": "圖片搜尋",
+        "description": "生物醫學圖片搜尋",
+        "tools": ["search_biomedical_images"],
+    },
 }
 
 

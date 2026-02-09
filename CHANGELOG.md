@@ -16,7 +16,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.2.12] - 2026-02-06
+## [0.3.0] - 2026-02-09
+
+### Added
+
+- **Phase 4.1: Biomedical Image Search MVP** — New `search_biomedical_images` tool
+  - **Domain**: `ImageResult` dataclass + `ImageSource` enum (DDD entity)
+  - **Infrastructure**: `OpenIClient` — Open-i (NLM) image search client with rate limiting, pagination, MeSH extraction
+  - **Application**: `ImageSearchService` — coordinates search, source resolution, deduplication
+  - **Presentation**: `search_biomedical_images` MCP tool with `InputNormalizer` integration
+  - Supports image type filters (`xg`=X-ray, `mc`=Microscopy) and collection filters (`pmc`, `mpx`, `iu`)
+  - 41 tests covering all 4 DDD layers
+
+- **Tool-sync Auto-Update Skill** (`.claude/skills/tool-sync/SKILL.md`)
+  - Documents the `count_mcp_tools.py --update-docs` workflow for keeping tool documentation in sync
+  - Dynamic `_get_category_order()` in `count_mcp_tools.py` (replaces hardcoded list)
+
+- **Documentation**: `docs/IMAGE_SEARCH_API.md`, `docs/PHASE_4_IMAGE_SEARCH.md`
+
+### Changed
+
+- MCP tools: 40 → **41 tools** across **13 categories** (new: `image_search`)
+- Total tests: 2091 passed, 14 skipped
+- README Design Philosophy table expanded (5 → 10 rows), Key Differentiators (4 → 7 items)
+- README MCP Tools Overview rewritten to match current 41 tools / 13 categories
+- README PICO section: added Simple path (`unified_search` auto-detects PICO)
+
+### Fixed
+
+- `pico.py` next_steps referencing removed `search_literature()` + `merge_search_results()` → `unified_search()`
+- `ImageResult.to_dict()` now uses `dataclasses.asdict()` (auto-tracks new fields)
+- `test_tool_registry.py` updated for 13 categories
 
 ### Added
 

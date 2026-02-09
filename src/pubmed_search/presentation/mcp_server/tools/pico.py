@@ -72,13 +72,9 @@ def register_pico_tools(mcp: FastMCP):
             - "prognosis" → AND prognosis[filter]
             - "etiology"  → AND etiology[filter]
 
-        Step 5: search_literature() - PARALLEL CALLS
+        Step 5: unified_search()
         ─────────────────────────────────────────────
-        Execute multiple search strategies in parallel
-
-        Step 6: merge_search_results()
-        ──────────────────────────────
-        Combine and deduplicate results
+        Execute search with combined query (auto multi-source + dedup)
 
         ══════════════════════════════════════════════════════════════════════
 
@@ -173,8 +169,7 @@ def register_pico_tools(mcp: FastMCP):
                 "2. Call generate_search_queries() for EACH non-empty PICO element (IN PARALLEL)",
                 "3. Combine materials: (P) AND (I) AND (C if exists) AND (O)",
                 "4. Add suggested_filter to query",
-                "5. Call search_literature() with combined queries",
-                "6. Call merge_search_results() to deduplicate",
+                "5. Call unified_search() with combined query (auto multi-source + dedup)",
             ],
             "query_patterns": {
                 "high_precision": "(P_terms) AND (I_terms) AND (C_terms) AND (O_terms) AND {filter}",

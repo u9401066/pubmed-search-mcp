@@ -43,6 +43,7 @@ _crossref_client = None
 _unpaywall_client = None
 _openurl_builder = None
 _clinical_trials_client = None
+_openi_client = None
 
 
 class SearchSource(Enum):
@@ -161,6 +162,16 @@ def get_openurl_builder(resolver_base: str | None = None, preset: str | None = N
             config = get_openurl_config()
             _openurl_builder = config.get_builder()
     return _openurl_builder
+
+
+def get_openi_client():
+    """Get or create Open-i client (lazy initialization)."""
+    global _openi_client
+    if _openi_client is None:
+        from .openi import OpenIClient
+
+        _openi_client = OpenIClient()
+    return _openi_client
 
 
 def search_alternate_source(
@@ -507,6 +518,7 @@ __all__ = [
     "get_crossref_client",
     "get_unpaywall_client",
     "get_openurl_builder",
+    "get_openi_client",
     "get_fulltext_xml",
     "get_fulltext_parsed",
     "get_fulltext_downloader",

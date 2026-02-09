@@ -272,6 +272,9 @@ search_clinvar("cystic fibrosis", limit=10)
 - list_milestone_patterns: List all milestone detection patterns.
 - build_timeline_from_pmids: Build a timeline from a specific list of PMIDs.
 
+### 圖片搜尋
+- search_biomedical_images: Search biomedical images across Open-i and Europe PMC.
+
 NOTE: 搜尋結果自動暫存，使用 session 工具可隨時取回，不需依賴 Agent 記憶。
 """
 

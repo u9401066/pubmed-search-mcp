@@ -74,6 +74,7 @@ from .europe_pmc import (
 )  # For get_fulltext, get_text_mined_terms
 from .export import register_export_tools
 from .icd import register_icd_tools  # ICD-9/ICD-10 to MeSH conversion
+from .image_search import register_image_search_tools  # Biomedical image search
 from .ncbi_extended import register_ncbi_extended_tools
 from .openurl import register_openurl_tools  # Institutional access (OpenURL)
 from .pico import register_pico_tools
@@ -146,6 +147,9 @@ def register_all_tools(mcp: FastMCP, searcher: LiteratureSearcher):
     # 12. ICD conversion (3 tools)
     register_icd_tools(mcp)  # convert_icd_to_mesh, convert_mesh_to_icd, search_by_icd
 
+    # 13. Biomedical image search (1 tool)
+    register_image_search_tools(mcp)  # search_biomedical_images
+
 
 __all__ = [
     "register_all_tools",
@@ -164,4 +168,5 @@ __all__ = [
     "register_vision_tools",
     "register_openurl_tools",
     "register_icd_tools",
+    "register_image_search_tools",
 ]

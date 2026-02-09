@@ -4,14 +4,14 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![MCP](https://img.shields.io/badge/MCP-Compatible-green.svg)](https://modelcontextprotocol.io/)
-[![Test Coverage](https://img.shields.io/badge/coverage-90%25-brightgreen.svg)](https://github.com/u9401066/pubmed-search-mcp)
+[![Test Coverage](https://img.shields.io/badge/coverage-84%25-green.svg)](https://github.com/u9401066/pubmed-search-mcp)
 
 > **Professional Literature Research Assistant for AI Agents** - More than just an API wrapper
 
 A Domain-Driven Design (DDD) based MCP server that serves as an intelligent research assistant for AI agents, providing task-oriented literature search and analysis capabilities.
 
 **✨ What's Included:**
-- 🔧 **40 MCP Tools** - Streamlined PubMed, Europe PMC, CORE, NCBI database access, and **Research Timeline**
+- 🔧 **41 MCP Tools** - Streamlined PubMed, Europe PMC, CORE, NCBI database access, and **Research Timeline**
 - 📚 **22 Claude Skills** - Ready-to-use workflow guides for AI agents (Claude Code-specific)
 - 📖 **Copilot Instructions** - VS Code GitHub Copilot integration guide
 
@@ -217,7 +217,7 @@ NCBI_EMAIL=your@email.com uvx pubmed-search-mcp
 
 ### Why This Server?
 
-Other tools give you raw API access. We give you **vocabulary translation + intelligent routing**:
+Other tools give you raw API access. We give you **vocabulary translation + intelligent routing + research analysis**:
 
 | Challenge | Our Solution |
 |-----------|-------------|
@@ -226,13 +226,21 @@ Other tools give you raw API access. We give you **vocabulary translation + inte
 | Clinical questions need structured search | ✅ **PICO parser** with Boolean builder |
 | Typos in medical terms | ✅ **ESpell auto-correction** |
 | Too many results from one source | ✅ **Parallel multi-source** with dedup |
+| Need to trace research evolution | ✅ **Research Timeline** with milestone detection |
+| Citation context is unclear | ✅ **Citation Tree** forward/backward/network |
+| Can't access full text | ✅ **Multi-source fulltext** (Europe PMC, CORE, CrossRef) |
+| Gene/drug info scattered across DBs | ✅ **NCBI Extended** (Gene, PubChem, ClinVar) |
+| Export to reference managers | ✅ **One-click export** (RIS, BibTeX, CSV, MEDLINE) |
 
 ### Key Differentiators
 
 1. **Vocabulary Translation Layer** - Agent speaks naturally, we translate to each database's terminology (MeSH, ICD-10, text-mined entities)
 2. **Unified Search Gateway** - One `unified_search()` call, auto-dispatch to PubMed/Europe PMC/CORE/OpenAlex
 3. **PICO-Aware** - Parse clinical questions into structured (P)opulation/(I)ntervention/(C)omparison/(O)utcome
-4. **Agent-First Design** - Output optimized for machine decision-making, not human reading
+4. **Research Timeline** - Automatically detect milestones (FDA approvals, Phase 3 trials, guideline changes) from publication history
+5. **Citation Network Analysis** - Build multi-level citation trees to map an entire research landscape from a single paper
+6. **Full Research Lifecycle** - From search → discovery → full text → analysis → export, all in one server
+7. **Agent-First Design** - Output optimized for machine decision-making, not human reading
 
 ---
 
@@ -318,28 +326,28 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS proxy for API requests
 
 ## 🛠️ MCP Tools Overview
 
-### 🔍 Search Tools
+### 🔍 Search & Query Intelligence
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                      SEARCH ENTRY POINTS                         │
+│                      SEARCH ENTRY POINT                          │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
-│   unified_search()          ← 🌟 RECOMMENDED: Auto-routing       │
+│   unified_search()          ← 🌟 Single entry for all sources    │
 │        │                                                         │
 │        ├── Quick search     → Direct multi-source query          │
 │        ├── PICO mode        → Clinical question decomposition    │
 │        └── Systematic mode  → MeSH expansion + parallel search   │
 │                                                                  │
-├─────────────────────────────────────────────────────────────────┤
-│   SPECIALIZED SEARCH (when you need specific source)            │
+│   Sources: PubMed · Europe PMC · CORE · OpenAlex                 │
+│   Auto: Deduplicate → Rank → Enrich full-text links              │
 │                                                                  │
-│   search_literature()       → PubMed only (MeSH support)         │
-│   search_europe_pmc()       → Europe PMC (fulltext/OA filters)   │
-│   search_core()             → CORE 200M+ open access             │
-│   search_gene()             → NCBI Gene database                 │
-│   search_compound()         → PubChem compounds                  │
-│   search_clinvar()          → ClinVar variants                   │
+├─────────────────────────────────────────────────────────────────┤
+│   QUERY INTELLIGENCE                                             │
+│                                                                  │
+│   generate_search_queries() → MeSH expansion + synonym discovery │
+│   parse_pico()              → PICO element decomposition         │
+│   analyze_search_query()    → Query analysis without execution   │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -363,19 +371,33 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS proxy for API requests
     │  papers     │        │   topic     │        │  research   │
     └─────────────┘        └─────────────┘        └─────────────┘
 
-    build_citation_tree() → Full network visualization (6 formats)
+    fetch_article_details()   → Detailed article metadata
+    get_citation_metrics()    → iCite RCR, citation percentile
+    build_citation_tree()     → Full network visualization (6 formats)
+    suggest_citation_tree()   → Smart recommendation for tree building
 ```
 
 ### 📚 Full Text & Export
 
 | Category | Tools |
 |----------|-------|
-| **Full Text** | `get_fulltext` (Europe PMC), `get_core_fulltext` (CORE), `get_fulltext_xml` |
+| **Full Text** | `get_fulltext` → Multi-source retrieval (Europe PMC, CORE, PubMed, CrossRef) |
 | **Text Mining** | `get_text_mined_terms` → Extract genes, diseases, chemicals |
-| **Export** | `prepare_export` → RIS/BibTeX/CSV/MEDLINE/JSON |
-| **Metrics** | `get_citation_metrics` → iCite RCR, citation percentile |
+| **Export** | `prepare_export` → RIS, BibTeX, CSV, MEDLINE, JSON |
 
-### 🕰️ Research Timeline (NEW in v0.2.8)
+### 🧬 NCBI Extended Databases
+
+| Tool | Description |
+|------|-------------|
+| `search_gene` | Search NCBI Gene database |
+| `get_gene_details` | Gene details by NCBI Gene ID |
+| `get_gene_literature` | PubMed articles linked to a gene |
+| `search_compound` | Search PubChem compounds |
+| `get_compound_details` | Compound details by PubChem CID |
+| `get_compound_literature` | PubMed articles linked to a compound |
+| `search_clinvar` | Search ClinVar clinical variants |
+
+### 🕰️ Research Timeline
 
 | Tool | Description |
 |------|-------------|
@@ -385,6 +407,29 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS proxy for API requests
 | `get_timeline_visualization` | Generate Mermaid/JSON visualization |
 | `compare_timelines` | Compare multiple topic timelines |
 | `list_milestone_patterns` | View detection patterns |
+
+### 🏥 Institutional Access & ICD Conversion
+
+| Tool | Description |
+|------|-------------|
+| `configure_institutional_access` | Configure institution's link resolver |
+| `get_institutional_link` | Generate OpenURL access link |
+| `list_resolver_presets` | List resolver presets |
+| `test_institutional_access` | Test resolver configuration |
+| `convert_icd_to_mesh` | Convert ICD-9/10 code to MeSH term |
+| `convert_mesh_to_icd` | Convert MeSH term to ICD codes |
+| `search_by_icd` | Search PubMed using ICD code (auto-converts) |
+
+### 💾 Session Management & Vision
+
+| Tool | Description |
+|------|-------------|
+| `get_session_pmids` | Retrieve cached PMID lists |
+| `list_search_history` | Browse search history |
+| `get_cached_article` | Get article from session cache (no API cost) |
+| `get_session_summary` | Session status overview |
+| `analyze_figure_for_search` | Analyze scientific figure for search |
+| `reverse_image_search_pubmed` | Reverse image search for literature |
 
 ---
 
@@ -403,6 +448,16 @@ unified_search(query="I10 treatment in E11.9 patients")
 ```
 
 ### 2️⃣ PICO Clinical Question
+
+**Simple path** — `unified_search` auto-detects PICO structure:
+
+```python
+# unified_search automatically detects clinical comparisons
+unified_search(query="Is remimazolam better than propofol for ICU sedation?")
+# → Auto-detects P/I/C/O, expands MeSH, multi-source search
+```
+
+**Advanced path** — Manual PICO decomposition for maximum control:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -439,9 +494,9 @@ unified_search(query="I10 treatment in E11.9 patients")
                                   │
                                   ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│              unified_search() × N (parallel multi-source)                │
+│              unified_search() (auto multi-source + dedup)                │
 │                                                                          │
-│  PubMed ──┬── Europe PMC ──┬── CORE ──► merge_search_results()           │
+│  PubMed + Europe PMC + CORE + OpenAlex → Auto deduplicate & rank         │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -459,8 +514,8 @@ generate_search_queries(topic="sedation")       # O
 # Step 3: Agent combines with Boolean
 query = '("Intensive Care Units"[MeSH]) AND (remimazolam OR "CNS 7056") AND propofol AND sedation'
 
-# Step 4: Search and merge
-unified_search(query=query, sources=["pubmed", "europe_pmc", "core"])
+# Step 4: Search (auto multi-source, dedup, rank)
+unified_search(query=query)
 ```
 
 ### 3️⃣ Explore from Key Paper

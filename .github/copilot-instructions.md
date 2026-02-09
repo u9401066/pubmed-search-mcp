@@ -259,6 +259,14 @@ generate_search_queries(topic="<O>")
 | `list_milestone_patterns` | List all milestone detection patterns. |
 | `build_timeline_from_pmids` | Build a timeline from a specific list of PMIDs. |
 
+
+### 圖片搜尋
+*生物醫學圖片搜尋*
+
+| Tool | Purpose |
+|------|---------|
+| `search_biomedical_images` | Search biomedical images across Open-i and Europe PMC. |
+
 ---
 
 ## 📋 Common Workflows
@@ -305,6 +313,30 @@ get_compound_literature(cid="4943", limit=20)
 prepare_export(pmids="last", format="ris")  # Last search
 analyze_fulltext_access(pmids="last")       # Check OA availability
 ```
+
+---
+
+## 📌 文檔自動同步規則 (IMPORTANT)
+
+當 MCP 工具被 **新增、移除、或重新命名** 時，以下文件必須同步更新：
+
+### 手動修改（AI Agent 負責）
+1. `tool_registry.py` — 更新 `TOOL_CATEGORIES` dict
+2. `tools/__init__.py` — import + 呼叫 `register_*_tools()`
+
+### 自動同步（腳本負責）
+```bash
+uv run python scripts/count_mcp_tools.py --update-docs
+```
+
+此腳本自動更新以下 6 個文件：
+- `instructions.py` — SERVER_INSTRUCTIONS 工具列表
+- `.github/copilot-instructions.md` — Tool Categories 表格
+- `.claude/skills/pubmed-mcp-tools-reference/SKILL.md` — 完整工具參考
+- `TOOLS_INDEX.md` — 工具索引
+- `README.md` / `README.zh-TW.md` — 工具數量
+
+> ⚠️ **必須在 git commit 前執行**。詳見 `.claude/skills/tool-sync/SKILL.md`。
 
 ---
 

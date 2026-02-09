@@ -44,7 +44,8 @@ class TestListRegisteredTools:
         result = list_registered_tools()
         expected = {"search", "query_intelligence", "discovery", "fulltext",
                     "ncbi_extended", "citation_network", "export", "session",
-                    "institutional", "vision", "icd", "timeline"}
+                    "institutional", "vision", "icd", "timeline",
+                    "image_search"}
         assert set(result.keys()) == expected
 
 

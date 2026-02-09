@@ -178,12 +178,13 @@ def update_copilot_instructions(stats: dict, mcp) -> bool:
     return updated
 
 
-def generate_tool_categories_markdown(stats: dict, tool_details: dict) -> str:
-    """生成工具類別的 Markdown 內容"""
-    lines = []
+def _get_category_order(stats: dict) -> list[str]:
+    """動態取得類別順序。
 
-    # 按類別順序輸出
-    category_order = [
+    優先使用預定義的順序，自動附加新增的類別到尾端。
+    這樣新增類別時不需要手動更新此列表。
+    """
+    preferred_order = [
         "search",
         "query_intelligence",
         "discovery",
@@ -197,6 +198,20 @@ def generate_tool_categories_markdown(stats: dict, tool_details: dict) -> str:
         "icd",
         "timeline",
     ]
+    # Append any categories not in the preferred order
+    all_cats = list(stats["categories"].keys())
+    for cat in all_cats:
+        if cat not in preferred_order:
+            preferred_order.append(cat)
+    return preferred_order
+
+
+def generate_tool_categories_markdown(stats: dict, tool_details: dict) -> str:
+    """生成工具類別的 Markdown 內容"""
+    lines = []
+
+    # 動態取得類別順序（自動包含新增類別）
+    category_order = _get_category_order(stats)
 
     for cat_key in category_order:
         if cat_key not in stats["categories"]:
@@ -256,21 +271,8 @@ def generate_tools_index_markdown(stats: dict, tool_details: dict) -> str:
         "---",
     ]
 
-    # 按類別順序輸出
-    category_order = [
-        "search",
-        "query_intelligence",
-        "discovery",
-        "fulltext",
-        "ncbi_extended",
-        "citation_network",
-        "export",
-        "session",
-        "institutional",
-        "vision",
-        "icd",
-        "timeline",
-    ]
+    # 動態取得類別順序（自動包含新增類別）
+    category_order = _get_category_order(stats)
 
     for cat_key in category_order:
         if cat_key not in stats["categories"]:
@@ -454,20 +456,8 @@ def _generate_instructions_tool_list(stats: dict, tool_details: dict) -> str:
     """生成 instructions.py 的工具列表內容"""
     lines = []
 
-    category_order = [
-        "search",
-        "query_intelligence",
-        "discovery",
-        "fulltext",
-        "ncbi_extended",
-        "citation_network",
-        "export",
-        "session",
-        "institutional",
-        "vision",
-        "icd",
-        "timeline",
-    ]
+    # 動態取得類別順序（自動包含新增類別）
+    category_order = _get_category_order(stats)
 
     for cat_key in category_order:
         if cat_key not in stats["categories"]:
@@ -542,21 +532,8 @@ def _generate_skill_tools_reference(stats: dict, tool_details: dict) -> str:
         "|------|--------|----------|",
     ]
 
-    # 類別總覽表
-    category_order = [
-        "search",
-        "query_intelligence",
-        "discovery",
-        "fulltext",
-        "ncbi_extended",
-        "citation_network",
-        "export",
-        "session",
-        "institutional",
-        "vision",
-        "icd",
-        "timeline",
-    ]
+    # 動態取得類別順序（自動包含新增類別）
+    category_order = _get_category_order(stats)
 
     for cat_key in category_order:
         if cat_key not in categories:
