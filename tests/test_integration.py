@@ -193,7 +193,7 @@ class TestRealImageSearch:
         advice = advisor.advise("chest X-ray pneumonia")
 
         assert advice.is_suitable is True
-        assert advice.recommended_image_type == "xg"
+        assert advice.recommended_image_type == "x"  # x = X-ray (not xg which is Exclude Graphics)
 
         # Step 2: Service executes search with advisor guidance
         service = ImageSearchService()
@@ -206,7 +206,7 @@ class TestRealImageSearch:
 
         # Step 3: Verify results
         assert result.total_count > 0
-        assert result.recommended_image_type == "xg"
+        assert result.recommended_image_type == "x"
 
     @pytest.mark.skipif(
         os.environ.get("SKIP_INTEGRATION", "").lower() == "true",

@@ -286,75 +286,22 @@ class ImageQueryAdvisor:
     # Year pattern for detecting recent year ranges
     YEAR_PATTERN = re.compile(r"\b(202[1-9]|20[3-9]\d)\b")
 
-    # ─── Common Non-English Medical Terms (Auto-Translation) ──────
-    # Maps common CJK medical terms to English equivalents for Open-i
-    # This enables automatic query translation for non-English users
+    # ─── Non-English Detection (NO translation - Agent does that) ──────
+    # MCP only detects non-English and provides examples.
+    # Translation is Agent's responsibility (Agent has LLM capability).
+    # See CONSTITUTION.md 第 7.4 條：避免 Hardcode 原則
 
-    CJK_MEDICAL_TERMS: dict[str, str] = {
-        # Chinese (Traditional + Simplified)
-        "喉頭水腫": "laryngeal edema",
-        "喉水腫": "laryngeal edema",
-        "喉嚨水腫": "laryngeal edema",
-        "氣管內管": "endotracheal tube",
-        "拔管": "extubation",
-        "插管": "intubation",
-        "氣切": "tracheostomy",
-        "氣管切開": "tracheostomy",
-        "肺炎": "pneumonia",
-        "胸部X光": "chest X-ray",
-        "胸片": "chest X-ray",
-        "氣胸": "pneumothorax",
-        "肋膜積水": "pleural effusion",
-        "心臟肥大": "cardiomegaly",
-        "骨折": "fracture",
-        "腫瘤": "tumor",
-        "腫塊": "mass",
-        "水腫": "edema",
-        "出血": "hemorrhage",
-        "發炎": "inflammation",
-        "膿瘍": "abscess",
-        "潰瘍": "ulcer",
-        "壞死": "necrosis",
-        "纖維化": "fibrosis",
-        "鈣化": "calcification",
-        "狹窄": "stenosis",
-        "阻塞": "occlusion",
-        "動脈瘤": "aneurysm",
-        "萎縮": "atrophy",
-        "肥厚": "hypertrophy",
-        "皮膚": "skin",
-        "傷口": "wound",
-        "燒傷": "burn",
-        "內視鏡": "endoscopy",
-        "大腸鏡": "colonoscopy",
-        "支氣管鏡": "bronchoscopy",
-        "超音波": "ultrasound",
-        "心臟超音波": "echocardiography",
-        "電腦斷層": "CT scan",
-        "斷層掃描": "CT scan",
-        "核磁共振": "MRI",
-        "磁振造影": "MRI",
-        "正子造影": "PET scan",
-        "X光": "X-ray",
-        "X射線": "X-ray",
-        "顯微鏡": "microscopy",
-        "組織學": "histology",
-        "病理": "pathology",
-        "切片": "biopsy",
-        "染色": "staining",
-        "細胞": "cell",
-        "手術": "surgery",
-        "照片": "photograph",
-        "影像": "image",
-        "圖片": "image",
-        # Japanese common terms
-        "喉頭浮腫": "laryngeal edema",
-        "肺炎": "pneumonia",
-        "骨折": "fracture",
-        "腫瘍": "tumor",
-        "手術": "surgery",
-        # Korean common terms (romanized concepts handled by English)
-    }
+    # Example translations for error messages (NOT a translation dictionary!)
+    NON_ENGLISH_EXAMPLES = """
+常見醫學術語翻譯範例 (Examples for Agent):
+- 喉頭水腫 → laryngeal edema
+- 肺炎 → pneumonia
+- 骨折 → fracture
+- 胸部X光 → chest X-ray
+- 心臟超音波 → echocardiography
+- 電腦斷層 → CT scan
+- 磁振造影 → MRI
+"""
 
     # Regex pattern for detecting non-Latin scripts (CJK, Japanese, Korean, etc.)
     NON_LATIN_PATTERN = re.compile(
@@ -415,32 +362,18 @@ class ImageQueryAdvisor:
         # 4. Recommend collection
         recommended_coll, coll_reason = self._recommend_collection(query_lower)
 
-        # 5. Non-English query detection and auto-translation
+        # 5. Non-English query detection (Agent must translate)
         non_english_info = self._detect_non_english(query_lower)
         if non_english_info["is_non_english"]:
-            if non_english_info["translated_query"]:
-                # Auto-translate available
-                enhanced = non_english_info["translated_query"]
-                warnings.append(
-                    f"⚠️ Open-i 僅支援英文查詢。已自動翻譯: "
-                    f"'{query}' → '{enhanced}'"
-                )
-                suggestions.append(
-                    f"建議使用翻譯後的英文查詢: "
-                    f'search_biomedical_images("{enhanced}")'
-                )
-            else:
-                # No dictionary match — Agent must translate
-                warnings.append(
-                    "⚠️ Open-i only supports English queries. "
-                    "The current query contains non-English characters. "
-                    "Please translate to English medical terminology before searching. "
-                    "Example: '喉頭水腫' → 'laryngeal edema'"
-                )
-                suggestions.append(
-                    "Translate the query to English medical terms, then call "
-                    "search_biomedical_images() with the English query."
-                )
+            # MCP only detects - Agent must translate (see CONSTITUTION 第 7.4 條)
+            warnings.append(
+                f"⚠️ {non_english_info['error_message']}"
+            )
+            suggestions.append(
+                "Translate the query to English medical terms, then call "
+                "search_biomedical_images() with the English query.\n"
+                f"{non_english_info['examples']}"
+            )
 
         # 6. Check image_type mismatch
         if image_type and recommended_type and image_type != recommended_type:
@@ -466,9 +399,11 @@ class ImageQueryAdvisor:
                     "請加入 X-ray、histology、CT scan 等關鍵字"
                 )
 
-        # 9. Query enhancement (use translated query if available)
-        if non_english_info["is_non_english"] and non_english_info["translated_query"]:
-            enhanced = non_english_info["translated_query"]
+        # 9. Query enhancement (non-English queries: Agent must translate first)
+        # MCP does NOT translate - it only enhances English queries
+        if non_english_info["is_non_english"]:
+            # Cannot enhance non-English - Agent must translate first
+            enhanced = None
         else:
             enhanced = self._enhance_query(query_lower, recommended_type)
 
@@ -704,20 +639,23 @@ class ImageQueryAdvisor:
         """
         Detect non-English (CJK/Cyrillic/Arabic/Thai) characters in query.
 
-        If CJK characters are found, attempt auto-translation using
-        the built-in medical term dictionary.
+        NOTE: This method ONLY detects - it does NOT translate.
+        Translation is the Agent's responsibility (Agent has LLM capability).
+        See CONSTITUTION.md 第 7.4 條.
 
         Returns:
             dict with:
             - is_non_english: bool
-            - translated_query: str | None (English translation if available)
             - detected_script: str (e.g., "CJK", "Cyrillic", "Latin")
+            - error_message: str | None (guidance for Agent)
+            - examples: str | None (translation examples for Agent)
         """
         if not self.NON_LATIN_PATTERN.search(query):
             return {
                 "is_non_english": False,
-                "translated_query": None,
                 "detected_script": "Latin",
+                "error_message": None,
+                "examples": None,
             }
 
         # Detect script type
@@ -740,68 +678,16 @@ class ImageQueryAdvisor:
                 detected_script = "Arabic"
                 break
 
-        # Attempt auto-translation via dictionary
-        translated = self._try_translate(query)
-
         return {
             "is_non_english": True,
-            "translated_query": translated,
             "detected_script": detected_script,
+            "error_message": (
+                f"Open-i API only supports English queries. "
+                f"Your query '{query}' contains {detected_script} characters. "
+                f"Please translate to English medical terminology and retry."
+            ),
+            "examples": self.NON_ENGLISH_EXAMPLES,
         }
-
-    def _try_translate(self, query: str) -> str | None:
-        """
-        Attempt to translate a non-English query using the built-in dictionary.
-
-        Strategy:
-        1. Try exact match first
-        2. Try longest-match substring replacement
-        3. Return None if no meaningful translation possible
-
-        Returns:
-            Translated English query, or None if translation not possible
-        """
-        query_stripped = query.strip()
-
-        # Build case-insensitive lookup (handles e.g. "X光" vs "x光")
-        lower_terms = {k.lower(): v for k, v in self.CJK_MEDICAL_TERMS.items()}
-
-        # 1. Exact match (case-insensitive)
-        if query_stripped.lower() in lower_terms:
-            return lower_terms[query_stripped.lower()]
-
-        # 2. Longest-match substring replacement
-        result = query_stripped
-        translated_any = False
-
-        # Sort terms by length (longest first) to avoid partial matches
-        sorted_terms = sorted(
-            lower_terms.items(),
-            key=lambda x: len(x[0]),
-            reverse=True,
-        )
-
-        for term_lower, term_en in sorted_terms:
-            # Case-insensitive substring search
-            idx = result.lower().find(term_lower)
-            while idx >= 0:
-                result = result[:idx] + term_en + result[idx + len(term_lower) :]
-                translated_any = True
-                # Continue searching after the replacement
-                idx = result.lower().find(term_lower, idx + len(term_en))
-
-        if not translated_any:
-            return None
-
-        # Clean up spaces
-        result = re.sub(r"\s+", " ", result).strip()
-
-        # If there are still non-Latin chars remaining, partial translation
-        if self.NON_LATIN_PATTERN.search(result):
-            # Still has untranslated chars — return what we have but note it's partial
-            return result if translated_any else None
-
-        return result
 
     @staticmethod
     def _type_label(image_type: str) -> str:

@@ -339,12 +339,16 @@ class TestAdviseImageSearchConvenience:
 
 
 # ============================================================================
-# Non-English Detection & Auto-Translation Tests
+# Non-English Detection Tests
 # ============================================================================
 
 
 class TestNonEnglishDetection:
-    """Tests for CJK/non-Latin character detection and auto-translation."""
+    """Tests for CJK/non-Latin character detection.
+
+    Design principle: MCP detects non-English but does NOT translate.
+    Agent (with LLM capability) is responsible for translation.
+    """
 
     def setup_method(self):
         self.advisor = ImageQueryAdvisor()
@@ -375,58 +379,35 @@ class TestNonEnglishDetection:
         advice = self.advisor.advise("胸部 pneumonia CT")
         assert advice.has_warnings
 
-    # --- Auto-Translation ---
+    # --- No Translation (MCP design principle) ---
 
-    def test_translate_exact_match(self):
+    def test_non_english_no_auto_translate(self):
+        """Non-English queries should NOT be auto-translated by MCP.
+        MCP only detects; Agent must translate using LLM.
+        """
         advice = self.advisor.advise("喉頭水腫")
-        # Should have translated query in suggestions
-        assert advice.enhanced_query is not None
-        assert "laryngeal edema" in advice.enhanced_query
+        # enhanced_query should be None for non-English (MCP can't translate)
+        assert advice.enhanced_query is None
 
-    def test_translate_chest_xray(self):
-        advice = self.advisor.advise("胸部X光")
-        assert advice.enhanced_query is not None
-        assert "chest" in advice.enhanced_query.lower() or "x-ray" in advice.enhanced_query.lower()
-
-    def test_translate_pneumonia(self):
-        advice = self.advisor.advise("肺炎")
-        assert advice.enhanced_query is not None
-        assert "pneumonia" in advice.enhanced_query.lower()
-
-    def test_translate_fracture(self):
-        advice = self.advisor.advise("骨折")
-        assert advice.enhanced_query is not None
-        assert "fracture" in advice.enhanced_query.lower()
-
-    def test_translate_multi_term(self):
-        """Multiple CJK terms should all be translated."""
-        advice = self.advisor.advise("肺炎 骨折")
-        assert advice.enhanced_query is not None
-        assert "pneumonia" in advice.enhanced_query.lower()
-        assert "fracture" in advice.enhanced_query.lower()
-
-    def test_translate_unknown_term_returns_warning(self):
-        """Unknown CJK terms should still trigger translation warning."""
+    def test_unknown_cjk_returns_warning_only(self):
+        """Unknown CJK terms should trigger warning but NOT translation."""
         advice = self.advisor.advise("罕見疾病名稱")
         assert advice.has_warnings
         has_translate_warning = any(
             "English" in w or "translate" in w.lower() for w in advice.warnings
         )
         assert has_translate_warning
+        # MCP does NOT translate
+        assert advice.enhanced_query is None
 
-    def test_translate_suggestion_includes_search_call(self):
-        """Suggestions should include the search_biomedical_images call."""
-        advice = self.advisor.advise("喉頭水腫")
-        has_search_suggestion = any(
-            "search_biomedical_images" in s for s in advice.suggestions
+    def test_warning_includes_examples(self):
+        """Warning should include translation examples for Agent."""
+        advice = self.advisor.advise("肺炎")
+        # Should have suggestions with examples
+        has_example = any(
+            "pneumonia" in s or "fracture" in s for s in advice.suggestions
         )
-        assert has_search_suggestion
-
-    def test_translate_composite_query(self):
-        """Composite query with known + unknown CJK should partially translate."""
-        advice = self.advisor.advise("肺炎相關影像")
-        assert advice.enhanced_query is not None
-        assert "pneumonia" in advice.enhanced_query.lower()
+        assert has_example
 
     # --- _detect_non_english internal ---
 
@@ -440,21 +421,19 @@ class TestNonEnglishDetection:
         assert result["is_non_english"] is True
         assert result["detected_script"] == "CJK"
 
-    # --- _try_translate internal ---
+    def test_detect_returns_error_message(self):
+        """_detect_non_english should return error message for Agent."""
+        result = self.advisor._detect_non_english("肺炎")
+        assert "error_message" in result
+        # Should mention English requirement and translation
+        assert "English" in result["error_message"] or "translate" in result["error_message"]
 
-    def test_try_translate_known_term(self):
-        result = self.advisor._try_translate("喉頭水腫")
-        assert result == "laryngeal edema"
-
-    def test_try_translate_unknown_term(self):
-        result = self.advisor._try_translate("罕見疾病名稱")
-        assert result is None
-
-    def test_try_translate_compound(self):
-        result = self.advisor._try_translate("肺炎 水腫")
-        assert result is not None
-        assert "pneumonia" in result
-        assert "edema" in result
+    def test_detect_returns_examples(self):
+        """_detect_non_english should return translation examples."""
+        result = self.advisor._detect_non_english("肺炎")
+        assert "examples" in result
+        # Examples should show translation patterns
+        assert any("→" in ex for ex in result["examples"])
 
 
 # ============================================================================
@@ -631,7 +610,7 @@ class TestAdvisorIntegration:
             query="covid-19 chest",
             advisor_warnings=["Open-i 索引凍結於 ~2020，查詢含 'covid-19' 可能找不到相關結果"],
             advisor_suggestions=[],
-            recommended_image_type="xg",
+            recommended_image_type="x",  # x = X-ray (not xg)
         )
 
         with patch(
@@ -642,4 +621,3 @@ class TestAdvisorIntegration:
 
         assert "智慧建議" in result
         assert "2020" in result
-        assert "xg" in result
