@@ -337,8 +337,8 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS 代理
 │   unified_search()          ← 🌟 單一入口，涵蓋所有來源            │
 │        │                                                         │
 │        ├── 快速搜尋     → 直接多源查詢                             │
-│        ├── PICO 模式    → 臨床問題分解                             │
-│        └── 系統模式     → MeSH 擴展 + 平行搜尋                      │
+│        ├── PICO 提示    → 偵測比較結構，顯示 P/I/C/O               │
+│        └── ICD 擴展     → 自動 ICD→MeSH 轉換                      │
 │                                                                  │
 │   來源: PubMed · Europe PMC · CORE · OpenAlex                    │
 │   自動: 去重 → 排序 → 補充全文連結                                  │
@@ -449,12 +449,13 @@ unified_search(query="I10 treatment in E11.9 patients")
 
 ### 2️⃣ PICO 臨床問題
 
-**簡單路徑** — `unified_search` 自動偵測 PICO 結構：
+**簡單路徑** — `unified_search` 偵測比較結構並顯示 PICO 提示：
 
 ```python
-# unified_search 自動偵測臨床比較問題
+# unified_search 偵測「A vs B」模式並在輸出中顯示 PICO metadata
 unified_search(query="remimazolam 在 ICU 鎮靜比 propofol 好嗎？")
-# → 自動偵測 P/I/C/O，擴展 MeSH，多源搜尋
+# → 偵測比較結構，輸出中顯示 PICO 提示，多源搜尋
+# 注意：完整 PICO 拆解 + MeSH 擴展請用下方進階路徑
 ```
 
 **進階路徑** — 手動 PICO 拆解以獲得最大控制：

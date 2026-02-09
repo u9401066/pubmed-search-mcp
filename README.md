@@ -336,8 +336,8 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS proxy for API requests
 │   unified_search()          ← 🌟 Single entry for all sources    │
 │        │                                                         │
 │        ├── Quick search     → Direct multi-source query          │
-│        ├── PICO mode        → Clinical question decomposition    │
-│        └── Systematic mode  → MeSH expansion + parallel search   │
+│        ├── PICO hints       → Detects comparison, shows P/I/C/O  │
+│        └── ICD expansion    → Auto ICD→MeSH conversion           │
 │                                                                  │
 │   Sources: PubMed · Europe PMC · CORE · OpenAlex                 │
 │   Auto: Deduplicate → Rank → Enrich full-text links              │
@@ -449,12 +449,13 @@ unified_search(query="I10 treatment in E11.9 patients")
 
 ### 2️⃣ PICO Clinical Question
 
-**Simple path** — `unified_search` auto-detects PICO structure:
+**Simple path** — `unified_search` detects comparison structure and shows PICO hints:
 
 ```python
-# unified_search automatically detects clinical comparisons
+# unified_search detects "A vs B" patterns and displays PICO metadata
 unified_search(query="Is remimazolam better than propofol for ICU sedation?")
-# → Auto-detects P/I/C/O, expands MeSH, multi-source search
+# → Detects comparison structure, shows PICO hints in output, multi-source search
+# Note: For full PICO decomposition + MeSH expansion, use the Advanced path below
 ```
 
 **Advanced path** — Manual PICO decomposition for maximum control:
