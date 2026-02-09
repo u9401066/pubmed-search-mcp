@@ -257,22 +257,23 @@ class TestOpenIClientSearch:
         assert total == 0
 
     def test_search_default_image_type(self, openi_client, sample_openi_response):
-        """When no image_type specified, defaults to 'xg' (required by API)."""
+        """When no image_type specified, defaults to None (all types)."""
         with patch.object(
             openi_client, "_make_request", return_value=sample_openi_response
         ) as mock_req:
             openi_client.search("test")
             call_url = mock_req.call_args[0][0]
-            assert "it=xg" in call_url
+            # No 'it' parameter when None
+            assert "it=" not in call_url
 
-    def test_search_invalid_image_type_defaults_to_xg(self, openi_client, sample_openi_response):
-        """Invalid image_type falls back to default 'xg'."""
+    def test_search_invalid_image_type_ignored(self, openi_client, sample_openi_response):
+        """Invalid image_type is ignored (no 'it' param)."""
         with patch.object(
             openi_client, "_make_request", return_value=sample_openi_response
         ) as mock_req:
             openi_client.search("test", image_type="invalid")
             call_url = mock_req.call_args[0][0]
-            assert "it=xg" in call_url
+            assert "it=" not in call_url
 
     def test_search_valid_image_type(self, openi_client, sample_openi_response):
         with patch.object(
@@ -292,13 +293,13 @@ class TestOpenIClientSearch:
             assert "it=ph" in call_url
 
     def test_search_graphics_image_type(self, openi_client, sample_openi_response):
-        """'gl' (Graphics/line art) is a valid image type."""
+        """'g' (Graphics) is a valid image type."""
         with patch.object(
             openi_client, "_make_request", return_value=sample_openi_response
         ) as mock_req:
-            openi_client.search("test", image_type="gl")
+            openi_client.search("test", image_type="g")
             call_url = mock_req.call_args[0][0]
-            assert "it=gl" in call_url
+            assert "it=g" in call_url
 
     def test_search_valid_collection(self, openi_client, sample_openi_response):
         with patch.object(

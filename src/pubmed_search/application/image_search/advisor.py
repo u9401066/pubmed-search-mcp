@@ -41,7 +41,7 @@ class ImageSearchAdvice:
     confidence: float  # 0.0-1.0 confidence in assessment
 
     # Image type recommendation
-    recommended_image_type: str | None = None  # "xg", "mc", "ph", "gl"
+    recommended_image_type: str | None = None  # "xg", "mc", "ph", "g"
     image_type_reason: str = ""  # Why this type was recommended
 
     # Warnings and suggestions
@@ -325,7 +325,7 @@ class ImageQueryAdvisor:
         Returns:
             (image_type, reason) tuple
         """
-        scores: dict[str, int] = {"xg": 0, "mc": 0, "ph": 0, "gl": 0}
+        scores: dict[str, int] = {"xg": 0, "mc": 0, "ph": 0, "g": 0}
 
         for kw in self.RADIOLOGY_KEYWORDS:
             if kw in query_lower:
@@ -341,7 +341,7 @@ class ImageQueryAdvisor:
 
         for kw in self.GRAPHICS_KEYWORDS:
             if kw in query_lower:
-                scores["gl"] += 1
+                scores["g"] += 1
 
         # Find the highest-scoring type
         max_score = max(scores.values())
@@ -353,7 +353,7 @@ class ImageQueryAdvisor:
             "xg": "偵測到放射學/X光相關關鍵字",
             "mc": "偵測到顯微鏡/組織學/病理相關關鍵字",
             "ph": "偵測到臨床照片/皮膚/內視鏡相關關鍵字",
-            "gl": "偵測到圖表/示意圖/流程圖相關關鍵字",
+            "g": "偵測到圖表/示意圖/流程圖相關關鍵字",
         }
 
         return best_type, reasons.get(best_type, "")
@@ -414,7 +414,7 @@ class ImageQueryAdvisor:
             "xg": "X-ray/放射 (xg)",
             "mc": "顯微鏡 (mc)",
             "ph": "臨床照片 (ph)",
-            "gl": "圖表/示意圖 (gl)",
+            "g": "圖表/示意圖 (g)",
         }
         return labels.get(image_type, image_type)
 

@@ -118,9 +118,9 @@ class TestImageQueryAdvisorImageType:
         assert advice.recommended_image_type == "ph"
         assert "照片" in advice.image_type_reason or "皮膚" in advice.image_type_reason
 
-    def test_recommend_gl_for_graphics(self):
+    def test_recommend_g_for_graphics(self):
         advice = self.advisor.advise("flowchart algorithm diagram")
-        assert advice.recommended_image_type == "gl"
+        assert advice.recommended_image_type == "g"
         assert "圖表" in advice.image_type_reason or "示意" in advice.image_type_reason
 
     def test_default_xg_for_unknown(self):

@@ -16,6 +16,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.3.3] - 2026-02-09
+
+### Fixed
+
+- **Critical**: Open-i image search returning irrelevant results (3 bugs)
+  - Query parameter name was `q` instead of correct `query` — API ignored all search terms
+  - Pagination parameter `n` treated as count but is actually end index — wrong page ranges
+  - `it` (image type) was forced as required but is optional — prevented searching all types
+- Updated `VALID_IMAGE_TYPES` to match official Swagger spec (`g` not `gl`, added `x`, `u`, `xm`, `m`, `p`, `c`)
+- Updated `VALID_COLLECTIONS` to match official spec (added `cxr`, `usc`, `hmd`)
+- Aligned `ImageQueryAdvisor` graphics type recommendation from `"gl"` → `"g"`
+
+---
+
 ## [0.3.2] - 2026-02-09
 
 ### Fixed

@@ -72,15 +72,18 @@ def register_image_search_tools(mcp: FastMCP):
                 - "europe_pmc": Europe PMC only (future)
                 - "all": Search all sources
             image_type: Filter by image type (Open-i only):
-                - "xg": X-ray / radiology images (default — broadest coverage)
+                - "xg": X-ray / radiology images
                 - "mc": Microscopy images
                 - "ph": Photographs / clinical photos
-                - "gl": Graphics / line art / diagrams
-                - None: Defaults to "xg"
+                - "g": Graphics / line art / diagrams
+                - "x": X-ray, "u": Ultrasound, "c", "m", "p", "xm": other types
+                - None: All types (default)
             collection: Filter by collection (Open-i only):
                 - "pmc": PubMed Central articles
                 - "mpx": MedPix clinical teaching images
-                - "iu": Indiana University radiology reports
+                - "cxr": Chest X-ray collection
+                - "hmd": History of Medicine
+                - "usc": USC collection
                 - None: All collections (default)
             open_access_only: Only return open access images (default True)
             limit: Maximum number of images to return (default 10)

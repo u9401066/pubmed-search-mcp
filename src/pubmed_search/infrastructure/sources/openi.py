@@ -10,11 +10,13 @@ Image Search API Reference: docs/IMAGE_SEARCH_API.md
 
 Limitations:
 - Index frozen at ~2020 (no newer content)
-- Image type filter ('it' param) is REQUIRED by API (as of 2026-02)
-  Valid values: "xg" (X-ray/radiology), "mc" (Microscopy), "ph" (Photo), "gl" (Graphics)
-  Default: "xg" (broadest coverage)
-- Fixed ~10 results per page unless 'n' param specified
-- m parameter is offset, not limit
+- Image type filter ('it' param) optional
+  Valid values: "xg","xm","x","u","ph","p","mc","m","g","c"
+  Default: None (all types)
+- Query param name is 'query' (NOT 'q')
+- m = Start Index (1-based), n = End Index (default 10)
+  e.g. m=1&n=10 → results 1-10, m=11&n=20 → results 11-20
+- Collection 'coll' values: pmc, cxr, usc, hmd, mpx
 - Response latency: 2-9 seconds
 """
 
@@ -48,12 +50,12 @@ class OpenIClient:
         images, total = client.search("chest pneumonia", image_type="xg")
     """
 
-    # Valid image type filters (tested 2026-02)
-    # "xg" gives broadest coverage (~1.5M results), includes all radiology images
-    VALID_IMAGE_TYPES = {"xg", "mc", "ph", "gl"}
-    DEFAULT_IMAGE_TYPE = "xg"  # Required by API — fallback when user doesn't specify
-    VALID_COLLECTIONS = {"pmc", "mpx", "iu"}
-    PAGE_SIZE = 10  # Fixed results per page
+    # Valid image type filters per official Swagger spec (2026-02)
+    # See: https://openi.nlm.nih.gov/v2/api-docs
+    VALID_IMAGE_TYPES = {"xg", "xm", "x", "u", "ph", "p", "mc", "m", "g", "c"}
+    DEFAULT_IMAGE_TYPE = None  # None = all types (API does not require 'it')
+    VALID_COLLECTIONS = {"pmc", "cxr", "usc", "hmd", "mpx"}
+    PAGE_SIZE = 10  # Default results per page (m=1, n=10)
 
     def __init__(self, timeout: float = 15.0):
         """
@@ -121,9 +123,13 @@ class OpenIClient:
 
         Args:
             query: Search query (e.g., "chest pneumonia CT")
-            image_type: Image type filter ("xg"=X-ray, "mc"=Microscopy, "ph"=Photo, "gl"=Graphics)
-                        Defaults to "xg" if not specified (required by API).
-            collection: Collection filter ("pmc", "mpx"=MedPix, "iu"=Indiana, None=all)
+            image_type: Image type filter per API spec:
+                        "xg"=X-ray general, "x"=X-ray, "xm"=X-ray misc,
+                        "mc"=Microscopy, "m"=Microscopy alt,
+                        "ph"=Photo, "p"=Photo alt,
+                        "g"=Graphics, "u"=Ultrasound, "c"=CT.
+                        None = all types (default).
+            collection: Collection filter ("pmc", "cxr", "usc", "hmd", "mpx", None=all)
             max_results: Maximum number of results to return.
                 Internally calculates pages needed: ceil(max_results / PAGE_SIZE).
 
@@ -143,13 +149,11 @@ class OpenIClient:
         if image_type and image_type not in self.VALID_IMAGE_TYPES:
             logger.warning(
                 f"Invalid image_type '{image_type}', "
-                f"only {self.VALID_IMAGE_TYPES} are effective. Using default."
+                f"only {self.VALID_IMAGE_TYPES} are effective. Ignoring filter."
             )
-            image_type = self.DEFAULT_IMAGE_TYPE
+            image_type = None
 
-        # API requires 'it' parameter (as of 2026-02)
-        if not image_type:
-            image_type = self.DEFAULT_IMAGE_TYPE
+        # image_type is optional — None means all types
 
         # Validate collection
         if collection and collection not in self.VALID_COLLECTIONS:
@@ -165,15 +169,18 @@ class OpenIClient:
         total_count = 0
 
         for page in range(pages_needed):
-            offset = page * self.PAGE_SIZE + 1  # Open-i offset is 1-based
+            start_index = page * self.PAGE_SIZE + 1  # 1-based
+            remaining = min(max_results - len(all_images), self.PAGE_SIZE)
+            end_index = start_index + remaining - 1
 
-            # Build URL
+            # Build URL — 'query' is the correct param name (NOT 'q')
             params: dict[str, str] = {
-                "q": query,
-                "m": str(offset),
-                "it": image_type,  # Required by API
-                "n": str(min(max_results - len(all_images), self.PAGE_SIZE)),
+                "query": query,
+                "m": str(start_index),
+                "n": str(end_index),
             }
+            if image_type:
+                params["it"] = image_type
             if collection:
                 params["coll"] = collection
 
@@ -209,7 +216,7 @@ class OpenIClient:
             if len(items) < self.PAGE_SIZE:
                 # Last page — no more results
                 break
-            if offset + self.PAGE_SIZE > total_count:
+            if end_index >= total_count:
                 break
 
         return all_images, total_count
