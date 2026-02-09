@@ -751,9 +751,23 @@ def _record_search_only(results: list, query: str):
     Used for filtered searches where we don't want to pollute the cache
     but still want to support 'last' export feature.
     """
-    if _session_manager and results and not results[0].get("error"):
+    if not _session_manager or not results:
+        return
+
+    # Handle both dict results and UnifiedArticle dataclass results
+    first = results[0]
+    if isinstance(first, dict):
+        if first.get("error"):
+            return
+        pmids = [r.get("pmid") for r in results if r.get("pmid")]
+    else:
+        # UnifiedArticle or similar dataclass
+        if getattr(first, "error", None):
+            return
+        pmids = [getattr(r, "pmid", None) for r in results if getattr(r, "pmid", None)]
+
+    if pmids:
         try:
-            pmids = [r.get("pmid") for r in results if r.get("pmid")]
             _session_manager.add_search_record(query, pmids)
             logger.debug(f"Recorded search '{query}' with {len(pmids)} PMIDs")
         except Exception as e:
