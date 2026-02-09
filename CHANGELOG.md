@@ -25,8 +25,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Infrastructure**: `OpenIClient` — Open-i (NLM) image search client with rate limiting, pagination, MeSH extraction
   - **Application**: `ImageSearchService` — coordinates search, source resolution, deduplication
   - **Presentation**: `search_biomedical_images` MCP tool with `InputNormalizer` integration
-  - Supports image type filters (`xg`=X-ray, `mc`=Microscopy) and collection filters (`pmc`, `mpx`, `iu`)
-  - 41 tests covering all 4 DDD layers
+  - Supports image type filters (`xg`=X-ray, `mc`=Microscopy, `ph`=Photo, `gl`=Graphics) and collection filters (`pmc`, `mpx`, `iu`)
+  - 44 tests covering all 4 DDD layers
+
+- **Comprehensive Test Coverage (Round 6 & 7)** - 127+ new tests
+  - `test_round6_coverage.py`: 85 tests covering unified.py, query_analyzer.py, _common.py
+  - `test_round6_part2.py`: 42 tests covering fulltext_download.py, openurl.py, vision_search.py
+  - Tests for: multi-source search, enrichment functions, DispatchStrategy, QueryAnalyzer
+  - Tests for: FulltextDownloader async methods, OpenURL builder, Vision tools
+  - Coverage improvement from 81.9% to 84%+
 
 - **Tool-sync Auto-Update Skill** (`.claude/skills/tool-sync/SKILL.md`)
   - Documents the `count_mcp_tools.py --update-docs` workflow for keeping tool documentation in sync
@@ -37,44 +44,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - MCP tools: 40 → **41 tools** across **13 categories** (new: `image_search`)
-- Total tests: 2091 passed, 14 skipped
+- Total tests: 2093 passed, 14 skipped
 - README Design Philosophy table expanded (5 → 10 rows), Key Differentiators (4 → 7 items)
 - README MCP Tools Overview rewritten to match current 41 tools / 13 categories
-- README PICO section: added Simple path (`unified_search` auto-detects PICO)
+- README PICO descriptions: clarified as Agent-driven workflow (not auto server behavior)
+- Dev tooling: ruff 0.14.13, mypy 1.19.1 — all lint/type errors resolved
+- Unified mypy config in `pyproject.toml` (removed standalone `.mypy.ini`)
 
 ### Fixed
 
+- **Open-i API `it` parameter now required** — API silently changed behavior; without `it`, returns `{total: 0, Query-Error: "Invalid request type."}`. Default to `xg` (X-ray, broadest coverage ~1.5M results). Added `ph` (Photo) and `gl` (Graphics) to `VALID_IMAGE_TYPES`
 - `pico.py` next_steps referencing removed `search_literature()` + `merge_search_results()` → `unified_search()`
 - `ImageResult.to_dict()` now uses `dataclasses.asdict()` (auto-tracks new fields)
 - `test_tool_registry.py` updated for 13 categories
-
-### Added
-
-- **Comprehensive Test Coverage (Round 6 & 7)** - 127+ new tests
-  - `test_round6_coverage.py`: 85 tests covering unified.py, query_analyzer.py, _common.py
-  - `test_round6_part2.py`: 42 tests covering fulltext_download.py, openurl.py, vision_search.py
-  - Tests for: multi-source search (_search_pubmed, _search_openalex, _search_semantic_scholar)
-  - Tests for: enrichment functions (_enrich_with_crossref, _enrich_with_unpaywall)
-  - Tests for: DispatchStrategy, QueryAnalyzer intent/complexity detection
-  - Tests for: FulltextDownloader async methods, OpenURL builder, Vision tools
-
-- **Coverage Improvement** - From 81.9% to 84%+
-  - Fixed UnifiedArticle API (primary_source parameter)
-  - Fixed mock paths for infrastructure sources
-  - Proper test isolation with correct import paths
-
-### Fixed
-
-- **Test API Compatibility**
-  - All UnifiedArticle instantiation now includes `primary_source` parameter
-  - SemanticScholarClient mock path corrected to infrastructure.sources
-  - PubMedSearchError instantiation corrected (removed invalid `action` parameter)
-  - QueryAnalyzer test assertions aligned with actual behavior
-
-### Changed
-
-- Total tests: 2050+ passed, 14 skipped
-- MCP tools: 40 tools across 12 categories
+- `test_perf.py` moved to `tests/` and fixed stale import paths
+- Misleading PICO auto-detect claims corrected in both READMEs (5 locations each)
+- 109 ruff lint errors fixed (86 auto + 23 manual: E741 `l`→`lnk`, F841 unused vars)
 
 ---
 

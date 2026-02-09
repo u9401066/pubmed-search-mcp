@@ -1,7 +1,7 @@
 # PubMed Search MCP - Roadmap
 
 > 本文件記錄**待實作**功能。已完成功能請參閱 [CHANGELOG.md](CHANGELOG.md)。
-> **最後更新**: 2026-01-27
+> **最後更新**: 2026-02-09
 
 ---
 

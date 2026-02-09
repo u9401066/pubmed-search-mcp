@@ -4,45 +4,34 @@
 
 ## 🎯 當前焦點
 
-- **v0.2.8 FulltextDownloader 增強** - Retry, Rate Limiting, Streaming 下載
-- **Code Review 完成** - 套件導入、Mypy 錯誤修復
+- **v0.3.0 Release** — Phase 4.1 Image Search MVP + Open-i API fix + dev tooling + docs
 
 ## 📝 進行中的變更
 
 | 目錄/檔案 | 變更內容 |
 |----------|----------|
-| `infrastructure/sources/fulltext_download.py` | 新增 - Retry (exponential backoff), Rate Limiting (semaphore), Streaming Download |
-| `tools/europe_pmc.py` | 更新 - get_fulltext 新增 `extended_sources` 參數 (15 sources) |
-| `sources/__init__.py` | 更新 - 新增 `get_fulltext_downloader()` 工廠函數 |
-| `session/manager.py` | 修復 - Mypy 型別錯誤 |
-| `sources/openurl.py` | 修復 - Mypy 型別註解 |
-| `tests/test_package_imports.py` | 修復 - API 簽名更新 |
-| `tests/test_fulltext_urls.py` | 新增 - 17 個 URL 驗證測試 |
+| `infrastructure/sources/openi.py` | 修復 — `it` 參數現為必填，預設 `xg`，新增 `ph`/`gl` 類型，加 `n` 參數 |
+| `tools/image_search.py` | 更新 — image_type 文檔加入 ph/gl/預設說明 |
+| `tests/test_image_search.py` | 新增 — 3 個測試 (default_xg, invalid_defaults, ph, gl)，共 44 個 |
+| `CHANGELOG.md` | 重整 — 合併 v0.3.0 所有條目，加入 5 個新 commit |
+| `README.md + README.zh-TW.md` | 修正 — PICO 描述 5 處改為 Agent-driven |
+| `pyproject.toml` | 統一 mypy 配置，移除 .mypy.ini |
 
-## ✅ 已實現功能
+## ✅ 已完成本 session
 
-**FulltextDownloader 增強**:
-- ✅ Rate Limiting: `asyncio.Semaphore(5)` 限制並行請求
-- ✅ Retry: 指數退避 (1s, 2s, 4s...) 最多 3 次
-- ✅ Streaming: 分塊下載 (8KB chunks) 避免記憶體爆炸
-- ✅ 429 處理: 全域 Rate Limit 等待
-
-**get_fulltext 工具擴展**:
-- ✅ `extended_sources=True`: 啓用 15 個來源（預設 3 個）
-- ✅ 來源優先順序: Europe PMC > Unpaywall > CORE > CrossRef > DOAJ > Zenodo...
-
-## 💡 關鍵發現
-
-- PDF 下載不需要外部套件，內建 `asyncio.Semaphore` + `httpx.stream` 即可
-- Zenodo API 有 Cloudflare 保護，可能返回 403
-- bioRxiv/medRxiv URL 需要版本後綴 (v1.full.pdf)
-- 測試文件 API 簽名要與實際程式碼同步
+- Open-i API `it` 參數修復 (default xg, add ph/gl)
+- ruff 0.14.13 + mypy 1.19.1 升級，109 lint 錯誤修復
+- PICO README 描述全面修正
+- test_perf.py 搬移至 tests/
+- CHANGELOG v0.3.0 整合
+- Memory Bank 更新
+- 2093 tests passed, 44 image tests, 41 MCP tools / 13 categories
 
 ## 🔜 下一步
 
-1. ✅ Git commit + push v0.2.8
-2. ⏳ Phase 14 - Research Gap Detection
-3. ⏳ 帶遍測試覆蓋率到 50%+
+1. Phase 14 - Research Gap Detection
+2. Phase 5.8 - Token 效率優化
+3. Phase 13.2 - NLP 增強里程碑偵測
 
 ---
-*Last updated: 2026-02-06 - FulltextDownloader 增強 + Code Review*
+*Last updated: 2026-02-09 — v0.3.0 release session*

@@ -1,38 +1,30 @@
-# Progress (Updated: 2026-02-06)
+# Progress (Updated: 2026-02-09)
 
 ## Done
 
 - v0.2.3 工具註冊架構重構
 - 工具統計自動化腳本 scripts/count_mcp_tools.py
 - v0.2.8 Research Timeline 功能 (Phase 13.1 MVP)
--   - domain/entities/timeline.py - TimelineEvent, ResearchTimeline 實體
--   - application/timeline/ - TimelineBuilder, MilestoneDetector
--   - tools/timeline.py - 6 個新 MCP 工具
--   - 里程碑偵測：FDA/EMA 批准、臨床試驗階段、Meta-Analysis 等
--   - Mermaid/JSON 視覺化輸出
 - v0.2.8.1 Timeline Bug Fixes
--   - ResponseFormatter API 修正 (format_error→error, format_info→no_results)
--   - 搜尋參數修正 (max_results→limit)
--   - BioPython 類型轉換 (StringElement→int)
--   - 月份字串解析 (_parse_month: 'Jan'→1)
--   - unified_search Session 記錄修復
 - v0.2.8.2 FulltextDownloader 增強 + Code Review
--   - 新增 Retry (exponential backoff, max 3 retries)
--   - 新增 Rate Limiting (asyncio.Semaphore, 5 concurrent)
--   - 新增 Streaming Download (8KB chunks)
--   - get_fulltext 新增 extended_sources 參數 (15 來源)
--   - 修復 test_package_imports.py API 簽名
--   - 修復 Mypy 型別錯誤 (session/manager.py, openurl.py)
--   - 新增 4 個全文 API (CrossRef, DOAJ, Zenodo, PubMed LinkOut)
+- v0.2.12 Comprehensive Test Coverage (2050+ tests, 84% coverage)
+- v0.3.0 Phase 4.1 Biomedical Image Search MVP (search_biomedical_images)
+- v0.3.0 Tool-sync Auto-Update Skill + docs
+- v0.3.0 README PICO descriptions corrected (Agent-driven workflow)
+- v0.3.0 Dev tooling update: ruff 0.14.13 + mypy 1.19.1, 109 lint errors fixed
+- v0.3.0 Open-i API fix: 'it' param now required, default to xg, add ph/gl types
+- v0.3.0 test_perf.py moved to tests/, stale imports fixed
+- v0.3.0 Total: 2093 tests passed, 44 image search tests, 41 MCP tools / 13 categories
 
 ## Doing
 
-- Git commit + push v0.2.8.2
+- Documentation sync + CHANGELOG + git commit for v0.3.0
 
 ## Next
 
 - Phase 14 - Research Gap Detection 實作
 - Phase 13.2 - NLP 增強里程碑偵測
-- 提升測試覆蓋率到 50%+
+- Phase 5.8 - Token 效率優化 (compact output format)
+- 提升測試覆蓋率到 90%+
 - PRISMA flow tracking
 - Evidence level classification
