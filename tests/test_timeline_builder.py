@@ -1,18 +1,16 @@
 """Tests for TimelineBuilder and format_timeline_text."""
 
 import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import MagicMock
 
 from pubmed_search.application.timeline.timeline_builder import (
     TimelineBuilder,
     format_timeline_text,
-    DEFAULT_PERIODS,
 )
 from pubmed_search.domain.entities.timeline import (
     MilestoneType,
     ResearchTimeline,
     TimelineEvent,
-    TimelinePeriod,
 )
 
 

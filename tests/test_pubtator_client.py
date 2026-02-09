@@ -5,7 +5,6 @@ Covers: PubTatorClient, rate limiting, find_entity, search_by_entity,
         resolve_entity, find_relations, get_annotations, singleton.
 """
 
-import asyncio
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -17,8 +16,6 @@ from pubmed_search.infrastructure.pubtator.client import (
 )
 from pubmed_search.infrastructure.pubtator.models import (
     EntityMatch,
-    PubTatorEntity,
-    RelationMatch,
 )
 
 

@@ -54,7 +54,7 @@ class TestSearchPubmed:
     def test_year_filters(self, setup):
         tools, searcher = setup
         searcher.search.return_value = [{"pmid": "1", "title": "T"}]
-        result = tools["search_pubmed"](query="test", min_year=2020, max_year=2024)
+        _result = tools["search_pubmed"](query="test", min_year=2020, max_year=2024)
         searcher.search.assert_called_once()
         call_kwargs = searcher.search.call_args
         assert call_kwargs[1].get("min_year") == 2020 or call_kwargs[0][2] == 2020

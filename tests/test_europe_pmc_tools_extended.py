@@ -9,7 +9,6 @@ NOTE: search_europe_pmc, get_fulltext_xml, get_europe_pmc_citations are
       get_text_mined_terms are registered.
 """
 
-import json
 import pytest
 from unittest.mock import MagicMock, patch
 

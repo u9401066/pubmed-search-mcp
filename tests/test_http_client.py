@@ -4,7 +4,6 @@ Tests for HTTP client module.
 Target: http/client.py coverage from 16% to 90%+
 """
 
-import json
 import urllib.error
 from unittest.mock import MagicMock, patch
 

@@ -1,6 +1,5 @@
 """Tests for exceptions.py — full coverage of exception hierarchy."""
 
-import pytest
 
 from pubmed_search.shared.exceptions import (
     APIError,

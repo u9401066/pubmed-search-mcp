@@ -3,7 +3,6 @@
 import json
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 from pubmed_search.presentation.mcp_server.tools.unified import (
     register_unified_search_tools,

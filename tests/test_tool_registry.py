@@ -1,6 +1,5 @@
 """Tests for tool_registry.py — pure functions + validation."""
 
-import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -221,11 +220,11 @@ class TestRegisterAllMcpTools:
         with patch.object(reg_mod, '__name__', reg_mod.__name__):  # Keep module identity
             with patch(
                 "pubmed_search.presentation.mcp_server.resources.register_resources"
-            ) as mock_res, patch(
+            ) as _mock_res, patch(
                 "pubmed_search.presentation.mcp_server.session_tools.register_session_resources"
-            ) as mock_sres, patch(
+            ) as _mock_sres, patch(
                 "pubmed_search.presentation.mcp_server.session_tools.register_session_tools"
-            ) as mock_stools, patch(
+            ) as _mock_stools, patch(
                 "pubmed_search.presentation.mcp_server.tools.register_all_tools"
             ) as mock_all, patch(
                 "pubmed_search.presentation.mcp_server.tools.set_session_manager"
@@ -233,7 +232,7 @@ class TestRegisterAllMcpTools:
                 "pubmed_search.presentation.mcp_server.tools.set_strategy_generator"
             ) as mock_set_sg, patch(
                 "pubmed_search.presentation.mcp_server.prompts.register_prompts"
-            ) as mock_prompts:
+            ) as _mock_prompts:
                 stats = register_all_mcp_tools(mcp, searcher, sm, sg)
 
             mock_set_sm.assert_called_once_with(sm)

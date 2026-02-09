@@ -7,10 +7,6 @@ import pytest
 
 from pubmed_search.infrastructure.sources.semantic_scholar import (
     SemanticScholarClient,
-    DEFAULT_FIELDS,
-    S2_API_BASE,
-    S2_SEARCH_URL,
-    S2_PAPER_URL,
 )
 
 

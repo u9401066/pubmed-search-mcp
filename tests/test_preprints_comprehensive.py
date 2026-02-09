@@ -2,14 +2,12 @@
 
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 from pubmed_search.infrastructure.sources.preprints import (
     PreprintArticle,
     ArXivClient,
     MedBioRxivClient,
     PreprintSearcher,
-    ARXIV_MEDICAL_CATEGORIES,
 )
 
 

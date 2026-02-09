@@ -1,9 +1,7 @@
 """Tests for citation_tree.py — format converters, node/edge builders, and build tool."""
 
-import json
 from unittest.mock import MagicMock
 
-import pytest
 
 from pubmed_search.presentation.mcp_server.tools.citation_tree import (
     _escape_mermaid,
@@ -16,8 +14,6 @@ from pubmed_search.presentation.mcp_server.tools.citation_tree import (
     _to_graphml,
     _to_mermaid,
     _to_vis,
-    MAX_DEPTH,
-    SUPPORTED_FORMATS,
     register_citation_tree_tools,
 )
 

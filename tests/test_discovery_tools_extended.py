@@ -1,6 +1,5 @@
 """Tests for Discovery MCP tools — find_related, find_citing, etc."""
 
-import json
 from unittest.mock import MagicMock, patch
 
 import pytest

@@ -1,6 +1,5 @@
 """Tests for Europe PMC MCP tools — get_fulltext, get_text_mined_terms, helpers."""
 
-import json
 from unittest.mock import MagicMock, patch
 
 import pytest

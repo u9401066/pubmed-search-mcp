@@ -8,10 +8,8 @@ import json
 import urllib.error
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 from pubmed_search.infrastructure.sources.crossref import (
-    CROSSREF_API_BASE,
     CrossRefClient,
     get_citation_count,
     get_crossref_client,
@@ -469,7 +467,7 @@ class TestModuleFunctions:
         """Test get_doi_metadata function."""
         with patch.object(CrossRefClient, "get_work") as mock_get:
             mock_get.return_value = {"DOI": "10.1/test"}
-            result = get_doi_metadata("10.1/test")
+            _result = get_doi_metadata("10.1/test")
             # Note: Will use singleton, so result depends on mock
 
     def test_search_crossref(self):
@@ -487,7 +485,7 @@ class TestModuleFunctions:
         with patch.object(CrossRefClient, "get_work") as mock_get:
             mock_get.return_value = {"is-referenced-by-count": 42}
             # Will use singleton
-            count = get_citation_count("10.1/test")
+            _count = get_citation_count("10.1/test")
             # Result depends on singleton state
 
 

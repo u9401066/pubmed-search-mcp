@@ -9,7 +9,6 @@ import pytest
 from pubmed_search.infrastructure.sources.ncbi_extended import (
     NCBIExtendedClient,
     get_ncbi_extended_client,
-    ENTREZ_BASE,
     DEFAULT_EMAIL,
 )
 

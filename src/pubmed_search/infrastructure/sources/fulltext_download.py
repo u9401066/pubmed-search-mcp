@@ -32,11 +32,9 @@ Usage:
 import asyncio
 import logging
 import re
-import tempfile
 from dataclasses import dataclass, field
 from enum import Enum
-from pathlib import Path
-from typing import Any, Literal, Optional
+from typing import Literal, Optional
 
 import httpx
 
@@ -362,7 +360,7 @@ class FulltextDownloader:
         if preferred_source:
             links = sorted(
                 links,
-                key=lambda l: (0 if l.source == preferred_source else 1, l.source.priority)
+                key=lambda lnk: (0 if lnk.source == preferred_source else 1, lnk.source.priority)
             )
         
         # Try downloading

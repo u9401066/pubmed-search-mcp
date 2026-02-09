@@ -4,7 +4,6 @@ Tests for Timeline modules: MilestoneDetector and TimelineBuilder.
 Target: milestone_detector.py (18% → 90%), timeline_builder.py (14% → 90%)
 """
 
-import pytest
 
 from pubmed_search.application.timeline.milestone_detector import (
     LANDMARK_CITATION_THRESHOLDS,
@@ -16,7 +15,6 @@ from pubmed_search.application.timeline.milestone_detector import (
 from pubmed_search.domain.entities.timeline import (
     EvidenceLevel,
     MilestoneType,
-    TimelineEvent,
 )
 
 

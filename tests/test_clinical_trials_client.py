@@ -4,7 +4,6 @@ Tests for ClinicalTrials.gov API client.
 Target: clinical_trials.py coverage from 0% to 90%+
 """
 
-import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -121,7 +120,7 @@ class TestClinicalTrialsClientSearch:
         client = ClinicalTrialsClient()
         client._client = mock_httpx_client.return_value
         
-        results = client.search(
+        _results = client.search(
             "diabetes", 
             limit=10, 
             status=["RECRUITING", "COMPLETED"]

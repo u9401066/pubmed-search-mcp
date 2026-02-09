@@ -76,7 +76,6 @@ from pubmed_search.application.search.result_aggregator import (
 )
 from pubmed_search.application.search.semantic_enhancer import (
     EnhancedQuery,
-    SemanticEnhancer,
     get_semantic_enhancer,
 )
 from pubmed_search.domain.entities.article import UnifiedArticle

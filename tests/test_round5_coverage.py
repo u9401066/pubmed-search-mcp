@@ -7,10 +7,8 @@ NOTE: search_literature, expand_search_queries, search_europe_pmc are
       We test the underlying infrastructure and helper functions instead.
 """
 
-import json
 import time
-import pytest
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import MagicMock, patch
 import urllib.error
 
 

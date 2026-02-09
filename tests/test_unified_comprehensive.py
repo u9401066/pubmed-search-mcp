@@ -4,13 +4,11 @@ Additional comprehensive tests for unified search module.
 Target: unified.py coverage from 14% to 50%+
 """
 
-import json
-from unittest.mock import MagicMock, patch, Mock
+from unittest.mock import MagicMock, patch
 import pytest
 
 from pubmed_search.domain.entities.article import UnifiedArticle
 from pubmed_search.application.search.query_analyzer import (
-    AnalyzedQuery,
     QueryAnalyzer,
     QueryComplexity,
     QueryIntent,

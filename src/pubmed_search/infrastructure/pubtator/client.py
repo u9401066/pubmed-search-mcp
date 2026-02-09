@@ -346,7 +346,7 @@ class PubTatorClient:
         Returns:
             dict with annotated entities by type
         """
-        data = await self._request(f"publications/export/pubtator", {"pmids": pmid})
+        data = await self._request("publications/export/pubtator", {"pmids": pmid})
         if not data:
             return {}
             

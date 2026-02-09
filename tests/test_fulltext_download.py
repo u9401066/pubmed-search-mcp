@@ -1,6 +1,5 @@
 """Tests for FulltextDownloader."""
 
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -157,7 +156,7 @@ class TestGetPdfLinks:
              patch.object(d, "_get_arxiv_link", new_callable=AsyncMock) as mock_arxiv:
             mock_arxiv.return_value = PDFLink(url="https://arxiv.org/pdf/2301.00001.pdf", source=PDFSource.ARXIV)
             links = await d.get_pdf_links(doi="10.48550/arxiv.2301.00001")
-            assert any(l.source == PDFSource.ARXIV for l in links)
+            assert any(lnk.source == PDFSource.ARXIV for lnk in links)
 
     @pytest.mark.asyncio
     async def test_exception_in_task(self):
@@ -178,8 +177,8 @@ class TestGetPMCLinks:
         d = FulltextDownloader()
         links = await d._get_pmc_links(None, "PMC7096777")
         assert len(links) == 2
-        assert any("europepmc" in l.url for l in links)
-        assert any("ncbi.nlm.nih.gov" in l.url for l in links)
+        assert any("europepmc" in lnk.url for lnk in links)
+        assert any("ncbi.nlm.nih.gov" in lnk.url for lnk in links)
 
     @pytest.mark.asyncio
     async def test_pmcid_lowercase(self):
@@ -293,7 +292,7 @@ class TestDownloadPdf:
             mock_dl.return_value = DownloadResult(
                 success=True, content=b'%PDF-1.4', source=PDFSource.CORE
             )
-            result = await d.download_pdf(
+            _result = await d.download_pdf(
                 doi="10.1234/test", preferred_source=PDFSource.CORE
             )
             # CORE should be tried first

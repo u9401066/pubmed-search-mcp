@@ -4,7 +4,6 @@ Deep URL Format Validation for Fulltext Download Module
 This test validates that all URL formats are correct and sources are accessible.
 """
 
-import asyncio
 import pytest
 import httpx
 
@@ -212,7 +211,7 @@ class TestFulltextDownloader:
             assert len(links) > 0, "Should find at least one PDF link"
             
             # Should prioritize Europe PMC
-            sources = [l.source for l in links]
+            sources = [lnk.source for lnk in links]
             assert PDFSource.EUROPE_PMC in sources or PDFSource.PMC in sources
             
             # Print found links
@@ -259,7 +258,7 @@ class TestFulltextDownloader:
             links = await downloader.get_pdf_links(doi="10.48550/arXiv.2301.00001")
             
             # Should include arXiv source
-            arxiv_links = [l for l in links if l.source == PDFSource.ARXIV]
+            arxiv_links = [lnk for lnk in links if lnk.source == PDFSource.ARXIV]
             assert len(arxiv_links) > 0, "Should find arXiv link"
             
             # URL should be correct
@@ -282,7 +281,7 @@ class TestFulltextDownloader:
             links = await downloader.get_pdf_links(doi="10.1101/2024.01.15.575635")
             
             # Should include bioRxiv source
-            biorxiv_links = [l for l in links if l.source == PDFSource.BIORXIV]
+            biorxiv_links = [lnk for lnk in links if lnk.source == PDFSource.BIORXIV]
             assert len(biorxiv_links) > 0, "Should find bioRxiv link"
             
             # URL should include version

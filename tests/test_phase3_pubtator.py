@@ -9,7 +9,7 @@ Tests:
 """
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -27,8 +27,6 @@ from pubmed_search.application.search.result_aggregator import (
 )
 from pubmed_search.infrastructure.cache.entity_cache import (
     EntityCache,
-    CacheStats,
-    get_entity_cache,
     reset_entity_cache,
 )
 from pubmed_search.infrastructure.pubtator.models import (

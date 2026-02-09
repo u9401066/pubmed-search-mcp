@@ -40,12 +40,6 @@ class TestPackageImports:
             LiteratureSearcher,
             EntrezBase,
             SearchStrategy,
-            SearchMixin,
-            PDFMixin,
-            CitationMixin,
-            BatchMixin,
-            UtilsMixin,
-            ICiteMixin,
         )
         
         assert LiteratureSearcher is not None
@@ -136,7 +130,6 @@ class TestPackageImports:
     def test_query_analysis_imports(self):
         """Query analysis classes should be importable."""
         from pubmed_search import (
-            SearchStrategyGenerator,
             QueryAnalyzer,
             QueryComplexity,
             QueryIntent,
@@ -175,8 +168,6 @@ class TestInfrastructureImports:
             FulltextDownloader,
             PDFSource,
             PDFLink,
-            DownloadResult,
-            FulltextResult,
         )
         
         assert FulltextDownloader is not None
@@ -243,9 +234,6 @@ class TestApplicationImports:
         from pubmed_search import (
             export_ris,
             export_bibtex,
-            export_csv,
-            export_medline,
-            export_json,
         )
         
         assert callable(export_ris)

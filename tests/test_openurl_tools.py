@@ -1,6 +1,6 @@
 """Tests for openurl MCP tools — configure, link, presets, test."""
 
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 

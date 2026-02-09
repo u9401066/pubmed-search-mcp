@@ -31,7 +31,7 @@ except Exception as e:
     print(f'  Error: {e}')
 
 # Test 2: PubMed search timing
-print(f'\nTest 2: PubMed search timing')
+print('\nTest 2: PubMed search timing')
 print('-'*40)
 start = time.time()
 try:
@@ -45,7 +45,7 @@ except Exception as e:
     print(f'  Error: {e}')
 
 # Test 3: OpenAlex search timing
-print(f'\nTest 3: OpenAlex search timing')
+print('\nTest 3: OpenAlex search timing')
 print('-'*40)
 start = time.time()
 try:
@@ -59,7 +59,7 @@ except Exception as e:
     print(f'  Error: {e}')
 
 # Test 4: Semantic Scholar search timing
-print(f'\nTest 4: Semantic Scholar search timing')
+print('\nTest 4: Semantic Scholar search timing')
 print('-'*40)
 start = time.time()
 try:
@@ -72,5 +72,5 @@ try:
 except Exception as e:
     print(f'  Error: {e}')
 
-print(f'\n' + '='*60)
+print('\n' + '='*60)
 print('Done.')

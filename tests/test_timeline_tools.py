@@ -1,7 +1,7 @@
 """Tests for timeline MCP tools."""
 
 import json
-from unittest.mock import MagicMock, AsyncMock, patch, PropertyMock
+from unittest.mock import MagicMock, AsyncMock, patch
 
 import pytest
 
@@ -85,7 +85,7 @@ class TestBuildResearchTimeline:
             # Re-capture with mocked builder
             mcp = MagicMock()
             searcher = MagicMock()
-            tools2 = _capture_tools(mcp, searcher)
+            _tools2 = _capture_tools(mcp, searcher)
             # Tools use the builder created during registration, need to patch differently
 
         # Direct approach: patch the builder instance's method
@@ -186,7 +186,7 @@ class TestBuildTimelineFromPmids:
         searcher = MagicMock()
         with patch(
             "pubmed_search.presentation.mcp_server.tools.timeline.TimelineBuilder"
-        ) as MockTB, patch(
+        ) as _MockTB, patch(
             "pubmed_search.presentation.mcp_server.tools.timeline.MilestoneDetector"
         ):
             tools = _capture_tools(mcp, searcher)
@@ -347,7 +347,7 @@ class TestCompareTimelines:
         searcher = MagicMock()
         with patch(
             "pubmed_search.presentation.mcp_server.tools.timeline.TimelineBuilder"
-        ) as MockTB, patch(
+        ) as _MockTB, patch(
             "pubmed_search.presentation.mcp_server.tools.timeline.MilestoneDetector"
         ):
             tools = _capture_tools(mcp, searcher)
@@ -361,7 +361,7 @@ class TestCompareTimelines:
         searcher = MagicMock()
         with patch(
             "pubmed_search.presentation.mcp_server.tools.timeline.TimelineBuilder"
-        ) as MockTB, patch(
+        ) as _MockTB, patch(
             "pubmed_search.presentation.mcp_server.tools.timeline.MilestoneDetector"
         ):
             tools = _capture_tools(mcp, searcher)

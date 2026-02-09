@@ -8,8 +8,7 @@ Focused on filling coverage gaps in:
 """
 
 import pytest
-from unittest.mock import Mock, MagicMock, patch, AsyncMock
-import asyncio
+from unittest.mock import Mock, patch, AsyncMock
 
 
 # ===========================================================================
@@ -67,7 +66,7 @@ class TestFulltextDownloaderDownloadPdf:
     async def test_download_pdf_no_links(self):
         """Test download_pdf with no links found."""
         from pubmed_search.infrastructure.sources.fulltext_download import (
-            FulltextDownloader, DownloadResult
+            FulltextDownloader
         )
         
         downloader = FulltextDownloader()
@@ -142,7 +141,7 @@ class TestFulltextDownloaderGetFulltext:
     async def test_get_fulltext_try_all_with_pmcid(self):
         """Test get_fulltext try_all strategy with PMCID."""
         from pubmed_search.infrastructure.sources.fulltext_download import (
-            FulltextDownloader, PDFSource
+            FulltextDownloader
         )
         
         downloader = FulltextDownloader()
@@ -197,8 +196,8 @@ class TestGetPMCLinks:
         links = await downloader._get_pmc_links(None, "PMC1234567")
         
         assert len(links) == 2
-        assert any(l.source == PDFSource.EUROPE_PMC for l in links)
-        assert any(l.source == PDFSource.PMC for l in links)
+        assert any(lnk.source == PDFSource.EUROPE_PMC for lnk in links)
+        assert any(lnk.source == PDFSource.PMC for lnk in links)
 
 
 class TestGetUnpaywallLinks:
@@ -343,7 +342,7 @@ class TestGetPreprintLink:
         
         downloader = FulltextDownloader()
         
-        link = await downloader._get_preprint_link("https://doi.org/10.1101/medrxiv.2024.01.01")
+        _link = await downloader._get_preprint_link("https://doi.org/10.1101/medrxiv.2024.01.01")
         
         # May or may not match depending on pattern
         # This tests the branching logic
@@ -356,7 +355,6 @@ class TestGetCrossRefLinks:
     async def test_crossref_pdf_link(self):
         """Test CrossRef with PDF link."""
         from pubmed_search.infrastructure.sources.fulltext_download import FulltextDownloader
-        import httpx
         
         downloader = FulltextDownloader()
         

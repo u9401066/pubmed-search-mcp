@@ -35,7 +35,6 @@ from pubmed_search.infrastructure.pubtator import (
     PubTatorClient,
     get_pubtator_client,
     PubTatorEntity,
-    EntityMatch,
 )
 from pubmed_search.infrastructure.cache import get_entity_cache
 

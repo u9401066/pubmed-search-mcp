@@ -2,7 +2,6 @@
 
 from datetime import date
 
-import pytest
 
 from pubmed_search.domain.entities.article import (
     ArticleType,

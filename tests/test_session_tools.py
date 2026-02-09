@@ -3,7 +3,6 @@
 import json
 from unittest.mock import MagicMock
 
-import pytest
 
 from pubmed_search.presentation.mcp_server.session_tools import (
     register_session_resources,

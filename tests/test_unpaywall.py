@@ -7,7 +7,6 @@ import pytest
 
 from pubmed_search.infrastructure.sources.unpaywall import (
     UnpaywallClient,
-    get_unpaywall_client,
     find_oa_link,
     find_pdf_link,
     is_open_access,

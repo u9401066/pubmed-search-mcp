@@ -5,10 +5,7 @@ Target: article.py coverage from 28% to 90%+
 Tests: Author, OpenAccessLink, CitationMetrics, SourceMetadata, UnifiedArticle
 """
 
-from datetime import date
-from unittest.mock import MagicMock
 
-import pytest
 
 from pubmed_search.domain.entities.article import (
     ArticleType,

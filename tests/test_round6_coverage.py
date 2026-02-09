@@ -9,8 +9,7 @@ Focused on filling coverage gaps in:
 """
 
 import pytest
-from unittest.mock import Mock, MagicMock, patch, AsyncMock
-import asyncio
+from unittest.mock import Mock, patch
 import json
 
 
@@ -721,7 +720,7 @@ class TestQueryAnalyzerExtended:
 
     def test_recommend_strategies_comparison(self):
         """Test strategy recommendations for comparison."""
-        from pubmed_search.application.search.query_analyzer import QueryAnalyzer, QueryIntent
+        from pubmed_search.application.search.query_analyzer import QueryAnalyzer
         
         analyzer = QueryAnalyzer()
         result = analyzer.analyze("drug A versus drug B")

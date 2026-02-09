@@ -5,13 +5,11 @@ Target: copilot_tools.py and _common.py coverage from 0% to 90%+
 """
 
 import json
-import re
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from pubmed_search.presentation.mcp_server.tools._common import (
-    KEY_ALIASES,
     InputNormalizer,
     ResponseFormatter,
     apply_key_aliases,
