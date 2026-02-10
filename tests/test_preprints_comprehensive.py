@@ -1,6 +1,6 @@
 """Comprehensive tests for PreprintSearcher, ArXivClient, MedBioRxivClient."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 
 from pubmed_search.infrastructure.sources.preprints import (
@@ -85,9 +85,10 @@ class TestPreprintArticleExtended:
 # ============================================================
 
 class TestArXivClientExtended:
-    @patch("httpx.Client")
+    @patch("httpx.AsyncClient")
     async def test_search_with_atom_response(self, MockClient):
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
+        mock_client.is_closed = False
         MockClient.return_value = mock_client
 
         xml_response = """<?xml version="1.0" encoding="UTF-8"?>
@@ -114,7 +115,7 @@ class TestArXivClientExtended:
 
         client = ArXivClient()
         client._client = mock_client
-        results = client.search("deep learning", limit=10)
+        results = await client.search("deep learning", limit=10)
 
         assert len(results) == 1
         assert results[0].title == "Test Paper Title"
@@ -122,9 +123,10 @@ class TestArXivClientExtended:
         assert len(results[0].authors) == 2
         assert results[0].doi == "10.48550/arXiv.2301.00001"
 
-    @patch("httpx.Client")
+    @patch("httpx.AsyncClient")
     async def test_search_empty_result(self, MockClient):
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
+        mock_client.is_closed = False
         MockClient.return_value = mock_client
         mock_response = MagicMock()
         mock_response.text = '<feed xmlns="http://www.w3.org/2005/Atom"></feed>'
@@ -133,23 +135,25 @@ class TestArXivClientExtended:
 
         client = ArXivClient()
         client._client = mock_client
-        results = client.search("nonexistent topic xyz")
+        results = await client.search("nonexistent topic xyz")
         assert results == []
 
-    @patch("httpx.Client")
+    @patch("httpx.AsyncClient")
     async def test_search_exception(self, MockClient):
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
+        mock_client.is_closed = False
         MockClient.return_value = mock_client
         mock_client.get.side_effect = Exception("network error")
 
         client = ArXivClient()
         client._client = mock_client
-        results = client.search("test")
+        results = await client.search("test")
         assert results == []
 
-    @patch("httpx.Client")
+    @patch("httpx.AsyncClient")
     async def test_get_by_id(self, MockClient):
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
+        mock_client.is_closed = False
         MockClient.return_value = mock_client
 
         xml_response = """<?xml version="1.0" encoding="UTF-8"?>
@@ -169,13 +173,14 @@ class TestArXivClientExtended:
 
         client = ArXivClient()
         client._client = mock_client
-        result = client.get_by_id("2301.00001")
+        result = await client.get_by_id("2301.00001")
         assert result is not None
         assert result.title == "Found Paper"
 
-    @patch("httpx.Client")
+    @patch("httpx.AsyncClient")
     async def test_get_by_id_not_found(self, MockClient):
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
+        mock_client.is_closed = False
         MockClient.return_value = mock_client
         mock_response = MagicMock()
         mock_response.text = '<feed xmlns="http://www.w3.org/2005/Atom"></feed>'
@@ -184,17 +189,18 @@ class TestArXivClientExtended:
 
         client = ArXivClient()
         client._client = mock_client
-        assert client.get_by_id("9999.99999") is None
+        assert await client.get_by_id("9999.99999") is None
 
-    @patch("httpx.Client")
+    @patch("httpx.AsyncClient")
     async def test_get_by_id_error(self, MockClient):
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
+        mock_client.is_closed = False
         MockClient.return_value = mock_client
         mock_client.get.side_effect = Exception("error")
 
         client = ArXivClient()
         client._client = mock_client
-        assert client.get_by_id("2301.00001") is None
+        assert await client.get_by_id("2301.00001") is None
 
 
 # ============================================================
@@ -202,9 +208,10 @@ class TestArXivClientExtended:
 # ============================================================
 
 class TestMedBioRxivClientExtended:
-    @patch("httpx.Client")
+    @patch("httpx.AsyncClient")
     async def test_search_medrxiv_success(self, MockClient):
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
+        mock_client.is_closed = False
         MockClient.return_value = mock_client
 
         mock_response = MagicMock()
@@ -223,14 +230,15 @@ class TestMedBioRxivClientExtended:
 
         client = MedBioRxivClient()
         client._client = mock_client
-        results = client.search_medrxiv("COVID-19 treatment")
+        results = await client.search_medrxiv("COVID-19 treatment")
 
         assert len(results) == 1
         assert results[0].source == "medrxiv"
 
-    @patch("httpx.Client")
+    @patch("httpx.AsyncClient")
     async def test_search_biorxiv_success(self, MockClient):
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
+        mock_client.is_closed = False
         MockClient.return_value = mock_client
 
         mock_response = MagicMock()
@@ -249,14 +257,15 @@ class TestMedBioRxivClientExtended:
 
         client = MedBioRxivClient()
         client._client = mock_client
-        results = client.search_biorxiv("CRISPR gene editing")
+        results = await client.search_biorxiv("CRISPR gene editing")
 
         assert len(results) == 1
         assert results[0].source == "biorxiv"
 
-    @patch("httpx.Client")
+    @patch("httpx.AsyncClient")
     async def test_filter_by_query_terms(self, MockClient):
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
+        mock_client.is_closed = False
         MockClient.return_value = mock_client
 
         mock_response = MagicMock()
@@ -271,23 +280,25 @@ class TestMedBioRxivClientExtended:
 
         client = MedBioRxivClient()
         client._client = mock_client
-        results = client.search_medrxiv("COVID")
+        results = await client.search_medrxiv("COVID")
         assert len(results) == 1
 
-    @patch("httpx.Client")
+    @patch("httpx.AsyncClient")
     async def test_search_error(self, MockClient):
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
+        mock_client.is_closed = False
         MockClient.return_value = mock_client
         mock_client.get.side_effect = Exception("network error")
 
         client = MedBioRxivClient()
         client._client = mock_client
-        results = client.search_medrxiv("test")
+        results = await client.search_medrxiv("test")
         assert results == []
 
-    @patch("httpx.Client")
+    @patch("httpx.AsyncClient")
     async def test_limit_applied(self, MockClient):
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
+        mock_client.is_closed = False
         MockClient.return_value = mock_client
 
         articles = [
@@ -303,7 +314,7 @@ class TestMedBioRxivClientExtended:
 
         client = MedBioRxivClient()
         client._client = mock_client
-        results = client.search_medrxiv("test", limit=5)
+        results = await client.search_medrxiv("test", limit=5)
         assert len(results) <= 5
 
 
@@ -312,9 +323,9 @@ class TestMedBioRxivClientExtended:
 # ============================================================
 
 class TestPreprintSearcherExtended:
-    @patch.object(ArXivClient, "search")
-    @patch.object(MedBioRxivClient, "search_medrxiv")
-    @patch.object(MedBioRxivClient, "search_biorxiv")
+    @patch.object(ArXivClient, "search", new_callable=AsyncMock)
+    @patch.object(MedBioRxivClient, "search_medrxiv", new_callable=AsyncMock)
+    @patch.object(MedBioRxivClient, "search_biorxiv", new_callable=AsyncMock)
     async def test_search_all_sources(self, mock_bio, mock_med, mock_arxiv):
         mock_arxiv.return_value = [
             PreprintArticle(id="1", title="arXiv paper", abstract="",
@@ -329,30 +340,30 @@ class TestPreprintSearcherExtended:
         mock_bio.return_value = []
 
         searcher = PreprintSearcher()
-        result = searcher.search("deep learning")
+        result = await searcher.search("deep learning")
         assert result["total"] == 2
         assert "arxiv" in result["by_source"]
         assert "medrxiv" in result["by_source"]
         assert "biorxiv" in result["by_source"]
 
-    @patch.object(ArXivClient, "search")
+    @patch.object(ArXivClient, "search", new_callable=AsyncMock)
     async def test_search_specific_sources(self, mock_arxiv):
         mock_arxiv.return_value = []
         searcher = PreprintSearcher()
-        result = searcher.search("test", sources=["arxiv"])
+        result = await searcher.search("test", sources=["arxiv"])
         assert "arxiv" in result["by_source"]
         assert "medrxiv" not in result["by_source"]
 
-    @patch.object(MedBioRxivClient, "search_medrxiv")
-    @patch.object(ArXivClient, "search")
+    @patch.object(MedBioRxivClient, "search_medrxiv", new_callable=AsyncMock)
+    @patch.object(ArXivClient, "search", new_callable=AsyncMock)
     async def test_search_medical_preprints(self, mock_arxiv, mock_med):
         mock_arxiv.return_value = []
         mock_med.return_value = []
         searcher = PreprintSearcher()
-        result = searcher.search_medical_preprints("COVID-19")
+        result = await searcher.search_medical_preprints("COVID-19")
         assert result["total"] == 0
 
-    @patch.object(ArXivClient, "get_by_id")
+    @patch.object(ArXivClient, "get_by_id", new_callable=AsyncMock)
     async def test_get_arxiv_paper_found(self, mock_get):
         mock_get.return_value = PreprintArticle(
             id="2301.00001", title="Found", abstract="",
@@ -360,11 +371,11 @@ class TestPreprintSearcherExtended:
             source="arxiv", categories=[], pdf_url=None, doi=None,
         )
         searcher = PreprintSearcher()
-        result = searcher.get_arxiv_paper("2301.00001")
+        result = await searcher.get_arxiv_paper("2301.00001")
         assert result["title"] == "Found"
 
-    @patch.object(ArXivClient, "get_by_id")
+    @patch.object(ArXivClient, "get_by_id", new_callable=AsyncMock)
     async def test_get_arxiv_paper_not_found(self, mock_get):
         mock_get.return_value = None
         searcher = PreprintSearcher()
-        assert searcher.get_arxiv_paper("9999.99999") is None
+        assert await searcher.get_arxiv_paper("9999.99999") is None

@@ -5,6 +5,8 @@ Tests for Entrez modules - citation, icite, batch, pdf.
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 
+from pubmed_search.infrastructure.ncbi.base import EntrezBase
+
 
 class TestCitationMixin:
     """Tests for CitationMixin methods."""
@@ -27,7 +29,7 @@ class TestCitationMixin:
         """Test getting related articles successfully."""
         from pubmed_search.infrastructure.ncbi.citation import CitationMixin
 
-        class TestSearcher(CitationMixin):
+        class TestSearcher(CitationMixin, EntrezBase):
             async def fetch_details(self, pmids):
                 return [{"pmid": pmid, "title": f"Article {pmid}"} for pmid in pmids]
 
@@ -53,7 +55,7 @@ class TestCitationMixin:
         """Test getting related articles when none exist."""
         from pubmed_search.infrastructure.ncbi.citation import CitationMixin
 
-        class TestSearcher(CitationMixin):
+        class TestSearcher(CitationMixin, EntrezBase):
             async def fetch_details(self, pmids):
                 return []
 
@@ -77,7 +79,7 @@ class TestCitationMixin:
         """Test getting related articles with error."""
         from pubmed_search.infrastructure.ncbi.citation import CitationMixin
 
-        class TestSearcher(CitationMixin):
+        class TestSearcher(CitationMixin, EntrezBase):
             async def fetch_details(self, pmids):
                 return []
 
@@ -96,7 +98,7 @@ class TestCitationMixin:
         """Test getting citing articles successfully."""
         from pubmed_search.infrastructure.ncbi.citation import CitationMixin
 
-        class TestSearcher(CitationMixin):
+        class TestSearcher(CitationMixin, EntrezBase):
             async def fetch_details(self, pmids):
                 return [{"pmid": pmid, "title": f"Article {pmid}"} for pmid in pmids]
 
@@ -130,7 +132,7 @@ class TestCitationMixin:
         """Test getting article references successfully."""
         from pubmed_search.infrastructure.ncbi.citation import CitationMixin
 
-        class TestSearcher(CitationMixin):
+        class TestSearcher(CitationMixin, EntrezBase):
             async def fetch_details(self, pmids):
                 return [{"pmid": pmid, "title": f"Ref {pmid}"} for pmid in pmids]
 
@@ -164,7 +166,7 @@ class TestCitationMixin:
         """Test that alias methods work."""
         from pubmed_search.infrastructure.ncbi.citation import CitationMixin
 
-        class TestSearcher(CitationMixin):
+        class TestSearcher(CitationMixin, EntrezBase):
             async def fetch_details(self, pmids):
                 return []
 

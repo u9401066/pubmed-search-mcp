@@ -34,7 +34,7 @@ class CitationMixin:
             List of related article details.
         """
         try:
-            handle = await asyncio.to_thread(
+            handle = await self._rate_limited_call(
                 Entrez.elink,
                 dbfrom="pubmed",
                 db="pubmed",
@@ -72,7 +72,7 @@ class CitationMixin:
             List of citing article details.
         """
         try:
-            handle = await asyncio.to_thread(
+            handle = await self._rate_limited_call(
                 Entrez.elink,
                 dbfrom="pubmed",
                 db="pubmed",
@@ -110,7 +110,7 @@ class CitationMixin:
             List of referenced article details.
         """
         try:
-            handle = await asyncio.to_thread(
+            handle = await self._rate_limited_call(
                 Entrez.elink,
                 dbfrom="pubmed",
                 db="pubmed",

@@ -30,6 +30,14 @@ class ICiteMixin:
         enrich_with_citations: Add citation metrics to search results
     """
 
+    _icite_client: httpx.AsyncClient | None = None
+
+    async def _get_icite_client(self) -> httpx.AsyncClient:
+        """Get or create a reusable httpx.AsyncClient for iCite."""
+        if self._icite_client is None or self._icite_client.is_closed:
+            self._icite_client = httpx.AsyncClient(timeout=30.0)
+        return self._icite_client
+
     async def get_citation_metrics(
         self, pmids: List[str], fields: Optional[List[str]] = None
     ) -> Dict[str, Dict[str, Any]]:
@@ -84,8 +92,8 @@ class ICiteMixin:
         try:
             params = {"pmids": ",".join(str(p) for p in pmids), "fl": ",".join(fields)}
 
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.get(ICITE_API_BASE, params=params)
+            client = await self._get_icite_client()
+            response = await client.get(ICITE_API_BASE, params=params)
             response.raise_for_status()
 
             data = response.json()

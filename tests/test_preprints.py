@@ -16,7 +16,7 @@ class TestArXivClient:
     async def test_arxiv_search_basic(self):
         """Test basic arXiv search."""
         client = ArXivClient(timeout=30.0)
-        results = client.search("machine learning healthcare", limit=3)
+        results = await client.search("machine learning healthcare", limit=3)
 
         # Should return list (may be empty if API issues)
         assert isinstance(results, list)
@@ -31,7 +31,7 @@ class TestArXivClient:
     async def test_arxiv_search_with_categories(self):
         """Test arXiv search with category filter."""
         client = ArXivClient(timeout=30.0)
-        results = client.search(
+        results = await client.search(
             "neural network", limit=3, categories=["q-bio", "cs.AI"]
         )
 
@@ -67,7 +67,7 @@ class TestPreprintSearcher:
     async def test_search_all_sources(self):
         """Test searching across all preprint sources."""
         searcher = PreprintSearcher()
-        results = searcher.search(
+        results = await searcher.search(
             query="COVID-19 vaccine",
             sources=["arxiv"],  # Just arXiv for faster test
             limit=3,
@@ -82,7 +82,7 @@ class TestPreprintSearcher:
     async def test_search_medical_preprints(self):
         """Test convenience method for medical preprints."""
         searcher = PreprintSearcher()
-        results = searcher.search_medical_preprints(
+        results = await searcher.search_medical_preprints(
             query="anesthesia",
             limit=3,
         )

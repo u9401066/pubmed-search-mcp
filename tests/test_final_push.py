@@ -212,9 +212,10 @@ class TestDiscoveryRemainingPaths:
     async def test_find_citing_method(self):
         """Test find_citing_articles directly."""
         from pubmed_search.infrastructure.ncbi.citation import CitationMixin
+        from pubmed_search.infrastructure.ncbi.base import EntrezBase
 
-        class TestSearcher(CitationMixin):
-            def fetch_details(self, pmids):
+        class TestSearcher(CitationMixin, EntrezBase):
+            async def fetch_details(self, pmids):
                 return [{"pmid": p} for p in pmids]
 
         searcher = TestSearcher()

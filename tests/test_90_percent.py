@@ -124,9 +124,10 @@ class TestDiscoveryMissingLines:
     async def test_find_related_no_results(self):
         """Test find_related with no results."""
         from pubmed_search.infrastructure.ncbi.citation import CitationMixin
+        from pubmed_search.infrastructure.ncbi.base import EntrezBase
 
-        class TestSearcher(CitationMixin):
-            def fetch_details(self, pmids):
+        class TestSearcher(CitationMixin, EntrezBase):
+            async def fetch_details(self, pmids):
                 return []
 
         searcher = TestSearcher()
@@ -379,9 +380,10 @@ class TestCitationMissingLines:
     async def test_citation_no_linksetdb(self):
         """Test citation when LinkSetDb is empty."""
         from pubmed_search.infrastructure.ncbi.citation import CitationMixin
+        from pubmed_search.infrastructure.ncbi.base import EntrezBase
 
-        class TestSearcher(CitationMixin):
-            def fetch_details(self, pmids):
+        class TestSearcher(CitationMixin, EntrezBase):
+            async def fetch_details(self, pmids):
                 return []
 
         searcher = TestSearcher()

@@ -26,7 +26,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
-from pubmed_search.mcp_server.server import DEFAULT_EMAIL
+from pubmed_search.presentation.mcp_server.server import DEFAULT_EMAIL
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -51,9 +51,9 @@ def create_copilot_server(
     """
     from mcp.server.fastmcp import FastMCP
     from mcp.server.transport_security import TransportSecuritySettings
-    from pubmed_search.entrez import LiteratureSearcher
-    from pubmed_search.session import SessionManager
-    from pubmed_search.mcp_server.tools._common import (
+    from pubmed_search.infrastructure.ncbi import LiteratureSearcher
+    from pubmed_search.application.session import SessionManager
+    from pubmed_search.presentation.mcp_server.tools._common import (
         set_session_manager,
         set_strategy_generator,
     )
@@ -63,7 +63,7 @@ def create_copilot_server(
     # Initialize core components
     searcher = LiteratureSearcher(email=email, api_key=api_key)
 
-    from pubmed_search.entrez.strategy import SearchStrategyGenerator
+    from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
 
     strategy_generator = SearchStrategyGenerator(email=email, api_key=api_key)
 
@@ -101,8 +101,8 @@ Available tools:
     # Register tools
     if use_full_tools:
         logger.warning("Using FULL tool set - may have schema compatibility issues!")
-        from pubmed_search.mcp_server.tools import register_all_tools
-        from pubmed_search.mcp_server.session_tools import (
+        from pubmed_search.presentation.mcp_server.tools import register_all_tools
+        from pubmed_search.presentation.mcp_server.session_tools import (
             register_session_tools,
             register_session_resources,
         )
@@ -112,7 +112,7 @@ Available tools:
         register_session_resources(mcp, session_manager)
     else:
         logger.info("Using SIMPLIFIED Copilot-compatible tool set")
-        from pubmed_search.mcp_server.copilot_tools import (
+        from pubmed_search.presentation.mcp_server.copilot_tools import (
             register_copilot_compatible_tools,
         )
 

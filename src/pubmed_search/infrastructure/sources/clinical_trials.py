@@ -41,19 +41,19 @@ class ClinicalTrialsClient:
             timeout: Request timeout in seconds
         """
         self.timeout = timeout
-        self._client: httpx.Client | None = None
+        self._client: httpx.AsyncClient | None = None
 
     @property
-    def client(self) -> httpx.Client:
+    def client(self) -> httpx.AsyncClient:
         """Lazy-init HTTP client."""
-        if self._client is None:
-            self._client = httpx.Client(
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(
                 timeout=self.timeout,
                 headers={"Accept": "application/json"},
             )
         return self._client
 
-    def search(
+    async def search(
         self,
         query: str,
         limit: int = 5,
@@ -91,7 +91,7 @@ class ClinicalTrialsClient:
             if status:
                 params["filter.overallStatus"] = ",".join(status)
 
-            response = self.client.get(f"{BASE_URL}/studies", params=params)
+            response = await self.client.get(f"{BASE_URL}/studies", params=params)
             response.raise_for_status()
 
             data = response.json()
@@ -158,7 +158,7 @@ class ClinicalTrialsClient:
             .get("name", ""),
         }
 
-    def get_study(self, nct_id: str) -> dict[str, Any] | None:
+    async def get_study(self, nct_id: str) -> dict[str, Any] | None:
         """
         Get a specific study by NCT ID.
 
@@ -174,7 +174,7 @@ class ClinicalTrialsClient:
             if not nct_id.startswith("NCT"):
                 nct_id = f"NCT{nct_id}"
 
-            response = self.client.get(f"{BASE_URL}/studies/{nct_id}")
+            response = await self.client.get(f"{BASE_URL}/studies/{nct_id}")
 
             if response.status_code == 404:
                 return None
@@ -186,17 +186,17 @@ class ClinicalTrialsClient:
             logger.warning(f"Failed to get study {nct_id}: {e}")
             return None
 
-    def close(self):
+    async def close(self):
         """Close HTTP client."""
         if self._client:
-            self._client.close()
+            await self._client.aclose()
             self._client = None
 
-    def __enter__(self):
+    async def __aenter__(self):
         return self
 
-    def __exit__(self, *args):
-        self.close()
+    async def __aexit__(self, *args):
+        await self.close()
 
 
 def format_trials_section(trials: list[dict], max_display: int = 3) -> str:
@@ -263,7 +263,7 @@ def get_clinical_trials_client() -> ClinicalTrialsClient:
     return _client
 
 
-def search_related_trials(
+async def search_related_trials(
     query: str,
     limit: int = 5,
     recruiting_only: bool = False,
@@ -281,4 +281,4 @@ def search_related_trials(
     """
     client = get_clinical_trials_client()
     status = ["RECRUITING", "NOT_YET_RECRUITING"] if recruiting_only else None
-    return client.search(query, limit=limit, status=status)
+    return await client.search(query, limit=limit, status=status)

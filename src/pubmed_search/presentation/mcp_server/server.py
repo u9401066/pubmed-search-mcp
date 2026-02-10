@@ -16,6 +16,7 @@ Architecture:
 - tools/: Individual tool implementations by category
 """
 
+import asyncio
 import logging
 import os
 import sys
@@ -127,6 +128,9 @@ def start_http_api_background(session_manager, searcher, port: int = 8765):
     import threading
     from http.server import BaseHTTPRequestHandler, HTTPServer
 
+    # Create a dedicated event loop for the background thread
+    _bg_loop = asyncio.new_event_loop()
+
     class MCPAPIHandler(BaseHTTPRequestHandler):
         """Simple HTTP handler for MCP-to-MCP API."""
 
@@ -164,10 +168,12 @@ def start_http_api_background(session_manager, searcher, port: int = 8765):
                     )
                     return
 
-                # Try to fetch if not in cache
+                # Try to fetch if not in cache (async → sync bridge)
                 if searcher:
                     try:
-                        articles = searcher.fetch_details([pmid])
+                        articles = _bg_loop.run_until_complete(
+                            searcher.fetch_details([pmid])
+                        )
                         if articles:
                             session_manager.add_to_cache(articles)
                             self._send_json(

@@ -646,7 +646,7 @@ async def _enrich_with_api_similarity(
 # ============================================================================
 
 
-def _format_unified_results(
+async def _format_unified_results(
     articles: list[UnifiedArticle],
     analysis: AnalyzedQuery,
     stats: AggregationStats,
@@ -849,7 +849,7 @@ def _format_unified_results(
 
             # Get first few words of query for trial search
             trial_query = " ".join(original_query.split()[:5])
-            trials = search_related_trials(trial_query, limit=3)
+            trials = await search_related_trials(trial_query, limit=3)
             if trials:
                 output_parts.append(format_trials_section(trials, max_display=3))
         except Exception as e:
@@ -1183,8 +1183,7 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                         if "[MeSH]" in query
                         else query
                     )
-                    preprint_results = await asyncio.to_thread(
-                        preprint_searcher.search_medical_preprints,
+                    preprint_results = await preprint_searcher.search_medical_preprints(
                         query=preprint_query,
                         limit=min(limit, 10),
                     )
@@ -1231,7 +1230,7 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             if output_format == "json":
                 return _format_as_json(ranked, analysis, stats)
             else:
-                return _format_unified_results(
+                return await _format_unified_results(
                     ranked,
                     analysis,
                     stats,

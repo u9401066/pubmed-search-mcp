@@ -125,7 +125,7 @@ class PubMedClient:
         """Get the underlying LiteratureSearcher for advanced operations."""
         return self._searcher
 
-    def search(
+    async def search(
         self,
         query: str,
         limit: int = 5,
@@ -154,7 +154,7 @@ class PubMedClient:
         Returns:
             List of SearchResult objects.
         """
-        results = self._searcher.search(
+        results = await self._searcher.search(
             query=query,
             limit=limit,
             min_year=min_year,
@@ -168,7 +168,7 @@ class PubMedClient:
 
         return [SearchResult.from_dict(r) for r in results if "error" not in r]
 
-    def search_raw(
+    async def search_raw(
         self,
         query: str,
         limit: int = 5,
@@ -186,7 +186,7 @@ class PubMedClient:
         Same as search() but returns dicts instead of SearchResult objects.
         Useful for JSON serialization.
         """
-        return self._searcher.search(
+        return await self._searcher.search(
             query=query,
             limit=limit,
             min_year=min_year,
@@ -198,7 +198,7 @@ class PubMedClient:
             date_type=date_type,
         )
 
-    def fetch_by_pmid(self, pmid: str) -> SearchResult | None:
+    async def fetch_by_pmid(self, pmid: str) -> SearchResult | None:
         """
         Fetch article details by PMID.
 
@@ -208,12 +208,12 @@ class PubMedClient:
         Returns:
             SearchResult or None if not found.
         """
-        results = self._searcher.fetch_details([pmid])
+        results = await self._searcher.fetch_details([pmid])
         if results and "error" not in results[0]:
             return SearchResult.from_dict(results[0])
         return None
 
-    def fetch_by_pmids(self, pmids: list[str]) -> list[SearchResult]:
+    async def fetch_by_pmids(self, pmids: list[str]) -> list[SearchResult]:
         """
         Fetch details for multiple PMIDs.
 
@@ -223,16 +223,16 @@ class PubMedClient:
         Returns:
             List of SearchResult objects.
         """
-        results = self._searcher.fetch_details(pmids)
+        results = await self._searcher.fetch_details(pmids)
         return [SearchResult.from_dict(r) for r in results if "error" not in r]
 
-    def fetch_by_pmids_raw(self, pmids: list[str]) -> list[dict[str, Any]]:
+    async def fetch_by_pmids_raw(self, pmids: list[str]) -> list[dict[str, Any]]:
         """
         Fetch details for multiple PMIDs and return raw dictionaries.
         """
-        return self._searcher.fetch_details(pmids)
+        return await self._searcher.fetch_details(pmids)
 
-    def fetch_details(self, pmids: list[str]) -> list[dict[str, Any]]:
+    async def fetch_details(self, pmids: list[str]) -> list[dict[str, Any]]:
         """
         Fetch details for multiple PMIDs (returns dicts).
 
@@ -245,9 +245,9 @@ class PubMedClient:
         Returns:
             List of article dictionaries.
         """
-        return self._searcher.fetch_details(pmids)
+        return await self._searcher.fetch_details(pmids)
 
-    def find_related(self, pmid: str, limit: int = 5) -> list[SearchResult]:
+    async def find_related(self, pmid: str, limit: int = 5) -> list[SearchResult]:
         """
         Find related articles.
 
@@ -258,10 +258,10 @@ class PubMedClient:
         Returns:
             List of related articles.
         """
-        results = self._searcher.find_related_articles(pmid, limit=limit)
+        results = await self._searcher.find_related_articles(pmid, limit=limit)
         return [SearchResult.from_dict(r) for r in results if "error" not in r]
 
-    def find_citing(self, pmid: str, limit: int = 10) -> list[SearchResult]:
+    async def find_citing(self, pmid: str, limit: int = 10) -> list[SearchResult]:
         """
         Find articles that cite this one.
 
@@ -272,10 +272,10 @@ class PubMedClient:
         Returns:
             List of citing articles.
         """
-        results = self._searcher.find_citing_articles(pmid, limit=limit)
+        results = await self._searcher.find_citing_articles(pmid, limit=limit)
         return [SearchResult.from_dict(r) for r in results if "error" not in r]
 
-    def download_pdf(self, pmid: str, output_path: str | None = None) -> bytes | None:
+    async def download_pdf(self, pmid: str, output_path: str | None = None) -> bytes | None:
         """
         Download PDF if available from PMC.
 
@@ -286,9 +286,9 @@ class PubMedClient:
         Returns:
             PDF content as bytes or None.
         """
-        return self._searcher.download_pdf(pmid, output_path)
+        return await self._searcher.download_pdf(pmid, output_path)
 
-    def get_pmc_url(self, pmid: str) -> str | None:
+    async def get_pmc_url(self, pmid: str) -> str | None:
         """
         Get PMC full text URL if available.
 
@@ -298,4 +298,4 @@ class PubMedClient:
         Returns:
             URL to PMC full text, or None.
         """
-        return self._searcher.get_pmc_fulltext_url(pmid)
+        return await self._searcher.get_pmc_fulltext_url(pmid)

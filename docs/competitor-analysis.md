@@ -2,7 +2,7 @@
 
 > **文件性質**: 內部參考  
 > **目的**: 收集其他專案的亮點功能，供未來擴展參考  
-> **最後更新**: 2024-12-04  
+> **最後更新**: 2026-02-10  
 > **維護者**: Eric
 
 ---
@@ -21,7 +21,7 @@
 
 | # | 專案名稱 | GitHub | 特色定位 |
 |---|---------|--------|----------|
-| 1 | paper-search-mcp | [openags/paper-search-mcp](https://github.com/openags/paper-search-mcp) | 多來源瑞士刀 (8 個資料庫) |
+| 1 | paper-search-mcp | [openags/paper-search-mcp](https://github.com/openags/paper-search-mcp) | 多來源瑞士刀 (8 個資料庫) ⭐643 |
 | 2 | semantic-scholar-fastmcp-mcp-server | [zongmin-yu](https://github.com/zongmin-yu/semantic-scholar-fastmcp-mcp-server) | 引用分析 + 推薦系統 |
 | 3 | google-scholar-mcp | [mochow13](https://github.com/mochow13/google-scholar-mcp) | Google Scholar 爬蟲 (TypeScript) + Gemini 整合 |
 | 4 | **JackKuo666 系列** | [JackKuo666](https://github.com/JackKuo666) | 生醫領域 MCP 專家 (15+ 專案) |
@@ -33,9 +33,11 @@
 | 10 | **zotero-mcp** ⭐⭐ | [54yyyu/zotero-mcp](https://github.com/54yyyu/zotero-mcp) | Zotero 語義搜尋 + Embeddings + PDF 註釋 (751 stars) |
 | 11 | **pubmearch** | [Darkroaster/pubmearch](https://github.com/Darkroaster/pubmearch) | PubMed 熱點分析 + 趨勢追蹤 + 發文統計 (142 stars) |
 | 12 | **mcp-simple-pubmed** | [andybrandt/mcp-simple-pubmed](https://github.com/andybrandt/mcp-simple-pubmed) | PubMed 輕量 + 全文取得 + Smithery (142 stars) |
-| 13 | **BioMCP** ⭐⭐⭐ | [genomoncology/biomcp](https://github.com/genomoncology/biomcp) | 生醫全局 (24 Tools + 10 數據源 + 統一查詢語言) (367 stars) |
-| 14 | **pubmedmcp** | [grll/pubmedmcp](https://github.com/grll/pubmedmcp) | PubMed 極簡 + uvx 一鍵運行 (84 stars) |
-| 15 | **pubmed-mcp-server** ⭐ | [cyanheads/pubmed-mcp-server](https://github.com/cyanheads/pubmed-mcp-server) | PubMed TypeScript + 圖表生成 + HTTP (36 stars) |
+| 13 | **BioMCP** ⭐⭐⭐ | [genomoncology/biomcp](https://github.com/genomoncology/biomcp) | 生醫全局 (24 Tools + 10 數據源 + 統一查詢語言) (413 stars) |
+| 14 | **pubmedmcp** | [grll/pubmedmcp](https://github.com/grll/pubmedmcp) | PubMed 極簡 + uvx 一鍵運行 (95 stars) |
+| 15 | **pubmed-mcp-server** ⭐ | [cyanheads/pubmed-mcp-server](https://github.com/cyanheads/pubmed-mcp-server) | PubMed TypeScript + 圖表生成 + HTTP (52 stars) |
+| 16 | **paper-search-mcp-nodejs** | [Dianel555/paper-search-mcp-nodejs](https://github.com/Dianel555/paper-search-mcp-nodejs) | 14 平台搜尋 + 安全特性 (91 stars) 🆕 |
+| 17 | **healthcare-mcp-public** | [Cicatriiz/healthcare-mcp-public](https://github.com/Cicatriiz/healthcare-mcp-public) | 醫療健康 MCP (FDA+PubMed+ICD-10) (87 stars) 🆕 |
 
 ---
 
@@ -2059,6 +2061,10 @@ academic-mcp/
 | 2024-12-05 | 新增 pubmedmcp (grll) ⭐84 - PubMed 極簡版 + uvx 一鍵運行 (直接競品) |
 | 2024-12-05 | 新增 pubmed-mcp-server (cyanheads) ⭐36 - TypeScript + 圖表生成 + 研究計劃 (直接競品) |
 | 2025-01-28 | 新增 第二批 4 個 repos：suppr-mcp, findpapers, EasyPubMed, paperscraper |
+| 2026-02-10 | 🔥 大規模星星更新：paper-search-mcp 469→643, BioMCP 367→413, cyanheads 36→52 |
+| 2026-02-10 | 新增 paper-search-mcp-nodejs (Dianel555) ⭐91 — 14 學術平台 MCP |
+| 2026-02-10 | 新增 healthcare-mcp-public (Cicatriiz) ⭐87 — 醫療健康 MCP |
+| 2026-02-10 | suppr-mcp 星星更新 → 247★，重新評估定位 |
 
 ---
 
@@ -2270,6 +2276,118 @@ if_score = impactor.search("nature medicine")  # 模糊匹配
 
 ---
 
+# 2026-02 新增分析
+
+## 18. paper-search-mcp-nodejs (Dianel555) 🆕
+
+> **定位**: 14 學術平台整合 MCP Server (Node.js/TypeScript)
+> **GitHub**: https://github.com/Dianel555/paper-search-mcp-nodejs
+> **Stars**: ⭐ 91 | **語言**: TypeScript/Node.js
+
+### 核心賣點
+
+| 賣點 | 說明 | 可學習度 |
+|------|------|:--------:|
+| **14 學術平台整合** ⭐⭐⭐ | 覆蓋面最廣的 MCP Server | ⭐⭐⭐ |
+| **18+ MCP Tools** | 每平台獨立工具 | ⭐⭐ |
+| **安全特性** | DOI 驗證、HTML 清理 | ⭐⭐ |
+| **Rate Limiting + Cache** | 內建速率限制和快取 | ⭐⭐ |
+
+### 支援的 14 個平台
+
+| 平台 | 類型 | 說明 |
+|------|------|------|
+| arXiv | 預印本 | CS/Physics |
+| WoS (Web of Science) | 索引 | 需付費 |
+| PubMed | 生醫 | 標準 |
+| Google Scholar | 通用 | 爬蟲風險 |
+| bioRxiv | 生物預印本 | 免費 |
+| medRxiv | 醫學預印本 | 免費 |
+| Semantic Scholar | AI 學術 | 引用分析 |
+| IACR | 密碼學 | 專業 |
+| Sci-Hub | 全文 | ⚠️ 法律風險 |
+| ScienceDirect | 出版商 | Elsevier |
+| Springer | 出版商 | Springer Nature |
+| Wiley | 出版商 | Wiley |
+| Scopus | 索引 | 需付費 |
+| Crossref | DOI | 免費 |
+
+### 與我們的比較
+
+```diff
+✅ 我們: PubMed 專精 (MeSH/PICO/ESpell) — 深度遠超
+✅ 我們: 34 tools vs 18+, 功能更完整
+✅ 我們: Citation Tree, iCite, Timeline — 分析能力強
+
+❌ 我們: 沒有出版商直接搜尋 (Elsevier, Springer, Wiley)
+❌ 我們: 沒有 WoS/Scopus 整合
+```
+
+### 結論
+
+**paper-search-mcp-nodejs 走「廣度」路線**，14 平台但每個都是淺層整合。
+我們走「深度」路線，PubMed 一個深挖。**不直接競爭，定位互補。**
+
+---
+
+## 19. healthcare-mcp-public (Cicatriiz) 🆕
+
+> **定位**: 醫療健康 MCP Server (Node.js) — 多 API 整合
+> **GitHub**: https://github.com/Cicatriiz/healthcare-mcp-public
+> **Stars**: ⭐ 87 | **語言**: Node.js | **版本**: v2.1.1
+
+### 核心賣點
+
+| 賣點 | 說明 | 可學習度 |
+|------|------|:--------:|
+| **醫療健康全覆蓋** | 不只文獻，包含 FDA/ICD/BMI 等 | ⭐⭐ |
+| **9 MCP Tools** | 覆蓋不同醫療資訊需求 | ⭐⭐ |
+| **雙 Transport** | HTTP/SSE + stdio | ⭐⭐ |
+| **Connection Pooling + Cache** | 企業級效能 | ⭐⭐ |
+
+### Tools 清單 (9 個)
+
+| Tool | 功能 | 說明 |
+|------|------|------|
+| `search_fda_drugs` | FDA 藥物查詢 | OpenFDA API |
+| `search_pubmed` | PubMed 搜尋 | 基本搜尋 |
+| `search_health_topics` | 健康主題搜尋 | MedlinePlus |
+| `search_clinical_trials` | 臨床試驗 | ClinicalTrials.gov |
+| `lookup_icd_code` | ICD-10 查詢 | 診斷碼 |
+| `search_medrxiv` | medRxiv 預印本 | 醫學預印本 |
+| `calculate_bmi` | BMI 計算 | 工具型 |
+| `search_ncbi_bookshelf` | NCBI Bookshelf | 醫學教科書 |
+| `get_dicom_metadata` | DICOM metadata | 醫學影像 |
+
+### 與我們的比較
+
+```diff
+✅ 我們: PubMed 搜尋 FAR 更強 (MeSH/PICO/Citation)
+✅ 我們: 34 vs 9 tools
+✅ 我們: 已有 ICD↔MeSH 轉換 (更進階)
+✅ 我們: 已有 Gene/PubChem/ClinVar
+
+❌ 我們: 沒有 FDA 藥物查詢 (OpenFDA)
+❌ 我們: 沒有 MedlinePlus 健康主題
+❌ 我們: 沒有 NCBI Bookshelf
+❌ 我們: 沒有 DICOM metadata
+```
+
+### 可學習
+
+| 功能 | 說明 | 優先度 |
+|------|------|:------:|
+| **OpenFDA 整合** | 藥物不良事件、標籤 | ⭐⭐ (BioMCP 也有) |
+| **MedlinePlus** | 患者友善健康資訊 | ⭐ |
+| **NCBI Bookshelf** | 醫學教科書搜尋 | ⭐⭐ |
+
+### 結論
+
+**healthcare-mcp-public 是「醫療健康」而非「文獻研究」MCP**。
+覆蓋面廣但每個功能都很淺。PubMed 搜尋只是其中之一。**不是直接競品。**
+
+---
+
 # 2025 年 8-9 月更新
 
 > **更新日期**: 2025-09-15
@@ -2409,17 +2527,21 @@ zotero_chatgpt_fetch()   # 簡化輸出格式
 
 ## 📊 競品星星更新
 
-| Repo | 上次記錄 | 現在 | 變化 |
-|------|:--------:|:----:|:----:|
-| arxiv-mcp-server | 1.9k | 1.9k | - |
-| papersgpt-for-zotero | 2k | 2k | - |
-| zotero-mcp | 751 | 751 | - |
-| paper-search-mcp | 469 | 469 | - |
-| BioMCP | 367 | 367 | - |
-| mcp-simple-pubmed | 142 | 142 | - |
-| pubmearch | 142 | 142 | - |
-| pubmedmcp | 84 | 84 | - |
-| **cyanheads/pubmed-mcp-server** | N/A | 36 | 🆕 |
+| Repo | 2024-12 | 2025-09 | 2026-02 | 變化 |
+|------|:-------:|:-------:|:-------:|:----:|
+| arxiv-mcp-server | 1.9k | 1.9k | ~2k | 穩定 |
+| papersgpt-for-zotero | 2k | 2k | ~2k | 穩定 |
+| zotero-mcp | 751 | 751 | ~750+ | 穩定 |
+| paper-search-mcp | 469 | 469 | **643** | +37% 🔥 |
+| BioMCP | 367 | 367 | **413** | +13% |
+| suppr-mcp | N/A | N/A | **247** | 🆕 |
+| mcp-simple-pubmed | 142 | 142 | **156** | +10% |
+| pubmearch | 142 | 142 | **144** | +1% |
+| JackKuo666/PubMed-MCP | 82 | 82 | **96** | +17% |
+| pubmedmcp | 84 | 84 | **95** | +13% |
+| paper-search-mcp-nodejs | N/A | N/A | **91** | 🆕 |
+| healthcare-mcp-public | N/A | N/A | **87** | 🆕 |
+| **cyanheads/pubmed-mcp-server** | N/A | 36 | **52** | +44% 🔥 |
 
 ---
 
@@ -2458,19 +2580,32 @@ zotero_chatgpt_fetch()   # 簡化輸出格式
 
 ---
 
-## 🔍 真正的 PubMed MCP 競品
+## 🔍 真正的 PubMed/生醫 MCP 競品 (2026-02 更新)
 
-經過完整分析，真正的 PubMed MCP Server 競品只有：
+經過完整分析，所有 PubMed/生醫相關 MCP Server：
 
-| Repo | 星星 | 工具數 | 獨特功能 |
-|------|:----:|:------:|----------|
-| **我們** | 0 | **35+** | MeSH/PICO/Citation Tree/多源 |
-| cyanheads | 36 | 5 | Research Agent/Chart |
-| mcp-simple-pubmed | 142 | 3 | 極簡 |
-| pubmedmcp | 84 | 2 | uvx 一鍵 |
-| pubmearch | 142 | 3 | 熱點追蹤 |
+| Repo | Stars | 語言 | 工具數 | 獨特功能 |
+|------|:-----:|:----:|:------:|----------|
+| **我們** | — | Python | **34** | MeSH/PICO/Citation Tree/iCite/Timeline/ICD/多源 |
+| [paper-search-mcp](https://github.com/openags/paper-search-mcp) | 643 | Python | ~14 | 8 資料庫一站搜尋, PDF 下載 |
+| [BioMCP](https://github.com/genomoncology/biomcp) | 413 | Python | 24 | Think Tool, 統一查詢語法, 10+ 數據源 |
+| [suppr-mcp](https://github.com/WildDataX/suppr-mcp) | 247 | TS | 4 | AI 語義搜尋 + 文件翻譯 (商業) |
+| [mcp-simple-pubmed](https://github.com/andybrandt/mcp-simple-pubmed) | 156 | Python | 3 | uvx 一鍵, Smithery 整合 |
+| [pubmearch](https://github.com/Darkroaster/pubmearch) | 144 | Python | 5 | 熱點追蹤, 趨勢分析 |
+| [PubMed-MCP-Server](https://github.com/JackKuo666/PubMed-MCP-Server) | 96 | Python | 5 | 進階搜尋, PDF 下載, Smithery |
+| [pubmedmcp](https://github.com/grll/pubmedmcp) | 95 | Python | ~2 | uvx 一行安裝, 零配置 |
+| [paper-search-mcp-nodejs](https://github.com/Dianel555/paper-search-mcp-nodejs) | 91 | TS | 18+ | 14 平台 (WoS, Scopus, Sci-Hub 等) |
+| [healthcare-mcp-public](https://github.com/Cicatriiz/healthcare-mcp-public) | 87 | Node | 9 | FDA, ICD-10, DICOM, BMI |
+| [pubmed-mcp-server](https://github.com/cyanheads/pubmed-mcp-server) | 52 | TS | 5 | 圖表生成 (PNG), Research Agent, JWT |
 
-**結論**：我們的功能最完整，但星星最少。需要加強推廣！
+### 關鍵觀察
+
+1. **我們功能最豐富 (34 tools)**，但缺乏推廣 — 無 PyPI/Smithery 發布
+2. **paper-search-mcp (643★)** 靠多源廣度 + Smithery 取勝，PubMed 整合淺
+3. **BioMCP (413★)** 是功能最接近的競品，但偏向腫瘤基因組學
+4. **極簡也能高星** — mcp-simple (3 tools) = 156★，uvx 一鍵是關鍵
+5. **Smithery/PyPI 發布是推廣最大瓶頸**
+6. **TypeScript 生態活躍** — cyanheads, paper-nodejs, healthcare 都是 TS/Node
 
 ---
 

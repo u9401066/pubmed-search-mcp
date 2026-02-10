@@ -1,7 +1,7 @@
 # PubMed Search MCP - Roadmap
 
 > 本文件記錄**待實作**功能。已完成功能請參閱 [CHANGELOG.md](CHANGELOG.md)。
-> **最後更新**: 2026-02-09
+> **最後更新**: 2026-02-10
 
 ---
 
@@ -1535,42 +1535,84 @@ arxiv-mcp-server 目前只有 **1 個 Prompt**: `deep-paper-analysis`
 
 ## 競品參考
 
-> **詳見**: [docs/competitor-analysis.md](docs/competitor-analysis.md) (2025-09 更新)
+> **詳見**: [docs/competitor-analysis.md](docs/competitor-analysis.md) (2026-02 更新)
 
-### 直接競品比較
+### 直接競品比較 (2026-02 最新)
 
-| 專案 | Stars | 工具數 | 獨特功能 | 我們的優勢 |
-|------|:-----:|:------:|----------|-----------|
-| **我們** | 0 | **35+** | MeSH/PICO/Citation Tree/多源 | 功能最完整 |
-| cyanheads | 36 | 5 | Research Agent, Chart | TypeScript, 活躍 |
-| mcp-simple-pubmed | 142 | 3 | 極簡 | uvx 一鍵 |
-| pubmearch | 142 | 3 | 熱點追蹤 | 趨勢分析 |
-| pubmedmcp | 84 | 2 | 極簡 | 入門友善 |
-| BioMCP | 367 | 24 | Think Tool, OpenFDA | 生醫全局 |
+| 專案 | Stars | 語言 | 工具數 | 定位 | 獨特功能 |
+|------|:-----:|:----:|:------:|------|----------|
+| **我們** | — | Python | **34** | PubMed 深度整合 | MeSH/PICO/Citation Tree/iCite/Timeline/ICD/多源 |
+| [paper-search-mcp](https://github.com/openags/paper-search-mcp) | 643 | Python | ~14 | 多源瑞士刀 | 8 資料庫 (arXiv, PubMed, bioRxiv, Semantic Scholar 等) |
+| [BioMCP](https://github.com/genomoncology/biomcp) | 413 | Python | 24 | 生醫全局 | Think Tool, 統一查詢語法, 10+ 數據源 (ClinicalTrials, OncoKB 等) |
+| [suppr-mcp](https://github.com/WildDataX/suppr-mcp) | 247 | TypeScript | 4 | 搜尋+翻譯 | AI 語義搜尋, 文件翻譯 (PDF/DOCX/PPTX), 商業 API |
+| [mcp-simple-pubmed](https://github.com/andybrandt/mcp-simple-pubmed) | 156 | Python | 3 | PubMed 極簡 | uvx 一鍵, PMC 全文, Smithery |
+| [pubmearch](https://github.com/Darkroaster/pubmearch) | 144 | Python | 5 | 趨勢分析 | 熱點追蹤, 發文數量統計, 綜合報告 |
+| [PubMed-MCP-Server](https://github.com/JackKuo666/PubMed-MCP-Server) | 96 | Python | 5 | PubMed 基本 | 進階搜尋, PDF 下載, 深度分析 Prompt |
+| [pubmedmcp](https://github.com/grll/pubmedmcp) | 95 | Python | ~2 | PubMed 入門 | uvx 一行安裝, 零配置 |
+| [paper-search-mcp-nodejs](https://github.com/Dianel555/paper-search-mcp-nodejs) | 91 | TypeScript | 18+ | 多源廣覆蓋 | 14 平台 (WoS, Scopus, Sci-Hub, ScienceDirect 等) |
+| [healthcare-mcp-public](https://github.com/Cicatriiz/healthcare-mcp-public) | 87 | Node.js | 9 | 醫療健康 | FDA 藥物, ICD-10, BMI 計算, DICOM, NCBI Bookshelf |
+| [pubmed-mcp-server](https://github.com/cyanheads/pubmed-mcp-server) | 52 | TypeScript | 5 | PubMed 專業 | 圖表生成 (PNG), Research Agent, JWT/OAuth |
+
+### 功能差距分析
+
+| 功能領域 | 我們 | 競品最佳 | 差距 |
+|----------|:----:|----------|:----:|
+| PubMed 搜尋深度 (MeSH/PICO/ESpell) | ✅ | 無對手 | **領先** |
+| 引用分析 (iCite/Citation Tree) | ✅ | cyanheads (基本) | **領先** |
+| 研究時間軸 + 里程碑偵測 | ✅ | 無對手 | **領先** |
+| ICD↔MeSH 轉換 | ✅ | 無對手 | **領先** |
+| NCBI 延伸 (Gene/PubChem/ClinVar) | ✅ | BioMCP (更廣) | 持平 |
+| 多源搜尋 (Europe PMC/CORE) | ✅ | paper-search-mcp (8 源) | 持平 |
+| 全文取得 | ✅ | mcp-simple-pubmed (PMC XML) | 持平 |
+| 引用匯出 (RIS/BibTeX/MEDLINE) | ✅ | cyanheads (7 格式) | 持平 |
+| REST API (FastAPI) | ✅ | healthcare-mcp (HTTP/SSE) | 持平 |
+| PyPI 自動發布 (tag→CI) | ✅ | mcp-simple-pubmed, pubmedmcp | 持平 |
+| 臨床試驗搜尋 | ⚠️ sync | BioMCP (ClinicalTrials.gov) | 需 async 化 |
+| 圖表生成 | ❌ | cyanheads (7 種 PNG 圖表) | **落後** |
+| 統一查詢語法 | ❌ | BioMCP (`gene:X AND trials:Y`) | **落後** |
+| 文件翻譯 | ❌ | suppr-mcp (PDF/DOCX/PPTX) | N/A |
+| Smithery 整合 | ❌ | mcp-simple-pubmed, pubmedmcp | **落後** |
+| MCP HTTP Transport (SSE/Streamable) | ❌ | BioMCP, cyanheads | **落後** |
 
 ### 可學習功能 (優先級排序)
 
-| 優先級 | 功能 | 來源 | 狀態 |
-|:------:|------|------|:----:|
-| ⭐⭐⭐⭐⭐ | Think/Plan Tool | BioMCP | Phase 5.7 |
-| ⭐⭐⭐⭐⭐ | 統一查詢語法 | BioMCP | Phase 5.7 |
-| ⭐⭐⭐ | Research Agent | cyanheads | Phase 5.7 |
-| ⭐⭐ | 圖表生成 | cyanheads | Phase 7 |
-| ⭐ | 語義搜尋緩存 | zotero-mcp | Phase 10 |
+| 優先級 | 功能 | 來源 | 備註 |
+|:------:|------|------|------|
+| ⭐⭐⭐⭐⭐ | Smithery 整合 | mcp-simple, pubmedmcp | PyPI 已有 (tag 自動發布)，Smithery 未做 |
+| ⭐⭐⭐⭐⭐ | MCP HTTP Transport (SSE/Streamable) | BioMCP, cyanheads | REST API 已有 (FastAPI)，MCP 層缺 HTTP |
+| ⭐⭐⭐⭐⭐ | clinical_trials + preprints async 化 | — | 目前 sync httpx，需遷移 AsyncClient |
+| ⭐⭐⭐⭐ | 統一查詢語法 | BioMCP | 跨域搜尋 UX 提升 |
+| ⭐⭐⭐⭐ | 圖表生成 (PNG) | cyanheads | 研究趨勢可視化 |
+| ⭐⭐⭐ | Research Agent / Plan Tool | cyanheads | 結構化研究計劃 |
+| ⭐⭐⭐ | 趨勢/熱點分析 | pubmearch | 關鍵字頻率+發文趨勢 |
+| ⭐⭐ | Think Tool | BioMCP | 強制順序推理 |
+| ⭐⭐ | 文件翻譯 | suppr-mcp | Agent 本身可翻譯，低優先 |
+| ⭐ | 語義搜尋緩存 | zotero-mcp | 本地 RAG — 超出 MCP 範疇 |
 
 ### 星星分析
 
 ```
-📊 星星 vs 功能數分析：
+📊 GitHub Stars vs 工具數 (2026-02):
 
-  cyanheads (36★)    ████████████░░░░░░░░░░░░░░░░░░░░ 5 tools
-  pubmearch (142★)   ███████████░░░░░░░░░░░░░░░░░░░░░ 3 tools
-  mcp-simple (142★)  █████████░░░░░░░░░░░░░░░░░░░░░░░ 3 tools
-  pubmedmcp (84★)    ██████░░░░░░░░░░░░░░░░░░░░░░░░░░ 2 tools
-  BioMCP (367★)      ████████████████████████████████ 24 tools
-  我們 (0★)          ████████████████████████████████████████ 35+ tools
-  
-  觀察: 星星 ≠ 功能數，需要加強推廣！
+  paper-search (643★)  ████████████████████████████ 14 tools  ← 多源廣度取勝
+  BioMCP (413★)        ████████████████████████████████ 24 tools  ← 生醫全局深度
+  suppr-mcp (247★)     ██████░░░░░░░░░░░░░░░░░░░░░░ 4 tools   ← 翻譯差異化
+  mcp-simple (156★)    █████░░░░░░░░░░░░░░░░░░░░░░░ 3 tools   ← 極簡+Smithery
+  pubmearch (144★)     ██████████░░░░░░░░░░░░░░░░░░ 5 tools   ← 趨勢分析
+  JackKuo666 (96★)     ██████████░░░░░░░░░░░░░░░░░░ 5 tools   ← Smithery 先行
+  pubmedmcp (95★)      ████░░░░░░░░░░░░░░░░░░░░░░░░ 2 tools   ← uvx 極簡
+  paper-nodejs (91★)   ████████████████████████████████████ 18+ tools  ← 14 平台
+  healthcare (87★)     ██████████████████░░░░░░░░░░ 9 tools   ← FDA/ICD 醫療
+  cyanheads (52★)      ██████████░░░░░░░░░░░░░░░░░░ 5 tools   ← 圖表+Agent
+  我們 (—)             ████████████████████████████████████████ 34 tools  ← 功能最豐富
+
+  觀察:
+  1. Stars ≠ 功能數 — paper-search-mcp 靠多源+Smithery 獲 643★
+  2. 極簡也能高星 — mcp-simple (3 tools) = 156★，uvx 一鍵是關鍵
+  3. BioMCP 是最接近的功能競品 (24 tools)，但偏向腫瘤基因組學
+  4. 我們的 34 tools 是所有 PubMed MCP 中最多的
+  5. PyPI 已有 (tag 自動發布)，缺少 Smithery 整合是推廣瓶頸
+  6. REST API 已有 (FastAPI on :8765)，但 MCP 層僅 stdio
 ```
 
 ---

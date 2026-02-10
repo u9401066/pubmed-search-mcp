@@ -84,9 +84,16 @@ class ArXivClient:
 
     def __init__(self, timeout: float = 30.0):
         self.timeout = timeout
-        self._client = httpx.Client(timeout=timeout)
+        self._client: httpx.AsyncClient | None = None
 
-    def search(
+    @property
+    def client(self) -> httpx.AsyncClient:
+        """Lazy-init async HTTP client."""
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(timeout=self.timeout)
+        return self._client
+
+    async def search(
         self,
         query: str,
         limit: int = 10,
@@ -144,7 +151,7 @@ class ArXivClient:
 
             logger.info(f"arXiv search: {full_query}")
 
-            response = self._client.get(ARXIV_API_URL, params=params)
+            response = await self.client.get(ARXIV_API_URL, params=params)
             response.raise_for_status()
 
             return self._parse_atom_response(response.text)
@@ -259,11 +266,11 @@ class ArXivClient:
 
         return articles
 
-    def get_by_id(self, arxiv_id: str) -> Optional[PreprintArticle]:
+    async def get_by_id(self, arxiv_id: str) -> Optional[PreprintArticle]:
         """Get article by arXiv ID."""
         try:
             params = {"id_list": arxiv_id}
-            response = self._client.get(ARXIV_API_URL, params=params)
+            response = await self.client.get(ARXIV_API_URL, params=params)
             response.raise_for_status()
 
             articles = self._parse_atom_response(response.text)
@@ -279,9 +286,16 @@ class MedBioRxivClient:
 
     def __init__(self, timeout: float = 30.0):
         self.timeout = timeout
-        self._client = httpx.Client(timeout=timeout)
+        self._client: httpx.AsyncClient | None = None
 
-    def search_medrxiv(
+    @property
+    def client(self) -> httpx.AsyncClient:
+        """Lazy-init async HTTP client."""
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(timeout=self.timeout)
+        return self._client
+
+    async def search_medrxiv(
         self,
         query: str,
         limit: int = 10,
@@ -300,7 +314,7 @@ class MedBioRxivClient:
             from_date: Start date (YYYY-MM-DD)
             to_date: End date (YYYY-MM-DD)
         """
-        return self._search_rxiv(
+        return await self._search_rxiv(
             base_url=MEDRXIV_API_URL,
             source="medrxiv",
             query=query,
@@ -309,7 +323,7 @@ class MedBioRxivClient:
             to_date=to_date,
         )
 
-    def search_biorxiv(
+    async def search_biorxiv(
         self,
         query: str,
         limit: int = 10,
@@ -317,7 +331,7 @@ class MedBioRxivClient:
         to_date: Optional[str] = None,
     ) -> List[PreprintArticle]:
         """Search bioRxiv for biology preprints."""
-        return self._search_rxiv(
+        return await self._search_rxiv(
             base_url=BIORXIV_API_URL,
             source="biorxiv",
             query=query,
@@ -326,7 +340,7 @@ class MedBioRxivClient:
             to_date=to_date,
         )
 
-    def _search_rxiv(
+    async def _search_rxiv(
         self,
         base_url: str,
         source: str,
@@ -351,7 +365,7 @@ class MedBioRxivClient:
 
             logger.info(f"{source} search: {query} ({from_date} to {to_date})")
 
-            response = self._client.get(url)
+            response = await self.client.get(url)
             response.raise_for_status()
 
             data = response.json()
@@ -417,7 +431,7 @@ class PreprintSearcher:
         self.arxiv = ArXivClient()
         self.rxiv = MedBioRxivClient()
 
-    def search(
+    async def search(
         self,
         query: str,
         sources: Optional[List[str]] = None,
@@ -449,7 +463,7 @@ class PreprintSearcher:
 
         # Search arXiv
         if "arxiv" in sources:
-            arxiv_results = self.arxiv.search(
+            arxiv_results = await self.arxiv.search(
                 query=query,
                 limit=limit,
                 categories=categories or ARXIV_MEDICAL_CATEGORIES,
@@ -459,13 +473,13 @@ class PreprintSearcher:
 
         # Search medRxiv
         if "medrxiv" in sources:
-            medrxiv_results = self.rxiv.search_medrxiv(query=query, limit=limit)
+            medrxiv_results = await self.rxiv.search_medrxiv(query=query, limit=limit)
             results["by_source"]["medrxiv"] = [a.to_dict() for a in medrxiv_results]
             results["articles"].extend(results["by_source"]["medrxiv"])
 
         # Search bioRxiv
         if "biorxiv" in sources:
-            biorxiv_results = self.rxiv.search_biorxiv(query=query, limit=limit)
+            biorxiv_results = await self.rxiv.search_biorxiv(query=query, limit=limit)
             results["by_source"]["biorxiv"] = [a.to_dict() for a in biorxiv_results]
             results["articles"].extend(results["by_source"]["biorxiv"])
 
@@ -473,7 +487,7 @@ class PreprintSearcher:
 
         return results
 
-    def search_medical_preprints(
+    async def search_medical_preprints(
         self,
         query: str,
         limit: int = 10,
@@ -482,14 +496,14 @@ class PreprintSearcher:
         Convenience method for medical/health preprint search.
         Searches medRxiv + arXiv q-bio.
         """
-        return self.search(
+        return await self.search(
             query=query,
             sources=["medrxiv", "arxiv"],
             limit=limit,
             categories=["q-bio", "stat.AP", "stat.ML"],
         )
 
-    def get_arxiv_paper(self, arxiv_id: str) -> Optional[Dict[str, Any]]:
+    async def get_arxiv_paper(self, arxiv_id: str) -> Optional[Dict[str, Any]]:
         """Get specific arXiv paper by ID."""
-        article = self.arxiv.get_by_id(arxiv_id)
+        article = await self.arxiv.get_by_id(arxiv_id)
         return article.to_dict() if article else None

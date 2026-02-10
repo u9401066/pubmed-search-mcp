@@ -4,7 +4,7 @@ Tests for ClinicalTrials.gov API client.
 Target: clinical_trials.py coverage from 0% to 90%+
 """
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -91,122 +91,134 @@ class TestClinicalTrialsClientSearch:
             ]
         }
 
-    @patch("httpx.Client")
-    async def test_search_success(self, mock_httpx_client, mock_response_data):
+    async def test_search_success(self, mock_response_data):
         """Test successful search."""
         mock_response = MagicMock()
         mock_response.json.return_value = mock_response_data
         mock_response.raise_for_status = MagicMock()
-        mock_httpx_client.return_value.get.return_value = mock_response
-        
+
+        mock_async_client = AsyncMock()
+        mock_async_client.get.return_value = mock_response
+        mock_async_client.is_closed = False
+
         client = ClinicalTrialsClient()
-        client._client = mock_httpx_client.return_value
-        
-        results = client.search("diabetes treatment", limit=5)
-        
+        client._client = mock_async_client
+
+        results = await client.search("diabetes treatment", limit=5)
+
         assert len(results) == 1
         assert results[0]["nct_id"] == "NCT05123456"
         assert results[0]["title"] == "Test Trial for Diabetes"
         assert results[0]["status"] == "RECRUITING"
 
-    @patch("httpx.Client")
-    async def test_search_with_status_filter(self, mock_httpx_client, mock_response_data):
+    async def test_search_with_status_filter(self, mock_response_data):
         """Test search with status filter."""
         mock_response = MagicMock()
         mock_response.json.return_value = mock_response_data
         mock_response.raise_for_status = MagicMock()
-        mock_httpx_client.return_value.get.return_value = mock_response
-        
+
+        mock_async_client = AsyncMock()
+        mock_async_client.get.return_value = mock_response
+        mock_async_client.is_closed = False
+
         client = ClinicalTrialsClient()
-        client._client = mock_httpx_client.return_value
-        
-        _results = client.search(
-            "diabetes", 
-            limit=10, 
+        client._client = mock_async_client
+
+        _results = await client.search(
+            "diabetes",
+            limit=10,
             status=["RECRUITING", "COMPLETED"]
         )
-        
+
         # Check that status filter was included in params
-        call_args = mock_httpx_client.return_value.get.call_args
+        call_args = mock_async_client.get.call_args
         params = call_args[1]["params"]
         assert "filter.overallStatus" in params
 
-    @patch("httpx.Client")
-    async def test_search_empty_results(self, mock_httpx_client):
+    async def test_search_empty_results(self):
         """Test search with no results."""
         mock_response = MagicMock()
         mock_response.json.return_value = {"studies": []}
         mock_response.raise_for_status = MagicMock()
-        mock_httpx_client.return_value.get.return_value = mock_response
-        
+
+        mock_async_client = AsyncMock()
+        mock_async_client.get.return_value = mock_response
+        mock_async_client.is_closed = False
+
         client = ClinicalTrialsClient()
-        client._client = mock_httpx_client.return_value
-        
-        results = client.search("nonexistent condition xyz")
-        
+        client._client = mock_async_client
+
+        results = await client.search("nonexistent condition xyz")
+
         assert results == []
 
-    @patch("httpx.Client")
-    async def test_search_timeout_error(self, mock_httpx_client):
+    async def test_search_timeout_error(self):
         """Test search handles timeout gracefully."""
         import httpx
-        
-        mock_httpx_client.return_value.get.side_effect = httpx.TimeoutException("timeout")
-        
+
+        mock_async_client = AsyncMock()
+        mock_async_client.get.side_effect = httpx.TimeoutException("timeout")
+        mock_async_client.is_closed = False
+
         client = ClinicalTrialsClient()
-        client._client = mock_httpx_client.return_value
-        
-        results = client.search("diabetes treatment")
-        
+        client._client = mock_async_client
+
+        results = await client.search("diabetes treatment")
+
         assert results == []
 
-    @patch("httpx.Client")
-    async def test_search_http_error(self, mock_httpx_client):
+    async def test_search_http_error(self):
         """Test search handles HTTP errors gracefully."""
         import httpx
-        
+
         mock_response = MagicMock()
         mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
-            "Server Error", 
+            "Server Error",
             request=MagicMock(),
             response=MagicMock(status_code=500)
         )
-        mock_httpx_client.return_value.get.return_value = mock_response
-        
+
+        mock_async_client = AsyncMock()
+        mock_async_client.get.return_value = mock_response
+        mock_async_client.is_closed = False
+
         client = ClinicalTrialsClient()
-        client._client = mock_httpx_client.return_value
-        
-        results = client.search("diabetes treatment")
-        
+        client._client = mock_async_client
+
+        results = await client.search("diabetes treatment")
+
         assert results == []
 
-    @patch("httpx.Client")
-    async def test_search_generic_error(self, mock_httpx_client):
+    async def test_search_generic_error(self):
         """Test search handles generic errors gracefully."""
-        mock_httpx_client.return_value.get.side_effect = Exception("Unexpected error")
-        
+        mock_async_client = AsyncMock()
+        mock_async_client.get.side_effect = Exception("Unexpected error")
+        mock_async_client.is_closed = False
+
         client = ClinicalTrialsClient()
-        client._client = mock_httpx_client.return_value
-        
-        results = client.search("diabetes treatment")
-        
+        client._client = mock_async_client
+
+        results = await client.search("diabetes treatment")
+
         assert results == []
 
-    @patch("httpx.Client")
-    async def test_search_limit_capped(self, mock_httpx_client, mock_response_data):
+    async def test_search_limit_capped(self, mock_response_data):
         """Test that limit is capped at 20."""
         mock_response = MagicMock()
         mock_response.json.return_value = mock_response_data
         mock_response.raise_for_status = MagicMock()
-        mock_httpx_client.return_value.get.return_value = mock_response
-        
+
+        mock_async_client = AsyncMock()
+        mock_async_client.get.return_value = mock_response
+        mock_async_client.is_closed = False
+
         client = ClinicalTrialsClient()
-        client._client = mock_httpx_client.return_value
-        
-        client.search("diabetes", limit=100)  # Request 100
-        
+        client._client = mock_async_client
+
+        await client.search("diabetes", limit=100)  # Request 100
+
         # Check that pageSize was capped
-        call_args = mock_httpx_client.return_value.get.call_args
+        call_args = mock_async_client.get.call_args
         params = call_args[1]["params"]
         assert params["pageSize"] == 20
 

@@ -30,7 +30,8 @@ import sys
 # Add src to path for development
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
-from pubmed_search.mcp_server.server import create_server
+from pubmed_search.presentation.mcp_server.server import create_server
+from pubmed_search import __version__
 
 # Configure logging
 logging.basicConfig(
@@ -145,7 +146,7 @@ def main():
         return JSONResponse(
             {
                 "service": "PubMed Search MCP Server",
-                "version": "0.1.18",
+                "version": __version__,
                 "transport": args.transport,
                 "endpoints": {
                     "mcp": mcp_endpoints,
@@ -248,7 +249,7 @@ def main():
         if fetch_if_missing and searcher:
             logger.info(f"[API] Cache miss for PMID {pmid}, fetching from PubMed")
             try:
-                articles = searcher.fetch_details([pmid])
+                articles = await searcher.fetch_details([pmid])
                 if articles:
                     session_manager.add_to_cache(articles)
                     return JSONResponse(
@@ -289,7 +290,7 @@ def main():
 
         if fetch_if_missing and missing and searcher:
             try:
-                articles = searcher.fetch_details(missing)
+                articles = await searcher.fetch_details(missing)
                 for article in articles:
                     pmid = article.get("pmid", "")
                     if pmid:
