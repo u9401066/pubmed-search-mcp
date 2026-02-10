@@ -10,11 +10,12 @@ description: Generate comprehensive test suites including static analysis, unit 
 **所有命令一律透過 `uv run` 執行**，包括測試、lint、type check：
 
 ```bash
-uv run pytest --timeout=60   # 測試（每個案例 60 秒上限）
-uv run ruff check .          # Lint
-uv run ruff format .         # 格式化
-uv run mypy src/ tests/      # 型別檢查（含 tests）
-uv run pytest --cov          # 覆蓋率
+uv run pytest -n auto --timeout=60  # ⚡ 多核平行測試（~67 秒，推薦）
+uv run pytest --timeout=60          # 單核測試（180-240 秒）
+uv run ruff check .                 # Lint
+uv run ruff format .                # 格式化
+uv run mypy src/ tests/             # 型別檢查（含 tests）
+uv run pytest --cov                 # 覆蓋率（不可搭配 -n auto）
 ```
 
 > 💡 UV 使用 Rust 實作，比 pip 快 10-100 倍。`uv run` 在毫秒級確認環境後直接執行，幾乎零開銷。
@@ -22,16 +23,29 @@ uv run pytest --cov          # 覆蓋率
 
 ### ⏱️ 測試執行時間 (CRITICAL - 必讀)
 
-本專案測試套件規模：**30,000+ 行、2200+ 測試案例、60+ 測試檔案**。
+本專案使用 **pytest-xdist** 多核平行測試，規模：**30,000+ 行、2200+ 測試案例、60+ 測試檔案**。
 
 | 指標 | 數值 |
 |------|------|
-| 完整執行時間 | **180~240 秒（3~4 分鐘）** |
+| ⚡ 多核執行時間 (`-n auto`) | **~67 秒** |
+| 單核執行時間 | 180~240 秒 |
 | 每個測試超時 | 60 秒 (`--timeout=60`) |
-| 建議 terminal timeout | **300,000+ ms (5 分鐘)** |
+| 建議 terminal timeout | **120,000+ ms**（多核）/ 300,000+ ms（單核） |
 
-> 🚨 **絕對不要**設定 terminal timeout 為 60 秒就期望看到結果！這會截斷輸出，誤判測試狀態。
-> 🚨 建議導向檔案：`uv run pytest tests/ --timeout=60 -q 2>&1 > scripts/_tmp/test_result.txt`，等 3-4 分鐘後再讀取。
+```bash
+# ✅ 推薦：多核平行測試
+uv run pytest tests/ -n auto --timeout=60 -q
+
+# ✅ 導向檔案
+uv run pytest tests/ -n auto --timeout=60 -q 2>&1 > scripts/_tmp/test_result.txt
+# 等待 ~70 秒後再讀取
+
+# ⚠️ 覆蓋率不可搭配 -n auto
+uv run pytest tests/ --timeout=60 --cov -q
+```
+
+> 💡 `-n auto` 自動偵測 CPU 核心數，每個 worker 為獨立 process，singleton 隔離無衝突。
+> ⚠️ `pytest-benchmark` 在 xdist 模式下自動停用。
 
 ## 描述
 為指定的程式碼自動生成完整測試套件，包含靜態分析、單元測試、整合測試及覆蓋率報告。

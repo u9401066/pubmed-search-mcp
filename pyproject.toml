@@ -95,6 +95,7 @@ dev = [
     "vulture>=2.14",
     "types-requests>=2.32.4.20260107",
     "types-cachetools>=6.2.0",
+    "pytest-xdist>=3.8.0",
 ]
 
 [tool.mypy]

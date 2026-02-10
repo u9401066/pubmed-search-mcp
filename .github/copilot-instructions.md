@@ -37,31 +37,31 @@ uv run ruff check .        # Lint 檢查
 uv run ruff check . --fix  # Lint 自動修復
 uv run ruff format .       # 格式化
 uv run mypy src/ tests/    # 型別檢查（含 src 和 tests）
-uv run pytest              # 測試
-uv run pytest --cov        # 覆蓋率
-uv run pytest --timeout=60 # 帶超時的測試（每個測試 60 秒上限）
+uv run pytest -n auto --timeout=60  # ⚡ 多核平行測試（推薦，~67 秒）
+uv run pytest --timeout=60          # 單核測試（~180-240 秒）
+uv run pytest --cov                 # 覆蓋率（不可搭配 -n auto）
 ```
 
 > ⚠️ **永遠不要**直接呼叫 `pytest`、`ruff`、`mypy`，一律使用 `uv run` 前綴。
 
 ### ⏱️ 測試執行時間 (IMPORTANT - 請務必閱讀)
 
-本專案測試套件規模龐大（**30,000+ 行測試程式碼、2200+ 測試案例**），完整執行需要 **180~240 秒（3~4 分鐘）**。
-
-> 🚨 **常見錯誤**：設定 terminal timeout 為 60 秒就想看到結果 — 這會導致輸出被截斷，誤以為測試卡住或失敗！
+本專案使用 **pytest-xdist** 多核平行測試，大幅縮短執行時間。
 
 ```bash
-# ✅ 正確：設定足夠的 timeout（至少 300 秒）
-# 在 terminal 工具中 timeout 應設定 300000+ ms
+# ✅ 推薦：多核平行測試（~67 秒，比單核快 3x）
+uv run pytest tests/ -n auto --timeout=60 -q
+# ↑ -n auto 自動偵測 CPU 核心數，--timeout=60 是每個測試案例的超時
+
+# ✅ 導向檔案避免 terminal buffer 溢出
+uv run pytest tests/ -n auto --timeout=60 -q --no-header 2>&1 > scripts/_tmp/test_result.txt
+# 等待 ~70 秒後再讀取結果
+
+# ⚠️ 單核模式（不推薦，需 180-240 秒）
 uv run pytest tests/ --timeout=60 -q
-# ↑ --timeout=60 是「每個測試案例」的超時，整個套件仍需 180-240 秒完成
 
-# ✅ 正確：導向檔案避免 terminal buffer 溢出
-uv run pytest tests/ --timeout=60 -q --no-header 2>&1 > scripts/_tmp/test_result.txt
-# 等待 180-240 秒後再讀取結果
-
-# ❌ 錯誤：設定 timeout=60000ms 就期望看到完整結果
-# ❌ 錯誤：60 秒後看到空輸出就以為測試失敗
+# ⚠️ 覆蓋率模式（不可搭配 -n auto）
+uv run pytest tests/ --timeout=60 --cov -q
 ```
 
 | 指標 | 數值 |
@@ -69,9 +69,13 @@ uv run pytest tests/ --timeout=60 -q --no-header 2>&1 > scripts/_tmp/test_result
 | 測試檔案數 | 60+ |
 | 測試案例數 | 2200+ |
 | 測試程式碼行數 | 30,000+ |
-| 完整執行時間 | 180~240 秒 |
+| ⚡ 多核執行時間 (`-n auto`) | **~67 秒** |
+| 單核執行時間 | 180~240 秒 |
 | 每個測試超時 | 60 秒 (`--timeout=60`) |
-| 建議 terminal timeout | 300,000+ ms |
+| 建議 terminal timeout | **120,000+ ms**（多核）/ 300,000+ ms（單核） |
+
+> 💡 **pytest-xdist** 使用多 process 平行化，每個 worker 為獨立 process，singleton 隔離無衝突。
+> ⚠️ `pytest-benchmark` 在 xdist 模式下自動停用（benchmark 需要單核確保精確度）。
 
 ### 🔄 Async/Sync 測試一致性檢查 (MANDATORY)
 
