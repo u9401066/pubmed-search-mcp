@@ -49,7 +49,7 @@ def register_export_tools(mcp: FastMCP, searcher: LiteratureSearcher):
     """Register export-related tools."""
 
     @mcp.tool()
-    def prepare_export(
+    async def prepare_export(
         pmids: Union[str, List, int],
         format: str = "ris",
         include_abstract: bool = True,
@@ -162,7 +162,7 @@ def register_export_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         try:
             if use_official:
                 # Use official NCBI Citation API
-                result: CitationResult = export_citations_official(
+                result: CitationResult = await export_citations_official(
                     pmid_list,
                     format=format_lower,  # type: ignore
                 )
@@ -179,12 +179,12 @@ def register_export_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                     logger.warning(
                         f"Official API failed ({result.error}), falling back to local"
                     )
-                    return _export_local(
+                    return await _export_local(
                         pmid_list, format_lower, normalized_abstract, searcher
                     )
             else:
                 # Use local formatting
-                return _export_local(
+                return await _export_local(
                     pmid_list, format_lower, normalized_abstract, searcher
                 )
 
@@ -198,7 +198,7 @@ def register_export_tools(mcp: FastMCP, searcher: LiteratureSearcher):
 
     # ❌ REMOVED v0.1.20: Merged into unified get_fulltext tool
     # @mcp.tool()
-    def get_article_fulltext_links(pmid: Union[str, int]) -> str:
+    async def get_article_fulltext_links(pmid: Union[str, int]) -> str:
         """
         Get fulltext links for a single article.
 
@@ -227,10 +227,10 @@ def register_export_tools(mcp: FastMCP, searcher: LiteratureSearcher):
 
         try:
             # Use API lookup to get PMC status
-            links = get_fulltext_links_with_lookup(normalized_pmid, searcher)
+            links = await get_fulltext_links_with_lookup(normalized_pmid, searcher)
 
             # Add article title if available
-            articles = searcher.fetch_details([normalized_pmid])
+            articles = await searcher.fetch_details([normalized_pmid])
             if articles:
                 links["title"] = articles[0].get("title", "")[:100]
                 links["doi_url"] = (
@@ -251,7 +251,7 @@ def register_export_tools(mcp: FastMCP, searcher: LiteratureSearcher):
 
     # ❌ REMOVED v0.1.20: Auto-handled by unified get_fulltext
     # @mcp.tool()
-    def analyze_fulltext_access(pmids: Union[str, List, int]) -> str:
+    async def analyze_fulltext_access(pmids: Union[str, List, int]) -> str:
         """
         Analyze fulltext availability for multiple articles.
 
@@ -290,7 +290,7 @@ def register_export_tools(mcp: FastMCP, searcher: LiteratureSearcher):
 
         try:
             # Fetch article details to get PMC info
-            articles = searcher.fetch_details(pmid_list)
+            articles = await searcher.fetch_details(pmid_list)
 
             if not articles:
                 return ResponseFormatter.no_results(
@@ -365,7 +365,7 @@ def _get_file_extension(format: str) -> str:
     return extensions.get(format, "txt")
 
 
-def _export_local(
+async def _export_local(
     pmid_list: list,
     format_lower: str,
     include_abstract: bool,
@@ -377,7 +377,7 @@ def _export_local(
     Used as fallback when official API is unavailable,
     or for formats not supported by official API (bibtex, csv, json).
     """
-    articles = searcher.fetch_details(pmid_list)
+    articles = await searcher.fetch_details(pmid_list)
 
     if not articles:
         return ResponseFormatter.no_results(

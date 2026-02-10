@@ -105,7 +105,7 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
 
     # ❌ REMOVED v0.1.20: Replaced by unified_search which auto-handles multi-source
     # @mcp.tool()
-    def search_literature(
+    async def search_literature(
         query: str,
         limit: int = 5,
         min_year: Optional[int] = None,
@@ -160,7 +160,7 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             if source in ALTERNATE_SOURCES:
                 # Cast to narrow type (we've already checked source is in ALTERNATE_SOURCES)
                 alt_source: Literal["semantic_scholar", "openalex"] = source  # type: ignore[assignment]
-                return _search_alternate_source_internal(
+                return await _search_alternate_source_internal(
                     query=query,
                     source=alt_source,
                     limit=limit,
@@ -186,7 +186,7 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                     return result
 
             # No cache hit - call API
-            results = searcher.search(
+            results = await searcher.search(
                 query,
                 limit,
                 min_year,
@@ -245,7 +245,7 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
 
             # === Cross-search fallback (when PubMed results insufficient) ===
             if cross_search_fallback and returned_count < cross_search_threshold:
-                result += _perform_cross_search_fallback(
+                result += await _perform_cross_search_fallback(
                     query=query,
                     existing_results=results[:limit],
                     limit=limit - returned_count,
@@ -259,7 +259,7 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             logger.error(f"Search failed: {e}")
             return f"Error: {e}"
 
-    def _search_alternate_source_internal(
+    async def _search_alternate_source_internal(
         query: str,
         source: Literal["semantic_scholar", "openalex"],
         limit: int,
@@ -269,7 +269,7 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
     ) -> str:
         """Internal: Search alternate sources (Semantic Scholar, OpenAlex)."""
         try:
-            results = search_alternate_source(
+            results = await search_alternate_source(
                 query=query,
                 source=source,
                 limit=limit,
@@ -307,7 +307,7 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             logger.error(f"Alternate source search failed: {e}")
             return f"Error searching {source}: {e}"
 
-    def _perform_cross_search_fallback(
+    async def _perform_cross_search_fallback(
         query: str,
         existing_results: list,
         limit: int,
@@ -320,7 +320,7 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             return ""
 
         try:
-            cross_results = cross_search(
+            cross_results = await cross_search(
                 query=query,
                 sources=["openalex"],  # OpenAlex is more reliable for fallback
                 limit_per_source=limit,
@@ -361,7 +361,7 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             return ""
 
     @mcp.tool()
-    def find_related_articles(pmid: Union[str, int], limit: int = 5) -> str:
+    async def find_related_articles(pmid: Union[str, int], limit: int = 5) -> str:
         """
         Find articles related to a given PubMed article.
         Uses PubMed's "Related Articles" feature to find similar papers.
@@ -429,7 +429,9 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
 
         logger.info(f"Finding related articles for PMID: {normalized_pmid}")
         try:
-            results = searcher.get_related_articles(normalized_pmid, normalized_limit)
+            results = await searcher.get_related_articles(
+                normalized_pmid, normalized_limit
+            )
 
             if not results:
                 return ResponseFormatter.no_results(
@@ -460,7 +462,7 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             )
 
     @mcp.tool()
-    def find_citing_articles(pmid: Union[str, int], limit: int = 10) -> str:
+    async def find_citing_articles(pmid: Union[str, int], limit: int = 10) -> str:
         """
         Find articles that cite a given PubMed article.
         Uses PubMed Central's citation data to find papers that reference this article.
@@ -518,7 +520,9 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
 
         logger.info(f"Finding citing articles for PMID: {normalized_pmid}")
         try:
-            results = searcher.get_citing_articles(normalized_pmid, normalized_limit)
+            results = await searcher.get_citing_articles(
+                normalized_pmid, normalized_limit
+            )
 
             if not results:
                 return ResponseFormatter.no_results(
@@ -550,7 +554,7 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             )
 
     @mcp.tool()
-    def get_article_references(pmid: Union[str, int], limit: int = 20) -> str:
+    async def get_article_references(pmid: Union[str, int], limit: int = 20) -> str:
         """
         Get the references (bibliography) of a PubMed article.
 
@@ -611,7 +615,9 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
 
         logger.info(f"Getting references for PMID: {normalized_pmid}")
         try:
-            results = searcher.get_article_references(normalized_pmid, normalized_limit)
+            results = await searcher.get_article_references(
+                normalized_pmid, normalized_limit
+            )
 
             if not results:
                 return ResponseFormatter.no_results(
@@ -645,7 +651,7 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             )
 
     @mcp.tool()
-    def fetch_article_details(pmids: Union[str, List, int]) -> str:
+    async def fetch_article_details(pmids: Union[str, List, int]) -> str:
         """
         Fetch detailed information for one or more PubMed articles.
 
@@ -673,7 +679,7 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
 
         logger.info(f"Fetching details for PMIDs: {normalized_pmids}")
         try:
-            results = searcher.fetch_details(normalized_pmids)
+            results = await searcher.fetch_details(normalized_pmids)
 
             if not results:
                 return ResponseFormatter.no_results(
@@ -701,7 +707,7 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             )
 
     @mcp.tool()
-    def get_citation_metrics(
+    async def get_citation_metrics(
         pmids: Union[str, List, int],
         sort_by: str = "citation_count",
         min_citations: Optional[int] = None,
@@ -768,7 +774,7 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 )
 
             # Get metrics from iCite
-            metrics = searcher.get_citation_metrics(pmid_list)
+            metrics = await searcher.get_citation_metrics(pmid_list)
 
             if not metrics:
                 return ResponseFormatter.no_results(

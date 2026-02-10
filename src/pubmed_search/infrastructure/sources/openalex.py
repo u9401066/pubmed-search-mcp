@@ -13,13 +13,13 @@ Features:
 - Institution and concept relationships
 """
 
-import json
+import asyncio
 import logging
 import time
-import urllib.error
 import urllib.parse
-import urllib.request
 from typing import Any
+
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -54,36 +54,42 @@ class OpenAlexClient:
         self._timeout = timeout
         self._last_request_time = 0
         self._min_interval = 0.1  # OpenAlex is more generous with rate limits
+        self._client = httpx.AsyncClient(
+            timeout=self._timeout,
+            headers={
+                "User-Agent": f"pubmed-search-mcp/1.0 (mailto:{self._email})",
+                "Accept": "application/json",
+            },
+        )
 
-    def _rate_limit(self):
+    async def _rate_limit(self):
         """Simple rate limiting."""
         elapsed = time.time() - self._last_request_time
         if elapsed < self._min_interval:
-            time.sleep(self._min_interval - elapsed)
+            await asyncio.sleep(self._min_interval - elapsed)
         self._last_request_time = time.time()
 
-    def _make_request(self, url: str) -> dict | None:
+    async def _make_request(self, url: str) -> dict | None:
         """Make HTTP GET request with proper headers."""
-        self._rate_limit()
-
-        request = urllib.request.Request(url)
-        request.add_header("Accept", "application/json")
-        request.add_header(
-            "User-Agent", f"pubmed-search-mcp/1.0 (mailto:{self._email})"
-        )
+        await self._rate_limit()
 
         try:
-            # nosec B310: URL is constructed from hardcoded OPENALEX_API_BASE (https)
-            with urllib.request.urlopen(request, timeout=self._timeout) as response:  # nosec B310
-                return json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            logger.error(f"HTTP error {e.code}: {e.reason}")
+            response = await self._client.get(url)
+            if response.status_code == 429:
+                logger.warning("OpenAlex: Rate limit exceeded")
+                return None
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                f"HTTP error {e.response.status_code}: {e.response.reason_phrase}"
+            )
             return None
-        except urllib.error.URLError as e:
-            logger.error(f"URL error: {e.reason}")
+        except httpx.RequestError as e:
+            logger.error(f"URL error: {e}")
             return None
 
-    def search(
+    async def search(
         self,
         query: str,
         limit: int = 10,
@@ -140,7 +146,7 @@ class OpenAlexClient:
                 params["filter"] = ",".join(filters)
 
             url = f"{OA_WORKS_URL}?{urllib.parse.urlencode(params)}"
-            data = self._make_request(url)
+            data = await self._make_request(url)
 
             if not data:
                 return []
@@ -154,7 +160,7 @@ class OpenAlexClient:
             logger.error(f"OpenAlex search failed: {e}")
             return []
 
-    def get_work(self, work_id: str) -> dict[str, Any] | None:
+    async def get_work(self, work_id: str) -> dict[str, Any] | None:
         """
         Get work by ID (OpenAlex ID, DOI, or PMID).
 
@@ -176,7 +182,7 @@ class OpenAlexClient:
             params = {"mailto": self._email}
             url = f"{OA_WORKS_URL}/{encoded_id}?{urllib.parse.urlencode(params)}"
 
-            data = self._make_request(url)
+            data = await self._make_request(url)
             if not data:
                 return None
 
@@ -186,7 +192,9 @@ class OpenAlexClient:
             logger.error(f"Failed to get work {work_id}: {e}")
             return None
 
-    def get_citations(self, work_id: str, limit: int = 10) -> list[dict[str, Any]]:
+    async def get_citations(
+        self, work_id: str, limit: int = 10
+    ) -> list[dict[str, Any]]:
         """
         Get works that cite this work.
 
@@ -207,7 +215,7 @@ class OpenAlexClient:
             }
 
             url = f"{OA_WORKS_URL}?{urllib.parse.urlencode(params)}"
-            data = self._make_request(url)
+            data = await self._make_request(url)
 
             if not data:
                 return []
@@ -331,12 +339,12 @@ class OpenAlexClient:
             logger.warning(f"Failed to reconstruct abstract: {e}")
             return ""
 
-    def close(self):
-        """Close resources (no-op for urllib, but keeps interface consistent)."""
-        pass
+    async def close(self):
+        """Close the HTTP client."""
+        await self._client.aclose()
 
-    def __enter__(self):
+    async def __aenter__(self):
         return self
 
-    def __exit__(self, *args):
-        self.close()
+    async def __aexit__(self, *args):
+        await self.close()

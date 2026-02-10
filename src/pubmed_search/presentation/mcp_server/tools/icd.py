@@ -350,29 +350,37 @@ def register_icd_tools(mcp: FastMCP):
         Note: Provide either 'code' OR 'mesh_term', not both.
         """
         if code and mesh_term:
-            return json.dumps({
-                "success": False,
-                "error": "Provide either 'code' OR 'mesh_term', not both",
-            }, indent=2, ensure_ascii=False)
+            return json.dumps(
+                {
+                    "success": False,
+                    "error": "Provide either 'code' OR 'mesh_term', not both",
+                },
+                indent=2,
+                ensure_ascii=False,
+            )
 
         if code:
             result = lookup_icd_to_mesh(code)
         elif mesh_term:
             result = lookup_mesh_to_icd(mesh_term)
         else:
-            return json.dumps({
-                "success": False,
-                "error": "Must provide either 'code' or 'mesh_term'",
-                "examples": {
-                    "icd_to_mesh": 'convert_icd_mesh(code="E11")',
-                    "mesh_to_icd": 'convert_icd_mesh(mesh_term="Diabetes Mellitus")',
+            return json.dumps(
+                {
+                    "success": False,
+                    "error": "Must provide either 'code' or 'mesh_term'",
+                    "examples": {
+                        "icd_to_mesh": 'convert_icd_mesh(code="E11")',
+                        "mesh_to_icd": 'convert_icd_mesh(mesh_term="Diabetes Mellitus")',
+                    },
                 },
-            }, indent=2, ensure_ascii=False)
+                indent=2,
+                ensure_ascii=False,
+            )
 
         return json.dumps(result, indent=2, ensure_ascii=False)
 
     @mcp.tool()
-    def search_by_icd(
+    async def search_by_icd(
         code: str,
         limit: int = 10,
         min_year: Optional[int] = None,
@@ -410,7 +418,7 @@ def register_icd_tools(mcp: FastMCP):
         searcher = LiteratureSearcher()
         mesh_query = mapping["pubmed_query"]
 
-        results = searcher.search(
+        results = await searcher.search(
             query=mesh_query,
             limit=limit,
             min_year=min_year,

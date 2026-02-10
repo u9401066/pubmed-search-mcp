@@ -276,7 +276,7 @@ class DispatchStrategy:
 # ============================================================================
 
 
-def _search_pubmed(
+async def _search_pubmed(
     searcher: LiteratureSearcher,
     query: str,
     limit: int,
@@ -298,7 +298,7 @@ def _search_pubmed(
         clinical_query: therapy, diagnosis, prognosis, etiology
     """
     try:
-        results = searcher.search(
+        results = await searcher.search(
             query=query,
             limit=limit,
             min_year=min_year,
@@ -326,7 +326,7 @@ def _search_pubmed(
         return [], None
 
 
-def _search_openalex(
+async def _search_openalex(
     query: str,
     limit: int,
     min_year: int | None,
@@ -338,7 +338,7 @@ def _search_openalex(
         Tuple of (articles, total_count).
     """
     try:
-        results = search_alternate_source(
+        results = await search_alternate_source(
             query=query,
             source="openalex",
             limit=limit,
@@ -357,7 +357,7 @@ def _search_openalex(
         return [], None
 
 
-def _search_semantic_scholar(
+async def _search_semantic_scholar(
     query: str,
     limit: int,
     min_year: int | None,
@@ -369,7 +369,7 @@ def _search_semantic_scholar(
         Tuple of (articles, total_count).
     """
     try:
-        results = search_alternate_source(
+        results = await search_alternate_source(
             query=query,
             source="semantic_scholar",
             limit=limit,
@@ -388,7 +388,7 @@ def _search_semantic_scholar(
         return [], None
 
 
-def _enrich_with_crossref(articles: list[UnifiedArticle]) -> None:
+async def _enrich_with_crossref(articles: list[UnifiedArticle]) -> None:
     """Enrich articles with CrossRef metadata (in-place, parallel)."""
     try:
         client = get_crossref_client()
@@ -407,36 +407,33 @@ def _enrich_with_crossref(articles: list[UnifiedArticle]) -> None:
         MAX_PARALLEL = 10
         articles_to_enrich = articles_to_enrich[:MAX_PARALLEL]
 
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-
-        def fetch_crossref(
-            idx_article: tuple[int, UnifiedArticle],
+        async def fetch_crossref(
+            idx: int, article: UnifiedArticle
         ) -> tuple[int, dict | None]:
-            idx, article = idx_article
             try:
                 doi = article.doi
                 if not doi:
                     return (idx, None)
-                work = client.get_work(doi)
+                work = await client.get_work(doi)
                 return (idx, work)
             except Exception:
                 return (idx, None)
 
-        # Parallel fetch
-        with ThreadPoolExecutor(
-            max_workers=min(5, len(articles_to_enrich))
-        ) as executor:
-            futures = {
-                executor.submit(fetch_crossref, item): item
-                for item in articles_to_enrich
-            }
+        # Parallel fetch with asyncio.gather
+        results = await asyncio.gather(
+            *[fetch_crossref(idx, article) for idx, article in articles_to_enrich],
+            return_exceptions=True,
+        )
 
-            for future in as_completed(futures):
+        for result in results:
+            if isinstance(result, Exception):
+                logger.debug(f"CrossRef enrichment skipped: {result}")
+                continue
+            idx, work = result
+            if work:
                 try:
-                    idx, work = future.result()
-                    if work:
-                        crossref_article = UnifiedArticle.from_crossref(work)
-                        articles[idx].merge_from(crossref_article)
+                    crossref_article = UnifiedArticle.from_crossref(work)
+                    articles[idx].merge_from(crossref_article)
                 except Exception as e:
                     logger.debug(f"CrossRef enrichment skipped: {e}")
 
@@ -444,7 +441,7 @@ def _enrich_with_crossref(articles: list[UnifiedArticle]) -> None:
         logger.warning(f"CrossRef enrichment failed: {e}")
 
 
-def _enrich_with_unpaywall(articles: list[UnifiedArticle]) -> None:
+async def _enrich_with_unpaywall(articles: list[UnifiedArticle]) -> None:
     """Enrich articles with Unpaywall OA links (in-place, parallel)."""
     try:
         client = get_unpaywall_client()
@@ -463,65 +460,62 @@ def _enrich_with_unpaywall(articles: list[UnifiedArticle]) -> None:
         MAX_PARALLEL = 10
         articles_to_enrich = articles_to_enrich[:MAX_PARALLEL]
 
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-
-        def fetch_unpaywall(
-            idx_article: tuple[int, UnifiedArticle],
+        async def fetch_unpaywall(
+            idx: int, article: UnifiedArticle
         ) -> tuple[int, dict | None]:
-            idx, article = idx_article
             try:
                 doi = article.doi
                 if not doi:
                     return (idx, None)
-                oa_info = client.enrich_article(doi)
+                oa_info = await client.enrich_article(doi)
                 return (idx, oa_info if oa_info.get("is_oa") else None)
             except Exception:
                 return (idx, None)
 
-        # Parallel fetch
-        with ThreadPoolExecutor(
-            max_workers=min(5, len(articles_to_enrich))
-        ) as executor:
-            futures = {
-                executor.submit(fetch_unpaywall, item): item
-                for item in articles_to_enrich
-            }
+        # Parallel fetch with asyncio.gather
+        results = await asyncio.gather(
+            *[fetch_unpaywall(idx, article) for idx, article in articles_to_enrich],
+            return_exceptions=True,
+        )
 
-            for future in as_completed(futures):
+        for result in results:
+            if isinstance(result, Exception):
+                logger.debug(f"Unpaywall enrichment skipped: {result}")
+                continue
+            idx, oa_info = result
+            if oa_info:
                 try:
-                    idx, oa_info = future.result()
-                    if oa_info:
-                        from pubmed_search.domain.entities.article import (
-                            OpenAccessLink,
-                            OpenAccessStatus,
-                        )
+                    from pubmed_search.domain.entities.article import (
+                        OpenAccessLink,
+                        OpenAccessStatus,
+                    )
 
-                        articles[idx].is_open_access = True
+                    articles[idx].is_open_access = True
 
-                        # Map OA status
-                        status_map = {
-                            "gold": OpenAccessStatus.GOLD,
-                            "green": OpenAccessStatus.GREEN,
-                            "hybrid": OpenAccessStatus.HYBRID,
-                            "bronze": OpenAccessStatus.BRONZE,
-                        }
-                        articles[idx].oa_status = status_map.get(
-                            oa_info.get("oa_status", "unknown"),
-                            OpenAccessStatus.UNKNOWN,
-                        )
+                    # Map OA status
+                    status_map = {
+                        "gold": OpenAccessStatus.GOLD,
+                        "green": OpenAccessStatus.GREEN,
+                        "hybrid": OpenAccessStatus.HYBRID,
+                        "bronze": OpenAccessStatus.BRONZE,
+                    }
+                    articles[idx].oa_status = status_map.get(
+                        oa_info.get("oa_status", "unknown"),
+                        OpenAccessStatus.UNKNOWN,
+                    )
 
-                        # Add OA links
-                        for link_data in oa_info.get("oa_links", []):
-                            if link_data.get("url"):
-                                articles[idx].oa_links.append(
-                                    OpenAccessLink(
-                                        url=link_data["url"],
-                                        version=link_data.get("version", "unknown"),
-                                        host_type=link_data.get("host_type"),
-                                        license=link_data.get("license"),
-                                        is_best=link_data.get("is_best", False),
-                                    )
+                    # Add OA links
+                    for link_data in oa_info.get("oa_links", []):
+                        if link_data.get("url"):
+                            articles[idx].oa_links.append(
+                                OpenAccessLink(
+                                    url=link_data["url"],
+                                    version=link_data.get("version", "unknown"),
+                                    host_type=link_data.get("host_type"),
+                                    license=link_data.get("license"),
+                                    is_best=link_data.get("is_best", False),
                                 )
+                            )
                 except Exception as e:
                     logger.debug(f"Unpaywall enrichment skipped: {e}")
 
@@ -588,7 +582,7 @@ def _enrich_with_similarity_scores(
         logger.warning(f"Similarity enrichment failed: {e}")
 
 
-def _enrich_with_api_similarity(
+async def _enrich_with_api_similarity(
     articles: list[UnifiedArticle],
     seed_pmid: str | None = None,
 ) -> None:
@@ -613,7 +607,9 @@ def _enrich_with_api_similarity(
         s2_client = SemanticScholarClient()
 
         # Get recommendations based on seed article
-        recommendations = s2_client.get_recommendations(f"PMID:{seed_pmid}", limit=50)
+        recommendations = await s2_client.get_recommendations(
+            f"PMID:{seed_pmid}", limit=50
+        )
 
         if not recommendations:
             return
@@ -682,7 +678,7 @@ def _format_unified_results(
         if icd_matches:
             icd_info = ", ".join([f"{m['code']}→{m['mesh']}" for m in icd_matches])
             output_parts.append(f"**ICD Expansion**: {icd_info}")
-        
+
         # Phase 3: Show PubTator3 resolved entities
         if enhanced_entities:
             entity_str = ", ".join(enhanced_entities[:5])  # Show max 5
@@ -888,7 +884,7 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
     """Register unified search MCP tools."""
 
     @mcp.tool()
-    def unified_search(
+    async def unified_search(
         query: str,
         limit: Union[int, str] = 10,
         min_year: Union[int, str, None] = None,
@@ -1054,18 +1050,13 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             # Deep+Wide: Every search gets PubTator3 entity resolution
             enhanced_query: EnhancedQuery | None = None
             matched_entity_names: list[str] = []
-            
+
             try:
-                # Run async enhancement in sync context
                 enhancer = get_semantic_enhancer()
-                loop = asyncio.new_event_loop()
-                try:
-                    enhanced_query = loop.run_until_complete(
-                        asyncio.wait_for(enhancer.enhance(query), timeout=3.0)
-                    )
-                finally:
-                    loop.close()
-                
+                enhanced_query = await asyncio.wait_for(
+                    enhancer.enhance(query), timeout=3.0
+                )
+
                 if enhanced_query and enhanced_query.entities:
                     # Extract entity names for ranking
                     matched_entity_names = [
@@ -1093,7 +1084,7 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 config = RankingConfig.quality_focused()
             else:
                 config = DispatchStrategy.get_ranking_config(analysis)
-            
+
             # Phase 3: Pass entity information to ranking config
             if matched_entity_names:
                 config.matched_entities = matched_entity_names
@@ -1116,10 +1107,8 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 if v is not None
             }
 
-            # Use ThreadPoolExecutor for parallel search
-            from concurrent.futures import ThreadPoolExecutor, as_completed
-
-            def search_source(
+            # Async parallel search
+            async def search_source(
                 source: str,
             ) -> tuple[str, list[UnifiedArticle], int | None]:
                 """Search a single source and return (source_name, articles, total_count)."""
@@ -1127,18 +1116,18 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 effective_max_year = max_year or analysis.year_to
 
                 if source == "pubmed":
-                    articles, total_count = _search_pubmed(
+                    articles, total_count = await _search_pubmed(
                         searcher,
                         query,
                         limit,
                         effective_min_year,
                         effective_max_year,
-                        **advanced_filters,  # Cleaner: pass all advanced filters
+                        **advanced_filters,
                     )
                     return ("pubmed", articles, total_count)
 
                 elif source == "openalex":
-                    articles, total_count = _search_openalex(
+                    articles, total_count = await _search_openalex(
                         query,
                         limit,
                         effective_min_year,
@@ -1147,7 +1136,7 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                     return ("openalex", articles, total_count)
 
                 elif source == "semantic_scholar":
-                    articles, total_count = _search_semantic_scholar(
+                    articles, total_count = await _search_semantic_scholar(
                         query,
                         limit,
                         effective_min_year,
@@ -1164,24 +1153,25 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             # Filter out crossref from parallel search (it's enrichment only)
             search_sources = [s for s in sources if s != "crossref"]
 
-            # Execute searches in parallel
-            with ThreadPoolExecutor(max_workers=len(search_sources)) as executor:
-                futures = {executor.submit(search_source, s): s for s in search_sources}
+            # Execute searches in parallel with asyncio.gather
+            search_results = await asyncio.gather(
+                *[search_source(s) for s in search_sources],
+                return_exceptions=True,
+            )
 
-                for future in as_completed(futures):
-                    source_name = futures[future]
-                    try:
-                        name, articles, total_count = future.result()
-                        if articles:
-                            all_results.append(articles)
-                        if name == "pubmed" and total_count is not None:
-                            pubmed_total_count = total_count
-                        logger.info(
-                            f"{name}: {len(articles)} results"
-                            + (f" (total: {total_count})" if total_count else "")
-                        )
-                    except Exception as e:
-                        logger.error(f"Search failed for {source_name}: {e}")
+            for result in search_results:
+                if isinstance(result, Exception):
+                    logger.error(f"Search failed: {result}")
+                    continue
+                name, articles, total_count = result
+                if articles:
+                    all_results.append(articles)
+                if name == "pubmed" and total_count is not None:
+                    pubmed_total_count = total_count
+                logger.info(
+                    f"{name}: {len(articles)} results"
+                    + (f" (total: {total_count})" if total_count else "")
+                )
 
             # === Step 4.5: Search Preprints (if enabled) ===
             if include_preprints:
@@ -1193,9 +1183,10 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                         if "[MeSH]" in query
                         else query
                     )
-                    preprint_results = preprint_searcher.search_medical_preprints(
+                    preprint_results = await asyncio.to_thread(
+                        preprint_searcher.search_medical_preprints,
                         query=preprint_query,
-                        limit=min(limit, 10),  # Cap preprint results
+                        limit=min(limit, 10),
                     )
                     logger.info(
                         f"Preprints: {preprint_results.get('total', 0)} results"
@@ -1214,13 +1205,13 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
 
             # === Step 6: Enrich with CrossRef (if in sources) ===
             if "crossref" in sources:
-                _enrich_with_crossref(articles)
+                await _enrich_with_crossref(articles)
 
             # === Step 7: Enrich with Unpaywall OA Links ===
             if include_oa_links and DispatchStrategy.should_enrich_with_unpaywall(
                 analysis
             ):
-                _enrich_with_unpaywall(articles)
+                await _enrich_with_unpaywall(articles)
 
             # === Step 8: Rank Results ===
             ranked = aggregator.rank(articles, config, query)
@@ -1250,7 +1241,9 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                     preprint_results if include_preprints else None,
                     include_trials=True,
                     original_query=analysis.original_query,
-                    enhanced_entities=matched_entity_names if matched_entity_names else None,
+                    enhanced_entities=matched_entity_names
+                    if matched_entity_names
+                    else None,
                 )
 
         except Exception as e:
@@ -1258,7 +1251,7 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             return f"Error: Unified search failed - {str(e)}"
 
     @mcp.tool()
-    def analyze_search_query(query: str) -> str:
+    async def analyze_search_query(query: str) -> str:
         """
         Analyze a search query without executing the search.
 

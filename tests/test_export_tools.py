@@ -3,6 +3,7 @@
 import json
 from unittest.mock import MagicMock, patch
 
+import pytest
 
 from pubmed_search.presentation.mcp_server.tools.export import (
     register_export_tools,
@@ -93,15 +94,17 @@ def _capture_tools(mcp, searcher):
 
 
 class TestPrepareExport:
-    def test_no_pmids(self):
+    @pytest.mark.asyncio
+    async def test_no_pmids(self):
         mcp = MagicMock()
         searcher = MagicMock()
         tools = _capture_tools(mcp, searcher)
 
-        result = tools["prepare_export"](pmids="", format="ris")
+        result = await tools["prepare_export"](pmids="", format="ris")
         assert "error" in result.lower()
 
-    def test_official_ris(self):
+    @pytest.mark.asyncio
+    async def test_official_ris(self):
         mcp = MagicMock()
         searcher = MagicMock()
         tools = _capture_tools(mcp, searcher)
@@ -115,14 +118,15 @@ class TestPrepareExport:
             "pubmed_search.presentation.mcp_server.tools.export.export_citations_official",
             return_value=mock_result,
         ):
-            result = tools["prepare_export"](
+            result = await tools["prepare_export"](
                 pmids="12345678", format="ris", source="official"
             )
         parsed = json.loads(result)
         assert parsed["status"] == "success"
         assert parsed["source"] == "official"
 
-    def test_local_bibtex(self):
+    @pytest.mark.asyncio
+    async def test_local_bibtex(self):
         mcp = MagicMock()
         searcher = MagicMock()
         searcher.fetch_details.return_value = [
@@ -134,24 +138,26 @@ class TestPrepareExport:
             "pubmed_search.presentation.mcp_server.tools.export.export_articles",
             return_value="@article{123,\n  title={T}\n}",
         ):
-            result = tools["prepare_export"](
+            result = await tools["prepare_export"](
                 pmids="123", format="bibtex", source="local"
             )
         parsed = json.loads(result)
         assert parsed["status"] == "success"
         assert parsed["format"] == "bibtex"
 
-    def test_unsupported_format(self):
+    @pytest.mark.asyncio
+    async def test_unsupported_format(self):
         mcp = MagicMock()
         searcher = MagicMock()
         tools = _capture_tools(mcp, searcher)
 
-        result = tools["prepare_export"](
+        result = await tools["prepare_export"](
             pmids="123", format="xyz", source="official"
         )
         assert "unsupported" in result.lower() or "error" in result.lower()
 
-    def test_official_api_failure_falls_back(self):
+    @pytest.mark.asyncio
+    async def test_official_api_failure_falls_back(self):
         mcp = MagicMock()
         searcher = MagicMock()
         searcher.fetch_details.return_value = [{"pmid": "123", "title": "T"}]
@@ -168,14 +174,15 @@ class TestPrepareExport:
             "pubmed_search.presentation.mcp_server.tools.export.export_articles",
             return_value="TY  - JOUR\n",
         ):
-            result = tools["prepare_export"](
+            result = await tools["prepare_export"](
                 pmids="123", format="ris", source="official"
             )
         parsed = json.loads(result)
         assert parsed["status"] == "success"
         assert parsed["source"] == "local"
 
-    def test_exception_handling(self):
+    @pytest.mark.asyncio
+    async def test_exception_handling(self):
         mcp = MagicMock()
         searcher = MagicMock()
         tools = _capture_tools(mcp, searcher)
@@ -184,7 +191,7 @@ class TestPrepareExport:
             "pubmed_search.presentation.mcp_server.tools.export.export_citations_official",
             side_effect=RuntimeError("network error"),
         ):
-            result = tools["prepare_export"](
+            result = await tools["prepare_export"](
                 pmids="123", format="ris", source="official"
             )
         assert "error" in result.lower()

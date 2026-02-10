@@ -38,7 +38,7 @@ def register_image_search_tools(mcp: FastMCP):
     """
 
     @mcp.tool()
-    def search_biomedical_images(
+    async def search_biomedical_images(
         query: str,
         sources: str = "auto",
         image_type: Union[str, None] = None,
@@ -217,15 +217,13 @@ def register_image_search_tools(mcp: FastMCP):
         }
         source_list = source_map.get(sources)
         if sources not in source_map:
-            logger.warning(
-                f"Unknown sources value '{sources}', using auto"
-            )
+            logger.warning(f"Unknown sources value '{sources}', using auto")
             source_list = None
 
         # 3. Call application service
         try:
             service = ImageSearchService()
-            result = service.search(
+            result = await service.search(
                 query=query,
                 sources=source_list,
                 image_type=image_type,
@@ -284,14 +282,10 @@ def _format_image_results(result: ImageSearchResult) -> str:
             parts.append(f"- 💡 {s}")
 
     if result.recommended_image_type:
-        parts.append(
-            f"- 🎯 建議 image_type: `{result.recommended_image_type}`"
-        )
+        parts.append(f"- 🎯 建議 image_type: `{result.recommended_image_type}`")
 
     if result.coarse_category:
-        parts.append(
-            f"- 📂 粗分類: {result.coarse_category}"
-        )
+        parts.append(f"- 📂 粗分類: {result.coarse_category}")
 
     if result.recommended_collection:
         parts.append(
@@ -366,13 +360,15 @@ def _format_image_results(result: ImageSearchResult) -> str:
     # Footer with tips
     parts.append("---")
     parts.append("💡 **Tips**:")
-    parts.append('- Use `image_type="x"` for X-ray, `"m"` for MRI, `"mc"` for microscopy, `"c"` for CT')
+    parts.append(
+        '- Use `image_type="x"` for X-ray, `"m"` for MRI, `"mc"` for microscopy, `"c"` for CT'
+    )
     parts.append('- Use `collection="mpx"` for MedPix clinical teaching images')
-    parts.append('- Use `sort_by="d"` for newest images, `article_type="cr"` for case reports')
+    parts.append(
+        '- Use `sort_by="d"` for newest images, `article_type="cr"` for case reports'
+    )
     parts.append('- Use `specialty="r"` for radiology, `"c"` for cardiology')
     parts.append('- Use `license_type="by"` for CC-BY licensed images')
-    parts.append(
-        "- Use `fetch_article_details(pmid=...)` to get full article info"
-    )
+    parts.append("- Use `fetch_article_details(pmid=...)` to get full article info")
 
     return "\n".join(parts)

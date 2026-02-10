@@ -10,12 +10,12 @@ All use the same Entrez E-utilities infrastructure.
 API Documentation: https://www.ncbi.nlm.nih.gov/books/NBK25497/
 """
 
-import json
+import asyncio
 import logging
 import time
-import urllib.error
 import urllib.parse
-import urllib.request
+
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -66,17 +66,26 @@ class NCBIExtendedClient:
         self._last_request_time = 0
         # Rate limit: 3/sec without key, 10/sec with key
         self._min_interval = 0.34 if not api_key else 0.1
+        self._client = httpx.AsyncClient(
+            timeout=self._timeout,
+            headers={
+                "User-Agent": f"pubmed-search-mcp/1.0 (mailto:{self._email})",
+                "Accept": "application/json",
+            },
+        )
 
-    def _rate_limit(self):
+    async def _rate_limit(self):
         """Simple rate limiting."""
         elapsed = time.time() - self._last_request_time
         if elapsed < self._min_interval:
-            time.sleep(self._min_interval - elapsed)
+            await asyncio.sleep(self._min_interval - elapsed)
         self._last_request_time = time.time()
 
-    def _make_request(self, url: str, expect_json: bool = False) -> dict | str | None:
+    async def _make_request(
+        self, url: str, expect_json: bool = False
+    ) -> dict | str | None:
         """Make HTTP request to NCBI."""
-        self._rate_limit()
+        await self._rate_limit()
 
         # Add required parameters
         separator = "&" if "?" in url else "?"
@@ -86,20 +95,22 @@ class NCBIExtendedClient:
         if self._api_key:
             url += f"&api_key={self._api_key}"
 
-        request = urllib.request.Request(url)
-        request.add_header(
-            "User-Agent", f"pubmed-search-mcp/1.0 (mailto:{self._email})"
-        )
-
         try:
-            # nosec B310: URL is constructed from hardcoded NCBI_EUTILS_BASE (https)
-            with urllib.request.urlopen(request, timeout=self._timeout) as response:  # nosec B310
-                content = response.read().decode("utf-8")
-                if expect_json:
-                    return json.loads(content)
-                return content
-        except urllib.error.HTTPError as e:
-            logger.error(f"NCBI HTTP error {e.code}: {e.reason}")
+            response = await self._client.get(url)
+            if response.status_code == 429:
+                logger.warning("NCBI: Rate limit exceeded")
+                return None
+            response.raise_for_status()
+            if expect_json:
+                return response.json()
+            return response.text
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                f"NCBI HTTP error {e.response.status_code}: {e.response.reason_phrase}"
+            )
+            return None
+        except httpx.RequestError as e:
+            logger.error(f"NCBI request failed: {e}")
             return None
         except Exception as e:
             logger.error(f"NCBI request failed: {e}")
@@ -109,7 +120,7 @@ class NCBIExtendedClient:
     # Gene Database
     # =========================================================================
 
-    def search_gene(
+    async def search_gene(
         self,
         query: str,
         organism: str | None = None,
@@ -139,7 +150,7 @@ class NCBIExtendedClient:
                 f"&retmax={limit}&retmode=json"
             )
 
-            search_result = self._make_request(search_url, expect_json=True)
+            search_result = await self._make_request(search_url, expect_json=True)
             if not search_result:
                 return []
 
@@ -153,7 +164,7 @@ class NCBIExtendedClient:
                 f"{ENTREZ_BASE}/esummary.fcgi?db=gene&id={ids_str}&retmode=json"
             )
 
-            summary_result = self._make_request(summary_url, expect_json=True)
+            summary_result = await self._make_request(summary_url, expect_json=True)
             if not summary_result:
                 return []
 
@@ -171,7 +182,7 @@ class NCBIExtendedClient:
             logger.error(f"Gene search failed: {e}")
             return []
 
-    def get_gene(self, gene_id: str | int) -> dict | None:
+    async def get_gene(self, gene_id: str | int) -> dict | None:
         """
         Get gene details by NCBI Gene ID.
 
@@ -183,7 +194,7 @@ class NCBIExtendedClient:
         """
         try:
             url = f"{ENTREZ_BASE}/esummary.fcgi?db=gene&id={gene_id}&retmode=json"
-            result = self._make_request(url, expect_json=True)
+            result = await self._make_request(url, expect_json=True)
 
             if not result:
                 return None
@@ -198,7 +209,9 @@ class NCBIExtendedClient:
             logger.error(f"Get gene failed: {e}")
             return None
 
-    def get_gene_pubmed_links(self, gene_id: str | int, limit: int = 20) -> list[str]:
+    async def get_gene_pubmed_links(
+        self, gene_id: str | int, limit: int = 20
+    ) -> list[str]:
         """
         Get PubMed IDs linked to a gene.
 
@@ -214,7 +227,7 @@ class NCBIExtendedClient:
                 f"{ENTREZ_BASE}/elink.fcgi?dbfrom=gene&db=pubmed"
                 f"&id={gene_id}&retmode=json"
             )
-            result = self._make_request(url, expect_json=True)
+            result = await self._make_request(url, expect_json=True)
 
             if not result:
                 return []
@@ -255,7 +268,7 @@ class NCBIExtendedClient:
     # PubChem Database
     # =========================================================================
 
-    def search_compound(
+    async def search_compound(
         self,
         query: str,
         limit: int = 10,
@@ -278,7 +291,7 @@ class NCBIExtendedClient:
                 f"&retmax={limit}&retmode=json"
             )
 
-            search_result = self._make_request(search_url, expect_json=True)
+            search_result = await self._make_request(search_url, expect_json=True)
             if not search_result:
                 return []
 
@@ -292,7 +305,7 @@ class NCBIExtendedClient:
                 f"{ENTREZ_BASE}/esummary.fcgi?db=pccompound&id={ids_str}&retmode=json"
             )
 
-            summary_result = self._make_request(summary_url, expect_json=True)
+            summary_result = await self._make_request(summary_url, expect_json=True)
             if not summary_result:
                 return []
 
@@ -310,7 +323,7 @@ class NCBIExtendedClient:
             logger.error(f"Compound search failed: {e}")
             return []
 
-    def get_compound(self, cid: str | int) -> dict | None:
+    async def get_compound(self, cid: str | int) -> dict | None:
         """
         Get compound details by PubChem CID.
 
@@ -322,7 +335,7 @@ class NCBIExtendedClient:
         """
         try:
             url = f"{ENTREZ_BASE}/esummary.fcgi?db=pccompound&id={cid}&retmode=json"
-            result = self._make_request(url, expect_json=True)
+            result = await self._make_request(url, expect_json=True)
 
             if not result:
                 return None
@@ -337,7 +350,9 @@ class NCBIExtendedClient:
             logger.error(f"Get compound failed: {e}")
             return None
 
-    def get_compound_pubmed_links(self, cid: str | int, limit: int = 20) -> list[str]:
+    async def get_compound_pubmed_links(
+        self, cid: str | int, limit: int = 20
+    ) -> list[str]:
         """
         Get PubMed IDs linked to a compound.
 
@@ -353,7 +368,7 @@ class NCBIExtendedClient:
                 f"{ENTREZ_BASE}/elink.fcgi?dbfrom=pccompound&db=pubmed"
                 f"&id={cid}&retmode=json"
             )
-            result = self._make_request(url, expect_json=True)
+            result = await self._make_request(url, expect_json=True)
 
             if not result:
                 return []
@@ -402,7 +417,7 @@ class NCBIExtendedClient:
     # ClinVar Database
     # =========================================================================
 
-    def search_clinvar(
+    async def search_clinvar(
         self,
         query: str,
         limit: int = 10,
@@ -425,7 +440,7 @@ class NCBIExtendedClient:
                 f"&retmax={limit}&retmode=json"
             )
 
-            search_result = self._make_request(search_url, expect_json=True)
+            search_result = await self._make_request(search_url, expect_json=True)
             if not search_result:
                 return []
 
@@ -439,7 +454,7 @@ class NCBIExtendedClient:
                 f"{ENTREZ_BASE}/esummary.fcgi?db=clinvar&id={ids_str}&retmode=json"
             )
 
-            summary_result = self._make_request(summary_url, expect_json=True)
+            summary_result = await self._make_request(summary_url, expect_json=True)
             if not summary_result:
                 return []
 
@@ -491,6 +506,16 @@ class NCBIExtendedClient:
             ],
             "_source": "clinvar",
         }
+
+    async def close(self):
+        """Close the HTTP client."""
+        await self._client.aclose()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        await self.close()
 
 
 # Singleton instance

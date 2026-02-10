@@ -27,7 +27,7 @@ def register_openurl_tools(mcp: FastMCP) -> None:
     """Register OpenURL-related MCP tools."""
 
     @mcp.tool()
-    async def configure_institutional_access(
+    def configure_institutional_access(
         resolver_url: str | None = None,
         preset: str | None = None,
         enable: bool = True,
@@ -172,7 +172,7 @@ To configure, call:
             return f"❌ Configuration failed: {e}"
 
     @mcp.tool()
-    async def get_institutional_link(
+    def get_institutional_link(
         pmid: str | None = None,
         doi: str | None = None,
         title: str | None = None,
@@ -286,7 +286,7 @@ Click the link to check your library's subscription and access full text.
             return f"❌ Error: {e}"
 
     @mcp.tool()
-    async def list_resolver_presets() -> str:
+    def list_resolver_presets() -> str:
         """
         List available institutional link resolver presets.
 
@@ -514,9 +514,10 @@ def _format_article(article: dict) -> str:
 
 async def _test_resolver_url(url: str, timeout: int = 10) -> dict:
     """Test if a resolver URL is reachable."""
-    import urllib.error
+    import time
     import urllib.parse
-    import urllib.request
+
+    import httpx
 
     result = {
         "reachable": False,
@@ -534,31 +535,29 @@ async def _test_resolver_url(url: str, timeout: int = 10) -> dict:
         return result
 
     try:
-        import time
-
         start = time.time()
 
-        req = urllib.request.Request(
-            url, headers={"User-Agent": "PubMed-Search-MCP/0.1.25 (OpenURL Test)"}
-        )
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+            response = await client.get(
+                url,
+                headers={"User-Agent": "PubMed-Search-MCP/0.1.25 (OpenURL Test)"},
+            )
 
-        # nosec B310: URL scheme validated above
-        with urllib.request.urlopen(req, timeout=timeout) as response:  # nosec B310
-            result["reachable"] = True
-            result["status_code"] = response.status
-            result["response_time_ms"] = int((time.time() - start) * 1000)
+        result["reachable"] = True
+        result["status_code"] = response.status_code
+        result["response_time_ms"] = int((time.time() - start) * 1000)
 
-    except urllib.error.HTTPError as e:
-        # HTTP errors (4xx, 5xx) - resolver exists but returned error
-        # This is actually OK for OpenURL - resolver often returns 4xx for invalid queries
-        result["reachable"] = True  # Server responded
-        result["status_code"] = e.code
-        result["response_time_ms"] = None
-        result["error"] = f"HTTP {e.code}: {e.reason}"
+        # Check if status indicates server error but still reachable
+        if response.status_code >= 400:
+            result["error"] = f"HTTP {response.status_code}: {response.reason_phrase}"
 
-    except urllib.error.URLError as e:
+    except httpx.ConnectError as e:
         result["reachable"] = False
-        result["error"] = f"Connection failed: {e.reason}"
+        result["error"] = f"Connection failed: {e}"
+
+    except httpx.HTTPError as e:
+        result["reachable"] = False
+        result["error"] = str(e)
 
     except Exception as e:
         result["reachable"] = False

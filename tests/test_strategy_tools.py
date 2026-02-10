@@ -26,12 +26,14 @@ def setup():
 
 
 class TestGenerateSearchQueries:
-    def test_empty_topic(self, setup):
+    @pytest.mark.asyncio
+    async def test_empty_topic(self, setup):
         tools, _ = setup
-        result = tools["generate_search_queries"](topic="")
+        result = await tools["generate_search_queries"](topic="")
         assert "error" in result.lower()
 
-    def test_with_strategy_generator(self, setup):
+    @pytest.mark.asyncio
+    async def test_with_strategy_generator(self, setup):
         tools, _ = setup
         mock_gen = MagicMock()
         mock_gen.generate_strategies.return_value = {
@@ -43,36 +45,39 @@ class TestGenerateSearchQueries:
             "pubmed_search.presentation.mcp_server.tools.strategy.get_strategy_generator",
             return_value=mock_gen,
         ):
-            result = tools["generate_search_queries"](topic="remimazolam")
+            result = await tools["generate_search_queries"](topic="remimazolam")
         parsed = json.loads(result)
         assert "_hint" in parsed
         assert "mesh_terms" in parsed
 
-    def test_fallback_no_generator(self, setup):
+    @pytest.mark.asyncio
+    async def test_fallback_no_generator(self, setup):
         tools, _ = setup
         with patch(
             "pubmed_search.presentation.mcp_server.tools.strategy.get_strategy_generator",
             return_value=None,
         ):
-            result = tools["generate_search_queries"](topic="propofol sedation")
+            result = await tools["generate_search_queries"](topic="propofol sedation")
         parsed = json.loads(result)
         assert parsed["topic"] == "propofol sedation"
         assert "fallback" in parsed.get("note", "").lower()
         assert len(parsed["suggested_queries"]) >= 3
 
-    def test_invalid_strategy_defaults(self, setup):
+    @pytest.mark.asyncio
+    async def test_invalid_strategy_defaults(self, setup):
         tools, _ = setup
         with patch(
             "pubmed_search.presentation.mcp_server.tools.strategy.get_strategy_generator",
             return_value=None,
         ):
-            result = tools["generate_search_queries"](
+            result = await tools["generate_search_queries"](
                 topic="test", strategy="invalid_strategy"
             )
         parsed = json.loads(result)
         assert parsed["strategy"] == "comprehensive"
 
-    def test_generator_exception_falls_back(self, setup):
+    @pytest.mark.asyncio
+    async def test_generator_exception_falls_back(self, setup):
         tools, _ = setup
         mock_gen = MagicMock()
         mock_gen.generate_strategies.side_effect = RuntimeError("API failure")
@@ -80,19 +85,20 @@ class TestGenerateSearchQueries:
             "pubmed_search.presentation.mcp_server.tools.strategy.get_strategy_generator",
             return_value=mock_gen,
         ):
-            result = tools["generate_search_queries"](topic="test")
+            result = await tools["generate_search_queries"](topic="test")
         parsed = json.loads(result)
         # Should fall back to basic
         assert "suggested_queries" in parsed
         assert "fallback" in parsed.get("note", "").lower()
 
-    def test_single_word_topic(self, setup):
+    @pytest.mark.asyncio
+    async def test_single_word_topic(self, setup):
         tools, _ = setup
         with patch(
             "pubmed_search.presentation.mcp_server.tools.strategy.get_strategy_generator",
             return_value=None,
         ):
-            result = tools["generate_search_queries"](topic="diabetes")
+            result = await tools["generate_search_queries"](topic="diabetes")
         parsed = json.loads(result)
         # Single word: should have title, tiab, mesh but no AND query
         queries = parsed["suggested_queries"]

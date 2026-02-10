@@ -3,6 +3,7 @@
 import json
 from unittest.mock import MagicMock, patch
 
+import pytest
 
 from pubmed_search.presentation.mcp_server.tools.unified import (
     register_unified_search_tools,
@@ -173,14 +174,16 @@ def _capture_tools(mcp, searcher):
 
 
 class TestUnifiedSearch:
-    def test_empty_query(self):
+    @pytest.mark.asyncio
+    async def test_empty_query(self):
         mcp = MagicMock()
         searcher = MagicMock()
         tools = _capture_tools(mcp, searcher)
-        result = tools["unified_search"](query="")
+        result = await tools["unified_search"](query="")
         assert "error" in result.lower() or "empty" in result.lower()
 
-    def test_simple_pubmed_search(self):
+    @pytest.mark.asyncio
+    async def test_simple_pubmed_search(self):
         mcp = MagicMock()
         searcher = MagicMock()
         searcher.search.return_value = [
@@ -192,12 +195,13 @@ class TestUnifiedSearch:
             "pubmed_search.presentation.mcp_server.tools.unified.get_semantic_enhancer",
         ) as mock_enhancer:
             mock_enhancer.return_value.enhance.side_effect = Exception("skip")
-            result = tools["unified_search"](
+            result = await tools["unified_search"](
                 query="diabetes", limit=5, show_analysis=False, include_similarity_scores=False
             )
         assert isinstance(result, str)
 
-    def test_json_output(self):
+    @pytest.mark.asyncio
+    async def test_json_output(self):
         """unified_search with json format - may return JSON or error string depending on dispatch."""
         mcp = MagicMock()
         searcher = MagicMock()
@@ -210,7 +214,7 @@ class TestUnifiedSearch:
             "pubmed_search.presentation.mcp_server.tools.unified.get_semantic_enhancer",
         ) as mock_enhancer:
             mock_enhancer.return_value.enhance.side_effect = Exception("skip")
-            result = tools["unified_search"](
+            result = await tools["unified_search"](
                 query="test", output_format="json", include_similarity_scores=False
             )
         assert isinstance(result, str)
@@ -221,7 +225,8 @@ class TestUnifiedSearch:
         except json.JSONDecodeError:
             assert "no results" in result.lower() or "error" in result.lower()
 
-    def test_exception_handling(self):
+    @pytest.mark.asyncio
+    async def test_exception_handling(self):
         """When PubMed search fails internally, unified_search still returns results (empty)."""
         mcp = MagicMock()
         searcher = MagicMock()
@@ -232,27 +237,30 @@ class TestUnifiedSearch:
             "pubmed_search.presentation.mcp_server.tools.unified.get_semantic_enhancer",
         ) as mock_enhancer:
             mock_enhancer.return_value.enhance.side_effect = Exception("skip")
-            result = tools["unified_search"](query="test")
+            result = await tools["unified_search"](query="test")
         # PubMed exception is caught in _search_pubmed, so result is "No results"
         assert "no results" in result.lower() or "error" in result.lower()
 
 
 class TestAnalyzeSearchQuery:
-    def test_empty_query(self):
+    @pytest.mark.asyncio
+    async def test_empty_query(self):
         mcp = MagicMock()
         searcher = MagicMock()
         tools = _capture_tools(mcp, searcher)
-        result = tools["analyze_search_query"](query="")
+        result = await tools["analyze_search_query"](query="")
         assert "error" in result.lower()
 
-    def test_basic_analysis(self):
+    @pytest.mark.asyncio
+    async def test_basic_analysis(self):
         mcp = MagicMock()
         searcher = MagicMock()
         tools = _capture_tools(mcp, searcher)
-        result = tools["analyze_search_query"](query="diabetes treatment")
+        result = await tools["analyze_search_query"](query="diabetes treatment")
         assert "Query Analysis" in result or "Complexity" in result
 
-    def test_exception(self):
+    @pytest.mark.asyncio
+    async def test_exception(self):
         mcp = MagicMock()
         searcher = MagicMock()
         tools = _capture_tools(mcp, searcher)
@@ -261,5 +269,5 @@ class TestAnalyzeSearchQuery:
             "pubmed_search.presentation.mcp_server.tools.unified.QueryAnalyzer"
         ) as MockAnalyzer:
             MockAnalyzer.return_value.analyze.side_effect = RuntimeError("fail")
-            result = tools["analyze_search_query"](query="test")
+            result = await tools["analyze_search_query"](query="test")
         assert "error" in result.lower()

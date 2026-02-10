@@ -22,13 +22,13 @@ Best Practices:
 - Use for enriching existing article data
 """
 
-import json
+import asyncio
 import logging
 import time
-import urllib.error
 import urllib.parse
-import urllib.request
 from typing import Any, Literal
+
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -74,47 +74,51 @@ class UnpaywallClient:
         self._last_request_time = 0.0
         # Rate limit: be polite, max 10 req/sec
         self._min_interval = 0.1
+        self._client = httpx.AsyncClient(
+            timeout=self._timeout,
+            headers={
+                "User-Agent": f"pubmed-search-mcp/1.0 (mailto:{self._email})",
+                "Accept": "application/json",
+            },
+        )
 
-    def _rate_limit(self) -> None:
+    async def _rate_limit(self) -> None:
         """Simple rate limiting."""
         elapsed = time.time() - self._last_request_time
         if elapsed < self._min_interval:
-            time.sleep(self._min_interval - elapsed)
+            await asyncio.sleep(self._min_interval - elapsed)
         self._last_request_time = time.time()
 
-    def _make_request(self, url: str) -> dict[str, Any] | None:
+    async def _make_request(self, url: str) -> dict[str, Any] | None:
         """Make HTTP request to Unpaywall API."""
-        self._rate_limit()
-
-        headers = {
-            "User-Agent": f"pubmed-search-mcp/1.0 (mailto:{self._email})",
-            "Accept": "application/json",
-        }
-
-        request = urllib.request.Request(url, headers=headers)
+        await self._rate_limit()
 
         try:
-            # nosec B310: URL is constructed from hardcoded UNPAYWALL_API_BASE (https)
-            with urllib.request.urlopen(request, timeout=self._timeout) as response:  # nosec B310
-                return json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            if e.code == 404:
+            response = await self._client.get(url)
+            if response.status_code == 404:
                 logger.debug("Unpaywall: DOI not found")
-            elif e.code == 422:
+                return None
+            if response.status_code == 422:
                 logger.warning("Unpaywall: Invalid DOI format")
-            elif e.code == 429:
+                return None
+            if response.status_code == 429:
                 logger.warning("Unpaywall: Rate limit exceeded")
-            else:
-                logger.error(f"Unpaywall HTTP error {e.code}: {e.reason}")
+                return None
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                f"Unpaywall HTTP error {e.response.status_code}: {e.response.reason_phrase}"
+            )
             return None
-        except urllib.error.URLError as e:
-            logger.error(f"Unpaywall URL error: {e.reason}")
+        except httpx.RequestError as e:
+            logger.error(f"Unpaywall URL error: {e}")
             return None
         except Exception as e:
             logger.error(f"Unpaywall request failed: {e}")
             return None
 
-    def get_oa_status(self, doi: str) -> dict[str, Any] | None:
+    async def get_oa_status(self, doi: str) -> dict[str, Any] | None:
         """
         Get open access status and links for a DOI.
 
@@ -143,14 +147,14 @@ class UnpaywallClient:
         doi = self._normalize_doi(doi)
         url = f"{UNPAYWALL_API_BASE}/{urllib.parse.quote(doi, safe='')}?email={urllib.parse.quote(self._email)}"
 
-        data = self._make_request(url)
+        data = await self._make_request(url)
         if not data:
             return None
 
         # Normalize response
         return self._normalize_response(data)
 
-    def get_best_oa_link(self, doi: str) -> str | None:
+    async def get_best_oa_link(self, doi: str) -> str | None:
         """
         Get the best available OA link for a DOI.
 
@@ -160,14 +164,14 @@ class UnpaywallClient:
         Returns:
             Best OA URL or None if not available
         """
-        oa_info = self.get_oa_status(doi)
+        oa_info = await self.get_oa_status(doi)
         if oa_info and oa_info.get("is_oa"):
             best = oa_info.get("best_oa_location")
             if best:
                 return best.get("url") or best.get("url_for_pdf")
         return None
 
-    def get_pdf_link(self, doi: str) -> str | None:
+    async def get_pdf_link(self, doi: str) -> str | None:
         """
         Get direct PDF link if available.
 
@@ -177,7 +181,7 @@ class UnpaywallClient:
         Returns:
             PDF URL or None
         """
-        oa_info = self.get_oa_status(doi)
+        oa_info = await self.get_oa_status(doi)
         if not oa_info or not oa_info.get("is_oa"):
             return None
 
@@ -193,7 +197,7 @@ class UnpaywallClient:
 
         return None
 
-    def batch_get_oa_status(
+    async def batch_get_oa_status(
         self,
         dois: list[str],
     ) -> dict[str, dict[str, Any] | None]:
@@ -211,10 +215,10 @@ class UnpaywallClient:
         """
         results = {}
         for doi in dois:
-            results[doi] = self.get_oa_status(doi)
+            results[doi] = await self.get_oa_status(doi)
         return results
 
-    def enrich_article(
+    async def enrich_article(
         self,
         doi: str,
     ) -> dict[str, Any]:
@@ -229,7 +233,7 @@ class UnpaywallClient:
         Returns:
             Dict with OA fields for article enrichment
         """
-        oa_info = self.get_oa_status(doi)
+        oa_info = await self.get_oa_status(doi)
 
         result = {
             "is_oa": False,
@@ -305,6 +309,16 @@ class UnpaywallClient:
         }
         return descriptions.get(status, f"Unknown status: {status}")
 
+    async def close(self):
+        """Close the HTTP client."""
+        await self._client.aclose()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        await self.close()
+
 
 # OA Status type for type hints
 OAStatus = Literal["gold", "green", "hybrid", "bronze", "closed", "unknown"]
@@ -327,29 +341,29 @@ def get_unpaywall_client(email: str | None = None) -> UnpaywallClient:
 
 
 # Convenience functions
-def find_oa_link(doi: str) -> str | None:
+async def find_oa_link(doi: str) -> str | None:
     """Find best OA link for a DOI."""
     client = get_unpaywall_client()
-    return client.get_best_oa_link(doi)
+    return await client.get_best_oa_link(doi)
 
 
-def find_pdf_link(doi: str) -> str | None:
+async def find_pdf_link(doi: str) -> str | None:
     """Find PDF link for a DOI."""
     client = get_unpaywall_client()
-    return client.get_pdf_link(doi)
+    return await client.get_pdf_link(doi)
 
 
-def is_open_access(doi: str) -> bool:
+async def is_open_access(doi: str) -> bool:
     """Check if DOI has an OA version."""
     client = get_unpaywall_client()
-    oa_info = client.get_oa_status(doi)
+    oa_info = await client.get_oa_status(doi)
     return oa_info.get("is_oa", False) if oa_info else False
 
 
-def get_oa_status(doi: str) -> OAStatus:
+async def get_oa_status(doi: str) -> OAStatus:
     """Get OA status for a DOI."""
     client = get_unpaywall_client()
-    oa_info = client.get_oa_status(doi)
+    oa_info = await client.get_oa_status(doi)
     if oa_info:
         return oa_info.get("oa_status", "unknown")
     return "unknown"

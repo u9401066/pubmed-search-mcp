@@ -4,10 +4,11 @@ Entrez PDF Module - PMC PDF Download Functionality
 Provides functionality to download PDFs from PubMed Central Open Access.
 """
 
+import asyncio
 import logging
 from typing import Optional
 
-import requests
+import httpx
 from Bio import Entrez
 
 logger = logging.getLogger(__name__)
@@ -22,7 +23,7 @@ class PDFMixin:
         download_pmc_pdf: Download PDF from PMC Open Access
     """
 
-    def get_pmc_fulltext_url(self, pmid: str) -> Optional[str]:
+    async def get_pmc_fulltext_url(self, pmid: str) -> Optional[str]:
         """
         Get the PubMed Central full text URL if available (Open Access).
         Uses elink to find PMC ID and constructs the download URL.
@@ -34,10 +35,14 @@ class PDFMixin:
             URL to download full text PDF, or None if not available.
         """
         try:
-            handle = Entrez.elink(
-                dbfrom="pubmed", db="pmc", id=pmid, linkname="pubmed_pmc"
+            handle = await asyncio.to_thread(
+                Entrez.elink,
+                dbfrom="pubmed",
+                db="pmc",
+                id=pmid,
+                linkname="pubmed_pmc",
             )
-            record = Entrez.read(handle)
+            record = await asyncio.to_thread(Entrez.read, handle)
             handle.close()
 
             if record and record[0].get("LinkSetDb"):
@@ -52,7 +57,7 @@ class PDFMixin:
             logger.error(f"Error getting PMC URL: {e}")
             return None
 
-    def download_pmc_pdf(self, pmid: str, output_path: str) -> bool:
+    async def download_pmc_pdf(self, pmid: str, output_path: str) -> bool:
         """
         Download PDF from PubMed Central if available.
 
@@ -65,7 +70,7 @@ class PDFMixin:
         """
         try:
             # First, get PMC ID via elink
-            pmc_id = self._get_pmc_id(pmid)
+            pmc_id = await self._get_pmc_id(pmid)
 
             if not pmc_id:
                 logger.info(
@@ -82,9 +87,12 @@ class PDFMixin:
 
             headers = {"User-Agent": "Mozilla/5.0 (compatible; pubmed-search/1.0)"}
 
-            response = requests.get(
-                oa_url, headers=headers, allow_redirects=True, timeout=30
-            )
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(
+                    oa_url,
+                    headers=headers,
+                    follow_redirects=True,
+                )
 
             content_type = response.headers.get("Content-Type", "")
 
@@ -104,7 +112,7 @@ class PDFMixin:
             logger.error(f"PMID {pmid}: Error downloading PDF - {e}")
             return False
 
-    def download_pdf(
+    async def download_pdf(
         self, pmid: str, output_path: Optional[str] = None
     ) -> Optional[bytes]:
         """
@@ -118,7 +126,7 @@ class PDFMixin:
             PDF content as bytes, or None if not available.
         """
         try:
-            pmc_id = self._get_pmc_id(pmid)
+            pmc_id = await self._get_pmc_id(pmid)
 
             if not pmc_id:
                 return None
@@ -127,9 +135,12 @@ class PDFMixin:
 
             headers = {"User-Agent": "Mozilla/5.0 (compatible; pubmed-search/1.0)"}
 
-            response = requests.get(
-                oa_url, headers=headers, allow_redirects=True, timeout=30
-            )
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(
+                    oa_url,
+                    headers=headers,
+                    follow_redirects=True,
+                )
 
             content_type = response.headers.get("Content-Type", "")
 
@@ -144,7 +155,7 @@ class PDFMixin:
             logger.error(f"PMID {pmid}: Error downloading PDF - {e}")
             return None
 
-    def _get_pmc_id(self, pmid: str) -> Optional[str]:
+    async def _get_pmc_id(self, pmid: str) -> Optional[str]:
         """
         Get PMC ID for a given PMID using elink.
 
@@ -155,10 +166,14 @@ class PDFMixin:
             PMC ID if available, None otherwise.
         """
         try:
-            handle = Entrez.elink(
-                dbfrom="pubmed", db="pmc", id=pmid, linkname="pubmed_pmc"
+            handle = await asyncio.to_thread(
+                Entrez.elink,
+                dbfrom="pubmed",
+                db="pmc",
+                id=pmid,
+                linkname="pubmed_pmc",
             )
-            record = Entrez.read(handle)
+            record = await asyncio.to_thread(Entrez.read, handle)
             handle.close()
 
             if record and record[0].get("LinkSetDb"):

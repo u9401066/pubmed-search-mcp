@@ -23,13 +23,13 @@ Best Practices:
 - Cache responses when possible
 """
 
-import json
+import asyncio
 import logging
 import time
-import urllib.error
 import urllib.parse
-import urllib.request
 from typing import Any
+
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -78,50 +78,53 @@ class CrossRefClient:
         self._last_request_time = 0.0
         # Rate limit: be polite, ~20 req/sec max
         self._min_interval = 0.05
+        self._client = httpx.AsyncClient(
+            timeout=self._timeout,
+            headers={
+                "User-Agent": f"pubmed-search-mcp/1.0 (mailto:{self._email})",
+                "Accept": "application/json",
+            },
+        )
 
-    def _rate_limit(self) -> None:
+    async def _rate_limit(self) -> None:
         """Simple rate limiting."""
         elapsed = time.time() - self._last_request_time
         if elapsed < self._min_interval:
-            time.sleep(self._min_interval - elapsed)
+            await asyncio.sleep(self._min_interval - elapsed)
         self._last_request_time = time.time()
 
-    def _make_request(self, url: str) -> dict[str, Any] | None:
+    async def _make_request(self, url: str) -> dict[str, Any] | None:
         """Make HTTP request to CrossRef API."""
-        self._rate_limit()
+        await self._rate_limit()
 
         # Add mailto parameter for polite pool
         separator = "&" if "?" in url else "?"
         url = f"{url}{separator}mailto={urllib.parse.quote(self._email)}"
 
-        headers = {
-            "User-Agent": f"pubmed-search-mcp/1.0 (mailto:{self._email})",
-            "Accept": "application/json",
-        }
-
-        request = urllib.request.Request(url, headers=headers)
-
         try:
-            # nosec B310: URL is constructed from hardcoded CROSSREF_API_BASE (https)
-            with urllib.request.urlopen(request, timeout=self._timeout) as response:  # nosec B310
-                data = json.loads(response.read().decode("utf-8"))
-                return data.get("message", data)
-        except urllib.error.HTTPError as e:
-            if e.code == 404:
+            response = await self._client.get(url)
+            if response.status_code == 404:
                 logger.debug(f"CrossRef: DOI not found - {url}")
-            elif e.code == 429:
+                return None
+            if response.status_code == 429:
                 logger.warning("CrossRef: Rate limit exceeded, please slow down")
-            else:
-                logger.error(f"CrossRef HTTP error {e.code}: {e.reason}")
+                return None
+            response.raise_for_status()
+            data = response.json()
+            return data.get("message", data)
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                f"CrossRef HTTP error {e.response.status_code}: {e.response.reason_phrase}"
+            )
             return None
-        except urllib.error.URLError as e:
-            logger.error(f"CrossRef URL error: {e.reason}")
+        except httpx.RequestError as e:
+            logger.error(f"CrossRef URL error: {e}")
             return None
         except Exception as e:
             logger.error(f"CrossRef request failed: {e}")
             return None
 
-    def get_work(self, doi: str) -> dict[str, Any] | None:
+    async def get_work(self, doi: str) -> dict[str, Any] | None:
         """
         Get metadata for a single work by DOI.
 
@@ -145,9 +148,9 @@ class CrossRefClient:
         doi = self._normalize_doi(doi)
 
         url = f"{CROSSREF_API_BASE}/works/{urllib.parse.quote(doi, safe='')}"
-        return self._make_request(url)
+        return await self._make_request(url)
 
-    def search(
+    async def search(
         self,
         query: str,
         limit: int = 10,
@@ -189,7 +192,7 @@ class CrossRefClient:
             params["filter"] = ",".join(filter_parts)
 
         url = f"{CROSSREF_API_BASE}/works?{urllib.parse.urlencode(params)}"
-        data = self._make_request(url)
+        data = await self._make_request(url)
 
         if not data:
             return {"total_results": 0, "items": []}
@@ -200,7 +203,7 @@ class CrossRefClient:
             "query": query,
         }
 
-    def search_by_title(
+    async def search_by_title(
         self,
         title: str,
         limit: int = 5,
@@ -223,14 +226,14 @@ class CrossRefClient:
         }
 
         url = f"{CROSSREF_API_BASE}/works?{urllib.parse.urlencode(params)}"
-        data = self._make_request(url)
+        data = await self._make_request(url)
 
         if not data:
             return []
 
         return data.get("items", [])
 
-    def get_references(
+    async def get_references(
         self,
         doi: str,
         limit: int = 100,
@@ -247,14 +250,14 @@ class CrossRefClient:
         Returns:
             List of reference objects (may include DOIs for linked refs)
         """
-        work = self.get_work(doi)
+        work = await self.get_work(doi)
         if not work:
             return []
 
         references = work.get("reference", [])
         return references[:limit]
 
-    def get_citations(
+    async def get_citations(
         self,
         doi: str,
         limit: int = 20,
@@ -277,7 +280,7 @@ class CrossRefClient:
         doi = self._normalize_doi(doi)
 
         # Get citation count from work metadata
-        work = self.get_work(doi)
+        work = await self.get_work(doi)
         citation_count = work.get("is-referenced-by-count", 0) if work else 0
 
         # Search for citing works
@@ -290,7 +293,7 @@ class CrossRefClient:
         }
 
         url = f"{CROSSREF_API_BASE}/works?{urllib.parse.urlencode(params)}"
-        data = self._make_request(url)
+        data = await self._make_request(url)
 
         if not data:
             return {"citation_count": citation_count, "items": []}
@@ -300,7 +303,7 @@ class CrossRefClient:
             "items": data.get("items", []),
         }
 
-    def get_journal(self, issn: str) -> dict[str, Any] | None:
+    async def get_journal(self, issn: str) -> dict[str, Any] | None:
         """
         Get journal metadata by ISSN.
 
@@ -311,9 +314,9 @@ class CrossRefClient:
             Journal metadata or None
         """
         url = f"{CROSSREF_API_BASE}/journals/{issn}"
-        return self._make_request(url)
+        return await self._make_request(url)
 
-    def resolve_doi_batch(
+    async def resolve_doi_batch(
         self,
         dois: list[str],
     ) -> dict[str, dict[str, Any] | None]:
@@ -331,10 +334,10 @@ class CrossRefClient:
         """
         results = {}
         for doi in dois:
-            results[doi] = self.get_work(doi)
+            results[doi] = await self.get_work(doi)
         return results
 
-    def enrich_with_crossref(
+    async def enrich_with_crossref(
         self,
         pmid: str | None = None,
         doi: str | None = None,
@@ -355,13 +358,13 @@ class CrossRefClient:
         """
         # Try DOI first (most reliable)
         if doi:
-            work = self.get_work(doi)
+            work = await self.get_work(doi)
             if work:
                 return work
 
         # Fall back to title search
         if title:
-            results = self.search_by_title(title, limit=3)
+            results = await self.search_by_title(title, limit=3)
             if results:
                 # Return best match (first result from title search)
                 return results[0]
@@ -414,6 +417,16 @@ class CrossRefClient:
 
         return (None, None, None)
 
+    async def close(self):
+        """Close the HTTP client."""
+        await self._client.aclose()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        await self.close()
+
 
 # Singleton instance
 _crossref_client: CrossRefClient | None = None
@@ -432,27 +445,27 @@ def get_crossref_client(email: str | None = None) -> CrossRefClient:
 
 
 # Convenience functions
-def get_doi_metadata(doi: str) -> dict[str, Any] | None:
+async def get_doi_metadata(doi: str) -> dict[str, Any] | None:
     """Get metadata for a DOI."""
     client = get_crossref_client()
-    return client.get_work(doi)
+    return await client.get_work(doi)
 
 
-def search_crossref(
+async def search_crossref(
     query: str,
     limit: int = 10,
     sort: str = "relevance",
 ) -> list[dict[str, Any]]:
     """Search CrossRef for works."""
     client = get_crossref_client()
-    result = client.search(query=query, limit=limit, sort=sort)
+    result = await client.search(query=query, limit=limit, sort=sort)
     return result.get("items", [])
 
 
-def get_citation_count(doi: str) -> int:
+async def get_citation_count(doi: str) -> int:
     """Get citation count for a DOI."""
     client = get_crossref_client()
-    work = client.get_work(doi)
+    work = await client.get_work(doi)
     if work:
         return work.get("is-referenced-by-count", 0)
     return 0

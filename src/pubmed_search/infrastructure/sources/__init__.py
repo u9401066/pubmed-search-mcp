@@ -26,6 +26,7 @@ Architecture:
     └─────────────────────────────────────────────────────────┘
 """
 
+import asyncio
 import logging
 import re
 from enum import Enum
@@ -174,7 +175,7 @@ def get_openi_client():
     return _openi_client
 
 
-def search_alternate_source(
+async def search_alternate_source(
     query: str,
     source: Literal["semantic_scholar", "openalex", "europe_pmc", "core"],
     limit: int = 10,
@@ -209,7 +210,7 @@ def search_alternate_source(
     try:
         if source == "semantic_scholar":
             client = get_semantic_scholar_client()
-            return client.search(
+            return await client.search(
                 query=query,
                 limit=limit,
                 min_year=min_year,
@@ -219,7 +220,7 @@ def search_alternate_source(
 
         elif source == "openalex":
             client = get_openalex_client(email)
-            return client.search(
+            return await client.search(
                 query=query,
                 limit=limit,
                 min_year=min_year,
@@ -229,7 +230,7 @@ def search_alternate_source(
 
         elif source == "europe_pmc":
             client = get_europe_pmc_client(email)
-            result = client.search(
+            result = await client.search(
                 query=query,
                 limit=limit,
                 min_year=min_year,
@@ -241,7 +242,7 @@ def search_alternate_source(
 
         elif source == "core":
             client = get_core_client()
-            result = client.search(
+            result = await client.search(
                 query=query,
                 limit=limit,
                 year_from=min_year,
@@ -259,7 +260,7 @@ def search_alternate_source(
         return []
 
 
-def cross_search(
+async def cross_search(
     query: str,
     sources: list[str] | None = None,
     limit_per_source: int = 5,
@@ -299,14 +300,13 @@ def cross_search(
     all_results = []
     by_source = {}
 
-    for source in sources:
-        try:
-            if source == "pubmed":
-                # PubMed is handled by the main LiteratureSearcher
-                # This function is for alternate sources only
-                continue
+    # Filter out pubmed (handled by main LiteratureSearcher)
+    valid_sources = [s for s in sources if s != "pubmed"]
 
-            results = search_alternate_source(
+    async def _search_one(source: str) -> tuple[str, list[dict[str, Any]]]:
+        """Search a single source, returning (source_name, results)."""
+        try:
+            results = await search_alternate_source(
                 query=query,
                 source=source,
                 limit=limit_per_source,
@@ -318,13 +318,17 @@ def cross_search(
                 else False,
                 email=email,
             )
-
-            by_source[source] = results
-            all_results.extend(results)
-
+            return (source, results)
         except Exception as e:
             logger.error(f"Cross-search failed for {source}: {e}")
-            by_source[source] = []
+            return (source, [])
+
+    # Execute all source searches in parallel
+    search_results = await asyncio.gather(*[_search_one(s) for s in valid_sources])
+
+    for source, results in search_results:
+        by_source[source] = results
+        all_results.extend(results)
 
     # Deduplicate by DOI or title
     if deduplicate:
@@ -394,7 +398,7 @@ def _normalize_title(title: str) -> str:
     return title
 
 
-def get_paper_from_any_source(
+async def get_paper_from_any_source(
     identifier: str,
     email: str | None = None,
 ) -> dict[str, Any] | None:
@@ -416,13 +420,13 @@ def get_paper_from_any_source(
 
         # Try Semantic Scholar first (faster)
         client = get_semantic_scholar_client()
-        result = client.get_paper(f"DOI:{doi}")
+        result = await client.get_paper(f"DOI:{doi}")
         if result:
             return result
 
         # Fallback to OpenAlex
         client = get_openalex_client(email)
-        return client.get_work(f"doi:{doi}")
+        return await client.get_work(f"doi:{doi}")
 
     # PMID
     if identifier.isdigit() or identifier.upper().startswith("PMID:"):
@@ -430,31 +434,31 @@ def get_paper_from_any_source(
 
         # Try Semantic Scholar
         client = get_semantic_scholar_client()
-        result = client.get_paper(f"PMID:{pmid}")
+        result = await client.get_paper(f"PMID:{pmid}")
         if result:
             return result
 
         # Fallback to OpenAlex
         client = get_openalex_client(email)
-        return client.get_work(f"pmid:{pmid}")
+        return await client.get_work(f"pmid:{pmid}")
 
     # S2 ID (40 char hex)
     if len(identifier) == 40 and all(
         c in "0123456789abcdef" for c in identifier.lower()
     ):
         client = get_semantic_scholar_client()
-        return client.get_paper(identifier)
+        return await client.get_paper(identifier)
 
     # OpenAlex ID
     if identifier.startswith("W") or identifier.startswith("https://openalex.org/"):
         client = get_openalex_client(email)
-        return client.get_work(identifier)
+        return await client.get_work(identifier)
 
     logger.warning(f"Unknown identifier format: {identifier}")
     return None
 
 
-def get_fulltext_xml(pmcid: str, email: str | None = None) -> str | None:
+async def get_fulltext_xml(pmcid: str, email: str | None = None) -> str | None:
     """
     Get full text XML from Europe PMC.
 
@@ -468,10 +472,10 @@ def get_fulltext_xml(pmcid: str, email: str | None = None) -> str | None:
         Full text XML string or None
     """
     client = get_europe_pmc_client(email)
-    return client.get_fulltext_xml(pmcid)
+    return await client.get_fulltext_xml(pmcid)
 
 
-def get_fulltext_parsed(pmcid: str, email: str | None = None) -> dict[str, Any]:
+async def get_fulltext_parsed(pmcid: str, email: str | None = None) -> dict[str, Any]:
     """
     Get parsed full text from Europe PMC.
 
@@ -483,7 +487,7 @@ def get_fulltext_parsed(pmcid: str, email: str | None = None) -> dict[str, Any]:
         Dict with structured content (title, abstract, sections, references)
     """
     client = get_europe_pmc_client(email)
-    xml = client.get_fulltext_xml(pmcid)
+    xml = await client.get_fulltext_xml(pmcid)
     if xml:
         return client.parse_fulltext_xml(xml)
     return {"error": "Full text not available"}
@@ -500,6 +504,7 @@ def get_fulltext_downloader():
     global _fulltext_downloader
     if _fulltext_downloader is None:
         from .fulltext_download import FulltextDownloader
+
         _fulltext_downloader = FulltextDownloader()
     return _fulltext_downloader
 

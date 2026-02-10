@@ -1,38 +1,45 @@
-# Progress (Updated: 2026-02-09)
+# Progress (Updated: 2026-02-10)
 
 ## Done
+
+### 2026-02-10: P2 Async-First 架構全面遷移
+- ✅ 8 source clients → httpx.AsyncClient (core, crossref, unpaywall, openi, europe_pmc, openalex, semantic_scholar, ncbi_extended)
+- ✅ 9 ncbi/ modules → asyncio.to_thread(Entrez.*) (base, search, citation, batch, strategy, utils, icite, pdf, citation_exporter)
+- ✅ sources/__init__.py → 5 async functions (cross_search → asyncio.gather)
+- ✅ Application layer → async (timeline_builder, image_search/service, export/links)
+- ✅ 13 MCP tool files (~49 functions) → async def
+- ✅ unified.py: ThreadPoolExecutor → asyncio.gather (major refactor)
+- ✅ openurl.py: urllib → httpx.AsyncClient
+- ✅ europe_pmc.py: removed asyncio.run workaround
+- ✅ 7 tool test files → async
+- ✅ ruff check + format pass; 41 files changed, +990/-872 lines
 
 ### 2026-02-09: 圖片搜尋 + Agent-Friendly 改善
 - ✅ Open-i API 全參數整合 (13 params) - commit `46df404`
 - ✅ Agent-friendly 非英文偵測 - commit `ac40d6d`
-  - NON_LATIN_PATTERN 偵測 CJK/Cyrillic/Arabic/Thai
-  - Tool docstring 新增 CRITICAL LANGUAGE REQUIREMENT
-  - Instructions 新增圖片搜尋工作流
-  - Vision tool 自動搜尋引導
-- ✅ 設計決策：Agent vs MCP 職責劃分
-  - 翻譯：Agent 負責 (有 LLM 能力)
-  - MCP：偵測 + 警告，不翻譯
 - ✅ ImageQueryAdvisor 擴展至 10 種 image types
-- ✅ docs/IMAGE_SEARCH_API.md 完整重寫 (Swagger 規格)
-- ✅ ROADMAP 更新：設計原則、Phase 4 完成、版本歷程
-- ✅ 152 測試全部通過
+- ✅ docs/IMAGE_SEARCH_API.md 完整重寫
+- ✅ ROADMAP 更新：設計原則、Phase 4 完成
 
 ## Doing
 
-(無進行中任務)
+- 🔄 修復 43 non-tool test files (492 failures due to missing await)
 
 ## Next
 
 | 優先級 | 項目 | 說明 |
 |:------:|------|------|
-| ⭐⭐⭐⭐⭐ | Token 效率優化 | `output_format="compact"` 省 60% token |
-| ⭐⭐⭐⭐⭐ | 研究時間軸 | 里程碑偵測、知識演化追蹤 |
-| ⭐⭐⭐⭐ | PRISMA 流程追蹤 | Systematic Review 工作流 |
-| ⭐⭐⭐ | 智能引用 API | Semantic Scholar Intent, OpenAlex Concepts |
+| ⭐⭐⭐⭐⭐ | 修復 43 test files | async def + await (492 failures) |
+| ⭐⭐⭐⭐⭐ | Group H 文件規則 | CONSTITUTION/ARCHITECTURE async 規則 |
+| ⭐⭐⭐⭐ | Token 效率優化 | `output_format="compact"` 省 60% token |
+| ⭐⭐⭐⭐ | 研究時間軸增強 | NLP 里程碑偵測 |
+| ⭐⭐⭐ | 刪除 unused code | http/client.py |
 
 ## Design Decisions Log
 
 | 日期 | 決策 | 原因 |
 |------|------|------|
-| 2026-02-09 | Agent 翻譯，MCP 偵測 | Agent 有 LLM 能力，MCP 維護字典不實際 |
-| 2026-02-09 | 模式選擇由 Agent 決定 | Agent 理解用戶意圖，MCP 提供工具選項 |
+| 2026-02-10 | 全面 async-first | 使用者選擇「立即重構 P2 + 加規則」 |
+| 2026-02-10 | Entrez → asyncio.to_thread | BioPython sync library, wrap 不改源碼 |
+| 2026-02-10 | ThreadPoolExecutor → asyncio.gather | 原生 async 更高效 |
+| 2026-02-09 | Agent 翻譯，MCP 偵測 | Agent 有 LLM 能力 |

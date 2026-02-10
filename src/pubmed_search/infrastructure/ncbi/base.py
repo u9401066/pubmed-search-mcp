@@ -5,6 +5,7 @@ Provides base class with Entrez configuration and common functionality.
 Includes rate limiting to respect NCBI API limits.
 """
 
+import asyncio
 import time
 from enum import Enum
 from typing import Optional
@@ -27,13 +28,13 @@ _last_request_time = 0.0
 _min_request_interval = 0.34  # ~3 requests/second (NCBI limit without API key)
 
 
-def _rate_limit():
+async def _rate_limit():
     """Ensure minimum interval between API requests."""
     global _last_request_time
     now = time.time()
     elapsed = now - _last_request_time
     if elapsed < _min_request_interval:
-        time.sleep(_min_request_interval - elapsed)
+        await asyncio.sleep(_min_request_interval - elapsed)
     _last_request_time = time.time()
 
 
@@ -73,10 +74,10 @@ class EntrezBase:
         self._email = email
         self._api_key = api_key
 
-    def _rate_limited_call(self, func, *args, **kwargs):
+    async def _rate_limited_call(self, func, *args, **kwargs):
         """Execute a function with rate limiting."""
-        _rate_limit()
-        return func(*args, **kwargs)
+        await _rate_limit()
+        return await asyncio.to_thread(func, *args, **kwargs)
 
     @property
     def email(self) -> str:

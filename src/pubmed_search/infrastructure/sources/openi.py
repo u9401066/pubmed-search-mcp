@@ -36,14 +36,14 @@ Full API Parameters (13 total):
 - hmp: HMD publication type filter
 """
 
-import json
+import asyncio
 import logging
 import math
 import time
-import urllib.error
 import urllib.parse
-import urllib.request
 from typing import Any
+
+import httpx
 
 from pubmed_search.domain.entities.image import ImageResult, ImageSource
 
@@ -117,9 +117,30 @@ class OpenIClient:
 
     # Article Type (at)
     VALID_ARTICLE_TYPES = {
-        "ab", "bk", "bf", "cr", "dp", "di", "ed", "ib", "in", "lt",
-        "mr", "ma", "ne", "ob", "pr", "or", "re", "ra", "rw", "sr",
-        "rr", "os", "hs", "ot",
+        "ab",
+        "bk",
+        "bf",
+        "cr",
+        "dp",
+        "di",
+        "ed",
+        "ib",
+        "in",
+        "lt",
+        "mr",
+        "ma",
+        "ne",
+        "ob",
+        "pr",
+        "or",
+        "re",
+        "ra",
+        "rw",
+        "sr",
+        "rr",
+        "os",
+        "hs",
+        "ot",
     }
     ARTICLE_TYPE_LABELS = {
         "ab": "Abstract",
@@ -169,9 +190,41 @@ class OpenIClient:
 
     # Medical Specialty (sp)
     VALID_SPECIALTIES = {
-        "b", "bc", "c", "ca", "cc", "d", "de", "dt", "e", "en", "f",
-        "eh", "g", "ge", "gr", "gy", "h", "i", "id", "im", "n", "ne",
-        "nu", "o", "or", "ot", "p", "py", "pu", "r", "s", "t", "u", "v", "vi",
+        "b",
+        "bc",
+        "c",
+        "ca",
+        "cc",
+        "d",
+        "de",
+        "dt",
+        "e",
+        "en",
+        "f",
+        "eh",
+        "g",
+        "ge",
+        "gr",
+        "gy",
+        "h",
+        "i",
+        "id",
+        "im",
+        "n",
+        "ne",
+        "nu",
+        "o",
+        "or",
+        "ot",
+        "p",
+        "py",
+        "pu",
+        "r",
+        "s",
+        "t",
+        "u",
+        "v",
+        "vi",
     }
     SPECIALTY_LABELS = {
         "b": "Behavioral Sciences",
@@ -224,9 +277,31 @@ class OpenIClient:
 
     # HMD Publication Type (hmp) - for History of Medicine collection
     VALID_HMP_TYPES = {
-        "ad", "ar", "at", "bi", "br", "cr", "ca", "ch", "cg", "cd",
-        "dr", "ep", "ex", "hr", "hu", "lt", "mp", "nw", "pn", "ph",
-        "pi", "po", "pt", "pc", "ps",
+        "ad",
+        "ar",
+        "at",
+        "bi",
+        "br",
+        "cr",
+        "ca",
+        "ch",
+        "cg",
+        "cd",
+        "dr",
+        "ep",
+        "ex",
+        "hr",
+        "hu",
+        "lt",
+        "mp",
+        "nw",
+        "pn",
+        "ph",
+        "pi",
+        "po",
+        "pt",
+        "pc",
+        "ps",
     }
 
     PAGE_SIZE = 10  # Default results per page (m=1, n=10)
@@ -242,15 +317,22 @@ class OpenIClient:
         self._last_request_time = 0.0
         self._min_interval = 1.0  # Be polite — Open-i is a free service
         self._user_agent = "PubMedSearchMCP/0.3.0"
+        self._client = httpx.AsyncClient(
+            timeout=self._timeout,
+            headers={
+                "User-Agent": self._user_agent,
+                "Accept": "application/json",
+            },
+        )
 
-    def _rate_limit(self) -> None:
+    async def _rate_limit(self) -> None:
         """Simple rate limiting between requests."""
         elapsed = time.time() - self._last_request_time
         if elapsed < self._min_interval:
-            time.sleep(self._min_interval - elapsed)
+            await asyncio.sleep(self._min_interval - elapsed)
         self._last_request_time = time.time()
 
-    def _make_request(self, url: str) -> dict[str, Any] | None:
+    async def _make_request(self, url: str) -> dict[str, Any] | None:
         """
         Make HTTP GET request with proper headers.
 
@@ -260,23 +342,22 @@ class OpenIClient:
         Returns:
             Parsed JSON response or None on error
         """
-        self._rate_limit()
-
-        request = urllib.request.Request(url)
-        request.add_header("Accept", "application/json")
-        request.add_header("User-Agent", self._user_agent)
+        await self._rate_limit()
 
         try:
-            # nosec B310: URL is constructed from hardcoded OPENI_BASE_URL (https)
-            with urllib.request.urlopen(
-                request, timeout=self._timeout
-            ) as response:  # nosec B310
-                return json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            logger.error(f"Open-i HTTP error {e.code}: {e.reason}")
+            response = await self._client.get(url)
+            if response.status_code == 429:
+                logger.warning("Open-i: Rate limit exceeded")
+                return None
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                f"Open-i HTTP error {e.response.status_code}: {e.response.reason_phrase}"
+            )
             return None
-        except urllib.error.URLError as e:
-            logger.error(f"Open-i URL error: {e.reason}")
+        except httpx.RequestError as e:
+            logger.error(f"Open-i URL error: {e}")
             return None
         except TimeoutError:
             logger.error("Open-i request timed out")
@@ -285,7 +366,7 @@ class OpenIClient:
             logger.error(f"Open-i request failed: {e}")
             return None
 
-    def search(
+    async def search(
         self,
         query: str,
         image_type: str | None = None,
@@ -369,8 +450,7 @@ class OpenIClient:
         # Validate sort_by
         if sort_by and sort_by not in self.VALID_SORT_BY:
             logger.warning(
-                f"Invalid sort_by '{sort_by}', "
-                f"valid: {self.VALID_SORT_BY}. Ignoring."
+                f"Invalid sort_by '{sort_by}', valid: {self.VALID_SORT_BY}. Ignoring."
             )
             sort_by = None
 
@@ -401,8 +481,7 @@ class OpenIClient:
         # Validate subset
         if subset and subset not in self.VALID_SUBSETS:
             logger.warning(
-                f"Invalid subset '{subset}', "
-                f"valid: {self.VALID_SUBSETS}. Ignoring."
+                f"Invalid subset '{subset}', valid: {self.VALID_SUBSETS}. Ignoring."
             )
             subset = None
 
@@ -464,7 +543,7 @@ class OpenIClient:
             url = f"{OPENI_API_URL}?{urllib.parse.urlencode(params)}"
             logger.debug(f"Open-i search: {url}")
 
-            data = self._make_request(url)
+            data = await self._make_request(url)
             if data is None:
                 logger.warning(f"Open-i search failed at page {page + 1}")
                 break
@@ -523,12 +602,8 @@ class OpenIClient:
             caption = image_obj.get("caption", "")
 
         return ImageResult(
-            image_url=(
-                f"{OPENI_BASE_URL}{img_large}" if img_large else ""
-            ),
-            thumbnail_url=(
-                f"{OPENI_BASE_URL}{img_thumb}" if img_thumb else None
-            ),
+            image_url=(f"{OPENI_BASE_URL}{img_large}" if img_large else ""),
+            thumbnail_url=(f"{OPENI_BASE_URL}{img_thumb}" if img_thumb else None),
             caption=caption,
             label="",
             source=ImageSource.OPENI,
@@ -569,3 +644,13 @@ class OpenIClient:
         if not isinstance(minor, list):
             minor = []
         return list(major) + list(minor)
+
+    async def close(self):
+        """Close the HTTP client."""
+        await self._client.aclose()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        await self.close()

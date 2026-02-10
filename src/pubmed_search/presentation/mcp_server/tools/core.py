@@ -86,7 +86,7 @@ def register_core_tools(mcp: FastMCP) -> None:
             )
 
             client = get_core_client()
-            result = client.search(
+            result = await client.search(
                 query=query,
                 limit=limit,
                 year_from=year_from,
@@ -173,7 +173,7 @@ def register_core_tools(mcp: FastMCP) -> None:
             )
 
             client = get_core_client()
-            result = client.search_fulltext(
+            result = await client.search_fulltext(
                 query=query,
                 limit=limit,
                 year_from=year_from,
@@ -231,7 +231,7 @@ def register_core_tools(mcp: FastMCP) -> None:
             )
 
             client = get_core_client()
-            result = client.get_work(core_id)
+            result = await client.get_work(core_id)
 
             if result:
                 return json.dumps(result, indent=2, ensure_ascii=False)
@@ -275,7 +275,7 @@ def register_core_tools(mcp: FastMCP) -> None:
             )
 
             client = get_core_client()
-            fulltext = client.get_fulltext(core_id)
+            fulltext = await client.get_fulltext(core_id)
 
             if fulltext:
                 # Truncate if too long
@@ -353,9 +353,9 @@ def register_core_tools(mcp: FastMCP) -> None:
             client = get_core_client()
 
             if identifier_type == "doi":
-                result = client.search_by_doi(identifier)
+                result = await client.search_by_doi(identifier)
             elif identifier_type == "pmid":
-                result = client.search_by_pmid(identifier)
+                result = await client.search_by_pmid(identifier)
             else:
                 return ResponseFormatter.error(
                     f"Unknown identifier type: {identifier_type}",

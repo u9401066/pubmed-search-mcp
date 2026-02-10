@@ -13,13 +13,13 @@ Features:
 - Paper recommendations
 """
 
-import json
+import asyncio
 import logging
 import time
-import urllib.error
 import urllib.parse
-import urllib.request
 from typing import Any
+
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -67,36 +67,46 @@ class SemanticScholarClient:
         self._timeout = timeout
         self._last_request_time = 0
         self._min_interval = 0.5  # Conservative rate limiting
+        self._client = httpx.AsyncClient(
+            timeout=self._timeout,
+            headers={
+                "User-Agent": "pubmed-search-mcp/1.0",
+                "Accept": "application/json",
+            },
+        )
 
-    def _rate_limit(self):
+    async def _rate_limit(self):
         """Simple rate limiting to avoid hitting API limits."""
         elapsed = time.time() - self._last_request_time
         if elapsed < self._min_interval:
-            time.sleep(self._min_interval - elapsed)
+            await asyncio.sleep(self._min_interval - elapsed)
         self._last_request_time = time.time()
 
-    def _make_request(self, url: str) -> dict | None:
+    async def _make_request(self, url: str) -> dict | None:
         """Make HTTP GET request with proper headers."""
-        self._rate_limit()
+        await self._rate_limit()
 
-        request = urllib.request.Request(url)
-        request.add_header("Accept", "application/json")
-        request.add_header("User-Agent", "pubmed-search-mcp/1.0")
+        headers = {}
         if self._api_key:
-            request.add_header("x-api-key", self._api_key)
+            headers["x-api-key"] = self._api_key
 
         try:
-            # nosec B310: URL is constructed from hardcoded S2_API_BASE (https)
-            with urllib.request.urlopen(request, timeout=self._timeout) as response:  # nosec B310
-                return json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            logger.error(f"HTTP error {e.code}: {e.reason}")
+            response = await self._client.get(url, headers=headers)
+            if response.status_code == 429:
+                logger.warning("Semantic Scholar: Rate limit exceeded")
+                return None
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                f"HTTP error {e.response.status_code}: {e.response.reason_phrase}"
+            )
             return None
-        except urllib.error.URLError as e:
-            logger.error(f"URL error: {e.reason}")
+        except httpx.RequestError as e:
+            logger.error(f"URL error: {e}")
             return None
 
-    def search(
+    async def search(
         self,
         query: str,
         limit: int = 10,
@@ -140,7 +150,7 @@ class SemanticScholarClient:
                 params["openAccessPdf"] = ""  # Only papers with OA PDF
 
             url = f"{S2_SEARCH_URL}?{urllib.parse.urlencode(params)}"
-            data = self._make_request(url)
+            data = await self._make_request(url)
 
             if not data:
                 return []
@@ -154,7 +164,7 @@ class SemanticScholarClient:
             logger.error(f"Semantic Scholar search failed: {e}")
             return []
 
-    def get_paper(
+    async def get_paper(
         self, paper_id: str, fields: list[str] | None = None
     ) -> dict[str, Any] | None:
         """
@@ -173,7 +183,7 @@ class SemanticScholarClient:
             params = {"fields": ",".join(fields or DEFAULT_FIELDS)}
             url = f"{S2_PAPER_URL}/{encoded_id}?{urllib.parse.urlencode(params)}"
 
-            data = self._make_request(url)
+            data = await self._make_request(url)
             if not data:
                 return None
 
@@ -183,7 +193,9 @@ class SemanticScholarClient:
             logger.error(f"Failed to get paper {paper_id}: {e}")
             return None
 
-    def get_citations(self, paper_id: str, limit: int = 10) -> list[dict[str, Any]]:
+    async def get_citations(
+        self, paper_id: str, limit: int = 10
+    ) -> list[dict[str, Any]]:
         """
         Get papers that cite this paper.
 
@@ -202,7 +214,7 @@ class SemanticScholarClient:
             }
             url = f"{S2_PAPER_URL}/{encoded_id}/citations?{urllib.parse.urlencode(params)}"
 
-            data = self._make_request(url)
+            data = await self._make_request(url)
             if not data:
                 return []
 
@@ -213,7 +225,9 @@ class SemanticScholarClient:
             logger.error(f"Failed to get citations for {paper_id}: {e}")
             return []
 
-    def get_references(self, paper_id: str, limit: int = 10) -> list[dict[str, Any]]:
+    async def get_references(
+        self, paper_id: str, limit: int = 10
+    ) -> list[dict[str, Any]]:
         """
         Get papers referenced by this paper.
 
@@ -232,7 +246,7 @@ class SemanticScholarClient:
             }
             url = f"{S2_PAPER_URL}/{encoded_id}/references?{urllib.parse.urlencode(params)}"
 
-            data = self._make_request(url)
+            data = await self._make_request(url)
             if not data:
                 return []
 
@@ -243,7 +257,7 @@ class SemanticScholarClient:
             logger.error(f"Failed to get references for {paper_id}: {e}")
             return []
 
-    def get_recommendations(
+    async def get_recommendations(
         self,
         paper_id: str,
         limit: int = 10,
@@ -273,7 +287,7 @@ class SemanticScholarClient:
             # Recommendations endpoint
             url = f"https://api.semanticscholar.org/recommendations/v1/papers/forpaper/{encoded_id}?{urllib.parse.urlencode(params)}"
 
-            data = self._make_request(url)
+            data = await self._make_request(url)
             if not data:
                 return []
 
@@ -296,7 +310,7 @@ class SemanticScholarClient:
             logger.error(f"Failed to get recommendations for {paper_id}: {e}")
             return []
 
-    def get_paper_embedding_similarity(
+    async def get_paper_embedding_similarity(
         self,
         paper_id1: str,
         paper_id2: str,
@@ -315,7 +329,7 @@ class SemanticScholarClient:
             Similarity score 0.0-1.0, or None if not calculable
         """
         try:
-            recommendations = self.get_recommendations(paper_id1, limit=100)
+            recommendations = await self.get_recommendations(paper_id1, limit=100)
 
             for rec in recommendations:
                 rec_s2_id = rec.get("_s2_id", "")
@@ -405,12 +419,12 @@ class SemanticScholarClient:
             "_s2_id": paper.get("paperId", ""),
         }
 
-    def close(self):
-        """Close resources (no-op for urllib, but keeps interface consistent)."""
-        pass
+    async def close(self):
+        """Close the HTTP client."""
+        await self._client.aclose()
 
-    def __enter__(self):
+    async def __aenter__(self):
         return self
 
-    def __exit__(self, *args):
-        self.close()
+    async def __aexit__(self, *args):
+        await self.close()

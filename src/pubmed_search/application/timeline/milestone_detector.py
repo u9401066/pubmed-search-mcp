@@ -287,7 +287,11 @@ class MilestoneDetector:
 
         # Sort by year for first-report detection
         sorted_articles = sorted(
-            articles, key=lambda a: (a.get("year") or a.get("pub_year") or 9999, a.get("pmid", ""))
+            articles,
+            key=lambda a: (
+                a.get("year") or a.get("pub_year") or 9999,
+                a.get("pmid", ""),
+            ),
         )
 
         events = []
@@ -299,9 +303,7 @@ class MilestoneDetector:
 
         return events
 
-    def _detect_from_pubtype(
-        self, article: dict[str, Any]
-    ) -> TimelineEvent | None:
+    def _detect_from_pubtype(self, article: dict[str, Any]) -> TimelineEvent | None:
         """Detect milestone from publication type."""
         pub_types = article.get("publication_types", [])
         if isinstance(pub_types, str):
@@ -358,11 +360,11 @@ class MilestoneDetector:
     ) -> TimelineEvent:
         """Create a TimelineEvent from article data."""
         pmid = str(article.get("pmid", ""))
-        
+
         # Ensure year and month are int (BioPython may return StringElement)
         raw_year = article.get("year") or article.get("pub_year") or 0
         year = int(raw_year) if raw_year else 0
-        
+
         raw_month = article.get("month") or article.get("pub_month")
         month = self._parse_month(raw_month)
 
@@ -385,7 +387,9 @@ class MilestoneDetector:
             milestone_type=milestone_type,
             title=article.get("title", ""),
             milestone_label=label,
-            description=article.get("abstract", "")[:200] if article.get("abstract") else None,
+            description=article.get("abstract", "")[:200]
+            if article.get("abstract")
+            else None,
             evidence_level=evidence_level,
             citation_count=article.get("citation_count") or article.get("citations", 0),
             journal=article.get("journal") or article.get("source"),
@@ -398,37 +402,49 @@ class MilestoneDetector:
         """Parse month from various formats (int, string name, string number)."""
         if not raw_month:
             return None
-        
+
         # If already int
         if isinstance(raw_month, int):
             return raw_month if 1 <= raw_month <= 12 else None
-        
+
         # Convert to string
         month_str = str(raw_month).strip()
-        
+
         # Try numeric
         try:
             month_int = int(month_str)
             return month_int if 1 <= month_int <= 12 else None
         except ValueError:
             pass
-        
+
         # Month name mapping
         month_names = {
-            "jan": 1, "january": 1,
-            "feb": 2, "february": 2,
-            "mar": 3, "march": 3,
-            "apr": 4, "april": 4,
+            "jan": 1,
+            "january": 1,
+            "feb": 2,
+            "february": 2,
+            "mar": 3,
+            "march": 3,
+            "apr": 4,
+            "april": 4,
             "may": 5,
-            "jun": 6, "june": 6,
-            "jul": 7, "july": 7,
-            "aug": 8, "august": 8,
-            "sep": 9, "sept": 9, "september": 9,
-            "oct": 10, "october": 10,
-            "nov": 11, "november": 11,
-            "dec": 12, "december": 12,
+            "jun": 6,
+            "june": 6,
+            "jul": 7,
+            "july": 7,
+            "aug": 8,
+            "august": 8,
+            "sep": 9,
+            "sept": 9,
+            "september": 9,
+            "oct": 10,
+            "october": 10,
+            "nov": 11,
+            "november": 11,
+            "dec": 12,
+            "december": 12,
         }
-        
+
         return month_names.get(month_str.lower())
 
     def _infer_evidence_level(self, article: dict[str, Any]) -> EvidenceLevel:
@@ -452,7 +468,11 @@ class MilestoneDetector:
             return EvidenceLevel.LEVEL_2
 
         # Level 3: Cohort, Case-control
-        level3_types = {"Clinical Trial, Phase II", "Cohort Study", "Case-Control Study"}
+        level3_types = {
+            "Clinical Trial, Phase II",
+            "Cohort Study",
+            "Case-Control Study",
+        }
         if any(pt in level3_types for pt in pub_types):
             return EvidenceLevel.LEVEL_3
 

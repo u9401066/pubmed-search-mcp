@@ -377,20 +377,52 @@ class QueryAnalyzer:
 
     # Image search intent keywords
     IMAGE_INTENT_KEYWORDS = {
-        "image", "images", "picture", "photo", "scan", "scans",
-        "x-ray", "xray", "radiograph", "ct scan", "mri",
-        "microscopy", "histology", "pathology", "biopsy",
-        "figure", "diagram", "illustration",
-        "clinical photo", "endoscopy", "fundoscopy",
-        "圖片", "影像", "X光", "顯微鏡", "組織學", "切片",
+        "image",
+        "images",
+        "picture",
+        "photo",
+        "scan",
+        "scans",
+        "x-ray",
+        "xray",
+        "radiograph",
+        "ct scan",
+        "mri",
+        "microscopy",
+        "histology",
+        "pathology",
+        "biopsy",
+        "figure",
+        "diagram",
+        "illustration",
+        "clinical photo",
+        "endoscopy",
+        "fundoscopy",
+        "圖片",
+        "影像",
+        "X光",
+        "顯微鏡",
+        "組織學",
+        "切片",
     }
 
     # Visual anatomy keywords (implicit image intent)
     VISUAL_ANATOMY_KEYWORDS = {
-        "fracture", "pneumonia", "pneumothorax", "effusion",
-        "nodule", "mass", "opacity", "consolidation",
-        "stenosis", "aneurysm", "calcification",
-        "skin lesion", "rash", "wound", "ulcer",
+        "fracture",
+        "pneumonia",
+        "pneumothorax",
+        "effusion",
+        "nodule",
+        "mass",
+        "opacity",
+        "consolidation",
+        "stenosis",
+        "aneurysm",
+        "calcification",
+        "skin lesion",
+        "rash",
+        "wound",
+        "ulcer",
     }
 
     # Study type keywords
@@ -870,9 +902,7 @@ class QueryAnalyzer:
 
         return strategies
 
-    def _detect_image_intent(
-        self, query: str, keywords: list[str]
-    ) -> tuple[bool, str]:
+    def _detect_image_intent(self, query: str, keywords: list[str]) -> tuple[bool, str]:
         """
         Detect if the query has image search intent.
 
@@ -883,16 +913,12 @@ class QueryAnalyzer:
         reasons: list[str] = []
 
         # Check explicit image keywords
-        image_hits = [
-            kw for kw in self.IMAGE_INTENT_KEYWORDS if kw in query_lower
-        ]
+        image_hits = [kw for kw in self.IMAGE_INTENT_KEYWORDS if kw in query_lower]
         if image_hits:
             reasons.append(f"影像關鍵字: {', '.join(image_hits[:3])}")
 
         # Check visual anatomy keywords (weaker signal)
-        anatomy_hits = [
-            kw for kw in self.VISUAL_ANATOMY_KEYWORDS if kw in query_lower
-        ]
+        anatomy_hits = [kw for kw in self.VISUAL_ANATOMY_KEYWORDS if kw in query_lower]
         if anatomy_hits:
             reasons.append(f"視覺解剖關鍵字: {', '.join(anatomy_hits[:3])}")
 

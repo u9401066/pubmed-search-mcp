@@ -314,7 +314,10 @@ Suggest clinical search terms and relevant MeSH headings.
             prompt = prompts.get(normalized_type, prompts["comprehensive"])
 
             # Build instruction text
-            instruction_text = prompt + "\n\n_After analysis, IMMEDIATELY search for related literature using the extracted English terms. Call `search_biomedical_images()` or `unified_search()` without asking for confirmation._"
+            instruction_text = (
+                prompt
+                + "\n\n_After analysis, IMMEDIATELY search for related literature using the extracted English terms. Call `search_biomedical_images()` or `unified_search()` without asking for confirmation._"
+            )
 
             if context:
                 instruction_text += f"\n\n**User Context**: {context}"

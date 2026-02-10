@@ -27,11 +27,13 @@ def tools():
 
 
 class TestGetFulltext:
-    def test_no_identifier(self, tools):
-        result = tools["get_fulltext"]()
+    @pytest.mark.asyncio
+    async def test_no_identifier(self, tools):
+        result = await tools["get_fulltext"]()
         assert "error" in result.lower() or "no valid" in result.lower()
 
-    def test_pmcid_success(self, tools):
+    @pytest.mark.asyncio
+    async def test_pmcid_success(self, tools):
         mock_client = MagicMock()
         mock_client.get_fulltext_xml.return_value = "<xml/>"
         mock_client.parse_fulltext_xml.return_value = {
@@ -43,22 +45,24 @@ class TestGetFulltext:
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
             return_value=mock_client,
         ):
-            result = tools["get_fulltext"](pmcid="PMC7096777")
+            result = await tools["get_fulltext"](pmcid="PMC7096777")
         assert "Test Article" in result
         assert "Introduction" in result
 
-    def test_pmcid_no_xml(self, tools):
+    @pytest.mark.asyncio
+    async def test_pmcid_no_xml(self, tools):
         mock_client = MagicMock()
         mock_client.get_fulltext_xml.return_value = None
         with patch(
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
             return_value=mock_client,
         ):
-            result = tools["get_fulltext"](pmcid="PMC9999999")
+            result = await tools["get_fulltext"](pmcid="PMC9999999")
         # Should still succeed if unpaywall / core have nothing either
         assert isinstance(result, str)
 
-    def test_doi_unpaywall_success(self, tools):
+    @pytest.mark.asyncio
+    async def test_doi_unpaywall_success(self, tools):
         mock_unpaywall = MagicMock()
         mock_unpaywall.get_oa_status.return_value = {
             "is_oa": True,
@@ -76,10 +80,11 @@ class TestGetFulltext:
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_unpaywall_client",
             return_value=mock_unpaywall,
         ):
-            result = tools["get_fulltext"](doi="10.1234/test")
+            result = await tools["get_fulltext"](doi="10.1234/test")
         assert "example.com/paper.pdf" in result
 
-    def test_doi_core_fallback(self, tools):
+    @pytest.mark.asyncio
+    async def test_doi_core_fallback(self, tools):
         mock_unpaywall = MagicMock()
         mock_unpaywall.get_oa_status.return_value = {"is_oa": False}
 
@@ -100,16 +105,18 @@ class TestGetFulltext:
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_core_client",
             return_value=mock_core,
         ):
-            result = tools["get_fulltext"](doi="10.1234/test")
+            result = await tools["get_fulltext"](doi="10.1234/test")
         assert "Full text content" in result or "core.ac.uk" in result
 
-    def test_pmid_identifier_auto_detect(self, tools):
+    @pytest.mark.asyncio
+    async def test_pmid_identifier_auto_detect(self, tools):
         """Test auto-detection of PMID from identifier string."""
-        result = tools["get_fulltext"](identifier="12345678")
+        result = await tools["get_fulltext"](identifier="12345678")
         # Should detect as PMID, result will depend on API but shouldn't crash
         assert isinstance(result, str)
 
-    def test_doi_identifier_auto_detect(self, tools):
+    @pytest.mark.asyncio
+    async def test_doi_identifier_auto_detect(self, tools):
         """Test auto-detection of DOI from identifier string."""
         mock_unpaywall = MagicMock()
         mock_unpaywall.get_oa_status.return_value = {"is_oa": False}
@@ -120,10 +127,11 @@ class TestGetFulltext:
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_core_client",
             return_value=MagicMock(search=MagicMock(return_value={"results": []})),
         ):
-            result = tools["get_fulltext"](identifier="10.1038/s41586-021-03819-2")
+            result = await tools["get_fulltext"](identifier="10.1038/s41586-021-03819-2")
         assert isinstance(result, str)
 
-    def test_pmc_identifier_auto_detect(self, tools):
+    @pytest.mark.asyncio
+    async def test_pmc_identifier_auto_detect(self, tools):
         """Test auto-detection of PMC ID from identifier string."""
         mock_client = MagicMock()
         mock_client.get_fulltext_xml.return_value = None
@@ -131,10 +139,11 @@ class TestGetFulltext:
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
             return_value=mock_client,
         ):
-            result = tools["get_fulltext"](identifier="PMC7096777")
+            result = await tools["get_fulltext"](identifier="PMC7096777")
         assert isinstance(result, str)
 
-    def test_sections_filter(self, tools):
+    @pytest.mark.asyncio
+    async def test_sections_filter(self, tools):
         mock_client = MagicMock()
         mock_client.get_fulltext_xml.return_value = "<xml/>"
         mock_client.parse_fulltext_xml.return_value = {
@@ -149,12 +158,13 @@ class TestGetFulltext:
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
             return_value=mock_client,
         ):
-            result = tools["get_fulltext"](
+            result = await tools["get_fulltext"](
                 pmcid="PMC7096777", sections="introduction,results"
             )
         assert "Intro text" in result or "Results text" in result
 
-    def test_europe_pmc_exception(self, tools):
+    @pytest.mark.asyncio
+    async def test_europe_pmc_exception(self, tools):
         mock_client = MagicMock()
         mock_client.get_fulltext_xml.side_effect = RuntimeError("API down")
         with patch(
@@ -162,15 +172,17 @@ class TestGetFulltext:
             return_value=mock_client,
         ):
             # Should not crash, just log and continue to other sources
-            result = tools["get_fulltext"](pmcid="PMC7096777")
+            result = await tools["get_fulltext"](pmcid="PMC7096777")
         assert isinstance(result, str)
 
-    def test_no_results_at_all(self, tools):
+    @pytest.mark.asyncio
+    async def test_no_results_at_all(self, tools):
         """When all sources fail, should return no results message."""
-        result = tools["get_fulltext"](pmid="99999999")
+        result = await tools["get_fulltext"](pmid="99999999")
         assert "no" in result.lower() or "not" in result.lower()
 
-    def test_unpaywall_landing_page(self, tools):
+    @pytest.mark.asyncio
+    async def test_unpaywall_landing_page(self, tools):
         """Test unpaywall returning a landing page URL instead of PDF."""
         mock_unpaywall = MagicMock()
         mock_unpaywall.get_oa_status.return_value = {
@@ -186,7 +198,7 @@ class TestGetFulltext:
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_unpaywall_client",
             return_value=mock_unpaywall,
         ):
-            result = tools["get_fulltext"](doi="10.1234/test")
+            result = await tools["get_fulltext"](doi="10.1234/test")
         assert "example.com/article" in result
 
 
@@ -196,11 +208,13 @@ class TestGetFulltext:
 
 
 class TestGetTextMinedTerms:
-    def test_no_ids(self, tools):
-        result = tools["get_text_mined_terms"]()
+    @pytest.mark.asyncio
+    async def test_no_ids(self, tools):
+        result = await tools["get_text_mined_terms"]()
         assert "error" in result.lower() or "required" in result.lower()
 
-    def test_pmid_success(self, tools):
+    @pytest.mark.asyncio
+    async def test_pmid_success(self, tools):
         mock_client = MagicMock()
         mock_client.get_text_mined_terms.return_value = [
             {"semantic_type": "GENE_PROTEIN", "term": "BRCA1"},
@@ -212,12 +226,13 @@ class TestGetTextMinedTerms:
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
             return_value=mock_client,
         ):
-            result = tools["get_text_mined_terms"](pmid="12345678")
+            result = await tools["get_text_mined_terms"](pmid="12345678")
         assert "BRCA1" in result
         assert "Breast Cancer" in result
         assert "×2" in result  # BRCA1 appears twice
 
-    def test_pmcid_success(self, tools):
+    @pytest.mark.asyncio
+    async def test_pmcid_success(self, tools):
         mock_client = MagicMock()
         mock_client.get_text_mined_terms.return_value = [
             {"semantic_type": "ORGANISM", "term": "Homo sapiens"},
@@ -226,10 +241,11 @@ class TestGetTextMinedTerms:
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
             return_value=mock_client,
         ):
-            result = tools["get_text_mined_terms"](pmcid="PMC7096777")
+            result = await tools["get_text_mined_terms"](pmcid="PMC7096777")
         assert "Homo sapiens" in result
 
-    def test_semantic_type_filter(self, tools):
+    @pytest.mark.asyncio
+    async def test_semantic_type_filter(self, tools):
         mock_client = MagicMock()
         mock_client.get_text_mined_terms.return_value = [
             {"semantic_type": "CHEMICAL", "term": "Propofol"},
@@ -238,27 +254,29 @@ class TestGetTextMinedTerms:
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
             return_value=mock_client,
         ):
-            result = tools["get_text_mined_terms"](
+            result = await tools["get_text_mined_terms"](
                 pmid="12345678", semantic_type="CHEMICAL"
             )
         assert "Propofol" in result
 
-    def test_no_terms_found(self, tools):
+    @pytest.mark.asyncio
+    async def test_no_terms_found(self, tools):
         mock_client = MagicMock()
         mock_client.get_text_mined_terms.return_value = []
         with patch(
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
             return_value=mock_client,
         ):
-            result = tools["get_text_mined_terms"](pmid="12345678")
+            result = await tools["get_text_mined_terms"](pmid="12345678")
         assert "no" in result.lower()
 
-    def test_exception(self, tools):
+    @pytest.mark.asyncio
+    async def test_exception(self, tools):
         mock_client = MagicMock()
         mock_client.get_text_mined_terms.side_effect = RuntimeError("API error")
         with patch(
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
             return_value=mock_client,
         ):
-            result = tools["get_text_mined_terms"](pmid="12345678")
+            result = await tools["get_text_mined_terms"](pmid="12345678")
         assert "error" in result.lower()

@@ -75,26 +75,23 @@ class TestTestResolverUrl:
 # ============================================================
 
 class TestConfigureInstitutionalAccess:
-    @pytest.mark.asyncio
-    async def test_disable(self, tools):
+    def test_disable(self, tools):
         with patch(
             "pubmed_search.presentation.mcp_server.tools.openurl.configure_openurl"
         ) as mock:
-            result = await tools["configure_institutional_access"](enable=False)
+            result = tools["configure_institutional_access"](enable=False)
         assert "disabled" in result.lower()
         mock.assert_called_once_with(enabled=False)
 
-    @pytest.mark.asyncio
-    async def test_unknown_preset(self, tools):
+    def test_unknown_preset(self, tools):
         with patch(
             "pubmed_search.presentation.mcp_server.tools.openurl.list_presets",
             return_value={"ntu": "http://ntu.edu/resolver"},
         ):
-            result = await tools["configure_institutional_access"](preset="zzz")
+            result = tools["configure_institutional_access"](preset="zzz")
         assert "unknown" in result.lower() or "Unknown" in result
 
-    @pytest.mark.asyncio
-    async def test_valid_preset(self, tools):
+    def test_valid_preset(self, tools):
         mock_config = MagicMock()
         mock_builder = MagicMock()
         mock_builder.resolver_base = "http://ntu.edu/resolver"
@@ -109,21 +106,19 @@ class TestConfigureInstitutionalAccess:
             "pubmed_search.presentation.mcp_server.tools.openurl.get_openurl_config",
             return_value=mock_config,
         ):
-            result = await tools["configure_institutional_access"](preset="ntu")
+            result = tools["configure_institutional_access"](preset="ntu")
         assert "configured" in result.lower() or "✅" in result
 
-    @pytest.mark.asyncio
-    async def test_custom_url(self, tools):
+    def test_custom_url(self, tools):
         with patch(
             "pubmed_search.presentation.mcp_server.tools.openurl.configure_openurl"
         ):
-            result = await tools["configure_institutional_access"](
+            result = tools["configure_institutional_access"](
                 resolver_url="https://mylib.edu/resolver"
             )
         assert "configured" in result.lower() or "✅" in result
 
-    @pytest.mark.asyncio
-    async def test_show_current_config(self, tools):
+    def test_show_current_config(self, tools):
         mock_config = MagicMock()
         mock_config.enabled = True
         mock_config.resolver_base = "http://test.edu"
@@ -136,16 +131,15 @@ class TestConfigureInstitutionalAccess:
             "pubmed_search.presentation.mcp_server.tools.openurl.list_presets",
             return_value={"ntu": "http://ntu.edu/resolver"},
         ):
-            result = await tools["configure_institutional_access"]()
+            result = tools["configure_institutional_access"]()
         assert "configuration" in result.lower() or "Status" in result
 
-    @pytest.mark.asyncio
-    async def test_exception(self, tools):
+    def test_exception(self, tools):
         with patch(
             "pubmed_search.presentation.mcp_server.tools.openurl.configure_openurl",
             side_effect=RuntimeError("fail"),
         ):
-            result = await tools["configure_institutional_access"](enable=False)
+            result = tools["configure_institutional_access"](enable=False)
         # Should handle exception (via try/except in the tool)
         # The disable path calls configure_openurl before reaching other code
         assert "fail" in result.lower() or "Error" in result or "❌" in result
@@ -156,8 +150,7 @@ class TestConfigureInstitutionalAccess:
 # ============================================================
 
 class TestGetInstitutionalLink:
-    @pytest.mark.asyncio
-    async def test_not_configured(self, tools):
+    def test_not_configured(self, tools):
         mock_config = MagicMock()
         mock_config.get_builder.return_value = None
 
@@ -165,11 +158,10 @@ class TestGetInstitutionalLink:
             "pubmed_search.presentation.mcp_server.tools.openurl.get_openurl_config",
             return_value=mock_config,
         ):
-            result = await tools["get_institutional_link"]()
+            result = tools["get_institutional_link"]()
         assert "not configured" in result.lower()
 
-    @pytest.mark.asyncio
-    async def test_no_identifiers(self, tools):
+    def test_no_identifiers(self, tools):
         mock_config = MagicMock()
         mock_builder = MagicMock()
         mock_config.get_builder.return_value = mock_builder
@@ -178,11 +170,10 @@ class TestGetInstitutionalLink:
             "pubmed_search.presentation.mcp_server.tools.openurl.get_openurl_config",
             return_value=mock_config,
         ):
-            result = await tools["get_institutional_link"]()
+            result = tools["get_institutional_link"]()
         assert "provide" in result.lower() or "identifier" in result.lower()
 
-    @pytest.mark.asyncio
-    async def test_with_pmid(self, tools):
+    def test_with_pmid(self, tools):
         mock_config = MagicMock()
         mock_builder = MagicMock()
         mock_builder.build_from_article.return_value = "https://resolver.edu/?pmid=123"
@@ -192,11 +183,10 @@ class TestGetInstitutionalLink:
             "pubmed_search.presentation.mcp_server.tools.openurl.get_openurl_config",
             return_value=mock_config,
         ):
-            result = await tools["get_institutional_link"](pmid="123")
+            result = tools["get_institutional_link"](pmid="123")
         assert "resolver.edu" in result
 
-    @pytest.mark.asyncio
-    async def test_url_generation_fails(self, tools):
+    def test_url_generation_fails(self, tools):
         mock_config = MagicMock()
         mock_builder = MagicMock()
         mock_builder.build_from_article.return_value = None
@@ -206,7 +196,7 @@ class TestGetInstitutionalLink:
             "pubmed_search.presentation.mcp_server.tools.openurl.get_openurl_config",
             return_value=mock_config,
         ):
-            result = await tools["get_institutional_link"](pmid="123")
+            result = tools["get_institutional_link"](pmid="123")
         assert "could not" in result.lower() or "❌" in result
 
 
@@ -215,8 +205,7 @@ class TestGetInstitutionalLink:
 # ============================================================
 
 class TestListResolverPresets:
-    @pytest.mark.asyncio
-    async def test_returns_presets(self, tools):
+    def test_returns_presets(self, tools):
         with patch(
             "pubmed_search.presentation.mcp_server.tools.openurl.list_presets",
             return_value={
@@ -225,7 +214,7 @@ class TestListResolverPresets:
                 "sfx": "http://sfx.example.com",
             },
         ):
-            result = await tools["list_resolver_presets"]()
+            result = tools["list_resolver_presets"]()
         assert "ntu" in result
         assert "harvard" in result
 

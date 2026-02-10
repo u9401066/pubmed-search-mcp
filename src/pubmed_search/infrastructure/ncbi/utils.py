@@ -10,6 +10,7 @@ Provides various utility functions for Entrez operations including:
 - Export functions
 """
 
+import asyncio
 from typing import Any, Dict, List, Optional
 
 from Bio import Entrez
@@ -29,7 +30,7 @@ class UtilsMixin:
         get_database_info: Get database statistics
     """
 
-    def quick_fetch_summary(self, id_list: List[str]) -> List[Dict[str, Any]]:
+    async def quick_fetch_summary(self, id_list: List[str]) -> List[Dict[str, Any]]:
         """
         Fetch article summaries using ESummary (faster than EFetch for metadata only).
 
@@ -43,8 +44,10 @@ class UtilsMixin:
             return []
 
         try:
-            handle = Entrez.esummary(db="pubmed", id=",".join(id_list))
-            summaries = Entrez.read(handle)
+            handle = await asyncio.to_thread(
+                Entrez.esummary, db="pubmed", id=",".join(id_list)
+            )
+            summaries = await asyncio.to_thread(Entrez.read, handle)
             handle.close()
 
             results = []
@@ -74,7 +77,7 @@ class UtilsMixin:
         except Exception as e:
             return [{"error": str(e)}]
 
-    def spell_check_query(self, query: str) -> str:
+    async def spell_check_query(self, query: str) -> str:
         """
         Get spelling suggestions for search queries using ESpell.
 
@@ -85,8 +88,8 @@ class UtilsMixin:
             Corrected query string if suggestions found, original query otherwise.
         """
         try:
-            handle = Entrez.espell(db="pubmed", term=query)
-            result = Entrez.read(handle)
+            handle = await asyncio.to_thread(Entrez.espell, db="pubmed", term=query)
+            result = await asyncio.to_thread(Entrez.read, handle)
             handle.close()
 
             corrected = result.get("CorrectedQuery", "")
@@ -95,7 +98,7 @@ class UtilsMixin:
             print(f"Error in spell check: {e}")
             return query
 
-    def get_database_counts(self, query: str) -> Dict[str, int]:
+    async def get_database_counts(self, query: str) -> Dict[str, int]:
         """
         Get result counts across multiple NCBI databases using EGQuery.
 
@@ -106,8 +109,8 @@ class UtilsMixin:
             Dictionary mapping database names to result counts.
         """
         try:
-            handle = Entrez.egquery(term=query)
-            result = Entrez.read(handle)
+            handle = await asyncio.to_thread(Entrez.egquery, term=query)
+            result = await asyncio.to_thread(Entrez.read, handle)
             handle.close()
 
             counts = {}
@@ -123,7 +126,7 @@ class UtilsMixin:
         except Exception as e:
             return {"error": str(e)}
 
-    def validate_mesh_terms(self, terms: List[str]) -> Dict[str, Any]:
+    async def validate_mesh_terms(self, terms: List[str]) -> Dict[str, Any]:
         """
         Validate MeSH terms and get their IDs using MeSH database.
 
@@ -135,15 +138,19 @@ class UtilsMixin:
         """
         try:
             query = " OR ".join([f'"{term}"[MeSH Terms]' for term in terms])
-            handle = Entrez.esearch(db="mesh", term=query, retmax=len(terms))
-            result = Entrez.read(handle)
+            handle = await asyncio.to_thread(
+                Entrez.esearch, db="mesh", term=query, retmax=len(terms)
+            )
+            result = await asyncio.to_thread(Entrez.read, handle)
             handle.close()
 
             mesh_ids = result.get("IdList", [])
 
             if mesh_ids:
-                handle = Entrez.esummary(db="mesh", id=",".join(mesh_ids))
-                summaries = Entrez.read(handle)
+                handle = await asyncio.to_thread(
+                    Entrez.esummary, db="mesh", id=",".join(mesh_ids)
+                )
+                summaries = await asyncio.to_thread(Entrez.read, handle)
                 handle.close()
 
                 validated_terms = []
@@ -165,7 +172,7 @@ class UtilsMixin:
         except Exception as e:
             return {"error": str(e)}
 
-    def find_by_citation(
+    async def find_by_citation(
         self,
         journal: str,
         year: str,
@@ -191,8 +198,11 @@ class UtilsMixin:
         try:
             citation_string = f"{journal}|{year}|{volume}|{first_page}|{author}||"
 
-            handle = Entrez.ecitmatch(db="pubmed", bdata=citation_string)
-            result = handle.read().strip()
+            handle = await asyncio.to_thread(
+                Entrez.ecitmatch, db="pubmed", bdata=citation_string
+            )
+            result = await asyncio.to_thread(handle.read)
+            result = result.strip()
             handle.close()
 
             if result and "\t" in result:
@@ -205,7 +215,9 @@ class UtilsMixin:
             print(f"Error in citation match: {e}")
             return None
 
-    def export_citations(self, id_list: List[str], format: str = "medline") -> str:
+    async def export_citations(
+        self, id_list: List[str], format: str = "medline"
+    ) -> str:
         """
         Export citations in various formats.
 
@@ -231,17 +243,21 @@ class UtilsMixin:
 
             rettype, retmode = valid_formats[format]
 
-            handle = Entrez.efetch(
-                db="pubmed", id=id_list, rettype=rettype, retmode=retmode
+            handle = await asyncio.to_thread(
+                Entrez.efetch,
+                db="pubmed",
+                id=id_list,
+                rettype=rettype,
+                retmode=retmode,
             )
-            result = handle.read()
+            result = await asyncio.to_thread(handle.read)
             handle.close()
 
             return result
         except Exception as e:
             return f"Error exporting citations: {str(e)}"
 
-    def get_database_info(self, db: str = "pubmed") -> Dict[str, Any]:
+    async def get_database_info(self, db: str = "pubmed") -> Dict[str, Any]:
         """
         Get database statistics and field information using EInfo.
 
@@ -254,8 +270,8 @@ class UtilsMixin:
             - available search fields
         """
         try:
-            handle = Entrez.einfo(db=db)
-            result = Entrez.read(handle)
+            handle = await asyncio.to_thread(Entrez.einfo, db=db)
+            result = await asyncio.to_thread(Entrez.read, handle)
             handle.close()
 
             db_info = result.get("DbInfo", {})

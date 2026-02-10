@@ -13,13 +13,13 @@ Features:
 - Free API key required for better rate limits
 """
 
-import json
+import asyncio
 import logging
 import time
-import urllib.error
 import urllib.parse
-import urllib.request
 from typing import Any
+
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -65,57 +65,59 @@ class COREClient:
         self._last_request_time = 0
         # Rate limit: 10/min without key, 25/min with key
         self._min_interval = 6.0 if not api_key else 2.5
+        self._client = httpx.AsyncClient(
+            timeout=self._timeout,
+            headers={
+                "User-Agent": f"pubmed-search-mcp/1.0 (mailto:{self._email})",
+                "Accept": "application/json",
+            },
+        )
 
-    def _rate_limit(self):
+    async def _rate_limit(self):
         """Simple rate limiting."""
         elapsed = time.time() - self._last_request_time
         if elapsed < self._min_interval:
-            time.sleep(self._min_interval - elapsed)
+            await asyncio.sleep(self._min_interval - elapsed)
         self._last_request_time = time.time()
 
-    def _make_request(
+    async def _make_request(
         self, url: str, method: str = "GET", data: dict | None = None
     ) -> dict | None:
         """Make HTTP request to CORE API."""
-        self._rate_limit()
+        await self._rate_limit()
 
-        headers = {
-            "User-Agent": f"pubmed-search-mcp/1.0 (mailto:{self._email})",
-            "Accept": "application/json",
-        }
-
+        headers = {}
         if self._api_key:
             headers["Authorization"] = f"Bearer {self._api_key}"
 
-        if method == "POST" and data:
-            headers["Content-Type"] = "application/json"
-            request_data = json.dumps(data).encode("utf-8")
-            request = urllib.request.Request(
-                url, data=request_data, headers=headers, method="POST"
-            )
-        else:
-            request = urllib.request.Request(url, headers=headers)
-
         try:
-            # nosec B310: URL is constructed from hardcoded CORE_API_BASE (https)
-            with urllib.request.urlopen(request, timeout=self._timeout) as response:  # nosec B310
-                return json.loads(response.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            if e.code == 401:
-                logger.error("CORE API: Unauthorized - check your API key")
-            elif e.code == 429:
-                logger.warning("CORE API: Rate limit exceeded")
+            if method == "POST" and data:
+                headers["Content-Type"] = "application/json"
+                response = await self._client.post(url, json=data, headers=headers)
             else:
-                logger.error(f"CORE API HTTP error {e.code}: {e.reason}")
+                response = await self._client.get(url, headers=headers)
+
+            if response.status_code == 401:
+                logger.error("CORE API: Unauthorized - check your API key")
+                return None
+            if response.status_code == 429:
+                logger.warning("CORE API: Rate limit exceeded")
+                return None
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                f"CORE API HTTP error {e.response.status_code}: {e.response.reason_phrase}"
+            )
             return None
-        except urllib.error.URLError as e:
-            logger.error(f"CORE API URL error: {e.reason}")
+        except httpx.RequestError as e:
+            logger.error(f"CORE API URL error: {e}")
             return None
         except Exception as e:
             logger.error(f"CORE API request failed: {e}")
             return None
 
-    def search(
+    async def search(
         self,
         query: str,
         limit: int = 10,
@@ -167,7 +169,7 @@ class COREClient:
             url = (
                 f"{CORE_API_BASE}/search/{entity_type}?{urllib.parse.urlencode(params)}"
             )
-            data = self._make_request(url)
+            data = await self._make_request(url)
 
             if not data:
                 return {"total_hits": 0, "results": []}
@@ -188,7 +190,7 @@ class COREClient:
             logger.error(f"CORE search failed: {e}")
             return {"total_hits": 0, "results": []}
 
-    def search_fulltext(
+    async def search_fulltext(
         self,
         query: str,
         limit: int = 10,
@@ -209,7 +211,7 @@ class COREClient:
         """
         # Search in fullText field specifically
         fulltext_query = f'fullText:"{query}"'
-        return self.search(
+        return await self.search(
             query=fulltext_query,
             limit=limit,
             entity_type="outputs",  # Outputs have full text
@@ -218,7 +220,7 @@ class COREClient:
             has_fulltext=True,
         )
 
-    def get_work(self, work_id: int | str) -> dict | None:
+    async def get_work(self, work_id: int | str) -> dict | None:
         """
         Get a specific work by ID.
 
@@ -230,7 +232,7 @@ class COREClient:
         """
         try:
             url = f"{CORE_API_BASE}/works/{work_id}"
-            data = self._make_request(url)
+            data = await self._make_request(url)
 
             if not data:
                 return None
@@ -241,7 +243,7 @@ class COREClient:
             logger.error(f"Get CORE work failed: {e}")
             return None
 
-    def get_output(self, output_id: int | str) -> dict | None:
+    async def get_output(self, output_id: int | str) -> dict | None:
         """
         Get a specific output by ID.
 
@@ -255,7 +257,7 @@ class COREClient:
         """
         try:
             url = f"{CORE_API_BASE}/outputs/{output_id}"
-            data = self._make_request(url)
+            data = await self._make_request(url)
 
             if not data:
                 return None
@@ -266,7 +268,7 @@ class COREClient:
             logger.error(f"Get CORE output failed: {e}")
             return None
 
-    def get_fulltext(self, output_id: int | str) -> str | None:
+    async def get_fulltext(self, output_id: int | str) -> str | None:
         """
         Get full text content for an output.
 
@@ -276,12 +278,12 @@ class COREClient:
         Returns:
             Full text string or None
         """
-        output = self.get_output(output_id)
+        output = await self.get_output(output_id)
         if output:
             return output.get("full_text")
         return None
 
-    def search_by_doi(self, doi: str) -> dict | None:
+    async def search_by_doi(self, doi: str) -> dict | None:
         """
         Find a work by DOI.
 
@@ -291,12 +293,12 @@ class COREClient:
         Returns:
             Work details or None
         """
-        result = self.search(f'doi:"{doi}"', limit=1)
+        result = await self.search(f'doi:"{doi}"', limit=1)
         if result.get("results"):
             return result["results"][0]
         return None
 
-    def search_by_pmid(self, pmid: str) -> dict | None:
+    async def search_by_pmid(self, pmid: str) -> dict | None:
         """
         Find a work by PubMed ID.
 
@@ -306,7 +308,7 @@ class COREClient:
         Returns:
             Work details or None
         """
-        result = self.search(f"pubmedId:{pmid}", limit=1)
+        result = await self.search(f"pubmedId:{pmid}", limit=1)
         if result.get("results"):
             return result["results"][0]
         return None
@@ -421,6 +423,16 @@ class COREClient:
 
         return normalized
 
+    async def close(self):
+        """Close the HTTP client."""
+        await self._client.aclose()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        await self.close()
+
 
 # Singleton instance
 _core_client: COREClient | None = None
@@ -438,7 +450,7 @@ def get_core_client(api_key: str | None = None) -> COREClient:
 
 
 # Convenience functions
-def search_core(
+async def search_core(
     query: str,
     limit: int = 10,
     year_from: int | None = None,
@@ -447,7 +459,7 @@ def search_core(
 ) -> list[dict]:
     """Search CORE for research outputs."""
     client = get_core_client()
-    result = client.search(
+    result = await client.search(
         query=query,
         limit=limit,
         year_from=year_from,
@@ -457,11 +469,11 @@ def search_core(
     return result.get("results", [])
 
 
-def search_core_fulltext(
+async def search_core_fulltext(
     query: str,
     limit: int = 10,
 ) -> list[dict]:
     """Search within full text content in CORE."""
     client = get_core_client()
-    result = client.search_fulltext(query=query, limit=limit)
+    result = await client.search_fulltext(query=query, limit=limit)
     return result.get("results", [])

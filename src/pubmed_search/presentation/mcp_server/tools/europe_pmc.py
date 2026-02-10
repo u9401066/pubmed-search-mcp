@@ -24,7 +24,6 @@ Phase 3 Updates (v0.2.8):
 - CrossRef, DOAJ, Zenodo, PubMed LinkOut integration
 """
 
-import asyncio
 import logging
 from typing import Any, Dict, List, Optional, Union
 
@@ -53,7 +52,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
     # Use unified_search(sources=["europe_pmc"]) instead.
     # Keeping the function for internal use by unified_search.
     # @mcp.tool()  # REMOVED - integrated into unified_search
-    def search_europe_pmc(
+    async def search_europe_pmc(
         query: str,
         limit: int = 10,
         min_year: Optional[int] = None,
@@ -117,7 +116,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
             }
             sort_param = sort_map.get(sort, None)
 
-            result = client.search(
+            result = await client.search(
                 query=normalized_query,
                 limit=normalized_limit,
                 min_year=normalized_min_year,
@@ -229,7 +228,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
             )
 
     @mcp.tool()
-    def get_fulltext(
+    async def get_fulltext(
         identifier: Optional[str] = None,
         pmcid: Optional[Union[str, int]] = None,
         pmid: Optional[Union[str, int]] = None,
@@ -337,7 +336,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
             sources_tried.append("Europe PMC")
             try:
                 client = get_europe_pmc_client()
-                xml = client.get_fulltext_xml(detected_pmcid)
+                xml = await client.get_fulltext_xml(detected_pmcid)
                 if xml:
                     parsed = client.parse_fulltext_xml(xml)
                     if parsed:
@@ -361,7 +360,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
             sources_tried.append("Unpaywall")
             try:
                 unpaywall = get_unpaywall_client()
-                oa_info = unpaywall.get_oa_status(detected_doi)
+                oa_info = await unpaywall.get_oa_status(detected_doi)
                 if oa_info and oa_info.get("is_oa"):
                     # Get title if we don't have it
                     if not article_title:
@@ -412,7 +411,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
             try:
                 core = get_core_client()
                 # Search by DOI
-                results = core.search(f'doi:"{detected_doi}"', limit=1)
+                results = await core.search(f'doi:"{detected_doi}"', limit=1)
                 if results and results.get("results"):
                     work = results["results"][0]
                     if not article_title:
@@ -458,47 +457,37 @@ def register_europe_pmc_tools(mcp: FastMCP):
                 pmcid_str = str(detected_pmcid) if detected_pmcid else None
                 doi_str = str(detected_doi) if detected_doi else None
 
-                async def _get_extended_links():
-                    downloader = FulltextDownloader()
-                    try:
-                        return await downloader.get_pdf_links(
-                            pmid=pmid_str,
-                            pmcid=pmcid_str,
-                            doi=doi_str,
-                        )
-                    finally:
-                        await downloader.close()
-
-                # Run async function in sync context
+                downloader = FulltextDownloader()
                 try:
-                    loop = asyncio.get_running_loop()
-                except RuntimeError:
-                    loop = None
-
-                if loop and loop.is_running():
-                    # Already in async context - create task
-                    import concurrent.futures
-                    with concurrent.futures.ThreadPoolExecutor() as executor:
-                        future = executor.submit(asyncio.run, _get_extended_links())
-                        extended_links = future.result(timeout=30)
-                else:
-                    extended_links = asyncio.run(_get_extended_links())
+                    extended_links = await downloader.get_pdf_links(
+                        pmid=pmid_str,
+                        pmcid=pmcid_str,
+                        doi=doi_str,
+                    )
+                finally:
+                    await downloader.close()
 
                 # Merge extended links (avoid duplicates)
                 seen_urls = {link["url"] for link in pdf_links}
                 for ext_link in extended_links:
                     if ext_link.url not in seen_urls:
                         seen_urls.add(ext_link.url)
-                        pdf_links.append({
-                            "source": ext_link.source.display_name,
-                            "url": ext_link.url,
-                            "type": "pdf" if ext_link.is_direct_pdf else "landing_page",
-                            "access": ext_link.access_type,
-                            "version": ext_link.version,
-                            "license": ext_link.license,
-                        })
+                        pdf_links.append(
+                            {
+                                "source": ext_link.source.display_name,
+                                "url": ext_link.url,
+                                "type": "pdf"
+                                if ext_link.is_direct_pdf
+                                else "landing_page",
+                                "access": ext_link.access_type,
+                                "version": ext_link.version,
+                                "license": ext_link.license,
+                            }
+                        )
 
-                logger.info(f"Extended sources found {len(extended_links)} additional links")
+                logger.info(
+                    f"Extended sources found {len(extended_links)} additional links"
+                )
             except Exception as e:
                 logger.warning(f"Extended sources failed: {e}")
 
@@ -623,7 +612,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
     # NOTE: get_fulltext_xml is NOT registered as a tool.
     # Use get_fulltext instead - it provides better parsed output.
     # @mcp.tool()  # REMOVED - use get_fulltext instead
-    def get_fulltext_xml(pmcid: Union[str, int]) -> str:
+    async def get_fulltext_xml(pmcid: Union[str, int]) -> str:
         """
         Get raw JATS XML fulltext from Europe PMC.
 
@@ -653,7 +642,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
         try:
             client = get_europe_pmc_client()
 
-            xml = client.get_fulltext_xml(pmcid_normalized)
+            xml = await client.get_fulltext_xml(pmcid_normalized)
             if not xml:
                 return ResponseFormatter.no_results(
                     query=pmcid_normalized,
@@ -686,7 +675,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
             )
 
     @mcp.tool()
-    def get_text_mined_terms(
+    async def get_text_mined_terms(
         pmid: Optional[Union[str, int]] = None,
         pmcid: Optional[Union[str, int]] = None,
         semantic_type: Optional[str] = None,
@@ -744,7 +733,9 @@ def register_europe_pmc_tools(mcp: FastMCP):
                 else:
                     article_id = normalized_pmcid or ""
 
-            terms = client.get_text_mined_terms(source, str(article_id), semantic_type)
+            terms = await client.get_text_mined_terms(
+                source, str(article_id), semantic_type
+            )
 
             if not terms:
                 id_str = (
@@ -823,7 +814,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
     # NOTE: get_europe_pmc_citations is NOT registered as a tool.
     # Use find_citing_articles or get_article_references instead.
     # @mcp.tool()  # REMOVED - use find_citing_articles instead
-    def get_europe_pmc_citations(
+    async def get_europe_pmc_citations(
         pmid: Optional[Union[str, int]] = None,
         pmcid: Optional[Union[str, int]] = None,
         direction: str = "citing",
@@ -883,13 +874,13 @@ def register_europe_pmc_tools(mcp: FastMCP):
 
             # Get citations or references
             if direction == "references":
-                results = client.get_references(
+                results = await client.get_references(
                     source, str(article_id), limit=normalized_limit
                 )
                 direction_label = "References (Bibliography)"
                 direction_desc = "papers cited BY this article"
             else:
-                results = client.get_citations(
+                results = await client.get_citations(
                     source, str(article_id), limit=normalized_limit
                 )
                 direction_label = "Citing Articles"

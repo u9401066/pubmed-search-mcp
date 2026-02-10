@@ -183,7 +183,9 @@ def register_session_tools(mcp: FastMCP, session_manager: SessionManager):
             return json.dumps({"success": False, "error": str(e)})
 
     @mcp.tool()
-    def get_session_summary(include_history: bool = False, history_limit: int = 10) -> str:
+    def get_session_summary(
+        include_history: bool = False, history_limit: int = 10
+    ) -> str:
         """
         取得當前 session 的摘要資訊。
 
@@ -251,12 +253,16 @@ def register_session_tools(mcp: FastMCP, session_manager: SessionManager):
                 total = len(session.search_history)
                 formatted_history = []
                 for i, search in enumerate(history):
-                    actual_index = total - history_limit + i if total > history_limit else i
+                    actual_index = (
+                        total - history_limit + i if total > history_limit else i
+                    )
                     formatted_history.append(
                         {
                             "index": actual_index,
                             "query": search.get("query", "")[:80],
-                            "timestamp": search.get("timestamp", "")[:19],  # YYYY-MM-DDTHH:MM:SS
+                            "timestamp": search.get("timestamp", "")[
+                                :19
+                            ],  # YYYY-MM-DDTHH:MM:SS
                             "result_count": search.get("result_count", 0),
                             "pmid_count": len(search.get("pmids", [])),
                         }

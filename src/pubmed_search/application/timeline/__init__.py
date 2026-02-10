@@ -10,7 +10,7 @@ Modules:
 Usage:
     >>> from pubmed_search.application.timeline import TimelineBuilder
     >>> builder = TimelineBuilder(searcher)
-    >>> timeline = await builder.build_timeline("remimazolam", max_events=50)
+    >>> timeline = builder.build_timeline("remimazolam", max_events=50)
 """
 
 from .milestone_detector import MilestoneDetector

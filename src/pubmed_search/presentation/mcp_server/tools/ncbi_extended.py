@@ -71,7 +71,7 @@ def register_ncbi_extended_tools(mcp: FastMCP) -> None:
             )  # type: ignore[import-not-found]
 
             client = get_ncbi_extended_client()
-            results = client.search_gene(
+            results = await client.search_gene(
                 query=query,
                 organism=organism,
                 limit=limit,
@@ -127,7 +127,7 @@ def register_ncbi_extended_tools(mcp: FastMCP) -> None:
             )  # type: ignore[import-not-found]
 
             client = get_ncbi_extended_client()
-            result = client.get_gene(gene_id)
+            result = await client.get_gene(gene_id)
 
             if result:
                 return json.dumps(result, indent=2, ensure_ascii=False)
@@ -178,7 +178,7 @@ def register_ncbi_extended_tools(mcp: FastMCP) -> None:
             )  # type: ignore[import-not-found]
 
             client = get_ncbi_extended_client()
-            pmids = client.get_gene_pubmed_links(gene_id, limit=limit)
+            pmids = await client.get_gene_pubmed_links(gene_id, limit=limit)
 
             if not pmids:
                 return ResponseFormatter.no_results(
@@ -247,7 +247,7 @@ def register_ncbi_extended_tools(mcp: FastMCP) -> None:
             )  # type: ignore[import-not-found]
 
             client = get_ncbi_extended_client()
-            results = client.search_compound(
+            results = await client.search_compound(
                 query=query,
                 limit=limit,
             )
@@ -302,7 +302,7 @@ def register_ncbi_extended_tools(mcp: FastMCP) -> None:
             )  # type: ignore[import-not-found]
 
             client = get_ncbi_extended_client()
-            result = client.get_compound(cid)
+            result = await client.get_compound(cid)
 
             if result:
                 return json.dumps(result, indent=2, ensure_ascii=False)
@@ -352,7 +352,7 @@ def register_ncbi_extended_tools(mcp: FastMCP) -> None:
             )  # type: ignore[import-not-found]
 
             client = get_ncbi_extended_client()
-            pmids = client.get_compound_pubmed_links(cid, limit=limit)
+            pmids = await client.get_compound_pubmed_links(cid, limit=limit)
 
             if not pmids:
                 return ResponseFormatter.no_results(
@@ -421,7 +421,7 @@ def register_ncbi_extended_tools(mcp: FastMCP) -> None:
             )  # type: ignore[import-not-found]
 
             client = get_ncbi_extended_client()
-            results = client.search_clinvar(
+            results = await client.search_clinvar(
                 query=query,
                 limit=limit,
             )

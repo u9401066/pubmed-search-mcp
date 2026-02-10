@@ -1,5 +1,6 @@
 """Tests for citation_tree.py — format converters, node/edge builders, and build tool."""
 
+import pytest
 from unittest.mock import MagicMock
 
 
@@ -253,11 +254,13 @@ class TestBuildCitationTreeTool:
         self.searcher = MagicMock()
         self.tools = _capture_tools(self.mcp, self.searcher)
 
-    def test_invalid_pmid(self):
-        result = self.tools["build_citation_tree"](pmid="")
+    @pytest.mark.asyncio
+    async def test_invalid_pmid(self):
+        result = await self.tools["build_citation_tree"](pmid="")
         assert "error" in result.lower() or "Error" in result
 
-    def test_depth_clamped(self):
+    @pytest.mark.asyncio
+    async def test_depth_clamped(self):
         self.searcher.fetch_details = MagicMock(return_value=[{
             "pmid": "111", "title": "Root", "year": "2024",
             "journal": "J", "authors": ["A"], "doi": "",
@@ -265,19 +268,21 @@ class TestBuildCitationTreeTool:
         self.searcher.get_citing_articles = MagicMock(return_value=[])
         self.searcher.get_article_references = MagicMock(return_value=[])
 
-        result = self.tools["build_citation_tree"](
+        result = await self.tools["build_citation_tree"](
             pmid="111", depth=10, limit_per_level=5, output_format="cytoscape"
         )
         # Should succeed (depth clamped to MAX_DEPTH)
         assert isinstance(result, str)
         assert "111" in result
 
-    def test_article_not_found(self):
+    @pytest.mark.asyncio
+    async def test_article_not_found(self):
         self.searcher.fetch_details = MagicMock(return_value=[])
-        result = self.tools["build_citation_tree"](pmid="999999")
+        result = await self.tools["build_citation_tree"](pmid="999999")
         assert "not" in result.lower() or "error" in result.lower()
 
-    def test_successful_tree(self):
+    @pytest.mark.asyncio
+    async def test_successful_tree(self):
         root = {"pmid": "111", "title": "Root Paper", "year": "2024",
                 "journal": "Nature", "authors": ["Smith"], "doi": ""}
         citing = {"pmid": "222", "title": "Citing Paper", "year": "2024",
@@ -289,7 +294,7 @@ class TestBuildCitationTreeTool:
         self.searcher.get_citing_articles = MagicMock(return_value=[citing])
         self.searcher.get_article_references = MagicMock(return_value=[ref])
 
-        result = self.tools["build_citation_tree"](
+        result = await self.tools["build_citation_tree"](
             pmid="111", depth=1, limit_per_level=5, output_format="cytoscape"
         )
         assert "111" in result

@@ -72,13 +72,13 @@ class NCBICitationExporter:
             timeout: Request timeout in seconds
         """
         self.timeout = timeout
-        self._client: httpx.Client | None = None
+        self._client: httpx.AsyncClient | None = None
 
     @property
-    def client(self) -> httpx.Client:
-        """Lazy-initialized HTTP client."""
+    def client(self) -> httpx.AsyncClient:
+        """Lazy-initialized async HTTP client."""
         if self._client is None:
-            self._client = httpx.Client(
+            self._client = httpx.AsyncClient(
                 timeout=self.timeout,
                 follow_redirects=True,
                 headers={
@@ -87,7 +87,7 @@ class NCBICitationExporter:
             )
         return self._client
 
-    def export_citations(
+    async def export_citations(
         self,
         pmids: list[str],
         format: CitationFormat = "ris",
@@ -138,7 +138,7 @@ class NCBICitationExporter:
         }
 
         try:
-            response = self.client.get(CITATION_API_BASE, params=params)
+            response = await self.client.get(CITATION_API_BASE, params=params)
             response.raise_for_status()
 
             content = response.text
@@ -190,17 +190,17 @@ class NCBICitationExporter:
                 error=f"Request failed: {str(e)}",
             )
 
-    def close(self) -> None:
+    async def close(self) -> None:
         """Close HTTP client."""
         if self._client is not None:
-            self._client.close()
+            await self._client.aclose()
             self._client = None
 
-    def __enter__(self) -> "NCBICitationExporter":
+    async def __aenter__(self) -> "NCBICitationExporter":
         return self
 
-    def __exit__(self, *args) -> None:
-        self.close()
+    async def __aexit__(self, *args) -> None:
+        await self.close()
 
 
 # Module-level singleton for convenience
@@ -215,7 +215,7 @@ def get_exporter() -> NCBICitationExporter:
     return _default_exporter
 
 
-def export_citations_official(
+async def export_citations_official(
     pmids: list[str],
     format: CitationFormat = "ris",
 ) -> CitationResult:
@@ -233,8 +233,8 @@ def export_citations_official(
         CitationResult with formatted content
 
     Example:
-        result = export_citations_official(["37654670", "37654671"])
+        result = await export_citations_official(["37654670", "37654671"])
         if result.success:
             save_to_file(result.content, "references.ris")
     """
-    return get_exporter().export_citations(pmids, format)
+    return await get_exporter().export_citations(pmids, format)

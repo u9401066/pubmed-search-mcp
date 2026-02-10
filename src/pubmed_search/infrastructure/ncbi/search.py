@@ -4,9 +4,9 @@ Entrez Search Module - Core Search Functionality
 Provides search and fetch operations using esearch and efetch.
 """
 
+import asyncio
 import logging
 import re
-import time
 from typing import Any, Dict, List, Optional
 
 from Bio import Entrez
@@ -113,11 +113,11 @@ MESH_SUBHEADINGS = {
 def _retry_on_error(func):
     """Decorator to retry Entrez operations on transient errors."""
 
-    def wrapper(*args, **kwargs):
+    async def wrapper(*args, **kwargs):
         last_error = None
         for attempt in range(MAX_RETRIES):
             try:
-                return func(*args, **kwargs)
+                return await func(*args, **kwargs)
             except Exception as e:
                 error_str = str(e)
                 # Check for transient NCBI errors
@@ -138,7 +138,7 @@ def _retry_on_error(func):
                         f"NCBI transient error (attempt {attempt + 1}/{MAX_RETRIES}): {error_str}"
                     )
                     logger.info(f"Retrying in {wait_time} seconds...")
-                    time.sleep(wait_time)
+                    await asyncio.sleep(wait_time)
                 else:
                     # Non-transient error, don't retry
                     raise
@@ -158,7 +158,7 @@ class SearchMixin:
         filter_results: Filter results by sample size
     """
 
-    def search(
+    async def search(
         self,
         query: str,
         limit: int = 5,
@@ -294,11 +294,11 @@ class SearchMixin:
                     )
 
             # Step 1: Search for IDs with retry
-            id_list, total_count = self._search_ids_with_retry(
+            id_list, total_count = await self._search_ids_with_retry(
                 full_query, limit * 2, sort_param
             )
 
-            results = self.fetch_details(id_list)
+            results = await self.fetch_details(id_list)
 
             # Attach total count to results for caller to access
             final_results = results[:limit]
@@ -314,7 +314,7 @@ class SearchMixin:
         except Exception as e:
             return [{"error": str(e)}]
 
-    def _search_ids_with_retry(self, query: str, retmax: int, sort: str) -> tuple:
+    async def _search_ids_with_retry(self, query: str, retmax: int, sort: str) -> tuple:
         """Search for PubMed IDs with retry on transient errors.
 
         Returns:
@@ -324,11 +324,11 @@ class SearchMixin:
         last_error = None
         for attempt in range(MAX_RETRIES):
             try:
-                _rate_limit()  # Rate limiting before API call
-                handle = Entrez.esearch(
-                    db="pubmed", term=query, retmax=retmax, sort=sort
+                await _rate_limit()  # Rate limiting before API call
+                handle = await asyncio.to_thread(
+                    Entrez.esearch, db="pubmed", term=query, retmax=retmax, sort=sort
                 )
-                record = Entrez.read(handle)
+                record = await asyncio.to_thread(Entrez.read, handle)
                 handle.close()
                 total_count = int(record.get("Count", 0))
                 return record["IdList"], total_count
@@ -351,19 +351,21 @@ class SearchMixin:
                     logger.warning(
                         f"NCBI transient error (attempt {attempt + 1}/{MAX_RETRIES}): {error_str}"
                     )
-                    time.sleep(wait_time)
+                    await asyncio.sleep(wait_time)
                 else:
                     raise
         raise last_error if last_error else Exception("Search failed after retries")
 
-    def _fetch_with_retry(self, id_list: List[str]):
+    async def _fetch_with_retry(self, id_list: List[str]):
         """Fetch PubMed articles with retry on transient errors."""
         last_error = None
         for attempt in range(MAX_RETRIES):
             try:
-                _rate_limit()  # Rate limiting before API call
-                handle = Entrez.efetch(db="pubmed", id=id_list, retmode="xml")
-                papers = Entrez.read(handle)
+                await _rate_limit()  # Rate limiting before API call
+                handle = await asyncio.to_thread(
+                    Entrez.efetch, db="pubmed", id=id_list, retmode="xml"
+                )
+                papers = await asyncio.to_thread(Entrez.read, handle)
                 handle.close()
                 return papers
             except Exception as e:
@@ -385,12 +387,12 @@ class SearchMixin:
                     logger.warning(
                         f"NCBI transient error (attempt {attempt + 1}/{MAX_RETRIES}): {error_str}"
                     )
-                    time.sleep(wait_time)
+                    await asyncio.sleep(wait_time)
                 else:
                     raise
         raise last_error if last_error else Exception("Fetch failed after retries")
 
-    def fetch_details(self, id_list: List[str]) -> List[Dict[str, Any]]:
+    async def fetch_details(self, id_list: List[str]) -> List[Dict[str, Any]]:
         """
         Fetch complete details for a list of PMIDs.
 
@@ -408,7 +410,7 @@ class SearchMixin:
             return []
 
         try:
-            papers = self._fetch_with_retry(id_list)
+            papers = await self._fetch_with_retry(id_list)
 
             results = []
             if "PubmedArticle" in papers:

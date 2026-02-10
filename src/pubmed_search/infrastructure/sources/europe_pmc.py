@@ -15,16 +15,15 @@ Features:
 - No API key required
 """
 
-import json
+import asyncio
 import logging
 import re
 import time
-import urllib.error
 import urllib.parse
-import urllib.request
 from typing import Any
 
 import defusedxml.ElementTree as ElementTree  # Security: prevent XML attacks
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -61,44 +60,52 @@ class EuropePMCClient:
         self._timeout = timeout
         self._last_request_time = 0
         self._min_interval = 0.1  # Europe PMC is generous with rate limits
+        self._client = httpx.AsyncClient(
+            timeout=self._timeout,
+            headers={
+                "User-Agent": f"pubmed-search-mcp/1.0 (mailto:{self._email})",
+                "Accept": "application/json",
+            },
+        )
 
-    def _rate_limit(self):
+    async def _rate_limit(self):
         """Simple rate limiting."""
         elapsed = time.time() - self._last_request_time
         if elapsed < self._min_interval:
-            time.sleep(self._min_interval - elapsed)
+            await asyncio.sleep(self._min_interval - elapsed)
         self._last_request_time = time.time()
 
-    def _make_request(self, url: str, expect_xml: bool = False) -> dict | str | None:
+    async def _make_request(
+        self, url: str, expect_xml: bool = False
+    ) -> dict | str | None:
         """Make HTTP GET request."""
-        self._rate_limit()
-
-        request = urllib.request.Request(url)
-        request.add_header(
-            "User-Agent", f"pubmed-search-mcp/1.0 (mailto:{self._email})"
-        )
-
-        if not expect_xml:
-            request.add_header("Accept", "application/json")
+        await self._rate_limit()
 
         try:
-            # nosec B310: URL is constructed from hardcoded EPMC_API_BASE (https)
-            with urllib.request.urlopen(request, timeout=self._timeout) as response:  # nosec B310
-                content = response.read().decode("utf-8")
-                if expect_xml:
-                    return content
-                return json.loads(content)
-        except urllib.error.HTTPError as e:
-            logger.error(f"HTTP error {e.code}: {e.reason}")
+            headers = {}
+            if expect_xml:
+                headers["Accept"] = "application/xml"
+            response = await self._client.get(url, headers=headers)
+            if response.status_code == 429:
+                logger.warning("Europe PMC: Rate limit exceeded")
+                return None
+            response.raise_for_status()
+            if expect_xml:
+                return response.text
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                f"HTTP error {e.response.status_code}: {e.response.reason_phrase}"
+            )
             return None
-        except urllib.error.URLError as e:
-            logger.error(f"URL error: {e.reason}")
+        except httpx.RequestError as e:
+            logger.error(f"URL error: {e}")
             return None
-        except json.JSONDecodeError as e:
+        except Exception as e:
             logger.error(f"JSON decode error: {e}")
             return None
 
-    def search(
+    async def search(
         self,
         query: str,
         limit: int = 10,
@@ -154,7 +161,7 @@ class EuropePMCClient:
                 params["sort"] = sort
 
             url = f"{EPMC_SEARCH_URL}?{urllib.parse.urlencode(params)}"
-            data = self._make_request(url)
+            data = await self._make_request(url)
 
             if not data:
                 return {"results": [], "hit_count": 0}
@@ -172,7 +179,7 @@ class EuropePMCClient:
             logger.error(f"Europe PMC search failed: {e}")
             return {"results": [], "hit_count": 0}
 
-    def get_article(
+    async def get_article(
         self,
         source: str,
         article_id: str,
@@ -196,7 +203,7 @@ class EuropePMCClient:
             }
 
             url = f"{EPMC_ARTICLE_URL}/{source}/{article_id}?{urllib.parse.urlencode(params)}"
-            data = self._make_request(url)
+            data = await self._make_request(url)
 
             if not data:
                 return None
@@ -211,7 +218,7 @@ class EuropePMCClient:
             logger.error(f"Failed to get article {source}/{article_id}: {e}")
             return None
 
-    def get_fulltext_xml(self, pmcid: str) -> str | None:
+    async def get_fulltext_xml(self, pmcid: str) -> str | None:
         """
         Get full text XML for an Open Access article.
 
@@ -229,13 +236,13 @@ class EuropePMCClient:
                 pmcid = f"PMC{pmcid}"
 
             url = f"{EPMC_API_BASE}/{pmcid}/fullTextXML"
-            return self._make_request(url, expect_xml=True)
+            return await self._make_request(url, expect_xml=True)
 
         except Exception as e:
             logger.error(f"Failed to get fulltext for {pmcid}: {e}")
             return None
 
-    def get_references(
+    async def get_references(
         self,
         source: str,
         article_id: str,
@@ -259,7 +266,7 @@ class EuropePMCClient:
             }
 
             url = f"{EPMC_API_BASE}/{source}/{article_id}/references?{urllib.parse.urlencode(params)}"
-            data = self._make_request(url)
+            data = await self._make_request(url)
 
             if not data:
                 return []
@@ -271,7 +278,7 @@ class EuropePMCClient:
             logger.error(f"Failed to get references for {source}/{article_id}: {e}")
             return []
 
-    def get_citations(
+    async def get_citations(
         self,
         source: str,
         article_id: str,
@@ -295,7 +302,7 @@ class EuropePMCClient:
             }
 
             url = f"{EPMC_API_BASE}/{source}/{article_id}/citations?{urllib.parse.urlencode(params)}"
-            data = self._make_request(url)
+            data = await self._make_request(url)
 
             if not data:
                 return []
@@ -307,7 +314,7 @@ class EuropePMCClient:
             logger.error(f"Failed to get citations for {source}/{article_id}: {e}")
             return []
 
-    def get_text_mined_terms(
+    async def get_text_mined_terms(
         self,
         source: str,
         article_id: str,
@@ -330,7 +337,7 @@ class EuropePMCClient:
                 params["semanticType"] = semantic_type
 
             url = f"{EPMC_API_BASE}/{source}/{article_id}/textMinedTerms?{urllib.parse.urlencode(params)}"
-            data = self._make_request(url)
+            data = await self._make_request(url)
 
             if not data:
                 return []
@@ -560,7 +567,7 @@ class EuropePMCClient:
             "doi": mixed_citation.findtext(".//pub-id[@pub-id-type='doi']", ""),
         }
 
-    def get_similar_articles(
+    async def get_similar_articles(
         self,
         pmid: str | None = None,
         pmcid: str | None = None,
@@ -591,7 +598,7 @@ class EuropePMCClient:
             else:
                 query = f"SIMILAR:PMC{pmcid.replace('PMC', '')}"
 
-            result = self.search(query=query, limit=limit)
+            result = await self.search(query=query, limit=limit)
             articles = result.get("results", [])
 
             # Add similarity scores based on ranking
@@ -608,19 +615,19 @@ class EuropePMCClient:
             logger.error(f"Failed to get similar articles: {e}")
             return []
 
-    def close(self):
-        """Close resources (no-op for urllib, but keeps interface consistent)."""
-        pass
+    async def close(self):
+        """Close the HTTP client."""
+        await self._client.aclose()
 
-    def __enter__(self):
+    async def __aenter__(self):
         return self
 
-    def __exit__(self, *args):
-        self.close()
+    async def __aexit__(self, *args):
+        await self.close()
 
 
 # Convenience functions
-def search_europe_pmc(
+async def search_europe_pmc(
     query: str,
     limit: int = 10,
     open_access_only: bool = False,
@@ -641,7 +648,7 @@ def search_europe_pmc(
         List of article dictionaries
     """
     client = EuropePMCClient(email=email)
-    result = client.search(
+    result = await client.search(
         query=query,
         limit=limit,
         open_access_only=open_access_only,
@@ -650,7 +657,7 @@ def search_europe_pmc(
     return result.get("results", [])
 
 
-def get_fulltext(pmcid: str, email: str | None = None) -> str | None:
+async def get_fulltext(pmcid: str, email: str | None = None) -> str | None:
     """
     Quick function to get full text XML.
 
@@ -662,4 +669,4 @@ def get_fulltext(pmcid: str, email: str | None = None) -> str | None:
         Full text XML string or None
     """
     client = EuropePMCClient(email=email)
-    return client.get_fulltext_xml(pmcid)
+    return await client.get_fulltext_xml(pmcid)

@@ -27,9 +27,10 @@ T = TypeVar("T")
 @dataclass
 class CacheEntry:
     """Cache entry with timestamp."""
+
     value: Any
     timestamp: float = field(default_factory=time.time)
-    
+
     def is_expired(self, ttl: float) -> bool:
         """Check if entry has expired."""
         return time.time() - self.timestamp > ttl
@@ -38,24 +39,24 @@ class CacheEntry:
 class EntityCache:
     """
     In-memory cache for entity resolution.
-    
+
     Uses LRU eviction and TTL-based expiration.
     Thread-safe for async usage.
-    
+
     Example:
         cache = EntityCache(max_size=1000, ttl=3600)
-        
+
         # Get or fetch pattern
         entity = await cache.get_or_fetch(
             "propofol",
             lambda: client.resolve_entity("propofol")
         )
-        
+
         # Direct access
         cache.set("key", value)
         value = cache.get("key")
     """
-    
+
     def __init__(
         self,
         max_size: int = 1000,
@@ -63,7 +64,7 @@ class EntityCache:
     ):
         """
         Initialize cache.
-        
+
         Args:
             max_size: Maximum number of entries
             ttl: Time-to-live in seconds
@@ -73,68 +74,68 @@ class EntityCache:
         self._cache: OrderedDict[str, CacheEntry] = OrderedDict()
         self._lock = asyncio.Lock()
         self._stats = CacheStats()
-        
+
     @property
     def stats(self) -> "CacheStats":
         """Get cache statistics."""
         return self._stats
-        
+
     def _normalize_key(self, key: str) -> str:
         """Normalize cache key."""
         return key.lower().strip()
-        
+
     def get(self, key: str) -> Any | None:
         """
         Get value from cache (sync).
-        
+
         Args:
             key: Cache key
-            
+
         Returns:
             Cached value or None if not found/expired
         """
         nkey = self._normalize_key(key)
-        
+
         if nkey not in self._cache:
             self._stats.misses += 1
             return None
-            
+
         entry = self._cache[nkey]
-        
+
         if entry.is_expired(self._ttl):
             # Remove expired entry
             del self._cache[nkey]
             self._stats.misses += 1
             self._stats.expirations += 1
             return None
-            
+
         # Move to end (LRU)
         self._cache.move_to_end(nkey)
         self._stats.hits += 1
         return entry.value
-        
+
     def set(self, key: str, value: Any) -> None:
         """
         Set value in cache (sync).
-        
+
         Args:
             key: Cache key
             value: Value to cache
         """
         nkey = self._normalize_key(key)
-        
+
         # Remove if exists (to update position)
         if nkey in self._cache:
             del self._cache[nkey]
-            
+
         # Evict oldest if at capacity
         while len(self._cache) >= self._max_size:
             oldest_key = next(iter(self._cache))
             del self._cache[oldest_key]
             self._stats.evictions += 1
-            
+
         self._cache[nkey] = CacheEntry(value=value)
-        
+
     async def get_or_fetch(
         self,
         key: str,
@@ -142,14 +143,14 @@ class EntityCache:
     ) -> T | None:
         """
         Get from cache or fetch and cache result.
-        
+
         This is the primary method for cache-aside pattern.
         Thread-safe with async lock.
-        
+
         Args:
             key: Cache key
             fetch_func: Async function to fetch value if not cached
-            
+
         Returns:
             Cached or freshly fetched value
         """
@@ -158,14 +159,14 @@ class EntityCache:
         if value is not None:
             logger.debug(f"Cache hit: {key}")
             return value
-            
+
         # Fetch with lock to prevent thundering herd
         async with self._lock:
             # Double-check after acquiring lock
             value = self.get(key)
             if value is not None:
                 return value
-                
+
             # Fetch
             try:
                 value = await fetch_func()
@@ -175,14 +176,14 @@ class EntityCache:
             except Exception as e:
                 logger.error(f"Fetch failed for {key}: {e}")
                 return None
-                
+
     def invalidate(self, key: str) -> bool:
         """
         Invalidate cache entry.
-        
+
         Args:
             key: Cache key
-            
+
         Returns:
             True if entry was removed
         """
@@ -191,40 +192,39 @@ class EntityCache:
             del self._cache[nkey]
             return True
         return False
-        
+
     def clear(self) -> int:
         """
         Clear all cache entries.
-        
+
         Returns:
             Number of entries cleared
         """
         count = len(self._cache)
         self._cache.clear()
         return count
-        
+
     def cleanup_expired(self) -> int:
         """
         Remove all expired entries.
-        
+
         Returns:
             Number of entries removed
         """
         expired_keys = [
-            key for key, entry in self._cache.items()
-            if entry.is_expired(self._ttl)
+            key for key, entry in self._cache.items() if entry.is_expired(self._ttl)
         ]
-        
+
         for key in expired_keys:
             del self._cache[key]
             self._stats.expirations += 1
-            
+
         return len(expired_keys)
-        
+
     def __len__(self) -> int:
         """Get number of cached entries."""
         return len(self._cache)
-        
+
     def __contains__(self, key: str) -> bool:
         """Check if key is in cache (may be expired)."""
         return self._normalize_key(key) in self._cache
@@ -233,22 +233,23 @@ class EntityCache:
 @dataclass
 class CacheStats:
     """Cache statistics."""
+
     hits: int = 0
     misses: int = 0
     evictions: int = 0
     expirations: int = 0
-    
+
     @property
     def total_requests(self) -> int:
         """Total cache requests."""
         return self.hits + self.misses
-        
+
     @property
     def hit_rate(self) -> float:
         """Cache hit rate (0-1)."""
         total = self.total_requests
         return self.hits / total if total > 0 else 0.0
-        
+
     def reset(self) -> None:
         """Reset statistics."""
         self.hits = 0
@@ -265,7 +266,7 @@ _entity_cache: EntityCache | None = None
 def get_entity_cache() -> EntityCache:
     """
     Get singleton entity cache.
-    
+
     Returns:
         Shared EntityCache instance
     """

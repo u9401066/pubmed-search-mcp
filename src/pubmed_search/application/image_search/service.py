@@ -62,7 +62,7 @@ class ImageSearchService:
     # Valid source identifiers
     VALID_SOURCES = {"openi", "europe_pmc"}
 
-    def search(
+    async def search(
         self,
         query: str,
         sources: list[str] | None = None,
@@ -147,7 +147,7 @@ class ImageSearchService:
         for source in active_sources:
             try:
                 if source == "openi":
-                    images, count = self._search_openi(
+                    images, count = await self._search_openi(
                         query=query,
                         image_type=image_type,
                         collection=collection,
@@ -211,9 +211,7 @@ class ImageSearchService:
             # Validate and filter
             valid = [s for s in sources if s in self.VALID_SOURCES]
             if not valid:
-                logger.warning(
-                    f"No valid sources in {sources}, falling back to openi"
-                )
+                logger.warning(f"No valid sources in {sources}, falling back to openi")
                 return ["openi"]
             return valid
 
@@ -221,7 +219,7 @@ class ImageSearchService:
         # Phase 4.2+ will add Europe PMC auto-selection logic
         return ["openi"]
 
-    def _search_openi(
+    async def _search_openi(
         self,
         query: str,
         image_type: str | None,
@@ -245,7 +243,7 @@ class ImageSearchService:
         from pubmed_search.infrastructure.sources import get_openi_client
 
         client = get_openi_client()
-        return client.search(
+        return await client.search(
             query=query,
             image_type=image_type,
             collection=collection,

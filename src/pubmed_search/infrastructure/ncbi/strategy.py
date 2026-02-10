@@ -7,8 +7,8 @@ Uses:
 - EInfo for query translation
 """
 
+import asyncio
 import logging
-import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from Bio import Entrez
@@ -43,12 +43,12 @@ class SearchStrategyGenerator:
         if api_key:
             Entrez.api_key = api_key
 
-    def _retry_operation(self, operation, *args, **kwargs):
+    async def _retry_operation(self, operation, *args, **kwargs):
         """Execute operation with retry logic for NCBI intermittent errors."""
         last_error = None
         for attempt in range(MAX_RETRIES):
             try:
-                return operation(*args, **kwargs)
+                return await operation(*args, **kwargs)
             except Exception as e:
                 last_error = e
                 if _is_retryable(e) and attempt < MAX_RETRIES - 1:
@@ -56,12 +56,12 @@ class SearchStrategyGenerator:
                     logger.warning(
                         f"NCBI error (attempt {attempt + 1}): {e}, retrying in {delay}s"
                     )
-                    time.sleep(delay)
+                    await asyncio.sleep(delay)
                 else:
                     raise
         raise last_error
 
-    def spell_check(self, query: str) -> Tuple[str, bool]:
+    async def spell_check(self, query: str) -> Tuple[str, bool]:
         """
         Check and correct spelling using NCBI ESpell.
 
@@ -70,13 +70,13 @@ class SearchStrategyGenerator:
         """
         try:
 
-            def _do_spell_check():
-                handle = Entrez.espell(db="pubmed", term=query)
-                result = Entrez.read(handle)
+            async def _do_spell_check():
+                handle = await asyncio.to_thread(Entrez.espell, db="pubmed", term=query)
+                result = await asyncio.to_thread(Entrez.read, handle)
                 handle.close()
                 return result
 
-            result = self._retry_operation(_do_spell_check)
+            result = await self._retry_operation(_do_spell_check)
 
             corrected = result.get("CorrectedQuery", "")
             if corrected and corrected != query:
@@ -87,7 +87,7 @@ class SearchStrategyGenerator:
             logger.warning(f"ESpell failed: {e}")
             return query, False
 
-    def get_mesh_info(self, term: str) -> Optional[Dict[str, Any]]:
+    async def get_mesh_info(self, term: str) -> Optional[Dict[str, Any]]:
         """
         Get MeSH information for a term including synonyms.
 
@@ -99,26 +99,34 @@ class SearchStrategyGenerator:
             Dict with mesh_id, preferred_term, synonyms, tree_numbers
         """
 
-        def _search_mesh_exact():
+        async def _search_mesh_exact():
             """Try exact MeSH term search first."""
-            handle = Entrez.esearch(db="mesh", term=f"{term}[MeSH Terms]", retmax=1)
-            result = Entrez.read(handle)
-            handle.close()
-            return result
-
-        def _search_mesh_quoted():
-            """Fall back to quoted search."""
-            handle = Entrez.esearch(db="mesh", term=f'"{term}"', retmax=1)
-            result = Entrez.read(handle)
-            handle.close()
-            return result
-
-        def _fetch_mesh_text(mesh_id):
-            # Use text mode - more reliable than XML
-            handle = Entrez.efetch(
-                db="mesh", id=mesh_id, rettype="full", retmode="text"
+            handle = await asyncio.to_thread(
+                Entrez.esearch, db="mesh", term=f"{term}[MeSH Terms]", retmax=1
             )
-            content = handle.read()
+            result = await asyncio.to_thread(Entrez.read, handle)
+            handle.close()
+            return result
+
+        async def _search_mesh_quoted():
+            """Fall back to quoted search."""
+            handle = await asyncio.to_thread(
+                Entrez.esearch, db="mesh", term=f'"{term}"', retmax=1
+            )
+            result = await asyncio.to_thread(Entrez.read, handle)
+            handle.close()
+            return result
+
+        async def _fetch_mesh_text(mesh_id):
+            # Use text mode - more reliable than XML
+            handle = await asyncio.to_thread(
+                Entrez.efetch,
+                db="mesh",
+                id=mesh_id,
+                rettype="full",
+                retmode="text",
+            )
+            content = await asyncio.to_thread(handle.read)
             handle.close()
             return content
 
@@ -174,12 +182,12 @@ class SearchStrategyGenerator:
 
         try:
             # Strategy 1: Try exact MeSH term search first
-            result = self._retry_operation(_search_mesh_exact)
+            result = await self._retry_operation(_search_mesh_exact)
             mesh_ids = result.get("IdList", [])
 
             # Strategy 2: Fall back to quoted search
             if not mesh_ids:
-                result = self._retry_operation(_search_mesh_quoted)
+                result = await self._retry_operation(_search_mesh_quoted)
                 mesh_ids = result.get("IdList", [])
 
             if not mesh_ids:
@@ -188,7 +196,7 @@ class SearchStrategyGenerator:
             mesh_id = mesh_ids[0]
 
             # Fetch MeSH record in text mode with retry
-            content = self._retry_operation(_fetch_mesh_text, mesh_id)
+            content = await self._retry_operation(_fetch_mesh_text, mesh_id)
 
             if not content:
                 return None
@@ -207,7 +215,7 @@ class SearchStrategyGenerator:
             logger.warning(f"MeSH lookup failed for '{term}': {e}")
             return None
 
-    def analyze_query(self, query: str) -> Dict[str, Any]:
+    async def analyze_query(self, query: str) -> Dict[str, Any]:
         """
         Analyze how PubMed interprets a query using ESearch translation.
 
@@ -215,19 +223,20 @@ class SearchStrategyGenerator:
             Dict with translated_query, query_translation breakdown
         """
 
-        def _do_esearch():
-            handle = Entrez.esearch(
+        async def _do_esearch():
+            handle = await asyncio.to_thread(
+                Entrez.esearch,
                 db="pubmed",
                 term=query,
                 retmax=0,  # Don't need results, just translation
                 usehistory="n",
             )
-            result = Entrez.read(handle)
+            result = await asyncio.to_thread(Entrez.read, handle)
             handle.close()
             return result
 
         try:
-            result = self._retry_operation(_do_esearch)
+            result = await self._retry_operation(_do_esearch)
 
             return {
                 "original": query,
@@ -240,7 +249,7 @@ class SearchStrategyGenerator:
             logger.warning(f"Query analysis failed: {e}")
             return {"original": query, "count": 0}
 
-    def generate_strategies(
+    async def generate_strategies(
         self,
         topic: str,
         strategy: str = "comprehensive",
@@ -291,7 +300,7 @@ class SearchStrategyGenerator:
         # Step 1: Spell check
         working_topic = topic
         if check_spelling:
-            corrected, was_corrected = self.spell_check(topic)
+            corrected, was_corrected = await self.spell_check(topic)
             result["spelling"] = {
                 "original": topic,
                 "corrected": corrected,
@@ -320,7 +329,7 @@ class SearchStrategyGenerator:
 
         if use_mesh:
             # Try full topic first
-            full_mesh = self.get_mesh_info(working_topic)
+            full_mesh = await self.get_mesh_info(working_topic)
             if full_mesh:
                 mesh_data[working_topic] = full_mesh
                 result["mesh_terms"].append(
@@ -336,7 +345,7 @@ class SearchStrategyGenerator:
             for i in range(len(words) - 1):
                 bigram = f"{words[i]} {words[i + 1]}"
                 if bigram.lower() not in stop_words:
-                    bigram_mesh = self.get_mesh_info(bigram)
+                    bigram_mesh = await self.get_mesh_info(bigram)
                     if bigram_mesh and bigram not in mesh_data:
                         mesh_data[bigram] = bigram_mesh
                         result["mesh_terms"].append(
@@ -358,7 +367,7 @@ class SearchStrategyGenerator:
                     and word.lower() not in stop_words
                     and word.lower() not in covered_words
                 ):
-                    word_mesh = self.get_mesh_info(word)
+                    word_mesh = await self.get_mesh_info(word)
                     if word_mesh and word not in mesh_data:
                         mesh_data[word] = word_mesh
                         result["mesh_terms"].append(
@@ -494,7 +503,7 @@ class SearchStrategyGenerator:
         if analyze_queries:
             for q in queries:
                 try:
-                    analysis = self.analyze_query(q["query"])
+                    analysis = await self.analyze_query(q["query"])
                     q["estimated_count"] = analysis.get("count", 0)
                     q["pubmed_translation"] = analysis.get(
                         "translated_query", q["query"]
@@ -508,7 +517,7 @@ class SearchStrategyGenerator:
 
         return result
 
-    def expand_with_mesh(
+    async def expand_with_mesh(
         self, topic: str, existing_queries: List[str]
     ) -> Dict[str, Any]:
         """
@@ -527,7 +536,7 @@ class SearchStrategyGenerator:
         query_id = len(existing_set) + 1
 
         # Get MeSH info
-        mesh_info = self.get_mesh_info(topic)
+        mesh_info = await self.get_mesh_info(topic)
 
         if mesh_info:
             # Use remaining synonyms
@@ -548,7 +557,7 @@ class SearchStrategyGenerator:
         words = topic.split()
         for word in words[:2]:
             if len(word) > 4:
-                word_mesh = self.get_mesh_info(word)
+                word_mesh = await self.get_mesh_info(word)
                 if word_mesh:
                     for syn in word_mesh.get("synonyms", [])[:2]:
                         new_topic = topic.replace(word, syn)

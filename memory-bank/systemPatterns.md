@@ -4,6 +4,16 @@
 
 ## 🏗️ 架構模式
 
+### Async-First Architecture (2026-02-10)
+```
+所有 IO 操作必須使用 async/await:
+- HTTP: httpx.AsyncClient (取代 urllib/requests)
+- NCBI Entrez: await asyncio.to_thread(Entrez.*)
+- Rate limit: await asyncio.sleep() (取代 time.sleep)
+- 並行: asyncio.gather() (取代 ThreadPoolExecutor)
+- MCP tools: async def (FastMCP 原生支援)
+```
+
 ### MCP Tool 模式
 ```
 MCP Server → Tools → Entrez/Sources → External APIs

@@ -13,7 +13,7 @@ API Documentation: https://icite.od.nih.gov/api
 import logging
 from typing import Any, Dict, List, Optional
 
-import requests
+import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ class ICiteMixin:
         enrich_with_citations: Add citation metrics to search results
     """
 
-    def get_citation_metrics(
+    async def get_citation_metrics(
         self, pmids: List[str], fields: Optional[List[str]] = None
     ) -> Dict[str, Dict[str, Any]]:
         """
@@ -72,19 +72,20 @@ class ICiteMixin:
         # Process in batches of 200 (API limit)
         for i in range(0, len(pmids), MAX_PMIDS_PER_REQUEST):
             batch = pmids[i : i + MAX_PMIDS_PER_REQUEST]
-            batch_results = self._fetch_icite_batch(batch, fields)
+            batch_results = await self._fetch_icite_batch(batch, fields)
             results.update(batch_results)
 
         return results
 
-    def _fetch_icite_batch(
+    async def _fetch_icite_batch(
         self, pmids: List[str], fields: List[str]
     ) -> Dict[str, Dict[str, Any]]:
         """Fetch a single batch from iCite API."""
         try:
             params = {"pmids": ",".join(str(p) for p in pmids), "fl": ",".join(fields)}
 
-            response = requests.get(ICITE_API_BASE, params=params, timeout=30)
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(ICITE_API_BASE, params=params)
             response.raise_for_status()
 
             data = response.json()
@@ -98,14 +99,14 @@ class ICiteMixin:
 
             return results
 
-        except requests.RequestException as e:
+        except httpx.HTTPError as e:
             logger.error(f"iCite API request failed: {e}")
             return {}
         except Exception as e:
             logger.error(f"iCite processing error: {e}")
             return {}
 
-    def enrich_with_citations(
+    async def enrich_with_citations(
         self, articles: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
         """
@@ -127,7 +128,7 @@ class ICiteMixin:
             return articles
 
         # Fetch metrics
-        metrics = self.get_citation_metrics(pmids)
+        metrics = await self.get_citation_metrics(pmids)
 
         # Enrich articles
         enriched = []

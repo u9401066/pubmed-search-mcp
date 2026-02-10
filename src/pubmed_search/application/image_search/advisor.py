@@ -24,7 +24,6 @@ Example:
 from __future__ import annotations
 
 import re
-import unicodedata
 from dataclasses import dataclass, field
 
 
@@ -101,37 +100,110 @@ class ImageQueryAdvisor:
 
     IMAGE_POSITIVE_KEYWORDS = {
         # English
-        "image", "images", "picture", "pictures", "photo", "photos",
-        "photograph", "scan", "scans", "x-ray", "xray", "x ray",
-        "radiograph", "radiography", "ct scan", "mri", "ultrasound",
-        "echocardiography", "mammography", "fluoroscopy",
-        "microscopy", "histology", "histopathology", "pathology",
-        "cytology", "biopsy", "slide", "staining",
-        "figure", "illustration", "diagram", "chart",
-        "clinical appearance", "gross appearance", "visual",
-        "morphology", "anatomy", "dermoscopy", "endoscopy",
-        "fundoscopy", "ophthalmoscopy", "angiography",
+        "image",
+        "images",
+        "picture",
+        "pictures",
+        "photo",
+        "photos",
+        "photograph",
+        "scan",
+        "scans",
+        "x-ray",
+        "xray",
+        "x ray",
+        "radiograph",
+        "radiography",
+        "ct scan",
+        "mri",
+        "ultrasound",
+        "echocardiography",
+        "mammography",
+        "fluoroscopy",
+        "microscopy",
+        "histology",
+        "histopathology",
+        "pathology",
+        "cytology",
+        "biopsy",
+        "slide",
+        "staining",
+        "figure",
+        "illustration",
+        "diagram",
+        "chart",
+        "clinical appearance",
+        "gross appearance",
+        "visual",
+        "morphology",
+        "anatomy",
+        "dermoscopy",
+        "endoscopy",
+        "fundoscopy",
+        "ophthalmoscopy",
+        "angiography",
         # Chinese
-        "圖片", "影像", "照片", "X光", "X射線", "掃描",
-        "顯微鏡", "組織學", "病理", "切片",
+        "圖片",
+        "影像",
+        "照片",
+        "X光",
+        "X射線",
+        "掃描",
+        "顯微鏡",
+        "組織學",
+        "病理",
+        "切片",
     }
 
     # Queries containing these are UNLIKELY suitable for image search
     IMAGE_NEGATIVE_KEYWORDS = {
         # English
-        "pharmacokinetics", "pharmacodynamics", "mechanism of action",
-        "drug interaction", "dosing", "dosage", "protocol",
-        "guideline", "guidelines", "meta-analysis", "systematic review",
-        "randomized", "randomised", "clinical trial", "rct",
-        "prevalence", "incidence", "epidemiology", "statistics",
-        "gene expression", "molecular", "genomics", "proteomics",
-        "biomarker", "pathway", "signaling", "receptor",
-        "cost-effectiveness", "economic", "policy",
-        "survey", "questionnaire", "interview",
+        "pharmacokinetics",
+        "pharmacodynamics",
+        "mechanism of action",
+        "drug interaction",
+        "dosing",
+        "dosage",
+        "protocol",
+        "guideline",
+        "guidelines",
+        "meta-analysis",
+        "systematic review",
+        "randomized",
+        "randomised",
+        "clinical trial",
+        "rct",
+        "prevalence",
+        "incidence",
+        "epidemiology",
+        "statistics",
+        "gene expression",
+        "molecular",
+        "genomics",
+        "proteomics",
+        "biomarker",
+        "pathway",
+        "signaling",
+        "receptor",
+        "cost-effectiveness",
+        "economic",
+        "policy",
+        "survey",
+        "questionnaire",
+        "interview",
         # Chinese
-        "藥物動力學", "藥理", "劑量", "指南", "統合分析",
-        "系統性回顧", "隨機", "臨床試驗", "流行病學",
-        "基因表達", "分子", "生物標記",
+        "藥物動力學",
+        "藥理",
+        "劑量",
+        "指南",
+        "統合分析",
+        "系統性回顧",
+        "隨機",
+        "臨床試驗",
+        "流行病學",
+        "基因表達",
+        "分子",
+        "生物標記",
     }
 
     # ─── Image Type Detection Keywords ──────────────────────────────
@@ -143,97 +215,233 @@ class ImageQueryAdvisor:
 
     # X-ray → "x"
     RADIOLOGY_KEYWORDS = {
-        "x-ray", "xray", "x ray", "radiograph", "radiography",
-        "chest", "lung", "thorax", "bone", "fracture", "skeletal",
-        "spine", "vertebra", "pelvis", "abdomen", "abdominal",
-        "mammography", "mammogram",
-        "fluoroscopy", "barium",
-        "angiography", "angiogram",
-        "pneumonia", "pneumothorax", "pleural", "effusion",
-        "cardiomegaly", "mediastinal",
-        "X光", "胸部", "骨折", "脊椎", "腹部",
+        "x-ray",
+        "xray",
+        "x ray",
+        "radiograph",
+        "radiography",
+        "chest",
+        "lung",
+        "thorax",
+        "bone",
+        "fracture",
+        "skeletal",
+        "spine",
+        "vertebra",
+        "pelvis",
+        "abdomen",
+        "abdominal",
+        "mammography",
+        "mammogram",
+        "fluoroscopy",
+        "barium",
+        "angiography",
+        "angiogram",
+        "pneumonia",
+        "pneumothorax",
+        "pleural",
+        "effusion",
+        "cardiomegaly",
+        "mediastinal",
+        "X光",
+        "胸部",
+        "骨折",
+        "脊椎",
+        "腹部",
     }
 
     # MRI → "m"
     MRI_KEYWORDS = {
-        "mri", "magnetic resonance", "magnetic resonance imaging",
-        "t1 weighted", "t2 weighted", "flair", "dwi", "diffusion",
-        "gadolinium", "contrast enhanced mri",
-        "brain mri", "spine mri", "knee mri",
-        "mr angiography", "mra", "mrcp",
-        "磁振造影", "核磁共振",
+        "mri",
+        "magnetic resonance",
+        "magnetic resonance imaging",
+        "t1 weighted",
+        "t2 weighted",
+        "flair",
+        "dwi",
+        "diffusion",
+        "gadolinium",
+        "contrast enhanced mri",
+        "brain mri",
+        "spine mri",
+        "knee mri",
+        "mr angiography",
+        "mra",
+        "mrcp",
+        "磁振造影",
+        "核磁共振",
     }
 
     # CT → "c"
     CT_KEYWORDS = {
-        "ct", "ct scan", "computed tomography",
-        "ct angiography", "cta", "hrct",
-        "contrast enhanced", "hounsfield",
-        "axial", "coronal", "sagittal",
-        "ct abdomen", "ct chest", "ct head",
-        "ct brain", "ct spine",
-        "電腦斷層", "斷層掃描",
+        "ct",
+        "ct scan",
+        "computed tomography",
+        "ct angiography",
+        "cta",
+        "hrct",
+        "contrast enhanced",
+        "hounsfield",
+        "axial",
+        "coronal",
+        "sagittal",
+        "ct abdomen",
+        "ct chest",
+        "ct head",
+        "ct brain",
+        "ct spine",
+        "電腦斷層",
+        "斷層掃描",
     }
 
     # PET → "p"
     PET_KEYWORDS = {
-        "pet", "pet scan", "pet-ct", "pet/ct",
-        "positron emission", "positron emission tomography",
-        "fdg", "suv", "standardized uptake",
-        "nuclear medicine", "scintigraphy", "spect",
-        "正子造影", "正子掃描",
+        "pet",
+        "pet scan",
+        "pet-ct",
+        "pet/ct",
+        "positron emission",
+        "positron emission tomography",
+        "fdg",
+        "suv",
+        "standardized uptake",
+        "nuclear medicine",
+        "scintigraphy",
+        "spect",
+        "正子造影",
+        "正子掃描",
     }
 
     # Ultrasound → "u"
     ULTRASOUND_KEYWORDS = {
-        "ultrasound", "ultrasonography", "sonography", "sonogram",
-        "echocardiography", "echocardiogram", "echo",
-        "doppler", "b-mode", "m-mode",
-        "transesophageal", "transthoracic",
-        "obstetric ultrasound", "fetal ultrasound",
-        "abdominal ultrasound", "renal ultrasound",
-        "thyroid ultrasound", "breast ultrasound",
-        "超音波", "心臟超音波",
+        "ultrasound",
+        "ultrasonography",
+        "sonography",
+        "sonogram",
+        "echocardiography",
+        "echocardiogram",
+        "echo",
+        "doppler",
+        "b-mode",
+        "m-mode",
+        "transesophageal",
+        "transthoracic",
+        "obstetric ultrasound",
+        "fetal ultrasound",
+        "abdominal ultrasound",
+        "renal ultrasound",
+        "thyroid ultrasound",
+        "breast ultrasound",
+        "超音波",
+        "心臟超音波",
     }
 
     # Microscopy → "mc"
     MICROSCOPY_KEYWORDS = {
-        "histology", "histological", "histopathology", "histopathological",
-        "microscopy", "microscopic", "micrograph",
-        "pathology", "pathological",
-        "cytology", "cytological",
-        "biopsy", "tissue", "specimen",
-        "staining", "stain", "h&e", "hematoxylin", "eosin",
-        "immunohistochemistry", "ihc",
-        "slide", "section", "thin section",
-        "cell", "cells", "cellular",
-        "tumor", "tumour", "neoplasm",
-        "granuloma", "fibrosis", "necrosis", "inflammation",
-        "顯微鏡", "組織學", "病理", "切片", "染色", "細胞",
+        "histology",
+        "histological",
+        "histopathology",
+        "histopathological",
+        "microscopy",
+        "microscopic",
+        "micrograph",
+        "pathology",
+        "pathological",
+        "cytology",
+        "cytological",
+        "biopsy",
+        "tissue",
+        "specimen",
+        "staining",
+        "stain",
+        "h&e",
+        "hematoxylin",
+        "eosin",
+        "immunohistochemistry",
+        "ihc",
+        "slide",
+        "section",
+        "thin section",
+        "cell",
+        "cells",
+        "cellular",
+        "tumor",
+        "tumour",
+        "neoplasm",
+        "granuloma",
+        "fibrosis",
+        "necrosis",
+        "inflammation",
+        "顯微鏡",
+        "組織學",
+        "病理",
+        "切片",
+        "染色",
+        "細胞",
     }
 
     # Photo → "ph"
     PHOTO_KEYWORDS = {
-        "photo", "photograph", "photography", "clinical photo",
-        "clinical appearance", "gross appearance", "gross pathology",
-        "skin", "dermatology", "dermatological", "rash", "lesion",
-        "wound", "ulcer", "burn", "scar",
-        "eye", "ophthalmology", "fundus", "retina",
-        "endoscopy", "endoscopic", "colonoscopy", "bronchoscopy",
-        "surgery", "surgical", "intraoperative",
-        "anatomical", "cadaver", "dissection",
-        "照片", "皮膚", "傷口", "內視鏡", "手術",
+        "photo",
+        "photograph",
+        "photography",
+        "clinical photo",
+        "clinical appearance",
+        "gross appearance",
+        "gross pathology",
+        "skin",
+        "dermatology",
+        "dermatological",
+        "rash",
+        "lesion",
+        "wound",
+        "ulcer",
+        "burn",
+        "scar",
+        "eye",
+        "ophthalmology",
+        "fundus",
+        "retina",
+        "endoscopy",
+        "endoscopic",
+        "colonoscopy",
+        "bronchoscopy",
+        "surgery",
+        "surgical",
+        "intraoperative",
+        "anatomical",
+        "cadaver",
+        "dissection",
+        "照片",
+        "皮膚",
+        "傷口",
+        "內視鏡",
+        "手術",
     }
 
     # Graphics → "g"
     GRAPHICS_KEYWORDS = {
-        "diagram", "schematic", "illustration", "drawing",
-        "flowchart", "flow chart", "algorithm",
-        "graph", "chart", "plot", "figure",
-        "infographic", "visualization",
-        "anatomical diagram", "pathway diagram",
-        "decision tree", "clinical pathway",
-        "圖表", "流程圖", "示意圖", "插圖",
+        "diagram",
+        "schematic",
+        "illustration",
+        "drawing",
+        "flowchart",
+        "flow chart",
+        "algorithm",
+        "graph",
+        "chart",
+        "plot",
+        "figure",
+        "infographic",
+        "visualization",
+        "anatomical diagram",
+        "pathway diagram",
+        "decision tree",
+        "clinical pathway",
+        "圖表",
+        "流程圖",
+        "示意圖",
+        "插圖",
     }
 
     # ─── Coarse Category Mapping ────────────────────────────────────
@@ -256,31 +464,63 @@ class ImageQueryAdvisor:
     # ─── Collection Detection Keywords ──────────────────────────────
 
     CHEST_XRAY_KEYWORDS = {
-        "chest x-ray", "chest xray", "chest radiograph",
-        "cxr", "pa view", "ap view", "lateral chest",
-        "chest film", "胸部X光", "胸片",
+        "chest x-ray",
+        "chest xray",
+        "chest radiograph",
+        "cxr",
+        "pa view",
+        "ap view",
+        "lateral chest",
+        "chest film",
+        "胸部X光",
+        "胸片",
     }
 
     MEDPIX_KEYWORDS = {
-        "teaching", "clinical case", "case study",
-        "educational", "medpix", "teaching image",
-        "教學", "臨床案例", "教學影像",
+        "teaching",
+        "clinical case",
+        "case study",
+        "educational",
+        "medpix",
+        "teaching image",
+        "教學",
+        "臨床案例",
+        "教學影像",
     }
 
     HISTORY_KEYWORDS = {
-        "history of medicine", "historical", "vintage",
-        "medical history", "antique", "醫學史",
+        "history of medicine",
+        "historical",
+        "vintage",
+        "medical history",
+        "antique",
+        "醫學史",
     }
 
     # ─── Temporal Limitation Detection ──────────────────────────────
     # Open-i index is frozen at ~2020
 
     POST_2020_KEYWORDS = {
-        "covid-19", "sars-cov-2", "omicron", "delta variant",
-        "monkeypox", "mpox", "long covid",
-        "2021", "2022", "2023", "2024", "2025", "2026",
-        "chatgpt", "gpt-4", "large language model", "llm",
-        "新冠", "猴痘", "長新冠",
+        "covid-19",
+        "sars-cov-2",
+        "omicron",
+        "delta variant",
+        "monkeypox",
+        "mpox",
+        "long covid",
+        "2021",
+        "2022",
+        "2023",
+        "2024",
+        "2025",
+        "2026",
+        "chatgpt",
+        "gpt-4",
+        "large language model",
+        "llm",
+        "新冠",
+        "猴痘",
+        "長新冠",
     }
 
     # Year pattern for detecting recent year ranges
@@ -305,13 +545,13 @@ class ImageQueryAdvisor:
 
     # Regex pattern for detecting non-Latin scripts (CJK, Japanese, Korean, etc.)
     NON_LATIN_PATTERN = re.compile(
-        r"[\u4e00-\u9fff"   # CJK Unified Ideographs (Chinese/Japanese/Korean)
-        r"\u3040-\u309f"    # Hiragana
-        r"\u30a0-\u30ff"    # Katakana
-        r"\uac00-\ud7af"    # Korean Hangul
-        r"\u0400-\u04ff"    # Cyrillic
-        r"\u0600-\u06ff"    # Arabic
-        r"\u0e00-\u0e7f]"   # Thai
+        r"[\u4e00-\u9fff"  # CJK Unified Ideographs (Chinese/Japanese/Korean)
+        r"\u3040-\u309f"  # Hiragana
+        r"\u30a0-\u30ff"  # Katakana
+        r"\uac00-\ud7af"  # Korean Hangul
+        r"\u0400-\u04ff"  # Cyrillic
+        r"\u0600-\u06ff"  # Arabic
+        r"\u0e00-\u0e7f]"  # Thai
     )
 
     # ─── Anatomical / Clinical Keywords (image-suitable) ───────────
@@ -319,13 +559,31 @@ class ImageQueryAdvisor:
     # explicit "image" keywords
 
     ANATOMICAL_KEYWORDS = {
-        "fracture", "dislocation", "effusion", "opacity",
-        "consolidation", "infiltrate", "nodule", "mass",
-        "tumor", "tumour", "cyst", "abscess",
-        "stenosis", "occlusion", "aneurysm",
-        "edema", "oedema", "hemorrhage", "haemorrhage",
-        "atrophy", "hypertrophy", "calcification",
-        "erosion", "deformity", "swelling",
+        "fracture",
+        "dislocation",
+        "effusion",
+        "opacity",
+        "consolidation",
+        "infiltrate",
+        "nodule",
+        "mass",
+        "tumor",
+        "tumour",
+        "cyst",
+        "abscess",
+        "stenosis",
+        "occlusion",
+        "aneurysm",
+        "edema",
+        "oedema",
+        "hemorrhage",
+        "haemorrhage",
+        "atrophy",
+        "hypertrophy",
+        "calcification",
+        "erosion",
+        "deformity",
+        "swelling",
     }
 
     def advise(
@@ -355,9 +613,11 @@ class ImageQueryAdvisor:
         recommended_type, type_reason = self._recommend_image_type(query_lower)
 
         # 3. Determine coarse category
-        coarse_category = self.COARSE_CATEGORIES.get(
-            recommended_type, None
-        ) if recommended_type else None
+        coarse_category = (
+            self.COARSE_CATEGORIES.get(recommended_type, None)
+            if recommended_type
+            else None
+        )
 
         # 4. Recommend collection
         recommended_coll, coll_reason = self._recommend_collection(query_lower)
@@ -366,9 +626,7 @@ class ImageQueryAdvisor:
         non_english_info = self._detect_non_english(query_lower)
         if non_english_info["is_non_english"]:
             # MCP only detects - Agent must translate (see CONSTITUTION 第 7.4 條)
-            warnings.append(
-                f"⚠️ {non_english_info['error_message']}"
-            )
+            warnings.append(f"⚠️ {non_english_info['error_message']}")
             suggestions.append(
                 "Translate the query to English medical terms, then call "
                 "search_biomedical_images() with the English query.\n"
@@ -380,7 +638,7 @@ class ImageQueryAdvisor:
             warnings.append(
                 f"查詢內容偏向 {self._type_label(recommended_type)}，"
                 f"但指定了 {self._type_label(image_type)}。"
-                f"建議用 image_type=\"{recommended_type}\""
+                f'建議用 image_type="{recommended_type}"'
             )
 
         # 7. Temporal relevance check
@@ -437,9 +695,7 @@ class ImageQueryAdvisor:
         score += min(positive_hits * 0.3, 0.9)
 
         # Anatomical/clinical keywords (moderate positive signal)
-        anatomical_hits = sum(
-            1 for kw in self.ANATOMICAL_KEYWORDS if kw in query_lower
-        )
+        anatomical_hits = sum(1 for kw in self.ANATOMICAL_KEYWORDS if kw in query_lower)
         score += min(anatomical_hits * 0.15, 0.45)
 
         # Negative signals
@@ -449,36 +705,27 @@ class ImageQueryAdvisor:
         score -= min(negative_hits * 0.25, 0.75)
 
         # Radiology/CT/Ultrasound/Microscopy/Photo keywords are strong positive signals
-        radiology_hits = sum(
-            1 for kw in self.RADIOLOGY_KEYWORDS if kw in query_lower
+        radiology_hits = sum(1 for kw in self.RADIOLOGY_KEYWORDS if kw in query_lower)
+        ct_hits = sum(1 for kw in self.CT_KEYWORDS if kw in query_lower)
+        mri_hits = sum(1 for kw in self.MRI_KEYWORDS if kw in query_lower)
+        pet_hits = sum(1 for kw in self.PET_KEYWORDS if kw in query_lower)
+        us_hits = sum(1 for kw in self.ULTRASOUND_KEYWORDS if kw in query_lower)
+        microscopy_hits = sum(1 for kw in self.MICROSCOPY_KEYWORDS if kw in query_lower)
+        photo_hits = sum(1 for kw in self.PHOTO_KEYWORDS if kw in query_lower)
+        type_hits = (
+            radiology_hits
+            + ct_hits
+            + mri_hits
+            + pet_hits
+            + us_hits
+            + microscopy_hits
+            + photo_hits
         )
-        ct_hits = sum(
-            1 for kw in self.CT_KEYWORDS if kw in query_lower
-        )
-        mri_hits = sum(
-            1 for kw in self.MRI_KEYWORDS if kw in query_lower
-        )
-        pet_hits = sum(
-            1 for kw in self.PET_KEYWORDS if kw in query_lower
-        )
-        us_hits = sum(
-            1 for kw in self.ULTRASOUND_KEYWORDS if kw in query_lower
-        )
-        microscopy_hits = sum(
-            1 for kw in self.MICROSCOPY_KEYWORDS if kw in query_lower
-        )
-        photo_hits = sum(
-            1 for kw in self.PHOTO_KEYWORDS if kw in query_lower
-        )
-        type_hits = (radiology_hits + ct_hits + mri_hits + pet_hits
-                     + us_hits + microscopy_hits + photo_hits)
         score += min(type_hits * 0.2, 0.6)
 
         return max(-1.0, min(1.0, score))
 
-    def _recommend_image_type(
-        self, query_lower: str
-    ) -> tuple[str | None, str]:
+    def _recommend_image_type(self, query_lower: str) -> tuple[str | None, str]:
         """
         Recommend the best image_type based on query content.
 
@@ -495,8 +742,14 @@ class ImageQueryAdvisor:
             (image_type, reason) tuple
         """
         scores: dict[str, int] = {
-            "x": 0, "c": 0, "m": 0, "p": 0,
-            "u": 0, "mc": 0, "ph": 0, "g": 0,
+            "x": 0,
+            "c": 0,
+            "m": 0,
+            "p": 0,
+            "u": 0,
+            "mc": 0,
+            "ph": 0,
+            "g": 0,
         }
 
         for kw in self.RADIOLOGY_KEYWORDS:
@@ -551,9 +804,7 @@ class ImageQueryAdvisor:
 
         return best_type, reasons.get(best_type, "")
 
-    def _recommend_collection(
-        self, query_lower: str
-    ) -> tuple[str | None, str]:
+    def _recommend_collection(self, query_lower: str) -> tuple[str | None, str]:
         """
         Recommend the best collection based on query content.
 
@@ -563,23 +814,17 @@ class ImageQueryAdvisor:
             (collection, reason) tuple. None means all collections.
         """
         # Check chest X-ray specific queries
-        cxr_hits = sum(
-            1 for kw in self.CHEST_XRAY_KEYWORDS if kw in query_lower
-        )
+        cxr_hits = sum(1 for kw in self.CHEST_XRAY_KEYWORDS if kw in query_lower)
         if cxr_hits >= 2:
             return "cxr", "查詢高度偏向胸部 X 光，建議使用 cxr 專集"
 
         # Check teaching/clinical case queries
-        mpx_hits = sum(
-            1 for kw in self.MEDPIX_KEYWORDS if kw in query_lower
-        )
+        mpx_hits = sum(1 for kw in self.MEDPIX_KEYWORDS if kw in query_lower)
         if mpx_hits >= 1:
             return "mpx", "查詢含教學/案例相關詞彙，MedPix 提供高品質教學影像"
 
         # Check history of medicine
-        hmd_hits = sum(
-            1 for kw in self.HISTORY_KEYWORDS if kw in query_lower
-        )
+        hmd_hits = sum(1 for kw in self.HISTORY_KEYWORDS if kw in query_lower)
         if hmd_hits >= 1:
             return "hmd", "查詢含醫學史相關詞彙"
 
@@ -605,16 +850,11 @@ class ImageQueryAdvisor:
         year_match = self.YEAR_PATTERN.search(query_lower)
         if year_match:
             year = year_match.group(1)
-            return (
-                f"Open-i 索引凍結於 ~2020，查詢含 '{year}' "
-                "年份的文獻可能尚未索引"
-            )
+            return f"Open-i 索引凍結於 ~2020，查詢含 '{year}' 年份的文獻可能尚未索引"
 
         return None
 
-    def _enhance_query(
-        self, query_lower: str, recommended_type: str | None
-    ) -> str:
+    def _enhance_query(self, query_lower: str, recommended_type: str | None) -> str:
         """
         Optionally enhance the query for better image search results.
 
@@ -708,9 +948,7 @@ class ImageQueryAdvisor:
 
 
 # Convenience function
-def advise_image_search(
-    query: str, image_type: str | None = None
-) -> ImageSearchAdvice:
+def advise_image_search(query: str, image_type: str | None = None) -> ImageSearchAdvice:
     """
     Analyze a query for image search suitability (convenience function).
 

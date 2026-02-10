@@ -392,7 +392,7 @@ def register_citation_tree_tools(mcp: FastMCP, searcher: LiteratureSearcher):
     """Register citation tree tools."""
 
     @mcp.tool()
-    def build_citation_tree(
+    async def build_citation_tree(
         pmid: Union[str, int],
         depth: Union[int, str] = 2,
         direction: str = "both",
@@ -512,7 +512,7 @@ def register_citation_tree_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             }
 
             # Fetch root article
-            root_articles = searcher.fetch_details([normalized_pmid])
+            root_articles = await searcher.fetch_details([normalized_pmid])
             if not root_articles or "error" in root_articles[0]:
                 return ResponseFormatter.error(
                     f"Could not fetch article with PMID: {normalized_pmid}",
@@ -529,7 +529,7 @@ def register_citation_tree_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             stats["levels"]["0"] = 1
 
             # BFS traversal for each direction
-            def traverse(
+            async def traverse(
                 start_pmids: List[str],
                 current_depth: int,
                 fetch_func,
@@ -559,7 +559,7 @@ def register_citation_tree_tools(mcp: FastMCP, searcher: LiteratureSearcher):
 
                     # Fetch related articles
                     try:
-                        related = fetch_func(parent_pmid, normalized_limit)
+                        related = await fetch_func(parent_pmid, normalized_limit)
                     except Exception as e:
                         logger.warning(f"Error fetching for {parent_pmid}: {e}")
                         continue
@@ -605,7 +605,7 @@ def register_citation_tree_tools(mcp: FastMCP, searcher: LiteratureSearcher):
 
                 # Continue to next level
                 if next_level_pmids and current_depth < normalized_depth:
-                    traverse(
+                    await traverse(
                         next_level_pmids,
                         current_depth + 1,
                         fetch_func,
@@ -615,7 +615,7 @@ def register_citation_tree_tools(mcp: FastMCP, searcher: LiteratureSearcher):
 
             # Build forward tree (citing articles)
             if normalized_direction in ["forward", "both"]:
-                traverse(
+                await traverse(
                     [normalized_pmid],
                     1,
                     searcher.get_citing_articles,
@@ -625,7 +625,7 @@ def register_citation_tree_tools(mcp: FastMCP, searcher: LiteratureSearcher):
 
             # Build backward tree (references)
             if normalized_direction in ["backward", "both"]:
-                traverse(
+                await traverse(
                     [normalized_pmid],
                     1,
                     searcher.get_article_references,

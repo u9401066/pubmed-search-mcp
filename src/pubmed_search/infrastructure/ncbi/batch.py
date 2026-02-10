@@ -4,6 +4,7 @@ Entrez Batch Module - Large Result Set Processing
 Provides functionality for processing large result sets using NCBI History Server.
 """
 
+import asyncio
 from typing import Any, Dict, List
 
 from Bio import Entrez
@@ -18,7 +19,9 @@ class BatchMixin:
         fetch_batch_from_history: Fetch results in batches
     """
 
-    def search_with_history(self, query: str, batch_size: int = 500) -> Dict[str, Any]:
+    async def search_with_history(
+        self, query: str, batch_size: int = 500
+    ) -> Dict[str, Any]:
         """
         Search large result sets efficiently using NCBI History Server.
         Returns WebEnv and QueryKey for batch processing.
@@ -35,8 +38,10 @@ class BatchMixin:
             - batch_size: Recommended batch size
         """
         try:
-            handle = Entrez.esearch(db="pubmed", term=query, usehistory="y", retmax=0)
-            search_results = Entrez.read(handle)
+            handle = await asyncio.to_thread(
+                Entrez.esearch, db="pubmed", term=query, usehistory="y", retmax=0
+            )
+            search_results = await asyncio.to_thread(Entrez.read, handle)
             handle.close()
 
             return {
@@ -48,7 +53,7 @@ class BatchMixin:
         except Exception as e:
             return {"error": str(e)}
 
-    def fetch_batch_from_history(
+    async def fetch_batch_from_history(
         self, webenv: str, query_key: str, start: int, batch_size: int
     ) -> List[Dict[str, Any]]:
         """
@@ -64,18 +69,19 @@ class BatchMixin:
             List of article details for this batch.
 
         Example:
-            >>> history = searcher.search_with_history("cancer therapy")
+            >>> history = await searcher.search_with_history("cancer therapy")
             >>> total = history['count']
             >>> batch_size = history['batch_size']
             >>> for start in range(0, total, batch_size):
-            ...     batch = searcher.fetch_batch_from_history(
+            ...     batch = await searcher.fetch_batch_from_history(
             ...         history['webenv'], history['query_key'],
             ...         start, batch_size
             ...     )
             ...     process_batch(batch)
         """
         try:
-            handle = Entrez.efetch(
+            handle = await asyncio.to_thread(
+                Entrez.efetch,
                 db="pubmed",
                 retstart=start,
                 retmax=batch_size,
@@ -83,7 +89,7 @@ class BatchMixin:
                 query_key=query_key,
                 retmode="xml",
             )
-            papers = Entrez.read(handle)
+            papers = await asyncio.to_thread(Entrez.read, handle)
             handle.close()
 
             results = []

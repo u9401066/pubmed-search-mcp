@@ -9,7 +9,7 @@ Orchestrates the timeline building process:
 
 Example:
     >>> builder = TimelineBuilder(searcher)
-    >>> timeline = await builder.build_timeline("remimazolam", max_events=50)
+    >>> timeline = builder.build_timeline("remimazolam", max_events=50)
     >>> print(timeline.to_mermaid())
 """
 
@@ -35,11 +35,38 @@ logger = logging.getLogger(__name__)
 
 # Period definitions for auto-grouping
 DEFAULT_PERIODS = [
-    ("Discovery", [MilestoneType.FIRST_REPORT, MilestoneType.MECHANISM_DISCOVERY, MilestoneType.PRECLINICAL]),
-    ("Clinical Development", [MilestoneType.PHASE_1, MilestoneType.PHASE_2, MilestoneType.PHASE_3]),
-    ("Regulatory", [MilestoneType.FDA_APPROVAL, MilestoneType.EMA_APPROVAL, MilestoneType.REGULATORY_APPROVAL]),
-    ("Evidence Synthesis", [MilestoneType.META_ANALYSIS, MilestoneType.SYSTEMATIC_REVIEW, MilestoneType.GUIDELINE]),
-    ("Post-Market", [MilestoneType.PHASE_4, MilestoneType.SAFETY_ALERT, MilestoneType.LABEL_UPDATE]),
+    (
+        "Discovery",
+        [
+            MilestoneType.FIRST_REPORT,
+            MilestoneType.MECHANISM_DISCOVERY,
+            MilestoneType.PRECLINICAL,
+        ],
+    ),
+    (
+        "Clinical Development",
+        [MilestoneType.PHASE_1, MilestoneType.PHASE_2, MilestoneType.PHASE_3],
+    ),
+    (
+        "Regulatory",
+        [
+            MilestoneType.FDA_APPROVAL,
+            MilestoneType.EMA_APPROVAL,
+            MilestoneType.REGULATORY_APPROVAL,
+        ],
+    ),
+    (
+        "Evidence Synthesis",
+        [
+            MilestoneType.META_ANALYSIS,
+            MilestoneType.SYSTEMATIC_REVIEW,
+            MilestoneType.GUIDELINE,
+        ],
+    ),
+    (
+        "Post-Market",
+        [MilestoneType.PHASE_4, MilestoneType.SAFETY_ALERT, MilestoneType.LABEL_UPDATE],
+    ),
 ]
 
 
@@ -118,7 +145,7 @@ class TimelineBuilder:
             raw_year = a.get("year") or a.get("pub_year") or 9999
             year = int(raw_year) if raw_year else 9999
             return (year, str(a.get("pmid", "")))
-        
+
         sorted_articles = sorted(articles, key=get_sort_key)
 
         for i, article in enumerate(sorted_articles):
@@ -177,7 +204,7 @@ class TimelineBuilder:
             return ResearchTimeline(topic=topic)
 
         # Fetch article details
-        articles = self.searcher.fetch_details(pmids)
+        articles = await self.searcher.fetch_details(pmids)
 
         if not articles:
             return ResearchTimeline(topic=topic)
@@ -209,7 +236,7 @@ class TimelineBuilder:
         """
         # Use searcher to get articles
         try:
-            results = self.searcher.search(topic, limit=max_results)
+            results = await self.searcher.search(topic, limit=max_results)
 
             # If we want citation sorting and have iCite access
             if sort_by_citations and results:
@@ -217,7 +244,7 @@ class TimelineBuilder:
                 if pmids:
                     try:
                         # Try to get citation data
-                        citation_data = self.searcher.get_citation_metrics(pmids)
+                        citation_data = await self.searcher.get_citation_metrics(pmids)
                         if citation_data:
                             # Map citations to articles
                             citation_map = {
@@ -265,11 +292,11 @@ class TimelineBuilder:
     def _create_generic_event(self, article: dict[str, Any]) -> TimelineEvent:
         """Create a generic event for non-milestone articles."""
         pmid = str(article.get("pmid", ""))
-        
+
         # Ensure year is int (BioPython may return StringElement)
         raw_year = article.get("year") or article.get("pub_year") or 0
         year = int(raw_year) if raw_year else 0
-        
+
         # Parse month (may be string like "Jan" or int)
         raw_month = article.get("month") or article.get("pub_month")
         month = self._parse_month(raw_month)
@@ -300,37 +327,49 @@ class TimelineBuilder:
         """Parse month from various formats (int, string name, string number)."""
         if not raw_month:
             return None
-        
+
         # If already int
         if isinstance(raw_month, int):
             return raw_month if 1 <= raw_month <= 12 else None
-        
+
         # Convert to string
         month_str = str(raw_month).strip()
-        
+
         # Try numeric
         try:
             month_int = int(month_str)
             return month_int if 1 <= month_int <= 12 else None
         except ValueError:
             pass
-        
+
         # Month name mapping
         month_names = {
-            "jan": 1, "january": 1,
-            "feb": 2, "february": 2,
-            "mar": 3, "march": 3,
-            "apr": 4, "april": 4,
+            "jan": 1,
+            "january": 1,
+            "feb": 2,
+            "february": 2,
+            "mar": 3,
+            "march": 3,
+            "apr": 4,
+            "april": 4,
             "may": 5,
-            "jun": 6, "june": 6,
-            "jul": 7, "july": 7,
-            "aug": 8, "august": 8,
-            "sep": 9, "sept": 9, "september": 9,
-            "oct": 10, "october": 10,
-            "nov": 11, "november": 11,
-            "dec": 12, "december": 12,
+            "jun": 6,
+            "june": 6,
+            "jul": 7,
+            "july": 7,
+            "aug": 8,
+            "august": 8,
+            "sep": 9,
+            "sept": 9,
+            "september": 9,
+            "oct": 10,
+            "october": 10,
+            "nov": 11,
+            "november": 11,
+            "dec": 12,
+            "december": 12,
         }
-        
+
         return month_names.get(month_str.lower())
 
     def _create_periods(self, events: list[TimelineEvent]) -> list[TimelinePeriod]:
@@ -342,9 +381,7 @@ class TimelineBuilder:
         periods: list[TimelinePeriod] = []
 
         for period_name, milestone_types in DEFAULT_PERIODS:
-            period_events = [
-                e for e in events if e.milestone_type in milestone_types
-            ]
+            period_events = [e for e in events if e.milestone_type in milestone_types]
 
             if period_events:
                 years = [e.year for e in period_events]

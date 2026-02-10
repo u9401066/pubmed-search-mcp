@@ -63,7 +63,7 @@ def get_fulltext_links(article: Dict[str, Any]) -> Dict[str, Any]:
     return links
 
 
-def get_fulltext_links_with_lookup(
+async def get_fulltext_links_with_lookup(
     pmid: str, searcher: "LiteratureSearcher"
 ) -> Dict[str, Any]:
     """
@@ -91,7 +91,7 @@ def get_fulltext_links_with_lookup(
 
     try:
         # Use existing PDFMixin method
-        pmc_url = searcher.get_pmc_fulltext_url(pmid)
+        pmc_url = await searcher.get_pmc_fulltext_url(pmid)
 
         if pmc_url:
             links["pmc_url"] = pmc_url

@@ -16,6 +16,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.4.0] - 2026-02-10
+
+### Changed
+
+- **Architecture: Full Async-First Migration** — All IO operations now use async/await
+  - 8 source clients: `urllib.request` → `httpx.AsyncClient` (core, crossref, unpaywall, openi, europe_pmc, openalex, semantic_scholar, ncbi_extended)
+  - 9 ncbi/ modules: `Entrez.*` → `await asyncio.to_thread(Entrez.*)` (base, search, citation, batch, strategy, utils, icite, pdf, citation_exporter)
+  - `sources/__init__.py`: 5 functions → async (`cross_search` uses `asyncio.gather()` for parallel execution)
+  - Application layer: `timeline_builder`, `image_search/service`, `export/links` → async
+  - 13 MCP tool files (~49 functions) → `async def`
+  - `time.sleep()` → `await asyncio.sleep()` throughout codebase
+- **unified.py major refactor**: `ThreadPoolExecutor` → `asyncio.gather()` for parallel multi-source search; removed `asyncio.new_event_loop()` hack
+- **openurl.py**: `urllib.request` → `httpx.AsyncClient` for `_test_resolver_url`
+- **europe_pmc.py**: Removed `asyncio.run()` workaround (now natively async)
+- 7 tool test files updated for async compatibility
+
+### Technical Details
+
+- 41 files changed, +990 insertions, -872 deletions
+- All `requests`/`urllib` HTTP calls replaced with `httpx.AsyncClient`
+- BioPython Entrez (sync library) wrapped with `asyncio.to_thread()` — no source modification needed
+- `ruff check` + `ruff format` pass on all source files
+
+---
+
 ## [0.3.3] - 2026-02-09
 
 ### Fixed

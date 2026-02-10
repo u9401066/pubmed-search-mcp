@@ -4,6 +4,7 @@ Entrez Citation Module - Citation Network Functionality
 Provides functionality to explore citation networks (related, citing, references).
 """
 
+import asyncio
 from typing import Any, Dict, List
 
 from Bio import Entrez
@@ -19,7 +20,9 @@ class CitationMixin:
         get_article_references: Get the bibliography of an article
     """
 
-    def get_related_articles(self, pmid: str, limit: int = 5) -> List[Dict[str, Any]]:
+    async def get_related_articles(
+        self, pmid: str, limit: int = 5
+    ) -> List[Dict[str, Any]]:
         """
         Find related articles using PubMed's related articles feature.
 
@@ -31,10 +34,14 @@ class CitationMixin:
             List of related article details.
         """
         try:
-            handle = Entrez.elink(
-                dbfrom="pubmed", db="pubmed", id=pmid, linkname="pubmed_pubmed"
+            handle = await asyncio.to_thread(
+                Entrez.elink,
+                dbfrom="pubmed",
+                db="pubmed",
+                id=pmid,
+                linkname="pubmed_pubmed",
             )
-            record = Entrez.read(handle)
+            record = await asyncio.to_thread(Entrez.read, handle)
             handle.close()
 
             related_ids = []
@@ -46,12 +53,14 @@ class CitationMixin:
                         break
 
             if related_ids:
-                return self.fetch_details(related_ids)
+                return await self.fetch_details(related_ids)
             return []
         except Exception as e:
             return [{"error": str(e)}]
 
-    def get_citing_articles(self, pmid: str, limit: int = 10) -> List[Dict[str, Any]]:
+    async def get_citing_articles(
+        self, pmid: str, limit: int = 10
+    ) -> List[Dict[str, Any]]:
         """
         Find articles that cite this article (via PMC).
 
@@ -63,10 +72,14 @@ class CitationMixin:
             List of citing article details.
         """
         try:
-            handle = Entrez.elink(
-                dbfrom="pubmed", db="pubmed", id=pmid, linkname="pubmed_pubmed_citedin"
+            handle = await asyncio.to_thread(
+                Entrez.elink,
+                dbfrom="pubmed",
+                db="pubmed",
+                id=pmid,
+                linkname="pubmed_pubmed_citedin",
             )
-            record = Entrez.read(handle)
+            record = await asyncio.to_thread(Entrez.read, handle)
             handle.close()
 
             citing_ids = []
@@ -78,12 +91,12 @@ class CitationMixin:
                         break
 
             if citing_ids:
-                return self.fetch_details(citing_ids)
+                return await self.fetch_details(citing_ids)
             return []
         except Exception as e:
             return [{"error": str(e)}]
 
-    def get_article_references(
+    async def get_article_references(
         self, pmid: str, limit: int = 20
     ) -> List[Dict[str, Any]]:
         """
@@ -97,10 +110,14 @@ class CitationMixin:
             List of referenced article details.
         """
         try:
-            handle = Entrez.elink(
-                dbfrom="pubmed", db="pubmed", id=pmid, linkname="pubmed_pubmed_refs"
+            handle = await asyncio.to_thread(
+                Entrez.elink,
+                dbfrom="pubmed",
+                db="pubmed",
+                id=pmid,
+                linkname="pubmed_pubmed_refs",
             )
-            record = Entrez.read(handle)
+            record = await asyncio.to_thread(Entrez.read, handle)
             handle.close()
 
             ref_ids = []
@@ -112,16 +129,20 @@ class CitationMixin:
                         break
 
             if ref_ids:
-                return self.fetch_details(ref_ids)
+                return await self.fetch_details(ref_ids)
             return []
         except Exception as e:
             return [{"error": str(e)}]
 
     # Aliases for backward compatibility
-    def find_related_articles(self, pmid: str, limit: int = 5) -> List[Dict[str, Any]]:
+    async def find_related_articles(
+        self, pmid: str, limit: int = 5
+    ) -> List[Dict[str, Any]]:
         """Alias for get_related_articles."""
-        return self.get_related_articles(pmid, limit)
+        return await self.get_related_articles(pmid, limit)
 
-    def find_citing_articles(self, pmid: str, limit: int = 10) -> List[Dict[str, Any]]:
+    async def find_citing_articles(
+        self, pmid: str, limit: int = 10
+    ) -> List[Dict[str, Any]]:
         """Alias for get_citing_articles."""
-        return self.get_citing_articles(pmid, limit)
+        return await self.get_citing_articles(pmid, limit)

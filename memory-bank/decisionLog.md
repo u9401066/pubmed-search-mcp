@@ -2,6 +2,10 @@
 
 | Date | Decision | Rationale |
 |------|----------|-----------|
+| 2026-02-10 | **全面 Async-First 架構** | 使用者審計後選擇「立即重構 P2 + 加規則」，消除所有 sync/async 混用 |
+| 2026-02-10 | BioPython Entrez → asyncio.to_thread | BioPython 是 sync library，用 to_thread wrap 不修改源碼最安全 |
+| 2026-02-10 | ThreadPoolExecutor → asyncio.gather | unified.py 原用 ThreadPool 做並行搜尋，改用原生 asyncio.gather 更高效 |
+| 2026-02-10 | httpx.AsyncClient 取代 urllib/requests | httpx 支援 async，統一 HTTP client，消除 sync blocking |
 | 2025-01 | 採用 MCP 協定作為主要介面 | AI Agent 工具標準，支援 Claude/GPT |
 | 2025-01 | 使用 Biopython Entrez 作為 NCBI 客戶端 | 成熟穩定，自動 rate limiting |
 | 2025-01 | 90% 測試覆蓋率目標 | 確保程式碼品質和穩定性 |

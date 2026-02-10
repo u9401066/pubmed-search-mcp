@@ -24,7 +24,7 @@ def register_strategy_tools(mcp: FastMCP, searcher: LiteratureSearcher):
     """Register search strategy tools."""
 
     @mcp.tool()
-    def generate_search_queries(
+    async def generate_search_queries(
         topic: str,
         strategy: str = "comprehensive",
         check_spelling: Union[bool, str] = True,
@@ -135,7 +135,7 @@ def register_strategy_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         # Use intelligent strategy generator if available
         if _strategy_generator:
             try:
-                result = _strategy_generator.generate_strategies(
+                result = await _strategy_generator.generate_strategies(
                     topic=topic,
                     strategy=strategy,
                     use_mesh=True,
@@ -214,7 +214,7 @@ def register_strategy_tools(mcp: FastMCP, searcher: LiteratureSearcher):
 
     # ❌ REMOVED v0.1.20: Auto-executed by unified_search when results < 10
     # @mcp.tool()
-    def expand_search_queries(
+    async def expand_search_queries(
         topic: str, existing_query_ids: str = "", expansion_type: str = "mesh"
     ) -> str:
         """
@@ -261,7 +261,7 @@ def register_strategy_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         # Use intelligent MeSH-based expansion if available
         if expansion_type == "mesh" and _strategy_generator:
             try:
-                result = _strategy_generator.expand_with_mesh(
+                result = await _strategy_generator.expand_with_mesh(
                     topic=topic, existing_queries=list(existing)
                 )
 

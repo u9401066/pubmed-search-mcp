@@ -172,7 +172,7 @@ class RankingConfig:
 
     # Title match minimum length (for deduplication)
     title_min_length: int = 20
-    
+
     # Phase 3: Entity context for entity_match scoring
     matched_entities: list[str] = field(default_factory=list)
 
@@ -217,7 +217,7 @@ class RankingConfig:
             source_trust_weight=0.10,
             entity_match_weight=0.10,
         )
-    
+
     @classmethod
     def entity_focused(cls) -> RankingConfig:
         """Get entity-focused configuration (emphasizes PubTator3 entity matching)."""
@@ -845,47 +845,47 @@ class ResultAggregator:
     ) -> float:
         """
         Calculate entity match score based on PubTator3 resolved entities.
-        
+
         Phase 3: Checks if article's title/abstract/keywords contain
         the resolved entity names from semantic enhancement.
-        
+
         If no entities were resolved (fallback mode), returns neutral score.
         """
         # If no matched entities provided, return neutral score
         if not config.matched_entities:
             return 0.5
-            
+
         # Combine article text fields for matching
         article_text = ""
         if article.title:
             article_text += article.title.lower() + " "
         if article.abstract:
             article_text += article.abstract.lower() + " "
-        
+
         # Check keywords/MeSH terms
         keywords = getattr(article, "keywords", []) or []
         mesh_terms = getattr(article, "mesh_terms", []) or []
         article_text += " ".join(keywords + mesh_terms).lower()
-        
+
         if not article_text.strip():
             return 0.5
-            
+
         # Count entity matches
         matched_count = 0
         total_entities = len(config.matched_entities)
-        
+
         for entity_name in config.matched_entities:
             entity_lower = entity_name.lower()
             if entity_lower in article_text:
                 matched_count += 1
-                
+
         # Calculate score (0-1)
         if total_entities == 0:
             return 0.5
-            
+
         # Base score from match ratio
         match_ratio = matched_count / total_entities
-        
+
         # Boost if article mentions most/all entities
         if match_ratio >= 0.8:
             return min(1.0, 0.7 + match_ratio * 0.3)
