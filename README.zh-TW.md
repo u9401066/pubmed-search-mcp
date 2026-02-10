@@ -231,6 +231,7 @@ NCBI_EMAIL=your@email.com uvx pubmed-search-mcp
 | 無法取得全文 | ✅ **多源全文取得** (Europe PMC, CORE, CrossRef) |
 | 基因/藥物資訊散布不同資料庫 | ✅ **NCBI 延伸** (Gene, PubChem, ClinVar) |
 | 匯出到文獻管理軟體 | ✅ **一鍵匯出** (RIS, BibTeX, CSV, MEDLINE) |
+| 需要最新預印本研究 | ✅ **預印本搜尋** (arXiv, medRxiv, bioRxiv) 含同儕審查過濾 |
 
 ### 核心差異化
 
@@ -374,7 +375,7 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS 代理
     fetch_article_details()   → 詳細文章元資料
     get_citation_metrics()    → iCite RCR, 引用百分位
     build_citation_tree()     → 完整網絡視覺化（6 種格式）
-    suggest_citation_tree()   → 智慧推薦是否建構引用樹
+
 ```
 
 ### 📚 全文與匯出
@@ -402,11 +403,8 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS 代理
 | 工具 | 說明 |
 |------|------|
 | `build_research_timeline` | 建構時間軸，顯示關鍵里程碑（FDA 核准、Phase 3 等） |
-| `build_timeline_from_pmids` | 從特定 PMID 列表建構時間軸 |
 | `analyze_timeline_milestones` | 分析里程碑分佈 |
-| `get_timeline_visualization` | 產生 Mermaid/JSON 視覺化 |
 | `compare_timelines` | 比較多個主題的時間軸 |
-| `list_milestone_patterns` | 查看里程碑偵測模式 |
 
 ### 🏥 機構訂閱與 ICD 轉換
 
@@ -416,16 +414,15 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS 代理
 | `get_institutional_link` | 產生 OpenURL 存取連結 |
 | `list_resolver_presets` | 列出 Resolver 預設值 |
 | `test_institutional_access` | 測試 Resolver 設定 |
-| `convert_icd_to_mesh` | 將 ICD-9/10 代碼轉換為 MeSH 詞彙 |
-| `convert_mesh_to_icd` | 將 MeSH 詞彙轉換為 ICD 代碼 |
-| `search_by_icd` | 使用 ICD 代碼搜尋 PubMed（自動轉換） |
+| `convert_icd_mesh` | ICD 碼與 MeSH 詞彙雙向轉換 |
+| `search_by_icd` | 使用 ICD 代碼搜尋 PubMed（自動轉換為 MeSH）|
 
 ### 💾 Session 管理
 
 | 工具 | 說明 |
 |------|------|
 | `get_session_pmids` | 取得暫存的 PMID 列表 |
-| `list_search_history` | 瀏覽搜尋歷史 |
+
 | `get_cached_article` | 從 Session 快取取得文章（不消耗 API） |
 | `get_session_summary` | Session 狀態概覽 |
 
@@ -435,6 +432,30 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS 代理
 |------|------|
 | `analyze_figure_for_search` | 分析科學圖片以進行搜尋 |
 | `search_biomedical_images` | 跨來源生物醫學圖片搜尋（X光、顯微鏡、照片、圖表） |
+
+### 📄 預印本搜尋
+
+透過 `unified_search` 搜尋 **arXiv**、**medRxiv**、**bioRxiv** 預印本伺服器：
+
+| 參數 | 預設 | 說明 |
+|------|------|------|
+| `include_preprints` | `False` | 啟用預印本搜尋（arXiv, medRxiv, bioRxiv）。結果顯示在**獨立區段** |
+| `peer_reviewed_only` | `True` | 從主結果中過濾預印本（OpenAlex、CrossRef、Semantic Scholar 可能返回預印本） |
+
+**交互行為：**
+
+| `include_preprints` | `peer_reviewed_only` | 行為 |
+|---------------------|---------------------|------|
+| `False`（預設） | `True`（預設） | 無預印本 — 僅同儕審查標準結果 |
+| `True` | `True` | 預印本在**獨立區段** + 主結果僅含同儕審查 |
+| `True` | `False` | 預印本混入所有結果 |
+| `False` | `False` | 主結果保留預印本（不另外搜尋預印本伺服器） |
+
+**預印本偵測方式** — 透過以下條件辨識預印本：
+- 來源 API 的文章類型（OpenAlex、CrossRef、Semantic Scholar）
+- 有 arXiv ID 但無 PubMed ID
+- 已知預印本伺服器來源或期刊名稱
+- DOI 前綴匹配預印本伺服器（如 `10.1101/` → bioRxiv/medRxiv、`10.48550/` → arXiv）
 
 ---
 
@@ -558,6 +579,22 @@ prepare_export(pmids="last", format="bibtex")   # → LaTeX
 
 # 檢查開放取用可用性
 analyze_fulltext_access(pmids="last")
+```
+
+### 6️⃣ 預印本搜尋
+
+```python
+# 同時搜尋同儕審查文獻與預印本
+unified_search("COVID-19 vaccine efficacy", include_preprints=True)
+# → 主結果（同儕審查）+ 獨立預印本區段（arXiv, medRxiv, bioRxiv）
+
+# 預印本混入主結果
+unified_search("CRISPR gene therapy", include_preprints=True, peer_reviewed_only=False)
+# → 所有結果混合顯示，預印本標記為非同儕審查
+
+# 僅同儕審查（預設行為）
+unified_search("diabetes treatment")
+# → 自動過濾來自任何來源的預印本
 ```
 
 ---

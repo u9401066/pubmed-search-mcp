@@ -357,3 +357,123 @@ class TestIsPreprint:
             article_type=ArticleType.UNKNOWN,
         )
         assert _is_preprint(a, ArticleType) is False
+
+    async def test_doi_biorxiv_medrxiv_prefix(self):
+        """DOI starting with 10.1101/ (bioRxiv/medRxiv) is preprint."""
+        from pubmed_search.domain.entities.article import ArticleType, UnifiedArticle
+
+        a = UnifiedArticle(
+            title="T",
+            primary_source="openalex",
+            doi="10.1101/2024.01.15.575123",
+            article_type=ArticleType.UNKNOWN,
+        )
+        assert _is_preprint(a, ArticleType) is True
+
+    async def test_doi_arxiv_prefix(self):
+        """DOI starting with 10.48550/ (arXiv) is preprint."""
+        from pubmed_search.domain.entities.article import ArticleType, UnifiedArticle
+
+        a = UnifiedArticle(
+            title="T",
+            primary_source="openalex",
+            doi="10.48550/arXiv.2301.12345",
+            article_type=ArticleType.UNKNOWN,
+        )
+        assert _is_preprint(a, ArticleType) is True
+
+    async def test_doi_chemrxiv_prefix(self):
+        """DOI starting with 10.26434/ (chemRxiv) is preprint."""
+        from pubmed_search.domain.entities.article import ArticleType, UnifiedArticle
+
+        a = UnifiedArticle(
+            title="T",
+            primary_source="openalex",
+            doi="10.26434/chemrxiv-2024-abc",
+            article_type=ArticleType.UNKNOWN,
+        )
+        assert _is_preprint(a, ArticleType) is True
+
+    async def test_doi_ssrn_prefix(self):
+        """DOI starting with 10.2139/ (SSRN) is preprint."""
+        from pubmed_search.domain.entities.article import ArticleType, UnifiedArticle
+
+        a = UnifiedArticle(
+            title="T",
+            primary_source="openalex",
+            doi="10.2139/ssrn.4567890",
+            article_type=ArticleType.UNKNOWN,
+        )
+        assert _is_preprint(a, ArticleType) is True
+
+    async def test_doi_research_square_prefix(self):
+        """DOI starting with 10.21203/ (Research Square) is preprint."""
+        from pubmed_search.domain.entities.article import ArticleType, UnifiedArticle
+
+        a = UnifiedArticle(
+            title="T",
+            primary_source="openalex",
+            doi="10.21203/rs.3.rs-1234567/v1",
+            article_type=ArticleType.UNKNOWN,
+        )
+        assert _is_preprint(a, ArticleType) is True
+
+    async def test_normal_doi_not_preprint(self):
+        """Normal DOI (e.g. 10.1016/) is not a preprint."""
+        from pubmed_search.domain.entities.article import ArticleType, UnifiedArticle
+
+        a = UnifiedArticle(
+            title="T",
+            primary_source="openalex",
+            doi="10.1016/j.bja.2024.01.001",
+            article_type=ArticleType.UNKNOWN,
+        )
+        assert _is_preprint(a, ArticleType) is False
+
+    async def test_journal_name_arxiv(self):
+        """Journal name containing 'arxiv' is preprint."""
+        from pubmed_search.domain.entities.article import ArticleType, UnifiedArticle
+
+        a = UnifiedArticle(
+            title="T",
+            primary_source="openalex",
+            journal="ArXiv",
+            article_type=ArticleType.UNKNOWN,
+        )
+        assert _is_preprint(a, ArticleType) is True
+
+    async def test_journal_name_medrxiv(self):
+        """Journal name containing 'medrxiv' is preprint."""
+        from pubmed_search.domain.entities.article import ArticleType, UnifiedArticle
+
+        a = UnifiedArticle(
+            title="T",
+            primary_source="openalex",
+            journal="medRxiv (Cold Spring Harbor Laboratory Press)",
+            article_type=ArticleType.UNKNOWN,
+        )
+        assert _is_preprint(a, ArticleType) is True
+
+    async def test_journal_name_biorxiv(self):
+        """Journal name containing 'biorxiv' is preprint."""
+        from pubmed_search.domain.entities.article import ArticleType, UnifiedArticle
+
+        a = UnifiedArticle(
+            title="T",
+            primary_source="openalex",
+            journal="bioRxiv",
+            article_type=ArticleType.UNKNOWN,
+        )
+        assert _is_preprint(a, ArticleType) is True
+
+    async def test_normal_journal_name_not_preprint(self):
+        """Normal journal name is not a preprint."""
+        from pubmed_search.domain.entities.article import ArticleType, UnifiedArticle
+
+        a = UnifiedArticle(
+            title="T",
+            primary_source="openalex",
+            journal="British Journal of Anaesthesia",
+            article_type=ArticleType.UNKNOWN,
+        )
+        assert _is_preprint(a, ArticleType) is False

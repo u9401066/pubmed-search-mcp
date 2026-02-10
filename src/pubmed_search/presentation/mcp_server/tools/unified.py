@@ -1246,10 +1246,12 @@ def _is_preprint(article: UnifiedArticle, ArticleType: type) -> bool:
     """
     Determine if an article is a non-peer-reviewed preprint.
 
-    Detection heuristics:
+    Detection heuristics (ordered by confidence):
     1. article_type is PREPRINT (detected from OpenAlex/CrossRef/S2)
     2. Has arXiv ID but no PubMed ID (arXiv-only paper)
     3. Primary source is a known preprint server
+    4. DOI prefix matches known preprint servers
+    5. Journal name matches known preprint servers
 
     Returns:
         True if the article is likely a preprint (not peer-reviewed).
@@ -1263,9 +1265,36 @@ def _is_preprint(article: UnifiedArticle, ArticleType: type) -> bool:
         return True
 
     # Primary source is a preprint server
-    preprint_sources = {"arxiv", "medrxiv", "biorxiv"}
+    preprint_sources = {"arxiv", "medrxiv", "biorxiv", "chemrxiv", "ssrn", "preprints.org", "research square"}
     if article.primary_source and article.primary_source.lower() in preprint_sources:
         return True
+
+    # DOI prefix matches known preprint servers
+    doi = article.doi or ""
+    if doi:
+        doi_lower = doi.lower()
+        # 10.1101/ → bioRxiv/medRxiv
+        # 10.48550/ → arXiv
+        # 10.26434/ → chemRxiv
+        # 10.2139/ → SSRN
+        # 10.20944/ → Preprints.org
+        # 10.21203/ → Research Square
+        preprint_doi_prefixes = (
+            "10.1101/", "10.48550/", "10.26434/",
+            "10.2139/", "10.20944/", "10.21203/",
+        )
+        if any(doi_lower.startswith(prefix) for prefix in preprint_doi_prefixes):
+            return True
+
+    # Journal name matches known preprint servers
+    journal = (article.journal or "").lower()
+    if journal:
+        preprint_journal_names = (
+            "arxiv", "medrxiv", "biorxiv", "chemrxiv", "ssrn",
+            "preprints", "research square",
+        )
+        if any(name in journal for name in preprint_journal_names):
+            return True
 
     return False
 

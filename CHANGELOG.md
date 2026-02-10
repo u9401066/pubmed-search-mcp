@@ -16,6 +16,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.3.8] - 2026-02-10
+
+### Added
+
+- **QueryValidator** — Pre-flight PubMed query syntax validation with auto-correction
+  - Parentheses/quote balance checking and auto-fix
+  - Field tag validation against 30+ valid PubMed tags
+  - Empty Boolean operand detection, dangling operator fix
+  - Query length limit enforcement (4096 chars)
+  - Convenience function `validate_query()` for one-call usage
+  - Integrated into `search.py` — queries auto-validated before NCBI API calls
+- **NCBI WarningList Detection** — Post-search warning parsing (QuotedPhraseNotFound, PhraseIgnored, etc.)
+- **Journal Metrics Enrichment** — OpenAlex `/sources` API integration in `unified_search`
+  - `JournalMetrics` dataclass: h-index, 2-year mean citedness, works count, cited-by count, DOAJ status, subject areas
+  - `impact_tier` property: Tier 1 (h≥150) / Tier 2 (h≥50) / Tier 3 (h≥20) / Tier 4
+  - `get_source()` and `get_sources_batch()` methods on OpenAlex client
+  - Output formatting: 📊 Journal metrics displayed per article
+- **Peer Review Filter** — `peer_reviewed_only` parameter in `unified_search` (default=True)
+  - `_is_preprint()` helper function for article type detection
+  - OpenAlex `type` field mapping to `ArticleType` (article→JOURNAL_ARTICLE, preprint→PREPRINT, etc.)
+  - Semantic Scholar preprint detection via `publicationVenue.type` and arXiv ID heuristics
+- **Preprint Search** — `include_preprints` parameter in `unified_search` (default=False)
+  - Dedicated preprint section in results (arXiv, medRxiv, bioRxiv)
+  - Preprint detection via DOI prefix (6 prefixes: bioRxiv, medRxiv, arXiv, chemRxiv, SSRN, Research Square), source name, article type, journal name, arXiv ID
+
+### Changed
+
+- **Shared httpx.AsyncClient** — `get_shared_async_client()` singleton replacing per-request client creation in pdf.py, openurl tools, vision search
+- **CI** — Removed test job from `publish.yml` (build+publish only, faster releases)
+
+### Fixed
+
+- **README formatting** — Fixed broken Unicode character in `## 🔗 Links` heading, removed stray empty code block in Security section
+- **README tool names** — Synced tool tables with `TOOL_CATEGORIES` in both README.md and README.zh-TW.md (removed 5 non-existent tools, corrected ICD tool names)
+
+### Documentation
+
+- **Preprint Search** — Added preprint search sections to README.md and README.zh-TW.md (parameter table, usage examples, design philosophy)
+- **Agent Instructions** — Added 情境 5 (preprint search) to `instructions.py` with `include_preprints`/`peer_reviewed_only` parameter guidance
+
+### Tests
+
+- **2380 passed, 27 skipped** — Full test suite healthy
+- New: `test_query_validator.py` — 110 tests for QueryValidator
+- New: `test_journal_metrics.py` — 41 tests for JournalMetrics enrichment
+- New: 12 tests for `_is_preprint()` enhanced detection (DOI prefix, journal name)
+- Updated mocks in multiple test files for shared httpx client singleton
+
+---
+
 ## [0.3.7] - 2026-02-10
 
 ### Added

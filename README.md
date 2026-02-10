@@ -230,6 +230,7 @@ Other tools give you raw API access. We give you **vocabulary translation + inte
 | Citation context is unclear | ✅ **Citation Tree** forward/backward/network |
 | Can't access full text | ✅ **Multi-source fulltext** (Europe PMC, CORE, CrossRef) |
 | Gene/drug info scattered across DBs | ✅ **NCBI Extended** (Gene, PubChem, ClinVar) |
+| Need cutting-edge preprints | ✅ **Preprint search** (arXiv, medRxiv, bioRxiv) with peer-review filtering |
 | Export to reference managers | ✅ **One-click export** (RIS, BibTeX, CSV, MEDLINE) |
 
 ### Key Differentiators
@@ -374,7 +375,7 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS proxy for API requests
     fetch_article_details()   → Detailed article metadata
     get_citation_metrics()    → iCite RCR, citation percentile
     build_citation_tree()     → Full network visualization (6 formats)
-    suggest_citation_tree()   → Smart recommendation for tree building
+
 ```
 
 ### 📚 Full Text & Export
@@ -402,11 +403,8 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS proxy for API requests
 | Tool | Description |
 |------|-------------|
 | `build_research_timeline` | Build timeline showing key milestones (FDA approval, Phase 3, etc.) |
-| `build_timeline_from_pmids` | Build timeline from specific PMIDs |
 | `analyze_timeline_milestones` | Analyze milestone distribution |
-| `get_timeline_visualization` | Generate Mermaid/JSON visualization |
 | `compare_timelines` | Compare multiple topic timelines |
-| `list_milestone_patterns` | View detection patterns |
 
 ### 🏥 Institutional Access & ICD Conversion
 
@@ -416,16 +414,14 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS proxy for API requests
 | `get_institutional_link` | Generate OpenURL access link |
 | `list_resolver_presets` | List resolver presets |
 | `test_institutional_access` | Test resolver configuration |
-| `convert_icd_to_mesh` | Convert ICD-9/10 code to MeSH term |
-| `convert_mesh_to_icd` | Convert MeSH term to ICD codes |
-| `search_by_icd` | Search PubMed using ICD code (auto-converts) |
+| `convert_icd_mesh` | Convert between ICD codes and MeSH terms (bidirectional) |
+| `search_by_icd` | Search PubMed using ICD code (auto-converts to MeSH) |
 
 ### 💾 Session Management
 
 | Tool | Description |
 |------|-------------|
 | `get_session_pmids` | Retrieve cached PMID lists |
-| `list_search_history` | Browse search history |
 | `get_cached_article` | Get article from session cache (no API cost) |
 | `get_session_summary` | Session status overview |
 
@@ -435,6 +431,30 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS proxy for API requests
 |------|-------------|
 | `analyze_figure_for_search` | Analyze scientific figure for search |
 | `search_biomedical_images` | Search biomedical images across Open-i (X-ray, microscopy, photos, diagrams) |
+
+### 📄 Preprint Search
+
+Search **arXiv**, **medRxiv**, and **bioRxiv** preprint servers via `unified_search`:
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `include_preprints` | `False` | Enable preprint search (arXiv, medRxiv, bioRxiv). Results shown in a **separate section** |
+| `peer_reviewed_only` | `True` | Filter out preprints from main results (OpenAlex, CrossRef, Semantic Scholar may return preprints) |
+
+**How they work together:**
+
+| `include_preprints` | `peer_reviewed_only` | Behavior |
+|---------------------|---------------------|----------|
+| `False` (default) | `True` (default) | No preprints — standard peer-reviewed results only |
+| `True` | `True` | Preprints in **separate section** + main results peer-reviewed only |
+| `True` | `False` | Preprints everywhere — separate section + mixed into main results |
+| `False` | `False` | No dedicated preprint search, but preprints from other sources kept in results |
+
+**Preprint detection** — articles are identified as preprints by:
+- Article type from source API (OpenAlex, CrossRef, Semantic Scholar)
+- arXiv ID present without PubMed ID
+- Known preprint server source or journal name
+- DOI prefix matching preprint servers (e.g., `10.1101/` → bioRxiv/medRxiv, `10.48550/` → arXiv)
 
 ---
 
@@ -558,6 +578,22 @@ prepare_export(pmids="last", format="bibtex")   # → LaTeX
 
 # Check open access availability
 analyze_fulltext_access(pmids="last")
+```
+
+### 6️⃣ Preprint Search
+
+```python
+# Include preprints alongside peer-reviewed results
+unified_search("COVID-19 vaccine efficacy", include_preprints=True)
+# → Main results (peer-reviewed) + Separate preprint section (arXiv, medRxiv, bioRxiv)
+
+# Include preprints mixed into main results
+unified_search("CRISPR gene therapy", include_preprints=True, peer_reviewed_only=False)
+# → All results mixed together, preprints marked as such
+
+# Only peer-reviewed (default behavior)
+unified_search("diabetes treatment")
+# → Preprints from any source automatically filtered out
 ```
 
 ---
@@ -837,9 +873,6 @@ python run_server.py --transport streamable-http --port 8765
 | **No Database** | Stateless | No SQL injection risk |
 | **No Secrets** | In-memory only | No credentials stored |
 
-
-```
-
 See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed deployment instructions.
 
 ---
@@ -857,6 +890,7 @@ Export your search results in formats compatible with major reference managers:
 | **JSON** | Programmatic access | Custom processing |
 
 ### Exported Fields
+
 - **Core**: PMID, Title, Authors, Journal, Year, Volume, Issue, Pages
 - **Identifiers**: DOI, PMC ID, ISSN
 - **Content**: Abstract (HTML tags cleaned)
@@ -864,6 +898,7 @@ Export your search results in formats compatible with major reference managers:
 - **Access**: DOI URL, PMC URL, Full-text availability
 
 ### Special Character Handling
+
 - BibTeX exports use **pylatexenc** for proper LaTeX encoding
 - Nordic characters (ø, æ, å), umlauts (ü, ö, ä), and accents are correctly converted
 - Example: `Søren Hansen` → `S{\o}ren Hansen`
@@ -878,7 +913,7 @@ Apache License 2.0 - see [LICENSE](LICENSE)
 
 ---
 
-## �🔗 Links
+## 🔗 Links
 
 - [GitHub Repository](https://github.com/u9401066/pubmed-search-mcp)
 - [PyPI Package](https://pypi.org/project/pubmed-search/)
