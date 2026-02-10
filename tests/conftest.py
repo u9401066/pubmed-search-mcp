@@ -5,7 +5,7 @@ Pytest configuration and shared fixtures.
 import pytest
 import tempfile
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 
 # ============================================================
@@ -95,9 +95,7 @@ def mock_espell_response():
 @pytest.fixture
 def mock_searcher(mock_article_data, mock_search_response):
     """Create a mock LiteratureSearcher."""
-    searcher = Mock()
-
-    # Mock search method
+    searcher = AsyncMock()
     searcher.search.return_value = [mock_article_data]
 
     # Mock fetch_details

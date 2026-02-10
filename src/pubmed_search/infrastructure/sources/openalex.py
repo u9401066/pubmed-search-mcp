@@ -13,13 +13,11 @@ Features:
 - Institution and concept relationships
 """
 
-import asyncio
 import logging
-import time
 import urllib.parse
 from typing import Any
 
-import httpx
+from pubmed_search.infrastructure.sources.base_client import BaseAPIClient
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +31,7 @@ OA_AUTHORS_URL = f"{OA_API_BASE}/authors"
 DEFAULT_EMAIL = "pubmed-search-mcp@example.com"
 
 
-class OpenAlexClient:
+class OpenAlexClient(BaseAPIClient):
     """
     OpenAlex API client.
 
@@ -41,6 +39,8 @@ class OpenAlexClient:
         client = OpenAlexClient(email="your@email.com")
         results = client.search("CRISPR gene editing", limit=10, open_access_only=True)
     """
+
+    _service_name = "OpenAlex"
 
     def __init__(self, email: str | None = None, timeout: float = 30.0):
         """
@@ -51,62 +51,14 @@ class OpenAlexClient:
             timeout: Request timeout in seconds
         """
         self._email = email or DEFAULT_EMAIL
-        self._timeout = timeout
-        self._last_request_time = 0
-        self._min_interval = 0.1  # OpenAlex is more generous with rate limits
-        self._client = httpx.AsyncClient(
-            timeout=self._timeout,
+        super().__init__(
+            timeout=timeout,
+            min_interval=0.1,
             headers={
                 "User-Agent": f"pubmed-search-mcp/1.0 (mailto:{self._email})",
                 "Accept": "application/json",
             },
         )
-
-    async def _rate_limit(self):
-        """Simple rate limiting."""
-        elapsed = time.time() - self._last_request_time
-        if elapsed < self._min_interval:
-            await asyncio.sleep(self._min_interval - elapsed)
-        self._last_request_time = time.time()
-
-    _MAX_RETRIES = 3
-
-    async def _make_request(self, url: str) -> dict | None:
-        """Make HTTP GET request with retry on 429."""
-        for attempt in range(self._MAX_RETRIES + 1):
-            await self._rate_limit()
-            try:
-                response = await self._client.get(url)
-                if response.status_code == 429:
-                    if attempt < self._MAX_RETRIES:
-                        try:
-                            retry_after = float(
-                                response.headers.get("Retry-After", 2 ** (attempt + 1))
-                            )
-                        except (ValueError, TypeError):
-                            retry_after = float(2 ** (attempt + 1))
-                        logger.warning(
-                            f"OpenAlex: Rate limited (429), retry {attempt + 1}/{self._MAX_RETRIES} "
-                            f"in {retry_after:.1f}s"
-                        )
-                        await asyncio.sleep(retry_after)
-                        continue
-                    logger.warning("OpenAlex: Rate limit exceeded after retries")
-                    return None
-                response.raise_for_status()
-                return response.json()
-            except httpx.HTTPStatusError as e:
-                logger.error(
-                    f"HTTP error {e.response.status_code}: {e.response.reason_phrase}"
-                )
-                return None
-            except httpx.RequestError as e:
-                logger.error(f"URL error: {e}")
-                return None
-            except Exception as e:
-                logger.error(f"OpenAlex request failed: {e}")
-                return None
-        return None
 
     async def search(
         self,
@@ -167,7 +119,7 @@ class OpenAlexClient:
             url = f"{OA_WORKS_URL}?{urllib.parse.urlencode(params)}"
             data = await self._make_request(url)
 
-            if not data:
+            if not isinstance(data, dict):
                 return []
 
             works = data.get("results", [])
@@ -202,7 +154,7 @@ class OpenAlexClient:
             url = f"{OA_WORKS_URL}/{encoded_id}?{urllib.parse.urlencode(params)}"
 
             data = await self._make_request(url)
-            if not data:
+            if not isinstance(data, dict):
                 return None
 
             return self._normalize_work(data)
@@ -236,7 +188,7 @@ class OpenAlexClient:
             url = f"{OA_WORKS_URL}?{urllib.parse.urlencode(params)}"
             data = await self._make_request(url)
 
-            if not data:
+            if not isinstance(data, dict):
                 return []
 
             return [self._normalize_work(w) for w in data.get("results", [])]
@@ -357,13 +309,3 @@ class OpenAlexClient:
         except Exception as e:
             logger.warning(f"Failed to reconstruct abstract: {e}")
             return ""
-
-    async def close(self):
-        """Close the HTTP client."""
-        await self._client.aclose()
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *args):
-        await self.close()

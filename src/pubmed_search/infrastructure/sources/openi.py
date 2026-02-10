@@ -36,14 +36,12 @@ Full API Parameters (13 total):
 - hmp: HMD publication type filter
 """
 
-import asyncio
 import logging
 import math
-import time
 import urllib.parse
 from typing import Any
 
-import httpx
+from pubmed_search.infrastructure.sources.base_client import BaseAPIClient
 
 from pubmed_search.domain.entities.image import ImageResult, ImageSource
 
@@ -54,12 +52,9 @@ OPENI_BASE_URL = "https://openi.nlm.nih.gov"
 OPENI_API_URL = f"{OPENI_BASE_URL}/api/search"
 
 
-class OpenIClient:
+class OpenIClient(BaseAPIClient):
     """
     Open-i (NLM) biomedical image search client.
-
-    Uses urllib.request + _make_request() pattern consistent with
-    OpenAlexClient, EuropePMCClient, COREClient, etc.
 
     Supports ALL 13 API parameters from Swagger spec.
 
@@ -306,6 +301,8 @@ class OpenIClient:
 
     PAGE_SIZE = 10  # Default results per page (m=1, n=10)
 
+    _service_name = "Open-i"
+
     def __init__(self, timeout: float = 15.0):
         """
         Initialize Open-i client.
@@ -313,74 +310,14 @@ class OpenIClient:
         Args:
             timeout: Request timeout in seconds (Open-i is slow: 2-9s)
         """
-        self._timeout = timeout
-        self._last_request_time = 0.0
-        self._min_interval = 1.0  # Be polite — Open-i is a free service
-        self._user_agent = "PubMedSearchMCP/0.3.0"
-        self._client = httpx.AsyncClient(
-            timeout=self._timeout,
+        super().__init__(
+            timeout=timeout,
+            min_interval=1.0,
             headers={
-                "User-Agent": self._user_agent,
+                "User-Agent": "PubMedSearchMCP/0.3.0",
                 "Accept": "application/json",
             },
         )
-
-    async def _rate_limit(self) -> None:
-        """Simple rate limiting between requests."""
-        elapsed = time.time() - self._last_request_time
-        if elapsed < self._min_interval:
-            await asyncio.sleep(self._min_interval - elapsed)
-        self._last_request_time = time.time()
-
-    _MAX_RETRIES = 3
-
-    async def _make_request(self, url: str) -> dict[str, Any] | None:
-        """
-        Make HTTP GET request with retry on 429.
-
-        Args:
-            url: Full request URL
-
-        Returns:
-            Parsed JSON response or None on error
-        """
-        for attempt in range(self._MAX_RETRIES + 1):
-            await self._rate_limit()
-            try:
-                response = await self._client.get(url)
-                if response.status_code == 429:
-                    if attempt < self._MAX_RETRIES:
-                        try:
-                            retry_after = float(
-                                response.headers.get("Retry-After", 2 ** (attempt + 1))
-                            )
-                        except (ValueError, TypeError):
-                            retry_after = float(2 ** (attempt + 1))
-                        logger.warning(
-                            f"Open-i: Rate limited (429), retry {attempt + 1}/{self._MAX_RETRIES} "
-                            f"in {retry_after:.1f}s"
-                        )
-                        await asyncio.sleep(retry_after)
-                        continue
-                    logger.warning("Open-i: Rate limit exceeded after retries")
-                    return None
-                response.raise_for_status()
-                return response.json()
-            except httpx.HTTPStatusError as e:
-                logger.error(
-                    f"Open-i HTTP error {e.response.status_code}: {e.response.reason_phrase}"
-                )
-                return None
-            except httpx.RequestError as e:
-                logger.error(f"Open-i URL error: {e}")
-                return None
-            except TimeoutError:
-                logger.error("Open-i request timed out")
-                return None
-            except Exception as e:
-                logger.error(f"Open-i request failed: {e}")
-                return None
-        return None
 
     async def search(
         self,
@@ -660,13 +597,3 @@ class OpenIClient:
         if not isinstance(minor, list):
             minor = []
         return list(major) + list(minor)
-
-    async def close(self):
-        """Close the HTTP client."""
-        await self._client.aclose()
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *args):
-        await self.close()

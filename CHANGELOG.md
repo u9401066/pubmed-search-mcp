@@ -16,6 +16,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.3.7] - 2026-02-10
+
+### Added
+
+- **TRUE Deep Search** — `unified_search` now actually executes SemanticEnhancer strategies instead of just extracting entity names
+  - 5 parallel strategies: original, mesh_expanded, entity_semantic, fulltext_epmc, broad_tiab
+  - `_execute_deep_search()` runs all strategies via `asyncio.gather()`, aggregates and deduplicates results
+  - New `deep_search` parameter (default=True) to control behavior
+  - `SearchDepthMetrics` displayed in output (depth score, estimated recall/precision, strategies executed)
+- **Auto Search Relaxation** — When 0 results found, progressively relax query across 6 levels
+  - New `auto_relax` parameter (default=True)
+  - 6 relaxation levels: advanced filters → year range → field tags → AND→OR → core keywords → broadest
+  - `RelaxationResult` with step-by-step trace of what was tried
+- **BaseAPIClient** — New base class for all 8 source clients (`infrastructure/sources/base_client.py`)
+  - Unified retry on HTTP 429 with exponential backoff + `Retry-After` header support
+  - Built-in rate limiting (configurable `min_interval`)
+  - CircuitBreaker error tolerance
+  - Consistent `httpx.AsyncClient` lifecycle management
+- **Async test checker script** (`scripts/check_async_tests.py`) — Detect async/sync mismatches in tests
+
+### Changed
+
+- **8 source clients refactored to BaseAPIClient** — core.py, crossref.py, europe_pmc.py, ncbi_extended.py, openalex.py, openi.py, semantic_scholar.py, unpaywall.py now inherit from `BaseAPIClient`, removing ~500 lines of duplicated retry/rate-limit boilerplate
+- **SemanticEnhancer** — `SearchPlan` dataclass now includes `source`, `expected_precision`, `expected_recall` fields
+- **entity_cache.py** — Refactored for cleaner async patterns
+- **strategy.py / search.py** — Improved search strategy dispatching
+- **copilot-instructions.md** — Added anti-pattern rules (no reinventing wheel, no over-engineering)
+
+### Fixed
+
+- **unified_search never used SemanticEnhancer strategies** — Critical fix: strategies were generated but only entity names extracted for ranking weights; now all strategies are actually executed
+- **`_search_europe_pmc()` field mapping** — Fixed to properly convert results using `from_pubmed()` with correct field name mapping
+- **mypy type narrowing** — Fixed 4 locations where `asyncio.gather` results needed `cast()` for proper type inference
+
+### Tests
+
+- **2205 passed, 27 skipped** — Full test suite healthy
+- New: 23 tests in `test_auto_relaxation.py` covering relaxation logic
+- New: 16 tests in `test_unified_search.py` covering deep search integration
+- Multiple test files updated for improved async mock patterns
+
+### Technical Details
+
+- 33 files changed, ~1427 insertions, ~939 deletions
+- 3 new files: `base_client.py`, `check_async_tests.py`, `test_auto_relaxation.py`
+
+---
+
+## [0.3.6] - 2026-02-10
+
+### Changed
+
+- **Anti-pattern enforcement** — Added rules against reinventing the wheel and over-engineering to copilot-instructions.md
+- **File hygiene** — Enforced `uv run` for all tool commands (ruff, mypy, pytest)
+- **ruff format** — Applied consistent formatting across codebase
+
+---
+
 ## [0.3.5] - 2026-02-10
 
 ### Fixed

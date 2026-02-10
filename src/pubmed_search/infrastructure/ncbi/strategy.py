@@ -12,6 +12,12 @@ import logging
 from typing import Any, Dict, List, Optional, Tuple
 
 from Bio import Entrez
+from tenacity import (
+    retry,
+    retry_if_exception,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -21,10 +27,19 @@ RETRY_DELAY = 1.0
 RETRYABLE_ERRORS = ["Database is not supported", "Backend failed", "Server Error"]
 
 
-def _is_retryable(error: Exception) -> bool:
+def _is_retryable(error: BaseException) -> bool:
     """Check if an error is retryable."""
     error_str = str(error)
     return any(msg in error_str for msg in RETRYABLE_ERRORS)
+
+
+# Reusable tenacity retry decorator for NCBI operations
+_ncbi_retry = retry(
+    stop=stop_after_attempt(MAX_RETRIES),
+    wait=wait_exponential(multiplier=RETRY_DELAY, min=RETRY_DELAY, max=RETRY_DELAY * 4),
+    retry=retry_if_exception(_is_retryable),
+    reraise=True,
+)
 
 
 class SearchStrategyGenerator:
@@ -43,24 +58,6 @@ class SearchStrategyGenerator:
         if api_key:
             Entrez.api_key = api_key
 
-    async def _retry_operation(self, operation, *args, **kwargs):
-        """Execute operation with retry logic for NCBI intermittent errors."""
-        last_error = None
-        for attempt in range(MAX_RETRIES):
-            try:
-                return await operation(*args, **kwargs)
-            except Exception as e:
-                last_error = e
-                if _is_retryable(e) and attempt < MAX_RETRIES - 1:
-                    delay = RETRY_DELAY * (attempt + 1)
-                    logger.warning(
-                        f"NCBI error (attempt {attempt + 1}): {e}, retrying in {delay}s"
-                    )
-                    await asyncio.sleep(delay)
-                else:
-                    raise
-        raise last_error
-
     async def spell_check(self, query: str) -> Tuple[str, bool]:
         """
         Check and correct spelling using NCBI ESpell.
@@ -76,7 +73,7 @@ class SearchStrategyGenerator:
                 handle.close()
                 return result
 
-            result = await self._retry_operation(_do_spell_check)
+            result = await _ncbi_retry(_do_spell_check)()
 
             corrected = result.get("CorrectedQuery", "")
             if corrected and corrected != query:
@@ -182,12 +179,12 @@ class SearchStrategyGenerator:
 
         try:
             # Strategy 1: Try exact MeSH term search first
-            result = await self._retry_operation(_search_mesh_exact)
+            result = await _ncbi_retry(_search_mesh_exact)()
             mesh_ids = result.get("IdList", [])
 
             # Strategy 2: Fall back to quoted search
             if not mesh_ids:
-                result = await self._retry_operation(_search_mesh_quoted)
+                result = await _ncbi_retry(_search_mesh_quoted)()
                 mesh_ids = result.get("IdList", [])
 
             if not mesh_ids:
@@ -196,7 +193,7 @@ class SearchStrategyGenerator:
             mesh_id = mesh_ids[0]
 
             # Fetch MeSH record in text mode with retry
-            content = await self._retry_operation(_fetch_mesh_text, mesh_id)
+            content = await _ncbi_retry(_fetch_mesh_text)(mesh_id)
 
             if not content:
                 return None
@@ -236,7 +233,7 @@ class SearchStrategyGenerator:
             return result
 
         try:
-            result = await self._retry_operation(_do_esearch)
+            result = await _ncbi_retry(_do_esearch)()
 
             return {
                 "original": query,

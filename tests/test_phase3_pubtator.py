@@ -16,7 +16,7 @@ import pytest
 from pubmed_search.application.search.semantic_enhancer import (
     EnhancedQuery,
     ExpandedTerm,
-    SearchStrategy,
+    SearchPlan,
     SemanticEnhancer,
     enhance_query,
 )
@@ -523,13 +523,13 @@ class TestPhase3Integration:
                 )
             ],
             strategies=[
-                SearchStrategy(
+                SearchPlan(
                     name="original",
                     query="propofol sedation",
                     source="pubmed",
                     priority=1,
                 ),
-                SearchStrategy(
+                SearchPlan(
                     name="mesh_expanded",
                     query='"Propofol"[MeSH Terms] AND sedation',
                     source="pubmed",

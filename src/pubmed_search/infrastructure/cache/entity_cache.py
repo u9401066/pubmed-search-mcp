@@ -2,10 +2,10 @@
 Entity Cache
 
 In-memory cache with TTL for entity resolution results.
-Reduces PubTator3 API calls for frequently queried entities.
+Uses cachetools.TTLCache for LRU eviction and TTL expiration.
 
 Features:
-- Time-based expiration (TTL)
+- Time-based expiration (TTL) via cachetools
 - LRU eviction when max size reached
 - Async-safe with locks
 - Simple key-value interface
@@ -13,10 +13,10 @@ Features:
 
 import asyncio
 import logging
-import time
-from collections import OrderedDict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, TypeVar
+
+from cachetools import TTLCache
 
 
 logger = logging.getLogger(__name__)
@@ -24,24 +24,12 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
 
-@dataclass
-class CacheEntry:
-    """Cache entry with timestamp."""
-
-    value: Any
-    timestamp: float = field(default_factory=time.time)
-
-    def is_expired(self, ttl: float) -> bool:
-        """Check if entry has expired."""
-        return time.time() - self.timestamp > ttl
-
-
 class EntityCache:
     """
     In-memory cache for entity resolution.
 
-    Uses LRU eviction and TTL-based expiration.
-    Thread-safe for async usage.
+    Uses cachetools.TTLCache for LRU eviction and TTL-based expiration.
+    Thread-safe for async usage via asyncio.Lock.
 
     Example:
         cache = EntityCache(max_size=1000, ttl=3600)
@@ -69,9 +57,7 @@ class EntityCache:
             max_size: Maximum number of entries
             ttl: Time-to-live in seconds
         """
-        self._max_size = max_size
-        self._ttl = ttl
-        self._cache: OrderedDict[str, CacheEntry] = OrderedDict()
+        self._cache: TTLCache[str, Any] = TTLCache(maxsize=max_size, ttl=ttl)
         self._lock = asyncio.Lock()
         self._stats = CacheStats()
 
@@ -95,24 +81,13 @@ class EntityCache:
             Cached value or None if not found/expired
         """
         nkey = self._normalize_key(key)
-
-        if nkey not in self._cache:
+        try:
+            value = self._cache[nkey]
+            self._stats.hits += 1
+            return value
+        except KeyError:
             self._stats.misses += 1
             return None
-
-        entry = self._cache[nkey]
-
-        if entry.is_expired(self._ttl):
-            # Remove expired entry
-            del self._cache[nkey]
-            self._stats.misses += 1
-            self._stats.expirations += 1
-            return None
-
-        # Move to end (LRU)
-        self._cache.move_to_end(nkey)
-        self._stats.hits += 1
-        return entry.value
 
     def set(self, key: str, value: Any) -> None:
         """
@@ -123,18 +98,7 @@ class EntityCache:
             value: Value to cache
         """
         nkey = self._normalize_key(key)
-
-        # Remove if exists (to update position)
-        if nkey in self._cache:
-            del self._cache[nkey]
-
-        # Evict oldest if at capacity
-        while len(self._cache) >= self._max_size:
-            oldest_key = next(iter(self._cache))
-            del self._cache[oldest_key]
-            self._stats.evictions += 1
-
-        self._cache[nkey] = CacheEntry(value=value)
+        self._cache[nkey] = value
 
     async def get_or_fetch(
         self,
@@ -188,10 +152,11 @@ class EntityCache:
             True if entry was removed
         """
         nkey = self._normalize_key(key)
-        if nkey in self._cache:
+        try:
             del self._cache[nkey]
             return True
-        return False
+        except KeyError:
+            return False
 
     def clear(self) -> int:
         """
@@ -208,18 +173,16 @@ class EntityCache:
         """
         Remove all expired entries.
 
+        cachetools.TTLCache handles expiration lazily on access.
+        This method triggers an explicit cleanup via expire().
+
         Returns:
             Number of entries removed
         """
-        expired_keys = [
-            key for key, entry in self._cache.items() if entry.is_expired(self._ttl)
-        ]
-
-        for key in expired_keys:
-            del self._cache[key]
-            self._stats.expirations += 1
-
-        return len(expired_keys)
+        expired = self._cache.expire()
+        removed = len(expired)
+        self._stats.expirations += removed
+        return removed
 
     def __len__(self) -> int:
         """Get number of cached entries."""

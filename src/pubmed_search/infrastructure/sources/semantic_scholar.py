@@ -13,13 +13,11 @@ Features:
 - Paper recommendations
 """
 
-import asyncio
 import logging
-import time
 import urllib.parse
 from typing import Any
 
-import httpx
+from pubmed_search.infrastructure.sources.base_client import BaseAPIClient
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +44,7 @@ DEFAULT_FIELDS = [
 ]
 
 
-class SemanticScholarClient:
+class SemanticScholarClient(BaseAPIClient):
     """
     Semantic Scholar API client.
 
@@ -54,6 +52,8 @@ class SemanticScholarClient:
         client = SemanticScholarClient()
         results = client.search("deep learning medical imaging", limit=10)
     """
+
+    _service_name = "Semantic Scholar"
 
     def __init__(self, api_key: str | None = None, timeout: float = 30.0):
         """
@@ -64,67 +64,30 @@ class SemanticScholarClient:
             timeout: Request timeout in seconds
         """
         self._api_key = api_key
-        self._timeout = timeout
-        self._last_request_time = 0
-        self._min_interval = 0.5  # Conservative rate limiting
-        self._client = httpx.AsyncClient(
-            timeout=self._timeout,
+        super().__init__(
+            timeout=timeout,
+            min_interval=0.5,
             headers={
                 "User-Agent": "pubmed-search-mcp/1.0",
                 "Accept": "application/json",
             },
         )
 
-    async def _rate_limit(self):
-        """Simple rate limiting to avoid hitting API limits."""
-        elapsed = time.time() - self._last_request_time
-        if elapsed < self._min_interval:
-            await asyncio.sleep(self._min_interval - elapsed)
-        self._last_request_time = time.time()
-
-    _MAX_RETRIES = 3
-
-    async def _make_request(self, url: str) -> dict | None:
-        """Make HTTP GET request with retry on 429."""
-        for attempt in range(self._MAX_RETRIES + 1):
-            await self._rate_limit()
-            headers = {}
-            if self._api_key:
-                headers["x-api-key"] = self._api_key
-            try:
-                response = await self._client.get(url, headers=headers)
-                if response.status_code == 429:
-                    if attempt < self._MAX_RETRIES:
-                        try:
-                            retry_after = float(
-                                response.headers.get("Retry-After", 2 ** (attempt + 1))
-                            )
-                        except (ValueError, TypeError):
-                            retry_after = float(2 ** (attempt + 1))
-                        logger.warning(
-                            f"Semantic Scholar: Rate limited (429), retry {attempt + 1}/{self._MAX_RETRIES} "
-                            f"in {retry_after:.1f}s"
-                        )
-                        await asyncio.sleep(retry_after)
-                        continue
-                    logger.warning(
-                        "Semantic Scholar: Rate limit exceeded after retries"
-                    )
-                    return None
-                response.raise_for_status()
-                return response.json()
-            except httpx.HTTPStatusError as e:
-                logger.error(
-                    f"HTTP error {e.response.status_code}: {e.response.reason_phrase}"
-                )
-                return None
-            except httpx.RequestError as e:
-                logger.error(f"URL error: {e}")
-                return None
-            except Exception as e:
-                logger.error(f"Semantic Scholar request failed: {e}")
-                return None
-        return None
+    async def _execute_request(
+        self,
+        url: str,
+        *,
+        method: str = "GET",
+        data: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> Any:
+        """Add API key header to requests."""
+        req_headers = dict(headers or {})
+        if self._api_key:
+            req_headers["x-api-key"] = self._api_key
+        return await super()._execute_request(
+            url, method=method, data=data, headers=req_headers
+        )
 
     async def search(
         self,
@@ -172,7 +135,7 @@ class SemanticScholarClient:
             url = f"{S2_SEARCH_URL}?{urllib.parse.urlencode(params)}"
             data = await self._make_request(url)
 
-            if not data:
+            if not isinstance(data, dict):
                 return []
 
             papers = data.get("data", [])
@@ -204,7 +167,7 @@ class SemanticScholarClient:
             url = f"{S2_PAPER_URL}/{encoded_id}?{urllib.parse.urlencode(params)}"
 
             data = await self._make_request(url)
-            if not data:
+            if not isinstance(data, dict):
                 return None
 
             return self._normalize_paper(data)
@@ -235,7 +198,7 @@ class SemanticScholarClient:
             url = f"{S2_PAPER_URL}/{encoded_id}/citations?{urllib.parse.urlencode(params)}"
 
             data = await self._make_request(url)
-            if not data:
+            if not isinstance(data, dict):
                 return []
 
             papers = [item.get("citingPaper", {}) for item in data.get("data", [])]
@@ -267,7 +230,7 @@ class SemanticScholarClient:
             url = f"{S2_PAPER_URL}/{encoded_id}/references?{urllib.parse.urlencode(params)}"
 
             data = await self._make_request(url)
-            if not data:
+            if not isinstance(data, dict):
                 return []
 
             papers = [item.get("citedPaper", {}) for item in data.get("data", [])]
@@ -308,7 +271,7 @@ class SemanticScholarClient:
             url = f"https://api.semanticscholar.org/recommendations/v1/papers/forpaper/{encoded_id}?{urllib.parse.urlencode(params)}"
 
             data = await self._make_request(url)
-            if not data:
+            if not isinstance(data, dict):
                 return []
 
             papers = data.get("recommendedPapers", [])
@@ -438,13 +401,3 @@ class SemanticScholarClient:
             "_source": "semantic_scholar",
             "_s2_id": paper.get("paperId", ""),
         }
-
-    async def close(self):
-        """Close the HTTP client."""
-        await self._client.aclose()
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *args):
-        await self.close()

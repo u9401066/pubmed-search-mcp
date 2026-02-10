@@ -10,6 +10,12 @@ import re
 from typing import Any, Dict, List, Optional
 
 from Bio import Entrez
+from tenacity import (
+    retry,
+    retry_if_exception,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from .base import SearchStrategy, _rate_limit
 
@@ -18,6 +24,24 @@ logger = logging.getLogger(__name__)
 # Retry settings for transient NCBI errors
 MAX_RETRIES = 3
 RETRY_DELAY = 2  # seconds
+
+
+_RETRYABLE_MESSAGES = [
+    "database is not supported",
+    "backend failed",
+    "temporarily unavailable",
+    "service unavailable",
+    "rate limit",
+    "too many requests",
+    "server error",
+]
+
+
+def _is_retryable_ncbi(error: BaseException) -> bool:
+    """Check if an NCBI error is retryable."""
+    error_str = str(error).lower()
+    return any(msg in error_str for msg in _RETRYABLE_MESSAGES)
+
 
 # ============================================================================
 # PubMed Advanced Filters - Based on official PubMed Help documentation
@@ -314,6 +338,14 @@ class SearchMixin:
         except Exception as e:
             return [{"error": str(e)}]
 
+    @retry(
+        stop=stop_after_attempt(MAX_RETRIES),
+        wait=wait_exponential(
+            multiplier=RETRY_DELAY, min=RETRY_DELAY, max=RETRY_DELAY * 4
+        ),
+        retry=retry_if_exception(_is_retryable_ncbi),
+        reraise=True,
+    )
     async def _search_ids_with_retry(self, query: str, retmax: int, sort: str) -> tuple:
         """Search for PubMed IDs with retry on transient errors.
 
@@ -321,76 +353,32 @@ class SearchMixin:
             Tuple of (id_list, total_count) where total_count is the total number
             of articles matching the query in PubMed (not limited by retmax).
         """
-        last_error = None
-        for attempt in range(MAX_RETRIES):
-            try:
-                await _rate_limit()  # Rate limiting before API call
-                handle = await asyncio.to_thread(
-                    Entrez.esearch, db="pubmed", term=query, retmax=retmax, sort=sort
-                )
-                record = await asyncio.to_thread(Entrez.read, handle)
-                handle.close()
-                total_count = int(record.get("Count", 0))
-                return record["IdList"], total_count
-            except Exception as e:
-                error_str = str(e)
-                if any(
-                    msg in error_str.lower()
-                    for msg in [
-                        "database is not supported",
-                        "backend failed",
-                        "temporarily unavailable",
-                        "service unavailable",
-                        "rate limit",
-                        "too many requests",
-                        "server error",
-                    ]
-                ):
-                    last_error = e
-                    wait_time = RETRY_DELAY * (attempt + 1)
-                    logger.warning(
-                        f"NCBI transient error (attempt {attempt + 1}/{MAX_RETRIES}): {error_str}"
-                    )
-                    await asyncio.sleep(wait_time)
-                else:
-                    raise
-        raise last_error if last_error else Exception("Search failed after retries")
+        await _rate_limit()  # Rate limiting before API call
+        handle = await asyncio.to_thread(
+            Entrez.esearch, db="pubmed", term=query, retmax=retmax, sort=sort
+        )
+        record = await asyncio.to_thread(Entrez.read, handle)
+        handle.close()
+        total_count = int(record.get("Count", 0))
+        return record["IdList"], total_count
 
+    @retry(
+        stop=stop_after_attempt(MAX_RETRIES),
+        wait=wait_exponential(
+            multiplier=RETRY_DELAY, min=RETRY_DELAY, max=RETRY_DELAY * 4
+        ),
+        retry=retry_if_exception(_is_retryable_ncbi),
+        reraise=True,
+    )
     async def _fetch_with_retry(self, id_list: List[str]):
         """Fetch PubMed articles with retry on transient errors."""
-        last_error = None
-        for attempt in range(MAX_RETRIES):
-            try:
-                await _rate_limit()  # Rate limiting before API call
-                handle = await asyncio.to_thread(
-                    Entrez.efetch, db="pubmed", id=id_list, retmode="xml"
-                )
-                papers = await asyncio.to_thread(Entrez.read, handle)
-                handle.close()
-                return papers
-            except Exception as e:
-                error_str = str(e)
-                if any(
-                    msg in error_str.lower()
-                    for msg in [
-                        "database is not supported",
-                        "backend failed",
-                        "temporarily unavailable",
-                        "service unavailable",
-                        "rate limit",
-                        "too many requests",
-                        "server error",
-                    ]
-                ):
-                    last_error = e
-                    wait_time = RETRY_DELAY * (attempt + 1)
-                    logger.warning(
-                        f"NCBI transient error (attempt {attempt + 1}/{MAX_RETRIES}): {error_str}"
-                    )
-                    await asyncio.sleep(wait_time)
-                else:
-                    raise
-        raise last_error if last_error else Exception("Fetch failed after retries")
+        await _rate_limit()  # Rate limiting before API call
+        handle = await asyncio.to_thread(
+            Entrez.efetch, db="pubmed", id=id_list, retmode="xml"
+        )
+        papers = await asyncio.to_thread(Entrez.read, handle)
+        handle.close()
+        return papers
 
     async def fetch_details(self, id_list: List[str]) -> List[Dict[str, Any]]:
         """

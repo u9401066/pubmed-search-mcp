@@ -26,7 +26,7 @@ pytestmark = pytest.mark.slow
 class TestSearchPerformance:
     """Test search operation performance."""
 
-    async def test_search_response_time(self, benchmark, mock_searcher):
+    async def test_search_response_time(self, mock_searcher):
         """Search should complete within acceptable time."""
         with patch(
             "pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher",
@@ -34,13 +34,13 @@ class TestSearchPerformance:
         ):
             client = PubMedClient(email="test@example.com")
 
-            # Benchmark the search operation
-            result = benchmark(client.search, query="diabetes", limit=10)
+            # Directly await the search operation
+            result = await client.search(query="diabetes", limit=10)
 
             # Verify results returned
             assert len(result) > 0
 
-    async def test_batch_fetch_performance(self, benchmark, mock_searcher):
+    async def test_batch_fetch_performance(self, mock_searcher):
         """Batch fetching should be efficient."""
         pmids = [str(i) for i in range(1000000, 1000010)]  # 10 PMIDs
 
@@ -50,8 +50,8 @@ class TestSearchPerformance:
         ):
             client = PubMedClient(email="test@example.com")
 
-            # Benchmark batch fetch
-            result = benchmark(client.fetch_details, pmids=pmids)
+            # Directly await batch fetch
+            result = await client.fetch_details(pmids=pmids)
 
             assert len(result) > 0
 
@@ -80,7 +80,7 @@ class TestSearchPerformance:
             ]
 
             for query in queries:
-                client.search(query=query, limit=5)
+                await client.search(query=query, limit=5)
 
             elapsed = time.perf_counter() - start_time
 
@@ -102,14 +102,14 @@ class TestSearchPerformance:
             client = PubMedClient(email="test@example.com")
 
             # Should complete within timeout
-            result = client.search("diabetes", limit=1)
+            result = await client.search("diabetes", limit=1)
             assert len(result) > 0
 
 
 class TestCachePerformance:
     """Test caching efficiency."""
 
-    async def test_cache_hit_performance(self, benchmark, mock_searcher):
+    async def test_cache_hit_performance(self, mock_searcher):
         """Cached results should be much faster than API calls."""
         from pubmed_search.application.session import SessionManager
 
@@ -126,11 +126,8 @@ class TestCachePerformance:
         session_mgr.add_to_cache([article_data])
 
         # Benchmark cache retrieval
-        def get_cached():
-            found, missing = session_mgr.get_from_cache(["12345678"])
-            return found[0] if found else None
-
-        result = benchmark(get_cached)
+        found, missing = session_mgr.get_from_cache(["12345678"])
+        result = found[0] if found else None
         assert result is not None
         assert result["pmid"] == "12345678"
 
@@ -184,7 +181,7 @@ class TestMemoryUsage:
             client = PubMedClient(email="test@example.com")
 
             # Process large result set
-            results = client.search("test", limit=100)
+            results = await client.search("test", limit=100)
 
             # Verify data integrity
             assert len(results) == 100
@@ -212,7 +209,7 @@ class TestAPIRateLimiting:
 
             # Make 10 rapid requests
             for i in range(10):
-                client.search(f"query{i}", limit=1)
+                await client.search(f"query{i}", limit=1)
 
             elapsed = time.perf_counter() - start_time
 
@@ -235,7 +232,7 @@ class TestAPIRateLimiting:
 
             for query in queries:
                 try:
-                    result = client.search(query, limit=1)
+                    result = await client.search(query, limit=1)
                     results.append(result)
                 except Exception as e:
                     pytest.fail(f"Burst request failed: {e}")
@@ -252,7 +249,7 @@ class TestAPIRateLimiting:
 class TestPerformanceRegression:
     """Detect performance regressions."""
 
-    async def test_search_baseline_performance(self, benchmark, mock_searcher):
+    async def test_search_baseline_performance(self, mock_searcher):
         """Establish baseline for search performance."""
         with patch(
             "pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher",
@@ -260,15 +257,14 @@ class TestPerformanceRegression:
         ):
             client = PubMedClient(email="test@example.com")
 
-            # Run benchmark
-            benchmark.pedantic(
-                lambda: client.search("diabetes", limit=10), rounds=10, iterations=5
-            )
+            # Run multiple iterations directly
+            for _ in range(50):
+                await client.search("diabetes", limit=10)
 
             # Log performance metrics for monitoring
             # In real CI/CD, these would be compared against historical data
 
-    async def test_complex_query_performance(self, benchmark, mock_searcher):
+    async def test_complex_query_performance(self, mock_searcher):
         """Complex queries should not degrade performance significantly."""
         complex_query = (
             '("Diabetes Mellitus"[MeSH Terms]) AND '
@@ -282,7 +278,7 @@ class TestPerformanceRegression:
         ):
             client = PubMedClient(email="test@example.com")
 
-            result = benchmark(client.search, query=complex_query, limit=20)
+            result = await client.search(query=complex_query, limit=20)
 
             # Verify results
             assert len(result) > 0
@@ -310,7 +306,7 @@ class TestScalability:
             client = PubMedClient(email="test@example.com")
 
             start = time.perf_counter()
-            results = client.search("test", limit=limit)
+            results = await client.search("test", limit=limit)
             elapsed = time.perf_counter() - start
 
             # Should complete quickly even with large limits

@@ -8,7 +8,7 @@ This tests the unified search gateway which provides:
 """
 
 import pytest
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 from mcp.server.fastmcp import FastMCP
 
 
@@ -186,7 +186,7 @@ class TestSourceSearchFunctions:
         """_search_pubmed should work with mock searcher."""
         from pubmed_search.presentation.mcp_server.tools.unified import _search_pubmed
 
-        mock_searcher = Mock()
+        mock_searcher = AsyncMock()
         mock_searcher.search.return_value = []
 
         results = await _search_pubmed(
@@ -205,7 +205,7 @@ class TestSourceSearchFunctions:
         """_search_pubmed should handle exceptions gracefully."""
         from pubmed_search.presentation.mcp_server.tools.unified import _search_pubmed
 
-        mock_searcher = Mock()
+        mock_searcher = AsyncMock()
         mock_searcher.search.side_effect = Exception("API error")
 
         results = await _search_pubmed(

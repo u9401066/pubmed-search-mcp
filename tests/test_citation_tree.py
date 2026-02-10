@@ -141,7 +141,8 @@ async def test_full_tree():
     seen = set()
 
     # Root
-    root = await searcher.fetch_details([pmid])[0]
+    details = await searcher.fetch_details([pmid])
+    root = details[0]
     nodes.append(_make_node(root, 0, "root"))
     seen.add(pmid)
     print(f"\n    Root: {root.get('title', '?')[:50]}...")
@@ -187,13 +188,15 @@ async def test_full_tree():
 
 
 if __name__ == "__main__":
+    import asyncio
+
     print("\n" + "=" * 60)
     print("   CITATION TREE TEST SUITE")
     print("=" * 60)
 
-    test_basic_apis()
-    test_format_converters()
-    test_full_tree()
+    asyncio.run(test_basic_apis())
+    asyncio.run(test_format_converters())
+    asyncio.run(test_full_tree())
 
     print("\n" + "=" * 60)
     print("   ALL TESTS COMPLETED!")

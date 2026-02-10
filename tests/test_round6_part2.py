@@ -237,7 +237,7 @@ class TestGetUnpaywallLinks:
         with patch(
             "pubmed_search.infrastructure.sources.unpaywall.get_unpaywall_client"
         ) as mock_get:
-            mock_client = Mock()
+            mock_client = AsyncMock()
             mock_client.get_oa_status.return_value = {
                 "is_oa": True,
                 "oa_status": "gold",
@@ -268,7 +268,7 @@ class TestGetUnpaywallLinks:
         with patch(
             "pubmed_search.infrastructure.sources.unpaywall.get_unpaywall_client"
         ) as mock_get:
-            mock_client = Mock()
+            mock_client = AsyncMock()
             mock_client.get_oa_status.return_value = {"is_oa": False}
             mock_get.return_value = mock_client
 
@@ -293,7 +293,7 @@ class TestGetCoreLinks:
         with patch(
             "pubmed_search.infrastructure.sources.core.get_core_client"
         ) as mock_get:
-            mock_client = Mock()
+            mock_client = AsyncMock()
             mock_client.search.return_value = {
                 "results": [{"downloadUrl": "https://core.ac.uk/download/12345.pdf"}]
             }
@@ -316,7 +316,7 @@ class TestGetCoreLinks:
         with patch(
             "pubmed_search.infrastructure.sources.core.get_core_client"
         ) as mock_get:
-            mock_client = Mock()
+            mock_client = AsyncMock()
             mock_client.search.return_value = {"results": []}
             mock_get.return_value = mock_client
 

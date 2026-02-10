@@ -13,13 +13,13 @@ Features:
 - Free API key required for better rate limits
 """
 
-import asyncio
 import logging
-import time
 import urllib.parse
 from typing import Any
 
 import httpx
+
+from pubmed_search.infrastructure.sources.base_client import BaseAPIClient, _CONTINUE
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ CORE_API_BASE = "https://api.core.ac.uk/v3"
 DEFAULT_EMAIL = "pubmed-search-mcp@example.com"
 
 
-class COREClient:
+class COREClient(BaseAPIClient):
     """
     CORE API client for open access research.
 
@@ -44,6 +44,8 @@ class COREClient:
         results = client.search("machine learning", limit=10)
         work = client.get_work(152480964)
     """
+
+    _service_name = "CORE API"
 
     def __init__(
         self,
@@ -61,76 +63,37 @@ class COREClient:
         """
         self._api_key = api_key
         self._email = email or DEFAULT_EMAIL
-        self._timeout = timeout
-        self._last_request_time = 0
-        # Rate limit: 10/min without key, 25/min with key
-        self._min_interval = 6.0 if not api_key else 2.5
-        self._client = httpx.AsyncClient(
-            timeout=self._timeout,
+        super().__init__(
+            timeout=timeout,
+            min_interval=6.0 if not api_key else 2.5,
             headers={
                 "User-Agent": f"pubmed-search-mcp/1.0 (mailto:{self._email})",
                 "Accept": "application/json",
             },
         )
 
-    async def _rate_limit(self):
-        """Simple rate limiting."""
-        elapsed = time.time() - self._last_request_time
-        if elapsed < self._min_interval:
-            await asyncio.sleep(self._min_interval - elapsed)
-        self._last_request_time = time.time()
+    async def _execute_request(
+        self,
+        url: str,
+        *,
+        method: str = "GET",
+        data: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> Any:
+        """Add Bearer authorization header for API key."""
+        req_headers = dict(headers or {})
+        if self._api_key:
+            req_headers["Authorization"] = f"Bearer {self._api_key}"
+        return await super()._execute_request(
+            url, method=method, data=data, headers=req_headers
+        )
 
-    _MAX_RETRIES = 3
-
-    async def _make_request(
-        self, url: str, method: str = "GET", data: dict | None = None
-    ) -> dict | None:
-        """Make HTTP request to CORE API with retry on 429."""
-        for attempt in range(self._MAX_RETRIES + 1):
-            await self._rate_limit()
-            headers = {}
-            if self._api_key:
-                headers["Authorization"] = f"Bearer {self._api_key}"
-            try:
-                if method == "POST" and data:
-                    headers["Content-Type"] = "application/json"
-                    response = await self._client.post(url, json=data, headers=headers)
-                else:
-                    response = await self._client.get(url, headers=headers)
-
-                if response.status_code == 401:
-                    logger.error("CORE API: Unauthorized - check your API key")
-                    return None
-                if response.status_code == 429:
-                    if attempt < self._MAX_RETRIES:
-                        try:
-                            retry_after = float(
-                                response.headers.get("Retry-After", 2 ** (attempt + 1))
-                            )
-                        except (ValueError, TypeError):
-                            retry_after = float(2 ** (attempt + 1))
-                        logger.warning(
-                            f"CORE API: Rate limited (429), retry {attempt + 1}/{self._MAX_RETRIES} "
-                            f"in {retry_after:.1f}s"
-                        )
-                        await asyncio.sleep(retry_after)
-                        continue
-                    logger.warning("CORE API: Rate limit exceeded after retries")
-                    return None
-                response.raise_for_status()
-                return response.json()
-            except httpx.HTTPStatusError as e:
-                logger.error(
-                    f"CORE API HTTP error {e.response.status_code}: {e.response.reason_phrase}"
-                )
-                return None
-            except httpx.RequestError as e:
-                logger.error(f"CORE API URL error: {e}")
-                return None
-            except Exception as e:
-                logger.error(f"CORE API request failed: {e}")
-                return None
-        return None
+    def _handle_expected_status(self, response: httpx.Response, url: str) -> Any:
+        """Handle 401 (unauthorized - bad API key)."""
+        if response.status_code == 401:
+            logger.error("CORE API: Unauthorized - check your API key")
+            return None
+        return _CONTINUE
 
     async def search(
         self,
@@ -437,16 +400,6 @@ class COREClient:
             normalized["repository_url"] = first_repo.get("urlHomepage")
 
         return normalized
-
-    async def close(self):
-        """Close the HTTP client."""
-        await self._client.aclose()
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *args):
-        await self.close()
 
 
 # Singleton instance

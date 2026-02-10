@@ -59,6 +59,7 @@ import asyncio
 import json
 import logging
 import re
+from dataclasses import dataclass, field
 from typing import Literal, Union
 
 from mcp.server.fastmcp import FastMCP
@@ -76,6 +77,7 @@ from pubmed_search.application.search.result_aggregator import (
 )
 from pubmed_search.application.search.semantic_enhancer import (
     EnhancedQuery,
+    SearchPlan,
     get_semantic_enhancer,
 )
 from pubmed_search.domain.entities.article import UnifiedArticle
@@ -272,6 +274,622 @@ class DispatchStrategy:
 
 
 # ============================================================================
+# Auto Search Relaxation
+# ============================================================================
+
+# Pattern matching PubMed field tags like [Title], [tiab], [MeSH Terms], etc.
+_FIELD_TAG_PATTERN = re.compile(
+    r"\s*\[(?:Title|tiab|Title/Abstract|MeSH Terms?|All Fields|pt|"
+    r"Author|Journal|Affiliation|Publication Type|"
+    r"MeSH Major Topic|MeSH Subheading|dp)\]",
+    re.IGNORECASE,
+)
+
+# Publication type filters like "randomized controlled trial[pt]"
+_PUB_TYPE_FILTER_PATTERN = re.compile(
+    r"\s+AND\s+(?:\()?(?:randomized controlled trial|meta-analysis|"
+    r"systematic review|clinical trial|review|case reports?)"
+    r"(?:\[pt\])?(?:\s+OR\s+(?:randomized controlled trial|meta-analysis|"
+    r"systematic review|clinical trial|review|case reports?)"
+    r"(?:\[pt\])?)*(?:\))?",
+    re.IGNORECASE,
+)
+
+# Stop words to filter when extracting core keywords
+_STOP_WORDS = frozenset(
+    {
+        "in",
+        "of",
+        "for",
+        "the",
+        "a",
+        "an",
+        "and",
+        "or",
+        "with",
+        "to",
+        "on",
+        "by",
+        "is",
+        "vs",
+        "versus",
+        "from",
+        "at",
+        "as",
+        "not",
+        "between",
+        "during",
+        "after",
+        "before",
+        "using",
+        "through",
+        "about",
+        "into",
+    }
+)
+
+
+# ============================================================================
+# Search Depth Metrics (Quantified Deep Search)
+# ============================================================================
+
+
+@dataclass
+class StrategyResult:
+    """Result from executing one search strategy."""
+
+    strategy_name: str
+    query: str
+    source: str
+    articles_count: int
+    expected_precision: float
+    expected_recall: float
+    execution_time_ms: float = 0.0
+
+
+@dataclass
+class SearchDepthMetrics:
+    """
+    Quantified metrics for search depth.
+
+    This answers the question: "How deep was this search?"
+    """
+
+    # Semantic Enhancement
+    entities_resolved: int = 0  # PubTator3 entities found
+    mesh_terms_used: int = 0  # MeSH terms in search
+    synonyms_expanded: int = 0  # Synonym expansions
+
+    # Strategy Execution
+    strategies_generated: int = 0  # How many strategies were planned
+    strategies_executed: int = 0  # How many actually ran
+    strategies_with_results: int = 0  # How many returned results
+
+    # Coverage Metrics
+    estimated_recall: float = 0.0  # Combined recall estimate (0-1)
+    estimated_precision: float = 0.0  # Combined precision estimate (0-1)
+    depth_score: float = 0.0  # Overall depth score (0-100)
+
+    # Strategy Details
+    strategy_results: list[StrategyResult] = field(default_factory=list)
+
+    def calculate_depth_score(self) -> float:
+        """
+        Calculate overall search depth score (0-100).
+
+        Factors:
+        - Entity resolution: up to 30 points (semantic understanding)
+        - MeSH coverage: up to 30 points (standardized vocabulary)
+        - Strategy diversity: up to 20 points (multiple approaches)
+        - Recall estimate: up to 20 points (coverage)
+        """
+        entity_score = min(30, self.entities_resolved * 10)
+        mesh_score = min(30, self.mesh_terms_used * 10)
+        strategy_score = min(20, self.strategies_with_results * 5)
+        recall_score = self.estimated_recall * 20
+
+        self.depth_score = entity_score + mesh_score + strategy_score + recall_score
+        return self.depth_score
+
+    def to_dict(self) -> dict:
+        """Convert to dictionary for JSON output."""
+        return {
+            "entities_resolved": self.entities_resolved,
+            "mesh_terms_used": self.mesh_terms_used,
+            "synonyms_expanded": self.synonyms_expanded,
+            "strategies_generated": self.strategies_generated,
+            "strategies_executed": self.strategies_executed,
+            "strategies_with_results": self.strategies_with_results,
+            "estimated_recall": round(self.estimated_recall, 2),
+            "estimated_precision": round(self.estimated_precision, 2),
+            "depth_score": round(self.depth_score, 1),
+            "strategy_results": [
+                {
+                    "name": s.strategy_name,
+                    "query": s.query[:100] + "..." if len(s.query) > 100 else s.query,
+                    "source": s.source,
+                    "articles": s.articles_count,
+                }
+                for s in self.strategy_results
+            ],
+        }
+
+    def summary(self) -> str:
+        """Human-readable summary."""
+        self.calculate_depth_score()
+        level = (
+            "🟢 Deep"
+            if self.depth_score >= 60
+            else "🟡 Moderate"
+            if self.depth_score >= 30
+            else "🔴 Shallow"
+        )
+        return (
+            f"{level} (Score: {self.depth_score:.0f}/100) | "
+            f"Entities: {self.entities_resolved}, MeSH: {self.mesh_terms_used}, "
+            f"Strategies: {self.strategies_with_results}/{self.strategies_executed}"
+        )
+
+
+@dataclass
+class RelaxationStep:
+    """Describes one step of query relaxation."""
+
+    level: int
+    action: str
+    description: str
+    query: str
+    min_year: int | None = None
+    max_year: int | None = None
+    advanced_filters: dict = field(default_factory=dict)
+    result_count: int = 0
+
+
+@dataclass
+class RelaxationResult:
+    """Result of auto-relaxation process."""
+
+    original_query: str
+    relaxed_query: str
+    steps_tried: list[RelaxationStep]
+    successful_step: RelaxationStep | None
+    total_results: int
+
+
+def _generate_relaxation_steps(
+    query: str,
+    min_year: int | None,
+    max_year: int | None,
+    advanced_filters: dict,
+) -> list[RelaxationStep]:
+    """Generate progressive relaxation steps from narrow to broad.
+
+    Scope ordering principle (narrow → broad):
+      Level 1: Remove advanced clinical filters (least core impact)
+      Level 2: Remove year constraints
+      Level 3: Remove publication type filters (e.g., AND RCT[pt])
+      Level 4: Remove PubMed field tags ([Title], [MeSH Terms], etc.)
+      Level 5: Relax Boolean logic (AND → OR)
+      Level 6: Extract core keywords only (most broad)
+
+    Only generates steps that are actually applicable to the given query.
+    """
+    steps: list[RelaxationStep] = []
+    level = 1
+
+    current_query = query
+    current_min_year = min_year
+    current_max_year = max_year
+    current_filters = dict(advanced_filters)
+
+    # --- Level 1: Remove advanced filters ---
+    active_filters = {k: v for k, v in current_filters.items() if v is not None}
+    if active_filters:
+        filter_names = ", ".join(f"{k}={v}" for k, v in active_filters.items())
+        steps.append(
+            RelaxationStep(
+                level=level,
+                action="remove_advanced_filters",
+                description=f"移除進階篩選條件: {filter_names}",
+                query=current_query,
+                min_year=current_min_year,
+                max_year=current_max_year,
+                advanced_filters={},
+            )
+        )
+        current_filters = {}
+        level += 1
+
+    # --- Level 2: Remove year constraints ---
+    if current_min_year or current_max_year:
+        year_parts = []
+        if current_min_year:
+            year_parts.append(f"min_year={current_min_year}")
+        if current_max_year:
+            year_parts.append(f"max_year={current_max_year}")
+        steps.append(
+            RelaxationStep(
+                level=level,
+                action="remove_year_filter",
+                description=f"移除年份限制: {', '.join(year_parts)}",
+                query=current_query,
+                min_year=None,
+                max_year=None,
+                advanced_filters=current_filters,
+            )
+        )
+        current_min_year = None
+        current_max_year = None
+        level += 1
+
+    # --- Level 3: Remove publication type filters ---
+    if _PUB_TYPE_FILTER_PATTERN.search(current_query):
+        relaxed = _PUB_TYPE_FILTER_PATTERN.sub("", current_query).strip()
+        relaxed = re.sub(r"\s+", " ", relaxed).strip()
+        if relaxed and relaxed != current_query:
+            steps.append(
+                RelaxationStep(
+                    level=level,
+                    action="remove_pub_type_filter",
+                    description="移除出版類型篩選 (如 RCT, Meta-analysis 等)",
+                    query=relaxed,
+                    min_year=current_min_year,
+                    max_year=current_max_year,
+                    advanced_filters=current_filters,
+                )
+            )
+            current_query = relaxed
+            level += 1
+
+    # --- Level 4: Remove field tags ---
+    if _FIELD_TAG_PATTERN.search(current_query):
+        relaxed = _FIELD_TAG_PATTERN.sub("", current_query)
+        # Clean up leftover parentheses and whitespace
+        relaxed = re.sub(r"\(\s*\)", "", relaxed)
+        relaxed = re.sub(r"\s+", " ", relaxed).strip()
+        # Remove leading/trailing Boolean operators
+        relaxed = re.sub(r"^\s*(AND|OR)\s+", "", relaxed, flags=re.IGNORECASE)
+        relaxed = re.sub(r"\s+(AND|OR)\s*$", "", relaxed, flags=re.IGNORECASE)
+        if relaxed and relaxed != current_query:
+            steps.append(
+                RelaxationStep(
+                    level=level,
+                    action="remove_field_tags",
+                    description="移除 PubMed 欄位限制 (如 [Title], [MeSH Terms])",
+                    query=relaxed,
+                    min_year=current_min_year,
+                    max_year=current_max_year,
+                    advanced_filters=current_filters,
+                )
+            )
+            current_query = relaxed
+            level += 1
+
+    # --- Level 5: AND → OR ---
+    if re.search(r"\bAND\b", current_query, re.IGNORECASE):
+        relaxed = re.sub(r"\s+AND\s+", " OR ", current_query, flags=re.IGNORECASE)
+        steps.append(
+            RelaxationStep(
+                level=level,
+                action="and_to_or",
+                description="放寬布林邏輯: AND → OR (任一關鍵字即可匹配)",
+                query=relaxed,
+                min_year=current_min_year,
+                max_year=current_max_year,
+                advanced_filters=current_filters,
+            )
+        )
+        current_query = relaxed
+        level += 1
+
+    # --- Level 6: Core keywords only ---
+    # Strip all operators, quotes, parentheses, field tags
+    core = re.sub(r'"([^"]+)"', r"\1", current_query)  # unquote
+    core = re.sub(r"\b(AND|OR|NOT)\b", " ", core, flags=re.IGNORECASE)
+    core = re.sub(r"[\[\]()\"']", " ", core)
+    core = re.sub(r"\s+", " ", core).strip()
+
+    words = core.split()
+    significant = [w for w in words if w.lower() not in _STOP_WORDS and len(w) > 2]
+
+    if len(significant) > 2:
+        # Keep at most 2-3 core keywords
+        core_keywords = significant[:3]
+        core_query = " ".join(core_keywords)
+        if core_query.lower() != current_query.lower().strip():
+            steps.append(
+                RelaxationStep(
+                    level=level,
+                    action="core_keywords_only",
+                    description=f"簡化為核心關鍵字: {core_query}",
+                    query=core_query,
+                    min_year=None,
+                    max_year=None,
+                    advanced_filters={},
+                )
+            )
+
+    return steps
+
+
+async def _auto_relax_search(
+    searcher: LiteratureSearcher,
+    query: str,
+    limit: int,
+    min_year: int | None,
+    max_year: int | None,
+    advanced_filters: dict,
+) -> RelaxationResult | None:
+    """Progressively relax search query until results are found.
+
+    Only re-searches PubMed (primary source) for efficiency.
+
+    Returns:
+        RelaxationResult if relaxation was attempted, None if no steps available.
+    """
+    steps = _generate_relaxation_steps(query, min_year, max_year, advanced_filters)
+
+    if not steps:
+        return None
+
+    result = RelaxationResult(
+        original_query=query,
+        relaxed_query=query,
+        steps_tried=[],
+        successful_step=None,
+        total_results=0,
+    )
+
+    for step in steps:
+        try:
+            articles, total_count = await _search_pubmed(
+                searcher,
+                step.query,
+                limit,
+                step.min_year,
+                step.max_year,
+                **step.advanced_filters,
+            )
+            step.result_count = len(articles)
+            result.steps_tried.append(step)
+
+            if articles:
+                result.successful_step = step
+                result.relaxed_query = step.query
+                result.total_results = total_count or len(articles)
+                logger.info(
+                    f"Auto-relaxation succeeded at level {step.level} "
+                    f"({step.action}): {len(articles)} results"
+                )
+                return result
+
+            logger.debug(
+                f"Relaxation level {step.level} ({step.action}): still 0 results"
+            )
+
+        except Exception as e:
+            logger.warning(f"Relaxation level {step.level} failed: {e}")
+            step.result_count = 0
+            result.steps_tried.append(step)
+
+    # All steps tried, still 0 results
+    return result
+
+
+# ============================================================================
+# Deep Multi-Strategy Search
+# ============================================================================
+
+
+async def _execute_deep_search(
+    searcher: LiteratureSearcher,
+    enhanced_query: EnhancedQuery,
+    limit: int,
+    min_year: int | None,
+    max_year: int | None,
+    advanced_filters: dict,
+) -> tuple[list[list[UnifiedArticle]], SearchDepthMetrics, int | None]:
+    """
+    Execute true deep search using ALL strategies from SemanticEnhancer.
+
+    This is the core of "deep search" - we don't just throw keywords at API,
+    we execute multiple semantically-aware strategies in parallel.
+
+    Args:
+        searcher: PubMed searcher instance
+        enhanced_query: Result from SemanticEnhancer with entities and strategies
+        limit: Max results per strategy
+        min_year, max_year: Year filters
+        advanced_filters: Additional PubMed filters
+
+    Returns:
+        Tuple of (all_results, depth_metrics, pubmed_total_count)
+    """
+    import time
+
+    metrics = SearchDepthMetrics()
+
+    # Populate metrics from enhanced_query
+    metrics.entities_resolved = len(enhanced_query.entities)
+    metrics.mesh_terms_used = len([e for e in enhanced_query.entities if e.mesh_id])
+    metrics.synonyms_expanded = len(
+        [t for t in enhanced_query.expanded_terms if t.source != "original"]
+    )
+    metrics.strategies_generated = len(enhanced_query.strategies)
+
+    all_results: list[list[UnifiedArticle]] = []
+    pubmed_total_count: int | None = None
+    total_precision = 0.0
+    total_recall = 0.0
+
+    # Execute each strategy
+    strategies = enhanced_query.strategies or [
+        # Fallback: at least search original query
+        SearchPlan(
+            name="original",
+            query=enhanced_query.original_query,
+            source="pubmed",
+            priority=1,
+            expected_precision=0.5,
+            expected_recall=0.5,
+        )
+    ]
+
+    # Sort by priority (highest first)
+    strategies = sorted(strategies, key=lambda s: s.priority, reverse=True)
+
+    async def execute_strategy(
+        strategy: SearchPlan,
+    ) -> tuple[StrategyResult, list[UnifiedArticle], int | None]:
+        """Execute one strategy and return results."""
+        start_time = time.perf_counter()
+        articles: list[UnifiedArticle] = []
+        total_count: int | None = None
+
+        try:
+            if strategy.source == "pubmed":
+                articles, total_count = await _search_pubmed(
+                    searcher,
+                    strategy.query,
+                    limit,
+                    min_year,
+                    max_year,
+                    **advanced_filters,
+                )
+            elif strategy.source == "europe_pmc":
+                articles, total_count = await _search_europe_pmc(
+                    strategy.query,
+                    limit,
+                    min_year,
+                    max_year,
+                )
+            elif strategy.source == "openalex":
+                articles, total_count = await _search_openalex(
+                    strategy.query,
+                    limit,
+                    min_year,
+                    max_year,
+                )
+            # Add more sources as needed
+
+        except Exception as e:
+            logger.warning(f"Strategy '{strategy.name}' failed: {e}")
+
+        elapsed_ms = (time.perf_counter() - start_time) * 1000
+
+        result = StrategyResult(
+            strategy_name=strategy.name,
+            query=strategy.query,
+            source=strategy.source,
+            articles_count=len(articles),
+            expected_precision=strategy.expected_precision,
+            expected_recall=strategy.expected_recall,
+            execution_time_ms=elapsed_ms,
+        )
+
+        return result, articles, total_count
+
+    # Execute all strategies in parallel
+    tasks = [execute_strategy(s) for s in strategies]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    for result in results:
+        if isinstance(result, Exception):
+            logger.error(f"Strategy execution error: {result}")
+            continue
+
+        # Type narrowing: result is now tuple, not Exception
+        strategy_result, articles, total_count = result  # type: ignore[misc]
+        metrics.strategy_results.append(strategy_result)
+        metrics.strategies_executed += 1
+
+        if articles:
+            all_results.append(articles)
+            metrics.strategies_with_results += 1
+            total_precision += strategy_result.expected_precision
+            total_recall += strategy_result.expected_recall
+
+            # Keep first PubMed total count
+            if total_count and pubmed_total_count is None:
+                pubmed_total_count = total_count
+
+    # Calculate combined metrics
+    if metrics.strategies_with_results > 0:
+        # Combined recall: 1 - (1-r1)(1-r2)... (probability of finding at least once)
+        combined_recall = 1.0
+        for sr in metrics.strategy_results:
+            if sr.articles_count > 0:
+                combined_recall *= 1 - sr.expected_recall
+        metrics.estimated_recall = 1 - combined_recall
+
+        # Average precision (weighted by articles found)
+        total_articles = sum(sr.articles_count for sr in metrics.strategy_results)
+        if total_articles > 0:
+            weighted_precision = sum(
+                sr.expected_precision * sr.articles_count
+                for sr in metrics.strategy_results
+            )
+            metrics.estimated_precision = weighted_precision / total_articles
+    else:
+        metrics.estimated_recall = 0.0
+        metrics.estimated_precision = 0.0
+
+    metrics.calculate_depth_score()
+
+    logger.info(
+        f"Deep search: {metrics.strategies_executed} strategies, "
+        f"{metrics.strategies_with_results} with results, "
+        f"depth score: {metrics.depth_score:.0f}"
+    )
+
+    return all_results, metrics, pubmed_total_count
+
+
+async def _search_europe_pmc(
+    query: str,
+    limit: int,
+    min_year: int | None,
+    max_year: int | None,
+) -> tuple[list[UnifiedArticle], int | None]:
+    """Search Europe PMC and convert to UnifiedArticle.
+
+    Europe PMC's normalized format is compatible with PubMed format,
+    so we map a few fields and use from_pubmed() for conversion.
+    """
+    try:
+        results = await search_alternate_source(
+            query=query,
+            source="europe_pmc",
+            limit=limit,
+            min_year=min_year,
+            max_year=max_year,
+        )
+
+        articles = []
+        for r in results:
+            # Map Europe PMC fields to PubMed expected format
+            if "pmc_id" in r and not r.get("pmc"):
+                r["pmc"] = r["pmc_id"]
+            if "journal_abbrev" in r and not r.get("source"):
+                r["source"] = r["journal_abbrev"]
+            # Mark as coming from Europe PMC for source tracking
+            r["_source_origin"] = "europe_pmc"
+
+            try:
+                article = UnifiedArticle.from_pubmed(r)
+                # Override primary source to reflect true origin
+                article.primary_source = "europe_pmc"
+                articles.append(article)
+            except Exception as e:
+                logger.warning(f"Failed to convert Europe PMC result: {e}")
+
+        return articles, None
+    except Exception as e:
+        logger.error(f"Europe PMC search failed: {e}")
+        return [], None
+
+
+# ============================================================================
 # Source Search Functions
 # ============================================================================
 
@@ -429,7 +1047,8 @@ async def _enrich_with_crossref(articles: list[UnifiedArticle]) -> None:
             if isinstance(result, Exception):
                 logger.debug(f"CrossRef enrichment skipped: {result}")
                 continue
-            idx, work = result
+            # Type narrowing: result is now tuple, not Exception
+            idx, work = result  # type: ignore[misc]
             if work:
                 try:
                     crossref_article = UnifiedArticle.from_crossref(work)
@@ -482,7 +1101,8 @@ async def _enrich_with_unpaywall(articles: list[UnifiedArticle]) -> None:
             if isinstance(result, Exception):
                 logger.debug(f"Unpaywall enrichment skipped: {result}")
                 continue
-            idx, oa_info = result
+            # Type narrowing: result is now tuple, not Exception
+            idx, oa_info = result  # type: ignore[misc]
             if oa_info:
                 try:
                     from pubmed_search.domain.entities.article import (
@@ -657,6 +1277,8 @@ async def _format_unified_results(
     include_trials: bool = True,
     original_query: str = "",
     enhanced_entities: list[str] | None = None,
+    relaxation_result: RelaxationResult | None = None,
+    deep_search_metrics: SearchDepthMetrics | None = None,
 ) -> str:
     """Format unified search results for MCP response."""
     output_parts: list[str] = []
@@ -686,6 +1308,15 @@ async def _format_unified_results(
                 entity_str += f" (+{len(enhanced_entities) - 5} more)"
             output_parts.append(f"**🧬 Entities**: {entity_str}")
 
+        # Deep Search Metrics (if enabled)
+        if deep_search_metrics:
+            output_parts.append(
+                f"**🔬 深度搜索**: "
+                f"Depth Score {deep_search_metrics.depth_score:.0f}/100 | "
+                f"{deep_search_metrics.strategies_executed}/{deep_search_metrics.strategies_generated} 策略執行 | "
+                f"估計召回率 {deep_search_metrics.estimated_recall:.0%}"
+            )
+
         output_parts.append(f"**Sources**: {', '.join(stats.by_source.keys())}")
 
         # Show total count info with PubMed total
@@ -697,6 +1328,50 @@ async def _format_unified_results(
             results_str = f"📊 返回 **{stats.unique_articles}** 篇 (PubMed 總共 **{pubmed_total_count}** 篇符合) | {stats.duplicates_removed} 去重"
         output_parts.append(f"**Results**: {results_str}")
         output_parts.append("")
+
+    # Relaxation info (if auto-relaxation was triggered)
+    if relaxation_result:
+        if relaxation_result.successful_step:
+            step = relaxation_result.successful_step
+            output_parts.append("### ⚠️ 搜尋自動放寬 (Auto-Relaxed)\n")
+            output_parts.append(
+                f"原始查詢 `{relaxation_result.original_query}` 返回 **0** 筆結果。"
+            )
+            output_parts.append(
+                f"已自動放寬至 **Level {step.level}**: {step.description}"
+            )
+            output_parts.append(f"放寬後查詢: `{relaxation_result.relaxed_query}`")
+
+            # Show all attempted steps for transparency
+            if len(relaxation_result.steps_tried) > 1:
+                output_parts.append("\n**放寬嘗試過程** (由窄到寬):")
+                for s in relaxation_result.steps_tried:
+                    status = (
+                        "✅"
+                        if s == relaxation_result.successful_step
+                        else "❌ 0 results"
+                    )
+                    output_parts.append(
+                        f"  - Level {s.level} ({s.action}): {s.description} → {status}"
+                    )
+            output_parts.append("")
+        else:
+            # All steps tried, still 0
+            output_parts.append("### ⚠️ 搜尋自動放寬失敗\n")
+            output_parts.append(
+                f"原始查詢 `{relaxation_result.original_query}` 返回 **0** 筆結果。"
+            )
+            output_parts.append("已嘗試所有放寬策略，仍無結果。")
+            if relaxation_result.steps_tried:
+                output_parts.append("\n**已嘗試:**")
+                for s in relaxation_result.steps_tried:
+                    output_parts.append(
+                        f"  - Level {s.level}: {s.description} → ❌ 0 results"
+                    )
+            output_parts.append(
+                "\n**建議:** 嘗試不同的搜尋詞，或使用 `generate_search_queries()` 取得 MeSH 同義詞。"
+            )
+            output_parts.append("")
 
     # Articles
     if not articles:
@@ -862,17 +1537,79 @@ def _format_as_json(
     articles: list[UnifiedArticle],
     analysis: AnalyzedQuery,
     stats: AggregationStats,
+    relaxation_result: RelaxationResult | None = None,
+    deep_search_metrics: SearchDepthMetrics | None = None,
 ) -> str:
     """Format results as JSON for programmatic access."""
-    return json.dumps(
-        {
-            "analysis": analysis.to_dict(),
-            "statistics": stats.to_dict(),
-            "articles": [a.to_dict() for a in articles],
-        },
-        ensure_ascii=False,
-        indent=2,
-    )
+    result = {
+        "analysis": analysis.to_dict(),
+        "statistics": stats.to_dict(),
+        "articles": [a.to_dict() for a in articles],
+    }
+
+    # Add deep search metrics if available
+    if deep_search_metrics:
+        result["deep_search"] = {
+            "enabled": True,
+            "depth_score": deep_search_metrics.depth_score,
+            "entities_resolved": deep_search_metrics.entities_resolved,
+            "mesh_terms_used": deep_search_metrics.mesh_terms_used,
+            "synonyms_expanded": deep_search_metrics.synonyms_expanded,
+            "strategies_generated": deep_search_metrics.strategies_generated,
+            "strategies_executed": deep_search_metrics.strategies_executed,
+            "strategies_with_results": deep_search_metrics.strategies_with_results,
+            "estimated_recall": deep_search_metrics.estimated_recall,
+            "estimated_precision": deep_search_metrics.estimated_precision,
+            "strategy_results": [
+                {
+                    "name": sr.strategy_name,
+                    "query": sr.query,
+                    "source": sr.source,
+                    "articles_found": sr.articles_count,
+                    "execution_time_ms": sr.execution_time_ms,
+                }
+                for sr in deep_search_metrics.strategy_results
+            ],
+        }
+
+    if relaxation_result and relaxation_result.successful_step:
+        step = relaxation_result.successful_step
+        result["relaxation"] = {
+            "was_relaxed": True,
+            "original_query": relaxation_result.original_query,
+            "relaxed_query": relaxation_result.relaxed_query,
+            "successful_level": step.level,
+            "successful_action": step.action,
+            "description": step.description,
+            "steps_tried": [
+                {
+                    "level": s.level,
+                    "action": s.action,
+                    "description": s.description,
+                    "query": s.query,
+                    "result_count": s.result_count,
+                }
+                for s in relaxation_result.steps_tried
+            ],
+        }
+    elif relaxation_result and not relaxation_result.successful_step:
+        result["relaxation"] = {
+            "was_relaxed": False,
+            "original_query": relaxation_result.original_query,
+            "note": "All relaxation levels tried, still 0 results",
+            "steps_tried": [
+                {
+                    "level": s.level,
+                    "action": s.action,
+                    "description": s.description,
+                    "query": s.query,
+                    "result_count": s.result_count,
+                }
+                for s in relaxation_result.steps_tried
+            ],
+        }
+
+    return json.dumps(result, ensure_ascii=False, indent=2)
 
 
 # ============================================================================
@@ -903,6 +1640,10 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         clinical_query: Union[str, None] = None,
         # Preprint search (Phase 2.2)
         include_preprints: Union[bool, str] = False,
+        # Auto-relaxation (Phase 5.x)
+        auto_relax: Union[bool, str] = True,
+        # Deep search (Phase 3.x) - Use SemanticEnhancer strategies
+        deep_search: Union[bool, str] = True,
     ) -> str:
         """
         🔍 Unified Search - Single entry point for multi-source academic search.
@@ -992,6 +1733,28 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                            These are validated PubMed clinical query strategies for EBM.
             include_preprints: Also search preprint servers (arXiv, medRxiv, bioRxiv)
                               Default: False. Set True for cutting-edge research.
+            auto_relax: Automatically relax search when 0 results (default True).
+                        Progressive relaxation from narrow to broad:
+                        1. Remove advanced filters (age_group, clinical_query, etc.)
+                        2. Remove year constraints
+                        3. Remove publication type filters (RCT, Meta-analysis)
+                        4. Remove field tags ([Title], [MeSH Terms])
+                        5. Relax Boolean logic (AND → OR)
+                        6. Extract core keywords only
+                        Set False to get exact 0-result feedback without relaxation.
+            deep_search: Enable semantic deep search using PubTator3 and MeSH expansion
+                        (default True). When enabled, the search:
+                        - Resolves biomedical entities via PubTator3
+                        - Expands queries with MeSH terms and synonyms
+                        - Executes multiple search strategies in parallel:
+                          * Original query (baseline)
+                          * MeSH-expanded query (high precision)
+                          * Entity-semantic query (via PubTator3)
+                          * Europe PMC full-text search (high recall)
+                          * Broad Title/Abstract search (maximum recall)
+                        - Aggregates and deduplicates results from all strategies
+                        - Reports depth metrics (entities resolved, strategies executed)
+                        Set False for simple keyword-only search (faster but shallower).
 
         Returns:
             Formatted search results with:
@@ -1001,6 +1764,7 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             - Ranked articles with metadata
             - Open access links where available
             - Preprints (if include_preprints=True)
+            - Relaxation info (if auto_relax triggered)
         """
         logger.info(
             f"Unified search: query='{query}', limit={limit}, ranking='{ranking}'"
@@ -1030,6 +1794,8 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             include_preprints = InputNormalizer.normalize_bool(
                 include_preprints, default=False
             )
+            auto_relax = InputNormalizer.normalize_bool(auto_relax, default=True)
+            deep_search = InputNormalizer.normalize_bool(deep_search, default=True)
 
             # === Step 0.5: ICD Code Detection and Expansion ===
             icd_matches: list[dict] = []
@@ -1093,6 +1859,7 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             all_results: list[list[UnifiedArticle]] = []
             pubmed_total_count: int | None = None
             preprint_results: dict = {}
+            deep_search_metrics: SearchDepthMetrics | None = None
 
             # Build advanced filters dict for cleaner passing
             advanced_filters = {
@@ -1107,71 +1874,104 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 if v is not None
             }
 
-            # Async parallel search
-            async def search_source(
-                source: str,
-            ) -> tuple[str, list[UnifiedArticle], int | None]:
-                """Search a single source and return (source_name, articles, total_count)."""
-                effective_min_year = min_year or analysis.year_from
-                effective_max_year = max_year or analysis.year_to
+            effective_min_year = min_year or analysis.year_from
+            effective_max_year = max_year or analysis.year_to
 
-                if source == "pubmed":
-                    articles, total_count = await _search_pubmed(
-                        searcher,
-                        query,
-                        limit,
-                        effective_min_year,
-                        effective_max_year,
-                        **advanced_filters,
-                    )
-                    return ("pubmed", articles, total_count)
-
-                elif source == "openalex":
-                    articles, total_count = await _search_openalex(
-                        query,
-                        limit,
-                        effective_min_year,
-                        effective_max_year,
-                    )
-                    return ("openalex", articles, total_count)
-
-                elif source == "semantic_scholar":
-                    articles, total_count = await _search_semantic_scholar(
-                        query,
-                        limit,
-                        effective_min_year,
-                        effective_max_year,
-                    )
-                    return ("semantic_scholar", articles, total_count)
-
-                elif source == "crossref":
-                    # CrossRef is used for enrichment, not primary search
-                    return ("crossref", [], None)
-
-                return (source, [], None)
-
-            # Filter out crossref from parallel search (it's enrichment only)
-            search_sources = [s for s in sources if s != "crossref"]
-
-            # Execute searches in parallel with asyncio.gather
-            search_results = await asyncio.gather(
-                *[search_source(s) for s in search_sources],
-                return_exceptions=True,
-            )
-
-            for result in search_results:
-                if isinstance(result, Exception):
-                    logger.error(f"Search failed: {result}")
-                    continue
-                name, articles, total_count = result
-                if articles:
-                    all_results.append(articles)
-                if name == "pubmed" and total_count is not None:
-                    pubmed_total_count = total_count
+            # *** DEEP SEARCH: Use SemanticEnhancer strategies ***
+            if (
+                deep_search
+                and enhanced_query
+                and enhanced_query.strategies
+                and len(enhanced_query.strategies) > 0
+            ):
                 logger.info(
-                    f"{name}: {len(articles)} results"
-                    + (f" (total: {total_count})" if total_count else "")
+                    f"Executing DEEP SEARCH with {len(enhanced_query.strategies)} strategies"
                 )
+                (
+                    all_results,
+                    deep_search_metrics,
+                    pubmed_total_count,
+                ) = await _execute_deep_search(
+                    searcher,
+                    enhanced_query,
+                    limit,
+                    effective_min_year,
+                    effective_max_year,
+                    advanced_filters,
+                )
+                logger.info(
+                    f"Deep search: {deep_search_metrics.strategies_executed} strategies, "
+                    f"{deep_search_metrics.strategies_with_results} with results, "
+                    f"depth score: {deep_search_metrics.depth_score:.0f}"
+                )
+
+            else:
+                # *** FALLBACK: Traditional source-based search ***
+                logger.info("Using traditional source-based search (no deep search)")
+
+                # Async parallel search
+                async def search_source(
+                    source: str,
+                ) -> tuple[str, list[UnifiedArticle], int | None]:
+                    """Search a single source and return (source_name, articles, total_count)."""
+                    if source == "pubmed":
+                        articles, total_count = await _search_pubmed(
+                            searcher,
+                            query,
+                            limit,
+                            effective_min_year,
+                            effective_max_year,
+                            **advanced_filters,
+                        )
+                        return ("pubmed", articles, total_count)
+
+                    elif source == "openalex":
+                        articles, total_count = await _search_openalex(
+                            query,
+                            limit,
+                            effective_min_year,
+                            effective_max_year,
+                        )
+                        return ("openalex", articles, total_count)
+
+                    elif source == "semantic_scholar":
+                        articles, total_count = await _search_semantic_scholar(
+                            query,
+                            limit,
+                            effective_min_year,
+                            effective_max_year,
+                        )
+                        return ("semantic_scholar", articles, total_count)
+
+                    elif source == "crossref":
+                        # CrossRef is used for enrichment, not primary search
+                        return ("crossref", [], None)
+
+                    return (source, [], None)
+
+                # Filter out crossref from parallel search (it's enrichment only)
+                search_sources = [s for s in sources if s != "crossref"]
+
+                # Execute searches in parallel with asyncio.gather
+                search_results = await asyncio.gather(
+                    *[search_source(s) for s in search_sources],
+                    return_exceptions=True,
+                )
+
+                for result in search_results:
+                    if isinstance(result, Exception):
+                        logger.error(f"Search failed: {result}")
+                        continue
+                    # Type narrowing: result is now tuple, not Exception
+                    name, articles, total_count = result  # type: ignore[misc]
+                    if articles:
+                        all_results.append(articles)
+                    if name == "pubmed" and total_count is not None:
+                        pubmed_total_count = total_count
+                    logger.info(
+                        f"{name}: {len(articles)} results"
+                        + (f" (total: {total_count})" if total_count else "")
+                    )
 
             # === Step 4.5: Search Preprints (if enabled) ===
             if include_preprints:
@@ -1202,6 +2002,44 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 f"Aggregation: {stats.unique_articles} unique from {stats.total_input} total"
             )
 
+            # === Step 5.5: Auto-Relaxation (when 0 results) ===
+            relaxation_result: RelaxationResult | None = None
+
+            if (
+                auto_relax
+                and stats.unique_articles == 0
+                and not analysis.identifiers  # Don't relax PMID/DOI lookups
+            ):
+                logger.info("0 results — attempting auto-relaxation")
+                relaxation_result = await _auto_relax_search(
+                    searcher,
+                    query,
+                    limit,
+                    min_year or analysis.year_from,
+                    max_year or analysis.year_to,
+                    advanced_filters,
+                )
+
+                if relaxation_result and relaxation_result.successful_step:
+                    step = relaxation_result.successful_step
+                    # Re-aggregate with relaxed results
+                    relaxed_articles, _ = await _search_pubmed(
+                        searcher,
+                        step.query,
+                        limit,
+                        step.min_year,
+                        step.max_year,
+                        **step.advanced_filters,
+                    )
+                    all_results = [relaxed_articles]
+                    articles, stats = aggregator.aggregate(all_results)
+                    # Update pubmed_total_count
+                    pubmed_total_count = relaxation_result.total_results
+                    logger.info(
+                        f"Auto-relaxation: {stats.unique_articles} results "
+                        f"at level {step.level} ({step.action})"
+                    )
+
             # === Step 6: Enrich with CrossRef (if in sources) ===
             if "crossref" in sources:
                 await _enrich_with_crossref(articles)
@@ -1228,7 +2066,9 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
 
             # === Step 9: Format Output ===
             if output_format == "json":
-                return _format_as_json(ranked, analysis, stats)
+                return _format_as_json(
+                    ranked, analysis, stats, relaxation_result, deep_search_metrics
+                )
             else:
                 return await _format_unified_results(
                     ranked,
@@ -1243,6 +2083,8 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                     enhanced_entities=matched_entity_names
                     if matched_entity_names
                     else None,
+                    relaxation_result=relaxation_result,
+                    deep_search_metrics=deep_search_metrics,
                 )
 
         except Exception as e:

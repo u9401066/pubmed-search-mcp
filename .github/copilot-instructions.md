@@ -39,10 +39,90 @@ uv run ruff format .       # 格式化
 uv run mypy src/ tests/    # 型別檢查（含 src 和 tests）
 uv run pytest              # 測試
 uv run pytest --cov        # 覆蓋率
-uv run pytest --timeout=60 # 帶超時的測試
+uv run pytest --timeout=60 # 帶超時的測試（每個測試 60 秒上限）
 ```
 
 > ⚠️ **永遠不要**直接呼叫 `pytest`、`ruff`、`mypy`，一律使用 `uv run` 前綴。
+
+### ⏱️ 測試執行時間 (IMPORTANT - 請務必閱讀)
+
+本專案測試套件規模龐大（**30,000+ 行測試程式碼、2200+ 測試案例**），完整執行需要 **180~240 秒（3~4 分鐘）**。
+
+> 🚨 **常見錯誤**：設定 terminal timeout 為 60 秒就想看到結果 — 這會導致輸出被截斷，誤以為測試卡住或失敗！
+
+```bash
+# ✅ 正確：設定足夠的 timeout（至少 300 秒）
+# 在 terminal 工具中 timeout 應設定 300000+ ms
+uv run pytest tests/ --timeout=60 -q
+# ↑ --timeout=60 是「每個測試案例」的超時，整個套件仍需 180-240 秒完成
+
+# ✅ 正確：導向檔案避免 terminal buffer 溢出
+uv run pytest tests/ --timeout=60 -q --no-header 2>&1 > scripts/_tmp/test_result.txt
+# 等待 180-240 秒後再讀取結果
+
+# ❌ 錯誤：設定 timeout=60000ms 就期望看到完整結果
+# ❌ 錯誤：60 秒後看到空輸出就以為測試失敗
+```
+
+| 指標 | 數值 |
+|------|------|
+| 測試檔案數 | 60+ |
+| 測試案例數 | 2200+ |
+| 測試程式碼行數 | 30,000+ |
+| 完整執行時間 | 180~240 秒 |
+| 每個測試超時 | 60 秒 (`--timeout=60`) |
+| 建議 terminal timeout | 300,000+ ms |
+
+### 🔄 Async/Sync 測試一致性檢查 (MANDATORY)
+
+本專案使用 `asyncio_mode = "auto"`，所有 async 方法的測試必須正確使用 `await` 和 `AsyncMock`。
+**每次新增或修改測試時，必須執行** `scripts/check_async_tests.py` 確認無 async/sync 不一致。
+
+```bash
+# ✅ 必須在 commit 前執行
+uv run python scripts/check_async_tests.py
+
+# 詳細模式（查看每個問題的具體位置）
+uv run python scripts/check_async_tests.py --verbose
+
+# 自動修復 missing await（僅修復可安全自動修復的問題）
+uv run python scripts/check_async_tests.py --fix
+```
+
+#### 常見反模式與修正
+
+```python
+# ❌ 錯誤：使用 Mock() mock async 方法
+mock_searcher = Mock()
+mock_searcher.search.return_value = []
+result = await searcher.search(...)  # TypeError: can't await Mock
+
+# ✅ 正確：使用 AsyncMock()
+mock_searcher = AsyncMock()
+mock_searcher.search.return_value = []
+result = await searcher.search(...)  # 正常運作
+
+# ❌ 錯誤：忘記 await async 方法
+result = client.search(query="test")  # 返回 coroutine，非結果
+
+# ✅ 正確：加上 await
+result = await client.search(query="test")  # 返回實際結果
+
+# ❌ 錯誤：sync def 測試呼叫 async 方法
+def test_something():
+    result = client.search(...)  # 永遠不會正確執行
+
+# ✅ 正確：使用 async def
+async def test_something():
+    result = await client.search(...)
+```
+
+#### 檢查清單（每次寫測試時）
+
+- [ ] async 方法的 mock 是否使用 `AsyncMock()`？
+- [ ] 所有 async 方法呼叫是否加了 `await`？
+- [ ] 測試函數是否為 `async def`？（當測試呼叫 async 方法時）
+- [ ] `scripts/check_async_tests.py` 執行結果為 0 issues？
 
 ### 依賴管理檔案
 
@@ -162,8 +242,32 @@ src/pubmed_search/
 │   └── api/                # REST API
 └── shared/                 # 跨層共用
     ├── exceptions.py       # 例外處理
-    └── async_utils.py      # 非同步工具
+    └── async_utils.py      # 非同步工具 (CircuitBreaker, RateLimiter, etc.)
 ```
+
+### Source Client 設計模式 (BaseAPIClient)
+
+所有外部 API 客戶端（`infrastructure/sources/`）都繼承自 `BaseAPIClient`：
+
+```python
+# base_client.py 提供：
+# - 自動 retry on 429 (Rate Limit) + Retry-After 支援
+# - Rate limiting (configurable min_interval)
+# - CircuitBreaker 錯誤容忍
+# - 統一的 httpx.AsyncClient 管理
+
+class MySourceClient(BaseAPIClient):
+    _service_name = "MyAPI"
+
+    def __init__(self):
+        super().__init__(base_url="https://api.example.com", min_interval=0.1)
+
+    # 覆寫 _handle_expected_status() 處理 404 等預期狀態碼
+    # 覆寫 _parse_response() 自訂回應解析
+    # 覆寫 _execute_request() 自訂請求邏輯 (e.g., POST)
+```
+
+**已整合的 8 個客戶端：** CrossRef, OpenAlex, Semantic Scholar, NCBI Extended, Europe PMC, CORE, Open-i, Unpaywall
 
 ### 導入規則
 

@@ -555,7 +555,7 @@ class FulltextDownloader:
             )
 
             client = get_unpaywall_client()
-            oa_info = client.get_oa_status(doi)
+            oa_info = await client.get_oa_status(doi)
 
             if oa_info and oa_info.get("is_oa"):
                 # Best location
@@ -606,7 +606,7 @@ class FulltextDownloader:
             from pubmed_search.infrastructure.sources.core import get_core_client
 
             client = get_core_client()
-            results = client.search(f'doi:"{doi}"', limit=1)
+            results = await client.search(f'doi:"{doi}"', limit=1)
 
             if results and results.get("results"):
                 work = results["results"][0]

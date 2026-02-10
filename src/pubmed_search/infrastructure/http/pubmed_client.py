@@ -5,20 +5,9 @@ This module provides a clean, user-friendly interface for PubMed searches.
 """
 
 from dataclasses import dataclass
-from enum import Enum
 from typing import Any, Self  # Python 3.11+
 
-from pubmed_search.infrastructure.ncbi import LiteratureSearcher
-
-
-class SearchStrategy(Enum):
-    """Search strategy options for literature search."""
-
-    RECENT = "recent"
-    MOST_CITED = "most_cited"
-    RELEVANCE = "relevance"
-    IMPACT = "impact"
-    AGENT_DECIDED = "agent_decided"
+from pubmed_search.infrastructure.ncbi import LiteratureSearcher, SearchStrategy
 
 
 @dataclass

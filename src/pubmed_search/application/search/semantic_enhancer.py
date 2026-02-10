@@ -11,9 +11,9 @@ Architecture:
     It enriches the analyzed query with standardized entities and expanded terms.
 
     Query Flow:
-    User Query → QueryAnalyzer → SemanticEnhancer → MultiSourceSearcher
-                      ↓                ↓                    ↓
-                AnalyzedQuery → EnhancedQuery → SearchStrategies
+    User Query ??QueryAnalyzer ??SemanticEnhancer ??MultiSourceSearcher
+                      ??               ??                   ??
+                AnalyzedQuery ??EnhancedQuery ??SearchStrategies
 
 Example:
     >>> enhancer = SemanticEnhancer()
@@ -65,7 +65,7 @@ class ExpandedTerm:
 
 
 @dataclass
-class SearchStrategy:
+class SearchPlan:
     """A search strategy with query and metadata."""
 
     name: str  # "original", "mesh_expanded", "entity_semantic", "fulltext"
@@ -75,7 +75,7 @@ class SearchStrategy:
     expected_precision: float = 0.5  # Estimated precision
     expected_recall: float = 0.5  # Estimated recall
 
-    def __lt__(self, other: SearchStrategy) -> bool:
+    def __lt__(self, other: SearchPlan) -> bool:
         """Sort by priority (descending)."""
         return self.priority > other.priority
 
@@ -98,7 +98,7 @@ class EnhancedQuery:
     expanded_terms: list[ExpandedTerm] = field(default_factory=list)
 
     # Generated search strategies
-    strategies: list[SearchStrategy] = field(default_factory=list)
+    strategies: list[SearchPlan] = field(default_factory=list)
 
     # Detected PICO elements (enhanced)
     pico_elements: dict[str, list[str]] = field(default_factory=dict)
@@ -122,7 +122,7 @@ class EnhancedQuery:
         """Get primary MeSH terms from resolved entities."""
         return [e.mesh_id for e in self.entities if e.mesh_id]
 
-    def get_best_strategy(self) -> SearchStrategy | None:
+    def get_best_strategy(self) -> SearchPlan | None:
         """Get highest priority strategy."""
         if not self.strategies:
             return None
@@ -406,17 +406,17 @@ class SemanticEnhancer:
         query: str,
         entities: list[PubTatorEntity],
         terms: list[ExpandedTerm],
-    ) -> list[SearchStrategy]:
+    ) -> list[SearchPlan]:
         """
         Generate multiple search strategies for deep+wide search.
 
         Always generates multiple strategies to ensure comprehensive coverage.
         """
-        strategies: list[SearchStrategy] = []
+        strategies: list[SearchPlan] = []
 
         # Strategy 1: Original query (baseline)
         strategies.append(
-            SearchStrategy(
+            SearchPlan(
                 name="original",
                 query=query,
                 source="pubmed",
@@ -431,7 +431,7 @@ class SemanticEnhancer:
         if mesh_terms:
             mesh_query = self._build_mesh_query(query, mesh_terms)
             strategies.append(
-                SearchStrategy(
+                SearchPlan(
                     name="mesh_expanded",
                     query=mesh_query,
                     source="pubmed",
@@ -445,7 +445,7 @@ class SemanticEnhancer:
         if entities:
             entity_query = self._build_entity_query(entities)
             strategies.append(
-                SearchStrategy(
+                SearchPlan(
                     name="entity_semantic",
                     query=entity_query,
                     source="pubmed",
@@ -457,7 +457,7 @@ class SemanticEnhancer:
 
         # Strategy 4: Full-text search on Europe PMC
         strategies.append(
-            SearchStrategy(
+            SearchPlan(
                 name="fulltext_epmc",
                 query=query,
                 source="europe_pmc",
@@ -471,7 +471,7 @@ class SemanticEnhancer:
         broad_query = self._build_broad_query(terms)
         if broad_query != query:
             strategies.append(
-                SearchStrategy(
+                SearchPlan(
                     name="broad_tiab",
                     query=broad_query,
                     source="pubmed",
@@ -556,7 +556,7 @@ class SemanticEnhancer:
 
         # Generate basic strategies
         enhanced.strategies = [
-            SearchStrategy(
+            SearchPlan(
                 name="original",
                 query=query,
                 source="pubmed",
@@ -564,7 +564,7 @@ class SemanticEnhancer:
                 expected_precision=0.6,
                 expected_recall=0.5,
             ),
-            SearchStrategy(
+            SearchPlan(
                 name="fulltext_epmc",
                 query=query,
                 source="europe_pmc",

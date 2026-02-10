@@ -23,13 +23,13 @@ Best Practices:
 - Cache responses when possible
 """
 
-import asyncio
 import logging
-import time
 import urllib.parse
 from typing import Any
 
 import httpx
+
+from pubmed_search.infrastructure.sources.base_client import BaseAPIClient, _CONTINUE
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ CROSSREF_API_BASE = "https://api.crossref.org"
 DEFAULT_EMAIL = "pubmed-search-mcp@example.com"
 
 
-class CrossRefClient:
+class CrossRefClient(BaseAPIClient):
     """
     CrossRef API client for DOI metadata and article search.
 
@@ -61,6 +61,8 @@ class CrossRefClient:
         higher rate limits. Without email, requests are severely throttled.
     """
 
+    _service_name = "CrossRef"
+
     def __init__(
         self,
         email: str | None = None,
@@ -74,71 +76,43 @@ class CrossRefClient:
             timeout: Request timeout in seconds
         """
         self._email = email or DEFAULT_EMAIL
-        self._timeout = timeout
-        self._last_request_time = 0.0
-        # Rate limit: be polite, ~20 req/sec max
-        self._min_interval = 0.05
-        self._client = httpx.AsyncClient(
-            timeout=self._timeout,
+        super().__init__(
+            timeout=timeout,
+            min_interval=0.05,
             headers={
                 "User-Agent": f"pubmed-search-mcp/1.0 (mailto:{self._email})",
                 "Accept": "application/json",
             },
         )
 
-    async def _rate_limit(self) -> None:
-        """Simple rate limiting."""
-        elapsed = time.time() - self._last_request_time
-        if elapsed < self._min_interval:
-            await asyncio.sleep(self._min_interval - elapsed)
-        self._last_request_time = time.time()
-
-    _MAX_RETRIES = 3
-
-    async def _make_request(self, url: str) -> dict[str, Any] | None:
-        """Make HTTP request to CrossRef API with retry on 429."""
-        # Add mailto parameter for polite pool
+    async def _execute_request(
+        self,
+        url: str,
+        *,
+        method: str = "GET",
+        data: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> Any:
+        """Add mailto parameter for polite pool access."""
         separator = "&" if "?" in url else "?"
         url = f"{url}{separator}mailto={urllib.parse.quote(self._email)}"
+        return await super()._execute_request(
+            url, method=method, data=data, headers=headers
+        )
 
-        for attempt in range(self._MAX_RETRIES + 1):
-            await self._rate_limit()
-            try:
-                response = await self._client.get(url)
-                if response.status_code == 404:
-                    logger.debug(f"CrossRef: DOI not found - {url}")
-                    return None
-                if response.status_code == 429:
-                    if attempt < self._MAX_RETRIES:
-                        try:
-                            retry_after = float(
-                                response.headers.get("Retry-After", 2 ** (attempt + 1))
-                            )
-                        except (ValueError, TypeError):
-                            retry_after = float(2 ** (attempt + 1))
-                        logger.warning(
-                            f"CrossRef: Rate limited (429), retry {attempt + 1}/{self._MAX_RETRIES} "
-                            f"in {retry_after:.1f}s"
-                        )
-                        await asyncio.sleep(retry_after)
-                        continue
-                    logger.warning("CrossRef: Rate limit exceeded after retries")
-                    return None
-                response.raise_for_status()
-                data = response.json()
-                return data.get("message", data)
-            except httpx.HTTPStatusError as e:
-                logger.error(
-                    f"CrossRef HTTP error {e.response.status_code}: {e.response.reason_phrase}"
-                )
-                return None
-            except httpx.RequestError as e:
-                logger.error(f"CrossRef URL error: {e}")
-                return None
-            except Exception as e:
-                logger.error(f"CrossRef request failed: {e}")
-                return None
-        return None
+    def _handle_expected_status(self, response: httpx.Response, url: str) -> Any:
+        """Handle 404 (DOI not found)."""
+        if response.status_code == 404:
+            logger.debug(f"CrossRef: DOI not found - {url}")
+            return None
+        return _CONTINUE
+
+    def _parse_response(
+        self, response: httpx.Response, expect_json: bool
+    ) -> dict[str, Any] | str:
+        """Extract 'message' key from CrossRef JSON responses."""
+        data = response.json()
+        return data.get("message", data)
 
     async def get_work(self, doi: str) -> dict[str, Any] | None:
         """
@@ -164,7 +138,8 @@ class CrossRefClient:
         doi = self._normalize_doi(doi)
 
         url = f"{CROSSREF_API_BASE}/works/{urllib.parse.quote(doi, safe='')}"
-        return await self._make_request(url)
+        result = await self._make_request(url)
+        return result if isinstance(result, dict) else None
 
     async def search(
         self,
@@ -210,7 +185,7 @@ class CrossRefClient:
         url = f"{CROSSREF_API_BASE}/works?{urllib.parse.urlencode(params)}"
         data = await self._make_request(url)
 
-        if not data:
+        if not isinstance(data, dict):
             return {"total_results": 0, "items": []}
 
         return {
@@ -244,7 +219,7 @@ class CrossRefClient:
         url = f"{CROSSREF_API_BASE}/works?{urllib.parse.urlencode(params)}"
         data = await self._make_request(url)
 
-        if not data:
+        if not isinstance(data, dict):
             return []
 
         return data.get("items", [])
@@ -311,7 +286,7 @@ class CrossRefClient:
         url = f"{CROSSREF_API_BASE}/works?{urllib.parse.urlencode(params)}"
         data = await self._make_request(url)
 
-        if not data:
+        if not isinstance(data, dict):
             return {"citation_count": citation_count, "items": []}
 
         return {
@@ -330,7 +305,8 @@ class CrossRefClient:
             Journal metadata or None
         """
         url = f"{CROSSREF_API_BASE}/journals/{issn}"
-        return await self._make_request(url)
+        result = await self._make_request(url)
+        return result if isinstance(result, dict) else None
 
     async def resolve_doi_batch(
         self,
@@ -432,16 +408,6 @@ class CrossRefClient:
                     return (year, month, day)
 
         return (None, None, None)
-
-    async def close(self):
-        """Close the HTTP client."""
-        await self._client.aclose()
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *args):
-        await self.close()
 
 
 # Singleton instance

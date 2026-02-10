@@ -281,6 +281,10 @@ class TestCircuitBreaker:
         cb._last_failure_time = time.monotonic()
         assert cb.is_open is True
 
+    async def test_state_property(self):
+        cb = CircuitBreaker()
+        assert cb.state == "closed"
+
 
 # ============================================================
 # AsyncConnectionPool
@@ -296,7 +300,7 @@ class TestAsyncConnectionPool:
         pool = AsyncConnectionPool(factory, max_size=3)
         conn = await pool.acquire()
         assert conn == "conn"
-        assert pool._size == 1
+        assert pool.size == 1
 
     @pytest.mark.asyncio
     async def test_release_returns_to_pool(self):
@@ -311,7 +315,19 @@ class TestAsyncConnectionPool:
         conn2 = await pool.acquire()
         assert conn2 == "conn"
         # Size shouldn't increase
-        assert pool._size == 1
+        assert pool.size == 1
+
+    @pytest.mark.asyncio
+    async def test_available_property(self):
+        async def factory():
+            return "conn"
+
+        pool = AsyncConnectionPool(factory, max_size=3)
+        assert pool.available == 0
+
+        conn = await pool.acquire()
+        await pool.release(conn)
+        assert pool.available == 1
 
 
 # ============================================================

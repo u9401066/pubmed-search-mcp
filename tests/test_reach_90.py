@@ -1,6 +1,6 @@
 """Final targeted tests to reach 90% coverage."""
 
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 import tempfile
 import json
 
@@ -15,7 +15,7 @@ class TestClientPubMedClient:
         with patch(
             "pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher"
         ) as mock_searcher_class:
-            mock_searcher = Mock()
+            mock_searcher = AsyncMock()
             mock_searcher.search.return_value = [
                 {
                     "pmid": "123",
@@ -31,7 +31,7 @@ class TestClientPubMedClient:
             mock_searcher_class.return_value = mock_searcher
 
             client = PubMedClient(email="test@example.com")
-            results = client.search("test query", limit=5)
+            results = await client.search("test query", limit=5)
 
             assert len(results) == 1
             assert results[0].pmid == "123"
@@ -43,12 +43,12 @@ class TestClientPubMedClient:
         with patch(
             "pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher"
         ) as mock_searcher_class:
-            mock_searcher = Mock()
+            mock_searcher = AsyncMock()
             mock_searcher.search.return_value = [{"pmid": "123", "title": "Test"}]
             mock_searcher_class.return_value = mock_searcher
 
             client = PubMedClient(email="test@example.com")
-            results = client.search_raw("test query")
+            results = await client.search_raw("test query")
 
             assert isinstance(results, list)
             assert results[0]["pmid"] == "123"
@@ -60,7 +60,7 @@ class TestClientPubMedClient:
         with patch(
             "pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher"
         ) as mock_searcher_class:
-            mock_searcher = Mock()
+            mock_searcher = AsyncMock()
             mock_searcher.fetch_details.return_value = [
                 {
                     "pmid": "12345",
@@ -76,7 +76,7 @@ class TestClientPubMedClient:
             mock_searcher_class.return_value = mock_searcher
 
             client = PubMedClient(email="test@example.com")
-            result = client.fetch_by_pmid("12345")
+            result = await client.fetch_by_pmid("12345")
 
             assert result is not None
             assert result.pmid == "12345"
@@ -88,12 +88,12 @@ class TestClientPubMedClient:
         with patch(
             "pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher"
         ) as mock_searcher_class:
-            mock_searcher = Mock()
+            mock_searcher = AsyncMock()
             mock_searcher.fetch_details.return_value = []
             mock_searcher_class.return_value = mock_searcher
 
             client = PubMedClient(email="test@example.com")
-            result = client.fetch_by_pmid("99999")
+            result = await client.fetch_by_pmid("99999")
 
             assert result is None
 
@@ -104,7 +104,7 @@ class TestClientPubMedClient:
         with patch(
             "pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher"
         ) as mock_searcher_class:
-            mock_searcher = Mock()
+            mock_searcher = AsyncMock()
             mock_searcher.fetch_details.return_value = [
                 {
                     "pmid": "111",
@@ -130,7 +130,7 @@ class TestClientPubMedClient:
             mock_searcher_class.return_value = mock_searcher
 
             client = PubMedClient(email="test@example.com")
-            results = client.fetch_by_pmids(["111", "222"])
+            results = await client.fetch_by_pmids(["111", "222"])
 
             assert len(results) == 2
 
@@ -141,12 +141,12 @@ class TestClientPubMedClient:
         with patch(
             "pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher"
         ) as mock_searcher_class:
-            mock_searcher = Mock()
+            mock_searcher = AsyncMock()
             mock_searcher.fetch_details.return_value = [{"pmid": "123"}]
             mock_searcher_class.return_value = mock_searcher
 
             client = PubMedClient(email="test@example.com")
-            results = client.fetch_by_pmids_raw(["123"])
+            results = await client.fetch_by_pmids_raw(["123"])
 
             assert isinstance(results, list)
 
@@ -157,7 +157,7 @@ class TestClientPubMedClient:
         with patch(
             "pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher"
         ) as mock_searcher_class:
-            mock_searcher = Mock()
+            mock_searcher = AsyncMock()
             mock_searcher.find_related_articles.return_value = [
                 {
                     "pmid": "999",
@@ -173,7 +173,7 @@ class TestClientPubMedClient:
             mock_searcher_class.return_value = mock_searcher
 
             client = PubMedClient(email="test@example.com")
-            results = client.find_related("12345")
+            results = await client.find_related("12345")
 
             assert len(results) == 1
 
@@ -184,7 +184,7 @@ class TestClientPubMedClient:
         with patch(
             "pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher"
         ) as mock_searcher_class:
-            mock_searcher = Mock()
+            mock_searcher = AsyncMock()
             mock_searcher.find_citing_articles.return_value = [
                 {
                     "pmid": "888",
@@ -200,7 +200,7 @@ class TestClientPubMedClient:
             mock_searcher_class.return_value = mock_searcher
 
             client = PubMedClient(email="test@example.com")
-            results = client.find_citing("12345")
+            results = await client.find_citing("12345")
 
             assert len(results) == 1
 
@@ -211,7 +211,7 @@ class TestClientPubMedClient:
         with patch(
             "pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher"
         ) as mock_searcher_class:
-            mock_searcher = Mock()
+            mock_searcher = AsyncMock()
             mock_searcher.get_citation_metrics.return_value = {
                 "123": {"citation_count": 50, "rcr": 1.5}
             }
@@ -219,7 +219,7 @@ class TestClientPubMedClient:
 
             client = PubMedClient(email="test@example.com")
             # Access via internal searcher if method not exposed
-            metrics = client._searcher.get_citation_metrics(["123"])
+            metrics = await client._searcher.get_citation_metrics(["123"])
 
             assert "123" in metrics
 

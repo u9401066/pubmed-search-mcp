@@ -10,6 +10,7 @@ Provides:
 - Parallel API calls with TaskGroup
 - Rate limiting with token bucket
 - Connection pooling
+- Circuit breaker for fault tolerance
 - Retry with exponential backoff
 """
 
@@ -266,9 +267,12 @@ class CircuitBreaker:
     """
     Circuit breaker for fault tolerance.
 
+    Protects against cascading failures when external APIs are down.
+    Used by BaseAPIClient to automatically stop calling failing services.
+
     States:
-    - CLOSED: Normal operation
-    - OPEN: Failing, reject requests immediately
+    - CLOSED: Normal operation, requests pass through
+    - OPEN: Service is failing, reject requests immediately
     - HALF_OPEN: Testing if service recovered
 
     Example:
@@ -287,6 +291,11 @@ class CircuitBreaker:
     _state: str = field(init=False, default="closed")
     _half_open_calls: int = field(init=False, default=0)
     _lock: asyncio.Lock = field(init=False, default_factory=asyncio.Lock)
+
+    @property
+    def state(self) -> str:
+        """Current circuit breaker state."""
+        return self._state
 
     @property
     def is_open(self) -> bool:
@@ -353,15 +362,21 @@ class CircuitBreaker:
 
 class AsyncConnectionPool(Generic[T]):
     """
-    Generic async connection pool.
+    Generic async connection/resource pool.
+
+    Manages a pool of reusable async resources (HTTP clients, DB connections, etc.)
+    with configurable max size. Used by BaseAPIClient for httpx.AsyncClient pooling.
 
     Example:
         pool = AsyncConnectionPool(
             factory=create_http_client,
             max_size=10
         )
-        async with pool.acquire() as client:
-            await client.get(url)
+        conn = await pool.acquire()
+        try:
+            await conn.get(url)
+        finally:
+            await pool.release(conn)
     """
 
     def __init__(
@@ -376,6 +391,16 @@ class AsyncConnectionPool(Generic[T]):
         self._pool: asyncio.Queue[T] = asyncio.Queue(maxsize=max_size)
         self._size = 0
         self._lock = asyncio.Lock()
+
+    @property
+    def size(self) -> int:
+        """Current number of managed connections."""
+        return self._size
+
+    @property
+    def available(self) -> int:
+        """Number of idle connections in the pool."""
+        return self._pool.qsize()
 
     async def _create_connection(self) -> T:
         """Create a new connection."""

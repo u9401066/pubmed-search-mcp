@@ -159,7 +159,7 @@ class TestFormatUnifiedResults:
         stats.unique_articles = 0
         stats.duplicates_removed = 0
 
-        result = _format_unified_results(
+        result = await _format_unified_results(
             [], analysis, stats, include_analysis=False, include_trials=False
         )
         assert "No results" in result

@@ -148,7 +148,7 @@ class TestCOREClient:
         c._client = mock_client
 
         with patch(
-            "pubmed_search.infrastructure.sources.core.asyncio.sleep",
+            "pubmed_search.infrastructure.sources.base_client.asyncio.sleep",
             new_callable=AsyncMock,
         ):
             result = await c._make_request("https://example.com/api")
@@ -519,11 +519,12 @@ class TestClinicalTrialsClient:
             ]
         }
         mock_resp.raise_for_status = MagicMock()
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
+        mock_client.is_closed = False
         mock_client.get.return_value = mock_resp
         c._client = mock_client
 
-        result = c.search("diabetes treatment", limit=5)
+        result = await c.search("diabetes treatment", limit=5)
         assert len(result) == 1
         assert result[0]["nct_id"] == "NCT12345"
         assert result[0]["status"] == "RECRUITING"
@@ -541,11 +542,12 @@ class TestClinicalTrialsClient:
         mock_resp.status_code = 200
         mock_resp.json.return_value = {"studies": []}
         mock_resp.raise_for_status = MagicMock()
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
+        mock_client.is_closed = False
         mock_client.get.return_value = mock_resp
         c._client = mock_client
 
-        result = c.search("test", status=["RECRUITING", "COMPLETED"])
+        result = await c.search("test", status=["RECRUITING", "COMPLETED"])
         assert result == []
         call_params = mock_client.get.call_args
         assert "RECRUITING" in str(call_params)
@@ -561,11 +563,12 @@ class TestClinicalTrialsClient:
         mock_resp.status_code = 200
         mock_resp.json.return_value = {"studies": []}
         mock_resp.raise_for_status = MagicMock()
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
+        mock_client.is_closed = False
         mock_client.get.return_value = mock_resp
         c._client = mock_client
 
-        result = c.search("xyz_no_results")
+        result = await c.search("xyz_no_results")
         assert result == []
         c._client = None
 
@@ -576,11 +579,12 @@ class TestClinicalTrialsClient:
         import httpx
 
         c = ClinicalTrialsClient()
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
+        mock_client.is_closed = False
         mock_client.get.side_effect = httpx.TimeoutException("timeout")
         c._client = mock_client
 
-        result = c.search("test")
+        result = await c.search("test")
         assert result == []
         c._client = None
 
@@ -593,13 +597,14 @@ class TestClinicalTrialsClient:
         c = ClinicalTrialsClient()
         mock_resp = MagicMock()
         mock_resp.status_code = 500
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
+        mock_client.is_closed = False
         mock_client.get.side_effect = httpx.HTTPStatusError(
             "500", request=MagicMock(), response=mock_resp
         )
         c._client = mock_client
 
-        result = c.search("test")
+        result = await c.search("test")
         assert result == []
         c._client = None
 
@@ -638,11 +643,12 @@ class TestClinicalTrialsGetStudy:
             }
         }
         mock_resp.raise_for_status = MagicMock()
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
+        mock_client.is_closed = False
         mock_client.get.return_value = mock_resp
         c._client = mock_client
 
-        result = c.get_study("NCT99999")
+        result = await c.get_study("NCT99999")
         assert result is not None
         assert result["nct_id"] == "NCT99999"
         c._client = None
@@ -656,13 +662,14 @@ class TestClinicalTrialsGetStudy:
         c = ClinicalTrialsClient()
         mock_resp = MagicMock()
         mock_resp.status_code = 404
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
+        mock_client.is_closed = False
         mock_client.get.side_effect = httpx.HTTPStatusError(
             "404", request=MagicMock(), response=mock_resp
         )
         c._client = mock_client
 
-        result = c.get_study("NCT00000")
+        result = await c.get_study("NCT00000")
         assert result is None
         c._client = None
 

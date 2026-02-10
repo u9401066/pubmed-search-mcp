@@ -89,7 +89,9 @@ class TestMakeRequest:
         client._client = AsyncMock()
         client._client.get = AsyncMock(return_value=mock_response)
 
-        result = await client._make_request("https://example.com/api")
+        result = await client._make_request(
+            "https://example.com/api", expect_json=False
+        )
         assert result == "<xml>data</xml>"
 
     async def test_http_error(self, client):

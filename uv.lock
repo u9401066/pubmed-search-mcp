@@ -178,6 +178,15 @@ wheels = [
 ]
 
 [[package]]
+name = "cachetools"
+version = "7.0.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/98/af/df70e9b65bc77a1cbe0768c0aa4617147f30f8306ded98c1744bcdc0ae1e/cachetools-7.0.0.tar.gz", hash = "sha256:a9abf18ff3b86c7d05b27ead412e235e16ae045925e531fae38d5fada5ed5b08", size = 35796, upload-time = "2026-02-01T18:59:47.411Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/28/df/2dd32cce20cbcf6f2ec456b58d44368161ad28320729f64e5e1d5d7bd0ae/cachetools-7.0.0-py3-none-any.whl", hash = "sha256:d52fef60e6e964a1969cfb61ccf6242a801b432790fe520d78720d757c81cbd2", size = 13487, upload-time = "2026-02-01T18:59:45.981Z" },
+]
+
+[[package]]
 name = "certifi"
 version = "2025.11.12"
 source = { registry = "https://pypi.org/simple" }
@@ -1338,10 +1347,11 @@ wheels = [
 
 [[package]]
 name = "pubmed-search-mcp"
-version = "0.3.6"
+version = "0.3.7"
 source = { editable = "." }
 dependencies = [
     { name = "biopython" },
+    { name = "cachetools" },
     { name = "defusedxml" },
     { name = "fastapi" },
     { name = "httpx" },
@@ -1349,6 +1359,7 @@ dependencies = [
     { name = "pylatexenc" },
     { name = "pywin32", marker = "sys_platform == 'win32'" },
     { name = "requests" },
+    { name = "tenacity" },
 ]
 
 [package.dev-dependencies]
@@ -1364,6 +1375,7 @@ dev = [
     { name = "pytest-timeout" },
     { name = "ruff" },
     { name = "safety" },
+    { name = "types-cachetools" },
     { name = "types-requests" },
     { name = "vulture" },
 ]
@@ -1371,6 +1383,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "biopython", specifier = ">=1.81" },
+    { name = "cachetools", specifier = ">=5.0.0" },
     { name = "defusedxml", specifier = ">=0.7.1" },
     { name = "fastapi", specifier = ">=0.128.0" },
     { name = "httpx", specifier = ">=0.28.1" },
@@ -1378,6 +1391,7 @@ requires-dist = [
     { name = "pylatexenc", specifier = ">=2.10" },
     { name = "pywin32", marker = "sys_platform == 'win32'", specifier = ">=311" },
     { name = "requests", specifier = ">=2.28.0" },
+    { name = "tenacity", specifier = ">=8.0.0" },
 ]
 
 [package.metadata.requires-dev]
@@ -1393,6 +1407,7 @@ dev = [
     { name = "pytest-timeout", specifier = ">=2.3.1" },
     { name = "ruff", specifier = ">=0.11" },
     { name = "safety", specifier = ">=3.2.10" },
+    { name = "types-cachetools", specifier = ">=6.2.0" },
     { name = "types-requests", specifier = ">=2.32.4.20260107" },
     { name = "vulture", specifier = ">=2.14" },
 ]
@@ -2417,6 +2432,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/36/bf/8825b5929afd84d0dabd606c67cd57b8388cb3ec385f7ef19c5cc2202069/typer-0.21.1.tar.gz", hash = "sha256:ea835607cd752343b6b2b7ce676893e5a0324082268b48f27aa058bdb7d2145d", size = 110371, upload-time = "2026-01-06T11:21:10.989Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a0/1d/d9257dd49ff2ca23ea5f132edf1281a0c4f9de8a762b9ae399b670a59235/typer-0.21.1-py3-none-any.whl", hash = "sha256:7985e89081c636b88d172c2ee0cfe33c253160994d47bdfdc302defd7d1f1d01", size = 47381, upload-time = "2026-01-06T11:21:09.824Z" },
+]
+
+[[package]]
+name = "types-cachetools"
+version = "6.2.0.20251022"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/3b/a8/f9bcc7f1be63af43ef0170a773e2d88817bcc7c9d8769f2228c802826efe/types_cachetools-6.2.0.20251022.tar.gz", hash = "sha256:f1d3c736f0f741e89ec10f0e1b0138625023e21eb33603a930c149e0318c0cef", size = 9608, upload-time = "2025-10-22T03:03:58.16Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/98/2d/8d821ed80f6c2c5b427f650bf4dc25b80676ed63d03388e4b637d2557107/types_cachetools-6.2.0.20251022-py3-none-any.whl", hash = "sha256:698eb17b8f16b661b90624708b6915f33dbac2d185db499ed57e4997e7962cad", size = 9341, upload-time = "2025-10-22T03:03:57.036Z" },
 ]
 
 [[package]]

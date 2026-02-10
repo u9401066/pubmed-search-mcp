@@ -17,7 +17,7 @@ logger = logging.getLogger()
 
 
 @pytest.mark.skip(reason="Integration test - makes real API calls, not for CI")
-def test_perf_integration():
+async def test_perf_integration():
     print("=" * 60)
     print("Testing unified_search performance")
     print("=" * 60)
@@ -49,7 +49,7 @@ def test_perf_integration():
         from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
         searcher = LiteratureSearcher()
-        results = searcher.search(query="aspirin mechanism", limit=5)
+        results = await searcher.search(query="aspirin mechanism", limit=5)
         pubmed_time = time.time() - start
         print(f"  PubMed search: {pubmed_time:.2f}s")
         print(f"  Results: {len(results)}")
@@ -64,7 +64,7 @@ def test_perf_integration():
         from pubmed_search.infrastructure.sources.openalex import OpenAlexClient
 
         client = OpenAlexClient()
-        results = client.search("aspirin mechanism", limit=5)
+        results = await client.search("aspirin mechanism", limit=5)
         openalex_time = time.time() - start
         print(f"  OpenAlex search: {openalex_time:.2f}s")
         print(f"  Results: {len(results)}")
@@ -81,7 +81,7 @@ def test_perf_integration():
         )
 
         client = SemanticScholarClient()
-        results = client.search("aspirin mechanism", limit=5)
+        results = await client.search("aspirin mechanism", limit=5)
         s2_time = time.time() - start
         print(f"  Semantic Scholar search: {s2_time:.2f}s")
         print(f"  Results: {len(results)}")

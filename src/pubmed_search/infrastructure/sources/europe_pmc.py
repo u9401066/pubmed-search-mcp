@@ -15,15 +15,14 @@ Features:
 - No API key required
 """
 
-import asyncio
 import logging
 import re
-import time
 import urllib.parse
 from typing import Any
 
 import defusedxml.ElementTree as ElementTree  # Security: prevent XML attacks
-import httpx
+
+from pubmed_search.infrastructure.sources.base_client import BaseAPIClient
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +35,7 @@ EPMC_ARTICLE_URL = f"{EPMC_API_BASE}/article"
 DEFAULT_EMAIL = "pubmed-search-mcp@example.com"
 
 
-class EuropePMCClient:
+class EuropePMCClient(BaseAPIClient):
     """
     Europe PMC API client.
 
@@ -48,6 +47,8 @@ class EuropePMCClient:
         fulltext = client.get_fulltext_xml("PMC7096777")
     """
 
+    _service_name = "Europe PMC"
+
     def __init__(self, email: str | None = None, timeout: float = 30.0):
         """
         Initialize client.
@@ -57,69 +58,14 @@ class EuropePMCClient:
             timeout: Request timeout in seconds
         """
         self._email = email or DEFAULT_EMAIL
-        self._timeout = timeout
-        self._last_request_time = 0
-        self._min_interval = 0.1  # Europe PMC is generous with rate limits
-        self._client = httpx.AsyncClient(
-            timeout=self._timeout,
+        super().__init__(
+            timeout=timeout,
+            min_interval=0.1,
             headers={
                 "User-Agent": f"pubmed-search-mcp/1.0 (mailto:{self._email})",
                 "Accept": "application/json",
             },
         )
-
-    async def _rate_limit(self):
-        """Simple rate limiting."""
-        elapsed = time.time() - self._last_request_time
-        if elapsed < self._min_interval:
-            await asyncio.sleep(self._min_interval - elapsed)
-        self._last_request_time = time.time()
-
-    _MAX_RETRIES = 3
-
-    async def _make_request(
-        self, url: str, expect_xml: bool = False
-    ) -> dict | str | None:
-        """Make HTTP GET request with retry on 429."""
-        for attempt in range(self._MAX_RETRIES + 1):
-            await self._rate_limit()
-            try:
-                headers = {}
-                if expect_xml:
-                    headers["Accept"] = "application/xml"
-                response = await self._client.get(url, headers=headers)
-                if response.status_code == 429:
-                    if attempt < self._MAX_RETRIES:
-                        try:
-                            retry_after = float(
-                                response.headers.get("Retry-After", 2 ** (attempt + 1))
-                            )
-                        except (ValueError, TypeError):
-                            retry_after = float(2 ** (attempt + 1))
-                        logger.warning(
-                            f"Europe PMC: Rate limited (429), retry {attempt + 1}/{self._MAX_RETRIES} "
-                            f"in {retry_after:.1f}s"
-                        )
-                        await asyncio.sleep(retry_after)
-                        continue
-                    logger.warning("Europe PMC: Rate limit exceeded after retries")
-                    return None
-                response.raise_for_status()
-                if expect_xml:
-                    return response.text
-                return response.json()
-            except httpx.HTTPStatusError as e:
-                logger.error(
-                    f"HTTP error {e.response.status_code}: {e.response.reason_phrase}"
-                )
-                return None
-            except httpx.RequestError as e:
-                logger.error(f"URL error: {e}")
-                return None
-            except Exception as e:
-                logger.error(f"Europe PMC request failed: {e}")
-                return None
-        return None
 
     async def search(
         self,
@@ -179,7 +125,7 @@ class EuropePMCClient:
             url = f"{EPMC_SEARCH_URL}?{urllib.parse.urlencode(params)}"
             data = await self._make_request(url)
 
-            if not data:
+            if not isinstance(data, dict):
                 return {"results": [], "hit_count": 0}
 
             results = data.get("resultList", {}).get("result", [])
@@ -221,7 +167,7 @@ class EuropePMCClient:
             url = f"{EPMC_ARTICLE_URL}/{source}/{article_id}?{urllib.parse.urlencode(params)}"
             data = await self._make_request(url)
 
-            if not data:
+            if not isinstance(data, dict):
                 return None
 
             result = data.get("result")
@@ -252,7 +198,10 @@ class EuropePMCClient:
                 pmcid = f"PMC{pmcid}"
 
             url = f"{EPMC_API_BASE}/{pmcid}/fullTextXML"
-            return await self._make_request(url, expect_xml=True)
+            result = await self._make_request(
+                url, headers={"Accept": "application/xml"}, expect_json=False
+            )
+            return result if isinstance(result, str) else None
 
         except Exception as e:
             logger.error(f"Failed to get fulltext for {pmcid}: {e}")
@@ -284,7 +233,7 @@ class EuropePMCClient:
             url = f"{EPMC_API_BASE}/{source}/{article_id}/references?{urllib.parse.urlencode(params)}"
             data = await self._make_request(url)
 
-            if not data:
+            if not isinstance(data, dict):
                 return []
 
             refs = data.get("referenceList", {}).get("reference", [])
@@ -320,7 +269,7 @@ class EuropePMCClient:
             url = f"{EPMC_API_BASE}/{source}/{article_id}/citations?{urllib.parse.urlencode(params)}"
             data = await self._make_request(url)
 
-            if not data:
+            if not isinstance(data, dict):
                 return []
 
             citations = data.get("citationList", {}).get("citation", [])
@@ -355,7 +304,7 @@ class EuropePMCClient:
             url = f"{EPMC_API_BASE}/{source}/{article_id}/textMinedTerms?{urllib.parse.urlencode(params)}"
             data = await self._make_request(url)
 
-            if not data:
+            if not isinstance(data, dict):
                 return []
 
             return data.get("semanticTypeList", {}).get("semanticType", [])
@@ -630,16 +579,6 @@ class EuropePMCClient:
         except Exception as e:
             logger.error(f"Failed to get similar articles: {e}")
             return []
-
-    async def close(self):
-        """Close the HTTP client."""
-        await self._client.aclose()
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *args):
-        await self.close()
 
 
 # Convenience functions

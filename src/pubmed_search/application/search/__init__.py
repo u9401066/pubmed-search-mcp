@@ -51,7 +51,7 @@ from .result_aggregator import (
 from .semantic_enhancer import (
     EnhancedQuery,
     ExpandedTerm,
-    SearchStrategy,
+    SearchPlan,
     SemanticEnhancer,
     enhance_query,
     get_semantic_enhancer,
@@ -67,7 +67,7 @@ __all__ = [
     "SemanticEnhancer",
     "EnhancedQuery",
     "ExpandedTerm",
-    "SearchStrategy",
+    "SearchPlan",
     "enhance_query",
     "get_semantic_enhancer",
     # Result Aggregation
