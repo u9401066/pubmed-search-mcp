@@ -94,9 +94,53 @@ git status --short | Where-Object { $_ -match '^\?\?' }
 
 > ⚠️ **任何不在白名單的檔案出現在根目錄都是錯誤。**
 
+### 🚫 禁止重造輪子與過度設計 (No Reinventing the Wheel - MANDATORY)
+
+AI Agent **必須持續檢查**是否存在以下反模式，並在每次新增或修改程式碼時主動排查：
+
+#### 重造輪子 (Reinventing the Wheel)
+
+```
+# ❌ 禁止：自己實作已有標準庫/第三方可完成的功能
+手寫 HTTP retry/backoff     → 用 tenacity 或 httpx 內建 retry
+手寫 JSON schema 驗證       → 用 pydantic
+手寫 rate limiter           → 用現有的 asyncio.Semaphore 或 aiolimiter
+手寫 URL 解析/編碼          → 用 urllib.parse / yarl
+手寫日期解析                → 用 dateutil.parser
+手寫 CSV/XML 解析器         → 用 csv / lxml / xml.etree
+自己包裝 logging 框架       → 直接用 logging 標準庫
+手寫 LRU cache              → 用 functools.lru_cache / cachetools
+```
+
+#### 過度設計 (Over-Engineering)
+
+```
+# ❌ 禁止：
+- 只有一個實作卻建立 Abstract Base Class + Interface + Factory
+- 為了「未來擴展」加入目前未使用的參數/類別/層
+- 包裝層只是直接轉發呼叫，沒有增加任何邏輯 (Thin Wrapper 無價值)
+- 為只用一次的功能建立獨立模組
+- 把 3 行能解決的問題寫成 30 行的 class hierarchy
+- 給 cfg/env 變數寫複雜的 getter/setter，直接讀取即可
+
+# ✅ 正確做法：
+- YAGNI (You Ain't Gonna Need It) — 只實作當前需要的
+- 優先使用函數，不需要狀態就不要用 class
+- 先用最簡單的方案，有證據需要時才重構
+- 第三方庫已解決的問題，直接 uv add 而非手寫
+```
+
+#### 檢查清單 (每次 code review 時)
+
+- [ ] 這個功能有沒有現成的標準庫/第三方能做到？
+- [ ] 這個 class 是否可以用簡單的函數取代？
+- [ ] 這個抽象層是否真的有多個實作？還是只有一個？
+- [ ] 這段程式碼有沒有「只是轉發」的 wrapper？
+- [ ] 有沒有為「未來可能」而非「現在需要」而寫的程式碼？
+
 ---
 
-## �️ 專案架構 (DDD v0.2.0)
+## 🏗️ 專案架構 (DDD v0.2.0)
 
 本專案採用 **Domain-Driven Design (DDD)** 分層架構：
 
