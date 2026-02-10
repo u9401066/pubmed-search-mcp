@@ -171,6 +171,49 @@ class OpenAccessLink:
 
 
 @dataclass
+class JournalMetrics:
+    """
+    Journal-level metrics from OpenAlex Sources API.
+
+    Provides journal impact and ranking information:
+    - 2yr_mean_citedness: mathematically equivalent to 2-year Impact Factor
+    - h_index: journal h-index
+    - i10_index: number of papers with 10+ citations
+    - works_count: total articles published
+    - cited_by_count: total citations to journal's articles
+
+    Source: OpenAlex /sources endpoint (free, open data)
+    """
+
+    issn: str | None = None
+    issn_l: str | None = None  # Linking ISSN (canonical identifier)
+    openalex_source_id: str | None = None
+    h_index: int | None = None
+    two_year_mean_citedness: float | None = None  # ≈ 2-year Impact Factor
+    i10_index: int | None = None
+    works_count: int | None = None
+    cited_by_count: int | None = None
+    is_in_doaj: bool | None = None
+    source_type: str | None = None  # journal, repository, conference, etc.
+    subject_areas: list[str] = field(default_factory=list)
+
+    @property
+    def impact_tier(self) -> str:
+        """Categorize journal by 2yr_mean_citedness (≈ IF)."""
+        if self.two_year_mean_citedness is None:
+            return "unknown"
+        if self.two_year_mean_citedness >= 10.0:
+            return "top"  # Top-tier journals (Nature, NEJM, Lancet...)
+        if self.two_year_mean_citedness >= 5.0:
+            return "high"
+        if self.two_year_mean_citedness >= 2.0:
+            return "medium"
+        if self.two_year_mean_citedness >= 1.0:
+            return "low"
+        return "minimal"
+
+
+@dataclass
 class CitationMetrics:
     """
     Citation and impact metrics from various sources.
@@ -298,6 +341,7 @@ class UnifiedArticle:
 
     # === Metrics ===
     citation_metrics: CitationMetrics | None = None
+    journal_metrics: JournalMetrics | None = None
 
     # === Similarity Scores (from external APIs) ===
     similarity_score: float | None = None  # 0.0-1.0, higher = more similar
@@ -764,6 +808,26 @@ class UnifiedArticle:
         if source:
             journal = source.get("display_name")
 
+        # Parse article type from OpenAlex 'type' field
+        # Reference: https://docs.openalex.org/api-entities/works/work-object#type
+        oa_type = data.get("type", "").lower()
+        openalex_type_map = {
+            "article": ArticleType.JOURNAL_ARTICLE,
+            "review": ArticleType.REVIEW,
+            "preprint": ArticleType.PREPRINT,
+            "book-chapter": ArticleType.BOOK_CHAPTER,
+            "proceedings-article": ArticleType.CONFERENCE_PAPER,
+            "dissertation": ArticleType.THESIS,
+            "dataset": ArticleType.DATASET,
+            "editorial": ArticleType.EDITORIAL,
+            "letter": ArticleType.LETTER,
+            "erratum": ArticleType.OTHER,
+            "paratext": ArticleType.OTHER,
+            "peer-review": ArticleType.OTHER,
+            "reference-entry": ArticleType.OTHER,
+        }
+        article_type = openalex_type_map.get(oa_type, ArticleType.UNKNOWN)
+
         return cls(
             title=data.get("title") or data.get("display_name", "Unknown Title"),
             primary_source="openalex",
@@ -776,7 +840,7 @@ class UnifiedArticle:
             journal=journal,
             year=year,
             publication_date=pub_date,
-            article_type=ArticleType.UNKNOWN,  # OpenAlex type mapping needed
+            article_type=article_type,
             is_open_access=is_oa,
             oa_status=oa_status,
             oa_links=oa_links,
@@ -817,6 +881,20 @@ class UnifiedArticle:
                 )
             )
 
+        # Detect article type
+        # S2 publicationVenue.type can be "journal", "conference", "repository"
+        article_type = ArticleType.UNKNOWN
+        venue_type = (
+            data.get("publicationVenue", {}) or {}
+        ).get("type", "").lower()
+        if venue_type == "journal":
+            article_type = ArticleType.JOURNAL_ARTICLE
+        elif venue_type == "conference":
+            article_type = ArticleType.CONFERENCE_PAPER
+        elif arxiv and not pmid:
+            # Has arXiv ID but no PubMed ID → likely a preprint
+            article_type = ArticleType.PREPRINT
+
         return cls(
             title=data.get("title", "Unknown Title"),
             primary_source="semantic_scholar",
@@ -829,6 +907,7 @@ class UnifiedArticle:
             abstract=data.get("abstract"),
             journal=data.get("venue"),
             year=data.get("year"),
+            article_type=article_type,
             is_open_access=is_oa,
             oa_links=oa_links,
             citation_metrics=CitationMetrics(
@@ -961,6 +1040,23 @@ class UnifiedArticle:
                         other.citation_metrics.influential_citation_count
                     )
 
+        # Merge journal metrics
+        if other.journal_metrics:
+            if not self.journal_metrics:
+                self.journal_metrics = other.journal_metrics
+            else:
+                # Fill missing fields
+                if not self.journal_metrics.issn and other.journal_metrics.issn:
+                    self.journal_metrics.issn = other.journal_metrics.issn
+                if not self.journal_metrics.issn_l and other.journal_metrics.issn_l:
+                    self.journal_metrics.issn_l = other.journal_metrics.issn_l
+                if self.journal_metrics.h_index is None and other.journal_metrics.h_index is not None:
+                    self.journal_metrics.h_index = other.journal_metrics.h_index
+                if self.journal_metrics.two_year_mean_citedness is None and other.journal_metrics.two_year_mean_citedness is not None:
+                    self.journal_metrics.two_year_mean_citedness = other.journal_metrics.two_year_mean_citedness
+                if self.journal_metrics.i10_index is None and other.journal_metrics.i10_index is not None:
+                    self.journal_metrics.i10_index = other.journal_metrics.i10_index
+
         # Track sources
         for source in other.sources:
             if source.source not in [s.source for s in self.sources]:
@@ -1033,6 +1129,30 @@ class UnifiedArticle:
                 "influential_citations": self.citation_metrics.influential_citation_count,
                 "impact_level": self.citation_metrics.impact_level,
             }
+
+        # Add journal metrics if available
+        if self.journal_metrics:
+            jm = self.journal_metrics
+            journal_data: dict[str, Any] = {}
+            if jm.two_year_mean_citedness is not None:
+                journal_data["impact_factor_approx"] = round(jm.two_year_mean_citedness, 3)
+                journal_data["impact_tier"] = jm.impact_tier
+            if jm.h_index is not None:
+                journal_data["h_index"] = jm.h_index
+            if jm.i10_index is not None:
+                journal_data["i10_index"] = jm.i10_index
+            if jm.works_count is not None:
+                journal_data["works_count"] = jm.works_count
+            if jm.cited_by_count is not None:
+                journal_data["cited_by_count"] = jm.cited_by_count
+            if jm.issn:
+                journal_data["issn"] = jm.issn
+            if jm.subject_areas:
+                journal_data["subject_areas"] = jm.subject_areas
+            if jm.is_in_doaj is not None:
+                journal_data["is_in_doaj"] = jm.is_in_doaj
+            if journal_data:
+                result["journal_metrics"] = journal_data
 
         # Add ranking scores if calculated
         if self._ranking_score is not None:

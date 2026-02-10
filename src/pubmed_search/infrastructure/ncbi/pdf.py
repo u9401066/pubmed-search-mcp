@@ -8,8 +8,9 @@ import asyncio
 import logging
 from typing import Optional
 
-import httpx
 from Bio import Entrez
+
+from pubmed_search.shared.async_utils import get_shared_async_client
 
 logger = logging.getLogger(__name__)
 
@@ -87,12 +88,11 @@ class PDFMixin:
 
             headers = {"User-Agent": "Mozilla/5.0 (compatible; pubmed-search/1.0)"}
 
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.get(
-                    oa_url,
-                    headers=headers,
-                    follow_redirects=True,
-                )
+            client = get_shared_async_client()
+            response = await client.get(
+                oa_url,
+                headers=headers,
+            )
 
             content_type = response.headers.get("Content-Type", "")
 
@@ -135,12 +135,11 @@ class PDFMixin:
 
             headers = {"User-Agent": "Mozilla/5.0 (compatible; pubmed-search/1.0)"}
 
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.get(
-                    oa_url,
-                    headers=headers,
-                    follow_redirects=True,
-                )
+            client = get_shared_async_client()
+            response = await client.get(
+                oa_url,
+                headers=headers,
+            )
 
             content_type = response.headers.get("Content-Type", "")
 

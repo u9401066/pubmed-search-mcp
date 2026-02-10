@@ -26,16 +26,18 @@ class SearchStrategy(Enum):
 # Global rate limiter state
 _last_request_time = 0.0
 _min_request_interval = 0.34  # ~3 requests/second (NCBI limit without API key)
+_rate_lock = asyncio.Lock()
 
 
 async def _rate_limit():
-    """Ensure minimum interval between API requests."""
+    """Ensure minimum interval between API requests (thread-safe)."""
     global _last_request_time
-    now = time.time()
-    elapsed = now - _last_request_time
-    if elapsed < _min_request_interval:
-        await asyncio.sleep(_min_request_interval - elapsed)
-    _last_request_time = time.time()
+    async with _rate_lock:
+        now = time.time()
+        elapsed = now - _last_request_time
+        if elapsed < _min_request_interval:
+            await asyncio.sleep(_min_request_interval - elapsed)
+        _last_request_time = time.time()
 
 
 class EntrezBase:

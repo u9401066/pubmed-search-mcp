@@ -197,6 +197,124 @@ class OpenAlexClient(BaseAPIClient):
             logger.error(f"Failed to get citations for {work_id}: {e}")
             return []
 
+    async def get_source(self, source_id: str) -> dict[str, Any] | None:
+        """
+        Get journal/source metadata from OpenAlex Sources API.
+
+        Returns journal-level metrics including:
+        - 2yr_mean_citedness (≈ Impact Factor)
+        - h_index, i10_index
+        - works_count, cited_by_count
+        - ISSN, DOAJ status, subject areas
+
+        Args:
+            source_id: OpenAlex source ID (e.g., "S137773608") or full URL
+
+        Returns:
+            Source metadata dict or None
+        """
+        try:
+            # Normalize ID
+            if source_id.startswith("https://openalex.org/"):
+                source_id = source_id.replace("https://openalex.org/", "")
+
+            params = {"mailto": self._email}
+            url = f"{OA_API_BASE}/sources/{source_id}?{urllib.parse.urlencode(params)}"
+
+            data = await self._make_request(url)
+            if not isinstance(data, dict):
+                return None
+
+            return self._normalize_source(data)
+
+        except Exception as e:
+            logger.debug(f"Failed to get source {source_id}: {e}")
+            return None
+
+    async def get_sources_batch(
+        self, source_ids: list[str]
+    ) -> dict[str, dict[str, Any]]:
+        """
+        Batch-fetch journal/source metadata using OpenAlex filter API.
+
+        Uses the filter endpoint to fetch multiple sources in a single request.
+
+        Args:
+            source_ids: List of OpenAlex source IDs
+
+        Returns:
+            Dict mapping source_id → source metadata
+        """
+        if not source_ids:
+            return {}
+
+        try:
+            # OpenAlex supports batch filter: openalex_id:S1|S2|S3
+            # Max ~50 per request
+            clean_ids = []
+            for sid in source_ids[:50]:
+                sid = sid.replace("https://openalex.org/", "")
+                clean_ids.append(sid)
+
+            filter_str = "openalex:" + "|".join(clean_ids)
+            params = {
+                "filter": filter_str,
+                "per_page": str(len(clean_ids)),
+                "mailto": self._email,
+            }
+
+            url = f"{OA_API_BASE}/sources?{urllib.parse.urlencode(params)}"
+            data = await self._make_request(url)
+
+            if not isinstance(data, dict):
+                return {}
+
+            result = {}
+            for source in data.get("results", []):
+                oa_id = source.get("id", "").replace("https://openalex.org/", "")
+                if oa_id:
+                    result[oa_id] = self._normalize_source(source)
+
+            return result
+
+        except Exception as e:
+            logger.debug(f"Failed to batch-fetch sources: {e}")
+            return {}
+
+    @staticmethod
+    def _normalize_source(source: dict[str, Any]) -> dict[str, Any]:
+        """Normalize OpenAlex source to journal metrics format."""
+        summary = source.get("summary_stats", {}) or {}
+
+        # Extract ISSNs
+        issns = source.get("issn", []) or []
+        issn_l = source.get("issn_l")
+
+        # Extract subject areas from x_concepts (top-level concepts)
+        concepts = source.get("x_concepts", []) or []
+        subject_areas = [
+            c.get("display_name", "")
+            for c in concepts[:5]  # Top 5 concepts
+            if c.get("level", 99) <= 1 and c.get("display_name")
+        ]
+
+        return {
+            "openalex_source_id": source.get("id", "").replace(
+                "https://openalex.org/", ""
+            ),
+            "display_name": source.get("display_name", ""),
+            "issn": issns[0] if issns else None,
+            "issn_l": issn_l,
+            "h_index": summary.get("h_index"),
+            "two_year_mean_citedness": summary.get("2yr_mean_citedness"),
+            "i10_index": summary.get("i10_index"),
+            "works_count": source.get("works_count"),
+            "cited_by_count": source.get("cited_by_count"),
+            "is_in_doaj": source.get("is_in_doaj"),
+            "source_type": source.get("type"),
+            "subject_areas": subject_areas,
+        }
+
     def _normalize_work(self, work: dict[str, Any]) -> dict[str, Any]:
         """
         Normalize OpenAlex work to common format compatible with PubMed results.
@@ -281,6 +399,7 @@ class OpenAlexClient(BaseAPIClient):
             # Source marker
             "_source": "openalex",
             "_openalex_id": work.get("id", ""),
+            "_openalex_source_id": source.get("id", ""),  # For journal metrics lookup
         }
 
     def _get_abstract(self, work: dict[str, Any]) -> str:

@@ -61,10 +61,12 @@ class TestTestResolverUrl:
 
     @pytest.mark.asyncio
     async def test_unreachable(self):
-        mock_http = AsyncMock()
-        mock_http.__aenter__.return_value = mock_http
-        mock_http.get.side_effect = Exception("timeout")
-        with patch("httpx.AsyncClient", return_value=mock_http):
+        mock_client = AsyncMock()
+        mock_client.get.side_effect = Exception("timeout")
+        with patch(
+            "pubmed_search.shared.async_utils.get_shared_async_client",
+            return_value=mock_client,
+        ):
             result = await _test_resolver_url("https://nonexistent.example.com/test")
         assert result["reachable"] is False
 
@@ -73,10 +75,12 @@ class TestTestResolverUrl:
         mock_response = MagicMock()
         mock_response.status_code = 403
         mock_response.reason_phrase = "Forbidden"
-        mock_http = AsyncMock()
-        mock_http.__aenter__.return_value = mock_http
-        mock_http.get.return_value = mock_response
-        with patch("httpx.AsyncClient", return_value=mock_http):
+        mock_client = AsyncMock()
+        mock_client.get.return_value = mock_response
+        with patch(
+            "pubmed_search.shared.async_utils.get_shared_async_client",
+            return_value=mock_client,
+        ):
             result = await _test_resolver_url("https://example.com/resolver")
         assert result["reachable"] is True
         assert result["status_code"] == 403

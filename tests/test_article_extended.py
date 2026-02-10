@@ -452,6 +452,38 @@ class TestFromOpenalex:
         a = UnifiedArticle.from_openalex(data)
         assert a.journal is None
 
+    async def test_article_type_mapping(self):
+        """OpenAlex 'type' field should map to ArticleType."""
+        # Journal article
+        data = {"title": "T", "id": "https://openalex.org/W1", "type": "article"}
+        a = UnifiedArticle.from_openalex(data)
+        assert a.article_type == ArticleType.JOURNAL_ARTICLE
+
+        # Preprint
+        data = {"title": "T", "id": "https://openalex.org/W2", "type": "preprint"}
+        a = UnifiedArticle.from_openalex(data)
+        assert a.article_type == ArticleType.PREPRINT
+
+        # Review
+        data = {"title": "T", "id": "https://openalex.org/W3", "type": "review"}
+        a = UnifiedArticle.from_openalex(data)
+        assert a.article_type == ArticleType.REVIEW
+
+        # Book chapter
+        data = {"title": "T", "id": "https://openalex.org/W4", "type": "book-chapter"}
+        a = UnifiedArticle.from_openalex(data)
+        assert a.article_type == ArticleType.BOOK_CHAPTER
+
+        # Unknown type defaults to UNKNOWN
+        data = {"title": "T", "id": "https://openalex.org/W5", "type": "some-new-type"}
+        a = UnifiedArticle.from_openalex(data)
+        assert a.article_type == ArticleType.UNKNOWN
+
+        # Missing type defaults to UNKNOWN
+        data = {"title": "T", "id": "https://openalex.org/W6"}
+        a = UnifiedArticle.from_openalex(data)
+        assert a.article_type == ArticleType.UNKNOWN
+
 
 class TestFromSemanticScholar:
     async def test_basic(self):
@@ -472,6 +504,58 @@ class TestFromSemanticScholar:
         assert a.pmid == "12345"
         assert a.pmc == "PMC999"
         assert a.citation_metrics.influential_citation_count == 5
+
+    async def test_preprint_detection_arxiv_no_pmid(self):
+        """ArXiv paper without PubMed ID should be detected as preprint."""
+        data = {
+            "paperId": "abc",
+            "title": "ArXiv Paper",
+            "authors": [],
+            "externalIds": {"ArXiv": "2301.12345"},
+            "year": 2023,
+        }
+        a = UnifiedArticle.from_semantic_scholar(data)
+        assert a.article_type == ArticleType.PREPRINT
+        assert a.arxiv_id == "2301.12345"
+
+    async def test_arxiv_with_pmid_not_preprint(self):
+        """ArXiv paper that also has PubMed ID is published, not preprint."""
+        data = {
+            "paperId": "abc",
+            "title": "Published Paper",
+            "authors": [],
+            "externalIds": {"ArXiv": "2301.12345", "PubMed": "12345"},
+            "year": 2023,
+        }
+        a = UnifiedArticle.from_semantic_scholar(data)
+        # Has PMID → not a preprint (venue detection or fallback)
+        assert a.article_type != ArticleType.PREPRINT
+
+    async def test_venue_type_journal(self):
+        """S2 publicationVenue.type='journal' should map to JOURNAL_ARTICLE."""
+        data = {
+            "paperId": "abc",
+            "title": "Journal Paper",
+            "authors": [],
+            "externalIds": {},
+            "publicationVenue": {"type": "journal"},
+            "year": 2023,
+        }
+        a = UnifiedArticle.from_semantic_scholar(data)
+        assert a.article_type == ArticleType.JOURNAL_ARTICLE
+
+    async def test_venue_type_conference(self):
+        """S2 publicationVenue.type='conference' should map to CONFERENCE_PAPER."""
+        data = {
+            "paperId": "abc",
+            "title": "Conf Paper",
+            "authors": [],
+            "externalIds": {},
+            "publicationVenue": {"type": "conference"},
+            "year": 2023,
+        }
+        a = UnifiedArticle.from_semantic_scholar(data)
+        assert a.article_type == ArticleType.CONFERENCE_PAPER
 
 
 # ============================================================

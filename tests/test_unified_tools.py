@@ -11,6 +11,7 @@ from pubmed_search.presentation.mcp_server.tools.unified import (
     DispatchStrategy,
     _format_unified_results,
     _format_as_json,
+    _is_preprint,
 )
 from pubmed_search.application.search.query_analyzer import (
     AnalyzedQuery,
@@ -278,3 +279,81 @@ class TestAnalyzeSearchQuery:
             MockAnalyzer.return_value.analyze.side_effect = RuntimeError("fail")
             result = await tools["analyze_search_query"](query="test")
         assert "error" in result.lower()
+
+
+# ============================================================
+# _is_preprint helper
+# ============================================================
+
+
+class TestIsPreprint:
+    async def test_article_type_preprint(self):
+        """Articles with article_type=PREPRINT are preprints."""
+        from pubmed_search.domain.entities.article import ArticleType, UnifiedArticle
+
+        a = UnifiedArticle(
+            title="T",
+            primary_source="openalex",
+            article_type=ArticleType.PREPRINT,
+        )
+        assert _is_preprint(a, ArticleType) is True
+
+    async def test_arxiv_without_pmid(self):
+        """ArXiv ID + no PMID = preprint."""
+        from pubmed_search.domain.entities.article import ArticleType, UnifiedArticle
+
+        a = UnifiedArticle(
+            title="T",
+            primary_source="semantic_scholar",
+            arxiv_id="2301.12345",
+            article_type=ArticleType.UNKNOWN,
+        )
+        assert _is_preprint(a, ArticleType) is True
+
+    async def test_arxiv_with_pmid_not_preprint(self):
+        """ArXiv ID + PMID = published, not preprint."""
+        from pubmed_search.domain.entities.article import ArticleType, UnifiedArticle
+
+        a = UnifiedArticle(
+            title="T",
+            primary_source="semantic_scholar",
+            arxiv_id="2301.12345",
+            pmid="12345",
+            article_type=ArticleType.JOURNAL_ARTICLE,
+        )
+        assert _is_preprint(a, ArticleType) is False
+
+    async def test_preprint_primary_source(self):
+        """Primary source from preprint server = preprint."""
+        from pubmed_search.domain.entities.article import ArticleType, UnifiedArticle
+
+        for source in ["arxiv", "medrxiv", "biorxiv"]:
+            a = UnifiedArticle(
+                title="T",
+                primary_source=source,
+                article_type=ArticleType.UNKNOWN,
+            )
+            assert _is_preprint(a, ArticleType) is True
+
+    async def test_normal_journal_not_preprint(self):
+        """Normal journal article is not a preprint."""
+        from pubmed_search.domain.entities.article import ArticleType, UnifiedArticle
+
+        a = UnifiedArticle(
+            title="T",
+            primary_source="pubmed",
+            pmid="12345",
+            article_type=ArticleType.JOURNAL_ARTICLE,
+        )
+        assert _is_preprint(a, ArticleType) is False
+
+    async def test_unknown_type_not_preprint(self):
+        """UNKNOWN type without arxiv_id is not a preprint."""
+        from pubmed_search.domain.entities.article import ArticleType, UnifiedArticle
+
+        a = UnifiedArticle(
+            title="T",
+            primary_source="openalex",
+            article_type=ArticleType.UNKNOWN,
+        )
+        assert _is_preprint(a, ArticleType) is False

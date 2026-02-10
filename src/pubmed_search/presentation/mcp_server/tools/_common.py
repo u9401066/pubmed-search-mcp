@@ -736,7 +736,8 @@ def _cache_results(results: list, query: Optional[str] = None):
     """Cache search results if session manager is available."""
     if _session_manager and results and not results[0].get("error"):
         try:
-            _session_manager.add_to_cache(results)
+            # Use _skip_save=True to defer disk write, add_search_record will save both
+            _session_manager.add_to_cache(results, _skip_save=bool(query))
             if query:
                 pmids = [r.get("pmid") for r in results if r.get("pmid")]
                 _session_manager.add_search_record(query, pmids)

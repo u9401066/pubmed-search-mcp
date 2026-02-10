@@ -356,81 +356,57 @@ class CircuitBreaker:
 
 
 # =============================================================================
-# Connection Pool
+# Shared Async HTTP Client
 # =============================================================================
 
+_shared_async_client: Any | None = None
 
-class AsyncConnectionPool(Generic[T]):
+
+def get_shared_async_client() -> Any:
     """
-    Generic async connection/resource pool.
+    Get a shared httpx.AsyncClient singleton for general-purpose HTTP requests.
 
-    Manages a pool of reusable async resources (HTTP clients, DB connections, etc.)
-    with configurable max size. Used by BaseAPIClient for httpx.AsyncClient pooling.
+    Replaces per-call ``httpx.AsyncClient(...)`` creation in tools like
+    vision_search, openurl, and pdf download.  A single long-lived client
+    reuses TCP connections, saving TLS-handshake and DNS-lookup overhead
+    on repeated calls.
 
-    Example:
-        pool = AsyncConnectionPool(
-            factory=create_http_client,
-            max_size=10
+    The client is configured with:
+    - follow_redirects=True (needed by most callers)
+    - 30 s default timeout (override per-request with ``timeout=`` kwarg)
+    - Connection pool limits matching BaseAPIClient
+
+    Returns:
+        A reusable ``httpx.AsyncClient`` instance.
+
+    Example::
+
+        client = get_shared_async_client()
+        response = await client.get(url, timeout=10.0)
+    """
+    global _shared_async_client  # noqa: PLW0603
+
+    import httpx  # lazy import to avoid circular deps
+
+    if _shared_async_client is None or _shared_async_client.is_closed:
+        _shared_async_client = httpx.AsyncClient(
+            timeout=30.0,
+            follow_redirects=True,
+            limits=httpx.Limits(
+                max_connections=20,
+                max_keepalive_connections=10,
+                keepalive_expiry=30.0,
+            ),
         )
-        conn = await pool.acquire()
-        try:
-            await conn.get(url)
-        finally:
-            await pool.release(conn)
-    """
+    return _shared_async_client
 
-    def __init__(
-        self,
-        factory: Callable[[], Awaitable[T]],
-        max_size: int = 10,
-        min_size: int = 2,
-    ) -> None:
-        self._factory = factory
-        self._max_size = max_size
-        self._min_size = min_size
-        self._pool: asyncio.Queue[T] = asyncio.Queue(maxsize=max_size)
-        self._size = 0
-        self._lock = asyncio.Lock()
 
-    @property
-    def size(self) -> int:
-        """Current number of managed connections."""
-        return self._size
-
-    @property
-    def available(self) -> int:
-        """Number of idle connections in the pool."""
-        return self._pool.qsize()
-
-    async def _create_connection(self) -> T:
-        """Create a new connection."""
-        return await self._factory()
-
-    async def acquire(self) -> T:
-        """Acquire a connection from the pool."""
-        # Try to get from pool first
-        try:
-            return self._pool.get_nowait()
-        except asyncio.QueueEmpty:
-            pass
-
-        # Create new if under max size
-        async with self._lock:
-            if self._size < self._max_size:
-                self._size += 1
-                return await self._create_connection()
-
-        # Wait for available connection
-        return await self._pool.get()
-
-    async def release(self, conn: T) -> None:
-        """Release a connection back to the pool."""
-        try:
-            self._pool.put_nowait(conn)
-        except asyncio.QueueFull:
-            # Pool is full, discard connection
-            async with self._lock:
-                self._size -= 1
+async def close_shared_async_client() -> None:
+    """Close the shared async HTTP client (call on shutdown)."""
+    global _shared_async_client  # noqa: PLW0603
+    if _shared_async_client is not None and not _shared_async_client.is_closed:
+        await _shared_async_client.aclose()
+        _shared_async_client = None
 
 
 # =============================================================================

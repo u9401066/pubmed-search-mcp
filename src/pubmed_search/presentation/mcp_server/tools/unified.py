@@ -84,6 +84,7 @@ from pubmed_search.domain.entities.article import UnifiedArticle
 from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 from pubmed_search.infrastructure.sources import (
     get_crossref_client,
+    get_openalex_client,
     get_unpaywall_client,
     search_alternate_source,
 )
@@ -1060,6 +1061,104 @@ async def _enrich_with_crossref(articles: list[UnifiedArticle]) -> None:
         logger.warning(f"CrossRef enrichment failed: {e}")
 
 
+async def _enrich_with_journal_metrics(articles: list[UnifiedArticle]) -> None:
+    """Enrich articles with journal-level metrics from OpenAlex Sources API (in-place).
+
+    Fetches journal h-index, 2yr_mean_citedness (≈ Impact Factor), ISSN, DOAJ status,
+    subject areas, etc. Uses batch API for efficiency.
+
+    Strategy:
+    1. Collect OpenAlex source IDs from articles that came from OpenAlex
+    2. Batch-fetch source metadata
+    3. For articles without source IDs, skip (no reliable lookup available)
+    4. Create JournalMetrics objects and assign to articles
+    """
+    from pubmed_search.domain.entities.article import JournalMetrics
+
+    try:
+        client = get_openalex_client()
+
+        # Collect unique source IDs from OpenAlex-sourced articles
+        # Source ID is stored in raw_data._openalex_source_id
+        source_id_to_articles: dict[str, list[int]] = {}  # source_id → [article_idx]
+
+        for i, article in enumerate(articles):
+            if article.journal_metrics:
+                continue  # Already enriched
+
+            source_id = _extract_openalex_source_id(article)
+            if source_id:
+                clean_id = source_id.replace("https://openalex.org/", "")
+                if clean_id not in source_id_to_articles:
+                    source_id_to_articles[clean_id] = []
+                source_id_to_articles[clean_id].append(i)
+
+        if not source_id_to_articles:
+            return
+
+        # Batch fetch all unique sources
+        source_data = await client.get_sources_batch(
+            list(source_id_to_articles.keys())
+        )
+
+        # Map source data to articles
+        for source_id, article_indices in source_id_to_articles.items():
+            data = source_data.get(source_id)
+            if not data:
+                continue
+
+            journal_metrics = JournalMetrics(
+                issn=data.get("issn"),
+                issn_l=data.get("issn_l"),
+                openalex_source_id=data.get("openalex_source_id"),
+                h_index=data.get("h_index"),
+                two_year_mean_citedness=data.get("two_year_mean_citedness"),
+                i10_index=data.get("i10_index"),
+                works_count=data.get("works_count"),
+                cited_by_count=data.get("cited_by_count"),
+                is_in_doaj=data.get("is_in_doaj"),
+                source_type=data.get("source_type"),
+                subject_areas=data.get("subject_areas", []),
+            )
+
+            for idx in article_indices:
+                articles[idx].journal_metrics = journal_metrics
+
+        enriched = sum(
+            1 for a in articles if a.journal_metrics is not None
+        )
+        if enriched > 0:
+            logger.info(
+                f"Journal metrics: enriched {enriched}/{len(articles)} articles "
+                f"from {len(source_data)} unique journals"
+            )
+
+    except Exception as e:
+        logger.warning(f"Journal metrics enrichment failed: {e}")
+
+
+def _extract_openalex_source_id(article: UnifiedArticle) -> str | None:
+    """Extract OpenAlex source ID from an article's metadata.
+
+    Checks:
+    1. raw_data._openalex_source_id (set by OpenAlex _normalize_work)
+    2. raw_data.primary_location.source.id (direct OpenAlex response)
+    """
+    for source_meta in article.sources:
+        if source_meta.source == "openalex" and source_meta.raw_data:
+            raw = source_meta.raw_data
+            # Check _openalex_source_id (set in _normalize_work)
+            if raw.get("_openalex_source_id"):
+                return raw["_openalex_source_id"]
+            # Fallback: check nested structure
+            location = raw.get("primary_location", {})
+            if isinstance(location, dict):
+                source = location.get("source", {})
+                if isinstance(source, dict) and source.get("id"):
+                    return source["id"]
+    return None
+
+
 async def _enrich_with_unpaywall(articles: list[UnifiedArticle]) -> None:
     """Enrich articles with Unpaywall OA links (in-place, parallel)."""
     try:
@@ -1141,6 +1240,34 @@ async def _enrich_with_unpaywall(articles: list[UnifiedArticle]) -> None:
 
     except Exception as e:
         logger.warning(f"Unpaywall enrichment failed: {e}")
+
+
+def _is_preprint(article: UnifiedArticle, ArticleType: type) -> bool:
+    """
+    Determine if an article is a non-peer-reviewed preprint.
+
+    Detection heuristics:
+    1. article_type is PREPRINT (detected from OpenAlex/CrossRef/S2)
+    2. Has arXiv ID but no PubMed ID (arXiv-only paper)
+    3. Primary source is a known preprint server
+
+    Returns:
+        True if the article is likely a preprint (not peer-reviewed).
+    """
+    # Check article type
+    if article.article_type == ArticleType.PREPRINT:
+        return True
+
+    # Has arXiv ID but no PubMed ID → likely preprint
+    if getattr(article, "arxiv_id", None) and not article.pmid:
+        return True
+
+    # Primary source is a preprint server
+    preprint_sources = {"arxiv", "medrxiv", "biorxiv"}
+    if article.primary_source and article.primary_source.lower() in preprint_sources:
+        return True
+
+    return False
 
 
 def _enrich_with_similarity_scores(
@@ -1279,6 +1406,7 @@ async def _format_unified_results(
     enhanced_entities: list[str] | None = None,
     relaxation_result: RelaxationResult | None = None,
     deep_search_metrics: SearchDepthMetrics | None = None,
+    prefetched_trials: list | None = None,
 ) -> str:
     """Format unified search results for MCP response."""
     output_parts: list[str] = []
@@ -1473,6 +1601,29 @@ async def _format_unified_results(
             if metric_parts:
                 output_parts.append(f"**Impact**: {', '.join(metric_parts)}")
 
+        # Journal metrics
+        if article.journal_metrics:
+            jm = article.journal_metrics
+            jm_parts = []
+            if jm.two_year_mean_citedness is not None:
+                jm_parts.append(f"IF≈{jm.two_year_mean_citedness:.2f}")
+            if jm.h_index is not None:
+                jm_parts.append(f"h-index: {jm.h_index}")
+            if jm.impact_tier and jm.impact_tier != "unknown":
+                tier_icons = {
+                    "top": "🏆",
+                    "high": "⭐",
+                    "medium": "📊",
+                    "low": "📄",
+                    "minimal": "📄",
+                }
+                icon = tier_icons.get(jm.impact_tier, "")
+                jm_parts.append(f"{icon} {jm.impact_tier.capitalize()}-tier")
+            if jm.is_in_doaj:
+                jm_parts.append("DOAJ ✓")
+            if jm_parts:
+                output_parts.append(f"**Journal**: {', '.join(jm_parts)}")
+
         # Similarity score
         if article.similarity_score is not None:
             sim_str = f"**Relevance**: {article.similarity_score:.0%}"
@@ -1514,7 +1665,7 @@ async def _format_unified_results(
                         output_parts.append(f"Link: {paper['source_url']}")
                 output_parts.append("")
 
-    # === Related Clinical Trials (optional) ===
+    # === Related Clinical Trials (use pre-fetched results) ===
     if include_trials and original_query:
         try:
             from pubmed_search.infrastructure.sources.clinical_trials import (
@@ -1522,9 +1673,11 @@ async def _format_unified_results(
                 search_related_trials,
             )
 
-            # Get first few words of query for trial search
-            trial_query = " ".join(original_query.split()[:5])
-            trials = await search_related_trials(trial_query, limit=3)
+            trials = prefetched_trials
+            if trials is None:
+                # Fallback: fetch inline if not pre-fetched
+                trial_query = " ".join(original_query.split()[:5])
+                trials = await search_related_trials(trial_query, limit=3)
             if trials:
                 output_parts.append(format_trials_section(trials, max_display=3))
         except Exception as e:
@@ -1640,6 +1793,8 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         clinical_query: Union[str, None] = None,
         # Preprint search (Phase 2.2)
         include_preprints: Union[bool, str] = False,
+        # Peer review filter
+        peer_reviewed_only: Union[bool, str] = True,
         # Auto-relaxation (Phase 5.x)
         auto_relax: Union[bool, str] = True,
         # Deep search (Phase 3.x) - Use SemanticEnhancer strategies
@@ -1733,6 +1888,13 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                            These are validated PubMed clinical query strategies for EBM.
             include_preprints: Also search preprint servers (arXiv, medRxiv, bioRxiv)
                               Default: False. Set True for cutting-edge research.
+            peer_reviewed_only: Filter out non-peer-reviewed articles (preprints,
+                              arXiv papers, etc.) from ALL sources including OpenAlex
+                              and Semantic Scholar. Default: True.
+                              Set False to include preprints mixed in with results.
+                              Note: This is independent of include_preprints — even with
+                              peer_reviewed_only=True, you can set include_preprints=True
+                              to show preprints in a SEPARATE section.
             auto_relax: Automatically relax search when 0 results (default True).
                         Progressive relaxation from narrow to broad:
                         1. Remove advanced filters (age_group, clinical_query, etc.)
@@ -1794,6 +1956,9 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             include_preprints = InputNormalizer.normalize_bool(
                 include_preprints, default=False
             )
+            peer_reviewed_only = InputNormalizer.normalize_bool(
+                peer_reviewed_only, default=True
+            )
             auto_relax = InputNormalizer.normalize_bool(auto_relax, default=True)
             deep_search = InputNormalizer.normalize_bool(deep_search, default=True)
 
@@ -1813,29 +1978,39 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             )
 
             # === Step 1.5: Semantic Enhancement (Phase 3) ===
-            # Deep+Wide: Every search gets PubTator3 entity resolution
+            # Skip PubTator3 for SIMPLE/LOOKUP queries (saves 1-3s latency)
             enhanced_query: EnhancedQuery | None = None
             matched_entity_names: list[str] = []
 
-            try:
-                enhancer = get_semantic_enhancer()
-                enhanced_query = await asyncio.wait_for(
-                    enhancer.enhance(query), timeout=3.0
-                )
+            skip_enhancement = (
+                analysis.complexity.value == "simple"
+                or analysis.intent.value == "lookup"
+            )
 
-                if enhanced_query and enhanced_query.entities:
-                    # Extract entity names for ranking
-                    matched_entity_names = [
-                        e.resolved_name for e in enhanced_query.entities
-                    ]
-                    logger.info(
-                        f"Semantic enhancement: {len(enhanced_query.entities)} entities, "
-                        f"{len(enhanced_query.strategies)} strategies"
+            if skip_enhancement:
+                logger.info(
+                    "Skipping semantic enhancement for simple/lookup query"
+                )
+            else:
+                try:
+                    enhancer = get_semantic_enhancer()
+                    enhanced_query = await asyncio.wait_for(
+                        enhancer.enhance(query), timeout=3.0
                     )
-            except asyncio.TimeoutError:
-                logger.warning("Semantic enhancement timeout - continuing without")
-            except Exception as e:
-                logger.debug(f"Semantic enhancement skipped: {e}")
+
+                    if enhanced_query and enhanced_query.entities:
+                        # Extract entity names for ranking
+                        matched_entity_names = [
+                            e.resolved_name for e in enhanced_query.entities
+                        ]
+                        logger.info(
+                            f"Semantic enhancement: {len(enhanced_query.entities)} entities, "
+                            f"{len(enhanced_query.strategies)} strategies"
+                        )
+                except asyncio.TimeoutError:
+                    logger.warning("Semantic enhancement timeout - continuing without")
+                except Exception as e:
+                    logger.debug(f"Semantic enhancement skipped: {e}")
 
             # === Step 2: Determine Sources ===
             sources = DispatchStrategy.get_sources(analysis)
@@ -1860,6 +2035,22 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             pubmed_total_count: int | None = None
             preprint_results: dict = {}
             deep_search_metrics: SearchDepthMetrics | None = None
+
+            # === Pre-fetch: Start clinical trials search in background ===
+            # This runs in parallel with the main search to avoid blocking formatting
+            clinical_trials_task: asyncio.Task | None = None
+            if output_format != "json":
+                try:
+                    from pubmed_search.infrastructure.sources.clinical_trials import (
+                        search_related_trials,
+                    )
+
+                    trial_query = " ".join(query.split()[:5])
+                    clinical_trials_task = asyncio.create_task(
+                        search_related_trials(trial_query, limit=3)
+                    )
+                except Exception:
+                    pass
 
             # Build advanced filters dict for cleaner passing
             advanced_filters = {
@@ -2044,6 +2235,27 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             if "crossref" in sources:
                 await _enrich_with_crossref(articles)
 
+            # === Step 6.25: Enrich with Journal Metrics (OpenAlex Sources API) ===
+            if "openalex" in sources:
+                await _enrich_with_journal_metrics(articles)
+
+            # === Step 6.5: Filter non-peer-reviewed articles ===
+            if peer_reviewed_only and articles:
+                from pubmed_search.domain.entities.article import ArticleType
+
+                pre_filter_count = len(articles)
+                articles = [
+                    a
+                    for a in articles
+                    if not _is_preprint(a, ArticleType)
+                ]
+                filtered_count = pre_filter_count - len(articles)
+                if filtered_count > 0:
+                    logger.info(
+                        f"Peer-review filter: removed {filtered_count} "
+                        f"non-peer-reviewed articles"
+                    )
+
             # === Step 7: Enrich with Unpaywall OA Links ===
             if include_oa_links and DispatchStrategy.should_enrich_with_unpaywall(
                 analysis
@@ -2066,10 +2278,22 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
 
             # === Step 9: Format Output ===
             if output_format == "json":
+                if clinical_trials_task:
+                    clinical_trials_task.cancel()
                 return _format_as_json(
                     ranked, analysis, stats, relaxation_result, deep_search_metrics
                 )
             else:
+                # Collect pre-fetched clinical trials
+                prefetched_trials: list | None = None
+                if clinical_trials_task:
+                    try:
+                        prefetched_trials = await asyncio.wait_for(
+                            clinical_trials_task, timeout=5.0
+                        )
+                    except (asyncio.TimeoutError, Exception):
+                        prefetched_trials = None
+
                 return await _format_unified_results(
                     ranked,
                     analysis,
@@ -2085,6 +2309,7 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                     else None,
                     relaxation_result=relaxation_result,
                     deep_search_metrics=deep_search_metrics,
+                    prefetched_trials=prefetched_trials,
                 )
 
         except Exception as e:

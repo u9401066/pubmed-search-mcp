@@ -42,6 +42,11 @@ from .query_analyzer import (
     QueryComplexity,
     QueryIntent,
 )
+from .query_validator import (
+    QueryValidationResult,
+    QueryValidator,
+    validate_query,
+)
 from .result_aggregator import (
     AggregationStats,
     RankingConfig,
@@ -70,6 +75,10 @@ __all__ = [
     "SearchPlan",
     "enhance_query",
     "get_semantic_enhancer",
+    # Query Validation
+    "QueryValidator",
+    "QueryValidationResult",
+    "validate_query",
     # Result Aggregation
     "ResultAggregator",
     "RankingConfig",

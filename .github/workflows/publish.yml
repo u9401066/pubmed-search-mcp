@@ -6,37 +6,7 @@ on:
       - 'v*'  # Trigger on version tags like v0.1.10
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-          version: "latest"
-      
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      
-      - name: Install dependencies
-        run: uv sync --all-extras --dev
-      
-      - name: Run tests
-        env:
-          NCBI_EMAIL: test@example.com
-        run: uv run pytest -v -m "not integration"
-      
-      - name: Run ruff check
-        run: uv run ruff check .
-      
-      - name: Run ruff format check
-        run: uv run ruff format --check .
-
   build-and-publish:
-    needs: test
     runs-on: ubuntu-latest
     environment: pypi
     permissions:

@@ -210,11 +210,27 @@ class ArticleCache:
         logger.debug(f"Cached article PMID {pmid}")
 
     def put_many(self, articles: List[Dict[str, Any]]):
-        """Add multiple articles to cache."""
+        """Add multiple articles to cache (batched - single disk write)."""
+        added = 0
         for article in articles:
             pmid = article.get("pmid", "")
             if pmid:
-                self.put(pmid, article)
+                cached_article = CachedArticle(
+                    pmid=pmid,
+                    title=article.get("title", ""),
+                    authors=article.get("authors", []),
+                    abstract=article.get("abstract", ""),
+                    journal=article.get("journal", ""),
+                    year=article.get("year", ""),
+                    doi=article.get("doi", ""),
+                    pmc_id=article.get("pmc_id", ""),
+                    full_data=article,
+                )
+                self._memory_cache[pmid] = cached_article
+                added += 1
+        if added > 0:
+            self._save_cache()  # Single disk write for all articles
+            logger.debug(f"Batch cached {added} articles")
 
     def invalidate(self, pmid: str):
         """Remove article from cache."""
@@ -391,8 +407,13 @@ class SessionManager:
             for s in self._sessions.values()
         ]
 
-    def add_to_cache(self, articles: List[Dict[str, Any]]):
-        """Add articles to current session's cache."""
+    def add_to_cache(self, articles: List[Dict[str, Any]], *, _skip_save: bool = False):
+        """Add articles to current session's cache.
+
+        Args:
+            articles: List of article dicts to cache.
+            _skip_save: Internal flag to defer disk write (used by add_search_record).
+        """
         session = self.get_or_create_session()
         for article in articles:
             pmid = article.get("pmid", "")
@@ -402,7 +423,8 @@ class SessionManager:
                     "cached_at": datetime.now().isoformat(),
                 }
         session.touch()
-        self._save_session(session)
+        if not _skip_save:
+            self._save_session(session)
 
     def get_from_cache(self, pmids: List[str]) -> tuple[List[Dict], List[str]]:
         """

@@ -85,13 +85,13 @@ class TestFetchImage:
         mock_response.content = b"\x89PNG\r\n\x1a\n"  # PNG header
         mock_response.raise_for_status = MagicMock()
 
-        with patch("httpx.AsyncClient") as mock_client:
-            mock_instance = AsyncMock()
-            mock_instance.get.return_value = mock_response
-            mock_instance.__aenter__.return_value = mock_instance
-            mock_instance.__aexit__.return_value = None
-            mock_client.return_value = mock_instance
+        mock_client = AsyncMock()
+        mock_client.get.return_value = mock_response
 
+        with patch(
+            "pubmed_search.presentation.mcp_server.tools.vision_search.get_shared_async_client",
+            return_value=mock_client,
+        ):
             mime, data = await fetch_image_as_base64("https://example.com/image.png")
 
             assert mime == "image/png"

@@ -519,6 +519,8 @@ async def _test_resolver_url(url: str, timeout: int = 10) -> dict:
 
     import httpx
 
+    from pubmed_search.shared.async_utils import get_shared_async_client
+
     result = {
         "reachable": False,
         "status_code": None,
@@ -537,11 +539,12 @@ async def _test_resolver_url(url: str, timeout: int = 10) -> dict:
     try:
         start = time.time()
 
-        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-            response = await client.get(
-                url,
-                headers={"User-Agent": "PubMed-Search-MCP/0.1.25 (OpenURL Test)"},
-            )
+        client = get_shared_async_client()
+        response = await client.get(
+            url,
+            headers={"User-Agent": "PubMed-Search-MCP/0.1.25 (OpenURL Test)"},
+            timeout=timeout,
+        )
 
         result["reachable"] = True
         result["status_code"] = response.status_code

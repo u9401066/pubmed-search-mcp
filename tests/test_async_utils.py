@@ -6,13 +6,14 @@ import time
 import pytest
 
 from pubmed_search.shared.async_utils import (
-    AsyncConnectionPool,
     CircuitBreaker,
     RateLimiter,
     async_retry,
     batch_process,
+    close_shared_async_client,
     gather_with_errors,
     get_rate_limiter,
+    get_shared_async_client,
     timeout_with_fallback,
 )
 from pubmed_search.shared.exceptions import RateLimitError
@@ -287,47 +288,46 @@ class TestCircuitBreaker:
 
 
 # ============================================================
-# AsyncConnectionPool
+# Shared Async HTTP Client
 # ============================================================
 
 
-class TestAsyncConnectionPool:
+class TestSharedAsyncClient:
     @pytest.mark.asyncio
-    async def test_acquire_creates_connection(self):
-        async def factory():
-            return "conn"
+    async def test_get_shared_async_client_returns_httpx_client(self):
+        import httpx
 
-        pool = AsyncConnectionPool(factory, max_size=3)
-        conn = await pool.acquire()
-        assert conn == "conn"
-        assert pool.size == 1
+        client = get_shared_async_client()
+        assert isinstance(client, httpx.AsyncClient)
+        assert not client.is_closed
 
     @pytest.mark.asyncio
-    async def test_release_returns_to_pool(self):
-        async def factory():
-            return "conn"
-
-        pool = AsyncConnectionPool(factory, max_size=3)
-        conn = await pool.acquire()
-        await pool.release(conn)
-
-        # Next acquire should reuse
-        conn2 = await pool.acquire()
-        assert conn2 == "conn"
-        # Size shouldn't increase
-        assert pool.size == 1
+    async def test_get_shared_async_client_returns_same_instance(self):
+        client1 = get_shared_async_client()
+        client2 = get_shared_async_client()
+        assert client1 is client2
 
     @pytest.mark.asyncio
-    async def test_available_property(self):
-        async def factory():
-            return "conn"
+    async def test_get_shared_async_client_follows_redirects(self):
+        client = get_shared_async_client()
+        assert client.follow_redirects is True
 
-        pool = AsyncConnectionPool(factory, max_size=3)
-        assert pool.available == 0
+    @pytest.mark.asyncio
+    async def test_close_shared_async_client(self):
+        client = get_shared_async_client()
+        assert not client.is_closed
+        await close_shared_async_client()
+        assert client.is_closed
 
-        conn = await pool.acquire()
-        await pool.release(conn)
-        assert pool.available == 1
+    @pytest.mark.asyncio
+    async def test_get_shared_async_client_recreates_after_close(self):
+        client1 = get_shared_async_client()
+        await close_shared_async_client()
+        client2 = get_shared_async_client()
+        assert client2 is not client1
+        assert not client2.is_closed
+        # Clean up
+        await close_shared_async_client()
 
 
 # ============================================================

@@ -317,6 +317,25 @@ class SearchMixin:
                         f"Valid options: {', '.join(CLINICAL_QUERY_FILTERS.keys())}"
                     )
 
+            # Pre-flight query validation
+            from pubmed_search.application.search.query_validator import (
+                validate_query,
+            )
+
+            validation = validate_query(full_query)
+            if not validation.is_valid:
+                logger.warning(
+                    f"Query syntax issues detected: {validation.errors}. "
+                    f"Original: {full_query}"
+                )
+                if validation.corrected_query:
+                    logger.info(
+                        f"Auto-corrected query: {validation.corrected_query}"
+                    )
+                    full_query = validation.corrected_query
+            elif validation.has_warnings:
+                logger.debug(f"Query warnings: {validation.warnings}")
+
             # Step 1: Search for IDs with retry
             id_list, total_count = await self._search_ids_with_retry(
                 full_query, limit * 2, sort_param
@@ -359,6 +378,26 @@ class SearchMixin:
         )
         record = await asyncio.to_thread(Entrez.read, handle)
         handle.close()
+
+        # Check NCBI WarningList for query translation issues
+        warning_list = record.get("WarningList", {})
+        if warning_list:
+            # NCBI returns warnings like QuotedPhraseNotFound,
+            # OutputMessage (e.g. term not found in MeSH), etc.
+            for warn_type, warn_msgs in warning_list.items():
+                if isinstance(warn_msgs, list) and warn_msgs:
+                    logger.warning(
+                        f"NCBI {warn_type}: {warn_msgs}"
+                    )
+
+        # Check TranslationStack for how NCBI interpreted the query
+        translation_set = record.get("TranslationSet", [])
+        if translation_set:
+            logger.debug(
+                f"NCBI query translation: "
+                f"{[(t.get('From', ''), t.get('To', '')) for t in translation_set]}"
+            )
+
         total_count = int(record.get("Count", 0))
         return record["IdList"], total_count
 

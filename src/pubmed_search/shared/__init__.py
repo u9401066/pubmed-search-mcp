@@ -15,8 +15,6 @@ Python 3.12+ features:
 """
 
 from .async_utils import (
-    # Connection pooling
-    AsyncConnectionPool,
     # Fault tolerance
     CircuitBreaker,
     # Rate limiting
@@ -24,9 +22,12 @@ from .async_utils import (
     # Retry
     async_retry,
     batch_process,
+    # Shared HTTP client
+    close_shared_async_client,
     # Parallel execution
     gather_with_errors,
     get_rate_limiter,
+    get_shared_async_client,
     # Utilities
     timeout_with_fallback,
 )
@@ -86,6 +87,7 @@ __all__ = [
     "gather_with_errors",
     "batch_process",
     "CircuitBreaker",
-    "AsyncConnectionPool",
+    "get_shared_async_client",
+    "close_shared_async_client",
     "timeout_with_fallback",
 ]

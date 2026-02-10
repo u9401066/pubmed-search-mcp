@@ -66,15 +66,14 @@ class TestPDFMixin:
         mock_response.status_code = 200
         mock_response.headers = {"Content-Type": "application/pdf"}
         mock_response.content = b"%PDF-1.4 test content"
-        mock_http = AsyncMock()
-        mock_http.__aenter__.return_value = mock_http
-        mock_http.get.return_value = mock_response
+        mock_client = AsyncMock()
+        mock_client.get.return_value = mock_response
 
         with (
             patch.object(pdf_searcher, "_get_pmc_id", return_value="123456"),
             patch(
-                "pubmed_search.infrastructure.ncbi.pdf.httpx.AsyncClient",
-                return_value=mock_http,
+                "pubmed_search.infrastructure.ncbi.pdf.get_shared_async_client",
+                return_value=mock_client,
             ),
         ):
             result = await pdf_searcher.download_pmc_pdf("12345", str(output_path))
@@ -98,15 +97,14 @@ class TestPDFMixin:
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.headers = {"Content-Type": "text/html"}
-        mock_http = AsyncMock()
-        mock_http.__aenter__.return_value = mock_http
-        mock_http.get.return_value = mock_response
+        mock_client = AsyncMock()
+        mock_client.get.return_value = mock_response
 
         with (
             patch.object(pdf_searcher, "_get_pmc_id", return_value="123456"),
             patch(
-                "pubmed_search.infrastructure.ncbi.pdf.httpx.AsyncClient",
-                return_value=mock_http,
+                "pubmed_search.infrastructure.ncbi.pdf.get_shared_async_client",
+                return_value=mock_client,
             ),
         ):
             result = await pdf_searcher.download_pmc_pdf("12345", str(output_path))
@@ -117,15 +115,14 @@ class TestPDFMixin:
         """Test downloading PDF with error."""
         output_path = tmp_path / "test.pdf"
 
-        mock_http = AsyncMock()
-        mock_http.__aenter__.return_value = mock_http
-        mock_http.get.side_effect = Exception("Network Error")
+        mock_client = AsyncMock()
+        mock_client.get.side_effect = Exception("Network Error")
 
         with (
             patch.object(pdf_searcher, "_get_pmc_id", return_value="123456"),
             patch(
-                "pubmed_search.infrastructure.ncbi.pdf.httpx.AsyncClient",
-                return_value=mock_http,
+                "pubmed_search.infrastructure.ncbi.pdf.get_shared_async_client",
+                return_value=mock_client,
             ),
         ):
             result = await pdf_searcher.download_pmc_pdf("12345", str(output_path))
@@ -138,15 +135,14 @@ class TestPDFMixin:
         mock_response.status_code = 200
         mock_response.headers = {"Content-Type": "application/pdf"}
         mock_response.content = b"%PDF-1.4 test content"
-        mock_http = AsyncMock()
-        mock_http.__aenter__.return_value = mock_http
-        mock_http.get.return_value = mock_response
+        mock_client = AsyncMock()
+        mock_client.get.return_value = mock_response
 
         with (
             patch.object(pdf_searcher, "_get_pmc_id", return_value="123456"),
             patch(
-                "pubmed_search.infrastructure.ncbi.pdf.httpx.AsyncClient",
-                return_value=mock_http,
+                "pubmed_search.infrastructure.ncbi.pdf.get_shared_async_client",
+                return_value=mock_client,
             ),
         ):
             result = await pdf_searcher.download_pdf("12345")
@@ -169,15 +165,14 @@ class TestPDFMixin:
         mock_response.status_code = 200
         mock_response.headers = {"Content-Type": "application/pdf"}
         mock_response.content = b"%PDF-1.4 test content"
-        mock_http = AsyncMock()
-        mock_http.__aenter__.return_value = mock_http
-        mock_http.get.return_value = mock_response
+        mock_client = AsyncMock()
+        mock_client.get.return_value = mock_response
 
         with (
             patch.object(pdf_searcher, "_get_pmc_id", return_value="123456"),
             patch(
-                "pubmed_search.infrastructure.ncbi.pdf.httpx.AsyncClient",
-                return_value=mock_http,
+                "pubmed_search.infrastructure.ncbi.pdf.get_shared_async_client",
+                return_value=mock_client,
             ),
         ):
             result = await pdf_searcher.download_pdf("12345", str(output_path))

@@ -30,7 +30,7 @@ import re
 from typing import Optional, Union
 from urllib.parse import urlparse
 
-import httpx
+from pubmed_search.shared.async_utils import get_shared_async_client
 from mcp.types import ImageContent, TextContent
 
 logger = logging.getLogger(__name__)
@@ -98,23 +98,23 @@ async def fetch_image_as_base64(url: str, timeout: float = 30.0) -> tuple[str, s
     if not is_valid_url(url):
         raise ValueError(f"Invalid URL: {url}")
 
-    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
-        response = await client.get(url)
-        response.raise_for_status()
+    client = get_shared_async_client()
+    response = await client.get(url, timeout=timeout)
+    response.raise_for_status()
 
-        # Determine mime type
-        content_type = response.headers.get("content-type", "image/jpeg")
-        if ";" in content_type:
-            content_type = content_type.split(";")[0].strip()
+    # Determine mime type
+    content_type = response.headers.get("content-type", "image/jpeg")
+    if ";" in content_type:
+        content_type = content_type.split(";")[0].strip()
 
-        # Validate it's an image
-        if not content_type.startswith("image/"):
-            raise ValueError(f"URL does not point to an image: {content_type}")
+    # Validate it's an image
+    if not content_type.startswith("image/"):
+        raise ValueError(f"URL does not point to an image: {content_type}")
 
-        # Encode to base64
-        image_data = base64.b64encode(response.content).decode("utf-8")
+    # Encode to base64
+    image_data = base64.b64encode(response.content).decode("utf-8")
 
-        return content_type, image_data
+    return content_type, image_data
 
 
 # ============================================================================

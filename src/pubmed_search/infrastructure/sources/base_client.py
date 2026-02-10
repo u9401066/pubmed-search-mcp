@@ -79,6 +79,11 @@ class BaseAPIClient:
         self._client = httpx.AsyncClient(
             timeout=self._timeout,
             headers=headers or {},
+            limits=httpx.Limits(
+                max_connections=20,
+                max_keepalive_connections=10,
+                keepalive_expiry=30.0,
+            ),
         )
         self._circuit_breaker = circuit_breaker or CircuitBreaker(
             failure_threshold=10, recovery_timeout=60.0
