@@ -1,10 +1,10 @@
 """
-PubMed Search MCP Tools - Simplified Architecture (v0.2.8)
+PubMed Search MCP Tools (v0.3.4)
 
-🎯 34 個核心工具：
+🎯 34 個 MCP 工具 / 13 categories：
 
-✅ 核心搜索入口 (1)：
-- unified_search: 主入口，自動多源搜索
+✅ 搜尋工具 (1)：
+- unified_search: 統一搜索入口，自動多源搜索
 
 ✅ 查詢智能 (3)：
 - parse_pico, generate_search_queries, analyze_search_query
@@ -14,7 +14,7 @@ PubMed Search MCP Tools - Simplified Architecture (v0.2.8)
 - get_article_references, get_citation_metrics
 
 ✅ 全文工具 (2)：
-- get_fulltext: 獲取 Europe PMC 全文
+- get_fulltext: 多源全文取得
 - get_text_mined_terms: 文本挖掘標註
 
 ✅ NCBI 延伸 (7)：
@@ -22,40 +22,30 @@ PubMed Search MCP Tools - Simplified Architecture (v0.2.8)
 - search_compound, get_compound_details, get_compound_literature
 - search_clinvar
 
-✅ 引用網絡 (2)：
-- build_citation_tree, suggest_citation_tree
+✅ 引用網絡 (1)：
+- build_citation_tree
 
-✅ 研究時間軸 (6) [NEW in v0.2.8]：
-- build_research_timeline: 建構研究時間軸
-- build_timeline_from_pmids: 從 PMID 列表建構時間軸
-- analyze_timeline_milestones: 分析里程碑分佈
-- get_timeline_visualization: 產生視覺化程式碼
-- list_milestone_patterns: 列出偵測模式
-- compare_timelines: 比較多個主題時間軸
+✅ 研究時間軸 (3)：
+- build_research_timeline, analyze_timeline_milestones, compare_timelines
 
-✅ Session 管理 (4) [在 session_tools.py 註冊]：
-- get_session_pmids, list_search_history, get_cached_article, get_session_summary
+✅ Session 管理 (3) [在 session_tools.py 註冊]：
+- get_session_pmids, get_cached_article, get_session_summary
 
 ✅ 匯出 (1)：
 - prepare_export
 
-✅ 視覺搜索 (2) [實驗性]：
-- analyze_figure_for_search: 分析圖片並提取搜索關鍵字
-- reverse_image_search_pubmed: 反向圖片搜索文獻
+✅ 視覺搜索 (1) [實驗性]：
+- analyze_figure_for_search
 
-✅ 機構訂閱 (3)：
-- configure_institutional_access: 設定機構 Link Resolver
-- get_institutional_link: 產生機構訂閱連結 (OpenURL)
-- list_resolver_presets: 列出可用的預設機構
+✅ 機構訂閱 (4)：
+- configure_institutional_access, get_institutional_link
+- list_resolver_presets, test_institutional_access
 
-✅ ICD 轉換 (3)：
-- convert_icd_to_mesh: ICD-9/10 轉 MeSH 詞彙
-- convert_mesh_to_icd: MeSH 轉 ICD 代碼
-- search_by_icd: 用 ICD 代碼搜尋 PubMed
+✅ ICD 轉換 (2)：
+- convert_icd_mesh, search_by_icd
 
-❌ 已移除的重複工具（功能已整合進 unified_search）：
-- search_literature, search_europe_pmc, search_core, search_openalex...
-- merge_search_results, expand_search_queries...
+✅ 圖片搜尋 (1)：
+- search_biomedical_images
 
 Usage:
     from .tools import register_all_tools
@@ -79,76 +69,51 @@ from .ncbi_extended import register_ncbi_extended_tools
 from .openurl import register_openurl_tools  # Institutional access (OpenURL)
 from .pico import register_pico_tools
 from .strategy import register_strategy_tools
-from .timeline import register_timeline_tools  # Research Timeline (v0.2.8)
+from .timeline import register_timeline_tools
 from .unified import register_unified_search_tools
 from .vision_search import register_vision_tools  # Experimental: image-to-literature
 
 
 def register_all_tools(mcp: FastMCP, searcher: LiteratureSearcher):
-    """
-    精簡到 34 個核心工具 (v0.2.8)。
+    """註冊全部 34 個 MCP 工具 (13 categories)。"""
+    # 1. 搜尋工具 (1)
+    register_unified_search_tools(mcp, searcher)
 
-    保留的核心功能：
-    - unified_search: 主搜索入口（自動多源）
-    - get_fulltext: 獲取全文內容
-    - get_text_mined_terms: 文本挖掘
-    - Timeline tools: 研究時間軸 (v0.2.8 新增)
-    - Session 管理工具
-    - OpenURL 機構訂閱連結
+    # 2. 查詢智能 - PICO (1)
+    register_pico_tools(mcp)
 
-    已移除重複工具（功能已整合）：
-    - 多源搜索工具 → unified_search
-    - 擴展/合併工具 → 自動執行
-    """
-    # 1. Core entry point (1 tool)
-    register_unified_search_tools(mcp, searcher)  # unified_search
+    # 3. 查詢智能 - 策略 (2)
+    register_strategy_tools(mcp, searcher)
 
-    # 2. Advanced PICO (1 tool)
-    register_pico_tools(mcp)  # parse_pico
+    # 4. 文章探索 (5)
+    register_discovery_tools(mcp, searcher)
 
-    # 3. Query materials (2 tools)
-    register_strategy_tools(
-        mcp, searcher
-    )  # generate_search_queries, analyze_search_query
-
-    # 4. Article exploration (5 tools)
-    register_discovery_tools(
-        mcp, searcher
-    )  # fetch, find_related/citing/references, metrics
-
-    # 5. Export & session (1 tool: prepare_export)
+    # 5. 匯出工具 (1)
     register_export_tools(mcp, searcher)
 
-    # 6. Fulltext & text mining (2 tools: get_fulltext, get_text_mined_terms)
-    # Note: search_europe_pmc is NOT registered (use unified_search instead)
+    # 6. 全文工具 (2)
     register_europe_pmc_tools(mcp)
 
-    # 7. NCBI Extended (6 tools)
-    register_ncbi_extended_tools(mcp)  # gene, compound, clinvar
+    # 7. NCBI 延伸 (7)
+    register_ncbi_extended_tools(mcp)
 
-    # 8. Citation network (2 tools)
-    register_citation_tree_tools(
-        mcp, searcher
-    )  # build_citation_tree, suggest_citation_tree
+    # 8. 引用網絡 (1)
+    register_citation_tree_tools(mcp, searcher)
 
-    # 9. Research Timeline (6 tools) - NEW in v0.2.8
-    register_timeline_tools(
-        mcp, searcher
-    )  # build_research_timeline, analyze_timeline_milestones, etc.
+    # 9. 研究時間軸 (3)
+    register_timeline_tools(mcp, searcher)
 
-    # 10. Vision-based search (2 tools) - Experimental
-    register_vision_tools(mcp)  # analyze_figure_for_search, reverse_image_search_pubmed
+    # 10. 視覺搜索 (1)
+    register_vision_tools(mcp)
 
-    # 11. Institutional access (3 tools) - OpenURL/Link Resolver
-    register_openurl_tools(
-        mcp
-    )  # configure_institutional_access, get_institutional_link, list_resolver_presets
+    # 11. 機構訂閱 (4)
+    register_openurl_tools(mcp)
 
-    # 12. ICD conversion (3 tools)
-    register_icd_tools(mcp)  # convert_icd_to_mesh, convert_mesh_to_icd, search_by_icd
+    # 12. ICD 轉換 (2)
+    register_icd_tools(mcp)
 
-    # 13. Biomedical image search (1 tool)
-    register_image_search_tools(mcp)  # search_biomedical_images
+    # 13. 圖片搜尋 (1)
+    register_image_search_tools(mcp)
 
 
 __all__ = [
