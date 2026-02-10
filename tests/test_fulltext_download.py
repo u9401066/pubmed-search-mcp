@@ -20,29 +20,29 @@ from pubmed_search.infrastructure.sources.fulltext_download import (
 # ============================================================
 
 class TestPDFSource:
-    def test_properties(self):
+    async def test_properties(self):
         assert PDFSource.EUROPE_PMC.source_id == "europe_pmc"
         assert PDFSource.EUROPE_PMC.priority == 1
         assert PDFSource.EUROPE_PMC.display_name == "Europe PMC"
 
-    def test_priority_ordering(self):
+    async def test_priority_ordering(self):
         assert PDFSource.EUROPE_PMC.priority < PDFSource.PMC.priority
         assert PDFSource.PMC.priority < PDFSource.CORE.priority
         assert PDFSource.CORE.priority < PDFSource.ARXIV.priority
 
 
 class TestPDFLink:
-    def test_sorting(self):
+    async def test_sorting(self):
         link1 = PDFLink(url="a", source=PDFSource.EUROPE_PMC)
         link2 = PDFLink(url="b", source=PDFSource.CORE)
         assert link1 < link2
 
-    def test_sorting_same_source(self):
+    async def test_sorting_same_source(self):
         link1 = PDFLink(url="a", source=PDFSource.CORE, confidence=0.9)
         link2 = PDFLink(url="b", source=PDFSource.CORE, confidence=0.5)
         assert link1 < link2  # higher confidence first
 
-    def test_defaults(self):
+    async def test_defaults(self):
         link = PDFLink(url="https://example.com/paper.pdf", source=PDFSource.PMC)
         assert link.access_type == "unknown"
         assert link.is_direct_pdf is True
@@ -50,21 +50,21 @@ class TestPDFLink:
 
 
 class TestDownloadResult:
-    def test_is_pdf_true(self):
+    async def test_is_pdf_true(self):
         result = DownloadResult(success=True, content=b'%PDF-1.4 test content')
         assert result.is_pdf is True
 
-    def test_is_pdf_false_html(self):
+    async def test_is_pdf_false_html(self):
         result = DownloadResult(success=True, content=b'<html>Not a PDF</html>')
         assert result.is_pdf is False
 
-    def test_is_pdf_no_content(self):
+    async def test_is_pdf_no_content(self):
         result = DownloadResult(success=False, content=None)
         assert result.is_pdf is False
 
 
 class TestFulltextResult:
-    def test_defaults(self):
+    async def test_defaults(self):
         result = FulltextResult()
         assert result.pmid is None
         assert result.content_type == "none"
@@ -77,13 +77,13 @@ class TestFulltextResult:
 # ============================================================
 
 class TestFulltextDownloaderInit:
-    def test_defaults(self):
+    async def test_defaults(self):
         d = FulltextDownloader()
         assert d._timeout == 30.0
         assert d._max_retries == 3
         assert d._client is None
 
-    def test_custom_params(self):
+    async def test_custom_params(self):
         d = FulltextDownloader(timeout=60.0, max_retries=5, max_concurrent=10)
         assert d._timeout == 60.0
         assert d._max_retries == 5
@@ -375,7 +375,7 @@ class TestExtractPdfText:
         mock_page = MagicMock()
         mock_page.get_text.return_value = "Page 1 text"
         mock_doc.__iter__ = lambda s: iter([mock_page])
-        mock_doc.close = MagicMock()
+        mock_doc.close = AsyncMock()
 
         with patch.dict("sys.modules", {"fitz": MagicMock()}):
             import sys
@@ -398,7 +398,7 @@ class TestExtractPdfText:
 # ============================================================
 
 class TestSingleton:
-    def test_get_fulltext_downloader(self):
+    async def test_get_fulltext_downloader(self):
         import pubmed_search.infrastructure.sources.fulltext_download as mod
         mod._downloader_instance = None
         d = get_fulltext_downloader()

@@ -93,36 +93,50 @@ class CrossRefClient:
             await asyncio.sleep(self._min_interval - elapsed)
         self._last_request_time = time.time()
 
-    async def _make_request(self, url: str) -> dict[str, Any] | None:
-        """Make HTTP request to CrossRef API."""
-        await self._rate_limit()
+    _MAX_RETRIES = 3
 
+    async def _make_request(self, url: str) -> dict[str, Any] | None:
+        """Make HTTP request to CrossRef API with retry on 429."""
         # Add mailto parameter for polite pool
         separator = "&" if "?" in url else "?"
         url = f"{url}{separator}mailto={urllib.parse.quote(self._email)}"
 
-        try:
-            response = await self._client.get(url)
-            if response.status_code == 404:
-                logger.debug(f"CrossRef: DOI not found - {url}")
+        for attempt in range(self._MAX_RETRIES + 1):
+            await self._rate_limit()
+            try:
+                response = await self._client.get(url)
+                if response.status_code == 404:
+                    logger.debug(f"CrossRef: DOI not found - {url}")
+                    return None
+                if response.status_code == 429:
+                    if attempt < self._MAX_RETRIES:
+                        try:
+                            retry_after = float(response.headers.get("Retry-After", 2 ** (attempt + 1)))
+                        except (ValueError, TypeError):
+                            retry_after = float(2 ** (attempt + 1))
+                        logger.warning(
+                            f"CrossRef: Rate limited (429), retry {attempt + 1}/{self._MAX_RETRIES} "
+                            f"in {retry_after:.1f}s"
+                        )
+                        await asyncio.sleep(retry_after)
+                        continue
+                    logger.warning("CrossRef: Rate limit exceeded after retries")
+                    return None
+                response.raise_for_status()
+                data = response.json()
+                return data.get("message", data)
+            except httpx.HTTPStatusError as e:
+                logger.error(
+                    f"CrossRef HTTP error {e.response.status_code}: {e.response.reason_phrase}"
+                )
                 return None
-            if response.status_code == 429:
-                logger.warning("CrossRef: Rate limit exceeded, please slow down")
+            except httpx.RequestError as e:
+                logger.error(f"CrossRef URL error: {e}")
                 return None
-            response.raise_for_status()
-            data = response.json()
-            return data.get("message", data)
-        except httpx.HTTPStatusError as e:
-            logger.error(
-                f"CrossRef HTTP error {e.response.status_code}: {e.response.reason_phrase}"
-            )
-            return None
-        except httpx.RequestError as e:
-            logger.error(f"CrossRef URL error: {e}")
-            return None
-        except Exception as e:
-            logger.error(f"CrossRef request failed: {e}")
-            return None
+            except Exception as e:
+                logger.error(f"CrossRef request failed: {e}")
+                return None
+        return None
 
     async def get_work(self, doi: str) -> dict[str, Any] | None:
         """

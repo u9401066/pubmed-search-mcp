@@ -1,6 +1,11 @@
-"""Test citation tree functionality."""
+"""Test citation tree functionality.
+
+Integration test - makes real NCBI API calls. Not for CI.
+"""
 
 import sys
+
+import pytest
 
 sys.path.insert(0, "src")
 
@@ -16,7 +21,8 @@ from pubmed_search.presentation.mcp_server.tools.citation_tree import (
 )
 
 
-def test_basic_apis():
+@pytest.mark.skip(reason="Integration test - makes real NCBI API calls, not for CI")
+async def test_basic_apis():
     """Test the underlying citation APIs."""
     print("=" * 60)
     print("Test 1: Basic Citation APIs")
@@ -27,7 +33,7 @@ def test_basic_apis():
 
     # 1. Fetch article info
     print("\n[1] Fetching article details...")
-    articles = searcher.fetch_details([pmid])
+    articles = await searcher.fetch_details([pmid])
     if articles:
         a = articles[0]
         print(f"    Title: {a.get('title', '?')[:60]}...")
@@ -36,14 +42,14 @@ def test_basic_apis():
 
     # 2. Test citing articles (forward)
     print("\n[2] Testing Forward (who cites this)...")
-    citing = searcher.get_citing_articles(pmid, limit=3)
+    citing = await searcher.get_citing_articles(pmid, limit=3)
     print(f"    Found {len(citing)} citing articles")
     for c in citing[:2]:
         print(f"    - {c.get('title', '?')[:50]}... ({c.get('year', '?')})")
 
     # 3. Test references (backward)
     print("\n[3] Testing Backward (what this cites)...")
-    refs = searcher.get_article_references(pmid, limit=3)
+    refs = await searcher.get_article_references(pmid, limit=3)
     print(f"    Found {len(refs)} references")
     for r in refs[:2]:
         print(f"    - {r.get('title', '?')[:50]}... ({r.get('year', '?')})")
@@ -51,7 +57,8 @@ def test_basic_apis():
     return articles[0] if articles else None
 
 
-def test_format_converters():
+@pytest.mark.skip(reason="Integration test - makes real NCBI API calls, not for CI")
+async def test_format_converters():
     """Test the format conversion functions."""
     print("\n" + "=" * 60)
     print("Test 2: Format Converters")
@@ -113,7 +120,8 @@ def test_format_converters():
     print(f"        First 200 chars: {graphml[:200]}...")
 
 
-def test_full_tree():
+@pytest.mark.skip(reason="Integration test - makes real NCBI API calls, not for CI")
+async def test_full_tree():
     """Test building a complete citation tree."""
     print("\n" + "=" * 60)
     print("Test 3: Full Citation Tree (depth=1)")
@@ -133,13 +141,13 @@ def test_full_tree():
     seen = set()
 
     # Root
-    root = searcher.fetch_details([pmid])[0]
+    root = await searcher.fetch_details([pmid])[0]
     nodes.append(_make_node(root, 0, "root"))
     seen.add(pmid)
     print(f"\n    Root: {root.get('title', '?')[:50]}...")
 
     # Forward (citing)
-    citing = searcher.get_citing_articles(pmid, limit=3)
+    citing = await searcher.get_citing_articles(pmid, limit=3)
     for c in citing:
         c_pmid = str(c.get("pmid", ""))
         if c_pmid and c_pmid not in seen:
@@ -149,7 +157,7 @@ def test_full_tree():
     print(f"    Added {len(citing)} citing articles")
 
     # Backward (references)
-    refs = searcher.get_article_references(pmid, limit=3)
+    refs = await searcher.get_article_references(pmid, limit=3)
     for r in refs:
         r_pmid = str(r.get("pmid", ""))
         if r_pmid and r_pmid not in seen:

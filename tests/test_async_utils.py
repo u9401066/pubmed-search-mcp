@@ -53,12 +53,12 @@ class TestRateLimiter:
 
 
 class TestGetRateLimiter:
-    def test_creates_new(self):
+    async def test_creates_new(self):
         # Use unique name to avoid conflicts
         rl = get_rate_limiter("test_unique_abc", rate=5.0)
         assert isinstance(rl, RateLimiter)
 
-    def test_reuses_existing(self):
+    async def test_reuses_existing(self):
         rl1 = get_rate_limiter("test_reuse_xyz", rate=5.0)
         rl2 = get_rate_limiter("test_reuse_xyz", rate=5.0)
         assert rl1 is rl2
@@ -270,7 +270,7 @@ class TestCircuitBreaker:
 
         assert cb._state == "closed"
 
-    def test_is_open_property(self):
+    async def test_is_open_property(self):
         cb = CircuitBreaker()
         assert cb.is_open is False
 

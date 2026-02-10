@@ -1,0 +1,26 @@
+{
+    // PubMed Search MCP Server — VS Code Configuration
+    // Works on Windows / Linux / macOS via `uv run`
+    //
+    // Prerequisites:
+    //   1. Install uv: https://docs.astral.sh/uv/getting-started/installation/
+    //   2. Run `uv sync` in the project root
+    //
+    // Zero config needed! Email auto-detected from `git config user.email`.
+    // To override, set environment variables:
+    //   NCBI_EMAIL    — Your email for NCBI Entrez API
+    //   NCBI_API_KEY  — NCBI API key for 10 req/s (default: 3 req/s)
+    //
+    "servers": {
+        "pubmed-search": {
+            "type": "stdio",
+            "command": "uv",
+            "args": [
+                "run",
+                "--directory",
+                "${workspaceFolder}",
+                "pubmed-search-mcp"
+            ]
+        }
+    }
+}

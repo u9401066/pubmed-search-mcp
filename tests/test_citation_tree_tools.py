@@ -1,7 +1,7 @@
 """Tests for citation_tree.py — format converters, node/edge builders, and build tool."""
 
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 
 from pubmed_search.presentation.mcp_server.tools.citation_tree import (
@@ -24,7 +24,7 @@ from pubmed_search.presentation.mcp_server.tools.citation_tree import (
 # ============================================================
 
 class TestMakeNode:
-    def test_basic(self):
+    async def test_basic(self):
         article = {
             "pmid": "12345",
             "title": "My Research Paper",
@@ -41,17 +41,17 @@ class TestMakeNode:
         assert node["journal"] == "Nature"
         assert "Smith J" in node["label"]
 
-    def test_no_authors(self):
+    async def test_no_authors(self):
         article = {"pmid": "1", "title": "T", "year": "2020"}
         node = _make_node(article, level=1, direction="citing")
         assert node["first_author"] == "Unknown"
 
-    def test_long_title_truncated(self):
+    async def test_long_title_truncated(self):
         article = {"pmid": "1", "title": "A" * 100}
         node = _make_node(article, level=0, direction="root")
         assert len(node["short_title"]) <= 63
 
-    def test_missing_fields(self):
+    async def test_missing_fields(self):
         node = _make_node({}, level=2, direction="reference")
         assert node["pmid"] == "unknown"
         assert node["journal"] == "Unknown Journal"
@@ -63,7 +63,7 @@ class TestMakeNode:
 # ============================================================
 
 class TestMakeEdge:
-    def test_basic(self):
+    async def test_basic(self):
         edge = _make_edge("111", "222", "cites")
         assert edge["source"] == "111"
         assert edge["target"] == "222"
@@ -75,18 +75,18 @@ class TestMakeEdge:
 # ============================================================
 
 class TestEscapeXml:
-    def test_ampersand(self):
+    async def test_ampersand(self):
         assert "&amp;" in _escape_xml("A & B")
 
-    def test_lt_gt(self):
+    async def test_lt_gt(self):
         assert "&lt;" in _escape_xml("<tag>")
         assert "&gt;" in _escape_xml("<tag>")
 
-    def test_quotes(self):
+    async def test_quotes(self):
         assert "&quot;" in _escape_xml('"hello"')
         assert "&apos;" in _escape_xml("it's")
 
-    def test_no_escaping_needed(self):
+    async def test_no_escaping_needed(self):
         assert _escape_xml("hello world") == "hello world"
 
 
@@ -95,11 +95,11 @@ class TestEscapeXml:
 # ============================================================
 
 class TestEscapeMermaid:
-    def test_basic(self):
+    async def test_basic(self):
         result = _escape_mermaid("Hello (World)")
         assert "(" not in result or "#40;" in result or "world" in result.lower()
 
-    def test_quotes(self):
+    async def test_quotes(self):
         result = _escape_mermaid('Say "hello"')
         assert '"' not in result or "#quot;" in result
 
@@ -145,80 +145,80 @@ SAMPLE_EDGES = [
 
 
 class TestToCytoscape:
-    def test_structure(self):
+    async def test_structure(self):
         result = _to_cytoscape(SAMPLE_NODES, SAMPLE_EDGES)
         assert "nodes" in result
         assert "edges" in result
         assert len(result["nodes"]) == 2
         assert len(result["edges"]) == 1
 
-    def test_node_data(self):
+    async def test_node_data(self):
         result = _to_cytoscape(SAMPLE_NODES, SAMPLE_EDGES)
         node = result["nodes"][0]
         assert "data" in node
         assert node["data"]["pmid"] == "111"
 
-    def test_empty(self):
+    async def test_empty(self):
         result = _to_cytoscape([], [])
         assert result["nodes"] == []
         assert result["edges"] == []
 
 
 class TestToG6:
-    def test_structure(self):
+    async def test_structure(self):
         result = _to_g6(SAMPLE_NODES, SAMPLE_EDGES)
         assert "nodes" in result
         assert "edges" in result
         assert len(result["nodes"]) == 2
 
-    def test_node_has_id(self):
+    async def test_node_has_id(self):
         result = _to_g6(SAMPLE_NODES, SAMPLE_EDGES)
         assert result["nodes"][0]["id"] == "111"
 
 
 class TestToD3:
-    def test_structure(self):
+    async def test_structure(self):
         result = _to_d3(SAMPLE_NODES, SAMPLE_EDGES)
         assert "nodes" in result
         assert "links" in result  # D3 uses "links" not "edges"
         assert len(result["nodes"]) == 2
 
-    def test_link_has_source_target(self):
+    async def test_link_has_source_target(self):
         result = _to_d3(SAMPLE_NODES, SAMPLE_EDGES)
         assert result["links"][0]["source"] == "222"
         assert result["links"][0]["target"] == "111"
 
 
 class TestToVis:
-    def test_structure(self):
+    async def test_structure(self):
         result = _to_vis(SAMPLE_NODES, SAMPLE_EDGES)
         assert "nodes" in result
         assert "edges" in result
 
-    def test_edge_has_arrows(self):
+    async def test_edge_has_arrows(self):
         result = _to_vis(SAMPLE_NODES, SAMPLE_EDGES)
         assert result["edges"][0]["arrows"] == "to"
 
 
 class TestToGraphml:
-    def test_returns_xml_string(self):
+    async def test_returns_xml_string(self):
         result = _to_graphml(SAMPLE_NODES, SAMPLE_EDGES, "Test Tree")
         assert isinstance(result, str)
         assert "<?xml" in result
         assert "<graphml" in result
         assert "</graphml>" in result
 
-    def test_contains_nodes(self):
+    async def test_contains_nodes(self):
         result = _to_graphml(SAMPLE_NODES, SAMPLE_EDGES, "Test Tree")
         assert 'node id="111"' in result
         assert 'node id="222"' in result
 
-    def test_contains_edges(self):
+    async def test_contains_edges(self):
         result = _to_graphml(SAMPLE_NODES, SAMPLE_EDGES, "Test Tree")
         assert 'source="222"' in result
         assert 'target="111"' in result
 
-    def test_escapes_special_chars(self):
+    async def test_escapes_special_chars(self):
         nodes = [{**SAMPLE_NODES[0], "title": "A & B <test>"}]
         result = _to_graphml(nodes, [], "Test")
         assert "&amp;" in result
@@ -226,12 +226,12 @@ class TestToGraphml:
 
 
 class TestToMermaid:
-    def test_returns_string(self):
+    async def test_returns_string(self):
         result = _to_mermaid(SAMPLE_NODES, SAMPLE_EDGES, "Test")
         assert isinstance(result, str)
         assert "graph TD" in result
 
-    def test_contains_nodes(self):
+    async def test_contains_nodes(self):
         result = _to_mermaid(SAMPLE_NODES, SAMPLE_EDGES, "Root Paper")
         assert "111" in result
         assert "222" in result
@@ -261,12 +261,12 @@ class TestBuildCitationTreeTool:
 
     @pytest.mark.asyncio
     async def test_depth_clamped(self):
-        self.searcher.fetch_details = MagicMock(return_value=[{
+        self.searcher.fetch_details = AsyncMock(return_value=[{
             "pmid": "111", "title": "Root", "year": "2024",
             "journal": "J", "authors": ["A"], "doi": "",
         }])
-        self.searcher.get_citing_articles = MagicMock(return_value=[])
-        self.searcher.get_article_references = MagicMock(return_value=[])
+        self.searcher.get_citing_articles = AsyncMock(return_value=[])
+        self.searcher.get_article_references = AsyncMock(return_value=[])
 
         result = await self.tools["build_citation_tree"](
             pmid="111", depth=10, limit_per_level=5, output_format="cytoscape"
@@ -277,7 +277,7 @@ class TestBuildCitationTreeTool:
 
     @pytest.mark.asyncio
     async def test_article_not_found(self):
-        self.searcher.fetch_details = MagicMock(return_value=[])
+        self.searcher.fetch_details = AsyncMock(return_value=[])
         result = await self.tools["build_citation_tree"](pmid="999999")
         assert "not" in result.lower() or "error" in result.lower()
 
@@ -290,9 +290,9 @@ class TestBuildCitationTreeTool:
         ref = {"pmid": "333", "title": "Reference Paper", "year": "2020",
                "journal": "JAMA", "authors": ["Lee"], "doi": ""}
 
-        self.searcher.fetch_details = MagicMock(return_value=[root])
-        self.searcher.get_citing_articles = MagicMock(return_value=[citing])
-        self.searcher.get_article_references = MagicMock(return_value=[ref])
+        self.searcher.fetch_details = AsyncMock(return_value=[root])
+        self.searcher.get_citing_articles = AsyncMock(return_value=[citing])
+        self.searcher.get_article_references = AsyncMock(return_value=[ref])
 
         result = await self.tools["build_citation_tree"](
             pmid="111", depth=1, limit_per_level=5, output_format="cytoscape"

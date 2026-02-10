@@ -3,14 +3,14 @@ Final targeted tests to reach 90% coverage.
 Focus on uncovered lines in remaining files.
 """
 
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 import tempfile
 
 
 class TestSearchRetryAndErrorPaths:
     """Cover retry and error paths in search.py."""
 
-    def test_search_with_rate_limit_error(self):
+    async def test_search_with_rate_limit_error(self):
         """Test search retry on rate limit errors."""
         from pubmed_search.infrastructure.ncbi.search import SearchMixin
 
@@ -25,7 +25,8 @@ class TestSearchRetryAndErrorPaths:
                 "pubmed_search.infrastructure.ncbi.search.Entrez.esearch"
             ) as mock_esearch,
             patch("pubmed_search.infrastructure.ncbi.search.Entrez.read") as mock_read,
-            patch("pubmed_search.infrastructure.ncbi.search.time.sleep"),
+            patch("pubmed_search.infrastructure.ncbi.search.asyncio.sleep", new_callable=AsyncMock),
+            patch("pubmed_search.infrastructure.ncbi.search._rate_limit", new_callable=AsyncMock),
         ):
             # First two calls fail, third succeeds
             call_count = [0]
@@ -40,11 +41,11 @@ class TestSearchRetryAndErrorPaths:
             mock_read.return_value = {"IdList": ["123"]}
 
             try:
-                searcher._search_ids_with_retry("test", 10, "relevance")
+                await searcher._search_ids_with_retry("test", 10, "relevance")
             except Exception:
                 pass  # May still fail after max retries
 
-    def test_search_with_backend_failed_error(self):
+    async def test_search_with_backend_failed_error(self):
         """Test search retry on backend failed errors."""
         from pubmed_search.infrastructure.ncbi.search import SearchMixin
 
@@ -58,12 +59,13 @@ class TestSearchRetryAndErrorPaths:
             patch(
                 "pubmed_search.infrastructure.ncbi.search.Entrez.esearch"
             ) as mock_esearch,
-            patch("pubmed_search.infrastructure.ncbi.search.time.sleep"),
+            patch("pubmed_search.infrastructure.ncbi.search.asyncio.sleep", new_callable=AsyncMock),
+            patch("pubmed_search.infrastructure.ncbi.search._rate_limit", new_callable=AsyncMock),
         ):
             mock_esearch.side_effect = Exception("Backend failed")
 
             try:
-                searcher._search_ids_with_retry("test", 10, "relevance")
+                await searcher._search_ids_with_retry("test", 10, "relevance")
             except Exception:
                 pass  # Expected to fail after max retries
 
@@ -71,7 +73,7 @@ class TestSearchRetryAndErrorPaths:
 class TestClientEdgeCases:
     """Cover edge cases in client.py."""
 
-    def test_literature_searcher_full_workflow(self):
+    async def test_literature_searcher_full_workflow(self):
         """Test full search workflow."""
         from pubmed_search import LiteratureSearcher
 
@@ -87,7 +89,7 @@ class TestClientEdgeCases:
 class TestSessionFindCachedSearch:
     """Test session cached search functionality."""
 
-    def test_find_cached_search_found(self):
+    async def test_find_cached_search_found(self):
         """Test finding cached search results."""
         from pubmed_search.application.session import SessionManager
 
@@ -107,7 +109,7 @@ class TestSessionFindCachedSearch:
             # Result depends on implementation
             assert result is None or isinstance(result, list)
 
-    def test_session_no_current(self):
+    async def test_session_no_current(self):
         """Test operations with no current session."""
         from pubmed_search.application.session import SessionManager
 
@@ -122,7 +124,7 @@ class TestSessionFindCachedSearch:
 class TestStrategyGeneratorPaths:
     """Cover additional paths in strategy.py."""
 
-    def test_generate_strategies_basic(self):
+    async def test_generate_strategies_basic(self):
         """Test basic strategy generation."""
         from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
 
@@ -141,7 +143,7 @@ class TestStrategyGeneratorPaths:
             generator = SearchStrategyGenerator(email="test@example.com")
 
             # Generate strategies
-            result = generator.generate_strategies("cancer treatment")
+            result = await generator.generate_strategies("cancer treatment")
 
             assert isinstance(result, dict)
 
@@ -149,7 +151,7 @@ class TestStrategyGeneratorPaths:
 class TestServerModulePaths:
     """Cover paths in server.py."""
 
-    def test_server_constants(self):
+    async def test_server_constants(self):
         """Test server module constants."""
         from pubmed_search.presentation.mcp_server import server
 
@@ -157,7 +159,7 @@ class TestServerModulePaths:
         assert hasattr(server, "SERVER_INSTRUCTIONS")
         assert hasattr(server, "DEFAULT_DATA_DIR")
 
-    def test_server_instructions_content(self):
+    async def test_server_instructions_content(self):
         """Test server instructions are defined."""
         from pubmed_search.presentation.mcp_server.server import SERVER_INSTRUCTIONS
 
@@ -170,7 +172,7 @@ class TestServerModulePaths:
 class TestSessionToolsPaths:
     """Cover paths in session_tools.py."""
 
-    def test_session_tools_module_structure(self):
+    async def test_session_tools_module_structure(self):
         """Test session_tools module structure."""
         from pubmed_search.presentation.mcp_server import session_tools
 
@@ -182,7 +184,7 @@ class TestSessionToolsPaths:
 class TestCommonModuleEdgeCases:
     """Cover edge cases in _common.py."""
 
-    def test_format_search_results_with_error(self):
+    async def test_format_search_results_with_error(self):
         """Test formatting results containing an error."""
         from pubmed_search.presentation.mcp_server.tools._common import (
             format_search_results,
@@ -193,7 +195,7 @@ class TestCommonModuleEdgeCases:
 
         assert "Error" in formatted or "error" in formatted.lower()
 
-    def test_format_search_results_normal(self):
+    async def test_format_search_results_normal(self):
         """Test formatting normal results."""
         from pubmed_search.presentation.mcp_server.tools._common import (
             format_search_results,
@@ -220,7 +222,7 @@ class TestCommonModuleEdgeCases:
 class TestDiscoveryModuleEdgeCases:
     """Cover edge cases in discovery.py."""
 
-    def test_get_references_tool(self):
+    async def test_get_references_tool(self):
         """Test that get_references tool function exists."""
         from pubmed_search.presentation.mcp_server.tools import discovery
 
@@ -231,7 +233,7 @@ class TestDiscoveryModuleEdgeCases:
 class TestExportModuleEdgeCases:
     """Cover edge cases in export.py."""
 
-    def test_export_tool_module_structure(self):
+    async def test_export_tool_module_structure(self):
         """Test export tool module structure."""
         from pubmed_search.presentation.mcp_server.tools import export
 
@@ -242,7 +244,7 @@ class TestExportModuleEdgeCases:
 class TestFormatsModuleEdgeCases:
     """Cover edge cases in formats.py."""
 
-    def test_export_articles_dispatcher(self):
+    async def test_export_articles_dispatcher(self):
         """Test export_articles function dispatches correctly."""
         from pubmed_search.application.export.formats import export_articles
 
@@ -265,7 +267,7 @@ class TestFormatsModuleEdgeCases:
 class TestPicoModuleEdgeCases:
     """Cover edge cases in pico.py."""
 
-    def test_pico_module_structure(self):
+    async def test_pico_module_structure(self):
         """Test pico module structure."""
         from pubmed_search.presentation.mcp_server.tools import pico
 
@@ -275,7 +277,7 @@ class TestPicoModuleEdgeCases:
 class TestIciteModuleEdgeCases:
     """Cover edge cases in icite.py."""
 
-    def test_icite_sorting(self):
+    async def test_icite_sorting(self):
         """Test iCite result sorting."""
         from pubmed_search.infrastructure.ncbi.icite import ICiteMixin
 
@@ -291,7 +293,7 @@ class TestIciteModuleEdgeCases:
 class TestBatchModuleEdgeCases:
     """Cover edge cases in batch.py."""
 
-    def test_batch_search_with_history(self):
+    async def test_batch_search_with_history(self):
         """Test batch search_with_history method."""
         from pubmed_search.infrastructure.ncbi.batch import BatchMixin
 
@@ -313,7 +315,7 @@ class TestBatchModuleEdgeCases:
             }
             mock_esearch.return_value = MagicMock()
 
-            result = searcher.search_with_history("cancer")
+            result = await searcher.search_with_history("cancer")
 
             assert result["count"] == 100
 
@@ -321,7 +323,7 @@ class TestBatchModuleEdgeCases:
 class TestPdfModuleEdgeCases:
     """Cover edge cases in pdf.py."""
 
-    def test_pdf_mixin_methods(self):
+    async def test_pdf_mixin_methods(self):
         """Test PDFMixin has expected methods."""
         from pubmed_search.infrastructure.ncbi.pdf import PDFMixin
 
@@ -336,7 +338,7 @@ class TestPdfModuleEdgeCases:
 class TestLinksModuleEdgeCases:
     """Cover edge cases in links.py."""
 
-    def test_get_fulltext_links(self):
+    async def test_get_fulltext_links(self):
         """Test get_fulltext_links function."""
         from pubmed_search.application.export.links import get_fulltext_links
 
@@ -354,7 +356,7 @@ class TestLinksModuleEdgeCases:
 class TestBaseModuleEdgeCases:
     """Cover edge cases in base.py."""
 
-    def test_entrez_base_init(self):
+    async def test_entrez_base_init(self):
         """Test EntrezBase initialization."""
         from pubmed_search.infrastructure.ncbi.base import EntrezBase
 
@@ -366,7 +368,7 @@ class TestBaseModuleEdgeCases:
         assert Entrez.email == "test@example.com"
         assert Entrez.api_key == "test_key"
 
-    def test_rate_limit_function(self):
+    async def test_rate_limit_function(self):
         """Test rate limiting function."""
         from pubmed_search.infrastructure.ncbi.base import _rate_limit
 
@@ -377,7 +379,7 @@ class TestBaseModuleEdgeCases:
         # Should not raise
         assert True
 
-    def test_search_strategy_enum(self):
+    async def test_search_strategy_enum(self):
         """Test SearchStrategy enum."""
         from pubmed_search.infrastructure.ncbi.base import SearchStrategy
 

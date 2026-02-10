@@ -6,7 +6,7 @@ Run with: pytest tests/test_e2e_workflows.py -v
 """
 
 import pytest
-from unittest.mock import Mock
+from unittest.mock import AsyncMock, Mock
 
 
 # ============================================================
@@ -50,7 +50,7 @@ def complete_article_data():
 @pytest.fixture
 def mock_client_full(complete_article_data):
     """Fully mocked PubMedClient for E2E tests."""
-    client = Mock()  # No spec - allow any attributes for E2E workflow testing
+    client = AsyncMock()  # AsyncMock to support await calls
 
     # Mock search
     client.search.return_value = [complete_article_data]
@@ -80,7 +80,7 @@ def mock_client_full(complete_article_data):
 class TestQuickSearchWorkflow:
     """Test: User wants to quickly find papers on a topic."""
 
-    def test_quick_search_workflow(self, mock_client_full):
+    async def test_quick_search_workflow(self, mock_client_full):
         """
         Workflow:
         1. User searches for a topic
@@ -88,7 +88,7 @@ class TestQuickSearchWorkflow:
         3. Reads titles and abstracts
         """
         # Step 1: Search
-        results = mock_client_full.search("remimazolam sedation", limit=10)
+        results = await mock_client_full.search("remimazolam sedation", limit=10)
 
         assert len(results) > 0
         assert results[0]["pmid"] is not None
@@ -113,7 +113,7 @@ class TestQuickSearchWorkflow:
 class TestSystematicReviewWorkflow:
     """Test: Researcher conducting systematic literature review."""
 
-    def test_systematic_review_workflow(self, mock_client_full, complete_article_data):
+    async def test_systematic_review_workflow(self, mock_client_full, complete_article_data):
         """
         Workflow:
         1. Search with MeSH terms
@@ -123,13 +123,13 @@ class TestSystematicReviewWorkflow:
         """
         # Step 1: Comprehensive search with MeSH
         mesh_query = '("Remimazolam"[MeSH]) AND ("Conscious Sedation"[MeSH])'
-        results = mock_client_full.search(mesh_query, limit=50)
+        results = await mock_client_full.search(mesh_query, limit=50)
 
         assert len(results) > 0
 
         # Step 2: Get detailed information
         pmids = [r["pmid"] for r in results[:10]]
-        details = mock_client_full.fetch_details(pmids)
+        details = await mock_client_full.fetch_details(pmids)
 
         assert len(details) > 0
         assert all("abstract" in d for d in details)
@@ -158,7 +158,7 @@ class TestSystematicReviewWorkflow:
 class TestCitationExplorationWorkflow:
     """Test: Researcher exploring citation networks."""
 
-    def test_citation_network_workflow(self, mock_client_full):
+    async def test_citation_network_workflow(self, mock_client_full):
         """
         Workflow:
         1. Find a key paper
@@ -169,16 +169,17 @@ class TestCitationExplorationWorkflow:
         key_pmid = "33475315"
 
         # Step 1: Get the key paper details
-        article = mock_client_full.fetch_details([key_pmid])[0]
+        details = await mock_client_full.fetch_details([key_pmid])
+        article = details[0]
         assert article["pmid"] == key_pmid
 
         # Step 2: Find related articles
-        related = mock_client_full.get_related_articles(key_pmid, limit=10)
+        related = await mock_client_full.get_related_articles(key_pmid, limit=10)
         assert len(related) > 0
         assert all(r["pmid"] != key_pmid for r in related)
 
         # Step 3: Find citing articles (forward citation)
-        citing = mock_client_full.get_citing_articles(key_pmid, limit=10)
+        citing = await mock_client_full.get_citing_articles(key_pmid, limit=10)
         assert len(citing) > 0
 
         # Step 4: Get references (backward citation)
@@ -205,7 +206,7 @@ class TestCitationExplorationWorkflow:
 class TestPICOWorkflow:
     """Test: Clinician asking PICO-based question."""
 
-    def test_pico_clinical_workflow(self, mock_client_full):
+    async def test_pico_clinical_workflow(self, mock_client_full):
         """
         Workflow:
         1. Clinician has PICO question
@@ -233,7 +234,7 @@ class TestPICOWorkflow:
         )
 
         # Step 4: Search
-        results = mock_client_full.search(optimized_query, limit=20)
+        results = await mock_client_full.search(optimized_query, limit=20)
         assert len(results) > 0
 
         # Step 5: Filter for high-quality evidence
@@ -259,7 +260,7 @@ class TestPICOWorkflow:
 class TestDrugResearchWorkflow:
     """Test: Pharmacologist researching a drug compound."""
 
-    def test_drug_compound_workflow(self, mock_client_full):
+    async def test_drug_compound_workflow(self, mock_client_full):
         """
         Workflow:
         1. Search for drug by name
@@ -270,7 +271,7 @@ class TestDrugResearchWorkflow:
         drug_name = "remimazolam"
 
         # Step 1: Search PubMed
-        results = mock_client_full.search(drug_name, limit=50)
+        results = await mock_client_full.search(drug_name, limit=50)
         assert len(results) > 0
 
         # Step 2: Search PubChem (mock)
@@ -312,7 +313,7 @@ class TestDrugResearchWorkflow:
 class TestFullTextAccessWorkflow:
     """Test: Researcher needing full text access."""
 
-    def test_fulltext_access_workflow(self, mock_client_full, complete_article_data):
+    async def test_fulltext_access_workflow(self, mock_client_full, complete_article_data):
         """
         Workflow:
         1. Find articles
@@ -321,7 +322,7 @@ class TestFullTextAccessWorkflow:
         4. Get PDF links
         """
         # Step 1: Find articles
-        results = mock_client_full.search("diabetes treatment", limit=10)
+        results = await mock_client_full.search("diabetes treatment", limit=10)
         assert len(results) > 0
 
         # Step 2: Check OA availability
@@ -364,7 +365,7 @@ class TestSessionWorkflow:
     """Test: User managing research sessions."""
 
     @pytest.mark.skip(reason="SessionManager API changed - needs rewrite")
-    def test_session_management_workflow(self, mock_client_full):
+    async def test_session_management_workflow(self, mock_client_full):
         """
         Workflow:
         1. Create research session
@@ -385,7 +386,7 @@ class TestSessionWorkflow:
         assert session["topic"] == "diabetes treatment"
 
         # Step 2: Save search results
-        results = mock_client_full.search("diabetes", limit=10)
+        results = await mock_client_full.search("diabetes", limit=10)
         session_mgr.cache_articles(session_id, results)
 
         # Step 3: Build reading list
@@ -413,33 +414,33 @@ class TestSessionWorkflow:
 class TestErrorRecoveryWorkflow:
     """Test: System handles errors gracefully."""
 
-    def test_network_error_recovery(self):
+    async def test_network_error_recovery(self):
         """Handle network failures gracefully."""
         from pubmed_search.shared.exceptions import NetworkError
 
-        mock_client = Mock()
+        mock_client = AsyncMock()
         mock_client.search.side_effect = NetworkError("Network timeout")
 
         # User should get meaningful error
         with pytest.raises(NetworkError) as exc_info:
-            mock_client.search("diabetes")
+            await mock_client.search("diabetes")
 
         assert "Network timeout" in str(exc_info.value)
 
-    def test_invalid_pmid_handling(self, mock_client_full):
+    async def test_invalid_pmid_handling(self, mock_client_full):
         """Handle invalid PMIDs gracefully."""
         invalid_pmids = ["invalid", "999999999", ""]
 
         # Should not crash, just skip invalid PMIDs
         mock_client_full.fetch_details.return_value = []
 
-        results = mock_client_full.fetch_details(invalid_pmids)
+        results = await mock_client_full.fetch_details(invalid_pmids)
         # Should return empty or valid results only
         assert isinstance(results, list)
 
-    def test_rate_limit_retry(self):
+    async def test_rate_limit_retry(self):
         """Retry on rate limit errors."""
-        mock_client = Mock()
+        mock_client = AsyncMock()
 
         # First call fails with rate limit
         # Second call succeeds
@@ -451,7 +452,7 @@ class TestErrorRecoveryWorkflow:
         # Implementation should retry
         # For now, just verify exception is raised
         with pytest.raises(Exception):
-            mock_client.search("diabetes")
+            await mock_client.search("diabetes")
 
 
 # ============================================================
@@ -462,7 +463,7 @@ class TestErrorRecoveryWorkflow:
 class TestCompleteResearchProject:
     """Test: Complete research project from start to finish."""
 
-    def test_full_research_project(self, mock_client_full):
+    async def test_full_research_project(self, mock_client_full):
         """
         Complete workflow:
         1. Define research question
@@ -475,7 +476,7 @@ class TestCompleteResearchProject:
         question = "What is the efficacy of remimazolam for procedural sedation?"
 
         # Step 2: Systematic search
-        results = mock_client_full.search("remimazolam procedural sedation", limit=100)
+        results = await mock_client_full.search("remimazolam procedural sedation", limit=100)
         assert len(results) > 0
 
         # Step 3: Screen articles (mock screening)

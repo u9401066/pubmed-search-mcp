@@ -3,7 +3,7 @@ Tests for search.py module and discovery tools functions.
 """
 
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import AsyncMock, patch, MagicMock
 import json
 
 
@@ -21,7 +21,7 @@ class TestSearchModule:
 
         return TestSearcher()
 
-    def test_search_basic(self, search_mixin):
+    async def test_search_basic(self, search_mixin):
         """Test basic search functionality."""
         with (
             patch(
@@ -33,12 +33,12 @@ class TestSearchModule:
             mock_read.return_value = {"IdList": ["123", "456"], "Count": "2"}
             mock_esearch.return_value = MagicMock()
 
-            search_mixin.search("test query", limit=10)
+            await search_mixin.search("test query", limit=10)
 
             # Should call esearch
             mock_esearch.assert_called_once()
 
-    def test_search_with_date_filters(self, search_mixin):
+    async def test_search_with_date_filters(self, search_mixin):
         """Test search with date filters."""
         with (
             patch(
@@ -50,7 +50,7 @@ class TestSearchModule:
             mock_read.return_value = {"IdList": [], "Count": "0"}
             mock_esearch.return_value = MagicMock()
 
-            search_mixin.search(
+            await search_mixin.search(
                 "test",
                 limit=10,
                 date_from="2024/01/01",
@@ -58,7 +58,7 @@ class TestSearchModule:
                 date_type="edat",
             )
 
-    def test_fetch_details_basic(self, search_mixin):
+    async def test_fetch_details_basic(self, search_mixin):
         """Test fetching article details."""
         with (
             patch(
@@ -88,7 +88,7 @@ class TestSearchModule:
             }
             mock_efetch.return_value = MagicMock()
 
-            results = search_mixin.fetch_details(["12345"])
+            results = await search_mixin.fetch_details(["12345"])
 
             assert len(results) == 1
             assert results[0]["pmid"] == "12345"
@@ -105,7 +105,7 @@ class TestDiscoveryToolsComplete:
         )
 
         mcp = MagicMock()
-        searcher = MagicMock()
+        searcher = AsyncMock()
 
         tools = {}
 
@@ -125,25 +125,25 @@ class TestDiscoveryToolsComplete:
     @pytest.mark.skip(
         reason="v0.1.21: search_literature integrated into unified_search"
     )
-    def test_search_literature_tool(self, registered_tools):
+    async def test_search_literature_tool(self, registered_tools):
         """Test search_literature tool function."""
         pass  # This tool has been integrated into unified_search
 
     @pytest.mark.skip(
         reason="v0.1.21: search_literature integrated into unified_search"
     )
-    def test_search_literature_empty_query(self, registered_tools):
+    async def test_search_literature_empty_query(self, registered_tools):
         """Test search_literature with empty query."""
         pass  # This tool has been integrated into unified_search
 
     @pytest.mark.skip(
         reason="v0.1.21: search_literature integrated into unified_search"
     )
-    def test_search_literature_with_ambiguous_term(self, registered_tools):
+    async def test_search_literature_with_ambiguous_term(self, registered_tools):
         """Test search_literature with ambiguous journal name."""
         pass  # This tool has been integrated into unified_search
 
-    def test_find_related_articles_tool(self, registered_tools):
+    async def test_find_related_articles_tool(self, registered_tools):
         """Test find_related_articles tool."""
         tools, searcher = registered_tools
 
@@ -151,32 +151,32 @@ class TestDiscoveryToolsComplete:
             {"pmid": "456", "title": "Related Article", "authors": [], "year": "2024"}
         ]
 
-        result = tools["find_related_articles"](pmid="123", limit=5)
+        result = await tools["find_related_articles"](pmid="123", limit=5)
 
         assert "Related" in result or "456" in result
 
-    def test_find_related_articles_no_results(self, registered_tools):
+    async def test_find_related_articles_no_results(self, registered_tools):
         """Test find_related_articles with no results."""
         tools, searcher = registered_tools
 
         searcher.get_related_articles.return_value = []
 
-        result = tools["find_related_articles"](pmid="123", limit=5)
+        result = await tools["find_related_articles"](pmid="123", limit=5)
 
         # Updated to match unified "No results found" format
         assert "No related" in result or "No results" in result
 
-    def test_find_related_articles_error(self, registered_tools):
+    async def test_find_related_articles_error(self, registered_tools):
         """Test find_related_articles with error."""
         tools, searcher = registered_tools
 
         searcher.get_related_articles.return_value = [{"error": "API Error"}]
 
-        result = tools["find_related_articles"](pmid="123", limit=5)
+        result = await tools["find_related_articles"](pmid="123", limit=5)
 
         assert "Error" in result
 
-    def test_find_citing_articles_tool(self, registered_tools):
+    async def test_find_citing_articles_tool(self, registered_tools):
         """Test find_citing_articles tool."""
         tools, searcher = registered_tools
 
@@ -184,17 +184,17 @@ class TestDiscoveryToolsComplete:
             {"pmid": "789", "title": "Citing Article", "authors": [], "year": "2024"}
         ]
 
-        result = tools["find_citing_articles"](pmid="123", limit=10)
+        result = await tools["find_citing_articles"](pmid="123", limit=10)
 
         assert "Citing" in result or "789" in result
 
-    def test_find_citing_articles_no_results(self, registered_tools):
+    async def test_find_citing_articles_no_results(self, registered_tools):
         """Test find_citing_articles with no results."""
         tools, searcher = registered_tools
 
         searcher.get_citing_articles.return_value = []
 
-        result = tools["find_citing_articles"](pmid="123", limit=10)
+        result = await tools["find_citing_articles"](pmid="123", limit=10)
 
         # Updated to match unified "No results found" format
         assert (
@@ -203,7 +203,7 @@ class TestDiscoveryToolsComplete:
             or "not indexed" in result.lower()
         )
 
-    def test_get_article_references_tool(self, registered_tools):
+    async def test_get_article_references_tool(self, registered_tools):
         """Test get_article_references tool."""
         tools, searcher = registered_tools
 
@@ -211,22 +211,22 @@ class TestDiscoveryToolsComplete:
             {"pmid": "111", "title": "Reference Article", "authors": [], "year": "2020"}
         ]
 
-        result = tools["get_article_references"](pmid="123", limit=20)
+        result = await tools["get_article_references"](pmid="123", limit=20)
 
         assert "References" in result or "111" in result
 
-    def test_get_article_references_no_results(self, registered_tools):
+    async def test_get_article_references_no_results(self, registered_tools):
         """Test get_article_references with no results."""
         tools, searcher = registered_tools
 
         searcher.get_article_references.return_value = []
 
-        result = tools["get_article_references"](pmid="123", limit=20)
+        result = await tools["get_article_references"](pmid="123", limit=20)
 
         # Updated to match unified "No results found" format
         assert "No references" in result or "No results" in result
 
-    def test_fetch_article_details_tool(self, registered_tools):
+    async def test_fetch_article_details_tool(self, registered_tools):
         """Test fetch_article_details tool."""
         tools, searcher = registered_tools
 
@@ -247,22 +247,22 @@ class TestDiscoveryToolsComplete:
             },
         ]
 
-        result = tools["fetch_article_details"](pmids="123,456")
+        result = await tools["fetch_article_details"](pmids="123,456")
 
         assert "123" in result or "Article" in result
 
-    def test_fetch_article_details_no_results(self, registered_tools):
+    async def test_fetch_article_details_no_results(self, registered_tools):
         """Test fetch_article_details with no results."""
         tools, searcher = registered_tools
 
         searcher.fetch_details.return_value = []
 
-        result = tools["fetch_article_details"](pmids="999999")
+        result = await tools["fetch_article_details"](pmids="999999")
 
         # Updated to match unified "No results found" format
         assert "No articles" in result or "No results" in result
 
-    def test_get_citation_metrics_tool(self, registered_tools):
+    async def test_get_citation_metrics_tool(self, registered_tools):
         """Test get_citation_metrics tool."""
         tools, searcher = registered_tools
 
@@ -280,23 +280,23 @@ class TestDiscoveryToolsComplete:
             }
         }
 
-        result = tools["get_citation_metrics"](pmids="123")
+        result = await tools["get_citation_metrics"](pmids="123")
 
         assert "Citation Metrics" in result
         assert "50" in result or "citations" in result.lower()
 
-    def test_get_citation_metrics_no_results(self, registered_tools):
+    async def test_get_citation_metrics_no_results(self, registered_tools):
         """Test get_citation_metrics with no data."""
         tools, searcher = registered_tools
 
         searcher.get_citation_metrics.return_value = {}
 
-        result = tools["get_citation_metrics"](pmids="999999")
+        result = await tools["get_citation_metrics"](pmids="999999")
 
         # Updated to match unified "No results found" format
         assert "No citation data" in result or "No results" in result
 
-    def test_get_citation_metrics_with_filters(self, registered_tools):
+    async def test_get_citation_metrics_with_filters(self, registered_tools):
         """Test get_citation_metrics with filtering."""
         tools, searcher = registered_tools
 
@@ -322,12 +322,12 @@ class TestDiscoveryToolsComplete:
         }
 
         # Filter by min_citations
-        result = tools["get_citation_metrics"](pmids="123,456", min_citations=50)
+        result = await tools["get_citation_metrics"](pmids="123,456", min_citations=50)
 
         # Should only show high citation article
         assert "100" in result or "High" in result
 
-    def test_get_citation_metrics_last_keyword(self, registered_tools):
+    async def test_get_citation_metrics_last_keyword(self, registered_tools):
         """Test get_citation_metrics with 'last' keyword."""
         tools, searcher = registered_tools
 
@@ -335,7 +335,7 @@ class TestDiscoveryToolsComplete:
             "pubmed_search.presentation.mcp_server.tools._common.get_last_search_pmids",
             return_value=[],
         ):
-            result = tools["get_citation_metrics"](pmids="last")
+            result = await tools["get_citation_metrics"](pmids="last")
 
             assert "No previous search" in result
 
@@ -351,7 +351,7 @@ class TestExportToolsFunctions:
         )
 
         mcp = MagicMock()
-        searcher = MagicMock()
+        searcher = AsyncMock()
 
         tools = {}
 
@@ -367,7 +367,7 @@ class TestExportToolsFunctions:
 
         return tools, searcher
 
-    def test_prepare_export_empty_pmids(self, registered_export_tools):
+    async def test_prepare_export_empty_pmids(self, registered_export_tools):
         """Test prepare_export with empty PMIDs."""
         tools, searcher = registered_export_tools
 
@@ -375,7 +375,7 @@ class TestExportToolsFunctions:
             "pubmed_search.presentation.mcp_server.tools.export._resolve_pmids",
             return_value=[],
         ):
-            result = tools["prepare_export"](pmids="", format="ris")
+            result = await tools["prepare_export"](pmids="", format="ris")
 
             # Result could be JSON or plain text error message
             try:

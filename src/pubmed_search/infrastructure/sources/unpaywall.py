@@ -89,34 +89,48 @@ class UnpaywallClient:
             await asyncio.sleep(self._min_interval - elapsed)
         self._last_request_time = time.time()
 
-    async def _make_request(self, url: str) -> dict[str, Any] | None:
-        """Make HTTP request to Unpaywall API."""
-        await self._rate_limit()
+    _MAX_RETRIES = 3
 
-        try:
-            response = await self._client.get(url)
-            if response.status_code == 404:
-                logger.debug("Unpaywall: DOI not found")
+    async def _make_request(self, url: str) -> dict[str, Any] | None:
+        """Make HTTP request to Unpaywall API with retry on 429."""
+        for attempt in range(self._MAX_RETRIES + 1):
+            await self._rate_limit()
+            try:
+                response = await self._client.get(url)
+                if response.status_code == 404:
+                    logger.debug("Unpaywall: DOI not found")
+                    return None
+                if response.status_code == 422:
+                    logger.warning("Unpaywall: Invalid DOI format")
+                    return None
+                if response.status_code == 429:
+                    if attempt < self._MAX_RETRIES:
+                        try:
+                            retry_after = float(response.headers.get("Retry-After", 2 ** (attempt + 1)))
+                        except (ValueError, TypeError):
+                            retry_after = float(2 ** (attempt + 1))
+                        logger.warning(
+                            f"Unpaywall: Rate limited (429), retry {attempt + 1}/{self._MAX_RETRIES} "
+                            f"in {retry_after:.1f}s"
+                        )
+                        await asyncio.sleep(retry_after)
+                        continue
+                    logger.warning("Unpaywall: Rate limit exceeded after retries")
+                    return None
+                response.raise_for_status()
+                return response.json()
+            except httpx.HTTPStatusError as e:
+                logger.error(
+                    f"Unpaywall HTTP error {e.response.status_code}: {e.response.reason_phrase}"
+                )
                 return None
-            if response.status_code == 422:
-                logger.warning("Unpaywall: Invalid DOI format")
+            except httpx.RequestError as e:
+                logger.error(f"Unpaywall URL error: {e}")
                 return None
-            if response.status_code == 429:
-                logger.warning("Unpaywall: Rate limit exceeded")
+            except Exception as e:
+                logger.error(f"Unpaywall request failed: {e}")
                 return None
-            response.raise_for_status()
-            return response.json()
-        except httpx.HTTPStatusError as e:
-            logger.error(
-                f"Unpaywall HTTP error {e.response.status_code}: {e.response.reason_phrase}"
-            )
-            return None
-        except httpx.RequestError as e:
-            logger.error(f"Unpaywall URL error: {e}")
-            return None
-        except Exception as e:
-            logger.error(f"Unpaywall request failed: {e}")
-            return None
+        return None
 
     async def get_oa_status(self, doi: str) -> dict[str, Any] | None:
         """

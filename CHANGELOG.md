@@ -16,6 +16,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.3.5] - 2026-02-10
+
+### Fixed
+
+- **P0: Rate limiting in batch.py** — Added `await _rate_limit()` before `Entrez.esearch` and `Entrez.efetch` calls to prevent NCBI 429 errors during batch operations
+- **P1: HTTP 429 retry for all 8 source clients** — Added exponential backoff retry on 429 Too Many Requests for: core.py, crossref.py, europe_pmc.py, ncbi_extended.py, openalex.py, openi.py, semantic_scholar.py, unpaywall.py
+  - Safe `Retry-After` header parsing with `try/except (ValueError, TypeError)` to prevent crashes on malformed headers
+- **Code review P0/P1 fixes**:
+  - `openalex.py`: Added missing `except Exception` handler for network errors
+  - `semantic_scholar.py`: Added missing `except Exception` handler for network errors
+  - `europe_pmc.py`: Fixed incorrect error message text
+  - `ncbi_extended.py`: Removed duplicate exception handler
+
+### Changed
+
+- **copilot_tools.py** — Full rewrite: removed 11 duplicate tool registrations, added proper async/await, cleaned up docstrings (242 ins, 320 del)
+- **File hygiene enforcement** — Added 第 7.1.1 條 to CONSTITUTION.md and 🧹 section to copilot-instructions.md; updated .gitignore with temp file exclusion patterns
+
+### Tests
+
+- **2181 passed, 0 failed, 27 skipped** — Full test suite passing
+- Fixed 60+ test files for async compatibility after v0.3.4 async migration:
+  - `with` → `async with` for httpx.AsyncClient context managers
+  - `MagicMock()` → `AsyncMock()` for all async method mocks
+  - `urllib.request.urlopen` / `requests.get` mocks → `httpx.AsyncClient` mocks
+  - Removed `await` from sync functions; added `await` for async tool function calls
+  - `time.sleep` → `asyncio.sleep` in async test code
+- Skipped 4 integration test files that make real API calls (test_integration, test_advanced_filters, test_citation_tree, test_perf)
+
+### Technical Details
+
+- 94 files changed
+- All source clients now have consistent 429 retry with exponential backoff (1s → 2s → 4s, max 3 retries)
+- `pytest-timeout` added as dev dependency (30s default timeout)
+
+---
+
 ## [0.3.4] - 2026-02-10
 
 ### Changed

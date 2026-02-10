@@ -1,7 +1,7 @@
 """Tests for TimelineBuilder and format_timeline_text."""
 
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from pubmed_search.application.timeline.timeline_builder import (
     TimelineBuilder,
@@ -21,9 +21,9 @@ from pubmed_search.domain.entities.timeline import (
 @pytest.fixture
 def mock_searcher():
     searcher = MagicMock()
-    searcher.search = MagicMock(return_value=[])
-    searcher.fetch_details = MagicMock(return_value=[])
-    searcher.get_citation_metrics = MagicMock(return_value=None)
+    searcher.search = AsyncMock(return_value=[])
+    searcher.fetch_details = AsyncMock(return_value=[])
+    searcher.get_citation_metrics = AsyncMock(return_value=None)
     return searcher
 
 
@@ -73,11 +73,11 @@ def sample_articles():
 # ============================================================
 
 class TestInit:
-    def test_default_detector(self, mock_searcher):
+    async def test_default_detector(self, mock_searcher):
         b = TimelineBuilder(mock_searcher)
         assert b.detector is not None
 
-    def test_custom_detector(self, mock_searcher):
+    async def test_custom_detector(self, mock_searcher):
         from pubmed_search.application.timeline.milestone_detector import MilestoneDetector
         detector = MilestoneDetector()
         b = TimelineBuilder(mock_searcher, detector=detector)
@@ -233,33 +233,33 @@ class TestSearchTopic:
 # ============================================================
 
 class TestFilterByYear:
-    def test_min_year(self, builder):
+    async def test_min_year(self, builder):
         articles = [
             {"year": "2010"}, {"year": "2015"}, {"year": "2020"},
         ]
         filtered = builder._filter_by_year(articles, min_year=2015, max_year=None)
         assert len(filtered) == 2
 
-    def test_max_year(self, builder):
+    async def test_max_year(self, builder):
         articles = [
             {"year": "2010"}, {"year": "2015"}, {"year": "2020"},
         ]
         filtered = builder._filter_by_year(articles, min_year=None, max_year=2015)
         assert len(filtered) == 2
 
-    def test_both(self, builder):
+    async def test_both(self, builder):
         articles = [
             {"year": "2010"}, {"year": "2015"}, {"year": "2020"},
         ]
         filtered = builder._filter_by_year(articles, min_year=2012, max_year=2018)
         assert len(filtered) == 1
 
-    def test_no_year(self, builder):
+    async def test_no_year(self, builder):
         articles = [{"title": "No year"}]
         filtered = builder._filter_by_year(articles, min_year=2010, max_year=None)
         assert len(filtered) == 0
 
-    def test_pub_year_field(self, builder):
+    async def test_pub_year_field(self, builder):
         articles = [{"pub_year": "2020"}]
         filtered = builder._filter_by_year(articles, min_year=2015, max_year=None)
         assert len(filtered) == 1
@@ -270,7 +270,7 @@ class TestFilterByYear:
 # ============================================================
 
 class TestCreateGenericEvent:
-    def test_basic(self, builder):
+    async def test_basic(self, builder):
         article = {
             "pmid": "12345",
             "title": "Test Study",
@@ -288,23 +288,23 @@ class TestCreateGenericEvent:
         assert event.milestone_type == MilestoneType.OTHER
         assert event.first_author == "Smith J"
 
-    def test_string_author(self, builder):
+    async def test_string_author(self, builder):
         article = {"pmid": "1", "title": "T", "year": "2023", "authors": ["Doe A"]}
         event = builder._create_generic_event(article)
         assert event.first_author == "Doe A"
 
-    def test_dict_author_full_name(self, builder):
+    async def test_dict_author_full_name(self, builder):
         article = {"pmid": "1", "title": "T", "year": "2023",
                     "authors": [{"full_name": "Jane Doe"}]}
         event = builder._create_generic_event(article)
         assert event.first_author == "Jane Doe"
 
-    def test_no_year(self, builder):
+    async def test_no_year(self, builder):
         article = {"pmid": "1", "title": "T", "authors": []}
         event = builder._create_generic_event(article)
         assert event.year == 0
 
-    def test_source_field(self, builder):
+    async def test_source_field(self, builder):
         article = {"pmid": "1", "title": "T", "year": "2023",
                     "source": "JAMA", "authors": []}
         event = builder._create_generic_event(article)
@@ -316,30 +316,30 @@ class TestCreateGenericEvent:
 # ============================================================
 
 class TestParseMonth:
-    def test_int(self, builder):
+    async def test_int(self, builder):
         assert builder._parse_month(6) == 6
 
-    def test_int_out_of_range(self, builder):
+    async def test_int_out_of_range(self, builder):
         assert builder._parse_month(13) is None
         assert builder._parse_month(0) is None
 
-    def test_string_number(self, builder):
+    async def test_string_number(self, builder):
         assert builder._parse_month("3") == 3
 
-    def test_month_name(self, builder):
+    async def test_month_name(self, builder):
         assert builder._parse_month("Jan") == 1
         assert builder._parse_month("february") == 2
         assert builder._parse_month("mar") == 3
         assert builder._parse_month("sept") == 9
         assert builder._parse_month("December") == 12
 
-    def test_none(self, builder):
+    async def test_none(self, builder):
         assert builder._parse_month(None) is None
 
-    def test_invalid(self, builder):
+    async def test_invalid(self, builder):
         assert builder._parse_month("xyz") is None
 
-    def test_string_number_out_of_range(self, builder):
+    async def test_string_number_out_of_range(self, builder):
         assert builder._parse_month("15") is None
 
 
@@ -348,7 +348,7 @@ class TestParseMonth:
 # ============================================================
 
 class TestCreatePeriods:
-    def test_groups_by_milestone_type(self, builder):
+    async def test_groups_by_milestone_type(self, builder):
         events = [
             TimelineEvent(pmid="1", year=2010, milestone_type=MilestoneType.FIRST_REPORT,
                           title="First", milestone_label="First Report"),
@@ -364,10 +364,10 @@ class TestCreatePeriods:
         period_names = [p.name for p in periods]
         assert "Discovery" in period_names
 
-    def test_empty_events(self, builder):
+    async def test_empty_events(self, builder):
         assert builder._create_periods([]) == []
 
-    def test_sorted_by_start_year(self, builder):
+    async def test_sorted_by_start_year(self, builder):
         events = [
             TimelineEvent(pmid="1", year=2020, milestone_type=MilestoneType.META_ANALYSIS,
                           title="Meta", milestone_label="Meta"),
@@ -384,12 +384,12 @@ class TestCreatePeriods:
 # ============================================================
 
 class TestFormatTimelineText:
-    def test_empty_timeline(self):
+    async def test_empty_timeline(self):
         timeline = ResearchTimeline(topic="Test")
         result = format_timeline_text(timeline)
         assert "No timeline events found" in result
 
-    def test_with_events(self):
+    async def test_with_events(self):
         events = [
             TimelineEvent(pmid="1", year=2010, milestone_type=MilestoneType.FIRST_REPORT,
                           title="First Discovery", milestone_label="First Report",
@@ -406,7 +406,7 @@ class TestFormatTimelineText:
         assert "First Report" in result
         assert "⭐" in result  # High confidence event
 
-    def test_long_title_truncated(self):
+    async def test_long_title_truncated(self):
         long_title = "A" * 100
         events = [
             TimelineEvent(pmid="1", year=2023, milestone_type=MilestoneType.OTHER,

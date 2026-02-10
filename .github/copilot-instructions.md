@@ -39,6 +39,51 @@ uv run pytest --cov        # 覆蓋率
 - `pyproject.toml` - 主要依賴定義
 - `uv.lock` - 鎖定版本 (自動生成，勿手動編輯)
 
+### 🧹 檔案衛生規範 (File Hygiene - MANDATORY)
+
+AI Agent 在工作過程中**絕對禁止**在專案中留下臨時檔案。違反此規範等同程式碼品質問題。
+
+#### 禁止事項
+
+```
+# ❌ 禁止：將測試結果導向檔案
+uv run pytest > test_results.txt
+uv run pytest 2>&1 | Out-File result.txt
+
+# ❌ 禁止：在 scripts/ 放一次性修復腳本
+scripts/auto_fix_something.py
+scripts/fix_async_tests_v3.py
+
+# ❌ 禁止：在根目錄放任何臨時產出物
+failed_lines.txt, test_summary.txt, v3_result.txt
+```
+
+#### 正確做法
+
+```bash
+# ✅ 正確：直接在終端看測試結果
+uv run pytest --timeout=60
+
+# ✅ 正確：若真需要臨時檔案，放在 scripts/_tmp/ (已被 .gitignore 排除)
+uv run pytest > scripts/_tmp/result.txt
+
+# ✅ 正確：修復腳本執行完畢後立即刪除
+Remove-Item scripts/_tmp/fix_script.py
+
+# ✅ 正確：commit 前確認無臨時檔案
+git status --short | Where-Object { $_ -match '^\?\?' }
+```
+
+#### 允許在根目錄的檔案（白名單）
+
+| 類型 | 檔案 |
+|------|------|
+| 設定 | `pyproject.toml`, `Dockerfile`, `docker-compose*.yml`, `.gitignore`, `uv.lock` |
+| 文檔 | `README.md`, `CHANGELOG.md`, `CONSTITUTION.md`, `ARCHITECTURE.md`, `ROADMAP.md`, `CONTRIBUTING.md`, `DEPLOYMENT.md`, `LICENSE` |
+| 入口 | `run_copilot.py`, `run_server.py`, `start.sh` |
+
+> ⚠️ **任何不在白名單的檔案出現在根目錄都是錯誤。**
+
 ---
 
 ## �️ 專案架構 (DDD v0.2.0)

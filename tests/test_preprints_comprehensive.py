@@ -16,7 +16,7 @@ from pubmed_search.infrastructure.sources.preprints import (
 # ============================================================
 
 class TestPreprintArticleExtended:
-    def test_to_dict_complete(self):
+    async def test_to_dict_complete(self):
         article = PreprintArticle(
             id="2301.00001",
             title="Test Paper",
@@ -36,7 +36,7 @@ class TestPreprintArticleExtended:
         assert d["doi"] == "10.48550/arXiv.2301.00001"
         assert "arxiv.org/abs/2301.00001" in d["source_url"]
 
-    def test_to_dict_long_abstract_truncated(self):
+    async def test_to_dict_long_abstract_truncated(self):
         article = PreprintArticle(
             id="1", title="T", abstract="A" * 600,
             authors=[], published="2023-01-01", updated=None,
@@ -45,7 +45,7 @@ class TestPreprintArticleExtended:
         d = article.to_dict()
         assert len(d["abstract"]) == 503
 
-    def test_source_url_medrxiv(self):
+    async def test_source_url_medrxiv(self):
         article = PreprintArticle(
             id="1", title="T", abstract="A",
             authors=[], published="2023-01-01", updated=None,
@@ -54,7 +54,7 @@ class TestPreprintArticleExtended:
         )
         assert "medrxiv.org" in article._get_source_url()
 
-    def test_source_url_biorxiv(self):
+    async def test_source_url_biorxiv(self):
         article = PreprintArticle(
             id="1", title="T", abstract="A",
             authors=[], published="2023-01-01", updated=None,
@@ -63,7 +63,7 @@ class TestPreprintArticleExtended:
         )
         assert "biorxiv.org" in article._get_source_url()
 
-    def test_source_url_no_doi(self):
+    async def test_source_url_no_doi(self):
         article = PreprintArticle(
             id="1", title="T", abstract="A",
             authors=[], published="", updated=None,
@@ -71,7 +71,7 @@ class TestPreprintArticleExtended:
         )
         assert article._get_source_url() == ""
 
-    def test_source_url_unknown_source(self):
+    async def test_source_url_unknown_source(self):
         article = PreprintArticle(
             id="1", title="T", abstract="A",
             authors=[], published="", updated=None,
@@ -86,7 +86,7 @@ class TestPreprintArticleExtended:
 
 class TestArXivClientExtended:
     @patch("httpx.Client")
-    def test_search_with_atom_response(self, MockClient):
+    async def test_search_with_atom_response(self, MockClient):
         mock_client = MagicMock()
         MockClient.return_value = mock_client
 
@@ -123,7 +123,7 @@ class TestArXivClientExtended:
         assert results[0].doi == "10.48550/arXiv.2301.00001"
 
     @patch("httpx.Client")
-    def test_search_empty_result(self, MockClient):
+    async def test_search_empty_result(self, MockClient):
         mock_client = MagicMock()
         MockClient.return_value = mock_client
         mock_response = MagicMock()
@@ -137,7 +137,7 @@ class TestArXivClientExtended:
         assert results == []
 
     @patch("httpx.Client")
-    def test_search_exception(self, MockClient):
+    async def test_search_exception(self, MockClient):
         mock_client = MagicMock()
         MockClient.return_value = mock_client
         mock_client.get.side_effect = Exception("network error")
@@ -148,7 +148,7 @@ class TestArXivClientExtended:
         assert results == []
 
     @patch("httpx.Client")
-    def test_get_by_id(self, MockClient):
+    async def test_get_by_id(self, MockClient):
         mock_client = MagicMock()
         MockClient.return_value = mock_client
 
@@ -174,7 +174,7 @@ class TestArXivClientExtended:
         assert result.title == "Found Paper"
 
     @patch("httpx.Client")
-    def test_get_by_id_not_found(self, MockClient):
+    async def test_get_by_id_not_found(self, MockClient):
         mock_client = MagicMock()
         MockClient.return_value = mock_client
         mock_response = MagicMock()
@@ -187,7 +187,7 @@ class TestArXivClientExtended:
         assert client.get_by_id("9999.99999") is None
 
     @patch("httpx.Client")
-    def test_get_by_id_error(self, MockClient):
+    async def test_get_by_id_error(self, MockClient):
         mock_client = MagicMock()
         MockClient.return_value = mock_client
         mock_client.get.side_effect = Exception("error")
@@ -203,7 +203,7 @@ class TestArXivClientExtended:
 
 class TestMedBioRxivClientExtended:
     @patch("httpx.Client")
-    def test_search_medrxiv_success(self, MockClient):
+    async def test_search_medrxiv_success(self, MockClient):
         mock_client = MagicMock()
         MockClient.return_value = mock_client
 
@@ -229,7 +229,7 @@ class TestMedBioRxivClientExtended:
         assert results[0].source == "medrxiv"
 
     @patch("httpx.Client")
-    def test_search_biorxiv_success(self, MockClient):
+    async def test_search_biorxiv_success(self, MockClient):
         mock_client = MagicMock()
         MockClient.return_value = mock_client
 
@@ -255,7 +255,7 @@ class TestMedBioRxivClientExtended:
         assert results[0].source == "biorxiv"
 
     @patch("httpx.Client")
-    def test_filter_by_query_terms(self, MockClient):
+    async def test_filter_by_query_terms(self, MockClient):
         mock_client = MagicMock()
         MockClient.return_value = mock_client
 
@@ -275,7 +275,7 @@ class TestMedBioRxivClientExtended:
         assert len(results) == 1
 
     @patch("httpx.Client")
-    def test_search_error(self, MockClient):
+    async def test_search_error(self, MockClient):
         mock_client = MagicMock()
         MockClient.return_value = mock_client
         mock_client.get.side_effect = Exception("network error")
@@ -286,7 +286,7 @@ class TestMedBioRxivClientExtended:
         assert results == []
 
     @patch("httpx.Client")
-    def test_limit_applied(self, MockClient):
+    async def test_limit_applied(self, MockClient):
         mock_client = MagicMock()
         MockClient.return_value = mock_client
 
@@ -315,7 +315,7 @@ class TestPreprintSearcherExtended:
     @patch.object(ArXivClient, "search")
     @patch.object(MedBioRxivClient, "search_medrxiv")
     @patch.object(MedBioRxivClient, "search_biorxiv")
-    def test_search_all_sources(self, mock_bio, mock_med, mock_arxiv):
+    async def test_search_all_sources(self, mock_bio, mock_med, mock_arxiv):
         mock_arxiv.return_value = [
             PreprintArticle(id="1", title="arXiv paper", abstract="",
                             authors=[], published="", updated=None,
@@ -336,7 +336,7 @@ class TestPreprintSearcherExtended:
         assert "biorxiv" in result["by_source"]
 
     @patch.object(ArXivClient, "search")
-    def test_search_specific_sources(self, mock_arxiv):
+    async def test_search_specific_sources(self, mock_arxiv):
         mock_arxiv.return_value = []
         searcher = PreprintSearcher()
         result = searcher.search("test", sources=["arxiv"])
@@ -345,7 +345,7 @@ class TestPreprintSearcherExtended:
 
     @patch.object(MedBioRxivClient, "search_medrxiv")
     @patch.object(ArXivClient, "search")
-    def test_search_medical_preprints(self, mock_arxiv, mock_med):
+    async def test_search_medical_preprints(self, mock_arxiv, mock_med):
         mock_arxiv.return_value = []
         mock_med.return_value = []
         searcher = PreprintSearcher()
@@ -353,7 +353,7 @@ class TestPreprintSearcherExtended:
         assert result["total"] == 0
 
     @patch.object(ArXivClient, "get_by_id")
-    def test_get_arxiv_paper_found(self, mock_get):
+    async def test_get_arxiv_paper_found(self, mock_get):
         mock_get.return_value = PreprintArticle(
             id="2301.00001", title="Found", abstract="",
             authors=[], published="", updated=None,
@@ -364,7 +364,7 @@ class TestPreprintSearcherExtended:
         assert result["title"] == "Found"
 
     @patch.object(ArXivClient, "get_by_id")
-    def test_get_arxiv_paper_not_found(self, mock_get):
+    async def test_get_arxiv_paper_not_found(self, mock_get):
         mock_get.return_value = None
         searcher = PreprintSearcher()
         assert searcher.get_arxiv_paper("9999.99999") is None

@@ -13,7 +13,7 @@ from pubmed_search.infrastructure.sources.preprints import (
 class TestArXivClient:
     """Tests for arXiv API client."""
 
-    def test_arxiv_search_basic(self):
+    async def test_arxiv_search_basic(self):
         """Test basic arXiv search."""
         client = ArXivClient(timeout=30.0)
         results = client.search("machine learning healthcare", limit=3)
@@ -28,7 +28,7 @@ class TestArXivClient:
             assert article.source == "arxiv"
             assert article.title
 
-    def test_arxiv_search_with_categories(self):
+    async def test_arxiv_search_with_categories(self):
         """Test arXiv search with category filter."""
         client = ArXivClient(timeout=30.0)
         results = client.search(
@@ -37,7 +37,7 @@ class TestArXivClient:
 
         assert isinstance(results, list)
 
-    def test_preprint_article_to_dict(self):
+    async def test_preprint_article_to_dict(self):
         """Test PreprintArticle serialization."""
         article = PreprintArticle(
             id="2301.12345",
@@ -64,7 +64,7 @@ class TestArXivClient:
 class TestPreprintSearcher:
     """Tests for unified preprint searcher."""
 
-    def test_search_all_sources(self):
+    async def test_search_all_sources(self):
         """Test searching across all preprint sources."""
         searcher = PreprintSearcher()
         results = searcher.search(
@@ -79,7 +79,7 @@ class TestPreprintSearcher:
         assert "by_source" in results
         assert "total" in results
 
-    def test_search_medical_preprints(self):
+    async def test_search_medical_preprints(self):
         """Test convenience method for medical preprints."""
         searcher = PreprintSearcher()
         results = searcher.search_medical_preprints(
@@ -98,7 +98,7 @@ class TestPreprintSearcher:
 class TestIcdDetection:
     """Test ICD code detection in unified search."""
 
-    def test_icd10_detection_regex(self):
+    async def test_icd10_detection_regex(self):
         """Test ICD-10 pattern matching."""
         import re
 
@@ -112,7 +112,7 @@ class TestIcdDetection:
         assert ICD10_PATTERN.findall("U07.1 COVID") == ["U07.1"]
         assert ICD10_PATTERN.findall("C50 breast cancer") == ["C50"]
 
-    def test_icd9_detection_regex(self):
+    async def test_icd9_detection_regex(self):
         """Test ICD-9 pattern matching."""
         import re
 

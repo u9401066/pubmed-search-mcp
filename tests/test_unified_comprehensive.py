@@ -4,7 +4,7 @@ Additional comprehensive tests for unified search module.
 Target: unified.py coverage from 14% to 50%+
 """
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from pubmed_search.domain.entities.article import UnifiedArticle
@@ -23,7 +23,7 @@ from pubmed_search.application.search.query_analyzer import (
 class TestIcdCodeDetection:
     """Tests for ICD code detection and expansion."""
 
-    def test_detect_no_icd_codes(self):
+    async def test_detect_no_icd_codes(self):
         """Test query without ICD codes."""
         from pubmed_search.presentation.mcp_server.tools.unified import (
             detect_and_expand_icd_codes,
@@ -35,7 +35,7 @@ class TestIcdCodeDetection:
         assert expanded == query
         assert matches == []
 
-    def test_icd10_pattern_matching(self):
+    async def test_icd10_pattern_matching(self):
         """Test ICD-10 regex pattern."""
         from pubmed_search.presentation.mcp_server.tools.unified import ICD10_PATTERN
 
@@ -45,7 +45,7 @@ class TestIcdCodeDetection:
         assert ICD10_PATTERN.search("J45.20")
         assert ICD10_PATTERN.search("K50.011")
 
-    def test_icd9_pattern_matching(self):
+    async def test_icd9_pattern_matching(self):
         """Test ICD-9 regex pattern."""
         from pubmed_search.presentation.mcp_server.tools.unified import ICD9_PATTERN
 
@@ -68,7 +68,7 @@ class TestDispatchStrategyExtended:
         """Create a QueryAnalyzer."""
         return QueryAnalyzer()
 
-    def test_lookup_with_identifiers(self, analyzer):
+    async def test_lookup_with_identifiers(self, analyzer):
         """Test lookup with identifiers uses PubMed only."""
         from pubmed_search.presentation.mcp_server.tools.unified import DispatchStrategy
 
@@ -81,7 +81,7 @@ class TestDispatchStrategyExtended:
         sources = DispatchStrategy.get_sources(analysis)
         assert sources == ["pubmed"]
 
-    def test_lookup_without_identifiers(self, analyzer):
+    async def test_lookup_without_identifiers(self, analyzer):
         """Test lookup without identifiers uses PubMed + CrossRef."""
         from pubmed_search.presentation.mcp_server.tools.unified import DispatchStrategy
 
@@ -94,7 +94,7 @@ class TestDispatchStrategyExtended:
         assert "pubmed" in sources
         assert "crossref" in sources
 
-    def test_simple_exploration(self, analyzer):
+    async def test_simple_exploration(self, analyzer):
         """Test simple exploration uses PubMed only."""
         from pubmed_search.presentation.mcp_server.tools.unified import DispatchStrategy
 
@@ -105,7 +105,7 @@ class TestDispatchStrategyExtended:
         sources = DispatchStrategy.get_sources(analysis)
         assert sources == ["pubmed"]
 
-    def test_moderate_uses_crossref(self, analyzer):
+    async def test_moderate_uses_crossref(self, analyzer):
         """Test moderate complexity uses CrossRef."""
         from pubmed_search.presentation.mcp_server.tools.unified import DispatchStrategy
 
@@ -117,7 +117,7 @@ class TestDispatchStrategyExtended:
         assert "pubmed" in sources
         assert "crossref" in sources
 
-    def test_complex_comparison(self, analyzer):
+    async def test_complex_comparison(self, analyzer):
         """Test complex comparison uses multiple sources."""
         from pubmed_search.presentation.mcp_server.tools.unified import DispatchStrategy
 
@@ -130,7 +130,7 @@ class TestDispatchStrategyExtended:
         assert "openalex" in sources
         assert "semantic_scholar" in sources
 
-    def test_complex_systematic(self, analyzer):
+    async def test_complex_systematic(self, analyzer):
         """Test complex systematic review uses all sources."""
         from pubmed_search.presentation.mcp_server.tools.unified import DispatchStrategy
 
@@ -143,7 +143,7 @@ class TestDispatchStrategyExtended:
         assert "europe_pmc" in sources
         assert len(sources) >= 4
 
-    def test_ambiguous_uses_broad_search(self, analyzer):
+    async def test_ambiguous_uses_broad_search(self, analyzer):
         """Test ambiguous queries use broad sources."""
         from pubmed_search.presentation.mcp_server.tools.unified import DispatchStrategy
 
@@ -155,7 +155,7 @@ class TestDispatchStrategyExtended:
         assert "pubmed" in sources
         assert "openalex" in sources
 
-    def test_ranking_config_systematic(self):
+    async def test_ranking_config_systematic(self):
         """Test systematic ranking configuration."""
         from pubmed_search.presentation.mcp_server.tools.unified import DispatchStrategy
         from pubmed_search.application.search.result_aggregator import RankingConfig
@@ -167,7 +167,7 @@ class TestDispatchStrategyExtended:
         config = DispatchStrategy.get_ranking_config(analysis)
         assert isinstance(config, RankingConfig)
 
-    def test_ranking_config_comparison(self):
+    async def test_ranking_config_comparison(self):
         """Test comparison ranking configuration."""
         from pubmed_search.presentation.mcp_server.tools.unified import DispatchStrategy
         from pubmed_search.application.search.result_aggregator import RankingConfig
@@ -179,7 +179,7 @@ class TestDispatchStrategyExtended:
         config = DispatchStrategy.get_ranking_config(analysis)
         assert isinstance(config, RankingConfig)
 
-    def test_ranking_config_recency(self):
+    async def test_ranking_config_recency(self):
         """Test recency-focused ranking configuration."""
         from pubmed_search.presentation.mcp_server.tools.unified import DispatchStrategy
 
@@ -191,7 +191,7 @@ class TestDispatchStrategyExtended:
         # Should have higher recency weight
         assert config is not None
 
-    def test_should_enrich_with_unpaywall_systematic(self):
+    async def test_should_enrich_with_unpaywall_systematic(self):
         """Test Unpaywall enrichment for systematic reviews."""
         from pubmed_search.presentation.mcp_server.tools.unified import DispatchStrategy
 
@@ -202,7 +202,7 @@ class TestDispatchStrategyExtended:
         should_enrich = DispatchStrategy.should_enrich_with_unpaywall(analysis)
         assert should_enrich is True
 
-    def test_should_enrich_with_unpaywall_complex(self):
+    async def test_should_enrich_with_unpaywall_complex(self):
         """Test Unpaywall enrichment for complex queries."""
         from pubmed_search.presentation.mcp_server.tools.unified import DispatchStrategy
 
@@ -213,7 +213,7 @@ class TestDispatchStrategyExtended:
         should_enrich = DispatchStrategy.should_enrich_with_unpaywall(analysis)
         assert should_enrich is True
 
-    def test_should_not_enrich_simple(self):
+    async def test_should_not_enrich_simple(self):
         """Test no Unpaywall enrichment for simple queries."""
         from pubmed_search.presentation.mcp_server.tools.unified import DispatchStrategy
 
@@ -233,11 +233,11 @@ class TestDispatchStrategyExtended:
 class TestSearchFunctions:
     """Tests for internal search functions."""
 
-    def test_search_pubmed_success(self):
+    async def test_search_pubmed_success(self):
         """Test _search_pubmed with successful results."""
         from pubmed_search.presentation.mcp_server.tools.unified import _search_pubmed
 
-        mock_searcher = MagicMock()
+        mock_searcher = AsyncMock()
         mock_searcher.search.return_value = [
             {
                 "pmid": "12345678",
@@ -248,7 +248,7 @@ class TestSearchFunctions:
             }
         ]
 
-        articles, total_count = _search_pubmed(
+        articles, total_count = await _search_pubmed(
             searcher=mock_searcher,
             query="diabetes",
             limit=10,
@@ -259,11 +259,11 @@ class TestSearchFunctions:
         assert len(articles) == 1
         assert isinstance(articles[0], UnifiedArticle)
 
-    def test_search_pubmed_with_metadata(self):
+    async def test_search_pubmed_with_metadata(self):
         """Test _search_pubmed extracts total_count from metadata."""
         from pubmed_search.presentation.mcp_server.tools.unified import _search_pubmed
 
-        mock_searcher = MagicMock()
+        mock_searcher = AsyncMock()
         mock_searcher.search.return_value = [
             {
                 "_search_metadata": {"total_count": 1000},
@@ -277,7 +277,7 @@ class TestSearchFunctions:
             }
         ]
 
-        articles, total_count = _search_pubmed(
+        articles, total_count = await _search_pubmed(
             searcher=mock_searcher,
             query="cancer",
             limit=10,
@@ -289,14 +289,14 @@ class TestSearchFunctions:
         # Metadata entry should be removed
         assert len(articles) == 1
 
-    def test_search_pubmed_error_handling(self):
+    async def test_search_pubmed_error_handling(self):
         """Test _search_pubmed handles errors gracefully."""
         from pubmed_search.presentation.mcp_server.tools.unified import _search_pubmed
 
-        mock_searcher = MagicMock()
+        mock_searcher = AsyncMock()
         mock_searcher.search.side_effect = Exception("API Error")
 
-        articles, total_count = _search_pubmed(
+        articles, total_count = await _search_pubmed(
             searcher=mock_searcher,
             query="test",
             limit=10,
@@ -307,11 +307,11 @@ class TestSearchFunctions:
         assert articles == []
         assert total_count is None
 
-    def test_search_pubmed_skips_errors(self):
+    async def test_search_pubmed_skips_errors(self):
         """Test _search_pubmed skips error entries."""
         from pubmed_search.presentation.mcp_server.tools.unified import _search_pubmed
 
-        mock_searcher = MagicMock()
+        mock_searcher = AsyncMock()
         mock_searcher.search.return_value = [
             {"error": "Rate limit exceeded"},
             {
@@ -323,7 +323,7 @@ class TestSearchFunctions:
             },
         ]
 
-        articles, total_count = _search_pubmed(
+        articles, total_count = await _search_pubmed(
             searcher=mock_searcher,
             query="test",
             limit=10,
@@ -339,7 +339,7 @@ class TestSearchFunctions:
 class TestSearchOpenAlex:
     """Tests for OpenAlex search function."""
 
-    def test_search_openalex_success(self):
+    async def test_search_openalex_success(self):
         """Test _search_openalex with mocked results."""
         from pubmed_search.presentation.mcp_server.tools.unified import _search_openalex
 
@@ -354,7 +354,7 @@ class TestSearchOpenAlex:
                 }
             ]
 
-            articles, total_count = _search_openalex(
+            articles, total_count = await _search_openalex(
                 query="machine learning",
                 limit=10,
                 min_year=None,
@@ -363,7 +363,7 @@ class TestSearchOpenAlex:
 
             assert len(articles) >= 0  # May succeed or not depending on mock
 
-    def test_search_openalex_error(self):
+    async def test_search_openalex_error(self):
         """Test _search_openalex handles errors."""
         from pubmed_search.presentation.mcp_server.tools.unified import _search_openalex
 
@@ -372,7 +372,7 @@ class TestSearchOpenAlex:
         ) as mock_search:
             mock_search.side_effect = Exception("OpenAlex error")
 
-            articles, total_count = _search_openalex(
+            articles, total_count = await _search_openalex(
                 query="test",
                 limit=10,
                 min_year=None,
@@ -385,7 +385,7 @@ class TestSearchOpenAlex:
 class TestSearchSemanticScholar:
     """Tests for Semantic Scholar search function."""
 
-    def test_search_semantic_scholar_success(self):
+    async def test_search_semantic_scholar_success(self):
         """Test _search_semantic_scholar."""
         from pubmed_search.presentation.mcp_server.tools.unified import (
             _search_semantic_scholar,
@@ -396,7 +396,7 @@ class TestSearchSemanticScholar:
         ) as mock_search:
             mock_search.return_value = []
 
-            articles, total_count = _search_semantic_scholar(
+            articles, total_count = await _search_semantic_scholar(
                 query="deep learning",
                 limit=10,
                 min_year=None,
@@ -405,7 +405,7 @@ class TestSearchSemanticScholar:
 
             assert articles == []
 
-    def test_search_semantic_scholar_error(self):
+    async def test_search_semantic_scholar_error(self):
         """Test _search_semantic_scholar handles errors."""
         from pubmed_search.presentation.mcp_server.tools.unified import (
             _search_semantic_scholar,
@@ -416,7 +416,7 @@ class TestSearchSemanticScholar:
         ) as mock_search:
             mock_search.side_effect = Exception("S2 error")
 
-            articles, total_count = _search_semantic_scholar(
+            articles, total_count = await _search_semantic_scholar(
                 query="test",
                 limit=10,
                 min_year=None,
@@ -434,17 +434,17 @@ class TestSearchSemanticScholar:
 class TestEnrichmentFunctions:
     """Tests for enrichment functions."""
 
-    def test_enrich_with_crossref_no_articles(self):
+    async def test_enrich_with_crossref_no_articles(self):
         """Test enrichment with empty list."""
         from pubmed_search.presentation.mcp_server.tools.unified import (
             _enrich_with_crossref,
         )
 
         articles = []
-        _enrich_with_crossref(articles)
+        await _enrich_with_crossref(articles)
         assert articles == []
 
-    def test_enrich_with_crossref_no_doi(self):
+    async def test_enrich_with_crossref_no_doi(self):
         """Test enrichment skips articles without DOI."""
         from pubmed_search.presentation.mcp_server.tools.unified import (
             _enrich_with_crossref,
@@ -453,17 +453,17 @@ class TestEnrichmentFunctions:
         article = UnifiedArticle(title="Test", primary_source="pubmed")
         articles = [article]
 
-        _enrich_with_crossref(articles)
+        await _enrich_with_crossref(articles)
         # Should not crash, DOI is None
 
-    def test_enrich_with_unpaywall_no_articles(self):
+    async def test_enrich_with_unpaywall_no_articles(self):
         """Test Unpaywall enrichment with empty list."""
         from pubmed_search.presentation.mcp_server.tools.unified import (
             _enrich_with_unpaywall,
         )
 
         articles = []
-        _enrich_with_unpaywall(articles)
+        await _enrich_with_unpaywall(articles)
         assert articles == []
 
 
@@ -475,7 +475,7 @@ class TestEnrichmentFunctions:
 class TestFormatFunctions:
     """Tests for output formatting functions."""
 
-    def test_format_as_json_structure(self):
+    async def test_format_as_json_structure(self):
         """Test JSON format function exists and works."""
         # This function is internal, so just test registration works
         from pubmed_search.presentation.mcp_server.tools.unified import (
@@ -484,7 +484,7 @@ class TestFormatFunctions:
         from mcp.server.fastmcp import FastMCP
         
         mcp = FastMCP(name="test")
-        mock_searcher = MagicMock()
+        mock_searcher = AsyncMock()
         register_unified_search_tools(mcp, mock_searcher)
         
         # If it registered successfully, the format functions exist
@@ -500,7 +500,7 @@ class TestFormatFunctions:
 class TestToolRegistrationExtended:
     """Extended tests for tool registration."""
 
-    def test_register_all_tools(self):
+    async def test_register_all_tools(self):
         """Test full tool registration."""
         from mcp.server.fastmcp import FastMCP
         from pubmed_search.presentation.mcp_server.tools.unified import (
@@ -508,7 +508,7 @@ class TestToolRegistrationExtended:
         )
 
         mcp = FastMCP(name="test")
-        mock_searcher = MagicMock()
+        mock_searcher = AsyncMock()
 
         register_unified_search_tools(mcp, mock_searcher)
 
@@ -516,7 +516,7 @@ class TestToolRegistrationExtended:
         assert "unified_search" in tool_names
         assert "analyze_search_query" in tool_names
 
-    def test_unified_search_parameters(self):
+    async def test_unified_search_parameters(self):
         """Test unified_search tool has expected parameters."""
         from mcp.server.fastmcp import FastMCP
         from pubmed_search.presentation.mcp_server.tools.unified import (
@@ -524,7 +524,7 @@ class TestToolRegistrationExtended:
         )
 
         mcp = FastMCP(name="test")
-        mock_searcher = MagicMock()
+        mock_searcher = AsyncMock()
 
         register_unified_search_tools(mcp, mock_searcher)
 

@@ -8,7 +8,7 @@ Tests:
 - Presentation: search_biomedical_images tool
 """
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, AsyncMock, patch
 
 import pytest
 
@@ -79,7 +79,7 @@ def openi_client():
 class TestImageResult:
     """Tests for ImageResult domain entity."""
 
-    def test_basic_creation(self):
+    async def test_basic_creation(self):
         img = ImageResult(
             image_url="https://example.com/img.png",
             caption="Test image",
@@ -89,39 +89,39 @@ class TestImageResult:
         assert img.caption == "Test image"
         assert img.source == ImageSource.OPENI
 
-    def test_has_article_link_with_pmid(self):
+    async def test_has_article_link_with_pmid(self):
         img = ImageResult(image_url="", pmid="12345")
         assert img.has_article_link is True
 
-    def test_has_article_link_with_pmcid(self):
+    async def test_has_article_link_with_pmcid(self):
         img = ImageResult(image_url="", pmcid="PMC123")
         assert img.has_article_link is True
 
-    def test_has_article_link_with_doi(self):
+    async def test_has_article_link_with_doi(self):
         img = ImageResult(image_url="", doi="10.1234/test")
         assert img.has_article_link is True
 
-    def test_has_article_link_none(self):
+    async def test_has_article_link_none(self):
         img = ImageResult(image_url="")
         assert img.has_article_link is False
 
-    def test_best_identifier_pmid(self):
+    async def test_best_identifier_pmid(self):
         img = ImageResult(image_url="", pmid="12345", pmcid="PMC123")
         assert img.best_identifier == "PMID:12345"
 
-    def test_best_identifier_pmcid(self):
+    async def test_best_identifier_pmcid(self):
         img = ImageResult(image_url="", pmcid="PMC123")
         assert img.best_identifier == "PMC123"
 
-    def test_best_identifier_doi(self):
+    async def test_best_identifier_doi(self):
         img = ImageResult(image_url="", doi="10.1234/test")
         assert img.best_identifier == "DOI:10.1234/test"
 
-    def test_best_identifier_source_id(self):
+    async def test_best_identifier_source_id(self):
         img = ImageResult(image_url="", source_id="uid-123")
         assert img.best_identifier == "uid-123"
 
-    def test_to_dict(self):
+    async def test_to_dict(self):
         img = ImageResult(
             image_url="https://example.com/img.png",
             pmid="12345",
@@ -134,7 +134,7 @@ class TestImageResult:
         assert d["source"] == ImageSource.OPENI
         assert d["mesh_terms"] == ["Pneumonia"]
 
-    def test_default_values(self):
+    async def test_default_values(self):
         img = ImageResult(image_url="https://example.com/img.png")
         assert img.caption == ""
         assert img.label == ""
@@ -146,12 +146,12 @@ class TestImageResult:
 class TestImageSource:
     """Tests for ImageSource enum."""
 
-    def test_enum_values(self):
+    async def test_enum_values(self):
         assert ImageSource.OPENI == "openi"
         assert ImageSource.EUROPE_PMC == "europe_pmc"
         assert ImageSource.MEDPIX == "medpix"
 
-    def test_is_string(self):
+    async def test_is_string(self):
         # str, Enum — can be used as string
         assert isinstance(ImageSource.OPENI, str)
 
@@ -164,7 +164,7 @@ class TestImageSource:
 class TestOpenIClientMapper:
     """Tests for OpenIClient._map_to_image_result mapper."""
 
-    def test_map_full_item(self, sample_openi_response):
+    async def test_map_full_item(self, sample_openi_response):
         item = sample_openi_response["list"][0]
         result = OpenIClient._map_to_image_result(item)
 
@@ -180,21 +180,21 @@ class TestOpenIClientMapper:
         assert "https://openi.nlm.nih.gov/imgs/thumb/12345.png" in result.thumbnail_url
         assert result.caption == "PA chest radiograph showing bilateral infiltrates"
 
-    def test_map_missing_thumbnail(self, sample_openi_response):
+    async def test_map_missing_thumbnail(self, sample_openi_response):
         item = sample_openi_response["list"][1]
         result = OpenIClient._map_to_image_result(item)
 
         # Empty imgThumb → None
         assert result.thumbnail_url is None
 
-    def test_map_empty_item(self):
+    async def test_map_empty_item(self):
         result = OpenIClient._map_to_image_result({})
         assert result.image_url == ""
         assert result.thumbnail_url is None
         assert result.caption == ""
         assert result.pmid is None
 
-    def test_map_image_caption_not_dict(self):
+    async def test_map_image_caption_not_dict(self):
         item = {"image": "not a dict", "uid": "test"}
         result = OpenIClient._map_to_image_result(item)
         assert result.caption == ""
@@ -203,7 +203,7 @@ class TestOpenIClientMapper:
 class TestOpenIClientMeSH:
     """Tests for OpenIClient._extract_mesh."""
 
-    def test_extract_mesh_full(self, sample_openi_response):
+    async def test_extract_mesh_full(self, sample_openi_response):
         item = sample_openi_response["list"][0]
         terms = OpenIClient._extract_mesh(item)
         assert "Pneumonia" in terms
@@ -211,13 +211,13 @@ class TestOpenIClientMeSH:
         assert "Adult" in terms
         assert "Humans" in terms
 
-    def test_extract_mesh_empty(self):
+    async def test_extract_mesh_empty(self):
         assert OpenIClient._extract_mesh({}) == []
 
-    def test_extract_mesh_not_dict(self):
+    async def test_extract_mesh_not_dict(self):
         assert OpenIClient._extract_mesh({"MeSH": "invalid"}) == []
 
-    def test_extract_mesh_invalid_lists(self):
+    async def test_extract_mesh_invalid_lists(self):
         item = {"MeSH": {"major": "not-a-list", "minor": 42}}
         assert OpenIClient._extract_mesh(item) == []
 
@@ -225,91 +225,91 @@ class TestOpenIClientMeSH:
 class TestOpenIClientSearch:
     """Tests for OpenIClient.search with mocked HTTP."""
 
-    def test_search_success(self, openi_client, sample_openi_response):
+    async def test_search_success(self, openi_client, sample_openi_response):
         with patch.object(
             openi_client, "_make_request", return_value=sample_openi_response
         ):
-            images, total = openi_client.search("chest pneumonia", max_results=10)
+            images, total = await openi_client.search("chest pneumonia", max_results=10)
 
         assert total == 42
         assert len(images) == 2
         assert images[0].pmid == "12345678"
 
-    def test_search_empty_query(self, openi_client):
-        images, total = openi_client.search("")
+    async def test_search_empty_query(self, openi_client):
+        images, total = await openi_client.search("")
         assert images == []
         assert total == 0
 
-    def test_search_empty_results(self, openi_client, empty_openi_response):
+    async def test_search_empty_results(self, openi_client, empty_openi_response):
         with patch.object(
             openi_client, "_make_request", return_value=empty_openi_response
         ):
-            images, total = openi_client.search("nonexistent query")
+            images, total = await openi_client.search("nonexistent query")
 
         assert total == 0
         assert images == []
 
-    def test_search_request_failure(self, openi_client):
+    async def test_search_request_failure(self, openi_client):
         with patch.object(openi_client, "_make_request", return_value=None):
-            images, total = openi_client.search("test")
+            images, total = await openi_client.search("test")
 
         assert images == []
         assert total == 0
 
-    def test_search_default_image_type(self, openi_client, sample_openi_response):
+    async def test_search_default_image_type(self, openi_client, sample_openi_response):
         """When no image_type specified, defaults to None (all types)."""
         with patch.object(
             openi_client, "_make_request", return_value=sample_openi_response
         ) as mock_req:
-            openi_client.search("test")
+            await openi_client.search("test")
             call_url = mock_req.call_args[0][0]
             # No 'it' parameter when None
             assert "it=" not in call_url
 
-    def test_search_invalid_image_type_ignored(self, openi_client, sample_openi_response):
+    async def test_search_invalid_image_type_ignored(self, openi_client, sample_openi_response):
         """Invalid image_type is ignored (no 'it' param)."""
         with patch.object(
             openi_client, "_make_request", return_value=sample_openi_response
         ) as mock_req:
-            openi_client.search("test", image_type="invalid")
+            await openi_client.search("test", image_type="invalid")
             call_url = mock_req.call_args[0][0]
             assert "it=" not in call_url
 
-    def test_search_valid_image_type(self, openi_client, sample_openi_response):
+    async def test_search_valid_image_type(self, openi_client, sample_openi_response):
         with patch.object(
             openi_client, "_make_request", return_value=sample_openi_response
         ) as mock_req:
-            openi_client.search("test", image_type="xg")
+            await openi_client.search("test", image_type="xg")
             call_url = mock_req.call_args[0][0]
             assert "it=xg" in call_url
 
-    def test_search_photo_image_type(self, openi_client, sample_openi_response):
+    async def test_search_photo_image_type(self, openi_client, sample_openi_response):
         """'ph' (Photo) is a valid image type."""
         with patch.object(
             openi_client, "_make_request", return_value=sample_openi_response
         ) as mock_req:
-            openi_client.search("test", image_type="ph")
+            await openi_client.search("test", image_type="ph")
             call_url = mock_req.call_args[0][0]
             assert "it=ph" in call_url
 
-    def test_search_graphics_image_type(self, openi_client, sample_openi_response):
+    async def test_search_graphics_image_type(self, openi_client, sample_openi_response):
         """'g' (Graphics) is a valid image type."""
         with patch.object(
             openi_client, "_make_request", return_value=sample_openi_response
         ) as mock_req:
-            openi_client.search("test", image_type="g")
+            await openi_client.search("test", image_type="g")
             call_url = mock_req.call_args[0][0]
             assert "it=g" in call_url
 
-    def test_search_valid_collection(self, openi_client, sample_openi_response):
+    async def test_search_valid_collection(self, openi_client, sample_openi_response):
         with patch.object(
             openi_client, "_make_request", return_value=sample_openi_response
         ) as mock_req:
-            openi_client.search("test", collection="mpx")
+            await openi_client.search("test", collection="mpx")
             call_url = mock_req.call_args[0][0]
             assert "coll=mpx" in call_url
 
-    def test_search_respects_max_results(self, openi_client):
+    async def test_search_respects_max_results(self, openi_client):
         """max_results=1 should only return 1 image even if API returns more."""
         response = {
             "total": 100,
@@ -318,7 +318,7 @@ class TestOpenIClientSearch:
             ],
         }
         with patch.object(openi_client, "_make_request", return_value=response):
-            images, total = openi_client.search("test", max_results=1)
+            images, total = await openi_client.search("test", max_results=1)
 
         assert len(images) == 1
         assert total == 100
@@ -327,174 +327,174 @@ class TestOpenIClientSearch:
     # New API Parameters Tests (v0.3.4)
     # ═══════════════════════════════════════════════════════════════════════════
 
-    def test_search_sort_by_date(self, openi_client, sample_openi_response):
+    async def test_search_sort_by_date(self, openi_client, sample_openi_response):
         """sort_by='d' should add favor=d parameter."""
         with patch.object(
             openi_client, "_make_request", return_value=sample_openi_response
         ) as mock_req:
-            openi_client.search("test", sort_by="d")
+            await openi_client.search("test", sort_by="d")
             call_url = mock_req.call_args[0][0]
             assert "favor=d" in call_url
 
-    def test_search_sort_by_relevance(self, openi_client, sample_openi_response):
+    async def test_search_sort_by_relevance(self, openi_client, sample_openi_response):
         """sort_by='r' should add favor=r parameter."""
         with patch.object(
             openi_client, "_make_request", return_value=sample_openi_response
         ) as mock_req:
-            openi_client.search("test", sort_by="r")
+            await openi_client.search("test", sort_by="r")
             call_url = mock_req.call_args[0][0]
             assert "favor=r" in call_url
 
-    def test_search_invalid_sort_by_ignored(self, openi_client, sample_openi_response):
+    async def test_search_invalid_sort_by_ignored(self, openi_client, sample_openi_response):
         """Invalid sort_by is ignored (no favor param)."""
         with patch.object(
             openi_client, "_make_request", return_value=sample_openi_response
         ) as mock_req:
-            openi_client.search("test", sort_by="invalid")
+            await openi_client.search("test", sort_by="invalid")
             call_url = mock_req.call_args[0][0]
             assert "favor=" not in call_url
 
-    def test_search_article_type_case_report(self, openi_client, sample_openi_response):
+    async def test_search_article_type_case_report(self, openi_client, sample_openi_response):
         """article_type='cr' should add at=cr parameter."""
         with patch.object(
             openi_client, "_make_request", return_value=sample_openi_response
         ) as mock_req:
-            openi_client.search("test", article_type="cr")
+            await openi_client.search("test", article_type="cr")
             call_url = mock_req.call_args[0][0]
             assert "at=cr" in call_url
 
-    def test_search_invalid_article_type_ignored(self, openi_client, sample_openi_response):
+    async def test_search_invalid_article_type_ignored(self, openi_client, sample_openi_response):
         """Invalid article_type is ignored."""
         with patch.object(
             openi_client, "_make_request", return_value=sample_openi_response
         ) as mock_req:
-            openi_client.search("test", article_type="invalid")
+            await openi_client.search("test", article_type="invalid")
             call_url = mock_req.call_args[0][0]
             assert "at=" not in call_url
 
-    def test_search_specialty_radiology(self, openi_client, sample_openi_response):
+    async def test_search_specialty_radiology(self, openi_client, sample_openi_response):
         """specialty='r' should add sp=r parameter."""
         with patch.object(
             openi_client, "_make_request", return_value=sample_openi_response
         ) as mock_req:
-            openi_client.search("test", specialty="r")
+            await openi_client.search("test", specialty="r")
             call_url = mock_req.call_args[0][0]
             assert "sp=r" in call_url
 
-    def test_search_specialty_cardiology(self, openi_client, sample_openi_response):
+    async def test_search_specialty_cardiology(self, openi_client, sample_openi_response):
         """specialty='c' should add sp=c parameter."""
         with patch.object(
             openi_client, "_make_request", return_value=sample_openi_response
         ) as mock_req:
-            openi_client.search("test", specialty="c")
+            await openi_client.search("test", specialty="c")
             call_url = mock_req.call_args[0][0]
             assert "sp=c" in call_url
 
-    def test_search_invalid_specialty_ignored(self, openi_client, sample_openi_response):
+    async def test_search_invalid_specialty_ignored(self, openi_client, sample_openi_response):
         """Invalid specialty is ignored."""
         with patch.object(
             openi_client, "_make_request", return_value=sample_openi_response
         ) as mock_req:
-            openi_client.search("test", specialty="invalid")
+            await openi_client.search("test", specialty="invalid")
             call_url = mock_req.call_args[0][0]
             assert "sp=" not in call_url
 
-    def test_search_license_cc_by(self, openi_client, sample_openi_response):
+    async def test_search_license_cc_by(self, openi_client, sample_openi_response):
         """license_type='by' should add lic=by parameter."""
         with patch.object(
             openi_client, "_make_request", return_value=sample_openi_response
         ) as mock_req:
-            openi_client.search("test", license_type="by")
+            await openi_client.search("test", license_type="by")
             call_url = mock_req.call_args[0][0]
             assert "lic=by" in call_url
 
-    def test_search_license_cc_by_nc(self, openi_client, sample_openi_response):
+    async def test_search_license_cc_by_nc(self, openi_client, sample_openi_response):
         """license_type='bync' should add lic=bync parameter."""
         with patch.object(
             openi_client, "_make_request", return_value=sample_openi_response
         ) as mock_req:
-            openi_client.search("test", license_type="bync")
+            await openi_client.search("test", license_type="bync")
             call_url = mock_req.call_args[0][0]
             assert "lic=bync" in call_url
 
-    def test_search_invalid_license_ignored(self, openi_client, sample_openi_response):
+    async def test_search_invalid_license_ignored(self, openi_client, sample_openi_response):
         """Invalid license_type is ignored."""
         with patch.object(
             openi_client, "_make_request", return_value=sample_openi_response
         ) as mock_req:
-            openi_client.search("test", license_type="invalid")
+            await openi_client.search("test", license_type="invalid")
             call_url = mock_req.call_args[0][0]
             assert "lic=" not in call_url
 
-    def test_search_subset_cancer(self, openi_client, sample_openi_response):
+    async def test_search_subset_cancer(self, openi_client, sample_openi_response):
         """subset='c' should add sub=c parameter."""
         with patch.object(
             openi_client, "_make_request", return_value=sample_openi_response
         ) as mock_req:
-            openi_client.search("test", subset="c")
+            await openi_client.search("test", subset="c")
             call_url = mock_req.call_args[0][0]
             assert "sub=c" in call_url
 
-    def test_search_invalid_subset_ignored(self, openi_client, sample_openi_response):
+    async def test_search_invalid_subset_ignored(self, openi_client, sample_openi_response):
         """Invalid subset is ignored."""
         with patch.object(
             openi_client, "_make_request", return_value=sample_openi_response
         ) as mock_req:
-            openi_client.search("test", subset="invalid")
+            await openi_client.search("test", subset="invalid")
             call_url = mock_req.call_args[0][0]
             assert "sub=" not in call_url
 
-    def test_search_fields_title(self, openi_client, sample_openi_response):
+    async def test_search_fields_title(self, openi_client, sample_openi_response):
         """search_fields='t' should add fields=t parameter."""
         with patch.object(
             openi_client, "_make_request", return_value=sample_openi_response
         ) as mock_req:
-            openi_client.search("test", search_fields="t")
+            await openi_client.search("test", search_fields="t")
             call_url = mock_req.call_args[0][0]
             assert "fields=t" in call_url
 
-    def test_search_fields_caption(self, openi_client, sample_openi_response):
+    async def test_search_fields_caption(self, openi_client, sample_openi_response):
         """search_fields='c' should add fields=c parameter."""
         with patch.object(
             openi_client, "_make_request", return_value=sample_openi_response
         ) as mock_req:
-            openi_client.search("test", search_fields="c")
+            await openi_client.search("test", search_fields="c")
             call_url = mock_req.call_args[0][0]
             assert "fields=c" in call_url
 
-    def test_search_invalid_fields_ignored(self, openi_client, sample_openi_response):
+    async def test_search_invalid_fields_ignored(self, openi_client, sample_openi_response):
         """Invalid search_fields is ignored."""
         with patch.object(
             openi_client, "_make_request", return_value=sample_openi_response
         ) as mock_req:
-            openi_client.search("test", search_fields="invalid")
+            await openi_client.search("test", search_fields="invalid")
             call_url = mock_req.call_args[0][0]
             assert "fields=" not in call_url
 
-    def test_search_video_only(self, openi_client, sample_openi_response):
+    async def test_search_video_only(self, openi_client, sample_openi_response):
         """video_only=True should add vid=1 parameter."""
         with patch.object(
             openi_client, "_make_request", return_value=sample_openi_response
         ) as mock_req:
-            openi_client.search("test", video_only=True)
+            await openi_client.search("test", video_only=True)
             call_url = mock_req.call_args[0][0]
             assert "vid=1" in call_url
 
-    def test_search_video_only_false(self, openi_client, sample_openi_response):
+    async def test_search_video_only_false(self, openi_client, sample_openi_response):
         """video_only=False should NOT add vid parameter."""
         with patch.object(
             openi_client, "_make_request", return_value=sample_openi_response
         ) as mock_req:
-            openi_client.search("test", video_only=False)
+            await openi_client.search("test", video_only=False)
             call_url = mock_req.call_args[0][0]
             assert "vid=" not in call_url
 
-    def test_search_combined_filters(self, openi_client, sample_openi_response):
+    async def test_search_combined_filters(self, openi_client, sample_openi_response):
         """Multiple filters should be combined in URL."""
         with patch.object(
             openi_client, "_make_request", return_value=sample_openi_response
         ) as mock_req:
-            openi_client.search(
+            await openi_client.search(
                 "test",
                 image_type="xg",
                 collection="pmc",
@@ -520,19 +520,19 @@ class TestOpenIClientSearch:
 class TestImageSearchService:
     """Tests for ImageSearchService application service."""
 
-    def test_search_empty_query(self):
+    async def test_search_empty_query(self):
         from pubmed_search.application.image_search import ImageSearchService
 
         service = ImageSearchService()
-        result = service.search("")
+        result = await service.search("")
         assert result.images == []
         assert result.total_count == 0
 
-    def test_search_delegates_to_openi(self, sample_openi_response):
+    async def test_search_delegates_to_openi(self, sample_openi_response):
         from pubmed_search.application.image_search import ImageSearchService
 
         service = ImageSearchService()
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
         mock_images = [
             ImageResult(image_url="https://openi.nlm.nih.gov/img/1.png", pmid="123"),
         ]
@@ -542,13 +542,13 @@ class TestImageSearchService:
             "pubmed_search.infrastructure.sources.get_openi_client",
             return_value=mock_client,
         ):
-            result = service.search("chest pneumonia")
+            result = await service.search("chest pneumonia")
 
         assert len(result.images) == 1
         assert result.total_count == 1
         assert "openi" in result.sources_used
 
-    def test_search_handles_error(self):
+    async def test_search_handles_error(self):
         from pubmed_search.application.image_search import ImageSearchService
 
         service = ImageSearchService()
@@ -557,34 +557,34 @@ class TestImageSearchService:
             "pubmed_search.infrastructure.sources.get_openi_client",
             side_effect=Exception("Connection failed"),
         ):
-            result = service.search("test")
+            result = await service.search("test")
 
         assert result.images == []
         assert len(result.errors) == 1
         assert "Connection failed" in result.errors[0]
 
-    def test_resolve_sources_default(self):
+    async def test_resolve_sources_default(self):
         from pubmed_search.application.image_search import ImageSearchService
 
         service = ImageSearchService()
         sources = service._resolve_sources(None, None, None)
         assert sources == ["openi"]
 
-    def test_resolve_sources_explicit(self):
+    async def test_resolve_sources_explicit(self):
         from pubmed_search.application.image_search import ImageSearchService
 
         service = ImageSearchService()
         sources = service._resolve_sources(["openi"], None, None)
         assert sources == ["openi"]
 
-    def test_resolve_sources_invalid_fallback(self):
+    async def test_resolve_sources_invalid_fallback(self):
         from pubmed_search.application.image_search import ImageSearchService
 
         service = ImageSearchService()
         sources = service._resolve_sources(["invalid_source"], None, None)
         assert sources == ["openi"]
 
-    def test_deduplicate(self):
+    async def test_deduplicate(self):
         from pubmed_search.application.image_search import ImageSearchService
 
         images = [
@@ -595,7 +595,7 @@ class TestImageSearchService:
         result = ImageSearchService._deduplicate(images)
         assert len(result) == 2
 
-    def test_deduplicate_by_url(self):
+    async def test_deduplicate_by_url(self):
         from pubmed_search.application.image_search import ImageSearchService
 
         images = [
@@ -609,105 +609,105 @@ class TestImageSearchService:
     # New API Parameters Tests (v0.3.4)
     # ═══════════════════════════════════════════════════════════════════════════
 
-    def test_search_with_sort_by(self):
+    async def test_search_with_sort_by(self):
         """sort_by parameter should be passed to client."""
         from pubmed_search.application.image_search import ImageSearchService
 
         service = ImageSearchService()
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
         mock_client.search.return_value = ([], 0)
 
         with patch(
             "pubmed_search.infrastructure.sources.get_openi_client",
             return_value=mock_client,
         ):
-            service.search("test", sort_by="d")
+            await service.search("test", sort_by="d")
 
         mock_client.search.assert_called_once()
         call_kwargs = mock_client.search.call_args[1]
         assert call_kwargs["sort_by"] == "d"
 
-    def test_search_with_article_type(self):
+    async def test_search_with_article_type(self):
         """article_type parameter should be passed to client."""
         from pubmed_search.application.image_search import ImageSearchService
 
         service = ImageSearchService()
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
         mock_client.search.return_value = ([], 0)
 
         with patch(
             "pubmed_search.infrastructure.sources.get_openi_client",
             return_value=mock_client,
         ):
-            service.search("test", article_type="cr")
+            await service.search("test", article_type="cr")
 
         call_kwargs = mock_client.search.call_args[1]
         assert call_kwargs["article_type"] == "cr"
 
-    def test_search_with_specialty(self):
+    async def test_search_with_specialty(self):
         """specialty parameter should be passed to client."""
         from pubmed_search.application.image_search import ImageSearchService
 
         service = ImageSearchService()
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
         mock_client.search.return_value = ([], 0)
 
         with patch(
             "pubmed_search.infrastructure.sources.get_openi_client",
             return_value=mock_client,
         ):
-            service.search("test", specialty="r")
+            await service.search("test", specialty="r")
 
         call_kwargs = mock_client.search.call_args[1]
         assert call_kwargs["specialty"] == "r"
 
-    def test_search_with_license_type(self):
+    async def test_search_with_license_type(self):
         """license_type parameter should be passed to client."""
         from pubmed_search.application.image_search import ImageSearchService
 
         service = ImageSearchService()
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
         mock_client.search.return_value = ([], 0)
 
         with patch(
             "pubmed_search.infrastructure.sources.get_openi_client",
             return_value=mock_client,
         ):
-            service.search("test", license_type="by")
+            await service.search("test", license_type="by")
 
         call_kwargs = mock_client.search.call_args[1]
         assert call_kwargs["license_type"] == "by"
 
-    def test_search_with_video_only(self):
+    async def test_search_with_video_only(self):
         """video_only parameter should be passed to client."""
         from pubmed_search.application.image_search import ImageSearchService
 
         service = ImageSearchService()
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
         mock_client.search.return_value = ([], 0)
 
         with patch(
             "pubmed_search.infrastructure.sources.get_openi_client",
             return_value=mock_client,
         ):
-            service.search("test", video_only=True)
+            await service.search("test", video_only=True)
 
         call_kwargs = mock_client.search.call_args[1]
         assert call_kwargs["video_only"] is True
 
-    def test_search_tracks_applied_filters(self):
+    async def test_search_tracks_applied_filters(self):
         """applied_filters should track all set filters."""
         from pubmed_search.application.image_search import ImageSearchService
 
         service = ImageSearchService()
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
         mock_client.search.return_value = ([], 0)
 
         with patch(
             "pubmed_search.infrastructure.sources.get_openi_client",
             return_value=mock_client,
         ):
-            result = service.search(
+            result = await service.search(
                 "test",
                 image_type="xg",
                 sort_by="d",
@@ -722,19 +722,19 @@ class TestImageSearchService:
         assert result.applied_filters["specialty"] == "r"
         assert result.applied_filters["license"] == "by"
 
-    def test_search_with_all_new_parameters(self):
+    async def test_search_with_all_new_parameters(self):
         """All new parameters should be passed to client."""
         from pubmed_search.application.image_search import ImageSearchService
 
         service = ImageSearchService()
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
         mock_client.search.return_value = ([], 0)
 
         with patch(
             "pubmed_search.infrastructure.sources.get_openi_client",
             return_value=mock_client,
         ):
-            service.search(
+            await service.search(
                 "test",
                 sort_by="d",
                 article_type="cr",
@@ -781,12 +781,12 @@ class TestSearchBiomedicalImagesTool:
         assert "search_biomedical_images" in tools
         return tools["search_biomedical_images"].fn
 
-    def test_empty_query_returns_error(self):
+    async def test_empty_query_returns_error(self):
         tool_fn = self._get_tool()
-        result = tool_fn(query="")
+        result = await tool_fn(query="")
         assert "Missing search query" in result
 
-    def test_successful_search(self):
+    async def test_successful_search(self):
         tool_fn = self._get_tool()
         mock_images = [
             ImageResult(
@@ -810,15 +810,15 @@ class TestSearchBiomedicalImagesTool:
         with patch(
             "pubmed_search.presentation.mcp_server.tools.image_search.ImageSearchService"
         ) as MockService:
-            MockService.return_value.search.return_value = mock_result
-            result = tool_fn(query="chest pneumonia")
+            MockService.return_value.search = AsyncMock(return_value=mock_result)
+            result = await tool_fn(query="chest pneumonia")
 
         assert "Image Search Results" in result
         assert "chest pneumonia" in result
         assert "12345678" in result
         assert "Chest X-ray" in result
 
-    def test_input_normalization(self):
+    async def test_input_normalization(self):
         tool_fn = self._get_tool()
 
         from pubmed_search.application.image_search import ImageSearchResult
@@ -830,13 +830,13 @@ class TestSearchBiomedicalImagesTool:
         with patch(
             "pubmed_search.presentation.mcp_server.tools.image_search.ImageSearchService"
         ) as MockService:
-            MockService.return_value.search.return_value = mock_result
+            MockService.return_value.search = AsyncMock(return_value=mock_result)
             # Test with string limit and bool
-            result = tool_fn(query="test", limit="5", open_access_only="true")
+            result = await tool_fn(query="test", limit="5", open_access_only="true")
 
         assert "No images found" in result
 
-    def test_unknown_sources_handled(self):
+    async def test_unknown_sources_handled(self):
         tool_fn = self._get_tool()
 
         from pubmed_search.application.image_search import ImageSearchResult
@@ -848,8 +848,8 @@ class TestSearchBiomedicalImagesTool:
         with patch(
             "pubmed_search.presentation.mcp_server.tools.image_search.ImageSearchService"
         ) as MockService:
-            MockService.return_value.search.return_value = mock_result
+            MockService.return_value.search = AsyncMock(return_value=mock_result)
             # Unknown sources value should not crash
-            result = tool_fn(query="test", sources="unknown_source")
+            result = await tool_fn(query="test", sources="unknown_source")
 
         assert isinstance(result, str)

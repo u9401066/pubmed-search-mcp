@@ -1,7 +1,7 @@
 """Tests for Europe PMC integration."""
 
 import pytest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 
 class TestEuropePMCClient:
@@ -45,10 +45,10 @@ class TestEuropePMCClient:
             },
         }
 
-    def test_search_basic(self, client, mock_search_response):
+    async def test_search_basic(self, client, mock_search_response):
         """Test basic search functionality."""
         with patch.object(client, "_make_request", return_value=mock_search_response):
-            result = client.search("COVID-19", limit=10)
+            result = await client.search("COVID-19", limit=10)
 
             assert result["hit_count"] == 100
             assert len(result["results"]) == 1
@@ -56,12 +56,12 @@ class TestEuropePMCClient:
             assert result["results"][0]["title"] == "Test Article Title"
             assert result["results"][0]["is_open_access"] is True
 
-    def test_search_with_filters(self, client, mock_search_response):
+    async def test_search_with_filters(self, client, mock_search_response):
         """Test search with year and OA filters."""
         with patch.object(
             client, "_make_request", return_value=mock_search_response
         ) as mock:
-            client.search(
+            await client.search(
                 "test query",
                 min_year=2020,
                 max_year=2024,
@@ -73,44 +73,44 @@ class TestEuropePMCClient:
             call_args = mock.call_args[0][0]
             assert "FIRST_PDATE" in call_args or "query=" in call_args
 
-    def test_search_empty_result(self, client):
+    async def test_search_empty_result(self, client):
         """Test search with no results."""
         empty_response = {"hitCount": 0, "resultList": {"result": []}}
         with patch.object(client, "_make_request", return_value=empty_response):
-            result = client.search("nonexistent query xyz")
+            result = await client.search("nonexistent query xyz")
             assert result["hit_count"] == 0
             assert len(result["results"]) == 0
 
-    def test_search_error_handling(self, client):
+    async def test_search_error_handling(self, client):
         """Test search error handling."""
         with patch.object(client, "_make_request", return_value=None):
-            result = client.search("test")
+            result = await client.search("test")
             assert result["hit_count"] == 0
             assert result["results"] == []
 
-    def test_get_fulltext_xml(self, client):
+    async def test_get_fulltext_xml(self, client):
         """Test fulltext XML retrieval."""
         mock_xml = "<article>Test content</article>"
         with patch.object(client, "_make_request", return_value=mock_xml):
-            xml = client.get_fulltext_xml("PMC1234567")
+            xml = await client.get_fulltext_xml("PMC1234567")
             assert xml == mock_xml
 
-    def test_get_fulltext_xml_normalize_id(self, client):
+    async def test_get_fulltext_xml_normalize_id(self, client):
         """Test that PMCID is normalized."""
         with patch.object(client, "_make_request", return_value="<xml/>") as mock:
-            client.get_fulltext_xml("1234567")  # Without PMC prefix
+            await client.get_fulltext_xml("1234567")  # Without PMC prefix
             call_url = mock.call_args[0][0]
             assert "PMC1234567" in call_url
 
-    def test_get_article(self, client, mock_search_response):
+    async def test_get_article(self, client, mock_search_response):
         """Test get single article."""
         article_response = {"result": mock_search_response["resultList"]["result"][0]}
         with patch.object(client, "_make_request", return_value=article_response):
-            article = client.get_article("MED", "12345678")
+            article = await client.get_article("MED", "12345678")
             assert article is not None
             assert article["pmid"] == "12345678"
 
-    def test_get_references(self, client):
+    async def test_get_references(self, client):
         """Test get references."""
         refs_response = {
             "referenceList": {
@@ -127,21 +127,21 @@ class TestEuropePMCClient:
             }
         }
         with patch.object(client, "_make_request", return_value=refs_response):
-            refs = client.get_references("MED", "12345678")
+            refs = await client.get_references("MED", "12345678")
             assert len(refs) == 1
             assert refs[0]["title"] == "Reference Title"
 
-    def test_get_citations(self, client, mock_search_response):
+    async def test_get_citations(self, client, mock_search_response):
         """Test get citations."""
         citations_response = {
             "citationList": {"citation": mock_search_response["resultList"]["result"]}
         }
         with patch.object(client, "_make_request", return_value=citations_response):
-            citations = client.get_citations("MED", "12345678")
+            citations = await client.get_citations("MED", "12345678")
             assert len(citations) == 1
             assert citations[0]["pmid"] == "12345678"
 
-    def test_normalize_article(self, client):
+    async def test_normalize_article(self, client):
         """Test article normalization."""
         raw_article = {
             "id": "12345",
@@ -199,7 +199,7 @@ class TestEuropePMCClient:
         assert "MeSH Term 1" in normalized["mesh_terms"]
         assert normalized["_source"] == "europe_pmc"
 
-    def test_parse_fulltext_xml(self, client):
+    async def test_parse_fulltext_xml(self, client):
         """Test fulltext XML parsing."""
         xml = """<?xml version="1.0"?>
         <article>
@@ -256,7 +256,7 @@ class TestEuropePMCMCPTools:
         register_europe_pmc_tools(mcp)
         return mcp
 
-    def test_tools_registered(self, mcp):
+    async def test_tools_registered(self, mcp):
         """Test Europe PMC tools are registered (v0.1.21: consolidated tools)."""
         tools = mcp._tool_manager._tools
         # v0.1.21: search_europe_pmc integrated into unified_search
@@ -270,11 +270,11 @@ class TestEuropePMCMCPTools:
     @pytest.mark.skip(
         reason="v0.1.21: search_europe_pmc integrated into unified_search"
     )
-    def test_search_europe_pmc_tool(self, mcp):
+    async def test_search_europe_pmc_tool(self, mcp):
         """Test search_europe_pmc tool returns formatted results."""
         pass  # This tool has been integrated into unified_search
 
-    def test_get_fulltext_tool(self, mcp):
+    async def test_get_fulltext_tool(self, mcp):
         """Test get_fulltext tool parses XML correctly."""
         from unittest.mock import patch
 
@@ -294,26 +294,27 @@ class TestEuropePMCMCPTools:
         with patch(
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client"
         ) as mock:
-            mock.return_value.get_fulltext_xml.return_value = mock_xml
-            mock.return_value.parse_fulltext_xml.return_value = mock_parsed
+            mock_client = mock.return_value
+            mock_client.get_fulltext_xml = AsyncMock(return_value=mock_xml)
+            mock_client.parse_fulltext_xml.return_value = mock_parsed
 
             tool = mcp._tool_manager._tools["get_fulltext"]
-            result = tool.fn(pmcid="PMC1234567")
+            result = await tool.fn(pmcid="PMC1234567")
 
             assert "Test Title" in result
             assert "Introduction" in result
 
-    def test_get_fulltext_not_found(self, mcp):
+    async def test_get_fulltext_not_found(self, mcp):
         """Test get_fulltext handles missing fulltext."""
         from unittest.mock import patch
 
         with patch(
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client"
         ) as mock:
-            mock.return_value.get_fulltext_xml.return_value = None
+            mock.return_value.get_fulltext_xml = AsyncMock(return_value=None)
 
             tool = mcp._tool_manager._tools["get_fulltext"]
-            result = tool.fn(pmcid="PMC9999999")
+            result = await tool.fn(pmcid="PMC9999999")
 
             # Updated to match actual error message format
             assert (
@@ -321,15 +322,15 @@ class TestEuropePMCMCPTools:
                 or "not available" in result.lower()
             )
 
-    def test_get_text_mined_terms_requires_id(self, mcp):
+    async def test_get_text_mined_terms_requires_id(self, mcp):
         """Test get_text_mined_terms requires pmid or pmcid."""
         tool = mcp._tool_manager._tools["get_text_mined_terms"]
-        result = tool.fn()
+        result = await tool.fn()
         assert "provide" in result.lower()
 
     # v0.1.21: get_europe_pmc_citations has been removed
     @pytest.mark.skip(reason="v0.1.21: get_europe_pmc_citations tool removed")
-    def test_get_europe_pmc_citations_tool(self, mcp):
+    async def test_get_europe_pmc_citations_tool(self, mcp):
         """Test get_europe_pmc_citations tool."""
         pass  # This tool has been removed in v0.1.21
 
@@ -345,25 +346,25 @@ class TestEuropePMCIntegration:
         return EuropePMCClient(email="test@example.com")
 
     @pytest.mark.integration
-    def test_real_search(self, client):
+    async def test_real_search(self, client):
         """Test real API search."""
-        result = client.search("COVID-19 vaccine", limit=5)
+        result = await client.search("COVID-19 vaccine", limit=5)
         assert result["hit_count"] > 0
         assert len(result["results"]) > 0
         assert result["results"][0]["title"]
 
     @pytest.mark.integration
-    def test_real_fulltext(self, client):
+    async def test_real_fulltext(self, client):
         """Test real fulltext retrieval."""
-        xml = client.get_fulltext_xml("PMC7096777")
+        xml = await client.get_fulltext_xml("PMC7096777")
         assert xml is not None
         assert len(xml) > 1000
         assert "<article" in xml
 
     @pytest.mark.integration
-    def test_real_fulltext_parse(self, client):
+    async def test_real_fulltext_parse(self, client):
         """Test real fulltext parsing."""
-        xml = client.get_fulltext_xml("PMC7096777")
+        xml = await client.get_fulltext_xml("PMC7096777")
         parsed = client.parse_fulltext_xml(xml)
         assert parsed["title"]
         assert len(parsed["sections"]) > 0
@@ -372,20 +373,20 @@ class TestEuropePMCIntegration:
 class TestSourcesIntegration:
     """Test Europe PMC integration with sources module."""
 
-    def test_get_europe_pmc_client(self):
+    async def test_get_europe_pmc_client(self):
         """Test client factory."""
         from pubmed_search.infrastructure.sources import get_europe_pmc_client
 
         client = get_europe_pmc_client()
         assert client is not None
 
-    def test_search_source_enum(self):
+    async def test_search_source_enum(self):
         """Test SearchSource enum includes europe_pmc."""
         from pubmed_search.infrastructure.sources import SearchSource
 
         assert SearchSource.EUROPE_PMC.value == "europe_pmc"
 
-    def test_search_alternate_source_europe_pmc(self):
+    async def test_search_alternate_source_europe_pmc(self):
         """Test search_alternate_source with europe_pmc."""
         from pubmed_search.infrastructure.sources import search_alternate_source
         from unittest.mock import patch
@@ -395,8 +396,8 @@ class TestSourcesIntegration:
         with patch(
             "pubmed_search.infrastructure.sources.get_europe_pmc_client"
         ) as mock_client:
-            mock_client.return_value.search.return_value = mock_result
-            results = search_alternate_source(
+            mock_client.return_value.search = AsyncMock(return_value=mock_result)
+            results = await search_alternate_source(
                 query="test", source="europe_pmc", limit=5
             )
             assert len(results) == 1

@@ -1,7 +1,7 @@
 """Tests for ncbi_extended MCP tools — search_gene, get_gene_details, etc."""
 
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -36,7 +36,7 @@ class TestSearchGeneTool:
 
     @pytest.mark.asyncio
     async def test_success(self, tools):
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
         mock_client.search_gene.return_value = [
             {"gene_id": "672", "symbol": "BRCA1", "name": "BRCA1 DNA repair"}
         ]
@@ -51,7 +51,7 @@ class TestSearchGeneTool:
 
     @pytest.mark.asyncio
     async def test_no_results(self, tools):
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
         mock_client.search_gene.return_value = []
         with patch(
             "pubmed_search.infrastructure.sources.ncbi_extended.get_ncbi_extended_client",
@@ -82,7 +82,7 @@ class TestGetGeneDetailsTool:
 
     @pytest.mark.asyncio
     async def test_success(self, tools):
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
         mock_client.get_gene.return_value = {"gene_id": "672", "symbol": "BRCA1"}
         with patch(
             "pubmed_search.infrastructure.sources.ncbi_extended.get_ncbi_extended_client",
@@ -94,7 +94,7 @@ class TestGetGeneDetailsTool:
 
     @pytest.mark.asyncio
     async def test_not_found(self, tools):
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
         mock_client.get_gene.return_value = None
         with patch(
             "pubmed_search.infrastructure.sources.ncbi_extended.get_ncbi_extended_client",
@@ -116,7 +116,7 @@ class TestGetGeneLiteratureTool:
 
     @pytest.mark.asyncio
     async def test_success(self, tools):
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
         mock_client.get_gene_pubmed_links.return_value = ["12345", "67890"]
         with patch(
             "pubmed_search.infrastructure.sources.ncbi_extended.get_ncbi_extended_client",
@@ -140,7 +140,7 @@ class TestSearchCompoundTool:
 
     @pytest.mark.asyncio
     async def test_success(self, tools):
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
         mock_client.search_compound.return_value = [
             {"cid": "2244", "name": "Aspirin"}
         ]
@@ -165,7 +165,7 @@ class TestGetCompoundDetailsTool:
 
     @pytest.mark.asyncio
     async def test_success(self, tools):
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
         mock_client.get_compound.return_value = {"cid": "2244", "name": "Aspirin"}
         with patch(
             "pubmed_search.infrastructure.sources.ncbi_extended.get_ncbi_extended_client",
@@ -177,7 +177,7 @@ class TestGetCompoundDetailsTool:
 
     @pytest.mark.asyncio
     async def test_not_found(self, tools):
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
         mock_client.get_compound.return_value = None
         with patch(
             "pubmed_search.infrastructure.sources.ncbi_extended.get_ncbi_extended_client",
@@ -199,7 +199,7 @@ class TestGetCompoundLiteratureTool:
 
     @pytest.mark.asyncio
     async def test_success(self, tools):
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
         mock_client.get_compound_pubmed_links.return_value = ["111", "222"]
         with patch(
             "pubmed_search.infrastructure.sources.ncbi_extended.get_ncbi_extended_client",
@@ -222,7 +222,7 @@ class TestSearchClinvarTool:
 
     @pytest.mark.asyncio
     async def test_success(self, tools):
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
         mock_client.search_clinvar.return_value = [
             {"variant_id": "1", "gene": "BRCA1", "significance": "Pathogenic"}
         ]

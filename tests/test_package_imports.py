@@ -16,7 +16,7 @@ import pytest
 class TestPackageImports:
     """Test all package imports work correctly."""
 
-    def test_version(self):
+    async def test_version(self):
         """Version should be a valid semver string."""
         import pubmed_search
         
@@ -26,7 +26,7 @@ class TestPackageImports:
         assert len(parts) >= 2
         assert all(p.isdigit() for p in parts[:2])
 
-    def test_all_exports_importable(self):
+    async def test_all_exports_importable(self):
         """All items in __all__ should be importable."""
         import pubmed_search
         
@@ -34,7 +34,7 @@ class TestPackageImports:
             obj = getattr(pubmed_search, name, None)
             assert obj is not None, f"Export '{name}' is None or missing"
 
-    def test_core_entrez_imports(self):
+    async def test_core_entrez_imports(self):
         """Core Entrez classes should be importable."""
         from pubmed_search import (
             LiteratureSearcher,
@@ -46,26 +46,26 @@ class TestPackageImports:
         assert EntrezBase is not None
         assert SearchStrategy is not None
 
-    def test_http_client_imports(self):
+    async def test_http_client_imports(self):
         """HTTP client classes should be importable."""
         from pubmed_search import PubMedClient, SearchResult
         
         assert PubMedClient is not None
         assert SearchResult is not None
 
-    def test_ncbi_extended_imports(self):
+    async def test_ncbi_extended_imports(self):
         """NCBI Extended client should be importable."""
         from pubmed_search import NCBIExtendedClient
         
         assert NCBIExtendedClient is not None
 
-    def test_europe_pmc_imports(self):
+    async def test_europe_pmc_imports(self):
         """Europe PMC client should be importable."""
         from pubmed_search import EuropePMCClient
         
         assert EuropePMCClient is not None
 
-    def test_multi_source_client_factories(self):
+    async def test_multi_source_client_factories(self):
         """Multi-source client factories should be importable."""
         from pubmed_search import (
             get_semantic_scholar_client,
@@ -83,7 +83,7 @@ class TestPackageImports:
         assert callable(get_crossref_client)
         assert callable(get_unpaywall_client)
 
-    def test_search_source_enum(self):
+    async def test_search_source_enum(self):
         """SearchSource enum should be importable."""
         from pubmed_search import SearchSource
         
@@ -91,7 +91,7 @@ class TestPackageImports:
         assert hasattr(SearchSource, "SEMANTIC_SCHOLAR")
         assert hasattr(SearchSource, "OPENALEX")
 
-    def test_export_functions(self):
+    async def test_export_functions(self):
         """Export functions should be importable."""
         from pubmed_search import (
             export_ris,
@@ -113,7 +113,7 @@ class TestPackageImports:
         assert isinstance(SUPPORTED_FORMATS, (list, tuple, set, dict))
         assert callable(get_fulltext_links)
 
-    def test_openurl_imports(self):
+    async def test_openurl_imports(self):
         """OpenURL functions should be importable."""
         from pubmed_search import (
             get_openurl_link,
@@ -127,7 +127,7 @@ class TestPackageImports:
         assert callable(configure_openurl)
         assert callable(get_openurl_config)
 
-    def test_query_analysis_imports(self):
+    async def test_query_analysis_imports(self):
         """Query analysis classes should be importable."""
         from pubmed_search import (
             QueryAnalyzer,
@@ -145,13 +145,13 @@ class TestPackageImports:
         assert ResultAggregator is not None
         assert RankingConfig is not None
 
-    def test_domain_entity_imports(self):
+    async def test_domain_entity_imports(self):
         """Domain entities should be importable."""
         from pubmed_search import UnifiedArticle
         
         assert UnifiedArticle is not None
 
-    def test_mcp_server_imports(self):
+    async def test_mcp_server_imports(self):
         """MCP server functions should be importable."""
         from pubmed_search import create_mcp_server, mcp_main
         
@@ -162,7 +162,7 @@ class TestPackageImports:
 class TestInfrastructureImports:
     """Test infrastructure layer imports."""
 
-    def test_fulltext_downloader_import(self):
+    async def test_fulltext_downloader_import(self):
         """FulltextDownloader should be importable."""
         from pubmed_search.infrastructure.sources.fulltext_download import (
             FulltextDownloader,
@@ -174,20 +174,20 @@ class TestInfrastructureImports:
         assert PDFSource is not None
         assert PDFLink is not None
 
-    def test_fulltext_downloader_factory(self):
+    async def test_fulltext_downloader_factory(self):
         """get_fulltext_downloader factory should work."""
         from pubmed_search.infrastructure.sources import get_fulltext_downloader
         
         downloader = get_fulltext_downloader()
         assert downloader is not None
 
-    def test_core_client_import(self):
+    async def test_core_client_import(self):
         """CORE client should be importable."""
         from pubmed_search.infrastructure.sources.core import COREClient
         
         assert COREClient is not None
 
-    def test_semantic_scholar_import(self):
+    async def test_semantic_scholar_import(self):
         """Semantic Scholar client should be importable."""
         from pubmed_search.infrastructure.sources.semantic_scholar import (
             SemanticScholarClient,
@@ -195,7 +195,7 @@ class TestInfrastructureImports:
         
         assert SemanticScholarClient is not None
 
-    def test_openalex_import(self):
+    async def test_openalex_import(self):
         """OpenAlex client should be importable."""
         from pubmed_search.infrastructure.sources.openalex import OpenAlexClient
         
@@ -205,7 +205,7 @@ class TestInfrastructureImports:
 class TestDomainImports:
     """Test domain layer imports."""
 
-    def test_unified_article_creation(self):
+    async def test_unified_article_creation(self):
         """UnifiedArticle should be creatable."""
         from pubmed_search.domain.entities.article import UnifiedArticle
         
@@ -222,13 +222,13 @@ class TestDomainImports:
 class TestApplicationImports:
     """Test application layer imports."""
 
-    def test_session_manager_import(self):
+    async def test_session_manager_import(self):
         """SessionManager should be importable."""
         from pubmed_search.application.session import SessionManager
         
         assert SessionManager is not None
 
-    def test_export_formats_import(self):
+    async def test_export_formats_import(self):
         """Export format functions should be importable."""
         # Use top-level exports instead of internal functions
         from pubmed_search import (
@@ -243,7 +243,7 @@ class TestApplicationImports:
 class TestNoCircularImports:
     """Ensure no circular import issues."""
 
-    def test_import_order_1(self):
+    async def test_import_order_1(self):
         """Import infrastructure before presentation."""
         from pubmed_search.infrastructure.ncbi import LiteratureSearcher
         from pubmed_search.presentation.mcp_server import create_server
@@ -251,7 +251,7 @@ class TestNoCircularImports:
         assert LiteratureSearcher is not None
         assert create_server is not None
 
-    def test_import_order_2(self):
+    async def test_import_order_2(self):
         """Import domain before application."""
         from pubmed_search.domain.entities.article import UnifiedArticle
         from pubmed_search.application.search import QueryAnalyzer
@@ -259,7 +259,7 @@ class TestNoCircularImports:
         assert UnifiedArticle is not None
         assert QueryAnalyzer is not None
 
-    def test_import_order_3(self):
+    async def test_import_order_3(self):
         """Import shared before everything."""
         from pubmed_search.shared.exceptions import PubMedSearchError
         from pubmed_search import LiteratureSearcher
@@ -271,7 +271,7 @@ class TestNoCircularImports:
 class TestMCPToolsAccessible:
     """Test that MCP tools are registered and accessible."""
 
-    def test_create_server_returns_valid_server(self):
+    async def test_create_server_returns_valid_server(self):
         """create_mcp_server should return a valid FastMCP server."""
         from pubmed_search import create_mcp_server
         
@@ -283,7 +283,7 @@ class TestMCPToolsAccessible:
         assert server is not None
         assert hasattr(server, "_tool_manager")
 
-    def test_server_has_expected_tools(self):
+    async def test_server_has_expected_tools(self):
         """Server should have expected number of tools."""
         from pubmed_search import create_mcp_server
         
@@ -296,7 +296,7 @@ class TestMCPToolsAccessible:
         # Should have 34 tools (consolidated in v0.3.1)
         assert len(tools) >= 30, f"Expected at least 30 tools, got {len(tools)}"
 
-    def test_key_tools_registered(self):
+    async def test_key_tools_registered(self):
         """Key tools should be registered."""
         from pubmed_search import create_mcp_server
         

@@ -28,11 +28,11 @@ def client():
 # ============================================================
 
 class TestInit:
-    def test_defaults(self):
+    async def test_defaults(self):
         c = UnpaywallClient()
         assert c._email == DEFAULT_EMAIL
 
-    def test_custom_email(self, client):
+    async def test_custom_email(self, client):
         assert client._email == "test@example.com"
 
 
@@ -41,50 +41,68 @@ class TestInit:
 # ============================================================
 
 class TestMakeRequest:
-    @patch("urllib.request.urlopen")
-    def test_success(self, mock_urlopen, client):
-        mock_resp = MagicMock()
-        mock_resp.read.return_value = json.dumps({"is_oa": True}).encode()
-        mock_resp.__enter__ = lambda s: s
-        mock_resp.__exit__ = MagicMock(return_value=False)
-        mock_urlopen.return_value = mock_resp
-        result = client._make_request("https://api.unpaywall.org/v2/test")
+    async def test_success(self, client):
+        from unittest.mock import AsyncMock
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"is_oa": True}
+        mock_response.raise_for_status = MagicMock()
+        client._client = MagicMock()
+        client._client.get = AsyncMock(return_value=mock_response)
+        result = await client._make_request("https://api.unpaywall.org/v2/test")
         assert result == {"is_oa": True}
 
-    @patch("urllib.request.urlopen")
-    def test_404(self, mock_urlopen, client):
-        import urllib.error
-        mock_urlopen.side_effect = urllib.error.HTTPError("url", 404, "Not Found", {}, None)
-        assert client._make_request("https://test.com") is None
+    async def test_404(self, client):
+        from unittest.mock import AsyncMock
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+        client._client = MagicMock()
+        client._client.get = AsyncMock(return_value=mock_response)
+        assert await client._make_request("https://test.com") is None
 
-    @patch("urllib.request.urlopen")
-    def test_422(self, mock_urlopen, client):
-        import urllib.error
-        mock_urlopen.side_effect = urllib.error.HTTPError("url", 422, "Invalid DOI", {}, None)
-        assert client._make_request("https://test.com") is None
+    async def test_422(self, client):
+        from unittest.mock import AsyncMock
+        mock_response = MagicMock()
+        mock_response.status_code = 422
+        client._client = MagicMock()
+        client._client.get = AsyncMock(return_value=mock_response)
+        assert await client._make_request("https://test.com") is None
 
-    @patch("urllib.request.urlopen")
-    def test_429(self, mock_urlopen, client):
-        import urllib.error
-        mock_urlopen.side_effect = urllib.error.HTTPError("url", 429, "Rate limit", {}, None)
-        assert client._make_request("https://test.com") is None
+    async def test_429(self, client):
+        from unittest.mock import AsyncMock
+        import httpx
+        mock_response = MagicMock()
+        mock_response.status_code = 429
+        mock_response.headers = {"Retry-After": "0"}
+        client._client = MagicMock()
+        client._client.get = AsyncMock(return_value=mock_response)
+        assert await client._make_request("https://test.com") is None
 
-    @patch("urllib.request.urlopen")
-    def test_500(self, mock_urlopen, client):
-        import urllib.error
-        mock_urlopen.side_effect = urllib.error.HTTPError("url", 500, "Server Error", {}, None)
-        assert client._make_request("https://test.com") is None
+    async def test_500(self, client):
+        from unittest.mock import AsyncMock
+        import httpx
+        mock_response = MagicMock()
+        mock_response.status_code = 500
+        mock_response.reason_phrase = "Server Error"
+        mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "Server Error", request=MagicMock(), response=mock_response
+        )
+        client._client = MagicMock()
+        client._client.get = AsyncMock(return_value=mock_response)
+        assert await client._make_request("https://test.com") is None
 
-    @patch("urllib.request.urlopen")
-    def test_url_error(self, mock_urlopen, client):
-        import urllib.error
-        mock_urlopen.side_effect = urllib.error.URLError("DNS failed")
-        assert client._make_request("https://test.com") is None
+    async def test_url_error(self, client):
+        from unittest.mock import AsyncMock
+        import httpx
+        client._client = MagicMock()
+        client._client.get = AsyncMock(side_effect=httpx.RequestError("DNS failed", request=MagicMock()))
+        assert await client._make_request("https://test.com") is None
 
-    @patch("urllib.request.urlopen")
-    def test_generic_error(self, mock_urlopen, client):
-        mock_urlopen.side_effect = Exception("unexpected")
-        assert client._make_request("https://test.com") is None
+    async def test_generic_error(self, client):
+        from unittest.mock import AsyncMock
+        client._client = MagicMock()
+        client._client.get = AsyncMock(side_effect=Exception("unexpected"))
+        assert await client._make_request("https://test.com") is None
 
 
 # ============================================================
@@ -93,7 +111,7 @@ class TestMakeRequest:
 
 class TestGetOAStatus:
     @patch.object(UnpaywallClient, "_make_request")
-    def test_success(self, mock_req, client):
+    async def test_success(self, mock_req, client):
         mock_req.return_value = {
             "doi": "10.1234/test",
             "is_oa": True,
@@ -108,17 +126,17 @@ class TestGetOAStatus:
             "is_paratext": False,
             "updated": "2023-01-01",
         }
-        result = client.get_oa_status("10.1234/test")
+        result = await client.get_oa_status("10.1234/test")
         assert result is not None
         assert result["is_oa"] is True
         assert result["oa_status"] == "gold"
 
     @patch.object(UnpaywallClient, "_make_request")
-    def test_not_found(self, mock_req, client):
+    async def test_not_found(self, mock_req, client):
         mock_req.return_value = None
-        assert client.get_oa_status("10.xxxx/fake") is None
+        assert await client.get_oa_status("10.xxxx/fake") is None
 
-    def test_normalize_doi_strips_prefix(self, client):
+    async def test_normalize_doi_strips_prefix(self, client):
         assert client._normalize_doi("https://doi.org/10.1234/test") == "10.1234/test"
         assert client._normalize_doi("http://doi.org/10.1234/test") == "10.1234/test"
         assert client._normalize_doi("doi:10.1234/test") == "10.1234/test"
@@ -131,32 +149,32 @@ class TestGetOAStatus:
 
 class TestGetBestOALink:
     @patch.object(UnpaywallClient, "get_oa_status")
-    def test_found(self, mock_status, client):
+    async def test_found(self, mock_status, client):
         mock_status.return_value = {
             "is_oa": True,
             "best_oa_location": {"url": "https://oa.example.com", "url_for_pdf": "https://pdf.example.com"},
         }
-        link = client.get_best_oa_link("10.1234/test")
+        link = await client.get_best_oa_link("10.1234/test")
         assert link == "https://oa.example.com"
 
     @patch.object(UnpaywallClient, "get_oa_status")
-    def test_pdf_fallback(self, mock_status, client):
+    async def test_pdf_fallback(self, mock_status, client):
         mock_status.return_value = {
             "is_oa": True,
             "best_oa_location": {"url": None, "url_for_pdf": "https://pdf.example.com"},
         }
-        link = client.get_best_oa_link("10.1234/test")
+        link = await client.get_best_oa_link("10.1234/test")
         assert link == "https://pdf.example.com"
 
     @patch.object(UnpaywallClient, "get_oa_status")
-    def test_not_oa(self, mock_status, client):
+    async def test_not_oa(self, mock_status, client):
         mock_status.return_value = {"is_oa": False}
-        assert client.get_best_oa_link("10.1234/test") is None
+        assert await client.get_best_oa_link("10.1234/test") is None
 
     @patch.object(UnpaywallClient, "get_oa_status")
-    def test_none_response(self, mock_status, client):
+    async def test_none_response(self, mock_status, client):
         mock_status.return_value = None
-        assert client.get_best_oa_link("10.1234/test") is None
+        assert await client.get_best_oa_link("10.1234/test") is None
 
 
 # ============================================================
@@ -165,16 +183,16 @@ class TestGetBestOALink:
 
 class TestGetPdfLink:
     @patch.object(UnpaywallClient, "get_oa_status")
-    def test_best_location_has_pdf(self, mock_status, client):
+    async def test_best_location_has_pdf(self, mock_status, client):
         mock_status.return_value = {
             "is_oa": True,
             "best_oa_location": {"url_for_pdf": "https://pdf.example.com/best.pdf"},
             "oa_locations": [],
         }
-        assert client.get_pdf_link("10.1234/test") == "https://pdf.example.com/best.pdf"
+        assert await client.get_pdf_link("10.1234/test") == "https://pdf.example.com/best.pdf"
 
     @patch.object(UnpaywallClient, "get_oa_status")
-    def test_fallback_location(self, mock_status, client):
+    async def test_fallback_location(self, mock_status, client):
         mock_status.return_value = {
             "is_oa": True,
             "best_oa_location": {},
@@ -183,26 +201,26 @@ class TestGetPdfLink:
                 {"url_for_pdf": "https://pdf.example.com/alt.pdf"},
             ],
         }
-        assert client.get_pdf_link("10.1234/test") == "https://pdf.example.com/alt.pdf"
+        assert await client.get_pdf_link("10.1234/test") == "https://pdf.example.com/alt.pdf"
 
     @patch.object(UnpaywallClient, "get_oa_status")
-    def test_no_pdf_anywhere(self, mock_status, client):
+    async def test_no_pdf_anywhere(self, mock_status, client):
         mock_status.return_value = {
             "is_oa": True,
             "best_oa_location": {},
             "oa_locations": [{"url_for_pdf": None}],
         }
-        assert client.get_pdf_link("10.1234/test") is None
+        assert await client.get_pdf_link("10.1234/test") is None
 
     @patch.object(UnpaywallClient, "get_oa_status")
-    def test_not_oa(self, mock_status, client):
+    async def test_not_oa(self, mock_status, client):
         mock_status.return_value = {"is_oa": False}
-        assert client.get_pdf_link("10.1234/test") is None
+        assert await client.get_pdf_link("10.1234/test") is None
 
     @patch.object(UnpaywallClient, "get_oa_status")
-    def test_none(self, mock_status, client):
+    async def test_none(self, mock_status, client):
         mock_status.return_value = None
-        assert client.get_pdf_link("10.1234/test") is None
+        assert await client.get_pdf_link("10.1234/test") is None
 
 
 # ============================================================
@@ -211,13 +229,13 @@ class TestGetPdfLink:
 
 class TestBatchGetOAStatus:
     @patch.object(UnpaywallClient, "get_oa_status")
-    def test_batch(self, mock_status, client):
+    async def test_batch(self, mock_status, client):
         mock_status.side_effect = [
             {"is_oa": True, "doi": "10.1"},
             None,
             {"is_oa": False, "doi": "10.3"},
         ]
-        results = client.batch_get_oa_status(["10.1", "10.2", "10.3"])
+        results = await client.batch_get_oa_status(["10.1", "10.2", "10.3"])
         assert len(results) == 3
         assert results["10.1"]["is_oa"] is True
         assert results["10.2"] is None
@@ -230,7 +248,7 @@ class TestBatchGetOAStatus:
 
 class TestEnrichArticle:
     @patch.object(UnpaywallClient, "get_oa_status")
-    def test_oa_article(self, mock_status, client):
+    async def test_oa_article(self, mock_status, client):
         mock_status.return_value = {
             "is_oa": True,
             "oa_status": "gold",
@@ -249,15 +267,15 @@ class TestEnrichArticle:
                 "license": "cc-by",
             }],
         }
-        result = client.enrich_article("10.1234/test")
+        result = await client.enrich_article("10.1234/test")
         assert result["is_oa"] is True
         assert result["oa_status"] == "gold"
         assert len(result["oa_links"]) == 1
 
     @patch.object(UnpaywallClient, "get_oa_status")
-    def test_not_found(self, mock_status, client):
+    async def test_not_found(self, mock_status, client):
         mock_status.return_value = None
-        result = client.enrich_article("10.xxxx/fake")
+        result = await client.enrich_article("10.xxxx/fake")
         assert result["is_oa"] is False
         assert result["oa_links"] == []
 
@@ -267,7 +285,7 @@ class TestEnrichArticle:
 # ============================================================
 
 class TestStaticMethods:
-    def test_get_oa_status_description(self):
+    async def test_get_oa_status_description(self):
         assert "OA journal" in UnpaywallClient.get_oa_status_description("gold")
         assert "repository" in UnpaywallClient.get_oa_status_description("green")
         assert "subscription" in UnpaywallClient.get_oa_status_description("hybrid")
@@ -282,46 +300,46 @@ class TestStaticMethods:
 # ============================================================
 
 class TestConvenienceFunctions:
-    def test_find_oa_link(self):
+    async def test_find_oa_link(self):
         import pubmed_search.infrastructure.sources.unpaywall as mod
         mod._unpaywall_client = None
         with patch.object(UnpaywallClient, "get_best_oa_link", return_value="https://oa.example.com"):
-            result = find_oa_link("10.1234/test")
+            result = await find_oa_link("10.1234/test")
             assert result == "https://oa.example.com"
         mod._unpaywall_client = None
 
-    def test_find_pdf_link(self):
+    async def test_find_pdf_link(self):
         import pubmed_search.infrastructure.sources.unpaywall as mod
         mod._unpaywall_client = None
         with patch.object(UnpaywallClient, "get_pdf_link", return_value="https://pdf.example.com"):
-            result = find_pdf_link("10.1234/test")
+            result = await find_pdf_link("10.1234/test")
             assert result == "https://pdf.example.com"
         mod._unpaywall_client = None
 
-    def test_is_open_access(self):
+    async def test_is_open_access(self):
         import pubmed_search.infrastructure.sources.unpaywall as mod
         mod._unpaywall_client = None
         with patch.object(UnpaywallClient, "get_oa_status", return_value={"is_oa": True}):
-            assert is_open_access("10.1234/test") is True
+            assert await is_open_access("10.1234/test") is True
         mod._unpaywall_client = None
 
-    def test_is_open_access_none(self):
+    async def test_is_open_access_none(self):
         import pubmed_search.infrastructure.sources.unpaywall as mod
         mod._unpaywall_client = None
         with patch.object(UnpaywallClient, "get_oa_status", return_value=None):
-            assert is_open_access("10.1234/test") is False
+            assert await is_open_access("10.1234/test") is False
         mod._unpaywall_client = None
 
-    def test_get_oa_status_func(self):
+    async def test_get_oa_status_func(self):
         import pubmed_search.infrastructure.sources.unpaywall as mod
         mod._unpaywall_client = None
         with patch.object(UnpaywallClient, "get_oa_status", return_value={"oa_status": "gold"}):
-            assert get_oa_status("10.1234/test") == "gold"
+            assert await get_oa_status("10.1234/test") == "gold"
         mod._unpaywall_client = None
 
-    def test_get_oa_status_func_none(self):
+    async def test_get_oa_status_func_none(self):
         import pubmed_search.infrastructure.sources.unpaywall as mod
         mod._unpaywall_client = None
         with patch.object(UnpaywallClient, "get_oa_status", return_value=None):
-            assert get_oa_status("10.1234/test") == "unknown"
+            assert await get_oa_status("10.1234/test") == "unknown"
         mod._unpaywall_client = None

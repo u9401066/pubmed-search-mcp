@@ -23,18 +23,18 @@ from pubmed_search.infrastructure.sources.clinical_trials import (
 class TestClinicalTrialsClientBasic:
     """Basic tests for ClinicalTrialsClient."""
 
-    def test_init_default(self):
+    async def test_init_default(self):
         """Test initialization with defaults."""
         client = ClinicalTrialsClient()
         assert client.timeout == DEFAULT_TIMEOUT
         assert client._client is None
 
-    def test_init_custom_timeout(self):
+    async def test_init_custom_timeout(self):
         """Test initialization with custom timeout."""
         client = ClinicalTrialsClient(timeout=30.0)
         assert client.timeout == 30.0
 
-    def test_client_property_lazy_init(self):
+    async def test_client_property_lazy_init(self):
         """Test lazy initialization of HTTP client."""
         client = ClinicalTrialsClient()
         assert client._client is None
@@ -92,7 +92,7 @@ class TestClinicalTrialsClientSearch:
         }
 
     @patch("httpx.Client")
-    def test_search_success(self, mock_httpx_client, mock_response_data):
+    async def test_search_success(self, mock_httpx_client, mock_response_data):
         """Test successful search."""
         mock_response = MagicMock()
         mock_response.json.return_value = mock_response_data
@@ -110,7 +110,7 @@ class TestClinicalTrialsClientSearch:
         assert results[0]["status"] == "RECRUITING"
 
     @patch("httpx.Client")
-    def test_search_with_status_filter(self, mock_httpx_client, mock_response_data):
+    async def test_search_with_status_filter(self, mock_httpx_client, mock_response_data):
         """Test search with status filter."""
         mock_response = MagicMock()
         mock_response.json.return_value = mock_response_data
@@ -132,7 +132,7 @@ class TestClinicalTrialsClientSearch:
         assert "filter.overallStatus" in params
 
     @patch("httpx.Client")
-    def test_search_empty_results(self, mock_httpx_client):
+    async def test_search_empty_results(self, mock_httpx_client):
         """Test search with no results."""
         mock_response = MagicMock()
         mock_response.json.return_value = {"studies": []}
@@ -147,7 +147,7 @@ class TestClinicalTrialsClientSearch:
         assert results == []
 
     @patch("httpx.Client")
-    def test_search_timeout_error(self, mock_httpx_client):
+    async def test_search_timeout_error(self, mock_httpx_client):
         """Test search handles timeout gracefully."""
         import httpx
         
@@ -161,7 +161,7 @@ class TestClinicalTrialsClientSearch:
         assert results == []
 
     @patch("httpx.Client")
-    def test_search_http_error(self, mock_httpx_client):
+    async def test_search_http_error(self, mock_httpx_client):
         """Test search handles HTTP errors gracefully."""
         import httpx
         
@@ -181,7 +181,7 @@ class TestClinicalTrialsClientSearch:
         assert results == []
 
     @patch("httpx.Client")
-    def test_search_generic_error(self, mock_httpx_client):
+    async def test_search_generic_error(self, mock_httpx_client):
         """Test search handles generic errors gracefully."""
         mock_httpx_client.return_value.get.side_effect = Exception("Unexpected error")
         
@@ -193,7 +193,7 @@ class TestClinicalTrialsClientSearch:
         assert results == []
 
     @patch("httpx.Client")
-    def test_search_limit_capped(self, mock_httpx_client, mock_response_data):
+    async def test_search_limit_capped(self, mock_httpx_client, mock_response_data):
         """Test that limit is capped at 20."""
         mock_response = MagicMock()
         mock_response.json.return_value = mock_response_data
@@ -219,7 +219,7 @@ class TestClinicalTrialsClientSearch:
 class TestNormalizeStudy:
     """Tests for _normalize_study method."""
 
-    def test_normalize_complete_study(self):
+    async def test_normalize_complete_study(self):
         """Test normalization of complete study data."""
         client = ClinicalTrialsClient()
         
@@ -259,7 +259,7 @@ class TestNormalizeStudy:
         assert result["conditions"] == ["Hypertension"]
         assert len(result["interventions"]) == 1
 
-    def test_normalize_minimal_study(self):
+    async def test_normalize_minimal_study(self):
         """Test normalization of study with minimal data."""
         client = ClinicalTrialsClient()
         
@@ -280,7 +280,7 @@ class TestNormalizeStudy:
         assert result["status"] == "UNKNOWN"
         assert result["phase"] == "N/A"
 
-    def test_normalize_empty_study(self):
+    async def test_normalize_empty_study(self):
         """Test normalization of empty study."""
         client = ClinicalTrialsClient()
         
@@ -291,7 +291,7 @@ class TestNormalizeStudy:
         assert result["nct_id"] == ""
         assert result["title"] == ""
 
-    def test_normalize_multiple_phases(self):
+    async def test_normalize_multiple_phases(self):
         """Test normalization with multiple phases."""
         client = ClinicalTrialsClient()
         
@@ -311,7 +311,7 @@ class TestNormalizeStudy:
         
         assert result["phase"] == "PHASE1, PHASE2"
 
-    def test_normalize_multiple_interventions(self):
+    async def test_normalize_multiple_interventions(self):
         """Test normalization with multiple interventions."""
         client = ClinicalTrialsClient()
         
@@ -337,7 +337,7 @@ class TestNormalizeStudy:
         assert result["interventions"][0]["type"] == "DRUG"
         assert result["interventions"][1]["type"] == "PROCEDURE"
 
-    def test_normalize_preserves_url(self):
+    async def test_normalize_preserves_url(self):
         """Test that NCT ID is used in URL."""
         client = ClinicalTrialsClient()
         
@@ -369,12 +369,12 @@ class TestNormalizeStudy:
 class TestModuleConstants:
     """Tests for module-level constants."""
 
-    def test_base_url_format(self):
+    async def test_base_url_format(self):
         """Test BASE_URL is valid."""
         assert BASE_URL.startswith("https://")
         assert "clinicaltrials.gov" in BASE_URL
 
-    def test_default_timeout(self):
+    async def test_default_timeout(self):
         """Test DEFAULT_TIMEOUT is reasonable."""
         assert DEFAULT_TIMEOUT > 0
         assert DEFAULT_TIMEOUT <= 60  # Not too long

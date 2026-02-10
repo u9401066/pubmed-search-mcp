@@ -19,12 +19,12 @@ class TestSearchMixinAdvanced:
 
         return LiteratureSearcher(email="test@example.com")
 
-    def test_fetch_details_empty(self, searcher):
+    async def test_fetch_details_empty(self, searcher):
         """Test fetch_details with empty ID list."""
-        result = searcher.fetch_details([])
+        result = await searcher.fetch_details([])
         assert result == []
 
-    def test_fetch_details_single(self, searcher):
+    async def test_fetch_details_single(self, searcher):
         """Test fetch_details with single ID."""
         with (
             patch(
@@ -74,12 +74,12 @@ class TestSearchMixinAdvanced:
             }
             mock_efetch.return_value = MagicMock()
 
-            results = searcher.fetch_details(["12345"])
+            results = await searcher.fetch_details(["12345"])
 
             assert len(results) == 1
             assert results[0]["pmid"] == "12345"
 
-    def test_search_with_all_parameters(self, searcher):
+    async def test_search_with_all_parameters(self, searcher):
         """Test search with all parameters specified."""
         with (
             patch(
@@ -91,7 +91,7 @@ class TestSearchMixinAdvanced:
             mock_read.return_value = {"IdList": ["123"]}
             mock_esearch.return_value = MagicMock()
 
-            results = searcher.search(
+            results = await searcher.search(
                 query="cancer",
                 limit=5,
                 min_year=2020,
@@ -105,7 +105,7 @@ class TestSearchMixinAdvanced:
 
             assert len(results) == 1
 
-    def test_detect_ambiguous_terms(self, searcher):
+    async def test_detect_ambiguous_terms(self, searcher):
         """Test ambiguous term detection."""
         # Test with potentially ambiguous term
         from pubmed_search.infrastructure.ncbi.search import SearchMixin
@@ -118,7 +118,7 @@ class TestSearchMixinAdvanced:
 class TestSessionMoreCoverage:
     """More session.py coverage tests."""
 
-    def test_article_cache_operations(self):
+    async def test_article_cache_operations(self):
         """Test ArticleCache get_many, put_many, and stats."""
         from pubmed_search.application.session import ArticleCache
 
@@ -155,7 +155,7 @@ class TestSessionMoreCoverage:
             stats = cache.stats()
             assert stats["total_cached"] == 2
 
-    def test_article_cache_clear(self):
+    async def test_article_cache_clear(self):
         """Test ArticleCache clear."""
         from pubmed_search.application.session import ArticleCache
 
@@ -167,7 +167,7 @@ class TestSessionMoreCoverage:
 
             assert cache.get("123") is None
 
-    def test_article_cache_invalidate(self):
+    async def test_article_cache_invalidate(self):
         """Test ArticleCache invalidate."""
         from pubmed_search.application.session import ArticleCache
 
@@ -179,7 +179,7 @@ class TestSessionMoreCoverage:
 
             assert cache.get("123") is None
 
-    def test_session_manager_list_sessions(self):
+    async def test_session_manager_list_sessions(self):
         """Test listing sessions."""
         from pubmed_search.application.session import SessionManager
 
@@ -194,7 +194,7 @@ class TestSessionMoreCoverage:
 
             assert len(sessions) == 2
 
-    def test_session_manager_switch_session(self):
+    async def test_session_manager_switch_session(self):
         """Test switching sessions."""
         from pubmed_search.application.session import SessionManager
 
@@ -210,7 +210,7 @@ class TestSessionMoreCoverage:
             assert result is not None
             assert manager.get_current_session().session_id == session1.session_id
 
-    def test_session_manager_get_from_cache(self):
+    async def test_session_manager_get_from_cache(self):
         """Test getting from cache."""
         from pubmed_search.application.session import SessionManager
 
@@ -227,7 +227,7 @@ class TestSessionMoreCoverage:
             assert len(cached) == 1
             assert "999" in missing
 
-    def test_session_manager_is_searched(self):
+    async def test_session_manager_is_searched(self):
         """Test is_searched check."""
         from pubmed_search.application.session import SessionManager
 
@@ -245,7 +245,7 @@ class TestSessionMoreCoverage:
 class TestCommonModuleFinalCoverage:
     """Final coverage for _common.py."""
 
-    def test_cache_results_with_session(self):
+    async def test_cache_results_with_session(self):
         """Test caching results with active session."""
         from pubmed_search.presentation.mcp_server.tools._common import (
             _cache_results,
@@ -267,7 +267,7 @@ class TestCommonModuleFinalCoverage:
             # Cleanup
             set_session_manager(None)
 
-    def test_record_search_only_with_session(self):
+    async def test_record_search_only_with_session(self):
         """Test recording search without caching."""
         from pubmed_search.presentation.mcp_server.tools._common import (
             _record_search_only,
@@ -285,7 +285,7 @@ class TestCommonModuleFinalCoverage:
             # Cleanup
             set_session_manager(None)
 
-    def test_get_last_search_pmids_with_history(self):
+    async def test_get_last_search_pmids_with_history(self):
         """Test getting last search PMIDs."""
         from pubmed_search.presentation.mcp_server.tools._common import (
             get_last_search_pmids,
@@ -311,7 +311,7 @@ class TestCommonModuleFinalCoverage:
         # Cleanup
         set_session_manager(None)
 
-    def test_get_last_search_pmids_no_history(self):
+    async def test_get_last_search_pmids_no_history(self):
         """Test getting last search PMIDs with no history."""
         from pubmed_search.presentation.mcp_server.tools._common import (
             get_last_search_pmids,
@@ -334,7 +334,7 @@ class TestCommonModuleFinalCoverage:
 class TestServerMainFunction:
     """Test server main function (partial)."""
 
-    def test_server_default_email(self):
+    async def test_server_default_email(self):
         """Test server module has default email."""
         from pubmed_search.presentation.mcp_server import server
 
@@ -345,7 +345,7 @@ class TestServerMainFunction:
 class TestExportToolsEdgeCases:
     """Edge cases for export tools."""
 
-    def test_get_file_extension_medline(self):
+    async def test_get_file_extension_medline(self):
         """Test file extension for MEDLINE format."""
         from pubmed_search.presentation.mcp_server.tools.export import (
             _get_file_extension,
@@ -354,7 +354,7 @@ class TestExportToolsEdgeCases:
         result = _get_file_extension("medline")
         assert result == "txt"
 
-    def test_resolve_pmids_with_dataclass_history(self):
+    async def test_resolve_pmids_with_dataclass_history(self):
         """Test resolving PMIDs from SearchRecord dataclass."""
         from pubmed_search.presentation.mcp_server.tools.export import _resolve_pmids
         from pubmed_search.presentation.mcp_server.tools._common import (
@@ -388,7 +388,7 @@ class TestExportToolsEdgeCases:
 class TestStrategyEdgeCases:
     """Edge cases for strategy module."""
 
-    def test_strategy_generator_spell_check(self):
+    async def test_strategy_generator_spell_check(self):
         """Test spell check in strategy generator."""
         from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
 
@@ -407,7 +407,7 @@ class TestStrategyEdgeCases:
 
             # Call spell check method if available
             if hasattr(generator, "spell_check"):
-                result = generator.spell_check("diabetis")
+                result = await generator.spell_check("diabetis")
                 # Returns tuple (corrected, was_corrected)
                 if isinstance(result, tuple):
                     assert result[0] == "diabetes"
@@ -418,7 +418,7 @@ class TestStrategyEdgeCases:
 class TestDiscoveryEdgeCases:
     """Edge cases for discovery tools."""
 
-    def test_find_citing_articles(self):
+    async def test_find_citing_articles(self):
         """Test find_citing_articles method."""
         from pubmed_search.infrastructure.ncbi.citation import CitationMixin
 
@@ -448,7 +448,7 @@ class TestDiscoveryEdgeCases:
             ]
             mock_elink.return_value = MagicMock()
 
-            results = searcher.find_citing_articles("12345", limit=5)
+            results = await searcher.find_citing_articles("12345", limit=5)
 
             assert len(results) <= 5
 
@@ -456,7 +456,7 @@ class TestDiscoveryEdgeCases:
 class TestFormatsCoverage:
     """Additional coverage for formats.py."""
 
-    def test_export_ris_with_all_fields(self):
+    async def test_export_ris_with_all_fields(self):
         """Test RIS export with comprehensive article data."""
         from pubmed_search.application.export.formats import export_ris
 
@@ -484,7 +484,7 @@ class TestFormatsCoverage:
         assert "TY  - JOUR" in result
         assert "PMID- 12345" in result or "AN  - 12345" in result
 
-    def test_export_json_structure(self):
+    async def test_export_json_structure(self):
         """Test JSON export structure."""
         from pubmed_search.application.export.formats import export_json
 
@@ -504,7 +504,7 @@ class TestFormatsCoverage:
 class TestLinksCoverage:
     """Additional coverage for links.py."""
 
-    def test_summarize_access_full(self):
+    async def test_summarize_access_full(self):
         """Test summarize_access with various access types."""
         from pubmed_search.application.export.links import summarize_access
 
@@ -524,7 +524,7 @@ class TestLinksCoverage:
 class TestMergeToolsCoverage:
     """Additional coverage for merge tools."""
 
-    def test_merge_pmids_dedup(self):
+    async def test_merge_pmids_dedup(self):
         """Test PMID deduplication in merge."""
         # Test basic list operations
         pmids_1 = ["111", "222", "333"]

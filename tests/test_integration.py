@@ -13,8 +13,11 @@ import os
 import time
 
 
-# Skip all integration tests if SKIP_INTEGRATION is set
-pytestmark = pytest.mark.integration
+# Skip all integration tests - they make real API calls, not for CI
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.skip(reason="Integration test - makes real API calls, not for CI"),
+]
 
 
 @pytest.fixture
@@ -31,7 +34,7 @@ class TestRealPubMedSearch:
         os.environ.get("SKIP_INTEGRATION", "").lower() == "true",
         reason="Integration tests skipped",
     )
-    def test_real_search(self, real_email):
+    async def test_real_search(self, real_email):
         """Test real PubMed search."""
         from pubmed_search import PubMedClient
 
@@ -44,7 +47,7 @@ class TestRealPubMedSearch:
         last_error = None
         for attempt in range(3):
             try:
-                results = client.search("diabetes mellitus", limit=5)
+                results = await client.search("diabetes mellitus", limit=5)
                 if len(results) > 0:
                     assert results[0].pmid is not None
                     assert results[0].title is not None
@@ -64,12 +67,12 @@ class TestRealPubMedSearch:
         os.environ.get("SKIP_INTEGRATION", "").lower() == "true",
         reason="Integration tests skipped",
     )
-    def test_real_spell_check(self, real_email):
+    async def test_real_spell_check(self, real_email):
         """Test real ESpell API."""
         from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
         searcher = LiteratureSearcher(email=real_email)
-        corrected = searcher.spell_check_query("diabetis")
+        corrected = await searcher.spell_check_query("diabetis")
 
         # Should suggest "diabetes"
         assert "diabet" in corrected.lower()
@@ -82,7 +85,7 @@ class TestRealMeSHLookup:
         os.environ.get("SKIP_INTEGRATION", "").lower() == "true",
         reason="Integration tests skipped",
     )
-    def test_real_mesh_lookup(self, real_email):
+    async def test_real_mesh_lookup(self, real_email):
         """Test real MeSH term lookup."""
         from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
@@ -139,7 +142,7 @@ class TestRealImageSearch:
         os.environ.get("SKIP_INTEGRATION", "").lower() == "true",
         reason="Integration tests skipped",
     )
-    def test_real_image_search_xray(self):
+    async def test_real_image_search_xray(self):
         """Test real Open-i search for X-ray images."""
         from pubmed_search.application.image_search import ImageSearchService
 
@@ -160,7 +163,7 @@ class TestRealImageSearch:
         os.environ.get("SKIP_INTEGRATION", "").lower() == "true",
         reason="Integration tests skipped",
     )
-    def test_real_image_search_microscopy(self):
+    async def test_real_image_search_microscopy(self):
         """Test real Open-i search for microscopy images."""
         from pubmed_search.application.image_search import ImageSearchService
 
@@ -179,7 +182,7 @@ class TestRealImageSearch:
         os.environ.get("SKIP_INTEGRATION", "").lower() == "true",
         reason="Integration tests skipped",
     )
-    def test_advisor_integration_suitable_query(self):
+    async def test_advisor_integration_suitable_query(self):
         """Test ImageQueryAdvisor → ImageSearchService full pipeline."""
         from pubmed_search.application.image_search import (
             ImageQueryAdvisor,
@@ -212,7 +215,7 @@ class TestRealImageSearch:
         os.environ.get("SKIP_INTEGRATION", "").lower() == "true",
         reason="Integration tests skipped",
     )
-    def test_advisor_temporal_warning_live(self):
+    async def test_advisor_temporal_warning_live(self):
         """Test that temporal warnings are accurate with real API."""
         from pubmed_search.application.image_search import ImageSearchService
 
@@ -220,7 +223,7 @@ class TestRealImageSearch:
 
         # covid-19 should trigger temporal warning (Open-i frozen ~2020)
         service = ImageSearchService()
-        result = service.search(
+        result = await service.search(
             query="covid-19 lung CT",
             image_type="xg",
             limit=3,
@@ -237,7 +240,7 @@ class TestRealImageSearch:
         os.environ.get("SKIP_INTEGRATION", "").lower() == "true",
         reason="Integration tests skipped",
     )
-    def test_advisor_unsuitable_query_suggestion(self):
+    async def test_advisor_unsuitable_query_suggestion(self):
         """Test that unsuitable queries get proper suggestions."""
         from pubmed_search.application.image_search import (
             ImageQueryAdvisor,
@@ -256,7 +259,7 @@ class TestRealImageSearch:
 
         # Service should still work but include suggestions
         service = ImageSearchService()
-        result = service.search(
+        result = await service.search(
             query="propofol pharmacokinetics",
             limit=3,
         )
@@ -267,7 +270,7 @@ class TestRealImageSearch:
         os.environ.get("SKIP_INTEGRATION", "").lower() == "true",
         reason="Integration tests skipped",
     )
-    def test_image_type_mismatch_warning_live(self):
+    async def test_image_type_mismatch_warning_live(self):
         """Test image_type mismatch warning with real API."""
         from pubmed_search.application.image_search import ImageSearchService
 
@@ -275,7 +278,7 @@ class TestRealImageSearch:
 
         # histology query with xg (X-ray) type should warn
         service = ImageSearchService()
-        result = service.search(
+        result = await service.search(
             query="histology liver pathology",
             image_type="xg",  # Should recommend mc
             limit=3,

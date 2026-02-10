@@ -1,7 +1,7 @@
 """Tests for CORE MCP tools — search_core, get_core_paper, etc."""
 
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -33,7 +33,7 @@ class TestSearchCore:
 
     @pytest.mark.asyncio
     async def test_success(self, tools):
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
         mock_client.search.return_value = {
             "results": [{"title": "Paper1", "id": "123"}],
             "total_hits": 42,
@@ -48,7 +48,7 @@ class TestSearchCore:
 
     @pytest.mark.asyncio
     async def test_no_results(self, tools):
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
         mock_client.search.return_value = {"results": []}
         with patch(
             "pubmed_search.infrastructure.sources.core.get_core_client",
@@ -80,7 +80,7 @@ class TestSearchCoreFulltext:
 
     @pytest.mark.asyncio
     async def test_success(self, tools):
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
         mock_client.search_fulltext.return_value = {
             "results": [{"title": "FT Paper"}],
             "total_hits": 5,
@@ -95,7 +95,7 @@ class TestSearchCoreFulltext:
 
     @pytest.mark.asyncio
     async def test_no_results(self, tools):
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
         mock_client.search_fulltext.return_value = {"results": []}
         with patch(
             "pubmed_search.infrastructure.sources.core.get_core_client",
@@ -118,7 +118,7 @@ class TestGetCorePaper:
 
     @pytest.mark.asyncio
     async def test_found(self, tools):
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
         mock_client.get_work.return_value = {"id": "123", "title": "Paper"}
         with patch(
             "pubmed_search.infrastructure.sources.core.get_core_client",
@@ -130,7 +130,7 @@ class TestGetCorePaper:
 
     @pytest.mark.asyncio
     async def test_not_found(self, tools):
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
         mock_client.get_work.return_value = None
         with patch(
             "pubmed_search.infrastructure.sources.core.get_core_client",
@@ -153,7 +153,7 @@ class TestGetCoreFulltext:
 
     @pytest.mark.asyncio
     async def test_found(self, tools):
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
         mock_client.get_fulltext.return_value = "The full text of the paper."
         with patch(
             "pubmed_search.infrastructure.sources.core.get_core_client",
@@ -166,7 +166,7 @@ class TestGetCoreFulltext:
 
     @pytest.mark.asyncio
     async def test_truncated(self, tools):
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
         mock_client.get_fulltext.return_value = "x" * 60000
         with patch(
             "pubmed_search.infrastructure.sources.core.get_core_client",
@@ -178,7 +178,7 @@ class TestGetCoreFulltext:
 
     @pytest.mark.asyncio
     async def test_not_available(self, tools):
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
         mock_client.get_fulltext.return_value = None
         with patch(
             "pubmed_search.infrastructure.sources.core.get_core_client",
@@ -201,7 +201,7 @@ class TestFindInCore:
 
     @pytest.mark.asyncio
     async def test_doi_found(self, tools):
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
         mock_client.search_by_doi.return_value = {"title": "DOI Paper"}
         with patch(
             "pubmed_search.infrastructure.sources.core.get_core_client",
@@ -215,7 +215,7 @@ class TestFindInCore:
 
     @pytest.mark.asyncio
     async def test_pmid_found(self, tools):
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
         mock_client.search_by_pmid.return_value = {"title": "PMID Paper"}
         with patch(
             "pubmed_search.infrastructure.sources.core.get_core_client",
@@ -236,7 +236,7 @@ class TestFindInCore:
 
     @pytest.mark.asyncio
     async def test_not_found(self, tools):
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
         mock_client.search_by_doi.return_value = None
         with patch(
             "pubmed_search.infrastructure.sources.core.get_core_client",

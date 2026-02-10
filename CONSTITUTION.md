@@ -72,6 +72,30 @@
 >
 > 今天的零散測試，就是明天的回歸測試。
 
+### 第 7.1.1 條：檔案衛生原則 (File Hygiene)
+
+1. **專案根目錄禁止放臨時檔案**：`.txt`、`.log`、`.tmp`、`.bak` 等臨時產出物不得出現在專案根目錄
+2. **臨時腳本禁止放在 `scripts/`**：除非是長期使用的工具腳本，否則不得放入 `scripts/` 目錄
+3. **測試結果一律用 stdout 檢視**：不要將 pytest 輸出導向檔案再讀取，直接用終端機看
+4. **若真需要臨時檔案**：放在 `scripts/_tmp/`（已被 `.gitignore` 排除），且用完即刪
+5. **AI Agent 產生的修復腳本**：執行後立即刪除，不得殘留
+
+> 💡 **名言：「根目錄是專案的門面，不是垃圾桶」**
+>
+> 每個出現在根目錄的檔案都應該有存在的理由。若它不值得被 git track，它就不值得在那裡。
+
+#### 允許存在於根目錄的檔案
+
+- 設定檔：`pyproject.toml`, `Dockerfile`, `docker-compose*.yml`, `.gitignore`, `uv.lock`
+- 文檔：`README.md`, `CHANGELOG.md`, `CONSTITUTION.md`, `ARCHITECTURE.md`, `ROADMAP.md`, `CONTRIBUTING.md`, `DEPLOYMENT.md`, `LICENSE`
+- 入口點：`run_copilot.py`, `run_server.py`, `start.sh`
+
+#### 禁止存在於根目錄的檔案
+
+- ❌ 任何 `*.txt` 臨時輸出（`test_results.txt`, `full_test_result.txt` 等）
+- ❌ 任何 `*.log` 日誌檔（已被 `.gitignore` 排除）
+- ❌ 任何 `fix_*.py`、`auto_*.py` 等一次性修復腳本
+
 ### 第 7.2 條：環境即程式碼
 1. 虛擬環境配置必須可重現
 2. 依賴必須明確版本鎖定

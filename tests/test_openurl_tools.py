@@ -1,6 +1,6 @@
 """Tests for openurl MCP tools — configure, link, presets, test."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, AsyncMock, patch
 
 import pytest
 
@@ -28,7 +28,7 @@ def tools():
 # ============================================================
 
 class TestFormatArticle:
-    def test_full_article(self):
+    async def test_full_article(self):
         art = {"pmid": "123", "doi": "10.1/x", "title": "A"*100,
                "journal": "Nature", "year": "2024"}
         result = _format_article(art)
@@ -36,7 +36,7 @@ class TestFormatArticle:
         assert "DOI: 10.1/x" in result
         assert "Nature" in result
 
-    def test_empty_article(self):
+    async def test_empty_article(self):
         result = _format_article({})
         assert "No metadata" in result
 
@@ -54,17 +54,22 @@ class TestTestResolverUrl:
 
     @pytest.mark.asyncio
     async def test_unreachable(self):
-        with patch("urllib.request.urlopen", side_effect=Exception("timeout")):
+        mock_http = AsyncMock()
+        mock_http.__aenter__.return_value = mock_http
+        mock_http.get.side_effect = Exception("timeout")
+        with patch("httpx.AsyncClient", return_value=mock_http):
             result = await _test_resolver_url("https://nonexistent.example.com/test")
         assert result["reachable"] is False
 
     @pytest.mark.asyncio
     async def test_http_error_still_reachable(self):
-        import urllib.error
-        err = urllib.error.HTTPError(
-            "https://example.com", 403, "Forbidden", {}, None
-        )
-        with patch("urllib.request.urlopen", side_effect=err):
+        mock_response = MagicMock()
+        mock_response.status_code = 403
+        mock_response.reason_phrase = "Forbidden"
+        mock_http = AsyncMock()
+        mock_http.__aenter__.return_value = mock_http
+        mock_http.get.return_value = mock_response
+        with patch("httpx.AsyncClient", return_value=mock_http):
             result = await _test_resolver_url("https://example.com/resolver")
         assert result["reachable"] is True
         assert result["status_code"] == 403
@@ -75,7 +80,7 @@ class TestTestResolverUrl:
 # ============================================================
 
 class TestConfigureInstitutionalAccess:
-    def test_disable(self, tools):
+    async def test_disable(self, tools):
         with patch(
             "pubmed_search.presentation.mcp_server.tools.openurl.configure_openurl"
         ) as mock:
@@ -83,7 +88,7 @@ class TestConfigureInstitutionalAccess:
         assert "disabled" in result.lower()
         mock.assert_called_once_with(enabled=False)
 
-    def test_unknown_preset(self, tools):
+    async def test_unknown_preset(self, tools):
         with patch(
             "pubmed_search.presentation.mcp_server.tools.openurl.list_presets",
             return_value={"ntu": "http://ntu.edu/resolver"},
@@ -91,7 +96,7 @@ class TestConfigureInstitutionalAccess:
             result = tools["configure_institutional_access"](preset="zzz")
         assert "unknown" in result.lower() or "Unknown" in result
 
-    def test_valid_preset(self, tools):
+    async def test_valid_preset(self, tools):
         mock_config = MagicMock()
         mock_builder = MagicMock()
         mock_builder.resolver_base = "http://ntu.edu/resolver"
@@ -109,7 +114,7 @@ class TestConfigureInstitutionalAccess:
             result = tools["configure_institutional_access"](preset="ntu")
         assert "configured" in result.lower() or "✅" in result
 
-    def test_custom_url(self, tools):
+    async def test_custom_url(self, tools):
         with patch(
             "pubmed_search.presentation.mcp_server.tools.openurl.configure_openurl"
         ):
@@ -118,7 +123,7 @@ class TestConfigureInstitutionalAccess:
             )
         assert "configured" in result.lower() or "✅" in result
 
-    def test_show_current_config(self, tools):
+    async def test_show_current_config(self, tools):
         mock_config = MagicMock()
         mock_config.enabled = True
         mock_config.resolver_base = "http://test.edu"
@@ -134,7 +139,7 @@ class TestConfigureInstitutionalAccess:
             result = tools["configure_institutional_access"]()
         assert "configuration" in result.lower() or "Status" in result
 
-    def test_exception(self, tools):
+    async def test_exception(self, tools):
         with patch(
             "pubmed_search.presentation.mcp_server.tools.openurl.configure_openurl",
             side_effect=RuntimeError("fail"),
@@ -150,7 +155,7 @@ class TestConfigureInstitutionalAccess:
 # ============================================================
 
 class TestGetInstitutionalLink:
-    def test_not_configured(self, tools):
+    async def test_not_configured(self, tools):
         mock_config = MagicMock()
         mock_config.get_builder.return_value = None
 
@@ -161,7 +166,7 @@ class TestGetInstitutionalLink:
             result = tools["get_institutional_link"]()
         assert "not configured" in result.lower()
 
-    def test_no_identifiers(self, tools):
+    async def test_no_identifiers(self, tools):
         mock_config = MagicMock()
         mock_builder = MagicMock()
         mock_config.get_builder.return_value = mock_builder
@@ -173,7 +178,7 @@ class TestGetInstitutionalLink:
             result = tools["get_institutional_link"]()
         assert "provide" in result.lower() or "identifier" in result.lower()
 
-    def test_with_pmid(self, tools):
+    async def test_with_pmid(self, tools):
         mock_config = MagicMock()
         mock_builder = MagicMock()
         mock_builder.build_from_article.return_value = "https://resolver.edu/?pmid=123"
@@ -186,7 +191,7 @@ class TestGetInstitutionalLink:
             result = tools["get_institutional_link"](pmid="123")
         assert "resolver.edu" in result
 
-    def test_url_generation_fails(self, tools):
+    async def test_url_generation_fails(self, tools):
         mock_config = MagicMock()
         mock_builder = MagicMock()
         mock_builder.build_from_article.return_value = None
@@ -205,7 +210,7 @@ class TestGetInstitutionalLink:
 # ============================================================
 
 class TestListResolverPresets:
-    def test_returns_presets(self, tools):
+    async def test_returns_presets(self, tools):
         with patch(
             "pubmed_search.presentation.mcp_server.tools.openurl.list_presets",
             return_value={
@@ -249,6 +254,7 @@ class TestTestInstitutionalAccess:
             return_value=mock_config,
         ), patch(
             "pubmed_search.presentation.mcp_server.tools.openurl._test_resolver_url",
+            new_callable=AsyncMock,
             return_value={
                 "reachable": True,
                 "status_code": 200,

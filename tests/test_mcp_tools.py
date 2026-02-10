@@ -8,7 +8,7 @@ from unittest.mock import Mock
 class TestCommonTools:
     """Tests for common tool utilities."""
 
-    def test_format_search_results_empty(self):
+    async def test_format_search_results_empty(self):
         """Test formatting empty results."""
         from pubmed_search.presentation.mcp_server.tools._common import (
             format_search_results,
@@ -17,7 +17,7 @@ class TestCommonTools:
         result = format_search_results([])
         assert "No results found" in result
 
-    def test_format_search_results_with_error(self):
+    async def test_format_search_results_with_error(self):
         """Test formatting results with error."""
         from pubmed_search.presentation.mcp_server.tools._common import (
             format_search_results,
@@ -26,7 +26,7 @@ class TestCommonTools:
         result = format_search_results([{"error": "API failed"}])
         assert "Error" in result
 
-    def test_format_search_results_success(self, mock_article_data):
+    async def test_format_search_results_success(self, mock_article_data):
         """Test formatting successful results."""
         from pubmed_search.presentation.mcp_server.tools._common import (
             format_search_results,
@@ -38,7 +38,7 @@ class TestCommonTools:
         assert mock_article_data["title"] in result
         assert mock_article_data["pmid"] in result
 
-    def test_set_session_manager(self):
+    async def test_set_session_manager(self):
         """Test setting session manager."""
         from pubmed_search.presentation.mcp_server.tools._common import (
             set_session_manager,
@@ -52,7 +52,7 @@ class TestCommonTools:
 
         assert _common._session_manager == mock_manager
 
-    def test_set_strategy_generator(self):
+    async def test_set_strategy_generator(self):
         """Test setting strategy generator."""
         from pubmed_search.presentation.mcp_server.tools._common import (
             set_strategy_generator,
@@ -68,7 +68,7 @@ class TestCommonTools:
 class TestDiscoveryTools:
     """Tests for discovery tools (search, related, citing)."""
 
-    def test_discovery_module_exists(self):
+    async def test_discovery_module_exists(self):
         """Test that discovery module can be imported."""
         from pubmed_search.presentation.mcp_server.tools import discovery
 
@@ -78,7 +78,7 @@ class TestDiscoveryTools:
 class TestStrategyTools:
     """Tests for strategy tools (generate queries, expand)."""
 
-    def test_strategy_module_exists(self):
+    async def test_strategy_module_exists(self):
         """Test that strategy module can be imported."""
         from pubmed_search.presentation.mcp_server.tools import strategy
 
@@ -88,7 +88,7 @@ class TestStrategyTools:
 class TestPicoTools:
     """Tests for PICO parsing tools."""
 
-    def test_pico_module_exists(self):
+    async def test_pico_module_exists(self):
         """Test that pico module can be imported."""
         from pubmed_search.presentation.mcp_server.tools import pico
 
@@ -98,7 +98,7 @@ class TestPicoTools:
 class TestMergeTools:
     """Tests for merge/dedup tools."""
 
-    def test_merge_module_exists(self):
+    async def test_merge_module_exists(self):
         """Test that merge module can be imported."""
         from pubmed_search.presentation.mcp_server.tools import merge
 

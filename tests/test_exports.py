@@ -29,7 +29,7 @@ class TestExportFormats:
             "keywords": ["drug x", "clinical trial"],
         }
 
-    def test_convert_to_latex_with_pylatexenc(self):
+    async def test_convert_to_latex_with_pylatexenc(self):
         """Test LaTeX conversion with pylatexenc."""
         from pubmed_search.application.export.formats import _convert_to_latex
 
@@ -37,7 +37,7 @@ class TestExportFormats:
         result = _convert_to_latex("café")
         assert result is not None
 
-    def test_convert_to_latex_fallback(self):
+    async def test_convert_to_latex_fallback(self):
         """Test LaTeX conversion fallback without pylatexenc."""
         from pubmed_search.application.export.formats import _convert_to_latex
 
@@ -45,14 +45,14 @@ class TestExportFormats:
         result = _convert_to_latex("test")
         assert result == "test"
 
-    def test_convert_to_latex_empty(self):
+    async def test_convert_to_latex_empty(self):
         """Test LaTeX conversion with empty string."""
         from pubmed_search.application.export.formats import _convert_to_latex
 
         assert _convert_to_latex("") == ""
         assert _convert_to_latex(None) is None
 
-    def test_strip_html_tags(self):
+    async def test_strip_html_tags(self):
         """Test HTML tag stripping."""
         from pubmed_search.application.export.formats import _strip_html_tags
 
@@ -69,40 +69,40 @@ class TestExportFormats:
         assert "<b>" not in result
         assert "bold" in result
 
-    def test_strip_html_tags_empty(self):
+    async def test_strip_html_tags_empty(self):
         """Test HTML tag stripping with empty string."""
         from pubmed_search.application.export.formats import _strip_html_tags
 
         assert _strip_html_tags("") == ""
         assert _strip_html_tags(None) is None
 
-    def test_format_author_ris_simple(self):
+    async def test_format_author_ris_simple(self):
         """Test RIS author formatting - simple case."""
         from pubmed_search.application.export.formats import _format_author_ris
 
         assert _format_author_ris("Smith John") == "Smith, John"
         assert _format_author_ris("Doe Jane Mary") == "Doe, Jane Mary"
 
-    def test_format_author_ris_already_formatted(self):
+    async def test_format_author_ris_already_formatted(self):
         """Test RIS author formatting - already has comma."""
         from pubmed_search.application.export.formats import _format_author_ris
 
         assert _format_author_ris("Smith, John") == "Smith, John"
 
-    def test_format_author_ris_single_name(self):
+    async def test_format_author_ris_single_name(self):
         """Test RIS author formatting - single name."""
         from pubmed_search.application.export.formats import _format_author_ris
 
         assert _format_author_ris("Madonna") == "Madonna"
 
-    def test_format_author_ris_empty(self):
+    async def test_format_author_ris_empty(self):
         """Test RIS author formatting - empty."""
         from pubmed_search.application.export.formats import _format_author_ris
 
         assert _format_author_ris("") == ""
         assert _format_author_ris(None) is None
 
-    def test_export_ris(self, sample_article):
+    async def test_export_ris(self, sample_article):
         """Test RIS format export."""
         from pubmed_search.application.export.formats import export_ris
 
@@ -114,7 +114,7 @@ class TestExportFormats:
         assert sample_article["title"] in result
         assert "ER  -" in result
 
-    def test_export_ris_no_abstract(self, sample_article):
+    async def test_export_ris_no_abstract(self, sample_article):
         """Test RIS format export without abstract."""
         from pubmed_search.application.export.formats import export_ris
 
@@ -123,7 +123,7 @@ class TestExportFormats:
         assert "TY  - JOUR" in result
         # Abstract tag should not be present or should be empty
 
-    def test_export_ris_empty(self):
+    async def test_export_ris_empty(self):
         """Test RIS format export with empty list."""
         from pubmed_search.application.export.formats import export_ris
 
@@ -147,7 +147,7 @@ class TestExportBibTeX:
             "doi": "10.1000/test",
         }
 
-    def test_export_bibtex(self, sample_article):
+    async def test_export_bibtex(self, sample_article):
         """Test BibTeX format export."""
         from pubmed_search.application.export.formats import export_bibtex
 
@@ -158,7 +158,7 @@ class TestExportBibTeX:
         assert "author = {" in result
         assert "}" in result
 
-    def test_export_bibtex_special_chars(self):
+    async def test_export_bibtex_special_chars(self):
         """Test BibTeX export with special characters."""
         from pubmed_search.application.export.formats import export_bibtex
 
@@ -196,7 +196,7 @@ class TestExportCSV:
             },
         ]
 
-    def test_export_csv(self, sample_articles):
+    async def test_export_csv(self, sample_articles):
         """Test CSV format export."""
         from pubmed_search.application.export.formats import export_csv
 
@@ -206,7 +206,7 @@ class TestExportCSV:
         assert "123" in result
         assert "456" in result
 
-    def test_export_csv_empty(self):
+    async def test_export_csv_empty(self):
         """Test CSV export with empty list."""
         from pubmed_search.application.export.formats import export_csv
 
@@ -229,7 +229,7 @@ class TestExportMEDLINE:
             "abstract": "Test abstract",
         }
 
-    def test_export_medline(self, sample_article):
+    async def test_export_medline(self, sample_article):
         """Test MEDLINE format export."""
         from pubmed_search.application.export.formats import export_medline
 
@@ -252,7 +252,7 @@ class TestExportJSON:
             "year": "2024",
         }
 
-    def test_export_json(self, sample_article):
+    async def test_export_json(self, sample_article):
         """Test JSON format export."""
         from pubmed_search.application.export.formats import export_json
 
@@ -264,7 +264,7 @@ class TestExportJSON:
         assert len(parsed["articles"]) == 1
         assert parsed["articles"][0]["pmid"] == "12345678"
 
-    def test_export_json_empty(self):
+    async def test_export_json_empty(self):
         """Test JSON export with empty list."""
         from pubmed_search.application.export.formats import export_json
 
@@ -287,28 +287,28 @@ class TestExportArticles:
             "year": "2024",
         }
 
-    def test_export_articles_ris(self, sample_article):
+    async def test_export_articles_ris(self, sample_article):
         """Test export_articles with RIS format."""
         from pubmed_search.application.export.formats import export_articles
 
         result = export_articles([sample_article], format="ris")
         assert "TY  - JOUR" in result
 
-    def test_export_articles_bibtex(self, sample_article):
+    async def test_export_articles_bibtex(self, sample_article):
         """Test export_articles with BibTeX format."""
         from pubmed_search.application.export.formats import export_articles
 
         result = export_articles([sample_article], format="bibtex")
         assert "@article{" in result
 
-    def test_export_articles_csv(self, sample_article):
+    async def test_export_articles_csv(self, sample_article):
         """Test export_articles with CSV format."""
         from pubmed_search.application.export.formats import export_articles
 
         result = export_articles([sample_article], format="csv")
         assert "12345678" in result
 
-    def test_export_articles_json(self, sample_article):
+    async def test_export_articles_json(self, sample_article):
         """Test export_articles with JSON format."""
         from pubmed_search.application.export.formats import export_articles
 
@@ -317,7 +317,7 @@ class TestExportArticles:
         assert "articles" in parsed
         assert len(parsed["articles"]) == 1
 
-    def test_export_articles_invalid_format(self, sample_article):
+    async def test_export_articles_invalid_format(self, sample_article):
         """Test export_articles with invalid format."""
         from pubmed_search.application.export.formats import export_articles
 
@@ -337,7 +337,7 @@ class TestFulltextLinks:
     def sample_article_no_pmc(self):
         return {"pmid": "12345678", "doi": "10.1000/test", "pmc_id": ""}
 
-    def test_get_fulltext_links_with_pmc(self, sample_article_with_pmc):
+    async def test_get_fulltext_links_with_pmc(self, sample_article_with_pmc):
         """Test getting fulltext links with PMC available."""
         from pubmed_search.application.export.links import get_fulltext_links
 
@@ -348,7 +348,7 @@ class TestFulltextLinks:
         assert "pmc" in result["pmc_url"].lower()
         assert result["pmc_pdf_url"] is not None
 
-    def test_get_fulltext_links_no_pmc(self, sample_article_no_pmc):
+    async def test_get_fulltext_links_no_pmc(self, sample_article_no_pmc):
         """Test getting fulltext links without PMC."""
         from pubmed_search.application.export.links import get_fulltext_links
 
@@ -359,7 +359,7 @@ class TestFulltextLinks:
         assert result["pmc_url"] is None
         assert result["doi_url"] is not None
 
-    def test_get_fulltext_links_no_doi_no_pmc(self):
+    async def test_get_fulltext_links_no_doi_no_pmc(self):
         """Test getting fulltext links without DOI or PMC."""
         from pubmed_search.application.export.links import get_fulltext_links
 
@@ -368,7 +368,7 @@ class TestFulltextLinks:
 
         assert result["access_type"] == "abstract_only"
 
-    def test_get_batch_fulltext_links(
+    async def test_get_batch_fulltext_links(
         self, sample_article_with_pmc, sample_article_no_pmc
     ):
         """Test getting fulltext links for multiple articles."""
@@ -381,7 +381,7 @@ class TestFulltextLinks:
         assert results[0]["has_free_fulltext"] is True
         assert results[1]["has_free_fulltext"] is False
 
-    def test_summarize_access(self, sample_article_with_pmc, sample_article_no_pmc):
+    async def test_summarize_access(self, sample_article_with_pmc, sample_article_no_pmc):
         """Test summarizing fulltext access."""
         from pubmed_search.application.export.links import summarize_access
 
@@ -399,7 +399,7 @@ class TestFulltextLinks:
         assert summary["abstract_only"] == 1
         assert summary["pmc_percentage"] == pytest.approx(33.3, rel=0.1)
 
-    def test_summarize_access_empty(self):
+    async def test_summarize_access_empty(self):
         """Test summarizing access with empty list."""
         from pubmed_search.application.export.links import summarize_access
 

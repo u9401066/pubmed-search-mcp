@@ -3,7 +3,7 @@ Tests for Entrez modules - citation, icite, batch, pdf.
 """
 
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import AsyncMock, patch, MagicMock
 
 
 class TestCitationMixin:
@@ -23,12 +23,12 @@ class TestCitationMixin:
             }
         ]
 
-    def test_get_related_articles_success(self, mock_entrez_read):
+    async def test_get_related_articles_success(self, mock_entrez_read):
         """Test getting related articles successfully."""
         from pubmed_search.infrastructure.ncbi.citation import CitationMixin
 
         class TestSearcher(CitationMixin):
-            def fetch_details(self, pmids):
+            async def fetch_details(self, pmids):
                 return [{"pmid": pmid, "title": f"Article {pmid}"} for pmid in pmids]
 
         searcher = TestSearcher()
@@ -44,17 +44,17 @@ class TestCitationMixin:
             mock_read.return_value = mock_entrez_read
             mock_elink.return_value = MagicMock()
 
-            results = searcher.get_related_articles("999", limit=5)
+            results = await searcher.get_related_articles("999", limit=5)
 
             assert len(results) == 2
             assert results[0]["pmid"] == "12345"
 
-    def test_get_related_articles_empty(self):
+    async def test_get_related_articles_empty(self):
         """Test getting related articles when none exist."""
         from pubmed_search.infrastructure.ncbi.citation import CitationMixin
 
         class TestSearcher(CitationMixin):
-            def fetch_details(self, pmids):
+            async def fetch_details(self, pmids):
                 return []
 
         searcher = TestSearcher()
@@ -70,15 +70,15 @@ class TestCitationMixin:
             mock_read.return_value = [{}]  # No LinkSetDb
             mock_elink.return_value = MagicMock()
 
-            results = searcher.get_related_articles("999", limit=5)
+            results = await searcher.get_related_articles("999", limit=5)
             assert results == []
 
-    def test_get_related_articles_error(self):
+    async def test_get_related_articles_error(self):
         """Test getting related articles with error."""
         from pubmed_search.infrastructure.ncbi.citation import CitationMixin
 
         class TestSearcher(CitationMixin):
-            def fetch_details(self, pmids):
+            async def fetch_details(self, pmids):
                 return []
 
         searcher = TestSearcher()
@@ -88,16 +88,16 @@ class TestCitationMixin:
         ) as mock_elink:
             mock_elink.side_effect = Exception("API Error")
 
-            results = searcher.get_related_articles("999")
+            results = await searcher.get_related_articles("999")
             assert len(results) == 1
             assert "error" in results[0]
 
-    def test_get_citing_articles_success(self):
+    async def test_get_citing_articles_success(self):
         """Test getting citing articles successfully."""
         from pubmed_search.infrastructure.ncbi.citation import CitationMixin
 
         class TestSearcher(CitationMixin):
-            def fetch_details(self, pmids):
+            async def fetch_details(self, pmids):
                 return [{"pmid": pmid, "title": f"Article {pmid}"} for pmid in pmids]
 
         searcher = TestSearcher()
@@ -122,16 +122,16 @@ class TestCitationMixin:
             ]
             mock_elink.return_value = MagicMock()
 
-            results = searcher.get_citing_articles("999", limit=10)
+            results = await searcher.get_citing_articles("999", limit=10)
 
             assert len(results) == 2
 
-    def test_get_article_references_success(self):
+    async def test_get_article_references_success(self):
         """Test getting article references successfully."""
         from pubmed_search.infrastructure.ncbi.citation import CitationMixin
 
         class TestSearcher(CitationMixin):
-            def fetch_details(self, pmids):
+            async def fetch_details(self, pmids):
                 return [{"pmid": pmid, "title": f"Ref {pmid}"} for pmid in pmids]
 
         searcher = TestSearcher()
@@ -156,16 +156,16 @@ class TestCitationMixin:
             ]
             mock_elink.return_value = MagicMock()
 
-            results = searcher.get_article_references("999", limit=20)
+            results = await searcher.get_article_references("999", limit=20)
 
             assert len(results) == 2
 
-    def test_aliases_work(self):
+    async def test_aliases_work(self):
         """Test that alias methods work."""
         from pubmed_search.infrastructure.ncbi.citation import CitationMixin
 
         class TestSearcher(CitationMixin):
-            def fetch_details(self, pmids):
+            async def fetch_details(self, pmids):
                 return []
 
         searcher = TestSearcher()
@@ -173,11 +173,11 @@ class TestCitationMixin:
         with patch.object(
             searcher, "get_related_articles", return_value=[]
         ) as mock_get:
-            searcher.find_related_articles("123")
+            await searcher.find_related_articles("123")
             mock_get.assert_called_once_with("123", 5)
 
         with patch.object(searcher, "get_citing_articles", return_value=[]) as mock_get:
-            searcher.find_citing_articles("123")
+            await searcher.find_citing_articles("123")
             mock_get.assert_called_once_with("123", 10)
 
 
@@ -203,7 +203,7 @@ class TestICiteMixin:
             ]
         }
 
-    def test_get_citation_metrics_success(self, mock_icite_response):
+    async def test_get_citation_metrics_success(self, mock_icite_response):
         """Test getting citation metrics successfully."""
         from pubmed_search.infrastructure.ncbi.icite import ICiteMixin
 
@@ -212,19 +212,22 @@ class TestICiteMixin:
 
         searcher = TestSearcher()
 
-        with patch("pubmed_search.infrastructure.ncbi.icite.requests.get") as mock_get:
-            mock_response = MagicMock()
-            mock_response.status_code = 200
-            mock_response.json.return_value = mock_icite_response
-            mock_get.return_value = mock_response
+        mock_http = AsyncMock()
+        mock_http.__aenter__.return_value = mock_http
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = mock_icite_response
+        mock_response.raise_for_status = MagicMock()
+        mock_http.get = AsyncMock(return_value=mock_response)
 
-            results = searcher.get_citation_metrics(["12345678"])
+        with patch("httpx.AsyncClient", return_value=mock_http):
+            results = await searcher.get_citation_metrics(["12345678"])
 
             assert "12345678" in results
             assert results["12345678"]["citation_count"] == 50
             assert results["12345678"]["relative_citation_ratio"] == 2.5
 
-    def test_get_citation_metrics_empty(self):
+    async def test_get_citation_metrics_empty(self):
         """Test getting citation metrics with no PMIDs."""
         from pubmed_search.infrastructure.ncbi.icite import ICiteMixin
 
@@ -232,11 +235,11 @@ class TestICiteMixin:
             pass
 
         searcher = TestSearcher()
-        results = searcher.get_citation_metrics([])
+        results = await searcher.get_citation_metrics([])
 
         assert results == {}
 
-    def test_get_citation_metrics_batch(self, mock_icite_response):
+    async def test_get_citation_metrics_batch(self, mock_icite_response):
         """Test getting citation metrics in batches."""
         from pubmed_search.infrastructure.ncbi.icite import (
             ICiteMixin,
@@ -251,18 +254,21 @@ class TestICiteMixin:
         # Create more PMIDs than the batch limit
         pmids = [str(i) for i in range(MAX_PMIDS_PER_REQUEST + 50)]
 
-        with patch("pubmed_search.infrastructure.ncbi.icite.requests.get") as mock_get:
-            mock_response = MagicMock()
-            mock_response.status_code = 200
-            mock_response.json.return_value = {"data": []}
-            mock_get.return_value = mock_response
+        mock_http = AsyncMock()
+        mock_http.__aenter__.return_value = mock_http
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"data": []}
+        mock_response.raise_for_status = MagicMock()
+        mock_http.get = AsyncMock(return_value=mock_response)
 
-            searcher.get_citation_metrics(pmids)
+        with patch("httpx.AsyncClient", return_value=mock_http) as MockClient:
+            await searcher.get_citation_metrics(pmids)
 
-            # Should make 2 API calls (one full batch + one partial)
-            assert mock_get.call_count == 2
+            # Should make 2 AsyncClient instantiations (one per batch)
+            assert MockClient.call_count == 2
 
-    def test_get_citation_metrics_api_error(self):
+    async def test_get_citation_metrics_api_error(self):
         """Test getting citation metrics with API error."""
         from pubmed_search.infrastructure.ncbi.icite import ICiteMixin
 
@@ -271,10 +277,12 @@ class TestICiteMixin:
 
         searcher = TestSearcher()
 
-        with patch("pubmed_search.infrastructure.ncbi.icite.requests.get") as mock_get:
-            mock_get.side_effect = Exception("API Error")
+        mock_http = AsyncMock()
+        mock_http.__aenter__.return_value = mock_http
+        mock_http.get = AsyncMock(side_effect=Exception("API Error"))
 
-            results = searcher.get_citation_metrics(["12345"])
+        with patch("httpx.AsyncClient", return_value=mock_http):
+            results = await searcher.get_citation_metrics(["12345"])
             # Should return empty dict on error
             assert results == {}
 
@@ -282,7 +290,7 @@ class TestICiteMixin:
 class TestBatchMixin:
     """Tests for BatchMixin methods."""
 
-    def test_search_with_history_success(self):
+    async def test_search_with_history_success(self):
         """Test search with history server."""
         from pubmed_search.infrastructure.ncbi.batch import BatchMixin
 
@@ -304,13 +312,13 @@ class TestBatchMixin:
             }
             mock_search.return_value = MagicMock()
 
-            result = searcher.search_with_history("cancer therapy")
+            result = await searcher.search_with_history("cancer therapy")
 
             assert result["webenv"] == "WEB_ENV_123"
             assert result["query_key"] == "1"
             assert result["count"] == 500
 
-    def test_search_with_history_error(self):
+    async def test_search_with_history_error(self):
         """Test search with history server error."""
         from pubmed_search.infrastructure.ncbi.batch import BatchMixin
 
@@ -324,10 +332,10 @@ class TestBatchMixin:
         ) as mock_search:
             mock_search.side_effect = Exception("API Error")
 
-            result = searcher.search_with_history("test")
+            result = await searcher.search_with_history("test")
             assert "error" in result
 
-    def test_fetch_batch_from_history_success(self):
+    async def test_fetch_batch_from_history_success(self):
         """Test fetching batch from history."""
         from pubmed_search.infrastructure.ncbi.batch import BatchMixin
 
@@ -363,13 +371,13 @@ class TestBatchMixin:
             }
             mock_fetch.return_value = MagicMock()
 
-            results = searcher.fetch_batch_from_history("WEB_ENV", "1", 0, 10)
+            results = await searcher.fetch_batch_from_history("WEB_ENV", "1", 0, 10)
 
             assert len(results) == 1
             assert results[0]["pmid"] == "12345"
             assert results[0]["title"] == "Test Article"
 
-    def test_fetch_batch_from_history_error(self):
+    async def test_fetch_batch_from_history_error(self):
         """Test fetching batch with error."""
         from pubmed_search.infrastructure.ncbi.batch import BatchMixin
 
@@ -383,6 +391,6 @@ class TestBatchMixin:
         ) as mock_fetch:
             mock_fetch.side_effect = Exception("API Error")
 
-            results = searcher.fetch_batch_from_history("WEB_ENV", "1", 0, 10)
+            results = await searcher.fetch_batch_from_history("WEB_ENV", "1", 0, 10)
             assert len(results) == 1
             assert "error" in results[0]

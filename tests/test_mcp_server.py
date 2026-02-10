@@ -8,19 +8,19 @@ from unittest.mock import Mock
 class TestServerImports:
     """Test that server modules can be imported."""
 
-    def test_import_create_server(self):
+    async def test_import_create_server(self):
         """Test importing create_server function."""
         from pubmed_search.presentation.mcp_server import create_server
 
         assert create_server is not None
 
-    def test_import_register_all_tools(self):
+    async def test_import_register_all_tools(self):
         """Test importing register_all_tools function."""
         from pubmed_search.presentation.mcp_server import register_all_tools
 
         assert register_all_tools is not None
 
-    def test_import_main(self):
+    async def test_import_main(self):
         """Test importing main function."""
         from pubmed_search.presentation.mcp_server import main
 
@@ -30,13 +30,13 @@ class TestServerImports:
 class TestServerModule:
     """Tests for server module."""
 
-    def test_server_module_exists(self):
+    async def test_server_module_exists(self):
         """Test that server module can be imported."""
         from pubmed_search.presentation.mcp_server import server
 
         assert server is not None
 
-    def test_server_has_create_server(self):
+    async def test_server_has_create_server(self):
         """Test that server module has create_server."""
         from pubmed_search.presentation.mcp_server.server import create_server
 
@@ -46,13 +46,13 @@ class TestServerModule:
 class TestToolsRegistration:
     """Tests for tools registration."""
 
-    def test_tools_init_exports(self):
+    async def test_tools_init_exports(self):
         """Test that tools __init__ exports register_all_tools."""
         from pubmed_search.presentation.mcp_server.tools import register_all_tools
 
         assert callable(register_all_tools)
 
-    def test_register_all_tools_callable(self):
+    async def test_register_all_tools_callable(self):
         """Test that register_all_tools is callable."""
         from pubmed_search.presentation.mcp_server.tools import register_all_tools
 
@@ -70,7 +70,7 @@ class TestToolsRegistration:
 class TestSessionTools:
     """Tests for session tools."""
 
-    def test_session_tools_module_exists(self):
+    async def test_session_tools_module_exists(self):
         """Test that session_tools module can be imported."""
         from pubmed_search.presentation.mcp_server import session_tools
 

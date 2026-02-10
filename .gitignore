@@ -64,7 +64,8 @@ env.bak/
 venv.bak/
 
 # IDE
-.vscode/
+.vscode/*
+!.vscode/mcp.json
 .idea/
 *.swp
 *.swo
@@ -72,4 +73,23 @@ venv.bak/
 
 # macOS
 .DS_Store
+
+# Server / runtime logs
 server.log
+*.log
+
+# Temporary test result / debug output files
+# AI agents and scripts MUST NOT create temp files in project root
+*.tmp
+*.bak
+test_results*.txt
+*_test_result*.txt
+*_results*.txt
+*_tbline*.txt
+*_summary.txt
+*_final.txt
+failed_lines.txt
+perf_*.txt
+
+# Temp fix scripts (should go in scripts/_tmp/ if needed)
+scripts/_tmp/

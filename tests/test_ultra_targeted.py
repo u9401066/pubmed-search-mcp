@@ -9,7 +9,7 @@ import tempfile
 class TestSessionReadingList:
     """Test session reading list functions."""
 
-    def test_add_to_reading_list(self):
+    async def test_add_to_reading_list(self):
         """Test adding article to reading list."""
         from pubmed_search.application.session import SessionManager
 
@@ -23,7 +23,7 @@ class TestSessionReadingList:
             assert "12345" in session.reading_list
             assert session.reading_list["12345"]["priority"] == 1
 
-    def test_exclude_article(self):
+    async def test_exclude_article(self):
         """Test excluding article."""
         from pubmed_search.application.session import SessionManager
 
@@ -36,7 +36,7 @@ class TestSessionReadingList:
             session = manager.get_current_session()
             assert "99999" in session.excluded_pmids
 
-    def test_get_session_summary(self):
+    async def test_get_session_summary(self):
         """Test getting session summary."""
         from pubmed_search.application.session import SessionManager
 
@@ -54,7 +54,7 @@ class TestSessionReadingList:
             assert summary["topic"] == "Test Topic"
             assert summary["cached_articles"] >= 1
 
-    def test_get_session_summary_no_session(self):
+    async def test_get_session_summary_no_session(self):
         """Test getting summary with no session."""
         from pubmed_search.application.session import SessionManager
 
@@ -70,7 +70,7 @@ class TestSessionReadingList:
 class TestDiscoveryCacheHit:
     """Test discovery tool cache hit paths."""
 
-    def test_discovery_with_cache_hint(self):
+    async def test_discovery_with_cache_hint(self):
         """Test discovery returns cache hint."""
         from pubmed_search.presentation.mcp_server.tools._common import (
             format_search_results,
@@ -96,7 +96,7 @@ class TestDiscoveryCacheHit:
 class TestServerRegisterTools:
     """Test server tool registration."""
 
-    def test_register_all_tools(self):
+    async def test_register_all_tools(self):
         """Test registering all tools."""
         from pubmed_search.presentation.mcp_server.tools import register_all_tools
         from pubmed_search import LiteratureSearcher
@@ -113,7 +113,7 @@ class TestServerRegisterTools:
 class TestCommonCheckCache:
     """Test _common.py cache check."""
 
-    def test_check_cache_function(self):
+    async def test_check_cache_function(self):
         """Test check_cache when available."""
         from pubmed_search.presentation.mcp_server.tools import _common
 
@@ -132,7 +132,7 @@ class TestCommonCheckCache:
 class TestSearchFilterLogic:
     """Test search filter logic paths."""
 
-    def test_search_with_date_filter_only_min(self):
+    async def test_search_with_date_filter_only_min(self):
         """Test search with only min_year."""
         from pubmed_search.infrastructure.ncbi.search import SearchMixin
 
@@ -151,11 +151,11 @@ class TestSearchFilterLogic:
             mock_read.return_value = {"IdList": ["123"]}
             mock_esearch.return_value = MagicMock()
 
-            results = searcher.search("test", min_year=2020)
+            results = await searcher.search("test", min_year=2020)
 
             assert isinstance(results, list)
 
-    def test_search_with_date_filter_only_max(self):
+    async def test_search_with_date_filter_only_max(self):
         """Test search with only max_year."""
         from pubmed_search.infrastructure.ncbi.search import SearchMixin
 
@@ -174,7 +174,7 @@ class TestSearchFilterLogic:
             mock_read.return_value = {"IdList": ["123"]}
             mock_esearch.return_value = MagicMock()
 
-            results = searcher.search("test", max_year=2024)
+            results = await searcher.search("test", max_year=2024)
 
             assert isinstance(results, list)
 
@@ -182,7 +182,7 @@ class TestSearchFilterLogic:
 class TestStrategyCornerCases:
     """Test strategy generator corner cases."""
 
-    def test_strategy_with_single_word(self):
+    async def test_strategy_with_single_word(self):
         """Test strategy with single word query."""
         from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
 
@@ -198,7 +198,7 @@ class TestStrategyCornerCases:
             mock_espell.return_value = MagicMock()
 
             generator = SearchStrategyGenerator(email="test@example.com")
-            result = generator.generate_strategies("cancer")
+            result = await generator.generate_strategies("cancer")
 
             assert "topic" in result
 
@@ -206,7 +206,7 @@ class TestStrategyCornerCases:
 class TestExportWithLargeFile:
     """Test export with large file path."""
 
-    def test_export_file_path_creation(self):
+    async def test_export_file_path_creation(self):
         """Test export file path creation."""
         from pubmed_search.presentation.mcp_server.tools.export import _save_export_file
         import os
@@ -224,7 +224,7 @@ class TestExportWithLargeFile:
 class TestSessionFindCached:
     """Test session find_cached_search edge cases."""
 
-    def test_find_cached_search_match(self):
+    async def test_find_cached_search_match(self):
         """Test finding cached search with match."""
         from pubmed_search.application.session import SessionManager
 
@@ -248,7 +248,7 @@ class TestSessionFindCached:
 class TestLinksWithDOI:
     """Test links with DOI."""
 
-    def test_fulltext_links_doi_only(self):
+    async def test_fulltext_links_doi_only(self):
         """Test fulltext links with DOI only."""
         from pubmed_search.application.export.links import get_fulltext_links
 
@@ -262,7 +262,7 @@ class TestLinksWithDOI:
 class TestClientFindMethods:
     """Test client find methods."""
 
-    def test_find_related_articles(self):
+    async def test_find_related_articles(self):
         """Test find_related_articles method."""
         from pubmed_search import LiteratureSearcher
 
@@ -280,7 +280,7 @@ class TestClientFindMethods:
             mock_read.return_value = [{"LinkSetDb": [{"Link": [{"Id": "999"}]}]}]
             mock_elink.return_value = MagicMock()
 
-            results = searcher.find_related_articles("12345", limit=5)
+            results = await searcher.find_related_articles("12345", limit=5)
 
             assert isinstance(results, list)
 
@@ -288,7 +288,7 @@ class TestClientFindMethods:
 class TestFormatsSpecialCases:
     """Test formats special cases."""
 
-    def test_medline_with_keywords(self):
+    async def test_medline_with_keywords(self):
         """Test MEDLINE export with keywords."""
         from pubmed_search.application.export.formats import export_medline
 
@@ -310,7 +310,7 @@ class TestFormatsSpecialCases:
 class TestMergeHighRelevance:
     """Test merge high relevance detection."""
 
-    def test_detect_high_relevance(self):
+    async def test_detect_high_relevance(self):
         """Test detecting high relevance articles."""
         from collections import Counter
 
@@ -328,7 +328,7 @@ class TestMergeHighRelevance:
 class TestBaseAPIKey:
     """Test base module with API key."""
 
-    def test_entrez_base_no_api_key(self):
+    async def test_entrez_base_no_api_key(self):
         """Test EntrezBase without API key."""
         from pubmed_search.infrastructure.ncbi.base import EntrezBase
 
@@ -342,7 +342,7 @@ class TestBaseAPIKey:
 class TestPicoExtraction:
     """Test PICO extraction."""
 
-    def test_pico_module_callable(self):
+    async def test_pico_module_callable(self):
         """Test PICO module is callable."""
         from pubmed_search.presentation.mcp_server.tools.pico import register_pico_tools
 

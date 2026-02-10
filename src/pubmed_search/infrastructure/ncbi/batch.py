@@ -9,6 +9,8 @@ from typing import Any, Dict, List
 
 from Bio import Entrez
 
+from .base import _rate_limit
+
 
 class BatchMixin:
     """
@@ -38,6 +40,7 @@ class BatchMixin:
             - batch_size: Recommended batch size
         """
         try:
+            await _rate_limit()
             handle = await asyncio.to_thread(
                 Entrez.esearch, db="pubmed", term=query, usehistory="y", retmax=0
             )
@@ -80,6 +83,7 @@ class BatchMixin:
             ...     process_batch(batch)
         """
         try:
+            await _rate_limit()
             handle = await asyncio.to_thread(
                 Entrez.efetch,
                 db="pubmed",

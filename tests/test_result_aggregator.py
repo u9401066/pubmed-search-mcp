@@ -141,7 +141,7 @@ def sample_articles(mock_article):
 class TestUnionFind:
     """Tests for UnionFind data structure."""
 
-    def test_init(self):
+    async def test_init(self):
         """Test initialization."""
         uf = UnionFind(5)
         assert len(uf.parent) == 5
@@ -149,14 +149,14 @@ class TestUnionFind:
         assert uf.rank == [0, 0, 0, 0, 0]
         assert uf.size == [1, 1, 1, 1, 1]
 
-    def test_find_self(self):
+    async def test_find_self(self):
         """Test find returns self for initial elements."""
         uf = UnionFind(3)
         assert uf.find(0) == 0
         assert uf.find(1) == 1
         assert uf.find(2) == 2
 
-    def test_union_two_elements(self):
+    async def test_union_two_elements(self):
         """Test union of two elements."""
         uf = UnionFind(3)
 
@@ -166,7 +166,7 @@ class TestUnionFind:
         # They should now have the same root
         assert uf.find(0) == uf.find(1)
 
-    def test_union_same_set(self):
+    async def test_union_same_set(self):
         """Test union of elements in same set returns False."""
         uf = UnionFind(3)
         uf.union(0, 1)
@@ -175,7 +175,7 @@ class TestUnionFind:
         assert uf.union(0, 1) is False
         assert uf.union(1, 0) is False
 
-    def test_union_multiple(self):
+    async def test_union_multiple(self):
         """Test multiple unions."""
         uf = UnionFind(5)
 
@@ -192,7 +192,7 @@ class TestUnionFind:
         # 4 should be separate
         assert uf.find(4) == 4
 
-    def test_path_compression(self):
+    async def test_path_compression(self):
         """Test path compression works."""
         uf = UnionFind(4)
         uf.union(0, 1)
@@ -205,7 +205,7 @@ class TestUnionFind:
         # After find, all should point directly to root
         assert uf.parent[3] == root
 
-    def test_get_groups(self):
+    async def test_get_groups(self):
         """Test get_groups returns correct groupings."""
         uf = UnionFind(5)
 
@@ -221,7 +221,7 @@ class TestUnionFind:
         sizes = sorted([len(g) for g in groups.values()])
         assert sizes == [1, 2, 2]
 
-    def test_get_groups_all_separate(self):
+    async def test_get_groups_all_separate(self):
         """Test get_groups with all separate elements."""
         uf = UnionFind(3)
         groups = uf.get_groups()
@@ -230,7 +230,7 @@ class TestUnionFind:
         for members in groups.values():
             assert len(members) == 1
 
-    def test_get_groups_all_united(self):
+    async def test_get_groups_all_united(self):
         """Test get_groups with all elements in one group."""
         uf = UnionFind(4)
         uf.union(0, 1)
@@ -250,7 +250,7 @@ class TestUnionFind:
 class TestRankingConfig:
     """Tests for RankingConfig."""
 
-    def test_default_config(self):
+    async def test_default_config(self):
         """Test default configuration."""
         config = RankingConfig.default()
 
@@ -262,27 +262,27 @@ class TestRankingConfig:
         assert config.entity_match_weight == 0.10
         assert config.dedup_strategy == DeduplicationStrategy.MODERATE
 
-    def test_impact_focused_config(self):
+    async def test_impact_focused_config(self):
         """Test impact-focused configuration."""
         config = RankingConfig.impact_focused()
 
         assert config.impact_weight == 0.40
         assert config.relevance_weight == 0.20
 
-    def test_recency_focused_config(self):
+    async def test_recency_focused_config(self):
         """Test recency-focused configuration."""
         config = RankingConfig.recency_focused()
 
         assert config.recency_weight == 0.40
         assert config.recency_half_life_years == 3.0
 
-    def test_quality_focused_config(self):
+    async def test_quality_focused_config(self):
         """Test quality-focused configuration."""
         config = RankingConfig.quality_focused()
 
         assert config.quality_weight == 0.35
 
-    def test_normalized_weights(self):
+    async def test_normalized_weights(self):
         """Test weights normalization."""
         config = RankingConfig()
         weights = config.normalized_weights()
@@ -290,7 +290,7 @@ class TestRankingConfig:
         # Should sum to 1.0
         assert abs(sum(weights.values()) - 1.0) < 0.001
 
-    def test_normalized_weights_custom(self):
+    async def test_normalized_weights_custom(self):
         """Test normalization with custom weights."""
         config = RankingConfig(
             relevance_weight=1.0,
@@ -307,7 +307,7 @@ class TestRankingConfig:
         assert abs(weights["relevance"] - expected) < 0.001
         assert abs(sum(weights.values()) - 1.0) < 0.001
 
-    def test_normalized_weights_zero_total(self):
+    async def test_normalized_weights_zero_total(self):
         """Test normalization with all zero weights."""
         config = RankingConfig(
             relevance_weight=0,
@@ -322,7 +322,7 @@ class TestRankingConfig:
         # When total=0, code sets total=1.0, so each weight = 0/1 = 0
         assert all(w == 0.0 for w in weights.values())
 
-    def test_get_article_type_weight_default(self):
+    async def test_get_article_type_weight_default(self):
         """Test default article type weights."""
         config = RankingConfig()
 
@@ -330,14 +330,14 @@ class TestRankingConfig:
         assert config.get_article_type_weight("review") == 0.10
         assert config.get_article_type_weight("unknown-type") == 0.0
 
-    def test_get_article_type_weight_custom(self):
+    async def test_get_article_type_weight_custom(self):
         """Test custom article type weights."""
         config = RankingConfig(quality_article_type_weights={"custom-type": 0.99})
 
         assert config.get_article_type_weight("custom-type") == 0.99
         assert config.get_article_type_weight("meta-analysis") == 0.0  # Not in custom
 
-    def test_source_trust_levels(self):
+    async def test_source_trust_levels(self):
         """Test source trust levels."""
         config = RankingConfig()
 
@@ -353,7 +353,7 @@ class TestRankingConfig:
 class TestAggregationStats:
     """Tests for AggregationStats."""
 
-    def test_default_values(self):
+    async def test_default_values(self):
         """Test default values."""
         stats = AggregationStats()
 
@@ -366,7 +366,7 @@ class TestAggregationStats:
         assert stats.dedup_by_pmid == 0
         assert stats.dedup_by_title == 0
 
-    def test_to_dict(self):
+    async def test_to_dict(self):
         """Test to_dict conversion."""
         stats = AggregationStats(
             total_input=100,
@@ -394,12 +394,12 @@ class TestAggregationStats:
 class TestResultAggregator:
     """Tests for ResultAggregator."""
 
-    def test_init_default_config(self):
+    async def test_init_default_config(self):
         """Test initialization with default config."""
         aggregator = ResultAggregator()
         assert aggregator._config is not None
 
-    def test_init_custom_config(self):
+    async def test_init_custom_config(self):
         """Test initialization with custom config."""
         config = RankingConfig.impact_focused()
         aggregator = ResultAggregator(config)
@@ -410,7 +410,7 @@ class TestResultAggregator:
     # Aggregation Tests
     # =========================================================================
 
-    def test_aggregate_empty_lists(self):
+    async def test_aggregate_empty_lists(self):
         """Test aggregation with empty lists."""
         aggregator = ResultAggregator()
         articles, stats = aggregator.aggregate([[], []])
@@ -419,7 +419,7 @@ class TestResultAggregator:
         assert stats.total_input == 0
         assert stats.unique_articles == 0
 
-    def test_aggregate_single_source(self, sample_articles):
+    async def test_aggregate_single_source(self, sample_articles):
         """Test aggregation from single source."""
         aggregator = ResultAggregator()
         articles, stats = aggregator.aggregate([sample_articles])
@@ -429,7 +429,7 @@ class TestResultAggregator:
         assert stats.unique_articles == 3
         assert stats.duplicates_removed == 0
 
-    def test_aggregate_multiple_sources_no_duplicates(self, mock_article):
+    async def test_aggregate_multiple_sources_no_duplicates(self, mock_article):
         """Test aggregation from multiple sources without duplicates."""
         source1 = [mock_article(pmid="111", doi="10.1/a")]
         source2 = [mock_article(pmid="222", doi="10.1/b")]
@@ -442,7 +442,7 @@ class TestResultAggregator:
         assert stats.duplicates_removed == 0
         assert "pubmed" in stats.by_source
 
-    def test_aggregate_dedup_by_doi(self, mock_article):
+    async def test_aggregate_dedup_by_doi(self, mock_article):
         """Test deduplication by DOI."""
         same_doi = "10.1000/same"
         source1 = [mock_article(pmid="111", doi=same_doi, primary_source="pubmed")]
@@ -456,7 +456,7 @@ class TestResultAggregator:
         assert stats.duplicates_removed == 1
         assert stats.dedup_by_doi == 1
 
-    def test_aggregate_dedup_by_pmid(self, mock_article):
+    async def test_aggregate_dedup_by_pmid(self, mock_article):
         """Test deduplication by PMID."""
         same_pmid = "12345678"
         source1 = [mock_article(pmid=same_pmid, doi="10.1/a", primary_source="pubmed")]
@@ -470,7 +470,7 @@ class TestResultAggregator:
         assert len(articles) == 1
         assert stats.dedup_by_pmid == 1
 
-    def test_aggregate_dedup_by_title_moderate(self, mock_article):
+    async def test_aggregate_dedup_by_title_moderate(self, mock_article):
         """Test deduplication by title with MODERATE strategy."""
         same_title = "Machine Learning Applications in Medical Diagnosis"
         source1 = [mock_article(title=same_title, pmid="111", primary_source="pubmed")]
@@ -483,7 +483,7 @@ class TestResultAggregator:
         assert len(articles) == 1
         assert stats.dedup_by_title == 1
 
-    def test_aggregate_strict_no_title_match(self, mock_article):
+    async def test_aggregate_strict_no_title_match(self, mock_article):
         """Test STRICT strategy doesn't use title matching."""
         same_title = "Machine Learning Applications in Medical Diagnosis"
         source1 = [mock_article(title=same_title, pmid="111")]
@@ -497,7 +497,7 @@ class TestResultAggregator:
         assert len(articles) == 2
         assert stats.dedup_by_title == 0
 
-    def test_aggregate_title_too_short(self, mock_article):
+    async def test_aggregate_title_too_short(self, mock_article):
         """Test short titles are not used for deduplication."""
         short_title = "ML"  # Too short
         source1 = [mock_article(title=short_title, pmid="111")]
@@ -509,7 +509,7 @@ class TestResultAggregator:
         # Should NOT deduplicate by short title
         assert len(articles) == 2
 
-    def test_aggregate_merge_called(self, mock_article):
+    async def test_aggregate_merge_called(self, mock_article):
         """Test merge_from is called for duplicates."""
         same_doi = "10.1/same"
         article1 = mock_article(pmid="111", doi=same_doi, primary_source="pubmed")
@@ -521,7 +521,7 @@ class TestResultAggregator:
         # merge_from should be called on the primary article
         assert stats.merged_records == 1
 
-    def test_aggregate_doi_normalization(self, mock_article):
+    async def test_aggregate_doi_normalization(self, mock_article):
         """Test DOI normalization during deduplication."""
         source1 = [mock_article(doi="https://doi.org/10.1000/test")]
         source2 = [mock_article(doi="10.1000/test")]  # Same DOI, different format
@@ -536,14 +536,14 @@ class TestResultAggregator:
     # Ranking Tests
     # =========================================================================
 
-    def test_rank_empty(self):
+    async def test_rank_empty(self):
         """Test ranking empty list."""
         aggregator = ResultAggregator()
         ranked = aggregator.rank([])
 
         assert ranked == []
 
-    def test_rank_single_article(self, mock_article):
+    async def test_rank_single_article(self, mock_article):
         """Test ranking single article."""
         article = mock_article(title="Test", year=2024)
 
@@ -553,7 +553,7 @@ class TestResultAggregator:
         assert len(ranked) == 1
         assert ranked[0]._ranking_score is not None
 
-    def test_rank_multiple_articles(self, sample_articles):
+    async def test_rank_multiple_articles(self, sample_articles):
         """Test ranking multiple articles."""
         aggregator = ResultAggregator()
         ranked = aggregator.rank(sample_articles)
@@ -564,7 +564,7 @@ class TestResultAggregator:
         scores = [a._ranking_score for a in ranked]
         assert scores == sorted(scores, reverse=True)
 
-    def test_rank_with_query(self, mock_article):
+    async def test_rank_with_query(self, mock_article):
         """Test ranking with query for relevance."""
         article1 = mock_article(
             title="Machine Learning in Healthcare",
@@ -581,7 +581,7 @@ class TestResultAggregator:
         # article1 should rank higher due to relevance
         assert ranked[0].title == "Machine Learning in Healthcare"
 
-    def test_rank_min_score_filter(self, mock_article):
+    async def test_rank_min_score_filter(self, mock_article):
         """Test min_score filtering."""
         articles = [
             mock_article(title="High Quality", year=2024),
@@ -596,7 +596,7 @@ class TestResultAggregator:
         for article in ranked:
             assert article._ranking_score >= 0.6
 
-    def test_rank_max_results(self, sample_articles):
+    async def test_rank_max_results(self, sample_articles):
         """Test max_results limiting."""
         config = RankingConfig(max_results=2)
         aggregator = ResultAggregator(config)
@@ -604,7 +604,7 @@ class TestResultAggregator:
 
         assert len(ranked) == 2
 
-    def test_rank_custom_config(self, mock_article):
+    async def test_rank_custom_config(self, mock_article):
         """Test ranking with custom config."""
         # Recent article
         article1 = mock_article(year=datetime.now().year)
@@ -623,7 +623,7 @@ class TestResultAggregator:
     # Scoring Tests
     # =========================================================================
 
-    def test_calculate_relevance_no_query(self, mock_article):
+    async def test_calculate_relevance_no_query(self, mock_article):
         """Test relevance without query returns 0.5."""
         aggregator = ResultAggregator()
         article = mock_article()
@@ -631,7 +631,7 @@ class TestResultAggregator:
         score = aggregator._calculate_relevance(article, None)
         assert score == 0.5
 
-    def test_calculate_relevance_title_match(self, mock_article):
+    async def test_calculate_relevance_title_match(self, mock_article):
         """Test relevance with title match."""
         aggregator = ResultAggregator()
         article = mock_article(title="Machine Learning Applications in Healthcare")
@@ -642,7 +642,7 @@ class TestResultAggregator:
         score = aggregator._calculate_relevance(article, "machine learning healthcare")
         assert score >= 0.5  # Should be high due to title match
 
-    def test_calculate_relevance_abstract_match(self, mock_article):
+    async def test_calculate_relevance_abstract_match(self, mock_article):
         """Test relevance with abstract match."""
         aggregator = ResultAggregator()
         article = mock_article(
@@ -654,7 +654,7 @@ class TestResultAggregator:
         score = aggregator._calculate_relevance(article, "machine learning diagnosis")
         assert score >= 0.3  # Abstract match contributes to score
 
-    def test_calculate_quality_meta_analysis(self, mock_article):
+    async def test_calculate_quality_meta_analysis(self, mock_article):
         """Test quality score for meta-analysis."""
         aggregator = ResultAggregator()
         article = mock_article(article_type="meta-analysis")
@@ -662,7 +662,7 @@ class TestResultAggregator:
         score = aggregator._calculate_quality(article, RankingConfig())
         assert score > 0.7  # Meta-analysis gets high score
 
-    def test_calculate_quality_preprint(self, mock_article):
+    async def test_calculate_quality_preprint(self, mock_article):
         """Test quality score for preprint."""
         aggregator = ResultAggregator()
         article = mock_article(article_type="preprint")
@@ -670,7 +670,7 @@ class TestResultAggregator:
         score = aggregator._calculate_quality(article, RankingConfig())
         assert score < 0.7  # Preprint gets lower score
 
-    def test_calculate_quality_open_access_boost(self, mock_article):
+    async def test_calculate_quality_open_access_boost(self, mock_article):
         """Test open access gives small quality boost."""
         aggregator = ResultAggregator()
         config = RankingConfig()
@@ -683,7 +683,7 @@ class TestResultAggregator:
 
         assert score_oa > score_closed
 
-    def test_calculate_recency_current_year(self, mock_article):
+    async def test_calculate_recency_current_year(self, mock_article):
         """Test recency for current year."""
         aggregator = ResultAggregator()
         article = mock_article(year=datetime.now().year)
@@ -691,7 +691,7 @@ class TestResultAggregator:
         score = aggregator._calculate_recency(article, RankingConfig())
         assert score > 0.9  # Recent should be high
 
-    def test_calculate_recency_old_article(self, mock_article):
+    async def test_calculate_recency_old_article(self, mock_article):
         """Test recency for old article."""
         aggregator = ResultAggregator()
         article = mock_article(year=2000)
@@ -699,7 +699,7 @@ class TestResultAggregator:
         score = aggregator._calculate_recency(article, RankingConfig())
         assert score < 0.3  # Old should be low
 
-    def test_calculate_recency_no_year(self, mock_article):
+    async def test_calculate_recency_no_year(self, mock_article):
         """Test recency without year."""
         aggregator = ResultAggregator()
         article = mock_article(year=None)
@@ -707,7 +707,7 @@ class TestResultAggregator:
         score = aggregator._calculate_recency(article, RankingConfig())
         assert score == 0.3  # Default for unknown
 
-    def test_calculate_impact_no_metrics(self, mock_article):
+    async def test_calculate_impact_no_metrics(self, mock_article):
         """Test impact without citation metrics."""
         aggregator = ResultAggregator()
         article = mock_article(citation_metrics=None)
@@ -715,7 +715,7 @@ class TestResultAggregator:
         score = aggregator._calculate_impact(article)
         assert score == 0.3  # Default for unknown
 
-    def test_calculate_impact_with_nih_percentile(self, mock_article):
+    async def test_calculate_impact_with_nih_percentile(self, mock_article):
         """Test impact with NIH percentile."""
         aggregator = ResultAggregator()
 
@@ -726,7 +726,7 @@ class TestResultAggregator:
         score = aggregator._calculate_impact(article)
         assert score == 0.8  # 80/100
 
-    def test_calculate_impact_with_rcr(self, mock_article):
+    async def test_calculate_impact_with_rcr(self, mock_article):
         """Test impact with RCR."""
         aggregator = ResultAggregator()
 
@@ -738,7 +738,7 @@ class TestResultAggregator:
         score = aggregator._calculate_impact(article)
         assert 0.6 < score < 0.7  # RCR 4.0 → ~0.67
 
-    def test_calculate_impact_with_citation_count(self, mock_article):
+    async def test_calculate_impact_with_citation_count(self, mock_article):
         """Test impact with citation count."""
         aggregator = ResultAggregator()
 
@@ -751,7 +751,7 @@ class TestResultAggregator:
         score = aggregator._calculate_impact(article)
         assert 0.6 < score < 0.8  # log10(101)/3 ≈ 0.67
 
-    def test_calculate_source_trust(self, mock_article):
+    async def test_calculate_source_trust(self, mock_article):
         """Test source trust calculation."""
         aggregator = ResultAggregator()
         config = RankingConfig()
@@ -764,7 +764,7 @@ class TestResultAggregator:
 
         assert score_pubmed > score_core  # PubMed more trusted
 
-    def test_calculate_source_trust_multi_source_boost(self, mock_article):
+    async def test_calculate_source_trust_multi_source_boost(self, mock_article):
         """Test multi-source verification boost."""
         aggregator = ResultAggregator()
         config = RankingConfig()
@@ -786,7 +786,7 @@ class TestResultAggregator:
     # Primary Selection Tests
     # =========================================================================
 
-    def test_select_primary_more_identifiers(self, mock_article):
+    async def test_select_primary_more_identifiers(self, mock_article):
         """Test primary selection prefers more identifiers."""
         aggregator = ResultAggregator()
 
@@ -797,7 +797,7 @@ class TestResultAggregator:
 
         assert primary.pmid == "222"  # Has more identifiers
 
-    def test_select_primary_more_metadata(self, mock_article):
+    async def test_select_primary_more_metadata(self, mock_article):
         """Test primary selection prefers more metadata."""
         aggregator = ResultAggregator()
 
@@ -812,7 +812,7 @@ class TestResultAggregator:
     # Utility Method Tests
     # =========================================================================
 
-    def test_normalize_doi(self):
+    async def test_normalize_doi(self):
         """Test DOI normalization."""
         assert ResultAggregator._normalize_doi("10.1000/test") == "10.1000/test"
         assert (
@@ -826,7 +826,7 @@ class TestResultAggregator:
         assert ResultAggregator._normalize_doi("doi:10.1000/test") == "10.1000/test"
         assert ResultAggregator._normalize_doi("  10.1000/test  ") == "10.1000/test"
 
-    def test_normalize_title(self):
+    async def test_normalize_title(self):
         """Test title normalization."""
         assert ResultAggregator._normalize_title("Hello World") == "hello world"
         assert ResultAggregator._normalize_title("Hello, World!") == "hello world"
@@ -841,7 +841,7 @@ class TestResultAggregator:
     # Convenience Function Tests
     # =========================================================================
 
-    def test_aggregate_and_rank(self, sample_articles):
+    async def test_aggregate_and_rank(self, sample_articles):
         """Test aggregate_and_rank convenience method."""
         aggregator = ResultAggregator()
         articles, stats = aggregator.aggregate_and_rank([sample_articles])
@@ -857,7 +857,7 @@ class TestResultAggregator:
 class TestConvenienceFunctions:
     """Tests for module-level convenience functions."""
 
-    def test_aggregate_results(self, mock_article):
+    async def test_aggregate_results(self, mock_article):
         """Test aggregate_results function."""
         source1 = [mock_article(pmid="111")]
         source2 = [mock_article(pmid="222")]
@@ -867,7 +867,7 @@ class TestConvenienceFunctions:
         assert len(articles) == 2
         assert stats.total_input == 2
 
-    def test_rank_results(self, mock_article):
+    async def test_rank_results(self, mock_article):
         """Test rank_results function."""
         articles = [
             mock_article(year=2024),
@@ -888,7 +888,7 @@ class TestConvenienceFunctions:
 class TestConstants:
     """Tests for module constants."""
 
-    def test_article_type_weights(self):
+    async def test_article_type_weights(self):
         """Test article type weights are defined."""
         assert "meta-analysis" in ARTICLE_TYPE_WEIGHTS
         assert "journal-article" in ARTICLE_TYPE_WEIGHTS
@@ -897,7 +897,7 @@ class TestConstants:
             > ARTICLE_TYPE_WEIGHTS["journal-article"]
         )
 
-    def test_default_source_trust(self):
+    async def test_default_source_trust(self):
         """Test default source trust levels."""
         assert "pubmed" in DEFAULT_SOURCE_TRUST
         assert "core" in DEFAULT_SOURCE_TRUST
@@ -907,7 +907,7 @@ class TestConstants:
 class TestRankingDimension:
     """Tests for RankingDimension enum."""
 
-    def test_enum_values(self):
+    async def test_enum_values(self):
         """Test enum values."""
         assert RankingDimension.RELEVANCE.value == "relevance"
         assert RankingDimension.QUALITY.value == "quality"
@@ -919,7 +919,7 @@ class TestRankingDimension:
 class TestDeduplicationStrategy:
     """Tests for DeduplicationStrategy enum."""
 
-    def test_enum_values(self):
+    async def test_enum_values(self):
         """Test enum values."""
         assert DeduplicationStrategy.STRICT.value == "strict"
         assert DeduplicationStrategy.MODERATE.value == "moderate"

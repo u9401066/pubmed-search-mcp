@@ -18,57 +18,57 @@ from pubmed_search.presentation.mcp_server.tools.vision_search import (
 class TestURLValidation:
     """Tests for URL validation."""
 
-    def test_valid_https_url(self):
+    async def test_valid_https_url(self):
         assert is_valid_url("https://example.com/image.png") is True
 
-    def test_valid_http_url(self):
+    async def test_valid_http_url(self):
         assert is_valid_url("http://example.com/image.jpg") is True
 
-    def test_invalid_ftp_url(self):
+    async def test_invalid_ftp_url(self):
         assert is_valid_url("ftp://example.com/file") is False
 
-    def test_invalid_not_url(self):
+    async def test_invalid_not_url(self):
         assert is_valid_url("not-a-url") is False
 
-    def test_invalid_empty(self):
+    async def test_invalid_empty(self):
         assert is_valid_url("") is False
 
 
 class TestBase64Detection:
     """Tests for base64 image detection."""
 
-    def test_data_uri(self):
+    async def test_data_uri(self):
         data_uri = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUg"
         assert is_base64_image(data_uri) is True
 
-    def test_raw_base64_long(self):
+    async def test_raw_base64_long(self):
         # Generate long enough base64 string
         raw = base64.b64encode(b"x" * 100).decode()
         assert is_base64_image(raw) is True
 
-    def test_short_string(self):
+    async def test_short_string(self):
         assert is_base64_image("abc") is False
 
-    def test_invalid_base64(self):
+    async def test_invalid_base64(self):
         assert is_base64_image("!@#$%^&*()") is False
 
 
 class TestDataURIParsing:
     """Tests for data URI parsing."""
 
-    def test_parse_png(self):
+    async def test_parse_png(self):
         data_uri = "data:image/png;base64,iVBORw0KGgo"
         mime, data = parse_data_uri(data_uri)
         assert mime == "image/png"
         assert data == "iVBORw0KGgo"
 
-    def test_parse_jpeg(self):
+    async def test_parse_jpeg(self):
         data_uri = "data:image/jpeg;base64,/9j/4AAQ"
         mime, data = parse_data_uri(data_uri)
         assert mime == "image/jpeg"
         assert data == "/9j/4AAQ"
 
-    def test_invalid_format(self):
+    async def test_invalid_format(self):
         with pytest.raises(ValueError):
             parse_data_uri("not-a-data-uri")
 
@@ -107,7 +107,7 @@ class TestFetchImage:
 class TestVisionToolsRegistration:
     """Tests for tool registration."""
 
-    def test_register_tools(self):
+    async def test_register_tools(self):
         """Test that vision tools can be registered."""
         mock_mcp = MagicMock()
         mock_mcp.tool = MagicMock(return_value=lambda f: f)

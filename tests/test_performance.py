@@ -26,7 +26,7 @@ pytestmark = pytest.mark.slow
 class TestSearchPerformance:
     """Test search operation performance."""
 
-    def test_search_response_time(self, benchmark, mock_searcher):
+    async def test_search_response_time(self, benchmark, mock_searcher):
         """Search should complete within acceptable time."""
         with patch(
             "pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher",
@@ -40,7 +40,7 @@ class TestSearchPerformance:
             # Verify results returned
             assert len(result) > 0
 
-    def test_batch_fetch_performance(self, benchmark, mock_searcher):
+    async def test_batch_fetch_performance(self, benchmark, mock_searcher):
         """Batch fetching should be efficient."""
         pmids = [str(i) for i in range(1000000, 1000010)]  # 10 PMIDs
 
@@ -55,7 +55,7 @@ class TestSearchPerformance:
 
             assert len(result) > 0
 
-    def test_concurrent_searches_throughput(self, mock_searcher):
+    async def test_concurrent_searches_throughput(self, mock_searcher):
         """Test throughput with multiple concurrent searches."""
         with patch(
             "pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher",
@@ -88,7 +88,7 @@ class TestSearchPerformance:
             assert elapsed < 2.0, f"10 searches took {elapsed:.2f}s (should be <2s)"
 
     @pytest.mark.timeout(5)
-    def test_search_timeout_handling(self, mock_searcher):
+    async def test_search_timeout_handling(self, mock_searcher):
         """Search should handle timeouts gracefully."""
         # Simulate slow response
         mock_searcher.search.side_effect = lambda *args, **kwargs: (
@@ -109,7 +109,7 @@ class TestSearchPerformance:
 class TestCachePerformance:
     """Test caching efficiency."""
 
-    def test_cache_hit_performance(self, benchmark, mock_searcher):
+    async def test_cache_hit_performance(self, benchmark, mock_searcher):
         """Cached results should be much faster than API calls."""
         from pubmed_search.application.session import SessionManager
 
@@ -134,7 +134,7 @@ class TestCachePerformance:
         assert result is not None
         assert result["pmid"] == "12345678"
 
-    def test_cache_miss_to_hit_ratio(self, mock_searcher):
+    async def test_cache_miss_to_hit_ratio(self, mock_searcher):
         """Monitor cache effectiveness."""
         from pubmed_search.application.session import SessionManager
 
@@ -161,7 +161,7 @@ class TestCachePerformance:
 class TestMemoryUsage:
     """Test memory efficiency."""
 
-    def test_large_result_set_memory(self, mock_searcher):
+    async def test_large_result_set_memory(self, mock_searcher):
         """Large result sets should not cause memory issues."""
 
         # Create large mock result
@@ -200,7 +200,7 @@ class TestMemoryUsage:
 class TestAPIRateLimiting:
     """Test API rate limiting behavior."""
 
-    def test_rate_limit_handling(self, mock_searcher):
+    async def test_rate_limit_handling(self, mock_searcher):
         """Should respect NCBI rate limits (3 requests/second)."""
         with patch(
             "pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher",
@@ -221,7 +221,7 @@ class TestAPIRateLimiting:
             # With mocks, should be much faster
             assert elapsed < 1.0, "Mocked requests should be fast"
 
-    def test_burst_request_handling(self, mock_searcher):
+    async def test_burst_request_handling(self, mock_searcher):
         """Handle burst requests without errors."""
         with patch(
             "pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher",
@@ -252,7 +252,7 @@ class TestAPIRateLimiting:
 class TestPerformanceRegression:
     """Detect performance regressions."""
 
-    def test_search_baseline_performance(self, benchmark, mock_searcher):
+    async def test_search_baseline_performance(self, benchmark, mock_searcher):
         """Establish baseline for search performance."""
         with patch(
             "pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher",
@@ -268,7 +268,7 @@ class TestPerformanceRegression:
             # Log performance metrics for monitoring
             # In real CI/CD, these would be compared against historical data
 
-    def test_complex_query_performance(self, benchmark, mock_searcher):
+    async def test_complex_query_performance(self, benchmark, mock_searcher):
         """Complex queries should not degrade performance significantly."""
         complex_query = (
             '("Diabetes Mellitus"[MeSH Terms]) AND '
@@ -297,7 +297,7 @@ class TestScalability:
     """Test system scalability."""
 
     @pytest.mark.parametrize("limit", [10, 50, 100, 500])
-    def test_scaling_with_result_size(self, mock_searcher, limit):
+    async def test_scaling_with_result_size(self, mock_searcher, limit):
         """Performance should scale linearly with result size."""
         # Create results matching the limit
         mock_results = [{"pmid": str(i), "title": f"Article {i}"} for i in range(limit)]
@@ -317,7 +317,7 @@ class TestScalability:
             assert len(results) == limit
             assert elapsed < 0.5, f"Processing {limit} results took {elapsed:.2f}s"
 
-    def test_concurrent_session_handling(self):
+    async def test_concurrent_session_handling(self):
         """Handle multiple concurrent sessions efficiently."""
         from pubmed_search.application.session import SessionManager
 

@@ -332,9 +332,11 @@ class OpenIClient:
             await asyncio.sleep(self._min_interval - elapsed)
         self._last_request_time = time.time()
 
+    _MAX_RETRIES = 3
+
     async def _make_request(self, url: str) -> dict[str, Any] | None:
         """
-        Make HTTP GET request with proper headers.
+        Make HTTP GET request with retry on 429.
 
         Args:
             url: Full request URL
@@ -342,29 +344,41 @@ class OpenIClient:
         Returns:
             Parsed JSON response or None on error
         """
-        await self._rate_limit()
-
-        try:
-            response = await self._client.get(url)
-            if response.status_code == 429:
-                logger.warning("Open-i: Rate limit exceeded")
+        for attempt in range(self._MAX_RETRIES + 1):
+            await self._rate_limit()
+            try:
+                response = await self._client.get(url)
+                if response.status_code == 429:
+                    if attempt < self._MAX_RETRIES:
+                        try:
+                            retry_after = float(response.headers.get("Retry-After", 2 ** (attempt + 1)))
+                        except (ValueError, TypeError):
+                            retry_after = float(2 ** (attempt + 1))
+                        logger.warning(
+                            f"Open-i: Rate limited (429), retry {attempt + 1}/{self._MAX_RETRIES} "
+                            f"in {retry_after:.1f}s"
+                        )
+                        await asyncio.sleep(retry_after)
+                        continue
+                    logger.warning("Open-i: Rate limit exceeded after retries")
+                    return None
+                response.raise_for_status()
+                return response.json()
+            except httpx.HTTPStatusError as e:
+                logger.error(
+                    f"Open-i HTTP error {e.response.status_code}: {e.response.reason_phrase}"
+                )
                 return None
-            response.raise_for_status()
-            return response.json()
-        except httpx.HTTPStatusError as e:
-            logger.error(
-                f"Open-i HTTP error {e.response.status_code}: {e.response.reason_phrase}"
-            )
-            return None
-        except httpx.RequestError as e:
-            logger.error(f"Open-i URL error: {e}")
-            return None
-        except TimeoutError:
-            logger.error("Open-i request timed out")
-            return None
-        except Exception as e:
-            logger.error(f"Open-i request failed: {e}")
-            return None
+            except httpx.RequestError as e:
+                logger.error(f"Open-i URL error: {e}")
+                return None
+            except TimeoutError:
+                logger.error("Open-i request timed out")
+                return None
+            except Exception as e:
+                logger.error(f"Open-i request failed: {e}")
+                return None
+        return None
 
     async def search(
         self,

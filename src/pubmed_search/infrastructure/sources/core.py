@@ -80,42 +80,55 @@ class COREClient:
             await asyncio.sleep(self._min_interval - elapsed)
         self._last_request_time = time.time()
 
+    _MAX_RETRIES = 3
+
     async def _make_request(
         self, url: str, method: str = "GET", data: dict | None = None
     ) -> dict | None:
-        """Make HTTP request to CORE API."""
-        await self._rate_limit()
+        """Make HTTP request to CORE API with retry on 429."""
+        for attempt in range(self._MAX_RETRIES + 1):
+            await self._rate_limit()
+            headers = {}
+            if self._api_key:
+                headers["Authorization"] = f"Bearer {self._api_key}"
+            try:
+                if method == "POST" and data:
+                    headers["Content-Type"] = "application/json"
+                    response = await self._client.post(url, json=data, headers=headers)
+                else:
+                    response = await self._client.get(url, headers=headers)
 
-        headers = {}
-        if self._api_key:
-            headers["Authorization"] = f"Bearer {self._api_key}"
-
-        try:
-            if method == "POST" and data:
-                headers["Content-Type"] = "application/json"
-                response = await self._client.post(url, json=data, headers=headers)
-            else:
-                response = await self._client.get(url, headers=headers)
-
-            if response.status_code == 401:
-                logger.error("CORE API: Unauthorized - check your API key")
+                if response.status_code == 401:
+                    logger.error("CORE API: Unauthorized - check your API key")
+                    return None
+                if response.status_code == 429:
+                    if attempt < self._MAX_RETRIES:
+                        try:
+                            retry_after = float(response.headers.get("Retry-After", 2 ** (attempt + 1)))
+                        except (ValueError, TypeError):
+                            retry_after = float(2 ** (attempt + 1))
+                        logger.warning(
+                            f"CORE API: Rate limited (429), retry {attempt + 1}/{self._MAX_RETRIES} "
+                            f"in {retry_after:.1f}s"
+                        )
+                        await asyncio.sleep(retry_after)
+                        continue
+                    logger.warning("CORE API: Rate limit exceeded after retries")
+                    return None
+                response.raise_for_status()
+                return response.json()
+            except httpx.HTTPStatusError as e:
+                logger.error(
+                    f"CORE API HTTP error {e.response.status_code}: {e.response.reason_phrase}"
+                )
                 return None
-            if response.status_code == 429:
-                logger.warning("CORE API: Rate limit exceeded")
+            except httpx.RequestError as e:
+                logger.error(f"CORE API URL error: {e}")
                 return None
-            response.raise_for_status()
-            return response.json()
-        except httpx.HTTPStatusError as e:
-            logger.error(
-                f"CORE API HTTP error {e.response.status_code}: {e.response.reason_phrase}"
-            )
-            return None
-        except httpx.RequestError as e:
-            logger.error(f"CORE API URL error: {e}")
-            return None
-        except Exception as e:
-            logger.error(f"CORE API request failed: {e}")
-            return None
+            except Exception as e:
+                logger.error(f"CORE API request failed: {e}")
+                return None
+        return None
 
     async def search(
         self,

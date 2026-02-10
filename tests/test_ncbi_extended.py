@@ -2,7 +2,7 @@
 
 import json
 import time
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -32,21 +32,21 @@ def client_no_key():
 # ============================================================
 
 class TestInit:
-    def test_default_email(self):
+    async def test_default_email(self):
         c = NCBIExtendedClient()
         assert c._email == DEFAULT_EMAIL
 
-    def test_custom_email(self, client):
+    async def test_custom_email(self, client):
         assert client._email == "test@example.com"
 
-    def test_api_key(self, client):
+    async def test_api_key(self, client):
         assert client._api_key == "test_key"
         assert client._min_interval == 0.1  # with key
 
-    def test_no_api_key_interval(self, client_no_key):
+    async def test_no_api_key_interval(self, client_no_key):
         assert client_no_key._min_interval == 0.34
 
-    def test_timeout(self, client):
+    async def test_timeout(self, client):
         assert client._timeout == 30.0
 
 
@@ -55,10 +55,10 @@ class TestInit:
 # ============================================================
 
 class TestRateLimit:
-    def test_rate_limit_waits(self, client):
+    async def test_rate_limit_waits(self, client):
         client._last_request_time = time.time()
         start = time.time()
-        client._rate_limit()
+        await client._rate_limit()
         # Should have waited at least some time
         assert client._last_request_time >= start
 
@@ -68,57 +68,61 @@ class TestRateLimit:
 # ============================================================
 
 class TestMakeRequest:
-    @patch("urllib.request.urlopen")
-    def test_json_response(self, mock_urlopen, client):
+    async def test_json_response(self, client):
         mock_response = MagicMock()
-        mock_response.read.return_value = json.dumps({"result": "ok"}).encode()
-        mock_response.__enter__ = lambda s: s
-        mock_response.__exit__ = MagicMock(return_value=False)
-        mock_urlopen.return_value = mock_response
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"result": "ok"}
+        mock_response.text = '{"result": "ok"}'
+        client._client = AsyncMock()
+        client._client.get = AsyncMock(return_value=mock_response)
 
-        result = client._make_request("https://example.com/api", expect_json=True)
+        result = await client._make_request("https://example.com/api", expect_json=True)
         assert result == {"result": "ok"}
 
-    @patch("urllib.request.urlopen")
-    def test_text_response(self, mock_urlopen, client):
+    async def test_text_response(self, client):
         mock_response = MagicMock()
-        mock_response.read.return_value = b"<xml>data</xml>"
-        mock_response.__enter__ = lambda s: s
-        mock_response.__exit__ = MagicMock(return_value=False)
-        mock_urlopen.return_value = mock_response
+        mock_response.status_code = 200
+        mock_response.text = "<xml>data</xml>"
+        client._client = AsyncMock()
+        client._client.get = AsyncMock(return_value=mock_response)
 
-        result = client._make_request("https://example.com/api")
+        result = await client._make_request("https://example.com/api")
         assert result == "<xml>data</xml>"
 
-    @patch("urllib.request.urlopen")
-    def test_http_error(self, mock_urlopen, client):
-        import urllib.error
-        mock_urlopen.side_effect = urllib.error.HTTPError(
-            "url", 500, "Server Error", {}, None
-        )
-        result = client._make_request("https://example.com/api")
-        assert result is None
-
-    @patch("urllib.request.urlopen")
-    def test_generic_error(self, mock_urlopen, client):
-        mock_urlopen.side_effect = Exception("Connection failed")
-        result = client._make_request("https://example.com/api")
-        assert result is None
-
-    @patch("urllib.request.urlopen")
-    def test_adds_email_and_tool(self, mock_urlopen, client):
+    async def test_http_error(self, client):
+        import httpx
         mock_response = MagicMock()
-        mock_response.read.return_value = b"ok"
-        mock_response.__enter__ = lambda s: s
-        mock_response.__exit__ = MagicMock(return_value=False)
-        mock_urlopen.return_value = mock_response
+        mock_response.status_code = 500
+        mock_response.reason_phrase = "Server Error"
+        mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "Server Error", request=MagicMock(), response=mock_response
+        )
+        client._client = AsyncMock()
+        client._client.get = AsyncMock(return_value=mock_response)
 
-        client._make_request("https://example.com/api?db=gene")
+        result = await client._make_request("https://example.com/api")
+        assert result is None
+
+    async def test_generic_error(self, client):
+        client._client = AsyncMock()
+        client._client.get = AsyncMock(side_effect=Exception("Connection failed"))
+
+        result = await client._make_request("https://example.com/api")
+        assert result is None
+
+    async def test_adds_email_and_tool(self, client):
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.text = "ok"
+        client._client = AsyncMock()
+        client._client.get = AsyncMock(return_value=mock_response)
+
+        await client._make_request("https://example.com/api?db=gene")
         # Check the URL includes email and tool params
-        call_args = mock_urlopen.call_args
-        request_obj = call_args[0][0]
-        assert "email=" in request_obj.full_url
-        assert "tool=pubmed-search-mcp" in request_obj.full_url
+        call_args = client._client.get.call_args
+        url = call_args[0][0]
+        assert "email=" in url
+        assert "tool=pubmed-search-mcp" in url
 
 
 # ============================================================
@@ -127,7 +131,7 @@ class TestMakeRequest:
 
 class TestSearchGene:
     @patch.object(NCBIExtendedClient, "_make_request")
-    def test_search_gene_success(self, mock_req, client):
+    async def test_search_gene_success(self, mock_req, client):
         # First call: esearch
         mock_req.side_effect = [
             {"esearchresult": {"idlist": ["672"]}},
@@ -143,7 +147,7 @@ class TestSearchGene:
                 "geneticsource": "protein-coding",
             }}},
         ]
-        genes = client.search_gene("BRCA1")
+        genes = await client.search_gene("BRCA1")
         assert len(genes) == 1
         assert genes[0]["symbol"] == "BRCA1"
         assert genes[0]["gene_id"] == "672"
@@ -152,43 +156,43 @@ class TestSearchGene:
         assert genes[0]["_source"] == "ncbi_gene"
 
     @patch.object(NCBIExtendedClient, "_make_request")
-    def test_search_gene_with_organism(self, mock_req, client):
+    async def test_search_gene_with_organism(self, mock_req, client):
         mock_req.side_effect = [
             {"esearchresult": {"idlist": []}},
         ]
-        result = client.search_gene("BRCA1", organism="human")
+        result = await client.search_gene("BRCA1", organism="human")
         assert result == []
         # Verify organism was added to query
         call_url = mock_req.call_args_list[0][0][0]
         assert "human%5BOrganism%5D" in call_url or "human[Organism]" in call_url
 
     @patch.object(NCBIExtendedClient, "_make_request")
-    def test_search_gene_no_results(self, mock_req, client):
+    async def test_search_gene_no_results(self, mock_req, client):
         mock_req.return_value = {"esearchresult": {"idlist": []}}
-        assert client.search_gene("nonexistent") == []
+        assert await client.search_gene("nonexistent") == []
 
     @patch.object(NCBIExtendedClient, "_make_request")
-    def test_search_gene_search_fails(self, mock_req, client):
+    async def test_search_gene_search_fails(self, mock_req, client):
         mock_req.return_value = None
-        assert client.search_gene("BRCA1") == []
+        assert await client.search_gene("BRCA1") == []
 
     @patch.object(NCBIExtendedClient, "_make_request")
-    def test_search_gene_summary_fails(self, mock_req, client):
+    async def test_search_gene_summary_fails(self, mock_req, client):
         mock_req.side_effect = [
             {"esearchresult": {"idlist": ["672"]}},
             None,
         ]
-        assert client.search_gene("BRCA1") == []
+        assert await client.search_gene("BRCA1") == []
 
     @patch.object(NCBIExtendedClient, "_make_request")
-    def test_search_gene_exception(self, mock_req, client):
+    async def test_search_gene_exception(self, mock_req, client):
         mock_req.side_effect = Exception("fail")
-        assert client.search_gene("BRCA1") == []
+        assert await client.search_gene("BRCA1") == []
 
 
 class TestGetGene:
     @patch.object(NCBIExtendedClient, "_make_request")
-    def test_get_gene_success(self, mock_req, client):
+    async def test_get_gene_success(self, mock_req, client):
         mock_req.return_value = {"result": {"672": {
             "uid": "672",
             "name": "BRCA1",
@@ -200,57 +204,57 @@ class TestGetGene:
             "summary": "",
             "geneticsource": "",
         }}}
-        gene = client.get_gene("672")
+        gene = await client.get_gene("672")
         assert gene is not None
         assert gene["gene_id"] == "672"
 
     @patch.object(NCBIExtendedClient, "_make_request")
-    def test_get_gene_not_found(self, mock_req, client):
+    async def test_get_gene_not_found(self, mock_req, client):
         mock_req.return_value = {"result": {}}
-        assert client.get_gene("99999") is None
+        assert await client.get_gene("99999") is None
 
     @patch.object(NCBIExtendedClient, "_make_request")
-    def test_get_gene_request_fails(self, mock_req, client):
+    async def test_get_gene_request_fails(self, mock_req, client):
         mock_req.return_value = None
-        assert client.get_gene("672") is None
+        assert await client.get_gene("672") is None
 
     @patch.object(NCBIExtendedClient, "_make_request")
-    def test_get_gene_exception(self, mock_req, client):
+    async def test_get_gene_exception(self, mock_req, client):
         mock_req.side_effect = Exception("fail")
-        assert client.get_gene("672") is None
+        assert await client.get_gene("672") is None
 
 
 class TestGetGenePubmedLinks:
     @patch.object(NCBIExtendedClient, "_make_request")
-    def test_success(self, mock_req, client):
+    async def test_success(self, mock_req, client):
         mock_req.return_value = {"linksets": [{"linksetdbs": [
             {"dbto": "pubmed", "links": [12345, 67890]},
         ]}]}
-        pmids = client.get_gene_pubmed_links("672")
+        pmids = await client.get_gene_pubmed_links("672")
         assert pmids == ["12345", "67890"]
 
     @patch.object(NCBIExtendedClient, "_make_request")
-    def test_limit(self, mock_req, client):
+    async def test_limit(self, mock_req, client):
         mock_req.return_value = {"linksets": [{"linksetdbs": [
             {"dbto": "pubmed", "links": list(range(100))},
         ]}]}
-        pmids = client.get_gene_pubmed_links("672", limit=5)
+        pmids = await client.get_gene_pubmed_links("672", limit=5)
         assert len(pmids) == 5
 
     @patch.object(NCBIExtendedClient, "_make_request")
-    def test_no_links(self, mock_req, client):
+    async def test_no_links(self, mock_req, client):
         mock_req.return_value = {"linksets": [{"linksetdbs": []}]}
-        assert client.get_gene_pubmed_links("672") == []
+        assert await client.get_gene_pubmed_links("672") == []
 
     @patch.object(NCBIExtendedClient, "_make_request")
-    def test_request_fails(self, mock_req, client):
+    async def test_request_fails(self, mock_req, client):
         mock_req.return_value = None
-        assert client.get_gene_pubmed_links("672") == []
+        assert await client.get_gene_pubmed_links("672") == []
 
     @patch.object(NCBIExtendedClient, "_make_request")
-    def test_exception(self, mock_req, client):
+    async def test_exception(self, mock_req, client):
         mock_req.side_effect = Exception("fail")
-        assert client.get_gene_pubmed_links("672") == []
+        assert await client.get_gene_pubmed_links("672") == []
 
 
 # ============================================================
@@ -259,7 +263,7 @@ class TestGetGenePubmedLinks:
 
 class TestSearchCompound:
     @patch.object(NCBIExtendedClient, "_make_request")
-    def test_success(self, mock_req, client):
+    async def test_success(self, mock_req, client):
         mock_req.side_effect = [
             {"esearchresult": {"idlist": ["2244"]}},
             {"result": {"2244": {
@@ -279,7 +283,7 @@ class TestSearchCompound:
                 "hydrogenbondacceptorcount": 4,
             }}},
         ]
-        compounds = client.search_compound("aspirin")
+        compounds = await client.search_compound("aspirin")
         assert len(compounds) == 1
         assert compounds[0]["cid"] == "2244"
         assert compounds[0]["name"] == "Aspirin"
@@ -287,19 +291,19 @@ class TestSearchCompound:
         assert len(compounds[0]["synonyms"]) == 2
 
     @patch.object(NCBIExtendedClient, "_make_request")
-    def test_no_results(self, mock_req, client):
+    async def test_no_results(self, mock_req, client):
         mock_req.return_value = {"esearchresult": {"idlist": []}}
-        assert client.search_compound("nonexistent") == []
+        assert await client.search_compound("nonexistent") == []
 
     @patch.object(NCBIExtendedClient, "_make_request")
-    def test_exception(self, mock_req, client):
+    async def test_exception(self, mock_req, client):
         mock_req.side_effect = Exception("fail")
-        assert client.search_compound("aspirin") == []
+        assert await client.search_compound("aspirin") == []
 
 
 class TestGetCompound:
     @patch.object(NCBIExtendedClient, "_make_request")
-    def test_success(self, mock_req, client):
+    async def test_success(self, mock_req, client):
         mock_req.return_value = {"result": {"2244": {
             "uid": "2244",
             "synonymlist": ["Aspirin"],
@@ -311,34 +315,34 @@ class TestGetCompound:
             "inchi": "",
             "inchikey": "",
         }}}
-        compound = client.get_compound("2244")
+        compound = await client.get_compound("2244")
         assert compound is not None
         assert compound["cid"] == "2244"
 
     @patch.object(NCBIExtendedClient, "_make_request")
-    def test_not_found(self, mock_req, client):
+    async def test_not_found(self, mock_req, client):
         mock_req.return_value = {"result": {}}
-        assert client.get_compound("99999") is None
+        assert await client.get_compound("99999") is None
 
     @patch.object(NCBIExtendedClient, "_make_request")
-    def test_exception(self, mock_req, client):
+    async def test_exception(self, mock_req, client):
         mock_req.side_effect = Exception("fail")
-        assert client.get_compound("2244") is None
+        assert await client.get_compound("2244") is None
 
 
 class TestGetCompoundPubmedLinks:
     @patch.object(NCBIExtendedClient, "_make_request")
-    def test_success(self, mock_req, client):
+    async def test_success(self, mock_req, client):
         mock_req.return_value = {"linksets": [{"linksetdbs": [
             {"dbto": "pubmed", "links": [11111, 22222]},
         ]}]}
-        pmids = client.get_compound_pubmed_links("2244")
+        pmids = await client.get_compound_pubmed_links("2244")
         assert pmids == ["11111", "22222"]
 
     @patch.object(NCBIExtendedClient, "_make_request")
-    def test_exception(self, mock_req, client):
+    async def test_exception(self, mock_req, client):
         mock_req.side_effect = Exception("fail")
-        assert client.get_compound_pubmed_links("2244") == []
+        assert await client.get_compound_pubmed_links("2244") == []
 
 
 # ============================================================
@@ -347,7 +351,7 @@ class TestGetCompoundPubmedLinks:
 
 class TestSearchClinvar:
     @patch.object(NCBIExtendedClient, "_make_request")
-    def test_success(self, mock_req, client):
+    async def test_success(self, mock_req, client):
         mock_req.side_effect = [
             {"esearchresult": {"idlist": ["12345"]}},
             {"result": {"12345": {
@@ -364,7 +368,7 @@ class TestSearchClinvar:
                 "trait_set": [{"trait_name": "Breast-ovarian cancer"}],
             }}},
         ]
-        variants = client.search_clinvar("BRCA1")
+        variants = await client.search_clinvar("BRCA1")
         assert len(variants) == 1
         assert variants[0]["clinvar_id"] == "12345"
         assert variants[0]["clinical_significance"] == "Pathogenic"
@@ -372,7 +376,7 @@ class TestSearchClinvar:
         assert variants[0]["_source"] == "clinvar"
 
     @patch.object(NCBIExtendedClient, "_make_request")
-    def test_clinvar_string_significance(self, mock_req, client):
+    async def test_clinvar_string_significance(self, mock_req, client):
         mock_req.side_effect = [
             {"esearchresult": {"idlist": ["1"]}},
             {"result": {"1": {
@@ -382,13 +386,13 @@ class TestSearchClinvar:
                 "trait_set": [],
             }}},
         ]
-        variants = client.search_clinvar("test")
+        variants = await client.search_clinvar("test")
         assert variants[0]["clinical_significance"] == "Benign"
 
     @patch.object(NCBIExtendedClient, "_make_request")
-    def test_exception(self, mock_req, client):
+    async def test_exception(self, mock_req, client):
         mock_req.side_effect = Exception("fail")
-        assert client.search_clinvar("BRCA1") == []
+        assert await client.search_clinvar("BRCA1") == []
 
 
 # ============================================================
@@ -396,32 +400,32 @@ class TestSearchClinvar:
 # ============================================================
 
 class TestNormalizeGene:
-    def test_no_aliases(self, client):
+    async def test_no_aliases(self, client):
         gene = client._normalize_gene({"uid": "1", "otheraliases": ""})
         assert gene["aliases"] == []
 
-    def test_with_aliases(self, client):
+    async def test_with_aliases(self, client):
         gene = client._normalize_gene({"uid": "1", "otheraliases": "A, B, C"})
         assert gene["aliases"] == ["A", "B", "C"]
 
 
 class TestNormalizeCompound:
-    def test_string_synonyms(self, client):
+    async def test_string_synonyms(self, client):
         compound = client._normalize_compound({"synonymlist": "Aspirin"})
         assert compound["synonyms"] == ["Aspirin"]
 
-    def test_list_synonyms_limited(self, client):
+    async def test_list_synonyms_limited(self, client):
         syns = [f"Syn{i}" for i in range(20)]
         compound = client._normalize_compound({"synonymlist": syns})
         assert len(compound["synonyms"]) == 10
 
-    def test_cid_fallback(self, client):
+    async def test_cid_fallback(self, client):
         compound = client._normalize_compound({"cid": "999", "synonymlist": []})
         assert compound["cid"] == "999"
 
 
 class TestNormalizeClinvar:
-    def test_non_dict_gene(self, client):
+    async def test_non_dict_gene(self, client):
         variant = client._normalize_clinvar({
             "uid": "1",
             "genes": ["not_a_dict"],
@@ -430,7 +434,7 @@ class TestNormalizeClinvar:
         })
         assert variant["gene_symbols"] == []
 
-    def test_non_dict_trait(self, client):
+    async def test_non_dict_trait(self, client):
         variant = client._normalize_clinvar({
             "uid": "1",
             "genes": [],
@@ -445,7 +449,7 @@ class TestNormalizeClinvar:
 # ============================================================
 
 class TestSingleton:
-    def test_get_ncbi_extended_client(self):
+    async def test_get_ncbi_extended_client(self):
         import pubmed_search.infrastructure.sources.ncbi_extended as mod
         mod._ncbi_extended_client = None
         with patch.dict("os.environ", {"NCBI_EMAIL": "e@e.com", "NCBI_API_KEY": "k"}):

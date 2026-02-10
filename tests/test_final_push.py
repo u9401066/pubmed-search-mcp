@@ -4,13 +4,14 @@ Target remaining uncovered lines in key modules.
 """
 
 from unittest.mock import Mock, patch, MagicMock
+import httpx
 import tempfile
 
 
 class TestClientRemainingMethods:
     """Test remaining client methods."""
 
-    def test_literature_searcher_class(self):
+    async def test_literature_searcher_class(self):
         """Test LiteratureSearcher class attributes."""
         from pubmed_search import LiteratureSearcher
 
@@ -26,7 +27,7 @@ class TestClientRemainingMethods:
 class TestSearchRemainingPaths:
     """Test remaining search paths."""
 
-    def test_search_with_all_date_types(self):
+    async def test_search_with_all_date_types(self):
         """Test search with different date types."""
         from pubmed_search.infrastructure.ncbi.search import SearchMixin
 
@@ -48,7 +49,7 @@ class TestSearchRemainingPaths:
                 mock_read.return_value = {"IdList": ["123"]}
                 mock_esearch.return_value = MagicMock()
 
-                results = searcher.search(
+                results = await searcher.search(
                     "test",
                     date_from="2024/01/01",
                     date_to="2024/12/31",
@@ -57,7 +58,7 @@ class TestSearchRemainingPaths:
 
                 assert isinstance(results, list)
 
-    def test_search_retry_exhausted(self):
+    async def test_search_retry_exhausted(self):
         """Test search when all retries exhausted."""
         from pubmed_search.infrastructure.ncbi.search import SearchMixin
 
@@ -71,13 +72,13 @@ class TestSearchRemainingPaths:
             patch(
                 "pubmed_search.infrastructure.ncbi.search.Entrez.esearch"
             ) as mock_esearch,
-            patch("pubmed_search.infrastructure.ncbi.search.time.sleep"),
+            patch("asyncio.sleep", return_value=None),
         ):
             # All attempts fail with transient error
             mock_esearch.side_effect = Exception("Service unavailable")
 
             try:
-                searcher._search_ids_with_retry("test", 10, "relevance")
+                await searcher._search_ids_with_retry("test", 10, "relevance")
             except Exception as e:
                 assert "unavailable" in str(e)
 
@@ -85,7 +86,7 @@ class TestSearchRemainingPaths:
 class TestStrategyRemainingPaths:
     """Test remaining strategy paths."""
 
-    def test_strategy_with_complex_query(self):
+    async def test_strategy_with_complex_query(self):
         """Test strategy with multi-word complex query."""
         from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
 
@@ -110,13 +111,13 @@ class TestStrategyRemainingPaths:
             mock_efetch.return_value.read.return_value = ""
 
             generator = SearchStrategyGenerator(email="test@example.com")
-            result = generator.generate_strategies(
+            result = await generator.generate_strategies(
                 "diabetes mellitus type 2 treatment guidelines", strategy="focused"
             )
 
             assert "topic" in result
 
-    def test_strategy_exploratory(self):
+    async def test_strategy_exploratory(self):
         """Test strategy with exploratory strategy."""
         from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
 
@@ -141,7 +142,7 @@ class TestStrategyRemainingPaths:
             mock_efetch.return_value.read.return_value = ""
 
             generator = SearchStrategyGenerator(email="test@example.com")
-            result = generator.generate_strategies("cancer", strategy="exploratory")
+            result = await generator.generate_strategies("cancer", strategy="exploratory")
 
             assert isinstance(result, dict)
 
@@ -149,7 +150,7 @@ class TestStrategyRemainingPaths:
 class TestSessionRemainingPaths:
     """Test remaining session paths."""
 
-    def test_session_switch_invalid(self):
+    async def test_session_switch_invalid(self):
         """Test switching to invalid session."""
         from pubmed_search.application.session import SessionManager
 
@@ -162,7 +163,7 @@ class TestSessionRemainingPaths:
 
             assert result is None
 
-    def test_session_load_from_disk(self):
+    async def test_session_load_from_disk(self):
         """Test loading sessions from disk."""
         from pubmed_search.application.session import SessionManager
 
@@ -182,7 +183,7 @@ class TestSessionRemainingPaths:
 class TestCommonRemainingPaths:
     """Test remaining _common paths."""
 
-    def test_format_results_with_doi(self):
+    async def test_format_results_with_doi(self):
         """Test formatting with DOI."""
         from pubmed_search.presentation.mcp_server.tools._common import (
             format_search_results,
@@ -208,7 +209,7 @@ class TestCommonRemainingPaths:
 class TestDiscoveryRemainingPaths:
     """Test remaining discovery paths."""
 
-    def test_find_citing_method(self):
+    async def test_find_citing_method(self):
         """Test find_citing_articles directly."""
         from pubmed_search.infrastructure.ncbi.citation import CitationMixin
 
@@ -235,7 +236,7 @@ class TestDiscoveryRemainingPaths:
             ]
             mock_elink.return_value = MagicMock()
 
-            results = searcher.find_citing_articles("12345")
+            results = await searcher.find_citing_articles("12345")
 
             assert len(results) >= 0
 
@@ -243,7 +244,7 @@ class TestDiscoveryRemainingPaths:
 class TestExportRemainingPaths:
     """Test remaining export paths."""
 
-    def test_export_json_detailed(self):
+    async def test_export_json_detailed(self):
         """Test detailed JSON export."""
         from pubmed_search.application.export.formats import export_json
 
@@ -272,7 +273,7 @@ class TestExportRemainingPaths:
 class TestBaseRemainingPaths:
     """Test remaining base module paths."""
 
-    def test_search_strategy_all_values(self):
+    async def test_search_strategy_all_values(self):
         """Test all SearchStrategy enum values."""
         from pubmed_search.infrastructure.ncbi.base import SearchStrategy
 
@@ -288,7 +289,7 @@ class TestBaseRemainingPaths:
 class TestICiteRemainingPaths:
     """Test remaining iCite paths."""
 
-    def test_get_citation_metrics_batch(self):
+    async def test_get_citation_metrics_batch(self):
         """Test iCite batch metrics."""
         from pubmed_search.infrastructure.ncbi.icite import ICiteMixin
 
@@ -297,9 +298,9 @@ class TestICiteRemainingPaths:
 
         searcher = TestSearcher()
 
-        with patch("pubmed_search.infrastructure.ncbi.icite.requests.get") as mock_get:
-            mock_response = Mock()
-            mock_response.json.return_value = {
+        mock_response = httpx.Response(
+            200,
+            json={
                 "data": [
                     {
                         "pmid": "123",
@@ -307,11 +308,17 @@ class TestICiteRemainingPaths:
                         "relative_citation_ratio": 1.5,
                     }
                 ]
-            }
-            mock_response.raise_for_status = Mock()
-            mock_get.return_value = mock_response
+            },
+        )
 
-            results = searcher.get_citation_metrics(["123"])
+        with patch("pubmed_search.infrastructure.ncbi.icite.httpx.AsyncClient") as mock_cls:
+            mock_client = MagicMock()
+            mock_client.get = MagicMock(return_value=mock_response)
+            mock_client.__aenter__ = MagicMock(return_value=mock_client)
+            mock_client.__aexit__ = MagicMock(return_value=None)
+            mock_cls.return_value = mock_client
+
+            results = await searcher.get_citation_metrics(["123"])
 
             assert len(results) >= 0
 
@@ -319,7 +326,7 @@ class TestICiteRemainingPaths:
 class TestPDFRemainingPaths:
     """Test remaining PDF module paths."""
 
-    def test_get_pmc_fulltext_url(self):
+    async def test_get_pmc_fulltext_url(self):
         """Test getting PMC fulltext URL."""
         from pubmed_search.infrastructure.ncbi.pdf import PDFMixin
 
@@ -337,7 +344,7 @@ class TestPDFRemainingPaths:
             ]
             mock_elink.return_value = MagicMock()
 
-            url = searcher.get_pmc_fulltext_url("12345")
+            url = await searcher.get_pmc_fulltext_url("12345")
 
             assert url is None or "pmc" in url.lower() if url else True
 
@@ -345,7 +352,7 @@ class TestPDFRemainingPaths:
 class TestMergeRemainingPaths:
     """Test remaining merge paths."""
 
-    def test_merge_tools_register(self):
+    async def test_merge_tools_register(self):
         """Test merge tools registration."""
         from pubmed_search.presentation.mcp_server.tools.merge import (
             register_merge_tools,
@@ -364,7 +371,7 @@ class TestMergeRemainingPaths:
 class TestServerRemainingPaths:
     """Test remaining server paths."""
 
-    def test_server_default_data_dir(self):
+    async def test_server_default_data_dir(self):
         """Test server default data directory."""
         from pubmed_search.presentation.mcp_server.server import DEFAULT_DATA_DIR
 
@@ -374,7 +381,7 @@ class TestServerRemainingPaths:
 class TestFormatsMoreCases:
     """Test more format edge cases."""
 
-    def test_export_bibtex_special_chars(self):
+    async def test_export_bibtex_special_chars(self):
         """Test BibTeX with special characters."""
         from pubmed_search.application.export.formats import export_bibtex
 

@@ -1,13 +1,13 @@
 """Final push to reach 90% coverage."""
 
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import AsyncMock, Mock, patch, MagicMock
 import tempfile
 
 
 class TestClientMissingLines:
     """Target client.py lines 153-165, 185, 207-210, etc."""
 
-    def test_fetch_details_empty_pmids(self):
+    async def test_fetch_details_empty_pmids(self):
         """Test fetch_details with empty list."""
         from pubmed_search import LiteratureSearcher
 
@@ -16,10 +16,10 @@ class TestClientMissingLines:
             searcher = LiteratureSearcher(email="test@example.com")
 
             # Empty list should return empty
-            result = searcher.fetch_details([])
+            result = await searcher.fetch_details([])
             assert result == []
 
-    def test_fetch_details_with_mesh(self):
+    async def test_fetch_details_with_mesh(self):
         """Test fetch_details returning mesh_terms."""
         from pubmed_search import LiteratureSearcher
 
@@ -62,7 +62,7 @@ class TestClientMissingLines:
             }
 
             searcher = LiteratureSearcher(email="test@example.com")
-            result = searcher.fetch_details(["12345"])
+            result = await searcher.fetch_details(["12345"])
 
             assert len(result) >= 0
 
@@ -70,7 +70,7 @@ class TestClientMissingLines:
 class TestSessionToolsMissingLines:
     """Target session_tools.py - mostly pass functions."""
 
-    def test_register_session_tools_passes(self):
+    async def test_register_session_tools_passes(self):
         """Test session tools registration just passes (no tools)."""
         from pubmed_search.presentation.mcp_server.session_tools import (
             register_session_tools,
@@ -86,7 +86,7 @@ class TestSessionToolsMissingLines:
             result = register_session_tools(mock_mcp, manager)
             assert result is None  # pass returns None
 
-    def test_register_session_resources(self):
+    async def test_register_session_resources(self):
         """Test session resources registration."""
         from pubmed_search.presentation.mcp_server.session_tools import (
             register_session_resources,
@@ -108,7 +108,7 @@ class TestSessionToolsMissingLines:
 class TestCommonMissingLines:
     """Target _common.py lines 56-60, 72-73, 87-88, 106-108."""
 
-    def test_format_results_empty(self):
+    async def test_format_results_empty(self):
         """Test formatting empty results."""
         from pubmed_search.presentation.mcp_server.tools._common import (
             format_search_results,
@@ -121,7 +121,7 @@ class TestCommonMissingLines:
 class TestDiscoveryMissingLines:
     """Target discovery.py lines 135-138, etc."""
 
-    def test_find_related_no_results(self):
+    async def test_find_related_no_results(self):
         """Test find_related with no results."""
         from pubmed_search.infrastructure.ncbi.citation import CitationMixin
 
@@ -142,7 +142,7 @@ class TestDiscoveryMissingLines:
             mock_read.return_value = [{"LinkSetDb": []}]
             mock_elink.return_value = MagicMock()
 
-            results = searcher.find_related_articles("12345")
+            results = await searcher.find_related_articles("12345")
 
             assert results == []
 
@@ -150,7 +150,7 @@ class TestDiscoveryMissingLines:
 class TestExportToolsMissingLines:
     """Target export.py lines 90, 104-105, etc."""
 
-    def test_register_export_tools(self):
+    async def test_register_export_tools(self):
         """Test export tools registration."""
         from pubmed_search.presentation.mcp_server.tools.export import (
             register_export_tools,
@@ -172,7 +172,7 @@ class TestExportToolsMissingLines:
 class TestStrategyMissingLines:
     """Target strategy.py tool lines."""
 
-    def test_register_strategy_tools(self):
+    async def test_register_strategy_tools(self):
         """Test strategy tools registration."""
         from pubmed_search.presentation.mcp_server.tools.strategy import (
             register_strategy_tools,
@@ -194,7 +194,7 @@ class TestStrategyMissingLines:
 class TestMainModule:
     """Test __main__.py."""
 
-    def test_main_module_import(self):
+    async def test_main_module_import(self):
         """Test main module can be imported."""
         # Import the module - that's enough
         from pubmed_search.presentation.mcp_server import __main__ as main_module
@@ -206,7 +206,7 @@ class TestMainModule:
 class TestSearchMissingLines:
     """Target search.py lines 49, 224-225, etc."""
 
-    def test_search_with_article_type_filter(self):
+    async def test_search_with_article_type_filter(self):
         """Test search with article type filter."""
         from pubmed_search.infrastructure.ncbi.search import SearchMixin
 
@@ -225,11 +225,11 @@ class TestSearchMissingLines:
             mock_read.return_value = {"IdList": ["123"], "Count": "1"}
             mock_esearch.return_value = MagicMock()
 
-            results = searcher.search("diabetes", article_type="Review", limit=5)
+            results = await searcher.search("diabetes", article_type="Review", limit=5)
 
             assert isinstance(results, list)
 
-    def test_search_impact_strategy(self):
+    async def test_search_impact_strategy(self):
         """Test search with impact strategy."""
         from pubmed_search.infrastructure.ncbi.search import SearchMixin
 
@@ -251,7 +251,7 @@ class TestSearchMissingLines:
             mock_read.return_value = {"IdList": ["123", "456"], "Count": "2"}
             mock_esearch.return_value = MagicMock()
 
-            results = searcher.search("test", strategy="impact", limit=5)
+            results = await searcher.search("test", strategy="impact", limit=5)
 
             assert isinstance(results, list)
 
@@ -259,7 +259,7 @@ class TestSearchMissingLines:
 class TestBaseMissingLines:
     """Target base.py lines 74-75, 80, 85."""
 
-    def test_entrez_base_api_key(self):
+    async def test_entrez_base_api_key(self):
         """Test EntrezBase with API key."""
         from pubmed_search.infrastructure.ncbi.base import EntrezBase
 
@@ -275,7 +275,7 @@ class TestBaseMissingLines:
 class TestFormatsMissingLines:
     """Target formats.py remaining lines."""
 
-    def test_export_medline(self):
+    async def test_export_medline(self):
         """Test MEDLINE format export."""
         from pubmed_search.application.export.formats import export_medline
 
@@ -294,7 +294,7 @@ class TestFormatsMissingLines:
 
         assert "PMID" in result or "Test" in result
 
-    def test_export_csv_many_columns(self):
+    async def test_export_csv_many_columns(self):
         """Test CSV export with all columns."""
         from pubmed_search.application.export.formats import export_csv
 
@@ -321,7 +321,7 @@ class TestFormatsMissingLines:
 class TestSessionMissingLines:
     """Target session.py remaining uncovered lines."""
 
-    def test_session_manager_reading_list(self):
+    async def test_session_manager_reading_list(self):
         """Test manager add_to_reading_list."""
         from pubmed_search.application.session import SessionManager
 
@@ -335,7 +335,7 @@ class TestSessionMissingLines:
             session = manager.get_current_session()
             assert "12345" in session.reading_list
 
-    def test_session_manager_get_summary(self):
+    async def test_session_manager_get_summary(self):
         """Test manager get_session_summary."""
         from pubmed_search.application.session import SessionManager
 
@@ -352,7 +352,7 @@ class TestSessionMissingLines:
 class TestICiteMissingLines:
     """Target icite.py remaining lines."""
 
-    def test_icite_error_handling(self):
+    async def test_icite_error_handling(self):
         """Test iCite error handling."""
         from pubmed_search.infrastructure.ncbi.icite import ICiteMixin
 
@@ -361,21 +361,22 @@ class TestICiteMissingLines:
 
         searcher = TestSearcher()
 
-        with patch("pubmed_search.infrastructure.ncbi.icite.requests.get") as mock_get:
-            mock_get.side_effect = Exception("Network error")
+        with patch("pubmed_search.infrastructure.ncbi.icite.httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(side_effect=Exception("Network error"))
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_client
 
             # Should handle error gracefully
-            try:
-                result = searcher.get_citation_metrics(["123"])
-                assert result is None or result == {} or isinstance(result, dict)
-            except Exception:
-                pass  # Error is expected
+            result = await searcher.get_citation_metrics(["123"])
+            assert result is not None and isinstance(result, dict)
 
 
 class TestCitationMissingLines:
     """Target citation.py lines 77-79, 107-109."""
 
-    def test_citation_no_linksetdb(self):
+    async def test_citation_no_linksetdb(self):
         """Test citation when LinkSetDb is empty."""
         from pubmed_search.infrastructure.ncbi.citation import CitationMixin
 
@@ -397,7 +398,7 @@ class TestCitationMissingLines:
             mock_read.return_value = [{}]
             mock_elink.return_value = MagicMock()
 
-            results = searcher.find_citing_articles("12345")
+            results = await searcher.find_citing_articles("12345")
 
             assert results == []
 
@@ -405,7 +406,7 @@ class TestCitationMissingLines:
 class TestMergeToolsMissingLines:
     """Target merge tool remaining paths."""
 
-    def test_register_merge_tools(self):
+    async def test_register_merge_tools(self):
         """Test merge tools registration."""
         from pubmed_search.presentation.mcp_server.tools.merge import (
             register_merge_tools,

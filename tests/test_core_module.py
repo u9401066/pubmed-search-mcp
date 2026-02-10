@@ -15,7 +15,7 @@ import asyncio
 class TestExceptionHierarchy:
     """Tests for unified exception hierarchy."""
 
-    def test_base_exception_creation(self):
+    async def test_base_exception_creation(self):
         """PubMedSearchError should be creatable with context."""
         from pubmed_search.shared.exceptions import PubMedSearchError, ErrorContext
 
@@ -26,7 +26,7 @@ class TestExceptionHierarchy:
         assert err.context.tool_name == "test_tool"
         assert err.context.suggestion == "Try again"
 
-    def test_error_to_dict(self):
+    async def test_error_to_dict(self):
         """Error should serialize to dict."""
         from pubmed_search.shared.exceptions import PubMedSearchError, ErrorContext
 
@@ -38,7 +38,7 @@ class TestExceptionHierarchy:
         assert d["tool"] == "test"
         assert d["suggestion"] == "hint"
 
-    def test_error_to_agent_message(self):
+    async def test_error_to_agent_message(self):
         """Error should format for agent consumption."""
         from pubmed_search.shared.exceptions import PubMedSearchError, ErrorContext
 
@@ -51,7 +51,7 @@ class TestExceptionHierarchy:
         assert "Try X" in msg
         assert "do_something()" in msg
 
-    def test_invalid_pmid_error(self):
+    async def test_invalid_pmid_error(self):
         """InvalidPMIDError should have correct defaults."""
         from pubmed_search.shared.exceptions import InvalidPMIDError
 
@@ -62,7 +62,7 @@ class TestExceptionHierarchy:
         assert err.context.example is not None
         assert not err.retryable
 
-    def test_rate_limit_error(self):
+    async def test_rate_limit_error(self):
         """RateLimitError should be retryable."""
         from pubmed_search.shared.exceptions import RateLimitError
 
@@ -71,7 +71,7 @@ class TestExceptionHierarchy:
         assert err.retryable
         assert err.context.retry_after == 5.0
 
-    def test_is_retryable_error(self):
+    async def test_is_retryable_error(self):
         """is_retryable_error should detect retryable errors."""
         from pubmed_search.shared.exceptions import (
             is_retryable_error,
@@ -89,7 +89,7 @@ class TestExceptionHierarchy:
         assert is_retryable_error(Exception("Too Many Requests"))
         assert not is_retryable_error(Exception("Invalid input"))
 
-    def test_get_retry_delay(self):
+    async def test_get_retry_delay(self):
         """get_retry_delay should use exponential backoff."""
         from pubmed_search.shared.exceptions import get_retry_delay, RateLimitError
 
@@ -133,7 +133,7 @@ class TestRateLimiter:
         async with limiter:
             pass  # Should not raise
 
-    def test_get_rate_limiter(self):
+    async def test_get_rate_limiter(self):
         """get_rate_limiter should return singleton per API."""
         from pubmed_search.shared.async_utils import get_rate_limiter
 
@@ -306,7 +306,7 @@ class TestBatchProcess:
 class TestErrorContext:
     """Tests for ErrorContext dataclass."""
 
-    def test_error_context_slots(self):
+    async def test_error_context_slots(self):
         """ErrorContext should use slots for efficiency."""
         from pubmed_search.shared.exceptions import ErrorContext
 
@@ -314,7 +314,7 @@ class TestErrorContext:
         # slots means no __dict__
         assert not hasattr(ctx, "__dict__") or len(ctx.__dict__) == 0
 
-    def test_error_context_frozen(self):
+    async def test_error_context_frozen(self):
         """ErrorContext should be immutable."""
         from pubmed_search.shared.exceptions import ErrorContext
 

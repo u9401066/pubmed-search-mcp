@@ -1,7 +1,7 @@
 """Tests for Strategy MCP tools — generate_search_queries, expand_search_queries."""
 
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -35,7 +35,7 @@ class TestGenerateSearchQueries:
     @pytest.mark.asyncio
     async def test_with_strategy_generator(self, setup):
         tools, _ = setup
-        mock_gen = MagicMock()
+        mock_gen = AsyncMock()
         mock_gen.generate_strategies.return_value = {
             "topic": "remimazolam",
             "mesh_terms": [{"preferred": "remimazolam"}],
@@ -79,7 +79,7 @@ class TestGenerateSearchQueries:
     @pytest.mark.asyncio
     async def test_generator_exception_falls_back(self, setup):
         tools, _ = setup
-        mock_gen = MagicMock()
+        mock_gen = AsyncMock()
         mock_gen.generate_strategies.side_effect = RuntimeError("API failure")
         with patch(
             "pubmed_search.presentation.mcp_server.tools.strategy.get_strategy_generator",

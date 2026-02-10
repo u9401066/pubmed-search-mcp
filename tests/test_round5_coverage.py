@@ -8,7 +8,7 @@ NOTE: search_literature, expand_search_queries, search_europe_pmc are
 """
 
 import time
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, AsyncMock, patch
 import urllib.error
 
 
@@ -20,7 +20,7 @@ import urllib.error
 class TestMCPAPIHandler:
     """Test the HTTP API handler that runs alongside MCP server."""
 
-    def test_start_http_api_returns_thread(self):
+    async def test_start_http_api_returns_thread(self):
         from pubmed_search.presentation.mcp_server.server import (
             start_http_api_background,
         )
@@ -38,7 +38,7 @@ class TestMCPAPIHandler:
             assert thread.daemon is True
             time.sleep(0.15)
 
-    def test_start_http_api_port_in_use(self):
+    async def test_start_http_api_port_in_use(self):
         from pubmed_search.presentation.mcp_server.server import (
             start_http_api_background,
         )
@@ -59,13 +59,13 @@ class TestMCPAPIHandler:
 
 
 class TestServerModule:
-    def test_import(self):
+    async def test_import(self):
         import pubmed_search.presentation.mcp_server.server as mod
 
         assert hasattr(mod, "start_http_api_background")
         assert hasattr(mod, "main")
 
-    def test_create_server(self):
+    async def test_create_server(self):
         from pubmed_search.presentation.mcp_server.server import create_server
 
         srv = create_server(email="test@test.com")
@@ -80,81 +80,93 @@ class TestServerModule:
 class TestCOREClient:
     """Test infrastructure/sources/core.py."""
 
-    def test_init_defaults(self):
+    async def test_init_defaults(self):
         from pubmed_search.infrastructure.sources.core import COREClient
 
         c = COREClient()
         assert c._api_key is None
         assert c._timeout == 30.0
 
-    def test_init_with_key(self):
+    async def test_init_with_key(self):
         from pubmed_search.infrastructure.sources.core import COREClient
 
         c = COREClient(api_key="test-key")
         assert c._api_key == "test-key"
         assert c._min_interval == 2.5  # Faster with key
 
-    def test_rate_limit_delay(self):
+    async def test_rate_limit_delay(self):
         from pubmed_search.infrastructure.sources.core import COREClient
 
         c = COREClient()
         c._min_interval = 0.01
         c._last_request_time = time.time()
-        c._rate_limit()  # Should wait briefly
+        await c._rate_limit()  # Should wait briefly
 
-    def test_make_request_success(self):
+    async def test_make_request_success(self):
         from pubmed_search.infrastructure.sources.core import COREClient
 
         c = COREClient()
         c._last_request_time = 0
 
-        mock_resp = MagicMock()
-        mock_resp.read.return_value = b'{"ok": true}'
-        mock_resp.__enter__ = lambda s: s
-        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"ok": True}
+        mock_response.raise_for_status = MagicMock()
+        mock_client = AsyncMock()
+        mock_client.get.return_value = mock_response
+        c._client = mock_client
 
-        with patch("urllib.request.urlopen", return_value=mock_resp):
-            result = c._make_request("https://example.com/api")
+        result = await c._make_request("https://example.com/api")
         assert result == {"ok": True}
 
-    def test_make_request_http_error_401(self):
+    async def test_make_request_http_error_401(self):
         from pubmed_search.infrastructure.sources.core import COREClient
 
         c = COREClient()
         c._last_request_time = 0
 
-        err = urllib.error.HTTPError(
-            "url", 401, "Unauthorized", {}, None
-        )
-        with patch("urllib.request.urlopen", side_effect=err):
-            result = c._make_request("https://example.com/api")
+        mock_response = MagicMock()
+        mock_response.status_code = 401
+        mock_client = AsyncMock()
+        mock_client.get.return_value = mock_response
+        c._client = mock_client
+
+        result = await c._make_request("https://example.com/api")
         assert result is None
 
-    def test_make_request_http_error_429(self):
+    async def test_make_request_http_error_429(self):
         from pubmed_search.infrastructure.sources.core import COREClient
 
         c = COREClient()
         c._last_request_time = 0
+        c._min_interval = 0  # Disable rate limiting in test
 
-        err = urllib.error.HTTPError(
-            "url", 429, "Rate Limit", {}, None
-        )
-        with patch("urllib.request.urlopen", side_effect=err):
-            result = c._make_request("https://example.com/api")
+        mock_response = MagicMock()
+        mock_response.status_code = 429
+        mock_response.headers = {}
+        mock_client = AsyncMock()
+        mock_client.get.return_value = mock_response
+        c._client = mock_client
+
+        with patch("pubmed_search.infrastructure.sources.core.asyncio.sleep", new_callable=AsyncMock):
+            result = await c._make_request("https://example.com/api")
         assert result is None
 
-    def test_make_request_url_error(self):
+    async def test_make_request_url_error(self):
         from pubmed_search.infrastructure.sources.core import COREClient
+        import httpx
 
         c = COREClient()
         c._last_request_time = 0
 
-        err = urllib.error.URLError("Connection refused")
-        with patch("urllib.request.urlopen", side_effect=err):
-            result = c._make_request("https://example.com/api")
+        mock_client = AsyncMock()
+        mock_client.get.side_effect = httpx.RequestError("Connection refused")
+        c._client = mock_client
+
+        result = await c._make_request("https://example.com/api")
         assert result is None
 
-    def test_search_success(self):
+    async def test_search_success(self):
         from pubmed_search.infrastructure.sources.core import COREClient
 
         c = COREClient()
@@ -178,30 +190,30 @@ class TestCOREClient:
             ],
         }
 
-        with patch.object(c, "_make_request", return_value=mock_response_data):
-            result = c.search("machine learning", limit=5)
+        with patch.object(c, "_make_request", new_callable=AsyncMock, return_value=mock_response_data):
+            result = await c.search("machine learning", limit=5)
         assert result["total_hits"] == 50
         assert len(result["results"]) == 1
         assert result["results"][0]["title"] == "Machine Learning Paper"
         assert result["results"][0]["doi"] == "10.1234/test"
 
-    def test_search_empty(self):
+    async def test_search_empty(self):
         from pubmed_search.infrastructure.sources.core import COREClient
 
         c = COREClient()
-        with patch.object(c, "_make_request", return_value=None):
-            result = c.search("xyz_no_match")
+        with patch.object(c, "_make_request", new_callable=AsyncMock, return_value=None):
+            result = await c.search("xyz_no_match")
         assert result["total_hits"] == 0
         assert result["results"] == []
 
-    def test_search_with_filters(self):
+    async def test_search_with_filters(self):
         from pubmed_search.infrastructure.sources.core import COREClient
 
         c = COREClient()
         with patch.object(
-            c, "_make_request", return_value={"totalHits": 0, "results": []}
+            c, "_make_request", new_callable=AsyncMock, return_value={"totalHits": 0, "results": []}
         ) as mock_req:
-            c.search(
+            await c.search(
                 "test",
                 year_from=2020,
                 year_to=2024,
@@ -213,20 +225,20 @@ class TestCOREClient:
         assert "2020" in url_arg
         assert "fullText" in url_arg
 
-    def test_search_fulltext(self):
+    async def test_search_fulltext(self):
         from pubmed_search.infrastructure.sources.core import COREClient
 
         c = COREClient()
         with patch.object(
-            c, "search", return_value={"total_hits": 0, "results": []}
+            c, "search", new_callable=AsyncMock, return_value={"total_hits": 0, "results": []}
         ) as mock_s:
-            c.search_fulltext("deep learning", limit=5)
+            await c.search_fulltext("deep learning", limit=5)
         assert mock_s.called
         # search_fulltext wraps query in fullText:"..." 
         call_query = mock_s.call_args[1].get("query") or mock_s.call_args[0][0]
         assert "fullText" in call_query
 
-    def test_get_work_success(self):
+    async def test_get_work_success(self):
         from pubmed_search.infrastructure.sources.core import COREClient
 
         c = COREClient()
@@ -236,20 +248,20 @@ class TestCOREClient:
             "authors": [{"name": "A B"}],
             "yearPublished": 2022,
         }
-        with patch.object(c, "_make_request", return_value=work_data):
-            result = c.get_work(999)
+        with patch.object(c, "_make_request", new_callable=AsyncMock, return_value=work_data):
+            result = await c.get_work(999)
         assert result is not None
         assert result["title"] == "A Paper"
 
-    def test_get_work_not_found(self):
+    async def test_get_work_not_found(self):
         from pubmed_search.infrastructure.sources.core import COREClient
 
         c = COREClient()
-        with patch.object(c, "_make_request", return_value=None):
-            result = c.get_work(99999)
+        with patch.object(c, "_make_request", new_callable=AsyncMock, return_value=None):
+            result = await c.get_work(99999)
         assert result is None
 
-    def test_get_output(self):
+    async def test_get_output(self):
         from pubmed_search.infrastructure.sources.core import COREClient
 
         c = COREClient()
@@ -259,12 +271,12 @@ class TestCOREClient:
             "fullText": "Full text here",
             "authors": [],
         }
-        with patch.object(c, "_make_request", return_value=output_data):
-            result = c.get_output(888)
+        with patch.object(c, "_make_request", new_callable=AsyncMock, return_value=output_data):
+            result = await c.get_output(888)
         assert result is not None
         assert result["full_text"] == "Full text here"
 
-    def test_get_fulltext(self):
+    async def test_get_fulltext(self):
         from pubmed_search.infrastructure.sources.core import COREClient
 
         c = COREClient()
@@ -274,51 +286,53 @@ class TestCOREClient:
             "fullText": "The full text content",
             "authors": [],
         }
-        with patch.object(c, "_make_request", return_value=output_data):
-            result = c.get_fulltext(777)
+        with patch.object(c, "_make_request", new_callable=AsyncMock, return_value=output_data):
+            result = await c.get_fulltext(777)
         assert result == "The full text content"
 
-    def test_get_fulltext_none(self):
+    async def test_get_fulltext_none(self):
         from pubmed_search.infrastructure.sources.core import COREClient
 
         c = COREClient()
-        with patch.object(c, "_make_request", return_value=None):
-            result = c.get_fulltext(999)
+        with patch.object(c, "_make_request", new_callable=AsyncMock, return_value=None):
+            result = await c.get_fulltext(999)
         assert result is None
 
-    def test_search_by_doi(self):
+    async def test_search_by_doi(self):
         from pubmed_search.infrastructure.sources.core import COREClient
 
         c = COREClient()
         with patch.object(
             c,
             "search",
+            new_callable=AsyncMock,
             return_value={"results": [{"title": "Found by DOI", "doi": "10.1234/x"}]},
         ):
-            result = c.search_by_doi("10.1234/x")
+            result = await c.search_by_doi("10.1234/x")
         assert result["title"] == "Found by DOI"
 
-    def test_search_by_doi_not_found(self):
+    async def test_search_by_doi_not_found(self):
         from pubmed_search.infrastructure.sources.core import COREClient
 
         c = COREClient()
-        with patch.object(c, "search", return_value={"results": []}):
-            result = c.search_by_doi("10.9999/none")
+        with patch.object(c, "search", new_callable=AsyncMock, return_value={"results": []}):
+            result = await c.search_by_doi("10.9999/none")
         assert result is None
 
-    def test_search_by_pmid(self):
+    async def test_search_by_pmid(self):
         from pubmed_search.infrastructure.sources.core import COREClient
 
         c = COREClient()
         with patch.object(
             c,
             "search",
+            new_callable=AsyncMock,
             return_value={"results": [{"title": "Found by PMID", "pmid": "111"}]},
         ):
-            result = c.search_by_pmid("111")
+            result = await c.search_by_pmid("111")
         assert result["title"] == "Found by PMID"
 
-    def test_normalize_work_identifiers(self):
+    async def test_normalize_work_identifiers(self):
         from pubmed_search.infrastructure.sources.core import COREClient
 
         c = COREClient()
@@ -351,7 +365,7 @@ class TestCOREClient:
         assert result["citation_count"] == 42
         assert "Alice" in result["author_string"]
 
-    def test_normalize_output(self):
+    async def test_normalize_output(self):
         from pubmed_search.infrastructure.sources.core import COREClient
 
         c = COREClient()
@@ -371,7 +385,7 @@ class TestCOREClient:
 class TestCOREConvenience:
     """Test convenience functions."""
 
-    def test_get_core_client_singleton(self):
+    async def test_get_core_client_singleton(self):
         from pubmed_search.infrastructure.sources.core import get_core_client
         import pubmed_search.infrastructure.sources.core as mod
 
@@ -381,34 +395,34 @@ class TestCOREConvenience:
         assert c1 is c2
         mod._core_client = None
 
-    def test_search_core(self):
+    async def test_search_core(self):
         from pubmed_search.infrastructure.sources.core import search_core
 
         with patch(
             "pubmed_search.infrastructure.sources.core.get_core_client"
         ) as mock_gc:
-            mock_client = MagicMock()
+            mock_client = AsyncMock()
             mock_client.search.return_value = {
                 "total_hits": 1,
                 "results": [{"title": "Test"}],
             }
             mock_gc.return_value = mock_client
-            result = search_core("test", limit=5)
+            result = await search_core("test", limit=5)
         assert len(result) == 1
 
-    def test_search_core_fulltext(self):
+    async def test_search_core_fulltext(self):
         from pubmed_search.infrastructure.sources.core import search_core_fulltext
 
         with patch(
             "pubmed_search.infrastructure.sources.core.get_core_client"
         ) as mock_gc:
-            mock_client = MagicMock()
+            mock_client = AsyncMock()
             mock_client.search_fulltext.return_value = {
                 "total_hits": 0,
                 "results": [],
             }
             mock_gc.return_value = mock_client
-            result = search_core_fulltext("test")
+            result = await search_core_fulltext("test")
         assert result == []
 
 
@@ -420,7 +434,7 @@ class TestCOREConvenience:
 class TestClinicalTrialsClient:
     """Test infrastructure/sources/clinical_trials.py."""
 
-    def test_init(self):
+    async def test_init(self):
         from pubmed_search.infrastructure.sources.clinical_trials import (
             ClinicalTrialsClient,
         )
@@ -428,7 +442,7 @@ class TestClinicalTrialsClient:
         c = ClinicalTrialsClient()
         assert c.timeout == 10.0
 
-    def test_lazy_client(self):
+    async def test_lazy_client(self):
         from pubmed_search.infrastructure.sources.clinical_trials import (
             ClinicalTrialsClient,
         )
@@ -439,7 +453,7 @@ class TestClinicalTrialsClient:
         assert client is not None
         c._client = None  # cleanup
 
-    def test_search_success(self):
+    async def test_search_success(self):
         from pubmed_search.infrastructure.sources.clinical_trials import (
             ClinicalTrialsClient,
         )
@@ -493,7 +507,7 @@ class TestClinicalTrialsClient:
         assert result[0]["enrollment"] == 200
         c._client = None
 
-    def test_search_with_status_filter(self):
+    async def test_search_with_status_filter(self):
         from pubmed_search.infrastructure.sources.clinical_trials import (
             ClinicalTrialsClient,
         )
@@ -513,7 +527,7 @@ class TestClinicalTrialsClient:
         assert "RECRUITING" in str(call_params)
         c._client = None
 
-    def test_search_empty(self):
+    async def test_search_empty(self):
         from pubmed_search.infrastructure.sources.clinical_trials import (
             ClinicalTrialsClient,
         )
@@ -531,7 +545,7 @@ class TestClinicalTrialsClient:
         assert result == []
         c._client = None
 
-    def test_search_timeout(self):
+    async def test_search_timeout(self):
         from pubmed_search.infrastructure.sources.clinical_trials import (
             ClinicalTrialsClient,
         )
@@ -546,7 +560,7 @@ class TestClinicalTrialsClient:
         assert result == []
         c._client = None
 
-    def test_search_http_error(self):
+    async def test_search_http_error(self):
         from pubmed_search.infrastructure.sources.clinical_trials import (
             ClinicalTrialsClient,
         )
@@ -565,7 +579,7 @@ class TestClinicalTrialsClient:
         assert result == []
         c._client = None
 
-    def test_normalize_study_minimal(self):
+    async def test_normalize_study_minimal(self):
         from pubmed_search.infrastructure.sources.clinical_trials import (
             ClinicalTrialsClient,
         )
@@ -581,7 +595,7 @@ class TestClinicalTrialsClient:
 class TestClinicalTrialsGetStudy:
     """Test get_study method."""
 
-    def test_get_study_success(self):
+    async def test_get_study_success(self):
         from pubmed_search.infrastructure.sources.clinical_trials import (
             ClinicalTrialsClient,
         )
@@ -609,7 +623,7 @@ class TestClinicalTrialsGetStudy:
         assert result["nct_id"] == "NCT99999"
         c._client = None
 
-    def test_get_study_not_found(self):
+    async def test_get_study_not_found(self):
         from pubmed_search.infrastructure.sources.clinical_trials import (
             ClinicalTrialsClient,
         )
@@ -637,7 +651,7 @@ class TestClinicalTrialsGetStudy:
 class TestNCBICitationExporter:
     """Test infrastructure/ncbi/citation_exporter.py."""
 
-    def test_init(self):
+    async def test_init(self):
         from pubmed_search.infrastructure.ncbi.citation_exporter import (
             NCBICitationExporter,
         )
@@ -645,7 +659,7 @@ class TestNCBICitationExporter:
         e = NCBICitationExporter()
         assert e.timeout == 30.0
 
-    def test_lazy_client(self):
+    async def test_lazy_client(self):
         from pubmed_search.infrastructure.ncbi.citation_exporter import (
             NCBICitationExporter,
         )
@@ -656,27 +670,27 @@ class TestNCBICitationExporter:
         assert client is not None
         e._client = None
 
-    def test_export_no_pmids(self):
+    async def test_export_no_pmids(self):
         from pubmed_search.infrastructure.ncbi.citation_exporter import (
             NCBICitationExporter,
         )
 
         e = NCBICitationExporter()
-        result = e.export_citations([])
+        result = await e.export_citations([])
         assert result.success is False
         assert "No PMIDs" in result.error
 
-    def test_export_invalid_format(self):
+    async def test_export_invalid_format(self):
         from pubmed_search.infrastructure.ncbi.citation_exporter import (
             NCBICitationExporter,
         )
 
         e = NCBICitationExporter()
-        result = e.export_citations(["12345"], format="invalid_format")
+        result = await e.export_citations(["12345"], format="invalid_format")
         assert result.success is False
         assert "Unsupported" in result.error
 
-    def test_export_ris_success(self):
+    async def test_export_ris_success(self):
         from pubmed_search.infrastructure.ncbi.citation_exporter import (
             NCBICitationExporter,
         )
@@ -686,17 +700,17 @@ class TestNCBICitationExporter:
         mock_resp.status_code = 200
         mock_resp.text = "TY  - JOUR\nTI  - Test Article\nER  -\n"
         mock_resp.raise_for_status = MagicMock()
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
         mock_client.get.return_value = mock_resp
         e._client = mock_client
 
-        result = e.export_citations(["12345"], format="ris")
+        result = await e.export_citations(["12345"], format="ris")
         assert result.success is True
         assert "TY  - JOUR" in result.content
         assert result.pmid_count == 1
         e._client = None
 
-    def test_export_medline_success(self):
+    async def test_export_medline_success(self):
         from pubmed_search.infrastructure.ncbi.citation_exporter import (
             NCBICitationExporter,
         )
@@ -706,16 +720,16 @@ class TestNCBICitationExporter:
         mock_resp.status_code = 200
         mock_resp.text = "PMID- 12345\nTI  - Test\n"
         mock_resp.raise_for_status = MagicMock()
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
         mock_client.get.return_value = mock_resp
         e._client = mock_client
 
-        result = e.export_citations(["12345"], format="medline")
+        result = await e.export_citations(["12345"], format="medline")
         assert result.success is True
         assert "PMID" in result.content
         e._client = None
 
-    def test_export_csl_success(self):
+    async def test_export_csl_success(self):
         from pubmed_search.infrastructure.ncbi.citation_exporter import (
             NCBICitationExporter,
         )
@@ -725,15 +739,15 @@ class TestNCBICitationExporter:
         mock_resp.status_code = 200
         mock_resp.text = '[{"type": "article-journal"}]'
         mock_resp.raise_for_status = MagicMock()
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
         mock_client.get.return_value = mock_resp
         e._client = mock_client
 
-        result = e.export_citations(["12345"], format="csl")
+        result = await e.export_citations(["12345"], format="csl")
         assert result.success is True
         e._client = None
 
-    def test_export_api_error_response(self):
+    async def test_export_api_error_response(self):
         from pubmed_search.infrastructure.ncbi.citation_exporter import (
             NCBICitationExporter,
         )
@@ -743,16 +757,16 @@ class TestNCBICitationExporter:
         mock_resp.status_code = 200
         mock_resp.text = '{"format": "unknown_fmt"}'
         mock_resp.raise_for_status = MagicMock()
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
         mock_client.get.return_value = mock_resp
         e._client = mock_client
 
-        result = e.export_citations(["12345"], format="ris")
+        result = await e.export_citations(["12345"], format="ris")
         assert result.success is False
         assert "Invalid format" in result.error
         e._client = None
 
-    def test_export_http_error(self):
+    async def test_export_http_error(self):
         from pubmed_search.infrastructure.ncbi.citation_exporter import (
             NCBICitationExporter,
         )
@@ -761,17 +775,17 @@ class TestNCBICitationExporter:
         e = NCBICitationExporter()
         mock_resp = MagicMock()
         mock_resp.status_code = 500
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
         mock_client.get.side_effect = httpx.HTTPStatusError(
             "500", request=MagicMock(), response=mock_resp
         )
         e._client = mock_client
 
-        result = e.export_citations(["12345"], format="ris")
+        result = await e.export_citations(["12345"], format="ris")
         assert result.success is False
         e._client = None
 
-    def test_export_multiple_pmids(self):
+    async def test_export_multiple_pmids(self):
         from pubmed_search.infrastructure.ncbi.citation_exporter import (
             NCBICitationExporter,
         )
@@ -781,11 +795,11 @@ class TestNCBICitationExporter:
         mock_resp.status_code = 200
         mock_resp.text = "TY  - JOUR\nER  -\nTY  - JOUR\nER  -\n"
         mock_resp.raise_for_status = MagicMock()
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
         mock_client.get.return_value = mock_resp
         e._client = mock_client
 
-        result = e.export_citations(["11111", "22222", "33333"], format="ris")
+        result = await e.export_citations(["11111", "22222", "33333"], format="ris")
         assert result.success is True
         assert result.pmid_count == 3
         e._client = None
@@ -799,14 +813,14 @@ class TestNCBICitationExporter:
 class TestEuropePMCInfra:
     """Test infrastructure/sources/europe_pmc.py."""
 
-    def test_singleton(self):
+    async def test_singleton(self):
         from pubmed_search.infrastructure.sources import get_europe_pmc_client
 
         c1 = get_europe_pmc_client()
         c2 = get_europe_pmc_client()
         assert c1 is c2
 
-    def test_search_with_filters(self):
+    async def test_search_with_filters(self):
         from pubmed_search.infrastructure.sources.europe_pmc import EuropePMCClient
 
         c = EuropePMCClient()
@@ -827,11 +841,11 @@ class TestEuropePMCInfra:
             },
         }
 
-        with patch.object(c, "_make_request", return_value=mock_resp.json.return_value):
-            result = c.search("diabetes", limit=10, min_year=2020, open_access_only=True)
+        with patch.object(c, "_make_request", new_callable=AsyncMock, return_value=mock_resp.json.return_value):
+            result = await c.search("diabetes", limit=10, min_year=2020, open_access_only=True)
         assert result["hit_count"] == 5
 
-    def test_get_citations(self):
+    async def test_get_citations(self):
         from pubmed_search.infrastructure.sources.europe_pmc import EuropePMCClient
 
         c = EuropePMCClient()
@@ -850,11 +864,11 @@ class TestEuropePMCInfra:
             },
         }
 
-        with patch.object(c, "_make_request", return_value=mock_data):
-            result = c.get_citations("MED", "12345")
+        with patch.object(c, "_make_request", new_callable=AsyncMock, return_value=mock_data):
+            result = await c.get_citations("MED", "12345")
         assert len(result) == 2
 
-    def test_get_references(self):
+    async def test_get_references(self):
         from pubmed_search.infrastructure.sources.europe_pmc import EuropePMCClient
 
         c = EuropePMCClient()
@@ -868,8 +882,8 @@ class TestEuropePMCInfra:
             },
         }
 
-        with patch.object(c, "_make_request", return_value=mock_data):
-            result = c.get_references("MED", "12345")
+        with patch.object(c, "_make_request", new_callable=AsyncMock, return_value=mock_data):
+            result = await c.get_references("MED", "12345")
         assert len(result) == 1
 
 
@@ -881,18 +895,18 @@ class TestEuropePMCInfra:
 class TestNCBIStrategy:
     """Test infrastructure/ncbi/strategy.py — SearchStrategyGenerator."""
 
-    def test_import(self):
+    async def test_import(self):
         from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
 
         assert SearchStrategyGenerator is not None
 
-    def test_init(self):
+    async def test_init(self):
         from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
 
         sg = SearchStrategyGenerator(email="test@test.com")
         assert sg is not None
 
-    def test_spell_check(self):
+    async def test_spell_check(self):
         from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
 
         sg = SearchStrategyGenerator(email="test@test.com")
@@ -905,11 +919,11 @@ class TestNCBIStrategy:
             "pubmed_search.infrastructure.ncbi.strategy.Entrez.read",
             return_value=mock_record,
         ):
-            corrected, changed = sg.spell_check("diabtes")
+            corrected, changed = await sg.spell_check("diabtes")
         assert corrected == "diabetes"
         assert changed is True
 
-    def test_spell_check_no_correction(self):
+    async def test_spell_check_no_correction(self):
         from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
 
         sg = SearchStrategyGenerator(email="test@test.com")
@@ -921,11 +935,11 @@ class TestNCBIStrategy:
             "pubmed_search.infrastructure.ncbi.strategy.Entrez.read",
             return_value=mock_record,
         ):
-            corrected, changed = sg.spell_check("diabetes")
+            corrected, changed = await sg.spell_check("diabetes")
         assert corrected == "diabetes"
         assert changed is False
 
-    def test_get_mesh_terms(self):
+    async def test_get_mesh_terms(self):
         from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
 
         sg = SearchStrategyGenerator(email="test@test.com")
@@ -940,6 +954,6 @@ class TestNCBIStrategy:
             "pubmed_search.infrastructure.ncbi.strategy.Entrez.read",
             return_value=mock_record,
         ):
-            info = sg.get_mesh_info("diabetes")
+            info = await sg.get_mesh_info("diabetes")
         # May return None or dict depending on mock
         assert info is None or isinstance(info, dict)

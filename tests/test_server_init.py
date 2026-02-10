@@ -8,20 +8,20 @@ from unittest.mock import MagicMock
 class TestMCPServerInit:
     """Tests for MCP server initialization."""
 
-    def test_server_module_imports(self):
+    async def test_server_module_imports(self):
         """Test that server module can be imported."""
         from pubmed_search.presentation.mcp_server import server
 
         assert server is not None
 
-    def test_literature_searcher_creation(self):
+    async def test_literature_searcher_creation(self):
         """Test LiteratureSearcher creation with email."""
         from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
         searcher = LiteratureSearcher(email="test@example.com")
         assert searcher is not None
 
-    def test_literature_searcher_has_mixins(self):
+    async def test_literature_searcher_has_mixins(self):
         """Test that LiteratureSearcher has all expected mixins."""
         from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
@@ -39,13 +39,13 @@ class TestMCPServerInit:
 class TestSessionTools:
     """Tests for session tools."""
 
-    def test_session_tools_module_imports(self):
+    async def test_session_tools_module_imports(self):
         """Test that session_tools module can be imported."""
         from pubmed_search.presentation.mcp_server import session_tools
 
         assert session_tools is not None
 
-    def test_register_session_tools(self):
+    async def test_register_session_tools(self):
         """Test registering session tools."""
         from pubmed_search.presentation.mcp_server.session_tools import (
             register_session_tools,
@@ -63,7 +63,7 @@ class TestSessionTools:
 class TestToolRegistration:
     """Tests for tool registration."""
 
-    def test_all_tools_registered(self):
+    async def test_all_tools_registered(self):
         """Test that all tools are registered."""
         from pubmed_search.presentation.mcp_server.tools import (
             register_discovery_tools,
@@ -87,7 +87,7 @@ class TestToolRegistration:
         register_unified_search_tools(mcp, searcher)
         register_europe_pmc_tools(mcp)
 
-    def test_register_all_tools_function(self):
+    async def test_register_all_tools_function(self):
         """Test register_all_tools aggregator function."""
         from pubmed_search.presentation.mcp_server.tools import register_all_tools
 
@@ -103,7 +103,7 @@ class TestToolRegistration:
 class TestServerHTTPMode:
     """Tests for HTTP server mode."""
 
-    def test_run_server_module_imports(self):
+    async def test_run_server_module_imports(self):
         """Test that run_server can be imported."""
         import importlib.util
 
@@ -111,7 +111,7 @@ class TestServerHTTPMode:
         spec = importlib.util.find_spec("run_server")
         assert spec is not None or spec is None  # Module may or may not be in path
 
-    def test_server_has_fastmcp(self):
+    async def test_server_has_fastmcp(self):
         """Test that FastMCP is available."""
         from mcp.server.fastmcp import FastMCP
 
@@ -121,7 +121,7 @@ class TestServerHTTPMode:
 class TestToolsInit:
     """Tests for tools __init__ module."""
 
-    def test_tools_init_exports(self):
+    async def test_tools_init_exports(self):
         """Test that tools __init__ exports expected functions."""
         from pubmed_search.presentation.mcp_server import tools
 
@@ -133,13 +133,13 @@ class TestToolsInit:
 class TestEntrezInit:
     """Tests for entrez __init__ module."""
 
-    def test_entrez_init_exports(self):
+    async def test_entrez_init_exports(self):
         """Test that entrez __init__ exports LiteratureSearcher."""
         from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
         assert LiteratureSearcher is not None
 
-    def test_literature_searcher_inheritance(self):
+    async def test_literature_searcher_inheritance(self):
         """Test LiteratureSearcher has correct inheritance."""
         from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
@@ -155,7 +155,7 @@ class TestEntrezInit:
 class TestExportsInit:
     """Tests for exports __init__ module."""
 
-    def test_exports_init_exports(self):
+    async def test_exports_init_exports(self):
         """Test that exports __init__ exports expected functions."""
         from pubmed_search.application.export import (
             export_articles,

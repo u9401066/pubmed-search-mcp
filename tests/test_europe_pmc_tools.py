@@ -1,6 +1,6 @@
 """Tests for Europe PMC MCP tools — get_fulltext, get_text_mined_terms, helpers."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -34,13 +34,13 @@ class TestGetFulltext:
 
     @pytest.mark.asyncio
     async def test_pmcid_success(self, tools):
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
         mock_client.get_fulltext_xml.return_value = "<xml/>"
-        mock_client.parse_fulltext_xml.return_value = {
+        mock_client.parse_fulltext_xml = MagicMock(return_value={
             "title": "Test Article",
             "sections": [{"title": "Introduction", "content": "Hello world"}],
             "abstract": "An abstract",
-        }
+        })
         with patch(
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
             return_value=mock_client,
@@ -51,7 +51,7 @@ class TestGetFulltext:
 
     @pytest.mark.asyncio
     async def test_pmcid_no_xml(self, tools):
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
         mock_client.get_fulltext_xml.return_value = None
         with patch(
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
@@ -63,7 +63,7 @@ class TestGetFulltext:
 
     @pytest.mark.asyncio
     async def test_doi_unpaywall_success(self, tools):
-        mock_unpaywall = MagicMock()
+        mock_unpaywall = AsyncMock()
         mock_unpaywall.get_oa_status.return_value = {
             "is_oa": True,
             "title": "OA Paper",
@@ -85,10 +85,10 @@ class TestGetFulltext:
 
     @pytest.mark.asyncio
     async def test_doi_core_fallback(self, tools):
-        mock_unpaywall = MagicMock()
+        mock_unpaywall = AsyncMock()
         mock_unpaywall.get_oa_status.return_value = {"is_oa": False}
 
-        mock_core = MagicMock()
+        mock_core = AsyncMock()
         mock_core.search.return_value = {
             "results": [
                 {
@@ -118,14 +118,14 @@ class TestGetFulltext:
     @pytest.mark.asyncio
     async def test_doi_identifier_auto_detect(self, tools):
         """Test auto-detection of DOI from identifier string."""
-        mock_unpaywall = MagicMock()
+        mock_unpaywall = AsyncMock()
         mock_unpaywall.get_oa_status.return_value = {"is_oa": False}
         with patch(
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_unpaywall_client",
             return_value=mock_unpaywall,
         ), patch(
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_core_client",
-            return_value=MagicMock(search=MagicMock(return_value={"results": []})),
+            return_value=MagicMock(search=AsyncMock(return_value={"results": []})),
         ):
             result = await tools["get_fulltext"](identifier="10.1038/s41586-021-03819-2")
         assert isinstance(result, str)
@@ -133,7 +133,7 @@ class TestGetFulltext:
     @pytest.mark.asyncio
     async def test_pmc_identifier_auto_detect(self, tools):
         """Test auto-detection of PMC ID from identifier string."""
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
         mock_client.get_fulltext_xml.return_value = None
         with patch(
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
@@ -144,16 +144,16 @@ class TestGetFulltext:
 
     @pytest.mark.asyncio
     async def test_sections_filter(self, tools):
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
         mock_client.get_fulltext_xml.return_value = "<xml/>"
-        mock_client.parse_fulltext_xml.return_value = {
+        mock_client.parse_fulltext_xml = MagicMock(return_value={
             "title": "Filtered",
             "sections": [
                 {"title": "Introduction", "content": "Intro text"},
                 {"title": "Methods", "content": "Methods text"},
                 {"title": "Results", "content": "Results text"},
             ],
-        }
+        })
         with patch(
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
             return_value=mock_client,
@@ -165,7 +165,7 @@ class TestGetFulltext:
 
     @pytest.mark.asyncio
     async def test_europe_pmc_exception(self, tools):
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
         mock_client.get_fulltext_xml.side_effect = RuntimeError("API down")
         with patch(
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
@@ -184,7 +184,7 @@ class TestGetFulltext:
     @pytest.mark.asyncio
     async def test_unpaywall_landing_page(self, tools):
         """Test unpaywall returning a landing page URL instead of PDF."""
-        mock_unpaywall = MagicMock()
+        mock_unpaywall = AsyncMock()
         mock_unpaywall.get_oa_status.return_value = {
             "is_oa": True,
             "oa_status": "green",
@@ -215,7 +215,7 @@ class TestGetTextMinedTerms:
 
     @pytest.mark.asyncio
     async def test_pmid_success(self, tools):
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
         mock_client.get_text_mined_terms.return_value = [
             {"semantic_type": "GENE_PROTEIN", "term": "BRCA1"},
             {"semantic_type": "GENE_PROTEIN", "term": "BRCA1"},
@@ -233,7 +233,7 @@ class TestGetTextMinedTerms:
 
     @pytest.mark.asyncio
     async def test_pmcid_success(self, tools):
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
         mock_client.get_text_mined_terms.return_value = [
             {"semantic_type": "ORGANISM", "term": "Homo sapiens"},
         ]
@@ -246,7 +246,7 @@ class TestGetTextMinedTerms:
 
     @pytest.mark.asyncio
     async def test_semantic_type_filter(self, tools):
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
         mock_client.get_text_mined_terms.return_value = [
             {"semantic_type": "CHEMICAL", "term": "Propofol"},
         ]
@@ -261,7 +261,7 @@ class TestGetTextMinedTerms:
 
     @pytest.mark.asyncio
     async def test_no_terms_found(self, tools):
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
         mock_client.get_text_mined_terms.return_value = []
         with patch(
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
@@ -272,7 +272,7 @@ class TestGetTextMinedTerms:
 
     @pytest.mark.asyncio
     async def test_exception(self, tools):
-        mock_client = MagicMock()
+        mock_client = AsyncMock()
         mock_client.get_text_mined_terms.side_effect = RuntimeError("API error")
         with patch(
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",

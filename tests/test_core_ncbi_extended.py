@@ -11,7 +11,7 @@ Tests for CORE API and NCBI Extended Database integration.
 class TestCOREClient:
     """Tests for CORE API client."""
 
-    def test_client_initialization(self):
+    async def test_client_initialization(self):
         """Test CORE client initialization."""
         from pubmed_search.infrastructure.sources.core import COREClient
 
@@ -25,7 +25,7 @@ class TestCOREClient:
         assert client._api_key == "test-key"
         assert client._min_interval == 2.5  # Faster with key
 
-    def test_get_core_client_singleton(self):
+    async def test_get_core_client_singleton(self):
         """Test singleton pattern."""
         from pubmed_search.infrastructure.sources.core import get_core_client
 
@@ -38,7 +38,7 @@ class TestCOREClient:
         client2 = get_core_client()
         assert client1 is client2
 
-    def test_normalize_work(self):
+    async def test_normalize_work(self):
         """Test work normalization."""
         from pubmed_search.infrastructure.sources.core import COREClient
 
@@ -72,7 +72,7 @@ class TestCOREClient:
         assert normalized["citation_count"] == 42
         assert normalized["_source"] == "core"
 
-    def test_search_method_exists(self):
+    async def test_search_method_exists(self):
         """Test search methods exist."""
         from pubmed_search.infrastructure.sources.core import COREClient
 
@@ -90,7 +90,7 @@ class TestCOREClient:
 class TestCOREConvenienceFunctions:
     """Test convenience functions."""
 
-    def test_search_core_function(self):
+    async def test_search_core_function(self):
         """Test search_core convenience function exists."""
         from pubmed_search.infrastructure.sources.core import (
             search_core,
@@ -110,7 +110,7 @@ class TestCOREConvenienceFunctions:
 class TestNCBIExtendedClient:
     """Tests for NCBI Extended client."""
 
-    def test_client_initialization(self):
+    async def test_client_initialization(self):
         """Test client initialization."""
         from pubmed_search.infrastructure.sources.ncbi_extended import (
             NCBIExtendedClient,
@@ -126,7 +126,7 @@ class TestNCBIExtendedClient:
         assert client._api_key == "test-key"
         assert client._min_interval == 0.1  # Faster with key
 
-    def test_get_ncbi_extended_client_singleton(self):
+    async def test_get_ncbi_extended_client_singleton(self):
         """Test singleton pattern."""
         from pubmed_search.infrastructure.sources.ncbi_extended import (
             get_ncbi_extended_client,
@@ -141,7 +141,7 @@ class TestNCBIExtendedClient:
         client2 = get_ncbi_extended_client()
         assert client1 is client2
 
-    def test_normalize_gene(self):
+    async def test_normalize_gene(self):
         """Test gene normalization."""
         from pubmed_search.infrastructure.sources.ncbi_extended import (
             NCBIExtendedClient,
@@ -171,7 +171,7 @@ class TestNCBIExtendedClient:
         assert "IRIS" in normalized["aliases"]
         assert normalized["_source"] == "ncbi_gene"
 
-    def test_normalize_compound(self):
+    async def test_normalize_compound(self):
         """Test compound normalization."""
         from pubmed_search.infrastructure.sources.ncbi_extended import (
             NCBIExtendedClient,
@@ -198,7 +198,7 @@ class TestNCBIExtendedClient:
         assert normalized["molecular_weight"] == 180.16
         assert normalized["_source"] == "pubchem"
 
-    def test_normalize_clinvar(self):
+    async def test_normalize_clinvar(self):
         """Test ClinVar normalization."""
         from pubmed_search.infrastructure.sources.ncbi_extended import (
             NCBIExtendedClient,
@@ -237,14 +237,14 @@ class TestNCBIExtendedClient:
 class TestSourcesIntegration:
     """Test sources module integration."""
 
-    def test_search_source_enum(self):
+    async def test_search_source_enum(self):
         """Test SearchSource enum includes CORE."""
         from pubmed_search.infrastructure.sources import SearchSource
 
         assert hasattr(SearchSource, "CORE")
         assert SearchSource.CORE.value == "core"
 
-    def test_get_clients(self):
+    async def test_get_clients(self):
         """Test client getter functions."""
         from pubmed_search.infrastructure.sources import (
             get_core_client,
@@ -263,7 +263,7 @@ class TestSourcesIntegration:
         ncbi_client = get_ncbi_extended_client()
         assert ncbi_client is not None
 
-    def test_cross_search_includes_core(self):
+    async def test_cross_search_includes_core(self):
         """Test that cross_search default sources include CORE."""
         from pubmed_search.infrastructure.sources import cross_search
         import inspect
@@ -283,7 +283,7 @@ class TestSourcesIntegration:
 class TestCOREMCPTools:
     """Test CORE MCP tools."""
 
-    def test_tools_registered(self):
+    async def test_tools_registered(self):
         """Test that CORE tools can be registered."""
         from mcp.server.fastmcp import FastMCP
         from pubmed_search.presentation.mcp_server.tools.core import register_core_tools
@@ -303,7 +303,7 @@ class TestCOREMCPTools:
 class TestNCBIExtendedMCPTools:
     """Test NCBI Extended MCP tools."""
 
-    def test_tools_registered(self):
+    async def test_tools_registered(self):
         """Test that NCBI Extended tools can be registered."""
         from mcp.server.fastmcp import FastMCP
         from pubmed_search.presentation.mcp_server.tools.ncbi_extended import (
@@ -333,7 +333,7 @@ class TestNCBIExtendedMCPTools:
 class TestAllToolsRegistration:
     """Test that all tools are registered properly."""
 
-    def test_register_all_tools_includes_new_sources(self):
+    async def test_register_all_tools_includes_new_sources(self):
         """Test register_all_tools includes CORE and NCBI Extended."""
         from mcp.server.fastmcp import FastMCP
         from pubmed_search.presentation.mcp_server.tools import register_all_tools
@@ -363,7 +363,7 @@ class TestAllToolsRegistration:
 class TestServerIntegration:
     """Test server includes new tools."""
 
-    def test_create_server_with_new_tools(self):
+    async def test_create_server_with_new_tools(self):
         """Test create_server registers new tools."""
         from pubmed_search.presentation.mcp_server.server import create_server
 

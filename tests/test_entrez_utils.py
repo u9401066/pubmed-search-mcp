@@ -8,7 +8,7 @@ from unittest.mock import patch, MagicMock
 class TestUtilsMixin:
     """Tests for UtilsMixin class (spell check, MeSH, etc.)."""
 
-    def test_spell_check_returns_corrected(self, mock_espell_response):
+    async def test_spell_check_returns_corrected(self, mock_espell_response):
         """Test spell check returns corrected query."""
         from pubmed_search.infrastructure.ncbi.utils import UtilsMixin
 
@@ -19,11 +19,11 @@ class TestUtilsMixin:
             mock_entrez.espell.return_value = mock_handle
             mock_entrez.read.return_value = mock_espell_response
 
-            result = mixin.spell_check_query("diabetis")
+            result = await mixin.spell_check_query("diabetis")
 
             assert result == "diabetes"
 
-    def test_spell_check_returns_original_on_no_correction(self):
+    async def test_spell_check_returns_original_on_no_correction(self):
         """Test spell check returns original when no correction."""
         from pubmed_search.infrastructure.ncbi.utils import UtilsMixin
 
@@ -34,11 +34,11 @@ class TestUtilsMixin:
             mock_entrez.espell.return_value = mock_handle
             mock_entrez.read.return_value = {"Query": "diabetes", "CorrectedQuery": ""}
 
-            result = mixin.spell_check_query("diabetes")
+            result = await mixin.spell_check_query("diabetes")
 
             assert result == "diabetes"
 
-    def test_spell_check_handles_error(self):
+    async def test_spell_check_handles_error(self):
         """Test spell check handles API errors gracefully."""
         from pubmed_search.infrastructure.ncbi.utils import UtilsMixin
 
@@ -47,7 +47,7 @@ class TestUtilsMixin:
         with patch("pubmed_search.infrastructure.ncbi.utils.Entrez") as mock_entrez:
             mock_entrez.espell.side_effect = Exception("API Error")
 
-            result = mixin.spell_check_query("test query")
+            result = await mixin.spell_check_query("test query")
 
             # Should return original query on error
             assert result == "test query"
@@ -56,16 +56,16 @@ class TestUtilsMixin:
 class TestQuickFetchSummary:
     """Tests for quick_fetch_summary method."""
 
-    def test_empty_id_list(self):
+    async def test_empty_id_list(self):
         """Test with empty ID list."""
         from pubmed_search.infrastructure.ncbi.utils import UtilsMixin
 
         mixin = UtilsMixin()
-        result = mixin.quick_fetch_summary([])
+        result = await mixin.quick_fetch_summary([])
 
         assert result == []
 
-    def test_fetch_summary_success(self):
+    async def test_fetch_summary_success(self):
         """Test successful summary fetch."""
         from pubmed_search.infrastructure.ncbi.utils import UtilsMixin
 
@@ -89,7 +89,7 @@ class TestQuickFetchSummary:
             mock_entrez.esummary.return_value = mock_handle
             mock_entrez.read.return_value = [mock_summary]
 
-            result = mixin.quick_fetch_summary(["12345678"])
+            result = await mixin.quick_fetch_summary(["12345678"])
 
             assert len(result) == 1
             assert result[0]["pmid"] == "12345678"
@@ -99,7 +99,7 @@ class TestQuickFetchSummary:
 class TestValidateMeshTerms:
     """Tests for MeSH term validation."""
 
-    def test_validate_valid_mesh_term(self):
+    async def test_validate_valid_mesh_term(self):
         """Test validating a real MeSH term."""
         from pubmed_search.infrastructure.ncbi.utils import UtilsMixin
 
@@ -112,5 +112,5 @@ class TestValidateMeshTerms:
 
             # If the method exists, test it
             if hasattr(mixin, "validate_mesh_terms"):
-                result = mixin.validate_mesh_terms(["Diabetes Mellitus"])
+                result = await mixin.validate_mesh_terms(["Diabetes Mellitus"])
                 assert "Diabetes Mellitus" in result.get("valid", []) or len(result) > 0

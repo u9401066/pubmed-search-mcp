@@ -233,6 +233,27 @@ def start_http_api_background(session_manager, searcher, port: int = 8765):
     return thread
 
 
+def _detect_git_email() -> str | None:
+    """Auto-detect email from git config (cross-platform)."""
+    import shutil
+    import subprocess
+
+    git = shutil.which("git")
+    if not git:
+        return None
+    try:
+        result = subprocess.run(
+            [git, "config", "user.email"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+        email = result.stdout.strip()
+        return email if email and "@" in email else None
+    except Exception:
+        return None
+
+
 def main():
     """Run the MCP server."""
     import os
@@ -243,17 +264,24 @@ def main():
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
-    # Get email from args or environment
+    # Get email: CLI arg → env var → git config → default
     if len(sys.argv) > 1:
         email = sys.argv[1]
     else:
-        email = os.environ.get("NCBI_EMAIL", DEFAULT_EMAIL)
+        email = os.environ.get("NCBI_EMAIL", "").strip() or None
+        if not email:
+            email = _detect_git_email()
+            if email:
+                logger.info(f"Using git config email: {email}")
+            else:
+                email = DEFAULT_EMAIL
+                logger.info(f"No email configured, using default: {email}")
 
-    # Get API key from args or environment
+    # Get API key: CLI arg → env var
     if len(sys.argv) > 2:
         api_key = sys.argv[2]
     else:
-        api_key = os.environ.get("NCBI_API_KEY")
+        api_key = os.environ.get("NCBI_API_KEY", "").strip() or None
 
     # Get HTTP API port from environment (default: 8765)
     http_api_port = int(os.environ.get("PUBMED_HTTP_API_PORT", "8765"))

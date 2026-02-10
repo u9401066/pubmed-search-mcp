@@ -10,7 +10,7 @@ import pytest
 class TestOpenURLBuilder:
     """Test OpenURLBuilder class."""
 
-    def test_build_from_preset_ntu(self):
+    async def test_build_from_preset_ntu(self):
         """Test building OpenURL with NTU preset."""
         from pubmed_search.infrastructure.sources.openurl import OpenURLBuilder
 
@@ -21,7 +21,7 @@ class TestOpenURLBuilder:
         assert url is not None
         assert "pmid=12345678" in url
 
-    def test_build_from_preset_harvard(self):
+    async def test_build_from_preset_harvard(self):
         """Test building OpenURL with Harvard preset."""
         from pubmed_search.infrastructure.sources.openurl import OpenURLBuilder
 
@@ -37,7 +37,7 @@ class TestOpenURLBuilder:
         assert url is not None
         assert "rft.doi=10.1016" in url
 
-    def test_build_with_full_metadata(self):
+    async def test_build_with_full_metadata(self):
         """Test building OpenURL with complete article metadata."""
         from pubmed_search.infrastructure.sources.openurl import OpenURLBuilder
 
@@ -63,14 +63,14 @@ class TestOpenURLBuilder:
         assert "rft.spage=123" in url
         assert "rft.epage=456" in url
 
-    def test_unknown_preset_raises_error(self):
+    async def test_unknown_preset_raises_error(self):
         """Test that unknown preset raises ValueError."""
         from pubmed_search.infrastructure.sources.openurl import OpenURLBuilder
 
         with pytest.raises(ValueError, match="Unknown preset"):
             OpenURLBuilder.from_preset("unknown_university")
 
-    def test_no_resolver_returns_none(self):
+    async def test_no_resolver_returns_none(self):
         """Test that empty resolver returns None."""
         from pubmed_search.infrastructure.sources.openurl import OpenURLBuilder
 
@@ -82,7 +82,7 @@ class TestOpenURLBuilder:
 class TestOpenURLConfig:
     """Test OpenURLConfig class."""
 
-    def test_config_from_env_preset(self, monkeypatch):
+    async def test_config_from_env_preset(self, monkeypatch):
         """Test loading config from OPENURL_PRESET env var."""
         monkeypatch.setenv("OPENURL_PRESET", "ntu")
         monkeypatch.setenv("OPENURL_RESOLVER", "")
@@ -103,7 +103,7 @@ class TestOpenURLConfig:
         assert builder is not None
         assert "ntu.primo" in builder.resolver_base
 
-    def test_config_from_env_resolver(self, monkeypatch):
+    async def test_config_from_env_resolver(self, monkeypatch):
         """Test loading config from OPENURL_RESOLVER env var."""
         monkeypatch.setenv("OPENURL_PRESET", "")
         monkeypatch.setenv("OPENURL_RESOLVER", "https://custom.library.edu/openurl")
@@ -122,7 +122,7 @@ class TestOpenURLConfig:
         assert builder is not None
         assert builder.resolver_base == "https://custom.library.edu/openurl"
 
-    def test_config_disabled(self, monkeypatch):
+    async def test_config_disabled(self, monkeypatch):
         """Test disabled config returns None builder."""
         monkeypatch.setenv("OPENURL_ENABLED", "false")
 
@@ -141,7 +141,7 @@ class TestOpenURLConfig:
 class TestConvenienceFunctions:
     """Test convenience functions."""
 
-    def test_list_presets(self):
+    async def test_list_presets(self):
         """Test listing available presets."""
         from pubmed_search.infrastructure.sources.openurl import list_presets
 
@@ -157,7 +157,7 @@ class TestConvenienceFunctions:
             assert isinstance(url, str)
             assert len(url) > 0
 
-    def test_configure_and_get_link(self, monkeypatch):
+    async def test_configure_and_get_link(self, monkeypatch):
         """Test configure_openurl and get_openurl_link."""
         # Clear env vars
         monkeypatch.delenv("OPENURL_PRESET", raising=False)
@@ -185,7 +185,7 @@ class TestConvenienceFunctions:
 class TestIntegrationWithUnifiedSearch:
     """Test integration with unified search output."""
 
-    def test_openurl_in_unified_output(self, monkeypatch):
+    async def test_openurl_in_unified_output(self, monkeypatch):
         """Test that OpenURL appears in unified search formatted output."""
         # This would require mocking the searcher, so just test the config
         monkeypatch.setenv("OPENURL_PRESET", "harvard")
@@ -206,7 +206,7 @@ class TestIntegrationWithUnifiedSearch:
 class TestNetworkConnectivity:
     """Test actual network connectivity to resolvers."""
 
-    def test_harvard_resolver_reachable(self):
+    async def test_harvard_resolver_reachable(self):
         """Test Harvard resolver is reachable."""
         import urllib.request
 

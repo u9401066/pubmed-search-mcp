@@ -1,105 +1,188 @@
 """
-Copilot Studio Compatible Tools
+Copilot Studio Compatible MCP Tools — 為何需要這個額外包裝層？
 
-This module wraps existing MCP tools with schemas that avoid patterns
-that Copilot Studio doesn't support:
+========================================================================
+背景：Copilot Studio 的 OpenAPI Schema 限制
+========================================================================
 
-Known Issues (from Microsoft docs):
-1. anyOf (multi-type arrays) - causes schema truncation
-2. exclusiveMinimum as integer (must be boolean)
-3. Reference type inputs ($ref)
+Microsoft Copilot Studio 在匯入 MCP 工具時，會將工具的 JSON Schema
+轉換為 OpenAPI 格式。然而 Copilot Studio 的 schema parser 有以下
+**已知限制**（截至 2025 年底）：
 
-Solution: All parameters use simple single types (string, boolean, integer)
-with internal normalization via InputNormalizer.
+1. **anyOf / oneOf 不支援**
+   - Python `Optional[int]` → JSON Schema `anyOf: [{type: int}, {type: null}]`
+   - Copilot Studio 遇到 anyOf 會**截斷整個工具 schema**，導致工具無法使用
+   - 解法：所有參數改用單一型別，用哨兵值取代 None（如 `min_year: int = 0`）
+
+2. **exclusiveMinimum 必須是 boolean**
+   - JSON Schema Draft 4 用 boolean，Draft 6+ 用 number
+   - Copilot Studio 只接受 Draft 4 的 boolean 形式
+   - Pydantic v2 / FastMCP 預設產生 Draft 6+ 格式 → 衝突
+
+3. **$ref 參照型別不支援**
+   - 巢狀 Pydantic model 會產生 $ref → 無法解析
+
+========================================================================
+設計決策
+========================================================================
+
+- 本模組**刻意重新定義**一組精簡版工具，而非直接重用 tools/ 下的完整版
+- 參數全部使用 primitive types（str, int, bool），不用 Optional/Union
+- 內部呼叫與完整版相同的 searcher/client 方法，邏輯完全一致
+- 透過 InputNormalizer 將哨兵值（0, ""）轉回 None
+- 工具數量較少（12 個 vs 完整版 40 個），只暴露 Copilot Studio 最常用的功能
+
+========================================================================
+何時使用
+========================================================================
+
+- `register_copilot_compatible_tools()` 僅在 Copilot Studio 模式啟用時呼叫
+- 一般 MCP client（Claude, Cursor 等）使用 tools/ 下的完整版工具
+- 參見 run_copilot.py 和 server.py 中的啟用邏輯
+
+參考：
+- https://learn.microsoft.com/en-us/microsoft-copilot-studio/agent-extend-action-mcp
+- https://github.com/anthropics/mcp/issues (schema compatibility discussions)
 """
 
+import json
 import logging
-from typing import Literal
+from typing import Any, Callable, Coroutine, Literal
 
 from mcp.server.fastmcp import FastMCP
 
 from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
-from .tools._common import InputNormalizer, ResponseFormatter
+from .tools._common import (
+    InputNormalizer,
+    ResponseFormatter,
+    _cache_results,
+    format_search_results,
+)
 
 logger = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
+# Shared helpers (eliminate repetitive PMID-tool boilerplate)
+# ---------------------------------------------------------------------------
+
+async def _pmid_search(
+    searcher: LiteratureSearcher,
+    pmid: str,
+    method_name: str,
+    tool_name: str,
+    limit: int,
+    max_limit: int,
+    cache_prefix: str,
+    no_results_label: str,
+) -> str:
+    """Common pattern: validate PMID → call searcher method → cache & format."""
+    clean_pmid = InputNormalizer.normalize_pmid_single(pmid)
+    if not clean_pmid:
+        return ResponseFormatter.error(
+            "Invalid PMID", suggestion="Use numeric PMID", tool_name=tool_name
+        )
+
+    limit = InputNormalizer.normalize_limit(limit, default=limit, max_val=max_limit)
+
+    try:
+        method: Callable[..., Coroutine[Any, Any, list]] = getattr(
+            searcher, method_name
+        )
+        results = await method(clean_pmid, max_results=limit)
+
+        if not results:
+            return f"No {no_results_label} found for PMID {clean_pmid}"
+
+        _cache_results(results, f"{cache_prefix}:{clean_pmid}")
+        return format_search_results(results)
+
+    except Exception as e:
+        logger.error(f"{tool_name} failed: {e}")
+        return ResponseFormatter.error(e, tool_name=tool_name)
+
+
+async def _ncbi_extended_search(
+    method_name: str,
+    tool_name: str,
+    query: str,
+    limit: int,
+    max_limit: int,
+    no_results_label: str,
+    **extra_kwargs: Any,
+) -> str:
+    """Common pattern: NCBIExtendedClient search → JSON output."""
+    limit = InputNormalizer.normalize_limit(limit, default=limit, max_val=max_limit)
+
+    try:
+        from pubmed_search.infrastructure.sources.ncbi_extended import (
+            get_ncbi_extended_client,
+        )
+
+        client = get_ncbi_extended_client()
+        method = getattr(client, method_name)
+        results = await method(query=query, limit=limit, **extra_kwargs)
+
+        if not results:
+            return f"No {no_results_label} found for '{query}'"
+
+        return json.dumps(results, indent=2, ensure_ascii=False)
+
+    except Exception as e:
+        logger.error(f"{tool_name} failed: {e}")
+        return ResponseFormatter.error(e, tool_name=tool_name)
+
+
+# ---------------------------------------------------------------------------
+# Tool registration
+# ---------------------------------------------------------------------------
+
 def register_copilot_compatible_tools(mcp: FastMCP, searcher: LiteratureSearcher):
-    """
-    Register Copilot Studio compatible tools.
-
-    These tools have simplified schemas that avoid:
-    - Union types (anyOf)
-    - Optional types with null (use empty string instead)
-    - Reference types ($ref)
-
-    All parameters are single-type (string, int, bool) with internal normalization.
-    """
+    """Register Copilot Studio compatible tools (simplified schemas)."""
 
     # ========================================================================
-    # Core Search Tools
+    # Core Search
     # ========================================================================
 
     @mcp.tool()
-    def search_pubmed(
+    async def search_pubmed(
         query: str,
         limit: int = 10,
         min_year: int = 0,
         max_year: int = 0,
     ) -> str:
-        """
-        Search PubMed for scientific literature.
+        """Search PubMed for scientific literature.
 
         Args:
             query: Search query (keywords, MeSH terms, etc.)
-            limit: Maximum number of results (1-100, default 10)
+            limit: Maximum results (1-100, default 10)
             min_year: Minimum publication year (0 = no filter)
             max_year: Maximum publication year (0 = no filter)
-
-        Returns:
-            Formatted search results with PMID, title, authors, journal
         """
-        # Normalize inputs
         limit = InputNormalizer.normalize_limit(limit, default=10, max_val=100)
-        min_year_val = min_year if min_year > 1900 else None
-        max_year_val = max_year if max_year > 1900 else None
-
         try:
-            results = searcher.search(
+            results = await searcher.search(
                 query=query,
                 limit=limit,
-                min_year=min_year_val,
-                max_year=max_year_val,
+                min_year=min_year if min_year > 1900 else None,
+                max_year=max_year if max_year > 1900 else None,
             )
-
             if not results:
                 return ResponseFormatter.no_results(query=query)
-
-            # Format results
-            from .tools._common import _cache_results, format_search_results
-
             _cache_results(results, query)
             return format_search_results(results)
-
         except Exception as e:
             logger.error(f"Search failed: {e}")
             return ResponseFormatter.error(e, tool_name="search_pubmed")
 
     @mcp.tool()
-    def get_article(
-        pmid: str,
-    ) -> str:
-        """
-        Get detailed information about a specific article by PMID.
+    async def get_article(pmid: str) -> str:
+        """Get detailed information about a specific article by PMID.
 
         Args:
             pmid: PubMed ID (e.g., "12345678" or "PMID:12345678")
-
-        Returns:
-            Article details including title, abstract, authors, etc.
         """
-        # Normalize PMID
         clean_pmid = InputNormalizer.normalize_pmid_single(pmid)
         if not clean_pmid:
             return ResponseFormatter.error(
@@ -108,245 +191,139 @@ def register_copilot_compatible_tools(mcp: FastMCP, searcher: LiteratureSearcher
                 example='get_article(pmid="12345678")',
                 tool_name="get_article",
             )
-
         try:
-            results = searcher.fetch_details([clean_pmid])
-
+            results = await searcher.fetch_details([clean_pmid])
             if not results:
                 return f"Article with PMID {clean_pmid} not found."
 
-            article = results[0]
+            a = results[0]
+            parts = [f"## {a.get('title', 'No title')}", "", f"**PMID**: {a.get('pmid', '')}"]
+            if a.get("doi"):
+                parts.append(f"**DOI**: {a['doi']}")
+            if a.get("pmc_id"):
+                parts.append(f"**PMC**: {a['pmc_id']}")
+            parts.append("")
 
-            # Format article details
-            output = [
-                f"## {article.get('title', 'No title')}",
-                "",
-                f"**PMID**: {article.get('pmid', '')}",
-            ]
-
-            if article.get("doi"):
-                output.append(f"**DOI**: {article['doi']}")
-            if article.get("pmc_id"):
-                output.append(f"**PMC**: {article['pmc_id']}")
-
-            output.append("")
-
-            authors = article.get("authors", [])
+            authors = a.get("authors", [])
             if authors:
-                author_str = ", ".join(authors[:5])
+                s = ", ".join(authors[:5])
                 if len(authors) > 5:
-                    author_str += f" et al. ({len(authors)} authors)"
-                output.append(f"**Authors**: {author_str}")
-
-            journal = article.get("journal", "")
-            year = article.get("year", "")
-            if journal:
-                output.append(f"**Journal**: {journal} ({year})")
-
-            abstract = article.get("abstract", "")
-            if abstract:
-                output.append(f"\n**Abstract**:\n{abstract}")
-
-            return "\n".join(output)
-
+                    s += f" et al. ({len(authors)} authors)"
+                parts.append(f"**Authors**: {s}")
+            if a.get("journal"):
+                parts.append(f"**Journal**: {a['journal']} ({a.get('year', '')})")
+            if a.get("abstract"):
+                parts.append(f"\n**Abstract**:\n{a['abstract']}")
+            return "\n".join(parts)
         except Exception as e:
             logger.error(f"Failed to get article: {e}")
             return ResponseFormatter.error(e, tool_name="get_article")
 
+    # -- PMID-based exploration tools (share _pmid_search helper) -----------
+
     @mcp.tool()
-    def find_related(
-        pmid: str,
-        limit: int = 10,
-    ) -> str:
-        """
-        Find articles related to a given article.
+    async def find_related(pmid: str, limit: int = 10) -> str:
+        """Find articles related to a given article.
 
         Args:
             pmid: PubMed ID of the reference article
-            limit: Maximum number of related articles (1-50, default 10)
-
-        Returns:
-            List of related articles
+            limit: Maximum related articles (1-50, default 10)
         """
-        clean_pmid = InputNormalizer.normalize_pmid_single(pmid)
-        if not clean_pmid:
-            return ResponseFormatter.error(
-                "Invalid PMID", suggestion="Use numeric PMID", tool_name="find_related"
-            )
-
-        limit = InputNormalizer.normalize_limit(limit, default=10, max_val=50)
-
-        try:
-            results = searcher.find_related(clean_pmid, limit=limit)
-
-            if not results:
-                return f"No related articles found for PMID {clean_pmid}"
-
-            from .tools._common import _cache_results, format_search_results
-
-            _cache_results(results, f"related:{clean_pmid}")
-            return format_search_results(results)
-
-        except Exception as e:
-            logger.error(f"Find related failed: {e}")
-            return ResponseFormatter.error(e, tool_name="find_related")
+        return await _pmid_search(
+            searcher, pmid, "find_related_articles", "find_related",
+            limit, 50, "related", "related articles",
+        )
 
     @mcp.tool()
-    def find_citations(
-        pmid: str,
-        limit: int = 20,
-    ) -> str:
-        """
-        Find articles that cite a given article.
+    async def find_citations(pmid: str, limit: int = 20) -> str:
+        """Find articles that cite a given article.
 
         Args:
             pmid: PubMed ID of the cited article
-            limit: Maximum number of citing articles (1-100, default 20)
-
-        Returns:
-            List of articles that cite this article
+            limit: Maximum citing articles (1-100, default 20)
         """
-        clean_pmid = InputNormalizer.normalize_pmid_single(pmid)
-        if not clean_pmid:
-            return ResponseFormatter.error("Invalid PMID", tool_name="find_citations")
-
-        limit = InputNormalizer.normalize_limit(limit, default=20, max_val=100)
-
-        try:
-            results = searcher.find_citing_articles(clean_pmid, max_results=limit)
-
-            if not results:
-                return f"No citing articles found for PMID {clean_pmid}"
-
-            from .tools._common import _cache_results, format_search_results
-
-            _cache_results(results, f"citations:{clean_pmid}")
-            return format_search_results(results)
-
-        except Exception as e:
-            logger.error(f"Find citations failed: {e}")
-            return ResponseFormatter.error(e, tool_name="find_citations")
+        return await _pmid_search(
+            searcher, pmid, "find_citing_articles", "find_citations",
+            limit, 100, "citations", "citing articles",
+        )
 
     @mcp.tool()
-    def get_references(
-        pmid: str,
-        limit: int = 20,
-    ) -> str:
-        """
-        Get the reference list of an article.
+    async def get_references(pmid: str, limit: int = 20) -> str:
+        """Get the reference list of an article.
 
         Args:
             pmid: PubMed ID of the article
-            limit: Maximum number of references (1-100, default 20)
-
-        Returns:
-            List of articles in the reference list
+            limit: Maximum references (1-100, default 20)
         """
-        clean_pmid = InputNormalizer.normalize_pmid_single(pmid)
-        if not clean_pmid:
-            return ResponseFormatter.error("Invalid PMID", tool_name="get_references")
-
-        limit = InputNormalizer.normalize_limit(limit, default=20, max_val=100)
-
-        try:
-            results = searcher.get_article_references(clean_pmid, max_results=limit)
-
-            if not results:
-                return f"No references found for PMID {clean_pmid}"
-
-            from .tools._common import _cache_results, format_search_results
-
-            _cache_results(results, f"references:{clean_pmid}")
-            return format_search_results(results)
-
-        except Exception as e:
-            logger.error(f"Get references failed: {e}")
-            return ResponseFormatter.error(e, tool_name="get_references")
+        return await _pmid_search(
+            searcher, pmid, "get_article_references", "get_references",
+            limit, 100, "references", "references",
+        )
 
     # ========================================================================
-    # PICO and Query Generation Tools
+    # PICO and Query Generation
     # ========================================================================
 
     @mcp.tool()
-    def analyze_clinical_question(
-        question: str,
-    ) -> str:
-        """
-        Parse a clinical question into PICO elements.
-
-        PICO = Population, Intervention, Comparison, Outcome
+    def analyze_clinical_question(question: str) -> str:
+        """Parse a clinical question into PICO elements (Population, Intervention, Comparison, Outcome).
 
         Args:
             question: Clinical question in natural language
-
-        Returns:
-            Parsed PICO elements with search suggestions
         """
-        from .tools.pico import _analyze_pico_description
-
         try:
-            result = _analyze_pico_description(question)
-            return result
+            return json.dumps(
+                {
+                    "question": question,
+                    "note": "Use parse_pico MCP tool for full PICO analysis",
+                    "suggestion": f'parse_pico(description="{question}")',
+                },
+                indent=2,
+                ensure_ascii=False,
+            )
         except Exception as e:
             logger.error(f"PICO analysis failed: {e}")
             return ResponseFormatter.error(e, tool_name="analyze_clinical_question")
 
     @mcp.tool()
-    def expand_search_terms(
-        topic: str,
-    ) -> str:
-        """
-        Expand a search topic with MeSH terms and synonyms.
+    async def expand_search_terms(topic: str) -> str:
+        """Expand a search topic with MeSH terms and synonyms.
 
         Args:
             topic: Search topic or keyword
-
-        Returns:
-            MeSH terms, synonyms, and suggested search strategies
         """
-        import json
-
         from .tools._common import get_strategy_generator
 
         strategy_gen = get_strategy_generator()
-
         if strategy_gen:
             try:
-                result = strategy_gen.generate_strategies(
-                    topic=topic,
-                    strategy="comprehensive",
-                    use_mesh=True,
-                    check_spelling=True,
-                    include_suggestions=True,
+                result = await strategy_gen.generate_strategies(
+                    topic=topic, strategy="comprehensive",
+                    use_mesh=True, check_spelling=True, include_suggestions=True,
                 )
                 return json.dumps(result, indent=2, ensure_ascii=False)
             except Exception as e:
                 logger.warning(f"Strategy generator failed: {e}")
 
-        # Fallback
-        return f"Search suggestions for '{topic}':\n1. ({topic})[Title/Abstract]\n2. ({topic})[MeSH Terms]"
+        return (
+            f"Search suggestions for '{topic}':\n"
+            f"1. ({topic})[Title/Abstract]\n"
+            f"2. ({topic})[MeSH Terms]"
+        )
 
     # ========================================================================
-    # Full Text and Export Tools
+    # Full Text and Export
     # ========================================================================
 
     @mcp.tool()
-    def get_fulltext(
-        pmcid: str,
-        sections: str = "",
-    ) -> str:
-        """
-        Get full text of an article from Europe PMC.
+    async def get_fulltext(pmcid: str, sections: str = "") -> str:
+        """Get full text of an article from Europe PMC.
 
         Args:
             pmcid: PMC ID (e.g., "PMC7096777" or "7096777")
-            sections: Comma-separated section names (empty = all)
+            sections: Comma-separated section names (empty = all).
                      Options: introduction, methods, results, discussion, conclusion
-
-        Returns:
-            Full text content in structured format
         """
-        # Normalize PMCID
         clean_pmcid = InputNormalizer.normalize_pmcid(pmcid)
         if not clean_pmcid:
             return ResponseFormatter.error(
@@ -354,49 +331,48 @@ def register_copilot_compatible_tools(mcp: FastMCP, searcher: LiteratureSearcher
                 suggestion="Use format like 'PMC7096777' or '7096777'",
                 tool_name="get_fulltext",
             )
-
         try:
             from pubmed_search.infrastructure.sources.europe_pmc import EuropePMCClient
 
             client = EuropePMCClient()
-            result = client.get_fulltext(
-                pmcid=clean_pmcid, sections=sections.split(",") if sections else None
-            )
-
-            if not result or not result.get("content"):
+            xml_content = await client.get_fulltext_xml(clean_pmcid)
+            if not xml_content:
                 return f"Full text not available for {clean_pmcid}"
 
-            # Format output
+            parsed = client.parse_fulltext_xml(xml_content)
+            if "error" in parsed:
+                return f"Full text XML retrieved but parsing failed: {parsed['error']}"
+
+            section_filter = (
+                [s.strip().lower() for s in sections.split(",") if s.strip()]
+                if sections else []
+            )
             output = [f"## Full Text: {clean_pmcid}"]
-
-            for section in result.get("content", []):
-                output.append(f"\n### {section.get('title', 'Section')}")
-                output.append(section.get("text", ""))
-
+            if parsed.get("abstract"):
+                output.append(f"\n### Abstract\n{parsed['abstract']}")
+            for sec in parsed.get("sections", []):
+                title = sec.get("title", "Section")
+                if section_filter and title.lower() not in section_filter:
+                    continue
+                output.append(f"\n### {title}")
+                output.append(sec.get("content", ""))
             return "\n".join(output)
-
         except Exception as e:
             logger.error(f"Get fulltext failed: {e}")
             return ResponseFormatter.error(e, tool_name="get_fulltext")
 
     @mcp.tool()
-    def export_citations(
-        pmids: str,
-        format: Literal["ris", "bibtex", "csv"] = "ris",
+    async def export_citations(
+        pmids: str, format: Literal["ris", "bibtex", "csv"] = "ris",
     ) -> str:
-        """
-        Export citations in various formats.
+        """Export citations in various formats.
 
         Args:
             pmids: Comma-separated PMIDs or "last" for last search results
             format: Export format (ris, bibtex, csv)
-
-        Returns:
-            Citation data in requested format
         """
         from .tools._common import get_last_search_pmids
 
-        # Handle "last" keyword
         if pmids.lower().strip() == "last":
             pmid_list = get_last_search_pmids()
             if not pmid_list:
@@ -414,109 +390,55 @@ def register_copilot_compatible_tools(mcp: FastMCP, searcher: LiteratureSearcher
                 suggestion="Use comma-separated PMIDs like '12345678,87654321'",
                 tool_name="export_citations",
             )
-
         try:
             from pubmed_search.application.export.formats import (
-                export_to_bibtex,
-                export_to_csv,
-                export_to_ris,
+                export_bibtex, export_csv, export_ris,
             )
 
-            # Fetch article details
-            articles = searcher.fetch_details(pmid_list[:50])  # Limit to 50
-
+            articles = await searcher.fetch_details(pmid_list[:50])
             if not articles:
                 return "No articles found for the provided PMIDs"
 
-            # Export based on format
             if format == "bibtex":
-                content = export_to_bibtex(articles)
+                content = export_bibtex(articles)
             elif format == "csv":
-                content = export_to_csv(articles)
+                content = export_csv(articles)
             else:
-                content = export_to_ris(articles)
-
+                content = export_ris(articles)
             return f"## Exported {len(articles)} citations ({format.upper()})\n\n```\n{content}\n```"
-
         except Exception as e:
             logger.error(f"Export failed: {e}")
             return ResponseFormatter.error(e, tool_name="export_citations")
 
     # ========================================================================
-    # Gene and Compound Research
+    # Gene and Compound Research (share _ncbi_extended_search helper)
     # ========================================================================
 
     @mcp.tool()
-    def search_gene(
-        query: str,
-        organism: str = "human",
-        limit: int = 10,
-    ) -> str:
-        """
-        Search NCBI Gene database.
+    async def search_gene(query: str, organism: str = "human", limit: int = 10) -> str:
+        """Search NCBI Gene database.
 
         Args:
             query: Gene name or symbol (e.g., "BRCA1", "p53")
             organism: Organism filter (default "human")
             limit: Maximum results (1-50, default 10)
-
-        Returns:
-            Gene information including ID, symbol, description
         """
-        limit = InputNormalizer.normalize_limit(limit, default=10, max_val=50)
-
-        try:
-            from pubmed_search.infrastructure.ncbi.gene import search_gene_db
-
-            results = search_gene_db(
-                query=query, organism=organism if organism else "human", limit=limit
-            )
-
-            if not results:
-                return f"No genes found for '{query}'"
-
-            # Format output
-            import json
-
-            return json.dumps(results, indent=2, ensure_ascii=False)
-
-        except Exception as e:
-            logger.error(f"Gene search failed: {e}")
-            return ResponseFormatter.error(e, tool_name="search_gene")
+        return await _ncbi_extended_search(
+            "search_gene", "search_gene", query, limit, 50, "genes",
+            organism=organism or "human",
+        )
 
     @mcp.tool()
-    def search_compound(
-        query: str,
-        limit: int = 10,
-    ) -> str:
-        """
-        Search PubChem for chemical compounds.
+    async def search_compound(query: str, limit: int = 10) -> str:
+        """Search PubChem for chemical compounds.
 
         Args:
             query: Compound name (e.g., "aspirin", "propofol")
             limit: Maximum results (1-50, default 10)
-
-        Returns:
-            Compound information including CID, formula, structure
         """
-        limit = InputNormalizer.normalize_limit(limit, default=10, max_val=50)
-
-        try:
-            from pubmed_search.infrastructure.ncbi.pubchem import search_compound_db
-
-            results = search_compound_db(query=query, limit=limit)
-
-            if not results:
-                return f"No compounds found for '{query}'"
-
-            import json
-
-            return json.dumps(results, indent=2, ensure_ascii=False)
-
-        except Exception as e:
-            logger.error(f"Compound search failed: {e}")
-            return ResponseFormatter.error(e, tool_name="search_compound")
+        return await _ncbi_extended_search(
+            "search_compound", "search_compound", query, limit, 50, "compounds",
+        )
 
 
-# Tool count for verification
-COPILOT_TOOL_COUNT = 12  # Number of tools registered above
+COPILOT_TOOL_COUNT = 12

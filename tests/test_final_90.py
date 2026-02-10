@@ -8,7 +8,7 @@ from unittest.mock import patch, MagicMock
 class TestSearchFilterResults:
     """Test filter_results in search.py."""
 
-    def test_filter_results_by_sample_size(self):
+    async def test_filter_results_by_sample_size(self):
         """Test filtering results by sample size."""
         from pubmed_search.infrastructure.ncbi.search import SearchMixin
 
@@ -31,7 +31,7 @@ class TestSearchFilterResults:
 class TestSearchAmbiguousTerms:
     """Test ambiguous term detection in search.py."""
 
-    def test_search_with_ambiguous_term(self):
+    async def test_search_with_ambiguous_term(self):
         """Test search handles ambiguous terms."""
         from pubmed_search.infrastructure.ncbi.search import SearchMixin
 
@@ -51,7 +51,7 @@ class TestSearchAmbiguousTerms:
             mock_esearch.return_value = MagicMock()
 
             # Search with short ambiguous term
-            results = searcher.search("GI")
+            results = await searcher.search("GI")
 
             assert isinstance(results, list)
 
@@ -59,7 +59,7 @@ class TestSearchAmbiguousTerms:
 class TestSearchResultParsing:
     """Test detailed parsing in search.py."""
 
-    def test_parse_article_with_abstract_sections(self):
+    async def test_parse_article_with_abstract_sections(self):
         """Test parsing article with structured abstract."""
         from pubmed_search.infrastructure.ncbi.search import SearchMixin
 
@@ -113,7 +113,7 @@ class TestSearchResultParsing:
 class TestStrategyBuildQueries:
     """Test strategy query building."""
 
-    def test_build_query_suggestions(self):
+    async def test_build_query_suggestions(self):
         """Test building query suggestions."""
         from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
 
@@ -143,7 +143,7 @@ class TestStrategyBuildQueries:
 class TestClientConvenienceMethods:
     """Test client convenience methods."""
 
-    def test_literature_searcher_search_method(self):
+    async def test_literature_searcher_search_method(self):
         """Test LiteratureSearcher.search method."""
         from pubmed_search import LiteratureSearcher
 
@@ -157,7 +157,7 @@ class TestClientConvenienceMethods:
                 return_value=[{"pmid": "12345", "title": "Test"}],
             ),
         ):
-            results = searcher.search("test query")
+            results = await searcher.search("test query")
 
             assert len(results) >= 0
 
@@ -165,7 +165,7 @@ class TestClientConvenienceMethods:
 class TestSessionStatePersistence:
     """Test session state persistence."""
 
-    def test_session_touch(self):
+    async def test_session_touch(self):
         """Test session touch updates timestamp."""
         from pubmed_search.application.session import ResearchSession
         import time
@@ -182,7 +182,7 @@ class TestSessionStatePersistence:
 class TestExportFormatsEdgeCases:
     """Test export format edge cases."""
 
-    def test_export_ris_no_abstract(self):
+    async def test_export_ris_no_abstract(self):
         """Test RIS export without abstract."""
         from pubmed_search.application.export.formats import export_ris
 
@@ -198,7 +198,7 @@ class TestExportFormatsEdgeCases:
         assert "TY  - JOUR" in result
         assert "AB  -" not in result
 
-    def test_export_csv_special_chars(self):
+    async def test_export_csv_special_chars(self):
         """Test CSV export with special characters."""
         from pubmed_search.application.export.formats import export_csv
 
@@ -218,7 +218,7 @@ class TestExportFormatsEdgeCases:
 class TestDiscoveryToolEdgeCases:
     """Test discovery tool edge cases."""
 
-    def test_discovery_tool_format(self):
+    async def test_discovery_tool_format(self):
         """Test discovery tool result formatting."""
         from pubmed_search.presentation.mcp_server.tools._common import (
             format_search_results,
@@ -252,7 +252,7 @@ class TestDiscoveryToolEdgeCases:
 class TestSessionToolsInternals:
     """Test session tools internal functions."""
 
-    def test_session_tools_module(self):
+    async def test_session_tools_module(self):
         """Test session_tools module contents."""
         from pubmed_search.presentation.mcp_server import session_tools
 
@@ -264,7 +264,7 @@ class TestSessionToolsInternals:
 class TestPicoElementExtraction:
     """Test PICO element extraction."""
 
-    def test_pico_parse_question(self):
+    async def test_pico_parse_question(self):
         """Test PICO parsing of clinical question."""
         from pubmed_search.presentation.mcp_server.tools.pico import register_pico_tools
 
@@ -275,7 +275,7 @@ class TestPicoElementExtraction:
 class TestLinksSummarizeAccess:
     """Test links summarize_access function."""
 
-    def test_summarize_access_mixed(self):
+    async def test_summarize_access_mixed(self):
         """Test access summary with mixed availability."""
         from pubmed_search.application.export.links import summarize_access
 
@@ -295,7 +295,7 @@ class TestLinksSummarizeAccess:
 class TestMergeResultsStatistics:
     """Test merge results statistics."""
 
-    def test_merge_duplicate_detection(self):
+    async def test_merge_duplicate_detection(self):
         """Test duplicate detection in merge."""
         # Test basic list deduplication
         results = [["111", "222"], ["222", "333"], ["111", "333", "444"]]
@@ -313,7 +313,7 @@ class TestMergeResultsStatistics:
 class TestBaseRateLimit:
     """Test rate limiting in base module."""
 
-    def test_rate_limit_interval(self):
+    async def test_rate_limit_interval(self):
         """Test rate limiting respects interval."""
         from pubmed_search.infrastructure.ncbi.base import _rate_limit
         import time

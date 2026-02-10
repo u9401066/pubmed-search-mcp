@@ -8,8 +8,8 @@ import json
 class TestClientPubMedClient:
     """Test client.py PubMedClient - lines 153-165, 185, 207-210, etc."""
 
-    def test_pubmed_client_search(self):
-        """Test PubMedClient.search() method."""
+    async def test_pubmed_client_search(self):
+        """Test await PubMedClient.search() method."""
         from pubmed_search import PubMedClient
 
         with patch(
@@ -36,7 +36,7 @@ class TestClientPubMedClient:
             assert len(results) == 1
             assert results[0].pmid == "123"
 
-    def test_pubmed_client_search_raw(self):
+    async def test_pubmed_client_search_raw(self):
         """Test PubMedClient.search_raw() method."""
         from pubmed_search import PubMedClient
 
@@ -53,7 +53,7 @@ class TestClientPubMedClient:
             assert isinstance(results, list)
             assert results[0]["pmid"] == "123"
 
-    def test_pubmed_client_fetch_by_pmid(self):
+    async def test_pubmed_client_fetch_by_pmid(self):
         """Test PubMedClient.fetch_by_pmid() method."""
         from pubmed_search import PubMedClient
 
@@ -81,7 +81,7 @@ class TestClientPubMedClient:
             assert result is not None
             assert result.pmid == "12345"
 
-    def test_pubmed_client_fetch_by_pmid_not_found(self):
+    async def test_pubmed_client_fetch_by_pmid_not_found(self):
         """Test PubMedClient.fetch_by_pmid() when not found."""
         from pubmed_search import PubMedClient
 
@@ -97,7 +97,7 @@ class TestClientPubMedClient:
 
             assert result is None
 
-    def test_pubmed_client_fetch_by_pmids(self):
+    async def test_pubmed_client_fetch_by_pmids(self):
         """Test PubMedClient.fetch_by_pmids() method."""
         from pubmed_search import PubMedClient
 
@@ -134,7 +134,7 @@ class TestClientPubMedClient:
 
             assert len(results) == 2
 
-    def test_pubmed_client_fetch_by_pmids_raw(self):
+    async def test_pubmed_client_fetch_by_pmids_raw(self):
         """Test PubMedClient.fetch_by_pmids_raw() method."""
         from pubmed_search import PubMedClient
 
@@ -150,8 +150,8 @@ class TestClientPubMedClient:
 
             assert isinstance(results, list)
 
-    def test_pubmed_client_find_related(self):
-        """Test PubMedClient.find_related() method."""
+    async def test_pubmed_client_find_related(self):
+        """Test await PubMedClient.find_related() method."""
         from pubmed_search import PubMedClient
 
         with patch(
@@ -177,7 +177,7 @@ class TestClientPubMedClient:
 
             assert len(results) == 1
 
-    def test_pubmed_client_find_citing(self):
+    async def test_pubmed_client_find_citing(self):
         """Test PubMedClient.find_citing() method."""
         from pubmed_search import PubMedClient
 
@@ -204,8 +204,8 @@ class TestClientPubMedClient:
 
             assert len(results) == 1
 
-    def test_pubmed_client_get_citation_metrics(self):
-        """Test PubMedClient searcher's get_citation_metrics() method."""
+    async def test_pubmed_client_get_citation_metrics(self):
+        """Test PubMedClient searcher's await get_citation_metrics() method."""
         from pubmed_search import PubMedClient
 
         with patch(
@@ -227,7 +227,7 @@ class TestClientPubMedClient:
 class TestSessionToolsResourceFunction:
     """Test session_tools.py lines 45-50 - the resource function body."""
 
-    def test_session_resources_get_context_with_session(self):
+    async def test_session_resources_get_context_with_session(self):
         """Test get_research_context resource with active session."""
         from pubmed_search.presentation.mcp_server.session_tools import (
             register_session_resources,
@@ -265,7 +265,7 @@ class TestSessionToolsResourceFunction:
             assert data["cached_articles"] == 1
             assert data["searches"] == 1
 
-    def test_session_resources_get_context_no_session(self):
+    async def test_session_resources_get_context_no_session(self):
         """Test get_research_context resource with no session."""
         from pubmed_search.presentation.mcp_server.session_tools import (
             register_session_resources,
@@ -302,7 +302,7 @@ class TestSessionToolsResourceFunction:
 class TestServerMainLines:
     """Test server.py lines 213-235, 239 - main entry point."""
 
-    def test_server_instructions_content(self):
+    async def test_server_instructions_content(self):
         """Test SERVER_INSTRUCTIONS has correct content."""
         from pubmed_search.presentation.mcp_server.server import SERVER_INSTRUCTIONS
 
@@ -310,7 +310,7 @@ class TestServerMainLines:
         assert "PubMed" in SERVER_INSTRUCTIONS
         assert "search" in SERVER_INSTRUCTIONS.lower()
 
-    def test_default_data_dir_value(self):
+    async def test_default_data_dir_value(self):
         """Test DEFAULT_DATA_DIR is properly set."""
         from pubmed_search.presentation.mcp_server.server import DEFAULT_DATA_DIR
 
@@ -322,7 +322,7 @@ class TestServerMainLines:
 class TestCommonToolsLines:
     """Test _common.py lines 56-60, 72-73, 87-88, 106-108."""
 
-    def test_format_search_results_no_results(self):
+    async def test_format_search_results_no_results(self):
         """Test format_search_results with empty list."""
         from pubmed_search.presentation.mcp_server.tools._common import (
             format_search_results,
@@ -331,7 +331,7 @@ class TestCommonToolsLines:
         result = format_search_results([])
         assert "No results" in result or result.strip() == ""
 
-    def test_format_search_results_with_articles(self):
+    async def test_format_search_results_with_articles(self):
         """Test format_search_results with articles."""
         from pubmed_search.presentation.mcp_server.tools._common import (
             format_search_results,
@@ -355,7 +355,7 @@ class TestCommonToolsLines:
 class TestFormatsMoreLines:
     """Test formats.py additional lines."""
 
-    def test_export_functions_exist(self):
+    async def test_export_functions_exist(self):
         """Test all export functions exist and are callable."""
         from pubmed_search.application.export import formats
 
@@ -376,7 +376,7 @@ class TestFormatsMoreLines:
 class TestSearchResultDataclass:
     """Test SearchResult dataclass methods."""
 
-    def test_search_result_from_dict(self):
+    async def test_search_result_from_dict(self):
         """Test SearchResult.from_dict() method."""
         from pubmed_search import SearchResult
 
@@ -406,7 +406,7 @@ class TestSearchResultDataclass:
         assert result.volume == "10"
         assert result.keywords == ["k1"]
 
-    def test_search_result_to_dict(self):
+    async def test_search_result_to_dict(self):
         """Test SearchResult.to_dict() method."""
         from pubmed_search import SearchResult
 
@@ -426,7 +426,7 @@ class TestSearchResultDataclass:
         assert data["pmid"] == "123"
         assert isinstance(data, dict)
 
-    def test_search_result_defaults(self):
+    async def test_search_result_defaults(self):
         """Test SearchResult default values."""
         from pubmed_search import SearchResult
 
@@ -451,7 +451,7 @@ class TestSearchResultDataclass:
 class TestSearchStrategyEnum:
     """Test SearchStrategy enum."""
 
-    def test_search_strategy_values(self):
+    async def test_search_strategy_values(self):
         """Test SearchStrategy enum values."""
         from pubmed_search import SearchStrategy
 

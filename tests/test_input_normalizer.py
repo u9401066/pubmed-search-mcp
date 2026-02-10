@@ -13,49 +13,49 @@ import json
 class TestInputNormalizerPMIDs:
     """Tests for PMID normalization."""
 
-    def test_single_pmid_string(self):
+    async def test_single_pmid_string(self):
         """Single PMID string should work."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
         result = InputNormalizer.normalize_pmids("12345678")
         assert result == ["12345678"]
 
-    def test_multiple_pmids_comma(self):
+    async def test_multiple_pmids_comma(self):
         """Comma-separated PMIDs should work."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
         result = InputNormalizer.normalize_pmids("12345678,87654321")
         assert result == ["12345678", "87654321"]
 
-    def test_multiple_pmids_comma_spaces(self):
+    async def test_multiple_pmids_comma_spaces(self):
         """Comma with spaces should work."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
         result = InputNormalizer.normalize_pmids("12345678, 87654321, 11111111")
         assert result == ["12345678", "87654321", "11111111"]
 
-    def test_multiple_pmids_space_separated(self):
+    async def test_multiple_pmids_space_separated(self):
         """Space-separated PMIDs should work."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
         result = InputNormalizer.normalize_pmids("12345678 87654321")
         assert result == ["12345678", "87654321"]
 
-    def test_pmid_with_prefix(self):
+    async def test_pmid_with_prefix(self):
         """PMID: prefix should be stripped."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
         result = InputNormalizer.normalize_pmids("PMID:12345678")
         assert result == ["12345678"]
 
-    def test_pmid_with_prefix_and_space(self):
+    async def test_pmid_with_prefix_and_space(self):
         """PMID: prefix with space should be stripped."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
         result = InputNormalizer.normalize_pmids("PMID: 12345678")
         assert result == ["12345678"]
 
-    def test_mixed_format_pmids(self):
+    async def test_mixed_format_pmids(self):
         """Mixed formats should all work."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
@@ -64,42 +64,42 @@ class TestInputNormalizerPMIDs:
         )
         assert result == ["12345678", "87654321", "11111111"]
 
-    def test_list_input(self):
+    async def test_list_input(self):
         """List input should work."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
         result = InputNormalizer.normalize_pmids(["12345678", "87654321"])
         assert result == ["12345678", "87654321"]
 
-    def test_int_input(self):
+    async def test_int_input(self):
         """Integer input should work."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
         result = InputNormalizer.normalize_pmids(12345678)
         assert result == ["12345678"]
 
-    def test_int_list_input(self):
+    async def test_int_list_input(self):
         """Integer list should work."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
         result = InputNormalizer.normalize_pmids([12345678, 87654321])
         assert result == ["12345678", "87654321"]
 
-    def test_last_keyword(self):
+    async def test_last_keyword(self):
         """'last' keyword should be preserved."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
         result = InputNormalizer.normalize_pmids("last")
         assert result == ["last"]
 
-    def test_none_input(self):
+    async def test_none_input(self):
         """None should return empty list."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
         result = InputNormalizer.normalize_pmids(None)
         assert result == []
 
-    def test_empty_string(self):
+    async def test_empty_string(self):
         """Empty string should return empty list."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
@@ -110,28 +110,28 @@ class TestInputNormalizerPMIDs:
 class TestInputNormalizerPMCID:
     """Tests for PMC ID normalization."""
 
-    def test_pmc_with_prefix(self):
+    async def test_pmc_with_prefix(self):
         """PMCxxxxxxx format should work."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
         result = InputNormalizer.normalize_pmcid("PMC7096777")
         assert result == "PMC7096777"
 
-    def test_pmc_without_prefix(self):
+    async def test_pmc_without_prefix(self):
         """Digits only should add PMC prefix."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
         result = InputNormalizer.normalize_pmcid("7096777")
         assert result == "PMC7096777"
 
-    def test_pmc_lowercase(self):
+    async def test_pmc_lowercase(self):
         """Lowercase pmc should work."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
         result = InputNormalizer.normalize_pmcid("pmc7096777")
         assert result == "PMC7096777"
 
-    def test_pmc_with_pmcid_prefix(self):
+    async def test_pmc_with_pmcid_prefix(self):
         """PMCID: prefix should be handled."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
@@ -142,42 +142,42 @@ class TestInputNormalizerPMCID:
 class TestInputNormalizerYear:
     """Tests for year normalization."""
 
-    def test_year_int(self):
+    async def test_year_int(self):
         """Integer year should work."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
         result = InputNormalizer.normalize_year(2024)
         assert result == 2024
 
-    def test_year_string(self):
+    async def test_year_string(self):
         """String year should work."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
         result = InputNormalizer.normalize_year("2024")
         assert result == 2024
 
-    def test_year_with_text(self):
+    async def test_year_with_text(self):
         """Year with text should extract year."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
         result = InputNormalizer.normalize_year("2024年")
         assert result == 2024
 
-    def test_year_since(self):
+    async def test_year_since(self):
         """'since 2020' should extract 2020."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
         result = InputNormalizer.normalize_year("since 2020")
         assert result == 2020
 
-    def test_year_invalid(self):
+    async def test_year_invalid(self):
         """Invalid year should return None."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
         result = InputNormalizer.normalize_year("invalid")
         assert result is None
 
-    def test_year_out_of_range(self):
+    async def test_year_out_of_range(self):
         """Year out of range should return None."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
@@ -188,35 +188,35 @@ class TestInputNormalizerYear:
 class TestInputNormalizerLimit:
     """Tests for limit normalization."""
 
-    def test_limit_int(self):
+    async def test_limit_int(self):
         """Integer limit should work."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
         result = InputNormalizer.normalize_limit(20)
         assert result == 20
 
-    def test_limit_string(self):
+    async def test_limit_string(self):
         """String limit should work."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
         result = InputNormalizer.normalize_limit("20")
         assert result == 20
 
-    def test_limit_none_uses_default(self):
+    async def test_limit_none_uses_default(self):
         """None should use default."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
         result = InputNormalizer.normalize_limit(None, default=15)
         assert result == 15
 
-    def test_limit_clamped_max(self):
+    async def test_limit_clamped_max(self):
         """Limit above max should be clamped."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
         result = InputNormalizer.normalize_limit(200, max_val=100)
         assert result == 100
 
-    def test_limit_clamped_min(self):
+    async def test_limit_clamped_min(self):
         """Limit below min should be clamped."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
@@ -227,19 +227,19 @@ class TestInputNormalizerLimit:
 class TestInputNormalizerBool:
     """Tests for boolean normalization."""
 
-    def test_bool_true(self):
+    async def test_bool_true(self):
         """True should work."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
         assert InputNormalizer.normalize_bool(True) is True
 
-    def test_bool_false(self):
+    async def test_bool_false(self):
         """False should work."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
         assert InputNormalizer.normalize_bool(False) is False
 
-    def test_bool_string_true(self):
+    async def test_bool_string_true(self):
         """'true' string should work."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
@@ -247,28 +247,28 @@ class TestInputNormalizerBool:
         assert InputNormalizer.normalize_bool("True") is True
         assert InputNormalizer.normalize_bool("TRUE") is True
 
-    def test_bool_string_false(self):
+    async def test_bool_string_false(self):
         """'false' string should work."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
         assert InputNormalizer.normalize_bool("false") is False
         assert InputNormalizer.normalize_bool("False") is False
 
-    def test_bool_yes_no(self):
+    async def test_bool_yes_no(self):
         """yes/no should work."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
         assert InputNormalizer.normalize_bool("yes") is True
         assert InputNormalizer.normalize_bool("no") is False
 
-    def test_bool_int(self):
+    async def test_bool_int(self):
         """1/0 should work."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
         assert InputNormalizer.normalize_bool(1) is True
         assert InputNormalizer.normalize_bool(0) is False
 
-    def test_bool_none_default(self):
+    async def test_bool_none_default(self):
         """None should use default."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
@@ -279,21 +279,21 @@ class TestInputNormalizerBool:
 class TestInputNormalizerQuery:
     """Tests for query normalization."""
 
-    def test_query_strip(self):
+    async def test_query_strip(self):
         """Query should be stripped."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
         result = InputNormalizer.normalize_query("  diabetes  ")
         assert result == "diabetes"
 
-    def test_query_unicode_quotes(self):
+    async def test_query_unicode_quotes(self):
         """Unicode quotes should be normalized."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
         result = InputNormalizer.normalize_query('"diabetes treatment"')
         assert result == '"diabetes treatment"'
 
-    def test_query_empty(self):
+    async def test_query_empty(self):
         """Empty query should return empty string."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
@@ -304,42 +304,42 @@ class TestInputNormalizerQuery:
 class TestInputNormalizerDOI:
     """Tests for DOI normalization (v0.1.21)."""
 
-    def test_doi_simple(self):
+    async def test_doi_simple(self):
         """Simple DOI should work."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
         result = InputNormalizer.normalize_doi("10.1234/example.123")
         assert result == "10.1234/example.123"
 
-    def test_doi_with_prefix(self):
+    async def test_doi_with_prefix(self):
         """DOI with doi: prefix should work."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
         result = InputNormalizer.normalize_doi("doi:10.1234/example.123")
         assert result == "10.1234/example.123"
 
-    def test_doi_with_prefix_space(self):
+    async def test_doi_with_prefix_space(self):
         """DOI with 'DOI: ' prefix should work."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
         result = InputNormalizer.normalize_doi("DOI: 10.1234/example.123")
         assert result == "10.1234/example.123"
 
-    def test_doi_url_https(self):
+    async def test_doi_url_https(self):
         """DOI URL with https://doi.org should work."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
         result = InputNormalizer.normalize_doi("https://doi.org/10.1234/example.123")
         assert result == "10.1234/example.123"
 
-    def test_doi_url_dx(self):
+    async def test_doi_url_dx(self):
         """DOI URL with dx.doi.org should work."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
         result = InputNormalizer.normalize_doi("http://dx.doi.org/10.1234/example.123")
         assert result == "10.1234/example.123"
 
-    def test_doi_invalid(self):
+    async def test_doi_invalid(self):
         """Invalid DOI should return None."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
@@ -351,7 +351,7 @@ class TestInputNormalizerDOI:
 class TestInputNormalizerIdentifier:
     """Tests for auto-detect identifier normalization (v0.1.21)."""
 
-    def test_identifier_pmid_digits(self):
+    async def test_identifier_pmid_digits(self):
         """Pure digits should be detected as PMID."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
@@ -359,7 +359,7 @@ class TestInputNormalizerIdentifier:
         assert result["type"] == "pmid"
         assert result["value"] == "12345678"
 
-    def test_identifier_pmid_prefix(self):
+    async def test_identifier_pmid_prefix(self):
         """PMID: prefix should be detected as PMID."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
@@ -367,7 +367,7 @@ class TestInputNormalizerIdentifier:
         assert result["type"] == "pmid"
         assert result["value"] == "12345678"
 
-    def test_identifier_pmid_int(self):
+    async def test_identifier_pmid_int(self):
         """Integer should be detected as PMID."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
@@ -375,7 +375,7 @@ class TestInputNormalizerIdentifier:
         assert result["type"] == "pmid"
         assert result["value"] == "12345678"
 
-    def test_identifier_pmcid(self):
+    async def test_identifier_pmcid(self):
         """PMC ID should be detected."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
@@ -383,7 +383,7 @@ class TestInputNormalizerIdentifier:
         assert result["type"] == "pmcid"
         assert result["value"] == "PMC7096777"
 
-    def test_identifier_pmcid_lowercase(self):
+    async def test_identifier_pmcid_lowercase(self):
         """Lowercase PMC ID should be detected."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
@@ -391,7 +391,7 @@ class TestInputNormalizerIdentifier:
         assert result["type"] == "pmcid"
         assert result["value"] == "PMC7096777"
 
-    def test_identifier_doi(self):
+    async def test_identifier_doi(self):
         """DOI should be detected."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
@@ -399,7 +399,7 @@ class TestInputNormalizerIdentifier:
         assert result["type"] == "doi"
         assert result["value"] == "10.1038/nature12373"
 
-    def test_identifier_doi_url(self):
+    async def test_identifier_doi_url(self):
         """DOI URL should be detected."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
@@ -407,7 +407,7 @@ class TestInputNormalizerIdentifier:
         assert result["type"] == "doi"
         assert result["value"] == "10.1038/s41586"
 
-    def test_identifier_none(self):
+    async def test_identifier_none(self):
         """None should return type=None."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
@@ -415,7 +415,7 @@ class TestInputNormalizerIdentifier:
         assert result["type"] is None
         assert result["value"] is None
 
-    def test_identifier_preserves_original(self):
+    async def test_identifier_preserves_original(self):
         """Original value should be preserved."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
@@ -426,7 +426,7 @@ class TestInputNormalizerIdentifier:
 class TestResponseFormatter:
     """Tests for response formatting."""
 
-    def test_success_markdown(self):
+    async def test_success_markdown(self):
         """Success response in markdown."""
         from pubmed_search.presentation.mcp_server.tools._common import (
             ResponseFormatter,
@@ -437,7 +437,7 @@ class TestResponseFormatter:
         assert "Success!" in result
         assert "Test data" in result
 
-    def test_success_json(self):
+    async def test_success_json(self):
         """Success response in JSON."""
         from pubmed_search.presentation.mcp_server.tools._common import (
             ResponseFormatter,
@@ -448,7 +448,7 @@ class TestResponseFormatter:
         assert parsed["success"] is True
         assert parsed["data"]["key"] == "value"
 
-    def test_error_markdown(self):
+    async def test_error_markdown(self):
         """Error response in markdown."""
         from pubmed_search.presentation.mcp_server.tools._common import (
             ResponseFormatter,
@@ -464,7 +464,7 @@ class TestResponseFormatter:
         assert "API failed" in result
         assert "Check your query" in result
 
-    def test_error_json(self):
+    async def test_error_json(self):
         """Error response in JSON."""
         from pubmed_search.presentation.mcp_server.tools._common import (
             ResponseFormatter,
@@ -478,7 +478,7 @@ class TestResponseFormatter:
         assert parsed["error"] == "API failed"
         assert parsed["suggestion"] == "Check your query"
 
-    def test_no_results(self):
+    async def test_no_results(self):
         """No results response."""
         from pubmed_search.presentation.mcp_server.tools._common import (
             ResponseFormatter,
@@ -495,7 +495,7 @@ class TestResponseFormatter:
 class TestKeyAliases:
     """Tests for key alias mapping."""
 
-    def test_year_aliases(self):
+    async def test_year_aliases(self):
         """Year aliases should be mapped."""
         from pubmed_search.presentation.mcp_server.tools._common import (
             apply_key_aliases,
@@ -504,7 +504,7 @@ class TestKeyAliases:
         result = apply_key_aliases({"year_from": 2020, "year_to": 2024})
         assert result == {"min_year": 2020, "max_year": 2024}
 
-    def test_limit_aliases(self):
+    async def test_limit_aliases(self):
         """Limit aliases should be mapped."""
         from pubmed_search.presentation.mcp_server.tools._common import (
             apply_key_aliases,
@@ -513,7 +513,7 @@ class TestKeyAliases:
         result = apply_key_aliases({"max_results": 20})
         assert result == {"limit": 20}
 
-    def test_standard_key_preserved(self):
+    async def test_standard_key_preserved(self):
         """Standard key should not be overwritten by alias."""
         from pubmed_search.presentation.mcp_server.tools._common import (
             apply_key_aliases,
@@ -523,7 +523,7 @@ class TestKeyAliases:
         result = apply_key_aliases({"min_year": 2020, "year_from": 2019})
         assert result["min_year"] == 2020
 
-    def test_unknown_keys_preserved(self):
+    async def test_unknown_keys_preserved(self):
         """Unknown keys should pass through."""
         from pubmed_search.presentation.mcp_server.tools._common import (
             apply_key_aliases,

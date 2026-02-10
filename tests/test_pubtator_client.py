@@ -30,13 +30,13 @@ def client():
 
 
 class TestPubTatorClientInit:
-    def test_default_values(self):
+    async def test_default_values(self):
         c = PubTatorClient()
         assert c._timeout == PubTatorClient.DEFAULT_TIMEOUT
         assert c._rate_limit == PubTatorClient.DEFAULT_RATE_LIMIT
         assert c._client is None
 
-    def test_custom_values(self):
+    async def test_custom_values(self):
         c = PubTatorClient(timeout=30.0, rate_limit=5.0)
         assert c._timeout == 30.0
         assert c._rate_limit == 5.0
@@ -363,7 +363,7 @@ class TestGetAnnotations:
 
 
 class TestSingleton:
-    def test_get_pubtator_client(self):
+    async def test_get_pubtator_client(self):
         import pubmed_search.infrastructure.pubtator.client as mod
 
         mod._client_instance = None

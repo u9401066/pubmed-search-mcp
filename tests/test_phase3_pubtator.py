@@ -49,7 +49,7 @@ class TestSemanticEnhancer:
         """Create enhancer with mocked client."""
         return SemanticEnhancer(use_cache=False, timeout=5.0)
 
-    def test_extract_candidates_basic(self, enhancer):
+    async def test_extract_candidates_basic(self, enhancer):
         """Test candidate term extraction."""
         candidates = enhancer._extract_candidates("propofol sedation ICU patients")
         
@@ -58,7 +58,7 @@ class TestSemanticEnhancer:
         assert "sedation" in candidates
         assert "patients" not in candidates  # Stop word
         
-    def test_extract_candidates_quoted(self, enhancer):
+    async def test_extract_candidates_quoted(self, enhancer):
         """Test extraction of quoted phrases."""
         candidates = enhancer._extract_candidates('"type 2 diabetes" treatment')
         
@@ -66,7 +66,7 @@ class TestSemanticEnhancer:
         assert candidates[0] == "type 2 diabetes"
         assert "treatment" not in candidates  # Stop word
 
-    def test_extract_candidates_filters_stop_words(self, enhancer):
+    async def test_extract_candidates_filters_stop_words(self, enhancer):
         """Test stop word filtering."""
         candidates = enhancer._extract_candidates("the effect of treatment on patients")
         
@@ -75,7 +75,7 @@ class TestSemanticEnhancer:
         for word in stop_words:
             assert word.lower() not in [c.lower() for c in candidates]
 
-    def test_basic_enhancement_fallback(self, enhancer):
+    async def test_basic_enhancement_fallback(self, enhancer):
         """Test basic enhancement when PubTator3 unavailable."""
         enhanced = enhancer._basic_enhancement("propofol mechanism action")
         
@@ -85,7 +85,7 @@ class TestSemanticEnhancer:
         assert len(enhanced.strategies) >= 2  # At least original + fulltext
         assert enhanced.metadata.get("fallback") is True
 
-    def test_generate_strategies(self, enhancer):
+    async def test_generate_strategies(self, enhancer):
         """Test strategy generation."""
         entities = [
             PubTatorEntity(
@@ -111,7 +111,7 @@ class TestSemanticEnhancer:
         assert "original" in strategy_names
         assert "mesh_expanded" in strategy_names
 
-    def test_build_mesh_query(self, enhancer):
+    async def test_build_mesh_query(self, enhancer):
         """Test MeSH query building."""
         entities = [
             PubTatorEntity(
@@ -201,21 +201,21 @@ class TestEntityCache:
         """Create fresh cache."""
         return EntityCache(max_size=100, ttl=3600)
 
-    def test_basic_set_get(self, cache):
+    async def test_basic_set_get(self, cache):
         """Test basic cache operations."""
         cache.set("key1", "value1")
         
         assert cache.get("key1") == "value1"
         assert cache.get("nonexistent") is None
 
-    def test_case_insensitive_keys(self, cache):
+    async def test_case_insensitive_keys(self, cache):
         """Test that keys are case-insensitive."""
         cache.set("Propofol", "value1")
         
         assert cache.get("propofol") == "value1"
         assert cache.get("PROPOFOL") == "value1"
 
-    def test_lru_eviction(self):
+    async def test_lru_eviction(self):
         """Test LRU eviction when max size reached."""
         cache = EntityCache(max_size=3, ttl=3600)
         
@@ -234,7 +234,7 @@ class TestEntityCache:
         assert cache.get("c") == 3
         assert cache.get("d") == 4
 
-    def test_ttl_expiration(self):
+    async def test_ttl_expiration(self):
         """Test TTL-based expiration."""
         import time
         
@@ -247,7 +247,7 @@ class TestEntityCache:
         
         assert cache.get("key") is None  # Expired
 
-    def test_stats(self, cache):
+    async def test_stats(self, cache):
         """Test cache statistics."""
         cache.set("key1", "value1")
         
@@ -279,7 +279,7 @@ class TestEntityCache:
         assert result2 == "fetched_value"
         assert fetch_count == 1  # No additional fetch
 
-    def test_cleanup_expired(self):
+    async def test_cleanup_expired(self):
         """Test cleanup of expired entries."""
         import time
         
@@ -321,7 +321,7 @@ class TestResultAggregatorEntityMatch:
         article._quality_score = None
         return article
 
-    def test_entity_match_scoring_with_entities(self, mock_article):
+    async def test_entity_match_scoring_with_entities(self, mock_article):
         """Test entity_match scoring when entities are matched."""
         config = RankingConfig(
             matched_entities=["Propofol", "ICU", "Sedation"]
@@ -333,7 +333,7 @@ class TestResultAggregatorEntityMatch:
         # Should have high score since article mentions all entities
         assert score > 0.7
 
-    def test_entity_match_scoring_no_entities(self, mock_article):
+    async def test_entity_match_scoring_no_entities(self, mock_article):
         """Test entity_match scoring when no entities configured."""
         config = RankingConfig(matched_entities=[])
         
@@ -343,7 +343,7 @@ class TestResultAggregatorEntityMatch:
         # Should return neutral score
         assert score == 0.5
 
-    def test_entity_match_partial_match(self, mock_article):
+    async def test_entity_match_partial_match(self, mock_article):
         """Test entity_match with partial entity matches."""
         config = RankingConfig(
             matched_entities=["Propofol", "Ketamine", "Dexmedetomidine"]
@@ -355,11 +355,11 @@ class TestResultAggregatorEntityMatch:
         # Should have moderate score (mentions 2 of 3)
         assert 0.4 < score < 0.8
 
-    def test_ranking_dimension_includes_entity_match(self):
+    async def test_ranking_dimension_includes_entity_match(self):
         """Test that entity_match is in ranking dimensions."""
         assert RankingDimension.ENTITY_MATCH.value == "entity_match"
 
-    def test_ranking_config_default_weights(self):
+    async def test_ranking_config_default_weights(self):
         """Test default ranking config includes entity_match."""
         config = RankingConfig.default()
         weights = config.normalized_weights()
@@ -367,7 +367,7 @@ class TestResultAggregatorEntityMatch:
         assert "entity_match" in weights
         assert weights["entity_match"] > 0
 
-    def test_ranking_config_entity_focused(self):
+    async def test_ranking_config_entity_focused(self):
         """Test entity-focused ranking config."""
         config = RankingConfig.entity_focused()
         weights = config.normalized_weights()
@@ -384,7 +384,7 @@ class TestResultAggregatorEntityMatch:
 class TestPubTatorModels:
     """Tests for PubTator3 data models."""
 
-    def test_entity_match_mesh_id(self):
+    async def test_entity_match_mesh_id(self):
         """Test MeSH ID extraction from EntityMatch."""
         match = EntityMatch(
             entity_id="@CHEMICAL_Propofol",
@@ -396,7 +396,7 @@ class TestPubTatorModels:
         
         assert match.mesh_id == "D015742"
 
-    def test_entity_match_no_mesh(self):
+    async def test_entity_match_no_mesh(self):
         """Test when no MeSH ID available."""
         match = EntityMatch(
             entity_id="@GENE_BRCA1",
@@ -408,7 +408,7 @@ class TestPubTatorModels:
         
         assert match.mesh_id is None
 
-    def test_entity_match_to_pubmed_query(self):
+    async def test_entity_match_to_pubmed_query(self):
         """Test PubMed query generation from entity."""
         match = EntityMatch(
             entity_id="@CHEMICAL_Propofol",
@@ -421,7 +421,7 @@ class TestPubTatorModels:
         query = match.to_pubmed_query()
         assert query == '"Propofol"[MeSH Terms]'
 
-    def test_pubtator_entity_to_search_term(self):
+    async def test_pubtator_entity_to_search_term(self):
         """Test search term generation from PubTatorEntity."""
         entity = PubTatorEntity(
             original_text="propofol",
@@ -434,7 +434,7 @@ class TestPubTatorModels:
         term = entity.to_search_term()
         assert term == '"Propofol"[MeSH Terms]'
 
-    def test_pubtator_entity_gene_search_term(self):
+    async def test_pubtator_entity_gene_search_term(self):
         """Test gene search term generation."""
         entity = PubTatorEntity(
             original_text="BRCA1",
@@ -448,7 +448,7 @@ class TestPubTatorModels:
         assert "BRCA1" in term
         assert "[Gene Name]" in term
 
-    def test_relation_match(self):
+    async def test_relation_match(self):
         """Test RelationMatch model."""
         relation = RelationMatch(
             source_entity="@CHEMICAL_Propofol",
@@ -479,7 +479,7 @@ class TestPhase3Integration:
         yield
         reset_entity_cache()
 
-    def test_semantic_enhancer_to_ranking_config(self):
+    async def test_semantic_enhancer_to_ranking_config(self):
         """Test that SemanticEnhancer entities flow to RankingConfig."""
         # Simulate enhancement result
         enhanced = EnhancedQuery(
@@ -503,7 +503,7 @@ class TestPhase3Integration:
         
         assert config.matched_entities == ["Propofol"]
 
-    def test_enhanced_query_to_search_strategies(self):
+    async def test_enhanced_query_to_search_strategies(self):
         """Test conversion of EnhancedQuery to search strategies."""
         enhanced = EnhancedQuery(
             original_query="propofol sedation",

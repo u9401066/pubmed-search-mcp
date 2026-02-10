@@ -1,7 +1,7 @@
 """Tests for export MCP tools — prepare_export, helpers."""
 
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -18,37 +18,37 @@ from pubmed_search.presentation.mcp_server.tools.export import (
 # ============================================================
 
 class TestGetFileExtension:
-    def test_ris(self):
+    async def test_ris(self):
         assert _get_file_extension("ris") == "ris"
 
-    def test_bibtex(self):
+    async def test_bibtex(self):
         assert _get_file_extension("bibtex") == "bib"
 
-    def test_csv(self):
+    async def test_csv(self):
         assert _get_file_extension("csv") == "csv"
 
-    def test_medline(self):
+    async def test_medline(self):
         assert _get_file_extension("medline") == "txt"
 
-    def test_json(self):
+    async def test_json(self):
         assert _get_file_extension("json") == "json"
 
-    def test_csl(self):
+    async def test_csl(self):
         assert _get_file_extension("csl") == "json"
 
-    def test_unknown(self):
+    async def test_unknown(self):
         assert _get_file_extension("xyz") == "txt"
 
 
 class TestFormatExportResponse:
-    def test_small_export(self):
+    async def test_small_export(self):
         result = _format_export_response("TY  - JOUR\n", "ris", 5, source="official")
         parsed = json.loads(result)
         assert parsed["status"] == "success"
         assert parsed["article_count"] == 5
         assert "export_text" in parsed
 
-    def test_large_export_saves_file(self):
+    async def test_large_export_saves_file(self):
         result = _format_export_response("content", "ris", 25, source="local")
         parsed = json.loads(result)
         assert parsed["status"] == "success"
@@ -56,11 +56,11 @@ class TestFormatExportResponse:
 
 
 class TestResolvePmids:
-    def test_comma_separated(self):
+    async def test_comma_separated(self):
         result = _resolve_pmids("111,222,333")
         assert result == ["111", "222", "333"]
 
-    def test_last_no_session(self):
+    async def test_last_no_session(self):
         with patch(
             "pubmed_search.presentation.mcp_server.tools.export.get_session_manager",
             return_value=None,
@@ -68,7 +68,7 @@ class TestResolvePmids:
             result = _resolve_pmids("last")
         assert result == []
 
-    def test_last_with_session(self):
+    async def test_last_with_session(self):
         mock_sm = MagicMock()
         session = MagicMock()
         session.search_history = [{"pmids": ["111", "222"]}]
@@ -97,7 +97,7 @@ class TestPrepareExport:
     @pytest.mark.asyncio
     async def test_no_pmids(self):
         mcp = MagicMock()
-        searcher = MagicMock()
+        searcher = AsyncMock()
         tools = _capture_tools(mcp, searcher)
 
         result = await tools["prepare_export"](pmids="", format="ris")
@@ -106,7 +106,7 @@ class TestPrepareExport:
     @pytest.mark.asyncio
     async def test_official_ris(self):
         mcp = MagicMock()
-        searcher = MagicMock()
+        searcher = AsyncMock()
         tools = _capture_tools(mcp, searcher)
 
         mock_result = MagicMock()
@@ -128,7 +128,7 @@ class TestPrepareExport:
     @pytest.mark.asyncio
     async def test_local_bibtex(self):
         mcp = MagicMock()
-        searcher = MagicMock()
+        searcher = AsyncMock()
         searcher.fetch_details.return_value = [
             {"pmid": "123", "title": "T", "authors": ["A"]}
         ]
@@ -148,7 +148,7 @@ class TestPrepareExport:
     @pytest.mark.asyncio
     async def test_unsupported_format(self):
         mcp = MagicMock()
-        searcher = MagicMock()
+        searcher = AsyncMock()
         tools = _capture_tools(mcp, searcher)
 
         result = await tools["prepare_export"](
@@ -159,7 +159,7 @@ class TestPrepareExport:
     @pytest.mark.asyncio
     async def test_official_api_failure_falls_back(self):
         mcp = MagicMock()
-        searcher = MagicMock()
+        searcher = AsyncMock()
         searcher.fetch_details.return_value = [{"pmid": "123", "title": "T"}]
         tools = _capture_tools(mcp, searcher)
 
@@ -184,7 +184,7 @@ class TestPrepareExport:
     @pytest.mark.asyncio
     async def test_exception_handling(self):
         mcp = MagicMock()
-        searcher = MagicMock()
+        searcher = AsyncMock()
         tools = _capture_tools(mcp, searcher)
 
         with patch(

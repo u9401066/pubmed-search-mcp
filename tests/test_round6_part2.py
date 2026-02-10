@@ -404,7 +404,7 @@ class TestGetCrossRefLinks:
 class TestOpenURLBuilderExtended:
     """Extended tests for OpenURLBuilder."""
 
-    def test_from_preset_sfx_with_base(self):
+    async def test_from_preset_sfx_with_base(self):
         """Test from_preset with SFX requiring base URL."""
         from pubmed_search.infrastructure.sources.openurl import OpenURLBuilder
         
@@ -413,21 +413,21 @@ class TestOpenURLBuilderExtended:
         assert "mylib.edu" in builder.resolver_base
         assert "sfx_local" in builder.resolver_base
 
-    def test_from_preset_sfx_without_base(self):
+    async def test_from_preset_sfx_without_base(self):
         """Test from_preset with SFX missing base URL."""
         from pubmed_search.infrastructure.sources.openurl import OpenURLBuilder
         
         with pytest.raises(ValueError, match="requires base_url"):
             OpenURLBuilder.from_preset("sfx")
 
-    def test_from_preset_unknown(self):
+    async def test_from_preset_unknown(self):
         """Test from_preset with unknown preset."""
         from pubmed_search.infrastructure.sources.openurl import OpenURLBuilder
         
         with pytest.raises(ValueError, match="Unknown preset"):
             OpenURLBuilder.from_preset("unknown_preset")
 
-    def test_build_from_pmid(self):
+    async def test_build_from_pmid(self):
         """Test build_from_pmid convenience method."""
         from pubmed_search.infrastructure.sources.openurl import OpenURLBuilder
         
@@ -436,7 +436,7 @@ class TestOpenURLBuilderExtended:
         
         assert "12345678" in url
 
-    def test_build_from_doi(self):
+    async def test_build_from_doi(self):
         """Test build_from_doi convenience method."""
         from pubmed_search.infrastructure.sources.openurl import OpenURLBuilder
         
@@ -445,7 +445,7 @@ class TestOpenURLBuilderExtended:
         
         assert "10.1234" in url
 
-    def test_build_with_authors(self):
+    async def test_build_with_authors(self):
         """Test build with author information."""
         from pubmed_search.infrastructure.sources.openurl import OpenURLBuilder
         
@@ -458,7 +458,7 @@ class TestOpenURLBuilderExtended:
         assert "aulast=Smith" in url
         assert "aufirst=John" in url
 
-    def test_build_with_string_authors(self):
+    async def test_build_with_string_authors(self):
         """Test build with string format authors."""
         from pubmed_search.infrastructure.sources.openurl import OpenURLBuilder
         
@@ -470,7 +470,7 @@ class TestOpenURLBuilderExtended:
         
         assert "au=Smith" in url
 
-    def test_build_with_issn(self):
+    async def test_build_with_issn(self):
         """Test build with ISSN."""
         from pubmed_search.infrastructure.sources.openurl import OpenURLBuilder
         
@@ -488,7 +488,7 @@ class TestOpenURLBuilderExtended:
 class TestOpenURLConfigExtended:
     """Extended tests for OpenURLConfig."""
 
-    def test_get_builder_disabled(self):
+    async def test_get_builder_disabled(self):
         """Test get_builder when disabled."""
         from pubmed_search.infrastructure.sources.openurl import OpenURLConfig
         
@@ -500,7 +500,7 @@ class TestOpenURLConfigExtended:
         builder = config.get_builder()
         assert builder is None
 
-    def test_get_builder_with_preset(self):
+    async def test_get_builder_with_preset(self):
         """Test get_builder with preset."""
         from pubmed_search.infrastructure.sources.openurl import OpenURLConfig
         
@@ -510,7 +510,7 @@ class TestOpenURLConfigExtended:
         assert builder is not None
         assert "ntu" in builder.resolver_base.lower()
 
-    def test_get_builder_invalid_preset(self):
+    async def test_get_builder_invalid_preset(self):
         """Test get_builder with invalid preset."""
         from pubmed_search.infrastructure.sources.openurl import OpenURLConfig
         
@@ -528,7 +528,7 @@ class TestOpenURLConfigExtended:
 class TestOpenURLConvenienceFunctions:
     """Test OpenURL convenience functions."""
 
-    def test_get_openurl_from_pmid(self):
+    async def test_get_openurl_from_pmid(self):
         """Test get_openurl_from_pmid function."""
         from pubmed_search.infrastructure.sources.openurl import (
             get_openurl_from_pmid,
@@ -543,7 +543,7 @@ class TestOpenURLConvenienceFunctions:
         
         configure_openurl(enabled=False)
 
-    def test_get_openurl_from_doi(self):
+    async def test_get_openurl_from_doi(self):
         """Test get_openurl_from_doi function."""
         from pubmed_search.infrastructure.sources.openurl import (
             get_openurl_from_doi,
@@ -558,7 +558,7 @@ class TestOpenURLConvenienceFunctions:
         
         configure_openurl(enabled=False)
 
-    def test_list_presets(self):
+    async def test_list_presets(self):
         """Test list_presets function."""
         from pubmed_search.infrastructure.sources.openurl import list_presets
         
@@ -572,7 +572,7 @@ class TestOpenURLConvenienceFunctions:
 class TestGetFulltextLinkWithFallback:
     """Test get_fulltext_link_with_fallback function."""
 
-    def test_with_pmc(self):
+    async def test_with_pmc(self):
         """Test with PMC ID available."""
         from pubmed_search.infrastructure.sources.openurl import (
             get_fulltext_link_with_fallback,
@@ -590,7 +590,7 @@ class TestGetFulltextLinkWithFallback:
         assert "PMC1234567" in result["url"]
         assert result["pdf_url"] is not None
 
-    def test_without_pmc_with_openurl(self):
+    async def test_without_pmc_with_openurl(self):
         """Test without PMC but with OpenURL."""
         from pubmed_search.infrastructure.sources.openurl import (
             get_fulltext_link_with_fallback,
@@ -609,7 +609,7 @@ class TestGetFulltextLinkWithFallback:
         
         configure_openurl(enabled=False)
 
-    def test_doi_only(self):
+    async def test_doi_only(self):
         """Test with DOI only."""
         from pubmed_search.infrastructure.sources.openurl import (
             get_fulltext_link_with_fallback,
@@ -633,7 +633,7 @@ class TestGetFulltextLinkWithFallback:
 class TestVisionUtilities:
     """Test vision_search utility functions."""
 
-    def test_parse_data_uri_webp(self):
+    async def test_parse_data_uri_webp(self):
         """Test parsing WebP data URI."""
         from pubmed_search.presentation.mcp_server.tools.vision_search import parse_data_uri
         
@@ -644,7 +644,7 @@ class TestVisionUtilities:
         assert mime == "image/webp"
         assert data == "UklGRh4AAABXRUJQVlA4TBE="
 
-    def test_parse_data_uri_invalid(self):
+    async def test_parse_data_uri_invalid(self):
         """Test parsing invalid data URI."""
         from pubmed_search.presentation.mcp_server.tools.vision_search import parse_data_uri
         
@@ -677,7 +677,7 @@ class TestFetchImageAsync:
 class TestVisionToolsRegistrationExtended:
     """Extended tests for vision tools registration."""
 
-    def test_register_analyze_figure(self):
+    async def test_register_analyze_figure(self):
         """Test analyze_figure_for_search tool registration."""
         from pubmed_search.presentation.mcp_server.tools.vision_search import register_vision_tools
         
@@ -689,7 +689,7 @@ class TestVisionToolsRegistrationExtended:
         
         assert "analyze_figure_for_search" in tools or len(tools) > 0
 
-    def test_register_reverse_image_search(self):
+    async def test_register_reverse_image_search(self):
         """Test reverse_image_search_pubmed tool registration."""
         from pubmed_search.presentation.mcp_server.tools.vision_search import register_vision_tools
         

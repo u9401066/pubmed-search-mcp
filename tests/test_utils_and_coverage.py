@@ -19,7 +19,7 @@ class TestUtilsMixin:
 
         return TestSearcher()
 
-    def test_quick_fetch_summary_success(self, utils_mixin):
+    async def test_quick_fetch_summary_success(self, utils_mixin):
         """Test quick_fetch_summary with successful response."""
         with (
             patch(
@@ -43,30 +43,30 @@ class TestUtilsMixin:
             mock_read.return_value = [mock_summary]
             mock_esummary.return_value = MagicMock()
 
-            results = utils_mixin.quick_fetch_summary(["12345"])
+            results = await utils_mixin.quick_fetch_summary(["12345"])
 
             assert len(results) == 1
             assert results[0]["pmid"] == "12345"
             assert "Test Article" in results[0]["title"]
 
-    def test_quick_fetch_summary_empty(self, utils_mixin):
+    async def test_quick_fetch_summary_empty(self, utils_mixin):
         """Test quick_fetch_summary with empty list."""
-        results = utils_mixin.quick_fetch_summary([])
+        results = await utils_mixin.quick_fetch_summary([])
         assert results == []
 
-    def test_quick_fetch_summary_error(self, utils_mixin):
+    async def test_quick_fetch_summary_error(self, utils_mixin):
         """Test quick_fetch_summary with API error."""
         with patch(
             "pubmed_search.infrastructure.ncbi.utils.Entrez.esummary"
         ) as mock_esummary:
             mock_esummary.side_effect = Exception("API Error")
 
-            results = utils_mixin.quick_fetch_summary(["12345"])
+            results = await utils_mixin.quick_fetch_summary(["12345"])
 
             assert len(results) == 1
             assert "error" in results[0]
 
-    def test_spell_check_query_success(self, utils_mixin):
+    async def test_spell_check_query_success(self, utils_mixin):
         """Test spell_check_query with correction."""
         with (
             patch(
@@ -77,11 +77,11 @@ class TestUtilsMixin:
             mock_read.return_value = {"CorrectedQuery": "diabetes"}
             mock_espell.return_value = MagicMock()
 
-            result = utils_mixin.spell_check_query("diabetis")
+            result = await utils_mixin.spell_check_query("diabetis")
 
             assert result == "diabetes"
 
-    def test_spell_check_query_no_correction(self, utils_mixin):
+    async def test_spell_check_query_no_correction(self, utils_mixin):
         """Test spell_check_query without correction."""
         with (
             patch(
@@ -92,23 +92,23 @@ class TestUtilsMixin:
             mock_read.return_value = {"CorrectedQuery": ""}
             mock_espell.return_value = MagicMock()
 
-            result = utils_mixin.spell_check_query("diabetes")
+            result = await utils_mixin.spell_check_query("diabetes")
 
             assert result == "diabetes"
 
-    def test_spell_check_query_error(self, utils_mixin):
+    async def test_spell_check_query_error(self, utils_mixin):
         """Test spell_check_query with API error."""
         with patch(
             "pubmed_search.infrastructure.ncbi.utils.Entrez.espell"
         ) as mock_espell:
             mock_espell.side_effect = Exception("API Error")
 
-            result = utils_mixin.spell_check_query("test")
+            result = await utils_mixin.spell_check_query("test")
 
             # Should return original query on error
             assert result == "test"
 
-    def test_get_database_counts_success(self, utils_mixin):
+    async def test_get_database_counts_success(self, utils_mixin):
         """Test get_database_counts with successful response."""
         with (
             patch(
@@ -124,23 +124,23 @@ class TestUtilsMixin:
             }
             mock_egquery.return_value = MagicMock()
 
-            result = utils_mixin.get_database_counts("cancer")
+            result = await utils_mixin.get_database_counts("cancer")
 
             assert result["pubmed"] == 1234
             assert result["pmc"] == 567
 
-    def test_get_database_counts_error(self, utils_mixin):
+    async def test_get_database_counts_error(self, utils_mixin):
         """Test get_database_counts with API error."""
         with patch(
             "pubmed_search.infrastructure.ncbi.utils.Entrez.egquery"
         ) as mock_egquery:
             mock_egquery.side_effect = Exception("API Error")
 
-            result = utils_mixin.get_database_counts("test")
+            result = await utils_mixin.get_database_counts("test")
 
             assert "error" in result
 
-    def test_validate_mesh_terms_found(self, utils_mixin):
+    async def test_validate_mesh_terms_found(self, utils_mixin):
         """Test validate_mesh_terms when terms are found."""
         with (
             patch(
@@ -166,11 +166,11 @@ class TestUtilsMixin:
             mock_esearch.return_value = MagicMock()
             mock_esummary.return_value = MagicMock()
 
-            result = utils_mixin.validate_mesh_terms(["diabetes"])
+            result = await utils_mixin.validate_mesh_terms(["diabetes"])
 
             assert result["valid_count"] >= 0
 
-    def test_validate_mesh_terms_not_found(self, utils_mixin):
+    async def test_validate_mesh_terms_not_found(self, utils_mixin):
         """Test validate_mesh_terms when no terms found."""
         with (
             patch(
@@ -181,11 +181,11 @@ class TestUtilsMixin:
             mock_read.return_value = {"IdList": []}
             mock_esearch.return_value = MagicMock()
 
-            result = utils_mixin.validate_mesh_terms(["nonexistent12345"])
+            result = await utils_mixin.validate_mesh_terms(["nonexistent12345"])
 
             assert result["valid_count"] == 0
 
-    def test_find_by_citation_found(self, utils_mixin):
+    async def test_find_by_citation_found(self, utils_mixin):
         """Test find_by_citation when article is found."""
         with patch(
             "pubmed_search.infrastructure.ncbi.utils.Entrez.ecitmatch"
@@ -194,13 +194,13 @@ class TestUtilsMixin:
             mock_handle.read.return_value = "journal|2024|10|1|author||\t12345678"
             mock_ecitmatch.return_value = mock_handle
 
-            result = utils_mixin.find_by_citation(
+            result = await utils_mixin.find_by_citation(
                 journal="Test Journal", year="2024", volume="10", first_page="1"
             )
 
             assert result == "12345678"
 
-    def test_find_by_citation_not_found(self, utils_mixin):
+    async def test_find_by_citation_not_found(self, utils_mixin):
         """Test find_by_citation when article is not found."""
         with patch(
             "pubmed_search.infrastructure.ncbi.utils.Entrez.ecitmatch"
@@ -209,22 +209,22 @@ class TestUtilsMixin:
             mock_handle.read.return_value = "journal|2024||||\t"
             mock_ecitmatch.return_value = mock_handle
 
-            result = utils_mixin.find_by_citation(journal="Unknown", year="1900")
+            result = await utils_mixin.find_by_citation(journal="Unknown", year="1900")
 
             assert result is None
 
-    def test_find_by_citation_error(self, utils_mixin):
+    async def test_find_by_citation_error(self, utils_mixin):
         """Test find_by_citation with API error."""
         with patch(
             "pubmed_search.infrastructure.ncbi.utils.Entrez.ecitmatch"
         ) as mock_ecitmatch:
             mock_ecitmatch.side_effect = Exception("API Error")
 
-            result = utils_mixin.find_by_citation(journal="Test", year="2024")
+            result = await utils_mixin.find_by_citation(journal="Test", year="2024")
 
             assert result is None
 
-    def test_export_citations_medline(self, utils_mixin):
+    async def test_export_citations_medline(self, utils_mixin):
         """Test export_citations with MEDLINE format."""
         with patch(
             "pubmed_search.infrastructure.ncbi.utils.Entrez.efetch"
@@ -233,16 +233,16 @@ class TestUtilsMixin:
             mock_handle.read.return_value = "PMID- 12345\nTI  - Test Article"
             mock_efetch.return_value = mock_handle
 
-            result = utils_mixin.export_citations(["12345"], format="medline")
+            result = await utils_mixin.export_citations(["12345"], format="medline")
 
             assert "PMID" in result or "12345" in result
 
-    def test_export_citations_empty(self, utils_mixin):
+    async def test_export_citations_empty(self, utils_mixin):
         """Test export_citations with empty list."""
-        result = utils_mixin.export_citations([])
+        result = await utils_mixin.export_citations([])
         assert result == ""
 
-    def test_export_citations_invalid_format(self, utils_mixin):
+    async def test_export_citations_invalid_format(self, utils_mixin):
         """Test export_citations with invalid format falls back to medline."""
         with patch(
             "pubmed_search.infrastructure.ncbi.utils.Entrez.efetch"
@@ -251,12 +251,12 @@ class TestUtilsMixin:
             mock_handle.read.return_value = "PMID- 12345"
             mock_efetch.return_value = mock_handle
 
-            utils_mixin.export_citations(["12345"], format="invalid")
+            await utils_mixin.export_citations(["12345"], format="invalid")
 
             # Should use medline as fallback
             mock_efetch.assert_called()
 
-    def test_get_database_info_success(self, utils_mixin):
+    async def test_get_database_info_success(self, utils_mixin):
         """Test get_database_info with successful response."""
         with (
             patch("pubmed_search.infrastructure.ncbi.utils.Entrez.einfo") as mock_einfo,
@@ -280,20 +280,20 @@ class TestUtilsMixin:
             }
             mock_einfo.return_value = MagicMock()
 
-            result = utils_mixin.get_database_info("pubmed")
+            result = await utils_mixin.get_database_info("pubmed")
 
             assert result["name"] == "pubmed"
             assert result["count"] == "35000000"
             assert len(result["fields"]) > 0
 
-    def test_get_database_info_error(self, utils_mixin):
+    async def test_get_database_info_error(self, utils_mixin):
         """Test get_database_info with API error."""
         with patch(
             "pubmed_search.infrastructure.ncbi.utils.Entrez.einfo"
         ) as mock_einfo:
             mock_einfo.side_effect = Exception("API Error")
 
-            result = utils_mixin.get_database_info("pubmed")
+            result = await utils_mixin.get_database_info("pubmed")
 
             assert "error" in result
 
@@ -301,14 +301,14 @@ class TestUtilsMixin:
 class TestServerModule:
     """Tests to improve server.py coverage."""
 
-    def test_server_module_structure(self):
+    async def test_server_module_structure(self):
         """Test server module has expected structure."""
         from pubmed_search.presentation.mcp_server import server
 
         # Check for expected attributes
         assert hasattr(server, "logging")
 
-    def test_create_mcp_if_exists(self):
+    async def test_create_mcp_if_exists(self):
         """Test create_mcp function if it exists."""
         from pubmed_search.presentation.mcp_server import server
 
@@ -321,14 +321,14 @@ class TestServerModule:
 class TestSessionModule:
     """Additional tests for session.py coverage."""
 
-    def test_session_manager_create(self):
+    async def test_session_manager_create(self):
         """Test SessionManager creation."""
         from pubmed_search.application.session import SessionManager
 
         manager = SessionManager()
         assert manager is not None
 
-    def test_research_session_create(self):
+    async def test_research_session_create(self):
         """Test ResearchSession creation."""
         from pubmed_search.application.session import ResearchSession
 
@@ -337,7 +337,7 @@ class TestSessionModule:
         assert session.search_history == []
         assert session.session_id == "test_session"
 
-    def test_cached_article_create(self):
+    async def test_cached_article_create(self):
         """Test CachedArticle creation."""
         from pubmed_search.application.session import CachedArticle
 
@@ -354,7 +354,7 @@ class TestSessionModule:
         # Use a large max_age to ensure not expired
         assert article.is_expired(max_age_days=365) is False
 
-    def test_search_record_create(self):
+    async def test_search_record_create(self):
         """Test SearchRecord creation."""
         from pubmed_search.application.session import SearchRecord
 
@@ -371,7 +371,7 @@ class TestSessionModule:
 class TestCommonModuleCoverage:
     """Tests for _common.py coverage."""
 
-    def test_format_search_results_with_multiple(self):
+    async def test_format_search_results_with_multiple(self):
         """Test formatting multiple search results."""
         from pubmed_search.presentation.mcp_server.tools._common import (
             format_search_results,
@@ -402,7 +402,7 @@ class TestCommonModuleCoverage:
         assert "123" in result
         assert "456" in result
 
-    def test_cache_results(self):
+    async def test_cache_results(self):
         """Test _cache_results function."""
         from pubmed_search.presentation.mcp_server.tools._common import (
             _cache_results,
@@ -414,7 +414,7 @@ class TestCommonModuleCoverage:
         # Should not raise
         _cache_results([{"pmid": "123"}], "test query")
 
-    def test_record_search_only(self):
+    async def test_record_search_only(self):
         """Test _record_search_only function."""
         from pubmed_search.presentation.mcp_server.tools._common import (
             _record_search_only,
@@ -430,7 +430,7 @@ class TestCommonModuleCoverage:
 class TestExportModuleCoverage:
     """Additional tests for exports/formats.py coverage."""
 
-    def test_export_bibtex_complete(self):
+    async def test_export_bibtex_complete(self):
         """Test complete BibTeX export with all fields."""
         from pubmed_search.application.export.formats import export_bibtex
 
@@ -454,7 +454,7 @@ class TestExportModuleCoverage:
         assert "title = {" in result
         assert "author = {" in result
 
-    def test_export_csv_complete(self):
+    async def test_export_csv_complete(self):
         """Test complete CSV export with all fields."""
         from pubmed_search.application.export.formats import export_csv
 
@@ -474,7 +474,7 @@ class TestExportModuleCoverage:
         # CSV should handle commas in title
         assert "123" in result
 
-    def test_export_medline_complete(self):
+    async def test_export_medline_complete(self):
         """Test complete MEDLINE export."""
         from pubmed_search.application.export.formats import export_medline
 

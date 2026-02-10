@@ -81,12 +81,12 @@ class NCBIExtendedClient:
             await asyncio.sleep(self._min_interval - elapsed)
         self._last_request_time = time.time()
 
+    _MAX_RETRIES = 3
+
     async def _make_request(
         self, url: str, expect_json: bool = False
     ) -> dict | str | None:
-        """Make HTTP request to NCBI."""
-        await self._rate_limit()
-
+        """Make HTTP request to NCBI with retry on 429."""
         # Add required parameters
         separator = "&" if "?" in url else "?"
         url += (
@@ -95,26 +95,40 @@ class NCBIExtendedClient:
         if self._api_key:
             url += f"&api_key={self._api_key}"
 
-        try:
-            response = await self._client.get(url)
-            if response.status_code == 429:
-                logger.warning("NCBI: Rate limit exceeded")
+        for attempt in range(self._MAX_RETRIES + 1):
+            await self._rate_limit()
+            try:
+                response = await self._client.get(url)
+                if response.status_code == 429:
+                    if attempt < self._MAX_RETRIES:
+                        try:
+                            retry_after = float(response.headers.get("Retry-After", 2 ** (attempt + 1)))
+                        except (ValueError, TypeError):
+                            retry_after = float(2 ** (attempt + 1))
+                        logger.warning(
+                            f"NCBI: Rate limited (429), retry {attempt + 1}/{self._MAX_RETRIES} "
+                            f"in {retry_after:.1f}s"
+                        )
+                        await asyncio.sleep(retry_after)
+                        continue
+                    logger.warning("NCBI: Rate limit exceeded after retries")
+                    return None
+                response.raise_for_status()
+                if expect_json:
+                    return response.json()
+                return response.text
+            except httpx.HTTPStatusError as e:
+                logger.error(
+                    f"NCBI HTTP error {e.response.status_code}: {e.response.reason_phrase}"
+                )
                 return None
-            response.raise_for_status()
-            if expect_json:
-                return response.json()
-            return response.text
-        except httpx.HTTPStatusError as e:
-            logger.error(
-                f"NCBI HTTP error {e.response.status_code}: {e.response.reason_phrase}"
-            )
-            return None
-        except httpx.RequestError as e:
-            logger.error(f"NCBI request failed: {e}")
-            return None
-        except Exception as e:
-            logger.error(f"NCBI request failed: {e}")
-            return None
+            except httpx.RequestError as e:
+                logger.error(f"NCBI request failed: {e}")
+                return None
+            except Exception as e:
+                logger.error(f"NCBI request failed: {e}")
+                return None
+        return None
 
     # =========================================================================
     # Gene Database
