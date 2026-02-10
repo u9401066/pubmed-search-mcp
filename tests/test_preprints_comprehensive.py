@@ -15,6 +15,7 @@ from pubmed_search.infrastructure.sources.preprints import (
 # PreprintArticle (extended)
 # ============================================================
 
+
 class TestPreprintArticleExtended:
     async def test_to_dict_complete(self):
         article = PreprintArticle(
@@ -38,44 +39,77 @@ class TestPreprintArticleExtended:
 
     async def test_to_dict_long_abstract_truncated(self):
         article = PreprintArticle(
-            id="1", title="T", abstract="A" * 600,
-            authors=[], published="2023-01-01", updated=None,
-            source="arxiv", categories=[], pdf_url=None, doi=None,
+            id="1",
+            title="T",
+            abstract="A" * 600,
+            authors=[],
+            published="2023-01-01",
+            updated=None,
+            source="arxiv",
+            categories=[],
+            pdf_url=None,
+            doi=None,
         )
         d = article.to_dict()
         assert len(d["abstract"]) == 503
 
     async def test_source_url_medrxiv(self):
         article = PreprintArticle(
-            id="1", title="T", abstract="A",
-            authors=[], published="2023-01-01", updated=None,
-            source="medrxiv", categories=[], pdf_url=None,
+            id="1",
+            title="T",
+            abstract="A",
+            authors=[],
+            published="2023-01-01",
+            updated=None,
+            source="medrxiv",
+            categories=[],
+            pdf_url=None,
             doi="10.1101/2023.01.01.123456",
         )
         assert "medrxiv.org" in article._get_source_url()
 
     async def test_source_url_biorxiv(self):
         article = PreprintArticle(
-            id="1", title="T", abstract="A",
-            authors=[], published="2023-01-01", updated=None,
-            source="biorxiv", categories=[], pdf_url=None,
+            id="1",
+            title="T",
+            abstract="A",
+            authors=[],
+            published="2023-01-01",
+            updated=None,
+            source="biorxiv",
+            categories=[],
+            pdf_url=None,
             doi="10.1101/2023.01.01.999999",
         )
         assert "biorxiv.org" in article._get_source_url()
 
     async def test_source_url_no_doi(self):
         article = PreprintArticle(
-            id="1", title="T", abstract="A",
-            authors=[], published="", updated=None,
-            source="medrxiv", categories=[], pdf_url=None, doi=None,
+            id="1",
+            title="T",
+            abstract="A",
+            authors=[],
+            published="",
+            updated=None,
+            source="medrxiv",
+            categories=[],
+            pdf_url=None,
+            doi=None,
         )
         assert article._get_source_url() == ""
 
     async def test_source_url_unknown_source(self):
         article = PreprintArticle(
-            id="1", title="T", abstract="A",
-            authors=[], published="", updated=None,
-            source="unknown", categories=[], pdf_url=None, doi=None,
+            id="1",
+            title="T",
+            abstract="A",
+            authors=[],
+            published="",
+            updated=None,
+            source="unknown",
+            categories=[],
+            pdf_url=None,
+            doi=None,
         )
         assert article._get_source_url() == ""
 
@@ -83,6 +117,7 @@ class TestPreprintArticleExtended:
 # ============================================================
 # ArXivClient (extended)
 # ============================================================
+
 
 class TestArXivClientExtended:
     @patch("httpx.AsyncClient")
@@ -207,6 +242,7 @@ class TestArXivClientExtended:
 # MedBioRxivClient (extended)
 # ============================================================
 
+
 class TestMedBioRxivClientExtended:
     @patch("httpx.AsyncClient")
     async def test_search_medrxiv_success(self, MockClient):
@@ -215,16 +251,18 @@ class TestMedBioRxivClientExtended:
         MockClient.return_value = mock_client
 
         mock_response = MagicMock()
-        mock_response.json.return_value = {"collection": [
-            {
-                "doi": "10.1101/2023.01.01.123456",
-                "title": "COVID-19 Treatment Study",
-                "abstract": "A study about COVID-19 treatment options",
-                "authors": "Smith J; Doe A",
-                "date": "2023-01-15",
-                "category": "infectious diseases",
-            },
-        ]}
+        mock_response.json.return_value = {
+            "collection": [
+                {
+                    "doi": "10.1101/2023.01.01.123456",
+                    "title": "COVID-19 Treatment Study",
+                    "abstract": "A study about COVID-19 treatment options",
+                    "authors": "Smith J; Doe A",
+                    "date": "2023-01-15",
+                    "category": "infectious diseases",
+                },
+            ]
+        }
         mock_response.raise_for_status = MagicMock()
         mock_client.get.return_value = mock_response
 
@@ -242,16 +280,18 @@ class TestMedBioRxivClientExtended:
         MockClient.return_value = mock_client
 
         mock_response = MagicMock()
-        mock_response.json.return_value = {"collection": [
-            {
-                "doi": "10.1101/2023.02.01.999",
-                "title": "CRISPR gene editing advances",
-                "abstract": "CRISPR gene editing study",
-                "authors": "Lee K",
-                "date": "2023-02-01",
-                "category": "molecular biology",
-            },
-        ]}
+        mock_response.json.return_value = {
+            "collection": [
+                {
+                    "doi": "10.1101/2023.02.01.999",
+                    "title": "CRISPR gene editing advances",
+                    "abstract": "CRISPR gene editing study",
+                    "authors": "Lee K",
+                    "date": "2023-02-01",
+                    "category": "molecular biology",
+                },
+            ]
+        }
         mock_response.raise_for_status = MagicMock()
         mock_client.get.return_value = mock_response
 
@@ -269,12 +309,26 @@ class TestMedBioRxivClientExtended:
         MockClient.return_value = mock_client
 
         mock_response = MagicMock()
-        mock_response.json.return_value = {"collection": [
-            {"doi": "1", "title": "COVID Treatment", "abstract": "Treatment study",
-             "authors": "A", "date": "2023-01-01", "category": ""},
-            {"doi": "2", "title": "Cancer Research", "abstract": "Oncology study",
-             "authors": "B", "date": "2023-01-01", "category": ""},
-        ]}
+        mock_response.json.return_value = {
+            "collection": [
+                {
+                    "doi": "1",
+                    "title": "COVID Treatment",
+                    "abstract": "Treatment study",
+                    "authors": "A",
+                    "date": "2023-01-01",
+                    "category": "",
+                },
+                {
+                    "doi": "2",
+                    "title": "Cancer Research",
+                    "abstract": "Oncology study",
+                    "authors": "B",
+                    "date": "2023-01-01",
+                    "category": "",
+                },
+            ]
+        }
         mock_response.raise_for_status = MagicMock()
         mock_client.get.return_value = mock_response
 
@@ -302,9 +356,14 @@ class TestMedBioRxivClientExtended:
         MockClient.return_value = mock_client
 
         articles = [
-            {"doi": f"doi{i}", "title": f"Study {i} about test",
-             "abstract": f"Test abstract {i}",
-             "authors": "A", "date": "2023-01-01", "category": ""}
+            {
+                "doi": f"doi{i}",
+                "title": f"Study {i} about test",
+                "abstract": f"Test abstract {i}",
+                "authors": "A",
+                "date": "2023-01-01",
+                "category": "",
+            }
             for i in range(20)
         ]
         mock_response = MagicMock()
@@ -322,20 +381,39 @@ class TestMedBioRxivClientExtended:
 # PreprintSearcher (extended)
 # ============================================================
 
+
 class TestPreprintSearcherExtended:
     @patch.object(ArXivClient, "search", new_callable=AsyncMock)
     @patch.object(MedBioRxivClient, "search_medrxiv", new_callable=AsyncMock)
     @patch.object(MedBioRxivClient, "search_biorxiv", new_callable=AsyncMock)
     async def test_search_all_sources(self, mock_bio, mock_med, mock_arxiv):
         mock_arxiv.return_value = [
-            PreprintArticle(id="1", title="arXiv paper", abstract="",
-                            authors=[], published="", updated=None,
-                            source="arxiv", categories=[], pdf_url=None, doi=None),
+            PreprintArticle(
+                id="1",
+                title="arXiv paper",
+                abstract="",
+                authors=[],
+                published="",
+                updated=None,
+                source="arxiv",
+                categories=[],
+                pdf_url=None,
+                doi=None,
+            ),
         ]
         mock_med.return_value = [
-            PreprintArticle(id="2", title="medRxiv paper", abstract="",
-                            authors=[], published="", updated=None,
-                            source="medrxiv", categories=[], pdf_url=None, doi=None),
+            PreprintArticle(
+                id="2",
+                title="medRxiv paper",
+                abstract="",
+                authors=[],
+                published="",
+                updated=None,
+                source="medrxiv",
+                categories=[],
+                pdf_url=None,
+                doi=None,
+            ),
         ]
         mock_bio.return_value = []
 
@@ -366,9 +444,16 @@ class TestPreprintSearcherExtended:
     @patch.object(ArXivClient, "get_by_id", new_callable=AsyncMock)
     async def test_get_arxiv_paper_found(self, mock_get):
         mock_get.return_value = PreprintArticle(
-            id="2301.00001", title="Found", abstract="",
-            authors=[], published="", updated=None,
-            source="arxiv", categories=[], pdf_url=None, doi=None,
+            id="2301.00001",
+            title="Found",
+            abstract="",
+            authors=[],
+            published="",
+            updated=None,
+            source="arxiv",
+            categories=[],
+            pdf_url=None,
+            doi=None,
         )
         searcher = PreprintSearcher()
         result = await searcher.get_arxiv_paper("2301.00001")

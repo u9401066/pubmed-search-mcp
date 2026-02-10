@@ -6,7 +6,7 @@ Run with: pytest tests/test_e2e_workflows.py -v
 """
 
 import pytest
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock
 
 
 # ============================================================
@@ -113,7 +113,9 @@ class TestQuickSearchWorkflow:
 class TestSystematicReviewWorkflow:
     """Test: Researcher conducting systematic literature review."""
 
-    async def test_systematic_review_workflow(self, mock_client_full, complete_article_data):
+    async def test_systematic_review_workflow(
+        self, mock_client_full, complete_article_data
+    ):
         """
         Workflow:
         1. Search with MeSH terms
@@ -313,7 +315,9 @@ class TestDrugResearchWorkflow:
 class TestFullTextAccessWorkflow:
     """Test: Researcher needing full text access."""
 
-    async def test_fulltext_access_workflow(self, mock_client_full, complete_article_data):
+    async def test_fulltext_access_workflow(
+        self, mock_client_full, complete_article_data
+    ):
         """
         Workflow:
         1. Find articles
@@ -476,7 +480,9 @@ class TestCompleteResearchProject:
         question = "What is the efficacy of remimazolam for procedural sedation?"
 
         # Step 2: Systematic search
-        results = await mock_client_full.search("remimazolam procedural sedation", limit=100)
+        results = await mock_client_full.search(
+            "remimazolam procedural sedation", limit=100
+        )
         assert len(results) > 0
 
         # Step 3: Screen articles (mock screening)

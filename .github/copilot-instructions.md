@@ -8,31 +8,41 @@ This document provides guidance for AI assistants working with the PubMed Search
 
 ### 套件管理：使用 UV (NOT pip)
 
-本專案**必須**使用 [UV](https://github.com/astral-sh/uv) 管理所有 Python 依賴：
+本專案**必須**使用 [UV](https://github.com/astral-sh/uv) 管理所有 Python 依賴。
+**所有命令（包括測試、lint、type check）一律透過 `uv run` 執行**，確保使用正確的虛擬環境與依賴版本。
+
+> 💡 **UV 非常高效**：UV 使用 Rust 實作，比 pip 快 10-100 倍。即使是 `uv run pytest`，UV 也會在毫秒級確認環境一致後直接執行，幾乎零開銷。
 
 ```bash
-# ❌ 禁止使用
+# ❌ 禁止使用 (一律禁止直接呼叫，必須透過 uv run)
 pip install <package>
-pip install -r requirements.txt
+python -m pytest
+pytest
+ruff check .
+mypy src/
 
 # ✅ 正確使用
 uv add <package>           # 新增依賴
 uv add --dev <package>     # 新增開發依賴
 uv remove <package>        # 移除依賴
 uv sync                    # 同步依賴
-uv run pytest              # 透過 uv 執行命令
+uv run pytest              # 透過 uv 執行測試
 uv run python script.py    # 透過 uv 執行 Python
 ```
 
-### 程式碼品質工具
+### 程式碼品質工具（全部透過 uv run 執行）
 
 ```bash
 uv run ruff check .        # Lint 檢查
+uv run ruff check . --fix  # Lint 自動修復
 uv run ruff format .       # 格式化
-uv run mypy src/           # 型別檢查
+uv run mypy src/ tests/    # 型別檢查（含 src 和 tests）
 uv run pytest              # 測試
 uv run pytest --cov        # 覆蓋率
+uv run pytest --timeout=60 # 帶超時的測試
 ```
+
+> ⚠️ **永遠不要**直接呼叫 `pytest`、`ruff`、`mypy`，一律使用 `uv run` 前綴。
 
 ### 依賴管理檔案
 

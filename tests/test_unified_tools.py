@@ -68,7 +68,9 @@ class TestDispatchStrategy:
         return a
 
     async def test_lookup_with_identifiers(self):
-        a = self._make_analysis(QueryComplexity.SIMPLE, QueryIntent.LOOKUP, identifiers=["PMID:123"])
+        a = self._make_analysis(
+            QueryComplexity.SIMPLE, QueryIntent.LOOKUP, identifiers=["PMID:123"]
+        )
         sources = DispatchStrategy.get_sources(a)
         assert sources == ["pubmed"]
 
@@ -113,7 +115,9 @@ class TestDispatchStrategy:
         assert isinstance(config, RankingConfig)
 
     async def test_ranking_config_recency(self):
-        a = self._make_analysis(QueryComplexity.SIMPLE, QueryIntent.EXPLORATION, year_from=2023)
+        a = self._make_analysis(
+            QueryComplexity.SIMPLE, QueryIntent.EXPLORATION, year_from=2023
+        )
         config = DispatchStrategy.get_ranking_config(a)
         assert isinstance(config, RankingConfig)
 
@@ -196,7 +200,10 @@ class TestUnifiedSearch:
         ) as mock_enhancer:
             mock_enhancer.return_value.enhance.side_effect = Exception("skip")
             result = await tools["unified_search"](
-                query="diabetes", limit=5, show_analysis=False, include_similarity_scores=False
+                query="diabetes",
+                limit=5,
+                show_analysis=False,
+                include_similarity_scores=False,
             )
         assert isinstance(result, str)
 

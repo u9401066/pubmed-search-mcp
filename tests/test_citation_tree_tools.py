@@ -23,6 +23,7 @@ from pubmed_search.presentation.mcp_server.tools.citation_tree import (
 # _make_node
 # ============================================================
 
+
 class TestMakeNode:
     async def test_basic(self):
         article = {
@@ -62,6 +63,7 @@ class TestMakeNode:
 # _make_edge
 # ============================================================
 
+
 class TestMakeEdge:
     async def test_basic(self):
         edge = _make_edge("111", "222", "cites")
@@ -73,6 +75,7 @@ class TestMakeEdge:
 # ============================================================
 # _escape_xml
 # ============================================================
+
 
 class TestEscapeXml:
     async def test_ampersand(self):
@@ -93,6 +96,7 @@ class TestEscapeXml:
 # ============================================================
 # _escape_mermaid
 # ============================================================
+
 
 class TestEscapeMermaid:
     async def test_basic(self):
@@ -241,6 +245,7 @@ class TestToMermaid:
 # Tool registration & build_citation_tree
 # ============================================================
 
+
 def _capture_tools(mcp, searcher):
     tools = {}
     mcp.tool = lambda: lambda func: (tools.__setitem__(func.__name__, func), func)[1]
@@ -261,10 +266,18 @@ class TestBuildCitationTreeTool:
 
     @pytest.mark.asyncio
     async def test_depth_clamped(self):
-        self.searcher.fetch_details = AsyncMock(return_value=[{
-            "pmid": "111", "title": "Root", "year": "2024",
-            "journal": "J", "authors": ["A"], "doi": "",
-        }])
+        self.searcher.fetch_details = AsyncMock(
+            return_value=[
+                {
+                    "pmid": "111",
+                    "title": "Root",
+                    "year": "2024",
+                    "journal": "J",
+                    "authors": ["A"],
+                    "doi": "",
+                }
+            ]
+        )
         self.searcher.get_citing_articles = AsyncMock(return_value=[])
         self.searcher.get_article_references = AsyncMock(return_value=[])
 
@@ -283,12 +296,30 @@ class TestBuildCitationTreeTool:
 
     @pytest.mark.asyncio
     async def test_successful_tree(self):
-        root = {"pmid": "111", "title": "Root Paper", "year": "2024",
-                "journal": "Nature", "authors": ["Smith"], "doi": ""}
-        citing = {"pmid": "222", "title": "Citing Paper", "year": "2024",
-                  "journal": "Science", "authors": ["Doe"], "doi": ""}
-        ref = {"pmid": "333", "title": "Reference Paper", "year": "2020",
-               "journal": "JAMA", "authors": ["Lee"], "doi": ""}
+        root = {
+            "pmid": "111",
+            "title": "Root Paper",
+            "year": "2024",
+            "journal": "Nature",
+            "authors": ["Smith"],
+            "doi": "",
+        }
+        citing = {
+            "pmid": "222",
+            "title": "Citing Paper",
+            "year": "2024",
+            "journal": "Science",
+            "authors": ["Doe"],
+            "doi": "",
+        }
+        ref = {
+            "pmid": "333",
+            "title": "Reference Paper",
+            "year": "2020",
+            "journal": "JAMA",
+            "authors": ["Lee"],
+            "doi": "",
+        }
 
         self.searcher.fetch_details = AsyncMock(return_value=[root])
         self.searcher.get_citing_articles = AsyncMock(return_value=[citing])

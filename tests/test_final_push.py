@@ -142,7 +142,9 @@ class TestStrategyRemainingPaths:
             mock_efetch.return_value.read.return_value = ""
 
             generator = SearchStrategyGenerator(email="test@example.com")
-            result = await generator.generate_strategies("cancer", strategy="exploratory")
+            result = await generator.generate_strategies(
+                "cancer", strategy="exploratory"
+            )
 
             assert isinstance(result, dict)
 
@@ -312,7 +314,9 @@ class TestICiteRemainingPaths:
             },
         )
 
-        with patch("pubmed_search.infrastructure.ncbi.icite.httpx.AsyncClient") as mock_cls:
+        with patch(
+            "pubmed_search.infrastructure.ncbi.icite.httpx.AsyncClient"
+        ) as mock_cls:
             mock_client = MagicMock()
             mock_client.get = MagicMock(return_value=mock_response)
             mock_client.__aenter__ = MagicMock(return_value=mock_client)

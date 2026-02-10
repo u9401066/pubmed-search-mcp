@@ -1,6 +1,5 @@
 """Tests for NCBIExtendedClient (Gene, PubChem, ClinVar)."""
 
-import json
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -17,6 +16,7 @@ from pubmed_search.infrastructure.sources.ncbi_extended import (
 # Fixtures
 # ============================================================
 
+
 @pytest.fixture
 def client():
     return NCBIExtendedClient(email="test@example.com", api_key="test_key")
@@ -30,6 +30,7 @@ def client_no_key():
 # ============================================================
 # Init & Config
 # ============================================================
+
 
 class TestInit:
     async def test_default_email(self):
@@ -54,6 +55,7 @@ class TestInit:
 # Rate Limiting
 # ============================================================
 
+
 class TestRateLimit:
     async def test_rate_limit_waits(self, client):
         client._last_request_time = time.time()
@@ -66,6 +68,7 @@ class TestRateLimit:
 # ============================================================
 # _make_request
 # ============================================================
+
 
 class TestMakeRequest:
     async def test_json_response(self, client):
@@ -91,6 +94,7 @@ class TestMakeRequest:
 
     async def test_http_error(self, client):
         import httpx
+
         mock_response = MagicMock()
         mock_response.status_code = 500
         mock_response.reason_phrase = "Server Error"
@@ -129,23 +133,28 @@ class TestMakeRequest:
 # Gene Database
 # ============================================================
 
+
 class TestSearchGene:
     @patch.object(NCBIExtendedClient, "_make_request")
     async def test_search_gene_success(self, mock_req, client):
         # First call: esearch
         mock_req.side_effect = [
             {"esearchresult": {"idlist": ["672"]}},
-            {"result": {"672": {
-                "uid": "672",
-                "name": "BRCA1",
-                "description": "BRCA1 DNA repair associated",
-                "organism": {"scientificname": "Homo sapiens", "taxid": "9606"},
-                "chromosome": "17",
-                "maplocation": "17q21.31",
-                "otheraliases": "BRCAI,BRCC1",
-                "summary": "Tumor suppressor",
-                "geneticsource": "protein-coding",
-            }}},
+            {
+                "result": {
+                    "672": {
+                        "uid": "672",
+                        "name": "BRCA1",
+                        "description": "BRCA1 DNA repair associated",
+                        "organism": {"scientificname": "Homo sapiens", "taxid": "9606"},
+                        "chromosome": "17",
+                        "maplocation": "17q21.31",
+                        "otheraliases": "BRCAI,BRCC1",
+                        "summary": "Tumor suppressor",
+                        "geneticsource": "protein-coding",
+                    }
+                }
+            },
         ]
         genes = await client.search_gene("BRCA1")
         assert len(genes) == 1
@@ -193,17 +202,21 @@ class TestSearchGene:
 class TestGetGene:
     @patch.object(NCBIExtendedClient, "_make_request")
     async def test_get_gene_success(self, mock_req, client):
-        mock_req.return_value = {"result": {"672": {
-            "uid": "672",
-            "name": "BRCA1",
-            "description": "BRCA1 DNA repair",
-            "organism": {"scientificname": "Homo sapiens", "taxid": "9606"},
-            "chromosome": "17",
-            "maplocation": "",
-            "otheraliases": "",
-            "summary": "",
-            "geneticsource": "",
-        }}}
+        mock_req.return_value = {
+            "result": {
+                "672": {
+                    "uid": "672",
+                    "name": "BRCA1",
+                    "description": "BRCA1 DNA repair",
+                    "organism": {"scientificname": "Homo sapiens", "taxid": "9606"},
+                    "chromosome": "17",
+                    "maplocation": "",
+                    "otheraliases": "",
+                    "summary": "",
+                    "geneticsource": "",
+                }
+            }
+        }
         gene = await client.get_gene("672")
         assert gene is not None
         assert gene["gene_id"] == "672"
@@ -227,17 +240,29 @@ class TestGetGene:
 class TestGetGenePubmedLinks:
     @patch.object(NCBIExtendedClient, "_make_request")
     async def test_success(self, mock_req, client):
-        mock_req.return_value = {"linksets": [{"linksetdbs": [
-            {"dbto": "pubmed", "links": [12345, 67890]},
-        ]}]}
+        mock_req.return_value = {
+            "linksets": [
+                {
+                    "linksetdbs": [
+                        {"dbto": "pubmed", "links": [12345, 67890]},
+                    ]
+                }
+            ]
+        }
         pmids = await client.get_gene_pubmed_links("672")
         assert pmids == ["12345", "67890"]
 
     @patch.object(NCBIExtendedClient, "_make_request")
     async def test_limit(self, mock_req, client):
-        mock_req.return_value = {"linksets": [{"linksetdbs": [
-            {"dbto": "pubmed", "links": list(range(100))},
-        ]}]}
+        mock_req.return_value = {
+            "linksets": [
+                {
+                    "linksetdbs": [
+                        {"dbto": "pubmed", "links": list(range(100))},
+                    ]
+                }
+            ]
+        }
         pmids = await client.get_gene_pubmed_links("672", limit=5)
         assert len(pmids) == 5
 
@@ -261,27 +286,32 @@ class TestGetGenePubmedLinks:
 # PubChem Database
 # ============================================================
 
+
 class TestSearchCompound:
     @patch.object(NCBIExtendedClient, "_make_request")
     async def test_success(self, mock_req, client):
         mock_req.side_effect = [
             {"esearchresult": {"idlist": ["2244"]}},
-            {"result": {"2244": {
-                "uid": "2244",
-                "synonymlist": ["Aspirin", "Acetylsalicylic acid"],
-                "iupacname": "2-acetoxybenzoic acid",
-                "molecularformula": "C9H8O4",
-                "molecularweight": "180.16",
-                "canonicalsmiles": "CC(=O)OC1=CC=CC=C1C(=O)O",
-                "isomericsmiles": "",
-                "inchi": "InChI=1S/...",
-                "inchikey": "BSYNRYMUTXBXSQ",
-                "charge": 0,
-                "heavyatomcount": 13,
-                "rotatablebondcount": 3,
-                "hydrogenbonddonorcount": 1,
-                "hydrogenbondacceptorcount": 4,
-            }}},
+            {
+                "result": {
+                    "2244": {
+                        "uid": "2244",
+                        "synonymlist": ["Aspirin", "Acetylsalicylic acid"],
+                        "iupacname": "2-acetoxybenzoic acid",
+                        "molecularformula": "C9H8O4",
+                        "molecularweight": "180.16",
+                        "canonicalsmiles": "CC(=O)OC1=CC=CC=C1C(=O)O",
+                        "isomericsmiles": "",
+                        "inchi": "InChI=1S/...",
+                        "inchikey": "BSYNRYMUTXBXSQ",
+                        "charge": 0,
+                        "heavyatomcount": 13,
+                        "rotatablebondcount": 3,
+                        "hydrogenbonddonorcount": 1,
+                        "hydrogenbondacceptorcount": 4,
+                    }
+                }
+            },
         ]
         compounds = await client.search_compound("aspirin")
         assert len(compounds) == 1
@@ -304,17 +334,21 @@ class TestSearchCompound:
 class TestGetCompound:
     @patch.object(NCBIExtendedClient, "_make_request")
     async def test_success(self, mock_req, client):
-        mock_req.return_value = {"result": {"2244": {
-            "uid": "2244",
-            "synonymlist": ["Aspirin"],
-            "iupacname": "",
-            "molecularformula": "C9H8O4",
-            "molecularweight": "",
-            "canonicalsmiles": "",
-            "isomericsmiles": "",
-            "inchi": "",
-            "inchikey": "",
-        }}}
+        mock_req.return_value = {
+            "result": {
+                "2244": {
+                    "uid": "2244",
+                    "synonymlist": ["Aspirin"],
+                    "iupacname": "",
+                    "molecularformula": "C9H8O4",
+                    "molecularweight": "",
+                    "canonicalsmiles": "",
+                    "isomericsmiles": "",
+                    "inchi": "",
+                    "inchikey": "",
+                }
+            }
+        }
         compound = await client.get_compound("2244")
         assert compound is not None
         assert compound["cid"] == "2244"
@@ -333,9 +367,15 @@ class TestGetCompound:
 class TestGetCompoundPubmedLinks:
     @patch.object(NCBIExtendedClient, "_make_request")
     async def test_success(self, mock_req, client):
-        mock_req.return_value = {"linksets": [{"linksetdbs": [
-            {"dbto": "pubmed", "links": [11111, 22222]},
-        ]}]}
+        mock_req.return_value = {
+            "linksets": [
+                {
+                    "linksetdbs": [
+                        {"dbto": "pubmed", "links": [11111, 22222]},
+                    ]
+                }
+            ]
+        }
         pmids = await client.get_compound_pubmed_links("2244")
         assert pmids == ["11111", "22222"]
 
@@ -349,24 +389,29 @@ class TestGetCompoundPubmedLinks:
 # ClinVar Database
 # ============================================================
 
+
 class TestSearchClinvar:
     @patch.object(NCBIExtendedClient, "_make_request")
     async def test_success(self, mock_req, client):
         mock_req.side_effect = [
             {"esearchresult": {"idlist": ["12345"]}},
-            {"result": {"12345": {
-                "uid": "12345",
-                "accession": "VCV000012345",
-                "title": "NM_007294.4(BRCA1):c.5266dupC",
-                "clinical_significance": {"description": "Pathogenic"},
-                "genes": [{"symbol": "BRCA1"}],
-                "review_status": "reviewed by expert panel",
-                "obj_type": "single nucleotide variant",
-                "chr": "17",
-                "start": 43057051,
-                "stop": 43057051,
-                "trait_set": [{"trait_name": "Breast-ovarian cancer"}],
-            }}},
+            {
+                "result": {
+                    "12345": {
+                        "uid": "12345",
+                        "accession": "VCV000012345",
+                        "title": "NM_007294.4(BRCA1):c.5266dupC",
+                        "clinical_significance": {"description": "Pathogenic"},
+                        "genes": [{"symbol": "BRCA1"}],
+                        "review_status": "reviewed by expert panel",
+                        "obj_type": "single nucleotide variant",
+                        "chr": "17",
+                        "start": 43057051,
+                        "stop": 43057051,
+                        "trait_set": [{"trait_name": "Breast-ovarian cancer"}],
+                    }
+                }
+            },
         ]
         variants = await client.search_clinvar("BRCA1")
         assert len(variants) == 1
@@ -379,12 +424,16 @@ class TestSearchClinvar:
     async def test_clinvar_string_significance(self, mock_req, client):
         mock_req.side_effect = [
             {"esearchresult": {"idlist": ["1"]}},
-            {"result": {"1": {
-                "uid": "1",
-                "clinical_significance": "Benign",
-                "genes": [],
-                "trait_set": [],
-            }}},
+            {
+                "result": {
+                    "1": {
+                        "uid": "1",
+                        "clinical_significance": "Benign",
+                        "genes": [],
+                        "trait_set": [],
+                    }
+                }
+            },
         ]
         variants = await client.search_clinvar("test")
         assert variants[0]["clinical_significance"] == "Benign"
@@ -398,6 +447,7 @@ class TestSearchClinvar:
 # ============================================================
 # Normalize helpers
 # ============================================================
+
 
 class TestNormalizeGene:
     async def test_no_aliases(self, client):
@@ -426,21 +476,25 @@ class TestNormalizeCompound:
 
 class TestNormalizeClinvar:
     async def test_non_dict_gene(self, client):
-        variant = client._normalize_clinvar({
-            "uid": "1",
-            "genes": ["not_a_dict"],
-            "clinical_significance": {"description": "VUS"},
-            "trait_set": [],
-        })
+        variant = client._normalize_clinvar(
+            {
+                "uid": "1",
+                "genes": ["not_a_dict"],
+                "clinical_significance": {"description": "VUS"},
+                "trait_set": [],
+            }
+        )
         assert variant["gene_symbols"] == []
 
     async def test_non_dict_trait(self, client):
-        variant = client._normalize_clinvar({
-            "uid": "1",
-            "genes": [],
-            "clinical_significance": {"description": "VUS"},
-            "trait_set": ["not_a_dict"],
-        })
+        variant = client._normalize_clinvar(
+            {
+                "uid": "1",
+                "genes": [],
+                "clinical_significance": {"description": "VUS"},
+                "trait_set": ["not_a_dict"],
+            }
+        )
         assert variant["conditions"] == []
 
 
@@ -448,9 +502,11 @@ class TestNormalizeClinvar:
 # Singleton
 # ============================================================
 
+
 class TestSingleton:
     async def test_get_ncbi_extended_client(self):
         import pubmed_search.infrastructure.sources.ncbi_extended as mod
+
         mod._ncbi_extended_client = None
         with patch.dict("os.environ", {"NCBI_EMAIL": "e@e.com", "NCBI_API_KEY": "k"}):
             c = get_ncbi_extended_client()

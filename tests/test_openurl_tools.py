@@ -27,10 +27,16 @@ def tools():
 # _format_article (pure helper)
 # ============================================================
 
+
 class TestFormatArticle:
     async def test_full_article(self):
-        art = {"pmid": "123", "doi": "10.1/x", "title": "A"*100,
-               "journal": "Nature", "year": "2024"}
+        art = {
+            "pmid": "123",
+            "doi": "10.1/x",
+            "title": "A" * 100,
+            "journal": "Nature",
+            "year": "2024",
+        }
         result = _format_article(art)
         assert "PMID: 123" in result
         assert "DOI: 10.1/x" in result
@@ -44,6 +50,7 @@ class TestFormatArticle:
 # ============================================================
 # _test_resolver_url
 # ============================================================
+
 
 class TestTestResolverUrl:
     @pytest.mark.asyncio
@@ -79,6 +86,7 @@ class TestTestResolverUrl:
 # configure_institutional_access
 # ============================================================
 
+
 class TestConfigureInstitutionalAccess:
     async def test_disable(self, tools):
         with patch(
@@ -102,14 +110,18 @@ class TestConfigureInstitutionalAccess:
         mock_builder.resolver_base = "http://ntu.edu/resolver"
         mock_config.get_builder.return_value = mock_builder
 
-        with patch(
-            "pubmed_search.presentation.mcp_server.tools.openurl.list_presets",
-            return_value={"ntu": "http://ntu.edu/resolver"},
-        ), patch(
-            "pubmed_search.presentation.mcp_server.tools.openurl.configure_openurl"
-        ), patch(
-            "pubmed_search.presentation.mcp_server.tools.openurl.get_openurl_config",
-            return_value=mock_config,
+        with (
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.openurl.list_presets",
+                return_value={"ntu": "http://ntu.edu/resolver"},
+            ),
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.openurl.configure_openurl"
+            ),
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.openurl.get_openurl_config",
+                return_value=mock_config,
+            ),
         ):
             result = tools["configure_institutional_access"](preset="ntu")
         assert "configured" in result.lower() or "✅" in result
@@ -129,12 +141,15 @@ class TestConfigureInstitutionalAccess:
         mock_config.resolver_base = "http://test.edu"
         mock_config.preset = None
 
-        with patch(
-            "pubmed_search.presentation.mcp_server.tools.openurl.get_openurl_config",
-            return_value=mock_config,
-        ), patch(
-            "pubmed_search.presentation.mcp_server.tools.openurl.list_presets",
-            return_value={"ntu": "http://ntu.edu/resolver"},
+        with (
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.openurl.get_openurl_config",
+                return_value=mock_config,
+            ),
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.openurl.list_presets",
+                return_value={"ntu": "http://ntu.edu/resolver"},
+            ),
         ):
             result = tools["configure_institutional_access"]()
         assert "configuration" in result.lower() or "Status" in result
@@ -153,6 +168,7 @@ class TestConfigureInstitutionalAccess:
 # ============================================================
 # get_institutional_link
 # ============================================================
+
 
 class TestGetInstitutionalLink:
     async def test_not_configured(self, tools):
@@ -209,6 +225,7 @@ class TestGetInstitutionalLink:
 # list_resolver_presets
 # ============================================================
 
+
 class TestListResolverPresets:
     async def test_returns_presets(self, tools):
         with patch(
@@ -228,6 +245,7 @@ class TestListResolverPresets:
 # test_institutional_access
 # ============================================================
 
+
 class TestTestInstitutionalAccess:
     @pytest.mark.asyncio
     async def test_not_configured(self, tools):
@@ -246,21 +264,26 @@ class TestTestInstitutionalAccess:
         mock_config = MagicMock()
         mock_builder = MagicMock()
         mock_builder.resolver_base = "https://resolver.test.edu"
-        mock_builder.build_from_article.return_value = "https://resolver.test.edu?openurl"
+        mock_builder.build_from_article.return_value = (
+            "https://resolver.test.edu?openurl"
+        )
         mock_config.get_builder.return_value = mock_builder
 
-        with patch(
-            "pubmed_search.presentation.mcp_server.tools.openurl.get_openurl_config",
-            return_value=mock_config,
-        ), patch(
-            "pubmed_search.presentation.mcp_server.tools.openurl._test_resolver_url",
-            new_callable=AsyncMock,
-            return_value={
-                "reachable": True,
-                "status_code": 200,
-                "response_time_ms": 50,
-                "error": None,
-            },
+        with (
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.openurl.get_openurl_config",
+                return_value=mock_config,
+            ),
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.openurl._test_resolver_url",
+                new_callable=AsyncMock,
+                return_value={
+                    "reachable": True,
+                    "status_code": 200,
+                    "response_time_ms": 50,
+                    "error": None,
+                },
+            ),
         ):
             result = await tools["test_institutional_access"](pmid="12345")
         assert "reachable" in result.lower() or "✅" in result

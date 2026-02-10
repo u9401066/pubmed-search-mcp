@@ -36,11 +36,13 @@ class TestGetFulltext:
     async def test_pmcid_success(self, tools):
         mock_client = AsyncMock()
         mock_client.get_fulltext_xml.return_value = "<xml/>"
-        mock_client.parse_fulltext_xml = MagicMock(return_value={
-            "title": "Test Article",
-            "sections": [{"title": "Introduction", "content": "Hello world"}],
-            "abstract": "An abstract",
-        })
+        mock_client.parse_fulltext_xml = MagicMock(
+            return_value={
+                "title": "Test Article",
+                "sections": [{"title": "Introduction", "content": "Hello world"}],
+                "abstract": "An abstract",
+            }
+        )
         with patch(
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
             return_value=mock_client,
@@ -98,12 +100,15 @@ class TestGetFulltext:
                 }
             ]
         }
-        with patch(
-            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_unpaywall_client",
-            return_value=mock_unpaywall,
-        ), patch(
-            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_core_client",
-            return_value=mock_core,
+        with (
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_unpaywall_client",
+                return_value=mock_unpaywall,
+            ),
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_core_client",
+                return_value=mock_core,
+            ),
         ):
             result = await tools["get_fulltext"](doi="10.1234/test")
         assert "Full text content" in result or "core.ac.uk" in result
@@ -120,14 +125,19 @@ class TestGetFulltext:
         """Test auto-detection of DOI from identifier string."""
         mock_unpaywall = AsyncMock()
         mock_unpaywall.get_oa_status.return_value = {"is_oa": False}
-        with patch(
-            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_unpaywall_client",
-            return_value=mock_unpaywall,
-        ), patch(
-            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_core_client",
-            return_value=MagicMock(search=AsyncMock(return_value={"results": []})),
+        with (
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_unpaywall_client",
+                return_value=mock_unpaywall,
+            ),
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_core_client",
+                return_value=MagicMock(search=AsyncMock(return_value={"results": []})),
+            ),
         ):
-            result = await tools["get_fulltext"](identifier="10.1038/s41586-021-03819-2")
+            result = await tools["get_fulltext"](
+                identifier="10.1038/s41586-021-03819-2"
+            )
         assert isinstance(result, str)
 
     @pytest.mark.asyncio
@@ -146,14 +156,16 @@ class TestGetFulltext:
     async def test_sections_filter(self, tools):
         mock_client = AsyncMock()
         mock_client.get_fulltext_xml.return_value = "<xml/>"
-        mock_client.parse_fulltext_xml = MagicMock(return_value={
-            "title": "Filtered",
-            "sections": [
-                {"title": "Introduction", "content": "Intro text"},
-                {"title": "Methods", "content": "Methods text"},
-                {"title": "Results", "content": "Results text"},
-            ],
-        })
+        mock_client.parse_fulltext_xml = MagicMock(
+            return_value={
+                "title": "Filtered",
+                "sections": [
+                    {"title": "Introduction", "content": "Intro text"},
+                    {"title": "Methods", "content": "Methods text"},
+                    {"title": "Results", "content": "Results text"},
+                ],
+            }
+        )
         with patch(
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
             return_value=mock_client,

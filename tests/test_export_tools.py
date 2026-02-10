@@ -17,6 +17,7 @@ from pubmed_search.presentation.mcp_server.tools.export import (
 # Pure helpers
 # ============================================================
 
+
 class TestGetFileExtension:
     async def test_ris(self):
         assert _get_file_extension("ris") == "ris"
@@ -85,6 +86,7 @@ class TestResolvePmids:
 # ============================================================
 # prepare_export tool
 # ============================================================
+
 
 def _capture_tools(mcp, searcher):
     tools = {}
@@ -167,12 +169,15 @@ class TestPrepareExport:
         mock_result.success = False
         mock_result.error = "API down"
 
-        with patch(
-            "pubmed_search.presentation.mcp_server.tools.export.export_citations_official",
-            return_value=mock_result,
-        ), patch(
-            "pubmed_search.presentation.mcp_server.tools.export.export_articles",
-            return_value="TY  - JOUR\n",
+        with (
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.export.export_citations_official",
+                return_value=mock_result,
+            ),
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.export.export_articles",
+                return_value="TY  - JOUR\n",
+            ),
         ):
             result = await tools["prepare_export"](
                 pmids="123", format="ris", source="official"

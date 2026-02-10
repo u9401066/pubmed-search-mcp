@@ -4,9 +4,7 @@ Tests for CrossRef API client.
 Target: crossref.py coverage from 0% to 90%+
 """
 
-import json
-import urllib.error
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 
 from pubmed_search.infrastructure.sources.crossref import (
@@ -179,9 +177,7 @@ class TestCrossRefClientSearchByTitle:
         client = CrossRefClient()
         client._min_interval = 0
         client._make_request = AsyncMock(
-            return_value={
-                "items": [{"DOI": "10.1/exact", "title": ["Exact Match"]}]
-            }
+            return_value={"items": [{"DOI": "10.1/exact", "title": ["Exact Match"]}]}
         )
 
         results = await client.search_by_title("Exact Match", limit=5)
@@ -253,9 +249,7 @@ class TestCrossRefClientGetCitations:
         client._min_interval = 0
         client.get_work = AsyncMock(return_value={"is-referenced-by-count": 50})
         client._make_request = AsyncMock(
-            return_value={
-                "items": [{"DOI": "10.1/citing1"}, {"DOI": "10.1/citing2"}]
-            }
+            return_value={"items": [{"DOI": "10.1/citing1"}, {"DOI": "10.1/citing2"}]}
         )
 
         result = await client.get_citations("10.1/test", limit=10)

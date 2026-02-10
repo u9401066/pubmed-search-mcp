@@ -4,7 +4,6 @@ Tests for Timeline modules: MilestoneDetector and TimelineBuilder.
 Target: milestone_detector.py (18% → 90%), timeline_builder.py (14% → 90%)
 """
 
-
 from pubmed_search.application.timeline.milestone_detector import (
     LANDMARK_CITATION_THRESHOLDS,
     PUBTYPE_PATTERNS,
@@ -725,6 +724,15 @@ class TestConstants:
 
     async def test_landmark_thresholds(self):
         """Test landmark citation thresholds."""
-        assert LANDMARK_CITATION_THRESHOLDS["exceptional"] > LANDMARK_CITATION_THRESHOLDS["high"]
-        assert LANDMARK_CITATION_THRESHOLDS["high"] > LANDMARK_CITATION_THRESHOLDS["notable"]
-        assert LANDMARK_CITATION_THRESHOLDS["notable"] > LANDMARK_CITATION_THRESHOLDS["moderate"]
+        assert (
+            LANDMARK_CITATION_THRESHOLDS["exceptional"]
+            > LANDMARK_CITATION_THRESHOLDS["high"]
+        )
+        assert (
+            LANDMARK_CITATION_THRESHOLDS["high"]
+            > LANDMARK_CITATION_THRESHOLDS["notable"]
+        )
+        assert (
+            LANDMARK_CITATION_THRESHOLDS["notable"]
+            > LANDMARK_CITATION_THRESHOLDS["moderate"]
+        )

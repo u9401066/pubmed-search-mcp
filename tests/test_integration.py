@@ -196,7 +196,9 @@ class TestRealImageSearch:
         advice = advisor.advise("chest X-ray pneumonia")
 
         assert advice.is_suitable is True
-        assert advice.recommended_image_type == "x"  # x = X-ray (not xg which is Exclude Graphics)
+        assert (
+            advice.recommended_image_type == "x"
+        )  # x = X-ray (not xg which is Exclude Graphics)
 
         # Step 2: Service executes search with advisor guidance
         service = ImageSearchService()
@@ -255,7 +257,10 @@ class TestRealImageSearch:
 
         assert advice.is_suitable is False
         assert len(advice.suggestions) > 0
-        assert any("search_literature" in s or "unified_search" in s for s in advice.suggestions)
+        assert any(
+            "search_literature" in s or "unified_search" in s
+            for s in advice.suggestions
+        )
 
         # Service should still work but include suggestions
         service = ImageSearchService()

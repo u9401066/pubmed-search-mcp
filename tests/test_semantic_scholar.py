@@ -1,6 +1,5 @@
 """Tests for SemanticScholarClient."""
 
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -30,6 +29,7 @@ def client_with_key():
 # Init
 # ============================================================
 
+
 class TestInit:
     async def test_defaults(self):
         c = SemanticScholarClient()
@@ -47,6 +47,7 @@ class TestInit:
 # ============================================================
 # _make_request
 # ============================================================
+
 
 class TestMakeRequest:
     async def test_success(self, client):
@@ -94,23 +95,28 @@ class TestMakeRequest:
 # search
 # ============================================================
 
+
 class TestSearch:
     @patch.object(SemanticScholarClient, "_make_request")
     async def test_basic_search(self, mock_req, client):
-        mock_req.return_value = {"data": [{
-            "paperId": "abc123",
-            "title": "Deep Learning",
-            "abstract": "A review",
-            "year": 2023,
-            "authors": [{"name": "Jane Doe"}],
-            "venue": "Nature",
-            "publicationVenue": None,
-            "citationCount": 100,
-            "influentialCitationCount": 10,
-            "isOpenAccess": True,
-            "openAccessPdf": {"url": "https://pdf.example.com/paper.pdf"},
-            "externalIds": {"DOI": "10.1234/test", "PubMed": "12345"},
-        }]}
+        mock_req.return_value = {
+            "data": [
+                {
+                    "paperId": "abc123",
+                    "title": "Deep Learning",
+                    "abstract": "A review",
+                    "year": 2023,
+                    "authors": [{"name": "Jane Doe"}],
+                    "venue": "Nature",
+                    "publicationVenue": None,
+                    "citationCount": 100,
+                    "influentialCitationCount": 10,
+                    "isOpenAccess": True,
+                    "openAccessPdf": {"url": "https://pdf.example.com/paper.pdf"},
+                    "externalIds": {"DOI": "10.1234/test", "PubMed": "12345"},
+                }
+            ]
+        }
 
         results = await client.search("deep learning")
         assert len(results) == 1
@@ -170,6 +176,7 @@ class TestSearch:
 # get_paper
 # ============================================================
 
+
 class TestGetPaper:
     @patch.object(SemanticScholarClient, "_make_request")
     async def test_get_by_doi(self, mock_req, client):
@@ -199,13 +206,32 @@ class TestGetPaper:
 # get_citations & get_references
 # ============================================================
 
+
 class TestCitationsRefs:
     @patch.object(SemanticScholarClient, "_make_request")
     async def test_get_citations(self, mock_req, client):
-        mock_req.return_value = {"data": [
-            {"citingPaper": {"paperId": "p1", "title": "Citing 1", "year": 2023, "authors": [], "externalIds": {}}},
-            {"citingPaper": {"paperId": "p2", "title": "Citing 2", "year": 2022, "authors": [], "externalIds": {}}},
-        ]}
+        mock_req.return_value = {
+            "data": [
+                {
+                    "citingPaper": {
+                        "paperId": "p1",
+                        "title": "Citing 1",
+                        "year": 2023,
+                        "authors": [],
+                        "externalIds": {},
+                    }
+                },
+                {
+                    "citingPaper": {
+                        "paperId": "p2",
+                        "title": "Citing 2",
+                        "year": 2022,
+                        "authors": [],
+                        "externalIds": {},
+                    }
+                },
+            ]
+        }
         results = await client.get_citations("abc123")
         assert len(results) == 2
         assert results[0]["title"] == "Citing 1"
@@ -222,9 +248,19 @@ class TestCitationsRefs:
 
     @patch.object(SemanticScholarClient, "_make_request")
     async def test_get_references(self, mock_req, client):
-        mock_req.return_value = {"data": [
-            {"citedPaper": {"paperId": "r1", "title": "Ref 1", "year": 2020, "authors": [], "externalIds": {}}},
-        ]}
+        mock_req.return_value = {
+            "data": [
+                {
+                    "citedPaper": {
+                        "paperId": "r1",
+                        "title": "Ref 1",
+                        "year": 2020,
+                        "authors": [],
+                        "externalIds": {},
+                    }
+                },
+            ]
+        }
         results = await client.get_references("abc123")
         assert len(results) == 1
 
@@ -243,13 +279,28 @@ class TestCitationsRefs:
 # get_recommendations
 # ============================================================
 
+
 class TestRecommendations:
     @patch.object(SemanticScholarClient, "_make_request")
     async def test_success(self, mock_req, client):
-        mock_req.return_value = {"recommendedPapers": [
-            {"paperId": "r1", "title": "Rec 1", "year": 2023, "authors": [], "externalIds": {}},
-            {"paperId": "r2", "title": "Rec 2", "year": 2022, "authors": [], "externalIds": {}},
-        ]}
+        mock_req.return_value = {
+            "recommendedPapers": [
+                {
+                    "paperId": "r1",
+                    "title": "Rec 1",
+                    "year": 2023,
+                    "authors": [],
+                    "externalIds": {},
+                },
+                {
+                    "paperId": "r2",
+                    "title": "Rec 2",
+                    "year": 2022,
+                    "authors": [],
+                    "externalIds": {},
+                },
+            ]
+        }
         results = await client.get_recommendations("abc123", limit=10)
         assert len(results) == 2
         assert results[0]["similarity_score"] == 1.0
@@ -277,6 +328,7 @@ class TestRecommendations:
 # ============================================================
 # get_paper_embedding_similarity
 # ============================================================
+
 
 class TestEmbeddingSimilarity:
     @patch.object(SemanticScholarClient, "get_recommendations")
@@ -306,7 +358,12 @@ class TestEmbeddingSimilarity:
     @patch.object(SemanticScholarClient, "get_recommendations")
     async def test_not_found(self, mock_recs, client):
         mock_recs.return_value = [
-            {"_s2_id": "other", "pmid": "999", "doi": "10.xxx", "similarity_score": 0.5},
+            {
+                "_s2_id": "other",
+                "pmid": "999",
+                "doi": "10.xxx",
+                "similarity_score": 0.5,
+            },
         ]
         score = await client.get_paper_embedding_similarity("abc", "xyz")
         assert score == 0.1
@@ -321,6 +378,7 @@ class TestEmbeddingSimilarity:
 # _normalize_paper
 # ============================================================
 
+
 class TestNormalizePaper:
     async def test_full_paper(self, client):
         paper = {
@@ -333,7 +391,10 @@ class TestNormalizePaper:
                 {"name": "Jane"},
             ],
             "venue": "Nature",
-            "publicationVenue": {"name": "Nature Medicine", "alternate_names": ["Nat Med"]},
+            "publicationVenue": {
+                "name": "Nature Medicine",
+                "alternate_names": ["Nat Med"],
+            },
             "citationCount": 50,
             "influentialCitationCount": 5,
             "isOpenAccess": True,

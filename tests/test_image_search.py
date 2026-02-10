@@ -8,7 +8,7 @@ Tests:
 - Presentation: search_biomedical_images tool
 """
 
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -36,7 +36,9 @@ def sample_openi_response():
                 "authors": "Smith J, Doe A",
                 "imgLarge": "/imgs/large/12345.png",
                 "imgThumb": "/imgs/thumb/12345.png",
-                "image": {"caption": "PA chest radiograph showing bilateral infiltrates"},
+                "image": {
+                    "caption": "PA chest radiograph showing bilateral infiltrates"
+                },
                 "MeSH": {
                     "major": ["Pneumonia", "Radiography, Thoracic"],
                     "minor": ["Adult", "Humans"],
@@ -266,7 +268,9 @@ class TestOpenIClientSearch:
             # No 'it' parameter when None
             assert "it=" not in call_url
 
-    async def test_search_invalid_image_type_ignored(self, openi_client, sample_openi_response):
+    async def test_search_invalid_image_type_ignored(
+        self, openi_client, sample_openi_response
+    ):
         """Invalid image_type is ignored (no 'it' param)."""
         with patch.object(
             openi_client, "_make_request", return_value=sample_openi_response
@@ -292,7 +296,9 @@ class TestOpenIClientSearch:
             call_url = mock_req.call_args[0][0]
             assert "it=ph" in call_url
 
-    async def test_search_graphics_image_type(self, openi_client, sample_openi_response):
+    async def test_search_graphics_image_type(
+        self, openi_client, sample_openi_response
+    ):
         """'g' (Graphics) is a valid image type."""
         with patch.object(
             openi_client, "_make_request", return_value=sample_openi_response
@@ -345,7 +351,9 @@ class TestOpenIClientSearch:
             call_url = mock_req.call_args[0][0]
             assert "favor=r" in call_url
 
-    async def test_search_invalid_sort_by_ignored(self, openi_client, sample_openi_response):
+    async def test_search_invalid_sort_by_ignored(
+        self, openi_client, sample_openi_response
+    ):
         """Invalid sort_by is ignored (no favor param)."""
         with patch.object(
             openi_client, "_make_request", return_value=sample_openi_response
@@ -354,7 +362,9 @@ class TestOpenIClientSearch:
             call_url = mock_req.call_args[0][0]
             assert "favor=" not in call_url
 
-    async def test_search_article_type_case_report(self, openi_client, sample_openi_response):
+    async def test_search_article_type_case_report(
+        self, openi_client, sample_openi_response
+    ):
         """article_type='cr' should add at=cr parameter."""
         with patch.object(
             openi_client, "_make_request", return_value=sample_openi_response
@@ -363,7 +373,9 @@ class TestOpenIClientSearch:
             call_url = mock_req.call_args[0][0]
             assert "at=cr" in call_url
 
-    async def test_search_invalid_article_type_ignored(self, openi_client, sample_openi_response):
+    async def test_search_invalid_article_type_ignored(
+        self, openi_client, sample_openi_response
+    ):
         """Invalid article_type is ignored."""
         with patch.object(
             openi_client, "_make_request", return_value=sample_openi_response
@@ -372,7 +384,9 @@ class TestOpenIClientSearch:
             call_url = mock_req.call_args[0][0]
             assert "at=" not in call_url
 
-    async def test_search_specialty_radiology(self, openi_client, sample_openi_response):
+    async def test_search_specialty_radiology(
+        self, openi_client, sample_openi_response
+    ):
         """specialty='r' should add sp=r parameter."""
         with patch.object(
             openi_client, "_make_request", return_value=sample_openi_response
@@ -381,7 +395,9 @@ class TestOpenIClientSearch:
             call_url = mock_req.call_args[0][0]
             assert "sp=r" in call_url
 
-    async def test_search_specialty_cardiology(self, openi_client, sample_openi_response):
+    async def test_search_specialty_cardiology(
+        self, openi_client, sample_openi_response
+    ):
         """specialty='c' should add sp=c parameter."""
         with patch.object(
             openi_client, "_make_request", return_value=sample_openi_response
@@ -390,7 +406,9 @@ class TestOpenIClientSearch:
             call_url = mock_req.call_args[0][0]
             assert "sp=c" in call_url
 
-    async def test_search_invalid_specialty_ignored(self, openi_client, sample_openi_response):
+    async def test_search_invalid_specialty_ignored(
+        self, openi_client, sample_openi_response
+    ):
         """Invalid specialty is ignored."""
         with patch.object(
             openi_client, "_make_request", return_value=sample_openi_response
@@ -417,7 +435,9 @@ class TestOpenIClientSearch:
             call_url = mock_req.call_args[0][0]
             assert "lic=bync" in call_url
 
-    async def test_search_invalid_license_ignored(self, openi_client, sample_openi_response):
+    async def test_search_invalid_license_ignored(
+        self, openi_client, sample_openi_response
+    ):
         """Invalid license_type is ignored."""
         with patch.object(
             openi_client, "_make_request", return_value=sample_openi_response
@@ -435,7 +455,9 @@ class TestOpenIClientSearch:
             call_url = mock_req.call_args[0][0]
             assert "sub=c" in call_url
 
-    async def test_search_invalid_subset_ignored(self, openi_client, sample_openi_response):
+    async def test_search_invalid_subset_ignored(
+        self, openi_client, sample_openi_response
+    ):
         """Invalid subset is ignored."""
         with patch.object(
             openi_client, "_make_request", return_value=sample_openi_response
@@ -462,7 +484,9 @@ class TestOpenIClientSearch:
             call_url = mock_req.call_args[0][0]
             assert "fields=c" in call_url
 
-    async def test_search_invalid_fields_ignored(self, openi_client, sample_openi_response):
+    async def test_search_invalid_fields_ignored(
+        self, openi_client, sample_openi_response
+    ):
         """Invalid search_fields is ignored."""
         with patch.object(
             openi_client, "_make_request", return_value=sample_openi_response

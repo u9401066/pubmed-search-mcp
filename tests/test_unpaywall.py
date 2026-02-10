@@ -1,6 +1,5 @@
 """Tests for UnpaywallClient."""
 
-import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -27,6 +26,7 @@ def client():
 # Init
 # ============================================================
 
+
 class TestInit:
     async def test_defaults(self):
         c = UnpaywallClient()
@@ -40,9 +40,11 @@ class TestInit:
 # _make_request
 # ============================================================
 
+
 class TestMakeRequest:
     async def test_success(self, client):
         from unittest.mock import AsyncMock
+
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {"is_oa": True}
@@ -54,6 +56,7 @@ class TestMakeRequest:
 
     async def test_404(self, client):
         from unittest.mock import AsyncMock
+
         mock_response = MagicMock()
         mock_response.status_code = 404
         client._client = MagicMock()
@@ -62,6 +65,7 @@ class TestMakeRequest:
 
     async def test_422(self, client):
         from unittest.mock import AsyncMock
+
         mock_response = MagicMock()
         mock_response.status_code = 422
         client._client = MagicMock()
@@ -70,7 +74,7 @@ class TestMakeRequest:
 
     async def test_429(self, client):
         from unittest.mock import AsyncMock
-        import httpx
+
         mock_response = MagicMock()
         mock_response.status_code = 429
         mock_response.headers = {"Retry-After": "0"}
@@ -81,6 +85,7 @@ class TestMakeRequest:
     async def test_500(self, client):
         from unittest.mock import AsyncMock
         import httpx
+
         mock_response = MagicMock()
         mock_response.status_code = 500
         mock_response.reason_phrase = "Server Error"
@@ -94,12 +99,16 @@ class TestMakeRequest:
     async def test_url_error(self, client):
         from unittest.mock import AsyncMock
         import httpx
+
         client._client = MagicMock()
-        client._client.get = AsyncMock(side_effect=httpx.RequestError("DNS failed", request=MagicMock()))
+        client._client.get = AsyncMock(
+            side_effect=httpx.RequestError("DNS failed", request=MagicMock())
+        )
         assert await client._make_request("https://test.com") is None
 
     async def test_generic_error(self, client):
         from unittest.mock import AsyncMock
+
         client._client = MagicMock()
         client._client.get = AsyncMock(side_effect=Exception("unexpected"))
         assert await client._make_request("https://test.com") is None
@@ -109,6 +118,7 @@ class TestMakeRequest:
 # get_oa_status
 # ============================================================
 
+
 class TestGetOAStatus:
     @patch.object(UnpaywallClient, "_make_request")
     async def test_success(self, mock_req, client):
@@ -116,7 +126,10 @@ class TestGetOAStatus:
             "doi": "10.1234/test",
             "is_oa": True,
             "oa_status": "gold",
-            "best_oa_location": {"url": "https://oa.example.com", "host_type": "publisher"},
+            "best_oa_location": {
+                "url": "https://oa.example.com",
+                "host_type": "publisher",
+            },
             "oa_locations": [],
             "title": "Test Paper",
             "year": 2023,
@@ -147,12 +160,16 @@ class TestGetOAStatus:
 # get_best_oa_link
 # ============================================================
 
+
 class TestGetBestOALink:
     @patch.object(UnpaywallClient, "get_oa_status")
     async def test_found(self, mock_status, client):
         mock_status.return_value = {
             "is_oa": True,
-            "best_oa_location": {"url": "https://oa.example.com", "url_for_pdf": "https://pdf.example.com"},
+            "best_oa_location": {
+                "url": "https://oa.example.com",
+                "url_for_pdf": "https://pdf.example.com",
+            },
         }
         link = await client.get_best_oa_link("10.1234/test")
         assert link == "https://oa.example.com"
@@ -181,6 +198,7 @@ class TestGetBestOALink:
 # get_pdf_link
 # ============================================================
 
+
 class TestGetPdfLink:
     @patch.object(UnpaywallClient, "get_oa_status")
     async def test_best_location_has_pdf(self, mock_status, client):
@@ -189,7 +207,10 @@ class TestGetPdfLink:
             "best_oa_location": {"url_for_pdf": "https://pdf.example.com/best.pdf"},
             "oa_locations": [],
         }
-        assert await client.get_pdf_link("10.1234/test") == "https://pdf.example.com/best.pdf"
+        assert (
+            await client.get_pdf_link("10.1234/test")
+            == "https://pdf.example.com/best.pdf"
+        )
 
     @patch.object(UnpaywallClient, "get_oa_status")
     async def test_fallback_location(self, mock_status, client):
@@ -201,7 +222,10 @@ class TestGetPdfLink:
                 {"url_for_pdf": "https://pdf.example.com/alt.pdf"},
             ],
         }
-        assert await client.get_pdf_link("10.1234/test") == "https://pdf.example.com/alt.pdf"
+        assert (
+            await client.get_pdf_link("10.1234/test")
+            == "https://pdf.example.com/alt.pdf"
+        )
 
     @patch.object(UnpaywallClient, "get_oa_status")
     async def test_no_pdf_anywhere(self, mock_status, client):
@@ -227,6 +251,7 @@ class TestGetPdfLink:
 # batch_get_oa_status
 # ============================================================
 
+
 class TestBatchGetOAStatus:
     @patch.object(UnpaywallClient, "get_oa_status")
     async def test_batch(self, mock_status, client):
@@ -246,6 +271,7 @@ class TestBatchGetOAStatus:
 # enrich_article
 # ============================================================
 
+
 class TestEnrichArticle:
     @patch.object(UnpaywallClient, "get_oa_status")
     async def test_oa_article(self, mock_status, client):
@@ -259,13 +285,15 @@ class TestEnrichArticle:
                 "host_type": "publisher",
                 "license": "cc-by",
             },
-            "oa_locations": [{
-                "url": "https://pub.example.com",
-                "url_for_pdf": "https://pub.example.com/pdf",
-                "version": "publishedVersion",
-                "host_type": "publisher",
-                "license": "cc-by",
-            }],
+            "oa_locations": [
+                {
+                    "url": "https://pub.example.com",
+                    "url_for_pdf": "https://pub.example.com/pdf",
+                    "version": "publishedVersion",
+                    "host_type": "publisher",
+                    "license": "cc-by",
+                }
+            ],
         }
         result = await client.enrich_article("10.1234/test")
         assert result["is_oa"] is True
@@ -284,6 +312,7 @@ class TestEnrichArticle:
 # Static methods
 # ============================================================
 
+
 class TestStaticMethods:
     async def test_get_oa_status_description(self):
         assert "OA journal" in UnpaywallClient.get_oa_status_description("gold")
@@ -299,32 +328,43 @@ class TestStaticMethods:
 # Convenience functions
 # ============================================================
 
+
 class TestConvenienceFunctions:
     async def test_find_oa_link(self):
         import pubmed_search.infrastructure.sources.unpaywall as mod
+
         mod._unpaywall_client = None
-        with patch.object(UnpaywallClient, "get_best_oa_link", return_value="https://oa.example.com"):
+        with patch.object(
+            UnpaywallClient, "get_best_oa_link", return_value="https://oa.example.com"
+        ):
             result = await find_oa_link("10.1234/test")
             assert result == "https://oa.example.com"
         mod._unpaywall_client = None
 
     async def test_find_pdf_link(self):
         import pubmed_search.infrastructure.sources.unpaywall as mod
+
         mod._unpaywall_client = None
-        with patch.object(UnpaywallClient, "get_pdf_link", return_value="https://pdf.example.com"):
+        with patch.object(
+            UnpaywallClient, "get_pdf_link", return_value="https://pdf.example.com"
+        ):
             result = await find_pdf_link("10.1234/test")
             assert result == "https://pdf.example.com"
         mod._unpaywall_client = None
 
     async def test_is_open_access(self):
         import pubmed_search.infrastructure.sources.unpaywall as mod
+
         mod._unpaywall_client = None
-        with patch.object(UnpaywallClient, "get_oa_status", return_value={"is_oa": True}):
+        with patch.object(
+            UnpaywallClient, "get_oa_status", return_value={"is_oa": True}
+        ):
             assert await is_open_access("10.1234/test") is True
         mod._unpaywall_client = None
 
     async def test_is_open_access_none(self):
         import pubmed_search.infrastructure.sources.unpaywall as mod
+
         mod._unpaywall_client = None
         with patch.object(UnpaywallClient, "get_oa_status", return_value=None):
             assert await is_open_access("10.1234/test") is False
@@ -332,13 +372,17 @@ class TestConvenienceFunctions:
 
     async def test_get_oa_status_func(self):
         import pubmed_search.infrastructure.sources.unpaywall as mod
+
         mod._unpaywall_client = None
-        with patch.object(UnpaywallClient, "get_oa_status", return_value={"oa_status": "gold"}):
+        with patch.object(
+            UnpaywallClient, "get_oa_status", return_value={"oa_status": "gold"}
+        ):
             assert await get_oa_status("10.1234/test") == "gold"
         mod._unpaywall_client = None
 
     async def test_get_oa_status_func_none(self):
         import pubmed_search.infrastructure.sources.unpaywall as mod
+
         mod._unpaywall_client = None
         with patch.object(UnpaywallClient, "get_oa_status", return_value=None):
             assert await get_oa_status("10.1234/test") == "unknown"

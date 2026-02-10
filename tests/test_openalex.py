@@ -1,6 +1,5 @@
 """Tests for OpenAlexClient."""
 
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -24,6 +23,7 @@ def client():
 # Init
 # ============================================================
 
+
 class TestInit:
     async def test_defaults(self):
         c = OpenAlexClient()
@@ -37,6 +37,7 @@ class TestInit:
 # ============================================================
 # _make_request
 # ============================================================
+
 
 class TestMakeRequest:
     async def test_success(self, client):
@@ -72,21 +73,31 @@ class TestMakeRequest:
 # search
 # ============================================================
 
+
 class TestSearch:
     @patch.object(OpenAlexClient, "_make_request")
     async def test_basic(self, mock_req, client):
-        mock_req.return_value = {"results": [{
-            "id": "W123",
-            "display_name": "Test Paper",
-            "publication_date": "2023-06-15",
-            "publication_year": 2023,
-            "authorships": [{"author": {"display_name": "John Doe"}}],
-            "ids": {"doi": "https://doi.org/10.1234/test", "pmid": "https://pubmed.ncbi.nlm.nih.gov/12345/"},
-            "cited_by_count": 50,
-            "open_access": {"is_oa": True, "oa_status": "gold"},
-            "best_oa_location": {"pdf_url": "https://pdf.example.com"},
-            "primary_location": {"source": {"display_name": "Nature", "is_in_doaj": False}},
-        }]}
+        mock_req.return_value = {
+            "results": [
+                {
+                    "id": "W123",
+                    "display_name": "Test Paper",
+                    "publication_date": "2023-06-15",
+                    "publication_year": 2023,
+                    "authorships": [{"author": {"display_name": "John Doe"}}],
+                    "ids": {
+                        "doi": "https://doi.org/10.1234/test",
+                        "pmid": "https://pubmed.ncbi.nlm.nih.gov/12345/",
+                    },
+                    "cited_by_count": 50,
+                    "open_access": {"is_oa": True, "oa_status": "gold"},
+                    "best_oa_location": {"pdf_url": "https://pdf.example.com"},
+                    "primary_location": {
+                        "source": {"display_name": "Nature", "is_in_doaj": False}
+                    },
+                }
+            ]
+        }
         results = await client.search("deep learning")
         assert len(results) == 1
         assert results[0]["title"] == "Test Paper"
@@ -100,7 +111,9 @@ class TestSearch:
     @patch.object(OpenAlexClient, "_make_request")
     async def test_with_filters(self, mock_req, client):
         mock_req.return_value = {"results": []}
-        await client.search("test", min_year=2020, max_year=2024, open_access_only=True, is_doaj=True)
+        await client.search(
+            "test", min_year=2020, max_year=2024, open_access_only=True, is_doaj=True
+        )
         url = mock_req.call_args[0][0]
         assert "is_oa%3Atrue" in url or "is_oa:true" in url
         assert "2020" in url
@@ -133,6 +146,7 @@ class TestSearch:
 # ============================================================
 # get_work
 # ============================================================
+
 
 class TestGetWork:
     @patch.object(OpenAlexClient, "_make_request")
@@ -171,12 +185,15 @@ class TestGetWork:
 # get_citations
 # ============================================================
 
+
 class TestGetCitations:
     @patch.object(OpenAlexClient, "_make_request")
     async def test_success(self, mock_req, client):
-        mock_req.return_value = {"results": [
-            {"id": "W1", "display_name": "Citing Paper", "ids": {}},
-        ]}
+        mock_req.return_value = {
+            "results": [
+                {"id": "W1", "display_name": "Citing Paper", "ids": {}},
+            ]
+        }
         results = await client.get_citations("W123")
         assert len(results) == 1
 
@@ -194,6 +211,7 @@ class TestGetCitations:
 # ============================================================
 # _normalize_work
 # ============================================================
+
 
 class TestNormalizeWork:
     async def test_full_work(self, client):
@@ -215,7 +233,9 @@ class TestNormalizeWork:
             "cited_by_count": 50,
             "open_access": {"is_oa": True, "oa_status": "gold"},
             "best_oa_location": {"pdf_url": "https://pdf.example.com"},
-            "primary_location": {"source": {"display_name": "Nature", "is_in_doaj": True}},
+            "primary_location": {
+                "source": {"display_name": "Nature", "is_in_doaj": True}
+            },
         }
         result = client._normalize_work(work)
         assert result["doi"] == "10.1234/test"
@@ -265,14 +285,17 @@ class TestNormalizeWork:
 # _get_abstract
 # ============================================================
 
+
 class TestGetAbstract:
     async def test_inverted_index(self, client):
-        work = {"abstract_inverted_index": {
-            "This": [0],
-            "is": [1],
-            "a": [2],
-            "test": [3],
-        }}
+        work = {
+            "abstract_inverted_index": {
+                "This": [0],
+                "is": [1],
+                "a": [2],
+                "test": [3],
+            }
+        }
         abstract = client._get_abstract(work)
         assert abstract == "This is a test"
 
@@ -283,11 +306,13 @@ class TestGetAbstract:
         assert client._get_abstract({"abstract_inverted_index": None}) == ""
 
     async def test_multi_position_words(self, client):
-        work = {"abstract_inverted_index": {
-            "the": [0, 3],
-            "cat": [1],
-            "sat": [2],
-            "mat": [4],
-        }}
+        work = {
+            "abstract_inverted_index": {
+                "the": [0, 3],
+                "cat": [1],
+                "sat": [2],
+                "mat": [4],
+            }
+        }
         abstract = client._get_abstract(work)
         assert abstract == "the cat sat the mat"

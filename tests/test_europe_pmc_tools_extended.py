@@ -59,15 +59,19 @@ class TestGetFulltextIdentifiers:
         mock_client.get_fulltext_xml.return_value = None
         mock_unpaywall = AsyncMock()
         mock_unpaywall.get_oa_status.return_value = None
-        with patch(
-            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
-            return_value=mock_client,
-        ), patch(
-            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_unpaywall_client",
-            return_value=mock_unpaywall,
-        ), patch(
-            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_core_client",
-            return_value=AsyncMock(search=AsyncMock(return_value=None)),
+        with (
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
+                return_value=mock_client,
+            ),
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_unpaywall_client",
+                return_value=mock_unpaywall,
+            ),
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_core_client",
+                return_value=AsyncMock(search=AsyncMock(return_value=None)),
+            ),
         ):
             result = await tools["get_fulltext"](identifier="10.1001/jama.2024.1234")
         assert isinstance(result, str)
@@ -86,15 +90,19 @@ class TestGetFulltextIdentifiers:
         mock_client = AsyncMock()
         mock_unpaywall = AsyncMock()
         mock_unpaywall.get_oa_status.return_value = None
-        with patch(
-            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
-            return_value=mock_client,
-        ), patch(
-            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_unpaywall_client",
-            return_value=mock_unpaywall,
-        ), patch(
-            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_core_client",
-            return_value=AsyncMock(search=AsyncMock(return_value=None)),
+        with (
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
+                return_value=mock_client,
+            ),
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_unpaywall_client",
+                return_value=mock_unpaywall,
+            ),
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_core_client",
+                return_value=AsyncMock(search=AsyncMock(return_value=None)),
+            ),
         ):
             result = await tools["get_fulltext"](
                 identifier="https://doi.org/10.1038/s41586-021-03819-2"
@@ -121,15 +129,17 @@ class TestGetFulltextEuropePMC:
     async def test_pmcid_with_xml(self, tools):
         mock_client = AsyncMock()
         mock_client.get_fulltext_xml.return_value = "<xml />"
-        mock_client.parse_fulltext_xml = MagicMock(return_value={
-            "title": "PMC Article",
-            "sections": [
-                {"title": "Introduction", "content": "Intro text here"},
-                {"title": "Methods", "content": "Method description"},
-            ],
-            "abstract": "Article abstract",
-            "references": [{"title": "Ref1"}, {"title": "Ref2"}],
-        })
+        mock_client.parse_fulltext_xml = MagicMock(
+            return_value={
+                "title": "PMC Article",
+                "sections": [
+                    {"title": "Introduction", "content": "Intro text here"},
+                    {"title": "Methods", "content": "Method description"},
+                ],
+                "abstract": "Article abstract",
+                "references": [{"title": "Ref1"}, {"title": "Ref2"}],
+            }
+        )
         with patch(
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
             return_value=mock_client,
@@ -185,15 +195,19 @@ class TestGetFulltextUnpaywall:
             "oa_locations": [],
         }
 
-        with patch(
-            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
-            return_value=mock_client,
-        ), patch(
-            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_unpaywall_client",
-            return_value=mock_unpaywall,
-        ), patch(
-            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_core_client",
-            return_value=AsyncMock(search=AsyncMock(return_value=None)),
+        with (
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
+                return_value=mock_client,
+            ),
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_unpaywall_client",
+                return_value=mock_unpaywall,
+            ),
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_core_client",
+                return_value=AsyncMock(search=AsyncMock(return_value=None)),
+            ),
         ):
             result = await tools["get_fulltext"](doi="10.1001/test")
         assert "example.com/paper.pdf" in result
@@ -214,15 +228,19 @@ class TestGetFulltextUnpaywall:
             "oa_locations": [],
         }
 
-        with patch(
-            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
-            return_value=mock_client,
-        ), patch(
-            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_unpaywall_client",
-            return_value=mock_unpaywall,
-        ), patch(
-            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_core_client",
-            return_value=AsyncMock(search=AsyncMock(return_value=None)),
+        with (
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
+                return_value=mock_client,
+            ),
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_unpaywall_client",
+                return_value=mock_unpaywall,
+            ),
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_core_client",
+                return_value=AsyncMock(search=AsyncMock(return_value=None)),
+            ),
         ):
             result = await tools["get_fulltext"](doi="10.1001/test2")
         assert "repo.example.com" in result
@@ -248,15 +266,19 @@ class TestGetFulltextUnpaywall:
             "oa_locations": [best_loc, alt_loc],
         }
 
-        with patch(
-            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
-            return_value=mock_client,
-        ), patch(
-            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_unpaywall_client",
-            return_value=mock_unpaywall,
-        ), patch(
-            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_core_client",
-            return_value=AsyncMock(search=AsyncMock(return_value=None)),
+        with (
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
+                return_value=mock_client,
+            ),
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_unpaywall_client",
+                return_value=mock_unpaywall,
+            ),
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_core_client",
+                return_value=AsyncMock(search=AsyncMock(return_value=None)),
+            ),
         ):
             result = await tools["get_fulltext"](doi="10.1001/test3")
         assert "publisher.com" in result
@@ -269,15 +291,19 @@ class TestGetFulltextUnpaywall:
         mock_unpaywall = AsyncMock()
         mock_unpaywall.get_oa_status.return_value = {"is_oa": False}
 
-        with patch(
-            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
-            return_value=mock_client,
-        ), patch(
-            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_unpaywall_client",
-            return_value=mock_unpaywall,
-        ), patch(
-            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_core_client",
-            return_value=AsyncMock(search=AsyncMock(return_value=None)),
+        with (
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
+                return_value=mock_client,
+            ),
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_unpaywall_client",
+                return_value=mock_unpaywall,
+            ),
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_core_client",
+                return_value=AsyncMock(search=AsyncMock(return_value=None)),
+            ),
         ):
             result = await tools["get_fulltext"](doi="10.1001/closed")
         assert isinstance(result, str)
@@ -286,15 +312,19 @@ class TestGetFulltextUnpaywall:
         mock_client = AsyncMock()
         mock_client.get_fulltext_xml.return_value = None
 
-        with patch(
-            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
-            return_value=mock_client,
-        ), patch(
-            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_unpaywall_client",
-            side_effect=RuntimeError("API down"),
-        ), patch(
-            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_core_client",
-            return_value=AsyncMock(search=AsyncMock(return_value=None)),
+        with (
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
+                return_value=mock_client,
+            ),
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_unpaywall_client",
+                side_effect=RuntimeError("API down"),
+            ),
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_core_client",
+                return_value=AsyncMock(search=AsyncMock(return_value=None)),
+            ),
         ):
             result = await tools["get_fulltext"](doi="10.1001/error")
         assert isinstance(result, str)
@@ -328,15 +358,19 @@ class TestGetFulltextCORE:
             ]
         }
 
-        with patch(
-            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
-            return_value=mock_client,
-        ), patch(
-            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_unpaywall_client",
-            return_value=mock_unpaywall,
-        ), patch(
-            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_core_client",
-            return_value=mock_core,
+        with (
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
+                return_value=mock_client,
+            ),
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_unpaywall_client",
+                return_value=mock_unpaywall,
+            ),
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_core_client",
+                return_value=mock_core,
+            ),
         ):
             result = await tools["get_fulltext"](doi="10.1234/core-test")
         assert "CORE" in result or "core.ac.uk" in result
@@ -358,15 +392,19 @@ class TestGetFulltextCORE:
             ]
         }
 
-        with patch(
-            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
-            return_value=mock_client,
-        ), patch(
-            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_unpaywall_client",
-            return_value=mock_unpaywall,
-        ), patch(
-            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_core_client",
-            return_value=mock_core,
+        with (
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
+                return_value=mock_client,
+            ),
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_unpaywall_client",
+                return_value=mock_unpaywall,
+            ),
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_core_client",
+                return_value=mock_core,
+            ),
         ):
             result = await tools["get_fulltext"](doi="10.1234/core-notext")
         assert "core.ac.uk" in result
@@ -378,15 +416,19 @@ class TestGetFulltextCORE:
         mock_unpaywall = AsyncMock()
         mock_unpaywall.get_oa_status.return_value = None
 
-        with patch(
-            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
-            return_value=mock_client,
-        ), patch(
-            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_unpaywall_client",
-            return_value=mock_unpaywall,
-        ), patch(
-            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_core_client",
-            side_effect=RuntimeError("CORE down"),
+        with (
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
+                return_value=mock_client,
+            ),
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_unpaywall_client",
+                return_value=mock_unpaywall,
+            ),
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_core_client",
+                side_effect=RuntimeError("CORE down"),
+            ),
         ):
             result = await tools["get_fulltext"](doi="10.1234/core-err")
         assert isinstance(result, str)
@@ -401,15 +443,17 @@ class TestGetFulltextSections:
     async def test_filter_specific_sections(self, tools):
         mock_client = AsyncMock()
         mock_client.get_fulltext_xml.return_value = "<xml/>"
-        mock_client.parse_fulltext_xml = MagicMock(return_value={
-            "title": "Test",
-            "sections": [
-                {"title": "Introduction", "content": "Intro text"},
-                {"title": "Methods", "content": "Methods text"},
-                {"title": "Results", "content": "Results text"},
-                {"title": "Discussion", "content": "Discussion text"},
-            ],
-        })
+        mock_client.parse_fulltext_xml = MagicMock(
+            return_value={
+                "title": "Test",
+                "sections": [
+                    {"title": "Introduction", "content": "Intro text"},
+                    {"title": "Methods", "content": "Methods text"},
+                    {"title": "Results", "content": "Results text"},
+                    {"title": "Discussion", "content": "Discussion text"},
+                ],
+            }
+        )
         with patch(
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
             return_value=mock_client,
@@ -425,12 +469,14 @@ class TestGetFulltextSections:
     async def test_long_section_truncation(self, tools):
         mock_client = AsyncMock()
         mock_client.get_fulltext_xml.return_value = "<xml/>"
-        mock_client.parse_fulltext_xml = MagicMock(return_value={
-            "title": "Test",
-            "sections": [
-                {"title": "Results", "content": "X" * 7000},
-            ],
-        })
+        mock_client.parse_fulltext_xml = MagicMock(
+            return_value={
+                "title": "Test",
+                "sections": [
+                    {"title": "Results", "content": "X" * 7000},
+                ],
+            }
+        )
         with patch(
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
             return_value=mock_client,
@@ -441,13 +487,15 @@ class TestGetFulltextSections:
     async def test_no_matching_sections_falls_back_abstract(self, tools):
         mock_client = AsyncMock()
         mock_client.get_fulltext_xml.return_value = "<xml/>"
-        mock_client.parse_fulltext_xml = MagicMock(return_value={
-            "title": "Test",
-            "sections": [
-                {"title": "Introduction", "content": "Intro"},
-            ],
-            "abstract": "Abstract text fallback",
-        })
+        mock_client.parse_fulltext_xml = MagicMock(
+            return_value={
+                "title": "Test",
+                "sections": [
+                    {"title": "Introduction", "content": "Intro"},
+                ],
+                "abstract": "Abstract text fallback",
+            }
+        )
         with patch(
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
             return_value=mock_client,
@@ -472,15 +520,19 @@ class TestGetFulltextNoResults:
         mock_core = AsyncMock()
         mock_core.search.return_value = None
 
-        with patch(
-            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
-            return_value=mock_client,
-        ), patch(
-            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_unpaywall_client",
-            return_value=mock_unpaywall,
-        ), patch(
-            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_core_client",
-            return_value=mock_core,
+        with (
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
+                return_value=mock_client,
+            ),
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_unpaywall_client",
+                return_value=mock_unpaywall,
+            ),
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_core_client",
+                return_value=mock_core,
+            ),
         ):
             result = await tools["get_fulltext"](doi="10.1234/nothing")
         assert "no results" in result.lower() or "not" in result.lower()

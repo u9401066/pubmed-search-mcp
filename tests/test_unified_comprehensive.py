@@ -31,7 +31,7 @@ class TestIcdCodeDetection:
 
         query = "diabetes mellitus treatment"
         expanded, matches = detect_and_expand_icd_codes(query)
-        
+
         assert expanded == query
         assert matches == []
 
@@ -274,7 +274,7 @@ class TestSearchFunctions:
                 "authors": [],
                 "journal": "",
                 "year": "2024",
-            }
+            },
         ]
 
         articles, total_count = await _search_pubmed(
@@ -482,11 +482,11 @@ class TestFormatFunctions:
             register_unified_search_tools,
         )
         from mcp.server.fastmcp import FastMCP
-        
+
         mcp = FastMCP(name="test")
         mock_searcher = AsyncMock()
         register_unified_search_tools(mcp, mock_searcher)
-        
+
         # If it registered successfully, the format functions exist
         tool_names = [t.name for t in mcp._tool_manager._tools.values()]
         assert "unified_search" in tool_names

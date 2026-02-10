@@ -28,6 +28,7 @@ def tools():
 # search_gene
 # ============================================================
 
+
 class TestSearchGeneTool:
     @pytest.mark.asyncio
     async def test_empty_query(self, tools):
@@ -74,6 +75,7 @@ class TestSearchGeneTool:
 # get_gene_details
 # ============================================================
 
+
 class TestGetGeneDetailsTool:
     @pytest.mark.asyncio
     async def test_missing_gene_id(self, tools):
@@ -108,6 +110,7 @@ class TestGetGeneDetailsTool:
 # get_gene_literature
 # ============================================================
 
+
 class TestGetGeneLiteratureTool:
     @pytest.mark.asyncio
     async def test_missing_gene_id(self, tools):
@@ -132,6 +135,7 @@ class TestGetGeneLiteratureTool:
 # search_compound
 # ============================================================
 
+
 class TestSearchCompoundTool:
     @pytest.mark.asyncio
     async def test_empty_query(self, tools):
@@ -141,9 +145,7 @@ class TestSearchCompoundTool:
     @pytest.mark.asyncio
     async def test_success(self, tools):
         mock_client = AsyncMock()
-        mock_client.search_compound.return_value = [
-            {"cid": "2244", "name": "Aspirin"}
-        ]
+        mock_client.search_compound.return_value = [{"cid": "2244", "name": "Aspirin"}]
         with patch(
             "pubmed_search.infrastructure.sources.ncbi_extended.get_ncbi_extended_client",
             return_value=mock_client,
@@ -156,6 +158,7 @@ class TestSearchCompoundTool:
 # ============================================================
 # get_compound_details
 # ============================================================
+
 
 class TestGetCompoundDetailsTool:
     @pytest.mark.asyncio
@@ -191,6 +194,7 @@ class TestGetCompoundDetailsTool:
 # get_compound_literature
 # ============================================================
 
+
 class TestGetCompoundLiteratureTool:
     @pytest.mark.asyncio
     async def test_missing_cid(self, tools):
@@ -213,6 +217,7 @@ class TestGetCompoundLiteratureTool:
 # ============================================================
 # search_clinvar
 # ============================================================
+
 
 class TestSearchClinvarTool:
     @pytest.mark.asyncio

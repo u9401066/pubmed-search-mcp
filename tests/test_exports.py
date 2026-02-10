@@ -381,7 +381,9 @@ class TestFulltextLinks:
         assert results[0]["has_free_fulltext"] is True
         assert results[1]["has_free_fulltext"] is False
 
-    async def test_summarize_access(self, sample_article_with_pmc, sample_article_no_pmc):
+    async def test_summarize_access(
+        self, sample_article_with_pmc, sample_article_no_pmc
+    ):
         """Test summarizing fulltext access."""
         from pubmed_search.application.export.links import summarize_access
 

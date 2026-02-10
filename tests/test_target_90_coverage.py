@@ -25,8 +25,14 @@ class TestSearchRetryAndErrorPaths:
                 "pubmed_search.infrastructure.ncbi.search.Entrez.esearch"
             ) as mock_esearch,
             patch("pubmed_search.infrastructure.ncbi.search.Entrez.read") as mock_read,
-            patch("pubmed_search.infrastructure.ncbi.search.asyncio.sleep", new_callable=AsyncMock),
-            patch("pubmed_search.infrastructure.ncbi.search._rate_limit", new_callable=AsyncMock),
+            patch(
+                "pubmed_search.infrastructure.ncbi.search.asyncio.sleep",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "pubmed_search.infrastructure.ncbi.search._rate_limit",
+                new_callable=AsyncMock,
+            ),
         ):
             # First two calls fail, third succeeds
             call_count = [0]
@@ -59,8 +65,14 @@ class TestSearchRetryAndErrorPaths:
             patch(
                 "pubmed_search.infrastructure.ncbi.search.Entrez.esearch"
             ) as mock_esearch,
-            patch("pubmed_search.infrastructure.ncbi.search.asyncio.sleep", new_callable=AsyncMock),
-            patch("pubmed_search.infrastructure.ncbi.search._rate_limit", new_callable=AsyncMock),
+            patch(
+                "pubmed_search.infrastructure.ncbi.search.asyncio.sleep",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "pubmed_search.infrastructure.ncbi.search._rate_limit",
+                new_callable=AsyncMock,
+            ),
         ):
             mock_esearch.side_effect = Exception("Backend failed")
 

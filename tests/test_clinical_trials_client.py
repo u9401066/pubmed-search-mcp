@@ -4,7 +4,7 @@ Tests for ClinicalTrials.gov API client.
 Target: clinical_trials.py coverage from 0% to 90%+
 """
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -38,12 +38,12 @@ class TestClinicalTrialsClientBasic:
         """Test lazy initialization of HTTP client."""
         client = ClinicalTrialsClient()
         assert client._client is None
-        
+
         # Access client property
         http_client = client.client
         assert http_client is not None
         assert client._client is not None
-        
+
         # Should return same instance
         http_client2 = client.client
         assert http_client is http_client2
@@ -125,9 +125,7 @@ class TestClinicalTrialsClientSearch:
         client._client = mock_async_client
 
         _results = await client.search(
-            "diabetes",
-            limit=10,
-            status=["RECRUITING", "COMPLETED"]
+            "diabetes", limit=10, status=["RECRUITING", "COMPLETED"]
         )
 
         # Check that status filter was included in params
@@ -173,9 +171,7 @@ class TestClinicalTrialsClientSearch:
 
         mock_response = MagicMock()
         mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
-            "Server Error",
-            request=MagicMock(),
-            response=MagicMock(status_code=500)
+            "Server Error", request=MagicMock(), response=MagicMock(status_code=500)
         )
 
         mock_async_client = AsyncMock()
@@ -234,7 +230,7 @@ class TestNormalizeStudy:
     async def test_normalize_complete_study(self):
         """Test normalization of complete study data."""
         client = ClinicalTrialsClient()
-        
+
         study = {
             "protocolSection": {
                 "identificationModule": {
@@ -250,19 +246,15 @@ class TestNormalizeStudy:
                     "phases": ["PHASE3"],
                     "enrollmentInfo": {"count": 1000},
                 },
-                "conditionsModule": {
-                    "conditions": ["Hypertension"]
-                },
+                "conditionsModule": {"conditions": ["Hypertension"]},
                 "armsInterventionsModule": {
-                    "interventions": [
-                        {"type": "DRUG", "name": "DrugA"}
-                    ]
+                    "interventions": [{"type": "DRUG", "name": "DrugA"}]
                 },
             }
         }
-        
+
         result = client._normalize_study(study)
-        
+
         assert result["nct_id"] == "NCT12345678"
         assert result["title"] == "Test Trial"
         assert result["official_title"] == "Official Test Trial Title"
@@ -274,7 +266,7 @@ class TestNormalizeStudy:
     async def test_normalize_minimal_study(self):
         """Test normalization of study with minimal data."""
         client = ClinicalTrialsClient()
-        
+
         study = {
             "protocolSection": {
                 "identificationModule": {},
@@ -284,9 +276,9 @@ class TestNormalizeStudy:
                 "armsInterventionsModule": {},
             }
         }
-        
+
         result = client._normalize_study(study)
-        
+
         assert result["nct_id"] == ""
         assert result["title"] == ""
         assert result["status"] == "UNKNOWN"
@@ -295,38 +287,36 @@ class TestNormalizeStudy:
     async def test_normalize_empty_study(self):
         """Test normalization of empty study."""
         client = ClinicalTrialsClient()
-        
+
         study = {}
-        
+
         result = client._normalize_study(study)
-        
+
         assert result["nct_id"] == ""
         assert result["title"] == ""
 
     async def test_normalize_multiple_phases(self):
         """Test normalization with multiple phases."""
         client = ClinicalTrialsClient()
-        
+
         study = {
             "protocolSection": {
                 "identificationModule": {"nctId": "NCT00001"},
                 "statusModule": {},
-                "designModule": {
-                    "phases": ["PHASE1", "PHASE2"]
-                },
+                "designModule": {"phases": ["PHASE1", "PHASE2"]},
                 "conditionsModule": {},
                 "armsInterventionsModule": {},
             }
         }
-        
+
         result = client._normalize_study(study)
-        
+
         assert result["phase"] == "PHASE1, PHASE2"
 
     async def test_normalize_multiple_interventions(self):
         """Test normalization with multiple interventions."""
         client = ClinicalTrialsClient()
-        
+
         study = {
             "protocolSection": {
                 "identificationModule": {"nctId": "NCT00002"},
@@ -342,9 +332,9 @@ class TestNormalizeStudy:
                 },
             }
         }
-        
+
         result = client._normalize_study(study)
-        
+
         assert len(result["interventions"]) == 3
         assert result["interventions"][0]["type"] == "DRUG"
         assert result["interventions"][1]["type"] == "PROCEDURE"
@@ -352,7 +342,7 @@ class TestNormalizeStudy:
     async def test_normalize_preserves_url(self):
         """Test that NCT ID is used in URL."""
         client = ClinicalTrialsClient()
-        
+
         study = {
             "protocolSection": {
                 "identificationModule": {"nctId": "NCT05555555"},
@@ -362,9 +352,9 @@ class TestNormalizeStudy:
                 "armsInterventionsModule": {},
             }
         }
-        
+
         result = client._normalize_study(study)
-        
+
         # URL should contain NCT ID
         assert result["nct_id"] == "NCT05555555"
         if "url" in result:

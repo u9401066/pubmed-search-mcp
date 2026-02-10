@@ -112,7 +112,9 @@ class TestImageQueryAdvisorImageType:
     async def test_recommend_mc_for_microscopy(self):
         advice = self.advisor.advise("histology liver biopsy pathology")
         assert advice.recommended_image_type == "mc"
-        assert "顯微鏡" in advice.image_type_reason or "病理" in advice.image_type_reason
+        assert (
+            "顯微鏡" in advice.image_type_reason or "病理" in advice.image_type_reason
+        )
 
     async def test_recommend_ph_for_photo(self):
         advice = self.advisor.advise("skin lesion dermatology clinical photo")
@@ -270,7 +272,9 @@ class TestImageQueryAdvisorCollection:
     async def test_mpx_collection_for_teaching(self):
         advice = self.advisor.advise("clinical case teaching image")
         assert advice.recommended_collection == "mpx"
-        assert "教學" in advice.collection_reason or "MedPix" in advice.collection_reason
+        assert (
+            "教學" in advice.collection_reason or "MedPix" in advice.collection_reason
+        )
 
     async def test_hmd_collection_for_medical_history(self):
         advice = self.advisor.advise("history of medicine vintage")
@@ -367,9 +371,7 @@ class TestNonEnglishDetection:
     async def test_chinese_query_detected(self):
         advice = self.advisor.advise("喉頭水腫")
         assert advice.has_warnings
-        has_lang_warning = any(
-            "English" in w or "翻譯" in w for w in advice.warnings
-        )
+        has_lang_warning = any("English" in w or "翻譯" in w for w in advice.warnings)
         assert has_lang_warning
 
     async def test_japanese_query_detected(self):
@@ -427,7 +429,10 @@ class TestNonEnglishDetection:
         result = self.advisor._detect_non_english("肺炎")
         assert "error_message" in result
         # Should mention English requirement and translation
-        assert "English" in result["error_message"] or "translate" in result["error_message"]
+        assert (
+            "English" in result["error_message"]
+            or "translate" in result["error_message"]
+        )
 
     async def test_detect_returns_examples(self):
         """_detect_non_english should return translation examples."""
@@ -609,7 +614,9 @@ class TestAdvisorIntegration:
             total_count=1,
             sources_used=["openi"],
             query="covid-19 chest",
-            advisor_warnings=["Open-i 索引凍結於 ~2020，查詢含 'covid-19' 可能找不到相關結果"],
+            advisor_warnings=[
+                "Open-i 索引凍結於 ~2020，查詢含 'covid-19' 可能找不到相關結果"
+            ],
             advisor_suggestions=[],
             recommended_image_type="x",  # x = X-ray (not xg)
         )

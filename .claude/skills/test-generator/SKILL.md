@@ -5,6 +5,21 @@ description: Generate comprehensive test suites including static analysis, unit 
 
 # 測試生成技能
 
+## ⚗️ 本專案規範 (CRITICAL)
+
+**所有命令一律透過 `uv run` 執行**，包括測試、lint、type check：
+
+```bash
+uv run pytest --timeout=60   # 測試
+uv run ruff check .          # Lint
+uv run ruff format .         # 格式化
+uv run mypy src/ tests/      # 型別檢查（含 tests）
+uv run pytest --cov          # 覆蓋率
+```
+
+> 💡 UV 使用 Rust 實作，比 pip 快 10-100 倍。`uv run` 在毫秒級確認環境後直接執行，幾乎零開銷。
+> ⚠️ **永遠不要**直接呼叫 `pytest`、`ruff`、`mypy`。
+
 ## 描述
 為指定的程式碼自動生成完整測試套件，包含靜態分析、單元測試、整合測試及覆蓋率報告。
 
@@ -521,13 +536,13 @@ output = "coverage.xml"
 #### 執行覆蓋率
 ```bash
 # 單元測試覆蓋率
-pytest tests/unit -v --cov=src --cov-report=term-missing --cov-report=html
+uv run pytest tests/unit -v --cov=src --cov-report=term-missing --cov-report=html
 
 # 整合測試覆蓋率
-pytest tests/integration -v --cov=src --cov-report=xml --cov-append
+uv run pytest tests/integration -v --cov=src --cov-report=xml --cov-append
 
 # 全部測試 + 覆蓋率報告
-pytest --cov=src --cov-report=term-missing --cov-report=html --cov-report=xml
+uv run pytest --cov=src --cov-report=term-missing --cov-report=html --cov-report=xml
 ```
 
 ---

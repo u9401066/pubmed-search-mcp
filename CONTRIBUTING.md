@@ -59,20 +59,27 @@ By participating in this project, you agree to maintain a respectful and inclusi
 
 ### Installation
 
-This project uses [UV](https://github.com/astral-sh/uv) for dependency management:
+This project uses [UV](https://github.com/astral-sh/uv) for dependency management.
+**All commands (including tests, lint, type check) must go through `uv run`** to ensure the correct virtual environment and dependency versions.
+
+> 💡 **UV is extremely efficient**: Built in Rust, 10-100x faster than pip. Even `uv run pytest` confirms env consistency in milliseconds before executing — virtually zero overhead.
 
 ```bash
 # Install all dependencies (including dev tools)
 uv sync
 
-# Run commands through uv
+# Run commands through uv (ALWAYS use uv run prefix)
 uv run pytest              # Run tests
 uv run ruff check .        # Lint
+uv run ruff check . --fix  # Lint auto-fix
 uv run ruff format .       # Format
-uv run mypy src/           # Type check
+uv run mypy src/ tests/    # Type check (including tests)
+uv run pytest --cov        # Coverage
+uv run pytest --timeout=60 # Tests with timeout
 ```
 
-> **Note**: Do NOT use `pip install`. All dependencies are managed via `uv` and defined in `pyproject.toml` with `[dependency-groups]`.
+> ⚠️ **NEVER** call `pytest`, `ruff`, or `mypy` directly. Always use the `uv run` prefix.
+> **Do NOT** use `pip install`. All dependencies are managed via `uv` and defined in `pyproject.toml` with `[dependency-groups]`.
 
 ### Environment Variables (Optional)
 

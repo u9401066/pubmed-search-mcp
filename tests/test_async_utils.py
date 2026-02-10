@@ -22,6 +22,7 @@ from pubmed_search.shared.exceptions import RateLimitError
 # RateLimiter
 # ============================================================
 
+
 class TestRateLimiter:
     @pytest.mark.asyncio
     async def test_acquire_fast(self):
@@ -67,6 +68,7 @@ class TestGetRateLimiter:
 # ============================================================
 # async_retry
 # ============================================================
+
 
 class TestAsyncRetry:
     @pytest.mark.asyncio
@@ -132,6 +134,7 @@ class TestAsyncRetry:
 # gather_with_errors
 # ============================================================
 
+
 class TestGatherWithErrors:
     @pytest.mark.asyncio
     async def test_all_success(self):
@@ -149,9 +152,7 @@ class TestGatherWithErrors:
         async def fail():
             raise ValueError("bad")
 
-        results = await gather_with_errors(
-            ok(), fail(), return_exceptions=True
-        )
+        results = await gather_with_errors(ok(), fail(), return_exceptions=True)
         assert any(isinstance(r, str) for r in results)
         assert any(isinstance(r, ValueError) for r in results)
 
@@ -164,6 +165,7 @@ class TestGatherWithErrors:
 # ============================================================
 # batch_process
 # ============================================================
+
 
 class TestBatchProcess:
     @pytest.mark.asyncio
@@ -207,6 +209,7 @@ class TestBatchProcess:
 # ============================================================
 # CircuitBreaker
 # ============================================================
+
 
 class TestCircuitBreaker:
     @pytest.mark.asyncio
@@ -283,6 +286,7 @@ class TestCircuitBreaker:
 # AsyncConnectionPool
 # ============================================================
 
+
 class TestAsyncConnectionPool:
     @pytest.mark.asyncio
     async def test_acquire_creates_connection(self):
@@ -313,6 +317,7 @@ class TestAsyncConnectionPool:
 # ============================================================
 # timeout_with_fallback
 # ============================================================
+
 
 class TestTimeoutWithFallback:
     @pytest.mark.asyncio

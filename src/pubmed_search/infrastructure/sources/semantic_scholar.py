@@ -96,7 +96,9 @@ class SemanticScholarClient:
                 if response.status_code == 429:
                     if attempt < self._MAX_RETRIES:
                         try:
-                            retry_after = float(response.headers.get("Retry-After", 2 ** (attempt + 1)))
+                            retry_after = float(
+                                response.headers.get("Retry-After", 2 ** (attempt + 1))
+                            )
                         except (ValueError, TypeError):
                             retry_after = float(2 ** (attempt + 1))
                         logger.warning(
@@ -105,7 +107,9 @@ class SemanticScholarClient:
                         )
                         await asyncio.sleep(retry_after)
                         continue
-                    logger.warning("Semantic Scholar: Rate limit exceeded after retries")
+                    logger.warning(
+                        "Semantic Scholar: Rate limit exceeded after retries"
+                    )
                     return None
                 response.raise_for_status()
                 return response.json()

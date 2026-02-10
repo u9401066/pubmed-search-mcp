@@ -447,9 +447,7 @@ class TestResponseFormatterError:
 
     async def test_error_with_example(self):
         """Test error with example."""
-        result = ResponseFormatter.error(
-            "Invalid input", example="tool(param='value')"
-        )
+        result = ResponseFormatter.error("Invalid input", example="tool(param='value')")
         assert "📝" in result
         assert "tool(param='value')" in result
 

@@ -19,6 +19,7 @@ from pubmed_search.infrastructure.sources import (
 # SearchSource enum
 # ============================================================
 
+
 class TestSearchSource:
     async def test_values(self):
         assert SearchSource.PUBMED.value == "pubmed"
@@ -29,6 +30,7 @@ class TestSearchSource:
 # ============================================================
 # search_alternate_source
 # ============================================================
+
 
 class TestSearchAlternateSource:
     @patch("pubmed_search.infrastructure.sources.get_semantic_scholar_client")
@@ -85,8 +87,12 @@ class TestSearchAlternateSource:
         mock_get.return_value = mock_client
 
         await search_alternate_source(
-            "test", "semantic_scholar",
-            limit=20, min_year=2020, max_year=2024, open_access_only=True
+            "test",
+            "semantic_scholar",
+            limit=20,
+            min_year=2020,
+            max_year=2024,
+            open_access_only=True,
         )
         mock_client.search.assert_called_with(
             query="test", limit=20, min_year=2020, max_year=2024, open_access_only=True
@@ -96,6 +102,7 @@ class TestSearchAlternateSource:
 # ============================================================
 # cross_search
 # ============================================================
+
 
 class TestCrossSearch:
     @patch("pubmed_search.infrastructure.sources.search_alternate_source")
@@ -107,7 +114,9 @@ class TestCrossSearch:
 
     @patch("pubmed_search.infrastructure.sources.search_alternate_source")
     async def test_specific_sources(self, mock_search):
-        mock_search.return_value = [{"title": "P", "doi": "10.1/x", "_source": "openalex"}]
+        mock_search.return_value = [
+            {"title": "P", "doi": "10.1/x", "_source": "openalex"}
+        ]
         result = await cross_search("test", sources=["openalex"])
         assert "openalex" in result["by_source"]
 
@@ -134,7 +143,9 @@ class TestCrossSearch:
             [{"title": "Same Paper", "doi": "10.1/x", "_source": "ss"}],
             [{"title": "Same Paper", "doi": "10.1/x", "_source": "oa"}],
         ]
-        result = await cross_search("test", sources=["semantic_scholar", "openalex"], deduplicate=False)
+        result = await cross_search(
+            "test", sources=["semantic_scholar", "openalex"], deduplicate=False
+        )
         assert result["stats"]["total"] == 2
 
     @patch("pubmed_search.infrastructure.sources.search_alternate_source")
@@ -147,17 +158,22 @@ class TestCrossSearch:
     @patch("pubmed_search.infrastructure.sources.search_alternate_source")
     async def test_has_fulltext_only_for_supported(self, mock_search):
         mock_search.return_value = []
-        await cross_search("test", sources=["europe_pmc", "semantic_scholar"], has_fulltext=True)
+        await cross_search(
+            "test", sources=["europe_pmc", "semantic_scholar"], has_fulltext=True
+        )
         calls = mock_search.call_args_list
         # europe_pmc should get has_fulltext=True, semantic_scholar should not
         for call in calls:
-            if call[1].get("source") == "europe_pmc" or (call[0] and len(call[0]) > 1 and call[0][1] == "europe_pmc"):
+            if call[1].get("source") == "europe_pmc" or (
+                call[0] and len(call[0]) > 1 and call[0][1] == "europe_pmc"
+            ):
                 pass  # Check the has_fulltext param
 
 
 # ============================================================
 # _deduplicate_results
 # ============================================================
+
 
 class TestDeduplicateResults:
     async def test_by_doi(self):
@@ -199,6 +215,7 @@ class TestDeduplicateResults:
 # _normalize_title
 # ============================================================
 
+
 class TestNormalizeTitle:
     async def test_lowercase(self):
         assert "hello" in _normalize_title("Hello")
@@ -213,6 +230,7 @@ class TestNormalizeTitle:
 # ============================================================
 # get_paper_from_any_source
 # ============================================================
+
 
 class TestGetPaperFromAnySource:
     @patch("pubmed_search.infrastructure.sources.get_semantic_scholar_client")
@@ -284,6 +302,7 @@ class TestGetPaperFromAnySource:
 # Fulltext functions
 # ============================================================
 
+
 class TestFulltext:
     @patch("pubmed_search.infrastructure.sources.get_europe_pmc_client")
     async def test_get_fulltext_xml(self, mock_get):
@@ -318,9 +337,11 @@ class TestFulltext:
 # Lazy init singletons
 # ============================================================
 
+
 class TestLazyInit:
     async def test_get_fulltext_downloader(self):
         import pubmed_search.infrastructure.sources as mod
+
         mod._fulltext_downloader = None
         downloader = mod.get_fulltext_downloader()
         assert downloader is not None

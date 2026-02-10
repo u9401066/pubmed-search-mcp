@@ -51,7 +51,9 @@ class TestConfiguration:
 
     async def test_configure_proxy_explicit(self):
         """Test explicit proxy configuration."""
-        configure_proxy(http_proxy="http://proxy:8080", https_proxy="https://proxy:8080")
+        configure_proxy(
+            http_proxy="http://proxy:8080", https_proxy="https://proxy:8080"
+        )
         assert _config["http_proxy"] == "http://proxy:8080"
         assert _config["https_proxy"] == "https://proxy:8080"
 
@@ -166,7 +168,9 @@ class TestHttpGet:
         mock_opener.open.return_value = mock_response
         mock_build_opener.return_value = mock_opener
 
-        result = http_get("https://api.test.com/data", expect_json=False, rate_limit_interval=0)
+        result = http_get(
+            "https://api.test.com/data", expect_json=False, rate_limit_interval=0
+        )
         assert result == "plain text response"
 
     @patch("pubmed_search.infrastructure.http.client._build_opener")
@@ -232,7 +236,9 @@ class TestHttpGet:
         mock_build_opener.return_value = mock_opener
 
         with pytest.raises(ParseError):
-            http_get("https://api.test.com/data", expect_json=True, rate_limit_interval=0)
+            http_get(
+                "https://api.test.com/data", expect_json=True, rate_limit_interval=0
+            )
 
     @patch("pubmed_search.infrastructure.http.client._build_opener")
     async def test_http_get_with_headers(self, mock_build_opener):

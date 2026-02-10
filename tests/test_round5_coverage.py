@@ -9,7 +9,6 @@ NOTE: search_literature, expand_search_queries, search_europe_pmc are
 
 import time
 from unittest.mock import MagicMock, AsyncMock, patch
-import urllib.error
 
 
 # ============================================================
@@ -148,7 +147,10 @@ class TestCOREClient:
         mock_client.get.return_value = mock_response
         c._client = mock_client
 
-        with patch("pubmed_search.infrastructure.sources.core.asyncio.sleep", new_callable=AsyncMock):
+        with patch(
+            "pubmed_search.infrastructure.sources.core.asyncio.sleep",
+            new_callable=AsyncMock,
+        ):
             result = await c._make_request("https://example.com/api")
         assert result is None
 
@@ -190,7 +192,9 @@ class TestCOREClient:
             ],
         }
 
-        with patch.object(c, "_make_request", new_callable=AsyncMock, return_value=mock_response_data):
+        with patch.object(
+            c, "_make_request", new_callable=AsyncMock, return_value=mock_response_data
+        ):
             result = await c.search("machine learning", limit=5)
         assert result["total_hits"] == 50
         assert len(result["results"]) == 1
@@ -201,7 +205,9 @@ class TestCOREClient:
         from pubmed_search.infrastructure.sources.core import COREClient
 
         c = COREClient()
-        with patch.object(c, "_make_request", new_callable=AsyncMock, return_value=None):
+        with patch.object(
+            c, "_make_request", new_callable=AsyncMock, return_value=None
+        ):
             result = await c.search("xyz_no_match")
         assert result["total_hits"] == 0
         assert result["results"] == []
@@ -211,7 +217,10 @@ class TestCOREClient:
 
         c = COREClient()
         with patch.object(
-            c, "_make_request", new_callable=AsyncMock, return_value={"totalHits": 0, "results": []}
+            c,
+            "_make_request",
+            new_callable=AsyncMock,
+            return_value={"totalHits": 0, "results": []},
         ) as mock_req:
             await c.search(
                 "test",
@@ -230,11 +239,14 @@ class TestCOREClient:
 
         c = COREClient()
         with patch.object(
-            c, "search", new_callable=AsyncMock, return_value={"total_hits": 0, "results": []}
+            c,
+            "search",
+            new_callable=AsyncMock,
+            return_value={"total_hits": 0, "results": []},
         ) as mock_s:
             await c.search_fulltext("deep learning", limit=5)
         assert mock_s.called
-        # search_fulltext wraps query in fullText:"..." 
+        # search_fulltext wraps query in fullText:"..."
         call_query = mock_s.call_args[1].get("query") or mock_s.call_args[0][0]
         assert "fullText" in call_query
 
@@ -248,7 +260,9 @@ class TestCOREClient:
             "authors": [{"name": "A B"}],
             "yearPublished": 2022,
         }
-        with patch.object(c, "_make_request", new_callable=AsyncMock, return_value=work_data):
+        with patch.object(
+            c, "_make_request", new_callable=AsyncMock, return_value=work_data
+        ):
             result = await c.get_work(999)
         assert result is not None
         assert result["title"] == "A Paper"
@@ -257,7 +271,9 @@ class TestCOREClient:
         from pubmed_search.infrastructure.sources.core import COREClient
 
         c = COREClient()
-        with patch.object(c, "_make_request", new_callable=AsyncMock, return_value=None):
+        with patch.object(
+            c, "_make_request", new_callable=AsyncMock, return_value=None
+        ):
             result = await c.get_work(99999)
         assert result is None
 
@@ -271,7 +287,9 @@ class TestCOREClient:
             "fullText": "Full text here",
             "authors": [],
         }
-        with patch.object(c, "_make_request", new_callable=AsyncMock, return_value=output_data):
+        with patch.object(
+            c, "_make_request", new_callable=AsyncMock, return_value=output_data
+        ):
             result = await c.get_output(888)
         assert result is not None
         assert result["full_text"] == "Full text here"
@@ -286,7 +304,9 @@ class TestCOREClient:
             "fullText": "The full text content",
             "authors": [],
         }
-        with patch.object(c, "_make_request", new_callable=AsyncMock, return_value=output_data):
+        with patch.object(
+            c, "_make_request", new_callable=AsyncMock, return_value=output_data
+        ):
             result = await c.get_fulltext(777)
         assert result == "The full text content"
 
@@ -294,7 +314,9 @@ class TestCOREClient:
         from pubmed_search.infrastructure.sources.core import COREClient
 
         c = COREClient()
-        with patch.object(c, "_make_request", new_callable=AsyncMock, return_value=None):
+        with patch.object(
+            c, "_make_request", new_callable=AsyncMock, return_value=None
+        ):
             result = await c.get_fulltext(999)
         assert result is None
 
@@ -315,7 +337,9 @@ class TestCOREClient:
         from pubmed_search.infrastructure.sources.core import COREClient
 
         c = COREClient()
-        with patch.object(c, "search", new_callable=AsyncMock, return_value={"results": []}):
+        with patch.object(
+            c, "search", new_callable=AsyncMock, return_value={"results": []}
+        ):
             result = await c.search_by_doi("10.9999/none")
         assert result is None
 
@@ -841,8 +865,15 @@ class TestEuropePMCInfra:
             },
         }
 
-        with patch.object(c, "_make_request", new_callable=AsyncMock, return_value=mock_resp.json.return_value):
-            result = await c.search("diabetes", limit=10, min_year=2020, open_access_only=True)
+        with patch.object(
+            c,
+            "_make_request",
+            new_callable=AsyncMock,
+            return_value=mock_resp.json.return_value,
+        ):
+            result = await c.search(
+                "diabetes", limit=10, min_year=2020, open_access_only=True
+            )
         assert result["hit_count"] == 5
 
     async def test_get_citations(self):
@@ -864,7 +895,9 @@ class TestEuropePMCInfra:
             },
         }
 
-        with patch.object(c, "_make_request", new_callable=AsyncMock, return_value=mock_data):
+        with patch.object(
+            c, "_make_request", new_callable=AsyncMock, return_value=mock_data
+        ):
             result = await c.get_citations("MED", "12345")
         assert len(result) == 2
 
@@ -882,7 +915,9 @@ class TestEuropePMCInfra:
             },
         }
 
-        with patch.object(c, "_make_request", new_callable=AsyncMock, return_value=mock_data):
+        with patch.object(
+            c, "_make_request", new_callable=AsyncMock, return_value=mock_data
+        ):
             result = await c.get_references("MED", "12345")
         assert len(result) == 1
 
@@ -912,12 +947,15 @@ class TestNCBIStrategy:
         sg = SearchStrategyGenerator(email="test@test.com")
         # Mock the Entrez call
         mock_record = {"CorrectedQuery": "diabetes", "Query": "diabtes"}
-        with patch(
-            "pubmed_search.infrastructure.ncbi.strategy.Entrez.espell",
-            return_value=MagicMock(),
-        ), patch(
-            "pubmed_search.infrastructure.ncbi.strategy.Entrez.read",
-            return_value=mock_record,
+        with (
+            patch(
+                "pubmed_search.infrastructure.ncbi.strategy.Entrez.espell",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "pubmed_search.infrastructure.ncbi.strategy.Entrez.read",
+                return_value=mock_record,
+            ),
         ):
             corrected, changed = await sg.spell_check("diabtes")
         assert corrected == "diabetes"
@@ -928,12 +966,15 @@ class TestNCBIStrategy:
 
         sg = SearchStrategyGenerator(email="test@test.com")
         mock_record = {"CorrectedQuery": "", "Query": "diabetes"}
-        with patch(
-            "pubmed_search.infrastructure.ncbi.strategy.Entrez.espell",
-            return_value=MagicMock(),
-        ), patch(
-            "pubmed_search.infrastructure.ncbi.strategy.Entrez.read",
-            return_value=mock_record,
+        with (
+            patch(
+                "pubmed_search.infrastructure.ncbi.strategy.Entrez.espell",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "pubmed_search.infrastructure.ncbi.strategy.Entrez.read",
+                return_value=mock_record,
+            ),
         ):
             corrected, changed = await sg.spell_check("diabetes")
         assert corrected == "diabetes"
@@ -947,12 +988,15 @@ class TestNCBIStrategy:
             "IdList": ["68003920"],
             "TranslationStack": [],
         }
-        with patch(
-            "pubmed_search.infrastructure.ncbi.strategy.Entrez.esearch",
-            return_value=MagicMock(),
-        ), patch(
-            "pubmed_search.infrastructure.ncbi.strategy.Entrez.read",
-            return_value=mock_record,
+        with (
+            patch(
+                "pubmed_search.infrastructure.ncbi.strategy.Entrez.esearch",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "pubmed_search.infrastructure.ncbi.strategy.Entrez.read",
+                return_value=mock_record,
+            ),
         ):
             info = await sg.get_mesh_info("diabetes")
         # May return None or dict depending on mock

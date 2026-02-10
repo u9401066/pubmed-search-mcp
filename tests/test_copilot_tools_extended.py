@@ -54,7 +54,9 @@ class TestSearchPubmed:
     async def test_year_filters(self, setup):
         tools, searcher = setup
         searcher.search.return_value = [{"pmid": "1", "title": "T"}]
-        _result = await tools["search_pubmed"](query="test", min_year=2020, max_year=2024)
+        _result = await tools["search_pubmed"](
+            query="test", min_year=2020, max_year=2024
+        )
         searcher.search.assert_called_once()
         call_kwargs = searcher.search.call_args
         assert call_kwargs[1].get("min_year") == 2020 or call_kwargs[0][2] == 2020
@@ -121,7 +123,9 @@ class TestFindRelated:
 
     async def test_success(self, setup):
         tools, searcher = setup
-        searcher.find_related_articles.return_value = [{"pmid": "999", "title": "Related"}]
+        searcher.find_related_articles.return_value = [
+            {"pmid": "999", "title": "Related"}
+        ]
         result = await tools["find_related"](pmid="12345678")
         assert "Related" in result
 

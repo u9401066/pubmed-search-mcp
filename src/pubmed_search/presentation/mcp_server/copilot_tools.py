@@ -67,6 +67,7 @@ logger = logging.getLogger(__name__)
 # Shared helpers (eliminate repetitive PMID-tool boilerplate)
 # ---------------------------------------------------------------------------
 
+
 async def _pmid_search(
     searcher: LiteratureSearcher,
     pmid: str,
@@ -138,6 +139,7 @@ async def _ncbi_extended_search(
 # Tool registration
 # ---------------------------------------------------------------------------
 
+
 def register_copilot_compatible_tools(mcp: FastMCP, searcher: LiteratureSearcher):
     """Register Copilot Studio compatible tools (simplified schemas)."""
 
@@ -197,7 +199,11 @@ def register_copilot_compatible_tools(mcp: FastMCP, searcher: LiteratureSearcher
                 return f"Article with PMID {clean_pmid} not found."
 
             a = results[0]
-            parts = [f"## {a.get('title', 'No title')}", "", f"**PMID**: {a.get('pmid', '')}"]
+            parts = [
+                f"## {a.get('title', 'No title')}",
+                "",
+                f"**PMID**: {a.get('pmid', '')}",
+            ]
             if a.get("doi"):
                 parts.append(f"**DOI**: {a['doi']}")
             if a.get("pmc_id"):
@@ -230,8 +236,14 @@ def register_copilot_compatible_tools(mcp: FastMCP, searcher: LiteratureSearcher
             limit: Maximum related articles (1-50, default 10)
         """
         return await _pmid_search(
-            searcher, pmid, "find_related_articles", "find_related",
-            limit, 50, "related", "related articles",
+            searcher,
+            pmid,
+            "find_related_articles",
+            "find_related",
+            limit,
+            50,
+            "related",
+            "related articles",
         )
 
     @mcp.tool()
@@ -243,8 +255,14 @@ def register_copilot_compatible_tools(mcp: FastMCP, searcher: LiteratureSearcher
             limit: Maximum citing articles (1-100, default 20)
         """
         return await _pmid_search(
-            searcher, pmid, "find_citing_articles", "find_citations",
-            limit, 100, "citations", "citing articles",
+            searcher,
+            pmid,
+            "find_citing_articles",
+            "find_citations",
+            limit,
+            100,
+            "citations",
+            "citing articles",
         )
 
     @mcp.tool()
@@ -256,8 +274,14 @@ def register_copilot_compatible_tools(mcp: FastMCP, searcher: LiteratureSearcher
             limit: Maximum references (1-100, default 20)
         """
         return await _pmid_search(
-            searcher, pmid, "get_article_references", "get_references",
-            limit, 100, "references", "references",
+            searcher,
+            pmid,
+            "get_article_references",
+            "get_references",
+            limit,
+            100,
+            "references",
+            "references",
         )
 
     # ========================================================================
@@ -298,8 +322,11 @@ def register_copilot_compatible_tools(mcp: FastMCP, searcher: LiteratureSearcher
         if strategy_gen:
             try:
                 result = await strategy_gen.generate_strategies(
-                    topic=topic, strategy="comprehensive",
-                    use_mesh=True, check_spelling=True, include_suggestions=True,
+                    topic=topic,
+                    strategy="comprehensive",
+                    use_mesh=True,
+                    check_spelling=True,
+                    include_suggestions=True,
                 )
                 return json.dumps(result, indent=2, ensure_ascii=False)
             except Exception as e:
@@ -345,7 +372,8 @@ def register_copilot_compatible_tools(mcp: FastMCP, searcher: LiteratureSearcher
 
             section_filter = (
                 [s.strip().lower() for s in sections.split(",") if s.strip()]
-                if sections else []
+                if sections
+                else []
             )
             output = [f"## Full Text: {clean_pmcid}"]
             if parsed.get("abstract"):
@@ -363,7 +391,8 @@ def register_copilot_compatible_tools(mcp: FastMCP, searcher: LiteratureSearcher
 
     @mcp.tool()
     async def export_citations(
-        pmids: str, format: Literal["ris", "bibtex", "csv"] = "ris",
+        pmids: str,
+        format: Literal["ris", "bibtex", "csv"] = "ris",
     ) -> str:
         """Export citations in various formats.
 
@@ -392,7 +421,9 @@ def register_copilot_compatible_tools(mcp: FastMCP, searcher: LiteratureSearcher
             )
         try:
             from pubmed_search.application.export.formats import (
-                export_bibtex, export_csv, export_ris,
+                export_bibtex,
+                export_csv,
+                export_ris,
             )
 
             articles = await searcher.fetch_details(pmid_list[:50])
@@ -424,7 +455,12 @@ def register_copilot_compatible_tools(mcp: FastMCP, searcher: LiteratureSearcher
             limit: Maximum results (1-50, default 10)
         """
         return await _ncbi_extended_search(
-            "search_gene", "search_gene", query, limit, 50, "genes",
+            "search_gene",
+            "search_gene",
+            query,
+            limit,
+            50,
+            "genes",
             organism=organism or "human",
         )
 
@@ -437,7 +473,12 @@ def register_copilot_compatible_tools(mcp: FastMCP, searcher: LiteratureSearcher
             limit: Maximum results (1-50, default 10)
         """
         return await _ncbi_extended_search(
-            "search_compound", "search_compound", query, limit, 50, "compounds",
+            "search_compound",
+            "search_compound",
+            query,
+            limit,
+            50,
+            "compounds",
         )
 
 

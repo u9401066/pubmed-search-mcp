@@ -49,7 +49,9 @@ async def test_advanced_filters():
     # Test 3: language filter (English only)
     print()
     print("=== Test 3: COVID + language=english ===")
-    results3 = await searcher.search(query="COVID-19 vaccine", limit=3, language="english")
+    results3 = await searcher.search(
+        query="COVID-19 vaccine", limit=3, language="english"
+    )
     print(f"Results: {len(results3)}")
     for r in results3[:3]:
         if r and "title" in r:
@@ -58,7 +60,9 @@ async def test_advanced_filters():
     # Test 4: clinical query - diagnosis
     print()
     print("=== Test 4: lung cancer + diagnosis filter ===")
-    results4 = await searcher.search(query="lung cancer", limit=3, clinical_query="diagnosis")
+    results4 = await searcher.search(
+        query="lung cancer", limit=3, clinical_query="diagnosis"
+    )
     print(f"Results: {len(results4)}")
     for r in results4[:3]:
         if r and "title" in r:
@@ -67,7 +71,9 @@ async def test_advanced_filters():
     # Test 5: pediatric (child age group)
     print()
     print("=== Test 5: asthma + child age group ===")
-    results5 = await searcher.search(query="asthma treatment", limit=3, age_group="child")
+    results5 = await searcher.search(
+        query="asthma treatment", limit=3, age_group="child"
+    )
     print(f"Results: {len(results5)}")
     for r in results5[:3]:
         if r and "title" in r:

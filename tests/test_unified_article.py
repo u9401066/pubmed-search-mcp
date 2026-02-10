@@ -5,8 +5,6 @@ Target: article.py coverage from 28% to 90%+
 Tests: Author, OpenAccessLink, CitationMetrics, SourceMetadata, UnifiedArticle
 """
 
-
-
 from pubmed_search.domain.entities.article import (
     ArticleType,
     Author,
@@ -274,9 +272,7 @@ class TestUnifiedArticleProperties:
 
     async def test_best_identifier_pmid(self):
         """Test best_identifier with PMID."""
-        article = UnifiedArticle(
-            title="Test", primary_source="pubmed", pmid="12345678"
-        )
+        article = UnifiedArticle(title="Test", primary_source="pubmed", pmid="12345678")
         assert article.best_identifier == "PMID:12345678"
 
     async def test_best_identifier_doi(self):
@@ -288,9 +284,7 @@ class TestUnifiedArticleProperties:
 
     async def test_best_identifier_pmc(self):
         """Test best_identifier with PMC (no PMID/DOI)."""
-        article = UnifiedArticle(
-            title="Test", primary_source="pmc", pmc="PMC7096777"
-        )
+        article = UnifiedArticle(title="Test", primary_source="pmc", pmc="PMC7096777")
         assert article.best_identifier == "PMC:PMC7096777"
 
     async def test_best_identifier_openalex(self):
@@ -372,7 +366,9 @@ class TestUnifiedArticleProperties:
 
     async def test_best_oa_link_published_version(self):
         """Test best_oa_link prefers published version."""
-        link1 = OpenAccessLink(url="https://repo.com/paper.pdf", version="acceptedVersion")
+        link1 = OpenAccessLink(
+            url="https://repo.com/paper.pdf", version="acceptedVersion"
+        )
         link2 = OpenAccessLink(
             url="https://publisher.com/paper.pdf", version="publishedVersion"
         )
@@ -433,9 +429,7 @@ class TestUnifiedArticleProperties:
 
     async def test_pubmed_url(self):
         """Test pubmed_url property."""
-        article = UnifiedArticle(
-            title="Test", primary_source="pubmed", pmid="12345678"
-        )
+        article = UnifiedArticle(title="Test", primary_source="pubmed", pmid="12345678")
         assert article.pubmed_url == "https://pubmed.ncbi.nlm.nih.gov/12345678/"
 
     async def test_pubmed_url_none(self):
@@ -457,9 +451,7 @@ class TestUnifiedArticleProperties:
 
     async def test_pmc_url(self):
         """Test pmc_url property."""
-        article = UnifiedArticle(
-            title="Test", primary_source="pmc", pmc="PMC7096777"
-        )
+        article = UnifiedArticle(title="Test", primary_source="pmc", pmc="PMC7096777")
         assert "PMC7096777" in article.pmc_url
 
     async def test_pmc_url_none(self):
@@ -573,7 +565,9 @@ class TestUnifiedArticleCitation:
         article = UnifiedArticle(
             title="Large Team Research",
             primary_source="pubmed",
-            authors=[Author(family_name=f"Author{i}", given_name="X") for i in range(10)],
+            authors=[
+                Author(family_name=f"Author{i}", given_name="X") for i in range(10)
+            ],
             year=2024,
         )
         citation = article.cite_apa()

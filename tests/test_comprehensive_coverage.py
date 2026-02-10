@@ -55,7 +55,9 @@ class TestSearchMixinEdgeCases:
             mock_read.return_value = {"IdList": ["123"]}
             mock_esearch.return_value = MagicMock()
 
-            results = await search_mixin.search(query="cancer", min_year=2020, max_year=2024)
+            results = await search_mixin.search(
+                query="cancer", min_year=2020, max_year=2024
+            )
 
             assert isinstance(results, list)
 
@@ -100,8 +102,14 @@ class TestSearchMixinEdgeCases:
                 "pubmed_search.infrastructure.ncbi.search.Entrez.esearch"
             ) as mock_esearch,
             patch("pubmed_search.infrastructure.ncbi.search.Entrez.read") as mock_read,
-            patch("pubmed_search.infrastructure.ncbi.search.asyncio.sleep", new_callable=AsyncMock),
-            patch("pubmed_search.infrastructure.ncbi.search._rate_limit", new_callable=AsyncMock),
+            patch(
+                "pubmed_search.infrastructure.ncbi.search.asyncio.sleep",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "pubmed_search.infrastructure.ncbi.search._rate_limit",
+                new_callable=AsyncMock,
+            ),
         ):
             # First call fails, second succeeds
             mock_esearch.side_effect = [
@@ -110,7 +118,9 @@ class TestSearchMixinEdgeCases:
             ]
             mock_read.return_value = {"IdList": ["123"]}
 
-            result = await search_mixin._search_ids_with_retry("test query", 10, "relevance")
+            result = await search_mixin._search_ids_with_retry(
+                "test query", 10, "relevance"
+            )
 
             assert result[0] == ["123"] or result == (["123"], 0)
 
@@ -143,7 +153,10 @@ class TestRetryDecorator:
                 raise Exception("temporarily unavailable")
             return "success"
 
-        with patch("pubmed_search.infrastructure.ncbi.search.asyncio.sleep", new_callable=AsyncMock):
+        with patch(
+            "pubmed_search.infrastructure.ncbi.search.asyncio.sleep",
+            new_callable=AsyncMock,
+        ):
             result = await failing_function()
             assert result == "success"
 

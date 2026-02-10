@@ -72,7 +72,10 @@ class TestPDFMixin:
 
         with (
             patch.object(pdf_searcher, "_get_pmc_id", return_value="123456"),
-            patch("pubmed_search.infrastructure.ncbi.pdf.httpx.AsyncClient", return_value=mock_http),
+            patch(
+                "pubmed_search.infrastructure.ncbi.pdf.httpx.AsyncClient",
+                return_value=mock_http,
+            ),
         ):
             result = await pdf_searcher.download_pmc_pdf("12345", str(output_path))
 
@@ -101,7 +104,10 @@ class TestPDFMixin:
 
         with (
             patch.object(pdf_searcher, "_get_pmc_id", return_value="123456"),
-            patch("pubmed_search.infrastructure.ncbi.pdf.httpx.AsyncClient", return_value=mock_http),
+            patch(
+                "pubmed_search.infrastructure.ncbi.pdf.httpx.AsyncClient",
+                return_value=mock_http,
+            ),
         ):
             result = await pdf_searcher.download_pmc_pdf("12345", str(output_path))
 
@@ -117,7 +123,10 @@ class TestPDFMixin:
 
         with (
             patch.object(pdf_searcher, "_get_pmc_id", return_value="123456"),
-            patch("pubmed_search.infrastructure.ncbi.pdf.httpx.AsyncClient", return_value=mock_http),
+            patch(
+                "pubmed_search.infrastructure.ncbi.pdf.httpx.AsyncClient",
+                return_value=mock_http,
+            ),
         ):
             result = await pdf_searcher.download_pmc_pdf("12345", str(output_path))
 
@@ -135,7 +144,10 @@ class TestPDFMixin:
 
         with (
             patch.object(pdf_searcher, "_get_pmc_id", return_value="123456"),
-            patch("pubmed_search.infrastructure.ncbi.pdf.httpx.AsyncClient", return_value=mock_http),
+            patch(
+                "pubmed_search.infrastructure.ncbi.pdf.httpx.AsyncClient",
+                return_value=mock_http,
+            ),
         ):
             result = await pdf_searcher.download_pdf("12345")
 
@@ -163,7 +175,10 @@ class TestPDFMixin:
 
         with (
             patch.object(pdf_searcher, "_get_pmc_id", return_value="123456"),
-            patch("pubmed_search.infrastructure.ncbi.pdf.httpx.AsyncClient", return_value=mock_http),
+            patch(
+                "pubmed_search.infrastructure.ncbi.pdf.httpx.AsyncClient",
+                return_value=mock_http,
+            ),
         ):
             result = await pdf_searcher.download_pdf("12345", str(output_path))
 

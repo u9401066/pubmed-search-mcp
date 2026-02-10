@@ -229,9 +229,7 @@ class TestFindInCore:
 
     @pytest.mark.asyncio
     async def test_unknown_type(self, tools):
-        result = await tools["find_in_core"](
-            identifier="xxx", identifier_type="isbn"
-        )
+        result = await tools["find_in_core"](identifier="xxx", identifier_type="isbn")
         assert "error" in result.lower() or "unknown" in result.lower()
 
     @pytest.mark.asyncio

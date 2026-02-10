@@ -106,7 +106,9 @@ class UnpaywallClient:
                 if response.status_code == 429:
                     if attempt < self._MAX_RETRIES:
                         try:
-                            retry_after = float(response.headers.get("Retry-After", 2 ** (attempt + 1)))
+                            retry_after = float(
+                                response.headers.get("Retry-After", 2 ** (attempt + 1))
+                            )
                         except (ValueError, TypeError):
                             retry_after = float(2 ** (attempt + 1))
                         logger.warning(

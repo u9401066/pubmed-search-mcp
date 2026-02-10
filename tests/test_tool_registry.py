@@ -20,6 +20,7 @@ from pubmed_search.presentation.mcp_server.tool_registry import (
 # list_registered_tools
 # ============================================================
 
+
 class TestListRegisteredTools:
     async def test_returns_dict(self):
         result = list_registered_tools()
@@ -41,16 +42,28 @@ class TestListRegisteredTools:
 
     async def test_all_categories_present(self):
         result = list_registered_tools()
-        expected = {"search", "query_intelligence", "discovery", "fulltext",
-                    "ncbi_extended", "citation_network", "export", "session",
-                    "institutional", "vision", "icd", "timeline",
-                    "image_search"}
+        expected = {
+            "search",
+            "query_intelligence",
+            "discovery",
+            "fulltext",
+            "ncbi_extended",
+            "citation_network",
+            "export",
+            "session",
+            "institutional",
+            "vision",
+            "icd",
+            "timeline",
+            "image_search",
+        }
         assert set(result.keys()) == expected
 
 
 # ============================================================
 # get_tool_info
 # ============================================================
+
 
 class TestGetToolInfo:
     async def test_existing_tool(self):
@@ -83,6 +96,7 @@ class TestGetToolInfo:
 # get_tools_by_category
 # ============================================================
 
+
 class TestGetToolsByCategory:
     async def test_valid_category(self):
         tools = get_tools_by_category("search")
@@ -103,6 +117,7 @@ class TestGetToolsByCategory:
 # ============================================================
 # generate_tools_index_markdown
 # ============================================================
+
 
 class TestGenerateToolsIndexMarkdown:
     async def test_returns_string(self):
@@ -132,6 +147,7 @@ class TestGenerateToolsIndexMarkdown:
 # ============================================================
 # validate_tool_registry
 # ============================================================
+
 
 class TestValidateToolRegistry:
     async def test_all_tools_registered(self):
@@ -179,6 +195,7 @@ class TestValidateToolRegistry:
 # check_tool_registration
 # ============================================================
 
+
 class TestCheckToolRegistration:
     async def test_valid(self):
         mcp = MagicMock()
@@ -207,6 +224,7 @@ class TestCheckToolRegistration:
 # register_all_mcp_tools
 # ============================================================
 
+
 class TestRegisterAllMcpTools:
     async def test_calls_all_register_functions(self):
         """Test that register_all_mcp_tools wires everything together."""
@@ -217,22 +235,32 @@ class TestRegisterAllMcpTools:
         sm = MagicMock()
         sg = MagicMock()
 
-        with patch.object(reg_mod, '__name__', reg_mod.__name__):  # Keep module identity
-            with patch(
-                "pubmed_search.presentation.mcp_server.resources.register_resources"
-            ) as _mock_res, patch(
-                "pubmed_search.presentation.mcp_server.session_tools.register_session_resources"
-            ) as _mock_sres, patch(
-                "pubmed_search.presentation.mcp_server.session_tools.register_session_tools"
-            ) as _mock_stools, patch(
-                "pubmed_search.presentation.mcp_server.tools.register_all_tools"
-            ) as mock_all, patch(
-                "pubmed_search.presentation.mcp_server.tools.set_session_manager"
-            ) as mock_set_sm, patch(
-                "pubmed_search.presentation.mcp_server.tools.set_strategy_generator"
-            ) as mock_set_sg, patch(
-                "pubmed_search.presentation.mcp_server.prompts.register_prompts"
-            ) as _mock_prompts:
+        with patch.object(
+            reg_mod, "__name__", reg_mod.__name__
+        ):  # Keep module identity
+            with (
+                patch(
+                    "pubmed_search.presentation.mcp_server.resources.register_resources"
+                ) as _mock_res,
+                patch(
+                    "pubmed_search.presentation.mcp_server.session_tools.register_session_resources"
+                ) as _mock_sres,
+                patch(
+                    "pubmed_search.presentation.mcp_server.session_tools.register_session_tools"
+                ) as _mock_stools,
+                patch(
+                    "pubmed_search.presentation.mcp_server.tools.register_all_tools"
+                ) as mock_all,
+                patch(
+                    "pubmed_search.presentation.mcp_server.tools.set_session_manager"
+                ) as mock_set_sm,
+                patch(
+                    "pubmed_search.presentation.mcp_server.tools.set_strategy_generator"
+                ) as mock_set_sg,
+                patch(
+                    "pubmed_search.presentation.mcp_server.prompts.register_prompts"
+                ) as _mock_prompts,
+            ):
                 stats = register_all_mcp_tools(mcp, searcher, sm, sg)
 
             mock_set_sm.assert_called_once_with(sm)
@@ -246,20 +274,20 @@ class TestRegisterAllMcpTools:
         searcher = MagicMock()
         sm = MagicMock()
 
-        with patch(
-            "pubmed_search.presentation.mcp_server.resources.register_resources"
-        ), patch(
-            "pubmed_search.presentation.mcp_server.session_tools.register_session_resources"
-        ), patch(
-            "pubmed_search.presentation.mcp_server.session_tools.register_session_tools"
-        ), patch(
-            "pubmed_search.presentation.mcp_server.tools.register_all_tools"
-        ), patch(
-            "pubmed_search.presentation.mcp_server.tools.set_session_manager"
-        ), patch(
-            "pubmed_search.presentation.mcp_server.tools.set_strategy_generator"
-        ) as mock_set_sg, patch(
-            "pubmed_search.presentation.mcp_server.prompts.register_prompts"
+        with (
+            patch("pubmed_search.presentation.mcp_server.resources.register_resources"),
+            patch(
+                "pubmed_search.presentation.mcp_server.session_tools.register_session_resources"
+            ),
+            patch(
+                "pubmed_search.presentation.mcp_server.session_tools.register_session_tools"
+            ),
+            patch("pubmed_search.presentation.mcp_server.tools.register_all_tools"),
+            patch("pubmed_search.presentation.mcp_server.tools.set_session_manager"),
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.set_strategy_generator"
+            ) as mock_set_sg,
+            patch("pubmed_search.presentation.mcp_server.prompts.register_prompts"),
         ):
             register_all_mcp_tools(mcp, searcher, sm, strategy_generator=None)
             mock_set_sg.assert_not_called()

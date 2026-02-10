@@ -4,7 +4,6 @@ Final targeted tests to push coverage from 86% to 90%.
 
 import pytest
 from unittest.mock import Mock, patch, MagicMock, AsyncMock
-import asyncio
 
 
 class TestSearchFetchWithRetry:
@@ -23,8 +22,14 @@ class TestSearchFetchWithRetry:
             patch(
                 "pubmed_search.infrastructure.ncbi.search.Entrez.efetch"
             ) as mock_efetch,
-            patch("pubmed_search.infrastructure.ncbi.search.asyncio.sleep", new_callable=AsyncMock),
-            patch("pubmed_search.infrastructure.ncbi.search._rate_limit", new_callable=AsyncMock),
+            patch(
+                "pubmed_search.infrastructure.ncbi.search.asyncio.sleep",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "pubmed_search.infrastructure.ncbi.search._rate_limit",
+                new_callable=AsyncMock,
+            ),
         ):
             # All calls fail with transient error
             mock_efetch.side_effect = Exception("Backend failed")
@@ -48,7 +53,10 @@ class TestSearchFetchWithRetry:
             patch(
                 "pubmed_search.infrastructure.ncbi.search.Entrez.efetch"
             ) as mock_efetch,
-            patch("pubmed_search.infrastructure.ncbi.search._rate_limit", new_callable=AsyncMock),
+            patch(
+                "pubmed_search.infrastructure.ncbi.search._rate_limit",
+                new_callable=AsyncMock,
+            ),
         ):
             mock_efetch.side_effect = ValueError("Invalid input")
 

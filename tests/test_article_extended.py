@@ -18,6 +18,7 @@ from pubmed_search.domain.entities.article import (
 # Author
 # ============================================================
 
+
 class TestAuthor:
     async def test_display_name_full_name(self):
         a = Author(full_name="John Smith")
@@ -48,8 +49,12 @@ class TestAuthor:
         assert a.citation_name == "Smith J"
 
     async def test_from_dict_crossref(self):
-        data = {"family": "Smith", "given": "John", "ORCID": "0000-0001-2345-6789",
-                "affiliation": [{"name": "MIT"}]}
+        data = {
+            "family": "Smith",
+            "given": "John",
+            "ORCID": "0000-0001-2345-6789",
+            "affiliation": [{"name": "MIT"}],
+        }
         a = Author.from_dict(data)
         assert a.family_name == "Smith"
         assert a.orcid == "0000-0001-2345-6789"
@@ -77,6 +82,7 @@ class TestAuthor:
 # OpenAccessLink
 # ============================================================
 
+
 class TestOpenAccessLink:
     async def test_is_pdf_true(self):
         link = OpenAccessLink(url="https://example.com/paper.pdf")
@@ -94,6 +100,7 @@ class TestOpenAccessLink:
 # ============================================================
 # CitationMetrics
 # ============================================================
+
 
 class TestCitationMetrics:
     async def test_impact_high_percentile(self):
@@ -141,6 +148,7 @@ class TestCitationMetrics:
 # UnifiedArticle — Properties
 # ============================================================
 
+
 class TestUnifiedArticleProperties:
     async def test_best_identifier_pmid(self):
         a = UnifiedArticle(title="T", primary_source="pubmed", pmid="12345")
@@ -171,12 +179,17 @@ class TestUnifiedArticleProperties:
         assert a.has_open_access is True
 
     async def test_has_open_access_gold(self):
-        a = UnifiedArticle(title="T", primary_source="p", oa_status=OpenAccessStatus.GOLD)
+        a = UnifiedArticle(
+            title="T", primary_source="p", oa_status=OpenAccessStatus.GOLD
+        )
         assert a.has_open_access is True
 
     async def test_has_open_access_links(self):
-        a = UnifiedArticle(title="T", primary_source="p",
-                           oa_links=[OpenAccessLink(url="https://x.com/1.pdf")])
+        a = UnifiedArticle(
+            title="T",
+            primary_source="p",
+            oa_links=[OpenAccessLink(url="https://x.com/1.pdf")],
+        )
         assert a.has_open_access is True
 
     async def test_has_open_access_false(self):
@@ -205,8 +218,11 @@ class TestUnifiedArticleProperties:
         assert a.best_oa_link.url == "https://a.com"
 
     async def test_author_string(self):
-        a = UnifiedArticle(title="T", primary_source="p",
-                           authors=[Author(full_name="Smith J"), Author(full_name="Doe A")])
+        a = UnifiedArticle(
+            title="T",
+            primary_source="p",
+            authors=[Author(full_name="Smith J"), Author(full_name="Doe A")],
+        )
         assert "Smith J" in a.author_string
 
     async def test_author_string_et_al(self):
@@ -246,6 +262,7 @@ class TestUnifiedArticleProperties:
 # ============================================================
 # UnifiedArticle — Citation Formatting
 # ============================================================
+
 
 class TestCiteVancouver:
     async def test_full_citation(self):
@@ -298,7 +315,9 @@ class TestCiteApa:
         assert "(n.d.)" in cite
 
     async def test_apa_many_authors(self):
-        authors = [Author(given_name=f"Author{i}", family_name=f"Last{i}") for i in range(10)]
+        authors = [
+            Author(given_name=f"Author{i}", family_name=f"Last{i}") for i in range(10)
+        ]
         a = UnifiedArticle(title="T", primary_source="p", authors=authors, year=2024)
         cite = a.cite_apa()
         assert "..." in cite  # APA truncates after 7
@@ -317,6 +336,7 @@ class TestCiteApa:
 # ============================================================
 # UnifiedArticle — Factory Methods
 # ============================================================
+
 
 class TestFromPubmed:
     async def test_basic(self):
@@ -337,7 +357,10 @@ class TestFromPubmed:
         assert a.has_open_access  # PMC = green OA
 
     async def test_article_type_parsing(self):
-        data = {"title": "T", "article_type": ["Randomized Controlled Trial", "Journal Article"]}
+        data = {
+            "title": "T",
+            "article_type": ["Randomized Controlled Trial", "Journal Article"],
+        }
         a = UnifiedArticle.from_pubmed(data)
         assert a.article_type == ArticleType.RANDOMIZED_CONTROLLED_TRIAL
 
@@ -384,10 +407,16 @@ class TestFromCrossref:
         assert a.pmc == "PMC12345"
 
     async def test_oa_links_from_crossref(self):
-        data = {"title": ["T"], "link": [
-            {"URL": "https://x.com/1.pdf", "content-type": "application/pdf",
-             "intended-application": "publisher"}
-        ]}
+        data = {
+            "title": ["T"],
+            "link": [
+                {
+                    "URL": "https://x.com/1.pdf",
+                    "content-type": "application/pdf",
+                    "intended-application": "publisher",
+                }
+            ],
+        }
         a = UnifiedArticle.from_crossref(data)
         assert len(a.oa_links) == 1
 
@@ -402,7 +431,11 @@ class TestFromOpenalex:
             "publication_date": "2024-01-15",
             "authorships": [{"author": {"display_name": "Smith J"}}],
             "ids": {"pmid": "https://pubmed.ncbi.nlm.nih.gov/12345/"},
-            "open_access": {"is_oa": True, "oa_url": "https://oa.com", "oa_status": "gold"},
+            "open_access": {
+                "is_oa": True,
+                "oa_url": "https://oa.com",
+                "oa_status": "gold",
+            },
             "cited_by_count": 100,
             "primary_location": {"source": {"display_name": "Nature"}},
         }
@@ -445,32 +478,40 @@ class TestFromSemanticScholar:
 # UnifiedArticle — merge_from
 # ============================================================
 
+
 class TestMergeFrom:
     async def test_fills_missing_identifiers(self):
         a = UnifiedArticle(title="T", primary_source="pubmed", pmid="12345")
-        b = UnifiedArticle(title="T", primary_source="crossref", doi="10.1/x", pmc="PMC999")
+        b = UnifiedArticle(
+            title="T", primary_source="crossref", doi="10.1/x", pmc="PMC999"
+        )
         a.merge_from(b)
         assert a.doi == "10.1/x"
         assert a.pmc == "PMC999"
 
     async def test_does_not_overwrite_existing(self):
-        a = UnifiedArticle(title="T", primary_source="pubmed", pmid="12345", doi="10.1/orig")
+        a = UnifiedArticle(
+            title="T", primary_source="pubmed", pmid="12345", doi="10.1/orig"
+        )
         b = UnifiedArticle(title="T", primary_source="crossref", doi="10.1/other")
         a.merge_from(b)
         assert a.doi == "10.1/orig"
 
     async def test_merges_authors_if_empty(self):
         a = UnifiedArticle(title="T", primary_source="pubmed")
-        b = UnifiedArticle(title="T", primary_source="crossref",
-                           authors=[Author(full_name="Smith")])
+        b = UnifiedArticle(
+            title="T", primary_source="crossref", authors=[Author(full_name="Smith")]
+        )
         a.merge_from(b)
         assert len(a.authors) == 1
 
     async def test_keeps_existing_authors(self):
-        a = UnifiedArticle(title="T", primary_source="pubmed",
-                           authors=[Author(full_name="Doe")])
-        b = UnifiedArticle(title="T", primary_source="crossref",
-                           authors=[Author(full_name="Smith")])
+        a = UnifiedArticle(
+            title="T", primary_source="pubmed", authors=[Author(full_name="Doe")]
+        )
+        b = UnifiedArticle(
+            title="T", primary_source="crossref", authors=[Author(full_name="Smith")]
+        )
         a.merge_from(b)
         assert len(a.authors) == 1
         assert a.authors[0].full_name == "Doe"
@@ -484,40 +525,62 @@ class TestMergeFrom:
     async def test_merges_oa_links_deduped(self):
         link = OpenAccessLink(url="https://x.com/1.pdf")
         a = UnifiedArticle(title="T", primary_source="p", oa_links=[link])
-        b = UnifiedArticle(title="T", primary_source="p",
-                           oa_links=[link, OpenAccessLink(url="https://y.com/2.pdf")])
+        b = UnifiedArticle(
+            title="T",
+            primary_source="p",
+            oa_links=[link, OpenAccessLink(url="https://y.com/2.pdf")],
+        )
         a.merge_from(b)
         assert len(a.oa_links) == 2
 
     async def test_merges_citation_metrics(self):
-        a = UnifiedArticle(title="T", primary_source="p",
-                           citation_metrics=CitationMetrics(citation_count=10))
-        b = UnifiedArticle(title="T", primary_source="p",
-                           citation_metrics=CitationMetrics(citation_count=50, nih_percentile=80.0))
+        a = UnifiedArticle(
+            title="T",
+            primary_source="p",
+            citation_metrics=CitationMetrics(citation_count=10),
+        )
+        b = UnifiedArticle(
+            title="T",
+            primary_source="p",
+            citation_metrics=CitationMetrics(citation_count=50, nih_percentile=80.0),
+        )
         a.merge_from(b)
         assert a.citation_metrics.citation_count == 50  # Higher wins
         assert a.citation_metrics.nih_percentile == 80.0
 
     async def test_fills_citation_metrics_from_none(self):
         a = UnifiedArticle(title="T", primary_source="p")
-        b = UnifiedArticle(title="T", primary_source="p",
-                           citation_metrics=CitationMetrics(citation_count=10))
+        b = UnifiedArticle(
+            title="T",
+            primary_source="p",
+            citation_metrics=CitationMetrics(citation_count=10),
+        )
         a.merge_from(b)
         assert a.citation_metrics.citation_count == 10
 
     async def test_tracks_sources(self):
-        a = UnifiedArticle(title="T", primary_source="pubmed",
-                           sources=[SourceMetadata(source="pubmed")])
-        b = UnifiedArticle(title="T", primary_source="crossref",
-                           sources=[SourceMetadata(source="crossref")])
+        a = UnifiedArticle(
+            title="T",
+            primary_source="pubmed",
+            sources=[SourceMetadata(source="pubmed")],
+        )
+        b = UnifiedArticle(
+            title="T",
+            primary_source="crossref",
+            sources=[SourceMetadata(source="crossref")],
+        )
         a.merge_from(b)
         source_names = [s.source for s in a.sources]
         assert "pubmed" in source_names
         assert "crossref" in source_names
 
     async def test_updates_article_type(self):
-        a = UnifiedArticle(title="T", primary_source="p", article_type=ArticleType.UNKNOWN)
-        b = UnifiedArticle(title="T", primary_source="p", article_type=ArticleType.REVIEW)
+        a = UnifiedArticle(
+            title="T", primary_source="p", article_type=ArticleType.UNKNOWN
+        )
+        b = UnifiedArticle(
+            title="T", primary_source="p", article_type=ArticleType.REVIEW
+        )
         a.merge_from(b)
         assert a.article_type == ArticleType.REVIEW
 
@@ -525,6 +588,7 @@ class TestMergeFrom:
 # ============================================================
 # UnifiedArticle — to_dict
 # ============================================================
+
 
 class TestToDict:
     async def test_basic_structure(self):
@@ -535,8 +599,11 @@ class TestToDict:
         assert "open_access" in d
 
     async def test_with_citation_metrics(self):
-        a = UnifiedArticle(title="T", primary_source="p",
-                           citation_metrics=CitationMetrics(citation_count=50))
+        a = UnifiedArticle(
+            title="T",
+            primary_source="p",
+            citation_metrics=CitationMetrics(citation_count=50),
+        )
         d = a.to_dict()
         assert d["citation_metrics"]["citation_count"] == 50
 
@@ -547,8 +614,9 @@ class TestToDict:
         assert d["_ranking_score"] == 0.85
 
     async def test_with_similarity(self):
-        a = UnifiedArticle(title="T", primary_source="p",
-                           similarity_score=0.95, similarity_source="s2")
+        a = UnifiedArticle(
+            title="T", primary_source="p", similarity_score=0.95, similarity_source="s2"
+        )
         d = a.to_dict()
         assert d["similarity"]["score"] == 0.95
 
@@ -556,6 +624,7 @@ class TestToDict:
 # ============================================================
 # UnifiedArticle — matches_identifier
 # ============================================================
+
 
 class TestMatchesIdentifier:
     async def test_doi_match(self):
@@ -565,8 +634,7 @@ class TestMatchesIdentifier:
 
     async def test_doi_normalized(self):
         a = UnifiedArticle(title="T", primary_source="p", doi="10.1/X")
-        b = UnifiedArticle(title="T", primary_source="p",
-                           doi="https://doi.org/10.1/x")
+        b = UnifiedArticle(title="T", primary_source="p", doi="https://doi.org/10.1/x")
         assert a.matches_identifier(b)
 
     async def test_pmid_match(self):

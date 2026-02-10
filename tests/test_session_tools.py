@@ -36,6 +36,7 @@ def _make_session(search_history=None, article_cache=None):
 # get_session_pmids
 # ============================================================
 
+
 class TestGetSessionPmids:
     def setup_method(self):
         self.sm = MagicMock()
@@ -116,6 +117,7 @@ class TestGetSessionPmids:
 # get_cached_article
 # ============================================================
 
+
 class TestGetCachedArticle:
     def setup_method(self):
         self.sm = MagicMock()
@@ -153,6 +155,7 @@ class TestGetCachedArticle:
 # get_session_summary
 # ============================================================
 
+
 class TestGetSessionSummary:
     def setup_method(self):
         self.sm = MagicMock()
@@ -179,8 +182,18 @@ class TestGetSessionSummary:
     async def test_with_include_history(self):
         """Test include_history=True (merged from list_search_history in v0.3.1)."""
         history = [
-            {"query": "test1", "pmids": ["1"], "timestamp": "2024-01-01T12:00:00Z", "result_count": 1},
-            {"query": "test2", "pmids": ["2", "3"], "timestamp": "2024-01-02T12:00:00Z", "result_count": 2},
+            {
+                "query": "test1",
+                "pmids": ["1"],
+                "timestamp": "2024-01-01T12:00:00Z",
+                "result_count": 1,
+            },
+            {
+                "query": "test2",
+                "pmids": ["2", "3"],
+                "timestamp": "2024-01-02T12:00:00Z",
+                "result_count": 2,
+            },
         ]
         cache = {"1": {}, "2": {}, "3": {}}
         session = _make_session(search_history=history, article_cache=cache)
@@ -194,7 +207,10 @@ class TestGetSessionSummary:
 
     async def test_include_history_with_limit(self):
         """Test include_history with history_limit parameter."""
-        history = [{"query": f"q{i}", "pmids": [], "timestamp": "", "result_count": 0} for i in range(20)]
+        history = [
+            {"query": f"q{i}", "pmids": [], "timestamp": "", "result_count": 0}
+            for i in range(20)
+        ]
         session = _make_session(search_history=history, article_cache={})
         self.sm.get_current_session.return_value = session
         result = json.loads(self.fn(include_history=True, history_limit=5))
@@ -210,6 +226,7 @@ class TestGetSessionSummary:
 # ============================================================
 # register_session_resources
 # ============================================================
+
 
 class TestSessionResources:
     async def test_context_with_session(self):
