@@ -1619,6 +1619,31 @@ arxiv-mcp-server 目前只有 **1 個 Prompt**: `deep-paper-analysis`
 
 ---
 
+## 🔬 Phase 10.5: 演算法創新升級 (Algorithm Innovation)
+> **目標**: 從「API 包裝 + 規則引擎」升級為「有學術深度的演算法」
+> **狀態**: 研究中
+> **研究文件**: [docs/ALGORITHM_INNOVATION_RESEARCH.md](docs/ALGORITHM_INNOVATION_RESEARCH.md)
+
+### Phase A：快速勝利（無需 ML）
+- [ ] A1: BM25 排序取代 term overlap（`_calculate_relevance()`）
+- [ ] A2: Reciprocal Rank Fusion 取代位置線性轉換（`_enrich_with_similarity_scores()`）
+- [ ] A3: Pseudo-Relevance Feedback 自動查詢擴展
+- [ ] A4: MinHash 模糊去重（Union-Find 第四通道）
+
+### Phase B：核心演算法（經典 IR/Bibliometrics）
+- [ ] B1: Main Path Analysis + PageRank（引用網路）
+- [ ] B2: Citation Burst Detection — Kleinberg 模型
+- [ ] B3: MeSH 階層語意距離（搜尋詞差異分析）
+- [ ] B4: 搜尋策略差異量化報告（集合差異分析）
+- [ ] B5: Community Detection — Louvain（研究子社群發現）
+
+### Phase C：ML 增強（可選）
+- [ ] C1: SPECTER2 語意排序
+- [ ] C2: PubMedBERT 意圖分類
+- [ ] C3: Dynamic Topic Models
+
+---
+
 ## 🎓 Phase 11: 學術研究方向 (Academic Innovation)
 > **目標**: 探索 MCP 文獻檢索的學術創新空間
 > **狀態**: 規劃中 - 需選擇方向深入

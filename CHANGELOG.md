@@ -16,6 +16,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.3.8.1] - 2026-02-12
+
+### Added
+
+- **Algorithm Innovation Research Document** (`docs/ALGORITHM_INNOVATION_RESEARCH.md`)
+  - Comprehensive internal research document assessing current algorithm depth
+  - Honest evaluation: ~60% API wrapping, ~30% rule engines, ~10% real algorithms
+  - Identified 3 core pain points: result indigestibility, cross-search amnesia, ranking-research mismatch
+  - Proposed 4 solutions: Search Delta, Smart Top-K (MMR), Result Digest, Cumulative Coverage Tracker
+  - Academic positioning: MMR (1998), TREC Session Track, Task-based Retrieval — none implemented in MCP ecosystem
+  - 8 sections: motivation, pain points, honest assessment, innovation opportunities, search term analysis, implementation roadmap, validation methodology, references
+
+### Changed
+
+- **ROADMAP.md** — Added Phase 10.5: Algorithm Innovation Upgrade with 3-phase plan (A: BM25/RRF/PRF, B: Main Path/Burst/MeSH, C: SPECTER2/PubMedBERT)
+
+---
+
 ## [0.3.8] - 2026-02-10
 
 ### Added

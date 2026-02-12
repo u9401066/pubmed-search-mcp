@@ -232,7 +232,6 @@ search_clinvar("cystic fibrosis", limit=10)
 
 ### 搜尋工具
 - unified_search: Unified Search - Single entry point for multi-source academic search.
-  - 支援 `include_preprints` (搜尋 arXiv/medRxiv/bioRxiv) 和 `peer_reviewed_only` (過濾非同行審查文章) 參數。
 
 ### 查詢智能
 - parse_pico: Parse a clinical question into PICO elements OR accept pre-parsed PICO.
