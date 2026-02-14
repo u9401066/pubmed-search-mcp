@@ -4,51 +4,40 @@
 
 ## 🎯 當前焦點
 
-- **v0.3.9 品質嚴格化** — ruff `select=["ALL"]` + mypy `strict=true` + pre-commit 17 hooks + noqa 消除
+- **v0.3.10 mypy 完全修復 + Pre-commit 41 hooks** — mypy 168→0, 2 real bugs found & fixed
 
 ## 📊 測試結果
 
-- **2400 passed, 0 failed, 27 skipped** in ~47s (pytest-xdist -n 4)
+- **2372 passed, 0 failed, 27 skipped** in ~47s (pytest-xdist -n auto)
 - ruff src/: `All checks passed!`
-- mypy src/: 176 errors (已知，deferred 修復)
+- mypy src/: **0 errors** (Success: no issues found in 91 source files)
 
 ## ✅ 已完成本 session
 
-### Phase 6: Ruff/Mypy 最大嚴格化
-- ruff `select = ["ALL"]` — 啟用所有規則，~40 justified global ignores
-- mypy `strict = true` — 包含 module overrides
-- 修復 16 src/ ruff violations across 9 files
-- `format` → `fmt` in `export_articles()` 重命名
+### Phase 12: 14 new pre-commit hooks (17→41 total)
+- bandit (security), vulture (dead code), deptry (dependency hygiene), semgrep (SAST)
+- 7 custom hooks: future-annotations, no-print-in-src, ddd-layer-imports, no-type-ignore-bare, docstring-tools, no-env-inner-layers, todo-scanner
+- 10 additional standard hooks from pre-commit-hooks repo
 
-### Phase 7: 生產級零例外 (`# noqa` 消除)
-- **18 → 9 個 `# noqa`**（消除 9 個根因修復）
-  - SLF001 ×3: `_ranking_score` 等欄位重命名為 public
-  - A001 ×2: `format` → `fmt` 參數重命名 (ncbi/utils.py)
-  - ARG001: 刪除 `retryable_status_codes` 死碼 (http/client.py)
-  - ARG001: 移除未使用 `index` 參數 (async_utils.py)
-  - S110 ×2: `pass` → `logger.debug()` / `return False`
-  - N818: `RateLimitExceeded` → `RateLimitExceededError`
-- 剩餘 9 個均為合理例外（monkey-patch, polyfill, security rules）
-
-### Pre-commit Infrastructure (17 hooks)
-- ruff lint + format, mypy, file-hygiene, async-test-checker
-- tool-count-sync (auto-fix), evolution-cycle 一致性驗證
-- pytest pre-push hook
-
-### MCP Performance Profiling
-- `shared/profiling.py`: 20 profiling tests
-- Monkey-patch BaseAPIClient for request timing
+### Phase 13: mypy 168→0 comprehensive fix
+- **2 real bugs**: missing `await` in fulltext_download.py (Semantic Scholar & OpenAlex PDF links silently broken)
+- **1 logic bug**: timeline_builder.py iterated citation_data keys instead of .items()
+- **Key discovery**: `disallow_untyped_defs = false` in overrides does NOT override `strict = true` — use `disable_error_code` instead
+- **Key discovery**: mypy glob `*` only matches ONE module depth level
+- **Key discovery**: `float.__pow__(float)` returns `Any` in typeshed — wrap in `float()`
+- 30+ source files with proper type annotations
+- 3 test fixes: Mock→AsyncMock, citation_data list→dict
 
 ## 📈 Version History
-- v0.3.9: 品質嚴格化 + pre-commit + noqa 消除 (current)
+- v0.3.10: mypy 168→0 + pre-commit 41 hooks (current)
+- v0.3.9: 品質嚴格化 + pre-commit 17 hooks + noqa 消除
 - v0.3.8: QueryValidator + JournalMetrics + preprint detection
 - v0.3.5: 品質強化 + 測試零失敗
 - v0.3.4: async-first migration
 
 ## 🔜 下一步 (low priority)
-- mypy 176 errors 逐步修復（主要 no-untyped-def, attr-defined）
 - ARCHITECTURE.md 更新 (outdated directory tree)
-- `type: ignore[import-not-found]` 調查 (core.py, ncbi_extended.py)
+- Algorithm innovation implementation (BM25/RRF/PRF)
 
 ---
-*Last updated: 2026-02-14 — v0.3.9 quality strictification session*
+*Last updated: 2026-02-14 — v0.3.10 mypy complete fix + hooks expansion*

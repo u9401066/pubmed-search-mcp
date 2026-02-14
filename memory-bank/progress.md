@@ -2,6 +2,14 @@
 
 ## Done
 
+### 2026-02-14: v0.3.10 — mypy 168→0 + Pre-commit 41 hooks
+- ✅ **mypy 0 errors** — 168→0 under `strict = true` (91 source files clean)
+- ✅ **2 real bugs found** — missing `await` in fulltext_download.py (S2 & OpenAlex PDF links broken)
+- ✅ **1 logic bug found** — timeline_builder.py citation_data iteration
+- ✅ **Pre-commit 41 hooks** — bandit, vulture, deptry, semgrep + 7 custom hooks
+- ✅ **`from __future__ import annotations`** — enforced across all files
+- ✅ **Tests: 2372 passed, 0 failed, 27 skipped** in ~47s
+
 ### 2026-02-14: v0.3.9 — 品質嚴格化 + Pre-commit + Noqa 消除
 - ✅ **ruff `select=["ALL"]`** — 最嚴格 lint，~40 justified ignores
 - ✅ **mypy `strict=true`** — 326→176 errors with module overrides
@@ -42,9 +50,8 @@
 
 | 優先級 | 項目 | 說明 |
 |:------:|------|------|
-| ⭐⭐⭐ | mypy 176 errors 修復 | 主要 no-untyped-def, attr-defined |
 | ⭐⭐⭐ | ARCHITECTURE.md 更新 | 仍顯示舊的目錄結構 |
-| ⭐⭐ | type: ignore[import-not-found] | core.py, ncbi_extended.py 的 12 個 |
+| ⭐⭐ | Algorithm innovation impl | BM25/RRF/PRF 等算法實作 |
 | ⭐⭐ | clinical_trials + preprints → async httpx | 仍用 sync httpx |
 
 ## Design Decisions Log

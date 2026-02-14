@@ -16,6 +16,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.3.10] - 2026-02-14
+
+### Added
+
+- **14 new pre-commit hooks** — expanded from 17 to 41 hooks total
+  - **External tools**: bandit (security), vulture (dead code), deptry (dependency hygiene), semgrep (SAST)
+  - **Custom hooks**: future-annotations, no-print-in-src, ddd-layer-imports, no-type-ignore-bare, docstring-tools, no-env-inner-layers, todo-scanner
+  - **Standard hooks**: 10 additional pre-commit-hooks (check-builtin-literals, check-case-conflict, check-docstring-first, etc.)
+- **vulture_whitelist.py** — Dead code scan whitelist for false positives
+
+### Changed
+
+- **mypy 168→0 errors** — Complete type-safety achievement under `strict = true`
+  - Fixed 2 real bugs: missing `await` in `fulltext_download.py` (Semantic Scholar & OpenAlex PDF links were silently broken)
+  - Fixed 1 logic bug: `timeline_builder.py` iterated `citation_data` dict keys instead of `.items()`
+  - Added proper type annotations across 30+ source files
+  - `pyproject.toml` overrides use `disable_error_code` (not `disallow_untyped_defs = false`) for mypy strict compatibility
+  - Wrapped `float.__pow__()` returns in `float()` to handle typeshed `Any` return
+- **`from __future__ import annotations`** — enforced across all src/ and tests/ files via custom hook
+- **Pre-commit hooks expanded** — 17→41 hooks covering security, dead code, dependency hygiene, and SAST
+
+### Fixed
+
+- **Missing `await` in `fulltext_download.py`** — `SemanticScholarClient.get_paper()` and `OpenAlexClient.get_work()` were called without `await`, causing PDF links to never be found (silently caught by try/except)
+- **`timeline_builder.py` citation mapping** — `citation_data` dict was iterated by keys instead of `.items()`, causing `citation_count` to never be mapped to articles
+- **Test mocks updated** — `Mock()` → `AsyncMock()` for async client methods; citation metrics mock format aligned with actual `dict[str, dict]` return type
+
+---
+
 ## [0.3.9] - 2026-02-14
 
 ### Added
