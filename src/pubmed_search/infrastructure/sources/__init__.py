@@ -26,6 +26,8 @@ Architecture:
     └─────────────────────────────────────────────────────────┘
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import re
@@ -305,7 +307,7 @@ async def cross_search(
         try:
             results = await search_alternate_source(
                 query=query,
-                source=source,
+                source=source,  # type: ignore[arg-type]
                 limit=limit_per_source,
                 min_year=min_year,
                 max_year=max_year,

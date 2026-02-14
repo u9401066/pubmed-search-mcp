@@ -199,7 +199,7 @@ class BaseAPIClient:
 
         Default: no special handling.
         """
-        return _CONTINUE
+        return _CONTINUE  # type: ignore[return-value]
 
     def _parse_response(self, response: httpx.Response, expect_json: bool) -> dict[str, Any] | str:
         """Parse response body. Override for custom extraction logic."""

@@ -28,6 +28,8 @@ Usage:
     url = get_openurl_link(article_dict)
 """
 
+from __future__ import annotations
+
 import logging
 import os
 import urllib.parse
@@ -106,7 +108,7 @@ class OpenURLBuilder:
             self.resolver_base = os.environ.get("OPENURL_RESOLVER", "")
 
     @classmethod
-    def from_preset(cls, preset_name: str, base_url: str | None = None) -> "OpenURLBuilder":
+    def from_preset(cls, preset_name: str, base_url: str | None = None) -> OpenURLBuilder:
         """
         Create builder from a preset resolver template.
 
@@ -263,7 +265,7 @@ class OpenURLConfig:
     enabled: bool = True
 
     @classmethod
-    def from_env(cls) -> "OpenURLConfig":
+    def from_env(cls) -> OpenURLConfig:
         """Load configuration from environment variables."""
         return cls(
             resolver_base=os.environ.get("OPENURL_RESOLVER", ""),

@@ -4,21 +4,33 @@ Entrez Citation Module - Citation Network Functionality
 Provides functionality to explore citation networks (related, citing, references).
 """
 
+from __future__ import annotations
+
 import asyncio
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from Bio import Entrez
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Coroutine
 
 
 class CitationMixin:
     """
     Mixin providing citation network functionality.
 
+    Requires the host class to provide:
+        _rate_limited_call: Callable for rate-limited Entrez calls
+        fetch_details: Method to fetch article details by PMID list
+
     Methods:
         get_related_articles: Find related articles using PubMed's algorithm
         get_citing_articles: Find articles that cite a given paper
         get_article_references: Get the bibliography of an article
     """
+
+    _rate_limited_call: Callable[..., Coroutine[Any, Any, Any]]
+    fetch_details: Callable[..., Coroutine[Any, Any, list[dict[str, Any]]]]
 
     async def get_related_articles(self, pmid: str, limit: int = 5) -> list[dict[str, Any]]:
         """

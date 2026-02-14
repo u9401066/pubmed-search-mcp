@@ -11,13 +11,17 @@ Features:
 - Simple key-value interface
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from cachetools import TTLCache
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +66,7 @@ class EntityCache:
         self._stats = CacheStats()
 
     @property
-    def stats(self) -> "CacheStats":
+    def stats(self) -> CacheStats:
         """Get cache statistics."""
         return self._stats
 
@@ -122,14 +126,14 @@ class EntityCache:
         value = self.get(key)
         if value is not None:
             logger.debug(f"Cache hit: {key}")
-            return value
+            return value  # type: ignore[no-any-return]
 
         # Fetch with lock to prevent thundering herd
         async with self._lock:
             # Double-check after acquiring lock
             value = self.get(key)
             if value is not None:
-                return value
+                return value  # type: ignore[no-any-return]
 
             # Fetch
             try:

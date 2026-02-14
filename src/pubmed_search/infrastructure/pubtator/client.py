@@ -11,10 +11,12 @@ API Documentation:
 https://www.ncbi.nlm.nih.gov/research/pubtator3/api
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import time
-from typing import Literal
+from typing import Any, Literal
 
 import httpx
 
@@ -132,7 +134,7 @@ class PubTatorClient:
         """
         url = f"{self.BASE_URL}/{endpoint}"
 
-        last_error = None
+        last_error: Exception | None = None
         for attempt in range(self.MAX_RETRIES):
             try:
                 await self._rate_limit_wait()
@@ -352,7 +354,7 @@ class PubTatorClient:
             return {}
 
         # Parse PubTator format
-        annotations = {
+        annotations: dict[str, list[Any]] = {
             "genes": [],
             "diseases": [],
             "chemicals": [],

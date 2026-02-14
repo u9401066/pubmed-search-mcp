@@ -36,6 +36,8 @@ Full API Parameters (13 total):
 - hmp: HMD publication type filter
 """
 
+from __future__ import annotations
+
 import logging
 import math
 import urllib.parse
@@ -471,7 +473,7 @@ class OpenIClient(BaseAPIClient):
             logger.debug(f"Open-i search: {url}")
 
             data = await self._make_request(url)
-            if data is None:
+            if data is None or isinstance(data, str):
                 logger.warning(f"Open-i search failed at page {page + 1}")
                 break
 

@@ -10,6 +10,8 @@ Provides various utility functions for Entrez operations including:
 - Export functions
 """
 
+from __future__ import annotations
+
 import asyncio
 from typing import Any
 
@@ -95,7 +97,7 @@ class UtilsMixin:
         except Exception:
             return query
 
-    async def get_database_counts(self, query: str) -> dict[str, int]:
+    async def get_database_counts(self, query: str) -> dict[str, Any]:
         """
         Get result counts across multiple NCBI databases using EGQuery.
 

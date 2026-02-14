@@ -18,6 +18,8 @@ Usage:
     ...     print(f"{trial['nct_id']}: {trial['title']} ({trial['status']})")
 """
 
+from __future__ import annotations
+
 import logging
 from typing import Any
 

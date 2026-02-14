@@ -10,6 +10,8 @@ Provides citation metrics from NIH's iCite API:
 API Documentation: https://icite.od.nih.gov/api
 """
 
+from __future__ import annotations
+
 import logging
 import time
 from typing import Any

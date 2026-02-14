@@ -4,6 +4,8 @@ Entrez Batch Module - Large Result Set Processing
 Provides functionality for processing large result sets using NCBI History Server.
 """
 
+from __future__ import annotations
+
 import asyncio
 from typing import Any
 

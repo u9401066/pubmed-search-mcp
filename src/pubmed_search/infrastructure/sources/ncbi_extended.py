@@ -10,6 +10,8 @@ All use the same Entrez E-utilities infrastructure.
 API Documentation: https://www.ncbi.nlm.nih.gov/books/NBK25497/
 """
 
+from __future__ import annotations
+
 import logging
 import urllib.parse
 from typing import Any

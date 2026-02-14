@@ -5,6 +5,8 @@ Provides base class with Entrez configuration and common functionality.
 Includes rate limiting to respect NCBI API limits.
 """
 
+from __future__ import annotations
+
 import asyncio
 import time
 from enum import Enum
@@ -60,9 +62,9 @@ class EntrezBase:
         """
         global _min_request_interval
 
-        Entrez.email = email
+        Entrez.email = email  # type: ignore[assignment]
         if api_key:
-            Entrez.api_key = api_key
+            Entrez.api_key = api_key  # type: ignore[assignment]
             _min_request_interval = 0.1  # 10 requests/second with API key
         else:
             _min_request_interval = 0.34  # ~3 requests/second without API key

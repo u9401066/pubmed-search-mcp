@@ -19,6 +19,8 @@ Usage:
     results = searcher.search("diabetes treatment", limit=10)
 """
 
+from __future__ import annotations
+
 from .base import EntrezBase, SearchStrategy
 from .batch import BatchMixin
 from .citation import CitationMixin

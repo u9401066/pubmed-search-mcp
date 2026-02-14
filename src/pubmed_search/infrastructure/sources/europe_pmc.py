@@ -15,10 +15,13 @@ Features:
 - No API key required
 """
 
+from __future__ import annotations
+
 import logging
 import re
 import urllib.parse
 from typing import Any
+from xml.etree.ElementTree import Element
 
 from defusedxml import ElementTree  # Security: prevent XML attacks
 
@@ -439,7 +442,7 @@ class EuropePMCClient(BaseAPIClient):
 
             # Define namespace handling
 
-            result = {
+            result: dict[str, Any] = {
                 "title": "",
                 "abstract": "",
                 "sections": [],
@@ -478,7 +481,7 @@ class EuropePMCClient(BaseAPIClient):
             logger.exception(f"Failed to parse fulltext XML: {e}")
             return {"error": str(e)}
 
-    def _get_text(self, elem) -> str:
+    def _get_text(self, elem: Element) -> str:
         """Recursively get all text from an element."""
         text = elem.text or ""
         for child in elem:
@@ -487,7 +490,7 @@ class EuropePMCClient(BaseAPIClient):
                 text += child.tail
         return text.strip()
 
-    def _parse_section(self, sec_elem) -> dict[str, Any] | None:
+    def _parse_section(self, sec_elem: Element) -> dict[str, Any] | None:
         """Parse a section element."""
         title_elem = sec_elem.find("title")
         title = self._get_text(title_elem) if title_elem is not None else ""
@@ -507,7 +510,7 @@ class EuropePMCClient(BaseAPIClient):
             "content": "\n\n".join(paragraphs),
         }
 
-    def _parse_reference(self, ref_elem) -> dict[str, Any] | None:
+    def _parse_reference(self, ref_elem: Element) -> dict[str, Any] | None:
         """Parse a reference element."""
         label = ref_elem.find("label")
         mixed_citation = ref_elem.find(".//mixed-citation")
@@ -548,7 +551,7 @@ class EuropePMCClient(BaseAPIClient):
                 return []
 
             # Build SIMILAR query
-            query = f"SIMILAR:{pmid}" if pmid else f"SIMILAR:PMC{pmcid.replace('PMC', '')}"
+            query = f"SIMILAR:{pmid}" if pmid else f"SIMILAR:PMC{pmcid.replace('PMC', '')}" if pmcid else ""
 
             result = await self.search(query=query, limit=limit)
             articles = result.get("results", [])

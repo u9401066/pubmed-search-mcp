@@ -4,6 +4,8 @@ Entrez Search Module - Core Search Functionality
 Provides search and fetch operations using esearch and efetch.
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import re
@@ -350,7 +352,7 @@ class SearchMixin:
         retry=retry_if_exception(_is_retryable_ncbi),
         reraise=True,
     )
-    async def _fetch_with_retry(self, id_list: list[str]):
+    async def _fetch_with_retry(self, id_list: list[str]) -> Any:
         """Fetch PubMed articles with retry on transient errors."""
         await _rate_limit()  # Rate limiting before API call
         handle = await asyncio.to_thread(Entrez.efetch, db="pubmed", id=id_list, retmode="xml")

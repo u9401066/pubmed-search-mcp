@@ -10,6 +10,8 @@ Features:
 - Async HTTP client with retry
 """
 
+from __future__ import annotations
+
 from pubmed_search.infrastructure.pubtator.client import (
     PubTatorClient,
     get_pubtator_client,

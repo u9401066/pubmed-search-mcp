@@ -22,13 +22,16 @@ Best Practices:
 - Use for enriching existing article data
 """
 
+from __future__ import annotations
+
 import logging
 import urllib.parse
-from typing import Any, Literal
-
-import httpx
+from typing import TYPE_CHECKING, Any, Literal
 
 from pubmed_search.infrastructure.sources.base_client import _CONTINUE, BaseAPIClient
+
+if TYPE_CHECKING:
+    import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +92,7 @@ class UnpaywallClient(BaseAPIClient):
         if response.status_code == 422:
             logger.warning("Unpaywall: Invalid DOI format")
             return None
-        return _CONTINUE
+        return _CONTINUE  # type: ignore[return-value]
 
     async def get_oa_status(self, doi: str) -> dict[str, Any] | None:
         """
@@ -125,6 +128,8 @@ class UnpaywallClient(BaseAPIClient):
             return None
 
         # Normalize response
+        if isinstance(data, str):
+            return None
         return self._normalize_response(data)
 
     async def get_best_oa_link(self, doi: str) -> str | None:
@@ -208,7 +213,7 @@ class UnpaywallClient(BaseAPIClient):
         """
         oa_info = await self.get_oa_status(doi)
 
-        result = {
+        result: dict[str, Any] = {
             "is_oa": False,
             "oa_status": "unknown",
             "oa_links": [],

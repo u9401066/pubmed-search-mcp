@@ -7,6 +7,8 @@ Contains:
 - http: HTTP client utilities
 """
 
+from __future__ import annotations
+
 from .ncbi import LiteratureSearcher, SearchStrategy
 from .ncbi.citation_exporter import NCBICitationExporter, export_citations_official
 

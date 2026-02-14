@@ -4,6 +4,8 @@ PubTator3 Data Models
 Dataclasses for PubTator3 API responses.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from typing import Literal
 

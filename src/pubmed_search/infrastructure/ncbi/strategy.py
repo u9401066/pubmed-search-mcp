@@ -7,6 +7,8 @@ Uses:
 - EInfo for query translation
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
 from typing import Any
@@ -54,9 +56,9 @@ class SearchStrategyGenerator:
     """
 
     def __init__(self, email: str, api_key: str | None = None):
-        Entrez.email = email
+        Entrez.email = email  # type: ignore[assignment]
         if api_key:
-            Entrez.api_key = api_key
+            Entrez.api_key = api_key  # type: ignore[assignment]
 
     async def spell_check(self, query: str) -> tuple[str, bool]:
         """
@@ -127,7 +129,7 @@ class SearchStrategyGenerator:
             """Parse MeSH text format to extract info."""
             lines = content.strip().split("\n")
 
-            result = {
+            result: dict[str, Any] = {
                 "preferred_term": "",
                 "synonyms": [],
                 "tree_numbers": [],
@@ -273,7 +275,7 @@ class SearchStrategyGenerator:
         Returns:
             Dict with raw materials (spelling, mesh_terms, keywords) and optional suggestions
         """
-        result = {
+        result: dict[str, Any] = {
             "topic": topic,
             "corrected_topic": topic,  # May be updated by spell check
             "spelling": None,
@@ -483,7 +485,7 @@ class SearchStrategyGenerator:
         if analyze_queries:
             for q in queries:
                 try:
-                    analysis = await self.analyze_query(q["query"])
+                    analysis = await self.analyze_query(str(q["query"]))
                     q["estimated_count"] = analysis.get("count", 0)
                     q["pubmed_translation"] = analysis.get("translated_query", q["query"])
                 except Exception as e:
@@ -506,7 +508,7 @@ class SearchStrategyGenerator:
         Returns:
             New queries for expansion
         """
-        result = {"topic": topic, "expansion_type": "mesh_based", "queries": []}
+        result: dict[str, Any] = {"topic": topic, "expansion_type": "mesh_based", "queries": []}
 
         existing_set = set(existing_queries)
         query_id = len(existing_set) + 1

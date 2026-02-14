@@ -4,6 +4,8 @@ Entrez PDF Module - PMC PDF Download Functionality
 Provides functionality to download PDFs from PubMed Central Open Access.
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
 from pathlib import Path

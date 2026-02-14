@@ -7,6 +7,8 @@ Provides search capabilities for preprint servers:
 - bioRxiv: Biology preprints
 """
 
+from __future__ import annotations
+
 import logging
 import re
 from dataclasses import dataclass
@@ -135,7 +137,7 @@ class ArXivClient:
             }
             sort_param = sort_map.get(sort_by, "relevance")
 
-            params = {
+            params: dict[str, str | int] = {
                 "search_query": full_query,
                 "start": 0,
                 "max_results": min(limit, 100),
@@ -439,7 +441,7 @@ class PreprintSearcher:
             "sources_searched": sources,
             "articles": [],
             "by_source": {},
-        }
+        }  # type: dict[str, Any]
 
         # Search arXiv
         if "arxiv" in sources:

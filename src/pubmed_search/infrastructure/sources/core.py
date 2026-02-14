@@ -13,13 +13,16 @@ Features:
 - Free API key required for better rate limits
 """
 
+from __future__ import annotations
+
 import logging
 import urllib.parse
-from typing import Any
-
-import httpx
+from typing import TYPE_CHECKING, Any
 
 from pubmed_search.infrastructure.sources.base_client import _CONTINUE, BaseAPIClient
+
+if TYPE_CHECKING:
+    import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -145,7 +148,7 @@ class COREClient(BaseAPIClient):
             url = f"{CORE_API_BASE}/search/{entity_type}?{urllib.parse.urlencode(params)}"
             data = await self._make_request(url)
 
-            if not data:
+            if not data or isinstance(data, str):
                 return {"total_hits": 0, "results": []}
 
             # Normalize results
@@ -208,7 +211,7 @@ class COREClient(BaseAPIClient):
             url = f"{CORE_API_BASE}/works/{work_id}"
             data = await self._make_request(url)
 
-            if not data:
+            if not data or isinstance(data, str):
                 return None
 
             return self._normalize_work(data)
@@ -233,7 +236,7 @@ class COREClient(BaseAPIClient):
             url = f"{CORE_API_BASE}/outputs/{output_id}"
             data = await self._make_request(url)
 
-            if not data:
+            if not data or isinstance(data, str):
                 return None
 
             return self._normalize_output(data)

@@ -23,13 +23,16 @@ Best Practices:
 - Cache responses when possible
 """
 
+from __future__ import annotations
+
 import logging
 import urllib.parse
-from typing import Any
-
-import httpx
+from typing import TYPE_CHECKING, Any
 
 from pubmed_search.infrastructure.sources.base_client import _CONTINUE, BaseAPIClient
+
+if TYPE_CHECKING:
+    import httpx
 
 logger = logging.getLogger(__name__)
 

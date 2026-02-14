@@ -4,8 +4,11 @@ PubMed Client - High-level wrapper for PubMed API interactions.
 This module provides a clean, user-friendly interface for PubMed searches.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import Any, Self  # Python 3.11+
+from typing import Any
+from typing_extensions import Self  # Python 3.11+
 
 from pubmed_search.infrastructure.ncbi import LiteratureSearcher, SearchStrategy
 
@@ -32,7 +35,7 @@ class SearchResult:
     keywords: list[str] | None = None
     mesh_terms: list[str] | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.keywords is None:
             self.keywords = []
         if self.mesh_terms is None:
@@ -197,7 +200,8 @@ class PubMedClient:
         """
         results = await self._searcher.fetch_details([pmid])
         if results and "error" not in results[0]:
-            return SearchResult.from_dict(results[0])
+            data: dict[str, Any] = results[0]
+            return SearchResult.from_dict(data)
         return None
 
     async def fetch_by_pmids(self, pmids: list[str]) -> list[SearchResult]:
