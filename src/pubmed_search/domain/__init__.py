@@ -5,6 +5,8 @@ Contains:
 - entities: Core domain entities (Article, Citation)
 """
 
+from __future__ import annotations
+
 from .entities import (
     ArticleType,
     Author,

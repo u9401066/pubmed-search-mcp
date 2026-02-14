@@ -10,6 +10,8 @@ Provides URLs for:
 - Publisher direct links
 """
 
+from __future__ import annotations
+
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -61,7 +63,7 @@ def get_fulltext_links(article: dict[str, Any]) -> dict[str, Any]:
     return links
 
 
-async def get_fulltext_links_with_lookup(pmid: str, searcher: "LiteratureSearcher") -> dict[str, Any]:
+async def get_fulltext_links_with_lookup(pmid: str, searcher: LiteratureSearcher) -> dict[str, Any]:
     """
     Get fulltext links with PMC lookup via API.
 

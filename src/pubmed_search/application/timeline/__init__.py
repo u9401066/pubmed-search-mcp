@@ -13,6 +13,8 @@ Usage:
     >>> timeline = builder.build_timeline("remimazolam", max_events=50)
 """
 
+from __future__ import annotations
+
 from .milestone_detector import MilestoneDetector
 from .timeline_builder import TimelineBuilder
 

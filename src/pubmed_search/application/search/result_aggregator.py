@@ -45,7 +45,7 @@ if TYPE_CHECKING:
 _UnifiedArticle = None
 
 
-def _get_unified_article():
+def _get_unified_article() -> type[UnifiedArticle]:
     """Lazy import UnifiedArticle to avoid circular imports."""
     global _UnifiedArticle
     if _UnifiedArticle is None:
@@ -765,7 +765,7 @@ class ResultAggregator:
 
         # Exponential decay
         half_life = config.recency_half_life_years
-        return 0.5 ** (age / half_life)
+        return float(0.5 ** (age / half_life))
 
     def _calculate_impact(self, article: UnifiedArticle) -> float:
         """
@@ -783,13 +783,14 @@ class ResultAggregator:
         # Use NIH percentile if available (0-100 → 0-1)
         nih_percentile = getattr(metrics, "nih_percentile", None)
         if nih_percentile is not None:
-            return nih_percentile / 100
+            return float(nih_percentile) / 100
 
         # Use RCR if available (normalize: 2.0 = average, 4.0 = excellent)
         rcr = getattr(metrics, "relative_citation_ratio", None)
         if rcr is not None:
             # Sigmoid-like transformation
-            score = rcr / (rcr + 2.0)  # 0 → 0, 2 → 0.5, 4 → 0.67, 10 → 0.83
+            rcr_val = float(rcr)
+            score = rcr_val / (rcr_val + 2.0)  # 0 → 0, 2 → 0.5, 4 → 0.67, 10 → 0.83
             return min(score, 1.0)
 
         # Use raw citation count (log scale)
@@ -798,7 +799,7 @@ class ResultAggregator:
             if citation_count <= 0:
                 return 0.1
             # Log transformation: 1 → 0.1, 10 → 0.4, 100 → 0.7, 1000 → 1.0
-            score = math.log10(citation_count + 1) / 3
+            score = math.log10(float(citation_count) + 1) / 3
             return min(score, 1.0)
 
         return 0.3

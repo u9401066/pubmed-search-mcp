@@ -442,7 +442,7 @@ def _edit_distance(a: str, b: str) -> int:
     """Compute Levenshtein edit distance between two strings."""
     if len(a) > len(b):
         a, b = b, a
-    distances = range(len(a) + 1)
+    distances: list[int] = list(range(len(a) + 1))
     for j, ch_b in enumerate(b):
         new_distances = [j + 1]
         for i, ch_a in enumerate(a):

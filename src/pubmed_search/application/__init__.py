@@ -9,6 +9,8 @@ Contains:
 - timeline: Research timeline building (v0.2.8)
 """
 
+from __future__ import annotations
+
 from .export.formats import SUPPORTED_FORMATS, export_articles
 from .export.links import (
     get_fulltext_links,

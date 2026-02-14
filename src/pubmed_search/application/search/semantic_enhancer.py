@@ -271,7 +271,7 @@ class SemanticEnhancer:
 
         try:
             # Run enhancement phases in parallel (with timeout)
-            async with asyncio.timeout(self._timeout):
+            async with asyncio.timeout(self._timeout):  # type: ignore[attr-defined]
                 # Phase 1: Entity resolution + term extraction
                 entities, terms = await self._resolve_and_expand(query)
                 enhanced.entities = entities
@@ -334,8 +334,8 @@ class SemanticEnhancer:
             cache_key = f"entity:{term.lower()}"
             if cache:
                 cached = cache.get(cache_key)
-                if cached:
-                    return cached
+                if cached is not None:
+                    return cached  # type: ignore[no-any-return]
 
             # Resolve via PubTator3
             entity = await client.resolve_entity(term)

@@ -51,6 +51,8 @@ Architecture (DDD):
     shared/          - Cross-cutting concerns (exceptions, utils)
 """
 
+from __future__ import annotations
+
 # ═══════════════════════════════════════════════════════════════════
 # Core Entrez API
 # ═══════════════════════════════════════════════════════════════════

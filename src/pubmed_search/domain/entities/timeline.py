@@ -214,7 +214,7 @@ class ResearchTimeline:
     metadata: dict[str, Any] = field(default_factory=dict)
     created_at: date = field(default_factory=date.today)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Sort events chronologically."""
         self.events = sorted(self.events, key=lambda e: e.sort_key)
 

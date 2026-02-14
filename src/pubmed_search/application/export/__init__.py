@@ -10,6 +10,8 @@ Note: PDF download functionality is in entrez.pdf (PDFMixin).
 This module focuses on citation formats and link aggregation.
 """
 
+from __future__ import annotations
+
 from .formats import (
     SUPPORTED_FORMATS,
     export_articles,

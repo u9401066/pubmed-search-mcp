@@ -4,6 +4,8 @@ Domain Entities
 Core business objects for academic search.
 """
 
+from __future__ import annotations
+
 from .article import (
     ArticleType,
     Author,

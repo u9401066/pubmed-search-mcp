@@ -426,7 +426,7 @@ class QueryAnalyzer:
         "clinical trial": "Clinical Trial",
     }
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize QueryAnalyzer."""
 
     def analyze(self, query: str) -> AnalyzedQuery:

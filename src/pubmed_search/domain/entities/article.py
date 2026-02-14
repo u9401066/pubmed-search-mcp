@@ -1060,7 +1060,7 @@ class UnifiedArticle:
 
         This is the format returned by MCP tools.
         """
-        result = {
+        result: dict[str, Any] = {
             "title": self.title,
             "primary_source": self.primary_source,
             "identifiers": {

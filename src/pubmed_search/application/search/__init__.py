@@ -36,6 +36,8 @@ Architecture:
     UnifiedArticle[]
 """
 
+from __future__ import annotations
+
 from .query_analyzer import (
     AnalyzedQuery,
     QueryAnalyzer,

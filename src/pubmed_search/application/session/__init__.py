@@ -1,5 +1,7 @@
 """Session Management."""
 
+from __future__ import annotations
+
 from .manager import (
     ArticleCache,
     CachedArticle,

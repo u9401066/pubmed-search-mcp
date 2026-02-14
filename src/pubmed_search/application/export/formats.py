@@ -9,6 +9,8 @@ Supported formats:
 - JSON: Programmatic access
 """
 
+from __future__ import annotations
+
 import csv
 import io
 import json
@@ -39,7 +41,7 @@ def _convert_to_latex(text: str) -> str:
         return text
 
     if HAS_PYLATEXENC:
-        return unicode_to_latex(text)
+        return str(unicode_to_latex(text))
 
     # Fallback: basic character mapping
     latex_char_map = {
@@ -511,7 +513,7 @@ def export_csv(articles: list[dict[str, Any]], include_abstract: bool = True, de
         if include_abstract:
             row["Abstract"] = article.get("abstract", "")
 
-        writer.writerow(row)
+        writer.writerow(row)  # type: ignore[arg-type]
 
     return output.getvalue()
 
@@ -608,7 +610,7 @@ def export_json(articles: list[dict[str, Any]], include_abstract: bool = True, p
     Returns:
         JSON formatted string.
     """
-    export_data = {
+    export_data: dict[str, Any] = {
         "exported_at": datetime.now(tz=timezone.utc).isoformat(),
         "article_count": len(articles),
         "articles": [],

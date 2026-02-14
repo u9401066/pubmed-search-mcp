@@ -20,10 +20,14 @@ Full API support (v0.3.4):
     ... )
 """
 
+from __future__ import annotations
+
 import logging
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
-from pubmed_search.domain.entities.image import ImageResult
+if TYPE_CHECKING:
+    from pubmed_search.domain.entities.image import ImageResult
 
 logger = logging.getLogger(__name__)
 
@@ -242,8 +246,8 @@ class ImageSearchService:
         """
         from pubmed_search.infrastructure.sources import get_openi_client
 
-        client = get_openi_client()
-        return await client.search(
+        client = get_openi_client()  # type: ignore[no-untyped-call]
+        return await client.search(  # type: ignore[no-any-return, no-untyped-call]
             query=query,
             image_type=image_type,
             collection=collection,
