@@ -121,41 +121,6 @@ class TestSearchMixinEdgeCases:
             assert len(results) >= 1
 
 
-class TestRetryDecorator:
-    """Test the _retry_on_error decorator."""
-
-    async def test_retry_on_transient_errors(self):
-        """Test retry decorator with transient errors."""
-        from pubmed_search.infrastructure.ncbi.search import _retry_on_error
-
-        call_count = [0]
-
-        @_retry_on_error
-        async def failing_function():
-            call_count[0] += 1
-            if call_count[0] < 2:
-                raise Exception("temporarily unavailable")
-            return "success"
-
-        with patch(
-            "pubmed_search.infrastructure.ncbi.search.asyncio.sleep",
-            new_callable=AsyncMock,
-        ):
-            result = await failing_function()
-            assert result == "success"
-
-    async def test_no_retry_on_non_transient_errors(self):
-        """Test no retry on non-transient errors."""
-        from pubmed_search.infrastructure.ncbi.search import _retry_on_error
-
-        @_retry_on_error
-        async def failing_function():
-            raise ValueError("Not a transient error")
-
-        with pytest.raises(ValueError):
-            await failing_function()
-
-
 class TestServerCreateServer:
     """Tests for server creation function."""
 

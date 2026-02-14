@@ -89,6 +89,16 @@ repos:
         pass_filenames: false
         always_run: true
 
+      # ── Commit size guard ──────────────────────────────────
+      - id: commit-size-guard
+        name: commit size guard (≤30 files)
+        entry: uv run python scripts/hooks/check_commit_size.py
+        language: system
+        pass_filenames: false
+        always_run: true
+        # Prevents oversized commits; split into focused changes
+        # Bypass: git commit --no-verify
+
       # ── MCP tool documentation sync ────────────────────────
       - id: tool-count-sync
         name: MCP tool docs sync (auto-fix)

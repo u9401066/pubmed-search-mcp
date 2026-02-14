@@ -146,64 +146,6 @@ class TestRateLimiter:
         assert limiter1 is not limiter3
 
 
-class TestAsyncRetry:
-    """Tests for async_retry decorator."""
-
-    @pytest.mark.asyncio
-    async def test_retry_success(self):
-        """async_retry should return on success."""
-        from pubmed_search.shared.async_utils import async_retry
-
-        call_count = 0
-
-        @async_retry(max_attempts=3)
-        async def succeed():
-            nonlocal call_count
-            call_count += 1
-            return "success"
-
-        result = await succeed()
-        assert result == "success"
-        assert call_count == 1
-
-    @pytest.mark.asyncio
-    async def test_retry_on_retryable_error(self):
-        """async_retry should retry on retryable errors."""
-        from pubmed_search.shared.async_utils import async_retry
-
-        call_count = 0
-
-        @async_retry(max_attempts=3)
-        async def fail_then_succeed():
-            nonlocal call_count
-            call_count += 1
-            if call_count < 2:
-                raise Exception("rate limit exceeded")
-            return "success"
-
-        result = await fail_then_succeed()
-        assert result == "success"
-        assert call_count == 2
-
-    @pytest.mark.asyncio
-    async def test_no_retry_on_non_retryable(self):
-        """async_retry should not retry non-retryable errors."""
-        from pubmed_search.shared.async_utils import async_retry
-
-        call_count = 0
-
-        @async_retry(max_attempts=3)
-        async def fail_immediately():
-            nonlocal call_count
-            call_count += 1
-            raise ValueError("Invalid input")
-
-        with pytest.raises(ValueError):
-            await fail_immediately()
-
-        assert call_count == 1
-
-
 class TestGatherWithErrors:
     """Tests for gather_with_errors."""
 

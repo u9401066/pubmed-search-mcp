@@ -8,7 +8,6 @@ import pytest
 from pubmed_search.shared.async_utils import (
     CircuitBreaker,
     RateLimiter,
-    async_retry,
     batch_process,
     close_shared_async_client,
     gather_with_errors,
@@ -63,71 +62,6 @@ class TestGetRateLimiter:
         rl1 = get_rate_limiter("test_reuse_xyz", rate=5.0)
         rl2 = get_rate_limiter("test_reuse_xyz", rate=5.0)
         assert rl1 is rl2
-
-
-# ============================================================
-# async_retry
-# ============================================================
-
-
-class TestAsyncRetry:
-    @pytest.mark.asyncio
-    async def test_success_no_retry(self):
-        call_count = 0
-
-        @async_retry(max_attempts=3)
-        async def succeed():
-            nonlocal call_count
-            call_count += 1
-            return "ok"
-
-        result = await succeed()
-        assert result == "ok"
-        assert call_count == 1
-
-    @pytest.mark.asyncio
-    async def test_retry_on_transient_error(self):
-        call_count = 0
-
-        @async_retry(max_attempts=3)
-        async def fail_twice():
-            nonlocal call_count
-            call_count += 1
-            if call_count < 3:
-                raise RateLimitError("rate limit", retry_after=0.01)
-            return "recovered"
-
-        result = await fail_twice()
-        assert result == "recovered"
-        assert call_count == 3
-
-    @pytest.mark.asyncio
-    async def test_non_retryable_error_not_retried(self):
-        call_count = 0
-
-        @async_retry(max_attempts=3)
-        async def fail_permanent():
-            nonlocal call_count
-            call_count += 1
-            raise ValueError("permanent error")
-
-        with pytest.raises(ValueError):
-            await fail_permanent()
-        assert call_count == 1
-
-    @pytest.mark.asyncio
-    async def test_all_retries_exhausted(self):
-        call_count = 0
-
-        @async_retry(max_attempts=2, retryable_check=lambda e: True)
-        async def always_fail():
-            nonlocal call_count
-            call_count += 1
-            raise RuntimeError("always fails")
-
-        with pytest.raises(RuntimeError):
-            await always_fail()
-        assert call_count == 2
 
 
 # ============================================================

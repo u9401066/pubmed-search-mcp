@@ -11,7 +11,10 @@ Provides:
 - Rate limiting with token bucket
 - Connection pooling
 - Circuit breaker for fault tolerance
-- Retry with exponential backoff
+
+Note:
+    Retry logic uses tenacity (project dependency).
+    See infrastructure/ncbi/strategy.py for examples.
 """
 
 from __future__ import annotations
@@ -20,15 +23,12 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
-from functools import wraps
 from typing import TYPE_CHECKING, Any, TypeVar
 
 from typing_extensions import Self
 
 from .exceptions import (
     RateLimitError,
-    get_retry_delay,
-    is_retryable_error,
 )
 
 if TYPE_CHECKING:
@@ -105,55 +105,9 @@ def get_rate_limiter(api_name: str, rate: float = 3.0) -> RateLimiter:
     return _rate_limiters[api_name]
 
 
-# =============================================================================
-# Retry Decorator
-# =============================================================================
-
-
-def async_retry(
-    max_attempts: int = 3,
-    retryable_check: Callable[[Exception], bool] = is_retryable_error,
-) -> Callable[[Callable[..., Awaitable[T]]], Callable[..., Awaitable[T]]]:
-    """
-    Decorator for async functions with automatic retry.
-
-    Uses exponential backoff with jitter.
-
-    Example:
-        @async_retry(max_attempts=3)
-        async def fetch_data(pmid: str) -> dict:
-            ...
-    """
-
-    def decorator(func: Callable[..., Awaitable[T]]) -> Callable[..., Awaitable[T]]:
-        @wraps(func)
-        async def wrapper(*args: Any, **kwargs: Any) -> T:
-            last_error: Exception | None = None
-
-            for attempt in range(max_attempts):
-                try:
-                    return await func(*args, **kwargs)
-                except Exception as e:
-                    last_error = e
-
-                    if not retryable_check(e):
-                        raise
-
-                    if attempt < max_attempts - 1:
-                        delay = get_retry_delay(e, attempt)
-                        logger.warning(
-                            f"Retry {attempt + 1}/{max_attempts} for {func.__name__}: {e} (waiting {delay:.1f}s)"
-                        )
-                        await asyncio.sleep(delay)
-
-            # Should not reach here, but for type safety
-            if last_error:
-                raise last_error
-            raise RuntimeError("Unexpected retry loop exit")
-
-        return wrapper
-
-    return decorator
+# NOTE: Retry logic is provided by tenacity (already a project dependency).
+# Use tenacity's @retry decorator for both sync and async retry needs.
+# See infrastructure/ncbi/strategy.py for usage examples.
 
 
 # =============================================================================

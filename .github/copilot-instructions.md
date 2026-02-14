@@ -67,6 +67,7 @@ uv run pre-commit autoupdate
 - **mypy** type check
 - **async-test-checker** async/sync 測試一致性 (`scripts/check_async_tests.py`)
 - **file-hygiene** 檔案衛生檢查 (`scripts/hooks/check_file_hygiene.py`)
+- **commit-size-guard** 限制每次 commit ≤30 檔案 (`scripts/hooks/check_commit_size.py`)
 - **tool-count-sync** MCP 工具文檔同步 (`scripts/hooks/check_tool_sync.py`, 自動修復)
 - **evolution-cycle** 一致性驗證 (`scripts/hooks/check_evolution_cycle.py`)
 

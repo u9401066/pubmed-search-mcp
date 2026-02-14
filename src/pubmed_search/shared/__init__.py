@@ -19,8 +19,6 @@ from .async_utils import (
     CircuitBreaker,
     # Rate limiting
     RateLimiter,
-    # Retry
-    async_retry,
     batch_process,
     # Shared HTTP client
     close_shared_async_client,
@@ -83,7 +81,6 @@ __all__ = [
     # Async utilities
     "RateLimiter",
     "get_rate_limiter",
-    "async_retry",
     "gather_with_errors",
     "batch_process",
     "CircuitBreaker",

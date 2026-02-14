@@ -134,42 +134,6 @@ MESH_SUBHEADINGS = {
 }
 
 
-def _retry_on_error(func):
-    """Decorator to retry Entrez operations on transient errors."""
-
-    async def wrapper(*args, **kwargs):
-        last_error = None
-        for attempt in range(MAX_RETRIES):
-            try:
-                return await func(*args, **kwargs)
-            except Exception as e:
-                error_str = str(e)
-                # Check for transient NCBI errors
-                if any(
-                    msg in error_str
-                    for msg in [
-                        "Database is not supported",
-                        "Backend failed",
-                        "temporarily unavailable",
-                        "Service unavailable",
-                        "rate limit",
-                        "Too Many Requests",
-                    ]
-                ):
-                    last_error = e
-                    wait_time = RETRY_DELAY * (attempt + 1)
-                    logger.warning(f"NCBI transient error (attempt {attempt + 1}/{MAX_RETRIES}): {error_str}")
-                    logger.info(f"Retrying in {wait_time} seconds...")
-                    await asyncio.sleep(wait_time)
-                else:
-                    # Non-transient error, don't retry
-                    raise
-        # All retries exhausted
-        raise last_error
-
-    return wrapper
-
-
 class SearchMixin:
     """
     Mixin providing core search functionality.
