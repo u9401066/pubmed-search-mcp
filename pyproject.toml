@@ -46,6 +46,7 @@ dependencies = [
     "cachetools>=5.0.0",
     "pywin32>=311; sys_platform == 'win32'",
     "defusedxml>=0.7.1",
+    "dependency-injector>=4.48.3",
 ]
 
 [project.scripts]
@@ -83,6 +84,15 @@ markers = [
 filterwarnings = [
     "ignore::DeprecationWarning",
 ]
+
+[tool.pytest-benchmark]
+# Storage settings for baseline comparison
+storage = "file://.benchmarks"
+save = "0001"                 # auto-save with run number
+compare = "0001"              # compare against baseline
+min_rounds = 3
+warmup = true
+warmup_iterations = 1
 
 [dependency-groups]
 dev = [

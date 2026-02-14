@@ -46,6 +46,9 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 
+# Benchmark baselines (pytest-benchmark)
+.benchmarks/
+
 # Linter / Type checker caches
 .mypy_cache/
 .ruff_cache/

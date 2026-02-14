@@ -23,6 +23,7 @@ import argparse
 import logging
 import os
 import sys
+from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
@@ -48,8 +49,7 @@ def create_copilot_server(email: str, api_key: str | None = None, use_full_tools
     from mcp.server.fastmcp import FastMCP
     from mcp.server.transport_security import TransportSecuritySettings
 
-    from pubmed_search.application.session import SessionManager
-    from pubmed_search.infrastructure.ncbi import LiteratureSearcher
+    from pubmed_search.container import ApplicationContainer
     from pubmed_search.presentation.mcp_server.tools._common import (
         set_session_manager,
         set_strategy_generator,
@@ -57,14 +57,19 @@ def create_copilot_server(email: str, api_key: str | None = None, use_full_tools
 
     logger.info("Initializing PubMed Search MCP Server (Copilot Studio mode)...")
 
-    # Initialize core components
-    searcher = LiteratureSearcher(email=email, api_key=api_key)
+    # ── DI container ────────────────────────────────────────────────────
+    container = ApplicationContainer()
+    container.config.from_dict(
+        {
+            "email": email,
+            "api_key": api_key,
+            "data_dir": str(Path.home() / ".pubmed-search-mcp"),
+        }
+    )
 
-    from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
-
-    strategy_generator = SearchStrategyGenerator(email=email, api_key=api_key)
-
-    session_manager = SessionManager()
+    searcher = container.searcher()
+    strategy_generator = container.strategy_generator()
+    session_manager = container.session_manager()
 
     # Create MCP server with Copilot Studio settings
     mcp = FastMCP(
@@ -112,11 +117,6 @@ Available tools:
         )
 
         register_copilot_compatible_tools(mcp, searcher)
-
-    # Store references
-    mcp._pubmed_session_manager = session_manager
-    mcp._searcher = searcher
-    mcp._strategy_generator = strategy_generator
 
     return mcp
 

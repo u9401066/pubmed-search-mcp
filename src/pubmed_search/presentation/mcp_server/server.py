@@ -14,19 +14,22 @@ Architecture:
 - instructions.py: SERVER_INSTRUCTIONS for AI agents
 - tool_registry.py: Centralized tool registration
 - tools/: Individual tool implementations by category
+- container: DI container (dependency-injector) for service lifecycle
 """
 
 import asyncio
 import logging
 import os
 import sys
+from collections.abc import AsyncIterator, Callable
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
-from pubmed_search.application.session.manager import SessionManager
-from pubmed_search.infrastructure.ncbi import LiteratureSearcher
+from pubmed_search.container import ApplicationContainer
 
 from .instructions import SERVER_INSTRUCTIONS
 from .tool_registry import register_all_mcp_tools
@@ -35,6 +38,42 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_EMAIL = "pubmed-search@example.com"
 DEFAULT_DATA_DIR = str(Path.home() / ".pubmed-search-mcp")
+
+# ── Module-level DI container ──────────────────────────────────────────────
+_container: ApplicationContainer | None = None
+
+
+def get_container() -> ApplicationContainer:
+    """Get the application DI container.
+
+    Raises:
+        RuntimeError: If ``create_server()`` has not been called yet.
+    """
+    if _container is None:
+        msg = "Container not initialized. Call create_server() first."
+        raise RuntimeError(msg)
+    return _container
+
+
+def _make_lifespan(
+    container: ApplicationContainer,
+) -> Callable[[FastMCP[Any]], AbstractAsyncContextManager[ApplicationContainer]]:
+    """Create a FastMCP lifespan handler bound to *container*."""
+
+    @asynccontextmanager
+    async def _lifespan(server: FastMCP[Any]) -> AsyncIterator[ApplicationContainer]:
+        """Application lifecycle: startup → yield → shutdown."""
+        logger.info("Lifecycle: startup — resources ready")
+        try:
+            yield container
+        finally:
+            # Shutdown: close shared httpx client
+            from pubmed_search.shared.async_utils import close_shared_async_client
+
+            await close_shared_async_client()
+            logger.info("Lifecycle: shutdown — shared HTTP client closed")
+
+    return _lifespan
 
 
 def create_server(
@@ -49,6 +88,9 @@ def create_server(
     """
     Create and configure the PubMed Search MCP server.
 
+    Uses :class:`~pubmed_search.container.ApplicationContainer` for
+    dependency injection and lifecycle management.
+
     Args:
         email: Email address for NCBI Entrez API (required by NCBI).
         api_key: Optional NCBI API key for higher rate limits.
@@ -61,56 +103,53 @@ def create_server(
     Returns:
         Configured FastMCP server instance.
     """
+    global _container
     logger.info("Initializing PubMed Search MCP Server...")
 
-    # Initialize searcher
-    searcher = LiteratureSearcher(email=email, api_key=api_key)
+    # ── DI container ────────────────────────────────────────────────────
+    _container = ApplicationContainer()
+    _container.config.from_dict(
+        {
+            "email": email,
+            "api_key": api_key,
+            "data_dir": data_dir or DEFAULT_DATA_DIR,
+        }
+    )
 
-    # Initialize strategy generator for intelligent query generation
-    from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
+    searcher = _container.searcher()
+    strategy_generator = _container.strategy_generator()
+    session_manager = _container.session_manager()
 
-    strategy_generator = SearchStrategyGenerator(email=email, api_key=api_key)
     logger.info("Strategy generator initialized (ESpell + MeSH)")
+    logger.info("Session data directory: %s", data_dir or DEFAULT_DATA_DIR)
 
-    # Initialize session manager
-    session_data_dir = data_dir or DEFAULT_DATA_DIR
-    session_manager = SessionManager(data_dir=session_data_dir)
-    logger.info(f"Session data directory: {session_data_dir}")
-
-    # Configure transport security
-    # Disable DNS rebinding protection for remote access
+    # ── Transport security ──────────────────────────────────────────────
     if disable_security:
         transport_security = TransportSecuritySettings(enable_dns_rebinding_protection=False)
         logger.info("DNS rebinding protection disabled for remote access")
     else:
         transport_security = None
 
-    # Create MCP server
+    # ── Create MCP server with lifespan ─────────────────────────────────
     mcp = FastMCP(
         name,
         instructions=SERVER_INSTRUCTIONS,
         transport_security=transport_security,
         json_response=json_response,
-        stateless_http=stateless_http,  # Stateless mode for Copilot Studio
+        stateless_http=stateless_http,
+        lifespan=_make_lifespan(_container),
     )
 
-    # Register all tools via centralized registry
+    # ── Register all tools via centralized registry ─────────────────────
     stats = register_all_mcp_tools(
         mcp=mcp,
         searcher=searcher,
         session_manager=session_manager,
         strategy_generator=strategy_generator,
     )
-    logger.info(f"Tool registration complete: {stats}")
+    logger.info("Tool registration complete: %s", stats)
 
-    # Store references for later use
-    # Note: Use _pubmed_session_manager to avoid conflicting with FastMCP's _session_manager
-    # which is used by streamable_http_app() for StreamableHTTPSessionManager
-    mcp._pubmed_session_manager = session_manager
-    mcp._searcher = searcher
-    mcp._strategy_generator = strategy_generator
-
-    # Install performance profiling (dev feature, toggled by PUBMED_PROFILING=1)
+    # ── Install performance profiling (optional) ────────────────────────
     from pubmed_search.shared.profiling import install_http_profiling, install_profiling
 
     if install_profiling(mcp):
@@ -296,7 +335,12 @@ def main():
 
     # Start background HTTP API for MCP-to-MCP communication
     # This runs alongside the stdio MCP server
-    start_http_api_background(server._pubmed_session_manager, server._searcher, port=http_api_port)
+    container = get_container()
+    start_http_api_background(
+        container.session_manager(),
+        container.searcher(),
+        port=http_api_port,
+    )
 
     # Run stdio MCP server (blocks)
     server.run()

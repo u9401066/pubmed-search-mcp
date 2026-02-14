@@ -110,10 +110,12 @@ def main():
     else:
         mcp_app = server.streamable_http_app()
 
-    # Get session manager for HTTP API endpoints
-    # Note: Use _pubmed_session_manager (not _session_manager which is used by MCP SDK)
-    session_manager = server._pubmed_session_manager
-    searcher = server._searcher
+    # Get session manager for HTTP API endpoints via DI container
+    from pubmed_search.presentation.mcp_server.server import get_container
+
+    container = get_container()
+    session_manager = container.session_manager()
+    searcher = container.searcher()
 
     # Add health check and info endpoints
     async def health(request):
