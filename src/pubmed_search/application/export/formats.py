@@ -13,8 +13,8 @@ import csv
 import io
 import json
 import logging
-from datetime import datetime
-from typing import Any, Dict, List
+from datetime import datetime, timezone
+from typing import Any
 
 # For LaTeX special character handling
 try:
@@ -42,7 +42,7 @@ def _convert_to_latex(text: str) -> str:
         return unicode_to_latex(text)
 
     # Fallback: basic character mapping
-    UNICODE_TO_LATEX = {
+    latex_char_map = {
         "ø": r"{\o}",
         "Ø": r"{\O}",
         "æ": r"{\ae}",
@@ -79,7 +79,7 @@ def _convert_to_latex(text: str) -> str:
         "ł": r"{\l}",
         "Ł": r"{\L}",
     }
-    for char, latex in UNICODE_TO_LATEX.items():
+    for char, latex in latex_char_map.items():
         text = text.replace(char, latex)
     return text
 
@@ -93,8 +93,7 @@ def _strip_html_tags(text: str) -> str:
     # Remove common HTML tags
     text = re.sub(r"<sup>(.*?)</sup>", r"^\1", text)  # superscript
     text = re.sub(r"<sub>(.*?)</sub>", r"_\1", text)  # subscript
-    text = re.sub(r"</?[a-zA-Z][^>]*>", "", text)  # all other tags
-    return text
+    return re.sub(r"</?[a-zA-Z][^>]*>", "", text)  # all other tags
 
 
 def _format_author_ris(author_name: str) -> str:
@@ -116,14 +115,13 @@ def _format_author_ris(author_name: str) -> str:
     parts = author_name.strip().split()
     if len(parts) == 1:
         return parts[0]
-    elif len(parts) == 2:
+    if len(parts) == 2:
         return f"{parts[0]}, {parts[1]}"
-    else:
-        # First part is last name, rest are first/middle names
-        return f"{parts[0]}, {' '.join(parts[1:])}"
+    # First part is last name, rest are first/middle names
+    return f"{parts[0]}, {' '.join(parts[1:])}"
 
 
-def export_ris(articles: List[Dict[str, Any]], include_abstract: bool = True) -> str:
+def export_ris(articles: list[dict[str, Any]], include_abstract: bool = True) -> str:
     """
     Export articles to RIS format.
 
@@ -210,7 +208,7 @@ def export_ris(articles: List[Dict[str, Any]], include_abstract: bool = True) ->
             lines.append(f"SP  - {pages}")
             # Split pages into start/end if possible
             if "-" in pages:
-                sp, ep = pages.split("-", 1)
+                _sp, ep = pages.split("-", 1)
                 lines.append(f"EP  - {ep.strip()}")
 
         # Identifiers
@@ -253,9 +251,7 @@ def export_ris(articles: List[Dict[str, Any]], include_abstract: bool = True) ->
         if article.get("doi"):
             lines.append(f"L2  - https://doi.org/{article['doi']}")
         if article.get("pmc_id"):
-            lines.append(
-                f"L1  - https://www.ncbi.nlm.nih.gov/pmc/articles/{article['pmc_id']}/pdf/"
-            )
+            lines.append(f"L1  - https://www.ncbi.nlm.nih.gov/pmc/articles/{article['pmc_id']}/pdf/")
 
         # Database
         lines.append("DB  - PubMed")
@@ -283,14 +279,13 @@ def _format_author_bibtex(author_name: str) -> str:
     parts = author_name.strip().split()
     if len(parts) == 1:
         return parts[0]
-    elif len(parts) == 2:
+    if len(parts) == 2:
         return f"{parts[0]}, {parts[1]}"
-    else:
-        # First part is last name, rest are first/middle names
-        return f"{parts[0]}, {' '.join(parts[1:])}"
+    # First part is last name, rest are first/middle names
+    return f"{parts[0]}, {' '.join(parts[1:])}"
 
 
-def export_bibtex(articles: List[Dict[str, Any]], include_abstract: bool = True) -> str:
+def export_bibtex(articles: list[dict[str, Any]], include_abstract: bool = True) -> str:
     """
     Export articles to BibTeX format.
 
@@ -316,9 +311,7 @@ def export_bibtex(articles: List[Dict[str, Any]], include_abstract: bool = True)
         if authors:
             first_author = authors[0].split()[0] if authors[0] else "Unknown"
             # Remove special characters from cite key
-            first_author = "".join(
-                c for c in first_author if c.isalnum() or c.isascii()
-            )
+            first_author = "".join(c for c in first_author if c.isalnum() or c.isascii())
             first_author = first_author.replace(" ", "")
         else:
             first_author = "Unknown"
@@ -338,9 +331,7 @@ def export_bibtex(articles: List[Dict[str, Any]], include_abstract: bool = True)
         # Authors (BibTeX format: "Last, First and Last, First")
         # Convert Unicode to LaTeX for proper rendering
         if authors:
-            bibtex_authors = " and ".join(
-                _convert_to_latex(_format_author_bibtex(a)) for a in authors
-            )
+            bibtex_authors = " and ".join(_convert_to_latex(_format_author_bibtex(a)) for a in authors)
             entry_lines.append(f"  author = {{{bibtex_authors}}},")
 
         # Journal
@@ -365,11 +356,7 @@ def export_bibtex(articles: List[Dict[str, Any]], include_abstract: bool = True)
             entry_lines.append(f"  number = {{{article['issue']}}},")
         if article.get("pages"):
             # Convert "123-456" to "123--456" for LaTeX
-            pages = (
-                article["pages"].replace("-", "--")
-                if "-" in article["pages"]
-                else article["pages"]
-            )
+            pages = article["pages"].replace("-", "--") if "-" in article["pages"] else article["pages"]
             entry_lines.append(f"  pages = {{{pages}}},")
 
         # ISSN
@@ -411,13 +398,10 @@ def export_bibtex(articles: List[Dict[str, Any]], include_abstract: bool = True)
         if article.get("doi"):
             entry_lines.append(f"  url = {{https://doi.org/{article['doi']}}},")
         elif article.get("pmid"):
-            entry_lines.append(
-                f"  url = {{https://pubmed.ncbi.nlm.nih.gov/{article['pmid']}/}},"
-            )
+            entry_lines.append(f"  url = {{https://pubmed.ncbi.nlm.nih.gov/{article['pmid']}/}},")
 
         # Remove trailing comma from last field
-        if entry_lines[-1].endswith(","):
-            entry_lines[-1] = entry_lines[-1][:-1]
+        entry_lines[-1] = entry_lines[-1].removesuffix(",")
 
         entry_lines.append("}")
         entries.append("\n".join(entry_lines))
@@ -425,9 +409,7 @@ def export_bibtex(articles: List[Dict[str, Any]], include_abstract: bool = True)
     return "\n\n".join(entries)
 
 
-def export_csv(
-    articles: List[Dict[str, Any]], include_abstract: bool = True, delimiter: str = ","
-) -> str:
+def export_csv(articles: list[dict[str, Any]], include_abstract: bool = True, delimiter: str = ",") -> str:
     """
     Export articles to CSV format.
 
@@ -483,9 +465,7 @@ def export_csv(
     # Remove None values
     columns = [c for c in columns if c is not None]
 
-    writer = csv.DictWriter(
-        output, fieldnames=columns, delimiter=delimiter, extrasaction="ignore"
-    )
+    writer = csv.DictWriter(output, fieldnames=columns, delimiter=delimiter, extrasaction="ignore")
     writer.writeheader()
 
     for article in articles:
@@ -522,9 +502,7 @@ def export_csv(
             "MeSH_Terms": "; ".join(article.get("mesh_terms", [])),
             # URLs
             "PubMed_URL": f"https://pubmed.ncbi.nlm.nih.gov/{article.get('pmid', '')}/",
-            "DOI_URL": f"https://doi.org/{article['doi']}"
-            if article.get("doi")
-            else "",
+            "DOI_URL": f"https://doi.org/{article['doi']}" if article.get("doi") else "",
             "PMC_URL": f"https://www.ncbi.nlm.nih.gov/pmc/articles/{article['pmc_id']}/"
             if article.get("pmc_id")
             else "",
@@ -538,7 +516,7 @@ def export_csv(
     return output.getvalue()
 
 
-def export_medline(articles: List[Dict[str, Any]]) -> str:
+def export_medline(articles: list[dict[str, Any]]) -> str:
     """
     Export articles to MEDLINE format.
 
@@ -616,9 +594,7 @@ def export_medline(articles: List[Dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def export_json(
-    articles: List[Dict[str, Any]], include_abstract: bool = True, pretty: bool = True
-) -> str:
+def export_json(articles: list[dict[str, Any]], include_abstract: bool = True, pretty: bool = True) -> str:
     """
     Export articles to JSON format.
 
@@ -633,7 +609,7 @@ def export_json(
         JSON formatted string.
     """
     export_data = {
-        "exported_at": datetime.now().isoformat(),
+        "exported_at": datetime.now(tz=timezone.utc).isoformat(),
         "article_count": len(articles),
         "articles": [],
     }
@@ -655,9 +631,7 @@ def export_json(
             "mesh_terms": article.get("mesh_terms", []),
             "urls": {
                 "pubmed": f"https://pubmed.ncbi.nlm.nih.gov/{article.get('pmid', '')}/",
-                "doi": f"https://doi.org/{article['doi']}"
-                if article.get("doi")
-                else None,
+                "doi": f"https://doi.org/{article['doi']}" if article.get("doi") else None,
                 "pmc": f"https://www.ncbi.nlm.nih.gov/pmc/articles/{article['pmc_id']}/"
                 if article.get("pmc_id")
                 else None,
@@ -671,19 +645,16 @@ def export_json(
 
     if pretty:
         return json.dumps(export_data, indent=2, ensure_ascii=False)
-    else:
-        return json.dumps(export_data, ensure_ascii=False)
+    return json.dumps(export_data, ensure_ascii=False)
 
 
-def export_articles(
-    articles: List[Dict[str, Any]], format: str = "ris", include_abstract: bool = True
-) -> str:
+def export_articles(articles: list[dict[str, Any]], fmt: str = "ris", include_abstract: bool = True) -> str:
     """
     Export articles to specified format.
 
     Args:
         articles: List of article dictionaries.
-        format: Export format (ris, bibtex, csv, medline, json).
+        fmt: Export format (ris, bibtex, csv, medline, json).
         include_abstract: Whether to include abstracts.
 
     Returns:
@@ -692,22 +663,20 @@ def export_articles(
     Raises:
         ValueError: If format is not supported.
     """
-    format = format.lower()
+    fmt = fmt.lower()
 
-    if format not in SUPPORTED_FORMATS:
-        raise ValueError(
-            f"Unsupported format: {format}. Supported: {SUPPORTED_FORMATS}"
-        )
+    if fmt not in SUPPORTED_FORMATS:
+        raise ValueError(f"Unsupported format: {fmt}. Supported: {SUPPORTED_FORMATS}")
 
-    if format == "ris":
+    if fmt == "ris":
         return export_ris(articles, include_abstract)
-    elif format == "bibtex":
+    if fmt == "bibtex":
         return export_bibtex(articles, include_abstract)
-    elif format == "csv":
+    if fmt == "csv":
         return export_csv(articles, include_abstract)
-    elif format == "medline":
+    if fmt == "medline":
         return export_medline(articles)
-    elif format == "json":
+    if fmt == "json":
         return export_json(articles, include_abstract)
 
-    raise ValueError(f"Unknown format: {format}")
+    raise ValueError(f"Unknown format: {fmt}")

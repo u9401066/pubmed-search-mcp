@@ -2,18 +2,16 @@
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-
 from pubmed_search.infrastructure.sources import (
     SearchSource,
-    search_alternate_source,
-    cross_search,
     _deduplicate_results,
     _normalize_title,
-    get_paper_from_any_source,
-    get_fulltext_xml,
+    cross_search,
     get_fulltext_parsed,
+    get_fulltext_xml,
+    get_paper_from_any_source,
+    search_alternate_source,
 )
-
 
 # ============================================================
 # SearchSource enum
@@ -114,9 +112,7 @@ class TestCrossSearch:
 
     @patch("pubmed_search.infrastructure.sources.search_alternate_source")
     async def test_specific_sources(self, mock_search):
-        mock_search.return_value = [
-            {"title": "P", "doi": "10.1/x", "_source": "openalex"}
-        ]
+        mock_search.return_value = [{"title": "P", "doi": "10.1/x", "_source": "openalex"}]
         result = await cross_search("test", sources=["openalex"])
         assert "openalex" in result["by_source"]
 
@@ -143,9 +139,7 @@ class TestCrossSearch:
             [{"title": "Same Paper", "doi": "10.1/x", "_source": "ss"}],
             [{"title": "Same Paper", "doi": "10.1/x", "_source": "oa"}],
         ]
-        result = await cross_search(
-            "test", sources=["semantic_scholar", "openalex"], deduplicate=False
-        )
+        result = await cross_search("test", sources=["semantic_scholar", "openalex"], deduplicate=False)
         assert result["stats"]["total"] == 2
 
     @patch("pubmed_search.infrastructure.sources.search_alternate_source")
@@ -158,15 +152,11 @@ class TestCrossSearch:
     @patch("pubmed_search.infrastructure.sources.search_alternate_source")
     async def test_has_fulltext_only_for_supported(self, mock_search):
         mock_search.return_value = []
-        await cross_search(
-            "test", sources=["europe_pmc", "semantic_scholar"], has_fulltext=True
-        )
+        await cross_search("test", sources=["europe_pmc", "semantic_scholar"], has_fulltext=True)
         calls = mock_search.call_args_list
         # europe_pmc should get has_fulltext=True, semantic_scholar should not
         for call in calls:
-            if call[1].get("source") == "europe_pmc" or (
-                call[0] and len(call[0]) > 1 and call[0][1] == "europe_pmc"
-            ):
+            if call[1].get("source") == "europe_pmc" or (call[0] and len(call[0]) > 1 and call[0][1] == "europe_pmc"):
                 pass  # Check the has_fulltext param
 
 

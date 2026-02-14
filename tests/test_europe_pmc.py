@@ -1,7 +1,8 @@
 """Tests for Europe PMC integration."""
 
-import pytest
 from unittest.mock import AsyncMock, patch
+
+import pytest
 
 
 class TestEuropePMCClient:
@@ -58,9 +59,7 @@ class TestEuropePMCClient:
 
     async def test_search_with_filters(self, client, mock_search_response):
         """Test search with year and OA filters."""
-        with patch.object(
-            client, "_make_request", return_value=mock_search_response
-        ) as mock:
+        with patch.object(client, "_make_request", return_value=mock_search_response) as mock:
             await client.search(
                 "test query",
                 min_year=2020,
@@ -133,9 +132,7 @@ class TestEuropePMCClient:
 
     async def test_get_citations(self, client, mock_search_response):
         """Test get citations."""
-        citations_response = {
-            "citationList": {"citation": mock_search_response["resultList"]["result"]}
-        }
+        citations_response = {"citationList": {"citation": mock_search_response["resultList"]["result"]}}
         with patch.object(client, "_make_request", return_value=citations_response):
             citations = await client.get_citations("MED", "12345678")
             assert len(citations) == 1
@@ -248,6 +245,7 @@ class TestEuropePMCMCPTools:
     def mcp(self):
         """Create MCP instance with Europe PMC tools."""
         from mcp.server.fastmcp import FastMCP
+
         from pubmed_search.presentation.mcp_server.tools.europe_pmc import (
             register_europe_pmc_tools,
         )
@@ -267,12 +265,10 @@ class TestEuropePMCMCPTools:
 
     # v0.1.21: search_europe_pmc has been integrated into unified_search
     # This test is kept as a reminder but skipped
-    @pytest.mark.skip(
-        reason="v0.1.21: search_europe_pmc integrated into unified_search"
-    )
+    @pytest.mark.skip(reason="v0.1.21: search_europe_pmc integrated into unified_search")
     async def test_search_europe_pmc_tool(self, mcp):
         """Test search_europe_pmc tool returns formatted results."""
-        pass  # This tool has been integrated into unified_search
+        # This tool has been integrated into unified_search
 
     async def test_get_fulltext_tool(self, mcp):
         """Test get_fulltext tool parses XML correctly."""
@@ -291,9 +287,7 @@ class TestEuropePMCMCPTools:
             "references": [],
         }
 
-        with patch(
-            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client"
-        ) as mock:
+        with patch("pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client") as mock:
             mock_client = mock.return_value
             mock_client.get_fulltext_xml = AsyncMock(return_value=mock_xml)
             mock_client.parse_fulltext_xml.return_value = mock_parsed
@@ -308,19 +302,14 @@ class TestEuropePMCMCPTools:
         """Test get_fulltext handles missing fulltext."""
         from unittest.mock import patch
 
-        with patch(
-            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client"
-        ) as mock:
+        with patch("pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client") as mock:
             mock.return_value.get_fulltext_xml = AsyncMock(return_value=None)
 
             tool = mcp._tool_manager._tools["get_fulltext"]
             result = await tool.fn(pmcid="PMC9999999")
 
             # Updated to match actual error message format
-            assert (
-                "no results found" in result.lower()
-                or "not available" in result.lower()
-            )
+            assert "no results found" in result.lower() or "not available" in result.lower()
 
     async def test_get_text_mined_terms_requires_id(self, mcp):
         """Test get_text_mined_terms requires pmid or pmcid."""
@@ -332,7 +321,7 @@ class TestEuropePMCMCPTools:
     @pytest.mark.skip(reason="v0.1.21: get_europe_pmc_citations tool removed")
     async def test_get_europe_pmc_citations_tool(self, mcp):
         """Test get_europe_pmc_citations tool."""
-        pass  # This tool has been removed in v0.1.21
+        # This tool has been removed in v0.1.21
 
 
 class TestEuropePMCIntegration:
@@ -388,16 +377,13 @@ class TestSourcesIntegration:
 
     async def test_search_alternate_source_europe_pmc(self):
         """Test search_alternate_source with europe_pmc."""
-        from pubmed_search.infrastructure.sources import search_alternate_source
         from unittest.mock import patch
+
+        from pubmed_search.infrastructure.sources import search_alternate_source
 
         mock_result = {"results": [{"pmid": "123", "title": "Test"}], "hit_count": 1}
 
-        with patch(
-            "pubmed_search.infrastructure.sources.get_europe_pmc_client"
-        ) as mock_client:
+        with patch("pubmed_search.infrastructure.sources.get_europe_pmc_client") as mock_client:
             mock_client.return_value.search = AsyncMock(return_value=mock_result)
-            results = await search_alternate_source(
-                query="test", source="europe_pmc", limit=5
-            )
+            results = await search_alternate_source(query="test", source="europe_pmc", limit=5)
             assert len(results) == 1

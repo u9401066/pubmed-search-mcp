@@ -1,8 +1,8 @@
 """Final targeted tests to reach 90% coverage."""
 
-from unittest.mock import AsyncMock, Mock, patch
-import tempfile
 import json
+import tempfile
+from unittest.mock import AsyncMock, Mock, patch
 
 
 class TestClientPubMedClient:
@@ -12,9 +12,7 @@ class TestClientPubMedClient:
         """Test await PubMedClient.search() method."""
         from pubmed_search import PubMedClient
 
-        with patch(
-            "pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher"
-        ) as mock_searcher_class:
+        with patch("pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher") as mock_searcher_class:
             mock_searcher = AsyncMock()
             mock_searcher.search.return_value = [
                 {
@@ -40,9 +38,7 @@ class TestClientPubMedClient:
         """Test PubMedClient.search_raw() method."""
         from pubmed_search import PubMedClient
 
-        with patch(
-            "pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher"
-        ) as mock_searcher_class:
+        with patch("pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher") as mock_searcher_class:
             mock_searcher = AsyncMock()
             mock_searcher.search.return_value = [{"pmid": "123", "title": "Test"}]
             mock_searcher_class.return_value = mock_searcher
@@ -57,9 +53,7 @@ class TestClientPubMedClient:
         """Test PubMedClient.fetch_by_pmid() method."""
         from pubmed_search import PubMedClient
 
-        with patch(
-            "pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher"
-        ) as mock_searcher_class:
+        with patch("pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher") as mock_searcher_class:
             mock_searcher = AsyncMock()
             mock_searcher.fetch_details.return_value = [
                 {
@@ -85,9 +79,7 @@ class TestClientPubMedClient:
         """Test PubMedClient.fetch_by_pmid() when not found."""
         from pubmed_search import PubMedClient
 
-        with patch(
-            "pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher"
-        ) as mock_searcher_class:
+        with patch("pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher") as mock_searcher_class:
             mock_searcher = AsyncMock()
             mock_searcher.fetch_details.return_value = []
             mock_searcher_class.return_value = mock_searcher
@@ -101,9 +93,7 @@ class TestClientPubMedClient:
         """Test PubMedClient.fetch_by_pmids() method."""
         from pubmed_search import PubMedClient
 
-        with patch(
-            "pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher"
-        ) as mock_searcher_class:
+        with patch("pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher") as mock_searcher_class:
             mock_searcher = AsyncMock()
             mock_searcher.fetch_details.return_value = [
                 {
@@ -138,9 +128,7 @@ class TestClientPubMedClient:
         """Test PubMedClient.fetch_by_pmids_raw() method."""
         from pubmed_search import PubMedClient
 
-        with patch(
-            "pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher"
-        ) as mock_searcher_class:
+        with patch("pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher") as mock_searcher_class:
             mock_searcher = AsyncMock()
             mock_searcher.fetch_details.return_value = [{"pmid": "123"}]
             mock_searcher_class.return_value = mock_searcher
@@ -154,9 +142,7 @@ class TestClientPubMedClient:
         """Test await PubMedClient.find_related() method."""
         from pubmed_search import PubMedClient
 
-        with patch(
-            "pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher"
-        ) as mock_searcher_class:
+        with patch("pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher") as mock_searcher_class:
             mock_searcher = AsyncMock()
             mock_searcher.find_related_articles.return_value = [
                 {
@@ -181,9 +167,7 @@ class TestClientPubMedClient:
         """Test PubMedClient.find_citing() method."""
         from pubmed_search import PubMedClient
 
-        with patch(
-            "pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher"
-        ) as mock_searcher_class:
+        with patch("pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher") as mock_searcher_class:
             mock_searcher = AsyncMock()
             mock_searcher.find_citing_articles.return_value = [
                 {
@@ -208,13 +192,9 @@ class TestClientPubMedClient:
         """Test PubMedClient searcher's await get_citation_metrics() method."""
         from pubmed_search import PubMedClient
 
-        with patch(
-            "pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher"
-        ) as mock_searcher_class:
+        with patch("pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher") as mock_searcher_class:
             mock_searcher = AsyncMock()
-            mock_searcher.get_citation_metrics.return_value = {
-                "123": {"citation_count": 50, "rcr": 1.5}
-            }
+            mock_searcher.get_citation_metrics.return_value = {"123": {"citation_count": 50, "rcr": 1.5}}
             mock_searcher_class.return_value = mock_searcher
 
             client = PubMedClient(email="test@example.com")
@@ -229,10 +209,10 @@ class TestSessionToolsResourceFunction:
 
     async def test_session_resources_get_context_with_session(self):
         """Test get_research_context resource with active session."""
+        from pubmed_search.application.session import SessionManager
         from pubmed_search.presentation.mcp_server.session_tools import (
             register_session_resources,
         )
-        from pubmed_search.application.session import SessionManager
 
         mock_mcp = Mock()
         captured_func = None
@@ -267,10 +247,10 @@ class TestSessionToolsResourceFunction:
 
     async def test_session_resources_get_context_no_session(self):
         """Test get_research_context resource with no session."""
+        from pubmed_search.application.session import SessionManager
         from pubmed_search.presentation.mcp_server.session_tools import (
             register_session_resources,
         )
-        from pubmed_search.application.session import SessionManager
 
         mock_mcp = Mock()
         captured_func = None

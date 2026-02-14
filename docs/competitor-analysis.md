@@ -402,11 +402,11 @@ export const googleScholarTools = [{
         type: "object",
         properties: {
             query: { type: "string", description: "..." },
-            numResults: { 
-                type: "number", 
-                minimum: 1, 
+            numResults: {
+                type: "number",
+                minimum: 1,
                 maximum: 20,
-                default: 10 
+                default: 10
             },
             author: { type: "string", description: "Filter by author" },
             startYear: { type: "number", minimum: 1900 },
@@ -435,17 +435,17 @@ class MCPClient {
     async processQuery(query: string) {
         // 1. 加入對話歷史
         this.conversationHistory.push({ role: "user", parts: [{ text: query }] });
-        
+
         // 2. 轉換 MCP tools 為 Gemini function declarations
         const config = { tools: [{ functionDeclarations: this.tools }] };
-        
+
         // 3. 呼叫 Gemini
         const response = await this.genAI.models.generateContent({
             model: "gemini-2.5-flash",
             contents: this.conversationHistory,
             config
         });
-        
+
         // 4. 處理 function calls
         for (const toolCall of response.functionCalls) {
             const result = await this.mcp.callTool({
@@ -741,7 +741,7 @@ call_prompt("deep-paper-analysis", {"paper_id": "2401.12345"})
     - Then use read_paper to get content
     - Use search_papers to find related papers
   </preparation>
-  
+
   <comprehensive-analysis>
     - Executive Summary (2-3 sentences)
     - Main contribution
@@ -750,13 +750,13 @@ call_prompt("deep-paper-analysis", {"paper_id": "2401.12345"})
     - Main results
     - Conclusion
   </comprehensive-analysis>
-  
+
   <research-context>
     - Research area
     - Key prior approaches and limitations
     - How this paper advances the field
   </research-context>
-  
+
   <methodology-analysis>
     - Step-by-step breakdown
     - Key innovations
@@ -798,7 +798,7 @@ call_prompt("research-discovery", {
 import pymupdf4llm
 
 markdown = pymupdf4llm.to_markdown(
-    paper_pdf_path, 
+    paper_pdf_path,
     show_progress=False
 )
 
@@ -2157,7 +2157,7 @@ findpapers generate_bibtex results.json -o refs.bib
 class PubMedSearcher:
     def __init__(self):
         self.base_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
-    
+
     def search(self, query, limit=100):
         # 使用 esearch + efetch 標準流程
         pass

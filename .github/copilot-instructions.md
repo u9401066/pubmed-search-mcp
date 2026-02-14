@@ -26,7 +26,7 @@ uv add <package>           # 新增依賴
 uv add --dev <package>     # 新增開發依賴
 uv remove <package>        # 移除依賴
 uv sync                    # 同步依賴
-uv run pytest              # 透過 uv 執行測試
+uv run pytest              # 透過 uv 執行測試（自動多核）
 uv run python script.py    # 透過 uv 執行 Python
 ```
 
@@ -37,31 +37,103 @@ uv run ruff check .        # Lint 檢查
 uv run ruff check . --fix  # Lint 自動修復
 uv run ruff format .       # 格式化
 uv run mypy src/ tests/    # 型別檢查（含 src 和 tests）
-uv run pytest -n auto --timeout=60  # ⚡ 多核平行測試（推薦，~67 秒）
-uv run pytest --timeout=60          # 單核測試（~180-240 秒）
-uv run pytest --cov                 # 覆蓋率（不可搭配 -n auto）
+uv run pytest              # ⩡ 多核平行測試（預設 -n auto --timeout=60）
+uv run pytest --cov        # 多核 + 覆蓋率
 ```
 
 > ⚠️ **永遠不要**直接呼叫 `pytest`、`ruff`、`mypy`，一律使用 `uv run` 前綴。
 
-### ⏱️ 測試執行時間 (IMPORTANT - 請務必閱讀)
+### 🔒 Pre-commit Hooks (自動品質守門)
 
-本專案使用 **pytest-xdist** 多核平行測試，大幅縮短執行時間。
+本專案使用 [pre-commit](https://pre-commit.com/) 在每次 commit 時自動執行品質檢查。
 
 ```bash
-# ✅ 推薦：多核平行測試（~67 秒，比單核快 3x）
-uv run pytest tests/ -n auto --timeout=60 -q
-# ↑ -n auto 自動偵測 CPU 核心數，--timeout=60 是每個測試案例的超時
+# 首次設定（uv sync 安裝依賴後）
+uv run pre-commit install                       # 安裝 pre-commit hook
+uv run pre-commit install --hook-type pre-push  # 安裝 pre-push hook
+
+# 手動執行所有 hooks
+uv run pre-commit run --all-files
+
+# 更新 hook 版本（建議每月一次）
+uv run pre-commit autoupdate
+```
+
+**Commit 階段自動檢查：**
+- trailing-whitespace / end-of-file-fixer (自動修復)
+- check-yaml / check-toml / check-json
+- check-added-large-files / check-merge-conflict / debug-statements / detect-private-key
+- **ruff** lint (自動修復) + **ruff-format** (自動修復)
+- **mypy** type check
+- **async-test-checker** async/sync 測試一致性 (`scripts/check_async_tests.py`)
+- **file-hygiene** 檔案衛生檢查 (`scripts/hooks/check_file_hygiene.py`)
+- **tool-count-sync** MCP 工具文檔同步 (`scripts/hooks/check_tool_sync.py`, 自動修復)
+- **evolution-cycle** 一致性驗證 (`scripts/hooks/check_evolution_cycle.py`)
+
+**Push 階段自動檢查：**
+- **pytest** 全套測試 (`-n auto --timeout=60`)
+
+```bash
+# 跳過特定 hook
+SKIP=mypy git commit -m "quick fix"
+# 跳過所有 hooks（慎用）
+git commit --no-verify -m "emergency fix"
+```
+
+### 🔄 自演化循環 (Self-Evolution Cycle - IMPORTANT)
+
+本專案的 Instruction、Skill、Hook 形成一個自我演化的閉迴系統：
+
+```
+Instruction (copilot-instructions.md)
+    │ 定義規範、引導 AI 使用 Skills
+    ▼
+Skill (SKILL.md 檔案)
+    │ 確保建構完整、創建新 Hook
+    ▼
+Hook (.pre-commit-config.yaml + scripts/hooks/)
+    │ 自動執行檢查、自動修正
+    ▼
+evolution-cycle hook (check_evolution_cycle.py)
+    │ 驗證三者一致性、報告不同步處
+    ▼
+Feedback → 更新 Instruction & Skill → 循環完成
+```
+
+**新增 Hook 的完整流程：**
+1. 創建 hook 腳本 → `scripts/hooks/<name>.py`
+2. 註冊到 `.pre-commit-config.yaml`
+3. 更新 `copilot-instructions.md` (Commit 階段自動檢查列表)
+4. 更新 `git-precommit SKILL.md` (架構圖 + Hook 設定檔案表)
+5. 更新 `CONTRIBUTING.md` (hooks 表格)
+6. 執行 `uv run python scripts/hooks/check_evolution_cycle.py` 驗證
+
+> ⚠️ 如果只做了 1-2 而沒有 3-5，evolution-cycle hook 會在下次 commit 時報錯。
+
+**套件版本自動演化：**
+```bash
+uv run pre-commit autoupdate    # 更新 ruff、pre-commit-hooks 等版本
+uv run pre-commit run --all-files  # 驗證更新後所有 hook 正常
+```
+
+### ⏱️ 測試執行時間 (IMPORTANT - 請務必閱讀)
+
+本專案**強制**使用 **pytest-xdist** 多核平行測試（透過 `addopts = "-n auto --timeout=60"` 全局強制）。
+
+```bash
+# ✅ 所有測試命令自動帶 -n auto --timeout=60（不需手動加）
+uv run pytest                # 多核執行（~67 秒）
+uv run pytest tests/ -q      # 多核 + 簡潔輸出
 
 # ✅ 導向檔案避免 terminal buffer 溢出
-uv run pytest tests/ -n auto --timeout=60 -q --no-header 2>&1 > scripts/_tmp/test_result.txt
+uv run pytest tests/ -q --no-header 2>&1 > scripts/_tmp/test_result.txt
 # 等待 ~70 秒後再讀取結果
 
-# ⚠️ 單核模式（不推薦，需 180-240 秒）
-uv run pytest tests/ --timeout=60 -q
+# ✅ 多核 + 覆蓋率（pytest-cov 完全支援 xdist）
+uv run pytest --cov -q
 
-# ⚠️ 覆蓋率模式（不可搭配 -n auto）
-uv run pytest tests/ --timeout=60 --cov -q
+# ⚠️ 僅在需要 benchmark 時停用 xdist
+uv run pytest tests/test_performance.py --benchmark-only -p no:xdist
 ```
 
 | 指標 | 數值 |
@@ -70,9 +142,8 @@ uv run pytest tests/ --timeout=60 --cov -q
 | 測試案例數 | 2200+ |
 | 測試程式碼行數 | 30,000+ |
 | ⚡ 多核執行時間 (`-n auto`) | **~67 秒** |
-| 單核執行時間 | 180~240 秒 |
 | 每個測試超時 | 60 秒 (`--timeout=60`) |
-| 建議 terminal timeout | **120,000+ ms**（多核）/ 300,000+ ms（單核） |
+| 建議 terminal timeout | **120,000+ ms** |
 
 > 💡 **pytest-xdist** 使用多 process 平行化，每個 worker 為獨立 process，singleton 隔離無衝突。
 > ⚠️ `pytest-benchmark` 在 xdist 模式下自動停用（benchmark 需要單核確保精確度）。

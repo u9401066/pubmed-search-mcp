@@ -1,7 +1,7 @@
 # PubMed Search MCP - Roadmap
 
 > 本文件記錄**待實作**功能。已完成功能請參閱 [CHANGELOG.md](CHANGELOG.md)。
-> **最後更新**: 2026-02-10
+> **最後更新**: 2026-02-14
 
 ---
 
@@ -28,7 +28,7 @@
    問題: MCP 維護字典，更新困難，翻譯品質差
 
 ✅ 正確設計 (職責分明):
-   用戶: "喉頭水腫" 
+   用戶: "喉頭水腫"
      → MCP 偵測非英文 → 返回警告 "Open-i 只支援英文"
      → Agent 翻譯 → "laryngeal edema"
      → Agent 再次呼叫 MCP → API 成功
@@ -892,24 +892,24 @@ flowchart TD
         A1[Records from databases<br/>PubMed n=234<br/>Europe PMC n=456<br/>CORE n=123<br/>OpenAlex n=189<br/>Semantic Scholar n=156]
         A2[Records removed before screening<br/>Duplicates n=312<br/>Ineligible by automation n=45]
     end
-    
+
     subgraph Screening
         B1[Records screened<br/>n=501]
         B2[Records excluded<br/>n=380]
     end
-    
+
     subgraph Eligibility
         C1[Reports sought for retrieval<br/>n=121]
         C2[Reports not retrieved<br/>n=6]
         C3[Reports assessed for eligibility<br/>n=115]
         C4[Reports excluded with reasons<br/>No comparator n=40<br/>Inadequate outcome n=30<br/>High risk of bias n=15]
     end
-    
+
     subgraph Included
         D1[Studies included in review<br/>n=36]
         D2[Reports included in review<br/>n=42]
     end
-    
+
     A1 --> A2 --> B1
     B1 --> B2
     B1 --> C1
@@ -1288,12 +1288,12 @@ session.expand_search(include_observational=True)
 ##### 7. 主動式資訊推送 ⭐⭐⭐
 ```python
 # 監控新文獻並主動推送
-monitor_new_publications(keywords=["remimazolam"], 
+monitor_new_publications(keywords=["remimazolam"],
                         quality_threshold=0.8,
                         notify_agent=True)
 
 # Agent會收到推送通知
-# "🆕 新文獻推送: 'Remimazolam vs Propofol in ICU: 
+# "🆕 新文獻推送: 'Remimazolam vs Propofol in ICU:
 #   Meta-analysis' - 高品質 (IF=8.2, Level I)"
 ```
 
@@ -1746,7 +1746,7 @@ Living SR (我們的方向):
 Evidence-Grounded 回答:
   "Remimazolam 比 propofol 更少引起低血壓 [1,2]，
    但 delirium 風險相似 [3]。"
-   
+
    [1] PMID:12345678 (RCT, n=200, RCR=2.1)
    [2] PMID:23456789 (Meta-analysis, RCR=3.5)
    [3] PMID:34567890 (Cohort, n=500, RCR=1.8)
@@ -1833,13 +1833,13 @@ Citation Network Analysis:
 問題: 使用者到底想要什麼？
 
 使用者說: "找關於 propofol 的論文"
-真實意圖: 
+真實意圖:
   - 臨床醫師 → 用法、劑量、副作用
   - 研究者 → 機制、新發現
   - 護理師 → 護理要點、監測
   - 學生 → 基礎知識、教科書級
-  
-創新點: 
+
+創新點:
   1. 意圖分類器 (role-aware retrieval)
   2. 對話澄清 (clarification questions)
   3. 個人化學習 (user profile)
@@ -1853,12 +1853,12 @@ Citation Network Analysis:
 問題: 不只是文字，還有圖表、影片、數據
 
 傳統: 文字 → 文獻
-未來: 
+未來:
   - 圖片 → 相關文獻 (圖片內容理解)
   - 影片 → 相關文獻 (手術影片 → 技術論文)
   - 數據 → 相關文獻 (基因序列 → 相關研究)
   - 代碼 → 相關文獻 (演算法 → 方法論文)
-  
+
 現有嘗試:
   - ✅ 我們有 reverse_image_search_pubmed (實驗性)
   - ⏳ 影片理解尚無解決方案
@@ -1876,7 +1876,7 @@ Consensus 做了: 人工整理共識
   1. 自動偵測衝突宣稱
   2. 分析衝突原因 (方法差異、族群差異、時間差異)
   3. 提供 "證據三角測量" (多來源驗證)
-  
+
 例: "Vitamin D 預防 COVID?"
   - 支持: PMID:xxx (RCT, Spain, n=76)
   - 反對: PMID:yyy (RCT, Brazil, n=240)
@@ -1895,7 +1895,7 @@ Consensus 做了: 人工整理共識
   - 2020-06: 氣溶膠傳播辯論
   - 2021-05: 氣溶膠傳播確認
   - 2022+: 變異株不同傳播特性
-  
+
 創新點:
   1. 知識時間線 (knowledge timeline)
   2. 共識演化追蹤 (consensus evolution)
@@ -1927,7 +1927,7 @@ Consensus 做了: 人工整理共識
 
 新定義 (我們的方向):
   文獻檢索 = Understanding + Matching + Synthesizing + Inspiring
-  
+
                 ┌─────────────────────────────────────────────┐
                 │                                              │
                 │   使用者意圖        知識需求        創意需要  │
@@ -2059,7 +2059,7 @@ Consensus 做了: 人工整理共識
   "topic": "remimazolam",
   "time_range": {"start": 2014, "end": 2026},
   "total_publications": 234,
-  
+
   "timeline": [
     {
       "year": 2014,
@@ -2118,7 +2118,7 @@ Consensus 做了: 人工整理共識
       "methodology_differences": ["study_design", "population", "dose_regimen"]
     }
   ],
-  
+
   "summary": {
     "key_milestones": 8,
     "knowledge_shifts": 3,
@@ -2136,30 +2136,30 @@ Consensus 做了: 人工整理共識
 ```mermaid
 timeline
     title Remimazolam Research Timeline (2014-2026)
-    
+
     section Discovery Phase
         2014 : 🔬 CNS 7056 synthesized
              : GABA-A mechanism confirmed
-    
+
     section Clinical Development
         2017 : 👤 First-in-human trial
         2018 : Phase II initiated
         2019 : 📊 Pivotal Phase III RCTs completed
-    
+
     section Regulatory Milestones
         2020 : ✅ FDA approval (US)
              : ✅ EMA approval (EU)
         2021 : ✅ PMDA approval (Japan)
-    
+
     section Knowledge Expansion
         2021-2023 : ICU sedation exploration
                   : ⚔️ vs Propofol comparisons
                   : ⚔️ vs Midazolam comparisons
-    
+
     section Active Controversies
         2024 : ⚠️ Delirium risk debate
              : Conflicting RCT vs Cohort data
-        
+
     section Current Status
         2025 : 📖 Cochrane Review pending
              : 🔮 ICU guidelines awaited
@@ -2231,16 +2231,16 @@ Extract the main claim from this abstract:
 def detect_controversy(topic: str, articles: List[Article]) -> List[Controversy]:
     # 1. Extract claims from each article
     claims = [extract_claim(article) for article in articles]
-    
+
     # 2. Cluster claims by subject (e.g., "delirium risk")
     claim_clusters = cluster_by_subject(claims)
-    
+
     # 3. Find clusters with opposing directions
     controversies = []
     for subject, cluster_claims in claim_clusters.items():
         positive = [c for c in cluster_claims if c.direction == "positive"]
         negative = [c for c in cluster_claims if c.direction == "negative"]
-        
+
         if positive and negative:
             controversies.append(Controversy(
                 subject=subject,
@@ -2249,7 +2249,7 @@ def detect_controversy(topic: str, articles: List[Article]) -> List[Controversy]
                 status=determine_resolution_status(positive, negative),
                 methodology_analysis=analyze_methodology_differences(positive, negative)
             ))
-    
+
     return controversies
 ```
 
@@ -2312,7 +2312,7 @@ def detect_controversy(topic: str, articles: List[Article]) -> List[Controversy]
   1. 研究者花大量時間讀文獻，結果發現問題早已被研究
   2. 真正的創新機會隱藏在「主題交集的空白」
   3. 無法系統性發現「方法論的遷移可能性」
-  
+
 價值:
   研究缺口 = 論文創新點 = 研究生畢業題目 = 基金申請亮點
 ```
@@ -2414,18 +2414,18 @@ def detect_controversy(topic: str, articles: List[Article]) -> List[Controversy]
 def find_topic_intersection_gaps(topic_a: str, topic_b: str) -> List[IntersectionGap]:
     """
     找出 topic_a 和 topic_b 交集中的研究缺口
-    
+
     策略:
     1. 搜尋 A 的子主題 (MeSH 子樹)
     2. 搜尋 B 的子主題
     3. 對每個 (A_sub, B_sub) 組合計算文獻數
     4. 文獻數極低但相鄰交集有研究 = 研究缺口
     """
-    
+
     # 1. 取得子主題
     subtopics_a = get_mesh_subtree(topic_a, depth=2)  # e.g., ["procedural sedation", "ICU sedation", "endoscopy sedation"]
     subtopics_b = get_mesh_subtree(topic_b, depth=2)  # e.g., ["pediatric", "elderly", "obese"]
-    
+
     # 2. 矩陣搜尋
     matrix = {}
     for sub_a in subtopics_a:
@@ -2433,7 +2433,7 @@ def find_topic_intersection_gaps(topic_a: str, topic_b: str) -> List[Intersectio
             query = f'({sub_a}) AND ({sub_b})'
             count = get_pubmed_count(query)
             matrix[(sub_a, sub_b)] = count
-    
+
     # 3. 偵測缺口 (鄰近有研究但此交集無)
     gaps = []
     for (sub_a, sub_b), count in matrix.items():
@@ -2448,7 +2448,7 @@ def find_topic_intersection_gaps(topic_a: str, topic_b: str) -> List[Intersectio
                     gap_score=calculate_gap_score(count, neighbors),
                     suggested_query=query
                 ))
-    
+
     return sorted(gaps, key=lambda g: g.gap_score, reverse=True)
 ```
 
@@ -2458,13 +2458,13 @@ def find_topic_intersection_gaps(topic_a: str, topic_b: str) -> List[Intersectio
 def find_method_transfer_opportunities(topic: str, reference_topics: List[str]) -> List[MethodGap]:
     """
     找出可從其他主題遷移的方法論
-    
+
     策略:
     1. 分析 reference_topics 使用的研究方法 (publication types)
     2. 檢查 topic 是否缺少這些方法
     3. 如果 reference 有但 topic 缺少 = 遷移機會
     """
-    
+
     METHODS = [
         "Meta-Analysis",
         "Systematic Review",
@@ -2475,26 +2475,26 @@ def find_method_transfer_opportunities(topic: str, reference_topics: List[str]) 
         "Individual Patient Data Meta-Analysis",
         "Umbrella Review"
     ]
-    
+
     # 1. 分析目標主題的方法覆蓋
     topic_methods = analyze_publication_types(topic)
-    
+
     # 2. 分析參考主題的方法覆蓋
     reference_methods = {}
     for ref in reference_topics:
         reference_methods[ref] = analyze_publication_types(ref)
-    
+
     # 3. 找出缺口
     gaps = []
     for method in METHODS:
         topic_has = topic_methods.get(method, 0) > THRESHOLD
-        refs_have = [ref for ref, methods in reference_methods.items() 
+        refs_have = [ref for ref, methods in reference_methods.items()
                      if methods.get(method, 0) > THRESHOLD]
-        
+
         if not topic_has and refs_have:
             # 找範本論文
             exemplars = find_exemplar_papers(refs_have[0], method)
-            
+
             gaps.append(MethodGap(
                 target_topic=topic,
                 missing_method=method,
@@ -2503,7 +2503,7 @@ def find_method_transfer_opportunities(topic: str, reference_topics: List[str]) 
                 suggested_study=generate_study_suggestion(topic, method, exemplars),
                 feasibility_score=estimate_feasibility(topic, method)
             ))
-    
+
     return gaps
 ```
 
@@ -2520,7 +2520,7 @@ POPULATIONS = {
 
 def analyze_population_coverage(topic: str) -> PopulationCoverage:
     """分析研究族群覆蓋度，找出未充分研究的族群"""
-    
+
     coverage = {}
     for category, populations in POPULATIONS.items():
         coverage[category] = {}
@@ -2531,7 +2531,7 @@ def analyze_population_coverage(topic: str) -> PopulationCoverage:
                 "count": count,
                 "adequacy": "adequate" if count > 10 else "limited" if count > 3 else "gap"
             }
-    
+
     # 識別缺口
     gaps = []
     for category, pops in coverage.items():
@@ -2544,7 +2544,7 @@ def analyze_population_coverage(topic: str) -> PopulationCoverage:
                     clinical_importance=get_clinical_importance(topic, pop),
                     suggested_study_design=suggest_study_design(topic, pop)
                 ))
-    
+
     return PopulationCoverage(
         topic=topic,
         coverage_matrix=coverage,
@@ -2562,7 +2562,7 @@ def analyze_population_coverage(topic: str) -> PopulationCoverage:
   "topic": "remimazolam",
   "analysis_date": "2026-01-28",
   "total_literature": 234,
-  
+
   "gaps": [
     {
       "rank": 1,
@@ -2641,13 +2641,13 @@ def analyze_population_coverage(topic: str) -> PopulationCoverage:
     },
     {
       "rank": 4,
-      "type": "outcome_gap", 
+      "type": "outcome_gap",
       "title": "Long-term Cognitive Outcomes After Remimazolam",
       "description": "Short-term recovery data abundant; no POCD/delirium follow-up > 7 days",
       "gap_score": 0.78
     }
   ],
-  
+
   "summary": {
     "total_gaps_found": 12,
     "high_value_gaps": 4,

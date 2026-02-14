@@ -19,11 +19,17 @@ Notes:
 """
 
 import argparse
+import io
 import json
 import re
 import sys
 from datetime import datetime
 from pathlib import Path
+
+# Fix Windows cp950 encoding for emoji output
+if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -71,10 +77,7 @@ def get_tools_by_category() -> dict[str, list[str]]:
 
 def get_category_info() -> dict[str, dict]:
     """取得類別資訊"""
-    return {
-        cat: {"name": info["name"], "description": info["description"]}
-        for cat, info in TOOL_CATEGORIES.items()
-    }
+    return {cat: {"name": info["name"], "description": info["description"]} for cat, info in TOOL_CATEGORIES.items()}
 
 
 def count_tools(include_details: bool = False):
@@ -127,9 +130,7 @@ def count_tools(include_details: bool = False):
 
 def update_copilot_instructions(stats: dict, mcp) -> bool:
     """更新 copilot-instructions.md 中的工具數量和列表"""
-    instructions_path = (
-        Path(__file__).parent.parent / ".github" / "copilot-instructions.md"
-    )
+    instructions_path = Path(__file__).parent.parent / ".github" / "copilot-instructions.md"
 
     if not instructions_path.exists():
         print(f"Warning: {instructions_path} not found")
@@ -234,12 +235,7 @@ def generate_tool_categories_markdown(stats: dict, tool_details: dict) -> str:
 def update_tools_index(stats: dict, mcp) -> bool:
     """更新 TOOLS_INDEX.md 中的工具數量和列表"""
     index_path = (
-        Path(__file__).parent.parent
-        / "src"
-        / "pubmed_search"
-        / "presentation"
-        / "mcp_server"
-        / "TOOLS_INDEX.md"
+        Path(__file__).parent.parent / "src" / "pubmed_search" / "presentation" / "mcp_server" / "TOOLS_INDEX.md"
     )
 
     if not index_path.exists():
@@ -329,7 +325,7 @@ def generate_tools_index_markdown(stats: dict, tool_details: dict) -> str:
         ]
     )
 
-    return "\n".join(lines)
+    return "\n".join(lines) + "\n"
 
 
 def update_readme(stats: dict, readme_path: Path, is_chinese: bool = False) -> bool:
@@ -404,12 +400,7 @@ def update_instructions_py(stats: dict, mcp) -> bool:
     只替換最後的工具列表區塊，保留搜尋策略說明等手寫內容。
     """
     instructions_path = (
-        Path(__file__).parent.parent
-        / "src"
-        / "pubmed_search"
-        / "presentation"
-        / "mcp_server"
-        / "instructions.py"
+        Path(__file__).parent.parent / "src" / "pubmed_search" / "presentation" / "mcp_server" / "instructions.py"
     )
 
     if not instructions_path.exists():
@@ -435,13 +426,7 @@ def update_instructions_py(stats: dict, mcp) -> bool:
         return False
 
     # 替換工具列表內容
-    new_content = (
-        content[: match.start(2)]
-        + new_tool_section
-        + "\n"
-        + match.group(3)
-        + content[match.end() :]
-    )
+    new_content = content[: match.start(2)] + new_tool_section + "\n" + match.group(3) + content[match.end() :]
 
     if new_content != content:
         instructions_path.write_text(new_content, encoding="utf-8")
@@ -480,13 +465,7 @@ def update_skill_tools_reference(stats: dict, mcp) -> bool:
 
     從 FastMCP runtime 自動生成完整的工具參考。
     """
-    skill_path = (
-        Path(__file__).parent.parent
-        / ".claude"
-        / "skills"
-        / "pubmed-mcp-tools-reference"
-        / "SKILL.md"
-    )
+    skill_path = Path(__file__).parent.parent / ".claude" / "skills" / "pubmed-mcp-tools-reference" / "SKILL.md"
 
     if not skill_path.exists():
         print(f"Warning: {skill_path} not found")
@@ -613,18 +592,10 @@ def main():
         "  uv run python scripts/count_mcp_tools.py --verbose # With descriptions",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument(
-        "--json", action="store_true", help="Output as JSON (includes tool details)"
-    )
-    parser.add_argument(
-        "--update-docs", action="store_true", help="Update documentation files"
-    )
-    parser.add_argument(
-        "--quiet", "-q", action="store_true", help="Minimal output (just count)"
-    )
-    parser.add_argument(
-        "--verbose", "-v", action="store_true", help="Show tool descriptions"
-    )
+    parser.add_argument("--json", action="store_true", help="Output as JSON (includes tool details)")
+    parser.add_argument("--update-docs", action="store_true", help="Update documentation files")
+    parser.add_argument("--quiet", "-q", action="store_true", help="Minimal output (just count)")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Show tool descriptions")
     args = parser.parse_args()
 
     include_details = args.json or args.update_docs or args.verbose

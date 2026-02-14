@@ -8,10 +8,10 @@ Focused on filling coverage gaps in:
 - fulltext_download.py: more async methods
 """
 
-import pytest
-from unittest.mock import Mock, patch, AsyncMock
 import json
+from unittest.mock import AsyncMock, Mock, patch
 
+import pytest
 
 # ===========================================================================
 # unified.py - Search and Enrich Functions
@@ -23,8 +23,8 @@ class TestSearchPubMed:
 
     async def test_search_pubmed_success(self):
         """Test successful PubMed search."""
-        from pubmed_search.presentation.mcp_server.tools.unified import _search_pubmed
         from pubmed_search.domain.entities.article import UnifiedArticle
+        from pubmed_search.presentation.mcp_server.tools.unified import _search_pubmed
 
         mock_searcher = Mock()
         mock_searcher.search = AsyncMock(
@@ -40,9 +40,7 @@ class TestSearchPubMed:
             ]
         )
 
-        articles, total = await _search_pubmed(
-            mock_searcher, "test query", 10, None, None
-        )
+        articles, total = await _search_pubmed(mock_searcher, "test query", 10, None, None)
 
         assert len(articles) == 1
         assert isinstance(articles[0], UnifiedArticle)
@@ -66,9 +64,7 @@ class TestSearchPubMed:
             ]
         )
 
-        articles, total = await _search_pubmed(
-            mock_searcher, "test query", 10, 2020, 2024
-        )
+        articles, total = await _search_pubmed(mock_searcher, "test query", 10, 2020, 2024)
 
         assert total == 500
         assert len(articles) == 1
@@ -238,14 +234,12 @@ class TestEnrichWithCrossRef:
     @patch("pubmed_search.presentation.mcp_server.tools.unified.get_crossref_client")
     async def test_enrich_no_doi(self, mock_get_client):
         """Test enrichment skips articles without DOI."""
+        from pubmed_search.domain.entities.article import UnifiedArticle
         from pubmed_search.presentation.mcp_server.tools.unified import (
             _enrich_with_crossref,
         )
-        from pubmed_search.domain.entities.article import UnifiedArticle
 
-        article = UnifiedArticle(
-            pmid="123", title="Test", doi=None, primary_source="pubmed"
-        )
+        article = UnifiedArticle(pmid="123", title="Test", doi=None, primary_source="pubmed")
 
         await _enrich_with_crossref([article])
         mock_get_client.assert_called_once()
@@ -253,12 +247,12 @@ class TestEnrichWithCrossRef:
     @patch("pubmed_search.presentation.mcp_server.tools.unified.get_crossref_client")
     async def test_enrich_with_metrics(self, mock_get_client):
         """Test enrichment skips articles that already have metrics."""
+        from pubmed_search.domain.entities.article import (
+            CitationMetrics,
+            UnifiedArticle,
+        )
         from pubmed_search.presentation.mcp_server.tools.unified import (
             _enrich_with_crossref,
-        )
-        from pubmed_search.domain.entities.article import (
-            UnifiedArticle,
-            CitationMetrics,
         )
 
         article = UnifiedArticle(
@@ -275,10 +269,10 @@ class TestEnrichWithCrossRef:
     @patch("pubmed_search.presentation.mcp_server.tools.unified.get_crossref_client")
     async def test_enrich_crossref_success(self, mock_get_client):
         """Test successful CrossRef enrichment."""
+        from pubmed_search.domain.entities.article import UnifiedArticle
         from pubmed_search.presentation.mcp_server.tools.unified import (
             _enrich_with_crossref,
         )
-        from pubmed_search.domain.entities.article import UnifiedArticle
 
         mock_client = Mock()
         mock_client.get_work = AsyncMock(
@@ -290,9 +284,7 @@ class TestEnrichWithCrossRef:
         )
         mock_get_client.return_value = mock_client
 
-        article = UnifiedArticle(
-            pmid="123", title="Test", doi="10.1234/test", primary_source="pubmed"
-        )
+        article = UnifiedArticle(pmid="123", title="Test", doi="10.1234/test", primary_source="pubmed")
 
         await _enrich_with_crossref([article])
         mock_client.get_work.assert_called()
@@ -300,16 +292,14 @@ class TestEnrichWithCrossRef:
     @patch("pubmed_search.presentation.mcp_server.tools.unified.get_crossref_client")
     async def test_enrich_crossref_exception(self, mock_get_client):
         """Test CrossRef enrichment handles exception."""
+        from pubmed_search.domain.entities.article import UnifiedArticle
         from pubmed_search.presentation.mcp_server.tools.unified import (
             _enrich_with_crossref,
         )
-        from pubmed_search.domain.entities.article import UnifiedArticle
 
         mock_get_client.side_effect = Exception("API error")
 
-        article = UnifiedArticle(
-            pmid="123", title="Test", doi="10.1234/test", primary_source="pubmed"
-        )
+        article = UnifiedArticle(pmid="123", title="Test", doi="10.1234/test", primary_source="pubmed")
 
         # Should not raise
         await _enrich_with_crossref([article])
@@ -332,10 +322,10 @@ class TestEnrichWithUnpaywall:
     @patch("pubmed_search.presentation.mcp_server.tools.unified.get_unpaywall_client")
     async def test_enrich_already_oa(self, mock_get_client):
         """Test enrichment skips articles that already have OA."""
+        from pubmed_search.domain.entities.article import UnifiedArticle
         from pubmed_search.presentation.mcp_server.tools.unified import (
             _enrich_with_unpaywall,
         )
-        from pubmed_search.domain.entities.article import UnifiedArticle
 
         article = UnifiedArticle(
             pmid="123",
@@ -351,26 +341,22 @@ class TestEnrichWithUnpaywall:
     @patch("pubmed_search.presentation.mcp_server.tools.unified.get_unpaywall_client")
     async def test_enrich_unpaywall_success(self, mock_get_client):
         """Test successful Unpaywall enrichment."""
+        from pubmed_search.domain.entities.article import UnifiedArticle
         from pubmed_search.presentation.mcp_server.tools.unified import (
             _enrich_with_unpaywall,
         )
-        from pubmed_search.domain.entities.article import UnifiedArticle
 
         mock_client = Mock()
         mock_client.enrich_article = AsyncMock(
             return_value={
                 "is_oa": True,
                 "oa_status": "gold",
-                "oa_links": [
-                    {"url": "https://example.com/pdf", "version": "published"}
-                ],
+                "oa_links": [{"url": "https://example.com/pdf", "version": "published"}],
             }
         )
         mock_get_client.return_value = mock_client
 
-        article = UnifiedArticle(
-            pmid="123", title="Test", doi="10.1234/test", primary_source="pubmed"
-        )
+        article = UnifiedArticle(pmid="123", title="Test", doi="10.1234/test", primary_source="pubmed")
 
         await _enrich_with_unpaywall([article])
 
@@ -379,16 +365,14 @@ class TestEnrichWithUnpaywall:
     @patch("pubmed_search.presentation.mcp_server.tools.unified.get_unpaywall_client")
     async def test_enrich_unpaywall_exception(self, mock_get_client):
         """Test Unpaywall enrichment handles exception."""
+        from pubmed_search.domain.entities.article import UnifiedArticle
         from pubmed_search.presentation.mcp_server.tools.unified import (
             _enrich_with_unpaywall,
         )
-        from pubmed_search.domain.entities.article import UnifiedArticle
 
         mock_get_client.side_effect = Exception("API error")
 
-        article = UnifiedArticle(
-            pmid="123", title="Test", doi="10.1234/test", primary_source="pubmed"
-        )
+        article = UnifiedArticle(pmid="123", title="Test", doi="10.1234/test", primary_source="pubmed")
 
         # Should not raise
         await _enrich_with_unpaywall([article])
@@ -407,10 +391,10 @@ class TestEnrichWithSimilarityScores:
 
     async def test_enrich_single_article(self):
         """Test enrichment with single article."""
+        from pubmed_search.domain.entities.article import UnifiedArticle
         from pubmed_search.presentation.mcp_server.tools.unified import (
             _enrich_with_similarity_scores,
         )
-        from pubmed_search.domain.entities.article import UnifiedArticle
 
         article = UnifiedArticle(pmid="123", title="Test", primary_source="pubmed")
 
@@ -422,10 +406,10 @@ class TestEnrichWithSimilarityScores:
 
     async def test_enrich_multiple_articles(self):
         """Test enrichment with multiple articles."""
+        from pubmed_search.domain.entities.article import UnifiedArticle
         from pubmed_search.presentation.mcp_server.tools.unified import (
             _enrich_with_similarity_scores,
         )
-        from pubmed_search.domain.entities.article import UnifiedArticle
 
         articles = [
             UnifiedArticle(pmid="1", title="First", primary_source="pubmed"),
@@ -448,10 +432,10 @@ class TestEnrichWithApiSimilarity:
 
     async def test_no_seed_pmid(self):
         """Test skips without seed PMID."""
+        from pubmed_search.domain.entities.article import UnifiedArticle
         from pubmed_search.presentation.mcp_server.tools.unified import (
             _enrich_with_api_similarity,
         )
-        from pubmed_search.domain.entities.article import UnifiedArticle
 
         articles = [UnifiedArticle(pmid="123", title="Test", primary_source="pubmed")]
 
@@ -465,15 +449,13 @@ class TestEnrichWithApiSimilarity:
 
         await _enrich_with_api_similarity([], "seed123")
 
-    @patch(
-        "pubmed_search.infrastructure.sources.semantic_scholar.SemanticScholarClient"
-    )
+    @patch("pubmed_search.infrastructure.sources.semantic_scholar.SemanticScholarClient")
     async def test_api_similarity_success(self, mock_s2_class):
         """Test successful API similarity enrichment."""
+        from pubmed_search.domain.entities.article import UnifiedArticle
         from pubmed_search.presentation.mcp_server.tools.unified import (
             _enrich_with_api_similarity,
         )
-        from pubmed_search.domain.entities.article import UnifiedArticle
 
         mock_client = Mock()
         mock_client.get_recommendations = AsyncMock(
@@ -499,15 +481,13 @@ class TestEnrichWithApiSimilarity:
         assert articles[0].similarity_score == 0.9
         assert articles[0].similarity_source == "semantic_scholar"
 
-    @patch(
-        "pubmed_search.infrastructure.sources.semantic_scholar.SemanticScholarClient"
-    )
+    @patch("pubmed_search.infrastructure.sources.semantic_scholar.SemanticScholarClient")
     async def test_api_similarity_exception(self, mock_s2_class):
         """Test API similarity handles exception."""
+        from pubmed_search.domain.entities.article import UnifiedArticle
         from pubmed_search.presentation.mcp_server.tools.unified import (
             _enrich_with_api_similarity,
         )
-        from pubmed_search.domain.entities.article import UnifiedArticle
 
         mock_s2_class.side_effect = Exception("API error")
 
@@ -586,13 +566,13 @@ class TestDispatchStrategyExtended:
 
     async def test_get_sources_lookup_with_identifiers(self):
         """Test LOOKUP intent with identifiers."""
-        from pubmed_search.presentation.mcp_server.tools.unified import DispatchStrategy
         from pubmed_search.application.search.query_analyzer import (
-            QueryIntent,
-            QueryComplexity,
             AnalyzedQuery,
             ExtractedIdentifier,
+            QueryComplexity,
+            QueryIntent,
         )
+        from pubmed_search.presentation.mcp_server.tools.unified import DispatchStrategy
 
         analysis = AnalyzedQuery(
             original_query="PMID:12345678",
@@ -607,12 +587,12 @@ class TestDispatchStrategyExtended:
 
     async def test_get_sources_complex_comparison(self):
         """Test COMPLEX + COMPARISON."""
-        from pubmed_search.presentation.mcp_server.tools.unified import DispatchStrategy
         from pubmed_search.application.search.query_analyzer import (
-            QueryIntent,
-            QueryComplexity,
             AnalyzedQuery,
+            QueryComplexity,
+            QueryIntent,
         )
+        from pubmed_search.presentation.mcp_server.tools.unified import DispatchStrategy
 
         analysis = AnalyzedQuery(
             original_query="A vs B",
@@ -626,12 +606,12 @@ class TestDispatchStrategyExtended:
 
     async def test_get_sources_complex_systematic(self):
         """Test COMPLEX + SYSTEMATIC."""
-        from pubmed_search.presentation.mcp_server.tools.unified import DispatchStrategy
         from pubmed_search.application.search.query_analyzer import (
-            QueryIntent,
-            QueryComplexity,
             AnalyzedQuery,
+            QueryComplexity,
+            QueryIntent,
         )
+        from pubmed_search.presentation.mcp_server.tools.unified import DispatchStrategy
 
         analysis = AnalyzedQuery(
             original_query="systematic review",
@@ -646,12 +626,12 @@ class TestDispatchStrategyExtended:
 
     async def test_get_ranking_config_comparison(self):
         """Test ranking config for COMPARISON intent."""
-        from pubmed_search.presentation.mcp_server.tools.unified import DispatchStrategy
         from pubmed_search.application.search.query_analyzer import (
-            QueryIntent,
-            QueryComplexity,
             AnalyzedQuery,
+            QueryComplexity,
+            QueryIntent,
         )
+        from pubmed_search.presentation.mcp_server.tools.unified import DispatchStrategy
 
         analysis = AnalyzedQuery(
             original_query="A vs B",
@@ -666,12 +646,12 @@ class TestDispatchStrategyExtended:
 
     async def test_get_ranking_config_exploration_recent(self):
         """Test ranking config for EXPLORATION with year constraint."""
-        from pubmed_search.presentation.mcp_server.tools.unified import DispatchStrategy
         from pubmed_search.application.search.query_analyzer import (
-            QueryIntent,
-            QueryComplexity,
             AnalyzedQuery,
+            QueryComplexity,
+            QueryIntent,
         )
+        from pubmed_search.presentation.mcp_server.tools.unified import DispatchStrategy
 
         analysis = AnalyzedQuery(
             original_query="recent research",
@@ -686,12 +666,12 @@ class TestDispatchStrategyExtended:
 
     async def test_should_enrich_systematic(self):
         """Test should_enrich_with_unpaywall for systematic."""
-        from pubmed_search.presentation.mcp_server.tools.unified import DispatchStrategy
         from pubmed_search.application.search.query_analyzer import (
-            QueryIntent,
-            QueryComplexity,
             AnalyzedQuery,
+            QueryComplexity,
+            QueryIntent,
         )
+        from pubmed_search.presentation.mcp_server.tools.unified import DispatchStrategy
 
         analysis = AnalyzedQuery(
             original_query="systematic review",
@@ -704,12 +684,12 @@ class TestDispatchStrategyExtended:
 
     async def test_should_enrich_simple(self):
         """Test should_enrich_with_unpaywall for simple query."""
-        from pubmed_search.presentation.mcp_server.tools.unified import DispatchStrategy
         from pubmed_search.application.search.query_analyzer import (
-            QueryIntent,
-            QueryComplexity,
             AnalyzedQuery,
+            QueryComplexity,
+            QueryIntent,
         )
+        from pubmed_search.presentation.mcp_server.tools.unified import DispatchStrategy
 
         analysis = AnalyzedQuery(
             original_query="diabetes",
@@ -761,9 +741,7 @@ class TestQueryAnalyzerExtended:
         from pubmed_search.application.search.query_analyzer import QueryAnalyzer
 
         analyzer = QueryAnalyzer()
-        result = analyzer.analyze(
-            "metformin vs glipizide for diabetes patients on glucose control"
-        )
+        result = analyzer.analyze("metformin vs glipizide for diabetes patients on glucose control")
 
         assert result.pico is not None
         assert result.pico.intervention is not None
@@ -839,10 +817,7 @@ class TestQueryAnalyzerExtended:
         analyzer = QueryAnalyzer()
         result = analyzer.analyze("drug A versus drug B")
 
-        assert (
-            "pico_search" in result.recommended_strategies
-            or "comparison_filter" in result.recommended_strategies
-        )
+        assert "pico_search" in result.recommended_strategies or "comparison_filter" in result.recommended_strategies
 
     async def test_recommend_strategies_systematic(self):
         """Test strategy recommendations for systematic."""
@@ -884,9 +859,7 @@ class TestPICOElements:
         """Test is_complete property."""
         from pubmed_search.application.search.query_analyzer import PICOElements
 
-        complete = PICOElements(
-            population="adults", intervention="drug A", outcome="blood pressure"
-        )
+        complete = PICOElements(population="adults", intervention="drug A", outcome="blood pressure")
         assert complete.is_complete is True
 
         incomplete = PICOElements(population="adults")
@@ -896,9 +869,7 @@ class TestPICOElements:
         """Test has_comparison property."""
         from pubmed_search.application.search.query_analyzer import PICOElements
 
-        with_comp = PICOElements(
-            population="adults", intervention="drug A", comparison="placebo"
-        )
+        with_comp = PICOElements(population="adults", intervention="drug A", comparison="placebo")
         assert with_comp.has_comparison is True
 
         without_comp = PICOElements(population="adults")
@@ -948,9 +919,7 @@ class TestResponseFormatterExtended:
             ResponseFormatter,
         )
 
-        result = ResponseFormatter.success(
-            data="Test result", message="Done", output_format="markdown"
-        )
+        result = ResponseFormatter.success(data="Test result", message="Done", output_format="markdown")
 
         assert "✅ Done" in result
         assert "Test result" in result
@@ -961,9 +930,7 @@ class TestResponseFormatterExtended:
             ResponseFormatter,
         )
 
-        result = ResponseFormatter.success(
-            data={"key": "value"}, output_format="markdown"
-        )
+        result = ResponseFormatter.success(data={"key": "value"}, output_format="markdown")
 
         assert '"key"' in result
 

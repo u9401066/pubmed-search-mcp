@@ -11,13 +11,13 @@ sys.path.insert(0, "src")
 
 from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 from pubmed_search.presentation.mcp_server.tools.citation_tree import (
-    _make_node,
     _make_edge,
+    _make_node,
     _to_cytoscape,
-    _to_g6,
     _to_d3,
-    _to_vis,
+    _to_g6,
     _to_graphml,
+    _to_vis,
 )
 
 
@@ -107,9 +107,7 @@ async def test_format_converters():
         result = converter(nodes, edges)
         node_key = "nodes"
         edge_key = "edges" if fmt_name != "d3" else "links"
-        print(
-            f"\n    [{fmt_name}] nodes: {len(result[node_key])}, edges: {len(result[edge_key])}"
-        )
+        print(f"\n    [{fmt_name}] nodes: {len(result[node_key])}, edges: {len(result[edge_key])}")
         # Show first node structure
         first_node = result[node_key][0]
         print(f"        Sample node keys: {list(first_node.keys())[:5]}...")
@@ -128,8 +126,8 @@ async def test_full_tree():
     print("=" * 60)
 
     from pubmed_search.presentation.mcp_server.tools.citation_tree import (
-        _make_node,
         _make_edge,
+        _make_node,
     )
 
     searcher = LiteratureSearcher()

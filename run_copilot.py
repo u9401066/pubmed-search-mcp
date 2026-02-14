@@ -28,15 +28,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
 from pubmed_search.presentation.mcp_server.server import DEFAULT_EMAIL
 
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 
-def create_copilot_server(
-    email: str, api_key: str = None, use_full_tools: bool = False
-):
+def create_copilot_server(email: str, api_key: str | None = None, use_full_tools: bool = False):
     """
     Create MCP server optimized for Copilot Studio.
 
@@ -51,8 +47,9 @@ def create_copilot_server(
     """
     from mcp.server.fastmcp import FastMCP
     from mcp.server.transport_security import TransportSecuritySettings
-    from pubmed_search.infrastructure.ncbi import LiteratureSearcher
+
     from pubmed_search.application.session import SessionManager
+    from pubmed_search.infrastructure.ncbi import LiteratureSearcher
     from pubmed_search.presentation.mcp_server.tools._common import (
         set_session_manager,
         set_strategy_generator,
@@ -87,9 +84,7 @@ Available tools:
 - search_gene: Search NCBI Gene database
 - search_compound: Search PubChem compounds
 """,
-        transport_security=TransportSecuritySettings(
-            enable_dns_rebinding_protection=False
-        ),
+        transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
         json_response=True,
         stateless_http=True,  # Required for Copilot Studio
     )
@@ -101,11 +96,11 @@ Available tools:
     # Register tools
     if use_full_tools:
         logger.warning("Using FULL tool set - may have schema compatibility issues!")
-        from pubmed_search.presentation.mcp_server.tools import register_all_tools
         from pubmed_search.presentation.mcp_server.session_tools import (
-            register_session_tools,
             register_session_resources,
+            register_session_tools,
         )
+        from pubmed_search.presentation.mcp_server.tools import register_all_tools
 
         register_all_tools(mcp, searcher)
         register_session_tools(mcp, session_manager)
@@ -160,9 +155,7 @@ class CopilotStudioMiddleware:
                     # Also need to set content-length for the empty body
                     headers = list(message.get("headers", []))
                     # Update content-length to 2 for "{}"
-                    headers = [
-                        (k, v) for k, v in headers if k.lower() != b"content-length"
-                    ]
+                    headers = [(k, v) for k, v in headers if k.lower() != b"content-length"]
                     headers.append((b"content-length", b"2"))
                     message["headers"] = headers
 
@@ -178,12 +171,8 @@ class CopilotStudioMiddleware:
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Run PubMed Search MCP for Copilot Studio"
-    )
-    parser.add_argument(
-        "--port", type=int, default=int(os.environ.get("MCP_PORT", "8765"))
-    )
+    parser = argparse.ArgumentParser(description="Run PubMed Search MCP for Copilot Studio")
+    parser.add_argument("--port", type=int, default=int(os.environ.get("MCP_PORT", "8765")))
     parser.add_argument("--host", default=os.environ.get("MCP_HOST", "0.0.0.0"))
     parser.add_argument("--email", default=os.environ.get("NCBI_EMAIL", DEFAULT_EMAIL))
     parser.add_argument("--api-key", default=os.environ.get("NCBI_API_KEY"))
@@ -198,9 +187,7 @@ def main():
     logger.info("Creating PubMed Search MCP Server for Copilot Studio...")
 
     # Create server with appropriate tool set
-    server = create_copilot_server(
-        email=args.email, api_key=args.api_key, use_full_tools=args.full_tools
-    )
+    server = create_copilot_server(email=args.email, api_key=args.api_key, use_full_tools=args.full_tools)
 
     # Get the streamable-http app directly from FastMCP
     app = server.streamable_http_app()
@@ -210,11 +197,7 @@ def main():
 
     # Get tool count for display
     tool_count = len(server._tool_manager.list_tools())
-    tool_mode = (
-        "FULL (may have issues)"
-        if args.full_tools
-        else "SIMPLIFIED (Copilot-compatible)"
-    )
+    tool_mode = "FULL (may have issues)" if args.full_tools else "SIMPLIFIED (Copilot-compatible)"
 
     logger.info("")
     logger.info("═══════════════════════════════════════════════════════")

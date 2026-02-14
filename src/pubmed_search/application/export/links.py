@@ -11,15 +11,15 @@ Provides URLs for:
 """
 
 import logging
-from typing import TYPE_CHECKING, Any, Dict, List
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from ..client import LiteratureSearcher
+    from pubmed_search.application.client import LiteratureSearcher
 
 logger = logging.getLogger(__name__)
 
 
-def get_fulltext_links(article: Dict[str, Any]) -> Dict[str, Any]:
+def get_fulltext_links(article: dict[str, Any]) -> dict[str, Any]:
     """
     Get all available fulltext links for an article (from metadata only).
 
@@ -51,9 +51,7 @@ def get_fulltext_links(article: Dict[str, Any]) -> Dict[str, Any]:
         # Clean PMC ID (remove "PMC" prefix if present)
         pmc_num = pmc_id.replace("PMC", "")
         links["pmc_url"] = f"https://www.ncbi.nlm.nih.gov/pmc/articles/PMC{pmc_num}/"
-        links["pmc_pdf_url"] = (
-            f"https://www.ncbi.nlm.nih.gov/pmc/articles/PMC{pmc_num}/pdf/"
-        )
+        links["pmc_pdf_url"] = f"https://www.ncbi.nlm.nih.gov/pmc/articles/PMC{pmc_num}/pdf/"
         links["has_free_fulltext"] = True
         links["access_type"] = "open_access"
     elif doi:
@@ -63,9 +61,7 @@ def get_fulltext_links(article: Dict[str, Any]) -> Dict[str, Any]:
     return links
 
 
-async def get_fulltext_links_with_lookup(
-    pmid: str, searcher: "LiteratureSearcher"
-) -> Dict[str, Any]:
+async def get_fulltext_links_with_lookup(pmid: str, searcher: "LiteratureSearcher") -> dict[str, Any]:
     """
     Get fulltext links with PMC lookup via API.
 
@@ -104,7 +100,7 @@ async def get_fulltext_links_with_lookup(
     return links
 
 
-def get_batch_fulltext_links(articles: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def get_batch_fulltext_links(articles: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """
     Get fulltext links for multiple articles.
 
@@ -124,7 +120,7 @@ def get_batch_fulltext_links(articles: List[Dict[str, Any]]) -> List[Dict[str, A
     return results
 
 
-def summarize_access(articles: List[Dict[str, Any]]) -> Dict[str, Any]:
+def summarize_access(articles: list[dict[str, Any]]) -> dict[str, Any]:
     """
     Summarize fulltext access for a list of articles.
 

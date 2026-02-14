@@ -197,7 +197,7 @@ o_materials = generate_search_queries("hospitalization")
 # Step 3: 組合查詢
 query = '''
 ("Diabetes Mellitus, Type 2"[MeSH] AND "Heart Failure"[MeSH])
-AND ("Sodium-Glucose Transporter 2 Inhibitors"[MeSH] 
+AND ("Sodium-Glucose Transporter 2 Inhibitors"[MeSH]
      OR empagliflozin OR dapagliflozin OR canagliflozin)
 AND ("Hospitalization"[MeSH] OR hospitalization[tiab] OR rehospitalization)
 AND therapy[filter]

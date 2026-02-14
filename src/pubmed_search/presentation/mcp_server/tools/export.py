@@ -17,10 +17,10 @@ v0.1.30 Updates:
 
 import json
 import logging
-import os
 import tempfile
-from datetime import datetime
-from typing import List, Union
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Union
 
 from mcp.server.fastmcp import FastMCP
 
@@ -42,7 +42,7 @@ from ._common import InputNormalizer, ResponseFormatter, get_session_manager
 logger = logging.getLogger(__name__)
 
 # Export directory for prepared files
-EXPORT_DIR = os.path.join(tempfile.gettempdir(), "pubmed_exports")
+EXPORT_DIR = Path(tempfile.gettempdir()) / "pubmed_exports"
 
 
 def register_export_tools(mcp: FastMCP, searcher: LiteratureSearcher):
@@ -50,7 +50,7 @@ def register_export_tools(mcp: FastMCP, searcher: LiteratureSearcher):
 
     @mcp.tool()
     async def prepare_export(
-        pmids: Union[str, List, int],
+        pmids: Union[str, list, int],
         format: str = "ris",
         include_abstract: bool = True,
         source: str = "official",
@@ -109,15 +109,10 @@ def register_export_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         """
         # Phase 2.1: Input normalization
         normalized_pmids = InputNormalizer.normalize_pmids(pmids)
-        normalized_abstract = InputNormalizer.normalize_bool(
-            include_abstract, default=True
-        )
+        normalized_abstract = InputNormalizer.normalize_bool(include_abstract, default=True)
 
         # Handle "last" keyword
-        if normalized_pmids == ["last"]:
-            pmid_list = _resolve_pmids("last")
-        else:
-            pmid_list = normalized_pmids
+        pmid_list = _resolve_pmids("last") if normalized_pmids == ["last"] else normalized_pmids
 
         if not pmid_list:
             return ResponseFormatter.error(
@@ -138,9 +133,7 @@ def register_export_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             if format_lower in SUPPORTED_FORMATS:
                 # Use local fallback for unsupported official formats
                 use_official = False
-                logger.info(
-                    f"Format '{format_lower}' not available via official API, using local"
-                )
+                logger.info(f"Format '{format_lower}' not available via official API, using local")
             else:
                 return ResponseFormatter.error(
                     error=f"Unsupported format: {format}",
@@ -164,7 +157,7 @@ def register_export_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 # Use official NCBI Citation API
                 result: CitationResult = await export_citations_official(
                     pmid_list,
-                    format=format_lower,  # type: ignore
+                    format=format_lower,  # type: ignore[arg-type]
                 )
 
                 if result.success:
@@ -174,19 +167,11 @@ def register_export_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                         result.pmid_count,
                         source="official",
                     )
-                else:
-                    # Fallback to local on API failure
-                    logger.warning(
-                        f"Official API failed ({result.error}), falling back to local"
-                    )
-                    return await _export_local(
-                        pmid_list, format_lower, normalized_abstract, searcher
-                    )
-            else:
-                # Use local formatting
-                return await _export_local(
-                    pmid_list, format_lower, normalized_abstract, searcher
-                )
+                # Fallback to local on API failure
+                logger.warning(f"Official API failed ({result.error}), falling back to local")
+                return await _export_local(pmid_list, format_lower, normalized_abstract, searcher)
+            # Use local formatting
+            return await _export_local(pmid_list, format_lower, normalized_abstract, searcher)
 
         except Exception as e:
             logger.exception("Error preparing export")
@@ -233,11 +218,7 @@ def register_export_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             articles = await searcher.fetch_details([normalized_pmid])
             if articles:
                 links["title"] = articles[0].get("title", "")[:100]
-                links["doi_url"] = (
-                    f"https://doi.org/{articles[0].get('doi')}"
-                    if articles[0].get("doi")
-                    else None
-                )
+                links["doi_url"] = f"https://doi.org/{articles[0].get('doi')}" if articles[0].get("doi") else None
 
             return json.dumps({"status": "success", "links": links})
 
@@ -251,7 +232,7 @@ def register_export_tools(mcp: FastMCP, searcher: LiteratureSearcher):
 
     # ❌ REMOVED v0.1.20: Auto-handled by unified get_fulltext
     # @mcp.tool()
-    async def analyze_fulltext_access(pmids: Union[str, List, int]) -> str:
+    async def analyze_fulltext_access(pmids: Union[str, list, int]) -> str:
         """
         Analyze fulltext availability for multiple articles.
 
@@ -275,10 +256,7 @@ def register_export_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         normalized_pmids = InputNormalizer.normalize_pmids(pmids)
 
         # Handle "last" keyword
-        if normalized_pmids == ["last"]:
-            pmid_list = _resolve_pmids("last")
-        else:
-            pmid_list = normalized_pmids
+        pmid_list = _resolve_pmids("last") if normalized_pmids == ["last"] else normalized_pmids
 
         if not pmid_list:
             return ResponseFormatter.error(
@@ -328,28 +306,27 @@ def _resolve_pmids(pmids: str) -> list:
                 if isinstance(last_search, dict):
                     return last_search.get("pmids", [])[:100]  # Limit to 100
                 # Fallback for SearchRecord dataclass
-                elif hasattr(last_search, "pmids"):
+                if hasattr(last_search, "pmids"):
                     return last_search.pmids[:100]
         return []
 
     # Parse comma-separated list
-    pmid_list = [p.strip() for p in pmids.split(",") if p.strip()]
-    return pmid_list
+    return [p.strip() for p in pmids.split(",") if p.strip()]
 
 
 def _save_export_file(content: str, format: str, count: int) -> str:
     """Save export content to a temporary file."""
-    os.makedirs(EXPORT_DIR, exist_ok=True)
+    EXPORT_DIR.mkdir(parents=True, exist_ok=True)
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(tz=timezone.utc).strftime("%Y%m%d_%H%M%S")
     extension = _get_file_extension(format)
     filename = f"pubmed_export_{count}_{timestamp}.{extension}"
-    file_path = os.path.join(EXPORT_DIR, filename)
+    file_path = EXPORT_DIR / filename
 
-    with open(file_path, "w", encoding="utf-8") as f:
+    with file_path.open("w", encoding="utf-8") as f:
         f.write(content)
 
-    return file_path
+    return str(file_path)
 
 
 def _get_file_extension(format: str) -> str:
@@ -388,9 +365,7 @@ async def _export_local(
             ],
         )
 
-    exported_text = export_articles(
-        articles, format=format_lower, include_abstract=include_abstract
-    )
+    exported_text = export_articles(articles, fmt=format_lower, include_abstract=include_abstract)
 
     return _format_export_response(
         exported_text,

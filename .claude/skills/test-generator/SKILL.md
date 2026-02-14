@@ -10,12 +10,11 @@ description: Generate comprehensive test suites including static analysis, unit 
 **所有命令一律透過 `uv run` 執行**，包括測試、lint、type check：
 
 ```bash
-uv run pytest -n auto --timeout=60  # ⚡ 多核平行測試（~67 秒，推薦）
-uv run pytest --timeout=60          # 單核測試（180-240 秒）
+uv run pytest                        # ⩡ 多核平行測試（預設 -n auto --timeout=60）
 uv run ruff check .                 # Lint
 uv run ruff format .                # 格式化
 uv run mypy src/ tests/             # 型別檢查（含 tests）
-uv run pytest --cov                 # 覆蓋率（不可搭配 -n auto）
+uv run pytest --cov                 # 多核 + 覆蓋率
 ```
 
 > 💡 UV 使用 Rust 實作，比 pip 快 10-100 倍。`uv run` 在毫秒級確認環境後直接執行，幾乎零開銷。
@@ -296,7 +295,7 @@ class TestUserRepository:
         """儲存並取回使用者"""
         user = User(name="Test", email="test@test.com")
         saved_user = await repository.save(user)
-        
+
         retrieved = await repository.get_by_id(saved_user.id)
         assert retrieved is not None
         assert retrieved.name == "Test"
@@ -305,7 +304,7 @@ class TestUserRepository:
         """透過 email 查詢"""
         user = User(name="Test", email="unique@test.com")
         await repository.save(user)
-        
+
         found = await repository.find_by_email("unique@test.com")
         assert found is not None
         assert found.email == "unique@test.com"
@@ -470,7 +469,7 @@ class TestUserJourney:
         await page.fill("input[name='email']", "test@example.com")
         await page.fill("input[name='password']", "SecureP@ss123")
         await page.click("button[type='submit']")
-        
+
         await expect(page.locator(".user-menu")).to_be_visible()
 
         # 登出
@@ -480,11 +479,11 @@ class TestUserJourney:
     async def test_create_item_flow(self, page: Page, base_url: str, authenticated_page):
         """測試建立項目流程 (需登入)"""
         await authenticated_page.goto(f"{base_url}/items/new")
-        
+
         await authenticated_page.fill("input[name='title']", "Test Item")
         await authenticated_page.fill("textarea[name='description']", "Description")
         await authenticated_page.click("button[type='submit']")
-        
+
         await expect(authenticated_page.locator(".success-toast")).to_be_visible()
 ```
 
@@ -576,7 +575,7 @@ output = "coverage.xml"
 
 #### 執行覆蓋率
 ```bash
-# 單元測試覆蓋率
+# 單元測試覆蓋率（多核 + 覆蓋率）
 uv run pytest tests/unit -v --cov=src --cov-report=term-missing --cov-report=html
 
 # 整合測試覆蓋率
@@ -628,17 +627,17 @@ dev = [
     "httpx>=0.24.0",            # Async HTTP client for API tests
     "factory-boy>=3.3.0",       # Test data factories
     "faker>=19.0.0",            # Fake data generation
-    
+
     # E2E Testing
     "playwright>=1.40.0",       # Browser automation
     "pytest-playwright>=0.4.0", # Playwright pytest plugin
     "locust>=2.20.0",           # Load testing (optional)
-    
+
     # Static Analysis
     "mypy>=1.5.0",
     "ruff>=0.0.290",
     "bandit[toml]>=1.7.5",
-    
+
     # Type stubs
     "types-requests",
     "types-python-dateutil",

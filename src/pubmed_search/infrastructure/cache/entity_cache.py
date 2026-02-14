@@ -13,11 +13,11 @@ Features:
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, TypeVar
+from typing import Any, TypeVar
 
 from cachetools import TTLCache
-
 
 logger = logging.getLogger(__name__)
 
@@ -138,7 +138,7 @@ class EntityCache:
                     self.set(key, value)
                 return value
             except Exception as e:
-                logger.error(f"Fetch failed for {key}: {e}")
+                logger.exception(f"Fetch failed for {key}: {e}")
                 return None
 
     def invalidate(self, key: str) -> bool:

@@ -6,15 +6,15 @@ This script tests the MCP server running in SSE mode.
 """
 
 import asyncio
-import sys
 import os
+import sys
 
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
-from mcp.client.sse import sse_client
 from mcp import ClientSession
+from mcp.client.sse import sse_client
 
 
 @pytest.mark.asyncio

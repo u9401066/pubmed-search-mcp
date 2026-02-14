@@ -2,11 +2,11 @@
 Pytest configuration and shared fixtures.
 """
 
-import pytest
 import tempfile
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 
+import pytest
 
 # ============================================================
 # Environment Fixtures
@@ -75,9 +75,7 @@ def mock_mesh_response():
     """Mock response from MeSH database search."""
     return {
         "IdList": ["D003920"],  # Diabetes Mellitus
-        "TranslationSet": [
-            {"From": "diabetes", "To": '"Diabetes Mellitus"[MeSH Terms]'}
-        ],
+        "TranslationSet": [{"From": "diabetes", "To": '"Diabetes Mellitus"[MeSH Terms]'}],
     }
 
 

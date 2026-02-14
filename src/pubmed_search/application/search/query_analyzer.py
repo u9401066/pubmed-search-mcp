@@ -177,9 +177,7 @@ class AnalyzedQuery:
     keywords: list[str] = field(default_factory=list)
 
     # Detected clinical question type (for PubMed Clinical Queries filter)
-    clinical_category: (
-        Literal["therapy", "diagnosis", "prognosis", "etiology", "prediction"] | None
-    ) = None
+    clinical_category: Literal["therapy", "diagnosis", "prognosis", "etiology", "prediction"] | None = None
 
     # Year constraints detected
     year_from: int | None = None
@@ -209,10 +207,7 @@ class AnalyzedQuery:
             "complexity": self.complexity.value,
             "intent": self.intent.value,
             "pico": self.pico.to_dict() if self.pico else None,
-            "identifiers": [
-                {"type": i.type, "value": i.value, "confidence": i.confidence}
-                for i in self.identifiers
-            ],
+            "identifiers": [{"type": i.type, "value": i.value, "confidence": i.confidence} for i in self.identifiers],
             "keywords": self.keywords,
             "clinical_category": self.clinical_category,
             "year_constraints": {
@@ -254,18 +249,12 @@ class QueryAnalyzer:
     PMID_PATTERN = re.compile(r"(?:PMID[:\s]?)?(\d{7,8})\b", re.IGNORECASE)
     DOI_PATTERN = re.compile(r"(?:doi[:\s]?)?(10\.\d{4,}/[^\s]+)", re.IGNORECASE)
     PMC_PATTERN = re.compile(r"PMC\s?(\d{6,8})\b", re.IGNORECASE)
-    ARXIV_PATTERN = re.compile(
-        r"(?:arxiv[:\s]?)?([\d]{4}\.[\d]{4,5}(?:v\d+)?)", re.IGNORECASE
-    )
+    ARXIV_PATTERN = re.compile(r"(?:arxiv[:\s]?)?([\d]{4}\.[\d]{4,5}(?:v\d+)?)", re.IGNORECASE)
 
     # Year patterns
     YEAR_PATTERN = re.compile(r"\b(19\d{2}|20[0-3]\d)\b")
-    YEAR_RANGE_PATTERN = re.compile(
-        r"\b(19\d{2}|20[0-3]\d)\s*[-–to]+\s*(19\d{2}|20[0-3]\d)\b", re.IGNORECASE
-    )
-    RECENT_PATTERN = re.compile(
-        r"\b(recent|last\s+\d+\s+years?|past\s+\d+\s+years?)\b", re.IGNORECASE
-    )
+    YEAR_RANGE_PATTERN = re.compile(r"\b(19\d{2}|20[0-3]\d)\s*[-–to]+\s*(19\d{2}|20[0-3]\d)\b", re.IGNORECASE)
+    RECENT_PATTERN = re.compile(r"\b(recent|last\s+\d+\s+years?|past\s+\d+\s+years?)\b", re.IGNORECASE)
 
     # Comparison keywords
     COMPARISON_KEYWORDS = {
@@ -439,7 +428,6 @@ class QueryAnalyzer:
 
     def __init__(self):
         """Initialize QueryAnalyzer."""
-        pass
 
     def analyze(self, query: str) -> AnalyzedQuery:
         """
@@ -482,14 +470,10 @@ class QueryAnalyzer:
         strategies = self._recommend_strategies(complexity, intent, pico)
 
         # Detect image search intent
-        image_recommended, image_reason = self._detect_image_intent(
-            normalized, keywords
-        )
+        image_recommended, image_reason = self._detect_image_intent(normalized, keywords)
 
         # Calculate confidence
-        confidence = self._calculate_confidence(
-            identifiers, pico, clinical_category, keywords
-        )
+        confidence = self._calculate_confidence(identifiers, pico, clinical_category, keywords)
 
         return AnalyzedQuery(
             original_query=query,
@@ -515,10 +499,9 @@ class QueryAnalyzer:
         query = query.strip()
 
         # Normalize whitespace
-        query = re.sub(r"\s+", " ", query)
+        return re.sub(r"\s+", " ", query)
 
         # Don't lowercase (preserve case for identifiers)
-        return query
 
     def _extract_identifiers(self, query: str) -> list[ExtractedIdentifier]:
         """Extract identifiers (PMID, DOI, etc.) from query."""
@@ -584,7 +567,7 @@ class QueryAnalyzer:
             # Default to last 5 years
             import datetime
 
-            current_year = datetime.datetime.now().year
+            current_year = datetime.datetime.now(tz=datetime.timezone.utc).year
             year_from = current_year - 5
             year_to = current_year
             return year_from, year_to
@@ -604,9 +587,7 @@ class QueryAnalyzer:
 
         return year_from, year_to
 
-    def _detect_intent(
-        self, query: str, identifiers: list[ExtractedIdentifier]
-    ) -> QueryIntent:
+    def _detect_intent(self, query: str, identifiers: list[ExtractedIdentifier]) -> QueryIntent:
         """Detect user's search intent."""
         query_lower = query.lower()
 
@@ -615,16 +596,11 @@ class QueryAnalyzer:
             return QueryIntent.LOOKUP
 
         # CITATION_TRACKING: Mentions citing/related
-        if any(
-            kw in query_lower for kw in ["citing", "cited by", "related to", "引用"]
-        ):
+        if any(kw in query_lower for kw in ["citing", "cited by", "related to", "引用"]):
             return QueryIntent.CITATION_TRACKING
 
         # AUTHOR_SEARCH: Mentions author/publications by
-        if any(
-            kw in query_lower
-            for kw in ["author", "publications by", "papers by", "作者"]
-        ):
+        if any(kw in query_lower for kw in ["author", "publications by", "papers by", "作者"]):
             return QueryIntent.AUTHOR_SEARCH
 
         # COMPARISON: Has comparison keywords
@@ -632,10 +608,7 @@ class QueryAnalyzer:
             return QueryIntent.COMPARISON
 
         # SYSTEMATIC: Has PICO-like structure or mentions systematic
-        if any(
-            kw in query_lower
-            for kw in ["systematic", "meta-analysis", "pico", "系統性"]
-        ):
+        if any(kw in query_lower for kw in ["systematic", "meta-analysis", "pico", "系統性"]):
             return QueryIntent.SYSTEMATIC
 
         # Default: EXPLORATION
@@ -702,9 +675,7 @@ class QueryAnalyzer:
         words = re.findall(r"\b[a-zA-Z\u4e00-\u9fff]{2,}\b", query)
 
         # Filter stop words and short words
-        keywords = [
-            word for word in words if word.lower() not in stop_words and len(word) > 2
-        ]
+        keywords = [word for word in words if word.lower() not in stop_words and len(word) > 2]
 
         return keywords[:10]  # Limit to top 10
 
@@ -720,8 +691,7 @@ class QueryAnalyzer:
         # Quick check: Does it look like a clinical question?
         has_comparison = any(kw in query_lower for kw in self.COMPARISON_KEYWORDS)
         has_clinical = any(
-            kw in query_lower
-            for kw in self.CLINICAL_THERAPY_KEYWORDS | self.CLINICAL_DIAGNOSIS_KEYWORDS
+            kw in query_lower for kw in self.CLINICAL_THERAPY_KEYWORDS | self.CLINICAL_DIAGNOSIS_KEYWORDS
         )
 
         if not (has_comparison or has_clinical):
@@ -787,9 +757,7 @@ class QueryAnalyzer:
         # SIMPLE: Very short query (1-2 words) without comparison
         if len(keywords) <= 2 and not pico:
             # Check if it's a genuine comparison (e.g., "A vs B")
-            has_real_comparison = bool(
-                re.search(r"\b\w+\s+(?:vs\.?|versus)\s+\w+", query_lower)
-            )
+            has_real_comparison = bool(re.search(r"\b\w+\s+(?:vs\.?|versus)\s+\w+", query_lower))
             if not has_real_comparison:
                 return QueryComplexity.SIMPLE
 
@@ -840,26 +808,21 @@ class QueryAnalyzer:
         pico: PICOElements | None,
     ) -> list[str]:
         """Recommend data sources based on analysis."""
-        sources = []
 
         # LOOKUP: Just need primary source
         if intent == QueryIntent.LOOKUP:
-            sources = ["pubmed", "crossref"]
-            return sources
+            return ["pubmed", "crossref"]
 
         # SIMPLE: PubMed + optional CrossRef for DOI enrichment
         if complexity == QueryComplexity.SIMPLE:
-            sources = ["pubmed"]
-            return sources
+            return ["pubmed"]
 
         # COMPLEX/SYSTEMATIC: Full multi-source
         if complexity in (QueryComplexity.COMPLEX, QueryComplexity.AMBIGUOUS):
-            sources = ["pubmed", "crossref", "openalex", "semantic_scholar"]
-            return sources
+            return ["pubmed", "crossref", "openalex", "semantic_scholar"]
 
         # MODERATE: PubMed + one alternative
-        sources = ["pubmed", "crossref"]
-        return sources
+        return ["pubmed", "crossref"]
 
     def _recommend_strategies(
         self,
@@ -872,8 +835,7 @@ class QueryAnalyzer:
 
         # LOOKUP: Direct identifier search
         if intent == QueryIntent.LOOKUP:
-            strategies = ["direct_lookup"]
-            return strategies
+            return ["direct_lookup"]
 
         # COMPARISON: Need comparison-focused search
         if intent == QueryIntent.COMPARISON:
@@ -884,13 +846,12 @@ class QueryAnalyzer:
 
         # SYSTEMATIC: Comprehensive strategies
         if intent == QueryIntent.SYSTEMATIC:
-            strategies = [
+            return [
                 "pico_search",
                 "mesh_expansion",
                 "title_abstract",
                 "clinical_queries",
             ]
-            return strategies
 
         # Default strategies
         if complexity == QueryComplexity.COMPLEX:

@@ -8,8 +8,9 @@ Python 3.12+ features tested:
 - Modern dataclass features
 """
 
-import pytest
 import asyncio
+
+import pytest
 
 
 class TestExceptionHierarchy:
@@ -17,7 +18,7 @@ class TestExceptionHierarchy:
 
     async def test_base_exception_creation(self):
         """PubMedSearchError should be creatable with context."""
-        from pubmed_search.shared.exceptions import PubMedSearchError, ErrorContext
+        from pubmed_search.shared.exceptions import ErrorContext, PubMedSearchError
 
         ctx = ErrorContext(tool_name="test_tool", suggestion="Try again")
         err = PubMedSearchError("Test error", context=ctx)
@@ -28,7 +29,7 @@ class TestExceptionHierarchy:
 
     async def test_error_to_dict(self):
         """Error should serialize to dict."""
-        from pubmed_search.shared.exceptions import PubMedSearchError, ErrorContext
+        from pubmed_search.shared.exceptions import ErrorContext, PubMedSearchError
 
         ctx = ErrorContext(tool_name="test", suggestion="hint")
         err = PubMedSearchError("Test", context=ctx)
@@ -40,7 +41,7 @@ class TestExceptionHierarchy:
 
     async def test_error_to_agent_message(self):
         """Error should format for agent consumption."""
-        from pubmed_search.shared.exceptions import PubMedSearchError, ErrorContext
+        from pubmed_search.shared.exceptions import ErrorContext, PubMedSearchError
 
         ctx = ErrorContext(suggestion="Try X", example="do_something()")
         err = PubMedSearchError("Failed", context=ctx, retryable=True)
@@ -74,10 +75,10 @@ class TestExceptionHierarchy:
     async def test_is_retryable_error(self):
         """is_retryable_error should detect retryable errors."""
         from pubmed_search.shared.exceptions import (
-            is_retryable_error,
-            RateLimitError,
             InvalidPMIDError,
             NetworkError,
+            RateLimitError,
+            is_retryable_error,
         )
 
         assert is_retryable_error(RateLimitError())
@@ -91,7 +92,7 @@ class TestExceptionHierarchy:
 
     async def test_get_retry_delay(self):
         """get_retry_delay should use exponential backoff."""
-        from pubmed_search.shared.exceptions import get_retry_delay, RateLimitError
+        from pubmed_search.shared.exceptions import RateLimitError, get_retry_delay
 
         # First attempt
         delay0 = get_retry_delay(Exception("error"), 0)

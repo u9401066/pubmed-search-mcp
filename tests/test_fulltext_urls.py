@@ -4,9 +4,10 @@ Deep URL Format Validation for Fulltext Download Module
 This test validates that all URL formats are correct and sources are accessible.
 """
 
-import pytest
-import httpx
 from unittest.mock import AsyncMock, MagicMock
+
+import httpx
+import pytest
 
 
 class TestURLFormats:
@@ -32,9 +33,7 @@ class TestURLFormats:
 
         async with client:
             resp = await client.head(url)
-            assert resp.status_code == 200, (
-                f"Europe PMC PDF returned {resp.status_code}"
-            )
+            assert resp.status_code == 200, f"Europe PMC PDF returned {resp.status_code}"
             content_type = resp.headers.get("content-type", "")
             assert "pdf" in content_type.lower(), f"Expected PDF, got {content_type}"
 
@@ -68,9 +67,7 @@ class TestURLFormats:
             for url in test_urls:
                 resp = await client.head(url)
                 # Accept 200 (success), 301/302 (redirect), or 403 (blocked but URL valid)
-                assert resp.status_code in [200, 301, 302, 403], (
-                    f"URL: {url}, Status: {resp.status_code}"
-                )
+                assert resp.status_code in [200, 301, 302, 403], f"URL: {url}, Status: {resp.status_code}"
                 print(f"bioRxiv URL test: {resp.status_code} for {url[-40:]}")
 
     @pytest.mark.asyncio
@@ -83,9 +80,7 @@ class TestURLFormats:
         async with client:
             resp = await client.get(url)
             # 200 = found, 404 = DOI not found (both valid API responses)
-            assert resp.status_code in [200, 404], (
-                f"Unpaywall API returned {resp.status_code}"
-            )
+            assert resp.status_code in [200, 404], f"Unpaywall API returned {resp.status_code}"
 
             if resp.status_code == 200:
                 data = resp.json()
@@ -102,9 +97,7 @@ class TestURLFormats:
                 resp = await client.get(url)
                 # CORE might require API key, block unauthenticated, rate limit, or error
                 # 200 = works, 401 = needs auth, 403 = blocked, 429 = rate limited, 5xx = server issue
-                assert resp.status_code < 600, (
-                    f"CORE API returned unexpected {resp.status_code}"
-                )
+                assert resp.status_code < 600, f"CORE API returned unexpected {resp.status_code}"
             except httpx.ConnectError:
                 pytest.skip("CORE API unreachable")
 
@@ -116,9 +109,7 @@ class TestURLFormats:
 
         async with client:
             resp = await client.get(url)
-            assert resp.status_code in [200, 404, 429], (
-                f"S2 API returned {resp.status_code}"
-            )
+            assert resp.status_code in [200, 404, 429], f"S2 API returned {resp.status_code}"
 
             if resp.status_code == 200:
                 data = resp.json()
@@ -132,9 +123,7 @@ class TestURLFormats:
 
         async with client:
             resp = await client.get(url)
-            assert resp.status_code in [200, 404], (
-                f"OpenAlex API returned {resp.status_code}"
-            )
+            assert resp.status_code in [200, 404], f"OpenAlex API returned {resp.status_code}"
 
             if resp.status_code == 200:
                 data = resp.json()
@@ -151,9 +140,7 @@ class TestURLFormats:
 
         async with client:
             resp = await client.get(url)
-            assert resp.status_code in [200, 404], (
-                f"CrossRef API returned {resp.status_code}"
-            )
+            assert resp.status_code in [200, 404], f"CrossRef API returned {resp.status_code}"
 
             if resp.status_code == 200:
                 data = resp.json()
@@ -173,9 +160,7 @@ class TestURLFormats:
 
         async with client:
             resp = await client.get(url)
-            assert resp.status_code in [200, 404], (
-                f"DOAJ API returned {resp.status_code}"
-            )
+            assert resp.status_code in [200, 404], f"DOAJ API returned {resp.status_code}"
 
             if resp.status_code == 200:
                 data = resp.json()
@@ -191,9 +176,7 @@ class TestURLFormats:
             resp = await client.get(url)
             # Zenodo may block automated requests with 403 (Cloudflare)
             # Accept 200, 403, or 404 as valid responses
-            assert resp.status_code in [200, 403, 404], (
-                f"Zenodo API returned {resp.status_code}"
-            )
+            assert resp.status_code in [200, 403, 404], f"Zenodo API returned {resp.status_code}"
 
             if resp.status_code == 200:
                 data = resp.json()
@@ -206,13 +189,13 @@ class TestURLFormats:
     async def test_pubmed_linkout(self, client):
         """PubMed LinkOut should return external links."""
         pmid = "23903782"  # Known article with external links
-        url = f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/elink.fcgi?dbfrom=pubmed&id={pmid}&cmd=llinks&retmode=json"
+        url = (
+            f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/elink.fcgi?dbfrom=pubmed&id={pmid}&cmd=llinks&retmode=json"
+        )
 
         async with client:
             resp = await client.get(url)
-            assert resp.status_code == 200, (
-                f"PubMed LinkOut returned {resp.status_code}"
-            )
+            assert resp.status_code == 200, f"PubMed LinkOut returned {resp.status_code}"
 
             data = resp.json()
             linksets = data.get("linksets", [])
@@ -295,7 +278,7 @@ class TestFulltextDownloader:
         async def mock_get(url, **kwargs):
             if "unpaywall" in url:
                 return mock_response_unpaywall
-            elif "crossref" in url:
+            if "crossref" in url:
                 return mock_response_crossref
             return mock_response_default
 
@@ -361,10 +344,7 @@ class TestFulltextDownloader:
             assert len(biorxiv_links) > 0, "Should find bioRxiv link"
 
             # URL should include version
-            assert (
-                "v1.full.pdf" in biorxiv_links[0].url
-                or ".full.pdf" in biorxiv_links[0].url
-            )
+            assert "v1.full.pdf" in biorxiv_links[0].url or ".full.pdf" in biorxiv_links[0].url
             print(f"bioRxiv URL: {biorxiv_links[0].url}")
         finally:
             await downloader.close()

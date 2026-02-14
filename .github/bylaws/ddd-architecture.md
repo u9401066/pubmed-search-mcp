@@ -53,7 +53,7 @@ Presentation → Application → Domain
 class IUserRepository(ABC):
     @abstractmethod
     def get_by_id(self, id: UserId) -> Optional[User]: ...
-    
+
     @abstractmethod
     def save(self, user: User) -> None: ...
 ```
@@ -64,7 +64,7 @@ class IUserRepository(ABC):
 class UserRepository(IUserRepository):
     def __init__(self, db_context: DbContext):
         self._db = db_context
-    
+
     def get_by_id(self, id: UserId) -> Optional[User]:
         # 實際資料庫操作
         ...
@@ -110,7 +110,7 @@ def process_order(order):
                     for item in order.items:
                         if item.in_stock:
                             # ... 更多巢狀
-                            
+
 # ✅ 重構後
 def process_order(order):
     validate_order_status(order)

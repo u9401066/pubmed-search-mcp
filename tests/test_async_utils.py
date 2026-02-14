@@ -18,7 +18,6 @@ from pubmed_search.shared.async_utils import (
 )
 from pubmed_search.shared.exceptions import RateLimitError
 
-
 # ============================================================
 # RateLimiter
 # ============================================================

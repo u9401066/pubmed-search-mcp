@@ -5,14 +5,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from pubmed_search.presentation.mcp_server.tools.unified import (
-    register_unified_search_tools,
-    detect_and_expand_icd_codes,
-    DispatchStrategy,
-    _format_unified_results,
-    _format_as_json,
-    _is_preprint,
-)
 from pubmed_search.application.search.query_analyzer import (
     AnalyzedQuery,
     QueryComplexity,
@@ -22,7 +14,14 @@ from pubmed_search.application.search.result_aggregator import (
     AggregationStats,
     RankingConfig,
 )
-
+from pubmed_search.presentation.mcp_server.tools.unified import (
+    DispatchStrategy,
+    _format_as_json,
+    _format_unified_results,
+    _is_preprint,
+    detect_and_expand_icd_codes,
+    register_unified_search_tools,
+)
 
 # ============================================================
 # ICD Detection
@@ -69,9 +68,7 @@ class TestDispatchStrategy:
         return a
 
     async def test_lookup_with_identifiers(self):
-        a = self._make_analysis(
-            QueryComplexity.SIMPLE, QueryIntent.LOOKUP, identifiers=["PMID:123"]
-        )
+        a = self._make_analysis(QueryComplexity.SIMPLE, QueryIntent.LOOKUP, identifiers=["PMID:123"])
         sources = DispatchStrategy.get_sources(a)
         assert sources == ["pubmed"]
 
@@ -116,9 +113,7 @@ class TestDispatchStrategy:
         assert isinstance(config, RankingConfig)
 
     async def test_ranking_config_recency(self):
-        a = self._make_analysis(
-            QueryComplexity.SIMPLE, QueryIntent.EXPLORATION, year_from=2023
-        )
+        a = self._make_analysis(QueryComplexity.SIMPLE, QueryIntent.EXPLORATION, year_from=2023)
         config = DispatchStrategy.get_ranking_config(a)
         assert isinstance(config, RankingConfig)
 
@@ -160,9 +155,7 @@ class TestFormatUnifiedResults:
         stats.unique_articles = 0
         stats.duplicates_removed = 0
 
-        result = await _format_unified_results(
-            [], analysis, stats, include_analysis=False, include_trials=False
-        )
+        result = await _format_unified_results([], analysis, stats, include_analysis=False, include_trials=False)
         assert "No results" in result
 
 
@@ -191,9 +184,7 @@ class TestUnifiedSearch:
     async def test_simple_pubmed_search(self):
         mcp = MagicMock()
         searcher = AsyncMock()
-        searcher.search.return_value = [
-            {"pmid": "123", "title": "Test Article", "authors": ["A B"]}
-        ]
+        searcher.search.return_value = [{"pmid": "123", "title": "Test Article", "authors": ["A B"]}]
         tools = _capture_tools(mcp, searcher)
 
         with patch(
@@ -213,18 +204,14 @@ class TestUnifiedSearch:
         """unified_search with json format - may return JSON or error string depending on dispatch."""
         mcp = MagicMock()
         searcher = AsyncMock()
-        searcher.search.return_value = [
-            {"pmid": "123", "title": "Test", "authors": ["X"]}
-        ]
+        searcher.search.return_value = [{"pmid": "123", "title": "Test", "authors": ["X"]}]
         tools = _capture_tools(mcp, searcher)
 
         with patch(
             "pubmed_search.presentation.mcp_server.tools.unified.get_semantic_enhancer",
         ) as mock_enhancer:
             mock_enhancer.return_value.enhance.side_effect = Exception("skip")
-            result = await tools["unified_search"](
-                query="test", output_format="json", include_similarity_scores=False
-            )
+            result = await tools["unified_search"](query="test", output_format="json", include_similarity_scores=False)
         assert isinstance(result, str)
         # Result is either valid JSON or an error/no-results message
         try:
@@ -273,9 +260,7 @@ class TestAnalyzeSearchQuery:
         searcher = AsyncMock()
         tools = _capture_tools(mcp, searcher)
 
-        with patch(
-            "pubmed_search.presentation.mcp_server.tools.unified.QueryAnalyzer"
-        ) as MockAnalyzer:
+        with patch("pubmed_search.presentation.mcp_server.tools.unified.QueryAnalyzer") as MockAnalyzer:
             MockAnalyzer.return_value.analyze.side_effect = RuntimeError("fail")
             result = await tools["analyze_search_query"](query="test")
         assert "error" in result.lower()

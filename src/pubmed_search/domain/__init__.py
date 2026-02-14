@@ -16,11 +16,11 @@ from .entities import (
 )
 
 __all__ = [
-    "UnifiedArticle",
     "ArticleType",
-    "OpenAccessStatus",
     "Author",
-    "OpenAccessLink",
     "CitationMetrics",
+    "OpenAccessLink",
+    "OpenAccessStatus",
     "SourceMetadata",
+    "UnifiedArticle",
 ]

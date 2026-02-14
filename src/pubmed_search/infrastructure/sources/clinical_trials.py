@@ -153,9 +153,7 @@ class ClinicalTrialsClient:
             "start_date": start_date,
             "enrollment": enrollment,
             "url": f"https://clinicaltrials.gov/study/{nct_id}",
-            "sponsor": protocol.get("sponsorCollaboratorsModule", {})
-            .get("leadSponsor", {})
-            .get("name", ""),
+            "sponsor": protocol.get("sponsorCollaboratorsModule", {}).get("leadSponsor", {}).get("name", ""),
         }
 
     async def get_study(self, nct_id: str) -> dict[str, Any] | None:
@@ -232,9 +230,7 @@ def format_trials_section(trials: list[dict], max_display: int = 3) -> str:
         phase = trial["phase"] if trial["phase"] != "N/A" else ""
         phase_str = f" ({phase})" if phase else ""
 
-        lines.append(
-            f"**{i + 1}. [{trial['nct_id']}]({trial['url']})**{phase_str} {emoji} {trial['status']}"
-        )
+        lines.append(f"**{i + 1}. [{trial['nct_id']}]({trial['url']})**{phase_str} {emoji} {trial['status']}")
         lines.append(f"   {trial['title']}")
 
         if trial.get("enrollment"):

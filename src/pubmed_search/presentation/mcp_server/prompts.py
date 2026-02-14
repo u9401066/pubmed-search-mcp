@@ -127,9 +127,9 @@ generate_search_queries(topic="<O element>")  # Outcome
 ### Step 3: Build Boolean Query
 Combine with AND logic:
 ```
-(P_mesh OR P_synonyms) AND 
-(I_mesh OR I_synonyms) AND 
-(C_mesh OR C_synonyms) AND 
+(P_mesh OR P_synonyms) AND
+(I_mesh OR I_synonyms) AND
+(C_mesh OR C_synonyms) AND
 (O_mesh OR O_synonyms)
 ```
 
@@ -434,7 +434,7 @@ generate_search_queries(topic="{topic}", strategy="comprehensive")
 
 ### 1.2 Execute Multiple Search Strategies (Parallel)
 - Title search
-- Title/Abstract search  
+- Title/Abstract search
 - MeSH search
 - Synonym search
 

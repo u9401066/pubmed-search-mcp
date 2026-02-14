@@ -3,9 +3,10 @@ Final tests to reach 90% coverage.
 Target remaining uncovered lines in key modules.
 """
 
-from unittest.mock import Mock, patch, MagicMock
-import httpx
 import tempfile
+from unittest.mock import MagicMock, Mock, patch
+
+import httpx
 
 
 class TestClientRemainingMethods:
@@ -39,12 +40,8 @@ class TestSearchRemainingPaths:
 
         for date_type in ["edat", "pdat", "mdat"]:
             with (
-                patch(
-                    "pubmed_search.infrastructure.ncbi.search.Entrez.esearch"
-                ) as mock_esearch,
-                patch(
-                    "pubmed_search.infrastructure.ncbi.search.Entrez.read"
-                ) as mock_read,
+                patch("pubmed_search.infrastructure.ncbi.search.Entrez.esearch") as mock_esearch,
+                patch("pubmed_search.infrastructure.ncbi.search.Entrez.read") as mock_read,
             ):
                 mock_read.return_value = {"IdList": ["123"]}
                 mock_esearch.return_value = MagicMock()
@@ -69,9 +66,7 @@ class TestSearchRemainingPaths:
         searcher = TestSearcher()
 
         with (
-            patch(
-                "pubmed_search.infrastructure.ncbi.search.Entrez.esearch"
-            ) as mock_esearch,
+            patch("pubmed_search.infrastructure.ncbi.search.Entrez.esearch") as mock_esearch,
             patch("asyncio.sleep", return_value=None),
         ):
             # All attempts fail with transient error
@@ -91,18 +86,10 @@ class TestStrategyRemainingPaths:
         from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
 
         with (
-            patch(
-                "pubmed_search.infrastructure.ncbi.strategy.Entrez.espell"
-            ) as mock_espell,
-            patch(
-                "pubmed_search.infrastructure.ncbi.strategy.Entrez.read"
-            ) as mock_read,
-            patch(
-                "pubmed_search.infrastructure.ncbi.strategy.Entrez.esearch"
-            ) as mock_esearch,
-            patch(
-                "pubmed_search.infrastructure.ncbi.strategy.Entrez.efetch"
-            ) as mock_efetch,
+            patch("pubmed_search.infrastructure.ncbi.strategy.Entrez.espell") as mock_espell,
+            patch("pubmed_search.infrastructure.ncbi.strategy.Entrez.read") as mock_read,
+            patch("pubmed_search.infrastructure.ncbi.strategy.Entrez.esearch") as mock_esearch,
+            patch("pubmed_search.infrastructure.ncbi.strategy.Entrez.efetch") as mock_efetch,
         ):
             mock_read.return_value = {"CorrectedQuery": "", "IdList": []}
             mock_espell.return_value = MagicMock()
@@ -122,18 +109,10 @@ class TestStrategyRemainingPaths:
         from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
 
         with (
-            patch(
-                "pubmed_search.infrastructure.ncbi.strategy.Entrez.espell"
-            ) as mock_espell,
-            patch(
-                "pubmed_search.infrastructure.ncbi.strategy.Entrez.read"
-            ) as mock_read,
-            patch(
-                "pubmed_search.infrastructure.ncbi.strategy.Entrez.esearch"
-            ) as mock_esearch,
-            patch(
-                "pubmed_search.infrastructure.ncbi.strategy.Entrez.efetch"
-            ) as mock_efetch,
+            patch("pubmed_search.infrastructure.ncbi.strategy.Entrez.espell") as mock_espell,
+            patch("pubmed_search.infrastructure.ncbi.strategy.Entrez.read") as mock_read,
+            patch("pubmed_search.infrastructure.ncbi.strategy.Entrez.esearch") as mock_esearch,
+            patch("pubmed_search.infrastructure.ncbi.strategy.Entrez.efetch") as mock_efetch,
         ):
             mock_read.return_value = {"CorrectedQuery": "", "IdList": []}
             mock_espell.return_value = MagicMock()
@@ -142,9 +121,7 @@ class TestStrategyRemainingPaths:
             mock_efetch.return_value.read.return_value = ""
 
             generator = SearchStrategyGenerator(email="test@example.com")
-            result = await generator.generate_strategies(
-                "cancer", strategy="exploratory"
-            )
+            result = await generator.generate_strategies("cancer", strategy="exploratory")
 
             assert isinstance(result, dict)
 
@@ -213,8 +190,8 @@ class TestDiscoveryRemainingPaths:
 
     async def test_find_citing_method(self):
         """Test find_citing_articles directly."""
-        from pubmed_search.infrastructure.ncbi.citation import CitationMixin
         from pubmed_search.infrastructure.ncbi.base import EntrezBase
+        from pubmed_search.infrastructure.ncbi.citation import CitationMixin
 
         class TestSearcher(CitationMixin, EntrezBase):
             async def fetch_details(self, pmids):
@@ -223,20 +200,10 @@ class TestDiscoveryRemainingPaths:
         searcher = TestSearcher()
 
         with (
-            patch(
-                "pubmed_search.infrastructure.ncbi.citation.Entrez.elink"
-            ) as mock_elink,
-            patch(
-                "pubmed_search.infrastructure.ncbi.citation.Entrez.read"
-            ) as mock_read,
+            patch("pubmed_search.infrastructure.ncbi.citation.Entrez.elink") as mock_elink,
+            patch("pubmed_search.infrastructure.ncbi.citation.Entrez.read") as mock_read,
         ):
-            mock_read.return_value = [
-                {
-                    "LinkSetDb": [
-                        {"LinkName": "pubmed_pubmed_citedin", "Link": [{"Id": "111"}]}
-                    ]
-                }
-            ]
+            mock_read.return_value = [{"LinkSetDb": [{"LinkName": "pubmed_pubmed_citedin", "Link": [{"Id": "111"}]}]}]
             mock_elink.return_value = MagicMock()
 
             results = await searcher.find_citing_articles("12345")
@@ -314,9 +281,7 @@ class TestICiteRemainingPaths:
             },
         )
 
-        with patch(
-            "pubmed_search.infrastructure.ncbi.icite.httpx.AsyncClient"
-        ) as mock_cls:
+        with patch("pubmed_search.infrastructure.ncbi.icite.httpx.AsyncClient") as mock_cls:
             mock_client = MagicMock()
             mock_client.get = MagicMock(return_value=mock_response)
             mock_client.__aenter__ = MagicMock(return_value=mock_client)
@@ -344,9 +309,7 @@ class TestPDFRemainingPaths:
             patch("pubmed_search.infrastructure.ncbi.pdf.Entrez.elink") as mock_elink,
             patch("pubmed_search.infrastructure.ncbi.pdf.Entrez.read") as mock_read,
         ):
-            mock_read.return_value = [
-                {"LinkSetDb": [{"LinkName": "pubmed_pmc", "Link": [{"Id": "PMC123"}]}]}
-            ]
+            mock_read.return_value = [{"LinkSetDb": [{"LinkName": "pubmed_pmc", "Link": [{"Id": "PMC123"}]}]}]
             mock_elink.return_value = MagicMock()
 
             url = await searcher.get_pmc_fulltext_url("12345")
@@ -359,10 +322,10 @@ class TestMergeRemainingPaths:
 
     async def test_merge_tools_register(self):
         """Test merge tools registration."""
+        from pubmed_search import LiteratureSearcher
         from pubmed_search.presentation.mcp_server.tools.merge import (
             register_merge_tools,
         )
-        from pubmed_search import LiteratureSearcher
 
         mock_mcp = Mock()
         mock_mcp.tool = Mock(return_value=lambda f: f)

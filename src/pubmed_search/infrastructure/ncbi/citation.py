@@ -5,7 +5,7 @@ Provides functionality to explore citation networks (related, citing, references
 """
 
 import asyncio
-from typing import Any, Dict, List
+from typing import Any
 
 from Bio import Entrez
 
@@ -20,9 +20,7 @@ class CitationMixin:
         get_article_references: Get the bibliography of an article
     """
 
-    async def get_related_articles(
-        self, pmid: str, limit: int = 5
-    ) -> List[Dict[str, Any]]:
+    async def get_related_articles(self, pmid: str, limit: int = 5) -> list[dict[str, Any]]:
         """
         Find related articles using PubMed's related articles feature.
 
@@ -58,9 +56,7 @@ class CitationMixin:
         except Exception as e:
             return [{"error": str(e)}]
 
-    async def get_citing_articles(
-        self, pmid: str, limit: int = 10
-    ) -> List[Dict[str, Any]]:
+    async def get_citing_articles(self, pmid: str, limit: int = 10) -> list[dict[str, Any]]:
         """
         Find articles that cite this article (via PMC).
 
@@ -96,9 +92,7 @@ class CitationMixin:
         except Exception as e:
             return [{"error": str(e)}]
 
-    async def get_article_references(
-        self, pmid: str, limit: int = 20
-    ) -> List[Dict[str, Any]]:
+    async def get_article_references(self, pmid: str, limit: int = 20) -> list[dict[str, Any]]:
         """
         Get references (bibliography) of an article via PMC.
 
@@ -135,14 +129,10 @@ class CitationMixin:
             return [{"error": str(e)}]
 
     # Aliases for backward compatibility
-    async def find_related_articles(
-        self, pmid: str, limit: int = 5
-    ) -> List[Dict[str, Any]]:
+    async def find_related_articles(self, pmid: str, limit: int = 5) -> list[dict[str, Any]]:
         """Alias for get_related_articles."""
         return await self.get_related_articles(pmid, limit)
 
-    async def find_citing_articles(
-        self, pmid: str, limit: int = 10
-    ) -> List[Dict[str, Any]]:
+    async def find_citing_articles(self, pmid: str, limit: int = 10) -> list[dict[str, Any]]:
         """Alias for get_citing_articles."""
         return await self.get_citing_articles(pmid, limit)

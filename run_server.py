@@ -30,20 +30,16 @@ import sys
 # Add src to path for development
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
-from pubmed_search.presentation.mcp_server.server import create_server
 from pubmed_search import __version__
+from pubmed_search.presentation.mcp_server.server import create_server
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Run PubMed Search MCP Server in HTTP mode"
-    )
+    parser = argparse.ArgumentParser(description="Run PubMed Search MCP Server in HTTP mode")
     parser.add_argument(
         "--email",
         default=os.environ.get("NCBI_EMAIL", "pubmed-search@example.com"),
@@ -87,13 +83,9 @@ def main():
     logger.info(f"  Transport: {args.transport}")
     logger.info(f"  Host: {args.host}")
     logger.info(f"  Port: {args.port}")
-    logger.info(
-        f"  DNS Rebinding Protection: {'Disabled' if args.no_security else 'Enabled'}"
-    )
+    logger.info(f"  DNS Rebinding Protection: {'Disabled' if args.no_security else 'Enabled'}")
 
-    server = create_server(
-        email=args.email, api_key=args.api_key, disable_security=args.no_security
-    )
+    server = create_server(email=args.email, api_key=args.api_key, disable_security=args.no_security)
 
     # Run server with selected transport
     logger.info(f"Starting server at http://{args.host}:{args.port}")
@@ -105,9 +97,10 @@ def main():
         logger.info("Streamable HTTP endpoint: /mcp")
 
     # Run the server using uvicorn directly for proper host/port control
-    import uvicorn
-    from starlette.responses import JSONResponse, FileResponse
     from pathlib import Path
+
+    import uvicorn
+    from starlette.responses import FileResponse, JSONResponse
 
     # Export directory
     EXPORT_DIR = Path("/tmp/pubmed_exports")
@@ -229,9 +222,7 @@ def main():
         MCP-to-MCP endpoint: Other MCP servers call this directly.
         """
         pmid = request.path_params["pmid"]
-        fetch_if_missing = (
-            request.query_params.get("fetch_if_missing", "true").lower() == "true"
-        )
+        fetch_if_missing = request.query_params.get("fetch_if_missing", "true").lower() == "true"
 
         # Try cache first
         session = session_manager.get_current_session()
@@ -252,25 +243,17 @@ def main():
                 articles = await searcher.fetch_details([pmid])
                 if articles:
                     session_manager.add_to_cache(articles)
-                    return JSONResponse(
-                        {"source": "pubmed", "verified": True, "data": articles[0]}
-                    )
+                    return JSONResponse({"source": "pubmed", "verified": True, "data": articles[0]})
             except Exception as e:
                 logger.error(f"[API] Failed to fetch PMID {pmid}: {e}")
-                return JSONResponse(
-                    {"detail": f"PubMed API error: {str(e)}"}, status_code=502
-                )
+                return JSONResponse({"detail": f"PubMed API error: {e!s}"}, status_code=502)
 
-        return JSONResponse(
-            {"detail": f"Article PMID:{pmid} not found in cache"}, status_code=404
-        )
+        return JSONResponse({"detail": f"Article PMID:{pmid} not found in cache"}, status_code=404)
 
     async def api_get_multiple_articles(request):
         """Get multiple cached articles by PMIDs."""
         pmids_param = request.query_params.get("pmids", "")
-        fetch_if_missing = (
-            request.query_params.get("fetch_if_missing", "false").lower() == "true"
-        )
+        fetch_if_missing = request.query_params.get("fetch_if_missing", "false").lower() == "true"
 
         pmid_list = [p.strip() for p in pmids_param.split(",") if p.strip()]
 
@@ -343,9 +326,7 @@ def main():
     app = mcp_app
 
     # Log appropriate endpoints based on transport
-    logger.info(
-        f"Download endpoint: http://{args.host}:{args.port}/download/{{filename}}"
-    )
+    logger.info(f"Download endpoint: http://{args.host}:{args.port}/download/{{filename}}")
     logger.info(f"List exports: http://{args.host}:{args.port}/exports")
 
     if args.transport == "streamable-http":

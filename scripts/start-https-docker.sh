@@ -78,29 +78,29 @@ case "$ACTION" in
         echo '    }'
         echo '  }'
         ;;
-    
+
     down)
         echo -e "${YELLOW}🛑 停止 HTTPS 服務...${NC}"
         $COMPOSE_CMD -f docker-compose.https.yml down
         echo -e "${GREEN}✅ 服務已停止${NC}"
         ;;
-    
+
     logs)
         echo -e "${BLUE}📋 查看日誌...${NC}"
         $COMPOSE_CMD -f docker-compose.https.yml logs -f
         ;;
-    
+
     restart)
         echo -e "${YELLOW}🔄 重啟 HTTPS 服務...${NC}"
         $COMPOSE_CMD -f docker-compose.https.yml restart
         echo -e "${GREEN}✅ 服務已重啟${NC}"
         ;;
-    
+
     status)
         echo -e "${BLUE}📊 服務狀態：${NC}"
         $COMPOSE_CMD -f docker-compose.https.yml ps
         ;;
-    
+
     *)
         echo "Usage: $0 {up|down|logs|restart|status}"
         exit 1

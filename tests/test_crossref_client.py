@@ -6,7 +6,6 @@ Target: crossref.py coverage from 0% to 90%+
 
 from unittest.mock import AsyncMock, patch
 
-
 from pubmed_search.infrastructure.sources.crossref import (
     CrossRefClient,
     get_citation_count,
@@ -14,7 +13,6 @@ from pubmed_search.infrastructure.sources.crossref import (
     get_doi_metadata,
     search_crossref,
 )
-
 
 # =============================================================================
 # CrossRefClient - Basic Tests
@@ -144,13 +142,9 @@ class TestCrossRefClientSearch:
         """Test search with filter parameters."""
         client = CrossRefClient()
         client._min_interval = 0
-        client._make_request = AsyncMock(
-            return_value={"total-results": 50, "items": []}
-        )
+        client._make_request = AsyncMock(return_value={"total-results": 50, "items": []})
 
-        result = await client.search(
-            "test", filter_params={"from-pub-date": "2020", "type": "journal-article"}
-        )
+        result = await client.search("test", filter_params={"from-pub-date": "2020", "type": "journal-article"})
         assert result["total_results"] == 50
 
     async def test_search_empty_result(self):
@@ -176,9 +170,7 @@ class TestCrossRefClientSearchByTitle:
         """Test successful title search."""
         client = CrossRefClient()
         client._min_interval = 0
-        client._make_request = AsyncMock(
-            return_value={"items": [{"DOI": "10.1/exact", "title": ["Exact Match"]}]}
-        )
+        client._make_request = AsyncMock(return_value={"items": [{"DOI": "10.1/exact", "title": ["Exact Match"]}]})
 
         results = await client.search_by_title("Exact Match", limit=5)
         assert len(results) == 1
@@ -248,9 +240,7 @@ class TestCrossRefClientGetCitations:
         client = CrossRefClient()
         client._min_interval = 0
         client.get_work = AsyncMock(return_value={"is-referenced-by-count": 50})
-        client._make_request = AsyncMock(
-            return_value={"items": [{"DOI": "10.1/citing1"}, {"DOI": "10.1/citing2"}]}
-        )
+        client._make_request = AsyncMock(return_value={"items": [{"DOI": "10.1/citing1"}, {"DOI": "10.1/citing2"}]})
 
         result = await client.get_citations("10.1/test", limit=10)
         assert result["citation_count"] == 50
@@ -335,9 +325,7 @@ class TestCrossRefClientEnrich:
         """Test enrichment falls back to title search."""
         client = CrossRefClient()
         client.get_work = AsyncMock(return_value=None)
-        client.search_by_title = AsyncMock(
-            return_value=[{"DOI": "10.1/found", "title": ["Test"]}]
-        )
+        client.search_by_title = AsyncMock(return_value=[{"DOI": "10.1/found", "title": ["Test"]}])
 
         result = await client.enrich_with_crossref(title="Test Article")
         assert result is not None

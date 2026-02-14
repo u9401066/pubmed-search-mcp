@@ -22,7 +22,7 @@ Supports multiple output formats:
 
 import json
 import logging
-from typing import Any, Dict, List, Set, Union
+from typing import Any, Union
 
 from mcp.server.fastmcp import FastMCP
 
@@ -41,7 +41,7 @@ MAX_TOTAL_NODES = 100  # Safety limit
 SUPPORTED_FORMATS = ["cytoscape", "g6", "d3", "vis", "graphml", "mermaid"]
 
 
-def _make_node(article: Dict[str, Any], level: int, direction: str) -> Dict[str, Any]:
+def _make_node(article: dict[str, Any], level: int, direction: str) -> dict[str, Any]:
     """
     Create internal node representation from article data.
 
@@ -80,7 +80,7 @@ def _make_node(article: Dict[str, Any], level: int, direction: str) -> Dict[str,
     }
 
 
-def _make_edge(source_pmid: str, target_pmid: str, edge_type: str) -> Dict[str, Any]:
+def _make_edge(source_pmid: str, target_pmid: str, edge_type: str) -> dict[str, Any]:
     """Create internal edge representation."""
     return {"source": source_pmid, "target": target_pmid, "edge_type": edge_type}
 
@@ -90,7 +90,7 @@ def _make_edge(source_pmid: str, target_pmid: str, edge_type: str) -> Dict[str, 
 # ============================================================================
 
 
-def _to_cytoscape(nodes: List[Dict], edges: List[Dict]) -> Dict[str, Any]:
+def _to_cytoscape(nodes: list[dict], edges: list[dict]) -> dict[str, Any]:
     """
     Convert to Cytoscape.js format.
     Academic standard, used in bioinformatics and medical research.
@@ -123,7 +123,7 @@ def _to_cytoscape(nodes: List[Dict], edges: List[Dict]) -> Dict[str, Any]:
     return {"nodes": cy_nodes, "edges": cy_edges}
 
 
-def _to_g6(nodes: List[Dict], edges: List[Dict]) -> Dict[str, Any]:
+def _to_g6(nodes: list[dict], edges: list[dict]) -> dict[str, Any]:
     """
     Convert to AntV G6 format.
     Modern, high-performance, great for large graphs.
@@ -164,7 +164,7 @@ def _to_g6(nodes: List[Dict], edges: List[Dict]) -> Dict[str, Any]:
     return {"nodes": g6_nodes, "edges": g6_edges}
 
 
-def _to_d3(nodes: List[Dict], edges: List[Dict]) -> Dict[str, Any]:
+def _to_d3(nodes: list[dict], edges: list[dict]) -> dict[str, Any]:
     """
     Convert to D3.js force graph format.
     Most flexible, works with Observable notebooks.
@@ -178,9 +178,7 @@ def _to_d3(nodes: List[Dict], edges: List[Dict]) -> Dict[str, Any]:
         d3_nodes.append(
             {
                 "id": node["pmid"],
-                "group": 0
-                if node["level"] == 0
-                else (1 if node["direction"] == "citing" else 2),
+                "group": 0 if node["level"] == 0 else (1 if node["direction"] == "citing" else 2),
                 **node,
             }
         )
@@ -201,7 +199,7 @@ def _to_d3(nodes: List[Dict], edges: List[Dict]) -> Dict[str, Any]:
     return {"nodes": d3_nodes, "links": d3_links}
 
 
-def _to_vis(nodes: List[Dict], edges: List[Dict]) -> Dict[str, Any]:
+def _to_vis(nodes: list[dict], edges: list[dict]) -> dict[str, Any]:
     """
     Convert to vis-network format.
     Simple and easy to use, good for quick prototypes.
@@ -211,13 +209,7 @@ def _to_vis(nodes: List[Dict], edges: List[Dict]) -> Dict[str, Any]:
     """
     vis_nodes = []
     for node in nodes:
-        color = (
-            "#ff6b6b"
-            if node["level"] == 0
-            else "#4ecdc4"
-            if node["direction"] == "citing"
-            else "#95e1d3"
-        )
+        color = "#ff6b6b" if node["level"] == 0 else "#4ecdc4" if node["direction"] == "citing" else "#95e1d3"
         vis_nodes.append(
             {
                 "id": int(node["pmid"]) if node["pmid"].isdigit() else node["pmid"],
@@ -233,12 +225,8 @@ def _to_vis(nodes: List[Dict], edges: List[Dict]) -> Dict[str, Any]:
     for edge in edges:
         vis_edges.append(
             {
-                "from": int(edge["source"])
-                if edge["source"].isdigit()
-                else edge["source"],
-                "to": int(edge["target"])
-                if edge["target"].isdigit()
-                else edge["target"],
+                "from": int(edge["source"]) if edge["source"].isdigit() else edge["source"],
+                "to": int(edge["target"]) if edge["target"].isdigit() else edge["target"],
                 "arrows": "to",
                 "title": edge["edge_type"],
             }
@@ -247,7 +235,7 @@ def _to_vis(nodes: List[Dict], edges: List[Dict]) -> Dict[str, Any]:
     return {"nodes": vis_nodes, "edges": vis_edges}
 
 
-def _to_graphml(nodes: List[Dict], edges: List[Dict], root_title: str) -> str:
+def _to_graphml(nodes: list[dict], edges: list[dict], root_title: str) -> str:
     """
     Convert to GraphML format (XML string).
     For desktop tools: Gephi, VOSviewer, Pajek, yEd.
@@ -271,9 +259,7 @@ def _to_graphml(nodes: List[Dict], edges: List[Dict], root_title: str) -> str:
     for node in nodes:
         lines.append(f'    <node id="{node["pmid"]}">')
         lines.append(f'      <data key="label">{_escape_xml(node["label"])}</data>')
-        lines.append(
-            f'      <data key="title">{_escape_xml(node["title"][:200])}</data>'
-        )
+        lines.append(f'      <data key="title">{_escape_xml(node["title"][:200])}</data>')
         lines.append(f'      <data key="year">{node["year"]}</data>')
         lines.append(f'      <data key="journal">{_escape_xml(node["journal"])}</data>')
         lines.append(f'      <data key="level">{node["level"]}</data>')
@@ -281,9 +267,7 @@ def _to_graphml(nodes: List[Dict], edges: List[Dict], root_title: str) -> str:
         lines.append("    </node>")
 
     for i, edge in enumerate(edges):
-        lines.append(
-            f'    <edge id="e{i}" source="{edge["source"]}" target="{edge["target"]}">'
-        )
+        lines.append(f'    <edge id="e{i}" source="{edge["source"]}" target="{edge["target"]}">')
         lines.append(f'      <data key="edge_type">{edge["edge_type"]}</data>')
         lines.append("    </edge>")
 
@@ -304,7 +288,7 @@ def _escape_xml(text: str) -> str:
     )
 
 
-def _to_mermaid(nodes: List[Dict], edges: List[Dict], root_title: str) -> str:
+def _to_mermaid(nodes: list[dict], edges: list[dict], root_title: str) -> str:
     """
     Convert to Mermaid diagram format.
     Can be directly previewed in VS Code Markdown or rendered by Mermaid.js.
@@ -355,13 +339,9 @@ def _to_mermaid(nodes: List[Dict], edges: List[Dict], root_title: str) -> str:
     for node in nodes:
         pmid = node["pmid"]
         if node["direction"] == "root":
-            lines.append(
-                f"    style pmid_{pmid} fill:#ff6b6b,stroke:#c0392b,stroke-width:3px,color:#fff"
-            )
+            lines.append(f"    style pmid_{pmid} fill:#ff6b6b,stroke:#c0392b,stroke-width:3px,color:#fff")
         elif node["direction"] == "citing":
-            lines.append(
-                f"    style pmid_{pmid} fill:#4ecdc4,stroke:#16a085,color:#fff"
-            )
+            lines.append(f"    style pmid_{pmid} fill:#4ecdc4,stroke:#16a085,color:#fff")
         else:  # reference
             lines.append(f"    style pmid_{pmid} fill:#95e1d3,stroke:#27ae60")
 
@@ -468,18 +448,12 @@ def register_citation_tree_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                     tool_name="build_citation_tree",
                 )
 
-            normalized_depth = InputNormalizer.normalize_limit(
-                depth, default=2, min_val=1, max_val=MAX_DEPTH
-            )
-            normalized_limit = InputNormalizer.normalize_limit(
-                limit_per_level, default=5, min_val=1, max_val=20
-            )
+            normalized_depth = InputNormalizer.normalize_limit(depth, default=2, min_val=1, max_val=MAX_DEPTH)
+            normalized_limit = InputNormalizer.normalize_limit(limit_per_level, default=5, min_val=1, max_val=20)
 
             # Validate output format
             valid_formats = ["cytoscape", "g6", "d3", "vis", "graphml", "mermaid"]
-            normalized_format = (
-                output_format.lower().strip() if output_format else "cytoscape"
-            )
+            normalized_format = output_format.lower().strip() if output_format else "cytoscape"
             if normalized_format not in valid_formats:
                 return ResponseFormatter.error(
                     f"Invalid output format: '{output_format}'",
@@ -500,10 +474,10 @@ def register_citation_tree_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 )
 
             # Initialize data structures
-            nodes: List[Dict[str, Any]] = []
-            edges: List[Dict[str, Any]] = []
-            seen_pmids: Set[str] = set()
-            stats: Dict[str, Any] = {
+            nodes: list[dict[str, Any]] = []
+            edges: list[dict[str, Any]] = []
+            seen_pmids: set[str] = set()
+            stats: dict[str, Any] = {
                 "total_nodes": 0,
                 "total_edges": 0,
                 "citing_articles": 0,
@@ -530,7 +504,7 @@ def register_citation_tree_tools(mcp: FastMCP, searcher: LiteratureSearcher):
 
             # BFS traversal for each direction
             async def traverse(
-                start_pmids: List[str],
+                start_pmids: list[str],
                 current_depth: int,
                 fetch_func,
                 edge_type: str,
@@ -576,18 +550,12 @@ def register_citation_tree_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                             break
 
                         # Add node
-                        node = _make_node(
-                            article, level=current_depth, direction=direction_name
-                        )
+                        node = _make_node(article, level=current_depth, direction=direction_name)
                         nodes.append(node)
                         seen_pmids.add(article_pmid)
                         stats["total_nodes"] += 1
-                        stats[f"{direction_name}_articles"] = (
-                            stats.get(f"{direction_name}_articles", 0) + 1
-                        )
-                        stats["levels"][level_key] = (
-                            stats["levels"].get(level_key, 0) + 1
-                        )
+                        stats[f"{direction_name}_articles"] = stats.get(f"{direction_name}_articles", 0) + 1
+                        stats["levels"][level_key] = stats["levels"].get(level_key, 0) + 1
 
                         # Add edge
                         if edge_type == "cites":
@@ -670,7 +638,7 @@ def register_citation_tree_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             }
 
             # Convert internal format to requested output format
-            graph_data: Union[Dict[str, Any], str]
+            graph_data: Union[dict[str, Any], str]
             if normalized_format == "cytoscape":
                 graph_data = _to_cytoscape(nodes, edges)
             elif normalized_format == "g6":
@@ -720,7 +688,7 @@ def register_citation_tree_tools(mcp: FastMCP, searcher: LiteratureSearcher):
 🎨 **Output Format**: {format_info[normalized_format]["name"]}
    {format_info[normalized_format]["description"]}
 
-📌 **Other Available Formats**: {", ".join(f for f in format_info.keys() if f != normalized_format)}
+📌 **Other Available Formats**: {", ".join(f for f in format_info if f != normalized_format)}
 
 ---
 
@@ -728,7 +696,7 @@ def register_citation_tree_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             return summary + json.dumps(result, indent=2, ensure_ascii=False)
 
         except Exception as e:
-            logger.error(f"Build citation tree failed: {e}")
+            logger.exception(f"Build citation tree failed: {e}")
             return ResponseFormatter.error(
                 e,
                 suggestion="Check PMID and try again with smaller depth",

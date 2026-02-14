@@ -2,8 +2,9 @@
 Tests for Entrez modules - citation, icite, batch, pdf.
 """
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
 
 from pubmed_search.infrastructure.ncbi.base import EntrezBase
 
@@ -36,12 +37,8 @@ class TestCitationMixin:
         searcher = TestSearcher()
 
         with (
-            patch(
-                "pubmed_search.infrastructure.ncbi.citation.Entrez.elink"
-            ) as mock_elink,
-            patch(
-                "pubmed_search.infrastructure.ncbi.citation.Entrez.read"
-            ) as mock_read,
+            patch("pubmed_search.infrastructure.ncbi.citation.Entrez.elink") as mock_elink,
+            patch("pubmed_search.infrastructure.ncbi.citation.Entrez.read") as mock_read,
         ):
             mock_read.return_value = mock_entrez_read
             mock_elink.return_value = MagicMock()
@@ -62,12 +59,8 @@ class TestCitationMixin:
         searcher = TestSearcher()
 
         with (
-            patch(
-                "pubmed_search.infrastructure.ncbi.citation.Entrez.elink"
-            ) as mock_elink,
-            patch(
-                "pubmed_search.infrastructure.ncbi.citation.Entrez.read"
-            ) as mock_read,
+            patch("pubmed_search.infrastructure.ncbi.citation.Entrez.elink") as mock_elink,
+            patch("pubmed_search.infrastructure.ncbi.citation.Entrez.read") as mock_read,
         ):
             mock_read.return_value = [{}]  # No LinkSetDb
             mock_elink.return_value = MagicMock()
@@ -85,9 +78,7 @@ class TestCitationMixin:
 
         searcher = TestSearcher()
 
-        with patch(
-            "pubmed_search.infrastructure.ncbi.citation.Entrez.elink"
-        ) as mock_elink:
+        with patch("pubmed_search.infrastructure.ncbi.citation.Entrez.elink") as mock_elink:
             mock_elink.side_effect = Exception("API Error")
 
             results = await searcher.get_related_articles("999")
@@ -105,12 +96,8 @@ class TestCitationMixin:
         searcher = TestSearcher()
 
         with (
-            patch(
-                "pubmed_search.infrastructure.ncbi.citation.Entrez.elink"
-            ) as mock_elink,
-            patch(
-                "pubmed_search.infrastructure.ncbi.citation.Entrez.read"
-            ) as mock_read,
+            patch("pubmed_search.infrastructure.ncbi.citation.Entrez.elink") as mock_elink,
+            patch("pubmed_search.infrastructure.ncbi.citation.Entrez.read") as mock_read,
         ):
             mock_read.return_value = [
                 {
@@ -139,12 +126,8 @@ class TestCitationMixin:
         searcher = TestSearcher()
 
         with (
-            patch(
-                "pubmed_search.infrastructure.ncbi.citation.Entrez.elink"
-            ) as mock_elink,
-            patch(
-                "pubmed_search.infrastructure.ncbi.citation.Entrez.read"
-            ) as mock_read,
+            patch("pubmed_search.infrastructure.ncbi.citation.Entrez.elink") as mock_elink,
+            patch("pubmed_search.infrastructure.ncbi.citation.Entrez.read") as mock_read,
         ):
             mock_read.return_value = [
                 {
@@ -172,9 +155,7 @@ class TestCitationMixin:
 
         searcher = TestSearcher()
 
-        with patch.object(
-            searcher, "get_related_articles", return_value=[]
-        ) as mock_get:
+        with patch.object(searcher, "get_related_articles", return_value=[]) as mock_get:
             await searcher.find_related_articles("123")
             mock_get.assert_called_once_with("123", 5)
 
@@ -244,8 +225,8 @@ class TestICiteMixin:
     async def test_get_citation_metrics_batch(self, mock_icite_response):
         """Test getting citation metrics in batches."""
         from pubmed_search.infrastructure.ncbi.icite import (
-            ICiteMixin,
             MAX_PMIDS_PER_REQUEST,
+            ICiteMixin,
         )
 
         class TestSearcher(ICiteMixin):
@@ -302,9 +283,7 @@ class TestBatchMixin:
         searcher = TestSearcher()
 
         with (
-            patch(
-                "pubmed_search.infrastructure.ncbi.batch.Entrez.esearch"
-            ) as mock_search,
+            patch("pubmed_search.infrastructure.ncbi.batch.Entrez.esearch") as mock_search,
             patch("pubmed_search.infrastructure.ncbi.batch.Entrez.read") as mock_read,
         ):
             mock_read.return_value = {
@@ -329,9 +308,7 @@ class TestBatchMixin:
 
         searcher = TestSearcher()
 
-        with patch(
-            "pubmed_search.infrastructure.ncbi.batch.Entrez.esearch"
-        ) as mock_search:
+        with patch("pubmed_search.infrastructure.ncbi.batch.Entrez.esearch") as mock_search:
             mock_search.side_effect = Exception("API Error")
 
             result = await searcher.search_with_history("test")
@@ -347,9 +324,7 @@ class TestBatchMixin:
         searcher = TestSearcher()
 
         with (
-            patch(
-                "pubmed_search.infrastructure.ncbi.batch.Entrez.efetch"
-            ) as mock_fetch,
+            patch("pubmed_search.infrastructure.ncbi.batch.Entrez.efetch") as mock_fetch,
             patch("pubmed_search.infrastructure.ncbi.batch.Entrez.read") as mock_read,
         ):
             mock_read.return_value = {
@@ -359,9 +334,7 @@ class TestBatchMixin:
                             "PMID": "12345",
                             "Article": {
                                 "ArticleTitle": "Test Article",
-                                "AuthorList": [
-                                    {"LastName": "Smith", "ForeName": "John"}
-                                ],
+                                "AuthorList": [{"LastName": "Smith", "ForeName": "John"}],
                                 "Journal": {
                                     "Title": "Test Journal",
                                     "JournalIssue": {"PubDate": {"Year": "2024"}},
@@ -388,9 +361,7 @@ class TestBatchMixin:
 
         searcher = TestSearcher()
 
-        with patch(
-            "pubmed_search.infrastructure.ncbi.batch.Entrez.efetch"
-        ) as mock_fetch:
+        with patch("pubmed_search.infrastructure.ncbi.batch.Entrez.efetch") as mock_fetch:
             mock_fetch.side_effect = Exception("API Error")
 
             results = await searcher.fetch_batch_from_history("WEB_ENV", "1", 0, 10)

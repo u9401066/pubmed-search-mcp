@@ -16,4 +16,4 @@ Usage:
 from .milestone_detector import MilestoneDetector
 from .timeline_builder import TimelineBuilder
 
-__all__ = ["TimelineBuilder", "MilestoneDetector"]
+__all__ = ["MilestoneDetector", "TimelineBuilder"]

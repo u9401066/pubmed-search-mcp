@@ -39,9 +39,7 @@ class TestSearchPubmed:
 
     async def test_success(self, setup):
         tools, searcher = setup
-        searcher.search.return_value = [
-            {"pmid": "123", "title": "Test", "authors": ["A"]}
-        ]
+        searcher.search.return_value = [{"pmid": "123", "title": "Test", "authors": ["A"]}]
         result = await tools["search_pubmed"](query="diabetes")
         assert "Test" in result or "123" in result
 
@@ -54,9 +52,7 @@ class TestSearchPubmed:
     async def test_year_filters(self, setup):
         tools, searcher = setup
         searcher.search.return_value = [{"pmid": "1", "title": "T"}]
-        _result = await tools["search_pubmed"](
-            query="test", min_year=2020, max_year=2024
-        )
+        _result = await tools["search_pubmed"](query="test", min_year=2020, max_year=2024)
         searcher.search.assert_called_once()
         call_kwargs = searcher.search.call_args
         assert call_kwargs[1].get("min_year") == 2020 or call_kwargs[0][2] == 2020
@@ -123,9 +119,7 @@ class TestFindRelated:
 
     async def test_success(self, setup):
         tools, searcher = setup
-        searcher.find_related_articles.return_value = [
-            {"pmid": "999", "title": "Related"}
-        ]
+        searcher.find_related_articles.return_value = [{"pmid": "999", "title": "Related"}]
         result = await tools["find_related"](pmid="12345678")
         assert "Related" in result
 
@@ -149,9 +143,7 @@ class TestFindCitations:
 
     async def test_success(self, setup):
         tools, searcher = setup
-        searcher.find_citing_articles.return_value = [
-            {"pmid": "888", "title": "Citing"}
-        ]
+        searcher.find_citing_articles.return_value = [{"pmid": "888", "title": "Citing"}]
         result = await tools["find_citations"](pmid="12345678")
         assert "Citing" in result
 
@@ -169,9 +161,7 @@ class TestGetReferences:
 
     async def test_success(self, setup):
         tools, searcher = setup
-        searcher.get_article_references.return_value = [
-            {"pmid": "777", "title": "Reference"}
-        ]
+        searcher.get_article_references.return_value = [{"pmid": "777", "title": "Reference"}]
         result = await tools["get_references"](pmid="12345678")
         assert "Reference" in result
 
@@ -185,9 +175,7 @@ class TestAnalyzeClinicalQuestion:
     def test_returns_json_suggestion(self, setup):
         """analyze_clinical_question is sync and returns a JSON suggestion."""
         tools, _ = setup
-        result = tools["analyze_clinical_question"](
-            question="Does drug X reduce mortality?"
-        )
+        result = tools["analyze_clinical_question"](question="Does drug X reduce mortality?")
         parsed = json.loads(result)
         assert "question" in parsed
         assert "suggestion" in parsed
@@ -291,18 +279,14 @@ class TestCopilotExportCitations:
     async def test_success_ris(self, setup):
         """export_ris exists and should produce RIS output."""
         tools, searcher = setup
-        searcher.fetch_details.return_value = [
-            {"pmid": "123", "title": "T", "authors": ["A"]}
-        ]
+        searcher.fetch_details.return_value = [{"pmid": "123", "title": "T", "authors": ["A"]}]
         result = await tools["export_citations"](pmids="123", format="ris")
         assert "Exported" in result or "error" in result.lower()
 
     async def test_success_bibtex(self, setup):
         """export_bibtex exists and should produce BibTeX output."""
         tools, searcher = setup
-        searcher.fetch_details.return_value = [
-            {"pmid": "123", "title": "T", "authors": ["A"]}
-        ]
+        searcher.fetch_details.return_value = [{"pmid": "123", "title": "T", "authors": ["A"]}]
         result = await tools["export_citations"](pmids="123", format="bibtex")
         assert "Exported" in result or "error" in result.lower()
 
@@ -324,9 +308,7 @@ class TestCopilotSearchGene:
         """search_gene returns results from NCBI extended client."""
         tools, _ = setup
         mock_client = MagicMock()
-        mock_client.search_gene = AsyncMock(
-            return_value=[{"gene_id": "672", "symbol": "BRCA1"}]
-        )
+        mock_client.search_gene = AsyncMock(return_value=[{"gene_id": "672", "symbol": "BRCA1"}])
         with patch(
             "pubmed_search.infrastructure.sources.ncbi_extended.get_ncbi_extended_client",
             return_value=mock_client,
@@ -356,9 +338,7 @@ class TestCopilotSearchCompound:
         """search_compound returns results from NCBI extended client."""
         tools, _ = setup
         mock_client = MagicMock()
-        mock_client.search_compound = AsyncMock(
-            return_value=[{"cid": "4943", "name": "propofol"}]
-        )
+        mock_client.search_compound = AsyncMock(return_value=[{"cid": "4943", "name": "propofol"}])
         with patch(
             "pubmed_search.infrastructure.sources.ncbi_extended.get_ncbi_extended_client",
             return_value=mock_client,

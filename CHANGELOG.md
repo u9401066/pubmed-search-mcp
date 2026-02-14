@@ -16,6 +16,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.3.9] - 2026-02-14
+
+### Added
+
+- **Pre-commit Infrastructure** — 17 automated hooks for code quality enforcement
+  - ruff lint + ruff format (auto-fix)
+  - mypy strict type checking
+  - file-hygiene checker (`scripts/hooks/check_file_hygiene.py`)
+  - async-test-checker (`scripts/check_async_tests.py`)
+  - tool-count-sync with auto-stage (`scripts/hooks/check_tool_sync.py`)
+  - evolution-cycle consistency validator (`scripts/hooks/check_evolution_cycle.py`)
+  - Standard hooks: trailing-whitespace, end-of-file-fixer, check-yaml/toml/json, detect-private-key, etc.
+  - Pre-push hook: full pytest suite (`-n 4 --timeout=60`)
+- **MCP Performance Profiling** — `shared/profiling.py` module with 20 profiling tests
+  - Monkey-patches `BaseAPIClient._make_request` for request timing
+  - Profiling decorators and context managers
+
+### Changed
+
+- **ruff strictified to maximum** — `select = ["ALL"]` with ~40 justified global ignores in pyproject.toml
+- **mypy strictified** — `strict = true` with module overrides; 326→176 errors
+- **pytest multi-core enforced** — `-n 4 --timeout=60` via pyproject.toml `addopts`
+- **`# noqa` suppressions reduced from 18 to 9** — Root-cause fixes instead of suppression:
+  - `_ranking_score` / `_relevance_score` / `_quality_score` renamed to public fields (eliminates SLF001 ×3)
+  - `format` → `fmt` parameter rename in `ncbi/utils.py` `export_citations()` (eliminates A001 ×2)
+  - Dead `retryable_status_codes` parameter removed from `with_retry()` decorator (eliminates ARG001)
+  - Unused `index` parameter removed from `safe_run()` in `async_utils.py` (eliminates ARG001)
+  - `RateLimitExceeded` → `RateLimitExceededError` in pubtator client (eliminates N818)
+  - Bare `pass` in try-except replaced with `logger.debug()` / explicit `return False` (eliminates S110 ×2)
+- **Remaining 9 `# noqa` are all justified** — monkey-patching (SLF001), ExceptionGroup polyfill (N818), security rules (S310, S311, S603), XML import convention (N817), gather error handling (BLE001)
+
+### Fixed
+
+- **Dead code removed** — `retryable_status_codes` parameter in `with_retry()` was never used; retry logic uses typed exception classes (`RateLimitError`, `ServiceUnavailableError`, `NetworkError`)
+- **Field visibility corrected** — `_ranking_score`, `_relevance_score`, `_quality_score` in `UnifiedArticle` were accessed cross-module but named as private; now properly public
+
+---
+
 ## [0.3.8.1] - 2026-02-12
 
 ### Added
@@ -235,8 +273,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Tool Consolidation: 41 → 34 tools** (-7 tools) — Simplified API surface while preserving all functionality
   - **Timeline**: 6 → 3 tools
-    - `build_timeline_from_pmids` → merged into `build_research_timeline(pmids=...)` 
-    - `get_timeline_visualization` → merged into `build_research_timeline(output_format=...)` 
+    - `build_timeline_from_pmids` → merged into `build_research_timeline(pmids=...)`
+    - `get_timeline_visualization` → merged into `build_research_timeline(output_format=...)`
     - `list_milestone_patterns` → removed (static data, Agent can describe)
   - **Vision**: 2 → 1 tool
     - `reverse_image_search_pubmed` → merged into `analyze_figure_for_search(search_type=...)`
@@ -482,7 +520,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **README Tool Count Sync** - 21 → 34 MCP Tools
   - Fixed outdated tool count in all documentation
   - Tool descriptions auto-generated from FastMCP Tool.description
-  
+
 - **Git Pre-commit Skill Update** - Added `tool-count-sync` step
   - Now includes mandatory tool statistics sync before commit
   - Ensures documentation always matches codebase
@@ -901,7 +939,7 @@ Major infrastructure upgrade with Python 3.12+ features.
 ### Added
 
 - **New Core Module** (`src/pubmed_search/core/`):
-  - **Unified Exception Hierarchy**: 
+  - **Unified Exception Hierarchy**:
     - `PubMedSearchError` - Base with context, severity, retryable flags
     - `APIError` → `RateLimitError`, `NetworkError`, `ServiceUnavailableError`
     - `ValidationError` → `InvalidPMIDError`, `InvalidQueryError`, `InvalidParameterError`
@@ -1017,7 +1055,7 @@ Major architectural simplification for better Agent UX.
 - **Unified Search Entry Point**: `unified_search` now handles all multi-source searches
   - Integrated: `search_literature`, `search_europe_pmc`, `search_core`, `search_openalex`
   - Auto-executes: `merge_search_results`, `expand_search_queries`
-  
+
 - **Streamlined Fulltext Tools**:
   - `get_fulltext` retained (Europe PMC)
   - `get_text_mined_terms` retained (text mining annotations)
@@ -1129,7 +1167,7 @@ Added two major data source integrations:
 
 ### Technical Details
 
-- **CORE API**: 
+- **CORE API**:
   - Base URL: `https://api.core.ac.uk/v3`
   - Rate limits: 100/day (no key), 1000/day (free key), 5000/day (academic)
   - Environment variable: `CORE_API_KEY`

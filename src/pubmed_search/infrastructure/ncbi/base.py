@@ -8,7 +8,6 @@ Includes rate limiting to respect NCBI API limits.
 import asyncio
 import time
 from enum import Enum
-from typing import Optional
 
 from Bio import Entrez
 
@@ -51,9 +50,7 @@ class EntrezBase:
         api_key: Optional NCBI API key for higher rate limits.
     """
 
-    def __init__(
-        self, email: str = "your.email@example.com", api_key: Optional[str] = None
-    ):
+    def __init__(self, email: str = "your.email@example.com", api_key: str | None = None):
         """
         Initialize Entrez configuration.
 
@@ -87,6 +84,6 @@ class EntrezBase:
         return self._email
 
     @property
-    def api_key(self) -> Optional[str]:
+    def api_key(self) -> str | None:
         """Get configured API key."""
         return self._api_key

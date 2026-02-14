@@ -20,7 +20,7 @@ import asyncio
 import logging
 import os
 import sys
-from typing import Optional
+from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
@@ -34,15 +34,15 @@ from .tool_registry import register_all_mcp_tools
 logger = logging.getLogger(__name__)
 
 DEFAULT_EMAIL = "pubmed-search@example.com"
-DEFAULT_DATA_DIR = os.path.expanduser("~/.pubmed-search-mcp")
+DEFAULT_DATA_DIR = str(Path.home() / ".pubmed-search-mcp")
 
 
 def create_server(
     email: str = DEFAULT_EMAIL,
-    api_key: Optional[str] = None,
+    api_key: str | None = None,
     name: str = "pubmed-search",
     disable_security: bool = False,
-    data_dir: Optional[str] = None,
+    data_dir: str | None = None,
     json_response: bool = False,
     stateless_http: bool = False,
 ) -> FastMCP:
@@ -80,9 +80,7 @@ def create_server(
     # Configure transport security
     # Disable DNS rebinding protection for remote access
     if disable_security:
-        transport_security = TransportSecuritySettings(
-            enable_dns_rebinding_protection=False
-        )
+        transport_security = TransportSecuritySettings(enable_dns_rebinding_protection=False)
         logger.info("DNS rebinding protection disabled for remote access")
     else:
         transport_security = None
@@ -111,6 +109,12 @@ def create_server(
     mcp._pubmed_session_manager = session_manager
     mcp._searcher = searcher
     mcp._strategy_generator = strategy_generator
+
+    # Install performance profiling (dev feature, toggled by PUBMED_PROFILING=1)
+    from pubmed_search.shared.profiling import install_http_profiling, install_profiling
+
+    if install_profiling(mcp):
+        install_http_profiling()
 
     logger.info("PubMed Search MCP Server initialized successfully")
 
@@ -171,9 +175,7 @@ def start_http_api_background(session_manager, searcher, port: int = 8765):
                 # Try to fetch if not in cache (async → sync bridge)
                 if searcher:
                     try:
-                        articles = _bg_loop.run_until_complete(
-                            searcher.fetch_details([pmid])
-                        )
+                        articles = _bg_loop.run_until_complete(searcher.fetch_details([pmid]))
                         if articles:
                             session_manager.add_to_cache(articles)
                             self._send_json(
@@ -185,7 +187,7 @@ def start_http_api_background(session_manager, searcher, port: int = 8765):
                             )
                             return
                     except Exception as e:
-                        self._send_json({"detail": f"PubMed API error: {str(e)}"}, 502)
+                        self._send_json({"detail": f"PubMed API error: {e!s}"}, 502)
                         return
 
                 self._send_json({"detail": f"Article PMID:{pmid} not found"}, 404)
@@ -197,7 +199,7 @@ def start_http_api_background(session_manager, searcher, port: int = 8765):
                 return
 
             # Root - API info
-            if path == "/" or path == "":
+            if path in {"/", ""}:
                 self._send_json(
                     {
                         "service": "pubmed-search-mcp HTTP API",
@@ -248,11 +250,12 @@ def _detect_git_email() -> str | None:
     if not git:
         return None
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # noqa: S603
             [git, "config", "user.email"],
             capture_output=True,
             text=True,
             timeout=3,
+            check=False,
         )
         email = result.stdout.strip()
         return email if email and "@" in email else None
@@ -262,7 +265,6 @@ def _detect_git_email() -> str | None:
 
 def main():
     """Run the MCP server."""
-    import os
 
     # Configure logging
     logging.basicConfig(
@@ -284,10 +286,7 @@ def main():
                 logger.info(f"No email configured, using default: {email}")
 
     # Get API key: CLI arg → env var
-    if len(sys.argv) > 2:
-        api_key = sys.argv[2]
-    else:
-        api_key = os.environ.get("NCBI_API_KEY", "").strip() or None
+    api_key = sys.argv[2] if len(sys.argv) > 2 else os.environ.get("NCBI_API_KEY", "").strip() or None
 
     # Get HTTP API port from environment (default: 8765)
     http_api_port = int(os.environ.get("PUBMED_HTTP_API_PORT", "8765"))
@@ -297,9 +296,7 @@ def main():
 
     # Start background HTTP API for MCP-to-MCP communication
     # This runs alongside the stdio MCP server
-    start_http_api_background(
-        server._pubmed_session_manager, server._searcher, port=http_api_port
-    )
+    start_http_api_background(server._pubmed_session_manager, server._searcher, port=http_api_port)
 
     # Run stdio MCP server (blocks)
     server.run()

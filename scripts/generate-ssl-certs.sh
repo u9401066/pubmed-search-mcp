@@ -2,7 +2,7 @@
 # =============================================================================
 # PubMed Search MCP - SSL Certificate Generation Script
 # =============================================================================
-# 
+#
 # Generates self-signed SSL certificates for development/testing.
 # For production, use Let's Encrypt or your organization's CA.
 #

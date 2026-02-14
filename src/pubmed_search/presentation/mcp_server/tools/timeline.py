@@ -155,11 +155,11 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             # Format output
             if output_format == "mermaid":
                 return timeline.to_mermaid()
-            elif output_format == "json":
+            if output_format == "json":
                 return json.dumps(timeline.to_dict(), indent=2, ensure_ascii=False)
-            elif output_format == "timeline_js":
+            if output_format == "timeline_js":
                 return json.dumps(timeline.to_json_timeline(), indent=2)
-            elif output_format == "d3":
+            if output_format == "d3":
                 d3_data = {
                     "nodes": [
                         {
@@ -173,11 +173,10 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                     ]
                 }
                 return json.dumps(d3_data, indent=2)
-            else:
-                return format_timeline_text(timeline)
+            return format_timeline_text(timeline)
 
         except Exception as e:
-            logger.error(f"Timeline build failed: {e}")
+            logger.exception(f"Timeline build failed: {e}")
             return ResponseFormatter.error(
                 error=str(e),
                 suggestion="Try a simpler topic or check network connection",
@@ -253,10 +252,8 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             return json.dumps(analysis, indent=2, ensure_ascii=False)
 
         except Exception as e:
-            logger.error(f"Milestone analysis failed: {e}")
-            return ResponseFormatter.error(
-                error=str(e), tool_name="analyze_timeline_milestones"
-            )
+            logger.exception(f"Milestone analysis failed: {e}")
+            return ResponseFormatter.error(error=str(e), tool_name="analyze_timeline_milestones")
 
     @mcp.tool()
     async def compare_timelines(
@@ -312,23 +309,15 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                     "year_range": timeline.year_range,
                     "duration_years": timeline.duration_years,
                     "milestone_summary": timeline.milestone_summary,
-                    "first_event": timeline.events[0].to_dict()
-                    if timeline.events
-                    else None,
-                    "latest_event": timeline.events[-1].to_dict()
-                    if timeline.events
-                    else None,
+                    "first_event": timeline.events[0].to_dict() if timeline.events else None,
+                    "latest_event": timeline.events[-1].to_dict() if timeline.events else None,
                 }
                 comparison["topics"].append(topic_data)
 
             # Generate comparison summary
             comparison["summary"] = {
                 "earliest_research": min(
-                    (
-                        t["year_range"][0]
-                        for t in comparison["topics"]
-                        if t["year_range"]
-                    ),
+                    (t["year_range"][0] for t in comparison["topics"] if t["year_range"]),
                     default=None,
                 ),
                 "most_milestones": max(
@@ -344,7 +333,7 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             return json.dumps(comparison, indent=2, ensure_ascii=False)
 
         except Exception as e:
-            logger.error(f"Timeline comparison failed: {e}")
+            logger.exception(f"Timeline comparison failed: {e}")
             return ResponseFormatter.error(error=str(e), tool_name="compare_timelines")
 
     logger.info("Registered 3 timeline tools")

@@ -8,10 +8,10 @@ Run with: pytest -m integration
 Skip with: pytest -m "not integration"
 """
 
-import pytest
 import os
 import time
 
+import pytest
 
 # Skip all integration tests - they make real API calls, not for CI
 pytestmark = [
@@ -52,10 +52,9 @@ class TestRealPubMedSearch:
                     assert results[0].pmid is not None
                     assert results[0].title is not None
                     return  # Success
-                else:
-                    # Empty results, retry after delay
-                    last_error = "Empty results returned"
-                    time.sleep(2)
+                # Empty results, retry after delay
+                last_error = "Empty results returned"
+                time.sleep(2)
             except Exception as e:
                 last_error = str(e)
                 time.sleep(2)
@@ -196,15 +195,11 @@ class TestRealImageSearch:
         advice = advisor.advise("chest X-ray pneumonia")
 
         assert advice.is_suitable is True
-        assert (
-            advice.recommended_image_type == "x"
-        )  # x = X-ray (not xg which is Exclude Graphics)
+        assert advice.recommended_image_type == "x"  # x = X-ray (not xg which is Exclude Graphics)
 
         # Step 2: Service executes search with advisor guidance
         service = ImageSearchService()
-        result, success = self._search_with_retry(
-            service, "chest X-ray pneumonia", advice.recommended_image_type
-        )
+        result, success = self._search_with_retry(service, "chest X-ray pneumonia", advice.recommended_image_type)
 
         if not success:
             pytest.skip("Open-i API unreliable (timeout/empty after retries)")
@@ -257,10 +252,7 @@ class TestRealImageSearch:
 
         assert advice.is_suitable is False
         assert len(advice.suggestions) > 0
-        assert any(
-            "search_literature" in s or "unified_search" in s
-            for s in advice.suggestions
-        )
+        assert any("search_literature" in s or "unified_search" in s for s in advice.suggestions)
 
         # Service should still work but include suggestions
         service = ImageSearchService()

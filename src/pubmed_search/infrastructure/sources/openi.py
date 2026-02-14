@@ -41,9 +41,8 @@ import math
 import urllib.parse
 from typing import Any
 
-from pubmed_search.infrastructure.sources.base_client import BaseAPIClient
-
 from pubmed_search.domain.entities.image import ImageResult, ImageSource
+from pubmed_search.infrastructure.sources.base_client import BaseAPIClient
 
 logger = logging.getLogger(__name__)
 
@@ -386,72 +385,47 @@ class OpenIClient(BaseAPIClient):
 
         # Validate image_type
         if image_type and image_type not in self.VALID_IMAGE_TYPES:
-            logger.warning(
-                f"Invalid image_type '{image_type}', "
-                f"valid: {self.VALID_IMAGE_TYPES}. Ignoring filter."
-            )
+            logger.warning(f"Invalid image_type '{image_type}', valid: {self.VALID_IMAGE_TYPES}. Ignoring filter.")
             image_type = None
 
         # Validate collection
         if collection and collection not in self.VALID_COLLECTIONS:
-            logger.warning(
-                f"Invalid collection '{collection}', "
-                f"valid: {self.VALID_COLLECTIONS}. Ignoring filter."
-            )
+            logger.warning(f"Invalid collection '{collection}', valid: {self.VALID_COLLECTIONS}. Ignoring filter.")
             collection = None
 
         # Validate sort_by
         if sort_by and sort_by not in self.VALID_SORT_BY:
-            logger.warning(
-                f"Invalid sort_by '{sort_by}', valid: {self.VALID_SORT_BY}. Ignoring."
-            )
+            logger.warning(f"Invalid sort_by '{sort_by}', valid: {self.VALID_SORT_BY}. Ignoring.")
             sort_by = None
 
         # Validate article_type
         if article_type and article_type not in self.VALID_ARTICLE_TYPES:
-            logger.warning(
-                f"Invalid article_type '{article_type}', "
-                f"valid: {self.VALID_ARTICLE_TYPES}. Ignoring."
-            )
+            logger.warning(f"Invalid article_type '{article_type}', valid: {self.VALID_ARTICLE_TYPES}. Ignoring.")
             article_type = None
 
         # Validate specialty
         if specialty and specialty not in self.VALID_SPECIALTIES:
-            logger.warning(
-                f"Invalid specialty '{specialty}', "
-                f"valid: {self.VALID_SPECIALTIES}. Ignoring."
-            )
+            logger.warning(f"Invalid specialty '{specialty}', valid: {self.VALID_SPECIALTIES}. Ignoring.")
             specialty = None
 
         # Validate license_type
         if license_type and license_type not in self.VALID_LICENSES:
-            logger.warning(
-                f"Invalid license_type '{license_type}', "
-                f"valid: {self.VALID_LICENSES}. Ignoring."
-            )
+            logger.warning(f"Invalid license_type '{license_type}', valid: {self.VALID_LICENSES}. Ignoring.")
             license_type = None
 
         # Validate subset
         if subset and subset not in self.VALID_SUBSETS:
-            logger.warning(
-                f"Invalid subset '{subset}', valid: {self.VALID_SUBSETS}. Ignoring."
-            )
+            logger.warning(f"Invalid subset '{subset}', valid: {self.VALID_SUBSETS}. Ignoring.")
             subset = None
 
         # Validate search_fields
         if search_fields and search_fields not in self.VALID_SEARCH_FIELDS:
-            logger.warning(
-                f"Invalid search_fields '{search_fields}', "
-                f"valid: {self.VALID_SEARCH_FIELDS}. Ignoring."
-            )
+            logger.warning(f"Invalid search_fields '{search_fields}', valid: {self.VALID_SEARCH_FIELDS}. Ignoring.")
             search_fields = None
 
         # Validate hmp_type
         if hmp_type and hmp_type not in self.VALID_HMP_TYPES:
-            logger.warning(
-                f"Invalid hmp_type '{hmp_type}', "
-                f"valid: {self.VALID_HMP_TYPES}. Ignoring."
-            )
+            logger.warning(f"Invalid hmp_type '{hmp_type}', valid: {self.VALID_HMP_TYPES}. Ignoring.")
             hmp_type = None
 
         # Calculate pages needed

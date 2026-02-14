@@ -33,4 +33,4 @@ Usage for integration:
 from .server import create_server, main
 from .tools import register_all_tools
 
-__all__ = ["create_server", "register_all_tools", "main"]
+__all__ = ["create_server", "main", "register_all_tools"]

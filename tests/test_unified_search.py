@@ -7,8 +7,9 @@ This tests the unified search gateway which provides:
 - Result aggregation and ranking
 """
 
-import pytest
 from unittest.mock import AsyncMock, Mock
+
+import pytest
 from mcp.server.fastmcp import FastMCP
 
 
@@ -82,8 +83,8 @@ class TestDispatchStrategy:
 
     async def test_get_ranking_config_returns_config(self, analyzer):
         """get_ranking_config should return a RankingConfig."""
-        from pubmed_search.presentation.mcp_server.tools.unified import DispatchStrategy
         from pubmed_search.application.search.result_aggregator import RankingConfig
+        from pubmed_search.presentation.mcp_server.tools.unified import DispatchStrategy
 
         analysis = analyzer.analyze("test query")
         config = DispatchStrategy.get_ranking_config(analysis)
@@ -226,9 +227,10 @@ class TestFormatFunctions:
     async def test_format_as_json_returns_valid_json(self):
         """_format_as_json should return valid JSON."""
         import json
-        from pubmed_search.presentation.mcp_server.tools.unified import _format_as_json
-        from pubmed_search.application.search.result_aggregator import AggregationStats
+
         from pubmed_search.application.search import QueryAnalyzer
+        from pubmed_search.application.search.result_aggregator import AggregationStats
+        from pubmed_search.presentation.mcp_server.tools.unified import _format_as_json
 
         analyzer = QueryAnalyzer()
         analysis = analyzer.analyze("test query")

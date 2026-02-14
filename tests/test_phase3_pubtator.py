@@ -13,17 +13,17 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from pubmed_search.application.search.result_aggregator import (
+    RankingConfig,
+    RankingDimension,
+    ResultAggregator,
+)
 from pubmed_search.application.search.semantic_enhancer import (
     EnhancedQuery,
     ExpandedTerm,
     SearchPlan,
     SemanticEnhancer,
     enhance_query,
-)
-from pubmed_search.application.search.result_aggregator import (
-    RankingConfig,
-    RankingDimension,
-    ResultAggregator,
 )
 from pubmed_search.infrastructure.cache.entity_cache import (
     EntityCache,
@@ -34,7 +34,6 @@ from pubmed_search.infrastructure.pubtator.models import (
     PubTatorEntity,
     RelationMatch,
 )
-
 
 # =============================================================================
 # SemanticEnhancer Tests
@@ -174,7 +173,6 @@ class TestSemanticEnhancerAsync:
         # Create enhancer with very short timeout
         async def slow_resolve(*args, **kwargs):
             await asyncio.sleep(10)  # Simulate slow API
-            return None
 
         client = AsyncMock()
         client.resolve_entity = slow_resolve
@@ -188,10 +186,7 @@ class TestSemanticEnhancerAsync:
         enhanced = await enhancer.enhance("test query")
 
         # Should fall back to basic enhancement
-        assert (
-            enhanced.metadata.get("timeout") is True
-            or enhanced.metadata.get("fallback") is True
-        )
+        assert enhanced.metadata.get("timeout") is True or enhanced.metadata.get("fallback") is True
 
 
 # =============================================================================
@@ -313,9 +308,7 @@ class TestResultAggregatorEntityMatch:
         """Create mock article."""
         article = MagicMock()
         article.title = "Propofol for ICU sedation: a randomized trial"
-        article.abstract = (
-            "We studied propofol versus dexmedetomidine for sedation in ICU patients."
-        )
+        article.abstract = "We studied propofol versus dexmedetomidine for sedation in ICU patients."
         article.primary_source = "pubmed"
         article.sources = [MagicMock(source="pubmed")]
         article.keywords = []
@@ -324,9 +317,9 @@ class TestResultAggregatorEntityMatch:
         article.citation_metrics = None
         article.doi = None
         article.article_type = None
-        article._ranking_score = None
-        article._relevance_score = None
-        article._quality_score = None
+        article.ranking_score = None
+        article.relevance_score = None
+        article.quality_score = None
         return article
 
     async def test_entity_match_scoring_with_entities(self, mock_article):
@@ -351,9 +344,7 @@ class TestResultAggregatorEntityMatch:
 
     async def test_entity_match_partial_match(self, mock_article):
         """Test entity_match with partial entity matches."""
-        config = RankingConfig(
-            matched_entities=["Propofol", "Ketamine", "Dexmedetomidine"]
-        )
+        config = RankingConfig(matched_entities=["Propofol", "Ketamine", "Dexmedetomidine"])
 
         aggregator = ResultAggregator(config)
         score = aggregator._calculate_entity_match(mock_article, config)

@@ -5,7 +5,7 @@ Provides functionality for processing large result sets using NCBI History Serve
 """
 
 import asyncio
-from typing import Any, Dict, List
+from typing import Any
 
 from Bio import Entrez
 
@@ -21,9 +21,7 @@ class BatchMixin:
         fetch_batch_from_history: Fetch results in batches
     """
 
-    async def search_with_history(
-        self, query: str, batch_size: int = 500
-    ) -> Dict[str, Any]:
+    async def search_with_history(self, query: str, batch_size: int = 500) -> dict[str, Any]:
         """
         Search large result sets efficiently using NCBI History Server.
         Returns WebEnv and QueryKey for batch processing.
@@ -41,9 +39,7 @@ class BatchMixin:
         """
         try:
             await _rate_limit()
-            handle = await asyncio.to_thread(
-                Entrez.esearch, db="pubmed", term=query, usehistory="y", retmax=0
-            )
+            handle = await asyncio.to_thread(Entrez.esearch, db="pubmed", term=query, usehistory="y", retmax=0)
             search_results = await asyncio.to_thread(Entrez.read, handle)
             handle.close()
 
@@ -58,7 +54,7 @@ class BatchMixin:
 
     async def fetch_batch_from_history(
         self, webenv: str, query_key: str, start: int, batch_size: int
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Fetch a batch of results using History Server credentials.
 
@@ -110,17 +106,10 @@ class BatchMixin:
                     if "AuthorList" in article_data:
                         for author in article_data["AuthorList"]:
                             if "LastName" in author:
-                                authors.append(
-                                    f"{author['LastName']} {author.get('ForeName', '')}".strip()
-                                )
+                                authors.append(f"{author['LastName']} {author.get('ForeName', '')}".strip())
 
                     journal = article_data.get("Journal", {}).get("Title", "Unknown")
-                    year = (
-                        article_data.get("Journal", {})
-                        .get("JournalIssue", {})
-                        .get("PubDate", {})
-                        .get("Year", "")
-                    )
+                    year = article_data.get("Journal", {}).get("JournalIssue", {}).get("PubDate", {}).get("Year", "")
 
                     results.append(
                         {

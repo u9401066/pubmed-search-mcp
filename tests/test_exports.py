@@ -2,8 +2,9 @@
 Tests for Export modules - formats.py and links.py.
 """
 
-import pytest
 import json
+
+import pytest
 
 
 class TestExportFormats:
@@ -291,28 +292,28 @@ class TestExportArticles:
         """Test export_articles with RIS format."""
         from pubmed_search.application.export.formats import export_articles
 
-        result = export_articles([sample_article], format="ris")
+        result = export_articles([sample_article], fmt="ris")
         assert "TY  - JOUR" in result
 
     async def test_export_articles_bibtex(self, sample_article):
         """Test export_articles with BibTeX format."""
         from pubmed_search.application.export.formats import export_articles
 
-        result = export_articles([sample_article], format="bibtex")
+        result = export_articles([sample_article], fmt="bibtex")
         assert "@article{" in result
 
     async def test_export_articles_csv(self, sample_article):
         """Test export_articles with CSV format."""
         from pubmed_search.application.export.formats import export_articles
 
-        result = export_articles([sample_article], format="csv")
+        result = export_articles([sample_article], fmt="csv")
         assert "12345678" in result
 
     async def test_export_articles_json(self, sample_article):
         """Test export_articles with JSON format."""
         from pubmed_search.application.export.formats import export_articles
 
-        result = export_articles([sample_article], format="json")
+        result = export_articles([sample_article], fmt="json")
         parsed = json.loads(result)
         assert "articles" in parsed
         assert len(parsed["articles"]) == 1
@@ -323,7 +324,7 @@ class TestExportArticles:
 
         # Should raise ValueError for unsupported format
         with pytest.raises(ValueError, match="Unsupported format"):
-            export_articles([sample_article], format="invalid")
+            export_articles([sample_article], fmt="invalid")
 
 
 class TestFulltextLinks:
@@ -368,9 +369,7 @@ class TestFulltextLinks:
 
         assert result["access_type"] == "abstract_only"
 
-    async def test_get_batch_fulltext_links(
-        self, sample_article_with_pmc, sample_article_no_pmc
-    ):
+    async def test_get_batch_fulltext_links(self, sample_article_with_pmc, sample_article_no_pmc):
         """Test getting fulltext links for multiple articles."""
         from pubmed_search.application.export.links import get_batch_fulltext_links
 
@@ -381,9 +380,7 @@ class TestFulltextLinks:
         assert results[0]["has_free_fulltext"] is True
         assert results[1]["has_free_fulltext"] is False
 
-    async def test_summarize_access(
-        self, sample_article_with_pmc, sample_article_no_pmc
-    ):
+    async def test_summarize_access(self, sample_article_with_pmc, sample_article_no_pmc):
         """Test summarizing fulltext access."""
         from pubmed_search.application.export.links import summarize_access
 

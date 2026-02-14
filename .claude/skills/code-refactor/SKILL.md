@@ -64,13 +64,13 @@ def process_order(order):
     if order.total < 0:
         raise ValueError("Invalid total")
     # ... 更多驗證
-    
+
     # 計算價格 (15 行)
     subtotal = sum(item.price * item.qty for item in order.items)
     tax = subtotal * 0.05
     total = subtotal + tax
     # ... 更多計算
-    
+
     # 儲存訂單 (10 行)
     # ...
 
@@ -106,7 +106,7 @@ class User:
         self.address_line2 = ...
         self.city = ...
         self.postal_code = ...
-    
+
     def validate_email(self): ...
     def format_address(self): ...
     def calculate_shipping(self): ...
@@ -119,7 +119,7 @@ class Address:
     line2: str | None
     city: str
     postal_code: str
-    
+
     def format(self) -> str:
         return f"{self.line1}\n{self.city} {self.postal_code}"
 

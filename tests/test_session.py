@@ -5,10 +5,10 @@ Tests for Session management and Article caching.
 from datetime import datetime, timedelta
 
 from pubmed_search.application.session import (
-    CachedArticle,
-    SearchRecord,
-    ResearchSession,
     ArticleCache,
+    CachedArticle,
+    ResearchSession,
+    SearchRecord,
     SessionManager,
 )
 
@@ -33,9 +33,7 @@ class TestCachedArticle:
 
     async def test_cached_article_not_expired(self):
         """Test that fresh cache entry is not expired."""
-        article = CachedArticle(
-            pmid="123", title="Test", authors=[], abstract="", journal="", year=""
-        )
+        article = CachedArticle(pmid="123", title="Test", authors=[], abstract="", journal="", year="")
         assert not article.is_expired(max_age_days=7)
 
     async def test_cached_article_expired(self):

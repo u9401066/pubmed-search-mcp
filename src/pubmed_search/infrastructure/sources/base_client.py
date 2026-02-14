@@ -17,6 +17,7 @@ import time
 from typing import Any
 
 import httpx
+from typing_extensions import Self
 
 from pubmed_search.shared.async_utils import CircuitBreaker
 
@@ -85,9 +86,7 @@ class BaseAPIClient:
                 keepalive_expiry=30.0,
             ),
         )
-        self._circuit_breaker = circuit_breaker or CircuitBreaker(
-            failure_threshold=10, recovery_timeout=60.0
-        )
+        self._circuit_breaker = circuit_breaker or CircuitBreaker(failure_threshold=10, recovery_timeout=60.0)
 
     async def _rate_limit(self) -> None:
         """Enforce minimum interval between requests."""
@@ -98,7 +97,7 @@ class BaseAPIClient:
 
     def _build_url(self, url: str) -> str:
         """Build full URL from path or full URL."""
-        if url.startswith("http://") or url.startswith("https://"):
+        if url.startswith(("http://", "https://")):
             return url
         return f"{self._base_url}{url}"
 
@@ -130,9 +129,7 @@ class BaseAPIClient:
             await self._rate_limit()
             try:
                 async with self._circuit_breaker:
-                    response = await self._execute_request(
-                        full_url, method=method, data=data, headers=headers
-                    )
+                    response = await self._execute_request(full_url, method=method, data=data, headers=headers)
 
                     # Handle expected error codes (e.g., 404 = not found)
                     expected = self._handle_expected_status(response, full_url)
@@ -149,39 +146,32 @@ class BaseAPIClient:
                             )
                             await asyncio.sleep(retry_after)
                             continue
-                        logger.warning(
-                            f"{self._service_name}: Rate limit exceeded after retries"
-                        )
+                        logger.warning(f"{self._service_name}: Rate limit exceeded after retries")
                         return None
 
                     response.raise_for_status()
                     return self._parse_response(response, expect_json)
 
             except httpx.HTTPStatusError as e:
-                logger.error(
-                    f"{self._service_name} HTTP error "
-                    f"{e.response.status_code}: {e.response.reason_phrase}"
+                logger.exception(
+                    f"{self._service_name} HTTP error {e.response.status_code}: {e.response.reason_phrase}"
                 )
                 return None
             except httpx.RequestError as e:
                 if attempt < self._MAX_RETRIES:
-                    logger.warning(
-                        f"{self._service_name} request error (attempt {attempt + 1}): {e}"
-                    )
+                    logger.warning(f"{self._service_name} request error (attempt {attempt + 1}): {e}")
                     await asyncio.sleep(2 ** (attempt + 1))
                     continue
-                logger.error(f"{self._service_name} request failed: {e}")
+                logger.exception(f"{self._service_name} request failed: {e}")
                 return None
             except Exception as e:
                 # RateLimitError from circuit breaker should propagate
                 from pubmed_search.shared.exceptions import RateLimitError
 
                 if isinstance(e, RateLimitError):
-                    logger.warning(
-                        f"{self._service_name}: Circuit breaker open, skipping request"
-                    )
+                    logger.warning(f"{self._service_name}: Circuit breaker open, skipping request")
                     return None
-                logger.error(f"{self._service_name} request failed: {e}")
+                logger.exception(f"{self._service_name} request failed: {e}")
                 return None
 
         return None
@@ -199,9 +189,7 @@ class BaseAPIClient:
             return await self._client.post(url, json=data, headers=headers or {})
         return await self._client.get(url, headers=headers or {})
 
-    def _handle_expected_status(
-        self, response: httpx.Response, url: str
-    ) -> dict[str, Any] | str | None:
+    def _handle_expected_status(self, response: httpx.Response, url: str) -> dict[str, Any] | str | None:
         """
         Handle expected non-200 status codes that shouldn't trigger retry.
 
@@ -213,9 +201,7 @@ class BaseAPIClient:
         """
         return _CONTINUE
 
-    def _parse_response(
-        self, response: httpx.Response, expect_json: bool
-    ) -> dict[str, Any] | str:
+    def _parse_response(self, response: httpx.Response, expect_json: bool) -> dict[str, Any] | str:
         """Parse response body. Override for custom extraction logic."""
         if expect_json:
             return response.json()
@@ -233,10 +219,10 @@ class BaseAPIClient:
         """Close the underlying HTTP client."""
         await self._client.aclose()
 
-    async def __aenter__(self) -> BaseAPIClient:
+    async def __aenter__(self) -> Self:
         return self
 
-    async def __aexit__(self, *args: Any) -> None:
+    async def __aexit__(self, *args: object) -> None:
         await self.close()
 
 

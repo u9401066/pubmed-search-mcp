@@ -19,7 +19,6 @@ from pubmed_search.application.search.query_analyzer import (
     QueryAnalyzer,
 )
 
-
 # ============================================================================
 # ImageQueryAdvisor Tests
 # ============================================================================
@@ -70,9 +69,7 @@ class TestImageQueryAdvisorSuitability:
         assert advice.is_suitable is False
 
     async def test_meta_analysis_query(self):
-        advice = self.advisor.advise(
-            "systematic review meta-analysis treatment efficacy"
-        )
+        advice = self.advisor.advise("systematic review meta-analysis treatment efficacy")
         assert advice.is_suitable is False
 
     async def test_guideline_query(self):
@@ -92,10 +89,7 @@ class TestImageQueryAdvisorSuitability:
         advice = self.advisor.advise("propofol mechanism of action pharmacodynamics")
         assert advice.is_suitable is False
         assert len(advice.suggestions) > 0
-        assert any(
-            "unified_search" in s or "search_literature" in s
-            for s in advice.suggestions
-        )
+        assert any("unified_search" in s or "search_literature" in s for s in advice.suggestions)
 
 
 class TestImageQueryAdvisorImageType:
@@ -112,9 +106,7 @@ class TestImageQueryAdvisorImageType:
     async def test_recommend_mc_for_microscopy(self):
         advice = self.advisor.advise("histology liver biopsy pathology")
         assert advice.recommended_image_type == "mc"
-        assert (
-            "顯微鏡" in advice.image_type_reason or "病理" in advice.image_type_reason
-        )
+        assert "顯微鏡" in advice.image_type_reason or "病理" in advice.image_type_reason
 
     async def test_recommend_ph_for_photo(self):
         advice = self.advisor.advise("skin lesion dermatology clinical photo")
@@ -272,9 +264,7 @@ class TestImageQueryAdvisorCollection:
     async def test_mpx_collection_for_teaching(self):
         advice = self.advisor.advise("clinical case teaching image")
         assert advice.recommended_collection == "mpx"
-        assert (
-            "教學" in advice.collection_reason or "MedPix" in advice.collection_reason
-        )
+        assert "教學" in advice.collection_reason or "MedPix" in advice.collection_reason
 
     async def test_hmd_collection_for_medical_history(self):
         advice = self.advisor.advise("history of medicine vintage")
@@ -363,9 +353,7 @@ class TestNonEnglishDetection:
     async def test_english_query_not_flagged(self):
         advice = self.advisor.advise("chest X-ray pneumonia")
         # English queries should NOT trigger non-English warnings
-        non_english_warnings = [
-            w for w in advice.warnings if "English" in w or "英文" in w or "翻譯" in w
-        ]
+        non_english_warnings = [w for w in advice.warnings if "English" in w or "英文" in w or "翻譯" in w]
         assert len(non_english_warnings) == 0
 
     async def test_chinese_query_detected(self):
@@ -396,9 +384,7 @@ class TestNonEnglishDetection:
         """Unknown CJK terms should trigger warning but NOT translation."""
         advice = self.advisor.advise("罕見疾病名稱")
         assert advice.has_warnings
-        has_translate_warning = any(
-            "English" in w or "translate" in w.lower() for w in advice.warnings
-        )
+        has_translate_warning = any("English" in w or "translate" in w.lower() for w in advice.warnings)
         assert has_translate_warning
         # MCP does NOT translate
         assert advice.enhanced_query is None
@@ -407,9 +393,7 @@ class TestNonEnglishDetection:
         """Warning should include translation examples for Agent."""
         advice = self.advisor.advise("肺炎")
         # Should have suggestions with examples
-        has_example = any(
-            "pneumonia" in s or "fracture" in s for s in advice.suggestions
-        )
+        has_example = any("pneumonia" in s or "fracture" in s for s in advice.suggestions)
         assert has_example
 
     # --- _detect_non_english internal ---
@@ -429,10 +413,7 @@ class TestNonEnglishDetection:
         result = self.advisor._detect_non_english("肺炎")
         assert "error_message" in result
         # Should mention English requirement and translation
-        assert (
-            "English" in result["error_message"]
-            or "translate" in result["error_message"]
-        )
+        assert "English" in result["error_message"] or "translate" in result["error_message"]
 
     async def test_detect_returns_examples(self):
         """_detect_non_english should return translation examples."""
@@ -614,16 +595,12 @@ class TestAdvisorIntegration:
             total_count=1,
             sources_used=["openi"],
             query="covid-19 chest",
-            advisor_warnings=[
-                "Open-i 索引凍結於 ~2020，查詢含 'covid-19' 可能找不到相關結果"
-            ],
+            advisor_warnings=["Open-i 索引凍結於 ~2020，查詢含 'covid-19' 可能找不到相關結果"],
             advisor_suggestions=[],
             recommended_image_type="x",  # x = X-ray (not xg)
         )
 
-        with patch(
-            "pubmed_search.presentation.mcp_server.tools.image_search.ImageSearchService"
-        ) as MockService:
+        with patch("pubmed_search.presentation.mcp_server.tools.image_search.ImageSearchService") as MockService:
             MockService.return_value.search = AsyncMock(return_value=mock_result)
             result = await tool_fn(query="covid-19 chest")
 

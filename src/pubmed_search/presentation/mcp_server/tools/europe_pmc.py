@@ -25,7 +25,7 @@ Phase 3 Updates (v0.2.8):
 """
 
 import logging
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Union
 
 from mcp.server.fastmcp import FastMCP
 
@@ -55,8 +55,8 @@ def register_europe_pmc_tools(mcp: FastMCP):
     async def search_europe_pmc(
         query: str,
         limit: int = 10,
-        min_year: Optional[int] = None,
-        max_year: Optional[int] = None,
+        min_year: int | None = None,
+        max_year: int | None = None,
         open_access_only: bool = False,
         has_fulltext: bool = False,
         sort: str = "relevance",
@@ -89,21 +89,13 @@ def register_europe_pmc_tools(mcp: FastMCP):
                 tool_name="search_europe_pmc",
             )
 
-        normalized_limit = InputNormalizer.normalize_limit(
-            limit, default=10, min_val=1, max_val=100
-        )
+        normalized_limit = InputNormalizer.normalize_limit(limit, default=10, min_val=1, max_val=100)
         normalized_min_year = InputNormalizer.normalize_year(min_year)
         normalized_max_year = InputNormalizer.normalize_year(max_year)
-        normalized_oa_only = InputNormalizer.normalize_bool(
-            open_access_only, default=False
-        )
-        normalized_fulltext = InputNormalizer.normalize_bool(
-            has_fulltext, default=False
-        )
+        normalized_oa_only = InputNormalizer.normalize_bool(open_access_only, default=False)
+        normalized_fulltext = InputNormalizer.normalize_bool(has_fulltext, default=False)
 
-        logger.info(
-            f"Searching Europe PMC: query='{normalized_query}', limit={normalized_limit}"
-        )
+        logger.info(f"Searching Europe PMC: query='{normalized_query}', limit={normalized_limit}")
 
         try:
             client = get_europe_pmc_client()
@@ -114,7 +106,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
                 "date": "P_PDATE_D desc",
                 "cited": "CITED desc",
             }
-            sort_param = sort_map.get(sort, None)
+            sort_param = sort_map.get(sort)
 
             result = await client.search(
                 query=normalized_query,
@@ -152,9 +144,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
             if normalized_fulltext:
                 filters.append("Fulltext available")
             if normalized_min_year or normalized_max_year:
-                year_range = (
-                    f"{normalized_min_year or '...'}-{normalized_max_year or '...'}"
-                )
+                year_range = f"{normalized_min_year or '...'}-{normalized_max_year or '...'}"
                 filters.append(year_range)
             if filters:
                 output += f" | Filters: {', '.join(filters)}"
@@ -171,10 +161,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
 
                 # Format author string
                 if authors:
-                    if len(authors) > 3:
-                        author_str = f"{authors[0]} et al."
-                    else:
-                        author_str = ", ".join(authors)
+                    author_str = f"{authors[0]} et al." if len(authors) > 3 else ", ".join(authors)
                 else:
                     author_str = article.get("author_string", "Unknown authors")
 
@@ -198,21 +185,15 @@ def register_europe_pmc_tools(mcp: FastMCP):
                 # Abstract preview
                 abstract = article.get("abstract", "")
                 if abstract:
-                    preview = (
-                        abstract[:200] + "..." if len(abstract) > 200 else abstract
-                    )
+                    preview = abstract[:200] + "..." if len(abstract) > 200 else abstract
                     output += f"   📝 {preview}\n"
 
                 output += "\n"
 
             # Add fulltext hint
-            fulltext_available = [
-                a for a in articles if a.get("has_fulltext") or a.get("pmc_id")
-            ]
+            fulltext_available = [a for a in articles if a.get("has_fulltext") or a.get("pmc_id")]
             if fulltext_available:
-                pmc_ids = [
-                    a.get("pmc_id") for a in fulltext_available[:3] if a.get("pmc_id")
-                ]
+                pmc_ids = [a.get("pmc_id") for a in fulltext_available[:3] if a.get("pmc_id")]
                 if pmc_ids:
                     output += "---\n"
                     output += f"💡 **Tip**: Use `get_fulltext(pmcid='{pmc_ids[0]}')` to read the full paper\n"
@@ -220,7 +201,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
             return output
 
         except Exception as e:
-            logger.error(f"Europe PMC search failed: {e}")
+            logger.exception(f"Europe PMC search failed: {e}")
             return ResponseFormatter.error(
                 error=e,
                 suggestion="Check query syntax and try again",
@@ -229,11 +210,11 @@ def register_europe_pmc_tools(mcp: FastMCP):
 
     @mcp.tool()
     async def get_fulltext(
-        identifier: Optional[str] = None,
-        pmcid: Optional[Union[str, int]] = None,
-        pmid: Optional[Union[str, int]] = None,
-        doi: Optional[str] = None,
-        sections: Optional[str] = None,
+        identifier: str | None = None,
+        pmcid: Union[str, int] | None = None,
+        pmid: Union[str, int] | None = None,
+        doi: str | None = None,
+        sections: str | None = None,
         include_pdf_links: bool = True,
         extended_sources: bool = False,
     ) -> str:
@@ -285,22 +266,17 @@ def register_europe_pmc_tools(mcp: FastMCP):
         if identifier:
             identifier = str(identifier).strip()
             # Detect format
-            if identifier.upper().startswith("PMC") or (
-                identifier.isdigit() and len(identifier) > 6
-            ):
+            if identifier.upper().startswith("PMC") or (identifier.isdigit() and len(identifier) > 6):
                 if identifier.upper().startswith("PMC"):
                     detected_pmcid = identifier
+                # Could be PMID or PMC number - assume PMID if < 8 digits
+                elif len(identifier) <= 8:
+                    detected_pmid = identifier
                 else:
-                    # Could be PMID or PMC number - assume PMID if < 8 digits
-                    if len(identifier) <= 8:
-                        detected_pmid = identifier
-                    else:
-                        detected_pmcid = f"PMC{identifier}"
+                    detected_pmcid = f"PMC{identifier}"
             elif identifier.startswith("10.") or "doi.org" in identifier:
                 # DOI format
-                detected_doi = identifier.replace("https://doi.org/", "").replace(
-                    "http://doi.org/", ""
-                )
+                detected_doi = identifier.replace("https://doi.org/", "").replace("http://doi.org/", "")
             elif identifier.isdigit():
                 detected_pmid = identifier
             else:
@@ -321,13 +297,11 @@ def register_europe_pmc_tools(mcp: FastMCP):
                 tool_name="get_fulltext",
             )
 
-        logger.info(
-            f"Getting fulltext: pmcid={detected_pmcid}, pmid={detected_pmid}, doi={detected_doi}"
-        )
+        logger.info(f"Getting fulltext: pmcid={detected_pmcid}, pmid={detected_pmid}, doi={detected_doi}")
 
         # Collect results from all sources
         fulltext_content = None
-        pdf_links: List[Dict[str, Any]] = []
+        pdf_links: list[dict[str, Any]] = []
         sources_tried = []
         article_title = None
 
@@ -476,18 +450,14 @@ def register_europe_pmc_tools(mcp: FastMCP):
                             {
                                 "source": ext_link.source.display_name,
                                 "url": ext_link.url,
-                                "type": "pdf"
-                                if ext_link.is_direct_pdf
-                                else "landing_page",
+                                "type": "pdf" if ext_link.is_direct_pdf else "landing_page",
                                 "access": ext_link.access_type,
                                 "version": ext_link.version,
                                 "license": ext_link.license,
                             }
                         )
 
-                logger.info(
-                    f"Extended sources found {len(extended_links)} additional links"
-                )
+                logger.info(f"Extended sources found {len(extended_links)} additional links")
             except Exception as e:
                 logger.warning(f"Extended sources failed: {e}")
 
@@ -542,7 +512,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
 
         return output
 
-    def _format_sections(parsed: Dict[str, Any], sections_filter: Optional[str]) -> str:
+    def _format_sections(parsed: dict[str, Any], sections_filter: str | None) -> str:
         """Format parsed Europe PMC sections."""
         all_sections = parsed.get("sections", [])
 
@@ -568,9 +538,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
                 output += f"### {title}\n\n"
                 if len(content) > 5000:
                     output += content[:5000]
-                    output += (
-                        f"\n\n_... {len(content) - 5000} characters truncated_\n\n"
-                    )
+                    output += f"\n\n_... {len(content) - 5000} characters truncated_\n\n"
                 else:
                     output += content + "\n\n"
 
@@ -580,9 +548,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
 
         return output
 
-    def _format_core_fulltext(
-        work: Dict[str, Any], sections_filter: Optional[str]
-    ) -> str:
+    def _format_core_fulltext(work: dict[str, Any], sections_filter: str | None) -> str:
         """Format CORE fulltext."""
         fulltext = work.get("fullText", "")
         if not fulltext:
@@ -593,20 +559,17 @@ def register_europe_pmc_tools(mcp: FastMCP):
             # Try to extract requested sections by searching for keywords
             output = ""
             for section in sections_filter.split(","):
-                section = section.strip().lower()
+                section_name = section.strip().lower()
                 # Simple section extraction (CORE doesn't have structured sections)
                 # Just show that we have content
-                if section in fulltext.lower():
-                    output += f"_Contains '{section}' section_\n"
+                if section_name in fulltext.lower():
+                    output += f"_Contains '{section_name}' section_\n"
             if output:
                 output += "\n"
 
         # Truncate if too long
         if len(fulltext) > 10000:
-            return (
-                fulltext[:10000]
-                + f"\n\n_... {len(fulltext) - 10000} characters truncated_"
-            )
+            return fulltext[:10000] + f"\n\n_... {len(fulltext) - 10000} characters truncated_"
         return fulltext
 
     # NOTE: get_fulltext_xml is NOT registered as a tool.
@@ -626,9 +589,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
             JATS XML document as string, or error message.
         """
         # Phase 2.1: Input normalization
-        pmcid_normalized = InputNormalizer.normalize_pmcid(
-            str(pmcid) if pmcid else None
-        )
+        pmcid_normalized = InputNormalizer.normalize_pmcid(str(pmcid) if pmcid else None)
         if not pmcid_normalized:
             return ResponseFormatter.error(
                 error="Invalid PMC ID format",
@@ -653,9 +614,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
                 )
 
             # Return with size info
-            output = (
-                f"<!-- JATS XML for {pmcid_normalized} ({len(xml):,} bytes) -->\n\n"
-            )
+            output = f"<!-- JATS XML for {pmcid_normalized} ({len(xml):,} bytes) -->\n\n"
 
             # Truncate if very large
             if len(xml) > 50000:
@@ -667,7 +626,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
             return output
 
         except Exception as e:
-            logger.error(f"Get fulltext XML failed: {e}")
+            logger.exception(f"Get fulltext XML failed: {e}")
             return ResponseFormatter.error(
                 error=e,
                 suggestion="Check if the PMC ID is correct",
@@ -676,9 +635,9 @@ def register_europe_pmc_tools(mcp: FastMCP):
 
     @mcp.tool()
     async def get_text_mined_terms(
-        pmid: Optional[Union[str, int]] = None,
-        pmcid: Optional[Union[str, int]] = None,
-        semantic_type: Optional[str] = None,
+        pmid: Union[str, int] | None = None,
+        pmcid: Union[str, int] | None = None,
+        semantic_type: str | None = None,
     ) -> str:
         """
         Get text-mined annotations from Europe PMC.
@@ -702,13 +661,9 @@ def register_europe_pmc_tools(mcp: FastMCP):
         """
         # Phase 2.1: Input normalization
         normalized_pmid = InputNormalizer.normalize_pmid_single(pmid) if pmid else None
-        normalized_pmcid = (
-            InputNormalizer.normalize_pmcid(str(pmcid)) if pmcid else None
-        )
+        normalized_pmcid = InputNormalizer.normalize_pmcid(str(pmcid)) if pmcid else None
 
-        logger.info(
-            f"Getting text-mined terms for PMID={normalized_pmid}, PMCID={normalized_pmcid}"
-        )
+        logger.info(f"Getting text-mined terms for PMID={normalized_pmid}, PMCID={normalized_pmcid}")
 
         try:
             if not normalized_pmid and not normalized_pmcid:
@@ -733,16 +688,10 @@ def register_europe_pmc_tools(mcp: FastMCP):
                 else:
                     article_id = normalized_pmcid or ""
 
-            terms = await client.get_text_mined_terms(
-                source, str(article_id), semantic_type
-            )
+            terms = await client.get_text_mined_terms(source, str(article_id), semantic_type)
 
             if not terms:
-                id_str = (
-                    f"PMID:{normalized_pmid}"
-                    if normalized_pmid
-                    else f"PMC:{normalized_pmcid}"
-                )
+                id_str = f"PMID:{normalized_pmid}" if normalized_pmid else f"PMC:{normalized_pmcid}"
                 return ResponseFormatter.no_results(
                     query=id_str,
                     suggestions=[
@@ -752,7 +701,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
                 )
 
             # Group by semantic type
-            by_type: Dict[str, List[Dict[str, Any]]] = {}
+            by_type: dict[str, list[dict[str, Any]]] = {}
             for term in terms:
                 term_type = term.get("semantic_type", "OTHER")
                 if term_type not in by_type:
@@ -779,15 +728,13 @@ def register_europe_pmc_tools(mcp: FastMCP):
                 output += f"### {emoji} {term_type} ({len(type_terms)})\n\n"
 
                 # Deduplicate and count
-                term_counts: Dict[str, int] = {}
+                term_counts: dict[str, int] = {}
                 for t in type_terms:
                     name = t.get("term", t.get("name", "Unknown"))
                     term_counts[name] = term_counts.get(name, 0) + 1
 
                 # Sort by frequency
-                sorted_terms = sorted(
-                    term_counts.items(), key=lambda x: x[1], reverse=True
-                )
+                sorted_terms = sorted(term_counts.items(), key=lambda x: x[1], reverse=True)
 
                 # Show top 10 per type
                 for name, count in sorted_terms[:10]:
@@ -804,7 +751,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
             return output
 
         except Exception as e:
-            logger.error(f"Get text-mined terms failed: {e}")
+            logger.exception(f"Get text-mined terms failed: {e}")
             return ResponseFormatter.error(
                 error=e,
                 suggestion="Check the ID and try again",
@@ -815,8 +762,8 @@ def register_europe_pmc_tools(mcp: FastMCP):
     # Use find_citing_articles or get_article_references instead.
     # @mcp.tool()  # REMOVED - use find_citing_articles instead
     async def get_europe_pmc_citations(
-        pmid: Optional[Union[str, int]] = None,
-        pmcid: Optional[Union[str, int]] = None,
+        pmid: Union[str, int] | None = None,
+        pmcid: Union[str, int] | None = None,
         direction: str = "citing",
         limit: int = 20,
     ) -> str:
@@ -839,16 +786,10 @@ def register_europe_pmc_tools(mcp: FastMCP):
         """
         # Phase 2.1: Input normalization
         normalized_pmid = InputNormalizer.normalize_pmid_single(pmid) if pmid else None
-        normalized_pmcid = (
-            InputNormalizer.normalize_pmcid(str(pmcid)) if pmcid else None
-        )
-        normalized_limit = InputNormalizer.normalize_limit(
-            limit, default=20, min_val=1, max_val=100
-        )
+        normalized_pmcid = InputNormalizer.normalize_pmcid(str(pmcid)) if pmcid else None
+        normalized_limit = InputNormalizer.normalize_limit(limit, default=20, min_val=1, max_val=100)
 
-        logger.info(
-            f"Getting {direction} for PMID={normalized_pmid}, PMCID={normalized_pmcid}"
-        )
+        logger.info(f"Getting {direction} for PMID={normalized_pmid}, PMCID={normalized_pmcid}")
 
         try:
             if not normalized_pmid and not normalized_pmcid:
@@ -874,24 +815,16 @@ def register_europe_pmc_tools(mcp: FastMCP):
 
             # Get citations or references
             if direction == "references":
-                results = await client.get_references(
-                    source, str(article_id), limit=normalized_limit
-                )
+                results = await client.get_references(source, str(article_id), limit=normalized_limit)
                 direction_label = "References (Bibliography)"
                 direction_desc = "papers cited BY this article"
             else:
-                results = await client.get_citations(
-                    source, str(article_id), limit=normalized_limit
-                )
+                results = await client.get_citations(source, str(article_id), limit=normalized_limit)
                 direction_label = "Citing Articles"
                 direction_desc = "papers that cite this article"
 
             if not results:
-                id_str = (
-                    f"PMID:{normalized_pmid}"
-                    if normalized_pmid
-                    else f"PMC:{normalized_pmcid}"
-                )
+                id_str = f"PMID:{normalized_pmid}" if normalized_pmid else f"PMC:{normalized_pmcid}"
                 return ResponseFormatter.no_results(
                     query=id_str,
                     suggestions=[
@@ -916,10 +849,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
 
                 # Author string
                 if authors:
-                    if len(authors) > 2:
-                        author_str = f"{authors[0]} et al."
-                    else:
-                        author_str = ", ".join(authors)
+                    author_str = f"{authors[0]} et al." if len(authors) > 2 else ", ".join(authors)
                 else:
                     author_str = article.get("author_string", "Unknown")
 
@@ -942,7 +872,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
             return output
 
         except Exception as e:
-            logger.error(f"Get Europe PMC citations failed: {e}")
+            logger.exception(f"Get Europe PMC citations failed: {e}")
             return ResponseFormatter.error(
                 error=e,
                 suggestion="Check the ID and direction parameter",

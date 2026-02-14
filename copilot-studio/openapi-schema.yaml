@@ -1,5 +1,5 @@
 # PubMed Search MCP - OpenAPI Schema for Microsoft Copilot Studio
-# 
+#
 # This schema is used to create a custom MCP connector in Power Apps
 # for integration with Microsoft Copilot Studio and Microsoft 365 Copilot.
 #
@@ -16,7 +16,7 @@ info:
   title: PubMed Search MCP
   description: |
     Professional medical literature research assistant powered by MCP (Model Context Protocol).
-    
+
     Features:
     • Search 33M+ PubMed articles with MeSH term expansion
     • PICO clinical question analysis
@@ -24,7 +24,7 @@ info:
     • Gene, compound, and clinical variant research (NCBI databases)
     • Citation network exploration
     • Export to RIS, BibTeX, CSV formats
-    
+
     This MCP server provides 35+ tools for comprehensive literature research.
   version: 0.2.7
   contact:
@@ -46,7 +46,7 @@ paths:
       summary: PubMed Search MCP Server
       description: |
         MCP endpoint for PubMed literature search and analysis.
-        
+
         Available tool categories:
         - Core Search: search_literature, search_europe_pmc, search_core
         - Discovery: find_related_articles, find_citing_articles, build_citation_tree
@@ -54,10 +54,10 @@ paths:
         - Full Text: get_fulltext, get_fulltext_xml, get_core_fulltext
         - NCBI Extended: search_gene, search_compound, search_clinvar
         - Export: prepare_export (RIS, BibTeX, CSV)
-      
+
       # This special header tells Copilot Studio this is an MCP endpoint
       x-ms-agentic-protocol: mcp-streamable-1.0
-      
+
       operationId: InvokeMCP
       consumes:
         - application/json

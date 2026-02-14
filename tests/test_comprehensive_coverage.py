@@ -3,10 +3,12 @@ Comprehensive coverage tests for remaining gaps in search.py, server.py, export.
 Target: 90% overall coverage.
 """
 
-import pytest
-from unittest.mock import Mock, patch, MagicMock, AsyncMock
-import tempfile
 import os
+import tempfile
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
+
+import pytest
 
 
 class TestSearchMixinEdgeCases:
@@ -26,9 +28,7 @@ class TestSearchMixinEdgeCases:
     async def test_search_with_date_range(self, search_mixin):
         """Test search with precise date range."""
         with (
-            patch(
-                "pubmed_search.infrastructure.ncbi.search.Entrez.esearch"
-            ) as mock_esearch,
+            patch("pubmed_search.infrastructure.ncbi.search.Entrez.esearch") as mock_esearch,
             patch("pubmed_search.infrastructure.ncbi.search.Entrez.read") as mock_read,
         ):
             mock_read.return_value = {"IdList": ["123", "456"]}
@@ -47,26 +47,20 @@ class TestSearchMixinEdgeCases:
     async def test_search_with_min_max_year(self, search_mixin):
         """Test search with legacy year range."""
         with (
-            patch(
-                "pubmed_search.infrastructure.ncbi.search.Entrez.esearch"
-            ) as mock_esearch,
+            patch("pubmed_search.infrastructure.ncbi.search.Entrez.esearch") as mock_esearch,
             patch("pubmed_search.infrastructure.ncbi.search.Entrez.read") as mock_read,
         ):
             mock_read.return_value = {"IdList": ["123"]}
             mock_esearch.return_value = MagicMock()
 
-            results = await search_mixin.search(
-                query="cancer", min_year=2020, max_year=2024
-            )
+            results = await search_mixin.search(query="cancer", min_year=2020, max_year=2024)
 
             assert isinstance(results, list)
 
     async def test_search_with_article_type(self, search_mixin):
         """Test search with article type filter."""
         with (
-            patch(
-                "pubmed_search.infrastructure.ncbi.search.Entrez.esearch"
-            ) as mock_esearch,
+            patch("pubmed_search.infrastructure.ncbi.search.Entrez.esearch") as mock_esearch,
             patch("pubmed_search.infrastructure.ncbi.search.Entrez.read") as mock_read,
         ):
             mock_read.return_value = {"IdList": ["789"]}
@@ -82,12 +76,8 @@ class TestSearchMixinEdgeCases:
 
         for strategy in strategies:
             with (
-                patch(
-                    "pubmed_search.infrastructure.ncbi.search.Entrez.esearch"
-                ) as mock_esearch,
-                patch(
-                    "pubmed_search.infrastructure.ncbi.search.Entrez.read"
-                ) as mock_read,
+                patch("pubmed_search.infrastructure.ncbi.search.Entrez.esearch") as mock_esearch,
+                patch("pubmed_search.infrastructure.ncbi.search.Entrez.read") as mock_read,
             ):
                 mock_read.return_value = {"IdList": ["123"]}
                 mock_esearch.return_value = MagicMock()
@@ -98,9 +88,7 @@ class TestSearchMixinEdgeCases:
     async def test_search_ids_with_retry_transient_error(self, search_mixin):
         """Test retry logic on transient errors."""
         with (
-            patch(
-                "pubmed_search.infrastructure.ncbi.search.Entrez.esearch"
-            ) as mock_esearch,
+            patch("pubmed_search.infrastructure.ncbi.search.Entrez.esearch") as mock_esearch,
             patch("pubmed_search.infrastructure.ncbi.search.Entrez.read") as mock_read,
             patch(
                 "pubmed_search.infrastructure.ncbi.search.asyncio.sleep",
@@ -118,17 +106,13 @@ class TestSearchMixinEdgeCases:
             ]
             mock_read.return_value = {"IdList": ["123"]}
 
-            result = await search_mixin._search_ids_with_retry(
-                "test query", 10, "relevance"
-            )
+            result = await search_mixin._search_ids_with_retry("test query", 10, "relevance")
 
             assert result[0] == ["123"] or result == (["123"], 0)
 
     async def test_search_error_handling(self, search_mixin):
         """Test search error handling."""
-        with patch(
-            "pubmed_search.infrastructure.ncbi.search.Entrez.esearch"
-        ) as mock_esearch:
+        with patch("pubmed_search.infrastructure.ncbi.search.Entrez.esearch") as mock_esearch:
             mock_esearch.side_effect = Exception("Unknown error")
 
             results = await search_mixin.search(query="test")
@@ -177,19 +161,17 @@ class TestServerCreateServer:
 
     async def test_create_server_basic(self):
         """Test creating server with basic parameters."""
-        from pubmed_search.presentation.mcp_server.server import create_server
         from pubmed_search import LiteratureSearcher
-        from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
         from pubmed_search.application.session import SessionManager
+        from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
+        from pubmed_search.presentation.mcp_server.server import create_server
 
         with (
             patch.object(LiteratureSearcher, "__init__", return_value=None),
             patch.object(SearchStrategyGenerator, "__init__", return_value=None),
             patch.object(SessionManager, "__init__", return_value=None),
             patch("pubmed_search.presentation.mcp_server.server.FastMCP") as mock_mcp,
-            patch(
-                "pubmed_search.presentation.mcp_server.server.register_all_mcp_tools"
-            ),
+            patch("pubmed_search.presentation.mcp_server.server.register_all_mcp_tools"),
         ):
             mock_mcp.return_value = MagicMock()
 
@@ -199,19 +181,17 @@ class TestServerCreateServer:
 
     async def test_create_server_with_security_disabled(self):
         """Test creating server with security disabled."""
-        from pubmed_search.presentation.mcp_server.server import create_server
         from pubmed_search import LiteratureSearcher
-        from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
         from pubmed_search.application.session import SessionManager
+        from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
+        from pubmed_search.presentation.mcp_server.server import create_server
 
         with (
             patch.object(LiteratureSearcher, "__init__", return_value=None),
             patch.object(SearchStrategyGenerator, "__init__", return_value=None),
             patch.object(SessionManager, "__init__", return_value=None),
             patch("pubmed_search.presentation.mcp_server.server.FastMCP") as mock_mcp,
-            patch(
-                "pubmed_search.presentation.mcp_server.server.register_all_mcp_tools"
-            ),
+            patch("pubmed_search.presentation.mcp_server.server.register_all_mcp_tools"),
         ):
             mock_mcp.return_value = MagicMock()
 
@@ -221,19 +201,17 @@ class TestServerCreateServer:
 
     async def test_create_server_with_api_key(self):
         """Test creating server with API key."""
-        from pubmed_search.presentation.mcp_server.server import create_server
         from pubmed_search import LiteratureSearcher
-        from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
         from pubmed_search.application.session import SessionManager
+        from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
+        from pubmed_search.presentation.mcp_server.server import create_server
 
         with (
             patch.object(LiteratureSearcher, "__init__", return_value=None),
             patch.object(SearchStrategyGenerator, "__init__", return_value=None),
             patch.object(SessionManager, "__init__", return_value=None),
             patch("pubmed_search.presentation.mcp_server.server.FastMCP") as mock_mcp,
-            patch(
-                "pubmed_search.presentation.mcp_server.server.register_all_mcp_tools"
-            ),
+            patch("pubmed_search.presentation.mcp_server.server.register_all_mcp_tools"),
         ):
             mock_mcp.return_value = MagicMock()
 
@@ -247,10 +225,10 @@ class TestExportToolsFunctions:
 
     async def test_resolve_pmids_last(self):
         """Test resolving 'last' to get previous search PMIDs."""
-        from pubmed_search.presentation.mcp_server.tools.export import _resolve_pmids
         from pubmed_search.presentation.mcp_server.tools._common import (
             set_session_manager,
         )
+        from pubmed_search.presentation.mcp_server.tools.export import _resolve_pmids
 
         # Mock session manager with search history
         mock_session = Mock()
@@ -270,10 +248,10 @@ class TestExportToolsFunctions:
 
     async def test_resolve_pmids_last_no_history(self):
         """Test resolving 'last' with no search history."""
-        from pubmed_search.presentation.mcp_server.tools.export import _resolve_pmids
         from pubmed_search.presentation.mcp_server.tools._common import (
             set_session_manager,
         )
+        from pubmed_search.presentation.mcp_server.tools.export import _resolve_pmids
 
         # Mock session manager with empty history
         mock_session = Mock()
@@ -304,15 +282,13 @@ class TestExportToolsFunctions:
         from pubmed_search.presentation.mcp_server.tools.export import _save_export_file
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch(
-                "pubmed_search.presentation.mcp_server.tools.export.EXPORT_DIR", tmpdir
-            ):
+            with patch("pubmed_search.presentation.mcp_server.tools.export.EXPORT_DIR", Path(tmpdir)):
                 content = "TY  - JOUR\nPMID- 12345\nER  -"
 
                 file_path = _save_export_file(content, "ris", 5)
 
                 assert os.path.exists(file_path)
-                with open(file_path, "r") as f:
+                with open(file_path) as f:
                     assert f.read() == content
 
     async def test_get_file_extension(self):
@@ -332,8 +308,9 @@ class TestSessionManagerCoverage:
 
     async def test_session_manager_with_custom_data_dir(self):
         """Test SessionManager with custom data directory."""
-        from pubmed_search.application.session import SessionManager
         from pathlib import Path
+
+        from pubmed_search.application.session import SessionManager
 
         with tempfile.TemporaryDirectory() as tmpdir:
             manager = SessionManager(data_dir=tmpdir)

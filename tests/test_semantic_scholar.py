@@ -85,9 +85,7 @@ class TestMakeRequest:
 
     async def test_url_error(self, client):
         client._client = AsyncMock()
-        client._client.get = AsyncMock(
-            side_effect=httpx.ConnectError("DNS failed", request=MagicMock())
-        )
+        client._client.get = AsyncMock(side_effect=httpx.ConnectError("DNS failed", request=MagicMock()))
         assert await client._make_request("https://test.com") is None
 
 

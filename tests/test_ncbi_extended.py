@@ -6,11 +6,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from pubmed_search.infrastructure.sources.ncbi_extended import (
+    DEFAULT_EMAIL,
     NCBIExtendedClient,
     get_ncbi_extended_client,
-    DEFAULT_EMAIL,
 )
-
 
 # ============================================================
 # Fixtures
@@ -89,9 +88,7 @@ class TestMakeRequest:
         client._client = AsyncMock()
         client._client.get = AsyncMock(return_value=mock_response)
 
-        result = await client._make_request(
-            "https://example.com/api", expect_json=False
-        )
+        result = await client._make_request("https://example.com/api", expect_json=False)
         assert result == "<xml>data</xml>"
 
     async def test_http_error(self, client):

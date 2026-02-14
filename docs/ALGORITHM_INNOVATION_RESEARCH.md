@@ -180,7 +180,7 @@ PubMed 的 "relevance" 排序：
 {
   "query": "remimazolam sedation",
   "total_results": 10247,
-  
+
   "topic_clusters": [
     {
       "label": "程序性鎮靜（Procedural Sedation）",
@@ -207,20 +207,20 @@ PubMed 的 "relevance" 排序：
       "trend": "stable"
     }
   ],
-  
+
   "must_read": [
     {"pmid": "PMID:555", "reason": "最高 RCR (8.2) 的 Meta-analysis", "rcr": 8.2},
     {"pmid": "PMID:666", "reason": "最多引用的 Phase III RCT", "citations": 450},
     {"pmid": "PMID:777", "reason": "最近(2025)的 Systematic Review", "year": 2025}
   ],
-  
+
   "temporal_trend": {
     "first_publication": 2014,
     "peak_year": 2023,
     "current_trend": "plateau",
     "annual_counts": {"2014": 3, "2015": 8, "...": "...", "2025": 890, "2026": 124}
   },
-  
+
   "evidence_pyramid": {
     "meta_analyses": 45,
     "systematic_reviews": 120,
@@ -281,7 +281,7 @@ PubMed 的 "relevance" 排序：
 # SessionManager 擴展
 class SearchDeltaAnalyzer:
     """分析多輪搜尋之間的增量差異"""
-    
+
     def analyze_delta(
         self,
         new_pmids: set[str],
@@ -291,18 +291,18 @@ class SearchDeltaAnalyzer:
         all_previous = set()
         for record in session.search_history:
             all_previous.update(record['pmids'])
-        
+
         overlap = new_pmids & all_previous
         new_only = new_pmids - all_previous
         cumulative = all_previous | new_pmids
-        
+
         # 2. 新發現的 MeSH 分布
         new_mesh_distribution = self._analyze_mesh_distribution(new_only)
-        
+
         # 3. 覆蓋缺口推測
         #    - 從 MeSH tree 中找「相鄰但未覆蓋的子樹」
         gaps = self._detect_coverage_gaps(cumulative)
-        
+
         return SearchDeltaReport(
             new_count=len(new_only),
             overlap_count=len(overlap),
@@ -327,7 +327,7 @@ class SearchDeltaAnalyzer:
   ...前 5 名全是「程序性鎮靜」！其他面向完全缺失。
 
 Smart Top-10（多樣性保證）：
-  Cluster 1 (程序性鎮靜, 3200篇): 
+  Cluster 1 (程序性鎮靜, 3200篇):
     1. PMID:AAA - Meta-analysis (最高 RCR)
     2. PMID:BBB - 最新 RCT (2025)
   Cluster 2 (ICU 鎮靜, 2100篇):
@@ -681,12 +681,12 @@ def main_path_analysis(G: nx.DiGraph) -> list[str]:
     spc = {}
     sources = [n for n in G if G.in_degree(n) == 0]
     sinks = [n for n in G if G.out_degree(n) == 0]
-    
+
     for u, v in G.edges():
         paths_to_u = sum(nx.has_path(G, s, u) for s in sources)
         paths_from_v = sum(nx.has_path(G, v, s) for s in sinks)
         spc[(u, v)] = paths_to_u * paths_from_v
-    
+
     # 2. 貪心追蹤最大 SPC 路徑
     main_path = greedy_forward_path(G, spc, sources)
     return main_path
@@ -753,10 +753,10 @@ def detect_citation_bursts(
     """Kleinberg burst detection on yearly citation counts"""
     years = sorted(yearly_citations.keys())
     counts = [yearly_citations[y] for y in years]
-    
+
     # Viterbi on 2-state automaton
     states = viterbi_two_state(counts, s, gamma)
-    
+
     # Extract burst periods (consecutive q=1 states)
     bursts = extract_burst_periods(years, states, counts)
     return bursts
@@ -817,14 +817,14 @@ def pseudo_relevance_feedback(
             term_freqs[t] += 1
         for t in unique_terms:
             doc_freqs[t] += 1
-    
+
     # 2. 計算 TF-IDF
     n_docs = len(top_results[:top_n])
     tfidf = {}
     for term, tf in term_freqs.items():
         idf = math.log(n_docs / (1 + doc_freqs[term]))
         tfidf[term] = tf * idf
-    
+
     # 3. 排除原始查詢已有的詞 + 停用詞
     query_terms = set(tokenize(original_query))
     expansion = [
@@ -832,7 +832,7 @@ def pseudo_relevance_feedback(
         if term not in query_terms and term not in STOPWORDS and len(term) > 3
     ]
     expansion.sort(key=lambda x: x[1], reverse=True)
-    
+
     # 4. 構建擴展查詢
     new_terms = [t for t, _ in expansion[:num_expansion_terms]]
     expanded_query = f"({original_query}) AND ({' OR '.join(new_terms)})"
@@ -860,7 +860,7 @@ from datasketch import MinHash, MinHashLSH
 def fuzzy_dedup(articles: list[UnifiedArticle], threshold: float = 0.85):
     """MinHash LSH 模糊去重"""
     lsh = MinHashLSH(threshold=threshold, num_perm=128)
-    
+
     for i, article in enumerate(articles):
         m = MinHash(num_perm=128)
         # Character n-grams (3-grams) 比 word-level 更抗拼寫變化
@@ -868,7 +868,7 @@ def fuzzy_dedup(articles: list[UnifiedArticle], threshold: float = 0.85):
         for ngram in ngrams(title_normalized, n=3):
             m.update(ngram.encode('utf8'))
         lsh.insert(str(i), m)
-    
+
     # 查詢每篇文章的近似重複
     duplicates = []
     for i, article in enumerate(articles):
@@ -964,24 +964,24 @@ def analyze_strategy_difference(
 ) -> StrategyDiffReport:
     """分析兩個搜尋策略的結果差異"""
     set_a, set_b = set(results_a), set(results_b)
-    
+
     overlap = set_a & set_b
     only_a = set_a - set_b
     only_b = set_b - set_a
-    
+
     # 基本統計
     jaccard = len(overlap) / len(set_a | set_b) if set_a | set_b else 0
-    
+
     # MeSH 分布差異: 獨佔文章用了哪些 MeSH？
     mesh_only_a = extract_mesh_terms(only_a, articles_cache)
     mesh_only_b = extract_mesh_terms(only_b, articles_cache)
     mesh_unique_to_a = mesh_only_a - mesh_only_b  # A 獨有的 MeSH 主題
     mesh_unique_to_b = mesh_only_b - mesh_only_a  # B 獨有的 MeSH 主題
-    
+
     # 發表年分布: 獨佔文章是新的還是舊的？
     years_only_a = [articles_cache[p].year for p in only_a if p in articles_cache]
     years_only_b = [articles_cache[p].year for p in only_b if p in articles_cache]
-    
+
     return StrategyDiffReport(
         jaccard=jaccard,
         overlap_count=len(overlap),
@@ -1051,7 +1051,7 @@ D - Chemicals and Drugs
 ```python
 # 使用 NCBI MeSH API 取得樹號
 async def mesh_semantic_distance(
-    term_a: str, 
+    term_a: str,
     term_b: str,
     method: str = "wu_palmer",
 ) -> float:
@@ -1059,10 +1059,10 @@ async def mesh_semantic_distance(
     # 1. 查詢 MeSH 樹號
     tree_a = await get_mesh_tree_numbers(term_a)  # e.g., ["D03.383.129.xxx"]
     tree_b = await get_mesh_tree_numbers(term_b)  # e.g., ["D03.383.129.yyy"]
-    
+
     # 2. 計算最近公共祖先
     lca = lowest_common_ancestor(tree_a, tree_b)
-    
+
     # 3. Wu-Palmer 相似度
     if method == "wu_palmer":
         depth_lca = len(lca.split("."))

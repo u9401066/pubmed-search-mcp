@@ -15,7 +15,6 @@ from pubmed_search.domain.entities.article import (
     UnifiedArticle,
 )
 
-
 # =============================================================================
 # Author Tests
 # =============================================================================
@@ -221,9 +220,7 @@ class TestSourceMetadata:
     async def test_full_creation(self):
         """Test creation with all fields."""
         raw = {"id": "123"}
-        meta = SourceMetadata(
-            source="crossref", fetched_at="2024-01-01T00:00:00Z", raw_data=raw
-        )
+        meta = SourceMetadata(source="crossref", fetched_at="2024-01-01T00:00:00Z", raw_data=raw)
         assert meta.source == "crossref"
         assert meta.fetched_at == "2024-01-01T00:00:00Z"
         assert meta.raw_data == raw
@@ -277,9 +274,7 @@ class TestUnifiedArticleProperties:
 
     async def test_best_identifier_doi(self):
         """Test best_identifier with DOI (no PMID)."""
-        article = UnifiedArticle(
-            title="Test", primary_source="crossref", doi="10.1000/example"
-        )
+        article = UnifiedArticle(title="Test", primary_source="crossref", doi="10.1000/example")
         assert article.best_identifier == "DOI:10.1000/example"
 
     async def test_best_identifier_pmc(self):
@@ -289,9 +284,7 @@ class TestUnifiedArticleProperties:
 
     async def test_best_identifier_openalex(self):
         """Test best_identifier with OpenAlex ID."""
-        article = UnifiedArticle(
-            title="Test", primary_source="openalex", openalex_id="W12345678"
-        )
+        article = UnifiedArticle(title="Test", primary_source="openalex", openalex_id="W12345678")
         assert article.best_identifier == "OpenAlex:W12345678"
 
     async def test_best_identifier_s2(self):
@@ -305,30 +298,22 @@ class TestUnifiedArticleProperties:
 
     async def test_best_identifier_title_only(self):
         """Test best_identifier with only title."""
-        article = UnifiedArticle(
-            title="A Very Long Title for Testing Purpose", primary_source="unknown"
-        )
+        article = UnifiedArticle(title="A Very Long Title for Testing Purpose", primary_source="unknown")
         assert "Title:" in article.best_identifier
 
     async def test_has_open_access_explicit(self):
         """Test has_open_access with explicit flag."""
-        article = UnifiedArticle(
-            title="Test", primary_source="pubmed", is_open_access=True
-        )
+        article = UnifiedArticle(title="Test", primary_source="pubmed", is_open_access=True)
         assert article.has_open_access is True
 
     async def test_has_open_access_status_gold(self):
         """Test has_open_access with gold OA status."""
-        article = UnifiedArticle(
-            title="Test", primary_source="pubmed", oa_status=OpenAccessStatus.GOLD
-        )
+        article = UnifiedArticle(title="Test", primary_source="pubmed", oa_status=OpenAccessStatus.GOLD)
         assert article.has_open_access is True
 
     async def test_has_open_access_status_green(self):
         """Test has_open_access with green OA status."""
-        article = UnifiedArticle(
-            title="Test", primary_source="pubmed", oa_status=OpenAccessStatus.GREEN
-        )
+        article = UnifiedArticle(title="Test", primary_source="pubmed", oa_status=OpenAccessStatus.GREEN)
         assert article.has_open_access is True
 
     async def test_has_open_access_links(self):
@@ -359,31 +344,21 @@ class TestUnifiedArticleProperties:
         """Test best_oa_link prefers marked as best."""
         link1 = OpenAccessLink(url="https://repo.com/paper.pdf", is_best=False)
         link2 = OpenAccessLink(url="https://publisher.com/paper.pdf", is_best=True)
-        article = UnifiedArticle(
-            title="Test", primary_source="pubmed", oa_links=[link1, link2]
-        )
+        article = UnifiedArticle(title="Test", primary_source="pubmed", oa_links=[link1, link2])
         assert article.best_oa_link == link2
 
     async def test_best_oa_link_published_version(self):
         """Test best_oa_link prefers published version."""
-        link1 = OpenAccessLink(
-            url="https://repo.com/paper.pdf", version="acceptedVersion"
-        )
-        link2 = OpenAccessLink(
-            url="https://publisher.com/paper.pdf", version="publishedVersion"
-        )
-        article = UnifiedArticle(
-            title="Test", primary_source="pubmed", oa_links=[link1, link2]
-        )
+        link1 = OpenAccessLink(url="https://repo.com/paper.pdf", version="acceptedVersion")
+        link2 = OpenAccessLink(url="https://publisher.com/paper.pdf", version="publishedVersion")
+        article = UnifiedArticle(title="Test", primary_source="pubmed", oa_links=[link1, link2])
         assert article.best_oa_link == link2
 
     async def test_best_oa_link_first_available(self):
         """Test best_oa_link returns first if no best/published."""
         link1 = OpenAccessLink(url="https://first.com/paper.pdf")
         link2 = OpenAccessLink(url="https://second.com/paper.pdf")
-        article = UnifiedArticle(
-            title="Test", primary_source="pubmed", oa_links=[link1, link2]
-        )
+        article = UnifiedArticle(title="Test", primary_source="pubmed", oa_links=[link1, link2])
         assert article.best_oa_link == link1
 
     async def test_author_string_empty(self):
@@ -439,9 +414,7 @@ class TestUnifiedArticleProperties:
 
     async def test_doi_url(self):
         """Test doi_url property."""
-        article = UnifiedArticle(
-            title="Test", primary_source="crossref", doi="10.1000/example"
-        )
+        article = UnifiedArticle(title="Test", primary_source="crossref", doi="10.1000/example")
         assert article.doi_url == "https://doi.org/10.1000/example"
 
     async def test_doi_url_none(self):
@@ -504,9 +477,7 @@ class TestUnifiedArticleCitation:
 
     async def test_cite_vancouver_year_only(self):
         """Test cite_vancouver with year only (no journal)."""
-        article = UnifiedArticle(
-            title="Conference Paper", primary_source="unknown", year=2023
-        )
+        article = UnifiedArticle(title="Conference Paper", primary_source="unknown", year=2023)
         citation = article.cite_vancouver()
         assert "2023" in citation
 
@@ -565,9 +536,7 @@ class TestUnifiedArticleCitation:
         article = UnifiedArticle(
             title="Large Team Research",
             primary_source="pubmed",
-            authors=[
-                Author(family_name=f"Author{i}", given_name="X") for i in range(10)
-            ],
+            authors=[Author(family_name=f"Author{i}", given_name="X") for i in range(10)],
             year=2024,
         )
         citation = article.cite_apa()
@@ -696,12 +665,8 @@ class TestUnifiedArticleMerge:
 
     async def test_matches_identifier_same_doi(self):
         """Test matches_identifier with same DOI."""
-        article1 = UnifiedArticle(
-            title="Test", primary_source="pubmed", doi="10.1/test"
-        )
-        article2 = UnifiedArticle(
-            title="Test", primary_source="crossref", doi="10.1/test"
-        )
+        article1 = UnifiedArticle(title="Test", primary_source="pubmed", doi="10.1/test")
+        article2 = UnifiedArticle(title="Test", primary_source="crossref", doi="10.1/test")
         assert article1.matches_identifier(article2) is True
 
     async def test_matches_identifier_different(self):

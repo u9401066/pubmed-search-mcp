@@ -3,10 +3,11 @@ Tests for preprint sources (arXiv, medRxiv, bioRxiv).
 """
 
 import pytest
+
 from pubmed_search.infrastructure.sources.preprints import (
     ArXivClient,
-    PreprintSearcher,
     PreprintArticle,
+    PreprintSearcher,
 )
 
 
@@ -31,9 +32,7 @@ class TestArXivClient:
     async def test_arxiv_search_with_categories(self):
         """Test arXiv search with category filter."""
         client = ArXivClient(timeout=30.0)
-        results = await client.search(
-            "neural network", limit=3, categories=["q-bio", "cs.AI"]
-        )
+        results = await client.search("neural network", limit=3, categories=["q-bio", "cs.AI"])
 
         assert isinstance(results, list)
 
@@ -89,10 +88,7 @@ class TestPreprintSearcher:
 
         assert "articles" in results
         # Medical preprints uses medRxiv + arXiv q-bio
-        assert (
-            "medrxiv" in results["sources_searched"]
-            or "arxiv" in results["sources_searched"]
-        )
+        assert "medrxiv" in results["sources_searched"] or "arxiv" in results["sources_searched"]
 
 
 class TestIcdDetection:
@@ -106,9 +102,7 @@ class TestIcdDetection:
 
         # Test various ICD-10 codes
         assert ICD10_PATTERN.findall("E11 diabetes") == ["E11"]
-        assert ICD10_PATTERN.findall("I21.9 STEMI") == [
-            "I21.9"
-        ]  # Full code with decimal
+        assert ICD10_PATTERN.findall("I21.9 STEMI") == ["I21.9"]  # Full code with decimal
         assert ICD10_PATTERN.findall("U07.1 COVID") == ["U07.1"]
         assert ICD10_PATTERN.findall("C50 breast cancer") == ["C50"]
 

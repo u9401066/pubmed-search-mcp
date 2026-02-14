@@ -27,11 +27,13 @@ Use cases:
 import base64
 import logging
 import re
-from typing import Optional, Union
+from typing import Union
 from urllib.parse import urlparse
 
-from pubmed_search.shared.async_utils import get_shared_async_client
+import httpx
 from mcp.types import ImageContent, TextContent
+
+from pubmed_search.shared.async_utils import get_shared_async_client
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +64,7 @@ def is_base64_image(data: str) -> bool:
             base64.b64decode(data[:100], validate=True)
             return True
         except Exception:
-            pass
+            return False
     return False
 
 
@@ -127,9 +129,9 @@ def register_vision_tools(mcp):
 
     @mcp.tool()
     async def analyze_figure_for_search(
-        image: Optional[str] = None,
-        url: Optional[str] = None,
-        context: Optional[str] = None,
+        image: str | None = None,
+        url: str | None = None,
+        context: str | None = None,
         search_type: str = "comprehensive",
     ) -> list[Union[TextContent, ImageContent]]:
         """
@@ -335,7 +337,7 @@ Suggest clinical search terms and relevant MeSH headings.
             ]
         except Exception as e:
             logger.exception("Error in analyze_figure_for_search")
-            return [TextContent(type="text", text=f"❌ **Error**: {str(e)}")]
+            return [TextContent(type="text", text=f"❌ **Error**: {e!s}")]
 
     # reverse_image_search_pubmed removed in v0.3.1 - merged into analyze_figure_for_search with search_type param
 

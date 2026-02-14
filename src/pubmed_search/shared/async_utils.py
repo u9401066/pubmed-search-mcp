@@ -19,16 +19,20 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import Sequence
 from dataclasses import dataclass, field
 from functools import wraps
-from typing import Any, Awaitable, Callable, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
+
+from typing_extensions import Self
 
 from .exceptions import (
     RateLimitError,
     get_retry_delay,
     is_retryable_error,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable, Sequence
 
 logger = logging.getLogger(__name__)
 
@@ -71,9 +75,7 @@ class RateLimiter:
         async with self._lock:
             now = time.monotonic()
             elapsed = now - self._last_update
-            self._tokens = min(
-                self.rate, self._tokens + elapsed * (self.rate / self.per)
-            )
+            self._tokens = min(self.rate, self._tokens + elapsed * (self.rate / self.per))
             self._last_update = now
 
             if self._tokens < 1:
@@ -84,11 +86,11 @@ class RateLimiter:
             else:
                 self._tokens -= 1
 
-    async def __aenter__(self) -> RateLimiter:
+    async def __aenter__(self) -> Self:
         await self.acquire()
         return self
 
-    async def __aexit__(self, *args: Any) -> None:
+    async def __aexit__(self, *args: object) -> None:
         pass
 
 
@@ -140,8 +142,7 @@ def async_retry(
                     if attempt < max_attempts - 1:
                         delay = get_retry_delay(e, attempt)
                         logger.warning(
-                            f"Retry {attempt + 1}/{max_attempts} for {func.__name__}: "
-                            f"{e} (waiting {delay:.1f}s)"
+                            f"Retry {attempt + 1}/{max_attempts} for {func.__name__}: {e} (waiting {delay:.1f}s)"
                         )
                         await asyncio.sleep(delay)
 
@@ -190,16 +191,16 @@ async def gather_with_errors(
 
     if return_exceptions:
         # Collect all results, including exceptions
-        async def safe_run(coro: Awaitable[T], index: int) -> None:
+        async def safe_run(coro: Awaitable[T]) -> None:
             try:
                 result = await coro
                 results.append(result)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 results.append(e)
 
         async with asyncio.TaskGroup() as tg:
-            for i, coro in enumerate(coros):
-                tg.create_task(safe_run(coro, i))
+            for coro in coros:
+                tg.create_task(safe_run(coro))
     else:
         # Fail fast on any exception
         async with asyncio.TaskGroup() as tg:
@@ -245,9 +246,7 @@ async def batch_process(
                 await rate_limiter.acquire()
             return await processor(item)
 
-        batch_results = await gather_with_errors(
-            *[process_with_limit(item) for item in batch], return_exceptions=True
-        )
+        batch_results = await gather_with_errors(*[process_with_limit(item) for item in batch], return_exceptions=True)
         all_results.extend(batch_results)
 
         # Small delay between batches
@@ -300,20 +299,15 @@ class CircuitBreaker:
     @property
     def is_open(self) -> bool:
         """Check if circuit is open (rejecting requests)."""
-        if self._state == "open":
-            # Check if recovery timeout passed
-            if self._last_failure_time:
-                if time.monotonic() - self._last_failure_time > self.recovery_timeout:
-                    return False  # Move to half-open
-            return True
-        return False
+        if self._state != "open":
+            return False
+        # Check if recovery timeout passed
+        return not (self._last_failure_time and time.monotonic() - self._last_failure_time > self.recovery_timeout)
 
-    async def __aenter__(self) -> CircuitBreaker:
+    async def __aenter__(self) -> Self:
         async with self._lock:
             if self.is_open:
-                raise RateLimitError(
-                    "Circuit breaker is open", retry_after=self.recovery_timeout
-                )
+                raise RateLimitError("Circuit breaker is open", retry_after=self.recovery_timeout)
 
             if self._state == "open":
                 self._state = "half_open"
@@ -333,7 +327,7 @@ class CircuitBreaker:
         self,
         exc_type: type[BaseException] | None,
         exc_val: BaseException | None,
-        exc_tb: Any,
+        exc_tb: object,
     ) -> None:
         async with self._lock:
             if exc_val is not None:
@@ -342,17 +336,14 @@ class CircuitBreaker:
 
                 if self._failure_count >= self.failure_threshold:
                     self._state = "open"
-                    logger.warning(
-                        f"Circuit breaker opened after {self._failure_count} failures"
-                    )
-            else:
-                # Success
-                if self._state == "half_open":
-                    self._state = "closed"
-                    self._failure_count = 0
-                    logger.info("Circuit breaker closed (recovered)")
-                elif self._state == "closed":
-                    self._failure_count = max(0, self._failure_count - 1)
+                    logger.warning(f"Circuit breaker opened after {self._failure_count} failures")
+            # Success
+            elif self._state == "half_open":
+                self._state = "closed"
+                self._failure_count = 0
+                logger.info("Circuit breaker closed (recovered)")
+            elif self._state == "closed":
+                self._failure_count = max(0, self._failure_count - 1)
 
 
 # =============================================================================
@@ -384,7 +375,7 @@ def get_shared_async_client() -> Any:
         client = get_shared_async_client()
         response = await client.get(url, timeout=10.0)
     """
-    global _shared_async_client  # noqa: PLW0603
+    global _shared_async_client
 
     import httpx  # lazy import to avoid circular deps
 
@@ -403,7 +394,7 @@ def get_shared_async_client() -> Any:
 
 async def close_shared_async_client() -> None:
     """Close the shared async HTTP client (call on shutdown)."""
-    global _shared_async_client  # noqa: PLW0603
+    global _shared_async_client
     if _shared_async_client is not None and not _shared_async_client.is_closed:
         await _shared_async_client.aclose()
         _shared_async_client = None

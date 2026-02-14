@@ -5,14 +5,15 @@ Covers: PubTatorClient, rate limiting, find_entity, search_by_entity,
         resolve_entity, find_relations, get_annotations, singleton.
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from pubmed_search.infrastructure.pubtator.client import (
-    PubTatorClient,
     PubTator3Error,
-    get_pubtator_client,
+    PubTatorClient,
     close_pubtator_client,
+    get_pubtator_client,
 )
 from pubmed_search.infrastructure.pubtator.models import (
     EntityMatch,
@@ -313,9 +314,7 @@ class TestFindRelations:
                 ]
             },
         ):
-            rels = await client.find_relations(
-                "@CHEMICAL_Propofol", relation_type="treat", target_type="disease"
-            )
+            rels = await client.find_relations("@CHEMICAL_Propofol", relation_type="treat", target_type="disease")
         assert len(rels) == 1
         assert rels[0].relation_type == "treat"
         assert rels[0].target_name == "Pain"

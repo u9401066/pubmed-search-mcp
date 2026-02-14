@@ -28,7 +28,6 @@ from pubmed_search.domain.entities.timeline import (
     TimelineEvent,
 )
 
-
 # ============================================================================
 # Milestone Patterns (Extensible)
 # ============================================================================
@@ -212,14 +211,9 @@ class MilestoneDetector:
         self.min_confidence = min_confidence
 
         # Pre-compile regex patterns for efficiency
-        self._compiled_patterns = [
-            (re.compile(p[0], re.IGNORECASE), p[1], p[2], p[3])
-            for p in self.title_patterns
-        ]
+        self._compiled_patterns = [(re.compile(p[0], re.IGNORECASE), p[1], p[2], p[3]) for p in self.title_patterns]
 
-    def detect_milestone(
-        self, article: dict[str, Any], is_first: bool = False
-    ) -> TimelineEvent | None:
+    def detect_milestone(self, article: dict[str, Any], is_first: bool = False) -> TimelineEvent | None:
         """
         Detect milestone from a single article.
 
@@ -268,9 +262,7 @@ class MilestoneDetector:
 
         return result
 
-    def detect_milestones_batch(
-        self, articles: list[dict[str, Any]]
-    ) -> list[TimelineEvent]:
+    def detect_milestones_batch(self, articles: list[dict[str, Any]]) -> list[TimelineEvent]:
         """
         Detect milestones from a batch of articles.
 
@@ -337,17 +329,11 @@ class MilestoneDetector:
             return None
 
         if citations >= LANDMARK_CITATION_THRESHOLDS["exceptional"]:
-            return self._create_event(
-                article, MilestoneType.LANDMARK_STUDY, "Landmark Study", 0.9
-            )
-        elif citations >= LANDMARK_CITATION_THRESHOLDS["high"]:
-            return self._create_event(
-                article, MilestoneType.LANDMARK_STUDY, "High-Impact Study", 0.8
-            )
-        elif citations >= LANDMARK_CITATION_THRESHOLDS["notable"]:
-            return self._create_event(
-                article, MilestoneType.LANDMARK_STUDY, "Notable Study", 0.7
-            )
+            return self._create_event(article, MilestoneType.LANDMARK_STUDY, "Landmark Study", 0.9)
+        if citations >= LANDMARK_CITATION_THRESHOLDS["high"]:
+            return self._create_event(article, MilestoneType.LANDMARK_STUDY, "High-Impact Study", 0.8)
+        if citations >= LANDMARK_CITATION_THRESHOLDS["notable"]:
+            return self._create_event(article, MilestoneType.LANDMARK_STUDY, "Notable Study", 0.7)
 
         return None
 
@@ -387,9 +373,7 @@ class MilestoneDetector:
             milestone_type=milestone_type,
             title=article.get("title", ""),
             milestone_label=label,
-            description=article.get("abstract", "")[:200]
-            if article.get("abstract")
-            else None,
+            description=article.get("abstract", "")[:200] if article.get("abstract") else None,
             evidence_level=evidence_level,
             citation_count=article.get("citation_count") or article.get("citations", 0),
             journal=article.get("journal") or article.get("source"),

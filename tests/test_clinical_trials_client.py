@@ -10,10 +10,9 @@ import pytest
 
 from pubmed_search.infrastructure.sources.clinical_trials import (
     BASE_URL,
-    ClinicalTrialsClient,
     DEFAULT_TIMEOUT,
+    ClinicalTrialsClient,
 )
-
 
 # =============================================================================
 # ClinicalTrialsClient - Basic Tests
@@ -77,9 +76,7 @@ class TestClinicalTrialsClientSearch:
                             "phases": ["PHASE2", "PHASE3"],
                             "enrollmentInfo": {"count": 500},
                         },
-                        "conditionsModule": {
-                            "conditions": ["Type 2 Diabetes", "Obesity"]
-                        },
+                        "conditionsModule": {"conditions": ["Type 2 Diabetes", "Obesity"]},
                         "armsInterventionsModule": {
                             "interventions": [
                                 {"type": "DRUG", "name": "TestDrug"},
@@ -124,9 +121,7 @@ class TestClinicalTrialsClientSearch:
         client = ClinicalTrialsClient()
         client._client = mock_async_client
 
-        _results = await client.search(
-            "diabetes", limit=10, status=["RECRUITING", "COMPLETED"]
-        )
+        _results = await client.search("diabetes", limit=10, status=["RECRUITING", "COMPLETED"])
 
         # Check that status filter was included in params
         call_args = mock_async_client.get.call_args
@@ -247,9 +242,7 @@ class TestNormalizeStudy:
                     "enrollmentInfo": {"count": 1000},
                 },
                 "conditionsModule": {"conditions": ["Hypertension"]},
-                "armsInterventionsModule": {
-                    "interventions": [{"type": "DRUG", "name": "DrugA"}]
-                },
+                "armsInterventionsModule": {"interventions": [{"type": "DRUG", "name": "DrugA"}]},
             }
         }
 

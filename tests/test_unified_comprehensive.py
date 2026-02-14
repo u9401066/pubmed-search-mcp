@@ -5,15 +5,15 @@ Target: unified.py coverage from 14% to 50%+
 """
 
 from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 
-from pubmed_search.domain.entities.article import UnifiedArticle
 from pubmed_search.application.search.query_analyzer import (
     QueryAnalyzer,
     QueryComplexity,
     QueryIntent,
 )
-
+from pubmed_search.domain.entities.article import UnifiedArticle
 
 # =============================================================================
 # ICD Code Detection Tests
@@ -157,8 +157,8 @@ class TestDispatchStrategyExtended:
 
     async def test_ranking_config_systematic(self):
         """Test systematic ranking configuration."""
-        from pubmed_search.presentation.mcp_server.tools.unified import DispatchStrategy
         from pubmed_search.application.search.result_aggregator import RankingConfig
+        from pubmed_search.presentation.mcp_server.tools.unified import DispatchStrategy
 
         analysis = MagicMock()
         analysis.intent = QueryIntent.SYSTEMATIC
@@ -169,8 +169,8 @@ class TestDispatchStrategyExtended:
 
     async def test_ranking_config_comparison(self):
         """Test comparison ranking configuration."""
-        from pubmed_search.presentation.mcp_server.tools.unified import DispatchStrategy
         from pubmed_search.application.search.result_aggregator import RankingConfig
+        from pubmed_search.presentation.mcp_server.tools.unified import DispatchStrategy
 
         analysis = MagicMock()
         analysis.intent = QueryIntent.COMPARISON
@@ -343,9 +343,7 @@ class TestSearchOpenAlex:
         """Test _search_openalex with mocked results."""
         from pubmed_search.presentation.mcp_server.tools.unified import _search_openalex
 
-        with patch(
-            "pubmed_search.presentation.mcp_server.tools.unified.search_alternate_source"
-        ) as mock_search:
+        with patch("pubmed_search.presentation.mcp_server.tools.unified.search_alternate_source") as mock_search:
             mock_search.return_value = [
                 {
                     "openalex_id": "W1234567",
@@ -367,9 +365,7 @@ class TestSearchOpenAlex:
         """Test _search_openalex handles errors."""
         from pubmed_search.presentation.mcp_server.tools.unified import _search_openalex
 
-        with patch(
-            "pubmed_search.presentation.mcp_server.tools.unified.search_alternate_source"
-        ) as mock_search:
+        with patch("pubmed_search.presentation.mcp_server.tools.unified.search_alternate_source") as mock_search:
             mock_search.side_effect = Exception("OpenAlex error")
 
             articles, total_count = await _search_openalex(
@@ -391,9 +387,7 @@ class TestSearchSemanticScholar:
             _search_semantic_scholar,
         )
 
-        with patch(
-            "pubmed_search.presentation.mcp_server.tools.unified.search_alternate_source"
-        ) as mock_search:
+        with patch("pubmed_search.presentation.mcp_server.tools.unified.search_alternate_source") as mock_search:
             mock_search.return_value = []
 
             articles, total_count = await _search_semantic_scholar(
@@ -411,9 +405,7 @@ class TestSearchSemanticScholar:
             _search_semantic_scholar,
         )
 
-        with patch(
-            "pubmed_search.presentation.mcp_server.tools.unified.search_alternate_source"
-        ) as mock_search:
+        with patch("pubmed_search.presentation.mcp_server.tools.unified.search_alternate_source") as mock_search:
             mock_search.side_effect = Exception("S2 error")
 
             articles, total_count = await _search_semantic_scholar(
@@ -478,10 +470,11 @@ class TestFormatFunctions:
     async def test_format_as_json_structure(self):
         """Test JSON format function exists and works."""
         # This function is internal, so just test registration works
+        from mcp.server.fastmcp import FastMCP
+
         from pubmed_search.presentation.mcp_server.tools.unified import (
             register_unified_search_tools,
         )
-        from mcp.server.fastmcp import FastMCP
 
         mcp = FastMCP(name="test")
         mock_searcher = AsyncMock()
@@ -503,6 +496,7 @@ class TestToolRegistrationExtended:
     async def test_register_all_tools(self):
         """Test full tool registration."""
         from mcp.server.fastmcp import FastMCP
+
         from pubmed_search.presentation.mcp_server.tools.unified import (
             register_unified_search_tools,
         )
@@ -519,6 +513,7 @@ class TestToolRegistrationExtended:
     async def test_unified_search_parameters(self):
         """Test unified_search tool has expected parameters."""
         from mcp.server.fastmcp import FastMCP
+
         from pubmed_search.presentation.mcp_server.tools.unified import (
             register_unified_search_tools,
         )

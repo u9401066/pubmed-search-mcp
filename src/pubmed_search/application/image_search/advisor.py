@@ -613,11 +613,7 @@ class ImageQueryAdvisor:
         recommended_type, type_reason = self._recommend_image_type(query_lower)
 
         # 3. Determine coarse category
-        coarse_category = (
-            self.COARSE_CATEGORIES.get(recommended_type, None)
-            if recommended_type
-            else None
-        )
+        coarse_category = self.COARSE_CATEGORIES.get(recommended_type, None) if recommended_type else None
 
         # 4. Recommend collection
         recommended_coll, coll_reason = self._recommend_collection(query_lower)
@@ -648,22 +644,16 @@ class ImageQueryAdvisor:
 
         # 8. Non-image query suggestions
         if not is_suitable:
-            suggestions.append(
-                "此查詢更適合文獻搜尋。建議改用 unified_search() 或 search_literature()"
-            )
+            suggestions.append("此查詢更適合文獻搜尋。建議改用 unified_search() 或 search_literature()")
             if suitability_score < 0.1:
                 suggestions.append(
-                    "查詢內容不含影像相關詞彙。若確實需要圖片，"
-                    "請加入 X-ray、histology、CT scan 等關鍵字"
+                    "查詢內容不含影像相關詞彙。若確實需要圖片，請加入 X-ray、histology、CT scan 等關鍵字"
                 )
 
         # 9. Query enhancement (non-English queries: Agent must translate first)
         # MCP does NOT translate - it only enhances English queries
-        if non_english_info["is_non_english"]:
-            # Cannot enhance non-English - Agent must translate first
-            enhanced = None
-        else:
-            enhanced = self._enhance_query(query_lower, recommended_type)
+        # Cannot enhance non-English - Agent must translate first
+        enhanced = None if non_english_info["is_non_english"] else self._enhance_query(query_lower, recommended_type)
 
         return ImageSearchAdvice(
             is_suitable=is_suitable,
@@ -689,9 +679,7 @@ class ImageQueryAdvisor:
         score = 0.0
 
         # Positive signals
-        positive_hits = sum(
-            1 for kw in self.IMAGE_POSITIVE_KEYWORDS if kw in query_lower
-        )
+        positive_hits = sum(1 for kw in self.IMAGE_POSITIVE_KEYWORDS if kw in query_lower)
         score += min(positive_hits * 0.3, 0.9)
 
         # Anatomical/clinical keywords (moderate positive signal)
@@ -699,9 +687,7 @@ class ImageQueryAdvisor:
         score += min(anatomical_hits * 0.15, 0.45)
 
         # Negative signals
-        negative_hits = sum(
-            1 for kw in self.IMAGE_NEGATIVE_KEYWORDS if kw in query_lower
-        )
+        negative_hits = sum(1 for kw in self.IMAGE_NEGATIVE_KEYWORDS if kw in query_lower)
         score -= min(negative_hits * 0.25, 0.75)
 
         # Radiology/CT/Ultrasound/Microscopy/Photo keywords are strong positive signals
@@ -712,15 +698,7 @@ class ImageQueryAdvisor:
         us_hits = sum(1 for kw in self.ULTRASOUND_KEYWORDS if kw in query_lower)
         microscopy_hits = sum(1 for kw in self.MICROSCOPY_KEYWORDS if kw in query_lower)
         photo_hits = sum(1 for kw in self.PHOTO_KEYWORDS if kw in query_lower)
-        type_hits = (
-            radiology_hits
-            + ct_hits
-            + mri_hits
-            + pet_hits
-            + us_hits
-            + microscopy_hits
-            + photo_hits
-        )
+        type_hits = radiology_hits + ct_hits + mri_hits + pet_hits + us_hits + microscopy_hits + photo_hits
         score += min(type_hits * 0.2, 0.6)
 
         return max(-1.0, min(1.0, score))
@@ -841,10 +819,7 @@ class ImageQueryAdvisor:
         # Check post-2020 keywords
         for kw in self.POST_2020_KEYWORDS:
             if kw in query_lower:
-                return (
-                    f"Open-i 索引凍結於 ~2020，查詢含 '{kw}' "
-                    "可能找不到相關結果。較新主題建議用 Europe PMC 全文搜尋"
-                )
+                return f"Open-i 索引凍結於 ~2020，查詢含 '{kw}' 可能找不到相關結果。較新主題建議用 Europe PMC 全文搜尋"
 
         # Check year patterns
         year_match = self.YEAR_PATTERN.search(query_lower)
@@ -905,16 +880,16 @@ class ImageQueryAdvisor:
             if 0x4E00 <= cp <= 0x9FFF:
                 detected_script = "CJK"
                 break
-            elif 0x3040 <= cp <= 0x30FF:
+            if 0x3040 <= cp <= 0x30FF:
                 detected_script = "Japanese"
                 break
-            elif 0xAC00 <= cp <= 0xD7AF:
+            if 0xAC00 <= cp <= 0xD7AF:
                 detected_script = "Korean"
                 break
-            elif 0x0400 <= cp <= 0x04FF:
+            if 0x0400 <= cp <= 0x04FF:
                 detected_script = "Cyrillic"
                 break
-            elif 0x0600 <= cp <= 0x06FF:
+            if 0x0600 <= cp <= 0x06FF:
                 detected_script = "Arabic"
                 break
 

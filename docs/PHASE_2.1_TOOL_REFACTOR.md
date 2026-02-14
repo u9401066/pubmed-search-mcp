@@ -1,7 +1,7 @@
 # Phase 2.1: Agent-Friendly Tool Refactoring
 
 > **目標**: 讓 34 個 MCP Tools 對 Agent（尤其是較弱的模型）更友善
-> 
+>
 > **狀態**: ✅ **已完成** (2025-01-11)
 
 ---
@@ -112,7 +112,7 @@ get_gene_details()  # 回傳 JSON 字串
 "Error: API call failed"
 
 # 應該是
-"Error: PubMed search failed for query 'xxx'. 
+"Error: PubMed search failed for query 'xxx'.
  Suggestion: Check if the query syntax is correct.
  Example: 'diabetes AND treatment'"
 ```
@@ -128,12 +128,12 @@ get_gene_details()  # 回傳 JSON 字串
 
 class InputNormalizer:
     """Agent 友善的輸入規範化器"""
-    
+
     @staticmethod
     def normalize_pmids(value: str | list | int) -> list[str]:
         """
         接受多種 PMID 格式，統一轉為 list[str]
-        
+
         支援格式:
         - "12345678"
         - "12345678,87654321"
@@ -143,34 +143,34 @@ class InputNormalizer:
         - 12345678 (int)
         """
         pass
-    
+
     @staticmethod
     def normalize_pmid_single(value: str | int) -> str:
         """單一 PMID 規範化"""
         pass
-    
+
     @staticmethod  
     def normalize_year(value: str | int | None) -> int | None:
         """
         年份規範化
-        
+
         支援:
         - 2024 (int)
         - "2024" (str)
         - "2024年"
         """
         pass
-    
+
     @staticmethod
     def normalize_limit(value: int | str | None, default: int = 10, max_val: int = 100) -> int:
         """限制數量規範化，確保在合理範圍"""
         pass
-    
+
     @staticmethod
     def normalize_bool(value: bool | str | int | None, default: bool = False) -> bool:
         """
         布林值規範化
-        
+
         支援:
         - True/False
         - "true"/"false" (case insensitive)
@@ -185,7 +185,7 @@ class InputNormalizer:
 ```python
 class ResponseFormatter:
     """統一的回應格式化器"""
-    
+
     @staticmethod
     def success(
         data: Any,
@@ -195,7 +195,7 @@ class ResponseFormatter:
     ) -> str:
         """成功回應"""
         pass
-    
+
     @staticmethod
     def error(
         error: Exception | str,
@@ -205,16 +205,16 @@ class ResponseFormatter:
     ) -> str:
         """
         友善的錯誤回應
-        
+
         Output:
         ❌ Error in {tool_name}: {error}
-        
+
         💡 Suggestion: {suggestion}
-        
+
         📝 Example: {example}
         """
         pass
-    
+
     @staticmethod
     def no_results(
         query: str = None,
@@ -235,18 +235,18 @@ STANDARD_PARAMS = {
     "pmids": "多個 PMID, 逗號分隔 (str)",
     "pmcid": "PMC ID (str)",
     "doi": "DOI (str)",
-    
+
     # 數量類
     "limit": "結果數量上限 (int)",  # 統一用 limit
     "max_results": "DEPRECATED → use limit",
     "limit_per_level": "DEPRECATED → use limit",
-    
+
     # 年份類
     "min_year": "最小年份 (int)",  # 統一用 min_year
     "max_year": "最大年份 (int)",
     "year_from": "DEPRECATED → use min_year",
     "year_to": "DEPRECATED → use max_year",
-    
+
     # 格式類
     "output_format": "輸出格式: markdown/json (str)",
     "format": "DEPRECATED → use output_format",
@@ -301,19 +301,19 @@ def smart_route(
 ) -> str:
     """
     🧠 智能路由 - 根據輸入自動選擇最佳工具
-    
+
     Agent 不確定用哪個工具時，可以用這個！
-    
+
     Examples:
         smart_route(query="diabetes treatment")
         → 自動呼叫 unified_search
-        
+
         smart_route(pmid="12345678", action="details")
         → 自動呼叫 fetch_article_details
-        
+
         smart_route(pmid="12345678", action="related")
         → 自動呼叫 find_related_articles
-        
+
         smart_route(doi="10.1234/example")
         → 解析 DOI，找到 PMID，取得詳情
     """

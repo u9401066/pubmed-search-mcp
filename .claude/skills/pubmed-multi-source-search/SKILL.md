@@ -126,7 +126,7 @@ access = analyze_fulltext_access(pmids="last")
 # Step 3: Europe PMC 補充全文
 for pmid in access["subscription_required_pmids"]:
     epmc = search_europe_pmc(query=f"EXT_ID:{pmid}")
-    
+
 # Step 4: CORE 最後嘗試
 for pmid in still_missing:
     details = fetch_article_details(pmids=pmid)
@@ -259,19 +259,19 @@ def deduplicate_papers(all_results):
     """基於標題相似度去重"""
     seen_titles = {}
     unique = []
-    
+
     for paper in all_results:
         # 正規化標題
         title_key = paper["title"].lower()
         title_key = re.sub(r'[^\w\s]', '', title_key)[:100]
-        
+
         if title_key not in seen_titles:
             seen_titles[title_key] = paper
             unique.append(paper)
         else:
             # 合併來源資訊
             seen_titles[title_key]["sources"].append(paper["source"])
-    
+
     return unique
 ```
 
@@ -281,21 +281,21 @@ def deduplicate_papers(all_results):
 def score_paper(paper):
     """計算論文優先分數"""
     score = 0
-    
+
     # 多來源找到 = 更重要
     score += len(paper.get("sources", [])) * 10
-    
+
     # 有全文 = 更有用
     if paper.get("fulltext_available"):
         score += 20
-    
+
     # 高引用 = 更有影響力
     score += min(paper.get("citation_count", 0) / 10, 50)
-    
+
     # 最近發表 = 更新穎
     if paper.get("year", 0) >= 2023:
         score += 15
-    
+
     return score
 
 # 排序

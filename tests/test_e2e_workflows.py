@@ -5,9 +5,9 @@ Tests realistic scenarios that users would encounter.
 Run with: pytest tests/test_e2e_workflows.py -v
 """
 
-import pytest
 from unittest.mock import AsyncMock
 
+import pytest
 
 # ============================================================
 # E2E Test Fixtures
@@ -113,9 +113,7 @@ class TestQuickSearchWorkflow:
 class TestSystematicReviewWorkflow:
     """Test: Researcher conducting systematic literature review."""
 
-    async def test_systematic_review_workflow(
-        self, mock_client_full, complete_article_data
-    ):
+    async def test_systematic_review_workflow(self, mock_client_full, complete_article_data):
         """
         Workflow:
         1. Search with MeSH terms
@@ -229,11 +227,7 @@ class TestPICOWorkflow:
 
         # Step 3: Generate optimized query
         # Combine PICO elements with Boolean logic
-        optimized_query = (
-            f'("{pico["P"]}"[All Fields]) AND '
-            f'("{pico["I"]}"[All Fields]) AND '
-            f'("{pico["C"]}"[All Fields])'
-        )
+        optimized_query = f'("{pico["P"]}"[All Fields]) AND ("{pico["I"]}"[All Fields]) AND ("{pico["C"]}"[All Fields])'
 
         # Step 4: Search
         results = await mock_client_full.search(optimized_query, limit=20)
@@ -244,10 +238,7 @@ class TestPICOWorkflow:
         [
             r
             for r in results
-            if any(
-                term in r.get("title", "").lower()
-                for term in ["systematic review", "meta-analysis", "randomized"]
-            )
+            if any(term in r.get("title", "").lower() for term in ["systematic review", "meta-analysis", "randomized"])
         ]
 
         # User gets evidence-based answer
@@ -293,8 +284,7 @@ class TestDrugResearchWorkflow:
         clinical_trials = [
             r
             for r in results
-            if "clinical trial" in r.get("title", "").lower()
-            or "Clinical Trial" in r.get("mesh_terms", [])
+            if "clinical trial" in r.get("title", "").lower() or "Clinical Trial" in r.get("mesh_terms", [])
         ]
 
         # Researcher has comprehensive drug information
@@ -315,9 +305,7 @@ class TestDrugResearchWorkflow:
 class TestFullTextAccessWorkflow:
     """Test: Researcher needing full text access."""
 
-    async def test_fulltext_access_workflow(
-        self, mock_client_full, complete_article_data
-    ):
+    async def test_fulltext_access_workflow(self, mock_client_full, complete_article_data):
         """
         Workflow:
         1. Find articles
@@ -398,9 +386,7 @@ class TestSessionWorkflow:
         session_mgr.add_to_reading_list(session_id, important_pmid, priority="high")
 
         # Step 4: Add notes
-        session_mgr.add_note(
-            session_id, important_pmid, "Key paper for methodology section"
-        )
+        session_mgr.add_note(session_id, important_pmid, "Key paper for methodology section")
 
         # Step 5: Resume session
         reading_list = session_mgr.get_reading_list(session_id)
@@ -480,9 +466,7 @@ class TestCompleteResearchProject:
         question = "What is the efficacy of remimazolam for procedural sedation?"
 
         # Step 2: Systematic search
-        results = await mock_client_full.search(
-            "remimazolam procedural sedation", limit=100
-        )
+        results = await mock_client_full.search("remimazolam procedural sedation", limit=100)
         assert len(results) > 0
 
         # Step 3: Screen articles (mock screening)
@@ -496,9 +480,7 @@ class TestCompleteResearchProject:
                 "pmid": article["pmid"],
                 "title": article["title"],
                 "year": article["year"],
-                "study_type": "RCT"
-                if "randomized" in article.get("abstract", "").lower()
-                else "Other",
+                "study_type": "RCT" if "randomized" in article.get("abstract", "").lower() else "Other",
             }
             extracted_data.append(data)
 

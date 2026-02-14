@@ -2,7 +2,7 @@
 # =============================================================================
 # PubMed Search MCP - Quick Start for Copilot Studio
 # =============================================================================
-# 
+#
 # Domain: kmuh-ai.ngrok.dev
 # Copilot Studio URL: https://kmuh-ai.ngrok.dev/mcp
 #

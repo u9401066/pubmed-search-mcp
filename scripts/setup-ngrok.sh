@@ -2,8 +2,8 @@
 # =============================================================================
 # PubMed Search MCP - ngrok Setup Script
 # =============================================================================
-# 
-# This script helps you set up ngrok with a custom domain for Microsoft 
+#
+# This script helps you set up ngrok with a custom domain for Microsoft
 # Copilot Studio integration.
 #
 # Prerequisites:
@@ -92,7 +92,7 @@ setup_authtoken() {
     echo "  2. Copy your authtoken"
     echo ""
     read -p "Enter your ngrok authtoken: " authtoken
-    
+
     if [ -n "$authtoken" ]; then
         ngrok config add-authtoken "$authtoken"
         print_success "Authtoken configured"
@@ -125,7 +125,7 @@ save_domain() {
 # Setup custom domain
 setup_domain() {
     print_header "Setup Custom Domain"
-    
+
     echo "Your ngrok domains are listed at:"
     echo "  https://dashboard.ngrok.com/domains"
     echo ""
@@ -134,7 +134,7 @@ setup_domain() {
     echo "  - Create custom domain (e.g., pubmed-mcp.ngrok.io)"
     echo "  - Bring your own domain (e.g., mcp.yourdomain.com)"
     echo ""
-    
+
     current_domain=$(get_domain)
     if [ -n "$current_domain" ]; then
         echo "Current configured domain: $current_domain"
@@ -144,9 +144,9 @@ setup_domain() {
             return
         fi
     fi
-    
+
     read -p "Enter your ngrok domain (e.g., pubmed-mcp.ngrok.io): " domain
-    
+
     if [ -n "$domain" ]; then
         save_domain "$domain"
         echo "$domain"
@@ -160,45 +160,45 @@ setup_domain() {
 start_tunnel() {
     local domain=$1
     local port=${2:-8765}
-    
+
     print_header "Starting ngrok Tunnel"
-    
+
     echo "Domain: $domain"
     echo "Local port: $port"
     echo ""
-    
+
     # Start the MCP server in background
     print_info "Starting PubMed Search MCP Server..."
     cd "$PROJECT_DIR"
-    
+
     if [ -f ".venv/bin/activate" ]; then
         source .venv/bin/activate
     fi
-    
+
     python run_server.py --transport streamable-http --port $port &
     SERVER_PID=$!
     sleep 2
-    
+
     if ! kill -0 $SERVER_PID 2>/dev/null; then
         print_error "Failed to start MCP server"
         exit 1
     fi
     print_success "MCP server started (PID: $SERVER_PID)"
-    
+
     # Start ngrok with domain
     print_info "Starting ngrok tunnel..."
     ngrok http --domain="$domain" $port &
     NGROK_PID=$!
     sleep 3
-    
+
     if ! kill -0 $NGROK_PID 2>/dev/null; then
         print_error "Failed to start ngrok tunnel"
         kill $SERVER_PID 2>/dev/null
         exit 1
     fi
-    
+
     print_header "🎉 Ready for Microsoft Copilot Studio!"
-    
+
     echo ""
     echo "Your MCP server is now accessible at:"
     echo ""
@@ -220,10 +220,10 @@ start_tunnel() {
     echo ""
     echo "Press Ctrl+C to stop"
     echo ""
-    
+
     # Handle shutdown
     trap "echo ''; echo 'Shutting down...'; kill $SERVER_PID $NGROK_PID 2>/dev/null; exit 0" SIGINT SIGTERM
-    
+
     # Wait
     wait
 }
@@ -231,22 +231,22 @@ start_tunnel() {
 # Show status
 show_status() {
     print_header "ngrok Status"
-    
+
     check_ngrok
-    
+
     if check_auth; then
         echo ""
         # Try to get account info
         ngrok config check 2>&1 || true
     fi
-    
+
     domain=$(get_domain)
     if [ -n "$domain" ]; then
         echo ""
         print_info "Configured domain: $domain"
         print_info "Copilot Studio URL: https://${domain}/mcp"
     fi
-    
+
     # Check if tunnel is running
     if curl -s http://localhost:4040/api/tunnels > /dev/null 2>&1; then
         echo ""
@@ -287,18 +287,18 @@ main() {
             ;;
         *)
             print_header "PubMed Search MCP - ngrok Setup"
-            
+
             # Step 1: Check ngrok
             check_ngrok
-            
+
             # Step 2: Check/setup auth
             if ! check_auth; then
                 setup_authtoken
             fi
-            
+
             # Step 3: Setup domain
             domain=$(setup_domain)
-            
+
             # Step 4: Ask to start
             echo ""
             read -p "Start ngrok tunnel now? (Y/n): " start_now

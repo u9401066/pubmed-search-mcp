@@ -203,9 +203,7 @@ def register_image_search_tools(mcp: FastMCP):
             )
 
         limit = InputNormalizer.normalize_limit(limit, default=10, max_val=50)
-        open_access_only = InputNormalizer.normalize_bool(
-            open_access_only, default=True
-        )
+        open_access_only = InputNormalizer.normalize_bool(open_access_only, default=True)
         video_only = InputNormalizer.normalize_bool(video_only, default=False)
 
         # 2. Map sources string to list
@@ -256,10 +254,7 @@ def _format_image_results(result: ImageSearchResult) -> str:
     # Header
     parts.append("## 🖼️ Image Search Results")
     parts.append(f"**Query**: {result.query}")
-    parts.append(
-        f"**Found**: {len(result.images)} images "
-        f"(total available: {result.total_count})"
-    )
+    parts.append(f"**Found**: {len(result.images)} images (total available: {result.total_count})")
     parts.append(f"**Sources**: {', '.join(result.sources_used)}")
 
     # Show applied filters
@@ -288,10 +283,7 @@ def _format_image_results(result: ImageSearchResult) -> str:
         parts.append(f"- 📂 粗分類: {result.coarse_category}")
 
     if result.recommended_collection:
-        parts.append(
-            f"- 📦 建議 collection: `{result.recommended_collection}` "
-            f"({result.collection_reason})"
-        )
+        parts.append(f"- 📦 建議 collection: `{result.recommended_collection}` ({result.collection_reason})")
 
     if not result.images:
         parts.append("\nNo images found. Try broader search terms.")
@@ -360,13 +352,9 @@ def _format_image_results(result: ImageSearchResult) -> str:
     # Footer with tips
     parts.append("---")
     parts.append("💡 **Tips**:")
-    parts.append(
-        '- Use `image_type="x"` for X-ray, `"m"` for MRI, `"mc"` for microscopy, `"c"` for CT'
-    )
+    parts.append('- Use `image_type="x"` for X-ray, `"m"` for MRI, `"mc"` for microscopy, `"c"` for CT')
     parts.append('- Use `collection="mpx"` for MedPix clinical teaching images')
-    parts.append(
-        '- Use `sort_by="d"` for newest images, `article_type="cr"` for case reports'
-    )
+    parts.append('- Use `sort_by="d"` for newest images, `article_type="cr"` for case reports')
     parts.append('- Use `specialty="r"` for radiology, `"c"` for cardiology')
     parts.append('- Use `license_type="by"` for CC-BY licensed images')
     parts.append("- Use `fetch_article_details(pmid=...)` to get full article info")

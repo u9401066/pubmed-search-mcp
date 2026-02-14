@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pubmed-search-mcp"
-version = "0.3.8"
+version = "0.3.9"
 description = "MCP server for PubMed literature search with MeSH, PICO, and intelligent query expansion"
 readme = "README.md"
 license = "Apache-2.0"
@@ -71,6 +71,11 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+# ⚡ MANDATORY: 所有測試一律多核執行
+# -n 8: 限制 worker 數量避免 OOM（32 logical cores × ~1.5GB/worker > 48GB RAM）
+# pytest-benchmark 在 xdist 模式下自動停用（無需手動處理）
+# pytest-cov 完全支援 xdist（自 pytest-cov 2.0+）
+addopts = "-n 4 --timeout=60"
 markers = [
     "integration: marks tests as integration tests (may make real API calls)",
     "slow: marks tests as slow running",
@@ -86,7 +91,7 @@ dev = [
     "pytest>=9.0",
     "pytest-asyncio>=0.26",
     "pytest-cov>=7.0",
-    "ruff>=0.11",
+    "ruff>=0.14,<0.15",
     "pytest-benchmark>=5.1.0",
     "mutmut>=3.2.0",
     "bandit>=1.8.0",
@@ -96,38 +101,202 @@ dev = [
     "types-requests>=2.32.4.20260107",
     "types-cachetools>=6.2.0",
     "pytest-xdist>=3.8.0",
+    "pre-commit>=3.8",
 ]
 
+# ─────────────────────────────────────────────────────────────
+# Ruff — linter + formatter
+# ─────────────────────────────────────────────────────────────
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+# 🔒 PRODUCTION: 啟用所有規則，僅排除不適用的規則集
+select = ["ALL"]
+ignore = [
+    # ── formatter 負責 ──
+    "E501",    # line too long — handled by ruff format
+    "W191",    # tab indentation — handled by formatter
+    "COM812",  # missing trailing comma — conflicts with formatter
+    "ISC001",  # implicit string concat in single line — conflicts with formatter
+    "Q",       # quotes — handled by formatter
+
+    # ── 不適用的規則集 ──
+    "D",       # pydocstyle — 啟用後再逐步加入（TODO: Phase 2）
+    "ANN",     # flake8-annotations — 由 mypy strict 負責
+    "FBT",     # boolean trap — 對 API 層過於嚴格
+    "FIX",     # fixme/todo — 開發階段允許 TODO
+    "TD",      # todo — 開發階段允許 TODO
+    "ERA",     # eradicate — 誤判率高（中英雙語註解）
+    "CPY",     # copyright — 由 LICENSE 檔案管理
+    "DJ",      # django — 非 Django 專案
+
+    # ── 3.10 相容 ──
+    "UP007",   # use X | Y union — needs 3.10+ runtime
+    # UP038 removed in ruff 0.14 (integrated into UP007)
+
+    # ── 中英雙語專案 ──
+    "RUF001",  # ambiguous unicode in string
+    "RUF002",  # ambiguous unicode in docstring
+    "RUF003",  # ambiguous unicode in comment
+
+    # ── 特定模式豁免 ──
+    "B008",    # function call in default arg — FastAPI/MCP Depends() pattern
+    "B905",    # zip() without strict= — 3.10 compat
+    "RUF012",  # mutable class var annotation — dataclass patterns
+    "RUF022",  # __all__ not sorted — intentionally grouped by category
+    "TRY003",  # long messages in exceptions — 中文錯誤訊息需要完整描述
+    "EM101",   # raw string in exception — 中文錯誤訊息直接寫更清楚
+    "EM102",   # f-string in exception — 同上
+
+    # ── Logging 風格 (production 合理選擇) ──
+    "G004",    # logging-f-string — 現代 Python 慣例，MCP 單用戶場景效能影響 <1μs
+    "TRY401",  # verbose-log-message — logging.exception(msg) 含 context 更清楚
+    "TRY300",  # try-consider-else — 風格偏好，非安全問題
+
+    # ── 架構模式 (MCP server 特有) ──
+    "PLC0415", # import-outside-top-level — lazy import 是刻意的啟動效能最佳化
+    "PLW0603", # global-statement — 模組級 singleton/cache 必要模式
+    "PLR0913", # too-many-arguments — MCP tool function 需要多參數 API surface
+    "C901",    # complex-structure — 部分解析/路由邏輯本質複雜，需要大規模重構才能降低
+    "PLR0912", # too-many-branches — 同上
+    "PLR0915", # too-many-statements — 同上
+    "PLR0911", # too-many-return-statements — early return 是好實踐
+
+    # ── API 客戶端模式 ──
+    "PERF401", # manual-list-comprehension — 可讀性優先，非 hot path
+    "PERF203", # try-except-in-loop — API 批次處理需要逐項容錯
+]
+fixable = ["ALL"]
+unfixable = []
+
+[tool.ruff.lint.isort]
+known-first-party = ["pubmed_search"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = [
+    "S101",    # assert — pytest uses assert
+    "S105",    # hardcoded password — test fixtures
+    "S106",    # hardcoded password arg — test fixtures
+    "S108",    # hardcoded temp file — test fixtures
+    "S110",    # try-except-pass — test setup
+    "S310",    # URL open — test HTTP calls
+    "S311",    # pseudo-random — test data generation
+    "B011",    # assert False
+    "B017",    # assert blind exception
+    "BLE001",  # blind exception — test error handling
+    "PT",      # pytest style — existing tests may not follow
+    "SIM",     # simplify — test readability
+    "PLR2004", # magic value comparison — tests use literals
+    "PLR0913", # too many arguments — test fixtures
+    "ARG",     # unused arguments — pytest fixtures
+    "RUF059",  # unused unpacked variable — test destructuring
+    "B007",    # unused loop variable — test loops
+    "RUF015",  # next(iter()) vs slice — test readability
+    "SLF001",  # private member access — testing internals
+    "T201",    # print — debug output in tests
+    "N802",    # function name uppercase — test naming conventions
+    "N803",    # argument name uppercase — test naming conventions
+    "N806",    # variable name uppercase — mock naming conventions
+    "INP001",  # implicit namespace package — tests dir
+    "TRY",     # exception handling — test code can be simpler
+    "EM",      # error message — test code can be simpler
+    "PERF",    # performance — not critical in tests
+    "C901",    # complexity — test functions can be complex
+    "PLR0912", # too many branches — complex test scenarios
+    "PLR0915", # too many statements — complex test setup
+    "PTH",     # pathlib — test code uses os.path for simplicity
+    "ASYNC",   # async — test code uses sync patterns (time.sleep, open)
+    "PGH003",  # blanket-type-ignore — test type annotations
+    "RET504",  # unnecessary-assign — test readability
+    "S603",    # subprocess — test scripts
+    "DTZ005",  # datetime-now — tests don't need tz
+]
+"scripts/**/*.py" = [
+    "T20",     # print statements — expected in scripts
+    "S603",    # subprocess call — scripts need it
+    "S607",    # partial executable path — scripts intentional
+    "B007",    # unused loop variable
+    "BLE001",  # blind exception — script error handling
+    "INP001",  # implicit namespace package — scripts dir
+    "PLR0913", # too many arguments — script functions
+    "PLR2004", # magic values — scripts use literals
+    "SLF001",  # private member — FastMCP internal access
+    "SIM102",  # nested-if — script readability
+    "DTZ005",  # datetime-now — scripts don't need tz
+    "ARG001",  # unused argument — script callbacks
+    "PLW1510", # subprocess-run-without-check — scripts handle errors
+    "PERF102", # dict-items — script readability
+]
+"run_copilot.py" = [
+    "PTH",     # pathlib — sys.path manipulation
+    "SLF001",  # private member — FastMCP internal access
+    "PLR2004", # magic values — HTTP status codes
+    "S104",    # bind-all — server intentional
+    "INP001",  # namespace package
+]
+"run_server.py" = [
+    "PTH",     # pathlib — sys.path manipulation
+    "SLF001",  # private member — FastMCP internal access
+    "S104",    # bind-all — server intentional
+    "S108",    # hardcoded temp — export dir
+    "N806",    # variable uppercase — EXPORT_DIR constant
+    "SIM108",  # ternary — readability
+    "ARG001",  # unused argument — Starlette request handlers
+    "BLE001",  # blind exception — API error handling
+    "TRY400",  # logging-error — contextual error messages
+    "INP001",  # namespace package
+]
+"src/pubmed_search/infrastructure/**/*.py" = [
+    "BLE001",  # blind-except — API 客戶端必須容錯任意外部錯誤
+    "PLR2004", # magic-value — HTTP 狀態碼 (200, 404, 429) 是慣例
+    "ARG002",  # unused-method-argument — override/callback 模式
+    "SLF001",  # private-member-access — 框架整合需存取內部狀態
+    "A002",    # builtin-shadowing — `type`, `id`, `format` 是 API 參數名稱
+]
+"src/pubmed_search/presentation/**/*.py" = [
+    "BLE001",  # blind-except — MCP tool 必須捕獲任何錯誤回傳有意義的訊息
+    "PLR2004", # magic-value — HTTP 狀態碼、限制值
+    "ARG001",  # unused-function-argument — MCP 框架要求的參數簽名
+    "ARG002",  # unused-method-argument — 同上
+    "SLF001",  # private-member-access — FastMCP 內部 API 整合
+    "A002",    # builtin-shadowing — `type`, `id`, `format` 是 MCP tool 參數
+]
+"src/pubmed_search/application/**/*.py" = [
+    "BLE001",  # blind-except — session 管理需容錯 I/O 錯誤
+    "PLR2004", # magic-value — 設定常數
+    "ARG002",  # unused-method-argument — 抽象方法實作
+]
+".mutmut_config.py" = ["ALL"]  # auto-generated config
+"scripts/test-copilot-mcp.py" = [
+    "BLE001",  # blind exception — test script error handling
+    "INP001",  # namespace package
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+
+# ─────────────────────────────────────────────────────────────
+# mypy — 🔒 PRODUCTION strict mode
+# ─────────────────────────────────────────────────────────────
 [tool.mypy]
 python_version = "3.10"
-warn_return_any = false
-warn_unused_configs = true
-disallow_untyped_defs = false
-disallow_incomplete_defs = false
-check_untyped_defs = false
-no_implicit_optional = true
-warn_redundant_casts = true
-warn_unused_ignores = false
-warn_no_return = false
-warn_unreachable = false
-strict_equality = false
-ignore_missing_imports = true
-# Allow dynamic typing for API responses and external data
-allow_untyped_calls = true
-allow_untyped_defs = true
-# Disable warnings that are overly strict for production code with external APIs
-# - no-any-return/unreachable/misc: standard noise suppression
-# - union-attr/attr-defined: HTTP clients return dict|str, mixin patterns
-# - assignment/index/arg-type: dynamic API response parsing
-# - var-annotated/dict-item/return-value: loose typing for JSON data
-# - call-arg/call-overload/type-arg: external API parameter variance
-disable_error_code = [
-    "no-any-return", "unreachable", "misc",
-    "union-attr", "attr-defined", "assignment",
-    "index", "arg-type", "var-annotated",
-    "dict-item", "return-value", "call-arg",
-    "call-overload", "type-arg",
-]
+strict = true
+# strict = true 啟用以下所有嚴格檢查：
+#   disallow_any_generics, disallow_untyped_defs, disallow_incomplete_defs,
+#   check_untyped_defs, no_implicit_optional, warn_redundant_casts,
+#   warn_unused_ignores, warn_return_any, no_implicit_reexport,
+#   strict_equality, strict_concatenate
+
+# ── 針對第三方庫的務實豁免 ──
+ignore_missing_imports = true  # 第三方庫缺少 py.typed（逐步移除）
+warn_unused_ignores = false    # 跨 Python 版本的 type: ignore 相容性
+# 漸進式嚴格化：以下暫時放寬，待逐步修復後移除
+disallow_any_generics = false  # 94 errors — dict/list 缺少 type args（逐步加入）
 
 [[tool.mypy.overrides]]
 module = "tests.*"
@@ -135,17 +304,35 @@ ignore_errors = true
 
 [[tool.mypy.overrides]]
 module = "pubmed_search.infrastructure.sources.*"
-# External API responses are inherently dynamic
+# 外部 API 回應本質上是動態的 (dict[str, Any])
+disallow_untyped_defs = false
+disallow_untyped_calls = false
 warn_return_any = false
-allow_untyped_defs = true
 
 [[tool.mypy.overrides]]
 module = "pubmed_search.infrastructure.ncbi.*"
-# NCBI API responses can be complex
+# NCBI API 回應結構複雜且多變
+disallow_untyped_defs = false
+disallow_untyped_calls = false
 warn_return_any = false
-allow_untyped_defs = true
 
 [[tool.mypy.overrides]]
-module = "pubmed_search.presentation.mcp_server.*"
-# MCP server tools work with dynamic data
-allow_untyped_defs = true
+module = "pubmed_search.infrastructure.pubtator.*"
+# PubTator API 動態回應
+disallow_untyped_defs = false
+disallow_untyped_calls = false
+warn_return_any = false
+
+[[tool.mypy.overrides]]
+module = "pubmed_search.presentation.*"
+# MCP tool/server 函數處理動態數據
+disallow_untyped_defs = false
+disallow_untyped_calls = false
+warn_return_any = false
+
+[[tool.mypy.overrides]]
+module = "pubmed_search.application.session.*"
+# Session 管理涉及大量動態 JSON 數據
+disallow_untyped_defs = false
+disallow_untyped_calls = false
+warn_return_any = false

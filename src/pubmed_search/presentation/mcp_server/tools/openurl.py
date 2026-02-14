@@ -104,15 +104,11 @@ def register_openurl_tools(mcp: FastMCP) -> None:
             if preset:
                 # List available presets if invalid
                 available = list_presets()
-                if preset.lower() not in [k.lower() for k in available.keys()]:
-                    preset_list = "\n".join(
-                        [f"  - {k}: {v}" for k, v in available.items()]
-                    )
+                if preset.lower() not in [k.lower() for k in available]:
+                    preset_list = "\n".join([f"  - {k}: {v}" for k, v in available.items()])
                     return f"❌ Unknown preset '{preset}'. Available presets:\n{preset_list}"
 
-                configure_openurl(
-                    preset=preset, resolver_base=resolver_url, enabled=True
-                )
+                configure_openurl(preset=preset, resolver_base=resolver_url, enabled=True)
 
                 # Show the resolved URL
                 config = get_openurl_config()
@@ -131,7 +127,7 @@ Test it:
     get_institutional_link(pmid="12345678")
 """
 
-            elif resolver_url:
+            if resolver_url:
                 configure_openurl(resolver_base=resolver_url, enabled=True)
                 return f"""✅ Institutional access configured!
 
@@ -144,16 +140,15 @@ Test it:
     get_institutional_link(pmid="12345678")
 """
 
-            else:
-                # Show current config and available presets
-                config = get_openurl_config()
-                available = list_presets()
-                preset_list = "\n".join([f"  - {k}" for k in available.keys()])
+            # Show current config and available presets
+            config = get_openurl_config()
+            available = list_presets()
+            preset_list = "\n".join([f"  - {k}" for k in available])
 
-                status = "✅ Enabled" if config.enabled else "❌ Disabled"
-                current = config.resolver_base or config.preset or "Not configured"
+            status = "✅ Enabled" if config.enabled else "❌ Disabled"
+            current = config.resolver_base or config.preset or "Not configured"
 
-                return f"""📊 Current Configuration:
+            return f"""📊 Current Configuration:
 ─────────────────────────────
 Status: {status}
 Resolver: {current}
@@ -237,9 +232,9 @@ To configure, call:
 Please first configure your library's link resolver:
 
     configure_institutional_access(preset="ntu")  # or your institution
-    
+
     or
-    
+
     configure_institutional_access(
         resolver_url="https://your.library.edu/openurl"
     )
@@ -278,8 +273,7 @@ Click the link to check your library's subscription and access full text.
 📝 Article Info:
 {_format_article(article)}
 """
-            else:
-                return "❌ Could not generate link. Please check your configuration."
+            return "❌ Could not generate link. Please check your configuration."
 
         except Exception as e:
             logger.exception("Failed to generate institutional link")
@@ -306,21 +300,11 @@ Click the link to check your library's subscription and access full text.
         lines.append("═" * 60)
 
         # Group by region
-        taiwan = {
-            k: v for k, v in presets.items() if k in ["ntu", "ncku", "nthu", "nycu"]
-        }
-        usa = {
-            k: v
-            for k, v in presets.items()
-            if k in ["harvard", "stanford", "mit", "yale"]
-        }
+        taiwan = {k: v for k, v in presets.items() if k in ["ntu", "ncku", "nthu", "nycu"]}
+        usa = {k: v for k, v in presets.items() if k in ["harvard", "stanford", "mit", "yale"]}
         uk = {k: v for k, v in presets.items() if k in ["oxford", "cambridge"]}
         generic = {k: v for k, v in presets.items() if k in ["sfx", "360link", "primo"]}
-        free_test = {
-            k: v
-            for k, v in presets.items()
-            if k in ["worldcat", "pubmed_linkout", "test_free"]
-        }
+        free_test = {k: v for k, v in presets.items() if k in ["worldcat", "pubmed_linkout", "test_free"]}
 
         if taiwan:
             lines.append("\n🇹🇼 台灣大學:")
@@ -351,7 +335,7 @@ Click the link to check your library's subscription and access full text.
         lines.append("""
 Usage:
     configure_institutional_access(preset="ntu")
-    
+
 For generic presets, also provide your base URL:
     configure_institutional_access(
         preset="sfx",
@@ -441,9 +425,7 @@ Test your connection:
         if test_url:
             output.append("✅ **URL Generated**")
             output.append(f"\n[🔗 Click to test in browser]({test_url})")
-            output.append(
-                f"\n<details><summary>Full URL</summary>\n\n```\n{test_url}\n```\n</details>"
-            )
+            output.append(f"\n<details><summary>Full URL</summary>\n\n```\n{test_url}\n```\n</details>")
         else:
             output.append("❌ Failed to generate URL")
             return "\n".join(output)
@@ -463,9 +445,7 @@ Test your connection:
                     output.append(f"   Response Time: {result['response_time_ms']}ms")
                 if result["error"]:
                     output.append(f"   Note: {result['error']}")
-                    output.append(
-                        "\n   ℹ️ HTTP 4xx/5xx is normal - resolver responded but needs valid session"
-                    )
+                    output.append("\n   ℹ️ HTTP 4xx/5xx is normal - resolver responded but needs valid session")
             else:
                 output.append("⚠️ **Not Reachable**")
                 output.append(f"   Error: {result['error']}")
@@ -531,9 +511,7 @@ async def _test_resolver_url(url: str, timeout: int = 10) -> dict:
     # Security: Validate URL scheme to prevent SSRF attacks
     parsed = urllib.parse.urlparse(url)
     if parsed.scheme not in ("http", "https"):
-        result["error"] = (
-            f"Invalid URL scheme: {parsed.scheme}. Only http/https allowed."
-        )
+        result["error"] = f"Invalid URL scheme: {parsed.scheme}. Only http/https allowed."
         return result
 
     try:

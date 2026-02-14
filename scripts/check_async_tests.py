@@ -24,7 +24,6 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-
 # ─────────────────────────────────────────────────────────────────────
 # Configuration: known async methods that must be awaited
 # ─────────────────────────────────────────────────────────────────────
@@ -205,9 +204,7 @@ class AsyncMismatchDetector(ast.NodeVisitor):
         client_patterns = ("client", "searcher", "_searcher", "_client")
         return any(p in lower for p in client_patterns) or lower == "c"
 
-    def _is_inside_benchmark(
-        self, func_node: ast.AsyncFunctionDef, call_node: ast.Call
-    ) -> bool:
+    def _is_inside_benchmark(self, func_node: ast.AsyncFunctionDef, call_node: ast.Call) -> bool:
         """Check if a call is inside a benchmark() invocation (which doesn't support async)."""
         for child in ast.walk(func_node):
             if isinstance(child, ast.Call):
@@ -215,9 +212,7 @@ class AsyncMismatchDetector(ast.NodeVisitor):
                 if isinstance(func, ast.Name) and func.id == "benchmark":
                     # Check if our call is one of the args
                     for arg in child.args:
-                        if isinstance(
-                            arg, ast.Attribute
-                        ) and arg.attr == self._get_call_method_name(call_node):
+                        if isinstance(arg, ast.Attribute) and arg.attr == self._get_call_method_name(call_node):
                             return True
                 if isinstance(func, ast.Attribute) and func.attr == "pedantic":
                     return True
@@ -253,10 +248,7 @@ def check_mock_types(filepath: str, source: str) -> list[Issue]:
                 for method in KNOWN_ASYNC_METHODS:
                     if f"{var_name}.{method}" in ahead and "AsyncMock" not in ahead:
                         # Check if the method's return_value is set (it's being mocked)
-                        if (
-                            "return_value" in ahead
-                            or f"await {var_name}.{method}" in ahead
-                        ):
+                        if "return_value" in ahead or f"await {var_name}.{method}" in ahead:
                             issues.append(
                                 Issue(
                                     file=filepath,
@@ -324,11 +316,7 @@ def auto_fix_missing_await(filepath: str, issues: list[Issue]) -> int:
 
         # Pattern: standalone call: obj.method(...) → await obj.method(...)
         pattern2 = rf"(\s+)(\w+\.{method}\()"
-        if (
-            re.search(pattern2, line)
-            and "await " not in line
-            and "=" not in line.split(f".{method}(")[0]
-        ):
+        if re.search(pattern2, line) and "await " not in line and "=" not in line.split(f".{method}(")[0]:
             lines[idx] = re.sub(
                 rf"(\s+)(\w+\.{method}\()",
                 r"\1await \2",
@@ -339,11 +327,7 @@ def auto_fix_missing_await(filepath: str, issues: list[Issue]) -> int:
 
         # Pattern: bare function call: method(...) → await method(...)
         pattern3 = rf"(\s+)({method}\()"
-        if (
-            re.search(pattern3, line)
-            and "await " not in line
-            and "=" not in line.split(f"{method}(")[0]
-        ):
+        if re.search(pattern3, line) and "await " not in line and "=" not in line.split(f"{method}(")[0]:
             lines[idx] = re.sub(
                 rf"(\s+)({method}\()",
                 r"\1await \2",
@@ -454,15 +438,9 @@ def main():
 
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
-    parser = argparse.ArgumentParser(
-        description="Check for async/sync mismatches in tests"
-    )
-    parser.add_argument(
-        "--fix", action="store_true", help="Auto-fix simple missing-await issues"
-    )
-    parser.add_argument(
-        "--verbose", "-v", action="store_true", help="Show detailed issue descriptions"
-    )
+    parser = argparse.ArgumentParser(description="Check for async/sync mismatches in tests")
+    parser.add_argument("--fix", action="store_true", help="Auto-fix simple missing-await issues")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Show detailed issue descriptions")
     parser.add_argument(
         "path",
         nargs="?",
@@ -498,9 +476,7 @@ def main():
                 total_fixed += fixed
         print(f"\n  Total: {total_fixed} fix(es) applied")
         if total_fixed < total:
-            print(
-                f"  ⚠️  {total - total_fixed} issue(s) need manual fix (Mock→AsyncMock, benchmark refactor, etc.)"
-            )
+            print(f"  ⚠️  {total - total_fixed} issue(s) need manual fix (Mock→AsyncMock, benchmark refactor, etc.)")
         sys.exit(1 if total_fixed > 0 else 0)
 
     sys.exit(1 if total > 0 else 0)

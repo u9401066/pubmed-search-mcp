@@ -11,20 +11,21 @@ Author: u9401066@gap.kmu.edu.tw
 import logging
 import os
 from contextlib import asynccontextmanager
-from typing import Any, Dict, Optional
+from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from ..application.session.manager import SessionManager
-from ..infrastructure.ncbi import LiteratureSearcher
+from pubmed_search.presentation.application.session.manager import SessionManager
+from pubmed_search.presentation.infrastructure.ncbi import LiteratureSearcher
 
 logger = logging.getLogger(__name__)
 
 # Default configuration
 DEFAULT_EMAIL = "u9401066@gap.kmu.edu.tw"
-DEFAULT_DATA_DIR = os.path.expanduser("~/.pubmed-search-mcp")
+DEFAULT_DATA_DIR = str(Path.home() / ".pubmed-search-mcp")
 DEFAULT_API_PORT = 8765
 
 
@@ -34,7 +35,7 @@ class ArticleResponse(BaseModel):
 
     source: str = "pubmed"
     verified: bool = True
-    data: Dict[str, Any]
+    data: dict[str, Any]
 
 
 class ErrorResponse(BaseModel):
@@ -52,8 +53,8 @@ class HealthResponse(BaseModel):
 
 
 # Global instances (initialized on startup)
-_session_manager: Optional[SessionManager] = None
-_searcher: Optional[LiteratureSearcher] = None
+_session_manager: SessionManager | None = None
+_searcher: LiteratureSearcher | None = None
 
 
 @asynccontextmanager
@@ -82,8 +83,8 @@ async def lifespan(app: FastAPI):
 
 def create_api_server(
     email: str = DEFAULT_EMAIL,
-    api_key: Optional[str] = None,
-    data_dir: Optional[str] = None,
+    api_key: str | None = None,
+    data_dir: str | None = None,
 ) -> FastAPI:
     """
     Create the FastAPI server for MCP-to-MCP communication.
@@ -138,23 +139,17 @@ async def health_check():
     current = _session_manager.get_current_session()
     cached_count = len(current.article_cache) if current else 0
 
-    return HealthResponse(
-        status="healthy", session_count=len(sessions), cached_articles=cached_count
-    )
+    return HealthResponse(status="healthy", session_count=len(sessions), cached_articles=cached_count)
 
 
 @app.get(
     "/api/cached_article/{pmid}",
     response_model=ArticleResponse,
-    responses={
-        404: {"model": ErrorResponse, "description": "Article not found in cache"}
-    },
+    responses={404: {"model": ErrorResponse, "description": "Article not found in cache"}},
 )
 async def get_cached_article(
     pmid: str,
-    fetch_if_missing: bool = Query(
-        default=True, description="If True, fetch from PubMed if not in cache"
-    ),
+    fetch_if_missing: bool = Query(default=True, description="If True, fetch from PubMed if not in cache"),
 ):
     """
     Get cached article by PMID.
@@ -180,9 +175,7 @@ async def get_cached_article(
     session = _session_manager.get_current_session()
     if session and pmid in session.article_cache:
         logger.info(f"Cache hit for PMID {pmid}")
-        return ArticleResponse(
-            source="pubmed", verified=True, data=session.article_cache[pmid]
-        )
+        return ArticleResponse(source="pubmed", verified=True, data=session.article_cache[pmid])
 
     # Not in cache - try to fetch if requested
     if fetch_if_missing and _searcher:
@@ -195,13 +188,12 @@ async def get_cached_article(
                 _session_manager.add_to_cache([article])
                 return ArticleResponse(source="pubmed", verified=True, data=article)
         except Exception as e:
-            logger.error(f"Failed to fetch PMID {pmid}: {e}")
-            raise HTTPException(status_code=502, detail=f"PubMed API error: {str(e)}")
+            logger.exception(f"Failed to fetch PMID {pmid}: {e}")
+            raise HTTPException(status_code=502, detail=f"PubMed API error: {e!s}") from e
 
     raise HTTPException(
         status_code=404,
-        detail=f"Article PMID:{pmid} not found in cache. "
-        "Please search for it first using pubmed-search MCP.",
+        detail=f"Article PMID:{pmid} not found in cache. Please search for it first using pubmed-search MCP.",
     )
 
 
@@ -271,8 +263,8 @@ def run_api_server(
     host: str = "127.0.0.1",
     port: int = DEFAULT_API_PORT,
     email: str = DEFAULT_EMAIL,
-    api_key: Optional[str] = None,
-    data_dir: Optional[str] = None,
+    api_key: str | None = None,
+    data_dir: str | None = None,
 ):
     """
     Run the HTTP API server.
@@ -302,9 +294,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="PubMed Search HTTP API Server")
     parser.add_argument("--host", default="127.0.0.1", help="Host to bind to")
-    parser.add_argument(
-        "--port", type=int, default=DEFAULT_API_PORT, help="Port to bind to"
-    )
+    parser.add_argument("--port", type=int, default=DEFAULT_API_PORT, help="Port to bind to")
     parser.add_argument("--email", default=DEFAULT_EMAIL, help="NCBI email")
     parser.add_argument("--api-key", help="NCBI API key")
     parser.add_argument("--data-dir", help="Session data directory")

@@ -3,7 +3,6 @@
 import json
 from unittest.mock import MagicMock
 
-
 from pubmed_search.presentation.mcp_server.session_tools import (
     register_session_resources,
     register_session_tools,
@@ -207,10 +206,7 @@ class TestGetSessionSummary:
 
     async def test_include_history_with_limit(self):
         """Test include_history with history_limit parameter."""
-        history = [
-            {"query": f"q{i}", "pmids": [], "timestamp": "", "result_count": 0}
-            for i in range(20)
-        ]
+        history = [{"query": f"q{i}", "pmids": [], "timestamp": "", "result_count": 0} for i in range(20)]
         session = _make_session(search_history=history, article_cache={})
         self.sm.get_current_session.return_value = session
         result = json.loads(self.fn(include_history=True, history_limit=5))

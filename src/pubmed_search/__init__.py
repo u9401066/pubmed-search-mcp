@@ -84,6 +84,10 @@ from .application.search import (
 # Domain Entities
 # ═══════════════════════════════════════════════════════════════════
 from .domain.entities.article import UnifiedArticle
+
+# HTTP Client and PubMed Client
+from .infrastructure.http import PubMedClient
+from .infrastructure.http.pubmed_client import SearchResult
 from .infrastructure.ncbi import (
     BatchMixin,
     CitationMixin,
@@ -94,10 +98,6 @@ from .infrastructure.ncbi import (
     SearchStrategy,
     UtilsMixin,
 )
-
-# HTTP Client and PubMed Client
-from .infrastructure.http import PubMedClient
-from .infrastructure.http.pubmed_client import SearchResult
 
 # iCite metrics
 from .infrastructure.ncbi.icite import ICiteMixin

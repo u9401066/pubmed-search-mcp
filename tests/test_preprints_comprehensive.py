@@ -2,14 +2,12 @@
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-
 from pubmed_search.infrastructure.sources.preprints import (
-    PreprintArticle,
     ArXivClient,
     MedBioRxivClient,
+    PreprintArticle,
     PreprintSearcher,
 )
-
 
 # ============================================================
 # PreprintArticle (extended)

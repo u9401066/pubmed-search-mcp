@@ -93,9 +93,7 @@ def register_pico_tools(mcp: FastMCP):
             - example_queries: Reference query patterns
         """
         # Normalize inputs
-        description = (
-            InputNormalizer.normalize_query(description) if description else ""
-        )
+        description = InputNormalizer.normalize_query(description) if description else ""
 
         if not description and not any([p, i, c, o]):
             return ResponseFormatter.error(
@@ -105,9 +103,7 @@ def register_pico_tools(mcp: FastMCP):
                 tool_name="parse_pico",
             )
 
-        logger.info(
-            f"Parsing PICO from: {description[:50] if description else 'structured input'}..."
-        )
+        logger.info(f"Parsing PICO from: {description[:50] if description else 'structured input'}...")
 
         # If structured PICO provided, use it directly
         if any([p, i, c, o]):
@@ -128,20 +124,11 @@ def register_pico_tools(mcp: FastMCP):
         question_type = "therapy"  # default
         if description:
             desc_lower = description.lower()
-            if any(
-                w in desc_lower
-                for w in ["診斷", "diagnos", "detect", "sensitivity", "specificity"]
-            ):
+            if any(w in desc_lower for w in ["診斷", "diagnos", "detect", "sensitivity", "specificity"]):
                 question_type = "diagnosis"
-            elif any(
-                w in desc_lower
-                for w in ["預後", "prognos", "survival", "mortality", "outcome"]
-            ):
+            elif any(w in desc_lower for w in ["預後", "prognos", "survival", "mortality", "outcome"]):
                 question_type = "prognosis"
-            elif any(
-                w in desc_lower
-                for w in ["原因", "病因", "cause", "etiolog", "risk factor"]
-            ):
+            elif any(w in desc_lower for w in ["原因", "病因", "cause", "etiolog", "risk factor"]):
                 question_type = "etiology"
             elif any(
                 w in desc_lower

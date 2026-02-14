@@ -9,8 +9,9 @@ NOTE: search_europe_pmc, get_fulltext_xml, get_europe_pmc_citations are
       get_text_mined_terms are registered.
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from pubmed_search.presentation.mcp_server.tools.europe_pmc import (
     register_europe_pmc_tools,
@@ -19,10 +20,12 @@ from pubmed_search.presentation.mcp_server.tools.europe_pmc import (
 
 def _capture_tools(mcp):
     tools = {}
-    mcp.tool = lambda: lambda func: (
-        tools.__setitem__(func.__name__, func),
-        func,
-    )[1]
+    mcp.tool = lambda: (
+        lambda func: (
+            tools.__setitem__(func.__name__, func),
+            func,
+        )[1]
+    )
     register_europe_pmc_tools(mcp)
     return tools
 
@@ -104,9 +107,7 @@ class TestGetFulltextIdentifiers:
                 return_value=AsyncMock(search=AsyncMock(return_value=None)),
             ),
         ):
-            result = await tools["get_fulltext"](
-                identifier="https://doi.org/10.1038/s41586-021-03819-2"
-            )
+            result = await tools["get_fulltext"](identifier="https://doi.org/10.1038/s41586-021-03819-2")
         assert isinstance(result, str)
 
     async def test_short_pmid(self, tools):
@@ -458,9 +459,7 @@ class TestGetFulltextSections:
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
             return_value=mock_client,
         ):
-            result = await tools["get_fulltext"](
-                pmcid="PMC123", sections="introduction,methods"
-            )
+            result = await tools["get_fulltext"](pmcid="PMC123", sections="introduction,methods")
         assert "Introduction" in result or "Intro text" in result
         assert "Methods" in result or "Methods text" in result
         # Discussion should be filtered out

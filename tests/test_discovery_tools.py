@@ -2,8 +2,9 @@
 Tests for Discovery Tools - search_literature, find_related, find_citing, etc.
 """
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 
 class TestAmbiguousTermDetection:
@@ -27,9 +28,7 @@ class TestAmbiguousTermDetection:
         )
 
         # Many other terms = probably a topic search
-        result = _detect_ambiguous_terms(
-            "anesthesiology patient safety monitoring guidelines review"
-        )
+        result = _detect_ambiguous_terms("anesthesiology patient safety monitoring guidelines review")
         # Should return empty or very few since there are many other terms
         assert len(result) == 0
 
@@ -140,9 +139,7 @@ class TestFindRelatedArticlesTool:
         mcp.tool = lambda: lambda f: f
 
         searcher = AsyncMock()
-        searcher.get_related_articles.return_value = [
-            {"pmid": "123", "title": "Related Article"}
-        ]
+        searcher.get_related_articles.return_value = [{"pmid": "123", "title": "Related Article"}]
 
         register_discovery_tools(mcp, searcher)
 

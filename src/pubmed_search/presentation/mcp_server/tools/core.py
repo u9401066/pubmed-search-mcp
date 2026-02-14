@@ -117,10 +117,8 @@ def register_core_tools(mcp: FastMCP) -> None:
             )
 
         except Exception as e:
-            logger.error(f"CORE search failed: {e}")
-            return ResponseFormatter.error(
-                e, suggestion="Check if CORE API is available", tool_name="search_core"
-            )
+            logger.exception(f"CORE search failed: {e}")
+            return ResponseFormatter.error(e, suggestion="Check if CORE API is available", tool_name="search_core")
 
     @mcp.tool()
     async def search_core_fulltext(
@@ -201,7 +199,7 @@ def register_core_tools(mcp: FastMCP) -> None:
             )
 
         except Exception as e:
-            logger.error(f"CORE fulltext search failed: {e}")
+            logger.exception(f"CORE fulltext search failed: {e}")
             return ResponseFormatter.error(e, tool_name="search_core_fulltext")
 
     @mcp.tool()
@@ -235,14 +233,13 @@ def register_core_tools(mcp: FastMCP) -> None:
 
             if result:
                 return json.dumps(result, indent=2, ensure_ascii=False)
-            else:
-                return ResponseFormatter.no_results(
-                    suggestions=[f"Paper with CORE ID '{core_id}' not found"],
-                    alternative_tools=["search_core", "find_in_core"],
-                )
+            return ResponseFormatter.no_results(
+                suggestions=[f"Paper with CORE ID '{core_id}' not found"],
+                alternative_tools=["search_core", "find_in_core"],
+            )
 
         except Exception as e:
-            logger.error(f"Get CORE paper failed: {e}")
+            logger.exception(f"Get CORE paper failed: {e}")
             return ResponseFormatter.error(e, tool_name="get_core_paper")
 
     @mcp.tool()
@@ -297,17 +294,16 @@ def register_core_tools(mcp: FastMCP) -> None:
                     },
                     ensure_ascii=False,
                 )
-            else:
-                return ResponseFormatter.no_results(
-                    suggestions=[
-                        "Full text not available for this paper",
-                        "Try get_core_paper to check download_url",
-                        "Consider using get_fulltext for PMC articles",
-                    ]
-                )
+            return ResponseFormatter.no_results(
+                suggestions=[
+                    "Full text not available for this paper",
+                    "Try get_core_paper to check download_url",
+                    "Consider using get_fulltext for PMC articles",
+                ]
+            )
 
         except Exception as e:
-            logger.error(f"Get CORE fulltext failed: {e}")
+            logger.exception(f"Get CORE fulltext failed: {e}")
             return ResponseFormatter.error(e, tool_name="get_core_fulltext")
 
     @mcp.tool()
@@ -366,15 +362,14 @@ def register_core_tools(mcp: FastMCP) -> None:
 
             if result:
                 return json.dumps(result, indent=2, ensure_ascii=False)
-            else:
-                return ResponseFormatter.no_results(
-                    suggestions=[
-                        f"Paper not found in CORE with {identifier_type}: {identifier}",
-                        "Paper may not be in open access repositories",
-                        "Try search_core with title keywords instead",
-                    ]
-                )
+            return ResponseFormatter.no_results(
+                suggestions=[
+                    f"Paper not found in CORE with {identifier_type}: {identifier}",
+                    "Paper may not be in open access repositories",
+                    "Try search_core with title keywords instead",
+                ]
+            )
 
         except Exception as e:
-            logger.error(f"Find in CORE failed: {e}")
+            logger.exception(f"Find in CORE failed: {e}")
             return ResponseFormatter.error(e, tool_name="find_in_core")

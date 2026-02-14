@@ -29,7 +29,6 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-
 # Maximum query length for PubMed (conservative estimate)
 MAX_QUERY_LENGTH = 4096
 
@@ -166,9 +165,7 @@ class QueryValidationResult:
         if self.errors:
             parts.append(f"❌ {len(self.errors)} error(s): {'; '.join(self.errors)}")
         if self.warnings:
-            parts.append(
-                f"⚠️ {len(self.warnings)} warning(s): {'; '.join(self.warnings)}"
-            )
+            parts.append(f"⚠️ {len(self.warnings)} warning(s): {'; '.join(self.warnings)}")
         if self.corrected_query:
             parts.append(f"💡 Suggested: {self.corrected_query}")
         return " | ".join(parts)
@@ -245,10 +242,7 @@ class QueryValidator:
 
         # 7. Empty parentheses
         if re.search(r"\(\s*\)", corrected):
-            warnings.append(
-                "Query contains empty parentheses '()'. "
-                "This may cause unexpected results."
-            )
+            warnings.append("Query contains empty parentheses '()'. This may cause unexpected results.")
             corrected = re.sub(r"\(\s*\)", "", corrected)
             corrected = re.sub(r"\s+", " ", corrected).strip()
 
@@ -282,16 +276,10 @@ class QueryValidator:
                 elif ch == ")":
                     depth -= 1
                     if depth < 0:
-                        return (
-                            "Unbalanced parentheses: "
-                            "closing ')' without matching opening '('"
-                        )
+                        return "Unbalanced parentheses: closing ')' without matching opening '('"
 
         if depth > 0:
-            return (
-                f"Unbalanced parentheses: "
-                f"{depth} opening '(' without matching closing ')'"
-            )
+            return f"Unbalanced parentheses: {depth} opening '(' without matching closing ')'"
         return None
 
     @staticmethod
@@ -300,10 +288,7 @@ class QueryValidator:
         # Count quotes not escaped (simple: just count all double quotes)
         count = query.count('"')
         if count % 2 != 0:
-            return (
-                f"Unbalanced quotes: "
-                f"{count} double quote(s) found (should be even)"
-            )
+            return f"Unbalanced quotes: {count} double quote(s) found (should be even)"
         return None
 
     @staticmethod
@@ -322,19 +307,11 @@ class QueryValidator:
                 continue
 
             # Check common misspellings
-            close_matches = [
-                t for t in VALID_FIELD_TAGS if _is_close_match(tag_lower, t)
-            ]
+            close_matches = [t for t in VALID_FIELD_TAGS if _is_close_match(tag_lower, t)]
             if close_matches:
-                errors.append(
-                    f"Invalid field tag [{tag}]. "
-                    f"Did you mean [{close_matches[0]}]?"
-                )
+                errors.append(f"Invalid field tag [{tag}]. Did you mean [{close_matches[0]}]?")
             else:
-                warnings.append(
-                    f"Unrecognized field tag [{tag}]. "
-                    f"This may be valid but is not in our known tags list."
-                )
+                warnings.append(f"Unrecognized field tag [{tag}]. This may be valid but is not in our known tags list.")
 
         return errors, warnings
 
@@ -348,34 +325,23 @@ class QueryValidator:
         stripped = re.sub(r'"[^"]*"', '""', query)
 
         # Check for consecutive Boolean operators: AND AND, OR OR, etc.
-        if re.search(
-            r"\b(AND|OR|NOT)\s+(AND|OR|NOT)\b", stripped, re.IGNORECASE
-        ):
+        if re.search(r"\b(AND|OR|NOT)\s+(AND|OR|NOT)\b", stripped, re.IGNORECASE):
             errors.append(
-                "Consecutive Boolean operators detected "
-                "(e.g., 'AND AND' or 'OR NOT' without operand between)"
+                "Consecutive Boolean operators detected (e.g., 'AND AND' or 'OR NOT' without operand between)"
             )
 
         # Check for leading Boolean operator
         stripped_trimmed = stripped.strip()
         if re.match(r"^\s*(AND|OR)\b", stripped_trimmed, re.IGNORECASE):
-            errors.append(
-                "Query starts with a Boolean operator (AND/OR). "
-                "Missing left operand."
-            )
+            errors.append("Query starts with a Boolean operator (AND/OR). Missing left operand.")
 
         # Check for trailing Boolean operator
         if re.search(r"\b(AND|OR|NOT)\s*$", stripped_trimmed, re.IGNORECASE):
-            errors.append(
-                "Query ends with a Boolean operator. Missing right operand."
-            )
+            errors.append("Query ends with a Boolean operator. Missing right operand.")
 
         # Check NOT at start (valid in PubMed but warn)
         if re.match(r"^\s*NOT\b", stripped_trimmed, re.IGNORECASE):
-            warnings.append(
-                "Query starts with NOT. "
-                "PubMed may interpret this differently than expected."
-            )
+            warnings.append("Query starts with NOT. PubMed may interpret this differently than expected.")
 
         return errors, warnings
 
@@ -450,13 +416,12 @@ class QueryValidator:
         # Remove trailing AND/OR/NOT
         query = re.sub(r"\s+(AND|OR|NOT)\s*$", "", query, flags=re.IGNORECASE)
         # Fix consecutive operators (keep the first one)
-        query = re.sub(
+        return re.sub(
             r"\b(AND|OR|NOT)\s+(AND|OR|NOT)\b",
             r"\1",
             query,
             flags=re.IGNORECASE,
         )
-        return query
 
 
 def _is_close_match(a: str, b: str) -> bool:
@@ -484,9 +449,7 @@ def _edit_distance(a: str, b: str) -> int:
             if ch_a == ch_b:
                 new_distances.append(distances[i])
             else:
-                new_distances.append(
-                    1 + min(distances[i], distances[i + 1], new_distances[-1])
-                )
+                new_distances.append(1 + min(distances[i], distances[i + 1], new_distances[-1]))
         distances = new_distances
     return distances[-1]
 

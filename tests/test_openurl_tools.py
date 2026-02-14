@@ -1,13 +1,13 @@
 """Tests for openurl MCP tools — configure, link, presets, test."""
 
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from pubmed_search.presentation.mcp_server.tools.openurl import (
-    register_openurl_tools,
     _format_article,
     _test_resolver_url,
+    register_openurl_tools,
 )
 
 
@@ -93,9 +93,7 @@ class TestTestResolverUrl:
 
 class TestConfigureInstitutionalAccess:
     async def test_disable(self, tools):
-        with patch(
-            "pubmed_search.presentation.mcp_server.tools.openurl.configure_openurl"
-        ) as mock:
+        with patch("pubmed_search.presentation.mcp_server.tools.openurl.configure_openurl") as mock:
             result = tools["configure_institutional_access"](enable=False)
         assert "disabled" in result.lower()
         mock.assert_called_once_with(enabled=False)
@@ -119,9 +117,7 @@ class TestConfigureInstitutionalAccess:
                 "pubmed_search.presentation.mcp_server.tools.openurl.list_presets",
                 return_value={"ntu": "http://ntu.edu/resolver"},
             ),
-            patch(
-                "pubmed_search.presentation.mcp_server.tools.openurl.configure_openurl"
-            ),
+            patch("pubmed_search.presentation.mcp_server.tools.openurl.configure_openurl"),
             patch(
                 "pubmed_search.presentation.mcp_server.tools.openurl.get_openurl_config",
                 return_value=mock_config,
@@ -131,12 +127,8 @@ class TestConfigureInstitutionalAccess:
         assert "configured" in result.lower() or "✅" in result
 
     async def test_custom_url(self, tools):
-        with patch(
-            "pubmed_search.presentation.mcp_server.tools.openurl.configure_openurl"
-        ):
-            result = tools["configure_institutional_access"](
-                resolver_url="https://mylib.edu/resolver"
-            )
+        with patch("pubmed_search.presentation.mcp_server.tools.openurl.configure_openurl"):
+            result = tools["configure_institutional_access"](resolver_url="https://mylib.edu/resolver")
         assert "configured" in result.lower() or "✅" in result
 
     async def test_show_current_config(self, tools):
@@ -268,9 +260,7 @@ class TestTestInstitutionalAccess:
         mock_config = MagicMock()
         mock_builder = MagicMock()
         mock_builder.resolver_base = "https://resolver.test.edu"
-        mock_builder.build_from_article.return_value = (
-            "https://resolver.test.edu?openurl"
-        )
+        mock_builder.build_from_article.return_value = "https://resolver.test.edu?openurl"
         mock_config.get_builder.return_value = mock_builder
 
         with (

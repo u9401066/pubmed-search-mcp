@@ -86,9 +86,7 @@ class TestBuildResearchTimeline:
     @pytest.mark.asyncio
     async def test_success_text(self, setup):
         tools = setup
-        with patch(
-            "pubmed_search.presentation.mcp_server.tools.timeline.TimelineBuilder"
-        ) as MockBuilder:
+        with patch("pubmed_search.presentation.mcp_server.tools.timeline.TimelineBuilder") as MockBuilder:
             instance = MockBuilder.return_value
             instance.build_timeline = AsyncMock(return_value=_FakeTimeline())
             # Re-capture with mocked builder
@@ -103,12 +101,8 @@ class TestBuildResearchTimeline:
         mcp = MagicMock()
         searcher = MagicMock()
         with (
-            patch(
-                "pubmed_search.presentation.mcp_server.tools.timeline.TimelineBuilder"
-            ) as MockTB,
-            patch(
-                "pubmed_search.presentation.mcp_server.tools.timeline.MilestoneDetector"
-            ),
+            patch("pubmed_search.presentation.mcp_server.tools.timeline.TimelineBuilder") as MockTB,
+            patch("pubmed_search.presentation.mcp_server.tools.timeline.MilestoneDetector"),
         ):
             mock_builder = MockTB.return_value
             mock_builder.build_timeline = AsyncMock(return_value=_FakeTimeline())
@@ -122,17 +116,11 @@ class TestBuildResearchTimeline:
         mcp = MagicMock()
         searcher = MagicMock()
         with (
-            patch(
-                "pubmed_search.presentation.mcp_server.tools.timeline.TimelineBuilder"
-            ) as MockTB,
-            patch(
-                "pubmed_search.presentation.mcp_server.tools.timeline.MilestoneDetector"
-            ),
+            patch("pubmed_search.presentation.mcp_server.tools.timeline.TimelineBuilder") as MockTB,
+            patch("pubmed_search.presentation.mcp_server.tools.timeline.MilestoneDetector"),
         ):
             mock_builder = MockTB.return_value
-            mock_builder.build_timeline = AsyncMock(
-                return_value=_FakeTimeline(empty=True)
-            )
+            mock_builder.build_timeline = AsyncMock(return_value=_FakeTimeline(empty=True))
             tools = _capture_tools(mcp, searcher)
 
         result = await tools["build_research_timeline"](topic="zzznonexistent")
@@ -143,20 +131,14 @@ class TestBuildResearchTimeline:
         mcp = MagicMock()
         searcher = MagicMock()
         with (
-            patch(
-                "pubmed_search.presentation.mcp_server.tools.timeline.TimelineBuilder"
-            ) as MockTB,
-            patch(
-                "pubmed_search.presentation.mcp_server.tools.timeline.MilestoneDetector"
-            ),
+            patch("pubmed_search.presentation.mcp_server.tools.timeline.TimelineBuilder") as MockTB,
+            patch("pubmed_search.presentation.mcp_server.tools.timeline.MilestoneDetector"),
         ):
             mock_builder = MockTB.return_value
             mock_builder.build_timeline = AsyncMock(return_value=_FakeTimeline())
             tools = _capture_tools(mcp, searcher)
 
-        result = await tools["build_research_timeline"](
-            topic="test", output_format="mermaid"
-        )
+        result = await tools["build_research_timeline"](topic="test", output_format="mermaid")
         assert "gantt" in result
 
     @pytest.mark.asyncio
@@ -164,20 +146,14 @@ class TestBuildResearchTimeline:
         mcp = MagicMock()
         searcher = MagicMock()
         with (
-            patch(
-                "pubmed_search.presentation.mcp_server.tools.timeline.TimelineBuilder"
-            ) as MockTB,
-            patch(
-                "pubmed_search.presentation.mcp_server.tools.timeline.MilestoneDetector"
-            ),
+            patch("pubmed_search.presentation.mcp_server.tools.timeline.TimelineBuilder") as MockTB,
+            patch("pubmed_search.presentation.mcp_server.tools.timeline.MilestoneDetector"),
         ):
             mock_builder = MockTB.return_value
             mock_builder.build_timeline = AsyncMock(return_value=_FakeTimeline())
             tools = _capture_tools(mcp, searcher)
 
-        result = await tools["build_research_timeline"](
-            topic="test", output_format="json"
-        )
+        result = await tools["build_research_timeline"](topic="test", output_format="json")
         parsed = json.loads(result)
         assert "events" in parsed
 
@@ -186,12 +162,8 @@ class TestBuildResearchTimeline:
         mcp = MagicMock()
         searcher = MagicMock()
         with (
-            patch(
-                "pubmed_search.presentation.mcp_server.tools.timeline.TimelineBuilder"
-            ) as MockTB,
-            patch(
-                "pubmed_search.presentation.mcp_server.tools.timeline.MilestoneDetector"
-            ),
+            patch("pubmed_search.presentation.mcp_server.tools.timeline.TimelineBuilder") as MockTB,
+            patch("pubmed_search.presentation.mcp_server.tools.timeline.MilestoneDetector"),
         ):
             mock_builder = MockTB.return_value
             mock_builder.build_timeline = AsyncMock(side_effect=RuntimeError("fail"))
@@ -222,17 +194,11 @@ class TestAnalyzeTimelineMilestones:
         mcp = MagicMock()
         searcher = MagicMock()
         with (
-            patch(
-                "pubmed_search.presentation.mcp_server.tools.timeline.TimelineBuilder"
-            ) as MockTB,
-            patch(
-                "pubmed_search.presentation.mcp_server.tools.timeline.MilestoneDetector"
-            ),
+            patch("pubmed_search.presentation.mcp_server.tools.timeline.TimelineBuilder") as MockTB,
+            patch("pubmed_search.presentation.mcp_server.tools.timeline.MilestoneDetector"),
         ):
             mock_builder = MockTB.return_value
-            mock_builder.build_timeline = AsyncMock(
-                return_value=_FakeTimeline(events=events)
-            )
+            mock_builder.build_timeline = AsyncMock(return_value=_FakeTimeline(events=events))
             tools = _capture_tools(mcp, searcher)
 
         result = await tools["analyze_timeline_milestones"](topic="test")
@@ -245,17 +211,11 @@ class TestAnalyzeTimelineMilestones:
         mcp = MagicMock()
         searcher = MagicMock()
         with (
-            patch(
-                "pubmed_search.presentation.mcp_server.tools.timeline.TimelineBuilder"
-            ) as MockTB,
-            patch(
-                "pubmed_search.presentation.mcp_server.tools.timeline.MilestoneDetector"
-            ),
+            patch("pubmed_search.presentation.mcp_server.tools.timeline.TimelineBuilder") as MockTB,
+            patch("pubmed_search.presentation.mcp_server.tools.timeline.MilestoneDetector"),
         ):
             mock_builder = MockTB.return_value
-            mock_builder.build_timeline = AsyncMock(
-                return_value=_FakeTimeline(empty=True)
-            )
+            mock_builder.build_timeline = AsyncMock(return_value=_FakeTimeline(empty=True))
             tools = _capture_tools(mcp, searcher)
 
         result = await tools["analyze_timeline_milestones"](topic="zzz")
@@ -285,12 +245,8 @@ class TestCompareTimelines:
         mcp = MagicMock()
         searcher = MagicMock()
         with (
-            patch(
-                "pubmed_search.presentation.mcp_server.tools.timeline.TimelineBuilder"
-            ) as _MockTB,
-            patch(
-                "pubmed_search.presentation.mcp_server.tools.timeline.MilestoneDetector"
-            ),
+            patch("pubmed_search.presentation.mcp_server.tools.timeline.TimelineBuilder") as _MockTB,
+            patch("pubmed_search.presentation.mcp_server.tools.timeline.MilestoneDetector"),
         ):
             tools = _capture_tools(mcp, searcher)
 
@@ -302,12 +258,8 @@ class TestCompareTimelines:
         mcp = MagicMock()
         searcher = MagicMock()
         with (
-            patch(
-                "pubmed_search.presentation.mcp_server.tools.timeline.TimelineBuilder"
-            ) as _MockTB,
-            patch(
-                "pubmed_search.presentation.mcp_server.tools.timeline.MilestoneDetector"
-            ),
+            patch("pubmed_search.presentation.mcp_server.tools.timeline.TimelineBuilder") as _MockTB,
+            patch("pubmed_search.presentation.mcp_server.tools.timeline.MilestoneDetector"),
         ):
             tools = _capture_tools(mcp, searcher)
 
@@ -319,20 +271,14 @@ class TestCompareTimelines:
         mcp = MagicMock()
         searcher = MagicMock()
         with (
-            patch(
-                "pubmed_search.presentation.mcp_server.tools.timeline.TimelineBuilder"
-            ) as MockTB,
-            patch(
-                "pubmed_search.presentation.mcp_server.tools.timeline.MilestoneDetector"
-            ),
+            patch("pubmed_search.presentation.mcp_server.tools.timeline.TimelineBuilder") as MockTB,
+            patch("pubmed_search.presentation.mcp_server.tools.timeline.MilestoneDetector"),
         ):
             mock_builder = MockTB.return_value
             mock_builder.build_timeline = AsyncMock(return_value=_FakeTimeline())
             tools = _capture_tools(mcp, searcher)
 
-        result = await tools["compare_timelines"](
-            topics="drugA,drugB", max_events_per_topic=5
-        )
+        result = await tools["compare_timelines"](topics="drugA,drugB", max_events_per_topic=5)
         parsed = json.loads(result)
         assert len(parsed["topics"]) == 2
         assert "summary" in parsed
@@ -342,12 +288,8 @@ class TestCompareTimelines:
         mcp = MagicMock()
         searcher = MagicMock()
         with (
-            patch(
-                "pubmed_search.presentation.mcp_server.tools.timeline.TimelineBuilder"
-            ) as MockTB,
-            patch(
-                "pubmed_search.presentation.mcp_server.tools.timeline.MilestoneDetector"
-            ),
+            patch("pubmed_search.presentation.mcp_server.tools.timeline.TimelineBuilder") as MockTB,
+            patch("pubmed_search.presentation.mcp_server.tools.timeline.MilestoneDetector"),
         ):
             mock_builder = MockTB.return_value
             mock_builder.build_timeline = AsyncMock(side_effect=RuntimeError("fail"))

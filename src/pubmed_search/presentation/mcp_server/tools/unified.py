@@ -94,8 +94,8 @@ from pubmed_search.infrastructure.sources.openurl import (
 )
 from pubmed_search.infrastructure.sources.preprints import PreprintSearcher
 
-from .icd import lookup_icd_to_mesh
 from ._common import InputNormalizer, ResponseFormatter, _record_search_only
+from .icd import lookup_icd_to_mesh
 
 logger = logging.getLogger(__name__)
 
@@ -269,9 +269,7 @@ class DispatchStrategy:
         if analysis.intent == QueryIntent.SYSTEMATIC:
             return True
         # Enrich for complex queries
-        if analysis.complexity == QueryComplexity.COMPLEX:
-            return True
-        return False
+        return analysis.complexity == QueryComplexity.COMPLEX
 
 
 # ============================================================================
@@ -418,13 +416,7 @@ class SearchDepthMetrics:
     def summary(self) -> str:
         """Human-readable summary."""
         self.calculate_depth_score()
-        level = (
-            "🟢 Deep"
-            if self.depth_score >= 60
-            else "🟡 Moderate"
-            if self.depth_score >= 30
-            else "🔴 Shallow"
-        )
+        level = "🟢 Deep" if self.depth_score >= 60 else "🟡 Moderate" if self.depth_score >= 30 else "🔴 Shallow"
         return (
             f"{level} (Score: {self.depth_score:.0f}/100) | "
             f"Entities: {self.entities_resolved}, MeSH: {self.mesh_terms_used}, "
@@ -658,15 +650,10 @@ async def _auto_relax_search(
                 result.successful_step = step
                 result.relaxed_query = step.query
                 result.total_results = total_count or len(articles)
-                logger.info(
-                    f"Auto-relaxation succeeded at level {step.level} "
-                    f"({step.action}): {len(articles)} results"
-                )
+                logger.info(f"Auto-relaxation succeeded at level {step.level} ({step.action}): {len(articles)} results")
                 return result
 
-            logger.debug(
-                f"Relaxation level {step.level} ({step.action}): still 0 results"
-            )
+            logger.debug(f"Relaxation level {step.level} ({step.action}): still 0 results")
 
         except Exception as e:
             logger.warning(f"Relaxation level {step.level} failed: {e}")
@@ -713,9 +700,7 @@ async def _execute_deep_search(
     # Populate metrics from enhanced_query
     metrics.entities_resolved = len(enhanced_query.entities)
     metrics.mesh_terms_used = len([e for e in enhanced_query.entities if e.mesh_id])
-    metrics.synonyms_expanded = len(
-        [t for t in enhanced_query.expanded_terms if t.source != "original"]
-    )
+    metrics.synonyms_expanded = len([t for t in enhanced_query.expanded_terms if t.source != "original"])
     metrics.strategies_generated = len(enhanced_query.strategies)
 
     all_results: list[list[UnifiedArticle]] = []
@@ -826,10 +811,7 @@ async def _execute_deep_search(
         # Average precision (weighted by articles found)
         total_articles = sum(sr.articles_count for sr in metrics.strategy_results)
         if total_articles > 0:
-            weighted_precision = sum(
-                sr.expected_precision * sr.articles_count
-                for sr in metrics.strategy_results
-            )
+            weighted_precision = sum(sr.expected_precision * sr.articles_count for sr in metrics.strategy_results)
             metrics.estimated_precision = weighted_precision / total_articles
     else:
         metrics.estimated_recall = 0.0
@@ -886,7 +868,7 @@ async def _search_europe_pmc(
 
         return articles, None
     except Exception as e:
-        logger.error(f"Europe PMC search failed: {e}")
+        logger.exception(f"Europe PMC search failed: {e}")
         return [], None
 
 
@@ -941,7 +923,7 @@ async def _search_pubmed(
 
         return articles, total_count
     except Exception as e:
-        logger.error(f"PubMed search failed: {e}")
+        logger.exception(f"PubMed search failed: {e}")
         return [], None
 
 
@@ -972,7 +954,7 @@ async def _search_openalex(
         # OpenAlex doesn't return total count in our current implementation
         return articles, None
     except Exception as e:
-        logger.error(f"OpenAlex search failed: {e}")
+        logger.exception(f"OpenAlex search failed: {e}")
         return [], None
 
 
@@ -1003,7 +985,7 @@ async def _search_semantic_scholar(
         # Semantic Scholar doesn't return total count in our current implementation
         return articles, None
     except Exception as e:
-        logger.error(f"Semantic Scholar search failed: {e}")
+        logger.exception(f"Semantic Scholar search failed: {e}")
         return [], None
 
 
@@ -1014,21 +996,17 @@ async def _enrich_with_crossref(articles: list[UnifiedArticle]) -> None:
 
         # Filter articles that need enrichment
         articles_to_enrich = [
-            (i, article)
-            for i, article in enumerate(articles)
-            if article.doi and not article.citation_metrics
+            (i, article) for i, article in enumerate(articles) if article.doi and not article.citation_metrics
         ]
 
         if not articles_to_enrich:
             return
 
         # Limit to avoid too many parallel requests
-        MAX_PARALLEL = 10
-        articles_to_enrich = articles_to_enrich[:MAX_PARALLEL]
+        max_parallel = 10
+        articles_to_enrich = articles_to_enrich[:max_parallel]
 
-        async def fetch_crossref(
-            idx: int, article: UnifiedArticle
-        ) -> tuple[int, dict | None]:
+        async def fetch_crossref(idx: int, article: UnifiedArticle) -> tuple[int, dict | None]:
             try:
                 doi = article.doi
                 if not doi:
@@ -1097,9 +1075,7 @@ async def _enrich_with_journal_metrics(articles: list[UnifiedArticle]) -> None:
             return
 
         # Batch fetch all unique sources
-        source_data = await client.get_sources_batch(
-            list(source_id_to_articles.keys())
-        )
+        source_data = await client.get_sources_batch(list(source_id_to_articles.keys()))
 
         # Map source data to articles
         for source_id, article_indices in source_id_to_articles.items():
@@ -1124,13 +1100,10 @@ async def _enrich_with_journal_metrics(articles: list[UnifiedArticle]) -> None:
             for idx in article_indices:
                 articles[idx].journal_metrics = journal_metrics
 
-        enriched = sum(
-            1 for a in articles if a.journal_metrics is not None
-        )
+        enriched = sum(1 for a in articles if a.journal_metrics is not None)
         if enriched > 0:
             logger.info(
-                f"Journal metrics: enriched {enriched}/{len(articles)} articles "
-                f"from {len(source_data)} unique journals"
+                f"Journal metrics: enriched {enriched}/{len(articles)} articles from {len(source_data)} unique journals"
             )
 
     except Exception as e:
@@ -1166,21 +1139,17 @@ async def _enrich_with_unpaywall(articles: list[UnifiedArticle]) -> None:
 
         # Filter articles that need enrichment
         articles_to_enrich = [
-            (i, article)
-            for i, article in enumerate(articles)
-            if article.doi and not article.has_open_access
+            (i, article) for i, article in enumerate(articles) if article.doi and not article.has_open_access
         ]
 
         if not articles_to_enrich:
             return
 
         # Limit to avoid too many parallel requests
-        MAX_PARALLEL = 10
-        articles_to_enrich = articles_to_enrich[:MAX_PARALLEL]
+        max_parallel = 10
+        articles_to_enrich = articles_to_enrich[:max_parallel]
 
-        async def fetch_unpaywall(
-            idx: int, article: UnifiedArticle
-        ) -> tuple[int, dict | None]:
+        async def fetch_unpaywall(idx: int, article: UnifiedArticle) -> tuple[int, dict | None]:
             try:
                 doi = article.doi
                 if not doi:
@@ -1242,7 +1211,7 @@ async def _enrich_with_unpaywall(articles: list[UnifiedArticle]) -> None:
         logger.warning(f"Unpaywall enrichment failed: {e}")
 
 
-def _is_preprint(article: UnifiedArticle, ArticleType: type) -> bool:
+def _is_preprint(article: UnifiedArticle, _article_type_class: type) -> bool:
     """
     Determine if an article is a non-peer-reviewed preprint.
 
@@ -1257,7 +1226,7 @@ def _is_preprint(article: UnifiedArticle, ArticleType: type) -> bool:
         True if the article is likely a preprint (not peer-reviewed).
     """
     # Check article type
-    if article.article_type == ArticleType.PREPRINT:
+    if article.article_type == _article_type_class.PREPRINT:
         return True
 
     # Has arXiv ID but no PubMed ID → likely preprint
@@ -1280,8 +1249,12 @@ def _is_preprint(article: UnifiedArticle, ArticleType: type) -> bool:
         # 10.20944/ → Preprints.org
         # 10.21203/ → Research Square
         preprint_doi_prefixes = (
-            "10.1101/", "10.48550/", "10.26434/",
-            "10.2139/", "10.20944/", "10.21203/",
+            "10.1101/",
+            "10.48550/",
+            "10.26434/",
+            "10.2139/",
+            "10.20944/",
+            "10.21203/",
         )
         if any(doi_lower.startswith(prefix) for prefix in preprint_doi_prefixes):
             return True
@@ -1290,8 +1263,13 @@ def _is_preprint(article: UnifiedArticle, ArticleType: type) -> bool:
     journal = (article.journal or "").lower()
     if journal:
         preprint_journal_names = (
-            "arxiv", "medrxiv", "biorxiv", "chemrxiv", "ssrn",
-            "preprints", "research square",
+            "arxiv",
+            "medrxiv",
+            "biorxiv",
+            "chemrxiv",
+            "ssrn",
+            "preprints",
+            "research square",
         )
         if any(name in journal for name in preprint_journal_names):
             return True
@@ -1383,9 +1361,7 @@ async def _enrich_with_api_similarity(
         s2_client = SemanticScholarClient()
 
         # Get recommendations based on seed article
-        recommendations = await s2_client.get_recommendations(
-            f"PMID:{seed_pmid}", limit=50
-        )
+        recommendations = await s2_client.get_recommendations(f"PMID:{seed_pmid}", limit=50)
 
         if not recommendations:
             return
@@ -1444,13 +1420,9 @@ async def _format_unified_results(
     if include_analysis:
         output_parts.append("## 🔍 Unified Search Results\n")
         output_parts.append(f"**Query**: {analysis.original_query}")
-        output_parts.append(
-            f"**Analysis**: {analysis.complexity.value} complexity, {analysis.intent.value} intent"
-        )
+        output_parts.append(f"**Analysis**: {analysis.complexity.value} complexity, {analysis.intent.value} intent")
         if analysis.pico:
-            pico_str = ", ".join(
-                f"{k}={v}" for k, v in analysis.pico.to_dict().items() if v
-            )
+            pico_str = ", ".join(f"{k}={v}" for k, v in analysis.pico.to_dict().items() if v)
             output_parts.append(f"**PICO**: {pico_str}")
 
         # ICD code expansion info
@@ -1478,10 +1450,7 @@ async def _format_unified_results(
 
         # Show total count info with PubMed total
         results_str = f"{stats.unique_articles} unique ({stats.duplicates_removed} duplicates removed)"
-        if (
-            pubmed_total_count is not None
-            and pubmed_total_count > stats.unique_articles
-        ):
+        if pubmed_total_count is not None and pubmed_total_count > stats.unique_articles:
             results_str = f"📊 返回 **{stats.unique_articles}** 篇 (PubMed 總共 **{pubmed_total_count}** 篇符合) | {stats.duplicates_removed} 去重"
         output_parts.append(f"**Results**: {results_str}")
         output_parts.append("")
@@ -1491,43 +1460,27 @@ async def _format_unified_results(
         if relaxation_result.successful_step:
             step = relaxation_result.successful_step
             output_parts.append("### ⚠️ 搜尋自動放寬 (Auto-Relaxed)\n")
-            output_parts.append(
-                f"原始查詢 `{relaxation_result.original_query}` 返回 **0** 筆結果。"
-            )
-            output_parts.append(
-                f"已自動放寬至 **Level {step.level}**: {step.description}"
-            )
+            output_parts.append(f"原始查詢 `{relaxation_result.original_query}` 返回 **0** 筆結果。")
+            output_parts.append(f"已自動放寬至 **Level {step.level}**: {step.description}")
             output_parts.append(f"放寬後查詢: `{relaxation_result.relaxed_query}`")
 
             # Show all attempted steps for transparency
             if len(relaxation_result.steps_tried) > 1:
                 output_parts.append("\n**放寬嘗試過程** (由窄到寬):")
                 for s in relaxation_result.steps_tried:
-                    status = (
-                        "✅"
-                        if s == relaxation_result.successful_step
-                        else "❌ 0 results"
-                    )
-                    output_parts.append(
-                        f"  - Level {s.level} ({s.action}): {s.description} → {status}"
-                    )
+                    status = "✅" if s == relaxation_result.successful_step else "❌ 0 results"
+                    output_parts.append(f"  - Level {s.level} ({s.action}): {s.description} → {status}")
             output_parts.append("")
         else:
             # All steps tried, still 0
             output_parts.append("### ⚠️ 搜尋自動放寬失敗\n")
-            output_parts.append(
-                f"原始查詢 `{relaxation_result.original_query}` 返回 **0** 筆結果。"
-            )
+            output_parts.append(f"原始查詢 `{relaxation_result.original_query}` 返回 **0** 筆結果。")
             output_parts.append("已嘗試所有放寬策略，仍無結果。")
             if relaxation_result.steps_tried:
                 output_parts.append("\n**已嘗試:**")
                 for s in relaxation_result.steps_tried:
-                    output_parts.append(
-                        f"  - Level {s.level}: {s.description} → ❌ 0 results"
-                    )
-            output_parts.append(
-                "\n**建議:** 嘗試不同的搜尋詞，或使用 `generate_search_queries()` 取得 MeSH 同義詞。"
-            )
+                    output_parts.append(f"  - Level {s.level}: {s.description} → ❌ 0 results")
+            output_parts.append("\n**建議:** 嘗試不同的搜尋詞，或使用 `generate_search_queries()` 取得 MeSH 同義詞。")
             output_parts.append("")
 
     # Articles
@@ -1539,9 +1492,7 @@ async def _format_unified_results(
 
     for i, article in enumerate(articles, 1):
         # Article header
-        score_str = (
-            f" (score: {article._ranking_score:.2f})" if article._ranking_score else ""
-        )
+        score_str = f" (score: {article.ranking_score:.2f})" if article.ranking_score else ""
         output_parts.append(f"### {i}. {article.title}{score_str}")
 
         # Identifiers
@@ -1568,9 +1519,7 @@ async def _format_unified_results(
                 ArticleType.REVIEW: "⚪ Review",
                 ArticleType.CASE_REPORT: "🟠 Case Report (4)",
             }
-            badge = type_badges.get(
-                article.article_type, f"📄 {article.article_type.value}"
-            )
+            badge = type_badges.get(article.article_type, f"📄 {article.article_type.value}")
             output_parts.append(f"**Type**: {badge}")
 
         # Authors and journal
@@ -1591,17 +1540,13 @@ async def _format_unified_results(
         if article.has_open_access:
             oa_link = article.best_oa_link
             if oa_link:
-                output_parts.append(
-                    f"**OA**: ✅ [{article.oa_status.value}]({oa_link.url})"
-                )
+                output_parts.append(f"**OA**: ✅ [{article.oa_status.value}]({oa_link.url})")
             else:
                 output_parts.append(f"**OA**: ✅ {article.oa_status.value}")
 
         # Institutional access link (OpenURL)
         openurl_config = get_openurl_config()
-        if openurl_config.enabled and (
-            openurl_config.resolver_base or openurl_config.preset
-        ):
+        if openurl_config.enabled and (openurl_config.resolver_base or openurl_config.preset):
             openurl = get_openurl_link(
                 {
                     "pmid": article.pmid,
@@ -1685,9 +1630,7 @@ async def _format_unified_results(
                         authors_str = ", ".join(paper["authors"][:3])
                         if len(paper["authors"]) > 3:
                             authors_str += " et al."
-                        output_parts.append(
-                            f"*{authors_str}* ({paper.get('published', 'N/A')})"
-                        )
+                        output_parts.append(f"*{authors_str}* ({paper.get('published', 'N/A')})")
                     if paper.get("pdf_url"):
                         output_parts.append(f"PDF: {paper['pdf_url']}")
                     if paper.get("source_url"):
@@ -1957,9 +1900,7 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             - Preprints (if include_preprints=True)
             - Relaxation info (if auto_relax triggered)
         """
-        logger.info(
-            f"Unified search: query='{query}', limit={limit}, ranking='{ranking}'"
-        )
+        logger.info(f"Unified search: query='{query}', limit={limit}, ranking='{ranking}'")
 
         try:
             # === Step 0: Normalize Inputs ===
@@ -1975,19 +1916,11 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             limit = InputNormalizer.normalize_limit(limit, default=10, max_val=100)
             min_year = InputNormalizer.normalize_year(min_year)
             max_year = InputNormalizer.normalize_year(max_year)
-            include_oa_links = InputNormalizer.normalize_bool(
-                include_oa_links, default=True
-            )
+            include_oa_links = InputNormalizer.normalize_bool(include_oa_links, default=True)
             show_analysis = InputNormalizer.normalize_bool(show_analysis, default=True)
-            include_similarity_scores = InputNormalizer.normalize_bool(
-                include_similarity_scores, default=True
-            )
-            include_preprints = InputNormalizer.normalize_bool(
-                include_preprints, default=False
-            )
-            peer_reviewed_only = InputNormalizer.normalize_bool(
-                peer_reviewed_only, default=True
-            )
+            include_similarity_scores = InputNormalizer.normalize_bool(include_similarity_scores, default=True)
+            include_preprints = InputNormalizer.normalize_bool(include_preprints, default=False)
+            peer_reviewed_only = InputNormalizer.normalize_bool(peer_reviewed_only, default=True)
             auto_relax = InputNormalizer.normalize_bool(auto_relax, default=True)
             deep_search = InputNormalizer.normalize_bool(deep_search, default=True)
 
@@ -2002,36 +1935,25 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             analyzer = QueryAnalyzer()
             analysis = analyzer.analyze(query)
 
-            logger.info(
-                f"Query analysis: complexity={analysis.complexity.value}, intent={analysis.intent.value}"
-            )
+            logger.info(f"Query analysis: complexity={analysis.complexity.value}, intent={analysis.intent.value}")
 
             # === Step 1.5: Semantic Enhancement (Phase 3) ===
             # Skip PubTator3 for SIMPLE/LOOKUP queries (saves 1-3s latency)
             enhanced_query: EnhancedQuery | None = None
             matched_entity_names: list[str] = []
 
-            skip_enhancement = (
-                analysis.complexity.value == "simple"
-                or analysis.intent.value == "lookup"
-            )
+            skip_enhancement = analysis.complexity.value == "simple" or analysis.intent.value == "lookup"
 
             if skip_enhancement:
-                logger.info(
-                    "Skipping semantic enhancement for simple/lookup query"
-                )
+                logger.info("Skipping semantic enhancement for simple/lookup query")
             else:
                 try:
                     enhancer = get_semantic_enhancer()
-                    enhanced_query = await asyncio.wait_for(
-                        enhancer.enhance(query), timeout=3.0
-                    )
+                    enhanced_query = await asyncio.wait_for(enhancer.enhance(query), timeout=3.0)
 
                     if enhanced_query and enhanced_query.entities:
                         # Extract entity names for ranking
-                        matched_entity_names = [
-                            e.resolved_name for e in enhanced_query.entities
-                        ]
+                        matched_entity_names = [e.resolved_name for e in enhanced_query.entities]
                         logger.info(
                             f"Semantic enhancement: {len(enhanced_query.entities)} entities, "
                             f"{len(enhanced_query.strategies)} strategies"
@@ -2075,13 +1997,9 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                     )
 
                     trial_query = " ".join(query.split()[:5])
-                    clinical_trials_task = asyncio.create_task(
-                        search_related_trials(trial_query, limit=3)
-                    )
+                    clinical_trials_task = asyncio.create_task(search_related_trials(trial_query, limit=3))
                 except Exception:
-                    pass
-
-            # Build advanced filters dict for cleaner passing
+                    logger.debug("Clinical trials module not available, skipping")
             advanced_filters = {
                 k: v
                 for k, v in {
@@ -2098,15 +2016,8 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             effective_max_year = max_year or analysis.year_to
 
             # *** DEEP SEARCH: Use SemanticEnhancer strategies ***
-            if (
-                deep_search
-                and enhanced_query
-                and enhanced_query.strategies
-                and len(enhanced_query.strategies) > 0
-            ):
-                logger.info(
-                    f"Executing DEEP SEARCH with {len(enhanced_query.strategies)} strategies"
-                )
+            if deep_search and enhanced_query and enhanced_query.strategies and len(enhanced_query.strategies) > 0:
+                logger.info(f"Executing DEEP SEARCH with {len(enhanced_query.strategies)} strategies")
                 (
                     all_results,
                     deep_search_metrics,
@@ -2145,7 +2056,7 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                         )
                         return ("pubmed", articles, total_count)
 
-                    elif source == "openalex":
+                    if source == "openalex":
                         articles, total_count = await _search_openalex(
                             query,
                             limit,
@@ -2154,7 +2065,7 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                         )
                         return ("openalex", articles, total_count)
 
-                    elif source == "semantic_scholar":
+                    if source == "semantic_scholar":
                         articles, total_count = await _search_semantic_scholar(
                             query,
                             limit,
@@ -2163,7 +2074,7 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                         )
                         return ("semantic_scholar", articles, total_count)
 
-                    elif source == "crossref":
+                    if source == "crossref":
                         # CrossRef is used for enrichment, not primary search
                         return ("crossref", [], None)
 
@@ -2189,8 +2100,7 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                     if name == "pubmed" and total_count is not None:
                         pubmed_total_count = total_count
                     logger.info(
-                        f"{name}: {len(articles)} results"
-                        + (f" (total: {total_count})" if total_count else "")
+                        "%s: %d results%s", name, len(articles), f" (total: {total_count})" if total_count else ""
                     )
 
             # === Step 4.5: Search Preprints (if enabled) ===
@@ -2198,18 +2108,12 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 try:
                     preprint_searcher = PreprintSearcher()
                     # Use original query for preprints (without MeSH expansion)
-                    preprint_query = (
-                        query.split("[MeSH]")[0].replace('"', "").strip()
-                        if "[MeSH]" in query
-                        else query
-                    )
+                    preprint_query = query.split("[MeSH]")[0].replace('"', "").strip() if "[MeSH]" in query else query
                     preprint_results = await preprint_searcher.search_medical_preprints(
                         query=preprint_query,
                         limit=min(limit, 10),
                     )
-                    logger.info(
-                        f"Preprints: {preprint_results.get('total', 0)} results"
-                    )
+                    logger.info(f"Preprints: {preprint_results.get('total', 0)} results")
                 except Exception as e:
                     logger.warning(f"Preprint search failed: {e}")
                     preprint_results = {}
@@ -2218,17 +2122,13 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             aggregator = ResultAggregator(config)
             articles, stats = aggregator.aggregate(all_results)
 
-            logger.info(
-                f"Aggregation: {stats.unique_articles} unique from {stats.total_input} total"
-            )
+            logger.info(f"Aggregation: {stats.unique_articles} unique from {stats.total_input} total")
 
             # === Step 5.5: Auto-Relaxation (when 0 results) ===
             relaxation_result: RelaxationResult | None = None
 
             if (
-                auto_relax
-                and stats.unique_articles == 0
-                and not analysis.identifiers  # Don't relax PMID/DOI lookups
+                auto_relax and stats.unique_articles == 0 and not analysis.identifiers  # Don't relax PMID/DOI lookups
             ):
                 logger.info("0 results — attempting auto-relaxation")
                 relaxation_result = await _auto_relax_search(
@@ -2256,8 +2156,7 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                     # Update pubmed_total_count
                     pubmed_total_count = relaxation_result.total_results
                     logger.info(
-                        f"Auto-relaxation: {stats.unique_articles} results "
-                        f"at level {step.level} ({step.action})"
+                        f"Auto-relaxation: {stats.unique_articles} results at level {step.level} ({step.action})"
                     )
 
             # === Step 6: Enrich with CrossRef (if in sources) ===
@@ -2273,22 +2172,13 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 from pubmed_search.domain.entities.article import ArticleType
 
                 pre_filter_count = len(articles)
-                articles = [
-                    a
-                    for a in articles
-                    if not _is_preprint(a, ArticleType)
-                ]
+                articles = [a for a in articles if not _is_preprint(a, ArticleType)]
                 filtered_count = pre_filter_count - len(articles)
                 if filtered_count > 0:
-                    logger.info(
-                        f"Peer-review filter: removed {filtered_count} "
-                        f"non-peer-reviewed articles"
-                    )
+                    logger.info(f"Peer-review filter: removed {filtered_count} non-peer-reviewed articles")
 
             # === Step 7: Enrich with Unpaywall OA Links ===
-            if include_oa_links and DispatchStrategy.should_enrich_with_unpaywall(
-                analysis
-            ):
+            if include_oa_links and DispatchStrategy.should_enrich_with_unpaywall(analysis):
                 await _enrich_with_unpaywall(articles)
 
             # === Step 8: Rank Results ===
@@ -2309,41 +2199,34 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             if output_format == "json":
                 if clinical_trials_task:
                     clinical_trials_task.cancel()
-                return _format_as_json(
-                    ranked, analysis, stats, relaxation_result, deep_search_metrics
-                )
-            else:
-                # Collect pre-fetched clinical trials
-                prefetched_trials: list | None = None
-                if clinical_trials_task:
-                    try:
-                        prefetched_trials = await asyncio.wait_for(
-                            clinical_trials_task, timeout=5.0
-                        )
-                    except (asyncio.TimeoutError, Exception):
-                        prefetched_trials = None
+                return _format_as_json(ranked, analysis, stats, relaxation_result, deep_search_metrics)
+            # Collect pre-fetched clinical trials
+            prefetched_trials: list | None = None
+            if clinical_trials_task:
+                try:
+                    prefetched_trials = await asyncio.wait_for(clinical_trials_task, timeout=5.0)
+                except (asyncio.TimeoutError, Exception):
+                    prefetched_trials = None
 
-                return await _format_unified_results(
-                    ranked,
-                    analysis,
-                    stats,
-                    show_analysis,
-                    pubmed_total_count,
-                    icd_matches,
-                    preprint_results if include_preprints else None,
-                    include_trials=True,
-                    original_query=analysis.original_query,
-                    enhanced_entities=matched_entity_names
-                    if matched_entity_names
-                    else None,
-                    relaxation_result=relaxation_result,
-                    deep_search_metrics=deep_search_metrics,
-                    prefetched_trials=prefetched_trials,
-                )
+            return await _format_unified_results(
+                ranked,
+                analysis,
+                stats,
+                show_analysis,
+                pubmed_total_count,
+                icd_matches,
+                preprint_results if include_preprints else None,
+                include_trials=True,
+                original_query=analysis.original_query,
+                enhanced_entities=matched_entity_names if matched_entity_names else None,
+                relaxation_result=relaxation_result,
+                deep_search_metrics=deep_search_metrics,
+                prefetched_trials=prefetched_trials,
+            )
 
         except Exception as e:
-            logger.error(f"Unified search failed: {e}", exc_info=True)
-            return f"Error: Unified search failed - {str(e)}"
+            logger.exception("Unified search failed: %s", e)
+            return f"Error: Unified search failed - {e!s}"
 
     @mcp.tool()
     async def analyze_search_query(query: str) -> str:
@@ -2431,5 +2314,5 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             return "\n".join(output)
 
         except Exception as e:
-            logger.error(f"Query analysis failed: {e}")
-            return f"Error: Query analysis failed - {str(e)}"
+            logger.exception(f"Query analysis failed: {e}")
+            return f"Error: Query analysis failed - {e!s}"

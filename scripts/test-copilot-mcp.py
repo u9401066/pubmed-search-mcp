@@ -12,10 +12,10 @@ Usage:
     python scripts/test-copilot-mcp.py https://kmuh-ai.ngrok.dev/mcp
 """
 
-import sys
 import json
+import sys
+
 import requests
-from typing import Optional
 
 
 # Colors for terminal output
@@ -63,7 +63,7 @@ def test_mcp_server(base_url: str):
         "X-Ms-User-Agent": "CopilotStudio PowerFx/1.5.0-test",
     }
 
-    session_id: Optional[str] = None
+    session_id: str | None = None
 
     # =========================================================================
     # Step 1: Initialize
@@ -104,9 +104,7 @@ def test_mcp_server(base_url: str):
 
             data = resp.json()
             server_info = data.get("result", {}).get("serverInfo", {})
-            print_success(
-                f"Server: {server_info.get('name')} v{server_info.get('version')}"
-            )
+            print_success(f"Server: {server_info.get('name')} v{server_info.get('version')}")
             print("Response (truncated):")
             print_json(data)
         else:

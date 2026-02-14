@@ -2,8 +2,9 @@
 Final targeted tests to push coverage from 86% to 90%.
 """
 
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
+
 import pytest
-from unittest.mock import Mock, patch, MagicMock, AsyncMock
 
 
 class TestSearchFetchWithRetry:
@@ -19,9 +20,7 @@ class TestSearchFetchWithRetry:
         searcher = TestSearcher()
 
         with (
-            patch(
-                "pubmed_search.infrastructure.ncbi.search.Entrez.efetch"
-            ) as mock_efetch,
+            patch("pubmed_search.infrastructure.ncbi.search.Entrez.efetch") as mock_efetch,
             patch(
                 "pubmed_search.infrastructure.ncbi.search.asyncio.sleep",
                 new_callable=AsyncMock,
@@ -50,9 +49,7 @@ class TestSearchFetchWithRetry:
         searcher = TestSearcher()
 
         with (
-            patch(
-                "pubmed_search.infrastructure.ncbi.search.Entrez.efetch"
-            ) as mock_efetch,
+            patch("pubmed_search.infrastructure.ncbi.search.Entrez.efetch") as mock_efetch,
             patch(
                 "pubmed_search.infrastructure.ncbi.search._rate_limit",
                 new_callable=AsyncMock,
@@ -102,18 +99,10 @@ class TestStrategyExpandSearch:
         from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
 
         with (
-            patch(
-                "pubmed_search.infrastructure.ncbi.strategy.Entrez.esearch"
-            ) as mock_esearch,
-            patch(
-                "pubmed_search.infrastructure.ncbi.strategy.Entrez.esummary"
-            ) as mock_esummary,
-            patch(
-                "pubmed_search.infrastructure.ncbi.strategy.Entrez.read"
-            ) as mock_read,
-            patch(
-                "pubmed_search.infrastructure.ncbi.strategy.Entrez.espell"
-            ) as mock_espell,
+            patch("pubmed_search.infrastructure.ncbi.strategy.Entrez.esearch") as mock_esearch,
+            patch("pubmed_search.infrastructure.ncbi.strategy.Entrez.esummary") as mock_esummary,
+            patch("pubmed_search.infrastructure.ncbi.strategy.Entrez.read") as mock_read,
+            patch("pubmed_search.infrastructure.ncbi.strategy.Entrez.espell") as mock_espell,
         ):
             # Spell check returns no correction
             mock_espell.return_value = MagicMock()
@@ -270,7 +259,7 @@ class TestFormatsHelperFunctions:
         from pubmed_search.application.export.formats import export_articles
 
         try:
-            export_articles([], format="invalid")
+            export_articles([], fmt="invalid")
         except ValueError:
             pass  # Expected
 
@@ -280,11 +269,12 @@ class TestSessionToolsRegister:
 
     async def test_register_session_tools(self):
         """Test session tools registration."""
+        import tempfile
+
+        from pubmed_search.application.session import SessionManager
         from pubmed_search.presentation.mcp_server.session_tools import (
             register_session_tools,
         )
-        from pubmed_search.application.session import SessionManager
-        import tempfile
 
         mock_mcp = Mock()
         mock_mcp.tool = Mock(return_value=lambda f: f)
@@ -297,11 +287,12 @@ class TestSessionToolsRegister:
 
     async def test_register_session_resources(self):
         """Test session resources registration."""
+        import tempfile
+
+        from pubmed_search.application.session import SessionManager
         from pubmed_search.presentation.mcp_server.session_tools import (
             register_session_resources,
         )
-        from pubmed_search.application.session import SessionManager
-        import tempfile
 
         mock_mcp = Mock()
         mock_mcp.resource = Mock(return_value=lambda f: f)
@@ -352,15 +343,13 @@ class TestLinksWithLookup:
 
     async def test_get_fulltext_links_with_lookup(self):
         """Test get_fulltext_links_with_lookup function."""
+        from pubmed_search import LiteratureSearcher
         from pubmed_search.application.export.links import (
             get_fulltext_links_with_lookup,
         )
-        from pubmed_search import LiteratureSearcher
 
         searcher = LiteratureSearcher(email="test@example.com")
-        searcher.get_pmc_fulltext_url = AsyncMock(
-            return_value="https://pmc.ncbi.nlm.nih.gov/PMC123"
-        )
+        searcher.get_pmc_fulltext_url = AsyncMock(return_value="https://pmc.ncbi.nlm.nih.gov/PMC123")
 
         result = await get_fulltext_links_with_lookup("12345", searcher)
 

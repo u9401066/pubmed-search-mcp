@@ -4,15 +4,13 @@ Performance test for unified_search.
 Integration test - makes real API calls. Not for CI.
 """
 
-import time
 import logging
+import time
 
 import pytest
 
 # Enable logging to see what's happening
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger()
 
 

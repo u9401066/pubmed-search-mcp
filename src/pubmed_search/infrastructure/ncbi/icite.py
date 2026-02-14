@@ -12,7 +12,7 @@ API Documentation: https://icite.od.nih.gov/api
 
 import logging
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import httpx
 
@@ -27,10 +27,10 @@ class _ICiteCache:
     """Simple in-memory TTL cache for iCite results."""
 
     def __init__(self, ttl: int = ICITE_CACHE_TTL):
-        self._cache: Dict[str, tuple[float, Dict[str, Any]]] = {}
+        self._cache: dict[str, tuple[float, dict[str, Any]]] = {}
         self._ttl = ttl
 
-    def get(self, pmid: str) -> Dict[str, Any] | None:
+    def get(self, pmid: str) -> dict[str, Any] | None:
         """Get cached metrics for a PMID, or None if expired/missing."""
         entry = self._cache.get(pmid)
         if entry is None:
@@ -41,10 +41,10 @@ class _ICiteCache:
             return None
         return data
 
-    def get_many(self, pmids: List[str]) -> tuple[Dict[str, Dict[str, Any]], List[str]]:
+    def get_many(self, pmids: list[str]) -> tuple[dict[str, dict[str, Any]], list[str]]:
         """Get cached metrics for multiple PMIDs. Returns (cached, missing)."""
-        cached: Dict[str, Dict[str, Any]] = {}
-        missing: List[str] = []
+        cached: dict[str, dict[str, Any]] = {}
+        missing: list[str] = []
         for pmid in pmids:
             data = self.get(pmid)
             if data is not None:
@@ -53,7 +53,7 @@ class _ICiteCache:
                 missing.append(pmid)
         return cached, missing
 
-    def put_many(self, results: Dict[str, Dict[str, Any]]) -> None:
+    def put_many(self, results: dict[str, dict[str, Any]]) -> None:
         """Cache multiple results at once."""
         now = time.monotonic()
         for pmid, data in results.items():
@@ -82,8 +82,8 @@ class ICiteMixin:
         return self._icite_client
 
     async def get_citation_metrics(
-        self, pmids: List[str], fields: Optional[List[str]] = None
-    ) -> Dict[str, Dict[str, Any]]:
+        self, pmids: list[str], fields: list[str] | None = None
+    ) -> dict[str, dict[str, Any]]:
         """
         Get citation metrics from iCite API (with in-memory TTL cache).
 
@@ -125,9 +125,7 @@ class ICiteMixin:
             return cached
 
         if cached:
-            logger.debug(
-                f"iCite cache: {len(cached)} hits, {len(missing)} misses"
-            )
+            logger.debug(f"iCite cache: {len(cached)} hits, {len(missing)} misses")
 
         results = dict(cached)  # Start with cached results
 
@@ -141,9 +139,7 @@ class ICiteMixin:
 
         return results
 
-    async def _fetch_icite_batch(
-        self, pmids: List[str], fields: List[str]
-    ) -> Dict[str, Dict[str, Any]]:
+    async def _fetch_icite_batch(self, pmids: list[str], fields: list[str]) -> dict[str, dict[str, Any]]:
         """Fetch a single batch from iCite API."""
         try:
             params = {"pmids": ",".join(str(p) for p in pmids), "fl": ",".join(fields)}
@@ -164,15 +160,13 @@ class ICiteMixin:
             return results
 
         except httpx.HTTPError as e:
-            logger.error(f"iCite API request failed: {e}")
+            logger.exception(f"iCite API request failed: {e}")
             return {}
         except Exception as e:
-            logger.error(f"iCite processing error: {e}")
+            logger.exception(f"iCite processing error: {e}")
             return {}
 
-    async def enrich_with_citations(
-        self, articles: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
+    async def enrich_with_citations(self, articles: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """
         Enrich article list with iCite citation metrics.
 
@@ -209,10 +203,10 @@ class ICiteMixin:
 
     def sort_by_citations(
         self,
-        articles: List[Dict[str, Any]],
+        articles: list[dict[str, Any]],
         metric: str = "citation_count",
         descending: bool = True,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Sort articles by citation metric.
 
@@ -241,11 +235,11 @@ class ICiteMixin:
 
     def filter_by_citations(
         self,
-        articles: List[Dict[str, Any]],
-        min_citations: Optional[int] = None,
-        min_rcr: Optional[float] = None,
-        min_percentile: Optional[float] = None,
-    ) -> List[Dict[str, Any]]:
+        articles: list[dict[str, Any]],
+        min_citations: int | None = None,
+        min_rcr: float | None = None,
+        min_percentile: float | None = None,
+    ) -> list[dict[str, Any]]:
         """
         Filter articles by citation thresholds.
 

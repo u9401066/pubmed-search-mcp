@@ -67,11 +67,11 @@ class TestToolRegistration:
         """Test that all tools are registered."""
         from pubmed_search.presentation.mcp_server.tools import (
             register_discovery_tools,
-            register_strategy_tools,
-            register_pico_tools,
-            register_export_tools,
-            register_unified_search_tools,
             register_europe_pmc_tools,
+            register_export_tools,
+            register_pico_tools,
+            register_strategy_tools,
+            register_unified_search_tools,
         )
 
         mcp = MagicMock()
@@ -158,10 +158,10 @@ class TestExportsInit:
     async def test_exports_init_exports(self):
         """Test that exports __init__ exports expected functions."""
         from pubmed_search.application.export import (
+            SUPPORTED_FORMATS,
             export_articles,
             get_fulltext_links,
             summarize_access,
-            SUPPORTED_FORMATS,
         )
 
         assert export_articles is not None

@@ -82,14 +82,10 @@ class NCBIExtendedClient(BaseAPIClient):
     ) -> Any:
         """Add required NCBI parameters (email, tool, api_key) to URL."""
         separator = "&" if "?" in url else "?"
-        url += (
-            f"{separator}email={urllib.parse.quote(self._email)}&tool=pubmed-search-mcp"
-        )
+        url += f"{separator}email={urllib.parse.quote(self._email)}&tool=pubmed-search-mcp"
         if self._api_key:
             url += f"&api_key={self._api_key}"
-        return await super()._execute_request(
-            url, method=method, data=data, headers=headers
-        )
+        return await super()._execute_request(url, method=method, data=data, headers=headers)
 
     # =========================================================================
     # Gene Database
@@ -135,9 +131,7 @@ class NCBIExtendedClient(BaseAPIClient):
 
             # Fetch summaries
             ids_str = ",".join(ids)
-            summary_url = (
-                f"{ENTREZ_BASE}/esummary.fcgi?db=gene&id={ids_str}&retmode=json"
-            )
+            summary_url = f"{ENTREZ_BASE}/esummary.fcgi?db=gene&id={ids_str}&retmode=json"
 
             summary_result = await self._make_request(summary_url, expect_json=True)
             if not isinstance(summary_result, dict):
@@ -154,7 +148,7 @@ class NCBIExtendedClient(BaseAPIClient):
             return genes
 
         except Exception as e:
-            logger.error(f"Gene search failed: {e}")
+            logger.exception(f"Gene search failed: {e}")
             return []
 
     async def get_gene(self, gene_id: str | int) -> dict | None:
@@ -181,12 +175,10 @@ class NCBIExtendedClient(BaseAPIClient):
             return None
 
         except Exception as e:
-            logger.error(f"Get gene failed: {e}")
+            logger.exception(f"Get gene failed: {e}")
             return None
 
-    async def get_gene_pubmed_links(
-        self, gene_id: str | int, limit: int = 20
-    ) -> list[str]:
+    async def get_gene_pubmed_links(self, gene_id: str | int, limit: int = 20) -> list[str]:
         """
         Get PubMed IDs linked to a gene.
 
@@ -198,10 +190,7 @@ class NCBIExtendedClient(BaseAPIClient):
             List of PubMed IDs
         """
         try:
-            url = (
-                f"{ENTREZ_BASE}/elink.fcgi?dbfrom=gene&db=pubmed"
-                f"&id={gene_id}&retmode=json"
-            )
+            url = f"{ENTREZ_BASE}/elink.fcgi?dbfrom=gene&db=pubmed&id={gene_id}&retmode=json"
             result = await self._make_request(url, expect_json=True)
 
             if not isinstance(result, dict):
@@ -218,7 +207,7 @@ class NCBIExtendedClient(BaseAPIClient):
             return pmids[:limit]
 
         except Exception as e:
-            logger.error(f"Get gene PubMed links failed: {e}")
+            logger.exception(f"Get gene PubMed links failed: {e}")
             return []
 
     def _normalize_gene(self, gene: dict) -> dict:
@@ -231,9 +220,7 @@ class NCBIExtendedClient(BaseAPIClient):
             "tax_id": gene.get("organism", {}).get("taxid"),
             "chromosome": gene.get("chromosome", ""),
             "map_location": gene.get("maplocation", ""),
-            "aliases": gene.get("otheraliases", "").split(", ")
-            if gene.get("otheraliases")
-            else [],
+            "aliases": gene.get("otheraliases", "").split(", ") if gene.get("otheraliases") else [],
             "summary": gene.get("summary", ""),
             "gene_type": gene.get("geneticsource", ""),
             "_source": "ncbi_gene",
@@ -261,9 +248,7 @@ class NCBIExtendedClient(BaseAPIClient):
         try:
             # Search PubChem Compound
             search_url = (
-                f"{ENTREZ_BASE}/esearch.fcgi?db=pccompound"
-                f"&term={urllib.parse.quote(query)}"
-                f"&retmax={limit}&retmode=json"
+                f"{ENTREZ_BASE}/esearch.fcgi?db=pccompound&term={urllib.parse.quote(query)}&retmax={limit}&retmode=json"
             )
 
             search_result = await self._make_request(search_url, expect_json=True)
@@ -276,9 +261,7 @@ class NCBIExtendedClient(BaseAPIClient):
 
             # Fetch summaries
             ids_str = ",".join(ids)
-            summary_url = (
-                f"{ENTREZ_BASE}/esummary.fcgi?db=pccompound&id={ids_str}&retmode=json"
-            )
+            summary_url = f"{ENTREZ_BASE}/esummary.fcgi?db=pccompound&id={ids_str}&retmode=json"
 
             summary_result = await self._make_request(summary_url, expect_json=True)
             if not isinstance(summary_result, dict):
@@ -295,7 +278,7 @@ class NCBIExtendedClient(BaseAPIClient):
             return compounds
 
         except Exception as e:
-            logger.error(f"Compound search failed: {e}")
+            logger.exception(f"Compound search failed: {e}")
             return []
 
     async def get_compound(self, cid: str | int) -> dict | None:
@@ -322,12 +305,10 @@ class NCBIExtendedClient(BaseAPIClient):
             return None
 
         except Exception as e:
-            logger.error(f"Get compound failed: {e}")
+            logger.exception(f"Get compound failed: {e}")
             return None
 
-    async def get_compound_pubmed_links(
-        self, cid: str | int, limit: int = 20
-    ) -> list[str]:
+    async def get_compound_pubmed_links(self, cid: str | int, limit: int = 20) -> list[str]:
         """
         Get PubMed IDs linked to a compound.
 
@@ -339,10 +320,7 @@ class NCBIExtendedClient(BaseAPIClient):
             List of PubMed IDs
         """
         try:
-            url = (
-                f"{ENTREZ_BASE}/elink.fcgi?dbfrom=pccompound&db=pubmed"
-                f"&id={cid}&retmode=json"
-            )
+            url = f"{ENTREZ_BASE}/elink.fcgi?dbfrom=pccompound&db=pubmed&id={cid}&retmode=json"
             result = await self._make_request(url, expect_json=True)
 
             if not isinstance(result, dict):
@@ -359,7 +337,7 @@ class NCBIExtendedClient(BaseAPIClient):
             return pmids[:limit]
 
         except Exception as e:
-            logger.error(f"Get compound PubMed links failed: {e}")
+            logger.exception(f"Get compound PubMed links failed: {e}")
             return []
 
     def _normalize_compound(self, compound: dict) -> dict:
@@ -410,9 +388,7 @@ class NCBIExtendedClient(BaseAPIClient):
         try:
             # Search ClinVar
             search_url = (
-                f"{ENTREZ_BASE}/esearch.fcgi?db=clinvar"
-                f"&term={urllib.parse.quote(query)}"
-                f"&retmax={limit}&retmode=json"
+                f"{ENTREZ_BASE}/esearch.fcgi?db=clinvar&term={urllib.parse.quote(query)}&retmax={limit}&retmode=json"
             )
 
             search_result = await self._make_request(search_url, expect_json=True)
@@ -425,9 +401,7 @@ class NCBIExtendedClient(BaseAPIClient):
 
             # Fetch summaries
             ids_str = ",".join(ids)
-            summary_url = (
-                f"{ENTREZ_BASE}/esummary.fcgi?db=clinvar&id={ids_str}&retmode=json"
-            )
+            summary_url = f"{ENTREZ_BASE}/esummary.fcgi?db=clinvar&id={ids_str}&retmode=json"
 
             summary_result = await self._make_request(summary_url, expect_json=True)
             if not isinstance(summary_result, dict):
@@ -444,17 +418,14 @@ class NCBIExtendedClient(BaseAPIClient):
             return variants
 
         except Exception as e:
-            logger.error(f"ClinVar search failed: {e}")
+            logger.exception(f"ClinVar search failed: {e}")
             return []
 
     def _normalize_clinvar(self, variant: dict) -> dict:
         """Normalize ClinVar data to common format."""
         # Get clinical significance
         clinical_sig = variant.get("clinical_significance", {})
-        if isinstance(clinical_sig, dict):
-            significance = clinical_sig.get("description", "")
-        else:
-            significance = str(clinical_sig)
+        significance = clinical_sig.get("description", "") if isinstance(clinical_sig, dict) else str(clinical_sig)
 
         # Get genes
         genes = variant.get("genes", [])
@@ -474,11 +445,7 @@ class NCBIExtendedClient(BaseAPIClient):
             "chromosome": variant.get("chr", ""),
             "start": variant.get("start"),
             "stop": variant.get("stop"),
-            "conditions": [
-                c.get("trait_name", "")
-                for c in variant.get("trait_set", [])
-                if isinstance(c, dict)
-            ],
+            "conditions": [c.get("trait_name", "") for c in variant.get("trait_set", []) if isinstance(c, dict)],
             "_source": "clinvar",
         }
 
@@ -487,9 +454,7 @@ class NCBIExtendedClient(BaseAPIClient):
 _ncbi_extended_client: NCBIExtendedClient | None = None
 
 
-def get_ncbi_extended_client(
-    email: str | None = None, api_key: str | None = None
-) -> NCBIExtendedClient:
+def get_ncbi_extended_client(email: str | None = None, api_key: str | None = None) -> NCBIExtendedClient:
     """Get or create NCBI extended client singleton."""
     global _ncbi_extended_client
     if _ncbi_extended_client is None:

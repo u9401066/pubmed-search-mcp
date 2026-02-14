@@ -5,11 +5,12 @@ Tests response times, throughput, and resource usage.
 Run with: pytest tests/test_performance.py -v --benchmark-only
 """
 
-import pytest
 import time
 from unittest.mock import patch
-from pubmed_search import PubMedClient
 
+import pytest
+
+from pubmed_search import PubMedClient
 
 # ============================================================
 # Performance Markers
@@ -149,9 +150,7 @@ class TestCachePerformance:
         hit_time = time.perf_counter() - start_hit
 
         # Cache hit should be significantly faster
-        assert hit_time < miss_time * 10, (
-            "Cache hit should not be orders of magnitude slower"
-        )
+        assert hit_time < miss_time * 10, "Cache hit should not be orders of magnitude slower"
         assert len(found) == 1
 
 
@@ -266,11 +265,7 @@ class TestPerformanceRegression:
 
     async def test_complex_query_performance(self, mock_searcher):
         """Complex queries should not degrade performance significantly."""
-        complex_query = (
-            '("Diabetes Mellitus"[MeSH Terms]) AND '
-            '("Drug Therapy"[MeSH Terms]) AND '
-            "(2020[PDAT]:2024[PDAT])"
-        )
+        complex_query = '("Diabetes Mellitus"[MeSH Terms]) AND ("Drug Therapy"[MeSH Terms]) AND (2020[PDAT]:2024[PDAT])'
 
         with patch(
             "pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher",

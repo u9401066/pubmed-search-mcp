@@ -452,7 +452,7 @@ async def main():
     async with sse_client("http://YOUR_SERVER_IP:8765/sse") as streams:
         async with ClientSession(*streams) as session:
             await session.initialize()
-            
+
             # 搜尋文獻
             result = await session.call_tool(
                 "search_literature",

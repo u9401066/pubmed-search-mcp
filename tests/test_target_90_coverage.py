@@ -3,8 +3,8 @@ Final targeted tests to reach 90% coverage.
 Focus on uncovered lines in remaining files.
 """
 
-from unittest.mock import patch, MagicMock, AsyncMock
 import tempfile
+from unittest.mock import AsyncMock, MagicMock, patch
 
 
 class TestSearchRetryAndErrorPaths:
@@ -21,9 +21,7 @@ class TestSearchRetryAndErrorPaths:
         searcher = TestSearcher()
 
         with (
-            patch(
-                "pubmed_search.infrastructure.ncbi.search.Entrez.esearch"
-            ) as mock_esearch,
+            patch("pubmed_search.infrastructure.ncbi.search.Entrez.esearch") as mock_esearch,
             patch("pubmed_search.infrastructure.ncbi.search.Entrez.read") as mock_read,
             patch(
                 "pubmed_search.infrastructure.ncbi.search.asyncio.sleep",
@@ -62,9 +60,7 @@ class TestSearchRetryAndErrorPaths:
         searcher = TestSearcher()
 
         with (
-            patch(
-                "pubmed_search.infrastructure.ncbi.search.Entrez.esearch"
-            ) as mock_esearch,
+            patch("pubmed_search.infrastructure.ncbi.search.Entrez.esearch") as mock_esearch,
             patch(
                 "pubmed_search.infrastructure.ncbi.search.asyncio.sleep",
                 new_callable=AsyncMock,
@@ -110,9 +106,7 @@ class TestSessionFindCachedSearch:
             manager.get_or_create_session()
 
             # Add to cache
-            manager.add_to_cache(
-                [{"pmid": "111", "title": "Test 1"}, {"pmid": "222", "title": "Test 2"}]
-            )
+            manager.add_to_cache([{"pmid": "111", "title": "Test 1"}, {"pmid": "222", "title": "Test 2"}])
             manager.add_search_record("test query", ["111", "222"])
 
             # Try to find cached
@@ -141,12 +135,8 @@ class TestStrategyGeneratorPaths:
         from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
 
         with (
-            patch(
-                "pubmed_search.infrastructure.ncbi.strategy.Entrez.espell"
-            ) as mock_espell,
-            patch(
-                "pubmed_search.infrastructure.ncbi.strategy.Entrez.read"
-            ) as mock_read,
+            patch("pubmed_search.infrastructure.ncbi.strategy.Entrez.espell") as mock_espell,
+            patch("pubmed_search.infrastructure.ncbi.strategy.Entrez.read") as mock_read,
         ):
             # Return no correction
             mock_read.return_value = {"CorrectedQuery": ""}
@@ -176,9 +166,7 @@ class TestServerModulePaths:
         from pubmed_search.presentation.mcp_server.server import SERVER_INSTRUCTIONS
 
         assert len(SERVER_INSTRUCTIONS) > 0
-        assert (
-            "PubMed" in SERVER_INSTRUCTIONS or "search" in SERVER_INSTRUCTIONS.lower()
-        )
+        assert "PubMed" in SERVER_INSTRUCTIONS or "search" in SERVER_INSTRUCTIONS.lower()
 
 
 class TestSessionToolsPaths:
@@ -272,7 +260,7 @@ class TestFormatsModuleEdgeCases:
 
         # Test each format
         for format_name in ["ris", "bibtex", "csv", "medline", "json"]:
-            result = export_articles(articles, format=format_name)
+            result = export_articles(articles, fmt=format_name)
             assert len(result) > 0
 
 
@@ -315,9 +303,7 @@ class TestBatchModuleEdgeCases:
         searcher = TestSearcher()
 
         with (
-            patch(
-                "pubmed_search.infrastructure.ncbi.batch.Entrez.esearch"
-            ) as mock_esearch,
+            patch("pubmed_search.infrastructure.ncbi.batch.Entrez.esearch") as mock_esearch,
             patch("pubmed_search.infrastructure.ncbi.batch.Entrez.read") as mock_read,
         ):
             mock_read.return_value = {

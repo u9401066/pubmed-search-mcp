@@ -207,9 +207,7 @@ class TestFindInCore:
             "pubmed_search.infrastructure.sources.core.get_core_client",
             return_value=mock_client,
         ):
-            result = await tools["find_in_core"](
-                identifier="10.1234/test", identifier_type="doi"
-            )
+            result = await tools["find_in_core"](identifier="10.1234/test", identifier_type="doi")
         parsed = json.loads(result)
         assert parsed["title"] == "DOI Paper"
 
@@ -221,9 +219,7 @@ class TestFindInCore:
             "pubmed_search.infrastructure.sources.core.get_core_client",
             return_value=mock_client,
         ):
-            result = await tools["find_in_core"](
-                identifier="12345678", identifier_type="pmid"
-            )
+            result = await tools["find_in_core"](identifier="12345678", identifier_type="pmid")
         parsed = json.loads(result)
         assert parsed["title"] == "PMID Paper"
 
@@ -240,7 +236,5 @@ class TestFindInCore:
             "pubmed_search.infrastructure.sources.core.get_core_client",
             return_value=mock_client,
         ):
-            result = await tools["find_in_core"](
-                identifier="10.9999/nonexistent", identifier_type="doi"
-            )
+            result = await tools["find_in_core"](identifier="10.9999/nonexistent", identifier_type="doi")
         assert "not found" in result.lower() or "no" in result.lower()

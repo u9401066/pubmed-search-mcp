@@ -29,7 +29,7 @@ from typing import Any
 
 import httpx
 
-from pubmed_search.infrastructure.sources.base_client import BaseAPIClient, _CONTINUE
+from pubmed_search.infrastructure.sources.base_client import _CONTINUE, BaseAPIClient
 
 logger = logging.getLogger(__name__)
 
@@ -96,9 +96,7 @@ class CrossRefClient(BaseAPIClient):
         """Add mailto parameter for polite pool access."""
         separator = "&" if "?" in url else "?"
         url = f"{url}{separator}mailto={urllib.parse.quote(self._email)}"
-        return await super()._execute_request(
-            url, method=method, data=data, headers=headers
-        )
+        return await super()._execute_request(url, method=method, data=data, headers=headers)
 
     def _handle_expected_status(self, response: httpx.Response, url: str) -> Any:
         """Handle 404 (DOI not found)."""
@@ -107,9 +105,7 @@ class CrossRefClient(BaseAPIClient):
             return None
         return _CONTINUE
 
-    def _parse_response(
-        self, response: httpx.Response, expect_json: bool
-    ) -> dict[str, Any] | str:
+    def _parse_response(self, response: httpx.Response, expect_json: bool) -> dict[str, Any] | str:
         """Extract 'message' key from CrossRef JSON responses."""
         data = response.json()
         return data.get("message", data)
@@ -420,9 +416,7 @@ def get_crossref_client(email: str | None = None) -> CrossRefClient:
     if _crossref_client is None:
         import os
 
-        _crossref_client = CrossRefClient(
-            email=email or os.environ.get("CROSSREF_EMAIL")
-        )
+        _crossref_client = CrossRefClient(email=email or os.environ.get("CROSSREF_EMAIL"))
     return _crossref_client
 
 

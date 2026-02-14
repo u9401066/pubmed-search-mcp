@@ -24,7 +24,7 @@ search_literature(query="remimazolam sedation", limit=10)
 
 ## 情境 2️⃣: 精確搜尋 (用戶要求專業/精確/完整的搜尋)
 ───────────────────────────────────────────────────────────────────────────────
-觸發條件: "系統性搜尋", "完整搜尋", "文獻回顧", "精確搜尋", 
+觸發條件: "系統性搜尋", "完整搜尋", "文獻回顧", "精確搜尋",
           或用戶提到 MeSH、同義詞、專業搜尋策略
 
 流程:
@@ -60,7 +60,7 @@ parse_pico(description="remimazolam 在 ICU 鎮靜比 propofol 好嗎")
 
 # Step 2: 並行取得各元素的 MeSH
 generate_search_queries("ICU patients")
-generate_search_queries("remimazolam") 
+generate_search_queries("remimazolam")
 generate_search_queries("propofol")
 
 # Step 3: 組合搜尋

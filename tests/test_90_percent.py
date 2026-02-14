@@ -1,7 +1,7 @@
 """Final push to reach 90% coverage."""
 
-from unittest.mock import AsyncMock, Mock, patch, MagicMock
 import tempfile
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 
 class TestClientMissingLines:
@@ -25,9 +25,7 @@ class TestClientMissingLines:
 
         with (
             patch("pubmed_search.infrastructure.ncbi.base.Entrez") as mock_entrez,
-            patch(
-                "pubmed_search.infrastructure.ncbi.utils.Entrez.efetch"
-            ) as mock_efetch,
+            patch("pubmed_search.infrastructure.ncbi.utils.Entrez.efetch") as mock_efetch,
             patch("pubmed_search.infrastructure.ncbi.utils.Entrez.read") as mock_read,
         ):
             mock_entrez.email = None
@@ -40,9 +38,7 @@ class TestClientMissingLines:
                             "Article": {
                                 "ArticleTitle": "Test",
                                 "Abstract": {"AbstractText": ["Test abstract"]},
-                                "AuthorList": [
-                                    {"LastName": "Smith", "ForeName": "John"}
-                                ],
+                                "AuthorList": [{"LastName": "Smith", "ForeName": "John"}],
                                 "Journal": {
                                     "Title": "Test Journal",
                                     "ISOAbbreviation": "Test J",
@@ -52,11 +48,7 @@ class TestClientMissingLines:
                             "KeywordList": [["keyword1"]],
                             "MeshHeadingList": [{"DescriptorName": "Disease"}],
                         },
-                        "PubmedData": {
-                            "ArticleIdList": [
-                                {"IdType": "doi", "#text": "10.1000/test"}
-                            ]
-                        },
+                        "PubmedData": {"ArticleIdList": [{"IdType": "doi", "#text": "10.1000/test"}]},
                     }
                 ]
             }
@@ -72,10 +64,10 @@ class TestSessionToolsMissingLines:
 
     async def test_register_session_tools_passes(self):
         """Test session tools registration just passes (no tools)."""
+        from pubmed_search.application.session import SessionManager
         from pubmed_search.presentation.mcp_server.session_tools import (
             register_session_tools,
         )
-        from pubmed_search.application.session import SessionManager
 
         mock_mcp = Mock()
 
@@ -88,10 +80,10 @@ class TestSessionToolsMissingLines:
 
     async def test_register_session_resources(self):
         """Test session resources registration."""
+        from pubmed_search.application.session import SessionManager
         from pubmed_search.presentation.mcp_server.session_tools import (
             register_session_resources,
         )
-        from pubmed_search.application.session import SessionManager
 
         mock_mcp = Mock()
         mock_mcp.resource = Mock(return_value=lambda f: f)
@@ -123,8 +115,8 @@ class TestDiscoveryMissingLines:
 
     async def test_find_related_no_results(self):
         """Test find_related with no results."""
-        from pubmed_search.infrastructure.ncbi.citation import CitationMixin
         from pubmed_search.infrastructure.ncbi.base import EntrezBase
+        from pubmed_search.infrastructure.ncbi.citation import CitationMixin
 
         class TestSearcher(CitationMixin, EntrezBase):
             async def fetch_details(self, pmids):
@@ -133,12 +125,8 @@ class TestDiscoveryMissingLines:
         searcher = TestSearcher()
 
         with (
-            patch(
-                "pubmed_search.infrastructure.ncbi.citation.Entrez.elink"
-            ) as mock_elink,
-            patch(
-                "pubmed_search.infrastructure.ncbi.citation.Entrez.read"
-            ) as mock_read,
+            patch("pubmed_search.infrastructure.ncbi.citation.Entrez.elink") as mock_elink,
+            patch("pubmed_search.infrastructure.ncbi.citation.Entrez.read") as mock_read,
         ):
             mock_read.return_value = [{"LinkSetDb": []}]
             mock_elink.return_value = MagicMock()
@@ -153,10 +141,10 @@ class TestExportToolsMissingLines:
 
     async def test_register_export_tools(self):
         """Test export tools registration."""
+        from pubmed_search import LiteratureSearcher
         from pubmed_search.presentation.mcp_server.tools.export import (
             register_export_tools,
         )
-        from pubmed_search import LiteratureSearcher
 
         mock_mcp = Mock()
         mock_mcp.tool = Mock(return_value=lambda f: f)
@@ -175,10 +163,10 @@ class TestStrategyMissingLines:
 
     async def test_register_strategy_tools(self):
         """Test strategy tools registration."""
+        from pubmed_search import LiteratureSearcher
         from pubmed_search.presentation.mcp_server.tools.strategy import (
             register_strategy_tools,
         )
-        from pubmed_search import LiteratureSearcher
 
         mock_mcp = Mock()
         mock_mcp.tool = Mock(return_value=lambda f: f)
@@ -218,9 +206,7 @@ class TestSearchMissingLines:
         searcher = TestSearcher()
 
         with (
-            patch(
-                "pubmed_search.infrastructure.ncbi.search.Entrez.esearch"
-            ) as mock_esearch,
+            patch("pubmed_search.infrastructure.ncbi.search.Entrez.esearch") as mock_esearch,
             patch("pubmed_search.infrastructure.ncbi.search.Entrez.read") as mock_read,
         ):
             mock_read.return_value = {"IdList": ["123"], "Count": "1"}
@@ -244,9 +230,7 @@ class TestSearchMissingLines:
         searcher = TestSearcher()
 
         with (
-            patch(
-                "pubmed_search.infrastructure.ncbi.search.Entrez.esearch"
-            ) as mock_esearch,
+            patch("pubmed_search.infrastructure.ncbi.search.Entrez.esearch") as mock_esearch,
             patch("pubmed_search.infrastructure.ncbi.search.Entrez.read") as mock_read,
         ):
             mock_read.return_value = {"IdList": ["123", "456"], "Count": "2"}
@@ -362,9 +346,7 @@ class TestICiteMissingLines:
 
         searcher = TestSearcher()
 
-        with patch(
-            "pubmed_search.infrastructure.ncbi.icite.httpx.AsyncClient"
-        ) as mock_client_cls:
+        with patch("pubmed_search.infrastructure.ncbi.icite.httpx.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
             mock_client.get = AsyncMock(side_effect=Exception("Network error"))
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -381,8 +363,8 @@ class TestCitationMissingLines:
 
     async def test_citation_no_linksetdb(self):
         """Test citation when LinkSetDb is empty."""
-        from pubmed_search.infrastructure.ncbi.citation import CitationMixin
         from pubmed_search.infrastructure.ncbi.base import EntrezBase
+        from pubmed_search.infrastructure.ncbi.citation import CitationMixin
 
         class TestSearcher(CitationMixin, EntrezBase):
             async def fetch_details(self, pmids):
@@ -391,12 +373,8 @@ class TestCitationMissingLines:
         searcher = TestSearcher()
 
         with (
-            patch(
-                "pubmed_search.infrastructure.ncbi.citation.Entrez.elink"
-            ) as mock_elink,
-            patch(
-                "pubmed_search.infrastructure.ncbi.citation.Entrez.read"
-            ) as mock_read,
+            patch("pubmed_search.infrastructure.ncbi.citation.Entrez.elink") as mock_elink,
+            patch("pubmed_search.infrastructure.ncbi.citation.Entrez.read") as mock_read,
         ):
             # No LinkSetDb at all
             mock_read.return_value = [{}]
@@ -412,10 +390,10 @@ class TestMergeToolsMissingLines:
 
     async def test_register_merge_tools(self):
         """Test merge tools registration."""
+        from pubmed_search import LiteratureSearcher
         from pubmed_search.presentation.mcp_server.tools.merge import (
             register_merge_tools,
         )
-        from pubmed_search import LiteratureSearcher
 
         mock_mcp = Mock()
         mock_mcp.tool = Mock(return_value=lambda f: f)

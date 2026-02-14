@@ -2,6 +2,11 @@
 
 | Date | Decision | Rationale |
 |------|----------|-----------|
+| 2026-02-14 | **ruff select=["ALL"] + mypy strict=true** | 生產級別程式碼品質：啟用所有 lint 規則，嚴格型別檢查。~40 justified ignores in pyproject.toml |
+| 2026-02-14 | **`# noqa` 消除優先於壓制** | 修復根因（field rename, dead code removal, parameter rename）而非壓制警告。18→9 noqa |
+| 2026-02-14 | **Pre-commit 17 hooks 自演化系統** | instruction↔skill↔hook 閉迴循環，evolution-cycle hook 自動驗證一致性 |
+| 2026-02-14 | **`_ranking_score` → `ranking_score` (public)** | 跨模組使用的欄位不應該是 private（SLF001 violation）。保留 to_dict() key 為 `_ranking_score` 向後相容 |
+| 2026-02-14 | **刪除 `retryable_status_codes` 死碼** | with_retry() 裝飾器的參數從未被使用，retry 邏輯使用 typed exception classes |
 | 2026-02-10 | **全面 Async-First 架構** | 使用者審計後選擇「立即重構 P2 + 加規則」，消除所有 sync/async 混用 |
 | 2026-02-10 | BioPython Entrez → asyncio.to_thread | BioPython 是 sync library，用 to_thread wrap 不修改源碼最安全 |
 | 2026-02-10 | ThreadPoolExecutor → asyncio.gather | unified.py 原用 ThreadPool 做並行搜尋，改用原生 asyncio.gather 更高效 |
@@ -132,7 +137,7 @@ python run_copilot.py --port 8765 --full-tools
 3. MCP SDK 對 notification 回傳 202 Accepted，Copilot Studio 無法處理
 
 ### 解決方案
-1. 使用 FastMCP 的 `streamable_http_app()` 
+1. 使用 FastMCP 的 `streamable_http_app()`
 2. 添加 `json_response=True` 參數
 3. 創建 CopilotStudioMiddleware 轉換 202→200
 4. 使用 ngrok 固定網域提供公開 HTTPS 端點

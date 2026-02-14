@@ -80,7 +80,7 @@ class TimelineBuilder:
 
     def __init__(
         self,
-        searcher: "LiteratureSearcher",
+        searcher: LiteratureSearcher,
         detector: MilestoneDetector | None = None,
     ):
         """
@@ -247,25 +247,20 @@ class TimelineBuilder:
                         citation_data = await self.searcher.get_citation_metrics(pmids)
                         if citation_data:
                             # Map citations to articles
-                            citation_map = {
-                                str(c.get("pmid")): c.get("citation_count", 0)
-                                for c in citation_data
-                            }
+                            citation_map = {str(c.get("pmid")): c.get("citation_count", 0) for c in citation_data}
                             for article in results:
                                 pmid = str(article.get("pmid", ""))
                                 article["citation_count"] = citation_map.get(pmid, 0)
 
                             # Sort by citations
-                            results.sort(
-                                key=lambda x: x.get("citation_count", 0), reverse=True
-                            )
+                            results.sort(key=lambda x: x.get("citation_count", 0), reverse=True)
                     except Exception as e:
                         logger.debug(f"Citation sorting failed: {e}")
 
             return results
 
         except Exception as e:
-            logger.error(f"Search failed for {topic}: {e}")
+            logger.exception(f"Search failed for {topic}: {e}")
             return []
 
     def _filter_by_year(

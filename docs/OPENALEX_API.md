@@ -136,14 +136,14 @@ cited_by:W2766808518                    # 被特定論文引用
   "publication_year": 2019,
   "publication_date": "2019-04-17",
   "type": "article",
-  
+
   "ids": {
     "openalex": "https://openalex.org/W2741809807",
     "doi": "https://doi.org/10.1038/s41586-019-1099-1",
     "pmid": "https://pubmed.ncbi.nlm.nih.gov/30971826",
     "pmcid": "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6538672"
   },
-  
+
   "authorships": [
     {
       "author": {
@@ -155,7 +155,7 @@ cited_by:W2766808518                    # 被特定論文引用
       "is_corresponding": true
     }
   ],
-  
+
   "primary_location": {
     "source": {
       "id": "https://openalex.org/S123456789",
@@ -165,19 +165,19 @@ cited_by:W2766808518                    # 被特定論文引用
     },
     "is_oa": true
   },
-  
+
   "open_access": {
     "is_oa": true,
     "oa_status": "gold",
     "any_repository_has_fulltext": true
   },
-  
+
   "best_oa_location": {
     "pdf_url": "https://...",
     "is_oa": true,
     "version": "publishedVersion"
   },
-  
+
   "cited_by_count": 1234,
   "referenced_works": [...],
   "abstract_inverted_index": {...}

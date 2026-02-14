@@ -321,8 +321,7 @@ class ResearchTimeline:
                     },
                     "text": {
                         "headline": event.milestone_label,
-                        "text": f"<p>{event.title}</p>"
-                        + (f"<p><em>{event.journal}</em></p>" if event.journal else ""),
+                        "text": f"<p>{event.title}</p>" + (f"<p><em>{event.journal}</em></p>" if event.journal else ""),
                     },
                     "group": event.milestone_type.value,
                     "unique_id": event.pmid,

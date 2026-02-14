@@ -1,0 +1,122 @@
+# ═══════════════════════════════════════════════════════════════
+# Pre-commit Hooks Configuration
+# ═══════════════════════════════════════════════════════════════
+#
+# Setup (first time):
+#   uv sync                        # install all deps including pre-commit
+#   uv run pre-commit install      # install pre-commit hook
+#   uv run pre-commit install --hook-type pre-push  # install pre-push hook
+#
+# Usage:
+#   git commit                     # hooks run automatically
+#   uv run pre-commit run --all-files  # run on all files manually
+#   SKIP=mypy git commit           # skip a slow hook
+#
+# Auto-evolution (update hook versions):
+#   uv run pre-commit autoupdate   # bump all hooks to latest version
+#   uv run pre-commit run --all-files  # verify after update
+#
+# ═══════════════════════════════════════════════════════════════
+
+default_stages: [pre-commit]
+
+repos:
+  # ─────────────────────────────────────────────────────────────
+  # 1. Standard pre-commit hooks — basic file hygiene (auto-fix)
+  # ─────────────────────────────────────────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+        exclude: ^(htmlcov/|\.vscode/)
+      - id: check-added-large-files
+        args: ['--maxkb=500']
+      - id: check-merge-conflict
+      - id: debug-statements
+      - id: detect-private-key
+      - id: check-ast
+
+  # ─────────────────────────────────────────────────────────────
+  # 2. Ruff — ultra-fast linter + formatter (auto-fix enabled)
+  #    Version should stay in sync with pyproject.toml [dependency-groups.dev]
+  #    Run `uv run pre-commit autoupdate` to bump
+  # ─────────────────────────────────────────────────────────────
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.13
+    hooks:
+      - id: ruff
+        name: ruff lint (auto-fix)
+        args: [--fix, --exit-non-zero-on-fix]
+        types_or: [python, pyi]
+      - id: ruff-format
+        name: ruff format (auto-fix)
+        types_or: [python, pyi]
+
+  # ─────────────────────────────────────────────────────────────
+  # 3. Local hooks — project-specific checks
+  # ─────────────────────────────────────────────────────────────
+  - repo: local
+    hooks:
+      # ── Type checking ──────────────────────────────────────
+      - id: mypy
+        name: mypy type check (src/)
+        entry: uv run mypy src/
+        language: system
+        types: [python]
+        pass_filenames: false
+        # Tip: skip with SKIP=mypy git commit
+
+      # ── Async/sync consistency ─────────────────────────────
+      - id: async-test-checker
+        name: async/sync test consistency
+        entry: uv run python scripts/check_async_tests.py
+        language: system
+        pass_filenames: false
+        files: ^tests/
+        # Only runs when test files are staged
+        # Fix: uv run python scripts/check_async_tests.py --fix
+
+      # ── File hygiene ───────────────────────────────────────
+      - id: file-hygiene
+        name: file hygiene (no temp files)
+        entry: uv run python scripts/hooks/check_file_hygiene.py
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      # ── MCP tool documentation sync ────────────────────────
+      - id: tool-count-sync
+        name: MCP tool docs sync (auto-fix)
+        entry: uv run python scripts/hooks/check_tool_sync.py
+        language: system
+        pass_filenames: false
+        files: ^src/pubmed_search/presentation/mcp_server/
+        # Only runs when MCP server files are modified
+        # Auto-updates docs and stages them
+      # ── Self-evolution cycle consistency ────────────────────
+      - id: evolution-cycle
+        name: instruction ↔ skill ↔ hook consistency
+        entry: uv run python scripts/hooks/check_evolution_cycle.py
+        language: system
+        pass_filenames: false
+        files: (\.pre-commit-config\.yaml|copilot-instructions\.md|SKILL\.md|CONTRIBUTING\.md|pyproject\.toml|scripts/hooks/)
+        # Validates the self-evolution cycle:
+        #   Instructions → Skills → Hooks → Validate → Feedback
+        # Only runs when relevant config/doc files are modified
+  # ─────────────────────────────────────────────────────────────
+  # 4. Pre-push hooks — slower but thorough
+  # ─────────────────────────────────────────────────────────────
+  - repo: local
+    hooks:
+      - id: pytest
+        name: pytest (multi-core)
+        entry: uv run pytest tests/ -n 4 --timeout=60 -q --no-header
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]

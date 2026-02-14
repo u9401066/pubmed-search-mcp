@@ -34,7 +34,7 @@
 3. 優先更新順序：progress > activeContext > decisionLog
 
 > 💡 **名言：「想要寫文件的時候，就更新 Memory Bank 吧！」**
-> 
+>
 > 不要另開文件寫筆記，直接寫進 Memory Bank，讓知識留在專案內。
 
 ### 第 5 條：更新時機

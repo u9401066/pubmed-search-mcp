@@ -1,9 +1,9 @@
 # Phase 4: Biomedical Image Search
 
 > **目標**: 整合 Open-i 和 Europe PMC 圖片搜尋，提供統一的生物醫學圖片搜尋 MCP 工具
-> 
+>
 > **狀態**: ✅ **已完成** (v0.3.0, 2026-02-09)
-> 
+>
 > **API 參考**: [docs/IMAGE_SEARCH_API.md](IMAGE_SEARCH_API.md)
 
 ---
@@ -130,7 +130,7 @@ class ImageSource(str, Enum):
 class ImageResult:
     """
     統一的生物醫學圖片搜尋結果。
-    
+
     純 Domain 實體 — 不包含任何來源特定的工廠方法。
     來源轉換由 Infrastructure mapper 負責。
     """
@@ -139,11 +139,11 @@ class ImageResult:
     thumbnail_url: str | None = None
     caption: str = ""
     label: str = ""                    # e.g., "Figure 1"
-    
+
     # 來源資訊
     source: str = ""                   # ImageSource 常數
     source_id: str = ""                # 來源內部 ID
-    
+
     # 關聯文章資訊
     pmid: str | None = None
     pmcid: str | None = None
@@ -152,7 +152,7 @@ class ImageResult:
     journal: str = ""
     authors: str = ""
     pub_year: int | None = None
-    
+
     # 圖片分類 (Open-i 特有，其他來源可為空)
     image_type: str | None = None      # "xg" (X-ray), "mc" (Microscopy)
     mesh_terms: list[str] = field(default_factory=list)
@@ -214,29 +214,29 @@ class ImageResult:
 class OpenIClient:
     """
     Open-i (NLM) 圖片搜尋客戶端。
-    
+
     使用 infrastructure/http/client.py 共用 HTTP 客戶端。
-    
+
     API 限制:
     - 索引停止於 ~2020
     - 圖片類型篩選只有 xg (X-ray) 和 mc (Microscopy) 有效
     - 每頁固定 ~10 筆結果
     - m 參數是偏移量，不是最大結果數
     """
-    
+
     BASE_URL = "https://openi.nlm.nih.gov"
     API_URL = f"{BASE_URL}/api/search"
-    
+
     VALID_IMAGE_TYPES = {"xg", "mc"}      # 實測有效的
     VALID_COLLECTIONS = {"pmc", "mpx", "iu"}
     PAGE_SIZE = 10  # 固定每頁筆數
-    
+
     def __init__(self):
         # 沿用既有 source client pattern (urllib.request + _make_request)
         # 與 EuropePMCClient, COREClient, OpenAlexClient 一致
         self.timeout = 15  # Open-i 回應較慢 (2-9s)
         self.user_agent = "PubMedSearchMCP/0.3.0"
-    
+
     def search(
         self,
         query: str,
@@ -246,17 +246,17 @@ class OpenIClient:
     ) -> tuple[list[ImageResult], int]:
         """
         搜尋圖片。
-        
+
         Args:
             query: 搜尋關鍵字
             image_type: 圖片類型 ("xg"=X-ray, "mc"=Microscopy, None=全部)
             collection: 集合 ("pmc", "mpx"=MedPix, "iu"=Indiana, None=全部)  
             max_results: 最大結果數 (API 每頁固定 10 筆，
                          內部自動計算需要幾頁: pages = ceil(max_results/10))
-            
+
         Returns:
             (images, total_count)
-            
+
         Note:
             分頁停止條件:
             1. 已取得 max_results 筆
@@ -264,14 +264,14 @@ class OpenIClient:
             3. 超過 total 總數
         """
         ...
-    
+
     @staticmethod
     def _map_to_image_result(item: dict) -> ImageResult:
         """將 Open-i API 回應轉換為 Domain 實體 (Mapper)。"""
         # 圖片 URL — 需處理空值
         img_large = item.get('imgLarge', '')
         img_thumb = item.get('imgThumb', '')
-        
+
         return ImageResult(
             image_url=f"https://openi.nlm.nih.gov{img_large}" if img_large else "",
             thumbnail_url=f"https://openi.nlm.nih.gov{img_thumb}" if img_thumb else None,
@@ -288,11 +288,11 @@ class OpenIClient:
             mesh_terms=OpenIClient._extract_mesh(item),
             collection=None,  # 可從 query 推斷
         )
-    
+
     @staticmethod
     def _extract_mesh(item: dict) -> list[str]:
         """從 Open-i 回應提取 MeSH 詞彙。
-        
+
         API 回傳格式: {"MeSH": {"major": [...], "minor": [...]}}
         展平為單一列表。
         """
@@ -328,7 +328,7 @@ def get_openi_client():
 
 class EuropePMCClient:
     # ... 現有方法 ...
-    
+
     # [新增] 圖片說明搜尋
     def search_figure_captions(
         self,
@@ -339,22 +339,22 @@ class EuropePMCClient:
         """
         搜尋含有特定圖片說明的文章。
         使用 Europe PMC 的 FIG: 查詢語法。
-        
+
         Returns: 文章列表 (非圖片)
         """
         search_query = f'FIG:"{query}"'
         if open_access_only:
             search_query += " AND OPEN_ACCESS:y"
         return self.search(search_query, limit=limit)
-    
+
     # [新增] 從全文 XML 提取圖片
     def extract_figures(self, pmcid: str) -> list[dict]:
         """
         從 Europe PMC 全文 XML 提取所有圖片。
-        
+
         回傳 raw dict 列表 (與其他方法一致)，
         由 Application 層 mapper 轉換為 ImageResult。
-        
+
         Returns:
             list[dict]: [{"id", "label", "caption", "href", "pmcid"}, ...]
         """
@@ -373,11 +373,11 @@ class EuropePMCClient:
 class ImageSearchService:
     """
     圖片搜尋應用服務。
-    
+
     協調 Open-i 和 Europe PMC 圖片搜尋，
     負責多來源結果合併和去重。
     """
-    
+
     def search(
         self,
         query: str,
@@ -389,19 +389,19 @@ class ImageSearchService:
     ) -> ImageSearchResult:
         """
         統一圖片搜尋。
-        
+
         自動選擇來源或按 sources 參數指定。
         合併結果並按 PMID/PMCID 去重。
         """
         ...
-    
+
     def extract_article_figures(
         self,
         pmcid: str,
     ) -> list[ImageResult]:
         """提取特定文章的所有圖片。"""
         ...
-    
+
     def _merge_results(
         self,
         *result_lists: list[ImageResult],
@@ -430,7 +430,7 @@ class ImageSearchResult:
 
 def register_image_search_tools(mcp: FastMCP):
     """Register biomedical image search MCP tools.
-    
+
     Note: 不需要 searcher 參數，ImageSearchService 自行管理 client。
     與 register_vision_tools(mcp) 模式一致。
     """
@@ -446,10 +446,10 @@ def register_image_search_tools(mcp: FastMCP):
     ) -> str:
         """
         🖼️ Search biomedical images across Open-i and Europe PMC.
-        
+
         Searches medical/scientific images from multiple sources and returns
         image URLs with metadata (caption, article info, MeSH terms).
-        
+
         ═══════════════════════════════════════════════════════════════
         SOURCES:
         ═══════════════════════════════════════════════════════════════
@@ -460,19 +460,19 @@ def register_image_search_tools(mcp: FastMCP):
         ═══════════════════════════════════════════════════════════════
         EXAMPLES:
         ═══════════════════════════════════════════════════════════════
-        
+
         General image search:
             search_biomedical_images("chest pneumonia CT scan")
-        
+
         X-ray only:
             search_biomedical_images("fracture", image_type="xg")
-        
+
         Clinical teaching images:
             search_biomedical_images("pneumothorax", collection="mpx")
-        
+
         Survival curves / charts:
             search_biomedical_images("kaplan meier survival", sources="europe_pmc")
-        
+
         ═══════════════════════════════════════════════════════════════
 
         Args:
@@ -493,7 +493,7 @@ def register_image_search_tools(mcp: FastMCP):
                 - None: All collections (default)
             open_access_only: Only return open access images (default True)
             limit: Maximum number of images to return (default 10)
-        
+
         Returns:
             Formatted image results with URLs, captions, and article metadata
         """
@@ -501,7 +501,7 @@ def register_image_search_tools(mcp: FastMCP):
         query = InputNormalizer.normalize_query(query)
         limit = InputNormalizer.normalize_limit(limit, default=10, max_val=50)
         open_access_only = InputNormalizer.normalize_bool(open_access_only, default=True)
-        
+
         # 2. sources 字串 → 列表映射
         # "auto" → None (service 自行選源)
         # "openi" → ["openi"]
@@ -514,7 +514,7 @@ def register_image_search_tools(mcp: FastMCP):
             "all": ["openi", "europe_pmc"],
         }
         source_list = source_map.get(sources, None)
-        
+
         # 3. 呼叫 ImageSearchService
         service = ImageSearchService()
         result = service.search(
@@ -522,7 +522,7 @@ def register_image_search_tools(mcp: FastMCP):
             image_type=image_type, collection=collection,
             open_access_only=open_access_only, limit=limit,
         )
-        
+
         # 4. 格式化輸出 (ResponseFormatter)
         return _format_image_results(result)
         ...
@@ -634,7 +634,7 @@ tests/
 └── test_image_search_tool.py        # Presentation 工具測試
 ```
 
-**測試方法**: 
+**測試方法**:
 - Mock HTTP 回應 (與現有 test_europe_pmc.py, test_core.py 一致)
 - 不依賴外部 API 的離線測試
 - 依照 `IMAGE_SEARCH_API.md` 附錄的測試數據建構 fixtures

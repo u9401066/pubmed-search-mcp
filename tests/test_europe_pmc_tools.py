@@ -135,9 +135,7 @@ class TestGetFulltext:
                 return_value=MagicMock(search=AsyncMock(return_value={"results": []})),
             ),
         ):
-            result = await tools["get_fulltext"](
-                identifier="10.1038/s41586-021-03819-2"
-            )
+            result = await tools["get_fulltext"](identifier="10.1038/s41586-021-03819-2")
         assert isinstance(result, str)
 
     @pytest.mark.asyncio
@@ -170,9 +168,7 @@ class TestGetFulltext:
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
             return_value=mock_client,
         ):
-            result = await tools["get_fulltext"](
-                pmcid="PMC7096777", sections="introduction,results"
-            )
+            result = await tools["get_fulltext"](pmcid="PMC7096777", sections="introduction,results")
         assert "Intro text" in result or "Results text" in result
 
     @pytest.mark.asyncio
@@ -266,9 +262,7 @@ class TestGetTextMinedTerms:
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
             return_value=mock_client,
         ):
-            result = await tools["get_text_mined_terms"](
-                pmid="12345678", semantic_type="CHEMICAL"
-            )
+            result = await tools["get_text_mined_terms"](pmid="12345678", semantic_type="CHEMICAL")
         assert "Propofol" in result
 
     @pytest.mark.asyncio

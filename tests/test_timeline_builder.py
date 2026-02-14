@@ -1,7 +1,8 @@
 """Tests for TimelineBuilder and format_timeline_text."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 from pubmed_search.application.timeline.timeline_builder import (
     TimelineBuilder,
@@ -12,7 +13,6 @@ from pubmed_search.domain.entities.timeline import (
     ResearchTimeline,
     TimelineEvent,
 )
-
 
 # ============================================================
 # Fixtures
@@ -122,9 +122,7 @@ class TestBuildTimeline:
     @pytest.mark.asyncio
     async def test_include_all(self, builder, mock_searcher, sample_articles):
         mock_searcher.search.return_value = sample_articles
-        timeline = await builder.build_timeline(
-            "drug X", include_all=True, max_events=50
-        )
+        timeline = await builder.build_timeline("drug X", include_all=True, max_events=50)
         # With include_all, even non-milestone articles should appear
         assert len(timeline.events) >= len(sample_articles) or len(timeline.events) > 0
 
@@ -186,9 +184,7 @@ class TestBuildTimelineFromPmids:
     @pytest.mark.asyncio
     async def test_with_pmids(self, builder, mock_searcher, sample_articles):
         mock_searcher.fetch_details.return_value = sample_articles
-        timeline = await builder.build_timeline_from_pmids(
-            ["11111", "22222", "33333"], topic="My Timeline"
-        )
+        timeline = await builder.build_timeline_from_pmids(["11111", "22222", "33333"], topic="My Timeline")
         assert timeline.topic == "My Timeline"
         assert isinstance(timeline.events, list)
 

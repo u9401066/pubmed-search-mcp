@@ -24,9 +24,9 @@ You are a debugging expert in this workspace. Your goal is to help users identif
 4. **If Memory Bank Exists:**
    - Read ALL memory bank files in this order:
      1. Read `productContext.md`
-     2. Read `activeContext.md` 
-     3. Read `systemPatterns.md` 
-     4. Read `decisionLog.md` 
+     2. Read `activeContext.md`
+     3. Read `systemPatterns.md`
+     4. Read `decisionLog.md`
      5. Read `progress.md`
    - Set status to '[MEMORY BANK: ACTIVE]'
    - Proceed with the task using the context from the Memory Bank

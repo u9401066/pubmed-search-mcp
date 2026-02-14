@@ -11,6 +11,10 @@ Thank you for your interest in contributing to PubMed Search MCP! This document 
   - [Development Setup](#development-setup)
     - [Prerequisites](#prerequisites)
     - [Installation](#installation)
+    - [Pre-commit Hooks (Recommended)](#pre-commit-hooks-recommended)
+      - [What the hooks check](#what-the-hooks-check)
+      - [Skipping hooks (when needed)](#skipping-hooks-when-needed)
+      - [Auto-evolution (keeping hooks updated)](#auto-evolution-keeping-hooks-updated)
     - [Environment Variables (Optional)](#environment-variables-optional)
   - [Project Architecture](#project-architecture)
     - [Key Principles](#key-principles)
@@ -69,17 +73,65 @@ This project uses [UV](https://github.com/astral-sh/uv) for dependency managemen
 uv sync
 
 # Run commands through uv (ALWAYS use uv run prefix)
-uv run pytest              # Run tests
+uv run pytest              # Run tests (multi-core, auto -n auto --timeout=60)
 uv run ruff check .        # Lint
 uv run ruff check . --fix  # Lint auto-fix
 uv run ruff format .       # Format
 uv run mypy src/ tests/    # Type check (including tests)
-uv run pytest --cov        # Coverage
-uv run pytest --timeout=60 # Tests with timeout
+uv run pytest --cov        # Multi-core + coverage
 ```
 
 > ⚠️ **NEVER** call `pytest`, `ruff`, or `mypy` directly. Always use the `uv run` prefix.
 > **Do NOT** use `pip install`. All dependencies are managed via `uv` and defined in `pyproject.toml` with `[dependency-groups]`.
+
+### Pre-commit Hooks (Recommended)
+
+This project uses [pre-commit](https://pre-commit.com/) to enforce code quality automatically on every commit. **Strongly recommended** for all contributors.
+
+```bash
+# One-time setup (after uv sync)
+uv run pre-commit install                          # install pre-commit hook
+uv run pre-commit install --hook-type pre-push     # install pre-push hook (runs tests)
+
+# Verify setup
+uv run pre-commit run --all-files                  # test all hooks manually
+```
+
+#### What the hooks check
+
+| Stage | Hook | Auto-fix? | What it does |
+|-------|------|-----------|-------------|
+| **commit** | trailing-whitespace | ✅ | Removes trailing spaces |
+| **commit** | end-of-file-fixer | ✅ | Ensures files end with newline |
+| **commit** | check-yaml / check-toml / check-json | — | Validates config file syntax |
+| **commit** | check-added-large-files | — | Blocks files > 500KB |
+| **commit** | check-merge-conflict | — | Detects leftover conflict markers |
+| **commit** | debug-statements | — | Catches `breakpoint()` / `pdb` |
+| **commit** | detect-private-key | — | Prevents accidental key commits |
+| **commit** | ruff lint | ✅ | Lints & auto-fixes Python code |
+| **commit** | ruff format | ✅ | Formats Python code |
+| **commit** | mypy | — | Type checks `src/` |
+| **commit** | async-test-checker | — | Validates async/sync consistency in tests |
+| **commit** | file-hygiene | — | Blocks forbidden temp files |
+| **commit** | tool-count-sync | ✅ | Syncs MCP tool documentation |
+| **commit** | evolution-cycle | — | Validates instruction/skill/hook consistency |
+| **push** | pytest | — | Runs full test suite (multi-core) |
+
+#### Skipping hooks (when needed)
+
+```bash
+SKIP=mypy git commit -m "quick fix"          # skip a slow hook
+git commit --no-verify -m "emergency fix"    # skip all hooks (use sparingly!)
+```
+
+#### Auto-evolution (keeping hooks updated)
+
+```bash
+uv run pre-commit autoupdate    # update all hook versions to latest
+uv run pre-commit run --all-files  # verify after update
+```
+
+Run `autoupdate` periodically (e.g., monthly) to pick up new ruff rules, security checks, and bug fixes.
 
 ### Environment Variables (Optional)
 
@@ -184,14 +236,14 @@ def get_citation_tree(
     max_depth: int = 2,
 ) -> CitationTree:
     """Build a citation tree from a seed article.
-    
+
     Args:
         pmid: The PubMed ID of the seed article.
         max_depth: Maximum depth to traverse (default: 2).
-        
+
     Returns:
         A CitationTree containing related articles.
-        
+
     Raises:
         ArticleNotFoundError: If the PMID doesn't exist.
     """
@@ -203,10 +255,10 @@ def get_citation_tree(
 ### Running Tests
 
 ```bash
-# Run all tests
+# Run all tests (multi-core by default via addopts)
 uv run pytest
 
-# Run with coverage
+# Run with coverage (multi-core + coverage)
 uv run pytest --cov=src/pubmed_search --cov-report=html
 
 # Run specific test file
@@ -244,6 +296,8 @@ We aim for **>85% code coverage**. Run coverage report:
 uv run pytest --cov=src/pubmed_search --cov-report=term-missing
 ```
 
+> 💡 Coverage works seamlessly with multi-core (`-n auto` from addopts) via `pytest-cov` + `pytest-xdist` integration.
+
 ## Pull Request Process
 
 1. **Sync with upstream**:
@@ -259,10 +313,13 @@ uv run pytest --cov=src/pubmed_search --cov-report=term-missing
 
 3. **Make your changes** following the code style guidelines
 
-4. **Run checks locally**:
+4. **Run checks locally** (or rely on pre-commit hooks):
    ```bash
+   uv run pre-commit run --all-files   # run all hooks
+   # Or manually:
    uv run ruff check src/
    uv run ruff format src/
+   uv run mypy src/
    uv run pytest
    ```
 

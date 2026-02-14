@@ -31,12 +31,12 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
+from pubmed_search.infrastructure.cache import get_entity_cache
 from pubmed_search.infrastructure.pubtator import (
     PubTatorClient,
-    get_pubtator_client,
     PubTatorEntity,
+    get_pubtator_client,
 )
-from pubmed_search.infrastructure.cache import get_entity_cache
 
 logger = logging.getLogger(__name__)
 
@@ -293,7 +293,7 @@ class SemanticEnhancer:
             enhanced.metadata["timeout"] = True
 
         except Exception as e:
-            logger.error(f"Enhancement failed: {e}")
+            logger.exception(f"Enhancement failed: {e}")
             # Fall back to basic enhancement
             enhanced = self._basic_enhancement(query)
             enhanced.metadata["error"] = str(e)
@@ -512,8 +512,7 @@ class SemanticEnhancer:
         if remaining_words:
             remaining = " ".join(remaining_words)
             return f"({mesh_clause}) AND ({remaining})"
-        else:
-            return mesh_clause
+        return mesh_clause
 
     def _build_entity_query(self, entities: list[PubTatorEntity]) -> str:
         """Build query using resolved entity names."""
@@ -549,10 +548,7 @@ class SemanticEnhancer:
 
         # Extract and add original terms
         candidates = self._extract_candidates(query)
-        enhanced.expanded_terms = [
-            ExpandedTerm(term=c, source="original", confidence=1.0)
-            for c in candidates[:10]
-        ]
+        enhanced.expanded_terms = [ExpandedTerm(term=c, source="original", confidence=1.0) for c in candidates[:10]]
 
         # Generate basic strategies
         enhanced.strategies = [

@@ -12,7 +12,6 @@ Removed in v0.3.1:
 
 import json
 import logging
-from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
 
@@ -177,7 +176,7 @@ ICD9_TO_MESH = {
 # ============================================================================
 
 
-def detect_icd_version(code: str) -> Optional[str]:
+def detect_icd_version(code: str) -> str | None:
     """Detect ICD version from code format."""
     code = code.strip().upper()
 
@@ -383,8 +382,8 @@ def register_icd_tools(mcp: FastMCP):
     async def search_by_icd(
         code: str,
         limit: int = 10,
-        min_year: Optional[int] = None,
-        article_type: Optional[str] = None,
+        min_year: int | None = None,
+        article_type: str | None = None,
     ) -> str:
         """
         Search PubMed using ICD code (auto-converts to MeSH).
@@ -442,11 +441,11 @@ def register_icd_tools(mcp: FastMCP):
 
 
 __all__ = [
-    "ICD10_TO_MESH",
     "ICD9_TO_MESH",
+    "ICD10_TO_MESH",
     "detect_icd_version",
+    "get_icd_reference",
     "lookup_icd_to_mesh",
     "lookup_mesh_to_icd",
-    "get_icd_reference",
     "register_icd_tools",
 ]

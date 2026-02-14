@@ -16,7 +16,6 @@ from pubmed_search.domain.entities.timeline import (
     MilestoneType,
 )
 
-
 # =============================================================================
 # MilestoneDetector - Basic Tests
 # =============================================================================
@@ -724,15 +723,6 @@ class TestConstants:
 
     async def test_landmark_thresholds(self):
         """Test landmark citation thresholds."""
-        assert (
-            LANDMARK_CITATION_THRESHOLDS["exceptional"]
-            > LANDMARK_CITATION_THRESHOLDS["high"]
-        )
-        assert (
-            LANDMARK_CITATION_THRESHOLDS["high"]
-            > LANDMARK_CITATION_THRESHOLDS["notable"]
-        )
-        assert (
-            LANDMARK_CITATION_THRESHOLDS["notable"]
-            > LANDMARK_CITATION_THRESHOLDS["moderate"]
-        )
+        assert LANDMARK_CITATION_THRESHOLDS["exceptional"] > LANDMARK_CITATION_THRESHOLDS["high"]
+        assert LANDMARK_CITATION_THRESHOLDS["high"] > LANDMARK_CITATION_THRESHOLDS["notable"]
+        assert LANDMARK_CITATION_THRESHOLDS["notable"] > LANDMARK_CITATION_THRESHOLDS["moderate"]

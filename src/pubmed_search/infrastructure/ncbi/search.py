@@ -7,7 +7,7 @@ Provides search and fetch operations using esearch and efetch.
 import asyncio
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from Bio import Entrez
 from tenacity import (
@@ -158,9 +158,7 @@ def _retry_on_error(func):
                 ):
                     last_error = e
                     wait_time = RETRY_DELAY * (attempt + 1)
-                    logger.warning(
-                        f"NCBI transient error (attempt {attempt + 1}/{MAX_RETRIES}): {error_str}"
-                    )
+                    logger.warning(f"NCBI transient error (attempt {attempt + 1}/{MAX_RETRIES}): {error_str}")
                     logger.info(f"Retrying in {wait_time} seconds...")
                     await asyncio.sleep(wait_time)
                 else:
@@ -186,20 +184,20 @@ class SearchMixin:
         self,
         query: str,
         limit: int = 5,
-        min_year: Optional[int] = None,
-        max_year: Optional[int] = None,
-        article_type: Optional[str] = None,
+        min_year: int | None = None,
+        max_year: int | None = None,
+        article_type: str | None = None,
         strategy: str = "relevance",
-        date_from: Optional[str] = None,
-        date_to: Optional[str] = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
         date_type: str = "edat",
         # Advanced filters (Phase 2.1)
-        age_group: Optional[str] = None,
-        sex: Optional[str] = None,
-        species: Optional[str] = None,
-        language: Optional[str] = None,
-        clinical_query: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
+        age_group: str | None = None,
+        sex: str | None = None,
+        species: str | None = None,
+        language: str | None = None,
+        clinical_query: str | None = None,
+    ) -> list[dict[str, Any]]:
         """
         Search PubMed for articles using a specific strategy.
 
@@ -274,8 +272,7 @@ class SearchMixin:
                     full_query += f" AND {AGE_GROUP_FILTERS[age_key]}"
                 else:
                     logger.warning(
-                        f"Unknown age_group: {age_group}. "
-                        f"Valid options: {', '.join(AGE_GROUP_FILTERS.keys())}"
+                        f"Unknown age_group: {age_group}. Valid options: {', '.join(AGE_GROUP_FILTERS.keys())}"
                     )
 
             # Sex filter
@@ -292,9 +289,7 @@ class SearchMixin:
                 if species_key in SPECIES_FILTERS:
                     full_query += f" AND {SPECIES_FILTERS[species_key]}"
                 else:
-                    logger.warning(
-                        f"Unknown species: {species}. Valid options: humans, animals"
-                    )
+                    logger.warning(f"Unknown species: {species}. Valid options: humans, animals")
 
             # Language filter
             if language:
@@ -324,22 +319,15 @@ class SearchMixin:
 
             validation = validate_query(full_query)
             if not validation.is_valid:
-                logger.warning(
-                    f"Query syntax issues detected: {validation.errors}. "
-                    f"Original: {full_query}"
-                )
+                logger.warning(f"Query syntax issues detected: {validation.errors}. Original: {full_query}")
                 if validation.corrected_query:
-                    logger.info(
-                        f"Auto-corrected query: {validation.corrected_query}"
-                    )
+                    logger.info(f"Auto-corrected query: {validation.corrected_query}")
                     full_query = validation.corrected_query
             elif validation.has_warnings:
                 logger.debug(f"Query warnings: {validation.warnings}")
 
             # Step 1: Search for IDs with retry
-            id_list, total_count = await self._search_ids_with_retry(
-                full_query, limit * 2, sort_param
-            )
+            id_list, total_count = await self._search_ids_with_retry(full_query, limit * 2, sort_param)
 
             results = await self.fetch_details(id_list)
 
@@ -359,9 +347,7 @@ class SearchMixin:
 
     @retry(
         stop=stop_after_attempt(MAX_RETRIES),
-        wait=wait_exponential(
-            multiplier=RETRY_DELAY, min=RETRY_DELAY, max=RETRY_DELAY * 4
-        ),
+        wait=wait_exponential(multiplier=RETRY_DELAY, min=RETRY_DELAY, max=RETRY_DELAY * 4),
         retry=retry_if_exception(_is_retryable_ncbi),
         reraise=True,
     )
@@ -373,9 +359,7 @@ class SearchMixin:
             of articles matching the query in PubMed (not limited by retmax).
         """
         await _rate_limit()  # Rate limiting before API call
-        handle = await asyncio.to_thread(
-            Entrez.esearch, db="pubmed", term=query, retmax=retmax, sort=sort
-        )
+        handle = await asyncio.to_thread(Entrez.esearch, db="pubmed", term=query, retmax=retmax, sort=sort)
         record = await asyncio.to_thread(Entrez.read, handle)
         handle.close()
 
@@ -386,40 +370,31 @@ class SearchMixin:
             # OutputMessage (e.g. term not found in MeSH), etc.
             for warn_type, warn_msgs in warning_list.items():
                 if isinstance(warn_msgs, list) and warn_msgs:
-                    logger.warning(
-                        f"NCBI {warn_type}: {warn_msgs}"
-                    )
+                    logger.warning(f"NCBI {warn_type}: {warn_msgs}")
 
         # Check TranslationStack for how NCBI interpreted the query
         translation_set = record.get("TranslationSet", [])
         if translation_set:
-            logger.debug(
-                f"NCBI query translation: "
-                f"{[(t.get('From', ''), t.get('To', '')) for t in translation_set]}"
-            )
+            logger.debug(f"NCBI query translation: {[(t.get('From', ''), t.get('To', '')) for t in translation_set]}")
 
         total_count = int(record.get("Count", 0))
         return record["IdList"], total_count
 
     @retry(
         stop=stop_after_attempt(MAX_RETRIES),
-        wait=wait_exponential(
-            multiplier=RETRY_DELAY, min=RETRY_DELAY, max=RETRY_DELAY * 4
-        ),
+        wait=wait_exponential(multiplier=RETRY_DELAY, min=RETRY_DELAY, max=RETRY_DELAY * 4),
         retry=retry_if_exception(_is_retryable_ncbi),
         reraise=True,
     )
-    async def _fetch_with_retry(self, id_list: List[str]):
+    async def _fetch_with_retry(self, id_list: list[str]):
         """Fetch PubMed articles with retry on transient errors."""
         await _rate_limit()  # Rate limiting before API call
-        handle = await asyncio.to_thread(
-            Entrez.efetch, db="pubmed", id=id_list, retmode="xml"
-        )
+        handle = await asyncio.to_thread(Entrez.efetch, db="pubmed", id=id_list, retmode="xml")
         papers = await asyncio.to_thread(Entrez.read, handle)
         handle.close()
         return papers
 
-    async def fetch_details(self, id_list: List[str]) -> List[Dict[str, Any]]:
+    async def fetch_details(self, id_list: list[str]) -> list[dict[str, Any]]:
         """
         Fetch complete details for a list of PMIDs.
 
@@ -449,7 +424,7 @@ class SearchMixin:
         except Exception as e:
             return [{"error": str(e)}]
 
-    def _parse_pubmed_article(self, article: Dict) -> Dict[str, Any]:
+    def _parse_pubmed_article(self, article: dict) -> dict[str, Any]:
         """
         Parse a single PubMed article record into a structured dictionary.
 
@@ -505,7 +480,7 @@ class SearchMixin:
             **journal_info,
         }
 
-    def _extract_authors(self, article_data: Dict) -> tuple:
+    def _extract_authors(self, article_data: dict) -> tuple:
         """Extract author information from article data."""
         authors = []
         authors_full = []
@@ -539,7 +514,7 @@ class SearchMixin:
 
         return authors, authors_full
 
-    def _extract_abstract(self, article_data: Dict) -> str:
+    def _extract_abstract(self, article_data: dict) -> str:
         """Extract abstract text from article data."""
         if "Abstract" in article_data and "AbstractText" in article_data["Abstract"]:
             abstract_parts = article_data["Abstract"]["AbstractText"]
@@ -548,7 +523,7 @@ class SearchMixin:
             return str(abstract_parts)
         return ""
 
-    def _extract_journal_info(self, article_data: Dict) -> Dict[str, str]:
+    def _extract_journal_info(self, article_data: dict) -> dict[str, str]:
         """Extract journal information from article data."""
         journal_data = article_data.get("Journal", {})
         journal_issue = journal_data.get("JournalIssue", {})
@@ -596,16 +571,16 @@ class SearchMixin:
             "pages": pagination.get("MedlinePgn", ""),
         }
 
-    def _extract_language(self, article_data: Dict) -> str:
+    def _extract_language(self, article_data: dict) -> str:
         """Extract article language from article data."""
         language = article_data.get("Language", [])
         if isinstance(language, list) and language:
             return language[0]
-        elif isinstance(language, str):
+        if isinstance(language, str):
             return language
         return "eng"
 
-    def _extract_publication_types(self, article_data: Dict) -> List[str]:
+    def _extract_publication_types(self, article_data: dict) -> list[str]:
         """Extract publication types from article data."""
         pub_types = []
         pub_type_list = article_data.get("PublicationTypeList", [])
@@ -616,7 +591,7 @@ class SearchMixin:
                 pub_types.append(pt)
         return pub_types
 
-    def _extract_identifiers(self, pubmed_data: Dict) -> tuple:
+    def _extract_identifiers(self, pubmed_data: dict) -> tuple:
         """Extract DOI and PMC ID from article identifiers."""
         doi = ""
         pmc_id = ""
@@ -631,7 +606,7 @@ class SearchMixin:
 
         return doi, pmc_id
 
-    def _extract_keywords(self, medline_citation: Dict) -> List[str]:
+    def _extract_keywords(self, medline_citation: dict) -> list[str]:
         """Extract keywords from MedlineCitation."""
         keywords = []
         if "KeywordList" in medline_citation:
@@ -639,7 +614,7 @@ class SearchMixin:
                 keywords.extend([str(kw) for kw in kw_list])
         return keywords
 
-    def _extract_mesh_terms(self, medline_citation: Dict) -> List[str]:
+    def _extract_mesh_terms(self, medline_citation: dict) -> list[str]:
         """Extract MeSH terms from MedlineCitation."""
         mesh_terms = []
         if "MeshHeadingList" in medline_citation:
@@ -648,9 +623,7 @@ class SearchMixin:
                     mesh_terms.append(str(mesh["DescriptorName"]))
         return mesh_terms
 
-    def filter_results(
-        self, results: List[Dict[str, Any]], min_sample_size: Optional[int] = None
-    ) -> List[Dict[str, Any]]:
+    def filter_results(self, results: list[dict[str, Any]], min_sample_size: int | None = None) -> list[dict[str, Any]]:
         """
         Filter results based on abstract content.
 
@@ -681,8 +654,7 @@ class SearchMixin:
                 for m in matches:
                     try:
                         val = int(m)
-                        if val > max_n:
-                            max_n = val
+                        max_n = max(max_n, val)
                     except ValueError:
                         pass
 

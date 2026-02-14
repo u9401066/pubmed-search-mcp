@@ -2,9 +2,10 @@
 Tests for search.py module and discovery tools functions.
 """
 
-import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
 import json
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 
 class TestSearchModule:
@@ -24,9 +25,7 @@ class TestSearchModule:
     async def test_search_basic(self, search_mixin):
         """Test basic search functionality."""
         with (
-            patch(
-                "pubmed_search.infrastructure.ncbi.search.Entrez.esearch"
-            ) as mock_esearch,
+            patch("pubmed_search.infrastructure.ncbi.search.Entrez.esearch") as mock_esearch,
             patch("pubmed_search.infrastructure.ncbi.search.Entrez.read") as mock_read,
             patch.object(search_mixin, "fetch_details", return_value=[]),
         ):
@@ -41,9 +40,7 @@ class TestSearchModule:
     async def test_search_with_date_filters(self, search_mixin):
         """Test search with date filters."""
         with (
-            patch(
-                "pubmed_search.infrastructure.ncbi.search.Entrez.esearch"
-            ) as mock_esearch,
+            patch("pubmed_search.infrastructure.ncbi.search.Entrez.esearch") as mock_esearch,
             patch("pubmed_search.infrastructure.ncbi.search.Entrez.read") as mock_read,
             patch.object(search_mixin, "fetch_details", return_value=[]),
         ):
@@ -61,9 +58,7 @@ class TestSearchModule:
     async def test_fetch_details_basic(self, search_mixin):
         """Test fetching article details."""
         with (
-            patch(
-                "pubmed_search.infrastructure.ncbi.search.Entrez.efetch"
-            ) as mock_efetch,
+            patch("pubmed_search.infrastructure.ncbi.search.Entrez.efetch") as mock_efetch,
             patch("pubmed_search.infrastructure.ncbi.search.Entrez.read") as mock_read,
         ):
             mock_read.return_value = {
@@ -122,26 +117,20 @@ class TestDiscoveryToolsComplete:
         return tools, searcher
 
     # v0.1.21: search_literature has been integrated into unified_search
-    @pytest.mark.skip(
-        reason="v0.1.21: search_literature integrated into unified_search"
-    )
+    @pytest.mark.skip(reason="v0.1.21: search_literature integrated into unified_search")
     async def test_search_literature_tool(self, registered_tools):
         """Test search_literature tool function."""
-        pass  # This tool has been integrated into unified_search
+        # This tool has been integrated into unified_search
 
-    @pytest.mark.skip(
-        reason="v0.1.21: search_literature integrated into unified_search"
-    )
+    @pytest.mark.skip(reason="v0.1.21: search_literature integrated into unified_search")
     async def test_search_literature_empty_query(self, registered_tools):
         """Test search_literature with empty query."""
-        pass  # This tool has been integrated into unified_search
+        # This tool has been integrated into unified_search
 
-    @pytest.mark.skip(
-        reason="v0.1.21: search_literature integrated into unified_search"
-    )
+    @pytest.mark.skip(reason="v0.1.21: search_literature integrated into unified_search")
     async def test_search_literature_with_ambiguous_term(self, registered_tools):
         """Test search_literature with ambiguous journal name."""
-        pass  # This tool has been integrated into unified_search
+        # This tool has been integrated into unified_search
 
     async def test_find_related_articles_tool(self, registered_tools):
         """Test find_related_articles tool."""
@@ -197,11 +186,7 @@ class TestDiscoveryToolsComplete:
         result = await tools["find_citing_articles"](pmid="123", limit=10)
 
         # Updated to match unified "No results found" format
-        assert (
-            "No citing" in result
-            or "No results" in result
-            or "not indexed" in result.lower()
-        )
+        assert "No citing" in result or "No results" in result or "not indexed" in result.lower()
 
     async def test_get_article_references_tool(self, registered_tools):
         """Test get_article_references tool."""

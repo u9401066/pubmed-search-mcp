@@ -7,11 +7,8 @@ Dataclasses for PubTator3 API responses.
 from dataclasses import dataclass, field
 from typing import Literal
 
-
 EntityType = Literal["gene", "disease", "chemical", "species", "variant"]
-RelationType = Literal[
-    "treat", "associate", "cause", "interact", "inhibit", "stimulate"
-]
+RelationType = Literal["treat", "associate", "cause", "interact", "inhibit", "stimulate"]
 
 
 @dataclass
@@ -95,10 +92,9 @@ class PubTatorEntity:
         """Generate optimal search term for PubMed."""
         if self.mesh_id:
             return f'"{self.resolved_name}"[MeSH Terms]'
-        elif self.entity_type == "gene" and self.ncbi_id:
+        if self.entity_type == "gene" and self.ncbi_id:
             return f"{self.resolved_name}[Gene Name]"
-        else:
-            return f'"{self.resolved_name}"'
+        return f'"{self.resolved_name}"'
 
 
 @dataclass

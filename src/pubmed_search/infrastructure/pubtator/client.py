@@ -20,10 +20,9 @@ import httpx
 
 from pubmed_search.infrastructure.pubtator.models import (
     EntityMatch,
-    RelationMatch,
     PubTatorEntity,
+    RelationMatch,
 )
-
 
 logger = logging.getLogger(__name__)
 
@@ -31,13 +30,9 @@ logger = logging.getLogger(__name__)
 class PubTator3Error(Exception):
     """Base exception for PubTator3 API errors."""
 
-    pass
 
-
-class RateLimitExceeded(PubTator3Error):
+class RateLimitExceededError(PubTator3Error):
     """Rate limit exceeded - retry later."""
-
-    pass
 
 
 class PubTatorClient:
@@ -156,13 +151,13 @@ class PubTatorClient:
                 return response.json()
 
             except httpx.HTTPStatusError as e:
-                logger.error(f"HTTP error {e.response.status_code}: {e}")
+                logger.exception(f"HTTP error {e.response.status_code}: {e}")
                 last_error = e
                 if e.response.status_code >= 500:
                     # Server error - retry
                     await asyncio.sleep(2**attempt)
                     continue
-                raise PubTator3Error(f"API error: {e}")
+                raise PubTator3Error(f"API error: {e}") from e
 
             except httpx.TimeoutException as e:
                 logger.warning(f"Timeout on attempt {attempt + 1}")
@@ -170,7 +165,7 @@ class PubTatorClient:
                 continue
 
             except Exception as e:
-                logger.error(f"Unexpected error: {e}")
+                logger.exception(f"Unexpected error: {e}")
                 last_error = e
                 break
 
@@ -184,8 +179,7 @@ class PubTatorClient:
     async def find_entity(
         self,
         query: str,
-        concept: Literal["gene", "disease", "chemical", "species", "variant"]
-        | None = None,
+        concept: Literal["gene", "disease", "chemical", "species", "variant"] | None = None,
         limit: int = 5,
     ) -> list[EntityMatch]:
         """
@@ -254,8 +248,7 @@ class PubTatorClient:
     async def resolve_entity(
         self,
         text: str,
-        preferred_type: Literal["gene", "disease", "chemical", "species", "variant"]
-        | None = None,
+        preferred_type: Literal["gene", "disease", "chemical", "species", "variant"] | None = None,
     ) -> PubTatorEntity | None:
         """
         Resolve text to standardized entity.
@@ -289,12 +282,8 @@ class PubTatorClient:
     async def find_relations(
         self,
         entity_id: str,
-        relation_type: Literal[
-            "treat", "associate", "cause", "interact", "inhibit", "stimulate"
-        ]
-        | None = None,
-        target_type: Literal["gene", "disease", "chemical", "species", "variant"]
-        | None = None,
+        relation_type: Literal["treat", "associate", "cause", "interact", "inhibit", "stimulate"] | None = None,
+        target_type: Literal["gene", "disease", "chemical", "species", "variant"] | None = None,
         limit: int = 20,
     ) -> list[RelationMatch]:
         """

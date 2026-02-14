@@ -7,7 +7,6 @@ Tools:
 
 import json
 import logging
-from typing import Dict, List
 
 from mcp.server.fastmcp import FastMCP
 
@@ -71,9 +70,9 @@ def register_merge_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 tool_name="merge_search_results",
             )
 
-        pmid_sources: Dict[str, List[str]] = {}
-        all_pmids: List[str] = []
-        by_query: Dict[str, int] = {}
+        pmid_sources: dict[str, list[str]] = {}
+        all_pmids: list[str] = []
+        by_query: dict[str, int] = {}
 
         for i, result in enumerate(results):
             # Support both formats
@@ -91,23 +90,19 @@ def register_merge_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             by_query[query_id] = len(pmids)
 
             for pmid in pmids:
-                pmid = str(pmid).strip()
-                if not pmid:
+                clean_pmid = str(pmid).strip()
+                if not clean_pmid:
                     continue
-                if pmid not in pmid_sources:
-                    pmid_sources[pmid] = []
-                    all_pmids.append(pmid)
-                pmid_sources[pmid].append(query_id)
+                if clean_pmid not in pmid_sources:
+                    pmid_sources[clean_pmid] = []
+                    all_pmids.append(clean_pmid)
+                pmid_sources[clean_pmid].append(query_id)
 
         # Find PMIDs that appeared in multiple searches (higher relevance)
-        high_relevance = [
-            pmid for pmid, sources in pmid_sources.items() if len(sources) > 1
-        ]
+        high_relevance = [pmid for pmid, sources in pmid_sources.items() if len(sources) > 1]
 
         # Sort: high relevance first, then others
-        sorted_pmids = high_relevance + [
-            p for p in all_pmids if p not in high_relevance
-        ]
+        sorted_pmids = high_relevance + [p for p in all_pmids if p not in high_relevance]
 
         output = {
             "total_unique": len(all_pmids),

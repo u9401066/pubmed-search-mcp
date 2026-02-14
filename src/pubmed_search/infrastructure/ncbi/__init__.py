@@ -28,9 +28,7 @@ from .search import SearchMixin
 from .utils import UtilsMixin
 
 
-class LiteratureSearcher(
-    SearchMixin, PDFMixin, CitationMixin, BatchMixin, UtilsMixin, ICiteMixin, EntrezBase
-):
+class LiteratureSearcher(SearchMixin, PDFMixin, CitationMixin, BatchMixin, UtilsMixin, ICiteMixin, EntrezBase):
     """
     Complete literature search interface combining all Entrez functionality.
 
@@ -44,16 +42,14 @@ class LiteratureSearcher(
         ...     print(paper['title'])
     """
 
-    pass
-
 
 __all__ = [
-    "LiteratureSearcher",
-    "EntrezBase",
-    "SearchStrategy",
-    "SearchMixin",
-    "PDFMixin",
-    "CitationMixin",
     "BatchMixin",
+    "CitationMixin",
+    "EntrezBase",
+    "LiteratureSearcher",
+    "PDFMixin",
+    "SearchMixin",
+    "SearchStrategy",
     "UtilsMixin",
 ]

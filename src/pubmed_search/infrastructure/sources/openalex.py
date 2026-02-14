@@ -128,7 +128,7 @@ class OpenAlexClient(BaseAPIClient):
             return [self._normalize_work(w) for w in works]
 
         except Exception as e:
-            logger.error(f"OpenAlex search failed: {e}")
+            logger.exception(f"OpenAlex search failed: {e}")
             return []
 
     async def get_work(self, work_id: str) -> dict[str, Any] | None:
@@ -160,12 +160,10 @@ class OpenAlexClient(BaseAPIClient):
             return self._normalize_work(data)
 
         except Exception as e:
-            logger.error(f"Failed to get work {work_id}: {e}")
+            logger.exception(f"Failed to get work {work_id}: {e}")
             return None
 
-    async def get_citations(
-        self, work_id: str, limit: int = 10
-    ) -> list[dict[str, Any]]:
+    async def get_citations(self, work_id: str, limit: int = 10) -> list[dict[str, Any]]:
         """
         Get works that cite this work.
 
@@ -194,7 +192,7 @@ class OpenAlexClient(BaseAPIClient):
             return [self._normalize_work(w) for w in data.get("results", [])]
 
         except Exception as e:
-            logger.error(f"Failed to get citations for {work_id}: {e}")
+            logger.exception(f"Failed to get citations for {work_id}: {e}")
             return []
 
     async def get_source(self, source_id: str) -> dict[str, Any] | None:
@@ -231,9 +229,7 @@ class OpenAlexClient(BaseAPIClient):
             logger.debug(f"Failed to get source {source_id}: {e}")
             return None
 
-    async def get_sources_batch(
-        self, source_ids: list[str]
-    ) -> dict[str, dict[str, Any]]:
+    async def get_sources_batch(self, source_ids: list[str]) -> dict[str, dict[str, Any]]:
         """
         Batch-fetch journal/source metadata using OpenAlex filter API.
 
@@ -253,8 +249,8 @@ class OpenAlexClient(BaseAPIClient):
             # Max ~50 per request
             clean_ids = []
             for sid in source_ids[:50]:
-                sid = sid.replace("https://openalex.org/", "")
-                clean_ids.append(sid)
+                clean_id = sid.replace("https://openalex.org/", "")
+                clean_ids.append(clean_id)
 
             filter_str = "openalex:" + "|".join(clean_ids)
             params = {
@@ -299,9 +295,7 @@ class OpenAlexClient(BaseAPIClient):
         ]
 
         return {
-            "openalex_source_id": source.get("id", "").replace(
-                "https://openalex.org/", ""
-            ),
+            "openalex_source_id": source.get("id", "").replace("https://openalex.org/", ""),
             "display_name": source.get("display_name", ""),
             "issn": issns[0] if issns else None,
             "issn_l": issn_l,
@@ -336,9 +330,7 @@ class OpenAlexClient(BaseAPIClient):
         if pmc_id and "PMC" in pmc_id:
             # Extract just the PMC ID
             pmc_id = pmc_id.split("PMC")[-1] if "PMC" in pmc_id else pmc_id
-            pmc_id = (
-                f"PMC{pmc_id}" if pmc_id and not pmc_id.startswith("PMC") else pmc_id
-            )
+            pmc_id = f"PMC{pmc_id}" if pmc_id and not pmc_id.startswith("PMC") else pmc_id
 
         # Extract authors (limit to avoid token explosion)
         authorships = work.get("authorships", []) or []

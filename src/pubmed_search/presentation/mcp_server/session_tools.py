@@ -14,7 +14,6 @@ Removed in v0.3.1:
 
 import json
 import logging
-from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
 
@@ -32,9 +31,7 @@ def register_session_tools(mcp: FastMCP, session_manager: SessionManager):
     """
 
     @mcp.tool()
-    def get_session_pmids(
-        search_index: int = -1, query_filter: Optional[str] = None
-    ) -> str:
+    def get_session_pmids(search_index: int = -1, query_filter: str | None = None) -> str:
         """
         取得 session 中暫存的 PMID 列表。
 
@@ -88,10 +85,7 @@ def register_session_tools(mcp: FastMCP, session_manager: SessionManager):
                         {
                             "success": False,
                             "error": f"No searches matching '{query_filter}'",
-                            "available_queries": [
-                                s.get("query", "")[:50]
-                                for s in session.search_history[-5:]
-                            ],
+                            "available_queries": [s.get("query", "")[:50] for s in session.search_history[-5:]],
                         }
                     )
                 index, search = matching[-1]  # Most recent matching
@@ -99,11 +93,7 @@ def register_session_tools(mcp: FastMCP, session_manager: SessionManager):
                 # Use search_index
                 try:
                     search = session.search_history[search_index]
-                    index = (
-                        search_index
-                        if search_index >= 0
-                        else len(session.search_history) + search_index
-                    )
+                    index = search_index if search_index >= 0 else len(session.search_history) + search_index
                 except IndexError:
                     return json.dumps(
                         {
@@ -130,7 +120,7 @@ def register_session_tools(mcp: FastMCP, session_manager: SessionManager):
             )
 
         except Exception as e:
-            logger.error(f"get_session_pmids failed: {e}")
+            logger.exception(f"get_session_pmids failed: {e}")
             return json.dumps({"success": False, "error": str(e)})
 
     # list_search_history removed in v0.3.1 - merged into get_session_summary(include_history=True)
@@ -179,13 +169,11 @@ def register_session_tools(mcp: FastMCP, session_manager: SessionManager):
             )
 
         except Exception as e:
-            logger.error(f"get_cached_article failed: {e}")
+            logger.exception(f"get_cached_article failed: {e}")
             return json.dumps({"success": False, "error": str(e)})
 
     @mcp.tool()
-    def get_session_summary(
-        include_history: bool = False, history_limit: int = 10
-    ) -> str:
+    def get_session_summary(include_history: bool = False, history_limit: int = 10) -> str:
         """
         取得當前 session 的摘要資訊。
 
@@ -218,9 +206,7 @@ def register_session_tools(mcp: FastMCP, session_manager: SessionManager):
             # Get recent searches summary (always included, brief)
             recent_searches = []
             for s in session.search_history[-5:]:
-                recent_searches.append(
-                    {"query": s.get("query", "")[:60], "count": len(s.get("pmids", []))}
-                )
+                recent_searches.append({"query": s.get("query", "")[:60], "count": len(s.get("pmids", []))})
 
             # Get some cached PMIDs sample
             cached_pmids = list(session.article_cache.keys())
@@ -253,29 +239,23 @@ def register_session_tools(mcp: FastMCP, session_manager: SessionManager):
                 total = len(session.search_history)
                 formatted_history = []
                 for i, search in enumerate(history):
-                    actual_index = (
-                        total - history_limit + i if total > history_limit else i
-                    )
+                    actual_index = total - history_limit + i if total > history_limit else i
                     formatted_history.append(
                         {
                             "index": actual_index,
                             "query": search.get("query", "")[:80],
-                            "timestamp": search.get("timestamp", "")[
-                                :19
-                            ],  # YYYY-MM-DDTHH:MM:SS
+                            "timestamp": search.get("timestamp", "")[:19],  # YYYY-MM-DDTHH:MM:SS
                             "result_count": search.get("result_count", 0),
                             "pmid_count": len(search.get("pmids", [])),
                         }
                     )
                 result["search_history"] = formatted_history
-                result["hints"].append(
-                    "Use get_session_pmids(index) to get PMIDs for a specific search"
-                )
+                result["hints"].append("Use get_session_pmids(index) to get PMIDs for a specific search")
 
             return json.dumps(result, ensure_ascii=False, indent=2)
 
         except Exception as e:
-            logger.error(f"get_session_summary failed: {e}")
+            logger.exception(f"get_session_summary failed: {e}")
             return json.dumps({"success": False, "error": str(e)})
 
 

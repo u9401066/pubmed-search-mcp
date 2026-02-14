@@ -2,8 +2,9 @@
 Tests for PDF module and additional entrez tests for high coverage.
 """
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock, AsyncMock
 
 
 class TestPDFMixin:
@@ -25,9 +26,7 @@ class TestPDFMixin:
             patch("pubmed_search.infrastructure.ncbi.pdf.Entrez.elink") as mock_elink,
             patch("pubmed_search.infrastructure.ncbi.pdf.Entrez.read") as mock_read,
         ):
-            mock_read.return_value = [
-                {"LinkSetDb": [{"LinkName": "pubmed_pmc", "Link": [{"Id": "123456"}]}]}
-            ]
+            mock_read.return_value = [{"LinkSetDb": [{"LinkName": "pubmed_pmc", "Link": [{"Id": "123456"}]}]}]
             mock_elink.return_value = MagicMock()
 
             result = await pdf_searcher.get_pmc_fulltext_url("12345")
@@ -186,9 +185,7 @@ class TestPDFMixin:
             patch("pubmed_search.infrastructure.ncbi.pdf.Entrez.elink") as mock_elink,
             patch("pubmed_search.infrastructure.ncbi.pdf.Entrez.read") as mock_read,
         ):
-            mock_read.return_value = [
-                {"LinkSetDb": [{"LinkName": "pubmed_pmc", "Link": [{"Id": "999888"}]}]}
-            ]
+            mock_read.return_value = [{"LinkSetDb": [{"LinkName": "pubmed_pmc", "Link": [{"Id": "999888"}]}]}]
             mock_elink.return_value = MagicMock()
 
             result = await pdf_searcher._get_pmc_id("12345")
@@ -271,9 +268,7 @@ class TestICiteExtended:
             {"pmid": "3", "icite": {"relative_citation_ratio": 1.5}},
         ]
 
-        result = icite_searcher.sort_by_citations(
-            articles, metric="relative_citation_ratio"
-        )
+        result = icite_searcher.sort_by_citations(articles, metric="relative_citation_ratio")
 
         assert result[0]["pmid"] == "2"  # Highest RCR
 
@@ -355,7 +350,5 @@ class TestMainModule:
         import importlib.util
 
         # Check if module exists without importing
-        spec = importlib.util.find_spec(
-            "pubmed_search.presentation.mcp_server.__main__"
-        )
+        spec = importlib.util.find_spec("pubmed_search.presentation.mcp_server.__main__")
         assert spec is not None or spec is None  # Module may or may not exist

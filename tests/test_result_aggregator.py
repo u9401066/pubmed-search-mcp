@@ -28,7 +28,6 @@ from pubmed_search.application.search.result_aggregator import (
     rank_results,
 )
 
-
 # =============================================================================
 # Fixtures
 # =============================================================================
@@ -87,9 +86,9 @@ def mock_article():
         article.merge_from = MagicMock()
 
         # Initialize scoring attributes
-        article._ranking_score = None
-        article._relevance_score = None
-        article._quality_score = None
+        article.ranking_score = None
+        article.relevance_score = None
+        article.quality_score = None
 
         return article
 
@@ -460,9 +459,7 @@ class TestResultAggregator:
         """Test deduplication by PMID."""
         same_pmid = "12345678"
         source1 = [mock_article(pmid=same_pmid, doi="10.1/a", primary_source="pubmed")]
-        source2 = [
-            mock_article(pmid=same_pmid, doi="10.1/b", primary_source="europe_pmc")
-        ]
+        source2 = [mock_article(pmid=same_pmid, doi="10.1/b", primary_source="europe_pmc")]
 
         aggregator = ResultAggregator()
         articles, stats = aggregator.aggregate([source1, source2])
@@ -551,7 +548,7 @@ class TestResultAggregator:
         ranked = aggregator.rank([article])
 
         assert len(ranked) == 1
-        assert ranked[0]._ranking_score is not None
+        assert ranked[0].ranking_score is not None
 
     async def test_rank_multiple_articles(self, sample_articles):
         """Test ranking multiple articles."""
@@ -561,7 +558,7 @@ class TestResultAggregator:
         assert len(ranked) == 3
 
         # Should be sorted by score (descending)
-        scores = [a._ranking_score for a in ranked]
+        scores = [a.ranking_score for a in ranked]
         assert scores == sorted(scores, reverse=True)
 
     async def test_rank_with_query(self, mock_article):
@@ -594,7 +591,7 @@ class TestResultAggregator:
 
         # Some articles may be filtered out
         for article in ranked:
-            assert article._ranking_score >= 0.6
+            assert article.ranking_score >= 0.6
 
     async def test_rank_max_results(self, sample_articles):
         """Test max_results limiting."""
@@ -815,14 +812,8 @@ class TestResultAggregator:
     async def test_normalize_doi(self):
         """Test DOI normalization."""
         assert ResultAggregator._normalize_doi("10.1000/test") == "10.1000/test"
-        assert (
-            ResultAggregator._normalize_doi("https://doi.org/10.1000/test")
-            == "10.1000/test"
-        )
-        assert (
-            ResultAggregator._normalize_doi("http://doi.org/10.1000/TEST")
-            == "10.1000/test"
-        )
+        assert ResultAggregator._normalize_doi("https://doi.org/10.1000/test") == "10.1000/test"
+        assert ResultAggregator._normalize_doi("http://doi.org/10.1000/TEST") == "10.1000/test"
         assert ResultAggregator._normalize_doi("doi:10.1000/test") == "10.1000/test"
         assert ResultAggregator._normalize_doi("  10.1000/test  ") == "10.1000/test"
 
@@ -830,10 +821,7 @@ class TestResultAggregator:
         """Test title normalization."""
         assert ResultAggregator._normalize_title("Hello World") == "hello world"
         assert ResultAggregator._normalize_title("Hello, World!") == "hello world"
-        assert (
-            ResultAggregator._normalize_title("  Multiple   Spaces  ")
-            == "multiple spaces"
-        )
+        assert ResultAggregator._normalize_title("  Multiple   Spaces  ") == "multiple spaces"
         assert ResultAggregator._normalize_title("") == ""
         assert ResultAggregator._normalize_title(None) == ""
 
@@ -850,7 +838,7 @@ class TestResultAggregator:
         assert stats.total_input == 3
 
         # Should be ranked
-        scores = [a._ranking_score for a in articles]
+        scores = [a.ranking_score for a in articles]
         assert scores == sorted(scores, reverse=True)
 
 
@@ -877,7 +865,7 @@ class TestConvenienceFunctions:
         ranked = rank_results(articles)
 
         assert len(ranked) == 2
-        assert ranked[0]._ranking_score >= ranked[1]._ranking_score
+        assert ranked[0].ranking_score >= ranked[1].ranking_score
 
 
 # =============================================================================
@@ -892,10 +880,7 @@ class TestConstants:
         """Test article type weights are defined."""
         assert "meta-analysis" in ARTICLE_TYPE_WEIGHTS
         assert "journal-article" in ARTICLE_TYPE_WEIGHTS
-        assert (
-            ARTICLE_TYPE_WEIGHTS["meta-analysis"]
-            > ARTICLE_TYPE_WEIGHTS["journal-article"]
-        )
+        assert ARTICLE_TYPE_WEIGHTS["meta-analysis"] > ARTICLE_TYPE_WEIGHTS["journal-article"]
 
     async def test_default_source_trust(self):
         """Test default source trust levels."""

@@ -106,9 +106,7 @@ class OpenURLBuilder:
             self.resolver_base = os.environ.get("OPENURL_RESOLVER", "")
 
     @classmethod
-    def from_preset(
-        cls, preset_name: str, base_url: str | None = None
-    ) -> "OpenURLBuilder":
+    def from_preset(cls, preset_name: str, base_url: str | None = None) -> "OpenURLBuilder":
         """
         Create builder from a preset resolver template.
 
@@ -405,9 +403,7 @@ def get_fulltext_link_with_fallback(
         result["url"] = f"https://www.ncbi.nlm.nih.gov/pmc/articles/PMC{pmc_num}/"
         result["source"] = "PubMed Central"
         result["type"] = "open_access"
-        result["pdf_url"] = (
-            f"https://www.ncbi.nlm.nih.gov/pmc/articles/PMC{pmc_num}/pdf/"
-        )
+        result["pdf_url"] = f"https://www.ncbi.nlm.nih.gov/pmc/articles/PMC{pmc_num}/pdf/"
 
     # 2. OpenURL (institutional)
     if include_openurl:

@@ -85,9 +85,7 @@ class SemanticScholarClient(BaseAPIClient):
         req_headers = dict(headers or {})
         if self._api_key:
             req_headers["x-api-key"] = self._api_key
-        return await super()._execute_request(
-            url, method=method, data=data, headers=req_headers
-        )
+        return await super()._execute_request(url, method=method, data=data, headers=req_headers)
 
     async def search(
         self,
@@ -144,12 +142,10 @@ class SemanticScholarClient(BaseAPIClient):
             return [self._normalize_paper(p) for p in papers]
 
         except Exception as e:
-            logger.error(f"Semantic Scholar search failed: {e}")
+            logger.exception(f"Semantic Scholar search failed: {e}")
             return []
 
-    async def get_paper(
-        self, paper_id: str, fields: list[str] | None = None
-    ) -> dict[str, Any] | None:
+    async def get_paper(self, paper_id: str, fields: list[str] | None = None) -> dict[str, Any] | None:
         """
         Get paper by ID (S2 paper ID, DOI, or PubMed ID).
 
@@ -173,12 +169,10 @@ class SemanticScholarClient(BaseAPIClient):
             return self._normalize_paper(data)
 
         except Exception as e:
-            logger.error(f"Failed to get paper {paper_id}: {e}")
+            logger.exception(f"Failed to get paper {paper_id}: {e}")
             return None
 
-    async def get_citations(
-        self, paper_id: str, limit: int = 10
-    ) -> list[dict[str, Any]]:
+    async def get_citations(self, paper_id: str, limit: int = 10) -> list[dict[str, Any]]:
         """
         Get papers that cite this paper.
 
@@ -205,12 +199,10 @@ class SemanticScholarClient(BaseAPIClient):
             return [self._normalize_paper(p) for p in papers if p]
 
         except Exception as e:
-            logger.error(f"Failed to get citations for {paper_id}: {e}")
+            logger.exception(f"Failed to get citations for {paper_id}: {e}")
             return []
 
-    async def get_references(
-        self, paper_id: str, limit: int = 10
-    ) -> list[dict[str, Any]]:
+    async def get_references(self, paper_id: str, limit: int = 10) -> list[dict[str, Any]]:
         """
         Get papers referenced by this paper.
 
@@ -237,7 +229,7 @@ class SemanticScholarClient(BaseAPIClient):
             return [self._normalize_paper(p) for p in papers if p]
 
         except Exception as e:
-            logger.error(f"Failed to get references for {paper_id}: {e}")
+            logger.exception(f"Failed to get references for {paper_id}: {e}")
             return []
 
     async def get_recommendations(
@@ -281,16 +273,14 @@ class SemanticScholarClient(BaseAPIClient):
                     normalized = self._normalize_paper(paper)
                     # Calculate similarity score based on ranking position
                     # First result = 1.0, linearly decreasing
-                    normalized["similarity_score"] = max(
-                        0.0, 1.0 - (i / max(len(papers), 1))
-                    )
+                    normalized["similarity_score"] = max(0.0, 1.0 - (i / max(len(papers), 1)))
                     normalized["similarity_source"] = "semantic_scholar"
                     results.append(normalized)
 
             return results
 
         except Exception as e:
-            logger.error(f"Failed to get recommendations for {paper_id}: {e}")
+            logger.exception(f"Failed to get recommendations for {paper_id}: {e}")
             return []
 
     async def get_paper_embedding_similarity(
@@ -332,7 +322,7 @@ class SemanticScholarClient(BaseAPIClient):
             return 0.1
 
         except Exception as e:
-            logger.error(f"Failed to calculate similarity: {e}")
+            logger.exception(f"Failed to calculate similarity: {e}")
             return None
 
     def _normalize_paper(self, paper: dict[str, Any]) -> dict[str, Any]:
@@ -361,11 +351,7 @@ class SemanticScholarClient(BaseAPIClient):
         # Journal/venue name
         if isinstance(venue, dict):
             journal = venue.get("name", "")
-            journal_abbrev = (
-                venue.get("alternate_names", [""])[0]
-                if venue.get("alternate_names")
-                else ""
-            )
+            journal_abbrev = venue.get("alternate_names", [""])[0] if venue.get("alternate_names") else ""
         else:
             journal = str(venue) if venue else ""
             journal_abbrev = ""

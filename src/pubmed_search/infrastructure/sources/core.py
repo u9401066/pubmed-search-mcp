@@ -19,7 +19,7 @@ from typing import Any
 
 import httpx
 
-from pubmed_search.infrastructure.sources.base_client import BaseAPIClient, _CONTINUE
+from pubmed_search.infrastructure.sources.base_client import _CONTINUE, BaseAPIClient
 
 logger = logging.getLogger(__name__)
 
@@ -84,9 +84,7 @@ class COREClient(BaseAPIClient):
         req_headers = dict(headers or {})
         if self._api_key:
             req_headers["Authorization"] = f"Bearer {self._api_key}"
-        return await super()._execute_request(
-            url, method=method, data=data, headers=req_headers
-        )
+        return await super()._execute_request(url, method=method, data=data, headers=req_headers)
 
     def _handle_expected_status(self, response: httpx.Response, url: str) -> Any:
         """Handle 401 (unauthorized - bad API key)."""
@@ -144,9 +142,7 @@ class COREClient(BaseAPIClient):
             if sort:
                 params["sort"] = sort
 
-            url = (
-                f"{CORE_API_BASE}/search/{entity_type}?{urllib.parse.urlencode(params)}"
-            )
+            url = f"{CORE_API_BASE}/search/{entity_type}?{urllib.parse.urlencode(params)}"
             data = await self._make_request(url)
 
             if not data:
@@ -165,7 +161,7 @@ class COREClient(BaseAPIClient):
             }
 
         except Exception as e:
-            logger.error(f"CORE search failed: {e}")
+            logger.exception(f"CORE search failed: {e}")
             return {"total_hits": 0, "results": []}
 
     async def search_fulltext(
@@ -218,7 +214,7 @@ class COREClient(BaseAPIClient):
             return self._normalize_work(data)
 
         except Exception as e:
-            logger.error(f"Get CORE work failed: {e}")
+            logger.exception(f"Get CORE work failed: {e}")
             return None
 
     async def get_output(self, output_id: int | str) -> dict | None:
@@ -243,7 +239,7 @@ class COREClient(BaseAPIClient):
             return self._normalize_output(data)
 
         except Exception as e:
-            logger.error(f"Get CORE output failed: {e}")
+            logger.exception(f"Get CORE output failed: {e}")
             return None
 
     async def get_fulltext(self, output_id: int | str) -> str | None:
@@ -351,8 +347,7 @@ class COREClient(BaseAPIClient):
             "core_id": work.get("id"),
             "title": work.get("title", ""),
             "authors": authors,
-            "author_string": ", ".join(authors[:3])
-            + (" et al." if len(authors) > 3 else ""),
+            "author_string": ", ".join(authors[:3]) + (" et al." if len(authors) > 3 else ""),
             "abstract": work.get("abstract", ""),
             "year": work.get("yearPublished"),
             "journal": journal,
@@ -360,22 +355,15 @@ class COREClient(BaseAPIClient):
             "doi": doi,
             "pmid": pmid,
             "arxiv_id": arxiv_id,
-            "language": work.get("language", {}).get("name")
-            if isinstance(work.get("language"), dict)
-            else None,
+            "language": work.get("language", {}).get("name") if isinstance(work.get("language"), dict) else None,
             "document_type": work.get("documentType", []),
             "has_fulltext": bool(work.get("fullText")),
-            "fulltext_available": "_exists_:fullText" in str(work)
-            or work.get("downloadUrl") is not None,
+            "fulltext_available": "_exists_:fullText" in str(work) or work.get("downloadUrl") is not None,
             "download_url": download_url,
             "pdf_url": pdf_url,
             "reader_url": reader_url,
             "citation_count": work.get("citationCount"),
-            "data_providers": [
-                dp.get("name")
-                for dp in work.get("dataProviders", [])
-                if isinstance(dp, dict)
-            ],
+            "data_providers": [dp.get("name") for dp in work.get("dataProviders", []) if isinstance(dp, dict)],
             "_source": "core",
         }
 

@@ -155,9 +155,7 @@ def get_openurl_builder(resolver_base: str | None = None, preset: str | None = N
         if preset:
             _openurl_builder = OpenURLBuilder.from_preset(preset, resolver_base)
         elif resolver_base or os.environ.get("OPENURL_RESOLVER"):
-            _openurl_builder = OpenURLBuilder(
-                resolver_base=resolver_base or os.environ.get("OPENURL_RESOLVER") or ""
-            )
+            _openurl_builder = OpenURLBuilder(resolver_base=resolver_base or os.environ.get("OPENURL_RESOLVER") or "")
         else:
             # Return a builder that will check config at runtime
             config = get_openurl_config()
@@ -218,7 +216,7 @@ async def search_alternate_source(
                 open_access_only=open_access_only,
             )
 
-        elif source == "openalex":
+        if source == "openalex":
             client = get_openalex_client(email)
             return await client.search(
                 query=query,
@@ -228,7 +226,7 @@ async def search_alternate_source(
                 open_access_only=open_access_only,
             )
 
-        elif source == "europe_pmc":
+        if source == "europe_pmc":
             client = get_europe_pmc_client(email)
             result = await client.search(
                 query=query,
@@ -240,7 +238,7 @@ async def search_alternate_source(
             )
             return result.get("results", [])
 
-        elif source == "core":
+        if source == "core":
             client = get_core_client()
             result = await client.search(
                 query=query,
@@ -251,12 +249,11 @@ async def search_alternate_source(
             )
             return result.get("results", [])
 
-        else:
-            logger.warning(f"Unknown source: {source}")
-            return []
+        logger.warning(f"Unknown source: {source}")
+        return []
 
     except Exception as e:
-        logger.error(f"Search failed for {source}: {e}")
+        logger.exception(f"Search failed for {source}: {e}")
         return []
 
 
@@ -313,14 +310,12 @@ async def cross_search(
                 min_year=min_year,
                 max_year=max_year,
                 open_access_only=open_access_only,
-                has_fulltext=has_fulltext
-                if source in ("europe_pmc", "core")
-                else False,
+                has_fulltext=has_fulltext if source in ("europe_pmc", "core") else False,
                 email=email,
             )
             return (source, results)
         except Exception as e:
-            logger.error(f"Cross-search failed for {source}: {e}")
+            logger.exception(f"Cross-search failed for {source}: {e}")
             return (source, [])
 
     # Execute all source searches in parallel
@@ -359,9 +354,7 @@ def _deduplicate_results(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
     # Sort by source priority
     source_priority = {"pubmed": 0, "semantic_scholar": 1, "openalex": 2}
-    sorted_results = sorted(
-        results, key=lambda x: source_priority.get(x.get("_source", ""), 99)
-    )
+    sorted_results = sorted(results, key=lambda x: source_priority.get(x.get("_source", ""), 99))
 
     for paper in sorted_results:
         doi = (paper.get("doi") or "").lower().strip()
@@ -371,11 +364,7 @@ def _deduplicate_results(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
         # Check for duplicates
         is_duplicate = False
 
-        if doi and doi in seen_dois:
-            is_duplicate = True
-        elif pmid and pmid in seen_pmids:
-            is_duplicate = True
-        elif title and title in seen_titles:
+        if (doi and doi in seen_dois) or (pmid and pmid in seen_pmids) or (title and title in seen_titles):
             is_duplicate = True
 
         if not is_duplicate:
@@ -394,8 +383,7 @@ def _normalize_title(title: str) -> str:
     """Normalize title for comparison."""
     # Remove punctuation, lowercase, remove extra spaces
     title = re.sub(r"[^\w\s]", "", title.lower())
-    title = " ".join(title.split())
-    return title
+    return " ".join(title.split())
 
 
 async def get_paper_from_any_source(
@@ -415,7 +403,7 @@ async def get_paper_from_any_source(
     identifier = identifier.strip()
 
     # DOI
-    if identifier.startswith("10.") or identifier.startswith("doi:"):
+    if identifier.startswith(("10.", "doi:")):
         doi = identifier.replace("doi:", "")
 
         # Try Semantic Scholar first (faster)
@@ -443,14 +431,12 @@ async def get_paper_from_any_source(
         return await client.get_work(f"pmid:{pmid}")
 
     # S2 ID (40 char hex)
-    if len(identifier) == 40 and all(
-        c in "0123456789abcdef" for c in identifier.lower()
-    ):
+    if len(identifier) == 40 and all(c in "0123456789abcdef" for c in identifier.lower()):
         client = get_semantic_scholar_client()
         return await client.get_paper(identifier)
 
     # OpenAlex ID
-    if identifier.startswith("W") or identifier.startswith("https://openalex.org/"):
+    if identifier.startswith(("W", "https://openalex.org/")):
         client = get_openalex_client(email)
         return await client.get_work(identifier)
 
@@ -512,19 +498,19 @@ def get_fulltext_downloader():
 # Export for convenience
 __all__ = [
     "SearchSource",
-    "search_alternate_source",
     "cross_search",
+    "get_core_client",
+    "get_crossref_client",
+    "get_europe_pmc_client",
+    "get_fulltext_downloader",
+    "get_fulltext_parsed",
+    "get_fulltext_xml",
+    "get_ncbi_extended_client",
+    "get_openalex_client",
+    "get_openi_client",
+    "get_openurl_builder",
     "get_paper_from_any_source",
     "get_semantic_scholar_client",
-    "get_openalex_client",
-    "get_europe_pmc_client",
-    "get_core_client",
-    "get_ncbi_extended_client",
-    "get_crossref_client",
     "get_unpaywall_client",
-    "get_openurl_builder",
-    "get_openi_client",
-    "get_fulltext_xml",
-    "get_fulltext_parsed",
-    "get_fulltext_downloader",
+    "search_alternate_source",
 ]

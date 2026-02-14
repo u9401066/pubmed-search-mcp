@@ -14,7 +14,7 @@ Usage:
 """
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
@@ -136,8 +136,8 @@ def register_all_mcp_tools(
     mcp: FastMCP,
     searcher: LiteratureSearcher,
     session_manager: SessionManager,
-    strategy_generator: Optional[Any] = None,
-) -> Dict[str, int]:
+    strategy_generator: Any | None = None,
+) -> dict[str, int]:
     """
     註冊所有 MCP 工具。
 
@@ -190,7 +190,7 @@ def register_all_mcp_tools(
     return stats
 
 
-def list_registered_tools() -> Dict[str, List[str]]:
+def list_registered_tools() -> dict[str, list[str]]:
     """
     列出所有已定義的工具，按類別分組。
 
@@ -200,7 +200,7 @@ def list_registered_tools() -> Dict[str, List[str]]:
     return {cat_id: cat_info["tools"] for cat_id, cat_info in TOOL_CATEGORIES.items()}
 
 
-def get_tool_info(tool_name: str) -> Optional[Dict[str, str]]:
+def get_tool_info(tool_name: str) -> dict[str, str] | None:
     """
     取得特定工具的資訊。
 
@@ -221,7 +221,7 @@ def get_tool_info(tool_name: str) -> Optional[Dict[str, str]]:
     return None
 
 
-def get_tools_by_category(category_id: str) -> List[str]:
+def get_tools_by_category(category_id: str) -> list[str]:
     """
     取得特定類別的所有工具。
 
@@ -252,7 +252,7 @@ def generate_tools_index_markdown() -> str:
         "",
     ]
 
-    for cat_id, cat_info in TOOL_CATEGORIES.items():
+    for cat_info in TOOL_CATEGORIES.values():
         lines.append(f"## {cat_info['name']}")
         lines.append(f"*{cat_info['description']}*")
         lines.append("")
@@ -271,7 +271,7 @@ def generate_tools_index_markdown() -> str:
 # ============================================================================
 
 
-def validate_tool_registry(mcp: FastMCP) -> Dict[str, List[str]]:
+def validate_tool_registry(mcp: FastMCP) -> dict[str, list[str]]:
     """
     驗證 TOOL_CATEGORIES 與實際註冊的工具是否同步。
 
@@ -345,19 +345,17 @@ def check_tool_registration(mcp: FastMCP, raise_on_error: bool = False) -> bool:
         logger.error(msg)
         return False
 
-    logger.info(
-        f"Tool registry validated: {len(result['registered'])} tools registered"
-    )
+    logger.info(f"Tool registry validated: {len(result['registered'])} tools registered")
     return True
 
 
 __all__ = [
     "TOOL_CATEGORIES",
-    "register_all_mcp_tools",
-    "list_registered_tools",
+    "check_tool_registration",
+    "generate_tools_index_markdown",
     "get_tool_info",
     "get_tools_by_category",
-    "generate_tools_index_markdown",
+    "list_registered_tools",
+    "register_all_mcp_tools",
     "validate_tool_registry",
-    "check_tool_registration",
 ]

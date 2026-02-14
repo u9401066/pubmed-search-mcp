@@ -206,7 +206,7 @@ MILESTONE_PATTERNS = {
 def detect_milestones(articles: List[Article]) -> List[Milestone]:
     """
     Detect research milestones from article titles and abstracts.
-    
+
     Returns milestones sorted chronologically with:
     - Milestone type
     - Date
@@ -226,7 +226,7 @@ def detect_controversies(topic: str, articles: List[Article]) -> List[Controvers
     4. Analyze methodology differences
     5. Determine resolution status
     """
-    
+
     # Claim extraction prompt
     CLAIM_PROMPT = """
     Extract the main finding from this abstract:
@@ -295,7 +295,7 @@ timeline
 
 ### 4.2 Experiment 1: Multi-Source Coverage (RQ1)
 
-**Method**: 
+**Method**:
 - 50 topics from BioASQ/TREC-COVID
 - Compare: PubMed-only vs All sources
 - Metric: Unique relevant papers found

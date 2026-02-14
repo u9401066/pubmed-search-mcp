@@ -71,7 +71,7 @@ if ($Quick) {
     Write-Host "  Running tests with coverage..." -ForegroundColor Gray
     uv run pytest --cov=src --cov-report=html --cov-report=term-missing -v
 } else {
-    Write-Host "  Running all tests..." -ForegroundColor Gray
+    Write-Host "  Running all tests (multi-core)..." -ForegroundColor Gray
     uv run pytest -v
 }
 
@@ -90,16 +90,16 @@ Write-Host ""
 if ($Benchmark -or $All) {
     Write-Host "📋 3. Performance Tests" -ForegroundColor Yellow
     Write-Host ""
-    
-    Write-Host "  Running benchmarks..." -ForegroundColor Gray
-    uv run pytest tests/test_performance.py -v --benchmark-only
-    
+
+    Write-Host "  Running benchmarks (single-core, xdist auto-disabled)..." -ForegroundColor Gray
+    uv run pytest tests/test_performance.py -v --benchmark-only -p no:xdist
+
     if ($LASTEXITCODE -ne 0) {
         Write-Host "  ⚠️  Some benchmarks failed" -ForegroundColor Yellow
     } else {
         Write-Host "  ✅ Benchmarks completed" -ForegroundColor Green
     }
-    
+
     Write-Host ""
 }
 
@@ -109,7 +109,7 @@ if ($Benchmark -or $All) {
 Write-Host "📋 4. End-to-End Tests" -ForegroundColor Yellow
 Write-Host ""
 
-Write-Host "  Running E2E workflows..." -ForegroundColor Gray
+Write-Host "  Running E2E workflows (multi-core)..." -ForegroundColor Gray
 uv run pytest tests/test_e2e_workflows.py -v
 
 if ($LASTEXITCODE -ne 0) {
@@ -127,13 +127,13 @@ Write-Host ""
 if ($Security -or $All) {
     Write-Host "📋 5. Security Scans" -ForegroundColor Yellow
     Write-Host ""
-    
+
     & "$PSScriptRoot\run_security_scan.ps1"
-    
+
     if ($LASTEXITCODE -ne 0) {
         Write-Host "  ⚠️  Security issues found" -ForegroundColor Yellow
     }
-    
+
     Write-Host ""
 }
 
@@ -145,9 +145,9 @@ if ($Mutation -or $All) {
     Write-Host ""
     Write-Host "  ⏰ This will take 10-30 minutes..." -ForegroundColor Gray
     Write-Host ""
-    
+
     & "$PSScriptRoot\run_mutation_tests.ps1"
-    
+
     Write-Host ""
 }
 

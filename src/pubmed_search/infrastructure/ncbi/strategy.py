@@ -9,7 +9,7 @@ Uses:
 
 import asyncio
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from Bio import Entrez
 from tenacity import (
@@ -53,12 +53,12 @@ class SearchStrategyGenerator:
     - Query translation analysis
     """
 
-    def __init__(self, email: str, api_key: Optional[str] = None):
+    def __init__(self, email: str, api_key: str | None = None):
         Entrez.email = email
         if api_key:
             Entrez.api_key = api_key
 
-    async def spell_check(self, query: str) -> Tuple[str, bool]:
+    async def spell_check(self, query: str) -> tuple[str, bool]:
         """
         Check and correct spelling using NCBI ESpell.
 
@@ -84,7 +84,7 @@ class SearchStrategyGenerator:
             logger.warning(f"ESpell failed: {e}")
             return query, False
 
-    async def get_mesh_info(self, term: str) -> Optional[Dict[str, Any]]:
+    async def get_mesh_info(self, term: str) -> dict[str, Any] | None:
         """
         Get MeSH information for a term including synonyms.
 
@@ -98,18 +98,14 @@ class SearchStrategyGenerator:
 
         async def _search_mesh_exact():
             """Try exact MeSH term search first."""
-            handle = await asyncio.to_thread(
-                Entrez.esearch, db="mesh", term=f"{term}[MeSH Terms]", retmax=1
-            )
+            handle = await asyncio.to_thread(Entrez.esearch, db="mesh", term=f"{term}[MeSH Terms]", retmax=1)
             result = await asyncio.to_thread(Entrez.read, handle)
             handle.close()
             return result
 
         async def _search_mesh_quoted():
             """Fall back to quoted search."""
-            handle = await asyncio.to_thread(
-                Entrez.esearch, db="mesh", term=f'"{term}"', retmax=1
-            )
+            handle = await asyncio.to_thread(Entrez.esearch, db="mesh", term=f'"{term}"', retmax=1)
             result = await asyncio.to_thread(Entrez.read, handle)
             handle.close()
             return result
@@ -127,7 +123,7 @@ class SearchStrategyGenerator:
             handle.close()
             return content
 
-        def _parse_mesh_text(content: str) -> Dict[str, Any]:
+        def _parse_mesh_text(content: str) -> dict[str, Any]:
             """Parse MeSH text format to extract info."""
             lines = content.strip().split("\n")
 
@@ -153,11 +149,7 @@ class SearchStrategyGenerator:
                 if in_entry_terms:
                     stripped = line.strip()
                     # Stop at empty line or new section
-                    if (
-                        not stripped
-                        or stripped.startswith("Previous")
-                        or stripped.startswith("All MeSH")
-                    ):
+                    if not stripped or stripped.startswith(("Previous", "All MeSH")):
                         in_entry_terms = False
                         continue
                     if stripped:
@@ -170,9 +162,7 @@ class SearchStrategyGenerator:
                     parts = line.split(":", 1)
                     if len(parts) > 1:
                         tree_str = parts[1].strip()
-                        result["tree_numbers"] = [
-                            t.strip() for t in tree_str.split(",") if t.strip()
-                        ]
+                        result["tree_numbers"] = [t.strip() for t in tree_str.split(",") if t.strip()]
                     break
 
             return result
@@ -212,7 +202,7 @@ class SearchStrategyGenerator:
             logger.warning(f"MeSH lookup failed for '{term}': {e}")
             return None
 
-    async def analyze_query(self, query: str) -> Dict[str, Any]:
+    async def analyze_query(self, query: str) -> dict[str, Any]:
         """
         Analyze how PubMed interprets a query using ESearch translation.
 
@@ -254,7 +244,7 @@ class SearchStrategyGenerator:
         check_spelling: bool = True,
         include_suggestions: bool = True,
         analyze_queries: bool = True,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Gather search intelligence for a topic - returns RAW MATERIALS for Agent to decide.
 
@@ -355,15 +345,11 @@ class SearchStrategyGenerator:
 
             # Try individual significant words (if not covered by bigrams)
             covered_words = set()
-            for key in mesh_data.keys():
+            for key in mesh_data:
                 covered_words.update(key.lower().split())
 
             for word in words:
-                if (
-                    len(word) > 3
-                    and word.lower() not in stop_words
-                    and word.lower() not in covered_words
-                ):
+                if len(word) > 3 and word.lower() not in stop_words and word.lower() not in covered_words:
                     word_mesh = await self.get_mesh_info(word)
                     if word_mesh and word not in mesh_data:
                         mesh_data[word] = word_mesh
@@ -376,9 +362,7 @@ class SearchStrategyGenerator:
                         )
 
         # Extract keywords for Agent to use
-        result["keywords"] = [
-            w for w in words if w.lower() not in stop_words and len(w) > 2
-        ]
+        result["keywords"] = [w for w in words if w.lower() not in stop_words and len(w) > 2]
 
         # Flatten all synonyms for easy access
         all_synonyms = []
@@ -471,18 +455,17 @@ class SearchStrategyGenerator:
             )
             query_id += 1
 
-        if strategy == "exploratory":
+        if strategy == "exploratory" and len(words) >= 2:
             # Broader search
-            if len(words) >= 2:
-                queries.append(
-                    {
-                        "id": f"q{query_id}_broad",
-                        "query": f"({words[0]})[Title] AND ({' OR '.join(words[1:])})",
-                        "purpose": "Broader: main term + any modifier",
-                        "priority": 4,
-                    }
-                )
-                query_id += 1
+            queries.append(
+                {
+                    "id": f"q{query_id}_broad",
+                    "query": f"({words[0]})[Title] AND ({' OR '.join(words[1:])})",
+                    "purpose": "Broader: main term + any modifier",
+                    "priority": 4,
+                }
+            )
+            query_id += 1
 
         if strategy == "focused":
             # Add RCT filter for high-quality evidence
@@ -502,9 +485,7 @@ class SearchStrategyGenerator:
                 try:
                     analysis = await self.analyze_query(q["query"])
                     q["estimated_count"] = analysis.get("count", 0)
-                    q["pubmed_translation"] = analysis.get(
-                        "translated_query", q["query"]
-                    )
+                    q["pubmed_translation"] = analysis.get("translated_query", q["query"])
                 except Exception as e:
                     logger.warning(f"Query analysis failed for {q['id']}: {e}")
                     q["estimated_count"] = None
@@ -514,9 +495,7 @@ class SearchStrategyGenerator:
 
         return result
 
-    async def expand_with_mesh(
-        self, topic: str, existing_queries: List[str]
-    ) -> Dict[str, Any]:
+    async def expand_with_mesh(self, topic: str, existing_queries: list[str]) -> dict[str, Any]:
         """
         Generate expansion queries using MeSH relationships.
 

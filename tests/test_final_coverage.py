@@ -3,10 +3,11 @@ Final push tests to reach 90% coverage.
 Targets: search.py (69%), session.py (76%), server.py (79%), _common.py (72%)
 """
 
-import pytest
-from unittest.mock import Mock, patch, MagicMock
 import json
 import tempfile
+from unittest.mock import MagicMock, Mock, patch
+
+import pytest
 
 
 class TestSearchMixinAdvanced:
@@ -27,9 +28,7 @@ class TestSearchMixinAdvanced:
     async def test_fetch_details_single(self, searcher):
         """Test fetch_details with single ID."""
         with (
-            patch(
-                "pubmed_search.infrastructure.ncbi.search.Entrez.efetch"
-            ) as mock_efetch,
+            patch("pubmed_search.infrastructure.ncbi.search.Entrez.efetch") as mock_efetch,
             patch("pubmed_search.infrastructure.ncbi.search.Entrez.read") as mock_read,
         ):
             mock_read.return_value = {
@@ -82,9 +81,7 @@ class TestSearchMixinAdvanced:
     async def test_search_with_all_parameters(self, searcher):
         """Test search with all parameters specified."""
         with (
-            patch(
-                "pubmed_search.infrastructure.ncbi.search.Entrez.esearch"
-            ) as mock_esearch,
+            patch("pubmed_search.infrastructure.ncbi.search.Entrez.esearch") as mock_esearch,
             patch("pubmed_search.infrastructure.ncbi.search.Entrez.read") as mock_read,
             patch.object(searcher, "fetch_details", return_value=[{"pmid": "123"}]),
         ):
@@ -247,11 +244,11 @@ class TestCommonModuleFinalCoverage:
 
     async def test_cache_results_with_session(self):
         """Test caching results with active session."""
+        from pubmed_search.application.session import SessionManager
         from pubmed_search.presentation.mcp_server.tools._common import (
             _cache_results,
             set_session_manager,
         )
-        from pubmed_search.application.session import SessionManager
 
         with tempfile.TemporaryDirectory() as tmpdir:
             manager = SessionManager(data_dir=tmpdir)
@@ -269,11 +266,11 @@ class TestCommonModuleFinalCoverage:
 
     async def test_record_search_only_with_session(self):
         """Test recording search without caching."""
+        from pubmed_search.application.session import SessionManager
         from pubmed_search.presentation.mcp_server.tools._common import (
             _record_search_only,
             set_session_manager,
         )
-        from pubmed_search.application.session import SessionManager
 
         with tempfile.TemporaryDirectory() as tmpdir:
             manager = SessionManager(data_dir=tmpdir)
@@ -313,11 +310,11 @@ class TestCommonModuleFinalCoverage:
 
     async def test_get_last_search_pmids_no_history(self):
         """Test getting last search PMIDs with no history."""
+        from pubmed_search.application.session import SessionManager
         from pubmed_search.presentation.mcp_server.tools._common import (
             get_last_search_pmids,
             set_session_manager,
         )
-        from pubmed_search.application.session import SessionManager
 
         with tempfile.TemporaryDirectory() as tmpdir:
             manager = SessionManager(data_dir=tmpdir)
@@ -356,11 +353,11 @@ class TestExportToolsEdgeCases:
 
     async def test_resolve_pmids_with_dataclass_history(self):
         """Test resolving PMIDs from SearchRecord dataclass."""
-        from pubmed_search.presentation.mcp_server.tools.export import _resolve_pmids
+        from pubmed_search.application.session import SearchRecord
         from pubmed_search.presentation.mcp_server.tools._common import (
             set_session_manager,
         )
-        from pubmed_search.application.session import SearchRecord
+        from pubmed_search.presentation.mcp_server.tools.export import _resolve_pmids
 
         # Mock session manager with SearchRecord in history
         mock_session = Mock()
@@ -393,12 +390,8 @@ class TestStrategyEdgeCases:
         from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
 
         with (
-            patch(
-                "pubmed_search.infrastructure.ncbi.strategy.Entrez.espell"
-            ) as mock_espell,
-            patch(
-                "pubmed_search.infrastructure.ncbi.strategy.Entrez.read"
-            ) as mock_read,
+            patch("pubmed_search.infrastructure.ncbi.strategy.Entrez.espell") as mock_espell,
+            patch("pubmed_search.infrastructure.ncbi.strategy.Entrez.read") as mock_read,
         ):
             mock_read.return_value = {"CorrectedQuery": "diabetes"}
             mock_espell.return_value = MagicMock()
@@ -420,8 +413,8 @@ class TestDiscoveryEdgeCases:
 
     async def test_find_citing_articles(self):
         """Test find_citing_articles method."""
-        from pubmed_search.infrastructure.ncbi.citation import CitationMixin
         from pubmed_search.infrastructure.ncbi.base import EntrezBase
+        from pubmed_search.infrastructure.ncbi.citation import CitationMixin
 
         class TestSearcher(CitationMixin, EntrezBase):
             async def fetch_details(self, pmids):
@@ -430,12 +423,8 @@ class TestDiscoveryEdgeCases:
         searcher = TestSearcher()
 
         with (
-            patch(
-                "pubmed_search.infrastructure.ncbi.citation.Entrez.elink"
-            ) as mock_elink,
-            patch(
-                "pubmed_search.infrastructure.ncbi.citation.Entrez.read"
-            ) as mock_read,
+            patch("pubmed_search.infrastructure.ncbi.citation.Entrez.elink") as mock_elink,
+            patch("pubmed_search.infrastructure.ncbi.citation.Entrez.read") as mock_read,
         ):
             mock_read.return_value = [
                 {

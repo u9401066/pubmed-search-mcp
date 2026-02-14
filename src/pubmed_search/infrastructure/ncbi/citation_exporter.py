@@ -28,6 +28,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 import httpx
+from typing_extensions import Self
 
 logger = logging.getLogger(__name__)
 
@@ -81,9 +82,7 @@ class NCBICitationExporter:
             self._client = httpx.AsyncClient(
                 timeout=self.timeout,
                 follow_redirects=True,
-                headers={
-                    "User-Agent": "PubMedSearchMCP/1.0 (github.com/u9401066/pubmed-search-mcp)"
-                },
+                headers={"User-Agent": "PubMedSearchMCP/1.0 (github.com/u9401066/pubmed-search-mcp)"},
             )
         return self._client
 
@@ -160,9 +159,7 @@ class NCBICitationExporter:
                 except json.JSONDecodeError:
                     pass  # Not an error response, continue
 
-            logger.info(
-                f"Exported {len(pmids)} citations in {format} format via official API"
-            )
+            logger.info(f"Exported {len(pmids)} citations in {format} format via official API")
 
             return CitationResult(
                 success=True,
@@ -172,7 +169,7 @@ class NCBICitationExporter:
             )
 
         except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP error from Citation API: {e}")
+            logger.exception(f"HTTP error from Citation API: {e}")
             return CitationResult(
                 success=False,
                 format=format,
@@ -181,13 +178,13 @@ class NCBICitationExporter:
                 error=f"HTTP {e.response.status_code}: {e.response.text[:200]}",
             )
         except httpx.RequestError as e:
-            logger.error(f"Request error: {e}")
+            logger.exception(f"Request error: {e}")
             return CitationResult(
                 success=False,
                 format=format,
                 content="",
                 pmid_count=len(pmids),
-                error=f"Request failed: {str(e)}",
+                error=f"Request failed: {e!s}",
             )
 
     async def close(self) -> None:
@@ -196,7 +193,7 @@ class NCBICitationExporter:
             await self._client.aclose()
             self._client = None
 
-    async def __aenter__(self) -> "NCBICitationExporter":
+    async def __aenter__(self) -> Self:
         return self
 
     async def __aexit__(self, *args) -> None:

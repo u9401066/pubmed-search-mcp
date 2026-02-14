@@ -184,14 +184,14 @@
 class SmartRateLimiter:
     """
     智能限流器 - 最大化吞吐量
-    
+
     策略:
     1. Token Bucket: 平滑請求速率
     2. 請求合併: 相似請求合併執行
     3. 優先級隊列: 關鍵請求優先
     4. 快取: 減少重複請求
     """
-    
+
     def __init__(
         self,
         rate: float = 3.0,      # requests per second
@@ -205,16 +205,16 @@ class SmartRateLimiter:
         self._cache = TTLCache(maxsize=1000, ttl=cache_ttl)
         self._pending: dict[str, asyncio.Future] = {}  # 請求合併
         self._lock = asyncio.Lock()
-        
+
     async def execute(
-        self, 
+        self,
         key: str,  # 用於快取和合併的鍵
         coro_factory,  # 生成協程的工廠函數
         priority: int = 0  # 優先級 (越高越優先)
     ):
         """
         智能執行請求
-        
+
         1. 先查快取
         2. 檢查是否有相同請求正在執行
         3. 等待 token
@@ -223,39 +223,39 @@ class SmartRateLimiter:
         # 1. 快取命中
         if key in self._cache:
             return self._cache[key]
-            
+
         # 2. 請求合併 (相同請求共享結果)
         async with self._lock:
             if key in self._pending:
                 # 等待已經在執行的相同請求
                 return await self._pending[key]
-                
+
             # 創建 Future 讓其他相同請求等待
             future = asyncio.get_event_loop().create_future()
             self._pending[key] = future
-            
+
         try:
             # 3. 等待 Token
             await self._wait_for_token()
-            
+
             # 4. 執行
             result = await coro_factory()
-            
+
             # 5. 快取結果
             self._cache[key] = result
-            
+
             # 6. 通知等待者
             future.set_result(result)
-            
+
             return result
-            
+
         except Exception as e:
             future.set_exception(e)
             raise
         finally:
             async with self._lock:
                 del self._pending[key]
-                
+
     async def _wait_for_token(self):
         """Token Bucket 算法"""
         async with self._lock:
@@ -264,11 +264,11 @@ class SmartRateLimiter:
             elapsed = now - self._last_update
             self._tokens = min(self._burst, self._tokens + elapsed * self._rate)
             self._last_update = now
-            
+
             if self._tokens >= 1:
                 self._tokens -= 1
                 return
-                
+
         # 等待下一個 token
         wait_time = (1 - self._tokens) / self._rate
         await asyncio.sleep(wait_time)
@@ -289,9 +289,9 @@ class SmartRateLimiter:
 
 async def resolve_entities_smart(terms: list[str]) -> dict:
     """智能實體解析 - 自動合併請求"""
-    
+
     limiter = get_pubtator_limiter()
-    
+
     # 並行執行，但相同實體會自動合併
     tasks = [
         limiter.execute(
@@ -300,7 +300,7 @@ async def resolve_entities_smart(terms: list[str]) -> dict:
         )
         for term in terms
     ]
-    
+
     results = await asyncio.gather(*tasks)
     return dict(zip(terms, results))
 ```
@@ -319,16 +319,16 @@ async def resolve_entities_smart(terms: list[str]) -> dict:
 class GracefulDegrader:
     """
     優雅降級器
-    
-    原則: 
+
+    原則:
     1. 總是嘗試最好的方式
     2. 失敗時用替代方式達到相似效果
     3. 記錄降級原因，讓 Agent 知道
     """
-    
+
     async def resolve_entities(self, query: str) -> EntityResult:
         """實體解析 - 三層降級"""
-        
+
         # Level 1: PubTator3 (最準確)
         try:
             result = await self._pubtator_resolve(query)
@@ -339,7 +339,7 @@ class GracefulDegrader:
             )
         except (TimeoutError, APIError) as e:
             logger.warning(f"PubTator3 failed: {e}, degrading to MeSH")
-            
+
         # Level 2: NCBI MeSH (次準確)
         try:
             result = await self._mesh_resolve(query)
@@ -351,7 +351,7 @@ class GracefulDegrader:
             )
         except (TimeoutError, APIError) as e:
             logger.warning(f"MeSH failed: {e}, degrading to local")
-            
+
         # Level 3: 本地詞典 (最後保底)
         result = self._local_resolve(query)
         return EntityResult(
@@ -360,25 +360,25 @@ class GracefulDegrader:
             confidence=0.50,
             degraded_from="ncbi_mesh"
         )
-        
+
     async def search_multi_source(self, query: str) -> SearchResult:
         """多源搜索 - 部分失敗不影響整體"""
-        
+
         sources = [
             ("pubmed", self._search_pubmed),
             ("europe_pmc", self._search_europe_pmc),
             ("pubtator3_semantic", self._search_pubtator3),
         ]
-        
+
         results = []
         failures = []
-        
+
         # 並行執行，收集成功的結果
         tasks = [
             self._safe_execute(name, func, query)
             for name, func in sources
         ]
-        
+
         for source, result in await asyncio.gather(*tasks):
             if result.success:
                 results.extend(result.articles)
@@ -387,7 +387,7 @@ class GracefulDegrader:
                     "source": source,
                     "error": str(result.error)
                 })
-                
+
         # 即使部分失敗，仍然返回結果
         return SearchResult(
             articles=results,
@@ -441,30 +441,30 @@ class GracefulDegrader:
 @dataclass
 class DeepSearchRankingConfig:
     """深度搜索排序配置 - 不可調整，這是專業級預設"""
-    
+
     relevance_weight: float = 0.20      # 查詢匹配度
     evidence_weight: float = 0.25       # 證據等級 (專業核心!)
     recency_weight: float = 0.15        # 時效性
     impact_weight: float = 0.20         # 影響力 (引用/RCR)
     source_trust_weight: float = 0.10   # 來源可信度
     entity_match_weight: float = 0.10   # 實體精確匹配
-    
+
     def calculate_score(self, article: Article, query_context: QueryContext) -> float:
         """計算文章排序分數"""
-        
+
         # 1. 相關性分數 (查詢詞匹配 + 實體匹配)
         relevance = self._calc_relevance(article, query_context)
-        
+
         # 2. 證據等級分數
         evidence = EVIDENCE_LEVEL_SCORES.get(article.article_type, 0.4)
-        
+
         # 3. 時效性分數 (指數衰減)
         if article.year:
             age = 2026 - article.year
             recency = 0.5 ** (age / 5.0)  # 5 年半衰期
         else:
             recency = 0.3
-            
+
         # 4. 影響力分數
         if article.rcr:
             impact = min(article.rcr / 4.0, 1.0)  # RCR 4.0 = 滿分
@@ -472,13 +472,13 @@ class DeepSearchRankingConfig:
             impact = min(math.log10(article.citation_count + 1) / 3, 1.0)
         else:
             impact = 0.3
-            
+
         # 5. 來源信任度
         source_trust = SOURCE_TRUST_SCORES.get(article.source, 0.5)
-        
+
         # 6. 實體匹配度 (PubTator3 識別的實體與查詢實體的匹配)
         entity_match = self._calc_entity_match(article, query_context)
-        
+
         # 加權總分
         return (
             self.relevance_weight * relevance +
@@ -526,7 +526,7 @@ src/pubmed_search/
 ### 資料流
 
 ```text
-unified_search(query) 
+unified_search(query)
         │
         ▼
 ┌─────────────────────────────────────┐

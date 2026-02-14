@@ -55,8 +55,8 @@ class TestCommonTools:
     async def test_set_strategy_generator(self):
         """Test setting strategy generator."""
         from pubmed_search.presentation.mcp_server.tools._common import (
-            set_strategy_generator,
             get_strategy_generator,
+            set_strategy_generator,
         )
 
         mock_generator = Mock()

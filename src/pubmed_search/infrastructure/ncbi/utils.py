@@ -11,7 +11,7 @@ Provides various utility functions for Entrez operations including:
 """
 
 import asyncio
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from Bio import Entrez
 
@@ -30,7 +30,7 @@ class UtilsMixin:
         get_database_info: Get database statistics
     """
 
-    async def quick_fetch_summary(self, id_list: List[str]) -> List[Dict[str, Any]]:
+    async def quick_fetch_summary(self, id_list: list[str]) -> list[dict[str, Any]]:
         """
         Fetch article summaries using ESummary (faster than EFetch for metadata only).
 
@@ -44,9 +44,7 @@ class UtilsMixin:
             return []
 
         try:
-            handle = await asyncio.to_thread(
-                Entrez.esummary, db="pubmed", id=",".join(id_list)
-            )
+            handle = await asyncio.to_thread(Entrez.esummary, db="pubmed", id=",".join(id_list))
             summaries = await asyncio.to_thread(Entrez.read, handle)
             handle.close()
 
@@ -94,11 +92,10 @@ class UtilsMixin:
 
             corrected = result.get("CorrectedQuery", "")
             return corrected if corrected else query
-        except Exception as e:
-            print(f"Error in spell check: {e}")
+        except Exception:
             return query
 
-    async def get_database_counts(self, query: str) -> Dict[str, int]:
+    async def get_database_counts(self, query: str) -> dict[str, int]:
         """
         Get result counts across multiple NCBI databases using EGQuery.
 
@@ -126,7 +123,7 @@ class UtilsMixin:
         except Exception as e:
             return {"error": str(e)}
 
-    async def validate_mesh_terms(self, terms: List[str]) -> Dict[str, Any]:
+    async def validate_mesh_terms(self, terms: list[str]) -> dict[str, Any]:
         """
         Validate MeSH terms and get their IDs using MeSH database.
 
@@ -138,18 +135,14 @@ class UtilsMixin:
         """
         try:
             query = " OR ".join([f'"{term}"[MeSH Terms]' for term in terms])
-            handle = await asyncio.to_thread(
-                Entrez.esearch, db="mesh", term=query, retmax=len(terms)
-            )
+            handle = await asyncio.to_thread(Entrez.esearch, db="mesh", term=query, retmax=len(terms))
             result = await asyncio.to_thread(Entrez.read, handle)
             handle.close()
 
             mesh_ids = result.get("IdList", [])
 
             if mesh_ids:
-                handle = await asyncio.to_thread(
-                    Entrez.esummary, db="mesh", id=",".join(mesh_ids)
-                )
+                handle = await asyncio.to_thread(Entrez.esummary, db="mesh", id=",".join(mesh_ids))
                 summaries = await asyncio.to_thread(Entrez.read, handle)
                 handle.close()
 
@@ -159,9 +152,7 @@ class UtilsMixin:
                         validated_terms.append(
                             {
                                 "mesh_id": summary.get("Id", ""),
-                                "term": summary.get("DS_MeshTerms", [""])[0]
-                                if summary.get("DS_MeshTerms")
-                                else "",
+                                "term": summary.get("DS_MeshTerms", [""])[0] if summary.get("DS_MeshTerms") else "",
                                 "tree_numbers": summary.get("DS_IdxLinks", []),
                             }
                         )
@@ -180,7 +171,7 @@ class UtilsMixin:
         first_page: str = "",
         author: str = "",
         title: str = "",
-    ) -> Optional[str]:
+    ) -> str | None:
         """
         Find article by citation details using ECitMatch.
 
@@ -198,9 +189,7 @@ class UtilsMixin:
         try:
             citation_string = f"{journal}|{year}|{volume}|{first_page}|{author}||"
 
-            handle = await asyncio.to_thread(
-                Entrez.ecitmatch, db="pubmed", bdata=citation_string
-            )
+            handle = await asyncio.to_thread(Entrez.ecitmatch, db="pubmed", bdata=citation_string)
             result = await asyncio.to_thread(handle.read)
             result = result.strip()
             handle.close()
@@ -211,19 +200,16 @@ class UtilsMixin:
                     return parts[1]
 
             return None
-        except Exception as e:
-            print(f"Error in citation match: {e}")
+        except Exception:
             return None
 
-    async def export_citations(
-        self, id_list: List[str], format: str = "medline"
-    ) -> str:
+    async def export_citations(self, id_list: list[str], fmt: str = "medline") -> str:
         """
         Export citations in various formats.
 
         Args:
             id_list: List of PubMed IDs.
-            format: Output format - "medline", "pubmed" (XML), "abstract".
+            fmt: Output format - "medline", "pubmed" (XML), "abstract".
 
         Returns:
             Formatted citation text.
@@ -238,10 +224,10 @@ class UtilsMixin:
                 "abstract": ("abstract", "text"),
             }
 
-            if format not in valid_formats:
-                format = "medline"
+            if fmt not in valid_formats:
+                fmt = "medline"
 
-            rettype, retmode = valid_formats[format]
+            rettype, retmode = valid_formats[fmt]
 
             handle = await asyncio.to_thread(
                 Entrez.efetch,
@@ -255,9 +241,9 @@ class UtilsMixin:
 
             return result
         except Exception as e:
-            return f"Error exporting citations: {str(e)}"
+            return f"Error exporting citations: {e!s}"
 
-    async def get_database_info(self, db: str = "pubmed") -> Dict[str, Any]:
+    async def get_database_info(self, db: str = "pubmed") -> dict[str, Any]:
         """
         Get database statistics and field information using EInfo.
 

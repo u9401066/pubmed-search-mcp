@@ -47,7 +47,7 @@ Microsoft Copilot Studio 在匯入 MCP 工具時，會將工具的 JSON Schema
 
 import json
 import logging
-from typing import Any, Callable, Coroutine, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from mcp.server.fastmcp import FastMCP
 
@@ -59,6 +59,9 @@ from .tools._common import (
     _cache_results,
     format_search_results,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Coroutine
 
 logger = logging.getLogger(__name__)
 
@@ -81,16 +84,12 @@ async def _pmid_search(
     """Common pattern: validate PMID → call searcher method → cache & format."""
     clean_pmid = InputNormalizer.normalize_pmid_single(pmid)
     if not clean_pmid:
-        return ResponseFormatter.error(
-            "Invalid PMID", suggestion="Use numeric PMID", tool_name=tool_name
-        )
+        return ResponseFormatter.error("Invalid PMID", suggestion="Use numeric PMID", tool_name=tool_name)
 
     limit = InputNormalizer.normalize_limit(limit, default=limit, max_val=max_limit)
 
     try:
-        method: Callable[..., Coroutine[Any, Any, list]] = getattr(
-            searcher, method_name
-        )
+        method: Callable[..., Coroutine[Any, Any, list]] = getattr(searcher, method_name)
         results = await method(clean_pmid, max_results=limit)
 
         if not results:
@@ -100,7 +99,7 @@ async def _pmid_search(
         return format_search_results(results)
 
     except Exception as e:
-        logger.error(f"{tool_name} failed: {e}")
+        logger.exception(f"{tool_name} failed: {e}")
         return ResponseFormatter.error(e, tool_name=tool_name)
 
 
@@ -131,7 +130,7 @@ async def _ncbi_extended_search(
         return json.dumps(results, indent=2, ensure_ascii=False)
 
     except Exception as e:
-        logger.error(f"{tool_name} failed: {e}")
+        logger.exception(f"{tool_name} failed: {e}")
         return ResponseFormatter.error(e, tool_name=tool_name)
 
 
@@ -175,7 +174,7 @@ def register_copilot_compatible_tools(mcp: FastMCP, searcher: LiteratureSearcher
             _cache_results(results, query)
             return format_search_results(results)
         except Exception as e:
-            logger.error(f"Search failed: {e}")
+            logger.exception(f"Search failed: {e}")
             return ResponseFormatter.error(e, tool_name="search_pubmed")
 
     @mcp.tool()
@@ -222,7 +221,7 @@ def register_copilot_compatible_tools(mcp: FastMCP, searcher: LiteratureSearcher
                 parts.append(f"\n**Abstract**:\n{a['abstract']}")
             return "\n".join(parts)
         except Exception as e:
-            logger.error(f"Failed to get article: {e}")
+            logger.exception(f"Failed to get article: {e}")
             return ResponseFormatter.error(e, tool_name="get_article")
 
     # -- PMID-based exploration tools (share _pmid_search helper) -----------
@@ -306,7 +305,7 @@ def register_copilot_compatible_tools(mcp: FastMCP, searcher: LiteratureSearcher
                 ensure_ascii=False,
             )
         except Exception as e:
-            logger.error(f"PICO analysis failed: {e}")
+            logger.exception(f"PICO analysis failed: {e}")
             return ResponseFormatter.error(e, tool_name="analyze_clinical_question")
 
     @mcp.tool()
@@ -332,11 +331,7 @@ def register_copilot_compatible_tools(mcp: FastMCP, searcher: LiteratureSearcher
             except Exception as e:
                 logger.warning(f"Strategy generator failed: {e}")
 
-        return (
-            f"Search suggestions for '{topic}':\n"
-            f"1. ({topic})[Title/Abstract]\n"
-            f"2. ({topic})[MeSH Terms]"
-        )
+        return f"Search suggestions for '{topic}':\n1. ({topic})[Title/Abstract]\n2. ({topic})[MeSH Terms]"
 
     # ========================================================================
     # Full Text and Export
@@ -370,11 +365,7 @@ def register_copilot_compatible_tools(mcp: FastMCP, searcher: LiteratureSearcher
             if "error" in parsed:
                 return f"Full text XML retrieved but parsing failed: {parsed['error']}"
 
-            section_filter = (
-                [s.strip().lower() for s in sections.split(",") if s.strip()]
-                if sections
-                else []
-            )
+            section_filter = [s.strip().lower() for s in sections.split(",") if s.strip()] if sections else []
             output = [f"## Full Text: {clean_pmcid}"]
             if parsed.get("abstract"):
                 output.append(f"\n### Abstract\n{parsed['abstract']}")
@@ -386,7 +377,7 @@ def register_copilot_compatible_tools(mcp: FastMCP, searcher: LiteratureSearcher
                 output.append(sec.get("content", ""))
             return "\n".join(output)
         except Exception as e:
-            logger.error(f"Get fulltext failed: {e}")
+            logger.exception(f"Get fulltext failed: {e}")
             return ResponseFormatter.error(e, tool_name="get_fulltext")
 
     @mcp.tool()
@@ -438,7 +429,7 @@ def register_copilot_compatible_tools(mcp: FastMCP, searcher: LiteratureSearcher
                 content = export_ris(articles)
             return f"## Exported {len(articles)} citations ({format.upper()})\n\n```\n{content}\n```"
         except Exception as e:
-            logger.error(f"Export failed: {e}")
+            logger.exception(f"Export failed: {e}")
             return ResponseFormatter.error(e, tool_name="export_citations")
 
     # ========================================================================

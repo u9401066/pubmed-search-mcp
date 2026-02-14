@@ -8,8 +8,7 @@ NOTE: search_literature, expand_search_queries, search_europe_pmc are
 """
 
 import time
-from unittest.mock import MagicMock, AsyncMock, patch
-
+from unittest.mock import AsyncMock, MagicMock, patch
 
 # ============================================================
 # MCP server.py — start_http_api_background
@@ -155,8 +154,9 @@ class TestCOREClient:
         assert result is None
 
     async def test_make_request_url_error(self):
-        from pubmed_search.infrastructure.sources.core import COREClient
         import httpx
+
+        from pubmed_search.infrastructure.sources.core import COREClient
 
         c = COREClient()
         c._last_request_time = 0
@@ -192,9 +192,7 @@ class TestCOREClient:
             ],
         }
 
-        with patch.object(
-            c, "_make_request", new_callable=AsyncMock, return_value=mock_response_data
-        ):
+        with patch.object(c, "_make_request", new_callable=AsyncMock, return_value=mock_response_data):
             result = await c.search("machine learning", limit=5)
         assert result["total_hits"] == 50
         assert len(result["results"]) == 1
@@ -205,9 +203,7 @@ class TestCOREClient:
         from pubmed_search.infrastructure.sources.core import COREClient
 
         c = COREClient()
-        with patch.object(
-            c, "_make_request", new_callable=AsyncMock, return_value=None
-        ):
+        with patch.object(c, "_make_request", new_callable=AsyncMock, return_value=None):
             result = await c.search("xyz_no_match")
         assert result["total_hits"] == 0
         assert result["results"] == []
@@ -260,9 +256,7 @@ class TestCOREClient:
             "authors": [{"name": "A B"}],
             "yearPublished": 2022,
         }
-        with patch.object(
-            c, "_make_request", new_callable=AsyncMock, return_value=work_data
-        ):
+        with patch.object(c, "_make_request", new_callable=AsyncMock, return_value=work_data):
             result = await c.get_work(999)
         assert result is not None
         assert result["title"] == "A Paper"
@@ -271,9 +265,7 @@ class TestCOREClient:
         from pubmed_search.infrastructure.sources.core import COREClient
 
         c = COREClient()
-        with patch.object(
-            c, "_make_request", new_callable=AsyncMock, return_value=None
-        ):
+        with patch.object(c, "_make_request", new_callable=AsyncMock, return_value=None):
             result = await c.get_work(99999)
         assert result is None
 
@@ -287,9 +279,7 @@ class TestCOREClient:
             "fullText": "Full text here",
             "authors": [],
         }
-        with patch.object(
-            c, "_make_request", new_callable=AsyncMock, return_value=output_data
-        ):
+        with patch.object(c, "_make_request", new_callable=AsyncMock, return_value=output_data):
             result = await c.get_output(888)
         assert result is not None
         assert result["full_text"] == "Full text here"
@@ -304,9 +294,7 @@ class TestCOREClient:
             "fullText": "The full text content",
             "authors": [],
         }
-        with patch.object(
-            c, "_make_request", new_callable=AsyncMock, return_value=output_data
-        ):
+        with patch.object(c, "_make_request", new_callable=AsyncMock, return_value=output_data):
             result = await c.get_fulltext(777)
         assert result == "The full text content"
 
@@ -314,9 +302,7 @@ class TestCOREClient:
         from pubmed_search.infrastructure.sources.core import COREClient
 
         c = COREClient()
-        with patch.object(
-            c, "_make_request", new_callable=AsyncMock, return_value=None
-        ):
+        with patch.object(c, "_make_request", new_callable=AsyncMock, return_value=None):
             result = await c.get_fulltext(999)
         assert result is None
 
@@ -337,9 +323,7 @@ class TestCOREClient:
         from pubmed_search.infrastructure.sources.core import COREClient
 
         c = COREClient()
-        with patch.object(
-            c, "search", new_callable=AsyncMock, return_value={"results": []}
-        ):
+        with patch.object(c, "search", new_callable=AsyncMock, return_value={"results": []}):
             result = await c.search_by_doi("10.9999/none")
         assert result is None
 
@@ -410,8 +394,8 @@ class TestCOREConvenience:
     """Test convenience functions."""
 
     async def test_get_core_client_singleton(self):
-        from pubmed_search.infrastructure.sources.core import get_core_client
         import pubmed_search.infrastructure.sources.core as mod
+        from pubmed_search.infrastructure.sources.core import get_core_client
 
         mod._core_client = None
         c1 = get_core_client()
@@ -422,9 +406,7 @@ class TestCOREConvenience:
     async def test_search_core(self):
         from pubmed_search.infrastructure.sources.core import search_core
 
-        with patch(
-            "pubmed_search.infrastructure.sources.core.get_core_client"
-        ) as mock_gc:
+        with patch("pubmed_search.infrastructure.sources.core.get_core_client") as mock_gc:
             mock_client = AsyncMock()
             mock_client.search.return_value = {
                 "total_hits": 1,
@@ -437,9 +419,7 @@ class TestCOREConvenience:
     async def test_search_core_fulltext(self):
         from pubmed_search.infrastructure.sources.core import search_core_fulltext
 
-        with patch(
-            "pubmed_search.infrastructure.sources.core.get_core_client"
-        ) as mock_gc:
+        with patch("pubmed_search.infrastructure.sources.core.get_core_client") as mock_gc:
             mock_client = AsyncMock()
             mock_client.search_fulltext.return_value = {
                 "total_hits": 0,
@@ -573,10 +553,11 @@ class TestClinicalTrialsClient:
         c._client = None
 
     async def test_search_timeout(self):
+        import httpx
+
         from pubmed_search.infrastructure.sources.clinical_trials import (
             ClinicalTrialsClient,
         )
-        import httpx
 
         c = ClinicalTrialsClient()
         mock_client = AsyncMock()
@@ -589,19 +570,18 @@ class TestClinicalTrialsClient:
         c._client = None
 
     async def test_search_http_error(self):
+        import httpx
+
         from pubmed_search.infrastructure.sources.clinical_trials import (
             ClinicalTrialsClient,
         )
-        import httpx
 
         c = ClinicalTrialsClient()
         mock_resp = MagicMock()
         mock_resp.status_code = 500
         mock_client = AsyncMock()
         mock_client.is_closed = False
-        mock_client.get.side_effect = httpx.HTTPStatusError(
-            "500", request=MagicMock(), response=mock_resp
-        )
+        mock_client.get.side_effect = httpx.HTTPStatusError("500", request=MagicMock(), response=mock_resp)
         c._client = mock_client
 
         result = await c.search("test")
@@ -654,19 +634,18 @@ class TestClinicalTrialsGetStudy:
         c._client = None
 
     async def test_get_study_not_found(self):
+        import httpx
+
         from pubmed_search.infrastructure.sources.clinical_trials import (
             ClinicalTrialsClient,
         )
-        import httpx
 
         c = ClinicalTrialsClient()
         mock_resp = MagicMock()
         mock_resp.status_code = 404
         mock_client = AsyncMock()
         mock_client.is_closed = False
-        mock_client.get.side_effect = httpx.HTTPStatusError(
-            "404", request=MagicMock(), response=mock_resp
-        )
+        mock_client.get.side_effect = httpx.HTTPStatusError("404", request=MagicMock(), response=mock_resp)
         c._client = mock_client
 
         result = await c.get_study("NCT00000")
@@ -798,18 +777,17 @@ class TestNCBICitationExporter:
         e._client = None
 
     async def test_export_http_error(self):
+        import httpx
+
         from pubmed_search.infrastructure.ncbi.citation_exporter import (
             NCBICitationExporter,
         )
-        import httpx
 
         e = NCBICitationExporter()
         mock_resp = MagicMock()
         mock_resp.status_code = 500
         mock_client = AsyncMock()
-        mock_client.get.side_effect = httpx.HTTPStatusError(
-            "500", request=MagicMock(), response=mock_resp
-        )
+        mock_client.get.side_effect = httpx.HTTPStatusError("500", request=MagicMock(), response=mock_resp)
         e._client = mock_client
 
         result = await e.export_citations(["12345"], format="ris")
@@ -878,9 +856,7 @@ class TestEuropePMCInfra:
             new_callable=AsyncMock,
             return_value=mock_resp.json.return_value,
         ):
-            result = await c.search(
-                "diabetes", limit=10, min_year=2020, open_access_only=True
-            )
+            result = await c.search("diabetes", limit=10, min_year=2020, open_access_only=True)
         assert result["hit_count"] == 5
 
     async def test_get_citations(self):
@@ -902,9 +878,7 @@ class TestEuropePMCInfra:
             },
         }
 
-        with patch.object(
-            c, "_make_request", new_callable=AsyncMock, return_value=mock_data
-        ):
+        with patch.object(c, "_make_request", new_callable=AsyncMock, return_value=mock_data):
             result = await c.get_citations("MED", "12345")
         assert len(result) == 2
 
@@ -922,9 +896,7 @@ class TestEuropePMCInfra:
             },
         }
 
-        with patch.object(
-            c, "_make_request", new_callable=AsyncMock, return_value=mock_data
-        ):
+        with patch.object(c, "_make_request", new_callable=AsyncMock, return_value=mock_data):
             result = await c.get_references("MED", "12345")
         assert len(result) == 1
 

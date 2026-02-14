@@ -37,8 +37,8 @@ class TestPackageImports:
     async def test_core_entrez_imports(self):
         """Core Entrez classes should be importable."""
         from pubmed_search import (
-            LiteratureSearcher,
             EntrezBase,
+            LiteratureSearcher,
             SearchStrategy,
         )
 
@@ -68,11 +68,11 @@ class TestPackageImports:
     async def test_multi_source_client_factories(self):
         """Multi-source client factories should be importable."""
         from pubmed_search import (
-            get_semantic_scholar_client,
-            get_openalex_client,
+            get_crossref_client,
             get_europe_pmc_client,
             get_ncbi_extended_client,
-            get_crossref_client,
+            get_openalex_client,
+            get_semantic_scholar_client,
             get_unpaywall_client,
         )
 
@@ -94,13 +94,13 @@ class TestPackageImports:
     async def test_export_functions(self):
         """Export functions should be importable."""
         from pubmed_search import (
-            export_ris,
+            SUPPORTED_FORMATS,
+            export_articles,
             export_bibtex,
             export_csv,
-            export_medline,
             export_json,
-            export_articles,
-            SUPPORTED_FORMATS,
+            export_medline,
+            export_ris,
             get_fulltext_links,
         )
 
@@ -116,10 +116,10 @@ class TestPackageImports:
     async def test_openurl_imports(self):
         """OpenURL functions should be importable."""
         from pubmed_search import (
-            get_openurl_link,
-            list_openurl_presets,
             configure_openurl,
             get_openurl_config,
+            get_openurl_link,
+            list_openurl_presets,
         )
 
         assert callable(get_openurl_link)
@@ -130,12 +130,12 @@ class TestPackageImports:
     async def test_query_analysis_imports(self):
         """Query analysis classes should be importable."""
         from pubmed_search import (
+            AnalyzedQuery,
             QueryAnalyzer,
             QueryComplexity,
             QueryIntent,
-            AnalyzedQuery,
-            ResultAggregator,
             RankingConfig,
+            ResultAggregator,
         )
 
         assert QueryAnalyzer is not None
@@ -166,8 +166,8 @@ class TestInfrastructureImports:
         """FulltextDownloader should be importable."""
         from pubmed_search.infrastructure.sources.fulltext_download import (
             FulltextDownloader,
-            PDFSource,
             PDFLink,
+            PDFSource,
         )
 
         assert FulltextDownloader is not None
@@ -232,8 +232,8 @@ class TestApplicationImports:
         """Export format functions should be importable."""
         # Use top-level exports instead of internal functions
         from pubmed_search import (
-            export_ris,
             export_bibtex,
+            export_ris,
         )
 
         assert callable(export_ris)
@@ -253,16 +253,16 @@ class TestNoCircularImports:
 
     async def test_import_order_2(self):
         """Import domain before application."""
-        from pubmed_search.domain.entities.article import UnifiedArticle
         from pubmed_search.application.search import QueryAnalyzer
+        from pubmed_search.domain.entities.article import UnifiedArticle
 
         assert UnifiedArticle is not None
         assert QueryAnalyzer is not None
 
     async def test_import_order_3(self):
         """Import shared before everything."""
-        from pubmed_search.shared.exceptions import PubMedSearchError
         from pubmed_search import LiteratureSearcher
+        from pubmed_search.shared.exceptions import PubMedSearchError
 
         assert PubMedSearchError is not None
         assert LiteratureSearcher is not None
@@ -320,9 +320,7 @@ class TestMCPToolsAccessible:
         ]
 
         for expected in expected_tools:
-            assert expected in tool_names, (
-                f"Tool '{expected}' not found in registered tools"
-            )
+            assert expected in tool_names, f"Tool '{expected}' not found in registered tools"
 
 
 if __name__ == "__main__":

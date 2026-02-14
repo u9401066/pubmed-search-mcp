@@ -12,7 +12,7 @@ from .ncbi.citation_exporter import NCBICitationExporter, export_citations_offic
 
 __all__ = [
     "LiteratureSearcher",
+    "NCBICitationExporter",
     "SearchStrategy",
     "export_citations_official",
-    "NCBICitationExporter",
 ]

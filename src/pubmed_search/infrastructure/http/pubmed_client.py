@@ -97,9 +97,7 @@ class PubMedClient:
         ...     print(f"{article.pmid}: {article.title}")
     """
 
-    def __init__(
-        self, email: str = "your.email@example.com", api_key: str | None = None
-    ):
+    def __init__(self, email: str = "your.email@example.com", api_key: str | None = None):
         """
         Initialize PubMed client.
 
@@ -264,9 +262,7 @@ class PubMedClient:
         results = await self._searcher.find_citing_articles(pmid, limit=limit)
         return [SearchResult.from_dict(r) for r in results if "error" not in r]
 
-    async def download_pdf(
-        self, pmid: str, output_path: str | None = None
-    ) -> bytes | None:
+    async def download_pdf(self, pmid: str, output_path: str | None = None) -> bytes | None:
         """
         Download PDF if available from PMC.
 

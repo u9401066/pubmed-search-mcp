@@ -83,7 +83,7 @@ uv run python scripts/count_mcp_tools.py --verbose
   ✅ SKILL.md (tools-reference) - 已重新生成
   ✅ README.md - 工具數量已更新
   ✅ README.zh-TW.md - 工具數量已更新
-  
+
 ⚠️ 驗證: PASSED ✅
 ```
 

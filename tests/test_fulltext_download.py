@@ -5,15 +5,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from pubmed_search.infrastructure.sources.fulltext_download import (
-    PDFSource,
-    PDFLink,
     DownloadResult,
-    FulltextResult,
     FulltextDownloader,
-    get_fulltext_downloader,
+    FulltextResult,
+    PDFLink,
+    PDFSource,
     download_fulltext,
+    get_fulltext_downloader,
 )
-
 
 # ============================================================
 # Data Classes
@@ -115,16 +114,12 @@ class TestGetPdfLinks:
             patch.object(d, "_get_unpaywall_links", new_callable=AsyncMock) as mock_uw,
             patch.object(d, "_get_crossref_links", new_callable=AsyncMock) as mock_cr,
             patch.object(d, "_get_core_links", new_callable=AsyncMock) as mock_core,
-            patch.object(
-                d, "_get_semantic_scholar_links", new_callable=AsyncMock
-            ) as mock_ss,
+            patch.object(d, "_get_semantic_scholar_links", new_callable=AsyncMock) as mock_ss,
             patch.object(d, "_get_openalex_links", new_callable=AsyncMock) as mock_oa,
             patch.object(d, "_get_doaj_links", new_callable=AsyncMock) as mock_doaj,
             patch.object(d, "_get_zenodo_links", new_callable=AsyncMock) as mock_zen,
         ):
-            mock_uw.return_value = [
-                PDFLink(url="https://uw.com/pdf", source=PDFSource.UNPAYWALL_PUBLISHER)
-            ]
+            mock_uw.return_value = [PDFLink(url="https://uw.com/pdf", source=PDFSource.UNPAYWALL_PUBLISHER)]
             mock_cr.return_value = []
             mock_core.return_value = []
             mock_ss.return_value = []
@@ -156,12 +151,8 @@ class TestGetPdfLinks:
     async def test_arxiv_doi(self):
         d = FulltextDownloader()
         with (
-            patch.object(
-                d, "_get_unpaywall_links", new_callable=AsyncMock, return_value=[]
-            ),
-            patch.object(
-                d, "_get_crossref_links", new_callable=AsyncMock, return_value=[]
-            ),
+            patch.object(d, "_get_unpaywall_links", new_callable=AsyncMock, return_value=[]),
+            patch.object(d, "_get_crossref_links", new_callable=AsyncMock, return_value=[]),
             patch.object(d, "_get_core_links", new_callable=AsyncMock, return_value=[]),
             patch.object(
                 d,
@@ -169,18 +160,12 @@ class TestGetPdfLinks:
                 new_callable=AsyncMock,
                 return_value=[],
             ),
-            patch.object(
-                d, "_get_openalex_links", new_callable=AsyncMock, return_value=[]
-            ),
+            patch.object(d, "_get_openalex_links", new_callable=AsyncMock, return_value=[]),
             patch.object(d, "_get_doaj_links", new_callable=AsyncMock, return_value=[]),
-            patch.object(
-                d, "_get_zenodo_links", new_callable=AsyncMock, return_value=[]
-            ),
+            patch.object(d, "_get_zenodo_links", new_callable=AsyncMock, return_value=[]),
             patch.object(d, "_get_arxiv_link", new_callable=AsyncMock) as mock_arxiv,
         ):
-            mock_arxiv.return_value = PDFLink(
-                url="https://arxiv.org/pdf/2301.00001.pdf", source=PDFSource.ARXIV
-            )
+            mock_arxiv.return_value = PDFLink(url="https://arxiv.org/pdf/2301.00001.pdf", source=PDFSource.ARXIV)
             links = await d.get_pdf_links(doi="10.48550/arxiv.2301.00001")
             assert any(lnk.source == PDFSource.ARXIV for lnk in links)
 
@@ -287,13 +272,9 @@ class TestDownloadPdf:
     @pytest.mark.asyncio
     async def test_successful_download(self):
         d = FulltextDownloader()
-        pdf_link = PDFLink(
-            url="https://example.com/paper.pdf", source=PDFSource.EUROPE_PMC
-        )
+        pdf_link = PDFLink(url="https://example.com/paper.pdf", source=PDFSource.EUROPE_PMC)
         with (
-            patch.object(
-                d, "get_pdf_links", new_callable=AsyncMock, return_value=[pdf_link]
-            ),
+            patch.object(d, "get_pdf_links", new_callable=AsyncMock, return_value=[pdf_link]),
             patch.object(d, "_download_from_url", new_callable=AsyncMock) as mock_dl,
         ):
             mock_dl.return_value = DownloadResult(
@@ -311,9 +292,7 @@ class TestDownloadPdf:
             PDFLink(url="https://b.com/pdf", source=PDFSource.PMC),
         ]
         with (
-            patch.object(
-                d, "get_pdf_links", new_callable=AsyncMock, return_value=links
-            ),
+            patch.object(d, "get_pdf_links", new_callable=AsyncMock, return_value=links),
             patch.object(d, "_download_from_url", new_callable=AsyncMock) as mock_dl,
         ):
             mock_dl.return_value = DownloadResult(success=False, error="timeout")
@@ -328,17 +307,11 @@ class TestDownloadPdf:
             PDFLink(url="https://b.com/pdf", source=PDFSource.CORE),
         ]
         with (
-            patch.object(
-                d, "get_pdf_links", new_callable=AsyncMock, return_value=links
-            ),
+            patch.object(d, "get_pdf_links", new_callable=AsyncMock, return_value=links),
             patch.object(d, "_download_from_url", new_callable=AsyncMock) as mock_dl,
         ):
-            mock_dl.return_value = DownloadResult(
-                success=True, content=b"%PDF-1.4", source=PDFSource.CORE
-            )
-            _result = await d.download_pdf(
-                doi="10.1234/test", preferred_source=PDFSource.CORE
-            )
+            mock_dl.return_value = DownloadResult(success=True, content=b"%PDF-1.4", source=PDFSource.CORE)
+            _result = await d.download_pdf(doi="10.1234/test", preferred_source=PDFSource.CORE)
             # CORE should be tried first
             first_call_url = mock_dl.call_args_list[0][0][0]
             assert "b.com" in first_call_url
@@ -364,9 +337,7 @@ class TestGetFulltext:
     @pytest.mark.asyncio
     async def test_try_all_xml_first(self):
         d = FulltextDownloader()
-        with patch.object(
-            d, "_get_structured_fulltext", new_callable=AsyncMock
-        ) as mock_xml:
+        with patch.object(d, "_get_structured_fulltext", new_callable=AsyncMock) as mock_xml:
             mock_xml.return_value = {
                 "text": "Full text content here",
                 "sections": {"introduction": "Intro text"},
@@ -392,13 +363,9 @@ class TestGetFulltext:
         with (
             patch.object(d, "get_pdf_links", new_callable=AsyncMock) as mock_links,
             patch.object(d, "download_pdf", new_callable=AsyncMock) as mock_dl,
-            patch.object(
-                d, "_extract_pdf_text", new_callable=AsyncMock
-            ) as mock_extract,
+            patch.object(d, "_extract_pdf_text", new_callable=AsyncMock) as mock_extract,
         ):
-            mock_links.return_value = [
-                PDFLink(url="https://x.com", source=PDFSource.PMC)
-            ]
+            mock_links.return_value = [PDFLink(url="https://x.com", source=PDFSource.PMC)]
             mock_dl.return_value = DownloadResult(
                 success=True, content=pdf_content, source=PDFSource.PMC, file_size=100
             )
@@ -470,9 +437,7 @@ class TestSingleton:
         import pubmed_search.infrastructure.sources.fulltext_download as mod
 
         mod._downloader_instance = None
-        with patch.object(
-            FulltextDownloader, "get_fulltext", new_callable=AsyncMock
-        ) as mock_get:
+        with patch.object(FulltextDownloader, "get_fulltext", new_callable=AsyncMock) as mock_get:
             mock_get.return_value = FulltextResult(pmid="123")
             result = await download_fulltext(pmid="123")
             assert result.pmid == "123"

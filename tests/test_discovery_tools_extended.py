@@ -5,9 +5,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from pubmed_search.presentation.mcp_server.tools.discovery import (
-    register_discovery_tools,
     _detect_ambiguous_terms,
     _format_ambiguity_hint,
+    register_discovery_tools,
 )
 
 
@@ -34,9 +34,7 @@ class TestDetectAmbiguousTerms:
         assert result[0]["journal"] == "Anesthesiology"
 
     async def test_not_ambiguous_with_context(self):
-        result = _detect_ambiguous_terms(
-            "anesthesiology and intensive care management of critical patients"
-        )
+        result = _detect_ambiguous_terms("anesthesiology and intensive care management of critical patients")
         assert result == []  # Too many other terms
 
 
@@ -84,9 +82,7 @@ class TestFindRelatedArticles:
 
     async def test_success(self, setup):
         tools, searcher = setup
-        searcher.get_related_articles.return_value = [
-            {"pmid": "999", "title": "Related Paper", "authors": ["A B"]}
-        ]
+        searcher.get_related_articles.return_value = [{"pmid": "999", "title": "Related Paper", "authors": ["A B"]}]
         result = await tools["find_related_articles"](pmid="12345678")
         assert "Related" in result
 
@@ -117,9 +113,7 @@ class TestFindCitingArticles:
 
     async def test_success(self, setup):
         tools, searcher = setup
-        searcher.get_citing_articles.return_value = [
-            {"pmid": "888", "title": "Citing Paper"}
-        ]
+        searcher.get_citing_articles.return_value = [{"pmid": "888", "title": "Citing Paper"}]
         result = await tools["find_citing_articles"](pmid="12345678")
         assert "Citing" in result
 
@@ -144,9 +138,7 @@ class TestGetArticleReferences:
 
     async def test_success(self, setup):
         tools, searcher = setup
-        searcher.get_article_references.return_value = [
-            {"pmid": "777", "title": "Reference Paper"}
-        ]
+        searcher.get_article_references.return_value = [{"pmid": "777", "title": "Reference Paper"}]
         result = await tools["get_article_references"](pmid="12345678")
         assert "Reference" in result
         assert "bibliography" in result.lower() or "cited BY" in result
@@ -178,9 +170,7 @@ class TestFetchArticleDetails:
 
     async def test_success(self, setup):
         tools, searcher = setup
-        searcher.fetch_details.return_value = [
-            {"pmid": "123", "title": "Detail Paper", "authors": ["A"]}
-        ]
+        searcher.fetch_details.return_value = [{"pmid": "123", "title": "Detail Paper", "authors": ["A"]}]
         result = await tools["fetch_article_details"](pmids="123")
         assert "Detail Paper" in result
 

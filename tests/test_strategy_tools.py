@@ -70,9 +70,7 @@ class TestGenerateSearchQueries:
             "pubmed_search.presentation.mcp_server.tools.strategy.get_strategy_generator",
             return_value=None,
         ):
-            result = await tools["generate_search_queries"](
-                topic="test", strategy="invalid_strategy"
-            )
+            result = await tools["generate_search_queries"](topic="test", strategy="invalid_strategy")
         parsed = json.loads(result)
         assert parsed["strategy"] == "comprehensive"
 

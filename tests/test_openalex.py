@@ -6,8 +6,8 @@ import httpx
 import pytest
 
 from pubmed_search.infrastructure.sources.openalex import (
-    OpenAlexClient,
     DEFAULT_EMAIL,
+    OpenAlexClient,
 )
 
 
@@ -63,9 +63,7 @@ class TestMakeRequest:
 
     async def test_url_error(self, client):
         client._client = AsyncMock()
-        client._client.get = AsyncMock(
-            side_effect=httpx.ConnectError("DNS failed", request=MagicMock())
-        )
+        client._client.get = AsyncMock(side_effect=httpx.ConnectError("DNS failed", request=MagicMock()))
         assert await client._make_request("https://test.com") is None
 
 
@@ -92,9 +90,7 @@ class TestSearch:
                     "cited_by_count": 50,
                     "open_access": {"is_oa": True, "oa_status": "gold"},
                     "best_oa_location": {"pdf_url": "https://pdf.example.com"},
-                    "primary_location": {
-                        "source": {"display_name": "Nature", "is_in_doaj": False}
-                    },
+                    "primary_location": {"source": {"display_name": "Nature", "is_in_doaj": False}},
                 }
             ]
         }
@@ -111,9 +107,7 @@ class TestSearch:
     @patch.object(OpenAlexClient, "_make_request")
     async def test_with_filters(self, mock_req, client):
         mock_req.return_value = {"results": []}
-        await client.search(
-            "test", min_year=2020, max_year=2024, open_access_only=True, is_doaj=True
-        )
+        await client.search("test", min_year=2020, max_year=2024, open_access_only=True, is_doaj=True)
         url = mock_req.call_args[0][0]
         assert "is_oa%3Atrue" in url or "is_oa:true" in url
         assert "2020" in url
@@ -233,9 +227,7 @@ class TestNormalizeWork:
             "cited_by_count": 50,
             "open_access": {"is_oa": True, "oa_status": "gold"},
             "best_oa_location": {"pdf_url": "https://pdf.example.com"},
-            "primary_location": {
-                "source": {"display_name": "Nature", "is_in_doaj": True}
-            },
+            "primary_location": {"source": {"display_name": "Nature", "is_in_doaj": True}},
         }
         result = client._normalize_work(work)
         assert result["doi"] == "10.1234/test"

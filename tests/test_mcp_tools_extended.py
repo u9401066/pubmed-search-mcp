@@ -2,9 +2,10 @@
 Tests for MCP Tools - merge, pico, strategy, and export tools.
 """
 
-import pytest
 import json
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 
 class TestMergeTools:
@@ -188,9 +189,7 @@ class TestPicoTools:
         mcp.tool = capture_tool
         register_pico_tools(mcp)
 
-        result = registered_fn(
-            description="Is remimazolam better than propofol for ICU sedation?"
-        )
+        result = registered_fn(description="Is remimazolam better than propofol for ICU sedation?")
         parsed = json.loads(result)
 
         assert parsed["source"] == "needs_parsing"
@@ -215,9 +214,7 @@ class TestPicoTools:
         mcp.tool = capture_tool
         register_pico_tools(mcp)
 
-        result = registered_fn(
-            description="What is the treatment effect of drug X versus placebo?"
-        )
+        result = registered_fn(description="What is the treatment effect of drug X versus placebo?")
         parsed = json.loads(result)
 
         assert parsed["question_type"] == "therapy"
@@ -241,9 +238,7 @@ class TestPicoTools:
         mcp.tool = capture_tool
         register_pico_tools(mcp)
 
-        result = registered_fn(
-            description="What is the sensitivity and specificity of test X for diagnosis?"
-        )
+        result = registered_fn(description="What is the sensitivity and specificity of test X for diagnosis?")
         parsed = json.loads(result)
 
         assert parsed["question_type"] == "diagnosis"
@@ -267,9 +262,7 @@ class TestPicoTools:
         mcp.tool = capture_tool
         register_pico_tools(mcp)
 
-        result = registered_fn(
-            description="What is the survival rate and mortality for patients with condition Y?"
-        )
+        result = registered_fn(description="What is the survival rate and mortality for patients with condition Y?")
         parsed = json.loads(result)
 
         assert parsed["question_type"] == "prognosis"
@@ -280,11 +273,11 @@ class TestStrategyTools:
 
     async def test_generate_search_queries_fallback(self):
         """Test generate_search_queries with fallback (no strategy generator)."""
-        from pubmed_search.presentation.mcp_server.tools.strategy import (
-            register_strategy_tools,
-        )
         from pubmed_search.presentation.mcp_server.tools._common import (
             set_strategy_generator,
+        )
+        from pubmed_search.presentation.mcp_server.tools.strategy import (
+            register_strategy_tools,
         )
 
         # Ensure no strategy generator is set
@@ -316,11 +309,11 @@ class TestStrategyTools:
 
     async def test_generate_search_queries_with_generator(self):
         """Test generate_search_queries with strategy generator."""
-        from pubmed_search.presentation.mcp_server.tools.strategy import (
-            register_strategy_tools,
-        )
         from pubmed_search.presentation.mcp_server.tools._common import (
             set_strategy_generator,
+        )
+        from pubmed_search.presentation.mcp_server.tools.strategy import (
+            register_strategy_tools,
         )
 
         # Set up mock strategy generator
@@ -425,28 +418,22 @@ class TestExportTools:
         # Result could be JSON or plain text error message
         try:
             parsed = json.loads(result)
-            assert (
-                parsed.get("status") == "error" or "unsupported" in str(parsed).lower()
-            )
+            assert parsed.get("status") == "error" or "unsupported" in str(parsed).lower()
         except json.JSONDecodeError:
             # Plain text error message
             assert "unsupported" in result.lower() or "error" in result.lower()
 
     # v0.1.21: get_article_fulltext_links has been integrated into get_fulltext
-    @pytest.mark.skip(
-        reason="v0.1.21: get_article_fulltext_links integrated into get_fulltext"
-    )
+    @pytest.mark.skip(reason="v0.1.21: get_article_fulltext_links integrated into get_fulltext")
     async def test_get_article_fulltext_links(self):
         """Test get_article_fulltext_links tool."""
-        pass  # This tool has been integrated into get_fulltext
+        # This tool has been integrated into get_fulltext
 
     # v0.1.21: analyze_fulltext_access has been integrated into get_fulltext
-    @pytest.mark.skip(
-        reason="v0.1.21: analyze_fulltext_access integrated into get_fulltext"
-    )
+    @pytest.mark.skip(reason="v0.1.21: analyze_fulltext_access integrated into get_fulltext")
     async def test_analyze_fulltext_access(self):
         """Test analyze_fulltext_access tool."""
-        pass  # This tool has been integrated into get_fulltext
+        # This tool has been integrated into get_fulltext
 
 
 class TestCommonToolsExtended:

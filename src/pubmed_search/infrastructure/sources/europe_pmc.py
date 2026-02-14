@@ -20,7 +20,7 @@ import re
 import urllib.parse
 from typing import Any
 
-import defusedxml.ElementTree as ElementTree  # Security: prevent XML attacks
+from defusedxml import ElementTree  # Security: prevent XML attacks
 
 from pubmed_search.infrastructure.sources.base_client import BaseAPIClient
 
@@ -138,7 +138,7 @@ class EuropePMCClient(BaseAPIClient):
             }
 
         except Exception as e:
-            logger.error(f"Europe PMC search failed: {e}")
+            logger.exception(f"Europe PMC search failed: {e}")
             return {"results": [], "hit_count": 0}
 
     async def get_article(
@@ -177,7 +177,7 @@ class EuropePMCClient(BaseAPIClient):
             return None
 
         except Exception as e:
-            logger.error(f"Failed to get article {source}/{article_id}: {e}")
+            logger.exception(f"Failed to get article {source}/{article_id}: {e}")
             return None
 
     async def get_fulltext_xml(self, pmcid: str) -> str | None:
@@ -198,13 +198,11 @@ class EuropePMCClient(BaseAPIClient):
                 pmcid = f"PMC{pmcid}"
 
             url = f"{EPMC_API_BASE}/{pmcid}/fullTextXML"
-            result = await self._make_request(
-                url, headers={"Accept": "application/xml"}, expect_json=False
-            )
+            result = await self._make_request(url, headers={"Accept": "application/xml"}, expect_json=False)
             return result if isinstance(result, str) else None
 
         except Exception as e:
-            logger.error(f"Failed to get fulltext for {pmcid}: {e}")
+            logger.exception(f"Failed to get fulltext for {pmcid}: {e}")
             return None
 
     async def get_references(
@@ -240,7 +238,7 @@ class EuropePMCClient(BaseAPIClient):
             return [self._normalize_reference(r) for r in refs]
 
         except Exception as e:
-            logger.error(f"Failed to get references for {source}/{article_id}: {e}")
+            logger.exception(f"Failed to get references for {source}/{article_id}: {e}")
             return []
 
     async def get_citations(
@@ -276,7 +274,7 @@ class EuropePMCClient(BaseAPIClient):
             return [self._normalize_article(c) for c in citations]
 
         except Exception as e:
-            logger.error(f"Failed to get citations for {source}/{article_id}: {e}")
+            logger.exception(f"Failed to get citations for {source}/{article_id}: {e}")
             return []
 
     async def get_text_mined_terms(
@@ -310,9 +308,7 @@ class EuropePMCClient(BaseAPIClient):
             return data.get("semanticTypeList", {}).get("semanticType", [])
 
         except Exception as e:
-            logger.error(
-                f"Failed to get text-mined terms for {source}/{article_id}: {e}"
-            )
+            logger.exception(f"Failed to get text-mined terms for {source}/{article_id}: {e}")
             return []
 
     def _normalize_article(self, article: dict[str, Any]) -> dict[str, Any]:
@@ -354,12 +350,8 @@ class EuropePMCClient(BaseAPIClient):
         day = first_pub_date[8:10] if len(first_pub_date) >= 10 else ""
 
         # Extract journal info
-        journal = article.get("journalTitle", "") or article.get("journalInfo", {}).get(
-            "journal", {}
-        ).get("title", "")
-        journal_abbrev = (
-            article.get("journalInfo", {}).get("journal", {}).get("isoabbreviation", "")
-        )
+        journal = article.get("journalTitle", "") or article.get("journalInfo", {}).get("journal", {}).get("title", "")
+        journal_abbrev = article.get("journalInfo", {}).get("journal", {}).get("isoabbreviation", "")
 
         # Extract keywords and MeSH
         keywords = []
@@ -376,9 +368,7 @@ class EuropePMCClient(BaseAPIClient):
 
         # Open access info
         is_oa = article.get("isOpenAccess", "N") == "Y"
-        has_fulltext = (
-            article.get("inEPMC", "N") == "Y" or article.get("inPMC", "N") == "Y"
-        )
+        has_fulltext = article.get("inEPMC", "N") == "Y" or article.get("inPMC", "N") == "Y"
         has_pdf = article.get("hasPDF", "N") == "Y"
 
         return {
@@ -485,7 +475,7 @@ class EuropePMCClient(BaseAPIClient):
             return result
 
         except Exception as e:
-            logger.error(f"Failed to parse fulltext XML: {e}")
+            logger.exception(f"Failed to parse fulltext XML: {e}")
             return {"error": str(e)}
 
     def _get_text(self, elem) -> str:
@@ -558,10 +548,7 @@ class EuropePMCClient(BaseAPIClient):
                 return []
 
             # Build SIMILAR query
-            if pmid:
-                query = f"SIMILAR:{pmid}"
-            else:
-                query = f"SIMILAR:PMC{pmcid.replace('PMC', '')}"
+            query = f"SIMILAR:{pmid}" if pmid else f"SIMILAR:PMC{pmcid.replace('PMC', '')}"
 
             result = await self.search(query=query, limit=limit)
             articles = result.get("results", [])
@@ -569,15 +556,13 @@ class EuropePMCClient(BaseAPIClient):
             # Add similarity scores based on ranking
             for i, article in enumerate(articles):
                 # First result = 1.0, decreasing linearly
-                article["similarity_score"] = max(
-                    0.0, 1.0 - (i / max(len(articles), 1))
-                )
+                article["similarity_score"] = max(0.0, 1.0 - (i / max(len(articles), 1)))
                 article["similarity_source"] = "europe_pmc"
 
             return articles
 
         except Exception as e:
-            logger.error(f"Failed to get similar articles: {e}")
+            logger.exception(f"Failed to get similar articles: {e}")
             return []
 
 

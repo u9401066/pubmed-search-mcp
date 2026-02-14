@@ -166,7 +166,7 @@ class ImageSearchService:
                 # Future: elif source == "europe_pmc": ...
             except Exception as e:
                 error_msg = f"{source}: {e}"
-                logger.error(f"Image search failed for {error_msg}")
+                logger.exception(f"Image search failed for {error_msg}")
                 errors.append(error_msg)
 
         # Deduplicate by PMID/source_id

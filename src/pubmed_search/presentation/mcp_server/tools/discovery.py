@@ -20,7 +20,7 @@ Phase 2.1 Updates:
 """
 
 import logging
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Any, Literal, Union
 
 from mcp.server.fastmcp import FastMCP
 
@@ -70,7 +70,7 @@ def _detect_ambiguous_terms(query: str) -> list:
     query_lower = query.lower()
     ambiguous = []
 
-    for term, (journal, issn, hint) in AMBIGUOUS_JOURNAL_NAMES.items():
+    for term, (journal, _issn, hint) in AMBIGUOUS_JOURNAL_NAMES.items():
         # Check if the term appears as a standalone word
         if term in query_lower:
             # Simple check: is it likely being used as a topic rather than journal?
@@ -101,19 +101,19 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
     """Register discovery tools for exploring PubMed."""
 
     # Supported alternate sources
-    ALTERNATE_SOURCES = ("semantic_scholar", "openalex")
+    alternate_sources = ("semantic_scholar", "openalex")
 
     # ❌ REMOVED v0.1.20: Replaced by unified_search which auto-handles multi-source
     # @mcp.tool()
     async def search_literature(
         query: str,
         limit: int = 5,
-        min_year: Optional[int] = None,
-        max_year: Optional[int] = None,
-        date_from: Optional[str] = None,
-        date_to: Optional[str] = None,
+        min_year: int | None = None,
+        max_year: int | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
         date_type: str = "edat",
-        article_type: Optional[str] = None,
+        article_type: str | None = None,
         strategy: str = "relevance",
         force_refresh: bool = False,
         source: Literal["pubmed", "semantic_scholar", "openalex"] = "pubmed",
@@ -149,16 +149,14 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         # cross_search_fallback: Auto-search alternate sources if PubMed < threshold
         # cross_search_threshold: Minimum results before triggering cross-search
 
-        logger.info(
-            f"Searching literature: query='{query}', limit={limit}, source='{source}', strategy='{strategy}'"
-        )
+        logger.info(f"Searching literature: query='{query}', limit={limit}, source='{source}', strategy='{strategy}'")
         try:
             if not query:
                 return "Error: Query is required."
 
             # === Handle alternate sources (internal feature) ===
-            if source in ALTERNATE_SOURCES:
-                # Cast to narrow type (we've already checked source is in ALTERNATE_SOURCES)
+            if source in alternate_sources:
+                # Cast to narrow type (we've already checked source is in alternate_sources)
                 alt_source: Literal["semantic_scholar", "openalex"] = source  # type: ignore[assignment]
                 return await _search_alternate_source_internal(
                     query=query,
@@ -179,9 +177,7 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 cached = check_cache(query, limit)
                 if cached:
                     logger.info(f"Returning {len(cached)} cached results for '{query}'")
-                    result = (
-                        format_search_results(cached[:limit]) + "\n\n_(cached results)_"
-                    )
+                    result = format_search_results(cached[:limit]) + "\n\n_(cached results)_"
                     result += _format_ambiguity_hint(ambiguous, query)
                     return result
 
@@ -205,9 +201,7 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 # Remove metadata from results before caching/formatting
                 del results[0]["_search_metadata"]
                 # If this was a metadata-only result (no actual article data), remove it
-                if len(results[0]) == 0 or (
-                    len(results[0]) == 1 and "error" not in results[0]
-                ):
+                if len(results[0]) == 0 or (len(results[0]) == 1 and "error" not in results[0]):
                     results = results[1:] if len(results) > 1 else []
 
             # Cache results (only for queries without filters)
@@ -256,7 +250,7 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
 
             return result
         except Exception as e:
-            logger.error(f"Search failed: {e}")
+            logger.exception(f"Search failed: {e}")
             return f"Error: {e}"
 
     async def _search_alternate_source_internal(
@@ -304,7 +298,7 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             return result
 
         except Exception as e:
-            logger.error(f"Alternate source search failed: {e}")
+            logger.exception(f"Alternate source search failed: {e}")
             return f"Error searching {source}: {e}"
 
     async def _perform_cross_search_fallback(
@@ -335,9 +329,7 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
 
             # Filter out papers already in PubMed results (by PMID or title)
             existing_pmids = {r.get("pmid") for r in existing_results if r.get("pmid")}
-            existing_titles = {
-                r.get("title", "").lower()[:50] for r in existing_results
-            }
+            existing_titles = {r.get("title", "").lower()[:50] for r in existing_results}
 
             new_results = []
             for paper in cross_results["results"]:
@@ -423,15 +415,11 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 tool_name="find_related_articles",
             )
 
-        normalized_limit = InputNormalizer.normalize_limit(
-            limit, default=5, min_val=1, max_val=50
-        )
+        normalized_limit = InputNormalizer.normalize_limit(limit, default=5, min_val=1, max_val=50)
 
         logger.info(f"Finding related articles for PMID: {normalized_pmid}")
         try:
-            results = await searcher.get_related_articles(
-                normalized_pmid, normalized_limit
-            )
+            results = await searcher.get_related_articles(normalized_pmid, normalized_limit)
 
             if not results:
                 return ResponseFormatter.no_results(
@@ -454,7 +442,7 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             output += format_search_results(results)
             return output
         except Exception as e:
-            logger.error(f"Find related articles failed: {e}")
+            logger.exception(f"Find related articles failed: {e}")
             return ResponseFormatter.error(
                 error=e,
                 suggestion="Check PMID format and try again",
@@ -514,15 +502,11 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 tool_name="find_citing_articles",
             )
 
-        normalized_limit = InputNormalizer.normalize_limit(
-            limit, default=10, min_val=1, max_val=100
-        )
+        normalized_limit = InputNormalizer.normalize_limit(limit, default=10, min_val=1, max_val=100)
 
         logger.info(f"Finding citing articles for PMID: {normalized_pmid}")
         try:
-            results = await searcher.get_citing_articles(
-                normalized_pmid, normalized_limit
-            )
+            results = await searcher.get_citing_articles(normalized_pmid, normalized_limit)
 
             if not results:
                 return ResponseFormatter.no_results(
@@ -546,7 +530,7 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             output += format_search_results(results)
             return output
         except Exception as e:
-            logger.error(f"Find citing articles failed: {e}")
+            logger.exception(f"Find citing articles failed: {e}")
             return ResponseFormatter.error(
                 error=e,
                 suggestion="Check PMID format and try again",
@@ -609,15 +593,11 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 tool_name="get_article_references",
             )
 
-        normalized_limit = InputNormalizer.normalize_limit(
-            limit, default=20, min_val=1, max_val=100
-        )
+        normalized_limit = InputNormalizer.normalize_limit(limit, default=20, min_val=1, max_val=100)
 
         logger.info(f"Getting references for PMID: {normalized_pmid}")
         try:
-            results = await searcher.get_article_references(
-                normalized_pmid, normalized_limit
-            )
+            results = await searcher.get_article_references(normalized_pmid, normalized_limit)
 
             if not results:
                 return ResponseFormatter.no_results(
@@ -637,13 +617,11 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 )
 
             output = f"📚 **References of PMID {normalized_pmid}** ({len(results)} found)\n\n"
-            output += (
-                "These are the papers cited BY this article (its bibliography):\n\n"
-            )
+            output += "These are the papers cited BY this article (its bibliography):\n\n"
             output += format_search_results(results)
             return output
         except Exception as e:
-            logger.error(f"Get article references failed: {e}")
+            logger.exception(f"Get article references failed: {e}")
             return ResponseFormatter.error(
                 error=e,
                 suggestion="Check PMID format and try again",
@@ -651,7 +629,7 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             )
 
     @mcp.tool()
-    async def fetch_article_details(pmids: Union[str, List, int]) -> str:
+    async def fetch_article_details(pmids: Union[str, list, int]) -> str:
         """
         Fetch detailed information for one or more PubMed articles.
 
@@ -699,7 +677,7 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
 
             return format_search_results(results, include_doi=True)
         except Exception as e:
-            logger.error(f"Fetch details failed: {e}")
+            logger.exception(f"Fetch details failed: {e}")
             return ResponseFormatter.error(
                 error=e,
                 suggestion="Check PMID format and try again",
@@ -708,11 +686,11 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
 
     @mcp.tool()
     async def get_citation_metrics(
-        pmids: Union[str, List, int],
+        pmids: Union[str, list, int],
         sort_by: str = "citation_count",
-        min_citations: Optional[int] = None,
-        min_rcr: Optional[float] = None,
-        min_percentile: Optional[float] = None,
+        min_citations: int | None = None,
+        min_rcr: float | None = None,
+        min_percentile: float | None = None,
     ) -> str:
         """
         Get citation metrics from NIH iCite for articles.
@@ -787,31 +765,17 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 )
 
             # Convert to list for sorting/filtering
-            articles: List[Dict[str, Any]] = [
-                {"pmid": pmid, "icite": data} for pmid, data in metrics.items()
-            ]
+            articles: list[dict[str, Any]] = [{"pmid": pmid, "icite": data} for pmid, data in metrics.items()]
 
             # Apply filters
             if min_citations is not None:
-                articles = [
-                    a
-                    for a in articles
-                    if (a["icite"].get("citation_count") or 0) >= min_citations
-                ]
+                articles = [a for a in articles if (a["icite"].get("citation_count") or 0) >= min_citations]
 
             if min_rcr is not None:
-                articles = [
-                    a
-                    for a in articles
-                    if (a["icite"].get("relative_citation_ratio") or 0) >= min_rcr
-                ]
+                articles = [a for a in articles if (a["icite"].get("relative_citation_ratio") or 0) >= min_rcr]
 
             if min_percentile is not None:
-                articles = [
-                    a
-                    for a in articles
-                    if (a["icite"].get("nih_percentile") or 0) >= min_percentile
-                ]
+                articles = [a for a in articles if (a["icite"].get("nih_percentile") or 0) >= min_percentile]
 
             if not articles:
                 return "No articles match the specified filters."
@@ -875,5 +839,5 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             return output
 
         except Exception as e:
-            logger.error(f"Get citation metrics failed: {e}")
+            logger.exception(f"Get citation metrics failed: {e}")
             return f"Error: {e}"

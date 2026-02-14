@@ -170,18 +170,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Install uv
         uses: astral-sh/setup-uv@v4
         with:
           version: "latest"
-      
+
       - name: Set up Python
         run: uv python install 3.11
-      
+
       - name: Install dependencies
         run: uv sync --all-extras
-      
+
       - name: Run tests
         run: uv run pytest
 ```
@@ -246,7 +246,7 @@ extra-index-url = ["https://your-private-pypi.com/simple"]
 | 安裝開發依賴 | `uv add --dev package` | `pip install package` |
 | 安裝全部 | `uv sync` | `pip install -r requirements.txt` |
 | 更新 lock | `uv lock` | `pip-compile` |
-| 執行命令 | `uv run pytest` | `pytest` |
+| 執行命令 | `uv run pytest` (自動 -n auto) | `pytest` |
 | 查看依賴 | `uv pip list` | `pip list` |
 
 ---

@@ -2,8 +2,9 @@
 Tests for utils.py module and additional coverage tests.
 """
 
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 
 
 class TestUtilsMixin:
@@ -22,9 +23,7 @@ class TestUtilsMixin:
     async def test_quick_fetch_summary_success(self, utils_mixin):
         """Test quick_fetch_summary with successful response."""
         with (
-            patch(
-                "pubmed_search.infrastructure.ncbi.utils.Entrez.esummary"
-            ) as mock_esummary,
+            patch("pubmed_search.infrastructure.ncbi.utils.Entrez.esummary") as mock_esummary,
             patch("pubmed_search.infrastructure.ncbi.utils.Entrez.read") as mock_read,
         ):
             # Mock ESummary response
@@ -56,9 +55,7 @@ class TestUtilsMixin:
 
     async def test_quick_fetch_summary_error(self, utils_mixin):
         """Test quick_fetch_summary with API error."""
-        with patch(
-            "pubmed_search.infrastructure.ncbi.utils.Entrez.esummary"
-        ) as mock_esummary:
+        with patch("pubmed_search.infrastructure.ncbi.utils.Entrez.esummary") as mock_esummary:
             mock_esummary.side_effect = Exception("API Error")
 
             results = await utils_mixin.quick_fetch_summary(["12345"])
@@ -69,9 +66,7 @@ class TestUtilsMixin:
     async def test_spell_check_query_success(self, utils_mixin):
         """Test spell_check_query with correction."""
         with (
-            patch(
-                "pubmed_search.infrastructure.ncbi.utils.Entrez.espell"
-            ) as mock_espell,
+            patch("pubmed_search.infrastructure.ncbi.utils.Entrez.espell") as mock_espell,
             patch("pubmed_search.infrastructure.ncbi.utils.Entrez.read") as mock_read,
         ):
             mock_read.return_value = {"CorrectedQuery": "diabetes"}
@@ -84,9 +79,7 @@ class TestUtilsMixin:
     async def test_spell_check_query_no_correction(self, utils_mixin):
         """Test spell_check_query without correction."""
         with (
-            patch(
-                "pubmed_search.infrastructure.ncbi.utils.Entrez.espell"
-            ) as mock_espell,
+            patch("pubmed_search.infrastructure.ncbi.utils.Entrez.espell") as mock_espell,
             patch("pubmed_search.infrastructure.ncbi.utils.Entrez.read") as mock_read,
         ):
             mock_read.return_value = {"CorrectedQuery": ""}
@@ -98,9 +91,7 @@ class TestUtilsMixin:
 
     async def test_spell_check_query_error(self, utils_mixin):
         """Test spell_check_query with API error."""
-        with patch(
-            "pubmed_search.infrastructure.ncbi.utils.Entrez.espell"
-        ) as mock_espell:
+        with patch("pubmed_search.infrastructure.ncbi.utils.Entrez.espell") as mock_espell:
             mock_espell.side_effect = Exception("API Error")
 
             result = await utils_mixin.spell_check_query("test")
@@ -111,9 +102,7 @@ class TestUtilsMixin:
     async def test_get_database_counts_success(self, utils_mixin):
         """Test get_database_counts with successful response."""
         with (
-            patch(
-                "pubmed_search.infrastructure.ncbi.utils.Entrez.egquery"
-            ) as mock_egquery,
+            patch("pubmed_search.infrastructure.ncbi.utils.Entrez.egquery") as mock_egquery,
             patch("pubmed_search.infrastructure.ncbi.utils.Entrez.read") as mock_read,
         ):
             mock_read.return_value = {
@@ -131,9 +120,7 @@ class TestUtilsMixin:
 
     async def test_get_database_counts_error(self, utils_mixin):
         """Test get_database_counts with API error."""
-        with patch(
-            "pubmed_search.infrastructure.ncbi.utils.Entrez.egquery"
-        ) as mock_egquery:
+        with patch("pubmed_search.infrastructure.ncbi.utils.Entrez.egquery") as mock_egquery:
             mock_egquery.side_effect = Exception("API Error")
 
             result = await utils_mixin.get_database_counts("test")
@@ -143,12 +130,8 @@ class TestUtilsMixin:
     async def test_validate_mesh_terms_found(self, utils_mixin):
         """Test validate_mesh_terms when terms are found."""
         with (
-            patch(
-                "pubmed_search.infrastructure.ncbi.utils.Entrez.esearch"
-            ) as mock_esearch,
-            patch(
-                "pubmed_search.infrastructure.ncbi.utils.Entrez.esummary"
-            ) as mock_esummary,
+            patch("pubmed_search.infrastructure.ncbi.utils.Entrez.esearch") as mock_esearch,
+            patch("pubmed_search.infrastructure.ncbi.utils.Entrez.esummary") as mock_esummary,
             patch("pubmed_search.infrastructure.ncbi.utils.Entrez.read") as mock_read,
         ):
             # First call for esearch
@@ -173,9 +156,7 @@ class TestUtilsMixin:
     async def test_validate_mesh_terms_not_found(self, utils_mixin):
         """Test validate_mesh_terms when no terms found."""
         with (
-            patch(
-                "pubmed_search.infrastructure.ncbi.utils.Entrez.esearch"
-            ) as mock_esearch,
+            patch("pubmed_search.infrastructure.ncbi.utils.Entrez.esearch") as mock_esearch,
             patch("pubmed_search.infrastructure.ncbi.utils.Entrez.read") as mock_read,
         ):
             mock_read.return_value = {"IdList": []}
@@ -187,9 +168,7 @@ class TestUtilsMixin:
 
     async def test_find_by_citation_found(self, utils_mixin):
         """Test find_by_citation when article is found."""
-        with patch(
-            "pubmed_search.infrastructure.ncbi.utils.Entrez.ecitmatch"
-        ) as mock_ecitmatch:
+        with patch("pubmed_search.infrastructure.ncbi.utils.Entrez.ecitmatch") as mock_ecitmatch:
             mock_handle = MagicMock()
             mock_handle.read.return_value = "journal|2024|10|1|author||\t12345678"
             mock_ecitmatch.return_value = mock_handle
@@ -202,9 +181,7 @@ class TestUtilsMixin:
 
     async def test_find_by_citation_not_found(self, utils_mixin):
         """Test find_by_citation when article is not found."""
-        with patch(
-            "pubmed_search.infrastructure.ncbi.utils.Entrez.ecitmatch"
-        ) as mock_ecitmatch:
+        with patch("pubmed_search.infrastructure.ncbi.utils.Entrez.ecitmatch") as mock_ecitmatch:
             mock_handle = MagicMock()
             mock_handle.read.return_value = "journal|2024||||\t"
             mock_ecitmatch.return_value = mock_handle
@@ -215,9 +192,7 @@ class TestUtilsMixin:
 
     async def test_find_by_citation_error(self, utils_mixin):
         """Test find_by_citation with API error."""
-        with patch(
-            "pubmed_search.infrastructure.ncbi.utils.Entrez.ecitmatch"
-        ) as mock_ecitmatch:
+        with patch("pubmed_search.infrastructure.ncbi.utils.Entrez.ecitmatch") as mock_ecitmatch:
             mock_ecitmatch.side_effect = Exception("API Error")
 
             result = await utils_mixin.find_by_citation(journal="Test", year="2024")
@@ -226,14 +201,12 @@ class TestUtilsMixin:
 
     async def test_export_citations_medline(self, utils_mixin):
         """Test export_citations with MEDLINE format."""
-        with patch(
-            "pubmed_search.infrastructure.ncbi.utils.Entrez.efetch"
-        ) as mock_efetch:
+        with patch("pubmed_search.infrastructure.ncbi.utils.Entrez.efetch") as mock_efetch:
             mock_handle = MagicMock()
             mock_handle.read.return_value = "PMID- 12345\nTI  - Test Article"
             mock_efetch.return_value = mock_handle
 
-            result = await utils_mixin.export_citations(["12345"], format="medline")
+            result = await utils_mixin.export_citations(["12345"], fmt="medline")
 
             assert "PMID" in result or "12345" in result
 
@@ -244,14 +217,12 @@ class TestUtilsMixin:
 
     async def test_export_citations_invalid_format(self, utils_mixin):
         """Test export_citations with invalid format falls back to medline."""
-        with patch(
-            "pubmed_search.infrastructure.ncbi.utils.Entrez.efetch"
-        ) as mock_efetch:
+        with patch("pubmed_search.infrastructure.ncbi.utils.Entrez.efetch") as mock_efetch:
             mock_handle = MagicMock()
             mock_handle.read.return_value = "PMID- 12345"
             mock_efetch.return_value = mock_handle
 
-            await utils_mixin.export_citations(["12345"], format="invalid")
+            await utils_mixin.export_citations(["12345"], fmt="invalid")
 
             # Should use medline as fallback
             mock_efetch.assert_called()
@@ -288,9 +259,7 @@ class TestUtilsMixin:
 
     async def test_get_database_info_error(self, utils_mixin):
         """Test get_database_info with API error."""
-        with patch(
-            "pubmed_search.infrastructure.ncbi.utils.Entrez.einfo"
-        ) as mock_einfo:
+        with patch("pubmed_search.infrastructure.ncbi.utils.Entrez.einfo") as mock_einfo:
             mock_einfo.side_effect = Exception("API Error")
 
             result = await utils_mixin.get_database_info("pubmed")

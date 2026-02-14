@@ -112,4 +112,3 @@ src/pubmed_search/
 
 ---
 *Last updated: 2025-01-XX*
-

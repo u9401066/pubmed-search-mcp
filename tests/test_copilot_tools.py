@@ -15,7 +15,6 @@ from pubmed_search.presentation.mcp_server.tools._common import (
     apply_key_aliases,
 )
 
-
 # =============================================================================
 # InputNormalizer Tests
 # =============================================================================
@@ -409,9 +408,7 @@ class TestResponseFormatterSuccess:
 
     async def test_success_json(self):
         """Test JSON format."""
-        result = ResponseFormatter.success(
-            {"key": "value"}, message="Done", output_format="json"
-        )
+        result = ResponseFormatter.success({"key": "value"}, message="Done", output_format="json")
         parsed = json.loads(result)
         assert parsed["success"] is True
         assert parsed["data"]["key"] == "value"
@@ -419,9 +416,7 @@ class TestResponseFormatterSuccess:
 
     async def test_success_with_metadata(self):
         """Test with metadata."""
-        result = ResponseFormatter.success(
-            "data", metadata={"count": 10}, output_format="json"
-        )
+        result = ResponseFormatter.success("data", metadata={"count": 10}, output_format="json")
         parsed = json.loads(result)
         assert parsed["metadata"]["count"] == 10
 
@@ -436,9 +431,7 @@ class TestResponseFormatterError:
 
     async def test_error_markdown(self):
         """Test markdown error format."""
-        result = ResponseFormatter.error(
-            "Something went wrong", suggestion="Try again", tool_name="test_tool"
-        )
+        result = ResponseFormatter.error("Something went wrong", suggestion="Try again", tool_name="test_tool")
         assert "❌" in result
         assert "test_tool" in result
         assert "Something went wrong" in result
@@ -453,9 +446,7 @@ class TestResponseFormatterError:
 
     async def test_error_json(self):
         """Test JSON error format."""
-        result = ResponseFormatter.error(
-            "Error message", suggestion="Fix it", output_format="json"
-        )
+        result = ResponseFormatter.error("Error message", suggestion="Fix it", output_format="json")
         parsed = json.loads(result)
         assert parsed["success"] is False
         assert parsed["error"] == "Error message"
@@ -499,17 +490,13 @@ class TestResponseFormatterPartialSuccess:
 
     async def test_partial_success_basic(self):
         """Test basic partial success."""
-        result = ResponseFormatter.partial_success(
-            successful=[1, 2, 3], failed=[{"id": "x", "error": "failed"}]
-        )
+        result = ResponseFormatter.partial_success(successful=[1, 2, 3], failed=[{"id": "x", "error": "failed"}])
         assert "3 succeeded" in result
         assert "1 failed" in result
 
     async def test_partial_success_with_message(self):
         """Test with custom message."""
-        result = ResponseFormatter.partial_success(
-            successful=[], failed=[], message="Custom message"
-        )
+        result = ResponseFormatter.partial_success(successful=[], failed=[], message="Custom message")
         assert "Custom message" in result
 
     async def test_partial_success_many_failures(self):

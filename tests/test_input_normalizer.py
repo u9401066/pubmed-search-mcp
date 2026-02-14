@@ -59,9 +59,7 @@ class TestInputNormalizerPMIDs:
         """Mixed formats should all work."""
         from pubmed_search.presentation.mcp_server.tools._common import InputNormalizer
 
-        result = InputNormalizer.normalize_pmids(
-            "PMID:12345678, 87654321, pmid: 11111111"
-        )
+        result = InputNormalizer.normalize_pmids("PMID:12345678, 87654321, pmid: 11111111")
         assert result == ["12345678", "87654321", "11111111"]
 
     async def test_list_input(self):
@@ -470,9 +468,7 @@ class TestResponseFormatter:
             ResponseFormatter,
         )
 
-        result = ResponseFormatter.error(
-            "API failed", suggestion="Check your query", output_format="json"
-        )
+        result = ResponseFormatter.error("API failed", suggestion="Check your query", output_format="json")
         parsed = json.loads(result)
         assert parsed["success"] is False
         assert parsed["error"] == "API failed"
@@ -484,9 +480,7 @@ class TestResponseFormatter:
             ResponseFormatter,
         )
 
-        result = ResponseFormatter.no_results(
-            query="obscure term", suggestions=["Try broader terms", "Check spelling"]
-        )
+        result = ResponseFormatter.no_results(query="obscure term", suggestions=["Try broader terms", "Check spelling"])
         assert "No results found" in result
         assert "obscure term" in result
         assert "Try broader terms" in result

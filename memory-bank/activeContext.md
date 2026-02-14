@@ -4,42 +4,51 @@
 
 ## 🎯 當前焦點
 
-- **v0.3.5 已完成** — 品質強化、測試零失敗、準備 git commit + tag
+- **v0.3.9 品質嚴格化** — ruff `select=["ALL"]` + mypy `strict=true` + pre-commit 17 hooks + noqa 消除
 
 ## 📊 測試結果
 
-- **2181 passed, 0 failed, 27 skipped** in 107.81s
-- 94 files modified (14 production + 80 test files)
+- **2400 passed, 0 failed, 27 skipped** in ~47s (pytest-xdist -n 4)
+- ruff src/: `All checks passed!`
+- mypy src/: 176 errors (已知，deferred 修復)
 
-## ✅ 已完成本 session (v0.3.5)
+## ✅ 已完成本 session
 
-### Production Code
-- batch.py: `await _rate_limit()` 在 Entrez.esearch/efetch 前
-- 8 source clients: 429 retry (指數退避 1s→2s→4s, max 3) + safe Retry-After
-- copilot_tools.py: 完整重寫 (移除 11 重複工具, proper async)
-- Code review fixes: exception handlers, error messages
+### Phase 6: Ruff/Mypy 最大嚴格化
+- ruff `select = ["ALL"]` — 啟用所有規則，~40 justified global ignores
+- mypy `strict = true` — 包含 module overrides
+- 修復 16 src/ ruff violations across 9 files
+- `format` → `fmt` in `export_articles()` 重命名
 
-### Test Code
-- 60+ test files 修復 (async compatibility)
-- MagicMock→AsyncMock, with→async with, urllib→httpx mocks
-- 4 integration tests marked skip (real API calls)
+### Phase 7: 生產級零例外 (`# noqa` 消除)
+- **18 → 9 個 `# noqa`**（消除 9 個根因修復）
+  - SLF001 ×3: `_ranking_score` 等欄位重命名為 public
+  - A001 ×2: `format` → `fmt` 參數重命名 (ncbi/utils.py)
+  - ARG001: 刪除 `retryable_status_codes` 死碼 (http/client.py)
+  - ARG001: 移除未使用 `index` 參數 (async_utils.py)
+  - S110 ×2: `pass` → `logger.debug()` / `return False`
+  - N818: `RateLimitExceeded` → `RateLimitExceededError`
+- 剩餘 9 個均為合理例外（monkey-patch, polyfill, security rules）
 
-### Governance
-- CONSTITUTION.md: 第 7.1.1 條 File Hygiene
-- copilot-instructions.md: 🧹 檔案衛生規範
-- .gitignore: temp file exclusion patterns
+### Pre-commit Infrastructure (17 hooks)
+- ruff lint + format, mypy, file-hygiene, async-test-checker
+- tool-count-sync (auto-fix), evolution-cycle 一致性驗證
+- pytest pre-push hook
+
+### MCP Performance Profiling
+- `shared/profiling.py`: 20 profiling tests
+- Monkey-patch BaseAPIClient for request timing
 
 ## 📈 Version History
-- v0.3.5: 品質強化 + 測試零失敗 (current)
+- v0.3.9: 品質嚴格化 + pre-commit + noqa 消除 (current)
+- v0.3.8: QueryValidator + JournalMetrics + preprint detection
+- v0.3.5: 品質強化 + 測試零失敗
 - v0.3.4: async-first migration
-- v0.3.3: Open-i 搜尋修復
-- v0.3.2: UnifiedArticle dataclass fix
-- v0.3.1: 41→34 tools consolidation
 
 ## 🔜 下一步 (low priority)
+- mypy 176 errors 逐步修復（主要 no-untyped-def, attr-defined）
 - ARCHITECTURE.md 更新 (outdated directory tree)
-- run_copilot.py / run_server.py import path fixes
-- clinical_trials.py + preprints.py → async httpx
+- `type: ignore[import-not-found]` 調查 (core.py, ncbi_extended.py)
 
 ---
-*Last updated: 2026-02-10 — v0.3.5 release session*
+*Last updated: 2026-02-14 — v0.3.9 quality strictification session*

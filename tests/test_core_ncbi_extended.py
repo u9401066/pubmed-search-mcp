@@ -27,10 +27,9 @@ class TestCOREClient:
 
     async def test_get_core_client_singleton(self):
         """Test singleton pattern."""
-        from pubmed_search.infrastructure.sources.core import get_core_client
-
         # Reset singleton
         import pubmed_search.infrastructure.sources.core as core_module
+        from pubmed_search.infrastructure.sources.core import get_core_client
 
         core_module._core_client = None
 
@@ -128,12 +127,11 @@ class TestNCBIExtendedClient:
 
     async def test_get_ncbi_extended_client_singleton(self):
         """Test singleton pattern."""
+        # Reset singleton
+        import pubmed_search.infrastructure.sources.ncbi_extended as ncbi_module
         from pubmed_search.infrastructure.sources.ncbi_extended import (
             get_ncbi_extended_client,
         )
-
-        # Reset singleton
-        import pubmed_search.infrastructure.sources.ncbi_extended as ncbi_module
 
         ncbi_module._ncbi_extended_client = None
 
@@ -246,13 +244,12 @@ class TestSourcesIntegration:
 
     async def test_get_clients(self):
         """Test client getter functions."""
+        # Reset singletons
+        from pubmed_search.infrastructure import sources
         from pubmed_search.infrastructure.sources import (
             get_core_client,
             get_ncbi_extended_client,
         )
-
-        # Reset singletons
-        import pubmed_search.infrastructure.sources as sources
 
         sources._core_client = None
         sources._ncbi_extended_client = None
@@ -265,8 +262,9 @@ class TestSourcesIntegration:
 
     async def test_cross_search_includes_core(self):
         """Test that cross_search default sources include CORE."""
-        from pubmed_search.infrastructure.sources import cross_search
         import inspect
+
+        from pubmed_search.infrastructure.sources import cross_search
 
         # Check the function signature
         inspect.signature(cross_search)
@@ -286,6 +284,7 @@ class TestCOREMCPTools:
     async def test_tools_registered(self):
         """Test that CORE tools can be registered."""
         from mcp.server.fastmcp import FastMCP
+
         from pubmed_search.presentation.mcp_server.tools.core import register_core_tools
 
         mcp = FastMCP(name="test")
@@ -306,6 +305,7 @@ class TestNCBIExtendedMCPTools:
     async def test_tools_registered(self):
         """Test that NCBI Extended tools can be registered."""
         from mcp.server.fastmcp import FastMCP
+
         from pubmed_search.presentation.mcp_server.tools.ncbi_extended import (
             register_ncbi_extended_tools,
         )
@@ -336,8 +336,9 @@ class TestAllToolsRegistration:
     async def test_register_all_tools_includes_new_sources(self):
         """Test register_all_tools includes CORE and NCBI Extended."""
         from mcp.server.fastmcp import FastMCP
-        from pubmed_search.presentation.mcp_server.tools import register_all_tools
+
         from pubmed_search.infrastructure.ncbi import LiteratureSearcher
+        from pubmed_search.presentation.mcp_server.tools import register_all_tools
 
         mcp = FastMCP(name="test")
         searcher = LiteratureSearcher(email="test@example.com")

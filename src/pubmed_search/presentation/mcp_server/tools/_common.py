@@ -12,7 +12,7 @@ Shared functions:
 
 import logging
 import re
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Union
 
 # Import core exceptions for unified error handling
 from pubmed_search.shared import (
@@ -51,7 +51,7 @@ class InputNormalizer:
     PMC_PREFIXES = ["pmc", "pmcid:", "pmcid"]
 
     @staticmethod
-    def normalize_pmids(value: Union[str, List, int, None]) -> List[str]:
+    def normalize_pmids(value: Union[str, list, int, None]) -> list[str]:
         """
         Accept multiple PMID formats and normalize to list of clean strings.
 
@@ -118,7 +118,7 @@ class InputNormalizer:
         return []
 
     @staticmethod
-    def normalize_pmid_single(value: Union[str, int, None]) -> Optional[str]:
+    def normalize_pmid_single(value: Union[str, int, None]) -> str | None:
         """
         Normalize a single PMID value.
 
@@ -129,7 +129,7 @@ class InputNormalizer:
         return pmids[0] if pmids else None
 
     @staticmethod
-    def normalize_pmcid(value: Union[str, None]) -> Optional[str]:
+    def normalize_pmcid(value: Union[str, None]) -> str | None:
         """
         Normalize PMC ID to standard format (PMCxxxxxxx).
 
@@ -164,7 +164,7 @@ class InputNormalizer:
         return None
 
     @staticmethod
-    def normalize_year(value: Union[str, int, None]) -> Optional[int]:
+    def normalize_year(value: Union[str, int, None]) -> int | None:
         """
         Normalize year value to integer.
 
@@ -230,9 +230,7 @@ class InputNormalizer:
         return default
 
     @staticmethod
-    def normalize_bool(
-        value: Union[bool, str, int, None], default: bool = False
-    ) -> bool:
+    def normalize_bool(value: Union[bool, str, int, None], default: bool = False) -> bool:
         """
         Normalize boolean value from various formats.
 
@@ -293,7 +291,7 @@ class InputNormalizer:
         return query
 
     @staticmethod
-    def normalize_doi(value: Union[str, None]) -> Optional[str]:
+    def normalize_doi(value: Union[str, None]) -> str | None:
         """
         Normalize DOI to standard format.
 
@@ -338,7 +336,7 @@ class InputNormalizer:
         return None
 
     @staticmethod
-    def normalize_identifier(value: Union[str, int, None]) -> Dict[str, Optional[str]]:
+    def normalize_identifier(value: Union[str, int, None]) -> dict[str, str | None]:
         """
         Auto-detect and normalize identifier type (PMID, PMC ID, or DOI).
 
@@ -355,7 +353,7 @@ class InputNormalizer:
             - value: Normalized identifier value
             - original: Original input value
         """
-        result: Dict[str, Optional[str]] = {
+        result: dict[str, str | None] = {
             "type": None,
             "value": None,
             "original": str(value) if value is not None else None,
@@ -376,11 +374,7 @@ class InputNormalizer:
         value = value.strip()
 
         # Check for DOI patterns first (most specific)
-        if (
-            value.startswith("10.")
-            or "doi.org/" in value.lower()
-            or value.lower().startswith("doi:")
-        ):
+        if value.startswith("10.") or "doi.org/" in value.lower() or value.lower().startswith("doi:"):
             doi = InputNormalizer.normalize_doi(value)
             if doi:
                 result["type"] = "doi"
@@ -433,8 +427,8 @@ class ResponseFormatter:
     @staticmethod
     def success(
         data: Any,
-        message: Optional[str] = None,
-        metadata: Optional[Dict] = None,
+        message: str | None = None,
+        metadata: dict | None = None,
         output_format: str = "markdown",
     ) -> str:
         """
@@ -482,9 +476,9 @@ class ResponseFormatter:
     @staticmethod
     def error(
         error: Union[Exception, str],
-        suggestion: Optional[str] = None,
-        example: Optional[str] = None,
-        tool_name: Optional[str] = None,
+        suggestion: str | None = None,
+        example: str | None = None,
+        tool_name: str | None = None,
         output_format: str = "markdown",
     ) -> str:
         """
@@ -514,11 +508,7 @@ class ResponseFormatter:
 
         # Check if this is a retryable error
         retryable = is_retryable_error(error) if isinstance(error, Exception) else False
-        retry_delay = (
-            get_retry_delay(error, 0)
-            if retryable and isinstance(error, Exception)
-            else None
-        )
+        retry_delay = get_retry_delay(error, 0) if retryable and isinstance(error, Exception) else None
 
         if output_format == "json":
             result = {
@@ -561,9 +551,9 @@ class ResponseFormatter:
 
     @staticmethod
     def no_results(
-        query: Optional[str] = None,
-        suggestions: Optional[List[str]] = None,
-        alternative_tools: Optional[List[str]] = None,
+        query: str | None = None,
+        suggestions: list[str] | None = None,
+        alternative_tools: list[str] | None = None,
     ) -> str:
         """
         Format a 'no results' response with helpful suggestions.
@@ -594,9 +584,7 @@ class ResponseFormatter:
         return "\n".join(parts)
 
     @staticmethod
-    def partial_success(
-        successful: List[Any], failed: List[Dict], message: Optional[str] = None
-    ) -> str:
+    def partial_success(successful: list[Any], failed: list[dict], message: str | None = None) -> str:
         """
         Format a partial success response (some items succeeded, some failed).
 
@@ -613,16 +601,12 @@ class ResponseFormatter:
         if message:
             parts.append(f"⚠️ {message}")
         else:
-            parts.append(
-                f"⚠️ **Partial success**: {len(successful)} succeeded, {len(failed)} failed"
-            )
+            parts.append(f"⚠️ **Partial success**: {len(successful)} succeeded, {len(failed)} failed")
 
         if failed:
             parts.append("\n\n**Failed items**:")
             for item in failed[:5]:  # Show first 5 failures
-                parts.append(
-                    f"- {item.get('id', 'unknown')}: {item.get('error', 'unknown error')}"
-                )
+                parts.append(f"- {item.get('id', 'unknown')}: {item.get('error', 'unknown error')}")
             if len(failed) > 5:
                 parts.append(f"- ... and {len(failed) - 5} more")
 
@@ -657,7 +641,7 @@ KEY_ALIASES = {
 }
 
 
-def apply_key_aliases(kwargs: Dict[str, Any]) -> Dict[str, Any]:
+def apply_key_aliases(kwargs: dict[str, Any]) -> dict[str, Any]:
     """
     Apply key aliases to normalize parameter names.
 
@@ -677,9 +661,7 @@ def apply_key_aliases(kwargs: Dict[str, Any]) -> Dict[str, Any]:
             result[standard_key] = value
         # If standard key exists and this is an alias, log warning
         elif key != standard_key:
-            logger.debug(
-                f"Ignoring alias '{key}' because '{standard_key}' already present"
-            )
+            logger.debug(f"Ignoring alias '{key}' because '{standard_key}' already present")
 
     return result
 
@@ -711,7 +693,7 @@ def get_strategy_generator():
     return _strategy_generator
 
 
-def check_cache(query: str, limit: Optional[int] = None) -> Optional[List[Dict]]:
+def check_cache(query: str, limit: int | None = None) -> list[dict] | None:
     """
     Check if search results exist in cache.
 
@@ -732,7 +714,7 @@ def check_cache(query: str, limit: Optional[int] = None) -> Optional[List[Dict]]
         return None
 
 
-def _cache_results(results: list, query: Optional[str] = None):
+def _cache_results(results: list, query: str | None = None):
     """Cache search results if session manager is available."""
     if _session_manager and results and not results[0].get("error"):
         try:
@@ -775,7 +757,7 @@ def _record_search_only(results: list, query: str):
             logger.warning(f"Failed to record search: {e}")
 
 
-def get_last_search_pmids() -> List[str]:
+def get_last_search_pmids() -> list[str]:
     """Get PMIDs from the most recent search.
 
     Returns:

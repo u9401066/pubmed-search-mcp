@@ -6,7 +6,7 @@ Provides functionality to download PDFs from PubMed Central Open Access.
 
 import asyncio
 import logging
-from typing import Optional
+from pathlib import Path
 
 from Bio import Entrez
 
@@ -24,7 +24,7 @@ class PDFMixin:
         download_pmc_pdf: Download PDF from PMC Open Access
     """
 
-    async def get_pmc_fulltext_url(self, pmid: str) -> Optional[str]:
+    async def get_pmc_fulltext_url(self, pmid: str) -> str | None:
         """
         Get the PubMed Central full text URL if available (Open Access).
         Uses elink to find PMC ID and constructs the download URL.
@@ -55,7 +55,7 @@ class PDFMixin:
                             return f"https://www.ncbi.nlm.nih.gov/pmc/articles/PMC{pmc_id}/pdf/"
             return None
         except Exception as e:
-            logger.error(f"Error getting PMC URL: {e}")
+            logger.exception(f"Error getting PMC URL: {e}")
             return None
 
     async def download_pmc_pdf(self, pmid: str, output_path: str) -> bool:
@@ -74,14 +74,10 @@ class PDFMixin:
             pmc_id = await self._get_pmc_id(pmid)
 
             if not pmc_id:
-                logger.info(
-                    f"PMID {pmid}: No PMC ID found - article not in PubMed Central Open Access"
-                )
+                logger.info(f"PMID {pmid}: No PMC ID found - article not in PubMed Central Open Access")
                 return False
 
-            logger.info(
-                f"PMID {pmid}: Found PMC ID {pmc_id}, attempting PDF download..."
-            )
+            logger.info(f"PMID {pmid}: Found PMC ID {pmc_id}, attempting PDF download...")
 
             # Try to get the PDF from PMC
             oa_url = f"https://www.ncbi.nlm.nih.gov/pmc/articles/PMC{pmc_id}/pdf/"
@@ -97,11 +93,8 @@ class PDFMixin:
             content_type = response.headers.get("Content-Type", "")
 
             if response.status_code == 200 and "application/pdf" in content_type:
-                with open(output_path, "wb") as f:
-                    f.write(response.content)
-                logger.info(
-                    f"PMID {pmid}: PDF downloaded successfully ({len(response.content)} bytes)"
-                )
+                Path(output_path).write_bytes(response.content)
+                logger.info(f"PMID {pmid}: PDF downloaded successfully ({len(response.content)} bytes)")
                 return True
 
             logger.warning(
@@ -109,12 +102,10 @@ class PDFMixin:
             )
             return False
         except Exception as e:
-            logger.error(f"PMID {pmid}: Error downloading PDF - {e}")
+            logger.exception(f"PMID {pmid}: Error downloading PDF - {e}")
             return False
 
-    async def download_pdf(
-        self, pmid: str, output_path: Optional[str] = None
-    ) -> Optional[bytes]:
+    async def download_pdf(self, pmid: str, output_path: str | None = None) -> bytes | None:
         """
         Download PDF and return as bytes.
 
@@ -145,16 +136,15 @@ class PDFMixin:
 
             if response.status_code == 200 and "application/pdf" in content_type:
                 if output_path:
-                    with open(output_path, "wb") as f:
-                        f.write(response.content)
+                    Path(output_path).write_bytes(response.content)
                 return response.content
 
             return None
         except Exception as e:
-            logger.error(f"PMID {pmid}: Error downloading PDF - {e}")
+            logger.exception(f"PMID {pmid}: Error downloading PDF - {e}")
             return None
 
-    async def _get_pmc_id(self, pmid: str) -> Optional[str]:
+    async def _get_pmc_id(self, pmid: str) -> str | None:
         """
         Get PMC ID for a given PMID using elink.
 
@@ -186,5 +176,5 @@ class PDFMixin:
             logger.debug(f"PMID {pmid}: No PMC link found")
             return None
         except Exception as e:
-            logger.error(f"PMID {pmid}: Error looking up PMC ID - {e}")
+            logger.exception(f"PMID {pmid}: Error looking up PMC ID - {e}")
             return None

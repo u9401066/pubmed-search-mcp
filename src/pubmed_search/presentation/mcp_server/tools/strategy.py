@@ -8,7 +8,7 @@ Tools:
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Union
 
 from mcp.server.fastmcp import FastMCP
@@ -116,9 +116,7 @@ def register_strategy_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             )
 
         check_spelling = InputNormalizer.normalize_bool(check_spelling, default=True)
-        include_suggestions = InputNormalizer.normalize_bool(
-            include_suggestions, default=True
-        )
+        include_suggestions = InputNormalizer.normalize_bool(include_suggestions, default=True)
 
         # Validate strategy
         valid_strategies = ["comprehensive", "focused", "exploratory"]
@@ -126,9 +124,7 @@ def register_strategy_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         if strategy not in valid_strategies:
             strategy = "comprehensive"  # Default fallback
 
-        logger.info(
-            f"Generating search queries for topic: {topic}, strategy: {strategy}"
-        )
+        logger.info(f"Generating search queries for topic: {topic}, strategy: {strategy}")
 
         _strategy_generator = get_strategy_generator()
 
@@ -214,9 +210,7 @@ def register_strategy_tools(mcp: FastMCP, searcher: LiteratureSearcher):
 
     # ❌ REMOVED v0.1.20: Auto-executed by unified_search when results < 10
     # @mcp.tool()
-    async def expand_search_queries(
-        topic: str, existing_query_ids: str = "", expansion_type: str = "mesh"
-    ) -> str:
+    async def expand_search_queries(topic: str, existing_query_ids: str = "", expansion_type: str = "mesh") -> str:
         """
         Expand search when initial results are insufficient.
 
@@ -254,21 +248,17 @@ def register_strategy_tools(mcp: FastMCP, searcher: LiteratureSearcher):
 
         _strategy_generator = get_strategy_generator()
 
-        existing = set(x.strip() for x in existing_query_ids.split(",") if x.strip())
+        existing = {x.strip() for x in existing_query_ids.split(",") if x.strip()}
         queries = []
         query_counter = len(existing) + 1
 
         # Use intelligent MeSH-based expansion if available
         if expansion_type == "mesh" and _strategy_generator:
             try:
-                result = await _strategy_generator.expand_with_mesh(
-                    topic=topic, existing_queries=list(existing)
-                )
+                result = await _strategy_generator.expand_with_mesh(topic=topic, existing_queries=list(existing))
 
                 if result.get("queries"):
-                    result["instruction"] = (
-                        "Execute these in PARALLEL, then merge with previous results"
-                    )
+                    result["instruction"] = "Execute these in PARALLEL, then merge with previous results"
                     return json.dumps(result, indent=2, ensure_ascii=False)
 
             except Exception as e:
@@ -354,7 +344,7 @@ def register_strategy_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 )
                 query_counter += 1
 
-            current_year = datetime.now().year
+            current_year = datetime.now(tz=timezone.utc).year
             qid = f"q{query_counter}_recent"
             if qid not in existing:
                 queries.append(

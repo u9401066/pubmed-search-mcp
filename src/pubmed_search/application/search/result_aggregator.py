@@ -34,7 +34,7 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
@@ -160,9 +160,7 @@ class RankingConfig:
     quality_article_type_weights: dict[str, float] = field(default_factory=dict)
 
     # Source trust levels (0-1)
-    source_trust_levels: dict[str, float] = field(
-        default_factory=lambda: DEFAULT_SOURCE_TRUST.copy()
-    )
+    source_trust_levels: dict[str, float] = field(default_factory=lambda: DEFAULT_SOURCE_TRUST.copy())
 
     # Minimum score to include in results
     min_score: float = 0.0
@@ -461,24 +459,20 @@ class ResultAggregator:
             )
 
             # Store scores in article (UnifiedArticle has these fields)
-            article._ranking_score = final_score
-            article._relevance_score = scores.get("relevance", 0.5)
-            article._quality_score = scores.get("quality", 0.5)
+            article.ranking_score = final_score
+            article.relevance_score = scores.get("relevance", 0.5)
+            article.quality_score = scores.get("quality", 0.5)
 
         # Sort by score (descending)
         sorted_articles = sorted(
             articles,
-            key=lambda a: getattr(a, "_ranking_score", 0) or 0,
+            key=lambda a: getattr(a, "ranking_score", 0) or 0,
             reverse=True,
         )
 
         # Filter by minimum score
         if config.min_score > 0:
-            sorted_articles = [
-                a
-                for a in sorted_articles
-                if (getattr(a, "_ranking_score", 0) or 0) >= config.min_score
-            ]
+            sorted_articles = [a for a in sorted_articles if (getattr(a, "ranking_score", 0) or 0) >= config.min_score]
 
         # Limit results
         if config.max_results:
@@ -580,7 +574,7 @@ class ResultAggregator:
         groups = uf.get_groups()
         unique: list[UnifiedArticle] = []
 
-        for _root, member_indices in groups.items():
+        for member_indices in groups.values():
             if len(member_indices) == 1:
                 unique.append(articles[member_indices[0]])
             else:
@@ -700,9 +694,7 @@ class ResultAggregator:
         keywords_overlap = len(query_terms & keywords_terms) / len(query_terms)
 
         # Weighted combination (title most important)
-        relevance = (
-            title_overlap * 0.5 + abstract_overlap * 0.3 + keywords_overlap * 0.2
-        )
+        relevance = title_overlap * 0.5 + abstract_overlap * 0.3 + keywords_overlap * 0.2
 
         return min(relevance, 1.0)
 
@@ -724,9 +716,7 @@ class ResultAggregator:
 
         # Article type boost
         article_type = (
-            article.article_type.value
-            if hasattr(article, "article_type") and article.article_type
-            else "unknown"
+            article.article_type.value if hasattr(article, "article_type") and article.article_type else "unknown"
         )
         score += config.get_article_type_weight(article_type)
 
@@ -768,17 +758,14 @@ class ResultAggregator:
         if not article.year:
             return 0.3  # Unknown year gets low score
 
-        current_year = datetime.now().year
+        current_year = datetime.now(tz=timezone.utc).year
         age = current_year - article.year
 
-        if age < 0:
-            age = 0  # Future publication (preprint?)
+        age = max(age, 0)  # Future publication (preprint?)
 
         # Exponential decay
         half_life = config.recency_half_life_years
-        score = 0.5 ** (age / half_life)
-
-        return score
+        return 0.5 ** (age / half_life)
 
     def _calculate_impact(self, article: UnifiedArticle) -> float:
         """
@@ -889,10 +876,9 @@ class ResultAggregator:
         # Boost if article mentions most/all entities
         if match_ratio >= 0.8:
             return min(1.0, 0.7 + match_ratio * 0.3)
-        elif match_ratio >= 0.5:
+        if match_ratio >= 0.5:
             return 0.5 + match_ratio * 0.3
-        else:
-            return 0.3 + match_ratio * 0.4
+        return 0.3 + match_ratio * 0.4
 
     # =========================================================================
     # Utility Methods
@@ -903,8 +889,7 @@ class ResultAggregator:
         """Normalize DOI for comparison."""
         doi = doi.lower().strip()
         for prefix in ["https://doi.org/", "http://doi.org/", "doi:"]:
-            if doi.startswith(prefix):
-                doi = doi[len(prefix) :]
+            doi = doi.removeprefix(prefix)
         return doi
 
     @staticmethod
@@ -920,9 +905,7 @@ class ResultAggregator:
         title = re.sub(r"[^\w\s]", "", title)
 
         # Remove extra whitespace
-        title = re.sub(r"\s+", " ", title).strip()
-
-        return title
+        return re.sub(r"\s+", " ", title).strip()
 
 
 # =============================================================================

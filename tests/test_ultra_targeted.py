@@ -2,8 +2,9 @@
 Ultra-targeted tests to push from 88% to 90% coverage.
 """
 
-from unittest.mock import Mock, patch, MagicMock
 import tempfile
+from pathlib import Path
+from unittest.mock import MagicMock, Mock, patch
 
 
 class TestSessionReadingList:
@@ -98,8 +99,8 @@ class TestServerRegisterTools:
 
     async def test_register_all_tools(self):
         """Test registering all tools."""
-        from pubmed_search.presentation.mcp_server.tools import register_all_tools
         from pubmed_search import LiteratureSearcher
+        from pubmed_search.presentation.mcp_server.tools import register_all_tools
 
         mock_mcp = Mock()
         mock_mcp.tool = Mock(return_value=lambda f: f)
@@ -143,9 +144,7 @@ class TestSearchFilterLogic:
         searcher = TestSearcher()
 
         with (
-            patch(
-                "pubmed_search.infrastructure.ncbi.search.Entrez.esearch"
-            ) as mock_esearch,
+            patch("pubmed_search.infrastructure.ncbi.search.Entrez.esearch") as mock_esearch,
             patch("pubmed_search.infrastructure.ncbi.search.Entrez.read") as mock_read,
         ):
             mock_read.return_value = {"IdList": ["123"]}
@@ -166,9 +165,7 @@ class TestSearchFilterLogic:
         searcher = TestSearcher()
 
         with (
-            patch(
-                "pubmed_search.infrastructure.ncbi.search.Entrez.esearch"
-            ) as mock_esearch,
+            patch("pubmed_search.infrastructure.ncbi.search.Entrez.esearch") as mock_esearch,
             patch("pubmed_search.infrastructure.ncbi.search.Entrez.read") as mock_read,
         ):
             mock_read.return_value = {"IdList": ["123"]}
@@ -187,12 +184,8 @@ class TestStrategyCornerCases:
         from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
 
         with (
-            patch(
-                "pubmed_search.infrastructure.ncbi.strategy.Entrez.espell"
-            ) as mock_espell,
-            patch(
-                "pubmed_search.infrastructure.ncbi.strategy.Entrez.read"
-            ) as mock_read,
+            patch("pubmed_search.infrastructure.ncbi.strategy.Entrez.espell") as mock_espell,
+            patch("pubmed_search.infrastructure.ncbi.strategy.Entrez.read") as mock_read,
         ):
             mock_read.return_value = {"CorrectedQuery": ""}
             mock_espell.return_value = MagicMock()
@@ -208,13 +201,12 @@ class TestExportWithLargeFile:
 
     async def test_export_file_path_creation(self):
         """Test export file path creation."""
-        from pubmed_search.presentation.mcp_server.tools.export import _save_export_file
         import os
 
+        from pubmed_search.presentation.mcp_server.tools.export import _save_export_file
+
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch(
-                "pubmed_search.presentation.mcp_server.tools.export.EXPORT_DIR", tmpdir
-            ):
+            with patch("pubmed_search.presentation.mcp_server.tools.export.EXPORT_DIR", Path(tmpdir)):
                 content = "test content"
                 file_path = _save_export_file(content, "ris", 10)
 
@@ -233,9 +225,7 @@ class TestSessionFindCached:
             manager.create_session("Test")
 
             # Add cached search
-            manager.add_to_cache(
-                [{"pmid": "111", "title": "Test 1"}, {"pmid": "222", "title": "Test 2"}]
-            )
+            manager.add_to_cache([{"pmid": "111", "title": "Test 1"}, {"pmid": "222", "title": "Test 2"}])
             manager.add_search_record("specific query", ["111", "222"])
 
             # Try to find it
@@ -269,12 +259,8 @@ class TestClientFindMethods:
         searcher = LiteratureSearcher(email="test@example.com")
 
         with (
-            patch(
-                "pubmed_search.infrastructure.ncbi.citation.Entrez.elink"
-            ) as mock_elink,
-            patch(
-                "pubmed_search.infrastructure.ncbi.citation.Entrez.read"
-            ) as mock_read,
+            patch("pubmed_search.infrastructure.ncbi.citation.Entrez.elink") as mock_elink,
+            patch("pubmed_search.infrastructure.ncbi.citation.Entrez.read") as mock_read,
             patch.object(searcher, "fetch_details", return_value=[{"pmid": "999"}]),
         ):
             mock_read.return_value = [{"LinkSetDb": [{"Link": [{"Id": "999"}]}]}]

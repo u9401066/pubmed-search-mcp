@@ -1,8 +1,8 @@
 """Tests for citation_tree.py — format converters, node/edge builders, and build tool."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
 
 from pubmed_search.presentation.mcp_server.tools.citation_tree import (
     _escape_mermaid,
@@ -17,7 +17,6 @@ from pubmed_search.presentation.mcp_server.tools.citation_tree import (
     _to_vis,
     register_citation_tree_tools,
 )
-
 
 # ============================================================
 # _make_node

@@ -38,9 +38,7 @@ class TestSearchGeneTool:
     @pytest.mark.asyncio
     async def test_success(self, tools):
         mock_client = AsyncMock()
-        mock_client.search_gene.return_value = [
-            {"gene_id": "672", "symbol": "BRCA1", "name": "BRCA1 DNA repair"}
-        ]
+        mock_client.search_gene.return_value = [{"gene_id": "672", "symbol": "BRCA1", "name": "BRCA1 DNA repair"}]
         with patch(
             "pubmed_search.infrastructure.sources.ncbi_extended.get_ncbi_extended_client",
             return_value=mock_client,
@@ -228,9 +226,7 @@ class TestSearchClinvarTool:
     @pytest.mark.asyncio
     async def test_success(self, tools):
         mock_client = AsyncMock()
-        mock_client.search_clinvar.return_value = [
-            {"variant_id": "1", "gene": "BRCA1", "significance": "Pathogenic"}
-        ]
+        mock_client.search_clinvar.return_value = [{"variant_id": "1", "gene": "BRCA1", "significance": "Pathogenic"}]
         with patch(
             "pubmed_search.infrastructure.sources.ncbi_extended.get_ncbi_extended_client",
             return_value=mock_client,

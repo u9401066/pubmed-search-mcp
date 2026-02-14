@@ -61,21 +61,21 @@ try {
     # Run mutmut with limited mutations for faster feedback
     # Remove --use-coverage for full coverage
     uv run mutmut run --paths-to-mutate=$targetPath --tests-dir=$testsPath --CI
-    
+
     $mutmutExitCode = $LASTEXITCODE
-    
+
     Write-Host ""
     Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Cyan
     Write-Host "Mutation Testing Results" -ForegroundColor Cyan
     Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Cyan
     Write-Host ""
-    
+
     # Get mutation summary
     uv run mutmut results
-    
+
     Write-Host ""
     Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Cyan
-    
+
 } catch {
     Write-Host "❌ Mutation testing failed: $_" -ForegroundColor Red
     exit 1

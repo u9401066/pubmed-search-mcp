@@ -31,7 +31,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from functools import wraps
-from typing import Any, Callable, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from pubmed_search.shared.exceptions import (
     NetworkError,
@@ -39,6 +39,9 @@ from pubmed_search.shared.exceptions import (
     RateLimitError,
     ServiceUnavailableError,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +70,6 @@ _rate_limits: dict[str, dict[str, float]] = {}
 def with_retry(
     max_retries: int | None = None,
     base_delay: float | None = None,
-    retryable_status_codes: tuple[int, ...] = (429, 500, 502, 503, 504),
 ) -> Callable[[Callable[..., T]], Callable[..., T]]:
     """
     Decorator for automatic retry with exponential backoff.
@@ -75,7 +77,6 @@ def with_retry(
     Args:
         max_retries: Maximum retry attempts (default from config)
         base_delay: Base delay in seconds (default from config)
-        retryable_status_codes: HTTP status codes to retry on
 
     Usage:
         @with_retry(max_retries=3)
@@ -87,9 +88,7 @@ def with_retry(
         @wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> T:
             retries = max_retries if max_retries is not None else _config["max_retries"]
-            delay = (
-                base_delay if base_delay is not None else _config["retry_base_delay"]
-            )
+            delay = base_delay if base_delay is not None else _config["retry_base_delay"]
             last_error: Exception | None = None
 
             for attempt in range(retries + 1):
@@ -100,8 +99,7 @@ def with_retry(
                     wait_time = e.context.retry_after or (delay * (2**attempt))
                     if attempt < retries:
                         logger.warning(
-                            f"Rate limited (attempt {attempt + 1}/{retries + 1}), "
-                            f"retrying in {wait_time:.1f}s"
+                            f"Rate limited (attempt {attempt + 1}/{retries + 1}), retrying in {wait_time:.1f}s"
                         )
                         time.sleep(wait_time)
                     else:
@@ -111,8 +109,7 @@ def with_retry(
                     wait_time = delay * (2**attempt)
                     if attempt < retries:
                         logger.warning(
-                            f"Service unavailable (attempt {attempt + 1}/{retries + 1}), "
-                            f"retrying in {wait_time:.1f}s"
+                            f"Service unavailable (attempt {attempt + 1}/{retries + 1}), retrying in {wait_time:.1f}s"
                         )
                         time.sleep(wait_time)
                     else:
@@ -122,8 +119,7 @@ def with_retry(
                     wait_time = delay * (2**attempt)
                     if attempt < retries:
                         logger.warning(
-                            f"Network error (attempt {attempt + 1}/{retries + 1}), "
-                            f"retrying in {wait_time:.1f}s"
+                            f"Network error (attempt {attempt + 1}/{retries + 1}), retrying in {wait_time:.1f}s"
                         )
                         time.sleep(wait_time)
                     else:
@@ -155,17 +151,11 @@ def configure_proxy(
         - HTTPS_PROXY / https_proxy
     """
     # Priority: explicit args > environment variables
-    _config["http_proxy"] = (
-        http_proxy or os.environ.get("HTTP_PROXY") or os.environ.get("http_proxy")
-    )
-    _config["https_proxy"] = (
-        https_proxy or os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
-    )
+    _config["http_proxy"] = http_proxy or os.environ.get("HTTP_PROXY") or os.environ.get("http_proxy")
+    _config["https_proxy"] = https_proxy or os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
 
     if _config["http_proxy"] or _config["https_proxy"]:
-        logger.info(
-            f"Proxy configured: HTTP={_config['http_proxy']}, HTTPS={_config['https_proxy']}"
-        )
+        logger.info(f"Proxy configured: HTTP={_config['http_proxy']}, HTTPS={_config['https_proxy']}")
 
 
 def configure_client(
@@ -287,10 +277,8 @@ def http_get(
     _rate_limit(domain, rate_limit_interval)
 
     # Build request
-    request = urllib.request.Request(url)
-    request.add_header(
-        "User-Agent", f"{_config['user_agent']} (mailto:{_config['contact_email']})"
-    )
+    request = urllib.request.Request(url)  # noqa: S310
+    request.add_header("User-Agent", f"{_config['user_agent']} (mailto:{_config['contact_email']})")
 
     if expect_json:
         request.add_header("Accept", "application/json")
@@ -310,7 +298,7 @@ def http_get(
                 return json.loads(content)
             return content
     except urllib.error.HTTPError as e:
-        logger.error(f"HTTP error {e.code}: {e.reason} for {url}")
+        logger.exception(f"HTTP error {e.code}: {e.reason} for {url}")
         if e.code == 429:
             # Try to extract Retry-After header
             retry_after = float(e.headers.get("Retry-After", 1.0))
@@ -318,24 +306,23 @@ def http_get(
                 f"Rate limited by {domain}",
                 retry_after=retry_after,
             ) from e
-        elif e.code >= 500:
+        if e.code >= 500:
             raise ServiceUnavailableError(
                 f"HTTP {e.code}: {e.reason}",
                 service=domain,
             ) from e
-        else:
-            raise NetworkError(f"HTTP {e.code}: {e.reason} for {url}") from e
+        raise NetworkError(f"HTTP {e.code}: {e.reason} for {url}") from e
     except urllib.error.URLError as e:
-        logger.error(f"URL error: {e.reason} for {url}")
+        logger.exception(f"URL error: {e.reason} for {url}")
         raise NetworkError(f"Connection failed: {e.reason}") from e
     except json.JSONDecodeError as e:
-        logger.error(f"JSON decode error: {e}")
+        logger.exception(f"JSON decode error: {e}")
         raise ParseError("Invalid JSON response", source=domain) from e
     except TimeoutError as e:
-        logger.error(f"Timeout for {url}")
+        logger.exception(f"Timeout for {url}")
         raise NetworkError(f"Request timeout after {request_timeout}s") from e
     except Exception as e:
-        logger.error(f"Request error: {e}")
+        logger.exception(f"Request error: {e}")
         raise NetworkError(f"Request failed: {e}") from e
 
 
@@ -402,10 +389,8 @@ def http_post(
         encoded_data = None
         content_type = None
 
-    request = urllib.request.Request(url, data=encoded_data, method="POST")
-    request.add_header(
-        "User-Agent", f"{_config['user_agent']} (mailto:{_config['contact_email']})"
-    )
+    request = urllib.request.Request(url, data=encoded_data, method="POST")  # noqa: S310
+    request.add_header("User-Agent", f"{_config['user_agent']} (mailto:{_config['contact_email']})")
 
     if content_type:
         request.add_header("Content-Type", content_type)
@@ -428,31 +413,30 @@ def http_post(
                 return json.loads(content)
             return content
     except urllib.error.HTTPError as e:
-        logger.error(f"HTTP error {e.code}: {e.reason} for {url}")
+        logger.exception(f"HTTP error {e.code}: {e.reason} for {url}")
         if e.code == 429:
             retry_after = float(e.headers.get("Retry-After", 1.0))
             raise RateLimitError(
                 f"Rate limited by {domain}",
                 retry_after=retry_after,
             ) from e
-        elif e.code >= 500:
+        if e.code >= 500:
             raise ServiceUnavailableError(
                 f"HTTP {e.code}: {e.reason}",
                 service=domain,
             ) from e
-        else:
-            raise NetworkError(f"HTTP {e.code}: {e.reason} for {url}") from e
+        raise NetworkError(f"HTTP {e.code}: {e.reason} for {url}") from e
     except urllib.error.URLError as e:
-        logger.error(f"URL error: {e.reason} for {url}")
+        logger.exception(f"URL error: {e.reason} for {url}")
         raise NetworkError(f"Connection failed: {e.reason}") from e
     except json.JSONDecodeError as e:
-        logger.error(f"JSON decode error: {e}")
+        logger.exception(f"JSON decode error: {e}")
         raise ParseError("Invalid JSON response", source=domain) from e
     except TimeoutError as e:
-        logger.error(f"Timeout for {url}")
+        logger.exception(f"Timeout for {url}")
         raise NetworkError(f"Request timeout after {request_timeout}s") from e
     except Exception as e:
-        logger.error(f"Request error: {e}")
+        logger.exception(f"Request error: {e}")
         raise NetworkError(f"Request failed: {e}") from e
 
 
@@ -472,9 +456,7 @@ def http_post_safe(
     Prefer http_post() for new code.
     """
     try:
-        return http_post(
-            url, data, json_data, headers, expect_json, rate_limit_interval, timeout
-        )
+        return http_post(url, data, json_data, headers, expect_json, rate_limit_interval, timeout)
     except Exception:
         return None
 

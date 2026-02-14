@@ -2,7 +2,6 @@
 
 from datetime import date
 
-
 from pubmed_search.domain.entities.article import (
     ArticleType,
     Author,
@@ -12,7 +11,6 @@ from pubmed_search.domain.entities.article import (
     SourceMetadata,
     UnifiedArticle,
 )
-
 
 # ============================================================
 # Author
@@ -179,9 +177,7 @@ class TestUnifiedArticleProperties:
         assert a.has_open_access is True
 
     async def test_has_open_access_gold(self):
-        a = UnifiedArticle(
-            title="T", primary_source="p", oa_status=OpenAccessStatus.GOLD
-        )
+        a = UnifiedArticle(title="T", primary_source="p", oa_status=OpenAccessStatus.GOLD)
         assert a.has_open_access is True
 
     async def test_has_open_access_links(self):
@@ -315,9 +311,7 @@ class TestCiteApa:
         assert "(n.d.)" in cite
 
     async def test_apa_many_authors(self):
-        authors = [
-            Author(given_name=f"Author{i}", family_name=f"Last{i}") for i in range(10)
-        ]
+        authors = [Author(given_name=f"Author{i}", family_name=f"Last{i}") for i in range(10)]
         a = UnifiedArticle(title="T", primary_source="p", authors=authors, year=2024)
         cite = a.cite_apa()
         assert "..." in cite  # APA truncates after 7
@@ -566,36 +560,26 @@ class TestFromSemanticScholar:
 class TestMergeFrom:
     async def test_fills_missing_identifiers(self):
         a = UnifiedArticle(title="T", primary_source="pubmed", pmid="12345")
-        b = UnifiedArticle(
-            title="T", primary_source="crossref", doi="10.1/x", pmc="PMC999"
-        )
+        b = UnifiedArticle(title="T", primary_source="crossref", doi="10.1/x", pmc="PMC999")
         a.merge_from(b)
         assert a.doi == "10.1/x"
         assert a.pmc == "PMC999"
 
     async def test_does_not_overwrite_existing(self):
-        a = UnifiedArticle(
-            title="T", primary_source="pubmed", pmid="12345", doi="10.1/orig"
-        )
+        a = UnifiedArticle(title="T", primary_source="pubmed", pmid="12345", doi="10.1/orig")
         b = UnifiedArticle(title="T", primary_source="crossref", doi="10.1/other")
         a.merge_from(b)
         assert a.doi == "10.1/orig"
 
     async def test_merges_authors_if_empty(self):
         a = UnifiedArticle(title="T", primary_source="pubmed")
-        b = UnifiedArticle(
-            title="T", primary_source="crossref", authors=[Author(full_name="Smith")]
-        )
+        b = UnifiedArticle(title="T", primary_source="crossref", authors=[Author(full_name="Smith")])
         a.merge_from(b)
         assert len(a.authors) == 1
 
     async def test_keeps_existing_authors(self):
-        a = UnifiedArticle(
-            title="T", primary_source="pubmed", authors=[Author(full_name="Doe")]
-        )
-        b = UnifiedArticle(
-            title="T", primary_source="crossref", authors=[Author(full_name="Smith")]
-        )
+        a = UnifiedArticle(title="T", primary_source="pubmed", authors=[Author(full_name="Doe")])
+        b = UnifiedArticle(title="T", primary_source="crossref", authors=[Author(full_name="Smith")])
         a.merge_from(b)
         assert len(a.authors) == 1
         assert a.authors[0].full_name == "Doe"
@@ -659,12 +643,8 @@ class TestMergeFrom:
         assert "crossref" in source_names
 
     async def test_updates_article_type(self):
-        a = UnifiedArticle(
-            title="T", primary_source="p", article_type=ArticleType.UNKNOWN
-        )
-        b = UnifiedArticle(
-            title="T", primary_source="p", article_type=ArticleType.REVIEW
-        )
+        a = UnifiedArticle(title="T", primary_source="p", article_type=ArticleType.UNKNOWN)
+        b = UnifiedArticle(title="T", primary_source="p", article_type=ArticleType.REVIEW)
         a.merge_from(b)
         assert a.article_type == ArticleType.REVIEW
 
@@ -693,14 +673,12 @@ class TestToDict:
 
     async def test_with_ranking_score(self):
         a = UnifiedArticle(title="T", primary_source="p")
-        a._ranking_score = 0.85
+        a.ranking_score = 0.85
         d = a.to_dict()
         assert d["_ranking_score"] == 0.85
 
     async def test_with_similarity(self):
-        a = UnifiedArticle(
-            title="T", primary_source="p", similarity_score=0.95, similarity_source="s2"
-        )
+        a = UnifiedArticle(title="T", primary_source="p", similarity_score=0.95, similarity_source="s2")
         d = a.to_dict()
         assert d["similarity"]["score"] == 0.95
 

@@ -5,12 +5,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from pubmed_search.infrastructure.sources.unpaywall import (
+    DEFAULT_EMAIL,
     UnpaywallClient,
     find_oa_link,
     find_pdf_link,
-    is_open_access,
     get_oa_status,
-    DEFAULT_EMAIL,
+    is_open_access,
 )
 
 
@@ -84,6 +84,7 @@ class TestMakeRequest:
 
     async def test_500(self, client):
         from unittest.mock import AsyncMock
+
         import httpx
 
         mock_response = MagicMock()
@@ -98,12 +99,11 @@ class TestMakeRequest:
 
     async def test_url_error(self, client):
         from unittest.mock import AsyncMock
+
         import httpx
 
         client._client = MagicMock()
-        client._client.get = AsyncMock(
-            side_effect=httpx.RequestError("DNS failed", request=MagicMock())
-        )
+        client._client.get = AsyncMock(side_effect=httpx.RequestError("DNS failed", request=MagicMock()))
         assert await client._make_request("https://test.com") is None
 
     async def test_generic_error(self, client):
@@ -207,10 +207,7 @@ class TestGetPdfLink:
             "best_oa_location": {"url_for_pdf": "https://pdf.example.com/best.pdf"},
             "oa_locations": [],
         }
-        assert (
-            await client.get_pdf_link("10.1234/test")
-            == "https://pdf.example.com/best.pdf"
-        )
+        assert await client.get_pdf_link("10.1234/test") == "https://pdf.example.com/best.pdf"
 
     @patch.object(UnpaywallClient, "get_oa_status")
     async def test_fallback_location(self, mock_status, client):
@@ -222,10 +219,7 @@ class TestGetPdfLink:
                 {"url_for_pdf": "https://pdf.example.com/alt.pdf"},
             ],
         }
-        assert (
-            await client.get_pdf_link("10.1234/test")
-            == "https://pdf.example.com/alt.pdf"
-        )
+        assert await client.get_pdf_link("10.1234/test") == "https://pdf.example.com/alt.pdf"
 
     @patch.object(UnpaywallClient, "get_oa_status")
     async def test_no_pdf_anywhere(self, mock_status, client):
@@ -334,9 +328,7 @@ class TestConvenienceFunctions:
         import pubmed_search.infrastructure.sources.unpaywall as mod
 
         mod._unpaywall_client = None
-        with patch.object(
-            UnpaywallClient, "get_best_oa_link", return_value="https://oa.example.com"
-        ):
+        with patch.object(UnpaywallClient, "get_best_oa_link", return_value="https://oa.example.com"):
             result = await find_oa_link("10.1234/test")
             assert result == "https://oa.example.com"
         mod._unpaywall_client = None
@@ -345,9 +337,7 @@ class TestConvenienceFunctions:
         import pubmed_search.infrastructure.sources.unpaywall as mod
 
         mod._unpaywall_client = None
-        with patch.object(
-            UnpaywallClient, "get_pdf_link", return_value="https://pdf.example.com"
-        ):
+        with patch.object(UnpaywallClient, "get_pdf_link", return_value="https://pdf.example.com"):
             result = await find_pdf_link("10.1234/test")
             assert result == "https://pdf.example.com"
         mod._unpaywall_client = None
@@ -356,9 +346,7 @@ class TestConvenienceFunctions:
         import pubmed_search.infrastructure.sources.unpaywall as mod
 
         mod._unpaywall_client = None
-        with patch.object(
-            UnpaywallClient, "get_oa_status", return_value={"is_oa": True}
-        ):
+        with patch.object(UnpaywallClient, "get_oa_status", return_value={"is_oa": True}):
             assert await is_open_access("10.1234/test") is True
         mod._unpaywall_client = None
 
@@ -374,9 +362,7 @@ class TestConvenienceFunctions:
         import pubmed_search.infrastructure.sources.unpaywall as mod
 
         mod._unpaywall_client = None
-        with patch.object(
-            UnpaywallClient, "get_oa_status", return_value={"oa_status": "gold"}
-        ):
+        with patch.object(UnpaywallClient, "get_oa_status", return_value={"oa_status": "gold"}):
             assert await get_oa_status("10.1234/test") == "gold"
         mod._unpaywall_client = None
 

@@ -34,7 +34,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Literal, Optional
+from typing import Literal
 
 import httpx
 
@@ -95,11 +95,9 @@ class PDFLink:
 
     url: str
     source: PDFSource
-    access_type: Literal[
-        "open_access", "green_oa", "gold", "bronze", "hybrid", "subscription", "unknown"
-    ] = "unknown"
-    version: Optional[str] = None  # "published", "accepted", "submitted"
-    license: Optional[str] = None
+    access_type: Literal["open_access", "green_oa", "gold", "bronze", "hybrid", "subscription", "unknown"] = "unknown"
+    version: str | None = None  # "published", "accepted", "submitted"
+    license: str | None = None
     is_direct_pdf: bool = True  # vs landing page
     confidence: float = 1.0  # How confident we are this is a valid PDF
 
@@ -115,11 +113,11 @@ class DownloadResult:
     """Result of a PDF download attempt."""
 
     success: bool
-    content: Optional[bytes] = None
-    content_type: Optional[str] = None
-    source: Optional[PDFSource] = None
-    url: Optional[str] = None
-    error: Optional[str] = None
+    content: bytes | None = None
+    content_type: str | None = None
+    source: PDFSource | None = None
+    url: str | None = None
+    error: str | None = None
     file_size: int = 0
 
     @property
@@ -136,23 +134,23 @@ class FulltextResult:
     """Complete fulltext retrieval result."""
 
     # Identifiers
-    pmid: Optional[str] = None
-    pmcid: Optional[str] = None
-    doi: Optional[str] = None
-    title: Optional[str] = None
+    pmid: str | None = None
+    pmcid: str | None = None
+    doi: str | None = None
+    title: str | None = None
 
     # Content
-    text_content: Optional[str] = None
-    pdf_bytes: Optional[bytes] = None
-    structured_sections: Optional[dict[str, str]] = None
+    text_content: str | None = None
+    pdf_bytes: bytes | None = None
+    structured_sections: dict[str, str] | None = None
 
     # Links found
     pdf_links: list[PDFLink] = field(default_factory=list)
 
     # Metadata
-    source_used: Optional[PDFSource] = None
+    source_used: PDFSource | None = None
     content_type: Literal["xml", "pdf", "text", "none"] = "none"
-    extraction_method: Optional[str] = None
+    extraction_method: str | None = None
 
     # Quality indicators
     has_figures: bool = False
@@ -218,9 +216,7 @@ class FulltextDownloader:
     RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 
     # User agent for academic access
-    USER_AGENT = (
-        "Mozilla/5.0 (compatible; PubMed-Search-MCP/1.0; mailto:research@example.com)"
-    )
+    USER_AGENT = "Mozilla/5.0 (compatible; PubMed-Search-MCP/1.0; mailto:research@example.com)"
 
     def __init__(
         self,
@@ -238,7 +234,7 @@ class FulltextDownloader:
         """
         self._timeout = timeout
         self._max_retries = max_retries
-        self._client: Optional[httpx.AsyncClient] = None
+        self._client: httpx.AsyncClient | None = None
         self._semaphore = asyncio.Semaphore(max_concurrent)
         self._rate_limit_until: float = 0  # Unix timestamp for global rate limit
 
@@ -265,9 +261,9 @@ class FulltextDownloader:
 
     async def get_pdf_links(
         self,
-        pmid: Optional[str] = None,
-        pmcid: Optional[str] = None,
-        doi: Optional[str] = None,
+        pmid: str | None = None,
+        pmcid: str | None = None,
+        doi: str | None = None,
     ) -> list[PDFLink]:
         """
         Collect PDF links from all available sources.
@@ -310,11 +306,7 @@ class FulltextDownloader:
             if "arxiv" in doi.lower():
                 tasks.append(self._get_arxiv_link(doi))
             # bioRxiv/medRxiv DOIs start with 10.1101
-            if (
-                "10.1101/" in doi
-                or "biorxiv" in doi.lower()
-                or "medrxiv" in doi.lower()
-            ):
+            if "10.1101/" in doi or "biorxiv" in doi.lower() or "medrxiv" in doi.lower():
                 tasks.append(self._get_preprint_link(doi))
 
         # Run all link gathering in parallel
@@ -340,10 +332,10 @@ class FulltextDownloader:
 
     async def download_pdf(
         self,
-        pmid: Optional[str] = None,
-        pmcid: Optional[str] = None,
-        doi: Optional[str] = None,
-        preferred_source: Optional[PDFSource] = None,
+        pmid: str | None = None,
+        pmcid: str | None = None,
+        doi: str | None = None,
+        preferred_source: PDFSource | None = None,
         try_all: bool = True,
     ) -> DownloadResult:
         """
@@ -363,9 +355,7 @@ class FulltextDownloader:
         links = await self.get_pdf_links(pmid, pmcid, doi)
 
         if not links:
-            return DownloadResult(
-                success=False, error="No PDF links found for this article"
-            )
+            return DownloadResult(success=False, error="No PDF links found for this article")
 
         # Reorder if preferred source specified
         if preferred_source:
@@ -389,22 +379,16 @@ class FulltextDownloader:
                 return result
 
             last_error = result.error
-            logger.debug(
-                f"Download failed from {link.source.display_name}: {result.error}"
-            )
+            logger.debug(f"Download failed from {link.source.display_name}: {result.error}")
 
-        return DownloadResult(
-            success=False, error=f"All sources failed. Last error: {last_error}"
-        )
+        return DownloadResult(success=False, error=f"All sources failed. Last error: {last_error}")
 
     async def get_fulltext(
         self,
-        pmid: Optional[str] = None,
-        pmcid: Optional[str] = None,
-        doi: Optional[str] = None,
-        strategy: Literal[
-            "links_only", "download_best", "extract_text", "try_all"
-        ] = "extract_text",
+        pmid: str | None = None,
+        pmcid: str | None = None,
+        doi: str | None = None,
+        strategy: Literal["links_only", "download_best", "extract_text", "try_all"] = "extract_text",
     ) -> FulltextResult:
         """
         Get fulltext using specified strategy.
@@ -479,8 +463,8 @@ class FulltextDownloader:
 
     async def _get_pmc_links(
         self,
-        pmid: Optional[str],
-        pmcid: Optional[str],
+        pmid: str | None,
+        pmcid: str | None,
     ) -> list[PDFLink]:
         """Get PDF links from PubMed Central."""
         links = []
@@ -518,9 +502,7 @@ class FulltextDownloader:
             try:
                 from Bio import Entrez
 
-                handle = Entrez.elink(
-                    dbfrom="pubmed", db="pmc", id=pmid, linkname="pubmed_pmc"
-                )
+                handle = Entrez.elink(dbfrom="pubmed", db="pmc", id=pmid, linkname="pubmed_pmc")
                 record = Entrez.read(handle)
                 handle.close()
 
@@ -563,9 +545,7 @@ class FulltextDownloader:
                 if best.get("url_for_pdf"):
                     host_type = best.get("host_type", "unknown")
                     source = (
-                        PDFSource.UNPAYWALL_PUBLISHER
-                        if host_type == "publisher"
-                        else PDFSource.UNPAYWALL_REPOSITORY
+                        PDFSource.UNPAYWALL_PUBLISHER if host_type == "publisher" else PDFSource.UNPAYWALL_REPOSITORY
                     )
                     links.append(
                         PDFLink(
@@ -645,9 +625,7 @@ class FulltextDownloader:
                     PDFLink(
                         url=paper["pdf_url"],
                         source=PDFSource.SEMANTIC_SCHOLAR,
-                        access_type="open_access"
-                        if paper.get("is_open_access")
-                        else "unknown",
+                        access_type="open_access" if paper.get("is_open_access") else "unknown",
                         is_direct_pdf=True,
                         confidence=0.8,
                     )
@@ -688,7 +666,7 @@ class FulltextDownloader:
 
         return links
 
-    async def _get_arxiv_link(self, doi: str) -> Optional[PDFLink]:
+    async def _get_arxiv_link(self, doi: str) -> PDFLink | None:
         """Get PDF link from arXiv."""
         # Extract arXiv ID from DOI
         match = re.search(r"arxiv[./:](\d+\.\d+)(v\d+)?", doi.lower())
@@ -705,7 +683,7 @@ class FulltextDownloader:
             )
         return None
 
-    async def _get_preprint_link(self, doi: str) -> Optional[PDFLink]:
+    async def _get_preprint_link(self, doi: str) -> PDFLink | None:
         """
         Get PDF link from bioRxiv/medRxiv.
 
@@ -742,9 +720,7 @@ class FulltextDownloader:
             # Try v1 first, but also provide fallback without version
             return PDFLink(
                 url=f"{base_url}v1.full.pdf",  # Most common: version 1
-                source=PDFSource.BIORXIV
-                if "biorxiv" in base_url
-                else PDFSource.MEDRXIV,
+                source=PDFSource.BIORXIV if "biorxiv" in base_url else PDFSource.MEDRXIV,
                 access_type="open_access",
                 version="submitted",
                 is_direct_pdf=True,
@@ -761,7 +737,7 @@ class FulltextDownloader:
                 is_direct_pdf=True,
                 confidence=0.7,
             )
-        elif "medrxiv" in doi.lower():
+        if "medrxiv" in doi.lower():
             return PDFLink(
                 url=f"https://www.medrxiv.org/content/{doi_clean}.full.pdf",
                 source=PDFSource.MEDRXIV,
@@ -783,9 +759,7 @@ class FulltextDownloader:
 
         try:
             client = await self._get_client()
-            url = (
-                f"https://api.crossref.org/works/{doi}?mailto=pubmed-search@example.com"
-            )
+            url = f"https://api.crossref.org/works/{doi}?mailto=pubmed-search@example.com"
 
             resp = await client.get(url)
             if resp.status_code != 200:
@@ -868,9 +842,7 @@ class FulltextDownloader:
 
                         # Determine if it's likely a PDF
                         is_pdf = (
-                            link_url.endswith(".pdf")
-                            or "pdf" in link_url.lower()
-                            or "fulltext" in provider.lower()
+                            link_url.endswith(".pdf") or "pdf" in link_url.lower() or "fulltext" in provider.lower()
                         )
 
                         links.append(
@@ -923,9 +895,7 @@ class FulltextDownloader:
                                 source=PDFSource.DOAJ,
                                 access_type="gold",  # DOAJ = Gold OA
                                 is_direct_pdf="fulltext" in link_type.lower(),
-                                confidence=0.9
-                                if "fulltext" in link_type.lower()
-                                else 0.7,
+                                confidence=0.9 if "fulltext" in link_type.lower() else 0.7,
                             )
                         )
 
@@ -1005,7 +975,7 @@ class FulltextDownloader:
         self,
         url: str,
         source: PDFSource,
-        headers: Optional[dict] = None,
+        headers: dict | None = None,
     ) -> DownloadResult:
         """
         Download with retry and exponential backoff.
@@ -1056,9 +1026,7 @@ class FulltextDownloader:
             # Exponential backoff
             if attempt < self._max_retries:
                 delay = min(self.RETRY_BASE_DELAY * (2**attempt), self.RETRY_MAX_DELAY)
-                logger.debug(
-                    f"Retry {attempt + 1}/{self._max_retries} in {delay:.1f}s: {last_error}"
-                )
+                logger.debug(f"Retry {attempt + 1}/{self._max_retries} in {delay:.1f}s: {last_error}")
                 await asyncio.sleep(delay)
 
         return DownloadResult(
@@ -1072,7 +1040,7 @@ class FulltextDownloader:
         self,
         url: str,
         source: PDFSource,
-        headers: Optional[dict] = None,
+        headers: dict | None = None,
     ) -> DownloadResult:
         """Actual download implementation with streaming support."""
         try:
@@ -1125,15 +1093,14 @@ class FulltextDownloader:
                 content = b"".join(chunks)
 
                 # Check if it's actually a PDF
-                if not content[:4] == b"%PDF":
-                    if b"<html" in content[:1000].lower():
-                        return DownloadResult(
-                            success=False,
-                            error="Received HTML instead of PDF (landing page)",
-                            url=url,
-                            source=source,
-                            content_type="text/html",
-                        )
+                if content[:4] != b"%PDF" and b"<html" in content[:1000].lower():
+                    return DownloadResult(
+                        success=False,
+                        error="Received HTML instead of PDF (landing page)",
+                        url=url,
+                        source=source,
+                        content_type="text/html",
+                    )
 
                 return DownloadResult(
                     success=True,
@@ -1167,7 +1134,7 @@ class FulltextDownloader:
         """Download PDF from URL with retry and rate limiting."""
         return await self._download_with_retry(url, source)
 
-    async def _extract_pdf_text(self, pdf_bytes: Optional[bytes]) -> Optional[str]:
+    async def _extract_pdf_text(self, pdf_bytes: bytes | None) -> str | None:
         """
         Extract text from PDF bytes.
 
@@ -1200,8 +1167,9 @@ class FulltextDownloader:
 
         # Try pdfplumber as fallback
         try:
-            import pdfplumber
             import io
+
+            import pdfplumber
 
             text_parts = []
             with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
@@ -1214,15 +1182,13 @@ class FulltextDownloader:
                 return "\n\n".join(text_parts)
 
         except ImportError:
-            logger.warning(
-                "No PDF extraction library available (install PyMuPDF or pdfplumber)"
-            )
+            logger.warning("No PDF extraction library available (install PyMuPDF or pdfplumber)")
         except Exception as e:
             logger.warning(f"pdfplumber extraction failed: {e}")
 
         return None
 
-    async def _get_structured_fulltext(self, pmcid: str) -> Optional[dict]:
+    async def _get_structured_fulltext(self, pmcid: str) -> dict | None:
         """Get structured fulltext from Europe PMC XML."""
         try:
             from pubmed_search.infrastructure.sources import get_europe_pmc_client
@@ -1266,7 +1232,7 @@ class FulltextDownloader:
 # =============================================================================
 
 
-_downloader_instance: Optional[FulltextDownloader] = None
+_downloader_instance: FulltextDownloader | None = None
 
 
 def get_fulltext_downloader() -> FulltextDownloader:
@@ -1278,12 +1244,10 @@ def get_fulltext_downloader() -> FulltextDownloader:
 
 
 async def download_fulltext(
-    pmid: Optional[str] = None,
-    pmcid: Optional[str] = None,
-    doi: Optional[str] = None,
-    strategy: Literal[
-        "links_only", "download_best", "extract_text", "try_all"
-    ] = "extract_text",
+    pmid: str | None = None,
+    pmcid: str | None = None,
+    doi: str | None = None,
+    strategy: Literal["links_only", "download_best", "extract_text", "try_all"] = "extract_text",
 ) -> FulltextResult:
     """
     Convenience function to download fulltext.

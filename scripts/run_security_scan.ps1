@@ -41,17 +41,17 @@ Write-Host "📦 2/3 Running Safety (dependency vulnerability scan)..." -Foregro
 try {
     # Generate requirements from UV
     uv export --no-hashes --no-dev -o requirements-check.txt 2>$null
-    
+
     # Run safety check
     uv run safety check --file=requirements-check.txt --json --output safety-report.json
-    
+
     if ($LASTEXITCODE -eq 0) {
         Write-Host "  ✅ Safety: No vulnerable dependencies found" -ForegroundColor Green
     } else {
         Write-Host "  ⚠️  Safety: Found vulnerable dependencies (see safety-report.json)" -ForegroundColor Yellow
         $exitCode = 1
     }
-    
+
     # Clean up temporary file
     Remove-Item requirements-check.txt -ErrorAction SilentlyContinue
 } catch {

@@ -4,16 +4,16 @@ Tests the progressive query relaxation engine that automatically
 broadens search criteria when 0 results are returned.
 """
 
-import pytest
 from unittest.mock import AsyncMock, patch
 
-from pubmed_search.presentation.mcp_server.tools.unified import (
-    RelaxationStep,
-    RelaxationResult,
-    _generate_relaxation_steps,
-    _auto_relax_search,
-)
+import pytest
 
+from pubmed_search.presentation.mcp_server.tools.unified import (
+    RelaxationResult,
+    RelaxationStep,
+    _auto_relax_search,
+    _generate_relaxation_steps,
+)
 
 # ============================================================================
 # _generate_relaxation_steps tests
@@ -67,9 +67,7 @@ class TestGenerateRelaxationSteps:
 
     def test_field_tag_relaxation(self):
         """Field tags like [Title] should be removed."""
-        steps = _generate_relaxation_steps(
-            "(cancer)[Title] AND (treatment)[MeSH Terms]", None, None, {}
-        )
+        steps = _generate_relaxation_steps("(cancer)[Title] AND (treatment)[MeSH Terms]", None, None, {})
 
         field_steps = [s for s in steps if s.action == "remove_field_tags"]
         assert len(field_steps) == 1
@@ -79,9 +77,7 @@ class TestGenerateRelaxationSteps:
 
     def test_and_to_or_relaxation(self):
         """AND should be relaxed to OR."""
-        steps = _generate_relaxation_steps(
-            "cancer AND treatment AND therapy", None, None, {}
-        )
+        steps = _generate_relaxation_steps("cancer AND treatment AND therapy", None, None, {})
 
         or_steps = [s for s in steps if s.action == "and_to_or"]
         assert len(or_steps) == 1
@@ -114,15 +110,11 @@ class TestGenerateRelaxationSteps:
         )
 
         levels = [s.level for s in steps]
-        assert levels == sorted(levels), (
-            f"Levels not monotonically increasing: {levels}"
-        )
+        assert levels == sorted(levels), f"Levels not monotonically increasing: {levels}"
         # Verify ordering: filters < year < pub_type/field_tags < AND→OR < core
         actions = [s.action for s in steps]
         if "remove_advanced_filters" in actions and "remove_year_filter" in actions:
-            assert actions.index("remove_advanced_filters") < actions.index(
-                "remove_year_filter"
-            )
+            assert actions.index("remove_advanced_filters") < actions.index("remove_year_filter")
 
     def test_empty_query_no_crash(self):
         """Empty query should not crash."""
@@ -212,9 +204,7 @@ class TestAutoRelaxSearch:
 
         call_count = 0
 
-        async def mock_search(
-            searcher, query, limit, min_year=None, max_year=None, **kwargs
-        ):
+        async def mock_search(searcher, query, limit, min_year=None, max_year=None, **kwargs):
             nonlocal call_count
             call_count += 1
             if call_count <= 1:

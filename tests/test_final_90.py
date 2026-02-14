@@ -2,7 +2,7 @@
 Final push to reach 90% coverage - targeting specific uncovered lines.
 """
 
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 
 class TestSearchFilterResults:
@@ -42,9 +42,7 @@ class TestSearchAmbiguousTerms:
         searcher = TestSearcher()
 
         with (
-            patch(
-                "pubmed_search.infrastructure.ncbi.search.Entrez.esearch"
-            ) as mock_esearch,
+            patch("pubmed_search.infrastructure.ncbi.search.Entrez.esearch") as mock_esearch,
             patch("pubmed_search.infrastructure.ncbi.search.Entrez.read") as mock_read,
         ):
             mock_read.return_value = {"IdList": ["123"]}
@@ -79,9 +77,7 @@ class TestSearchResultParsing:
                             {"Label": "METHODS", "#text": "Methods text"},
                         ]
                     },
-                    "AuthorList": [
-                        {"LastName": "Smith", "ForeName": "John", "Initials": "J"}
-                    ],
+                    "AuthorList": [{"LastName": "Smith", "ForeName": "John", "Initials": "J"}],
                     "Journal": {
                         "Title": "Test Journal",
                         "ISOAbbreviation": "Test J",
@@ -118,12 +114,8 @@ class TestStrategyBuildQueries:
         from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
 
         with (
-            patch(
-                "pubmed_search.infrastructure.ncbi.strategy.Entrez.espell"
-            ) as mock_espell,
-            patch(
-                "pubmed_search.infrastructure.ncbi.strategy.Entrez.read"
-            ) as mock_read,
+            patch("pubmed_search.infrastructure.ncbi.strategy.Entrez.espell") as mock_espell,
+            patch("pubmed_search.infrastructure.ncbi.strategy.Entrez.read") as mock_read,
         ):
             mock_read.return_value = {"CorrectedQuery": ""}
             mock_espell.return_value = MagicMock()
@@ -167,8 +159,9 @@ class TestSessionStatePersistence:
 
     async def test_session_touch(self):
         """Test session touch updates timestamp."""
-        from pubmed_search.application.session import ResearchSession
         import time
+
+        from pubmed_search.application.session import ResearchSession
 
         session = ResearchSession(session_id="test")
         original_time = session.updated_at
@@ -315,8 +308,9 @@ class TestBaseRateLimit:
 
     async def test_rate_limit_interval(self):
         """Test rate limiting respects interval."""
-        from pubmed_search.infrastructure.ncbi.base import _rate_limit
         import time
+
+        from pubmed_search.infrastructure.ncbi.base import _rate_limit
 
         start = time.time()
         _rate_limit()

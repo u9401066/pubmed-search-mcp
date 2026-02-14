@@ -97,7 +97,7 @@ def register_ncbi_extended_tools(mcp: FastMCP) -> None:
             )
 
         except Exception as e:
-            logger.error(f"Gene search failed: {e}")
+            logger.exception(f"Gene search failed: {e}")
             return ResponseFormatter.error(e, tool_name="search_gene")
 
     @mcp.tool()
@@ -131,16 +131,15 @@ def register_ncbi_extended_tools(mcp: FastMCP) -> None:
 
             if result:
                 return json.dumps(result, indent=2, ensure_ascii=False)
-            else:
-                return ResponseFormatter.no_results(
-                    suggestions=[
-                        f"Gene ID '{gene_id}' not found",
-                        "Use search_gene to find valid Gene IDs",
-                    ]
-                )
+            return ResponseFormatter.no_results(
+                suggestions=[
+                    f"Gene ID '{gene_id}' not found",
+                    "Use search_gene to find valid Gene IDs",
+                ]
+            )
 
         except Exception as e:
-            logger.error(f"Get gene details failed: {e}")
+            logger.exception(f"Get gene details failed: {e}")
             return ResponseFormatter.error(e, tool_name="get_gene_details")
 
     @mcp.tool()
@@ -199,7 +198,7 @@ def register_ncbi_extended_tools(mcp: FastMCP) -> None:
             )
 
         except Exception as e:
-            logger.error(f"Get gene literature failed: {e}")
+            logger.exception(f"Get gene literature failed: {e}")
             return ResponseFormatter.error(e, tool_name="get_gene_literature")
 
     # =========================================================================
@@ -272,7 +271,7 @@ def register_ncbi_extended_tools(mcp: FastMCP) -> None:
             )
 
         except Exception as e:
-            logger.error(f"Compound search failed: {e}")
+            logger.exception(f"Compound search failed: {e}")
             return ResponseFormatter.error(e, tool_name="search_compound")
 
     @mcp.tool()
@@ -306,16 +305,15 @@ def register_ncbi_extended_tools(mcp: FastMCP) -> None:
 
             if result:
                 return json.dumps(result, indent=2, ensure_ascii=False)
-            else:
-                return ResponseFormatter.no_results(
-                    suggestions=[
-                        f"Compound CID '{cid}' not found",
-                        "Use search_compound to find valid CIDs",
-                    ]
-                )
+            return ResponseFormatter.no_results(
+                suggestions=[
+                    f"Compound CID '{cid}' not found",
+                    "Use search_compound to find valid CIDs",
+                ]
+            )
 
         except Exception as e:
-            logger.error(f"Get compound details failed: {e}")
+            logger.exception(f"Get compound details failed: {e}")
             return ResponseFormatter.error(e, tool_name="get_compound_details")
 
     @mcp.tool()
@@ -373,7 +371,7 @@ def register_ncbi_extended_tools(mcp: FastMCP) -> None:
             )
 
         except Exception as e:
-            logger.error(f"Get compound literature failed: {e}")
+            logger.exception(f"Get compound literature failed: {e}")
             return ResponseFormatter.error(e, tool_name="get_compound_literature")
 
     # =========================================================================
@@ -446,5 +444,5 @@ def register_ncbi_extended_tools(mcp: FastMCP) -> None:
             )
 
         except Exception as e:
-            logger.error(f"ClinVar search failed: {e}")
+            logger.exception(f"ClinVar search failed: {e}")
             return ResponseFormatter.error(e, tool_name="search_clinvar")

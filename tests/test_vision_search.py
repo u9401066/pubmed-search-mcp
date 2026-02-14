@@ -2,15 +2,16 @@
 Tests for vision-based search tools.
 """
 
-import pytest
 import base64
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from pubmed_search.presentation.mcp_server.tools.vision_search import (
-    is_valid_url,
-    is_base64_image,
-    parse_data_uri,
     fetch_image_as_base64,
+    is_base64_image,
+    is_valid_url,
+    parse_data_uri,
     register_vision_tools,
 )
 

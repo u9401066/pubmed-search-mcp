@@ -9,7 +9,7 @@ Covers:
 - Output formatting with journal metrics
 """
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -18,7 +18,6 @@ from pubmed_search.domain.entities.article import (
     SourceMetadata,
     UnifiedArticle,
 )
-
 
 # =============================================================================
 # JournalMetrics Dataclass Tests
@@ -205,11 +204,7 @@ class TestExtractOpenAlexSourceId:
             sources=[
                 SourceMetadata(
                     source="openalex",
-                    raw_data={
-                        "primary_location": {
-                            "source": {"id": "https://openalex.org/S12345"}
-                        }
-                    },
+                    raw_data={"primary_location": {"source": {"id": "https://openalex.org/S12345"}}},
                 )
             ],
         )
@@ -259,11 +254,7 @@ class TestExtractOpenAlexSourceId:
         article = UnifiedArticle(
             title="Test",
             primary_source="openalex",
-            sources=[
-                SourceMetadata(
-                    source="openalex", raw_data={"_openalex_source_id": ""}
-                )
-            ],
+            sources=[SourceMetadata(source="openalex", raw_data={"_openalex_source_id": ""})],
         )
         result = _extract_openalex_source_id(article)
         assert result is None
@@ -281,9 +272,7 @@ class TestExtractOpenAlexSourceId:
                     source="openalex",
                     raw_data={
                         "_openalex_source_id": "https://openalex.org/S62468778",
-                        "primary_location": {
-                            "source": {"id": "https://openalex.org/S99999"}
-                        },
+                        "primary_location": {"source": {"id": "https://openalex.org/S99999"}},
                     },
                 )
             ],
@@ -345,9 +334,7 @@ class TestEnrichWithJournalMetrics:
                 sources=[
                     SourceMetadata(
                         source="openalex",
-                        raw_data={
-                            "_openalex_source_id": "https://openalex.org/S62468778"
-                        },
+                        raw_data={"_openalex_source_id": "https://openalex.org/S62468778"},
                     )
                 ],
             ),
@@ -357,24 +344,18 @@ class TestEnrichWithJournalMetrics:
                 sources=[
                     SourceMetadata(
                         source="openalex",
-                        raw_data={
-                            "_openalex_source_id": "https://openalex.org/S137773608"
-                        },
+                        raw_data={"_openalex_source_id": "https://openalex.org/S137773608"},
                     )
                 ],
             ),
             UnifiedArticle(
                 title="Article 3 (PubMed only)",
                 primary_source="pubmed",
-                sources=[
-                    SourceMetadata(source="pubmed", raw_data={"pmid": "99999"})
-                ],
+                sources=[SourceMetadata(source="pubmed", raw_data={"pmid": "99999"})],
             ),
         ]
 
-    async def test_enriches_openalex_articles(
-        self, articles_with_openalex_source, mock_source_data
-    ):
+    async def test_enriches_openalex_articles(self, articles_with_openalex_source, mock_source_data):
         from pubmed_search.presentation.mcp_server.tools.unified import (
             _enrich_with_journal_metrics,
         )
@@ -391,10 +372,7 @@ class TestEnrichWithJournalMetrics:
         # Article 1 should have NEJM metrics
         assert articles_with_openalex_source[0].journal_metrics is not None
         assert articles_with_openalex_source[0].journal_metrics.h_index == 1000
-        assert (
-            articles_with_openalex_source[0].journal_metrics.two_year_mean_citedness
-            == 91.25
-        )
+        assert articles_with_openalex_source[0].journal_metrics.two_year_mean_citedness == 91.25
         assert articles_with_openalex_source[0].journal_metrics.impact_tier == "top"
 
         # Article 2 should have Nature metrics
@@ -418,9 +396,7 @@ class TestEnrichWithJournalMetrics:
                 sources=[
                     SourceMetadata(
                         source="openalex",
-                        raw_data={
-                            "_openalex_source_id": "https://openalex.org/S62468778"
-                        },
+                        raw_data={"_openalex_source_id": "https://openalex.org/S62468778"},
                     )
                 ],
             ),
@@ -447,9 +423,7 @@ class TestEnrichWithJournalMetrics:
             UnifiedArticle(
                 title="PubMed only",
                 primary_source="pubmed",
-                sources=[
-                    SourceMetadata(source="pubmed", raw_data={"pmid": "12345"})
-                ],
+                sources=[SourceMetadata(source="pubmed", raw_data={"pmid": "12345"})],
             ),
         ]
 
@@ -478,18 +452,14 @@ class TestEnrichWithJournalMetrics:
                 sources=[
                     SourceMetadata(
                         source="openalex",
-                        raw_data={
-                            "_openalex_source_id": "https://openalex.org/S12345"
-                        },
+                        raw_data={"_openalex_source_id": "https://openalex.org/S12345"},
                     )
                 ],
             ),
         ]
 
         mock_client = AsyncMock()
-        mock_client.get_sources_batch = AsyncMock(
-            side_effect=Exception("API down")
-        )
+        mock_client.get_sources_batch = AsyncMock(side_effect=Exception("API down"))
 
         with patch(
             "pubmed_search.presentation.mcp_server.tools.unified.get_openalex_client",
@@ -512,9 +482,7 @@ class TestEnrichWithJournalMetrics:
                 sources=[
                     SourceMetadata(
                         source="openalex",
-                        raw_data={
-                            "_openalex_source_id": "https://openalex.org/S62468778"
-                        },
+                        raw_data={"_openalex_source_id": "https://openalex.org/S62468778"},
                     )
                 ],
             )
@@ -564,9 +532,7 @@ class TestEnrichWithJournalMetrics:
                 sources=[
                     SourceMetadata(
                         source="openalex",
-                        raw_data={
-                            "_openalex_source_id": "https://openalex.org/S99999999"
-                        },
+                        raw_data={"_openalex_source_id": "https://openalex.org/S99999999"},
                     )
                 ],
             ),

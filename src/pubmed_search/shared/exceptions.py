@@ -31,10 +31,10 @@ from typing import Any
 
 # ExceptionGroup is available in Python 3.11+
 if sys.version_info >= (3, 11):
-    from builtins import ExceptionGroup as ExceptionGroup
+    from builtins import ExceptionGroup
 else:
     # Fallback for Python 3.10
-    class ExceptionGroup(Exception):  # type: ignore[no-redef]
+    class ExceptionGroup(Exception):  # type: ignore[no-redef]  # noqa: N818
         """Fallback ExceptionGroup for Python < 3.11."""
 
         def __init__(self, message: str, exceptions: list[Exception]) -> None:
@@ -90,7 +90,7 @@ class PubMedSearchError(Exception):
     - Agent-friendly formatting
     """
 
-    __slots__ = ("context", "severity", "category", "retryable")
+    __slots__ = ("category", "context", "retryable", "severity")
 
     def __init__(
         self,
@@ -474,7 +474,7 @@ def get_retry_delay(error: Exception, attempt: int) -> float:
     import random
 
     delay = base_delay * (2**attempt)
-    jitter = random.uniform(0, 0.1 * delay)
+    jitter = random.uniform(0, 0.1 * delay)  # noqa: S311
 
     # Cap at 30 seconds
     return min(delay + jitter, 30.0)

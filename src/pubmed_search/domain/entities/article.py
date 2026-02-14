@@ -34,11 +34,43 @@ Example:
 
 from __future__ import annotations
 
+import contextlib
 import re
 from dataclasses import dataclass, field
 from datetime import date
 from enum import Enum
 from typing import Any, Literal
+
+# ── Impact classification thresholds ────────────────────────────────────────
+# JournalInfo.impact_tier: 2-year mean citedness (≈ Impact Factor)
+_IMPACT_TIER_TOP = 10.0
+_IMPACT_TIER_HIGH = 5.0
+_IMPACT_TIER_MEDIUM = 2.0
+_IMPACT_TIER_LOW = 1.0
+
+# CitationMetrics.impact_level: NIH percentile thresholds
+_PERCENTILE_HIGH = 90
+_PERCENTILE_MEDIUM = 50
+
+# CitationMetrics.impact_level: Relative Citation Ratio thresholds
+_RCR_HIGH = 2.0
+_RCR_MEDIUM = 0.5
+
+# CitationMetrics.impact_level: Raw citation count thresholds
+_CITATION_HIGH = 100
+_CITATION_MEDIUM = 10
+
+# Author display limits
+_AUTHOR_DISPLAY_MAX = 3
+_APA_AUTHOR_MAX = 7
+_CROSSREF_AUTHOR_BATCH = 2  # Min date-parts for full date
+
+# APA citation formatting
+_APA_AUTHOR_TRUNCATE = 6  # Show first 6 authors before "..."
+_APA_DUAL_AUTHOR = 2  # When exactly 2 authors, join with "&"
+
+# CrossRef date parsing: minimum date parts for full date
+_DATE_PARTS_FULL = 3
 
 
 class ArticleType(Enum):
@@ -109,9 +141,7 @@ class Author:
         """Return name in citation format: 'Smith J' or 'Smith JA'."""
         if self.family_name and self.given_name:
             # Extract initials
-            initials = "".join(
-                word[0].upper() for word in self.given_name.split() if word
-            )
+            initials = "".join(word[0].upper() for word in self.given_name.split() if word)
             return f"{self.family_name} {initials}"
         return self.display_name
 
@@ -124,10 +154,7 @@ class Author:
                 family_name=data.get("family"),
                 given_name=data.get("given"),
                 orcid=data.get("ORCID"),
-                affiliation="; ".join(
-                    aff.get("name", "") for aff in data.get("affiliation", [])
-                )
-                or None,
+                affiliation="; ".join(aff.get("name", "") for aff in data.get("affiliation", [])) or None,
             )
         # OpenAlex format
         if "display_name" in data:
@@ -157,9 +184,7 @@ class OpenAccessLink:
     """
 
     url: str
-    version: Literal[
-        "publishedVersion", "acceptedVersion", "submittedVersion", "unknown"
-    ] = "unknown"
+    version: Literal["publishedVersion", "acceptedVersion", "submittedVersion", "unknown"] = "unknown"
     host_type: Literal["publisher", "repository", "preprint"] | None = None
     license: str | None = None  # e.g., "cc-by", "cc-by-nc"
     is_best: bool = False  # Best available OA option
@@ -202,13 +227,13 @@ class JournalMetrics:
         """Categorize journal by 2yr_mean_citedness (≈ IF)."""
         if self.two_year_mean_citedness is None:
             return "unknown"
-        if self.two_year_mean_citedness >= 10.0:
+        if self.two_year_mean_citedness >= _IMPACT_TIER_TOP:
             return "top"  # Top-tier journals (Nature, NEJM, Lancet...)
-        if self.two_year_mean_citedness >= 5.0:
+        if self.two_year_mean_citedness >= _IMPACT_TIER_HIGH:
             return "high"
-        if self.two_year_mean_citedness >= 2.0:
+        if self.two_year_mean_citedness >= _IMPACT_TIER_MEDIUM:
             return "medium"
-        if self.two_year_mean_citedness >= 1.0:
+        if self.two_year_mean_citedness >= _IMPACT_TIER_LOW:
             return "low"
         return "minimal"
 
@@ -239,21 +264,21 @@ class CitationMetrics:
     def impact_level(self) -> Literal["high", "medium", "low", "unknown"]:
         """Categorize impact level based on available metrics."""
         if self.nih_percentile is not None:
-            if self.nih_percentile >= 90:
+            if self.nih_percentile >= _PERCENTILE_HIGH:
                 return "high"
-            if self.nih_percentile >= 50:
+            if self.nih_percentile >= _PERCENTILE_MEDIUM:
                 return "medium"
             return "low"
         if self.relative_citation_ratio is not None:
-            if self.relative_citation_ratio >= 2.0:
+            if self.relative_citation_ratio >= _RCR_HIGH:
                 return "high"
-            if self.relative_citation_ratio >= 0.5:
+            if self.relative_citation_ratio >= _RCR_MEDIUM:
                 return "medium"
             return "low"
         if self.citation_count is not None:
-            if self.citation_count >= 100:
+            if self.citation_count >= _CITATION_HIGH:
                 return "high"
-            if self.citation_count >= 10:
+            if self.citation_count >= _CITATION_MEDIUM:
                 return "medium"
             return "low"
         return "unknown"
@@ -346,17 +371,15 @@ class UnifiedArticle:
     # === Similarity Scores (from external APIs) ===
     similarity_score: float | None = None  # 0.0-1.0, higher = more similar
     similarity_source: str | None = None  # e.g., "semantic_scholar", "europe_pmc"
-    similarity_details: dict[str, float] | None = field(
-        default=None, repr=False
-    )  # Multiple sources
+    similarity_details: dict[str, float] | None = field(default=None, repr=False)  # Multiple sources
 
     # === Source Tracking ===
     sources: list[SourceMetadata] = field(default_factory=list)
 
-    # === Internal ===
-    _relevance_score: float | None = field(default=None, repr=False)
-    _quality_score: float | None = field(default=None, repr=False)
-    _ranking_score: float | None = field(default=None, repr=False)
+    # === Internal (ranking scores, set by ResultAggregator) ===
+    relevance_score: float | None = field(default=None, repr=False)
+    quality_score: float | None = field(default=None, repr=False)
+    ranking_score: float | None = field(default=None, repr=False)
 
     # ===================================================================
     # Properties
@@ -412,9 +435,9 @@ class UnifiedArticle:
         """Return formatted author string for display."""
         if not self.authors:
             return "Unknown"
-        names = [a.citation_name for a in self.authors[:3]]
+        names = [a.citation_name for a in self.authors[:_AUTHOR_DISPLAY_MAX]]
         result = ", ".join(names)
-        if len(self.authors) > 3:
+        if len(self.authors) > _AUTHOR_DISPLAY_MAX:
             result += " et al."
         return result
 
@@ -466,20 +489,17 @@ class UnifiedArticle:
         # Authors in APA format: "Last, F. M., & Last, F. M."
         if self.authors:
             apa_names = []
-            for i, author in enumerate(self.authors[:7]):  # APA shows up to 7
+            for _i, author in enumerate(self.authors[:_APA_AUTHOR_MAX]):
                 if author.family_name and author.given_name:
-                    initials = (
-                        ". ".join(w[0].upper() for w in author.given_name.split() if w)
-                        + "."
-                    )
+                    initials = ". ".join(w[0].upper() for w in author.given_name.split() if w) + "."
                     apa_names.append(f"{author.family_name}, {initials}")
                 else:
                     apa_names.append(author.display_name)
-            if len(self.authors) > 7:
-                author_str = ", ".join(apa_names[:6]) + ", ... " + apa_names[-1]
-            elif len(apa_names) == 2:
+            if len(self.authors) > _APA_AUTHOR_MAX:
+                author_str = ", ".join(apa_names[:_APA_AUTHOR_TRUNCATE]) + ", ... " + apa_names[-1]
+            elif len(apa_names) == _APA_DUAL_AUTHOR:
                 author_str = " & ".join(apa_names)
-            elif len(apa_names) > 2:
+            elif len(apa_names) > _APA_DUAL_AUTHOR:
                 author_str = ", ".join(apa_names[:-1]) + ", & " + apa_names[-1]
             else:
                 author_str = apa_names[0] if apa_names else "Unknown"
@@ -654,11 +674,9 @@ class UnifiedArticle:
             parts = date_parts[0]
             if len(parts) >= 1:
                 year = parts[0]
-            if len(parts) >= 3:
-                try:
+            if len(parts) >= _DATE_PARTS_FULL:
+                with contextlib.suppress(ValueError, TypeError):
                     pub_date = date(parts[0], parts[1], parts[2])
-                except (ValueError, TypeError):
-                    pass
 
         # Parse article type
         article_type = ArticleType.UNKNOWN
@@ -756,10 +774,8 @@ class UnifiedArticle:
         year = data.get("publication_year")
         pub_date = None
         if data.get("publication_date"):
-            try:
+            with contextlib.suppress(ValueError):
                 pub_date = date.fromisoformat(data["publication_date"])
-            except ValueError:
-                pass
 
         # Extract IDs
         doi = None
@@ -769,15 +785,9 @@ class UnifiedArticle:
             doi = data["doi"].replace("https://doi.org/", "")
         ids = data.get("ids", {})
         if ids.get("pmid"):
-            pmid = (
-                ids["pmid"].replace("https://pubmed.ncbi.nlm.nih.gov/", "").rstrip("/")
-            )
+            pmid = ids["pmid"].replace("https://pubmed.ncbi.nlm.nih.gov/", "").rstrip("/")
         if ids.get("pmcid"):
-            pmc = (
-                ids["pmcid"]
-                .replace("https://www.ncbi.nlm.nih.gov/pmc/articles/", "")
-                .rstrip("/")
-            )
+            pmc = ids["pmcid"].replace("https://www.ncbi.nlm.nih.gov/pmc/articles/", "").rstrip("/")
 
         # OA info
         is_oa = data.get("open_access", {}).get("is_oa", False)
@@ -884,9 +894,7 @@ class UnifiedArticle:
         # Detect article type
         # S2 publicationVenue.type can be "journal", "conference", "repository"
         article_type = ArticleType.UNKNOWN
-        venue_type = (
-            data.get("publicationVenue", {}) or {}
-        ).get("type", "").lower()
+        venue_type = (data.get("publicationVenue", {}) or {}).get("type", "").lower()
         if venue_type == "journal":
             article_type = ArticleType.JOURNAL_ARTICLE
         elif venue_type == "conference":
@@ -970,10 +978,7 @@ class UnifiedArticle:
             self.publication_date = other.publication_date
         if not self.publisher and other.publisher:
             self.publisher = other.publisher
-        if (
-            self.article_type == ArticleType.UNKNOWN
-            and other.article_type != ArticleType.UNKNOWN
-        ):
+        if self.article_type == ArticleType.UNKNOWN and other.article_type != ArticleType.UNKNOWN:
             self.article_type = other.article_type
 
         # Merge authors (if empty)
@@ -1009,36 +1014,20 @@ class UnifiedArticle:
                 self.citation_metrics = other.citation_metrics
             else:
                 # Prefer higher citation count (more recent data)
-                if (other.citation_metrics.citation_count or 0) > (
-                    self.citation_metrics.citation_count or 0
-                ):
-                    self.citation_metrics.citation_count = (
-                        other.citation_metrics.citation_count
-                    )
+                if (other.citation_metrics.citation_count or 0) > (self.citation_metrics.citation_count or 0):
+                    self.citation_metrics.citation_count = other.citation_metrics.citation_count
                 # Fill missing metrics
-                if (
-                    not self.citation_metrics.relative_citation_ratio
-                    and other.citation_metrics.relative_citation_ratio
-                ):
-                    self.citation_metrics.relative_citation_ratio = (
-                        other.citation_metrics.relative_citation_ratio
-                    )
-                if (
-                    not self.citation_metrics.nih_percentile
-                    and other.citation_metrics.nih_percentile
-                ):
-                    self.citation_metrics.nih_percentile = (
-                        other.citation_metrics.nih_percentile
-                    )
+                if not self.citation_metrics.relative_citation_ratio and other.citation_metrics.relative_citation_ratio:
+                    self.citation_metrics.relative_citation_ratio = other.citation_metrics.relative_citation_ratio
+                if not self.citation_metrics.nih_percentile and other.citation_metrics.nih_percentile:
+                    self.citation_metrics.nih_percentile = other.citation_metrics.nih_percentile
                 if not self.citation_metrics.apt and other.citation_metrics.apt:
                     self.citation_metrics.apt = other.citation_metrics.apt
                 if (
                     not self.citation_metrics.influential_citation_count
                     and other.citation_metrics.influential_citation_count
                 ):
-                    self.citation_metrics.influential_citation_count = (
-                        other.citation_metrics.influential_citation_count
-                    )
+                    self.citation_metrics.influential_citation_count = other.citation_metrics.influential_citation_count
 
         # Merge journal metrics
         if other.journal_metrics:
@@ -1052,7 +1041,10 @@ class UnifiedArticle:
                     self.journal_metrics.issn_l = other.journal_metrics.issn_l
                 if self.journal_metrics.h_index is None and other.journal_metrics.h_index is not None:
                     self.journal_metrics.h_index = other.journal_metrics.h_index
-                if self.journal_metrics.two_year_mean_citedness is None and other.journal_metrics.two_year_mean_citedness is not None:
+                if (
+                    self.journal_metrics.two_year_mean_citedness is None
+                    and other.journal_metrics.two_year_mean_citedness is not None
+                ):
                     self.journal_metrics.two_year_mean_citedness = other.journal_metrics.two_year_mean_citedness
                 if self.journal_metrics.i10_index is None and other.journal_metrics.i10_index is not None:
                     self.journal_metrics.i10_index = other.journal_metrics.i10_index
@@ -1080,9 +1072,7 @@ class UnifiedArticle:
                 "core_id": self.core_id,
                 "arxiv_id": self.arxiv_id,
             },
-            "authors": [
-                {"name": a.display_name, "orcid": a.orcid} for a in self.authors
-            ],
+            "authors": [{"name": a.display_name, "orcid": a.orcid} for a in self.authors],
             "author_string": self.author_string,
             "abstract": self.abstract,
             "journal": self.journal,
@@ -1091,9 +1081,7 @@ class UnifiedArticle:
             "issue": self.issue,
             "pages": self.pages,
             "year": self.year,
-            "publication_date": self.publication_date.isoformat()
-            if self.publication_date
-            else None,
+            "publication_date": self.publication_date.isoformat() if self.publication_date else None,
             "publisher": self.publisher,
             "article_type": self.article_type.value,
             "keywords": self.keywords,
@@ -1155,8 +1143,8 @@ class UnifiedArticle:
                 result["journal_metrics"] = journal_data
 
         # Add ranking scores if calculated
-        if self._ranking_score is not None:
-            result["_ranking_score"] = round(self._ranking_score, 4)
+        if self.ranking_score is not None:
+            result["_ranking_score"] = round(self.ranking_score, 4)
 
         # Add similarity scores if available
         if self.similarity_score is not None:
@@ -1203,8 +1191,7 @@ class UnifiedArticle:
         doi = doi.lower().strip()
         doi = doi.replace("https://doi.org/", "")
         doi = doi.replace("http://doi.org/", "")
-        doi = doi.replace("doi:", "")
-        return doi
+        return doi.replace("doi:", "")
 
     @staticmethod
     def _normalize_pmc(pmc: str) -> str:

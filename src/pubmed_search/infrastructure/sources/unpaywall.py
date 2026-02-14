@@ -28,7 +28,7 @@ from typing import Any, Literal
 
 import httpx
 
-from pubmed_search.infrastructure.sources.base_client import BaseAPIClient, _CONTINUE
+from pubmed_search.infrastructure.sources.base_client import _CONTINUE, BaseAPIClient
 
 logger = logging.getLogger(__name__)
 
@@ -81,9 +81,7 @@ class UnpaywallClient(BaseAPIClient):
             },
         )
 
-    def _handle_expected_status(
-        self, response: httpx.Response, url: str
-    ) -> dict[str, Any] | str | None:
+    def _handle_expected_status(self, response: httpx.Response, url: str) -> dict[str, Any] | str | None:
         """Handle 404 (DOI not found) and 422 (invalid DOI format)."""
         if response.status_code == 404:
             logger.debug("Unpaywall: DOI not found")
@@ -299,9 +297,7 @@ def get_unpaywall_client(email: str | None = None) -> UnpaywallClient:
     if _unpaywall_client is None:
         import os
 
-        _unpaywall_client = UnpaywallClient(
-            email=email or os.environ.get("UNPAYWALL_EMAIL")
-        )
+        _unpaywall_client = UnpaywallClient(email=email or os.environ.get("UNPAYWALL_EMAIL"))
     return _unpaywall_client
 
 

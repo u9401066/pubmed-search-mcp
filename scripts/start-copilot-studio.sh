@@ -1,6 +1,6 @@
 #!/bin/bash
 # Start PubMed Search MCP Server for Microsoft Copilot Studio
-# 
+#
 # Copilot Studio requires:
 # - Streamable HTTP transport (SSE deprecated since Aug 2025)
 # - Public HTTPS URL
@@ -35,29 +35,29 @@ echo ""
 if [ "$1" == "--with-ngrok" ]; then
     echo "Starting with ngrok tunnel..."
     echo ""
-    
+
     # Check if ngrok is installed
     if ! command -v ngrok &> /dev/null; then
         echo "❌ ngrok not found. Install from https://ngrok.com/download"
         exit 1
     fi
-    
+
     # Start server in background
     python run_server.py --transport streamable-http --port $PORT --email "$EMAIL" &
     SERVER_PID=$!
-    
+
     sleep 2
-    
+
     # Start ngrok
     echo "Starting ngrok tunnel..."
     ngrok http $PORT &
     NGROK_PID=$!
-    
+
     sleep 3
-    
+
     # Get ngrok URL
     NGROK_URL=$(curl -s http://localhost:4040/api/tunnels | python3 -c "import sys, json; print(json.load(sys.stdin)['tunnels'][0]['public_url'])" 2>/dev/null || echo "")
-    
+
     if [ -n "$NGROK_URL" ]; then
         echo ""
         echo "=========================================="
@@ -70,7 +70,7 @@ if [ "$1" == "--with-ngrok" ]; then
         echo ""
         echo "Press Ctrl+C to stop"
         echo ""
-        
+
         # Wait for Ctrl+C
         trap "kill $SERVER_PID $NGROK_PID 2>/dev/null; exit 0" SIGINT SIGTERM
         wait
@@ -88,6 +88,6 @@ else
     echo ""
     echo "Local endpoint: http://localhost:$PORT/mcp"
     echo ""
-    
+
     python run_server.py --transport streamable-http --port $PORT --email "$EMAIL"
 fi

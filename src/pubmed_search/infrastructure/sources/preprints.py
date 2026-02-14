@@ -9,13 +9,11 @@ Provides search capabilities for preprint servers:
 
 import logging
 import re
-
-import defusedxml.ElementTree as ET  # Security: prevent XML attacks
-
 from dataclasses import dataclass
-from datetime import datetime
-from typing import Any, Dict, List, Optional
+from datetime import datetime, timezone
+from typing import Any
 
+import defusedxml.ElementTree as ET  # noqa: N817  # Security: prevent XML attacks
 import httpx
 
 logger = logging.getLogger(__name__)
@@ -42,22 +40,20 @@ class PreprintArticle:
     id: str
     title: str
     abstract: str
-    authors: List[str]
+    authors: list[str]
     published: str
-    updated: Optional[str]
+    updated: str | None
     source: str  # "arxiv", "medrxiv", "biorxiv"
-    categories: List[str]
-    pdf_url: Optional[str]
-    doi: Optional[str]
+    categories: list[str]
+    pdf_url: str | None
+    doi: str | None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
             "id": self.id,
             "title": self.title,
-            "abstract": self.abstract[:500] + "..."
-            if len(self.abstract) > 500
-            else self.abstract,
+            "abstract": self.abstract[:500] + "..." if len(self.abstract) > 500 else self.abstract,
             "authors": self.authors,
             "published": self.published,
             "updated": self.updated,
@@ -72,9 +68,9 @@ class PreprintArticle:
         """Get URL to view article on source website."""
         if self.source == "arxiv":
             return f"https://arxiv.org/abs/{self.id}"
-        elif self.source == "medrxiv":
+        if self.source == "medrxiv":
             return f"https://www.medrxiv.org/content/{self.doi}" if self.doi else ""
-        elif self.source == "biorxiv":
+        if self.source == "biorxiv":
             return f"https://www.biorxiv.org/content/{self.doi}" if self.doi else ""
         return ""
 
@@ -97,9 +93,9 @@ class ArXivClient:
         self,
         query: str,
         limit: int = 10,
-        categories: Optional[List[str]] = None,
+        categories: list[str] | None = None,
         sort_by: str = "relevance",  # relevance, lastUpdatedDate, submittedDate
-    ) -> List[PreprintArticle]:
+    ) -> list[PreprintArticle]:
         """
         Search arXiv for preprints.
 
@@ -119,9 +115,7 @@ class ArXivClient:
             # Add main query
             if query:
                 # Escape special characters
-                escaped_query = (
-                    query.replace(":", " ").replace("(", " ").replace(")", " ")
-                )
+                escaped_query = query.replace(":", " ").replace("(", " ").replace(")", " ")
                 search_parts.append(f"all:{escaped_query}")
 
             # Add category filters
@@ -157,10 +151,10 @@ class ArXivClient:
             return self._parse_atom_response(response.text)
 
         except Exception as e:
-            logger.error(f"arXiv search error: {e}")
+            logger.exception(f"arXiv search error: {e}")
             return []
 
-    def _parse_atom_response(self, xml_text: str) -> List[PreprintArticle]:
+    def _parse_atom_response(self, xml_text: str) -> list[PreprintArticle]:
         """Parse Atom XML response from arXiv."""
         articles = []
 
@@ -187,9 +181,7 @@ class ArXivClient:
                     # Extract title
                     title_elem = entry.find("atom:title", ns)
                     title = (
-                        title_elem.text.strip().replace("\n", " ")
-                        if title_elem is not None and title_elem.text
-                        else ""
+                        title_elem.text.strip().replace("\n", " ") if title_elem is not None and title_elem.text else ""
                     )
 
                     # Extract abstract
@@ -209,18 +201,10 @@ class ArXivClient:
 
                     # Extract dates
                     published_elem = entry.find("atom:published", ns)
-                    published = (
-                        published_elem.text[:10]
-                        if published_elem is not None and published_elem.text
-                        else ""
-                    )
+                    published = published_elem.text[:10] if published_elem is not None and published_elem.text else ""
 
                     updated_elem = entry.find("atom:updated", ns)
-                    updated = (
-                        updated_elem.text[:10]
-                        if updated_elem is not None and updated_elem.text
-                        else None
-                    )
+                    updated = updated_elem.text[:10] if updated_elem is not None and updated_elem.text else None
 
                     # Extract categories
                     categories = []
@@ -262,11 +246,11 @@ class ArXivClient:
                     continue
 
         except Exception as e:
-            logger.error(f"Error parsing arXiv XML: {e}")
+            logger.exception(f"Error parsing arXiv XML: {e}")
 
         return articles
 
-    async def get_by_id(self, arxiv_id: str) -> Optional[PreprintArticle]:
+    async def get_by_id(self, arxiv_id: str) -> PreprintArticle | None:
         """Get article by arXiv ID."""
         try:
             params = {"id_list": arxiv_id}
@@ -277,7 +261,7 @@ class ArXivClient:
             return articles[0] if articles else None
 
         except Exception as e:
-            logger.error(f"arXiv get by ID error: {e}")
+            logger.exception(f"arXiv get by ID error: {e}")
             return None
 
 
@@ -299,9 +283,9 @@ class MedBioRxivClient:
         self,
         query: str,
         limit: int = 10,
-        from_date: Optional[str] = None,
-        to_date: Optional[str] = None,
-    ) -> List[PreprintArticle]:
+        from_date: str | None = None,
+        to_date: str | None = None,
+    ) -> list[PreprintArticle]:
         """
         Search medRxiv for medical preprints.
 
@@ -327,9 +311,9 @@ class MedBioRxivClient:
         self,
         query: str,
         limit: int = 10,
-        from_date: Optional[str] = None,
-        to_date: Optional[str] = None,
-    ) -> List[PreprintArticle]:
+        from_date: str | None = None,
+        to_date: str | None = None,
+    ) -> list[PreprintArticle]:
         """Search bioRxiv for biology preprints."""
         return await self._search_rxiv(
             base_url=BIORXIV_API_URL,
@@ -346,19 +330,19 @@ class MedBioRxivClient:
         source: str,
         query: str,
         limit: int,
-        from_date: Optional[str],
-        to_date: Optional[str],
-    ) -> List[PreprintArticle]:
+        from_date: str | None,
+        to_date: str | None,
+    ) -> list[PreprintArticle]:
         """Common search logic for medRxiv/bioRxiv."""
         try:
             # Default date range: last 30 days
             if not to_date:
-                to_date = datetime.now().strftime("%Y-%m-%d")
+                to_date = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d")
             if not from_date:
                 # Go back 90 days to get more results for filtering
                 from datetime import timedelta
 
-                from_date = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
+                from_date = (datetime.now(tz=timezone.utc) - timedelta(days=90)).strftime("%Y-%m-%d")
 
             # API format: /details/{server}/{from}/{to}/{cursor}
             url = f"{base_url}/{from_date}/{to_date}/0"
@@ -386,11 +370,7 @@ class MedBioRxivClient:
 
                     # Extract authors
                     authors_str = item.get("authors", "")
-                    authors = (
-                        [a.strip() for a in authors_str.split(";")]
-                        if authors_str
-                        else []
-                    )
+                    authors = [a.strip() for a in authors_str.split(";")] if authors_str else []
 
                     # Get category
                     category = item.get("category", "")
@@ -420,7 +400,7 @@ class MedBioRxivClient:
             return articles[:limit]
 
         except Exception as e:
-            logger.error(f"{source} search error: {e}")
+            logger.exception(f"{source} search error: {e}")
             return []
 
 
@@ -434,10 +414,10 @@ class PreprintSearcher:
     async def search(
         self,
         query: str,
-        sources: Optional[List[str]] = None,
+        sources: list[str] | None = None,
         limit: int = 10,
-        categories: Optional[List[str]] = None,
-    ) -> Dict[str, Any]:
+        categories: list[str] | None = None,
+    ) -> dict[str, Any]:
         """
         Search across preprint servers.
 
@@ -491,7 +471,7 @@ class PreprintSearcher:
         self,
         query: str,
         limit: int = 10,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Convenience method for medical/health preprint search.
         Searches medRxiv + arXiv q-bio.
@@ -503,7 +483,7 @@ class PreprintSearcher:
             categories=["q-bio", "stat.AP", "stat.ML"],
         )
 
-    async def get_arxiv_paper(self, arxiv_id: str) -> Optional[Dict[str, Any]]:
+    async def get_arxiv_paper(self, arxiv_id: str) -> dict[str, Any] | None:
         """Get specific arXiv paper by ID."""
         article = await self.arxiv.get_by_id(arxiv_id)
         return article.to_dict() if article else None
