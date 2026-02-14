@@ -57,20 +57,39 @@ description: Orchestrate pre-commit workflow including Memory Bank sync, README/
 ├──────────────────────┼──────────────────────────────────────┤
 │  ✅ ruff + ruff-format│  ✅ Memory Bank 同步                  │
 │  ✅ mypy type check  │  ✅ CHANGELOG 更新                    │
-│  ✅ file-hygiene     │  ✅ ROADMAP 更新                      │
-│  ✅ async-test-checker│  ✅ README 更新                       │
-│  ✅ tool-count-sync  │  ✅ 架構文檔檢查                      │
-│  ✅ evolution-cycle  │  ✅ Commit 訊息建議                   │
+│  ✅ bandit security  │  ✅ ROADMAP 更新                      │
+│  ✅ vulture deadcode │  ✅ README 更新                       │
+│  ✅ deptry deps      │  ✅ 架構文檔檢查                      │
+│  ✅ semgrep SAST     │  ✅ Commit 訊息建議                   │
+│  ✅ file-hygiene     │                                      │
+│  ✅ commit-size-guard│                                      │
+│  ✅ async-test-checker│                                      │
+│  ✅ tool-count-sync  │                                      │
+│  ✅ evolution-cycle  │                                      │
+│  ✅ future-annotations│                                      │
+│  ✅ no-print-in-src  │                                      │
+│  ✅ ddd-layer-imports│                                      │
+│  ✅ no-type-ignore-bare│                                    │
+│  ✅ docstring-tools  │                                      │
+│  ✅ no-env-inner-layers│                                    │
+│  ✅ todo-scanner     │                                      │
 │  ✅ yaml/toml/json   │                                      │
 │  ✅ no large files   │                                      │
 │  ✅ no debug stmts   │                                      │
 │  ✅ no private keys  │                                      │
+│  ✅ BOM / symlinks   │                                      │
+│  ✅ case conflicts   │                                      │
+│  ✅ Windows names    │                                      │
+│  ✅ mixed line ending│                                      │
+│  ✅ no-commit-to-branch│                                    │
+│  ✅ name-tests-test  │                                      │
 ├──────────────────────┼──────────────────────────────────────┤
 │  🔧 自動修復：       │  🔧 自動修復：                        │
 │  trailing whitespace │  tool-count-sync (auto-stage)        │
 │  end-of-file newline │                                      │
 │  ruff --fix          │                                      │
 │  ruff format         │                                      │
+│  future-annotations  │                                      │
 └──────────────────────┴──────────────────────────────────────┘
 ```
 
@@ -229,7 +248,18 @@ git commit --no-verify -m "emergency"       # 跳過所有 hooks (慎用!)
 | `pyproject.toml [tool.ruff]` | ruff lint + format 規則 |
 | `pyproject.toml [tool.mypy]` | mypy type check 規則 |
 | `pyproject.toml [tool.pytest] addopts` | 強制多核測試 |
+| `pyproject.toml [tool.bandit]` | bandit 安全掃描規則 |
+| `pyproject.toml [tool.deptry]` | deptry 依賴衛生規則 |
+| `vulture_whitelist.py` | vulture 死碼掃描白名單 |
 | `scripts/hooks/check_file_hygiene.py` | 檔案衛生檢查 |
 | `scripts/hooks/check_tool_sync.py` | MCP 工具文檔同步 |
 | `scripts/hooks/check_evolution_cycle.py` | 自演化循環一致性驗證 |
+| `scripts/hooks/check_commit_size.py` | Commit 檔案數限制 (≤30) |
+| `scripts/hooks/check_future_annotations.py` | future annotations 強制 |
+| `scripts/hooks/check_no_print.py` | 禁止 src/ 使用 print() |
+| `scripts/hooks/check_ddd_layers.py` | DDD 層級依賴檢查 |
+| `scripts/hooks/check_type_ignore.py` | 禁止裸 type: ignore |
+| `scripts/hooks/check_docstring_tools.py` | MCP tool docstring 檢查 |
+| `scripts/hooks/check_env_config.py` | 禁止內層使用 os.environ |
+| `scripts/hooks/check_todo_scanner.py` | TODO/FIXME 掃描 |
 | `scripts/check_async_tests.py` | async/sync 測試一致性 |

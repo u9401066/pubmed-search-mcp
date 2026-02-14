@@ -40,6 +40,39 @@ repos:
       - id: debug-statements
       - id: detect-private-key
       - id: check-ast
+      # ── New: comprehensive file & code hygiene ──────────
+      - id: check-byte-order-marker
+        # Detects UTF-8 BOM (breaks some parsers)
+      - id: fix-byte-order-marker
+        # Auto-removes UTF-8 BOM (auto-fix)
+      - id: check-builtin-literals
+        # Detects dict() instead of {}, list() instead of []
+      - id: check-case-conflict
+        # Detects files differing only in case (breaks on Windows/macOS)
+      - id: check-docstring-first
+        # Prevents code before module docstring
+      - id: check-executables-have-shebangs
+        # Scripts with +x must have #!/usr/bin/env
+      - id: check-shebang-scripts-are-executable
+        # Scripts with #! must have +x permission
+      - id: check-symlinks
+        # Detects broken symlinks
+      - id: destroyed-symlinks
+        # Detects symlinks destroyed by git checkout on Windows
+      - id: check-vcs-permalinks
+        # Detects non-permanent GitHub links (missing commit hash)
+      - id: check-illegal-windows-names
+        # Detects filenames illegal on Windows (CON, PRN, etc.)
+      - id: mixed-line-ending
+        args: [--fix=lf]
+        # Normalizes line endings to LF (auto-fix)
+      - id: no-commit-to-branch
+        args: [--branch, main, --branch, master]
+        # Prevents direct commits to main/master
+      - id: name-tests-test
+        args: [--pytest-test-first]
+        files: ^tests/
+        # Ensures test files follow test_*.py naming
 
   # ─────────────────────────────────────────────────────────────
   # 2. Ruff — ultra-fast linter + formatter (auto-fix enabled)
@@ -58,7 +91,47 @@ repos:
         types_or: [python, pyi]
 
   # ─────────────────────────────────────────────────────────────
-  # 3. Local hooks — project-specific checks
+  # 3. Security & dead code analysis
+  # ─────────────────────────────────────────────────────────────
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.9.3
+    hooks:
+      - id: bandit
+        name: bandit security scan
+        args: [-c, pyproject.toml, -ll, --quiet]
+        # Medium+ severity only. Config in [tool.bandit]
+        # Skip: SKIP=bandit git commit
+
+  - repo: local
+    hooks:
+      - id: vulture
+        name: vulture dead code scan
+        entry: uv run vulture src/ scripts/ vulture_whitelist.py --min-confidence 80
+        language: system
+        types: [python]
+        pass_filenames: false
+        files: ^(src|scripts)/
+        # False positives → vulture_whitelist.py
+
+      - id: deptry
+        name: deptry dependency check
+        entry: uv run deptry src/
+        language: system
+        pass_filenames: false
+        files: ^(src/|pyproject\.toml)
+        # Config in [tool.deptry] in pyproject.toml
+
+  - repo: https://github.com/semgrep/semgrep
+    rev: v1.151.0
+    hooks:
+      - id: semgrep
+        name: semgrep security analysis
+        args: [--config, p/python, --error, --quiet]
+        # Python security rules from Semgrep registry
+        # Skip: SKIP=semgrep git commit
+
+  # ─────────────────────────────────────────────────────────────
+  # 4. Local hooks — project-specific checks
   # ─────────────────────────────────────────────────────────────
   - repo: local
     hooks:
@@ -108,6 +181,72 @@ repos:
         files: ^src/pubmed_search/presentation/mcp_server/
         # Only runs when MCP server files are modified
         # Auto-updates docs and stages them
+      # ── Future annotations enforcement (auto-fix) ──────────
+      - id: future-annotations
+        name: future annotations (auto-fix)
+        entry: uv run python scripts/hooks/check_future_annotations.py --fix
+        language: system
+        pass_filenames: false
+        files: ^(src|tests)/.*\.py$
+        # Ensures 'from __future__ import annotations' in all files
+        # Auto-inserts after module docstring
+
+      # ── No print() in production code ──────────────────────
+      - id: no-print-in-src
+        name: no print() in src/
+        entry: uv run python scripts/hooks/check_no_print.py
+        language: system
+        pass_filenames: false
+        files: ^src/.*\.py$
+        # print() → logger.info(). Exceptions: __main__.py
+
+      # ── DDD layer import rules ─────────────────────────────
+      - id: ddd-layer-imports
+        name: DDD layer dependency check
+        entry: uv run python scripts/hooks/check_ddd_layers.py
+        language: system
+        pass_filenames: false
+        files: ^src/pubmed_search/
+        # domain/ ✗→ application/, infrastructure/, presentation/
+        # application/ ✗→ infrastructure/, presentation/
+
+      # ── No bare type: ignore ───────────────────────────────
+      - id: no-type-ignore-bare
+        name: no bare type:ignore
+        entry: uv run python scripts/hooks/check_type_ignore.py
+        language: system
+        pass_filenames: false
+        files: ^(src|tests)/.*\.py$
+        # Always specify error code: # type: ignore[assignment]
+
+      # ── MCP tool docstrings ────────────────────────────────
+      - id: docstring-tools
+        name: MCP tool docstrings required
+        entry: uv run python scripts/hooks/check_docstring_tools.py
+        language: system
+        pass_filenames: false
+        files: ^src/pubmed_search/presentation/mcp_server/tools/
+        # Every @tool function must have docstring ≥10 chars
+
+      # ── No os.environ in inner DDD layers ──────────────────
+      - id: no-env-inner-layers
+        name: no os.environ in domain/application
+        entry: uv run python scripts/hooks/check_env_config.py
+        language: system
+        pass_filenames: false
+        files: ^src/pubmed_search/(domain|application|shared)/
+        # Config via DI container, not os.environ
+
+      # ── TODO/FIXME scanner (warning only) ──────────────────
+      - id: todo-scanner
+        name: TODO/FIXME scanner (warn)
+        entry: uv run python scripts/hooks/check_todo_scanner.py
+        language: system
+        pass_filenames: false
+        files: ^(src|tests)/.*\.py$
+        verbose: true
+        # Non-blocking warning. Set BLOCK_ON_MARKERS=true to block.
+
       # ── Self-evolution cycle consistency ────────────────────
       - id: evolution-cycle
         name: instruction ↔ skill ↔ hook consistency
@@ -119,7 +258,7 @@ repos:
         #   Instructions → Skills → Hooks → Validate → Feedback
         # Only runs when relevant config/doc files are modified
   # ─────────────────────────────────────────────────────────────
-  # 4. Pre-push hooks — slower but thorough
+  # 5. Pre-push hooks — slower but thorough
   # ─────────────────────────────────────────────────────────────
   - repo: local
     hooks:

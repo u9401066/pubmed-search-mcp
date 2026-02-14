@@ -112,6 +112,7 @@ dev = [
     "types-cachetools>=6.2.0",
     "pytest-xdist>=3.8.0",
     "pre-commit>=3.8",
+    "semgrep>=1.151.0",
 ]
 
 # ─────────────────────────────────────────────────────────────
@@ -280,6 +281,7 @@ known-first-party = ["pubmed_search"]
     "ARG002",  # unused-method-argument — 抽象方法實作
 ]
 ".mutmut_config.py" = ["ALL"]  # auto-generated config
+"vulture_whitelist.py" = ["ALL"]  # vulture whitelist uses bare name expressions
 "scripts/test-copilot-mcp.py" = [
     "BLE001",  # blind exception — test script error handling
     "INP001",  # namespace package
@@ -308,41 +310,97 @@ warn_unused_ignores = false    # 跨 Python 版本的 type: ignore 相容性
 # 漸進式嚴格化：以下暫時放寬，待逐步修復後移除
 disallow_any_generics = false  # 94 errors — dict/list 缺少 type args（逐步加入）
 
+# ─────────────────────────────────────────────────────────────
+# Bandit — security linter (medium+ severity)
+# ─────────────────────────────────────────────────────────────
+[tool.bandit]
+# Only flag medium+ severity (skip low-noise rules)
+skips = [
+    "B404",   # import subprocess — tooling scripts need it
+    "B603",   # subprocess without shell=True — scripts intentional
+    "B311",   # pseudo-random — not crypto, used for jitter/test data
+]
+exclude_dirs = ["tests", "scripts/_tmp"]
+
+# ─────────────────────────────────────────────────────────────
+# Deptry — dependency hygiene
+# ─────────────────────────────────────────────────────────────
+[tool.deptry]
+extend_exclude = ["scripts", "tests", "docs"]
+
+[tool.deptry.per_rule_ignores]
+# DEP001 (missing): lazy optional imports — installed separately when needed
+DEP001 = ["fitz", "pdfplumber"]
+# DEP002 (unused): indirect usage (biopython→requests, platform-specific pywin32)
+DEP002 = ["requests", "pywin32"]
+# DEP003 (transitive): re-exports or direct usage of transitive deps
+DEP003 = ["typing_extensions", "pydantic", "uvicorn"]
+
+# ─────────────────────────────────────────────────────────────
+# Vulture — dead code detection (config reference; run via pre-commit)
+# ─────────────────────────────────────────────────────────────
+# Whitelist: vulture_whitelist.py
+# Command: uv run vulture src/ scripts/ vulture_whitelist.py --min-confidence 80
+
 [[tool.mypy.overrides]]
 module = "tests.*"
 ignore_errors = true
 
 [[tool.mypy.overrides]]
-module = "pubmed_search.infrastructure.sources.*"
+module = [
+    "pubmed_search.infrastructure.sources",
+    "pubmed_search.infrastructure.sources.*",
+]
 # 外部 API 回應本質上是動態的 (dict[str, Any])
 disallow_untyped_defs = false
 disallow_untyped_calls = false
 warn_return_any = false
+disable_error_code = ["no-untyped-def", "no-untyped-call", "no-any-return"]
 
 [[tool.mypy.overrides]]
-module = "pubmed_search.infrastructure.ncbi.*"
+module = [
+    "pubmed_search.infrastructure.ncbi",
+    "pubmed_search.infrastructure.ncbi.*",
+]
 # NCBI API 回應結構複雜且多變
 disallow_untyped_defs = false
 disallow_untyped_calls = false
 warn_return_any = false
+disable_error_code = ["no-untyped-def", "no-untyped-call", "no-any-return"]
 
 [[tool.mypy.overrides]]
-module = "pubmed_search.infrastructure.pubtator.*"
+module = [
+    "pubmed_search.infrastructure.pubtator",
+    "pubmed_search.infrastructure.pubtator.*",
+]
 # PubTator API 動態回應
 disallow_untyped_defs = false
 disallow_untyped_calls = false
 warn_return_any = false
+disable_error_code = ["no-untyped-def", "no-untyped-call", "no-any-return"]
 
 [[tool.mypy.overrides]]
-module = "pubmed_search.presentation.*"
+module = [
+    "pubmed_search.presentation",
+    "pubmed_search.presentation.*",
+    "pubmed_search.presentation.api.*",
+    "pubmed_search.presentation.mcp_server",
+    "pubmed_search.presentation.mcp_server.*",
+    "pubmed_search.presentation.mcp_server.tools.*",
+]
 # MCP tool/server 函數處理動態數據
 disallow_untyped_defs = false
 disallow_untyped_calls = false
 warn_return_any = false
+disable_error_code = ["no-untyped-def", "no-untyped-call", "no-any-return"]
 
 [[tool.mypy.overrides]]
-module = "pubmed_search.application.session.*"
+module = [
+    "pubmed_search.application.session",
+    "pubmed_search.application.session.*",
+]
 # Session 管理涉及大量動態 JSON 數據
 disallow_untyped_defs = false
 disallow_untyped_calls = false
 warn_return_any = false
+disable_error_code = ["no-untyped-def", "no-untyped-call", "no-any-return"]

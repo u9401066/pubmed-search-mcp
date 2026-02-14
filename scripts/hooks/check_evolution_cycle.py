@@ -125,8 +125,22 @@ def check_hooks_documented(report: ValidationReport) -> None:
             "mypy",
             "async-test-checker",
             "file-hygiene",
+            "commit-size-guard",
             "tool-count-sync",
             "pytest",
+            "future-annotations",
+            "no-print-in-src",
+            "ddd-layer-imports",
+            "no-type-ignore-bare",
+            "docstring-tools",
+            "no-env-inner-layers",
+            "todo-scanner",
+            "evolution-cycle",
+            # Security & dead code analysis
+            "bandit",
+            "vulture",
+            "deptry",
+            "semgrep",
         }
 
         for hook_id in hook_ids:

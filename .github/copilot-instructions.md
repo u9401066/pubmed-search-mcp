@@ -61,15 +61,33 @@ uv run pre-commit autoupdate
 
 **Commit 階段自動檢查：**
 - trailing-whitespace / end-of-file-fixer (自動修復)
-- check-yaml / check-toml / check-json
+- check-yaml / check-toml / check-json / check-ast
 - check-added-large-files / check-merge-conflict / debug-statements / detect-private-key
+- check-byte-order-marker / fix-byte-order-marker (自動修復)
+- check-builtin-literals / check-case-conflict / check-docstring-first
+- check-executables-have-shebangs / check-shebang-scripts-are-executable
+- check-symlinks / destroyed-symlinks / check-vcs-permalinks
+- check-illegal-windows-names / mixed-line-ending (自動修復)
+- no-commit-to-branch (保護 main/master)
+- name-tests-test (強制 test_*.py 命名)
 - **ruff** lint (自動修復) + **ruff-format** (自動修復)
+- **bandit** 安全掃描 (medium+ severity, `pyproject.toml [tool.bandit]`)
+- **vulture** 死碼掃描 (`vulture_whitelist.py` 管理白名單)
+- **deptry** 依賴衛生 (`pyproject.toml [tool.deptry]`)
+- **semgrep** SAST 靜態安全分析 (`p/python` ruleset)
 - **mypy** type check
 - **async-test-checker** async/sync 測試一致性 (`scripts/check_async_tests.py`)
 - **file-hygiene** 檔案衛生檢查 (`scripts/hooks/check_file_hygiene.py`)
 - **commit-size-guard** 限制每次 commit ≤30 檔案 (`scripts/hooks/check_commit_size.py`)
 - **tool-count-sync** MCP 工具文檔同步 (`scripts/hooks/check_tool_sync.py`, 自動修復)
 - **evolution-cycle** 一致性驗證 (`scripts/hooks/check_evolution_cycle.py`)
+- **future-annotations** 強制 `from __future__ import annotations` (`scripts/hooks/check_future_annotations.py`, 自動修復)
+- **no-print-in-src** 禁止 src/ 使用 print() (`scripts/hooks/check_no_print.py`)
+- **ddd-layer-imports** DDD 層級依賴檢查 (`scripts/hooks/check_ddd_layers.py`)
+- **no-type-ignore-bare** 禁止裸 `# type: ignore` (`scripts/hooks/check_type_ignore.py`)
+- **docstring-tools** MCP 工具必須有文檔字串 (`scripts/hooks/check_docstring_tools.py`)
+- **no-env-inner-layers** 禁止內層 DDD 使用 os.environ (`scripts/hooks/check_env_config.py`)
+- **todo-scanner** TODO/FIXME 掃描器 (警告, 不阻擋) (`scripts/hooks/check_todo_scanner.py`)
 
 **Push 階段自動檢查：**
 - **pytest** 全套測試 (`-n auto --timeout=60`)

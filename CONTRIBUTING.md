@@ -108,12 +108,38 @@ uv run pre-commit run --all-files                  # test all hooks manually
 | **commit** | check-merge-conflict | — | Detects leftover conflict markers |
 | **commit** | debug-statements | — | Catches `breakpoint()` / `pdb` |
 | **commit** | detect-private-key | — | Prevents accidental key commits |
+| **commit** | check-ast | — | Validates Python AST syntax |
+| **commit** | check-byte-order-marker | — | Detects UTF-8 BOM |
+| **commit** | fix-byte-order-marker | ✅ | Removes UTF-8 BOM |
+| **commit** | check-builtin-literals | — | Detects `dict()` → `{}`, `list()` → `[]` |
+| **commit** | check-case-conflict | — | Detects case-only filename conflicts |
+| **commit** | check-docstring-first | — | Code before module docstring |
+| **commit** | check-executables-have-shebangs | — | Scripts with +x need shebang |
+| **commit** | check-shebang-scripts-are-executable | — | Scripts with #! need +x |
+| **commit** | check-symlinks / destroyed-symlinks | — | Broken/destroyed symlink detection |
+| **commit** | check-vcs-permalinks | — | Non-permanent GitHub links |
+| **commit** | check-illegal-windows-names | — | Windows-illegal filenames (CON, PRN) |
+| **commit** | mixed-line-ending | ✅ | Normalizes to LF |
+| **commit** | no-commit-to-branch | — | Protects main/master branches |
+| **commit** | name-tests-test | — | Enforces `test_*.py` naming |
 | **commit** | ruff lint | ✅ | Lints & auto-fixes Python code |
 | **commit** | ruff format | ✅ | Formats Python code |
+| **commit** | bandit | — | Security scan (medium+ severity) |
+| **commit** | vulture | — | Dead code detection |
+| **commit** | deptry | — | Dependency hygiene check |
+| **commit** | semgrep | — | SAST security analysis |
 | **commit** | mypy | — | Type checks `src/` |
 | **commit** | async-test-checker | — | Validates async/sync consistency in tests |
 | **commit** | file-hygiene | — | Blocks forbidden temp files |
+| **commit** | commit-size-guard | — | Limits commits to ≤30 files |
 | **commit** | tool-count-sync | ✅ | Syncs MCP tool documentation |
+| **commit** | future-annotations | ✅ | Ensures `from __future__ import annotations` |
+| **commit** | no-print-in-src | — | Bans `print()` in `src/` (use logging) |
+| **commit** | ddd-layer-imports | — | Enforces DDD layer dependency direction |
+| **commit** | no-type-ignore-bare | — | Requires error codes on `# type: ignore` |
+| **commit** | docstring-tools | — | MCP `@tool` functions must have docstrings |
+| **commit** | no-env-inner-layers | — | Bans `os.environ` in domain/application layers |
+| **commit** | todo-scanner | — | Scans TODO/FIXME markers (warning only) |
 | **commit** | evolution-cycle | — | Validates instruction/skill/hook consistency |
 | **push** | pytest | — | Runs full test suite (multi-core) |
 
