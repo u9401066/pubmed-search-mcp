@@ -3,6 +3,8 @@
 Integration test - makes real NCBI API calls. Not for CI.
 """
 
+from __future__ import annotations
+
 import sys
 
 import pytest

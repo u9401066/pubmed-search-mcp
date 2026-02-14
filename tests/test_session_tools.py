@@ -1,5 +1,7 @@
 """Tests for session_tools.py — PMID persistence and session management tools."""
 
+from __future__ import annotations
+
 import json
 from unittest.mock import MagicMock
 

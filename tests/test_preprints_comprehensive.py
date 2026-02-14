@@ -1,5 +1,7 @@
 """Comprehensive tests for PreprintSearcher, ArXivClient, MedBioRxivClient."""
 
+from __future__ import annotations
+
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from pubmed_search.infrastructure.sources.preprints import (

@@ -5,6 +5,8 @@ Tests realistic scenarios that users would encounter.
 Run with: pytest tests/test_e2e_workflows.py -v
 """
 
+from __future__ import annotations
+
 from unittest.mock import AsyncMock
 
 import pytest

@@ -4,6 +4,8 @@ Tests for ClinicalTrials.gov API client.
 Target: clinical_trials.py coverage from 0% to 90%+
 """
 
+from __future__ import annotations
+
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest

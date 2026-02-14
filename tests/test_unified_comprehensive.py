@@ -4,6 +4,8 @@ Additional comprehensive tests for unified search module.
 Target: unified.py coverage from 14% to 50%+
 """
 
+from __future__ import annotations
+
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest

@@ -2,6 +2,8 @@
 Final targeted tests to push coverage from 86% to 90%.
 """
 
+from __future__ import annotations
+
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest

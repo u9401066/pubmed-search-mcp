@@ -1,5 +1,7 @@
 """Tests for Strategy MCP tools — generate_search_queries, expand_search_queries."""
 
+from __future__ import annotations
+
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 

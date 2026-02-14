@@ -1,5 +1,7 @@
 """Tests for exceptions.py — full coverage of exception hierarchy."""
 
+from __future__ import annotations
+
 from pubmed_search.shared.exceptions import (
     APIError,
     ConfigurationError,

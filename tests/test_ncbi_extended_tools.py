@@ -1,5 +1,7 @@
 """Tests for ncbi_extended MCP tools — search_gene, get_gene_details, etc."""
 
+from __future__ import annotations
+
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 

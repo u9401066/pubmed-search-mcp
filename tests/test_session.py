@@ -2,6 +2,8 @@
 Tests for Session management and Article caching.
 """
 
+from __future__ import annotations
+
 from datetime import datetime, timedelta
 
 from pubmed_search.application.session import (

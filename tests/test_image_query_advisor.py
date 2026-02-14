@@ -8,6 +8,8 @@ Tests:
 - Integration: advisor warnings flow through ImageSearchService
 """
 
+from __future__ import annotations
+
 from unittest.mock import AsyncMock
 
 from pubmed_search.application.image_search.advisor import (

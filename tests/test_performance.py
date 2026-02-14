@@ -5,6 +5,8 @@ Tests response times, throughput, and resource usage.
 Run with: pytest tests/test_performance.py -v --benchmark-only
 """
 
+from __future__ import annotations
+
 import time
 from unittest.mock import patch
 

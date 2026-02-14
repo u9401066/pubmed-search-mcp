@@ -2,6 +2,8 @@
 Ultra-targeted tests to push from 88% to 90% coverage.
 """
 
+from __future__ import annotations
+
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, Mock, patch

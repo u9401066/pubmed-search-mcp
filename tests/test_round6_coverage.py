@@ -8,6 +8,8 @@ Focused on filling coverage gaps in:
 - fulltext_download.py: more async methods
 """
 
+from __future__ import annotations
+
 import json
 from unittest.mock import AsyncMock, Mock, patch
 

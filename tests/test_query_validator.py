@@ -1,5 +1,7 @@
 """Comprehensive tests for QueryValidator — PubMed query syntax validation."""
 
+from __future__ import annotations
+
 from pubmed_search.application.search.query_validator import (
     VALID_FIELD_TAGS,
     QueryValidationResult,

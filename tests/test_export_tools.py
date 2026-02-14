@@ -1,5 +1,7 @@
 """Tests for export MCP tools — prepare_export, helpers."""
 
+from __future__ import annotations
+
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 

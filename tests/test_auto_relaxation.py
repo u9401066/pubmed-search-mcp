@@ -4,6 +4,8 @@ Tests the progressive query relaxation engine that automatically
 broadens search criteria when 0 results are returned.
 """
 
+from __future__ import annotations
+
 from unittest.mock import AsyncMock, patch
 
 import pytest

@@ -4,6 +4,8 @@ Tests for CrossRef API client.
 Target: crossref.py coverage from 0% to 90%+
 """
 
+from __future__ import annotations
+
 from unittest.mock import AsyncMock, patch
 
 from pubmed_search.infrastructure.sources.crossref import (

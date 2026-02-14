@@ -2,6 +2,8 @@
 Tests for MCP Server and related components.
 """
 
+from __future__ import annotations
+
 from unittest.mock import MagicMock
 
 

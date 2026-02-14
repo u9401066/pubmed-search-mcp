@@ -3,6 +3,8 @@ Final targeted tests to reach 90% coverage.
 Focus on uncovered lines in remaining files.
 """
 
+from __future__ import annotations
+
 import tempfile
 from unittest.mock import AsyncMock, MagicMock, patch
 

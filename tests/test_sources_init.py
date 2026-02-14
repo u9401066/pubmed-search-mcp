@@ -1,5 +1,7 @@
 """Tests for sources __init__ module (MultiSourceSearcher, cross_search, etc.)."""
 
+from __future__ import annotations
+
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from pubmed_search.infrastructure.sources import (

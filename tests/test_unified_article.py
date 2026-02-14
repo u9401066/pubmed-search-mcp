@@ -5,6 +5,8 @@ Target: article.py coverage from 28% to 90%+
 Tests: Author, OpenAccessLink, CitationMetrics, SourceMetadata, UnifiedArticle
 """
 
+from __future__ import annotations
+
 from pubmed_search.domain.entities.article import (
     ArticleType,
     Author,

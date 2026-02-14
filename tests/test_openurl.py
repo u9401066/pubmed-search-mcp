@@ -4,6 +4,8 @@ OpenURL Integration Tests
 Tests for the institutional access / OpenURL link resolver functionality.
 """
 
+from __future__ import annotations
+
 import pytest
 
 

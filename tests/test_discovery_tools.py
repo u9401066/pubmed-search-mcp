@@ -2,6 +2,8 @@
 Tests for Discovery Tools - search_literature, find_related, find_citing, etc.
 """
 
+from __future__ import annotations
+
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest

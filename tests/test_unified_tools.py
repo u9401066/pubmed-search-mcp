@@ -1,5 +1,7 @@
 """Tests for Unified Search MCP tools — unified_search, analyze_search_query, helpers."""
 
+from __future__ import annotations
+
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 

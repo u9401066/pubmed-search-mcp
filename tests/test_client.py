@@ -5,6 +5,8 @@ Test client for PubMed Search MCP Server
 This script tests the MCP server running in SSE mode.
 """
 
+from __future__ import annotations
+
 import asyncio
 import os
 import sys

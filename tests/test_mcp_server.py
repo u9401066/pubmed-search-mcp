@@ -2,6 +2,8 @@
 Tests for MCP Server initialization and registration.
 """
 
+from __future__ import annotations
+
 from unittest.mock import Mock
 
 

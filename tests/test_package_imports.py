@@ -10,6 +10,8 @@ This test module ensures:
 Run with: uv run pytest tests/test_package_imports.py -v
 """
 
+from __future__ import annotations
+
 import pytest
 
 

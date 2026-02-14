@@ -1,5 +1,7 @@
 """Final targeted tests to reach 90% coverage."""
 
+from __future__ import annotations
+
 import json
 import tempfile
 from unittest.mock import AsyncMock, Mock, patch

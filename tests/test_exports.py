@@ -2,6 +2,8 @@
 Tests for Export modules - formats.py and links.py.
 """
 
+from __future__ import annotations
+
 import json
 
 import pytest

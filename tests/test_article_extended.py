@@ -1,5 +1,7 @@
 """Extended tests for article.py — Author, OpenAccessLink, CitationMetrics, UnifiedArticle."""
 
+from __future__ import annotations
+
 from datetime import date
 
 from pubmed_search.domain.entities.article import (

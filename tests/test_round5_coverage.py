@@ -7,6 +7,8 @@ NOTE: search_literature, expand_search_queries, search_europe_pmc are
       We test the underlying infrastructure and helper functions instead.
 """
 
+from __future__ import annotations
+
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 

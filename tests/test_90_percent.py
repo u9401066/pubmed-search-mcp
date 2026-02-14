@@ -1,5 +1,7 @@
 """Final push to reach 90% coverage."""
 
+from __future__ import annotations
+
 import tempfile
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 

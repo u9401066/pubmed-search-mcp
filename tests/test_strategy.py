@@ -2,6 +2,8 @@
 Tests for Search Strategy Generator and related functions.
 """
 
+from __future__ import annotations
+
 from unittest.mock import MagicMock, patch
 
 import pytest

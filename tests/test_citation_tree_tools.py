@@ -1,5 +1,7 @@
 """Tests for citation_tree.py — format converters, node/edge builders, and build tool."""
 
+from __future__ import annotations
+
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest

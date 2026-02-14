@@ -2,6 +2,8 @@
 Tests for MCP Tools - merge, pico, strategy, and export tools.
 """
 
+from __future__ import annotations
+
 import json
 from unittest.mock import AsyncMock, MagicMock
 

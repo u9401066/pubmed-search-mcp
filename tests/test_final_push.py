@@ -3,6 +3,8 @@ Final tests to reach 90% coverage.
 Target remaining uncovered lines in key modules.
 """
 
+from __future__ import annotations
+
 import tempfile
 from unittest.mock import MagicMock, Mock, patch
 

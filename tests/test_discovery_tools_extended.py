@@ -1,5 +1,7 @@
 """Tests for Discovery MCP tools — find_related, find_citing, etc."""
 
+from __future__ import annotations
+
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest

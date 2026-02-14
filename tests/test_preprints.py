@@ -2,6 +2,8 @@
 Tests for preprint sources (arXiv, medRxiv, bioRxiv).
 """
 
+from __future__ import annotations
+
 import pytest
 
 from pubmed_search.infrastructure.sources.preprints import (

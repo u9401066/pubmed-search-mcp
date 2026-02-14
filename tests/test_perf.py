@@ -4,6 +4,8 @@ Performance test for unified_search.
 Integration test - makes real API calls. Not for CI.
 """
 
+from __future__ import annotations
+
 import logging
 import time
 

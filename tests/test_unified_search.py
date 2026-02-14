@@ -7,6 +7,8 @@ This tests the unified search gateway which provides:
 - Result aggregation and ranking
 """
 
+from __future__ import annotations
+
 from unittest.mock import AsyncMock, Mock
 
 import pytest

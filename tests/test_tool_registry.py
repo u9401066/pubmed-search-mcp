@@ -1,5 +1,7 @@
 """Tests for tool_registry.py — pure functions + validation."""
 
+from __future__ import annotations
+
 from unittest.mock import MagicMock, patch
 
 import pytest

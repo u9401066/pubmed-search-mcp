@@ -5,6 +5,8 @@ Covers: PubTatorClient, rate limiting, find_entity, search_by_entity,
         resolve_entity, find_relations, get_annotations, singleton.
 """
 
+from __future__ import annotations
+
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest

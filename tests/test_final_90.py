@@ -2,6 +2,8 @@
 Final push to reach 90% coverage - targeting specific uncovered lines.
 """
 
+from __future__ import annotations
+
 from unittest.mock import MagicMock, patch
 
 

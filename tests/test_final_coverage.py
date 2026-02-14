@@ -3,6 +3,8 @@ Final push tests to reach 90% coverage.
 Targets: search.py (69%), session.py (76%), server.py (79%), _common.py (72%)
 """
 
+from __future__ import annotations
+
 import json
 import tempfile
 from unittest.mock import MagicMock, Mock, patch

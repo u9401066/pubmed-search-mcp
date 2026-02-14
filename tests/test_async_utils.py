@@ -1,5 +1,7 @@
 """Tests for async_utils.py — RateLimiter, CircuitBreaker, retry, batch_process, gather."""
 
+from __future__ import annotations
+
 import asyncio
 import time
 

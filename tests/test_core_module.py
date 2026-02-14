@@ -8,6 +8,8 @@ Python 3.12+ features tested:
 - Modern dataclass features
 """
 
+from __future__ import annotations
+
 import asyncio
 
 import pytest

@@ -4,6 +4,8 @@ Tests for Timeline modules: MilestoneDetector and TimelineBuilder.
 Target: milestone_detector.py (18% → 90%), timeline_builder.py (14% → 90%)
 """
 
+from __future__ import annotations
+
 from pubmed_search.application.timeline.milestone_detector import (
     LANDMARK_CITATION_THRESHOLDS,
     PUBTYPE_PATTERNS,

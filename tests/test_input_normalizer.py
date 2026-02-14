@@ -7,6 +7,8 @@ These utilities make MCP tools more Agent-friendly by:
 - Auto-correcting common mistakes
 """
 
+from __future__ import annotations
+
 import json
 
 

@@ -3,6 +3,8 @@ Comprehensive coverage tests for remaining gaps in search.py, server.py, export.
 Target: 90% overall coverage.
 """
 
+from __future__ import annotations
+
 import os
 import tempfile
 from pathlib import Path

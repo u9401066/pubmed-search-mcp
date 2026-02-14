@@ -2,6 +2,8 @@
 Tests for search.py module and discovery tools functions.
 """
 
+from __future__ import annotations
+
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 

@@ -8,6 +8,8 @@ Run with: pytest -m integration
 Skip with: pytest -m "not integration"
 """
 
+from __future__ import annotations
+
 import os
 import time
 

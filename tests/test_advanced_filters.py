@@ -5,6 +5,8 @@ This is an integration test that makes REAL network calls to NCBI.
 Skip in normal test runs.
 """
 
+from __future__ import annotations
+
 import sys
 from pathlib import Path
 
