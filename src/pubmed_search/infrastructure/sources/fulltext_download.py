@@ -29,11 +29,14 @@ Usage:
     text = await downloader.get_fulltext_as_text(pmid="12345678")
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import re
 from dataclasses import dataclass, field
 from enum import Enum
+from collections.abc import Awaitable
 from typing import Literal
 
 import httpx
@@ -101,7 +104,7 @@ class PDFLink:
     is_direct_pdf: bool = True  # vs landing page
     confidence: float = 1.0  # How confident we are this is a valid PDF
 
-    def __lt__(self, other: "PDFLink") -> bool:
+    def __lt__(self, other: PDFLink) -> bool:
         """Sort by source priority then confidence."""
         if self.source.priority != other.source.priority:
             return self.source.priority < other.source.priority
@@ -281,7 +284,7 @@ class FulltextDownloader:
         links: list[PDFLink] = []
 
         # Gather links from all sources in parallel
-        tasks = []
+        tasks: list[Awaitable[list[PDFLink] | PDFLink | None]] = []
 
         # PMC/Europe PMC sources (need PMCID or PMID)
         if pmcid or pmid:
@@ -618,7 +621,7 @@ class FulltextDownloader:
             client = SemanticScholarClient()
 
             # Semantic Scholar uses DOI prefixed format
-            paper = client.get_paper(f"DOI:{doi}")
+            paper = await client.get_paper(f"DOI:{doi}")
 
             if paper and paper.get("pdf_url"):
                 links.append(
@@ -646,7 +649,7 @@ class FulltextDownloader:
             client = OpenAlexClient()
 
             # OpenAlex uses doi: prefix format
-            work = client.get_work(f"doi:{doi}")
+            work = await client.get_work(f"doi:{doi}")
 
             if work:
                 pdf_url = work.get("pdf_url")

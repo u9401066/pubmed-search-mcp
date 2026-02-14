@@ -1,5 +1,7 @@
 """Tests for TimelineBuilder and format_timeline_text."""
 
+from __future__ import annotations
+
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -213,10 +215,10 @@ class TestSearchTopic:
             {"pmid": "1", "title": "Low cited"},
             {"pmid": "2", "title": "High cited"},
         ]
-        mock_searcher.get_citation_metrics.return_value = [
-            {"pmid": "1", "citation_count": 10},
-            {"pmid": "2", "citation_count": 1000},
-        ]
+        mock_searcher.get_citation_metrics.return_value = {
+            "1": {"pmid": "1", "citation_count": 10},
+            "2": {"pmid": "2", "citation_count": 1000},
+        }
         results = await builder._search_topic("topic", sort_by_citations=True)
         assert results[0]["citation_count"] == 1000
 

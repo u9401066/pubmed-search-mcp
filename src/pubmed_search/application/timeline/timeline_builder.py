@@ -246,8 +246,11 @@ class TimelineBuilder:
                         # Try to get citation data
                         citation_data = await self.searcher.get_citation_metrics(pmids)
                         if citation_data:
-                            # Map citations to articles
-                            citation_map = {str(c.get("pmid")): c.get("citation_count", 0) for c in citation_data}
+                            # Map citations to articles (citation_data is dict[pmid, metrics])
+                            citation_map: dict[str, int] = {
+                                pmid_key: metrics.get("citation_count", 0)
+                                for pmid_key, metrics in citation_data.items()
+                            }
                             for article in results:
                                 pmid = str(article.get("pmid", ""))
                                 article["citation_count"] = citation_map.get(pmid, 0)

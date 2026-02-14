@@ -7,6 +7,8 @@ Focused on filling coverage gaps in:
 - vision_search.py: more tool paths
 """
 
+from __future__ import annotations
+
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -740,7 +742,7 @@ class TestGetOpenAlexLinks:
         downloader = FulltextDownloader()
 
         with patch("pubmed_search.infrastructure.sources.openalex.OpenAlexClient") as mock_class:
-            mock_client = Mock()
+            mock_client = AsyncMock()
             mock_client.get_work.return_value = {
                 "pdf_url": "https://openalex.org/paper.pdf",
                 "oa_status": "gold",
@@ -762,7 +764,7 @@ class TestGetOpenAlexLinks:
         downloader = FulltextDownloader()
 
         with patch("pubmed_search.infrastructure.sources.openalex.OpenAlexClient") as mock_class:
-            mock_client = Mock()
+            mock_client = AsyncMock()
             mock_client.get_work.return_value = {"title": "No PDF"}
             mock_class.return_value = mock_client
 
@@ -785,7 +787,7 @@ class TestGetSemanticScholarLinks:
         downloader = FulltextDownloader()
 
         with patch("pubmed_search.infrastructure.sources.semantic_scholar.SemanticScholarClient") as mock_class:
-            mock_client = Mock()
+            mock_client = AsyncMock()
             mock_client.get_paper.return_value = {
                 "pdf_url": "https://s2.org/paper.pdf",
                 "is_open_access": True,
