@@ -414,7 +414,7 @@ class ConfigurationError(PubMedSearchError):
 def create_error_group(
     message: str,
     errors: list[Exception],
-) -> ExceptionGroup[Exception]:
+) -> ExceptionGroup:  # type: ignore[type-arg]
     """
     Create an ExceptionGroup from multiple errors.
 
@@ -468,7 +468,7 @@ def get_retry_delay(error: Exception, attempt: int) -> float:
 
     # Check for specific retry-after in error
     if isinstance(error, PubMedSearchError) and error.context.retry_after:
-        base_delay = error.context.retry_after
+        base_delay = float(error.context.retry_after)
 
     # Exponential backoff with jitter
     import random
@@ -477,4 +477,4 @@ def get_retry_delay(error: Exception, attempt: int) -> float:
     jitter = random.uniform(0, 0.1 * delay)  # noqa: S311
 
     # Cap at 30 seconds
-    return min(delay + jitter, 30.0)
+    return float(min(delay + jitter, 30.0))

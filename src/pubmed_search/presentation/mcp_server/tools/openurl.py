@@ -10,15 +10,19 @@ Removed in v0.3.1:
 - test_institutional_access → integrated into configure_institutional_access(test=True)
 """
 
-import logging
+from __future__ import annotations
 
-from mcp.server.fastmcp import FastMCP
+import logging
+from typing import TYPE_CHECKING, Any
 
 from pubmed_search.infrastructure.sources.openurl import (
     configure_openurl,
     get_openurl_config,
     list_presets,
 )
+
+if TYPE_CHECKING:
+    from mcp.server.fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
 
@@ -501,7 +505,7 @@ async def _test_resolver_url(url: str, timeout: int = 10) -> dict:
 
     from pubmed_search.shared.async_utils import get_shared_async_client
 
-    result = {
+    result: dict[str, Any] = {
         "reachable": False,
         "status_code": None,
         "error": None,

@@ -18,16 +18,21 @@ These tools enable AI agents to:
 4. Trace knowledge development over time
 """
 
+from __future__ import annotations
+
 import json
 import logging
-
-from mcp.server.fastmcp import FastMCP
+from typing import TYPE_CHECKING, Any
 
 from pubmed_search.application.timeline import MilestoneDetector, TimelineBuilder
 from pubmed_search.application.timeline.timeline_builder import format_timeline_text
-from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
 from ._common import InputNormalizer, ResponseFormatter
+
+if TYPE_CHECKING:
+    from mcp.server.fastmcp import FastMCP
+
+    from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
 logger = logging.getLogger(__name__)
 
@@ -244,7 +249,7 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 ]
 
             # Events by year (activity pattern)
-            years = {}
+            years: dict[int, int] = {}
             for event in timeline.events:
                 years[event.year] = years.get(event.year, 0) + 1
             analysis["activity_by_year"] = dict(sorted(years.items()))
@@ -295,7 +300,7 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                     tool_name="compare_timelines",
                 )
 
-            comparison = {"topics": [], "summary": {}}
+            comparison: dict[str, Any] = {"topics": [], "summary": {}}
 
             for topic in topic_list:
                 timeline = await builder.build_timeline(

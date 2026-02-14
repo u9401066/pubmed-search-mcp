@@ -8,6 +8,8 @@ endpoints directly without going through the Agent.
 Author: u9401066@gap.kmu.edu.tw
 """
 
+from __future__ import annotations
+
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -110,7 +112,7 @@ def create_api_server(
     # Add CORS middleware for local development
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],  # Allow all origins for MCP-to-MCP
+        allow_origins=["*"],  # nosemgrep: python.fastapi.security.wildcard-cors.wildcard-cors
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

@@ -6,16 +6,19 @@ Tools:
 - expand_search_queries: Expand search when results are insufficient
 """
 
+from __future__ import annotations
+
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Union
-
-from mcp.server.fastmcp import FastMCP
-
-from pubmed_search.infrastructure.ncbi import LiteratureSearcher
+from typing import TYPE_CHECKING, Union
 
 from ._common import InputNormalizer, ResponseFormatter, get_strategy_generator
+
+if TYPE_CHECKING:
+    from mcp.server.fastmcp import FastMCP
+
+    from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
 logger = logging.getLogger(__name__)
 

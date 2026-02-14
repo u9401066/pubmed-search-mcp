@@ -24,16 +24,19 @@ Phase 3 Updates (v0.2.8):
 - CrossRef, DOAJ, Zenodo, PubMed LinkOut integration
 """
 
-import logging
-from typing import Any, Union
+from __future__ import annotations
 
-from mcp.server.fastmcp import FastMCP
+import logging
+from typing import TYPE_CHECKING, Any, Union
 
 from pubmed_search.infrastructure.sources import get_europe_pmc_client
 from pubmed_search.infrastructure.sources.core import get_core_client
 from pubmed_search.infrastructure.sources.unpaywall import get_unpaywall_client
 
 from ._common import InputNormalizer, ResponseFormatter
+
+if TYPE_CHECKING:
+    from mcp.server.fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
 

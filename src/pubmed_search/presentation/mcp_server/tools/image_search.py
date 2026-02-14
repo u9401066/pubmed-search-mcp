@@ -17,14 +17,17 @@ Full API Parameters (Open-i):
 - video_only: true/false
 """
 
-import logging
-from typing import Union
+from __future__ import annotations
 
-from mcp.server.fastmcp import FastMCP
+import logging
+from typing import TYPE_CHECKING, Union
 
 from pubmed_search.application.image_search import ImageSearchResult, ImageSearchService
 
 from ._common import InputNormalizer, ResponseFormatter
+
+if TYPE_CHECKING:
+    from mcp.server.fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
 

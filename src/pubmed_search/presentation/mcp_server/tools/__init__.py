@@ -52,9 +52,9 @@ Usage:
     register_all_tools(mcp, searcher)
 """
 
-from mcp.server.fastmcp import FastMCP
+from __future__ import annotations
 
-from pubmed_search.infrastructure.ncbi import LiteratureSearcher
+from typing import TYPE_CHECKING
 
 from ._common import set_session_manager, set_strategy_generator
 from .citation_tree import register_citation_tree_tools
@@ -72,6 +72,11 @@ from .strategy import register_strategy_tools
 from .timeline import register_timeline_tools
 from .unified import register_unified_search_tools
 from .vision_search import register_vision_tools  # Experimental: image-to-literature
+
+if TYPE_CHECKING:
+    from mcp.server.fastmcp import FastMCP
+
+    from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
 
 def register_all_tools(mcp: FastMCP, searcher: LiteratureSearcher):

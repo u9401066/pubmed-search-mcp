@@ -9,13 +9,16 @@ Provides MCP tools for accessing additional NCBI databases beyond PubMed:
 These tools complement PubMed search for comprehensive biomedical research.
 """
 
+from __future__ import annotations
+
 import json
 import logging
-from typing import Union
-
-from mcp.server.fastmcp import FastMCP
+from typing import TYPE_CHECKING, Union
 
 from ._common import InputNormalizer, ResponseFormatter
+
+if TYPE_CHECKING:
+    from mcp.server.fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
 

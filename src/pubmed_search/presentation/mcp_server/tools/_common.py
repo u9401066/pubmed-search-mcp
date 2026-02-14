@@ -10,6 +10,8 @@ Shared functions:
 - Exception handling integration (Phase 2.2)
 """
 
+from __future__ import annotations
+
 import logging
 import re
 from typing import Any, Union

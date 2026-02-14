@@ -55,14 +55,14 @@ Features:
     - Transparent operation with analysis metadata
 """
 
+from __future__ import annotations
+
 import asyncio
 import json
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Literal, Union
-
-from mcp.server.fastmcp import FastMCP
+from typing import TYPE_CHECKING, Literal, Union
 
 from pubmed_search.application.search.query_analyzer import (
     AnalyzedQuery,
@@ -81,7 +81,6 @@ from pubmed_search.application.search.semantic_enhancer import (
     get_semantic_enhancer,
 )
 from pubmed_search.domain.entities.article import UnifiedArticle
-from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 from pubmed_search.infrastructure.sources import (
     get_crossref_client,
     get_openalex_client,
@@ -96,6 +95,11 @@ from pubmed_search.infrastructure.sources.preprints import PreprintSearcher
 
 from ._common import InputNormalizer, ResponseFormatter, _record_search_only
 from .icd import lookup_icd_to_mesh
+
+if TYPE_CHECKING:
+    from mcp.server.fastmcp import FastMCP
+
+    from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
 logger = logging.getLogger(__name__)
 
@@ -1211,7 +1215,7 @@ async def _enrich_with_unpaywall(articles: list[UnifiedArticle]) -> None:
         logger.warning(f"Unpaywall enrichment failed: {e}")
 
 
-def _is_preprint(article: UnifiedArticle, _article_type_class: type) -> bool:
+def _is_preprint(article: UnifiedArticle, _article_type_class: type) -> bool:  # type: ignore[type-arg]
     """
     Determine if an article is a non-peer-reviewed preprint.
 
@@ -1226,7 +1230,7 @@ def _is_preprint(article: UnifiedArticle, _article_type_class: type) -> bool:
         True if the article is likely a preprint (not peer-reviewed).
     """
     # Check article type
-    if article.article_type == _article_type_class.PREPRINT:
+    if article.article_type == _article_type_class.PREPRINT:  # type: ignore[attr-defined]
         return True
 
     # Has arXiv ID but no PubMed ID → likely preprint

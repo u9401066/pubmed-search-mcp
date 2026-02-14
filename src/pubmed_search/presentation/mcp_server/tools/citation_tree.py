@@ -20,15 +20,18 @@ Supports multiple output formats:
 - mermaid: Mermaid diagram (VS Code preview, Markdown)
 """
 
+from __future__ import annotations
+
 import json
 import logging
-from typing import Any, Union
-
-from mcp.server.fastmcp import FastMCP
-
-from pubmed_search.infrastructure.ncbi import LiteratureSearcher
+from typing import TYPE_CHECKING, Any, Union
 
 from ._common import InputNormalizer, ResponseFormatter
+
+if TYPE_CHECKING:
+    from mcp.server.fastmcp import FastMCP
+
+    from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
 logger = logging.getLogger(__name__)
 

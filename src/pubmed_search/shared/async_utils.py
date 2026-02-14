@@ -152,12 +152,12 @@ async def gather_with_errors(
             except Exception as e:  # noqa: BLE001
                 results.append(e)
 
-        async with asyncio.TaskGroup() as tg:
+        async with asyncio.TaskGroup() as tg:  # type: ignore[attr-defined]
             for coro in coros:
                 tg.create_task(safe_run(coro))
     else:
         # Fail fast on any exception
-        async with asyncio.TaskGroup() as tg:
+        async with asyncio.TaskGroup() as tg:  # type: ignore[attr-defined]
             tasks = [tg.create_task(coro) for coro in coros]
         results = [task.result() for task in tasks]
 

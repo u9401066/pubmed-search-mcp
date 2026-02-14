@@ -14,6 +14,8 @@ Python 3.12+ features:
 - @override decorator support
 """
 
+from __future__ import annotations
+
 from .async_utils import (
     # Fault tolerance
     CircuitBreaker,

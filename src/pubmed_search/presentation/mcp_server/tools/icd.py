@@ -10,10 +10,14 @@ Removed in v0.3.1:
 - convert_mesh_to_icd → merged into convert_icd_mesh
 """
 
+from __future__ import annotations
+
 import json
 import logging
+from typing import TYPE_CHECKING, Any
 
-from mcp.server.fastmcp import FastMCP
+if TYPE_CHECKING:
+    from mcp.server.fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
 
@@ -258,7 +262,7 @@ def lookup_mesh_to_icd(mesh_term: str) -> dict:
     """
     mesh_term_lower = mesh_term.lower().strip()
 
-    results = {
+    results: dict[str, Any] = {
         "success": False,
         "input_mesh": mesh_term,
         "icd10_codes": [],

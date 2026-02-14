@@ -13,13 +13,16 @@ Usage:
     tools = list_registered_tools()
 """
 
+from __future__ import annotations
+
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from mcp.server.fastmcp import FastMCP
+if TYPE_CHECKING:
+    from mcp.server.fastmcp import FastMCP
 
-from pubmed_search.application.session.manager import SessionManager
-from pubmed_search.infrastructure.ncbi import LiteratureSearcher
+    from pubmed_search.application.session.manager import SessionManager
+    from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +31,7 @@ logger = logging.getLogger(__name__)
 # Tool Categories - 工具分類定義
 # ============================================================================
 
-TOOL_CATEGORIES = {
+TOOL_CATEGORIES: dict[str, dict[str, Any]] = {
     "search": {
         "name": "搜尋工具",
         "description": "文獻搜索入口",
@@ -271,7 +274,7 @@ def generate_tools_index_markdown() -> str:
 # ============================================================================
 
 
-def validate_tool_registry(mcp: FastMCP) -> dict[str, list[str]]:
+def validate_tool_registry(mcp: FastMCP) -> dict[str, Any]:
     """
     驗證 TOOL_CATEGORIES 與實際註冊的工具是否同步。
 
@@ -287,7 +290,7 @@ def validate_tool_registry(mcp: FastMCP) -> dict[str, list[str]]:
         - valid: True if fully synchronized
     """
     # Get defined tools from TOOL_CATEGORIES
-    defined_tools = set()
+    defined_tools: set[str] = set()
     for cat_info in TOOL_CATEGORIES.values():
         defined_tools.update(cat_info["tools"])
 

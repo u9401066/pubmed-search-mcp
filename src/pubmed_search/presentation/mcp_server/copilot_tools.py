@@ -45,13 +45,11 @@ Microsoft Copilot Studio 在匯入 MCP 工具時，會將工具的 JSON Schema
 - https://github.com/anthropics/mcp/issues (schema compatibility discussions)
 """
 
+from __future__ import annotations
+
 import json
 import logging
 from typing import TYPE_CHECKING, Any, Literal
-
-from mcp.server.fastmcp import FastMCP
-
-from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
 from .tools._common import (
     InputNormalizer,
@@ -62,6 +60,10 @@ from .tools._common import (
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Coroutine
+
+    from mcp.server.fastmcp import FastMCP
+
+    from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
 logger = logging.getLogger(__name__)
 

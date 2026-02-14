@@ -30,6 +30,8 @@ Usage for integration:
     register_all_tools(your_mcp_server, searcher)
 """
 
+from __future__ import annotations
+
 from .server import create_server, main
 from .tools import register_all_tools
 

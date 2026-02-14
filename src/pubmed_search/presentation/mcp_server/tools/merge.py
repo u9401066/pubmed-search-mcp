@@ -5,14 +5,18 @@ Tools:
 - merge_search_results: Merge multiple searches, remove duplicates, identify high-relevance
 """
 
+from __future__ import annotations
+
 import json
 import logging
-
-from mcp.server.fastmcp import FastMCP
-
-from pubmed_search.infrastructure.ncbi import LiteratureSearcher
+from typing import TYPE_CHECKING
 
 from ._common import ResponseFormatter
+
+if TYPE_CHECKING:
+    from mcp.server.fastmcp import FastMCP
+
+    from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
 logger = logging.getLogger(__name__)
 

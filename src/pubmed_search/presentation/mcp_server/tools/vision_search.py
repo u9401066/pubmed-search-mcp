@@ -24,6 +24,8 @@ Use cases:
 - Equipment photo → Find papers using similar methodology
 """
 
+from __future__ import annotations
+
 import base64
 import logging
 import re
@@ -127,7 +129,7 @@ async def fetch_image_as_base64(url: str, timeout: float = 30.0) -> tuple[str, s
 def register_vision_tools(mcp):
     """Register vision-based search tools with the MCP server."""
 
-    @mcp.tool()
+    @mcp.tool()  # type: ignore[misc, untyped-decorator]
     async def analyze_figure_for_search(
         image: str | None = None,
         url: str | None = None,

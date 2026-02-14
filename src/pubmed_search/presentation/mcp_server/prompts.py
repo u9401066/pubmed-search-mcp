@@ -7,7 +7,12 @@ Agents can call prompts/list and prompts/get to retrieve these templates.
 Prompts are NOT executed - they return guidance that the Agent follows.
 """
 
-from mcp.server.fastmcp import FastMCP
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from mcp.server.fastmcp import FastMCP
 
 
 def register_prompts(mcp: FastMCP) -> None:

@@ -17,14 +17,15 @@ Architecture:
 - container: DI container (dependency-injector) for service lifecycle
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import os
 import sys
-from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
@@ -33,6 +34,12 @@ from pubmed_search.container import ApplicationContainer
 
 from .instructions import SERVER_INSTRUCTIONS
 from .tool_registry import register_all_mcp_tools
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator, Callable
+
+    from pubmed_search.application.session.manager import SessionManager
+    from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
 logger = logging.getLogger(__name__)
 
@@ -116,9 +123,9 @@ def create_server(
         }
     )
 
-    searcher = _container.searcher()
+    searcher = cast("LiteratureSearcher", _container.searcher())
     strategy_generator = _container.strategy_generator()
-    session_manager = _container.session_manager()
+    session_manager = cast("SessionManager", _container.session_manager())
 
     logger.info("Strategy generator initialized (ESpell + MeSH)")
     logger.info("Session data directory: %s", data_dir or DEFAULT_DATA_DIR)
@@ -312,6 +319,7 @@ def main():
     )
 
     # Get email: CLI arg → env var → git config → default
+    email: str | None = None
     if len(sys.argv) > 1:
         email = sys.argv[1]
     else:

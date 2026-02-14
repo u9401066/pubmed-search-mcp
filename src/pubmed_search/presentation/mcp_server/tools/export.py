@@ -15,14 +15,14 @@ v0.1.30 Updates:
 - Fallback to local formatting when API unavailable
 """
 
+from __future__ import annotations
+
 import json
 import logging
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Union
-
-from mcp.server.fastmcp import FastMCP
+from typing import TYPE_CHECKING, Union
 
 from pubmed_search.application.export import (
     SUPPORTED_FORMATS,
@@ -30,7 +30,6 @@ from pubmed_search.application.export import (
     get_fulltext_links_with_lookup,
     summarize_access,
 )
-from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 from pubmed_search.infrastructure.ncbi.citation_exporter import (
     OFFICIAL_FORMATS,
     CitationResult,
@@ -38,6 +37,11 @@ from pubmed_search.infrastructure.ncbi.citation_exporter import (
 )
 
 from ._common import InputNormalizer, ResponseFormatter, get_session_manager
+
+if TYPE_CHECKING:
+    from mcp.server.fastmcp import FastMCP
+
+    from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
 logger = logging.getLogger(__name__)
 

@@ -5,6 +5,8 @@ MCP Server Instructions - Agent 使用指南
 從 server.py 獨立出來以便維護和查詢。
 """
 
+from __future__ import annotations
+
 SERVER_INSTRUCTIONS = """
 PubMed Search MCP Server - AI Agent 的文獻搜尋助理
 

@@ -19,12 +19,11 @@ Phase 2.1 Updates:
 - KEY_ALIASES for parameter name tolerance
 """
 
+from __future__ import annotations
+
 import logging
-from typing import Any, Literal, Union
+from typing import TYPE_CHECKING, Any, Literal, Union
 
-from mcp.server.fastmcp import FastMCP
-
-from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 from pubmed_search.infrastructure.sources import cross_search, search_alternate_source
 
 from ._common import (
@@ -36,6 +35,11 @@ from ._common import (
     check_cache,
     format_search_results,
 )
+
+if TYPE_CHECKING:
+    from mcp.server.fastmcp import FastMCP
+
+    from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
 logger = logging.getLogger(__name__)
 

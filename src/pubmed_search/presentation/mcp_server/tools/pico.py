@@ -5,12 +5,16 @@ Tools:
 - parse_pico: Parse clinical question into P/I/C/O elements
 """
 
+from __future__ import annotations
+
 import json
 import logging
-
-from mcp.server.fastmcp import FastMCP
+from typing import TYPE_CHECKING
 
 from ._common import InputNormalizer, ResponseFormatter
+
+if TYPE_CHECKING:
+    from mcp.server.fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
 

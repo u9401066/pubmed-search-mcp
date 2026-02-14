@@ -6,6 +6,8 @@ Contains:
 - api: REST API (for Copilot Studio)
 """
 
+from __future__ import annotations
+
 from .mcp_server import create_server, main
 
 # Alias for consistency

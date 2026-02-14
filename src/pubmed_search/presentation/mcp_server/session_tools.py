@@ -12,12 +12,16 @@ Removed in v0.3.1:
 - list_search_history → Merged into get_session_summary(include_history=True)
 """
 
+from __future__ import annotations
+
 import json
 import logging
+from typing import TYPE_CHECKING, Any
 
-from mcp.server.fastmcp import FastMCP
+if TYPE_CHECKING:
+    from mcp.server.fastmcp import FastMCP
 
-from pubmed_search.application.session.manager import SessionManager
+    from pubmed_search.application.session.manager import SessionManager
 
 logger = logging.getLogger(__name__)
 
@@ -211,7 +215,7 @@ def register_session_tools(mcp: FastMCP, session_manager: SessionManager):
             # Get some cached PMIDs sample
             cached_pmids = list(session.article_cache.keys())
 
-            result = {
+            result: dict[str, Any] = {
                 "success": True,
                 "has_session": True,
                 "session_id": session.session_id,
@@ -237,7 +241,7 @@ def register_session_tools(mcp: FastMCP, session_manager: SessionManager):
             if include_history:
                 history = session.search_history[-history_limit:]
                 total = len(session.search_history)
-                formatted_history = []
+                formatted_history: list[dict[str, Any]] = []
                 for i, search in enumerate(history):
                     actual_index = total - history_limit + i if total > history_limit else i
                     formatted_history.append(
