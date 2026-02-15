@@ -1962,69 +1962,86 @@ async def _execute_pipeline_mode(
 ) -> str:
     """Parse and execute a pipeline config, returning formatted results.
 
-    Accepts both YAML and JSON formats.
+    Accepts:
+    - "saved:<name>" — load a previously saved pipeline from PipelineStore
+    - YAML or JSON string — inline pipeline config
     """
     from pubmed_search.application.pipeline.executor import PipelineExecutor
     from pubmed_search.application.pipeline.templates import build_pipeline_from_template
-    from pubmed_search.domain.entities.pipeline import (
-        PipelineConfig,
-        PipelineOutput,
-        PipelineStep,
-    )
+    from pubmed_search.application.pipeline.validator import parse_and_validate_config
 
-    try:
-        raw = _parse_pipeline_config(pipeline_text)
-    except Exception as exc:
-        return ResponseFormatter.error(
-            f"Invalid pipeline config: {exc}",
-            suggestion="Provide valid YAML or JSON for the pipeline parameter",
-            example=('pipeline="template: pico\nparams:\n  P: ICU patients\n  I: remimazolam"'),
-            tool_name="unified_search",
-        )
+    # ── Saved pipeline mode ──────────────────────────────────────────────
+    stripped = pipeline_text.strip()
+    if stripped.startswith("saved:"):
+        pipeline_name = stripped[6:].strip()
+        if not pipeline_name:
+            return ResponseFormatter.error(
+                'Missing pipeline name after "saved:"',
+                suggestion='Use saved:<name>, e.g. pipeline="saved:weekly_remimazolam"',
+                tool_name="unified_search",
+            )
+        from pubmed_search.presentation.mcp_server.tools.pipeline_tools import get_pipeline_store
 
-    # Template mode
-    if "template" in raw:
-        template_name = raw["template"]
-        template_params = raw.get("params", {})
+        store = get_pipeline_store()  # PipelineStore | None
+        if not store:
+            return ResponseFormatter.error(
+                "Pipeline store not initialized",
+                suggestion="Server may not be fully started",
+                tool_name="unified_search",
+            )
         try:
-            config = build_pipeline_from_template(template_name, template_params)
+            config, _meta = store.load(pipeline_name)
+        except FileNotFoundError:
+            return ResponseFormatter.error(
+                f"Saved pipeline '{pipeline_name}' not found",
+                suggestion="Use list_pipelines() to see available pipelines",
+                tool_name="unified_search",
+            )
         except ValueError as exc:
             return ResponseFormatter.error(
-                f"Template error: {exc}",
-                suggestion="Check template name and required params",
+                f"Saved pipeline '{pipeline_name}' has errors: {exc}",
                 tool_name="unified_search",
             )
     else:
-        # Custom pipeline mode
+        # ── Inline YAML/JSON mode ───────────────────────────────────────
         try:
-            steps_raw = raw.get("steps", [])
-            steps = [
-                PipelineStep(
-                    id=s["id"],
-                    action=s["action"],
-                    params=s.get("params", {}),
-                    inputs=s.get("inputs", []),
-                    on_error=s.get("on_error", "skip"),
-                )
-                for s in steps_raw
-            ]
-            output_raw = raw.get("output", {})
-            output_cfg = PipelineOutput(
-                format=output_raw.get("format", output_format),
-                limit=int(output_raw.get("limit", 20)),
-                ranking=output_raw.get("ranking", "balanced"),
-            )
-            config = PipelineConfig(
-                name=raw.get("name", "Custom Pipeline"),
-                steps=steps,
-                output=output_cfg,
-            )
-        except (KeyError, TypeError) as exc:
+            raw = _parse_pipeline_config(pipeline_text)
+        except Exception as exc:
             return ResponseFormatter.error(
-                f"Pipeline config error: {exc}",
-                suggestion="Each step needs 'id' and 'action' fields",
+                f"Invalid pipeline config: {exc}",
+                suggestion="Provide valid YAML or JSON for the pipeline parameter",
+                example=('pipeline="template: pico\nparams:\n  P: ICU patients\n  I: remimazolam"'),
                 tool_name="unified_search",
             )
+
+        # Template mode
+        if "template" in raw:
+            template_name = raw["template"]
+            template_params = raw.get("params", {})
+            try:
+                config = build_pipeline_from_template(template_name, template_params)
+            except ValueError as exc:
+                return ResponseFormatter.error(
+                    f"Template error: {exc}",
+                    suggestion="Check template name and required params",
+                    tool_name="unified_search",
+                )
+        else:
+            # Custom pipeline — use validator for auto-fix
+            result = parse_and_validate_config(raw)
+            if not result.valid:
+                error_msg = "Pipeline config error:\n" + "\n".join(f"  ❌ {e}" for e in result.errors)
+                if result.fixes:
+                    error_msg += "\n\nAuto-fixes attempted:\n" + "\n".join(
+                        f"  🔧 {f.field}: {f.reason}" for f in result.fixes
+                    )
+                return ResponseFormatter.error(error_msg, tool_name="unified_search")
+            config = result.config  # type: ignore[assignment]
+            if config is None:
+                return ResponseFormatter.error(
+                    "Failed to parse pipeline config",
+                    tool_name="unified_search",
+                )
 
     # Override output format if specified at top level
     if output_format:

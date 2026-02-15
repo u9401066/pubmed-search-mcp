@@ -27,19 +27,21 @@ from pubmed_search.presentation.mcp_server.tools._common import ResponseFormatte
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
 
+    from pubmed_search.application.pipeline.store import PipelineStore
+
 logger = logging.getLogger(__name__)
 
 # Module-level store reference (set by register function)
-_pipeline_store = None
+_pipeline_store: PipelineStore | None = None
 
 
-def set_pipeline_store(store: object) -> None:
+def set_pipeline_store(store: PipelineStore) -> None:
     """Set the PipelineStore instance for tools."""
     global _pipeline_store
     _pipeline_store = store
 
 
-def get_pipeline_store():
+def get_pipeline_store() -> PipelineStore | None:
     """Get the current PipelineStore."""
     return _pipeline_store
 
