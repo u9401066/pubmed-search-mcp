@@ -41,8 +41,6 @@ repos:
       - id: detect-private-key
       - id: check-ast
       # ── New: comprehensive file & code hygiene ──────────
-      - id: check-byte-order-marker
-        # Detects UTF-8 BOM (breaks some parsers)
       - id: fix-byte-order-marker
         # Auto-removes UTF-8 BOM (auto-fix)
       - id: check-builtin-literals

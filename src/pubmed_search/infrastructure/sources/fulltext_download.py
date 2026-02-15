@@ -36,8 +36,10 @@ import logging
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from collections.abc import Awaitable
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable
 
 import httpx
 

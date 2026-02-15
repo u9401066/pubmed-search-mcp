@@ -1,9 +1,10 @@
 # PubMed Search MCP — 演算法創新差距分析與提升研究
 
 > **文件性質**: 內部研究文件  
-> **狀態**: 初稿 v1.1  
+> **狀態**: 初稿 v1.3  
 > **目的**: 誠實評估現有演算法深度，識別學術創新機會，規劃提升路線  
 > **建立日期**: 2026-02-12  
+> **最後更新**: 2026-02-15  
 > **維護者**: Eric
 
 ---
@@ -18,6 +19,7 @@
 6. [實施路線圖](#6-實施路線圖)
 7. [驗證方法論](#7-驗證方法論)
 8. [相關文獻](#8-相關文獻)
+9. [Technical Spec：Search Rank Fusion & Diff Engine](#9-technical-specsearch-rank-fusion--diff-engine)
 
 ---
 
@@ -1273,3 +1275,1857 @@ def query_semantic_distance(query_a: str, query_b: str) -> float:
 | 沒有真正的 ML 模型 | 低 | Phase A+B 完全不需 ML，反而是優勢（輕量部署、無 GPU 依賴） |
 | MinHash 的 `datasketch` 增加部署體積 | 低 | datasketch 是純 Python，體積小 |
 | MeSH 距離依賴 NCBI API 穩定性 | 低 | 可快取 MeSH 樹結構到本地 |
+
+---
+---
+
+## 9. Technical Spec：Search Rank Fusion & Diff Engine
+
+> **狀態**: 設計討論中 (v0.1)  
+> **前置依賴**: 本文件 §2（痛點分析）、§4.1（BM25 + RRF）  
+> **目標**: 將 §2 + §4.1 的理論方案落地為可實作的技術規格  
+> **建立日期**: 2026-02-15
+
+### 9.1 概述 (Overview)
+
+本模組負責接收來自多個異質學術搜尋 API（如 OpenAlex, CrossRef, Europe PMC, Semantic Scholar, PubMed）的原始結果，執行**標準化、去重、排名融合（RRF）**，並與同一 Session 中的上一次搜尋狀態進行比對。最終輸出一個精簡的、具備「新穎性」與「趨勢性」的 JSON 報告給 AI Agent。
+
+**核心價值**：解決 §2 識別的三大痛點 —— 結果不可消化、搜尋間無記憶、排序與研究問題脫節。
+
+### 9.2 系統架構與資料流 (Architecture)
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        Fusion Engine Pipeline                       │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐            │
+│  │ OpenAlex │  │ CrossRef │  │  Europe  │  │ Semantic │  ... more   │
+│  │ Top 100  │  │ Top 100  │  │   PMC    │  │ Scholar  │             │
+│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └────┬─────┘            │
+│       │              │              │              │                 │
+│       ▼              ▼              ▼              ▼                 │
+│  ┌─────────────────────────────────────────────────────┐            │
+│  │  Stage 1: Normalization & Deduplication              │            │
+│  │  UID = DOI > PMID > Title Hash                       │            │
+│  │  Union-Find O(n) 去重 (現有 ResultAggregator 基礎)   │            │
+│  └──────────────────────┬──────────────────────────────┘            │
+│                         │ List[UnifiedDoc]                          │
+│                         ▼                                           │
+│  ┌─────────────────────────────────────────────────────┐            │
+│  │  Stage 2: RRF Score Calculation                      │            │
+│  │  RRF(d) = Σ 1/(k + rank_source(d))                  │            │
+│  │  k = 60 (configurable)                               │            │
+│  └──────────────────────┬──────────────────────────────┘            │
+│                         │ Sorted by rrf_score                       │
+│                         ▼                                           │
+│  ┌─────────────────────────────────────────────────────┐            │
+│  │  Stage 3: Quality Re-ranking (Optional)              │            │
+│  │  Blend: α·rrf_score + (1-α)·quality_score            │            │
+│  │  quality = f(recency, impact, article_type, ...)     │            │
+│  └──────────────────────┬──────────────────────────────┘            │
+│                         │ Final ranked list                         │
+│                         ▼                                           │
+│  ┌─────────────────────────────────────────────────────┐            │
+│  │  Stage 4: Differential Analysis                      │            │
+│  │  Compare with Session fusion_history[-1]             │            │
+│  │  Categorize: NEW / HIGH_RISER / STAGNANT / DROPPING  │            │
+│  └──────────────────────┬──────────────────────────────┘            │
+│                         │                                           │
+│                         ▼                                           │
+│  ┌─────────────────────────────────────────────────────┐            │
+│  │  Stage 5: Insight Generation                         │            │
+│  │  global_consensus_new / high_risers / source_gems    │            │
+│  └──────────────────────┬──────────────────────────────┘            │
+│                         │                                           │
+│                         ▼                                           │
+│              AgentSummary (JSON) + Session Update                    │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 9.3 資料結構定義 (Data Structures)
+
+#### 9.3.1 原始輸入物件 (Raw Search Result)
+
+```python
+@dataclass
+class RawSearchResult:
+    """單一來源 API 返回的原始結果"""
+    source: str          # e.g., "openalex", "crossref", "europe_pmc", "semantic_scholar"
+    original_rank: int   # 1-based rank from API
+    title: str
+    doi: str | None      # Normalized DOI (lowercase, no prefix)
+    pmid: str | None     # PubMed ID (如有)
+    year: int | None
+    snippet: str         # Title + abstract 前 200 字
+```
+
+> **與現有系統的關係**: 現有 `UnifiedArticle` 的工廠方法 (`from_openalex`, `from_crossref` 等) 已經做了大部分欄位映射。`RawSearchResult` 是 `UnifiedArticle` 的**精簡投影**，僅保留 RRF 融合所需的欄位。可以從 `UnifiedArticle` 直接建構。
+
+#### 9.3.2 統一文檔物件 (Unified Document)
+
+系統內部的處理單元，經去重後產生。
+
+```python
+@dataclass
+class UnifiedDoc:
+    uid: str                    # Unique ID (見 §9.4.1 UID 策略)
+    title: str
+    rrf_score: float            # Calculated RRF Score
+    rrf_rank: int               # Final rank after RRF (1-based)
+    sources: list[str]          # e.g., ["openalex:2", "crossref:5"]
+    source_count: int           # len(unique sources) — 快速存取
+    metadata: dict              # Merged metadata (year, authors, doi, pmid, etc.)
+    quality_score: float | None # Optional: from Stage 3 re-ranking
+    blended_score: float | None # Optional: α·rrf + (1-α)·quality
+```
+
+> **與現有系統的關係**: `UnifiedDoc` 不替代 `UnifiedArticle`，而是 RRF 融合流程的**中間產物**。最終結果仍轉換回 `UnifiedArticle` 返回給 MCP 工具層。
+
+#### 9.3.3 Session 狀態擴展 (Fusion History)
+
+**設計決策**: 不新建 `SessionState`，而是擴展現有 `ResearchSession`。
+
+```python
+@dataclass
+class FusionTurn:
+    """每一輪搜尋的 RRF 融合狀態快照"""
+    query: str
+    timestamp: float
+    rank_map: dict[str, int]        # {uid: final_rank} — 僅 Top 100
+    rrf_scores: dict[str, float]    # {uid: rrf_score} — 僅 Top 100
+    source_breakdown: dict[str, int]  # {"openalex": 45, "crossref": 38, ...}
+    total_fused: int                  # 去重後總數
+
+class ResearchSession:
+    # ... 現有欄位保持不變 ...
+    # article_cache: dict[str, dict]
+    # search_history: list[dict]
+    # reading_list: dict[str, dict]
+    # excluded_pmids: list[str]
+
+    fusion_history: list[FusionTurn] = field(default_factory=list)  # ← 新增
+```
+
+> **記憶體控制**: `rank_map` 和 `rrf_scores` 僅儲存 Top 100（由 `TOP_N_PROCESS` 控制），每輪約 100 × 2 × 50 bytes ≈ 10 KB。即使 50 輪搜尋也僅佔 500 KB。
+
+### 9.4 核心演算法邏輯 (Core Algorithms)
+
+#### 9.4.1 UID 策略：三級識別符 (Normalization)
+
+**目的**: 確保同一篇論文在不同 API 中被視為同一個實體。
+
+**設計決策**: 採用 **DOI > PMID > Title Hash** 三級策略，與現有 `ResultAggregator` 的三通道匹配保持一致。
+
+```python
+import hashlib
+import re
+
+def compute_uid(article: RawSearchResult) -> str:
+    """三級 UID 計算策略
+
+    優先級:
+    1. DOI — 全球唯一、跨來源標準化
+    2. PMID — PubMed 穩定 ID，消除語言/特殊字元問題
+    3. Title Hash — 最後手段，sha256(正規化標題)[:16]
+    """
+    if article.doi:
+        # 移除前綴、小寫、去空格
+        doi = article.doi.lower().strip()
+        doi = re.sub(r'^https?://(dx\.)?doi\.org/', '', doi)
+        return f"doi:{doi}"
+    if article.pmid:
+        return f"pmid:{article.pmid.strip()}"
+    # Fallback: title hash
+    normalized = re.sub(r'[^a-z0-9]', '', article.title.lower())
+    title_hash = hashlib.sha256(normalized.encode()).hexdigest()[:16]
+    return f"hash:{title_hash}"
+```
+
+**去重整合**: UID 相同的文章會被合併 — 新的 `source:rank` 追加到 `sources` 列表，metadata 做 union 合併（保留資訊量最豐富的欄位）。這與現有 `ResultAggregator` 的 Union-Find 邏輯一致。
+
+#### 9.4.2 倒數排名融合 (Reciprocal Rank Fusion, RRF)
+
+**目的**: 不依賴 API 的絕對分數（各來源分數量綱不同），僅依賴排名來計算權重。
+
+**公式**:
+
+$$\text{RRF}(d) = \sum_{s \in S_d} \frac{1}{k + \text{rank}_s(d)}$$
+
+其中：
+- $k = 60$（經驗常數，避免排名第 1 的權重過大）
+- $S_d$ 是文件 $d$ 出現的來源集合
+- $\text{rank}_s(d)$ 是文件 $d$ 在來源 $s$ 中的排名（1-based）
+
+**Implementation**:
+
+```python
+def reciprocal_rank_fusion(
+    source_rankings: dict[str, list[str]],  # {source_name: [uid1, uid2, ...]}
+    k: int = 60,
+) -> dict[str, float]:
+    """RRF 融合多來源排名
+
+    Args:
+        source_rankings: 每個來源的 UID 排名列表 (1-based implicit)
+        k: 平滑常數 (預設 60)
+
+    Returns:
+        {uid: rrf_score}，由高至低排序
+    """
+    scores: dict[str, float] = {}
+    for source, ranked_uids in source_rankings.items():
+        for rank_0based, uid in enumerate(ranked_uids):
+            rank = rank_0based + 1  # 轉為 1-based
+            scores[uid] = scores.get(uid, 0.0) + 1.0 / (k + rank)
+    return dict(sorted(scores.items(), key=lambda x: x[1], reverse=True))
+```
+
+**未出現來源的處理 — ⚠️ 核心設計議題 (待定)**:
+
+若某文件只在 1 個來源的 Rank 1 出現，其 RRF 分數為：
+
+$$\text{RRF}_{\text{single}} = \frac{1}{60 + 1} = 0.0164$$
+
+若另一文件在 3 個來源都排 Rank 50：
+
+$$\text{RRF}_{\text{multi}} = 3 \times \frac{1}{60 + 50} = 0.0273$$
+
+多來源低排名 > 單來源高排名。這引出兩個對立的設計哲學：
+
+**方案 A：Standard RRF（共識優先）**
+
+```
+哲學: 「多來源都認為相關」比「單一來源強推」更可信
+優點: 抗噪能力強 — 單一 API 的排序偏差被稀釋
+缺點: 可能埋沒「獨家發現」— 僅在某特定來源頂部出現的論文
+適用: 一般搜尋（追求穩定、可靠的結果）
+```
+
+**方案 B：Source-Boosted RRF（獨家加權）**
+
+對只出現在 1 個來源的高排名文章給予補償：
+
+```python
+def source_boosted_rrf(
+    source_rankings: dict[str, list[str]],
+    k: int = 60,
+    single_source_boost: float = 1.5,  # 單來源 top-10 的加成
+    boost_rank_threshold: int = 10,     # 只有 top-N 才加成
+) -> dict[str, float]:
+    scores: dict[str, float] = {}
+    uid_source_count: dict[str, int] = {}  # 追蹤每個 UID 出現在幾個來源
+
+    # Pass 1: 標準 RRF
+    for source, ranked_uids in source_rankings.items():
+        for rank_0based, uid in enumerate(ranked_uids):
+            rank = rank_0based + 1
+            scores[uid] = scores.get(uid, 0.0) + 1.0 / (k + rank)
+            uid_source_count[uid] = uid_source_count.get(uid, 0) + 1
+
+    # Pass 2: 單來源高排名加成
+    for source, ranked_uids in source_rankings.items():
+        for rank_0based, uid in enumerate(ranked_uids[:boost_rank_threshold]):
+            if uid_source_count[uid] == 1:  # 僅出現在此來源
+                rank = rank_0based + 1
+                original_contribution = 1.0 / (k + rank)
+                scores[uid] += original_contribution * (single_source_boost - 1.0)
+
+    return dict(sorted(scores.items(), key=lambda x: x[1], reverse=True))
+```
+
+```
+哲學: 「獨家高排名」可能是該來源的獨特優勢（如 Europe PMC 的全文搜尋）
+優點: 不埋沒可能的 Preprint 或冷門領域論文
+缺點: 可能放大單一 API 的排序偏差
+適用: 探索性搜尋（追求覆蓋面和新穎性）
+```
+
+**方案 C：Hybrid（根據 Insight 類型區分處理）**
+
+```
+哲學: 不修改 RRF 分數本身，而是在 Insight 分類階段單獨打撈
+做法:
+  - RRF 排序仍用標準方案 A
+  - 但 source_specific_gems 類別專門收集「單來源 Top-10 但 RRF 排名偏後」的文章
+  - 等於在最終輸出中給這些文章一個「敗部復活」的展示機會
+優點: RRF 數學性質不被污染，同時保留獨家發現
+缺點: insights 中的 source_gems 可能純粹是某 API 的排序雜訊
+```
+
+**具體數值分析**（以 k=60, 5 個來源為例）：
+
+| 場景 | 來源分布 | Standard RRF | Boosted RRF (1.5x) | 排名 |
+|------|---------|:------------:|:-------------------:|:----:|
+| A: 跨源共識 | OA:5, CR:8, EPMC:3, SS:12, PM:6 | 0.0736 | 0.0736 (不觸發) | #1 |
+| B: 雙源強推 | OA:1, CR:2 | 0.0327 | 0.0327 (≥2 源) | #2 |
+| C: 三源低排名 | OA:50, CR:45, EPMC:55 | 0.0273 | 0.0273 (≥2 源) | #3 |
+| D: 單源 #1 | EPMC:1 | 0.0164 | **0.0246** (+50%) | #4→#3? |
+| E: 單源 #5 | SS:5 | 0.0154 | **0.0231** (+50%) | #5→#4? |
+| F: 單源 #50 | OA:50 | 0.0091 | 0.0091 (>10 位) | #6 |
+
+**待決事項**: 方案 A/B/C 的選擇需要基於實際搜尋數據驗證。建議先實作方案 A + C（標準 RRF + 後置打撈），若驗證顯示獨家發現確實有價值，再考慮方案 B。
+
+> 📌 **此議題將在 §9.10 中深入討論，是系統設計的核心取捨之一。**
+
+#### 9.4.3 品質再排序 (Quality Re-ranking) — Stage 3 (Optional)
+
+**設計決策**: RRF 與現有六維排序是**互補而非替代**。
+
+```
+層次 1 (RRF):   跨來源融合排序 — "同一篇文章在不同 API 的排名如何合併？"
+層次 2 (品質):  品質維度排序   — "文章本身的品質 (RCR、文章類型、時效) 如何比較？"
+```
+
+**兩階段 Pipeline**:
+
+```python
+def fuse_and_rank(
+    source_rankings: dict[str, list[str]],
+    articles: dict[str, UnifiedArticle],
+    alpha: float = 0.6,  # RRF 權重 (vs 品質)
+    ranking_config: RankingConfig | None = None,
+) -> list[UnifiedDoc]:
+    """兩階段融合 + 品質排序
+
+    Stage 2: RRF → cross-source consensus score
+    Stage 3: Quality → article intrinsic quality score
+    Blend:   final = α·rrf_normalized + (1-α)·quality_normalized
+    """
+    # Stage 2: RRF
+    rrf_scores = reciprocal_rank_fusion(source_rankings)
+
+    # Normalize RRF scores to [0, 1]
+    max_rrf = max(rrf_scores.values()) if rrf_scores else 1.0
+    rrf_normalized = {uid: s / max_rrf for uid, s in rrf_scores.items()}
+
+    # Stage 3: Quality scoring (reuse existing ResultAggregator dimensions)
+    # quality = f(recency, impact, article_type, source_trust, entity_match)
+    # 只用原始六維中的 5 個維度（排除 relevance，因為 RRF 已取代）
+    quality_scores = calculate_quality_scores(rrf_scores.keys(), articles, ranking_config)
+
+    # Blend
+    blended = {}
+    for uid in rrf_scores:
+        rrf_n = rrf_normalized.get(uid, 0.0)
+        qual_n = quality_scores.get(uid, 0.0)
+        blended[uid] = alpha * rrf_n + (1 - alpha) * qual_n
+
+    # Sort and assign final ranks
+    sorted_uids = sorted(blended.keys(), key=lambda u: blended[u], reverse=True)
+    results = []
+    for rank, uid in enumerate(sorted_uids, 1):
+        doc = UnifiedDoc(
+            uid=uid,
+            title=articles[uid].title,
+            rrf_score=rrf_scores[uid],
+            rrf_rank=rank,
+            sources=get_sources(uid),
+            source_count=count_sources(uid),
+            metadata=articles[uid].to_dict(),
+            quality_score=quality_scores.get(uid),
+            blended_score=blended[uid],
+        )
+        results.append(doc)
+    return results
+```
+
+**`alpha` 的語意**:
+- `alpha=1.0` — 純 RRF（只看跨來源共識）
+- `alpha=0.5` — 平衡（RRF + 品質各半）
+- `alpha=0.0` — 純品質排序（忽略來源排名，回歸現有行為）
+- **預設 `alpha=0.6`** — RRF 略為主導，品質作為校正
+
+#### 9.4.4 差異分析 (Differential Analysis) — Stage 4
+
+**目的**: 計算本次搜尋 (Turn $t$) 與上一次搜尋 (Turn $t-1$) 的變化。
+
+```python
+from enum import Enum
+
+class RankChangeType(Enum):
+    NEW = "new"                # 首次出現
+    HIGH_RISER = "high_riser"  # 排名大幅提升
+    STAGNANT = "stagnant"      # 排名變化不大
+    DROPPING = "dropping"      # 排名下降
+
+@dataclass
+class RankDelta:
+    uid: str
+    current_rank: int
+    previous_rank: int | None  # None = NEW
+    delta: int | None          # positive = improved
+    change_type: RankChangeType
+
+def differential_analysis(
+    current_rank_map: dict[str, int],   # {uid: rank} from current RRF
+    previous_rank_map: dict[str, int] | None,  # {uid: rank} from last turn
+    config: FusionConfig,
+) -> list[RankDelta]:
+    """計算排名差異
+
+    對 Current Top N 的每一篇文件：
+    1. 若不在 previous → NEW
+    2. 若存在且 rank_delta >= threshold → HIGH_RISER
+    3. 若存在且 |rank_delta| < threshold → STAGNANT
+    4. 若存在且 rank_delta < -threshold → DROPPING
+    """
+    deltas = []
+    for uid, current_rank in current_rank_map.items():
+        if current_rank > config.top_n_display:
+            continue  # 只分析 Top N
+
+        if previous_rank_map is None or uid not in previous_rank_map:
+            deltas.append(RankDelta(
+                uid=uid,
+                current_rank=current_rank,
+                previous_rank=None,
+                delta=None,
+                change_type=RankChangeType.NEW,
+            ))
+        else:
+            prev_rank = previous_rank_map[uid]
+            delta = prev_rank - current_rank  # positive = improved
+            if delta >= config.high_riser_threshold:
+                change_type = RankChangeType.HIGH_RISER
+            elif delta <= -config.high_riser_threshold:
+                change_type = RankChangeType.DROPPING
+            else:
+                change_type = RankChangeType.STAGNANT
+            deltas.append(RankDelta(
+                uid=uid,
+                current_rank=current_rank,
+                previous_rank=prev_rank,
+                delta=delta,
+                change_type=change_type,
+            ))
+    return deltas
+```
+
+#### 9.4.5 Insight 分類 (Insight Categorization) — Stage 5
+
+```python
+@dataclass
+class FusionInsights:
+    global_consensus_new: list[dict]    # 多來源推薦 + 新發現
+    high_risers: list[dict]             # 排名大幅提升
+    source_specific_gems: list[dict]    # 單來源獨家發現
+
+def categorize_insights(
+    docs: list[UnifiedDoc],
+    deltas: list[RankDelta],
+    config: FusionConfig,
+) -> FusionInsights:
+    delta_map = {d.uid: d for d in deltas}
+
+    consensus_new = []
+    high_risers = []
+    source_gems = []
+
+    for doc in docs[:config.top_n_display]:
+        delta = delta_map.get(doc.uid)
+        if not delta:
+            continue
+
+        # Global Consensus: ≥2 sources + NEW + Top N
+        if doc.source_count >= 2 and delta.change_type == RankChangeType.NEW:
+            consensus_new.append({
+                "uid": doc.uid,
+                "title": doc.title,
+                "rrf_rank": doc.rrf_rank,
+                "found_in": doc.sources,
+            })
+
+        # High Riser: rank improved ≥ threshold
+        if delta.change_type == RankChangeType.HIGH_RISER:
+            high_risers.append({
+                "uid": doc.uid,
+                "title": doc.title,
+                "rank_change": f"+{delta.delta} (Prev: {delta.previous_rank} → Curr: {delta.current_rank})",
+                "reason": "Relevance spiked for current query context",
+            })
+
+    # Source Gems: 單來源 + 在該來源 Top 10 (wider net than top_n_display)
+    for doc in docs[:config.top_n_display * 2]:  # 掃描更廣的範圍
+        if doc.source_count == 1:
+            # 解析該來源中的排名
+            source_rank_str = doc.sources[0]  # e.g., "europepmc:3"
+            source_name, rank_in_source = source_rank_str.rsplit(":", 1)
+            if int(rank_in_source) <= 10:  # 在來源中 Top 10
+                source_gems.append({
+                    "uid": doc.uid,
+                    "title": doc.title,
+                    "source": source_rank_str,
+                    "rrf_rank": doc.rrf_rank,
+                    "note": "Unique to this source — may be preprint or niche finding",
+                })
+
+    return FusionInsights(
+        global_consensus_new=consensus_new,
+        high_risers=high_risers,
+        source_specific_gems=source_gems,
+    )
+```
+
+### 9.5 Agent 輸出格式 (JSON Output Spec)
+
+經過高度壓縮與語意化的最終 Payload：
+
+```json
+{
+  "meta": {
+    "query": "current search query",
+    "sources": ["openalex", "crossref", "europepmc", "semantic_scholar", "pubmed"],
+    "total_fused": 150,
+    "overlap_vs_last": 0.35,
+    "overlap_vs_all": 0.72,
+    "novelty_rate": 0.28,
+    "warning": null
+  },
+  "insights": {
+    "global_consensus_new": [
+      {
+        "description": "多個來源一致推薦的新發現",
+        "items": [
+          {
+            "uid": "doi:10.1038/s41591-xxx",
+            "title": "Large language models encode clinical knowledge",
+            "rrf_rank": 1,
+            "found_in": ["openalex:2", "europepmc:1", "semantic_scholar:5"]
+          }
+        ]
+      }
+    ],
+    "high_risers": [
+      {
+        "description": "在當前關鍵字下排名顯著提升的舊論文",
+        "items": [
+          {
+            "uid": "doi:10.1145/3442188.xxx",
+            "title": "On the Dangers of Stochastic Parrots",
+            "rank_change": "+45 (Prev: 50 → Curr: 5)",
+            "reason": "Relevance spiked for current query context"
+          }
+        ]
+      }
+    ],
+    "source_specific_gems": [
+      {
+        "description": "單一來源獨家發現的高排名論文（可能是 Preprint 或冷門領域）",
+        "items": [
+          {
+            "uid": "doi:10.1101/2024.01.xxx",
+            "title": "Benchmarking Medical Hallucinations",
+            "source": "europepmc:3",
+            "rrf_rank": 28,
+            "note": "Unique to this source — may be preprint or niche finding"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+**Overlap 計算邏輯**:
+
+```python
+def calculate_overlaps(
+    current_uids: set[str],
+    fusion_history: list[FusionTurn],
+    config: FusionConfig,
+) -> dict[str, float]:
+    """計算三種重疊指標"""
+    result = {"overlap_vs_last": 0.0, "overlap_vs_all": 0.0, "novelty_rate": 1.0, "warning": None}
+
+    if not fusion_history:
+        return result  # Cold start: 全部都是新的
+
+    # vs Last Turn (Jaccard)
+    last_uids = set(fusion_history[-1].rank_map.keys())
+    if current_uids | last_uids:
+        result["overlap_vs_last"] = len(current_uids & last_uids) / len(current_uids | last_uids)
+
+    # vs All History (累積重疊率)
+    all_previous = set()
+    for turn in fusion_history:
+        all_previous.update(turn.rank_map.keys())
+    if current_uids:
+        overlap_count = len(current_uids & all_previous)
+        result["overlap_vs_all"] = overlap_count / len(current_uids)
+        result["novelty_rate"] = 1.0 - result["overlap_vs_all"]
+
+    # Warning: 搜尋策略過於重複
+    if result["overlap_vs_last"] > config.jaccard_warning_threshold:
+        result["warning"] = (
+            f"⚠️ 與上次搜尋的重疊率 ({result['overlap_vs_last']:.0%}) 超過閾值 "
+            f"({config.jaccard_warning_threshold:.0%})。"
+            f"建議調整搜尋策略以獲得更多新結果。"
+        )
+
+    return result
+```
+
+### 9.6 配置參數 (Configuration)
+
+```python
+@dataclass
+class FusionConfig:
+    """Fusion Engine 配置"""
+    # RRF
+    rrf_k: int = 60                       # RRF 平滑常數。值越小，Top 1 的影響力越大
+    top_n_process: int = 100              # 每個 API 來源只取前 N 筆進入融合流程
+    top_n_display: int = 20               # 最終回傳給 Agent 的列表長度
+
+    # Quality Re-ranking
+    alpha: float = 0.6                    # RRF vs Quality 的混合比例 (1.0=純RRF)
+    enable_quality_reranking: bool = True # 是否啟用 Stage 3
+
+    # Differential Analysis
+    high_riser_threshold: int = 15        # 排名提升超過此數值才被視為 High Riser
+
+    # Overlap Detection
+    jaccard_warning_threshold: float = 0.85  # 重疊率超過此值時警告 Agent
+
+    # Source Gems
+    gem_source_rank_threshold: int = 10   # 在來源中排名 Top N 才視為 Gem
+
+    @classmethod
+    def default(cls) -> "FusionConfig":
+        return cls()
+
+    @classmethod
+    def exploration_mode(cls) -> "FusionConfig":
+        """探索模式：更重視多樣性和新穎性"""
+        return cls(
+            alpha=0.4,            # 降低 RRF 權重，品質更重要
+            top_n_display=30,     # 顯示更多結果
+            high_riser_threshold=10,  # 更靈敏的 High Riser 偵測
+            gem_source_rank_threshold=20,  # 更寬的 Gem 範圍
+        )
+
+    @classmethod
+    def precision_mode(cls) -> "FusionConfig":
+        """精準模式：更重視共識和可靠性"""
+        return cls(
+            alpha=0.8,            # RRF 主導，共識最重要
+            top_n_display=10,     # 只顯示最可靠的
+            high_riser_threshold=20,  # 更高的 High Riser 門檻
+            gem_source_rank_threshold=5,  # 更嚴格的 Gem 條件
+        )
+```
+
+### 9.7 邊緣案例處理 (Edge Cases)
+
+| # | 場景 | 處理策略 |
+|---|------|----------|
+| 1 | **Cold Start** — 首次搜尋，Session 為空 | 所有結果標記為 `NEW`；省略 `high_risers`；Jaccard overlap = 0 |
+| 2 | **API Failure** — 某來源 Timeout/Error | Log warning 但繼續融合 (Degraded Mode)。RRF 天生支援缺漏資料 — 少一個加項而已 |
+| 3 | **No Results** — 所有 API 都回傳 0 筆 | 返回 `{"meta": {"total_fused": 0}, "insights": null}`，Agent 應嘗試放寬關鍵字 |
+| 4 | **Single Source** — 只有 1 個來源有結果 | RRF 退化為該來源的原始排名；`source_specific_gems` 無意義，省略 |
+| 5 | **Metadata Mismatch** — 同篇論文在不同來源的 metadata 不一致 | Union 合併策略：保留資訊量最豐富的欄位。年份取最早不為空的值 |
+| 6 | **很短的排名列表** — 某來源只返回 5 篇 | 正常處理，這些文章在該來源的排名就是 1-5 |
+| 7 | **完全重疊** — 所有來源返回完全相同的文章 | overlap = 1.0，觸發 warning；所有文章的 source_count 都很高，consensus 很強 |
+
+### 9.8 DDD 分層設計 (Architecture Placement)
+
+```
+src/pubmed_search/
+├── domain/entities/
+│   └── fusion.py                     # FusionConfig, UnifiedDoc, FusionTurn,
+│                                     # RankDelta, RankChangeType, FusionInsights
+│                                     # (Pure data structures, no logic)
+│
+├── application/
+│   └── fusion/                       # ← 新模組
+│       ├── __init__.py               # Public API: FusionEngine
+│       ├── rrf_engine.py             # reciprocal_rank_fusion()
+│       │                             # source_boosted_rrf() (if adopted)
+│       │                             # fuse_and_rank() — Stage 2+3
+│       ├── diff_engine.py            # differential_analysis() — Stage 4
+│       │                             # calculate_overlaps()
+│       └── insight_categorizer.py    # categorize_insights() — Stage 5
+│                                     # format_agent_summary()
+│
+├── application/session/
+│   └── manager.py                    # 修改：ResearchSession 新增 fusion_history
+│                                     # SessionManager 新增 update_fusion_state()
+│
+└── presentation/mcp_server/tools/
+    └── unified.py                    # 修改：在 unified_search 中整合 Fusion Pipeline
+                                      # result_aggregator → fusion_engine → session_update
+```
+
+**依賴方向** (DDD 嚴格分層):
+
+```
+presentation → application → domain
+     ↓              ↓           ↓
+  unified.py    fusion/     fusion.py
+  (MCP tool)    rrf_engine  (entities)
+                diff_engine
+                insight_cat
+```
+
+`application/fusion/` 不依賴 `presentation/`，不依賴 `infrastructure/`。
+所有外部 API 呼叫已在 unified.py 完成，fusion 模組只處理**內部資料**。
+
+### 9.9 與現有系統的整合策略
+
+#### 9.9.1 ResultAggregator 的角色轉變
+
+```
+現狀: ResultAggregator = 去重 + 六維排序 (全包)
+目標: ResultAggregator = Stage 1 (去重)
+      FusionEngine     = Stage 2-5 (RRF + 品質 + Diff + Insights)
+```
+
+**不破壞現有 API**: `ResultAggregator.aggregate()` 仍然可用，但 `unified_search` 在其後插入 Fusion Pipeline：
+
+```python
+# unified.py (修改後)
+async def unified_search(query: str, ...):
+    # 1. 並行搜尋 (現有)
+    raw_results = await asyncio.gather(
+        openalex.search(query),
+        crossref.search(query),
+        europepmc.search(query),
+        ...
+    )
+
+    # 2. 去重 (現有 ResultAggregator)
+    aggregated = result_aggregator.aggregate(raw_results)
+
+    # 3. ← 新增：Fusion Pipeline
+    fusion_engine = FusionEngine(config=FusionConfig.default())
+    fused_results, insights = fusion_engine.fuse(
+        source_rankings=extract_rankings(raw_results),
+        articles=aggregated.articles,
+        session=session_manager.get_current_session(),
+    )
+
+    # 4. 更新 Session fusion_history
+    session_manager.update_fusion_state(query, fused_results)
+
+    # 5. 格式化輸出 (在現有 Markdown 輸出中附加 insights)
+    return format_output(fused_results, insights)
+```
+
+#### 9.9.2 對現有 MCP 工具的影響
+
+| 工具 | 影響 | 說明 |
+|------|------|------|
+| `unified_search` | **主要修改** | 整合 Fusion Pipeline |
+| `get_session_summary` | 輕微修改 | 增加 fusion_history 摘要 |
+| `get_session_pmids` | 無變化 | PMID 儲存不受影響 |
+| 其他所有工具 | 無變化 | Fusion 只影響搜尋路徑 |
+
+### 9.10 RRF 未出現來源策略：深入分析 (Open Discussion)
+
+> **這是整個設計中最關鍵的取捨決策，值得獨立展開。**
+
+#### 9.10.1 問題本質
+
+RRF 的數學特性使得**多來源低排名 > 單來源高排名**。這是 feature 還是 bug？
+
+```
+場景化思考：
+
+假設搜尋 "remimazolam pharmacokinetics elderly"
+
+文章 X: 只出現在 Europe PMC Rank #3
+  ├── 可能原因 A: Europe PMC 全文搜尋能力強，找到其他來源索引不到的文獻 → 有價值
+  ├── 可能原因 B: Europe PMC 的 relevance 排序錯誤，其他來源正確地沒推薦它 → 噪音
+  └── 可能原因 C: 該文章太新（preprint），尚未被其他來源索引 → 有價值但需標註
+
+文章 Y: 出現在 OpenAlex #40, CrossRef #35, Semantic Scholar #50
+  ├── 三個獨立來源都認為它有一定相關性（雖然排名不高）→ 可信的中等相關
+  └── 但排名 35-50 在每個來源中可能已經是 "noise range" → 可能只是巧合
+```
+
+#### 9.10.2 三方案比較矩陣
+
+| 維度 | A: Standard RRF | B: Source-Boosted | C: Hybrid (A + 後置打撈) |
+|------|:---:|:---:|:---:|
+| 數學純粹性 | ✅ 標準 | ❌ 引入啟發式 | ✅ RRF 不受污染 |
+| 共識可靠度 | ✅ 最佳 | ⚠️ 可能被單源偏差放大 | ✅ 主排名可靠 |
+| 獨家發現能力 | ❌ 可能埋沒 | ✅ 有補償 | ✅ 在 gems 中展示 |
+| 實作複雜度 | ⭐ 最低 | ⭐⭐ 需要額外 pass | ⭐⭐ 需要分類邏輯 |
+| 可解釋性 | ✅ 「多來源共識」 | ⚠️ 「為什麼這篇被 boost？」 | ✅ 「主排名 + 獨家推薦」 |
+| 參數敏感性 | 只有 k | k + boost + threshold | k + gem_threshold |
+| 適合場景 | 一般搜尋 | 探索性搜尋 | **通用** |
+
+#### 9.10.3 各方案對 Agent 行為的影響
+
+```
+方案 A 的 Agent 體驗:
+  Agent: "以下是多個學術來源共同推薦的論文..."
+  → Agent 只展示高共識文章，行為保守
+  → 風險: 獨家 preprint 或冷門發現可能永遠不被展示
+
+方案 B 的 Agent 體驗:
+  Agent: "以下論文中，#1-#15 為多來源共識，#16-#20 為特定來源強烈推薦..."
+  → Agent 需要解釋為什麼某些文章排名被人為提升
+  → 風險: boost 導致一些「API 排序 bug」的文章莫名出現在高位
+
+方案 C 的 Agent 體驗:
+  Agent: "以下是主要推薦論文(排名基於跨來源共識)..."
+  Agent: "此外，以下論文僅在特定來源被高度推薦，可能值得額外關注：..."
+  → 最自然的展示方式 — 主結果 + 補充推薦
+  → 風險: gems 區塊可能被 Agent 忽略或選擇性展示
+```
+
+#### 9.10.4 建議與待驗證假設
+
+**初步建議**: 方案 C (Hybrid) 作為預設
+
+**理由**:
+1. RRF 數學性質是其核心價值，不應該被啟發式修改
+2. `source_specific_gems` 作為獨立 insight 類別已經覆蓋了「獨家發現」的展示需求
+3. Agent 可以自主決定是否展示 gems（而非被強制將 boosted 文章混入主排名）
+4. 若未來數據顯示 gems 中有高價值文章長期被 RRF 低估，可以升級到方案 B
+
+**待驗證假設** (需要用實際搜尋數據):
+
+| 假設 | 驗證方法 | 若假設成立 | 若假設不成立 |
+|------|---------|-----------|-------------|
+| 假設 | 驗證方法 | 若假設成立 | 若假設不成立 |
+|------|---------|-----------|-------------|
+| H1: 單來源 Top-10 中有 ≥20% 是其他來源完全沒有的 | 統計 5 個主題的來源分布 | Source Gems 有意義 | Source Gems 可能是空集合，無需特殊處理 |
+| H2: 這些獨家文章中有 ≥50% 確實與查詢高度相關 | 人工評審 | 方案 C 足夠且正確 | 需要更嚴格的 gem 篩選或放棄 |
+| H3: 獨家文章主要出現在 Europe PMC（全文搜尋）和預印本來源 | 來源歸因分析 | 可以按來源設定不同的 gem 信任度 | Gems 來源分布均勻，無法差異化處理 |
+| H4: Boosted RRF (方案 B) 比標準 RRF 在 nDCG@10 上有提升 | TREC PM 評測 | 升級到方案 B | 保持方案 C |
+
+#### 9.10.5 實驗驗證結論 (2026-02-15 實驗數據)
+
+> 以下結論基於 §9.14 完整實驗報告的數據。
+
+**H1 驗證結果：✅ 全部 6 個來源皆 >20% 獨家**
+
+| 來源 | 獨家率 | 結論 |
+|------|:------:|------|
+| PubMed | 61.7% | Source Gems **有意義** — 每個來源都有大量獨家文章 |
+| Semantic Scholar | 51.3% | |
+| OpenAlex | 54.6% | |
+| Europe PMC | 87.9% | |
+| CORE | 93.8% | |
+| CrossRef | 80.7% | |
+
+但注意：**獨家率過高本身就是問題**（見 §9.14.4 設計改進建議 #5）。
+
+**H3 驗證結果：⚠️ 部分成立**
+
+獨家文章分布**相對均勻**，Europe PMC (21.3%) 和 CORE (19.3%) 佔比最高但未形成壓倒性優勢。CrossRef (18.2%) 也貢獻了大量「獨家」，但其排序品質低（元資料搜尋而非學術排序），這些獨家更可能是噪音。
+
+**→ 決策：採用方案 C (Hybrid) + 以下改進**
+
+1. **Gems 需要品質門檻**（非「獨家即 Gem」）
+2. **CrossRef 降級為元資料補充**，不參與 RRF 主排序
+3. **Topic-Adaptive Alpha** 取代靜態 alpha（見 §9.14.4 #2）
+
+**H2 與 H4 狀態：** 需要 ground truth 標註和 TREC PM 評測，本次實驗無法驗證。
+
+### 9.11 與其他研究文件演算法的銜接
+
+本 Spec 建立的基礎設施可直接銜接 §2 和 §4 中的其他演算法：
+
+```
+本 Spec (Phase 1)          Phase 2                    Phase 3
+─────────────────         ───────                    ───────
+
+FusionTurn.rank_map  ───→  Smart Top-K (MMR)   ───→  Result Digest
+(每輪的排名快照)           §2.3 解法 3                §2.3 解法 1
+                           用 MeSH Jaccard 做          MeSH 分群 +
+                           多樣性選取                   代表作選取
+
+FusionTurn.rrf_scores ──→  BM25 整合            ───→  Learning-to-Rank
+(可作為 relevance 的       §4.1 Stage 1               §4.3 用 rrf_score
+ 一個特徵)                替代 term overlap            作為一個特徵
+
+calculate_overlaps() ───→  Coverage Tracker
+(overlap_vs_all)           §2.3 解法 4
+                           擴展為 MeSH 子樹覆蓋率
+
+source_specific_gems ───→  Preprint Monitor
+(獨家來源追蹤)             追蹤特定來源的新發現
+```
+
+### 9.12 實作估算
+
+| 檔案 | 預估行數 | 難度 | 依賴 |
+|------|:--------:|:----:|------|
+| `domain/entities/fusion.py` | ~80 | 低 | 無 |
+| `application/fusion/__init__.py` | ~20 | 低 | 無 |
+| `application/fusion/rrf_engine.py` | ~120 | 低 | 無（純計算） |
+| `application/fusion/diff_engine.py` | ~100 | 低 | 無（純計算） |
+| `application/fusion/insight_categorizer.py` | ~80 | 低 | 無 |
+| `application/session/manager.py` (修改) | ~30 | 低 | 現有 Session |
+| `presentation/mcp_server/tools/unified.py` (修改) | ~50 | 中 | 上述全部 |
+| **測試** | ~400 | 中 | pytest |
+| **合計** | **~880** | | |
+
+**預估工時**: 2-3 天（含測試）
+
+**零外部依賴**: 此模組完全由純 Python 實作，不需要任何新的第三方套件。
+
+### 9.13 驗證計畫
+
+| 驗證項目 | 方法 | 成功標準 |
+|---------|------|----------|
+| RRF 正確性 | 手動構造 3 組排名列表，驗算 RRF 分數 | 分數與手算一致 |
+| 去重一致性 | 確認 UID 策略與現有 Union-Find 的結果相容 | 0 衝突 |
+| Diff 邏輯 | 模擬 3 輪搜尋，驗證 NEW/HIGH_RISER 分類 | 分類符合預期 |
+| Overlap 計算 | Cold start + 多輪搜尋的 Jaccard | 數值正確 |
+| 效能 | 500 篇文章的融合時間 | < 50ms |
+| 整合測試 | 端到端 unified_search → insights JSON | JSON schema 合規 |
+
+### 9.14 RRF Source Behavior 實驗報告
+
+> **實驗日期**: 2026-02-15  
+> **實驗腳本**: `scripts/rrf_source_experiment.py`  
+> **原始數據**: `scripts/_tmp/rrf_experiment_data.json`  
+> **V2 報告**: `scripts/_tmp/rrf_experiment_report_v2.md`  
+> **文件版本**: v1.4
+
+#### 9.14.1 實驗目的
+
+驗證 §9.10.4 提出的四個假設 (H1-H4)，並為以下設計決策提供數據基礎：
+
+1. RRF 權重策略：Standard (A) vs Source-Boosted (B) vs Hybrid (C)
+2. Source-Weighted RRF 的來源權重校準
+3. `source_specific_gems` 是否應該保留
+4. CrossRef 和 CORE 在融合管線中的角色
+
+#### 9.14.2 實驗方法
+
+**測試主題** (5 個，覆蓋不同領域和特徵):
+
+| ID | Query | 特徵 |
+|----|-------|------|
+| T1 | `machine learning diagnosis cancer` | 寬領域、高量 |
+| T2 | `remimazolam sedation ICU` | 窄領域、利基 |
+| T3 | `CRISPR gene therapy sickle cell` | 尖端遺傳學 |
+| T4 | `COVID-19 long COVID neurological` | 快速出版週期 |
+| T5 | `gut microbiome obesity metabolic syndrome` | 跨學科 |
+
+**測試來源** (6 個): PubMed, Semantic Scholar, OpenAlex, Europe PMC, CORE, CrossRef
+
+**每個來源取 Top 30 結果**，收集：
+- 文章標識符 (DOI, PMID, 標題)
+- 元資料完整度 (Abstract, Citation Count)
+- 跨來源重疊率 (Jaccard Similarity)
+- 獨家文章統計
+
+**UID Matching 策略**: Union-Find 跨欄位匹配，任意共享 DOI/PMID/標準化標題即合併 — 與產品碼 `ResultAggregator` 行為一致。
+
+**實驗修正記錄** (V1→V2):
+
+| 修正 | V1 問題 | V2 修正 |
+|------|---------|---------|
+| EPMC Abstract | `result_type="lite"` 不含 abstract → 0% | 改用 `result_type="core"` → 88% |
+| CORE 301 Redirect | `BaseAPIClient` 不跟隨 redirect → 0 結果 | 加入 `follow_redirects=True` → avg 25.2 結果 |
+| UID Matching | 簡單 `DOI>PMID>title` 單一 fallback | Union-Find 三欄位交叉匹配 |
+| S2 Rate Limit | T3 三次 429 後放棄 → 0 結果 | 第三次 retry 間隔增加 → 30 結果 |
+
+#### 9.14.3 實驗結果
+
+##### A. 來源能力矩陣
+
+| Source | Avg Count | DOI Rate | PMID Rate | Abstract Rate | Avg Latency | Role |
+|--------|:---------:|:--------:|:---------:|:-------------:|:-----------:|------|
+| PubMed | 30.0 | 99% | 100% | 95% | 9.7s | 🥇 Gold Standard |
+| Semantic Scholar | 30.0 | 99% | 75% | 77% | 4.8s | 🥈 SPECTER 排序 |
+| OpenAlex | 30.0 | 99% | 80% | 69% | 1.7s | 🥈 快速+高覆蓋 |
+| Europe PMC | 30.0 | 93% | 89% | 88% | 2.4s | 全文搜尋 |
+| CORE | 25.2 | 67% | 15% | 92% | 1.7s | 開放取用+預印本 |
+| CrossRef | 30.0 | 100% | 0% | 24% | 1.7s | ⚠️ 元資料搜尋 |
+
+**關鍵發現：**
+- **PubMed** 在所有指標上都是最完整的（99% DOI, 100% PMID, 95% Abstract）
+- **CORE** 現在能正常工作（V1 修正 `follow_redirects` 後），但 DOI 覆蓋只有 67%，PMID 15%
+- **CrossRef** DOI 100% 但 PMID 0%，Abstract 只有 24% — 確認其本質是元資料註冊中心
+- **Europe PMC** 改用 `result_type="core"` 後 Abstract Rate 從 0% 升至 88%
+
+##### B. 跨來源重疊矩陣 (Avg Jaccard)
+
+```
+              PubMed   S2      OA      EPMC    CORE    CR
+PubMed        1.000    0.171   0.194   0.023   0.010   0.049
+S2            0.171    1.000   0.189   0.063   0.007   0.091
+OpenAlex      0.194    0.189   1.000   0.015   0.014   0.073
+Europe PMC    0.023    0.063   0.015   1.000   0.007   0.007
+CORE          0.010    0.007   0.014   0.007   1.000   0.003
+CrossRef      0.049    0.091   0.073   0.007   0.003   1.000
+```
+
+**平均跨來源 Jaccard: 0.061** — 極低重疊，各來源高度互補。
+
+**來源聚類分析：**
+- **聚類 1 (學術搜尋引擎)**: PubMed ↔ S2 (0.171) ↔ OpenAlex (0.194) — 相互重疊最高
+- **聚類 2 (獨立文獻庫)**: Europe PMC, CORE — 與所有來源重疊極低
+- **聚類 3 (元資料)**: CrossRef — 與 S2 (0.091) 和 OA (0.073) 有些重疊
+
+##### C. 獨家文章統計
+
+| 來源 | 獨家率 | 獨家數 (avg) | 佔總獨家% |
+|------|:------:|:-----------:|:---------:|
+| CORE | 93.8% | 23.4 | 19.3% |
+| Europe PMC | 87.9% | 25.8 | 21.3% |
+| CrossRef | 80.7% | 22.0 | 18.2% |
+| PubMed | 61.7% | 18.4 | 15.2% |
+| OpenAlex | 54.6% | 16.0 | 13.2% |
+| Semantic Scholar | 51.3% | 15.4 | 12.7% |
+
+**總獨家文章數 (avg/topic)**: ~121 / 175 total = **69.1% 獨家率**
+
+##### D. 窄領域 vs 寬領域差異
+
+| 指標 | T2 (窄: remimazolam) | T1 (寬: ML cancer) | 倍率 |
+|------|:---:|:---:|:---:|
+| PubMed-S2 Jaccard | **0.481** | 0.053 | 9.1x |
+| PubMed-OA Jaccard | **0.379** | 0.081 | 4.7x |
+| PubMed 獨家率 | **14%** | 87% | 0.16x |
+| S2 獨家率 | **13%** | 90% | 0.14x |
+
+**核心洞察**：Topic 類型對來源重疊率的影響**遠大於**來源本身的排序演算法差異。
+
+#### 9.14.4 數據驅動的設計改進建議
+
+##### 改進 #1：來源角色分類 (Source Roles)
+
+基於實驗數據，6 個來源應分為三種角色：
+
+```python
+SOURCE_ROLES = {
+    # Primary Search — 參與 RRF 融合排序
+    "pubmed": "primary",            # MeSH+BestMatch, 最完整
+    "semantic_scholar": "primary",  # SPECTER 語意排序
+    "openalex": "primary",         # 快速, 高 DOI 覆蓋
+    "europe_pmc": "primary",       # 全文搜尋, 高 PMID/Abstract
+
+    # Supplementary — 參與 RRF 但降權
+    "core": "supplementary",       # 開放取用, DOI 67%, PMID 15%
+
+    # Metadata Enrichment — 不參與 RRF
+    "crossref": "enrichment",      # DOI 100% 但無 PMID, 排序基於元資料
+}
+```
+
+**理由**：CrossRef 的「排序」是基於元資料文字匹配，不是學術 relevance ranking。其 80.7% 獨家率更可能反映的是「找到了其他來源沒索引的非學術或邊緣文獻」而非「找到了被遺漏的重要論文」。
+
+##### 改進 #2：Topic-Adaptive Alpha
+
+靜態 `alpha=0.6` 無法適應窄/寬領域的極端差異（Jaccard 差 9 倍）。
+
+```python
+def compute_adaptive_alpha(
+    uid_sets: dict[str, set[str]],
+    base_alpha: float = 0.6,
+) -> float:
+    """根據實際觀測的來源重疊率動態調整 RRF vs Quality 權重
+
+    高重疊 → 來源有共識 → 信任 RRF (alpha ↑)
+    低重疊 → 來源各自獨立 → 信任品質排序 (alpha ↓)
+    """
+    # 計算 primary source 間的平均 pairwise Jaccard
+    primary_sources = [s for s in uid_sets if s in PRIMARY_SOURCES]
+    if len(primary_sources) < 2:
+        return base_alpha
+
+    jaccards = []
+    for i in range(len(primary_sources)):
+        for j in range(i + 1, len(primary_sources)):
+            a, b = uid_sets[primary_sources[i]], uid_sets[primary_sources[j]]
+            if a and b:
+                jaccards.append(len(a & b) / len(a | b))
+
+    if not jaccards:
+        return base_alpha
+
+    avg_jaccard = sum(jaccards) / len(jaccards)
+
+    # 映射: Jaccard 0.0-0.5 → alpha 0.4-0.85
+    #   低重疊 (寬Topic): avg_j ≈ 0.05 → alpha ≈ 0.45 (品質主導)
+    #   高重疊 (窄Topic): avg_j ≈ 0.40 → alpha ≈ 0.76 (RRF 主導)
+    alpha = base_alpha + (avg_jaccard - 0.1) * 0.9
+    return max(0.3, min(0.9, alpha))  # clamp to [0.3, 0.9]
+```
+
+**實驗數據校準**:
+
+| Topic 類型 | avg Jaccard | Adaptive Alpha | 語意 |
+|-----------|:-----------:|:--------------:|------|
+| T2 窄領域 | ~0.30 | **0.78** | RRF 共識可靠 |
+| T3 前沿領域 | ~0.08 | **0.48** | 品質排序更重要 |
+| T1 寬領域 | ~0.05 | **0.45** | 各來源獨立判斷 |
+
+##### 改進 #3：Gems 品質門檻
+
+當所有來源 50-94% 獨家時，「獨家 + Top-10」不夠篩選，需要品質信號：
+
+```python
+def is_quality_gem(
+    article: UnifiedArticle,
+    rank_in_source: int,
+    source: str,
+    current_year: int,
+) -> bool:
+    """判斷獨家文章是否值得作為 Gem 推薦"""
+    # 必要條件
+    if rank_in_source > 10:
+        return False
+
+    # 品質信號 (至少滿足 1 個)
+    quality_signals = [
+        article.citation_count is not None and article.citation_count > 0,
+        bool(article.abstract),
+        article.year is not None and article.year >= current_year - 3,
+        bool(article.doi),  # 有 DOI 表示正式出版
+    ]
+
+    # 來源信任度 (CrossRef/CORE 需要更多品質信號)
+    min_signals = {
+        "pubmed": 1,
+        "semantic_scholar": 1,
+        "openalex": 1,
+        "europe_pmc": 1,
+        "core": 2,         # DOI 覆蓋低，需要更多品質信號
+        "crossref": 3,     # 不參與 RRF，gems 門檻更高
+    }
+
+    return sum(quality_signals) >= min_signals.get(source, 2)
+```
+
+##### 改進 #4：EPMC 應使用 `result_type="core"`
+
+實驗揭示：EPMC 預設 `result_type="lite"` 不包含 `abstractText`。
+在 `unified_search` 管線中呼叫 EPMC 時應指定 `result_type="core"` 以取得完整元資料。
+
+**影響**：延遲從 ~1.6s 增至 ~2.4s (+50%)，但換來 88% abstract 覆蓋率，對品質排序至關重要。
+
+##### 改進 #5：BaseAPIClient 啟用 redirect 跟隨
+
+已修正 `base_client.py`：`httpx.AsyncClient(follow_redirects=True)`。
+影響所有 8 個繼承的 source client，解決 CORE API 301 redirect 問題。
+
+##### 改進 #6：RRF 權重推導
+
+放棄靜態權重精確推導（缺乏 ground truth 標註），改用**運行時自適應**：
+
+```python
+SOURCE_BASE_WEIGHTS = {
+    # 基礎權重（排序演算法品質 × 資料完整度 / PubMed 基準）
+    "pubmed": 1.0,            # Gold standard
+    "semantic_scholar": 0.85,  # SPECTER + 高重疊
+    "openalex": 0.85,         # 高覆蓋 + 快速
+    "europe_pmc": 0.70,       # 全文搜尋 + 高 Abstract (修正後)
+    "core": 0.40,             # 低 DOI (67%), 低 PMID (15%)
+    # crossref: 不參與 RRF
+}
+
+def get_runtime_weights(
+    uid_sets: dict[str, set[str]],
+    base_weights: dict[str, float] = SOURCE_BASE_WEIGHTS,
+) -> dict[str, float]:
+    """根據本次搜尋的實際表現微調權重
+
+    如果某來源與 ≥2 個其他來源有 overlap → 它在搜同一空間 → 略微增權
+    如果某來源完全獨家 → 降權但保留在 gems 中
+    """
+    adjusted = dict(base_weights)
+    for source, uids in uid_sets.items():
+        if source not in adjusted:
+            continue
+        overlap_count = 0
+        for other_source, other_uids in uid_sets.items():
+            if other_source != source and other_source in adjusted:
+                if uids & other_uids:
+                    overlap_count += 1
+        if overlap_count >= 2:
+            adjusted[source] = min(1.0, adjusted[source] * 1.1)
+        elif overlap_count == 0:
+            adjusted[source] *= 0.8
+    return adjusted
+```
+
+#### 9.14.5 實驗局限性
+
+1. **樣本量小**：僅 5 個 topic，無法做統計顯著性檢定
+2. **無 ground truth**：無法評估獨家文章的「真正相關性」（H2 未驗證）
+3. **API 不穩定**：Semantic Scholar 頻繁 429，CORE 結果數量波動大 (12-30)
+4. **時序依賴**：搜尋結果會隨時間改變（新文章索引、排序演算法更新）
+5. **未測試預印本**：尚未加入 arXiv/medRxiv/bioRxiv 預印本來源
+
+#### 9.14.6 後續行動
+
+| # | 行動 | 狀態 | 對應改進 |
+|---|------|:----:|---------|
+| 1 | `BaseAPIClient` 加 `follow_redirects=True` | ✅ 完成 | #5 |
+| 2 | CORE client 加 zero-result warning log | ✅ 完成 | #5 |
+| 3 | 實作 `compute_adaptive_alpha()` | 待 Fusion Engine 實作時 | #2 |
+| 4 | 實作 `is_quality_gem()` | 待 Insight Categorizer 實作時 | #3 |
+| 5 | CrossRef 從 RRF 中移除 | 待 `unified_search` 重構時 | #1 |
+| 6 | EPMC search 改用 `result_type="core"` | 待確認延遲影響 | #4 |
+| 7 | Adaptive RRF weighting | 待 Fusion Engine 實作時 | #6 |
+
+### 9.15 學術研究方法論：如何證明「更好」
+
+> **問題**：如何從學術角度實現一個可驗證的更好的學術搜尋 MCP？
+> **日期**: 2026-02-15
+
+#### 9.15.1 現有生態系統調查
+
+對 GitHub 上 59 個 PubMed MCP repos + 43 個 Scholar MCP repos 的完整調查顯示，現有學術搜尋 MCP 分為三種架構模式，**沒有任何一個在做多來源融合排序**：
+
+##### 模式 A：單來源包裝器（90% 的 repos）
+
+| Repo | Stars | 架構 |
+|------|:-----:|------|
+| `andybrandt/mcp-simple-pubmed` | 156 | PubMed API 薄包裝 |
+| `JackKuo666/Google-Scholar-MCP-Server` | 225 | Google Scholar 薄包裝 |
+| `zongmin-yu/semantic-scholar-fastmcp-mcp-server` | 92 | S2 API 薄包裝 |
+| `Darkroaster/pubmearch` | 144 | PubMed 分析型（關鍵詞趨勢） |
+| `adityak74/mcp-scholarly` | 171 | Google Scholar 薄包裝 |
+
+**共同點**：一個 API、一個 tool、零融合邏輯。
+
+##### 模式 B：多來源但不融合（「交給 Agent 自己選」）
+
+| Repo | Stars | 來源數 | 融合策略 |
+|------|:-----:|:------:|---------|
+| `Dianel555/paper-search-mcp-nodejs` | 95 | **14** | 每個平台一個 tool；`platform="all"` 時**隨機選一個** |
+| `afrise/academic-search-mcp-server` | 101 | 2 (S2+CrossRef) | 各 tool 獨立，不合併 |
+| `JamesANZ/medical-mcp` | 58 | 4 (FDA+WHO+PubMed+Scholar) | 各 tool 獨立 |
+
+**致命問題**：14 個平台 × 14 個 tool = Agent 需要自己決定呼叫哪個 tool，等同於把融合問題丟給 Agent。Agent 通常只會挑 1-2 個來源呼叫，錯過其餘 12 個來源的獨家文獻。
+
+##### 模式 C：有去重但極簡原始（全 GitHub 唯一）
+
+| Repo | Stars | 來源數 | 融合策略 |
+|------|:-----:|:------:|---------|
+| `Seelly/scholar_mcp_server` | 10 | 6 (Go) | DOI-only 去重 + 引用數排序 |
+
+實際程式碼（`aggregator.go`）：
+
+```go
+// 去重：DOI > 標題（標準化後），無 cross-field matching
+func generatePaperKey(paper) string {
+    if paper.DOI != "" { return "doi:" + lower(paper.DOI) }
+    if paper.Title != "" { return "title:" + lower(trim(paper.Title)) }
+    return ""
+}
+
+// 排序：引用數 + 開放取用獎勵 10 分，無 RRF
+scoreI := papers[i].CitationCount
+if papers[i].IsOpenAccess { scoreI += 10 }
+```
+
+**問題**：無 RRF、無 source weighting、無 cross-field UID matching、無 adaptive 參數。
+
+##### 學術研究方面
+
+| 論文 | 年份 | 相關性 |
+|------|:----:|--------|
+| Cormack et al. "RRF outperforms Condorcet" (SIGIR 2009) | 2009 | RRF 原始論文，uniform weighting only |
+| `ranx.fuse` (Bassani & Romelli, CIKM 2022) | 2022 | Python metasearch library，用於同 corpus 多模態融合 |
+| Mmmorrf (Samuel et al., SIGIR 2025) | 2025 | Adaptive weighted RRF，但用於影片檢索 |
+| HySemRAG (Godinez, arXiv 2025) | 2025 | 用 RRF 融合學術文獻，但未分析 source overlap |
+| Sun et al. (BMC Bioinformatics 2025) | 2025 | RRF for biomedical IR，同一 TREC 資料集 |
+| Mourão et al. "Inverse Square Rank Fusion" (2014) | 2014 | 改進 RRF 公式，仍是 uniform weighting |
+| NovaSearch (TREC 2013 Federated Web Search) | 2013 | 最接近「聯邦搜尋」，但用於 web search |
+
+**結論**：沒有任何已發表研究同時處理 (1) 跨多個學術資料庫的 rank fusion with source-specific weighting, (2) query-dependent adaptive fusion, (3) source overlap 分析作為權重推導基礎, (4) 「獨家發現」(Gems) 的識別。
+
+#### 9.15.2 核心難題：Ground Truth 不存在
+
+學術搜尋不像 web search 有 TREC/BEIR 標準 benchmark。根本問題：**沒有人標註過「對於 query X，跨 6 個資料庫的最佳 Top-30 是哪些論文」**。
+
+因此需要**同時解決兩個問題**：
+1. 提出比現有方案更好的融合演算法
+2. 設計一個可信的評估方法來證明 (1)
+
+#### 9.15.3 三層評估方法論
+
+##### Layer 1：Citation-based Proxy Relevance（自動化、大規模）
+
+**核心洞察**：高被引 + 近期 + 多來源共識的論文大概率是相關的。可構造 pseudo-relevance judgments：
+
+```python
+def compute_pseudo_relevance(article, query, current_year=2026):
+    """基於客觀信號估計文章相關性（無需人工標註）"""
+    signals = {
+        # 1. 引用影響力（RCR 比原始引用數更公平）
+        "rcr": min(article.relative_citation_ratio / 5.0, 1.0),
+
+        # 2. 標題/摘要與 query 的語意相似度
+        "semantic_sim": cosine_sim(
+            embed(query), embed(article.title + " " + article.abstract)
+        ),
+
+        # 3. 時效性（針對快速發展領域）
+        "recency": max(0, 1 - (current_year - article.year) / 10),
+
+        # 4. 元資料完整度（proxy for quality）
+        "completeness": sum([
+            bool(article.doi), bool(article.abstract),
+            bool(article.pmid), article.citation_count is not None
+        ]) / 4,
+
+        # 5. 多來源共識（出現在越多來源 = 越可能相關）
+        "source_consensus": article.source_count / total_sources,
+    }
+
+    return (0.30 * signals["semantic_sim"] +
+            0.25 * signals["rcr"] +
+            0.20 * signals["source_consensus"] +
+            0.15 * signals["recency"] +
+            0.10 * signals["completeness"])
+```
+
+**優點**：可大規模自動化（1000+ queries），完全可重現。
+**缺點**：proxy ≠ true relevance，需在小規模 expert set 上驗證。
+
+##### Layer 2：LLM-as-Judge（中規模、可擴展）
+
+```
+流程：
+1. 給 LLM (GPT-4/Claude) query + title + abstract
+2. 要求判斷 relevance (0-3 scale)
+3. 在 expert-annotated subset 上驗證 LLM 判斷的一致性
+4. 若 Cohen's κ > 0.6，可作為大規模評估替代
+```
+
+**學術依據**：Thomas et al. (2024) "Large Language Models can Accurately Predict Searcher Preferences" (SIGIR 2024) 已證明 LLM 在 TREC-style relevance judgment 上與人類 annotator 一致性達 κ ≈ 0.6-0.7。
+
+**成本估算**：7500 篇 × ~$0.01/判斷 ≈ $75。
+
+##### Layer 3：Expert Annotation（小規模、Gold Standard）
+
+```
+設計流程：
+1. 選 30-50 個 query（覆蓋窄/寬/跨學科/前沿/經典）
+2. 每個 query 從 6 來源各取 Top-30 → 合併去重 → ~120-150 篇/query
+3. 邀請 3+ 位領域專家對每篇標註 relevance (0-3 scale)
+4. 計算 Fleiss' κ (inter-annotator agreement)
+5. 用標註結果算 nDCG@k, MAP, Precision@k
+```
+
+**用途**：驗證 Layer 1 和 Layer 2 的 proxy 有效性。
+
+#### 9.15.4 演算法創新點
+
+##### 創新 1：Source-Aware Reciprocal Rank Fusion (SA-RRF)
+
+原始 RRF (Cormack 2009)：
+
+```
+RRF(d) = Σ_{s∈S} 1/(k + rank_s(d))
+```
+
+SA-RRF：
+
+```
+SA-RRF(d) = Σ_{s∈S} w_s(q) · 1/(k + rank_s(d))
+```
+
+其中 w_s(q) = w_s^base · φ_s(q)，φ_s(q) 是來源 s 對 query q 的「能力估計」：
+
+- 該來源返回的結果數量（normalized）
+- 返回結果的元資料完整度
+- 該來源與其他來源的 overlap 程度
+
+**學術新穎性**：RRF 原始論文只證明 uniform weighting。Mmmorrf (SIGIR 2025) 在影片檢索做了 adaptive weighting，但沒有人在跨學術資料庫場景做過。
+
+##### 創新 2：Topic-Adaptive Fusion Parameter
+
+```
+α*(q) = f( avg_pairwise_jaccard(S_1(q), S_2(q), ..., S_n(q)) )
+```
+
+**直覺**：
+- 高 overlap（窄領域）→ 來源有共識 → 信任 RRF → α ↑
+- 低 overlap（寬領域）→ 來源各自獨立 → 信任 quality signals → α ↓
+
+§9.14 實驗數據：T2 remimazolam Jaccard=0.481 vs T1 ML cancer=0.053，差 9 倍。
+
+##### 創新 3：Source Complementarity Analysis Framework
+
+純分析貢獻：對 6 個學術資料庫在 N 個 query 上系統性量化 overlap、exclusivity rate、metadata quality，建立「來源能力矩陣」。
+
+本身即有價值的 benchmark contribution，類似 BEIR 對 retrieval model 的貢獻。
+
+#### 9.15.5 實驗設計
+
+##### A. Baselines
+
+| ID | Baseline | 描述 | 代表 |
+|----|----------|------|------|
+| B1 | Single-PubMed | 只用 PubMed | 90% 現有 MCP |
+| B2 | Best-Single | Oracle 選最好的單一來源 | 理論上限 |
+| B3 | Naive Merge | 合併去重 + 引用數排序 | Seelly/scholar_mcp_server |
+| B4 | Standard RRF | k=60, uniform weights | Cormack 2009 |
+| B5 | LLM-Orchestrated | 讓 Agent 選 tool | paper-search-mcp-nodejs 哲學 |
+| P1 | SA-RRF | Source-Aware RRF | 本研究 |
+| P2 | SA-RRF + Adaptive α | 完整方法 | 本研究 |
+
+##### B. Query Set 設計
+
+```
+來源：
+- 30 queries from systematic review protocols (Cochrane Library PICO)
+- 30 queries from trending topics (NIH Reporter 近期資助)
+- 30 queries from cross-disciplinary topics (人工構造)
+- 10 edge cases (very narrow / very broad / non-English terms)
+
+每個 query 標註：
+- Domain (bio/cs/chem/interdisciplinary)
+- Specificity (narrow/medium/broad)
+- Temporal profile (established/emerging/declining)
+```
+
+##### C. Metrics
+
+| Metric | 衡量什麼 | 計算方式 |
+|--------|---------|---------|
+| nDCG@10/20/50 | 排序品質 | 需要 relevance judgments |
+| Unique Relevant@k | 融合發現的獨家相關文章數 | 跨來源比較 |
+| Coverage | 召回了多少 ground truth 相關文章 | Expert set |
+| Diversity | 結果的主題多樣性 | Topic model entropy |
+| Freshness | 是否包含最新研究 | Median publication year |
+| Source Utilization | 每個來源對最終結果的貢獻 | 佔比分析 |
+| Latency | 實用性 | Wall clock time |
+
+##### D. Statistical Rigor
+
+- Paired t-test / Wilcoxon signed-rank test（每個 query 是 paired sample）
+- Bonferroni correction（多重比較）
+- Effect size (Cohen's d)
+- 100 queries × 7 methods = 700 runs → 足夠統計功效
+- Ablation study：逐一移除 SA-RRF 組件觀察影響
+
+#### 9.15.6 發表路線
+
+| 路線 | 目標 | 內容 | 工作量 |
+|------|------|------|--------|
+| A: Systems Paper | JCDL / ECIR / CIKM resource track | 完整系統 + SA-RRF + 三層評估 | 3-4 個月 |
+| B: Short Paper | JCDL Workshop / BIR@ECIR | 只做 Source Complementarity Analysis | 4-6 週 |
+| C: Benchmark | AcademicFuse benchmark (HuggingFace/Zenodo) | 100 queries + expert judgments + baselines | 2-3 個月 |
+
+#### 9.15.7 最小可行實驗 (MVP)
+
+```
+Step 1: 擴大 query set（5 → 50），用 Cochrane PICO 做 seed
+Step 2: 跑 50 queries × 6 sources × Top-50（~300 API calls）
+Step 3: LLM-as-Judge 標註 relevance（~7500 篇 × $0.01 ≈ $75）
+Step 4: 隨機抽 200 篇自己標註，驗證 LLM 一致性
+Step 5: 跑 7 baselines + ablation，比較 nDCG@10, Coverage
+Step 6: 統計顯著性檢定 + 寫 paper
+預計時間：2-3 週有初步結果，1-2 個月可提交
+```
+
+### 9.16 Agent-Centric Design：MCP 搜尋的根本不同
+
+> **核心觀察**：MCP 的使用者不是人類，是 AI Agent。
+> 這根本性地改變了搜尋系統的設計目標。
+
+#### 9.16.1 Agent ≠ Human：搜尋消費者的差異
+
+傳統學術搜尋引擎（PubMed、Google Scholar）為人類設計：
+
+```
+Human User:
+- 能瀏覽 10 頁結果，自己判斷相關性
+- 能讀標題+摘要，快速篩選
+- 有領域知識，能辨別低品質/邊緣結果
+- 會用篩選器（年份、期刊、文章類型）迭代搜尋
+- 能容忍假陽性（跳過不相關文章成本極低）
+
+AI Agent:
+- 只看一次結果，通常取 Top-10~30
+- 沒有深層領域知識，容易被假陽性誤導  
+- 會把搜尋結果直接摘要給最終使用者
+- Token 有限，大海撈針的成本是上下文污染
+- 無法自主判斷「這篇值不值得深入」
+- 搜尋一次就走，很少做 iterative refinement
+```
+
+#### 9.16.2 核心問題：上下文污染 (Context Pollution)
+
+Agent 的根本限制不是「找不到好文章」，而是**好文章被淹沒在雜訊中**。
+
+```
+情境重現：
+
+Agent 呼叫 unified_search("remimazolam ICU sedation")
+→ 返回 30 篇文章
+→ Agent 的可用 context window 被 30 篇文章的 metadata 佔據
+→ 其中 5 篇高度相關，10 篇略相關，15 篇噪音
+
+結果：Agent 在摘要時把不太相關的文章也混入回答
+→ 最終使用者看到的是被噪音稀釋的回答
+```
+
+**這就是「在不同的大海中撈針」問題**：6 個來源各返回 30 篇 = 180 篇候選，Agent 的 context window 承受不了，但簡單截斷 Top-30 又可能遺漏某來源的獨家重要發現。
+
+#### 9.16.3 Agent-Centric 設計原則
+
+##### 原則 1：Signal-to-Noise Ratio (SNR) 最大化
+
+> 搜尋系統的目標不是「召回率最高」，而是**在 Agent 的有限 context budget 內，最大化有用資訊密度**。
+
+```python
+# 傳統目標（人類優先）
+maximize Recall@100  # 越多越好，人類會自己篩
+
+# Agent-Centric 目標
+maximize Precision@k * Diversity@k  # 在 k 篇內，最大化相關且多樣
+subject to k ≤ context_budget       # k 受 Agent context window 限制
+```
+
+**量化 context budget**：
+
+```
+Agent 可用 context ≈ 128K tokens (Claude) / 128K (GPT-4o)
+每篇文章 metadata (title + authors + abstract + doi + year) ≈ 300-500 tokens
+系統 prompt + instruction + 之前對話 ≈ 10K-50K tokens
+可用於搜尋結果的空間 ≈ 30K-80K tokens
+→ 有效承載量 ≈ 60-160 篇文章
+
+但 Agent 的注意力集中度遠低於 context window 大小：
+實務觀察：Agent 通常只有效處理 Top-10~20 篇的資訊
+```
+
+##### 原則 2：結構化信號優於原始羅列
+
+Agent 不像人類可以「掃一眼標題就知道相不相關」。Agent 需要**明確的排序信號**：
+
+```python
+# ❌ 傳統方式：丟一堆文章讓 Agent 自己判斷
+return [article1, article2, ..., article30]  # 全部平等呈現
+
+# ✅ Agent-Centric：分層 + 標記 + 結構化
+return {
+    "high_confidence": [       # 多來源共識 + 高品質信號
+        {"article": a1, "why": "ranked top-5 in 3/6 sources, RCR=8.2"},
+        {"article": a2, "why": "ranked top-3 in PubMed+S2, 2025 review"},
+    ],
+    "source_gems": [           # 獨家發現但高品質
+        {"article": a3, "source": "CORE", "why": "only in CORE, OA preprint, 2025"},
+    ],
+    "supporting": [            # 補充性結果
+        {"article": a4, "why": "related but lower confidence"},
+    ],
+    "meta_insights": {         # Agent 可以直接引用的洞察
+        "topic_type": "narrow_niche",
+        "source_agreement": "high (Jaccard=0.48)",
+        "recommendation": "5 high-consensus papers + 2 unique gems from CORE"
+    }
+}
+```
+
+##### 原則 3：Fusion 即是摘要前處理
+
+> 把 RRF Fusion 想成 Agent 的「前額葉皮層」— 在資訊進入 Agent 的「工作記憶」(context window) 之前，先做好篩選、排序、去噪。
+
+```
+傳統 IR pipeline:
+  Query → Retrieve → Rank → [Return to User]
+                                    ↓
+                              User 自己看
+
+Agent-Centric pipeline:
+  Query → Retrieve → Rank → Fuse → Filter → Structure → [Return to Agent]
+                                                              ↓
+                                                        Agent 直接摘要
+                                                              ↓
+                                                        最終使用者看到
+
+   ^^^^^^^^^^^^^^^^          ^^^^^^^^^^^^^^^^^^^^^^^^
+   Server 端負責              新增的 Agent-Centric 層
+   （和傳統一樣）              （減少 Agent 認知負擔）
+```
+
+#### 9.16.4 Agent-Centric 的具體設計改進
+
+##### 改進 1：Confidence-Tiered Results（信心分層）
+
+不再返回一個扁平的 ranked list，而是**三層結構**：
+
+```python
+class TieredResults:
+    """Agent-Centric 分層結果"""
+
+    tier_1_consensus: list[RankedArticle]
+    # 定義：出現在 ≥2 個 primary source 中，且 SA-RRF score > P75
+    # Agent 指引：「這些文章有高度共識，可以直接引用」
+    # 數量：通常 3-8 篇
+
+    tier_2_gems: list[GemArticle]
+    # 定義：僅出現在 1 個來源，但通過品質門檻 (is_quality_gem)
+    # Agent 指引：「這些是獨家發現，值得提及但需標註來源」  
+    # 數量：通常 2-5 篇
+
+    tier_3_supporting: list[RankedArticle]
+    # 定義：其餘通過基本品質篩選的文章
+    # Agent 指引：「如需更多細節可參考，否則可忽略」
+    # 數量：通常 10-20 篇
+
+    meta: SearchMeta
+    # topic_type, source_agreement, confidence_level, suggested_citation_count
+```
+
+**為什麼這對 Agent 重要**：
+
+| 設計 | Agent 行為 | 最終使用者的體驗 |
+|------|-----------|----------------|
+| 扁平 30 篇 | Agent 嘗試摘要所有 30 篇，混入噪音 | 「回答很長但重點不清楚」 |
+| 分層結構 | Agent 先引用 Tier-1，選擇性提及 Tier-2 | 「回答精確且有獨到發現」 |
+
+##### 改進 2：Agent-Readable Annotations（機器可讀標記）
+
+每篇文章附加**明確的信號標記**，減少 Agent 自行判斷的認知負擔：
+
+```python
+class ArticleAnnotation:
+    """Agent 可直接消費的文章標記"""
+
+    relevance_signals: dict = {
+        "source_count": 3,           # 出現在幾個來源
+        "best_rank": 2,              # 在所有來源中的最佳排名
+        "has_abstract": True,        # Agent 能否摘要此文
+        "citation_tier": "high",     # high(>50)/medium(10-50)/low(<10)/unknown
+        "recency": "recent",         # recent(≤2yr)/established(3-5yr)/classic(>5yr)
+        "open_access": True,         # 全文是否可取得
+        "study_type": "RCT",         # RCT/Meta-analysis/Review/Cohort/Case/Other
+    }
+
+    agent_guidance: str = (
+        "Multi-source consensus article. "
+        "Ranked top-5 in PubMed, S2, OpenAlex. "
+        "2025 RCT with high RCR. Safe to cite."
+    )
+```
+
+**關鍵差別**：人類看到 `citation_count=47` 會自己判斷「這算多還是少」，Agent 不會。給 Agent `citation_tier="high"` 比給原始數字有效得多。
+
+##### 改進 3：adaptive k — 根據 topic 類型調整返回數量
+
+```python
+def compute_optimal_k(
+    topic_type: str,
+    source_agreement: float,
+    agent_context_budget: int = 30,
+) -> dict[str, int]:
+    """根據 topic 特性決定各層返回多少篇
+
+    窄領域且高共識 → 少而精（Agent 不需要看很多）
+    寬領域且低共識 → 多而廣（每個來源可能有獨家發現）
+    """
+
+    if source_agreement > 0.3:  # 窄領域
+        return {
+            "tier_1_consensus": min(5, agent_context_budget // 3),
+            "tier_2_gems": 2,
+            "tier_3_supporting": 5,
+            # 總共 ~12 篇，精簡但高品質
+        }
+    elif source_agreement > 0.1:  # 中領域
+        return {
+            "tier_1_consensus": min(8, agent_context_budget // 3),
+            "tier_2_gems": 4,
+            "tier_3_supporting": 10,
+            # 總共 ~22 篇，平衡
+        }
+    else:  # 寬領域
+        return {
+            "tier_1_consensus": min(10, agent_context_budget // 3),
+            "tier_2_gems": 6,
+            "tier_3_supporting": 14,
+            # 總共 ~30 篇，廣泛覆蓋
+        }
+```
+
+##### 改進 4：Fusion Summary — Agent 的決策支援
+
+在搜尋結果之前提供**一段結構化摘要**，讓 Agent 無需遍歷所有文章就能做初步判斷：
+
+```python
+class FusionSummary:
+    """搜尋結果的元摘要 — Agent 讀這段就能決定怎麼用結果"""
+
+    query_analysis: str
+    # "搜尋 'remimazolam ICU sedation' — 窄利基主題，
+    #  文獻集中在 2020-2026，以 RCT 和綜述為主"
+
+    source_landscape: str
+    # "6 來源高度一致 (Jaccard=0.48)，PubMed 和 S2 重疊 48%，
+    #  CORE 提供 3 篇獨家開放取用預印本"
+
+    top_findings: list[str]
+    # ["5 篇多來源共識文章確認 remimazolam 在 ICU 鎮靜的安全性",
+    #  "2 篇 CORE 獨家預印本顯示新的劑量調整方案",
+    #  "1 篇 2025 meta-analysis 涵蓋 12 個 RCT"]
+
+    suggested_narrative: str
+    # "建議引用 Tier-1 的 5 篇共識文章作為主要證據，
+    #  提及 Tier-2 的 CORE 預印本作為最新進展，
+    #  總共引用 7-8 篇即可全面回答"
+
+    confidence_level: str  # "high" / "medium" / "low"
+    # "high — 多來源高度一致，文獻充足"
+```
+
+**為 Agent 解決的問題**：
+
+| 沒有 FusionSummary | 有 FusionSummary |
+|---|---|
+| Agent 逐篇閱讀 30 篇 metadata | Agent 先讀摘要，決定引用策略 |
+| 不知道哪些來源重要 | 明確知道來源間的關係 |
+| 不知道該引用幾篇 | 有建議的引用數量和策略 |
+| 可能過度引用或引用不足 | 引用數量適合 topic 規模 |
+
+#### 9.16.5 Agent-Centric 評估指標
+
+傳統 IR metrics 不完全適用於 Agent-Centric 場景。需要新指標：
+
+##### Metric 1：Agent Answer Quality (AAQ)
+
+```
+流程：
+1. 給 Agent 搜尋結果（baseline vs 我們的方法）
+2. Agent 基於結果生成回答
+3. 由 expert / LLM-judge 評估 Agent 回答的品質
+
+AAQ 維度：
+- Accuracy: 回答中的事實是否正確？
+- Completeness: 是否涵蓋了主要面向？
+- Relevance: 引用的論文是否真的支持論點？
+- Specificity: 回答是否足夠具體（vs 泛泛而談）？
+- Noise Ratio: 有多少引用是不相關的噪音？
+```
+
+**這是最致命的指標**：不管 nDCG 多高，如果 Agent 用你的結果生成的回答比用 PubMed 單來源的還差，就沒有意義。
+
+##### Metric 2：Context Efficiency (CE)
+
+```
+CE = (Agent 回答中正確引用的文章數) / (返回給 Agent 的文章總數)
+
+理想情況：CE → 1.0（每篇返回的文章都被有效使用）
+現實中：CE ≈ 0.2-0.3（大部分結果是噪音）
+目標：CE ≥ 0.5（至少一半的結果被有效使用）
+```
+
+##### Metric 3：Unique Discovery Rate (UDR)
+
+```
+UDR = (Agent 引用的來自非 PubMed 來源的相關文章數) / (Agent 總引用數)
+
+如果 UDR ≈ 0：多來源搜尋毫無意義，PubMed 就夠了
+如果 UDR > 0.2：多來源搜尋成功帶來了「否則不會被發現的文章」
+```
+
+##### Metric 4：Cognitive Load Reduction (CLR)
+
+```
+CLR = 1 - (Agent 生成回答所消耗的 tokens) / (Baseline 的 tokens)
+
+如果 CLR > 0：我們的結構化結果讓 Agent 更高效
+如果 CLR < 0：結構太複雜反而增加了 Agent 的處理負擔
+```
+
+#### 9.16.6 Agent-Centric 實驗設計
+
+##### 實驗 1：End-to-End Agent Quality Test
+
+```
+Setup:
+- 50 個 medical questions（sourced from BioASQ / PubMedQA）
+- 3 個 Agent configurations：
+    A: Agent + PubMed only (baseline)
+    B: Agent + 6 sources, flat list (standard multi-source)
+    C: Agent + 6 sources, tiered + FusionSummary (our method)
+
+Evaluation:
+- 每個問題由 3 位醫學生評分 (1-5 scale)
+- 維度：accuracy, completeness, citation quality
+- 統計：paired Wilcoxon test on mean scores
+```
+
+##### 實驗 2：Context Pollution Measurement
+
+```
+Setup:
+- 取 Experiment 1 的同一組 questions
+- 測量 Agent 回答中：
+    - 引用了多少不相關的文章（False Citation Rate）
+    - 遺漏了多少重要文章（Missed Citation Rate）
+    - 回答中有多少段落是基於噪音文章的（Noise Propagation Rate）
+
+假設：
+- Tiered results 應顯著降低 False Citation Rate
+- FusionSummary 應降低 Missed Citation Rate
+```
+
+##### 實驗 3：Ablation — 哪個 Agent-Centric 組件最重要？
+
+```
+Conditions:
+C0: Flat list (no agent-centric features)
+C1: + Tiered results
+C2: + Article annotations
+C3: + Adaptive k
+C4: + FusionSummary
+C5: All features (full method)
+
+預測：
+- C4 (FusionSummary) 會帶來最大的 AAQ 提升
+  （因為 Agent 的主要瓶頸是「不知道怎麼用結果」）
+- C1 (Tiered) 會帶來最大的 CE 提升
+  （因為減少了 Agent 需要處理的噪音量）
+```
+
+#### 9.16.7 與 §9.15 傳統評估的整合
+
+完整評估框架需要**兩個維度**：
+
+```
+                    傳統 IR 評估          Agent-Centric 評估
+                    (§9.15)              (§9.16)
+                    ─────────            ──────────────────
+Level 1 (排序品質)：nDCG@10              Agent Answer Quality
+Level 2 (發現能力)：Unique Relevant@k    Unique Discovery Rate
+Level 3 (效率)：   Latency              Context Efficiency
+Level 4 (實用性)：  Coverage             Cognitive Load Reduction
+```
+
+**論文 framing**：
+
+> 我們證明 SA-RRF 不僅在傳統 IR 指標上優於 standard RRF（nDCG@10 提升 X%），
+> 更關鍵的是，當搜尋結果以 agent-centric 分層結構返回時，
+> 下游 AI Agent 生成的回答品質 (AAQ) 提升了 Y%，
+> 同時上下文效率 (CE) 從 0.23 提升至 0.51。
+
+這比單純報告 nDCG 的提升有更強的實際影響力。
+
+#### 9.16.8 這改變了什麼
+
+回到最初的問題：**「不要在不同的大海中找到針」**
+
+| 問題 | 傳統解法 | Agent-Centric 解法 |
+|------|---------|-------------------|
+| 6 來源各 30 篇 = 180 篇候選 | 融合排序取 Top-30 | 分層：5 共識 + 3 Gems + 10 支持 |
+| Agent 不知道哪篇重要 | 靠排名（但 Agent 不一定信任排名） | 每篇附帶 `agent_guidance` 說明 |
+| Agent 不知道引用幾篇 | 無指引 | FusionSummary 建議引用策略 |
+| 獨家文獻被淹沒 | 混在 Top-30 中 | Tier-2 Gems 獨立展示 |
+| Topic 類型影響最佳策略 | 固定 k=30 | Adaptive k 根據共識度調整 |
+| 評估只看排序品質 | nDCG@k | nDCG + AAQ + CE + UDR |
+
+**根本思維轉變**：
+
+```
+傳統思維：搜尋系統的工作到「返回排序結果」就結束了。
+Agent-Centric 思維：搜尋系統的工作到「Agent 能有效使用結果」才結束。
+```
+
+這才是學術搜尋 MCP 應該要解決的真正問題：不是「能搜到多少」，而是**「Agent 能用多好」**。

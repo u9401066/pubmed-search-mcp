@@ -111,7 +111,8 @@ TOOL_CATEGORIES: dict[str, dict[str, Any]] = {
     "icd": {
         "name": "ICD 轉換",
         "description": "ICD-10 與 MeSH 轉換",
-        "tools": ["convert_icd_mesh", "search_by_icd"],
+        "tools": ["convert_icd_mesh"],
+        # Note: search_by_icd 已廢棄 → unified_search 支援 ICD 自動偵測
     },
     "timeline": {
         "name": "研究時間軸",

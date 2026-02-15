@@ -2,7 +2,6 @@
 Tests for CORE API and NCBI Extended Database integration.
 """
 
-
 from __future__ import annotations
 
 # =============================================================================

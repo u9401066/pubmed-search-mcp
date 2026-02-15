@@ -58,6 +58,7 @@ Features:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import re
@@ -82,6 +83,7 @@ from pubmed_search.application.search.semantic_enhancer import (
 )
 from pubmed_search.domain.entities.article import UnifiedArticle
 from pubmed_search.infrastructure.sources import (
+    get_core_client,
     get_crossref_client,
     get_openalex_client,
     get_unpaywall_client,
@@ -274,6 +276,118 @@ class DispatchStrategy:
             return True
         # Enrich for complex queries
         return analysis.complexity == QueryComplexity.COMPLEX
+
+
+# ============================================================================
+# Composite Parameter Parsers (Agent-Centric Design)
+# ============================================================================
+
+
+def _parse_filters(filters_str: str | None) -> dict:
+    """Parse composite filters string into individual filter values.
+
+    Format: "key:value, key:value, ..."
+
+    Supported keys:
+        year:2020-2025  → min_year=2020, max_year=2025
+        year:2020-      → min_year=2020
+        year:-2025      → max_year=2025
+        year:2024       → min_year=2024
+        age:<value>     → age_group (newborn/infant/child/adolescent/adult/aged/aged_80)
+        sex:<value>     → sex (male/female)
+        species:<value> → species (humans/animals)
+        lang:<value>    → language (english/chinese/...)
+        clinical:<value>→ clinical_query (therapy/diagnosis/prognosis/etiology/...)
+
+    Returns:
+        Dict with keys: min_year, max_year, age_group, sex, species, language, clinical_query
+    """
+    if not filters_str:
+        return {}
+
+    result: dict = {}
+    for raw_part in filters_str.split(","):
+        part = raw_part.strip()
+        if not part or ":" not in part:
+            continue
+        key, value = part.split(":", 1)
+        key = key.strip().lower()
+        value = value.strip()
+        if not value:
+            continue
+
+        if key == "year":
+            if "-" in value:
+                parts = value.split("-", 1)
+                if parts[0].strip():
+                    with contextlib.suppress(ValueError):
+                        result["min_year"] = int(parts[0].strip())
+                if parts[1].strip():
+                    with contextlib.suppress(ValueError):
+                        result["max_year"] = int(parts[1].strip())
+            else:
+                with contextlib.suppress(ValueError):
+                    result["min_year"] = int(value)
+        elif key in ("age", "age_group"):
+            result["age_group"] = value
+        elif key == "sex":
+            result["sex"] = value
+        elif key == "species":
+            result["species"] = value
+        elif key in ("lang", "language"):
+            result["language"] = value
+        elif key in ("clinical", "clinical_query"):
+            result["clinical_query"] = value
+
+    return result
+
+
+# Mapping of option flag names to (internal_key, value_when_set)
+_OPTION_FLAGS: dict[str, tuple[str, bool]] = {
+    # Turn ON features (default OFF)
+    "preprints": ("include_preprints", True),
+    # Turn OFF features (default ON)
+    "all_types": ("peer_reviewed_only", False),
+    "no_peer_review": ("peer_reviewed_only", False),
+    "no_oa": ("include_oa_links", False),
+    "no_analysis": ("show_analysis", False),
+    "no_scores": ("include_similarity_scores", False),
+    "no_relax": ("auto_relax", False),
+    "shallow": ("deep_search", False),
+}
+
+
+def _parse_options(options_str: str | None) -> dict[str, bool]:
+    """Parse composite options string into boolean flags.
+
+    Format: "flag1, flag2, ..."
+
+    Supported flags:
+        preprints      → include preprint servers (arXiv, medRxiv, bioRxiv)
+        all_types      → include non-peer-reviewed articles
+        no_oa          → skip Unpaywall OA link enrichment
+        no_analysis    → hide query analysis section
+        no_scores      → hide similarity scores
+        no_relax       → disable auto-relaxation on 0 results
+        shallow        → disable deep search (faster, keyword-only)
+
+    Returns:
+        Dict with boolean values for each recognized flag.
+    """
+    if not options_str:
+        return {}
+
+    flags = {f.strip().lower() for f in options_str.split(",") if f.strip()}
+    result: dict[str, bool] = {}
+
+    for flag in flags:
+        if flag in _OPTION_FLAGS:
+            internal_key, value = _OPTION_FLAGS[flag]
+            result[internal_key] = value
+        else:
+            logger.warning(f"Unknown option flag: '{flag}' (available: {', '.join(sorted(_OPTION_FLAGS))})")
+
+    return result
 
 
 # ============================================================================
@@ -760,7 +874,13 @@ async def _execute_deep_search(
                     min_year,
                     max_year,
                 )
-            # Add more sources as needed
+            elif strategy.source == "core":
+                articles, total_count = await _search_core(
+                    strategy.query,
+                    limit,
+                    min_year,
+                    max_year,
+                )
 
         except Exception as e:
             logger.warning(f"Strategy '{strategy.name}' failed: {e}")
@@ -990,6 +1110,36 @@ async def _search_semantic_scholar(
         return articles, None
     except Exception as e:
         logger.exception(f"Semantic Scholar search failed: {e}")
+        return [], None
+
+
+async def _search_core(
+    query: str,
+    limit: int,
+    min_year: int | None,
+    max_year: int | None,
+) -> tuple[list[UnifiedArticle], int | None]:
+    """Search CORE and convert to UnifiedArticle.
+
+    Returns:
+        Tuple of (articles, total_count).
+    """
+    try:
+        client = get_core_client()
+        result = await client.search(
+            query=query,
+            limit=limit,
+            year_from=min_year,
+            year_to=max_year,
+        )
+
+        articles = []
+        for r in result.get("results", []):
+            articles.append(UnifiedArticle.from_core(r))
+
+        return articles, result.get("total_hits")
+    except Exception as e:
+        logger.exception(f"CORE search failed: {e}")
         return [], None
 
 
@@ -1742,6 +1892,210 @@ def _format_as_json(
 
 
 # ============================================================================
+# Pipeline Execution
+# ============================================================================
+
+
+def _parse_pipeline_config(text: str) -> dict:
+    """Parse pipeline config from YAML or JSON string.
+
+    Tries YAML first (superset of JSON), falls back to JSON.
+    Uses yaml.safe_load to prevent arbitrary code execution.
+    Raises ValueError if the result is not a dict.
+    """
+    import json as _json
+
+    import yaml
+
+    # YAML is a superset of JSON, so yaml.safe_load handles both.
+    # We try YAML first; if it fails on edge cases, fall back to JSON.
+    result = None
+    try:
+        result = yaml.safe_load(text)
+        if isinstance(result, dict):
+            return result
+    except yaml.YAMLError:
+        pass
+
+    # Fallback: pure JSON
+    try:
+        result = _json.loads(text)
+        if isinstance(result, dict):
+            return result
+    except _json.JSONDecodeError:
+        pass
+
+    msg = f"Pipeline config must be a YAML or JSON mapping (dict), got {type(result).__name__}"
+    raise ValueError(msg)
+
+
+async def _execute_pipeline_mode(
+    pipeline_text: str,
+    output_format: str,
+    searcher: LiteratureSearcher,
+) -> str:
+    """Parse and execute a pipeline config, returning formatted results.
+
+    Accepts both YAML and JSON formats.
+    """
+    from pubmed_search.application.pipeline.executor import PipelineExecutor
+    from pubmed_search.application.pipeline.templates import build_pipeline_from_template
+    from pubmed_search.domain.entities.pipeline import (
+        PipelineConfig,
+        PipelineOutput,
+        PipelineStep,
+    )
+
+    try:
+        raw = _parse_pipeline_config(pipeline_text)
+    except Exception as exc:
+        return ResponseFormatter.error(
+            f"Invalid pipeline config: {exc}",
+            suggestion="Provide valid YAML or JSON for the pipeline parameter",
+            example=('pipeline="template: pico\nparams:\n  P: ICU patients\n  I: remimazolam"'),
+            tool_name="unified_search",
+        )
+
+    # Template mode
+    if "template" in raw:
+        template_name = raw["template"]
+        template_params = raw.get("params", {})
+        try:
+            config = build_pipeline_from_template(template_name, template_params)
+        except ValueError as exc:
+            return ResponseFormatter.error(
+                f"Template error: {exc}",
+                suggestion="Check template name and required params",
+                tool_name="unified_search",
+            )
+    else:
+        # Custom pipeline mode
+        try:
+            steps_raw = raw.get("steps", [])
+            steps = [
+                PipelineStep(
+                    id=s["id"],
+                    action=s["action"],
+                    params=s.get("params", {}),
+                    inputs=s.get("inputs", []),
+                    on_error=s.get("on_error", "skip"),
+                )
+                for s in steps_raw
+            ]
+            output_raw = raw.get("output", {})
+            output_cfg = PipelineOutput(
+                format=output_raw.get("format", output_format),
+                limit=int(output_raw.get("limit", 20)),
+                ranking=output_raw.get("ranking", "balanced"),
+            )
+            config = PipelineConfig(
+                name=raw.get("name", "Custom Pipeline"),
+                steps=steps,
+                output=output_cfg,
+            )
+        except (KeyError, TypeError) as exc:
+            return ResponseFormatter.error(
+                f"Pipeline config error: {exc}",
+                suggestion="Each step needs 'id' and 'action' fields",
+                tool_name="unified_search",
+            )
+
+    # Override output format if specified at top level
+    if output_format:
+        config.output.format = output_format  # type: ignore[assignment]
+
+    # Execute
+    from pubmed_search.infrastructure.sources import search_alternate_source
+
+    executor = PipelineExecutor(
+        searcher=searcher,
+        alternate_search_fn=search_alternate_source,
+    )
+    try:
+        articles, step_results = await executor.execute(config)
+    except (ValueError, RuntimeError) as exc:
+        return ResponseFormatter.error(
+            f"Pipeline execution failed: {exc}",
+            tool_name="unified_search",
+        )
+
+    return _format_pipeline_results(articles, step_results, config)
+
+
+def _format_pipeline_results(
+    articles: list,
+    step_results: dict,
+    config,
+) -> str:
+    """Format pipeline results as Markdown."""
+    from pubmed_search.domain.entities.pipeline import StepResult
+
+    parts: list[str] = []
+
+    # Header
+    name = config.name or "Pipeline"
+    parts.append(f"## 🔗 Pipeline Results: {name}\n")
+
+    # Step summary
+    total = len(step_results)
+    ok_count = sum(1 for r in step_results.values() if isinstance(r, StepResult) and r.ok)
+    parts.append(f"**Steps**: {ok_count}/{total} completed")
+    parts.append(f"**Total articles**: {len(articles)}")
+    parts.append("")
+
+    # Step detail table
+    parts.append("| Step | Action | Status | Detail |")
+    parts.append("|------|--------|--------|--------|")
+    for step in config.steps:
+        sr = step_results.get(step.id)
+        if sr is None:
+            parts.append(f"| {step.id} | {step.action} | ⏭ skipped | — |")
+        elif not sr.ok:
+            parts.append(f"| {step.id} | {step.action} | ❌ error | {sr.error[:60] if sr.error else '—'} |")
+        else:
+            detail = ""
+            if sr.articles:
+                detail = f"{len(sr.articles)} articles"
+            elif sr.metadata:
+                keys = ", ".join(sorted(sr.metadata.keys())[:4])
+                detail = f"metadata: {keys}"
+            else:
+                detail = "ok"
+            parts.append(f"| {step.id} | {step.action} | ✅ | {detail} |")
+    parts.append("")
+
+    # Articles
+    if articles:
+        parts.append(f"### Results (top {min(len(articles), config.output.limit)})\n")
+        for i, article in enumerate(articles[: config.output.limit], 1):
+            title = getattr(article, "title", "Unknown Title") or "Unknown Title"
+            year = getattr(article, "year", None) or "N/A"
+            journal = getattr(article, "journal", None) or ""
+            pmid = getattr(article, "pmid", None)
+            doi = getattr(article, "doi", None)
+
+            parts.append(f"**{i}. {title}** ({year})")
+            if journal:
+                parts.append(f"   *{journal}*")
+            ids = []
+            if pmid:
+                ids.append(f"PMID: {pmid}")
+            if doi:
+                ids.append(f"DOI: {doi}")
+            if ids:
+                parts.append(f"   {' | '.join(ids)}")
+
+            abstract = getattr(article, "abstract", None)
+            if abstract:
+                parts.append(f"   > {abstract[:200]}{'...' if len(abstract) > 200 else ''}")
+            parts.append("")
+    else:
+        parts.append("*No articles found.*\n")
+
+    return "\n".join(parts)
+
+
+# ============================================================================
 # MCP Tool Registration
 # ============================================================================
 
@@ -1753,28 +2107,12 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
     async def unified_search(
         query: str,
         limit: Union[int, str] = 10,
-        min_year: Union[int, str, None] = None,
-        max_year: Union[int, str, None] = None,
+        sources: Union[str, None] = None,
         ranking: Literal["balanced", "impact", "recency", "quality"] = "balanced",
         output_format: Literal["markdown", "json"] = "markdown",
-        include_oa_links: Union[bool, str] = True,
-        show_analysis: Union[bool, str] = True,
-        # Similarity scores (Phase 5.10)
-        include_similarity_scores: Union[bool, str] = True,
-        # Advanced filters (Phase 2.1)
-        age_group: Union[str, None] = None,
-        sex: Union[str, None] = None,
-        species: Union[str, None] = None,
-        language: Union[str, None] = None,
-        clinical_query: Union[str, None] = None,
-        # Preprint search (Phase 2.2)
-        include_preprints: Union[bool, str] = False,
-        # Peer review filter
-        peer_reviewed_only: Union[bool, str] = True,
-        # Auto-relaxation (Phase 5.x)
-        auto_relax: Union[bool, str] = True,
-        # Deep search (Phase 3.x) - Use SemanticEnhancer strategies
-        deep_search: Union[bool, str] = True,
+        filters: Union[str, None] = None,
+        options: Union[str, None] = None,
+        pipeline: Union[str, None] = None,
     ) -> str:
         """
         🔍 Unified Search - Single entry point for multi-source academic search.
@@ -1795,104 +2133,148 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         8. Optionally searches preprints (arXiv, medRxiv, bioRxiv)
 
         ═══════════════════════════════════════════════════════════════════
-        EXAMPLES:
+        EXAMPLES (most calls only need 1-2 params):
         ═══════════════════════════════════════════════════════════════════
 
-        Simple lookup:
-            unified_search("PMID:12345678")
-            → PubMed only, fast
+        Simple (1 param):
+            unified_search("remimazolam ICU sedation")
 
-        Topic exploration:
+        With limit (2 params):
             unified_search("machine learning in anesthesia", limit=20)
-            → PubMed + CrossRef enrichment
 
-        Clinical comparison:
-            unified_search("remimazolam vs propofol for ICU sedation")
-            → Multi-source, PICO detected, impact-ranked
+        Specify sources:
+            unified_search("CRISPR gene therapy", sources="pubmed,openalex")
 
-        Systematic review prep:
-            unified_search("CRISPR gene therapy cancer", ranking="quality")
-            → All sources, quality-ranked, OA links
+        Clinical filters:
+            unified_search("diabetes treatment",
+                          filters="year:2020-2025, age:aged, clinical:therapy")
 
-        Advanced clinical filters:
-            unified_search("diabetes treatment", age_group="aged", clinical_query="therapy")
-            → Only elderly population studies with therapy filter
+        Include preprints + shallow search:
+            unified_search("COVID-19 vaccine", options="preprints, shallow")
 
-            unified_search("breast cancer screening", sex="female", species="humans")
-            → Female human studies only
+        Full control:
+            unified_search("propofol vs remimazolam",
+                          sources="pubmed,semantic_scholar,europe_pmc",
+                          ranking="impact",
+                          filters="year:2020-, sex:female, species:humans",
+                          options="preprints, no_relax")
 
         ICD Code Auto-Detection:
             unified_search("E11 complications")
             → Auto-expands E11 to "Diabetes Mellitus, Type 2"[MeSH]
 
-            unified_search("I21 treatment outcomes")
-            → Auto-expands I21 to "Myocardial Infarction"[MeSH]
-
-        Preprint Search:
-            unified_search("COVID-19 vaccine efficacy", include_preprints=True)
-            → Also searches arXiv, medRxiv, bioRxiv
-
         Args:
             query: Your search query (natural language, ICD codes, or structured)
-            limit: Maximum results per source (default 10)
-            min_year: Filter by minimum publication year
-            max_year: Filter by maximum publication year
+            limit: Maximum results per source (default 10, max 100)
+            sources: Comma-separated list of sources to search.
+                     Available: "pubmed", "openalex", "semantic_scholar",
+                     "europe_pmc", "crossref".
+                     Default: auto-select based on query complexity.
+                     Examples: "pubmed,openalex" or "europe_pmc"
             ranking: Ranking strategy:
                 - "balanced": Default, considers all factors
                 - "impact": Prioritize high-citation papers
                 - "recency": Prioritize recent publications
                 - "quality": Prioritize high-evidence studies (RCTs, meta-analyses)
             output_format: "markdown" (human-readable) or "json" (programmatic)
-            include_oa_links: Enrich results with open access links (default True)
-            show_analysis: Include query analysis in output (default True)
-            include_similarity_scores: Add relevance/similarity scores to each result
-                                       based on ranking position and source trust.
-                                       (default True). Scores range from 0-100%.
-            age_group: Age group filter (PubMed only). Options:
-                       "newborn" (0-1mo), "infant" (1-23mo), "preschool" (2-5y),
-                       "child" (6-12y), "adolescent" (13-18y), "young_adult" (19-24y),
-                       "adult" (19+), "middle_aged" (45-64y), "aged" (65+), "aged_80" (80+)
-            sex: Sex filter (PubMed only). Options: "male", "female"
-            species: Species filter (PubMed only). Options: "humans", "animals"
-            language: Language filter (PubMed only). Options: "english", "chinese", etc.
-            clinical_query: Clinical query filter (PubMed only). Options:
-                           "therapy" (broad), "therapy_narrow" (high specificity),
-                           "diagnosis", "diagnosis_narrow",
-                           "prognosis", "prognosis_narrow",
-                           "etiology", "etiology_narrow",
-                           "clinical_prediction", "clinical_prediction_narrow"
-                           These are validated PubMed clinical query strategies for EBM.
-            include_preprints: Also search preprint servers (arXiv, medRxiv, bioRxiv)
-                              Default: False. Set True for cutting-edge research.
-            peer_reviewed_only: Filter out non-peer-reviewed articles (preprints,
-                              arXiv papers, etc.) from ALL sources including OpenAlex
-                              and Semantic Scholar. Default: True.
-                              Set False to include preprints mixed in with results.
-                              Note: This is independent of include_preprints — even with
-                              peer_reviewed_only=True, you can set include_preprints=True
-                              to show preprints in a SEPARATE section.
-            auto_relax: Automatically relax search when 0 results (default True).
-                        Progressive relaxation from narrow to broad:
-                        1. Remove advanced filters (age_group, clinical_query, etc.)
-                        2. Remove year constraints
-                        3. Remove publication type filters (RCT, Meta-analysis)
-                        4. Remove field tags ([Title], [MeSH Terms])
-                        5. Relax Boolean logic (AND → OR)
-                        6. Extract core keywords only
-                        Set False to get exact 0-result feedback without relaxation.
-            deep_search: Enable semantic deep search using PubTator3 and MeSH expansion
-                        (default True). When enabled, the search:
-                        - Resolves biomedical entities via PubTator3
-                        - Expands queries with MeSH terms and synonyms
-                        - Executes multiple search strategies in parallel:
-                          * Original query (baseline)
-                          * MeSH-expanded query (high precision)
-                          * Entity-semantic query (via PubTator3)
-                          * Europe PMC full-text search (high recall)
-                          * Broad Title/Abstract search (maximum recall)
-                        - Aggregates and deduplicates results from all strategies
-                        - Reports depth metrics (entities resolved, strategies executed)
-                        Set False for simple keyword-only search (faster but shallower).
+            filters: Comma-separated key:value pairs for filtering results.
+                     Supported keys:
+                       year:2020-2025    → publication year range
+                       year:2020-        → from 2020 onwards
+                       year:-2025        → up to 2025
+                       year:2024         → from 2024 onwards
+                       age:<value>       → age group filter (PubMed).
+                                           Values: newborn, infant, preschool, child,
+                                           adolescent, young_adult, adult, middle_aged,
+                                           aged, aged_80
+                       sex:<value>       → sex filter: male, female
+                       species:<value>   → species filter: humans, animals
+                       lang:<value>      → language filter: english, chinese, etc.
+                       clinical:<value>  → clinical query filter (PubMed EBM).
+                                           Values: therapy, therapy_narrow, diagnosis,
+                                           diagnosis_narrow, prognosis, prognosis_narrow,
+                                           etiology, etiology_narrow,
+                                           clinical_prediction, clinical_prediction_narrow
+                     Example: "year:2020-2025, age:aged, sex:female, clinical:therapy"
+            options: Comma-separated flags to toggle behaviors.
+                     Supported flags:
+                       preprints      → also search arXiv, medRxiv, bioRxiv
+                       all_types      → include non-peer-reviewed articles
+                       no_oa          → skip Unpaywall OA link enrichment
+                       no_analysis    → hide query analysis section in output
+                       no_scores      → hide similarity/relevance scores
+                       no_relax       → disable auto-relaxation on 0 results
+                       shallow        → disable deep search (faster, keyword-only)
+                     Example: "preprints, shallow" or "no_analysis, no_scores"
+            pipeline: JSON string defining a multi-step search pipeline.
+                     When provided, other parameters (except output_format) are
+                     ignored and the pipeline DAG is executed instead.
+
+                     Accepts **YAML** (recommended, human-friendly) or **JSON** format.
+
+                     **Template mode — YAML** (shortcut for common workflows):
+                       template: pico
+                       params:
+                         P: ICU patients
+                         I: remimazolam
+                         C: propofol
+                         O: sedation
+
+                     Other templates:
+                       template: comprehensive
+                       params:
+                         query: CRISPR gene therapy
+
+                       template: exploration
+                       params:
+                         pmid: "12345678"
+
+                       template: gene_drug
+                       params:
+                         term: BRCA1
+
+                     **Custom pipeline — YAML** (full DAG control, max 20 steps):
+                       name: My Custom Search
+                       steps:
+                         - id: s1
+                           action: search
+                           params:
+                             query: remimazolam ICU
+                             sources: pubmed,europe_pmc
+                             limit: 50
+                         - id: s2
+                           action: search
+                           params:
+                             query: propofol ICU
+                             sources: pubmed
+                             limit: 50
+                         - id: merged
+                           action: merge
+                           inputs: [s1, s2]
+                           params:
+                             method: rrf
+                         - id: enriched
+                           action: metrics
+                           inputs: [merged]
+                       output:
+                         format: markdown
+                         limit: 20
+                         ranking: impact
+
+                     **JSON also supported** (for programmatic use):
+                       {"template": "pico", "params": {"P": "ICU patients", "I": "remimazolam"}}
+
+                     Available actions:
+                       search      — literature search (params: query, sources, limit, min_year, max_year)
+                       pico        — PICO elements (params: P, I, C, O)
+                       expand      — MeSH/synonym expansion (params: topic)
+                       details     — fetch article details (params: pmids)
+                       related     — find related articles (params: pmid, limit)
+                       citing      — find citing articles (params: pmid, limit)
+                       references  — get article references (params: pmid, limit)
+                       metrics     — enrich with iCite citation metrics (inputs only)
+                       merge       — combine results (params: method=union|intersection|rrf)
+                       filter      — post-filter (params: min_year, max_year, article_types, min_citations, has_abstract)
 
         Returns:
             Formatted search results with:
@@ -1901,12 +2283,19 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             - Search statistics (sources, dedup count)
             - Ranked articles with metadata
             - Open access links where available
-            - Preprints (if include_preprints=True)
+            - Preprints (if options includes "preprints")
             - Relaxation info (if auto_relax triggered)
+            - Pipeline step summary (if pipeline mode)
         """
         logger.info(f"Unified search: query='{query}', limit={limit}, ranking='{ranking}'")
 
         try:
+            # ============================================================
+            # Pipeline Mode — execute structured DAG when pipeline is set
+            # ============================================================
+            if pipeline:
+                return await _execute_pipeline_mode(pipeline, output_format, searcher)
+
             # === Step 0: Normalize Inputs ===
             query = InputNormalizer.normalize_query(query)
             if not query:
@@ -1918,15 +2307,28 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 )
 
             limit = InputNormalizer.normalize_limit(limit, default=10, max_val=100)
-            min_year = InputNormalizer.normalize_year(min_year)
-            max_year = InputNormalizer.normalize_year(max_year)
-            include_oa_links = InputNormalizer.normalize_bool(include_oa_links, default=True)
-            show_analysis = InputNormalizer.normalize_bool(show_analysis, default=True)
-            include_similarity_scores = InputNormalizer.normalize_bool(include_similarity_scores, default=True)
-            include_preprints = InputNormalizer.normalize_bool(include_preprints, default=False)
-            peer_reviewed_only = InputNormalizer.normalize_bool(peer_reviewed_only, default=True)
-            auto_relax = InputNormalizer.normalize_bool(auto_relax, default=True)
-            deep_search = InputNormalizer.normalize_bool(deep_search, default=True)
+
+            # === Step 0.1: Parse composite parameters ===
+            parsed_filters = _parse_filters(filters)
+            parsed_options = _parse_options(options)
+
+            # Extract filter values (with defaults)
+            min_year: int | None = parsed_filters.get("min_year")
+            max_year: int | None = parsed_filters.get("max_year")
+            age_group: str | None = parsed_filters.get("age_group")
+            sex: str | None = parsed_filters.get("sex")
+            species: str | None = parsed_filters.get("species")
+            language: str | None = parsed_filters.get("language")
+            clinical_query: str | None = parsed_filters.get("clinical_query")
+
+            # Extract option flags (with defaults)
+            include_oa_links: bool = parsed_options.get("include_oa_links", True)
+            show_analysis: bool = parsed_options.get("show_analysis", True)
+            include_similarity_scores: bool = parsed_options.get("include_similarity_scores", True)
+            include_preprints: bool = parsed_options.get("include_preprints", False)
+            peer_reviewed_only: bool = parsed_options.get("peer_reviewed_only", True)
+            auto_relax: bool = parsed_options.get("auto_relax", True)
+            deep_search: bool = parsed_options.get("deep_search", True)
 
             # === Step 0.5: ICD Code Detection and Expansion ===
             icd_matches: list[dict] = []
@@ -1968,8 +2370,25 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                     logger.debug(f"Semantic enhancement skipped: {e}")
 
             # === Step 2: Determine Sources ===
-            sources = DispatchStrategy.get_sources(analysis)
-            logger.info(f"Selected sources: {sources}")
+            valid_sources = {"pubmed", "openalex", "semantic_scholar", "europe_pmc", "crossref", "core"}
+            user_sources: list[str] | None = None
+
+            if sources:
+                # User explicitly specified sources — parse and validate
+                parsed = [s.strip().lower() for s in sources.split(",") if s.strip()]
+                invalid = [s for s in parsed if s not in valid_sources]
+                if invalid:
+                    return ResponseFormatter.error(
+                        f"Invalid source(s): {', '.join(invalid)}",
+                        suggestion=f"Available sources: {', '.join(sorted(valid_sources))}",
+                        example='unified_search(query="...", sources="pubmed,openalex")',
+                        tool_name="unified_search",
+                    )
+                user_sources = parsed
+                logger.info(f"User-specified sources: {user_sources}")
+
+            dispatch_sources = user_sources or DispatchStrategy.get_sources(analysis)
+            logger.info(f"Selected sources: {dispatch_sources}")
 
             # === Step 3: Get Ranking Config ===
             if ranking == "impact":
@@ -2021,6 +2440,28 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
 
             # *** DEEP SEARCH: Use SemanticEnhancer strategies ***
             if deep_search and enhanced_query and enhanced_query.strategies and len(enhanced_query.strategies) > 0:
+                # Filter strategies to user-specified sources if provided
+                if user_sources:
+                    original_count = len(enhanced_query.strategies)
+                    enhanced_query.strategies = [s for s in enhanced_query.strategies if s.source in user_sources]
+                    # If all strategies were filtered out, add back at least one per source
+                    if not enhanced_query.strategies:
+                        for src in user_sources:
+                            if src in ("pubmed", "europe_pmc", "openalex"):
+                                enhanced_query.strategies.append(
+                                    SearchPlan(
+                                        name=f"user_specified_{src}",
+                                        query=enhanced_query.original_query,
+                                        source=src,
+                                        priority=1,
+                                        expected_precision=0.5,
+                                        expected_recall=0.5,
+                                    )
+                                )
+                    filtered_count = original_count - len(enhanced_query.strategies)
+                    if filtered_count > 0:
+                        logger.info(f"Filtered {filtered_count} strategies to match user sources: {user_sources}")
+
                 logger.info(f"Executing DEEP SEARCH with {len(enhanced_query.strategies)} strategies")
                 (
                     all_results,
@@ -2078,6 +2519,15 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                         )
                         return ("semantic_scholar", articles, total_count)
 
+                    if source == "core":
+                        articles, total_count = await _search_core(
+                            query,
+                            limit,
+                            effective_min_year,
+                            effective_max_year,
+                        )
+                        return ("core", articles, total_count)
+
                     if source == "crossref":
                         # CrossRef is used for enrichment, not primary search
                         return ("crossref", [], None)
@@ -2085,7 +2535,7 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                     return (source, [], None)
 
                 # Filter out crossref from parallel search (it's enrichment only)
-                search_sources = [s for s in sources if s != "crossref"]
+                search_sources = [s for s in dispatch_sources if s != "crossref"]
 
                 # Execute searches in parallel with asyncio.gather
                 search_results = await asyncio.gather(
@@ -2164,11 +2614,11 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                     )
 
             # === Step 6: Enrich with CrossRef (if in sources) ===
-            if "crossref" in sources:
+            if "crossref" in dispatch_sources:
                 await _enrich_with_crossref(articles)
 
             # === Step 6.25: Enrich with Journal Metrics (OpenAlex Sources API) ===
-            if "openalex" in sources:
+            if "openalex" in dispatch_sources:
                 await _enrich_with_journal_metrics(articles)
 
             # === Step 6.5: Filter non-peer-reviewed articles ===

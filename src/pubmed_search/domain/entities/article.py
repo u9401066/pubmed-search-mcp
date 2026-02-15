@@ -927,6 +927,52 @@ class UnifiedArticle:
             sources=[SourceMetadata(source="semantic_scholar", raw_data=data)],
         )
 
+    @classmethod
+    def from_core(cls, data: dict[str, Any]) -> UnifiedArticle:
+        """Create UnifiedArticle from CORE API normalized response."""
+        # Parse authors
+        authors = []
+        for author in data.get("authors", []):
+            if isinstance(author, str):
+                authors.append(Author(full_name=author))
+            elif isinstance(author, dict):
+                authors.append(Author(full_name=author.get("name", "")))
+
+        # OA links
+        oa_links = []
+        for url_key in ("download_url", "pdf_url", "reader_url"):
+            url = data.get(url_key)
+            if url:
+                oa_links.append(
+                    OpenAccessLink(
+                        url=url,
+                        is_best=(url_key == "download_url"),
+                    )
+                )
+
+        return cls(
+            title=data.get("title") or "Unknown Title",
+            primary_source="core",
+            core_id=str(data["core_id"]) if data.get("core_id") else None,
+            doi=data.get("doi"),
+            pmid=data.get("pmid"),
+            arxiv_id=data.get("arxiv_id"),
+            authors=authors,
+            abstract=data.get("abstract"),
+            journal=data.get("journal"),
+            year=data.get("year"),
+            publisher=data.get("publisher"),
+            language=data.get("language"),
+            is_open_access=bool(data.get("has_fulltext") or data.get("download_url")),
+            oa_links=oa_links,
+            citation_metrics=CitationMetrics(
+                citation_count=data.get("citation_count"),
+            )
+            if data.get("citation_count")
+            else None,
+            sources=[SourceMetadata(source="core", raw_data=data)],
+        )
+
     # ===================================================================
     # Instance Methods
     # ===================================================================

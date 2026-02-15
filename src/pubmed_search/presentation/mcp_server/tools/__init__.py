@@ -1,10 +1,10 @@
 """
-PubMed Search MCP Tools (v0.3.4)
+PubMed Search MCP Tools (v0.4.0)
 
-🎯 34 個 MCP 工具 / 13 categories：
+🎯 33 個 MCP 工具 / 13 categories：
 
 ✅ 搜尋工具 (1)：
-- unified_search: 統一搜索入口，自動多源搜索
+- unified_search: 統一搜索入口，自動多源搜索 (PubMed, Europe PMC, OpenAlex, Semantic Scholar, CrossRef, CORE)
 
 ✅ 查詢智能 (3)：
 - parse_pico, generate_search_queries, analyze_search_query
@@ -41,8 +41,9 @@ PubMed Search MCP Tools (v0.3.4)
 - configure_institutional_access, get_institutional_link
 - list_resolver_presets, test_institutional_access
 
-✅ ICD 轉換 (2)：
-- convert_icd_mesh, search_by_icd
+✅ ICD 轉換 (1)：
+- convert_icd_mesh
+  (search_by_icd 已廢棄 → unified_search 支援 ICD 自動偵測)
 
 ✅ 圖片搜尋 (1)：
 - search_biomedical_images
@@ -80,7 +81,7 @@ if TYPE_CHECKING:
 
 
 def register_all_tools(mcp: FastMCP, searcher: LiteratureSearcher):
-    """註冊全部 34 個 MCP 工具 (13 categories)。"""
+    """註冊全部 33 個 MCP 工具 (13 categories)。"""
     # 1. 搜尋工具 (1)
     register_unified_search_tools(mcp, searcher)
 

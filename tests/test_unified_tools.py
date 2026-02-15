@@ -196,8 +196,7 @@ class TestUnifiedSearch:
             result = await tools["unified_search"](
                 query="diabetes",
                 limit=5,
-                show_analysis=False,
-                include_similarity_scores=False,
+                options="no_analysis, no_scores",
             )
         assert isinstance(result, str)
 
@@ -213,7 +212,7 @@ class TestUnifiedSearch:
             "pubmed_search.presentation.mcp_server.tools.unified.get_semantic_enhancer",
         ) as mock_enhancer:
             mock_enhancer.return_value.enhance.side_effect = Exception("skip")
-            result = await tools["unified_search"](query="test", output_format="json", include_similarity_scores=False)
+            result = await tools["unified_search"](query="test", output_format="json", options="no_scores")
         assert isinstance(result, str)
         # Result is either valid JSON or an error/no-results message
         try:

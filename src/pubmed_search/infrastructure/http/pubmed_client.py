@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+
 from typing_extensions import Self  # Python 3.11+
 
 from pubmed_search.infrastructure.ncbi import LiteratureSearcher, SearchStrategy

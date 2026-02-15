@@ -537,7 +537,6 @@ generate_search_queries(topic="<O>")
 | Tool | Purpose |
 |------|---------|
 | `convert_icd_mesh` | Convert between ICD codes and MeSH terms (bidirectional). |
-| `search_by_icd` | Search PubMed using ICD code (auto-converts to MeSH). |
 
 
 ### 研究時間軸

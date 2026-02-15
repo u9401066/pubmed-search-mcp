@@ -555,6 +555,90 @@ class TestFromSemanticScholar:
 
 
 # ============================================================
+# UnifiedArticle.from_core
+# ============================================================
+
+
+class TestFromCore:
+    async def test_basic_core_article(self):
+        data = {
+            "core_id": 152480964,
+            "title": "Machine Learning in Healthcare",
+            "authors": ["Alice Smith", "Bob Jones"],
+            "abstract": "A review of ML applications.",
+            "year": 2023,
+            "journal": "Nature Medicine",
+            "doi": "10.1038/test",
+            "pmid": "12345678",
+            "has_fulltext": True,
+            "download_url": "https://core.ac.uk/download/152480964.pdf",
+        }
+        a = UnifiedArticle.from_core(data)
+        assert a.primary_source == "core"
+        assert a.core_id == "152480964"
+        assert a.title == "Machine Learning in Healthcare"
+        assert len(a.authors) == 2
+        assert a.authors[0].full_name == "Alice Smith"
+        assert a.doi == "10.1038/test"
+        assert a.pmid == "12345678"
+        assert a.year == 2023
+        assert a.is_open_access is True
+        assert len(a.oa_links) >= 1
+
+    async def test_core_with_dict_authors(self):
+        data = {
+            "core_id": 999,
+            "title": "Test",
+            "authors": [{"name": "Alice"}, {"name": "Bob"}],
+        }
+        a = UnifiedArticle.from_core(data)
+        assert len(a.authors) == 2
+        assert a.authors[0].full_name == "Alice"
+
+    async def test_core_minimal_data(self):
+        data = {"core_id": 1}
+        a = UnifiedArticle.from_core(data)
+        assert a.title == "Unknown Title"
+        assert a.core_id == "1"
+        assert a.primary_source == "core"
+
+    async def test_core_with_citation_count(self):
+        data = {
+            "core_id": 123,
+            "title": "Cited Paper",
+            "citation_count": 42,
+        }
+        a = UnifiedArticle.from_core(data)
+        assert a.citation_metrics is not None
+        assert a.citation_metrics.citation_count == 42
+
+    async def test_core_no_citation_count(self):
+        data = {"core_id": 123, "title": "Uncited"}
+        a = UnifiedArticle.from_core(data)
+        assert a.citation_metrics is None
+
+    async def test_core_oa_links_multiple(self):
+        data = {
+            "core_id": 123,
+            "title": "OA Paper",
+            "download_url": "https://dl.example.com/paper.pdf",
+            "pdf_url": "https://pdf.example.com/paper.pdf",
+            "reader_url": "https://reader.example.com/paper",
+        }
+        a = UnifiedArticle.from_core(data)
+        assert len(a.oa_links) == 3
+
+    async def test_core_arxiv_id(self):
+        data = {
+            "core_id": 123,
+            "title": "ArXiv Paper",
+            "arxiv_id": "2301.12345",
+        }
+        a = UnifiedArticle.from_core(data)
+        assert a.arxiv_id == "2301.12345"
+
+
+# ============================================================
 # UnifiedArticle — merge_from
 # ============================================================
 

@@ -80,6 +80,7 @@ class BaseAPIClient:
         self._client = httpx.AsyncClient(
             timeout=self._timeout,
             headers=headers or {},
+            follow_redirects=True,
             limits=httpx.Limits(
                 max_connections=20,
                 max_keepalive_connections=10,

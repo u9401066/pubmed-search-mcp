@@ -219,6 +219,80 @@ class TestSearchSemanticScholar:
         assert articles == []
 
 
+class TestSearchCore:
+    """Test _search_core function."""
+
+    @patch(
+        "pubmed_search.presentation.mcp_server.tools.unified.get_core_client",
+    )
+    async def test_search_core_success(self, mock_get_client):
+        """Test successful CORE search."""
+        from pubmed_search.presentation.mcp_server.tools.unified import _search_core
+
+        mock_client = AsyncMock()
+        mock_client.search.return_value = {
+            "total_hits": 42,
+            "results": [
+                {
+                    "core_id": 152480964,
+                    "title": "CORE Article",
+                    "authors": ["Author A"],
+                    "doi": "10.1234/core-test",
+                    "year": 2024,
+                    "has_fulltext": True,
+                    "download_url": "https://core.ac.uk/download/152480964.pdf",
+                }
+            ],
+        }
+        mock_get_client.return_value = mock_client
+
+        articles, total = await _search_core("test query", 10, 2020, None)
+
+        assert len(articles) == 1
+        assert articles[0].primary_source == "core"
+        assert articles[0].core_id == "152480964"
+        assert articles[0].doi == "10.1234/core-test"
+        assert total == 42
+        mock_client.search.assert_called_once_with(
+            query="test query",
+            limit=10,
+            year_from=2020,
+            year_to=None,
+        )
+
+    @patch(
+        "pubmed_search.presentation.mcp_server.tools.unified.get_core_client",
+    )
+    async def test_search_core_exception(self, mock_get_client):
+        """Test CORE search handles exception."""
+        from pubmed_search.presentation.mcp_server.tools.unified import _search_core
+
+        mock_client = AsyncMock()
+        mock_client.search.side_effect = Exception("CORE API error")
+        mock_get_client.return_value = mock_client
+
+        articles, total = await _search_core("test", 10, None, None)
+
+        assert articles == []
+        assert total is None
+
+    @patch(
+        "pubmed_search.presentation.mcp_server.tools.unified.get_core_client",
+    )
+    async def test_search_core_empty_results(self, mock_get_client):
+        """Test CORE search with no results."""
+        from pubmed_search.presentation.mcp_server.tools.unified import _search_core
+
+        mock_client = AsyncMock()
+        mock_client.search.return_value = {"total_hits": 0, "results": []}
+        mock_get_client.return_value = mock_client
+
+        articles, total = await _search_core("obscure query", 10, None, None)
+
+        assert articles == []
+        assert total == 0
+
+
 class TestEnrichWithCrossRef:
     """Test _enrich_with_crossref function."""
 

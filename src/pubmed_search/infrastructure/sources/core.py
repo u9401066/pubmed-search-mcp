@@ -156,12 +156,20 @@ class COREClient(BaseAPIClient):
             for item in data.get("results", []):
                 results.append(self._normalize_work(item))
 
-            return {
+            result = {
                 "total_hits": data.get("totalHits", len(results)),
                 "results": results,
                 "offset": offset,
                 "limit": limit,
             }
+
+            if result["total_hits"] == 0:
+                logger.warning(
+                    "CORE search returned 0 results for query: %s",
+                    query[:100],
+                )
+
+            return result
 
         except Exception as e:
             logger.exception(f"CORE search failed: {e}")

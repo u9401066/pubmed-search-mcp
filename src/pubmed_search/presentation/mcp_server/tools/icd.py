@@ -382,66 +382,10 @@ def register_icd_tools(mcp: FastMCP):
 
         return json.dumps(result, indent=2, ensure_ascii=False)
 
-    @mcp.tool()
-    async def search_by_icd(
-        code: str,
-        limit: int = 10,
-        min_year: int | None = None,
-        article_type: str | None = None,
-    ) -> str:
-        """
-        Search PubMed using ICD code (auto-converts to MeSH).
+    # search_by_icd: Deprecated — unified_search 已支援 ICD 自動偵測
+    # Use unified_search(query="E11") instead, ICD codes are auto-detected and expanded to MeSH.
 
-        Convenience tool that:
-        1. Converts ICD code to MeSH term
-        2. Executes PubMed search with the MeSH query
-
-        Args:
-            code: ICD-9 or ICD-10 code
-            limit: Maximum results (default 10)
-            min_year: Minimum publication year
-            article_type: Article type filter (e.g., "Review", "Clinical Trial")
-
-        Returns:
-            Search results or conversion error
-
-        Example:
-            search_by_icd("E11", limit=5)  # Type 2 diabetes
-            search_by_icd("I21", limit=10, article_type="Clinical Trial")  # MI
-        """
-        # First convert
-        mapping = lookup_icd_to_mesh(code)
-
-        if not mapping.get("success"):
-            return json.dumps(mapping, indent=2, ensure_ascii=False)
-
-        # Import here to avoid circular dependency
-        from pubmed_search.infrastructure.ncbi import LiteratureSearcher
-
-        searcher = LiteratureSearcher()
-        mesh_query = mapping["pubmed_query"]
-
-        results = await searcher.search(
-            query=mesh_query,
-            limit=limit,
-            min_year=min_year,
-            article_type=article_type,
-        )
-
-        return json.dumps(
-            {
-                "icd_code": code,
-                "mesh_term": mapping["mesh_term"],
-                "query_used": mesh_query,
-                "total_results": len(results),
-                "articles": results,
-            },
-            indent=2,
-            ensure_ascii=False,
-            default=str,
-        )
-
-    logger.info("Registered ICD conversion tools (2 tools)")
+    logger.info("Registered ICD conversion tools (1 tool)")
 
 
 __all__ = [

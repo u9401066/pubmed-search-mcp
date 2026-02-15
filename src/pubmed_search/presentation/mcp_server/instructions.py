@@ -11,17 +11,20 @@ SERVER_INSTRUCTIONS = """
 PubMed Search MCP Server - AI Agent 的文獻搜尋助理
 
 ═══════════════════════════════════════════════════════════════════════════════
-🎯 搜尋策略選擇指南 (IMPORTANT - 請根據用戶需求選擇正確流程)
+🎯 搜尋策略選擇指南 (IMPORTANT - 所有文獻搜尋統一使用 unified_search)
 ═══════════════════════════════════════════════════════════════════════════════
+
+⚠️ 重要原則：unified_search 是唯一的文獻搜尋入口。
+   所有搜尋情境都從 unified_search 開始，不需要其他搜尋工具。
 
 ## 情境 1️⃣: 快速搜尋 (用戶只是想找幾篇文章看看)
 ───────────────────────────────────────────────────────────────────────────────
 觸發條件: "幫我找...", "搜尋...", "有沒有關於..."
-流程: 直接呼叫 search_literature()
+流程: 直接呼叫 unified_search()
 
 範例:
 ```
-search_literature(query="remimazolam sedation", limit=10)
+unified_search(query="remimazolam sedation", limit=10)
 ```
 
 ## 情境 2️⃣: 精確搜尋 (用戶要求專業/精確/完整的搜尋)
@@ -32,7 +35,7 @@ search_literature(query="remimazolam sedation", limit=10)
 流程:
 1. generate_search_queries(topic) → 取得 MeSH 詞彙和同義詞
 2. 根據返回的 suggested_queries 選擇最佳策略
-3. search_literature(query=優化後的查詢)
+3. unified_search(query=優化後的查詢)
 
 範例:
 ```
@@ -40,34 +43,26 @@ search_literature(query="remimazolam sedation", limit=10)
 generate_search_queries("anesthesiology artificial intelligence")
 
 # Step 2: 用 MeSH 標準化查詢 (從結果中選擇)
-search_literature(query='"Artificial Intelligence"[MeSH] AND "Anesthesiology"[MeSH]')
+unified_search(query='"Artificial Intelligence"[MeSH] AND "Anesthesiology"[MeSH]')
 ```
 
 ## 情境 3️⃣: PICO 臨床問題搜尋 (用戶問的是比較性問題)
 ───────────────────────────────────────────────────────────────────────────────
 觸發條件: "A比B好嗎?", "...相比...", "...對...的效果", "在...病人中..."
 
-流程:
+方法 A — Pipeline 自動化 (推薦):
+```
+unified_search(
+  query="remimazolam vs propofol ICU sedation",
+  pipeline='template: pico\\ntopic: remimazolam vs propofol for ICU sedation'
+)
+```
+
+方法 B — 手動 PICO 流程:
 1. parse_pico(description) → 解析 PICO 元素
 2. 對每個 PICO 元素並行呼叫 generate_search_queries()
 3. 組合 Boolean 查詢: (P) AND (I) AND (C) AND (O)
-4. search_literature() 執行搜尋
-5. merge_search_results() 合併結果
-
-範例:
-```
-# Step 1: 解析 PICO
-parse_pico(description="remimazolam 在 ICU 鎮靜比 propofol 好嗎")
-→ P=ICU patients, I=remimazolam, C=propofol, O=sedation outcome
-
-# Step 2: 並行取得各元素的 MeSH
-generate_search_queries("ICU patients")
-generate_search_queries("remimazolam")
-generate_search_queries("propofol")
-
-# Step 3: 組合搜尋
-search_literature(query='("Intensive Care Units"[MeSH]) AND (remimazolam OR CNS7056) AND (propofol)')
-```
+4. unified_search(query=組合查詢)
 
 ## 情境 4️⃣: 深入探索 (用戶找到一篇重要論文，想看相關的)
 ───────────────────────────────────────────────────────────────────────────────
@@ -85,50 +80,82 @@ get_article_references(pmid="12345678") # 這篇文章的參考文獻 (backward)
 觸發條件: "最新研究", "preprint", "預印本", "arXiv", "medRxiv", "bioRxiv",
           "尚未發表的", "最前沿的研究"
 
-unified_search 支援兩個預印本相關參數：
-- include_preprints=true: 額外搜尋 arXiv、medRxiv、bioRxiv 預印本伺服器
-- peer_reviewed_only=true: 過濾掉所有非同行審查的文章（預印本、社論等）
+unified_search 支援透過 options 參數控制預印本行為：
+- options="preprints": 額外搜尋 arXiv、medRxiv、bioRxiv 預印本伺服器
+- options="all_types": 包含非同行審查的文章（預印本、社論等）
 
 範例:
 ```
 # 包含預印本搜尋（預設不包含）
-unified_search(query="CRISPR base editing", include_preprints=true)
+unified_search(query="CRISPR base editing", options="preprints")
 
-# 只要同行審查的文章（排除預印本、社論等）
-unified_search(query="remimazolam sedation", peer_reviewed_only=true)
+# 預印本 + 包含非同行審查文章
+unified_search(query="CRISPR gene therapy", options="preprints, all_types")
 
-# 兩個參數互斥：include_preprints=true 時 peer_reviewed_only 自動忽略
+# 指定來源 + 預印本
+unified_search(query="remimazolam sedation", sources="pubmed,europe_pmc", options="preprints")
 ```
 
 注意：預印本**未經同行審查**，引用時應特別標註。
+
+## 情境 6️⃣: 指定搜尋來源
+───────────────────────────────────────────────────────────────────────────────
+unified_search 支援 6 個學術資料來源，可透過 sources 參數指定：
+
+| 來源 | sources 值 | 特色 |
+|------|-----------|------|
+| PubMed | pubmed | 生物醫學金標準，30M+ 文獻 |
+| Europe PMC | europe_pmc | 歐洲文獻，33M+ 文獻，6.5M 開放取用 |
+| OpenAlex | openalex | 全球學術，250M+ works |
+| Semantic Scholar | semantic_scholar | AI 語義搜尋，200M+ 論文 |
+| CrossRef | crossref | DOI 元資料，引用計數 |
+| CORE | core | 開放取用聚合，200M+ 論文，42M+ 全文 |
+
+範例:
+```
+# 自動選擇最佳來源（預設）
+unified_search(query="machine learning healthcare")
+
+# 指定多個來源
+unified_search(query="AI diagnosis", sources="pubmed,openalex,core")
+
+# 使用 CORE 找開放取用論文
+unified_search(query="deep learning radiology", sources="core")
+```
+
+## 情境 7️⃣: ICD 代碼搜尋
+───────────────────────────────────────────────────────────────────────────────
+unified_search 會自動偵測查詢中的 ICD-9/ICD-10 代碼並轉換為 MeSH 術語：
+
+```
+# ICD 代碼自動偵測 + MeSH 擴展
+unified_search(query="E11")        # 自動識別為 Type 2 Diabetes
+unified_search(query="I21")        # 自動識別為 Myocardial Infarction
+unified_search(query="E11 treatment outcomes")  # 混合 ICD + 文字也可以
+```
+
+如需手動轉換 ICD ↔ MeSH（不搜尋），使用 convert_icd_mesh。
 
 ═══════════════════════════════════════════════════════════════════════════════
 📦 匯出工具 (搜尋完成後)
 ═══════════════════════════════════════════════════════════════════════════════
 
 - prepare_export(pmids, format): 匯出引用格式 (ris/bibtex/csv/medline/json)
-- get_article_fulltext_links(pmid): 取得全文連結 (PMC/DOI)
-- analyze_fulltext_access(pmids): 分析哪些文章有免費全文
 
 ═══════════════════════════════════════════════════════════════════════════════
-🇪🇺 Europe PMC 工具 (全文存取 + 文本挖掘)
+📄 全文取得與文本挖掘
 ═══════════════════════════════════════════════════════════════════════════════
 
-Europe PMC 提供 33M+ 文獻，6.5M 開放取用全文。最適合：找全文、歐洲研究。
+### 全文取得
+- get_fulltext(pmcid): 📄 取得解析後的全文 (分段顯示，多源：Europe PMC, Unpaywall, CORE)
 
-### 搜尋與全文
-- search_europe_pmc(query, open_access_only=True): 搜尋 Europe PMC
-- get_fulltext(pmcid): 📄 取得解析後的全文 (分段顯示)
-- get_fulltext_xml(pmcid): 取得原始 JATS XML
-
-### 文本挖掘與引用
-- get_text_mined_terms(pmid/pmcid): 🔬 取得標註 (基因、疾病、藥物)
-- get_europe_pmc_citations(pmid/pmcid, direction): 引用網路
+### 文本挖掘
+- get_text_mined_terms(pmid/pmcid): 🔬 取得標註 (基因、疾病、藥物，來自 Europe PMC)
 
 ### 使用範例
 ```
-# 找到文章後，直接閱讀全文
-search_europe_pmc("CRISPR gene therapy", has_fulltext=True, limit=5)
+# 搜尋後，對感興趣的文章取得全文
+unified_search(query="CRISPR gene therapy", sources="europe_pmc")
 get_fulltext(pmcid="PMC7096777", sections="introduction,results")
 
 # 找出文章提到的所有基因
@@ -136,75 +163,28 @@ get_text_mined_terms(pmid="12345678", semantic_type="GENE_PROTEIN")
 ```
 
 ═══════════════════════════════════════════════════════════════════════════════
-📚 CORE 開放取用工具 (200M+ 論文)
-═══════════════════════════════════════════════════════════════════════════════
-
-CORE 聚合全球 14,000+ 機構庫的開放取用研究，42M+ 有全文。
-
-### 使用時機
-- 需要開放取用版本的論文
-- 搜尋預印本和機構庫內容
-- 在論文全文中搜尋特定內容
-- 用 DOI/PMID 找到文章的開放版本
-
-### 搜尋語法
-- title:"machine learning"    → 標題搜尋
-- authors:"John Smith"        → 作者搜尋
-- fullText:"neural network"  → 全文內容搜尋
-
-### 使用範例
-```
-# 找開放取用論文
-search_core("machine learning healthcare", has_fulltext=True, limit=10)
-
-# 在全文中搜尋
-search_core_fulltext("propofol dose calculation", limit=5)
-
-# 用 DOI 找開放版本
-find_in_core(identifier="10.1038/s41586-021-03819-2", identifier_type="doi")
-
-# 取得全文
-get_core_fulltext(core_id="123456789")
-```
-
-═══════════════════════════════════════════════════════════════════════════════
 🧬 NCBI 延伸資料庫工具 (Gene, PubChem, ClinVar)
 ═══════════════════════════════════════════════════════════════════════════════
 
-這些工具讓你從 NCBI 其他資料庫取得相關資訊，與文獻搜尋互補。
+這些工具搜尋的是**非文獻資料庫**（基因、化合物、臨床變異），與文獻搜尋互補。
 
 ### Gene 資料庫 - 基因資訊
 ```
-# 搜尋基因
 search_gene("BRCA1", organism="human", limit=5)
-
-# 取得基因詳情
-get_gene_details(gene_id="672")  # BRCA1
-
-# 找基因相關文獻
-get_gene_literature(gene_id="672", limit=20)
-→ 返回 PMID 列表，可用 fetch_article_details 取得文章
+get_gene_details(gene_id="672")
+get_gene_literature(gene_id="672", limit=20)  # 返回 PMID 列表
 ```
 
 ### PubChem - 化合物/藥物資訊
 ```
-# 搜尋化合物
 search_compound("aspirin", limit=5)
-search_compound("remimazolam", limit=3)
-
-# 取得化合物詳情 (分子式、SMILES、InChI 等)
-get_compound_details(cid="2244")  # aspirin
-
-# 找化合物相關文獻
+get_compound_details(cid="2244")
 get_compound_literature(cid="2244", limit=20)
 ```
 
 ### ClinVar - 臨床變異
 ```
-# 搜尋臨床變異
 search_clinvar("BRCA1", limit=10)
-search_clinvar("cystic fibrosis", limit=10)
-→ 返回變異紀錄，包含臨床意義和相關疾病
 ```
 
 ═══════════════════════════════════════════════════════════════════════════════
@@ -214,14 +194,7 @@ search_clinvar("cystic fibrosis", limit=10)
 搜尋結果會自動暫存在 session 中，不需要記住所有 PMID！
 
 - get_session_pmids(search_index=-1): 取得指定搜尋的 PMID 列表
-  - search_index=-1: 最近一次搜尋
-  - search_index=-2: 前一次搜尋
-  - query_filter="BJA": 篩選包含 "BJA" 的搜尋
-
-- list_search_history(limit=10): 列出搜尋歷史
-
 - get_cached_article(pmid): 從快取取得文章詳情 (不消耗 API)
-
 - get_session_summary(): 查看 session 狀態和可用資料
 
 ### 快捷用法
@@ -282,7 +255,6 @@ search_clinvar("cystic fibrosis", limit=10)
 
 ### ICD 轉換
 - convert_icd_mesh: Convert between ICD codes and MeSH terms (bidirectional).
-- search_by_icd: Search PubMed using ICD code (auto-converts to MeSH).
 
 ### 研究時間軸
 - build_research_timeline: Build a research timeline for a topic OR specific PMIDs.
