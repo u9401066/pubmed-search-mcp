@@ -25,6 +25,7 @@ try {
     # Clear stale state from previous session
     Remove-Item "$stateDir/last_search_eval.json" -Force -ErrorAction SilentlyContinue
     Remove-Item "$stateDir/pending_complexity.json" -Force -ErrorAction SilentlyContinue
+    Remove-Item "$stateDir/workflow_tracker.json" -Force -ErrorAction SilentlyContinue
 
     # Log session start
     try {

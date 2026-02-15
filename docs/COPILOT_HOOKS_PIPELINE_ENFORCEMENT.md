@@ -2,9 +2,9 @@
 
 > **文件性質**: 技術設計文件
 > **目的**: 利用 GitHub Copilot Hooks 在 Agent 層創建搜尋反饋迴路，強制正確使用 Pipeline Mode
-> **最後更新**: 2026-02-16
+> **最後更新**: 2026-02-17
 > **維護者**: Eric
-> **狀態**: PoC 實作完成
+> **狀態**: PoC 實作完成 + Workflow Tracker
 
 ---
 
@@ -19,7 +19,8 @@
 7. [檔案結構](#7-檔案結構)
 8. [編碼與健壯性](#8-編碼與健壯性)
 9. [使用方式](#9-使用方式)
-10. [限制與未來方向](#10-限制與未來方向)
+10. [Research Workflow Tracker](#10-research-workflow-tracker)
+11. [限制與未來方向](#11-限制與未來方向)
 
 ---
 
@@ -485,7 +486,115 @@ echo '{"timestamp":1704614600000,"cwd":"/tmp","toolName":"unified_search","toolA
 
 ---
 
-## 10. 限制與未來方向
+## 10. Research Workflow Tracker
+
+### 概述
+
+利用 Copilot Hooks 的 `instructions` 注入能力，在每次使用者提交 prompt 時注入 TODO 風格的研究工作流程進度，引導 AI Agent 按照結構化步驟進行文獻搜尋。
+
+### 核心機制
+
+```
+userPromptSubmitted hook
+  ├─ 偵測研究意圖 (analyze-prompt)
+  │   └─ 建立 workflow_tracker.json (7 步驟)
+  ├─ 生成 instructions JSON
+  │   └─ [x] 已完成 / [ ] 未完成 / <-- NEXT 提示
+  └─ 注入到 AI context
+
+postToolUse hook (evaluate-results)
+  ├─ 偵測 toolName → 對應步驟
+  └─ 更新 workflow_tracker.json 中的步驟狀態
+```
+
+### 7 步結構化研究流程
+
+| Step | 名稱 | 觸發工具 | 說明 |
+|------|------|---------|------|
+| 1 | Query Analysis | `analyze_search_query`, `parse_pico` | 分析查詢複雜度，拆解 PICO |
+| 2 | Strategy Formation | `generate_search_queries` | 取得 MeSH 詞彙、同義詞 |
+| 3 | Initial Search | `unified_search` (無 pipeline) | 初始搜尋，評估結果 |
+| 4 | Pipeline Search | `unified_search` (有 pipeline) | 使用 pipeline template 進行精確搜尋 |
+| 5 | Result Evaluation | `get_citation_metrics`, `get_session_summary` | 評估結果品質 (RCR, 引用數) |
+| 6 | Deep Exploration | `find_related_articles`, `find_citing_articles`, `get_fulltext`, `build_citation_tree` | 深入探索重要文獻 |
+| 7 | Export & Synthesis | `prepare_export`, `build_research_timeline` | 匯出引用、建構時間軸 |
+
+### State File Schema
+
+```json
+// .github/hooks/_state/workflow_tracker.json
+{
+  "topic": "remimazolam vs propofol ICU sedation",
+  "intent": "comparison",
+  "template": "pico",
+  "created_at": "2026-02-17T10:30:00Z",
+  "steps": {
+    "query_analysis": "completed",
+    "strategy_formation": "completed",
+    "initial_search": "not-started",
+    "pipeline_search": "not-started",
+    "result_evaluation": "not-started",
+    "deep_exploration": "not-started",
+    "export_synthesis": "not-started"
+  }
+}
+```
+
+### Instructions 注入範例
+
+`userPromptSubmitted` hook 回傳的 JSON：
+
+```json
+{
+  "instructions": "RESEARCH WORKFLOW (2/7 steps done)\n[x] 1. Query Analysis\n[x] 2. Strategy Formation\n[ ] 3. Initial Search  <-- NEXT: Use unified_search\n[ ] 4. Pipeline Search\n[ ] 5. Result Evaluation\n[ ] 6. Deep Exploration\n[ ] 7. Export & Synthesis\nTopic: remimazolam vs propofol ICU sedation\nTemplate: pico"
+}
+```
+
+AI Agent 會在 context 中看到這段 instructions，自動理解當前進度並跟隨 NEXT 提示。
+
+### 意圖偵測與 Template 映射
+
+| 偵測關鍵字 | 意圖 | 建議 Template |
+|-----------|------|-------------|
+| `vs`, `compared`, `comparison` | comparison | pico |
+| `systematic`, `comprehensive`, `review` | systematic | comprehensive |
+| `explore`, `related`, `citing` | exploration | exploration |
+| `gene`, `drug`, `compound`, `BRCA` | gene_drug | gene_drug |
+| 其他 | general | (無預設) |
+
+### Session 生命週期
+
+```
+sessionStart hook
+  └─ 清除 workflow_tracker.json (重置工作流程)
+
+userPromptSubmitted hook
+  └─ 偵測研究意圖 → 建立新 tracker (僅一次，已存在則跳過)
+
+postToolUse hook
+  └─ 每次工具呼叫後更新對應步驟狀態
+
+下次 userPromptSubmitted
+  └─ 讀取 tracker → 生成更新後的 instructions
+```
+
+### 與 Pipeline Enforcement 的互補
+
+```
+Pipeline Enforcement (preToolUse)
+  → 強制: 複雜查詢必須用 pipeline
+  → 目的: 確保搜尋品質
+
+Workflow Tracker (userPromptSubmitted + postToolUse)
+  → 引導: 顯示研究進度，建議下一步
+  → 目的: 結構化研究流程
+```
+
+兩者獨立運作，互不干擾。Pipeline enforcement 確保搜尋品質，workflow tracker 確保研究流程完整性。
+
+---
+
+## 11. 限制與未來方向
 
 ### 目前限制
 
@@ -493,7 +602,7 @@ echo '{"timestamp":1704614600000,"cwd":"/tmp","toolName":"unified_search","toolA
 |------|------|---------|
 | **preToolUse 只能 deny，不能修改參數** | Copilot Hooks API 限制 | 用 deny reason 引導 Agent 自行修改 |
 | **postToolUse output 被忽略** | Copilot Hooks API 限制 | 透過 state file → preToolUse deny 間接影響 |
-| **userPromptSubmitted 不能修改 prompt** | Copilot Hooks API 限制 | 只做 logging/analytics |
+| **userPromptSubmitted 可注入 instructions** | Copilot Hooks API 支援 | 用 `{"instructions": "..."}` 注入工作流程進度到 AI context |
 | **MCP toolName 可能帶前綴** | MCP 工具名稱格式不確定 | 用 regex 匹配 `unified_search` 後綴 |
 | **品質評估只能解析文字** | 不能直接存取結構化結果 | 用 PMID 計數、source 檢測等啟發式方法 |
 

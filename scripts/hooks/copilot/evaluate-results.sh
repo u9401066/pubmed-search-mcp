@@ -32,22 +32,53 @@ fi
 
 INPUT=$(cat)
 TOOL_NAME=$(echo "$INPUT" | jq -r '.toolName // empty' 2>/dev/null) || exit 0
+if [ -z "$TOOL_NAME" ]; then exit 0; fi
 
-# Only evaluate unified_search results
-if ! echo "$TOOL_NAME" | grep -qiE 'unified_search'; then
-    exit 0
-fi
-
+# Parse tool args early (needed for workflow tracking + result evaluation)
 TOOL_ARGS=$(echo "$INPUT" | jq -r '.toolArgs // empty' 2>/dev/null) || true
-RESULT_TYPE=$(echo "$INPUT" | jq -r '.toolResult.resultType // "unknown"' 2>/dev/null) || RESULT_TYPE="unknown"
-RESULT_TEXT=$(echo "$INPUT" | jq -r '.toolResult.textResultForLlm // empty' 2>/dev/null) || true
-
-# Extract the original query and pipeline
 QUERY=$(echo "$TOOL_ARGS" | jq -r '.query // empty' 2>/dev/null) || true
 HAD_PIPELINE=$(echo "$TOOL_ARGS" | jq -r '.pipeline // empty' 2>/dev/null) || true
 
 STATE_DIR=".github/hooks/_state"
 mkdir -p "$STATE_DIR"
+
+# === WORKFLOW STEP TRACKING (any MCP tool) ===
+TRACKER_FILE="$STATE_DIR/workflow_tracker.json"
+STEP_FOR_TOOL=""
+
+if echo "$TOOL_NAME" | grep -qiE 'analyze_search_query|parse_pico'; then
+    STEP_FOR_TOOL="query_analysis"
+elif echo "$TOOL_NAME" | grep -qiE 'generate_search_queries'; then
+    STEP_FOR_TOOL="strategy_formation"
+elif echo "$TOOL_NAME" | grep -qiE 'unified_search'; then
+    if [ -n "$HAD_PIPELINE" ] && [ "$HAD_PIPELINE" != "null" ]; then
+        STEP_FOR_TOOL="pipeline_search"
+    else
+        STEP_FOR_TOOL="initial_search"
+    fi
+elif echo "$TOOL_NAME" | grep -qiE 'get_citation_metrics|get_session_summary|get_session_pmids'; then
+    STEP_FOR_TOOL="result_evaluation"
+elif echo "$TOOL_NAME" | grep -qiE 'find_related|find_citing|get_article_references|build_citation_tree|get_fulltext|fetch_article_details|get_text_mined'; then
+    STEP_FOR_TOOL="deep_exploration"
+elif echo "$TOOL_NAME" | grep -qiE 'prepare_export|build_research_timeline|compare_timelines|analyze_timeline'; then
+    STEP_FOR_TOOL="export_synthesis"
+fi
+
+if [ -n "$STEP_FOR_TOOL" ] && [ -f "$TRACKER_FILE" ]; then
+    CURRENT_STATUS=$(jq -r ".steps.${STEP_FOR_TOOL} // \"not-started\"" "$TRACKER_FILE" 2>/dev/null)
+    if [ "$CURRENT_STATUS" != "completed" ]; then
+        jq ".steps.${STEP_FOR_TOOL} = \"completed\"" "$TRACKER_FILE" > "${TRACKER_FILE}.tmp" 2>/dev/null && \
+            mv "${TRACKER_FILE}.tmp" "$TRACKER_FILE" 2>/dev/null || true
+    fi
+fi
+
+# === RESULT EVALUATION (unified_search only) ===
+if ! echo "$TOOL_NAME" | grep -qiE 'unified_search'; then
+    exit 0
+fi
+
+RESULT_TYPE=$(echo "$INPUT" | jq -r '.toolResult.resultType // "unknown"' 2>/dev/null) || RESULT_TYPE="unknown"
+RESULT_TEXT=$(echo "$INPUT" | jq -r '.toolResult.textResultForLlm // empty' 2>/dev/null) || true
 
 # Read pending complexity flag (Tier 2)
 PENDING_TIER=""
