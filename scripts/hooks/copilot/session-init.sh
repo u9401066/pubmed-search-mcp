@@ -21,6 +21,7 @@ mkdir -p "$STATE_DIR"
 # Clear stale state from previous session
 rm -f "$STATE_DIR/last_search_eval.json" 2>/dev/null
 rm -f "$STATE_DIR/pending_complexity.json" 2>/dev/null
+rm -f "$STATE_DIR/workflow_tracker.json" 2>/dev/null
 
 # Log session start
 jq -n \

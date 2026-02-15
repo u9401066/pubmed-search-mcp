@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Research Workflow Tracker**: 7-step TODO-style research guidance via Copilot Hooks
+  - Automatic workflow initialization on research intent detection (`analyze-prompt`)
+  - Step completion tracking via `postToolUse` hook (`evaluate-results`)
+  - Dynamic `instructions` injection for AI context with progress markers (`[x]`/`[ ]`)
+  - Intent detection with template mapping (comparison→pico, systematic→comprehensive, etc.)
+  - State file: `.github/hooks/_state/workflow_tracker.json`
 - **Copilot Hooks Integration**: Three-tier parallel pipeline enforcement via GitHub Copilot Hooks
   - 5 hook events: sessionStart, userPromptSubmitted, preToolUse, postToolUse, sessionEnd
   - 10 scripts (bash + PowerShell) for cross-platform support

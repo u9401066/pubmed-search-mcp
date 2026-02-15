@@ -22,32 +22,72 @@ try {
 
     $inputJson = $rawInput | ConvertFrom-Json -ErrorAction Stop
     $toolName = $inputJson.toolName
+    if (-not $toolName) { exit 0 }
 
-    # Only evaluate unified_search results
+    # Parse tool args early (needed for workflow tracking + result evaluation)
+    $toolArgs = $null
+    if ($inputJson.toolArgs) {
+        try {
+            if ($inputJson.toolArgs -is [string]) {
+                $toolArgs = $inputJson.toolArgs | ConvertFrom-Json -ErrorAction Stop
+            } else {
+                $toolArgs = $inputJson.toolArgs
+            }
+        } catch {}
+    }
+
+    $query = if ($toolArgs) { $toolArgs.query } else { $null }
+    $hadPipeline = if ($toolArgs) { $toolArgs.pipeline } else { $null }
+
+    $stateDir = ".github/hooks/_state"
+    if (-not (Test-Path $stateDir)) {
+        New-Item -ItemType Directory -Path $stateDir -Force | Out-Null
+    }
+
+    # === WORKFLOW STEP TRACKING (any MCP tool) ===
+    $trackerFile = "$stateDir/workflow_tracker.json"
+    $stepForTool = $null
+
+    if ($toolName -match 'analyze_search_query|parse_pico') {
+        $stepForTool = "query_analysis"
+    } elseif ($toolName -match 'generate_search_queries') {
+        $stepForTool = "strategy_formation"
+    } elseif ($toolName -match 'unified_search') {
+        if ($hadPipeline -and $hadPipeline -ne 'null') {
+            $stepForTool = "pipeline_search"
+        } else {
+            $stepForTool = "initial_search"
+        }
+    } elseif ($toolName -match 'get_citation_metrics|get_session_summary|get_session_pmids') {
+        $stepForTool = "result_evaluation"
+    } elseif ($toolName -match 'find_related|find_citing|get_article_references|build_citation_tree|get_fulltext|fetch_article_details|get_text_mined') {
+        $stepForTool = "deep_exploration"
+    } elseif ($toolName -match 'prepare_export|build_research_timeline|compare_timelines|analyze_timeline') {
+        $stepForTool = "export_synthesis"
+    }
+
+    if ($stepForTool) {
+        try {
+            if (Test-Path $trackerFile -ErrorAction SilentlyContinue) {
+                $trackerRaw = Get-Content $trackerFile -Raw -ErrorAction Stop
+                if ($trackerRaw -and $trackerRaw.Trim().Length -gt 0) {
+                    $wfTracker = $trackerRaw | ConvertFrom-Json -ErrorAction Stop
+                    if ($wfTracker.steps.$stepForTool -ne "completed") {
+                        $wfTracker.steps.$stepForTool = "completed"
+                        $wfTracker | ConvertTo-Json -Depth 3 -Compress | Set-Content $trackerFile -Encoding UTF8
+                    }
+                }
+            }
+        } catch {}
+    }
+
+    # === RESULT EVALUATION (unified_search only) ===
     if ($toolName -notmatch 'unified_search') {
         exit 0
     }
 
     $resultType = $inputJson.toolResult.resultType
     $resultText = $inputJson.toolResult.textResultForLlm
-
-    # Parse tool args
-    $toolArgs = $null
-    if ($inputJson.toolArgs) {
-        if ($inputJson.toolArgs -is [string]) {
-            $toolArgs = $inputJson.toolArgs | ConvertFrom-Json
-        } else {
-            $toolArgs = $inputJson.toolArgs
-        }
-    }
-
-    $query = $toolArgs.query
-    $hadPipeline = $toolArgs.pipeline
-
-    $stateDir = ".github/hooks/_state"
-    if (-not (Test-Path $stateDir)) {
-        New-Item -ItemType Directory -Path $stateDir -Force | Out-Null
-    }
 
     # Read pending complexity flag (Tier 2) - safe parse
     $pendingTier = $null
