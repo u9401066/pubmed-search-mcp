@@ -7,31 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- **Research Workflow Tracker**: 7-step TODO-style research guidance via Copilot Hooks
-  - Automatic workflow initialization on research intent detection (`analyze-prompt`)
-  - Step completion tracking via `postToolUse` hook (`evaluate-results`)
-  - Dynamic `instructions` injection for AI context with progress markers (`[x]`/`[ ]`)
-  - Intent detection with template mapping (comparison→pico, systematic→comprehensive, etc.)
-  - State file: `.github/hooks/_state/workflow_tracker.json`
-- **Copilot Hooks Integration**: Three-tier parallel pipeline enforcement via GitHub Copilot Hooks
-  - 5 hook events: sessionStart, userPromptSubmitted, preToolUse, postToolUse, sessionEnd
-  - 10 scripts (bash + PowerShell) for cross-platform support
-  - Three-tier strategy: T1 (simple, allow) / T2 (moderate, allow+suggest) / T3 (complex, deny→pipeline)
-  - Quality feedback loop via state files for iterative search improvement
-  - Design document: `docs/COPILOT_HOOKS_PIPELINE_ENFORCEMENT.md`
-- **Deep Research Architecture Analysis**: Competitive analysis of 8 multi-source search repos
-  - Analysis document: `docs/DEEP_RESEARCH_ARCHITECTURE_ANALYSIS.md`
-
-### Fixed
-- **Copilot Hooks encoding/mojibake**: All hook output now ASCII-only (replaced emoji/Chinese with ASCII tags)
-  - `[PIPELINE]` / `[TIP]` / `[WARNING]` replace 🔬 / 💡 / ⚠️
-  - PowerShell scripts force UTF-8 output encoding
-  - All scripts fail-open on errors (`exit 0` instead of `exit 1`)
-  - Added `jq` availability check in all bash scripts
-  - Added `pending_complexity.json` cleanup in session-init/cleanup
-  - Added corrupted state file graceful degradation
-
 ### Planned
 - PRISMA flow tracking (init_prisma_flow, record_screening, get_prisma_diagram)
 - Evidence level classification (Oxford CEBM I-V)
@@ -48,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - 4 built-in templates: quick, standard, deep, custom
   - YAML pipeline definition support
   - Parallel step execution with configurable concurrency
+- **Pipeline Persistence**: Save, load, and reuse structured search plans
+  - Dual-scope storage: workspace (`.pubmed-search/`) + global (`~/.pubmed-search-mcp/`)
+  - 6 management tools: save_pipeline, list_pipelines, load_pipeline, delete_pipeline, get_pipeline_history, schedule_pipeline
+  - Auto-validation on save, execution history tracking
+  - Pipeline Report Generator with production-grade Markdown reports
 - **CORE Integration**: CORE as 6th search source in unified_search
   - 200M+ open access papers from 14,000+ repositories
   - Full text retrieval via CORE API
@@ -55,10 +35,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `filters`: "year:2020-2024, species:human, language:english"
   - `sources`: "pubmed, openalex, semantic_scholar"
   - `options`: "sort:relevance, include_preprints:true"
+- **Per-source API Return Counts**: Search results now display per-source counts
+  - e.g., "**Sources**: pubmed (8/500), openalex (5)" for agent coverage decisions
+  - `source-counts-guard` pre-commit hook to protect this critical feature
+- **Research Workflow Tracker**: 7-step TODO-style research guidance via Copilot Hooks
+  - Automatic workflow initialization on research intent detection (`analyze-prompt`)
+  - Step completion tracking via `postToolUse` hook (`evaluate-results`)
+  - Dynamic `instructions` injection for AI context with progress markers (`[x]`/`[ ]`)
+  - Intent detection with template mapping (comparison→pico, systematic→comprehensive, etc.)
+- **Copilot Hooks Integration**: Three-tier parallel pipeline enforcement via GitHub Copilot Hooks
+  - 5 hook events: sessionStart, userPromptSubmitted, preToolUse, postToolUse, sessionEnd
+  - 10 scripts (bash + PowerShell) for cross-platform support
+  - Three-tier strategy: T1 (simple, allow) / T2 (moderate, allow+suggest) / T3 (complex, deny→pipeline)
+  - Quality feedback loop via state files for iterative search improvement
+- **Deep Research Architecture Analysis**: Competitive analysis of 8 multi-source search repos
 
 ### Changed
 - **Single Search Entry Point**: unified_search replaces search_literature as primary entry
 - **PipelineExecutor DDD**: Dependency injection for infrastructure layer separation
+
+### Fixed
+- **Unpaywall DOI encoding**: Slashes in DOIs were not percent-encoded, causing 422 errors
+- **Copilot Hooks encoding/mojibake**: All hook output now ASCII-only (replaced emoji/Chinese with ASCII tags)
+  - PowerShell scripts force UTF-8 output encoding
+  - All scripts fail-open on errors (`exit 0` instead of `exit 1`)
 
 ### Deprecated
 - `search_by_icd` — use `convert_icd_mesh` + `unified_search` instead
