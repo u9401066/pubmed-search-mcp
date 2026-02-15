@@ -431,6 +431,10 @@ class MilestoneDetector:
 
         return month_names.get(month_str.lower())
 
+    def infer_evidence_level(self, article: dict[str, Any]) -> EvidenceLevel:
+        """Infer evidence level from publication type."""
+        return self._infer_evidence_level(article)
+
     def _infer_evidence_level(self, article: dict[str, Any]) -> EvidenceLevel:
         """Infer evidence level from publication type."""
         pub_types = article.get("publication_types", [])

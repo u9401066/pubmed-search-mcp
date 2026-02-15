@@ -226,7 +226,7 @@ Other tools give you raw API access. We give you **vocabulary translation + inte
 | Clinical questions need structured search | ✅ **PICO toolkit** (`parse_pico` + `generate_search_queries` for Agent-driven workflow) |
 | Typos in medical terms | ✅ **ESpell auto-correction** |
 | Too many results from one source | ✅ **Parallel multi-source** with dedup |
-| Need to trace research evolution | ✅ **Research Timeline** with milestone detection |
+| Need to trace research evolution | ✅ **Research Timeline & Tree** with landmark detection and sub-topic branching |
 | Citation context is unclear | ✅ **Citation Tree** forward/backward/network |
 | Can't access full text | ✅ **Multi-source fulltext** (Europe PMC, CORE, CrossRef) |
 | Gene/drug info scattered across DBs | ✅ **NCBI Extended** (Gene, PubChem, ClinVar) |
@@ -238,7 +238,7 @@ Other tools give you raw API access. We give you **vocabulary translation + inte
 1. **Vocabulary Translation Layer** - Agent speaks naturally, we translate to each database's terminology (MeSH, ICD-10, text-mined entities)
 2. **Unified Search Gateway** - One `unified_search()` call, auto-dispatch to PubMed/Europe PMC/CORE/OpenAlex
 3. **PICO Toolkit** - `parse_pico()` decomposes clinical questions into P/I/C/O elements; Agent then calls `generate_search_queries()` per element and builds Boolean query
-4. **Research Timeline** - Automatically detect milestones (FDA approvals, Phase 3 trials, guideline changes) from publication history
+4. **Research Timeline & Lineage Tree** - Detect milestones (FDA approvals, Phase 3, guidelines), identify landmark papers via multi-signal scoring, and visualize research evolution as branching trees by sub-topic
 5. **Citation Network Analysis** - Build multi-level citation trees to map an entire research landscape from a single paper
 6. **Full Research Lifecycle** - From search → discovery → full text → analysis → export, all in one server
 7. **Agent-First Design** - Output optimized for machine decision-making, not human reading
@@ -398,11 +398,11 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS proxy for API requests
 | `get_compound_literature` | PubMed articles linked to a compound |
 | `search_clinvar` | Search ClinVar clinical variants |
 
-### 🕰️ Research Timeline
+### 🕰️ Research Timeline & Lineage Tree
 
 | Tool | Description |
 |------|-------------|
-| `build_research_timeline` | Build timeline showing key milestones (FDA approval, Phase 3, etc.) |
+| `build_research_timeline` | Build timeline/tree with landmark detection. Output: text, tree, mermaid, mindmap, json |
 | `analyze_timeline_milestones` | Analyze milestone distribution |
 | `compare_timelines` | Compare multiple topic timelines |
 

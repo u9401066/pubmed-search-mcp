@@ -56,11 +56,11 @@ description: Orchestrate pre-commit workflow including Memory Bank sync, README/
 │  (pre-commit hooks)  │  (agent orchestrator)                │
 ├──────────────────────┼──────────────────────────────────────┤
 │  ✅ ruff + ruff-format│  ✅ Memory Bank 同步                  │
-│  ✅ mypy type check  │  ✅ CHANGELOG 更新                    │
-│  ✅ bandit security  │  ✅ ROADMAP 更新                      │
-│  ✅ vulture deadcode │  ✅ README 更新                       │
-│  ✅ deptry deps      │  ✅ 架構文檔檢查                      │
-│  ✅ semgrep SAST     │  ✅ Commit 訊息建議                   │
+│  ✅ bandit security  │  ✅ CHANGELOG 更新                    │
+│  ✅ vulture deadcode │  ✅ ROADMAP 更新                      │
+│  ✅ deptry deps      │  ✅ README 更新                       │
+│  ✅ file-hygiene     │  ✅ 架構文檔檢查                      │
+│  ✅ commit-size-guard│  ✅ Commit 訊息建議                   │
 │  ✅ file-hygiene     │                                      │
 │  ✅ commit-size-guard│                                      │
 │  ✅ async-test-checker│                                      │
@@ -84,6 +84,10 @@ description: Orchestrate pre-commit workflow including Memory Bank sync, README/
 │  ✅ mixed line ending│                                      │
 │  ✅ no-commit-to-branch│                                    │
 │  ✅ name-tests-test  │                                      │
+│ ── Pre-push ──────── │                                      │
+│  ✅ mypy (pre-push)  │                                      │
+│  ✅ semgrep (pre-push)│                                     │
+│  ✅ pytest (pre-push) │                                     │
 ├──────────────────────┼──────────────────────────────────────┤
 │  🔧 自動修復：       │  🔧 自動修復：                        │
 │  trailing whitespace │  tool-count-sync (auto-stage)        │
@@ -163,7 +167,7 @@ uv run python scripts/hooks/check_evolution_cycle.py  # 手動執行一致性檢
 └─────────────────────────────────────────────────┘
 ```
 
-> Step 2 會執行 `uv run pre-commit run --all-files`，涵蓋 ruff、mypy、file hygiene、tool docs sync 等所有自動化檢查。
+> Step 2 會執行 `uv run pre-commit run --all-files`，涵蓋 ruff、file hygiene、tool docs sync 等所有自動化檢查。mypy 和 semgrep 已移至 pre-push 階段以防 OOM。
 
 ## 必要步驟：MCP 工具數量同步
 

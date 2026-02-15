@@ -31,6 +31,11 @@ from datetime import date
 from enum import Enum
 from typing import Any
 
+# Landmark tier thresholds
+LANDMARK_TIER_THRESHOLD = 0.75
+NOTABLE_TIER_THRESHOLD = 0.50
+MINOR_TIER_THRESHOLD = 0.25
+
 
 class MilestoneType(Enum):
     """
@@ -89,6 +94,64 @@ class EvidenceLevel(Enum):
 
 
 @dataclass(frozen=True)
+class LandmarkScore:
+    """
+    Composite importance score for identifying landmark papers.
+
+    Combines multiple signals into a principled weighted score:
+    - citation_impact: Field-normalized via RCR/NIH percentile (0-1)
+    - source_agreement: Cross-database validation signal (0-1)
+    - milestone_confidence: Pattern-based milestone detection (0-1)
+    - evidence_quality: Evidence level from study type (0-1)
+    - citation_velocity: Citations-per-year growth rate (0-1)
+
+    The overall score is a weighted combination of all components.
+    Higher scores indicate more important/landmark papers.
+    """
+
+    overall: float  # 0.0-1.0, weighted combination
+    citation_impact: float = 0.0
+    source_agreement: float = 0.0
+    milestone_confidence: float = 0.0
+    evidence_quality: float = 0.0
+    citation_velocity: float = 0.0
+
+    @property
+    def tier(self) -> str:
+        """Categorize as landmark tier for display."""
+        if self.overall >= LANDMARK_TIER_THRESHOLD:
+            return "landmark"
+        if self.overall >= NOTABLE_TIER_THRESHOLD:
+            return "notable"
+        if self.overall >= MINOR_TIER_THRESHOLD:
+            return "minor"
+        return "standard"
+
+    @property
+    def stars(self) -> str:
+        """Star rating for display."""
+        if self.overall >= LANDMARK_TIER_THRESHOLD:
+            return "\u2b50\u2b50\u2b50"
+        if self.overall >= NOTABLE_TIER_THRESHOLD:
+            return "\u2b50\u2b50"
+        if self.overall >= MINOR_TIER_THRESHOLD:
+            return "\u2b50"
+        return ""
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to JSON-serializable dict."""
+        return {
+            "overall": round(self.overall, 3),
+            "tier": self.tier,
+            "citation_impact": round(self.citation_impact, 3),
+            "source_agreement": round(self.source_agreement, 3),
+            "milestone_confidence": round(self.milestone_confidence, 3),
+            "evidence_quality": round(self.evidence_quality, 3),
+            "citation_velocity": round(self.citation_velocity, 3),
+        }
+
+
+@dataclass(frozen=True)
 class TimelineEvent:
     """
     A single event/milestone in the research timeline.
@@ -128,6 +191,7 @@ class TimelineEvent:
     first_author: str | None = None
     doi: str | None = None
     confidence_score: float = 0.0
+    landmark_score: LandmarkScore | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -158,6 +222,7 @@ class TimelineEvent:
             "first_author": self.first_author,
             "doi": self.doi,
             "confidence_score": self.confidence_score,
+            "landmark_score": self.landmark_score.to_dict() if self.landmark_score else None,
             "date_label": self.date_label,
         }
 
@@ -260,8 +325,19 @@ class ResearchTimeline:
         """Get events within a year range (inclusive)."""
         return [e for e in self.events if start <= e.year <= end]
 
-    def get_landmark_events(self, min_citations: int = 100) -> list[TimelineEvent]:
-        """Get high-impact landmark events."""
+    def get_landmark_events(
+        self,
+        min_citations: int = 100,
+        min_landmark_score: float | None = None,
+    ) -> list[TimelineEvent]:
+        """Get high-impact landmark events.
+
+        Args:
+            min_citations: Minimum citation count (used if no landmark scores)
+            min_landmark_score: Minimum landmark score (preferred, 0-1)
+        """
+        if min_landmark_score is not None:
+            return [e for e in self.events if e.landmark_score and e.landmark_score.overall >= min_landmark_score]
         return [e for e in self.events if e.citation_count >= min_citations]
 
     def to_dict(self) -> dict[str, Any]:

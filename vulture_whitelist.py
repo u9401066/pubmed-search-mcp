@@ -19,3 +19,6 @@ notify  # noqa: B018
 
 # ── Script parameters (used by callers but not read in function body) ──
 is_chinese  # noqa: B018
+
+# ── Function parameters (API surface, reserved for future use) ──
+source_rankings  # noqa: B018

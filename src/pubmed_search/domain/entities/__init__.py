@@ -16,6 +16,7 @@ from .article import (
     UnifiedArticle,
 )
 from .image import ImageResult, ImageSource
+from .research_tree import ResearchBranch, ResearchTree
 from .timeline import (
     EvidenceLevel,
     MilestoneType,
@@ -42,4 +43,7 @@ __all__ = [
     "TimelinePeriod",
     "MilestoneType",
     "EvidenceLevel",
+    # Research Tree entities (v0.4.3)
+    "ResearchBranch",
+    "ResearchTree",
 ]

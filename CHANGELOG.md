@@ -16,6 +16,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.4.3] - 2026-02-15
+
+### Added
+
+- **Landmark Paper Detection** (`landmark_scorer.py`, ~250 lines)
+  - Multi-signal composite scoring to identify the most important papers
+  - 5 weighted components: citation impact (35%), milestone confidence (20%), source agreement (15%), evidence quality (15%), citation velocity (15%)
+  - Citation impact uses NIH percentile (priority) → RCR log-scaled → raw count fallback
+  - Tier system: landmark (≥0.75) / notable (≥0.50) / minor (≥0.25) / standard
+  - Star ratings (⭐⭐⭐ / ⭐⭐ / ⭐) for visual display
+  - `LandmarkScore` frozen dataclass in domain entities
+  - Integrated into `TimelineBuilder.build_timeline()` via `highlight_landmarks=True` (default)
+  - `format_timeline_text()` enhanced with star ratings and score details
+- **Research Lineage Tree** (`research_tree.py` domain + `branch_detector.py`)
+  - Tree-structured view of research evolution (vs flat timeline)
+  - Automatic branching by MilestoneType into 8 categories:
+    Discovery, Clinical Development, Regulatory, Evidence Synthesis,
+    Guidelines & Practice, Safety, Landmark Studies, Other
+  - Clinical Development auto-splits into Phase I/II and Phase III/IV sub-branches
+  - `ResearchBranch` dataclass with sub-branches and chronological sorting
+  - `ResearchTree` with `to_text_tree()` (ASCII tree), `to_mermaid_mindmap()`, `to_dict()`
+  - 3 new output formats in `build_research_timeline`: `tree`, `mindmap`, `json_tree`
+- **81 new tests** (54 landmark + 27 tree), total: 2899 passed
+
+### Changed
+
+- `TimelineBuilder._search_topic()` now preserves full iCite data (RCR, percentile, APT, velocity) instead of only citation_count
+- `TimelineEvent` gains `landmark_score: LandmarkScore | None` field
+- `ResearchTimeline.get_landmark_events()` supports `min_landmark_score` parameter
+- `build_research_timeline` MCP tool: new `highlight_landmarks` parameter; new output formats (`tree`, `mindmap`, `json_tree`)
+
+---
+
 ## [0.4.2] - 2026-02-15
 
 ### Added

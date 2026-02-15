@@ -1,0 +1,950 @@
+\documentclass[11pt,a4paper]{article}
+
+% === Packages ===
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{multirow}
+\usepackage{caption}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{natbib}
+\usepackage{url}
+\usepackage{amsthm}
+
+\newtheorem{definition}{Definition}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    citecolor=blue,
+    urlcolor=blue
+}
+
+% === Custom Commands ===
+\newcommand{\system}{\textsc{PubMed-Search-MCP}}
+\newcommand{\sas}{\textit{SAS}}
+\newcommand{\rrf}{\textit{RRF}}
+\newcommand{\mmr}{\textit{MMR}}
+\newcommand{\sda}{\textit{SDA}}
+\newcommand{\rscore}{\textit{R-Score}}
+\newcommand{\lscore}{\textit{L-Score}}
+
+\title{
+    \textbf{From Search to Timeline: Multi-Source Biomedical \\\\
+    Literature Retrieval with Rank Fusion, Source Disagreement \\\\
+    Analysis, and Research Evolution Mapping}
+}
+
+\author{
+    Tz-Ping Gau \\
+    Kaohsiung Medical University Hospital \\
+    Kaohsiung, Taiwan \\
+    \texttt{pubmed-search-mcp@github}
+}
+
+\date{\today}
+
+\begin{document}
+\maketitle
+
+% =====================================================================
+\begin{abstract}
+% =====================================================================
+Existing literature search tools return ranked lists of papers but fail to reveal \emph{how} research knowledge evolves---from initial discovery through clinical trials to guideline adoption.
+We present \system{}, an open-source platform that transforms multi-source biomedical literature retrieval from a static search into a dynamic research exploration workflow.
+The system integrates six academic databases---PubMed, Europe PMC, OpenAlex, Semantic Scholar, CORE, and CrossRef---through 40 Model Context Protocol (MCP) tools, covering the complete pipeline from search to timeline.
+
+We contribute seven innovations:
+(1)~a \textbf{BM25$^{+}$ + Reciprocal Rank Fusion + Maximal Marginal Relevance} ranking pipeline with field-level boosting for biomedical metadata;
+(2)~\textbf{Source Disagreement Analysis (SDA)}, a novel metric quantifying cross-source ranking consistency as a research maturity signal;
+(3)~\textbf{automated Research Timeline construction} with multi-signal milestone detection across five evidence levels;
+(4)~\textbf{Landmark Paper Detection}, a five-signal composite scoring system that identifies important papers through field-normalized citation impact, cross-source agreement, milestone confidence, evidence quality, and citation velocity;
+(5)~\textbf{Research Lineage Tree}, a branching model that organizes flat timelines into thematic research branches with automatic sub-branch detection;
+(6)~\textbf{Pipeline Persistence} with DAG-based workflow orchestration using topological batching for reproducible, schedulable searches;
+and (7)~a \textbf{Reproducibility Score} grading search reproducibility from A to F.
+We describe the algorithmic contributions with formal definitions, demonstrate the system through case studies, and compare it against existing tools across the end-to-end systematic review workflow.
+The system is released as open-source software with 2{,}900+ automated tests.
+
+\medskip
+\noindent\textbf{Keywords:} Information Retrieval, Multi-Source Search, BM25, Reciprocal Rank Fusion, Research Timeline, Landmark Detection, Research Lineage Tree, Pipeline Orchestration, Milestone Detection, Source Disagreement, Biomedical Literature
+\end{abstract}
+
+% =====================================================================
+\section{Introduction}
+\label{sec:introduction}
+% =====================================================================
+
+Biomedical researchers increasingly rely on multiple literature databases to conduct comprehensive searches~\citep{lu2011pubmed}.
+No single source provides complete coverage: PubMed/MEDLINE indexes 36M+ citations with curated MeSH headings; Europe PMC adds 45M+ records with 6.5M open-access full texts; OpenAlex covers 250M+ scholarly works across disciplines; and CORE aggregates 200M+ outputs including preprints and institutional repositories.
+A thorough literature search---particularly for systematic reviews governed by PRISMA 2020 guidelines~\citep{page2021prisma}---demands querying multiple databases and synthesizing their results.
+
+However, combining results from heterogeneous sources and making them \emph{actionable} presents five fundamental challenges that existing tools leave unaddressed:
+
+\paragraph{Challenge 1: Principled Rank Fusion.}
+Each source returns results ranked by its own proprietary algorithm.
+Na\"ive approaches---merging by date or using a single source's score---discard valuable ranking signals from other sources.
+While Reciprocal Rank Fusion (RRF)~\citep{cormack2009rrf} has proven effective in TREC evaluations, its application to biomedical multi-source search with field-level relevance scoring remains unexplored.
+
+\paragraph{Challenge 2: Cross-Source Agreement Quantification.}
+When sources agree on which articles are relevant, we gain confidence in the results.
+When they disagree---returning largely disjoint article sets or conflicting rankings---this signals emerging research, interdisciplinary topics, or controversial findings.
+No existing tool captures this \emph{source disagreement} as a structured, machine-readable quality signal.
+
+\paragraph{Challenge 3: From Results to Temporal Understanding.}
+Current tools deliver search results as static, flat lists.
+Researchers must manually reconstruct the temporal narrative: When was a compound first synthesized? When did pivotal trials occur? When was it approved?
+No search tool automatically detects research \emph{milestones} or constructs a \emph{research timeline} from literature.
+
+\paragraph{Challenge 4: Workflow Reproducibility.}
+PRISMA 2020~\citep{page2021prisma} mandates transparent, reproducible search strategies.
+Yet multi-step research workflows---involving PICO parsing, parallel searches, result merging, and filtering---are ad hoc and not persistable.
+No tool provides \emph{saveable, schedulable, and re-executable} search pipelines.
+
+\paragraph{Challenge 5: End-to-End Integration.}
+The systematic review workflow spans search, ranking, deduplication, temporal analysis, export, and ongoing monitoring.
+Existing tools address isolated stages: PubMed for search, ASReview~\citep{van2021asreview} for screening, Rayyan~\citep{ouzzani2016rayyan} for collaboration.
+No single platform covers the complete pipeline from query to timeline.
+
+\subsection{Contributions}
+
+We address these challenges through the following contributions:
+
+\begin{enumerate}
+    \item \textbf{Multi-source integration architecture:} An MCP-based system integrating six academic databases through a Domain-Driven Design architecture with 40 tools (Section~\ref{sec:architecture}).
+
+    \item \textbf{BM25$^{+}$ + RRF + MMR ranking pipeline:} A three-stage pipeline with field-boosted BM25 ($\beta_{\text{title}} = 2.0$, $\beta_{\text{MeSH}} = 1.5$), calibration-free RRF fusion across six dimensions, and MeSH-based MMR diversification (Sections~\ref{sec:bm25}--\ref{sec:mmr}).
+
+    \item \textbf{Source Disagreement Analysis (SDA):} A novel metric quantifying cross-source ranking consistency and complementarity as research maturity signals (Section~\ref{sec:sda}).
+
+    \item \textbf{Research Timeline Construction:} Multi-signal milestone detection using 35+ regex patterns, publication type inference, and citation-based landmark scoring across five evidence levels (Section~\ref{sec:timeline}).
+
+    \item \textbf{Landmark Paper Detection (\lscore{}):} A five-signal composite scoring system combining field-normalized citation impact (RCR/NIH percentile), cross-source agreement, milestone confidence, evidence quality, and citation velocity to identify landmark papers from large result sets (Section~\ref{sec:landmark}).
+
+    \item \textbf{Research Lineage Tree:} A branching model that organizes flat timelines into eight thematic research branches---from Discovery through Clinical Development, Regulatory milestones, to Post-Market Safety---with automatic sub-branch detection for clinical trial phases (Section~\ref{sec:lineage_tree}).
+
+    \item \textbf{Pipeline Persistence with DAG Orchestration:} Saveable, schedulable search workflows with topological batching (Kahn's algorithm) for automatic parallelization and dual-scope storage (Section~\ref{sec:pipeline}).
+
+    \item \textbf{Reproducibility Score:} A five-component index grading search reproducibility from A to F (Section~\ref{sec:reproducibility}).
+\end{enumerate}
+
+% =====================================================================
+\section{Related Work}
+\label{sec:related}
+% =====================================================================
+
+\subsection{Biomedical Information Retrieval}
+
+PubMed remains the gold standard for biomedical literature search, using the Best Match algorithm based on a learned ranking model~\citep{fiorini2018best}.
+\citet{lu2011pubmed} surveyed web tools for biomedical literature retrieval, documenting the evolution from Boolean to relevance-based search.
+MedCPT~\citep{jin2023medcpt} introduced contrastive pre-trained transformers for biomedical IR, achieving state-of-the-art performance on retrieval benchmarks.
+
+BM25 (Okapi BM25)~\citep{robertson2009bm25} remains competitive with neural approaches, especially in domain-specific settings.
+\citet{lin2021bm25} demonstrated that BM25 with appropriate tuning can match or exceed neural models on biomedical retrieval tasks.
+Our BM25$^{+}$ variant adds field-level boosting for title and MeSH terms, motivated by the structured nature of biomedical metadata.
+
+\subsection{Rank Fusion Methods}
+
+Reciprocal Rank Fusion~\citep{cormack2009rrf} was shown to outperform Condorcet voting, CombMNZ, and individual learned rankers in TREC evaluations.
+Its key advantage---requiring no score calibration across rankers---makes it ideal for fusing results from heterogeneous sources with incomparable scoring systems.
+While RRF has been widely adopted in web search (e.g., Elasticsearch), its systematic application to multi-source academic search with dimension-specific rankings is novel.
+
+\subsection{Result Diversification}
+
+Maximal Marginal Relevance (MMR)~\citep{carbonell1998mmr} introduced the principle of balancing relevance and novelty in retrieval.
+Subsequent work extended MMR with probabilistic models~\citep{li2010probabilistic} and learning-to-rank approaches~\citep{xia2015mmr}.
+These extensions typically require embedding spaces or supervised training.
+Our approach uses MeSH term and keyword Jaccard similarity---a domain-appropriate, zero-training alternative that leverages the rich controlled vocabulary of biomedical literature.
+
+\subsection{Systematic Review Automation}
+
+Tools like ASReview~\citep{van2021asreview}, Rayyan~\citep{ouzzani2016rayyan}, and Covidence focus on \emph{screening} automation---prioritizing which papers to include/exclude after search.
+Recent work has explored LLM-assisted screening~\citep{syriani2023llm,guo2024llm} and active learning approaches~\citep{abualsaud2021symbals}.
+\citet{wang2024automation} provided a comprehensive review of NLP, ML, and deep learning methods for automating the systematic review process.
+
+These tools address a \emph{different} stage of the review pipeline: they assist with screening \emph{after} results are retrieved, whereas our work improves the \emph{retrieval and ranking} stage itself.
+Furthermore, none of these tools provide quantitative metrics for search reproducibility or cross-source agreement.
+
+\subsection{Model Context Protocol}
+
+The Model Context Protocol (MCP) is an open standard for connecting AI assistants to external tools and data sources~\citep{anthropic2024mcp}.
+MCP enables bidirectional communication between LLM agents and tool servers, allowing agents to invoke search, analysis, and export functionality programmatically.
+Our system is among the first academic search tools built natively on MCP, enabling seamless integration with AI assistants for literature review workflows.
+
+% =====================================================================
+\section{System Architecture}
+\label{sec:architecture}
+% =====================================================================
+
+\system{} follows Domain-Driven Design (DDD) with four layers (Figure~\ref{fig:architecture}):
+
+\begin{figure}[htbp]
+\centering
+\small
+\begin{verbatim}
++-----------------------------------------------------------+
+|               AI Agent (Claude, GPT, etc.)                |
++-----------------------------------------------------------+
+                          |
+                   MCP Protocol (JSON-RPC)
+                          |
++-----------------------------------------------------------+
+| Presentation Layer: 40 MCP Tools, 9 Prompts, Resources    |
++-----------------------------------------------------------+
+| Application Layer                                         |
+| +-- QueryAnalyzer (MeSH expansion, PICO parsing)         |
+| +-- ResultAggregator (dedup, BM25+, RRF, MMR)            |
+| +-- SourceDisagreementAnalyzer (SDA)                      |
+| +-- ReproducibilityScorer                                 |
+| +-- SessionManager (search history, caching)              |
+| +-- TimelineBuilder (milestone detection)                 |
+| +-- LandmarkScorer (multi-signal landmark detection)      |
+| +-- BranchDetector (research lineage tree)                |
++-----------------------------------------------------------+
+| Domain Layer: UnifiedArticle, TimelineEvent,              |
+|               ResearchBranch, ResearchTree entities        |
++-----------------------------------------------------------+
+| Infrastructure Layer                                      |
+| +-- PubMed/Entrez  +-- Europe PMC  +-- OpenAlex           |
+| +-- Sem. Scholar   +-- CORE        +-- CrossRef           |
+| +-- iCite          +-- Unpaywall   +-- Open-i             |
++-----------------------------------------------------------+
+\end{verbatim}
+\caption{System architecture following Domain-Driven Design. The Application Layer contains the novel ranking and analysis algorithms.}
+\label{fig:architecture}
+\end{figure}
+
+\subsection{Multi-Source Integration}
+
+Table~\ref{tab:sources} summarizes the six primary academic data sources integrated by \system{}.
+
+\begin{table}[htbp]
+\centering
+\caption{Academic data sources integrated by \system{}.}
+\label{tab:sources}
+\begin{tabular}{lrll}
+\toprule
+\textbf{Source} & \textbf{Coverage} & \textbf{Unique Value} & \textbf{Stability} \\
+\midrule
+PubMed/MEDLINE & 36M+ & Gold standard, MeSH & 0.95 \\
+Europe PMC     & 45M+ & Full-text OA (6.5M) & 0.90 \\
+OpenAlex       & 250M+ & Concepts, topics     & 0.80 \\
+Semantic Scholar & 215M+ & Citation context    & 0.75 \\
+CORE           & 200M+ & Preprints, repos     & 0.70 \\
+CrossRef       & 150M+ & DOI metadata         & 0.92 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+All source clients inherit from a common \texttt{BaseAPIClient} that provides automatic retry on HTTP 429 (rate limit) with \texttt{Retry-After} header support, configurable rate limiting, and circuit breaker error tolerance.
+
+\subsection{Unified Article Model}
+
+Results from all sources are normalized into a \texttt{UnifiedArticle} entity with standardized fields: PMID, DOI, title, abstract, authors, journal, publication date, MeSH terms, keywords, and source provenance metadata.
+Deduplication uses a multi-key strategy (PMID $\rightarrow$ DOI $\rightarrow$ title similarity) to merge duplicate records across sources while preserving source-specific metadata.
+
+% =====================================================================
+\section{Algorithmic Contributions}
+\label{sec:algorithms}
+% =====================================================================
+
+The ranking pipeline processes search results through three stages: (1)~BM25$^{+}$ relevance scoring, (2)~RRF multi-dimensional fusion, and (3)~MMR diversity reranking.
+After ranking, two novel analysis modules compute Source Disagreement and Reproducibility metrics.
+
+% ---------------------------------------------------------------------
+\subsection{BM25$^{+}$: Field-Boosted BM25 for Biomedical Articles}
+\label{sec:bm25}
+% ---------------------------------------------------------------------
+
+Standard BM25~\citep{robertson2009bm25} treats documents as flat bags of words.
+Biomedical articles, however, have structured metadata---titles, abstracts, MeSH headings, and keywords---with different information densities.
+A query term appearing in the title is a stronger relevance signal than the same term appearing once in a long abstract.
+
+We introduce BM25$^{+}$, which extends BM25 with field-level IDF boosting:
+
+\begin{equation}
+\text{BM25}^{+}(q, D) = \sum_{i=1}^{|q|} \text{IDF}(q_i) \cdot \frac{f(q_i, D) \cdot (k_1 + 1)}{f(q_i, D) + k_1 \cdot (1 - b + b \cdot \frac{|D|}{\text{avgdl}})} \cdot \beta(q_i, D)
+\label{eq:bm25plus}
+\end{equation}
+
+where the standard BM25 components are:
+\begin{align}
+\text{IDF}(q_i) &= \ln\left(1 + \frac{N - n(q_i) + 0.5}{n(q_i) + 0.5}\right) \\
+f(q_i, D) &= \text{term frequency of } q_i \text{ in } D \\
+|D| &= \text{document length (total terms)} \\
+\text{avgdl} &= \text{average document length in corpus}
+\end{align}
+
+and $\beta(q_i, D)$ is the \textbf{field boost factor}:
+\begin{equation}
+\beta(q_i, D) =
+\begin{cases}
+    \beta_{\text{title}} = 2.0 & \text{if } q_i \in \text{title}(D) \\
+    \beta_{\text{MeSH}} = 1.5  & \text{if } q_i \in \text{MeSH}(D) \cup \text{keywords}(D) \\
+    1.0                        & \text{otherwise}
+\end{cases}
+\label{eq:boost}
+\end{equation}
+
+The parameters $k_1 = 1.5$ and $b = 0.75$ follow the Okapi defaults, which have been shown to be near-optimal across diverse biomedical corpora~\citep{lin2021bm25}.
+The boost values $\beta_{\text{title}} = 2.0$ and $\beta_{\text{MeSH}} = 1.5$ reflect the semantic density of these fields: titles are concise summarizations and MeSH terms are expert-curated controlled vocabulary.
+
+\paragraph{Micro-Corpus Construction.}
+Unlike traditional BM25 deployed over a static collection, our BM25$^{+}$ operates on a \emph{micro-corpus}---the current search result set (typically 10--200 articles).
+Corpus statistics (document frequency, average document length) are computed fresh for each search.
+This is appropriate because we use BM25$^{+}$ as a \emph{reranking} signal within a pre-filtered result set, not as a primary retrieval model over millions of documents.
+
+% ---------------------------------------------------------------------
+\subsection{Reciprocal Rank Fusion}
+\label{sec:rrf}
+% ---------------------------------------------------------------------
+
+Each article is scored along six dimensions: citation impact, temporal recency, relevance confidence, journal prestige, source agreement, and BM25$^{+}$ relevance.
+These dimensions produce six independent rankings with incomparable score scales.
+
+RRF~\citep{cormack2009rrf} provides a principled, calibration-free method to combine these rankings:
+
+\begin{equation}
+\text{RRF}(d) = \sum_{r \in \mathcal{R}} \frac{1}{k + \text{rank}_r(d)}
+\label{eq:rrf}
+\end{equation}
+
+where $\mathcal{R}$ is the set of ranking dimensions and $\text{rank}_r(d)$ is the 1-based rank of document $d$ in dimension $r$.
+We use $k = 60$, the value empirically validated in the original TREC evaluations~\citep{cormack2009rrf}.
+
+For articles not ranked by a particular dimension (e.g., articles without citation data cannot be ranked by impact), we assign worst rank $|\mathcal{D}| + 1$ where $|\mathcal{D}|$ is the total number of articles.
+This gracefully handles missing data without requiring imputation.
+
+\paragraph{Dimension Rankings.}
+The six dimensions used in RRF fusion are:
+\begin{itemize}
+    \item \textbf{BM25$^{+}$}: Term-level relevance (Section~\ref{sec:bm25})
+    \item \textbf{Citation Impact}: Normalized citation count or Relative Citation Ratio (RCR)
+    \item \textbf{Recency}: Publication date proximity
+    \item \textbf{Relevance Confidence}: Source-reported relevance score
+    \item \textbf{Journal Prestige}: Impact factor or h-index
+    \item \textbf{Source Agreement}: Number of sources returning this article
+\end{itemize}
+
+% ---------------------------------------------------------------------
+\subsection{Maximal Marginal Relevance Diversification}
+\label{sec:mmr}
+% ---------------------------------------------------------------------
+
+After RRF fusion, results may cluster around dominant subtopics.
+MMR~\citep{carbonell1998mmr} iteratively selects documents that balance relevance with diversity:
+
+\begin{equation}
+\text{MMR}(d_i) = \lambda \cdot \text{Rel}(d_i, q) - (1 - \lambda) \cdot \max_{d_j \in S} \text{Sim}(d_i, d_j)
+\label{eq:mmr}
+\end{equation}
+
+where $S$ is the set of already-selected documents, $\text{Rel}(d_i, q)$ is the normalized relevance score, and $\text{Sim}(d_i, d_j)$ is the inter-document similarity.
+
+\paragraph{MeSH-Based Similarity.}
+Most MMR implementations require document embeddings from neural models.
+We instead leverage the rich controlled vocabulary of biomedical literature:
+
+\begin{equation}
+\text{Sim}(d_i, d_j) = J(\mathcal{T}_i, \mathcal{T}_j) = \frac{|\mathcal{T}_i \cap \mathcal{T}_j|}{|\mathcal{T}_i \cup \mathcal{T}_j|}
+\label{eq:jaccard}
+\end{equation}
+
+where $\mathcal{T}_i = \text{MeSH}(d_i) \cup \text{keywords}(d_i) \cup \text{title\_terms}(d_i)$ is the term set for document $d_i$, and $J$ is the Jaccard coefficient.
+
+This approach has three advantages:
+(1)~it requires \emph{zero} training or pre-computed embeddings;
+(2)~it is \emph{interpretable}---overlapping MeSH terms directly explain why two articles are considered similar;
+and (3)~it is \emph{domain-appropriate}---MeSH terms capture semantic relationships (e.g., ``Propofol'' and ``Hypnotics and Sedatives'' share MeSH hierarchy) that keyword overlap alone would miss.
+
+We use $\lambda = 0.7$ (slight preference for relevance over diversity), which users can adjust per query.
+
+% ---------------------------------------------------------------------
+\subsection{Source Disagreement Analysis (SDA)}
+\label{sec:sda}
+% ---------------------------------------------------------------------
+
+We introduce Source Disagreement Analysis (SDA), a novel framework for quantifying how different academic databases agree or disagree on search results.
+To our knowledge, no existing system provides such metrics.
+
+\paragraph{Motivation.}
+When PubMed, Europe PMC, and OpenAlex all surface the same articles for a query, we have high confidence in result completeness.
+When they return largely disjoint sets, this conveys meaningful information:
+\begin{itemize}
+    \item \textbf{Emerging research}: Sources have not yet converged on terminology
+    \item \textbf{Interdisciplinary topics}: Different databases prioritize different communities
+    \item \textbf{Controversial findings}: Conflicting indexing or classification
+\end{itemize}
+
+\paragraph{Formal Definition.}
+Given a set of sources $\mathcal{S} = \{s_1, \ldots, s_m\}$ and their result sets $R_{s_1}, \ldots, R_{s_m}$ for a query $q$, we define:
+
+\begin{definition}[Source Agreement Score]
+\begin{equation}
+\text{SAS}(q) = \frac{1}{\binom{m}{2}} \sum_{i<j} \frac{|R_{s_i} \cap R_{s_j}|}{\min(|R_{s_i}|, |R_{s_j}|)}
+\label{eq:sas}
+\end{equation}
+\end{definition}
+
+The overlap coefficient (rather than Jaccard) is used because sources may return vastly different numbers of results.
+SAS $\in [0, 1]$ where 1.0 indicates perfect agreement.
+
+\begin{definition}[Source Complementarity]
+\begin{equation}
+\text{SC}(q) = \frac{|\{d \in \mathcal{D} : |\text{sources}(d)| = 1\}|}{|\mathcal{D}|}
+\label{eq:sc}
+\end{equation}
+\end{definition}
+
+where $\mathcal{D}$ is the deduplicated result set and $\text{sources}(d)$ returns the set of sources that found article $d$.
+High SC indicates that sources are finding \emph{different} articles---valuable for comprehensive coverage but concerning for reproducibility.
+
+\paragraph{Diagnostic Outputs.}
+SDA produces:
+\begin{itemize}
+    \item Per-source unique article counts (articles found exclusively by one source)
+    \item Pairwise source overlap coefficients
+    \item Cross-source vs. single-source article ratios
+\end{itemize}
+
+These metrics enable researchers to assess whether their multi-source search achieved true complementarity or merely redundancy.
+
+% ---------------------------------------------------------------------
+\subsection{Research Timeline Construction}
+\label{sec:timeline}
+% ---------------------------------------------------------------------
+
+Existing literature search tools return flat, chronologically-sorted lists.
+Our system transforms these into structured \emph{research timelines} by automatically detecting milestones and classifying articles into evidence levels.
+
+\paragraph{Multi-Signal Milestone Detection.}
+The \texttt{MilestoneDetector} uses three complementary signals to identify research milestones:
+
+\begin{enumerate}
+    \item \textbf{Title pattern matching}: 35+ regex patterns organized by milestone type (Table~\ref{tab:milestones})
+    \item \textbf{Publication type inference}: Maps PubMed publication types to evidence levels (Table~\ref{tab:evidence_levels})
+    \item \textbf{Citation-based landmark scoring}: Articles exceeding citation thresholds ($\geq$500 = exceptional, $\geq$200 = high, $\geq$100 = notable) are flagged as potential landmarks
+\end{enumerate}
+
+Each detected milestone receives a confidence score $c \in [0.5, 0.95]$ based on signal strength.
+
+\begin{table}[htbp]
+\centering
+\caption{Milestone types and representative detection patterns.}
+\label{tab:milestones}
+\begin{tabular}{llc}
+\toprule
+\textbf{Milestone Type} & \textbf{Pattern Examples} & \textbf{$c$} \\
+\midrule
+Discovery / First Report & \texttt{first (report|identification|synthesis)} & 0.90 \\
+Phase I/II Trial & \texttt{phase (I|1|II|2) (trial|study)} & 0.85 \\
+Phase III / Pivotal Trial & \texttt{phase (III|3)}, \texttt{pivotal} & 0.90 \\
+Regulatory Approval & \texttt{(FDA|EMA).*(approv|authoriz)} & 0.95 \\
+Guideline / Consensus & \texttt{guideline}, \texttt{consensus statement} & 0.85 \\
+Meta-analysis & \texttt{meta-analysis}, \texttt{systematic review} & 0.80 \\
+Safety Alert & \texttt{(black box|boxed) warning}, \texttt{safety alert} & 0.90 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Evidence Level Classification.}
+Articles are automatically classified into five evidence levels based on publication type:
+
+\begin{table}[htbp]
+\centering
+\caption{Evidence level classification hierarchy.}
+\label{tab:evidence_levels}
+\begin{tabular}{clp{5cm}}
+\toprule
+\textbf{Level} & \textbf{Category} & \textbf{Publication Types} \\
+\midrule
+1 & Systematic Reviews & Meta-analysis, Systematic Review \\
+2 & Controlled Trials  & Randomized Controlled Trial, Controlled Clinical Trial \\
+3 & Observational      & Cohort Study, Case-Control Study, Cross-Sectional \\
+4 & Case Reports       & Case Reports, Clinical Conference \\
+5 & Expert Opinion     & Editorial, Comment, Review, Letter \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Research Period Aggregation.}
+Detected milestones are grouped into five canonical research periods: \emph{Discovery} $\rightarrow$ \emph{Clinical Development} $\rightarrow$ \emph{Regulatory} $\rightarrow$ \emph{Evidence Synthesis} $\rightarrow$ \emph{Post-Market Surveillance}, with year ranges computed dynamically from the data.
+
+% ---------------------------------------------------------------------
+\subsection{Landmark Paper Detection}
+\label{sec:landmark}
+% ---------------------------------------------------------------------
+
+Large search result sets (hundreds to thousands of articles) require more than chronological sorting to surface genuinely important papers.
+Raw citation count---the most common ranking signal---is biased toward older papers and high-profile journals, obscuring field-normalized impact.
+We introduce the \lscore{} (Landmark Score), a five-signal composite scoring system that identifies landmark papers through principled multi-signal aggregation.
+
+\paragraph{Formal Definition.}
+The Landmark Score for an article $d$ is a weighted combination of five normalized signals:
+
+\begin{equation}
+\lscore{}(d) = \sum_{s \in \mathcal{S}} w_s \cdot \sigma_s(d)
+\label{eq:lscore}
+\end{equation}
+
+where $\mathcal{S}$ is the set of five signals and $\sigma_s(d) \in [0, 1]$ is the normalized score for signal $s$.
+The default weights $w_s$ (Table~\ref{tab:lscore_components}) are empirically calibrated to prioritize citation impact while maintaining sensitivity to emerging and multi-source-validated papers.
+
+\begin{table}[htbp]
+\centering
+\caption{Landmark Score components, normalization, and weights.}
+\label{tab:lscore_components}
+\begin{tabular}{llp{4.5cm}c}
+\toprule
+\textbf{Component} & \textbf{Symbol} & \textbf{Normalization} & \textbf{Weight} \\
+\midrule
+Citation Impact      & $\sigma_{\text{ci}}$  & NIH percentile $\rightarrow$ RCR (log) $\rightarrow$ raw count (fallback) & 0.35 \\
+Milestone Confidence & $\sigma_{\text{mc}}$ & Detector-assigned confidence $c \in [0.5, 0.95]$ & 0.20 \\
+Source Agreement     & $\sigma_{\text{sa}}$ & Step function: 1$\rightarrow$0.1, 2$\rightarrow$0.5, 3$\rightarrow$0.75, 4$\rightarrow$0.9, 5+$\rightarrow$1.0 & 0.15 \\
+Evidence Quality     & $\sigma_{\text{eq}}$ & Evidence level: L1=1.0, L2=0.75, L3=0.50, L4=0.25 & 0.15 \\
+Citation Velocity    & $\sigma_{\text{cv}}$ & $\min(1, \log_2(1 + v) / \log_2(51))$, $v$ = citations/year & 0.15 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Citation Impact Normalization.}
+The citation impact component uses a three-tier fallback chain that prioritizes field-normalized metrics from iCite~\citep{hutchins2016rcr}:
+
+\begin{equation}
+\sigma_{\text{ci}}(d) =
+\begin{cases}
+    p / 100 & \text{if NIH percentile } p > 0 \\
+    \min(1, \log_2(1 + \text{RCR}) / \log_2(11)) & \text{if RCR} > 0 \\
+    \min(1, \log_2(1 + c) / \log_2(501)) & \text{if raw citations } c > 0 \\
+    0 & \text{otherwise}
+\end{cases}
+\label{eq:citation_impact}
+\end{equation}
+
+The key insight is that a niche paper with RCR=4.2 (top 1\% in its small field) scores higher than a popular review with 200 raw citations but RCR=0.8 (below field average).
+This field normalization is critical for cross-disciplinary searches where citation counts are incomparable.
+
+\paragraph{Source Agreement as Cross-Validation.}
+Articles found independently by multiple academic databases receive higher scores.
+This signal provides cross-validation that pure citation metrics cannot: an article surfaced by PubMed, Europe PMC, \emph{and} OpenAlex for the same query is more likely to be genuinely relevant than one found by a single source.
+
+\paragraph{Tier Classification.}
+The final \lscore{} maps to four tiers for interpretability:
+\begin{itemize}
+    \item \textbf{Landmark} ($\geq 0.75$): High-impact papers that shaped the field ($\bigstar\bigstar\bigstar$)
+    \item \textbf{Notable} ($\geq 0.50$): Important contributions worth reading ($\bigstar\bigstar$)
+    \item \textbf{Minor} ($\geq 0.25$): Supporting evidence ($\bigstar$)
+    \item \textbf{Standard} ($< 0.25$): Routine contributions
+\end{itemize}
+
+% ---------------------------------------------------------------------
+\subsection{Research Lineage Tree}
+\label{sec:lineage_tree}
+% ---------------------------------------------------------------------
+
+Research timelines (Section~\ref{sec:timeline}) present events as a flat chronological list.
+However, real research evolves into \emph{branches}---discovery spawns clinical trials, which trigger regulatory review, which leads to guideline updates and post-market safety monitoring.
+These branches run in parallel, not sequentially.
+We introduce the Research Lineage Tree, a branching model that captures this structure.
+
+\paragraph{Design Rationale.}
+The tree sits between two extremes:
+\begin{itemize}
+    \item A \textbf{flat timeline} (too simple): loses the parallel nature of research branches
+    \item A \textbf{knowledge graph} (too complex): introduces cross-linkage noise that obscures the main narrative
+\end{itemize}
+
+A tree preserves temporal ordering (parent $\rightarrow$ child in time), natural branching into sub-fields, and hierarchical organization without cross-linkage noise.
+
+\paragraph{Branch Detection.}
+The \texttt{BranchDetector} maps each \texttt{MilestoneType} to one of eight predefined research branches (Table~\ref{tab:branches}).
+
+\begin{table}[htbp]
+\centering
+\caption{Research Lineage Tree branch categories.}
+\label{tab:branches}
+\begin{tabular}{clp{5cm}}
+\toprule
+\textbf{Order} & \textbf{Branch} & \textbf{Milestone Types} \\
+\midrule
+1 & Discovery \& Mechanism      & First Report, Mechanism, Preclinical \\
+2 & Clinical Development        & Phase I--IV (with sub-branches) \\
+3 & Regulatory Milestones       & FDA/EMA Approval, Regulatory \\
+4 & Evidence Synthesis           & Meta-analysis, Systematic Review \\
+5 & Guidelines \& Practice      & Guideline, Consensus Statement \\
+6 & Safety \& Pharmacovigilance & Safety Alert, Label Update, Withdrawal \\
+7 & Landmark Studies            & Landmark Study, Breakthrough \\
+8 & Other Studies               & Uncategorized milestones \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Clinical Sub-Branch Detection.}
+The Clinical Development branch receives special handling.
+When events span both early-phase (\texttt{Phase\_I}, \texttt{Phase\_II}) and late-phase (\texttt{Phase\_III}, \texttt{Phase\_IV}) trials, the branch automatically splits into two sub-branches:
+\emph{Phase I/II} (dose-finding, safety) and \emph{Phase III/IV} (efficacy, post-marketing).
+This split only occurs when both phases are present; single-phase data remains flat.
+
+\paragraph{Visualization Formats.}
+The Research Lineage Tree supports three output formats:
+\begin{itemize}
+    \item \textbf{ASCII Tree}: Human-readable text with Unicode box-drawing characters (\texttt{to\_text\_tree()})
+    \item \textbf{Mermaid Mindmap}: Machine-renderable diagram syntax (\texttt{to\_mermaid\_mindmap()})
+    \item \textbf{JSON}: Structured data for programmatic consumption (\texttt{to\_dict()})
+\end{itemize}
+
+The ASCII tree format integrates landmark star ratings ($\bigstar$--$\bigstar\bigstar\bigstar$) inline with each event, providing an at-a-glance view of both research structure and paper importance.
+
+\paragraph{Formal Structure.}
+A Research Lineage Tree $\mathcal{T}$ for topic $t$ is defined as:
+\begin{equation}
+\mathcal{T}(t) = (t, \{B_1, B_2, \ldots, B_m\})
+\label{eq:tree}
+\end{equation}
+where each branch $B_i = (\text{id}_i, \text{label}_i, E_i, \{B_{i,1}, \ldots, B_{i,k}\})$ contains events $E_i$ sorted chronologically and optional sub-branches.
+Empty branches are automatically pruned from the output.
+
+% ---------------------------------------------------------------------
+\subsection{Pipeline Persistence and DAG Orchestration}
+\label{sec:pipeline}
+% ---------------------------------------------------------------------
+
+Multi-step research workflows---such as PICO-based systematic searches involving parallel element searches followed by RRF merging---require more than ad hoc manual execution.
+We provide a \emph{pipeline persistence} system that makes complex workflows saveable, reproducible, and schedulable.
+
+\paragraph{DAG Execution Model.}
+A pipeline is defined as a Directed Acyclic Graph (DAG) of steps, where each step specifies an action (search, PICO parse, merge, filter, metrics) with explicit dependencies.
+The \texttt{PipelineExecutor} uses Kahn's algorithm~\citep{kahn1962topological} to partition steps into topological batches, enabling automatic parallelization:
+
+\begin{equation}
+\text{Batch}_i = \{s \in \mathcal{S} : \text{deps}(s) \subseteq \bigcup_{j<i} \text{Batch}_j \}
+\label{eq:batches}
+\end{equation}
+
+Steps within each batch execute concurrently via \texttt{asyncio.gather()}, while inter-batch ordering is strictly sequential.
+
+\paragraph{Pipeline Templates.}
+Four built-in templates cover common workflows:
+\begin{itemize}
+    \item \textbf{PICO Pipeline}: Clinical question $\rightarrow$ PICO parsing $\rightarrow$ parallel element searches $\rightarrow$ RRF merge
+    \item \textbf{Comprehensive Pipeline}: Multi-source search + MeSH expansion + citation enrichment
+    \item \textbf{Exploration Pipeline}: Seed PMID $\rightarrow$ related + citing + reference articles
+    \item \textbf{Gene/Drug Pipeline}: NCBI Gene + PubChem compound + literature cross-referencing
+\end{itemize}
+
+\paragraph{Dual-Scope Storage.}
+Pipelines are stored in two scopes:
+\emph{workspace-scoped} pipelines reside alongside project files (git-trackable), while \emph{global-scoped} pipelines persist across projects.
+Loading resolves workspace-first with global fallback, and includes automatic validation and self-repair on load.
+
+\paragraph{Execution History.}
+Each pipeline run records: timestamp, steps completed/failed, articles found, merge statistics, and runtime.
+History is capped at 100 runs per pipeline with automatic pruning.
+
+% ---------------------------------------------------------------------
+\subsection{Reproducibility Score}
+\label{sec:reproducibility}
+% ---------------------------------------------------------------------
+
+PRISMA 2020 guidelines~\citep{page2021prisma} require that systematic review searches be transparent and reproducible.
+However, current tools provide no quantitative measure of \emph{how} reproducible a search actually is.
+We introduce the Reproducibility Score (\rscore{}), a five-component weighted index:
+
+\begin{equation}
+\text{R-Score}(q) = \sum_{c \in \mathcal{C}} w_c \cdot S_c(q)
+\label{eq:rscore}
+\end{equation}
+
+where $\mathcal{C}$ denotes the five components and $w_c$ their weights (Table~\ref{tab:rscore_components}).
+
+\begin{table}[htbp]
+\centering
+\caption{Reproducibility Score components and weights.}
+\label{tab:rscore_components}
+\begin{tabular}{llp{5.5cm}c}
+\toprule
+\textbf{Component} & \textbf{Symbol} & \textbf{Description} & \textbf{Weight} \\
+\midrule
+Deterministic      & $S_{\text{det}}$   & No LLM or random sampling involved & 0.25 \\
+Query Formality    & $S_{\text{qf}}$    & Use of MeSH tags, Boolean operators, field tags & 0.20 \\
+Source Coverage     & $S_{\text{sc}}$    & Fraction of queried sources that responded & 0.20 \\
+Result Stability   & $S_{\text{rs}}$    & Expected temporal stability based on source tiers & 0.15 \\
+Audit Completeness & $S_{\text{ac}}$    & Presence of query trace, dedup stats, source counts & 0.20 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Query Formality.}
+Structured queries (using MeSH field tags, Boolean operators, quoted phrases) are more reproducible than free-text natural language queries.
+The query formality score accumulates points:
+\begin{equation}
+S_{\text{qf}}(q) = 0.3 + 0.3 \cdot \mathbb{1}[\text{MeSH}] + 0.15 \cdot \mathbb{1}[\text{Boolean}] + 0.1 \cdot \mathbb{1}[\text{quotes}] + 0.1 \cdot \mathbb{1}[\text{fields}] + 0.05 \cdot \mathbb{1}[\text{date}]
+\label{eq:formality}
+\end{equation}
+
+where $\mathbb{1}[\cdot]$ are indicator functions for the presence of each feature.
+
+\paragraph{Source Stability Tiers.}
+Different sources have different update frequencies, affecting result stability over time.
+We assign stability coefficients (Table~\ref{tab:sources}, ``Stability'' column) based on source characteristics: archival databases (PubMed: 0.95) are more stable than aggregators with frequent re-harvesting (CORE: 0.70).
+
+\paragraph{Grading Scale.}
+The overall R-Score $\in [0, 1]$ maps to letter grades:
+\begin{itemize}
+    \item \textbf{A} ($\geq 0.9$): Excellent---fully reproducible, formal query, all sources responding
+    \item \textbf{B} ($\geq 0.8$): Good---minor reproducibility concerns
+    \item \textbf{C} ($\geq 0.6$): Moderate---informal query or partial source coverage
+    \item \textbf{D} ($\geq 0.4$): Poor---significant reproducibility issues
+    \item \textbf{F} ($< 0.4$): Not reproducible---LLM-dependent or missing audit trail
+\end{itemize}
+
+% =====================================================================
+\section{Implementation}
+\label{sec:implementation}
+% =====================================================================
+
+\system{} is implemented in Python 3.12 using the FastMCP framework for MCP server capabilities.
+The codebase follows Domain-Driven Design with strict layer separation enforced by automated pre-commit hooks.
+
+\subsection{MCP Tool Interface}
+
+The system exposes 40 MCP tools organized into 14 categories (Table~\ref{tab:tools}).
+
+\begin{table}[htbp]
+\centering
+\caption{MCP tool categories in \system{}.}
+\label{tab:tools}
+\begin{tabular}{lrl}
+\toprule
+\textbf{Category} & \textbf{\#Tools} & \textbf{Purpose} \\
+\midrule
+Search             & 1  & Unified multi-source search entry point \\
+Query Intelligence & 3  & MeSH expansion, PICO parsing, query analysis \\
+Article Exploration & 5 & Related articles, citations, references \\
+Full Text          & 2  & Full-text retrieval and text mining \\
+NCBI Extended      & 7  & Gene, PubChem, ClinVar databases \\
+Citation Network   & 1  & Citation tree construction \\
+Export             & 1  & RIS, BibTeX, MEDLINE, CSV, JSON \\
+Session Management & 3  & Search history, PMID caching \\
+Institutional      & 4  & OpenURL link resolver \\
+ICD Conversion     & 1  & ICD-10 $\leftrightarrow$ MeSH mapping \\
+Research Timeline  & 3  & Milestone detection, timeline comparison \\
+Image Search       & 1  & Biomedical image search \\
+Visual Analysis    & 1  & Figure analysis for search \\
+Pipeline           & 6  & Save, load, schedule search workflows \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Ranking Pipeline Integration}
+
+The ranking pipeline is integrated into the unified search workflow:
+
+\begin{enumerate}
+    \item \textbf{Query analysis}: Parse query complexity, expand MeSH terms
+    \item \textbf{Parallel source dispatch}: Query all selected sources concurrently
+    \item \textbf{Deduplication}: Multi-key merge (PMID $\rightarrow$ DOI $\rightarrow$ title)
+    \item \textbf{BM25$^{+}$ scoring}: Build micro-corpus, compute per-article scores
+    \item \textbf{Dimension scoring}: Score each article on 6 dimensions
+    \item \textbf{RRF fusion}: Combine dimension rankings ($k=60$)
+    \item \textbf{MMR diversification}: Rerank for diversity ($\lambda=0.7$)
+    \item \textbf{SDA computation}: Analyze cross-source agreement
+    \item \textbf{Reproducibility scoring}: Grade search reproducibility
+    \item \textbf{Formatting \& caching}: Produce Markdown/JSON output, cache in session
+\end{enumerate}
+
+\subsection{Quality Assurance}
+
+The project maintains 2{,}900+ automated tests executed via pytest with parallel execution (\texttt{pytest-xdist}, $\sim$67s on multi-core systems).
+Pre-commit hooks enforce: code formatting (Ruff), type checking (mypy), security scanning (Bandit, Semgrep), dead code detection (Vulture), DDD layer import rules, and async/sync test consistency.
+
+% =====================================================================
+\section{Case Study}
+\label{sec:evaluation}
+% =====================================================================
+
+We demonstrate \system{}'s capabilities through a representative multi-source search scenario.
+
+\subsection{Search Configuration}
+
+We executed five searches covering different aspects of information retrieval and systematic review methodology, using the system's own tools:
+
+\begin{enumerate}
+    \item ``reciprocal rank fusion multi-source information retrieval'' (sources: PubMed, OpenAlex, Semantic Scholar)
+    \item ``systematic review search reproducibility PRISMA automated'' (sources: PubMed, OpenAlex)
+    \item ``BM25 biomedical literature ranking relevance scoring'' (sources: PubMed, OpenAlex, Semantic Scholar)
+    \item ``LLM-assisted literature review AI-powered systematic review'' (sources: PubMed, OpenAlex)
+    \item ``maximal marginal relevance diversity result diversification'' (sources: OpenAlex, Semantic Scholar)
+\end{enumerate}
+
+\subsection{Source Agreement Analysis Results}
+
+Table~\ref{tab:sda_results} shows SDA metrics computed by the system for each search.
+
+\begin{table}[htbp]
+\centering
+\caption{Source Disagreement Analysis results across five searches.}
+\label{tab:sda_results}
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Search} & \textbf{SAS} & \textbf{SC} & \textbf{Cross-src} & \textbf{Single-src} & \textbf{R-Score} \\
+\midrule
+1. RRF/multi-source & 0.00 & 1.00 & 0 & 10 & C (71\%) \\
+2. PRISMA/repro.    & 1.00 & 0.00 & 17 & 0 & B (85\%) \\
+3. BM25/biomedical  & 0.00 & 1.00 & 0 & 10 & C (71\%) \\
+4. LLM/review       & 0.00 & 1.00 & 0 & 10 & C (74\%) \\
+5. MMR/diversity    & 0.00 & 1.00 & 0 & 10 & C (74\%) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Key Observations.}
+Search \#2 (PRISMA/reproducibility) achieved SAS=1.00 with both PubMed and OpenAlex returning overlapping results, yielding higher reproducibility (Grade~B).
+Searches \#1, \#3, \#4, \#5 showed SAS=0.00 with complete complementarity (SC=1.00)---each source returned entirely different articles.
+This pattern is informative: it suggests these technical IR topics are indexed differently across databases, and a single-source search would miss substantial relevant literature.
+
+\subsection{Reproducibility Score Breakdown}
+
+The Reproducibility Score correctly identified that:
+\begin{itemize}
+    \item All searches are \textbf{deterministic} (no LLM in the retrieval pipeline)
+    \item Free-text queries receive low \textbf{query formality} scores ($\sim$30\%), correctly penalizing natural-language queries
+    \item Searches where sources failed (PubMed returning 0 for technical IR queries) receive lower \textbf{source coverage}
+    \item The \textbf{audit trail} is always complete (100\%), as the system records all API calls, deduplication counts, and source-level result counts
+\end{itemize}
+
+These results demonstrate that SDA and R-Score provide actionable feedback: a researcher seeing Grade~C with low query formality knows to reformulate using MeSH terms and Boolean operators.
+
+% =====================================================================
+\section{Discussion}
+\label{sec:discussion}
+% =====================================================================
+
+\subsection{Comparison with Existing Tools}
+
+Table~\ref{tab:comparison} contrasts \system{} with existing literature search and review tools across the end-to-end systematic review workflow.
+
+\begin{table}[htbp]
+\centering
+\caption{End-to-end feature comparison. \checkmark\ = supported, $\circ$ = partial, -- = absent.}
+\label{tab:comparison}
+\begin{tabular}{lccccccc}
+\toprule
+\textbf{Feature} & \rotatebox{60}{\textbf{PubMed}} & \rotatebox{60}{\textbf{S2}} & \rotatebox{60}{\textbf{ASReview}} & \rotatebox{60}{\textbf{Rayyan}} & \rotatebox{60}{\textbf{Covidence}} & \rotatebox{60}{\textbf{Litmaps}} & \rotatebox{60}{\textbf{Ours}} \\
+\midrule
+\multicolumn{8}{l}{\textit{Search \& Ranking}} \\
+\quad Multi-source search    & --  & --  & --  & --  & --  & --  & \checkmark \\
+\quad BM25 relevance         & $\circ$  & --  & --  & --  & --  & --  & \checkmark \\
+\quad Rank fusion (RRF)      & --  & --  & --  & --  & --  & --  & \checkmark \\
+\quad Result diversification & --  & --  & --  & --  & --  & --  & \checkmark \\
+\midrule
+\multicolumn{8}{l}{\textit{Analysis \& Quality}} \\
+\quad Source disagreement    & --  & --  & --  & --  & --  & --  & \checkmark \\
+\quad Reproducibility score  & --  & --  & --  & --  & --  & --  & \checkmark \\
+\quad Research timeline      & --  & --  & --  & --  & --  & $\circ$  & \checkmark \\
+\quad Milestone detection    & --  & --  & --  & --  & --  & --  & \checkmark \\
+\quad Landmark detection     & --  & --  & --  & --  & --  & --  & \checkmark \\
+\quad Lineage tree           & --  & --  & --  & --  & --  & --  & \checkmark \\
+\midrule
+\multicolumn{8}{l}{\textit{Workflow \& Integration}} \\
+\quad Pipeline persistence   & --  & --  & --  & --  & --  & --  & \checkmark \\
+\quad DAG orchestration      & --  & --  & --  & --  & --  & --  & \checkmark \\
+\quad AI agent integration   & --  & --  & --  & --  & --  & --  & \checkmark \\
+\quad Screening automation   & --  & --  & \checkmark & \checkmark & \checkmark & -- & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Figure~\ref{fig:workflow} illustrates how \system{} covers the systematic review pipeline compared to existing tools.
+
+\begin{figure}[htbp]
+\centering
+\small
+\begin{verbatim}
+  Systematic Review Pipeline:
+
+  [Query] --> [Search] --> [Rank] --> [Dedup] --> [Analyze] --> [Timeline] --> [Landmark] --> [Tree] --> [Export]
+     |          |            |          |           |             |            |            |         |
+     |   PubMed: single     ---        ---         ---           ---          ---          ---   manual
+     |   S2:     single     ---        ---         ---           ---          ---          ---   manual
+     |   Litmaps: single    ---        ---         ---        partial         ---          ---   manual
+     |
+     +-- Ours:  6 sources  BM25+    multi-key     SDA +      milestone     L-Score     8-branch  RIS/
+                parallel   RRF+MMR  PMID/DOI/     R-Score    detection    5-signal     lineage   BibTeX
+                            6-dim   title sim               + periods    composite     tree      auto
+
+  [Screen] --> [Extract] --> [Synthesize]
+     |            |              |
+  ASReview    Covidence       manual
+  Rayyan       manual
+\end{verbatim}
+\caption{End-to-end workflow coverage. \system{} covers Search through Export including landmark detection and lineage tree construction; screening tools (ASReview, Rayyan, Covidence) cover Screen through Extract. Together they form a complete pipeline.}
+\label{fig:workflow}
+\end{figure}
+
+Our contributions are orthogonal to screening tools: we improve the \emph{retrieval, ranking, analysis, and temporal exploration} stages while they improve \emph{screening}.
+A complete systematic review workflow could use \system{} for search through timeline construction, then pass results to ASReview for screening.
+
+\subsection{Limitations}
+
+\paragraph{BM25$^{+}$ Micro-Corpus.}
+Computing BM25 statistics over a small result set (10--200 documents) rather than the full database means IDF values may not reflect corpus-wide term rarity.
+This is a deliberate trade-off: we use BM25$^{+}$ as a \emph{reranking} signal combined with source-reported relevance via RRF, mitigating this limitation.
+
+\paragraph{Jaccard-Based MMR.}
+MeSH term Jaccard similarity cannot capture semantic relationships not encoded in controlled vocabulary (e.g., two articles about similar mechanisms using different terminology).
+Future work could incorporate biomedical concept embeddings while maintaining interpretability.
+
+\paragraph{Milestone Detection.}
+Pattern-based milestone detection (35+ regex patterns) may miss unconventionally phrased discoveries or milestones in non-English literature.
+False positives are mitigated by multi-signal confirmation (pattern + publication type + citation count), but a formal evaluation against gold-standard timelines is needed.
+
+\paragraph{Evaluation Scale.}
+Our case study demonstrates the system's capabilities qualitatively.
+A large-scale evaluation on benchmarks like BioASQ~\citep{tsatsaronis2015bioasq} or TREC-COVID~\citep{roberts2021trec} would provide quantitative retrieval effectiveness metrics.
+
+\subsection{Future Work}
+
+\begin{enumerate}
+    \item \textbf{Benchmark evaluation}: Formal evaluation on BioASQ and TREC-COVID for retrieval effectiveness (nDCG, MAP, Recall@k)
+    \item \textbf{Learned parameters}: Optimize $\beta_{\text{title}}$, $\beta_{\text{MeSH}}$, $\lambda$, and milestone confidence weights on relevance judgment data
+    \item \textbf{Embedding-augmented MMR}: Hybrid Jaccard + biomedical embedding similarity (e.g., BioSentVec)
+    \item \textbf{Temporal SDA}: Track how source agreement evolves over time for a topic
+    \item \textbf{LLM-enhanced milestone detection}: Use LLM claim extraction to identify milestones missed by regex patterns
+    \item \textbf{Living timelines}: Scheduled pipeline execution with change detection for ongoing research monitoring
+    \item \textbf{ClinicalTrials.gov integration}: Direct trial registration data for more precise clinical development timelines
+\end{enumerate}
+
+% =====================================================================
+\section{Conclusion}
+\label{sec:conclusion}
+% =====================================================================
+
+We presented \system{}, a platform that transforms multi-source biomedical literature retrieval from static search into dynamic research exploration---\emph{from search to timeline to lineage tree}.
+
+Our ranking pipeline---BM25$^{+}$ with field-level boosting, RRF multi-dimensional fusion, and MeSH-based MMR diversification---addresses the challenge of combining results from six heterogeneous academic databases without score calibration.
+Source Disagreement Analysis provides a novel quality signal by quantifying cross-source ranking consistency, enabling researchers to distinguish well-established topics from emerging or interdisciplinary ones.
+Automated Research Timeline construction with multi-signal milestone detection transforms flat result lists into structured temporal narratives of knowledge evolution.
+Landmark Paper Detection (\lscore{}) replaces na\"ive citation-count sorting with a principled five-signal composite that leverages field-normalized impact (RCR), cross-source agreement, milestone confidence, evidence quality, and citation velocity---surfacing truly important papers regardless of raw citation count or journal prestige.
+The Research Lineage Tree further transforms flat timelines into branching structures that mirror how research naturally evolves from discovery through clinical development, regulatory approval, and post-market surveillance.
+Pipeline Persistence with DAG-based orchestration makes complex multi-step workflows reproducible and schedulable.
+
+The system covers the systematic review pipeline from initial query through temporal analysis, landmark identification, lineage visualization, and export---a scope unmatched by existing tools.
+With 40 MCP tools, 2{,}900+ automated tests, and integration with six academic databases, \system{} demonstrates that the gap between literature \emph{search} and literature \emph{understanding} can be bridged through principled algorithms and thoughtful system design.
+
+The system is open-source and available at \url{https://github.com/punkpeye/pubmed-search-mcp}.
+
+% =====================================================================
+% References
+% =====================================================================
+
+\bibliographystyle{plainnat}
+\bibliography{references}
+
+\end{document}

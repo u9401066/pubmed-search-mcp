@@ -443,6 +443,9 @@ class TestFormatTimelineText:
         assert "No timeline events found" in result
 
     async def test_with_events(self):
+        from pubmed_search.domain.entities.timeline import LandmarkScore
+
+        ls_high = LandmarkScore(overall=0.82, citation_impact=0.9)
         events = [
             TimelineEvent(
                 pmid="1",
@@ -451,6 +454,7 @@ class TestFormatTimelineText:
                 title="First Discovery",
                 milestone_label="First Report",
                 confidence_score=0.9,
+                landmark_score=ls_high,
             ),
             TimelineEvent(
                 pmid="2",
@@ -467,7 +471,7 @@ class TestFormatTimelineText:
         assert "2010" in result
         assert "2020" in result
         assert "First Report" in result
-        assert "⭐" in result  # High confidence event
+        assert "⭐" in result  # Landmark star rating
 
     async def test_long_title_truncated(self):
         long_title = "A" * 100

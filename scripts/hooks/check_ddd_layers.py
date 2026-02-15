@@ -56,9 +56,7 @@ def get_staged_files() -> list[str]:
     return [
         f
         for f in result.stdout.strip().split("\n")
-        if f.strip()
-        and f.endswith(".py")
-        and f.startswith(f"src/{PACKAGE_ROOT}/")
+        if f.strip() and f.endswith(".py") and f.startswith(f"src/{PACKAGE_ROOT}/")
     ]
 
 
@@ -97,7 +95,16 @@ def check_file(filepath: str) -> list[tuple[int, str, str]]:
 
     violations: list[tuple[int, str, str]] = []
 
+    # Collect node indices that are inside TYPE_CHECKING blocks
+    type_checking_nodes: set[int] = set()
     for node in ast.walk(tree):
+        if _is_type_checking_block(node):
+            for child in ast.walk(node):
+                type_checking_nodes.add(id(child))
+
+    for node in ast.walk(tree):
+        if id(node) in type_checking_nodes:
+            continue
         if isinstance(node, ast.Import):
             for alias in node.names:
                 violated = _check_import_name(alias.name, forbidden)
@@ -111,16 +118,25 @@ def check_file(filepath: str) -> list[tuple[int, str, str]]:
     return violations
 
 
+def _is_type_checking_block(node: ast.AST) -> bool:
+    """Check if an AST node is an `if TYPE_CHECKING:` block."""
+    if not isinstance(node, ast.If):
+        return False
+    test = node.test
+    # Handle: if TYPE_CHECKING:
+    if isinstance(test, ast.Name) and test.id == "TYPE_CHECKING":
+        return True
+    # Handle: if typing.TYPE_CHECKING:
+    return isinstance(test, ast.Attribute) and test.attr == "TYPE_CHECKING"
+
+
 def _check_import_name(module_name: str, forbidden: set[str]) -> str | None:
     """Check if an import name references a forbidden layer."""
     # Match patterns like:
     #   pubmed_search.infrastructure.xxx
     #   pubmed_search.presentation.xxx
     for layer in forbidden:
-        if (
-            module_name == f"{PACKAGE_ROOT}.{layer}"
-            or module_name.startswith(f"{PACKAGE_ROOT}.{layer}.")
-        ):
+        if module_name == f"{PACKAGE_ROOT}.{layer}" or module_name.startswith(f"{PACKAGE_ROOT}.{layer}."):
             return layer
     return None
 

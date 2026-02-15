@@ -15,7 +15,9 @@ Usage:
 
 from __future__ import annotations
 
+from .branch_detector import build_research_tree
+from .landmark_scorer import LandmarkScorer
 from .milestone_detector import MilestoneDetector
 from .timeline_builder import TimelineBuilder
 
-__all__ = ["MilestoneDetector", "TimelineBuilder"]
+__all__ = ["LandmarkScorer", "MilestoneDetector", "TimelineBuilder", "build_research_tree"]

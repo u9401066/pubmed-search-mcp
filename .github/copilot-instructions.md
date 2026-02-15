@@ -74,8 +74,8 @@ uv run pre-commit autoupdate
 - **bandit** 安全掃描 (medium+ severity, `pyproject.toml [tool.bandit]`)
 - **vulture** 死碼掃描 (`vulture_whitelist.py` 管理白名單)
 - **deptry** 依賴衛生 (`pyproject.toml [tool.deptry]`)
-- **semgrep** SAST 靜態安全分析 (`p/python` ruleset)
-- **mypy** type check
+- **semgrep** SAST 靜態安全分析 — **已移至 pre-push** (記憶體 300-500MB)
+- **mypy** type check — **已移至 pre-push** (記憶體 500MB-1GB)
 - **async-test-checker** async/sync 測試一致性 (`scripts/check_async_tests.py`)
 - **file-hygiene** 檔案衛生檢查 (`scripts/hooks/check_file_hygiene.py`)
 - **commit-size-guard** 限制每次 commit ≤30 檔案 (`scripts/hooks/check_commit_size.py`)
@@ -91,6 +91,8 @@ uv run pre-commit autoupdate
 - **todo-scanner** TODO/FIXME 掃描器 (警告, 不阻擋) (`scripts/hooks/check_todo_scanner.py`)
 
 **Push 階段自動檢查：**
+- **mypy** type check (`uv run mypy src/`, 記憶體 500MB-1GB)
+- **semgrep** SAST 靜態安全分析 (`p/python` ruleset, 記憶體 300-500MB)
 - **pytest** 全套測試 (`-n auto --timeout=60`)
 
 ```bash

@@ -24,7 +24,7 @@ import json
 import logging
 from typing import TYPE_CHECKING, Any
 
-from pubmed_search.application.timeline import MilestoneDetector, TimelineBuilder
+from pubmed_search.application.timeline import LandmarkScorer, MilestoneDetector, TimelineBuilder, build_research_tree
 from pubmed_search.application.timeline.timeline_builder import format_timeline_text
 
 from ._common import InputNormalizer, ResponseFormatter
@@ -42,7 +42,8 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
 
     # Create shared instances
     detector = MilestoneDetector()
-    builder = TimelineBuilder(searcher, detector)
+    scorer = LandmarkScorer()
+    builder = TimelineBuilder(searcher, detector, scorer)
 
     @mcp.tool()
     async def build_research_timeline(
@@ -52,6 +53,7 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         min_year: int | None = None,
         max_year: int | None = None,
         include_all: bool = False,
+        highlight_landmarks: bool = True,
         output_format: str = "text",
     ) -> str:
         """
@@ -85,7 +87,9 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         ═══════════════════════════════════════════════════════════════
 
         - "text": Human-readable text format (default)
+        - "tree": Research lineage tree — branches by sub-topic (NEW)
         - "mermaid": Mermaid timeline (VS Code, GitHub preview)
+        - "mindmap": Mermaid mindmap of research branches (NEW)
         - "json": Full JSON data
         - "timeline_js": TimelineJS library format
         - "d3": D3.js visualization format
@@ -101,7 +105,7 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             min_year: Filter articles from this year (optional, topic mode only)
             max_year: Filter articles until this year (optional, topic mode only)
             include_all: Include non-milestone articles as generic events
-            output_format: "text", "mermaid", "json", "timeline_js", or "d3"
+            output_format: "text", "tree", "mermaid", "mindmap", "json", "json_tree", "timeline_js", or "d3"
 
         Returns:
             Research timeline with detected milestones in requested format.
@@ -139,6 +143,7 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                     min_year=min_year,
                     max_year=max_year,
                     include_all=include_all,
+                    highlight_landmarks=highlight_landmarks,
                 )
             else:
                 return ResponseFormatter.error(
@@ -158,10 +163,19 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 )
 
             # Format output
+            if output_format == "tree":
+                tree = build_research_tree(timeline)
+                return tree.to_text_tree()
+            if output_format == "mindmap":
+                tree = build_research_tree(timeline)
+                return tree.to_mermaid_mindmap()
             if output_format == "mermaid":
                 return timeline.to_mermaid()
             if output_format == "json":
                 return json.dumps(timeline.to_dict(), indent=2, ensure_ascii=False)
+            if output_format == "json_tree":
+                tree = build_research_tree(timeline)
+                return json.dumps(tree.to_dict(), indent=2, ensure_ascii=False)
             if output_format == "timeline_js":
                 return json.dumps(timeline.to_json_timeline(), indent=2)
             if output_format == "d3":

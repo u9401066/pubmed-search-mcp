@@ -119,28 +119,15 @@ repos:
         files: ^(src/|pyproject\.toml)
         # Config in [tool.deptry] in pyproject.toml
 
-  - repo: https://github.com/semgrep/semgrep
-    rev: v1.151.0
-    hooks:
-      - id: semgrep
-        name: semgrep security analysis
-        args: [--config, p/python, --error, --quiet]
-        # Python security rules from Semgrep registry
-        # Skip: SKIP=semgrep git commit
+  # semgrep moved to pre-push (see section 5) — too heavy for commit-time (~300-500MB)
 
   # ─────────────────────────────────────────────────────────────
   # 4. Local hooks — project-specific checks
   # ─────────────────────────────────────────────────────────────
   - repo: local
     hooks:
-      # ── Type checking ──────────────────────────────────────
-      - id: mypy
-        name: mypy type check (src/)
-        entry: uv run mypy src/
-        language: system
-        types: [python]
-        pass_filenames: false
-        # Tip: skip with SKIP=mypy git commit
+      # ── Type checking (moved to pre-push — uses 500MB-1GB) ──
+      # See section 5 for mypy. Run manually: uv run mypy src/
 
       # ── Async/sync consistency ─────────────────────────────
       - id: async-test-checker
@@ -266,10 +253,28 @@ repos:
         #   Instructions → Skills → Hooks → Validate → Feedback
         # Only runs when relevant config/doc files are modified
   # ─────────────────────────────────────────────────────────────
-  # 5. Pre-push hooks — slower but thorough
+  # 5. Pre-push hooks — heavier analysis (mypy, semgrep, pytest)
+  #    These are too memory-intensive for pre-commit (~1-2GB total)
+  #    but essential before pushing to remote.
   # ─────────────────────────────────────────────────────────────
+  - repo: https://github.com/semgrep/semgrep
+    rev: v1.151.0
+    hooks:
+      - id: semgrep
+        name: semgrep security analysis
+        args: [--config, p/python, --error, --quiet]
+        stages: [pre-push]
+
   - repo: local
     hooks:
+      - id: mypy
+        name: mypy type check (src/)
+        entry: uv run mypy src/
+        language: system
+        types: [python]
+        pass_filenames: false
+        stages: [pre-push]
+
       - id: pytest
         name: pytest (multi-core)
         entry: uv run pytest tests/ -n 4 --timeout=60 -q --no-header

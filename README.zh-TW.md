@@ -226,7 +226,7 @@ NCBI_EMAIL=your@email.com uvx pubmed-search-mcp
 | 臨床問題需結構化搜尋 | ✅ **PICO 工具組** (`parse_pico` + `generate_search_queries`，由 Agent 驅動) |
 | 醫學術語打錯字 | ✅ **ESpell 自動校正** |
 | 單一來源結果太多 | ✅ **平行多源搜尋** + 去重 |
-| 需要追蹤研究演進脈絡 | ✅ **研究時間軸** + 里程碑偵測 |
+| 需要追蹤研究演進脈絡 | ✅ **研究時間軸 & 脈絡樹** + 重要文獻偵測 + 子議題分支 |
 | 引用上下文不清楚 | ✅ **引用樹** 前向/後向/網路分析 |
 | 無法取得全文 | ✅ **多源全文取得** (Europe PMC, CORE, CrossRef) |
 | 基因/藥物資訊散布不同資料庫 | ✅ **NCBI 延伸** (Gene, PubChem, ClinVar) |
@@ -238,7 +238,7 @@ NCBI_EMAIL=your@email.com uvx pubmed-search-mcp
 1. **詞彙翻譯層** - Agent 自然語言表達，我們翻譯成各資料庫術語 (MeSH, ICD-10, text-mined entities)
 2. **統一搜尋閘道** - 一個 `unified_search()` 呼叫，自動分流到 PubMed/Europe PMC/CORE/OpenAlex
 3. **PICO 工具組** - `parse_pico()` 將臨床問題分解為 P/I/C/O 元素；Agent 再對每個元素呼叫 `generate_search_queries()` 並組合 Boolean 查詢
-4. **研究時間軸** - 自動偵測里程碑（FDA 核准、Phase 3 試驗、指引變更）從發表歷史中重建研究演進
+4. **研究時間軸 & 脈絡樹** - 自動偵測里程碑、多訊號重要文獻評分（引用影響力+多源交叉驗證+引用速度）、按子議題分支可視化研究演進
 5. **引用網路分析** - 從單篇論文建構多層引用樹，繪製完整研究版圖
 6. **完整研究生命週期** - 從搜尋 → 探索 → 全文 → 分析 → 匯出，一站完成
 7. **Agent-First 設計** - 輸出優化機器決策，非人類閱讀
@@ -398,11 +398,11 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS 代理
 | `get_compound_literature` | 取得與化合物相關的 PubMed 文章 |
 | `search_clinvar` | 搜尋 ClinVar 臨床變異 |
 
-### 🕰️ 研究時間軸
+### 🕰️ 研究時間軸 & 脈絡樹
 
 | 工具 | 說明 |
 |------|------|
-| `build_research_timeline` | 建構時間軸，顯示關鍵里程碑（FDA 核准、Phase 3 等） |
+| `build_research_timeline` | 建構時間軸/脈絡樹，支援重要文獻偵測。格式：text, tree, mermaid, mindmap, json |
 | `analyze_timeline_milestones` | 分析里程碑分佈 |
 | `compare_timelines` | 比較多個主題的時間軸 |
 

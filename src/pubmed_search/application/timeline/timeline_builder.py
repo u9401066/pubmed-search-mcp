@@ -16,18 +16,22 @@ Example:
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 from pubmed_search.domain.entities.timeline import (
+    LandmarkScore,
     MilestoneType,
     ResearchTimeline,
     TimelineEvent,
     TimelinePeriod,
 )
 
+from .landmark_scorer import LandmarkScorer, evidence_level_to_score
 from .milestone_detector import MilestoneDetector
 
 if TYPE_CHECKING:
+    from pubmed_search.domain.entities.research_tree import ResearchTree
     from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
 logger = logging.getLogger(__name__)
@@ -82,6 +86,7 @@ class TimelineBuilder:
         self,
         searcher: LiteratureSearcher,
         detector: MilestoneDetector | None = None,
+        scorer: LandmarkScorer | None = None,
     ):
         """
         Initialize the builder.
@@ -89,9 +94,11 @@ class TimelineBuilder:
         Args:
             searcher: LiteratureSearcher instance for PubMed queries
             detector: Optional custom MilestoneDetector
+            scorer: Optional custom LandmarkScorer
         """
         self.searcher = searcher
         self.detector = detector or MilestoneDetector()
+        self.scorer = scorer or LandmarkScorer()
 
     async def build_timeline(
         self,
@@ -102,9 +109,19 @@ class TimelineBuilder:
         max_year: int | None = None,
         sort_by_citations: bool = True,
         auto_periods: bool = True,
+        highlight_landmarks: bool = True,
+        source_counts: dict[str, int] | None = None,
     ) -> ResearchTimeline:
         """
         Build a research timeline for a topic.
+
+        When highlight_landmarks=True (default), uses multi-signal landmark
+        scoring to identify the most important papers:
+        - Field-normalized citation impact (RCR/NIH percentile from iCite)
+        - Milestone pattern detection (regex-based)
+        - Evidence quality (publication type hierarchy)
+        - Citation velocity (citations per year growth)
+        - Multi-source agreement (if source_counts provided)
 
         Args:
             topic: Research topic (drug name, gene, disease, etc.)
@@ -114,9 +131,12 @@ class TimelineBuilder:
             max_year: Filter articles until this year
             sort_by_citations: Sort results by citation count first
             auto_periods: Automatically group into periods
+            highlight_landmarks: Use multi-signal landmark scoring (default: True)
+            source_counts: Optional dict mapping PMID → number of sources
+                           that found this article (from unified search)
 
         Returns:
-            ResearchTimeline with detected milestones
+            ResearchTimeline with detected milestones and landmark scores
         """
         logger.info(f"Building timeline for: {topic}")
 
@@ -137,10 +157,23 @@ class TimelineBuilder:
         if min_year or max_year:
             articles = self._filter_by_year(articles, min_year, max_year)
 
-        # Step 3: Detect milestones
+        # Step 3: Compute landmark scores (if enabled)
+        landmark_map: dict[str, LandmarkScore] = {}
+        if highlight_landmarks and articles:
+            landmark_map = self._compute_landmark_scores(articles, source_counts=source_counts)
+            # Sort by landmark score to prioritize important articles
+            articles = sorted(
+                articles,
+                key=lambda a: landmark_map.get(str(a.get("pmid", "")), LandmarkScore(overall=0.0)).overall,
+                reverse=True,
+            )
+            # Keep top candidates for milestone detection
+            articles = articles[: max_events * 2]
+
+        # Step 4: Detect milestones
         events: list[TimelineEvent] = []
 
-        # Sort for first-report detection (ensure year is int for proper comparison)
+        # Sort for first-report detection (chronological)
         def get_sort_key(a: dict) -> tuple:
             raw_year = a.get("year") or a.get("pub_year") or 9999
             year = int(raw_year) if raw_year else 9999
@@ -153,29 +186,37 @@ class TimelineBuilder:
             event = self.detector.detect_milestone(article, is_first=is_first)
 
             if event:
+                # Attach landmark score if available
+                if event.pmid in landmark_map:
+                    event = replace(event, landmark_score=landmark_map[event.pmid])
                 events.append(event)
             elif include_all:
-                # Include as generic event
-                events.append(self._create_generic_event(article))
+                generic = self._create_generic_event(article)
+                if generic.pmid in landmark_map:
+                    generic = replace(generic, landmark_score=landmark_map[generic.pmid])
+                events.append(generic)
 
             if len(events) >= max_events:
                 break
 
         logger.info(f"Detected {len(events)} timeline events")
 
-        # Step 4: Build timeline
+        # Step 5: Build timeline
+        landmark_count = sum(1 for e in events if e.landmark_score and e.landmark_score.tier == "landmark")
         timeline = ResearchTimeline(
             topic=topic,
             events=events,
             metadata={
                 "total_searched": len(articles),
                 "milestones_detected": len(events),
+                "landmarks_detected": landmark_count,
+                "highlight_landmarks": highlight_landmarks,
                 "min_year": min_year,
                 "max_year": max_year,
             },
         )
 
-        # Step 5: Auto-group into periods if requested
+        # Step 6: Auto-group into periods if requested
         if auto_periods and events:
             timeline.periods = self._create_periods(events)
 
@@ -223,6 +264,45 @@ class TimelineBuilder:
 
         return timeline
 
+    async def build_research_tree(
+        self,
+        topic: str,
+        max_events: int = 50,
+        min_year: int | None = None,
+        max_year: int | None = None,
+        include_all: bool = True,
+    ) -> ResearchTree:
+        """
+        Build a research lineage tree — branching by sub-topics.
+
+        Reuses the full timeline pipeline (search → iCite → milestones →
+        landmark scoring) then organizes events into thematic branches
+        using BranchDetector.
+
+        Args:
+            topic: Research topic
+            max_events: Maximum events to include
+            min_year: Filter from this year
+            max_year: Filter until this year
+            include_all: Include non-milestone articles (recommended for trees
+                         since they fill out branch coverage)
+
+        Returns:
+            ResearchTree with thematic branches
+        """
+        from .branch_detector import build_research_tree as _build_tree
+
+        timeline = await self.build_timeline(
+            topic=topic,
+            max_events=max_events,
+            include_all=include_all,
+            min_year=min_year,
+            max_year=max_year,
+            highlight_landmarks=True,
+        )
+
+        return _build_tree(timeline)
+
     async def _search_topic(
         self,
         topic: str,
@@ -232,33 +312,35 @@ class TimelineBuilder:
         """
         Search for articles on a topic.
 
-        Uses PubMed search with citation-based sorting when available.
+        Uses PubMed search with iCite enrichment. Stores full iCite metrics
+        on each article (not just citation_count) for landmark scoring.
         """
-        # Use searcher to get articles
         try:
             results = await self.searcher.search(topic, limit=max_results)
 
-            # If we want citation sorting and have iCite access
-            if sort_by_citations and results:
+            # Fetch iCite metrics for all articles
+            if results:
                 pmids = [str(r.get("pmid", "")) for r in results if r.get("pmid")]
                 if pmids:
                     try:
-                        # Try to get citation data
                         citation_data = await self.searcher.get_citation_metrics(pmids)
                         if citation_data:
-                            # Map citations to articles (citation_data is dict[pmid, metrics])
-                            citation_map: dict[str, int] = {
-                                pmid_key: metrics.get("citation_count", 0)
-                                for pmid_key, metrics in citation_data.items()
-                            }
                             for article in results:
                                 pmid = str(article.get("pmid", ""))
-                                article["citation_count"] = citation_map.get(pmid, 0)
+                                if pmid in citation_data:
+                                    metrics = citation_data[pmid]
+                                    # Keep full iCite data for landmark scoring
+                                    article["icite"] = metrics
+                                    article["citation_count"] = metrics.get("citation_count", 0)
 
-                            # Sort by citations
-                            results.sort(key=lambda x: x.get("citation_count", 0), reverse=True)
+                            # Sort by citations if requested
+                            if sort_by_citations:
+                                results.sort(
+                                    key=lambda x: x.get("citation_count", 0),
+                                    reverse=True,
+                                )
                     except Exception as e:
-                        logger.debug(f"Citation sorting failed: {e}")
+                        logger.debug(f"iCite enrichment failed: {e}")
 
             return results
 
@@ -370,6 +452,60 @@ class TimelineBuilder:
 
         return month_names.get(month_str.lower())
 
+    def _compute_landmark_scores(
+        self,
+        articles: list[dict[str, Any]],
+        source_counts: dict[str, int] | None = None,
+    ) -> dict[str, LandmarkScore]:
+        """
+        Compute landmark scores for all articles using multi-signal scoring.
+
+        Pre-computes milestone confidence and evidence quality for each article,
+        then feeds all signals into the LandmarkScorer for composite scoring.
+
+        Args:
+            articles: Articles with optional 'icite' field from _search_topic
+            source_counts: Optional PMID → source count mapping
+
+        Returns:
+            Dict mapping PMID → LandmarkScore
+        """
+        # Extract per-article signals
+        icite_data: dict[str, dict[str, Any]] = {}
+        milestone_scores: dict[str, float] = {}
+        evidence_scores: dict[str, float] = {}
+
+        for article in articles:
+            pmid = str(article.get("pmid", ""))
+            if not pmid:
+                continue
+
+            # iCite metrics (already on article from _search_topic)
+            if article.get("icite"):
+                icite_data[pmid] = article["icite"]
+
+            # Pre-compute milestone confidence by running detection
+            event = self.detector.detect_milestone(article, is_first=False)
+            if event:
+                milestone_scores[pmid] = event.confidence_score
+                evidence_scores[pmid] = evidence_level_to_score(event.evidence_level.value)
+            else:
+                # Still compute evidence level from pub type
+                evidence_level = self.detector.infer_evidence_level(article)
+                evidence_scores[pmid] = evidence_level_to_score(evidence_level.value)
+
+        # Run batch scoring
+        scored = self.scorer.score_articles(
+            articles=articles,
+            icite_data=icite_data,
+            source_counts=source_counts or {},
+            milestone_scores=milestone_scores,
+            evidence_scores=evidence_scores,
+        )
+
+        # Build PMID → LandmarkScore mapping
+        return {str(article.get("pmid", "")): score for article, score in scored if article.get("pmid")}
+
     def _create_periods(self, events: list[TimelineEvent]) -> list[TimelinePeriod]:
         """
         Auto-group events into research periods.
@@ -402,20 +538,26 @@ def format_timeline_text(timeline: ResearchTimeline) -> str:
     """
     Format timeline as readable text.
 
-    Useful for agent response formatting.
+    Highlights landmark papers with star ratings and multi-signal scores.
     """
     if not timeline.events:
         return f"No timeline events found for: {timeline.topic}"
 
+    # Header
     lines = [
         f"## Research Timeline: {timeline.topic}",
         f"**Period**: {timeline.year_range[0]} - {timeline.year_range[1]} ({timeline.duration_years} years)"
         if timeline.year_range
         else "",
         f"**Total Events**: {timeline.total_events}",
-        "",
-        "### Milestone Summary",
     ]
+
+    # Landmark summary (if any)
+    landmark_events = timeline.get_landmark_events(min_landmark_score=0.50)
+    if landmark_events:
+        lines.append(f"**Landmark Papers**: {len(landmark_events)} identified via multi-signal scoring")
+
+    lines.extend(["", "### Milestone Summary"])
 
     # Add milestone counts
     for m_type, count in timeline.milestone_summary.items():
@@ -431,10 +573,30 @@ def format_timeline_text(timeline: ResearchTimeline) -> str:
             current_year = event.year
             lines.append(f"\n**{current_year}**")
 
-        confidence_indicator = "⭐" if event.confidence_score >= 0.8 else ""
-        lines.append(
-            f"- [{event.milestone_label}] {event.title[:80]}{'...' if len(event.title) > 80 else ''} "
-            f"(PMID: {event.pmid}) {confidence_indicator}"
-        )
+        # Build event line with landmark indicator
+        parts = []
+
+        # Star rating from landmark score
+        if event.landmark_score and event.landmark_score.stars:
+            parts.append(event.landmark_score.stars)
+
+        parts.append(f"[{event.milestone_label}]")
+        title_text = event.title[:80] + ("..." if len(event.title) > 80 else "")
+        parts.append(title_text)
+        parts.append(f"(PMID: {event.pmid})")
+
+        # Landmark details
+        if event.landmark_score and event.landmark_score.overall >= 0.25:
+            ls = event.landmark_score
+            details: list[str] = [f"Score: {ls.overall:.2f}"]
+            if ls.citation_impact > 0:
+                details.append(f"Impact: {ls.citation_impact:.2f}")
+            if ls.source_agreement > 0.1:
+                details.append(f"Sources: {ls.source_agreement:.2f}")
+            if ls.citation_velocity > 0:
+                details.append(f"Velocity: {ls.citation_velocity:.2f}")
+            parts.append(f"[{' | '.join(details)}]")
+
+        lines.append(f"- {' '.join(parts)}")
 
     return "\n".join(lines)

@@ -126,8 +126,8 @@ uv run pre-commit run --all-files                  # test all hooks manually
 | **commit** | bandit | — | Security scan (medium+ severity) |
 | **commit** | vulture | — | Dead code detection |
 | **commit** | deptry | — | Dependency hygiene check |
-| **commit** | semgrep | — | SAST security analysis |
-| **commit** | mypy | — | Type checks `src/` |
+| **commit** | ~~semgrep~~ | — | *Moved to pre-push (OOM prevention)* |
+| **commit** | ~~mypy~~ | — | *Moved to pre-push (OOM prevention)* |
 | **commit** | async-test-checker | — | Validates async/sync consistency in tests |
 | **commit** | file-hygiene | — | Blocks forbidden temp files |
 | **commit** | commit-size-guard | — | Limits commits to ≤30 files |
@@ -141,6 +141,8 @@ uv run pre-commit run --all-files                  # test all hooks manually
 | **commit** | source-counts-guard | — | Ensures per-source API return counts are displayed |
 | **commit** | todo-scanner | — | Scans TODO/FIXME markers (warning only) |
 | **commit** | evolution-cycle | — | Validates instruction/skill/hook consistency |
+| **push** | mypy | — | Type checks `src/` (~500MB-1GB RAM) |
+| **push** | semgrep | — | SAST security analysis (~300-500MB RAM) |
 | **push** | pytest | — | Runs full test suite (multi-core) |
 
 #### Skipping hooks (when needed)
