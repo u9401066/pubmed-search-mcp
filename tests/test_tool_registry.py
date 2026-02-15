@@ -57,6 +57,7 @@ class TestListRegisteredTools:
             "icd",
             "timeline",
             "image_search",
+            "pipeline",
         }
         assert set(result.keys()) == expected
 
@@ -245,6 +246,8 @@ class TestRegisterAllMcpTools:
                 patch("pubmed_search.presentation.mcp_server.tools.set_session_manager") as mock_set_sm,
                 patch("pubmed_search.presentation.mcp_server.tools.set_strategy_generator") as mock_set_sg,
                 patch("pubmed_search.presentation.mcp_server.prompts.register_prompts") as _mock_prompts,
+                patch("pubmed_search.application.pipeline.store.PipelineStore") as _mock_ps,
+                patch("pubmed_search.presentation.mcp_server.tools.pipeline_tools.set_pipeline_store") as _mock_sps,
             ):
                 stats = register_all_mcp_tools(mcp, searcher, sm, sg)
 
@@ -267,6 +270,8 @@ class TestRegisterAllMcpTools:
             patch("pubmed_search.presentation.mcp_server.tools.set_session_manager"),
             patch("pubmed_search.presentation.mcp_server.tools.set_strategy_generator") as mock_set_sg,
             patch("pubmed_search.presentation.mcp_server.prompts.register_prompts"),
+            patch("pubmed_search.application.pipeline.store.PipelineStore"),
+            patch("pubmed_search.presentation.mcp_server.tools.pipeline_tools.set_pipeline_store"),
         ):
             register_all_mcp_tools(mcp, searcher, sm, strategy_generator=None)
             mock_set_sg.assert_not_called()

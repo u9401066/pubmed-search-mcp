@@ -13,6 +13,9 @@ exc_tb  # noqa: B018
 # ── MCP tool parameters (part of public API, used by AI agents) ──
 include_details  # noqa: B018
 test  # noqa: B018
+cron  # noqa: B018
+diff_mode  # noqa: B018
+notify  # noqa: B018
 
 # ── Script parameters (used by callers but not read in function body) ──
 is_chinese  # noqa: B018
