@@ -1,0 +1,27 @@
+# ============================================================================
+# 探索型 Pipeline：從一篇 Seed Paper 出發的引用網路探索
+# ============================================================================
+# 目的: 從已知的重要論文出發，同時向前（citing）和向後（references）
+#       擴展引用網路，再用 RRF 融合找到最相關的周邊文獻
+#
+# 流程圖:
+#   related ──────┐
+#   citing ────────┤──► merged ──► enriched
+#   references ───┘
+#
+# 種子論文: PMID 37076210 (範例 — 可替換為任何 PMID)
+#
+# 使用方式:
+#   save_pipeline(name="explore_seed_37076210", config=<this>)
+#   unified_search(pipeline="saved:explore_seed_37076210")
+# ============================================================================
+
+template: exploration
+
+params:
+  pmid: "37076210"
+
+output:
+  format: markdown
+  limit: 25
+  ranking: quality

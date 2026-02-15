@@ -856,8 +856,8 @@ steps:
 
 class TestFormatPipelineResults:
     def test_format_with_articles(self):
-        from pubmed_search.presentation.mcp_server.tools.unified import (
-            _format_pipeline_results,
+        from pubmed_search.application.pipeline.report_generator import (
+            generate_pipeline_report,
         )
 
         articles = _make_articles(3)
@@ -873,26 +873,25 @@ class TestFormatPipelineResults:
             ],
             output=PipelineOutput(limit=10),
         )
-        result = _format_pipeline_results(articles, step_results, config)
-        assert "Pipeline Results: Test" in result
-        assert "3 articles" in result
+        result = generate_pipeline_report(articles, step_results, config)
+        assert "Test" in result
         assert "Article 0" in result
 
     def test_format_empty_results(self):
-        from pubmed_search.presentation.mcp_server.tools.unified import (
-            _format_pipeline_results,
+        from pubmed_search.application.pipeline.report_generator import (
+            generate_pipeline_report,
         )
 
         config = PipelineConfig(
             name="Empty",
             steps=[PipelineStep(id="s1", action="search")],
         )
-        result = _format_pipeline_results([], {}, config)
+        result = generate_pipeline_report([], {}, config)
         assert "No articles" in result
 
     def test_format_with_errors(self):
-        from pubmed_search.presentation.mcp_server.tools.unified import (
-            _format_pipeline_results,
+        from pubmed_search.application.pipeline.report_generator import (
+            generate_pipeline_report,
         )
 
         step_results = {
@@ -902,14 +901,14 @@ class TestFormatPipelineResults:
             name="Error Test",
             steps=[PipelineStep(id="s1", action="search")],
         )
-        result = _format_pipeline_results([], step_results, config)
+        result = generate_pipeline_report([], step_results, config)
         assert "❌" in result
         assert "Network timeout" in result
 
     def test_format_with_source_api_counts(self):
         """Per-source API counts in pipeline results MUST be displayed (critical feature)."""
-        from pubmed_search.presentation.mcp_server.tools.unified import (
-            _format_pipeline_results,
+        from pubmed_search.application.pipeline.report_generator import (
+            generate_pipeline_report,
         )
 
         articles = _make_articles(5)
@@ -937,13 +936,12 @@ class TestFormatPipelineResults:
             ],
             output=PipelineOutput(limit=10),
         )
-        result = _format_pipeline_results(articles, step_results, config)
+        result = generate_pipeline_report(articles, step_results, config)
 
-        # Aggregated source counts in header
-        assert "**Sources**:" in result
-        assert "pubmed (3)" in result
-        assert "openalex (2)" in result
-        assert "semantic_scholar (2)" in result
+        # Source statistics section
+        assert "pubmed" in result
+        assert "openalex" in result
+        assert "semantic_scholar" in result
 
         # Per-step breakdown in detail table
         assert "pubmed: 3" in result

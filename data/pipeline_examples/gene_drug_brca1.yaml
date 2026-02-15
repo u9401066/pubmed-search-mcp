@@ -1,0 +1,20 @@
+# ============================================================================
+# Gene-Drug Pipeline：BRCA1 標靶治療文獻掃描
+# ============================================================================
+# 目的: 使用 gene_drug 模板搜尋特定基因的相關治療文獻
+#       適用於精準醫學、藥物基因體學研究
+#
+# 使用方式:
+#   save_pipeline(name="brca1_targeted_therapy", config=<this>)
+#   unified_search(pipeline="saved:brca1_targeted_therapy")
+# ============================================================================
+
+template: gene_drug
+
+params:
+  topic: "BRCA1 targeted therapy PARP inhibitors"
+
+output:
+  format: markdown
+  limit: 20
+  ranking: recency
