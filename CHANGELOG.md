@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Copilot Hooks Integration**: Three-tier parallel pipeline enforcement via GitHub Copilot Hooks
+  - 5 hook events: sessionStart, userPromptSubmitted, preToolUse, postToolUse, sessionEnd
+  - 10 scripts (bash + PowerShell) for cross-platform support
+  - Three-tier strategy: T1 (simple, allow) / T2 (moderate, allow+suggest) / T3 (complex, deny→pipeline)
+  - Quality feedback loop via state files for iterative search improvement
+  - Design document: `docs/COPILOT_HOOKS_PIPELINE_ENFORCEMENT.md`
+- **Deep Research Architecture Analysis**: Competitive analysis of 8 multi-source search repos
+  - Analysis document: `docs/DEEP_RESEARCH_ARCHITECTURE_ANALYSIS.md`
+
+### Fixed
+- **Copilot Hooks encoding/mojibake**: All hook output now ASCII-only (replaced emoji/Chinese with ASCII tags)
+  - `[PIPELINE]` / `[TIP]` / `[WARNING]` replace 🔬 / 💡 / ⚠️
+  - PowerShell scripts force UTF-8 output encoding
+  - All scripts fail-open on errors (`exit 0` instead of `exit 1`)
+  - Added `jq` availability check in all bash scripts
+  - Added `pending_complexity.json` cleanup in session-init/cleanup
+  - Added corrupted state file graceful degradation
+
 ### Planned
 - PRISMA flow tracking (init_prisma_flow, record_screening, get_prisma_diagram)
 - Evidence level classification (Oxford CEBM I-V)
