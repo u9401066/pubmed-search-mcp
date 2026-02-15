@@ -121,7 +121,7 @@ class UnpaywallClient(BaseAPIClient):
             }
         """
         doi = self._normalize_doi(doi)
-        url = f"{UNPAYWALL_API_BASE}/{urllib.parse.quote(doi, safe='')}?email={urllib.parse.quote(self._email)}"
+        url = f"{UNPAYWALL_API_BASE}/{urllib.parse.quote(doi, safe='/')}?email={urllib.parse.quote(self._email, safe='@')}"
 
         data = await self._make_request(url)
         if not data:
