@@ -906,10 +906,48 @@ class TestFormatPipelineResults:
         assert "❌" in result
         assert "Network timeout" in result
 
+    def test_format_with_source_api_counts(self):
+        """Per-source API counts in pipeline results MUST be displayed (critical feature)."""
+        from pubmed_search.presentation.mcp_server.tools.unified import (
+            _format_pipeline_results,
+        )
 
-# =========================================================================
-# RRF Merge
-# =========================================================================
+        articles = _make_articles(5)
+        step_results = {
+            "s1": StepResult(
+                step_id="s1",
+                action="search",
+                articles=articles[:3],
+                metadata={"source_api_counts": {"pubmed": 3, "openalex": 2}},
+            ),
+            "s2": StepResult(
+                step_id="s2",
+                action="search",
+                articles=articles[3:],
+                metadata={"source_api_counts": {"semantic_scholar": 2}},
+            ),
+            "merge": StepResult(step_id="merge", action="merge", articles=articles),
+        }
+        config = PipelineConfig(
+            name="Source Count Test",
+            steps=[
+                PipelineStep(id="s1", action="search"),
+                PipelineStep(id="s2", action="search"),
+                PipelineStep(id="merge", action="merge", inputs=["s1", "s2"]),
+            ],
+            output=PipelineOutput(limit=10),
+        )
+        result = _format_pipeline_results(articles, step_results, config)
+
+        # Aggregated source counts in header
+        assert "**Sources**:" in result
+        assert "pubmed (3)" in result
+        assert "openalex (2)" in result
+        assert "semantic_scholar (2)" in result
+
+        # Per-step breakdown in detail table
+        assert "pubmed: 3" in result
+        assert "openalex: 2" in result
 
 
 class TestRRFMerge:

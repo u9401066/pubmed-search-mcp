@@ -265,6 +265,9 @@ search_clinvar("BRCA1", limit=10)
 - search_biomedical_images: Search biomedical images across Open-i and Europe PMC.
 
 NOTE: 搜尋結果自動暫存，使用 session 工具可隨時取回，不需依賴 Agent 記憶。
+
+NOTE: 每次搜尋結果會顯示各來源的 API 回傳量（如 **Sources**: pubmed (8/500), openalex (5)）。
+這些數字代表每個來源實際回傳的文章數和該來源的總匹配數，是評估搜尋覆蓋率的重要依據。
 """
 
 __all__ = ["SERVER_INSTRUCTIONS"]

@@ -794,7 +794,7 @@ async def _execute_deep_search(
     min_year: int | None,
     max_year: int | None,
     advanced_filters: dict,
-) -> tuple[list[list[UnifiedArticle]], SearchDepthMetrics, int | None]:
+) -> tuple[list[list[UnifiedArticle]], SearchDepthMetrics, int | None, dict[str, tuple[int, int | None]]]:
     """
     Execute true deep search using ALL strategies from SemanticEnhancer.
 
@@ -809,7 +809,7 @@ async def _execute_deep_search(
         advanced_filters: Additional PubMed filters
 
     Returns:
-        Tuple of (all_results, depth_metrics, pubmed_total_count)
+        Tuple of (all_results, depth_metrics, pubmed_total_count, source_api_counts)
     """
     import time
 
@@ -949,7 +949,13 @@ async def _execute_deep_search(
         f"depth score: {metrics.depth_score:.0f}"
     )
 
-    return all_results, metrics, pubmed_total_count
+    # Aggregate per-source API counts from strategies
+    source_api_counts: dict[str, tuple[int, int | None]] = {}
+    for sr in metrics.strategy_results:
+        prev_returned, prev_total = source_api_counts.get(sr.source, (0, None))
+        source_api_counts[sr.source] = (prev_returned + sr.articles_count, prev_total)
+
+    return all_results, metrics, pubmed_total_count, source_api_counts
 
 
 async def _search_europe_pmc(
@@ -1566,8 +1572,15 @@ async def _format_unified_results(
     relaxation_result: RelaxationResult | None = None,
     deep_search_metrics: SearchDepthMetrics | None = None,
     prefetched_trials: list | None = None,
+    source_api_counts: dict[str, tuple[int, int | None]] | None = None,
 ) -> str:
-    """Format unified search results for MCP response."""
+    """Format unified search results for MCP response.
+
+    Args:
+        source_api_counts: Per-source raw API counts {source: (returned, total_available)}.
+            - returned: how many articles the API actually returned to us
+            - total_available: how many total matches the API reports (None if unknown)
+    """
     output_parts: list[str] = []
 
     # Header with analysis summary
@@ -1600,7 +1613,20 @@ async def _format_unified_results(
                 f"估計召回率 {deep_search_metrics.estimated_recall:.0%}"
             )
 
-        output_parts.append(f"**Sources**: {', '.join(stats.by_source.keys())}")
+        # Per-source result counts (critical for agent decision-making)
+        if source_api_counts:
+            # Show detailed per-source API return counts
+            source_parts = []
+            for src, (returned, total) in source_api_counts.items():
+                if total is not None and total > returned:
+                    source_parts.append(f"{src} ({returned}/{total})")
+                else:
+                    source_parts.append(f"{src} ({returned})")
+            output_parts.append(f"**Sources**: {', '.join(source_parts)}")
+        elif stats.by_source:
+            # Fallback: use aggregation stats (pre-dedup per-source counts)
+            source_parts = [f"{src} ({count})" for src, count in stats.by_source.items()]
+            output_parts.append(f"**Sources**: {', '.join(source_parts)}")
 
         # Show total count info with PubMed total
         results_str = f"{stats.unique_articles} unique ({stats.duplicates_removed} duplicates removed)"
@@ -2041,6 +2067,16 @@ def _format_pipeline_results(
     ok_count = sum(1 for r in step_results.values() if isinstance(r, StepResult) and r.ok)
     parts.append(f"**Steps**: {ok_count}/{total} completed")
     parts.append(f"**Total articles**: {len(articles)}")
+
+    # Aggregate per-source API counts from search steps
+    aggregated_source_counts: dict[str, int] = {}
+    for sr in step_results.values():
+        if isinstance(sr, StepResult) and sr.ok and sr.metadata.get("source_api_counts"):
+            for src, count in sr.metadata["source_api_counts"].items():
+                aggregated_source_counts[src] = aggregated_source_counts.get(src, 0) + count
+    if aggregated_source_counts:
+        source_parts = [f"{src} ({count})" for src, count in aggregated_source_counts.items()]
+        parts.append(f"**Sources**: {', '.join(source_parts)}")
     parts.append("")
 
     # Step detail table
@@ -2055,7 +2091,13 @@ def _format_pipeline_results(
         else:
             detail = ""
             if sr.articles:
-                detail = f"{len(sr.articles)} articles"
+                # Show per-source breakdown if available
+                src_counts = sr.metadata.get("source_api_counts")
+                if src_counts:
+                    breakdown = ", ".join(f"{s}: {c}" for s, c in src_counts.items())
+                    detail = f"{len(sr.articles)} articles ({breakdown})"
+                else:
+                    detail = f"{len(sr.articles)} articles"
             elif sr.metadata:
                 keys = ", ".join(sorted(sr.metadata.keys())[:4])
                 detail = f"metadata: {keys}"
@@ -2407,6 +2449,7 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             # === Step 4: Search Each Source (Parallel) ===
             all_results: list[list[UnifiedArticle]] = []
             pubmed_total_count: int | None = None
+            source_api_counts: dict[str, tuple[int, int | None]] = {}
             preprint_results: dict = {}
             deep_search_metrics: SearchDepthMetrics | None = None
 
@@ -2467,6 +2510,7 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                     all_results,
                     deep_search_metrics,
                     pubmed_total_count,
+                    source_api_counts,
                 ) = await _execute_deep_search(
                     searcher,
                     enhanced_query,
@@ -2551,6 +2595,8 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                     name, articles, total_count = result  # type: ignore[misc]
                     if articles:
                         all_results.append(articles)
+                    # Track per-source API counts: (returned, total_available)
+                    source_api_counts[name] = (len(articles), total_count)
                     if name == "pubmed" and total_count is not None:
                         pubmed_total_count = total_count
                     logger.info(
@@ -2676,6 +2722,7 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 relaxation_result=relaxation_result,
                 deep_search_metrics=deep_search_metrics,
                 prefetched_trials=prefetched_trials,
+                source_api_counts=source_api_counts if source_api_counts else None,
             )
 
         except Exception as e:

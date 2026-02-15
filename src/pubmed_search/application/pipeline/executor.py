@@ -204,19 +204,27 @@ class PipelineExecutor:
 
         all_articles: list[UnifiedArticle] = []
         coros: list[Any] = []
+        source_order: list[str] = []
 
         for source in source_list:
             if source == "pubmed" and self._searcher:
                 coros.append(self._search_pubmed(query, limit, min_year, max_year, step.params))
+                source_order.append("pubmed")
             elif source in ("openalex", "semantic_scholar", "europe_pmc", "core"):
                 coros.append(self._search_alternate(source, query, limit, min_year, max_year))
+                source_order.append(source)
 
+        # Track per-source API return counts
+        source_api_counts: dict[str, int] = {}
         outcomes = await asyncio.gather(*coros, return_exceptions=True)
-        for outcome in outcomes:
+        for i, outcome in enumerate(outcomes):
+            src = source_order[i] if i < len(source_order) else "unknown"
             if isinstance(outcome, BaseException):
                 logger.warning("Source search failed in pipeline: %s", outcome)
+                source_api_counts[src] = 0
             else:
                 all_articles.extend(outcome)
+                source_api_counts[src] = len(outcome)
 
         # Deduplicate when multiple sources
         if len(source_list) > 1 and len(all_articles) > 1:
@@ -228,7 +236,13 @@ class PipelineExecutor:
             all_articles, _ = aggregator.aggregate([all_articles])
 
         pmids = [a.pmid for a in all_articles if a.pmid]
-        return StepResult(step_id=step.id, action="search", articles=all_articles, pmids=pmids)
+        return StepResult(
+            step_id=step.id,
+            action="search",
+            articles=all_articles,
+            pmids=pmids,
+            metadata={"source_api_counts": source_api_counts},
+        )
 
     async def _search_pubmed(
         self,

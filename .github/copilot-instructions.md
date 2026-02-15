@@ -87,6 +87,7 @@ uv run pre-commit autoupdate
 - **no-type-ignore-bare** 禁止裸 `# type: ignore` (`scripts/hooks/check_type_ignore.py`)
 - **docstring-tools** MCP 工具必須有文檔字串 (`scripts/hooks/check_docstring_tools.py`)
 - **no-env-inner-layers** 禁止內層 DDD 使用 os.environ (`scripts/hooks/check_env_config.py`)
+- **source-counts-guard** 確保每來源 API 回傳量顯示 (`scripts/hooks/check_source_counts.py`)
 - **todo-scanner** TODO/FIXME 掃描器 (警告, 不阻擋) (`scripts/hooks/check_todo_scanner.py`)
 
 **Push 階段自動檢查：**

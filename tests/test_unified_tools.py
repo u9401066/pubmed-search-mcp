@@ -160,6 +160,86 @@ class TestFormatUnifiedResults:
         result = await _format_unified_results([], analysis, stats, include_analysis=False, include_trials=False)
         assert "No results" in result
 
+    async def test_source_api_counts_displayed(self):
+        """Per-source API return counts MUST be displayed to agents (critical feature)."""
+        analysis = MagicMock(spec=AnalyzedQuery)
+        analysis.original_query = "test query"
+        analysis.complexity = QueryComplexity.SIMPLE
+        analysis.intent = QueryIntent.EXPLORATION
+        analysis.pico = None
+
+        stats = MagicMock(spec=AggregationStats)
+        stats.by_source = {"pubmed": 8, "openalex": 5}
+        stats.unique_articles = 10
+        stats.duplicates_removed = 3
+
+        # With explicit source_api_counts (returned/total)
+        result = await _format_unified_results(
+            [],
+            analysis,
+            stats,
+            include_analysis=True,
+            include_trials=False,
+            source_api_counts={"pubmed": (8, 150), "openalex": (5, None)},
+        )
+        assert "pubmed (8/150)" in result
+        assert "openalex (5)" in result
+
+    async def test_source_counts_fallback_to_by_source(self):
+        """When source_api_counts is None, use stats.by_source with counts."""
+        analysis = MagicMock(spec=AnalyzedQuery)
+        analysis.original_query = "test query"
+        analysis.complexity = QueryComplexity.SIMPLE
+        analysis.intent = QueryIntent.EXPLORATION
+        analysis.pico = None
+
+        stats = MagicMock(spec=AggregationStats)
+        stats.by_source = {"pubmed": 8, "europe_pmc": 5}
+        stats.unique_articles = 10
+        stats.duplicates_removed = 3
+
+        result = await _format_unified_results(
+            [],
+            analysis,
+            stats,
+            include_analysis=True,
+            include_trials=False,
+            source_api_counts=None,
+        )
+        # Should still show counts, not just source names
+        assert "pubmed (8)" in result
+        assert "europe_pmc (5)" in result
+
+    async def test_source_counts_never_names_only(self):
+        """GUARD: Sources line must NEVER show only names without counts."""
+        analysis = MagicMock(spec=AnalyzedQuery)
+        analysis.original_query = "guard test"
+        analysis.complexity = QueryComplexity.MODERATE
+        analysis.intent = QueryIntent.EXPLORATION
+        analysis.pico = None
+
+        stats = MagicMock(spec=AggregationStats)
+        stats.by_source = {"pubmed": 12, "semantic_scholar": 7}
+        stats.unique_articles = 15
+        stats.duplicates_removed = 4
+
+        result = await _format_unified_results(
+            [],
+            analysis,
+            stats,
+            include_analysis=True,
+            include_trials=False,
+        )
+        # Ensure counts appear — NOT just "pubmed, semantic_scholar"
+        assert "**Sources**:" in result
+        sources_line = [line for line in result.split("\\n") if "**Sources**:" in line]
+        if not sources_line:
+            sources_line = [line for line in result.split("\n") if "**Sources**:" in line]
+        assert sources_line, "Sources line must exist in output"
+        # Must contain parenthesized counts
+        line = sources_line[0]
+        assert "(" in line and ")" in line, f"Source counts missing in: {line}"
+
 
 # ============================================================
 # Tool capture and registration
