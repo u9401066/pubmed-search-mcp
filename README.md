@@ -425,7 +425,18 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS proxy for API requests
 | `get_cached_article` | Get article from session cache (no API cost) |
 | `get_session_summary` | Session status overview |
 
-### 👁️ Vision & Image Search
+### � Pipeline Management
+
+| Tool | Description |
+|------|-------------|
+| `save_pipeline` | Save a pipeline config for later reuse (YAML/JSON, auto-validated) |
+| `list_pipelines` | List saved pipelines (filter by tag/scope) |
+| `load_pipeline` | Load pipeline from name or file for review/editing |
+| `delete_pipeline` | Delete pipeline and its execution history |
+| `get_pipeline_history` | View execution history with article diff analysis |
+| `schedule_pipeline` | Schedule periodic execution (Phase 4) |
+
+### �👁️ Vision & Image Search
 
 | Tool | Description |
 |------|-------------|
@@ -596,6 +607,54 @@ unified_search("diabetes treatment")
 # → Preprints from any source automatically filtered out
 ```
 
+### 7️⃣ Pipeline (Reusable Search Plans)
+
+```python
+# Save a template-based pipeline
+save_pipeline(
+    name="icu_sedation_weekly",
+    config="template: pico\nparams:\n  P: ICU patients\n  I: remimazolam\n  C: propofol\n  O: delirium",
+    tags="anesthesia,sedation",
+    description="Weekly ICU sedation monitoring"
+)
+
+# Save a custom DAG pipeline
+save_pipeline(
+    name="brca1_comprehensive",
+    config="""
+steps:
+  - id: expand
+    action: expand
+    params: { topic: BRCA1 breast cancer }
+  - id: pubmed
+    action: search
+    params: { query: BRCA1, sources: pubmed, limit: 50 }
+  - id: expanded
+    action: search
+    inputs: [expand]
+    params: { strategy: mesh, sources: pubmed,openalex, limit: 50 }
+  - id: merged
+    action: merge
+    inputs: [pubmed, expanded]
+    params: { method: rrf }
+  - id: enriched
+    action: metrics
+    inputs: [merged]
+output:
+  limit: 30
+  ranking: quality
+"""
+)
+
+# Execute a saved pipeline
+unified_search(pipeline="saved:icu_sedation_weekly")
+
+# List & manage
+list_pipelines(tag="anesthesia")
+load_pipeline(source="brca1_comprehensive")  # Review YAML
+get_pipeline_history(name="icu_sedation_weekly")  # View past runs
+```
+
 ---
 
 ## 🔍 Search Mode Comparison
@@ -652,6 +711,7 @@ Pre-built workflow guides in `.claude/skills/`, divided into **Usage Skills** (f
 | `pubmed-export-citations` | RIS/BibTeX/CSV export |
 | `pubmed-multi-source-search` | Cross-database unified search |
 | `pubmed-mcp-tools-reference` | Complete tool reference guide |
+| `pipeline-persistence` | Save, load, reuse search plans |
 
 ### 🔧 Development Skills (13) — For Project Contributors
 

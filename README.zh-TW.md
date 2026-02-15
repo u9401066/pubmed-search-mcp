@@ -426,7 +426,18 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS 代理
 | `get_cached_article` | 從 Session 快取取得文章（不消耗 API） |
 | `get_session_summary` | Session 狀態概覽 |
 
-### 👁️ 視覺搜尋與圖片搜尋
+### � Pipeline 管理
+
+| 工具 | 說明 |
+|------|------|
+| `save_pipeline` | 保存 Pipeline 配置供後續重複使用（YAML/JSON，自動驗證） |
+| `list_pipelines` | 列出已保存的 Pipeline（可按標籤/範圍過濾） |
+| `load_pipeline` | 從名稱或檔案載入 Pipeline 以檢視/編輯 |
+| `delete_pipeline` | 刪除 Pipeline 及其執行歷史 |
+| `get_pipeline_history` | 查看執行歷史與文章 diff 分析 |
+| `schedule_pipeline` | 排程定期執行（Phase 4） |
+
+### �👁️ 視覺搜尋與圖片搜尋
 
 | 工具 | 說明 |
 |------|------|
@@ -597,6 +608,54 @@ unified_search("diabetes treatment")
 # → 自動過濾來自任何來源的預印本
 ```
 
+### 7️⃣ Pipeline（可重複使用的搜尋計畫）
+
+```python
+# 保存模板式 pipeline
+save_pipeline(
+    name="icu_sedation_weekly",
+    config="template: pico\nparams:\n  P: ICU patients\n  I: remimazolam\n  C: propofol\n  O: delirium",
+    tags="anesthesia,sedation",
+    description="每週 ICU 鎮靜藥物監控"
+)
+
+# 保存自訂 DAG pipeline
+save_pipeline(
+    name="brca1_comprehensive",
+    config="""
+steps:
+  - id: expand
+    action: expand
+    params: { topic: BRCA1 breast cancer }
+  - id: pubmed
+    action: search
+    params: { query: BRCA1, sources: pubmed, limit: 50 }
+  - id: expanded
+    action: search
+    inputs: [expand]
+    params: { strategy: mesh, sources: pubmed,openalex, limit: 50 }
+  - id: merged
+    action: merge
+    inputs: [pubmed, expanded]
+    params: { method: rrf }
+  - id: enriched
+    action: metrics
+    inputs: [merged]
+output:
+  limit: 30
+  ranking: quality
+"""
+)
+
+# 執行已保存的 pipeline
+unified_search(pipeline="saved:icu_sedation_weekly")
+
+# 管理
+list_pipelines(tag="anesthesia")
+load_pipeline(source="brca1_comprehensive")  # 檢視 YAML
+get_pipeline_history(name="icu_sedation_weekly")  # 查看過去執行
+```
+
 ---
 
 ## 🔍 搜尋模式比較
@@ -640,7 +699,7 @@ unified_search("diabetes treatment")
 
 預建工作流程指南位於 `.claude/skills/`，分為**使用 Skills**（使用 MCP server）和**開發 Skills**（維護專案）：
 
-### 📚 使用 Skills (9) — 給使用此 MCP Server 的 AI Agent
+### 📚 使用 Skills (10) — 給使用此 MCP Server 的 AI Agent
 
 | Skill | 說明 |
 |-------|------|
@@ -653,6 +712,7 @@ unified_search("diabetes treatment")
 | `pubmed-export-citations` | RIS/BibTeX/CSV 匯出 |
 | `pubmed-multi-source-search` | 跨資料庫統一搜尋 |
 | `pubmed-mcp-tools-reference` | 完整工具參考指南 |
+| `pipeline-persistence` | 保存、載入、重複使用搜尋計畫 |
 
 ### 🔧 開發 Skills (13) — 給專案貢獻者
 
