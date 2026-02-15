@@ -215,7 +215,7 @@ class TestAutoRelaxSearch:
             return ([UnifiedArticle(title="Test", primary_source="pubmed")], 1)
 
         with patch(
-            "pubmed_search.presentation.mcp_server.tools.unified._search_pubmed",
+            "pubmed_search.presentation.mcp_server.tools.unified_source_search._search_pubmed",
             side_effect=mock_search,
         ):
             result = await _auto_relax_search(
@@ -235,7 +235,7 @@ class TestAutoRelaxSearch:
     async def test_returns_result_with_all_steps_failed(self, mock_searcher):
         """Should return result with no successful step when all fail."""
         with patch(
-            "pubmed_search.presentation.mcp_server.tools.unified._search_pubmed",
+            "pubmed_search.presentation.mcp_server.tools.unified_source_search._search_pubmed",
             new_callable=AsyncMock,
             return_value=([], None),
         ):
@@ -257,7 +257,7 @@ class TestAutoRelaxSearch:
         from pubmed_search.domain.entities.article import UnifiedArticle
 
         with patch(
-            "pubmed_search.presentation.mcp_server.tools.unified._search_pubmed",
+            "pubmed_search.presentation.mcp_server.tools.unified_source_search._search_pubmed",
             new_callable=AsyncMock,
             return_value=(
                 [UnifiedArticle(title="Test", primary_source="pubmed")],
@@ -281,7 +281,7 @@ class TestAutoRelaxSearch:
     async def test_handles_search_exception(self, mock_searcher):
         """Should handle exceptions during relaxed search gracefully."""
         with patch(
-            "pubmed_search.presentation.mcp_server.tools.unified._search_pubmed",
+            "pubmed_search.presentation.mcp_server.tools.unified_source_search._search_pubmed",
             new_callable=AsyncMock,
             side_effect=Exception("API error"),
         ):

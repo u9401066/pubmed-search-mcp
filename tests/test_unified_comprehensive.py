@@ -345,7 +345,7 @@ class TestSearchOpenAlex:
         """Test _search_openalex with mocked results."""
         from pubmed_search.presentation.mcp_server.tools.unified import _search_openalex
 
-        with patch("pubmed_search.presentation.mcp_server.tools.unified.search_alternate_source") as mock_search:
+        with patch("pubmed_search.presentation.mcp_server.tools.unified_source_search.search_alternate_source") as mock_search:
             mock_search.return_value = [
                 {
                     "openalex_id": "W1234567",
@@ -367,7 +367,7 @@ class TestSearchOpenAlex:
         """Test _search_openalex handles errors."""
         from pubmed_search.presentation.mcp_server.tools.unified import _search_openalex
 
-        with patch("pubmed_search.presentation.mcp_server.tools.unified.search_alternate_source") as mock_search:
+        with patch("pubmed_search.presentation.mcp_server.tools.unified_source_search.search_alternate_source") as mock_search:
             mock_search.side_effect = Exception("OpenAlex error")
 
             articles, total_count = await _search_openalex(
@@ -389,7 +389,7 @@ class TestSearchSemanticScholar:
             _search_semantic_scholar,
         )
 
-        with patch("pubmed_search.presentation.mcp_server.tools.unified.search_alternate_source") as mock_search:
+        with patch("pubmed_search.presentation.mcp_server.tools.unified_source_search.search_alternate_source") as mock_search:
             mock_search.return_value = []
 
             articles, total_count = await _search_semantic_scholar(
@@ -407,7 +407,7 @@ class TestSearchSemanticScholar:
             _search_semantic_scholar,
         )
 
-        with patch("pubmed_search.presentation.mcp_server.tools.unified.search_alternate_source") as mock_search:
+        with patch("pubmed_search.presentation.mcp_server.tools.unified_source_search.search_alternate_source") as mock_search:
             mock_search.side_effect = Exception("S2 error")
 
             articles, total_count = await _search_semantic_scholar(

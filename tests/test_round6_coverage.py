@@ -127,7 +127,7 @@ class TestSearchOpenAlex:
     """Test _search_openalex function."""
 
     @patch(
-        "pubmed_search.presentation.mcp_server.tools.unified.search_alternate_source",
+        "pubmed_search.presentation.mcp_server.tools.unified_source_search.search_alternate_source",
         new_callable=AsyncMock,
     )
     async def test_search_openalex_success(self, mock_search):
@@ -158,7 +158,7 @@ class TestSearchOpenAlex:
         )
 
     @patch(
-        "pubmed_search.presentation.mcp_server.tools.unified.search_alternate_source",
+        "pubmed_search.presentation.mcp_server.tools.unified_source_search.search_alternate_source",
         new_callable=AsyncMock,
     )
     async def test_search_openalex_exception(self, mock_search):
@@ -177,7 +177,7 @@ class TestSearchSemanticScholar:
     """Test _search_semantic_scholar function."""
 
     @patch(
-        "pubmed_search.presentation.mcp_server.tools.unified.search_alternate_source",
+        "pubmed_search.presentation.mcp_server.tools.unified_source_search.search_alternate_source",
         new_callable=AsyncMock,
     )
     async def test_search_s2_success(self, mock_search):
@@ -203,7 +203,7 @@ class TestSearchSemanticScholar:
         mock_search.assert_called_once()
 
     @patch(
-        "pubmed_search.presentation.mcp_server.tools.unified.search_alternate_source",
+        "pubmed_search.presentation.mcp_server.tools.unified_source_search.search_alternate_source",
         new_callable=AsyncMock,
     )
     async def test_search_s2_exception(self, mock_search):
@@ -223,7 +223,7 @@ class TestSearchCore:
     """Test _search_core function."""
 
     @patch(
-        "pubmed_search.presentation.mcp_server.tools.unified.get_core_client",
+        "pubmed_search.presentation.mcp_server.tools.unified_source_search.get_core_client",
     )
     async def test_search_core_success(self, mock_get_client):
         """Test successful CORE search."""
@@ -261,7 +261,7 @@ class TestSearchCore:
         )
 
     @patch(
-        "pubmed_search.presentation.mcp_server.tools.unified.get_core_client",
+        "pubmed_search.presentation.mcp_server.tools.unified_source_search.get_core_client",
     )
     async def test_search_core_exception(self, mock_get_client):
         """Test CORE search handles exception."""
@@ -277,7 +277,7 @@ class TestSearchCore:
         assert total is None
 
     @patch(
-        "pubmed_search.presentation.mcp_server.tools.unified.get_core_client",
+        "pubmed_search.presentation.mcp_server.tools.unified_source_search.get_core_client",
     )
     async def test_search_core_empty_results(self, mock_get_client):
         """Test CORE search with no results."""
@@ -296,7 +296,7 @@ class TestSearchCore:
 class TestEnrichWithCrossRef:
     """Test _enrich_with_crossref function."""
 
-    @patch("pubmed_search.presentation.mcp_server.tools.unified.get_crossref_client")
+    @patch("pubmed_search.presentation.mcp_server.tools.unified_enrichment.get_crossref_client")
     async def test_enrich_no_articles(self, mock_get_client):
         """Test enrichment with empty list."""
         from pubmed_search.presentation.mcp_server.tools.unified import (
@@ -307,7 +307,7 @@ class TestEnrichWithCrossRef:
         # Function exits early after getting client, no work calls
         mock_get_client.assert_called_once()
 
-    @patch("pubmed_search.presentation.mcp_server.tools.unified.get_crossref_client")
+    @patch("pubmed_search.presentation.mcp_server.tools.unified_enrichment.get_crossref_client")
     async def test_enrich_no_doi(self, mock_get_client):
         """Test enrichment skips articles without DOI."""
         from pubmed_search.domain.entities.article import UnifiedArticle
@@ -320,7 +320,7 @@ class TestEnrichWithCrossRef:
         await _enrich_with_crossref([article])
         mock_get_client.assert_called_once()
 
-    @patch("pubmed_search.presentation.mcp_server.tools.unified.get_crossref_client")
+    @patch("pubmed_search.presentation.mcp_server.tools.unified_enrichment.get_crossref_client")
     async def test_enrich_with_metrics(self, mock_get_client):
         """Test enrichment skips articles that already have metrics."""
         from pubmed_search.domain.entities.article import (
@@ -342,7 +342,7 @@ class TestEnrichWithCrossRef:
         await _enrich_with_crossref([article])
         mock_get_client.assert_called_once()
 
-    @patch("pubmed_search.presentation.mcp_server.tools.unified.get_crossref_client")
+    @patch("pubmed_search.presentation.mcp_server.tools.unified_enrichment.get_crossref_client")
     async def test_enrich_crossref_success(self, mock_get_client):
         """Test successful CrossRef enrichment."""
         from pubmed_search.domain.entities.article import UnifiedArticle
@@ -365,7 +365,7 @@ class TestEnrichWithCrossRef:
         await _enrich_with_crossref([article])
         mock_client.get_work.assert_called()
 
-    @patch("pubmed_search.presentation.mcp_server.tools.unified.get_crossref_client")
+    @patch("pubmed_search.presentation.mcp_server.tools.unified_enrichment.get_crossref_client")
     async def test_enrich_crossref_exception(self, mock_get_client):
         """Test CrossRef enrichment handles exception."""
         from pubmed_search.domain.entities.article import UnifiedArticle
@@ -384,7 +384,7 @@ class TestEnrichWithCrossRef:
 class TestEnrichWithUnpaywall:
     """Test _enrich_with_unpaywall function."""
 
-    @patch("pubmed_search.presentation.mcp_server.tools.unified.get_unpaywall_client")
+    @patch("pubmed_search.presentation.mcp_server.tools.unified_enrichment.get_unpaywall_client")
     async def test_enrich_no_articles(self, mock_get_client):
         """Test enrichment with empty list."""
         from pubmed_search.presentation.mcp_server.tools.unified import (
@@ -395,7 +395,7 @@ class TestEnrichWithUnpaywall:
         # Function exits early after getting client, no work calls
         mock_get_client.assert_called_once()
 
-    @patch("pubmed_search.presentation.mcp_server.tools.unified.get_unpaywall_client")
+    @patch("pubmed_search.presentation.mcp_server.tools.unified_enrichment.get_unpaywall_client")
     async def test_enrich_already_oa(self, mock_get_client):
         """Test enrichment skips articles that already have OA."""
         from pubmed_search.domain.entities.article import UnifiedArticle
@@ -414,7 +414,7 @@ class TestEnrichWithUnpaywall:
         await _enrich_with_unpaywall([article])
         mock_get_client.assert_called_once()
 
-    @patch("pubmed_search.presentation.mcp_server.tools.unified.get_unpaywall_client")
+    @patch("pubmed_search.presentation.mcp_server.tools.unified_enrichment.get_unpaywall_client")
     async def test_enrich_unpaywall_success(self, mock_get_client):
         """Test successful Unpaywall enrichment."""
         from pubmed_search.domain.entities.article import UnifiedArticle
@@ -438,7 +438,7 @@ class TestEnrichWithUnpaywall:
 
         assert article.is_open_access is True
 
-    @patch("pubmed_search.presentation.mcp_server.tools.unified.get_unpaywall_client")
+    @patch("pubmed_search.presentation.mcp_server.tools.unified_enrichment.get_unpaywall_client")
     async def test_enrich_unpaywall_exception(self, mock_get_client):
         """Test Unpaywall enrichment handles exception."""
         from pubmed_search.domain.entities.article import UnifiedArticle
@@ -588,7 +588,7 @@ class TestICDCodeDetection:
         assert expanded == query
         assert matches == []
 
-    @patch("pubmed_search.presentation.mcp_server.tools.unified.lookup_icd_to_mesh")
+    @patch("pubmed_search.presentation.mcp_server.tools.unified_helpers.lookup_icd_to_mesh")
     async def test_icd10_code(self, mock_lookup):
         """Test ICD-10 code detection."""
         from pubmed_search.presentation.mcp_server.tools.unified import (
@@ -607,7 +607,7 @@ class TestICDCodeDetection:
         assert matches[0]["code"] == "E11"
         assert matches[0]["type"] == "ICD-10"
 
-    @patch("pubmed_search.presentation.mcp_server.tools.unified.lookup_icd_to_mesh")
+    @patch("pubmed_search.presentation.mcp_server.tools.unified_helpers.lookup_icd_to_mesh")
     async def test_icd9_code(self, mock_lookup):
         """Test ICD-9 code detection."""
         from pubmed_search.presentation.mcp_server.tools.unified import (
@@ -622,7 +622,7 @@ class TestICDCodeDetection:
         assert len(matches) == 1
         assert matches[0]["type"] == "ICD-9"
 
-    @patch("pubmed_search.presentation.mcp_server.tools.unified.lookup_icd_to_mesh")
+    @patch("pubmed_search.presentation.mcp_server.tools.unified_helpers.lookup_icd_to_mesh")
     async def test_icd_no_mesh_match(self, mock_lookup):
         """Test ICD code with no MeSH match."""
         from pubmed_search.presentation.mcp_server.tools.unified import (

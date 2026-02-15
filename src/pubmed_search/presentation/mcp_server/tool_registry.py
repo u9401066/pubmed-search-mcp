@@ -185,7 +185,23 @@ def register_all_mcp_tools(
         if session_manager.data_dir
         else str(__import__("pathlib").Path.home() / ".pubmed-search-mcp")
     )
-    pipeline_store = PipelineStore(global_data_dir=data_dir)
+
+    # Detect workspace directory for workspace-scoped pipelines & reports
+    import os as _os
+
+    workspace_dir = _os.environ.get("PUBMED_WORKSPACE_DIR") or None
+    if not workspace_dir:
+        # Fallback: use CWD if it looks like a project root
+        _cwd = __import__("pathlib").Path.cwd()
+        _markers = (".git", "pyproject.toml", "package.json", ".pubmed-search")
+        if any((_cwd / m).exists() for m in _markers):
+            workspace_dir = str(_cwd)
+            logger.info("Auto-detected workspace directory: %s", workspace_dir)
+
+    pipeline_store = PipelineStore(
+        global_data_dir=data_dir,
+        workspace_dir=workspace_dir,
+    )
     set_pipeline_store(pipeline_store)
 
     stats = {}

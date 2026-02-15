@@ -241,7 +241,7 @@ repos:
         entry: uv run python scripts/hooks/check_source_counts.py
         language: system
         pass_filenames: false
-        files: ^(src/pubmed_search/presentation/mcp_server/tools/unified\.py|tests/test_unified_tools\.py|tests/test_pipeline\.py)$
+        files: ^(src/pubmed_search/presentation/mcp_server/tools/unified(_formatting)?\.py|tests/test_unified_tools\.py|tests/test_pipeline\.py)$
         # Ensures per-source API return counts are always displayed
         # to the agent (critical for search coverage decisions)
 

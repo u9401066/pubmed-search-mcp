@@ -366,7 +366,7 @@ class TestEnrichWithJournalMetrics:
         mock_client.get_sources_batch = AsyncMock(return_value=mock_source_data)
 
         with patch(
-            "pubmed_search.presentation.mcp_server.tools.unified.get_openalex_client",
+            "pubmed_search.presentation.mcp_server.tools.unified_enrichment.get_openalex_client",
             return_value=mock_client,
         ):
             await _enrich_with_journal_metrics(articles_with_openalex_source)
@@ -408,7 +408,7 @@ class TestEnrichWithJournalMetrics:
         mock_client.get_sources_batch = AsyncMock(return_value=mock_source_data)
 
         with patch(
-            "pubmed_search.presentation.mcp_server.tools.unified.get_openalex_client",
+            "pubmed_search.presentation.mcp_server.tools.unified_enrichment.get_openalex_client",
             return_value=mock_client,
         ):
             await _enrich_with_journal_metrics(articles)
@@ -433,7 +433,7 @@ class TestEnrichWithJournalMetrics:
         mock_client.get_sources_batch = AsyncMock(return_value={})
 
         with patch(
-            "pubmed_search.presentation.mcp_server.tools.unified.get_openalex_client",
+            "pubmed_search.presentation.mcp_server.tools.unified_enrichment.get_openalex_client",
             return_value=mock_client,
         ):
             await _enrich_with_journal_metrics(articles)
@@ -464,7 +464,7 @@ class TestEnrichWithJournalMetrics:
         mock_client.get_sources_batch = AsyncMock(side_effect=Exception("API down"))
 
         with patch(
-            "pubmed_search.presentation.mcp_server.tools.unified.get_openalex_client",
+            "pubmed_search.presentation.mcp_server.tools.unified_enrichment.get_openalex_client",
             return_value=mock_client,
         ):
             # Should not raise
@@ -495,7 +495,7 @@ class TestEnrichWithJournalMetrics:
         mock_client.get_sources_batch = AsyncMock(return_value=mock_source_data)
 
         with patch(
-            "pubmed_search.presentation.mcp_server.tools.unified.get_openalex_client",
+            "pubmed_search.presentation.mcp_server.tools.unified_enrichment.get_openalex_client",
             return_value=mock_client,
         ):
             await _enrich_with_journal_metrics(articles)
@@ -515,7 +515,7 @@ class TestEnrichWithJournalMetrics:
 
         mock_client = AsyncMock()
         with patch(
-            "pubmed_search.presentation.mcp_server.tools.unified.get_openalex_client",
+            "pubmed_search.presentation.mcp_server.tools.unified_enrichment.get_openalex_client",
             return_value=mock_client,
         ):
             await _enrich_with_journal_metrics([])
@@ -545,7 +545,7 @@ class TestEnrichWithJournalMetrics:
         mock_client.get_sources_batch = AsyncMock(return_value={})
 
         with patch(
-            "pubmed_search.presentation.mcp_server.tools.unified.get_openalex_client",
+            "pubmed_search.presentation.mcp_server.tools.unified_enrichment.get_openalex_client",
             return_value=mock_client,
         ):
             await _enrich_with_journal_metrics(articles)

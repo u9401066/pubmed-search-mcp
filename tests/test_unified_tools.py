@@ -38,7 +38,7 @@ class TestDetectAndExpandIcdCodes:
 
     async def test_icd10_code_detected(self):
         with patch(
-            "pubmed_search.presentation.mcp_server.tools.unified.lookup_icd_to_mesh",
+            "pubmed_search.presentation.mcp_server.tools.unified_helpers.lookup_icd_to_mesh",
             return_value={"mesh": "Diabetes Mellitus, Type 2", "description": "T2DM"},
         ):
             expanded, matches = detect_and_expand_icd_codes("E11 complications")
@@ -48,7 +48,7 @@ class TestDetectAndExpandIcdCodes:
 
     async def test_no_mapping_found(self):
         with patch(
-            "pubmed_search.presentation.mcp_server.tools.unified.lookup_icd_to_mesh",
+            "pubmed_search.presentation.mcp_server.tools.unified_helpers.lookup_icd_to_mesh",
             return_value=None,
         ):
             expanded, matches = detect_and_expand_icd_codes("E11 complications")

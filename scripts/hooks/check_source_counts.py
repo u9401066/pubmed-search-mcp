@@ -3,7 +3,7 @@
 Pre-commit hook: Guard per-source API count display in search results.
 
 Auto-fix:  ❌ No — requires correct implementation of count tracking.
-Scope:     src/pubmed_search/presentation/mcp_server/tools/unified.py
+Scope:     src/pubmed_search/presentation/mcp_server/tools/unified_formatting.py
 
 Why it matters:
   Per-source API return counts (e.g., "pubmed (8/500), openalex (5)")
@@ -35,9 +35,12 @@ if sys.stdout.encoding and sys.stdout.encoding.lower().startswith("cp"):
 # Configuration
 # ─────────────────────────────────────────────────────────────
 
+# After refactoring, _format_unified_results() lives in unified_formatting.py
+# while **Sources** display logic may span both files.
+FORMATTING_PY = Path("src/pubmed_search/presentation/mcp_server/tools/unified_formatting.py")
 UNIFIED_PY = Path("src/pubmed_search/presentation/mcp_server/tools/unified.py")
 
-# Patterns that MUST exist in unified.py
+# Patterns that MUST exist in the formatting module or unified.py
 REQUIRED_PATTERNS = [
     # The format function must accept source_api_counts
     "source_api_counts",
@@ -64,7 +67,7 @@ def check_format_function_signature(tree: ast.Module) -> list[str]:
                         f"  Line {node.lineno}: _format_unified_results() missing 'source_api_counts' parameter"
                     )
                 return errors
-    errors.append("  _format_unified_results() function not found in unified.py")
+    errors.append("  _format_unified_results() function not found in unified_formatting.py")
     return errors
 
 
@@ -74,7 +77,7 @@ def check_source_display_logic(content: str) -> list[str]:
 
     # Must have Sources display
     if "**Sources**" not in content:
-        errors.append("  Missing '**Sources**' display in unified.py")
+        errors.append("  Missing '**Sources**' display in formatting module")
 
     # Must NOT have the old pattern of showing only source names without counts
     # Old broken pattern: stats.by_source.keys()  (loses count values)
@@ -102,11 +105,13 @@ def check_guard_tests() -> list[str]:
 
 
 def main() -> int:
-    if not UNIFIED_PY.exists():
-        print("source-counts-guard: unified.py not found, skipping")
+    # After refactoring, function definitions are in unified_formatting.py
+    target_file = FORMATTING_PY if FORMATTING_PY.exists() else UNIFIED_PY
+    if not target_file.exists():
+        print("source-counts-guard: formatting module not found, skipping")
         return 0
 
-    content = UNIFIED_PY.read_text(encoding="utf-8")
+    content = target_file.read_text(encoding="utf-8")
     tree = ast.parse(content)
     all_errors: list[str] = []
 

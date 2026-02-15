@@ -16,6 +16,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.4.1] - 2026-02-15
+
+### Changed
+- **unified.py modular split**: 2802→720 lines (74% reduction)
+  - `unified_pipeline.py` — Pipeline execution (~195 lines)
+  - `unified_helpers.py` — ICD detection, dispatch strategy, dataclasses (~545 lines)
+  - `unified_source_search.py` — Multi-source search + auto-relaxation (~387 lines)
+  - `unified_enrichment.py` — CrossRef/Unpaywall/journal metrics enrichment (~363 lines)
+  - `unified_formatting.py` — Markdown & JSON result formatting (~349 lines)
+  - All 27 symbols re-exported via `__all__` for backward compatibility
+
+### Added
+- **Pipeline report auto-save**: Reports automatically saved to workspace `.pubmed-search/reports/`
+  - `PipelineStore.save_report()` with dual-scope (workspace + global) support
+  - Workspace auto-detection via `.git`/`pyproject.toml` markers
+
+### Fixed
+- **source-counts-guard hook**: Updated to scan `unified_formatting.py` (where `_format_unified_results` now lives)
+- **Test patch targets**: 6 test files updated to patch functions at their actual module location
+
+---
+
 ## [0.4.0] - 2026-02-15
 
 ### Added

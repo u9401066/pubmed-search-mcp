@@ -550,6 +550,39 @@ class PipelineStore:
 
     # ── Utility ──────────────────────────────────────────────────────────
 
+    def save_report(
+        self,
+        name: str,
+        run_id: str,
+        report_markdown: str,
+    ) -> Path:
+        """Save a pipeline execution report as Markdown alongside the run record.
+
+        The report is saved to:
+        - Workspace: {workspace}/.pubmed-search/pipeline_reports/{name}/{run_id}.md
+        - Global:    ~/.pubmed-search-mcp/pipeline_reports/{name}/{run_id}.md
+
+        Returns:
+            Path to the saved report file.
+        """
+        scope = self._find_pipeline_scope(name)
+        reports_dir = self._reports_dir_for(scope) / name
+        reports_dir.mkdir(parents=True, exist_ok=True)
+
+        report_path = reports_dir / f"{run_id}.md"
+        report_path.write_text(report_markdown, encoding="utf-8")
+
+        logger.info("Saved report for pipeline '%s' run '%s' at %s", name, run_id, report_path)
+        return report_path
+
+    def _reports_dir_for(self, scope: PipelineScope) -> Path:
+        """Get the reports directory for a specific scope."""
+        if scope == PipelineScope.WORKSPACE:
+            if not self._workspace_dir:
+                return self._global_dir / "pipeline_reports"
+            return self._workspace_dir / ".pubmed-search" / "pipeline_reports"
+        return self._global_dir / "pipeline_reports"
+
     def exists(self, name: str) -> bool:
         """Check if a pipeline exists in any scope."""
         name = name.strip().lower()
