@@ -697,14 +697,42 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             if include_similarity_scores:
                 _enrich_with_similarity_scores(ranked, query)
 
-            # === Step 8.6: Record to Session ===
+            # === Step 8.6: Source Disagreement Analysis ===
+            source_disagreement = None
+            if len(source_api_counts) > 1:
+                from pubmed_search.application.search.ranking_algorithms import (
+                    analyze_source_disagreement,
+                )
+
+                source_disagreement = analyze_source_disagreement(ranked)
+
+            # === Step 8.7: Reproducibility Score ===
+            from pubmed_search.application.search.reproducibility import (
+                calculate_reproducibility,
+            )
+
+            sources_queried_list = list(source_api_counts.keys()) if source_api_counts else [s for s in dispatch_sources if s != "crossref"]
+            sources_responded_list = [s for s in sources_queried_list if source_api_counts.get(s, (0, None))[0] > 0] if source_api_counts else sources_queried_list
+            reproducibility = calculate_reproducibility(
+                query=query,
+                sources_queried=sources_queried_list,
+                sources_responded=sources_responded_list,
+                articles=ranked,
+                has_source_counts=bool(source_api_counts),
+            )
+
+            # === Step 8.8: Record to Session ===
             _record_search_only(ranked, analysis.original_query)
 
             # === Step 9: Format Output ===
             if output_format == "json":
                 if clinical_trials_task:
                     clinical_trials_task.cancel()
-                return _format_as_json(ranked, analysis, stats, relaxation_result, deep_search_metrics)
+                return _format_as_json(
+                    ranked, analysis, stats, relaxation_result, deep_search_metrics,
+                    source_disagreement=source_disagreement,
+                    reproducibility_score=reproducibility,
+                )
             # Collect pre-fetched clinical trials
             prefetched_trials: list | None = None
             if clinical_trials_task:
@@ -728,6 +756,8 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 deep_search_metrics=deep_search_metrics,
                 prefetched_trials=prefetched_trials,
                 source_api_counts=source_api_counts if source_api_counts else None,
+                source_disagreement=source_disagreement,
+                reproducibility_score=reproducibility,
             )
 
         except Exception as e:

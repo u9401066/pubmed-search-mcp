@@ -16,6 +16,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.4.2] - 2026-02-15
+
+### Added
+
+- **BM25 Okapi relevance scoring** (`ranking_algorithms.py`)
+  - Field-specific boosting: title (2×), MeSH/keywords (1.5×)
+  - Micro-corpus construction from search result set
+  - Normalized scoring for cross-query comparability
+- **Reciprocal Rank Fusion (RRF)** for multi-dimension score fusion
+  - Combines BM25, citation, recency, source authority rankings
+  - Per-article dimension contribution diagnostics
+  - k=60 (Cormack et al., 2009 TREC-optimal)
+- **Maximal Marginal Relevance (MMR)** for result diversification
+  - MeSH/keyword Jaccard similarity (no ML embeddings needed)
+  - Configurable λ parameter (relevance vs diversity balance)
+- **Source Disagreement Analysis** (novel contribution)
+  - Source Agreement Score (SAS): pairwise overlap coefficient
+  - Source Complementarity: fraction of unique-source articles
+  - Per-source exclusive findings count
+  - Integrated into unified search Markdown & JSON output
+- **Reproducibility Score** (novel contribution)
+  - 5-component weighted composite: deterministic (0.25), query formality (0.20), source coverage (0.20), result stability (0.15), audit completeness (0.20)
+  - Grade system A-F for human interpretation
+  - Query feature detection: MeSH tags, Boolean operators, field tags, date restrictions
+  - Source stability tiers (PubMed 0.95 → CORE 0.70)
+  - Integrated into unified search Markdown & JSON output
+- **86 new tests** for all algorithms (BM25, RRF, MMR, Source Disagreement, Reproducibility)
+
+### Changed
+
+- `ResultAggregator.rank()` rewritten with BM25+RRF+MMR pipeline
+  - `RankingConfig` extended with `use_bm25`, `use_rrf`, `use_mmr`, `mmr_lambda` fields
+  - Original weighted-sum fallback preserved when BM25/RRF disabled
+- Unified search output now includes Source Agreement Analysis and Reproducibility Score sections
+
+---
+
 ## [0.4.1] - 2026-02-15
 
 ### Changed

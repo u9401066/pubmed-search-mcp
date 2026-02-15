@@ -13,6 +13,8 @@ import json
 import logging
 
 from pubmed_search.application.search.query_analyzer import AnalyzedQuery
+from pubmed_search.application.search.ranking_algorithms import SourceDisagreement
+from pubmed_search.application.search.reproducibility import ReproducibilityScore
 from pubmed_search.application.search.result_aggregator import AggregationStats
 from pubmed_search.domain.entities.article import UnifiedArticle
 from pubmed_search.infrastructure.sources.openurl import (
@@ -48,6 +50,8 @@ async def _format_unified_results(
     deep_search_metrics: SearchDepthMetrics | None = None,
     prefetched_trials: list | None = None,
     source_api_counts: dict[str, tuple[int, int | None]] | None = None,
+    source_disagreement: SourceDisagreement | None = None,
+    reproducibility_score: ReproducibilityScore | None = None,
 ) -> str:
     """Format unified search results for MCP response.
 
@@ -272,6 +276,55 @@ async def _format_unified_results(
         output_parts.append(f"\n*Sources: {', '.join(sources)}*")
         output_parts.append("")
 
+    # === Source Disagreement Analysis Section ===
+    if source_disagreement and len(source_disagreement.per_source_unique) > 1:
+        output_parts.append("\n---")
+        output_parts.append("\n## 📊 Source Agreement Analysis\n")
+        sas = source_disagreement.source_agreement_score
+        sas_label = "High" if sas >= 0.7 else ("Moderate" if sas >= 0.4 else "Low")
+        output_parts.append(
+            f"**Source Agreement Score (SAS)**: {sas:.2f} ({sas_label})"
+        )
+        output_parts.append(
+            f"**Complementarity**: {source_disagreement.source_complementarity:.0%} "
+            f"({source_disagreement.single_source_articles} single-source / "
+            f"{source_disagreement.cross_source_articles} cross-source)"
+        )
+        if source_disagreement.per_source_unique:
+            unique_parts = [
+                f"{src}: {cnt}" for src, cnt in source_disagreement.per_source_unique.items() if cnt > 0
+            ]
+            if unique_parts:
+                output_parts.append(f"**Exclusive findings**: {', '.join(unique_parts)}")
+        if source_disagreement.rank_correlation:
+            corr_parts = [
+                f"{pair}: {val:.2f}" for pair, val in source_disagreement.rank_correlation.items()
+            ]
+            output_parts.append(f"**Pairwise overlap**: {', '.join(corr_parts)}")
+        output_parts.append("")
+
+    # === Reproducibility Score Section ===
+    if reproducibility_score:
+        output_parts.append("\n---")
+        output_parts.append("\n## 🔄 Reproducibility Score\n")
+        rs = reproducibility_score
+        output_parts.append(
+            f"**Grade**: {rs.grade} ({rs.overall_score:.0%})"
+        )
+        det_icon = "✅" if rs.deterministic else "⚠️"
+        output_parts.append(
+            f"| Component | Score |\n"
+            f"|-----------|-------|\n"
+            f"| {det_icon} Deterministic | {'Yes' if rs.deterministic else 'No (LLM/sampling)'} |\n"
+            f"| Query Formality | {rs.query_formality:.0%} |\n"
+            f"| Source Coverage | {rs.source_coverage:.0%} |\n"
+            f"| Result Stability | {rs.result_stability:.0%} |\n"
+            f"| Audit Completeness | {rs.audit_completeness:.0%} |"
+        )
+        if rs.sources_failed:
+            output_parts.append(f"\n**⚠️ Failed sources**: {', '.join(rs.sources_failed)}")
+        output_parts.append("")
+
     # === Preprint Results Section ===
     if preprint_results and preprint_results.get("total", 0) > 0:
         output_parts.append("\n---")
@@ -319,6 +372,8 @@ def _format_as_json(
     stats: AggregationStats,
     relaxation_result: RelaxationResult | None = None,
     deep_search_metrics: SearchDepthMetrics | None = None,
+    source_disagreement: SourceDisagreement | None = None,
+    reproducibility_score: ReproducibilityScore | None = None,
 ) -> str:
     """Format results as JSON for programmatic access."""
     result = {
@@ -388,5 +443,13 @@ def _format_as_json(
                 for s in relaxation_result.steps_tried
             ],
         }
+
+    # Source disagreement analysis
+    if source_disagreement:
+        result["source_disagreement"] = source_disagreement.to_dict()
+
+    # Reproducibility score
+    if reproducibility_score:
+        result["reproducibility"] = reproducibility_score.to_dict()
 
     return json.dumps(result, ensure_ascii=False, indent=2)

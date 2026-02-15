@@ -41,6 +41,19 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from pubmed_search.domain.entities.article import UnifiedArticle
 
+# Lazy imports for ranking algorithms (avoid circular)
+_ranking_algorithms = None
+
+
+def _get_ranking_algorithms():
+    """Lazy import ranking_algorithms module."""
+    global _ranking_algorithms
+    if _ranking_algorithms is None:
+        from pubmed_search.application.search import ranking_algorithms as _ra
+
+        _ranking_algorithms = _ra
+    return _ranking_algorithms
+
 # Lazy import to avoid circular dependency
 _UnifiedArticle = None
 
@@ -173,6 +186,12 @@ class RankingConfig:
 
     # Phase 3: Entity context for entity_match scoring
     matched_entities: list[str] = field(default_factory=list)
+
+    # === v0.4.2: Advanced ranking algorithms ===
+    use_bm25: bool = True  # Use BM25 for relevance (replaces term overlap)
+    use_rrf: bool = True  # Use Reciprocal Rank Fusion for score combination
+    use_mmr: bool = False  # Use MMR for diversity (opt-in)
+    mmr_lambda: float = 0.7  # MMR relevance/diversity balance (1.0=pure relevance)
 
     @classmethod
     def default(cls) -> RankingConfig:
@@ -433,6 +452,12 @@ class ResultAggregator:
         """
         Rank articles using multi-dimensional scoring.
 
+        v0.4.2 ranking pipeline:
+        1. BM25 relevance scoring (replaces term-overlap if enabled)
+        2. Calculate all dimension scores (quality, recency, impact, etc.)
+        3. RRF fusion across dimensions (replaces weighted sum if enabled)
+        4. MMR diversification (optional post-processing)
+
         Args:
             articles: Articles to rank
             config: Ranking configuration (uses default if not provided)
@@ -443,32 +468,93 @@ class ResultAggregator:
         """
         config = config or self._config
         weights = config.normalized_weights()
+        ra = _get_ranking_algorithms()
 
-        # Calculate scores for each article
+        if not articles:
+            return []
+
+        # === Step 1: BM25 corpus statistics (if enabled) ===
+        bm25_corpus = None
+        bm25_scores: dict[str, float] = {}
+        if config.use_bm25 and query and ra:
+            bm25_corpus = ra.BM25Corpus.from_articles(articles)
+            # Pre-compute raw BM25 scores for all articles
+            for article in articles:
+                key = ra._article_key(article)
+                bm25_scores[key] = ra.bm25_score(article, query, bm25_corpus)
+            max_bm25 = max(bm25_scores.values()) if bm25_scores else 1.0
+        else:
+            max_bm25 = 1.0
+
+        # === Step 2: Calculate dimension scores for each article ===
+        article_dim_scores: dict[str, dict[str, float]] = {}
         for article in articles:
+            key = ra._article_key(article) if ra else (article.pmid or article.doi or article.title)
             scores = self._calculate_dimension_scores(article, config, query)
 
-            # Calculate weighted final score (including entity_match)
-            final_score = (
-                scores.get("relevance", 0.5) * weights["relevance"]
-                + scores.get("quality", 0.5) * weights["quality"]
-                + scores.get("recency", 0.5) * weights["recency"]
-                + scores.get("impact", 0.5) * weights["impact"]
-                + scores.get("source_trust", 0.5) * weights["source_trust"]
-                + scores.get("entity_match", 0.5) * weights["entity_match"]
-            )
+            # Replace relevance with BM25 if enabled
+            if config.use_bm25 and query and ra and max_bm25 > 0:
+                raw_bm25 = bm25_scores.get(key, 0.0)
+                scores["relevance"] = min(raw_bm25 / max_bm25, 1.0)
 
-            # Store scores in article (UnifiedArticle has these fields)
-            article.ranking_score = final_score
+            article_dim_scores[key] = scores
+
+            # Store individual scores on article
             article.relevance_score = scores.get("relevance", 0.5)
             article.quality_score = scores.get("quality", 0.5)
 
-        # Sort by score (descending)
-        sorted_articles = sorted(
-            articles,
-            key=lambda a: getattr(a, "ranking_score", 0) or 0,
-            reverse=True,
-        )
+        # === Step 3: Ranking — RRF or weighted sum ===
+        if config.use_rrf and ra and len(articles) > 1:
+            # Build per-dimension rankings
+            dimension_rankings: dict[str, list[str]] = {}
+            for dim_name in ("relevance", "quality", "recency", "impact", "source_trust", "entity_match"):
+                # Sort article keys by this dimension's score (descending)
+                sorted_keys = sorted(
+                    article_dim_scores.keys(),
+                    key=lambda k: article_dim_scores[k].get(dim_name, 0.0),
+                    reverse=True,
+                )
+                dimension_rankings[dim_name] = sorted_keys
+
+            rrf_result = ra.reciprocal_rank_fusion(articles, dimension_rankings)
+
+            # Store RRF score as ranking_score
+            max_rrf = max(rrf_result.rrf_scores.values()) if rrf_result.rrf_scores else 1.0
+            for article in rrf_result.ranked_articles:
+                key = ra._article_key(article)
+                raw_rrf = rrf_result.rrf_scores.get(key, 0.0)
+                article.ranking_score = raw_rrf / max_rrf if max_rrf > 0 else 0.0
+
+            sorted_articles = rrf_result.ranked_articles
+        else:
+            # Fallback: weighted sum (original method)
+            for article in articles:
+                key = ra._article_key(article) if ra else (article.pmid or article.doi or article.title)
+                scores = article_dim_scores.get(key, {})
+                final_score = (
+                    scores.get("relevance", 0.5) * weights["relevance"]
+                    + scores.get("quality", 0.5) * weights["quality"]
+                    + scores.get("recency", 0.5) * weights["recency"]
+                    + scores.get("impact", 0.5) * weights["impact"]
+                    + scores.get("source_trust", 0.5) * weights["source_trust"]
+                    + scores.get("entity_match", 0.5) * weights["entity_match"]
+                )
+                article.ranking_score = final_score
+
+            sorted_articles = sorted(
+                articles,
+                key=lambda a: getattr(a, "ranking_score", 0) or 0,
+                reverse=True,
+            )
+
+        # === Step 4: MMR Diversification (optional) ===
+        if config.use_mmr and ra and query and len(sorted_articles) > 1:
+            mmr_result = ra.mmr_diversify(
+                sorted_articles,
+                query,
+                lambda_param=config.mmr_lambda,
+            )
+            sorted_articles = mmr_result.articles
 
         # Filter by minimum score
         if config.min_score > 0:

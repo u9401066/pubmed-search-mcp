@@ -49,6 +49,21 @@ from .query_validator import (
     QueryValidator,
     validate_query,
 )
+from .ranking_algorithms import (
+    BM25Corpus,
+    MMRResult,
+    RRFResult,
+    SourceDisagreement,
+    analyze_source_disagreement,
+    bm25_score,
+    bm25_score_normalized,
+    mmr_diversify,
+    reciprocal_rank_fusion,
+)
+from .reproducibility import (
+    ReproducibilityScore,
+    calculate_reproducibility,
+)
 from .result_aggregator import (
     AggregationStats,
     RankingConfig,
@@ -86,4 +101,17 @@ __all__ = [
     "RankingConfig",
     "RankingDimension",
     "AggregationStats",
+    # v0.4.2: Advanced Ranking Algorithms
+    "BM25Corpus",
+    "bm25_score",
+    "bm25_score_normalized",
+    "RRFResult",
+    "reciprocal_rank_fusion",
+    "MMRResult",
+    "mmr_diversify",
+    "SourceDisagreement",
+    "analyze_source_disagreement",
+    # v0.4.2: Reproducibility
+    "ReproducibilityScore",
+    "calculate_reproducibility",
 ]
