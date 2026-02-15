@@ -557,6 +557,19 @@ generate_search_queries(topic="<O>")
 |------|---------|
 | `search_biomedical_images` | Search biomedical images across Open-i and Europe PMC. |
 
+
+### Pipeline 管理
+*Pipeline 持久化、載入、排程*
+
+| Tool | Purpose |
+|------|---------|
+| `save_pipeline` | Save a pipeline configuration for later reuse. |
+| `list_pipelines` | List all saved pipeline configurations. |
+| `load_pipeline` | Load a pipeline configuration for review or editing. |
+| `delete_pipeline` | Delete a saved pipeline configuration and its execution history. |
+| `get_pipeline_history` | Get execution history for a saved pipeline. |
+| `schedule_pipeline` | Schedule a saved pipeline for periodic execution. |
+
 ---
 
 ## 📋 Common Workflows

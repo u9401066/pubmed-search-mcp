@@ -52,6 +52,8 @@ ALLOWED_ROOT_FILES: set[str] = {
     "run_copilot.py",
     "run_server.py",
     "start.sh",
+    # Tool config
+    "vulture_whitelist.py",
 }
 
 ALLOWED_ROOT_DIRS: set[str] = {

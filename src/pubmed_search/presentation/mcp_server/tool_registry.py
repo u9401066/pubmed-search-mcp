@@ -128,6 +128,18 @@ TOOL_CATEGORIES: dict[str, dict[str, Any]] = {
         "description": "生物醫學圖片搜尋",
         "tools": ["search_biomedical_images"],
     },
+    "pipeline": {
+        "name": "Pipeline 管理",
+        "description": "Pipeline 持久化、載入、排程",
+        "tools": [
+            "save_pipeline",
+            "list_pipelines",
+            "load_pipeline",
+            "delete_pipeline",
+            "get_pipeline_history",
+            "schedule_pipeline",
+        ],
+    },
 }
 
 
@@ -162,6 +174,19 @@ def register_all_mcp_tools(
     set_session_manager(session_manager)
     if strategy_generator:
         set_strategy_generator(strategy_generator)
+
+    # Initialize PipelineStore
+    from pubmed_search.application.pipeline.store import PipelineStore
+
+    from .tools.pipeline_tools import set_pipeline_store
+
+    data_dir = (
+        str(session_manager.data_dir)
+        if session_manager.data_dir
+        else str(__import__("pathlib").Path.home() / ".pubmed-search-mcp")
+    )
+    pipeline_store = PipelineStore(global_data_dir=data_dir)
+    set_pipeline_store(pipeline_store)
 
     stats = {}
 

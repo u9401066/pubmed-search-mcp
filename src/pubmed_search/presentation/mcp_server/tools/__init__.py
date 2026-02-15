@@ -69,6 +69,7 @@ from .image_search import register_image_search_tools  # Biomedical image search
 from .ncbi_extended import register_ncbi_extended_tools
 from .openurl import register_openurl_tools  # Institutional access (OpenURL)
 from .pico import register_pico_tools
+from .pipeline_tools import register_pipeline_tools  # Pipeline persistence & management
 from .strategy import register_strategy_tools
 from .timeline import register_timeline_tools
 from .unified import register_unified_search_tools
@@ -81,7 +82,7 @@ if TYPE_CHECKING:
 
 
 def register_all_tools(mcp: FastMCP, searcher: LiteratureSearcher):
-    """註冊全部 33 個 MCP 工具 (13 categories)。"""
+    """註冊全部 39 個 MCP 工具 (14 categories)。"""
     # 1. 搜尋工具 (1)
     register_unified_search_tools(mcp, searcher)
 
@@ -121,6 +122,9 @@ def register_all_tools(mcp: FastMCP, searcher: LiteratureSearcher):
     # 13. 圖片搜尋 (1)
     register_image_search_tools(mcp)
 
+    # 14. Pipeline 管理 (6)
+    register_pipeline_tools(mcp)
+
 
 __all__ = [
     "register_all_tools",
@@ -140,4 +144,5 @@ __all__ = [
     "register_openurl_tools",
     "register_icd_tools",
     "register_image_search_tools",
+    "register_pipeline_tools",
 ]

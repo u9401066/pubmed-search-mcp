@@ -7,6 +7,7 @@
 - [系統總覽](#系統總覽)
 - [DDD 領域驅動設計](#ddd-領域驅動設計)
 - [MCP 工具分層](#mcp-工具分層)
+- [Pipeline 持久化與排程](#pipeline-持久化與排程)
 - [HTTPS 部署架構](#https-部署架構)
 - [資料流程](#資料流程)
 - [內部機制](#內部機制)
@@ -178,6 +179,116 @@ src/pubmed_search/
                           │ 6 種輸出格式    │
                           └─────────────────┘
 ```
+
+---
+
+## Pipeline 持久化與排程
+
+> **Status**: 設計完成，尚未實作
+> **詳細設計文件**: [docs/PIPELINE_PERSISTENCE_DESIGN.md](docs/PIPELINE_PERSISTENCE_DESIGN.md)
+
+### 設計背景
+
+Pipeline 系統（v0.4.0）提供 DAG 執行引擎和 4 個模板（pico, comprehensive, exploration, gene_drug），
+但目前是**完全無狀態的** — 每次需要 inline 傳入配置，無法保存、重複使用、或定期執行。
+
+Pipeline 持久化擴展分為 4 個 Phase：
+
+| Phase | 功能 | 狀態 |
+|-------|------|------|
+| 1 | Pipeline CRUD（save/list/load/delete） | 🔲 規劃中 |
+| 2 | 外部載入（URL / 檔案路徑） | 🔲 規劃中 |
+| 3 | 執行歷史與 Diff | 🔲 規劃中 |
+| 4 | 排程搜尋（asyncio tick loop） | 🔲 規劃中 |
+
+### 兩路由模型
+
+```
+使用者問題
+    │
+    ├── 簡單查詢 ──────→ unified_search(query="...")
+    │                      → 即時回傳結果
+    │
+    └── 複雜/重複需求 ──→ save_pipeline(name, config)
+                           → unified_search(pipeline="saved:name")
+                           → schedule_pipeline(name, cron)
+                           → load_pipeline / list_pipelines / delete_pipeline
+```
+
+**關鍵原則**：`unified_search` 是唯一的搜尋執行入口。Pipeline 工具只做 CRUD + 排程管理，不直接執行搜尋。
+
+### MCP 工具（6 個獨立工具）
+
+| 工具 | 用途 | Phase |
+|------|------|-------|
+| `save_pipeline` | 保存 pipeline 配置（upsert，支援 scope 選擇） | 1 |
+| `list_pipelines` | 列舉已存 pipeline（合併 workspace + global） | 1 |
+| `load_pipeline` | 載入 pipeline（name / URL / path） | 1 |
+| `delete_pipeline` | 刪除 pipeline + 歷史 + 排程 | 1 |
+| `get_pipeline_history` | 查詢執行歷史與 diff | 3 |
+| `schedule_pipeline` | 排程/解除排程/查看排程 | 4 |
+
+### DDD 分層
+
+```
+Presentation ─── tools/pipeline_tools.py (6 MCP tools)
+                 resources.py (pipeline://saved/{name}, pipeline://templates/{name})
+       │
+Application ──── pipeline/store.py     (PipelineStore: CRUD + 雙層 scope)
+                 pipeline/scheduler.py  (PipelineScheduler: tick loop)
+                 pipeline/executor.py   (已有, 新增 run_and_store)
+       │
+Domain ────────  entities/pipeline.py  (新增 PipelineMeta, PipelineRun, ScheduleEntry)
+       │
+Infrastructure
+       │
+       ├─ Workspace scope (優先，可 git 追蹤)：
+       │    {workspace}/.pubmed-search/pipelines/{name}.yaml
+       │    {workspace}/.pubmed-search/pipeline_runs/{name}/*.json
+       │
+       └─ Global scope (fallback，跨專案)：
+            ~/.pubmed-search-mcp/pipelines/{name}.yaml
+            ~/.pubmed-search-mcp/pipeline_runs/{name}/*.json
+            ~/.pubmed-search-mcp/schedules.json
+```
+
+### 雙層儲存模型
+
+> **決策 D7**：採用 workspace + global 雙層儲存。
+
+| Scope | 路徑 | 用途 | 可 git 追蹤 |
+|-------|------|------|------------|
+| **workspace** | `{workspace}/.pubmed-search/` | 專案級搜尋策略，可分享給協作者 | ✅ |
+| **global** | `~/.pubmed-search-mcp/` | 個人通用策略，跨專案可用 | ❌ |
+
+解析順序：`load(name)` → workspace 優先，找不到則 global fallback。
+`save_pipeline(scope="auto")` 預設存 workspace（若有），否則 global。
+排程僅在 global scope（需跨 workspace 運作）。
+
+### 排程機制
+
+```
+┌──────────────────────────────────┐
+│  MCP Server Lifespan             │
+│                                  │
+│  startup:                        │
+│    load schedules.json           │
+│    start _tick_loop()            │
+│                                  │
+│  _tick_loop (每60秒):            │
+│    for schedule in schedules:    │
+│      if should_run(now):         │
+│        asyncio.create_task(      │
+│          execute_and_store())    │
+│        update next_run           │
+│                                  │
+│  shutdown:                       │
+│    save schedules.json           │
+│    cancel background tasks       │
+└──────────────────────────────────┘
+```
+
+**安全約束**：最小間隔 1 小時、同時最多 5 排程、執行超時 5 分鐘、URL 白名單。
 
 ---
 
@@ -443,6 +554,7 @@ nginx/
 | [DEPLOYMENT.md](DEPLOYMENT.md) | 部署指南、客戶端配置 |
 | [CHANGELOG.md](CHANGELOG.md) | 版本更新記錄 |
 | [ROADMAP.md](ROADMAP.md) | 開發路線圖 |
+| [docs/PIPELINE_PERSISTENCE_DESIGN.md](docs/PIPELINE_PERSISTENCE_DESIGN.md) | Pipeline 持久化與排程詳細設計 |
 
 ---
 

@@ -264,6 +264,14 @@ search_clinvar("BRCA1", limit=10)
 ### 圖片搜尋
 - search_biomedical_images: Search biomedical images across Open-i and Europe PMC.
 
+### Pipeline 管理
+- save_pipeline: Save a pipeline configuration for later reuse.
+- list_pipelines: List all saved pipeline configurations.
+- load_pipeline: Load a pipeline configuration for review or editing.
+- delete_pipeline: Delete a saved pipeline configuration and its execution history.
+- get_pipeline_history: Get execution history for a saved pipeline.
+- schedule_pipeline: Schedule a saved pipeline for periodic execution.
+
 NOTE: 搜尋結果自動暫存，使用 session 工具可隨時取回，不需依賴 Agent 記憶。
 
 NOTE: 每次搜尋結果會顯示各來源的 API 回傳量（如 **Sources**: pubmed (8/500), openalex (5)）。
