@@ -5,7 +5,7 @@
       {
         "type": "command",
         "bash": "./scripts/hooks/copilot/session-init.sh",
-        "powershell": "./scripts/hooks/copilot/session-init.ps1",
+        "powershell": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/hooks/copilot/session-init.ps1",
         "cwd": ".",
         "timeoutSec": 10,
         "comment": "Load available pipelines and set context for the agent"
@@ -15,7 +15,7 @@
       {
         "type": "command",
         "bash": "./scripts/hooks/copilot/analyze-prompt.sh",
-        "powershell": "./scripts/hooks/copilot/analyze-prompt.ps1",
+        "powershell": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/hooks/copilot/analyze-prompt.ps1",
         "cwd": ".",
         "timeoutSec": 5,
         "comment": "Detect research intent and recommend pipeline mode"
@@ -25,7 +25,7 @@
       {
         "type": "command",
         "bash": "./scripts/hooks/copilot/enforce-pipeline.sh",
-        "powershell": "./scripts/hooks/copilot/enforce-pipeline.ps1",
+        "powershell": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/hooks/copilot/enforce-pipeline.ps1",
         "cwd": ".",
         "timeoutSec": 5,
         "comment": "Enforce pipeline mode for complex queries; create feedback loop via deny+reason"
@@ -35,7 +35,7 @@
       {
         "type": "command",
         "bash": "./scripts/hooks/copilot/evaluate-results.sh",
-        "powershell": "./scripts/hooks/copilot/evaluate-results.ps1",
+        "powershell": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/hooks/copilot/evaluate-results.ps1",
         "cwd": ".",
         "timeoutSec": 10,
         "comment": "Evaluate search result quality and write state for feedback loop"
@@ -45,7 +45,7 @@
       {
         "type": "command",
         "bash": "./scripts/hooks/copilot/session-cleanup.sh",
-        "powershell": "./scripts/hooks/copilot/session-cleanup.ps1",
+        "powershell": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/hooks/copilot/session-cleanup.ps1",
         "cwd": ".",
         "timeoutSec": 5,
         "comment": "Clean up temporary state files"
