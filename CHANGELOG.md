@@ -16,6 +16,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.4.0] - 2026-02-15
+
+### Added
+- **Pipeline System**: DAG-based pipeline executor with dependency resolution
+  - 4 built-in templates: quick, standard, deep, custom
+  - YAML pipeline definition support
+  - Parallel step execution with configurable concurrency
+- **CORE Integration**: CORE as 6th search source in unified_search
+  - 200M+ open access papers from 14,000+ repositories
+  - Full text retrieval via CORE API
+- **Composite Parameters**: unified_search consolidated from 18 to 7 parameters
+  - `filters`: "year:2020-2024, species:human, language:english"
+  - `sources`: "pubmed, openalex, semantic_scholar"
+  - `options`: "sort:relevance, include_preprints:true"
+
+### Changed
+- **Single Search Entry Point**: unified_search replaces search_literature as primary entry
+- **PipelineExecutor DDD**: Dependency injection for infrastructure layer separation
+
+### Deprecated
+- `search_by_icd` — use `convert_icd_mesh` + `unified_search` instead
+
+---
+
 ## [0.3.10] - 2026-02-14
 
 ### Added

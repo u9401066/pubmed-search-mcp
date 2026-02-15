@@ -109,7 +109,6 @@ uv run pre-commit run --all-files                  # test all hooks manually
 | **commit** | debug-statements | — | Catches `breakpoint()` / `pdb` |
 | **commit** | detect-private-key | — | Prevents accidental key commits |
 | **commit** | check-ast | — | Validates Python AST syntax |
-| **commit** | check-byte-order-marker | — | Detects UTF-8 BOM |
 | **commit** | fix-byte-order-marker | ✅ | Removes UTF-8 BOM |
 | **commit** | check-builtin-literals | — | Detects `dict()` → `{}`, `list()` → `[]` |
 | **commit** | check-case-conflict | — | Detects case-only filename conflicts |

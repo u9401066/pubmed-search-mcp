@@ -173,7 +173,7 @@ class CopilotStudioMiddleware:
 def main():
     parser = argparse.ArgumentParser(description="Run PubMed Search MCP for Copilot Studio")
     parser.add_argument("--port", type=int, default=int(os.environ.get("MCP_PORT", "8765")))
-    parser.add_argument("--host", default=os.environ.get("MCP_HOST", "0.0.0.0"))
+    parser.add_argument("--host", default=os.environ.get("MCP_HOST", "0.0.0.0"))  # nosec B104
     parser.add_argument("--email", default=os.environ.get("NCBI_EMAIL", DEFAULT_EMAIL))
     parser.add_argument("--api-key", default=os.environ.get("NCBI_API_KEY"))
     parser.add_argument(

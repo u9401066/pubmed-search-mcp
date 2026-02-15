@@ -58,7 +58,7 @@ def main():
     )
     parser.add_argument(
         "--host",
-        default=os.environ.get("MCP_HOST", "0.0.0.0"),
+        default=os.environ.get("MCP_HOST", "0.0.0.0"),  # nosec B104
         help="Server host (default: 0.0.0.0)",
     )
     parser.add_argument(
@@ -103,7 +103,7 @@ def main():
     from starlette.responses import FileResponse, JSONResponse
 
     # Export directory
-    EXPORT_DIR = Path("/tmp/pubmed_exports")
+    EXPORT_DIR = Path("/tmp/pubmed_exports")  # nosec B108
 
     if args.transport == "sse":
         mcp_app = server.sse_app()

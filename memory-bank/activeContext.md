@@ -4,29 +4,27 @@
 
 ## 🎯 當前焦點
 
-- **v0.3.10 mypy 完全修復 + Pre-commit 41 hooks** — mypy 168→0, 2 real bugs found & fixed
+- **v0.4.0 Pipeline System + CORE Integration** — DAG pipeline, 18→7 params, CORE as 6th source
 
 ## 📊 測試結果
 
-- **2372 passed, 0 failed, 27 skipped** in ~47s (pytest-xdist -n auto)
+- **2477+ passed, 0 failed, 27 skipped** (pytest-xdist -n auto)
 - ruff src/: `All checks passed!`
-- mypy src/: **0 errors** (Success: no issues found in 91 source files)
+- mypy src/: **0 errors** (Success)
+- Pipeline tests: 71 passed
 
 ## ✅ 已完成本 session
 
-### Phase 12: 14 new pre-commit hooks (17→41 total)
-- bandit (security), vulture (dead code), deptry (dependency hygiene), semgrep (SAST)
-- 7 custom hooks: future-annotations, no-print-in-src, ddd-layer-imports, no-type-ignore-bare, docstring-tools, no-env-inner-layers, todo-scanner
-- 10 additional standard hooks from pre-commit-hooks repo
-
-### Phase 13: mypy 168→0 comprehensive fix
-- **2 real bugs**: missing `await` in fulltext_download.py (Semantic Scholar & OpenAlex PDF links silently broken)
-- **1 logic bug**: timeline_builder.py iterated citation_data keys instead of .items()
-- **Key discovery**: `disallow_untyped_defs = false` in overrides does NOT override `strict = true` — use `disable_error_code` instead
-- **Key discovery**: mypy glob `*` only matches ONE module depth level
-- **Key discovery**: `float.__pow__(float)` returns `Any` in typeshed — wrap in `float()`
-- 30+ source files with proper type annotations
-- 3 test fixes: Mock→AsyncMock, citation_data list→dict
+### v0.4.0: Pipeline System + CORE Integration
+- **Pipeline System**: DAG-based executor with 4 templates (quick/standard/deep/custom)
+- **YAML Support**: Pipeline definitions in YAML format
+- **CORE Integration**: 6th search source with 200M+ OA papers
+- **Parameter Consolidation**: unified_search 18→7 params (filters, sources, options)
+- **Single Entry Point**: unified_search replaces search_literature
+- **DDD Fix**: PipelineExecutor dependency injection for infra layer
+- **Deprecated**: search_by_icd → convert_icd_mesh + unified_search
+- Pre-commit: removed deprecated check-byte-order-marker hook
+- Bandit: added nosec for intentional 0.0.0.0 and /tmp bindings
 
 ## 📈 Version History
 - v0.3.10: mypy 168→0 + pre-commit 41 hooks (current)
