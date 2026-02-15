@@ -90,6 +90,7 @@ uv run pre-commit autoupdate
 - **no-env-inner-layers** 禁止內層 DDD 使用 os.environ (`scripts/hooks/check_env_config.py`)
 - **source-counts-guard** 確保每來源 API 回傳量顯示 (`scripts/hooks/check_source_counts.py`)
 - **todo-scanner** TODO/FIXME 掃描器 (警告, 不阻擋) (`scripts/hooks/check_todo_scanner.py`)
+- **instruction-drift** 工具 docstring 變更偵測 (警告, 不阻擋) (`scripts/hooks/check_instruction_drift.py`)
 
 **Push 階段自動檢查：**
 - **mypy** type check (`uv run mypy src/`, 記憶體 500MB-1GB)
@@ -267,6 +268,7 @@ git status --short | Where-Object { $_ -match '^\?\?' }
 | 類型 | 檔案 |
 |------|------|
 | 設定 | `pyproject.toml`, `Dockerfile`, `docker-compose*.yml`, `.gitignore`, `uv.lock` |
+| 狀態 | `.instruction_drift_fingerprint` |
 | 文檔 | `README.md`, `README.zh-TW.md`, `CHANGELOG.md`, `CONSTITUTION.md`, `ARCHITECTURE.md`, `ROADMAP.md`, `CONTRIBUTING.md`, `DEPLOYMENT.md`, `CITATION.cff`, `AGENTS.md`, `LICENSE` |
 | 入口 | `run_copilot.py`, `run_server.py`, `start.sh` |
 

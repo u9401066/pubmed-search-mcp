@@ -75,6 +75,7 @@ description: "Orchestrate pre-commit workflow including Memory Bank sync, README
 │  ✅ no-env-inner-layers│                                    │
 │  ✅ source-counts-guard│                                    │
 │  ✅ todo-scanner     │                                      │
+│  ✅ instruction-drift│                                      │
 │  ✅ yaml/toml/json   │                                      │
 │  ✅ no large files   │                                      │
 │  ✅ no debug stmts   │                                      │
@@ -270,4 +271,5 @@ git commit --no-verify -m "emergency"       # 跳過所有 hooks (慎用!)
 | `scripts/hooks/check_env_config.py` | 禁止內層使用 os.environ |
 | `scripts/hooks/check_source_counts.py` | 確保每來源 API 回傳量顯示 |
 | `scripts/hooks/check_todo_scanner.py` | TODO/FIXME 掃描 |
+| `scripts/hooks/check_instruction_drift.py` | 工具 docstring 變更偵測 |
 | `scripts/check_async_tests.py` | async/sync 測試一致性 |

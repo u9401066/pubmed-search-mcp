@@ -252,6 +252,18 @@ repos:
         verbose: true
         # Non-blocking warning. Set BLOCK_ON_MARKERS=true to block.
 
+      # ── Instruction drift detection (warning) ──────────────
+      - id: instruction-drift
+        name: instruction drift detector (warn)
+        entry: uv run python scripts/hooks/check_instruction_drift.py
+        language: system
+        pass_filenames: false
+        files: ^src/pubmed_search/presentation/mcp_server/tools/
+        verbose: true
+        # Warns when tool signatures/docstrings change,
+        # reminding to update instructions.py hand-written sections.
+        # Non-blocking (warning only).
+
       # ── Self-evolution cycle consistency ────────────────────
       - id: evolution-cycle
         name: instruction ↔ skill ↔ hook consistency

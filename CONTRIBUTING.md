@@ -141,6 +141,7 @@ uv run pre-commit run --all-files                  # test all hooks manually
 | **commit** | no-env-inner-layers | — | Bans `os.environ` in domain/application layers |
 | **commit** | source-counts-guard | — | Ensures per-source API return counts are displayed |
 | **commit** | todo-scanner | — | Scans TODO/FIXME markers (warning only) |
+| **commit** | instruction-drift | — | Warns when tool docstrings change (review instructions.py) |
 | **commit** | evolution-cycle | — | Validates instruction/skill/hook consistency |
 | **push** | mypy | — | Type checks `src/` (~500MB-1GB RAM) |
 | **push** | semgrep | — | SAST security analysis (~300-500MB RAM) |

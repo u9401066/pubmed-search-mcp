@@ -137,6 +137,7 @@ def check_hooks_documented(report: ValidationReport) -> None:
             "no-env-inner-layers",
             "todo-scanner",
             "evolution-cycle",
+            "instruction-drift",
             # Security & dead code analysis
             "bandit",
             "vulture",

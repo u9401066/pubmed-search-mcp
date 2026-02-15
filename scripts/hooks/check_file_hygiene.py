@@ -56,6 +56,8 @@ ALLOWED_ROOT_FILES: set[str] = {
     "start.sh",
     # Tool config
     "vulture_whitelist.py",
+    # Hook state
+    ".instruction_drift_fingerprint",
 }
 
 ALLOWED_ROOT_DIRS: set[str] = {
