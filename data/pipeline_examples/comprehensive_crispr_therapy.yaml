@@ -1,0 +1,22 @@
+# ============================================================================
+# 綜合型 Pipeline：Comprehensive MeSH-Expanded Search
+# ============================================================================
+# 目的: 從一個研究主題出發，先做語意擴展取得 MeSH 詞彙與同義詞，
+#       然後分別用原始查詢和擴展查詢搜尋，最後 RRF 融合並附加引用指標
+#
+# 適用場景: 文獻回顧的初步搜尋、全面掃描某領域
+#
+# 使用方式:
+#   save_pipeline(name="crispr_gene_therapy_review", config=<this>)
+#   unified_search(pipeline="saved:crispr_gene_therapy_review")
+# ============================================================================
+
+template: comprehensive
+
+params:
+  topic: "CRISPR gene therapy clinical trials"
+
+output:
+  format: markdown
+  limit: 30
+  ranking: quality

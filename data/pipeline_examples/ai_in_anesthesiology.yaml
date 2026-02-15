@@ -1,0 +1,76 @@
+# ============================================================================
+# 生產級複雜 Pipeline：AI in Anesthesiology — 多維度文獻掃描
+# ============================================================================
+# 目的: 展示自訂 DAG 的全部能力 — 多來源搜尋、語意擴展、
+#       RRF 融合、引用指標增強、後篩選
+#
+# 流程圖:
+#   expand ──────►  search_expanded ──┐
+#                                     ├──► merged ──► enriched ──► filtered
+#   search_pubmed ───────────────────┘        ▲
+#   search_openalex ─────────────────────────┘
+#
+# 使用方式:
+#   save_pipeline(name="ai_anesthesia_scan", config=<this file>, tags="AI,anesthesia")
+#   unified_search(pipeline="saved:ai_anesthesia_scan")
+# ============================================================================
+
+name: "AI in Anesthesiology Multi-Source Scan"
+
+steps:
+  # ── Phase 1: 語意擴展 (MeSH + PubTator3) ──
+  - id: expand
+    action: expand
+    params:
+      topic: "artificial intelligence machine learning anesthesiology"
+
+  # ── Phase 2: 平行三路搜尋 ──
+  - id: search_pubmed
+    action: search
+    params:
+      query: '"Artificial Intelligence"[MeSH] AND "Anesthesiology"[MeSH]'
+      sources: pubmed
+      limit: 100
+      min_year: 2019
+
+  - id: search_openalex
+    action: search
+    params:
+      query: "artificial intelligence anesthesia OR anesthesiology"
+      sources: openalex
+      limit: 80
+      min_year: 2019
+
+  - id: search_expanded
+    action: search
+    inputs: [expand]
+    params:
+      strategy: mesh
+      sources: pubmed,europe_pmc
+      limit: 80
+      min_year: 2019
+
+  # ── Phase 3: RRF 融合去重 ──
+  - id: merged
+    action: merge
+    inputs: [search_pubmed, search_openalex, search_expanded]
+    params:
+      method: rrf
+
+  # ── Phase 4: iCite 引用指標增強 ──
+  - id: enriched
+    action: metrics
+    inputs: [merged]
+
+  # ── Phase 5: 品質篩選 (近5年 + 有摘要) ──
+  - id: filtered
+    action: filter
+    inputs: [enriched]
+    params:
+      min_year: 2020
+      has_abstract: true
+
+output:
+  format: markdown
+  limit: 30
+  ranking: quality

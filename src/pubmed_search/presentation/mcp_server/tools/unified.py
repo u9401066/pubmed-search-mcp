@@ -2062,96 +2062,9 @@ async def _execute_pipeline_mode(
             tool_name="unified_search",
         )
 
-    return _format_pipeline_results(articles, step_results, config)
+    from pubmed_search.application.pipeline.report_generator import generate_pipeline_report
 
-
-def _format_pipeline_results(
-    articles: list,
-    step_results: dict,
-    config,
-) -> str:
-    """Format pipeline results as Markdown."""
-    from pubmed_search.domain.entities.pipeline import StepResult
-
-    parts: list[str] = []
-
-    # Header
-    name = config.name or "Pipeline"
-    parts.append(f"## 🔗 Pipeline Results: {name}\n")
-
-    # Step summary
-    total = len(step_results)
-    ok_count = sum(1 for r in step_results.values() if isinstance(r, StepResult) and r.ok)
-    parts.append(f"**Steps**: {ok_count}/{total} completed")
-    parts.append(f"**Total articles**: {len(articles)}")
-
-    # Aggregate per-source API counts from search steps
-    aggregated_source_counts: dict[str, int] = {}
-    for sr in step_results.values():
-        if isinstance(sr, StepResult) and sr.ok and sr.metadata.get("source_api_counts"):
-            for src, count in sr.metadata["source_api_counts"].items():
-                aggregated_source_counts[src] = aggregated_source_counts.get(src, 0) + count
-    if aggregated_source_counts:
-        source_parts = [f"{src} ({count})" for src, count in aggregated_source_counts.items()]
-        parts.append(f"**Sources**: {', '.join(source_parts)}")
-    parts.append("")
-
-    # Step detail table
-    parts.append("| Step | Action | Status | Detail |")
-    parts.append("|------|--------|--------|--------|")
-    for step in config.steps:
-        sr = step_results.get(step.id)
-        if sr is None:
-            parts.append(f"| {step.id} | {step.action} | ⏭ skipped | — |")
-        elif not sr.ok:
-            parts.append(f"| {step.id} | {step.action} | ❌ error | {sr.error[:60] if sr.error else '—'} |")
-        else:
-            detail = ""
-            if sr.articles:
-                # Show per-source breakdown if available
-                src_counts = sr.metadata.get("source_api_counts")
-                if src_counts:
-                    breakdown = ", ".join(f"{s}: {c}" for s, c in src_counts.items())
-                    detail = f"{len(sr.articles)} articles ({breakdown})"
-                else:
-                    detail = f"{len(sr.articles)} articles"
-            elif sr.metadata:
-                keys = ", ".join(sorted(sr.metadata.keys())[:4])
-                detail = f"metadata: {keys}"
-            else:
-                detail = "ok"
-            parts.append(f"| {step.id} | {step.action} | ✅ | {detail} |")
-    parts.append("")
-
-    # Articles
-    if articles:
-        parts.append(f"### Results (top {min(len(articles), config.output.limit)})\n")
-        for i, article in enumerate(articles[: config.output.limit], 1):
-            title = getattr(article, "title", "Unknown Title") or "Unknown Title"
-            year = getattr(article, "year", None) or "N/A"
-            journal = getattr(article, "journal", None) or ""
-            pmid = getattr(article, "pmid", None)
-            doi = getattr(article, "doi", None)
-
-            parts.append(f"**{i}. {title}** ({year})")
-            if journal:
-                parts.append(f"   *{journal}*")
-            ids = []
-            if pmid:
-                ids.append(f"PMID: {pmid}")
-            if doi:
-                ids.append(f"DOI: {doi}")
-            if ids:
-                parts.append(f"   {' | '.join(ids)}")
-
-            abstract = getattr(article, "abstract", None)
-            if abstract:
-                parts.append(f"   > {abstract[:200]}{'...' if len(abstract) > 200 else ''}")
-            parts.append("")
-    else:
-        parts.append("*No articles found.*\n")
-
-    return "\n".join(parts)
+    return generate_pipeline_report(articles, step_results, config)
 
 
 # ============================================================================

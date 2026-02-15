@@ -9,6 +9,7 @@ and persistence via PipelineStore + PipelineValidator.
 from __future__ import annotations
 
 from pubmed_search.application.pipeline.executor import PipelineExecutor
+from pubmed_search.application.pipeline.report_generator import generate_pipeline_report
 from pubmed_search.application.pipeline.store import PipelineStore
 from pubmed_search.application.pipeline.templates import (
     PIPELINE_TEMPLATES,
@@ -24,6 +25,7 @@ __all__ = [
     "PipelineExecutor",
     "PipelineStore",
     "build_pipeline_from_template",
+    "generate_pipeline_report",
     "parse_and_validate_config",
     "validate_and_fix",
 ]

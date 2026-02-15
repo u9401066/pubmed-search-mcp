@@ -1,0 +1,20 @@
+# ============================================================================
+# PICO 臨床問題搜尋：Remimazolam vs Propofol for ICU Sedation
+# ============================================================================
+# 使用方式:
+#   1. 直接執行:
+#      unified_search(pipeline="template: pico\nparams:\n  P: ICU patients\n  I: remimazolam\n  C: propofol\n  O: sedation adequacy")
+#
+#   2. 儲存後執行:
+#      save_pipeline(name="pico_remimazolam", config=<this file content>)
+#      unified_search(pipeline="saved:pico_remimazolam")
+# ============================================================================
+
+template: pico
+params:
+  P: "ICU patients requiring mechanical ventilation"
+  I: "remimazolam"
+  C: "propofol"
+  O: "sedation adequacy, hemodynamic stability, time to extubation"
+  sources: "pubmed,europe_pmc"
+  limit: 30
