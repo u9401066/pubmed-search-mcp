@@ -157,6 +157,15 @@ class TestGetOAStatus:
         assert client._normalize_doi("doi:10.1234/test") == "10.1234/test"
         assert client._normalize_doi("  10.1234/test  ") == "10.1234/test"
 
+    @patch.object(UnpaywallClient, "_make_request", return_value=None)
+    async def test_doi_slash_not_encoded_in_url(self, mock_req, client):
+        """DOI slashes must stay literal in the URL (not %2F) or Unpaywall returns 422."""
+        await client.get_oa_status("10.23736/S0375-9393.21.15517-8")
+        url_called = mock_req.call_args[0][0]
+        # The DOI slash should appear as '/' not '%2F'
+        assert "/10.23736/S0375-9393.21.15517-8?" in url_called
+        assert "%2F" not in url_called.split("?")[0]  # no encoded slash in path
+
 
 # ============================================================
 # get_best_oa_link
