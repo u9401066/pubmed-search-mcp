@@ -96,3 +96,6 @@ perf_*.txt
 
 # Temp fix scripts (should go in scripts/_tmp/ if needed)
 scripts/_tmp/
+
+# Copilot hooks runtime state (ephemeral, per-session)
+.github/hooks/_state/

@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "type": "command",
+        "bash": "./scripts/hooks/copilot/session-init.sh",
+        "powershell": "./scripts/hooks/copilot/session-init.ps1",
+        "cwd": ".",
+        "timeoutSec": 10,
+        "comment": "Load available pipelines and set context for the agent"
+      }
+    ],
+    "userPromptSubmitted": [
+      {
+        "type": "command",
+        "bash": "./scripts/hooks/copilot/analyze-prompt.sh",
+        "powershell": "./scripts/hooks/copilot/analyze-prompt.ps1",
+        "cwd": ".",
+        "timeoutSec": 5,
+        "comment": "Detect research intent and recommend pipeline mode"
+      }
+    ],
+    "preToolUse": [
+      {
+        "type": "command",
+        "bash": "./scripts/hooks/copilot/enforce-pipeline.sh",
+        "powershell": "./scripts/hooks/copilot/enforce-pipeline.ps1",
+        "cwd": ".",
+        "timeoutSec": 5,
+        "comment": "Enforce pipeline mode for complex queries; create feedback loop via deny+reason"
+      }
+    ],
+    "postToolUse": [
+      {
+        "type": "command",
+        "bash": "./scripts/hooks/copilot/evaluate-results.sh",
+        "powershell": "./scripts/hooks/copilot/evaluate-results.ps1",
+        "cwd": ".",
+        "timeoutSec": 10,
+        "comment": "Evaluate search result quality and write state for feedback loop"
+      }
+    ],
+    "sessionEnd": [
+      {
+        "type": "command",
+        "bash": "./scripts/hooks/copilot/session-cleanup.sh",
+        "powershell": "./scripts/hooks/copilot/session-cleanup.ps1",
+        "cwd": ".",
+        "timeoutSec": 5,
+        "comment": "Clean up temporary state files"
+      }
+    ]
+  }
+}
