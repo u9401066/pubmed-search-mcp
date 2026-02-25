@@ -219,6 +219,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
         doi: str | None = None,
         sections: str | None = None,
         include_pdf_links: bool = True,
+        include_figures: bool = False,
         extended_sources: bool = False,
     ) -> str:
         """
@@ -250,6 +251,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
             doi: DOI (e.g., "10.1001/jama.2024.1234")
             sections: Filter sections (e.g., "introduction,methods,results")
             include_pdf_links: Include PDF download links (default: True)
+            include_figures: Include figure metadata with image URLs (default: False)
             extended_sources: Search 15 sources instead of 3 (default: False)
 
         Returns:
@@ -512,6 +514,32 @@ def register_europe_pmc_tools(mcp: FastMCP):
             output += fulltext_content
         elif pdf_links:
             output += "_Structured fulltext not available. Use the PDF links above to access the article._\n"
+
+        # Figures section (when include_figures=True and we have a PMCID)
+        if include_figures and detected_pmcid:
+            try:
+                from pubmed_search.infrastructure.sources.figure_client import (
+                    get_figure_client,
+                )
+
+                fig_client = get_figure_client()
+                fig_result = await fig_client.get_article_figures(
+                    pmcid=detected_pmcid,
+                    pmid=str(detected_pmid) if detected_pmid else None,
+                )
+                if fig_result.figures:
+                    output += "\n---\n"
+                    output += f"## 🖼️ Figures ({fig_result.total_figures})\n\n"
+                    for fig in fig_result.figures:
+                        output += f"#### {fig.label or fig.figure_id}\n"
+                        if fig.caption_title:
+                            output += f"**{fig.caption_title}**\n\n"
+                        if fig.caption_text:
+                            output += f"{fig.caption_text}\n\n"
+                        if fig.image_url:
+                            output += f"**Image URL:** {fig.image_url}\n\n"
+            except Exception as e:
+                logger.warning("Figure extraction in get_fulltext failed: %s", e)
 
         return output
 

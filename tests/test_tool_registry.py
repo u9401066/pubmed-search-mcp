@@ -48,6 +48,7 @@ class TestListRegisteredTools:
             "query_intelligence",
             "discovery",
             "fulltext",
+            "figure",
             "ncbi_extended",
             "citation_network",
             "export",

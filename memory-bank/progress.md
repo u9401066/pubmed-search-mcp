@@ -1,6 +1,17 @@
-# Progress (Updated: 2026-02-14)
+# Progress (Updated: 2026-02-25)
 
 ## Done
+
+### 2026-02-25: v0.4.4 — Article Figure Extraction
+- ✅ **New MCP tool**: `get_article_figures` — extract figure metadata + image URLs + PDF links from PMC articles
+- ✅ **Multi-source fallback**: Europe PMC XML → PMC efetch XML → BioC JSON
+- ✅ **Domain entity**: `ArticleFigure` + `ArticleFiguresResult` dataclasses
+- ✅ **Infrastructure**: `FigureClient(BaseAPIClient)` with JATS XML parsing, BioC JSON parsing
+- ✅ **SSRF protection**: URL validation against allowed academic domain whitelist
+- ✅ **get_fulltext enhancement**: `include_figures=True` for inline figure data
+- ✅ **58 new tests**: entity (10) + client (30) + tools (18)
+- ✅ **40 tools / 15 categories** (new category: 圖表擷取)
+- ✅ **Spec document**: `docs/MCP_Visual_Data_Retrieval_Spec.md` v1.1.0
 
 ### 2026-02-14: v0.3.10 — mypy 168→0 + Pre-commit 41 hooks
 - ✅ **mypy 0 errors** — 168→0 under `strict = true` (91 source files clean)
@@ -44,7 +55,7 @@
 - ✅ docs/IMAGE_SEARCH_API.md 完整重寫
 
 ## Doing
-- (none — ready for commit + push)
+- (none — ready for tag v0.4.4)
 
 ## Next
 

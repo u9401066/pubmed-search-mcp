@@ -261,6 +261,9 @@ search_clinvar("BRCA1", limit=10)
 - analyze_timeline_milestones: Analyze milestone distribution for a research topic.
 - compare_timelines: Compare research timelines of multiple topics.
 
+### 圖表擷取
+- get_article_figures: Get structured figure metadata (label, caption, image URL) and PDF links from a PMC Open Access arti
+
 ### 圖片搜尋
 - search_biomedical_images: Search biomedical images across Open-i and Europe PMC.
 

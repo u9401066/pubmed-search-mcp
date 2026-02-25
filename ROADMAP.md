@@ -1,7 +1,7 @@
 # PubMed Search MCP - Roadmap
 
 > 本文件記錄**待實作**功能。已完成功能請參閱 [CHANGELOG.md](CHANGELOG.md)。
-> **最後更新**: 2026-02-14
+> **最後更新**: 2026-02-25
 
 ---
 
@@ -94,7 +94,7 @@
 | 匯出類 (prepare_*, analyze_*) | 5 | ✅ | - | ✅ |
 | Session 類 | 4 | ✅ | D | ✅ |
 | 多源類 (unified_search) | 1 | ✅ | A, C | ✅ |
-| Vision/圖片類 | 2 | ✅ | A | ✅ |
+| Vision/圖片類 | 3 | ✅ | A | ✅ |
 | 時間軸類 | 3 | ✅ | A | ✅ |
 | ICD/MeSH 轉換類 | 2 | ✅ | - | ✅ |
 | 機構存取類 | 4 | ✅ | - | ✅ |

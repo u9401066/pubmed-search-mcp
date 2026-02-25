@@ -552,6 +552,14 @@ generate_search_queries(topic="<O>")
 | `compare_timelines` | Compare research timelines of multiple topics. |
 
 
+### 圖表擷取
+*文章圖表與視覺資料擷取*
+
+| Tool | Purpose |
+|------|---------|
+| `get_article_figures` | Get structured figure metadata (label, caption, image URL) and PDF links from a PMC Open Access arti |
+
+
 ### 圖片搜尋
 *生物醫學圖片搜尋*
 

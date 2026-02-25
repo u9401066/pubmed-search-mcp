@@ -61,6 +61,11 @@ TOOL_CATEGORIES: dict[str, dict[str, Any]] = {
         "description": "全文取得與文本挖掘",
         "tools": ["get_fulltext", "get_text_mined_terms"],
     },
+    "figure": {
+        "name": "圖表擷取",
+        "description": "文章圖表與視覺資料擷取",
+        "tools": ["get_article_figures"],
+    },
     "ncbi_extended": {
         "name": "NCBI 延伸",
         "description": "Gene, PubChem, ClinVar",

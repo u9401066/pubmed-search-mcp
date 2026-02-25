@@ -15,6 +15,7 @@ from .article import (
     SourceMetadata,
     UnifiedArticle,
 )
+from .figure import ArticleFigure, ArticleFiguresResult
 from .image import ImageResult, ImageSource
 from .research_tree import ResearchBranch, ResearchTree
 from .timeline import (
@@ -34,6 +35,9 @@ __all__ = [
     "OpenAccessLink",
     "CitationMetrics",
     "SourceMetadata",
+    # Figure entities (v0.4.4)
+    "ArticleFigure",
+    "ArticleFiguresResult",
     # Image entities (v0.3.1)
     "ImageResult",
     "ImageSource",

@@ -16,6 +16,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.4.4] - 2026-02-25
+
+### Added
+
+- **Article Figure Extraction** — New `get_article_figures` MCP tool (40 total tools, 15 categories)
+  - Extract structured figure metadata (label, caption, image URL) from PMC Open Access articles
+  - Multi-source fallback chain: Europe PMC XML → PMC efetch XML → BioC JSON
+  - Direct image URLs via Europe PMC CDN pattern (deterministic, no extra HTTP request)
+  - HTML scraping fallback for exact CDN URLs from PMC article pages
+  - PDF download links (PubMed Central + Europe PMC) included in every response
+  - Smart identifier detection: auto-detects PMID vs PMC ID from input
+  - PMID→PMCID resolution via Europe PMC search API
+  - Sub-figure parsing (`include_subfigures=True`) for multi-part figures (A, B, C...)
+  - Table image extraction (`include_tables=True`) for `<table-wrap>` with `<graphic>`
+  - Section reference mapping — shows which sections mention each figure
+  - SSRF protection: URL validation against allowed academic domain whitelist
+- **`get_fulltext(include_figures=True)`** — Optional inline figure metadata in fulltext responses
+- **Domain Entity**: `ArticleFigure` + `ArticleFiguresResult` dataclasses (`domain/entities/figure.py`)
+- **Infrastructure**: `FigureClient(BaseAPIClient)` with JATS XML + BioC JSON parsing (`infrastructure/sources/figure_client.py`)
+- **New tool category**: "圖表擷取" (Figure Extraction) in tool registry
+- **Spec document**: `docs/MCP_Visual_Data_Retrieval_Spec.md` v1.1.0 with review notes (Appendix C)
+
+### Tests
+
+- `test_figure_entity.py` — 10 tests for domain entity serialization and edge cases
+- `test_figure_client.py` — 30 tests for SSRF validation, XML/JSON parsing, multi-source fallback, URL resolution
+- `test_figure_tools.py` — 18 tests for MCP tool layer, identifier detection, PMID→PMCID resolution, output formatting
+
+---
+
 ## [0.4.3] - 2026-02-15
 
 ### Added

@@ -447,6 +447,7 @@ class EuropePMCClient(BaseAPIClient):
                 "abstract": "",
                 "sections": [],
                 "references": [],
+                "figures": [],
             }
 
             # Extract title
@@ -466,6 +467,9 @@ class EuropePMCClient(BaseAPIClient):
                     section = self._parse_section(sec)
                     if section:
                         result["sections"].append(section)
+
+            # Extract figures from <fig> elements
+            result["figures"] = self._parse_figures(root)
 
             # Extract references
             ref_list = root.find(".//ref-list")
@@ -524,6 +528,64 @@ class EuropePMCClient(BaseAPIClient):
             "pmid": mixed_citation.findtext(".//pub-id[@pub-id-type='pmid']", ""),
             "doi": mixed_citation.findtext(".//pub-id[@pub-id-type='doi']", ""),
         }
+
+    def _parse_figures(self, root: Element) -> list[dict[str, Any]]:
+        """Extract <fig> elements from JATS XML.
+
+        Parses figure labels, captions, and graphic xlink:href references
+        to produce structured figure metadata.
+
+        Returns:
+            List of figure dicts with keys:
+            figure_id, label, caption_title, caption_text, graphic_href
+        """
+        xlink_ns = "http://www.w3.org/1999/xlink"
+        figures: list[dict[str, Any]] = []
+        seen_ids: set[str] = set()
+
+        for fig_elem in root.iter("fig"):
+            fig_id = fig_elem.get("id", "")
+            if fig_id in seen_ids:
+                continue
+            seen_ids.add(fig_id)
+
+            label_elem = fig_elem.find("label")
+            label = self._get_text(label_elem) if label_elem is not None else ""
+
+            caption_elem = fig_elem.find("caption")
+            caption_title = ""
+            caption_text = ""
+            if caption_elem is not None:
+                title_elem = caption_elem.find("title")
+                if title_elem is not None:
+                    caption_title = self._get_text(title_elem)
+                p_parts = []
+                for p in caption_elem.findall("p"):
+                    text = self._get_text(p)
+                    if text:
+                        p_parts.append(text)
+                caption_text = " ".join(p_parts)
+
+            # Extract graphic href
+            graphic_href = ""
+            graphic = fig_elem.find("graphic")
+            if graphic is not None:
+                graphic_href = graphic.get(f"{{{xlink_ns}}}href", "")
+                if not graphic_href:
+                    graphic_href = graphic.get("href", "")
+
+            if not label and not graphic_href and not caption_text:
+                continue
+
+            figures.append({
+                "figure_id": fig_id,
+                "label": label,
+                "caption_title": caption_title or None,
+                "caption_text": caption_text,
+                "graphic_href": graphic_href,
+            })
+
+        return figures
 
     async def get_similar_articles(
         self,

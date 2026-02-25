@@ -1,7 +1,7 @@
 """
-PubMed Search MCP Tools (v0.4.0)
+PubMed Search MCP Tools (v0.4.4)
 
-🎯 33 個 MCP 工具 / 13 categories：
+🎯 40 個 MCP 工具 / 15 categories：
 
 ✅ 搜尋工具 (1)：
 - unified_search: 統一搜索入口，自動多源搜索 (PubMed, Europe PMC, OpenAlex, Semantic Scholar, CrossRef, CORE)
@@ -16,6 +16,9 @@ PubMed Search MCP Tools (v0.4.0)
 ✅ 全文工具 (2)：
 - get_fulltext: 多源全文取得
 - get_text_mined_terms: 文本挖掘標註
+
+✅ 圖表擷取 (1)：
+- get_article_figures: 文章圖表與視覺資料擷取
 
 ✅ NCBI 延伸 (7)：
 - search_gene, get_gene_details, get_gene_literature
@@ -43,10 +46,13 @@ PubMed Search MCP Tools (v0.4.0)
 
 ✅ ICD 轉換 (1)：
 - convert_icd_mesh
-  (search_by_icd 已廢棄 → unified_search 支援 ICD 自動偵測)
 
 ✅ 圖片搜尋 (1)：
 - search_biomedical_images
+
+✅ Pipeline 管理 (6)：
+- save_pipeline, list_pipelines, load_pipeline
+- delete_pipeline, get_pipeline_history, schedule_pipeline
 
 Usage:
     from .tools import register_all_tools
@@ -64,6 +70,7 @@ from .europe_pmc import (
     register_europe_pmc_tools,
 )  # For get_fulltext, get_text_mined_terms
 from .export import register_export_tools
+from .figure_tools import register_figure_tools  # Article figure extraction
 from .icd import register_icd_tools  # ICD-9/ICD-10 to MeSH conversion
 from .image_search import register_image_search_tools  # Biomedical image search
 from .ncbi_extended import register_ncbi_extended_tools
@@ -100,6 +107,9 @@ def register_all_tools(mcp: FastMCP, searcher: LiteratureSearcher):
 
     # 6. 全文工具 (2)
     register_europe_pmc_tools(mcp)
+
+    # 6.5 圖表擷取 (1)
+    register_figure_tools(mcp)
 
     # 7. NCBI 延伸 (7)
     register_ncbi_extended_tools(mcp)
@@ -145,4 +155,5 @@ __all__ = [
     "register_icd_tools",
     "register_image_search_tools",
     "register_pipeline_tools",
+    "register_figure_tools",
 ]
