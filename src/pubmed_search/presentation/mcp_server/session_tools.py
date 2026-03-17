@@ -269,6 +269,70 @@ def register_session_resources(mcp: FastMCP, session_manager: SessionManager):
     Agent doesn't need to use these for normal operation.
     """
 
+    @mcp.resource("session://last-search")
+    def get_last_search() -> str:
+        """Latest search metadata and quick agent-facing summary."""
+        session = session_manager.get_current_session()
+        if not session or not session.search_history:
+            return json.dumps({"active": False, "has_last_search": False})
+
+        last_search = session.search_history[-1]
+        pmids = last_search.get("pmids", [])
+        return json.dumps(
+            {
+                "active": True,
+                "has_last_search": True,
+                "query": last_search.get("query", ""),
+                "timestamp": last_search.get("timestamp", ""),
+                "result_count": last_search.get("result_count", 0),
+                "pmid_count": len(pmids),
+                "pmids": pmids,
+            },
+            ensure_ascii=False,
+        )
+
+    @mcp.resource("session://last-search/pmids")
+    def get_last_search_pmids() -> str:
+        """PMIDs from the latest search for direct agent reuse."""
+        session = session_manager.get_current_session()
+        if not session or not session.search_history:
+            return json.dumps({"active": False, "pmids": []})
+
+        last_search = session.search_history[-1]
+        pmids = last_search.get("pmids", [])
+        return json.dumps(
+            {
+                "active": True,
+                "query": last_search.get("query", ""),
+                "pmids": pmids,
+                "pmids_csv": ",".join(pmids),
+            },
+            ensure_ascii=False,
+        )
+
+    @mcp.resource("session://last-search/results")
+    def get_last_search_results() -> str:
+        """Cached article payloads corresponding to the latest search PMIDs."""
+        session = session_manager.get_current_session()
+        if not session or not session.search_history:
+            return json.dumps({"active": False, "results": []})
+
+        last_search = session.search_history[-1]
+        pmids = last_search.get("pmids", [])
+        cached_articles = [session.article_cache[pmid] for pmid in pmids if pmid in session.article_cache]
+        missing_pmids = [pmid for pmid in pmids if pmid not in session.article_cache]
+        return json.dumps(
+            {
+                "active": True,
+                "query": last_search.get("query", ""),
+                "result_count": last_search.get("result_count", 0),
+                "cached_results": cached_articles,
+                "cached_count": len(cached_articles),
+                "missing_pmids": missing_pmids,
+            },
+            ensure_ascii=False,
+        )
+
     @mcp.resource("session://context")
     def get_research_context() -> str:
         """Internal: Current research context (for debugging)."""

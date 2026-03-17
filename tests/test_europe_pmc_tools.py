@@ -211,6 +211,26 @@ class TestGetFulltext:
             result = await tools["get_fulltext"](doi="10.1234/test")
         assert "example.com/article" in result
 
+    @pytest.mark.asyncio
+    async def test_reports_progress_and_logs(self, tools):
+        mock_client = AsyncMock()
+        mock_client.get_fulltext_xml.return_value = "<xml/>"
+        mock_client.parse_fulltext_xml = MagicMock(
+            return_value={
+                "title": "Test Article",
+                "sections": [{"title": "Introduction", "content": "Hello world"}],
+            }
+        )
+        ctx = AsyncMock()
+        with patch(
+            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
+            return_value=mock_client,
+        ):
+            result = await tools["get_fulltext"](pmcid="PMC7096777", ctx=ctx)
+        assert "Test Article" in result
+        assert ctx.report_progress.await_count >= 3
+        assert ctx.log.await_count >= 1
+
 
 # ============================================================
 # get_text_mined_terms
@@ -288,3 +308,18 @@ class TestGetTextMinedTerms:
         ):
             result = await tools["get_text_mined_terms"](pmid="12345678")
         assert "error" in result.lower()
+
+    @pytest.mark.asyncio
+    async def test_reports_progress(self, tools):
+        mock_client = AsyncMock()
+        mock_client.get_text_mined_terms.return_value = [
+            {"semantic_type": "GENE_PROTEIN", "term": "BRCA1"},
+        ]
+        ctx = AsyncMock()
+        with patch(
+            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
+            return_value=mock_client,
+        ):
+            result = await tools["get_text_mined_terms"](pmid="12345678", ctx=ctx)
+        assert "BRCA1" in result
+        assert ctx.report_progress.await_count >= 2

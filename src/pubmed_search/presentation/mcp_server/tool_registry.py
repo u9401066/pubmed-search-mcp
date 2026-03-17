@@ -15,6 +15,8 @@ Usage:
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -32,17 +34,27 @@ def _extract_registered_tool_names(mcp: FastMCP) -> set[str]:
     list_tools = getattr(mcp, "list_tools", None)
     if callable(list_tools):
         raw_tools = list_tools()
-        names: set[str] = set()
-        for tool in raw_tools:
-            if isinstance(tool, str):
-                names.add(tool)
-                continue
+        if inspect.isawaitable(raw_tools):
+            try:
+                raw_tools = asyncio.run(raw_tools)
+            except RuntimeError:
+                logger.debug(
+                    "FastMCP.list_tools() is awaitable inside a running loop; falling back to private registry"
+                )
+                raw_tools = None
 
-            tool_name = getattr(tool, "name", None)
-            if isinstance(tool_name, str):
-                names.add(tool_name)
-        if names:
-            return names
+        names: set[str] = set()
+        if raw_tools is not None:
+            for tool in raw_tools:
+                if isinstance(tool, str):
+                    names.add(tool)
+                    continue
+
+                tool_name = getattr(tool, "name", None)
+                if isinstance(tool_name, str):
+                    names.add(tool_name)
+            if names:
+                return names
 
     tool_manager = getattr(mcp, "_tool_manager", None)
     tools = getattr(tool_manager, "_tools", None)

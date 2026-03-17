@@ -245,3 +245,38 @@ class TestSessionResources:
         fn = tools["session://context"]
         result = json.loads(fn())
         assert result["active"] is False
+
+    async def test_last_search_resource(self):
+        sm = MagicMock()
+        session = _make_session(
+            search_history=[{"query": "covid", "pmids": ["111", "222"], "timestamp": "2024-01-01", "result_count": 2}],
+            article_cache={"111": {"pmid": "111"}, "222": {"pmid": "222"}},
+        )
+        sm.get_current_session.return_value = session
+        tools = _capture_tools(register_session_resources, sm)
+        result = json.loads(tools["session://last-search"]())
+        assert result["active"] is True
+        assert result["query"] == "covid"
+        assert result["pmid_count"] == 2
+
+    async def test_last_search_pmids_resource(self):
+        sm = MagicMock()
+        session = _make_session(search_history=[{"query": "covid", "pmids": ["111", "222"]}])
+        sm.get_current_session.return_value = session
+        tools = _capture_tools(register_session_resources, sm)
+        result = json.loads(tools["session://last-search/pmids"]())
+        assert result["pmids"] == ["111", "222"]
+        assert result["pmids_csv"] == "111,222"
+
+    async def test_last_search_results_resource(self):
+        sm = MagicMock()
+        session = _make_session(
+            search_history=[{"query": "covid", "pmids": ["111", "999"], "result_count": 2}],
+            article_cache={"111": {"pmid": "111", "title": "Cached"}},
+        )
+        sm.get_current_session.return_value = session
+        tools = _capture_tools(register_session_resources, sm)
+        result = json.loads(tools["session://last-search/results"]())
+        assert result["cached_count"] == 1
+        assert result["cached_results"][0]["title"] == "Cached"
+        assert result["missing_pmids"] == ["999"]

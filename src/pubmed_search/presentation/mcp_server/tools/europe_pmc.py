@@ -26,8 +26,11 @@ Phase 3 Updates (v0.2.8):
 
 from __future__ import annotations
 
+import contextlib
 import logging
-from typing import TYPE_CHECKING, Any, Union
+from typing import TYPE_CHECKING, Any, Literal, Union
+
+from mcp.server.fastmcp import Context  # noqa: TC002 - FastMCP needs runtime access for tool context injection
 
 from pubmed_search.infrastructure.sources import get_europe_pmc_client
 from pubmed_search.infrastructure.sources.core import get_core_client
@@ -221,6 +224,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
         include_pdf_links: bool = True,
         include_figures: bool = False,
         extended_sources: bool = False,
+        ctx: Context | None = None,
     ) -> str:
         """
         🔥 Enhanced multi-source fulltext retrieval.
@@ -263,6 +267,18 @@ def register_europe_pmc_tools(mcp: FastMCP):
             get_fulltext(pmid="12345678", extended_sources=True)
         """
 
+        async def _progress(progress: float, total: float, message: str) -> None:
+            if ctx is not None:
+                with contextlib.suppress(Exception):
+                    await ctx.report_progress(progress, total, message)
+
+        async def _log(level: Literal["debug", "info", "warning", "error"], message: str) -> None:
+            if ctx is not None:
+                with contextlib.suppress(Exception):
+                    await ctx.log(level, message, logger_name=__name__)
+
+        await _progress(1, 6, "Resolving article identifiers...")
+
         # Phase 2.2: Smart identifier detection
         detected_pmcid = pmcid
         detected_doi = doi
@@ -303,6 +319,10 @@ def register_europe_pmc_tools(mcp: FastMCP):
             )
 
         logger.info(f"Getting fulltext: pmcid={detected_pmcid}, pmid={detected_pmid}, doi={detected_doi}")
+        await _log(
+            "info",
+            f"get_fulltext start pmcid={detected_pmcid} pmid={detected_pmid} doi={'yes' if detected_doi else 'no'}",
+        )
 
         # Collect results from all sources
         fulltext_content = None
@@ -312,6 +332,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
 
         # === SOURCE 1: Europe PMC (best for structured fulltext) ===
         if detected_pmcid:
+            await _progress(2, 6, "Trying Europe PMC fulltext...")
             sources_tried.append("Europe PMC")
             try:
                 client = get_europe_pmc_client()
@@ -333,9 +354,11 @@ def register_europe_pmc_tools(mcp: FastMCP):
                         )
             except Exception as e:
                 logger.warning(f"Europe PMC failed: {e}")
+                await _log("warning", f"Europe PMC fulltext failed: {e!s}")
 
         # === SOURCE 2: Unpaywall (best for finding OA via DOI) ===
         if detected_doi:
+            await _progress(3, 6, "Checking Unpaywall open-access locations...")
             sources_tried.append("Unpaywall")
             try:
                 unpaywall = get_unpaywall_client()
@@ -383,9 +406,11 @@ def register_europe_pmc_tools(mcp: FastMCP):
                             )
             except Exception as e:
                 logger.warning(f"Unpaywall failed: {e}")
+                await _log("warning", f"Unpaywall lookup failed: {e!s}")
 
         # === SOURCE 3: CORE (200M+ open access papers) ===
         if detected_doi and not fulltext_content:
+            await _progress(4, 6, "Trying CORE fallback...")
             sources_tried.append("CORE")
             try:
                 core = get_core_client()
@@ -422,9 +447,11 @@ def register_europe_pmc_tools(mcp: FastMCP):
                             )
             except Exception as e:
                 logger.warning(f"CORE failed: {e}")
+                await _log("warning", f"CORE fulltext lookup failed: {e!s}")
 
         # === EXTENDED SOURCES (15 total) ===
         if extended_sources:
+            await _progress(5, 6, "Checking extended fulltext sources...")
             sources_tried.append("Extended (15 sources)")
             try:
                 from pubmed_search.infrastructure.sources.fulltext_download import (
@@ -465,6 +492,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
                 logger.info(f"Extended sources found {len(extended_links)} additional links")
             except Exception as e:
                 logger.warning(f"Extended sources failed: {e}")
+                await _log("warning", f"Extended fulltext sources failed: {e!s}")
 
         # === BUILD OUTPUT ===
         if not fulltext_content and not pdf_links:
@@ -479,6 +507,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
             )
 
         # Format output
+        await _progress(6, 6, "Formatting fulltext response...")
         output = f"📖 **{article_title or 'Fulltext Retrieved'}**\n"
         output += f"🔍 Sources checked: {', '.join(sources_tried)}\n\n"
 
@@ -540,6 +569,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
                             output += f"**Image URL:** {fig.image_url}\n\n"
             except Exception as e:
                 logger.warning("Figure extraction in get_fulltext failed: %s", e)
+                await _log("warning", f"Figure extraction skipped: {e!s}")
 
         return output
 
@@ -669,6 +699,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
         pmid: Union[str, int] | None = None,
         pmcid: Union[str, int] | None = None,
         semantic_type: str | None = None,
+        ctx: Context | None = None,
     ) -> str:
         """
         Get text-mined annotations from Europe PMC.
@@ -690,6 +721,12 @@ def register_europe_pmc_tools(mcp: FastMCP):
         Returns:
             List of text-mined entities with counts and sections.
         """
+
+        async def _progress(progress: float, total: float, message: str) -> None:
+            if ctx is not None:
+                with contextlib.suppress(Exception):
+                    await ctx.report_progress(progress, total, message)
+
         # Phase 2.1: Input normalization
         normalized_pmid = InputNormalizer.normalize_pmid_single(pmid) if pmid else None
         normalized_pmcid = InputNormalizer.normalize_pmcid(str(pmcid)) if pmcid else None
@@ -697,6 +734,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
         logger.info(f"Getting text-mined terms for PMID={normalized_pmid}, PMCID={normalized_pmcid}")
 
         try:
+            await _progress(1, 3, "Resolving article identifier...")
             if not normalized_pmid and not normalized_pmcid:
                 return ResponseFormatter.error(
                     error="Either pmid or pmcid is required",
@@ -719,6 +757,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
                 else:
                     article_id = normalized_pmcid or ""
 
+                    await _progress(2, 3, "Fetching Europe PMC text-mined annotations...")
             terms = await client.get_text_mined_terms(source, str(article_id), semantic_type)
 
             if not terms:
@@ -779,6 +818,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
 
                 output += "\n"
 
+            await _progress(3, 3, "Text-mined terms ready")
             return output
 
         except Exception as e:

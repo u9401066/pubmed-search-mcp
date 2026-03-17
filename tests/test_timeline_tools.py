@@ -174,6 +174,23 @@ class TestBuildResearchTimeline:
         result = await tools["build_research_timeline"](topic="test")
         assert "error" in result.lower()
 
+    @pytest.mark.asyncio
+    async def test_reports_progress_with_context(self):
+        mcp = MagicMock()
+        searcher = MagicMock()
+        ctx = AsyncMock()
+        with (
+            patch("pubmed_search.presentation.mcp_server.tools.timeline.TimelineBuilder") as MockTB,
+            patch("pubmed_search.presentation.mcp_server.tools.timeline.MilestoneDetector"),
+        ):
+            mock_builder = MockTB.return_value
+            mock_builder.build_timeline = AsyncMock(return_value=_FakeTimeline())
+            tools = _capture_tools(mcp, searcher)
+
+        result = await tools["build_research_timeline"](topic="test", ctx=ctx)
+        assert isinstance(result, str)
+        assert ctx.report_progress.await_count >= 3
+
 
 # ============================================================
 # build_timeline_from_pmids - REMOVED in v0.3.1
@@ -222,6 +239,24 @@ class TestAnalyzeTimelineMilestones:
 
         result = await tools["analyze_timeline_milestones"](topic="zzz")
         assert "no" in result.lower() or "suggest" in result.lower()
+
+    @pytest.mark.asyncio
+    async def test_reports_progress(self):
+        mcp = MagicMock()
+        searcher = MagicMock()
+        ctx = AsyncMock()
+        with (
+            patch("pubmed_search.presentation.mcp_server.tools.timeline.TimelineBuilder") as MockTB,
+            patch("pubmed_search.presentation.mcp_server.tools.timeline.MilestoneDetector"),
+        ):
+            mock_builder = MockTB.return_value
+            mock_builder.build_timeline = AsyncMock(return_value=_FakeTimeline())
+            tools = _capture_tools(mcp, searcher)
+
+        result = await tools["analyze_timeline_milestones"](topic="test", ctx=ctx)
+        parsed = json.loads(result)
+        assert parsed["topic"] == "test"
+        assert ctx.report_progress.await_count >= 2
 
 
 # ============================================================
@@ -299,3 +334,21 @@ class TestCompareTimelines:
 
         result = await tools["compare_timelines"](topics="a,b")
         assert "error" in result.lower()
+
+    @pytest.mark.asyncio
+    async def test_reports_progress(self):
+        mcp = MagicMock()
+        searcher = MagicMock()
+        ctx = AsyncMock()
+        with (
+            patch("pubmed_search.presentation.mcp_server.tools.timeline.TimelineBuilder") as MockTB,
+            patch("pubmed_search.presentation.mcp_server.tools.timeline.MilestoneDetector"),
+        ):
+            mock_builder = MockTB.return_value
+            mock_builder.build_timeline = AsyncMock(return_value=_FakeTimeline())
+            tools = _capture_tools(mcp, searcher)
+
+        result = await tools["compare_timelines"](topics="drugA,drugB", ctx=ctx)
+        parsed = json.loads(result)
+        assert len(parsed["topics"]) == 2
+        assert ctx.report_progress.await_count >= 2

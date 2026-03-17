@@ -23,6 +23,7 @@ def _fake_tools(names: set[str] | list[str]) -> list[SimpleNamespace]:
     """Build simple tool-like objects exposing a public ``name`` attribute."""
     return [SimpleNamespace(name=name) for name in names]
 
+
 # ============================================================
 # list_registered_tools
 # ============================================================
@@ -191,6 +192,17 @@ class TestValidateToolRegistry:
         result = validate_tool_registry(mcp)
         assert result["valid"] is False
         assert "extra_undocumented_tool" in result["extra"]
+
+    async def test_awaitable_list_tools(self):
+        mcp = MagicMock()
+
+        async def _list_tools():
+            return _fake_tools({"unified_search"})
+
+        mcp.list_tools.side_effect = _list_tools
+
+        result = validate_tool_registry(mcp)
+        assert "unified_search" in result["registered"]
 
     async def test_cannot_access_tools(self):
         mcp = MagicMock(spec=[])

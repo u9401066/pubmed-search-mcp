@@ -20,9 +20,12 @@ These tools enable AI agents to:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
+
+from mcp.server.fastmcp import Context  # noqa: TC002 - FastMCP needs runtime access for tool context injection
 
 from pubmed_search.application.timeline import LandmarkScorer, MilestoneDetector, TimelineBuilder, build_research_tree
 from pubmed_search.application.timeline.timeline_builder import format_timeline_text
@@ -55,6 +58,7 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         include_all: bool = False,
         highlight_landmarks: bool = True,
         output_format: str = "text",
+        ctx: Context | None = None,
     ) -> str:
         """
         Build a research timeline for a topic OR specific PMIDs.
@@ -119,7 +123,19 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             build_research_timeline(pmids="12345678,23456789", topic="Propofol Studies")
             build_research_timeline(pmids="last", topic="Previous Search", output_format="json")
         """
+
+        async def _progress(progress: float, total: float, message: str) -> None:
+            if ctx is not None:
+                with contextlib.suppress(Exception):
+                    await ctx.report_progress(progress, total, message)
+
+        async def _log(level: Literal["debug", "info", "warning", "error"], message: str) -> None:
+            if ctx is not None:
+                with contextlib.suppress(Exception):
+                    await ctx.log(level, message, logger_name=__name__)
+
         try:
+            await _progress(1, 4, "Preparing timeline request...")
             # Determine mode: PMIDs or topic search
             if pmids:
                 # Mode 2: Build from specific PMIDs
@@ -131,12 +147,16 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                         tool_name="build_research_timeline",
                     )
 
+                await _log("info", f"Building timeline from {len(pmid_list)} PMIDs")
+                await _progress(2, 4, "Loading PMID-backed timeline...")
                 timeline = await builder.build_timeline_from_pmids(
                     pmids=pmid_list,
                     topic=topic or "Custom Timeline",
                 )
             elif topic:
                 # Mode 1: Search by topic
+                await _log("info", f"Building timeline for topic: {topic}")
+                await _progress(2, 4, "Searching timeline evidence...")
                 timeline = await builder.build_timeline(
                     topic=topic,
                     max_events=max_events,
@@ -153,6 +173,7 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 )
 
             if not timeline.events:
+                await _log("warning", "Timeline request completed with no events")
                 return ResponseFormatter.no_results(
                     query=topic or "provided PMIDs",
                     suggestions=[
@@ -163,6 +184,7 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 )
 
             # Format output
+            await _progress(3, 4, f"Formatting {len(timeline.events)} timeline events...")
             if output_format == "tree":
                 tree = build_research_tree(timeline)
                 return tree.to_text_tree()
@@ -192,10 +214,12 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                     ]
                 }
                 return json.dumps(d3_data, indent=2)
+            await _progress(4, 4, "Timeline complete")
             return format_timeline_text(timeline)
 
         except Exception as e:
             logger.exception(f"Timeline build failed: {e}")
+            await _log("error", f"Timeline build failed: {e!s}")
             return ResponseFormatter.error(
                 error=str(e),
                 suggestion="Try a simpler topic or check network connection",
@@ -206,6 +230,7 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
     async def analyze_timeline_milestones(
         topic: str,
         max_results: int = 100,
+        ctx: Context | None = None,
     ) -> str:
         """
         Analyze milestone distribution for a research topic.
@@ -226,7 +251,14 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         Example:
             analyze_timeline_milestones("remdesivir COVID-19")
         """
+
+        async def _progress(progress: float, total: float, message: str) -> None:
+            if ctx is not None:
+                with contextlib.suppress(Exception):
+                    await ctx.report_progress(progress, total, message)
+
         try:
+            await _progress(1, 3, "Collecting timeline milestones...")
             timeline = await builder.build_timeline(
                 topic=topic,
                 max_events=max_results,
@@ -240,6 +272,7 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 )
 
             # Build analysis
+            await _progress(2, 3, "Analyzing milestone distribution...")
             analysis = {
                 "topic": topic,
                 "total_milestones": timeline.total_events,
@@ -268,6 +301,7 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 years[event.year] = years.get(event.year, 0) + 1
             analysis["activity_by_year"] = dict(sorted(years.items()))
 
+            await _progress(3, 3, "Milestone analysis complete")
             return json.dumps(analysis, indent=2, ensure_ascii=False)
 
         except Exception as e:
@@ -278,6 +312,7 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
     async def compare_timelines(
         topics: str,
         max_events_per_topic: int = 15,
+        ctx: Context | None = None,
     ) -> str:
         """
         Compare research timelines of multiple topics.
@@ -298,6 +333,12 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         Example:
             compare_timelines("remimazolam,propofol", max_events_per_topic=10)
         """
+
+        async def _progress(progress: float, total: float, message: str) -> None:
+            if ctx is not None:
+                with contextlib.suppress(Exception):
+                    await ctx.report_progress(progress, total, message)
+
         try:
             topic_list = [t.strip() for t in topics.split(",") if t.strip()]
 
@@ -316,7 +357,9 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
 
             comparison: dict[str, Any] = {"topics": [], "summary": {}}
 
-            for topic in topic_list:
+            total_topics = max(len(topic_list), 1)
+            for index, topic in enumerate(topic_list, start=1):
+                await _progress(index, total_topics + 1, f"Building timeline for {topic}...")
                 timeline = await builder.build_timeline(
                     topic=topic,
                     max_events=max_events_per_topic,
@@ -352,6 +395,7 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             return json.dumps(comparison, indent=2, ensure_ascii=False)
 
         except Exception as e:
+            await _progress(total_topics + 1, total_topics + 1, "Timeline comparison complete")
             logger.exception(f"Timeline comparison failed: {e}")
             return ResponseFormatter.error(error=str(e), tool_name="compare_timelines")
 
