@@ -220,7 +220,8 @@ class TestFigureClient:
 
     def test_parse_jats_with_subfigures(self, client):
         figures, title = client._parse_jats_figures(
-            SAMPLE_JATS_XML_WITH_FIG_GROUP, "PMC123",
+            SAMPLE_JATS_XML_WITH_FIG_GROUP,
+            "PMC123",
             include_subfigures=True,
         )
         assert title == "Article with Fig Group"
@@ -232,7 +233,8 @@ class TestFigureClient:
 
     def test_parse_jats_with_tables(self, client):
         figures, _ = client._parse_jats_figures(
-            SAMPLE_JATS_XML_WITH_TABLE, "PMC123",
+            SAMPLE_JATS_XML_WITH_TABLE,
+            "PMC123",
             include_tables=True,
         )
         assert figures is not None
@@ -326,7 +328,8 @@ class TestFigureClient:
     async def test_get_article_figures_all_fail(self, client):
         """Test error when all sources fail."""
         with patch.object(
-            client, "_make_request",
+            client,
+            "_make_request",
             new_callable=AsyncMock,
             side_effect=ConnectionError("All down"),
         ):
@@ -347,12 +350,12 @@ class TestFigureClient:
 
     async def test_resolve_image_urls_from_html(self, client):
         """Test HTML scraping for CDN URLs."""
-        html = '''
+        html = """
         <html><body>
         <img src="https://cdn.ncbi.nlm.nih.gov/pmc/blobs/abc/article-fig1.jpg" alt="Fig 1"/>
         <img src="https://cdn.ncbi.nlm.nih.gov/pmc/blobs/xyz/article-fig2.gif" alt="Fig 2"/>
         </body></html>
-        '''
+        """
         figures = [
             ArticleFigure(figure_id="f1", label="Figure 1", graphic_href="article-fig1"),
             ArticleFigure(figure_id="f2", label="Figure 2", graphic_href="article-fig2"),
@@ -370,7 +373,8 @@ class TestFigureClient:
         figures = [ArticleFigure(figure_id="f1", label="Fig 1", graphic_href="x")]
 
         with patch.object(
-            client, "_make_request",
+            client,
+            "_make_request",
             new_callable=AsyncMock,
             side_effect=ConnectionError("Failed"),
         ):

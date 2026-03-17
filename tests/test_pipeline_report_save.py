@@ -51,13 +51,7 @@ def workspace_store(tmp_path: Path) -> PipelineStore:
 @pytest.fixture()
 def sample_report() -> str:
     """A sample pipeline report markdown."""
-    return (
-        "# Pipeline Report\n\n"
-        "## Executive Summary\n\n"
-        "| Metric | Value |\n"
-        "|--------|-------|\n"
-        "| Articles | 10 |\n"
-    )
+    return "# Pipeline Report\n\n## Executive Summary\n\n| Metric | Value |\n|--------|-------|\n| Articles | 10 |\n"
 
 
 @pytest.fixture()

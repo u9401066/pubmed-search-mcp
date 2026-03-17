@@ -85,21 +85,13 @@ def check_file(filepath: str) -> list[tuple[int, str]]:
     for node in ast.walk(tree):
         # os.environ['KEY'] or os.environ.get('KEY')
         if isinstance(node, ast.Attribute):
-            if (
-                isinstance(node.value, ast.Name)
-                and node.value.id == "os"
-                and node.attr in ("environ", "getenv")
-            ):
+            if isinstance(node.value, ast.Name) and node.value.id == "os" and node.attr in ("environ", "getenv"):
                 line_text = lines[node.lineno - 1].strip() if node.lineno <= len(lines) else ""
                 violations.append((node.lineno, line_text))
 
         # os.getenv('KEY')
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
-            if (
-                isinstance(node.func.value, ast.Name)
-                and node.func.value.id == "os"
-                and node.func.attr == "getenv"
-            ):
+            if isinstance(node.func.value, ast.Name) and node.func.value.id == "os" and node.func.attr == "getenv":
                 # Avoid double-counting with the attribute check above
                 pass
 

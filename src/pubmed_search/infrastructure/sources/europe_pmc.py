@@ -579,13 +579,15 @@ class EuropePMCClient(BaseAPIClient):
             if not label and not graphic_href and not caption_text:
                 continue
 
-            figures.append({
-                "figure_id": fig_id,
-                "label": label,
-                "caption_title": caption_title or None,
-                "caption_text": caption_text,
-                "graphic_href": graphic_href,
-            })
+            figures.append(
+                {
+                    "figure_id": fig_id,
+                    "label": label,
+                    "caption_title": caption_title or None,
+                    "caption_text": caption_text,
+                    "graphic_href": graphic_href,
+                }
+            )
 
         return figures
 

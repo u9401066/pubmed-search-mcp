@@ -343,12 +343,8 @@ class TestReciprocalRankFusion:
         result_default = reciprocal_rank_fusion(sample_articles, dim_rankings, k=60)
         result_small_k = reciprocal_rank_fusion(sample_articles, dim_rankings, k=1)
         # Smaller k amplifies rank differences
-        default_diff = abs(
-            result_default.rrf_scores["pmid:111"] - result_default.rrf_scores["pmid:333"]
-        )
-        small_k_diff = abs(
-            result_small_k.rrf_scores["pmid:111"] - result_small_k.rrf_scores["pmid:333"]
-        )
+        default_diff = abs(result_default.rrf_scores["pmid:111"] - result_default.rrf_scores["pmid:333"])
+        small_k_diff = abs(result_small_k.rrf_scores["pmid:111"] - result_small_k.rrf_scores["pmid:333"])
         assert small_k_diff > default_diff
 
 

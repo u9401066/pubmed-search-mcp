@@ -727,8 +727,16 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 calculate_reproducibility,
             )
 
-            sources_queried_list = list(source_api_counts.keys()) if source_api_counts else [s for s in dispatch_sources if s != "crossref"]
-            sources_responded_list = [s for s in sources_queried_list if source_api_counts.get(s, (0, None))[0] > 0] if source_api_counts else sources_queried_list
+            sources_queried_list = (
+                list(source_api_counts.keys())
+                if source_api_counts
+                else [s for s in dispatch_sources if s != "crossref"]
+            )
+            sources_responded_list = (
+                [s for s in sources_queried_list if source_api_counts.get(s, (0, None))[0] > 0]
+                if source_api_counts
+                else sources_queried_list
+            )
             reproducibility = calculate_reproducibility(
                 query=query,
                 sources_queried=sources_queried_list,
@@ -767,7 +775,11 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 if clinical_trials_task:
                     clinical_trials_task.cancel()
                 return _format_as_json(
-                    ranked, analysis, stats, relaxation_result, deep_search_metrics,
+                    ranked,
+                    analysis,
+                    stats,
+                    relaxation_result,
+                    deep_search_metrics,
                     source_disagreement=source_disagreement,
                     reproducibility_score=reproducibility,
                     research_context=research_context_data,

@@ -283,24 +283,18 @@ async def _format_unified_results(
         output_parts.append("\n## 📊 Source Agreement Analysis\n")
         sas = source_disagreement.source_agreement_score
         sas_label = "High" if sas >= 0.7 else ("Moderate" if sas >= 0.4 else "Low")
-        output_parts.append(
-            f"**Source Agreement Score (SAS)**: {sas:.2f} ({sas_label})"
-        )
+        output_parts.append(f"**Source Agreement Score (SAS)**: {sas:.2f} ({sas_label})")
         output_parts.append(
             f"**Complementarity**: {source_disagreement.source_complementarity:.0%} "
             f"({source_disagreement.single_source_articles} single-source / "
             f"{source_disagreement.cross_source_articles} cross-source)"
         )
         if source_disagreement.per_source_unique:
-            unique_parts = [
-                f"{src}: {cnt}" for src, cnt in source_disagreement.per_source_unique.items() if cnt > 0
-            ]
+            unique_parts = [f"{src}: {cnt}" for src, cnt in source_disagreement.per_source_unique.items() if cnt > 0]
             if unique_parts:
                 output_parts.append(f"**Exclusive findings**: {', '.join(unique_parts)}")
         if source_disagreement.rank_correlation:
-            corr_parts = [
-                f"{pair}: {val:.2f}" for pair, val in source_disagreement.rank_correlation.items()
-            ]
+            corr_parts = [f"{pair}: {val:.2f}" for pair, val in source_disagreement.rank_correlation.items()]
             output_parts.append(f"**Pairwise overlap**: {', '.join(corr_parts)}")
         output_parts.append("")
 
@@ -309,9 +303,7 @@ async def _format_unified_results(
         output_parts.append("\n---")
         output_parts.append("\n## 🔄 Reproducibility Score\n")
         rs = reproducibility_score
-        output_parts.append(
-            f"**Grade**: {rs.grade} ({rs.overall_score:.0%})"
-        )
+        output_parts.append(f"**Grade**: {rs.grade} ({rs.overall_score:.0%})")
         det_icon = "✅" if rs.deterministic else "⚠️"
         output_parts.append(
             f"| Component | Score |\n"

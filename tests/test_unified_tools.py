@@ -347,7 +347,9 @@ class TestUnifiedSearch:
         ):
             mock_enhancer.return_value.enhance.side_effect = Exception("skip")
             MockTimelineBuilder.return_value.build_timeline_from_pmids = AsyncMock(return_value=fake_timeline)
-            result = await tools["unified_search"](query="test", output_format="json", options="context_graph,no_scores")
+            result = await tools["unified_search"](
+                query="test", output_format="json", options="context_graph,no_scores"
+            )
 
         parsed = json.loads(result)
         assert parsed["research_context"]["topic"] == "test"

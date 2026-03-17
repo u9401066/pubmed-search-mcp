@@ -104,9 +104,7 @@ def register_figure_tools(mcp: FastMCP):
                     tool_name="get_article_figures",
                 )
 
-        logger.info(
-            "Extracting figures: pmcid=%s, pmid=%s", detected_pmcid, detected_pmid
-        )
+        logger.info("Extracting figures: pmcid=%s, pmid=%s", detected_pmcid, detected_pmid)
 
         try:
             from pubmed_search.infrastructure.sources.figure_client import (
@@ -124,10 +122,7 @@ def register_figure_tools(mcp: FastMCP):
             if result.error:
                 return ResponseFormatter.error(
                     error=result.error,
-                    suggestion=(
-                        result.error_detail
-                        or "Try a different article or check if it's in PMC"
-                    ),
+                    suggestion=(result.error_detail or "Try a different article or check if it's in PMC"),
                     tool_name="get_article_figures",
                 )
 
@@ -149,7 +144,7 @@ async def _resolve_pmid_to_pmcid(pmid: str) -> str | None:
 
         client = get_europe_pmc_client()
         result = await client.search(
-            query=f'EXT_ID:{pmid} AND SRC:MED',
+            query=f"EXT_ID:{pmid} AND SRC:MED",
             limit=1,
             result_type="lite",
         )
@@ -192,15 +187,15 @@ def _format_figures_output(result: ArticleFiguresResult) -> str:
             if fig.graphic_href:
                 output += f"📎 Graphic ref: `{fig.graphic_href}`\n"
             if fig.mentioned_in_sections:
-                output += (
-                    f"📍 Referenced in: {', '.join(fig.mentioned_in_sections)}\n"
-                )
+                output += f"📍 Referenced in: {', '.join(fig.mentioned_in_sections)}\n"
 
             # Subfigures
             if fig.subfigures:
                 output += "\n**Sub-figures:**\n"
                 for sf in fig.subfigures:
-                    output += f"  - **{sf.label}**: {sf.caption_text[:100]}{'...' if len(sf.caption_text) > 100 else ''}"
+                    output += (
+                        f"  - **{sf.label}**: {sf.caption_text[:100]}{'...' if len(sf.caption_text) > 100 else ''}"
+                    )
                     if sf.image_url:
                         output += f"\n    🔗 {sf.image_url}"
                     output += "\n"

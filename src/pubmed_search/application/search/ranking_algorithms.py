@@ -279,18 +279,13 @@ def reciprocal_rank_fusion(
 
     if dim_rank_maps:
         if dimension_weights:
-            active_weights = {
-                dim_name: max(dimension_weights.get(dim_name, 0.0), 0.0)
-                for dim_name in dim_rank_maps
-            }
+            active_weights = {dim_name: max(dimension_weights.get(dim_name, 0.0), 0.0) for dim_name in dim_rank_maps}
             total_weight = sum(active_weights.values())
             if total_weight <= 0:
                 total_weight = float(len(active_weights))
                 normalized_weights = dict.fromkeys(active_weights, 1.0 / total_weight)
             else:
-                normalized_weights = {
-                    dim_name: weight / total_weight for dim_name, weight in active_weights.items()
-                }
+                normalized_weights = {dim_name: weight / total_weight for dim_name, weight in active_weights.items()}
         else:
             equal_weight = 1.0 / len(dim_rank_maps)
             normalized_weights = dict.fromkeys(dim_rank_maps, equal_weight)

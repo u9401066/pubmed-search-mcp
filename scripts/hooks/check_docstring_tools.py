@@ -46,13 +46,7 @@ def get_staged_files() -> list[str]:
         capture_output=True,
         text=True,
     )
-    return [
-        f
-        for f in result.stdout.strip().split("\n")
-        if f.strip()
-        and f.endswith(".py")
-        and f.startswith(TOOLS_DIR)
-    ]
+    return [f for f in result.stdout.strip().split("\n") if f.strip() and f.endswith(".py") and f.startswith(TOOLS_DIR)]
 
 
 def _is_tool_decorator(node: ast.expr) -> bool:

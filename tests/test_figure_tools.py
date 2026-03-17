@@ -69,6 +69,7 @@ class TestGetArticleFiguresTool:
             def decorator(fn):
                 tools_registered[fn.__name__] = fn
                 return fn
+
             return decorator
 
         mcp.tool = capture_tool
@@ -281,17 +282,22 @@ class TestFormatFiguresOutput:
         )
 
         sub = ArticleFigure(
-            figure_id="f1a", label="(A)",
+            figure_id="f1a",
+            label="(A)",
             caption_text="Subfigure A showing detailed view of the results.",
             image_url="https://europepmc.org/articles/PMC123/bin/f1a.jpg",
         )
         fig = ArticleFigure(
-            figure_id="f1", label="Figure 1",
+            figure_id="f1",
+            label="Figure 1",
             caption_text="Multi-part",
             subfigures=[sub],
         )
         result = ArticleFiguresResult(
-            pmcid="PMC123", total_figures=1, figures=[fig], source="europepmc",
+            pmcid="PMC123",
+            total_figures=1,
+            figures=[fig],
+            source="europepmc",
         )
 
         output = _format_figures_output(result)

@@ -60,6 +60,7 @@ def _get_ranking_algorithms() -> Any:
         _ranking_algorithms = _ra
     return _ranking_algorithms
 
+
 # Lazy import to avoid circular dependency
 _UnifiedArticle: Any = None
 

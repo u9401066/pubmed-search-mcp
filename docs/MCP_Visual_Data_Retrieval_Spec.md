@@ -763,7 +763,7 @@ class ImageURLResolver:
 
     async def _try_pmc_cdn(self, pmcid: str, graphic_href: str) -> str | None:
         """
-        PMC CDN URL requires blob hashes. 
+        PMC CDN URL requires blob hashes.
         Fetch from PMC article page meta tags or OA manifest.
         """
         # Fetch article page headers/meta to discover CDN base
@@ -876,12 +876,12 @@ cached = get_cached_article(pmid="40384072")
 在 MedPaper Assistant MCP 中，figure 工具可用於：
 
 ```
-save_reference_mcp(pmid) 
-  → 自動呼叫 get_article_figures 
+save_reference_mcp(pmid)
+  → 自動呼叫 get_article_figures
   → Figure metadata 存入 reference 記錄
   → 寫作時可引用 figure URL
 
-draft_section(section="methods") 
+draft_section(section="methods")
   → 引用相關文獻的架構圖作為比較依據
 ```
 

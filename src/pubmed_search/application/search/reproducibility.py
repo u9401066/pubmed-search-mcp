@@ -309,11 +309,7 @@ def _score_result_stability(
 
     # Multi-source verification bonus
     if articles:
-        multi_source_count = sum(
-            1
-            for a in articles
-            if len(getattr(a, "sources", []) or []) > 1
-        )
+        multi_source_count = sum(1 for a in articles if len(getattr(a, "sources", []) or []) > 1)
         multi_source_ratio = multi_source_count / len(articles)
         verification_bonus = multi_source_ratio * 0.1  # Up to 0.1 bonus
     else:

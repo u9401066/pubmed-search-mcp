@@ -48,11 +48,7 @@ def get_staged_files() -> list[str]:
         capture_output=True,
         text=True,
     )
-    return [
-        f
-        for f in result.stdout.strip().split("\n")
-        if f.strip() and f.endswith(".py") and f.startswith(SCOPE_DIR)
-    ]
+    return [f for f in result.stdout.strip().split("\n") if f.strip() and f.endswith(".py") and f.startswith(SCOPE_DIR)]
 
 
 def check_file(filepath: str) -> list[tuple[int, str]]:
@@ -75,11 +71,7 @@ def check_file(filepath: str) -> list[tuple[int, str]]:
     lines = content.splitlines()
 
     for node in ast.walk(tree):
-        if (
-            isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Name)
-            and node.func.id == "print"
-        ):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "print":
             lineno = node.lineno
             line_text = lines[lineno - 1].strip() if lineno <= len(lines) else ""
             violations.append((lineno, line_text))

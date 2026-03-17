@@ -120,9 +120,7 @@ class FigureClient(BaseAPIClient):
         try:
             xml = await self._fetch_epmc_xml(pmcid)
             if xml:
-                figures, title = self._parse_jats_figures(
-                    xml, pmcid, include_subfigures, include_tables
-                )
+                figures, title = self._parse_jats_figures(xml, pmcid, include_subfigures, include_tables)
                 if figures is not None:
                     result.figures = figures
                     result.total_figures = len(figures)
@@ -151,9 +149,7 @@ class FigureClient(BaseAPIClient):
         try:
             xml = await self._fetch_pmc_efetch_xml(pmcid_numeric)
             if xml:
-                figures, title = self._parse_jats_figures(
-                    xml, pmcid, include_subfigures, include_tables
-                )
+                figures, title = self._parse_jats_figures(xml, pmcid, include_subfigures, include_tables)
                 if figures is not None:
                     result.figures = figures
                     result.total_figures = len(figures)
@@ -205,10 +201,7 @@ class FigureClient(BaseAPIClient):
 
     async def _fetch_pmc_efetch_xml(self, pmcid_numeric: str) -> str | None:
         """Fetch JATS XML from NCBI PMC efetch."""
-        url = (
-            f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
-            f"?db=pmc&id={pmcid_numeric}&rettype=xml"
-        )
+        url = f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pmc&id={pmcid_numeric}&rettype=xml"
         try:
             result = await self._make_request(
                 url,
@@ -221,10 +214,7 @@ class FigureClient(BaseAPIClient):
 
     async def _fetch_bioc_figures(self, pmcid: str) -> list[ArticleFigure]:
         """Fetch figure captions from PMC BioC API (JSON)."""
-        url = (
-            f"https://www.ncbi.nlm.nih.gov/research/bionlp/RESTful/"
-            f"pmcoa.cgi/BioC_json/{pmcid}/unicode"
-        )
+        url = f"https://www.ncbi.nlm.nih.gov/research/bionlp/RESTful/pmcoa.cgi/BioC_json/{pmcid}/unicode"
         try:
             data = await self._make_request(url)
             if not isinstance(data, dict):
@@ -300,9 +290,7 @@ class FigureClient(BaseAPIClient):
 
         return unique_figures, title
 
-    def _parse_fig_element(
-        self, fig_elem: Element, pmcid: str
-    ) -> ArticleFigure | None:
+    def _parse_fig_element(self, fig_elem: Element, pmcid: str) -> ArticleFigure | None:
         """Parse a single <fig> element into ArticleFigure."""
         figure_id = fig_elem.get("id", "")
         label_elem = fig_elem.find("label")
@@ -342,9 +330,7 @@ class FigureClient(BaseAPIClient):
             graphic_href=graphic_href,
         )
 
-    def _parse_fig_group(
-        self, fig_group: Element, pmcid: str
-    ) -> ArticleFigure | None:
+    def _parse_fig_group(self, fig_group: Element, pmcid: str) -> ArticleFigure | None:
         """Parse a <fig-group> element with its sub-figures."""
         parent_fig = self._parse_fig_element(fig_group, pmcid)
         if not parent_fig:
@@ -403,9 +389,7 @@ class FigureClient(BaseAPIClient):
 
         return None
 
-    async def resolve_image_urls_from_html(
-        self, pmcid: str, figures: list[ArticleFigure]
-    ) -> list[ArticleFigure]:
+    async def resolve_image_urls_from_html(self, pmcid: str, figures: list[ArticleFigure]) -> list[ArticleFigure]:
         """Resolve accurate image URLs by scraping the PMC article page.
 
         This is a more reliable fallback that gets the exact CDN URLs
@@ -443,17 +427,11 @@ class FigureClient(BaseAPIClient):
             logger.warning("HTML scraping fallback failed for %s: %s", pmcid, e)
             return figures
 
-    def _resolve_figure_references(
-        self, figures: list[ArticleFigure], body: Element
-    ) -> None:
+    def _resolve_figure_references(self, figures: list[ArticleFigure], body: Element) -> None:
         """Find which sections reference each figure."""
         for sec in body.findall(".//sec"):
             sec_title_elem = sec.find("title")
-            sec_title = (
-                self._get_element_text(sec_title_elem)
-                if sec_title_elem is not None
-                else ""
-            )
+            sec_title = self._get_element_text(sec_title_elem) if sec_title_elem is not None else ""
             if not sec_title:
                 continue
 
@@ -479,7 +457,7 @@ class FigureClient(BaseAPIClient):
                     # Try to extract label from text
                     label_match = re.match(r"(Figure\s+\d+[A-Za-z]?)", text, re.IGNORECASE)
                     label = label_match.group(1) if label_match else ""
-                    caption = text[len(label):].strip(". ") if label else text
+                    caption = text[len(label) :].strip(". ") if label else text
 
                     figures.append(
                         ArticleFigure(
@@ -506,9 +484,7 @@ class FigureClient(BaseAPIClient):
                 text += child.tail
         return text.strip()
 
-    def _handle_expected_status(
-        self, response: Any, url: str
-    ) -> dict[str, Any] | str | None:
+    def _handle_expected_status(self, response: Any, url: str) -> dict[str, Any] | str | None:
         """Handle 404 (article not found) as expected."""
         if hasattr(response, "status_code") and response.status_code == 404:
             return {"error": "not_found"}
