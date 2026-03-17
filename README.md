@@ -11,7 +11,7 @@
 A Domain-Driven Design (DDD) based MCP server that serves as an intelligent research assistant for AI agents, providing task-oriented literature search and analysis capabilities.
 
 **✨ What's Included:**
-- 🔧 **40 MCP Tools** - Streamlined PubMed, Europe PMC, CORE, NCBI database access, and **Research Timeline**
+- 🔧 **40 MCP Tools** - Streamlined PubMed, Europe PMC, CORE, NCBI database access, and **Research Timeline / Context Graph**
 - 📚 **22 Claude Skills** - Ready-to-use workflow guides for AI agents (Claude Code-specific)
 - 📖 **Copilot Instructions** - VS Code GitHub Copilot integration guide
 
@@ -415,7 +415,6 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS proxy for API requests
 | `list_resolver_presets` | List resolver presets |
 | `test_institutional_access` | Test resolver configuration |
 | `convert_icd_mesh` | Convert between ICD codes and MeSH terms (bidirectional) |
-| `search_by_icd` | Search PubMed using ICD code (auto-converts to MeSH) |
 
 ### 💾 Session Management
 
@@ -445,27 +444,41 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS proxy for API requests
 
 ### 📄 Preprint Search
 
-Search **arXiv**, **medRxiv**, and **bioRxiv** preprint servers via `unified_search`:
+Search **arXiv**, **medRxiv**, and **bioRxiv** preprint servers via `unified_search` `options=`:
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `include_preprints` | `False` | Enable preprint search (arXiv, medRxiv, bioRxiv). Results shown in a **separate section** |
-| `peer_reviewed_only` | `True` | Filter out preprints from main results (OpenAlex, CrossRef, Semantic Scholar may return preprints) |
+| Option Flag | Default | Description |
+|-------------|---------|-------------|
+| `preprints` | off | Enable dedicated preprint search. Results appear in a **separate section** |
+| `all_types` | off | Keep non-peer-reviewed results in the main ranked list |
 
-**How they work together:**
+**Recommended combinations:**
 
-| `include_preprints` | `peer_reviewed_only` | Behavior |
-|---------------------|---------------------|----------|
-| `False` (default) | `True` (default) | No preprints — standard peer-reviewed results only |
-| `True` | `True` | Preprints in **separate section** + main results peer-reviewed only |
-| `True` | `False` | Preprints everywhere — separate section + mixed into main results |
-| `False` | `False` | No dedicated preprint search, but preprints from other sources kept in results |
+| `options` | Behavior |
+|-----------|----------|
+| _(empty)_ | Peer-reviewed results only |
+| `preprints` | Main results stay peer-reviewed; preprints shown in a separate section |
+| `preprints, all_types` | Preprints shown separately and can also remain in the main list |
 
 **Preprint detection** — articles are identified as preprints by:
 - Article type from source API (OpenAlex, CrossRef, Semantic Scholar)
 - arXiv ID present without PubMed ID
 - Known preprint server source or journal name
 - DOI prefix matching preprint servers (e.g., `10.1101/` → bioRxiv/medRxiv, `10.48550/` → arXiv)
+
+### 🌳 Research Context Graph
+
+`unified_search` can append a lightweight research lineage view built from PMID-backed ranked results:
+
+| Option Flag | Description |
+|-------------|-------------|
+| `context_graph` | Append a Research Context Graph preview to Markdown output and include `research_context` in JSON output |
+
+This is useful when an agent needs quick thematic branching without making a second `build_research_timeline` call.
+
+### ⏱️ MCP Progress Reporting
+
+When the MCP client provides a progress token, `unified_search` now emits progress updates for major phases such as query analysis, semantic enhancement, deep search, enrichment, ranking, and final formatting.
+This reduces the "black box" wait time for agents during longer searches.
 
 ---
 
@@ -595,16 +608,19 @@ analyze_fulltext_access(pmids="last")
 
 ```python
 # Include preprints alongside peer-reviewed results
-unified_search("COVID-19 vaccine efficacy", include_preprints=True)
+unified_search("COVID-19 vaccine efficacy", options="preprints")
 # → Main results (peer-reviewed) + Separate preprint section (arXiv, medRxiv, bioRxiv)
 
 # Include preprints mixed into main results
-unified_search("CRISPR gene therapy", include_preprints=True, peer_reviewed_only=False)
+unified_search("CRISPR gene therapy", options="preprints, all_types")
 # → All results mixed together, preprints marked as such
 
 # Only peer-reviewed (default behavior)
 unified_search("diabetes treatment")
 # → Preprints from any source automatically filtered out
+
+# Add a research context graph preview to the same search response
+unified_search("remimazolam ICU sedation", options="context_graph")
 ```
 
 ### 7️⃣ Pipeline (Reusable Search Plans)

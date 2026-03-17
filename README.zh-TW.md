@@ -11,7 +11,7 @@
 基於 Domain-Driven Design (DDD) 架構的 MCP 伺服器，作為 AI Agent 的智慧研究助理，提供任務導向的文獻搜尋與分析能力。
 
 **✨ 包含內容：**
-- 🔧 **40 個 MCP 工具** - 精簡的 PubMed、Europe PMC、CORE、NCBI 資料庫存取，及**研究時間軸**功能
+- 🔧 **40 個 MCP 工具** - 精簡的 PubMed、Europe PMC、CORE、NCBI 資料庫存取，及**研究時間軸 / 脈絡圖**功能
 - 📚 **22 個 Claude Skills** - AI Agent 可直接使用的工作流程指南（Claude Code 專屬）
 - 📖 **Copilot 整合指南** - VS Code GitHub Copilot 使用說明
 
@@ -415,7 +415,6 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS 代理
 | `list_resolver_presets` | 列出 Resolver 預設值 |
 | `test_institutional_access` | 測試 Resolver 設定 |
 | `convert_icd_mesh` | ICD 碼與 MeSH 詞彙雙向轉換 |
-| `search_by_icd` | 使用 ICD 代碼搜尋 PubMed（自動轉換為 MeSH）|
 
 ### 💾 Session 管理
 
@@ -446,27 +445,40 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS 代理
 
 ### 📄 預印本搜尋
 
-透過 `unified_search` 搜尋 **arXiv**、**medRxiv**、**bioRxiv** 預印本伺服器：
+透過 `unified_search` 的 `options=` 搜尋 **arXiv**、**medRxiv**、**bioRxiv** 預印本：
 
-| 參數 | 預設 | 說明 |
-|------|------|------|
-| `include_preprints` | `False` | 啟用預印本搜尋（arXiv, medRxiv, bioRxiv）。結果顯示在**獨立區段** |
-| `peer_reviewed_only` | `True` | 從主結果中過濾預印本（OpenAlex、CrossRef、Semantic Scholar 可能返回預印本） |
+| 選項旗標 | 預設 | 說明 |
+|----------|------|------|
+| `preprints` | 關閉 | 啟用預印本專用搜尋，結果顯示在**獨立區段** |
+| `all_types` | 關閉 | 允許非同儕審查文章保留在主排序結果中 |
 
-**交互行為：**
+**建議組合：**
 
-| `include_preprints` | `peer_reviewed_only` | 行為 |
-|---------------------|---------------------|------|
-| `False`（預設） | `True`（預設） | 無預印本 — 僅同儕審查標準結果 |
-| `True` | `True` | 預印本在**獨立區段** + 主結果僅含同儕審查 |
-| `True` | `False` | 預印本混入所有結果 |
-| `False` | `False` | 主結果保留預印本（不另外搜尋預印本伺服器） |
+| `options` | 行為 |
+|-----------|------|
+| _(空白)_ | 僅同儕審查結果 |
+| `preprints` | 主結果維持同儕審查；預印本額外顯示於獨立區段 |
+| `preprints, all_types` | 預印本額外顯示，且也可保留在主結果中 |
 
 **預印本偵測方式** — 透過以下條件辨識預印本：
 - 來源 API 的文章類型（OpenAlex、CrossRef、Semantic Scholar）
 - 有 arXiv ID 但無 PubMed ID
 - 已知預印本伺服器來源或期刊名稱
 - DOI 前綴匹配預印本伺服器（如 `10.1101/` → bioRxiv/medRxiv、`10.48550/` → arXiv）
+
+### 🌳 研究脈絡圖預覽
+
+`unified_search` 現在可直接在同一次搜尋回應中附帶 PMID-based 的研究脈絡圖預覽：
+
+| 選項旗標 | 說明 |
+|----------|------|
+| `context_graph` | Markdown 輸出附帶 Research Context Graph；JSON 輸出附帶 `research_context` 欄位 |
+
+這適合 Agent 在不額外呼叫 `build_research_timeline` 的情況下，先快速掌握主題分支。
+
+### ⏱️ MCP 進度回報
+
+當 MCP client 提供 progress token 時，`unified_search` 會回報 query analysis、semantic enhancement、deep search、enrichment、ranking、formatting 等主要階段的進度，降低 Agent 長時間等待時的黑箱感。
 
 ---
 
@@ -596,16 +608,19 @@ analyze_fulltext_access(pmids="last")
 
 ```python
 # 同時搜尋同儕審查文獻與預印本
-unified_search("COVID-19 vaccine efficacy", include_preprints=True)
+unified_search("COVID-19 vaccine efficacy", options="preprints")
 # → 主結果（同儕審查）+ 獨立預印本區段（arXiv, medRxiv, bioRxiv）
 
 # 預印本混入主結果
-unified_search("CRISPR gene therapy", include_preprints=True, peer_reviewed_only=False)
+unified_search("CRISPR gene therapy", options="preprints, all_types")
 # → 所有結果混合顯示，預印本標記為非同儕審查
 
 # 僅同儕審查（預設行為）
 unified_search("diabetes treatment")
 # → 自動過濾來自任何來源的預印本
+
+# 同一個搜尋回應附帶研究脈絡圖預覽
+unified_search("remimazolam ICU sedation", options="context_graph")
 ```
 
 ### 7️⃣ Pipeline（可重複使用的搜尋計畫）

@@ -401,6 +401,11 @@ PubMed Search MCP is a **professional literature research assistant** that provi
 search_literature(query="<topic>", limit=10)
 ```
 
+When an agent needs a lightweight topic overview in the same response, prefer:
+```python
+unified_search(query="<topic>", options="context_graph")
+```
+
 ### Systematic Search
 **Trigger**: "comprehensive search", "systematic review", "find all papers"
 ```python
@@ -656,6 +661,8 @@ uv run python scripts/count_mcp_tools.py --update-docs
 ## ⚠️ Important Notes
 
 1. **Session Auto-management**: Search results are automatically cached. Use `pmids="last"` to reference previous searches.
+
+1. **Unified Search Progress**: `unified_search` can emit MCP progress updates (query analysis, semantic enhancement, search, enrichment, ranking, formatting) when the client provides a progress token.
 
 2. **Parallel Execution**: When generating search strategies or PICO elements, call `generate_search_queries()` in parallel for efficiency.
 

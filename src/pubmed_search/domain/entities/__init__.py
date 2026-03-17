@@ -35,7 +35,7 @@ __all__ = [
     "OpenAccessLink",
     "CitationMetrics",
     "SourceMetadata",
-    # Figure entities (v0.4.4)
+    # Figure entities (v0.4.5)
     "ArticleFigure",
     "ArticleFiguresResult",
     # Image entities (v0.3.1)

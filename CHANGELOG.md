@@ -16,6 +16,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.4.5] - 2026-03-17
+
+### Added
+
+- **Research Context Graph preview in `unified_search`**
+  - New `options="context_graph"` mode appends a lightweight Research Context Graph to Markdown output
+  - JSON output now includes `research_context` when context graph generation succeeds
+  - Reuses PMID-backed timeline data to expose thematic branches without a second tool call
+- **MCP progress reporting for `unified_search`**
+  - Reports progress for query analysis, semantic enhancement, source selection, deep search, aggregation, enrichment, ranking, and formatting
+  - Reduces black-box wait time for MCP clients that provide a progress token
+- **Deterministic article identity helpers**
+  - New shared `canonical_article_key`, DOI normalization, and title normalization utilities in `shared/article_identity.py`
+  - Used across ranking, aggregation, and pipeline execution for stable dedup and diagnostics
+
+### Changed
+
+- **Unified enrichment pipeline now runs in parallel**
+  - CrossRef enrichment, OpenAlex journal metrics, and Unpaywall OA enrichment execute concurrently instead of sequentially
+  - Reduces end-to-end latency for multi-source searches
+- **Weighted RRF support** in ranking fusion
+  - Reciprocal Rank Fusion now accepts dimension weights so ranking presets influence fused ordering
+- **Tool registry validation prefers public FastMCP APIs**
+  - Uses `list_tools()` when available and falls back to private registry only when needed
+
+### Fixed
+
+- Updated tests for async rate limiting, network-skippable external endpoints, and modern FastMCP tool registry behavior
+- Synced README examples away from removed `include_preprints` / `peer_reviewed_only` direct params to current `options=` interface
+
+---
+
 ## [0.4.4] - 2026-02-25
 
 ### Added
@@ -1859,6 +1891,7 @@ get_citation_metrics(pmids="last", min_rcr=1.5, min_percentile=75)
 - [PyPI Package](https://pypi.org/project/pubmed-search-mcp/)
 - [Smithery](https://smithery.ai/server/pubmed-search-mcp)
 
-[Unreleased]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.4.5...HEAD
+[0.4.5]: https://github.com/u9401066/pubmed-search-mcp/releases/tag/v0.4.5
 [0.1.0]: https://github.com/u9401066/pubmed-search-mcp/releases/tag/v0.1.0
 [0.0.1]: https://github.com/u9401066/pubmed-search-mcp/releases/tag/v0.0.1

@@ -98,6 +98,21 @@ unified_search(query="remimazolam sedation", sources="pubmed,europe_pmc", option
 
 注意：預印本**未經同行審查**，引用時應特別標註。
 
+## 情境 5.5️⃣: 同一回應附帶研究脈絡圖
+───────────────────────────────────────────────────────────────────────────────
+觸發條件: "研究脈絡", "context graph", "分支", "研究樹", "先給我整體脈絡"
+
+`unified_search` 支援透過 options 參數附帶輕量級研究脈絡圖：
+- options="context_graph": 從本次 PMID-backed 結果附帶 Research Context Graph
+
+範例:
+```
+unified_search(query="remimazolam ICU sedation", options="context_graph")
+unified_search(query="propofol delirium ICU", options="context_graph, preprints")
+```
+
+注意：這是輕量預覽；若需要完整時間軸/樹/mermaid，改用 `build_research_timeline`。
+
 ## 情境 6️⃣: 指定搜尋來源
 ───────────────────────────────────────────────────────────────────────────────
 unified_search 支援 6 個學術資料來源，可透過 sources 參數指定：
