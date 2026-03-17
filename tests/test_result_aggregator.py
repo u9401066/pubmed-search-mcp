@@ -13,7 +13,7 @@ This test module provides comprehensive coverage for:
 from __future__ import annotations
 
 from datetime import datetime
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -617,6 +617,40 @@ class TestResultAggregator:
 
         # Recent article should rank higher
         assert ranked[0].year == datetime.now().year
+
+    async def test_rank_rrf_respects_preset_weights(self, mock_article):
+        """Impact-focused config should influence weighted RRF ranking."""
+        article_recent = mock_article(title="Recent", pmid="1", year=datetime.now().year)
+        article_impact = mock_article(title="Impact", pmid="2", year=2005)
+
+        scores_recent = {
+            "relevance": 0.5,
+            "quality": 0.5,
+            "recency": 1.0,
+            "impact": 0.1,
+            "source_trust": 0.5,
+            "entity_match": 0.5,
+        }
+        scores_impact = {
+            "relevance": 0.5,
+            "quality": 0.5,
+            "recency": 0.1,
+            "impact": 1.0,
+            "source_trust": 0.5,
+            "entity_match": 0.5,
+        }
+
+        config = RankingConfig.impact_focused()
+        aggregator = ResultAggregator(config)
+
+        with patch.object(
+            ResultAggregator,
+            "_calculate_dimension_scores",
+            side_effect=[scores_recent, scores_impact],
+        ):
+            ranked = aggregator.rank([article_recent, article_impact], config=config)
+
+        assert ranked[0].pmid == "2"
 
     # =========================================================================
     # Scoring Tests

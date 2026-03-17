@@ -9,7 +9,6 @@ Coverage targets:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
@@ -312,17 +311,17 @@ class TestWorkspaceDetection:
         (tmp_path / ".git").mkdir()
 
         with patch("pathlib.Path.cwd", return_value=tmp_path):
-            from pathlib import Path as P
+            from pathlib import Path
 
-            cwd = P.cwd()
+            cwd = Path.cwd()
             markers = (".git", "pyproject.toml", "package.json", ".pubmed-search")
             assert any((cwd / m).exists() for m in markers)
 
     def test_cwd_without_markers_not_detected(self, tmp_path: Path):
         """CWD without project markers should not be used as workspace."""
         with patch("pathlib.Path.cwd", return_value=tmp_path):
-            from pathlib import Path as P
+            from pathlib import Path
 
-            cwd = P.cwd()
+            cwd = Path.cwd()
             markers = (".git", "pyproject.toml", "package.json", ".pubmed-search")
             assert not any((cwd / m).exists() for m in markers)

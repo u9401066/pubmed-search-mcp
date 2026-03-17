@@ -20,12 +20,14 @@ from __future__ import annotations
 import logging
 import re
 import urllib.parse
-from typing import Any
-from xml.etree.ElementTree import Element
+from typing import TYPE_CHECKING, Any
 
 from defusedxml import ElementTree  # Security: prevent XML attacks
 
 from pubmed_search.infrastructure.sources.base_client import BaseAPIClient
+
+if TYPE_CHECKING:
+    from xml.etree.ElementTree import Element
 
 logger = logging.getLogger(__name__)
 

@@ -36,16 +36,22 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
+
+from pubmed_search.shared.article_identity import (
+    canonical_article_key,
+    normalize_article_doi,
+    normalize_article_title,
+)
 
 if TYPE_CHECKING:
     from pubmed_search.domain.entities.article import UnifiedArticle
 
 # Lazy imports for ranking algorithms (avoid circular)
-_ranking_algorithms = None
+_ranking_algorithms: Any | None = None
 
 
-def _get_ranking_algorithms():
+def _get_ranking_algorithms() -> Any:
     """Lazy import ranking_algorithms module."""
     global _ranking_algorithms
     if _ranking_algorithms is None:
@@ -55,7 +61,7 @@ def _get_ranking_algorithms():
     return _ranking_algorithms
 
 # Lazy import to avoid circular dependency
-_UnifiedArticle = None
+_UnifiedArticle: Any = None
 
 
 def _get_unified_article() -> type[UnifiedArticle]:
@@ -65,7 +71,12 @@ def _get_unified_article() -> type[UnifiedArticle]:
         from pubmed_search.domain.entities.article import UnifiedArticle
 
         _UnifiedArticle = UnifiedArticle
-    return _UnifiedArticle
+    return cast("type[UnifiedArticle]", _UnifiedArticle)
+
+
+def _article_key(article: UnifiedArticle) -> str:
+    """Get a stable ranking key for an article."""
+    return canonical_article_key(article)
 
 
 # =============================================================================
@@ -480,7 +491,7 @@ class ResultAggregator:
             bm25_corpus = ra.BM25Corpus.from_articles(articles)
             # Pre-compute raw BM25 scores for all articles
             for article in articles:
-                key = ra._article_key(article)
+                key = _article_key(article)
                 bm25_scores[key] = ra.bm25_score(article, query, bm25_corpus)
             max_bm25 = max(bm25_scores.values()) if bm25_scores else 1.0
         else:
@@ -489,7 +500,7 @@ class ResultAggregator:
         # === Step 2: Calculate dimension scores for each article ===
         article_dim_scores: dict[str, dict[str, float]] = {}
         for article in articles:
-            key = ra._article_key(article) if ra else (article.pmid or article.doi or article.title)
+            key = _article_key(article)
             scores = self._calculate_dimension_scores(article, config, query)
 
             # Replace relevance with BM25 if enabled
@@ -504,10 +515,15 @@ class ResultAggregator:
             article.quality_score = scores.get("quality", 0.5)
 
         # === Step 3: Ranking — RRF or weighted sum ===
+        sorted_articles: list[UnifiedArticle]
         if config.use_rrf and ra and len(articles) > 1:
             # Build per-dimension rankings
             dimension_rankings: dict[str, list[str]] = {}
             for dim_name in ("relevance", "quality", "recency", "impact", "source_trust", "entity_match"):
+                dimension_values = [article_dim_scores[key].get(dim_name, 0.0) for key in article_dim_scores]
+                if len({round(value, 12) for value in dimension_values}) <= 1:
+                    continue
+
                 # Sort article keys by this dimension's score (descending)
                 sorted_keys = sorted(
                     article_dim_scores.keys(),
@@ -516,20 +532,44 @@ class ResultAggregator:
                 )
                 dimension_rankings[dim_name] = sorted_keys
 
-            rrf_result = ra.reciprocal_rank_fusion(articles, dimension_rankings)
+            if dimension_rankings:
+                rrf_result = ra.reciprocal_rank_fusion(
+                    articles,
+                    dimension_rankings,
+                    dimension_weights=weights,
+                )
 
-            # Store RRF score as ranking_score
-            max_rrf = max(rrf_result.rrf_scores.values()) if rrf_result.rrf_scores else 1.0
-            for article in rrf_result.ranked_articles:
-                key = ra._article_key(article)
-                raw_rrf = rrf_result.rrf_scores.get(key, 0.0)
-                article.ranking_score = raw_rrf / max_rrf if max_rrf > 0 else 0.0
+                # Store RRF score as ranking_score
+                max_rrf = max(rrf_result.rrf_scores.values()) if rrf_result.rrf_scores else 1.0
+                for article in rrf_result.ranked_articles:
+                    key = _article_key(article)
+                    raw_rrf = rrf_result.rrf_scores.get(key, 0.0)
+                    article.ranking_score = raw_rrf / max_rrf if max_rrf > 0 else 0.0
 
-            sorted_articles = rrf_result.ranked_articles
+                sorted_articles = cast("list[UnifiedArticle]", rrf_result.ranked_articles)
+            else:
+                for article in articles:
+                    key = _article_key(article)
+                    scores = article_dim_scores.get(key, {})
+                    final_score = (
+                        scores.get("relevance", 0.5) * weights["relevance"]
+                        + scores.get("quality", 0.5) * weights["quality"]
+                        + scores.get("recency", 0.5) * weights["recency"]
+                        + scores.get("impact", 0.5) * weights["impact"]
+                        + scores.get("source_trust", 0.5) * weights["source_trust"]
+                        + scores.get("entity_match", 0.5) * weights["entity_match"]
+                    )
+                    article.ranking_score = final_score
+
+                sorted_articles = sorted(
+                    articles,
+                    key=lambda a: getattr(a, "ranking_score", 0) or 0,
+                    reverse=True,
+                )
         else:
             # Fallback: weighted sum (original method)
             for article in articles:
-                key = ra._article_key(article) if ra else (article.pmid or article.doi or article.title)
+                key = _article_key(article)
                 scores = article_dim_scores.get(key, {})
                 final_score = (
                     scores.get("relevance", 0.5) * weights["relevance"]
@@ -554,7 +594,7 @@ class ResultAggregator:
                 query,
                 lambda_param=config.mmr_lambda,
             )
-            sorted_articles = mmr_result.articles
+            sorted_articles = cast("list[UnifiedArticle]", mmr_result.articles)
 
         # Filter by minimum score
         if config.min_score > 0:
@@ -974,25 +1014,12 @@ class ResultAggregator:
     @staticmethod
     def _normalize_doi(doi: str) -> str:
         """Normalize DOI for comparison."""
-        doi = doi.lower().strip()
-        for prefix in ["https://doi.org/", "http://doi.org/", "doi:"]:
-            doi = doi.removeprefix(prefix)
-        return doi
+        return normalize_article_doi(doi)
 
     @staticmethod
     def _normalize_title(title: str) -> str:
         """Normalize title for comparison."""
-        if not title:
-            return ""
-
-        # Lowercase
-        title = title.lower()
-
-        # Remove punctuation
-        title = re.sub(r"[^\w\s]", "", title)
-
-        # Remove extra whitespace
-        return re.sub(r"\s+", " ", title).strip()
+        return normalize_article_title(title)
 
 
 # =============================================================================

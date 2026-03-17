@@ -11,7 +11,6 @@ Covers:
 
 from __future__ import annotations
 
-import math
 from unittest.mock import MagicMock
 
 import pytest
@@ -31,7 +30,6 @@ from pubmed_search.application.search.ranking_algorithms import (
     mmr_diversify,
     reciprocal_rank_fusion,
 )
-
 
 # =============================================================================
 # Fixtures
@@ -312,6 +310,18 @@ class TestReciprocalRankFusion:
         result = reciprocal_rank_fusion(sample_articles, dim_rankings)
         assert result.ranked_articles[0].pmid == "111"
 
+    def test_weighted_fusion_prefers_weighted_dimension(self, sample_articles):
+        dim_rankings = {
+            "relevance": ["pmid:111", "pmid:222", "pmid:333"],
+            "impact": ["pmid:222", "pmid:111", "pmid:333"],
+        }
+        result = reciprocal_rank_fusion(
+            sample_articles,
+            dim_rankings,
+            dimension_weights={"relevance": 0.1, "impact": 0.9},
+        )
+        assert result.ranked_articles[0].pmid == "222"
+
     def test_empty_articles(self):
         result = reciprocal_rank_fusion([], {})
         assert result.ranked_articles == []
@@ -529,10 +539,13 @@ class TestArticleKey:
         article = _make_article(doi="10.1234/test")
         assert _article_key(article) == "doi:10.1234/test"
 
-    def test_title_hash_key(self):
+    def test_title_key_is_deterministic(self):
         article = _make_article(title="Unique Title")
-        key = _article_key(article)
-        assert key.startswith("title:")
+        assert _article_key(article) == "title:unique title"
+
+    def test_doi_key_normalizes_prefix_and_case(self):
+        article = _make_article(doi="HTTPS://DOI.ORG/10.1234/TEST")
+        assert _article_key(article) == "doi:10.1234/test"
 
 
 class TestJaccardSimilarity:

@@ -26,7 +26,6 @@ from pubmed_search.application.search.reproducibility import (
     calculate_reproducibility,
 )
 
-
 # =============================================================================
 # Fixtures
 # =============================================================================

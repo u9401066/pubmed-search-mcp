@@ -34,6 +34,8 @@ import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from pubmed_search.shared.article_identity import canonical_article_key
+
 if TYPE_CHECKING:
     from pubmed_search.domain.entities.article import UnifiedArticle
 
@@ -161,7 +163,7 @@ def bm25_score(
     title_set = set(title_terms)
     keyword_set = set(keyword_terms)
 
-    N = corpus.total_docs
+    total_docs = corpus.total_docs
     avgdl = corpus.avg_doc_length
 
     score = 0.0
@@ -170,7 +172,7 @@ def bm25_score(
         df = corpus.doc_freq.get(qt, 0)
 
         # IDF with log(1+x) form (always non-negative)
-        idf = math.log(1.0 + (N - df + 0.5) / (df + 0.5))
+        idf = math.log(1.0 + (total_docs - df + 0.5) / (df + 0.5))
 
         # Term frequency in document
         tf = tf_map.get(qt, 0)
@@ -237,12 +239,13 @@ def reciprocal_rank_fusion(
     articles: list[UnifiedArticle],
     dimension_rankings: dict[str, list[str]],
     k: int = _RRF_K,
+    dimension_weights: dict[str, float] | None = None,
 ) -> RRFResult:
     """
     Apply Reciprocal Rank Fusion to combine multiple ranking dimensions.
 
-    RRF formula:
-        RRF(d) = Σ_r 1/(k + rank_r(d))
+    Weighted RRF formula:
+        RRF(d) = Σ_r w_r/(k + rank_r(d))
 
     where r iterates over ranking dimensions and rank_r(d) is the
     1-based rank of document d in dimension r.
@@ -256,6 +259,8 @@ def reciprocal_rank_fusion(
             Each value is a list of article keys (PMID/DOI/title) sorted by
             that dimension's score (best first).
         k: RRF constant (default 60, proven optimal in TREC evaluations)
+        dimension_weights: Optional per-dimension weights. When omitted,
+            all dimensions contribute equally.
 
     Returns:
         RRFResult with fused ranking, scores, and per-dimension contributions
@@ -269,10 +274,28 @@ def reciprocal_rank_fusion(
     # Build rank lookup for each dimension
     dim_rank_maps: dict[str, dict[str, int]] = {}
     for dim_name, ranked_keys in dimension_rankings.items():
-        rank_map: dict[str, int] = {}
-        for rank_1based, akey in enumerate(ranked_keys, start=1):
-            rank_map[akey] = rank_1based
+        rank_map = {akey: rank_1based for rank_1based, akey in enumerate(ranked_keys, start=1)}
         dim_rank_maps[dim_name] = rank_map
+
+    if dim_rank_maps:
+        if dimension_weights:
+            active_weights = {
+                dim_name: max(dimension_weights.get(dim_name, 0.0), 0.0)
+                for dim_name in dim_rank_maps
+            }
+            total_weight = sum(active_weights.values())
+            if total_weight <= 0:
+                total_weight = float(len(active_weights))
+                normalized_weights = dict.fromkeys(active_weights, 1.0 / total_weight)
+            else:
+                normalized_weights = {
+                    dim_name: weight / total_weight for dim_name, weight in active_weights.items()
+                }
+        else:
+            equal_weight = 1.0 / len(dim_rank_maps)
+            normalized_weights = dict.fromkeys(dim_rank_maps, equal_weight)
+    else:
+        normalized_weights = {}
 
     n_articles = len(articles)
     rrf_scores: dict[str, float] = {}
@@ -284,7 +307,8 @@ def reciprocal_rank_fusion(
         for dim_name, rank_map in dim_rank_maps.items():
             # Articles not in a dimension's ranking get worst rank
             rank = rank_map.get(akey, n_articles + 1)
-            contrib = 1.0 / (k + rank)
+            dim_weight = normalized_weights.get(dim_name, 0.0)
+            contrib = dim_weight / (k + rank)
             dim_contribs[dim_name] = contrib
             total += contrib
 
@@ -383,10 +407,7 @@ def mmr_diversify(
 
     # Normalize relevance to [0, 1]
     max_rel = max(relevance_scores) if relevance_scores else 1.0
-    if max_rel > 0:
-        norm_relevance = [r / max_rel for r in relevance_scores]
-    else:
-        norm_relevance = [0.5] * n
+    norm_relevance = [r / max_rel for r in relevance_scores] if max_rel > 0 else [0.5] * n
 
     # MMR greedy selection
     selected_indices: list[int] = []
@@ -411,8 +432,7 @@ def mmr_diversify(
             max_sim = 0.0
             for sel_idx in selected_indices:
                 sim = _jaccard_similarity(term_sets[idx], term_sets[sel_idx])
-                if sim > max_sim:
-                    max_sim = sim
+                max_sim = max(max_sim, sim)
 
             # MMR formula
             mmr = lambda_param * rel - (1 - lambda_param) * max_sim
@@ -475,7 +495,7 @@ class SourceDisagreement:
 
 def analyze_source_disagreement(
     articles: list[UnifiedArticle],
-    source_rankings: dict[str, list[str]] | None = None,
+    _source_rankings: dict[str, list[str]] | None = None,
 ) -> SourceDisagreement:
     """
     Analyze disagreement between different academic data sources.
@@ -594,12 +614,8 @@ def analyze_source_disagreement(
 
 
 def _article_key(article: UnifiedArticle) -> str:
-    """Get unique key for article (PMID > DOI > title hash)."""
-    if article.pmid:
-        return f"pmid:{article.pmid}"
-    if article.doi:
-        return f"doi:{article.doi}"
-    return f"title:{hash(article.title)}"
+    """Get unique key for article using shared canonical identity rules."""
+    return canonical_article_key(article)
 
 
 def _jaccard_similarity(set_a: set[str], set_b: set[str]) -> float:

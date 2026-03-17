@@ -27,6 +27,32 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _extract_registered_tool_names(mcp: FastMCP) -> set[str]:
+    """Get registered tool names using public APIs when available."""
+    list_tools = getattr(mcp, "list_tools", None)
+    if callable(list_tools):
+        raw_tools = list_tools()
+        names: set[str] = set()
+        for tool in raw_tools:
+            if isinstance(tool, str):
+                names.add(tool)
+                continue
+
+            tool_name = getattr(tool, "name", None)
+            if isinstance(tool_name, str):
+                names.add(tool_name)
+        if names:
+            return names
+
+    tool_manager = getattr(mcp, "_tool_manager", None)
+    tools = getattr(tool_manager, "_tools", None)
+    if tools is not None:
+        return set(tools.keys())
+
+    msg = "Cannot access FastMCP tools registry"
+    raise AttributeError(msg)
+
+
 # ============================================================================
 # Tool Categories - 工具分類定義
 # ============================================================================
@@ -341,9 +367,8 @@ def validate_tool_registry(mcp: FastMCP) -> dict[str, Any]:
     for cat_info in TOOL_CATEGORIES.values():
         defined_tools.update(cat_info["tools"])
 
-    # Get actually registered tools from mcp._tool_manager._tools
     try:
-        registered_tools = set(mcp._tool_manager._tools.keys())
+        registered_tools = _extract_registered_tool_names(mcp)
     except AttributeError:
         logger.warning("Cannot access registered tools from FastMCP instance")
         return {

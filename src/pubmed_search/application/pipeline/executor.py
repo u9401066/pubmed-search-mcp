@@ -23,6 +23,7 @@ from pubmed_search.domain.entities.pipeline import (
     PipelineStep,
     StepResult,
 )
+from pubmed_search.shared.article_identity import canonical_article_key
 
 if TYPE_CHECKING:
     from pubmed_search.domain.entities.article import UnifiedArticle
@@ -605,12 +606,7 @@ class PipelineExecutor:
     @staticmethod
     def _article_key(article: UnifiedArticle) -> str:
         """Canonical key for dedup / set operations."""
-        if getattr(article, "doi", None):
-            return f"doi:{article.doi.lower()}"  # type: ignore[union-attr]
-        if getattr(article, "pmid", None):
-            return f"pmid:{article.pmid}"
-        title = getattr(article, "title", "") or ""
-        return f"title:{title.lower().strip()[:80]}"
+        return canonical_article_key(article)
 
     def _intersect_articles(self, article_lists: list[list[UnifiedArticle]]) -> list[UnifiedArticle]:
         """Keep only articles present in ALL input lists."""

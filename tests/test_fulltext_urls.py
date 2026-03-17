@@ -34,7 +34,10 @@ class TestURLFormats:
         url = "https://europepmc.org/backend/ptpmcrender.fcgi?accid=PMC7096777&blobtype=pdf"
 
         async with client:
-            resp = await client.head(url)
+            try:
+                resp = await client.head(url)
+            except httpx.HTTPError as exc:
+                pytest.skip(f"Europe PMC endpoint unreachable in current environment: {exc}")
             assert resp.status_code == 200, f"Europe PMC PDF returned {resp.status_code}"
             content_type = resp.headers.get("content-type", "")
             assert "pdf" in content_type.lower(), f"Expected PDF, got {content_type}"

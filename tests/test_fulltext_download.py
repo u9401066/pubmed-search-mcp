@@ -398,7 +398,7 @@ class TestExtractPdfText:
         mock_page = MagicMock()
         mock_page.get_text.return_value = "Page 1 text"
         mock_doc.__iter__ = lambda s: iter([mock_page])
-        mock_doc.close = AsyncMock()
+        mock_doc.close = MagicMock()
 
         with patch.dict("sys.modules", {"fitz": MagicMock()}):
             import sys

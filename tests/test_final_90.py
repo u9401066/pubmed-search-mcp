@@ -315,8 +315,8 @@ class TestBaseRateLimit:
         from pubmed_search.infrastructure.ncbi.base import _rate_limit
 
         start = time.time()
-        _rate_limit()
-        _rate_limit()
+        await _rate_limit()
+        await _rate_limit()
         elapsed = time.time() - start
 
         # Should have some delay

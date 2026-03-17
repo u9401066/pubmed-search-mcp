@@ -16,6 +16,7 @@ Python 3.12+ features:
 
 from __future__ import annotations
 
+from .article_identity import canonical_article_key, normalize_article_doi, normalize_article_title
 from .async_utils import (
     # Fault tolerance
     CircuitBreaker,
@@ -89,4 +90,7 @@ __all__ = [
     "get_shared_async_client",
     "close_shared_async_client",
     "timeout_with_fallback",
+    "canonical_article_key",
+    "normalize_article_doi",
+    "normalize_article_title",
 ]

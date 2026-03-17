@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     from xml.etree.ElementTree import Element
 
 from pubmed_search.domain.entities.figure import ArticleFigure, ArticleFiguresResult
-from pubmed_search.infrastructure.sources.base_client import BaseAPIClient, _CONTINUE
+from pubmed_search.infrastructure.sources.base_client import _CONTINUE, BaseAPIClient
 
 logger = logging.getLogger(__name__)
 

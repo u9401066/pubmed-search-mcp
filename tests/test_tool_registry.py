@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -16,6 +17,11 @@ from pubmed_search.presentation.mcp_server.tool_registry import (
     register_all_mcp_tools,
     validate_tool_registry,
 )
+
+
+def _fake_tools(names: set[str] | list[str]) -> list[SimpleNamespace]:
+    """Build simple tool-like objects exposing a public ``name`` attribute."""
+    return [SimpleNamespace(name=name) for name in names]
 
 # ============================================================
 # list_registered_tools
@@ -159,7 +165,7 @@ class TestValidateToolRegistry:
         all_tools = set()
         for cat_info in TOOL_CATEGORIES.values():
             all_tools.update(cat_info["tools"])
-        mcp._tool_manager._tools.keys.return_value = all_tools
+        mcp.list_tools.return_value = _fake_tools(all_tools)
 
         result = validate_tool_registry(mcp)
         assert result["valid"] is True
@@ -168,7 +174,7 @@ class TestValidateToolRegistry:
 
     async def test_missing_tools(self):
         mcp = MagicMock()
-        mcp._tool_manager._tools.keys.return_value = {"unified_search"}
+        mcp.list_tools.return_value = _fake_tools(["unified_search"])
 
         result = validate_tool_registry(mcp)
         assert result["valid"] is False
@@ -180,7 +186,7 @@ class TestValidateToolRegistry:
         for cat_info in TOOL_CATEGORIES.values():
             all_tools.update(cat_info["tools"])
         all_tools.add("extra_undocumented_tool")
-        mcp._tool_manager._tools.keys.return_value = all_tools
+        mcp.list_tools.return_value = _fake_tools(all_tools)
 
         result = validate_tool_registry(mcp)
         assert result["valid"] is False
@@ -188,10 +194,18 @@ class TestValidateToolRegistry:
 
     async def test_cannot_access_tools(self):
         mcp = MagicMock(spec=[])
-        # No _tool_manager attribute at all → triggers AttributeError
+        # No public/private tool registry access at all → triggers AttributeError
         result = validate_tool_registry(mcp)
         assert result["valid"] is False
         assert "error" in result
+
+    async def test_private_registry_fallback(self):
+        mcp = MagicMock()
+        del mcp.list_tools
+        mcp._tool_manager._tools.keys.return_value = {"unified_search"}
+
+        result = validate_tool_registry(mcp)
+        assert result["registered"] == ["unified_search"]
 
 
 # ============================================================
@@ -205,19 +219,19 @@ class TestCheckToolRegistration:
         all_tools = set()
         for cat_info in TOOL_CATEGORIES.values():
             all_tools.update(cat_info["tools"])
-        mcp._tool_manager._tools.keys.return_value = all_tools
+        mcp.list_tools.return_value = _fake_tools(all_tools)
 
         assert check_tool_registration(mcp) is True
 
     async def test_invalid_no_raise(self):
         mcp = MagicMock()
-        mcp._tool_manager._tools.keys.return_value = set()
+        mcp.list_tools.return_value = []
 
         assert check_tool_registration(mcp) is False
 
     async def test_invalid_raise(self):
         mcp = MagicMock()
-        mcp._tool_manager._tools.keys.return_value = set()
+        mcp.list_tools.return_value = []
 
         with pytest.raises(RuntimeError):
             check_tool_registration(mcp, raise_on_error=True)

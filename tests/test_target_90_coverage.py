@@ -139,6 +139,11 @@ class TestStrategyGeneratorPaths:
         with (
             patch("pubmed_search.infrastructure.ncbi.strategy.Entrez.espell") as mock_espell,
             patch("pubmed_search.infrastructure.ncbi.strategy.Entrez.read") as mock_read,
+            patch.object(
+                SearchStrategyGenerator,
+                "analyze_query",
+                return_value={"count": 0, "translated_query": "cancer treatment"},
+            ),
         ):
             # Return no correction
             mock_read.return_value = {"CorrectedQuery": ""}
@@ -373,8 +378,8 @@ class TestBaseModuleEdgeCases:
         from pubmed_search.infrastructure.ncbi.base import _rate_limit
 
         # Call twice in quick succession to trigger rate limiting
-        _rate_limit()
-        _rate_limit()
+        await _rate_limit()
+        await _rate_limit()
 
         # Should not raise
         assert True
