@@ -424,6 +424,12 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS proxy for API requests
 | `get_cached_article` | Get article from session cache (no API cost) |
 | `get_session_summary` | Session status overview |
 
+Dynamic MCP resources are also available for agents that can read resources directly:
+- `session://context` — active session status
+- `session://last-search` — latest search metadata
+- `session://last-search/pmids` — latest PMID list + CSV form
+- `session://last-search/results` — cached article payloads for the latest search
+
 ### � Pipeline Management
 
 | Tool | Description |
@@ -477,7 +483,7 @@ This is useful when an agent needs quick thematic branching without making a sec
 
 ### ⏱️ MCP Progress Reporting
 
-When the MCP client provides a progress token, `unified_search` now emits progress updates for major phases such as query analysis, semantic enhancement, deep search, enrichment, ranking, and final formatting.
+When the MCP client provides a progress token, `unified_search`, `build_research_timeline`, `analyze_timeline_milestones`, `compare_timelines`, `get_fulltext`, and `get_text_mined_terms` emit progress updates for their major phases.
 This reduces the "black box" wait time for agents during longer searches.
 
 ---

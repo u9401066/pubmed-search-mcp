@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Expanded MCP SDK usage beyond `unified_search`
+  - Timeline tools now emit progress updates through FastMCP `Context`
+  - `get_fulltext` and `get_text_mined_terms` now emit progress updates, and fulltext retrieval logs degraded-source events to MCP clients
+  - New dynamic session resources: `session://last-search`, `session://last-search/pmids`, `session://last-search/results`
+
+### Changed
+- Raised MCP dependency floor to `mcp>=1.23.3` to match the runtime APIs now required by the server (`Context.report_progress`, `Context.log`, `FastMCP.list_tools`)
+- Reduced duplicated infrastructure in external clients
+  - `PubTatorClient` now uses the shared `BaseAPIClient` transport path instead of maintaining its own retry/rate-limit/request loop
+  - `ICiteMixin` now uses `cachetools.TTLCache` instead of a handwritten in-memory TTL cache
+
 ### Planned
 - PRISMA flow tracking (init_prisma_flow, record_screening, get_prisma_diagram)
 - Evidence level classification (Oxford CEBM I-V)

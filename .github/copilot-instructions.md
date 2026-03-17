@@ -662,19 +662,21 @@ uv run python scripts/count_mcp_tools.py --update-docs
 
 1. **Session Auto-management**: Search results are automatically cached. Use `pmids="last"` to reference previous searches.
 
-1. **Unified Search Progress**: `unified_search` can emit MCP progress updates (query analysis, semantic enhancement, search, enrichment, ranking, formatting) when the client provides a progress token.
+1. **Tool Progress**: `unified_search`, timeline tools, and Europe PMC fulltext/text-mining tools can emit MCP progress updates when the client provides a progress token.
 
-2. **Parallel Execution**: When generating search strategies or PICO elements, call `generate_search_queries()` in parallel for efficiency.
+2. **Session Resources**: Agents that support MCP resources can read `session://last-search`, `session://last-search/pmids`, and `session://last-search/results` instead of reconstructing recent search state from chat context.
 
-3. **MeSH Expansion**: `generate_search_queries()` automatically expands terms using NCBI MeSH database. This finds papers using different terminology but same concepts.
+3. **Parallel Execution**: When generating search strategies or PICO elements, call `generate_search_queries()` in parallel for efficiency.
 
-4. **Rate Limits**: The server automatically handles NCBI API rate limits. No manual throttling needed.
+4. **MeSH Expansion**: `generate_search_queries()` automatically expands terms using NCBI MeSH database. This finds papers using different terminology but same concepts.
 
-5. **Full Text Priority**:
+5. **Rate Limits**: The server automatically handles NCBI API rate limits. No manual throttling needed.
+
+6. **Full Text Priority**:
    - Europe PMC: Best for medical/biomedical, structured XML
    - CORE: Best for broader coverage, includes preprints
 
-6. **Citation Metrics**: Use `get_citation_metrics()` with `sort_by="rcr"` to find high-impact papers (RCR = Relative Citation Ratio).
+7. **Citation Metrics**: Use `get_citation_metrics()` with `sort_by="rcr"` to find high-impact papers (RCR = Relative Citation Ratio).
 
 ---
 

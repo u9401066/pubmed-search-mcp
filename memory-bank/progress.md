@@ -1,6 +1,15 @@
-# Progress (Updated: 2026-02-25)
+# Progress (Updated: 2026-03-17)
 
 ## Done
+
+### 2026-03-17: v0.4.5 — MCP SDK 擴充 + 反重造輪子重構
+- ✅ **FastMCP Context 擴充** — timeline tools 與 Europe PMC fulltext/text-mining 支援 progress/log
+- ✅ **Dynamic session resources** — `session://last-search*` 讓 Agent 直接讀取最近搜尋狀態
+- ✅ **MCP 版本下限收斂** — `mcp>=1.23.3`
+- ✅ **PubTatorClient 重構** — 改走 `BaseAPIClient` 共用 transport
+- ✅ **iCite cache 收斂** — 改用 `cachetools.TTLCache`
+- ✅ **Docs synced** — README / README.zh-TW / copilot-instructions / CHANGELOG
+- ✅ **驗證完成** — 2970 passed, 28 skipped；ruff / mypy / async-test-checker 全綠
 
 ### 2026-02-25: v0.4.4 — Article Figure Extraction
 - ✅ **New MCP tool**: `get_article_figures` — extract figure metadata + image URLs + PDF links from PMC articles
@@ -55,12 +64,13 @@
 - ✅ docs/IMAGE_SEARCH_API.md 完整重寫
 
 ## Doing
-- (none — ready for tag v0.4.4)
+- (none — ready for tag v0.4.5)
 
 ## Next
 
 | 優先級 | 項目 | 說明 |
 |:------:|------|------|
+| ⭐⭐⭐ | Session cache dedup cleanup | 評估 `ArticleCache` 與 `SessionManager.article_cache` 是否收斂成單一路徑 |
 | ⭐⭐⭐ | ARCHITECTURE.md 更新 | 仍顯示舊的目錄結構 |
 | ⭐⭐ | Algorithm innovation impl | BM25/RRF/PRF 等算法實作 |
 | ⭐⭐ | clinical_trials + preprints → async httpx | 仍用 sync httpx |
@@ -69,6 +79,7 @@
 
 | 日期 | 決策 | 原因 |
 |------|------|------|
+| 2026-03-17 | v0.4.5 MCP SDK 擴充 + anti-reinvention | 長任務工具回報 progress/log，並收斂重複 transport/cache 基礎設施 |
 | 2026-02-14 | v0.3.9 品質嚴格化 | ruff ALL + mypy strict + pre-commit 17 hooks + noqa 18→9 |
 | 2026-02-10 | 全面 async-first | 使用者選擇「立即重構 P2 + 加規則」 |
 | 2026-02-10 | Entrez → asyncio.to_thread | BioPython sync library, wrap 不改源碼 |

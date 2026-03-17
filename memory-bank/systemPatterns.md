@@ -29,6 +29,22 @@ PubMed (Primary) ←→ Semantic Scholar / OpenAlex (Supplementary)
 - PubMed 為主要來源
 - 其他來源提供額外資訊（引用數、影響力）
 
+### Shared Transport Pattern (2026-03-17)
+```
+External API Client → BaseAPIClient → httpx.AsyncClient
+```
+- 外部來源 client 優先重用 `BaseAPIClient`
+- 共用 rate limiting、429 retry、circuit breaker、client lifecycle
+- 禁止在單一 client 內重複手寫 request/retry/backoff loop，除非 API 有無法共用的特殊協定
+
+### Shared Cache Pattern (2026-03-17)
+```
+TTL / LRU cache → cachetools.TTLCache
+```
+- 通用 TTL cache 優先使用 `cachetools`
+- 僅在需要 domain-specific adapter 時外包一層薄封裝
+- 避免再新增第二套手寫 timestamp + eviction cache
+
 ## 🛠️ 設計模式
 
 ### Session Pattern (SearchSession)
@@ -93,4 +109,4 @@ except HTTPError as e:
 ```
 
 ---
-*Last updated: 2025-01-XX*
+*Last updated: 2026-03-17*

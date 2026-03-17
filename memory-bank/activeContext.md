@@ -4,26 +4,27 @@
 
 ## 🎯 當前焦點
 
-- **v0.4.4 Article Figure Extraction** — 圖表擷取工具 + domain entity + FigureClient
+- **v0.4.5 MCP SDK expansion + anti-reinvention refactor** — FastMCP progress/log, dynamic session resources, shared transport/cache cleanup
 
 ## 📊 測試結果
 
-- **2956+ passed, 0 failed, 27 skipped** (pytest-xdist -n auto, ~55s)
+- **2970 passed, 0 failed, 28 skipped** (pytest-xdist -n 4, ~58s)
 - ruff: `All checks passed!`
 - mypy: **0 errors** (Success)
-- Figure tests: 58 passed
+- async-test-checker: no mismatches
 
 ## ✅ 已完成本 session
 
-### v0.4.4: Article Figure Extraction
-- **New tool**: `get_article_figures` — PMC OA figure metadata + image URLs + PDF links
-- **Domain**: `ArticleFigure` + `ArticleFiguresResult` dataclasses
-- **Infrastructure**: `FigureClient(BaseAPIClient)` with 3-source fallback (EPMC/efetch/BioC)
-- **SSRF**: URL whitelist validation for allowed academic domains
-- **get_fulltext**: `include_figures=True` parameter for inline figure data
-- **Spec**: `docs/MCP_Visual_Data_Retrieval_Spec.md` v1.1.0 with Appendix C review
+### v0.4.5: MCP SDK Expansion + Anti-Reinvention
+- **FastMCP Context support**: `build_research_timeline`, `analyze_timeline_milestones`, `compare_timelines`, `get_fulltext`, `get_text_mined_terms`
+- **Dynamic session resources**: `session://last-search`, `session://last-search/pmids`, `session://last-search/results`
+- **Dependency floor**: `mcp>=1.23.3`
+- **PubTator refactor**: `PubTatorClient` now reuses `BaseAPIClient`
+- **iCite cache refactor**: handwritten TTL cache replaced with `cachetools.TTLCache`
+- **Docs synced**: README / README.zh-TW / copilot-instructions / CHANGELOG
 
 ## 📈 Version History
+- v0.4.5: MCP SDK expansion + anti-reinvention cleanup
 - v0.4.4: Article Figure Extraction (40 tools / 15 categories)
 - v0.4.3: Landmark Paper Detection + Research Lineage Tree
 - v0.3.10: mypy 168→0 + pre-commit 41 hooks
@@ -37,4 +38,4 @@
 - Algorithm innovation implementation (BM25/RRF/PRF)
 
 ---
-*Last updated: 2026-02-25 — v0.4.4 Article Figure Extraction*
+*Last updated: 2026-03-17 — v0.4.5 MCP SDK expansion + anti-reinvention cleanup*

@@ -2,6 +2,10 @@
 
 | Date | Decision | Rationale |
 |------|----------|-----------|
+| 2026-03-17 | **PubTatorClient 改走 BaseAPIClient** | PubTator 原本手寫 retry / rate limit / request loop，與專案既有 `BaseAPIClient` 重複。統一路徑可避免 transport 行為漂移。 |
+| 2026-03-17 | **ICiteMixin 改用 cachetools.TTLCache** | 專案已依賴 `cachetools`，不再維護第二套手寫 TTL cache；保留薄封裝即可。 |
+| 2026-03-17 | **FastMCP Context 擴展到長任務工具** | `unified_search` 之外的 timeline 與 Europe PMC 長任務也需要 progress/log，降低 Agent 黑箱等待時間。 |
+| 2026-03-17 | **Session 最近搜尋改用 MCP resources 暴露** | `session://last-search*` 比從聊天上下文重建 session state 更穩定，且更方便 Agent 直接取用。 |
 | 2026-02-14 | **ruff select=["ALL"] + mypy strict=true** | 生產級別程式碼品質：啟用所有 lint 規則，嚴格型別檢查。~40 justified ignores in pyproject.toml |
 | 2026-02-14 | **`# noqa` 消除優先於壓制** | 修復根因（field rename, dead code removal, parameter rename）而非壓制警告。18→9 noqa |
 | 2026-02-14 | **Pre-commit 17 hooks 自演化系統** | instruction↔skill↔hook 閉迴循環，evolution-cycle hook 自動驗證一致性 |

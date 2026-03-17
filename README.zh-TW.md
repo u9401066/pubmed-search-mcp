@@ -425,6 +425,12 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS 代理
 | `get_cached_article` | 從 Session 快取取得文章（不消耗 API） |
 | `get_session_summary` | Session 狀態概覽 |
 
+若 MCP client 支援直接讀取 resources，也可使用以下動態 session resources：
+- `session://context` — 目前 session 狀態
+- `session://last-search` — 最近一次搜尋 metadata
+- `session://last-search/pmids` — 最近一次 PMID 清單與 CSV 形式
+- `session://last-search/results` — 最近一次搜尋對應的快取文章內容
+
 ### � Pipeline 管理
 
 | 工具 | 說明 |
@@ -478,7 +484,7 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS 代理
 
 ### ⏱️ MCP 進度回報
 
-當 MCP client 提供 progress token 時，`unified_search` 會回報 query analysis、semantic enhancement、deep search、enrichment、ranking、formatting 等主要階段的進度，降低 Agent 長時間等待時的黑箱感。
+當 MCP client 提供 progress token 時，`unified_search`、`build_research_timeline`、`analyze_timeline_milestones`、`compare_timelines`、`get_fulltext`、`get_text_mined_terms` 都會回報主要階段進度，降低 Agent 長時間等待時的黑箱感。
 
 ---
 
