@@ -269,6 +269,7 @@ class TestICiteRemainingPaths:
             pass
 
         searcher = TestSearcher()
+        searcher._get_icite_cache().clear()
 
         mock_response = httpx.Response(
             200,
@@ -286,8 +287,6 @@ class TestICiteRemainingPaths:
         with patch("pubmed_search.infrastructure.ncbi.icite.httpx.AsyncClient") as mock_cls:
             mock_client = MagicMock()
             mock_client.get = MagicMock(return_value=mock_response)
-            mock_client.__aenter__ = MagicMock(return_value=mock_client)
-            mock_client.__aexit__ = MagicMock(return_value=None)
             mock_cls.return_value = mock_client
 
             results = await searcher.get_citation_metrics(["123"])

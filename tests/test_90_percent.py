@@ -347,12 +347,11 @@ class TestICiteMissingLines:
             pass
 
         searcher = TestSearcher()
+        searcher._get_icite_cache().clear()
 
         with patch("pubmed_search.infrastructure.ncbi.icite.httpx.AsyncClient") as mock_client_cls:
             mock_client = AsyncMock()
             mock_client.get = AsyncMock(side_effect=Exception("Network error"))
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=False)
             mock_client_cls.return_value = mock_client
 
             # Should handle error gracefully

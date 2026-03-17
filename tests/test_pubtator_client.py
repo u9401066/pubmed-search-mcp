@@ -12,7 +12,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from pubmed_search.infrastructure.pubtator.client import (
-    PubTator3Error,
     PubTatorClient,
     close_pubtator_client,
     get_pubtator_client,
@@ -36,13 +35,15 @@ class TestPubTatorClientInit:
     async def test_default_values(self):
         c = PubTatorClient()
         assert c._timeout == PubTatorClient.DEFAULT_TIMEOUT
-        assert c._rate_limit == PubTatorClient.DEFAULT_RATE_LIMIT
-        assert c._client is None
+        assert c._requests_per_second == PubTatorClient.DEFAULT_RATE_LIMIT
+        assert c._client is not None
+        await c.close()
 
     async def test_custom_values(self):
         c = PubTatorClient(timeout=30.0, rate_limit=5.0)
         assert c._timeout == 30.0
-        assert c._rate_limit == 5.0
+        assert c._requests_per_second == 5.0
+        await c.close()
 
 
 # ============================================================
@@ -86,15 +87,14 @@ class TestClose:
 
 
 # ============================================================
-# _rate_limit_wait
+# shared transport
 # ============================================================
 
 
-class TestRateLimitWait:
+class TestSharedTransport:
     @pytest.mark.asyncio
-    async def test_no_wait_first_call(self, client):
-        client._rate_limit = 100.0
-        await client._rate_limit_wait()  # should not block significantly
+    async def test_min_interval_derived_from_rate_limit(self, client):
+        assert client._min_interval == pytest.approx(0.01)
 
 
 # ============================================================
@@ -150,7 +150,7 @@ class TestRequest:
         client._client = mock_http
         result = await client._request("test")
         assert result is None
-        assert mock_http.get.call_count == client.MAX_RETRIES
+        assert mock_http.get.call_count == client._MAX_RETRIES + 1
 
     @pytest.mark.asyncio
     async def test_server_error_retries(self, client):
@@ -172,12 +172,13 @@ class TestRequest:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_client_error_raises(self, client):
-        """4xx (not 429) raises PubTator3Error."""
+    async def test_client_error_returns_none(self, client):
+        """4xx (not 429) should fail gracefully via shared BaseAPIClient."""
         import httpx
 
         mock_resp = MagicMock()
         mock_resp.status_code = 400
+        mock_resp.reason_phrase = "Bad Request"
         error = httpx.HTTPStatusError("400", request=MagicMock(), response=mock_resp)
         mock_resp.raise_for_status.side_effect = error
 
@@ -186,8 +187,8 @@ class TestRequest:
         mock_http.is_closed = False
 
         client._client = mock_http
-        with pytest.raises(PubTator3Error):
-            await client._request("test")
+        result = await client._request("test")
+        assert result is None
 
     @pytest.mark.asyncio
     async def test_unexpected_error(self, client):

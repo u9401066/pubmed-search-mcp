@@ -13,9 +13,7 @@ https://www.ncbi.nlm.nih.gov/research/pubtator3/api
 
 from __future__ import annotations
 
-import asyncio
 import logging
-import time
 from typing import Any, Literal
 
 import httpx
@@ -25,6 +23,7 @@ from pubmed_search.infrastructure.pubtator.models import (
     PubTatorEntity,
     RelationMatch,
 )
+from pubmed_search.infrastructure.sources.base_client import BaseAPIClient
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +36,7 @@ class RateLimitExceededError(PubTator3Error):
     """Rate limit exceeded - retry later."""
 
 
-class PubTatorClient:
+class PubTatorClient(BaseAPIClient):
     """
     Async client for PubTator3 API.
 
@@ -64,7 +63,7 @@ class PubTatorClient:
     BASE_URL = "https://www.ncbi.nlm.nih.gov/research/pubtator3-api"
     DEFAULT_TIMEOUT = 15.0
     DEFAULT_RATE_LIMIT = 3.0  # requests per second
-    MAX_RETRIES = 3
+    _service_name = "PubTator3"
 
     def __init__(
         self,
@@ -79,40 +78,42 @@ class PubTatorClient:
             rate_limit: Max requests per second
         """
         self._timeout = timeout
-        self._rate_limit = rate_limit
-        self._last_request_time = 0.0
-        self._request_lock = asyncio.Lock()
-        self._client: httpx.AsyncClient | None = None
+        self._requests_per_second = rate_limit
+        self._default_headers = {"User-Agent": "PubMed-Search-MCP/1.0"}
+        super().__init__(
+            base_url=self.BASE_URL,
+            timeout=timeout,
+            min_interval=1.0 / rate_limit,
+            headers=self._default_headers,
+        )
 
     async def _get_client(self) -> httpx.AsyncClient:
-        """Get or create HTTP client with connection pooling."""
+        """Get or recreate the underlying HTTP client."""
         if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(
                 timeout=httpx.Timeout(self._timeout, connect=5.0),
                 limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
-                headers={"User-Agent": "PubMed-Search-MCP/1.0"},
+                headers=self._default_headers,
             )
         return self._client
 
     async def close(self):
         """Close HTTP client and release resources."""
-        if self._client is not None and not self._client.is_closed:
+        if not self._client.is_closed:
             await self._client.aclose()
-            self._client = None
+        self._client = None  # type: ignore[assignment]
 
-    async def _rate_limit_wait(self):
-        """Wait to respect rate limit."""
-        async with self._request_lock:
-            now = time.time()
-            elapsed = now - self._last_request_time
-            min_interval = 1.0 / self._rate_limit
-
-            if elapsed < min_interval:
-                wait_time = min_interval - elapsed
-                logger.debug(f"Rate limiting: waiting {wait_time:.3f}s")
-                await asyncio.sleep(wait_time)
-
-            self._last_request_time = time.time()
+    async def _execute_request(
+        self,
+        url: str,
+        *,
+        method: str = "GET",
+        data: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> httpx.Response:
+        """Execute a request using the lazily recreated shared client."""
+        client = await self._get_client()
+        return await client.get(url, params=data or {}, headers=headers or {})
 
     async def _request(
         self,
@@ -127,54 +128,10 @@ class PubTatorClient:
             params: Query parameters
 
         Returns:
-            JSON response or None on failure
-
-        Raises:
-            PubTator3Error: On persistent API errors
+            JSON response or None on failure.
         """
-        url = f"{self.BASE_URL}/{endpoint}"
-
-        last_error: Exception | None = None
-        for attempt in range(self.MAX_RETRIES):
-            try:
-                await self._rate_limit_wait()
-
-                client = await self._get_client()
-                response = await client.get(url, params=params or {})
-
-                if response.status_code == 429:
-                    # Rate limited - exponential backoff
-                    wait = 2**attempt
-                    logger.warning(f"Rate limited, waiting {wait}s")
-                    await asyncio.sleep(wait)
-                    continue
-
-                response.raise_for_status()
-                return response.json()
-
-            except httpx.HTTPStatusError as e:
-                logger.exception(f"HTTP error {e.response.status_code}: {e}")
-                last_error = e
-                if e.response.status_code >= 500:
-                    # Server error - retry
-                    await asyncio.sleep(2**attempt)
-                    continue
-                raise PubTator3Error(f"API error: {e}") from e
-
-            except httpx.TimeoutException as e:
-                logger.warning(f"Timeout on attempt {attempt + 1}")
-                last_error = e
-                continue
-
-            except Exception as e:
-                logger.exception(f"Unexpected error: {e}")
-                last_error = e
-                break
-
-        # All retries exhausted
-        if last_error:
-            logger.error(f"All retries failed: {last_error}")
-        return None
+        data = await self._make_request(endpoint, data=params or {}, expect_json=True)
+        return data if isinstance(data, dict) else None
 
     # ==================== Entity APIs ====================
 

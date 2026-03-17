@@ -196,9 +196,10 @@ class TestICiteMixin:
             pass
 
         searcher = TestSearcher()
+        searcher._get_icite_cache().clear()
 
         mock_http = AsyncMock()
-        mock_http.__aenter__.return_value = mock_http
+        mock_http.is_closed = False
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = mock_icite_response
@@ -238,9 +239,10 @@ class TestICiteMixin:
 
         # Create more PMIDs than the batch limit
         pmids = [str(i) for i in range(MAX_PMIDS_PER_REQUEST + 50)]
+        searcher._get_icite_cache().clear()
 
         mock_http = AsyncMock()
-        mock_http.__aenter__.return_value = mock_http
+        mock_http.is_closed = False
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {"data": []}
@@ -250,8 +252,9 @@ class TestICiteMixin:
         with patch("httpx.AsyncClient", return_value=mock_http) as MockClient:
             await searcher.get_citation_metrics(pmids)
 
-            # Should make 2 AsyncClient instantiations (one per batch)
-            assert MockClient.call_count == 2
+            # Shared client should be reused across both batches.
+            assert MockClient.call_count == 1
+            assert mock_http.get.await_count == 2
 
     async def test_get_citation_metrics_api_error(self):
         """Test getting citation metrics with API error."""
@@ -261,9 +264,10 @@ class TestICiteMixin:
             pass
 
         searcher = TestSearcher()
+        searcher._get_icite_cache().clear()
 
         mock_http = AsyncMock()
-        mock_http.__aenter__.return_value = mock_http
+        mock_http.is_closed = False
         mock_http.get = AsyncMock(side_effect=Exception("API Error"))
 
         with patch("httpx.AsyncClient", return_value=mock_http):
