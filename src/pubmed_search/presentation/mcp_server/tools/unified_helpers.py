@@ -13,7 +13,6 @@ import contextlib
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
 
 from pubmed_search.application.search.query_analyzer import (
     AnalyzedQuery,
@@ -23,9 +22,6 @@ from pubmed_search.application.search.query_analyzer import (
 from pubmed_search.application.search.result_aggregator import RankingConfig
 
 from .icd import lookup_icd_to_mesh
-
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger(__name__)
 
@@ -270,6 +266,7 @@ def _parse_filters(filters_str: str | None) -> dict:
 _OPTION_FLAGS: dict[str, tuple[str, bool]] = {
     # Turn ON features (default OFF)
     "preprints": ("include_preprints", True),
+    "context_graph": ("include_research_context", True),
     # Turn OFF features (default ON)
     "all_types": ("peer_reviewed_only", False),
     "no_peer_review": ("peer_reviewed_only", False),
@@ -288,6 +285,7 @@ def _parse_options(options_str: str | None) -> dict[str, bool]:
 
     Supported flags:
         preprints      → include preprint servers (arXiv, medRxiv, bioRxiv)
+        context_graph  → append research context tree preview from PMID-backed results
         all_types      → include non-peer-reviewed articles
         no_oa          → skip Unpaywall OA link enrichment
         no_analysis    → hide query analysis section in output

@@ -302,6 +302,58 @@ class TestUnifiedSearch:
             assert "no results" in result.lower() or "error" in result.lower()
 
     @pytest.mark.asyncio
+    async def test_context_graph_markdown_output(self):
+        mcp = MagicMock()
+        searcher = AsyncMock()
+        searcher.search.return_value = [{"pmid": "123", "title": "Test Article", "authors": ["A B"]}]
+        searcher.fetch_details.return_value = [{"pmid": "123", "title": "Timeline Article", "year": 2020}]
+        tools = _capture_tools(mcp, searcher)
+
+        fake_timeline = MagicMock()
+        fake_timeline.events = [MagicMock()]
+        fake_tree = MagicMock()
+        fake_tree.to_text_tree.return_value = "## Research Tree: test\nBranch A"
+
+        with (
+            patch("pubmed_search.presentation.mcp_server.tools.unified.get_semantic_enhancer") as mock_enhancer,
+            patch("pubmed_search.presentation.mcp_server.tools.unified.TimelineBuilder") as MockTimelineBuilder,
+            patch("pubmed_search.presentation.mcp_server.tools.unified.build_research_tree", return_value=fake_tree),
+        ):
+            mock_enhancer.return_value.enhance.side_effect = Exception("skip")
+            MockTimelineBuilder.return_value.build_timeline_from_pmids = AsyncMock(return_value=fake_timeline)
+            result = await tools["unified_search"](query="test", options="context_graph,no_scores")
+
+        assert "Research Context Graph" in result
+        assert "Research Tree: test" in result
+
+    @pytest.mark.asyncio
+    async def test_context_graph_json_output(self):
+        mcp = MagicMock()
+        searcher = AsyncMock()
+        searcher.search.return_value = [{"pmid": "123", "title": "Test Article", "authors": ["A B"]}]
+        searcher.fetch_details.return_value = [{"pmid": "123", "title": "Timeline Article", "year": 2020}]
+        tools = _capture_tools(mcp, searcher)
+
+        fake_timeline = MagicMock()
+        fake_timeline.events = [MagicMock()]
+        fake_tree = MagicMock()
+        fake_tree.to_text_tree.return_value = "## Research Tree: test\nBranch A"
+        fake_tree.to_dict.return_value = {"topic": "test", "branches": [{"label": "Branch A"}]}
+
+        with (
+            patch("pubmed_search.presentation.mcp_server.tools.unified.get_semantic_enhancer") as mock_enhancer,
+            patch("pubmed_search.presentation.mcp_server.tools.unified.TimelineBuilder") as MockTimelineBuilder,
+            patch("pubmed_search.presentation.mcp_server.tools.unified.build_research_tree", return_value=fake_tree),
+        ):
+            mock_enhancer.return_value.enhance.side_effect = Exception("skip")
+            MockTimelineBuilder.return_value.build_timeline_from_pmids = AsyncMock(return_value=fake_timeline)
+            result = await tools["unified_search"](query="test", output_format="json", options="context_graph,no_scores")
+
+        parsed = json.loads(result)
+        assert parsed["research_context"]["topic"] == "test"
+        assert parsed["research_context"]["branches"][0]["label"] == "Branch A"
+
+    @pytest.mark.asyncio
     async def test_exception_handling(self):
         """When PubMed search fails internally, unified_search still returns results (empty)."""
         mcp = MagicMock()

@@ -31,8 +31,11 @@ Implementation details are in:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from typing import TYPE_CHECKING, Literal, Union
+
+from mcp.server.fastmcp import Context  # noqa: TC002 - FastMCP needs runtime access for type annotation injection
 
 from pubmed_search.application.search.query_analyzer import (
     QueryAnalyzer,
@@ -46,14 +49,10 @@ from pubmed_search.application.search.semantic_enhancer import (
     SearchPlan,
     get_semantic_enhancer,
 )
-from pubmed_search.domain.entities.article import UnifiedArticle
+from pubmed_search.application.timeline import TimelineBuilder, build_research_tree
 from pubmed_search.infrastructure.sources.preprints import PreprintSearcher
 
 from ._common import InputNormalizer, ResponseFormatter, _record_search_only
-
-# ---------------------------------------------------------------------------
-# Extracted sub-modules
-# ---------------------------------------------------------------------------
 from .unified_enrichment import (
     _enrich_with_api_similarity,
     _enrich_with_crossref,
@@ -65,9 +64,9 @@ from .unified_enrichment import (
 )
 from .unified_formatting import _format_as_json, _format_unified_results
 from .unified_helpers import (
-    DispatchStrategy,
-    ICD10_PATTERN,
     ICD9_PATTERN,
+    ICD10_PATTERN,
+    DispatchStrategy,
     RelaxationResult,
     RelaxationStep,
     SearchDepthMetrics,
@@ -95,6 +94,7 @@ from .unified_source_search import (
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
 
+    from pubmed_search.domain.entities.article import UnifiedArticle
     from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
 logger = logging.getLogger(__name__)
@@ -160,6 +160,7 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         filters: Union[str, None] = None,
         options: Union[str, None] = None,
         pipeline: Union[str, None] = None,
+        ctx: Context | None = None,
     ) -> str:
         """
         🔍 Unified Search - Single entry point for multi-source academic search.
@@ -336,6 +337,13 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         """
         logger.info(f"Unified search: query='{query}', limit={limit}, ranking='{ranking}'")
 
+        # --- Helper for progress reporting ---
+        async def _progress(progress: float, total: float, message: str) -> None:
+            """Report progress to MCP client if context is available."""
+            if ctx is not None:
+                with contextlib.suppress(Exception):
+                    await ctx.report_progress(progress, total, message)
+
         try:
             # ============================================================
             # Pipeline Mode — execute structured DAG when pipeline is set
@@ -373,6 +381,7 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             show_analysis: bool = parsed_options.get("show_analysis", True)
             include_similarity_scores: bool = parsed_options.get("include_similarity_scores", True)
             include_preprints: bool = parsed_options.get("include_preprints", False)
+            include_research_context: bool = parsed_options.get("include_research_context", False)
             peer_reviewed_only: bool = parsed_options.get("peer_reviewed_only", True)
             auto_relax: bool = parsed_options.get("auto_relax", True)
             deep_search: bool = parsed_options.get("deep_search", True)
@@ -385,6 +394,7 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 logger.info(f"ICD codes detected: {[i['code'] for i in icd_matches]}")
 
             # === Step 1: Analyze Query ===
+            await _progress(1, 10, "Analyzing query...")
             analyzer = QueryAnalyzer()
             analysis = analyzer.analyze(query)
 
@@ -401,6 +411,7 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 logger.info("Skipping semantic enhancement for simple/lookup query")
             else:
                 try:
+                    await _progress(2, 10, "Enhancing query with PubTator3...")
                     enhancer = get_semantic_enhancer()
                     enhanced_query = await asyncio.wait_for(enhancer.enhance(query), timeout=3.0)
 
@@ -435,6 +446,7 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 logger.info(f"User-specified sources: {user_sources}")
 
             dispatch_sources = user_sources or DispatchStrategy.get_sources(analysis)
+            await _progress(3, 10, f"Sources: {', '.join(dispatch_sources)}")
             logger.info(f"Selected sources: {dispatch_sources}")
 
             # === Step 3: Get Ranking Config ===
@@ -510,6 +522,7 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                     if filtered_count > 0:
                         logger.info(f"Filtered {filtered_count} strategies to match user sources: {user_sources}")
 
+                await _progress(4, 10, f"Deep search: {len(enhanced_query.strategies)} strategies...")
                 logger.info(f"Executing DEEP SEARCH with {len(enhanced_query.strategies)} strategies")
                 (
                     all_results,
@@ -624,6 +637,7 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                     preprint_results = {}
 
             # === Step 5: Aggregate and Deduplicate ===
+            await _progress(5, 10, "Aggregating results...")
             aggregator = ResultAggregator(config)
             articles, stats = aggregator.aggregate(all_results)
 
@@ -664,13 +678,18 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                         f"Auto-relaxation: {stats.unique_articles} results at level {step.level} ({step.action})"
                     )
 
-            # === Step 6: Enrich with CrossRef (if in sources) ===
+            # === Steps 6/6.25/7: Enrichment (parallel) ===
+            await _progress(6, 10, "Enriching results...")
+            enrichment_tasks: list[asyncio.Task] = []  # type: ignore[type-arg]
             if "crossref" in dispatch_sources:
-                await _enrich_with_crossref(articles)
-
-            # === Step 6.25: Enrich with Journal Metrics (OpenAlex Sources API) ===
+                enrichment_tasks.append(asyncio.create_task(_enrich_with_crossref(articles)))
             if "openalex" in dispatch_sources:
-                await _enrich_with_journal_metrics(articles)
+                enrichment_tasks.append(asyncio.create_task(_enrich_with_journal_metrics(articles)))
+            if include_oa_links and DispatchStrategy.should_enrich_with_unpaywall(analysis):
+                enrichment_tasks.append(asyncio.create_task(_enrich_with_unpaywall(articles)))
+
+            if enrichment_tasks:
+                await asyncio.gather(*enrichment_tasks, return_exceptions=True)
 
             # === Step 6.5: Filter non-peer-reviewed articles ===
             if peer_reviewed_only and articles:
@@ -682,11 +701,8 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 if filtered_count > 0:
                     logger.info(f"Peer-review filter: removed {filtered_count} non-peer-reviewed articles")
 
-            # === Step 7: Enrich with Unpaywall OA Links ===
-            if include_oa_links and DispatchStrategy.should_enrich_with_unpaywall(analysis):
-                await _enrich_with_unpaywall(articles)
-
             # === Step 8: Rank Results ===
+            await _progress(8, 10, "Ranking results...")
             ranked = aggregator.rank(articles, config, query)
 
             # Apply limit
@@ -721,10 +737,32 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 has_source_counts=bool(source_api_counts),
             )
 
+            # === Step 8.75: Research Context Graph Preview (optional) ===
+            research_context_preview: str | None = None
+            research_context_data: dict | None = None
+            if include_research_context and ranked:
+                pmids_for_context = [str(article.pmid) for article in ranked if getattr(article, "pmid", None)]
+                # Keep preview lightweight and PMID-backed for deterministic branching.
+                pmids_for_context = pmids_for_context[:20]
+                if pmids_for_context:
+                    try:
+                        context_builder = TimelineBuilder(searcher)
+                        context_timeline = await context_builder.build_timeline_from_pmids(
+                            pmids=pmids_for_context,
+                            topic=analysis.original_query,
+                        )
+                        if context_timeline.events:
+                            context_tree = build_research_tree(context_timeline)
+                            research_context_preview = context_tree.to_text_tree()
+                            research_context_data = context_tree.to_dict()
+                    except Exception as e:
+                        logger.debug(f"Research context graph skipped: {e}")
+
             # === Step 8.8: Record to Session ===
             _record_search_only(ranked, analysis.original_query)
 
             # === Step 9: Format Output ===
+            await _progress(9, 10, "Formatting output...")
             if output_format == "json":
                 if clinical_trials_task:
                     clinical_trials_task.cancel()
@@ -732,6 +770,7 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                     ranked, analysis, stats, relaxation_result, deep_search_metrics,
                     source_disagreement=source_disagreement,
                     reproducibility_score=reproducibility,
+                    research_context=research_context_data,
                 )
             # Collect pre-fetched clinical trials
             prefetched_trials: list | None = None
@@ -758,6 +797,7 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 source_api_counts=source_api_counts if source_api_counts else None,
                 source_disagreement=source_disagreement,
                 reproducibility_score=reproducibility,
+                research_context_preview=research_context_preview,
             )
 
         except Exception as e:

@@ -11,21 +11,21 @@ from __future__ import annotations
 
 import json
 import logging
+from typing import TYPE_CHECKING
 
-from pubmed_search.application.search.query_analyzer import AnalyzedQuery
-from pubmed_search.application.search.ranking_algorithms import SourceDisagreement
-from pubmed_search.application.search.reproducibility import ReproducibilityScore
-from pubmed_search.application.search.result_aggregator import AggregationStats
-from pubmed_search.domain.entities.article import UnifiedArticle
 from pubmed_search.infrastructure.sources.openurl import (
     get_openurl_config,
     get_openurl_link,
 )
 
-from .unified_helpers import (
-    RelaxationResult,
-    SearchDepthMetrics,
-)
+if TYPE_CHECKING:
+    from pubmed_search.application.search.query_analyzer import AnalyzedQuery
+    from pubmed_search.application.search.ranking_algorithms import SourceDisagreement
+    from pubmed_search.application.search.reproducibility import ReproducibilityScore
+    from pubmed_search.application.search.result_aggregator import AggregationStats
+    from pubmed_search.domain.entities.article import UnifiedArticle
+
+    from .unified_helpers import RelaxationResult, SearchDepthMetrics
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +52,7 @@ async def _format_unified_results(
     source_api_counts: dict[str, tuple[int, int | None]] | None = None,
     source_disagreement: SourceDisagreement | None = None,
     reproducibility_score: ReproducibilityScore | None = None,
+    research_context_preview: str | None = None,
 ) -> str:
     """Format unified search results for MCP response.
 
@@ -325,6 +326,18 @@ async def _format_unified_results(
             output_parts.append(f"\n**⚠️ Failed sources**: {', '.join(rs.sources_failed)}")
         output_parts.append("")
 
+    # === Research Context Graph Preview ===
+    if research_context_preview:
+        output_parts.append("\n---")
+        output_parts.append("\n## 🌳 Research Context Graph\n")
+        output_parts.append(
+            "This preview is generated from PMID-backed results in the current ranked set. "
+            "It shows thematic branches rather than the full cross-source knowledge graph."
+        )
+        output_parts.append("")
+        output_parts.append(research_context_preview)
+        output_parts.append("")
+
     # === Preprint Results Section ===
     if preprint_results and preprint_results.get("total", 0) > 0:
         output_parts.append("\n---")
@@ -374,6 +387,7 @@ def _format_as_json(
     deep_search_metrics: SearchDepthMetrics | None = None,
     source_disagreement: SourceDisagreement | None = None,
     reproducibility_score: ReproducibilityScore | None = None,
+    research_context: dict | None = None,
 ) -> str:
     """Format results as JSON for programmatic access."""
     result = {
@@ -451,5 +465,8 @@ def _format_as_json(
     # Reproducibility score
     if reproducibility_score:
         result["reproducibility"] = reproducibility_score.to_dict()
+
+    if research_context:
+        result["research_context"] = research_context
 
     return json.dumps(result, ensure_ascii=False, indent=2)
