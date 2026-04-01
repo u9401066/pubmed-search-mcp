@@ -9,7 +9,7 @@
 > **Professional Literature Research Assistant for AI Agents** - More than just an API wrapper
 
 <p align="center">
-  <img src="docs/images/architecture-overview.jpg" alt="PubMed Search MCP Architecture" width="800">
+  <img src="docs/images/architecture-overview.jpg" alt="PubMed Search MCP Architecture" width="600">
 </p>
 
 A Domain-Driven Design (DDD) based MCP server that serves as an intelligent research assistant for AI agents, providing task-oriented literature search and analysis capabilities.
@@ -329,15 +329,7 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS proxy for API requests
 
 ---
 
-<p align="center">
-  <img src="docs/images/unified-search-flow.jpg" alt="Unified Search Multi-Source Aggregation" width="800">
-</p>
-
 ## 🛠️ MCP Tools Overview
-
-<p align="center">
-  <img src="docs/images/tools-overview.jpg" alt="40 MCP Tools by Category" width="800">
-</p>
 
 ### 🔍 Search & Query Intelligence
 
@@ -515,10 +507,6 @@ unified_search(query="I10 treatment in E11.9 patients")
 ```
 
 ### 2️⃣ PICO Clinical Question
-
-<p align="center">
-  <img src="docs/images/pico-workflow.jpg" alt="PICO Clinical Question Workflow" width="800">
-</p>
 
 **Simple path** — `unified_search` can search directly (no PICO decomposition):
 
