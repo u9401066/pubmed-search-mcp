@@ -1,87 +1,57 @@
 ---
 name: pubmed-pico-search
-description: PICO-based clinical question search. Triggers: PICO, 臨床問題, A比B好嗎, treatment comparison, clinical question, 療效比較
+description: "PICO-based clinical question search using parse_pico and unified_search. Triggers: PICO, 臨床問題, A比B好嗎, treatment comparison, clinical question, 療效比較"
 ---
 
 # PICO 臨床問題搜尋
 
 ## 描述
-針對 PICO 格式的臨床問題進行結構化搜尋，自動解析 Population, Intervention, Comparison, Outcome 元素。
+這個 workflow 用在臨床比較問題。先把自然語言拆成 PICO，再對各元素做術語擴展，最後組成一個可以執行的臨床查詢並用 unified_search 搜尋。
 
 ## 觸發條件
-- 「A 比 B 好嗎？」、「哪個治療效果更好？」
-- 「在...病人中...的效果」
-- 「...相比...」、「療效比較」
-- 提到 PICO、臨床實證、治療指引
+- 「A 比 B 好嗎？」
+- 「哪個治療效果更好？」
+- 「在某類病人中，某藥是否改善某結果？」
+- 提到 PICO、臨床問題、療效比較
 
 ---
 
-## PICO 元素說明
+## PICO 元素
 
-| 元素 | 英文 | 說明 | 範例 |
-|------|------|------|------|
-| **P** | Population | 什麼病人？ | ICU 病人、糖尿病患者 |
-| **I** | Intervention | 什麼治療？ | remimazolam、SGLT2 抑制劑 |
-| **C** | Comparison | 比較什麼？ | propofol、傳統療法 |
-| **O** | Outcome | 什麼結果？ | 譫妄發生率、死亡率 |
+| 元素 | 說明 | 例子 |
+|------|------|------|
+| `P` | Population | ICU patients |
+| `I` | Intervention | remimazolam |
+| `C` | Comparison | propofol |
+| `O` | Outcome | delirium |
 
 ---
 
-## 工作流程
+## 正確工作流程
 
+```text
+parse_pico
+→ generate_search_queries × 每個 PICO 元素
+→ 組合 Boolean 查詢
+→ analyze_search_query
+→ unified_search
 ```
-┌─────────────────────────────────────────────────────────────┐
-│  Step 1: parse_pico(description)                            │
-│  → 自動解析臨床問題為 P, I, C, O 元素                        │
-└─────────────────────────┬───────────────────────────────────┘
-                          │
-┌─────────────────────────▼───────────────────────────────────┐
-│  Step 2: generate_search_queries() × 4 (並行)               │
-│  → 每個 PICO 元素分別取得 MeSH + 同義詞                      │
-└─────────────────────────┬───────────────────────────────────┘
-                          │
-┌─────────────────────────▼───────────────────────────────────┐
-│  Step 3: 組合 Boolean Query                                 │
-│  → (P) AND (I) AND (C) AND (O) + filter                    │
-└─────────────────────────┬───────────────────────────────────┘
-                          │
-┌─────────────────────────▼───────────────────────────────────┐
-│  Step 4: search_literature() + merge                        │
-│  → 執行搜尋並合併結果                                        │
-└─────────────────────────────────────────────────────────────┘
-```
+
+> 這個流程不再依賴舊的逐步搜尋與合併流程。臨床問題的重點是把 PICO 結構轉成一個清楚的臨床查詢，再用 unified_search 執行。
 
 ---
 
 ## Step 1: 解析 PICO
 
-### 自然語言問題：
+### 自然語言輸入
 
 ```python
-parse_pico(description="remimazolam 在 ICU 鎮靜比 propofol 好嗎？會減少 delirium 嗎？")
+parse_pico(
+    description="remimazolam 在 ICU 鎮靜比 propofol 好嗎？會減少 delirium 嗎？"
+)
 ```
 
-### 回傳：
-
-```json
-{
-  "pico": {
-    "P": "ICU patients",
-    "I": "remimazolam",
-    "C": "propofol",
-    "O": "delirium, sedation outcome"
-  },
-  "question_type": "therapy",
-  "suggested_filter": "therapy[filter]",
-  "next_steps": [
-    "For each PICO element, call generate_search_queries()",
-    "Combine with AND logic",
-    "Add therapy[filter] for high evidence"
-  ]
-}
-```
-
-### 或者直接提供結構化 PICO：
+### 或直接提供結構化欄位
 
 ```python
 parse_pico(
@@ -93,154 +63,147 @@ parse_pico(
 )
 ```
 
+你要關注的輸出是：
+
+- `pico`: 解析出的 P/I/C/O
+- `question_type`: 例如 `therapy`, `diagnosis`, `prognosis`, `etiology`
+- `suggested_filter`: 後續可轉進 `filters="clinical:..."`
+
 ---
 
-## Step 2: 擴展每個 PICO 元素（並行！）
+## Step 2: 擴展各元素術語
 
 ```python
-# 四個並行呼叫
-generate_search_queries(topic="ICU patients")         # → P 材料
-generate_search_queries(topic="remimazolam")          # → I 材料
-generate_search_queries(topic="propofol")             # → C 材料
-generate_search_queries(topic="delirium")             # → O 材料
+generate_search_queries(topic="ICU patients")
+generate_search_queries(topic="remimazolam")
+generate_search_queries(topic="propofol")
+generate_search_queries(topic="delirium")
 ```
 
-### 回傳範例（I 元素）：
-
-```json
-{
-  "mesh_terms": [{"preferred": "remimazolam [Supplementary Concept]", "synonyms": ["CNS 7056"]}],
-  "all_synonyms": ["CNS 7056", "ONO 2745"]
-}
-```
+實務上，只對有值的元素呼叫即可。如果 `C` 不明確，就不要硬塞進查詢。
 
 ---
 
-## Step 3: 組合 Boolean Query
+## Step 3: 組 Boolean 查詢
 
-### 高精確度（AND 所有元素）：
-
-```
-("Intensive Care Units"[MeSH] OR ICU[tiab])           # P
-AND (remimazolam OR "CNS 7056")                        # I
-AND (propofol OR Diprivan)                             # C
-AND ("Delirium"[MeSH] OR delirium[tiab])              # O
-AND therapy[filter]                                    # Evidence filter
-```
-
-### 高召回率（放寬 I/C）：
-
-```
-(ICU[tiab])                                            # P
-AND (remimazolam OR propofol OR "CNS 7056")           # I OR C
-AND (delirium[tiab])                                   # O
-```
-
----
-
-## Step 4: 執行搜尋
+### 高精確度版本
 
 ```python
-# 高精確度查詢
-search_literature(
-    query='("Intensive Care Units"[MeSH] OR ICU[tiab]) AND (remimazolam) AND (propofol) AND (delirium) AND therapy[filter]',
-    limit=50
-)
-
-# 高召回率查詢
-search_literature(
-    query='ICU[tiab] AND (remimazolam OR propofol) AND delirium[tiab]',
-    limit=50
-)
-
-# 合併結果
-merge_search_results(results_json='[[...], [...]]')
-```
-
----
-
-## Clinical Query Filters
-
-根據 `question_type` 自動建議篩選器：
-
-| 問題類型 | Filter | 適用情境 |
-|----------|--------|----------|
-| **therapy** | `therapy[filter]` | 治療效果比較、介入性研究 |
-| **diagnosis** | `diagnosis[filter]` | 診斷工具、篩檢準確度 |
-| **prognosis** | `prognosis[filter]` | 預後因子、存活率預測 |
-| **etiology** | `etiology[filter]` | 危險因子、病因探討 |
-
-這些是 PubMed 內建的 Clinical Query Filters，可大幅提升證據品質！
-
----
-
-## 完整範例：SGLT2 抑制劑與心衰竭
-
-### 臨床問題：
-「在第二型糖尿病合併心衰竭的病人中，SGLT2 抑制劑相比傳統治療，能否減少住院率？」
-
-```python
-# Step 1: 解析
-pico = parse_pico(
-    description="在第二型糖尿病合併心衰竭的病人中，SGLT2 抑制劑相比傳統治療，能否減少住院率？"
-)
-# P = Type 2 diabetes with heart failure
-# I = SGLT2 inhibitors
-# C = Traditional therapy
-# O = Hospitalization rate
-
-# Step 2: 並行取得各元素的 MeSH
-p_materials = generate_search_queries("Type 2 diabetes heart failure")
-i_materials = generate_search_queries("SGLT2 inhibitors")
-o_materials = generate_search_queries("hospitalization")
-
-# Step 3: 組合查詢
 query = '''
-("Diabetes Mellitus, Type 2"[MeSH] AND "Heart Failure"[MeSH])
-AND ("Sodium-Glucose Transporter 2 Inhibitors"[MeSH]
-     OR empagliflozin OR dapagliflozin OR canagliflozin)
-AND ("Hospitalization"[MeSH] OR hospitalization[tiab] OR rehospitalization)
-AND therapy[filter]
+("intensive care"[Title/Abstract] OR ICU[Title/Abstract])
+AND
+(remimazolam[Title/Abstract] OR "CNS 7056"[Title/Abstract])
+AND
+(propofol[Title/Abstract] OR Diprivan[Title/Abstract])
+AND
+(delirium[Title/Abstract] OR "Delirium"[MeSH Terms])
+'''
+```
+
+### 高召回版本
+
+```python
+query = '''
+("intensive care"[Title/Abstract] OR ICU[Title/Abstract])
+AND
+((remimazolam[Title/Abstract] OR "CNS 7056"[Title/Abstract])
+ OR
+ (propofol[Title/Abstract] OR Diprivan[Title/Abstract]))
+AND
+(delirium[Title/Abstract] OR sedation[Title/Abstract])
+'''
+```
+
+---
+
+## Step 4: 執行前分析
+
+```python
+analyze_search_query(query=query)
+```
+
+這一步可以先檢查查詢是否合理，再決定要不要執行。
+
+---
+
+## Step 5: 執行搜尋
+
+```python
+unified_search(
+    query=query,
+    limit=50,
+    ranking="quality",
+    filters="year:2018-2025, species:humans, clinical:therapy",
+    output_format="json"
+)
+```
+
+### `question_type` 對應的 `clinical` 篩選
+
+| 問題類型 | filters 建議 |
+|----------|--------------|
+| `therapy` | `clinical:therapy` |
+| `diagnosis` | `clinical:diagnosis` |
+| `prognosis` | `clinical:prognosis` |
+| `etiology` | `clinical:etiology` |
+
+---
+
+## 完整範例
+
+### 情境：remimazolam vs propofol in ICU sedation
+
+```python
+# Step 1: 解析問題
+pico = parse_pico(
+    description="remimazolam 在 ICU 鎮靜比 propofol 好嗎？會減少 delirium 嗎？"
+)
+
+# Step 2: 為 P/I/C/O 擴展詞彙
+generate_search_queries(topic="ICU patients")
+generate_search_queries(topic="remimazolam")
+generate_search_queries(topic="propofol")
+generate_search_queries(topic="delirium")
+
+# Step 3: 組查詢
+query = '''
+("intensive care"[Title/Abstract] OR ICU[Title/Abstract])
+AND
+(remimazolam[Title/Abstract] OR "CNS 7056"[Title/Abstract])
+AND
+(propofol[Title/Abstract])
+AND
+(delirium[Title/Abstract] OR "Delirium"[MeSH Terms])
 '''
 
-# Step 4: 搜尋
-search_literature(query=query, limit=100, min_year=2018)
+# Step 4: 先分析
+analyze_search_query(query=query)
+
+# Step 5: 再搜尋
+unified_search(
+    query=query,
+    limit=50,
+    ranking="quality",
+    filters="year:2018-2025, species:humans, clinical:therapy"
+)
 ```
 
 ---
 
-## 小技巧
+## 常見判斷
 
-### 1. 問題類型判斷：
+### 沒有 Comparison
 
-```python
-# 治療比較 → therapy
-"A 藥比 B 藥好嗎？"
+這很常見。直接用 `P + I + O` 即可，不要為了湊 PICO 硬塞對照組。
 
-# 診斷準確度 → diagnosis  
-"CT 診斷肺癌的敏感度？"
+### 結果太少
 
-# 預後評估 → prognosis
-"這個指數能預測死亡率嗎？"
+- 拿掉 `C`
+- 拿掉最窄的 outcome 詞
+- 放寬成較高召回版本
 
-# 病因研究 → etiology
-"抽菸會增加...的風險嗎？"
-```
+### 結果太多
 
-### 2. 沒有 Comparison？
-
-有些問題沒有明確的 C 元素，這很正常：
-
-```python
-parse_pico(description="COVID-19 病人使用 remdesivir 的效果")
-# P = COVID-19 patients
-# I = remdesivir
-# C = (empty or placebo)
-# O = efficacy/outcomes
-```
-
-### 3. 結果太少？
-
-- 移除 C 元素（只搜 P + I + O）
-- 移除 filter（但會降低證據品質）
-- 使用 `expansion_type="broader"`
+- 增加 outcome 限制
+- 加 `filters="clinical:therapy"`
+- 把 `ranking` 改成 `quality`

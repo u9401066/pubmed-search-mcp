@@ -176,12 +176,12 @@ unified_search → fetch_article_details → prepare_export
 
 ### 系統性搜尋
 ```
-generate_search_queries → unified_search × N → merge results
+generate_search_queries → Boolean query → analyze_search_query → unified_search
 ```
 
 ### PICO 搜尋
 ```
-parse_pico → generate_search_queries × 4 → unified_search → merge results
+parse_pico → generate_search_queries × N → Boolean query → analyze_search_query → unified_search
 ```
 
 ### 論文探索
@@ -191,7 +191,7 @@ fetch_article_details → find_related_articles + find_citing_articles + build_c
 
 ### 全文取得
 ```
-get_fulltext (自動嘗試 Europe PMC / CORE / CrossRef)
+get_fulltext → get_article_figures / get_text_mined_terms / get_institutional_link
 ```
 
 ---

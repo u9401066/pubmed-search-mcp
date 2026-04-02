@@ -1,6 +1,6 @@
 ---
 name: pipeline-persistence
-description: Pipeline persistence — save, load, and reuse structured search plans. Triggers: pipeline, 管道, search plan, 搜尋計畫, 重複搜尋, saved search, 排程, schedule, workflow, DAG
+description: "Pipeline persistence — save, load, and reuse structured search plans. Triggers: pipeline, 管道, search plan, 搜尋計畫, 重複搜尋, saved search, 排程, schedule, workflow, DAG"
 ---
 
 # Pipeline 持久化 — 結構化搜尋計畫管理

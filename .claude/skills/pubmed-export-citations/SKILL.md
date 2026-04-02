@@ -1,173 +1,134 @@
 ---
 name: pubmed-export-citations
-description: Export citations to reference managers. Triggers: 匯出, export, RIS, BibTeX, EndNote, Zotero, Mendeley, 引用格式, reference manager
+description: "Export citations with prepare_export. Triggers: 匯出, export, RIS, BibTeX, EndNote, Zotero, Mendeley, 引用格式, reference manager"
 ---
 
 # 引用匯出指南
 
+## 描述
+引用匯出現在統一使用 `prepare_export`。最常見的做法是先搜尋，再用 `pmids="last"` 匯出上一輪搜尋結果；若只想匯出指定文章，則直接傳 PMID 清單。
+
+---
+
 ## 快速決策樹
 
-```
+```text
 需要匯出引用？
-├── EndNote/Zotero/Mendeley → prepare_export(pmids="last", format="ris")
-├── LaTeX/Overleaf → prepare_export(pmids="last", format="bibtex", source="local")
-├── Excel 分析 → prepare_export(pmids="last", format="csv", source="local")
+├── EndNote / Zotero / Mendeley → prepare_export(pmids="last", format="ris")
+├── LaTeX / Overleaf → prepare_export(pmids="last", format="bibtex", source="local")
+├── Excel / 分析 → prepare_export(pmids="last", format="csv", source="local")
 └── 程式處理 → prepare_export(pmids="last", format="csl")
 ```
 
 ---
 
-## 工具簽名
+## 核心工具
 
 ```python
 prepare_export(
-    pmids: str | list,      # "last" | "12345678,87654321" | ["12345678"]
-    format: str = "ris",    # ris, medline, csl, bibtex, csv, json
-    include_abstract: bool = True,
-    source: str = "official"  # "official" (推薦) | "local"
+    pmids="last",
+    format="ris",
+    include_abstract=True,
+    source="official"
 )
 ```
 
----
+### `pmids` 可接受
 
-## 來源選項對比
-
-| 來源 | 支援格式 | 品質 | 何時使用 |
-|------|----------|------|----------|
-| **official** (預設) | ris, medline, csl | ★★★★★ | 📌 優先選擇，官方 API |
-| **local** | ris, bibtex, csv, medline, json | ★★★★ | BibTeX/CSV 專用 |
-
-> **💡 建議**: 除非需要 BibTeX 或 CSV，否則使用預設的 `source="official"`
+- `"last"`
+- `"12345678,87654321"`
+- `["12345678", "87654321"]`
+- `"PMID:12345678"`
 
 ---
 
-## 格式選擇指南
+## 來源與格式
 
-| 用途 | 格式 | 來源 | 範例 |
-|------|------|------|------|
-| EndNote/Zotero/Mendeley | ris | official | `prepare_export(pmids="last", format="ris")` |
-| LaTeX/Overleaf | bibtex | local | `prepare_export(pmids="last", format="bibtex", source="local")` |
-| Excel/數據分析 | csv | local | `prepare_export(pmids="last", format="csv", source="local")` |
-| 程式處理 (styled) | csl | official | `prepare_export(pmids="last", format="csl")` |
-| 備份保存 | medline | official | `prepare_export(pmids="last", format="medline")` |
+| source | 支援格式 | 何時用 |
+|--------|----------|--------|
+| `official` | `ris`, `medline`, `csl` | 預設首選，品質最好 |
+| `local` | `ris`, `bibtex`, `csv`, `medline`, `json` | 需要 BibTeX、CSV 或離線替代 |
+
+### 常用格式
+
+| 用途 | 呼叫方式 |
+|------|----------|
+| EndNote / Zotero / Mendeley | `prepare_export(pmids="last", format="ris")` |
+| LaTeX / Overleaf | `prepare_export(pmids="last", format="bibtex", source="local")` |
+| Excel / 數據分析 | `prepare_export(pmids="last", format="csv", source="local")` |
+| 程式處理 | `prepare_export(pmids="last", format="csl")` |
+| MEDLINE / NBIB 交換 | `prepare_export(pmids="last", format="medline")` |
 
 ---
 
-## 常用範例
+## 常見工作流程
 
-### 1. 匯出上次搜尋結果 (最常用)
+### 1. 搜尋後直接匯出
 
 ```python
-# 先搜尋
-search_literature(query="remimazolam sedation", limit=30)
-
-# 匯出到 EndNote/Zotero（官方 API，最佳品質）
+unified_search(query="remimazolam ICU sedation", limit=30)
 prepare_export(pmids="last", format="ris")
 ```
 
 ### 2. 匯出指定 PMID
 
 ```python
-prepare_export(pmids="30217674,28523456,35678901", format="ris")
+prepare_export(
+    pmids="30217674,28523456,35678901",
+    format="ris"
+)
 ```
 
-### 3. LaTeX 專用 BibTeX
+### 3. 匯出 BibTeX 給 LaTeX
 
 ```python
-# BibTeX 只支援 local source
-prepare_export(pmids="last", format="bibtex", source="local")
+prepare_export(
+    pmids="last",
+    format="bibtex",
+    source="local"
+)
 ```
 
-### 4. 資料分析 CSV
+### 4. 同一批結果同時輸出兩種格式
 
 ```python
-prepare_export(pmids="last", format="csv", source="local")
-```
-
----
-
-## 輸出格式
-
-### 成功回應
-
-```json
-{
-    "status": "success",
-    "article_count": 10,
-    "format": "ris",
-    "source": "official",
-    "export_text": "TY  - JOUR\nAU  - Doi, Mitsuharu\n..."
-}
-```
-
-### 大量匯出（>20篇）
-
-```json
-{
-    "status": "success",
-    "article_count": 50,
-    "format": "ris",
-    "source": "official",
-    "file_path": "/tmp/pubmed_exports/pubmed_export_50_20250126.ris"
-}
-```
-
----
-
-## RIS 格式範例（官方 API 輸出）
-
-```
-TY  - JOUR
-DB  - PubMed
-AU  - Doi, Mitsuharu
-AU  - Hirata, Nobuhiro
-T1  - Remimazolam versus midazolam for procedural sedation
-LA  - eng
-SN  - 1528-1175
-Y1  - 2020/01/01
-AB  - BACKGROUND: Remimazolam is a novel benzodiazepine...
-SP  - 63
-EP  - 74
-VL  - 132
-AN  - 30217674
-UR  - https://pubmed.ncbi.nlm.nih.gov/30217674
-DO  - 10.1097/ALN.0000000000002435
-ER  -
-```
-
----
-
-## 各軟體匯入
-
-| 軟體 | 步驟 |
-|------|------|
-| **EndNote** | File → Import → 選 RIS → Import Option: "RefMan RIS" |
-| **Zotero** | File → Import → 選 RIS (自動識別) |
-| **Mendeley** | File → Import → RIS |
-| **Overleaf** | 上傳 .bib 檔案 → `\cite{Author2020}` |
-
----
-
-## 完整工作流程
-
-```python
-# Step 1: 搜尋
-search_literature(query="remimazolam ICU sedation", limit=50)
-
-# Step 2: 匯出到 EndNote（官方 API）
 prepare_export(pmids="last", format="ris")
-
-# Step 3: 同時匯出 CSV 到 Excel 篩選
 prepare_export(pmids="last", format="csv", source="local")
 ```
 
 ---
 
-## 常見問題
+## 建議搭配工具
 
-| 問題 | 解決方案 |
-|------|----------|
-| 需要 BibTeX | 使用 `source="local"` |
-| 匯出失敗 | 系統會自動 fallback 到 local |
-| 缺少摘要 | 確認 `include_abstract=True` (預設) |
-| 大量匯出 | >20篇自動存檔，回傳 file_path |
+### 先確認上次搜尋結果有哪些 PMID
+
+```python
+get_session_pmids()
+```
+
+### 要先看文章細節再決定是否匯出
+
+```python
+fetch_article_details(pmids="12345678,87654321")
+```
+
+---
+
+## 回傳結果你要關注什麼
+
+- `status`
+- `article_count`
+- `format`
+- `source`
+- `export_text`
+
+如果是較大量匯出，回傳也可能包含可下載的檔案路徑或檔案資訊。
+
+---
+
+## 實務建議
+
+- 不確定時，先用 `format="ris"`, `source="official"`
+- 只有 BibTeX 需要 `source="local"`
+- 若要保留摘要，維持 `include_abstract=True`
+- 若只要少數重點文章，不要直接匯出整個 `last`，改傳明確 PMID 清單

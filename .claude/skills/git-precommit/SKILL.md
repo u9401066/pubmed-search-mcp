@@ -1,6 +1,6 @@
 ---
 name: git-precommit
-description: Orchestrate pre-commit workflow including Memory Bank sync, README/CHANGELOG/ROADMAP updates, and MCP tool count sync. Triggers: GIT, gc, push, commit, 提交, 準備 commit, 要提交了, git commit, pre-commit, 推送.
+description: "Orchestrate pre-commit workflow including Memory Bank sync, README/CHANGELOG/ROADMAP updates, and MCP tool count sync. Triggers: GIT, gc, push, commit, 提交, 準備 commit, 要提交了, git commit, pre-commit, 推送."
 ---
 
 # Git 提交前工作流（編排器）
@@ -65,6 +65,7 @@ description: Orchestrate pre-commit workflow including Memory Bank sync, README/
 │  ✅ commit-size-guard│                                      │
 │  ✅ async-test-checker│                                      │
 │  ✅ tool-count-sync  │                                      │
+│  ✅ skills-frontmatter│                                     │
 │  ✅ evolution-cycle  │                                      │
 │  ✅ future-annotations│                                      │
 │  ✅ no-print-in-src  │                                      │
@@ -258,6 +259,7 @@ git commit --no-verify -m "emergency"       # 跳過所有 hooks (慎用!)
 | `vulture_whitelist.py` | vulture 死碼掃描白名單 |
 | `scripts/hooks/check_file_hygiene.py` | 檔案衛生檢查 |
 | `scripts/hooks/check_tool_sync.py` | MCP 工具文檔同步 |
+| `scripts/hooks/check_skills_frontmatter.py` | `.claude/skills` YAML frontmatter 驗證 |
 | `scripts/hooks/check_evolution_cycle.py` | 自演化循環一致性驗證 |
 | `scripts/hooks/check_commit_size.py` | Commit 檔案數限制 (≤30) |
 | `scripts/hooks/check_future_annotations.py` | future annotations 強制 |

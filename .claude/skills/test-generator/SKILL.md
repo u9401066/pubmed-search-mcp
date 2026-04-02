@@ -1,6 +1,6 @@
 ---
 name: test-generator
-description: Generate comprehensive test suites including static analysis, unit tests, integration tests, E2E tests, and coverage reports. Triggers: TG, test, 測試, 寫測試, coverage, 覆蓋率, pytest, unittest, 驗證.
+description: "Generate comprehensive test suites including static analysis, unit tests, integration tests, E2E tests, and coverage reports. Triggers: TG, test, 測試, 寫測試, coverage, 覆蓋率, pytest, unittest, 驗證."
 ---
 
 # 測試生成技能

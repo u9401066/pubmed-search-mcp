@@ -1,6 +1,6 @@
 ---
 name: tool-sync
-description: Auto-sync MCP tool documentation when tools are added, removed, or renamed. Triggers: TS, tool-sync, 工具同步, 同步工具, sync tools, new tool, 新增工具, 工具變更, update tools.
+description: "Auto-sync MCP tool documentation when tools are added, removed, or renamed. Triggers: TS, tool-sync, 工具同步, 同步工具, sync tools, new tool, 新增工具, 工具變更, update tools."
 ---
 
 # MCP 工具文檔自動同步

@@ -1,6 +1,6 @@
 ---
 name: project-init
-description: Initialize new projects using this template. Triggers: init, new, 新專案, 初始化, create project, 建立專案, bootstrap, scaffold project.
+description: "Initialize new projects using this template. Triggers: init, new, 新專案, 初始化, create project, 建立專案, bootstrap, scaffold project."
 ---
 
 # 專案初始化技能
