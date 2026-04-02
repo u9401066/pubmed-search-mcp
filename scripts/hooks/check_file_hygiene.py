@@ -40,6 +40,7 @@ ALLOWED_ROOT_FILES: set[str] = {
     # Docs
     "README.md",
     "README.zh-TW.md",
+    "CITATION.cff",
     "CHANGELOG.md",
     "CONSTITUTION.md",
     "ARCHITECTURE.md",

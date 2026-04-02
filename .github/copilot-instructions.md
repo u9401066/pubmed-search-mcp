@@ -80,6 +80,7 @@ uv run pre-commit autoupdate
 - **file-hygiene** 檔案衛生檢查 (`scripts/hooks/check_file_hygiene.py`)
 - **commit-size-guard** 限制每次 commit ≤30 檔案 (`scripts/hooks/check_commit_size.py`)
 - **tool-count-sync** MCP 工具文檔同步 (`scripts/hooks/check_tool_sync.py`, 自動修復)
+- **skills-frontmatter** 驗證 `.claude/skills/*/SKILL.md` 的 YAML frontmatter (`scripts/hooks/check_skills_frontmatter.py`)
 - **evolution-cycle** 一致性驗證 (`scripts/hooks/check_evolution_cycle.py`)
 - **future-annotations** 強制 `from __future__ import annotations` (`scripts/hooks/check_future_annotations.py`, 自動修復)
 - **no-print-in-src** 禁止 src/ 使用 print() (`scripts/hooks/check_no_print.py`)
@@ -266,7 +267,7 @@ git status --short | Where-Object { $_ -match '^\?\?' }
 | 類型 | 檔案 |
 |------|------|
 | 設定 | `pyproject.toml`, `Dockerfile`, `docker-compose*.yml`, `.gitignore`, `uv.lock` |
-| 文檔 | `README.md`, `CHANGELOG.md`, `CONSTITUTION.md`, `ARCHITECTURE.md`, `ROADMAP.md`, `CONTRIBUTING.md`, `DEPLOYMENT.md`, `LICENSE` |
+| 文檔 | `README.md`, `README.zh-TW.md`, `CHANGELOG.md`, `CONSTITUTION.md`, `ARCHITECTURE.md`, `ROADMAP.md`, `CONTRIBUTING.md`, `DEPLOYMENT.md`, `CITATION.cff`, `LICENSE` |
 | 入口 | `run_copilot.py`, `run_server.py`, `start.sh` |
 
 > ⚠️ **任何不在白名單的檔案出現在根目錄都是錯誤。**
@@ -398,7 +399,7 @@ PubMed Search MCP is a **professional literature research assistant** that provi
 ### Quick Search (Default)
 **Trigger**: "find papers about...", "search for...", "any articles on..."
 ```python
-search_literature(query="<topic>", limit=10)
+unified_search(query="<topic>", limit=10)
 ```
 
 When an agent needs a lightweight topic overview in the same response, prefer:
@@ -412,13 +413,12 @@ unified_search(query="<topic>", options="context_graph")
 # Step 1: Get MeSH terms and synonyms
 generate_search_queries(topic="<topic>")
 
-# Step 2: Execute multiple strategies (parallel)
-search_literature(query="<query1>")
-search_literature(query="<query2>")
-# ...
+# Step 2: Build a Boolean query from MeSH terms and synonyms
+# Step 3: Validate the final query
+analyze_search_query(query="<combined_boolean_query>")
 
-# Step 3: Merge results
-merge_search_results(results_json='[[...],[...]]')
+# Step 4: Execute the search
+unified_search(query="<combined_boolean_query>")
 ```
 
 ### PICO Clinical Question
@@ -435,6 +435,10 @@ generate_search_queries(topic="<O>")
 
 # Step 3: Combine with Boolean logic
 # (P) AND (I) AND (C) AND (O)
+
+# Step 4: Validate and execute
+analyze_search_query(query="<combined_boolean_query>")
+unified_search(query="<combined_boolean_query>")
 ```
 
 ---
@@ -591,7 +595,7 @@ generate_search_queries(topic="<O>")
 
 ### 1. Find Papers on a Topic
 ```python
-search_literature(query="remimazolam ICU sedation", limit=10)
+unified_search(query="remimazolam ICU sedation", limit=10)
 ```
 
 ### 2. Explore from a Key Paper
@@ -604,12 +608,11 @@ get_article_references(pmid="12345678")  # What did it cite?
 
 ### 3. Get Full Text
 ```python
-# From Europe PMC (structured)
+# Structured full text from PMC / Europe PMC
 get_fulltext(pmcid="PMC7096777", sections="introduction,results")
 
-# From CORE (plain text)
-search_core(query="<topic>", has_fulltext=True)
-get_core_fulltext(core_id="<id>")
+# DOI or PMID-based retrieval with broader source fallback
+get_fulltext(doi="10.1038/s41586-021-03819-2", extended_sources=True)
 ```
 
 ### 4. Research a Gene
@@ -629,7 +632,7 @@ get_compound_literature(cid="4943", limit=20)
 ### 6. Export Results
 ```python
 prepare_export(pmids="last", format="ris")  # Last search
-analyze_fulltext_access(pmids="last")       # Check OA availability
+get_fulltext(pmid="12345678", extended_sources=True)  # Retrieve selected paper full text
 ```
 
 ---

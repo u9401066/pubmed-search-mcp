@@ -31,6 +31,7 @@ repos:
         args: [--markdown-linebreak-ext=md]
       - id: end-of-file-fixer
       - id: check-yaml
+        files: \.(yaml|yml|cff)$
       - id: check-toml
       - id: check-json
         exclude: ^(htmlcov/|\.vscode/)
@@ -78,7 +79,7 @@ repos:
   #    Run `uv run pre-commit autoupdate` to bump
   # ─────────────────────────────────────────────────────────────
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.14.13
+    rev: v0.15.8
     hooks:
       - id: ruff
         name: ruff lint (auto-fix)
@@ -92,7 +93,7 @@ repos:
   # 3. Security & dead code analysis
   # ─────────────────────────────────────────────────────────────
   - repo: https://github.com/PyCQA/bandit
-    rev: 1.9.3
+    rev: 1.9.4
     hooks:
       - id: bandit
         name: bandit security scan
@@ -166,6 +167,15 @@ repos:
         files: ^src/pubmed_search/presentation/mcp_server/
         # Only runs when MCP server files are modified
         # Auto-updates docs and stages them
+      # ── Repo skills frontmatter validation ──────────────────
+      - id: skills-frontmatter
+        name: repo skills frontmatter valid
+        entry: uv run python scripts/hooks/check_skills_frontmatter.py
+        language: system
+        pass_filenames: false
+        files: ^\.claude/skills/[^/]+/SKILL\.md$
+        # Ensures repo skills use valid YAML frontmatter
+        # and keep frontmatter name aligned with directory name
       # ── Future annotations enforcement (auto-fix) ──────────
       - id: future-annotations
         name: future annotations (auto-fix)
@@ -258,7 +268,7 @@ repos:
   #    but essential before pushing to remote.
   # ─────────────────────────────────────────────────────────────
   - repo: https://github.com/semgrep/semgrep
-    rev: v1.151.0
+    rev: v1.157.0
     hooks:
       - id: semgrep
         name: semgrep security analysis

@@ -127,6 +127,7 @@ def check_hooks_documented(report: ValidationReport) -> None:
             "file-hygiene",
             "commit-size-guard",
             "tool-count-sync",
+            "skills-frontmatter",
             "pytest",
             "future-annotations",
             "no-print-in-src",

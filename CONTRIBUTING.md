@@ -57,7 +57,7 @@ By participating in this project, you agree to maintain a respectful and inclusi
 
 ### Prerequisites
 
-- Python 3.12+
+- Python 3.10+ (3.12+ recommended for local development)
 - Git
 - (Optional) NCBI API Key for higher rate limits
 
@@ -132,6 +132,7 @@ uv run pre-commit run --all-files                  # test all hooks manually
 | **commit** | file-hygiene | — | Blocks forbidden temp files |
 | **commit** | commit-size-guard | — | Limits commits to ≤30 files |
 | **commit** | tool-count-sync | ✅ | Syncs MCP tool documentation |
+| **commit** | skills-frontmatter | — | Validates `.claude/skills/*/SKILL.md` YAML frontmatter |
 | **commit** | future-annotations | ✅ | Ensures `from __future__ import annotations` |
 | **commit** | no-print-in-src | — | Bans `print()` in `src/` (use logging) |
 | **commit** | ddd-layer-imports | — | Enforces DDD layer dependency direction |
@@ -171,7 +172,7 @@ export NCBI_API_KEY="your_api_key"  # Get from: https://www.ncbi.nlm.nih.gov/acc
 
 This project follows **Domain-Driven Design (DDD)** with an Onion Architecture:
 
-```
+```text
 src/pubmed_search/
 ├── domain/                 # Core business logic
 │   └── entities/           # UnifiedArticle, TimelineEvent
@@ -201,9 +202,18 @@ src/pubmed_search/
 
 ## Making Changes
 
+### AI Workflow Files
+
+- Repository skills are maintained only under `.claude/skills/*/SKILL.md`.
+- Do not create or mirror repo skills under `.github/skills/`.
+- Repository skills are project-scoped customizations and must stay in git so the team shares the same workflow behavior.
+- Personal skills belong in a user home directory such as `~/.copilot/skills/`, `~/.claude/skills/`, or `~/.agents/skills/` and should not be committed to this repository.
+- If you need to update the generated tools reference skill, edit `scripts/count_mcp_tools.py` and run `uv run python scripts/count_mcp_tools.py --update-docs`.
+- Follow the official `create-skills` frontmatter rules: skill folder name must match `name`, `description` must be present and YAML-safe, and `allowed-tools` / `license` are optional fields that should only be added when they convey real behavior or licensing information.
+
 ### Branch Naming
 
-```
+```text
 feature/description-of-feature
 fix/description-of-bug
 docs/description-of-docs-change
@@ -214,7 +224,7 @@ refactor/description-of-refactor
 
 Follow [Conventional Commits](https://www.conventionalcommits.org/):
 
-```
+```text
 feat: add citation export to BibTeX format
 fix: handle rate limit errors in Europe PMC client
 docs: update installation instructions
@@ -329,34 +339,38 @@ uv run pytest --cov=src/pubmed_search --cov-report=term-missing
 ## Pull Request Process
 
 1. **Sync with upstream**:
-   ```bash
-   git fetch upstream
-   git rebase upstream/main
-   ```
 
-2. **Create a feature branch**:
-   ```bash
-   git checkout -b feature/your-feature
-   ```
+  ```bash
+  git fetch upstream
+  git rebase upstream/main
+  ```
 
-3. **Make your changes** following the code style guidelines
+1. **Create a feature branch**:
 
-4. **Run checks locally** (or rely on pre-commit hooks):
-   ```bash
-   uv run pre-commit run --all-files   # run all hooks
-   # Or manually:
-   uv run ruff check src/
-   uv run ruff format src/
-   uv run mypy src/
-   uv run pytest
-   ```
+  ```bash
+  git checkout -b feature/your-feature
+  ```
 
-5. **Push and create PR**:
-   ```bash
-   git push origin feature/your-feature
-   ```
+1. **Make your changes** following the code style guidelines
 
-6. **Fill out the PR template** with:
+1. **Run checks locally** (or rely on pre-commit hooks):
+
+  ```bash
+  uv run pre-commit run --all-files   # run all hooks
+  # Or manually:
+  uv run ruff check src/
+  uv run ruff format src/
+  uv run mypy src/
+  uv run pytest
+  ```
+
+1. **Push and create PR**:
+
+  ```bash
+  git push origin feature/your-feature
+  ```
+
+1. **Fill out the PR template** with:
    - Description of changes
    - Related issues (if any)
    - Testing performed
@@ -376,6 +390,7 @@ uv run pytest --cov=src/pubmed_search --cov-report=term-missing
 ### Bug Reports
 
 Include:
+
 - Python version
 - OS and version
 - Steps to reproduce
@@ -385,6 +400,7 @@ Include:
 ### Feature Requests
 
 Include:
+
 - Use case description
 - Proposed solution
 - Alternatives considered
