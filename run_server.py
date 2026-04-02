@@ -6,11 +6,14 @@ This script runs the PubMed Search MCP server in HTTP mode (SSE or streamable-ht
 allowing remote clients from other machines to connect.
 
 Usage:
-    # Run with SSE transport (default, more compatible)
+    # Run with streamable-http transport (default)
+    python run_server.py --transport streamable-http --port 8765
+
+    # Run with legacy SSE transport
     python run_server.py --transport sse --port 8765
 
-    # Run with streamable-http transport
-    python run_server.py --transport streamable-http --port 8765
+    # Run with Copilot-compatible HTTP semantics (full tool schemas)
+    python run_server.py --transport streamable-http --copilot-compatible
 
     # Run with custom email and API key
     python run_server.py --email your@email.com --api-key YOUR_API_KEY
@@ -18,27 +21,46 @@ Usage:
 Environment Variables:
     NCBI_EMAIL: Email for NCBI Entrez API
     NCBI_API_KEY: Optional API key for higher rate limits
-    MCP_PORT: Server port (default: 8765)
+    MCP_PORT: Preferred server port
+    PORT: Fallback server port for container platforms
     MCP_HOST: Server host (default: 0.0.0.0)
+    MCP_COPILOT_COMPATIBLE: Enable Copilot-compatible HTTP semantics
 """
 
 import argparse
 import logging
 import os
 import sys
+from typing import TYPE_CHECKING, Any, cast
+
+from anyio import Path as AsyncPath
 
 # Add src to path for development
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
 from pubmed_search import __version__
+from pubmed_search.presentation.mcp_server.http_compat import wrap_copilot_compatibility
 from pubmed_search.presentation.mcp_server.server import create_server
+
+if TYPE_CHECKING:
+    from pubmed_search.application.session.manager import SessionManager
+    from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 
-def main():
+def _env_flag(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _default_port() -> int:
+    port = os.environ.get("MCP_PORT") or os.environ.get("PORT") or "8765"
+    return int(port)
+
+
+def main() -> None:
     parser = argparse.ArgumentParser(description="Run PubMed Search MCP Server in HTTP mode")
     parser.add_argument(
         "--email",
@@ -53,7 +75,7 @@ def main():
     parser.add_argument(
         "--transport",
         choices=["sse", "streamable-http"],
-        default="streamable-http",
+        default=os.environ.get("MCP_TRANSPORT", "streamable-http"),
         help="Transport protocol (default: streamable-http, recommended for Copilot Studio)",
     )
     parser.add_argument(
@@ -64,8 +86,17 @@ def main():
     parser.add_argument(
         "--port",
         type=int,
-        default=int(os.environ.get("MCP_PORT", "8765")),
-        help="Server port (default: 8765)",
+        default=_default_port(),
+        help="Server port (default: MCP_PORT, PORT, or 8765)",
+    )
+    parser.add_argument(
+        "--copilot-compatible",
+        action="store_true",
+        default=_env_flag("MCP_COPILOT_COMPATIBLE"),
+        help=(
+            "Enable Copilot-compatible JSON/stateless HTTP semantics. "
+            "Requires streamable-http. Use run_copilot.py for simplified tool schemas."
+        ),
     )
     parser.add_argument(
         "--no-security",
@@ -76,6 +107,9 @@ def main():
 
     args = parser.parse_args()
 
+    if args.copilot_compatible and args.transport != "streamable-http":
+        parser.error("--copilot-compatible requires --transport streamable-http")
+
     # Create server
     logger.info("Creating PubMed Search MCP Server...")
     logger.info(f"  Email: {args.email}")
@@ -83,9 +117,16 @@ def main():
     logger.info(f"  Transport: {args.transport}")
     logger.info(f"  Host: {args.host}")
     logger.info(f"  Port: {args.port}")
+    logger.info(f"  Copilot-compatible HTTP: {'Enabled' if args.copilot_compatible else 'Disabled'}")
     logger.info(f"  DNS Rebinding Protection: {'Disabled' if args.no_security else 'Enabled'}")
 
-    server = create_server(email=args.email, api_key=args.api_key, disable_security=args.no_security)
+    server = create_server(
+        email=args.email,
+        api_key=args.api_key,
+        disable_security=args.no_security,
+        json_response=args.copilot_compatible,
+        stateless_http=args.copilot_compatible,
+    )
 
     # Run server with selected transport
     logger.info(f"Starting server at http://{args.host}:{args.port}")
@@ -114,23 +155,39 @@ def main():
     from pubmed_search.presentation.mcp_server.server import get_container
 
     container = get_container()
-    session_manager = container.session_manager()
-    searcher = container.searcher()
+    session_manager = cast("SessionManager", container.session_manager())
+    searcher = cast("LiteratureSearcher", container.searcher())
 
     # Add health check and info endpoints
-    async def health(request):
+    async def health(request: Any) -> Any:
         return JSONResponse({"status": "ok", "service": "pubmed-search-mcp"})
 
-    async def info(request):
+    async def info(request: Any) -> Any:
         # Build endpoint info based on transport
         if args.transport == "streamable-http":
             mcp_endpoints = {"streamable_http": "/mcp", "method": "POST"}
-            copilot_studio = {
-                "compatible": True,
-                "server_url": "https://YOUR_DOMAIN/mcp",
-                "transport": "mcp-streamable-1.0",
-                "note": "Replace YOUR_DOMAIN with your public HTTPS domain",
-            }
+            if args.copilot_compatible:
+                copilot_studio = {
+                    "compatible": True,
+                    "server_url": "https://YOUR_DOMAIN/mcp",
+                    "transport": "mcp-streamable-1.0",
+                    "mode": "json_response + stateless_http",
+                    "tool_schemas": "full",
+                    "note": (
+                        "Replace YOUR_DOMAIN with your public HTTPS domain. "
+                        "If Copilot Studio rejects full schemas, use run_copilot.py."
+                    ),
+                }
+            else:
+                copilot_studio = {
+                    "compatible": False,
+                    "transport_ready": True,
+                    "note": (
+                        "Streamable HTTP is enabled, but Copilot-specific HTTP semantics are off. "
+                        "Start with --copilot-compatible for full HTTP compatibility or use run_copilot.py "
+                        "for simplified tool schemas."
+                    ),
+                }
         else:
             mcp_endpoints = {"sse": "/sse", "messages": "/messages"}
             copilot_studio = {
@@ -151,6 +208,8 @@ def main():
                         "session_summary": "/api/session/summary",
                     },
                     "utility": {
+                        "info": "/info",
+                        "root_info": "/",
                         "health": "/health",
                         "downloads": "/download/{filename}",
                         "list_exports": "/exports",
@@ -164,20 +223,22 @@ def main():
             }
         )
 
-    async def list_exports(request):
+    async def list_exports(request: Any) -> Any:
         """List available export files."""
-        if not EXPORT_DIR.exists():
+        export_dir = AsyncPath(EXPORT_DIR)
+
+        if not await export_dir.exists():
             return JSONResponse({"files": [], "message": "No exports yet"})
 
         files = []
-        for f in EXPORT_DIR.iterdir():
-            if f.is_file():
-                stat = f.stat()
+        async for entry in export_dir.iterdir():
+            if await entry.is_file():
+                stat = await entry.stat()
                 files.append(
                     {
-                        "filename": f.name,
+                        "filename": entry.name,
                         "size_bytes": stat.st_size,
-                        "download_url": f"/download/{f.name}",
+                        "download_url": f"/download/{entry.name}",
                     }
                 )
 
@@ -188,16 +249,17 @@ def main():
             }
         )
 
-    async def download_file(request):
+    async def download_file(request: Any) -> Any:
         """Download an export file."""
         filename = request.path_params["filename"]
         filepath = EXPORT_DIR / filename
+        async_filepath = AsyncPath(filepath)
 
         # Security: prevent directory traversal
         if ".." in filename or "/" in filename:
             return JSONResponse({"error": "Invalid filename"}, status_code=400)
 
-        if not filepath.exists():
+        if not await async_filepath.exists():
             return JSONResponse({"error": "File not found"}, status_code=404)
 
         # Determine content type
@@ -217,7 +279,7 @@ def main():
     # These endpoints allow other MCP servers (like mdpaper) to access
     # cached article data directly without going through the Agent.
 
-    async def api_get_cached_article(request):
+    async def api_get_cached_article(request: Any) -> Any:
         """
         Get cached article by PMID.
 
@@ -252,7 +314,7 @@ def main():
 
         return JSONResponse({"detail": f"Article PMID:{pmid} not found in cache"}, status_code=404)
 
-    async def api_get_multiple_articles(request):
+    async def api_get_multiple_articles(request: Any) -> Any:
         """Get multiple cached articles by PMIDs."""
         pmids_param = request.query_params.get("pmids", "")
         fetch_if_missing = request.query_params.get("fetch_if_missing", "false").lower() == "true"
@@ -295,7 +357,7 @@ def main():
             }
         )
 
-    async def api_session_summary(request):
+    async def api_session_summary(request: Any) -> Any:
         """Get current session summary for MCP-to-MCP."""
         return JSONResponse(session_manager.get_session_summary())
 
@@ -311,6 +373,7 @@ def main():
     # Insert our routes at the beginning of mcp_app.routes
     additional_routes = [
         StarletteRoute("/", info),
+        StarletteRoute("/info", info),
         StarletteRoute("/health", health),
         StarletteRoute("/exports", list_exports),
         StarletteRoute("/download/{filename}", download_file),
@@ -322,10 +385,13 @@ def main():
 
     # Prepend our routes to the MCP app's routes
     # This way /mcp still works (from MCP SDK) and our routes work too
-    mcp_app.routes = additional_routes + list(mcp_app.routes)
+    mcp_app.router.routes[:0] = additional_routes
 
     # Use mcp_app directly (preserves lifespan handling)
-    app = mcp_app
+    app: Any = mcp_app
+
+    if args.copilot_compatible:
+        app = wrap_copilot_compatibility(app)
 
     # Log appropriate endpoints based on transport
     logger.info(f"Download endpoint: http://{args.host}:{args.port}/download/{{filename}}")
@@ -334,12 +400,19 @@ def main():
     if args.transport == "streamable-http":
         logger.info("")
         logger.info("═══════════════════════════════════════════════════════")
-        logger.info("  Microsoft Copilot Studio Compatible!")
+        logger.info("  PubMed Search MCP HTTP Server")
         logger.info("═══════════════════════════════════════════════════════")
         logger.info(f"  MCP Endpoint: http://{args.host}:{args.port}/mcp")
         logger.info("  Transport:    Streamable HTTP (POST /mcp)")
+        if args.copilot_compatible:
+            logger.info("  Mode:         Copilot-compatible HTTP enabled")
+            logger.info("  Caveat:       Full tool schemas remain enabled")
+            logger.info("  Use run_copilot.py if schema simplification is needed")
+        else:
+            logger.info("  Mode:         Standard streamable HTTP")
+            logger.info("  For Copilot Studio HTTP semantics, add: --copilot-compatible")
         logger.info("")
-        logger.info("  For Copilot Studio, use HTTPS URL:")
+        logger.info("  For remote clients, use HTTPS URL:")
         logger.info("    Server URL: https://your-domain.com/mcp")
         logger.info("═══════════════════════════════════════════════════════")
     else:

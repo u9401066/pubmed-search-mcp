@@ -24,16 +24,28 @@ import logging
 import os
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING, Any, cast
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
+from pubmed_search.presentation.mcp_server.http_compat import wrap_copilot_compatibility
 from pubmed_search.presentation.mcp_server.server import DEFAULT_EMAIL
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from pubmed_search.application.session.manager import SessionManager
+    from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 
-def create_copilot_server(email: str, api_key: str | None = None, use_full_tools: bool = False):
+def create_copilot_server(
+    email: str,
+    api_key: str | None = None,
+    use_full_tools: bool = False,
+) -> Any:
     """
     Create MCP server optimized for Copilot Studio.
 
@@ -67,9 +79,9 @@ def create_copilot_server(email: str, api_key: str | None = None, use_full_tools
         }
     )
 
-    searcher = container.searcher()
+    searcher = cast("LiteratureSearcher", container.searcher())
     strategy_generator = container.strategy_generator()
-    session_manager = container.session_manager()
+    session_manager = cast("SessionManager", container.session_manager())
 
     # Create MCP server with Copilot Studio settings
     mcp = FastMCP(
@@ -95,8 +107,8 @@ Available tools:
     )
 
     # Set global references
-    set_session_manager(session_manager)
-    set_strategy_generator(strategy_generator)
+    cast("Callable[[SessionManager], None]", set_session_manager)(session_manager)
+    cast("Callable[[Any], None]", set_strategy_generator)(strategy_generator)
 
     # Register tools
     if use_full_tools:
@@ -121,58 +133,9 @@ Available tools:
     return mcp
 
 
-class CopilotStudioMiddleware:
-    """
-    Middleware to handle Copilot Studio compatibility issues:
-    1. Convert 202 Accepted to 200 OK with empty JSON object
-    2. Log all requests for debugging
-    """
-
-    def __init__(self, app):
-        self.app = app
-
-    async def __call__(self, scope, receive, send):
-        if scope["type"] != "http":
-            await self.app(scope, receive, send)
-            return
-
-        # Capture the response status
-        response_started = False
-        original_status = 200
-
-        async def send_wrapper(message):
-            nonlocal response_started, original_status
-
-            if message["type"] == "http.response.start":
-                response_started = True
-                original_status = message.get("status", 200)
-
-                # Convert 202 Accepted to 200 OK for Copilot Studio
-                if original_status == 202:
-                    logger.info("Converting 202 Accepted to 200 OK for Copilot Studio")
-                    message = dict(message)  # Make mutable copy
-                    message["status"] = 200
-                    # Also need to set content-length for the empty body
-                    headers = list(message.get("headers", []))
-                    # Update content-length to 2 for "{}"
-                    headers = [(k, v) for k, v in headers if k.lower() != b"content-length"]
-                    headers.append((b"content-length", b"2"))
-                    message["headers"] = headers
-
-            elif message["type"] == "http.response.body":
-                # If we converted 202 to 200, return empty JSON object
-                if original_status == 202:
-                    message = dict(message)
-                    message["body"] = b"{}"
-
-            await send(message)
-
-        await self.app(scope, receive, send_wrapper)
-
-
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Run PubMed Search MCP for Copilot Studio")
-    parser.add_argument("--port", type=int, default=int(os.environ.get("MCP_PORT", "8765")))
+    parser.add_argument("--port", type=int, default=int(os.environ.get("MCP_PORT") or os.environ.get("PORT") or "8765"))
     parser.add_argument("--host", default=os.environ.get("MCP_HOST", "0.0.0.0"))  # nosec B104
     parser.add_argument("--email", default=os.environ.get("NCBI_EMAIL", DEFAULT_EMAIL))
     parser.add_argument("--api-key", default=os.environ.get("NCBI_API_KEY"))
@@ -190,10 +153,10 @@ def main():
     server = create_copilot_server(email=args.email, api_key=args.api_key, use_full_tools=args.full_tools)
 
     # Get the streamable-http app directly from FastMCP
-    app = server.streamable_http_app()
+    app: Any = server.streamable_http_app()
 
     # Wrap with Copilot Studio compatibility middleware
-    app = CopilotStudioMiddleware(app)
+    app = wrap_copilot_compatibility(app)
 
     # Get tool count for display
     tool_count = len(server._tool_manager.list_tools())

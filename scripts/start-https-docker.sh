@@ -3,7 +3,7 @@
 # PubMed Search MCP - Docker HTTPS 啟動腳本
 # =============================================================================
 #
-# 使用 Docker Compose 啟動 HTTPS 服務 (Nginx + MCP)
+# 使用 Docker Compose 啟動 HTTPS 服務 (Nginx + MCP streamable-http)
 #
 # Usage:
 #   ./scripts/start-https-docker.sh up       # 啟動服務
@@ -64,8 +64,8 @@ case "$ACTION" in
         echo -e "${GREEN}✅ 服務已啟動！${NC}"
         echo ""
         echo "端點："
-        echo "  MCP SSE:     https://localhost/"
-        echo "  MCP SSE:     https://localhost/sse"
+        echo "  MCP:         https://localhost/mcp"
+        echo "  Info:        https://localhost/info"
         echo "  Health:      https://localhost/health"
         echo "  Exports:     https://localhost/exports"
         echo ""
@@ -73,7 +73,7 @@ case "$ACTION" in
         echo '  {'
         echo '    "mcpServers": {'
         echo '      "pubmed-search": {'
-        echo '        "url": "https://localhost/sse"'
+        echo '        "url": "https://localhost/mcp"'
         echo '      }'
         echo '    }'
         echo '  }'

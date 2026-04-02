@@ -3,7 +3,7 @@
 # PubMed Search MCP - 本地 HTTPS 啟動腳本
 # =============================================================================
 #
-# 使用 Uvicorn 原生 SSL 支援進行本地開發測試
+# 使用本專案的 streamable-http + HTTPS wrapper 進行本地開發測試
 # (不需要 Docker，直接執行)
 #
 # Usage:
@@ -64,9 +64,9 @@ if [ ! -f "$SSL_DIR/server.crt" ] || [ ! -f "$SSL_DIR/server.key" ]; then
     bash "$SCRIPT_DIR/generate-ssl-certs.sh"
 fi
 
-# Check Python dependencies
-if ! python -c "import uvicorn" 2>/dev/null; then
-    echo -e "${RED}❌ 缺少依賴，請先執行: pip install uvicorn${NC}"
+# Check uv
+if ! command -v uv &> /dev/null; then
+    echo -e "${RED}❌ 缺少 uv，請先安裝 uv${NC}"
     exit 1
 fi
 
@@ -74,15 +74,14 @@ fi
 stop_server
 
 # Start HTTPS server
-echo -e "${BLUE}🚀 啟動 MCP Server (HTTPS, port 8443)...${NC}"
+echo -e "${BLUE}🚀 啟動 MCP Server (HTTPS, port 8443, streamable-http)...${NC}"
 
 # Run in background
-nohup uvicorn pubmed_search.mcp.server:mcp.app \
+nohup uv run python scripts/run_https_local.py \
     --host 0.0.0.0 \
     --port 8443 \
-    --ssl-keyfile "$SSL_DIR/server.key" \
-    --ssl-certfile "$SSL_DIR/server.crt" \
-    --log-level info > "$PROJECT_ROOT/https-server.log" 2>&1 &
+    --certfile "$SSL_DIR/server.crt" \
+    --keyfile "$SSL_DIR/server.key" > "$PROJECT_ROOT/https-server.log" 2>&1 &
 
 # Save PID
 echo $! > "$PID_FILE"
@@ -91,8 +90,9 @@ echo ""
 echo -e "${GREEN}✅ HTTPS 服務已啟動！${NC}"
 echo ""
 echo "端點："
-echo "  MCP SSE:  https://localhost:8443/"
-echo "  MCP SSE:  https://localhost:8443/sse"
+echo "  MCP:      https://localhost:8443/mcp"
+echo "  Health:   https://localhost:8443/health"
+echo "  Info:     https://localhost:8443/info"
 echo ""
 echo "日誌："
 echo "  tail -f $PROJECT_ROOT/https-server.log"
@@ -104,7 +104,7 @@ echo "Claude Desktop 設定："
 echo '  {'
 echo '    "mcpServers": {'
 echo '      "pubmed-search": {'
-echo '        "url": "https://localhost:8443/sse"'
+echo '        "url": "https://localhost:8443/mcp"'
 echo '      }'
 echo '    }'
 echo '  }'

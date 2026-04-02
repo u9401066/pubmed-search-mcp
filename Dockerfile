@@ -25,7 +25,7 @@ EXPOSE 8765
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8765/ || exit 1
+    CMD curl -f http://localhost:8765/health || exit 1
 
 # Run the server
-CMD ["python", "run_server.py", "--transport", "sse"]
+CMD ["python", "run_server.py", "--transport", "streamable-http"]

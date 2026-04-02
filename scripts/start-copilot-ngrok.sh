@@ -34,9 +34,10 @@ echo "  Domain:  $NGROK_DOMAIN"
 echo "  Port:    $PORT"
 echo ""
 
-# Activate virtual environment if exists
-if [ -f ".venv/bin/activate" ]; then
-    source .venv/bin/activate
+# Check uv
+if ! command -v uv &> /dev/null; then
+    echo "❌ uv not found. Install from https://docs.astral.sh/uv/"
+    exit 1
 fi
 
 # Kill any existing processes on the port
@@ -48,7 +49,7 @@ sleep 1
 
 # Start MCP server (using run_copilot.py - simplified for Copilot Studio)
 echo "Starting PubMed Search MCP Server..."
-python3 run_copilot.py --port $PORT &
+uv run python run_copilot.py --port $PORT &
 SERVER_PID=$!
 sleep 3
 

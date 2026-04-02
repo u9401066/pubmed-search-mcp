@@ -36,9 +36,10 @@ services:
       - NCBI_API_KEY=${NCBI_API_KEY:-}
       - MCP_PORT=8765
       - MCP_HOST=0.0.0.0
+      - MCP_TRANSPORT=streamable-http
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:8765/"]
+      test: ["CMD", "curl", "-sf", "http://localhost:8765/health"]
       interval: 30s
       timeout: 10s
       retries: 3
