@@ -106,7 +106,7 @@ def register_core_tools(mcp: FastMCP) -> None:
                         "Remove year filters",
                         "Use fullText: prefix for content search",
                     ],
-                    alternative_tools=["search_europe_pmc", "search_literature"],
+                    alternative_tools=["unified_search", "get_fulltext"],
                 )
 
             return json.dumps(

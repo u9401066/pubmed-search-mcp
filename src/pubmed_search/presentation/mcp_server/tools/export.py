@@ -279,7 +279,7 @@ def register_export_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                     query=f"PMIDs: {', '.join(pmid_list[:5])}",
                     suggestions=[
                         "Check if the PMIDs are correct",
-                        "Use search_literature to find valid PMIDs",
+                        "Use unified_search to find valid PMIDs",
                     ],
                 )
 
@@ -365,7 +365,7 @@ async def _export_local(
             query=f"PMIDs: {', '.join(pmid_list[:5])}",
             suggestions=[
                 "Check if the PMIDs are correct",
-                "Use search_literature to find valid PMIDs",
+                "Use unified_search to find valid PMIDs",
             ],
         )
 

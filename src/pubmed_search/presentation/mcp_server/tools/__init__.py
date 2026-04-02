@@ -89,7 +89,7 @@ if TYPE_CHECKING:
 
 
 def register_all_tools(mcp: FastMCP, searcher: LiteratureSearcher):
-    """註冊全部 39 個 MCP 工具 (14 categories)。"""
+    """註冊全部 40 個 MCP 工具 (15 categories)。"""
     # 1. 搜尋工具 (1)
     register_unified_search_tools(mcp, searcher)
 
@@ -126,7 +126,7 @@ def register_all_tools(mcp: FastMCP, searcher: LiteratureSearcher):
     # 11. 機構訂閱 (4)
     register_openurl_tools(mcp)
 
-    # 12. ICD 轉換 (2)
+    # 12. ICD 轉換 (1)
     register_icd_tools(mcp)
 
     # 13. 圖片搜尋 (1)

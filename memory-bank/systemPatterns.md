@@ -65,7 +65,7 @@ TTL / LRU cache → cachetools.TTLCache
 
 | 類型 | 慣例 | 範例 |
 |------|------|------|
-| MCP Tool | snake_case 動詞 | `search_literature`, `parse_pico` |
+| MCP Tool | snake_case 動詞 | `unified_search`, `parse_pico` |
 | Entrez Function | 動詞_名詞 | `search_pubmed`, `fetch_details` |
 | Module | 單數名詞 | `search.py`, `citation.py` |
 | Test | test_模組_功能 | `test_search_basic` |

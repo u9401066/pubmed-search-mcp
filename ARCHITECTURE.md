@@ -1,747 +1,481 @@
 # PubMed Search MCP - 系統架構文件
 
-> **Architecture Documentation** | 系統架構設計說明
-
-## 📋 目錄
-
-- [系統總覽](#系統總覽)
-- [DDD 領域驅動設計](#ddd-領域驅動設計)
-- [MCP 工具分層](#mcp-工具分層)
-- [Pipeline 持久化與排程](#pipeline-持久化與排程)
-- [HTTPS 部署架構](#https-部署架構)
-- [資料流程](#資料流程)
-- [內部機制](#內部機制)
-
----
+> Current architecture reference for the active codebase and deployment surface.
 
 ## 系統總覽
 
-PubMed Search MCP 是一個基於 **Domain-Driven Design (DDD)** 的 MCP 伺服器，專為 AI Agent 提供智慧文獻研究能力。
+PubMed Search MCP 是一個以 Domain-Driven Design 為核心的 MCP 伺服器，提供 40 個 MCP tools、session 快取、Pipeline 持久化，以及 stdio 與 HTTP 兩種 transport。
 
-### 設計原則
+目前的公開入口已收斂為：
+
+- `unified_search`: 唯一的文字文獻搜尋入口
+- `get_fulltext`: 唯一的公開全文入口
+- `parse_pico`, `generate_search_queries`, `analyze_search_query`: 查詢智能層
+- `find_related_articles`, `find_citing_articles`, `get_article_references`, `build_citation_tree`: 探索層
+
+## 產品視角
+
+如果從產品而不是程式碼看，這個系統主要在服務三類任務：
+
+| 使用者 / 情境 | 他想完成什麼 | 典型入口 |
+| --- | --- | --- |
+| 臨床工作者 | 快速回答臨床問題、比較治療、追研究證據 | `parse_pico` → `generate_search_queries` → `unified_search` |
+| 研究者 / 學生 | 找代表性文獻、讀全文、追引用脈絡、匯出引用 | `unified_search`, `get_fulltext`, `find_citing_articles`, `prepare_export` |
+| AI agent / workflow builder | 把搜尋、判讀、匯出、排程串成可重跑流程 | `unified_search`, session tools, pipeline tools |
+
+這個文件後面會談 DDD 與 transport，但產品上真正交付的是一條研究工作流：
+
+1. 定義問題
+2. 擴展查詢
+3. 搜尋與篩選
+4. 深入閱讀與探索
+5. 產出可重用結果
+
+## 使用者旅程圖
+
+```mermaid
+journey
+    title 從研究問題到可重用輸出的使用者旅程
+    section 定義問題
+      用自然語言描述主題: 5: User
+      用 PICO、ICD 或關鍵詞收斂問題: 4: User, Agent
+    section 搜尋與擴展
+      產生 MeSH、同義詞與查詢策略: 5: Agent, MCP
+      執行多來源搜尋並快取結果: 5: MCP
+    section 深入判讀
+      看相關文章、被引用與參考文獻: 5: User, Agent
+      讀全文、圖表、時間軸與指標: 4: User, Agent
+    section 整理與重用
+      匯出 RIS 或 BibTeX: 5: User
+      保存 pipeline 供後續重跑: 4: User, Team
+```
+
+這張圖故意不提模組名稱，因為它要回答的是「使用者一路上感受到什麼能力」，而不是「工程上哪些 package 參與了」。
+
+## 功能地圖
+
+```mermaid
+flowchart TB
+  subgraph Discover[1. 發現研究]
+    D1[Quick search<br/>unified_search]
+    D2[Structured query building<br/>parse_pico / generate_search_queries / analyze_search_query]
+    D3[ICD to MeSH expansion<br/>convert_icd_mesh / auto-detect in unified_search]
+  end
+
+  subgraph Understand[2. 理解證據]
+    U1[Article exploration<br/>related / citing / references / citation tree]
+    U2[Full text and figures<br/>get_fulltext / get_article_figures / text-mined terms]
+    U3[Impact and evolution<br/>citation metrics / research timeline]
+  end
+
+  subgraph Specialize[3. 延伸查詢]
+    S1[Gene, compound, variant research]
+    S2[Biomedical image search]
+    S3[Institutional access fallback]
+  end
+
+  subgraph Reuse[4. 重用與協作]
+    R1[Session cache and follow-up actions]
+    R2[Export citations and datasets]
+    R3[Save / load / review pipelines]
+  end
+
+  Discover --> Understand
+  Understand --> Specialize
+  Understand --> Reuse
+  Specialize --> Reuse
+```
+
+功能地圖的重點是把「產品能力區塊」先分清楚：
+
+- `Discover` 負責把模糊問題變成候選文獻
+- `Understand` 負責把候選文獻變成可判讀的證據脈絡
+- `Specialize` 負責把一般搜尋延伸到特定資料域
+- `Reuse` 負責把一次性的研究操作轉成可保存、可分享、可重跑的資產
+
+下面的技術架構圖，則是在回答這些產品能力分別由哪一層系統承接。
+
+## 快速架構圖
+
+```mermaid
+flowchart LR
+  Client[Human / AI Client]
+  MCP[MCP Server<br/>presentation/mcp_server]
+  API[Background HTTP API<br/>health / cache / exports]
+  App[Application Layer<br/>search timeline pipeline export]
+  Domain[Domain Layer<br/>article timeline pipeline entities]
+  Infra[Infrastructure Layer<br/>NCBI / Europe PMC / CORE / OpenAlex / CrossRef]
+  Store[Session + Pipeline Store]
+
+  Client --> MCP
+  MCP --> App
+  MCP --> API
+  App --> Domain
+  App --> Infra
+  App --> Store
+```
+
+這張圖的重點不是列出每個模組，而是先讓讀者快速抓到三件事：
+
+- 所有使用者互動都先進入 MCP presentation layer
+- 真正的工作流編排在 application layer
+- 外部資料源與持久化能力都被隔離在 infrastructure / store 邊界之外
+
+## 設計原則
 
 | 原則 | 說明 |
-|------|------|
-| **Agent-First** | 輸出格式優化為機器決策，非人類閱讀 |
-| **Task-Oriented** | 工具以研究任務為單位，而非底層 API |
-| **Domain-Driven** | 以文獻研究領域知識為核心建模 |
-| **Context-Aware** | 透過 Session 維持研究狀態 |
+| --- | --- |
+| Agent-First | 回傳格式優先支援 AI agent 決策與後續工具編排 |
+| Task-Oriented | 工具以研究工作流分組，不直接暴露每個底層 API client |
+| Domain-Driven | 查詢、文章、timeline、pipeline 等核心概念在 domain/application 中建模 |
+| Multi-Source | PubMed 為核心，並整合 Europe PMC、CORE、OpenAlex、Semantic Scholar、CrossRef、preprint sources |
+| Session-Aware | 搜尋結果會自動快取於 session，支援後續全文、匯出與探索 |
 
----
+## 目前的 DDD 結構
 
-## DDD 領域驅動設計
-
-### 目錄結構
-
-```
+```text
 src/pubmed_search/
-├── mcp/
-│   ├── tools/                    # Application Layer - MCP 工具
-│   │   ├── discovery.py          # 探索型工具 (search, related, citing)
-│   │   ├── strategy.py           # 策略型工具 (generate_queries, expand)
-│   │   ├── pico.py               # PICO 解析
-│   │   ├── merge.py              # 結果合併
-│   │   ├── export.py             # 匯出工具
-│   │   ├── citation_tree.py      # 引用網絡視覺化
-│   │   └── _common.py            # 共用工具函數
-│   ├── session_tools.py          # Session 管理 (內部)
-│   └── server.py                 # MCP Server 入口
-│
-├── entrez/                       # Infrastructure Layer - NCBI API
-│   ├── searcher.py               # 文獻搜尋器
-│   ├── fetcher.py                # 文章詳情獲取
-│   └── mesh.py                   # MeSH 詞彙查詢
-│
-├── exports/                      # Infrastructure Layer - 匯出格式
-│   ├── ris.py                    # RIS 格式
-│   ├── bibtex.py                 # BibTeX 格式
-│   ├── csv_export.py             # CSV 格式
-│   └── medline.py                # MEDLINE 格式
-│
-├── domain/                       # Domain Layer - 領域模型
+├── domain/
 │   ├── entities/
-│   │   ├── article.py            # 文章實體
-│   │   └── search_result.py      # 搜尋結果
+│   │   ├── article.py
+│   │   ├── figure.py
+│   │   ├── image.py
+│   │   ├── pipeline.py
+│   │   ├── research_tree.py
+│   │   └── timeline.py
+│   ├── services/
 │   └── value_objects/
-│       ├── pmid.py               # PMID 值物件
-│       └── query.py              # 查詢值物件
-│
-├── session.py                    # Session 管理 (內部機制)
-└── client.py                     # Python Client API
+├── application/
+│   ├── export/
+│   ├── image_search/
+│   ├── pipeline/
+│   ├── search/
+│   ├── session/
+│   └── timeline/
+├── infrastructure/
+│   ├── cache/
+│   ├── http/
+│   ├── ncbi/
+│   ├── pubtator/
+│   └── sources/
+├── presentation/
+│   ├── api/
+│   └── mcp_server/
+└── shared/
 ```
 
-### 分層架構 (Onion Architecture)
+## 分層關係
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              Presentation Layer                              │
-│                         (MCP Protocol / HTTP API)                            │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                              Application Layer                               │
-│                   ┌─────────────────────────────────────┐                   │
-│                   │           MCP Tools                  │                   │
-│                   │  ┌─────────┐  ┌─────────┐  ┌──────┐ │                   │
-│                   │  │Discovery│  │Strategy │  │Export│ │                   │
-│                   │  └─────────┘  └─────────┘  └──────┘ │                   │
-│                   └─────────────────────────────────────┘                   │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                               Domain Layer                                   │
-│                   ┌─────────────────────────────────────┐                   │
-│                   │         Domain Services              │                   │
-│                   │  ┌────────────┐  ┌───────────────┐  │                   │
-│                   │  │   Search   │  │ Citation Tree │  │                   │
-│                   │  └────────────┘  └───────────────┘  │                   │
-│                   │         Domain Entities              │                   │
-│                   │  ┌────────┐  ┌────────┐  ┌───────┐  │                   │
-│                   │  │Article │  │ Query  │  │Session│  │                   │
-│                   │  └────────┘  └────────┘  └───────┘  │                   │
-│                   └─────────────────────────────────────┘                   │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                            Infrastructure Layer                              │
-│     ┌──────────────┐    ┌──────────────┐    ┌──────────────┐               │
-│     │ NCBI Entrez  │    │   Exports    │    │    Cache     │               │
-│     │     API      │    │  (RIS, Bib)  │    │   (Memory)   │               │
-│     └──────────────┘    └──────────────┘    └──────────────┘               │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+```text
+Presentation
+  ├─ mcp_server/server.py
+  ├─ mcp_server/tool_registry.py
+  ├─ mcp_server/tools/*.py
+  ├─ mcp_server/prompts.py
+  ├─ mcp_server/resources.py
+  └─ api/server.py
 
----
+Application
+  ├─ search/      查詢分析、語意增強、多源整合、重現性/排序
+  ├─ timeline/    timeline 建構與 milestone 分析
+  ├─ pipeline/    executor、templates、validator、store、report
+  ├─ export/      引用輸出工作流
+  ├─ session/     session 管理
+  └─ image_search 視覺查詢建議
 
-## MCP 工具分層
+Domain
+  ├─ UnifiedArticle / Figure / Timeline / Pipeline entities
+  └─ value objects / domain services
 
-### 工具分類 (14 個工具)
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                            MCP Tools (14)                                    │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │                      Discovery Tools (8)                             │    │
-│  │  探索型工具 - 搜尋、發現、探索文獻                                      │    │
-│  │                                                                      │    │
-│  │  • search_literature      搜尋 PubMed 文獻                           │    │
-│  │  • find_related_articles  尋找主題相似文章 (PubMed algorithm)         │    │
-│  │  • find_citing_articles   尋找引用此文的論文 (Forward ➡️)             │    │
-│  │  • get_article_references 取得此文的參考文獻 (Backward ⬅️)            │    │
-│  │  • fetch_article_details  取得文章完整資訊                            │    │
-│  │  • get_citation_metrics   取得引用指標 (iCite RCR/Percentile)        │    │
-│  │  • build_citation_tree    建構引用網絡樹 (6 種格式)                   │    │
-│  │  • suggest_citation_tree  評估是否值得建構引用樹                       │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│                                                                              │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │                      Strategy Tools (4)                              │    │
-│  │  策略型工具 - 搜尋策略生成、擴展、合併                                   │    │
-│  │                                                                      │    │
-│  │  • parse_pico               解析 PICO 臨床問題 (搜尋入口)             │    │
-│  │  • generate_search_queries  產生多個搜尋策略 (ESpell + MeSH)          │    │
-│  │  • merge_search_results     合併去重搜尋結果                          │    │
-│  │  • expand_search_queries    擴展搜尋策略                              │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│                                                                              │
-│  ┌─────────────────────────────────────────────────────────────────────┐    │
-│  │                       Export Tools (3)                               │    │
-│  │  匯出型工具 - 匯出引用、取得全文連結                                     │    │
-│  │                                                                      │    │
-│  │  • prepare_export           匯出引用格式 (RIS/BibTeX/CSV/MEDLINE)    │    │
-│  │  • get_article_fulltext_links  取得全文連結 (PMC/DOI)                │    │
-│  │  • analyze_fulltext_access  分析開放取用可用性                        │    │
-│  └─────────────────────────────────────────────────────────────────────┘    │
-│                                                                              │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Citation Discovery 工具關係
-
-```
-                            找到重要論文 (PMID)
-                                    │
-            ┌───────────────────────┼───────────────────────┐
-            │                       │                       │
-            ▼                       ▼                       ▼
-    ┌───────────────┐      ┌───────────────┐      ┌───────────────┐
-    │find_related_  │      │find_citing_   │      │get_article_   │
-    │articles       │      │articles       │      │references     │
-    │               │      │               │      │               │
-    │ 相似性搜尋    │      │ Forward ➡️    │      │ Backward ⬅️   │
-    │ PubMed 演算法 │      │ 被引用文章    │      │ 參考文獻      │
-    └───────────────┘      └───────────────┘      └───────────────┘
-            │                       │                       │
-            └───────────────────────┼───────────────────────┘
-                                    │
-                                    ▼
-                          ┌─────────────────┐
-                          │build_citation_  │
-                          │tree             │
-                          │                 │
-                          │ BFS 遍歷網絡    │
-                          │ 6 種輸出格式    │
-                          └─────────────────┘
-```
-
----
-
-## Pipeline 持久化與排程
-
-> **Status**: 設計完成，尚未實作
-> **詳細設計文件**: [docs/PIPELINE_PERSISTENCE_DESIGN.md](docs/PIPELINE_PERSISTENCE_DESIGN.md)
-
-### 設計背景
-
-Pipeline 系統（v0.4.0）提供 DAG 執行引擎和 4 個模板（pico, comprehensive, exploration, gene_drug），
-但目前是**完全無狀態的** — 每次需要 inline 傳入配置，無法保存、重複使用、或定期執行。
-
-Pipeline 持久化擴展分為 4 個 Phase：
-
-| Phase | 功能 | 狀態 |
-|-------|------|------|
-| 1 | Pipeline CRUD（save/list/load/delete） | 🔲 規劃中 |
-| 2 | 外部載入（URL / 檔案路徑） | 🔲 規劃中 |
-| 3 | 執行歷史與 Diff | 🔲 規劃中 |
-| 4 | 排程搜尋（asyncio tick loop） | 🔲 規劃中 |
-
-### 兩路由模型
-
-```
-使用者問題
-    │
-    ├── 簡單查詢 ──────→ unified_search(query="...")
-    │                      → 即時回傳結果
-    │
-    └── 複雜/重複需求 ──→ save_pipeline(name, config)
-                           → unified_search(pipeline="saved:name")
-                           → schedule_pipeline(name, cron)
-                           → load_pipeline / list_pipelines / delete_pipeline
-```
-
-**關鍵原則**：`unified_search` 是唯一的搜尋執行入口。Pipeline 工具只做 CRUD + 排程管理，不直接執行搜尋。
-
-### MCP 工具（6 個獨立工具）
-
-| 工具 | 用途 | Phase |
-|------|------|-------|
-| `save_pipeline` | 保存 pipeline 配置（upsert，支援 scope 選擇） | 1 |
-| `list_pipelines` | 列舉已存 pipeline（合併 workspace + global） | 1 |
-| `load_pipeline` | 載入 pipeline（name / URL / path） | 1 |
-| `delete_pipeline` | 刪除 pipeline + 歷史 + 排程 | 1 |
-| `get_pipeline_history` | 查詢執行歷史與 diff | 3 |
-| `schedule_pipeline` | 排程/解除排程/查看排程 | 4 |
-
-### DDD 分層
-
-```
-Presentation ─── tools/pipeline_tools.py (6 MCP tools)
-                 resources.py (pipeline://saved/{name}, pipeline://templates/{name})
-       │
-Application ──── pipeline/store.py     (PipelineStore: CRUD + 雙層 scope)
-                 pipeline/scheduler.py  (PipelineScheduler: tick loop)
-                 pipeline/executor.py   (已有, 新增 run_and_store)
-       │
-Domain ────────  entities/pipeline.py  (新增 PipelineMeta, PipelineRun, ScheduleEntry)
-       │
 Infrastructure
-       │
-       ├─ Workspace scope (優先，可 git 追蹤)：
-       │    {workspace}/.pubmed-search/pipelines/{name}.yaml
-       │    {workspace}/.pubmed-search/pipeline_runs/{name}/*.json
-       │
-       └─ Global scope (fallback，跨專案)：
-            ~/.pubmed-search-mcp/pipelines/{name}.yaml
-            ~/.pubmed-search-mcp/pipeline_runs/{name}/*.json
-            ~/.pubmed-search-mcp/schedules.json
+  ├─ ncbi/        Entrez / iCite / exporter
+  ├─ sources/     Europe PMC / CORE / OpenAlex / Semantic Scholar / CrossRef / Unpaywall / Open-i / preprints
+  ├─ pubtator/    semantic enhancement / entity extraction
+  └─ http/        shared HTTP client concerns
 ```
 
-### 雙層儲存模型
+依賴方向維持由外向內：presentation → application → domain，infrastructure 實作外部整合並由上層組合使用。
 
-> **決策 D7**：採用 workspace + global 雙層儲存。
+```mermaid
+flowchart TB
+    Presentation[Presentation]
+    Application[Application]
+    Domain[Domain]
+    Infrastructure[Infrastructure]
 
-| Scope | 路徑 | 用途 | 可 git 追蹤 |
-|-------|------|------|------------|
-| **workspace** | `{workspace}/.pubmed-search/` | 專案級搜尋策略，可分享給協作者 | ✅ |
-| **global** | `~/.pubmed-search-mcp/` | 個人通用策略，跨專案可用 | ❌ |
-
-解析順序：`load(name)` → workspace 優先，找不到則 global fallback。
-`save_pipeline(scope="auto")` 預設存 workspace（若有），否則 global。
-排程僅在 global scope（需跨 workspace 運作）。
-
-### 排程機制
-
-```
-┌──────────────────────────────────┐
-│  MCP Server Lifespan             │
-│                                  │
-│  startup:                        │
-│    load schedules.json           │
-│    start _tick_loop()            │
-│                                  │
-│  _tick_loop (每60秒):            │
-│    for schedule in schedules:    │
-│      if should_run(now):         │
-│        asyncio.create_task(      │
-│          execute_and_store())    │
-│        update next_run           │
-│                                  │
-│  shutdown:                       │
-│    save schedules.json           │
-│    cancel background tasks       │
-└──────────────────────────────────┘
+    Presentation --> Application
+    Application --> Domain
+    Application --> Infrastructure
+    Infrastructure -. implements external integrations .-> Domain
 ```
 
-**安全約束**：最小間隔 1 小時、同時最多 5 排程、執行超時 5 分鐘、URL 白名單。
+## MCP 伺服器組成
 
----
+`presentation/mcp_server/` 是目前的 MCP 入口，主要模組如下：
 
-## HTTPS 部署架構
-
-### 整體架構
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           HTTPS Deployment                                   │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│   ┌───────────────────┐                                                     │
-│   │      Client       │                                                     │
-│   │    (AI Agent)     │                                                     │
-│   │                   │                                                     │
-│   │ • Claude Desktop  │                                                     │
-│   │ • VS Code Copilot │                                                     │
-│   │ • Custom Client   │                                                     │
-│   └─────────┬─────────┘                                                     │
-│             │                                                                │
-│             │ HTTPS (TLS 1.2/1.3)                                           │
-│             │ Port 443                                                       │
-│             ▼                                                                │
-│   ┌─────────────────────────────────────────────────────────────────┐       │
-│   │                     Nginx Reverse Proxy                          │       │
-│   │  ┌────────────────────────────────────────────────────────────┐ │       │
-│   │  │                    Security Features                        │ │       │
-│   │  │                                                             │ │       │
-│   │  │  ✅ TLS Termination (SSL Certificates)                      │ │       │
-│   │  │  ✅ Rate Limiting (30 req/s per IP)                         │ │       │
-│   │  │  ✅ Security Headers                                        │ │       │
-│   │  │     • X-Frame-Options: SAMEORIGIN                           │ │       │
-│   │  │     • X-Content-Type-Options: nosniff                       │ │       │
-│   │  │     • X-XSS-Protection: 1; mode=block                       │ │       │
-│   │  │  ✅ SSE Optimization                                        │ │       │
-│   │  │     • 24h timeout for long-lived connections                │ │       │
-│   │  │     • Buffering disabled                                    │ │       │
-│   │  │                                                             │ │       │
-│   │  └────────────────────────────────────────────────────────────┘ │       │
-│   └───────────────────────────────┬─────────────────────────────────┘       │
-│                                   │                                          │
-│                                   │ HTTP (internal only)                     │
-│                                   │ Port 8765                                │
-│                                   ▼                                          │
-│              ┌────────────────────────────────────────────┐                  │
-│              │           PubMed Search MCP Server          │                  │
-│              │                                             │                  │
-│              │  Endpoints:                                 │                  │
-│              │  • /          Root                          │                  │
-│              │  • /sse       SSE Connection (MCP)          │                  │
-│              │  • /messages  POST messages (MCP)           │                  │
-│              │  • /exports   Export files list             │                  │
-│              │  • /download  Download export file          │                  │
-│              │                                             │                  │
-│              └────────────────────────────────────────────┘                  │
-│                                                                              │
-└─────────────────────────────────────────────────────────────────────────────┘
+```text
+presentation/mcp_server/
+├── server.py          MCP server 建立、DI container、stdio 啟動、背景 HTTP API
+├── tool_registry.py   40 tools / 15 categories 的權威 registry
+├── tools/             實際 MCP tool 實作
+├── session_tools.py   session 相關 tools 與 resources
+├── prompts.py         預設 prompt workflow
+├── resources.py       filter / category / tool resources
+├── instructions.py    server 指令與 agent 使用說明
+├── copilot_tools.py   Copilot Studio 簡化 schema 專用 tool surface
+└── http_compat.py     Copilot HTTP compatibility middleware
 ```
 
-### Docker Compose 架構
+```mermaid
+flowchart LR
+  Server[server.py]
+  Registry[tool_registry.py]
+  Tools[tools/*.py]
+  Session[session_tools.py]
+  Prompts[prompts.py]
+  Resources[resources.py]
+  Copilot[copilot_tools.py]
+  Compat[http_compat.py]
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                        docker-compose.https.yml                              │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│   Network: pubmed-mcp-network                                               │
-│   ┌─────────────────────────────────────────────────────────────────────┐   │
-│   │                                                                      │   │
-│   │  ┌─────────────────────┐      ┌─────────────────────┐               │   │
-│   │  │     nginx           │      │     pubmed-mcp      │               │   │
-│   │  │  (nginx:alpine)     │      │  (custom build)     │               │   │
-│   │  │                     │      │                     │               │   │
-│   │  │  Ports:             │      │  Expose:            │               │   │
-│   │  │  • 443:443 (HTTPS)  │──────│  • 8765 (internal)  │               │   │
-│   │  │  • 80:80 (redirect) │      │                     │               │   │
-│   │  │                     │      │  Environment:       │               │   │
-│   │  │  Volumes:           │      │  • NCBI_EMAIL       │               │   │
-│   │  │  • nginx.conf       │      │  • NCBI_API_KEY     │               │   │
-│   │  │  • ssl/             │      │                     │               │   │
-│   │  │                     │      │  Healthcheck:       │               │   │
-│   │  │  Depends on:        │      │  • curl localhost   │               │   │
-│   │  │  • pubmed-mcp       │      │                     │               │   │
-│   │  └─────────────────────┘      └─────────────────────┘               │   │
-│   │                                                                      │   │
-│   └─────────────────────────────────────────────────────────────────────┘   │
-│                                                                              │
-└─────────────────────────────────────────────────────────────────────────────┘
+  Server --> Registry
+  Server --> Tools
+  Server --> Session
+  Server --> Prompts
+  Server --> Resources
+  Server --> Copilot
+  Server --> Compat
+  Registry --> Tools
 ```
 
-### SSL 憑證結構
+這張圖比較接近維護者視角：`server.py` 是裝配中心，`tool_registry.py` 決定公開 surface，`tools/` 與 `session_tools.py` 提供實際能力，而 Copilot 相容層是額外分支，不是主架構本體。
 
-```
-nginx/
-└── ssl/
-    ├── ca.crt          # CA 憑證 (需加入系統信任)
-    ├── ca.key          # CA 私鑰 (勿外洩)
-    ├── server.crt      # 伺服器憑證
-    └── server.key      # 伺服器私鑰 (勿外洩)
-```
+## 工具分類
 
-### Endpoints 對照表
+目前 registry 定義 15 個 category、40 個公開 MCP tools：
 
-| External (HTTPS) | Internal (HTTP) | Description |
-|------------------|-----------------|-------------|
-| `https://localhost/` | `http://pubmed-mcp:8765/` | MCP Server root |
-| `https://localhost/sse` | `http://pubmed-mcp:8765/sse` | SSE connection |
-| `https://localhost/messages` | `http://pubmed-mcp:8765/messages` | MCP POST |
-| `https://localhost/health` | `http://pubmed-mcp:8765/` | Health check |
-| `https://localhost/exports` | `http://pubmed-mcp:8765/exports` | Export list |
+| 類別 | 工具數 | 代表工具 |
+| --- | --- | --- |
+| 搜尋工具 | 1 | `unified_search` |
+| 查詢智能 | 3 | `parse_pico`, `generate_search_queries`, `analyze_search_query` |
+| 文章探索 | 5 | `fetch_article_details`, `find_related_articles`, `find_citing_articles` |
+| 全文工具 | 2 | `get_fulltext`, `get_text_mined_terms` |
+| 圖表擷取 | 1 | `get_article_figures` |
+| NCBI 延伸 | 7 | `search_gene`, `search_compound`, `search_clinvar` |
+| 引用網絡 | 1 | `build_citation_tree` |
+| 匯出工具 | 1 | `prepare_export` |
+| Session 管理 | 3 | `get_session_pmids`, `get_cached_article`, `get_session_summary` |
+| 機構訂閱 | 4 | `configure_institutional_access`, `get_institutional_link` |
+| 視覺搜索 | 1 | `analyze_figure_for_search` |
+| ICD 轉換 | 1 | `convert_icd_mesh` |
+| 研究時間軸 | 3 | `build_research_timeline`, `analyze_timeline_milestones`, `compare_timelines` |
+| 圖片搜尋 | 1 | `search_biomedical_images` |
+| Pipeline 管理 | 6 | `save_pipeline`, `list_pipelines`, `load_pipeline`, `delete_pipeline`, `get_pipeline_history`, `schedule_pipeline` |
 
----
+## 搜尋流程
 
-## 資料流程
+`unified_search` 的高階流程如下：
 
-### 搜尋流程
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           Search Data Flow                                   │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│   AI Agent                                                                  │
-│      │                                                                       │
-│      │ search_literature(query="remimazolam sedation")                      │
-│      ▼                                                                       │
-│   ┌─────────────────────┐                                                   │
-│   │    MCP Server       │                                                   │
-│   │   (discovery.py)    │                                                   │
-│   └──────────┬──────────┘                                                   │
-│              │                                                               │
-│              │ 1. Check cache                                               │
-│              ▼                                                               │
-│   ┌─────────────────────┐     Cache Hit?                                    │
-│   │    Session Cache    │────────────────────────────────┐                  │
-│   └──────────┬──────────┘                                │                  │
-│              │ No                                        │                  │
-│              ▼                                           │                  │
-│   ┌─────────────────────┐                                │                  │
-│   │  LiteratureSearcher │                                │                  │
-│   │     (entrez/)       │                                │                  │
-│   └──────────┬──────────┘                                │                  │
-│              │                                           │                  │
-│              │ 2. Entrez.esearch()                       │                  │
-│              │ 3. Entrez.efetch()                        │                  │
-│              ▼                                           │                  │
-│   ┌─────────────────────┐                                │                  │
-│   │     NCBI Entrez     │                                │                  │
-│   │        API          │                                │                  │
-│   └──────────┬──────────┘                                │                  │
-│              │                                           │                  │
-│              │ XML Response                              │                  │
-│              ▼                                           │                  │
-│   ┌─────────────────────┐                                │                  │
-│   │   Parse & Format    │                                │                  │
-│   │   SearchResult[]    │◄───────────────────────────────┘                  │
-│   └──────────┬──────────┘                                                   │
-│              │                                                               │
-│              │ 4. Cache results                                             │
-│              │ 5. Format output                                             │
-│              ▼                                                               │
-│   AI Agent receives formatted results                                       │
-│                                                                              │
-└─────────────────────────────────────────────────────────────────────────────┘
+```text
+User Query
+  → QueryAnalyzer
+  → SemanticEnhancer (必要時)
+  → source selection / dispatch
+  → PubMed + external sources parallel search
+  → dedupe / rank / enrich
+  → session cache
+  → formatted response
 ```
 
-### Citation Tree 建構流程
+```mermaid
+sequenceDiagram
+  participant U as User / Agent
+  participant M as MCP Tool
+  participant Q as QueryAnalyzer
+  participant S as Source Clients
+  participant C as Session Cache
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                       Citation Tree Data Flow                                │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│   build_citation_tree(pmid="12345678", depth=2, direction="both")           │
-│      │                                                                       │
-│      ▼                                                                       │
-│   ┌───────────────────────────────────────────────────────────────┐         │
-│   │                     BFS Traversal                              │         │
-│   │                                                                │         │
-│   │   Level 0: [12345678]  (seed article)                         │         │
-│   │      │                                                         │         │
-│   │      ├── get_citing_articles()  ──► [A, B, C]                 │         │
-│   │      └── get_article_references() ──► [X, Y, Z]               │         │
-│   │      │                                                         │         │
-│   │   Level 1: [A, B, C, X, Y, Z]                                 │         │
-│   │      │                                                         │         │
-│   │      ├── get_citing_articles() for each  ──► [...]            │         │
-│   │      └── get_article_references() for each ──► [...]          │         │
-│   │      │                                                         │         │
-│   │   Level 2: [...]  (depth reached, stop)                       │         │
-│   │                                                                │         │
-│   └───────────────────────────────────────────────────────────────┘         │
-│      │                                                                       │
-│      │ Nodes: [{pmid, title, year, ...}, ...]                               │
-│      │ Edges: [{source, target, type}, ...]                                 │
-│      ▼                                                                       │
-│   ┌───────────────────────────────────────────────────────────────┐         │
-│   │                   Format Converter                             │         │
-│   │                                                                │         │
-│   │   output_format="mermaid"  ──► _to_mermaid()                  │         │
-│   │   output_format="cytoscape" ──► _to_cytoscape()               │         │
-│   │   output_format="graphml"  ──► _to_graphml()                  │         │
-│   │   ...                                                          │         │
-│   └───────────────────────────────────────────────────────────────┘         │
-│      │                                                                       │
-│      ▼                                                                       │
-│   Formatted graph data (JSON/XML/Mermaid)                                   │
-│                                                                              │
-└─────────────────────────────────────────────────────────────────────────────┘
+  U->>M: unified_search(query)
+  M->>Q: analyze / enrich query
+  Q-->>M: source plan + rewritten query
+  M->>S: parallel search
+  S-->>M: raw results
+  M->>M: dedupe / rank / enrich
+  M->>C: cache articles + PMIDs
+  M-->>U: formatted response
 ```
 
----
+支援的主要來源：
 
-## 內部機制
+- PubMed
+- Europe PMC
+- CORE
+- OpenAlex
+- Semantic Scholar
+- CrossRef
+- Optional preprint crawl: arXiv / medRxiv / bioRxiv
 
-### 對 Agent 透明的機制
+```mermaid
+flowchart TD
+  Query[Raw Query]
+  Intent[Intent / Complexity Analysis]
+  Expand[MeSH / synonym / semantic expansion]
+  Select[Source selection]
+  Parallel[Parallel source execution]
+  Merge[Deduplicate + merge]
+  Rank[Ranking + enrichment]
+  Cache[Session cache]
+  Result[Final MCP response]
 
-這些機制自動運作，Agent 無需管理：
-
-| 機制 | 說明 | 實作位置 |
-|------|------|----------|
-| **Session** | 自動建立、自動切換，維持搜尋上下文 | `session.py` |
-| **Cache** | 搜尋結果自動快取，避免重複 API 呼叫 | `_common.py` |
-| **Rate Limit** | 自動遵守 NCBI API 限制 (0.34s/0.1s with key) | `entrez/` |
-| **MeSH Lookup** | `generate_search_queries()` 自動查詢 MeSH | `strategy.py` |
-| **ESpell** | 自動拼字校正 (`remifentanyl` → `remifentanil`) | `strategy.py` |
-| **Query Analysis** | 分析 PubMed 實際解讀方式 | `strategy.py` |
-
-### Rate Limiting
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           NCBI Rate Limits                                   │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│   Without API Key:                                                          │
-│   ┌─────────────────────────────────────────────────────────────────┐       │
-│   │  • 3 requests per second                                         │       │
-│   │  • 0.34 second delay between requests                            │       │
-│   └─────────────────────────────────────────────────────────────────┘       │
-│                                                                              │
-│   With API Key (NCBI_API_KEY):                                              │
-│   ┌─────────────────────────────────────────────────────────────────┐       │
-│   │  • 10 requests per second                                        │       │
-│   │  • 0.1 second delay between requests                             │       │
-│   └─────────────────────────────────────────────────────────────────┘       │
-│                                                                              │
-│   Implementation:                                                            │
-│   • time.sleep() between API calls                                          │
-│   • Automatic retry on rate limit errors                                    │
-│                                                                              │
-└─────────────────────────────────────────────────────────────────────────────┘
+  Query --> Intent
+  Intent --> Expand
+  Expand --> Select
+  Select --> Parallel
+  Parallel --> Merge
+  Merge --> Rank
+  Rank --> Cache
+  Cache --> Result
 ```
 
----
+## Session 與 HTTP API
+
+```mermaid
+flowchart LR
+  StdIO[stdio client<br/>VS Code / Claude Desktop]
+  HTTP[HTTP client<br/>Copilot Studio / remote MCP]
+  Server[PubMed Search MCP]
+  Session[Session Cache]
+  API[HTTP API endpoints]
+
+  StdIO --> Server
+  HTTP --> Server
+  Server --> Session
+  Session --> API
+```
+
+stdio 模式下，server 會啟動背景 HTTP API，提供其他 MCP server 或外部流程直接讀取快取資料：
+
+- `/health`
+- `/api/cached_article/{pmid}`
+- `/api/cached_articles?pmids=...`
+- `/api/session/summary`
+
+HTTP 模式由 `run_server.py` 建立額外 routes，並提供：
+
+- MCP endpoint: `/mcp`（streamable-http）或 `/sse` + `/messages`（legacy SSE）
+- `/health`
+- `/download/{filename}`
+- `/exports`
+- `/info`
+
+## Pipeline 架構與狀態
+
+Pipeline 系統已經不是純設計稿，而是部分實作完成：
+
+### 已實作
+
+- `save_pipeline`
+- `list_pipelines`
+- `load_pipeline`
+- `delete_pipeline`
+- `get_pipeline_history`
+- workspace/global 雙層儲存
+- pipeline config validation 與 auto-fix
+- built-in templates: `pico`, `comprehensive`, `exploration`, `gene_drug`
+
+### 尚未完成
+
+- `schedule_pipeline` 目前仍為 Phase 4 placeholder
+- 內建 scheduler/tick loop 尚未進入 production-ready 狀態
+
+### 儲存模型
+
+```text
+Workspace scope:
+  {workspace}/.pubmed-search/pipelines/{name}.yaml
+  {workspace}/.pubmed-search/pipeline_runs/{name}/*.json
+
+Global scope:
+  ~/.pubmed-search-mcp/pipelines/{name}.yaml
+  ~/.pubmed-search-mcp/pipeline_runs/{name}/*.json
+```
+
+`unified_search` 仍是唯一的搜尋執行入口；pipeline tools 只負責保存、載入、回看歷史與未來排程介面。
+
+```mermaid
+flowchart LR
+  Draft[Pipeline config]
+  Validate[Validate / auto-fix]
+  Save[save_pipeline]
+  List[list_pipelines]
+  Load[load_pipeline]
+  Execute[Use loaded plan to call tools]
+  History[get_pipeline_history]
+  Schedule[schedule_pipeline<br/>placeholder]
+
+  Draft --> Validate --> Save
+  Save --> List
+  List --> Load
+  Load --> Execute
+  Execute --> History
+  Load -. future .-> Schedule
+```
+
+## Copilot Studio 相容層
+
+目前有兩條 HTTP 路線：
+
+| 路線 | 說明 | 適用情境 |
+| --- | --- | --- |
+| `run_server.py --transport streamable-http --copilot-compatible` | 保留完整 40-tool surface，開啟 Copilot HTTP compatibility | 想盡量保留完整 schema 時 |
+| `run_copilot.py` | 啟用簡化 schema 的 Copilot 專用工具集 | Copilot Studio schema 相容性優先時 |
+
+`http_compat.py` 會把部分 HTTP 202 responses 正規化為 Copilot 可接受的 200 JSON responses。
+
+```mermaid
+flowchart TD
+  Need{需要完整 40 tools?}
+  Full[run_server.py\n--transport streamable-http\n--copilot-compatible]
+  Simplified[run_copilot.py]
+  Studio{Copilot Studio\n接受 schema 嗎?}
+
+  Need -->|是| Full
+  Need -->|否| Simplified
+  Full --> Studio
+  Studio -->|接受| Full
+  Studio -->|截斷/拒收| Simplified
+```
+
+## HTTPS 部署拓撲
+
+推薦的遠端部署架構：
+
+```text
+MCP Client / Copilot Studio
+  → HTTPS reverse proxy (Nginx / cloud LB)
+  → PubMed Search MCP HTTP server
+  → /mcp
+```
+
+```mermaid
+flowchart LR
+    Client[MCP Client / Copilot Studio]
+    Proxy[HTTPS Reverse Proxy<br/>Nginx / Cloud LB]
+    MCPHTTP[run_server.py<br/>streamable-http]
+    Endpoint[/mcp]
+    Utility[/health /info /exports]
+
+    Client --> Proxy
+    Proxy --> Endpoint
+    Proxy --> Utility
+    Endpoint --> MCPHTTP
+    Utility --> MCPHTTP
+```
+
+目前推薦 transport 是 `streamable-http`。SSE 僅保留相容用途，不再是預設部署路線。
 
 ## 相關文件
 
-| 文件 | 說明 |
-|------|------|
-| [README.md](README.md) | 快速開始、功能總覽 |
-| [DEPLOYMENT.md](DEPLOYMENT.md) | 部署指南、客戶端配置 |
-| [CHANGELOG.md](CHANGELOG.md) | 版本更新記錄 |
-| [ROADMAP.md](ROADMAP.md) | 開發路線圖 |
-| [docs/PIPELINE_PERSISTENCE_DESIGN.md](docs/PIPELINE_PERSISTENCE_DESIGN.md) | Pipeline 持久化與排程詳細設計 |
-
----
-
-## 技術決策記錄 (ADR)
-
-### ADR-001: 選擇 DDD 架構
-
-**Context**: 需要一個可維護、可擴展的架構來處理文獻研究領域邏輯。
-
-**Decision**: 採用 Domain-Driven Design (DDD) + Onion Architecture。
-
-**Rationale**:
-- 領域邏輯（文獻搜尋、引用分析）與基礎設施（NCBI API、快取）分離
-- 易於測試：Domain Layer 不依賴外部服務
-- 易於擴展：新增工具只需在 Application Layer 添加
-
-### ADR-002: 選擇 Nginx 作為 HTTPS 反向代理
-
-**Context**: 需要為生產環境提供 TLS 加密和安全防護。
-
-**Decision**: 使用 Nginx 作為反向代理，而非在 Python 應用中直接處理 HTTPS。
-
-**Rationale**:
-- Nginx 對 TLS 終止有更好的性能
-- SSE 長連接需要特殊配置（24h timeout, buffering off）
-- Rate limiting 在 Nginx 層面更高效
-- 安全標頭統一管理
-
-### ADR-003: Citation Tree 支援多輸出格式
-
-**Context**: 不同用戶有不同的視覺化工具偏好。
-
-**Decision**: 支援 6 種輸出格式：mermaid, cytoscape, g6, d3, vis, graphml。
-
-**Rationale**:
-- Mermaid: VS Code 內建預覽，零配置
-- Cytoscape: 學術界標準，生物資訊常用
-- GraphML: 桌面軟體（Gephi, VOSviewer）相容
-- 保持格式轉換邏輯獨立，便於新增格式
-
-### ADR-004: Smart Citation Search 設計 (規劃中)
-
-**Context**: Agent 判斷文章相關性消耗大量 token，需要讓 MCP 預先排序。
-
-**Decision**: 整合預計算 API（Citation Intent、Concepts、Similarity）實現 `smart_citation_search`。
-
-**Rationale**:
-- **Agent 是瓶頸**: MCP 應做「數據密集」工作，Agent 做「判斷密集」決策
-- **Token 節省**: 100 篇 × 400 tokens → 10 篇 × 200 tokens = 95% 節省
-- **預計算優先**: 使用 Semantic Scholar Citation Intent、OpenAlex Concepts 等預計算指標
-
-**設計原則**:
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    Smart Citation Search 職責分離                            │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│  ┌────────────────────────────────────────┐                                 │
-│  │           MCP 職責 (數據密集)          │                                 │
-│  │  • 多源搜尋 (PubMed, S2, OpenAlex)     │                                 │
-│  │  • 呼叫預計算 API                      │                                 │
-│  │  • 依指標排序                          │                                 │
-│  │  • 輸出 compact 格式                   │                                 │
-│  └────────────────────────────────────────┘                                 │
-│                          ↓                                                   │
-│                    Top K 結果 + 排序理由                                     │
-│                          ↓                                                   │
-│  ┌────────────────────────────────────────┐                                 │
-│  │          Agent 職責 (判斷密集)         │                                 │
-│  │  • 閱讀精選結果                        │                                 │
-│  │  • 決定是否需要更多                    │                                 │
-│  │  • 綜合分析與回答                      │                                 │
-│  └────────────────────────────────────────┘                                 │
-│                                                                              │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-### ADR-005: 相似度分數來源策略 (規劃中)
-
-**Context**: `unified_search` 需要返回相似度分數，但不同來源提供不同的相似度計算。
-
-**Decision**: 採用多來源相似度融合策略。
-
-**來源優先順序**:
-1. **Semantic Scholar** (有 S2 ID) - 基於 citation graph 的相似度
-2. **Europe PMC** (有 PMID) - 基於 PubMed 的 Related Articles 演算法
-3. **OpenAlex** (有 Works ID) - 基於 Concepts 重疊度
-4. **TF-IDF** (備用) - 基於 title + abstract 的文本相似度
-
-**Rationale**:
-- API 提供的相似度比本地計算更準確（考慮了 citation graph 和語義）
-- 多來源融合提高 coverage
-- TF-IDF 作為 fallback 確保總是有相似度分數
-
-**輸出格式**:
-```json
-{
-  "pmid": "12345678",
-  "similarity_score": 0.87,
-  "similarity_source": "semantic_scholar",
-  "similarity_methods": {
-    "semantic_scholar": 0.87,
-    "europe_pmc": 0.82,
-    "concept_overlap": 0.75
-  }
-}
-```
-
----
-
-## 智能引用系統架構 (規劃中)
-
-### 5 個預計算 API 整合
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    Pre-computed Intelligence APIs                            │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
-│  ┌─────────────────────┐    ┌─────────────────────┐    ┌─────────────────┐  │
-│  │ Semantic Scholar    │    │ OpenAlex            │    │ PubTator        │  │
-│  │ Citation Intent     │    │ Concepts            │    │ Central         │  │
-│  │                     │    │                     │    │                 │  │
-│  │ • background        │    │ • Topic tags        │    │ • Gene          │  │
-│  │ • methodology       │    │ • Level 0-3         │    │ • Disease       │  │
-│  │ • result            │    │ • Score 0-1         │    │ • Chemical      │  │
-│  │ • comparison        │    │                     │    │ • Mutation      │  │
-│  └──────────┬──────────┘    └──────────┬──────────┘    └────────┬────────┘  │
-│             │                          │                        │            │
-│             └──────────────────────────┼────────────────────────┘            │
-│                                        ▼                                     │
-│             ┌──────────────────────────────────────────────────┐            │
-│             │              Smart Ranker                         │            │
-│             │                                                   │            │
-│             │  Weights (configurable by research_goal):         │            │
-│             │  ┌───────────────────────────────────────────┐   │            │
-│             │  │ methodology goal:                         │   │            │
-│             │  │   • Citation Intent (methodology): 40%    │   │            │
-│             │  │   • RCR: 25%                              │   │            │
-│             │  │   • Concept Overlap: 20%                  │   │            │
-│             │  │   • Recency: 15%                          │   │            │
-│             │  └───────────────────────────────────────────┘   │            │
-│             │  ┌───────────────────────────────────────────┐   │            │
-│             │  │ evidence goal:                            │   │            │
-│             │  │   • Citation Intent (result): 35%         │   │            │
-│             │  │   • Study Type (RCT > Cohort): 30%        │   │            │
-│             │  │   • RCR: 20%                              │   │            │
-│             │  │   • Recency: 15%                          │   │            │
-│             │  └───────────────────────────────────────────┘   │            │
-│             └──────────────────────────────────────────────────┘            │
-│                                        │                                     │
-│                                        ▼                                     │
-│                          ┌──────────────────────────┐                        │
-│                          │    Ranked Results        │                        │
-│                          │    (compact format)      │                        │
-│                          └──────────────────────────┘                        │
-│                                                                              │
-│  ┌─────────────────────┐                           ┌─────────────────────┐  │
-│  │ OpenCitations       │                           │ Europe PMC          │  │
-│  │                     │                           │ Similar Articles    │  │
-│  │ • DOI → citations   │                           │                     │  │
-│  │ • Citation timeline │                           │ • Similarity score  │  │
-│  │ • Reference graph   │                           │ • Related by content│  │
-│  └─────────────────────┘                           └─────────────────────┘  │
-│                                                                              │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-### 檔案結構規劃
-
-```
-src/pubmed_search/
-├── infrastructure/
-│   ├── ncbi/
-│   │   ├── pubtator.py               # 🆕 PubTator Central 客戶端
-│   │   └── ...
-│   └── sources/
-│       ├── opencitations.py          # 🆕 OpenCitations 客戶端
-│       ├── semantic_scholar.py       # ✏️ 擴展 Citation Intent
-│       ├── openalex.py               # ✏️ 擴展 Concepts API
-│       └── europe_pmc.py             # ✏️ 擴展 Similar Articles
-├── application/
-│   └── search/
-│       ├── smart_ranker.py           # 🆕 智能排序器
-│       └── result_aggregator.py      # ✏️ 擴展相似度融合
-└── presentation/
-    └── mcp_server/
-        └── tools/
-            └── smart_citation.py     # 🆕 smart_citation_search 工具
-```
+- [DEPLOYMENT.md](DEPLOYMENT.md): 實際部署與啟動方式
+- [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md): 各 MCP client 設定
+- [docs/PIPELINE_PERSISTENCE_DESIGN.md](docs/PIPELINE_PERSISTENCE_DESIGN.md): pipeline 詳細設計與未完成部分
+- [src/pubmed_search/presentation/mcp_server/TOOLS_INDEX.md](src/pubmed_search/presentation/mcp_server/TOOLS_INDEX.md): 工具索引

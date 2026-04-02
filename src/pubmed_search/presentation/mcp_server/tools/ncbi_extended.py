@@ -186,7 +186,7 @@ def register_ncbi_extended_tools(mcp: FastMCP) -> None:
                 return ResponseFormatter.no_results(
                     suggestions=[
                         f"No linked publications found for Gene ID '{gene_id}'",
-                        "Try search_literature with gene name instead",
+                        "Try unified_search with the gene name instead",
                     ]
                 )
 
@@ -359,7 +359,7 @@ def register_ncbi_extended_tools(mcp: FastMCP) -> None:
                 return ResponseFormatter.no_results(
                     suggestions=[
                         f"No linked publications found for CID '{cid}'",
-                        "Try search_literature with compound name instead",
+                        "Try unified_search with the compound name instead",
                     ]
                 )
 

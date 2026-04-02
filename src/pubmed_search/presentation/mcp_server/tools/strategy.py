@@ -3,6 +3,8 @@ Strategy Tools - Generate and expand search queries.
 
 Tools:
 - generate_search_queries: Generate multiple search strategies with MeSH expansion
+
+Internal helper:
 - expand_search_queries: Expand search when results are insufficient
 """
 
@@ -48,9 +50,9 @@ def register_strategy_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         User: "搜尋 remimazolam 的文獻"
 
         Step 1: generate_search_queries("remimazolam")
-        Step 2: Build queries from returned materials
-        Step 3: search_literature (parallel calls)
-        Step 4: merge_search_results
+        Step 2: Build a Boolean query from returned materials
+        Step 3: analyze_search_query(query="<combined_boolean_query>")
+        Step 4: unified_search(query="<combined_boolean_query>")
 
         ══════════════════════════════════════════════════════════════════════
 
@@ -77,8 +79,8 @@ def register_strategy_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 - prognosis[filter] → 預後相關
                 - etiology[filter]  → 病因相關
 
-        Step 5: search_literature (parallel calls with different strategies)
-        Step 6: merge_search_results
+            Step 5: Validate the final query with analyze_search_query()
+            Step 6: Execute unified_search() with the final Boolean query
 
         ══════════════════════════════════════════════════════════════════════
 
@@ -205,7 +207,7 @@ def register_strategy_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             "mesh_terms": [],
             "queries_count": len(queries),
             "suggested_queries": queries,
-            "instruction": "Execute search_literature in PARALLEL for each query, then merge_search_results",
+            "instruction": "Build a final Boolean query, validate it with analyze_search_query, then execute unified_search",
             "note": "Using fallback generator (MeSH lookup unavailable)",
         }
 
@@ -261,7 +263,10 @@ def register_strategy_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 result = await _strategy_generator.expand_with_mesh(topic=topic, existing_queries=list(existing))
 
                 if result.get("queries"):
-                    result["instruction"] = "Execute these in PARALLEL, then merge with previous results"
+                    result["instruction"] = (
+                        "Review these expansion ideas, update your Boolean query, "
+                        "validate with analyze_search_query, then rerun unified_search"
+                    )
                     return json.dumps(result, indent=2, ensure_ascii=False)
 
             except Exception as e:
@@ -366,7 +371,10 @@ def register_strategy_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             "existing_queries": list(existing),
             "queries_count": len(queries),
             "suggested_queries": queries,
-            "instruction": "Execute in PARALLEL, then merge_search_results with previous",
+            "instruction": (
+                "Use these expansions to revise your Boolean query, "
+                "validate with analyze_search_query, then rerun unified_search"
+            ),
         }
 
         return json.dumps(result, indent=2, ensure_ascii=False)

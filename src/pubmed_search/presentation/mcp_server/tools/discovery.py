@@ -668,7 +668,7 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                     query=f"PMIDs: {', '.join(normalized_pmids)}",
                     suggestions=[
                         "Check if the PMIDs are correct",
-                        "Use search_literature to find valid PMIDs",
+                        "Use unified_search to find valid PMIDs",
                     ],
                 )
 

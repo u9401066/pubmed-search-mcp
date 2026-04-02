@@ -1,538 +1,236 @@
-# PubMed Search MCP Server - 遠端服務部署指南
+# PubMed Search MCP 部署指南
 
-## 📋 目錄
+這份文件描述目前仍受支援、且已與實際程式碼對齊的部署方式。
 
-- [部署模式總覽](#-部署模式總覽)
-- [Microsoft Copilot Studio 整合](#-microsoft-copilot-studio-整合) ⭐ NEW
-- [快速開始](#快速開始)
-- [HTTPS 部署 (推薦)](#-https-部署--https-deployment)
-- [Docker 部署](#-docker-部署)
-- [客戶端配置](#客戶端配置)
-- [安全建議](#安全建議)
+## 部署矩陣
 
----
+| 模式 | 入口 | 適合情境 | 備註 |
+| --- | --- | --- | --- |
+| stdio | `uvx pubmed-search-mcp` | VS Code、Claude Desktop、Cursor | 預設本機模式 |
+| HTTP | `uv run python run_server.py --transport streamable-http` | 遠端 MCP client、自建服務 | 推薦的 HTTP transport |
+| HTTP + Copilot compatibility | `uv run python run_server.py --transport streamable-http --copilot-compatible` | 想保留完整 40 tools 並接 Copilot | HTTP response 會做相容轉換 |
+| Copilot simplified | `uv run python run_copilot.py` | Copilot Studio schema 相容性優先 | 暴露精簡版工具集 |
+| HTTPS local | `scripts/start-https-local.sh` | 本機 HTTPS smoke test | `/mcp`、`/health`、`/info` |
+| HTTPS Docker | `scripts/start-https-docker.sh up` | Nginx TLS reverse proxy 測試 | 預設代理到 `/mcp` |
 
-## 🎯 部署模式總覽
+```mermaid
+flowchart TD
+  Start[要怎麼部署?]
+  Local{只給本機 AI client?}
+  Remote{需要遠端 / Copilot / HTTPS?}
+  StdIO[stdio\nuvx pubmed-search-mcp]
+  HTTP[HTTP\nrun_server.py --transport streamable-http]
+  Full[Full Copilot\nrun_server.py --copilot-compatible]
+  Simple[Simple Copilot\nrun_copilot.py]
+  TLS[HTTPS\nstart-https-local.sh / start-https-docker.sh]
 
-```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                           Deployment Options                                  │
-├─────────────────┬─────────────────┬─────────────────┬────────────────────────┤
-│   HTTP (Dev)    │   Streamable    │   MCP stdio     │   HTTPS (Production)   │
-│   (Port 8765)   │   HTTP (8765)   │   (Local)       │   (Nginx + TLS)        │
-├─────────────────┼─────────────────┼─────────────────┼────────────────────────┤
-│ ✅ Quick test   │ ✅ Copilot      │ ✅ Claude       │ ✅ Production deploy   │
-│                 │    Studio       │    Desktop      │ ✅ Secure connections  │
-│                 │ ✅ M365 Copilot │ ✅ VS Code      │ ✅ Rate limiting       │
-│                 │ ✅ Docker/Cloud │    Copilot      │ ✅ TLS 1.2/1.3         │
-└─────────────────┴─────────────────┴─────────────────┴────────────────────────┘
-```
-
-| Mode | Protocol | Port | Best For |
-|------|----------|------|----------|
-| **stdio** | MCP stdio | - | Local Claude Desktop, VS Code Copilot |
-| **streamable-http** | Streamable HTTP | 8765 | **Microsoft Copilot Studio**, M365 Copilot ⭐ |
-| **sse** | MCP over SSE | 8765 | Other remote MCP clients (deprecated in some platforms) |
-| **https** | HTTPS (Nginx) | 443 | Production with TLS encryption 🔒 |
-
----
-
-## 🏢 Microsoft Copilot Studio 整合
-
-將 PubMed Search MCP 整合到 **Microsoft 365 Copilot** (Word, Teams, etc.)！
-
-### 架構
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Microsoft 365                                 │
-│  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐            │
-│  │  Word   │  │  Teams  │  │ Outlook │  │ Copilot │            │
-│  └────┬────┘  └────┬────┘  └────┬────┘  └────┬────┘            │
-│       └────────────┴────────────┴────────────┘                  │
-│                           │                                      │
-│                    Copilot Studio                                │
-│                    (Declarative Agent)                           │
-└───────────────────────────┬─────────────────────────────────────┘
-                            │ Streamable HTTP
-                            ▼
-              ┌──────────────────────────┐
-              │   PubMed Search MCP      │
-              │   /mcp endpoint          │
-              │                          │
-              │ • 35+ Tools              │
-              │ • PICO Analysis          │
-              │ • Full Text Access       │
-              │ • Citation Export        │
-              └──────────────────────────┘
+  Start --> Local
+  Local -->|是| StdIO
+  Local -->|否| Remote
+  Remote -->|一般遠端 MCP| HTTP
+  Remote -->|Copilot 且要完整 tools| Full
+  Remote -->|Copilot 且 schema 要最穩| Simple
+  Remote -->|需要 HTTPS 包裝| TLS
 ```
 
-### 需求
+## 1. 前置需求
 
-| 項目 | 需求 |
-|------|------|
-| Transport | **Streamable HTTP** (SSE 已於 2025/8 起停用) |
-| URL | 公開可訪問的 HTTPS URL |
-| Endpoint | `/mcp` |
-| 認證 | None, API Key, 或 OAuth 2.0 |
-
-### 快速開始
-
-#### 方法 1：使用 ngrok 快速測試
+本專案一律使用 uv。
 
 ```bash
-# 啟動腳本 (含 ngrok)
-./scripts/start-copilot-studio.sh --with-ngrok
-
-# 輸出類似：
-# ✅ Server ready for Copilot Studio!
-# Server URL: https://abc123.ngrok.io/mcp
+uv sync
 ```
 
-#### 方法 2：部署到雲端
+必要環境變數：
 
 ```bash
-# Railway (推薦，有免費額度)
-railway up
-
-# 或 Azure Container Apps
-az containerapp create \
-  --name pubmed-mcp \
-  --resource-group myRG \
-  --image u9401066/pubmed-search-mcp \
-  --target-port 8765 \
-  --env-vars MCP_TRANSPORT=streamable-http
+NCBI_EMAIL=your@email.com
 ```
 
-### Copilot Studio 設定步驟
-
-1. 前往 [Copilot Studio](https://web.powerva.microsoft.com/)
-2. 創建或選擇 Agent → **Tools** → **Add a tool** → **New tool**
-3. 選擇 **Model Context Protocol**
-4. 填入：
-
-| 欄位 | 值 |
-|------|-----|
-| Server name | `PubMed Search` |
-| Server description | `搜尋 PubMed 醫學文獻 (3300萬+)、MeSH 擴展、PICO 臨床分析、Europe PMC/CORE 全文、基因/化合物研究、引用匯出` |
-| Server URL | `https://your-server.com/mcp` |
-| Authentication | `None` (或配置 API Key) |
-
-5. **Create** → **Add to agent** → **Publish**
-
-### 在 Word Copilot 中使用
-
-發布後，在 Word 中：
-1. 打開 **Copilot** 側邊欄
-2. 選擇 **PubMed Search** Agent
-3. 開始對話：
-   - 「搜尋 diabetes treatment 的最新研究」
-   - 「分析這個臨床問題：Aspirin vs Clopidogrel 預防中風」
-   - 「找出 BRCA1 基因相關的文獻」
-
-### 可用工具 (35+)
-
-Copilot Studio 會自動發現所有工具：
-
-| 類別 | 工具 |
-|------|------|
-| **搜尋** | `search_literature`, `search_europe_pmc`, `search_core` |
-| **分析** | `parse_pico`, `generate_search_queries`, `merge_search_results` |
-| **發現** | `find_related_articles`, `find_citing_articles`, `build_citation_tree` |
-| **全文** | `get_fulltext`, `get_fulltext_xml`, `get_core_fulltext` |
-| **NCBI** | `search_gene`, `search_compound`, `search_clinvar` |
-| **匯出** | `prepare_export` (RIS, BibTeX, CSV) |
-
----
-
-## 快速開始
-
-### 1. 安裝
+可選：
 
 ```bash
-# Clone repo
-git clone https://github.com/u9401066/pubmed-search-mcp.git
-cd pubmed-search-mcp
-
-# 建立虛擬環境
-python3 -m venv .venv
-source .venv/bin/activate
-
-# 安裝套件
-pip install -e ".[all]"
+NCBI_API_KEY=your_api_key
+CORE_API_KEY=your_core_key
+CROSSREF_EMAIL=your@email.com
+UNPAYWALL_EMAIL=your@email.com
 ```
 
-### 2. 啟動服務
+## 2. 本機 stdio 模式
+
+給本機 MCP client 使用時，不需要額外部署 HTTP。
 
 ```bash
-# Streamable HTTP 模式 (推薦 - Copilot Studio 相容)
-python run_server.py --transport streamable-http --port 8765 --email your@email.com
-
-# SSE 模式 (⚠️ 已於 2025/8 起在 Copilot Studio 棄用)
-python run_server.py --transport sse --port 8765 --email your@email.com
+uvx pubmed-search-mcp
 ```
 
-### 3. 測試連接
+或在 repo 內開發測試：
 
 ```bash
-# Streamable HTTP 模式
-curl -X POST http://localhost:8765/mcp
-
-# SSE 模式
-curl http://localhost:8765/sse
+uv run python -m pubmed_search.presentation.mcp_server
 ```
 
-## 部署選項
+## 3. HTTP 模式
 
-### 選項 1: 直接運行 (開發/測試)
+### 標準 streamable-http
 
 ```bash
-# 設置環境變數
-export NCBI_EMAIL="your@email.com"
-export NCBI_API_KEY="your_api_key"  # 可選，提高請求限制
-
-# 啟動服務 (預設 streamable-http)
-python run_server.py --port 8765
+uv run python run_server.py --transport streamable-http --port 8765 --email your@email.com
 ```
 
-### 選項 2: 使用 systemd (生產環境)
+主要端點：
 
-創建 `/etc/systemd/system/pubmed-mcp.service`:
+- MCP: `http://localhost:8765/mcp`
+- Health: `http://localhost:8765/health`
+- Info: `http://localhost:8765/info`
+- Exports: `http://localhost:8765/exports`
 
-```ini
-[Unit]
-Description=PubMed Search MCP Server
-After=network.target
-
-[Service]
-Type=simple
-User=your_user
-WorkingDirectory=/path/to/pubmed-search-mcp
-Environment=NCBI_EMAIL=your@email.com
-Environment=NCBI_API_KEY=your_api_key
-ExecStart=/path/to/pubmed-search-mcp/.venv/bin/python run_server.py --transport streamable-http --port 8765
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-```
-
-啟動服務:
+### Copilot 相容 HTTP 語意，但保留完整工具面
 
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl enable pubmed-mcp
-sudo systemctl start pubmed-mcp
+uv run python run_server.py --transport streamable-http --copilot-compatible --port 8765 --email your@email.com
 ```
 
-### 選項 3: 使用 Docker
+這條路線的用途是：
 
-創建 `Dockerfile`:
+- 保留完整 40 個 tool schema
+- 啟用 stateless HTTP + JSON response 相容模式
+- 適合先嘗試完整面，再視 Copilot Studio schema 狀況回退到簡化模式
 
-```dockerfile
-FROM python:3.11-slim
+## 4. Copilot Studio 專用模式
 
-WORKDIR /app
-COPY . .
-
-RUN pip install -e ".[all]"
-
-EXPOSE 8765
-
-ENV NCBI_EMAIL=pubmed-search@example.com
-
-CMD ["python", "run_server.py", "--transport", "sse", "--port", "8765"]
-```
-
-構建並運行:
+若 Copilot Studio 對完整 schema 仍有解析限制，使用簡化模式：
 
 ```bash
-docker build -t pubmed-mcp .
-docker run -d -p 8765:8765 -e NCBI_EMAIL=your@email.com pubmed-mcp
+uv run python run_copilot.py --port 8765 --email your@email.com
 ```
 
----
+這個入口會：
 
-## 🔒 HTTPS 部署 | HTTPS Deployment
+- 固定使用 streamable-http
+- 開啟 Copilot compatibility middleware
+- 暴露 Copilot Studio 友善的精簡工具集
 
-為生產環境提供安全的 HTTPS 連線，使用 Nginx 反向代理處理 TLS 終止。
+## 5. HTTPS 部署
 
-### 架構 | Architecture
-
-```
-                    HTTPS (TLS 1.2/1.3)
-                          │
-                          ▼
-┌─────────────────────────────────────────────────────┐
-│              Nginx Reverse Proxy                     │
-│  ┌────────────────────────────────────────────────┐ │
-│  │ • TLS Termination (SSL Certificates)           │ │
-│  │ • Rate Limiting (30 req/s)                     │ │
-│  │ • Security Headers (XSS, CSRF protection)      │ │
-│  │ • SSE Optimization (24h timeout, no buffer)    │ │
-│  └────────────────────────────────────────────────┘ │
-└───────────────────────────┬─────────────────────────┘
-                            │ HTTP (internal)
-                            ▼
-              ┌──────────────────────────┐
-              │   PubMed Search MCP      │
-              │   (Port 8765)            │
-              │                          │
-              │ • /sse                   │
-              │ • /messages              │
-              │ • /exports               │
-              └──────────────────────────┘
-```
-
-### 快速開始 | Quick Start
-
-#### Option 1: Docker Deployment (推薦)
+### 本機 HTTPS 測試
 
 ```bash
-# Step 1: 生成 SSL 憑證
-chmod +x scripts/generate-ssl-certs.sh
-./scripts/generate-ssl-certs.sh
-
-# Step 2: 啟動 HTTPS 服務
-./scripts/start-https-docker.sh up
-
-# 其他命令
-./scripts/start-https-docker.sh down     # 停止服務
-./scripts/start-https-docker.sh logs     # 查看日誌
-./scripts/start-https-docker.sh restart  # 重啟服務
-./scripts/start-https-docker.sh status   # 查看狀態
-```
-
-**端點 | Endpoints:**
-
-| Service | URL | Description |
-|---------|-----|-------------|
-| MCP SSE | `https://localhost/` | MCP Server root |
-| MCP SSE | `https://localhost/sse` | SSE connection |
-| Health | `https://localhost/health` | Health check |
-| Exports | `https://localhost/exports` | Export files |
-
-#### Option 2: Local Development (無 Docker)
-
-使用 Uvicorn 原生 SSL 支援進行本地測試。
-
-```bash
-# Step 1: 生成 SSL 憑證
-./scripts/generate-ssl-certs.sh
-
-# Step 2: 啟動 HTTPS 服務
 ./scripts/start-https-local.sh
+```
 
-# 停止服務
+端點：
+
+- MCP: `https://localhost:8443/mcp`
+- Health: `https://localhost:8443/health`
+- Info: `https://localhost:8443/info`
+
+停止：
+
+```bash
 ./scripts/start-https-local.sh stop
 ```
 
-**端點 | Endpoints:**
-
-| Service | URL | Description |
-|---------|-----|-------------|
-| MCP SSE | `https://localhost:8443/` | MCP Server |
-| MCP SSE | `https://localhost:8443/sse` | SSE connection |
-
-### Claude Desktop 設定 (HTTPS)
-
-```json
-{
-  "mcpServers": {
-    "pubmed-search": {
-      "url": "https://localhost/sse"
-    }
-  }
-}
-```
-
-生產環境使用實際網域：
-
-```json
-{
-  "mcpServers": {
-    "pubmed-search": {
-      "url": "https://mcp.your-domain.com/sse"
-    }
-  }
-}
-```
-
-### 信任自簽憑證 | Trust Self-Signed Certificates
-
-**Linux (Ubuntu/Debian):**
-```bash
-sudo cp nginx/ssl/ca.crt /usr/local/share/ca-certificates/pubmed-mcp-dev.crt
-sudo update-ca-certificates
-```
-
-**macOS:**
-```bash
-sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain nginx/ssl/ca.crt
-```
-
-**Windows:**
-```
-雙擊 ca.crt → 安裝憑證 → 本機電腦 → 受信任的根憑證授權
-```
-
-### 相關檔案 | Files
-
-| File | Description |
-|------|-------------|
-| `nginx/nginx.conf` | Nginx 設定 (TLS, rate limiting, SSE optimization) |
-| `docker-compose.https.yml` | Docker Compose for HTTPS deployment |
-| `scripts/generate-ssl-certs.sh` | 生成自簽 SSL 憑證 |
-| `scripts/start-https-docker.sh` | Docker HTTPS 啟動腳本 |
-| `scripts/start-https-local.sh` | 本地 HTTPS 啟動腳本 |
-
----
-
-## 🐳 Docker 部署
-
-### Docker Compose (HTTP)
+### Docker + Nginx HTTPS
 
 ```bash
-# 啟動服務
-docker-compose up -d
-
-# 查看日誌
-docker-compose logs -f
-
-# 停止服務
-docker-compose down
+./scripts/start-https-docker.sh up
 ```
 
----
+端點：
 
-## 客戶端配置
+- MCP: `https://localhost/mcp`
+- Info: `https://localhost/info`
+- Health: `https://localhost/health`
+- Exports: `https://localhost/exports`
 
-### VS Code MCP 配置 (遠端連接)
-
-在其他主機的 `.vscode/mcp.json` 中添加:
-
-```json
-{
-  "servers": {
-    "pubmed-search": {
-      "type": "sse",
-      "url": "http://YOUR_SERVER_IP:8765/sse"
-    }
-  }
-}
-```
-
-### Claude Desktop 配置
-
-在 `claude_desktop_config.json` 中添加:
-
-```json
-{
-  "mcpServers": {
-    "pubmed-search": {
-      "command": "npx",
-      "args": [
-        "mcp-remote",
-        "http://YOUR_SERVER_IP:8765/sse"
-      ]
-    }
-  }
-}
-```
-
-### Python 客戶端
-
-```python
-from mcp.client.sse import sse_client
-from mcp import ClientSession
-import asyncio
-
-async def main():
-    async with sse_client("http://YOUR_SERVER_IP:8765/sse") as streams:
-        async with ClientSession(*streams) as session:
-            await session.initialize()
-
-            # 搜尋文獻
-            result = await session.call_tool(
-                "search_literature",
-                arguments={
-                    "query": "diabetes treatment",
-                    "limit": 5
-                }
-            )
-            print(result.content[0].text)
-
-asyncio.run(main())
-```
-
-## 可用工具
-
-| 工具名稱 | 說明 |
-|---------|------|
-| `search_literature` | 搜尋 PubMed 文獻 |
-| `find_related_articles` | 尋找相關文章 |
-| `find_citing_articles` | 尋找引用文章 |
-| `fetch_article_details` | 獲取文章詳細資訊 |
-| `generate_search_queries` | 生成多個搜尋查詢 |
-| `merge_search_results` | 合併搜尋結果 |
-| `expand_search_queries` | 擴展搜尋查詢 |
-
-## 網路配置
-
-### 防火牆設定
+其他指令：
 
 ```bash
-# UFW
-sudo ufw allow 8765/tcp
-
-# iptables
-sudo iptables -A INPUT -p tcp --dport 8765 -j ACCEPT
+./scripts/start-https-docker.sh logs
+./scripts/start-https-docker.sh status
+./scripts/start-https-docker.sh down
 ```
 
-### 反向代理 (Nginx)
+### 拓撲圖
 
-```nginx
-server {
-    listen 443 ssl;
-    server_name mcp.yourdomain.com;
+```mermaid
+flowchart LR
+    Client[MCP Client / Copilot Studio]
+    Proxy[HTTPS Reverse Proxy]
+    Server[PubMed Search MCP\nrun_server.py]
+    Endpoint[/mcp]
+    Utility[/health /info /exports]
 
-    ssl_certificate /path/to/cert.pem;
-    ssl_certificate_key /path/to/key.pem;
-
-    location / {
-        proxy_pass http://127.0.0.1:8765;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_read_timeout 86400;  # SSE 需要長連接
-    }
-}
+    Client --> Proxy
+    Proxy --> Endpoint
+    Proxy --> Utility
+    Endpoint --> Server
+    Utility --> Server
 ```
 
-## 故障排除
+## 6. Docker 直接啟動
 
-### 連接問題
+```bash
+docker build -t pubmed-search-mcp .
+docker run -p 8765:8765 -e NCBI_EMAIL=your@email.com pubmed-search-mcp
+```
 
-1. 確認服務正在運行:
-   ```bash
-   curl http://localhost:8765/sse
-   ```
+Dockerfile 預設會啟動：
 
-2. 檢查防火牆設定
+```bash
+python run_server.py --transport streamable-http
+```
 
-3. 確認 IP 地址可達
+## 7. 雲端部署
 
-### 搜尋錯誤
+### Railway
 
-1. 確認 NCBI_EMAIL 已設定
-2. 如果請求頻繁，考慮申請 NCBI API Key
+```bash
+railway up
+```
 
-## 安全建議
+建議環境變數：
 
-1. **使用 HTTPS**: 在生產環境中，透過反向代理啟用 SSL/TLS
-2. **限制訪問**: 使用防火牆限制可連接的 IP
-3. **API Key**: 使用 NCBI API Key 提高請求限制並追蹤使用
-4. **監控**: 設定日誌監控異常活動
+```bash
+NCBI_EMAIL=your@email.com
+MCP_TRANSPORT=streamable-http
+MCP_COPILOT_COMPATIBLE=true
+```
+
+### Azure Container Apps
+
+```bash
+az containerapp create \
+  --name pubmed-mcp \
+  --resource-group myRG \
+  --image ghcr.io/u9401066/pubmed-search-mcp:latest \
+  --target-port 8765 \
+  --ingress external \
+  --env-vars NCBI_EMAIL=your@email.com MCP_TRANSPORT=streamable-http MCP_COPILOT_COMPATIBLE=true
+```
+
+## 8. 已不建議的路線
+
+以下路線仍可能存在於舊文件或歷史腳本中，但不應再當成主要部署方式：
+
+- `/sse` + `/messages` 作為主要遠端入口
+- `python -m pubmed_search.mcp`
+- `pip install -e ".[all]"` 這類非 uv 指令
+- 舊版公開工具名稱，例如 `search_literature`、`search_core`、`merge_search_results`
+
+## 9. 驗證清單
+
+部署後至少驗證以下項目：
+
+1. `GET /health` 回傳 `status: ok`
+2. `GET /info` 顯示正確 transport 與 MCP endpoint
+3. `POST /mcp` 可被 MCP client 成功握手
+4. 能成功執行一次 `unified_search`
+5. 若是 Copilot Studio，確認 tools 有正確被發現
+
+## 相關文件
+
+- [ARCHITECTURE.md](ARCHITECTURE.md)
+- [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md)
+- [copilot-studio/README.md](copilot-studio/README.md)

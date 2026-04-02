@@ -12,7 +12,7 @@
 
 **✨ 包含內容：**
 - 🔧 **40 個 MCP 工具** - 精簡的 PubMed、Europe PMC、CORE、NCBI 資料庫存取，及**研究時間軸 / 脈絡圖**功能
-- 📚 **22 個 Claude Skills** - AI Agent 可直接使用的工作流程指南（Claude Code 專屬）
+- 📚 **24 個 Claude Skills** - AI Agent 可直接使用的工作流程指南（Claude Code 專屬）
 - 📖 **Copilot 整合指南** - VS Code GitHub Copilot 使用說明
 
 **🌐 語言**: [English](README.md) | **繁體中文**
@@ -415,6 +415,7 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS 代理
 | `list_resolver_presets` | 列出 Resolver 預設值 |
 | `test_institutional_access` | 測試 Resolver 設定 |
 | `convert_icd_mesh` | ICD 碼與 MeSH 詞彙雙向轉換 |
+| `unified_search` | 在查詢中自動偵測 ICD 代碼並擴展成 MeSH |
 
 ### 💾 Session 管理
 
@@ -451,22 +452,20 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS 代理
 
 ### 📄 預印本搜尋
 
-透過 `unified_search` 的 `options=` 搜尋 **arXiv**、**medRxiv**、**bioRxiv** 預印本：
+透過 `unified_search` 的 `options` 旗標搜尋 **arXiv**、**medRxiv**、**bioRxiv** 預印本伺服器：
 
-| 選項旗標 | 預設 | 說明 |
-|----------|------|------|
-| `preprints` | 關閉 | 啟用預印本專用搜尋，結果顯示在**獨立區段** |
-| `all_types` | 關閉 | 允許非同儕審查文章保留在主排序結果中 |
+- `preprints`: 啟用專門的預印本搜尋，並把結果放在獨立區段。
+- `all_types`: 在主結果中保留非同儕審查內容。
 
 **建議組合：**
 
-| `options` | 行為 |
-|-----------|------|
-| _(空白)_ | 僅同儕審查結果 |
-| `preprints` | 主結果維持同儕審查；預印本額外顯示於獨立區段 |
-| `preprints, all_types` | 預印本額外顯示，且也可保留在主結果中 |
+- 空白 `options`: 僅同儕審查結果。
+- `options="preprints"`: 主結果維持同儕審查，加上額外預印本區段。
+- `options="preprints, all_types"`: 有獨立預印本區段，且主結果也保留非同儕審查內容。
+- `options="all_types"`: 不額外爬預印本伺服器，但保留各來源中的非同儕審查項目。
 
 **預印本偵測方式** — 透過以下條件辨識預印本：
+
 - 來源 API 的文章類型（OpenAlex、CrossRef、Semantic Scholar）
 - 有 arXiv ID 但無 PubMed ID
 - 已知預印本伺服器來源或期刊名稱
@@ -606,20 +605,20 @@ get_compound_literature(cid="4943", limit=20)
 prepare_export(pmids="last", format="ris")      # → EndNote/Zotero
 prepare_export(pmids="last", format="bibtex")   # → LaTeX
 
-# 檢查開放取用可用性
-analyze_fulltext_access(pmids="last")
+# 對上次搜尋中的指定文章抓全文
+get_fulltext(pmid="12345678", extended_sources=True)
 ```
 
 ### 6️⃣ 預印本搜尋
 
 ```python
 # 同時搜尋同儕審查文獻與預印本
-unified_search("COVID-19 vaccine efficacy", options="preprints")
+unified_search(query="COVID-19 vaccine efficacy", options="preprints")
 # → 主結果（同儕審查）+ 獨立預印本區段（arXiv, medRxiv, bioRxiv）
 
-# 預印本混入主結果
-unified_search("CRISPR gene therapy", options="preprints, all_types")
-# → 所有結果混合顯示，預印本標記為非同儕審查
+# 保留主結果中的非同儕審查內容
+unified_search(query="CRISPR gene therapy", options="preprints, all_types")
+# → 獨立預印本區段 + 主結果保留非同儕審查內容
 
 # 僅同儕審查（預設行為）
 unified_search("diabetes treatment")
@@ -753,7 +752,9 @@ get_pipeline_history(name="icu_sedation_weekly")  # 查看過去執行
 | `roadmap-updater` | 更新 ROADMAP.md 狀態 |
 | `test-generator` | 產生測試套件 |
 
-> 📁 **位置**: `.claude/skills/*/SKILL.md`（Claude Code 專屬）
+> 📁 **位置**: `.claude/skills/*/SKILL.md`（Claude Code 專屬，也是 repo skills 的唯一來源）
+> 不要再另外鏡像或拆分到 `.github/skills/`。
+> 這些 repo skills 屬於 project-scoped 自訂內容，應納入版本控制。跨專案的個人 skills 則應放在 `~/.copilot/skills/` 或 `~/.claude/skills/` 之類的使用者目錄，不要提交到本 repository。
 
 ---
 
@@ -917,6 +918,9 @@ curl -k https://localhost/
 # 使用 Streamable HTTP transport 啟動（Copilot Studio 要求）
 python run_server.py --transport streamable-http --port 8765
 
+# 若要保留完整工具 schema，同時開啟 Copilot 相容 HTTP 行為
+python run_server.py --transport streamable-http --copilot-compatible --port 8765
+
 # 或使用專用腳本搭配 ngrok
 ./scripts/start-copilot-studio.sh --with-ngrok
 ```
@@ -930,6 +934,8 @@ python run_server.py --transport streamable-http --port 8765
 | **Authentication** | `None`（或 API Key）|
 
 > 📖 **完整文件**: [copilot-studio/README.md](copilot-studio/README.md)
+>
+> 若只需要 Copilot 相容 HTTP 行為，用 `run_server.py --copilot-compatible`；若還需要簡化後的工具 schema，使用 `run_copilot.py`。
 >
 > ⚠️ **注意**: SSE transport 自 2025 年 8 月起棄用。使用 `streamable-http`。
 
@@ -985,6 +991,20 @@ python run_server.py --transport streamable-http --port 8765
 
 ---
 
+## 📚 引用
+
+GitHub 會根據 [CITATION.cff](CITATION.cff) 顯示 **Cite this repository**。若你在論文、methods section、技術報告或內部研究文件中使用 PubMed Search MCP，建議直接使用 GitHub 產生的引用格式，或重用這份 repository citation metadata。
+
+```bibtex
+@software{pubmed_search_mcp,
+  title = {PubMed Search MCP},
+  author = {u9401066},
+  url = {https://github.com/u9401066/pubmed-search-mcp}
+}
+```
+
+---
+
 ## 📄 授權
 
 Apache License 2.0 - 詳見 [LICENSE](LICENSE)
@@ -994,5 +1014,5 @@ Apache License 2.0 - 詳見 [LICENSE](LICENSE)
 ## 🔗 相關連結
 
 - [GitHub Repository](https://github.com/u9401066/pubmed-search-mcp)
-- [PyPI Package](https://pypi.org/project/pubmed-search/)
+- [PyPI Package](https://pypi.org/project/pubmed-search-mcp/)
 - [NCBI Entrez Programming Utilities](https://www.ncbi.nlm.nih.gov/books/NBK25497/)

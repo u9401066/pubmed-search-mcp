@@ -13,7 +13,7 @@
 │  │  src/pubmed_search/mcp/                             │   │
 │  │  ├── server.py          # MCP Server (SSE/STDIO)   │   │
 │  │  └── tools/             # 15+ MCP Tools            │   │
-│  │      ├── discovery.py   # search_literature, etc.  │   │
+│  │      ├── unified.py / discovery.py  # unified_search, article exploration  │   │
 │  │      ├── strategy.py    # generate_search_queries  │   │
 │  │      ├── pico.py        # parse_pico               │   │
 │  │      ├── export.py      # prepare_export           │   │

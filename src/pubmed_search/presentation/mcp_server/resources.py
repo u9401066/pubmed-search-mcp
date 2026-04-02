@@ -15,6 +15,8 @@ import json
 import logging
 from typing import TYPE_CHECKING
 
+from .tool_registry import TOOL_CATEGORIES as TOOL_REGISTRY_CATEGORIES
+
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
 
@@ -39,7 +41,7 @@ AGE_GROUP_REFERENCE = {
         "aged": {"mesh": '"Aged"[MeSH]', "age_range": "65+ years"},
         "aged_80": {"mesh": '"Aged, 80 and over"[MeSH]', "age_range": "80+ years"},
     },
-    "usage_example": 'search_literature(query="diabetes", age_group="aged")',
+    "usage_example": 'unified_search(query="diabetes", filters="age:aged")',
 }
 
 SEX_REFERENCE = {
@@ -48,7 +50,7 @@ SEX_REFERENCE = {
         "male": {"mesh": '"Male"[MeSH]'},
         "female": {"mesh": '"Female"[MeSH]'},
     },
-    "usage_example": 'search_literature(query="breast cancer", sex="female")',
+    "usage_example": 'unified_search(query="breast cancer", filters="sex:female")',
 }
 
 SPECIES_REFERENCE = {
@@ -57,7 +59,7 @@ SPECIES_REFERENCE = {
         "humans": {"mesh": '"Humans"[MeSH]', "note": "Human studies only"},
         "animals": {"mesh": '"Animals"[MeSH]', "note": "Animal studies only"},
     },
-    "usage_example": 'search_literature(query="gene therapy", species="humans")',
+    "usage_example": 'unified_search(query="gene therapy", filters="species:humans")',
 }
 
 LANGUAGE_REFERENCE = {
@@ -75,7 +77,7 @@ LANGUAGE_REFERENCE = {
         "russian": {"syntax": "rus[la]"},
     },
     "note": "也可使用其他 ISO 語言代碼如 'jpn', 'kor' 等",
-    "usage_example": 'search_literature(query="COVID-19", language="english")',
+    "usage_example": 'unified_search(query="COVID-19", filters="lang:english")',
 }
 
 CLINICAL_QUERY_REFERENCE = {
@@ -133,7 +135,7 @@ CLINICAL_QUERY_REFERENCE = {
             "use_case": "驗證過的預測工具",
         },
     },
-    "usage_example": 'unified_search(query="diabetes treatment", clinical_query="therapy")',
+    "usage_example": 'unified_search(query="diabetes treatment", filters="clinical:therapy")',
 }
 
 ARTICLE_TYPE_REFERENCE = {
@@ -151,7 +153,7 @@ ARTICLE_TYPE_REFERENCE = {
         "Letter": "讀者來函",
         "Comment": "評論",
     },
-    "usage_example": 'search_literature(query="COVID-19", article_type="Systematic Review")',
+    "usage_example": 'unified_search(query="COVID-19 AND "Systematic Review"[pt]")',
 }
 
 # ============================================================================
@@ -159,82 +161,7 @@ ARTICLE_TYPE_REFERENCE = {
 # Tool Reference
 # ============================================================================
 
-TOOL_CATEGORIES = {
-    "search": {
-        "description": "搜尋工具",
-        "tools": [
-            {"name": "unified_search", "purpose": "統一入口，自動選擇最佳來源"},
-            {"name": "search_literature", "purpose": "直接 PubMed 搜尋"},
-            {"name": "generate_search_queries", "purpose": "產生 MeSH 擴展搜尋策略"},
-            {"name": "parse_pico", "purpose": "解析 PICO 臨床問題"},
-        ],
-    },
-    "discovery": {
-        "description": "探索工具 (從已知文章出發)",
-        "tools": [
-            {
-                "name": "find_related_articles",
-                "purpose": "找相似文章 (PubMed Similar Articles)",
-            },
-            {
-                "name": "find_citing_articles",
-                "purpose": "找引用這篇的文章 (Forward citation)",
-            },
-            {
-                "name": "get_article_references",
-                "purpose": "取得參考文獻 (Backward citation)",
-            },
-            {"name": "build_citation_tree", "purpose": "建立引用網路圖"},
-        ],
-    },
-    "fulltext": {
-        "description": "全文取得",
-        "tools": [
-            {
-                "name": "get_fulltext",
-                "purpose": "從 Europe PMC / CORE / Unpaywall 取得全文",
-            },
-            {
-                "name": "get_text_mined_terms",
-                "purpose": "取得文本挖掘標註 (基因/疾病/藥物)",
-            },
-        ],
-    },
-    "ncbi_extended": {
-        "description": "NCBI 延伸資料庫",
-        "tools": [
-            {"name": "search_gene", "purpose": "搜尋 NCBI Gene"},
-            {"name": "get_gene_details", "purpose": "取得基因詳情"},
-            {"name": "get_gene_literature", "purpose": "取得基因相關文獻"},
-            {"name": "search_compound", "purpose": "搜尋 PubChem 化合物"},
-            {"name": "get_compound_details", "purpose": "取得化合物詳情"},
-            {"name": "get_compound_literature", "purpose": "取得化合物相關文獻"},
-            {"name": "search_clinvar", "purpose": "搜尋 ClinVar 臨床變異"},
-        ],
-    },
-    "export": {
-        "description": "匯出工具",
-        "tools": [
-            {"name": "prepare_export", "purpose": "匯出引用格式 (RIS/BibTeX/CSV)"},
-            {"name": "get_citation_metrics", "purpose": "取得引用指標 (iCite RCR)"},
-        ],
-    },
-    "session": {
-        "description": "Session 管理",
-        "tools": [
-            {"name": "get_session_pmids", "purpose": "取得暫存的 PMID 列表"},
-            {"name": "list_search_history", "purpose": "列出搜尋歷史"},
-            {"name": "get_session_summary", "purpose": "Session 狀態摘要"},
-        ],
-    },
-    "conversion": {
-        "description": "代碼轉換",
-        "tools": [
-            {"name": "convert_icd_to_mesh", "purpose": "ICD-9/10 轉 MeSH 詞彙"},
-            {"name": "convert_mesh_to_icd", "purpose": "MeSH 轉 ICD 代碼"},
-        ],
-    },
-}
+TOOL_CATEGORIES = TOOL_REGISTRY_CATEGORIES
 
 
 # ============================================================================
@@ -305,8 +232,8 @@ def register_resources(mcp: FastMCP):
                 "supported_icd10_codes": "See tools/icd.py",
                 "supported_icd9_codes": "See tools/icd.py",
                 "usage": {
-                    "icd_to_mesh": 'convert_icd_to_mesh(code="E11")',
-                    "mesh_to_icd": 'convert_mesh_to_icd(mesh_term="Diabetes Mellitus")',
+                    "icd_to_mesh": 'convert_icd_mesh(code="E11")',
+                    "mesh_to_icd": 'convert_icd_mesh(mesh_term="Diabetes Mellitus")',
                 },
             },
             indent=2,

@@ -9,7 +9,7 @@ Tools:
 - get_session_summary: Session 摘要 (可選包含完整歷史)
 
 Removed in v0.3.1:
-- list_search_history → Merged into get_session_summary(include_history=True)
+- Legacy separate search-history tool → Merged into get_session_summary(include_history=True)
 """
 
 from __future__ import annotations
@@ -73,7 +73,7 @@ def register_session_tools(mcp: FastMCP, session_manager: SessionManager):
                     {
                         "success": False,
                         "error": "No search history",
-                        "hint": "Run search_literature first",
+                        "hint": "Run unified_search first",
                     }
                 )
 
@@ -127,7 +127,7 @@ def register_session_tools(mcp: FastMCP, session_manager: SessionManager):
             logger.exception(f"get_session_pmids failed: {e}")
             return json.dumps({"success": False, "error": str(e)})
 
-    # list_search_history removed in v0.3.1 - merged into get_session_summary(include_history=True)
+    # Legacy separate history tool removed in v0.3.1 and merged into get_session_summary(include_history=True)
 
     @mcp.tool()
     def get_cached_article(pmid: str) -> str:

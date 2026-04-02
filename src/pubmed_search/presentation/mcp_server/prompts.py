@@ -34,7 +34,7 @@ def register_prompts(mcp: FastMCP) -> None:
 ## User's Topic: {topic}
 
 ## Steps:
-1. Call `search_literature(query="{topic}", limit=10)`
+1. Call `unified_search(query="{topic}", limit=10)`
 2. Present results with title, authors, year, journal
 3. Ask if user wants to explore any paper further
 
@@ -71,25 +71,27 @@ This returns:
 - `mesh_terms`: MeSH standard vocabulary with synonyms
 - `suggested_queries`: Pre-built query strategies
 
-### Step 2: Execute Parallel Searches
-Use the `suggested_queries` from Step 1. Execute in parallel:
+### Step 2: Build a Boolean Query
+Use `mesh_terms`, `all_synonyms`, and `suggested_queries` as raw materials.
+Construct a final Boolean query that balances recall and precision.
+
+### Step 3: Validate the Final Query
 ```python
-search_literature(query=suggested_queries[0]["query"])  # Title search
-search_literature(query=suggested_queries[1]["query"])  # Title/Abstract
-search_literature(query=suggested_queries[2]["query"])  # MeSH terms
-# ... more strategies
+analyze_search_query(query="<combined_boolean_query>")
 ```
 
-### Step 3: Merge Results
+### Step 4: Execute Unified Search
 ```python
-merge_search_results(results_json='[["pmid1","pmid2"],["pmid2","pmid3"],...]')
+unified_search(
+    query="<combined_boolean_query>",
+    limit=50,
+    ranking="quality",
+    output_format="json"
+)
 ```
-Returns:
-- `unique_pmids`: Deduplicated list
-- `high_relevance_pmids`: Found in multiple searches (most relevant!)
 
-### Step 4: Present Results
-Prioritize high_relevance_pmids - these are the most relevant papers.
+### Step 5: Present Results
+Highlight the most relevant papers and refine the query if coverage is still too broad or too narrow.
 
 ## Key Insight:
 MeSH expansion finds papers that use different terminology but same concepts.
@@ -147,10 +149,10 @@ Based on question_type:
 - diagnosis → `AND diagnosis[filter]`
 - prognosis → `AND prognosis[filter]`
 
-### Step 5: Search and Merge
+### Step 5: Validate and Search
 ```python
-search_literature(query=<combined_query>)
-merge_search_results(...)
+analyze_search_query(query=<combined_query>)
+unified_search(query=<combined_query>, ranking="quality")
 ```
 
 ## Example PICO Parsing:
@@ -204,11 +206,6 @@ get_article_references(pmid="{pmid}", limit=30)
 - Best for: "What is this paper based on?"
 
 ### Path 4: Full Citation Network (build_citation_tree)
-First evaluate:
-```python
-suggest_citation_tree(pmid="{pmid}")
-```
-If worthwhile:
 ```python
 build_citation_tree(pmid="{pmid}", depth=2, direction="both", output_format="mermaid")
 ```
@@ -223,8 +220,7 @@ build_citation_tree(pmid="{pmid}", depth=2, direction="both", output_format="mer
 
 ## Get Full Text (if needed):
 ```python
-get_fulltext(pmcid="PMC...")  # Europe PMC - structured sections
-get_core_fulltext(core_id="...")  # CORE - plain text
+get_fulltext(pmid="{pmid}", extended_sources=True)
 ```
 """
 
@@ -286,7 +282,7 @@ Returns PMID list - curated compound-publication links!
 
 ### Step 4: Also Search PubMed Directly
 ```python
-search_literature(query='"{gene_or_drug}"[Substance Name]')
+unified_search(query="{gene_or_drug}", limit=20, ranking="quality")
 ```
 
 ---
@@ -336,28 +332,14 @@ prepare_export(pmids="last", format="ris")
 prepare_export(pmids="12345678,87654321,11111111", format="bibtex")
 ```
 
-## Check Full Text Availability:
+## Retrieve Full Text for a Selected Paper:
 ```python
-analyze_fulltext_access(pmids="last")
+get_fulltext(pmid="12345678", sections="introduction,methods,results", extended_sources=True)
 ```
-Returns:
-- open_access: PMIDs with free full text
-- subscription: PMIDs requiring subscription
-- abstract_only: PMIDs with only abstract
 
-## Get Full Text Links:
+## If OA Is Not Available:
 ```python
-get_article_fulltext_links(pmid="12345678")
-```
-Returns: PubMed URL, PMC URL (if available), DOI link
-
-## Download Full Text:
-```python
-# Europe PMC (structured XML)
-get_fulltext(pmcid="PMC7096777", sections="introduction,methods,results")
-
-# CORE (plain text)
-get_core_fulltext(core_id="123456789")
+get_institutional_link(pmid="12345678")
 ```
 """
 
@@ -372,46 +354,40 @@ get_core_fulltext(core_id="123456789")
 
 ## Topic: {topic}
 
-## Strategy 1: Search Europe PMC (6.5M+ Open Access)
+## Strategy 1: Search for Candidate Papers
 ```python
-search_europe_pmc(query="{topic}", open_access_only=True, has_fulltext=True, limit=20)
+unified_search(
+    query="{topic}",
+    sources="pubmed,europe_pmc,openalex",
+    limit=20,
+    ranking="balanced",
+    output_format="json"
+)
 ```
-- Returns papers with free full text available
-- Can directly retrieve content with `get_fulltext(pmcid="...")`
+- Returns candidate papers from sources most likely to expose OA/full-text metadata
 
-## Strategy 2: Search CORE (42M+ Full Text)
+## Strategy 2: Retrieve Full Text for a Known PMID / DOI / PMCID
 ```python
-search_core(query="{topic}", has_fulltext=True, limit=20)
+get_fulltext(identifier="PMC7096777")
+get_fulltext(pmid="12345678", extended_sources=True)
+get_fulltext(doi="10.1234/example", extended_sources=True)
 ```
-- Aggregates from institutional repositories worldwide
-- Often has preprints and accepted manuscripts
+- Automatically tries Europe PMC, Unpaywall, CORE, and extended sources when enabled
 
-## Strategy 3: Find OA Version of Known Paper
-If you have a DOI or PMID:
+## Strategy 3: Fall Back to Institutional Access
 ```python
-find_in_core(identifier="10.1234/example", identifier_type="doi")
+get_institutional_link(pmid="12345678")
 ```
-- Finds open access version in institutional repositories
-
-## Strategy 4: Analyze Existing Results
-```python
-# After a PubMed search:
-analyze_fulltext_access(pmids="last")
-```
-- Shows which papers have OA available
+- Use when the paper is not open access but the institution may subscribe
 
 ## Best Practice:
-1. Start with Europe PMC for medical/biomedical papers
-2. Use CORE for broader coverage (all disciplines)
-3. Check analyze_fulltext_access for papers from PubMed search
+1. Start with `unified_search` to identify the most relevant candidate papers
+2. Use `get_fulltext` on selected PMIDs, PMCIDs, or DOIs
+3. If full text is unavailable, try `get_institutional_link`
 
 ## Get Full Text Content:
 ```python
-# From Europe PMC (structured)
 get_fulltext(pmcid="PMC...", sections="all")
-
-# From CORE (plain text)
-get_core_fulltext(core_id="...")
 ```
 """
 
@@ -437,17 +413,21 @@ get_core_fulltext(core_id="...")
 generate_search_queries(topic="{topic}", strategy="comprehensive")
 ```
 
-### 1.2 Execute Multiple Search Strategies (Parallel)
-- Title search
-- Title/Abstract search
-- MeSH search
-- Synonym search
-
-### 1.3 Merge and Identify Key Papers
+### 1.2 Build and Validate Final Query
 ```python
-merge_search_results(results_json=...)
+analyze_search_query(query="<combined_boolean_query>")
 ```
-Papers in `high_relevance_pmids` are your core papers.
+
+### 1.3 Execute Unified Search
+```python
+unified_search(
+    query="<combined_boolean_query>",
+    limit=50,
+    ranking="quality",
+    output_format="json"
+)
+```
+Use the highest-quality and most relevant papers as your core set.
 
 ## Phase 2: Deep Exploration
 
@@ -563,7 +543,7 @@ get_compound_literature(cid="<cid>")  # More papers about this compound
 
 ### Found a Disease? Search for more:
 ```python
-search_literature(query='"<disease_name>"[MeSH]')
+unified_search(query='"<disease_name>"[MeSH Terms]')
 ```
 
 ## Batch Analysis:

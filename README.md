@@ -16,7 +16,7 @@ A Domain-Driven Design (DDD) based MCP server that serves as an intelligent rese
 
 **✨ What's Included:**
 - 🔧 **40 MCP Tools** - Streamlined PubMed, Europe PMC, CORE, NCBI database access, and **Research Timeline / Context Graph**
-- 📚 **22 Claude Skills** - Ready-to-use workflow guides for AI agents (Claude Code-specific)
+- 📚 **24 Claude Skills** - Ready-to-use workflow guides for AI agents (Claude Code-specific)
 - 📖 **Copilot Instructions** - VS Code GitHub Copilot integration guide
 
 **🌐 Language**: **English** | [繁體中文](README.zh-TW.md)
@@ -29,12 +29,14 @@ A Domain-Driven Design (DDD) based MCP server that serves as an intelligent rese
 
 - **Python 3.10+** — [Download](https://www.python.org/downloads/)
 - **uv** (recommended) — [Install uv](https://docs.astral.sh/uv/getting-started/installation/)
+
   ```bash
   # macOS / Linux
   curl -LsSf https://astral.sh/uv/install.sh | sh
   # Windows
   powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
   ```
+
 - **NCBI Email** — Required by [NCBI API policy](https://www.ncbi.nlm.nih.gov/books/NBK25497/#chapter2.Usage_Guidelines_and_Requiremen). Any valid email address.
 - **NCBI API Key** *(optional)* — [Get one here](https://www.ncbi.nlm.nih.gov/account/settings/) for higher rate limits (10 req/s vs 3 req/s)
 
@@ -91,6 +93,7 @@ This MCP server works with **any MCP-compatible AI tool**. Choose your preferred
 ```
 
 > **Config file location**:
+>
 > - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
 > - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
 > - Linux: `~/.config/Claude/claude_desktop_config.json`
@@ -210,7 +213,6 @@ NCBI_EMAIL=your@email.com uvx pubmed-search-mcp
 ```
 
 > **Note**: `NCBI_EMAIL` is required by NCBI API policy. Optionally set `NCBI_API_KEY` for higher rate limits (10 req/s vs 3 req/s).
-
 > 📖 **Detailed Integration Guides**: See [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) for all environment variables, Copilot Studio setup, Docker deployment, proxy configuration, and troubleshooting.
 
 ---
@@ -224,7 +226,7 @@ NCBI_EMAIL=your@email.com uvx pubmed-search-mcp
 Other tools give you raw API access. We give you **vocabulary translation + intelligent routing + research analysis**:
 
 | Challenge | Our Solution |
-|-----------|-------------|
+| --------- | ------------ |
 | Agent uses ICD codes, PubMed needs MeSH | ✅ **Auto ICD→MeSH conversion** |
 | Multiple databases, different APIs | ✅ **Unified Search** single entry point |
 | Clinical questions need structured search | ✅ **PICO toolkit** (`parse_pico` + `generate_search_queries` for Agent-driven workflow) |
@@ -256,7 +258,7 @@ This MCP server integrates with multiple academic databases and APIs:
 ### Core Data Sources
 
 | Source | Coverage | Vocabulary | Auto-Convert | Description |
-|--------|----------|------------|--------------|-------------|
+| ------ | -------- | ---------- | ------------ | ----------- |
 | **NCBI PubMed** | 36M+ articles | MeSH | ✅ Native | Primary biomedical literature |
 | **NCBI Entrez** | Multi-DB | MeSH | ✅ Native | Gene, PubChem, ClinVar |
 | **Europe PMC** | 33M+ | Text-mined | ✅ Extraction | Full text XML access |
@@ -285,10 +287,9 @@ HTTP_PROXY=http://proxy:8080       # HTTP proxy for API requests
 HTTPS_PROXY=https://proxy:8080     # HTTPS proxy for API requests
 ```
 
-
 ## 🔄 How It Works: The Middleware Architecture
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                              AI AGENT                                        │
 │                                                                              │
@@ -333,7 +334,7 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS proxy for API requests
 
 ### 🔍 Search & Query Intelligence
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────┐
 │                      SEARCH ENTRY POINT                          │
 ├─────────────────────────────────────────────────────────────────┤
@@ -359,7 +360,7 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS proxy for API requests
 
 ### 🔬 Discovery Tools (After Finding Key Papers)
 
-```
+```text
                         Found important paper (PMID)
                                    │
            ┌───────────────────────┼───────────────────────┐
@@ -385,7 +386,7 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS proxy for API requests
 ### 📚 Full Text & Export
 
 | Category | Tools |
-|----------|-------|
+| -------- | ----- |
 | **Full Text** | `get_fulltext` → Multi-source retrieval (Europe PMC, CORE, PubMed, CrossRef) |
 | **Text Mining** | `get_text_mined_terms` → Extract genes, diseases, chemicals |
 | **Export** | `prepare_export` → RIS, BibTeX, CSV, MEDLINE, JSON |
@@ -393,7 +394,7 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS proxy for API requests
 ### 🧬 NCBI Extended Databases
 
 | Tool | Description |
-|------|-------------|
+| ---- | ----------- |
 | `search_gene` | Search NCBI Gene database |
 | `get_gene_details` | Gene details by NCBI Gene ID |
 | `get_gene_literature` | PubMed articles linked to a gene |
@@ -405,7 +406,7 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS proxy for API requests
 ### 🕰️ Research Timeline & Lineage Tree
 
 | Tool | Description |
-|------|-------------|
+| ---- | ----------- |
 | `build_research_timeline` | Build timeline/tree with landmark detection. Output: text, tree, mermaid, mindmap, json |
 | `analyze_timeline_milestones` | Analyze milestone distribution |
 | `compare_timelines` | Compare multiple topic timelines |
@@ -413,17 +414,18 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS proxy for API requests
 ### 🏥 Institutional Access & ICD Conversion
 
 | Tool | Description |
-|------|-------------|
+| ---- | ----------- |
 | `configure_institutional_access` | Configure institution's link resolver |
 | `get_institutional_link` | Generate OpenURL access link |
 | `list_resolver_presets` | List resolver presets |
 | `test_institutional_access` | Test resolver configuration |
 | `convert_icd_mesh` | Convert between ICD codes and MeSH terms (bidirectional) |
+| `unified_search` | Auto-detect ICD codes in queries and expand them to MeSH |
 
 ### 💾 Session Management
 
 | Tool | Description |
-|------|-------------|
+| ---- | ----------- |
 | `get_session_pmids` | Retrieve cached PMID lists |
 | `get_cached_article` | Get article from session cache (no API cost) |
 | `get_session_summary` | Session status overview |
@@ -437,7 +439,7 @@ Dynamic MCP resources are also available for agents that can read resources dire
 ### � Pipeline Management
 
 | Tool | Description |
-|------|-------------|
+| ---- | ----------- |
 | `save_pipeline` | Save a pipeline config for later reuse (YAML/JSON, auto-validated) |
 | `list_pipelines` | List saved pipelines (filter by tag/scope) |
 | `load_pipeline` | Load pipeline from name or file for review/editing |
@@ -448,28 +450,26 @@ Dynamic MCP resources are also available for agents that can read resources dire
 ### �👁️ Vision & Image Search
 
 | Tool | Description |
-|------|-------------|
+| ---- | ----------- |
 | `analyze_figure_for_search` | Analyze scientific figure for search |
 | `search_biomedical_images` | Search biomedical images across Open-i (X-ray, microscopy, photos, diagrams) |
 
 ### 📄 Preprint Search
 
-Search **arXiv**, **medRxiv**, and **bioRxiv** preprint servers via `unified_search` `options=`:
+Search **arXiv**, **medRxiv**, and **bioRxiv** preprint servers via `unified_search` `options` flags:
 
-| Option Flag | Default | Description |
-|-------------|---------|-------------|
-| `preprints` | off | Enable dedicated preprint search. Results appear in a **separate section** |
-| `all_types` | off | Keep non-peer-reviewed results in the main ranked list |
+- `preprints`: Enable dedicated preprint search and show results in a separate section.
+- `all_types`: Keep non-peer-reviewed content in main aggregated results.
 
 **Recommended combinations:**
 
-| `options` | Behavior |
-|-----------|----------|
-| _(empty)_ | Peer-reviewed results only |
-| `preprints` | Main results stay peer-reviewed; preprints shown in a separate section |
-| `preprints, all_types` | Preprints shown separately and can also remain in the main list |
+- Empty `options`: Peer-reviewed results only.
+- `options="preprints"`: Peer-reviewed main results plus a separate preprint section.
+- `options="preprints, all_types"`: Separate preprint section plus non-peer-reviewed content retained in main results.
+- `options="all_types"`: No dedicated preprint crawl, but non-peer-reviewed items from searched sources are retained.
 
 **Preprint detection** — articles are identified as preprints by:
+
 - Article type from source API (OpenAlex, CrossRef, Semantic Scholar)
 - arXiv ID present without PubMed ID
 - Known preprint server source or journal name
@@ -520,7 +520,7 @@ unified_search(query="Is remimazolam better than propofol for ICU sedation?")
 
 **Agent workflow** — PICO decomposition + MeSH expansion (recommended for clinical questions):
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  "Is remimazolam better than propofol for ICU sedation?"                │
 └─────────────────────────────────┬───────────────────────────────────────┘
@@ -610,20 +610,20 @@ get_compound_literature(cid="4943", limit=20)
 prepare_export(pmids="last", format="ris")      # → EndNote/Zotero
 prepare_export(pmids="last", format="bibtex")   # → LaTeX
 
-# Check open access availability
-analyze_fulltext_access(pmids="last")
+# Retrieve full text for a selected paper from the last search
+get_fulltext(pmid="12345678", extended_sources=True)
 ```
 
 ### 6️⃣ Preprint Search
 
 ```python
 # Include preprints alongside peer-reviewed results
-unified_search("COVID-19 vaccine efficacy", options="preprints")
+unified_search(query="COVID-19 vaccine efficacy", options="preprints")
 # → Main results (peer-reviewed) + Separate preprint section (arXiv, medRxiv, bioRxiv)
 
-# Include preprints mixed into main results
-unified_search("CRISPR gene therapy", options="preprints, all_types")
-# → All results mixed together, preprints marked as such
+# Include preprints and retain non-peer-reviewed items in main results
+unified_search(query="CRISPR gene therapy", options="preprints, all_types")
+# → Separate preprint section + non-peer-reviewed items retained in main results
 
 # Only peer-reviewed (default behavior)
 unified_search("diabetes treatment")
@@ -685,7 +685,7 @@ get_pipeline_history(name="icu_sedation_weekly")  # View past runs
 
 ## 🔍 Search Mode Comparison
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                        SEARCH MODE DECISION TREE                         │
 ├─────────────────────────────────────────────────────────────────────────┤
@@ -712,7 +712,7 @@ get_pipeline_history(name="icu_sedation_weekly")  # View past runs
 ```
 
 | Mode | Entry Point | Best For | Auto-Features |
-|------|-------------|----------|---------------|
+| ---- | ----------- | -------- | ------------- |
 | **Quick** | `unified_search()` | Fast topic search | ICD→MeSH, multi-source, dedup |
 | **PICO** | `parse_pico()` → Agent | Clinical questions | Agent: decompose → MeSH expand → Boolean |
 | **Systematic** | `generate_search_queries()` | Literature reviews | MeSH expansion, synonyms |
@@ -724,10 +724,10 @@ get_pipeline_history(name="icu_sedation_weekly")  # View past runs
 
 Pre-built workflow guides in `.claude/skills/`, divided into **Usage Skills** (for using the MCP server) and **Development Skills** (for maintaining the project):
 
-### 📚 Usage Skills (9) — For AI Agents Using This MCP Server
+### 📚 Usage Skills (10) — For AI Agents Using This MCP Server
 
 | Skill | Description |
-|-------|-------------|
+| ----- | ----------- |
 | `pubmed-quick-search` | Basic search with filters |
 | `pubmed-systematic-search` | MeSH expansion, comprehensive |
 | `pubmed-pico-search` | Clinical question decomposition |
@@ -742,7 +742,7 @@ Pre-built workflow guides in `.claude/skills/`, divided into **Usage Skills** (f
 ### 🔧 Development Skills (13) — For Project Contributors
 
 | Skill | Description |
-|-------|-------------|
+| ----- | ----------- |
 | `changelog-updater` | Auto-update CHANGELOG.md |
 | `code-refactor` | DDD architecture refactoring |
 | `code-reviewer` | Code quality & security review |
@@ -757,7 +757,9 @@ Pre-built workflow guides in `.claude/skills/`, divided into **Usage Skills** (f
 | `roadmap-updater` | Update ROADMAP.md status |
 | `test-generator` | Generate test suites |
 
-> 📁 **Location**: `.claude/skills/*/SKILL.md` (Claude Code-specific)
+> 📁 **Location**: `.claude/skills/*/SKILL.md` (Claude Code-specific, and the single source of truth for repo skills)
+> Do not mirror or split repo skills into `.github/skills/`.
+> These repo skills are project-scoped and should remain version-controlled. Personal cross-project skills belong in a user directory such as `~/.copilot/skills/` or `~/.claude/skills/`, not in this repository.
 
 ---
 
@@ -765,7 +767,7 @@ Pre-built workflow guides in `.claude/skills/`, divided into **Usage Skills** (f
 
 This project uses **Domain-Driven Design (DDD)** architecture, with literature research domain knowledge as the core model.
 
-```
+```text
 src/pubmed_search/
 ├── domain/                     # Core business logic
 │   └── entities/article.py     # UnifiedArticle, Author, etc.
@@ -789,7 +791,7 @@ src/pubmed_search/
 ### Internal Mechanisms (Transparent to Agent)
 
 | Mechanism | Description |
-|-----------|-------------|
+| --------- | ----------- |
 | **Session** | Auto-create, auto-switch |
 | **Cache** | Auto-cache search results, avoid duplicate API calls |
 | **Rate Limit** | Auto-comply with NCBI API limits (0.34s/0.1s) |
@@ -804,7 +806,7 @@ src/pubmed_search/
 Different data sources use different controlled vocabulary systems. This server provides automatic conversion:
 
 | API / Database | Vocabulary System | Auto-Conversion |
-|----------------|-------------------|-----------------|
+| -------------- | ----------------- | --------------- |
 | **PubMed / NCBI** | MeSH (Medical Subject Headings) | ✅ Full support via `expand_with_mesh()` |
 | **ICD Codes** | ICD-10-CM / ICD-9-CM | ✅ Auto-detect & convert to MeSH |
 | **Europe PMC** | Text-mined entities (Gene, Disease, Chemical) | ✅ `get_text_mined_terms()` extraction |
@@ -816,6 +818,7 @@ Different data sources use different controlled vocabulary systems. This server 
 #### Automatic ICD → MeSH Conversion
 
 When searching with ICD codes (e.g., `I10` for Hypertension), `unified_search()` automatically:
+
 1. Detects ICD-10/ICD-9 patterns via `detect_and_expand_icd_codes()`
 2. Looks up corresponding MeSH terms from internal mapping (`ICD10_TO_MESH`, `ICD9_TO_MESH`)
 3. Expands query with MeSH synonyms for comprehensive search
@@ -876,7 +879,7 @@ When calling `generate_search_queries("remimazolam sedation")`, internally it:
 
 Enable HTTPS secure communication for production environments.
 
-### Quick Start
+### Copilot Studio Quick Start
 
 ```bash
 # Step 1: Generate SSL certificates
@@ -892,7 +895,7 @@ curl -k https://localhost/
 ### HTTPS Endpoints
 
 | Service | URL | Description |
-|---------|-----|-------------|
+| ------- | --- | ----------- |
 | MCP SSE | `https://localhost/sse` | SSE connection (MCP) |
 | Messages | `https://localhost/messages` | MCP POST |
 | Health | `https://localhost/health` | Health check |
@@ -921,6 +924,9 @@ Integrate PubMed Search MCP with **Microsoft 365 Copilot** (Word, Teams, Outlook
 # Start with Streamable HTTP transport (required by Copilot Studio)
 python run_server.py --transport streamable-http --port 8765
 
+# Enable Copilot-compatible HTTP semantics while keeping full tool schemas
+python run_server.py --transport streamable-http --copilot-compatible --port 8765
+
 # Or use the dedicated script with ngrok
 ./scripts/start-copilot-studio.sh --with-ngrok
 ```
@@ -928,18 +934,21 @@ python run_server.py --transport streamable-http --port 8765
 ### Copilot Studio Configuration
 
 | Field | Value |
-|-------|-------|
+| ----- | ----- |
 | **Server name** | `PubMed Search` |
 | **Server URL** | `https://your-server.com/mcp` |
 | **Authentication** | `None` (or API Key) |
 
 > 📖 **Full documentation**: [copilot-studio/README.md](copilot-studio/README.md)
 >
+> Use `--copilot-compatible` with `run_server.py` for Copilot HTTP semantics, or `run_copilot.py` if you also need simplified tool schemas.
+>
 > ⚠️ **Note**: SSE transport deprecated since Aug 2025. Use `streamable-http`.
 
 ---
 
 > 📖 **More documentation**:
+>
 > - Architecture → [ARCHITECTURE.md](ARCHITECTURE.md)
 > - Deployment guide → [DEPLOYMENT.md](DEPLOYMENT.md)
 > - Copilot Studio → [copilot-studio/README.md](copilot-studio/README.md)
@@ -951,7 +960,7 @@ python run_server.py --transport streamable-http --port 8765
 ### Security Features
 
 | Layer | Feature | Description |
-|-------|---------|-------------|
+| ----- | ------- | ----------- |
 | **HTTPS** | TLS 1.2/1.3 encryption | All traffic encrypted via Nginx |
 | **Rate Limiting** | 30 req/s | Nginx level protection |
 | **Security Headers** | XSS/CSRF protection | X-Frame-Options, X-Content-Type-Options |
@@ -968,7 +977,7 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed deployment instructions.
 Export your search results in formats compatible with major reference managers:
 
 | Format | Compatible With | Use Case |
-|--------|-----------------|----------|
+| ------ | --------------- | -------- |
 | **RIS** | EndNote, Zotero, Mendeley | Universal import |
 | **BibTeX** | LaTeX, Overleaf, JabRef | Academic writing |
 | **CSV** | Excel, Google Sheets | Data analysis |
@@ -989,7 +998,19 @@ Export your search results in formats compatible with major reference managers:
 - Nordic characters (ø, æ, å), umlauts (ü, ö, ä), and accents are correctly converted
 - Example: `Søren Hansen` → `S{\o}ren Hansen`
 
+---
 
+## 📚 Citation
+
+GitHub will show **Cite this repository** from [CITATION.cff](CITATION.cff). If you use PubMed Search MCP in research, methods sections, or internal technical reports, prefer the GitHub-generated citation or reuse the repository metadata directly.
+
+```bibtex
+@software{pubmed_search_mcp,
+  title = {PubMed Search MCP},
+  author = {u9401066},
+  url = {https://github.com/u9401066/pubmed-search-mcp}
+}
+```
 
 ---
 
@@ -1002,5 +1023,5 @@ Apache License 2.0 - see [LICENSE](LICENSE)
 ## 🔗 Links
 
 - [GitHub Repository](https://github.com/u9401066/pubmed-search-mcp)
-- [PyPI Package](https://pypi.org/project/pubmed-search/)
+- [PyPI Package](https://pypi.org/project/pubmed-search-mcp/)
 - [NCBI Entrez Programming Utilities](https://www.ncbi.nlm.nih.gov/books/NBK25497/)

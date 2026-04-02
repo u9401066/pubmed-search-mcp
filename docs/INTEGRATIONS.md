@@ -8,20 +8,28 @@ Detailed setup guide for integrating PubMed Search MCP with various AI clients a
 
 ## Table of Contents
 
-- [Transport Modes](#transport-modes)
-- [Environment Variables](#environment-variables)
-- [Client Configurations](#client-configurations)
-  - [VS Code / Cursor](#vs-code--cursor)
-  - [Claude Desktop](#claude-desktop)
-  - [Claude Code](#claude-code)
-  - [Zed AI](#zed-ai)
-  - [OpenClaw](#openclaw-)
-  - [Cline](#cline)
-  - [Microsoft Copilot Studio](#microsoft-copilot-studio)
-  - [Other MCP Clients](#other-mcp-clients)
-- [Verification & Troubleshooting](#verification--troubleshooting)
-- [Advanced: Proxy & Network](#advanced-proxy--network)
-- [Advanced: Docker Deployment](#advanced-docker-deployment)
+- [External Integrations Guide](#external-integrations-guide)
+  - [Table of Contents](#table-of-contents)
+  - [Transport Modes](#transport-modes)
+    - [stdio (Default)](#stdio-default)
+    - [Streamable HTTP](#streamable-http)
+  - [Environment Variables](#environment-variables)
+    - [Getting API Keys](#getting-api-keys)
+  - [Client Configurations](#client-configurations)
+    - [VS Code / Cursor](#vs-code--cursor)
+    - [Claude Desktop](#claude-desktop)
+    - [Claude Code](#claude-code)
+    - [Zed AI](#zed-ai)
+    - [OpenClaw 🦞](#openclaw-)
+    - [Cline](#cline)
+    - [Microsoft Copilot Studio](#microsoft-copilot-studio)
+    - [Other MCP Clients](#other-mcp-clients)
+  - [Verification \& Troubleshooting](#verification--troubleshooting)
+    - [Quick Health Check](#quick-health-check)
+    - [Common Issues](#common-issues)
+    - [Debug Mode](#debug-mode)
+  - [Advanced: Proxy \& Network](#advanced-proxy--network)
+  - [Advanced: Docker Deployment](#advanced-docker-deployment)
 
 ---
 
@@ -30,7 +38,7 @@ Detailed setup guide for integrating PubMed Search MCP with various AI clients a
 PubMed Search MCP supports two transport modes:
 
 | Mode | Protocol | Use Case | Default |
-|------|----------|----------|---------|
+| --- | --- | --- | --- |
 | **stdio** | Standard I/O | Local clients (VS Code, Claude Desktop, etc.) | ✅ |
 | **Streamable HTTP** | HTTP POST/SSE | Remote/cloud clients (Copilot Studio, web apps) | — |
 
@@ -63,7 +71,7 @@ The MCP endpoint will be available at `http://localhost:8765/mcp`.
 ## Environment Variables
 
 | Variable | Required | Description | Default |
-|----------|----------|-------------|---------|
+| --- | --- | --- | --- |
 | `NCBI_EMAIL` | **Yes** | Email for NCBI API policy compliance | `user@example.com` |
 | `NCBI_API_KEY` | No | NCBI API key for higher rate limits (10 req/s vs 3 req/s) | — |
 | `CORE_API_KEY` | No | [CORE API](https://core.ac.uk/services/api) key for open access search | — |
@@ -78,7 +86,7 @@ The MCP endpoint will be available at `http://localhost:8765/mcp`.
 ### Getting API Keys
 
 | Service | How to Get | Benefit |
-|---------|-----------|---------|
+| --- | --- | --- |
 | [NCBI API Key](https://www.ncbi.nlm.nih.gov/account/settings/) | Create NCBI account → Settings → API Key | 10 req/s (vs 3 req/s) |
 | [CORE API Key](https://core.ac.uk/services/api) | Register at core.ac.uk | Access 200M+ open access papers |
 
@@ -136,7 +144,7 @@ The MCP endpoint will be available at `http://localhost:8765/mcp`.
 **Config file**: `claude_desktop_config.json`
 
 | OS | Path |
-|----|------|
+| --- | --- |
 | macOS | `~/Library/Application Support/Claude/claude_desktop_config.json` |
 | Windows | `%APPDATA%\Claude\claude_desktop_config.json` |
 | Linux | `~/.config/Claude/claude_desktop_config.json` |
@@ -214,6 +222,7 @@ claude mcp add pubmed-search -- uvx pubmed-search-mcp
 **Verification**: Open the Agent Panel → the server should appear in the context server list.
 
 **Zed-specific notes**:
+
 - Zed uses `context_servers` (not `mcpServers`)
 - Supports stdio transport only
 - MCP tools are available in Assistant Panel conversations
@@ -327,7 +336,7 @@ Copilot Studio requires **Streamable HTTP** transport with a public URL.
 
 **Architecture**:
 
-```
+```text
 Copilot Studio ──HTTPS──▶ ngrok ──HTTP──▶ MCP Server (localhost:8765)
 ```
 
@@ -338,7 +347,10 @@ Copilot Studio ──HTTPS──▶ ngrok ──HTTP──▶ MCP Server (localh
 ./scripts/start-copilot-ngrok.sh
 
 # Option B: Manual setup
-python run_copilot.py --port 8765
+uv run python run_copilot.py --port 8765
+
+# Option C: Full 40-tool surface with Copilot-compatible HTTP semantics
+uv run python run_server.py --transport streamable-http --copilot-compatible --port 8765
 ```
 
 **Step 2**: Expose via ngrok (if not using the script)
@@ -350,7 +362,7 @@ ngrok http --url=your-domain.ngrok.dev 8765
 **Step 3**: Configure in Copilot Studio
 
 | Setting | Value |
-|---------|-------|
+| --- | --- |
 | Server name | `PubMed Search` |
 | Server URL | `https://your-domain.ngrok.dev/mcp` |
 | Authentication | None |
@@ -378,9 +390,9 @@ uvx pubmed-search-mcp
 # With environment variables
 NCBI_EMAIL=your@email.com NCBI_API_KEY=your_key uvx pubmed-search-mcp
 
-# From source (development)
+# From source (development, stdio)
 cd pubmed-search-mcp
-uv run python -m pubmed_search
+uv run python -m pubmed_search.presentation.mcp_server
 ```
 
 ---
@@ -398,7 +410,7 @@ After configuring any client, verify the server is working:
 ### Common Issues
 
 | Problem | Solution |
-|---------|----------|
+| --- | --- |
 | `uvx` not found | Install uv: `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
 | Server not connecting | Check the config file path and JSON syntax |
 | `NCBI_EMAIL` warning | Set the `NCBI_EMAIL` environment variable in the config |

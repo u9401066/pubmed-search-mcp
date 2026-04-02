@@ -131,7 +131,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
                         "Try broader search terms",
                         "Remove year filters",
                         "Disable open_access_only filter",
-                        "Try search_literature for PubMed instead",
+                        "Try unified_search for PubMed or multi-source discovery instead",
                     ],
                 )
 

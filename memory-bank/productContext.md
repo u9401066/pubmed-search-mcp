@@ -32,7 +32,7 @@ MCP Tools (Presentation) → Entrez/Sources (Infrastructure) → NCBI API (Exter
 
 ## ✨ 核心功能
 
-- 🔍 **search_literature**: 基本 PubMed 搜尋
+- 🔍 **unified_search**: 多來源文獻搜尋的單一入口
 - 🧬 **generate_search_queries**: MeSH 詞彙擴展搜尋策略
 - 🏥 **parse_pico**: PICO 臨床問題解析
 - 🔗 **find_related_articles / find_citing_articles**: 文獻探索

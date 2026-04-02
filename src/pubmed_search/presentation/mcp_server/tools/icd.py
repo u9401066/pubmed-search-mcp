@@ -3,11 +3,11 @@ ICD Conversion Tools - ICD-9/ICD-10 與 MeSH 轉換
 
 Tools:
 - convert_icd_mesh: ICD ↔ MeSH 雙向轉換（v0.3.1 合併）
-- search_by_icd: 使用 ICD 代碼搜尋 PubMed
 
 Removed in v0.3.1:
 - convert_icd_to_mesh → merged into convert_icd_mesh
 - convert_mesh_to_icd → merged into convert_icd_mesh
+- search_by_icd → use unified_search(query="E11 ...") with automatic ICD detection
 """
 
 from __future__ import annotations
@@ -225,7 +225,7 @@ def lookup_icd_to_mesh(code: str) -> dict:
             "mesh_term": entry["mesh"],
             "description": entry["description"],
             "pubmed_query": f'"{entry["mesh"]}"[MeSH]',
-            "search_suggestion": f"search_literature(query='\"{entry['mesh']}\"[MeSH]')",
+            "search_suggestion": f"unified_search(query='\"{entry['mesh']}\"[MeSH Terms]')",
         }
 
     # Prefix match (e.g., E11.9 -> E11)
@@ -240,7 +240,7 @@ def lookup_icd_to_mesh(code: str) -> dict:
             "mesh_term": entry["mesh"],
             "description": entry["description"],
             "pubmed_query": f'"{entry["mesh"]}"[MeSH]',
-            "search_suggestion": f"search_literature(query='\"{entry['mesh']}\"[MeSH]')",
+            "search_suggestion": f"unified_search(query='\"{entry['mesh']}\"[MeSH Terms]')",
             "note": f"Matched via prefix {prefix}",
         }
 
@@ -305,8 +305,8 @@ def get_icd_reference() -> dict:
         "supported_icd10_codes": list(ICD10_TO_MESH.keys()),
         "supported_icd9_codes": list(ICD9_TO_MESH.keys()),
         "usage": {
-            "icd_to_mesh": 'convert_icd_to_mesh(code="E11")',
-            "mesh_to_icd": 'convert_mesh_to_icd(mesh_term="Diabetes Mellitus")',
+            "icd_to_mesh": 'convert_icd_mesh(code="E11")',
+            "mesh_to_icd": 'convert_icd_mesh(mesh_term="Diabetes Mellitus")',
         },
     }
 

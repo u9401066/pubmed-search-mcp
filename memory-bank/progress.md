@@ -46,7 +46,7 @@
 ### 2026-02-10: v0.3.8 — QueryValidator + JournalMetrics + Preprint
 - ✅ **QueryValidator** — PubMed query 語法驗證 + 自動修正
 - ✅ **Journal Metrics** — OpenAlex h-index, impact tier
-- ✅ **Peer Review Filter** — `peer_reviewed_only` parameter
+- ✅ **Peer Review Filter** — 預設維持 peer-reviewed 結果，可用 `options="all_types"` 放寬
 - ✅ **Preprint Search** — arXiv/medRxiv/bioRxiv detection
 
 ### 2026-02-10: P2 Async-First 架構全面遷移 (v0.3.4)
