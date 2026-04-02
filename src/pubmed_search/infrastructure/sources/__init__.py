@@ -6,12 +6,12 @@ Aggregates results from PubMed, Semantic Scholar, OpenAlex, Europe PMC, CORE,
 and extended NCBI databases (Gene, PubChem, ClinVar).
 
 This module is NOT exposed as separate MCP tools - it's used internally
-by existing tools via the `source` parameter.
+by unified_search and related orchestration layers.
 
 Architecture:
     ┌─────────────────────────────────────────────────────────┐
-    │           MCP Tools (search_literature, etc.)           │
-    │                      (unchanged API)                     │
+    │        MCP Tools (unified_search, get_fulltext, etc.)    │
+    │                    (public orchestration layer)           │
     └───────────────────────────┬─────────────────────────────┘
                                 │
     ┌───────────────────────────▼─────────────────────────────┐

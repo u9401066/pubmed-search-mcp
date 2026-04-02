@@ -291,6 +291,33 @@ class TestFigureClient:
             assert len(result.pdf_links) == 2
             assert result.error is None
 
+    async def test_get_article_figures_prefers_exact_html_image_urls(self, client):
+        """Use HTML/CDN resolution so callers get real image URLs for web rendering."""
+
+        def enrich(figures: list[ArticleFigure]) -> list[ArticleFigure]:
+            figures[0].image_url = "https://cdn.ncbi.nlm.nih.gov/pmc/blobs/abc/article-fig1.jpg"
+            figures[1].image_url = "https://cdn.ncbi.nlm.nih.gov/pmc/blobs/xyz/article-fig2.gif"
+            return figures
+
+        with (
+            patch.object(client, "_fetch_epmc_xml", new_callable=AsyncMock) as mock_xml,
+            patch.object(
+                client,
+                "resolve_image_urls_from_html",
+                new_callable=AsyncMock,
+            ) as mock_resolve,
+        ):
+            mock_xml.return_value = SAMPLE_JATS_XML
+            mock_resolve.side_effect = lambda pmcid, figures: enrich(figures)
+
+            result = await client.get_article_figures("PMC123")
+
+            assert result.figures[0].image_url is not None
+            assert "cdn.ncbi.nlm.nih.gov" in result.figures[0].image_url
+            assert result.figures[1].image_url is not None
+            assert result.figures[1].image_url.endswith(".gif")
+            mock_resolve.assert_awaited_once()
+
     async def test_get_article_figures_fallback_to_efetch(self, client):
         """Test fallback to PMC efetch when Europe PMC fails."""
         call_count = 0

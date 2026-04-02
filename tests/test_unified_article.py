@@ -7,6 +7,8 @@ Tests: Author, OpenAccessLink, CitationMetrics, SourceMetadata, UnifiedArticle
 
 from __future__ import annotations
 
+from datetime import date
+
 from pubmed_search.domain.entities.article import (
     ArticleType,
     Author,
@@ -620,6 +622,34 @@ class TestUnifiedArticleFactory:
         }
         article = UnifiedArticle.from_pubmed(data)
         assert article.year == 2024
+
+    async def test_from_pubmed_publication_date_from_spaced_string(self):
+        """Test from_pubmed parses full PubMed dates with month names."""
+        data = {
+            "title": "Test",
+            "pub_date": "2024 Jan 15",
+        }
+        article = UnifiedArticle.from_pubmed(data)
+        assert article.publication_date == date(2024, 1, 15)
+
+    async def test_from_pubmed_publication_date_from_slash_string(self):
+        """Test from_pubmed parses slash-delimited dates from PubMed extraction."""
+        data = {
+            "title": "Test",
+            "pub_date": "2024/Jan/15",
+        }
+        article = UnifiedArticle.from_pubmed(data)
+        assert article.publication_date == date(2024, 1, 15)
+
+    async def test_from_pubmed_keeps_partial_dates_as_year_only(self):
+        """Test from_pubmed keeps seasonal dates without inventing a day."""
+        data = {
+            "title": "Test",
+            "pub_date": "2024 Spring",
+        }
+        article = UnifiedArticle.from_pubmed(data)
+        assert article.year == 2024
+        assert article.publication_date is None
 
     async def test_from_pubmed_year_direct(self):
         """Test from_pubmed uses year field."""

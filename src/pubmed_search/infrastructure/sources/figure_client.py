@@ -122,6 +122,7 @@ class FigureClient(BaseAPIClient):
             if xml:
                 figures, title = self._parse_jats_figures(xml, pmcid, include_subfigures, include_tables)
                 if figures is not None:
+                    figures = await self._resolve_exact_image_urls_if_needed(pmcid, figures)
                     result.figures = figures
                     result.total_figures = len(figures)
                     result.article_title = title or ""
@@ -151,6 +152,7 @@ class FigureClient(BaseAPIClient):
             if xml:
                 figures, title = self._parse_jats_figures(xml, pmcid, include_subfigures, include_tables)
                 if figures is not None:
+                    figures = await self._resolve_exact_image_urls_if_needed(pmcid, figures)
                     result.figures = figures
                     result.total_figures = len(figures)
                     result.article_title = title or ""
@@ -426,6 +428,15 @@ class FigureClient(BaseAPIClient):
         except Exception as e:
             logger.warning("HTML scraping fallback failed for %s: %s", pmcid, e)
             return figures
+
+    async def _resolve_exact_image_urls_if_needed(
+        self, pmcid: str, figures: list[ArticleFigure]
+    ) -> list[ArticleFigure]:
+        """Upgrade guessed figure URLs to exact CDN image URLs when possible."""
+        if not any(fig.graphic_href for fig in figures):
+            return figures
+
+        return await self.resolve_image_urls_from_html(pmcid, figures)
 
     def _resolve_figure_references(self, figures: list[ArticleFigure], body: Element) -> None:
         """Find which sections reference each figure."""

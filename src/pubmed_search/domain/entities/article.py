@@ -72,6 +72,94 @@ _APA_DUAL_AUTHOR = 2  # When exactly 2 authors, join with "&"
 # CrossRef date parsing: minimum date parts for full date
 _DATE_PARTS_FULL = 3
 
+_PUBMED_MONTHS = {
+    "jan": 1,
+    "january": 1,
+    "feb": 2,
+    "february": 2,
+    "mar": 3,
+    "march": 3,
+    "apr": 4,
+    "april": 4,
+    "may": 5,
+    "jun": 6,
+    "june": 6,
+    "jul": 7,
+    "july": 7,
+    "aug": 8,
+    "august": 8,
+    "sep": 9,
+    "sept": 9,
+    "september": 9,
+    "oct": 10,
+    "october": 10,
+    "nov": 11,
+    "november": 11,
+    "dec": 12,
+    "december": 12,
+}
+
+
+def _parse_pubmed_month(token: str) -> int | None:
+    normalized = token.strip().lower()
+    if not normalized:
+        return None
+
+    if normalized in _PUBMED_MONTHS:
+        return _PUBMED_MONTHS[normalized]
+
+    if normalized.isdigit():
+        month = int(normalized)
+        if 1 <= month <= 12:
+            return month
+
+    return None
+
+
+def _parse_pubmed_date(value: Any) -> tuple[int | None, date | None]:
+    if not isinstance(value, str):
+        return None, None
+
+    normalized = value.strip()
+    if not normalized:
+        return None, None
+
+    year_match = re.search(r"\b(\d{4})\b", normalized)
+    if not year_match:
+        return None, None
+
+    year = int(year_match.group(1))
+    pub_date = None
+
+    tokens = [token for token in re.split(r"[\s/,-]+", normalized) if token]
+    if not tokens:
+        return year, None
+
+    try:
+        start_index = tokens.index(year_match.group(1)) + 1
+    except ValueError:
+        start_index = 1
+
+    month = None
+    day = None
+
+    for index in range(start_index, len(tokens)):
+        month = _parse_pubmed_month(tokens[index])
+        if month is None:
+            continue
+
+        for day_token in tokens[index + 1 :]:
+            if day_token.isdigit():
+                day = int(day_token)
+                break
+        break
+
+    if month is not None and day is not None:
+        with contextlib.suppress(ValueError):
+            pub_date = date(year, month, day)
+
+    return year, pub_date
+
 
 class ArticleType(Enum):
     """Standard article types across sources."""
@@ -564,7 +652,7 @@ class UnifiedArticle:
         """
         Create UnifiedArticle from PubMed search result.
 
-        Expected format: Result from search_literature() or fetch_article_details()
+        Expected format: Result from unified_search(), fetch_article_details(), or raw PubMed extraction
         """
         # Parse authors
         authors = []
@@ -579,16 +667,7 @@ class UnifiedArticle:
         pub_date = None
         year = None
         if data.get("pub_date"):
-            try:
-                # Try various formats
-                date_str = data["pub_date"]
-                if isinstance(date_str, str):
-                    # "2024", "2024 Jan", "2024 Jan 15"
-                    year_match = re.match(r"(\d{4})", date_str)
-                    if year_match:
-                        year = int(year_match.group(1))
-            except (ValueError, TypeError):
-                pass
+            year, pub_date = _parse_pubmed_date(data["pub_date"])
         if not year and data.get("year"):
             year = int(data["year"])
 

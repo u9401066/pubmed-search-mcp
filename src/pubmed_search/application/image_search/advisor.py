@@ -644,7 +644,7 @@ class ImageQueryAdvisor:
 
         # 8. Non-image query suggestions
         if not is_suitable:
-            suggestions.append("此查詢更適合文獻搜尋。建議改用 unified_search() 或 search_literature()")
+            suggestions.append("此查詢更適合文獻搜尋。建議改用 unified_search()")
             if suitability_score < 0.1:
                 suggestions.append(
                     "查詢內容不含影像相關詞彙。若確實需要圖片，請加入 X-ray、histology、CT scan 等關鍵字"
@@ -848,7 +848,7 @@ class ImageQueryAdvisor:
         # Clean up extra whitespace
         enhanced = re.sub(r"\s+", " ", enhanced).strip()
 
-        return enhanced if enhanced else query_lower
+        return enhanced or query_lower
 
     def _detect_non_english(self, query: str) -> dict:
         """
