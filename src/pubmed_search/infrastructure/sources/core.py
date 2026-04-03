@@ -81,13 +81,14 @@ class COREClient(BaseAPIClient):
         *,
         method: str = "GET",
         data: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
     ) -> Any:
         """Add Bearer authorization header for API key."""
         req_headers = dict(headers or {})
         if self._api_key:
             req_headers["Authorization"] = f"Bearer {self._api_key}"
-        return await super()._execute_request(url, method=method, data=data, headers=req_headers)
+        return await super()._execute_request(url, method=method, data=data, params=params, headers=req_headers)
 
     def _handle_expected_status(self, response: httpx.Response, url: str) -> Any:
         """Handle 401 (unauthorized - bad API key)."""

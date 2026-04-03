@@ -94,12 +94,13 @@ class CrossRefClient(BaseAPIClient):
         *,
         method: str = "GET",
         data: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
     ) -> Any:
         """Add mailto parameter for polite pool access."""
         separator = "&" if "?" in url else "?"
         url = f"{url}{separator}mailto={urllib.parse.quote(self._email)}"
-        return await super()._execute_request(url, method=method, data=data, headers=headers)
+        return await super()._execute_request(url, method=method, data=data, params=params, headers=headers)
 
     def _handle_expected_status(self, response: httpx.Response, url: str) -> Any:
         """Handle 404 (DOI not found)."""

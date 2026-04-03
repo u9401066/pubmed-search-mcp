@@ -1,5 +1,7 @@
 FROM python:3.11-slim
 
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
 WORKDIR /app
 
 # Install system dependencies
@@ -8,12 +10,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy project files
-COPY pyproject.toml README.md LICENSE ./
+COPY pyproject.toml uv.lock README.md LICENSE ./
 COPY src/ ./src/
 COPY run_server.py ./
 
 # Install Python dependencies
-RUN pip install --no-cache-dir -e ".[mcp]"
+RUN uv sync --frozen --no-dev
 
 # Default environment variables
 ENV NCBI_EMAIL=pubmed-search@example.com
@@ -28,4 +30,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8765/health || exit 1
 
 # Run the server
-CMD ["python", "run_server.py", "--transport", "streamable-http"]
+CMD ["uv", "run", "python", "run_server.py", "--transport", "streamable-http"]

@@ -30,6 +30,7 @@ if ($All) {
 
 $exitCode = 0
 $startTime = Get-Date
+$coverageFailUnder = 80
 
 # ============================================================
 # 1. Static Analysis
@@ -68,8 +69,8 @@ if ($Quick) {
     Write-Host "  Running quick tests (skipping integration and slow)..." -ForegroundColor Gray
     uv run pytest -m "not integration and not slow" -v
 } elseif ($Coverage) {
-    Write-Host "  Running tests with coverage..." -ForegroundColor Gray
-    uv run pytest --cov=src --cov-report=html --cov-report=term-missing -v
+    Write-Host "  Running tests with coverage (fail-under $coverageFailUnder%)..." -ForegroundColor Gray
+    uv run pytest --cov=src --cov-report=html --cov-report=term-missing --cov-fail-under=$coverageFailUnder -v
 } else {
     Write-Host "  Running all tests (multi-core)..." -ForegroundColor Gray
     uv run pytest -v
@@ -143,10 +144,17 @@ if ($Security -or $All) {
 if ($Mutation -or $All) {
     Write-Host "📋 6. Mutation Testing" -ForegroundColor Yellow
     Write-Host ""
-    Write-Host "  ⏰ This will take 10-30 minutes..." -ForegroundColor Gray
+    Write-Host "  Running deterministic core-module mutation hard gate..." -ForegroundColor Gray
     Write-Host ""
 
     & "$PSScriptRoot\run_mutation_tests.ps1"
+
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "  ❌ Mutation hard gate failed" -ForegroundColor Red
+        $exitCode = 1
+    } else {
+        Write-Host "  ✅ Mutation hard gate passed" -ForegroundColor Green
+    }
 
     Write-Host ""
 }
@@ -179,8 +187,8 @@ if ($Security -or $All) {
 }
 
 if ($Mutation -or $All) {
-    Write-Host "🧬 Mutation Report: html/index.html" -ForegroundColor Cyan
-    Write-Host "   Open with: start html/index.html" -ForegroundColor Gray
+    Write-Host "🧬 Mutation Gate: scripts/run_mutation_gate.py" -ForegroundColor Cyan
+    Write-Host "   Wrapper: scripts/run_mutation_tests.ps1" -ForegroundColor Gray
     Write-Host ""
 }
 

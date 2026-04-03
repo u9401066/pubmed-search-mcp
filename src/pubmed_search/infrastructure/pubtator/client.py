@@ -109,11 +109,12 @@ class PubTatorClient(BaseAPIClient):
         *,
         method: str = "GET",
         data: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
     ) -> httpx.Response:
         """Execute a request using the lazily recreated shared client."""
         client = await self._get_client()
-        return await client.get(url, params=data or {}, headers=headers or {})
+        return await client.get(url, params=params or data or {}, headers=headers or {})
 
     async def _request(
         self,

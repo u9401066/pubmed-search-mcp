@@ -28,11 +28,17 @@ Architecture:
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import re
 from enum import Enum
-from typing import Any, Literal
+from typing import Any, Literal, cast
+
+from pubmed_search.shared.source_contracts import (
+    SourceAdapterCall,
+    SourceAdapterResult,
+    format_source_adapter_error,
+    gather_source_adapter_calls,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +64,9 @@ class SearchSource(Enum):
     EUROPE_PMC = "europe_pmc"
     CORE = "core"
     ALL = "all"
+
+
+AlternateSearchSource = Literal["semantic_scholar", "openalex", "europe_pmc", "core"]
 
 
 def get_semantic_scholar_client(api_key: str | None = None):
@@ -140,7 +149,7 @@ def get_unpaywall_client(email: str | None = None):
         from .unpaywall import UnpaywallClient
 
         _unpaywall_client = UnpaywallClient(
-            email=email or os.environ.get("UNPAYWALL_EMAIL"),
+            email=email or os.environ.get("UNPAYWALL_EMAIL") or os.environ.get("NCBI_EMAIL"),
         )
     return _unpaywall_client
 
@@ -177,7 +186,7 @@ def get_openi_client():
 
 async def search_alternate_source(
     query: str,
-    source: Literal["semantic_scholar", "openalex", "europe_pmc", "core"],
+    source: AlternateSearchSource,
     limit: int = 10,
     min_year: int | None = None,
     max_year: int | None = None,
@@ -208,55 +217,82 @@ async def search_alternate_source(
         List of normalized paper dictionaries
     """
     try:
-        if source == "semantic_scholar":
-            client = get_semantic_scholar_client()
-            return await client.search(
-                query=query,
-                limit=limit,
-                min_year=min_year,
-                max_year=max_year,
-                open_access_only=open_access_only,
-            )
-
-        if source == "openalex":
-            client = get_openalex_client(email)
-            return await client.search(
-                query=query,
-                limit=limit,
-                min_year=min_year,
-                max_year=max_year,
-                open_access_only=open_access_only,
-            )
-
-        if source == "europe_pmc":
-            client = get_europe_pmc_client(email)
-            result = await client.search(
-                query=query,
-                limit=limit,
-                min_year=min_year,
-                max_year=max_year,
-                open_access_only=open_access_only,
-                has_fulltext=has_fulltext,
-            )
-            return result.get("results", [])
-
-        if source == "core":
-            client = get_core_client()
-            result = await client.search(
-                query=query,
-                limit=limit,
-                year_from=min_year,
-                year_to=max_year,
-                has_fulltext=has_fulltext,
-            )
-            return result.get("results", [])
-
-        logger.warning(f"Unknown source: {source}")
-        return []
+        return await _search_alternate_source_unchecked(
+            query=query,
+            source=source,
+            limit=limit,
+            min_year=min_year,
+            max_year=max_year,
+            open_access_only=open_access_only,
+            has_fulltext=has_fulltext,
+            email=email,
+        )
 
     except Exception as e:
         logger.exception(f"Search failed for {source}: {e}")
         return []
+
+
+async def _search_alternate_source_unchecked(
+    query: str,
+    source: AlternateSearchSource,
+    limit: int = 10,
+    min_year: int | None = None,
+    max_year: int | None = None,
+    open_access_only: bool = False,
+    has_fulltext: bool = False,
+    email: str | None = None,
+) -> list[dict[str, Any]]:
+    """Search one alternate source without swallowing source-level exceptions."""
+    if source == "semantic_scholar":
+        client = get_semantic_scholar_client()
+        return await client.search(
+            query=query,
+            limit=limit,
+            min_year=min_year,
+            max_year=max_year,
+            open_access_only=open_access_only,
+        )
+
+    if source == "openalex":
+        client = get_openalex_client(email)
+        return await client.search(
+            query=query,
+            limit=limit,
+            min_year=min_year,
+            max_year=max_year,
+            open_access_only=open_access_only,
+        )
+
+    if source == "europe_pmc":
+        client = get_europe_pmc_client(email)
+        result = await client.search(
+            query=query,
+            limit=limit,
+            min_year=min_year,
+            max_year=max_year,
+            open_access_only=open_access_only,
+            has_fulltext=has_fulltext,
+        )
+        return result.get("results", [])
+
+    client = get_core_client()
+    result = await client.search(
+        query=query,
+        limit=limit,
+        year_from=min_year,
+        year_to=max_year,
+        has_fulltext=has_fulltext,
+    )
+    return result.get("results", [])
+
+
+def _is_alternate_source(source: str) -> bool:
+    return source in {"semantic_scholar", "openalex", "europe_pmc", "core"}
+
+
+def _normalize_alternate_sources(sources: list[str]) -> list[AlternateSearchSource]:
+    return [cast("AlternateSearchSource", source) for source in sources if _is_alternate_source(source)]
 
 
 async def cross_search(
@@ -300,32 +336,40 @@ async def cross_search(
     by_source = {}
 
     # Filter out pubmed (handled by main LiteratureSearcher)
-    valid_sources = [s for s in sources if s != "pubmed"]
+    valid_sources = _normalize_alternate_sources(sources)
 
-    async def _search_one(source: str) -> tuple[str, list[dict[str, Any]]]:
-        """Search a single source, returning (source_name, results)."""
-        try:
-            results = await search_alternate_source(
-                query=query,
-                source=source,  # type: ignore[arg-type]
-                limit=limit_per_source,
-                min_year=min_year,
-                max_year=max_year,
-                open_access_only=open_access_only,
-                has_fulltext=has_fulltext if source in ("europe_pmc", "core") else False,
-                email=email,
-            )
-            return (source, results)
-        except Exception as e:
-            logger.exception(f"Cross-search failed for {source}: {e}")
-            return (source, [])
+    async def _search_one(source: AlternateSearchSource) -> list[dict[str, Any]]:
+        """Search a single source through the public alternate-source seam."""
+        return await search_alternate_source(
+            query=query,
+            source=source,
+            limit=limit_per_source,
+            min_year=min_year,
+            max_year=max_year,
+            open_access_only=open_access_only,
+            has_fulltext=has_fulltext if source in ("europe_pmc", "core") else False,
+            email=email,
+        )
 
-    # Execute all source searches in parallel
-    search_results = await asyncio.gather(*[_search_one(s) for s in valid_sources])
+    def _build_cross_search_call(source: AlternateSearchSource) -> SourceAdapterCall[dict[str, Any]]:
+        async def _execute() -> list[dict[str, Any]]:
+            return await _search_one(source)
 
-    for source, results in search_results:
-        by_source[source] = results
-        all_results.extend(results)
+        return SourceAdapterCall(
+            source=source,
+            operation="cross_search",
+            execute=_execute,
+        )
+
+    search_results: list[SourceAdapterResult[dict[str, Any]]] = await gather_source_adapter_calls(
+        [_build_cross_search_call(source) for source in valid_sources]
+    )
+
+    for source_result in search_results:
+        by_source[source_result.source] = source_result.items
+        all_results.extend(source_result.items)
+        for error in source_result.errors:
+            logger.exception("Cross-search failed for %s", format_source_adapter_error(error))
 
     # Deduplicate by DOI or title
     if deduplicate:

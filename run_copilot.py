@@ -14,9 +14,9 @@ Includes middleware and simplified tool schemas for compatibility.
 This launcher uses a simplified tool set with single-type parameters.
 
 Usage:
-    python run_copilot.py
-    python run_copilot.py --port 8765
-    python run_copilot.py --full-tools  # Use all tools (may have issues)
+    uv run python run_copilot.py
+    uv run python run_copilot.py --port 8765
+    uv run python run_copilot.py --full-tools  # Use all tools (may have issues)
 """
 
 import argparse

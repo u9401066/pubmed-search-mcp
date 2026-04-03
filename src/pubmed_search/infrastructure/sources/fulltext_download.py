@@ -36,14 +36,114 @@ import logging
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Literal
-
-if TYPE_CHECKING:
-    from collections.abc import Awaitable
+from functools import partial
+from html.parser import HTMLParser
+from typing import Literal, cast
+from urllib.parse import urljoin
 
 import httpx
 
+from pubmed_search.shared.async_utils import (
+    RequestExecutionPolicy,
+    RetryableOperationError,
+    create_async_http_client,
+    get_rate_limiter,
+    get_transport_kernel,
+    parse_retry_after,
+)
+from pubmed_search.shared.source_contracts import (
+    SourceAdapterCall,
+    SourceExecutionSettings,
+    build_request_execution_policy,
+    gather_source_adapter_calls,
+)
+
 logger = logging.getLogger(__name__)
+
+AccessType = Literal["open_access", "green_oa", "gold", "bronze", "hybrid", "subscription", "unknown"]
+
+
+def _normalize_candidate_url(base_url: str, candidate_url: str) -> str | None:
+    raw_url = candidate_url.strip()
+    if not raw_url or raw_url.startswith(("#", "javascript:", "mailto:")):
+        return None
+    return urljoin(base_url, raw_url)
+
+
+def _has_explicit_pdf_signal(candidate_url: str) -> bool:
+    normalized = candidate_url.lower()
+    return any(signal in normalized for signal in (".pdf", "/pdf", "pdf=", "articlepdf", "full.pdf"))
+
+
+def _looks_like_pdf_candidate(candidate_url: str, context: str = "") -> bool:
+    normalized_context = context.lower()
+    if _has_explicit_pdf_signal(candidate_url):
+        return True
+    return any(keyword in normalized_context for keyword in ("pdf", "download", "full text", "fulltext"))
+
+
+class _LandingPageCandidateParser(HTMLParser):
+    """Collect likely direct-PDF targets from HTML landing pages."""
+
+    _META_PRIORITIES = {
+        "citation_pdf_url": 0,
+        "wkhealth_pdf_url": 0,
+        "pdf_url": 1,
+        "eprints.document_url": 1,
+    }
+
+    def __init__(self, base_url: str):
+        super().__init__(convert_charrefs=True)
+        self._base_url = base_url
+        self._candidates: list[tuple[int, str]] = []
+
+    def _add_candidate(self, candidate_url: str, priority: int) -> None:
+        normalized = _normalize_candidate_url(self._base_url, candidate_url)
+        if normalized:
+            self._candidates.append((priority, normalized))
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attributes = {str(key).lower(): str(value) for key, value in attrs if key and value}
+
+        if tag == "meta":
+            name = (attributes.get("name") or attributes.get("property") or "").lower()
+            content = attributes.get("content", "").strip()
+            priority = self._META_PRIORITIES.get(name)
+            if content and priority is not None:
+                self._add_candidate(content, priority)
+            return
+
+        if tag not in {"a", "link"}:
+            return
+
+        href = attributes.get("href", "").strip()
+        if not href:
+            return
+
+        context = " ".join(
+            value
+            for value in (
+                attributes.get("title", ""),
+                attributes.get("aria-label", ""),
+                attributes.get("type", ""),
+                attributes.get("rel", ""),
+                attributes.get("class", ""),
+            )
+            if value
+        )
+        if _looks_like_pdf_candidate(href, context):
+            priority = 1 if _has_explicit_pdf_signal(href) else 2
+            self._add_candidate(href, priority)
+
+    def get_candidates(self) -> list[str]:
+        ordered: list[str] = []
+        seen: set[str] = set()
+        for _, candidate in sorted(self._candidates, key=lambda item: (item[0], item[1])):
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            ordered.append(candidate)
+        return ordered
 
 
 # =============================================================================
@@ -68,18 +168,19 @@ class PDFSource(Enum):
     CORE = ("core", 5, "CORE")
     SEMANTIC_SCHOLAR = ("semantic_scholar", 6, "Semantic Scholar")
     OPENALEX = ("openalex", 7, "OpenAlex")
+    INSTITUTIONAL_RESOLVER = ("institutional_resolver", 8, "Institutional Resolver")
 
     # Preprint servers (open access, reliable)
-    ARXIV = ("arxiv", 8, "arXiv")
-    BIORXIV = ("biorxiv", 9, "bioRxiv")
-    MEDRXIV = ("medrxiv", 10, "medRxiv")
+    ARXIV = ("arxiv", 9, "arXiv")
+    BIORXIV = ("biorxiv", 10, "bioRxiv")
+    MEDRXIV = ("medrxiv", 11, "medRxiv")
 
     # Fallback sources
-    DOI_REDIRECT = ("doi_redirect", 11, "Publisher (DOI)")
-    CROSSREF = ("crossref", 12, "CrossRef")
-    DOAJ = ("doaj", 13, "DOAJ")  # Directory of Open Access Journals
-    ZENODO = ("zenodo", 14, "Zenodo")  # Research repository
-    INTERNET_ARCHIVE = ("internet_archive", 15, "Internet Archive")
+    DOI_REDIRECT = ("doi_redirect", 12, "Publisher (DOI)")
+    CROSSREF = ("crossref", 13, "CrossRef")
+    DOAJ = ("doaj", 14, "DOAJ")  # Directory of Open Access Journals
+    ZENODO = ("zenodo", 15, "Zenodo")  # Research repository
+    INTERNET_ARCHIVE = ("internet_archive", 16, "Internet Archive")
 
     @property
     def source_id(self) -> str:
@@ -100,7 +201,7 @@ class PDFLink:
 
     url: str
     source: PDFSource
-    access_type: Literal["open_access", "green_oa", "gold", "bronze", "hybrid", "subscription", "unknown"] = "unknown"
+    access_type: AccessType = "unknown"
     version: str | None = None  # "published", "accepted", "submitted"
     license: str | None = None
     is_direct_pdf: bool = True  # vs landing page
@@ -124,6 +225,7 @@ class DownloadResult:
     url: str | None = None
     error: str | None = None
     file_size: int = 0
+    retry_after: float | None = None
 
     @property
     def is_pdf(self) -> bool:
@@ -147,6 +249,7 @@ class FulltextResult:
     # Content
     text_content: str | None = None
     pdf_bytes: bytes | None = None
+    resolved_pdf_url: str | None = None
     structured_sections: dict[str, str] | None = None
 
     # Links found
@@ -239,19 +342,136 @@ class FulltextDownloader:
         """
         self._timeout = timeout
         self._max_retries = max_retries
+        self._max_concurrent = max_concurrent
         self._client: httpx.AsyncClient | None = None
         self._semaphore = asyncio.Semaphore(max_concurrent)
         self._rate_limit_until: float = 0  # Unix timestamp for global rate limit
+        self._transport_kernel = get_transport_kernel()
+
+    def _build_execution_policy(self) -> RequestExecutionPolicy:
+        return build_request_execution_policy(
+            SourceExecutionSettings(
+                service_name="fulltext-download",
+                timeout=self._timeout,
+                max_attempts=self._max_retries + 1,
+                base_delay=self.RETRY_BASE_DELAY,
+                max_delay=self.RETRY_MAX_DELAY,
+                min_interval=1.0 / max(float(self._max_concurrent), 1.0),
+                rate_limit_name="fulltext-download",
+                circuit_breaker_name="fulltext-download",
+                failure_threshold=6,
+                recovery_timeout=60.0,
+                half_open_max_calls=2,
+                concurrency_limit=self._max_concurrent,
+                concurrency_name="fulltext-download",
+            )
+        )
+
+    def _build_link_source_calls(
+        self,
+        pmid: str | None,
+        pmcid: str | None,
+        doi: str | None,
+    ) -> list[SourceAdapterCall[PDFLink]]:
+        """Build source adapter calls for link collection without embedding orchestration policy."""
+        calls: list[SourceAdapterCall[PDFLink]] = []
+
+        if pmcid or pmid:
+            calls.append(
+                SourceAdapterCall(
+                    source="pmc",
+                    operation="collect_links",
+                    execute=partial(self._get_pmc_links, pmid, pmcid),
+                )
+            )
+
+        if pmid:
+            calls.append(
+                SourceAdapterCall(
+                    source="pubmed-linkout",
+                    operation="collect_links",
+                    execute=partial(self._get_pubmed_linkout, pmid),
+                )
+            )
+
+        if pmid or doi:
+            calls.append(
+                SourceAdapterCall(
+                    source="institutional-resolver",
+                    operation="collect_links",
+                    execute=partial(self._get_openurl_links, pmid, doi),
+                )
+            )
+
+        if doi:
+            calls.append(
+                SourceAdapterCall(
+                    source="doi-landing-page",
+                    operation="collect_links",
+                    execute=partial(self._get_doi_redirect_link, doi),
+                )
+            )
+            doi_handlers = [
+                ("unpaywall", self._get_unpaywall_links),
+                ("crossref", self._get_crossref_links),
+                ("core", self._get_core_links),
+                ("semantic-scholar", self._get_semantic_scholar_links),
+                ("openalex", self._get_openalex_links),
+                ("doaj", self._get_doaj_links),
+                ("zenodo", self._get_zenodo_links),
+            ]
+            for source_name, handler in doi_handlers:
+                calls.append(
+                    SourceAdapterCall(
+                        source=source_name,
+                        operation="collect_links",
+                        execute=partial(handler, doi),
+                    )
+                )
+
+            if "arxiv" in doi.lower():
+                calls.append(
+                    SourceAdapterCall(
+                        source="arxiv",
+                        operation="collect_links",
+                        execute=partial(self._get_arxiv_link, doi),
+                    )
+                )
+
+            if "10.1101/" in doi or "biorxiv" in doi.lower() or "medrxiv" in doi.lower():
+                calls.append(
+                    SourceAdapterCall(
+                        source="preprints",
+                        operation="collect_links",
+                        execute=partial(self._get_preprint_link, doi),
+                    )
+                )
+
+        return calls
+
+    @staticmethod
+    def _extract_status_code(error: str | None) -> int | None:
+        if not error:
+            return None
+        match = re.search(r"\b(\d{3})\b", error)
+        if not match:
+            return None
+        return int(match.group(1))
 
     async def _get_client(self) -> httpx.AsyncClient:
         """Get or create HTTP client."""
         if self._client is None or self._client.is_closed:
-            self._client = httpx.AsyncClient(
-                timeout=httpx.Timeout(self._timeout, connect=10.0),
-                limits=httpx.Limits(max_connections=10),
+            self._client = create_async_http_client(
+                timeout=self._timeout,
                 headers={"User-Agent": self.USER_AGENT},
                 follow_redirects=True,
+                max_connections=10,
+                max_keepalive_connections=10,
+                keepalive_expiry=30.0,
             )
+        if self._client is None:
+            msg = "HTTP client initialization failed"
+            raise RuntimeError(msg)
         return self._client
 
     async def close(self):
@@ -284,46 +504,9 @@ class FulltextDownloader:
             List of PDFLink objects, sorted by priority
         """
         links: list[PDFLink] = []
-
-        # Gather links from all sources in parallel
-        tasks: list[Awaitable[list[PDFLink] | PDFLink | None]] = []
-
-        # PMC/Europe PMC sources (need PMCID or PMID)
-        if pmcid or pmid:
-            tasks.append(self._get_pmc_links(pmid, pmcid))
-
-        # PubMed LinkOut (need PMID)
-        if pmid:
-            tasks.append(self._get_pubmed_linkout(pmid))
-
-        # DOI-based sources
-        if doi:
-            tasks.append(self._get_unpaywall_links(doi))
-            tasks.append(self._get_crossref_links(doi))  # NEW: Publisher links
-            tasks.append(self._get_core_links(doi))
-            tasks.append(self._get_semantic_scholar_links(doi))
-            tasks.append(self._get_openalex_links(doi))
-            tasks.append(self._get_doaj_links(doi))  # NEW: OA journals
-            tasks.append(self._get_zenodo_links(doi))  # NEW: Research repository
-
-        # Check for preprint identifiers in DOI
-        if doi:
-            if "arxiv" in doi.lower():
-                tasks.append(self._get_arxiv_link(doi))
-            # bioRxiv/medRxiv DOIs start with 10.1101
-            if "10.1101/" in doi or "biorxiv" in doi.lower() or "medrxiv" in doi.lower():
-                tasks.append(self._get_preprint_link(doi))
-
-        # Run all link gathering in parallel
-        if tasks:
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            for result in results:
-                if isinstance(result, list):
-                    links.extend(result)
-                elif isinstance(result, PDFLink):
-                    links.append(result)
-                elif isinstance(result, Exception):
-                    logger.debug(f"Link gathering failed: {result}")
+        source_results = await gather_source_adapter_calls(self._build_link_source_calls(pmid, pmcid, doi))
+        for source_result in source_results:
+            links.extend(source_result.items)
 
         # Sort by priority and deduplicate by URL
         seen_urls = set()
@@ -351,7 +534,7 @@ class FulltextDownloader:
             pmcid: PubMed Central ID
             doi: Digital Object Identifier
             preferred_source: Try this source first
-            try_all: If preferred fails, try other sources
+            try_all: Continue through all sources after a failure
 
         Returns:
             DownloadResult with PDF bytes or error
@@ -448,9 +631,29 @@ class FulltextDownloader:
             return result
 
         result.pdf_bytes = download.content
+        result.resolved_pdf_url = download.url
         result.source_used = download.source
         result.content_type = "pdf"
         result.file_size = download.file_size
+
+        if download.source and download.url and all(link.url != download.url for link in result.pdf_links):
+            resolved_access_type = cast(
+                "AccessType",
+                next(
+                    (link.access_type for link in result.pdf_links if link.source == download.source),
+                    "unknown",
+                ),
+            )
+            result.pdf_links.insert(
+                0,
+                PDFLink(
+                    url=download.url,
+                    source=download.source,
+                    access_type=resolved_access_type,
+                    is_direct_pdf=True,
+                    confidence=1.0,
+                ),
+            )
 
         # Strategy 3: Extract text
         if strategy in ("extract_text", "try_all"):
@@ -670,6 +873,53 @@ class FulltextDownloader:
             logger.debug(f"OpenAlex lookup failed: {e}")
 
         return links
+
+    async def _get_openurl_links(self, pmid: str | None, doi: str | None) -> list[PDFLink]:
+        """Get institutional resolver landing-page links when OpenURL is configured."""
+        try:
+            from pubmed_search.infrastructure.sources.openurl import get_openurl_link
+
+            article: dict[str, str] = {}
+            if pmid:
+                article["pmid"] = pmid
+            if doi:
+                article["doi"] = doi
+
+            if not article:
+                return []
+
+            resolver_url = get_openurl_link(article)
+            if not resolver_url:
+                return []
+
+            return [
+                PDFLink(
+                    url=resolver_url,
+                    source=PDFSource.INSTITUTIONAL_RESOLVER,
+                    access_type="subscription",
+                    is_direct_pdf=False,
+                    confidence=0.8,
+                )
+            ]
+        except Exception as e:
+            logger.debug(f"OpenURL resolver lookup failed: {e}")
+            return []
+
+    async def _get_doi_redirect_link(self, doi: str) -> list[PDFLink]:
+        """Add the canonical DOI landing page as a last-mile fulltext fallback."""
+        doi_clean = doi.replace("https://doi.org/", "").replace("http://doi.org/", "").strip()
+        if not doi_clean:
+            return []
+
+        return [
+            PDFLink(
+                url=f"https://doi.org/{doi_clean}",
+                source=PDFSource.DOI_REDIRECT,
+                access_type="unknown",
+                is_direct_pdf=False,
+                confidence=0.55,
+            )
+        ]
 
     async def _get_arxiv_link(self, doi: str) -> PDFLink | None:
         """Get PDF link from arXiv."""
@@ -925,7 +1175,7 @@ class FulltextDownloader:
             # Note: Zenodo DOIs start with 10.5281/zenodo.
             if "10.5281/zenodo" in doi:
                 # Direct Zenodo DOI
-                record_id = doi.split(".")[-1]
+                record_id = doi.rsplit(".", maxsplit=1)[-1]
                 url = f"https://zenodo.org/api/records/{record_id}"
             else:
                 # Search for related records
@@ -967,14 +1217,29 @@ class FulltextDownloader:
     # =========================================================================
 
     async def _wait_for_rate_limit(self):
-        """Wait if we're being rate limited."""
-        import time
+        """Compatibility wrapper around the shared fulltext rate limiter."""
+        limiter = get_rate_limiter("fulltext-download", rate=max(float(self._max_concurrent), 1.0), per=1.0)
+        await limiter.acquire()
 
-        now = time.time()
-        if now < self._rate_limit_until:
-            wait_time = self._rate_limit_until - now
-            logger.info(f"Rate limited, waiting {wait_time:.1f}s")
-            await asyncio.sleep(wait_time)
+    @staticmethod
+    def _looks_like_html(content_type: str, content: bytes) -> bool:
+        preview = content[:2000].lower()
+        return "html" in content_type.lower() or b"<html" in preview or b"<!doctype html" in preview
+
+    def _extract_pdf_candidates_from_html(self, base_url: str, html_text: str) -> list[str]:
+        parser = _LandingPageCandidateParser(base_url)
+        try:
+            parser.feed(html_text)
+        except Exception as e:
+            logger.debug(f"Landing page parse failed for {base_url}: {e}")
+
+        candidates = parser.get_candidates()
+        regex_candidates = re.findall(r'["\']([^"\'#]+\.pdf(?:\?[^"\']*)?)["\']', html_text, flags=re.IGNORECASE)
+        for candidate in regex_candidates:
+            normalized = _normalize_candidate_url(base_url, candidate)
+            if normalized and normalized not in candidates:
+                candidates.append(normalized)
+        return candidates[:5]
 
     async def _download_with_retry(
         self,
@@ -991,64 +1256,50 @@ class FulltextDownloader:
         - Rate limit detection (429 response)
         - Streaming download for large files
         """
-        last_error = "Unknown error"
+        policy = self._build_execution_policy()
 
-        for attempt in range(self._max_retries + 1):
-            try:
-                # Wait for global rate limit
-                await self._wait_for_rate_limit()
+        async def perform_download() -> DownloadResult:
+            result = await self._download_from_url_impl(url, source, headers)
+            if result.success:
+                return result
 
-                # Acquire semaphore for concurrent request limiting
-                async with self._semaphore:
-                    result = await self._download_from_url_impl(url, source, headers)
+            status_code = self._extract_status_code(result.error)
+            if status_code in self.RETRYABLE_STATUS_CODES:
+                raise RetryableOperationError(
+                    result.error or f"HTTP {status_code}",
+                    retry_after=result.retry_after,
+                    status_code=status_code,
+                )
 
-                    # Handle rate limiting
-                    if result.error and "429" in result.error:
-                        import time
+            return result
 
-                        # Set global rate limit (wait 60s)
-                        self._rate_limit_until = time.time() + 60
-                        last_error = "Rate limited (429)"
-                        continue
-
-                    # Handle retryable errors
-                    if not result.success and result.error:
-                        for code in self.RETRYABLE_STATUS_CODES:
-                            if str(code) in result.error:
-                                last_error = result.error
-                                break
-                        else:
-                            # Non-retryable error
-                            return result
-                    else:
-                        return result
-
-            except httpx.TimeoutException:
-                last_error = "Download timeout"
-            except Exception as e:
-                last_error = str(e)
-
-            # Exponential backoff
-            if attempt < self._max_retries:
-                delay = min(self.RETRY_BASE_DELAY * (2**attempt), self.RETRY_MAX_DELAY)
-                logger.debug(f"Retry {attempt + 1}/{self._max_retries} in {delay:.1f}s: {last_error}")
-                await asyncio.sleep(delay)
-
-        return DownloadResult(
-            success=False,
-            error=f"Max retries exceeded: {last_error}",
-            url=url,
-            source=source,
-        )
+        try:
+            return await self._transport_kernel.execute(perform_download, policy=policy)
+        except httpx.TimeoutException:
+            return DownloadResult(success=False, error="Max retries exceeded: Download timeout", url=url, source=source)
+        except Exception as e:
+            return DownloadResult(success=False, error=f"Max retries exceeded: {e}", url=url, source=source)
 
     async def _download_from_url_impl(
         self,
         url: str,
         source: PDFSource,
         headers: dict | None = None,
+        depth: int = 0,
+        visited: frozenset[str] | None = None,
     ) -> DownloadResult:
         """Actual download implementation with streaming support."""
         try:
+            visited_urls = set(visited or ())
+            if url in visited_urls:
+                return DownloadResult(
+                    success=False,
+                    error="Landing-page resolution loop detected",
+                    url=url,
+                    source=source,
+                )
+            visited_urls.add(url)
+
             client = await self._get_client()
 
             # Build headers
@@ -1064,6 +1315,7 @@ class FulltextDownloader:
                         error=f"HTTP {response.status_code}",
                         url=url,
                         source=source,
+                        retry_after=parse_retry_after(response.headers.get("Retry-After")),
                     )
 
                 content_type = response.headers.get("Content-Type", "")
@@ -1098,22 +1350,55 @@ class FulltextDownloader:
                 content = b"".join(chunks)
 
                 # Check if it's actually a PDF
-                if content[:4] != b"%PDF" and b"<html" in content[:1000].lower():
+                if content[:4] == b"%PDF":
+                    return DownloadResult(
+                        success=True,
+                        content=content,
+                        content_type=content_type,
+                        source=source,
+                        url=url,
+                        file_size=len(content),
+                    )
+
+                if self._looks_like_html(content_type, content):
+                    if depth >= 2:
+                        return DownloadResult(
+                            success=False,
+                            error="Received HTML instead of PDF after resolver fallback",
+                            url=url,
+                            source=source,
+                            content_type="text/html",
+                        )
+
+                    html_text = content[:500000].decode("utf-8", errors="ignore")
+                    candidate_urls = self._extract_pdf_candidates_from_html(url, html_text)
+                    for candidate_url in candidate_urls:
+                        if candidate_url in visited_urls:
+                            continue
+                        candidate_result = await self._download_from_url_impl(
+                            candidate_url,
+                            source,
+                            headers=headers,
+                            depth=depth + 1,
+                            visited=frozenset(visited_urls),
+                        )
+                        if candidate_result.success and candidate_result.is_pdf:
+                            return candidate_result
+
                     return DownloadResult(
                         success=False,
-                        error="Received HTML instead of PDF (landing page)",
+                        error="Received HTML instead of PDF (landing page with no direct PDF link)",
                         url=url,
                         source=source,
                         content_type="text/html",
                     )
 
                 return DownloadResult(
-                    success=True,
-                    content=content,
-                    content_type=content_type,
-                    source=source,
+                    success=False,
+                    error=f"Received non-PDF content ({content_type or 'unknown'})",
                     url=url,
-                    file_size=len(content),
+                    source=source,
+                    content_type=content_type or None,
                 )
 
         except httpx.TimeoutException:
@@ -1200,7 +1485,7 @@ class FulltextDownloader:
 
             client = get_europe_pmc_client()
 
-            xml = client.get_fulltext_xml(pmcid)
+            xml = await client.get_fulltext_xml(pmcid)
             if xml:
                 parsed = client.parse_fulltext_xml(xml)
                 if parsed:

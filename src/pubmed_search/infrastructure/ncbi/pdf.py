@@ -95,7 +95,7 @@ class PDFMixin:
             content_type = response.headers.get("Content-Type", "")
 
             if response.status_code == 200 and "application/pdf" in content_type:
-                Path(output_path).write_bytes(response.content)
+                await asyncio.to_thread(Path(output_path).write_bytes, response.content)
                 logger.info(f"PMID {pmid}: PDF downloaded successfully ({len(response.content)} bytes)")
                 return True
 
@@ -138,7 +138,7 @@ class PDFMixin:
 
             if response.status_code == 200 and "application/pdf" in content_type:
                 if output_path:
-                    Path(output_path).write_bytes(response.content)
+                    await asyncio.to_thread(Path(output_path).write_bytes, response.content)
                 return response.content
 
             return None

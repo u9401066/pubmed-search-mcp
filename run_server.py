@@ -7,16 +7,16 @@ allowing remote clients from other machines to connect.
 
 Usage:
     # Run with streamable-http transport (default)
-    python run_server.py --transport streamable-http --port 8765
+    uv run python run_server.py --transport streamable-http --port 8765
 
     # Run with legacy SSE transport
-    python run_server.py --transport sse --port 8765
+    uv run python run_server.py --transport sse --port 8765
 
     # Run with Copilot-compatible HTTP semantics (full tool schemas)
-    python run_server.py --transport streamable-http --copilot-compatible
+    uv run python run_server.py --transport streamable-http --copilot-compatible
 
     # Run with custom email and API key
-    python run_server.py --email your@email.com --api-key YOUR_API_KEY
+    uv run python run_server.py --email your@email.com --api-key YOUR_API_KEY
 
 Environment Variables:
     NCBI_EMAIL: Email for NCBI Entrez API

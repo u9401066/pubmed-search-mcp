@@ -25,6 +25,16 @@ from typing import Any
 
 import httpx
 
+from pubmed_search.shared.async_utils import (
+    CircuitBreakerPolicy,
+    RequestExecutionPolicy,
+    RetryableOperationError,
+    RetryPolicy,
+    create_async_http_client,
+    get_transport_kernel,
+    parse_retry_after,
+)
+
 logger = logging.getLogger(__name__)
 
 # Base URL for ClinicalTrials.gov API v2
@@ -44,16 +54,51 @@ class ClinicalTrialsClient:
         """
         self.timeout = timeout
         self._client: httpx.AsyncClient | None = None
+        self._transport_kernel = get_transport_kernel()
+
+    def _build_execution_policy(self) -> RequestExecutionPolicy:
+        return RequestExecutionPolicy(
+            service_name="clinical-trials",
+            timeout=self.timeout,
+            retry=RetryPolicy(max_attempts=3, base_delay=0.5, max_delay=10.0),
+            circuit_breaker_policy=CircuitBreakerPolicy(
+                name="clinical-trials",
+                failure_threshold=5,
+                recovery_timeout=30.0,
+                half_open_max_calls=2,
+            ),
+        )
+
+    async def _execute_request(
+        self,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+    ) -> httpx.Response:
+        async def do_request() -> httpx.Response:
+            response = await self.client.get(f"{BASE_URL}{path}", params=params)
+            if response.status_code in {408, 425, 429, 500, 502, 503, 504}:
+                raise RetryableOperationError(
+                    f"ClinicalTrials.gov returned HTTP {response.status_code}",
+                    retry_after=parse_retry_after(response.headers.get("Retry-After")),
+                    status_code=response.status_code,
+                )
+            return response
+
+        return await self._transport_kernel.execute(do_request, policy=self._build_execution_policy())
 
     @property
     def client(self) -> httpx.AsyncClient:
         """Lazy-init HTTP client."""
         if self._client is None or self._client.is_closed:
-            self._client = httpx.AsyncClient(
+            self._client = create_async_http_client(
                 timeout=self.timeout,
                 headers={"Accept": "application/json"},
             )
-        return self._client
+        client = self._client
+        if client is None:
+            raise RuntimeError("ClinicalTrials client initialization failed")
+        return client
 
     async def search(
         self,
@@ -93,7 +138,7 @@ class ClinicalTrialsClient:
             if status:
                 params["filter.overallStatus"] = ",".join(status)
 
-            response = await self.client.get(f"{BASE_URL}/studies", params=params)
+            response = await self._execute_request("/studies", params=params)
             response.raise_for_status()
 
             data = response.json()
@@ -174,7 +219,7 @@ class ClinicalTrialsClient:
             if not nct_id.startswith("NCT"):
                 nct_id = f"NCT{nct_id}"
 
-            response = await self.client.get(f"{BASE_URL}/studies/{nct_id}")
+            response = await self._execute_request(f"/studies/{nct_id}")
 
             if response.status_code == 404:
                 return None

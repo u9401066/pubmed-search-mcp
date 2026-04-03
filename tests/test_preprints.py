@@ -4,13 +4,31 @@ Tests for preprint sources (arXiv, medRxiv, bioRxiv).
 
 from __future__ import annotations
 
-import pytest
+from unittest.mock import AsyncMock, patch
 
 from pubmed_search.infrastructure.sources.preprints import (
     ArXivClient,
+    MedBioRxivClient,
     PreprintArticle,
     PreprintSearcher,
 )
+
+ARXIV_ATOM_RESPONSE = """<?xml version='1.0' encoding='UTF-8'?>
+<feed xmlns='http://www.w3.org/2005/Atom' xmlns:arxiv='http://arxiv.org/schemas/atom'>
+    <entry>
+        <id>http://arxiv.org/abs/2301.12345v1</id>
+        <updated>2023-02-01T00:00:00Z</updated>
+        <published>2023-01-15T00:00:00Z</published>
+        <title>Test Paper</title>
+        <summary>This is a test abstract.</summary>
+        <author><name>Author One</name></author>
+        <author><name>Author Two</name></author>
+        <category term='q-bio.QM' />
+        <link title='pdf' href='https://arxiv.org/pdf/2301.12345.pdf' />
+        <arxiv:doi>10.1000/test</arxiv:doi>
+    </entry>
+</feed>
+"""
 
 
 class TestArXivClient:
@@ -19,24 +37,24 @@ class TestArXivClient:
     async def test_arxiv_search_basic(self):
         """Test basic arXiv search."""
         client = ArXivClient(timeout=30.0)
-        results = await client.search("machine learning healthcare", limit=3)
+        with patch.object(ArXivClient, "_make_request", new=AsyncMock(return_value=ARXIV_ATOM_RESPONSE)):
+            results = await client.search("machine learning healthcare", limit=3)
 
-        # Should return list (may be empty if API issues)
         assert isinstance(results, list)
-
-        # If we got results, check structure
-        if results:
-            article = results[0]
-            assert isinstance(article, PreprintArticle)
-            assert article.source == "arxiv"
-            assert article.title
+        assert len(results) == 1
+        article = results[0]
+        assert isinstance(article, PreprintArticle)
+        assert article.source == "arxiv"
+        assert article.title == "Test Paper"
 
     async def test_arxiv_search_with_categories(self):
         """Test arXiv search with category filter."""
         client = ArXivClient(timeout=30.0)
-        results = await client.search("neural network", limit=3, categories=["q-bio", "cs.AI"])
+        with patch.object(ArXivClient, "_make_request", new=AsyncMock(return_value=ARXIV_ATOM_RESPONSE)):
+            results = await client.search("neural network", limit=3, categories=["q-bio", "cs.AI"])
 
         assert isinstance(results, list)
+        assert len(results) == 1
 
     async def test_preprint_article_to_dict(self):
         """Test PreprintArticle serialization."""
@@ -65,8 +83,23 @@ class TestArXivClient:
 class TestPreprintSearcher:
     """Tests for unified preprint searcher."""
 
-    async def test_search_all_sources(self):
+    @patch.object(ArXivClient, "search", new_callable=AsyncMock)
+    async def test_search_all_sources(self, mock_arxiv):
         """Test searching across all preprint sources."""
+        mock_arxiv.return_value = [
+            PreprintArticle(
+                id="1",
+                title="arXiv paper",
+                abstract="",
+                authors=[],
+                published="2024-01-01",
+                updated=None,
+                source="arxiv",
+                categories=["q-bio.QM"],
+                pdf_url=None,
+                doi=None,
+            )
+        ]
         searcher = PreprintSearcher()
         results = await searcher.search(
             query="COVID-19 vaccine",
@@ -79,9 +112,27 @@ class TestPreprintSearcher:
         assert "articles" in results
         assert "by_source" in results
         assert "total" in results
+        assert results["total"] == 1
 
-    async def test_search_medical_preprints(self):
+    @patch.object(MedBioRxivClient, "search_medrxiv", new_callable=AsyncMock)
+    @patch.object(ArXivClient, "search", new_callable=AsyncMock)
+    async def test_search_medical_preprints(self, mock_arxiv, mock_medrxiv):
         """Test convenience method for medical preprints."""
+        mock_arxiv.return_value = []
+        mock_medrxiv.return_value = [
+            PreprintArticle(
+                id="2",
+                title="medRxiv paper",
+                abstract="",
+                authors=["Author One"],
+                published="2024-01-02",
+                updated=None,
+                source="medrxiv",
+                categories=["Anesthesiology"],
+                pdf_url=None,
+                doi="10.1101/2024.01.02.123456",
+            )
+        ]
         searcher = PreprintSearcher()
         results = await searcher.search_medical_preprints(
             query="anesthesia",
@@ -89,8 +140,8 @@ class TestPreprintSearcher:
         )
 
         assert "articles" in results
-        # Medical preprints uses medRxiv + arXiv q-bio
-        assert "medrxiv" in results["sources_searched"] or "arxiv" in results["sources_searched"]
+        assert results["total"] == 1
+        assert "medrxiv" in results["sources_searched"]
 
 
 class TestIcdDetection:
@@ -117,7 +168,3 @@ class TestIcdDetection:
         # Test ICD-9 codes (with decimals included)
         assert "250" in ICD9_PATTERN.findall("250 diabetes")
         assert "410.1" in ICD9_PATTERN.findall("410.1 MI")
-
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])

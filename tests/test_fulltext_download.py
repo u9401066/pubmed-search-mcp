@@ -16,6 +16,35 @@ from pubmed_search.infrastructure.sources.fulltext_download import (
     get_fulltext_downloader,
 )
 
+
+class _MockStreamResponse:
+    def __init__(
+        self, *, status_code: int = 200, headers: dict[str, str] | None = None, chunks: list[bytes] | None = None
+    ):
+        self.status_code = status_code
+        self.headers = headers or {}
+        self._chunks = chunks or []
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    async def aiter_bytes(self, _chunk_size: int):
+        for chunk in self._chunks:
+            yield chunk
+
+
+class _MockAsyncClient:
+    def __init__(self, responses: dict[str, _MockStreamResponse]):
+        self._responses = responses
+
+    def stream(self, _method: str, url: str, headers: dict | None = None):
+        del headers
+        return self._responses[url]
+
+
 # ============================================================
 # Data Classes
 # ============================================================
@@ -113,6 +142,8 @@ class TestGetPdfLinks:
     async def test_with_doi(self):
         d = FulltextDownloader()
         with (
+            patch.object(d, "_get_openurl_links", new_callable=AsyncMock, return_value=[]),
+            patch.object(d, "_get_doi_redirect_link", new_callable=AsyncMock, return_value=[]),
             patch.object(d, "_get_unpaywall_links", new_callable=AsyncMock) as mock_uw,
             patch.object(d, "_get_crossref_links", new_callable=AsyncMock) as mock_cr,
             patch.object(d, "_get_core_links", new_callable=AsyncMock) as mock_core,
@@ -131,6 +162,28 @@ class TestGetPdfLinks:
 
             links = await d.get_pdf_links(doi="10.1234/test")
             assert len(links) == 1
+
+    @pytest.mark.asyncio
+    async def test_adds_doi_landing_page_fallback(self):
+        d = FulltextDownloader()
+        with (
+            patch.object(d, "_get_openurl_links", new_callable=AsyncMock, return_value=[]),
+            patch.object(d, "_get_unpaywall_links", new_callable=AsyncMock, return_value=[]),
+            patch.object(d, "_get_crossref_links", new_callable=AsyncMock, return_value=[]),
+            patch.object(d, "_get_core_links", new_callable=AsyncMock, return_value=[]),
+            patch.object(d, "_get_semantic_scholar_links", new_callable=AsyncMock, return_value=[]),
+            patch.object(d, "_get_openalex_links", new_callable=AsyncMock, return_value=[]),
+            patch.object(d, "_get_doaj_links", new_callable=AsyncMock, return_value=[]),
+            patch.object(d, "_get_zenodo_links", new_callable=AsyncMock, return_value=[]),
+        ):
+            links = await d.get_pdf_links(doi="10.1234/test")
+
+        assert any(
+            link.source == PDFSource.DOI_REDIRECT
+            and link.url == "https://doi.org/10.1234/test"
+            and link.is_direct_pdf is False
+            for link in links
+        )
 
     @pytest.mark.asyncio
     async def test_deduplicates_urls(self):
@@ -202,6 +255,22 @@ class TestGetPMCLinks:
         assert "123" in links[0].url
 
 
+class TestInstitutionalResolverLinks:
+    @pytest.mark.asyncio
+    async def test_get_openurl_links(self):
+        d = FulltextDownloader()
+        with patch(
+            "pubmed_search.infrastructure.sources.openurl.get_openurl_link",
+            return_value="https://resolver.example.edu/openurl?id=123",
+        ):
+            links = await d._get_openurl_links("12345", "10.1234/test")
+
+        assert len(links) == 1
+        assert links[0].source == PDFSource.INSTITUTIONAL_RESOLVER
+        assert links[0].access_type == "subscription"
+        assert links[0].is_direct_pdf is False
+
+
 # ============================================================
 # _get_arxiv_link
 # ============================================================
@@ -269,6 +338,7 @@ class TestDownloadPdf:
         with patch.object(d, "get_pdf_links", new_callable=AsyncMock, return_value=[]):
             result = await d.download_pdf(doi="10.1234/fake")
             assert result.success is False
+            assert result.error is not None
             assert "No PDF links" in result.error
 
     @pytest.mark.asyncio
@@ -317,6 +387,59 @@ class TestDownloadPdf:
             # CORE should be tried first
             first_call_url = mock_dl.call_args_list[0][0][0]
             assert "b.com" in first_call_url
+
+
+class TestLandingPageResolution:
+    @pytest.mark.asyncio
+    async def test_extract_pdf_candidates_from_html(self):
+        d = FulltextDownloader()
+        html = """
+                <html>
+                    <head>
+                        <meta name="citation_pdf_url" content="/downloads/paper.pdf" />
+                    </head>
+                    <body>
+                        <a href="/downloads/paper.pdf">Download PDF</a>
+                    </body>
+                </html>
+                """
+
+        candidates = d._extract_pdf_candidates_from_html("https://publisher.example.edu/article", html)
+
+        assert candidates == ["https://publisher.example.edu/downloads/paper.pdf"]
+
+    @pytest.mark.asyncio
+    async def test_download_from_url_impl_follows_landing_page_pdf(self):
+        d = FulltextDownloader()
+        landing_url = "https://resolver.example.edu/openurl?id=1"
+        pdf_url = "https://resolver.example.edu/downloads/paper.pdf"
+        landing_page = b"""
+                <html>
+                    <head>
+                        <meta name=\"citation_pdf_url\" content=\"/downloads/paper.pdf\" />
+                    </head>
+                </html>
+                """
+        pdf_bytes = b"%PDF-1.4 test content"
+        mock_client = _MockAsyncClient(
+            {
+                landing_url: _MockStreamResponse(
+                    headers={"Content-Type": "text/html"},
+                    chunks=[landing_page],
+                ),
+                pdf_url: _MockStreamResponse(
+                    headers={"Content-Type": "application/pdf"},
+                    chunks=[pdf_bytes],
+                ),
+            }
+        )
+
+        with patch.object(d, "_get_client", new_callable=AsyncMock, return_value=mock_client):
+            result = await d._download_from_url_impl(landing_url, PDFSource.INSTITUTIONAL_RESOLVER)
+
+        assert result.success is True
+        assert result.is_pdf is True
+        assert result.url == pdf_url
 
 
 # ============================================================
@@ -377,6 +500,40 @@ class TestGetFulltext:
             assert result.content_type == "pdf"
             assert result.text_content == "Extracted text from PDF"
             assert result.extraction_method == "pdf_extraction"
+
+    @pytest.mark.asyncio
+    async def test_extract_text_adds_resolved_pdf_link(self):
+        d = FulltextDownloader()
+        resolved_pdf_url = "https://publisher.example.edu/paper.pdf"
+        with (
+            patch.object(
+                d,
+                "get_pdf_links",
+                new_callable=AsyncMock,
+                return_value=[
+                    PDFLink(
+                        url="https://resolver.example.edu/openurl?id=1",
+                        source=PDFSource.INSTITUTIONAL_RESOLVER,
+                        access_type="subscription",
+                        is_direct_pdf=False,
+                    )
+                ],
+            ),
+            patch.object(d, "download_pdf", new_callable=AsyncMock) as mock_dl,
+            patch.object(d, "_extract_pdf_text", new_callable=AsyncMock, return_value="Institutional fulltext"),
+        ):
+            mock_dl.return_value = DownloadResult(
+                success=True,
+                content=b"%PDF-1.4 test content",
+                source=PDFSource.INSTITUTIONAL_RESOLVER,
+                url=resolved_pdf_url,
+                file_size=128,
+            )
+            result = await d.get_fulltext(doi="10.1234/test", strategy="extract_text")
+
+        assert result.resolved_pdf_url == resolved_pdf_url
+        assert result.pdf_links[0].url == resolved_pdf_url
+        assert result.pdf_links[0].access_type == "subscription"
 
 
 # ============================================================
@@ -460,8 +617,9 @@ class TestClose:
     @pytest.mark.asyncio
     async def test_close_with_client(self):
         d = FulltextDownloader()
-        d._client = MagicMock()
-        d._client.is_closed = False
-        d._client.aclose = AsyncMock()
+        mock_client = MagicMock()
+        mock_client.is_closed = False
+        mock_client.aclose = AsyncMock()
+        d._client = mock_client
         await d.close()
-        d._client_called = True  # aclose was called
+        mock_client.aclose.assert_awaited_once()
