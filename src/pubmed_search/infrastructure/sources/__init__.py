@@ -276,6 +276,10 @@ async def _search_alternate_source_unchecked(
         )
         return result.get("results", [])
 
+    if source != "core":
+        logger.warning(f"Unknown alternate source requested: {source}")
+        return []
+
     client = get_core_client()
     result = await client.search(
         query=query,

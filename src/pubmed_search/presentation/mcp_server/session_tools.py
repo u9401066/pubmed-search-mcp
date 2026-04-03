@@ -17,7 +17,7 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Callable, TypeVar, cast
 
 if TYPE_CHECKING:
     from mcp.server.fastmcp import Context, FastMCP
@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 _JSON_MIME_TYPE = "application/json"
+ResourceFunc = TypeVar("ResourceFunc", bound=Callable[..., str])
 SESSION_RESOURCE_URIS = (
     "session://last-search",
     "session://last-search/pmids",
@@ -43,6 +44,16 @@ def _session_resource_kwargs(*, name: str, title: str, description: str) -> dict
         "mime_type": _JSON_MIME_TYPE,
         "meta": {"pubmedSearch": {"scope": "session", "dynamic": True, "format": "json"}},
     }
+
+
+def _session_resource_decorator(
+    mcp: FastMCP, uri: str, **kwargs: object
+) -> Callable[[ResourceFunc], ResourceFunc]:
+    """Build a resource decorator that falls back for test doubles without keyword support."""
+    resource = cast("Any", mcp.resource)
+    with contextlib.suppress(TypeError):
+        return cast("Callable[[ResourceFunc], ResourceFunc]", resource(uri, **kwargs))
+    return cast("Callable[[ResourceFunc], ResourceFunc]", resource(uri))
 
 
 async def notify_session_resources_updated(ctx: Context | None) -> None:
@@ -301,7 +312,8 @@ def register_session_resources(mcp: FastMCP, session_manager: SessionManager):
     Agent doesn't need to use these for normal operation.
     """
 
-    @mcp.resource(
+    @_session_resource_decorator(
+        mcp,
         "session://last-search",
         **cast(
             "Any",
@@ -333,7 +345,8 @@ def register_session_resources(mcp: FastMCP, session_manager: SessionManager):
             ensure_ascii=False,
         )
 
-    @mcp.resource(
+    @_session_resource_decorator(
+        mcp,
         "session://last-search/pmids",
         **cast(
             "Any",
@@ -362,7 +375,8 @@ def register_session_resources(mcp: FastMCP, session_manager: SessionManager):
             ensure_ascii=False,
         )
 
-    @mcp.resource(
+    @_session_resource_decorator(
+        mcp,
         "session://last-search/results",
         **cast(
             "Any",
@@ -395,7 +409,8 @@ def register_session_resources(mcp: FastMCP, session_manager: SessionManager):
             ensure_ascii=False,
         )
 
-    @mcp.resource(
+    @_session_resource_decorator(
+        mcp,
         "session://context",
         **cast(
             "Any",

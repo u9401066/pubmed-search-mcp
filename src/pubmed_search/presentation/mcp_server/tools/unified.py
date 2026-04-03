@@ -33,7 +33,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from typing import TYPE_CHECKING, Literal, Union
+from typing import TYPE_CHECKING, Any, Callable, Literal, TypeVar, Union, cast
 
 from mcp.server.fastmcp import Context  # noqa: TC002 - FastMCP needs runtime access for type annotation injection
 
@@ -108,6 +108,7 @@ if TYPE_CHECKING:
     from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
 logger = logging.getLogger(__name__)
+ToolFunc = TypeVar("ToolFunc", bound=Callable[..., Any])
 
 # ---------------------------------------------------------------------------
 # Backward-compatible re-exports (used by tests and __init__.py)
@@ -157,10 +158,21 @@ __all__ = [
 # ============================================================================
 
 
+def _tool_decorator_with_optional_meta(mcp: FastMCP) -> Callable[[ToolFunc], ToolFunc]:
+    """Return a tool decorator that tolerates simple test doubles without keyword support."""
+    tool = cast("Any", mcp.tool)
+    with contextlib.suppress(TypeError):
+        return cast(
+            "Callable[[ToolFunc], ToolFunc]",
+            tool(meta={"pubmedSearch": {"experimentalTaskSupport": "optional"}}),
+        )
+    return cast("Callable[[ToolFunc], ToolFunc]", tool())
+
+
 def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
     """Register unified search MCP tools."""
 
-    @mcp.tool(meta={"pubmedSearch": {"experimentalTaskSupport": "optional"}})
+    @_tool_decorator_with_optional_meta(mcp)
     async def unified_search(
         query: str,
         limit: Union[int, str] = 10,

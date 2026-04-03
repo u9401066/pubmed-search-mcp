@@ -174,7 +174,7 @@ class SourceAdapterCall(Generic[AdapterItem]):
         [],
         Awaitable[
             SourceAdapterResult[AdapterItem]
-            ^ TwoItemSourceAdapterOutcome
+            | TwoItemSourceAdapterOutcome
             | ThreeItemSourceAdapterOutcome
             | list[AdapterItem]
             | AdapterItem
