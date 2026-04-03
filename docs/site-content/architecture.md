@@ -1,3 +1,5 @@
+<!-- Generated from ARCHITECTURE.md by scripts/build_docs_site.py -->
+
 # PubMed Search MCP - 系統架構文件
 
 > Current architecture reference for the active codebase and deployment surface.
@@ -483,7 +485,7 @@ flowchart LR
 
 ## 相關文件
 
-- [DEPLOYMENT.md](DEPLOYMENT.md): 實際部署與啟動方式
-- [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md): 各 MCP client 設定
-- [docs/PIPELINE_PERSISTENCE_DESIGN.md](docs/PIPELINE_PERSISTENCE_DESIGN.md): pipeline 詳細設計與未完成部分
-- [src/pubmed_search/presentation/mcp_server/TOOLS_INDEX.md](src/pubmed_search/presentation/mcp_server/TOOLS_INDEX.md): 工具索引
+- [DEPLOYMENT.md](#/deployment): 實際部署與啟動方式
+- [docs/INTEGRATIONS.md](#/troubleshooting): 各 MCP client 設定
+- [docs/PIPELINE_PERSISTENCE_DESIGN.md](PIPELINE_PERSISTENCE_DESIGN.md): pipeline 詳細設計與未完成部分
+- [src/pubmed_search/presentation/mcp_server/TOOLS_INDEX.md](#/quick-reference): 工具索引

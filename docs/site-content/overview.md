@@ -1,3 +1,5 @@
+<!-- Generated from README.md by scripts/build_docs_site.py -->
+
 # PubMed Search MCP
 
 [![PyPI version](https://badge.fury.io/py/pubmed-search-mcp.svg)](https://badge.fury.io/py/pubmed-search-mcp)
@@ -8,7 +10,7 @@
 
 > **Professional Literature Research Assistant for AI Agents** - More than just an API wrapper
 
-![PubMed Search MCP Architecture](docs/images/architecture-overview.jpg)
+![PubMed Search MCP Architecture](images/architecture-overview.jpg)
 
 A Domain-Driven Design (DDD) based MCP server that serves as an intelligent research assistant for AI agents, providing task-oriented literature search and analysis capabilities.
 
@@ -16,11 +18,11 @@ A Domain-Driven Design (DDD) based MCP server that serves as an intelligent rese
 
 - 🔧 **40 MCP Tools** - Streamlined PubMed, Europe PMC, CORE, NCBI database access, and **Research Timeline / Context Graph**
 - 🖼️ **OA Figure Extraction** - Pull figure captions, direct image URLs, and PDF links from PMC Open Access articles
-- 📘 **Docs Site** - Browse overview, architecture, source contracts, quick reference, troubleshooting, and deployment in one place at [docs/index.html](docs/index.html)
+- 📘 **Docs Site** - Browse overview, architecture, source contracts, quick reference, troubleshooting, and deployment in one place at [docs/index.html](index.html)
 - 📚 **24 Claude Skills** - Ready-to-use workflow guides for AI agents (Claude Code-specific)
 - 📖 **Copilot Instructions** - VS Code GitHub Copilot integration guide
 
-**🌐 Language**: **English** | [繁體中文](README.zh-TW.md)
+**🌐 Language**: **English** | [繁體中文](#/overview-zh)
 
 ---
 
@@ -214,7 +216,7 @@ NCBI_EMAIL=your@email.com uvx pubmed-search-mcp
 ```
 
 > **Note**: `NCBI_EMAIL` is required by NCBI API policy. Optionally set `NCBI_API_KEY` for higher rate limits (10 req/s vs 3 req/s).
-> 📖 **Detailed Integration Guides**: See [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md) for all environment variables, Copilot Studio setup, Docker deployment, proxy configuration, and troubleshooting.
+> 📖 **Detailed Integration Guides**: See [docs/INTEGRATIONS.md](#/troubleshooting) for all environment variables, Copilot Studio setup, Docker deployment, proxy configuration, and troubleshooting.
 
 ---
 
@@ -859,7 +861,7 @@ unified_search(query="I10 treatment outcomes")
 "(I10 OR Hypertension[MeSH]) treatment outcomes"
 ```
 
-> 📖 **Full architecture documentation**: [ARCHITECTURE.md](ARCHITECTURE.md)
+> 📖 **Full architecture documentation**: [ARCHITECTURE.md](#/architecture)
 
 ### MeSH Auto-Expansion + Query Analysis
 
@@ -977,8 +979,8 @@ uv run python run_server.py --transport streamable-http --copilot-compatible --p
 
 > 📖 **More documentation**:
 >
-> - Architecture → [ARCHITECTURE.md](ARCHITECTURE.md)
-> - Deployment guide → [DEPLOYMENT.md](DEPLOYMENT.md)
+> - Architecture → [ARCHITECTURE.md](#/architecture)
+> - Deployment guide → [DEPLOYMENT.md](#/deployment)
 > - Copilot Studio → [copilot-studio/README.md](copilot-studio/README.md)
 
 ---
@@ -996,7 +998,7 @@ uv run python run_server.py --transport streamable-http --copilot-compatible --p
 | **No Database** | Stateless | No SQL injection risk |
 | **No Secrets** | In-memory only | No credentials stored |
 
-See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed deployment instructions.
+See [DEPLOYMENT.md](#/deployment) for detailed deployment instructions.
 
 ---
 

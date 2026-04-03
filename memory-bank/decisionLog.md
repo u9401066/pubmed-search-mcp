@@ -2,6 +2,9 @@
 
 | Date | Decision | Rationale |
 |------|----------|-----------|
+| 2026-04-03 | **建立 shared source adapter contract 層** | 多來源 orchestration 需要一致的 partial-failure、status、error envelope，不應在 search/fulltext/image 各自重造。 |
+| 2026-04-03 | **建立 shared cache substrate** | session/entity 類快取已經出現重複結構；收斂為 memory/json backend + 統一 stats/warmup/invalidation API。 |
+| 2026-04-03 | **將 docs site 產物納入版本控制** | README、ARCH、deployment、tool index 已足夠形成靜態 docs surface；直接提交生成結果可讓發布版立即可瀏覽。 |
 | 2026-03-17 | **PubTatorClient 改走 BaseAPIClient** | PubTator 原本手寫 retry / rate limit / request loop，與專案既有 `BaseAPIClient` 重複。統一路徑可避免 transport 行為漂移。 |
 | 2026-03-17 | **ICiteMixin 改用 cachetools.TTLCache** | 專案已依賴 `cachetools`，不再維護第二套手寫 TTL cache；保留薄封裝即可。 |
 | 2026-03-17 | **FastMCP Context 擴展到長任務工具** | `unified_search` 之外的 timeline 與 Europe PMC 長任務也需要 progress/log，降低 Agent 黑箱等待時間。 |

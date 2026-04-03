@@ -7,24 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Planned
+
+- PRISMA flow tracking (init_prisma_flow, record_screening, get_prisma_diagram)
+- Evidence level classification (Oxford CEBM I-V)
+- Quality assessment templates (RoB 2, ROBINS-I, NOS)
+- Research trend analysis (keyword frequency, publication trends)
+- Chart generation (PNG output)
+
+---
+
+## [0.5.0] - 2026-04-03
+
 ### Added
+
+- Docs site surface under `docs/` with generated browseable pages, source-contract reference, and a site build script
+- Shared orchestration primitives for multi-source adapters and cache backends
+  - `shared/source_contracts.py` normalizes adapter execution, partial failures, and source-level error envelopes
+  - `shared/cache_substrate.py` adds reusable in-memory / JSON-backed cache stores plus deterministic tests
+- Release hardening utilities
+  - `scripts/run_mutation_gate.py` adds deterministic mutation-gate coverage for core shared modules
+  - `tests/test_mcp_protocol_in_memory.py` exercises the real FastMCP server in-memory
 - Expanded MCP SDK usage beyond `unified_search`
   - Timeline tools now emit progress updates through FastMCP `Context`
   - `get_fulltext` and `get_text_mined_terms` now emit progress updates, and fulltext retrieval logs degraded-source events to MCP clients
   - New dynamic session resources: `session://last-search`, `session://last-search/pmids`, `session://last-search/results`
 
 ### Changed
-- Raised MCP dependency floor to `mcp>=1.23.3` to match the runtime APIs now required by the server (`Context.report_progress`, `Context.log`, `FastMCP.list_tools`)
+
+- Raised MCP dependency floor to `mcp>=1.27` to match the runtime APIs now required by the server (`Context.report_progress`, `Context.log`, `FastMCP.list_tools`, task support)
 - Reduced duplicated infrastructure in external clients
   - `PubTatorClient` now uses the shared `BaseAPIClient` transport path instead of maintaining its own retry/rate-limit/request loop
   - `ICiteMixin` now uses `cachetools.TTLCache` instead of a handwritten in-memory TTL cache
+- Refactored image search and timeline policy logic into smaller, inspectable modules
+  - Image query advising now separates policy tables, scoring, aggregation, and source adapter boundaries
+  - Timeline milestone / landmark logic now separates policy tables, diagnostics, and scoring helpers
+- Hardened runtime and local release workflows
+  - `run_server.py`, `run_copilot.py`, Docker/start scripts, and Copilot smoke-test helpers now align around the current local MCP runtime
+  - Test and mutation scripts now run through `uv` consistently
+- Promoted PMC Open Access figure extraction as a first-class workflow in the public README guides
+  - `get_article_figures` is now documented as the primary figure-first exploration path
+  - `get_fulltext(include_figures=True)` is now documented as the fulltext+figures path for OA papers
 
-### Planned
-- PRISMA flow tracking (init_prisma_flow, record_screening, get_prisma_diagram)
-- Evidence level classification (Oxford CEBM I-V)
-- Quality assessment templates (RoB 2, ROBINS-I, NOS)
-- Research trend analysis (keyword frequency, publication trends)
-- Chart generation (PNG output)
+### Fixed
+
+- Release metadata is now consistent across package and server surfaces (`pyproject.toml`, `pubmed_search.__version__`, tool package headers)
+- Source client overrides now accept the shared `params=` execution path used by `BaseAPIClient`
+- Unpaywall email resolution now falls back to `NCBI_EMAIL` instead of defaulting to a fake example address
+- MCP lifecycle logs now use ASCII separators so Windows terminal output no longer garbles startup / shutdown messages
 
 ---
 
@@ -1903,7 +1933,9 @@ get_citation_metrics(pmids="last", min_rcr=1.5, min_percentile=75)
 - [PyPI Package](https://pypi.org/project/pubmed-search-mcp/)
 - [Smithery](https://smithery.ai/server/pubmed-search-mcp)
 
-[Unreleased]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.4.5...HEAD
+[Unreleased]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/u9401066/pubmed-search-mcp/releases/tag/v0.5.0
+[0.4.6]: https://github.com/u9401066/pubmed-search-mcp/releases/tag/v0.4.6
 [0.4.5]: https://github.com/u9401066/pubmed-search-mcp/releases/tag/v0.4.5
 [0.1.0]: https://github.com/u9401066/pubmed-search-mcp/releases/tag/v0.1.0
 [0.0.1]: https://github.com/u9401066/pubmed-search-mcp/releases/tag/v0.0.1

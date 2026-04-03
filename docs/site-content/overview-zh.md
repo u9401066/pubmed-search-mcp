@@ -1,3 +1,5 @@
+<!-- Generated from README.zh-TW.md by scripts/build_docs_site.py -->
+
 # PubMed Search MCP
 
 [![PyPI version](https://badge.fury.io/py/pubmed-search-mcp.svg)](https://badge.fury.io/py/pubmed-search-mcp)
@@ -14,11 +16,11 @@
 
 - 🔧 **40 個 MCP 工具** - 精簡的 PubMed、Europe PMC、CORE、NCBI 資料庫存取，及**研究時間軸 / 脈絡圖**功能
 - 🖼️ **OA 圖表擷取** - 從 PMC Open Access 論文直接抽出 figure caption、image URL 與 PDF 連結
-- 📘 **Docs Site** - 用網站方式整合 overview、架構、source contract、quick reference、troubleshooting 與 deployment，入口在 [docs/index.html](docs/index.html)
+- 📘 **Docs Site** - 用網站方式整合 overview、架構、source contract、quick reference、troubleshooting 與 deployment，入口在 [docs/index.html](index.html)
 - 📚 **24 個 Claude Skills** - AI Agent 可直接使用的工作流程指南（Claude Code 專屬）
 - 📖 **Copilot 整合指南** - VS Code GitHub Copilot 使用說明
 
-**🌐 語言**: [English](README.md) | **繁體中文**
+**🌐 語言**: [English](#/overview) | **繁體中文**
 
 ---
 
@@ -212,7 +214,7 @@ NCBI_EMAIL=your@email.com uvx pubmed-search-mcp
 ```
 
 > **注意**: `NCBI_EMAIL` 是 NCBI API 政策要求的必填項。可選擇性設定 `NCBI_API_KEY` 以獲得更高的 API 限額（10 req/s vs 3 req/s）。
-> 📖 **完整整合指南**：詳見 [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md)，包含所有環境變數、Copilot Studio 設定、Docker 部署、代理設定與疑難排解。
+> 📖 **完整整合指南**：詳見 [docs/INTEGRATIONS.md](#/troubleshooting)，包含所有環境變數、Copilot Studio 設定、Docker 部署、代理設定與疑難排解。
 
 ---
 
@@ -856,7 +858,7 @@ unified_search(query="I10 treatment outcomes")
 "(I10 OR Hypertension[MeSH]) treatment outcomes"
 ```
 
-> 📖 **完整架構說明**：[ARCHITECTURE.md](ARCHITECTURE.md)
+> 📖 **完整架構說明**：[ARCHITECTURE.md](#/architecture)
 
 ### MeSH 自動擴展 + 查詢分析
 
@@ -974,8 +976,8 @@ uv run python run_server.py --transport streamable-http --copilot-compatible --p
 
 > 📖 **更多文件**:
 >
-> - 架構 → [ARCHITECTURE.md](ARCHITECTURE.md)
-> - 部署指南 → [DEPLOYMENT.md](DEPLOYMENT.md)
+> - 架構 → [ARCHITECTURE.md](#/architecture)
+> - 部署指南 → [DEPLOYMENT.md](#/deployment)
 > - Copilot Studio → [copilot-studio/README.md](copilot-studio/README.md)
 
 ---
@@ -993,7 +995,7 @@ uv run python run_server.py --transport streamable-http --copilot-compatible --p
 | **No Database** | 無狀態 | 無 SQL 注入風險 |
 | **No Secrets** | 僅記憶體 | 不儲存憑證 |
 
-詳見 [DEPLOYMENT.md](DEPLOYMENT.md) 完整部署說明。
+詳見 [DEPLOYMENT.md](#/deployment) 完整部署說明。
 
 ---
 

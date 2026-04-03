@@ -1,3 +1,5 @@
+<!-- Generated from docs/INTEGRATIONS.md by scripts/build_docs_site.py -->
+
 # External Integrations Guide
 
 Detailed setup guide for integrating PubMed Search MCP with various AI clients and platforms.
@@ -469,4 +471,4 @@ docker run -p 8765:8765 \
 docker compose -f docker-compose.https.yml up -d
 ```
 
-See [DEPLOYMENT.md](../DEPLOYMENT.md) for full production deployment instructions.
+See [DEPLOYMENT.md](#/deployment) for full production deployment instructions.

@@ -1,3 +1,5 @@
+<!-- Generated from DEPLOYMENT.md by scripts/build_docs_site.py -->
+
 # PubMed Search MCP 部署指南
 
 這份文件描述目前仍受支援、且已與實際程式碼對齊的部署方式。
@@ -231,6 +233,6 @@ az containerapp create \
 
 ## 相關文件
 
-- [ARCHITECTURE.md](ARCHITECTURE.md)
-- [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md)
+- [ARCHITECTURE.md](#/architecture)
+- [docs/INTEGRATIONS.md](#/troubleshooting)
 - [copilot-studio/README.md](copilot-studio/README.md)

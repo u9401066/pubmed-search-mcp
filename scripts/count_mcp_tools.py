@@ -492,7 +492,7 @@ def _generate_skill_tools_reference(stats: dict, tool_details: dict) -> str:
     lines = [
         "---",
         "name: pubmed-mcp-tools-reference",
-        f"description: Complete reference for all {total} PubMed Search MCP tools. Triggers: 工具列表, all tools, 完整功能, tool reference, 有哪些工具",
+        f'description: "Complete reference for all {total} PubMed Search MCP tools. Triggers: 工具列表, all tools, 完整功能, tool reference, 有哪些工具"',
         "---",
         "",
         "# PubMed Search MCP 工具完整參考",

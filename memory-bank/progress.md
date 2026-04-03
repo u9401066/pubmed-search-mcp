@@ -1,6 +1,15 @@
-# Progress (Updated: 2026-03-17)
+# Progress (Updated: 2026-04-03)
 
 ## Done
+
+### 2026-04-03: v0.5.0 — Docs Site + Source Contracts + Release Hardening
+- ✅ **Docs site** — `docs/index.html`, generated `docs/site-content/*`, `docs/site.css`, `docs/site.js`, `scripts/build_docs_site.py`
+- ✅ **Source contracts** — `docs/SOURCE_CONTRACTS.md` clarifies provenance, rate policy, credentials, and OA/fulltext promises
+- ✅ **Shared adapter/cache substrate** — `shared/source_contracts.py` + `shared/cache_substrate.py`
+- ✅ **Image/timeline policy extraction** — split advisor and timeline heuristics into policy/diagnostics modules
+- ✅ **Release hardening** — `scripts/run_mutation_gate.py`, `tests/test_mcp_protocol_in_memory.py`, local MCP RC validation
+- ✅ **0.5.0 blockers fixed** — BaseAPIClient `params=` override mismatch, Unpaywall email fallback, Windows lifecycle log encoding
+- ✅ **Quality gate** — `uv run pre-commit run --all-files` 全綠
 
 ### 2026-03-17: v0.4.5 — MCP SDK 擴充 + 反重造輪子重構
 - ✅ **FastMCP Context 擴充** — timeline tools 與 Europe PMC fulltext/text-mining 支援 progress/log
@@ -64,12 +73,13 @@
 - ✅ docs/IMAGE_SEARCH_API.md 完整重寫
 
 ## Doing
-- (none — ready for tag v0.4.5)
+- `release/v0.5.0` branch 已分段 commit，待 push + tag
 
 ## Next
 
 | 優先級 | 項目 | 說明 |
 |:------:|------|------|
+| ⭐⭐⭐ | Push/tag v0.5.0 | 推送 release branch，建立 `v0.5.0` tag，觸發發布流程 |
 | ⭐⭐⭐ | Session cache dedup cleanup | 評估 `ArticleCache` 與 `SessionManager.article_cache` 是否收斂成單一路徑 |
 | ⭐⭐⭐ | ARCHITECTURE.md 更新 | 仍顯示舊的目錄結構 |
 | ⭐⭐ | Algorithm innovation impl | BM25/RRF/PRF 等算法實作 |
