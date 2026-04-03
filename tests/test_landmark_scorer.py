@@ -109,6 +109,7 @@ class TestLandmarkScore:
         assert score.milestone_confidence == 0.0
         assert score.evidence_quality == 0.0
         assert score.citation_velocity == 0.0
+        assert score.diagnostics == {}
 
 
 # =============================================================================
@@ -283,6 +284,29 @@ class TestLandmarkScorer:
         assert score.citation_velocity > 0
         # Overall should be in (0, 1]
         assert 0 < score.overall <= 1.0
+
+    def test_diagnostics_capture_selected_policies(self, scorer: LandmarkScorer):
+        """Diagnostics should show which policy path produced each component."""
+        article = {"pmid": "1", "year": 2020}
+        metrics = {"nih_percentile": 90.0, "citations_per_year": 20.0}
+        score = scorer.score_article(
+            article,
+            icite_metrics=metrics,
+            source_count=3,
+            milestone_confidence=0.8,
+            evidence_level_score=0.75,
+        )
+        component_hits = score.diagnostics["component_hits"]
+        assert any(
+            hit["component"] == "citation_impact" and hit["policy"] == "nih_percentile" for hit in component_hits
+        )
+        assert any(
+            hit["component"] == "citation_velocity" and hit["policy"] == "citations_per_year" for hit in component_hits
+        )
+        assert any(
+            hit["component"] == "source_agreement" and hit["policy"] == "source_agreement_lookup"
+            for hit in component_hits
+        )
 
     def test_overall_max_capped_at_one(self):
         """Overall should never exceed 1.0."""

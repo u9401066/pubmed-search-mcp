@@ -27,6 +27,7 @@ from pubmed_search.domain.entities.timeline import (
     TimelinePeriod,
 )
 
+from .diagnostics import build_timeline_diagnostics
 from .landmark_scorer import LandmarkScorer, evidence_level_to_score
 from .milestone_detector import MilestoneDetector
 
@@ -146,6 +147,7 @@ class TimelineBuilder:
             max_results=max_events * 3,  # Fetch more, filter to milestones
             sort_by_citations=sort_by_citations,
         )
+        retrieved_count = len(articles)
 
         if not articles:
             logger.warning(f"No articles found for: {topic}")
@@ -156,6 +158,7 @@ class TimelineBuilder:
         # Step 2: Filter by year if specified
         if min_year or max_year:
             articles = self._filter_by_year(articles, min_year, max_year)
+        filtered_count = len(articles)
 
         # Step 3: Compute landmark scores (if enabled)
         landmark_map: dict[str, LandmarkScore] = {}
@@ -169,6 +172,7 @@ class TimelineBuilder:
             )
             # Keep top candidates for milestone detection
             articles = articles[: max_events * 2]
+        candidate_count = len(articles)
 
         # Step 4: Detect milestones
         events: list[TimelineEvent] = []
@@ -203,6 +207,15 @@ class TimelineBuilder:
 
         # Step 5: Build timeline
         landmark_count = sum(1 for e in events if e.landmark_score and e.landmark_score.tier == "landmark")
+        diagnostics = build_timeline_diagnostics(
+            events,
+            source="topic_search",
+            retrieved_count=retrieved_count,
+            filtered_count=filtered_count,
+            candidate_count=candidate_count,
+            include_all=include_all,
+            highlight_landmarks=highlight_landmarks,
+        )
         timeline = ResearchTimeline(
             topic=topic,
             events=events,
@@ -213,6 +226,7 @@ class TimelineBuilder:
                 "highlight_landmarks": highlight_landmarks,
                 "min_year": min_year,
                 "max_year": max_year,
+                "diagnostics": diagnostics,
             },
         )
 
@@ -252,11 +266,20 @@ class TimelineBuilder:
 
         # Detect milestones
         events = self.detector.detect_milestones_batch(articles)
+        diagnostics = build_timeline_diagnostics(
+            events,
+            source="pmid_list",
+            retrieved_count=len(articles),
+            filtered_count=len(articles),
+            candidate_count=len(articles),
+            include_all=False,
+            highlight_landmarks=False,
+        )
 
         timeline = ResearchTimeline(
             topic=topic,
             events=events,
-            metadata={"source": "pmid_list", "pmid_count": len(pmids)},
+            metadata={"source": "pmid_list", "pmid_count": len(pmids), "diagnostics": diagnostics},
         )
 
         if auto_periods and events:

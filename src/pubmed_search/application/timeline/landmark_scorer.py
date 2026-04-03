@@ -42,48 +42,29 @@ from typing import Any
 
 from pubmed_search.domain.entities.timeline import LandmarkScore
 
+from .landmark_policy import (
+    CITATION_IMPACT_POLICIES,
+    CITATION_VELOCITY_POLICIES,
+    DEFAULT_WEIGHTS,
+    EVIDENCE_LEVEL_SCORES,
+    MAX_CITATIONS_FOR_NORMALIZATION,
+    MAX_RCR_FOR_NORMALIZATION,
+    MAX_VELOCITY_FOR_NORMALIZATION,
+    SOURCE_AGREEMENT_SCORES,
+)
+
 logger = logging.getLogger(__name__)
 
-# =============================================================================
-# Configuration Constants
-# =============================================================================
-
-# Default weights for landmark score components
-DEFAULT_WEIGHTS: dict[str, float] = {
-    "citation_impact": 0.35,
-    "source_agreement": 0.15,
-    "milestone_confidence": 0.20,
-    "evidence_quality": 0.15,
-    "citation_velocity": 0.15,
-}
-
-# RCR normalization: RCR 1.0 = field average
-# Log scaling: score = min(1.0, log2(1 + RCR) / log2(1 + MAX_RCR))
-MAX_RCR_FOR_NORMALIZATION = 10.0  # RCR ≥ 10 → max score
-
-# Citation velocity normalization
-MAX_VELOCITY_FOR_NORMALIZATION = 50.0  # ≥ 50 citations/year → max score
-
-# Raw citation count normalization (fallback when RCR unavailable)
-MAX_CITATIONS_FOR_NORMALIZATION = 500  # ≥ 500 citations → max score
-
-# Source agreement scoring table
-SOURCE_AGREEMENT_SCORES: dict[int, float] = {
-    1: 0.1,  # Single source (minimal validation)
-    2: 0.5,  # Two sources (moderate validation)
-    3: 0.75,  # Three sources (strong validation)
-    4: 0.9,  # Four sources (very strong)
-}
-# 5+ sources → 1.0
-
-# Evidence level numeric scores (Oxford CEBM simplified)
-EVIDENCE_LEVEL_SCORES: dict[str, float] = {
-    "1": 1.0,  # Systematic reviews, meta-analyses
-    "2": 0.75,  # RCTs, cohort studies
-    "3": 0.50,  # Case-control, case series
-    "4": 0.25,  # Case reports, expert opinion
-    "unknown": 0.0,
-}
+__all__ = [
+    "DEFAULT_WEIGHTS",
+    "MAX_RCR_FOR_NORMALIZATION",
+    "MAX_VELOCITY_FOR_NORMALIZATION",
+    "MAX_CITATIONS_FOR_NORMALIZATION",
+    "SOURCE_AGREEMENT_SCORES",
+    "EVIDENCE_LEVEL_SCORES",
+    "LandmarkScorer",
+    "evidence_level_to_score",
+]
 
 
 # =============================================================================
@@ -140,18 +121,39 @@ class LandmarkScorer:
         metrics = icite_metrics or {}
 
         # Compute each component
-        citation_impact = self._compute_citation_impact(article, metrics)
-        source_agreement = self._compute_source_agreement(source_count)
-        citation_velocity = self._compute_citation_velocity(article, metrics)
+        citation_impact, citation_impact_diag = self._compute_citation_impact(article, metrics)
+        source_agreement, source_agreement_diag = self._compute_source_agreement(source_count)
+        citation_velocity, citation_velocity_diag = self._compute_citation_velocity(article, metrics)
 
-        # Weighted combination
-        overall = (
-            self.weights.get("citation_impact", 0.35) * citation_impact
-            + self.weights.get("source_agreement", 0.15) * source_agreement
-            + self.weights.get("milestone_confidence", 0.20) * milestone_confidence
-            + self.weights.get("evidence_quality", 0.15) * evidence_level_score
-            + self.weights.get("citation_velocity", 0.15) * citation_velocity
-        )
+        component_hits = [
+            self._component_hit("citation_impact", citation_impact, citation_impact_diag),
+            self._component_hit("source_agreement", source_agreement, source_agreement_diag),
+            self._component_hit(
+                "milestone_confidence",
+                milestone_confidence,
+                {
+                    "policy": "passthrough",
+                    "raw_value": milestone_confidence,
+                    "reason": "直接使用 milestone detector 的信心分數",
+                },
+            ),
+            self._component_hit(
+                "evidence_quality",
+                evidence_level_score,
+                {
+                    "policy": "passthrough",
+                    "raw_value": evidence_level_score,
+                    "reason": "直接使用 evidence level 對應分數",
+                },
+            ),
+            self._component_hit("citation_velocity", citation_velocity, citation_velocity_diag),
+        ]
+
+        overall = sum(hit["weighted_score"] for hit in component_hits)
+        diagnostics = {
+            "weights": {name: round(weight, 3) for name, weight in self.weights.items()},
+            "component_hits": component_hits,
+        }
 
         return LandmarkScore(
             overall=min(1.0, overall),
@@ -160,6 +162,7 @@ class LandmarkScorer:
             milestone_confidence=milestone_confidence,
             evidence_quality=evidence_level_score,
             citation_velocity=citation_velocity,
+            diagnostics=diagnostics,
         )
 
     def score_articles(
@@ -211,7 +214,9 @@ class LandmarkScorer:
     # Component Computations
     # =========================================================================
 
-    def _compute_citation_impact(self, article: dict[str, Any], metrics: dict[str, Any]) -> float:
+    def _compute_citation_impact(
+        self, article: dict[str, Any], metrics: dict[str, Any]
+    ) -> tuple[float, dict[str, Any]]:
         """
         Compute field-normalized citation impact score (0-1).
 
@@ -224,31 +229,37 @@ class LandmarkScorer:
         with RCR=4.2 (top 1% in its small field) scores higher than a
         popular review with 200 citations but RCR=0.8 (below field average).
         """
-        # Best signal: NIH percentile (already 0-100, directly meaningful)
-        percentile = metrics.get("nih_percentile")
-        if percentile is not None and percentile > 0:
-            return min(1.0, float(percentile) / 100.0)
+        for policy in CITATION_IMPACT_POLICIES:
+            raw_value = metrics.get(policy.metric_key)
+            if raw_value is None:
+                for key in policy.article_fallback_keys:
+                    raw_value = article.get(key)
+                    if raw_value is not None:
+                        break
 
-        # Good signal: RCR (1.0 = field average)
-        # Log scaling: RCR 1.0 → 0.32, RCR 4.0 → 0.68, RCR 10+ → 1.0
-        rcr = metrics.get("relative_citation_ratio")
-        if rcr is not None and rcr > 0:
-            return min(
-                1.0,
-                math.log2(1 + float(rcr)) / math.log2(1 + MAX_RCR_FOR_NORMALIZATION),
-            )
+            if raw_value is None:
+                continue
 
-        # Fallback: raw citation count (less meaningful but better than nothing)
-        citations = metrics.get("citation_count") or article.get("citation_count") or article.get("citations", 0)
-        if citations and int(citations) > 0:
-            return min(
-                1.0,
-                math.log2(1 + int(citations)) / math.log2(1 + MAX_CITATIONS_FOR_NORMALIZATION),
-            )
+            numeric = float(raw_value)
+            if numeric <= 0:
+                continue
 
-        return 0.0
+            if policy.mode == "percentile":
+                score = min(1.0, numeric / 100.0)
+            else:
+                if policy.max_value is None:
+                    continue
+                score = self._normalize_log_score(numeric, policy.max_value)
 
-    def _compute_source_agreement(self, source_count: int) -> float:
+            return score, {
+                "policy": policy.name,
+                "raw_value": numeric,
+                "reason": policy.reason,
+            }
+
+        return 0.0, {"policy": "none", "raw_value": 0.0, "reason": "沒有可用的 citation 指標"}
+
+    def _compute_source_agreement(self, source_count: int) -> tuple[float, dict[str, Any]]:
         """
         Compute source agreement score (0-1).
 
@@ -257,10 +268,21 @@ class LandmarkScorer:
         that pure citation metrics cannot.
         """
         if source_count >= 5:
-            return 1.0
-        return SOURCE_AGREEMENT_SCORES.get(source_count, 0.1)
+            return 1.0, {
+                "policy": "source_agreement_lookup",
+                "raw_value": source_count,
+                "reason": "5 個以上來源視為完全跨庫一致",
+            }
+        score = SOURCE_AGREEMENT_SCORES.get(source_count, 0.1)
+        return score, {
+            "policy": "source_agreement_lookup",
+            "raw_value": source_count,
+            "reason": "使用來源數量對照表進行跨庫一致性加權",
+        }
 
-    def _compute_citation_velocity(self, article: dict[str, Any], metrics: dict[str, Any]) -> float:
+    def _compute_citation_velocity(
+        self, article: dict[str, Any], metrics: dict[str, Any]
+    ) -> tuple[float, dict[str, Any]]:
         """
         Compute citation velocity score (0-1).
 
@@ -268,13 +290,20 @@ class LandmarkScorer:
         This helps identify "rising stars" that may not yet have
         high total citations but are rapidly gaining influence.
         """
-        # Best: direct citations_per_year from iCite
-        velocity = metrics.get("citations_per_year")
-        if velocity is not None and float(velocity) > 0:
-            return min(
-                1.0,
-                math.log2(1 + float(velocity)) / math.log2(1 + MAX_VELOCITY_FOR_NORMALIZATION),
-            )
+        for policy in CITATION_VELOCITY_POLICIES:
+            raw_value = metrics.get(policy.metric_key)
+            if raw_value is None:
+                continue
+            numeric = float(raw_value)
+            if numeric <= 0:
+                continue
+            if policy.max_value is None:
+                continue
+            return self._normalize_log_score(numeric, policy.max_value), {
+                "policy": policy.name,
+                "raw_value": numeric,
+                "reason": policy.reason,
+            }
 
         # Fallback: estimate from total citations and publication age
         citations = metrics.get("citation_count") or article.get("citation_count", 0)
@@ -284,14 +313,32 @@ class LandmarkScorer:
                 current_year = datetime.now(tz=timezone.utc).year
                 age = max(1, current_year - int(year))
                 estimated_velocity = float(int(citations)) / age
-                return min(
-                    1.0,
-                    math.log2(1 + estimated_velocity) / math.log2(1 + MAX_VELOCITY_FOR_NORMALIZATION),
-                )
+                return self._normalize_log_score(estimated_velocity, MAX_VELOCITY_FOR_NORMALIZATION), {
+                    "policy": "estimated_from_citations_and_age",
+                    "raw_value": round(estimated_velocity, 3),
+                    "reason": "用引用數與論文年齡估算 citations_per_year",
+                }
             except (ValueError, TypeError):
                 pass
 
-        return 0.0
+        return 0.0, {"policy": "none", "raw_value": 0.0, "reason": "沒有可用的 velocity 指標"}
+
+    def _normalize_log_score(self, value: float, max_value: float) -> float:
+        """Normalize a positive metric with log scaling."""
+        return min(1.0, math.log2(1 + value) / math.log2(1 + max_value))
+
+    def _component_hit(self, component: str, score: float, diagnostic: dict[str, Any]) -> dict[str, Any]:
+        """Build per-component diagnostics for explainable scoring."""
+        weight = self.weights.get(component, 0.0)
+        return {
+            "component": component,
+            "policy": diagnostic.get("policy", "unknown"),
+            "raw_value": diagnostic.get("raw_value", 0.0),
+            "normalized_score": round(score, 3),
+            "weight": round(weight, 3),
+            "weighted_score": round(weight * score, 3),
+            "reason": diagnostic.get("reason", ""),
+        }
 
 
 def evidence_level_to_score(level: str) -> float:

@@ -41,6 +41,8 @@ from datetime import date
 from enum import Enum
 from typing import Any, Literal
 
+MONTHS_PER_YEAR = 12
+
 # ── Impact classification thresholds ────────────────────────────────────────
 # JournalInfo.impact_tier: 2-year mean citedness (≈ Impact Factor)
 _IMPACT_TIER_TOP = 10.0
@@ -110,7 +112,7 @@ def _parse_pubmed_month(token: str) -> int | None:
 
     if normalized.isdigit():
         month = int(normalized)
-        if 1 <= month <= 12:
+        if 1 <= month <= MONTHS_PER_YEAR:
             return month
 
     return None
