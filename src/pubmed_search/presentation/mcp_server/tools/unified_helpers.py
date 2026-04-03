@@ -267,6 +267,8 @@ _OPTION_FLAGS: dict[str, tuple[str, bool]] = {
     # Turn ON features (default OFF)
     "preprints": ("include_preprints", True),
     "context_graph": ("include_research_context", True),
+    "counts_first": ("counts_first", True),
+    "counts-first": ("counts_first", True),
     # Turn OFF features (default ON)
     "all_types": ("peer_reviewed_only", False),
     "no_peer_review": ("peer_reviewed_only", False),
@@ -286,6 +288,7 @@ def _parse_options(options_str: str | None) -> dict[str, bool]:
     Supported flags:
         preprints      → include preprint servers (arXiv, medRxiv, bioRxiv)
         context_graph  → append research context tree preview from PMID-backed results
+        counts_first   → front-load source counts and next-tool recommendations
         all_types      → include non-peer-reviewed articles
         no_oa          → skip Unpaywall OA link enrichment
         no_analysis    → hide query analysis section in output

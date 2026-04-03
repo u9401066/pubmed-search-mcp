@@ -51,8 +51,18 @@ from pubmed_search.application.search.semantic_enhancer import (
 )
 from pubmed_search.application.timeline import TimelineBuilder, build_research_tree
 from pubmed_search.infrastructure.sources.preprints import PreprintSearcher
+from pubmed_search.presentation.mcp_server.session_tools import (
+    notify_session_resources_updated,
+)
+from pubmed_search.shared.source_contracts import (
+    SourceAdapterCall,
+    SourceAdapterResult,
+    format_source_adapter_error,
+    gather_source_adapter_calls,
+)
 
 from ._common import InputNormalizer, ResponseFormatter, _record_search_only
+from .agent_output import is_structured_output_format
 from .unified_enrichment import (
     _enrich_with_api_similarity,
     _enrich_with_crossref,
@@ -150,13 +160,13 @@ __all__ = [
 def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
     """Register unified search MCP tools."""
 
-    @mcp.tool()
+    @mcp.tool(meta={"pubmedSearch": {"experimentalTaskSupport": "optional"}})
     async def unified_search(
         query: str,
         limit: Union[int, str] = 10,
         sources: Union[str, None] = None,
         ranking: Literal["balanced", "impact", "recency", "quality"] = "balanced",
-        output_format: Literal["markdown", "json"] = "markdown",
+        output_format: Literal["markdown", "json", "toon"] = "markdown",
         filters: Union[str, None] = None,
         options: Union[str, None] = None,
         pipeline: Union[str, None] = None,
@@ -224,7 +234,7 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 - "impact": Prioritize high-citation papers
                 - "recency": Prioritize recent publications
                 - "quality": Prioritize high-evidence studies (RCTs, meta-analyses)
-            output_format: "markdown" (human-readable) or "json" (programmatic)
+            output_format: "markdown" (human-readable), "json", or "toon" (programmatic)
             filters: Comma-separated key:value pairs for filtering results.
                      Supported keys:
                        year:2020-2025    → publication year range
@@ -382,6 +392,7 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             include_similarity_scores: bool = parsed_options.get("include_similarity_scores", True)
             include_preprints: bool = parsed_options.get("include_preprints", False)
             include_research_context: bool = parsed_options.get("include_research_context", False)
+            counts_first: bool = parsed_options.get("counts_first", False)
             peer_reviewed_only: bool = parsed_options.get("peer_reviewed_only", True)
             auto_relax: bool = parsed_options.get("auto_relax", True)
             deep_search: bool = parsed_options.get("deep_search", True)
@@ -550,8 +561,8 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 # Async parallel search
                 async def search_source(
                     source: str,
-                ) -> tuple[str, list[UnifiedArticle], int | None]:
-                    """Search a single source and return (source_name, articles, total_count)."""
+                ) -> SourceAdapterResult[UnifiedArticle]:
+                    """Search a single source and return a normalized adapter result."""
                     if source == "pubmed":
                         articles, total_count = await _search_pubmed(
                             searcher,
@@ -561,7 +572,13 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                             effective_max_year,
                             **advanced_filters,
                         )
-                        return ("pubmed", articles, total_count)
+                        return SourceAdapterResult(
+                            source="pubmed",
+                            operation="search",
+                            items=articles,
+                            total_count=total_count or len(articles),
+                            metadata={"total_available": total_count},
+                        )
 
                     if source == "openalex":
                         articles, total_count = await _search_openalex(
@@ -570,7 +587,13 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                             effective_min_year,
                             effective_max_year,
                         )
-                        return ("openalex", articles, total_count)
+                        return SourceAdapterResult(
+                            source="openalex",
+                            operation="search",
+                            items=articles,
+                            total_count=total_count or len(articles),
+                            metadata={"total_available": total_count},
+                        )
 
                     if source == "semantic_scholar":
                         articles, total_count = await _search_semantic_scholar(
@@ -579,7 +602,13 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                             effective_min_year,
                             effective_max_year,
                         )
-                        return ("semantic_scholar", articles, total_count)
+                        return SourceAdapterResult(
+                            source="semantic_scholar",
+                            operation="search",
+                            items=articles,
+                            total_count=total_count or len(articles),
+                            metadata={"total_available": total_count},
+                        )
 
                     if source == "core":
                         articles, total_count = await _search_core(
@@ -588,29 +617,45 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                             effective_min_year,
                             effective_max_year,
                         )
-                        return ("core", articles, total_count)
+                        return SourceAdapterResult(
+                            source="core",
+                            operation="search",
+                            items=articles,
+                            total_count=total_count or len(articles),
+                            metadata={"total_available": total_count},
+                        )
 
                     if source == "crossref":
                         # CrossRef is used for enrichment, not primary search
-                        return ("crossref", [], None)
+                        return SourceAdapterResult.empty(source="crossref", operation="search")
 
-                    return (source, [], None)
+                    return SourceAdapterResult.empty(source=source, operation="search")
 
                 # Filter out crossref from parallel search (it's enrichment only)
                 search_sources = [s for s in dispatch_sources if s != "crossref"]
 
-                # Execute searches in parallel with asyncio.gather
-                search_results = await asyncio.gather(
-                    *[search_source(s) for s in search_sources],
-                    return_exceptions=True,
+                def _build_search_call(source: str) -> SourceAdapterCall[UnifiedArticle]:
+                    async def _execute() -> SourceAdapterResult[UnifiedArticle]:
+                        return await search_source(source)
+
+                    return SourceAdapterCall(
+                        source=source,
+                        operation="search",
+                        execute=_execute,
+                    )
+
+                search_results: list[SourceAdapterResult[UnifiedArticle]] = await gather_source_adapter_calls(
+                    [_build_search_call(source) for source in search_sources]
                 )
 
                 for result in search_results:
-                    if isinstance(result, Exception):
-                        logger.error(f"Search failed: {result}")
-                        continue
-                    # Type narrowing: result is now tuple, not Exception
-                    name, articles, total_count = result  # type: ignore[misc]
+                    for error in result.errors:
+                        logger.error("Search failed: %s", format_source_adapter_error(error))
+
+                    name = result.source
+                    articles = result.items
+                    raw_total_count = result.metadata.get("total_available")
+                    total_count = raw_total_count if isinstance(raw_total_count, int) else None
                     if articles:
                         all_results.append(articles)
                     # Track per-source API counts: (returned, total_available)
@@ -768,10 +813,11 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
 
             # === Step 8.8: Record to Session ===
             _record_search_only(ranked, analysis.original_query)
+            await notify_session_resources_updated(ctx)
 
             # === Step 9: Format Output ===
             await _progress(9, 10, "Formatting output...")
-            if output_format == "json":
+            if is_structured_output_format(output_format):
                 if clinical_trials_task:
                     clinical_trials_task.cancel()
                 return _format_as_json(
@@ -780,9 +826,12 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                     stats,
                     relaxation_result,
                     deep_search_metrics,
+                    source_api_counts=source_api_counts or None,
                     source_disagreement=source_disagreement,
                     reproducibility_score=reproducibility,
                     research_context=research_context_data,
+                    counts_first=counts_first,
+                    output_format=output_format,
                 )
             # Collect pre-fetched clinical trials
             prefetched_trials: list | None = None
@@ -802,14 +851,15 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 preprint_results if include_preprints else None,
                 include_trials=True,
                 original_query=analysis.original_query,
-                enhanced_entities=matched_entity_names if matched_entity_names else None,
+                enhanced_entities=matched_entity_names or None,
                 relaxation_result=relaxation_result,
                 deep_search_metrics=deep_search_metrics,
                 prefetched_trials=prefetched_trials,
-                source_api_counts=source_api_counts if source_api_counts else None,
+                source_api_counts=source_api_counts or None,
                 source_disagreement=source_disagreement,
                 reproducibility_score=reproducibility,
                 research_context_preview=research_context_preview,
+                counts_first=counts_first,
             )
 
         except Exception as e:

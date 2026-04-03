@@ -3,20 +3,46 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from pubmed_search.presentation.mcp_server.session_tools import (
+    SESSION_RESOURCE_URIS,
+    notify_session_resources_updated,
     register_session_resources,
     register_session_tools,
 )
 
 
+class _CapturedRegistrations(dict):
+    def __init__(self):
+        super().__init__()
+        self.resource_meta: dict[str, dict] = {}
+
+
 def _capture_tools(register_fn, *args):
     """Utility to capture registered tool functions."""
-    tools = {}
+    tools = _CapturedRegistrations()
     mcp = MagicMock()
-    mcp.tool = lambda: lambda func: (tools.__setitem__(func.__name__, func), func)[1]
-    mcp.resource = lambda uri: lambda func: (tools.__setitem__(uri, func), func)[1]
+
+    def _tool(*decorator_args, **decorator_kwargs):
+        del decorator_args, decorator_kwargs
+
+        def _decorator(func):
+            tools[func.__name__] = func
+            return func
+
+        return _decorator
+
+    def _resource(uri, **kwargs):
+        def _decorator(func):
+            tools[uri] = func
+            tools.resource_meta[uri] = kwargs
+            return func
+
+        return _decorator
+
+    mcp.tool = _tool
+    mcp.resource = _resource
     register_fn(mcp, *args)
     return tools
 
@@ -31,6 +57,26 @@ def _make_session(search_history=None, article_cache=None):
     session.reading_list = []
     session.excluded_pmids = set()
     return session
+
+
+def _configure_manager_cache(sm, article_cache=None):
+    cache = article_cache or {}
+
+    def _get_cached_article(pmid):
+        return cache.get(pmid)
+
+    def _get_session_cached_pmids(limit=None):
+        return list(cache.keys())[:limit]
+
+    def _get_cached_article_map(pmids):
+        return (
+            {pmid: cache[pmid] for pmid in pmids if pmid in cache},
+            [pmid for pmid in pmids if pmid not in cache],
+        )
+
+    sm.get_cached_article.side_effect = _get_cached_article
+    sm.get_session_cached_pmids.side_effect = _get_session_cached_pmids
+    sm.get_cached_article_map.side_effect = _get_cached_article_map
 
 
 # ============================================================
@@ -133,6 +179,7 @@ class TestGetCachedArticle:
     async def test_not_cached(self):
         session = _make_session(article_cache={})
         self.sm.get_current_session.return_value = session
+        _configure_manager_cache(self.sm, {})
         result = json.loads(self.fn(pmid="12345"))
         assert result["success"] is False
         assert "not in cache" in result["error"]
@@ -141,6 +188,7 @@ class TestGetCachedArticle:
         article = {"pmid": "12345", "title": "Test Article"}
         session = _make_session(article_cache={"12345": article})
         self.sm.get_current_session.return_value = session
+        _configure_manager_cache(self.sm, {"12345": article})
         result = json.loads(self.fn(pmid="12345"))
         assert result["success"] is True
         assert result["source"] == "cache"
@@ -174,6 +222,7 @@ class TestGetSessionSummary:
         cache = {"111": {"title": "A"}, "222": {"title": "B"}}
         session = _make_session(search_history=history, article_cache=cache)
         self.sm.get_current_session.return_value = session
+        _configure_manager_cache(self.sm, cache)
         result = json.loads(self.fn())
         assert result["success"] is True
         assert result["has_session"] is True
@@ -199,6 +248,7 @@ class TestGetSessionSummary:
         cache = {"1": {}, "2": {}, "3": {}}
         session = _make_session(search_history=history, article_cache=cache)
         self.sm.get_current_session.return_value = session
+        _configure_manager_cache(self.sm, cache)
         result = json.loads(self.fn(include_history=True))
         assert result["success"] is True
         assert "search_history" in result
@@ -211,6 +261,7 @@ class TestGetSessionSummary:
         history = [{"query": f"q{i}", "pmids": [], "timestamp": "", "result_count": 0} for i in range(20)]
         session = _make_session(search_history=history, article_cache={})
         self.sm.get_current_session.return_value = session
+        _configure_manager_cache(self.sm, {})
         result = json.loads(self.fn(include_history=True, history_limit=5))
         assert result["success"] is True
         assert len(result["search_history"]) == 5
@@ -227,11 +278,21 @@ class TestGetSessionSummary:
 
 
 class TestSessionResources:
+    async def test_session_resource_metadata(self):
+        sm = MagicMock()
+        tools = _capture_tools(register_session_resources, sm)
+        metadata = tools.resource_meta["session://last-search"]
+
+        assert metadata["mime_type"] == "application/json"
+        assert metadata["title"] == "Last Search Summary"
+        assert metadata["meta"]["pubmedSearch"]["dynamic"] is True
+
     async def test_context_with_session(self):
         sm = MagicMock()
         session = _make_session(article_cache={"111": {}})
         session.search_history = [{"q": "test"}]
         sm.get_current_session.return_value = session
+        _configure_manager_cache(sm, {"111": {}})
         tools = _capture_tools(register_session_resources, sm)
         fn = tools["session://context"]
         result = json.loads(fn())
@@ -253,6 +314,7 @@ class TestSessionResources:
             article_cache={"111": {"pmid": "111"}, "222": {"pmid": "222"}},
         )
         sm.get_current_session.return_value = session
+        _configure_manager_cache(sm, {"111": {"pmid": "111"}, "222": {"pmid": "222"}})
         tools = _capture_tools(register_session_resources, sm)
         result = json.loads(tools["session://last-search"]())
         assert result["active"] is True
@@ -275,8 +337,30 @@ class TestSessionResources:
             article_cache={"111": {"pmid": "111", "title": "Cached"}},
         )
         sm.get_current_session.return_value = session
+        _configure_manager_cache(sm, {"111": {"pmid": "111", "title": "Cached"}})
         tools = _capture_tools(register_session_resources, sm)
         result = json.loads(tools["session://last-search/results"]())
         assert result["cached_count"] == 1
         assert result["cached_results"][0]["title"] == "Cached"
         assert result["missing_pmids"] == ["999"]
+
+
+class TestSessionResourceNotifications:
+    async def test_notify_session_resources_updated_sends_all_known_uris(self):
+        ctx = MagicMock()
+        ctx.session = MagicMock()
+        ctx.session.send_resource_updated = AsyncMock()
+
+        await notify_session_resources_updated(ctx)
+
+        observed_uris = [call.args[0] for call in ctx.session.send_resource_updated.await_args_list]
+        assert observed_uris == list(SESSION_RESOURCE_URIS)
+
+    async def test_notify_session_resources_updated_swallows_host_errors(self):
+        ctx = MagicMock()
+        ctx.session = MagicMock()
+        ctx.session.send_resource_updated = AsyncMock(side_effect=RuntimeError("unsupported"))
+
+        await notify_session_resources_updated(ctx)
+
+        assert ctx.session.send_resource_updated.await_count == len(SESSION_RESOURCE_URIS)

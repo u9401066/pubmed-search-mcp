@@ -28,12 +28,15 @@ class _FakeEvent:
         milestone_type=None,
         milestone_label="label",
         citation_count=0,
+        metadata=None,
     ):
         self.pmid = pmid
         self.year = year
         self.title = title
         self.milestone_label = milestone_label
         self.citation_count = citation_count
+        self.metadata = metadata or {}
+        self.landmark_score = None
 
         class _MT:
             value = "generic"
@@ -41,7 +44,7 @@ class _FakeEvent:
         self.milestone_type = milestone_type or _MT()
 
     def to_dict(self):
-        return {"pmid": self.pmid, "year": self.year, "title": self.title}
+        return {"pmid": self.pmid, "year": self.year, "title": self.title, "metadata": self.metadata}
 
 
 class _FakePeriod:
@@ -51,21 +54,53 @@ class _FakePeriod:
 
 class _FakeTimeline:
     def __init__(self, events=None, empty=False):
+        self.topic = "Fake Topic"
         self.events = [] if empty else (events or [_FakeEvent()])
         self.total_events = len(self.events)
         self.year_range = (2020, 2024) if self.events else None
         self.duration_years = 4 if self.events else 0
         self.milestone_summary = {"generic": 1} if self.events else {}
         self.periods = [_FakePeriod()] if self.events else []
+        self.metadata = {
+            "diagnostics": {
+                "search": {
+                    "retrieved_articles": 12,
+                    "articles_after_filters": 10,
+                    "milestone_candidates": 6,
+                    "events_emitted": len(self.events),
+                },
+                "milestone_detection": {
+                    "strategy_counts": {"title_pattern": 1},
+                    "top_policies": [{"policy": "phase_3_trial", "count": 1}],
+                    "sample_matches": [
+                        {
+                            "pmid": self.events[0].pmid,
+                            "label": self.events[0].milestone_label,
+                            "strategy": "title_pattern",
+                            "policy": "phase_3_trial",
+                            "matched_value": "Phase III",
+                        }
+                    ]
+                    if self.events
+                    else [],
+                },
+                "landmark_scoring": {
+                    "enabled": True,
+                    "landmarks_detected": 0,
+                    "notable_or_higher": 0,
+                    "component_usage": {"citation_impact": 1},
+                },
+            }
+        }
 
-    def get_landmark_events(self, min_citations=50):
+    def get_landmark_events(self, min_citations=50, min_landmark_score=None):
         return [e for e in self.events if e.citation_count >= min_citations]
 
     def to_mermaid(self):
         return "gantt\n  title Timeline"
 
     def to_dict(self):
-        return {"events": [e.to_dict() for e in self.events]}
+        return {"events": [e.to_dict() for e in self.events], "metadata": self.metadata}
 
     def to_json_timeline(self):
         return {"events": []}
@@ -112,6 +147,7 @@ class TestBuildResearchTimeline:
 
         result = await tools["build_research_timeline"](topic="test drug")
         assert isinstance(result, str)
+        assert "Timeline Diagnostics" in result
 
     @pytest.mark.asyncio
     async def test_no_events(self):
@@ -158,6 +194,7 @@ class TestBuildResearchTimeline:
         result = await tools["build_research_timeline"](topic="test", output_format="json")
         parsed = json.loads(result)
         assert "events" in parsed
+        assert "diagnostics" in parsed
 
     @pytest.mark.asyncio
     async def test_exception(self):
@@ -224,6 +261,7 @@ class TestAnalyzeTimelineMilestones:
         parsed = json.loads(result)
         assert parsed["total_milestones"] == 2
         assert "landmark_studies" in parsed
+        assert "diagnostics" in parsed
 
     @pytest.mark.asyncio
     async def test_no_events(self):
@@ -318,6 +356,7 @@ class TestCompareTimelines:
         result = await tools["compare_timelines"](topics="drugA,drugB", max_events_per_topic=5)
         parsed = json.loads(result)
         assert len(parsed["topics"]) == 2
+        assert "diagnostics" in parsed["topics"][0]
         assert "summary" in parsed
 
     @pytest.mark.asyncio

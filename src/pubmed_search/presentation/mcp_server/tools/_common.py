@@ -423,7 +423,7 @@ class ResponseFormatter:
     Provides:
     - Consistent success/error formatting
     - Helpful error messages with suggestions
-    - Multi-format output (markdown/json)
+    - Multi-format output (markdown/json/toon)
     """
 
     @staticmethod
@@ -440,14 +440,16 @@ class ResponseFormatter:
             data: The main response data
             message: Optional success message
             metadata: Optional metadata dict
-            output_format: "markdown" or "json"
+            output_format: "markdown", "json", or "toon"
 
         Returns:
             Formatted response string
         """
         import json
 
-        if output_format == "json":
+        from .agent_output import is_structured_output_format, serialize_structured_payload
+
+        if is_structured_output_format(output_format):
             result = {
                 "success": True,
                 "data": data,
@@ -456,7 +458,7 @@ class ResponseFormatter:
                 result["message"] = message
             if metadata:
                 result["metadata"] = metadata
-            return json.dumps(result, ensure_ascii=False, indent=2)
+            return serialize_structured_payload(result, output_format)
 
         # Markdown format
         parts = []
@@ -493,17 +495,18 @@ class ResponseFormatter:
             suggestion: Helpful suggestion for fixing the error
             example: Example of correct usage
             tool_name: Name of the tool that failed
-            output_format: "markdown" or "json"
+            output_format: "markdown", "json", or "toon"
 
         Returns:
             Formatted error string
         """
-        import json
+
+        from .agent_output import is_structured_output_format, serialize_structured_payload
 
         # Use core exception's formatting if available
         if isinstance(error, PubMedSearchError):
-            if output_format == "json":
-                return json.dumps(error.to_dict(), ensure_ascii=False, indent=2)
+            if is_structured_output_format(output_format):
+                return serialize_structured_payload(error.to_dict(), output_format)
             return error.to_agent_message()
 
         error_msg = str(error)
@@ -512,7 +515,7 @@ class ResponseFormatter:
         retryable = is_retryable_error(error) if isinstance(error, Exception) else False
         retry_delay = get_retry_delay(error, 0) if retryable and isinstance(error, Exception) else None
 
-        if output_format == "json":
+        if is_structured_output_format(output_format):
             result = {
                 "success": False,
                 "error": error_msg,
@@ -527,7 +530,7 @@ class ResponseFormatter:
                 result["retryable"] = True
                 if retry_delay:
                     result["retry_after"] = retry_delay
-            return json.dumps(result, ensure_ascii=False, indent=2)
+            return serialize_structured_payload(result, output_format)
 
         # Markdown format
         parts = []
@@ -556,6 +559,8 @@ class ResponseFormatter:
         query: str | None = None,
         suggestions: list[str] | None = None,
         alternative_tools: list[str] | None = None,
+        output_format: str = "markdown",
+        tool_name: str | None = None,
     ) -> str:
         """
         Format a 'no results' response with helpful suggestions.
@@ -564,10 +569,30 @@ class ResponseFormatter:
             query: The search query that returned no results
             suggestions: List of search suggestions
             alternative_tools: List of alternative tools to try
+            output_format: "markdown", "json", or "toon"
+            tool_name: Optional originating tool name
 
         Returns:
             Formatted no-results message
         """
+        from .agent_output import is_structured_output_format, serialize_structured_payload
+
+        if is_structured_output_format(output_format):
+            payload: dict[str, Any] = {
+                "success": True,
+                "no_results": True,
+                "count": 0,
+            }
+            if tool_name:
+                payload["tool"] = tool_name
+            if query:
+                payload["query"] = query
+            if suggestions:
+                payload["suggestions"] = suggestions
+            if alternative_tools:
+                payload["alternative_tools"] = alternative_tools
+            return serialize_structured_payload(payload, output_format)
+
         parts = ["🔍 **No results found**"]
 
         if query:
@@ -772,6 +797,8 @@ def get_last_search_pmids() -> list[str]:
         session = _session_manager.get_or_create_session()
         if session.search_history:
             last_search = session.search_history[-1]
+            if isinstance(last_search, dict):
+                return last_search.get("pmids", [])
             return last_search.pmids
         return []
     except Exception as e:

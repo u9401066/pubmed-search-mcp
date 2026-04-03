@@ -37,11 +37,313 @@ from pubmed_search.infrastructure.sources.core import get_core_client
 from pubmed_search.infrastructure.sources.unpaywall import get_unpaywall_client
 
 from ._common import InputNormalizer, ResponseFormatter
+from .agent_output import (
+    OutputFormat,
+    finalize_next_tools,
+    is_structured_output_format,
+    make_next_tool,
+    make_section_provenance,
+    make_source_count_row,
+    normalize_output_format,
+    preferred_structured_output_format,
+    serialize_structured_payload,
+    sort_source_count_rows,
+)
 
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
+
+
+def _deduplicate_link_rows(pdf_links: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Deduplicate fulltext link rows by URL while preserving order."""
+    deduped: list[dict[str, Any]] = []
+    seen_urls: set[str] = set()
+    for link in pdf_links:
+        url = str(link.get("url") or "").strip()
+        if not url or url in seen_urls:
+            continue
+        seen_urls.add(url)
+        deduped.append(link)
+    return deduped
+
+
+def _build_fulltext_next_tools(
+    *,
+    pmcid: str | None,
+    pmid: str | None,
+    include_figures: bool,
+    output_format: OutputFormat = "json",
+) -> tuple[list[dict[str, str]], list[str]]:
+    """Build pragmatic next-tool suggestions for get_fulltext."""
+    structured_output_format = preferred_structured_output_format(output_format)
+    suggestions: list[dict[str, str]] = []
+
+    if pmid:
+        suggestions.append(
+            make_next_tool(
+                "fetch_article_details",
+                "Resolve the PubMed metadata record alongside the fulltext view before branching further.",
+                f'fetch_article_details(pmids="{pmid}", output_format="{structured_output_format}")',
+            )
+        )
+        suggestions.append(
+            make_next_tool(
+                "get_text_mined_terms",
+                "Use Europe PMC annotations to extract entities from this article after confirming access.",
+                f'get_text_mined_terms(pmid="{pmid}")',
+            )
+        )
+
+    if pmcid and not include_figures:
+        suggestions.append(
+            make_next_tool(
+                "get_article_figures",
+                "A PMCID is available, so you can pivot into structured figure extraction next.",
+                f'get_article_figures(identifier="{pmcid}")',
+            )
+        )
+    elif pmcid:
+        suggestions.append(
+            make_next_tool(
+                "get_text_mined_terms",
+                "You already have PMC-backed access; annotate the same article for entities and concepts.",
+                f'get_text_mined_terms(pmcid="{pmcid}")',
+            )
+        )
+
+    return finalize_next_tools(suggestions)
+
+
+def _build_fulltext_source_counts(
+    *,
+    sources_tried: list[str],
+    fulltext_source: str | None,
+    pdf_links: list[dict[str, Any]],
+    figures_count: int,
+) -> list[dict[str, Any]]:
+    """Summarize how many response artifacts each source contributed."""
+    artifact_counts: dict[str, int] = dict.fromkeys(sources_tried, 0)
+
+    if fulltext_source:
+        artifact_counts[fulltext_source] = artifact_counts.get(fulltext_source, 0) + 1
+
+    for link in pdf_links:
+        source_name = str(link.get("source") or "unknown")
+        artifact_counts[source_name] = artifact_counts.get(source_name, 0) + 1
+
+    if figures_count > 0:
+        artifact_counts["PMC Open Access / FigureClient"] = (
+            artifact_counts.get(
+                "PMC Open Access / FigureClient",
+                0,
+            )
+            + figures_count
+        )
+
+    return [
+        dict(row)
+        for row in sort_source_count_rows(
+            [make_source_count_row(source, count) for source, count in artifact_counts.items()]
+        )
+    ]
+
+
+def _format_get_fulltext_json(
+    *,
+    identifier: str | None,
+    pmcid: str | None,
+    pmid: str | None,
+    doi: str | None,
+    title: str | None,
+    fulltext_content: str | None,
+    content_sections: list[dict[str, Any]],
+    pdf_links: list[dict[str, Any]],
+    sources_tried: list[str],
+    source_counts: list[dict[str, Any]],
+    next_tools: list[dict[str, str]],
+    next_commands: list[str],
+    fulltext_source: str | None,
+    fulltext_canonical_host: str | None,
+    fulltext_provenance: Literal["direct", "indirect", "derived", "mixed"] | None,
+    include_figures: bool,
+    figures: list[dict[str, Any]],
+    output_format: OutputFormat = "json",
+) -> str:
+    """Format get_fulltext as an agent-oriented JSON or TOON envelope."""
+    section_provenance: dict[str, dict[str, Any]] = {
+        "source_counts": make_section_provenance(
+            surfacing_source="pubmed-search-mcp",
+            canonical_host=None,
+            provenance="derived",
+            note="Counts describe response artifacts yielded per source in this fulltext workflow (content blocks, links, figures).",
+            upstream_sources=sources_tried,
+        ),
+        "next_tools": make_section_provenance(
+            surfacing_source="pubmed-search-mcp",
+            canonical_host="pubmed-search-mcp",
+            provenance="derived",
+            note="Next-tool suggestions are inferred locally from resolved identifiers and access path shape.",
+        ),
+    }
+
+    if fulltext_source and fulltext_provenance:
+        section_provenance["content"] = make_section_provenance(
+            surfacing_source=fulltext_source,
+            canonical_host=fulltext_canonical_host,
+            provenance=fulltext_provenance,
+            note="Structured or extracted article text came from the reported surfacing source.",
+            fields=[section.get("title", "") for section in content_sections] if content_sections else None,
+        )
+
+    if pdf_links:
+        section_provenance["pdf_links"] = make_section_provenance(
+            surfacing_source="fulltext-link-aggregation",
+            canonical_host=None,
+            provenance="mixed",
+            note="Each link preserves the surfacing source; the final OA or publisher host may differ by URL.",
+            upstream_sources=[str(link.get("source") or "unknown") for link in pdf_links],
+        )
+
+    if figures:
+        section_provenance["figures"] = make_section_provenance(
+            surfacing_source="PMC Open Access / FigureClient",
+            canonical_host="PubMed Central",
+            provenance="mixed",
+            note="Figure metadata is extracted through the PMC-focused figure client and remains article-license scoped.",
+        )
+
+    payload = {
+        "tool": "get_fulltext",
+        "identifiers": {
+            "identifier": identifier,
+            "pmcid": pmcid,
+            "pmid": pmid,
+            "doi": doi,
+        },
+        "title": title,
+        "fulltext_available": bool(fulltext_content),
+        "content": fulltext_content,
+        "content_sections": content_sections,
+        "pdf_links": pdf_links,
+        "sources_tried": sources_tried,
+        "source_counts": source_counts,
+        "next_tools": next_tools,
+        "next_commands": next_commands,
+        "include_figures": include_figures,
+        "figures": figures,
+        "section_provenance": section_provenance,
+    }
+    return serialize_structured_payload(payload, output_format)
+
+
+def _format_text_mined_terms_structured(
+    *,
+    pmid: str | None,
+    pmcid: str | None,
+    semantic_type: str | None,
+    terms: list[dict[str, Any]],
+    output_format: OutputFormat = "json",
+) -> str:
+    """Format Europe PMC text-mined terms as a structured agent-facing payload."""
+    structured_output_format = preferred_structured_output_format(output_format)
+    by_type: dict[str, list[dict[str, Any]]] = {}
+    for term in terms:
+        term_type = str(term.get("semantic_type") or "OTHER")
+        by_type.setdefault(term_type, []).append(term)
+
+    grouped_terms: list[dict[str, Any]] = []
+    for term_type in sorted(by_type):
+        type_terms = by_type[term_type]
+        counts: dict[str, int] = {}
+        for term in type_terms:
+            name = str(term.get("term") or term.get("name") or "Unknown")
+            counts[name] = counts.get(name, 0) + 1
+
+        grouped_terms.append(
+            {
+                "semantic_type": term_type,
+                "annotation_count": len(type_terms),
+                "unique_term_count": len(counts),
+                "terms": [
+                    {"term": name, "count": count}
+                    for name, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+                ],
+            }
+        )
+
+    next_tool_candidates: list[dict[str, str]] = []
+    if pmid:
+        next_tool_candidates.append(
+            make_next_tool(
+                "fetch_article_details",
+                "Hydrate PubMed metadata for the annotated article before moving into citation or export workflows.",
+                f'fetch_article_details(pmids="{pmid}", output_format="{structured_output_format}")',
+            )
+        )
+        next_tool_candidates.append(
+            make_next_tool(
+                "get_fulltext",
+                "Inspect the article text alongside its extracted entities and concepts.",
+                (f'get_fulltext(pmid="{pmid}", extended_sources=True, output_format="{structured_output_format}")'),
+            )
+        )
+    if pmcid:
+        next_tool_candidates.append(
+            make_next_tool(
+                "get_article_figures",
+                "PMC-backed annotations can be paired with figure evidence from the same open-access article.",
+                f'get_article_figures(identifier="{pmcid}", output_format="{structured_output_format}")',
+            )
+        )
+
+    next_tools, next_commands = finalize_next_tools(next_tool_candidates)
+    visible_fields = sorted(
+        {key for term in terms for key, value in term.items() if value not in (None, "", [], {}, ())}
+    )
+    payload = {
+        "tool": "get_text_mined_terms",
+        "identifiers": {"pmid": pmid, "pmcid": pmcid},
+        "semantic_type_filter": semantic_type,
+        "annotation_count": len(terms),
+        "unique_term_count": sum(group["unique_term_count"] for group in grouped_terms),
+        "annotations": terms,
+        "term_groups": grouped_terms,
+        "source_counts": [make_source_count_row("europe-pmc-text-mining", len(terms))],
+        "next_tools": next_tools,
+        "next_commands": next_commands,
+        "section_provenance": {
+            "annotations": make_section_provenance(
+                surfacing_source="Europe PMC",
+                canonical_host="Europe PMC",
+                provenance="direct",
+                note="Text-mined annotations are retrieved directly from Europe PMC's annotation service.",
+                fields=visible_fields,
+            ),
+            "term_groups": make_section_provenance(
+                surfacing_source="pubmed-search-mcp",
+                canonical_host=None,
+                provenance="derived",
+                note="Grouped term counts are derived locally from the raw Europe PMC annotations.",
+                upstream_sources=["europe-pmc-text-mining"],
+            ),
+            "source_counts": make_section_provenance(
+                surfacing_source="pubmed-search-mcp",
+                canonical_host=None,
+                provenance="derived",
+                note="Counts reflect the number of annotation rows returned by Europe PMC.",
+                upstream_sources=["europe-pmc-text-mining"],
+            ),
+            "next_tools": make_section_provenance(
+                surfacing_source="pubmed-search-mcp",
+                canonical_host="pubmed-search-mcp",
+                provenance="derived",
+                note="Next-tool suggestions are inferred locally from the resolved identifiers and annotation payload.",
+            ),
+        },
+    }
+    return serialize_structured_payload(payload, output_format)
 
 
 def register_europe_pmc_tools(mcp: FastMCP):
@@ -224,6 +526,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
         include_pdf_links: bool = True,
         include_figures: bool = False,
         extended_sources: bool = False,
+        output_format: Literal["markdown", "json", "toon"] = "markdown",
         ctx: Context | None = None,
     ) -> str:
         """
@@ -278,6 +581,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
                     await ctx.log(level, message, logger_name=__name__)
 
         await _progress(1, 6, "Resolving article identifiers...")
+        normalized_output_format = normalize_output_format(output_format)
 
         # Phase 2.2: Smart identifier detection
         detected_pmcid = pmcid
@@ -316,6 +620,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
                 suggestion="Provide pmcid, pmid, doi, or auto-detect identifier",
                 example='get_fulltext(identifier="PMC7096777") or get_fulltext(doi="10.1038/...")',
                 tool_name="get_fulltext",
+                output_format=normalized_output_format,
             )
 
         logger.info(f"Getting fulltext: pmcid={detected_pmcid}, pmid={detected_pmid}, doi={detected_doi}")
@@ -329,6 +634,17 @@ def register_europe_pmc_tools(mcp: FastMCP):
         pdf_links: list[dict[str, Any]] = []
         sources_tried = []
         article_title = None
+        content_sections: list[dict[str, Any]] = []
+        figures_payload: list[dict[str, Any]] = []
+        fulltext_source_name: str | None = None
+        fulltext_canonical_host: str | None = None
+        fulltext_provenance: Literal["direct", "indirect", "derived", "mixed"] | None = None
+
+        def _truncate_extracted_text(text: str, max_chars: int = 10000) -> str:
+            if len(text) <= max_chars:
+                return text
+            truncated_count = len(text) - max_chars
+            return text[:max_chars] + f"\n\n_... {truncated_count} characters truncated from extracted PDF text_"
 
         # === SOURCE 1: Europe PMC (best for structured fulltext) ===
         if detected_pmcid:
@@ -340,8 +656,12 @@ def register_europe_pmc_tools(mcp: FastMCP):
                 if xml:
                     parsed = client.parse_fulltext_xml(xml)
                     if parsed:
-                        fulltext_content = _format_sections(parsed, sections)
+                        content_sections = _select_sections(parsed, sections)
+                        fulltext_content = _render_selected_sections(parsed, content_sections)
                         article_title = parsed.get("title")
+                        fulltext_source_name = "Europe PMC"
+                        fulltext_canonical_host = "PubMed Central"
+                        fulltext_provenance = "indirect"
                         # Add PMC PDF link
                         pmc_num = detected_pmcid.replace("PMC", "")
                         pdf_links.append(
@@ -424,6 +744,9 @@ def register_europe_pmc_tools(mcp: FastMCP):
                     # Get fulltext if available
                     if work.get("fullText"):
                         fulltext_content = _format_core_fulltext(work, sections)
+                        fulltext_source_name = "CORE"
+                        fulltext_canonical_host = "Repository / OA host"
+                        fulltext_provenance = "indirect"
 
                     # Add download links
                     if work.get("downloadUrl"):
@@ -465,13 +788,30 @@ def register_europe_pmc_tools(mcp: FastMCP):
 
                 downloader = FulltextDownloader()
                 try:
-                    extended_links = await downloader.get_pdf_links(
+                    extended_result = await downloader.get_fulltext(
                         pmid=pmid_str,
                         pmcid=pmcid_str,
                         doi=doi_str,
+                        strategy="links_only" if fulltext_content else "extract_text",
                     )
                 finally:
                     await downloader.close()
+
+                extended_links = extended_result.pdf_links
+
+                if not fulltext_content and extended_result.text_content:
+                    extracted_text = _truncate_extracted_text(extended_result.text_content)
+                    fulltext_content = extracted_text
+                    content_sections = [{"title": "Extracted PDF Text", "content": extracted_text}]
+                    if not article_title and extended_result.title:
+                        article_title = extended_result.title
+                    fulltext_source_name = (
+                        extended_result.source_used.display_name
+                        if extended_result.source_used
+                        else "Extended fulltext download"
+                    )
+                    fulltext_canonical_host = fulltext_source_name
+                    fulltext_provenance = "derived"
 
                 # Merge extended links (avoid duplicates)
                 seen_urls = {link["url"] for link in pdf_links}
@@ -494,55 +834,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
                 logger.warning(f"Extended sources failed: {e}")
                 await _log("warning", f"Extended fulltext sources failed: {e!s}")
 
-        # === BUILD OUTPUT ===
-        if not fulltext_content and not pdf_links:
-            return ResponseFormatter.no_results(
-                query=f"pmcid={detected_pmcid}, pmid={detected_pmid}, doi={detected_doi}",
-                suggestions=[
-                    "Article may not be open access",
-                    "Try searching with DOI for Unpaywall lookup",
-                    "Check if article is available in PubMed Central",
-                    f"Sources tried: {', '.join(sources_tried)}",
-                ],
-            )
-
-        # Format output
-        await _progress(6, 6, "Formatting fulltext response...")
-        output = f"📖 **{article_title or 'Fulltext Retrieved'}**\n"
-        output += f"🔍 Sources checked: {', '.join(sources_tried)}\n\n"
-
-        # PDF Links section
-        if pdf_links and include_pdf_links:
-            output += "## 📥 PDF/Fulltext Links\n\n"
-            # Deduplicate by URL
-            seen_urls = set()
-            for link in pdf_links:
-                if link["url"] not in seen_urls:
-                    seen_urls.add(link["url"])
-                    icon = "📄" if link["type"] == "pdf" else "🔗"
-                    access_badge = {
-                        "gold": "🥇 Gold OA",
-                        "green": "🟢 Green OA",
-                        "hybrid": "🔶 Hybrid",
-                        "bronze": "🟤 Bronze",
-                        "open_access": "🔓 Open Access",
-                        "alternative": "📋 Alternative",
-                    }.get(link.get("access", ""), "")
-
-                    output += f"- {icon} **{link['source']}** {access_badge}\n"
-                    output += f"  {link['url']}\n"
-                    if link.get("version"):
-                        output += f"  _Version: {link['version']}_\n"
-                    if link.get("license"):
-                        output += f"  _License: {link['license']}_\n"
-            output += "\n"
-
-        # Fulltext content
-        if fulltext_content:
-            output += "## 📝 Content\n\n"
-            output += fulltext_content
-        elif pdf_links:
-            output += "_Structured fulltext not available. Use the PDF links above to access the article._\n"
+        deduped_pdf_links = _deduplicate_link_rows(pdf_links)
 
         # Figures section (when include_figures=True and we have a PMCID)
         if include_figures and detected_pmcid:
@@ -557,24 +849,114 @@ def register_europe_pmc_tools(mcp: FastMCP):
                     pmid=str(detected_pmid) if detected_pmid else None,
                 )
                 if fig_result.figures:
-                    output += "\n---\n"
-                    output += f"## 🖼️ Figures ({fig_result.total_figures})\n\n"
-                    for fig in fig_result.figures:
-                        output += f"#### {fig.label or fig.figure_id}\n"
-                        if fig.caption_title:
-                            output += f"**{fig.caption_title}**\n\n"
-                        if fig.caption_text:
-                            output += f"{fig.caption_text}\n\n"
-                        if fig.image_url:
-                            output += f"**Image URL:** {fig.image_url}\n\n"
+                    figures_payload = [figure.to_dict() for figure in fig_result.figures]
             except Exception as e:
                 logger.warning("Figure extraction in get_fulltext failed: %s", e)
                 await _log("warning", f"Figure extraction skipped: {e!s}")
 
+        next_tools, next_commands = _build_fulltext_next_tools(
+            pmcid=str(detected_pmcid) if detected_pmcid else None,
+            pmid=str(detected_pmid) if detected_pmid else None,
+            include_figures=include_figures,
+            output_format=normalized_output_format,
+        )
+        exposed_pdf_links = deduped_pdf_links if include_pdf_links else []
+        source_counts = _build_fulltext_source_counts(
+            sources_tried=sources_tried,
+            fulltext_source=fulltext_source_name,
+            pdf_links=exposed_pdf_links,
+            figures_count=len(figures_payload),
+        )
+
+        # === BUILD OUTPUT ===
+        if is_structured_output_format(normalized_output_format):
+            return _format_get_fulltext_json(
+                identifier=identifier,
+                pmcid=str(detected_pmcid) if detected_pmcid else None,
+                pmid=str(detected_pmid) if detected_pmid else None,
+                doi=str(detected_doi) if detected_doi else None,
+                title=article_title,
+                fulltext_content=fulltext_content,
+                content_sections=content_sections,
+                pdf_links=exposed_pdf_links,
+                sources_tried=sources_tried,
+                source_counts=source_counts,
+                next_tools=next_tools,
+                next_commands=next_commands,
+                fulltext_source=fulltext_source_name,
+                fulltext_canonical_host=fulltext_canonical_host,
+                fulltext_provenance=fulltext_provenance,
+                include_figures=include_figures,
+                figures=figures_payload,
+                output_format=normalized_output_format,
+            )
+
+        if not fulltext_content and not deduped_pdf_links:
+            return ResponseFormatter.no_results(
+                query=f"pmcid={detected_pmcid}, pmid={detected_pmid}, doi={detected_doi}",
+                suggestions=[
+                    "Article may not be open access",
+                    "Try searching with DOI for Unpaywall lookup",
+                    "Check if article is available in PubMed Central",
+                    f"Sources tried: {', '.join(sources_tried)}",
+                ],
+                output_format=normalized_output_format,
+                tool_name="get_fulltext",
+            )
+
+        # Format output
+        await _progress(6, 6, "Formatting fulltext response...")
+        output = f"📖 **{article_title or 'Fulltext Retrieved'}**\n"
+        output += f"🔍 Sources checked: {', '.join(sources_tried)}\n\n"
+
+        # PDF Links section
+        if deduped_pdf_links and include_pdf_links:
+            output += "## 📥 PDF/Fulltext Links\n\n"
+            for link in deduped_pdf_links:
+                icon = "📄" if link["type"] == "pdf" else "🔗"
+                access_badge = {
+                    "gold": "🥇 Gold OA",
+                    "green": "🟢 Green OA",
+                    "hybrid": "🔶 Hybrid",
+                    "bronze": "🟤 Bronze",
+                    "open_access": "🔓 Open Access",
+                    "alternative": "📋 Alternative",
+                    "subscription": "🏛️ Institutional",
+                }.get(link.get("access", ""), "")
+
+                output += f"- {icon} **{link['source']}** {access_badge}\n"
+                output += f"  {link['url']}\n"
+                if link.get("version"):
+                    output += f"  _Version: {link['version']}_\n"
+                if link.get("license"):
+                    output += f"  _License: {link['license']}_\n"
+            output += "\n"
+
+        # Fulltext content
+        if fulltext_content:
+            output += "## 📝 Content\n\n"
+            output += fulltext_content
+        elif pdf_links:
+            output += "_Structured fulltext not available. Use the PDF links above to access the article._\n"
+            if any(link.get("access") == "subscription" for link in deduped_pdf_links):
+                output += "_Institutional links usually require campus IP recognition or library VPN/proxy access._\n"
+
+        if figures_payload:
+            output += "\n---\n"
+            output += f"## 🖼️ Figures ({len(figures_payload)})\n\n"
+            for fig in figures_payload:
+                output += f"#### {fig.get('label') or fig.get('figure_id', 'Figure')}\n"
+                if fig.get("caption_title"):
+                    output += f"**{fig['caption_title']}**\n\n"
+                if fig.get("caption_text"):
+                    output += f"{fig['caption_text']}\n\n"
+                if fig.get("image_url"):
+                    output += f"**Image URL:** {fig['image_url']}\n\n"
+
         return output
 
-    def _format_sections(parsed: dict[str, Any], sections_filter: str | None) -> str:
-        """Format parsed Europe PMC sections."""
+    def _select_sections(parsed: dict[str, Any], sections_filter: str | None) -> list[dict[str, Any]]:
+        """Select and normalize requested Europe PMC sections."""
         all_sections = parsed.get("sections", [])
 
         if sections_filter:
@@ -585,6 +967,11 @@ def register_europe_pmc_tools(mcp: FastMCP):
                 if any(req in sec_title or sec_title in req for req in requested):
                     filtered.append(sec)
             all_sections = filtered
+
+        return all_sections
+
+    def _render_selected_sections(parsed: dict[str, Any], all_sections: list[dict[str, Any]]) -> str:
+        """Render selected Europe PMC sections into markdown text."""
 
         if not all_sections:
             if parsed.get("abstract"):
@@ -608,6 +995,10 @@ def register_europe_pmc_tools(mcp: FastMCP):
             output += f"---\n📚 **References**: {len(refs)} citations\n"
 
         return output
+
+    def _format_sections(parsed: dict[str, Any], sections_filter: str | None) -> str:
+        """Format parsed Europe PMC sections."""
+        return _render_selected_sections(parsed, _select_sections(parsed, sections_filter))
 
     def _format_core_fulltext(work: dict[str, Any], sections_filter: str | None) -> str:
         """Format CORE fulltext."""
@@ -699,6 +1090,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
         pmid: Union[str, int] | None = None,
         pmcid: Union[str, int] | None = None,
         semantic_type: str | None = None,
+        output_format: Literal["markdown", "json", "toon"] = "markdown",
         ctx: Context | None = None,
     ) -> str:
         """
@@ -730,6 +1122,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
         # Phase 2.1: Input normalization
         normalized_pmid = InputNormalizer.normalize_pmid_single(pmid) if pmid else None
         normalized_pmcid = InputNormalizer.normalize_pmcid(str(pmcid)) if pmcid else None
+        normalized_output_format = normalize_output_format(output_format)
 
         logger.info(f"Getting text-mined terms for PMID={normalized_pmid}, PMCID={normalized_pmcid}")
 
@@ -741,6 +1134,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
                     suggestion="Provide a PMID or PMC ID",
                     example='get_text_mined_terms(pmid="12345678")',
                     tool_name="get_text_mined_terms",
+                    output_format=normalized_output_format,
                 )
 
             client = get_europe_pmc_client()
@@ -757,7 +1151,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
                 else:
                     article_id = normalized_pmcid or ""
 
-                    await _progress(2, 3, "Fetching Europe PMC text-mined annotations...")
+            await _progress(2, 3, "Fetching Europe PMC text-mined annotations...")
             terms = await client.get_text_mined_terms(source, str(article_id), semantic_type)
 
             if not terms:
@@ -768,6 +1162,18 @@ def register_europe_pmc_tools(mcp: FastMCP):
                         "Article may not have text-mining data",
                         "Try a different article",
                     ],
+                    output_format=normalized_output_format,
+                    tool_name="get_text_mined_terms",
+                )
+
+            if is_structured_output_format(normalized_output_format):
+                await _progress(3, 3, "Formatting structured annotation response...")
+                return _format_text_mined_terms_structured(
+                    pmid=str(normalized_pmid) if normalized_pmid else None,
+                    pmcid=str(normalized_pmcid) if normalized_pmcid else None,
+                    semantic_type=semantic_type,
+                    terms=terms,
+                    output_format=normalized_output_format,
                 )
 
             # Group by semantic type
@@ -827,6 +1233,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
                 error=e,
                 suggestion="Check the ID and try again",
                 tool_name="get_text_mined_terms",
+                output_format=normalized_output_format,
             )
 
     # NOTE: get_europe_pmc_citations is NOT registered as a tool.

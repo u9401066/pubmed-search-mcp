@@ -18,15 +18,54 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
+import threading
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable
+
     from mcp.server.fastmcp import FastMCP
 
     from pubmed_search.application.session.manager import SessionManager
     from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
 logger = logging.getLogger(__name__)
+
+
+async def _await_registered_tools(awaitable: Awaitable[Any]) -> Any:
+    """Normalize generic awaitables into a coroutine that asyncio.run can execute."""
+    return await awaitable
+
+
+def _run_awaitable_in_thread(awaitable: Any) -> Any:
+    """Run an awaitable to completion from a sync context, even if an event loop is already running."""
+    result: dict[str, Any] = {}
+    error: dict[str, BaseException] = {}
+
+    def _worker() -> None:
+        try:
+            result["value"] = asyncio.run(_await_registered_tools(awaitable))
+        except BaseException as exc:  # pragma: no cover - defensive transport glue
+            error["value"] = exc
+
+    thread = threading.Thread(target=_worker, daemon=True)
+    thread.start()
+    thread.join()
+
+    if "value" in error:
+        raise error["value"]
+
+    return result.get("value")
+
+
+def _resolve_awaitable(awaitable: Awaitable[Any]) -> Any:
+    """Resolve an awaitable from sync code without leaking un-awaited coroutines."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(_await_registered_tools(awaitable))
+
+    return _run_awaitable_in_thread(awaitable)
 
 
 def _extract_registered_tool_names(mcp: FastMCP) -> set[str]:
@@ -36,10 +75,10 @@ def _extract_registered_tool_names(mcp: FastMCP) -> set[str]:
         raw_tools = list_tools()
         if inspect.isawaitable(raw_tools):
             try:
-                raw_tools = asyncio.run(raw_tools)
-            except RuntimeError:
+                raw_tools = _resolve_awaitable(raw_tools)
+            except Exception:
                 logger.debug(
-                    "FastMCP.list_tools() is awaitable inside a running loop; falling back to private registry"
+                    "FastMCP.list_tools() is awaitable but could not be resolved; falling back to private registry"
                 )
                 raw_tools = None
 

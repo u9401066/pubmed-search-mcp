@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import toons
 
+from pubmed_search.infrastructure.sources.fulltext_download import (
+    FulltextResult,
+    PDFLink,
+    PDFSource,
+)
 from pubmed_search.presentation.mcp_server.tools.europe_pmc import (
     register_europe_pmc_tools,
 )
@@ -231,6 +238,118 @@ class TestGetFulltext:
         assert ctx.report_progress.await_count >= 3
         assert ctx.log.await_count >= 1
 
+    @pytest.mark.asyncio
+    async def test_json_contract(self, tools):
+        mock_client = AsyncMock()
+        mock_client.get_fulltext_xml.return_value = "<xml/>"
+        mock_client.parse_fulltext_xml = MagicMock(
+            return_value={
+                "title": "Structured Article",
+                "sections": [{"title": "Introduction", "content": "Hello world"}],
+            }
+        )
+        with patch(
+            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
+            return_value=mock_client,
+        ):
+            result = await tools["get_fulltext"](pmcid="PMC7096777", output_format="json")
+
+        parsed = json.loads(result)
+        assert parsed["tool"] == "get_fulltext"
+        assert parsed["fulltext_available"] is True
+        assert parsed["content_sections"][0]["title"] == "Introduction"
+        assert parsed["source_counts"]
+        assert parsed["next_tools"]
+        assert parsed["next_commands"]
+        assert parsed["section_provenance"]["content"]["surfacing_source"] == "Europe PMC"
+
+    @pytest.mark.asyncio
+    async def test_extended_sources_extracts_institutional_pdf_text(self, tools):
+        mock_client = AsyncMock()
+        mock_client.get_fulltext_xml.return_value = None
+
+        mock_unpaywall = AsyncMock()
+        mock_unpaywall.get_oa_status.return_value = {"is_oa": False}
+
+        mock_core = AsyncMock()
+        mock_core.search.return_value = {"results": []}
+
+        mock_downloader = MagicMock()
+        mock_downloader.get_fulltext = AsyncMock(
+            return_value=FulltextResult(
+                text_content="Institutional PDF text",
+                pdf_links=[
+                    PDFLink(
+                        url="https://resolver.example.edu/openurl?id=1",
+                        source=PDFSource.INSTITUTIONAL_RESOLVER,
+                        access_type="subscription",
+                        is_direct_pdf=False,
+                    ),
+                    PDFLink(
+                        url="https://publisher.example.edu/paper.pdf",
+                        source=PDFSource.INSTITUTIONAL_RESOLVER,
+                        access_type="subscription",
+                        is_direct_pdf=True,
+                    ),
+                ],
+                source_used=PDFSource.INSTITUTIONAL_RESOLVER,
+                content_type="pdf",
+            )
+        )
+        mock_downloader.close = AsyncMock()
+
+        with (
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
+                return_value=mock_client,
+            ),
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_unpaywall_client",
+                return_value=mock_unpaywall,
+            ),
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_core_client",
+                return_value=mock_core,
+            ),
+            patch(
+                "pubmed_search.infrastructure.sources.fulltext_download.FulltextDownloader",
+                return_value=mock_downloader,
+            ),
+        ):
+            result = await tools["get_fulltext"](doi="10.1234/test", extended_sources=True)
+
+        mock_downloader.get_fulltext.assert_awaited_once_with(
+            pmid=None,
+            pmcid=None,
+            doi="10.1234/test",
+            strategy="extract_text",
+        )
+        assert "Institutional PDF text" in result
+        assert "publisher.example.edu/paper.pdf" in result
+        assert "Institutional" in result
+
+    @pytest.mark.asyncio
+    async def test_toon_contract(self, tools):
+        mock_client = AsyncMock()
+        mock_client.get_fulltext_xml.return_value = "<xml/>"
+        mock_client.parse_fulltext_xml = MagicMock(
+            return_value={
+                "title": "Structured Article",
+                "sections": [{"title": "Introduction", "content": "Hello world"}],
+            }
+        )
+        with patch(
+            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
+            return_value=mock_client,
+        ):
+            result = await tools["get_fulltext"](pmcid="PMC7096777", output_format="toon")
+
+        parsed = toons.loads(result)
+        assert parsed["tool"] == "get_fulltext"
+        assert parsed["fulltext_available"] is True
+        assert parsed["content_sections"][0]["title"] == "Introduction"
+        assert parsed["section_provenance"]["content"]["canonical_host"] == "PubMed Central"
+
 
 # ============================================================
 # get_text_mined_terms
@@ -323,3 +442,41 @@ class TestGetTextMinedTerms:
             result = await tools["get_text_mined_terms"](pmid="12345678", ctx=ctx)
         assert "BRCA1" in result
         assert ctx.report_progress.await_count >= 2
+
+    @pytest.mark.asyncio
+    async def test_json_contract(self, tools):
+        mock_client = AsyncMock()
+        mock_client.get_text_mined_terms.return_value = [
+            {"semantic_type": "GENE_PROTEIN", "term": "BRCA1"},
+            {"semantic_type": "GENE_PROTEIN", "term": "BRCA1"},
+            {"semantic_type": "DISEASE", "term": "Breast Cancer"},
+        ]
+        with patch(
+            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
+            return_value=mock_client,
+        ):
+            result = await tools["get_text_mined_terms"](pmid="12345678", output_format="json")
+
+        parsed = json.loads(result)
+        assert parsed["tool"] == "get_text_mined_terms"
+        assert parsed["annotation_count"] == 3
+        assert any(group["semantic_type"] == "GENE_PROTEIN" for group in parsed["term_groups"])
+        assert parsed["next_tools"]
+        assert parsed["section_provenance"]["annotations"]["surfacing_source"] == "Europe PMC"
+
+    @pytest.mark.asyncio
+    async def test_toon_contract(self, tools):
+        mock_client = AsyncMock()
+        mock_client.get_text_mined_terms.return_value = [
+            {"semantic_type": "CHEMICAL", "term": "Propofol"},
+        ]
+        with patch(
+            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
+            return_value=mock_client,
+        ):
+            result = await tools["get_text_mined_terms"](pmid="12345678", output_format="toon")
+
+        parsed = toons.loads(result)
+        assert parsed["tool"] == "get_text_mined_terms"
+        assert parsed["annotation_count"] == 1
+        assert parsed["term_groups"][0]["terms"][0]["term"] == "Propofol"

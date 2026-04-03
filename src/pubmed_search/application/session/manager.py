@@ -1,11 +1,10 @@
 """
-Research Session Module - Session management and article caching.
+Research session management and article cache coordination.
 
-Provides:
-- Article caching to avoid redundant NCBI API calls
-- Research session state management
-- Search history tracking
-- Reading list management
+Session state stores research workflow context only.
+Article caching is delegated to a dedicated cache collaborator that uses the
+shared cache substrate, so backends can change without rewriting the
+application layer.
 """
 
 from __future__ import annotations
@@ -16,9 +15,18 @@ import logging
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+from pubmed_search.shared.cache_substrate import CacheBackend, CacheStore, JsonFileCacheBackend, MemoryCacheBackend
 
 logger = logging.getLogger(__name__)
+
+
+def _utcnow_iso() -> str:
+    return datetime.now(tz=timezone.utc).isoformat()
 
 
 @dataclass
@@ -33,17 +41,51 @@ class CachedArticle:
     year: str
     doi: str = ""
     pmc_id: str = ""
-    cached_at: str = field(default_factory=lambda: datetime.now(tz=timezone.utc).isoformat())
+    cached_at: str = field(default_factory=_utcnow_iso)
     full_data: dict[str, Any] = field(default_factory=dict)
 
     def is_expired(self, max_age_days: int = 7) -> bool:
         """Check if cache entry is expired."""
         cached_time = datetime.fromisoformat(self.cached_at)
         now = datetime.now(tz=timezone.utc)
-        # Handle legacy cache entries without timezone
         if cached_time.tzinfo is None:
             cached_time = cached_time.replace(tzinfo=timezone.utc)
         return now - cached_time > timedelta(days=max_age_days)
+
+    @classmethod
+    def from_article_data(cls, pmid: str, article_data: dict[str, Any]) -> CachedArticle:
+        payload = dict(article_data)
+        raw_cached_at = payload.get("cached_at")
+        cached_at = raw_cached_at if isinstance(raw_cached_at, str) else _utcnow_iso()
+        payload["cached_at"] = cached_at
+        payload.setdefault("pmid", pmid)
+
+        return cls(
+            pmid=pmid,
+            title=payload.get("title", ""),
+            authors=payload.get("authors", []),
+            abstract=payload.get("abstract", ""),
+            journal=payload.get("journal", ""),
+            year=payload.get("year", ""),
+            doi=payload.get("doi", ""),
+            pmc_id=payload.get("pmc_id", ""),
+            cached_at=cached_at,
+            full_data=payload,
+        )
+
+    def as_article_dict(self) -> dict[str, Any]:
+        """Return a dict payload suitable for API/tools responses."""
+        payload = dict(self.full_data)
+        payload.setdefault("pmid", self.pmid)
+        payload.setdefault("title", self.title)
+        payload.setdefault("authors", self.authors)
+        payload.setdefault("abstract", self.abstract)
+        payload.setdefault("journal", self.journal)
+        payload.setdefault("year", self.year)
+        payload.setdefault("doi", self.doi)
+        payload.setdefault("pmc_id", self.pmc_id)
+        payload["cached_at"] = self.cached_at
+        return payload
 
 
 @dataclass
@@ -59,224 +101,138 @@ class SearchRecord:
 
 @dataclass
 class ResearchSession:
-    """
-    Research session state - the aggregate root for a research project.
-
-    Maintains:
-    - Current research topic/context
-    - Article cache (avoid redundant API calls)
-    - Search history
-    - Reading list with priorities
-    - Notes and annotations
-    """
+    """Aggregate root for research workflow state."""
 
     session_id: str
     topic: str = ""
-    created_at: str = field(default_factory=lambda: datetime.now(tz=timezone.utc).isoformat())
-    updated_at: str = field(default_factory=lambda: datetime.now(tz=timezone.utc).isoformat())
+    created_at: str = field(default_factory=_utcnow_iso)
+    updated_at: str = field(default_factory=_utcnow_iso)
 
-    # Article cache: pmid -> CachedArticle
-    article_cache: dict[str, dict] = field(default_factory=dict)
+    # Compatibility snapshot only. The authoritative cache lives in ArticleCache.
+    article_cache: dict[str, dict[str, Any]] = field(default_factory=dict, repr=False)
 
-    # Search history
-    search_history: list[dict] = field(default_factory=list)
+    # Session-owned references to cached articles. The payloads live in ArticleCache.
+    cached_pmids: list[str] = field(default_factory=list)
 
-    # Reading list: pmid -> {"priority": 1-5, "status": "unread/reading/read", "notes": ""}
-    reading_list: dict[str, dict] = field(default_factory=dict)
-
-    # Excluded PMIDs (user marked as not relevant)
+    search_history: list[dict[str, Any]] = field(default_factory=list)
+    reading_list: dict[str, dict[str, Any]] = field(default_factory=dict)
     excluded_pmids: list[str] = field(default_factory=list)
-
-    # Notes: pmid -> notes
     notes: dict[str, str] = field(default_factory=dict)
 
-    def touch(self):
+    def touch(self) -> None:
         """Update the last modified timestamp."""
-        self.updated_at = datetime.now(tz=timezone.utc).isoformat()
+        self.updated_at = _utcnow_iso()
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ResearchSession:
+        payload = dict(data)
+        payload.setdefault("article_cache", {})
+        return cls(**payload)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize session state without persisting cache payloads."""
+        payload = asdict(self)
+        payload.pop("article_cache", None)
+        return payload
 
 
 class ArticleCache:
-    """
-    Article cache manager with persistence.
+    """Article cache wrapper using the shared cache substrate."""
 
-    Caches article details to avoid redundant NCBI API calls.
-    Supports both in-memory and file-based persistence.
-    """
-
-    def __init__(self, cache_dir: str | None = None, max_age_days: int = 7):
-        """
-        Initialize article cache.
-
-        Args:
-            cache_dir: Directory for persistent cache. If None, uses memory only.
-            max_age_days: Maximum age of cache entries before refresh.
-        """
+    def __init__(
+        self,
+        cache_dir: str | None = None,
+        max_age_days: int = 7,
+        backend: CacheBackend | None = None,
+    ):
         self.cache_dir = Path(cache_dir) if cache_dir else None
         self.max_age_days = max_age_days
-        self._memory_cache: dict[str, CachedArticle] = {}
 
-        if self.cache_dir:
-            self.cache_dir.mkdir(parents=True, exist_ok=True)
-            self._load_cache()
+        if backend is None:
+            if self.cache_dir:
+                self.cache_dir.mkdir(parents=True, exist_ok=True)
+                backend = JsonFileCacheBackend(self.cache_dir / "article_cache.json")
+            else:
+                backend = MemoryCacheBackend()
 
-    def _get_cache_file(self) -> Path:
-        """Get the cache file path."""
-        if self.cache_dir is None:
-            raise ValueError("Cache directory not set")
-        return self.cache_dir / "article_cache.json"
+        self._store = CacheStore[CachedArticle](
+            backend,
+            default_ttl=max_age_days * 86400.0,
+            key_normalizer=lambda value: value.strip(),
+            serializer=asdict,
+            deserializer=self._deserialize_cached_article,
+            name="article-cache",
+        )
 
-    def _load_cache(self):
-        """Load cache from disk."""
-        cache_file = self._get_cache_file()
-        if cache_file.exists():
-            try:
-                with cache_file.open(encoding="utf-8") as f:
-                    data = json.load(f)
-                    for pmid, article_data in data.items():
-                        self._memory_cache[pmid] = CachedArticle(**article_data)
-                logger.info(f"Loaded {len(self._memory_cache)} articles from cache")
-            except Exception as e:
-                logger.warning(f"Failed to load cache: {e}")
-
-    def _save_cache(self):
-        """Save cache to disk."""
-        if not self.cache_dir:
-            return
-
-        cache_file = self._get_cache_file()
-        try:
-            data = {pmid: asdict(article) for pmid, article in self._memory_cache.items()}
-            with cache_file.open("w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            logger.warning(f"Failed to save cache: {e}")
+    @staticmethod
+    def _deserialize_cached_article(raw: Any) -> CachedArticle:
+        if isinstance(raw, CachedArticle):
+            return raw
+        if not isinstance(raw, dict):
+            raise TypeError("Article cache payload must be a dict")
+        return CachedArticle(**raw)
 
     def get(self, pmid: str) -> CachedArticle | None:
-        """
-        Get article from cache.
-
-        Args:
-            pmid: PubMed ID.
-
-        Returns:
-            CachedArticle if found and not expired, None otherwise.
-        """
-        article = self._memory_cache.get(pmid)
-        if article and not article.is_expired(self.max_age_days):
-            logger.debug(f"Cache hit for PMID {pmid}")
-            return article
-        return None
+        return self._store.get(pmid)
 
     def get_many(self, pmids: list[str]) -> tuple[dict[str, CachedArticle], list[str]]:
-        """
-        Get multiple articles from cache.
+        return self._store.get_many(pmids)
 
-        Args:
-            pmids: List of PubMed IDs.
+    def put(self, pmid: str, article_data: dict[str, Any]) -> None:
+        self._store.set(pmid, CachedArticle.from_article_data(pmid, article_data))
 
-        Returns:
-            Tuple of (cached_articles dict, missing_pmids list)
-        """
-        cached = {}
-        missing = []
-
-        for pmid in pmids:
-            article = self.get(pmid)
-            if article:
-                cached[pmid] = article
-            else:
-                missing.append(pmid)
-
-        logger.info(f"Cache: {len(cached)} hits, {len(missing)} misses")
-        return cached, missing
-
-    def put(self, pmid: str, article_data: dict[str, Any]):
-        """
-        Add article to cache.
-
-        Args:
-            pmid: PubMed ID.
-            article_data: Full article data from NCBI.
-        """
-        cached_article = CachedArticle(
-            pmid=pmid,
-            title=article_data.get("title", ""),
-            authors=article_data.get("authors", []),
-            abstract=article_data.get("abstract", ""),
-            journal=article_data.get("journal", ""),
-            year=article_data.get("year", ""),
-            doi=article_data.get("doi", ""),
-            pmc_id=article_data.get("pmc_id", ""),
-            full_data=article_data,
-        )
-        self._memory_cache[pmid] = cached_article
-        self._save_cache()
-        logger.debug(f"Cached article PMID {pmid}")
-
-    def put_many(self, articles: list[dict[str, Any]]):
-        """Add multiple articles to cache (batched - single disk write)."""
-        added = 0
+    def put_many(self, articles: list[dict[str, Any]]) -> int:
+        entries: list[tuple[str, CachedArticle]] = []
         for article in articles:
             pmid = article.get("pmid", "")
             if pmid:
-                cached_article = CachedArticle(
-                    pmid=pmid,
-                    title=article.get("title", ""),
-                    authors=article.get("authors", []),
-                    abstract=article.get("abstract", ""),
-                    journal=article.get("journal", ""),
-                    year=article.get("year", ""),
-                    doi=article.get("doi", ""),
-                    pmc_id=article.get("pmc_id", ""),
-                    full_data=article,
-                )
-                self._memory_cache[pmid] = cached_article
-                added += 1
-        if added > 0:
-            self._save_cache()  # Single disk write for all articles
-            logger.debug(f"Batch cached {added} articles")
+                entries.append((pmid, CachedArticle.from_article_data(pmid, article)))
 
-    def invalidate(self, pmid: str):
-        """Remove article from cache."""
-        if pmid in self._memory_cache:
-            del self._memory_cache[pmid]
-            self._save_cache()
+        return self._store.warmup(entries)
 
-    def clear(self):
-        """Clear all cached articles."""
-        self._memory_cache.clear()
-        self._save_cache()
+    def warmup(self, articles: dict[str, dict[str, Any]] | list[dict[str, Any]]) -> int:
+        if isinstance(articles, dict):
+            payloads = []
+            for pmid, article in articles.items():
+                payload = dict(article)
+                payload.setdefault("pmid", pmid)
+                payloads.append(payload)
+            return self.put_many(payloads)
+
+        return self.put_many(articles)
+
+    def invalidate(self, pmid: str) -> bool:
+        return self._store.invalidate(pmid)
+
+    def clear(self) -> int:
+        return self._store.clear()
+
+    def cleanup_expired(self) -> int:
+        return self._store.cleanup_expired()
 
     def stats(self) -> dict[str, Any]:
-        """Get cache statistics."""
-        total = len(self._memory_cache)
-        expired = sum(1 for a in self._memory_cache.values() if a.is_expired(self.max_age_days))
+        snapshot = self._store.snapshot()
         return {
-            "total_cached": total,
-            "valid": total - expired,
-            "expired": expired,
+            "total_cached": len(self._store),
+            "valid": len(self._store),
+            "expired": snapshot["expirations"],
             "cache_dir": str(self.cache_dir) if self.cache_dir else "memory_only",
+            **snapshot,
         }
+
+    def __contains__(self, pmid: str) -> bool:
+        return pmid in self._store
+
+    def __len__(self) -> int:
+        return len(self._store)
 
 
 class SessionManager:
-    """
-    Manages research sessions with persistence.
+    """Manage research sessions and coordinate the shared article cache."""
 
-    Each session represents a research project/topic with its own:
-    - Article cache
-    - Search history
-    - Reading list
-    """
-
-    def __init__(self, data_dir: str | None = None):
-        """
-        Initialize session manager.
-
-        Args:
-            data_dir: Directory for session data. If None, uses memory only.
-        """
+    def __init__(self, data_dir: str | None = None, article_cache: ArticleCache | None = None):
         self.data_dir = Path(data_dir) if data_dir else None
+        self.article_cache = article_cache or ArticleCache(cache_dir=str(self.data_dir) if self.data_dir else None)
         self._sessions: dict[str, ResearchSession] = {}
         self._current_session_id: str | None = None
 
@@ -285,269 +241,311 @@ class SessionManager:
             self._load_sessions()
 
     def _get_sessions_file(self) -> Path:
-        """Get the sessions index file path."""
         if self.data_dir is None:
             raise RuntimeError("data_dir not configured")
         return self.data_dir / "sessions.json"
 
     def _get_session_file(self, session_id: str) -> Path:
-        """Get a specific session file path."""
         if self.data_dir is None:
             raise RuntimeError("data_dir not configured")
         return self.data_dir / f"session_{session_id}.json"
 
-    def _load_sessions(self):
-        """Load sessions index from disk."""
+    def _load_sessions(self) -> None:
         sessions_file = self._get_sessions_file()
-        if sessions_file.exists():
-            try:
-                with sessions_file.open(encoding="utf-8") as f:
-                    index = json.load(f)
-                    self._current_session_id = index.get("current_session_id")
-                    for session_id in index.get("sessions", []):
-                        self._load_session(session_id)
-                logger.info(f"Loaded {len(self._sessions)} sessions")
-            except Exception as e:
-                logger.warning(f"Failed to load sessions: {e}")
+        if not sessions_file.exists():
+            return
 
-    def _load_session(self, session_id: str):
-        """Load a specific session from disk."""
+        try:
+            with sessions_file.open(encoding="utf-8") as handle:
+                index = json.load(handle)
+        except Exception as exc:
+            logger.warning("Failed to load sessions: %s", exc)
+            return
+
+        self._current_session_id = index.get("current_session_id")
+        for session_id in index.get("sessions", []):
+            self._load_session(session_id)
+
+        logger.info("Loaded %s sessions", len(self._sessions))
+
+    def _load_session(self, session_id: str) -> None:
         session_file = self._get_session_file(session_id)
-        if session_file.exists():
-            try:
-                with session_file.open(encoding="utf-8") as f:
-                    data = json.load(f)
-                    self._sessions[session_id] = ResearchSession(**data)
-            except Exception as e:
-                logger.warning(f"Failed to load session {session_id}: {e}")
+        if not session_file.exists():
+            return
 
-    def _save_session(self, session: ResearchSession):
-        """Save a session to disk."""
+        try:
+            with session_file.open(encoding="utf-8") as handle:
+                payload = json.load(handle)
+        except Exception as exc:
+            logger.warning("Failed to load session %s: %s", session_id, exc)
+            return
+
+        legacy_cache = payload.pop("article_cache", {}) if isinstance(payload, dict) else {}
+        if not isinstance(payload, dict):
+            logger.warning("Skipping malformed session payload for %s", session_id)
+            return
+
+        session = ResearchSession.from_dict(payload)
+        self._sessions[session_id] = session
+
+        if isinstance(legacy_cache, dict) and legacy_cache:
+            self.article_cache.warmup(legacy_cache)
+            self._refresh_session_cache_view(session)
+            self._save_session(session)
+        else:
+            self._refresh_session_cache_view(session)
+
+    def _save_session(self, session: ResearchSession) -> None:
         if not self.data_dir:
             return
 
         session_file = self._get_session_file(session.session_id)
         try:
-            with session_file.open("w", encoding="utf-8") as f:
-                json.dump(asdict(session), f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            logger.warning(f"Failed to save session: {e}")
+            with session_file.open("w", encoding="utf-8") as handle:
+                json.dump(session.to_dict(), handle, ensure_ascii=False, indent=2)
+        except Exception as exc:
+            logger.warning("Failed to save session: %s", exc)
 
-        # Update index
         self._save_sessions_index()
 
-    def _save_sessions_index(self):
-        """Save sessions index."""
+    def _save_sessions_index(self) -> None:
         if not self.data_dir:
             return
 
         sessions_file = self._get_sessions_file()
+        index = {
+            "current_session_id": self._current_session_id,
+            "sessions": list(self._sessions.keys()),
+        }
         try:
-            index = {
-                "current_session_id": self._current_session_id,
-                "sessions": list(self._sessions.keys()),
-            }
-            with sessions_file.open("w", encoding="utf-8") as f:
-                json.dump(index, f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            logger.warning(f"Failed to save sessions index: {e}")
+            with sessions_file.open("w", encoding="utf-8") as handle:
+                json.dump(index, handle, ensure_ascii=False, indent=2)
+        except Exception as exc:
+            logger.warning("Failed to save sessions index: %s", exc)
+
+    def _session_related_pmids(self, session: ResearchSession) -> list[str]:
+        ordered: list[str] = []
+        seen: set[str] = set()
+
+        def add(pmid: str) -> None:
+            if pmid and pmid not in seen:
+                seen.add(pmid)
+                ordered.append(pmid)
+
+        for pmid in session.cached_pmids:
+            add(pmid)
+
+        for record in session.search_history:
+            for pmid in record.get("pmids", []):
+                add(pmid)
+
+        for pmid in session.reading_list:
+            add(pmid)
+
+        for pmid in session.excluded_pmids:
+            add(pmid)
+
+        for pmid in session.notes:
+            add(pmid)
+
+        return ordered
+
+    def _refresh_session_cache_view(self, session: ResearchSession) -> ResearchSession:
+        cached_map, _ = self.get_cached_article_map(self._session_related_pmids(session))
+        session.article_cache = cached_map
+        return session
+
+    @staticmethod
+    def _record_cached_pmids(session: ResearchSession, pmids: Iterable[str]) -> None:
+        seen = set(session.cached_pmids)
+        for pmid in pmids:
+            if pmid and pmid not in seen:
+                seen.add(pmid)
+                session.cached_pmids.append(pmid)
 
     def create_session(self, topic: str = "") -> ResearchSession:
-        """
-        Create a new research session.
-
-        Args:
-            topic: Research topic description.
-
-        Returns:
-            New ResearchSession instance.
-        """
         session_id = hashlib.md5(  # nosec B324
-            f"{topic}{datetime.now(tz=timezone.utc).isoformat()}".encode(),
-            usedforsecurity=False,  # Used only for ID generation, not security
+            f"{topic}{_utcnow_iso()}".encode(),
+            usedforsecurity=False,
         ).hexdigest()[:12]
         session = ResearchSession(session_id=session_id, topic=topic)
         self._sessions[session_id] = session
         self._current_session_id = session_id
         self._save_session(session)
-        logger.info(f"Created session {session_id}: {topic}")
-        return session
+        logger.info("Created session %s: %s", session_id, topic)
+        return self._refresh_session_cache_view(session)
 
     def get_current_session(self) -> ResearchSession | None:
-        """Get the current active session."""
-        if self._current_session_id:
-            return self._sessions.get(self._current_session_id)
-        return None
+        if not self._current_session_id:
+            return None
+        session = self._sessions.get(self._current_session_id)
+        if session is None:
+            return None
+        return self._refresh_session_cache_view(session)
 
     def get_or_create_session(self, topic: str = "default") -> ResearchSession:
-        """Get current session or create a new one."""
         session = self.get_current_session()
-        if not session:
+        if session is None:
             session = self.create_session(topic)
         return session
 
     def switch_session(self, session_id: str) -> ResearchSession | None:
-        """Switch to a different session."""
-        if session_id in self._sessions:
-            self._current_session_id = session_id
-            self._save_sessions_index()
-            return self._sessions[session_id]
-        return None
+        if session_id not in self._sessions:
+            return None
+        self._current_session_id = session_id
+        self._save_sessions_index()
+        return self.get_current_session()
 
     def list_sessions(self) -> list[dict[str, Any]]:
-        """List all sessions."""
         return [
             {
-                "session_id": s.session_id,
-                "topic": s.topic,
-                "created_at": s.created_at,
-                "updated_at": s.updated_at,
-                "article_count": len(s.article_cache),
-                "search_count": len(s.search_history),
-                "is_current": s.session_id == self._current_session_id,
+                "session_id": session.session_id,
+                "topic": session.topic,
+                "created_at": session.created_at,
+                "updated_at": session.updated_at,
+                "article_count": len(self.get_session_cached_pmids(session=session)),
+                "search_count": len(session.search_history),
+                "is_current": session.session_id == self._current_session_id,
             }
-            for s in self._sessions.values()
+            for session in self._sessions.values()
         ]
 
-    def add_to_cache(self, articles: list[dict[str, Any]], *, _skip_save: bool = False):
-        """Add articles to current session's cache.
-
-        Args:
-            articles: List of article dicts to cache.
-            _skip_save: Internal flag to defer disk write (used by add_search_record).
-        """
-        session = self.get_or_create_session()
-        for article in articles:
-            pmid = article.get("pmid", "")
-            if pmid:
-                session.article_cache[pmid] = {
-                    **article,
-                    "cached_at": datetime.now(tz=timezone.utc).isoformat(),
-                }
-        session.touch()
-        if not _skip_save:
-            self._save_session(session)
-
-    def get_from_cache(self, pmids: list[str]) -> tuple[list[dict], list[str]]:
-        """
-        Get articles from current session's cache.
-
-        Returns:
-            Tuple of (cached_articles, missing_pmids)
-        """
+    def warm_article_cache(self, articles: list[dict[str, Any]]) -> int:
+        warmed = self.article_cache.put_many(articles)
         session = self.get_current_session()
-        if not session:
-            return [], pmids
+        if session:
+            self._record_cached_pmids(session, [article.get("pmid", "") for article in articles])
+            self._refresh_session_cache_view(session)
+            self._save_session(session)
+        return warmed
 
-        cached = []
-        missing = []
+    def add_to_cache(self, articles: list[dict[str, Any]], *, _skip_save: bool = False) -> int:
+        warmed = self.article_cache.put_many(articles)
+        session = self.get_current_session()
+        if session:
+            self._record_cached_pmids(session, [article.get("pmid", "") for article in articles])
+        if session and not _skip_save:
+            self._refresh_session_cache_view(session)
+            self._save_session(session)
+        elif session:
+            self._refresh_session_cache_view(session)
+        return warmed
 
-        for pmid in pmids:
-            if pmid in session.article_cache:
-                cached.append(session.article_cache[pmid])
-            else:
-                missing.append(pmid)
+    def get_cached_article(self, pmid: str) -> dict[str, Any] | None:
+        cached = self.article_cache.get(pmid)
+        if cached is None:
+            return None
+        return cached.as_article_dict()
 
-        return cached, missing
+    def get_cached_article_map(self, pmids: Iterable[str]) -> tuple[dict[str, dict[str, Any]], list[str]]:
+        pmid_list = [pmid for pmid in pmids if pmid]
+        cached, missing = self.article_cache.get_many(pmid_list)
+        return ({pmid: article.as_article_dict() for pmid, article in cached.items()}, missing)
+
+    def get_from_cache(self, pmids: str | list[str]) -> tuple[list[dict[str, Any]], list[str]]:
+        pmid_list = [pmids] if isinstance(pmids, str) else pmids
+        cached_map, missing = self.get_cached_article_map(pmid_list)
+        ordered = [cached_map[pmid] for pmid in pmid_list if pmid in cached_map]
+        return ordered, missing
+
+    def get_session_cached_pmids(
+        self,
+        *,
+        session: ResearchSession | None = None,
+        limit: int | None = None,
+    ) -> list[str]:
+        active_session = session or self.get_current_session()
+        if active_session is None:
+            return []
+
+        cached_pmids = [pmid for pmid in self._session_related_pmids(active_session) if pmid in self.article_cache]
+        return cached_pmids[:limit] if limit is not None else cached_pmids
 
     def is_searched(self, pmid: str) -> bool:
-        """Check if PMID was already searched in this session."""
         session = self.get_current_session()
-        if not session:
+        if session is None:
             return False
-        return pmid in session.article_cache
+        return pmid in self._session_related_pmids(session)
 
-    def add_search_record(self, query: str, pmids: list[str], filters: dict | None = None):
-        """Record a search in history."""
+    def add_search_record(self, query: str, pmids: list[str], filters: dict[str, Any] | None = None) -> None:
         session = self.get_or_create_session()
         record = {
             "query": query,
-            "timestamp": datetime.now(tz=timezone.utc).isoformat(),
+            "timestamp": _utcnow_iso(),
             "result_count": len(pmids),
             "pmids": pmids,
             "filters": filters or {},
         }
         session.search_history.append(record)
         session.touch()
+        self._refresh_session_cache_view(session)
         self._save_session(session)
 
-    def find_cached_search(self, query: str, limit: int | None = None) -> list[dict] | None:
-        """
-        Find cached results for a query.
-
-        Returns cached articles if the same query was performed in this session.
-        Only returns cache hit if we have enough results.
-
-        Args:
-            query: Search query string
-            limit: Required number of results (returns None if cache has fewer)
-
-        Returns:
-            List of cached articles if found, None otherwise
-        """
+    def find_cached_search(self, query: str, limit: int | None = None) -> list[dict[str, Any]] | None:
         session = self.get_current_session()
-        if not session:
+        if session is None:
             return None
 
-        # Normalize query for comparison
         normalized_query = query.strip().lower()
 
-        # Find matching search record
-        for record in reversed(session.search_history):  # Most recent first
-            if record["query"].strip().lower() == normalized_query:
-                pmids = record.get("pmids", [])
+        for record in reversed(session.search_history):
+            if record.get("query", "").strip().lower() != normalized_query:
+                continue
 
-                # Check if we have enough cached results
-                if limit and len(pmids) < limit:
-                    continue
+            pmids = record.get("pmids", [])
+            if limit and len(pmids) < limit:
+                continue
 
-                # Retrieve cached articles
-                cached_articles = []
-                for pmid in pmids[:limit] if limit else pmids:
-                    if pmid in session.article_cache:
-                        cached_articles.append(session.article_cache[pmid])
+            requested_pmids = pmids[:limit] if limit else pmids
+            cached_map, missing = self.get_cached_article_map(requested_pmids)
+            if missing:
+                continue
 
-                # Only return if we have all requested articles
-                if cached_articles and (not limit or len(cached_articles) >= limit):
-                    logger.info(f"Cache hit for query '{query}': {len(cached_articles)} articles")
-                    return cached_articles[:limit] if limit else cached_articles
+            results = [cached_map[pmid] for pmid in requested_pmids if pmid in cached_map]
+            if results and (not limit or len(results) >= limit):
+                logger.info("Cache hit for query '%s': %s articles", query, len(results))
+                return results
 
         return None
 
-    def add_to_reading_list(self, pmid: str, priority: int = 3, notes: str = ""):
-        """Add article to reading list."""
+    def add_to_reading_list(self, pmid: str, priority: int = 3, notes: str = "") -> None:
         session = self.get_or_create_session()
         session.reading_list[pmid] = {
             "priority": priority,
             "status": "unread",
-            "added_at": datetime.now(tz=timezone.utc).isoformat(),
+            "added_at": _utcnow_iso(),
             "notes": notes,
         }
         session.touch()
+        self._refresh_session_cache_view(session)
         self._save_session(session)
 
-    def exclude_article(self, pmid: str):
-        """Mark article as excluded/not relevant."""
+    def exclude_article(self, pmid: str) -> None:
         session = self.get_or_create_session()
         if pmid not in session.excluded_pmids:
             session.excluded_pmids.append(pmid)
             session.touch()
+            self._refresh_session_cache_view(session)
             self._save_session(session)
 
     def get_session_summary(self) -> dict[str, Any]:
-        """Get summary of current session for Agent context."""
         session = self.get_current_session()
-        if not session:
+        if session is None:
             return {"status": "no_active_session"}
 
+        cached_pmids = self.get_session_cached_pmids(session=session, limit=20)
         return {
             "session_id": session.session_id,
             "topic": session.topic,
-            "cached_articles": len(session.article_cache),
+            "cached_articles": len(self.get_session_cached_pmids(session=session)),
             "searches_performed": len(session.search_history),
             "reading_list_count": len(session.reading_list),
             "excluded_count": len(session.excluded_pmids),
-            "recent_searches": [{"query": s["query"], "count": s["result_count"]} for s in session.search_history[-5:]],
-            "cached_pmids": list(session.article_cache.keys())[:20],
+            "recent_searches": [
+                {"query": search.get("query", ""), "count": search.get("result_count", 0)}
+                for search in session.search_history[-5:]
+            ],
+            "cached_pmids": cached_pmids,
             "reading_list": session.reading_list,
+            "cache_stats": self.article_cache.stats(),
         }

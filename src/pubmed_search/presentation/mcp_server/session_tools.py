@@ -14,16 +14,49 @@ Removed in v0.3.1:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
-    from mcp.server.fastmcp import FastMCP
+    from mcp.server.fastmcp import Context, FastMCP
 
     from pubmed_search.application.session.manager import SessionManager
 
 logger = logging.getLogger(__name__)
+_JSON_MIME_TYPE = "application/json"
+SESSION_RESOURCE_URIS = (
+    "session://last-search",
+    "session://last-search/pmids",
+    "session://last-search/results",
+    "session://context",
+)
+
+
+def _session_resource_kwargs(*, name: str, title: str, description: str) -> dict[str, object]:
+    """Build consistent host-facing metadata for dynamic session resources."""
+    return {
+        "name": name,
+        "title": title,
+        "description": description,
+        "mime_type": _JSON_MIME_TYPE,
+        "meta": {"pubmedSearch": {"scope": "session", "dynamic": True, "format": "json"}},
+    }
+
+
+async def notify_session_resources_updated(ctx: Context | None) -> None:
+    """Best-effort session resource refresh notifications for hosts that support them."""
+    if ctx is None:
+        return
+
+    session = getattr(ctx, "session", None)
+    if session is None:
+        return
+
+    for uri in SESSION_RESOURCE_URIS:
+        with contextlib.suppress(Exception):
+            await session.send_resource_updated(uri)
 
 
 def register_session_tools(mcp: FastMCP, session_manager: SessionManager):
@@ -154,17 +187,16 @@ def register_session_tools(mcp: FastMCP, session_manager: SessionManager):
                     }
                 )
 
-            if pmid not in session.article_cache:
+            article = session_manager.get_cached_article(pmid)
+            if article is None:
                 return json.dumps(
                     {
                         "success": False,
                         "error": f"PMID {pmid} not in cache",
-                        "cached_count": len(session.article_cache),
+                        "cached_count": len(session_manager.get_session_cached_pmids()),
                         "hint": "Use fetch_article_details to get from PubMed",
                     }
                 )
-
-            article = session.article_cache[pmid]
 
             return json.dumps(
                 {"success": True, "source": "cache", "article": article},
@@ -213,7 +245,7 @@ def register_session_tools(mcp: FastMCP, session_manager: SessionManager):
                 recent_searches.append({"query": s.get("query", "")[:60], "count": len(s.get("pmids", []))})
 
             # Get some cached PMIDs sample
-            cached_pmids = list(session.article_cache.keys())
+            cached_pmids = session_manager.get_session_cached_pmids(limit=100)
 
             result: dict[str, Any] = {
                 "success": True,
@@ -222,7 +254,7 @@ def register_session_tools(mcp: FastMCP, session_manager: SessionManager):
                 "topic": session.topic,
                 "created_at": session.created_at,
                 "stats": {
-                    "cached_articles": len(session.article_cache),
+                    "cached_articles": len(session_manager.get_session_cached_pmids()),
                     "total_searches": len(session.search_history),
                     "reading_list_items": len(session.reading_list),
                     "excluded_articles": len(session.excluded_pmids),
@@ -269,7 +301,17 @@ def register_session_resources(mcp: FastMCP, session_manager: SessionManager):
     Agent doesn't need to use these for normal operation.
     """
 
-    @mcp.resource("session://last-search")
+    @mcp.resource(
+        "session://last-search",
+        **cast(
+            "Any",
+            _session_resource_kwargs(
+                name="session_last_search",
+                title="Last Search Summary",
+                description="Latest session search metadata and reusable PMID summary.",
+            ),
+        ),
+    )
     def get_last_search() -> str:
         """Latest search metadata and quick agent-facing summary."""
         session = session_manager.get_current_session()
@@ -291,7 +333,17 @@ def register_session_resources(mcp: FastMCP, session_manager: SessionManager):
             ensure_ascii=False,
         )
 
-    @mcp.resource("session://last-search/pmids")
+    @mcp.resource(
+        "session://last-search/pmids",
+        **cast(
+            "Any",
+            _session_resource_kwargs(
+                name="session_last_search_pmids",
+                title="Last Search PMIDs",
+                description="PMID list from the latest recorded search for immediate reuse.",
+            ),
+        ),
+    )
     def get_last_search_pmids() -> str:
         """PMIDs from the latest search for direct agent reuse."""
         session = session_manager.get_current_session()
@@ -310,7 +362,17 @@ def register_session_resources(mcp: FastMCP, session_manager: SessionManager):
             ensure_ascii=False,
         )
 
-    @mcp.resource("session://last-search/results")
+    @mcp.resource(
+        "session://last-search/results",
+        **cast(
+            "Any",
+            _session_resource_kwargs(
+                name="session_last_search_results",
+                title="Last Search Cached Results",
+                description="Cached article payloads for the latest search PMIDs.",
+            ),
+        ),
+    )
     def get_last_search_results() -> str:
         """Cached article payloads corresponding to the latest search PMIDs."""
         session = session_manager.get_current_session()
@@ -319,8 +381,8 @@ def register_session_resources(mcp: FastMCP, session_manager: SessionManager):
 
         last_search = session.search_history[-1]
         pmids = last_search.get("pmids", [])
-        cached_articles = [session.article_cache[pmid] for pmid in pmids if pmid in session.article_cache]
-        missing_pmids = [pmid for pmid in pmids if pmid not in session.article_cache]
+        cached_map, missing_pmids = session_manager.get_cached_article_map(pmids)
+        cached_articles = [cached_map[pmid] for pmid in pmids if pmid in cached_map]
         return json.dumps(
             {
                 "active": True,
@@ -333,7 +395,17 @@ def register_session_resources(mcp: FastMCP, session_manager: SessionManager):
             ensure_ascii=False,
         )
 
-    @mcp.resource("session://context")
+    @mcp.resource(
+        "session://context",
+        **cast(
+            "Any",
+            _session_resource_kwargs(
+                name="session_context",
+                title="Session Context",
+                description="Current research session context and cache summary.",
+            ),
+        ),
+    )
     def get_research_context() -> str:
         """Internal: Current research context (for debugging)."""
         import json
@@ -346,8 +418,8 @@ def register_session_resources(mcp: FastMCP, session_manager: SessionManager):
             {
                 "active": True,
                 "session_id": session.session_id,
-                "cached_articles": len(session.article_cache),
+                "cached_articles": len(session_manager.get_session_cached_pmids()),
                 "searches": len(session.search_history),
-                "cached_pmids": list(session.article_cache.keys())[:50],
+                "cached_pmids": session_manager.get_session_cached_pmids(limit=50),
             }
         )

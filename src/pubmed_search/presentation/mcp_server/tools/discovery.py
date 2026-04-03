@@ -35,6 +35,17 @@ from ._common import (
     check_cache,
     format_search_results,
 )
+from .agent_output import (
+    OutputFormat,
+    finalize_next_tools,
+    is_structured_output_format,
+    make_next_tool,
+    make_section_provenance,
+    make_source_count_row,
+    normalize_output_format,
+    preferred_structured_output_format,
+    serialize_structured_payload,
+)
 
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
@@ -99,6 +110,217 @@ def _format_ambiguity_hint(ambiguous_terms: list, query: str) -> str:
         hints.append(f'"{term}" = journal "{journal}"? Use: {hint}')
 
     return "\n\n⚠️ **Tip**: " + " | ".join(hints)
+
+
+def _format_fetch_article_details_json(
+    requested_pmids: list[str],
+    articles: list[dict[str, Any]],
+    output_format: OutputFormat = "json",
+) -> str:
+    """Format fetch_article_details as an agent-oriented JSON envelope."""
+    structured_output_format = preferred_structured_output_format(output_format)
+    lead_pmid = next((str(article.get("pmid")) for article in articles if article.get("pmid")), None)
+    pmid_csv = ",".join(str(article.get("pmid")) for article in articles if article.get("pmid"))
+
+    next_tool_candidates: list[dict[str, str]] = []
+    if lead_pmid:
+        next_tool_candidates.append(
+            make_next_tool(
+                "find_related_articles",
+                "Use the lead PMID as a seed before widening the exploration graph.",
+                f'find_related_articles(pmid="{lead_pmid}", limit=10)',
+            )
+        )
+        next_tool_candidates.append(
+            make_next_tool(
+                "get_fulltext",
+                "Pivot from metadata into fulltext or OA link discovery for the lead article.",
+                (
+                    f'get_fulltext(pmid="{lead_pmid}", extended_sources=True, '
+                    f'output_format="{structured_output_format}")'
+                ),
+            )
+        )
+    if pmid_csv:
+        next_tool_candidates.append(
+            make_next_tool(
+                "get_citation_metrics",
+                "Rank these detailed records by impact before exporting or narrowing further.",
+                f'get_citation_metrics(pmids="{pmid_csv}")',
+            )
+        )
+        if len(articles) > 1:
+            next_tool_candidates.append(
+                make_next_tool(
+                    "prepare_export",
+                    "You already have multiple resolved records; export them once you are ready to shortlist offline.",
+                    f'prepare_export(pmids="{pmid_csv}", format="ris")',
+                )
+            )
+
+    next_tools, next_commands = finalize_next_tools(next_tool_candidates)
+    visible_fields = sorted(
+        {key for article in articles for key, value in article.items() if value not in (None, "", [], {}, ())}
+    )
+
+    payload = {
+        "tool": "fetch_article_details",
+        "pmids_requested": requested_pmids,
+        "article_count": len(articles),
+        "articles": articles,
+        "source_counts": [make_source_count_row("pubmed", len(articles))],
+        "next_tools": next_tools,
+        "next_commands": next_commands,
+        "section_provenance": {
+            "articles": make_section_provenance(
+                surfacing_source="PubMed / NCBI Entrez",
+                canonical_host="PubMed",
+                provenance="direct",
+                note="Detailed article metadata is fetched directly from PubMed/NCBI records.",
+                fields=visible_fields,
+            ),
+            "source_counts": make_section_provenance(
+                surfacing_source="pubmed-search-mcp",
+                canonical_host=None,
+                provenance="derived",
+                note="Counts reflect how many PubMed records were successfully materialized for this request.",
+                upstream_sources=["pubmed"],
+            ),
+            "next_tools": make_section_provenance(
+                surfacing_source="pubmed-search-mcp",
+                canonical_host="pubmed-search-mcp",
+                provenance="derived",
+                note="Next-tool suggestions are inferred locally from resolved PMIDs and article metadata.",
+            ),
+        },
+    }
+    return serialize_structured_payload(payload, output_format)
+
+
+def _format_citation_metrics_structured(
+    requested_pmids: list[str],
+    resolved_pmids: list[str],
+    articles: list[dict[str, Any]],
+    *,
+    sort_by: str,
+    min_citations: int | None,
+    min_rcr: float | None,
+    min_percentile: float | None,
+    total_metrics: int,
+    output_format: OutputFormat = "json",
+) -> str:
+    """Format get_citation_metrics as a structured agent-facing payload."""
+    structured_output_format = preferred_structured_output_format(output_format)
+    normalized_articles: list[dict[str, Any]] = []
+    for article in articles:
+        icite = article.get("icite", {})
+        normalized_articles.append(
+            {
+                "pmid": str(icite.get("pmid") or article.get("pmid") or ""),
+                "title": icite.get("title"),
+                "journal": icite.get("journal"),
+                "year": icite.get("year"),
+                "citation_count": icite.get("citation_count"),
+                "relative_citation_ratio": icite.get("relative_citation_ratio"),
+                "nih_percentile": icite.get("nih_percentile"),
+                "citations_per_year": icite.get("citations_per_year"),
+                "apt": icite.get("apt"),
+            }
+        )
+
+    lead_pmid = next((article["pmid"] for article in normalized_articles if article.get("pmid")), None)
+    pmid_csv = ",".join(article["pmid"] for article in normalized_articles if article.get("pmid"))
+
+    next_tool_candidates: list[dict[str, str]] = []
+    if pmid_csv:
+        next_tool_candidates.append(
+            make_next_tool(
+                "fetch_article_details",
+                "Hydrate the ranked PMIDs with richer PubMed metadata before deeper review or export.",
+                f'fetch_article_details(pmids="{pmid_csv}", output_format="{structured_output_format}")',
+            )
+        )
+    if lead_pmid:
+        next_tool_candidates.append(
+            make_next_tool(
+                "get_fulltext",
+                "Move from citation impact into fulltext access for the strongest PMID first.",
+                (
+                    f'get_fulltext(pmid="{lead_pmid}", extended_sources=True, '
+                    f'output_format="{structured_output_format}")'
+                ),
+            )
+        )
+        next_tool_candidates.append(
+            make_next_tool(
+                "find_related_articles",
+                "Use the highest-impact PMID as a seed for neighborhood exploration.",
+                f'find_related_articles(pmid="{lead_pmid}", limit=10)',
+            )
+        )
+    if len(normalized_articles) > 1 and pmid_csv:
+        next_tool_candidates.append(
+            make_next_tool(
+                "prepare_export",
+                "Export the ranked citation set once you are ready to compare it offline.",
+                f'prepare_export(pmids="{pmid_csv}", format="ris")',
+            )
+        )
+
+    next_tools, next_commands = finalize_next_tools(next_tool_candidates)
+    visible_fields = sorted(
+        {
+            key
+            for article in normalized_articles
+            for key, value in article.items()
+            if value not in (None, "", [], {}, ())
+        }
+    )
+    filters = {
+        key: value
+        for key, value in {
+            "min_citations": min_citations,
+            "min_rcr": min_rcr,
+            "min_percentile": min_percentile,
+        }.items()
+        if value is not None
+    }
+
+    payload = {
+        "tool": "get_citation_metrics",
+        "pmids_requested": requested_pmids,
+        "pmids_resolved": resolved_pmids,
+        "article_count": len(normalized_articles),
+        "sort_by": sort_by,
+        "filters": filters,
+        "articles": normalized_articles,
+        "source_counts": [make_source_count_row("nih-icite", len(normalized_articles), total_metrics)],
+        "next_tools": next_tools,
+        "next_commands": next_commands,
+        "section_provenance": {
+            "articles": make_section_provenance(
+                surfacing_source="NIH iCite",
+                canonical_host="NIH iCite",
+                provenance="direct",
+                note="Citation metrics are fetched directly from the NIH iCite service for the resolved PMIDs.",
+                fields=visible_fields,
+            ),
+            "source_counts": make_section_provenance(
+                surfacing_source="pubmed-search-mcp",
+                canonical_host=None,
+                provenance="derived",
+                note="Counts reflect how many iCite metric rows survived sorting and filter constraints.",
+                upstream_sources=["nih-icite"],
+            ),
+            "next_tools": make_section_provenance(
+                surfacing_source="pubmed-search-mcp",
+                canonical_host="pubmed-search-mcp",
+                provenance="derived",
+                note="Next-tool suggestions are inferred locally from the ranked PMID set and chosen metric sort.",
+            ),
+        },
+    }
+    return serialize_structured_payload(payload, output_format)
 
 
 def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
@@ -633,7 +855,10 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             )
 
     @mcp.tool()
-    async def fetch_article_details(pmids: Union[str, list, int]) -> str:
+    async def fetch_article_details(
+        pmids: Union[str, list, int],
+        output_format: Literal["markdown", "json"] = "markdown",
+    ) -> str:
         """
         Fetch detailed information for one or more PubMed articles.
 
@@ -649,6 +874,7 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             Detailed information for each article.
         """
         # Phase 2.1: Input normalization
+        normalized_output_format = normalize_output_format(output_format)
         normalized_pmids = InputNormalizer.normalize_pmids(pmids)
 
         if not normalized_pmids:
@@ -657,6 +883,7 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 suggestion="Provide one or more valid PMID numbers",
                 example='fetch_article_details(pmids="12345678,87654321")',
                 tool_name="fetch_article_details",
+                output_format=normalized_output_format,
             )
 
         logger.info(f"Fetching details for PMIDs: {normalized_pmids}")
@@ -664,6 +891,49 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             results = await searcher.fetch_details(normalized_pmids)
 
             if not results:
+                if is_structured_output_format(normalized_output_format):
+                    structured_output_format = preferred_structured_output_format(normalized_output_format)
+                    return serialize_structured_payload(
+                        {
+                            "tool": "fetch_article_details",
+                            "pmids_requested": normalized_pmids,
+                            "article_count": 0,
+                            "articles": [],
+                            "source_counts": [make_source_count_row("pubmed", 0)],
+                            "next_tools": [
+                                make_next_tool(
+                                    "unified_search",
+                                    "Resolve valid PubMed records first when the requested PMIDs cannot be materialized.",
+                                    f'unified_search(query="<topic>", output_format="{structured_output_format}")',
+                                )
+                            ],
+                            "next_commands": [
+                                f'unified_search(query="<topic>", output_format="{structured_output_format}")'
+                            ],
+                            "section_provenance": {
+                                "articles": make_section_provenance(
+                                    surfacing_source="PubMed / NCBI Entrez",
+                                    canonical_host="PubMed",
+                                    provenance="direct",
+                                    note="No PubMed records were returned for the requested PMIDs.",
+                                ),
+                                "source_counts": make_section_provenance(
+                                    surfacing_source="pubmed-search-mcp",
+                                    canonical_host=None,
+                                    provenance="derived",
+                                    note="Counts reflect the absence of resolved records from PubMed.",
+                                    upstream_sources=["pubmed"],
+                                ),
+                                "next_tools": make_section_provenance(
+                                    surfacing_source="pubmed-search-mcp",
+                                    canonical_host="pubmed-search-mcp",
+                                    provenance="derived",
+                                    note="Fallback navigation is generated locally when no records are returned.",
+                                ),
+                            },
+                        },
+                        normalized_output_format,
+                    )
                 return ResponseFormatter.no_results(
                     query=f"PMIDs: {', '.join(normalized_pmids)}",
                     suggestions=[
@@ -677,7 +947,11 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                     error=results[0]["error"],
                     suggestion="Check if the PMIDs exist in PubMed",
                     tool_name="fetch_article_details",
+                    output_format=normalized_output_format,
                 )
+
+            if is_structured_output_format(normalized_output_format):
+                return _format_fetch_article_details_json(normalized_pmids, results, normalized_output_format)
 
             return format_search_results(results, include_doi=True)
         except Exception as e:
@@ -686,6 +960,7 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 error=e,
                 suggestion="Check PMID format and try again",
                 tool_name="fetch_article_details",
+                output_format=normalized_output_format,
             )
 
     @mcp.tool()
@@ -695,6 +970,7 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         min_citations: int | None = None,
         min_rcr: float | None = None,
         min_percentile: float | None = None,
+        output_format: Literal["markdown", "json", "toon"] = "markdown",
     ) -> str:
         """
         Get citation metrics from NIH iCite for articles.
@@ -726,6 +1002,8 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         Returns:
             Articles with citation metrics, sorted and filtered as requested.
         """
+        normalized_output_format = normalize_output_format(output_format)
+
         # Phase 2.1: Input normalization
         normalized_pmids = InputNormalizer.normalize_pmids(pmids)
 
@@ -743,6 +1021,7 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                         suggestion="Search first or provide PMIDs directly",
                         example='get_citation_metrics(pmids="12345678,87654321")',
                         tool_name="get_citation_metrics",
+                        output_format=normalized_output_format,
                     )
             else:
                 pmid_list = normalized_pmids
@@ -753,6 +1032,7 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                     suggestion="Provide PMIDs or use 'last' for recent search results",
                     example='get_citation_metrics(pmids="12345678")',
                     tool_name="get_citation_metrics",
+                    output_format=normalized_output_format,
                 )
 
             # Get metrics from iCite
@@ -766,6 +1046,8 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                         "Check if PMIDs are correct",
                         "Try fetch_article_details to verify the articles exist",
                     ],
+                    output_format=normalized_output_format,
+                    tool_name="get_citation_metrics",
                 )
 
             # Convert to list for sorting/filtering
@@ -782,7 +1064,15 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 articles = [a for a in articles if (a["icite"].get("nih_percentile") or 0) >= min_percentile]
 
             if not articles:
-                return "No articles match the specified filters."
+                return ResponseFormatter.no_results(
+                    query=f"Filtered PMIDs: {', '.join(pmid_list[:5])}{'...' if len(pmid_list) > 5 else ''}",
+                    suggestions=[
+                        "Relax one or more citation filters",
+                        "Try sorting without filters first to inspect the raw iCite rows",
+                    ],
+                    output_format=normalized_output_format,
+                    tool_name="get_citation_metrics",
+                )
 
             # Sort
             def get_sort_value(a):
@@ -790,6 +1080,19 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 return val if val is not None else -1
 
             articles = sorted(articles, key=get_sort_value, reverse=True)
+
+            if is_structured_output_format(normalized_output_format):
+                return _format_citation_metrics_structured(
+                    normalized_pmids,
+                    pmid_list,
+                    articles,
+                    sort_by=sort_by,
+                    min_citations=min_citations,
+                    min_rcr=min_rcr,
+                    min_percentile=min_percentile,
+                    total_metrics=len(metrics),
+                    output_format=normalized_output_format,
+                )
 
             # Format output
             output = f"📊 **Citation Metrics** ({len(articles)} articles)\n"
@@ -844,4 +1147,9 @@ def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
 
         except Exception as e:
             logger.exception(f"Get citation metrics failed: {e}")
-            return f"Error: {e}"
+            return ResponseFormatter.error(
+                error=e,
+                suggestion="Check PMID format and try again",
+                tool_name="get_citation_metrics",
+                output_format=normalized_output_format,
+            )

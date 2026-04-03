@@ -20,6 +20,7 @@ Architecture:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import sys
@@ -27,8 +28,10 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
+from mcp import types
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
+from mcp.shared.exceptions import McpError
 
 from pubmed_search.container import ApplicationContainer
 
@@ -45,9 +48,103 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_EMAIL = "pubmed-search@example.com"
 DEFAULT_DATA_DIR = str(Path.home() / ".pubmed-search-mcp")
+_EXPERIMENTAL_TASK_TOOL_SUPPORT: dict[str, types.TaskExecutionMode] = {"unified_search": "optional"}
+_UNIFIED_SEARCH_TASK_IMMEDIATE_RESPONSE = (
+    "unified_search is running as an experimental MCP task. Poll tasks/get and tasks/result for completion."
+)
 
 # ── Module-level DI container ──────────────────────────────────────────────
 _container: ApplicationContainer | None = None
+
+
+class _TaskProgressContext:
+    """Proxy FastMCP context that maps progress updates onto task status."""
+
+    def __init__(self, base_context: Any, task_context: Any) -> None:
+        self._base_context = base_context
+        self._task_context = task_context
+
+    async def report_progress(self, progress: float, total: float, message: str) -> None:
+        del progress, total
+        await self._task_context.update_status(message or "Task running")
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._base_context, name)
+
+
+def _as_call_tool_result(result: Any) -> types.CallToolResult:
+    """Normalize task work output into a task-storable CallToolResult."""
+    if isinstance(result, types.CallToolResult):
+        return result
+
+    if isinstance(result, str):
+        return types.CallToolResult(content=[types.TextContent(type="text", text=result)])
+
+    if isinstance(result, dict):
+        return types.CallToolResult(
+            content=[types.TextContent(type="text", text=json.dumps(result, ensure_ascii=False))],
+            structuredContent=result,
+        )
+
+    if isinstance(result, tuple) and len(result) == 2 and isinstance(result[1], dict):
+        return types.CallToolResult(content=list(result[0]), structuredContent=result[1])
+
+    return types.CallToolResult(content=list(result))
+
+
+def _configure_experimental_task_support(mcp: FastMCP[Any]) -> None:
+    """Enable experimental task support for selected long-running tools only."""
+    mcp._mcp_server.experimental.enable_tasks()
+
+    async def _list_tools() -> list[types.Tool]:
+        tools = await mcp.list_tools()
+        for tool in tools:
+            task_mode = _EXPERIMENTAL_TASK_TOOL_SUPPORT.get(tool.name)
+            if task_mode is None:
+                continue
+
+            tool.execution = types.ToolExecution(taskSupport=task_mode)
+            merged_meta = dict(tool.meta or {})
+            merged_meta["pubmedSearch"] = {
+                **merged_meta.get("pubmedSearch", {}),
+                "experimentalTaskSupport": task_mode,
+            }
+            tool.meta = merged_meta
+
+        return tools
+
+    async def _call_tool(name: str, arguments: dict[str, Any]) -> Any:
+        context = mcp.get_context()
+        experimental = context.request_context.experimental
+
+        if not experimental.is_task:
+            return await mcp.call_tool(name, arguments)
+
+        if name not in _EXPERIMENTAL_TASK_TOOL_SUPPORT:
+            raise McpError(
+                types.ErrorData(
+                    code=-32601,
+                    message="Task-augmented execution is only available experimentally for unified_search.",
+                )
+            )
+
+        async def _work(task_context: Any) -> types.CallToolResult:
+            proxied_context = _TaskProgressContext(context, task_context)
+            result = await mcp._tool_manager.call_tool(
+                name,
+                arguments,
+                context=cast("Any", proxied_context),
+                convert_result=True,
+            )
+            return _as_call_tool_result(result)
+
+        return await experimental.run_task(
+            _work,
+            model_immediate_response=_UNIFIED_SEARCH_TASK_IMMEDIATE_RESPONSE,
+        )
+
+    mcp._mcp_server.list_tools()(_list_tools)
+    mcp._mcp_server.call_tool()(_call_tool)
 
 
 def get_container() -> ApplicationContainer:
@@ -70,7 +167,7 @@ def _make_lifespan(
     @asynccontextmanager
     async def _lifespan(server: FastMCP[Any]) -> AsyncIterator[ApplicationContainer]:
         """Application lifecycle: startup → yield → shutdown."""
-        logger.info("Lifecycle: startup — resources ready")
+        logger.info("Lifecycle: startup - resources ready")
         try:
             yield container
         finally:
@@ -78,7 +175,7 @@ def _make_lifespan(
             from pubmed_search.shared.async_utils import close_shared_async_client
 
             await close_shared_async_client()
-            logger.info("Lifecycle: shutdown — shared HTTP client closed")
+            logger.info("Lifecycle: shutdown - shared HTTP client closed")
 
     return _lifespan
 
@@ -162,6 +259,8 @@ def create_server(
     if install_profiling(mcp):
         install_http_profiling()
 
+    _configure_experimental_task_support(mcp)
+
     logger.info("PubMed Search MCP Server initialized successfully")
 
     return mcp
@@ -206,14 +305,13 @@ def start_http_api_background(session_manager, searcher, port: int = 8765):
             # Get single cached article
             if path.startswith("/api/cached_article/"):
                 pmid = path.split("/")[-1].split("?")[0]
-                session = session_manager.get_current_session()
-
-                if session and pmid in session.article_cache:
+                cached_article = session_manager.get_cached_article(pmid)
+                if cached_article is not None:
                     self._send_json(
                         {
                             "source": "pubmed",
                             "verified": True,
-                            "data": session.article_cache[pmid],
+                            "data": cached_article,
                         }
                     )
                     return
@@ -223,7 +321,7 @@ def start_http_api_background(session_manager, searcher, port: int = 8765):
                     try:
                         articles = _bg_loop.run_until_complete(searcher.fetch_details([pmid]))
                         if articles:
-                            session_manager.add_to_cache(articles)
+                            session_manager.warm_article_cache(articles)
                             self._send_json(
                                 {
                                     "source": "pubmed",

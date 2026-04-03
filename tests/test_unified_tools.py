@@ -136,6 +136,8 @@ class TestDispatchStrategy:
 class TestFormatAsJson:
     async def test_basic(self):
         analysis = MagicMock(spec=AnalyzedQuery)
+        analysis.original_query = "test"
+        analysis.intent = QueryIntent.EXPLORATION
         analysis.to_dict.return_value = {"query": "test"}
         stats = MagicMock(spec=AggregationStats)
         stats.to_dict.return_value = {"unique": 0}
@@ -143,6 +145,40 @@ class TestFormatAsJson:
         parsed = json.loads(result)
         assert "analysis" in parsed
         assert "articles" in parsed
+
+    async def test_counts_first_orientation_payload(self):
+        analysis = MagicMock(spec=AnalyzedQuery)
+        analysis.original_query = "remimazolam sedation"
+        analysis.intent = QueryIntent.EXPLORATION
+        analysis.to_dict.return_value = {"query": "remimazolam sedation"}
+
+        stats = MagicMock(spec=AggregationStats)
+        stats.to_dict.return_value = {"unique_articles": 2}
+        stats.by_source = {"pubmed": 2}
+
+        article = MagicMock()
+        article.pmid = "12345678"
+        article.pmc = "PMC1234567"
+        article.to_dict.return_value = {"pmid": "12345678"}
+
+        result = _format_as_json(
+            [article],
+            analysis,
+            stats,
+            source_api_counts={"pubmed": (2, 25)},
+            counts_first=True,
+        )
+
+        parsed = json.loads(result)
+        assert parsed["orientation"]["mode"] == "counts_first"
+        assert parsed["orientation"]["source_counts"][0]["source"] == "pubmed"
+        assert parsed["orientation"]["next_actions"]
+        assert parsed["orientation"]["next_actions"][0]["tool"] == "unified_search"
+        assert parsed["tool"] == "unified_search"
+        assert parsed["source_counts"][0]["source"] == "pubmed"
+        assert parsed["next_tools"]
+        assert parsed["next_commands"]
+        assert parsed["section_provenance"]["articles"]["provenance"] == "mixed"
 
 
 class TestFormatUnifiedResults:
@@ -240,6 +276,57 @@ class TestFormatUnifiedResults:
         line = sources_line[0]
         assert "(" in line and ")" in line, f"Source counts missing in: {line}"
 
+    async def test_counts_first_section_includes_next_tools(self):
+        analysis = MagicMock(spec=AnalyzedQuery)
+        analysis.original_query = "remimazolam sedation"
+        analysis.complexity = QueryComplexity.MODERATE
+        analysis.intent = QueryIntent.EXPLORATION
+        analysis.pico = None
+
+        stats = MagicMock(spec=AggregationStats)
+        stats.by_source = {"pubmed": 2, "openalex": 1}
+        stats.unique_articles = 2
+        stats.duplicates_removed = 1
+
+        article = MagicMock()
+        article.title = "Lead Article"
+        article.ranking_score = 0.9
+        article.pmid = "12345678"
+        article.pmc = "PMC1234567"
+        article.doi = None
+        article.article_type = None
+        article.author_string = "A B"
+        article.journal = "Journal"
+        article.year = 2025
+        article.volume = None
+        article.issue = None
+        article.pages = None
+        article.has_open_access = False
+        article.best_oa_link = None
+        article.citation_metrics = None
+        article.journal_metrics = None
+        article.similarity_score = None
+        article.similarity_source = None
+        article.abstract = "Short abstract"
+        article.sources = [MagicMock(source="pubmed")]
+
+        result = await _format_unified_results(
+            [article],
+            analysis,
+            stats,
+            include_analysis=True,
+            include_trials=False,
+            source_api_counts={"pubmed": (2, 25), "openalex": (1, None)},
+            counts_first=True,
+        )
+
+        assert "Count-First Orientation" in result
+        assert "| pubmed | 2 | 25 | backlog |" in result
+        assert "Next Tools" in result
+        assert "fetch_article_details" in result
+        assert "get_article_figures" in result
+        assert "**Sources**:" not in result
+
 
 # ============================================================
 # Tool capture and registration
@@ -248,7 +335,17 @@ class TestFormatUnifiedResults:
 
 def _capture_tools(mcp, searcher):
     tools = {}
-    mcp.tool = lambda: lambda func: (tools.__setitem__(func.__name__, func), func)[1]
+
+    def _tool(*decorator_args, **decorator_kwargs):
+        del decorator_args, decorator_kwargs
+
+        def _decorator(func):
+            tools[func.__name__] = func
+            return func
+
+        return _decorator
+
+    mcp.tool = _tool
     register_unified_search_tools(mcp, searcher)
     return tools
 
