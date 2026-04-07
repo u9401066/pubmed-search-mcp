@@ -1,8 +1,27 @@
 """
-PubMed Search MCP - Complete PubMed/NCBI Search Library
+PubMed Search MCP package surface.
 
-A comprehensive library for searching PubMed, NCBI databases, and other academic sources.
-Provides MCP server integration and standalone Python API.
+This top-level package intentionally separates three different surfaces:
+
+1. Python library surface
+    Import `LiteratureSearcher`, `NCBIExtendedClient`, export helpers, and related
+    query-analysis utilities from `pubmed_search` when you are using this project as
+    a Python library.
+
+2. MCP primary surface
+    Use `create_mcp_server` or `mcp_main` when you want the Model Context Protocol
+    server. The actual MCP tool contract is discovered dynamically at runtime through
+    the MCP server itself.
+
+3. Auxiliary HTTP surface
+    Cache/session HTTP endpoints such as `/api/cached_article/{pmid}` and
+    `/api/session/summary` live in `run_server.py` and `presentation.api.server`.
+    They are public auxiliary read APIs, but they are not re-exported from this
+    package root and should not be confused with the primary MCP contract.
+
+In short: import from `pubmed_search` for Python library usage, start the MCP server
+through the MCP entrypoints below for tool usage, and treat the auxiliary HTTP API as
+an explicit secondary surface.
 
 Quick Start:
     from pubmed_search import LiteratureSearcher
@@ -47,7 +66,7 @@ Architecture (DDD):
     domain/          - Core business logic (entities, value objects)
     application/     - Use cases (search, export, session)
     infrastructure/  - External systems (NCBI, Europe PMC, etc.)
-    presentation/    - User interfaces (MCP server, REST API)
+    presentation/    - User interfaces (MCP server, auxiliary HTTP API)
     shared/          - Cross-cutting concerns (exceptions, utils)
 """
 
@@ -143,7 +162,7 @@ from .infrastructure.sources.openurl import (
 )
 
 # ═══════════════════════════════════════════════════════════════════
-# Presentation - MCP Server
+# Presentation - MCP primary surface
 # ═══════════════════════════════════════════════════════════════════
 from .presentation.mcp_server import (
     create_server as create_mcp_server,
@@ -152,7 +171,7 @@ from .presentation.mcp_server import (
     main as mcp_main,
 )
 
-__version__ = "0.5.0"
+__version__ = "0.5.1"
 
 __all__ = [
     # ═══════════════════════════════════════════════════════════════════
@@ -221,7 +240,7 @@ __all__ = [
     # ═══════════════════════════════════════════════════════════════════
     "UnifiedArticle",
     # ═══════════════════════════════════════════════════════════════════
-    # MCP Server
+    # MCP primary surface
     # ═══════════════════════════════════════════════════════════════════
     "create_mcp_server",
     "mcp_main",

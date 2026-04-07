@@ -1,7 +1,9 @@
 # PubMed Search MCP - Roadmap
 
+<!-- markdownlint-disable MD022 MD024 MD031 MD032 MD040 MD058 MD060 -->
+
 > 本文件記錄**待實作**功能。已完成功能請參閱 [CHANGELOG.md](CHANGELOG.md)。
-> **最後更新**: 2026-02-25
+> **最後更新**: 2026-04-06
 
 ---
 
@@ -99,7 +101,15 @@
 | ICD/MeSH 轉換類 | 2 | ✅ | - | ✅ |
 | 機構存取類 | 4 | ✅ | - | ✅ |
 
-**結論**: 現有 40 個 MCP 工具均符合基本 Agent 友善標準 ✅
+**結論**: 現有 42 個 MCP 工具均符合基本 Agent 友善標準 ✅
+
+### 近期已同步完成的基建工作
+
+- `read_session` facade 已落地，session 讀取整合為單一入口，legacy tools 保留相容 wrapper
+- `manage_pipeline` facade 已落地，pipeline CRUD / history / scheduling 共用同一套 dispatch
+- `schedule_pipeline` 已接上 APScheduler-backed persisted scheduling，不再是 Phase 4 placeholder
+- pipeline validation 已拆成 Pydantic schema parsing + semantic autofix 兩層
+- runtime config 已集中到 Pydantic Settings，multi-source dispatch 已收斂到 source registry 與 source gating
 
 ---
 
@@ -604,34 +614,38 @@ src/pubmed_search/
 
 ## 願景
 
-**PubMed 為核心，可擴展至其他生醫資料庫**
+### PubMed 為核心的 Biomedical Evidence Node
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    pubmed-search-mcp                        │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│   ┌─────────────────────────────────────────────────────┐   │
-│   │              Core: PubMed/NCBI Entrez               │   │
-│   │  • 官方 Entrez API                                   │   │
-│   │  • 官方查詢語法 [MeSH], [tiab], [dp]                 │   │
-│   │  • MeSH 標準詞彙、PICO 結構化查詢                     │   │
-│   └─────────────────────────────────────────────────────┘   │
-│                           ↓                                 │
-│   ┌─────────────────────────────────────────────────────┐   │
-│   │           Future Extensions (Phase 9+)              │   │
-│   │  • PMC 全文 (同為 NCBI，共用 Entrez)                 │   │
-│   │  • ClinicalTrials.gov (NCBI 合作)                   │   │
-│   │  • Cochrane Library (系統性回顧)                     │   │
-│   └─────────────────────────────────────────────────────┘   │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
+> 而不是自建搜尋基礎設施
+
+這個 repo 未來只做會讓使用價值明顯上升的能力層，而不把資源投入在自建 crawler、索引、搜尋引擎或通用資料平台。
+
+### 核心價值主張
+
+1. 生醫詞彙翻譯與控制詞彙對齊
+2. agent-first 的 query planning / output contract
+3. citation / timeline / evidence context
+4. 可重跑的 pipeline / session workflow
+5. 多來源結果的 normalization，而不是自建搜尋基礎設施
+
+### 產品定位
+
+```text
+user / agent problem
+  -> biomedical vocabulary alignment
+  -> query planning and evidence retrieval
+  -> citation / timeline / evidence context
+  -> reproducible pipeline / session workflow
+  -> normalized multi-source outputs
 ```
 
-**設計原則**：
-- ✅ 使用各資料庫**官方 API 和語法**（不另創 DSL）
-- ✅ PubMed 功能優先完善，再逐步擴展
-- ✅ 擴展時保持 API 一致性
+### 設計原則
+
+- ✅ 使用官方 API、官方 identifier 與控制詞彙，不另創搜尋基礎設施
+- ✅ 先提升 evidence workflow 的價值密度，再考慮新增資料源
+- ✅ Agent-first：優先優化 query planning、output contract、next-step guidance
+- ✅ 所有新工作流遵循 [docs/REPO_SEPARATION_PRINCIPLES.md](docs/REPO_SEPARATION_PRINCIPLES.md)
+- ✅ 新來源只有在 normalization、policy、service 邊界穩定後才擴張
 
 ## 版本歷程
 
@@ -653,6 +667,224 @@ src/pubmed_search/
 ---
 
 ## 待實作功能
+
+> **注意**: 以下以「2026-2027 Canonical Roadmap」作為真正優先順序。後面的舊 phase 章節保留為 backlog / 設計參考，不代表目前執行順序。
+
+### 🧭 2026-2027 Canonical Roadmap
+
+#### 核心策略
+
+我們不追求「工具越多越好」或「資料源越多越強」，而是追求以下五條 value 軸的穩定提升：
+
+| Workstream | 目標 | 直接價值 | 不做什麼 |
+|------------|------|----------|----------|
+| A. 生醫詞彙對齊 | 把自然語言問題對齊到 MeSH / ICD / gene / compound 等控制詞彙 | 提升檢索精度、降低 agent 幻覺 | 不做通用翻譯引擎、不維護大型人工字典 |
+| B. Agent-first Query Planning | 把 query analysis / planning / output contract 變成可預測 API | 讓 agent 可規劃、可追蹤、可組裝後續步驟 | 不做強制僵化 DSL、不做 hidden magic |
+| C. Evidence Context | 把 citation / timeline / evidence summary 串成可判讀證據脈絡 | 提升研究判讀價值，而不是只吐文獻列表 | 不做花哨但無法重用的圖表功能優先化 |
+| D. Reproducible Workflow | 把 pipeline / session / schedule / report 變成可重跑工作流 | 讓研究流程可保存、可驗證、可交接 | 不把 facade 當實作中心 |
+| E. Multi-source Normalization | 把多來源文章、全文、指標與 provenance 對齊成穩定模型 | 提高跨來源可比較性與可匯出性 | 不自建搜尋 index / crawler / ranking infra |
+
+#### 執行原則
+
+1. 先修 contract，再擴充功能。
+2. 先把 service / policy / normalization 邊界拉清楚，再新增來源或新工具。
+3. 每個 workstream 都必須回答：輸入 schema 是什麼、semantic planner 是什麼、policy 在哪裡、runtime side effect 在哪裡、對外 contract 是什麼。
+
+#### Milestone 規畫
+
+##### M1. Vocabulary + Query Contract 基線
+
+**時間窗**: 現在 → 接下來 4-6 週
+
+**重點**:
+
+- 建立生醫詞彙對齊層的 canonical contract
+- 建立 agent-first query planning / output contract v1
+- 清掉 public API / docs surface 的明顯漂移
+
+**交付物**:
+
+- vocabulary alignment service / policy 初版
+  - query keyword → MeSH / synonym / ICD / gene / compound 對齊
+  - 對齊結果必須能被 `generate_search_queries`、`parse_pico`、`convert_icd_mesh`、未來 query planner 共用
+- query planning contract v1
+  - 明確區分 query schema、semantic planning、dispatch policy、runtime execution
+  - 統一 no-results、suggestion、next-step、evidence hint 的 output contract
+- API / docs contract review-update
+  - Copilot Studio OpenAPI
+  - HTTP `/api/*` auxiliary surface 定位
+  - docs site / README / pipeline public wording 對齊
+
+**完成標準**:
+
+- agent 可穩定取得結構化 planning diagnostics，而不是只拿到鬆散文字說明
+- 詞彙對齊結果可在至少 2 條工作流重用
+- public docs 不再同時存在 40-tool / Phase 4 placeholder 之類的表述漂移
+
+##### M2. Fulltext + Reproducible Workflow 主線
+
+**時間窗**: M1 後 4-8 週
+
+**重點**:
+
+- 完成 fulltext service orchestration 重構第一階段
+- 讓 pipeline / session / schedule / run artifact 成為真正的可重跑 workflow
+
+**交付物**:
+
+- FulltextService / FulltextRegistry / policy-driven retrieval flow（第一階段已落地；下一步是 downloader phase split）
+  - `get_fulltext` 只保留 normalization / progress / formatting
+  - fulltext request schema、semantic retrieval intent、source policy、fetch/extract runtime 分離
+- pipeline / session reproducibility 強化
+  - saved pipeline → run artifact → report → history 的主線穩定
+  - session summary / PMIDs / cached article 能作為 evidence context reuse entry
+  - schedule / history / diff mode 語義清楚且可文檔化
+- auxiliary verification surfaces
+  - 若保留 HTTP `/api/*`，就明確標記為 auxiliary public contract
+
+**完成標準**:
+
+- fulltext orchestration 不再卡在 MCP tool
+- agent 能從 session / pipeline artifact 重建研究脈絡，而不是重跑整個搜尋
+- workflow 的輸入、產出、歷史與錯誤路徑都可追蹤
+
+##### M3. Evidence Context 主線
+
+**時間窗**: M2 後 6-10 週
+
+**重點**:
+
+- 把 citation / timeline / evidence classification 從功能清單提升為 evidence context layer
+
+**交付物**:
+
+- citation context normalization
+  - related / citing / references / citation metrics 共用 evidence context model
+- timeline policy 穩定化
+  - request schema、milestone policy、landmark policy、runtime builder 明確分層
+- evidence summary 初版
+  - study type / evidence level / timeline milestone / citation context 的 summary contract
+  - session 與 export 能引用同一份 evidence context，而不是各自拼字串
+
+**完成標準**:
+
+- citation 與 timeline 不再只是分析工具，而是可被後續 workflow 消費的 evidence context
+- evidence summary 可以作為 export、review、pipeline report 的穩定輸入
+
+##### M4. Multi-source Normalization 深化
+
+**時間窗**: 與 M2 / M3 部分並行，之後持續推進
+
+**重點**:
+
+- 只擴張 normalization，不擴張自建 infra
+
+**交付物**:
+
+- canonical article / evidence / provenance model 補強
+- source registry metadata 持續擴充
+- citation、OA、fulltext availability、source trust、identifier linkage 的 normalization contract
+- 商業來源維持 default-off、policy-gated、mock-tested
+
+**完成標準**:
+
+- 新資料源加入時，主要工作是註冊 metadata + adapter + normalization，而不是重寫 orchestration
+- 結果品質的提升來自 normalization 和 evidence context，而不是來源數量本身
+
+#### Workstream 詳細規畫
+
+##### A. 生醫詞彙翻譯與控制詞彙對齊
+
+**目標**: 把 agent 的自然語言問題轉成可被生醫資料庫穩定理解的 controlled vocabulary layer。
+
+**要做**:
+
+- 統一 MeSH、ICD、gene、compound、clinical term 對齊策略
+- 建立 reusable terminology alignment result model
+- 把 query diagnostics、term mapping、synonym expansion 做成 planner 可消費的結構化輸出
+
+**不做**:
+
+- 通用多語翻譯引擎
+- 自建醫學知識圖譜或大型詞典平台
+
+##### B. Agent-first Query Planning / Output Contract
+
+**目標**: 讓 agent 在搜尋前能規劃，在搜尋後能知道下一步，而不是只拿到一團自然語言回應。
+
+**要做**:
+
+- query schema / semantic planner / dispatch policy / execution separation
+- 統一 `suggestion`, `next_step`, `evidence_hint`, `quality_hint`, `source_counts` 等 output contract
+- 讓 `parse_pico`, `generate_search_queries`, `analyze_search_query`, `unified_search` 的結果可以串起來，而不是各說各話
+
+**不做**:
+
+- 強迫 agent 永遠走固定流程
+- 新建一套龐大 query DSL 取代現有官方語法
+
+##### C. Citation / Timeline / Evidence Context
+
+**目標**: 從「找到文章」提升到「理解證據脈絡」。
+
+**要做**:
+
+- citation context, timeline context, evidence level context 對齊成一組可組裝模型
+- timeline diagnostics 與 citation metrics 進入可重用 contract
+- pipeline report / export / review tools 能讀同一組 context
+
+**不做**:
+
+- 先做大量視覺化花樣再回頭補資料結構
+- 把 timeline 變成獨立宇宙，與 search / export / session 脫節
+
+##### D. 可重跑的 Pipeline / Session Workflow
+
+**目標**: 把一次性 agent 行為變成可重跑、可審計、可交接的 workflow asset。
+
+**要做**:
+
+- pipeline config → validation → run → history → report → schedule 的閉環
+- session summary / PMIDs / cached article 作為 workflow reuse substrate
+- search proof / evidence provenance / run artifact 的一致化
+
+**不做**:
+
+- facade 名稱更新了，但 orchestration 仍塞在 tool surface
+- schedule 只有表面 API，沒有可追蹤 artifact 與 status
+
+##### E. 多來源結果 Normalization
+
+**目標**: 把多來源能力變成 evidence quality 的乘數，而不是變成維護成本黑洞。
+
+**要做**:
+
+- canonical identifier linkage
+- article / fulltext / citation / OA / provenance normalization
+- source registry + policy gating + adapter contract
+
+**不做**:
+
+- 自建 crawler、索引、搜尋平台
+- 為了來源數量而來源數量，導致 normalization 反而破碎
+
+#### 明確不投資的方向
+
+| 類型 | 不做原因 |
+|------|----------|
+| 自建搜尋基礎設施 | 不符合 repo 核心價值，維護成本高，與現有官方 API 策略衝突 |
+| 通用翻譯平台 | Agent 已有 LLM 翻譯能力，repo 應專注控制詞彙對齊 |
+| 為了炫技而新增資料源 | 若沒有 normalization / provenance / policy 支撐，價值密度低 |
+| 大量一次性分析圖表 | 若不能回寫成 evidence context contract，優先級低 |
+
+#### 版本節奏建議
+
+| 版本窗 | 主題 | 重點成果 |
+|--------|------|----------|
+| v0.6.x | Query contract + docs contract cleanup | vocabulary alignment baseline, query planning contract, public docs/API cleanup |
+| v0.7.x | Fulltext service + workflow reproducibility | fulltext orchestration refactor, stable pipeline/session/report flow |
+| v0.8.x | Evidence context | citation/timeline/evidence summary contracts |
+| v0.9.x | Normalization depth | provenance, source trust, identifier linkage, export/review reuse |
 
 ### 🔥 Phase 5.9: Meta-Analysis 搜尋中介層 ⭐⭐⭐⭐⭐
 > **目標**: 提供 Systematic Review / Meta-Analysis 等級的完整搜尋工作流程
@@ -813,8 +1045,8 @@ src/pubmed_search/
 | **CrossRef** | 150M | ✅ 免費 | ✅ `unified_search` (DOI metadata) |
 | **Unpaywall** | - | ✅ 免費 | ✅ `unified_search` (OA links) |
 | EMBASE | 40M | 💰 需訂閱 | ❌ 不計畫 |
-| Web of Science | 100M | 💰 需訂閱 | ❌ 不計畫 |
-| Scopus | 90M | 💰 需訂閱 | ❌ 不計畫 |
+| Web of Science | 100M | 💰 需訂閱 | ✅ 預設關閉 connector skeleton（僅授權環境啟用） |
+| Scopus | 90M | 💰 需訂閱 | ✅ 預設關閉 connector skeleton（僅授權環境啟用） |
 | Cochrane | 2M | ⚠️ 有限 | 💭 未來考慮 |
 
 #### 工作流程示例
@@ -1097,7 +1329,7 @@ Phase 4: 傳播與迭代
 
 | Tool | 說明 | 狀態 |
 |------|------|:----:|
-| `list_search_history` | 列出搜尋歷史（query, timestamp, result_count, pmid_count） | ✅ |
+| `read_session(action="summary")` | 統一 session facade，含摘要與可選歷史 | ✅ |
 | `get_session_pmids` | 取得特定搜尋的 PMIDs + 時間戳 | ✅ |
 | `get_session_summary` | 取得 session 摘要（session_id, stats, recent_searches） | ✅ |
 | `get_cached_article` | 從 cache 取得文章詳情 | ✅ |
@@ -1106,8 +1338,8 @@ Phase 4: 傳播與迭代
 
 ```python
 # 驗證 Agent 真的有搜尋
-list_search_history()
-# → 顯示所有搜尋，含 timestamp 和 PMID 數量
+read_session(action="summary", include_history=True)
+# → 顯示 session 摘要與搜尋歷史，含 timestamp 和 PMID 數量
 
 get_session_pmids(-1)  # 最近一次
 # → 顯示 query, timestamp, pmids 列表
@@ -1441,7 +1673,6 @@ arxiv-mcp-server 目前只有 **1 個 Prompt**: `deep-paper-analysis`
 | `get_europe_pmc_citations` | 取得引用文章 | ✅ v0.1.18 |
 | `get_text_mined_terms` | 取得文字探勘結果 (基因/疾病/化學物) | ✅ v0.1.18 |
 
-
 ##### Unpaywall 整合 ✅ 已完成
 | Tool | 說明 | 狀態 |
 |------|------|:----:|
@@ -1529,6 +1760,7 @@ arxiv-mcp-server 目前只有 **1 個 Prompt**: `deep-paper-analysis`
 | Google Scholar 爬蟲 | google-scholar-mcp | ToS 風險、IP 封鎖 |
 | Sci-Hub 整合 | JackKuo666 | 版權/法律問題 |
 | Zotero 整合 | zotero-mcp | 不同定位 |
+| 自建搜尋索引 / crawler / ranking 基礎設施 | 內部自研 | 與本 repo 的官方 API / normalization / evidence node 定位衝突 |
 | 本地 RAG | papersgpt-for-zotero | 複雜度太高 |
 
 ---
@@ -2297,7 +2529,7 @@ def detect_controversy(topic: str, articles: List[Article]) -> List[Controversy]
 
 ---
 
-## 🔬 Phase 14: 研究缺口偵測 (Research Gap Detection) ⭐⭐⭐⭐⭐ NEW!
+## 🔬 Phase 14: 研究缺口偵測 (Research Gap Detection) ⭐⭐⭐⭐⭐ NEW
 > **核心洞察**: 最有價值的研究問題往往是「沒人做過」的，但這些缺口難以發現
 > **創新點**: 自動偵測尚未被研究的主題交集、方法空白、族群缺失
 > **狀態**: 🔥 高優先級 - 差異化競爭優勢

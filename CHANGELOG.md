@@ -1,5 +1,8 @@
 # Changelog
 
+<!-- markdownlint-configure-file {"MD024": {"siblings_only": true}} -->
+<!-- markdownlint-disable MD022 MD031 MD032 MD034 MD037 MD040 MD053 MD058 MD060 -->
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
@@ -14,6 +17,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Quality assessment templates (RoB 2, ROBINS-I, NOS)
 - Research trend analysis (keyword frequency, publication trends)
 - Chart generation (PNG output)
+
+---
+
+## [0.5.1] - 2026-04-07
+
+### Added
+
+- Pydantic-backed runtime settings surface in `shared/settings.py`
+  - centralizes environment parsing for MCP server, HTTP API, source gating, profiling, OpenURL, and scheduler settings
+- Source registry and source-expression parsing for unified search
+  - supports `auto,-source` and `all,-source` expressions plus `PUBMED_SEARCH_DISABLED_SOURCES`
+  - adds default-off Scopus and Web of Science connector skeletons for licensed environments
+- Facade-style management tools
+  - `read_session` consolidates session reads behind one action-based entry point while keeping legacy wrappers
+  - `manage_pipeline` consolidates pipeline CRUD/history/scheduling behind one facade while keeping legacy wrappers
+- APScheduler-backed persisted pipeline scheduling
+  - `schedule_pipeline` now creates and removes real schedules
+  - new scheduling infrastructure persists entries to `schedules.json` and restores jobs on server startup
+- Pydantic schema layer for pipeline configs in `application/pipeline/schema.py`
+  - separates structural parsing/coercion from semantic autofix
+- Fulltext retrieval refactored into explicit discovery / fetch / extract phases
+  - `fulltext_discovery.py`, `fulltext_fetch.py`, `fulltext_extract.py`, `fulltext_models.py`
+  - `fulltext_download.py` preserved as backward-compatible facade
+- Centralized Copilot hook policy in `.github/hooks/copilot-tool-policy.json`
+  - bash and PowerShell hooks now read a single shared policy source
+- Docs site pipeline tutorials, source-contract reference, and troubleshooting pages
+- Article mapper extracted from domain entity into `infrastructure/sources/article_mapper.py`
+
+### Changed
+
+- High-level architecture and docs-site architecture pages now reflect the current 42-tool surface, facade tools, source registry, Pydantic settings, and real pipeline scheduling
+- ROADMAP now reflects the current tool count, completed facade/scheduler work, updated session validation workflow, and the new default-off status of commercial connector skeletons
+- Fulltext retrieval now routes through `fulltext_service.py` and `fulltext_registry.py`
+  - keeps `get_fulltext` focused on normalization, progress/log bridging, and output formatting
+  - centralizes identifier-aware source orchestration while preserving the existing public tool contract
+- Unified search tool internals split into planning, execution, and request modules for testability
+
+### Fixed
+
+- Template-mode pipeline validation now applies the same output semantic autofix as step-mode validation instead of returning before output correction
+- `run_server.py` `--no-security` flag now defaults to `False` instead of being always enabled
+- Module-level design and maintenance docstrings restored across repository
 
 ---
 

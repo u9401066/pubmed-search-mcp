@@ -101,8 +101,8 @@ def main() -> None:
     parser.add_argument(
         "--no-security",
         action="store_true",
-        default=True,
-        help="Disable DNS rebinding protection (default: True for remote access)",
+        default=False,
+        help="Disable DNS rebinding protection (not recommended for production)",
     )
 
     args = parser.parse_args()
@@ -202,7 +202,7 @@ def main() -> None:
                 "transport": args.transport,
                 "endpoints": {
                     "mcp": mcp_endpoints,
-                    "api": {
+                    "auxiliary_api": {
                         "cached_article": "/api/cached_article/{pmid}",
                         "cached_articles": "/api/cached_articles?pmids=...",
                         "session_summary": "/api/session/summary",
@@ -216,8 +216,12 @@ def main() -> None:
                     },
                 },
                 "microsoft_copilot_studio": copilot_studio,
-                "mcp_to_mcp": {
-                    "description": "Other MCP servers can call /api/* endpoints directly",
+                "auxiliary_http_api": {
+                    "classification": "public auxiliary read-only API",
+                    "description": (
+                        "Cache/session endpoints are callable directly, but they are auxiliary to the "
+                        "primary MCP contract at /mcp."
+                    ),
                     "example": f"GET http://localhost:{args.port}/api/cached_article/12345678",
                 },
             }
@@ -424,10 +428,11 @@ def main() -> None:
         logger.info("  For Copilot Studio, use: --transport streamable-http")
 
     logger.info("")
-    logger.info("[MCP-to-MCP API]")
-    logger.info("  GET /api/cached_article/{pmid} - Get single article")
-    logger.info("  GET /api/cached_articles?pmids=... - Get multiple articles")
-    logger.info("  GET /api/session/summary - Get session info")
+    logger.info("[Public Auxiliary HTTP API]")
+    logger.info("  GET /api/cached_article/{pmid} - Read one cached article")
+    logger.info("  GET /api/cached_articles?pmids=... - Read multiple cached articles")
+    logger.info("  GET /api/session/summary - Read current session summary")
+    logger.info("  These endpoints are public auxiliary APIs; /mcp remains the primary external contract")
 
     # Run with settings to accept any host
     uvicorn.run(

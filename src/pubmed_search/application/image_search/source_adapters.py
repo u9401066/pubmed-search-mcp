@@ -1,4 +1,16 @@
-"""Source adapter registry for image search providers."""
+"""Source adapter contracts and registry assembly for image search.
+
+Design:
+    This module defines the narrow adapter protocol used by image-search
+    orchestration and provides the default registry of source implementations.
+    It keeps the application layer dependent on capabilities instead of direct
+    infrastructure clients.
+
+Maintenance:
+    Add new image providers by implementing the protocol and registering them
+    through the builder. Avoid moving provider-specific parsing logic into the
+    registry layer.
+"""
 
 from __future__ import annotations
 
