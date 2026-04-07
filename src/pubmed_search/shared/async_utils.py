@@ -11,33 +11,136 @@ Provides:
 - Rate limiting with token bucket
 - Connection pooling
 - Circuit breaker for fault tolerance
+- Shared transport/resilience kernel for external I/O execution
 
 Note:
-    Retry logic uses tenacity (project dependency).
-    See infrastructure/ncbi/strategy.py for examples.
+    The transport kernel centralizes retry, timeout, Retry-After,
+    rate limiting, circuit breaker, and concurrency bulkhead policies.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import random
 import time
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import TYPE_CHECKING, Any, TypeVar
 
 from typing_extensions import Self
 
 from .exceptions import (
     RateLimitError,
+    is_retryable_error,
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Awaitable, Callable, Sequence
+    from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 R = TypeVar("R")
+
+
+@dataclass(frozen=True)
+class RetryPolicy:
+    """Retry policy for external operations."""
+
+    max_attempts: int = 3
+    base_delay: float = 1.0
+    max_delay: float = 30.0
+    jitter: bool = True
+    respect_retry_after: bool = True
+    retry_after_cap: float = 120.0
+    retryable_status_codes: frozenset[int] = field(
+        default_factory=lambda: frozenset({408, 425, 429, 500, 502, 503, 504})
+    )
+    retryable_messages: tuple[str, ...] = (
+        "rate limit",
+        "too many requests",
+        "temporarily unavailable",
+        "service unavailable",
+        "backend failed",
+        "connection reset",
+        "timeout",
+        "database is not supported",
+    )
+    retry_on_timeouts: bool = True
+    retry_on_transport_errors: bool = True
+
+
+@dataclass(frozen=True)
+class RateLimitPolicy:
+    """Rate limiting policy for a named external service."""
+
+    name: str
+    rate: float
+    per: float = 1.0
+
+
+@dataclass(frozen=True)
+class CircuitBreakerPolicy:
+    """Circuit breaker policy for a named external service."""
+
+    name: str
+    failure_threshold: int = 5
+    recovery_timeout: float = 30.0
+    half_open_max_calls: int = 3
+
+
+@dataclass(frozen=True)
+class RequestExecutionPolicy:
+    """Unified execution policy for external operations."""
+
+    service_name: str
+    timeout: float | None = None
+    retry: RetryPolicy = field(default_factory=RetryPolicy)
+    rate_limit: RateLimitPolicy | None = None
+    circuit_breaker: CircuitBreaker | None = None
+    circuit_breaker_policy: CircuitBreakerPolicy | None = None
+    concurrency_limit: int | None = None
+    concurrency_name: str | None = None
+
+
+class RetryableOperationError(Exception):
+    """Signal that an operation should be retried by the transport kernel."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        retry_after: float | None = None,
+        status_code: int | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
+        self.status_code = status_code
+
+
+def parse_retry_after(value: str | None) -> float | None:
+    """Parse Retry-After header values in seconds or HTTP-date form."""
+    if not value:
+        return None
+
+    try:
+        return max(0.0, float(value))
+    except (TypeError, ValueError):
+        pass
+
+    try:
+        retry_at = parsedate_to_datetime(value)
+    except (TypeError, ValueError, IndexError):
+        return None
+
+    if retry_at.tzinfo is None:
+        retry_at = retry_at.replace(tzinfo=timezone.utc)
+
+    delay = (retry_at - datetime.now(tz=timezone.utc)).total_seconds()
+    return max(0.0, delay)
 
 
 # =============================================================================
@@ -64,6 +167,7 @@ class RateLimiter:
     per: float = 1.0  # period in seconds
     _tokens: float = field(init=False)
     _last_update: float = field(init=False)
+    _cooldown_until: float = field(init=False, default=0.0)
     _lock: asyncio.Lock = field(init=False, default_factory=asyncio.Lock)
 
     def __post_init__(self) -> None:
@@ -74,6 +178,13 @@ class RateLimiter:
         """Acquire a token, waiting if necessary."""
         async with self._lock:
             now = time.monotonic()
+
+            if now < self._cooldown_until:
+                wait_time = self._cooldown_until - now
+                logger.debug(f"Rate limiter cooldown: waiting {wait_time:.2f}s")
+                await asyncio.sleep(wait_time)
+                now = time.monotonic()
+
             elapsed = now - self._last_update
             self._tokens = min(self.rate, self._tokens + elapsed * (self.rate / self.per))
             self._last_update = now
@@ -86,6 +197,20 @@ class RateLimiter:
             else:
                 self._tokens -= 1
 
+    async def apply_cooldown(self, retry_after: float) -> None:
+        """Apply a server-directed cooldown window such as Retry-After."""
+        if retry_after <= 0:
+            return
+
+        async with self._lock:
+            self._cooldown_until = max(self._cooldown_until, time.monotonic() + retry_after)
+
+    def reconfigure(self, *, rate: float, per: float = 1.0) -> None:
+        """Update limiter throughput for an existing shared limiter."""
+        self.rate = rate
+        self.per = per
+        self._tokens = min(self._tokens, self.rate)
+
     async def __aenter__(self) -> Self:
         await self.acquire()
         return self
@@ -96,18 +221,253 @@ class RateLimiter:
 
 # Global rate limiters for different APIs
 _rate_limiters: dict[str, RateLimiter] = {}
+_circuit_breakers: dict[str, CircuitBreaker] = {}
+_bulkheads: dict[str, asyncio.Semaphore] = {}
 
 
-def get_rate_limiter(api_name: str, rate: float = 3.0) -> RateLimiter:
+def _registry_key(name: str) -> str:
+    """Isolate asyncio primitives per event loop to avoid cross-loop reuse."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return f"{name}:global"
+    return f"{name}:loop-{id(loop)}"
+
+
+def get_rate_limiter(api_name: str, rate: float = 3.0, per: float = 1.0) -> RateLimiter:
     """Get or create a rate limiter for an API."""
-    if api_name not in _rate_limiters:
-        _rate_limiters[api_name] = RateLimiter(rate=rate)
-    return _rate_limiters[api_name]
+    key = _registry_key(api_name)
+    if key not in _rate_limiters:
+        _rate_limiters[key] = RateLimiter(rate=rate, per=per)
+    else:
+        limiter = _rate_limiters[key]
+        if limiter.rate != rate or limiter.per != per:
+            limiter.reconfigure(rate=rate, per=per)
+    return _rate_limiters[key]
 
 
-# NOTE: Retry logic is provided by tenacity (already a project dependency).
-# Use tenacity's @retry decorator for both sync and async retry needs.
-# See infrastructure/ncbi/strategy.py for usage examples.
+def get_circuit_breaker(
+    name: str,
+    *,
+    failure_threshold: int = 5,
+    recovery_timeout: float = 30.0,
+    half_open_max_calls: int = 3,
+) -> CircuitBreaker:
+    """Get or create a shared circuit breaker for a service."""
+    key = _registry_key(name)
+    breaker = _circuit_breakers.get(key)
+    if breaker is None:
+        breaker = CircuitBreaker(
+            failure_threshold=failure_threshold,
+            recovery_timeout=recovery_timeout,
+            half_open_max_calls=half_open_max_calls,
+        )
+        _circuit_breakers[key] = breaker
+    return breaker
+
+
+def get_bulkhead(name: str, limit: int) -> asyncio.Semaphore:
+    """Get or create a shared concurrency limiter for a service."""
+    key = _registry_key(name)
+    semaphore = _bulkheads.get(key)
+    if semaphore is None:
+        semaphore = asyncio.Semaphore(limit)
+        _bulkheads[key] = semaphore
+    return semaphore
+
+
+def create_async_http_client(
+    *,
+    timeout: float = 30.0,
+    headers: dict[str, str] | None = None,
+    follow_redirects: bool = True,
+    max_connections: int = 20,
+    max_keepalive_connections: int = 10,
+    keepalive_expiry: float = 30.0,
+) -> Any:
+    """Create a configured httpx.AsyncClient with consistent transport defaults."""
+    import httpx
+
+    return httpx.AsyncClient(
+        timeout=timeout,
+        headers=headers or {},
+        follow_redirects=follow_redirects,
+        limits=httpx.Limits(
+            max_connections=max_connections,
+            max_keepalive_connections=max_keepalive_connections,
+            keepalive_expiry=keepalive_expiry,
+        ),
+    )
+
+
+class TransportExecutionKernel:
+    """Unified execution kernel for resilient external operations."""
+
+    async def execute(
+        self,
+        operation: Callable[[], Awaitable[T]],
+        *,
+        policy: RequestExecutionPolicy,
+        should_retry: Callable[[BaseException], bool] | None = None,
+    ) -> T:
+        attempts = max(1, policy.retry.max_attempts)
+
+        for attempt in range(attempts):
+            limiter = self._resolve_rate_limiter(policy)
+            breaker = self._resolve_circuit_breaker(policy)
+            bulkhead = self._resolve_bulkhead(policy)
+
+            if limiter is not None:
+                await limiter.acquire()
+
+            try:
+                async with self._bulkhead_context(bulkhead), self._breaker_context(breaker):
+                    if policy.timeout is None:
+                        return await operation()
+                    return await asyncio.wait_for(operation(), timeout=policy.timeout)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                retry_after = self._extract_retry_after(exc)
+                if limiter is not None and retry_after is not None:
+                    capped_retry_after = min(retry_after, policy.retry.retry_after_cap)
+                    await limiter.apply_cooldown(capped_retry_after)
+
+                if attempt + 1 >= attempts or not self._is_retryable(exc, policy.retry, should_retry):
+                    raise
+
+                delay = self._compute_retry_delay(policy.retry, attempt, retry_after)
+                logger.warning(
+                    "%s attempt %s/%s failed: %s; retrying in %.2fs",
+                    policy.service_name,
+                    attempt + 1,
+                    attempts,
+                    exc,
+                    delay,
+                )
+                await asyncio.sleep(delay)
+
+        raise RuntimeError(f"{policy.service_name} transport execution exhausted unexpectedly")
+
+    @staticmethod
+    def _resolve_rate_limiter(policy: RequestExecutionPolicy) -> RateLimiter | None:
+        rate_policy = policy.rate_limit
+        if rate_policy is None:
+            return None
+        return get_rate_limiter(rate_policy.name, rate=rate_policy.rate, per=rate_policy.per)
+
+    @staticmethod
+    def _resolve_circuit_breaker(policy: RequestExecutionPolicy) -> CircuitBreaker | None:
+        if policy.circuit_breaker is not None:
+            return policy.circuit_breaker
+
+        breaker_policy = policy.circuit_breaker_policy
+        if breaker_policy is None:
+            return None
+
+        return get_circuit_breaker(
+            breaker_policy.name,
+            failure_threshold=breaker_policy.failure_threshold,
+            recovery_timeout=breaker_policy.recovery_timeout,
+            half_open_max_calls=breaker_policy.half_open_max_calls,
+        )
+
+    @staticmethod
+    def _resolve_bulkhead(policy: RequestExecutionPolicy) -> asyncio.Semaphore | None:
+        if policy.concurrency_limit is None:
+            return None
+        name = policy.concurrency_name or policy.service_name
+        return get_bulkhead(name, policy.concurrency_limit)
+
+    @staticmethod
+    @asynccontextmanager
+    async def _bulkhead_context(semaphore: asyncio.Semaphore | None) -> AsyncIterator[None]:
+        if semaphore is None:
+            yield
+            return
+
+        async with semaphore:
+            yield
+
+    @staticmethod
+    @asynccontextmanager
+    async def _breaker_context(breaker: CircuitBreaker | None) -> AsyncIterator[None]:
+        if breaker is None:
+            yield
+            return
+
+        async with breaker:
+            yield
+
+    @staticmethod
+    def _extract_retry_after(error: BaseException) -> float | None:
+        if isinstance(error, RetryableOperationError):
+            return error.retry_after
+
+        if isinstance(error, RateLimitError) and error.context.retry_after:
+            return float(error.context.retry_after)
+
+        retry_after = getattr(error, "retry_after", None)
+        if isinstance(retry_after, (int, float)):
+            return float(retry_after)
+
+        return None
+
+    @staticmethod
+    def _is_retryable(
+        error: BaseException,
+        retry_policy: RetryPolicy,
+        should_retry: Callable[[BaseException], bool] | None,
+    ) -> bool:
+        if isinstance(error, RetryableOperationError):
+            return True
+
+        if isinstance(error, RateLimitError):
+            return True
+
+        if should_retry is not None and should_retry(error):
+            return True
+
+        if retry_policy.retry_on_timeouts and isinstance(error, (asyncio.TimeoutError, TimeoutError)):
+            return True
+
+        try:
+            import httpx
+        except Exception:  # noqa: BLE001
+            httpx = None  # type: ignore[assignment]
+
+        if httpx is not None:
+            if retry_policy.retry_on_timeouts and isinstance(error, httpx.TimeoutException):
+                return True
+            if retry_policy.retry_on_transport_errors and isinstance(error, httpx.RequestError):
+                return True
+
+        error_str = str(error).lower()
+        if any(message in error_str for message in retry_policy.retryable_messages):
+            return True
+
+        return is_retryable_error(error if isinstance(error, Exception) else Exception(str(error)))
+
+    @staticmethod
+    def _compute_retry_delay(retry_policy: RetryPolicy, attempt: int, retry_after: float | None) -> float:
+        if retry_after is not None and retry_policy.respect_retry_after:
+            return float(min(retry_after, retry_policy.retry_after_cap))
+
+        delay = min(retry_policy.base_delay * (2**attempt), retry_policy.max_delay)
+        if retry_policy.jitter:
+            delay = random.uniform(delay / 2, delay)  # noqa: S311
+        return float(delay)
+
+
+_transport_kernel: TransportExecutionKernel | None = None
+
+
+def get_transport_kernel() -> TransportExecutionKernel:
+    """Get the shared transport execution kernel."""
+    global _transport_kernel
+    if _transport_kernel is None:
+        _transport_kernel = TransportExecutionKernel()
+    return _transport_kernel
 
 
 # =============================================================================
@@ -331,17 +691,13 @@ def get_shared_async_client() -> Any:
     """
     global _shared_async_client
 
-    import httpx  # lazy import to avoid circular deps
-
     if _shared_async_client is None or _shared_async_client.is_closed:
-        _shared_async_client = httpx.AsyncClient(
+        _shared_async_client = create_async_http_client(
             timeout=30.0,
             follow_redirects=True,
-            limits=httpx.Limits(
-                max_connections=20,
-                max_keepalive_connections=10,
-                keepalive_expiry=30.0,
-            ),
+            max_connections=20,
+            max_keepalive_connections=10,
+            keepalive_expiry=30.0,
         )
     return _shared_async_client
 

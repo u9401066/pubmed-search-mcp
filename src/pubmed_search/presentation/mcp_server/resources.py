@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 from .tool_registry import TOOL_CATEGORIES as TOOL_REGISTRY_CATEGORIES
 
@@ -21,6 +21,18 @@ if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
+_JSON_MIME_TYPE = "application/json"
+
+
+def _resource_kwargs(*, name: str, title: str, description: str, category: str) -> dict[str, object]:
+    """Build consistent host-facing metadata for JSON resources."""
+    return {
+        "name": name,
+        "title": title,
+        "description": description,
+        "mime_type": _JSON_MIME_TYPE,
+        "meta": {"pubmedSearch": {"category": category, "format": "json"}},
+    }
 
 
 # ============================================================================
@@ -172,37 +184,114 @@ TOOL_CATEGORIES = TOOL_REGISTRY_CATEGORIES
 def register_resources(mcp: FastMCP):
     """Register all MCP resources for filter and tool documentation."""
 
-    @mcp.resource("pubmed://filters/age_group")
+    @mcp.resource(
+        "pubmed://filters/age_group",
+        **cast(
+            "Any",
+            _resource_kwargs(
+                name="pubmed_filter_age_group",
+                title="Age Group Filters",
+                description="PubMed age-group filter reference and usage examples.",
+                category="filters",
+            ),
+        ),
+    )
     def get_age_group_filters() -> str:
         """Age group filter options for PubMed search."""
         return json.dumps(AGE_GROUP_REFERENCE, indent=2, ensure_ascii=False)
 
-    @mcp.resource("pubmed://filters/sex")
+    @mcp.resource(
+        "pubmed://filters/sex",
+        **cast(
+            "Any",
+            _resource_kwargs(
+                name="pubmed_filter_sex",
+                title="Sex Filters",
+                description="PubMed sex filter reference and usage examples.",
+                category="filters",
+            ),
+        ),
+    )
     def get_sex_filters() -> str:
         """Sex filter options for PubMed search."""
         return json.dumps(SEX_REFERENCE, indent=2, ensure_ascii=False)
 
-    @mcp.resource("pubmed://filters/species")
+    @mcp.resource(
+        "pubmed://filters/species",
+        **cast(
+            "Any",
+            _resource_kwargs(
+                name="pubmed_filter_species",
+                title="Species Filters",
+                description="PubMed species filter reference and usage examples.",
+                category="filters",
+            ),
+        ),
+    )
     def get_species_filters() -> str:
         """Species filter options for PubMed search."""
         return json.dumps(SPECIES_REFERENCE, indent=2, ensure_ascii=False)
 
-    @mcp.resource("pubmed://filters/language")
+    @mcp.resource(
+        "pubmed://filters/language",
+        **cast(
+            "Any",
+            _resource_kwargs(
+                name="pubmed_filter_language",
+                title="Language Filters",
+                description="PubMed language filter reference and usage examples.",
+                category="filters",
+            ),
+        ),
+    )
     def get_language_filters() -> str:
         """Language filter options for PubMed search."""
         return json.dumps(LANGUAGE_REFERENCE, indent=2, ensure_ascii=False)
 
-    @mcp.resource("pubmed://filters/clinical_query")
+    @mcp.resource(
+        "pubmed://filters/clinical_query",
+        **cast(
+            "Any",
+            _resource_kwargs(
+                name="pubmed_filter_clinical_query",
+                title="Clinical Query Filters",
+                description="PubMed Clinical Queries reference and usage examples.",
+                category="filters",
+            ),
+        ),
+    )
     def get_clinical_query_filters() -> str:
         """Clinical query filter options (PubMed Clinical Queries)."""
         return json.dumps(CLINICAL_QUERY_REFERENCE, indent=2, ensure_ascii=False)
 
-    @mcp.resource("pubmed://filters/article_type")
+    @mcp.resource(
+        "pubmed://filters/article_type",
+        **cast(
+            "Any",
+            _resource_kwargs(
+                name="pubmed_filter_article_type",
+                title="Article Type Filters",
+                description="PubMed article-type filter reference and usage examples.",
+                category="filters",
+            ),
+        ),
+    )
     def get_article_type_filters() -> str:
         """Article type filter options for PubMed search."""
         return json.dumps(ARTICLE_TYPE_REFERENCE, indent=2, ensure_ascii=False)
 
-    @mcp.resource("pubmed://filters/all")
+    @mcp.resource(
+        "pubmed://filters/all",
+        **cast(
+            "Any",
+            _resource_kwargs(
+                name="pubmed_filter_all",
+                title="All Search Filters",
+                description="Combined filter reference for PubMed search options.",
+                category="filters",
+            ),
+        ),
+    )
     def get_all_filters() -> str:
         """Complete reference for all PubMed search filters."""
         return json.dumps(
@@ -218,12 +307,34 @@ def register_resources(mcp: FastMCP):
             ensure_ascii=False,
         )
 
-    @mcp.resource("pubmed://tools/reference")
+    @mcp.resource(
+        "pubmed://tools/reference",
+        **cast(
+            "Any",
+            _resource_kwargs(
+                name="pubmed_tools_reference",
+                title="PubMed MCP Tool Reference",
+                description="Category view of all registered MCP tools.",
+                category="tools",
+            ),
+        ),
+    )
     def get_tools_reference() -> str:
         """Complete reference for all available MCP tools."""
         return json.dumps(TOOL_CATEGORIES, indent=2, ensure_ascii=False)
 
-    @mcp.resource("pubmed://icd/mapping")
+    @mcp.resource(
+        "pubmed://icd/mapping",
+        **cast(
+            "Any",
+            _resource_kwargs(
+                name="pubmed_icd_mapping",
+                title="ICD to MeSH Mapping",
+                description="Bidirectional ICD-9/10 and MeSH reference data.",
+                category="mappings",
+            ),
+        ),
+    )
     def get_icd_mapping() -> str:
         """ICD-9/10 to MeSH mapping reference."""
         return json.dumps(

@@ -112,6 +112,7 @@ class TestBuildTimeline:
         assert timeline.topic == "drug X"
         # Milestone detection should find at least some events
         assert isinstance(timeline.events, list)
+        assert "diagnostics" in timeline.metadata
 
     @pytest.mark.asyncio
     async def test_year_filter(self, builder, mock_searcher, sample_articles):
@@ -189,6 +190,7 @@ class TestBuildTimelineFromPmids:
         timeline = await builder.build_timeline_from_pmids(["11111", "22222", "33333"], topic="My Timeline")
         assert timeline.topic == "My Timeline"
         assert isinstance(timeline.events, list)
+        assert "diagnostics" in timeline.metadata
 
     @pytest.mark.asyncio
     async def test_fetch_returns_empty(self, builder, mock_searcher):

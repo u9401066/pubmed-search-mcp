@@ -12,37 +12,17 @@ import re
 from typing import Any
 
 from Bio import Entrez
-from tenacity import (
-    retry,
-    retry_if_exception,
-    stop_after_attempt,
-    wait_exponential,
-)
 
-from .base import SearchStrategy, _rate_limit
+from .base import SearchStrategy, execute_entrez_operation
+from .base import _rate_limit as _base_rate_limit
 
 logger = logging.getLogger(__name__)
+
+_rate_limit = _base_rate_limit
 
 # Retry settings for transient NCBI errors
 MAX_RETRIES = 3
 RETRY_DELAY = 2  # seconds
-
-
-_RETRYABLE_MESSAGES = [
-    "database is not supported",
-    "backend failed",
-    "temporarily unavailable",
-    "service unavailable",
-    "rate limit",
-    "too many requests",
-    "server error",
-]
-
-
-def _is_retryable_ncbi(error: BaseException) -> bool:
-    """Check if an NCBI error is retryable."""
-    error_str = str(error).lower()
-    return any(msg in error_str for msg in _RETRYABLE_MESSAGES)
 
 
 # ============================================================================
@@ -217,8 +197,8 @@ class SearchMixin:
             if date_from or date_to:
                 # Use precise date format: YYYY/MM/DD
                 # date_type: edat (Entrez date), pdat (Publication date), mdat (Modification date)
-                start_date = date_from if date_from else "1900/01/01"
-                end_date = date_to if date_to else "3000/12/31"
+                start_date = date_from or "1900/01/01"
+                end_date = date_to or "3000/12/31"
                 date_range = f"{start_date}:{end_date}[{date_type}]"
                 full_query += f" AND {date_range}"
             elif min_year or max_year:
@@ -311,12 +291,6 @@ class SearchMixin:
         except Exception as e:
             return [{"error": str(e)}]
 
-    @retry(
-        stop=stop_after_attempt(MAX_RETRIES),
-        wait=wait_exponential(multiplier=RETRY_DELAY, min=RETRY_DELAY, max=RETRY_DELAY * 4),
-        retry=retry_if_exception(_is_retryable_ncbi),
-        reraise=True,
-    )
     async def _search_ids_with_retry(self, query: str, retmax: int, sort: str) -> tuple:
         """Search for PubMed IDs with retry on transient errors.
 
@@ -324,41 +298,59 @@ class SearchMixin:
             Tuple of (id_list, total_count) where total_count is the total number
             of articles matching the query in PubMed (not limited by retmax).
         """
-        await _rate_limit()  # Rate limiting before API call
-        handle = await asyncio.to_thread(Entrez.esearch, db="pubmed", term=query, retmax=retmax, sort=sort)
-        record = await asyncio.to_thread(Entrez.read, handle)
-        handle.close()
+        api_key = getattr(self, "_api_key", None)
 
-        # Check NCBI WarningList for query translation issues
-        warning_list = record.get("WarningList", {})
-        if warning_list:
-            # NCBI returns warnings like QuotedPhraseNotFound,
-            # OutputMessage (e.g. term not found in MeSH), etc.
-            for warn_type, warn_msgs in warning_list.items():
-                if isinstance(warn_msgs, list) and warn_msgs:
-                    logger.warning(f"NCBI {warn_type}: {warn_msgs}")
+        async def do_search() -> tuple[list[str], int]:
+            handle = await asyncio.to_thread(Entrez.esearch, db="pubmed", term=query, retmax=retmax, sort=sort)
+            try:
+                record = await asyncio.to_thread(Entrez.read, handle)
+            finally:
+                handle.close()
 
-        # Check TranslationStack for how NCBI interpreted the query
-        translation_set = record.get("TranslationSet", [])
-        if translation_set:
-            logger.debug(f"NCBI query translation: {[(t.get('From', ''), t.get('To', '')) for t in translation_set]}")
+            # Check NCBI WarningList for query translation issues
+            warning_list = record.get("WarningList", {})
+            if warning_list:
+                for warn_type, warn_msgs in warning_list.items():
+                    if isinstance(warn_msgs, list) and warn_msgs:
+                        logger.warning(f"NCBI {warn_type}: {warn_msgs}")
 
-        total_count = int(record.get("Count", 0))
-        return record["IdList"], total_count
+            translation_set = record.get("TranslationSet", [])
+            if translation_set:
+                logger.debug(
+                    f"NCBI query translation: {[(t.get('From', ''), t.get('To', '')) for t in translation_set]}"
+                )
 
-    @retry(
-        stop=stop_after_attempt(MAX_RETRIES),
-        wait=wait_exponential(multiplier=RETRY_DELAY, min=RETRY_DELAY, max=RETRY_DELAY * 4),
-        retry=retry_if_exception(_is_retryable_ncbi),
-        reraise=True,
-    )
+            total_count = int(record.get("Count", 0))
+            return record["IdList"], total_count
+
+        return await execute_entrez_operation(
+            do_search,
+            api_key=api_key,
+            service_name="ncbi-search:esearch",
+            timeout=45.0,
+            max_attempts=MAX_RETRIES,
+            base_delay=float(RETRY_DELAY),
+        )
+
     async def _fetch_with_retry(self, id_list: list[str]) -> Any:
         """Fetch PubMed articles with retry on transient errors."""
-        await _rate_limit()  # Rate limiting before API call
-        handle = await asyncio.to_thread(Entrez.efetch, db="pubmed", id=id_list, retmode="xml")
-        papers = await asyncio.to_thread(Entrez.read, handle)
-        handle.close()
-        return papers
+        api_key = getattr(self, "_api_key", None)
+
+        async def do_fetch() -> Any:
+            handle = await asyncio.to_thread(Entrez.efetch, db="pubmed", id=id_list, retmode="xml")
+            try:
+                return await asyncio.to_thread(Entrez.read, handle)
+            finally:
+                handle.close()
+
+        return await execute_entrez_operation(
+            do_fetch,
+            api_key=api_key,
+            service_name="ncbi-search:efetch",
+            timeout=60.0,
+            max_attempts=MAX_RETRIES,
+            base_delay=float(RETRY_DELAY),
+        )
 
     async def fetch_details(self, id_list: list[str]) -> list[dict[str, Any]]:
         """

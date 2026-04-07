@@ -10,11 +10,17 @@ import pytest
 from pubmed_search.shared.async_utils import (
     CircuitBreaker,
     RateLimiter,
+    RateLimitPolicy,
+    RequestExecutionPolicy,
+    RetryableOperationError,
+    RetryPolicy,
     batch_process,
     close_shared_async_client,
     gather_with_errors,
     get_rate_limiter,
     get_shared_async_client,
+    get_transport_kernel,
+    parse_retry_after,
     timeout_with_fallback,
 )
 from pubmed_search.shared.exceptions import RateLimitError
@@ -295,3 +301,56 @@ class TestTimeoutWithFallback:
 
         result = await timeout_with_fallback(slow(), timeout=0.01, fallback=lambda: 42)
         assert result == 42
+
+
+# ============================================================
+# TransportExecutionKernel
+# ============================================================
+
+
+class TestTransportKernel:
+    @pytest.mark.asyncio
+    async def test_parse_retry_after_seconds(self):
+        assert parse_retry_after("3") == 3.0
+
+    @pytest.mark.asyncio
+    async def test_retries_retryable_operation_error(self):
+        kernel = get_transport_kernel()
+        attempts = 0
+
+        async def flaky():
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise RetryableOperationError("rate limited", retry_after=0.0, status_code=429)
+            return "ok"
+
+        result = await kernel.execute(
+            flaky,
+            policy=RequestExecutionPolicy(
+                service_name="test-kernel",
+                timeout=1.0,
+                retry=RetryPolicy(max_attempts=2, base_delay=0.01, max_delay=0.01, jitter=False),
+                rate_limit=RateLimitPolicy(name="test-kernel-rate", rate=100.0, per=1.0),
+            ),
+        )
+
+        assert result == "ok"
+        assert attempts == 2
+
+    @pytest.mark.asyncio
+    async def test_non_retryable_error_propagates(self):
+        kernel = get_transport_kernel()
+
+        async def fail_fast():
+            raise ValueError("bad input")
+
+        with pytest.raises(ValueError):
+            await kernel.execute(
+                fail_fast,
+                policy=RequestExecutionPolicy(
+                    service_name="test-kernel-fail",
+                    timeout=1.0,
+                    retry=RetryPolicy(max_attempts=2, base_delay=0.01, max_delay=0.01, jitter=False),
+                ),
+            )

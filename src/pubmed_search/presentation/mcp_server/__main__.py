@@ -1,5 +1,5 @@
 """
-Allow running MCP server as module: python -m pubmed_search.mcp
+Allow running MCP server as module: uv run python -m pubmed_search.presentation.mcp_server
 """
 
 from __future__ import annotations

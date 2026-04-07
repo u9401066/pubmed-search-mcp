@@ -127,6 +127,29 @@ class TestDispatchStrategy:
         a = self._make_analysis(QueryComplexity.SIMPLE, QueryIntent.EXPLORATION)
         assert DispatchStrategy.should_enrich_with_unpaywall(a) is False
 
+    async def test_disabled_sources_are_filtered(self):
+        a = self._make_analysis(QueryComplexity.COMPLEX, QueryIntent.COMPARISON)
+        with patch.dict("os.environ", {"PUBMED_SEARCH_DISABLED_SOURCES": "semantic_scholar"}, clear=False):
+            sources = DispatchStrategy.get_sources(a)
+        assert "semantic_scholar" not in sources
+        assert "openalex" in sources
+
+    async def test_enabled_commercial_sources_are_not_auto_dispatched(self):
+        a = self._make_analysis(QueryComplexity.COMPLEX, QueryIntent.SYSTEMATIC)
+        with patch.dict(
+            "os.environ",
+            {
+                "SCOPUS_ENABLED": "true",
+                "SCOPUS_API_KEY": "licensed-key",
+                "WEB_OF_SCIENCE_ENABLED": "true",
+                "WEB_OF_SCIENCE_API_KEY": "licensed-key",
+            },
+            clear=False,
+        ):
+            sources = DispatchStrategy.get_sources(a)
+        assert "scopus" not in sources
+        assert "web_of_science" not in sources
+
 
 # ============================================================
 # Format functions
@@ -136,6 +159,8 @@ class TestDispatchStrategy:
 class TestFormatAsJson:
     async def test_basic(self):
         analysis = MagicMock(spec=AnalyzedQuery)
+        analysis.original_query = "test"
+        analysis.intent = QueryIntent.EXPLORATION
         analysis.to_dict.return_value = {"query": "test"}
         stats = MagicMock(spec=AggregationStats)
         stats.to_dict.return_value = {"unique": 0}
@@ -143,6 +168,40 @@ class TestFormatAsJson:
         parsed = json.loads(result)
         assert "analysis" in parsed
         assert "articles" in parsed
+
+    async def test_counts_first_orientation_payload(self):
+        analysis = MagicMock(spec=AnalyzedQuery)
+        analysis.original_query = "remimazolam sedation"
+        analysis.intent = QueryIntent.EXPLORATION
+        analysis.to_dict.return_value = {"query": "remimazolam sedation"}
+
+        stats = MagicMock(spec=AggregationStats)
+        stats.to_dict.return_value = {"unique_articles": 2}
+        stats.by_source = {"pubmed": 2}
+
+        article = MagicMock()
+        article.pmid = "12345678"
+        article.pmc = "PMC1234567"
+        article.to_dict.return_value = {"pmid": "12345678"}
+
+        result = _format_as_json(
+            [article],
+            analysis,
+            stats,
+            source_api_counts={"pubmed": (2, 25)},
+            counts_first=True,
+        )
+
+        parsed = json.loads(result)
+        assert parsed["orientation"]["mode"] == "counts_first"
+        assert parsed["orientation"]["source_counts"][0]["source"] == "pubmed"
+        assert parsed["orientation"]["next_actions"]
+        assert parsed["orientation"]["next_actions"][0]["tool"] == "unified_search"
+        assert parsed["tool"] == "unified_search"
+        assert parsed["source_counts"][0]["source"] == "pubmed"
+        assert parsed["next_tools"]
+        assert parsed["next_commands"]
+        assert parsed["section_provenance"]["articles"]["provenance"] == "mixed"
 
 
 class TestFormatUnifiedResults:
@@ -240,6 +299,57 @@ class TestFormatUnifiedResults:
         line = sources_line[0]
         assert "(" in line and ")" in line, f"Source counts missing in: {line}"
 
+    async def test_counts_first_section_includes_next_tools(self):
+        analysis = MagicMock(spec=AnalyzedQuery)
+        analysis.original_query = "remimazolam sedation"
+        analysis.complexity = QueryComplexity.MODERATE
+        analysis.intent = QueryIntent.EXPLORATION
+        analysis.pico = None
+
+        stats = MagicMock(spec=AggregationStats)
+        stats.by_source = {"pubmed": 2, "openalex": 1}
+        stats.unique_articles = 2
+        stats.duplicates_removed = 1
+
+        article = MagicMock()
+        article.title = "Lead Article"
+        article.ranking_score = 0.9
+        article.pmid = "12345678"
+        article.pmc = "PMC1234567"
+        article.doi = None
+        article.article_type = None
+        article.author_string = "A B"
+        article.journal = "Journal"
+        article.year = 2025
+        article.volume = None
+        article.issue = None
+        article.pages = None
+        article.has_open_access = False
+        article.best_oa_link = None
+        article.citation_metrics = None
+        article.journal_metrics = None
+        article.similarity_score = None
+        article.similarity_source = None
+        article.abstract = "Short abstract"
+        article.sources = [MagicMock(source="pubmed")]
+
+        result = await _format_unified_results(
+            [article],
+            analysis,
+            stats,
+            include_analysis=True,
+            include_trials=False,
+            source_api_counts={"pubmed": (2, 25), "openalex": (1, None)},
+            counts_first=True,
+        )
+
+        assert "Count-First Orientation" in result
+        assert "| pubmed | 2 | 25 | backlog |" in result
+        assert "Next Tools" in result
+        assert "fetch_article_details" in result
+        assert "get_article_figures" in result
+        assert "**Sources**:" not in result
+
 
 # ============================================================
 # Tool capture and registration
@@ -248,7 +358,17 @@ class TestFormatUnifiedResults:
 
 def _capture_tools(mcp, searcher):
     tools = {}
-    mcp.tool = lambda: lambda func: (tools.__setitem__(func.__name__, func), func)[1]
+
+    def _tool(*decorator_args, **decorator_kwargs):
+        del decorator_args, decorator_kwargs
+
+        def _decorator(func):
+            tools[func.__name__] = func
+            return func
+
+        return _decorator
+
+    mcp.tool = _tool
     register_unified_search_tools(mcp, searcher)
     return tools
 
@@ -370,6 +490,114 @@ class TestUnifiedSearch:
             result = await tools["unified_search"](query="test")
         # PubMed exception is caught in _search_pubmed, so result is "No results"
         assert "no results" in result.lower() or "error" in result.lower()
+
+    @pytest.mark.asyncio
+    async def test_auto_source_exclusion_skips_semantic_scholar(self):
+        mcp = MagicMock()
+        searcher = AsyncMock()
+        searcher.search.return_value = [{"pmid": "123", "title": "Test Article", "authors": ["A B"]}]
+        tools = _capture_tools(mcp, searcher)
+
+        analysis = MagicMock(spec=AnalyzedQuery)
+        analysis.original_query = "comparison query"
+        analysis.complexity = QueryComplexity.COMPLEX
+        analysis.intent = QueryIntent.COMPARISON
+        analysis.identifiers = []
+        analysis.year_from = None
+        analysis.year_to = None
+        analysis.pico = None
+
+        with (
+            patch("pubmed_search.presentation.mcp_server.tools.unified.QueryAnalyzer") as MockAnalyzer,
+            patch("pubmed_search.presentation.mcp_server.tools.unified.get_semantic_enhancer") as mock_enhancer,
+            patch("pubmed_search.presentation.mcp_server.tools.unified._search_openalex", new_callable=AsyncMock) as mock_openalex,
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.unified._search_semantic_scholar",
+                new_callable=AsyncMock,
+            ) as mock_semantic,
+        ):
+            MockAnalyzer.return_value.analyze.return_value = analysis
+            mock_enhancer.return_value.enhance.side_effect = Exception("skip")
+            mock_openalex.return_value = ([], None)
+            mock_semantic.return_value = ([], None)
+
+            await tools["unified_search"](
+                query="comparison query",
+                sources="auto,-semantic_scholar",
+                options="no_analysis, no_scores, shallow",
+            )
+
+        mock_openalex.assert_awaited_once()
+        mock_semantic.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_explicit_scopus_source_uses_scopus_runner_when_enabled(self):
+        mcp = MagicMock()
+        searcher = AsyncMock()
+        tools = _capture_tools(mcp, searcher)
+
+        analysis = MagicMock(spec=AnalyzedQuery)
+        analysis.original_query = "licensed query"
+        analysis.complexity = QueryComplexity.SIMPLE
+        analysis.intent = QueryIntent.EXPLORATION
+        analysis.identifiers = []
+        analysis.year_from = None
+        analysis.year_to = None
+        analysis.pico = None
+
+        with (
+            patch.dict("os.environ", {"SCOPUS_ENABLED": "true", "SCOPUS_API_KEY": "licensed-key"}, clear=False),
+            patch("pubmed_search.presentation.mcp_server.tools.unified.QueryAnalyzer") as MockAnalyzer,
+            patch("pubmed_search.presentation.mcp_server.tools.unified._search_scopus", new_callable=AsyncMock) as mock_scopus,
+        ):
+            MockAnalyzer.return_value.analyze.return_value = analysis
+            mock_scopus.return_value = ([], None)
+
+            await tools["unified_search"](
+                query="licensed query",
+                sources="scopus",
+                options="no_analysis, no_scores, shallow",
+            )
+
+        mock_scopus.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_explicit_web_of_science_source_uses_runner_when_enabled(self):
+        mcp = MagicMock()
+        searcher = AsyncMock()
+        tools = _capture_tools(mcp, searcher)
+
+        analysis = MagicMock(spec=AnalyzedQuery)
+        analysis.original_query = "licensed query"
+        analysis.complexity = QueryComplexity.SIMPLE
+        analysis.intent = QueryIntent.EXPLORATION
+        analysis.identifiers = []
+        analysis.year_from = None
+        analysis.year_to = None
+        analysis.pico = None
+
+        with (
+            patch.dict(
+                "os.environ",
+                {"WEB_OF_SCIENCE_ENABLED": "true", "WEB_OF_SCIENCE_API_KEY": "licensed-key"},
+                clear=False,
+            ),
+            patch("pubmed_search.presentation.mcp_server.tools.unified.QueryAnalyzer") as MockAnalyzer,
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.unified._search_web_of_science",
+                new_callable=AsyncMock,
+            ) as mock_wos,
+        ):
+            MockAnalyzer.return_value.analyze.return_value = analysis
+            mock_wos.return_value = ([], None)
+
+            await tools["unified_search"](
+                query="licensed query",
+                sources="web_of_science",
+                options="no_analysis, no_scores, shallow",
+            )
+
+        mock_wos.assert_awaited_once()
 
 
 class TestAnalyzeSearchQuery:

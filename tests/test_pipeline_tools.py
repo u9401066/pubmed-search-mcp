@@ -1,12 +1,13 @@
 """Tests for pipeline MCP tools.
 
 Coverage targets:
+- manage_pipeline: unified facade over all pipeline actions
 - save_pipeline: YAML parsing, validation, store integration
 - list_pipelines: empty, with data, tag/scope filtering
 - load_pipeline: saved name, "saved:" prefix, "file:" prefix, not found
 - delete_pipeline: success, not found
 - get_pipeline_history: success, empty, not found
-- schedule_pipeline: Phase 4 stub
+- schedule_pipeline: real scheduler-backed set/remove flow
 - Error cases: store not initialized, invalid YAML, unfixable configs
 """
 
@@ -25,13 +26,16 @@ from pubmed_search.domain.entities.pipeline import (
     PipelineRun,
     PipelineScope,
     PipelineStep,
+    ScheduleEntry,
     ValidationFix,
     ValidationResult,
 )
 from pubmed_search.presentation.mcp_server.tools.pipeline_tools import (
     _config_to_display_dict,
+    get_pipeline_scheduler,
     get_pipeline_store,
     register_pipeline_tools,
+    set_pipeline_scheduler,
     set_pipeline_store,
 )
 
@@ -45,10 +49,12 @@ if TYPE_CHECKING:
 
 @pytest.fixture(autouse=True)
 def _reset_store():
-    """Reset the module-level store before/after each test."""
+    """Reset shared module state before/after each test."""
     set_pipeline_store(None)
+    set_pipeline_scheduler(None)
     yield
     set_pipeline_store(None)
+    set_pipeline_scheduler(None)
 
 
 @pytest.fixture()
@@ -57,6 +63,14 @@ def mock_store():
     store = MagicMock()
     set_pipeline_store(store)
     return store
+
+
+@pytest.fixture()
+def mock_scheduler():
+    """A MagicMock scheduler shared through pipeline_tools globals."""
+    scheduler = MagicMock()
+    set_pipeline_scheduler(scheduler)
+    return scheduler
 
 
 @pytest.fixture()
@@ -97,10 +111,11 @@ def mcp():
 
 
 class TestToolRegistration:
-    """Tests that all 6 tools are registered."""
+    """Tests that facade + legacy tools are registered."""
 
     def test_all_tools_registered(self, mcp):
         expected = {
+            "manage_pipeline",
             "save_pipeline",
             "list_pipelines",
             "load_pipeline",
@@ -112,20 +127,52 @@ class TestToolRegistration:
 
 
 # =========================================================================
+# manage_pipeline
+# =========================================================================
+
+
+class TestManagePipeline:
+    """Tests for manage_pipeline facade."""
+
+    def test_manage_list_uses_list_action(self, mcp, mock_store):
+        mock_store.list_pipelines.return_value = []
+        output = mcp["manage_pipeline"](action="list", tag="sedation")
+        assert "No saved pipelines" in output
+        mock_store.list_pipelines.assert_called_once_with(tag="sedation", scope="")
+
+    def test_manage_load_accepts_name_alias(self, mcp, mock_store):
+        config = PipelineConfig(template="pico")
+        meta = PipelineMeta(name="loaded", scope=PipelineScope.WORKSPACE)
+        mock_store.load.return_value = (config, meta)
+
+        output = mcp["manage_pipeline"](action="load", name="loaded")
+        assert "loaded" in output
+        mock_store.load.assert_called_once_with("loaded")
+
+    def test_manage_invalid_action(self, mcp):
+        output = mcp["manage_pipeline"](action="unknown")
+        assert "Unknown pipeline action" in output
+
+
+# =========================================================================
 # set/get pipeline store
 # =========================================================================
 
 
 class TestStoreAccessors:
-    """Tests for set_pipeline_store / get_pipeline_store."""
+    """Tests for shared pipeline store / scheduler accessors."""
 
     def test_get_returns_none_initially(self):
         assert get_pipeline_store() is None
+        assert get_pipeline_scheduler() is None
 
     def test_set_and_get(self):
         store = MagicMock()
+        scheduler = MagicMock()
         set_pipeline_store(store)
+        set_pipeline_scheduler(scheduler)
         assert get_pipeline_store() is store
+        assert get_pipeline_scheduler() is scheduler
 
 
 # =========================================================================
@@ -412,21 +459,41 @@ class TestGetPipelineHistory:
 
 
 # =========================================================================
-# schedule_pipeline (stub)
+# schedule_pipeline
 # =========================================================================
 
 
 class TestSchedulePipeline:
-    """Tests for schedule_pipeline Phase 4 stub."""
+    """Tests for scheduler-backed schedule_pipeline."""
 
-    def test_stub_returns_message(self, mcp):
-        output = mcp["schedule_pipeline"](name="test")
-        assert "Phase 4" in output or "not yet implemented" in output
+    def test_set_schedule(self, mcp, mock_scheduler):
+        mock_scheduler.schedule.return_value = ScheduleEntry(
+            pipeline_name="test",
+            cron="0 9 * * 1",
+            next_run=datetime(2026, 1, 1, 9, 0, tzinfo=timezone.utc),
+        )
 
-    def test_stub_includes_manual_alternatives(self, mcp):
-        output = mcp["schedule_pipeline"](name="my_pipe")
-        assert "my_pipe" in output
-        assert "unified_search" in output or "manually" in output.lower()
+        output = mcp["schedule_pipeline"](name="test", cron="0 9 * * 1")
+
+        assert "Schedule set" in output
+        assert "0 9 * * 1" in output
+        mock_scheduler.schedule.assert_called_once_with("test", "0 9 * * 1", diff_mode=True, notify=True)
+
+    def test_remove_schedule(self, mcp, mock_scheduler):
+        mock_scheduler.unschedule.return_value = ScheduleEntry(
+            pipeline_name="my_pipe",
+            cron="0 9 * * 1",
+            last_status="success",
+        )
+
+        output = mcp["schedule_pipeline"](name="my_pipe", cron="")
+
+        assert "Schedule removed" in output
+        mock_scheduler.unschedule.assert_called_once_with("my_pipe")
+
+    def test_no_scheduler(self, mcp):
+        output = mcp["schedule_pipeline"](name="test", cron="0 9 * * 1")
+        assert "not initialized" in output.lower()
 
 
 # =========================================================================

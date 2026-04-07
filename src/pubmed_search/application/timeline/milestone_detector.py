@@ -28,155 +28,24 @@ from pubmed_search.domain.entities.timeline import (
     TimelineEvent,
 )
 
-# ============================================================================
-# Milestone Patterns (Extensible)
-# ============================================================================
+from .milestone_policy import (
+    DEFAULT_CITATION_THRESHOLD_POLICIES,
+    DEFAULT_PUBTYPE_POLICIES,
+    DEFAULT_TITLE_PATTERN_POLICIES,
+    LANDMARK_CITATION_THRESHOLDS,
+    PUBTYPE_PATTERNS,
+    TITLE_PATTERNS,
+    PublicationTypeMilestonePolicy,
+    RegexMilestonePolicy,
+)
 
-# Pattern structure: (regex_pattern, milestone_type, label_template, confidence)
-# Label template can use {match} for the matched text
-
-TITLE_PATTERNS: list[tuple[str, MilestoneType, str, float]] = [
-    # Regulatory Approvals
-    (
-        r"\b(FDA|US Food and Drug Administration)\s+(approv|clear|authoriz)",
-        MilestoneType.FDA_APPROVAL,
-        "FDA Approval",
-        0.95,
-    ),
-    (
-        r"\b(EMA|European Medicines Agency)\s+(approv|authoriz)",
-        MilestoneType.EMA_APPROVAL,
-        "EMA Approval",
-        0.95,
-    ),
-    (
-        r"\bregulatory\s+approv",
-        MilestoneType.REGULATORY_APPROVAL,
-        "Regulatory Approval",
-        0.8,
-    ),
-    # Clinical Trials
-    (
-        r"\b(phase\s*(?:III|3)|pivotal\s+trial)",
-        MilestoneType.PHASE_3,
-        "Phase 3 Trial",
-        0.9,
-    ),
-    (
-        r"\b(phase\s*(?:II|2)|dose[- ]?find)",
-        MilestoneType.PHASE_2,
-        "Phase 2 Trial",
-        0.85,
-    ),
-    (
-        r"\b(phase\s*(?:I|1)|first[- ]?in[- ]?human|FIH)",
-        MilestoneType.PHASE_1,
-        "Phase 1 Trial",
-        0.85,
-    ),
-    (
-        r"\b(phase\s*(?:IV|4)|post[- ]?market)",
-        MilestoneType.PHASE_4,
-        "Phase 4 Study",
-        0.85,
-    ),
-    # Evidence Synthesis
-    (
-        r"\b(meta[- ]?analysis|pooled\s+analysis)",
-        MilestoneType.META_ANALYSIS,
-        "Meta-Analysis",
-        0.9,
-    ),
-    (
-        r"\bsystematic\s+review",
-        MilestoneType.SYSTEMATIC_REVIEW,
-        "Systematic Review",
-        0.9,
-    ),
-    (
-        r"\b(guideline|recommendation|consensus\s+statement)",
-        MilestoneType.GUIDELINE,
-        "Clinical Guideline",
-        0.85,
-    ),
-    (
-        r"\b(expert\s+consensus|panel\s+recommendation)",
-        MilestoneType.CONSENSUS,
-        "Expert Consensus",
-        0.8,
-    ),
-    # Mechanism & Discovery
-    (
-        r"\b(mechanism\s+of\s+action|pharmacodynamic|receptor\s+binding)",
-        MilestoneType.MECHANISM_DISCOVERY,
-        "Mechanism Discovery",
-        0.75,
-    ),
-    (
-        r"\b(preclinical|animal\s+model|in\s+vivo\s+study)",
-        MilestoneType.PRECLINICAL,
-        "Preclinical Study",
-        0.7,
-    ),
-    # Safety Events
-    (
-        r"\b(safety\s+alert|warning|adverse\s+event|black\s+box)",
-        MilestoneType.SAFETY_ALERT,
-        "Safety Alert",
-        0.85,
-    ),
-    (
-        r"\b(label\s+update|indication.*expand|new\s+indication)",
-        MilestoneType.LABEL_UPDATE,
-        "Label Update",
-        0.8,
-    ),
-    (
-        r"\b(withdraw|recall|market\s+removal)",
-        MilestoneType.WITHDRAWAL,
-        "Market Withdrawal",
-        0.9,
-    ),
-    # Breakthrough/Landmark
-    (
-        r"\b(breakthrough|paradigm\s+shift|revolutioniz)",
-        MilestoneType.BREAKTHROUGH,
-        "Breakthrough Discovery",
-        0.7,
-    ),
-    (
-        r"\b(controver|debate|challenge|dispute)",
-        MilestoneType.CONTROVERSY,
-        "Scientific Debate",
-        0.65,
-    ),
+__all__ = [
+    "TITLE_PATTERNS",
+    "PUBTYPE_PATTERNS",
+    "LANDMARK_CITATION_THRESHOLDS",
+    "MilestoneDetector",
+    "get_milestone_patterns",
 ]
-
-# Publication types that indicate milestones
-PUBTYPE_PATTERNS: dict[str, tuple[MilestoneType, str, float]] = {
-    "Randomized Controlled Trial": (MilestoneType.PHASE_3, "RCT", 0.7),
-    "Clinical Trial, Phase I": (MilestoneType.PHASE_1, "Phase 1 Trial", 0.9),
-    "Clinical Trial, Phase II": (MilestoneType.PHASE_2, "Phase 2 Trial", 0.9),
-    "Clinical Trial, Phase III": (MilestoneType.PHASE_3, "Phase 3 Trial", 0.95),
-    "Clinical Trial, Phase IV": (MilestoneType.PHASE_4, "Phase 4 Study", 0.9),
-    "Meta-Analysis": (MilestoneType.META_ANALYSIS, "Meta-Analysis", 0.95),
-    "Systematic Review": (MilestoneType.SYSTEMATIC_REVIEW, "Systematic Review", 0.95),
-    "Guideline": (MilestoneType.GUIDELINE, "Clinical Guideline", 0.95),
-    "Practice Guideline": (MilestoneType.GUIDELINE, "Practice Guideline", 0.95),
-    "Consensus Development Conference": (
-        MilestoneType.CONSENSUS,
-        "Consensus Conference",
-        0.9,
-    ),
-}
-
-# Citation thresholds for landmark detection
-LANDMARK_CITATION_THRESHOLDS = {
-    "exceptional": 500,  # Exceptional impact
-    "high": 200,  # High impact
-    "notable": 100,  # Notable impact
-    "moderate": 50,  # Moderate impact
-}
 
 
 class MilestoneDetector:
@@ -209,9 +78,14 @@ class MilestoneDetector:
         self.title_patterns = title_patterns or TITLE_PATTERNS
         self.pubtype_patterns = pubtype_patterns or PUBTYPE_PATTERNS
         self.min_confidence = min_confidence
+        self._title_pattern_policies = self._build_title_policies(title_patterns)
+        self._pubtype_policies = self._build_pubtype_policies(pubtype_patterns)
+        self._citation_threshold_policies = DEFAULT_CITATION_THRESHOLD_POLICIES
 
         # Pre-compile regex patterns for efficiency
-        self._compiled_patterns = [(re.compile(p[0], re.IGNORECASE), p[1], p[2], p[3]) for p in self.title_patterns]
+        self._compiled_patterns = [
+            (re.compile(policy.pattern, re.IGNORECASE), policy) for policy in self._title_pattern_policies
+        ]
 
     def detect_milestone(self, article: dict[str, Any], is_first: bool = False) -> TimelineEvent | None:
         """
@@ -242,6 +116,14 @@ class MilestoneDetector:
                 milestone_type=MilestoneType.FIRST_REPORT,
                 label="First Report",
                 confidence=0.85,
+                metadata={
+                    "milestone_detection": {
+                        "strategy": "first_report",
+                        "policy": "first_report",
+                        "reason": "最早的時間排序文章預設標記為 First Report",
+                        "confidence": 0.85,
+                    }
+                },
             )
 
         # 2. Publication type matching (high confidence)
@@ -302,10 +184,25 @@ class MilestoneDetector:
             pub_types = [pub_types]
 
         for pub_type in pub_types:
-            if pub_type in self.pubtype_patterns:
-                m_type, label, confidence = self.pubtype_patterns[pub_type]
-                if confidence >= self.min_confidence:
-                    return self._create_event(article, m_type, label, confidence)
+            for policy in self._pubtype_policies:
+                if pub_type != policy.publication_type:
+                    continue
+                if policy.confidence >= self.min_confidence:
+                    return self._create_event(
+                        article,
+                        policy.milestone_type,
+                        policy.label,
+                        policy.confidence,
+                        metadata={
+                            "milestone_detection": {
+                                "strategy": "publication_type",
+                                "policy": policy.name,
+                                "matched_value": pub_type,
+                                "reason": policy.reason,
+                                "confidence": policy.confidence,
+                            }
+                        },
+                    )
 
         return None
 
@@ -313,12 +210,29 @@ class MilestoneDetector:
         self, article: dict[str, Any], text: str, confidence_penalty: float = 0.0
     ) -> TimelineEvent | None:
         """Detect milestone from title or abstract text."""
-        for pattern, m_type, label, base_confidence in self._compiled_patterns:
+        strategy = "abstract_pattern" if confidence_penalty else "title_pattern"
+        for pattern, policy in self._compiled_patterns:
             match = pattern.search(text)
             if match:
-                confidence = base_confidence - confidence_penalty
+                confidence = policy.confidence - confidence_penalty
                 if confidence >= self.min_confidence:
-                    return self._create_event(article, m_type, label, confidence)
+                    return self._create_event(
+                        article,
+                        policy.milestone_type,
+                        policy.label,
+                        confidence,
+                        metadata={
+                            "milestone_detection": {
+                                "strategy": strategy,
+                                "policy": policy.name,
+                                "rule": policy.pattern,
+                                "matched_value": match.group(0),
+                                "reason": policy.reason,
+                                "confidence": confidence,
+                                "confidence_penalty": confidence_penalty,
+                            }
+                        },
+                    )
 
         return None
 
@@ -328,12 +242,27 @@ class MilestoneDetector:
         if not citations:
             return None
 
-        if citations >= LANDMARK_CITATION_THRESHOLDS["exceptional"]:
-            return self._create_event(article, MilestoneType.LANDMARK_STUDY, "Landmark Study", 0.9)
-        if citations >= LANDMARK_CITATION_THRESHOLDS["high"]:
-            return self._create_event(article, MilestoneType.LANDMARK_STUDY, "High-Impact Study", 0.8)
-        if citations >= LANDMARK_CITATION_THRESHOLDS["notable"]:
-            return self._create_event(article, MilestoneType.LANDMARK_STUDY, "Notable Study", 0.7)
+        citation_count = int(citations)
+        for policy in self._citation_threshold_policies:
+            if citation_count < policy.minimum_citations or not policy.emit_event:
+                continue
+            if policy.confidence >= self.min_confidence:
+                return self._create_event(
+                    article,
+                    MilestoneType.LANDMARK_STUDY,
+                    policy.label,
+                    policy.confidence,
+                    metadata={
+                        "milestone_detection": {
+                            "strategy": "citation_threshold",
+                            "policy": policy.name,
+                            "threshold": policy.minimum_citations,
+                            "matched_value": str(citation_count),
+                            "reason": policy.reason,
+                            "confidence": policy.confidence,
+                        }
+                    },
+                )
 
         return None
 
@@ -343,6 +272,7 @@ class MilestoneDetector:
         milestone_type: MilestoneType,
         label: str,
         confidence: float,
+        metadata: dict[str, Any] | None = None,
     ) -> TimelineEvent:
         """Create a TimelineEvent from article data."""
         pmid = str(article.get("pmid", ""))
@@ -380,6 +310,41 @@ class MilestoneDetector:
             first_author=first_author,
             doi=article.get("doi"),
             confidence_score=confidence,
+            metadata=metadata or {},
+        )
+
+    def _build_title_policies(
+        self, title_patterns: list[tuple[str, MilestoneType, str, float]] | None
+    ) -> tuple[RegexMilestonePolicy, ...]:
+        if title_patterns is None:
+            return DEFAULT_TITLE_PATTERN_POLICIES
+        return tuple(
+            RegexMilestonePolicy(
+                name=f"custom_title_{index}",
+                pattern=pattern,
+                milestone_type=milestone_type,
+                label=label,
+                confidence=confidence,
+                reason="使用自訂 title pattern 規則",
+            )
+            for index, (pattern, milestone_type, label, confidence) in enumerate(title_patterns)
+        )
+
+    def _build_pubtype_policies(
+        self, pubtype_patterns: dict[str, tuple[MilestoneType, str, float]] | None
+    ) -> tuple[PublicationTypeMilestonePolicy, ...]:
+        if pubtype_patterns is None:
+            return DEFAULT_PUBTYPE_POLICIES
+        return tuple(
+            PublicationTypeMilestonePolicy(
+                name=f"custom_pubtype_{index}",
+                publication_type=publication_type,
+                milestone_type=milestone_type,
+                label=label,
+                confidence=confidence,
+                reason="使用自訂 publication type 規則",
+            )
+            for index, (publication_type, (milestone_type, label, confidence)) in enumerate(pubtype_patterns.items())
         )
 
     def _parse_month(self, raw_month: Any) -> int | None:
@@ -479,13 +444,14 @@ def get_milestone_patterns() -> list[dict[str, Any]]:
     Useful for understanding what the detector looks for.
     """
     patterns = []
-    for regex, m_type, label, confidence in TITLE_PATTERNS:
+    for policy in DEFAULT_TITLE_PATTERN_POLICIES:
         patterns.append(
             {
-                "pattern": regex,
-                "milestone_type": m_type.value,
-                "label": label,
-                "confidence": confidence,
+                "policy": policy.name,
+                "pattern": policy.pattern,
+                "milestone_type": policy.milestone_type.value,
+                "label": policy.label,
+                "confidence": policy.confidence,
             }
         )
     return patterns

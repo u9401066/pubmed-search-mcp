@@ -8,7 +8,7 @@
 | --- | --- | --- | --- |
 | stdio | `uvx pubmed-search-mcp` | VS Code、Claude Desktop、Cursor | 預設本機模式 |
 | HTTP | `uv run python run_server.py --transport streamable-http` | 遠端 MCP client、自建服務 | 推薦的 HTTP transport |
-| HTTP + Copilot compatibility | `uv run python run_server.py --transport streamable-http --copilot-compatible` | 想保留完整 40 tools 並接 Copilot | HTTP response 會做相容轉換 |
+| HTTP + Copilot compatibility | `uv run python run_server.py --transport streamable-http --copilot-compatible` | 想保留完整 42-tool primary MCP surface 並接 Copilot | HTTP response 會做相容轉換 |
 | Copilot simplified | `uv run python run_copilot.py` | Copilot Studio schema 相容性優先 | 暴露精簡版工具集 |
 | HTTPS local | `scripts/start-https-local.sh` | 本機 HTTPS smoke test | `/mcp`、`/health`、`/info` |
 | HTTPS Docker | `scripts/start-https-docker.sh up` | Nginx TLS reverse proxy 測試 | 預設代理到 `/mcp` |
@@ -179,7 +179,7 @@ docker run -p 8765:8765 -e NCBI_EMAIL=your@email.com pubmed-search-mcp
 Dockerfile 預設會啟動：
 
 ```bash
-python run_server.py --transport streamable-http
+uv run python run_server.py --transport streamable-http
 ```
 
 ## 7. 雲端部署
@@ -215,7 +215,7 @@ az containerapp create \
 以下路線仍可能存在於舊文件或歷史腳本中，但不應再當成主要部署方式：
 
 - `/sse` + `/messages` 作為主要遠端入口
-- `python -m pubmed_search.mcp`
+- 舊的 module 路徑，例如 `uv run python -m pubmed_search.mcp`
 - `pip install -e ".[all]"` 這類非 uv 指令
 - 舊版公開工具名稱，例如 `search_literature`、`search_core`、`merge_search_results`
 

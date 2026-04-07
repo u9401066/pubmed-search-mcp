@@ -185,7 +185,7 @@ class RankingConfig:
     quality_article_type_weights: dict[str, float] = field(default_factory=dict)
 
     # Source trust levels (0-1)
-    source_trust_levels: dict[str, float] = field(default_factory=lambda: DEFAULT_SOURCE_TRUST.copy())
+    source_trust_levels: dict[str, float] = field(default_factory=DEFAULT_SOURCE_TRUST.copy)
 
     # Minimum score to include in results
     min_score: float = 0.0

@@ -14,34 +14,25 @@ import logging
 from typing import Any
 
 from Bio import Entrez
-from tenacity import (
-    retry,
-    retry_if_exception,
-    stop_after_attempt,
-    wait_exponential,
-)
+
+from .base import execute_entrez_operation
 
 logger = logging.getLogger(__name__)
 
 # Retry settings for NCBI intermittent errors
 MAX_RETRIES = 3
 RETRY_DELAY = 1.0
-RETRYABLE_ERRORS = ["Database is not supported", "Backend failed", "Server Error"]
-
-
-def _is_retryable(error: BaseException) -> bool:
-    """Check if an error is retryable."""
-    error_str = str(error)
-    return any(msg in error_str for msg in RETRYABLE_ERRORS)
-
-
-# Reusable tenacity retry decorator for NCBI operations
-_ncbi_retry = retry(
-    stop=stop_after_attempt(MAX_RETRIES),
-    wait=wait_exponential(multiplier=RETRY_DELAY, min=RETRY_DELAY, max=RETRY_DELAY * 4),
-    retry=retry_if_exception(_is_retryable),
-    reraise=True,
+_RETRYABLE_MESSAGES = (
+    "database is not supported",
+    "backend failed",
+    "server error",
 )
+
+
+def _is_retryable(error: Exception) -> bool:
+    """Compatibility helper kept for existing tests and callers."""
+    error_str = str(error).lower()
+    return any(message in error_str for message in _RETRYABLE_MESSAGES)
 
 
 class SearchStrategyGenerator:
@@ -57,8 +48,19 @@ class SearchStrategyGenerator:
 
     def __init__(self, email: str, api_key: str | None = None):
         Entrez.email = email  # type: ignore[assignment]
+        self._api_key = api_key
         if api_key:
             Entrez.api_key = api_key  # type: ignore[assignment]
+
+    async def _execute_entrez(self, operation, *, service_name: str, timeout: float = 45.0):
+        return await execute_entrez_operation(
+            operation,
+            api_key=self._api_key,
+            service_name=service_name,
+            timeout=timeout,
+            max_attempts=MAX_RETRIES,
+            base_delay=RETRY_DELAY,
+        )
 
     async def spell_check(self, query: str) -> tuple[str, bool]:
         """
@@ -75,7 +77,7 @@ class SearchStrategyGenerator:
                 handle.close()
                 return result
 
-            result = await _ncbi_retry(_do_spell_check)()
+            result = await self._execute_entrez(_do_spell_check, service_name="ncbi-strategy:espell")
 
             corrected = result.get("CorrectedQuery", "")
             if corrected and corrected != query:
@@ -171,12 +173,12 @@ class SearchStrategyGenerator:
 
         try:
             # Strategy 1: Try exact MeSH term search first
-            result = await _ncbi_retry(_search_mesh_exact)()
+            result = await self._execute_entrez(_search_mesh_exact, service_name="ncbi-strategy:mesh-esearch")
             mesh_ids = result.get("IdList", [])
 
             # Strategy 2: Fall back to quoted search
             if not mesh_ids:
-                result = await _ncbi_retry(_search_mesh_quoted)()
+                result = await self._execute_entrez(_search_mesh_quoted, service_name="ncbi-strategy:mesh-esearch")
                 mesh_ids = result.get("IdList", [])
 
             if not mesh_ids:
@@ -185,7 +187,11 @@ class SearchStrategyGenerator:
             mesh_id = mesh_ids[0]
 
             # Fetch MeSH record in text mode with retry
-            content = await _ncbi_retry(_fetch_mesh_text)(mesh_id)
+            content = await self._execute_entrez(
+                lambda: _fetch_mesh_text(mesh_id),
+                service_name="ncbi-strategy:mesh-efetch",
+                timeout=60.0,
+            )
 
             if not content:
                 return None
@@ -225,7 +231,7 @@ class SearchStrategyGenerator:
             return result
 
         try:
-            result = await _ncbi_retry(_do_esearch)()
+            result = await self._execute_entrez(_do_esearch, service_name="ncbi-strategy:analyze-query")
 
             return {
                 "original": query,

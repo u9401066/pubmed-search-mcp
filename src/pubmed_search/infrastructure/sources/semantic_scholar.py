@@ -81,13 +81,14 @@ class SemanticScholarClient(BaseAPIClient):
         *,
         method: str = "GET",
         data: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
     ) -> Any:
         """Add API key header to requests."""
         req_headers = dict(headers or {})
         if self._api_key:
             req_headers["x-api-key"] = self._api_key
-        return await super()._execute_request(url, method=method, data=data, headers=req_headers)
+        return await super()._execute_request(url, method=method, data=data, params=params, headers=req_headers)
 
     async def search(
         self,

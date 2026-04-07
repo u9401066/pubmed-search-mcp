@@ -18,15 +18,56 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
+import threading
 from typing import TYPE_CHECKING, Any
 
+from pubmed_search.shared.settings import load_settings
+
 if TYPE_CHECKING:
+    from collections.abc import Awaitable
+
     from mcp.server.fastmcp import FastMCP
 
     from pubmed_search.application.session.manager import SessionManager
     from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
 logger = logging.getLogger(__name__)
+
+
+async def _await_registered_tools(awaitable: Awaitable[Any]) -> Any:
+    """Normalize generic awaitables into a coroutine that asyncio.run can execute."""
+    return await awaitable
+
+
+def _run_awaitable_in_thread(awaitable: Any) -> Any:
+    """Run an awaitable to completion from a sync context, even if an event loop is already running."""
+    result: dict[str, Any] = {}
+    error: dict[str, BaseException] = {}
+
+    def _worker() -> None:
+        try:
+            result["value"] = asyncio.run(_await_registered_tools(awaitable))
+        except BaseException as exc:  # pragma: no cover - defensive transport glue
+            error["value"] = exc
+
+    thread = threading.Thread(target=_worker, daemon=True)
+    thread.start()
+    thread.join()
+
+    if "value" in error:
+        raise error["value"]
+
+    return result.get("value")
+
+
+def _resolve_awaitable(awaitable: Awaitable[Any]) -> Any:
+    """Resolve an awaitable from sync code without leaking un-awaited coroutines."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(_await_registered_tools(awaitable))
+
+    return _run_awaitable_in_thread(awaitable)
 
 
 def _extract_registered_tool_names(mcp: FastMCP) -> set[str]:
@@ -36,10 +77,10 @@ def _extract_registered_tool_names(mcp: FastMCP) -> set[str]:
         raw_tools = list_tools()
         if inspect.isawaitable(raw_tools):
             try:
-                raw_tools = asyncio.run(raw_tools)
-            except RuntimeError:
+                raw_tools = _resolve_awaitable(raw_tools)
+            except Exception:
                 logger.debug(
-                    "FastMCP.list_tools() is awaitable inside a running loop; falling back to private registry"
+                    "FastMCP.list_tools() is awaitable but could not be resolved; falling back to private registry"
                 )
                 raw_tools = None
 
@@ -131,6 +172,7 @@ TOOL_CATEGORIES: dict[str, dict[str, Any]] = {
         "name": "Session 管理",
         "description": "PMID 暫存與歷史",
         "tools": [
+            "read_session",
             "get_session_pmids",
             "get_cached_article",
             "get_session_summary",
@@ -175,6 +217,7 @@ TOOL_CATEGORIES: dict[str, dict[str, Any]] = {
         "name": "Pipeline 管理",
         "description": "Pipeline 持久化、載入、排程",
         "tools": [
+            "manage_pipeline",
             "save_pipeline",
             "list_pipelines",
             "load_pipeline",
@@ -219,9 +262,11 @@ def register_all_mcp_tools(
         set_strategy_generator(strategy_generator)
 
     # Initialize PipelineStore
+    from pubmed_search.application.pipeline.runner import StoredPipelineRunner
     from pubmed_search.application.pipeline.store import PipelineStore
+    from pubmed_search.infrastructure.scheduling import APSPipelineScheduler
 
-    from .tools.pipeline_tools import set_pipeline_store
+    from .tools.pipeline_tools import set_pipeline_scheduler, set_pipeline_store
 
     data_dir = (
         str(session_manager.data_dir)
@@ -230,9 +275,8 @@ def register_all_mcp_tools(
     )
 
     # Detect workspace directory for workspace-scoped pipelines & reports
-    import os as _os
-
-    workspace_dir = _os.environ.get("PUBMED_WORKSPACE_DIR") or None
+    settings = load_settings()
+    workspace_dir = settings.workspace_dir
     if not workspace_dir:
         # Fallback: use CWD if it looks like a project root
         _cwd = __import__("pathlib").Path.cwd()
@@ -247,18 +291,34 @@ def register_all_mcp_tools(
     )
     set_pipeline_store(pipeline_store)
 
+    from pubmed_search.infrastructure.sources import search_alternate_source
+
+    pipeline_runner = StoredPipelineRunner(
+        store=pipeline_store,
+        searcher=searcher,
+        alternate_search_fn=search_alternate_source,
+    )
+    pipeline_scheduler = APSPipelineScheduler(
+        store=pipeline_store,
+        runner=pipeline_runner,
+        settings=settings,
+    )
+    set_pipeline_scheduler(pipeline_scheduler)
+
     stats = {}
 
     # 1. Core search tools (from tools/__init__.py)
     logger.info("Registering search tools...")
     register_all_tools(mcp, searcher)
-    stats["search_and_discovery"] = 25  # Approximate
+    core_tool_count = len(_extract_registered_tool_names(mcp))
+    stats["search_and_discovery"] = core_tool_count
 
     # 2. Session tools
     logger.info("Registering session tools...")
     register_session_tools(mcp, session_manager)
+    session_tool_count = len(_extract_registered_tool_names(mcp)) - core_tool_count
     register_session_resources(mcp, session_manager)
-    stats["session"] = 3  # get_session_pmids, get_cached_article, get_session_summary
+    stats["session"] = session_tool_count
 
     # 3. Resources (filter docs, etc.)
     logger.info("Registering resources...")
@@ -324,6 +384,17 @@ def get_tools_by_category(category_id: str) -> list[str]:
     return []
 
 
+def _render_markdown_table(headers: list[str], rows: list[list[str]]) -> list[str]:
+    """Render a compact markdown table for generated docs."""
+    rendered = [
+        "| " + " | ".join(headers) + " |",
+        "|" + "|".join("-" * max(len(header) + 2, 6) for header in headers) + "|",
+    ]
+    for row in rows:
+        rendered.append("| " + " | ".join(row) + " |")
+    return rendered
+
+
 def generate_tools_index_markdown() -> str:
     """
     產生工具索引的 Markdown 文檔。
@@ -341,14 +412,12 @@ def generate_tools_index_markdown() -> str:
     ]
 
     for cat_info in TOOL_CATEGORIES.values():
-        lines.append(f"## {cat_info['name']}")
-        lines.append(f"*{cat_info['description']}*")
-        lines.append("")
-        lines.append("| Tool | Description |")
-        lines.append("|------|-------------|")
+        lines.extend([f"## {cat_info['name']}", "", cat_info["description"], ""])
+        rows: list[list[str]] = []
         for tool in cat_info["tools"]:
             # 簡短描述 (可以後續從 docstring 提取)
-            lines.append(f"| `{tool}` | - |")
+            rows.append([f"`{tool}`", "-"])
+        lines.extend(_render_markdown_table(["Tool", "Description"], rows))
         lines.append("")
 
     return "\n".join(lines)

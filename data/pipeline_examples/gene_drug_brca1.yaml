@@ -12,7 +12,7 @@
 template: gene_drug
 
 params:
-  topic: "BRCA1 targeted therapy PARP inhibitors"
+  term: "BRCA1 targeted therapy PARP inhibitors"
 
 output:
   format: markdown

@@ -24,10 +24,18 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from functools import partial
+from typing import TYPE_CHECKING, Any
+
+from pubmed_search.shared.source_contracts import SourceAdapterCall, gather_source_adapter_calls
+
+from .aggregation_kernel import ImageAggregationKernel
+from .source_adapters import build_image_source_registry
 
 if TYPE_CHECKING:
     from pubmed_search.domain.entities.image import ImageResult
+
+    from .source_adapters import ImageSourceAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +51,7 @@ class ImageSearchResult:
     errors: list[str] = field(default_factory=list)
     advisor_warnings: list[str] = field(default_factory=list)
     advisor_suggestions: list[str] = field(default_factory=list)
+    advisor_diagnostics: dict[str, Any] = field(default_factory=dict)
     recommended_image_type: str | None = None
     coarse_category: str | None = None
     recommended_collection: str | None = None
@@ -65,6 +74,15 @@ class ImageSearchService:
 
     # Valid source identifiers
     VALID_SOURCES = {"openi", "europe_pmc"}
+
+    def __init__(
+        self,
+        *,
+        adapters: dict[str, ImageSourceAdapter] | None = None,
+        aggregation_kernel: ImageAggregationKernel | None = None,
+    ) -> None:
+        self._adapters = adapters or build_image_source_registry()
+        self._aggregation_kernel = aggregation_kernel or ImageAggregationKernel()
 
     async def search(
         self,
@@ -122,10 +140,6 @@ class ImageSearchService:
 
         # Determine sources to search
         active_sources = self._resolve_sources(sources, image_type, collection)
-
-        all_images: list[ImageResult] = []
-        errors: list[str] = []
-        total_count = 0
         applied_filters: dict[str, str] = {}
 
         # Track applied filters for display
@@ -148,10 +162,81 @@ class ImageSearchService:
         if video_only:
             applied_filters["video_only"] = "true"
 
+        adapter_results = await gather_source_adapter_calls(
+            self._build_source_calls(
+                active_sources=active_sources,
+                query=query,
+                image_type=image_type,
+                collection=collection,
+                open_access_only=open_access_only,
+                limit=limit,
+                sort_by=sort_by,
+                article_type=article_type,
+                specialty=specialty,
+                license_type=license_type,
+                subset=subset,
+                search_fields=search_fields,
+                video_only=video_only,
+                hmp_type=hmp_type,
+            )
+        )
+        aggregated = self._aggregation_kernel.aggregate(adapter_results, limit=limit)
+
+        return ImageSearchResult(
+            images=aggregated.images,
+            total_count=aggregated.total_count,
+            sources_used=aggregated.sources_used,
+            query=query,
+            errors=aggregated.errors,
+            advisor_warnings=advice.warnings,
+            advisor_suggestions=advice.suggestions,
+            advisor_diagnostics=advice.diagnostics,
+            recommended_image_type=advice.recommended_image_type,
+            coarse_category=advice.coarse_category,
+            recommended_collection=advice.recommended_collection,
+            collection_reason=advice.collection_reason,
+            applied_filters=applied_filters,
+        )
+
+    def _build_source_calls(
+        self,
+        *,
+        active_sources: list[str],
+        query: str,
+        image_type: str | None,
+        collection: str | None,
+        open_access_only: bool,
+        limit: int,
+        sort_by: str | None,
+        article_type: str | None,
+        specialty: str | None,
+        license_type: str | None,
+        subset: str | None,
+        search_fields: str | None,
+        video_only: bool,
+        hmp_type: str | None,
+    ) -> list[SourceAdapterCall[ImageResult]]:
+        """Convert resolved sources into source-adapter calls."""
+        calls: list[SourceAdapterCall[ImageResult]] = []
+
         for source in active_sources:
-            try:
-                if source == "openi":
-                    images, count = await self._search_openi(
+            adapter = self._adapters.get(source)
+            if adapter is None:
+                calls.append(
+                    SourceAdapterCall(
+                        source=source,
+                        operation="search_images",
+                        execute=partial(self._raise_unavailable_source, source),
+                    )
+                )
+                continue
+
+            calls.append(
+                SourceAdapterCall(
+                    source=source,
+                    operation="search_images",
+                    execute=partial(
+                        adapter.search,
                         query=query,
                         image_type=image_type,
                         collection=collection,
@@ -164,35 +249,17 @@ class ImageSearchService:
                         search_fields=search_fields,
                         video_only=video_only,
                         hmp_type=hmp_type,
-                    )
-                    all_images.extend(images)
-                    total_count += count
-                # Future: elif source == "europe_pmc": ...
-            except Exception as e:
-                error_msg = f"{source}: {e}"
-                logger.exception(f"Image search failed for {error_msg}")
-                errors.append(error_msg)
+                        open_access_only=open_access_only,
+                    ),
+                )
+            )
 
-        # Deduplicate by PMID/source_id
-        deduped = self._deduplicate(all_images)
+        return calls
 
-        # Trim to limit
-        final_images = deduped[:limit]
-
-        return ImageSearchResult(
-            images=final_images,
-            total_count=total_count,
-            sources_used=active_sources,
-            query=query,
-            errors=errors,
-            advisor_warnings=advice.warnings,
-            advisor_suggestions=advice.suggestions,
-            recommended_image_type=advice.recommended_image_type,
-            coarse_category=advice.coarse_category,
-            recommended_collection=advice.recommended_collection,
-            collection_reason=advice.collection_reason,
-            applied_filters=applied_filters,
-        )
+    @staticmethod
+    async def _raise_unavailable_source(source: str) -> None:
+        msg = f"Image source adapter not implemented: {source}"
+        raise NotImplementedError(msg)
 
     def _resolve_sources(
         self,
@@ -223,72 +290,8 @@ class ImageSearchService:
         # Phase 4.2+ will add Europe PMC auto-selection logic
         return ["openi"]
 
-    async def _search_openi(
-        self,
-        query: str,
-        image_type: str | None,
-        collection: str | None,
-        limit: int,
-        sort_by: str | None = None,
-        article_type: str | None = None,
-        specialty: str | None = None,
-        license_type: str | None = None,
-        subset: str | None = None,
-        search_fields: str | None = None,
-        video_only: bool = False,
-        hmp_type: str | None = None,
-    ) -> tuple[list[ImageResult], int]:
-        """
-        Search Open-i via infrastructure client.
-
-        Uses lazy initialization via get_openi_client().
-        Passes all supported filters to the client.
-        """
-        from pubmed_search.infrastructure.sources import get_openi_client
-
-        client = get_openi_client()  # type: ignore[no-untyped-call]
-        return await client.search(  # type: ignore[no-any-return, no-untyped-call]
-            query=query,
-            image_type=image_type,
-            collection=collection,
-            max_results=limit,
-            sort_by=sort_by,
-            article_type=article_type,
-            specialty=specialty,
-            license_type=license_type,
-            subset=subset,
-            search_fields=search_fields,
-            video_only=video_only,
-            hmp_type=hmp_type,
-        )
-
     @staticmethod
     def _deduplicate(images: list[ImageResult]) -> list[ImageResult]:
-        """
-        Deduplicate images by PMID + source_id combination.
-
-        When images from multiple sources share the same PMID,
-        keep the first occurrence (source priority order matters).
-        Images without identifiers are always kept.
-        """
-        seen_keys: set[str] = set()
-        unique: list[ImageResult] = []
-
-        for img in images:
-            # Build dedup key
-            if img.pmid and img.source_id:
-                key = f"{img.pmid}:{img.source_id}"
-            elif img.source_id:
-                key = f"sid:{img.source_id}"
-            elif img.image_url:
-                key = f"url:{img.image_url}"
-            else:
-                # No identifier — keep it
-                unique.append(img)
-                continue
-
-            if key not in seen_keys:
-                seen_keys.add(key)
-                unique.append(img)
-
-        return unique
+        """Backward-compatible proxy to the shared aggregation kernel dedup policy."""
+        deduplicated, _duplicates_removed = ImageAggregationKernel.deduplicate(images)
+        return deduplicated

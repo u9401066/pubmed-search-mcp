@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PubMed Search MCP Docs</title>
+    <meta
+      name="description"
+      content="Browse PubMed Search MCP documentation: overview, architecture, pipeline tutorials, source contracts, quick reference, troubleshooting, and deployment."
+    />
+    <link rel="stylesheet" href="site.css?v=20260403-docs-site" />
+  </head>
+  <body>
+    <div class="layout-shell">
+      <aside class="sidebar" id="sidebar">
+        <div class="brand-block">
+          <p class="eyebrow">Documentation Site</p>
+          <h1>PubMed Search MCP</h1>
+          <p class="tagline">A browsable doc surface for research workflows, pipeline tutorials, source contracts, troubleshooting, and deployment.</p>
+        </div>
+
+        <label class="search-label" for="nav-filter">Filter pages</label>
+        <input id="nav-filter" class="nav-filter" type="search" placeholder="overview, tutorial, deployment, source..." />
+
+        <nav id="page-nav" class="page-nav" aria-label="Documentation pages"></nav>
+
+        <div class="sidebar-note">
+          <p>Counts-first search, pipeline tutorials, OA figure extraction, source contracts, and production docs live together here.</p>
+        </div>
+      </aside>
+
+      <main class="content-shell">
+        <header class="topbar">
+          <button id="nav-toggle" class="nav-toggle" type="button" aria-expanded="false" aria-controls="sidebar">
+            Menu
+          </button>
+          <div>
+            <p id="page-kicker" class="page-kicker">Overview</p>
+            <h2 id="page-title" class="page-title">PubMed Search MCP Docs</h2>
+          </div>
+        </header>
+
+        <section class="hero-panel">
+          <div class="hero-copy">
+            <p class="hero-kicker">Docs, not product UI</p>
+            <p>
+              This site stitches together the README, architecture reference, pipeline tutorials, tool quick reference,
+              source contracts, troubleshooting guidance, and deployment notes into one navigable surface.
+            </p>
+          </div>
+          <div class="hero-metrics">
+            <div>
+              <strong>42</strong>
+              <span>MCP tools</span>
+            </div>
+            <div>
+              <strong>Counts-first</strong>
+              <span>agent routing support</span>
+            </div>
+            <div>
+              <strong>OA-aware</strong>
+              <span>full text and figures</span>
+            </div>
+          </div>
+        </section>
+
+        <div class="doc-layout">
+          <article id="doc-content" class="doc-content" aria-live="polite"></article>
+          <aside id="page-outline" class="page-outline" aria-label="On this page" hidden></aside>
+        </div>
+      </main>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+    <script src="site-content.js?v=20260403-docs-site"></script>
+    <script src="site.js?v=20260403-docs-site"></script>
+  </body>
+</html>

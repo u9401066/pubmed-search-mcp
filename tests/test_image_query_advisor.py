@@ -319,6 +319,10 @@ class TestImageSearchAdviceDataclass:
         assert advice.format_warnings() == ""
         assert advice.format_suggestions() == ""
 
+    async def test_diagnostics_default_empty(self):
+        advice = ImageSearchAdvice(is_suitable=True, confidence=0.5)
+        assert advice.diagnostics == {}
+
 
 class TestAdviseImageSearchConvenience:
     """Tests for the convenience function."""
@@ -423,6 +427,25 @@ class TestNonEnglishDetection:
         assert "examples" in result
         # Examples should show translation patterns
         assert any("→" in ex for ex in result["examples"])
+
+
+class TestImageQueryDiagnostics:
+    """Tests for explainable policy hit diagnostics."""
+
+    def setup_method(self):
+        self.advisor = ImageQueryAdvisor()
+
+    async def test_feature_hit_breakdown_contains_policy_hits(self):
+        advice = self.advisor.advise("chest x-ray pneumonia systematic review")
+        feature_hits = advice.diagnostics["feature_hits"]
+        assert any(hit["rule"] == "explicit_image_terms" for hit in feature_hits)
+        assert any(hit["rule"] == "non_image_terms" for hit in feature_hits)
+        assert any(hit["category"] == "image_type" and hit["rule"] == "x" for hit in feature_hits)
+
+    async def test_mismatch_is_captured_in_diagnostics(self):
+        advice = self.advisor.advise("histology biopsy pathology", image_type="xg")
+        feature_hits = advice.diagnostics["feature_hits"]
+        assert any(hit["rule"] == "image_type_mismatch" for hit in feature_hits)
 
 
 # ============================================================================
@@ -558,6 +581,27 @@ class TestAdvisorIntegration:
 
         assert result.recommended_image_type == "mc"
 
+    async def test_service_includes_advisor_diagnostics(self):
+        """Service should pass through advisor diagnostics."""
+        from unittest.mock import MagicMock, patch
+
+        from pubmed_search.application.image_search import (
+            ImageSearchService,
+        )
+
+        service = ImageSearchService()
+        mock_client = MagicMock()
+        mock_client.search = AsyncMock(return_value=([], 0))
+
+        with patch(
+            "pubmed_search.infrastructure.sources.get_openi_client",
+            return_value=mock_client,
+        ):
+            result = await service.search("chest x-ray pneumonia systematic review")
+
+        assert result.advisor_diagnostics
+        assert any(hit["rule"] == "explicit_image_terms" for hit in result.advisor_diagnostics["feature_hits"])
+
     async def test_empty_query_no_advisor(self):
         """Empty query should skip advisor entirely."""
         from pubmed_search.application.image_search import ImageSearchService
@@ -608,3 +652,53 @@ class TestAdvisorIntegration:
 
         assert "智慧建議" in result
         assert "2020" in result
+
+    async def test_presentation_formats_diagnostics(self):
+        """Presentation layer should show query diagnostics when available."""
+        from unittest.mock import patch
+
+        from mcp.server.fastmcp import FastMCP
+
+        from pubmed_search.application.image_search import ImageSearchResult
+        from pubmed_search.domain.entities.image import ImageResult, ImageSource
+        from pubmed_search.presentation.mcp_server.tools.image_search import (
+            register_image_search_tools,
+        )
+
+        mcp = FastMCP("test")
+        register_image_search_tools(mcp)
+        tools = mcp._tool_manager._tools
+        tool_fn = tools["search_biomedical_images"].fn
+
+        mock_result = ImageSearchResult(
+            images=[
+                ImageResult(
+                    image_url="https://openi.nlm.nih.gov/img/1.png",
+                    caption="Test",
+                    pmid="123",
+                    article_title="Test",
+                    source=ImageSource.OPENI,
+                )
+            ],
+            total_count=1,
+            sources_used=["openi"],
+            query="chest x-ray pneumonia",
+            advisor_diagnostics={
+                "feature_hits": [
+                    {
+                        "category": "suitability",
+                        "rule": "explicit_image_terms",
+                        "reason": "明確影像詞彙",
+                        "matched_terms": ["x-ray", "image"],
+                        "score_delta": 0.6,
+                    }
+                ]
+            },
+        )
+
+        with patch("pubmed_search.presentation.mcp_server.tools.image_search.ImageSearchService") as MockService:
+            MockService.return_value.search = AsyncMock(return_value=mock_result)
+            result = await tool_fn(query="chest x-ray pneumonia")
+
+        assert "Query Diagnostics" in result
+        assert "explicit_image_terms" in result

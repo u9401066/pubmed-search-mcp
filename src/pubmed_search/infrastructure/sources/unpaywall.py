@@ -25,6 +25,7 @@ Best Practices:
 from __future__ import annotations
 
 import logging
+import os
 import urllib.parse
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -74,7 +75,7 @@ class UnpaywallClient(BaseAPIClient):
             email: Contact email (required by Unpaywall ToS)
             timeout: Request timeout in seconds
         """
-        self._email = email or DEFAULT_EMAIL
+        self._email = email or os.environ.get("NCBI_EMAIL", "").strip() or DEFAULT_EMAIL
         super().__init__(
             timeout=timeout,
             min_interval=0.1,

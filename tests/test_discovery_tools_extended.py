@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import toons
 
 from pubmed_search.presentation.mcp_server.tools.discovery import (
     _detect_ambiguous_terms,
@@ -185,6 +187,33 @@ class TestFetchArticleDetails:
         result = await tools["fetch_article_details"](pmids="1,2")
         assert "P1" in result and "P2" in result
 
+    async def test_json_contract(self, setup):
+        tools, searcher = setup
+        searcher.fetch_details.return_value = [
+            {"pmid": "12345678", "title": "Detail Paper", "authors": ["A"], "doi": "10.1/test"}
+        ]
+
+        result = await tools["fetch_article_details"](pmids="12345678", output_format="json")
+        parsed = json.loads(result)
+
+        assert parsed["tool"] == "fetch_article_details"
+        assert parsed["source_counts"][0]["source"] == "pubmed"
+        assert parsed["next_tools"]
+        assert any(item["tool"] == "get_fulltext" for item in parsed["next_tools"])
+        assert parsed["next_commands"]
+        assert parsed["section_provenance"]["articles"]["canonical_host"] == "PubMed"
+
+    async def test_json_contract_no_results(self, setup):
+        tools, searcher = setup
+        searcher.fetch_details.return_value = []
+
+        result = await tools["fetch_article_details"](pmids="12345678", output_format="json")
+        parsed = json.loads(result)
+
+        assert parsed["article_count"] == 0
+        assert parsed["source_counts"][0]["returned"] == 0
+        assert parsed["next_tools"][0]["tool"] == "unified_search"
+
 
 class TestGetCitationMetrics:
     async def test_no_pmids(self, setup):
@@ -240,3 +269,51 @@ class TestGetCitationMetrics:
         searcher.get_citation_metrics.side_effect = RuntimeError("fail")
         result = await tools["get_citation_metrics"](pmids="12345678")
         assert "error" in result.lower()
+
+    async def test_json_contract(self, setup):
+        tools, searcher = setup
+        searcher.get_citation_metrics.return_value = {
+            "12345678": {
+                "pmid": "12345678",
+                "title": "Metrics Paper",
+                "year": 2020,
+                "journal": "Nature",
+                "citation_count": 100,
+                "relative_citation_ratio": 5.5,
+                "nih_percentile": 95.0,
+                "citations_per_year": 25.0,
+                "apt": 0.8,
+            }
+        }
+
+        result = await tools["get_citation_metrics"](pmids="12345678", output_format="json")
+        parsed = json.loads(result)
+
+        assert parsed["tool"] == "get_citation_metrics"
+        assert parsed["article_count"] == 1
+        assert parsed["articles"][0]["pmid"] == "12345678"
+        assert parsed["source_counts"][0]["source"] == "nih-icite"
+
+    async def test_toon_contract(self, setup):
+        tools, searcher = setup
+        searcher.get_citation_metrics.return_value = {
+            "12345678": {
+                "pmid": "12345678",
+                "title": "Metrics Paper",
+                "year": 2020,
+                "journal": "Nature",
+                "citation_count": 100,
+                "relative_citation_ratio": 5.5,
+                "nih_percentile": 95.0,
+                "citations_per_year": 25.0,
+                "apt": 0.8,
+            }
+        }
+
+        result = await tools["get_citation_metrics"](pmids="12345678", output_format="toon")
+        parsed = toons.loads(result)
+
+        assert parsed["tool"] == "get_citation_metrics"
+        assert parsed["article_count"] == 1
+        assert parsed["next_tools"]
+        assert parsed["section_provenance"]["articles"]["canonical_host"] == "NIH iCite"

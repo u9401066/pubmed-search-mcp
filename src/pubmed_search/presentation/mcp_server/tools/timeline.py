@@ -40,6 +40,97 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _extract_timeline_diagnostics(timeline: Any) -> dict[str, Any]:
+    metadata = getattr(timeline, "metadata", {})
+    if isinstance(metadata, dict):
+        diagnostics = metadata.get("diagnostics", {})
+        if isinstance(diagnostics, dict):
+            return diagnostics
+    return {}
+
+
+def _serialize_timeline_payload(timeline: Any) -> dict[str, Any]:
+    payload = timeline.to_dict()
+    if not isinstance(payload, dict):
+        return {"timeline": payload}
+    metadata = getattr(timeline, "metadata", {})
+    if isinstance(metadata, dict) and metadata and "metadata" not in payload:
+        payload["metadata"] = metadata
+    diagnostics = _extract_timeline_diagnostics(timeline)
+    if diagnostics:
+        payload["diagnostics"] = diagnostics
+    return payload
+
+
+def _format_timeline_diagnostics(timeline: Any) -> str:
+    diagnostics = _extract_timeline_diagnostics(timeline)
+    if not diagnostics:
+        return ""
+
+    lines = ["### Timeline Diagnostics"]
+
+    search = diagnostics.get("search", {})
+    if isinstance(search, dict):
+        lines.append(
+            "- Pipeline: "
+            f"retrieved={search.get('retrieved_articles', 0)}, "
+            f"after_filters={search.get('articles_after_filters', 0)}, "
+            f"candidates={search.get('milestone_candidates', 0)}, "
+            f"events={search.get('events_emitted', 0)}"
+        )
+
+    detection = diagnostics.get("milestone_detection", {})
+    if isinstance(detection, dict):
+        strategy_counts = detection.get("strategy_counts", {})
+        if isinstance(strategy_counts, dict) and strategy_counts:
+            formatted = ", ".join(f"{key}={value}" for key, value in strategy_counts.items())
+            lines.append(f"- Detection paths: {formatted}")
+
+        top_policies = detection.get("top_policies", [])
+        if isinstance(top_policies, list) and top_policies:
+            formatted_policies = ", ".join(
+                f"{entry.get('policy')}={entry.get('count')}" for entry in top_policies if isinstance(entry, dict)
+            )
+            if formatted_policies:
+                lines.append(f"- Top policies: {formatted_policies}")
+
+        sample_matches = detection.get("sample_matches", [])
+        if isinstance(sample_matches, list) and sample_matches:
+            for sample in sample_matches[:3]:
+                if not isinstance(sample, dict):
+                    continue
+                detail = f"PMID {sample.get('pmid')} [{sample.get('label')}]"
+                strategy = sample.get("strategy")
+                policy = sample.get("policy")
+                matched = sample.get("matched_value")
+                suffix = f"{strategy}/{policy}" if strategy and policy else ""
+                if matched:
+                    suffix = f"{suffix} -> {matched}" if suffix else str(matched)
+                lines.append(f"- Sample match: {detail}{': ' + suffix if suffix else ''}")
+
+    landmark_scoring = diagnostics.get("landmark_scoring", {})
+    if isinstance(landmark_scoring, dict):
+        lines.append(
+            "- Landmark scoring: "
+            f"enabled={landmark_scoring.get('enabled', False)}, "
+            f"landmarks={landmark_scoring.get('landmarks_detected', 0)}, "
+            f"notable_or_higher={landmark_scoring.get('notable_or_higher', 0)}"
+        )
+        component_usage = landmark_scoring.get("component_usage", {})
+        if isinstance(component_usage, dict) and component_usage:
+            formatted = ", ".join(f"{key}={value}" for key, value in component_usage.items())
+            lines.append(f"- Landmark components: {formatted}")
+
+    return "\n".join(lines)
+
+
+def _append_timeline_diagnostics(body: str, timeline: Any) -> str:
+    diagnostics_block = _format_timeline_diagnostics(timeline)
+    if not diagnostics_block:
+        return body
+    return f"{body}\n\n{diagnostics_block}"
+
+
 def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
     """Register timeline exploration tools (3 tools)."""
 
@@ -187,21 +278,29 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             await _progress(3, 4, f"Formatting {len(timeline.events)} timeline events...")
             if output_format == "tree":
                 tree = build_research_tree(timeline)
-                return tree.to_text_tree()
+                return _append_timeline_diagnostics(tree.to_text_tree(), timeline)
             if output_format == "mindmap":
                 tree = build_research_tree(timeline)
                 return tree.to_mermaid_mindmap()
             if output_format == "mermaid":
                 return timeline.to_mermaid()
             if output_format == "json":
-                return json.dumps(timeline.to_dict(), indent=2, ensure_ascii=False)
+                return json.dumps(_serialize_timeline_payload(timeline), indent=2, ensure_ascii=False)
             if output_format == "json_tree":
                 tree = build_research_tree(timeline)
-                return json.dumps(tree.to_dict(), indent=2, ensure_ascii=False)
+                tree_payload = tree.to_dict()
+                diagnostics = _extract_timeline_diagnostics(timeline)
+                if diagnostics:
+                    tree_payload["diagnostics"] = diagnostics
+                return json.dumps(tree_payload, indent=2, ensure_ascii=False)
             if output_format == "timeline_js":
-                return json.dumps(timeline.to_json_timeline(), indent=2)
+                timeline_js_payload = timeline.to_json_timeline()
+                diagnostics = _extract_timeline_diagnostics(timeline)
+                if diagnostics:
+                    timeline_js_payload["diagnostics"] = diagnostics
+                return json.dumps(timeline_js_payload, indent=2, ensure_ascii=False)
             if output_format == "d3":
-                d3_data = {
+                d3_data: dict[str, Any] = {
                     "nodes": [
                         {
                             "id": e.pmid,
@@ -213,9 +312,12 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                         for e in timeline.events
                     ]
                 }
-                return json.dumps(d3_data, indent=2)
+                diagnostics = _extract_timeline_diagnostics(timeline)
+                if diagnostics:
+                    d3_data["diagnostics"] = diagnostics
+                return json.dumps(d3_data, indent=2, ensure_ascii=False)
             await _progress(4, 4, "Timeline complete")
-            return format_timeline_text(timeline)
+            return _append_timeline_diagnostics(format_timeline_text(timeline), timeline)
 
         except Exception as e:
             logger.exception(f"Timeline build failed: {e}")
@@ -280,6 +382,7 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 "duration_years": timeline.duration_years,
                 "milestone_distribution": timeline.milestone_summary,
                 "periods": [p.to_dict() for p in timeline.periods],
+                "diagnostics": _extract_timeline_diagnostics(timeline),
             }
 
             # Find landmark studies
@@ -373,6 +476,7 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                     "milestone_summary": timeline.milestone_summary,
                     "first_event": timeline.events[0].to_dict() if timeline.events else None,
                     "latest_event": timeline.events[-1].to_dict() if timeline.events else None,
+                    "diagnostics": _extract_timeline_diagnostics(timeline),
                 }
                 comparison["topics"].append(topic_data)
 

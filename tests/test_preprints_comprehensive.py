@@ -441,6 +441,32 @@ class TestPreprintSearcherExtended:
         result = await searcher.search_medical_preprints("COVID-19")
         assert result["total"] == 0
 
+    @patch.object(MedBioRxivClient, "search_medrxiv", new_callable=AsyncMock)
+    @patch.object(ArXivClient, "search", new_callable=AsyncMock)
+    async def test_search_collects_adapter_errors(self, mock_arxiv, mock_med):
+        mock_arxiv.return_value = [
+            PreprintArticle(
+                id="1",
+                title="Working source",
+                abstract="",
+                authors=[],
+                published="",
+                updated=None,
+                source="arxiv",
+                categories=[],
+                pdf_url=None,
+                doi=None,
+            ),
+        ]
+        mock_med.side_effect = RuntimeError("medrxiv offline")
+
+        searcher = PreprintSearcher()
+        result = await searcher.search("test", sources=["arxiv", "medrxiv"])
+
+        assert result["total"] == 1
+        assert len(result["articles"]) == 1
+        assert any("medrxiv" in error and "offline" in error for error in result["errors"])
+
     @patch.object(ArXivClient, "get_by_id", new_callable=AsyncMock)
     async def test_get_arxiv_paper_found(self, mock_get):
         mock_get.return_value = PreprintArticle(

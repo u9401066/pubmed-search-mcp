@@ -1,7 +1,7 @@
 """
-PubMed Search MCP Tools (v0.4.5)
+PubMed Search MCP Tools (v0.5.1)
 
-🎯 40 個 MCP 工具 / 15 categories：
+🎯 42 個 MCP 工具 / 15 categories：
 
 ✅ 搜尋工具 (1)：
 - unified_search: 統一搜索入口，自動多源搜索 (PubMed, Europe PMC, OpenAlex, Semantic Scholar, CrossRef, CORE)
@@ -31,8 +31,8 @@ PubMed Search MCP Tools (v0.4.5)
 ✅ 研究時間軸 (3)：
 - build_research_timeline, analyze_timeline_milestones, compare_timelines
 
-✅ Session 管理 (3) [在 session_tools.py 註冊]：
-- get_session_pmids, get_cached_article, get_session_summary
+✅ Session 管理 (4) [在 session_tools.py 註冊]：
+- read_session, get_session_pmids, get_cached_article, get_session_summary
 
 ✅ 匯出 (1)：
 - prepare_export
@@ -50,8 +50,8 @@ PubMed Search MCP Tools (v0.4.5)
 ✅ 圖片搜尋 (1)：
 - search_biomedical_images
 
-✅ Pipeline 管理 (6)：
-- save_pipeline, list_pipelines, load_pipeline
+✅ Pipeline 管理 (7)：
+- manage_pipeline, save_pipeline, list_pipelines, load_pipeline
 - delete_pipeline, get_pipeline_history, schedule_pipeline
 
 Usage:
@@ -89,7 +89,7 @@ if TYPE_CHECKING:
 
 
 def register_all_tools(mcp: FastMCP, searcher: LiteratureSearcher):
-    """註冊全部 40 個 MCP 工具 (15 categories)。"""
+    """註冊全部 42 個 MCP 工具 (15 categories)。"""
     # 1. 搜尋工具 (1)
     register_unified_search_tools(mcp, searcher)
 
@@ -132,7 +132,7 @@ def register_all_tools(mcp: FastMCP, searcher: LiteratureSearcher):
     # 13. 圖片搜尋 (1)
     register_image_search_tools(mcp)
 
-    # 14. Pipeline 管理 (6)
+    # 14. Pipeline 管理 (7)
     register_pipeline_tools(mcp)
 
 

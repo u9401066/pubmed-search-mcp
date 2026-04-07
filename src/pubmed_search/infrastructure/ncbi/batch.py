@@ -11,7 +11,7 @@ from typing import Any
 
 from Bio import Entrez
 
-from .base import _rate_limit
+from .base import execute_entrez_operation
 
 
 class BatchMixin:
@@ -40,10 +40,21 @@ class BatchMixin:
             - batch_size: Recommended batch size
         """
         try:
-            await _rate_limit()
-            handle = await asyncio.to_thread(Entrez.esearch, db="pubmed", term=query, usehistory="y", retmax=0)
-            search_results = await asyncio.to_thread(Entrez.read, handle)
-            handle.close()
+            api_key = getattr(self, "_api_key", None)
+
+            async def do_search() -> dict[str, Any]:
+                handle = await asyncio.to_thread(Entrez.esearch, db="pubmed", term=query, usehistory="y", retmax=0)
+                try:
+                    return await asyncio.to_thread(Entrez.read, handle)
+                finally:
+                    handle.close()
+
+            search_results = await execute_entrez_operation(
+                do_search,
+                api_key=api_key,
+                service_name="ncbi-batch:esearch",
+                timeout=45.0,
+            )
 
             return {
                 "webenv": search_results.get("WebEnv", ""),
@@ -81,18 +92,29 @@ class BatchMixin:
             ...     process_batch(batch)
         """
         try:
-            await _rate_limit()
-            handle = await asyncio.to_thread(
-                Entrez.efetch,
-                db="pubmed",
-                retstart=start,
-                retmax=batch_size,
-                webenv=webenv,
-                query_key=query_key,
-                retmode="xml",
+            api_key = getattr(self, "_api_key", None)
+
+            async def do_fetch() -> Any:
+                handle = await asyncio.to_thread(
+                    Entrez.efetch,
+                    db="pubmed",
+                    retstart=start,
+                    retmax=batch_size,
+                    webenv=webenv,
+                    query_key=query_key,
+                    retmode="xml",
+                )
+                try:
+                    return await asyncio.to_thread(Entrez.read, handle)
+                finally:
+                    handle.close()
+
+            papers = await execute_entrez_operation(
+                do_fetch,
+                api_key=api_key,
+                service_name="ncbi-batch:efetch",
+                timeout=60.0,
             )
-            papers = await asyncio.to_thread(Entrez.read, handle)
-            handle.close()
 
             results = []
             if "PubmedArticle" in papers:

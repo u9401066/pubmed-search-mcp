@@ -25,6 +25,7 @@ Usage::
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from dependency_injector import containers, providers
 
@@ -45,11 +46,18 @@ def _create_strategy_generator(email: str, api_key: str | None) -> object:
     return SearchStrategyGenerator(email=email, api_key=api_key or None)
 
 
-def _create_session_manager(data_dir: str) -> object:
-    """Lazy factory for SessionManager."""
+def _create_article_cache(data_dir: str) -> object:
+    """Lazy factory for the shared article cache."""
+    from pubmed_search.application.session.manager import ArticleCache
+
+    return ArticleCache(cache_dir=data_dir)
+
+
+def _create_session_manager_with_cache(data_dir: str, article_cache: Any) -> object:
+    """Lazy factory for SessionManager with an injected article cache."""
     from pubmed_search.application.session.manager import SessionManager
 
-    return SessionManager(data_dir=data_dir)
+    return SessionManager(data_dir=data_dir, article_cache=article_cache)
 
 
 class ApplicationContainer(containers.DeclarativeContainer):
@@ -75,9 +83,15 @@ class ApplicationContainer(containers.DeclarativeContainer):
         api_key=config.api_key,
     )
 
-    session_manager = providers.Singleton(
-        _create_session_manager,
+    article_cache = providers.Singleton(
+        _create_article_cache,
         data_dir=config.data_dir,
+    )
+
+    session_manager = providers.Singleton(
+        _create_session_manager_with_cache,
+        data_dir=config.data_dir,
+        article_cache=article_cache,
     )
 
 

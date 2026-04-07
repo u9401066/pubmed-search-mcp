@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 from unittest.mock import AsyncMock, patch
 
 import pytest
+import toons
 
 from pubmed_search.domain.entities.figure import ArticleFigure, ArticleFiguresResult
 
@@ -183,6 +185,37 @@ class TestGetArticleFiguresTool:
 
         assert "europepmc.org" in output
         assert "fig1.jpg" in output
+
+    @patch("pubmed_search.infrastructure.sources.figure_client.get_figure_client")
+    async def test_json_contract(self, mock_get_client, mock_result):
+        """Structured JSON output should expose figures, provenance, and next actions."""
+        mock_client = AsyncMock()
+        mock_client.get_article_figures.return_value = mock_result
+        mock_get_client.return_value = mock_client
+
+        output = await self._call_tool(pmcid="PMC12086443", output_format="json")
+        parsed = json.loads(output)
+
+        assert parsed["tool"] == "get_article_figures"
+        assert parsed["figure_count"] == 2
+        assert parsed["figures"][0]["label"] == "Figure 1"
+        assert parsed["next_tools"]
+        assert parsed["section_provenance"]["figures"]["canonical_host"] == "PubMed Central"
+
+    @patch("pubmed_search.infrastructure.sources.figure_client.get_figure_client")
+    async def test_toon_contract(self, mock_get_client, mock_result):
+        """Structured TOON output should decode to the same figure payload model."""
+        mock_client = AsyncMock()
+        mock_client.get_article_figures.return_value = mock_result
+        mock_get_client.return_value = mock_client
+
+        output = await self._call_tool(pmcid="PMC12086443", output_format="toon")
+        parsed = toons.loads(output)
+
+        assert parsed["tool"] == "get_article_figures"
+        assert parsed["figure_count"] == 2
+        assert parsed["pdf_links"][0]["source"] == "PubMed Central"
+        assert parsed["next_commands"]
 
 
 class TestResolvePmidToPmcid:

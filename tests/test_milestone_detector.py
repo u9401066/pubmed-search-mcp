@@ -250,6 +250,8 @@ class TestMilestoneDetectorTitlePatterns:
         event = detector.detect_milestone(article)
         assert event is not None
         assert event.milestone_type == MilestoneType.FDA_APPROVAL
+        assert event.metadata["milestone_detection"]["strategy"] == "title_pattern"
+        assert event.metadata["milestone_detection"]["policy"] == "fda_approval"
 
     async def test_detect_ema_approval(self):
         """Test EMA approval detection from title."""
@@ -416,6 +418,8 @@ class TestMilestoneDetectorCitations:
         event = detector.detect_milestone(article)
         assert event is not None
         assert "High-Impact" in event.milestone_label
+        assert event.metadata["milestone_detection"]["strategy"] == "citation_threshold"
+        assert event.metadata["milestone_detection"]["policy"] == "high"
 
     async def test_detect_notable(self):
         """Test notable study detection."""
@@ -701,6 +705,7 @@ class TestModuleFunctions:
         """Test get_milestone_patterns returns patterns."""
         patterns = get_milestone_patterns()
         assert len(patterns) > 0
+        assert all("policy" in p for p in patterns)
         assert all("pattern" in p for p in patterns)
         assert all("milestone_type" in p for p in patterns)
         assert all("label" in p for p in patterns)

@@ -28,11 +28,27 @@ Architecture:
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import re
+from collections.abc import Awaitable, Callable
 from enum import Enum
-from typing import Any, Literal
+from typing import Any, Literal, cast
+
+from pubmed_search.shared.settings import load_settings
+from pubmed_search.shared.source_contracts import (
+    SourceAdapterCall,
+    SourceAdapterResult,
+    format_source_adapter_error,
+    gather_source_adapter_calls,
+)
+
+from .registry import (
+    SourceDefinition,
+    SourceRegistry,
+    SourceSelection,
+    SourceSelectionError,
+    get_source_registry,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +57,8 @@ _semantic_scholar_client = None
 _openalex_client = None
 _europe_pmc_client = None
 _core_client = None
+_scopus_client = None
+_web_of_science_client = None
 _ncbi_extended_client = None
 _crossref_client = None
 _unpaywall_client = None
@@ -57,7 +75,23 @@ class SearchSource(Enum):
     OPENALEX = "openalex"
     EUROPE_PMC = "europe_pmc"
     CORE = "core"
+    SCOPUS = "scopus"
+    WEB_OF_SCIENCE = "web_of_science"
     ALL = "all"
+
+
+AlternateSearchSource = Literal[
+    "semantic_scholar",
+    "openalex",
+    "europe_pmc",
+    "core",
+    "scopus",
+    "web_of_science",
+]
+AlternateSourceRunner = Callable[
+    [str, int, int | None, int | None, bool, bool, str | None],
+    Awaitable[list[dict[str, Any]]],
+]
 
 
 def get_semantic_scholar_client(api_key: str | None = None):
@@ -94,25 +128,49 @@ def get_core_client(api_key: str | None = None):
     """Get or create CORE client (lazy initialization)."""
     global _core_client
     if _core_client is None:
-        import os
-
         from .core import COREClient
 
-        _core_client = COREClient(api_key=api_key or os.environ.get("CORE_API_KEY"))
+        settings = load_settings()
+        _core_client = COREClient(api_key=api_key or settings.core_api_key)
     return _core_client
+
+
+def get_scopus_client(api_key: str | None = None, insttoken: str | None = None):
+    """Get or create Scopus client (lazy initialization, default-off unless licensed)."""
+    global _scopus_client
+    if _scopus_client is None:
+        from .scopus import ScopusClient
+
+        settings = load_settings()
+        resolved_api_key = api_key or settings.scopus_api_key
+        resolved_insttoken = insttoken or settings.scopus_insttoken
+        _scopus_client = ScopusClient(api_key=resolved_api_key, insttoken=resolved_insttoken)
+    return _scopus_client
+
+
+def get_web_of_science_client(api_key: str | None = None):
+    """Get or create Web of Science client (lazy initialization, default-off unless licensed)."""
+    global _web_of_science_client
+    if _web_of_science_client is None:
+        from .web_of_science import WebOfScienceClient
+
+        settings = load_settings()
+        resolved_api_key = api_key or settings.web_of_science_api_key
+        _web_of_science_client = WebOfScienceClient(api_key=resolved_api_key)
+    return _web_of_science_client
 
 
 def get_ncbi_extended_client(email: str | None = None, api_key: str | None = None):
     """Get or create NCBI Extended client (lazy initialization)."""
     global _ncbi_extended_client
     if _ncbi_extended_client is None:
-        import os
-
         from .ncbi_extended import NCBIExtendedClient
 
+        settings = load_settings()
+
         _ncbi_extended_client = NCBIExtendedClient(
-            email=email or os.environ.get("NCBI_EMAIL"),
-            api_key=api_key or os.environ.get("NCBI_API_KEY"),
+            email=email or settings.ncbi_email,
+            api_key=api_key or settings.ncbi_api_key,
         )
     return _ncbi_extended_client
 
@@ -121,12 +179,12 @@ def get_crossref_client(email: str | None = None):
     """Get or create CrossRef client (lazy initialization)."""
     global _crossref_client
     if _crossref_client is None:
-        import os
-
         from .crossref import CrossRefClient
 
+        settings = load_settings()
+
         _crossref_client = CrossRefClient(
-            email=email or os.environ.get("CROSSREF_EMAIL"),
+            email=email or settings.crossref_email,
         )
     return _crossref_client
 
@@ -135,12 +193,12 @@ def get_unpaywall_client(email: str | None = None):
     """Get or create Unpaywall client (lazy initialization)."""
     global _unpaywall_client
     if _unpaywall_client is None:
-        import os
-
         from .unpaywall import UnpaywallClient
 
+        settings = load_settings()
+
         _unpaywall_client = UnpaywallClient(
-            email=email or os.environ.get("UNPAYWALL_EMAIL"),
+            email=email or settings.unpaywall_email or settings.ncbi_email,
         )
     return _unpaywall_client
 
@@ -149,15 +207,15 @@ def get_openurl_builder(resolver_base: str | None = None, preset: str | None = N
     """Get or create OpenURL builder (lazy initialization)."""
     global _openurl_builder
     if _openurl_builder is None:
-        import os
-
         from .openurl import OpenURLBuilder, get_openurl_config
+
+        settings = load_settings()
 
         # Try preset first, then resolver_base, then env var
         if preset:
             _openurl_builder = OpenURLBuilder.from_preset(preset, resolver_base)
-        elif resolver_base or os.environ.get("OPENURL_RESOLVER"):
-            _openurl_builder = OpenURLBuilder(resolver_base=resolver_base or os.environ.get("OPENURL_RESOLVER") or "")
+        elif resolver_base or settings.openurl_resolver:
+            _openurl_builder = OpenURLBuilder(resolver_base=resolver_base or settings.openurl_resolver)
         else:
             # Return a builder that will check config at runtime
             config = get_openurl_config()
@@ -177,7 +235,7 @@ def get_openi_client():
 
 async def search_alternate_source(
     query: str,
-    source: Literal["semantic_scholar", "openalex", "europe_pmc", "core"],
+    source: AlternateSearchSource,
     limit: int = 10,
     min_year: int | None = None,
     max_year: int | None = None,
@@ -196,7 +254,7 @@ async def search_alternate_source(
 
     Args:
         query: Search query
-        source: Target source (semantic_scholar, openalex, europe_pmc, or core)
+        source: Target source (semantic_scholar, openalex, europe_pmc, core, scopus, or web_of_science)
         limit: Maximum results
         min_year: Minimum publication year
         max_year: Maximum publication year
@@ -208,55 +266,209 @@ async def search_alternate_source(
         List of normalized paper dictionaries
     """
     try:
-        if source == "semantic_scholar":
-            client = get_semantic_scholar_client()
-            return await client.search(
-                query=query,
-                limit=limit,
-                min_year=min_year,
-                max_year=max_year,
-                open_access_only=open_access_only,
-            )
-
-        if source == "openalex":
-            client = get_openalex_client(email)
-            return await client.search(
-                query=query,
-                limit=limit,
-                min_year=min_year,
-                max_year=max_year,
-                open_access_only=open_access_only,
-            )
-
-        if source == "europe_pmc":
-            client = get_europe_pmc_client(email)
-            result = await client.search(
-                query=query,
-                limit=limit,
-                min_year=min_year,
-                max_year=max_year,
-                open_access_only=open_access_only,
-                has_fulltext=has_fulltext,
-            )
-            return result.get("results", [])
-
-        if source == "core":
-            client = get_core_client()
-            result = await client.search(
-                query=query,
-                limit=limit,
-                year_from=min_year,
-                year_to=max_year,
-                has_fulltext=has_fulltext,
-            )
-            return result.get("results", [])
-
-        logger.warning(f"Unknown source: {source}")
-        return []
+        return await _search_alternate_source_unchecked(
+            query=query,
+            source=source,
+            limit=limit,
+            min_year=min_year,
+            max_year=max_year,
+            open_access_only=open_access_only,
+            has_fulltext=has_fulltext,
+            email=email,
+        )
 
     except Exception as e:
         logger.exception(f"Search failed for {source}: {e}")
         return []
+
+
+async def _search_alternate_source_unchecked(
+    query: str,
+    source: AlternateSearchSource,
+    limit: int = 10,
+    min_year: int | None = None,
+    max_year: int | None = None,
+    open_access_only: bool = False,
+    has_fulltext: bool = False,
+    email: str | None = None,
+) -> list[dict[str, Any]]:
+    """Search one alternate source without swallowing source-level exceptions."""
+    registry = get_source_registry()
+    resolved_source = registry.resolve_key(source) or source
+    if not _is_alternate_source(resolved_source):
+        logger.warning(f"Unknown alternate source requested: {source}")
+        return []
+
+    runner = _ALTERNATE_SOURCE_RUNNERS.get(resolved_source)
+    if runner is None:
+        logger.warning(f"No alternate source runner registered for: {resolved_source}")
+        return []
+
+    return await runner(
+        query,
+        limit,
+        min_year,
+        max_year,
+        open_access_only,
+        has_fulltext,
+        email,
+    )
+
+
+async def _run_semantic_scholar_search(
+    query: str,
+    limit: int,
+    min_year: int | None,
+    max_year: int | None,
+    open_access_only: bool,
+    has_fulltext: bool,
+    email: str | None,
+) -> list[dict[str, Any]]:
+    del has_fulltext, email
+    client = get_semantic_scholar_client()
+    return await client.search(
+        query=query,
+        limit=limit,
+        min_year=min_year,
+        max_year=max_year,
+        open_access_only=open_access_only,
+    )
+
+
+async def _run_openalex_search(
+    query: str,
+    limit: int,
+    min_year: int | None,
+    max_year: int | None,
+    open_access_only: bool,
+    has_fulltext: bool,
+    email: str | None,
+) -> list[dict[str, Any]]:
+    del has_fulltext
+    client = get_openalex_client(email)
+    return await client.search(
+        query=query,
+        limit=limit,
+        min_year=min_year,
+        max_year=max_year,
+        open_access_only=open_access_only,
+    )
+
+
+async def _run_europe_pmc_search(
+    query: str,
+    limit: int,
+    min_year: int | None,
+    max_year: int | None,
+    open_access_only: bool,
+    has_fulltext: bool,
+    email: str | None,
+) -> list[dict[str, Any]]:
+    client = get_europe_pmc_client(email)
+    result = await client.search(
+        query=query,
+        limit=limit,
+        min_year=min_year,
+        max_year=max_year,
+        open_access_only=open_access_only,
+        has_fulltext=has_fulltext,
+    )
+    return result.get("results", [])
+
+
+async def _run_core_search(
+    query: str,
+    limit: int,
+    min_year: int | None,
+    max_year: int | None,
+    open_access_only: bool,
+    has_fulltext: bool,
+    email: str | None,
+) -> list[dict[str, Any]]:
+    del open_access_only, email
+
+    client = get_core_client()
+    result = await client.search(
+        query=query,
+        limit=limit,
+        year_from=min_year,
+        year_to=max_year,
+        has_fulltext=has_fulltext,
+    )
+    return result.get("results", [])
+
+
+async def _run_scopus_search(
+    query: str,
+    limit: int,
+    min_year: int | None,
+    max_year: int | None,
+    open_access_only: bool,
+    has_fulltext: bool,
+    email: str | None,
+) -> list[dict[str, Any]]:
+    del has_fulltext, email
+    client = get_scopus_client()
+    return await client.search(
+        query=query,
+        limit=limit,
+        min_year=min_year,
+        max_year=max_year,
+        open_access_only=open_access_only,
+    )
+
+
+async def _run_web_of_science_search(
+    query: str,
+    limit: int,
+    min_year: int | None,
+    max_year: int | None,
+    open_access_only: bool,
+    has_fulltext: bool,
+    email: str | None,
+) -> list[dict[str, Any]]:
+    del has_fulltext, email
+    client = get_web_of_science_client()
+    return await client.search(
+        query=query,
+        limit=limit,
+        min_year=min_year,
+        max_year=max_year,
+        open_access_only=open_access_only,
+    )
+
+
+_ALTERNATE_SOURCE_RUNNERS: dict[str, AlternateSourceRunner] = {
+    "semantic_scholar": _run_semantic_scholar_search,
+    "openalex": _run_openalex_search,
+    "europe_pmc": _run_europe_pmc_search,
+    "core": _run_core_search,
+    "scopus": _run_scopus_search,
+    "web_of_science": _run_web_of_science_search,
+}
+
+
+def _is_alternate_source(source: str) -> bool:
+    registry = get_source_registry()
+    definition = registry.get(source)
+    return bool(
+        definition
+        and definition.selectable_in_unified
+        and definition.supports_primary_search
+        and definition.key not in {"pubmed"}
+        and definition.alternate_search_runner in _ALTERNATE_SOURCE_RUNNERS
+        and registry.is_enabled(definition.key)
+    )
+
+
+def _normalize_alternate_sources(sources: list[str]) -> list[AlternateSearchSource]:
+    registry = get_source_registry()
+    normalized: list[AlternateSearchSource] = []
+    for source in sources:
+        key = registry.resolve_key(source)
+        if key is not None and _is_alternate_source(key):
+            normalized.append(cast("AlternateSearchSource", key))
+    return normalized
 
 
 async def cross_search(
@@ -300,32 +512,40 @@ async def cross_search(
     by_source = {}
 
     # Filter out pubmed (handled by main LiteratureSearcher)
-    valid_sources = [s for s in sources if s != "pubmed"]
+    valid_sources = _normalize_alternate_sources(sources)
 
-    async def _search_one(source: str) -> tuple[str, list[dict[str, Any]]]:
-        """Search a single source, returning (source_name, results)."""
-        try:
-            results = await search_alternate_source(
-                query=query,
-                source=source,  # type: ignore[arg-type]
-                limit=limit_per_source,
-                min_year=min_year,
-                max_year=max_year,
-                open_access_only=open_access_only,
-                has_fulltext=has_fulltext if source in ("europe_pmc", "core") else False,
-                email=email,
-            )
-            return (source, results)
-        except Exception as e:
-            logger.exception(f"Cross-search failed for {source}: {e}")
-            return (source, [])
+    async def _search_one(source: AlternateSearchSource) -> list[dict[str, Any]]:
+        """Search a single source through the public alternate-source seam."""
+        return await search_alternate_source(
+            query=query,
+            source=source,
+            limit=limit_per_source,
+            min_year=min_year,
+            max_year=max_year,
+            open_access_only=open_access_only,
+            has_fulltext=has_fulltext if source in ("europe_pmc", "core") else False,
+            email=email,
+        )
 
-    # Execute all source searches in parallel
-    search_results = await asyncio.gather(*[_search_one(s) for s in valid_sources])
+    def _build_cross_search_call(source: AlternateSearchSource) -> SourceAdapterCall[dict[str, Any]]:
+        async def _execute() -> list[dict[str, Any]]:
+            return await _search_one(source)
 
-    for source, results in search_results:
-        by_source[source] = results
-        all_results.extend(results)
+        return SourceAdapterCall(
+            source=source,
+            operation="cross_search",
+            execute=_execute,
+        )
+
+    search_results: list[SourceAdapterResult[dict[str, Any]]] = await gather_source_adapter_calls(
+        [_build_cross_search_call(source) for source in valid_sources]
+    )
+
+    for source_result in search_results:
+        by_source[source_result.source] = source_result.items
+        all_results.extend(source_result.items)
+        for error in source_result.errors:
+            logger.exception("Cross-search failed for %s", format_source_adapter_error(error))
 
     # Deduplicate by DOI or title
     if deduplicate:
@@ -355,7 +575,14 @@ def _deduplicate_results(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
     unique = []
 
     # Sort by source priority
-    source_priority = {"pubmed": 0, "semantic_scholar": 1, "openalex": 2}
+    source_priority = {
+        "pubmed": 0,
+        "semantic_scholar": 1,
+        "openalex": 2,
+        "scopus": 3,
+        "web_of_science": 4,
+        "core": 5,
+    }
     sorted_results = sorted(results, key=lambda x: source_priority.get(x.get("_source", ""), 99))
 
     for paper in sorted_results:
@@ -500,6 +727,10 @@ def get_fulltext_downloader():
 # Export for convenience
 __all__ = [
     "SearchSource",
+    "SourceDefinition",
+    "SourceRegistry",
+    "SourceSelection",
+    "SourceSelectionError",
     "cross_search",
     "get_core_client",
     "get_crossref_client",
@@ -512,6 +743,9 @@ __all__ = [
     "get_openi_client",
     "get_openurl_builder",
     "get_paper_from_any_source",
+    "get_scopus_client",
+    "get_web_of_science_client",
+    "get_source_registry",
     "get_semantic_scholar_client",
     "get_unpaywall_client",
     "search_alternate_source",

@@ -8,14 +8,15 @@
 
 > **Professional Literature Research Assistant for AI Agents** - More than just an API wrapper
 
-<p align="center">
-  <img src="docs/images/architecture-overview.jpg" alt="PubMed Search MCP Architecture" width="600">
-</p>
+![PubMed Search MCP Architecture](docs/images/architecture-overview.jpg)
 
 A Domain-Driven Design (DDD) based MCP server that serves as an intelligent research assistant for AI agents, providing task-oriented literature search and analysis capabilities.
 
 **✨ What's Included:**
-- 🔧 **40 MCP Tools** - Streamlined PubMed, Europe PMC, CORE, NCBI database access, and **Research Timeline / Context Graph**
+
+- 🔧 **42 MCP Tools** - Streamlined PubMed, Europe PMC, CORE, NCBI database access, and **Research Timeline / Context Graph**
+- 🖼️ **OA Figure Extraction** - Pull figure captions, direct image URLs, and PDF links from PMC Open Access articles
+- 📘 **Docs Site** - Browse overview, architecture, quick reference, pipeline tutorials, source contracts, troubleshooting, and deployment in one place at [docs/index.html](docs/index.html)
 - 📚 **24 Claude Skills** - Ready-to-use workflow guides for AI agents (Claude Code-specific)
 - 📖 **Copilot Instructions** - VS Code GitHub Copilot integration guide
 
@@ -232,7 +233,7 @@ Other tools give you raw API access. We give you **vocabulary translation + inte
 | Clinical questions need structured search | ✅ **PICO toolkit** (`parse_pico` + `generate_search_queries` for Agent-driven workflow) |
 | Typos in medical terms | ✅ **ESpell auto-correction** |
 | Too many results from one source | ✅ **Parallel multi-source** with dedup |
-| Need to trace research evolution | ✅ **Research Timeline & Tree** with landmark detection and sub-topic branching |
+| Need to trace research evolution | ✅ **Research Timeline & Tree** with landmark detection, diagnostics, and sub-topic branching |
 | Citation context is unclear | ✅ **Citation Tree** forward/backward/network |
 | Can't access full text | ✅ **Multi-source fulltext** (Europe PMC, CORE, CrossRef) |
 | Gene/drug info scattered across DBs | ✅ **NCBI Extended** (Gene, PubChem, ClinVar) |
@@ -244,7 +245,7 @@ Other tools give you raw API access. We give you **vocabulary translation + inte
 1. **Vocabulary Translation Layer** - Agent speaks naturally, we translate to each database's terminology (MeSH, ICD-10, text-mined entities)
 2. **Unified Search Gateway** - One `unified_search()` call, auto-dispatch to PubMed/Europe PMC/CORE/OpenAlex
 3. **PICO Toolkit** - `parse_pico()` decomposes clinical questions into P/I/C/O elements; Agent then calls `generate_search_queries()` per element and builds Boolean query
-4. **Research Timeline & Lineage Tree** - Detect milestones (FDA approvals, Phase 3, guidelines), identify landmark papers via multi-signal scoring, and visualize research evolution as branching trees by sub-topic
+4. **Research Timeline & Lineage Tree** - Detect milestones with policy-driven heuristics, identify landmark papers via multi-signal scoring, surface timeline diagnostics, and visualize research evolution as branching trees by sub-topic
 5. **Citation Network Analysis** - Build multi-level citation trees to map an entire research landscape from a single paper
 6. **Full Research Lifecycle** - From search → discovery → full text → analysis → export, all in one server
 7. **Agent-First Design** - Output optimized for machine decision-making, not human reading
@@ -383,13 +384,23 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS proxy for API requests
 
 ```
 
-### 📚 Full Text & Export
+### 📚 Full Text, Figure Extraction & Export
 
 | Category | Tools |
 | -------- | ----- |
 | **Full Text** | `get_fulltext` → Multi-source retrieval (Europe PMC, CORE, PubMed, CrossRef) |
+| **Figures** | `get_article_figures` → Extract figure labels, captions, image URLs, and PDF links from PMC Open Access articles |
+| **Figure-aware Full Text** | `get_fulltext(include_figures=True)` → Embed figure metadata alongside structured fulltext |
 | **Text Mining** | `get_text_mined_terms` → Extract genes, diseases, chemicals |
 | **Export** | `prepare_export` → RIS, BibTeX, CSV, MEDLINE, JSON |
+
+### 🖼️ OA Figure-First Exploration
+
+Use the PMC Open Access path when an agent needs evidence figures, not just article text:
+
+- `get_article_figures(identifier="PMC12086443")` → Figure labels, captions, image URLs, and PDF/article links
+- `get_fulltext(pmcid="PMC7096777", include_figures=True)` → Structured fulltext with figures inline
+- Figure output preserves article context, so agents can connect each figure back to the sections where it is mentioned
 
 ### 🧬 NCBI Extended Databases
 
@@ -407,9 +418,9 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS proxy for API requests
 
 | Tool | Description |
 | ---- | ----------- |
-| `build_research_timeline` | Build timeline/tree with landmark detection. Output: text, tree, mermaid, mindmap, json |
-| `analyze_timeline_milestones` | Analyze milestone distribution |
-| `compare_timelines` | Compare multiple topic timelines |
+| `build_research_timeline` | Build timeline/tree with landmark detection and formatted diagnostics. Output: text, tree, mermaid, mindmap, json |
+| `analyze_timeline_milestones` | Analyze milestone distribution with diagnostics payload |
+| `compare_timelines` | Compare multiple topic timelines with per-topic diagnostics |
 
 ### 🏥 Institutional Access & ICD Conversion
 
@@ -431,23 +442,32 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS proxy for API requests
 | `get_session_summary` | Session status overview |
 
 Dynamic MCP resources are also available for agents that can read resources directly:
+
 - `session://context` — active session status
 - `session://last-search` — latest search metadata
 - `session://last-search/pmids` — latest PMID list + CSV form
 - `session://last-search/results` — cached article payloads for the latest search
 
-### � Pipeline Management
+### 🔁 Pipeline Management
+
+`manage_pipeline` is the primary facade for pipeline CRUD, history, and scheduling. The more specific pipeline tools remain available as compatibility wrappers.
 
 | Tool | Description |
 | ---- | ----------- |
+| `manage_pipeline` | Primary facade for save, list, load, delete, history, and schedule actions |
 | `save_pipeline` | Save a pipeline config for later reuse (YAML/JSON, auto-validated) |
 | `list_pipelines` | List saved pipelines (filter by tag/scope) |
 | `load_pipeline` | Load pipeline from name or file for review/editing |
 | `delete_pipeline` | Delete pipeline and its execution history |
 | `get_pipeline_history` | View execution history with article diff analysis |
-| `schedule_pipeline` | Schedule periodic execution (Phase 4) |
+| `schedule_pipeline` | Create, update, or remove recurring pipeline schedules |
 
-### �👁️ Vision & Image Search
+Step-by-step tutorials:
+
+- English: [docs/PIPELINE_MODE_TUTORIAL.en.md](docs/PIPELINE_MODE_TUTORIAL.en.md)
+- 繁體中文: [docs/PIPELINE_MODE_TUTORIAL.md](docs/PIPELINE_MODE_TUTORIAL.md)
+
+### 👁️ Vision & Image Search
 
 | Tool | Description |
 | ---- | ----------- |
@@ -480,10 +500,26 @@ Search **arXiv**, **medRxiv**, and **bioRxiv** preprint servers via `unified_sea
 `unified_search` can append a lightweight research lineage view built from PMID-backed ranked results:
 
 | Option Flag | Description |
-|-------------|-------------|
+| ----------- | ----------- |
 | `context_graph` | Append a Research Context Graph preview to Markdown output and include `research_context` in JSON output |
 
 This is useful when an agent needs quick thematic branching without making a second `build_research_timeline` call.
+
+### 📊 Count-First Orientation
+
+`unified_search` can also front-load the existing source coverage and decision hints for agents that want routing help before reading the ranked list:
+
+| Option Flag | Description |
+| ----------- | ----------- |
+| `counts_first` | Add a source-count table, coverage summary, and next-tool recommendations to the response |
+
+Example:
+
+```python
+unified_search(query="remimazolam ICU sedation", options="counts_first")
+```
+
+This mode is useful when the agent should decide whether to expand a source, inspect the lead PMID, fetch fulltext, extract figures, or pivot into timeline exploration.
 
 ### ⏱️ MCP Progress Reporting
 
@@ -636,8 +672,9 @@ unified_search("remimazolam ICU sedation", options="context_graph")
 ### 7️⃣ Pipeline (Reusable Search Plans)
 
 ```python
-# Save a template-based pipeline
-save_pipeline(
+# Save a template-based pipeline through the primary facade
+manage_pipeline(
+  action="save",
     name="icu_sedation_weekly",
     config="template: pico\nparams:\n  P: ICU patients\n  I: remimazolam\n  C: propofol\n  O: delirium",
     tags="anesthesia,sedation",
@@ -645,7 +682,8 @@ save_pipeline(
 )
 
 # Save a custom DAG pipeline
-save_pipeline(
+manage_pipeline(
+  action="save",
     name="brca1_comprehensive",
     config="""
 steps:
@@ -676,9 +714,9 @@ output:
 unified_search(pipeline="saved:icu_sedation_weekly")
 
 # List & manage
-list_pipelines(tag="anesthesia")
-load_pipeline(source="brca1_comprehensive")  # Review YAML
-get_pipeline_history(name="icu_sedation_weekly")  # View past runs
+manage_pipeline(action="list", tag="anesthesia")
+manage_pipeline(action="load", source="brca1_comprehensive")  # Review YAML
+manage_pipeline(action="history", name="icu_sedation_weekly")  # View past runs
 ```
 
 ---
@@ -922,10 +960,10 @@ Integrate PubMed Search MCP with **Microsoft 365 Copilot** (Word, Teams, Outlook
 
 ```bash
 # Start with Streamable HTTP transport (required by Copilot Studio)
-python run_server.py --transport streamable-http --port 8765
+uv run python run_server.py --transport streamable-http --port 8765
 
 # Enable Copilot-compatible HTTP semantics while keeping full tool schemas
-python run_server.py --transport streamable-http --copilot-compatible --port 8765
+uv run python run_server.py --transport streamable-http --copilot-compatible --port 8765
 
 # Or use the dedicated script with ngrok
 ./scripts/start-copilot-studio.sh --with-ngrok
@@ -950,6 +988,8 @@ python run_server.py --transport streamable-http --copilot-compatible --port 876
 > 📖 **More documentation**:
 >
 > - Architecture → [ARCHITECTURE.md](ARCHITECTURE.md)
+> - Pipeline tutorial (English) → [docs/PIPELINE_MODE_TUTORIAL.en.md](docs/PIPELINE_MODE_TUTORIAL.en.md)
+> - Pipeline tutorial (zh-TW) → [docs/PIPELINE_MODE_TUTORIAL.md](docs/PIPELINE_MODE_TUTORIAL.md)
 > - Deployment guide → [DEPLOYMENT.md](DEPLOYMENT.md)
 > - Copilot Studio → [copilot-studio/README.md](copilot-studio/README.md)
 

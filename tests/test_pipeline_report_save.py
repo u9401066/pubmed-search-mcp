@@ -10,7 +10,7 @@ Coverage targets:
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -279,6 +279,36 @@ class TestAutoSavePipelineReport:
 
         # Should not raise
         _auto_save_pipeline_report(config, [], "# Report")
+
+        set_pipeline_store(None)
+
+    async def test_execute_saved_template_pipeline_records_run_under_saved_name(self, workspace_store: PipelineStore):
+        """saved:<name> should persist report/history using the saved pipeline name."""
+        from pubmed_search.presentation.mcp_server.tools.pipeline_tools import set_pipeline_store
+
+        set_pipeline_store(workspace_store)
+        workspace_store.save(
+            name="weekly_remi_template",
+            config=PipelineConfig(
+                template="pico",
+                template_params={"P": "ICU patients", "I": "remimazolam"},
+            ),
+            scope="workspace",
+        )
+
+        from pubmed_search.presentation.mcp_server.tools.unified import _execute_pipeline_mode
+
+        with patch("pubmed_search.application.pipeline.executor.PipelineExecutor") as MockExec:
+            mock_exec = MockExec.return_value
+            mock_exec.execute = AsyncMock(return_value=([], {}))
+            result = await _execute_pipeline_mode("saved:weekly_remi_template", "markdown", MagicMock())
+
+        assert isinstance(result, str)
+        assert mock_exec.execute.await_count == 1
+        history = workspace_store.get_history("weekly_remi_template")
+        assert len(history) == 1
+        reports_dir = workspace_store._reports_dir_for(PipelineScope.WORKSPACE) / "weekly_remi_template"
+        assert len(list(reports_dir.glob("*.md"))) == 1
 
         set_pipeline_store(None)
 

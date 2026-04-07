@@ -6,6 +6,7 @@ set -e
 if ! command -v jq >/dev/null 2>&1; then
     # Best-effort cleanup without jq
     rm -f ".github/hooks/_state/last_search_eval.json" 2>/dev/null
+    rm -f ".github/hooks/_state/last_research_eval.json" 2>/dev/null
     rm -f ".github/hooks/_state/pending_complexity.json" 2>/dev/null
     exit 0
 fi
@@ -25,6 +26,7 @@ if [ -d "$STATE_DIR" ]; then
 
     # Clean up state (keep audit log)
     rm -f "$STATE_DIR/last_search_eval.json" 2>/dev/null
+    rm -f "$STATE_DIR/last_research_eval.json" 2>/dev/null
     rm -f "$STATE_DIR/pending_complexity.json" 2>/dev/null
 fi
 

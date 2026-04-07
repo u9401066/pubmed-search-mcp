@@ -4,15 +4,15 @@ PubMed Search MCP Server
 This module provides a Model Context Protocol (MCP) server for PubMed search.
 
 Usage as standalone server:
-    python -m pubmed_search.mcp_server
+    uv run python -m pubmed_search.presentation.mcp_server
 
 Or in mcp.json:
     {
         "servers": {
             "pubmed-search": {
                 "type": "stdio",
-                "command": "python",
-                "args": ["-m", "pubmed_search.mcp_server"]
+                "command": "uv",
+                "args": ["run", "pubmed-search-mcp"]
             }
         }
     }

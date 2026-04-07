@@ -242,6 +242,21 @@ class TestValidateAndFixTemplate:
         assert result.has_errors
         assert "Unknown template" in result.errors[0]
 
+    def test_template_output_semantic_auto_fix(self):
+        config = PipelineConfig(
+            template="pico",
+            output=PipelineOutput(format="xml", limit=0, ranking="impac"),
+        )
+
+        result = validate_and_fix(config)
+
+        assert result.valid is True
+        assert config.output.format == "markdown"
+        assert config.output.limit == 20
+        assert config.output.ranking == "impact"
+        fields = {fix.field for fix in result.fixes}
+        assert {"output.format", "output.limit", "output.ranking"} <= fields
+
 
 # =========================================================================
 # validate_and_fix — Step Path
@@ -555,6 +570,40 @@ class TestParseAndValidateConfig:
         assert result.valid is True
         assert result.config.template == "pico"
 
+    def test_template_output_auto_fix_through_parse(self):
+        raw = {
+            "template": "clinical",
+            "output": {"format": "xml", "limit": 0, "ranking": "impac"},
+        }
+
+        result = parse_and_validate_config(raw)
+
+        assert result.valid is True
+        assert result.config is not None
+        assert result.config.template == "pico"
+        assert result.config.output.format == "markdown"
+        assert result.config.output.limit == 20
+        assert result.config.output.ranking == "impact"
+        fields = {fix.field for fix in result.fixes}
+        assert "template" in fields
+        assert {"output.format", "output.limit", "output.ranking"} <= fields
+
+    def test_schema_and_semantic_fixes_are_combined(self):
+        raw = {
+            "steps": [
+                {"id": "s1", "action": "find", "params": "invalid"},
+            ]
+        }
+        result = parse_and_validate_config(raw)
+
+        assert result.valid is True
+        assert result.config is not None
+        assert result.config.steps[0].action == "search"
+        assert result.config.steps[0].params == {}
+        reasons = [fix.reason.lower() for fix in result.fixes]
+        assert any("params must be a dict" in reason for reason in reasons)
+        assert any("alias" in reason or "fuzzy" in reason for reason in reasons)
+
 
 # =========================================================================
 # ValidationResult summary
@@ -601,9 +650,12 @@ class TestValidatorEdgeCases:
         )
         result = validate_and_fix(config)
         assert result.valid is True
-        # Template-based configs return early before output validation
-        # So only template fix is applied
         assert result.has_fixes
+        assert config.template == "pico"
+        assert config.output.limit == 20
+        fields = {fix.field for fix in result.fixes}
+        assert "template" in fields
+        assert "output.limit" in fields
 
     def test_complex_step_pipeline(self):
         """A realistic multi-step pipeline with some fixes needed."""

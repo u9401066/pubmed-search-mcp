@@ -80,6 +80,7 @@ class NCBIExtendedClient(BaseAPIClient):
         *,
         method: str = "GET",
         data: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
     ) -> Any:
         """Add required NCBI parameters (email, tool, api_key) to URL."""
@@ -87,7 +88,7 @@ class NCBIExtendedClient(BaseAPIClient):
         url += f"{separator}email={urllib.parse.quote(self._email)}&tool=pubmed-search-mcp"
         if self._api_key:
             url += f"&api_key={self._api_key}"
-        return await super()._execute_request(url, method=method, data=data, headers=headers)
+        return await super()._execute_request(url, method=method, data=data, params=params, headers=headers)
 
     # =========================================================================
     # Gene Database

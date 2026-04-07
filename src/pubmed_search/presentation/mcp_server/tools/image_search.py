@@ -288,6 +288,20 @@ def _format_image_results(result: ImageSearchResult) -> str:
     if result.recommended_collection:
         parts.append(f"- 📦 建議 collection: `{result.recommended_collection}` ({result.collection_reason})")
 
+    feature_hits = result.advisor_diagnostics.get("feature_hits", []) if result.advisor_diagnostics else []
+    if feature_hits:
+        parts.append("")
+        parts.append("### 🔎 Query Diagnostics")
+        for hit in feature_hits[:6]:
+            matched_terms = ", ".join(hit.get("matched_terms", []))
+            score_delta = hit.get("score_delta")
+            details = hit["reason"]
+            if matched_terms:
+                details = f"{details}: {matched_terms}"
+            if score_delta is not None:
+                details = f"{details} ({score_delta:+.2f})"
+            parts.append(f"- {hit['category']}/{hit['rule']}: {details}")
+
     if not result.images:
         parts.append("\nNo images found. Try broader search terms.")
         return "\n".join(parts)

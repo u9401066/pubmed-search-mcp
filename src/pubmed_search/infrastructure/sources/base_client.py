@@ -19,9 +19,19 @@ from typing import Any
 import httpx
 from typing_extensions import Self
 
-from pubmed_search.shared.async_utils import CircuitBreaker
+from pubmed_search.shared.async_utils import (
+    CircuitBreaker,
+    RequestExecutionPolicy,
+    create_async_http_client,
+    get_rate_limiter,
+    get_transport_kernel,
+    parse_retry_after,
+)
+from pubmed_search.shared.source_contracts import SourceExecutionSettings, build_request_execution_policy
 
 logger = logging.getLogger(__name__)
+
+_ASYNCIO_COMPAT = asyncio
 
 
 class BaseAPIClient:
@@ -77,23 +87,38 @@ class BaseAPIClient:
         self._timeout = timeout
         self._min_interval = min_interval
         self._last_request_time = 0.0
-        self._client = httpx.AsyncClient(
+        self._rate_limiter_name = f"source:{self._service_name.lower()}:{id(self)}"
+        self._client = create_async_http_client(
             timeout=self._timeout,
             headers=headers or {},
             follow_redirects=True,
-            limits=httpx.Limits(
-                max_connections=20,
-                max_keepalive_connections=10,
-                keepalive_expiry=30.0,
-            ),
+            max_connections=20,
+            max_keepalive_connections=10,
+            keepalive_expiry=30.0,
         )
         self._circuit_breaker = circuit_breaker or CircuitBreaker(failure_threshold=10, recovery_timeout=60.0)
+        self._transport_kernel = get_transport_kernel()
+
+    def _build_execution_policy(self) -> RequestExecutionPolicy:
+        return build_request_execution_policy(
+            SourceExecutionSettings(
+                service_name=self._service_name,
+                timeout=self._timeout,
+                min_interval=self._min_interval,
+                max_attempts=self._MAX_RETRIES + 1,
+                rate_limit_name=self._rate_limiter_name,
+                circuit_breaker=self._circuit_breaker,
+            )
+        )
 
     async def _rate_limit(self) -> None:
-        """Enforce minimum interval between requests."""
-        elapsed = time.time() - self._last_request_time
-        if elapsed < self._min_interval:
-            await asyncio.sleep(self._min_interval - elapsed)
+        """Compatibility wrapper around the shared rate limiter."""
+        if self._min_interval <= 0:
+            self._last_request_time = time.time()
+            return
+
+        limiter = get_rate_limiter(self._rate_limiter_name, rate=1.0, per=self._min_interval)
+        await limiter.acquire()
         self._last_request_time = time.time()
 
     def _build_url(self, url: str) -> str:
@@ -108,6 +133,7 @@ class BaseAPIClient:
         *,
         method: str = "GET",
         data: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
         expect_json: bool = True,
     ) -> dict[str, Any] | str | None:
@@ -126,56 +152,50 @@ class BaseAPIClient:
         """
         full_url = self._build_url(url)
 
-        for attempt in range(self._MAX_RETRIES + 1):
-            await self._rate_limit()
-            try:
-                async with self._circuit_breaker:
-                    response = await self._execute_request(full_url, method=method, data=data, headers=headers)
+        policy = self._build_execution_policy()
 
-                    # Handle expected error codes (e.g., 404 = not found)
-                    expected = self._handle_expected_status(response, full_url)
-                    if expected is not _CONTINUE:
-                        return expected
+        async def perform_request() -> dict[str, Any] | str | None:
+            response = await self._execute_request(
+                full_url,
+                method=method,
+                data=data,
+                params=params,
+                headers=headers,
+            )
 
-                    # Handle 429 rate limiting
-                    if response.status_code == 429:
-                        if attempt < self._MAX_RETRIES:
-                            retry_after = self._get_retry_after(response, attempt)
-                            logger.warning(
-                                f"{self._service_name}: Rate limited (429), "
-                                f"retry {attempt + 1}/{self._MAX_RETRIES} in {retry_after:.1f}s"
-                            )
-                            await asyncio.sleep(retry_after)
-                            continue
-                        logger.warning(f"{self._service_name}: Rate limit exceeded after retries")
-                        return None
+            expected = self._handle_expected_status(response, full_url)
+            if expected is not _CONTINUE:
+                return expected
 
-                    response.raise_for_status()
-                    return self._parse_response(response, expect_json)
+            if response.status_code in policy.retry.retryable_status_codes:
+                retry_after = parse_retry_after(response.headers.get("Retry-After"))
+                from pubmed_search.shared.async_utils import RetryableOperationError
 
-            except httpx.HTTPStatusError as e:
-                logger.exception(
-                    f"{self._service_name} HTTP error {e.response.status_code}: {e.response.reason_phrase}"
+                raise RetryableOperationError(
+                    f"HTTP {response.status_code}",
+                    retry_after=retry_after,
+                    status_code=response.status_code,
                 )
-                return None
-            except httpx.RequestError as e:
-                if attempt < self._MAX_RETRIES:
-                    logger.warning(f"{self._service_name} request error (attempt {attempt + 1}): {e}")
-                    await asyncio.sleep(2 ** (attempt + 1))
-                    continue
-                logger.exception(f"{self._service_name} request failed: {e}")
-                return None
-            except Exception as e:
-                # RateLimitError from circuit breaker should propagate
-                from pubmed_search.shared.exceptions import RateLimitError
 
-                if isinstance(e, RateLimitError):
-                    logger.warning(f"{self._service_name}: Circuit breaker open, skipping request")
-                    return None
-                logger.exception(f"{self._service_name} request failed: {e}")
-                return None
+            response.raise_for_status()
+            return self._parse_response(response, expect_json)
 
-        return None
+        try:
+            return await self._transport_kernel.execute(perform_request, policy=policy)
+        except httpx.HTTPStatusError as e:
+            logger.exception(f"{self._service_name} HTTP error {e.response.status_code}: {e.response.reason_phrase}")
+            return None
+        except httpx.RequestError as e:
+            logger.exception(f"{self._service_name} request failed: {e}")
+            return None
+        except Exception as e:
+            from pubmed_search.shared.exceptions import RateLimitError
+
+            if isinstance(e, RateLimitError):
+                logger.warning(f"{self._service_name}: Circuit breaker open, skipping request")
+                return None
+            logger.exception(f"{self._service_name} request failed: {e}")
+            return None
 
     async def _execute_request(
         self,
@@ -183,12 +203,13 @@ class BaseAPIClient:
         *,
         method: str = "GET",
         data: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
     ) -> httpx.Response:
         """Execute the actual HTTP request. Override for custom behavior."""
         if method == "POST" and data:
-            return await self._client.post(url, json=data, headers=headers or {})
-        return await self._client.get(url, headers=headers or {})
+            return await self._client.post(url, json=data, params=params, headers=headers or {})
+        return await self._client.get(url, params=params, headers=headers or {})
 
     def _handle_expected_status(self, response: httpx.Response, url: str) -> dict[str, Any] | str | None:
         """
@@ -211,10 +232,10 @@ class BaseAPIClient:
     @staticmethod
     def _get_retry_after(response: httpx.Response, attempt: int) -> float:
         """Extract Retry-After from response headers, with exponential backoff fallback."""
-        try:
-            return float(response.headers.get("Retry-After", 2 ** (attempt + 1)))
-        except (ValueError, TypeError):
-            return float(2 ** (attempt + 1))
+        retry_after = parse_retry_after(response.headers.get("Retry-After"))
+        if retry_after is not None:
+            return retry_after
+        return float(2 ** (attempt + 1))
 
     async def close(self) -> None:
         """Close the underlying HTTP client."""

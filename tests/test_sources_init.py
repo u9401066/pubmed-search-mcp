@@ -25,6 +25,8 @@ class TestSearchSource:
         assert SearchSource.PUBMED.value == "pubmed"
         assert SearchSource.ALL.value == "all"
         assert SearchSource.CORE.value == "core"
+        assert SearchSource.SCOPUS.value == "scopus"
+        assert SearchSource.WEB_OF_SCIENCE.value == "web_of_science"
 
 
 # ============================================================
@@ -69,6 +71,46 @@ class TestSearchAlternateSource:
 
         results = await search_alternate_source("test", "core")
         assert len(results) == 1
+
+    @patch("pubmed_search.infrastructure.sources.get_scopus_client")
+    async def test_scopus(self, mock_get):
+        mock_client = AsyncMock()
+        mock_client.search.return_value = [{"title": "Scopus paper"}]
+        mock_get.return_value = mock_client
+
+        with patch.dict("os.environ", {"SCOPUS_ENABLED": "true", "SCOPUS_API_KEY": "licensed-key"}, clear=False):
+            results = await search_alternate_source("test", "scopus")
+
+        assert len(results) == 1
+        mock_client.search.assert_called_once()
+
+    @patch("pubmed_search.infrastructure.sources.get_scopus_client")
+    async def test_scopus_disabled_by_default(self, mock_get):
+        results = await search_alternate_source("test", "scopus")
+        assert results == []
+        mock_get.assert_not_called()
+
+    @patch("pubmed_search.infrastructure.sources.get_web_of_science_client")
+    async def test_web_of_science(self, mock_get):
+        mock_client = AsyncMock()
+        mock_client.search.return_value = [{"title": "WoS paper"}]
+        mock_get.return_value = mock_client
+
+        with patch.dict(
+            "os.environ",
+            {"WEB_OF_SCIENCE_ENABLED": "true", "WEB_OF_SCIENCE_API_KEY": "licensed-key"},
+            clear=False,
+        ):
+            results = await search_alternate_source("test", "web_of_science")
+
+        assert len(results) == 1
+        mock_client.search.assert_called_once()
+
+    @patch("pubmed_search.infrastructure.sources.get_web_of_science_client")
+    async def test_web_of_science_disabled_by_default(self, mock_get):
+        results = await search_alternate_source("test", "web_of_science")
+        assert results == []
+        mock_get.assert_not_called()
 
     async def test_unknown_source(self):
         results = await search_alternate_source("test", "unknown_db")

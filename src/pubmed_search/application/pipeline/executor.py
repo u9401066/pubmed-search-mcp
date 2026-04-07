@@ -23,6 +23,15 @@ from pubmed_search.domain.entities.pipeline import (
     PipelineStep,
     StepResult,
 )
+from pubmed_search.infrastructure.sources.article_mapper import (
+    article_from_core,
+    article_from_europe_pmc,
+    article_from_openalex,
+    article_from_pubmed,
+    article_from_scopus,
+    article_from_semantic_scholar,
+    article_from_web_of_science,
+)
 from pubmed_search.shared.article_identity import canonical_article_key
 
 if TYPE_CHECKING:
@@ -189,6 +198,8 @@ class PipelineExecutor:
 
     async def _action_search(self, step: PipelineStep, inputs: dict[str, StepResult]) -> StepResult:
         """Execute parallel multi-source literature search."""
+        from pubmed_search.infrastructure.sources.registry import get_source_registry
+
         query = self._resolve_query(step, inputs)
         if not query:
             return StepResult(
@@ -206,14 +217,26 @@ class PipelineExecutor:
         all_articles: list[UnifiedArticle] = []
         coros: list[Any] = []
         source_order: list[str] = []
+        registry = get_source_registry()
 
         for source in source_list:
-            if source == "pubmed" and self._searcher:
+            resolved_source = registry.resolve_key(source) or source
+            if resolved_source == "pubmed" and self._searcher:
                 coros.append(self._search_pubmed(query, limit, min_year, max_year, step.params))
                 source_order.append("pubmed")
-            elif source in ("openalex", "semantic_scholar", "europe_pmc", "core"):
-                coros.append(self._search_alternate(source, query, limit, min_year, max_year))
-                source_order.append(source)
+                continue
+
+            definition = registry.get(resolved_source)
+            if (
+                definition
+                and definition.key != "pubmed"
+                and definition.selectable_in_unified
+                and definition.supports_primary_search
+                and definition.alternate_search_runner
+                and registry.is_enabled(definition.key)
+            ):
+                coros.append(self._search_alternate(definition.key, query, limit, min_year, max_year))
+                source_order.append(definition.key)
 
         # Track per-source API return counts
         source_api_counts: dict[str, int] = {}
@@ -253,8 +276,6 @@ class PipelineExecutor:
         max_year: Any,
         params: dict[str, Any],
     ) -> list[UnifiedArticle]:
-        from pubmed_search.domain.entities.article import UnifiedArticle
-
         kwargs: dict[str, Any] = {}
         if min_year:
             kwargs["min_year"] = int(min_year)
@@ -266,7 +287,7 @@ class PipelineExecutor:
 
         assert self._searcher is not None  # noqa: S101
         raw = await self._searcher.search(query=query, limit=limit, **kwargs)
-        return [UnifiedArticle.from_pubmed(r) for r in raw if r and "error" not in r]
+        return [article_from_pubmed(r) for r in raw if r and "error" not in r]
 
     async def _search_alternate(
         self,
@@ -276,8 +297,6 @@ class PipelineExecutor:
         min_year: Any,
         max_year: Any,
     ) -> list[UnifiedArticle]:
-        from pubmed_search.domain.entities.article import UnifiedArticle
-
         if self._alternate_search_fn is None:
             return []
 
@@ -290,20 +309,20 @@ class PipelineExecutor:
         )
 
         if source == "openalex":
-            return [UnifiedArticle.from_openalex(r) for r in raw]
+            return [article_from_openalex(r) for r in raw]
         if source == "semantic_scholar":
-            return [UnifiedArticle.from_semantic_scholar(r) for r in raw]
+            return [article_from_semantic_scholar(r) for r in raw]
+        if source == "scopus":
+            return [article_from_scopus(r) for r in raw]
+        if source == "web_of_science":
+            return [article_from_web_of_science(r) for r in raw]
+        if source == "core":
+            return [article_from_core(r) for r in raw]
 
-        # europe_pmc, core — use from_pubmed with source override
-        articles: list[UnifiedArticle] = []
-        for r in raw:
-            if source == "europe_pmc" and "pmc_id" in r and not r.get("pmc"):
-                r["pmc"] = r["pmc_id"]
-            r["_source_origin"] = source
-            article = UnifiedArticle.from_pubmed(r)
-            article.primary_source = source
-            articles.append(article)
-        return articles
+        if source == "europe_pmc":
+            return [article_from_europe_pmc(r) for r in raw]
+
+        return [article_from_pubmed(r) for r in raw]
 
     # =====================================================================
     # Actions — Intelligence (PICO, Expand)
@@ -438,10 +457,8 @@ class PipelineExecutor:
                 error="No PMIDs or searcher unavailable",
             )
 
-        from pubmed_search.domain.entities.article import UnifiedArticle
-
         raw = await self._searcher.fetch_details(pmids)
-        articles = [UnifiedArticle.from_pubmed(r) for r in raw if r and "error" not in r]
+        articles = [article_from_pubmed(r) for r in raw if r and "error" not in r]
         return StepResult(
             step_id=step.id,
             action="details",
@@ -455,10 +472,8 @@ class PipelineExecutor:
         if not pmid or not self._searcher:
             return StepResult(step_id=step.id, action="related", error="No PMID or searcher")
 
-        from pubmed_search.domain.entities.article import UnifiedArticle
-
         raw = await self._searcher.get_related_articles(pmid, limit)
-        articles = [UnifiedArticle.from_pubmed(r) for r in raw if r and "error" not in r]
+        articles = [article_from_pubmed(r) for r in raw if r and "error" not in r]
         return StepResult(
             step_id=step.id,
             action="related",
@@ -472,10 +487,8 @@ class PipelineExecutor:
         if not pmid or not self._searcher:
             return StepResult(step_id=step.id, action="citing", error="No PMID or searcher")
 
-        from pubmed_search.domain.entities.article import UnifiedArticle
-
         raw = await self._searcher.get_citing_articles(pmid, limit)
-        articles = [UnifiedArticle.from_pubmed(r) for r in raw if r and "error" not in r]
+        articles = [article_from_pubmed(r) for r in raw if r and "error" not in r]
         return StepResult(
             step_id=step.id,
             action="citing",
@@ -489,10 +502,8 @@ class PipelineExecutor:
         if not pmid or not self._searcher:
             return StepResult(step_id=step.id, action="references", error="No PMID or searcher")
 
-        from pubmed_search.domain.entities.article import UnifiedArticle
-
         raw = await self._searcher.get_article_references(pmid, limit)
-        articles = [UnifiedArticle.from_pubmed(r) for r in raw if r and "error" not in r]
+        articles = [article_from_pubmed(r) for r in raw if r and "error" not in r]
         return StepResult(
             step_id=step.id,
             action="references",

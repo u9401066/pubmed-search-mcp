@@ -20,17 +20,19 @@ Architecture:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
-import os
 import sys
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
+from mcp import types
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
+from mcp.shared.exceptions import McpError
 
 from pubmed_search.container import ApplicationContainer
+from pubmed_search.shared.settings import DEFAULT_DATA_DIR, DEFAULT_EMAIL, load_settings
 
 from .instructions import SERVER_INSTRUCTIONS
 from .tool_registry import register_all_mcp_tools
@@ -43,11 +45,103 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_EMAIL = "pubmed-search@example.com"
-DEFAULT_DATA_DIR = str(Path.home() / ".pubmed-search-mcp")
+_EXPERIMENTAL_TASK_TOOL_SUPPORT: dict[str, types.TaskExecutionMode] = {"unified_search": "optional"}
+_UNIFIED_SEARCH_TASK_IMMEDIATE_RESPONSE = (
+    "unified_search is running as an experimental MCP task. Poll tasks/get and tasks/result for completion."
+)
 
 # ── Module-level DI container ──────────────────────────────────────────────
 _container: ApplicationContainer | None = None
+
+
+class _TaskProgressContext:
+    """Proxy FastMCP context that maps progress updates onto task status."""
+
+    def __init__(self, base_context: Any, task_context: Any) -> None:
+        self._base_context = base_context
+        self._task_context = task_context
+
+    async def report_progress(self, progress: float, total: float, message: str) -> None:
+        del progress, total
+        await self._task_context.update_status(message or "Task running")
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._base_context, name)
+
+
+def _as_call_tool_result(result: Any) -> types.CallToolResult:
+    """Normalize task work output into a task-storable CallToolResult."""
+    if isinstance(result, types.CallToolResult):
+        return result
+
+    if isinstance(result, str):
+        return types.CallToolResult(content=[types.TextContent(type="text", text=result)])
+
+    if isinstance(result, dict):
+        return types.CallToolResult(
+            content=[types.TextContent(type="text", text=json.dumps(result, ensure_ascii=False))],
+            structuredContent=result,
+        )
+
+    if isinstance(result, tuple) and len(result) == 2 and isinstance(result[1], dict):
+        return types.CallToolResult(content=list(result[0]), structuredContent=result[1])
+
+    return types.CallToolResult(content=list(result))
+
+
+def _configure_experimental_task_support(mcp: FastMCP[Any]) -> None:
+    """Enable experimental task support for selected long-running tools only."""
+    mcp._mcp_server.experimental.enable_tasks()
+
+    async def _list_tools() -> list[types.Tool]:
+        tools = await mcp.list_tools()
+        for tool in tools:
+            task_mode = _EXPERIMENTAL_TASK_TOOL_SUPPORT.get(tool.name)
+            if task_mode is None:
+                continue
+
+            tool.execution = types.ToolExecution(taskSupport=task_mode)
+            merged_meta = dict(tool.meta or {})
+            merged_meta["pubmedSearch"] = {
+                **merged_meta.get("pubmedSearch", {}),
+                "experimentalTaskSupport": task_mode,
+            }
+            tool.meta = merged_meta
+
+        return tools
+
+    async def _call_tool(name: str, arguments: dict[str, Any]) -> Any:
+        context = mcp.get_context()
+        experimental = context.request_context.experimental
+
+        if not experimental.is_task:
+            return await mcp.call_tool(name, arguments)
+
+        if name not in _EXPERIMENTAL_TASK_TOOL_SUPPORT:
+            raise McpError(
+                types.ErrorData(
+                    code=-32601,
+                    message="Task-augmented execution is only available experimentally for unified_search.",
+                )
+            )
+
+        async def _work(task_context: Any) -> types.CallToolResult:
+            proxied_context = _TaskProgressContext(context, task_context)
+            result = await mcp._tool_manager.call_tool(
+                name,
+                arguments,
+                context=cast("Any", proxied_context),
+                convert_result=True,
+            )
+            return _as_call_tool_result(result)
+
+        return await experimental.run_task(
+            _work,
+            model_immediate_response=_UNIFIED_SEARCH_TASK_IMMEDIATE_RESPONSE,
+        )
+
+    mcp._mcp_server.list_tools()(_list_tools)
+    mcp._mcp_server.call_tool()(_call_tool)
 
 
 def get_container() -> ApplicationContainer:
@@ -70,15 +164,22 @@ def _make_lifespan(
     @asynccontextmanager
     async def _lifespan(server: FastMCP[Any]) -> AsyncIterator[ApplicationContainer]:
         """Application lifecycle: startup → yield → shutdown."""
-        logger.info("Lifecycle: startup — resources ready")
+        from pubmed_search.presentation.mcp_server.tools.pipeline_tools import get_pipeline_scheduler
+
+        scheduler = get_pipeline_scheduler()
+        if scheduler is not None:
+            scheduler.start()
+        logger.info("Lifecycle: startup - resources ready")
         try:
             yield container
         finally:
             # Shutdown: close shared httpx client
             from pubmed_search.shared.async_utils import close_shared_async_client
 
+            if scheduler is not None:
+                scheduler.shutdown()
             await close_shared_async_client()
-            logger.info("Lifecycle: shutdown — shared HTTP client closed")
+            logger.info("Lifecycle: shutdown - shared HTTP client closed")
 
     return _lifespan
 
@@ -162,6 +263,8 @@ def create_server(
     if install_profiling(mcp):
         install_http_profiling()
 
+    _configure_experimental_task_support(mcp)
+
     logger.info("PubMed Search MCP Server initialized successfully")
 
     return mcp
@@ -182,7 +285,7 @@ def start_http_api_background(session_manager, searcher, port: int = 8765):
     _bg_loop = asyncio.new_event_loop()
 
     class MCPAPIHandler(BaseHTTPRequestHandler):
-        """Simple HTTP handler for MCP-to-MCP API."""
+        """Simple HTTP handler for the public auxiliary HTTP API."""
 
         def log_message(self, format, *args):
             # Suppress HTTP access logs to avoid polluting stdio
@@ -206,14 +309,13 @@ def start_http_api_background(session_manager, searcher, port: int = 8765):
             # Get single cached article
             if path.startswith("/api/cached_article/"):
                 pmid = path.split("/")[-1].split("?")[0]
-                session = session_manager.get_current_session()
-
-                if session and pmid in session.article_cache:
+                cached_article = session_manager.get_cached_article(pmid)
+                if cached_article is not None:
                     self._send_json(
                         {
                             "source": "pubmed",
                             "verified": True,
-                            "data": session.article_cache[pmid],
+                            "data": cached_article,
                         }
                     )
                     return
@@ -223,7 +325,7 @@ def start_http_api_background(session_manager, searcher, port: int = 8765):
                     try:
                         articles = _bg_loop.run_until_complete(searcher.fetch_details([pmid]))
                         if articles:
-                            session_manager.add_to_cache(articles)
+                            session_manager.warm_article_cache(articles)
                             self._send_json(
                                 {
                                     "source": "pubmed",
@@ -249,11 +351,12 @@ def start_http_api_background(session_manager, searcher, port: int = 8765):
                 self._send_json(
                     {
                         "service": "pubmed-search-mcp HTTP API",
-                        "mode": "background (stdio MCP + HTTP API)",
+                        "mode": "background (stdio MCP + public auxiliary HTTP API)",
                         "endpoints": {
                             "/health": "Health check",
-                            "/api/cached_article/{pmid}": "Get cached article",
-                            "/api/session/summary": "Session info",
+                            "/api/cached_article/{pmid}": "Read cached article",
+                            "/api/cached_articles?pmids=...": "Read multiple cached articles",
+                            "/api/session/summary": "Read current session summary",
                         },
                     }
                 )
@@ -318,12 +421,14 @@ def main():
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
-    # Get email: CLI arg → env var → git config → default
+    settings = load_settings()
+
+    # Get email: CLI arg → settings/env → git config → default
     email: str | None = None
     if len(sys.argv) > 1:
         email = sys.argv[1]
     else:
-        email = os.environ.get("NCBI_EMAIL", "").strip() or None
+        email = settings.ncbi_email.strip() if "ncbi_email" in settings.model_fields_set else None
         if not email:
             email = _detect_git_email()
             if email:
@@ -332,14 +437,13 @@ def main():
                 email = DEFAULT_EMAIL
                 logger.info(f"No email configured, using default: {email}")
 
-    # Get API key: CLI arg → env var
-    api_key = sys.argv[2] if len(sys.argv) > 2 else os.environ.get("NCBI_API_KEY", "").strip() or None
+    # Get API key: CLI arg → settings/env
+    api_key = sys.argv[2] if len(sys.argv) > 2 else (settings.ncbi_api_key or None)
 
-    # Get HTTP API port from environment (default: 8765)
-    http_api_port = int(os.environ.get("PUBMED_HTTP_API_PORT", "8765"))
+    http_api_port = settings.http_api_port
 
     # Create server
-    server = create_server(email=email, api_key=api_key)
+    server = create_server(email=email, api_key=api_key, data_dir=settings.data_dir)
 
     # Start background HTTP API for MCP-to-MCP communication
     # This runs alongside the stdio MCP server

@@ -164,7 +164,10 @@ class TestURLFormats:
         url = f"https://doaj.org/api/search/articles/doi:{doi}"
 
         async with client:
-            resp = await client.get(url)
+            try:
+                resp = await client.get(url)
+            except httpx.TimeoutException:
+                pytest.skip("DOAJ API timed out in this environment")
             assert resp.status_code in [200, 404], f"DOAJ API returned {resp.status_code}"
 
             if resp.status_code == 200:

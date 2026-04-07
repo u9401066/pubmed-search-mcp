@@ -172,7 +172,7 @@ class AsyncMismatchDetector(ast.NodeVisitor):
         if isinstance(node.func, ast.Attribute):
             method = node.func.attr
             # For generic method names like 'search', require a client-like receiver
-            if method in ("search",):
+            if method == "search":
                 receiver = self._get_receiver_name(node.func.value)
                 if receiver and not self._is_client_like(receiver):
                     return None

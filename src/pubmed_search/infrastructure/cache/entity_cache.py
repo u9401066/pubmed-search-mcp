@@ -1,39 +1,31 @@
-"""
-Entity Cache
+"""Entity-focused cache wrapper built on the shared cache substrate.
 
-In-memory cache with TTL for entity resolution results.
-Uses cachetools.TTLCache for LRU eviction and TTL expiration.
+Design:
+    This module provides the common cache-aside pattern used for resolved
+    entities and lightweight lookup results. It wraps CacheStore with
+    normalized keys and an async-friendly get-or-fetch workflow.
 
-Features:
-- Time-based expiration (TTL) via cachetools
-- LRU eviction when max size reached
-- Async-safe with locks
-- Simple key-value interface
+Maintenance:
+    Keep this wrapper simple. Changes to eviction, persistence, or statistics
+    should usually happen in shared/cache_substrate.py rather than here.
 """
 
 from __future__ import annotations
 
 import asyncio
-import logging
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, TypeVar
 
-from cachetools import TTLCache
+from pubmed_search.shared.cache_substrate import CacheStats, CacheStore, MemoryCacheBackend
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
-
-logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
 
 class EntityCache:
     """
-    In-memory cache for entity resolution.
-
-    Uses cachetools.TTLCache for LRU eviction and TTL-based expiration.
-    Thread-safe for async usage via asyncio.Lock.
+    In-memory entity cache backed by the shared cache substrate.
 
     Example:
         cache = EntityCache(max_size=1000, ttl=3600)
@@ -61,14 +53,18 @@ class EntityCache:
             max_size: Maximum number of entries
             ttl: Time-to-live in seconds
         """
-        self._cache: TTLCache[str, Any] = TTLCache(maxsize=max_size, ttl=ttl)
+        self._store = CacheStore[Any](
+            MemoryCacheBackend(max_entries=max_size),
+            default_ttl=ttl,
+            key_normalizer=self._normalize_key,
+            name="entity-cache",
+        )
         self._lock = asyncio.Lock()
-        self._stats = CacheStats()
 
     @property
     def stats(self) -> CacheStats:
         """Get cache statistics."""
-        return self._stats
+        return self._store.stats
 
     def _normalize_key(self, key: str) -> str:
         """Normalize cache key."""
@@ -84,14 +80,7 @@ class EntityCache:
         Returns:
             Cached value or None if not found/expired
         """
-        nkey = self._normalize_key(key)
-        try:
-            value = self._cache[nkey]
-            self._stats.hits += 1
-            return value
-        except KeyError:
-            self._stats.misses += 1
-            return None
+        return self._store.get(key)
 
     def set(self, key: str, value: Any) -> None:
         """
@@ -101,8 +90,7 @@ class EntityCache:
             key: Cache key
             value: Value to cache
         """
-        nkey = self._normalize_key(key)
-        self._cache[nkey] = value
+        self._store.set(key, value)
 
     async def get_or_fetch(
         self,
@@ -122,28 +110,7 @@ class EntityCache:
         Returns:
             Cached or freshly fetched value
         """
-        # Try cache first (no lock needed for read)
-        value = self.get(key)
-        if value is not None:
-            logger.debug(f"Cache hit: {key}")
-            return value  # type: ignore[no-any-return]
-
-        # Fetch with lock to prevent thundering herd
-        async with self._lock:
-            # Double-check after acquiring lock
-            value = self.get(key)
-            if value is not None:
-                return value  # type: ignore[no-any-return]
-
-            # Fetch
-            try:
-                value = await fetch_func()
-                if value is not None:
-                    self.set(key, value)
-                return value
-            except Exception as e:
-                logger.exception(f"Fetch failed for {key}: {e}")
-                return None
+        return await self._store.get_or_fetch(key, fetch_func)
 
     def invalidate(self, key: str) -> bool:
         """
@@ -155,12 +122,7 @@ class EntityCache:
         Returns:
             True if entry was removed
         """
-        nkey = self._normalize_key(key)
-        try:
-            del self._cache[nkey]
-            return True
-        except KeyError:
-            return False
+        return self._store.invalidate(key)
 
     def clear(self) -> int:
         """
@@ -169,9 +131,7 @@ class EntityCache:
         Returns:
             Number of entries cleared
         """
-        count = len(self._cache)
-        self._cache.clear()
-        return count
+        return self._store.clear()
 
     def cleanup_expired(self) -> int:
         """
@@ -183,46 +143,19 @@ class EntityCache:
         Returns:
             Number of entries removed
         """
-        expired = self._cache.expire()
-        removed = len(expired)
-        self._stats.expirations += removed
-        return removed
+        return self._store.cleanup_expired()
+
+    def warmup(self, entries: dict[str, Any]) -> int:
+        """Preload multiple entity values using the same substrate API."""
+        return self._store.warmup(entries)
 
     def __len__(self) -> int:
         """Get number of cached entries."""
-        return len(self._cache)
+        return len(self._store)
 
     def __contains__(self, key: str) -> bool:
-        """Check if key is in cache (may be expired)."""
-        return self._normalize_key(key) in self._cache
-
-
-@dataclass
-class CacheStats:
-    """Cache statistics."""
-
-    hits: int = 0
-    misses: int = 0
-    evictions: int = 0
-    expirations: int = 0
-
-    @property
-    def total_requests(self) -> int:
-        """Total cache requests."""
-        return self.hits + self.misses
-
-    @property
-    def hit_rate(self) -> float:
-        """Cache hit rate (0-1)."""
-        total = self.total_requests
-        return self.hits / total if total > 0 else 0.0
-
-    def reset(self) -> None:
-        """Reset statistics."""
-        self.hits = 0
-        self.misses = 0
-        self.evictions = 0
-        self.expirations = 0
+        """Check if a normalized key resolves to a live cache entry."""
+        return key in self._store
 
 
 # ==================== Singleton Factory ====================

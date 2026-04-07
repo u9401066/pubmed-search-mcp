@@ -16,7 +16,13 @@ from datetime import datetime, timezone
 from typing import Any
 
 import defusedxml.ElementTree as ET  # noqa: N817  # Security: prevent XML attacks
-import httpx
+
+from pubmed_search.infrastructure.sources.base_client import BaseAPIClient
+from pubmed_search.shared.source_contracts import (
+    SourceAdapterCall,
+    format_source_adapter_error,
+    gather_source_adapter_calls,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -77,19 +83,20 @@ class PreprintArticle:
         return ""
 
 
-class ArXivClient:
+class ArXivClient(BaseAPIClient):
     """Client for arXiv API."""
 
-    def __init__(self, timeout: float = 30.0):
-        self.timeout = timeout
-        self._client: httpx.AsyncClient | None = None
+    _service_name = "preprints:arxiv"
 
-    @property
-    def client(self) -> httpx.AsyncClient:
-        """Lazy-init async HTTP client."""
-        if self._client is None or self._client.is_closed:
-            self._client = httpx.AsyncClient(timeout=self.timeout)
-        return self._client
+    def __init__(self, timeout: float = 30.0):
+        super().__init__(
+            timeout=timeout,
+            min_interval=0.0,
+            headers={
+                "User-Agent": "pubmed-search-mcp/1.0",
+                "Accept": "application/atom+xml",
+            },
+        )
 
     async def search(
         self,
@@ -147,10 +154,15 @@ class ArXivClient:
 
             logger.info(f"arXiv search: {full_query}")
 
-            response = await self.client.get(ARXIV_API_URL, params=params)
-            response.raise_for_status()
+            response_text = await self._make_request(
+                ARXIV_API_URL,
+                params=params,
+                expect_json=False,
+            )
+            if not isinstance(response_text, str):
+                return []
 
-            return self._parse_atom_response(response.text)
+            return self._parse_atom_response(response_text)
 
         except Exception as e:
             logger.exception(f"arXiv search error: {e}")
@@ -256,10 +268,15 @@ class ArXivClient:
         """Get article by arXiv ID."""
         try:
             params = {"id_list": arxiv_id}
-            response = await self.client.get(ARXIV_API_URL, params=params)
-            response.raise_for_status()
+            response_text = await self._make_request(
+                ARXIV_API_URL,
+                params=params,
+                expect_json=False,
+            )
+            if not isinstance(response_text, str):
+                return None
 
-            articles = self._parse_atom_response(response.text)
+            articles = self._parse_atom_response(response_text)
             return articles[0] if articles else None
 
         except Exception as e:
@@ -267,19 +284,20 @@ class ArXivClient:
             return None
 
 
-class MedBioRxivClient:
+class MedBioRxivClient(BaseAPIClient):
     """Client for medRxiv and bioRxiv APIs."""
 
-    def __init__(self, timeout: float = 30.0):
-        self.timeout = timeout
-        self._client: httpx.AsyncClient | None = None
+    _service_name = "preprints:rxiv"
 
-    @property
-    def client(self) -> httpx.AsyncClient:
-        """Lazy-init async HTTP client."""
-        if self._client is None or self._client.is_closed:
-            self._client = httpx.AsyncClient(timeout=self.timeout)
-        return self._client
+    def __init__(self, timeout: float = 30.0):
+        super().__init__(
+            timeout=timeout,
+            min_interval=0.0,
+            headers={
+                "User-Agent": "pubmed-search-mcp/1.0",
+                "Accept": "application/json",
+            },
+        )
 
     async def search_medrxiv(
         self,
@@ -351,10 +369,9 @@ class MedBioRxivClient:
 
             logger.info(f"{source} search: {query} ({from_date} to {to_date})")
 
-            response = await self.client.get(url)
-            response.raise_for_status()
-
-            data = response.json()
+            data = await self._make_request(url, expect_json=True)
+            if not isinstance(data, dict):
+                return []
 
             articles = []
             query_lower = query.lower()
@@ -441,29 +458,46 @@ class PreprintSearcher:
             "sources_searched": sources,
             "articles": [],
             "by_source": {},
+            "errors": [],
         }  # type: dict[str, Any]
 
-        # Search arXiv
+        calls: list[SourceAdapterCall[PreprintArticle]] = []
+
         if "arxiv" in sources:
-            arxiv_results = await self.arxiv.search(
-                query=query,
-                limit=limit,
-                categories=categories or ARXIV_MEDICAL_CATEGORIES,
+            calls.append(
+                SourceAdapterCall(
+                    source="arxiv",
+                    operation="search",
+                    execute=lambda: self.arxiv.search(
+                        query=query,
+                        limit=limit,
+                        categories=categories or ARXIV_MEDICAL_CATEGORIES,
+                    ),
+                )
             )
-            results["by_source"]["arxiv"] = [a.to_dict() for a in arxiv_results]
-            results["articles"].extend(results["by_source"]["arxiv"])
-
-        # Search medRxiv
         if "medrxiv" in sources:
-            medrxiv_results = await self.rxiv.search_medrxiv(query=query, limit=limit)
-            results["by_source"]["medrxiv"] = [a.to_dict() for a in medrxiv_results]
-            results["articles"].extend(results["by_source"]["medrxiv"])
-
-        # Search bioRxiv
+            calls.append(
+                SourceAdapterCall(
+                    source="medrxiv",
+                    operation="search",
+                    execute=lambda: self.rxiv.search_medrxiv(query=query, limit=limit),
+                )
+            )
         if "biorxiv" in sources:
-            biorxiv_results = await self.rxiv.search_biorxiv(query=query, limit=limit)
-            results["by_source"]["biorxiv"] = [a.to_dict() for a in biorxiv_results]
-            results["articles"].extend(results["by_source"]["biorxiv"])
+            calls.append(
+                SourceAdapterCall(
+                    source="biorxiv",
+                    operation="search",
+                    execute=lambda: self.rxiv.search_biorxiv(query=query, limit=limit),
+                )
+            )
+
+        adapter_results = await gather_source_adapter_calls(calls)
+        for adapter_result in adapter_results:
+            serialized = [article.to_dict() for article in adapter_result.items]
+            results["by_source"][adapter_result.source] = serialized
+            results["articles"].extend(serialized)
+            results["errors"].extend(format_source_adapter_error(error) for error in adapter_result.errors)
 
         results["total"] = len(results["articles"])
 

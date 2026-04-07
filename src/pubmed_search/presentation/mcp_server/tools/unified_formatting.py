@@ -9,13 +9,24 @@ Extracted from unified.py to keep each module under 400 lines.
 
 from __future__ import annotations
 
-import json
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal, cast
 
 from pubmed_search.infrastructure.sources.openurl import (
     get_openurl_config,
     get_openurl_link,
+)
+
+from .agent_output import (
+    OutputFormat,
+    SourceCountRow,
+    finalize_next_tools,
+    make_next_tool,
+    make_section_provenance,
+    make_source_count_row,
+    preferred_structured_output_format,
+    serialize_structured_payload,
+    sort_source_count_rows,
 )
 
 if TYPE_CHECKING:
@@ -28,6 +39,250 @@ if TYPE_CHECKING:
     from .unified_helpers import RelaxationResult, SearchDepthMetrics
 
 logger = logging.getLogger(__name__)
+
+
+def _serialize_source_counts(
+    source_api_counts: dict[str, tuple[int, int | None]] | None,
+    stats: AggregationStats,
+) -> list[SourceCountRow]:
+    """Normalize source counts into a common structure for markdown and JSON output."""
+    by_source = getattr(stats, "by_source", {}) or {}
+
+    if source_api_counts:
+        rows: list[SourceCountRow] = [
+            make_source_count_row(source, returned, total) for source, (returned, total) in source_api_counts.items()
+        ]
+    else:
+        rows = [make_source_count_row(source, count) for source, count in by_source.items()]
+
+    return sort_source_count_rows(rows)
+
+
+def _escape_tool_argument(value: str) -> str:
+    """Escape a value for display inside example MCP tool calls."""
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _build_next_actions(
+    articles: list[UnifiedArticle],
+    analysis: AnalyzedQuery,
+    source_rows: list[SourceCountRow],
+    research_context_preview: str | None,
+    structured_output_format: Literal["json", "toon"] = "json",
+) -> list[dict[str, str]]:
+    """Infer pragmatic next-tool suggestions from current result shape."""
+    escaped_query = _escape_tool_argument(analysis.original_query)
+    next_actions: list[dict[str, str]] = []
+    seen_tools: set[str] = set()
+
+    def add_action(tool: str, reason: str, example: str) -> None:
+        if tool in seen_tools or len(next_actions) >= 4:
+            return
+        next_actions.append(cast("dict[str, str]", dict(make_next_tool(tool, reason, example))))
+        seen_tools.add(tool)
+
+    if source_rows:
+        high_yield = next(
+            (
+                row
+                for row in source_rows
+                if row["total_available"] is not None and row["total_available"] > row["returned"]
+            ),
+            None,
+        )
+        if high_yield:
+            source_name = str(high_yield["source"])
+            current_returned = int(high_yield["returned"] or 0)
+            expanded_limit = max(min(current_returned * 2, 50), 20)
+            add_action(
+                "unified_search",
+                f"{source_name} reports more matches than were sampled here; expand the highest-yield source before pivoting.",
+                (
+                    f'unified_search(query="{escaped_query}", sources="{source_name}", '
+                    f'limit={expanded_limit}, options="counts_first", output_format="{structured_output_format}")'
+                ),
+            )
+
+    intent_value = getattr(analysis.intent, "value", "")
+    if intent_value in {"comparison", "systematic"}:
+        add_action(
+            "generate_search_queries",
+            "This query looks like a comparison or review question; generate controlled-vocabulary variants before broadening the search.",
+            f'generate_search_queries(topic="{escaped_query}")',
+        )
+
+    lead_article = next(
+        (article for article in articles if getattr(article, "pmid", None) or getattr(article, "pmc", None)), None
+    )
+    if lead_article and getattr(lead_article, "pmid", None):
+        lead_pmid = str(lead_article.pmid)
+        add_action(
+            "fetch_article_details",
+            "Inspect the lead PubMed record in detail before deciding whether to branch, export, or fetch fulltext.",
+            f'fetch_article_details(pmids="{lead_pmid}", output_format="{structured_output_format}")',
+        )
+        add_action(
+            "find_related_articles",
+            "Follow the strongest seed article into its related-paper neighborhood.",
+            f'find_related_articles(pmid="{lead_pmid}", limit=10)',
+        )
+
+    if lead_article and getattr(lead_article, "pmc", None):
+        lead_pmc = str(lead_article.pmc)
+        add_action(
+            "get_article_figures",
+            "A PMC-backed result is available; extract figures first when the next decision depends on evidence visuals.",
+            f'get_article_figures(identifier="{lead_pmc}", output_format="{structured_output_format}")',
+        )
+        add_action(
+            "get_fulltext",
+            "Retrieve structured fulltext with inline figures from the PMC-backed lead article.",
+            (f'get_fulltext(pmcid="{lead_pmc}", include_figures=True, output_format="{structured_output_format}")'),
+        )
+
+    if articles and not research_context_preview and any(getattr(article, "pmid", None) for article in articles):
+        add_action(
+            "build_research_timeline",
+            "You have PMID-backed results; build a lineage view before moving to export or citation chasing.",
+            f'build_research_timeline(pmids="last", topic="{escaped_query}", output_format="tree")',
+        )
+
+    if len(articles) >= 5:
+        add_action(
+            "prepare_export",
+            "Export the current result set once you have enough candidates to shortlist offline.",
+            'prepare_export(pmids="last", format="ris")',
+        )
+
+    if not next_actions:
+        add_action(
+            "generate_search_queries",
+            "No obvious downstream pivot was detected; start by expanding controlled vocabulary and synonyms.",
+            f'generate_search_queries(topic="{escaped_query}")',
+        )
+
+    return next_actions
+
+
+def _build_unified_section_provenance(
+    source_rows: list[SourceCountRow],
+    *,
+    include_research_context: bool,
+    include_deep_search: bool,
+    include_relaxation: bool,
+    include_source_disagreement: bool,
+    include_reproducibility: bool,
+) -> dict[str, dict[str, object]]:
+    """Describe where each JSON section came from for agent chaining."""
+    upstream_sources = [str(row["source"]) for row in source_rows]
+    provenance = {
+        "analysis": make_section_provenance(
+            surfacing_source="pubmed-search-mcp",
+            canonical_host="pubmed-search-mcp",
+            provenance="derived",
+            note="Query analysis is computed locally from the incoming request.",
+        ),
+        "statistics": make_section_provenance(
+            surfacing_source="pubmed-search-mcp",
+            canonical_host="pubmed-search-mcp",
+            provenance="derived",
+            note="Aggregate statistics are computed after cross-source deduplication and ranking.",
+            upstream_sources=upstream_sources,
+        ),
+        "source_counts": make_section_provenance(
+            surfacing_source="pubmed-search-mcp",
+            canonical_host=None,
+            provenance="derived",
+            note="Counts are normalized from upstream API responses; see upstream_sources for contributing corpora.",
+            upstream_sources=upstream_sources,
+        ),
+        "articles": make_section_provenance(
+            surfacing_source="pubmed-search-mcp",
+            canonical_host=None,
+            provenance="mixed",
+            note="Ranked articles are aggregated across multiple sources; inspect each article.sources entry for record-level provenance.",
+            upstream_sources=upstream_sources,
+        ),
+        "next_tools": make_section_provenance(
+            surfacing_source="pubmed-search-mcp",
+            canonical_host="pubmed-search-mcp",
+            provenance="derived",
+            note="Next-tool suggestions are inferred locally from the result shape and available identifiers.",
+        ),
+    }
+
+    if include_deep_search:
+        provenance["deep_search"] = make_section_provenance(
+            surfacing_source="pubmed-search-mcp",
+            canonical_host="pubmed-search-mcp",
+            provenance="derived",
+            note="Deep-search metrics summarize locally executed semantic expansion strategies.",
+            upstream_sources=upstream_sources,
+        )
+    if include_relaxation:
+        provenance["relaxation"] = make_section_provenance(
+            surfacing_source="pubmed-search-mcp",
+            canonical_host="pubmed-search-mcp",
+            provenance="derived",
+            note="Relaxation history is generated locally from automatic fallback steps.",
+        )
+    if include_source_disagreement:
+        provenance["source_disagreement"] = make_section_provenance(
+            surfacing_source="pubmed-search-mcp",
+            canonical_host="pubmed-search-mcp",
+            provenance="derived",
+            note="Agreement metrics are computed from the cross-source overlap of the ranked result set.",
+            upstream_sources=upstream_sources,
+        )
+    if include_reproducibility:
+        provenance["reproducibility"] = make_section_provenance(
+            surfacing_source="pubmed-search-mcp",
+            canonical_host="pubmed-search-mcp",
+            provenance="derived",
+            note="Reproducibility grades are computed locally from query formality, coverage, and failure signals.",
+            upstream_sources=upstream_sources,
+        )
+    if include_research_context:
+        provenance["research_context"] = make_section_provenance(
+            surfacing_source="pubmed-search-mcp",
+            canonical_host="pubmed-search-mcp",
+            provenance="derived",
+            note="Research context is synthesized locally from PMID-backed timeline and tree builders.",
+        )
+
+    return provenance
+
+
+def _format_counts_first_section(
+    source_rows: list[SourceCountRow],
+    stats: AggregationStats,
+    next_actions: list[dict[str, str]],
+) -> list[str]:
+    """Render the counts-first orientation block for markdown output."""
+    output_parts = ["### 📊 Count-First Orientation\n"]
+    output_parts.append("| Source | Returned | Total Known | Signal |")
+    output_parts.append("| --- | ---: | ---: | --- |")
+
+    for row in source_rows:
+        total = row["total_available"] if row["total_available"] is not None else "?"
+        signal = "backlog" if row["has_more"] else "sampled"
+        output_parts.append(f"| {row['source']} | {row['returned']} | {total} | {signal} |")
+
+    responded = sum(1 for row in source_rows if int(row["returned"] or 0) > 0)
+    output_parts.append("")
+    output_parts.append(
+        f"**Coverage**: {responded}/{len(source_rows)} sources returned results | "
+        f"{stats.unique_articles} unique articles | {stats.duplicates_removed} duplicates removed"
+    )
+
+    if next_actions:
+        output_parts.append("")
+        output_parts.append("### ⏭️ Next Tools\n")
+        for action in next_actions:
+            output_parts.append(f"- **{action['tool']}**: {action['reason']} Example: `{action['example']}`")
+        output_parts.append("")
+
+    return output_parts
 
 
 # ============================================================================
@@ -53,6 +308,7 @@ async def _format_unified_results(
     source_disagreement: SourceDisagreement | None = None,
     reproducibility_score: ReproducibilityScore | None = None,
     research_context_preview: str | None = None,
+    counts_first: bool = False,
 ) -> str:
     """Format unified search results for MCP response.
 
@@ -62,6 +318,8 @@ async def _format_unified_results(
             - total_available: how many total matches the API reports (None if unknown)
     """
     output_parts: list[str] = []
+    source_rows = _serialize_source_counts(source_api_counts, stats)
+    next_actions = _build_next_actions(articles, analysis, source_rows, research_context_preview)
 
     # Header with analysis summary
     if include_analysis:
@@ -94,18 +352,21 @@ async def _format_unified_results(
             )
 
         # Per-source result counts (critical for agent decision-making)
-        if source_api_counts:
+        if not counts_first and source_api_counts:
             # Show detailed per-source API return counts
             source_parts = []
-            for src, (returned, total) in source_api_counts.items():
+            for row in source_rows:
+                src = str(row["source"])
+                returned = int(row["returned"] or 0)
+                total = row["total_available"]
                 if total is not None and total > returned:
                     source_parts.append(f"{src} ({returned}/{total})")
                 else:
                     source_parts.append(f"{src} ({returned})")
             output_parts.append(f"**Sources**: {', '.join(source_parts)}")
-        elif stats.by_source:
+        elif not counts_first and stats.by_source:
             # Fallback: use aggregation stats (pre-dedup per-source counts)
-            source_parts = [f"{src} ({count})" for src, count in stats.by_source.items()]
+            source_parts = [f"{row['source']} ({row['returned']})" for row in source_rows]
             output_parts.append(f"**Sources**: {', '.join(source_parts)}")
 
         # Show total count info with PubMed total
@@ -114,6 +375,9 @@ async def _format_unified_results(
             results_str = f"📊 返回 **{stats.unique_articles}** 篇 (PubMed 總共 **{pubmed_total_count}** 篇符合) | {stats.duplicates_removed} 去重"
         output_parts.append(f"**Results**: {results_str}")
         output_parts.append("")
+
+    if counts_first and source_rows:
+        output_parts.extend(_format_counts_first_section(source_rows, stats, next_actions))
 
     # Relaxation info (if auto-relaxation was triggered)
     if relaxation_result:
@@ -377,15 +641,26 @@ def _format_as_json(
     stats: AggregationStats,
     relaxation_result: RelaxationResult | None = None,
     deep_search_metrics: SearchDepthMetrics | None = None,
+    source_api_counts: dict[str, tuple[int, int | None]] | None = None,
     source_disagreement: SourceDisagreement | None = None,
     reproducibility_score: ReproducibilityScore | None = None,
     research_context: dict | None = None,
+    counts_first: bool = False,
+    output_format: OutputFormat = "json",
 ) -> str:
-    """Format results as JSON for programmatic access."""
+    """Format results as JSON or TOON for programmatic access."""
+    source_rows = _serialize_source_counts(source_api_counts, stats)
+    structured_output_format = preferred_structured_output_format(output_format)
+    next_actions = _build_next_actions(articles, analysis, source_rows, None, structured_output_format)
+    next_tools, next_commands = finalize_next_tools(next_actions)
     result = {
+        "tool": "unified_search",
         "analysis": analysis.to_dict(),
         "statistics": stats.to_dict(),
         "articles": [a.to_dict() for a in articles],
+        "source_counts": source_rows,
+        "next_tools": next_tools,
+        "next_commands": next_commands,
     }
 
     # Add deep search metrics if available
@@ -461,4 +736,24 @@ def _format_as_json(
     if research_context:
         result["research_context"] = research_context
 
-    return json.dumps(result, ensure_ascii=False, indent=2)
+    if counts_first:
+        result["orientation"] = {
+            "mode": "counts_first",
+            "source_counts": source_rows,
+            "responded_sources": sum(1 for row in source_rows if int(row["returned"] or 0) > 0),
+            "queried_sources": len(source_rows),
+            "next_actions": next_actions,
+            "next_tools": next_tools,
+            "next_commands": next_commands,
+        }
+
+    result["section_provenance"] = _build_unified_section_provenance(
+        source_rows,
+        include_research_context=research_context is not None,
+        include_deep_search=deep_search_metrics is not None,
+        include_relaxation=relaxation_result is not None,
+        include_source_disagreement=source_disagreement is not None,
+        include_reproducibility=reproducibility_score is not None,
+    )
+
+    return serialize_structured_payload(result, output_format)

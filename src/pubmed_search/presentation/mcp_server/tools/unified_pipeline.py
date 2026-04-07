@@ -65,8 +65,10 @@ async def _execute_pipeline_mode(
     - YAML or JSON string — inline pipeline config
     """
     from pubmed_search.application.pipeline.executor import PipelineExecutor
-    from pubmed_search.application.pipeline.templates import build_pipeline_from_template
+    from pubmed_search.application.pipeline.templates import materialize_pipeline_config
     from pubmed_search.application.pipeline.validator import parse_and_validate_config
+
+    pipeline_name_override: str | None = None
 
     # ── Saved pipeline mode ──────────────────────────────────────────────
     stripped = pipeline_text.strip()
@@ -89,6 +91,7 @@ async def _execute_pipeline_mode(
             )
         try:
             config, _meta = store.load(pipeline_name)
+            pipeline_name_override = _meta.name
         except FileNotFoundError:
             return ResponseFormatter.error(
                 f"Saved pipeline '{pipeline_name}' not found",
@@ -112,34 +115,29 @@ async def _execute_pipeline_mode(
                 tool_name="unified_search",
             )
 
-        # Template mode
-        if "template" in raw:
-            template_name = raw["template"]
-            template_params = raw.get("params", {})
-            try:
-                config = build_pipeline_from_template(template_name, template_params)
-            except ValueError as exc:
-                return ResponseFormatter.error(
-                    f"Template error: {exc}",
-                    suggestion="Check template name and required params",
-                    tool_name="unified_search",
+        result = parse_and_validate_config(raw)
+        if not result.valid:
+            error_msg = "Pipeline config error:\n" + "\n".join(f"  ❌ {e}" for e in result.errors)
+            if result.fixes:
+                error_msg += "\n\nAuto-fixes attempted:\n" + "\n".join(
+                    f"  🔧 {f.field}: {f.reason}" for f in result.fixes
                 )
-        else:
-            # Custom pipeline — use validator for auto-fix
-            result = parse_and_validate_config(raw)
-            if not result.valid:
-                error_msg = "Pipeline config error:\n" + "\n".join(f"  ❌ {e}" for e in result.errors)
-                if result.fixes:
-                    error_msg += "\n\nAuto-fixes attempted:\n" + "\n".join(
-                        f"  🔧 {f.field}: {f.reason}" for f in result.fixes
-                    )
-                return ResponseFormatter.error(error_msg, tool_name="unified_search")
-            config = result.config  # type: ignore[assignment]
-            if config is None:
-                return ResponseFormatter.error(
-                    "Failed to parse pipeline config",
-                    tool_name="unified_search",
-                )
+            return ResponseFormatter.error(error_msg, tool_name="unified_search")
+        config = result.config  # type: ignore[assignment]
+        if config is None:
+            return ResponseFormatter.error(
+                "Failed to parse pipeline config",
+                tool_name="unified_search",
+            )
+
+    try:
+        config = materialize_pipeline_config(config)
+    except ValueError as exc:
+        return ResponseFormatter.error(
+            f"Template error: {exc}",
+            suggestion="Check template name and required params",
+            tool_name="unified_search",
+        )
 
     # Override output format if specified at top level
     if output_format:
@@ -165,7 +163,7 @@ async def _execute_pipeline_mode(
     report = generate_pipeline_report(articles, step_results, config)
 
     # ── Auto-save report to workspace/global ─────────────────────────────
-    _auto_save_pipeline_report(config, articles, report)
+    _auto_save_pipeline_report(config, articles, report, pipeline_name_override=pipeline_name_override)
 
     return report
 
@@ -174,6 +172,7 @@ def _auto_save_pipeline_report(
     config: Any,
     articles: list,
     report: str,
+    pipeline_name_override: str | None = None,
 ) -> None:
     """Best-effort auto-save of pipeline report and run record."""
     from pubmed_search.presentation.mcp_server.tools.pipeline_tools import get_pipeline_store
@@ -189,7 +188,7 @@ def _auto_save_pipeline_report(
 
         now = datetime.now(timezone.utc)
         run_id = now.strftime("%Y%m%d_%H%M%S")
-        pipeline_name = config.name or config.template or "unnamed"
+        pipeline_name = pipeline_name_override or config.name or config.template or "unnamed"
         pipeline_name = pipeline_name.strip().lower().replace(" ", "_")
 
         # Save report markdown

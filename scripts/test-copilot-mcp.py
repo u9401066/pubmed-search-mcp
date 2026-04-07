@@ -8,8 +8,8 @@ This script helps debug MCP integration by:
 3. Validating the full handshake process
 
 Usage:
-    python scripts/test-copilot-mcp.py [URL]
-    python scripts/test-copilot-mcp.py https://kmuh-ai.ngrok.dev/mcp
+    uv run python scripts/test-copilot-mcp.py [URL]
+    uv run python scripts/test-copilot-mcp.py https://kmuh-ai.ngrok.dev/mcp
 """
 
 import json

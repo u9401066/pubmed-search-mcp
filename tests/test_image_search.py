@@ -508,6 +508,53 @@ class TestImageSearchService:
         assert len(result.errors) == 1
         assert "Connection failed" in result.errors[0]
 
+    async def test_search_uses_injected_source_adapters(self):
+        from pubmed_search.application.image_search import ImageSearchService
+
+        class StubAdapter:
+            def __init__(self, images, total):
+                self.search = AsyncMock(return_value=(images, total))
+
+        images = [
+            ImageResult(image_url="https://example.org/img.png", pmid="123", source_id="img-1"),
+        ]
+        adapter = StubAdapter(images, 1)
+        service = ImageSearchService(adapters={"openi": adapter})
+
+        result = await service.search("test")
+
+        adapter.search.assert_awaited_once()
+        assert result.images == images
+        assert result.total_count == 1
+        assert result.sources_used == ["openi"]
+
+    async def test_search_preserves_partial_failures_from_adapters(self):
+        from pubmed_search.application.image_search import ImageSearchService
+
+        class StubAdapter:
+            def __init__(self, *, result=None, error=None):
+                self.search = AsyncMock()
+                if error is not None:
+                    self.search.side_effect = error
+                else:
+                    self.search.return_value = result
+
+        ok_images = [
+            ImageResult(image_url="https://example.org/ok.png", pmid="123", source_id="ok-1"),
+        ]
+        adapters = {
+            "openi": StubAdapter(result=(ok_images, 1)),
+            "europe_pmc": StubAdapter(error=RuntimeError("adapter offline")),
+        }
+        service = ImageSearchService(adapters=adapters)
+
+        result = await service.search("test", sources=["openi", "europe_pmc"])
+
+        assert result.total_count == 1
+        assert len(result.images) == 1
+        assert result.sources_used == ["openi"]
+        assert any("europe_pmc" in error and "adapter offline" in error for error in result.errors)
+
     async def test_resolve_sources_default(self):
         from pubmed_search.application.image_search import ImageSearchService
 

@@ -519,6 +519,7 @@ unified_search(query="<combined_boolean_query>")
 
 | Tool | Purpose |
 |------|---------|
+| `read_session` | Read session data through a single facade. |
 | `get_session_pmids` | 取得 session 中暫存的 PMID 列表。 |
 | `get_cached_article` | 從 session 快取取得文章詳情。 |
 | `get_session_summary` | 取得當前 session 的摘要資訊。 |
@@ -582,6 +583,7 @@ unified_search(query="<combined_boolean_query>")
 
 | Tool | Purpose |
 |------|---------|
+| `manage_pipeline` | Manage saved pipelines through a single facade. |
 | `save_pipeline` | Save a pipeline configuration for later reuse. |
 | `list_pipelines` | List all saved pipeline configurations. |
 | `load_pipeline` | Load a pipeline configuration for review or editing. |

@@ -11,7 +11,7 @@ info:
     Recommended runtime modes:
     - Full schema mode: run_server.py --transport streamable-http --copilot-compatible
     - Simplified mode: run_copilot.py
-  version: 0.3.6
+  version: 0.5.0
   contact:
     name: PubMed Search MCP
     url: https://github.com/u9401066/pubmed-search-mcp
@@ -33,7 +33,7 @@ paths:
 
         The tool surface is discovered dynamically by the MCP client at runtime.
         Depending on how the server is started, this endpoint may expose either:
-        - the full 40-tool MCP surface, or
+        - the full primary MCP surface (currently 42 tools in v0.5.0), or
         - the simplified Copilot-compatible tool surface.
       x-ms-agentic-protocol: mcp-streamable-1.0
       operationId: InvokeMCP

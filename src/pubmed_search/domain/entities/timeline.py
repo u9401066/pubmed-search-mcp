@@ -115,6 +115,7 @@ class LandmarkScore:
     milestone_confidence: float = 0.0
     evidence_quality: float = 0.0
     citation_velocity: float = 0.0
+    diagnostics: dict[str, Any] = field(default_factory=dict)
 
     @property
     def tier(self) -> str:
@@ -140,7 +141,7 @@ class LandmarkScore:
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to JSON-serializable dict."""
-        return {
+        result = {
             "overall": round(self.overall, 3),
             "tier": self.tier,
             "citation_impact": round(self.citation_impact, 3),
@@ -149,6 +150,9 @@ class LandmarkScore:
             "evidence_quality": round(self.evidence_quality, 3),
             "citation_velocity": round(self.citation_velocity, 3),
         }
+        if self.diagnostics:
+            result["diagnostics"] = self.diagnostics
+        return result
 
 
 @dataclass(frozen=True)
@@ -224,6 +228,7 @@ class TimelineEvent:
             "confidence_score": self.confidence_score,
             "landmark_score": self.landmark_score.to_dict() if self.landmark_score else None,
             "date_label": self.date_label,
+            "metadata": self.metadata,
         }
 
 
@@ -350,6 +355,7 @@ class ResearchTimeline:
             "milestone_summary": self.milestone_summary,
             "events": [e.to_dict() for e in self.events],
             "periods": [p.to_dict() for p in self.periods],
+            "metadata": self.metadata,
             "created_at": self.created_at.isoformat(),
         }
 

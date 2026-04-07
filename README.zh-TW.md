@@ -11,7 +11,10 @@
 基於 Domain-Driven Design (DDD) 架構的 MCP 伺服器，作為 AI Agent 的智慧研究助理，提供任務導向的文獻搜尋與分析能力。
 
 **✨ 包含內容：**
-- 🔧 **40 個 MCP 工具** - 精簡的 PubMed、Europe PMC、CORE、NCBI 資料庫存取，及**研究時間軸 / 脈絡圖**功能
+
+- 🔧 **42 個 MCP 工具** - 精簡的 PubMed、Europe PMC、CORE、NCBI 資料庫存取，及**研究時間軸 / 脈絡圖**功能
+- 🖼️ **OA 圖表擷取** - 從 PMC Open Access 論文直接抽出 figure caption、image URL 與 PDF 連結
+- 📘 **Docs Site** - 用網站方式整合 overview、架構、quick reference、pipeline 教學、source contract、troubleshooting 與 deployment，入口在 [docs/index.html](docs/index.html)
 - 📚 **24 個 Claude Skills** - AI Agent 可直接使用的工作流程指南（Claude Code 專屬）
 - 📖 **Copilot 整合指南** - VS Code GitHub Copilot 使用說明
 
@@ -25,12 +28,14 @@
 
 - **Python 3.10+** — [下載](https://www.python.org/downloads/)
 - **uv**（推薦）— [安裝 uv](https://docs.astral.sh/uv/getting-started/installation/)
+
   ```bash
   # macOS / Linux
   curl -LsSf https://astral.sh/uv/install.sh | sh
   # Windows
   powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
   ```
+
 - **NCBI Email** — [NCBI API 政策](https://www.ncbi.nlm.nih.gov/books/NBK25497/#chapter2.Usage_Guidelines_and_Requiremen)要求，任何有效的電子郵件地址
 - **NCBI API Key**（*選填*）— [在此取得](https://www.ncbi.nlm.nih.gov/account/settings/)，可提高 API 限額（10 req/s vs 3 req/s）
 
@@ -87,6 +92,7 @@ pip install pubmed-search-mcp
 ```
 
 > **設定檔位置**：
+>
 > - macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
 > - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
 > - Linux: `~/.config/Claude/claude_desktop_config.json`
@@ -206,7 +212,6 @@ NCBI_EMAIL=your@email.com uvx pubmed-search-mcp
 ```
 
 > **注意**: `NCBI_EMAIL` 是 NCBI API 政策要求的必填項。可選擇性設定 `NCBI_API_KEY` 以獲得更高的 API 限額（10 req/s vs 3 req/s）。
-
 > 📖 **完整整合指南**：詳見 [docs/INTEGRATIONS.md](docs/INTEGRATIONS.md)，包含所有環境變數、Copilot Studio 設定、Docker 部署、代理設定與疑難排解。
 
 ---
@@ -220,13 +225,13 @@ NCBI_EMAIL=your@email.com uvx pubmed-search-mcp
 其他工具給你原始 API 存取。我們給你**詞彙翻譯 + 智慧路由 + 研究分析**：
 
 | 挑戰 | 我們的解決方案 |
-|------|---------------|
+| ---- | -------------- |
 | Agent 用 ICD 碼，PubMed 要 MeSH | ✅ **自動 ICD→MeSH 轉換** |
 | 多資料庫，不同 API | ✅ **Unified Search** 單一入口 |
 | 臨床問題需結構化搜尋 | ✅ **PICO 工具組** (`parse_pico` + `generate_search_queries`，由 Agent 驅動) |
 | 醫學術語打錯字 | ✅ **ESpell 自動校正** |
 | 單一來源結果太多 | ✅ **平行多源搜尋** + 去重 |
-| 需要追蹤研究演進脈絡 | ✅ **研究時間軸 & 脈絡樹** + 重要文獻偵測 + 子議題分支 |
+| 需要追蹤研究演進脈絡 | ✅ **研究時間軸 & 脈絡樹** + 重要文獻偵測 + diagnostics + 子議題分支 |
 | 引用上下文不清楚 | ✅ **引用樹** 前向/後向/網路分析 |
 | 無法取得全文 | ✅ **多源全文取得** (Europe PMC, CORE, CrossRef) |
 | 基因/藥物資訊散布不同資料庫 | ✅ **NCBI 延伸** (Gene, PubChem, ClinVar) |
@@ -238,7 +243,7 @@ NCBI_EMAIL=your@email.com uvx pubmed-search-mcp
 1. **詞彙翻譯層** - Agent 自然語言表達，我們翻譯成各資料庫術語 (MeSH, ICD-10, text-mined entities)
 2. **統一搜尋閘道** - 一個 `unified_search()` 呼叫，自動分流到 PubMed/Europe PMC/CORE/OpenAlex
 3. **PICO 工具組** - `parse_pico()` 將臨床問題分解為 P/I/C/O 元素；Agent 再對每個元素呼叫 `generate_search_queries()` 並組合 Boolean 查詢
-4. **研究時間軸 & 脈絡樹** - 自動偵測里程碑、多訊號重要文獻評分（引用影響力+多源交叉驗證+引用速度）、按子議題分支可視化研究演進
+4. **研究時間軸 & 脈絡樹** - 以 policy-driven 規則自動偵測里程碑，結合多訊號重要文獻評分（引用影響力+多源交叉驗證+引用速度），並輸出 timeline diagnostics 與子議題分支視覺化
 5. **引用網路分析** - 從單篇論文建構多層引用樹，繪製完整研究版圖
 6. **完整研究生命週期** - 從搜尋 → 探索 → 全文 → 分析 → 匯出，一站完成
 7. **Agent-First 設計** - 輸出優化機器決策，非人類閱讀
@@ -252,7 +257,7 @@ NCBI_EMAIL=your@email.com uvx pubmed-search-mcp
 ### 核心資料來源
 
 | 來源 | 收錄量 | 詞彙系統 | 自動轉換 | 說明 |
-|------|--------|----------|----------|------|
+| ---- | ------ | -------- | -------- | ---- |
 | **NCBI PubMed** | 36M+ 文章 | MeSH | ✅ 原生支援 | 主要生醫文獻 |
 | **NCBI Entrez** | 多資料庫 | MeSH | ✅ 原生支援 | Gene, PubChem, ClinVar |
 | **Europe PMC** | 33M+ | Text-mined | ✅ 擷取 | 全文 XML 存取 |
@@ -262,7 +267,6 @@ NCBI_EMAIL=your@email.com uvx pubmed-search-mcp
 | **NIH iCite** | PubMed | N/A | N/A | 引用指標 (RCR) |
 
 > **🔑 說明**: ✅ = 完整詞彙支援 | ➡️ = 查詢直接傳遞（無控制詞彙）
->
 > **ICD 碼**：自動偵測並在 PubMed 搜尋前轉換為 MeSH
 
 ### 環境變數
@@ -285,7 +289,7 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS 代理
 
 ## 🔄 運作原理：中介層架構
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                              AI AGENT                                        │
 │                                                                              │
@@ -330,7 +334,7 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS 代理
 
 ### 🔍 搜尋與查詢智能
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────┐
 │                        搜尋入口                                   │
 ├─────────────────────────────────────────────────────────────────┤
@@ -356,7 +360,7 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS 代理
 
 ### 🔬 探索工具（找到關鍵論文後）
 
-```
+```text
                         找到重要論文 (PMID)
                                    │
            ┌───────────────────────┼───────────────────────┐
@@ -378,18 +382,28 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS 代理
 
 ```
 
-### 📚 全文與匯出
+### 📚 全文、圖表擷取與匯出
 
 | 類別 | 工具 |
-|------|------|
+| ---- | ---- |
 | **全文** | `get_fulltext` → 多源取得（Europe PMC、CORE、PubMed、CrossRef） |
+| **圖表擷取** | `get_article_figures` → 從 PMC Open Access 文章抽出圖號、caption、image URL 與 PDF 連結 |
+| **圖表感知全文** | `get_fulltext(include_figures=True)` → 在全文回應中直接附帶圖表 metadata |
 | **文字探勘** | `get_text_mined_terms` → 擷取基因、疾病、化學物質 |
 | **匯出** | `prepare_export` → RIS、BibTeX、CSV、MEDLINE、JSON |
+
+### 🖼️ OA 論文圖表優先探索
+
+當 Agent 需要的是證據圖像，而不只是文章全文時，建議優先走 PMC Open Access 圖表工作流：
+
+- `get_article_figures(identifier="PMC12086443")` → 回傳圖號、caption、image URL，以及 PDF/文章連結
+- `get_fulltext(pmcid="PMC7096777", include_figures=True)` → 結構化全文連同 figures 一起回傳
+- 圖表輸出會保留文章脈絡，方便 Agent 把 figure 與文中提及段落綁在一起，而不是只看到孤立圖片
 
 ### 🧬 NCBI 延伸資料庫
 
 | 工具 | 說明 |
-|------|------|
+| ---- | ---- |
 | `search_gene` | 搜尋 NCBI Gene 資料庫 |
 | `get_gene_details` | 依 NCBI Gene ID 取得基因詳情 |
 | `get_gene_literature` | 取得與基因相關的 PubMed 文章 |
@@ -401,15 +415,15 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS 代理
 ### 🕰️ 研究時間軸 & 脈絡樹
 
 | 工具 | 說明 |
-|------|------|
-| `build_research_timeline` | 建構時間軸/脈絡樹，支援重要文獻偵測。格式：text, tree, mermaid, mindmap, json |
-| `analyze_timeline_milestones` | 分析里程碑分佈 |
-| `compare_timelines` | 比較多個主題的時間軸 |
+| ---- | ---- |
+| `build_research_timeline` | 建構時間軸/脈絡樹，支援重要文獻偵測與格式化 diagnostics。格式：text, tree, mermaid, mindmap, json |
+| `analyze_timeline_milestones` | 分析里程碑分佈，並回傳 diagnostics payload |
+| `compare_timelines` | 比較多個主題的時間軸，附每個主題的 diagnostics |
 
 ### 🏥 機構訂閱與 ICD 轉換
 
 | 工具 | 說明 |
-|------|------|
+| ---- | ---- |
 | `configure_institutional_access` | 設定機構的 Link Resolver |
 | `get_institutional_link` | 產生 OpenURL 存取連結 |
 | `list_resolver_presets` | 列出 Resolver 預設值 |
@@ -420,33 +434,41 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS 代理
 ### 💾 Session 管理
 
 | 工具 | 說明 |
-|------|------|
+| ---- | ---- |
 | `get_session_pmids` | 取得暫存的 PMID 列表 |
-
 | `get_cached_article` | 從 Session 快取取得文章（不消耗 API） |
 | `get_session_summary` | Session 狀態概覽 |
 
 若 MCP client 支援直接讀取 resources，也可使用以下動態 session resources：
+
 - `session://context` — 目前 session 狀態
 - `session://last-search` — 最近一次搜尋 metadata
 - `session://last-search/pmids` — 最近一次 PMID 清單與 CSV 形式
 - `session://last-search/results` — 最近一次搜尋對應的快取文章內容
 
-### � Pipeline 管理
+### 🔁 Pipeline 管理
+
+`manage_pipeline` 是 pipeline CRUD、history 與 scheduling 的主要 façade；其他 pipeline tools 仍保留作為相容 wrapper。
 
 | 工具 | 說明 |
-|------|------|
+| ---- | ---- |
+| `manage_pipeline` | 主要 façade，統一處理 save、list、load、delete、history、schedule |
 | `save_pipeline` | 保存 Pipeline 配置供後續重複使用（YAML/JSON，自動驗證） |
 | `list_pipelines` | 列出已保存的 Pipeline（可按標籤/範圍過濾） |
 | `load_pipeline` | 從名稱或檔案載入 Pipeline 以檢視/編輯 |
 | `delete_pipeline` | 刪除 Pipeline 及其執行歷史 |
 | `get_pipeline_history` | 查看執行歷史與文章 diff 分析 |
-| `schedule_pipeline` | 排程定期執行（Phase 4） |
+| `schedule_pipeline` | 建立、更新或移除定期執行排程 |
 
-### �👁️ 視覺搜尋與圖片搜尋
+逐步教學：
+
+- 繁體中文: [docs/PIPELINE_MODE_TUTORIAL.md](docs/PIPELINE_MODE_TUTORIAL.md)
+- English: [docs/PIPELINE_MODE_TUTORIAL.en.md](docs/PIPELINE_MODE_TUTORIAL.en.md)
+
+### 👁️ 視覺搜尋與圖片搜尋
 
 | 工具 | 說明 |
-|------|------|
+| ---- | ---- |
 | `analyze_figure_for_search` | 分析科學圖片以進行搜尋 |
 | `search_biomedical_images` | 跨來源生物醫學圖片搜尋（X光、顯微鏡、照片、圖表） |
 
@@ -476,10 +498,26 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS 代理
 `unified_search` 現在可直接在同一次搜尋回應中附帶 PMID-based 的研究脈絡圖預覽：
 
 | 選項旗標 | 說明 |
-|----------|------|
+| -------- | ---- |
 | `context_graph` | Markdown 輸出附帶 Research Context Graph；JSON 輸出附帶 `research_context` 欄位 |
 
 這適合 Agent 在不額外呼叫 `build_research_timeline` 的情況下，先快速掌握主題分支。
+
+### 📊 Count-First Orientation
+
+`unified_search` 現在也支援把原本就有的來源覆蓋資訊前移，並加上後續工具建議，讓 Agent 先做路由決策，再深入讀排序後的文章：
+
+| 選項旗標 | 說明 |
+| -------- | ---- |
+| `counts_first` | 在回應前段加入 source-count 表格、coverage 摘要，以及 next-tool 建議 |
+
+範例：
+
+```python
+unified_search(query="remimazolam ICU sedation", options="counts_first")
+```
+
+這個模式特別適合先判斷要不要擴大某個來源、讀 lead PMID、抓全文/圖表，或直接轉進 timeline 探索。
 
 ### ⏱️ MCP 進度回報
 
@@ -515,7 +553,7 @@ unified_search(query="remimazolam 在 ICU 鎮靜比 propofol 好嗎？")
 
 **Agent 工作流程** — PICO 拆解 + MeSH 擴展（臨床問題建議使用）：
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  「remimazolam 在 ICU 鎮靜比 propofol 好嗎？」                            │
 └─────────────────────────────────────────┬───────────────────────────────┘
@@ -631,8 +669,9 @@ unified_search("remimazolam ICU sedation", options="context_graph")
 ### 7️⃣ Pipeline（可重複使用的搜尋計畫）
 
 ```python
-# 保存模板式 pipeline
-save_pipeline(
+# 透過主要 façade 保存模板式 pipeline
+manage_pipeline(
+  action="save",
     name="icu_sedation_weekly",
     config="template: pico\nparams:\n  P: ICU patients\n  I: remimazolam\n  C: propofol\n  O: delirium",
     tags="anesthesia,sedation",
@@ -640,7 +679,8 @@ save_pipeline(
 )
 
 # 保存自訂 DAG pipeline
-save_pipeline(
+manage_pipeline(
+  action="save",
     name="brca1_comprehensive",
     config="""
 steps:
@@ -671,16 +711,16 @@ output:
 unified_search(pipeline="saved:icu_sedation_weekly")
 
 # 管理
-list_pipelines(tag="anesthesia")
-load_pipeline(source="brca1_comprehensive")  # 檢視 YAML
-get_pipeline_history(name="icu_sedation_weekly")  # 查看過去執行
+manage_pipeline(action="list", tag="anesthesia")
+manage_pipeline(action="load", source="brca1_comprehensive")  # 檢視 YAML
+manage_pipeline(action="history", name="icu_sedation_weekly")  # 查看過去執行
 ```
 
 ---
 
 ## 🔍 搜尋模式比較
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                        搜尋模式決策樹                                     │
 ├─────────────────────────────────────────────────────────────────────────┤
@@ -707,7 +747,7 @@ get_pipeline_history(name="icu_sedation_weekly")  # 查看過去執行
 ```
 
 | 模式 | 入口 | 適用情境 | 自動功能 |
-|------|------|----------|----------|
+| ---- | ---- | -------- | -------- |
 | **快速** | `unified_search()` | 快速主題搜尋 | ICD→MeSH, 多源, 去重 |
 | **PICO** | `parse_pico()` → Agent | 臨床問題 | Agent: 拆解 → MeSH 擴展 → Boolean |
 | **系統** | `generate_search_queries()` | 文獻回顧 | MeSH 擴展, 同義詞 |
@@ -722,7 +762,7 @@ get_pipeline_history(name="icu_sedation_weekly")  # 查看過去執行
 ### 📚 使用 Skills (10) — 給使用此 MCP Server 的 AI Agent
 
 | Skill | 說明 |
-|-------|------|
+| ----- | ---- |
 | `pubmed-quick-search` | 基本搜尋含篩選 |
 | `pubmed-systematic-search` | MeSH 擴展，全面性 |
 | `pubmed-pico-search` | 臨床問題分解 |
@@ -737,7 +777,7 @@ get_pipeline_history(name="icu_sedation_weekly")  # 查看過去執行
 ### 🔧 開發 Skills (13) — 給專案貢獻者
 
 | Skill | 說明 |
-|-------|------|
+| ----- | ---- |
 | `changelog-updater` | 自動更新 CHANGELOG.md |
 | `code-refactor` | DDD 架構重構 |
 | `code-reviewer` | 程式碼品質與安全審查 |
@@ -762,7 +802,7 @@ get_pipeline_history(name="icu_sedation_weekly")  # 查看過去執行
 
 本專案採用 **Domain-Driven Design (DDD)** 架構，以文獻研究領域知識為核心模型。
 
-```
+```text
 src/pubmed_search/
 ├── domain/                     # 核心業務邏輯
 │   └── entities/article.py     # UnifiedArticle, Author 等
@@ -786,12 +826,12 @@ src/pubmed_search/
 ### 內部機制（對 Agent 透明）
 
 | 機制 | 說明 |
-|------|------|
+| ---- | ---- |
 | **Session** | 自動建立、自動切換 |
 | **Cache** | 搜尋結果自動快取，避免重複 API 呼叫 |
 | **Rate Limit** | 自動遵守 NCBI API 限制 (0.34s/0.1s) |
 | **MeSH Lookup** | `generate_search_queries()` 自動查詢 NCBI MeSH 資料庫 |
-| **ESpell** | 自動拼字校正（`remifentanyl` → `remifentanil`）|
+| **ESpell** | 自動拼字校正（`remifentanyl` → `remifentanil`） |
 | **Query Analysis** | 每個建議查詢都顯示 PubMed 實際如何詮釋 |
 
 ### 詞彙轉換層（核心功能）
@@ -801,7 +841,7 @@ src/pubmed_search/
 不同資料來源使用不同的控制詞彙系統。本伺服器提供自動轉換：
 
 | API / 資料庫 | 詞彙系統 | 自動轉換 |
-|--------------|----------|----------|
+| ------------ | -------- | -------- |
 | **PubMed / NCBI** | MeSH (醫學主題詞表) | ✅ 完整支援 `expand_with_mesh()` |
 | **ICD 碼** | ICD-10-CM / ICD-9-CM | ✅ 自動偵測並轉換為 MeSH |
 | **Europe PMC** | 文字探勘實體 (Gene, Disease, Chemical) | ✅ `get_text_mined_terms()` 擷取 |
@@ -813,6 +853,7 @@ src/pubmed_search/
 #### 自動 ICD → MeSH 轉換
 
 當搜尋包含 ICD 碼時（例如 `I10` 代表高血壓），`unified_search()` 會自動：
+
 1. 透過 `detect_and_expand_icd_codes()` 偵測 ICD-10/ICD-9 模式
 2. 從內部映射表查詢對應 MeSH 詞彙 (`ICD10_TO_MESH`, `ICD9_TO_MESH`)
 3. 以 MeSH 同義詞擴展查詢，提供更完整的搜尋結果
@@ -873,7 +914,7 @@ unified_search(query="I10 treatment outcomes")
 
 為生產環境啟用 HTTPS 安全通訊。
 
-### 快速開始
+### HTTPS 快速開始
 
 ```bash
 # Step 1: 生成 SSL 憑證
@@ -889,8 +930,8 @@ curl -k https://localhost/
 ### HTTPS 端點
 
 | 服務 | URL | 說明 |
-|------|-----|------|
-| MCP SSE | `https://localhost/sse` | SSE 連線（MCP）|
+| ---- | --- | ---- |
+| MCP SSE | `https://localhost/sse` | SSE 連線（MCP） |
 | Messages | `https://localhost/messages` | MCP POST |
 | Health | `https://localhost/health` | 健康檢查 |
 
@@ -912,14 +953,14 @@ curl -k https://localhost/
 
 將 PubMed Search MCP 與 **Microsoft 365 Copilot**（Word, Teams, Outlook）整合！
 
-### 快速開始
+### Copilot Studio 快速開始
 
 ```bash
 # 使用 Streamable HTTP transport 啟動（Copilot Studio 要求）
-python run_server.py --transport streamable-http --port 8765
+uv run python run_server.py --transport streamable-http --port 8765
 
 # 若要保留完整工具 schema，同時開啟 Copilot 相容 HTTP 行為
-python run_server.py --transport streamable-http --copilot-compatible --port 8765
+uv run python run_server.py --transport streamable-http --copilot-compatible --port 8765
 
 # 或使用專用腳本搭配 ngrok
 ./scripts/start-copilot-studio.sh --with-ngrok
@@ -928,10 +969,10 @@ python run_server.py --transport streamable-http --copilot-compatible --port 876
 ### Copilot Studio 設定
 
 | 欄位 | 值 |
-|------|---|
+| ---- | -- |
 | **Server name** | `PubMed Search` |
 | **Server URL** | `https://your-server.com/mcp` |
-| **Authentication** | `None`（或 API Key）|
+| **Authentication** | `None`（或 API Key） |
 
 > 📖 **完整文件**: [copilot-studio/README.md](copilot-studio/README.md)
 >
@@ -942,7 +983,10 @@ python run_server.py --transport streamable-http --copilot-compatible --port 876
 ---
 
 > 📖 **更多文件**:
+>
 > - 架構 → [ARCHITECTURE.md](ARCHITECTURE.md)
+> - Pipeline Mode 教學（繁中） → [docs/PIPELINE_MODE_TUTORIAL.md](docs/PIPELINE_MODE_TUTORIAL.md)
+> - Pipeline Mode 教學（English） → [docs/PIPELINE_MODE_TUTORIAL.en.md](docs/PIPELINE_MODE_TUTORIAL.en.md)
 > - 部署指南 → [DEPLOYMENT.md](DEPLOYMENT.md)
 > - Copilot Studio → [copilot-studio/README.md](copilot-studio/README.md)
 
@@ -953,7 +997,7 @@ python run_server.py --transport streamable-http --copilot-compatible --port 876
 ### 安全功能
 
 | 層級 | 功能 | 說明 |
-|------|------|------|
+| ---- | ---- | ---- |
 | **HTTPS** | TLS 1.2/1.3 加密 | 所有流量透過 Nginx 加密 |
 | **Rate Limiting** | 30 req/s | Nginx 層級保護 |
 | **Security Headers** | XSS/CSRF 防護 | X-Frame-Options, X-Content-Type-Options |
@@ -970,7 +1014,7 @@ python run_server.py --transport streamable-http --copilot-compatible --port 876
 匯出搜尋結果為各大參考文獻管理軟體相容的格式：
 
 | 格式 | 相容軟體 | 用途 |
-|------|----------|------|
+| ---- | -------- | ---- |
 | **RIS** | EndNote, Zotero, Mendeley | 通用匯入 |
 | **BibTeX** | LaTeX, Overleaf, JabRef | 學術寫作 |
 | **CSV** | Excel, Google Sheets | 資料分析 |
@@ -978,6 +1022,7 @@ python run_server.py --transport streamable-http --copilot-compatible --port 876
 | **JSON** | 程式存取 | 自訂處理 |
 
 ### 匯出欄位
+
 - **核心**: PMID, 標題, 作者, 期刊, 年份, 卷期頁碼
 - **識別碼**: DOI, PMC ID, ISSN
 - **內容**: 摘要（HTML 標籤已清除）
@@ -985,6 +1030,7 @@ python run_server.py --transport streamable-http --copilot-compatible --port 876
 - **存取**: DOI URL, PMC URL, 全文可用性
 
 ### 特殊字元處理
+
 - BibTeX 匯出使用 **pylatexenc** 進行正確的 LaTeX 編碼
 - 北歐字元 (ø, æ, å)、變音符號 (ü, ö, ä) 和重音符號都能正確轉換
 - 範例: `Søren Hansen` → `S{\o}ren Hansen`

@@ -35,19 +35,19 @@ __all__ = [
     "OpenAccessLink",
     "CitationMetrics",
     "SourceMetadata",
-    # Figure entities (v0.4.5)
+    # Figure entities
     "ArticleFigure",
     "ArticleFiguresResult",
-    # Image entities (v0.3.1)
+    # Image entities
     "ImageResult",
     "ImageSource",
-    # Timeline entities (v0.2.8)
+    # Timeline entities
     "TimelineEvent",
     "ResearchTimeline",
     "TimelinePeriod",
     "MilestoneType",
     "EvidenceLevel",
-    # Research Tree entities (v0.4.3)
+    # Research Tree entities
     "ResearchBranch",
     "ResearchTree",
 ]

@@ -5,14 +5,8 @@
 # Detects research intent, manages workflow tracker, outputs instructions.
 # Output: JSON with "instructions" field for AI context injection.
 #
-# WORKFLOW STEPS:
-#   1. Query Analysis      -> analyze_search_query / parse_pico
-#   2. Strategy Formation  -> generate_search_queries
-#   3. Initial Search      -> unified_search (no pipeline)
-#   4. Pipeline Search     -> unified_search(pipeline='template: ...')
-#   5. Result Evaluation   -> get_citation_metrics / get_session_summary
-#   6. Deep Exploration    -> find_related / citing / fulltext / citation_tree
-#   7. Export & Synthesis   -> prepare_export / build_research_timeline
+# WORKFLOW INSTRUCTIONS ARE READ FROM THE SHARED POLICY FILE:
+#   .github/hooks/copilot-tool-policy.json
 # =============================================================================
 set -e
 
@@ -28,6 +22,7 @@ if [ -z "$PROMPT" ]; then exit 0; fi
 STATE_DIR=".github/hooks/_state"
 mkdir -p "$STATE_DIR"
 TRACKER_FILE="$STATE_DIR/workflow_tracker.json"
+POLICY_FILE=".github/hooks/copilot-tool-policy.json"
 
 # --- Intent Detection ---
 INTENT="unknown"
@@ -51,9 +46,10 @@ IS_RESEARCH=false
 if [ "$INTENT" != "unknown" ]; then IS_RESEARCH=true; fi
 
 # Create tracker if research detected and no existing tracker
-if $IS_RESEARCH && [ ! -f "$TRACKER_FILE" ]; then
+if $IS_RESEARCH && [ ! -f "$TRACKER_FILE" ] && [ -f "$POLICY_FILE" ]; then
     TOPIC=$(echo "$PROMPT" | head -c 120 | tr -cd '[:print:]')
     jq -n \
+        --slurpfile policy "$POLICY_FILE" \
         --arg topic "$TOPIC" \
         --arg intent "$INTENT" \
         --arg template "$TEMPLATE" \
@@ -61,47 +57,35 @@ if $IS_RESEARCH && [ ! -f "$TRACKER_FILE" ]; then
         '{
             topic: $topic, intent: $intent,
             template: $template, created_at: $created_at,
-            steps: {
-                query_analysis: "not-started",
-                strategy_formation: "not-started",
-                initial_search: "not-started",
-                pipeline_search: "not-started",
-                result_evaluation: "not-started",
-                deep_exploration: "not-started",
-                export_synthesis: "not-started"
-            }
-        }' > "$TRACKER_FILE" 2>/dev/null
+            steps: (($policy[0].workflowSteps // {}) | to_entries | map({(.key): "not-started"}) | add)
+        }' > "$TRACKER_FILE" 2>/dev/null || true
 fi
 
 # --- Output Instructions ---
-if [ -f "$TRACKER_FILE" ]; then
+if [ -f "$TRACKER_FILE" ] && [ -f "$POLICY_FILE" ]; then
     TRACKER=$(cat "$TRACKER_FILE" 2>/dev/null)
     if [ -n "$TRACKER" ]; then
         T_TOPIC=$(echo "$TRACKER" | jq -r '.topic // "unknown"')
         T_INTENT=$(echo "$TRACKER" | jq -r '.intent // "unknown"')
         T_TEMPLATE=$(echo "$TRACKER" | jq -r '.template // "comprehensive"')
 
-        STEP_KEYS=("query_analysis" "strategy_formation" "initial_search" "pipeline_search" "result_evaluation" "deep_exploration" "export_synthesis")
-        STEP_LABELS=("Query Analysis" "Strategy Formation" "Initial Search" "Pipeline Search" "Result Evaluation" "Deep Exploration" "Export & Synthesis")
-        STEP_TOOLS=(
-            "analyze_search_query / parse_pico"
-            "generate_search_queries"
-            "unified_search (no pipeline)"
-            "unified_search(pipeline='template: ...')"
-            "get_citation_metrics / get_session_summary"
-            "find_related / citing / fulltext / citation_tree"
-            "prepare_export / build_research_timeline"
-        )
-
         COMPLETED=0
-        TOTAL=7
+        TOTAL=0
         NEXT_FOUND=false
         PROGRESS=""
 
-        for I in "${!STEP_KEYS[@]}"; do
-            KEY="${STEP_KEYS[$I]}"
-            LABEL="${STEP_LABELS[$I]}"
-            TOOL="${STEP_TOOLS[$I]}"
+        STEP_DEFS=$(jq -c '.workflowSteps | to_entries[] | {
+            key: .key,
+            label: (.value.label // .key),
+            nextInstruction: (.value.nextInstruction // "")
+        }' "$POLICY_FILE" 2>/dev/null) || STEP_DEFS=""
+
+        while IFS= read -r STEP_DEF; do
+            [ -n "$STEP_DEF" ] || continue
+            TOTAL=$((TOTAL + 1))
+            KEY=$(echo "$STEP_DEF" | jq -r '.key')
+            LABEL=$(echo "$STEP_DEF" | jq -r '.label')
+            TOOL=$(echo "$STEP_DEF" | jq -r '.nextInstruction')
             STATUS=$(echo "$TRACKER" | jq -r ".steps.${KEY} // \"not-started\"")
 
             if [ "$STATUS" = "completed" ]; then
@@ -113,7 +97,11 @@ if [ -f "$TRACKER_FILE" ]; then
             else
                 PROGRESS="${PROGRESS}[ ] ${LABEL}\n"
             fi
-        done
+        done <<< "$STEP_DEFS"
+
+        if [ "$TOTAL" -eq 0 ]; then
+            exit 0
+        fi
 
         INSTRUCTIONS="RESEARCH WORKFLOW (${COMPLETED}/${TOTAL} steps done)\n"
         INSTRUCTIONS="${INSTRUCTIONS}Topic: ${T_TOPIC}\n"

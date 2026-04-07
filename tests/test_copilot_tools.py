@@ -778,4 +778,4 @@ class TestCopilotToolCount:
             COPILOT_TOOL_COUNT,
         )
 
-        assert COPILOT_TOOL_COUNT == 12
+        assert COPILOT_TOOL_COUNT == 11

@@ -1,30 +1,33 @@
 # PubMed Search MCP - Tools Index
 
-Quick reference for all 40 available MCP tools. Auto-generated from `tool_registry.py`.
+Quick reference for all 42 available MCP tools. Auto-generated from `tool_registry.py`.
 
 ---
 
 ## 搜尋工具
-*文獻搜索入口*
+
+文獻搜索入口
 
 | Tool | Description |
-|------|-------------|
+| --- | --- |
 | `unified_search` | Unified Search - Single entry point for multi-source academic search. |
 
 ## 查詢智能
-*MeSH 擴展、PICO 解析*
+
+MeSH 擴展、PICO 解析
 
 | Tool | Description |
-|------|-------------|
+| --- | --- |
 | `parse_pico` | Parse a clinical question into PICO elements OR accept pre-parsed PICO. |
 | `generate_search_queries` | Gather search intelligence for a topic - returns RAW MATERIALS for Agent to decide. |
 | `analyze_search_query` | Analyze a search query without executing the search. |
 
 ## 文章探索
-*相關文章、引用網路*
+
+相關文章、引用網路
 
 | Tool | Description |
-|------|-------------|
+| --- | --- |
 | `fetch_article_details` | Fetch detailed information for one or more PubMed articles. |
 | `find_related_articles` | Find articles related to a given PubMed article. |
 | `find_citing_articles` | Find articles that cite a given PubMed article. |
@@ -32,18 +35,20 @@ Quick reference for all 40 available MCP tools. Auto-generated from `tool_regist
 | `get_citation_metrics` | Get citation metrics from NIH iCite for articles. |
 
 ## 全文工具
-*全文取得與文本挖掘*
+
+全文取得與文本挖掘
 
 | Tool | Description |
-|------|-------------|
+| --- | --- |
 | `get_fulltext` | Enhanced multi-source fulltext retrieval. |
 | `get_text_mined_terms` | Get text-mined annotations from Europe PMC. |
 
 ## NCBI 延伸
-*Gene, PubChem, ClinVar*
+
+Gene, PubChem, ClinVar
 
 | Tool | Description |
-|------|-------------|
+| --- | --- |
 | `search_gene` | Search NCBI Gene database for gene information. |
 | `get_gene_details` | Get detailed information about a gene by NCBI Gene ID. |
 | `get_gene_literature` | Get PubMed articles linked to a gene. |
@@ -53,80 +58,92 @@ Quick reference for all 40 available MCP tools. Auto-generated from `tool_regist
 | `search_clinvar` | Search ClinVar for clinical variants. |
 
 ## 引用網絡
-*引用樹建構與探索*
+
+引用樹建構與探索
 
 | Tool | Description |
-|------|-------------|
+| --- | --- |
 | `build_citation_tree` | Build a citation tree (network) from a single article. |
 
 ## 匯出工具
-*引用格式匯出*
+
+引用格式匯出
 
 | Tool | Description |
-|------|-------------|
+| --- | --- |
 | `prepare_export` | Export citations to reference manager formats. |
 
 ## Session 管理
-*PMID 暫存與歷史*
+
+PMID 暫存與歷史
 
 | Tool | Description |
-|------|-------------|
+| --- | --- |
+| `read_session` | Read session data through a single facade. |
 | `get_session_pmids` | 取得 session 中暫存的 PMID 列表。 |
 | `get_cached_article` | 從 session 快取取得文章詳情。 |
 | `get_session_summary` | 取得當前 session 的摘要資訊。 |
 
 ## 機構訂閱
-*OpenURL Link Resolver*
+
+OpenURL Link Resolver
 
 | Tool | Description |
-|------|-------------|
+| --- | --- |
 | `configure_institutional_access` | Configure your institution's link resolver for full-text access. |
 | `get_institutional_link` | Generate institutional access link (OpenURL) for an article. |
 | `list_resolver_presets` | List available institutional link resolver presets. |
 | `test_institutional_access` | Test your institutional link resolver configuration. |
 
 ## 視覺搜索
-*圖片分析與搜索 (實驗性)*
+
+圖片分析與搜索 (實驗性)
 
 | Tool | Description |
-|------|-------------|
+| --- | --- |
 | `analyze_figure_for_search` | Analyze a scientific figure or image for literature search. |
 
 ## ICD 轉換
-*ICD-10 與 MeSH 轉換*
+
+ICD-10 與 MeSH 轉換
 
 | Tool | Description |
-|------|-------------|
+| --- | --- |
 | `convert_icd_mesh` | Convert between ICD codes and MeSH terms (bidirectional). |
 
 ## 研究時間軸
-*研究演化追蹤與里程碑偵測*
+
+研究演化追蹤與里程碑偵測
 
 | Tool | Description |
-|------|-------------|
+| --- | --- |
 | `build_research_timeline` | Build a research timeline for a topic OR specific PMIDs. |
 | `analyze_timeline_milestones` | Analyze milestone distribution for a research topic. |
 | `compare_timelines` | Compare research timelines of multiple topics. |
 
 ## 圖表擷取
-*文章圖表與視覺資料擷取*
+
+文章圖表與視覺資料擷取
 
 | Tool | Description |
-|------|-------------|
+| --- | --- |
 | `get_article_figures` | Get structured figure metadata (label, caption, image URL) and PDF links from a PMC Open Access arti |
 
 ## 圖片搜尋
-*生物醫學圖片搜尋*
+
+生物醫學圖片搜尋
 
 | Tool | Description |
-|------|-------------|
+| --- | --- |
 | `search_biomedical_images` | Search biomedical images across Open-i and Europe PMC. |
 
 ## Pipeline 管理
-*Pipeline 持久化、載入、排程*
+
+Pipeline 持久化、載入、排程
 
 | Tool | Description |
-|------|-------------|
+| --- | --- |
+| `manage_pipeline` | Manage saved pipelines through a single facade. |
 | `save_pipeline` | Save a pipeline configuration for later reuse. |
 | `list_pipelines` | List all saved pipeline configurations. |
 | `load_pipeline` | Load a pipeline configuration for review or editing. |
@@ -138,7 +155,7 @@ Quick reference for all 40 available MCP tools. Auto-generated from `tool_regist
 
 ## 檔案結構
 
-```
+```text
 mcp_server/
 ├── server.py           # Server 創建與配置
 ├── instructions.py     # AI Agent 使用說明
@@ -166,5 +183,5 @@ mcp_server/
 
 ---
 
-*Total: 40 tools in 15 categories*
-*Last updated: 2026-04-02 (auto-generated by scripts/count_mcp_tools.py)*
+*Total: 42 tools in 15 categories*
+*Last updated: 2026-04-06 (auto-generated by scripts/count_mcp_tools.py)*
