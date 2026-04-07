@@ -33,6 +33,7 @@ try {
 
         # Clean up state (keep audit log)
         Remove-Item "$stateDir/last_search_eval.json" -Force -ErrorAction SilentlyContinue
+        Remove-Item "$stateDir/last_research_eval.json" -Force -ErrorAction SilentlyContinue
         Remove-Item "$stateDir/pending_complexity.json" -Force -ErrorAction SilentlyContinue
     }
     exit 0

@@ -1,3 +1,17 @@
+"""Build the embedded documentation site payload from repository Markdown.
+
+Design:
+    This script generates the docs/site-content/*.md files and the embedded
+    JavaScript payload consumed by the lightweight docs site. It rewrites
+    internal links so repository Markdown can be browsed through the static
+    client-side router.
+
+Maintenance:
+    Update the PAGES table when documentation surfaces are added, renamed, or
+    removed. Keep link-rewrite behavior centralized here so generated docs stay
+    consistent with README and docs navigation.
+"""
+
 from __future__ import annotations
 
 import json
@@ -13,6 +27,8 @@ PAGES = [
     ("overview", "Overview", REPO_ROOT / "README.md"),
     ("overview-zh", "Overview (zh-TW)", REPO_ROOT / "README.zh-TW.md"),
     ("architecture", "Architecture", REPO_ROOT / "ARCHITECTURE.md"),
+    ("pipeline-tutorial", "Pipeline Tutorial", DOCS_ROOT / "PIPELINE_MODE_TUTORIAL.en.md"),
+    ("pipeline-tutorial-zh", "Pipeline Tutorial (zh-TW)", DOCS_ROOT / "PIPELINE_MODE_TUTORIAL.md"),
     (
         "quick-reference",
         "Quick Reference",
@@ -64,7 +80,11 @@ def _render_page(slug: str, title: str, source_path: Path, route_map: dict[str, 
     raw = source_path.read_text(encoding="utf-8")
     rewritten = _rewrite_links(raw, source_path, route_map)
     header = (
-        f"<!-- Generated from {source_path.relative_to(REPO_ROOT).as_posix()} by scripts/build_docs_site.py -->\n\n"
+        (
+            f"<!-- Generated from {source_path.relative_to(REPO_ROOT).as_posix()} by scripts/build_docs_site.py -->\n"
+            "<!-- markdownlint-configure-file {\"MD051\": false} -->\n"
+            "<!-- markdownlint-disable MD051 -->\n\n"
+        )
         if not rewritten.startswith("<!-- Generated")
         else ""
     )

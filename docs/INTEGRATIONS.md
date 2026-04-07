@@ -66,6 +66,18 @@ The MCP endpoint will be available at `http://localhost:8765/mcp`.
 
 > **Note**: SSE transport (`--transport sse`) is deprecated in favor of Streamable HTTP per MCP spec 2025-03-26.
 
+### Auxiliary HTTP APIs
+
+Besides the primary MCP contract at `/mcp`, `run_server.py` also exposes a **public auxiliary read-only HTTP API** for cache and session access:
+
+| Endpoint | Purpose |
+| --- | --- |
+| `/api/cached_article/{pmid}` | Read one cached article, optionally fetch on miss |
+| `/api/cached_articles?pmids=...` | Read multiple cached articles |
+| `/api/session/summary` | Read current session summary |
+
+This auxiliary API is public in the sense that callers may use it directly, but it is **not** the primary MCP tool contract. For agent tool discovery and normal runtime usage, `/mcp` remains the canonical external interface.
+
 ---
 
 ## Environment Variables
@@ -77,11 +89,53 @@ The MCP endpoint will be available at `http://localhost:8765/mcp`.
 | `CORE_API_KEY` | No | [CORE API](https://core.ac.uk/services/api) key for open access search | — |
 | `CROSSREF_EMAIL` | No | Email for CrossRef polite pool (faster responses) | — |
 | `UNPAYWALL_EMAIL` | No | Email for Unpaywall API access | — |
+| `PUBMED_SEARCH_DISABLED_SOURCES` | No | Comma-separated source keys to globally disable in unified_search and cross-search | — |
+| `SCOPUS_ENABLED` | No | Enable the default-off Scopus connector (`true/false`) | `false` |
+| `SCOPUS_API_KEY` | No | Elsevier Scopus API key. Required when `SCOPUS_ENABLED=true` | — |
+| `SCOPUS_INSTTOKEN` | No | Optional Elsevier institutional token for Scopus | — |
+| `WEB_OF_SCIENCE_ENABLED` | No | Enable the default-off Web of Science connector (`true/false`) | `false` |
+| `WEB_OF_SCIENCE_API_KEY` | No | Clarivate Web of Science API key. Required when `WEB_OF_SCIENCE_ENABLED=true` | — |
 | `OPENURL_RESOLVER` | No | Institutional link resolver base URL | — |
 | `OPENURL_PRESET` | No | Preset name for institutional resolver | — |
 | `OPENURL_ENABLED` | No | Enable/disable OpenURL resolver | `true` |
 | `PUBMED_HTTP_API_PORT` | No | Port for background HTTP API (stdio mode) | `8765` |
 | `HTTP_PROXY` / `HTTPS_PROXY` | No | Proxy settings for outbound requests | — |
+
+### Source Selection and Source Gating
+
+`unified_search` now supports source expressions such as:
+
+```text
+sources="pubmed,openalex"
+sources="auto,-semantic_scholar"
+sources="all,-crossref"
+```
+
+You can also globally disable sources without changing prompts or client config:
+
+```bash
+PUBMED_SEARCH_DISABLED_SOURCES=semantic_scholar,core
+```
+
+This applies to unified multi-source dispatch and internal alternate-source cross-search.
+
+### Commercial Connectors
+
+Commercial sources should be wired as **default-off** connectors.
+
+Current status:
+
+- `scopus`: connector skeleton is implemented, but it stays unavailable unless both
+  `SCOPUS_ENABLED=true` and `SCOPUS_API_KEY` are present.
+- `web_of_science`: connector skeleton is implemented, but it stays unavailable unless
+  both `WEB_OF_SCIENCE_ENABLED=true` and `WEB_OF_SCIENCE_API_KEY` are present.
+
+Recommended practice for future commercial sources:
+
+- Keep the connector disabled by default.
+- Gate it behind explicit env vars and credentials.
+- Cover behavior with mocked unit tests in CI.
+- Add opt-in live integration tests only in licensed environments.
 
 ### Getting API Keys
 
@@ -89,6 +143,8 @@ The MCP endpoint will be available at `http://localhost:8765/mcp`.
 | --- | --- | --- |
 | [NCBI API Key](https://www.ncbi.nlm.nih.gov/account/settings/) | Create NCBI account → Settings → API Key | 10 req/s (vs 3 req/s) |
 | [CORE API Key](https://core.ac.uk/services/api) | Register at core.ac.uk | Access 200M+ open access papers |
+| Scopus API Key | Elsevier Developer Portal / licensed institutional access | Adds Scopus as an explicit or `all` source when enabled |
+| Web of Science API Key | Clarivate Developer Portal / licensed institutional access | Adds Web of Science as an explicit or `all` source when enabled |
 
 ---
 
@@ -349,7 +405,7 @@ Copilot Studio ──HTTPS──▶ ngrok ──HTTP──▶ MCP Server (localh
 # Option B: Manual setup
 uv run python run_copilot.py --port 8765
 
-# Option C: Full 40-tool surface with Copilot-compatible HTTP semantics
+# Option C: Full 42-tool primary MCP surface with Copilot-compatible HTTP semantics
 uv run python run_server.py --transport streamable-http --copilot-compatible --port 8765
 ```
 
@@ -403,7 +459,7 @@ uv run python -m pubmed_search.presentation.mcp_server
 
 After configuring any client, verify the server is working:
 
-1. **Ask the AI**: "List all available PubMed tools" — the AI should enumerate ~40 tools
+1. **Ask the AI**: "List all available PubMed tools" — the AI should enumerate 42 tools in the primary MCP surface
 2. **Simple search**: "Search PubMed for CRISPR gene therapy" — should return article results
 3. **Check tool list**: The server provides tools like `unified_search`, `fetch_article_details`, `get_fulltext`, etc.
 

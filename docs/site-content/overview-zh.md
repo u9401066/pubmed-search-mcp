@@ -1,4 +1,6 @@
 <!-- Generated from README.zh-TW.md by scripts/build_docs_site.py -->
+<!-- markdownlint-configure-file {"MD051": false} -->
+<!-- markdownlint-disable MD051 -->
 
 # PubMed Search MCP
 
@@ -14,9 +16,9 @@
 
 **✨ 包含內容：**
 
-- 🔧 **40 個 MCP 工具** - 精簡的 PubMed、Europe PMC、CORE、NCBI 資料庫存取，及**研究時間軸 / 脈絡圖**功能
+- 🔧 **42 個 MCP 工具** - 精簡的 PubMed、Europe PMC、CORE、NCBI 資料庫存取，及**研究時間軸 / 脈絡圖**功能
 - 🖼️ **OA 圖表擷取** - 從 PMC Open Access 論文直接抽出 figure caption、image URL 與 PDF 連結
-- 📘 **Docs Site** - 用網站方式整合 overview、架構、source contract、quick reference、troubleshooting 與 deployment，入口在 [docs/index.html](index.html)
+- 📘 **Docs Site** - 用網站方式整合 overview、架構、quick reference、pipeline 教學、source contract、troubleshooting 與 deployment，入口在 [docs/index.html](index.html)
 - 📚 **24 個 Claude Skills** - AI Agent 可直接使用的工作流程指南（Claude Code 專屬）
 - 📖 **Copilot 整合指南** - VS Code GitHub Copilot 使用說明
 
@@ -450,14 +452,22 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS 代理
 
 ### 🔁 Pipeline 管理
 
+`manage_pipeline` 是 pipeline CRUD、history 與 scheduling 的主要 façade；其他 pipeline tools 仍保留作為相容 wrapper。
+
 | 工具 | 說明 |
 | ---- | ---- |
+| `manage_pipeline` | 主要 façade，統一處理 save、list、load、delete、history、schedule |
 | `save_pipeline` | 保存 Pipeline 配置供後續重複使用（YAML/JSON，自動驗證） |
 | `list_pipelines` | 列出已保存的 Pipeline（可按標籤/範圍過濾） |
 | `load_pipeline` | 從名稱或檔案載入 Pipeline 以檢視/編輯 |
 | `delete_pipeline` | 刪除 Pipeline 及其執行歷史 |
 | `get_pipeline_history` | 查看執行歷史與文章 diff 分析 |
-| `schedule_pipeline` | 排程定期執行（Phase 4） |
+| `schedule_pipeline` | 建立、更新或移除定期執行排程 |
+
+逐步教學：
+
+- 繁體中文: [docs/PIPELINE_MODE_TUTORIAL.md](#/pipeline-tutorial-zh)
+- English: [docs/PIPELINE_MODE_TUTORIAL.en.md](#/pipeline-tutorial)
 
 ### 👁️ 視覺搜尋與圖片搜尋
 
@@ -663,8 +673,9 @@ unified_search("remimazolam ICU sedation", options="context_graph")
 ### 7️⃣ Pipeline（可重複使用的搜尋計畫）
 
 ```python
-# 保存模板式 pipeline
-save_pipeline(
+# 透過主要 façade 保存模板式 pipeline
+manage_pipeline(
+  action="save",
     name="icu_sedation_weekly",
     config="template: pico\nparams:\n  P: ICU patients\n  I: remimazolam\n  C: propofol\n  O: delirium",
     tags="anesthesia,sedation",
@@ -672,7 +683,8 @@ save_pipeline(
 )
 
 # 保存自訂 DAG pipeline
-save_pipeline(
+manage_pipeline(
+  action="save",
     name="brca1_comprehensive",
     config="""
 steps:
@@ -703,9 +715,9 @@ output:
 unified_search(pipeline="saved:icu_sedation_weekly")
 
 # 管理
-list_pipelines(tag="anesthesia")
-load_pipeline(source="brca1_comprehensive")  # 檢視 YAML
-get_pipeline_history(name="icu_sedation_weekly")  # 查看過去執行
+manage_pipeline(action="list", tag="anesthesia")
+manage_pipeline(action="load", source="brca1_comprehensive")  # 檢視 YAML
+manage_pipeline(action="history", name="icu_sedation_weekly")  # 查看過去執行
 ```
 
 ---
@@ -977,6 +989,8 @@ uv run python run_server.py --transport streamable-http --copilot-compatible --p
 > 📖 **更多文件**:
 >
 > - 架構 → [ARCHITECTURE.md](#/architecture)
+> - Pipeline Mode 教學（繁中） → [docs/PIPELINE_MODE_TUTORIAL.md](#/pipeline-tutorial-zh)
+> - Pipeline Mode 教學（English） → [docs/PIPELINE_MODE_TUTORIAL.en.md](#/pipeline-tutorial)
 > - 部署指南 → [DEPLOYMENT.md](#/deployment)
 > - Copilot Studio → [copilot-studio/README.md](copilot-studio/README.md)
 

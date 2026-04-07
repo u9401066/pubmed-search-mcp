@@ -1,3 +1,16 @@
+"""Run a focused mutation gate against high-value regression suites.
+
+Design:
+    This script encodes a curated set of source mutations and verifies that the
+    targeted pytest suites fail when those mutations are applied. It provides a
+    lightweight mutation-testing guard without requiring a full mutation engine.
+
+Maintenance:
+    Add or adjust MutationCase entries when critical invariants change. Keep
+    each mutation small and tied to a fast, focused test command so the gate
+    remains practical in local and CI workflows.
+"""
+
 from __future__ import annotations
 
 import subprocess

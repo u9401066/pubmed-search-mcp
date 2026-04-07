@@ -257,6 +257,17 @@ def update_tools_index(stats: dict, mcp) -> bool:
     return False
 
 
+def _render_markdown_table(headers: list[str], rows: list[list[str]]) -> list[str]:
+    """Render a compact markdown table for generated docs."""
+    rendered = [
+        "| " + " | ".join(headers) + " |",
+        "| " + " | ".join("---" for _ in headers) + " |",
+    ]
+    for row in rows:
+        rendered.append("| " + " | ".join(row) + " |")
+    return rendered
+
+
 def generate_tools_index_markdown(stats: dict, tool_details: dict) -> str:
     """生成完整的 TOOLS_INDEX.md 內容"""
     lines = [
@@ -275,14 +286,14 @@ def generate_tools_index_markdown(stats: dict, tool_details: dict) -> str:
             continue
 
         cat = stats["categories"][cat_key]
-        lines.append(f"\n## {cat['name']}")
-        lines.append(f"*{cat['description']}*\n")
-        lines.append("| Tool | Description |")
-        lines.append("|------|-------------|")
+        lines.extend(["", f"## {cat['name']}", "", cat["description"], ""])
+        rows: list[list[str]] = []
 
         for tool_name in cat["tools"]:
             desc = tool_details.get(tool_name, {}).get("description", "")
-            lines.append(f"| `{tool_name}` | {desc} |")
+            rows.append([f"`{tool_name}`", desc])
+
+        lines.extend(_render_markdown_table(["Tool", "Description"], rows))
 
     # 檔案結構
     lines.extend(
@@ -292,7 +303,7 @@ def generate_tools_index_markdown(stats: dict, tool_details: dict) -> str:
             "",
             "## 檔案結構",
             "",
-            "```",
+            "```text",
             "mcp_server/",
             "├── server.py           # Server 創建與配置",
             "├── instructions.py     # AI Agent 使用說明",

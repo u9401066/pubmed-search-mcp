@@ -1,4 +1,6 @@
 <!-- Generated from README.md by scripts/build_docs_site.py -->
+<!-- markdownlint-configure-file {"MD051": false} -->
+<!-- markdownlint-disable MD051 -->
 
 # PubMed Search MCP
 
@@ -16,9 +18,9 @@ A Domain-Driven Design (DDD) based MCP server that serves as an intelligent rese
 
 **✨ What's Included:**
 
-- 🔧 **40 MCP Tools** - Streamlined PubMed, Europe PMC, CORE, NCBI database access, and **Research Timeline / Context Graph**
+- 🔧 **42 MCP Tools** - Streamlined PubMed, Europe PMC, CORE, NCBI database access, and **Research Timeline / Context Graph**
 - 🖼️ **OA Figure Extraction** - Pull figure captions, direct image URLs, and PDF links from PMC Open Access articles
-- 📘 **Docs Site** - Browse overview, architecture, source contracts, quick reference, troubleshooting, and deployment in one place at [docs/index.html](index.html)
+- 📘 **Docs Site** - Browse overview, architecture, quick reference, pipeline tutorials, source contracts, troubleshooting, and deployment in one place at [docs/index.html](index.html)
 - 📚 **24 Claude Skills** - Ready-to-use workflow guides for AI agents (Claude Code-specific)
 - 📖 **Copilot Instructions** - VS Code GitHub Copilot integration guide
 
@@ -452,14 +454,22 @@ Dynamic MCP resources are also available for agents that can read resources dire
 
 ### 🔁 Pipeline Management
 
+`manage_pipeline` is the primary facade for pipeline CRUD, history, and scheduling. The more specific pipeline tools remain available as compatibility wrappers.
+
 | Tool | Description |
 | ---- | ----------- |
+| `manage_pipeline` | Primary facade for save, list, load, delete, history, and schedule actions |
 | `save_pipeline` | Save a pipeline config for later reuse (YAML/JSON, auto-validated) |
 | `list_pipelines` | List saved pipelines (filter by tag/scope) |
 | `load_pipeline` | Load pipeline from name or file for review/editing |
 | `delete_pipeline` | Delete pipeline and its execution history |
 | `get_pipeline_history` | View execution history with article diff analysis |
-| `schedule_pipeline` | Schedule periodic execution (Phase 4) |
+| `schedule_pipeline` | Create, update, or remove recurring pipeline schedules |
+
+Step-by-step tutorials:
+
+- English: [docs/PIPELINE_MODE_TUTORIAL.en.md](#/pipeline-tutorial)
+- 繁體中文: [docs/PIPELINE_MODE_TUTORIAL.md](#/pipeline-tutorial-zh)
 
 ### 👁️ Vision & Image Search
 
@@ -666,8 +676,9 @@ unified_search("remimazolam ICU sedation", options="context_graph")
 ### 7️⃣ Pipeline (Reusable Search Plans)
 
 ```python
-# Save a template-based pipeline
-save_pipeline(
+# Save a template-based pipeline through the primary facade
+manage_pipeline(
+  action="save",
     name="icu_sedation_weekly",
     config="template: pico\nparams:\n  P: ICU patients\n  I: remimazolam\n  C: propofol\n  O: delirium",
     tags="anesthesia,sedation",
@@ -675,7 +686,8 @@ save_pipeline(
 )
 
 # Save a custom DAG pipeline
-save_pipeline(
+manage_pipeline(
+  action="save",
     name="brca1_comprehensive",
     config="""
 steps:
@@ -706,9 +718,9 @@ output:
 unified_search(pipeline="saved:icu_sedation_weekly")
 
 # List & manage
-list_pipelines(tag="anesthesia")
-load_pipeline(source="brca1_comprehensive")  # Review YAML
-get_pipeline_history(name="icu_sedation_weekly")  # View past runs
+manage_pipeline(action="list", tag="anesthesia")
+manage_pipeline(action="load", source="brca1_comprehensive")  # Review YAML
+manage_pipeline(action="history", name="icu_sedation_weekly")  # View past runs
 ```
 
 ---
@@ -980,6 +992,8 @@ uv run python run_server.py --transport streamable-http --copilot-compatible --p
 > 📖 **More documentation**:
 >
 > - Architecture → [ARCHITECTURE.md](#/architecture)
+> - Pipeline tutorial (English) → [docs/PIPELINE_MODE_TUTORIAL.en.md](#/pipeline-tutorial)
+> - Pipeline tutorial (zh-TW) → [docs/PIPELINE_MODE_TUTORIAL.md](#/pipeline-tutorial-zh)
 > - Deployment guide → [DEPLOYMENT.md](#/deployment)
 > - Copilot Studio → [copilot-studio/README.md](copilot-studio/README.md)
 

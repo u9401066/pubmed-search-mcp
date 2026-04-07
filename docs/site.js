@@ -18,6 +18,18 @@ const DOC_PAGES = [
     file: "site-content/architecture.md",
   },
   {
+    slug: "pipeline-tutorial",
+    title: "Pipeline Tutorial",
+    blurb: "Step-by-step guide for inline templates, saved plans, custom DAGs, history, and scheduling.",
+    file: "site-content/pipeline-tutorial.md",
+  },
+  {
+    slug: "pipeline-tutorial-zh",
+    title: "Pipeline Tutorial (zh-TW)",
+    blurb: "繁體中文 pipeline mode 教學，涵蓋 template、DAG、history 與 schedule。",
+    file: "site-content/pipeline-tutorial-zh.md",
+  },
+  {
     slug: "quick-reference",
     title: "Quick Reference",
     blurb: "Fast lookup for MCP tools and categories.",
