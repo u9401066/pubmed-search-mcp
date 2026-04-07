@@ -1,16 +1,17 @@
-"""
-PipelineValidator — Aggressive auto-fix validation for pipeline configs.
+"""Pipeline semantic validator for pipeline configs.
 
 Design philosophy: MCP server self-validates, self-corrects, only reports
 to agent when truly unfixable. This validator is called automatically on
 every load/save operation.
 
-Auto-fix capabilities (aggressive mode):
-- Format fixes: missing fields → defaults, type coercion, name normalization
-- Semantic fixes: fuzzy match template/action names, auto-repair broken
-  dependencies, infer missing step IDs
-- Structural fixes: auto-generate missing step IDs, deduplicate, reorder
-- Unfixable: invalid YAML syntax, contradictory logic → report with suggestions
+This module owns semantic auto-fix only:
+- fuzzy alias/template matching
+- dependency repair
+- step ID repair
+- output semantic correction
+
+Raw schema parsing, type coercion, defaults, and pipeline mode discrimination
+live in application.pipeline.schema.
 """
 
 from __future__ import annotations
@@ -28,10 +29,11 @@ from pubmed_search.domain.entities.pipeline import (
     FixSeverity,
     PipelineConfig,
     PipelineOutput,
-    PipelineStep,
     ValidationFix,
     ValidationResult,
 )
+
+from .schema import parse_pipeline_schema
 
 logger = logging.getLogger(__name__)
 
@@ -198,10 +200,66 @@ def _fuzzy_match_template(template: str) -> tuple[str, ValidationFix | None]:
     return template, None
 
 
+def _validate_and_fix_output(config: PipelineConfig, fixes: list[ValidationFix]) -> None:
+    """Apply semantic output auto-fixes shared by template and step pipelines."""
+    output = config.output
+
+    if output.format not in ("markdown", "json"):
+        fixes.append(
+            ValidationFix(
+                field="output.format",
+                original=output.format,
+                corrected="markdown",
+                reason=f"Invalid output format '{output.format}', defaulting to 'markdown'",
+                severity=FixSeverity.INFO,
+            )
+        )
+        config.output = PipelineOutput(
+            format="markdown",
+            limit=config.output.limit,
+            ranking=config.output.ranking,
+        )
+
+    valid_rankings = ("balanced", "impact", "recency", "quality")
+    if config.output.ranking not in valid_rankings:
+        close = get_close_matches(config.output.ranking, list(valid_rankings), n=1, cutoff=_FUZZY_CUTOFF)
+        corrected_ranking = close[0] if close else "balanced"
+        fixes.append(
+            ValidationFix(
+                field="output.ranking",
+                original=config.output.ranking,
+                corrected=corrected_ranking,
+                reason=f"Invalid ranking '{config.output.ranking}', corrected to '{corrected_ranking}'",
+                severity=FixSeverity.WARNING,
+            )
+        )
+        config.output = PipelineOutput(
+            format=config.output.format,
+            limit=config.output.limit,
+            ranking=corrected_ranking,  # type: ignore[arg-type]
+        )
+
+    if config.output.limit < 1:
+        fixes.append(
+            ValidationFix(
+                field="output.limit",
+                original=config.output.limit,
+                corrected=20,
+                reason="Output limit must be positive, defaulting to 20",
+                severity=FixSeverity.INFO,
+            )
+        )
+        config.output = PipelineOutput(
+            format=config.output.format,
+            limit=20,
+            ranking=config.output.ranking,
+        )
+
+
 def validate_and_fix(config: PipelineConfig) -> ValidationResult:
     """Validate a PipelineConfig with aggressive auto-fix.
 
-    This is the main entry point — called on every load/save.
+    This is the main entry point - called on every load/save.
 
     Returns:
         ValidationResult with corrected config (or errors if unfixable).
@@ -219,6 +277,8 @@ def validate_and_fix(config: PipelineConfig) -> ValidationResult:
             else:
                 errors.append(f"Unknown template '{config.template}'. Valid templates: {sorted(VALID_TEMPLATES)}")
                 return ValidationResult(valid=False, fixes=fixes, errors=errors)
+
+        _validate_and_fix_output(config, fixes)
 
         # Template-based configs don't need step validation
         return ValidationResult(valid=True, fixes=fixes, config=config)
@@ -300,7 +360,7 @@ def validate_and_fix(config: PipelineConfig) -> ValidationResult:
             if inp in earlier_ids:
                 repaired_inputs.append(inp)
             elif inp in valid_step_ids:
-                # Reference to a later step — can't auto-fix ordering easily
+                # Reference to a later step - can't auto-fix ordering easily
                 # but we can warn and remove the circular dep
                 fixes.append(
                     ValidationFix(
@@ -352,57 +412,7 @@ def validate_and_fix(config: PipelineConfig) -> ValidationResult:
             object.__setattr__(step, "on_error", "skip")
 
     # ── Validate output config ───────────────────────────────────────────
-    output = config.output
-    if output.format not in ("markdown", "json"):
-        fixes.append(
-            ValidationFix(
-                field="output.format",
-                original=output.format,
-                corrected="markdown",
-                reason=f"Invalid output format '{output.format}', defaulting to 'markdown'",
-                severity=FixSeverity.INFO,
-            )
-        )
-        config.output = PipelineOutput(
-            format="markdown",
-            limit=output.limit,
-            ranking=output.ranking,
-        )
-
-    valid_rankings = ("balanced", "impact", "recency", "quality")
-    if output.ranking not in valid_rankings:
-        close = get_close_matches(output.ranking, list(valid_rankings), n=1, cutoff=_FUZZY_CUTOFF)
-        corrected_ranking = close[0] if close else "balanced"
-        fixes.append(
-            ValidationFix(
-                field="output.ranking",
-                original=output.ranking,
-                corrected=corrected_ranking,
-                reason=f"Invalid ranking '{output.ranking}', corrected to '{corrected_ranking}'",
-                severity=FixSeverity.WARNING,
-            )
-        )
-        config.output = PipelineOutput(
-            format=config.output.format,
-            limit=config.output.limit,
-            ranking=corrected_ranking,  # type: ignore[arg-type]
-        )
-
-    if output.limit < 1:
-        fixes.append(
-            ValidationFix(
-                field="output.limit",
-                original=output.limit,
-                corrected=20,
-                reason="Output limit must be positive, defaulting to 20",
-                severity=FixSeverity.INFO,
-            )
-        )
-        config.output = PipelineOutput(
-            format=config.output.format,
-            limit=20,
-            ranking=config.output.ranking,
-        )
+    _validate_and_fix_output(config, fixes)
 
     # ── Final decision ───────────────────────────────────────────────────
     has_unfixable = len(errors) > 0
@@ -415,91 +425,17 @@ def validate_and_fix(config: PipelineConfig) -> ValidationResult:
 def parse_and_validate_config(raw: dict[str, Any]) -> ValidationResult:
     """Parse a raw dict (from YAML/JSON) into a validated PipelineConfig.
 
-    This is the full pipeline: dict → PipelineConfig → validate_and_fix.
+    This is the full pipeline: raw dict -> Pydantic schema parse -> semantic auto-fix.
     Called by PipelineStore on load/save.
     """
-    fixes: list[ValidationFix] = []
-    errors: list[str] = []
+    schema_result = parse_pipeline_schema(raw)
+    if not schema_result.valid:
+        return schema_result
 
-    try:
-        # Parse steps
-        steps: list[PipelineStep] = []
-        for i, step_raw in enumerate(raw.get("steps", [])):
-            if not isinstance(step_raw, dict):
-                errors.append(f"Step {i} is not a dict: {step_raw!r}")
-                continue
+    config = schema_result.config
+    if config is None:
+        return ValidationResult(valid=False, fixes=schema_result.fixes, errors=["Failed to parse pipeline config"])
 
-            # Ensure params is a dict
-            params = step_raw.get("params", {})
-            if not isinstance(params, dict):
-                fixes.append(
-                    ValidationFix(
-                        field=f"steps[{i}].params",
-                        original=params,
-                        corrected={},
-                        reason="params must be a dict, replaced with empty dict",
-                        severity=FixSeverity.WARNING,
-                    )
-                )
-                params = {}
-
-            # Ensure inputs is a list
-            inputs = step_raw.get("inputs", [])
-            if isinstance(inputs, str):
-                inputs = [inputs]
-                fixes.append(
-                    ValidationFix(
-                        field=f"steps[{i}].inputs",
-                        original=step_raw.get("inputs"),
-                        corrected=inputs,
-                        reason="inputs should be a list, wrapped single string",
-                        severity=FixSeverity.INFO,
-                    )
-                )
-            elif not isinstance(inputs, list):
-                inputs = []
-
-            on_error = step_raw.get("on_error", "skip")
-            if on_error not in ("skip", "abort"):
-                on_error = "skip"
-
-            steps.append(
-                PipelineStep(
-                    id=str(step_raw.get("id", "")),
-                    action=str(step_raw.get("action", "")),
-                    params=params,
-                    inputs=inputs,
-                    on_error=on_error,
-                )
-            )
-
-        # Parse output
-        output_raw = raw.get("output", {})
-        if not isinstance(output_raw, dict):
-            output_raw = {}
-        output = PipelineOutput(
-            format=output_raw.get("format", "markdown"),
-            limit=int(output_raw.get("limit", 20)),
-            ranking=output_raw.get("ranking", "balanced"),
-        )
-
-        # Build config
-        config = PipelineConfig(
-            steps=steps,
-            name=str(raw.get("name", "")),
-            output=output,
-            template=raw.get("template"),
-            template_params=raw.get("template_params", {}),
-        )
-
-    except Exception as exc:
-        errors.append(f"Failed to parse pipeline config: {exc}")
-        return ValidationResult(valid=False, fixes=fixes, errors=errors)
-
-    # Run validation + auto-fix
     result = validate_and_fix(config)
-
-    # Merge any parsing-level fixes
-    result.fixes = fixes + result.fixes
-
+    result.fixes = schema_result.fixes + result.fixes
     return result

@@ -27,6 +27,7 @@ from pubmed_search.domain.entities.pipeline import (
     PipelineRun,
     PipelineScope,
     PipelineStep,
+    ScheduleEntry,
 )
 
 if TYPE_CHECKING:
@@ -513,6 +514,57 @@ class TestStoreRunHistory:
         store_dual.save("no_runs", simple_config)
         history = store_dual.get_history("no_runs")
         assert history == []
+
+
+# =========================================================================
+# Schedule Persistence
+# =========================================================================
+
+
+class TestStoreSchedules:
+    """Tests for PipelineStore schedule persistence methods."""
+
+    def test_save_and_get_schedule(self, store_dual: PipelineStore):
+        entry = ScheduleEntry(
+            pipeline_name="weekly_remi",
+            cron="0 9 * * 1",
+        )
+
+        store_dual.save_schedule(entry)
+        loaded = store_dual.get_schedule("weekly_remi")
+
+        assert loaded is not None
+        assert loaded.pipeline_name == "weekly_remi"
+        assert loaded.cron == "0 9 * * 1"
+
+    def test_list_schedules(self, store_dual: PipelineStore):
+        store_dual.save_schedule(ScheduleEntry(pipeline_name="b_pipe", cron="0 0 * * *"))
+        store_dual.save_schedule(ScheduleEntry(pipeline_name="a_pipe", cron="0 9 * * 1"))
+
+        schedules = store_dual.list_schedules()
+
+        assert len(schedules) == 2
+        assert {entry.pipeline_name for entry in schedules} == {"a_pipe", "b_pipe"}
+
+    def test_delete_schedule(self, store_dual: PipelineStore):
+        store_dual.save_schedule(ScheduleEntry(pipeline_name="weekly_remi", cron="0 9 * * 1"))
+
+        removed = store_dual.delete_schedule("weekly_remi")
+
+        assert removed is True
+        assert store_dual.get_schedule("weekly_remi") is None
+
+    def test_delete_pipeline_also_removes_schedule(
+        self,
+        store_dual: PipelineStore,
+        simple_config: PipelineConfig,
+    ):
+        store_dual.save("weekly_remi", simple_config)
+        store_dual.save_schedule(ScheduleEntry(pipeline_name="weekly_remi", cron="0 9 * * 1"))
+
+        store_dual.delete("weekly_remi")
+
+        assert store_dual.get_schedule("weekly_remi") is None
 
 
 # =========================================================================

@@ -9,6 +9,11 @@ Available templates:
 - **comprehensive**: Multi-source + MeSH expansion → union merge + metrics
 - **exploration**: Seed PMID → related + citing + refs → RRF merge
 - **gene_drug**: Gene/drug term → expanded multi-source → merge + metrics
+
+Maintenance:
+    Template functions should stay declarative and return PipelineConfig only.
+    Keep execution semantics in the pipeline runtime so template changes remain
+    easy to review and safe to snapshot in tests.
 """
 
 from __future__ import annotations
@@ -290,3 +295,31 @@ def build_pipeline_from_template(template_name: str, params: dict[str, Any]) -> 
     builder = entry["builder"]
     result: PipelineConfig = builder(params)
     return result
+
+
+def materialize_pipeline_config(
+    config: PipelineConfig,
+    *,
+    default_name: str = "",
+) -> PipelineConfig:
+    """Expand a template config into executable steps while preserving user output settings.
+
+    Step-based configs are returned unchanged except for an optional default name.
+    Template-based configs are rebuilt through the template registry so downstream
+    execution paths always receive a step DAG.
+    """
+    if not config.template:
+        if default_name and not config.name:
+            config.name = default_name
+        return config
+
+    materialized = build_pipeline_from_template(str(config.template), config.template_params)
+    materialized.name = config.name or default_name or materialized.name
+    materialized.output = PipelineOutput(
+        format=config.output.format,
+        limit=config.output.limit,
+        ranking=config.output.ranking,
+    )
+    materialized.template = config.template
+    materialized.template_params = dict(config.template_params)
+    return materialized

@@ -14,7 +14,7 @@
 template: comprehensive
 
 params:
-  topic: "CRISPR gene therapy clinical trials"
+  query: "CRISPR gene therapy clinical trials"
 
 output:
   format: markdown

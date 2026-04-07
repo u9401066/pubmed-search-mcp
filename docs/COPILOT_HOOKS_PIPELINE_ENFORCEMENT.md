@@ -2,9 +2,10 @@
 
 > **文件性質**: 技術設計文件
 > **目的**: 利用 GitHub Copilot Hooks 在 Agent 層創建搜尋反饋迴路，強制正確使用 Pipeline Mode
-> **最後更新**: 2026-02-17
+> **最後更新**: 2026-04-06
 > **維護者**: Eric
 > **狀態**: PoC 實作完成 + Workflow Tracker
+> **Scope Boundary**: 這套 Hook 約束只在 GitHub Copilot 載入 [.github/hooks/pipeline-enforcer.json](.github/hooks/pipeline-enforcer.json) 的執行路徑生效。它不是 MCP server 對所有 client 的通用約束；其他 MCP host 仍只會看到 server 端本身的工具行為。
 
 ---
 
@@ -14,7 +15,7 @@
 2. [架構設計](#2-架構設計)
 3. [反饋迴路機制](#3-反饋迴路機制)
 4. [Hook 清單與行為](#4-hook-清單與行為)
-5. [Pipeline 強制執行邏輯](#5-pipeline-強制執行邏輯)
+5. [Tool-Aware preToolUse 強制邏輯](#5-tool-aware-pretooluse-強制邏輯)
 6. [結果品質評估邏輯](#6-結果品質評估邏輯)
 7. [檔案結構](#7-檔案結構)
 8. [編碼與健壯性](#8-編碼與健壯性)
@@ -264,13 +265,20 @@ User → Copilot Agent → [preToolUse HOOK] → MCP Tool → Our Server
 |------------|------|-------------|------|
 | `sessionStart` | session-init.sh/ps1 | ❌ (output ignored) | 初始化狀態目錄，清除舊狀態 |
 | `userPromptSubmitted` | analyze-prompt.sh/ps1 | ❌ (output ignored) | 記錄用戶意圖分類 (audit) |
-| `preToolUse` | **enforce-pipeline.sh/ps1** | ✅ **DENY + reason** | **核心：Pipeline 強制 + 反饋迴路** |
-| `postToolUse` | evaluate-results.sh/ps1 | ❌ (output ignored) → 寫 state file | 評估搜尋品質，間接影響下次 preToolUse |
+| `preToolUse` | **enforce-pipeline.sh/ps1** | ✅ **DENY + reason** | **核心：unified_search 複雜度強制 + 其他 research tools 的 evidence/workflow guard** |
+| `postToolUse` | evaluate-results.sh/ps1 | ❌ (output ignored) → 寫 state file | 評估 result-bearing research tools 的品質，間接影響下次 preToolUse |
 | `sessionEnd` | session-cleanup.sh/ps1 | ❌ (output ignored) | 清理臨時狀態檔 |
 
 ---
 
-## 5. Pipeline 強制執行邏輯
+## 5. Tool-Aware preToolUse 強制邏輯
+
+### 現況摘要
+
+- `unified_search` 仍保留三層複雜度閾值與 pipeline 強制。
+- 其他 result-bearing MCP tools 不再是「未命中 unified_search 就直接放行」，而是依據共享政策檔做明確分組。
+- 下游工具如 `get_fulltext`、`find_related_articles`、`prepare_export`、`read_session`、`get_pipeline_history` 會檢查是否已有 evidence context，或是否提供明確 identifier/PMID/DOI/name 等參數。
+- 這些規則是 **Copilot runtime hook**，不是 server-wide policy。
 
 ### 三級複雜度閾值 (Three-Tier Thresholds)
 
@@ -322,6 +330,17 @@ Default for other complex queries → template: comprehensive
 
 ## 6. 結果品質評估邏輯
 
+### 評估範圍
+
+postToolUse 不再只評估 `unified_search`。目前會對所有 **result-bearing research tools** 寫入通用 `last_research_eval.json` 狀態，例如：
+
+- Search / retrieval: `unified_search`, `search_gene`, `search_compound`, `search_clinvar`, `search_biomedical_images`
+- Discovery / expansion: `fetch_article_details`, `find_related_articles`, `find_citing_articles`, `get_article_references`, `build_citation_tree`
+- Fulltext / figures: `get_fulltext`, `get_text_mined_terms`, `get_article_figures`
+- Session / evaluation / synthesis: `read_session`, `get_session_pmids`, `get_cached_article`, `get_session_summary`, `get_citation_metrics`, `prepare_export`, timeline tools
+
+不同工具家族使用不同啟發式：article-count、source diversity、fulltext availability、session/detail presence。
+
 ### 品質等級
 
 | 品質 | 條件 | 觸發反饋? |
@@ -350,8 +369,11 @@ Default for other complex queries → template: comprehensive
 ├── pipeline-enforcer.json          # Hook 設定檔 (Copilot 讀取)
 └── _state/                         # 執行時狀態 (gitignored)
     ├── pending_complexity.json     # Tier 2 待評估標記 (preToolUse → postToolUse)
-    ├── last_search_eval.json       # 搜尋品質評估 (postToolUse → next preToolUse)
+    ├── last_research_eval.json     # 通用 research tool 品質評估 (postToolUse → next preToolUse)
     └── search_audit.jsonl          # 完整操作日誌
+
+    # backward compatibility
+    └── last_search_eval.json       # 舊版 unified_search-only state (讀取時仍相容)
 
 scripts/hooks/copilot/
 ├── enforce-pipeline.sh             # preToolUse: Pipeline 強制 (bash)
@@ -603,7 +625,8 @@ Workflow Tracker (userPromptSubmitted + postToolUse)
 | **preToolUse 只能 deny，不能修改參數** | Copilot Hooks API 限制 | 用 deny reason 引導 Agent 自行修改 |
 | **postToolUse output 被忽略** | Copilot Hooks API 限制 | 透過 state file → preToolUse deny 間接影響 |
 | **userPromptSubmitted 可注入 instructions** | Copilot Hooks API 支援 | 用 `{"instructions": "..."}` 注入工作流程進度到 AI context |
-| **MCP toolName 可能帶前綴** | MCP 工具名稱格式不確定 | 用 regex 匹配 `unified_search` 後綴 |
+| **這是 Copilot-only runtime layer** | Hook 是 Copilot host 能力，不是 MCP server API | 在文件中明確標示 scope boundary；server 行為仍以工具實作為準 |
+| **MCP tool coverage 可能漂移** | 新工具加入後，hook 常常忘記同步 | 改為讀取共享 tool policy，並以測試驗證 policy 覆蓋所有已註冊工具 |
 | **品質評估只能解析文字** | 不能直接存取結構化結果 | 用 PMID 計數、source 檢測等啟發式方法 |
 
 ### 未來方向

@@ -29,6 +29,7 @@ from pubmed_search.domain.entities.pipeline import (
     PipelineMeta,
     PipelineRun,
     PipelineScope,
+    ScheduleEntry,
     ValidationResult,
 )
 
@@ -112,6 +113,10 @@ class PipelineStore:
     @property
     def _global_index_path(self) -> Path:
         return self._global_pipelines_dir / "_index.json"
+
+    @property
+    def _global_schedules_path(self) -> Path:
+        return self._global_dir / "schedules.json"
 
     @property
     def _workspace_pipelines_dir(self) -> Path:
@@ -466,9 +471,57 @@ class PipelineStore:
         index = self._load_index(scope)
         index.pop(name, None)
         self._save_index(scope, index)
+        self.delete_schedule(name)
 
         logger.info("Deleted pipeline '%s' from %s scope (%d runs)", name, scope.value, run_count)
         return scope, run_count
+
+    # ── Schedule Persistence ────────────────────────────────────────────
+
+    def save_schedule(self, entry: ScheduleEntry) -> None:
+        """Persist schedule metadata in the global schedules index."""
+        schedules = self._load_schedules()
+        schedules[entry.pipeline_name] = entry
+        self._save_schedules(schedules)
+
+    def get_schedule(self, name: str) -> ScheduleEntry | None:
+        """Get persisted schedule metadata for one pipeline."""
+        return self._load_schedules().get(name.strip().lower())
+
+    def list_schedules(self) -> list[ScheduleEntry]:
+        """List all persisted schedules."""
+        schedules = list(self._load_schedules().values())
+        schedules.sort(key=lambda entry: ((entry.next_run or datetime.max.replace(tzinfo=timezone.utc)), entry.pipeline_name))
+        return schedules
+
+    def delete_schedule(self, name: str) -> bool:
+        """Delete persisted schedule metadata if present."""
+        normalized_name = name.strip().lower()
+        schedules = self._load_schedules()
+        removed = schedules.pop(normalized_name, None)
+        if removed is None:
+            return False
+        self._save_schedules(schedules)
+        return True
+
+    def _load_schedules(self) -> dict[str, ScheduleEntry]:
+        """Load persisted schedule metadata from disk."""
+        path = self._global_schedules_path
+        if not path.exists():
+            return {}
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            logger.warning("Failed to load schedules at %s, starting fresh", path)
+            return {}
+        return {name: ScheduleEntry.from_dict(entry) for name, entry in data.items()}
+
+    def _save_schedules(self, schedules: dict[str, ScheduleEntry]) -> None:
+        """Persist schedule metadata to disk."""
+        path = self._global_schedules_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        data = {name: entry.to_dict() for name, entry in schedules.items()}
+        path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
     # ── Run History ──────────────────────────────────────────────────────
 

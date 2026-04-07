@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -23,6 +23,9 @@ from pubmed_search.domain.entities.pipeline import (
     PipelineStep,
     StepResult,
 )
+
+if TYPE_CHECKING:
+    from pubmed_search.domain.entities.article import UnifiedArticle
 
 # =========================================================================
 # Fixtures
@@ -47,16 +50,26 @@ class FakeArticle:
     sources: list = field(default_factory=list)
 
 
-def _make_articles(n: int, prefix: str = "Article") -> list[FakeArticle]:
-    return [
-        FakeArticle(
-            title=f"{prefix} {i}",
-            pmid=str(10000000 + i),
-            doi=f"10.1234/{prefix.lower()}{i}",
-            year=2020 + (i % 5),
-        )
-        for i in range(n)
-    ]
+def _as_articles(articles: list[FakeArticle]) -> list[UnifiedArticle]:
+    return cast("list[UnifiedArticle]", articles)
+
+
+def _make_articles(n: int, prefix: str = "Article") -> list[UnifiedArticle]:
+    return _as_articles(
+        [
+            FakeArticle(
+                title=f"{prefix} {i}",
+                pmid=str(10000000 + i),
+                doi=f"10.1234/{prefix.lower()}{i}",
+                year=2020 + (i % 5),
+            )
+            for i in range(n)
+        ]
+    )
+
+
+def _pmids(articles: list[UnifiedArticle]) -> list[str]:
+    return [article.pmid for article in articles if article.pmid is not None]
 
 
 @pytest.fixture()
@@ -314,8 +327,8 @@ class TestActionMerge:
 
         step = PipelineStep(id="m", action="merge", inputs=["a", "b"], params={"method": "union"})
         inputs = {
-            "a": StepResult(step_id="a", action="search", articles=arts_a, pmids=[a.pmid for a in arts_a]),
-            "b": StepResult(step_id="b", action="search", articles=arts_b, pmids=[a.pmid for a in arts_b]),
+            "a": StepResult(step_id="a", action="search", articles=arts_a, pmids=_pmids(arts_a)),
+            "b": StepResult(step_id="b", action="search", articles=arts_b, pmids=_pmids(arts_b)),
         }
 
         with patch("pubmed_search.application.search.result_aggregator.ResultAggregator") as MockAgg:
@@ -345,8 +358,8 @@ class TestActionMerge:
         executor = PipelineExecutor()
         # Create overlapping articles
         shared = FakeArticle(title="Shared", pmid="99999", doi="10.1/shared")
-        arts_a = [shared, FakeArticle(title="A only", pmid="11111", doi="10.1/a")]
-        arts_b = [shared, FakeArticle(title="B only", pmid="22222", doi="10.1/b")]
+        arts_a = _as_articles([shared, FakeArticle(title="A only", pmid="11111", doi="10.1/a")])
+        arts_b = _as_articles([shared, FakeArticle(title="B only", pmid="22222", doi="10.1/b")])
 
         step = PipelineStep(id="m", action="merge", inputs=["a", "b"], params={"method": "intersection"})
         inputs = {
@@ -382,14 +395,14 @@ class TestActionFilter:
         inputs = {"s1": StepResult(step_id="s1", action="search", articles=articles)}
         result = await executor._action_filter(step, inputs)
         assert result.ok
-        assert all(a.year >= 2023 for a in result.articles)
+        assert all(a.year is not None and a.year >= 2023 for a in result.articles)
 
     async def test_abstract_filter(self):
         executor = PipelineExecutor()
         with_abs = FakeArticle(title="Has Abstract", abstract="content")
         without_abs = FakeArticle(title="No Abstract", abstract=None)
         step = PipelineStep(id="f", action="filter", inputs=["s1"], params={"has_abstract": True})
-        inputs = {"s1": StepResult(step_id="s1", action="search", articles=[with_abs, without_abs])}
+        inputs = {"s1": StepResult(step_id="s1", action="search", articles=_as_articles([with_abs, without_abs]))}
         result = await executor._action_filter(step, inputs)
         assert len(result.articles) == 1
         assert result.articles[0].title == "Has Abstract"
@@ -423,6 +436,47 @@ class TestActionSearch:
         result = await executor._action_search(step, {})
         assert not result.ok
         assert "No query" in (result.error or "")
+
+    async def test_search_enabled_commercial_alternate_sources(self):
+        alternate_search = AsyncMock(
+            side_effect=[
+                [{"title": "Scopus Paper", "doi": "10.1/scopus", "source": "scopus"}],
+                [{"title": "WoS Paper", "doi": "10.1/wos", "source": "web_of_science"}],
+            ]
+        )
+        executor = PipelineExecutor(alternate_search_fn=alternate_search)
+        step = PipelineStep(
+            id="s1",
+            action="search",
+            params={"query": "test", "sources": "scopus,web_of_science", "limit": 10},
+        )
+
+        with (
+            patch.dict(
+                "os.environ",
+                {
+                    "SCOPUS_ENABLED": "true",
+                    "SCOPUS_API_KEY": "licensed-key",
+                    "WEB_OF_SCIENCE_ENABLED": "true",
+                    "WEB_OF_SCIENCE_API_KEY": "licensed-key",
+                },
+                clear=False,
+            ),
+            patch("pubmed_search.domain.entities.article.UnifiedArticle") as MockUA,
+            patch("pubmed_search.application.search.result_aggregator.ResultAggregator") as MockRA,
+        ):
+            scopus_article = FakeArticle(title="Scopus Paper", doi="10.1/scopus", primary_source="scopus")
+            wos_article = FakeArticle(title="WoS Paper", doi="10.1/wos", primary_source="web_of_science")
+            MockUA.from_scopus.return_value = scopus_article
+            MockUA.from_web_of_science.return_value = wos_article
+            MockRA.return_value.aggregate.return_value = ([scopus_article, wos_article], MagicMock())
+
+            result = await executor._action_search(step, {})
+
+        assert result.ok
+        assert len(result.articles) == 2
+        assert result.metadata["source_api_counts"] == {"scopus": 1, "web_of_science": 1}
+        assert alternate_search.await_count == 2
 
 
 # =========================================================================
@@ -768,6 +822,36 @@ params:
 
         assert isinstance(result, str)
 
+    async def test_template_yaml_supports_template_params_alias_and_autofix(self, mock_searcher):
+        """Inline template mode should accept template_params and schema/semantic auto-fixes."""
+        from pubmed_search.presentation.mcp_server.tools.unified import (
+            _execute_pipeline_mode,
+        )
+
+        pipeline_yaml = """\
+template: clinical
+template_params:
+    P: ICU patients
+    I: remimazolam
+output:
+    format: xml
+    limit: 0
+    ranking: impac
+"""
+
+        with patch("pubmed_search.application.pipeline.executor.PipelineExecutor") as MockExec:
+            mock_exec = MockExec.return_value
+            mock_exec.execute = AsyncMock(return_value=([], {}))
+            result = await _execute_pipeline_mode(pipeline_yaml, "markdown", mock_searcher)
+
+        assert isinstance(result, str)
+        assert mock_exec.execute.await_args is not None
+        executed_config = mock_exec.execute.await_args.args[0]
+        assert executed_config.steps[0].action == "pico"
+        assert executed_config.output.format == "markdown"
+        assert executed_config.output.limit == 20
+        assert executed_config.output.ranking == "impact"
+
     async def test_bare_string_not_dict_error(self, mock_searcher):
         """A plain string that YAML parses to a scalar should error."""
         from pubmed_search.presentation.mcp_server.tools.unified import (
@@ -956,8 +1040,8 @@ class TestRRFMerge:
         a_only = FakeArticle(title="A only", pmid="a1", doi="10.1/a")
         b_only = FakeArticle(title="B only", pmid="b1", doi="10.1/b")
 
-        list_a = [shared, a_only]
-        list_b = [shared, b_only]
+        list_a = _as_articles([shared, a_only])
+        list_b = _as_articles([shared, b_only])
 
         merged = executor._rrf_merge([list_a, list_b])
         assert merged[0].doi == "10.1/shared"  # Shared should be first
@@ -976,14 +1060,15 @@ class TestRRFMerge:
 class TestIntersectionMerge:
     def test_no_overlap(self):
         executor = PipelineExecutor()
-        a = [FakeArticle(doi="10.1/a")]
-        b = [FakeArticle(doi="10.1/b")]
+        a = _as_articles([FakeArticle(doi="10.1/a")])
+        b = _as_articles([FakeArticle(doi="10.1/b")])
         assert executor._intersect_articles([a, b]) == []
 
     def test_full_overlap(self):
         executor = PipelineExecutor()
         art = FakeArticle(doi="10.1/same")
-        assert len(executor._intersect_articles([[art], [art]])) == 1
+        shared = _as_articles([art])
+        assert len(executor._intersect_articles([shared, shared])) == 1
 
     def test_single_list(self):
         executor = PipelineExecutor()

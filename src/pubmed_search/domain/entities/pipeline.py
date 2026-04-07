@@ -7,6 +7,7 @@ performs an action (search, merge, filter, etc.) and passes results downstream.
 Persistence entities:
 - PipelineMeta: Metadata for a saved pipeline configuration
 - PipelineRun: Record of a single pipeline execution
+- ScheduleEntry: Persistent APScheduler-backed schedule metadata
 - ValidationResult / ValidationFix: Auto-fix validation results
 """
 
@@ -202,6 +203,53 @@ class PipelineRun:
             removed_pmids=data.get("removed_pmids", []),
             error_message=data.get("error_message"),
             top_articles=data.get("top_articles", []),
+        )
+
+
+@dataclass
+class ScheduleEntry:
+    """Persistent schedule metadata for a saved pipeline."""
+
+    pipeline_name: str
+    cron: str
+    enabled: bool = True
+    diff_mode: bool = True
+    notify: bool = True
+    timezone: str = "UTC"
+    next_run: datetime | None = None
+    last_run: datetime | None = None
+    last_status: Literal["scheduled", "success", "error"] = "scheduled"
+    last_error: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize for JSON storage."""
+        return {
+            "pipeline_name": self.pipeline_name,
+            "cron": self.cron,
+            "enabled": self.enabled,
+            "diff_mode": self.diff_mode,
+            "notify": self.notify,
+            "timezone": self.timezone,
+            "next_run": self.next_run.isoformat() if self.next_run else None,
+            "last_run": self.last_run.isoformat() if self.last_run else None,
+            "last_status": self.last_status,
+            "last_error": self.last_error,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ScheduleEntry:
+        """Deserialize from JSON storage."""
+        return cls(
+            pipeline_name=data.get("pipeline_name", ""),
+            cron=data.get("cron", ""),
+            enabled=data.get("enabled", True),
+            diff_mode=data.get("diff_mode", True),
+            notify=data.get("notify", True),
+            timezone=data.get("timezone", "UTC"),
+            next_run=datetime.fromisoformat(data["next_run"]) if data.get("next_run") else None,
+            last_run=datetime.fromisoformat(data["last_run"]) if data.get("last_run") else None,
+            last_status=data.get("last_status", "scheduled"),
+            last_error=data.get("last_error"),
         )
 
 

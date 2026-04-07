@@ -28,7 +28,7 @@
         "powershell": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/hooks/copilot/enforce-pipeline.ps1",
         "cwd": ".",
         "timeoutSec": 5,
-        "comment": "Enforce pipeline mode for complex queries; create feedback loop via deny+reason"
+        "comment": "Copilot-only workflow guardrails for search, discovery, fulltext, session, export, and pipeline tools"
       }
     ],
     "postToolUse": [
@@ -38,7 +38,7 @@
         "powershell": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/hooks/copilot/evaluate-results.ps1",
         "cwd": ".",
         "timeoutSec": 10,
-        "comment": "Evaluate search result quality and write state for feedback loop"
+        "comment": "Copilot-only evaluation of research tool quality and workflow state for the next preToolUse"
       }
     ],
     "sessionEnd": [
