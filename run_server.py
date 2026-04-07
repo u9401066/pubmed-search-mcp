@@ -31,6 +31,8 @@ import argparse
 import logging
 import os
 import sys
+import tempfile
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from anyio import Path as AsyncPath
@@ -58,6 +60,10 @@ def _env_flag(name: str) -> bool:
 def _default_port() -> int:
     port = os.environ.get("MCP_PORT") or os.environ.get("PORT") or "8765"
     return int(port)
+
+
+def _default_export_dir() -> str:
+    return str(Path(tempfile.gettempdir()) / "pubmed_exports")
 
 
 def main() -> None:
@@ -144,7 +150,7 @@ def main() -> None:
     from starlette.responses import FileResponse, JSONResponse
 
     # Export directory
-    EXPORT_DIR = Path("/tmp/pubmed_exports")  # nosec B108
+    EXPORT_DIR = Path(_default_export_dir())
 
     if args.transport == "sse":
         mcp_app = server.sse_app()

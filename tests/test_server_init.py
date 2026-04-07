@@ -4,7 +4,8 @@ Tests for MCP Server and related components.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 
 class TestMCPServerInit:
@@ -118,6 +119,20 @@ class TestServerHTTPMode:
         from mcp.server.fastmcp import FastMCP
 
         assert FastMCP is not None
+
+    async def test_run_server_uses_unix_like_temp_dir_for_exports(self):
+        """run_server export directory should follow the current temp directory."""
+        import run_server
+
+        with patch("run_server.tempfile.gettempdir", return_value="/var/folders/test-temp"):
+            assert run_server._default_export_dir() == str(Path("/var/folders/test-temp") / "pubmed_exports")
+
+    async def test_run_server_uses_windows_like_temp_dir_for_exports(self):
+        """run_server export helper should not hardcode a POSIX-only /tmp path."""
+        import run_server
+
+        with patch("run_server.tempfile.gettempdir", return_value=r"C:\Temp\pubmed"):
+            assert run_server._default_export_dir() == str(Path(r"C:\Temp\pubmed") / "pubmed_exports")
 
 
 class TestToolsInit:

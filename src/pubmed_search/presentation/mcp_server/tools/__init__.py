@@ -1,5 +1,5 @@
 """
-PubMed Search MCP Tools (v0.5.1)
+PubMed Search MCP Tools (v0.5.2)
 
 🎯 42 個 MCP 工具 / 15 categories：
 

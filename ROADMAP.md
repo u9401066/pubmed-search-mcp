@@ -3,7 +3,7 @@
 <!-- markdownlint-disable MD022 MD024 MD031 MD032 MD040 MD058 MD060 -->
 
 > 本文件記錄**待實作**功能。已完成功能請參閱 [CHANGELOG.md](CHANGELOG.md)。
-> **最後更新**: 2026-04-06
+> **最後更新**: 2026-04-07
 
 ---
 
@@ -624,9 +624,10 @@ src/pubmed_search/
 
 1. 生醫詞彙翻譯與控制詞彙對齊
 2. agent-first 的 query planning / output contract
-3. citation / timeline / evidence context
-4. 可重跑的 pipeline / session workflow
-5. 多來源結果的 normalization，而不是自建搜尋基礎設施
+3. bounded agent autonomy / control plane
+4. citation / timeline / evidence context
+5. 可重跑的 pipeline / session workflow
+6. 多來源結果的 normalization，而不是自建搜尋基礎設施
 
 ### 產品定位
 
@@ -634,6 +635,7 @@ src/pubmed_search/
 user / agent problem
   -> biomedical vocabulary alignment
   -> query planning and evidence retrieval
+  -> bounded agent control plane
   -> citation / timeline / evidence context
   -> reproducible pipeline / session workflow
   -> normalized multi-source outputs
@@ -644,6 +646,7 @@ user / agent problem
 - ✅ 使用官方 API、官方 identifier 與控制詞彙，不另創搜尋基礎設施
 - ✅ 先提升 evidence workflow 的價值密度，再考慮新增資料源
 - ✅ Agent-first：優先優化 query planning、output contract、next-step guidance
+- ✅ Bounded autonomy：規劃 / 執行 / 評估 / 核准分層，不把 server 做成黑箱 agent
 - ✅ 所有新工作流遵循 [docs/REPO_SEPARATION_PRINCIPLES.md](docs/REPO_SEPARATION_PRINCIPLES.md)
 - ✅ 新來源只有在 normalization、policy、service 邊界穩定後才擴張
 
@@ -674,7 +677,7 @@ user / agent problem
 
 #### 核心策略
 
-我們不追求「工具越多越好」或「資料源越多越強」，而是追求以下五條 value 軸的穩定提升：
+我們不追求「工具越多越好」或「資料源越多越強」，而是追求以下六條 value 軸的穩定提升：
 
 | Workstream | 目標 | 直接價值 | 不做什麼 |
 |------------|------|----------|----------|
@@ -683,12 +686,15 @@ user / agent problem
 | C. Evidence Context | 把 citation / timeline / evidence summary 串成可判讀證據脈絡 | 提升研究判讀價值，而不是只吐文獻列表 | 不做花哨但無法重用的圖表功能優先化 |
 | D. Reproducible Workflow | 把 pipeline / session / schedule / report 變成可重跑工作流 | 讓研究流程可保存、可驗證、可交接 | 不把 facade 當實作中心 |
 | E. Multi-source Normalization | 把多來源文章、全文、指標與 provenance 對齊成穩定模型 | 提高跨來源可比較性與可匯出性 | 不自建搜尋 index / crawler / ranking infra |
+| F. Bounded Agent Autonomy | 把 planning / execution / critic / approval 變成 agent-facing control plane | 讓 agent 能自主跑長流程，但仍可審計、可中止、可人工核准 | 不內嵌黑箱自由代理、不做 unrestricted autonomy |
 
 #### 執行原則
 
 1. 先修 contract，再擴充功能。
 2. 先把 service / policy / normalization 邊界拉清楚，再新增來源或新工具。
 3. 每個 workstream 都必須回答：輸入 schema 是什麼、semantic planner 是什麼、policy 在哪裡、runtime side effect 在哪裡、對外 contract 是什麼。
+4. bounded autonomy 優先於 unrestricted autonomy：每個 agent-facing workflow 都必須定義 stop condition、execution budget、approval boundary。
+5. agent-facing control plane 與 primitive tools 分層：新增 orchestration surface，但不污染既有 search / discovery / export primitive tools。
 
 #### Milestone 規畫
 
@@ -771,7 +777,48 @@ user / agent problem
 - citation 與 timeline 不再只是分析工具，而是可被後續 workflow 消費的 evidence context
 - evidence summary 可以作為 export、review、pipeline report 的穩定輸入
 
-##### M4. Multi-source Normalization 深化
+##### M4. Agent-led Workflow / Bounded Autonomy 主線
+
+**時間窗**: 與 M2 / M3 部分並行，之後 6-10 週
+
+**重點**:
+
+- 在不污染 primitive tools 的前提下，新增 agent-facing control plane
+- 把 planning / execution / critic / approval 接到既有 task、session、pipeline substrate
+
+**交付物**:
+
+- Planning tools
+  - `plan_literature_review(goal, constraints)`
+  - `plan_next_search_step(session_id)`
+  - 輸出不是自由文字，而是 typed plan：包含 source selection、PICO/MeSH strategy、stop conditions、evidence targets、fallback branches
+- Stateful execution tools
+  - `run_plan_step(plan_id, step_id?)`
+  - `resume_plan(plan_id)`
+  - `get_plan_status(plan_id)`
+  - 接上現有 experimental task support、session artifact、pipeline run history
+- Critic / evaluator tools
+  - `assess_evidence_gap(plan_id)`
+  - `suggest_next_best_action(plan_id)`
+  - `check_search_coverage(plan_id)`
+  - 能偵測 over-searching、stagnation、source imbalance、evidence weakness、缺失 comparator / outcome
+- Approval checkpoints
+  - `request_human_approval(plan_id, checkpoint="before_export")`
+  - 對 protocol lock、final export、final conclusion、high-risk branching 設明確人工核准點
+- DDD 落地切分
+  - Domain：`ResearchGoal`、`SearchPlan`、`PlanStep`、`EvidenceGap`、`ApprovalCheckpoint`、`ExecutionBudget`
+  - Application：`PlannerService`、`PlanExecutorService`、`CriticService`、`ApprovalService`
+  - Presentation：新增 agent-facing MCP tools，不污染既有 primitive search / discovery tools
+  - Infrastructure：plan persistence、task store、telemetry、budget enforcement
+
+**完成標準**:
+
+- agent 可產生 typed plan，且 plan/status 可在 session / pipeline artifact 中恢復
+- 長流程可中止、可恢復、可審計，不依賴 agent 自己記憶整個流程
+- critic 能指出「該擴展」「該停止」「該回到人類確認」
+- approval boundary 明確存在，避免 unrestricted autonomy
+
+##### M5. Multi-source Normalization 深化
 
 **時間窗**: 與 M2 / M3 部分並行，之後持續推進
 
@@ -868,6 +915,24 @@ user / agent problem
 - 自建 crawler、索引、搜尋平台
 - 為了來源數量而來源數量，導致 normalization 反而破碎
 
+##### F. Bounded Agent Autonomy / Agent Control Plane
+
+**目標**: 讓 agent 不只會呼叫工具，還能在明確邊界內規劃、執行、評估、請求人類核准。
+
+**要做**:
+
+- planning / execution / critic / approval contract 分層
+- typed plan model：step status、dependencies、stop conditions、execution budget、checkpoint policy
+- 重用 session、pipeline、task、evidence context 作為 execution substrate，而不是另起平行 runtime
+- 把 planning tools、stateful execution tools、critic tools、approval checkpoints 做成 agent-facing MCP surface
+- primitive tools 保持穩定，作為 control plane 下層 building blocks
+
+**不做**:
+
+- 在 MCP server 內嵌一個黑箱自由 agent，偷偷決策所有 side effects
+- 讓 agent 在沒有 budget / approval / audit trail 下無限循環
+- 用單一 mega-tool 取代既有 primitive tools
+
 #### 明確不投資的方向
 
 | 類型 | 不做原因 |
@@ -876,6 +941,7 @@ user / agent problem
 | 通用翻譯平台 | Agent 已有 LLM 翻譯能力，repo 應專注控制詞彙對齊 |
 | 為了炫技而新增資料源 | 若沒有 normalization / provenance / policy 支撐，價值密度低 |
 | 大量一次性分析圖表 | 若不能回寫成 evidence context contract，優先級低 |
+| 黑箱 unrestricted autonomy | 若沒有 planner / critic / approval / budget 邊界，會削弱可預測性與審計能力 |
 
 #### 版本節奏建議
 
@@ -884,7 +950,8 @@ user / agent problem
 | v0.6.x | Query contract + docs contract cleanup | vocabulary alignment baseline, query planning contract, public docs/API cleanup |
 | v0.7.x | Fulltext service + workflow reproducibility | fulltext orchestration refactor, stable pipeline/session/report flow |
 | v0.8.x | Evidence context | citation/timeline/evidence summary contracts |
-| v0.9.x | Normalization depth | provenance, source trust, identifier linkage, export/review reuse |
+| v0.9.x | Agent control plane | typed planning tools, resumable execution, critic/evaluator loop, approval checkpoints |
+| v1.0.x | Normalization depth | provenance, source trust, identifier linkage, export/review reuse |
 
 ### 🔥 Phase 5.9: Meta-Analysis 搜尋中介層 ⭐⭐⭐⭐⭐
 > **目標**: 提供 Systematic Review / Meta-Analysis 等級的完整搜尋工作流程

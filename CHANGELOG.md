@@ -20,6 +20,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.5.2] - 2026-04-07
+
+### Added
+
+- Cross-platform GitHub Actions CI matrix (Linux / macOS / Windows) with `timeout-minutes` and `concurrency` guard
+- Bounded Agent Autonomy roadmap direction (planning / execution / critic / approval control plane)
+
+### Fixed
+
+- `run_server.py` export directory now uses OS temporary path instead of hardcoded `/tmp/pubmed_exports` for true cross-platform support
+- `run_server.py` replaced `__import__("pathlib")` anti-pattern with proper top-level import
+
+---
+
 ## [0.5.1] - 2026-04-07
 
 ### Added
