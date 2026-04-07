@@ -4,7 +4,7 @@ Final targeted tests to push coverage from 86% to 90%.
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
@@ -100,28 +100,26 @@ class TestStrategyExpandSearch:
         """Test strategy generation with MeSH lookup."""
         from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
 
+        generator = SearchStrategyGenerator(email="test@example.com")
+
+        # Mock the high-level methods to avoid real NCBI API calls
         with (
-            patch("pubmed_search.infrastructure.ncbi.strategy.Entrez.esearch") as mock_esearch,
-            patch("pubmed_search.infrastructure.ncbi.strategy.Entrez.esummary") as mock_esummary,
-            patch("pubmed_search.infrastructure.ncbi.strategy.Entrez.read") as mock_read,
-            patch("pubmed_search.infrastructure.ncbi.strategy.Entrez.espell") as mock_espell,
+            patch.object(generator, "spell_check", return_value=("cancer treatment", False)),
+            patch.object(
+                generator,
+                "get_mesh_info",
+                return_value={
+                    "mesh_id": "D002318",
+                    "preferred_term": "Neoplasms",
+                    "synonyms": ["Cancer", "Tumors"],
+                    "tree_numbers": ["C04"],
+                },
+            ),
         ):
-            # Spell check returns no correction
-            mock_espell.return_value = MagicMock()
-
-            # MeSH search returns ID
-            mock_read.side_effect = [
-                {"CorrectedQuery": ""},  # Spell check
-                {"IdList": ["D002318"]},  # MeSH search
-            ]
-            mock_esearch.return_value = MagicMock()
-            mock_esummary.return_value = MagicMock()
-
-            generator = SearchStrategyGenerator(email="test@example.com")
-
             result = await generator.generate_strategies("cancer treatment")
 
             assert isinstance(result, dict)
+            assert result["topic"] == "cancer treatment"
 
 
 class TestClientSearchResult:
