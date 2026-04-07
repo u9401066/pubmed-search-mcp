@@ -22,11 +22,12 @@ from __future__ import annotations
 
 import contextvars
 import logging
-import os
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
+
+from pubmed_search.shared.settings import get_settings
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -36,7 +37,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # ── Toggle ──────────────────────────────────────────────────────────────────
-PROFILING_ENABLED = os.environ.get("PUBMED_PROFILING", "").lower() in ("1", "true", "yes")
+PROFILING_ENABLED = get_settings().profiling_enabled
 
 # ── Context var for tracking HTTP time within a tool call ───────────────────
 _http_time_accumulator: contextvars.ContextVar[list[float]] = contextvars.ContextVar(

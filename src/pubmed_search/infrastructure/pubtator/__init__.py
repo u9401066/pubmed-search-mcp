@@ -8,6 +8,11 @@ Features:
 - Relation queries (treat, associate, cause, interact)
 - Built-in rate limiting (3 req/sec)
 - Async HTTP client with retry
+
+Maintenance:
+    Keep request choreography and API model details in the underlying client
+    and model modules. This package export should remain a small, stable entry
+    point for callers that need PubTator capabilities.
 """
 
 from __future__ import annotations

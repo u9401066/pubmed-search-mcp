@@ -4,6 +4,7 @@ Session Tools - PMID 持久化與 Session 管理
 提供 Agent 存取 session 暫存資料的工具，解決記憶滿載問題。
 
 Tools:
+- read_session: 統一 session 讀取 facade
 - get_session_pmids: 取得指定搜尋的 PMID 列表
 - get_cached_article: 從快取取得文章詳情
 - get_session_summary: Session 摘要 (可選包含完整歷史)
@@ -70,6 +71,179 @@ async def notify_session_resources_updated(ctx: Context | None) -> None:
             await session.send_resource_updated(uri)
 
 
+def _json_error(**payload: Any) -> str:
+    """Serialize an error payload consistently for session tools."""
+    payload.setdefault("success", False)
+    return json.dumps(payload, ensure_ascii=False)
+
+
+def _read_session_pmids_impl(
+    session_manager: SessionManager,
+    *,
+    search_index: int = -1,
+    query_filter: str | None = None,
+) -> str:
+    session = session_manager.get_current_session()
+    if not session:
+        return _json_error(error="No active session", hint="Run a search first to create a session")
+
+    if not session.search_history:
+        return _json_error(error="No search history", hint="Run unified_search first")
+
+    if query_filter:
+        matching = [
+            (index, search)
+            for index, search in enumerate(session.search_history)
+            if query_filter.lower() in search.get("query", "").lower()
+        ]
+        if not matching:
+            return _json_error(
+                error=f"No searches matching '{query_filter}'",
+                available_queries=[search.get("query", "")[:50] for search in session.search_history[-5:]],
+            )
+        index, search = matching[-1]
+    else:
+        try:
+            search = session.search_history[search_index]
+            index = search_index if search_index >= 0 else len(session.search_history) + search_index
+        except IndexError:
+            return _json_error(error=f"Invalid search_index: {search_index}", total_searches=len(session.search_history))
+
+    pmids = search.get("pmids", [])
+    return json.dumps(
+        {
+            "success": True,
+            "search_index": index,
+            "query": search.get("query", ""),
+            "timestamp": search.get("timestamp", ""),
+            "total_pmids": len(pmids),
+            "pmids": pmids,
+            "pmids_csv": ",".join(pmids),
+            "hint": "Use pmids_csv with prepare_export or get_citation_metrics",
+        },
+        ensure_ascii=False,
+    )
+
+
+def _read_cached_article_impl(session_manager: SessionManager, *, pmid: str) -> str:
+    session = session_manager.get_current_session()
+    if not session:
+        return _json_error(
+            error="No active session",
+            hint="Article not in cache, use fetch_article_details instead",
+        )
+
+    article = session_manager.get_cached_article(pmid)
+    if article is None:
+        return _json_error(
+            error=f"PMID {pmid} not in cache",
+            cached_count=len(session_manager.get_session_cached_pmids()),
+            hint="Use fetch_article_details to get from PubMed",
+        )
+
+    return json.dumps(
+        {"success": True, "source": "cache", "article": article},
+        ensure_ascii=False,
+        indent=2,
+    )
+
+
+def _read_session_summary_impl(
+    session_manager: SessionManager,
+    *,
+    include_history: bool = False,
+    history_limit: int = 10,
+) -> str:
+    session = session_manager.get_current_session()
+    if not session:
+        return json.dumps(
+            {
+                "success": False,
+                "has_session": False,
+                "message": "No active session. Run a search to create one.",
+            },
+            ensure_ascii=False,
+        )
+
+    recent_searches = [
+        {"query": search.get("query", "")[:60], "count": len(search.get("pmids", []))}
+        for search in session.search_history[-5:]
+    ]
+    cached_pmids = session_manager.get_session_cached_pmids(limit=100)
+
+    result: dict[str, Any] = {
+        "success": True,
+        "has_session": True,
+        "session_id": session.session_id,
+        "topic": session.topic,
+        "created_at": session.created_at,
+        "stats": {
+            "cached_articles": len(session_manager.get_session_cached_pmids()),
+            "total_searches": len(session.search_history),
+            "reading_list_items": len(session.reading_list),
+            "excluded_articles": len(session.excluded_pmids),
+        },
+        "recent_searches": recent_searches,
+        "cached_pmids_sample": cached_pmids[:20],
+        "all_cached_pmids_csv": ",".join(cached_pmids[:100]),
+        "hints": [
+            "Use get_session_pmids() to get PMIDs from a specific search",
+            "Use get_cached_article(pmid) to get article details from cache",
+            "Use pmids='last' with prepare_export or get_citation_metrics",
+        ],
+    }
+
+    if include_history:
+        history = session.search_history[-history_limit:]
+        total = len(session.search_history)
+        formatted_history: list[dict[str, Any]] = []
+        for index, search in enumerate(history):
+            actual_index = total - history_limit + index if total > history_limit else index
+            formatted_history.append(
+                {
+                    "index": actual_index,
+                    "query": search.get("query", "")[:80],
+                    "timestamp": search.get("timestamp", "")[:19],
+                    "result_count": search.get("result_count", 0),
+                    "pmid_count": len(search.get("pmids", [])),
+                }
+            )
+        result["search_history"] = formatted_history
+        result["hints"].append("Use get_session_pmids(index) to get PMIDs for a specific search")
+
+    return json.dumps(result, ensure_ascii=False, indent=2)
+
+
+def _read_session_dispatch(
+    session_manager: SessionManager,
+    *,
+    action: str,
+    pmid: str = "",
+    search_index: int = -1,
+    query_filter: str | None = None,
+    include_history: bool = False,
+    history_limit: int = 10,
+) -> str:
+    normalized_action = action.strip().lower().replace("-", "_")
+    if normalized_action in {"pmids", "get_pmids", "search_pmids"}:
+        return _read_session_pmids_impl(session_manager, search_index=search_index, query_filter=query_filter)
+    if normalized_action in {"article", "cached_article", "cache"}:
+        if not pmid:
+            return _json_error(error="PMID is required for article action", hint="Provide pmid='<pmid>'")
+        return _read_cached_article_impl(session_manager, pmid=pmid)
+    if normalized_action in {"summary", "context"}:
+        return _read_session_summary_impl(
+            session_manager,
+            include_history=include_history,
+            history_limit=history_limit,
+        )
+
+    return _json_error(
+        error=f"Unknown session action: {action}",
+        hint="Use one of: pmids, article, summary",
+    )
+
+
 def register_session_tools(mcp: FastMCP, session_manager: SessionManager):
     """
     Register session tools for PMID persistence.
@@ -77,6 +251,36 @@ def register_session_tools(mcp: FastMCP, session_manager: SessionManager):
     These tools help Agent access cached data without
     relying on context memory.
     """
+
+    @mcp.tool()
+    def read_session(
+        action: str = "summary",
+        pmid: str = "",
+        search_index: int = -1,
+        query_filter: str | None = None,
+        include_history: bool = False,
+        history_limit: int = 10,
+    ) -> str:
+        """Read session data through a single facade.
+
+        Actions:
+        - pmids: return PMIDs for one recorded search
+        - article: return one cached article payload
+        - summary: return current session summary and optional history
+        """
+        try:
+            return _read_session_dispatch(
+                session_manager,
+                action=action,
+                pmid=pmid,
+                search_index=search_index,
+                query_filter=query_filter,
+                include_history=include_history,
+                history_limit=history_limit,
+            )
+        except Exception as exc:
+            logger.exception(f"read_session failed: {exc}")
+            return _json_error(error=str(exc))
 
     @mcp.tool()
     def get_session_pmids(search_index: int = -1, query_filter: str | None = None) -> str:
@@ -102,74 +306,15 @@ def register_session_tools(mcp: FastMCP, session_manager: SessionManager):
             get_session_pmids(query_filter="BJA")  # 包含 "BJA" 的搜尋
         """
         try:
-            session = session_manager.get_current_session()
-            if not session:
-                return json.dumps(
-                    {
-                        "success": False,
-                        "error": "No active session",
-                        "hint": "Run a search first to create a session",
-                    }
-                )
-
-            if not session.search_history:
-                return json.dumps(
-                    {
-                        "success": False,
-                        "error": "No search history",
-                        "hint": "Run unified_search first",
-                    }
-                )
-
-            # Filter by query if specified
-            if query_filter:
-                matching = [
-                    (i, s)
-                    for i, s in enumerate(session.search_history)
-                    if query_filter.lower() in s.get("query", "").lower()
-                ]
-                if not matching:
-                    return json.dumps(
-                        {
-                            "success": False,
-                            "error": f"No searches matching '{query_filter}'",
-                            "available_queries": [s.get("query", "")[:50] for s in session.search_history[-5:]],
-                        }
-                    )
-                index, search = matching[-1]  # Most recent matching
-            else:
-                # Use search_index
-                try:
-                    search = session.search_history[search_index]
-                    index = search_index if search_index >= 0 else len(session.search_history) + search_index
-                except IndexError:
-                    return json.dumps(
-                        {
-                            "success": False,
-                            "error": f"Invalid search_index: {search_index}",
-                            "total_searches": len(session.search_history),
-                        }
-                    )
-
-            pmids = search.get("pmids", [])
-
-            return json.dumps(
-                {
-                    "success": True,
-                    "search_index": index,
-                    "query": search.get("query", ""),
-                    "timestamp": search.get("timestamp", ""),
-                    "total_pmids": len(pmids),
-                    "pmids": pmids,
-                    "pmids_csv": ",".join(pmids),  # 方便直接複製使用
-                    "hint": "Use pmids_csv with prepare_export or get_citation_metrics",
-                },
-                ensure_ascii=False,
+            return _read_session_dispatch(
+                session_manager,
+                action="pmids",
+                search_index=search_index,
+                query_filter=query_filter,
             )
-
-        except Exception as e:
-            logger.exception(f"get_session_pmids failed: {e}")
-            return json.dumps({"success": False, "error": str(e)})
+        except Exception as exc:
+            logger.exception(f"get_session_pmids failed: {exc}")
+            return _json_error(error=str(exc))
 
     # Legacy separate history tool removed in v0.3.1 and merged into get_session_summary(include_history=True)
 
@@ -188,36 +333,10 @@ def register_session_tools(mcp: FastMCP, session_manager: SessionManager):
             文章詳細資訊 (如果在快取中)
         """
         try:
-            session = session_manager.get_current_session()
-            if not session:
-                return json.dumps(
-                    {
-                        "success": False,
-                        "error": "No active session",
-                        "hint": "Article not in cache, use fetch_article_details instead",
-                    }
-                )
-
-            article = session_manager.get_cached_article(pmid)
-            if article is None:
-                return json.dumps(
-                    {
-                        "success": False,
-                        "error": f"PMID {pmid} not in cache",
-                        "cached_count": len(session_manager.get_session_cached_pmids()),
-                        "hint": "Use fetch_article_details to get from PubMed",
-                    }
-                )
-
-            return json.dumps(
-                {"success": True, "source": "cache", "article": article},
-                ensure_ascii=False,
-                indent=2,
-            )
-
-        except Exception as e:
-            logger.exception(f"get_cached_article failed: {e}")
-            return json.dumps({"success": False, "error": str(e)})
+            return _read_session_dispatch(session_manager, action="article", pmid=pmid)
+        except Exception as exc:
+            logger.exception(f"get_cached_article failed: {exc}")
+            return _json_error(error=str(exc))
 
     @mcp.tool()
     def get_session_summary(include_history: bool = False, history_limit: int = 10) -> str:
@@ -240,70 +359,15 @@ def register_session_tools(mcp: FastMCP, session_manager: SessionManager):
             get_session_summary(include_history=True, history_limit=20)  # 更多歷史
         """
         try:
-            session = session_manager.get_current_session()
-            if not session:
-                return json.dumps(
-                    {
-                        "success": False,
-                        "has_session": False,
-                        "message": "No active session. Run a search to create one.",
-                    }
-                )
-
-            # Get recent searches summary (always included, brief)
-            recent_searches = []
-            for s in session.search_history[-5:]:
-                recent_searches.append({"query": s.get("query", "")[:60], "count": len(s.get("pmids", []))})
-
-            # Get some cached PMIDs sample
-            cached_pmids = session_manager.get_session_cached_pmids(limit=100)
-
-            result: dict[str, Any] = {
-                "success": True,
-                "has_session": True,
-                "session_id": session.session_id,
-                "topic": session.topic,
-                "created_at": session.created_at,
-                "stats": {
-                    "cached_articles": len(session_manager.get_session_cached_pmids()),
-                    "total_searches": len(session.search_history),
-                    "reading_list_items": len(session.reading_list),
-                    "excluded_articles": len(session.excluded_pmids),
-                },
-                "recent_searches": recent_searches,
-                "cached_pmids_sample": cached_pmids[:20],
-                "all_cached_pmids_csv": ",".join(cached_pmids[:100]),
-                "hints": [
-                    "Use get_session_pmids() to get PMIDs from a specific search",
-                    "Use get_cached_article(pmid) to get article details from cache",
-                    "Use pmids='last' with prepare_export or get_citation_metrics",
-                ],
-            }
-
-            # Include detailed search history if requested
-            if include_history:
-                history = session.search_history[-history_limit:]
-                total = len(session.search_history)
-                formatted_history: list[dict[str, Any]] = []
-                for i, search in enumerate(history):
-                    actual_index = total - history_limit + i if total > history_limit else i
-                    formatted_history.append(
-                        {
-                            "index": actual_index,
-                            "query": search.get("query", "")[:80],
-                            "timestamp": search.get("timestamp", "")[:19],  # YYYY-MM-DDTHH:MM:SS
-                            "result_count": search.get("result_count", 0),
-                            "pmid_count": len(search.get("pmids", [])),
-                        }
-                    )
-                result["search_history"] = formatted_history
-                result["hints"].append("Use get_session_pmids(index) to get PMIDs for a specific search")
-
-            return json.dumps(result, ensure_ascii=False, indent=2)
-
-        except Exception as e:
-            logger.exception(f"get_session_summary failed: {e}")
-            return json.dumps({"success": False, "error": str(e)})
+            return _read_session_dispatch(
+                session_manager,
+                action="summary",
+                include_history=include_history,
+                history_limit=history_limit,
+            )
+        except Exception as exc:
+            logger.exception(f"get_session_summary failed: {exc}")
+            return _json_error(error=str(exc))
 
 
 def register_session_resources(mcp: FastMCP, session_manager: SessionManager):

@@ -79,6 +79,59 @@ def _configure_manager_cache(sm, article_cache=None):
     sm.get_cached_article_map.side_effect = _get_cached_article_map
 
 
+class TestSessionToolRegistration:
+    def test_registers_read_session_facade(self):
+        sm = MagicMock()
+        tools = _capture_tools(register_session_tools, sm)
+        assert {"read_session", "get_session_pmids", "get_cached_article", "get_session_summary"} <= set(tools)
+
+
+# ============================================================
+# read_session
+# ============================================================
+
+
+class TestReadSession:
+    def setup_method(self):
+        self.sm = MagicMock()
+        self.tools = _capture_tools(register_session_tools, self.sm)
+        self.fn = self.tools["read_session"]
+
+    async def test_summary_action(self):
+        history = [{"query": "test", "pmids": ["111"]}]
+        cache = {"111": {"title": "A"}}
+        session = _make_session(search_history=history, article_cache=cache)
+        self.sm.get_current_session.return_value = session
+        _configure_manager_cache(self.sm, cache)
+
+        result = json.loads(self.fn())
+        assert result["success"] is True
+        assert result["has_session"] is True
+
+    async def test_pmids_action(self):
+        history = [{"query": "covid", "pmids": ["111", "222"], "timestamp": "2024-01-01"}]
+        self.sm.get_current_session.return_value = _make_session(search_history=history)
+
+        result = json.loads(self.fn(action="pmids"))
+        assert result["success"] is True
+        assert result["pmids_csv"] == "111,222"
+
+    async def test_article_action(self):
+        article = {"pmid": "12345", "title": "Test Article"}
+        session = _make_session(article_cache={"12345": article})
+        self.sm.get_current_session.return_value = session
+        _configure_manager_cache(self.sm, {"12345": article})
+
+        result = json.loads(self.fn(action="article", pmid="12345"))
+        assert result["success"] is True
+        assert result["article"]["title"] == "Test Article"
+
+    async def test_unknown_action(self):
+        result = json.loads(self.fn(action="unknown"))
+        assert result["success"] is False
+        assert "Unknown session action" in result["error"]
+
+
 # ============================================================
 # get_session_pmids
 # ============================================================

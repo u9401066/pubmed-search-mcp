@@ -1,4 +1,14 @@
-"""Entity cache wrapper built on the shared cache substrate."""
+"""Entity-focused cache wrapper built on the shared cache substrate.
+
+Design:
+    This module provides the common cache-aside pattern used for resolved
+    entities and lightweight lookup results. It wraps CacheStore with
+    normalized keys and an async-friendly get-or-fetch workflow.
+
+Maintenance:
+    Keep this wrapper simple. Changes to eviction, persistence, or statistics
+    should usually happen in shared/cache_substrate.py rather than here.
+"""
 
 from __future__ import annotations
 

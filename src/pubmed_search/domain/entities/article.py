@@ -656,84 +656,9 @@ class UnifiedArticle:
 
         Expected format: Result from unified_search(), fetch_article_details(), or raw PubMed extraction
         """
-        # Parse authors
-        authors = []
-        if "authors" in data:
-            for author_str in data["authors"]:
-                if isinstance(author_str, str):
-                    authors.append(Author(full_name=author_str))
-                elif isinstance(author_str, dict):
-                    authors.append(Author.from_dict(author_str))
+        from pubmed_search.infrastructure.sources.article_mapper import article_from_pubmed
 
-        # Parse date
-        pub_date = None
-        year = None
-        if data.get("pub_date"):
-            year, pub_date = _parse_pubmed_date(data["pub_date"])
-        if not year and data.get("year"):
-            year = int(data["year"])
-
-        # Parse article type
-        article_type = ArticleType.UNKNOWN
-        if data.get("article_type"):
-            type_map = {
-                "Journal Article": ArticleType.JOURNAL_ARTICLE,
-                "Review": ArticleType.REVIEW,
-                "Meta-Analysis": ArticleType.META_ANALYSIS,
-                "Systematic Review": ArticleType.SYSTEMATIC_REVIEW,
-                "Clinical Trial": ArticleType.CLINICAL_TRIAL,
-                "Randomized Controlled Trial": ArticleType.RANDOMIZED_CONTROLLED_TRIAL,
-                "Case Reports": ArticleType.CASE_REPORT,
-                "Letter": ArticleType.LETTER,
-                "Editorial": ArticleType.EDITORIAL,
-                "Comment": ArticleType.COMMENT,
-            }
-            for pub_type in data.get("article_type", []):
-                if pub_type in type_map:
-                    article_type = type_map[pub_type]
-                    break
-
-        # Determine OA status
-        oa_status = OpenAccessStatus.UNKNOWN
-        oa_links = []
-        is_oa = False
-        if data.get("pmc"):
-            is_oa = True
-            oa_status = OpenAccessStatus.GREEN
-            pmc_id = data["pmc"].replace("PMC", "")
-            oa_links.append(
-                OpenAccessLink(
-                    url=f"https://www.ncbi.nlm.nih.gov/pmc/articles/PMC{pmc_id}/",
-                    version="publishedVersion",
-                    host_type="repository",
-                    is_best=True,
-                )
-            )
-
-        return cls(
-            title=data.get("title", "Unknown Title"),
-            primary_source="pubmed",
-            pmid=data.get("pmid") or data.get("uid"),
-            doi=data.get("doi"),
-            pmc=data.get("pmc"),
-            authors=authors,
-            abstract=data.get("abstract"),
-            journal=data.get("journal") or data.get("fulljournalname"),
-            journal_abbrev=data.get("source"),
-            volume=data.get("volume"),
-            issue=data.get("issue"),
-            pages=data.get("pages"),
-            year=year,
-            publication_date=pub_date,
-            article_type=article_type,
-            language=data.get("language"),
-            keywords=data.get("keywords", []),
-            mesh_terms=data.get("mesh_terms", []),
-            oa_status=oa_status,
-            oa_links=oa_links,
-            is_open_access=is_oa,
-            sources=[SourceMetadata(source="pubmed", raw_data=data)],
-        )
+        return article_from_pubmed(data)
 
     @classmethod
     def from_crossref(cls, data: dict[str, Any]) -> UnifiedArticle:
@@ -742,96 +667,9 @@ class UnifiedArticle:
 
         Expected format: Single work from CrossRef /works/{doi} endpoint
         """
-        # Parse authors
-        authors = []
-        for author_data in data.get("author", []):
-            authors.append(Author.from_dict(author_data))
+        from pubmed_search.infrastructure.sources.article_mapper import article_from_crossref
 
-        # Parse date
-        year = None
-        pub_date = None
-        date_parts = data.get("published", {}).get("date-parts", [[]])
-        if date_parts and date_parts[0]:
-            parts = date_parts[0]
-            if len(parts) >= 1:
-                year = parts[0]
-            if len(parts) >= _DATE_PARTS_FULL:
-                with contextlib.suppress(ValueError, TypeError):
-                    pub_date = date(parts[0], parts[1], parts[2])
-
-        # Parse article type
-        article_type = ArticleType.UNKNOWN
-        cr_type = data.get("type", "").lower()
-        type_map = {
-            "journal-article": ArticleType.JOURNAL_ARTICLE,
-            "posted-content": ArticleType.PREPRINT,
-            "book-chapter": ArticleType.BOOK_CHAPTER,
-            "proceedings-article": ArticleType.CONFERENCE_PAPER,
-            "dissertation": ArticleType.THESIS,
-            "dataset": ArticleType.DATASET,
-        }
-        article_type = type_map.get(cr_type, ArticleType.UNKNOWN)
-
-        # Parse container (journal)
-        journal = None
-        journal_abbrev = None
-        container = data.get("container-title", [])
-        if container:
-            journal = container[0]
-        short_container = data.get("short-container-title", [])
-        if short_container:
-            journal_abbrev = short_container[0]
-
-        # Parse pages
-        pages = data.get("page")
-
-        # Extract PMC if in alternative-id
-        pmc = None
-        for alt_id in data.get("alternative-id", []):
-            if str(alt_id).startswith("PMC"):
-                pmc = alt_id
-                break
-
-        # Parse OA links
-        oa_links = []
-        for link in data.get("link", []):
-            if link.get("content-type") == "application/pdf":
-                oa_links.append(
-                    OpenAccessLink(
-                        url=link["URL"],
-                        version="publishedVersion"
-                        if "publisher" in link.get("intended-application", "")
-                        else "unknown",
-                        host_type="publisher",
-                    )
-                )
-
-        return cls(
-            title=data.get("title", ["Unknown Title"])[0]
-            if isinstance(data.get("title"), list)
-            else data.get("title", "Unknown Title"),
-            primary_source="crossref",
-            doi=data.get("DOI"),
-            pmc=pmc,
-            authors=authors,
-            abstract=data.get("abstract"),
-            journal=journal,
-            journal_abbrev=journal_abbrev,
-            volume=data.get("volume"),
-            issue=data.get("issue"),
-            pages=pages,
-            year=year,
-            publication_date=pub_date,
-            publisher=data.get("publisher"),
-            article_type=article_type,
-            oa_links=oa_links,
-            citation_metrics=CitationMetrics(
-                citation_count=data.get("is-referenced-by-count"),
-            )
-            if data.get("is-referenced-by-count")
-            else None,
-            sources=[SourceMetadata(source="crossref", raw_data=data)],
-        )
+        return article_from_crossref(data)
 
     @classmethod
     def from_openalex(cls, data: dict[str, Any]) -> UnifiedArticle:
@@ -840,219 +678,37 @@ class UnifiedArticle:
 
         Expected format: Single work from OpenAlex /works endpoint
         """
-        # Parse authors
-        authors = []
-        for authorship in data.get("authorships", []):
-            author_info = authorship.get("author", {})
-            authors.append(
-                Author(
-                    full_name=author_info.get("display_name"),
-                    orcid=author_info.get("orcid"),
-                )
-            )
+        from pubmed_search.infrastructure.sources.article_mapper import article_from_openalex
 
-        # Parse date
-        year = data.get("publication_year")
-        pub_date = None
-        if data.get("publication_date"):
-            with contextlib.suppress(ValueError):
-                pub_date = date.fromisoformat(data["publication_date"])
-
-        # Extract IDs
-        doi = None
-        pmid = None
-        pmc = None
-        if data.get("doi"):
-            doi = data["doi"].replace("https://doi.org/", "")
-        ids = data.get("ids", {})
-        if ids.get("pmid"):
-            pmid = ids["pmid"].replace("https://pubmed.ncbi.nlm.nih.gov/", "").rstrip("/")
-        if ids.get("pmcid"):
-            pmc = ids["pmcid"].replace("https://www.ncbi.nlm.nih.gov/pmc/articles/", "").rstrip("/")
-
-        # OA info
-        is_oa = data.get("open_access", {}).get("is_oa", False)
-        oa_url = data.get("open_access", {}).get("oa_url")
-        oa_status_str = data.get("open_access", {}).get("oa_status", "unknown")
-        oa_status_map = {
-            "gold": OpenAccessStatus.GOLD,
-            "green": OpenAccessStatus.GREEN,
-            "hybrid": OpenAccessStatus.HYBRID,
-            "bronze": OpenAccessStatus.BRONZE,
-            "closed": OpenAccessStatus.CLOSED,
-        }
-        oa_status = oa_status_map.get(oa_status_str, OpenAccessStatus.UNKNOWN)
-
-        oa_links = []
-        if oa_url:
-            oa_links.append(
-                OpenAccessLink(
-                    url=oa_url,
-                    is_best=True,
-                )
-            )
-
-        # Journal
-        journal = None
-        location = data.get("primary_location", {})
-        source = location.get("source", {})
-        if source:
-            journal = source.get("display_name")
-
-        # Parse article type from OpenAlex 'type' field
-        # Reference: https://docs.openalex.org/api-entities/works/work-object#type
-        oa_type = data.get("type", "").lower()
-        openalex_type_map = {
-            "article": ArticleType.JOURNAL_ARTICLE,
-            "review": ArticleType.REVIEW,
-            "preprint": ArticleType.PREPRINT,
-            "book-chapter": ArticleType.BOOK_CHAPTER,
-            "proceedings-article": ArticleType.CONFERENCE_PAPER,
-            "dissertation": ArticleType.THESIS,
-            "dataset": ArticleType.DATASET,
-            "editorial": ArticleType.EDITORIAL,
-            "letter": ArticleType.LETTER,
-            "erratum": ArticleType.OTHER,
-            "paratext": ArticleType.OTHER,
-            "peer-review": ArticleType.OTHER,
-            "reference-entry": ArticleType.OTHER,
-        }
-        article_type = openalex_type_map.get(oa_type, ArticleType.UNKNOWN)
-
-        return cls(
-            title=data.get("title") or data.get("display_name", "Unknown Title"),
-            primary_source="openalex",
-            openalex_id=data.get("id", "").replace("https://openalex.org/", ""),
-            doi=doi,
-            pmid=pmid,
-            pmc=pmc,
-            authors=authors,
-            abstract=data.get("abstract"),
-            journal=journal,
-            year=year,
-            publication_date=pub_date,
-            article_type=article_type,
-            is_open_access=is_oa,
-            oa_status=oa_status,
-            oa_links=oa_links,
-            citation_metrics=CitationMetrics(
-                citation_count=data.get("cited_by_count"),
-            )
-            if data.get("cited_by_count")
-            else None,
-            sources=[SourceMetadata(source="openalex", raw_data=data)],
-        )
+        return article_from_openalex(data)
 
     @classmethod
     def from_semantic_scholar(cls, data: dict[str, Any]) -> UnifiedArticle:
         """Create UnifiedArticle from Semantic Scholar API response."""
-        # Parse authors
-        authors = []
-        for author in data.get("authors", []):
-            authors.append(
-                Author(
-                    full_name=author.get("name"),
-                )
-            )
+        from pubmed_search.infrastructure.sources.article_mapper import article_from_semantic_scholar
 
-        # Extract IDs
-        doi = data.get("externalIds", {}).get("DOI")
-        pmid = data.get("externalIds", {}).get("PubMed")
-        pmc = data.get("externalIds", {}).get("PubMedCentral")
-        arxiv = data.get("externalIds", {}).get("ArXiv")
-
-        # OA info
-        is_oa = data.get("isOpenAccess", False)
-        oa_links = []
-        if data.get("openAccessPdf", {}).get("url"):
-            oa_links.append(
-                OpenAccessLink(
-                    url=data["openAccessPdf"]["url"],
-                    is_best=True,
-                )
-            )
-
-        # Detect article type
-        # S2 publicationVenue.type can be "journal", "conference", "repository"
-        article_type = ArticleType.UNKNOWN
-        venue_type = (data.get("publicationVenue", {}) or {}).get("type", "").lower()
-        if venue_type == "journal":
-            article_type = ArticleType.JOURNAL_ARTICLE
-        elif venue_type == "conference":
-            article_type = ArticleType.CONFERENCE_PAPER
-        elif arxiv and not pmid:
-            # Has arXiv ID but no PubMed ID → likely a preprint
-            article_type = ArticleType.PREPRINT
-
-        return cls(
-            title=data.get("title", "Unknown Title"),
-            primary_source="semantic_scholar",
-            s2_id=data.get("paperId"),
-            doi=doi,
-            pmid=pmid,
-            pmc=f"PMC{pmc}" if pmc else None,
-            arxiv_id=arxiv,
-            authors=authors,
-            abstract=data.get("abstract"),
-            journal=data.get("venue"),
-            year=data.get("year"),
-            article_type=article_type,
-            is_open_access=is_oa,
-            oa_links=oa_links,
-            citation_metrics=CitationMetrics(
-                citation_count=data.get("citationCount"),
-                influential_citation_count=data.get("influentialCitationCount"),
-            )
-            if data.get("citationCount")
-            else None,
-            sources=[SourceMetadata(source="semantic_scholar", raw_data=data)],
-        )
+        return article_from_semantic_scholar(data)
 
     @classmethod
     def from_core(cls, data: dict[str, Any]) -> UnifiedArticle:
         """Create UnifiedArticle from CORE API normalized response."""
-        # Parse authors
-        authors = []
-        for author in data.get("authors", []):
-            if isinstance(author, str):
-                authors.append(Author(full_name=author))
-            elif isinstance(author, dict):
-                authors.append(Author(full_name=author.get("name", "")))
+        from pubmed_search.infrastructure.sources.article_mapper import article_from_core
 
-        # OA links
-        oa_links = []
-        for url_key in ("download_url", "pdf_url", "reader_url"):
-            url = data.get(url_key)
-            if url:
-                oa_links.append(
-                    OpenAccessLink(
-                        url=url,
-                        is_best=(url_key == "download_url"),
-                    )
-                )
+        return article_from_core(data)
 
-        return cls(
-            title=data.get("title") or "Unknown Title",
-            primary_source="core",
-            core_id=str(data["core_id"]) if data.get("core_id") else None,
-            doi=data.get("doi"),
-            pmid=data.get("pmid"),
-            arxiv_id=data.get("arxiv_id"),
-            authors=authors,
-            abstract=data.get("abstract"),
-            journal=data.get("journal"),
-            year=data.get("year"),
-            publisher=data.get("publisher"),
-            language=data.get("language"),
-            is_open_access=bool(data.get("has_fulltext") or data.get("download_url")),
-            oa_links=oa_links,
-            citation_metrics=CitationMetrics(
-                citation_count=data.get("citation_count"),
-            )
-            if data.get("citation_count")
-            else None,
-            sources=[SourceMetadata(source="core", raw_data=data)],
-        )
+    @classmethod
+    def from_scopus(cls, data: dict[str, Any]) -> UnifiedArticle:
+        """Create UnifiedArticle from Scopus normalized response."""
+        from pubmed_search.infrastructure.sources.article_mapper import article_from_scopus
+
+        return article_from_scopus(data)
+
+    @classmethod
+    def from_web_of_science(cls, data: dict[str, Any]) -> UnifiedArticle:
+        """Create UnifiedArticle from Web of Science normalized response."""
+        from pubmed_search.infrastructure.sources.article_mapper import article_from_web_of_science
+
+        return article_from_web_of_science(data)
 
     # ===================================================================
     # Instance Methods

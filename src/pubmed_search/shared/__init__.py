@@ -59,6 +59,7 @@ from .exceptions import (
     get_retry_delay,
     is_retryable_error,
 )
+from .settings import AppSettings, get_settings, load_settings, reset_settings_cache
 
 __all__ = [
     # Exceptions
@@ -93,4 +94,8 @@ __all__ = [
     "canonical_article_key",
     "normalize_article_doi",
     "normalize_article_title",
+    "AppSettings",
+    "get_settings",
+    "load_settings",
+    "reset_settings_cache",
 ]

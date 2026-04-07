@@ -13,7 +13,6 @@ from __future__ import annotations
 import logging
 import os
 from contextlib import asynccontextmanager
-from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query
@@ -22,13 +21,12 @@ from pydantic import BaseModel
 
 from pubmed_search.application.session.manager import SessionManager
 from pubmed_search.infrastructure.ncbi import LiteratureSearcher
+from pubmed_search.shared.settings import DEFAULT_DATA_DIR, DEFAULT_EMAIL, DEFAULT_HTTP_API_PORT, load_settings
 
 logger = logging.getLogger(__name__)
 
 # Default configuration
-DEFAULT_EMAIL = "u9401066@gap.kmu.edu.tw"
-DEFAULT_DATA_DIR = str(Path.home() / ".pubmed-search-mcp")
-DEFAULT_API_PORT = 8765
+DEFAULT_API_PORT = DEFAULT_HTTP_API_PORT
 
 
 # Pydantic models for API responses
@@ -65,9 +63,10 @@ async def lifespan(app: FastAPI):
     global _session_manager, _searcher
 
     # Startup
-    email = os.environ.get("NCBI_EMAIL", DEFAULT_EMAIL)
-    api_key = os.environ.get("NCBI_API_KEY")
-    data_dir = os.environ.get("PUBMED_DATA_DIR", DEFAULT_DATA_DIR)
+    settings = load_settings()
+    email = settings.ncbi_email
+    api_key = settings.ncbi_api_key
+    data_dir = settings.data_dir
 
     logger.info(f"Initializing HTTP API server with email: {email}")
     logger.info(f"Session data directory: {data_dir}")
@@ -155,9 +154,9 @@ async def get_cached_article(
     """
     Get cached article by PMID.
 
-    This endpoint is designed for MCP-to-MCP communication.
-    Other MCP servers (like mdpaper) can call this directly to get
-    verified PubMed data without going through the Agent.
+    This is a public auxiliary read endpoint.
+    External callers can use it directly to retrieve verified PubMed data
+    without going through the MCP tool surface.
 
     Args:
         pmid: PubMed ID
@@ -206,6 +205,8 @@ async def get_multiple_cached_articles(
     """
     Get multiple cached articles by PMIDs.
 
+    This is a public auxiliary read endpoint for bulk cache access.
+
     Args:
         pmids: Comma-separated list of PMIDs
         fetch_if_missing: If True, fetch missing articles from PubMed
@@ -244,7 +245,7 @@ async def get_multiple_cached_articles(
 
 @app.get("/api/session/summary")
 async def get_session_summary():
-    """Get current session summary including all cached PMIDs."""
+    """Get the current session summary through the public auxiliary HTTP API."""
     if not _session_manager:
         raise HTTPException(status_code=503, detail="Server not initialized")
 

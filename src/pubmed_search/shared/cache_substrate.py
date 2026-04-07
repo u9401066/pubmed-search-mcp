@@ -1,3 +1,17 @@
+"""Shared cache substrate with backend, TTL, and statistics primitives.
+
+Design:
+    This module provides the reusable cache foundation used by higher-level
+    infrastructure caches. It separates storage backends, cache-store policy,
+    expiration handling, and runtime statistics so feature modules can compose
+    caching without reinventing invalidation or persistence behavior.
+
+Maintenance:
+    Keep cache semantics centralized here. When adding a backend or changing
+    eviction behavior, update this substrate first and let wrappers such as
+    EntityCache stay thin.
+"""
+
 from __future__ import annotations
 
 import asyncio

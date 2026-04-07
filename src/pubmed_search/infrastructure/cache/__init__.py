@@ -1,7 +1,13 @@
 """
-Cache Infrastructure
+Cache infrastructure exports.
 
-Provides caching layers for expensive API calls.
+Design:
+    This package exposes the shared cache substrate and the common entity cache
+    wrapper used by multiple infrastructure clients.
+
+Maintenance:
+    Keep this file focused on re-exporting stable cache primitives. Detailed
+    cache behavior belongs in the substrate and wrapper modules themselves.
 """
 
 from __future__ import annotations
