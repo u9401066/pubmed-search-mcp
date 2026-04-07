@@ -18,6 +18,15 @@ from pubmed_search.application.search.semantic_enhancer import (
     SearchPlan,
 )
 from pubmed_search.domain.entities.article import UnifiedArticle
+from pubmed_search.infrastructure.sources.article_mapper import (
+    article_from_core,
+    article_from_europe_pmc,
+    article_from_openalex,
+    article_from_pubmed,
+    article_from_scopus,
+    article_from_semantic_scholar,
+    article_from_web_of_science,
+)
 from pubmed_search.infrastructure.sources import (
     get_core_client,
     search_alternate_source,
@@ -192,8 +201,29 @@ async def _execute_deep_search(
                     min_year,
                     max_year,
                 )
+            elif strategy.source == "semantic_scholar":
+                articles, total_count = await _search_semantic_scholar(
+                    strategy.query,
+                    limit,
+                    min_year,
+                    max_year,
+                )
             elif strategy.source == "core":
                 articles, total_count = await _search_core(
+                    strategy.query,
+                    limit,
+                    min_year,
+                    max_year,
+                )
+            elif strategy.source == "scopus":
+                articles, total_count = await _search_scopus(
+                    strategy.query,
+                    limit,
+                    min_year,
+                    max_year,
+                )
+            elif strategy.source == "web_of_science":
+                articles, total_count = await _search_web_of_science(
                     strategy.query,
                     limit,
                     min_year,
@@ -289,8 +319,8 @@ async def _search_europe_pmc(
 ) -> tuple[list[UnifiedArticle], int | None]:
     """Search Europe PMC and convert to UnifiedArticle.
 
-    Europe PMC's normalized format is compatible with PubMed format,
-    so we map a few fields and use from_pubmed() for conversion.
+    Europe PMC's normalized format is close to PubMed, but mapping lives in
+    infrastructure/article_mapper.py rather than the domain entity.
     """
     try:
         results = await search_alternate_source(
@@ -303,18 +333,8 @@ async def _search_europe_pmc(
 
         articles = []
         for r in results:
-            # Map Europe PMC fields to PubMed expected format
-            if "pmc_id" in r and not r.get("pmc"):
-                r["pmc"] = r["pmc_id"]
-            if "journal_abbrev" in r and not r.get("source"):
-                r["source"] = r["journal_abbrev"]
-            # Mark as coming from Europe PMC for source tracking
-            r["_source_origin"] = "europe_pmc"
-
             try:
-                article = UnifiedArticle.from_pubmed(r)
-                # Override primary source to reflect true origin
-                article.primary_source = "europe_pmc"
+                article = article_from_europe_pmc(r)
                 articles.append(article)
             except Exception as e:
                 logger.warning(f"Failed to convert Europe PMC result: {e}")
@@ -367,7 +387,7 @@ async def _search_pubmed(
         articles = []
         for r in results:
             if r and "error" not in r:  # Skip error entries
-                articles.append(UnifiedArticle.from_pubmed(r))
+                articles.append(article_from_pubmed(r))
 
         return articles, total_count
     except Exception as e:
@@ -397,7 +417,7 @@ async def _search_openalex(
 
         articles = []
         for r in results:
-            articles.append(UnifiedArticle.from_openalex(r))
+            articles.append(article_from_openalex(r))
 
         # OpenAlex doesn't return total count in our current implementation
         return articles, None
@@ -428,7 +448,7 @@ async def _search_semantic_scholar(
 
         articles = []
         for r in results:
-            articles.append(UnifiedArticle.from_semantic_scholar(r))
+            articles.append(article_from_semantic_scholar(r))
 
         # Semantic Scholar doesn't return total count in our current implementation
         return articles, None
@@ -459,9 +479,61 @@ async def _search_core(
 
         articles = []
         for r in result.get("results", []):
-            articles.append(UnifiedArticle.from_core(r))
+            articles.append(article_from_core(r))
 
         return articles, result.get("total_hits")
     except Exception as e:
         logger.exception(f"CORE search failed: {e}")
+        return [], None
+
+
+async def _search_scopus(
+    query: str,
+    limit: int,
+    min_year: int | None,
+    max_year: int | None,
+) -> tuple[list[UnifiedArticle], int | None]:
+    """Search Scopus and convert to UnifiedArticle."""
+    try:
+        results = await search_alternate_source(
+            query=query,
+            source="scopus",
+            limit=limit,
+            min_year=min_year,
+            max_year=max_year,
+        )
+
+        articles = []
+        for r in results:
+            articles.append(article_from_scopus(r))
+
+        return articles, None
+    except Exception as e:
+        logger.exception(f"Scopus search failed: {e}")
+        return [], None
+
+
+async def _search_web_of_science(
+    query: str,
+    limit: int,
+    min_year: int | None,
+    max_year: int | None,
+) -> tuple[list[UnifiedArticle], int | None]:
+    """Search Web of Science and convert to UnifiedArticle."""
+    try:
+        results = await search_alternate_source(
+            query=query,
+            source="web_of_science",
+            limit=limit,
+            min_year=min_year,
+            max_year=max_year,
+        )
+
+        articles = []
+        for r in results:
+            articles.append(article_from_web_of_science(r))
+
+        return articles, None
+    except Exception as e:
+        logger.exception(f"Web of Science search failed: {e}")
         return [], None

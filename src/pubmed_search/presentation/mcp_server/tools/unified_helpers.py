@@ -20,6 +20,10 @@ from pubmed_search.application.search.query_analyzer import (
     QueryIntent,
 )
 from pubmed_search.application.search.result_aggregator import RankingConfig
+from pubmed_search.infrastructure.sources.registry import (
+    SourceAutoDispatchProfile,
+    get_source_registry,
+)
 
 from .icd import lookup_icd_to_mesh
 
@@ -132,41 +136,41 @@ class DispatchStrategy:
     @staticmethod
     def get_sources(analysis: AnalyzedQuery) -> list[str]:
         """Get ordered list of sources to query."""
+        registry = get_source_registry()
+        profile = DispatchStrategy.get_auto_dispatch_profile(analysis)
+        sources = registry.list_auto_dispatch_sources(profile)
+        if sources:
+            return sources
+        return registry.filter_unified_sources(["pubmed"])
+
+    @staticmethod
+    def get_auto_dispatch_profile(analysis: AnalyzedQuery) -> SourceAutoDispatchProfile:
+        """Map query analysis to a registry-owned auto-dispatch profile."""
         complexity = analysis.complexity
         intent = analysis.intent
 
-        # LOOKUP: Direct identifier search
         if intent == QueryIntent.LOOKUP:
             if analysis.identifiers:
-                # Has identifiers - just PubMed
-                return ["pubmed"]
-            return ["pubmed", "crossref"]
+                return "lookup_identifier"
+            return "lookup"
 
-        # SIMPLE: PubMed only for speed
         if complexity == QueryComplexity.SIMPLE:
-            return ["pubmed"]
+            return "simple"
 
-        # MODERATE: PubMed + CrossRef for DOI enrichment
         if complexity == QueryComplexity.MODERATE:
-            return ["pubmed", "crossref"]
+            return "moderate"
 
-        # COMPLEX - depends on intent
         if complexity == QueryComplexity.COMPLEX:
             if intent == QueryIntent.COMPARISON:
-                # Comparison needs diverse results
-                return ["pubmed", "openalex", "semantic_scholar"]
+                return "complex_comparison"
             if intent == QueryIntent.SYSTEMATIC:
-                # Systematic review needs maximum coverage
-                return ["pubmed", "openalex", "semantic_scholar", "europe_pmc"]
-            # Default complex
-            return ["pubmed", "openalex", "crossref"]
+                return "complex_systematic"
+            return "complex_default"
 
-        # AMBIGUOUS: Broad search
         if complexity == QueryComplexity.AMBIGUOUS:
-            return ["pubmed", "openalex"]
+            return "ambiguous"
 
-        # Default fallback
-        return ["pubmed"]
+        return "simple"
 
     @staticmethod
     def get_ranking_config(analysis: AnalyzedQuery) -> RankingConfig:

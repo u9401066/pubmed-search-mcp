@@ -1,5 +1,18 @@
 """Tests for FulltextDownloader."""
 
+"""Downloader-level regression tests for the backward-compatible fulltext facade.
+
+Design:
+    These tests exercise the public and legacy-private seams exposed by
+    FulltextDownloader, including landing-page resolution and compatibility
+    wrappers that callers may still patch.
+
+Maintenance:
+    Keep facade behavior covered here and reserve direct phase assertions for
+    test_fulltext_phases.py. If wrapper contracts change, update this suite to
+    reflect the intended compatibility story.
+"""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch

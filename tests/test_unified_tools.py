@@ -127,6 +127,29 @@ class TestDispatchStrategy:
         a = self._make_analysis(QueryComplexity.SIMPLE, QueryIntent.EXPLORATION)
         assert DispatchStrategy.should_enrich_with_unpaywall(a) is False
 
+    async def test_disabled_sources_are_filtered(self):
+        a = self._make_analysis(QueryComplexity.COMPLEX, QueryIntent.COMPARISON)
+        with patch.dict("os.environ", {"PUBMED_SEARCH_DISABLED_SOURCES": "semantic_scholar"}, clear=False):
+            sources = DispatchStrategy.get_sources(a)
+        assert "semantic_scholar" not in sources
+        assert "openalex" in sources
+
+    async def test_enabled_commercial_sources_are_not_auto_dispatched(self):
+        a = self._make_analysis(QueryComplexity.COMPLEX, QueryIntent.SYSTEMATIC)
+        with patch.dict(
+            "os.environ",
+            {
+                "SCOPUS_ENABLED": "true",
+                "SCOPUS_API_KEY": "licensed-key",
+                "WEB_OF_SCIENCE_ENABLED": "true",
+                "WEB_OF_SCIENCE_API_KEY": "licensed-key",
+            },
+            clear=False,
+        ):
+            sources = DispatchStrategy.get_sources(a)
+        assert "scopus" not in sources
+        assert "web_of_science" not in sources
+
 
 # ============================================================
 # Format functions
@@ -467,6 +490,114 @@ class TestUnifiedSearch:
             result = await tools["unified_search"](query="test")
         # PubMed exception is caught in _search_pubmed, so result is "No results"
         assert "no results" in result.lower() or "error" in result.lower()
+
+    @pytest.mark.asyncio
+    async def test_auto_source_exclusion_skips_semantic_scholar(self):
+        mcp = MagicMock()
+        searcher = AsyncMock()
+        searcher.search.return_value = [{"pmid": "123", "title": "Test Article", "authors": ["A B"]}]
+        tools = _capture_tools(mcp, searcher)
+
+        analysis = MagicMock(spec=AnalyzedQuery)
+        analysis.original_query = "comparison query"
+        analysis.complexity = QueryComplexity.COMPLEX
+        analysis.intent = QueryIntent.COMPARISON
+        analysis.identifiers = []
+        analysis.year_from = None
+        analysis.year_to = None
+        analysis.pico = None
+
+        with (
+            patch("pubmed_search.presentation.mcp_server.tools.unified.QueryAnalyzer") as MockAnalyzer,
+            patch("pubmed_search.presentation.mcp_server.tools.unified.get_semantic_enhancer") as mock_enhancer,
+            patch("pubmed_search.presentation.mcp_server.tools.unified._search_openalex", new_callable=AsyncMock) as mock_openalex,
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.unified._search_semantic_scholar",
+                new_callable=AsyncMock,
+            ) as mock_semantic,
+        ):
+            MockAnalyzer.return_value.analyze.return_value = analysis
+            mock_enhancer.return_value.enhance.side_effect = Exception("skip")
+            mock_openalex.return_value = ([], None)
+            mock_semantic.return_value = ([], None)
+
+            await tools["unified_search"](
+                query="comparison query",
+                sources="auto,-semantic_scholar",
+                options="no_analysis, no_scores, shallow",
+            )
+
+        mock_openalex.assert_awaited_once()
+        mock_semantic.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_explicit_scopus_source_uses_scopus_runner_when_enabled(self):
+        mcp = MagicMock()
+        searcher = AsyncMock()
+        tools = _capture_tools(mcp, searcher)
+
+        analysis = MagicMock(spec=AnalyzedQuery)
+        analysis.original_query = "licensed query"
+        analysis.complexity = QueryComplexity.SIMPLE
+        analysis.intent = QueryIntent.EXPLORATION
+        analysis.identifiers = []
+        analysis.year_from = None
+        analysis.year_to = None
+        analysis.pico = None
+
+        with (
+            patch.dict("os.environ", {"SCOPUS_ENABLED": "true", "SCOPUS_API_KEY": "licensed-key"}, clear=False),
+            patch("pubmed_search.presentation.mcp_server.tools.unified.QueryAnalyzer") as MockAnalyzer,
+            patch("pubmed_search.presentation.mcp_server.tools.unified._search_scopus", new_callable=AsyncMock) as mock_scopus,
+        ):
+            MockAnalyzer.return_value.analyze.return_value = analysis
+            mock_scopus.return_value = ([], None)
+
+            await tools["unified_search"](
+                query="licensed query",
+                sources="scopus",
+                options="no_analysis, no_scores, shallow",
+            )
+
+        mock_scopus.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_explicit_web_of_science_source_uses_runner_when_enabled(self):
+        mcp = MagicMock()
+        searcher = AsyncMock()
+        tools = _capture_tools(mcp, searcher)
+
+        analysis = MagicMock(spec=AnalyzedQuery)
+        analysis.original_query = "licensed query"
+        analysis.complexity = QueryComplexity.SIMPLE
+        analysis.intent = QueryIntent.EXPLORATION
+        analysis.identifiers = []
+        analysis.year_from = None
+        analysis.year_to = None
+        analysis.pico = None
+
+        with (
+            patch.dict(
+                "os.environ",
+                {"WEB_OF_SCIENCE_ENABLED": "true", "WEB_OF_SCIENCE_API_KEY": "licensed-key"},
+                clear=False,
+            ),
+            patch("pubmed_search.presentation.mcp_server.tools.unified.QueryAnalyzer") as MockAnalyzer,
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.unified._search_web_of_science",
+                new_callable=AsyncMock,
+            ) as mock_wos,
+        ):
+            MockAnalyzer.return_value.analyze.return_value = analysis
+            mock_wos.return_value = ([], None)
+
+            await tools["unified_search"](
+                query="licensed query",
+                sources="web_of_science",
+                options="no_analysis, no_scores, shallow",
+            )
+
+        mock_wos.assert_awaited_once()
 
 
 class TestAnalyzeSearchQuery:

@@ -12,13 +12,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from typing import TYPE_CHECKING
 
-from pubmed_search.domain.entities.article import UnifiedArticle
 from pubmed_search.infrastructure.sources import (
     get_crossref_client,
     get_openalex_client,
     get_unpaywall_client,
 )
+from pubmed_search.infrastructure.sources.article_mapper import article_from_crossref
+
+if TYPE_CHECKING:
+    from pubmed_search.domain.entities.article import UnifiedArticle
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +73,7 @@ async def _enrich_with_crossref(articles: list[UnifiedArticle]) -> None:
             idx, work = result  # type: ignore[misc]
             if work:
                 try:
-                    crossref_article = UnifiedArticle.from_crossref(work)
+                    crossref_article = article_from_crossref(work)
                     articles[idx].merge_from(crossref_article)
                 except Exception as e:
                     logger.debug(f"CrossRef enrichment skipped: {e}")

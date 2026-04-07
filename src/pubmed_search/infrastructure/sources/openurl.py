@@ -31,10 +31,11 @@ Usage:
 from __future__ import annotations
 
 import logging
-import os
 import urllib.parse
 from dataclasses import dataclass, field
 from typing import Any
+
+from pubmed_search.shared.settings import load_settings
 
 logger = logging.getLogger(__name__)
 
@@ -105,7 +106,7 @@ class OpenURLBuilder:
     def __post_init__(self):
         """Initialize with environment variable if not set."""
         if not self.resolver_base:
-            self.resolver_base = os.environ.get("OPENURL_RESOLVER", "")
+            self.resolver_base = load_settings().openurl_resolver
 
     @classmethod
     def from_preset(cls, preset_name: str, base_url: str | None = None) -> OpenURLBuilder:
@@ -267,10 +268,11 @@ class OpenURLConfig:
     @classmethod
     def from_env(cls) -> OpenURLConfig:
         """Load configuration from environment variables."""
+        settings = load_settings()
         return cls(
-            resolver_base=os.environ.get("OPENURL_RESOLVER", ""),
-            preset=os.environ.get("OPENURL_PRESET", ""),
-            enabled=os.environ.get("OPENURL_ENABLED", "true").lower() != "false",
+            resolver_base=settings.openurl_resolver,
+            preset=settings.openurl_preset,
+            enabled=settings.openurl_enabled,
         )
 
     def get_builder(self) -> OpenURLBuilder | None:

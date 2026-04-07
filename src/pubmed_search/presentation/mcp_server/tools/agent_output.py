@@ -1,4 +1,15 @@
-"""Shared agent-oriented JSON helpers for MCP tool responses."""
+"""Shared agent-oriented JSON helpers for MCP tool responses.
+
+Design:
+    This module centralizes structured response building for agents and MCP
+    clients, including source counts, next-tool suggestions, and output-format
+    negotiation between markdown, JSON, and TOON.
+
+Maintenance:
+    Keep schema-like payload shaping here so individual tools do not drift in
+    their structured output contracts. When adding a new shared field, update
+    these helpers first and let formatters consume the new contract.
+"""
 
 from __future__ import annotations
 

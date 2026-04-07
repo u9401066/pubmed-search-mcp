@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING, Any, Literal, Union
 
 from mcp.server.fastmcp import Context  # noqa: TC002 - FastMCP needs runtime access for tool context injection
 
+from pubmed_search.application.fulltext import FulltextRequest, FulltextService
 from pubmed_search.infrastructure.sources import get_europe_pmc_client
 from pubmed_search.infrastructure.sources.core import get_core_client
 from pubmed_search.infrastructure.sources.unpaywall import get_unpaywall_client
@@ -54,19 +55,6 @@ if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
-
-
-def _deduplicate_link_rows(pdf_links: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Deduplicate fulltext link rows by URL while preserving order."""
-    deduped: list[dict[str, Any]] = []
-    seen_urls: set[str] = set()
-    for link in pdf_links:
-        url = str(link.get("url") or "").strip()
-        if not url or url in seen_urls:
-            continue
-        seen_urls.add(url)
-        deduped.append(link)
-    return deduped
 
 
 def _build_fulltext_next_tools(
@@ -629,230 +617,29 @@ def register_europe_pmc_tools(mcp: FastMCP):
             f"get_fulltext start pmcid={detected_pmcid} pmid={detected_pmid} doi={'yes' if detected_doi else 'no'}",
         )
 
-        # Collect results from all sources
-        fulltext_content = None
-        pdf_links: list[dict[str, Any]] = []
-        sources_tried = []
-        article_title = None
-        content_sections: list[dict[str, Any]] = []
-        figures_payload: list[dict[str, Any]] = []
-        fulltext_source_name: str | None = None
-        fulltext_canonical_host: str | None = None
-        fulltext_provenance: Literal["direct", "indirect", "derived", "mixed"] | None = None
+        from pubmed_search.infrastructure.sources.figure_client import get_figure_client
+        from pubmed_search.infrastructure.sources.fulltext_download import FulltextDownloader
 
-        def _truncate_extracted_text(text: str, max_chars: int = 10000) -> str:
-            if len(text) <= max_chars:
-                return text
-            truncated_count = len(text) - max_chars
-            return text[:max_chars] + f"\n\n_... {truncated_count} characters truncated from extracted PDF text_"
-
-        # === SOURCE 1: Europe PMC (best for structured fulltext) ===
-        if detected_pmcid:
-            await _progress(2, 6, "Trying Europe PMC fulltext...")
-            sources_tried.append("Europe PMC")
-            try:
-                client = get_europe_pmc_client()
-                xml = await client.get_fulltext_xml(detected_pmcid)
-                if xml:
-                    parsed = client.parse_fulltext_xml(xml)
-                    if parsed:
-                        content_sections = _select_sections(parsed, sections)
-                        fulltext_content = _render_selected_sections(parsed, content_sections)
-                        article_title = parsed.get("title")
-                        fulltext_source_name = "Europe PMC"
-                        fulltext_canonical_host = "PubMed Central"
-                        fulltext_provenance = "indirect"
-                        # Add PMC PDF link
-                        pmc_num = detected_pmcid.replace("PMC", "")
-                        pdf_links.append(
-                            {
-                                "source": "PubMed Central",
-                                "url": f"https://www.ncbi.nlm.nih.gov/pmc/articles/PMC{pmc_num}/pdf/",
-                                "type": "pdf",
-                                "access": "open_access",
-                            }
-                        )
-            except Exception as e:
-                logger.warning(f"Europe PMC failed: {e}")
-                await _log("warning", f"Europe PMC fulltext failed: {e!s}")
-
-        # === SOURCE 2: Unpaywall (best for finding OA via DOI) ===
-        if detected_doi:
-            await _progress(3, 6, "Checking Unpaywall open-access locations...")
-            sources_tried.append("Unpaywall")
-            try:
-                unpaywall = get_unpaywall_client()
-                oa_info = await unpaywall.get_oa_status(detected_doi)
-                if oa_info and oa_info.get("is_oa"):
-                    # Get title if we don't have it
-                    if not article_title:
-                        article_title = oa_info.get("title")
-
-                    # Collect all OA links
-                    best_loc = oa_info.get("best_oa_location", {})
-                    if best_loc:
-                        if best_loc.get("url_for_pdf"):
-                            pdf_links.append(
-                                {
-                                    "source": f"Unpaywall ({best_loc.get('host_type', 'unknown')})",
-                                    "url": best_loc["url_for_pdf"],
-                                    "type": "pdf",
-                                    "access": oa_info.get("oa_status", "open_access"),
-                                    "version": best_loc.get("version", "unknown"),
-                                    "license": best_loc.get("license"),
-                                }
-                            )
-                        elif best_loc.get("url"):
-                            pdf_links.append(
-                                {
-                                    "source": f"Unpaywall ({best_loc.get('host_type', 'unknown')})",
-                                    "url": best_loc["url"],
-                                    "type": "landing_page",
-                                    "access": oa_info.get("oa_status", "open_access"),
-                                }
-                            )
-
-                    # Add alternative locations
-                    for loc in oa_info.get("oa_locations", [])[:3]:  # Top 3
-                        if loc != best_loc and loc.get("url_for_pdf"):
-                            pdf_links.append(
-                                {
-                                    "source": f"Unpaywall ({loc.get('host_type', 'repository')})",
-                                    "url": loc["url_for_pdf"],
-                                    "type": "pdf",
-                                    "access": "alternative",
-                                    "version": loc.get("version"),
-                                }
-                            )
-            except Exception as e:
-                logger.warning(f"Unpaywall failed: {e}")
-                await _log("warning", f"Unpaywall lookup failed: {e!s}")
-
-        # === SOURCE 3: CORE (200M+ open access papers) ===
-        if detected_doi and not fulltext_content:
-            await _progress(4, 6, "Trying CORE fallback...")
-            sources_tried.append("CORE")
-            try:
-                core = get_core_client()
-                # Search by DOI
-                results = await core.search(f'doi:"{detected_doi}"', limit=1)
-                if results and results.get("results"):
-                    work = results["results"][0]
-                    if not article_title:
-                        article_title = work.get("title")
-
-                    # Get fulltext if available
-                    if work.get("fullText"):
-                        fulltext_content = _format_core_fulltext(work, sections)
-                        fulltext_source_name = "CORE"
-                        fulltext_canonical_host = "Repository / OA host"
-                        fulltext_provenance = "indirect"
-
-                    # Add download links
-                    if work.get("downloadUrl"):
-                        pdf_links.append(
-                            {
-                                "source": "CORE",
-                                "url": work["downloadUrl"],
-                                "type": "pdf",
-                                "access": "open_access",
-                            }
-                        )
-                    if work.get("sourceFulltextUrls"):
-                        for url in work["sourceFulltextUrls"][:2]:
-                            pdf_links.append(
-                                {
-                                    "source": "CORE (source)",
-                                    "url": url,
-                                    "type": "fulltext",
-                                    "access": "open_access",
-                                }
-                            )
-            except Exception as e:
-                logger.warning(f"CORE failed: {e}")
-                await _log("warning", f"CORE fulltext lookup failed: {e!s}")
-
-        # === EXTENDED SOURCES (15 total) ===
-        if extended_sources:
-            await _progress(5, 6, "Checking extended fulltext sources...")
-            sources_tried.append("Extended (15 sources)")
-            try:
-                from pubmed_search.infrastructure.sources.fulltext_download import (
-                    FulltextDownloader,
-                )
-
-                # Ensure string types for downloader
-                pmid_str = str(detected_pmid) if detected_pmid else None
-                pmcid_str = str(detected_pmcid) if detected_pmcid else None
-                doi_str = str(detected_doi) if detected_doi else None
-
-                downloader = FulltextDownloader()
-                try:
-                    extended_result = await downloader.get_fulltext(
-                        pmid=pmid_str,
-                        pmcid=pmcid_str,
-                        doi=doi_str,
-                        strategy="links_only" if fulltext_content else "extract_text",
-                    )
-                finally:
-                    await downloader.close()
-
-                extended_links = extended_result.pdf_links
-
-                if not fulltext_content and extended_result.text_content:
-                    extracted_text = _truncate_extracted_text(extended_result.text_content)
-                    fulltext_content = extracted_text
-                    content_sections = [{"title": "Extracted PDF Text", "content": extracted_text}]
-                    if not article_title and extended_result.title:
-                        article_title = extended_result.title
-                    fulltext_source_name = (
-                        extended_result.source_used.display_name
-                        if extended_result.source_used
-                        else "Extended fulltext download"
-                    )
-                    fulltext_canonical_host = fulltext_source_name
-                    fulltext_provenance = "derived"
-
-                # Merge extended links (avoid duplicates)
-                seen_urls = {link["url"] for link in pdf_links}
-                for ext_link in extended_links:
-                    if ext_link.url not in seen_urls:
-                        seen_urls.add(ext_link.url)
-                        pdf_links.append(
-                            {
-                                "source": ext_link.source.display_name,
-                                "url": ext_link.url,
-                                "type": "pdf" if ext_link.is_direct_pdf else "landing_page",
-                                "access": ext_link.access_type,
-                                "version": ext_link.version,
-                                "license": ext_link.license,
-                            }
-                        )
-
-                logger.info(f"Extended sources found {len(extended_links)} additional links")
-            except Exception as e:
-                logger.warning(f"Extended sources failed: {e}")
-                await _log("warning", f"Extended fulltext sources failed: {e!s}")
-
-        deduped_pdf_links = _deduplicate_link_rows(pdf_links)
-
-        # Figures section (when include_figures=True and we have a PMCID)
-        if include_figures and detected_pmcid:
-            try:
-                from pubmed_search.infrastructure.sources.figure_client import (
-                    get_figure_client,
-                )
-
-                fig_client = get_figure_client()
-                fig_result = await fig_client.get_article_figures(
-                    pmcid=detected_pmcid,
-                    pmid=str(detected_pmid) if detected_pmid else None,
-                )
-                if fig_result.figures:
-                    figures_payload = [figure.to_dict() for figure in fig_result.figures]
-            except Exception as e:
-                logger.warning("Figure extraction in get_fulltext failed: %s", e)
-                await _log("warning", f"Figure extraction skipped: {e!s}")
+        service = FulltextService(
+            europe_pmc_client_factory=get_europe_pmc_client,
+            unpaywall_client_factory=get_unpaywall_client,
+            core_client_factory=get_core_client,
+            downloader_factory=FulltextDownloader,
+            figure_client_factory=get_figure_client if include_figures else None,
+        )
+        retrieval = await service.retrieve(
+            FulltextRequest(
+                identifier=identifier,
+                pmcid=str(detected_pmcid) if detected_pmcid else None,
+                pmid=str(detected_pmid) if detected_pmid else None,
+                doi=str(detected_doi) if detected_doi else None,
+                sections=sections,
+                include_figures=include_figures,
+                extended_sources=extended_sources,
+            ),
+            progress=_progress,
+            log=_log,
+        )
 
         next_tools, next_commands = _build_fulltext_next_tools(
             pmcid=str(detected_pmcid) if detected_pmcid else None,
@@ -860,12 +647,12 @@ def register_europe_pmc_tools(mcp: FastMCP):
             include_figures=include_figures,
             output_format=normalized_output_format,
         )
-        exposed_pdf_links = deduped_pdf_links if include_pdf_links else []
+        exposed_pdf_links = retrieval.pdf_links if include_pdf_links else []
         source_counts = _build_fulltext_source_counts(
-            sources_tried=sources_tried,
-            fulltext_source=fulltext_source_name,
+            sources_tried=retrieval.sources_tried,
+            fulltext_source=retrieval.fulltext_source_name,
             pdf_links=exposed_pdf_links,
-            figures_count=len(figures_payload),
+            figures_count=len(retrieval.figures),
         )
 
         # === BUILD OUTPUT ===
@@ -875,30 +662,30 @@ def register_europe_pmc_tools(mcp: FastMCP):
                 pmcid=str(detected_pmcid) if detected_pmcid else None,
                 pmid=str(detected_pmid) if detected_pmid else None,
                 doi=str(detected_doi) if detected_doi else None,
-                title=article_title,
-                fulltext_content=fulltext_content,
-                content_sections=content_sections,
+                title=retrieval.title,
+                fulltext_content=retrieval.fulltext_content,
+                content_sections=retrieval.content_sections,
                 pdf_links=exposed_pdf_links,
-                sources_tried=sources_tried,
+                sources_tried=retrieval.sources_tried,
                 source_counts=source_counts,
                 next_tools=next_tools,
                 next_commands=next_commands,
-                fulltext_source=fulltext_source_name,
-                fulltext_canonical_host=fulltext_canonical_host,
-                fulltext_provenance=fulltext_provenance,
+                fulltext_source=retrieval.fulltext_source_name,
+                fulltext_canonical_host=retrieval.fulltext_canonical_host,
+                fulltext_provenance=retrieval.fulltext_provenance,
                 include_figures=include_figures,
-                figures=figures_payload,
+                figures=retrieval.figures,
                 output_format=normalized_output_format,
             )
 
-        if not fulltext_content and not deduped_pdf_links:
+        if not retrieval.fulltext_content and not retrieval.pdf_links:
             return ResponseFormatter.no_results(
                 query=f"pmcid={detected_pmcid}, pmid={detected_pmid}, doi={detected_doi}",
                 suggestions=[
                     "Article may not be open access",
                     "Try searching with DOI for Unpaywall lookup",
                     "Check if article is available in PubMed Central",
-                    f"Sources tried: {', '.join(sources_tried)}",
+                    f"Sources tried: {', '.join(retrieval.sources_tried)}",
                 ],
                 output_format=normalized_output_format,
                 tool_name="get_fulltext",
@@ -906,13 +693,13 @@ def register_europe_pmc_tools(mcp: FastMCP):
 
         # Format output
         await _progress(6, 6, "Formatting fulltext response...")
-        output = f"📖 **{article_title or 'Fulltext Retrieved'}**\n"
-        output += f"🔍 Sources checked: {', '.join(sources_tried)}\n\n"
+        output = f"📖 **{retrieval.title or 'Fulltext Retrieved'}**\n"
+        output += f"🔍 Sources checked: {', '.join(retrieval.sources_tried)}\n\n"
 
         # PDF Links section
-        if deduped_pdf_links and include_pdf_links:
+        if retrieval.pdf_links and include_pdf_links:
             output += "## 📥 PDF/Fulltext Links\n\n"
-            for link in deduped_pdf_links:
+            for link in retrieval.pdf_links:
                 icon = "📄" if link["type"] == "pdf" else "🔗"
                 access_badge = {
                     "gold": "🥇 Gold OA",
@@ -933,18 +720,18 @@ def register_europe_pmc_tools(mcp: FastMCP):
             output += "\n"
 
         # Fulltext content
-        if fulltext_content:
+        if retrieval.fulltext_content:
             output += "## 📝 Content\n\n"
-            output += fulltext_content
-        elif pdf_links:
+            output += retrieval.fulltext_content
+        elif retrieval.pdf_links:
             output += "_Structured fulltext not available. Use the PDF links above to access the article._\n"
-            if any(link.get("access") == "subscription" for link in deduped_pdf_links):
+            if any(link.get("access") == "subscription" for link in retrieval.pdf_links):
                 output += "_Institutional links usually require campus IP recognition or library VPN/proxy access._\n"
 
-        if figures_payload:
+        if retrieval.figures:
             output += "\n---\n"
-            output += f"## 🖼️ Figures ({len(figures_payload)})\n\n"
-            for fig in figures_payload:
+            output += f"## 🖼️ Figures ({len(retrieval.figures)})\n\n"
+            for fig in retrieval.figures:
                 output += f"#### {fig.get('label') or fig.get('figure_id', 'Figure')}\n"
                 if fig.get("caption_title"):
                     output += f"**{fig['caption_title']}**\n\n"
@@ -954,75 +741,6 @@ def register_europe_pmc_tools(mcp: FastMCP):
                     output += f"**Image URL:** {fig['image_url']}\n\n"
 
         return output
-
-    def _select_sections(parsed: dict[str, Any], sections_filter: str | None) -> list[dict[str, Any]]:
-        """Select and normalize requested Europe PMC sections."""
-        all_sections = parsed.get("sections", [])
-
-        if sections_filter:
-            requested = [s.strip().lower() for s in sections_filter.split(",")]
-            filtered = []
-            for sec in all_sections:
-                sec_title = sec.get("title", "").lower()
-                if any(req in sec_title or sec_title in req for req in requested):
-                    filtered.append(sec)
-            all_sections = filtered
-
-        return all_sections
-
-    def _render_selected_sections(parsed: dict[str, Any], all_sections: list[dict[str, Any]]) -> str:
-        """Render selected Europe PMC sections into markdown text."""
-
-        if not all_sections:
-            if parsed.get("abstract"):
-                return f"**Abstract**\n{parsed['abstract']}\n\n"
-            return ""
-
-        output = ""
-        for sec in all_sections:
-            title = sec.get("title", "Untitled Section")
-            content = sec.get("content", "")
-            if content:
-                output += f"### {title}\n\n"
-                if len(content) > 5000:
-                    output += content[:5000]
-                    output += f"\n\n_... {len(content) - 5000} characters truncated_\n\n"
-                else:
-                    output += content + "\n\n"
-
-        refs = parsed.get("references", [])
-        if refs:
-            output += f"---\n📚 **References**: {len(refs)} citations\n"
-
-        return output
-
-    def _format_sections(parsed: dict[str, Any], sections_filter: str | None) -> str:
-        """Format parsed Europe PMC sections."""
-        return _render_selected_sections(parsed, _select_sections(parsed, sections_filter))
-
-    def _format_core_fulltext(work: dict[str, Any], sections_filter: str | None) -> str:
-        """Format CORE fulltext."""
-        fulltext = work.get("fullText", "")
-        if not fulltext:
-            return ""
-
-        # CORE fulltext is usually plain text, not structured
-        if sections_filter:
-            # Try to extract requested sections by searching for keywords
-            output = ""
-            for section in sections_filter.split(","):
-                section_name = section.strip().lower()
-                # Simple section extraction (CORE doesn't have structured sections)
-                # Just show that we have content
-                if section_name in fulltext.lower():
-                    output += f"_Contains '{section_name}' section_\n"
-            if output:
-                output += "\n"
-
-        # Truncate if too long
-        if len(fulltext) > 10000:
-            return fulltext[:10000] + f"\n\n_... {len(fulltext) - 10000} characters truncated_"
-        return fulltext
 
     # NOTE: get_fulltext_xml is NOT registered as a tool.
     # Use get_fulltext instead - it provides better parsed output.
