@@ -388,7 +388,7 @@ def _render_markdown_table(headers: list[str], rows: list[list[str]]) -> list[st
     """Render a compact markdown table for generated docs."""
     rendered = [
         "| " + " | ".join(headers) + " |",
-        "| " + " | ".join("---" for _ in headers) + " |",
+        "|" + "|".join("-" * max(len(header) + 2, 6) for header in headers) + "|",
     ]
     for row in rows:
         rendered.append("| " + " | ".join(row) + " |")

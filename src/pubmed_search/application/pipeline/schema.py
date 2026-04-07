@@ -19,7 +19,16 @@ from __future__ import annotations
 
 from typing import Annotated, Any, Literal, cast
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, ValidationInfo, field_validator
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    TypeAdapter,
+    ValidationError,
+    ValidationInfo,
+    field_validator,
+)
 
 from pubmed_search.domain.entities.pipeline import (
     MAX_PIPELINE_STEPS,

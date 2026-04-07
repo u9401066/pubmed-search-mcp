@@ -19,7 +19,6 @@ from typing import Any
 
 from pubmed_search.domain.entities.article import (
     _DATE_PARTS_FULL,
-    _parse_pubmed_date,
     ArticleType,
     Author,
     CitationMetrics,
@@ -27,6 +26,7 @@ from pubmed_search.domain.entities.article import (
     OpenAccessStatus,
     SourceMetadata,
     UnifiedArticle,
+    _parse_pubmed_date,
 )
 
 

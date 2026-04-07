@@ -1,5 +1,3 @@
-"""Tests for FulltextDownloader."""
-
 """Downloader-level regression tests for the backward-compatible fulltext facade.
 
 Design:

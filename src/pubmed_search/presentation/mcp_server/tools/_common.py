@@ -11,7 +11,8 @@ Maintenance:
     compatibility alias is required.
 """
 
-from .tool_input import InputNormalizer, KEY_ALIASES, apply_key_aliases
+from . import tool_session as _tool_session
+from .tool_input import KEY_ALIASES, InputNormalizer, apply_key_aliases
 from .tool_response import ResponseFormatter, format_search_results
 from .tool_session import (
     _cache_results,
@@ -24,10 +25,21 @@ from .tool_session import (
     set_strategy_generator,
 )
 
+
+def __getattr__(name: str):
+    """Expose legacy module attributes backed by tool_session state."""
+    if name == "_session_manager":
+        return _tool_session.get_session_manager()
+    if name == "_strategy_generator":
+        return _tool_session.get_strategy_generator()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 __all__ = [
     "InputNormalizer",
     "KEY_ALIASES",
     "ResponseFormatter",
+    "_session_manager",
+    "_strategy_generator",
     "_cache_results",
     "_record_search_only",
     "apply_key_aliases",

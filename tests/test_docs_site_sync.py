@@ -11,8 +11,7 @@ def _load_embedded_pages() -> dict[str, str]:
     assert raw.startswith(prefix)
 
     payload = raw.removeprefix(prefix).strip()
-    if payload.endswith(";"):
-        payload = payload[:-1]
+    payload = payload.removesuffix(";")
 
     return json.loads(payload)
 

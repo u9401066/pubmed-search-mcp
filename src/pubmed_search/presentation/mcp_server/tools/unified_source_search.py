@@ -17,7 +17,10 @@ from pubmed_search.application.search.semantic_enhancer import (
     EnhancedQuery,
     SearchPlan,
 )
-from pubmed_search.domain.entities.article import UnifiedArticle
+from pubmed_search.infrastructure.sources import (
+    get_core_client,
+    search_alternate_source,
+)
 from pubmed_search.infrastructure.sources.article_mapper import (
     article_from_core,
     article_from_europe_pmc,
@@ -26,10 +29,6 @@ from pubmed_search.infrastructure.sources.article_mapper import (
     article_from_scopus,
     article_from_semantic_scholar,
     article_from_web_of_science,
-)
-from pubmed_search.infrastructure.sources import (
-    get_core_client,
-    search_alternate_source,
 )
 
 from .unified_helpers import (
@@ -40,6 +39,7 @@ from .unified_helpers import (
 )
 
 if TYPE_CHECKING:
+    from pubmed_search.domain.entities.article import UnifiedArticle
     from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
 logger = logging.getLogger(__name__)

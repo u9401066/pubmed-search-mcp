@@ -21,7 +21,7 @@ from pydantic import BaseModel
 
 from pubmed_search.application.session.manager import SessionManager
 from pubmed_search.infrastructure.ncbi import LiteratureSearcher
-from pubmed_search.shared.settings import DEFAULT_DATA_DIR, DEFAULT_EMAIL, DEFAULT_HTTP_API_PORT, load_settings
+from pubmed_search.shared.settings import DEFAULT_EMAIL, DEFAULT_HTTP_API_PORT, load_settings
 
 logger = logging.getLogger(__name__)
 
