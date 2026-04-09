@@ -67,14 +67,13 @@ unified_search(query="...", options="preprints")
 
 | 情境 | 工具 | 說明 |
 |------|------|------|
-| 少量 (1-5) | `quick_import_pmids` | 快速匯入 |
-| 中量 (5-20) | `import_from_pmids` | 可指定 collection |
-| 大量 (20+) | `batch_import_from_pubmed` | 批次處理 + 進度回報 |
-| RIS 檔案 | `import_ris_to_zotero` | 標準格式匯入 |
+| PubMed JSON 結果 | `import_articles` | 預設推薦，直接接 `unified_search(..., output_format="json")` |
+| RIS 匯出文字 | `import_articles` | 傳入 `ris_text`，由 keeper 統一解析匯入 |
+| 需要舊版單機橋接 | legacy tools | 僅在啟用 `ZOTERO_KEEPER_ENABLE_LEGACY_PUBMED_TOOLS=1` 時使用 |
 
 ### 避免重複
 - `check_articles_owned` — 檢查 PMID 是否已在 Zotero
-- `search_pubmed_exclude_owned` — 搜尋時自動排除已有文獻
+- 在 pubmed-search-mcp 搜尋後，用 `check_articles_owned` 過濾已擁有的文獻
 
 ---
 
@@ -169,7 +168,7 @@ search_biomedical_images(query="chest CT COVID-19")
 4. 回報結果摘要 + 詢問是否匯入 Zotero
 5. list_collections → 列出 Collections
 6. 詢問目標 Collection
-7. batch_import_from_pubmed → 匯入 + 回報結果
+7. import_articles → 匯入到指定 Collection + 回報結果
 ```
 
 ## ⚠️ 注意事項
