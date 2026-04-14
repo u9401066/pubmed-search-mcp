@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -299,6 +300,38 @@ class TestFormatUnifiedResults:
         line = sources_line[0]
         assert "(" in line and ")" in line, f"Source counts missing in: {line}"
 
+    async def test_does_not_fetch_trials_inline_during_formatting(self):
+        from pubmed_search.domain.entities.article import UnifiedArticle
+
+        analysis = MagicMock(spec=AnalyzedQuery)
+        analysis.original_query = "dexmedetomidine bladder discomfort"
+        analysis.complexity = QueryComplexity.MODERATE
+        analysis.intent = QueryIntent.COMPARISON
+        analysis.pico = None
+
+        stats = MagicMock(spec=AggregationStats)
+        stats.by_source = {"pubmed": 1}
+        stats.unique_articles = 1
+        stats.duplicates_removed = 0
+
+        article = UnifiedArticle(title="Trial article", primary_source="pubmed")
+
+        with patch(
+            "pubmed_search.infrastructure.sources.clinical_trials.search_related_trials",
+            new=AsyncMock(),
+        ) as mock_search_trials:
+            result = await _format_unified_results(
+                [article],
+                analysis,
+                stats,
+                include_trials=True,
+                original_query=analysis.original_query,
+                prefetched_trials=None,
+            )
+
+        mock_search_trials.assert_not_awaited()
+        assert "Clinical Trials" not in result
+
     async def test_counts_first_section_includes_next_tools(self):
         analysis = MagicMock(spec=AnalyzedQuery)
         analysis.original_query = "remimazolam sedation"
@@ -490,6 +523,53 @@ class TestUnifiedSearch:
             result = await tools["unified_search"](query="test")
         # PubMed exception is caught in _search_pubmed, so result is "No results"
         assert "no results" in result.lower() or "error" in result.lower()
+
+    @pytest.mark.asyncio
+    async def test_markdown_output_does_not_block_on_slow_clinical_trials(self):
+        mcp = MagicMock()
+        searcher = AsyncMock()
+        searcher.search.return_value = [
+            {
+                "pmid": "12345",
+                "title": "Dexmedetomidine and CRBD",
+                "authors": ["A B"],
+            }
+        ]
+        tools = _capture_tools(mcp, searcher)
+
+        started = asyncio.Event()
+        cancelled = asyncio.Event()
+
+        async def _slow_trials(*args, **kwargs):
+            started.set()
+            try:
+                await asyncio.sleep(30)
+            except asyncio.CancelledError:
+                cancelled.set()
+                raise
+
+        with (
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.unified.get_semantic_enhancer",
+            ) as mock_enhancer,
+            patch(
+                "pubmed_search.infrastructure.sources.clinical_trials.search_related_trials",
+                side_effect=_slow_trials,
+            ),
+        ):
+            mock_enhancer.return_value.enhance.side_effect = Exception("skip")
+            result = await asyncio.wait_for(
+                tools["unified_search"](
+                    query="dexmedetomidine bladder discomfort",
+                    output_format="markdown",
+                    options="no_scores",
+                ),
+                timeout=2.0,
+            )
+
+        assert started.is_set()
+        assert cancelled.is_set()
+        assert "Dexmedetomidine and CRBD" in result
 
     @pytest.mark.asyncio
     async def test_auto_source_exclusion_skips_semantic_scholar(self):

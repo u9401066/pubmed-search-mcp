@@ -14,6 +14,7 @@ Maintenance:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
@@ -329,10 +330,15 @@ async def execute_unified_search(
 
     prefetched_trials: list[Any] | None = None
     if clinical_trials_task:
-        try:
-            prefetched_trials = await asyncio.wait_for(clinical_trials_task, timeout=5.0)
-        except (asyncio.TimeoutError, Exception):
-            prefetched_trials = None
+        if clinical_trials_task.done():
+            try:
+                prefetched_trials = clinical_trials_task.result()
+            except Exception:
+                prefetched_trials = None
+        else:
+            clinical_trials_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await clinical_trials_task
 
     return UnifiedSearchExecutionResult(
         ranked=ranked,

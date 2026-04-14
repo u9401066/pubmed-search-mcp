@@ -619,14 +619,9 @@ async def _format_unified_results(
         try:
             from pubmed_search.infrastructure.sources.clinical_trials import (
                 format_trials_section,
-                search_related_trials,
             )
 
             trials = prefetched_trials
-            if trials is None:
-                # Fallback: fetch inline if not pre-fetched
-                trial_query = " ".join(original_query.split()[:5])
-                trials = await search_related_trials(trial_query, limit=3)
             if trials:
                 output_parts.append(format_trials_section(trials, max_display=3))
         except Exception as e:
