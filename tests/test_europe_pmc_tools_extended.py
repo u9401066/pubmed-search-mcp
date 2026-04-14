@@ -96,6 +96,14 @@ class TestGetFulltextIdentifiers:
         mock_client = AsyncMock()
         mock_unpaywall = AsyncMock()
         mock_unpaywall.get_oa_status.return_value = None
+        mock_downloader = AsyncMock()
+        mock_downloader.get_fulltext.return_value = FulltextResult(
+            doi="10.1038/s41586-021-03819-2",
+            pdf_links=[],
+            text_content=None,
+            error="No PDF links found for this article",
+        )
+        mock_downloader.close = AsyncMock()
         with (
             patch(
                 "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
@@ -108,6 +116,10 @@ class TestGetFulltextIdentifiers:
             patch(
                 "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_core_client",
                 return_value=AsyncMock(search=AsyncMock(return_value=None)),
+            ),
+            patch(
+                "pubmed_search.infrastructure.sources.fulltext_download.FulltextDownloader",
+                return_value=mock_downloader,
             ),
         ):
             result = await tools["get_fulltext"](identifier="https://doi.org/10.1038/s41586-021-03819-2")
@@ -184,6 +196,14 @@ class TestGetFulltextUnpaywall:
     async def test_unpaywall_oa_with_pdf(self, tools):
         mock_client = AsyncMock()
         mock_client.get_fulltext_xml.return_value = None
+        mock_downloader = AsyncMock()
+        mock_downloader.get_fulltext.return_value = FulltextResult(
+            doi="10.1001/test",
+            pdf_links=[],
+            text_content=None,
+            error="No PDF links found for this article",
+        )
+        mock_downloader.close = AsyncMock()
 
         mock_unpaywall = AsyncMock()
         mock_unpaywall.get_oa_status.return_value = {
@@ -212,6 +232,10 @@ class TestGetFulltextUnpaywall:
                 "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_core_client",
                 return_value=AsyncMock(search=AsyncMock(return_value=None)),
             ),
+            patch(
+                "pubmed_search.infrastructure.sources.fulltext_download.FulltextDownloader",
+                return_value=mock_downloader,
+            ),
         ):
             result = await tools["get_fulltext"](doi="10.1001/test")
         assert "example.com/paper.pdf" in result
@@ -220,6 +244,14 @@ class TestGetFulltextUnpaywall:
     async def test_unpaywall_oa_landing_page_only(self, tools):
         mock_client = AsyncMock()
         mock_client.get_fulltext_xml.return_value = None
+        mock_downloader = AsyncMock()
+        mock_downloader.get_fulltext.return_value = FulltextResult(
+            doi="10.1001/test2",
+            pdf_links=[],
+            text_content=None,
+            error="No PDF links found for this article",
+        )
+        mock_downloader.close = AsyncMock()
 
         mock_unpaywall = AsyncMock()
         mock_unpaywall.get_oa_status.return_value = {
@@ -245,6 +277,10 @@ class TestGetFulltextUnpaywall:
                 "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_core_client",
                 return_value=AsyncMock(search=AsyncMock(return_value=None)),
             ),
+            patch(
+                "pubmed_search.infrastructure.sources.fulltext_download.FulltextDownloader",
+                return_value=mock_downloader,
+            ),
         ):
             result = await tools["get_fulltext"](doi="10.1001/test2")
         assert "repo.example.com" in result
@@ -252,6 +288,14 @@ class TestGetFulltextUnpaywall:
     async def test_unpaywall_with_alt_locations(self, tools):
         mock_client = AsyncMock()
         mock_client.get_fulltext_xml.return_value = None
+        mock_downloader = AsyncMock()
+        mock_downloader.get_fulltext.return_value = FulltextResult(
+            doi="10.1001/test3",
+            pdf_links=[],
+            text_content=None,
+            error="No PDF links found for this article",
+        )
+        mock_downloader.close = AsyncMock()
 
         best_loc = {
             "url_for_pdf": "https://publisher.com/pdf",
@@ -283,6 +327,10 @@ class TestGetFulltextUnpaywall:
                 "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_core_client",
                 return_value=AsyncMock(search=AsyncMock(return_value=None)),
             ),
+            patch(
+                "pubmed_search.infrastructure.sources.fulltext_download.FulltextDownloader",
+                return_value=mock_downloader,
+            ),
         ):
             result = await tools["get_fulltext"](doi="10.1001/test3")
         assert "publisher.com" in result
@@ -291,6 +339,14 @@ class TestGetFulltextUnpaywall:
     async def test_unpaywall_not_oa(self, tools):
         mock_client = AsyncMock()
         mock_client.get_fulltext_xml.return_value = None
+        mock_downloader = AsyncMock()
+        mock_downloader.get_fulltext.return_value = FulltextResult(
+            doi="10.1001/closed",
+            pdf_links=[],
+            text_content=None,
+            error="No PDF links found for this article",
+        )
+        mock_downloader.close = AsyncMock()
 
         mock_unpaywall = AsyncMock()
         mock_unpaywall.get_oa_status.return_value = {"is_oa": False}
@@ -307,6 +363,10 @@ class TestGetFulltextUnpaywall:
             patch(
                 "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_core_client",
                 return_value=AsyncMock(search=AsyncMock(return_value=None)),
+            ),
+            patch(
+                "pubmed_search.infrastructure.sources.fulltext_download.FulltextDownloader",
+                return_value=mock_downloader,
             ),
         ):
             result = await tools["get_fulltext"](doi="10.1001/closed")
@@ -428,6 +488,14 @@ class TestGetFulltextCORE:
     async def test_core_exception(self, tools):
         mock_client = AsyncMock()
         mock_client.get_fulltext_xml.return_value = None
+        mock_downloader = AsyncMock()
+        mock_downloader.get_fulltext.return_value = FulltextResult(
+            doi="10.1234/core-err",
+            pdf_links=[],
+            text_content=None,
+            error="No PDF links found for this article",
+        )
+        mock_downloader.close = AsyncMock()
 
         mock_unpaywall = AsyncMock()
         mock_unpaywall.get_oa_status.return_value = None
@@ -444,6 +512,10 @@ class TestGetFulltextCORE:
             patch(
                 "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_core_client",
                 side_effect=RuntimeError("CORE down"),
+            ),
+            patch(
+                "pubmed_search.infrastructure.sources.fulltext_download.FulltextDownloader",
+                return_value=mock_downloader,
             ),
         ):
             result = await tools["get_fulltext"](doi="10.1234/core-err")
