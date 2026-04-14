@@ -191,6 +191,27 @@ class TestRequest:
         assert result is None
 
     @pytest.mark.asyncio
+    async def test_autocomplete_404_disables_future_entity_requests(self, client):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 404
+        mock_resp.reason_phrase = "Not Found"
+        mock_resp.raise_for_status = MagicMock()
+
+        mock_http = AsyncMock()
+        mock_http.get.return_value = mock_resp
+        mock_http.is_closed = False
+
+        client._client = mock_http
+
+        first = await client.find_entity("propofol", concept="chemical")
+        second = await client.find_entity("midazolam", concept="chemical")
+
+        assert first == []
+        assert second == []
+        assert client._entity_autocomplete_disabled is True
+        assert mock_http.get.await_count == 1
+
+    @pytest.mark.asyncio
     async def test_unexpected_error(self, client):
         mock_http = AsyncMock()
         mock_http.get.side_effect = ValueError("unexpected")
@@ -240,6 +261,15 @@ class TestFindEntity:
         with patch.object(client, "_request", return_value={"results": []}):
             matches = await client.find_entity("nothing")
         assert matches == []
+
+    @pytest.mark.asyncio
+    async def test_skips_lookup_when_autocomplete_already_disabled(self, client):
+        client._entity_autocomplete_disabled = True
+        with patch.object(client, "_request", new=AsyncMock()) as mock_request:
+            matches = await client.find_entity("propofol", concept="chemical")
+
+        assert matches == []
+        mock_request.assert_not_awaited()
 
 
 # ============================================================

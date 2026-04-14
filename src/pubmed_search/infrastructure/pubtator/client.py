@@ -80,12 +80,22 @@ class PubTatorClient(BaseAPIClient):
         self._timeout = timeout
         self._requests_per_second = rate_limit
         self._default_headers = {"User-Agent": "PubMed-Search-MCP/1.0"}
+        self._entity_autocomplete_disabled = False
         super().__init__(
             base_url=self.BASE_URL,
             timeout=timeout,
             min_interval=1.0 / rate_limit,
             headers=self._default_headers,
         )
+
+    def _handle_expected_status(self, response: httpx.Response, url: str) -> dict[str, Any] | str | None:
+        """Treat missing autocomplete endpoints as a fail-open degradation path."""
+        if response.status_code == 404 and "entity/autocomplete/" in url:
+            if not self._entity_autocomplete_disabled:
+                logger.warning("PubTator3 entity autocomplete returned 404; disabling autocomplete for this process")
+            self._entity_autocomplete_disabled = True
+            return None
+        return super()._handle_expected_status(response, url)
 
     async def _get_client(self) -> httpx.AsyncClient:
         """Get or recreate the underlying HTTP client."""
@@ -157,6 +167,9 @@ class PubTatorClient(BaseAPIClient):
             matches = await client.find_entity("propofol", concept="chemical")
             # [EntityMatch(entity_id="@CHEMICAL_Propofol", name="Propofol", ...)]
         """
+        if self._entity_autocomplete_disabled:
+            return []
+
         params = {"query": query, "limit": limit}
         if concept:
             params["concept"] = concept
