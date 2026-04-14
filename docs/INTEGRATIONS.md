@@ -98,8 +98,20 @@ This auxiliary API is public in the sense that callers may use it directly, but 
 | `OPENURL_RESOLVER` | No | Institutional link resolver base URL | — |
 | `OPENURL_PRESET` | No | Preset name for institutional resolver | — |
 | `OPENURL_ENABLED` | No | Enable/disable OpenURL resolver | `true` |
+| `BROWSER_FETCH_CONFIG` | No | Preferred single JSON setting for browser-session broker and auto mode | — |
+| `BROWSER_FETCH_ENABLED` | No | Enable browser-session broker via per-field envs | `false` |
+| `BROWSER_FETCH_AUTO` | No | Auto-use broker when tool call omits allow_browser_session | `false` |
+| `BROWSER_FETCH_BROKER_URL` | No | Local broker endpoint, e.g. `http://127.0.0.1:8766/fetch` | — |
+| `BROWSER_FETCH_TOKEN` | No | Shared bearer token for the local broker | — |
+| `BROWSER_FETCH_ALLOWED_HOSTS` | No | Comma-separated host allow-list for broker targets | — |
 | `PUBMED_HTTP_API_PORT` | No | Port for background HTTP API (stdio mode) | `8765` |
 | `HTTP_PROXY` / `HTTPS_PROXY` | No | Proxy settings for outbound requests | — |
+| `BROWSER_FETCH_BROKER_TOKEN` | No | Bearer token expected by the local broker server | Falls back to `BROWSER_FETCH_TOKEN` |
+| `BROWSER_FETCH_BROKER_HOST` | No | Broker bind host | `127.0.0.1` |
+| `BROWSER_FETCH_BROKER_PORT` | No | Broker bind port | `8766` |
+| `BROWSER_FETCH_BROKER_HEADLESS` | No | Run broker browser headless | `false` |
+| `BROWSER_FETCH_BROKER_USER_DATA_DIR` | No | Persistent browser profile directory for broker login state | `~/.pubmed-search-mcp/browser-broker-profile` |
+| `BROWSER_FETCH_BROKER_DOWNLOAD_DIR` | No | Temporary broker download directory | `~/.pubmed-search-mcp/browser-broker-downloads` |
 
 ### Source Selection and Source Gating
 
@@ -190,6 +202,45 @@ Recommended practice for future commercial sources:
   }
 }
 ```
+
+**One-time browser-session auto mode**:
+
+```json
+{
+  "servers": {
+    "pubmed-search": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["pubmed-search-mcp"],
+      "env": {
+        "NCBI_EMAIL": "your@email.com",
+        "BROWSER_FETCH_CONFIG": "{\"enabled\":true,\"auto_enabled\":true,\"broker_url\":\"http://127.0.0.1:8766/fetch\",\"token\":\"local-dev-token\",\"allowed_hosts\":[\"jamanetwork.com\",\"*.jamanetwork.com\"]}"
+      }
+    }
+  }
+}
+```
+
+This is the recommended VS Code / Cursor setup when you want a single setting that enables authenticated browser fallback automatically. If you prefer separate values, `BROWSER_FETCH_ENABLED`, `BROWSER_FETCH_AUTO`, `BROWSER_FETCH_BROKER_URL`, `BROWSER_FETCH_TOKEN`, and `BROWSER_FETCH_ALLOWED_HOSTS` still work and override the JSON setting.
+
+### Running the local browser broker
+
+The MCP server only contains the broker client. To eliminate manual browser download prompts, run the companion local broker that intercepts Playwright download events and streams PDF bytes back to MCP.
+
+```bash
+uv sync --extra browser-broker
+uv run playwright install chromium
+uv run pubmed-browser-fetch-broker --token local-dev-token
+```
+
+Recommended first run:
+
+1. Start the broker in non-headless mode.
+2. Let the broker open its persistent browser profile.
+3. Sign in to the target publisher or institution once in that browser.
+4. Keep the broker running while MCP issues `get_fulltext` requests.
+
+Because downloads are intercepted inside the Playwright-controlled browser, publisher PDF flows no longer rely on the operating system's native Save As dialog.
 
 **Verification**: Open Copilot Chat → type `@pubmed-search` → you should see the server listed.
 

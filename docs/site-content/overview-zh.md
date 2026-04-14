@@ -24,6 +24,8 @@
 
 **🌐 語言**: [English](#/overview) | **繁體中文**
 
+**📘 工具使用文件**: [能力導向使用指南](TOOLS_USAGE_GUIDE.zh-TW.md) | [完整工具索引](#/quick-reference)
+
 ---
 
 ## 🚀 快速安裝
@@ -78,6 +80,36 @@ pip install pubmed-search-mcp
   }
 }
 ```
+
+選用：若要在 VS Code 內「設定一次，之後自動使用」browser-session PDF fallback，可直接加一個設定：
+
+```json
+{
+  "servers": {
+    "pubmed-search": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["pubmed-search-mcp"],
+      "env": {
+        "NCBI_EMAIL": "your@email.com",
+        "BROWSER_FETCH_CONFIG": "{\"enabled\":true,\"auto_enabled\":true,\"broker_url\":\"http://127.0.0.1:8766/fetch\",\"token\":\"local-dev-token\",\"allowed_hosts\":[\"jamanetwork.com\",\"*.jamanetwork.com\",\"nejm.org\",\"*.nejm.org\"]}"
+      }
+    }
+  }
+}
+```
+
+設定後，get_fulltext 遇到 institutional resolver 或 publisher landing page 時，會自動嘗試本機 broker。只有在單次呼叫想刻意關掉時，才需要傳 allow_browser_session=false。
+
+本機 broker 的自動下載攔截啟動方式：
+
+```bash
+uv sync --extra browser-broker
+uv run playwright install chromium
+uv run pubmed-browser-fetch-broker --token local-dev-token
+```
+
+這個 broker 會啟動一個可重複使用的瀏覽器 profile，並攔截下載事件。你只要在 broker 控制的瀏覽器裡登入一次，之後 PDF 下載就會直接落到暫存目錄並回傳給 MCP，不會再跳出手動另存對話框。
 
 ### Claude Desktop (`claude_desktop_config.json`)
 
@@ -335,6 +367,10 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS 代理
 ---
 
 ## 🛠️ MCP 工具概覽
+
+如果你想真正理解這 40 個工具怎麼用，不要從背工具名開始。
+
+先看[工具使用指南](TOOLS_USAGE_GUIDE.zh-TW.md)：它把目前 40 個工具濃縮成 8 個能力族，說明理論上的最小壓縮邊界，以及人類與 agent 的意圖路由方式。
 
 ### 🔍 搜尋與查詢智能
 

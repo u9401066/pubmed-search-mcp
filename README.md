@@ -22,6 +22,8 @@ A Domain-Driven Design (DDD) based MCP server that serves as an intelligent rese
 
 **🌐 Language**: **English** | [繁體中文](README.zh-TW.md)
 
+**📘 Tool Usage Docs**: [Capability-first guide](docs/TOOLS_USAGE_GUIDE.md) | [Complete index](src/pubmed_search/presentation/mcp_server/TOOLS_INDEX.md)
+
 ---
 
 ## 🚀 Quick Install
@@ -76,6 +78,36 @@ This MCP server works with **any MCP-compatible AI tool**. Choose your preferred
   }
 }
 ```
+
+Optional: enable browser-session PDF fallback once and let tools auto-use it:
+
+```json
+{
+  "servers": {
+    "pubmed-search": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["pubmed-search-mcp"],
+      "env": {
+        "NCBI_EMAIL": "your@email.com",
+        "BROWSER_FETCH_CONFIG": "{\"enabled\":true,\"auto_enabled\":true,\"broker_url\":\"http://127.0.0.1:8766/fetch\",\"token\":\"local-dev-token\",\"allowed_hosts\":[\"jamanetwork.com\",\"*.jamanetwork.com\",\"nejm.org\",\"*.nejm.org\"]}"
+      }
+    }
+  }
+}
+```
+
+With this setting, get_fulltext will automatically try the local broker for institutional or publisher landing pages. Pass allow_browser_session=false only when you want to suppress it for a specific call.
+
+Run the local broker with download interception:
+
+```bash
+uv sync --extra browser-broker
+uv run playwright install chromium
+uv run pubmed-browser-fetch-broker --token local-dev-token
+```
+
+The broker launches a persistent browser profile with download interception enabled. Log in once inside that broker-controlled browser window, and subsequent PDF downloads will be captured automatically without a native "Save As" dialog.
 
 ### Claude Desktop (`claude_desktop_config.json`)
 
@@ -332,6 +364,10 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS proxy for API requests
 ---
 
 ## 🛠️ MCP Tools Overview
+
+If you want to understand the tool surface as a usable system, do not start by memorizing 40 tool names.
+
+Start with the [Tools Usage Guide](docs/TOOLS_USAGE_GUIDE.md): it compresses the current 40 tools into 8 capability families, explains the theoretical lower bound, and gives intent-based routing for both humans and agents.
 
 ### 🔍 Search & Query Intelligence
 
