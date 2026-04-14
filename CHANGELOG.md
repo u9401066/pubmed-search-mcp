@@ -20,6 +20,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.5.3] - 2026-04-14
+
+### Fixed
+
+- `unified_search` no longer waits on background clinical-trials I/O after the `Formatting output...` phase begins
+- Markdown formatting no longer performs fallback clinical-trials fetches inline, preventing post-formatting tool stalls and cancellations
+- PubTator autocomplete now fails open after a 404 by disabling that endpoint for the current process instead of repeatedly retrying a missing route
+
+### Tests
+
+- Added regression coverage to ensure markdown output cancels slow clinical-trials work instead of blocking
+- Added regression coverage to ensure formatting does not trigger inline clinical-trials fetches
+- Added regression coverage to ensure PubTator autocomplete 404 disables subsequent autocomplete lookups
+
+---
+
 ## [0.5.2] - 2026-04-07
 
 ### Added

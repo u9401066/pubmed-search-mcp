@@ -171,7 +171,7 @@ from .presentation.mcp_server import (
     main as mcp_main,
 )
 
-__version__ = "0.5.2"
+__version__ = "0.5.3"
 
 __all__ = [
     # ═══════════════════════════════════════════════════════════════════
