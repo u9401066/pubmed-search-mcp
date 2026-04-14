@@ -14,12 +14,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from pubmed_search.application.pipeline.store import PipelineStore
-from pubmed_search.domain.entities.pipeline import (
+from pubmed_search.application.pipeline import (
     PipelineConfig,
-    PipelineOutput,
-    PipelineScope,
+    PipelineExecutionSettings,
 )
+from pubmed_search.application.pipeline.store import PipelineStore
+from pubmed_search.domain.entities.pipeline import PipelineScope
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -60,7 +60,7 @@ def sample_config() -> PipelineConfig:
     return PipelineConfig(
         name="test-pipeline",
         template="comprehensive",
-        output=PipelineOutput(),
+        execution=PipelineExecutionSettings(),
     )
 
 
@@ -169,9 +169,9 @@ class TestReportsDirFor:
         assert str(tmp_path / "workspace") in str(d)
 
     def test_workspace_scope_without_workspace_dir_falls_back(self, global_store: PipelineStore):
-        """When no workspace_dir, workspace scope falls back to global."""
-        d = global_store._reports_dir_for(PipelineScope.WORKSPACE)
-        assert "pipeline_reports" in str(d)
+        """When no workspace_dir, workspace scope should fail explicitly."""
+        with pytest.raises(RuntimeError, match="workspace directory"):
+            global_store._reports_dir_for(PipelineScope.WORKSPACE)
 
 
 # =========================================================================
@@ -314,38 +314,27 @@ class TestAutoSavePipelineReport:
 
 
 # =========================================================================
-# Workspace auto-detection
+# Explicit workspace configuration
 # =========================================================================
 
 
-class TestWorkspaceDetection:
-    """Tests for workspace_dir auto-detection in tool_registry."""
+class TestExplicitWorkspaceConfiguration:
+    """Tests for explicit workspace_dir plumbing."""
 
-    def test_env_var_takes_precedence(self, tmp_path: Path):
-        """PUBMED_WORKSPACE_DIR env var should be used if set."""
-        ws_path = str(tmp_path / "my-workspace")
+    def test_create_server_passes_workspace_dir(self):
+        from pubmed_search import LiteratureSearcher
+        from pubmed_search.application.session import SessionManager
+        from pubmed_search.infrastructure.ncbi.strategy import SearchStrategyGenerator
+        from pubmed_search.presentation.mcp_server.server import create_server
 
-        with patch.dict("os.environ", {"PUBMED_WORKSPACE_DIR": ws_path}):
-            import os
+        with (
+            patch.object(LiteratureSearcher, "__init__", return_value=None),
+            patch.object(SearchStrategyGenerator, "__init__", return_value=None),
+            patch.object(SessionManager, "__init__", return_value=None),
+            patch("pubmed_search.presentation.mcp_server.server.FastMCP") as mock_mcp,
+            patch("pubmed_search.presentation.mcp_server.server.register_all_mcp_tools") as mock_register,
+        ):
+            mock_mcp.return_value = MagicMock()
+            create_server(email="test@example.com", workspace_dir="/tmp/workspace")
 
-            assert os.environ.get("PUBMED_WORKSPACE_DIR") == ws_path
-
-    def test_cwd_with_git_is_detected(self, tmp_path: Path):
-        """CWD with .git should be auto-detected as workspace."""
-        (tmp_path / ".git").mkdir()
-
-        with patch("pathlib.Path.cwd", return_value=tmp_path):
-            from pathlib import Path
-
-            cwd = Path.cwd()
-            markers = (".git", "pyproject.toml", "package.json", ".pubmed-search")
-            assert any((cwd / m).exists() for m in markers)
-
-    def test_cwd_without_markers_not_detected(self, tmp_path: Path):
-        """CWD without project markers should not be used as workspace."""
-        with patch("pathlib.Path.cwd", return_value=tmp_path):
-            from pathlib import Path
-
-            cwd = Path.cwd()
-            markers = (".git", "pyproject.toml", "package.json", ".pubmed-search")
-            assert not any((cwd / m).exists() for m in markers)
+        assert mock_register.call_args.kwargs["workspace_dir"] == "/tmp/workspace"

@@ -329,6 +329,182 @@ class TestGetFulltext:
         assert "Institutional" in result
 
     @pytest.mark.asyncio
+    async def test_browser_session_assisted_fetch(self, tools):
+        mock_fulltext = FulltextResult(
+            doi="10.1234/test",
+            text_content="Institutional PDF extracted text",
+            source_used=PDFSource.BROWSER_SESSION,
+            retrieved_url="https://publisher.example/download.pdf",
+            pdf_links=[
+                PDFLink(
+                    url="https://resolver.library.edu/openurl?doi=10.1234/test",
+                    source=PDFSource.OPENURL,
+                    access_type="institutional",
+                    is_direct_pdf=False,
+                )
+            ],
+        )
+        mock_downloader = AsyncMock()
+        mock_downloader.get_fulltext.return_value = mock_fulltext
+        mock_downloader.close = AsyncMock()
+        mock_fetcher = MagicMock()
+        mock_fetcher.is_enabled.return_value = True
+
+        with (
+            patch(
+                "pubmed_search.infrastructure.sources.fulltext_download.FulltextDownloader",
+                return_value=mock_downloader,
+            ),
+            patch(
+                "pubmed_search.infrastructure.sources.browser_session.get_browser_session_fetcher",
+                return_value=mock_fetcher,
+            ),
+        ):
+            result = await tools["get_fulltext"](doi="10.1234/test", allow_browser_session=True)
+
+        assert "Browser-session broker fetched PDF" in result
+        assert "Institutional PDF extracted text" in result
+
+    @pytest.mark.asyncio
+    async def test_browser_session_assisted_fetch_auto_mode(self, tools):
+        mock_fulltext = FulltextResult(
+            doi="10.1234/test",
+            text_content="Institutional PDF extracted text",
+            source_used=PDFSource.BROWSER_SESSION,
+            retrieved_url="https://publisher.example/download.pdf",
+            pdf_links=[
+                PDFLink(
+                    url="https://resolver.library.edu/openurl?doi=10.1234/test",
+                    source=PDFSource.OPENURL,
+                    access_type="institutional",
+                    is_direct_pdf=False,
+                )
+            ],
+        )
+        mock_downloader = AsyncMock()
+        mock_downloader.get_fulltext.return_value = mock_fulltext
+        mock_downloader.close = AsyncMock()
+        mock_fetcher = MagicMock()
+        mock_fetcher.is_auto_enabled.return_value = True
+        mock_unpaywall = AsyncMock()
+        mock_unpaywall.get_oa_status.return_value = None
+        mock_core = AsyncMock()
+        mock_core.search.return_value = {"results": []}
+
+        with (
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_unpaywall_client",
+                return_value=mock_unpaywall,
+            ),
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_core_client",
+                return_value=mock_core,
+            ),
+            patch(
+                "pubmed_search.infrastructure.sources.fulltext_download.FulltextDownloader",
+                return_value=mock_downloader,
+            ),
+            patch(
+                "pubmed_search.infrastructure.sources.browser_session.get_browser_session_fetcher",
+                return_value=mock_fetcher,
+            ),
+        ):
+            result = await tools["get_fulltext"](doi="10.1234/test")
+
+        assert "Browser-session broker fetched PDF" in result
+        assert "Institutional PDF extracted text" in result
+        mock_downloader.get_fulltext.assert_awaited_once()
+        assert mock_downloader.get_fulltext.await_args.kwargs["allow_browser_session"] is None
+
+    @pytest.mark.asyncio
+    async def test_pdf_retrieval_fallback_runs_without_browser_session(self, tools):
+        mock_unpaywall = AsyncMock()
+        mock_unpaywall.get_oa_status.return_value = None
+        mock_core = AsyncMock()
+        mock_core.search.return_value = {"results": []}
+        mock_downloader = AsyncMock()
+        mock_downloader.get_fulltext.return_value = FulltextResult(
+            doi="10.1234/test",
+            text_content="Recovered from publisher PDF",
+            source_used=PDFSource.CROSSREF,
+            retrieved_url="https://publisher.example/paper.pdf",
+            pdf_links=[
+                PDFLink(
+                    url="https://publisher.example/paper.pdf",
+                    source=PDFSource.CROSSREF,
+                )
+            ],
+        )
+        mock_downloader.close = AsyncMock()
+        mock_fetcher = MagicMock()
+        mock_fetcher.is_auto_enabled.return_value = False
+
+        with (
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_unpaywall_client",
+                return_value=mock_unpaywall,
+            ),
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_core_client",
+                return_value=mock_core,
+            ),
+            patch(
+                "pubmed_search.infrastructure.sources.fulltext_download.FulltextDownloader",
+                return_value=mock_downloader,
+            ),
+            patch(
+                "pubmed_search.infrastructure.sources.browser_session.get_browser_session_fetcher",
+                return_value=mock_fetcher,
+            ),
+        ):
+            result = await tools["get_fulltext"](doi="10.1234/test")
+
+        assert "Recovered from publisher PDF" in result
+        assert "PDF retrieval fallback extracted text via CrossRef" in result
+        mock_downloader.get_fulltext.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_pdf_retrieval_fallback_reports_pdf_without_text(self, tools):
+        mock_unpaywall = AsyncMock()
+        mock_unpaywall.get_oa_status.return_value = None
+        mock_core = AsyncMock()
+        mock_core.search.return_value = {"results": []}
+        mock_downloader = AsyncMock()
+        mock_downloader.get_fulltext.return_value = FulltextResult(
+            doi="10.1234/test",
+            text_content=None,
+            source_used=PDFSource.CROSSREF,
+            retrieved_url="https://publisher.example/paper.pdf",
+            error="PDF downloaded successfully, but text extraction failed across all candidate sources",
+            pdf_links=[
+                PDFLink(
+                    url="https://publisher.example/paper.pdf",
+                    source=PDFSource.CROSSREF,
+                )
+            ],
+        )
+        mock_downloader.close = AsyncMock()
+
+        with (
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_unpaywall_client",
+                return_value=mock_unpaywall,
+            ),
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_core_client",
+                return_value=mock_core,
+            ),
+            patch(
+                "pubmed_search.infrastructure.sources.fulltext_download.FulltextDownloader",
+                return_value=mock_downloader,
+            ),
+        ):
+            result = await tools["get_fulltext"](doi="10.1234/test")
+
+        assert "retrieved PDF via CrossRef" in result
+        assert "extracted text via CrossRef" not in result
+
+    @pytest.mark.asyncio
     async def test_toon_contract(self, tools):
         mock_client = AsyncMock()
         mock_client.get_fulltext_xml.return_value = "<xml/>"

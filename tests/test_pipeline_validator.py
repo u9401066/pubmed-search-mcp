@@ -24,9 +24,10 @@ from pubmed_search.application.pipeline.validator import (
     validate_and_fix,
     validate_pipeline_name,
 )
-from pubmed_search.domain.entities.pipeline import (
+from pubmed_search.application.pipeline import (
     FixSeverity,
     PipelineConfig,
+    PipelineExecutionSettings,
     PipelineOutput,
     PipelineStep,
 )
@@ -409,46 +410,49 @@ class TestValidateAndFixOutputOnError:
         assert result.valid is True
         assert config.steps[0].on_error == "abort"
 
-    def test_invalid_output_format_fixed(self):
-        config = PipelineConfig(
-            steps=[PipelineStep(id="s1", action="search")],
-            output=PipelineOutput(format="xml"),
+    def test_legacy_output_format_is_ignored(self):
+        result = parse_and_validate_config(
+            {
+                "steps": [{"id": "s1", "action": "search"}],
+                "output": {"format": "xml"},
+            }
         )
-        result = validate_and_fix(config)
         assert result.valid is True
-        assert config.output.format == "markdown"
+        assert result.config is not None
+        assert result.config.execution.limit == 20
+        assert any(fix.field == "output.format" for fix in result.fixes)
 
     def test_invalid_ranking_fuzzy_fixed(self):
         config = PipelineConfig(
             steps=[PipelineStep(id="s1", action="search")],
-            output=PipelineOutput(ranking="impac"),  # close to "impact"
+            execution=PipelineExecutionSettings(ranking="impac"),  # close to "impact"
         )
         result = validate_and_fix(config)
         assert result.valid is True
-        assert config.output.ranking == "impact"
+        assert config.execution.ranking == "impact"
 
     def test_invalid_ranking_defaults_to_balanced(self):
         config = PipelineConfig(
             steps=[PipelineStep(id="s1", action="search")],
-            output=PipelineOutput(ranking="zzz_unknown"),
+            execution=PipelineExecutionSettings(ranking="zzz_unknown"),
         )
         result = validate_and_fix(config)
         assert result.valid is True
-        assert config.output.ranking == "balanced"
+        assert config.execution.ranking == "balanced"
 
     def test_negative_limit_fixed(self):
         config = PipelineConfig(
             steps=[PipelineStep(id="s1", action="search")],
-            output=PipelineOutput(limit=0),
+            execution=PipelineExecutionSettings(limit=0),
         )
         result = validate_and_fix(config)
         assert result.valid is True
-        assert config.output.limit == 20
+        assert config.execution.limit == 20
 
     def test_valid_output_passes(self):
         config = PipelineConfig(
             steps=[PipelineStep(id="s1", action="search")],
-            output=PipelineOutput(format="json", limit=50, ranking="recency"),
+            execution=PipelineExecutionSettings(limit=50, ranking="recency"),
         )
         result = validate_and_fix(config)
         assert result.valid is True
@@ -513,17 +517,16 @@ class TestParseAndValidateConfig:
         }
         result = parse_and_validate_config(raw)
         assert result.valid is True
-        assert result.config.output.format == "json"
-        assert result.config.output.limit == 50
-        assert result.config.output.ranking == "impact"
+        assert result.config.execution.limit == 50
+        assert result.config.execution.ranking == "impact"
+        assert any(fix.field == "output.format" for fix in result.fixes)
 
     def test_output_defaults(self):
         raw = {"steps": [{"id": "s1", "action": "search"}]}
         result = parse_and_validate_config(raw)
         assert result.valid is True
-        assert result.config.output.format == "markdown"
-        assert result.config.output.limit == 20
-        assert result.config.output.ranking == "balanced"
+        assert result.config.execution.limit == 20
+        assert result.config.execution.ranking == "balanced"
 
     def test_step_not_dict_error(self):
         raw = {"steps": ["not_a_dict"]}
@@ -554,7 +557,17 @@ class TestParseAndValidateConfig:
         }
         result = parse_and_validate_config(raw)
         assert result.valid is True
-        assert result.config.output.format == "markdown"
+        assert result.config.execution.limit == 20
+
+    def test_execution_key_is_supported(self):
+        raw = {
+            "steps": [{"id": "s1", "action": "search"}],
+            "execution": {"limit": 15, "ranking": "quality"},
+        }
+        result = parse_and_validate_config(raw)
+        assert result.valid is True
+        assert result.config.execution.limit == 15
+        assert result.config.execution.ranking == "quality"
 
     def test_action_alias_auto_fix_through_parse(self):
         """'find' alias should be resolved to 'search' through full parse path."""
@@ -646,7 +659,7 @@ class TestValidatorEdgeCases:
         """Template alias + output fix combined."""
         config = PipelineConfig(
             template="clinical",  # → pico
-            output=PipelineOutput(limit=-5),  # → 20
+            execution=PipelineExecutionSettings(limit=-5),  # → 20
         )
         result = validate_and_fix(config)
         assert result.valid is True

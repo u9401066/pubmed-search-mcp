@@ -154,7 +154,6 @@ class TestGetPdfLinks:
         d = FulltextDownloader()
         with (
             patch.object(d, "_get_openurl_links", new_callable=AsyncMock, return_value=[]),
-            patch.object(d, "_get_doi_redirect_link", new_callable=AsyncMock, return_value=[]),
             patch.object(d, "_get_unpaywall_links", new_callable=AsyncMock) as mock_uw,
             patch.object(d, "_get_crossref_links", new_callable=AsyncMock) as mock_cr,
             patch.object(d, "_get_core_links", new_callable=AsyncMock) as mock_core,
@@ -172,7 +171,8 @@ class TestGetPdfLinks:
             mock_zen.return_value = []
 
             links = await d.get_pdf_links(doi="10.1234/test")
-            assert len(links) == 1
+            assert len(links) == 2
+            assert any(link.source == PDFSource.DOI_REDIRECT for link in links)
 
     @pytest.mark.asyncio
     async def test_adds_doi_landing_page_fallback(self):
@@ -242,6 +242,34 @@ class TestGetPdfLinks:
             mock_pmc.side_effect = Exception("network error")
             links = await d.get_pdf_links(pmcid="PMC123")
             assert links == []  # Exception handled gracefully
+
+
+class TestCrossrefLinks:
+    @pytest.mark.asyncio
+    async def test_unspecified_content_type_pdf_url_is_kept(self):
+        d = FulltextDownloader()
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "message": {
+                "link": [
+                    {
+                        "URL": "https://jamanetwork.com/journals/jama/articlepdf/2845042/example.pdf",
+                        "content-type": "unspecified",
+                    }
+                ]
+            }
+        }
+
+        mock_client = AsyncMock()
+        mock_client.get.return_value = mock_response
+
+        with patch.object(d, "_get_client", new_callable=AsyncMock, return_value=mock_client):
+            links = await d._get_crossref_links("10.1001/jama.2025.27019")
+
+        assert len(links) == 1
+        assert links[0].is_direct_pdf is True
+        assert links[0].source == PDFSource.CROSSREF
 
 
 # ============================================================
@@ -399,6 +427,133 @@ class TestDownloadPdf:
             first_call_url = mock_dl.call_args_list[0][0][0]
             assert "b.com" in first_call_url
 
+    @pytest.mark.asyncio
+    async def test_prefers_direct_pdf_before_landing_page(self):
+        d = FulltextDownloader()
+        links = [
+            PDFLink(url="https://doi.example/article", source=PDFSource.DOI_REDIRECT, is_direct_pdf=False),
+            PDFLink(url="https://publisher.example/paper.pdf", source=PDFSource.CROSSREF, is_direct_pdf=True),
+        ]
+        with (
+            patch.object(d, "get_pdf_links", new_callable=AsyncMock, return_value=links),
+            patch.object(d, "_download_from_url", new_callable=AsyncMock) as mock_dl,
+        ):
+            mock_dl.return_value = DownloadResult(
+                success=True,
+                content=b"%PDF-1.4 test",
+                source=PDFSource.CROSSREF,
+                url="https://publisher.example/paper.pdf",
+                file_size=16,
+            )
+            result = await d.download_pdf(doi="10.1234/test")
+
+        assert result.success is True
+        first_call_url = mock_dl.call_args_list[0][0][0]
+        assert first_call_url == "https://publisher.example/paper.pdf"
+
+    @pytest.mark.asyncio
+    async def test_browser_session_fallback_for_institutional_link(self):
+        d = FulltextDownloader()
+        openurl_link = PDFLink(
+            url="https://resolver.library.edu/openurl?doi=10.1234/test",
+            source=PDFSource.OPENURL,
+            access_type="institutional",
+            is_direct_pdf=False,
+        )
+        mock_fetcher = MagicMock()
+        mock_fetcher.is_enabled.return_value = True
+        mock_fetcher.fetch_pdf = AsyncMock(
+            return_value=MagicMock(
+                success=True,
+                content=b"%PDF-1.4 institutional",
+                content_type="application/pdf",
+                final_url="https://publisher.example/download.pdf",
+            )
+        )
+
+        with (
+            patch.object(d, "get_pdf_links", new_callable=AsyncMock, return_value=[openurl_link]),
+            patch(
+                "pubmed_search.infrastructure.sources.browser_session.get_browser_session_fetcher",
+                return_value=mock_fetcher,
+            ),
+        ):
+            result = await d.download_pdf(doi="10.1234/test", allow_browser_session=True)
+
+        assert result.success is True
+        assert result.source == PDFSource.BROWSER_SESSION
+        assert result.url == "https://publisher.example/download.pdf"
+
+    @pytest.mark.asyncio
+    async def test_browser_session_auto_mode_for_institutional_link(self):
+        d = FulltextDownloader()
+        openurl_link = PDFLink(
+            url="https://resolver.library.edu/openurl?doi=10.1234/test",
+            source=PDFSource.OPENURL,
+            access_type="institutional",
+            is_direct_pdf=False,
+        )
+        mock_fetcher = MagicMock()
+        mock_fetcher.is_auto_enabled.return_value = True
+        mock_fetcher.fetch_pdf = AsyncMock(
+            return_value=MagicMock(
+                success=True,
+                content=b"%PDF-1.4 institutional",
+                content_type="application/pdf",
+                final_url="https://publisher.example/download.pdf",
+            )
+        )
+
+        with (
+            patch.object(d, "get_pdf_links", new_callable=AsyncMock, return_value=[openurl_link]),
+            patch(
+                "pubmed_search.infrastructure.sources.browser_session.get_browser_session_fetcher",
+                return_value=mock_fetcher,
+            ),
+        ):
+            result = await d.download_pdf(doi="10.1234/test")
+
+        assert result.success is True
+        assert result.source == PDFSource.BROWSER_SESSION
+        assert result.url == "https://publisher.example/download.pdf"
+
+    @pytest.mark.asyncio
+    async def test_get_pdf_links_includes_openurl_when_configured(self):
+        d = FulltextDownloader()
+        with patch(
+            "pubmed_search.infrastructure.sources.openurl.get_openurl_link",
+            return_value="https://resolver.library.edu/openurl?doi=10.1234/test",
+        ):
+            links = await d.get_pdf_links(doi="10.1234/test")
+
+        assert any(link.source == PDFSource.OPENURL for link in links)
+
+    @pytest.mark.asyncio
+    async def test_builds_jama_referer_for_articlepdf_links(self):
+        d = FulltextDownloader()
+        link = PDFLink(
+            url="https://jamanetwork.com/journals/jamasurgery/articlepdf/2846796/example.pdf",
+            source=PDFSource.OPENALEX,
+        )
+
+        headers = d._build_candidate_headers(link, {"doi": "10.1001/jamasurg.2026.0307"})
+
+        assert headers["Referer"] == "https://jamanetwork.com/journals/jamasurgery/fullarticle/2846796"
+
+    @pytest.mark.asyncio
+    async def test_browserish_headers_are_used_for_publisher_pdf(self):
+        d = FulltextDownloader()
+
+        headers = d._build_download_headers(
+            "https://jamanetwork.com/journals/jamasurgery/articlepdf/2846796/example.pdf",
+            PDFSource.OPENALEX,
+            headers={"Referer": "https://jamanetwork.com/journals/jamasurgery/fullarticle/2846796"},
+        )
+
+        assert headers["User-Agent"] == d.BROWSERISH_USER_AGENT
+        assert headers["Accept"].startswith("application/pdf")
+        assert headers["Referer"] == "https://jamanetwork.com/journals/jamasurgery/fullarticle/2846796"
+
 
 class TestLandingPageResolution:
     @pytest.mark.asyncio
@@ -486,6 +641,30 @@ class TestGetFulltext:
             assert result.source_used == PDFSource.EUROPE_PMC
 
     @pytest.mark.asyncio
+    async def test_get_structured_fulltext_awaits_xml_fetch(self):
+        d = FulltextDownloader()
+        mock_client = MagicMock()
+        mock_client.get_fulltext_xml = AsyncMock(return_value="<article><abstract>Test</abstract></article>")
+        mock_client.parse_fulltext_xml.return_value = {
+            "title": "Test Paper",
+            "abstract": "Abstract text",
+            "sections": [{"title": "Introduction", "content": "Intro text"}],
+            "references": ["ref1"],
+        }
+
+        with patch(
+            "pubmed_search.infrastructure.sources.get_europe_pmc_client",
+            return_value=mock_client,
+        ):
+            result = await d._get_structured_fulltext("PMC123")
+
+        mock_client.get_fulltext_xml.assert_awaited_once_with("PMC123")
+        mock_client.parse_fulltext_xml.assert_called_once()
+        assert result is not None
+        assert result["title"] == "Test Paper"
+        assert "ABSTRACT\nAbstract text" in result["text"]
+
+    @pytest.mark.asyncio
     async def test_no_links_found(self):
         d = FulltextDownloader()
         with patch.object(d, "get_pdf_links", new_callable=AsyncMock, return_value=[]):
@@ -498,11 +677,11 @@ class TestGetFulltext:
         pdf_content = b"%PDF-1.4 some content"
         with (
             patch.object(d, "get_pdf_links", new_callable=AsyncMock) as mock_links,
-            patch.object(d, "download_pdf", new_callable=AsyncMock) as mock_dl,
+            patch.object(d, "_download_candidate", new_callable=AsyncMock) as mock_download,
             patch.object(d, "_extract_pdf_text", new_callable=AsyncMock) as mock_extract,
         ):
             mock_links.return_value = [PDFLink(url="https://x.com", source=PDFSource.PMC)]
-            mock_dl.return_value = DownloadResult(
+            mock_download.return_value = DownloadResult(
                 success=True, content=pdf_content, source=PDFSource.PMC, file_size=100
             )
             mock_extract.return_value = "Extracted text from PDF"
@@ -530,10 +709,10 @@ class TestGetFulltext:
                     )
                 ],
             ),
-            patch.object(d, "download_pdf", new_callable=AsyncMock) as mock_dl,
+            patch.object(d, "_download_candidate", new_callable=AsyncMock) as mock_download,
             patch.object(d, "_extract_pdf_text", new_callable=AsyncMock, return_value="Institutional fulltext"),
         ):
-            mock_dl.return_value = DownloadResult(
+            mock_download.return_value = DownloadResult(
                 success=True,
                 content=b"%PDF-1.4 test content",
                 source=PDFSource.INSTITUTIONAL_RESOLVER,
@@ -545,6 +724,80 @@ class TestGetFulltext:
         assert result.resolved_pdf_url == resolved_pdf_url
         assert result.pdf_links[0].url == resolved_pdf_url
         assert result.pdf_links[0].access_type == "subscription"
+
+    async def test_extract_text_reuses_links_without_second_discovery(self):
+        d = FulltextDownloader()
+        link = PDFLink(url="https://publisher.example/paper.pdf", source=PDFSource.CROSSREF)
+        with (
+            patch.object(d, "get_pdf_links", new_callable=AsyncMock, return_value=[link]) as mock_links,
+            patch.object(d, "_download_candidate", new_callable=AsyncMock) as mock_download,
+            patch.object(d, "_extract_pdf_text", new_callable=AsyncMock, return_value="Extracted text") as mock_extract,
+        ):
+            mock_download.return_value = DownloadResult(
+                success=True,
+                content=b"%PDF-1.4 some content",
+                source=PDFSource.CROSSREF,
+                url=link.url,
+                file_size=100,
+            )
+
+            result = await d.get_fulltext(doi="10.1234/test", strategy="extract_text")
+
+        assert result.text_content == "Extracted text"
+        assert mock_links.await_count == 1
+        mock_extract.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_extract_text_falls_back_to_second_pdf_when_first_extraction_fails(self):
+        d = FulltextDownloader()
+        first = PDFLink(url="https://publisher.example/first.pdf", source=PDFSource.CROSSREF)
+        second = PDFLink(url="https://publisher.example/second.pdf", source=PDFSource.UNPAYWALL_PUBLISHER)
+        with (
+            patch.object(d, "get_pdf_links", new_callable=AsyncMock, return_value=[first, second]),
+            patch.object(d, "_download_candidate", new_callable=AsyncMock) as mock_download,
+            patch.object(d, "_extract_pdf_text", new_callable=AsyncMock) as mock_extract,
+        ):
+            mock_download.side_effect = [
+                DownloadResult(
+                    success=True,
+                    content=b"%PDF-1.4 first",
+                    source=PDFSource.CROSSREF,
+                    url=first.url,
+                    file_size=50,
+                ),
+                DownloadResult(
+                    success=True,
+                    content=b"%PDF-1.4 second",
+                    source=PDFSource.UNPAYWALL_PUBLISHER,
+                    url=second.url,
+                    file_size=80,
+                ),
+            ]
+            mock_extract.side_effect = [None, "Recovered text from second PDF"]
+
+            result = await d.get_fulltext(doi="10.1234/test", strategy="extract_text")
+
+        assert result.text_content == "Recovered text from second PDF"
+        assert result.source_used == PDFSource.UNPAYWALL_PUBLISHER
+        assert mock_download.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_browser_session_error_propagates(self):
+        d = FulltextDownloader()
+        with (
+            patch.object(d, "get_pdf_links", new_callable=AsyncMock) as mock_links,
+            patch.object(d, "download_pdf", new_callable=AsyncMock) as mock_dl,
+        ):
+            mock_links.return_value = [PDFLink(url="https://resolver.edu", source=PDFSource.OPENURL)]
+            mock_dl.return_value = DownloadResult(success=False, error="Browser-session fetch is not configured")
+
+            result = await d.get_fulltext(
+                doi="10.1234/test",
+                strategy="download_best",
+                allow_browser_session=True,
+            )
+
+        assert result.error == "Browser-session fetch is not configured"
 
 
 # ============================================================

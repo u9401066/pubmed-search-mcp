@@ -139,10 +139,6 @@ async def _execute_pipeline_mode(
             tool_name="unified_search",
         )
 
-    # Override output format if specified at top level
-    if output_format:
-        config.output.format = output_format  # type: ignore[assignment]
-
     # Execute
     from pubmed_search.infrastructure.sources import search_alternate_source
 

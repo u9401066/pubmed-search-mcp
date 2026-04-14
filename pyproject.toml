@@ -49,17 +49,23 @@ dependencies = [
     "pywin32>=311; sys_platform == 'win32'",
     "defusedxml>=0.7.1",
     "dependency-injector>=4.48.3",
-    "pyyaml>=6.0",  # YAML pipeline config support
+    "pyyaml>=6.0",
     "toons>=0.5.4",
 ]
 
 [project.scripts]
 pubmed-search-mcp = "pubmed_search.presentation.mcp_server:main"
+pubmed-browser-fetch-broker = "pubmed_search.presentation.browser_fetch_broker:main"
 
 [project.urls]
 Homepage = "https://github.com/u9401066/pubmed-search-mcp"
 Repository = "https://github.com/u9401066/pubmed-search-mcp"
 Issues = "https://github.com/u9401066/pubmed-search-mcp/issues"
+
+[project.optional-dependencies]
+browser-broker = [
+    "playwright>=1.52.0",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pubmed_search"]

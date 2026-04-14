@@ -110,6 +110,11 @@ def main() -> None:
         default=False,
         help="Disable DNS rebinding protection (not recommended for production)",
     )
+    parser.add_argument(
+        "--workspace-dir",
+        default=os.environ.get("PUBMED_WORKSPACE_DIR"),
+        help="Explicit workspace root for workspace-scoped pipeline persistence",
+    )
 
     args = parser.parse_args()
 
@@ -132,6 +137,7 @@ def main() -> None:
         disable_security=args.no_security,
         json_response=args.copilot_compatible,
         stateless_http=args.copilot_compatible,
+        workspace_dir=args.workspace_dir,
     )
 
     # Run server with selected transport

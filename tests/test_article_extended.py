@@ -651,6 +651,14 @@ class TestMergeFrom:
         assert a.doi == "10.1/x"
         assert a.pmc == "PMC999"
 
+    async def test_can_skip_identifier_transfer(self):
+        a = UnifiedArticle(title="T", primary_source="pubmed", year=2024)
+        b = UnifiedArticle(title="T", primary_source="crossref", doi="10.1/x", pmid="12345")
+        a.merge_from(b, merge_identifiers=False)
+        assert a.doi is None
+        assert a.pmid is None
+        assert a.year == 2024
+
     async def test_does_not_overwrite_existing(self):
         a = UnifiedArticle(title="T", primary_source="pubmed", pmid="12345", doi="10.1/orig")
         b = UnifiedArticle(title="T", primary_source="crossref", doi="10.1/other")

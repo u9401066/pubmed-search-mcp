@@ -204,13 +204,13 @@ def _validate_and_fix_output(config: PipelineConfig, fixes: list[ValidationFix])
     """Apply semantic output auto-fixes shared by template and step pipelines."""
     output = config.output
 
-    if output.format not in ("markdown", "json"):
+    if output.format != "markdown":
         fixes.append(
             ValidationFix(
                 field="output.format",
                 original=output.format,
                 corrected="markdown",
-                reason=f"Invalid output format '{output.format}', defaulting to 'markdown'",
+                reason=f"Legacy or invalid output format '{output.format}' is ignored; defaulting to 'markdown'",
                 severity=FixSeverity.INFO,
             )
         )

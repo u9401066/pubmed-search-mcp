@@ -29,6 +29,7 @@ from pubmed_search.application.search.result_aggregator import (
     aggregate_results,
     rank_results,
 )
+from pubmed_search.domain.entities.article import UnifiedArticle
 
 # =============================================================================
 # Fixtures
@@ -63,6 +64,10 @@ def mock_article():
         article.pmid = pmid
         article.doi = doi
         article.pmc = pmc
+        article.openalex_id = None
+        article.s2_id = None
+        article.core_id = None
+        article.arxiv_id = None
         article.abstract = abstract
         article.journal = journal
         article.year = year
@@ -86,6 +91,16 @@ def mock_article():
 
         # Mock merge_from method
         article.merge_from = MagicMock()
+        article.matches_identifier = MagicMock(
+            side_effect=lambda other: any(
+                left and left == right
+                for left, right in (
+                    (article.pmid, getattr(other, "pmid", None)),
+                    (article.doi, getattr(other, "doi", None)),
+                    (article.pmc, getattr(other, "pmc", None)),
+                )
+            )
+        )
 
         # Initialize scoring attributes
         article.ranking_score = None
@@ -472,8 +487,8 @@ class TestResultAggregator:
     async def test_aggregate_dedup_by_title_moderate(self, mock_article):
         """Test deduplication by title with MODERATE strategy."""
         same_title = "Machine Learning Applications in Medical Diagnosis"
-        source1 = [mock_article(title=same_title, pmid="111", primary_source="pubmed")]
-        source2 = [mock_article(title=same_title, pmid="222", primary_source="core")]
+        source1 = [mock_article(title=same_title, primary_source="pubmed")]
+        source2 = [mock_article(title=same_title, primary_source="core")]
 
         config = RankingConfig(dedup_strategy=DeduplicationStrategy.MODERATE)
         aggregator = ResultAggregator(config)
@@ -519,6 +534,36 @@ class TestResultAggregator:
 
         # merge_from should be called on the primary article
         assert stats.merged_records == 1
+        article1.merge_from.assert_called_once_with(article2, merge_identifiers=True)
+
+    async def test_aggregate_title_only_dedup_does_not_transfer_identifiers(self, mock_article):
+        """Identifier-less title matches may merge, but must not transfer identifiers."""
+        same_title = "Machine Learning Applications in Medical Diagnosis"
+        article1 = mock_article(title=same_title, doi=None, pmid=None, primary_source="pubmed")
+        article2 = mock_article(title=same_title, doi=None, pmid=None, primary_source="core")
+
+        config = RankingConfig(dedup_strategy=DeduplicationStrategy.MODERATE)
+        aggregator = ResultAggregator(config)
+        articles, stats = aggregator.aggregate([[article1], [article2]])
+
+        assert len(articles) == 1
+        assert stats.dedup_by_title == 1
+        article1.merge_from.assert_called_once_with(article2, merge_identifiers=False)
+
+    async def test_aggregate_title_match_with_identifier_stays_separate(self, mock_article):
+        """Title matching must not collapse records when either side already has an identifier."""
+        same_title = "Machine Learning Applications in Medical Diagnosis"
+        article1 = mock_article(title=same_title, doi=None, pmid=None, primary_source="pubmed")
+        article2 = mock_article(title=same_title, doi="10.1/title-only", pmid=None, primary_source="core")
+
+        config = RankingConfig(dedup_strategy=DeduplicationStrategy.MODERATE)
+        aggregator = ResultAggregator(config)
+        articles, stats = aggregator.aggregate([[article1], [article2]])
+
+        assert len(articles) == 2
+        assert stats.dedup_by_title == 0
+        article1.merge_from.assert_not_called()
+        article2.merge_from.assert_not_called()
 
     async def test_aggregate_doi_normalization(self, mock_article):
         """Test DOI normalization during deduplication."""
@@ -530,6 +575,87 @@ class TestResultAggregator:
 
         assert len(articles) == 1
         assert stats.dedup_by_doi == 1
+
+    async def test_mixed_source_transitive_merge_keeps_verified_identifier_chain(self):
+        """PMID-linked and DOI-linked records should merge transitively when the chain is consistent."""
+        pubmed = UnifiedArticle(
+            title="Machine Learning Applications in Medical Diagnosis",
+            primary_source="pubmed",
+            pmid="12345678",
+            abstract="PubMed abstract",
+        )
+        europe_pmc = UnifiedArticle(
+            title="Machine Learning Applications in Medical Diagnosis",
+            primary_source="europe_pmc",
+            pmid="12345678",
+            doi="10.1000/correct",
+            journal="JAMA",
+        )
+        crossref = UnifiedArticle(
+            title="Machine Learning Applications in Medical Diagnosis",
+            primary_source="crossref",
+            doi="10.1000/correct",
+            pages="100-110",
+        )
+
+        aggregator = ResultAggregator()
+        articles, stats = aggregator.aggregate([[pubmed], [europe_pmc], [crossref]])
+
+        assert len(articles) == 1
+        assert stats.dedup_by_pmid == 1
+        assert stats.dedup_by_doi == 1
+        merged = articles[0]
+        assert merged.pmid == "12345678"
+        assert merged.doi == "10.1000/correct"
+        assert merged.journal == "JAMA"
+        assert merged.pages == "100-110"
+
+    async def test_mixed_source_conflicting_title_doi_pmid_stays_separate(self):
+        """Conflicting strong identifiers must not collapse merely because titles match."""
+        pubmed = UnifiedArticle(
+            title="Machine Learning Applications in Medical Diagnosis",
+            primary_source="pubmed",
+            pmid="12345678",
+        )
+        europe_pmc = UnifiedArticle(
+            title="Machine Learning Applications in Medical Diagnosis",
+            primary_source="europe_pmc",
+            pmid="12345678",
+            doi="10.1000/correct",
+        )
+        crossref_conflict = UnifiedArticle(
+            title="Machine Learning Applications in Medical Diagnosis",
+            primary_source="crossref",
+            doi="10.1000/wrong",
+        )
+
+        aggregator = ResultAggregator()
+        articles, stats = aggregator.aggregate([[pubmed], [europe_pmc], [crossref_conflict]])
+
+        assert len(articles) == 2
+        assert stats.dedup_by_pmid == 1
+        assert stats.dedup_by_title == 0
+        dois = sorted(article.doi for article in articles if article.doi)
+        assert dois == ["10.1000/correct", "10.1000/wrong"]
+
+    async def test_identifierless_title_record_does_not_absorb_doi_record(self):
+        """An identifier-less title match must remain separate from a DOI-identified record."""
+        title_only = UnifiedArticle(
+            title="Machine Learning Applications in Medical Diagnosis",
+            primary_source="core",
+        )
+        doi_record = UnifiedArticle(
+            title="Machine Learning Applications in Medical Diagnosis",
+            primary_source="crossref",
+            doi="10.1000/identified",
+        )
+
+        config = RankingConfig(dedup_strategy=DeduplicationStrategy.MODERATE)
+        aggregator = ResultAggregator(config)
+        articles, stats = aggregator.aggregate([[title_only], [doi_record]])
+
+        assert len(articles) == 2
+        assert stats.dedup_by_title == 0
 
     # =========================================================================
     # Ranking Tests

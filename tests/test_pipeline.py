@@ -9,19 +9,19 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from pubmed_search.application.pipeline.executor import PipelineExecutor
-from pubmed_search.application.pipeline.templates import (
-    PIPELINE_TEMPLATES,
-    build_pipeline_from_template,
-)
-from pubmed_search.domain.entities.pipeline import (
+from pubmed_search.application.pipeline import (
     MAX_PIPELINE_STEPS,
     VALID_ACTIONS,
     VALID_TEMPLATES,
     PipelineConfig,
-    PipelineOutput,
+    PipelineExecutionSettings,
     PipelineStep,
     StepResult,
+)
+from pubmed_search.application.pipeline.executor import PipelineExecutor
+from pubmed_search.application.pipeline.templates import (
+    PIPELINE_TEMPLATES,
+    build_pipeline_from_template,
 )
 
 if TYPE_CHECKING:
@@ -115,8 +115,8 @@ class TestPipelineConfig:
     def test_minimal(self):
         cfg = PipelineConfig(steps=[PipelineStep(id="s1", action="search", params={"query": "test"})])
         assert len(cfg.steps) == 1
-        assert cfg.output.format == "markdown"
-        assert cfg.output.limit == 20
+        assert cfg.execution.limit == 20
+        assert cfg.execution.ranking == "balanced"
         assert cfg.template is None
 
     def test_template_mode(self):
@@ -544,7 +544,7 @@ class TestFullPipelineExecution:
         executor = PipelineExecutor(searcher=mock_searcher)
         cfg = PipelineConfig(
             steps=[PipelineStep(id="s1", action="search", params={"query": "test", "sources": "pubmed"})],
-            output=PipelineOutput(limit=10),
+            execution=PipelineExecutionSettings(limit=10),
         )
 
         with patch("pubmed_search.domain.entities.article.UnifiedArticle") as MockUA:
@@ -634,7 +634,7 @@ class TestComprehensiveTemplate:
         actions = [s.action for s in cfg.steps]
         assert "expand" in actions
         assert "merge" in actions
-        assert cfg.output.ranking == "quality"
+        assert cfg.execution.ranking == "quality"
 
     def test_with_year_filter(self):
         cfg = build_pipeline_from_template("comprehensive", {"query": "AI", "min_year": 2020})
@@ -654,7 +654,7 @@ class TestExplorationTemplate:
         assert "related" in actions
         assert "citing" in actions
         assert "references" in actions
-        assert cfg.output.ranking == "impact"
+        assert cfg.execution.ranking == "impact"
 
     def test_missing_pmid(self):
         with pytest.raises(ValueError, match="pmid"):
@@ -955,7 +955,7 @@ class TestFormatPipelineResults:
                 PipelineStep(id="s1", action="search"),
                 PipelineStep(id="merge", action="merge", inputs=["s1"]),
             ],
-            output=PipelineOutput(limit=10),
+            execution=PipelineExecutionSettings(limit=10),
         )
         result = generate_pipeline_report(articles, step_results, config)
         assert "Test" in result
@@ -1018,7 +1018,7 @@ class TestFormatPipelineResults:
                 PipelineStep(id="s2", action="search"),
                 PipelineStep(id="merge", action="merge", inputs=["s1", "s2"]),
             ],
-            output=PipelineOutput(limit=10),
+            execution=PipelineExecutionSettings(limit=10),
         )
         result = generate_pipeline_report(articles, step_results, config)
 

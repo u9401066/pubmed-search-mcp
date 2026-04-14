@@ -714,7 +714,7 @@ class UnifiedArticle:
     # Instance Methods
     # ===================================================================
 
-    def merge_from(self, other: UnifiedArticle) -> None:
+    def merge_from(self, other: UnifiedArticle, *, merge_identifiers: bool = True) -> None:
         """
         Merge data from another UnifiedArticle into this one.
 
@@ -725,22 +725,28 @@ class UnifiedArticle:
 
         Args:
             other: Another UnifiedArticle to merge from
+            merge_identifiers: Whether strong identifiers such as DOI/PMID/PMC
+                may be copied from ``other``. Set this to ``False`` when two
+                records were grouped only by weak evidence (for example,
+                title-only deduplication) to avoid propagating a wrong DOI.
         """
-        # Merge identifiers (fill missing)
-        if not self.pmid and other.pmid:
-            self.pmid = other.pmid
-        if not self.doi and other.doi:
-            self.doi = other.doi
-        if not self.pmc and other.pmc:
-            self.pmc = other.pmc
-        if not self.openalex_id and other.openalex_id:
-            self.openalex_id = other.openalex_id
-        if not self.s2_id and other.s2_id:
-            self.s2_id = other.s2_id
-        if not self.core_id and other.core_id:
-            self.core_id = other.core_id
-        if not self.arxiv_id and other.arxiv_id:
-            self.arxiv_id = other.arxiv_id
+        # Merge identifiers only when the caller has corroborated that these
+        # records refer to the same article through a strong identifier match.
+        if merge_identifiers:
+            if not self.pmid and other.pmid:
+                self.pmid = other.pmid
+            if not self.doi and other.doi:
+                self.doi = other.doi
+            if not self.pmc and other.pmc:
+                self.pmc = other.pmc
+            if not self.openalex_id and other.openalex_id:
+                self.openalex_id = other.openalex_id
+            if not self.s2_id and other.s2_id:
+                self.s2_id = other.s2_id
+            if not self.core_id and other.core_id:
+                self.core_id = other.core_id
+            if not self.arxiv_id and other.arxiv_id:
+                self.arxiv_id = other.arxiv_id
 
         # Merge bibliographic (fill missing)
         if not self.abstract and other.abstract:

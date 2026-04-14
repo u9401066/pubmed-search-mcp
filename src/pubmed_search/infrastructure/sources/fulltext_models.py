@@ -18,7 +18,16 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Literal
 
-AccessType = Literal["open_access", "green_oa", "gold", "bronze", "hybrid", "subscription", "unknown"]
+AccessType = Literal[
+    "open_access",
+    "green_oa",
+    "gold",
+    "bronze",
+    "hybrid",
+    "subscription",
+    "institutional",
+    "unknown",
+]
 
 
 class PDFSource(Enum):
@@ -32,6 +41,7 @@ class PDFSource(Enum):
     SEMANTIC_SCHOLAR = ("semantic_scholar", 6, "Semantic Scholar")
     OPENALEX = ("openalex", 7, "OpenAlex")
     INSTITUTIONAL_RESOLVER = ("institutional_resolver", 8, "Institutional Resolver")
+    OPENURL = INSTITUTIONAL_RESOLVER
     ARXIV = ("arxiv", 9, "arXiv")
     BIORXIV = ("biorxiv", 10, "bioRxiv")
     MEDRXIV = ("medrxiv", 11, "medRxiv")
@@ -40,6 +50,7 @@ class PDFSource(Enum):
     DOAJ = ("doaj", 14, "DOAJ")
     ZENODO = ("zenodo", 15, "Zenodo")
     INTERNET_ARCHIVE = ("internet_archive", 16, "Internet Archive")
+    BROWSER_SESSION = ("browser_session", 17, "Browser Session")
 
     @property
     def source_id(self) -> str:
@@ -104,6 +115,7 @@ class FulltextResult:
     text_content: str | None = None
     pdf_bytes: bytes | None = None
     resolved_pdf_url: str | None = None
+    retrieved_url: str | None = None
     structured_sections: dict[str, str] | None = None
     pdf_links: list[PDFLink] = field(default_factory=list)
     source_used: PDFSource | None = None
@@ -114,6 +126,7 @@ class FulltextResult:
     has_references: bool = False
     word_count: int = 0
     file_size: int = 0
+    error: str | None = None
 
 
 __all__ = [

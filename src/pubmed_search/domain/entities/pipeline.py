@@ -47,6 +47,8 @@ VALID_TEMPLATES: frozenset[str] = frozenset(
     }
 )
 
+VALID_RANKINGS: tuple[str, ...] = ("balanced", "impact", "recency", "quality")
+
 MAX_PIPELINE_STEPS = 20
 
 
@@ -70,7 +72,10 @@ class PipelineOutput:
     ranking: Literal["balanced", "impact", "recency", "quality"] = "balanced"
 
 
-@dataclass
+PipelineExecutionSettings = PipelineOutput
+
+
+@dataclass(init=False)
 class PipelineConfig:
     """Complete pipeline configuration — either custom steps or template reference."""
 
@@ -81,6 +86,32 @@ class PipelineConfig:
     # Template-based creation (steps auto-generated from template)
     template: str | None = None
     template_params: dict[str, Any] = field(default_factory=dict)
+
+    def __init__(
+        self,
+        steps: list[PipelineStep] | None = None,
+        name: str = "",
+        output: PipelineOutput | None = None,
+        execution: PipelineOutput | None = None,
+        template: str | None = None,
+        template_params: dict[str, Any] | None = None,
+    ) -> None:
+        """Support both the newer output field and legacy execution alias."""
+        effective_output = execution if execution is not None else output
+        self.steps = list(steps or [])
+        self.name = name
+        self.output = effective_output or PipelineOutput()
+        self.template = template
+        self.template_params = dict(template_params or {})
+
+    @property
+    def execution(self) -> PipelineOutput:
+        """Backward-compatible alias used by older tests and presentation code."""
+        return self.output
+
+    @execution.setter
+    def execution(self, value: PipelineOutput) -> None:
+        self.output = value
 
 
 @dataclass

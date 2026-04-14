@@ -515,6 +515,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
         include_figures: bool = False,
         extended_sources: bool = False,
         output_format: Literal["markdown", "json", "toon"] = "markdown",
+        allow_browser_session: bool | None = None,
         ctx: Context | None = None,
     ) -> str:
         """
@@ -548,6 +549,11 @@ def register_europe_pmc_tools(mcp: FastMCP):
             include_pdf_links: Include PDF download links (default: True)
             include_figures: Include figure metadata with image URLs (default: False)
             extended_sources: Search 15 sources instead of 3 (default: False)
+            output_format: Response format - "markdown" (default), "json", or "toon"
+            allow_browser_session: Control browser-session fallback.
+                - True: force broker fallback when configured
+                - False: disable broker fallback
+                - None: use auto mode from broker configuration
 
         Returns:
             Fulltext content with PDF links from all available sources.
@@ -617,6 +623,8 @@ def register_europe_pmc_tools(mcp: FastMCP):
             f"get_fulltext start pmcid={detected_pmcid} pmid={detected_pmid} doi={'yes' if detected_doi else 'no'}",
         )
 
+        browser_session_note = None
+
         from pubmed_search.infrastructure.sources.figure_client import get_figure_client
         from pubmed_search.infrastructure.sources.fulltext_download import FulltextDownloader
 
@@ -640,6 +648,89 @@ def register_europe_pmc_tools(mcp: FastMCP):
             progress=_progress,
             log=_log,
         )
+
+        # Keep the main service as the primary path, then fall back to
+        # multi-source PDF retrieval when no structured content is available.
+        if not retrieval.fulltext_content and any([detected_pmid, detected_pmcid, detected_doi]):
+            await _progress(5.5, 6, "Trying multi-source PDF retrieval fallback...")
+            retrieval.sources_tried.append("PDF Retrieval Fallback")
+            try:
+                from pubmed_search.infrastructure.sources.fulltext_download import (
+                    FulltextDownloader,
+                    PDFSource,
+                )
+
+                downloader = FulltextDownloader()
+                try:
+                    assisted = await downloader.get_fulltext(
+                        pmid=str(detected_pmid) if detected_pmid else None,
+                        pmcid=str(detected_pmcid) if detected_pmcid else None,
+                        doi=str(detected_doi) if detected_doi else None,
+                        strategy="extract_text",
+                        allow_browser_session=allow_browser_session,
+                    )
+                finally:
+                    await downloader.close()
+
+                seen_urls = {str(link.get("url") or "") for link in retrieval.pdf_links}
+                for ext_link in assisted.pdf_links:
+                    if not ext_link.url or ext_link.url in seen_urls:
+                        continue
+                    seen_urls.add(ext_link.url)
+                    retrieval.pdf_links.append(
+                        {
+                            "source": ext_link.source.display_name,
+                            "url": ext_link.url,
+                            "type": "pdf" if ext_link.is_direct_pdf else "landing_page",
+                            "access": ext_link.access_type,
+                            "version": ext_link.version,
+                            "license": ext_link.license,
+                        }
+                    )
+
+                if assisted.text_content:
+                    retrieval.fulltext_content = assisted.text_content
+                    retrieval.content_sections = [
+                        {
+                            "title": "Extracted PDF Text",
+                            "content": assisted.text_content,
+                        }
+                    ]
+                    if assisted.source_used:
+                        retrieval.fulltext_source_name = assisted.source_used.display_name
+                        retrieval.fulltext_canonical_host = assisted.source_used.display_name
+                        retrieval.fulltext_provenance = "derived"
+
+                if not retrieval.title and assisted.title:
+                    retrieval.title = assisted.title
+
+                note_parts: list[str] = []
+                if assisted.source_used == PDFSource.BROWSER_SESSION:
+                    if assisted.text_content:
+                        note_parts.append(
+                            f"🔐 Browser-session broker fetched PDF and extracted text from {assisted.retrieved_url or 'institutional access'}"
+                        )
+                    else:
+                        note_parts.append(
+                            f"🔐 Browser-session broker fetched PDF from {assisted.retrieved_url or 'institutional access'}"
+                        )
+                elif assisted.source_used:
+                    if assisted.text_content:
+                        note_parts.append(
+                            f"📄 PDF retrieval fallback extracted text via {assisted.source_used.display_name}"
+                        )
+                    else:
+                        note_parts.append(
+                            f"📄 PDF retrieval fallback retrieved PDF via {assisted.source_used.display_name}"
+                        )
+                if assisted.error:
+                    note_parts.append(f"⚠️ PDF retrieval fallback did not succeed: {assisted.error}")
+
+                if note_parts:
+                    browser_session_note = "\n".join(note_parts)
+            except Exception as e:
+                logger.warning(f"PDF retrieval fallback failed: {e}")
+                await _log("warning", f"PDF retrieval fallback failed: {e!s}")
 
         next_tools, next_commands = _build_fulltext_next_tools(
             pmcid=str(detected_pmcid) if detected_pmcid else None,
@@ -695,6 +786,9 @@ def register_europe_pmc_tools(mcp: FastMCP):
         await _progress(6, 6, "Formatting fulltext response...")
         output = f"📖 **{retrieval.title or 'Fulltext Retrieved'}**\n"
         output += f"🔍 Sources checked: {', '.join(retrieval.sources_tried)}\n\n"
+
+        if browser_session_note:
+            output += browser_session_note + "\n\n"
 
         # PDF Links section
         if retrieval.pdf_links and include_pdf_links:

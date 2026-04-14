@@ -15,6 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from pubmed_search.infrastructure.sources.fulltext_download import FulltextResult
 from pubmed_search.presentation.mcp_server.tools.europe_pmc import (
     register_europe_pmc_tools,
 )
@@ -314,6 +315,14 @@ class TestGetFulltextUnpaywall:
     async def test_unpaywall_exception(self, tools):
         mock_client = AsyncMock()
         mock_client.get_fulltext_xml.return_value = None
+        mock_downloader = AsyncMock()
+        mock_downloader.get_fulltext.return_value = FulltextResult(
+            doi="10.1001/error",
+            pdf_links=[],
+            text_content=None,
+            error="No PDF links found for this article",
+        )
+        mock_downloader.close = AsyncMock()
 
         with (
             patch(
@@ -327,6 +336,10 @@ class TestGetFulltextUnpaywall:
             patch(
                 "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_core_client",
                 return_value=AsyncMock(search=AsyncMock(return_value=None)),
+            ),
+            patch(
+                "pubmed_search.infrastructure.sources.fulltext_download.FulltextDownloader",
+                return_value=mock_downloader,
             ),
         ):
             result = await tools["get_fulltext"](doi="10.1001/error")
@@ -521,6 +534,15 @@ class TestGetFulltextNoResults:
         mock_core = AsyncMock()
         mock_core.search.return_value = None
 
+        mock_downloader = AsyncMock()
+        mock_downloader.get_fulltext.return_value = FulltextResult(
+            doi="10.1234/nothing",
+            pdf_links=[],
+            text_content=None,
+            error="No PDF links found for this article",
+        )
+        mock_downloader.close = AsyncMock()
+
         with (
             patch(
                 "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
@@ -533,6 +555,10 @@ class TestGetFulltextNoResults:
             patch(
                 "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_core_client",
                 return_value=mock_core,
+            ),
+            patch(
+                "pubmed_search.infrastructure.sources.fulltext_download.FulltextDownloader",
+                return_value=mock_downloader,
             ),
         ):
             result = await tools["get_fulltext"](doi="10.1234/nothing")

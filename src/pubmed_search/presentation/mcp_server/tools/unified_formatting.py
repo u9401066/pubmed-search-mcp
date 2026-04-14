@@ -615,15 +615,13 @@ async def _format_unified_results(
                 output_parts.append("")
 
     # === Related Clinical Trials (use pre-fetched results) ===
-    if include_trials and original_query:
+    if include_trials and prefetched_trials:
         try:
             from pubmed_search.infrastructure.sources.clinical_trials import (
                 format_trials_section,
             )
 
-            trials = prefetched_trials
-            if trials:
-                output_parts.append(format_trials_section(trials, max_display=3))
+            output_parts.append(format_trials_section(prefetched_trials, max_display=3))
         except Exception as e:
             logger.debug(f"Clinical trials search skipped: {e}")
 

@@ -19,17 +19,15 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from pubmed_search.domain.entities.pipeline import (
+from pubmed_search.application.pipeline import (
     PipelineConfig,
-    PipelineMeta,
-    PipelineOutput,
-    PipelineRun,
-    PipelineScope,
+    PipelineExecutionSettings,
     PipelineStep,
     ScheduleEntry,
     ValidationFix,
     ValidationResult,
 )
+from pubmed_search.domain.entities.pipeline import PipelineMeta, PipelineRun, PipelineScope
 from pubmed_search.presentation.mcp_server.tools.pipeline_tools import (
     _config_to_display_dict,
     get_pipeline_scheduler,
@@ -325,7 +323,7 @@ class TestLoadPipeline:
     def test_load_by_name(self, mcp, mock_store):
         config = PipelineConfig(
             steps=[PipelineStep(id="s1", action="search", params={"query": "test"})],
-            output=PipelineOutput(format="markdown", limit=20, ranking="balanced"),
+            execution=PipelineExecutionSettings(limit=20, ranking="balanced"),
         )
         meta = PipelineMeta(
             name="loaded",
@@ -507,11 +505,11 @@ class TestConfigToDisplayDict:
     def test_step_config_display(self):
         config = PipelineConfig(
             steps=[PipelineStep(id="s1", action="search", params={"query": "test"})],
-            output=PipelineOutput(format="json", limit=10, ranking="impact"),
+            execution=PipelineExecutionSettings(limit=10, ranking="impact"),
         )
         d = _config_to_display_dict(config)
         assert "steps" in d
-        assert d["output"]["format"] == "json"
+        assert d["output"] == {"limit": 10, "ranking": "impact"}
 
     def test_template_config_display(self):
         config = PipelineConfig(

@@ -190,6 +190,7 @@ def create_server(
     name: str = "pubmed-search",
     disable_security: bool = False,
     data_dir: str | None = None,
+    workspace_dir: str | None = None,
     json_response: bool = False,
     stateless_http: bool = False,
 ) -> FastMCP:
@@ -205,6 +206,8 @@ def create_server(
         name: Server name.
         disable_security: Disable DNS rebinding protection (needed for remote access).
         data_dir: Directory for session data persistence. Default: ~/.pubmed-search-mcp
+        workspace_dir: Explicit workspace root for workspace-scoped pipeline storage.
+            When omitted, workspace-scoped pipeline persistence is disabled.
         json_response: Use JSON responses instead of SSE (for Copilot Studio compatibility).
         stateless_http: Use stateless HTTP mode (no session management, for Copilot Studio).
 
@@ -254,6 +257,7 @@ def create_server(
         searcher=searcher,
         session_manager=session_manager,
         strategy_generator=strategy_generator,
+        workspace_dir=workspace_dir,
     )
     logger.info("Tool registration complete: %s", stats)
 
@@ -443,7 +447,17 @@ def main():
     http_api_port = settings.http_api_port
 
     # Create server
-    server = create_server(email=email, api_key=api_key, data_dir=settings.data_dir)
+    configured_workspace_dir = getattr(settings, "workspace_dir", None)
+    workspace_dir = str(configured_workspace_dir).strip() if configured_workspace_dir else None
+    if not workspace_dir:
+        workspace_dir = os.environ.get("PUBMED_WORKSPACE_DIR", "").strip() or None
+
+    server = create_server(
+        email=email,
+        api_key=api_key,
+        data_dir=settings.data_dir,
+        workspace_dir=workspace_dir,
+    )
 
     # Start background HTTP API for MCP-to-MCP communication
     # This runs alongside the stdio MCP server

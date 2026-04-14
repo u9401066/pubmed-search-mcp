@@ -722,11 +722,10 @@ def _config_to_display_dict(config) -> dict:
             for s in config.steps
         ]
 
-    out = config.output
+    execution = config.execution
     data["output"] = {
-        "format": out.format,
-        "limit": out.limit,
-        "ranking": out.ranking,
+        "limit": execution.limit,
+        "ranking": execution.ranking,
     }
 
     return data

@@ -239,6 +239,7 @@ def register_all_mcp_tools(
     searcher: LiteratureSearcher,
     session_manager: SessionManager,
     strategy_generator: Any | None = None,
+    workspace_dir: str | None = None,
 ) -> dict[str, int]:
     """
     註冊所有 MCP 工具。
@@ -248,6 +249,7 @@ def register_all_mcp_tools(
         searcher: LiteratureSearcher instance
         session_manager: SessionManager instance
         strategy_generator: Optional strategy generator
+        workspace_dir: Explicit workspace root for workspace-scoped pipeline persistence.
 
     Returns:
         Dict with category names and tool counts
@@ -274,20 +276,15 @@ def register_all_mcp_tools(
         else str(__import__("pathlib").Path.home() / ".pubmed-search-mcp")
     )
 
-    # Detect workspace directory for workspace-scoped pipelines & reports
     settings = load_settings()
-    workspace_dir = settings.workspace_dir
-    if not workspace_dir:
-        # Fallback: use CWD if it looks like a project root
-        _cwd = __import__("pathlib").Path.cwd()
-        _markers = (".git", "pyproject.toml", "package.json", ".pubmed-search")
-        if any((_cwd / m).exists() for m in _markers):
-            workspace_dir = str(_cwd)
-            logger.info("Auto-detected workspace directory: %s", workspace_dir)
+    configured_workspace_dir = getattr(settings, "workspace_dir", None)
+    effective_workspace_dir = workspace_dir or (
+        str(configured_workspace_dir).strip() if configured_workspace_dir else None
+    )
 
     pipeline_store = PipelineStore(
         global_data_dir=data_dir,
-        workspace_dir=workspace_dir,
+        workspace_dir=effective_workspace_dir,
     )
     set_pipeline_store(pipeline_store)
 

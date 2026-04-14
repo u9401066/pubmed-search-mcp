@@ -688,7 +688,7 @@ class ResultAggregator:
                     pmid_to_idx[article.pmid] = i
 
             # Title matching (if enabled)
-            if use_title and article.title:
+            if use_title and article.title and not self._has_strong_identifier(article):
                 normalized_title = self._normalize_title(article.title)
                 if len(normalized_title) >= min_title_len:
                     if normalized_title in title_to_idx:
@@ -711,12 +711,31 @@ class ResultAggregator:
 
                 for dup in duplicates:
                     if dup is not primary:
-                        primary.merge_from(dup)
+                        # Only transfer strong identifiers when the duplicate
+                        # relationship is corroborated by an existing
+                        # identifier match. Title-only deduplication may still
+                        # collapse two records into one result, but it must not
+                        # copy DOI/PMID/PMC across records.
+                        primary.merge_from(dup, merge_identifiers=primary.matches_identifier(dup))
                         stats.merged_records += 1
 
                 unique.append(primary)
 
         return unique
+
+    def _has_strong_identifier(self, article: UnifiedArticle) -> bool:
+        """Return True when the record already carries a high-confidence identity."""
+        return any(
+            [
+                article.pmid,
+                article.doi,
+                article.pmc,
+                getattr(article, "openalex_id", None),
+                getattr(article, "s2_id", None),
+                getattr(article, "core_id", None),
+                getattr(article, "arxiv_id", None),
+            ]
+        )
 
     def _select_primary(self, articles: list[UnifiedArticle]) -> UnifiedArticle:
         """

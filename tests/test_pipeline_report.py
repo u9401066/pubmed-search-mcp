@@ -5,6 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from pubmed_search.application.pipeline import (
+    PipelineConfig,
+    PipelineExecutionSettings,
+    PipelineStep,
+    StepResult,
+)
 from pubmed_search.application.pipeline.report_generator import (
     _format_article,
     _section_articles,
@@ -16,12 +22,6 @@ from pubmed_search.application.pipeline.report_generator import (
     _section_step_details,
     _step_output_summary,
     generate_pipeline_report,
-)
-from pubmed_search.domain.entities.pipeline import (
-    PipelineConfig,
-    PipelineOutput,
-    PipelineStep,
-    StepResult,
 )
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -127,7 +127,7 @@ def _make_config(
     return PipelineConfig(
         name=name,
         steps=steps,
-        output=PipelineOutput(format="markdown", limit=limit, ranking=ranking),
+        execution=PipelineExecutionSettings(limit=limit, ranking=ranking),
     )
 
 

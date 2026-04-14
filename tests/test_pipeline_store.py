@@ -20,13 +20,15 @@ from typing import TYPE_CHECKING
 import pytest
 import yaml
 
+from pubmed_search.application.pipeline import (
+    PipelineConfig,
+    PipelineExecutionSettings,
+    PipelineStep,
+)
 from pubmed_search.application.pipeline.store import PipelineStore, _config_to_dict
 from pubmed_search.domain.entities.pipeline import (
-    PipelineConfig,
-    PipelineOutput,
     PipelineRun,
     PipelineScope,
-    PipelineStep,
     ScheduleEntry,
 )
 
@@ -115,11 +117,11 @@ class TestConfigToDict:
     def test_output_included_when_non_default(self):
         config = PipelineConfig(
             steps=[PipelineStep(id="s1", action="search")],
-            output=PipelineOutput(format="json"),
+            execution=PipelineExecutionSettings(limit=10, ranking="quality"),
         )
         d = _config_to_dict(config)
         assert "output" in d
-        assert d["output"]["format"] == "json"
+        assert d["output"] == {"limit": 10, "ranking": "quality"}
 
     def test_on_error_skip_omitted(self):
         config = PipelineConfig(
@@ -635,9 +637,9 @@ class TestScopeResolution:
     """Tests for _resolve_scope edge cases."""
 
     def test_workspace_without_workspace_dir(self, store_global_only: PipelineStore):
-        """Requesting workspace without one configured should fall back."""
-        scope = store_global_only._resolve_scope("workspace")
-        assert scope == PipelineScope.GLOBAL
+        """Requesting workspace without one configured should fail explicitly."""
+        with pytest.raises(ValueError, match="workspace directory"):
+            store_global_only._resolve_scope("workspace")
 
     def test_auto_with_workspace(self, store_dual: PipelineStore):
         scope = store_dual._resolve_scope("auto")

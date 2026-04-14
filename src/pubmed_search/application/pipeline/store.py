@@ -140,8 +140,8 @@ class PipelineStore:
         """Resolve 'auto' scope to workspace (if available) or global."""
         if scope == "workspace":
             if not self._workspace_dir:
-                logger.warning("Workspace scope requested but no workspace configured, falling back to global")
-                return PipelineScope.GLOBAL
+                msg = "Workspace scope requested but no workspace directory is configured"
+                raise ValueError(msg)
             return PipelineScope.WORKSPACE
         if scope == "global":
             return PipelineScope.GLOBAL
@@ -632,7 +632,8 @@ class PipelineStore:
         """Get the reports directory for a specific scope."""
         if scope == PipelineScope.WORKSPACE:
             if not self._workspace_dir:
-                return self._global_dir / "pipeline_reports"
+                msg = "Workspace reports requested but no workspace directory is configured"
+                raise RuntimeError(msg)
             return self._workspace_dir / ".pubmed-search" / "pipeline_reports"
         return self._global_dir / "pipeline_reports"
 

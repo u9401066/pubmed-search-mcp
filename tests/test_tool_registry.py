@@ -200,6 +200,7 @@ class TestValidateToolRegistry:
             return _fake_tools({"unified_search"})
 
         mcp.list_tools.side_effect = _list_tools
+        mcp._tool_manager._tools.keys.return_value = {"unified_search"}
 
         result = validate_tool_registry(mcp)
         assert "unified_search" in result["registered"]
@@ -276,11 +277,12 @@ class TestRegisterAllMcpTools:
                 patch("pubmed_search.application.pipeline.store.PipelineStore") as _mock_ps,
                 patch("pubmed_search.presentation.mcp_server.tools.pipeline_tools.set_pipeline_store") as _mock_sps,
             ):
-                stats = register_all_mcp_tools(mcp, searcher, sm, sg)
+                stats = register_all_mcp_tools(mcp, searcher, sm, sg, workspace_dir="/tmp/ws")
 
             mock_set_sm.assert_called_once_with(sm)
             mock_set_sg.assert_called_once_with(sg)
             mock_all.assert_called_once_with(mcp, searcher)
+            _mock_ps.assert_called_once_with(global_data_dir=str(sm.data_dir), workspace_dir="/tmp/ws")
             assert isinstance(stats, dict)
 
     async def test_no_strategy_generator(self):

@@ -181,7 +181,10 @@ class _PipelineConfigBaseSchema(_PipelineSchemaModel):
     """Common fields shared by both pipeline config variants."""
 
     name: str = ""
-    output: PipelineOutputSchema = Field(default_factory=PipelineOutputSchema)
+    output: PipelineOutputSchema = Field(
+        default_factory=PipelineOutputSchema,
+        validation_alias=AliasChoices("output", "execution"),
+    )
 
     @field_validator("name", mode="before")
     @classmethod

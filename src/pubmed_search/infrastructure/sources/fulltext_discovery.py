@@ -335,7 +335,14 @@ class FulltextDiscoveryPhase:
                 if not link_url:
                     continue
 
-                if "pdf" in content_type.lower():
+                looks_like_pdf_url = (
+                    link_url.lower().endswith(".pdf")
+                    or "articlepdf" in link_url.lower()
+                    or "/pdf/" in link_url.lower()
+                    or "content/pdf/" in link_url.lower()
+                )
+
+                if "pdf" in content_type.lower() or (content_type.lower() == "unspecified" and looks_like_pdf_url):
                     links.append(
                         PDFLink(
                             url=link_url,

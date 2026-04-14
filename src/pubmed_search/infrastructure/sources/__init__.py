@@ -65,6 +65,7 @@ _unpaywall_client = None
 _openurl_builder = None
 _clinical_trials_client = None
 _openi_client = None
+_browser_session_fetcher = None
 
 
 class SearchSource(Enum):
@@ -231,6 +232,16 @@ def get_openi_client():
 
         _openi_client = OpenIClient()
     return _openi_client
+
+
+def get_browser_session_fetcher():
+    """Get or create browser-session fetcher (lazy initialization)."""
+    global _browser_session_fetcher
+    if _browser_session_fetcher is None:
+        from .browser_session import get_browser_session_fetcher as _get_fetcher
+
+        _browser_session_fetcher = _get_fetcher()
+    return _browser_session_fetcher
 
 
 async def search_alternate_source(
@@ -741,6 +752,7 @@ __all__ = [
     "get_ncbi_extended_client",
     "get_openalex_client",
     "get_openi_client",
+    "get_browser_session_fetcher",
     "get_openurl_builder",
     "get_paper_from_any_source",
     "get_scopus_client",

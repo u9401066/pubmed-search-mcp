@@ -383,7 +383,6 @@ class TestFormatUnifiedResults:
         assert "get_article_figures" in result
         assert "**Sources**:" not in result
 
-
 # ============================================================
 # Tool capture and registration
 # ============================================================
@@ -678,7 +677,6 @@ class TestUnifiedSearch:
             )
 
         mock_wos.assert_awaited_once()
-
 
 class TestAnalyzeSearchQuery:
     @pytest.mark.asyncio
