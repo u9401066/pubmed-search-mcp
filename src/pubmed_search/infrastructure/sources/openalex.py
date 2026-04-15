@@ -44,15 +44,18 @@ class OpenAlexClient(BaseAPIClient):
 
     _service_name = "OpenAlex"
 
-    def __init__(self, email: str | None = None, timeout: float = 30.0):
+    def __init__(self, email: str | None = None, api_key: str | None = None, timeout: float = 30.0):
         """
         Initialize client.
 
         Args:
             email: Email for polite pool (higher rate limits)
+            api_key: Optional OpenAlex API key for authenticated requests
             timeout: Request timeout in seconds
         """
         self._email = email or DEFAULT_EMAIL
+        self._api_key = api_key.strip() if isinstance(api_key, str) and api_key.strip() else None
+        self._auth_params = {"api_key": self._api_key} if self._api_key else {"mailto": self._email}
         super().__init__(
             timeout=timeout,
             min_interval=0.1,
@@ -107,7 +110,7 @@ class OpenAlexClient(BaseAPIClient):
             params = {
                 "search": query,
                 "per_page": str(min(limit, 200)),
-                "mailto": self._email,
+                **self._auth_params,
             }
 
             # Only add sort if explicitly provided
@@ -152,7 +155,7 @@ class OpenAlexClient(BaseAPIClient):
 
             # URL encode the work_id
             encoded_id = urllib.parse.quote(work_id, safe="")
-            params = {"mailto": self._email}
+            params = dict(self._auth_params)
             url = f"{OA_WORKS_URL}/{encoded_id}?{urllib.parse.urlencode(params)}"
 
             data = await self._make_request(url)
@@ -182,7 +185,7 @@ class OpenAlexClient(BaseAPIClient):
                 "filter": f"cites:{work_id}",
                 "per_page": str(min(limit, 200)),
                 "sort": "cited_by_count:desc",
-                "mailto": self._email,
+                **self._auth_params,
             }
 
             url = f"{OA_WORKS_URL}?{urllib.parse.urlencode(params)}"
@@ -218,7 +221,7 @@ class OpenAlexClient(BaseAPIClient):
             if source_id.startswith("https://openalex.org/"):
                 source_id = source_id.replace("https://openalex.org/", "")
 
-            params = {"mailto": self._email}
+            params = dict(self._auth_params)
             url = f"{OA_API_BASE}/sources/{source_id}?{urllib.parse.urlencode(params)}"
 
             data = await self._make_request(url)
@@ -258,7 +261,7 @@ class OpenAlexClient(BaseAPIClient):
             params = {
                 "filter": filter_str,
                 "per_page": str(len(clean_ids)),
-                "mailto": self._email,
+                **self._auth_params,
             }
 
             url = f"{OA_API_BASE}/sources?{urllib.parse.urlencode(params)}"

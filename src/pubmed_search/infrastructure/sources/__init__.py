@@ -105,13 +105,18 @@ def get_semantic_scholar_client(api_key: str | None = None):
     return _semantic_scholar_client
 
 
-def get_openalex_client(email: str | None = None):
+def get_openalex_client(email: str | None = None, api_key: str | None = None):
     """Get or create OpenAlex client (lazy initialization)."""
     global _openalex_client
     if _openalex_client is None:
         from .openalex import OpenAlexClient
 
-        _openalex_client = OpenAlexClient(email=email)
+        settings = load_settings()
+
+        _openalex_client = OpenAlexClient(
+            email=email or settings.ncbi_email,
+            api_key=api_key or settings.openalex_api_key,
+        )
     return _openalex_client
 
 

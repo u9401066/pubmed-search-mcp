@@ -373,6 +373,21 @@ class TestFulltext:
 
 
 class TestLazyInit:
+    async def test_get_openalex_client_uses_settings_api_key(self, monkeypatch):
+        import pubmed_search.infrastructure.sources as mod
+
+        mod._openalex_client = None
+        monkeypatch.setenv("NCBI_EMAIL", "test@example.com")
+        monkeypatch.setenv("OPENALEX_API_KEY", "oa-key")
+
+        client = mod.get_openalex_client()
+
+        assert client._email == "test@example.com"
+        assert client._api_key == "oa-key"
+        assert client._auth_params == {"api_key": "oa-key"}
+
+        mod._openalex_client = None
+
     async def test_get_fulltext_downloader(self):
         import pubmed_search.infrastructure.sources as mod
 

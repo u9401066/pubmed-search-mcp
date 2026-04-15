@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Optional `OPENALEX_API_KEY` support so OpenAlex requests can use authenticated API-key query parameters instead of mailto-only polite-pool auth
+
 ### Planned
 
 - PRISMA flow tracking (init_prisma_flow, record_screening, get_prisma_diagram)

@@ -42,6 +42,7 @@ A Domain-Driven Design (DDD) based MCP server that serves as an intelligent rese
 
 - **NCBI Email** — Required by [NCBI API policy](https://www.ncbi.nlm.nih.gov/books/NBK25497/#chapter2.Usage_Guidelines_and_Requiremen). Any valid email address.
 - **NCBI API Key** *(optional)* — [Get one here](https://www.ncbi.nlm.nih.gov/account/settings/) for higher rate limits (10 req/s vs 3 req/s)
+- **OpenAlex API Key** *(optional)* — set `OPENALEX_API_KEY` to use authenticated OpenAlex requests instead of mailto-only polite-pool auth
 
 ### Install & Run
 

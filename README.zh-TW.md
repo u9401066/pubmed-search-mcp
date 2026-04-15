@@ -40,6 +40,7 @@
 
 - **NCBI Email** — [NCBI API 政策](https://www.ncbi.nlm.nih.gov/books/NBK25497/#chapter2.Usage_Guidelines_and_Requiremen)要求，任何有效的電子郵件地址
 - **NCBI API Key**（*選填*）— [在此取得](https://www.ncbi.nlm.nih.gov/account/settings/)，可提高 API 限額（10 req/s vs 3 req/s）
+- **OpenAlex API Key**（*選填*）— 設定 `OPENALEX_API_KEY` 後，OpenAlex 會改用已驗證請求，而不是只靠 mailto polite-pool auth
 
 ### 安裝與執行
 

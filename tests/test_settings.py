@@ -29,6 +29,7 @@ class TestAppSettings:
         monkeypatch.setenv("SCOPUS_API_KEY", "licensed-key")
         monkeypatch.setenv("WEB_OF_SCIENCE_ENABLED", "1")
         monkeypatch.setenv("WEB_OF_SCIENCE_API_KEY", "wos-key")
+        monkeypatch.setenv("OPENALEX_API_KEY", "openalex-key")
 
         settings = load_settings()
 
@@ -36,6 +37,7 @@ class TestAppSettings:
         assert settings.scopus_api_key == "licensed-key"
         assert settings.web_of_science_enabled is True
         assert settings.web_of_science_api_key == "wos-key"
+        assert settings.openalex_api_key == "openalex-key"
 
     def test_empty_openurl_values_are_allowed(self, monkeypatch):
         monkeypatch.setenv("OPENURL_RESOLVER", "")

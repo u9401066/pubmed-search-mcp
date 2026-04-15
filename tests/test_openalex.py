@@ -30,6 +30,13 @@ class TestInit:
     async def test_defaults(self):
         c = OpenAlexClient()
         assert c._email == DEFAULT_EMAIL
+        assert c._api_key is None
+        assert c._auth_params == {"mailto": DEFAULT_EMAIL}
+
+    async def test_api_key_overrides_mailto_auth(self):
+        c = OpenAlexClient(email="test@example.com", api_key="oa-key")
+        assert c._api_key == "oa-key"
+        assert c._auth_params == {"api_key": "oa-key"}
 
     async def test_context_manager(self):
         async with OpenAlexClient() as c:
@@ -122,6 +129,15 @@ class TestSearch:
         assert "sort=" in url
 
     @patch.object(OpenAlexClient, "_make_request")
+    async def test_uses_api_key_when_configured(self, mock_req):
+        mock_req.return_value = {"results": []}
+        client = OpenAlexClient(email="test@example.com", api_key="oa-key")
+        await client.search("test")
+        url = mock_req.call_args[0][0]
+        assert "api_key=oa-key" in url
+        assert "mailto=" not in url
+
+    @patch.object(OpenAlexClient, "_make_request")
     async def test_limit_capped(self, mock_req, client):
         mock_req.return_value = {"results": []}
         await client.search("test", limit=500)
@@ -175,6 +191,15 @@ class TestGetWork:
     async def test_exception(self, mock_req, client):
         mock_req.side_effect = Exception("fail")
         assert await client.get_work("W1") is None
+
+    @patch.object(OpenAlexClient, "_make_request")
+    async def test_by_doi_uses_api_key_when_configured(self, mock_req):
+        mock_req.return_value = {"id": "W123", "display_name": "Test", "ids": {}}
+        client = OpenAlexClient(email="test@example.com", api_key="oa-key")
+        await client.get_work("10.1234/test")
+        url = mock_req.call_args[0][0]
+        assert "api_key=oa-key" in url
+        assert "mailto=" not in url
 
 
 # ============================================================

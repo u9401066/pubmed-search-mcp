@@ -34,6 +34,7 @@ class AppSettings(BaseSettings):
 
     crossref_email: str | None = Field(default=None, alias="CROSSREF_EMAIL")
     unpaywall_email: str | None = Field(default=None, alias="UNPAYWALL_EMAIL")
+    openalex_api_key: str | None = Field(default=None, alias="OPENALEX_API_KEY")
     core_api_key: str | None = Field(default=None, alias="CORE_API_KEY")
 
     openurl_enabled: bool = Field(default=True, alias="OPENURL_ENABLED")
@@ -75,6 +76,7 @@ class AppSettings(BaseSettings):
         "workspace_dir",
         "crossref_email",
         "unpaywall_email",
+        "openalex_api_key",
         "core_api_key",
         "scopus_api_key",
         "scopus_insttoken",
