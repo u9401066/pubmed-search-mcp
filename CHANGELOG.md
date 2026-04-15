@@ -20,6 +20,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.5.4] - 2026-04-15
+
+### Added
+
+- Browser-session PDF fallback flow for `get_fulltext`, including broker-aware retrieval wiring and source exports for institutional or publisher-gated PDFs
+
+### Changed
+
+- Regenerated docs-site overview, troubleshooting, deployment, and quick-reference content to reflect the current browser-session and pipeline behavior
+- Updated tool metadata and integration docs so README and docs navigation match the merged server surface
+
+### Fixed
+
+- Reconciled the local integration branch onto `master` for browser-session fulltext retrieval, Europe PMC fallback handling, and pipeline compatibility updates
+- `run_server.py` no longer contains the duplicated `workspace_dir` argument introduced during the integration merge
+- Result aggregation and pipeline entities now align with the merged compatibility layer expected by the MCP tools and tests
+
+### Tests
+
+- Added and stabilized regression coverage for Europe PMC fulltext fallback paths so Unpaywall / CORE / browser-session tests no longer depend on live external retries
+- Revalidated the merged `master` branch with `scripts/check_async_tests.py` and the full `pytest` suite
+
+---
+
 ## [0.5.3] - 2026-04-14
 
 ### Fixed
