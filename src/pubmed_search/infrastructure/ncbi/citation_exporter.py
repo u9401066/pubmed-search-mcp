@@ -54,6 +54,14 @@ OFFICIAL_FORMATS: list[CitationFormat] = ["ris", "medline", "csl"]
 _SHARED_CITATION_CLIENT: httpx.AsyncClient | None = None
 
 
+def _raise_for_retryable_status(response: httpx.Response) -> None:
+    raise RetryableOperationError(
+        f"HTTP {response.status_code}",
+        retry_after=parse_retry_after(response.headers.get("Retry-After")),
+        status_code=response.status_code,
+    )
+
+
 def _get_citation_http_client() -> httpx.AsyncClient:
     """Return the lazily-created module-level citation HTTP client."""
     global _SHARED_CITATION_CLIENT
@@ -178,11 +186,7 @@ class NCBICitationExporter:
                 response = await self.client.get(CITATION_API_BASE, params=params)
 
                 if response.status_code in policy.retry.retryable_status_codes:
-                    raise RetryableOperationError(
-                        f"HTTP {response.status_code}",
-                        retry_after=parse_retry_after(response.headers.get("Retry-After")),
-                        status_code=response.status_code,
-                    )
+                    _raise_for_retryable_status(response)
 
                 response.raise_for_status()
                 return response.text
@@ -233,7 +237,7 @@ class NCBICitationExporter:
                 pmid_count=len(pmids),
                 error=f"Request failed: {e!s}",
             )
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logger.exception(f"Citation exporter request failed: {e}")
             return CitationResult(
                 success=False,

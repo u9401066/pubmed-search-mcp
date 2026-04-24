@@ -69,10 +69,13 @@ class TestPackageImports:
         """Legacy root-level HTTP attributes should be absent after alias removal."""
         import pubmed_search
 
+        def read_root_attr(name: str):
+            return getattr(pubmed_search, name)
+
         with pytest.raises(AttributeError):
-            getattr(pubmed_search, "PubMedClient")
+            read_root_attr("PubMedClient")
         with pytest.raises(AttributeError):
-            getattr(pubmed_search, "SearchResult")
+            read_root_attr("SearchResult")
 
     async def test_ncbi_extended_imports(self):
         """NCBI Extended client should be importable."""

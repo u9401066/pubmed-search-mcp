@@ -18,8 +18,9 @@ import logging
 import re
 import urllib.parse
 import urllib.request
-import xml.etree.ElementTree as ET
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING
+
+from defusedxml import ElementTree
 
 from .fulltext_models import PDFLink, PDFSource
 
@@ -47,10 +48,11 @@ def _lookup_pmc_links_from_entrez(pmid: str) -> list[PDFLink]:
     }
     request_url = f"{NCBI_ELINK_ENDPOINT}?{urllib.parse.urlencode(params)}"
 
-    with urllib.request.urlopen(request_url, timeout=PMC_LINK_LOOKUP_TIMEOUT_SECONDS) as response:
+    # The URL is assembled from a fixed HTTPS NCBI endpoint plus encoded scalar parameters.
+    with urllib.request.urlopen(request_url, timeout=PMC_LINK_LOOKUP_TIMEOUT_SECONDS) as response:  # noqa: S310
         payload = response.read()
 
-    root = ET.fromstring(payload)
+    root = ElementTree.fromstring(payload)
     for linkset in root.findall("./LinkSet/LinkSetDb"):
         link_name = linkset.findtext("LinkName", default="")
         if link_name != "pubmed_pmc":

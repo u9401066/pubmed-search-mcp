@@ -99,8 +99,7 @@ class SearchStrategyGenerator:
                     api_key=self._api_key,
                     tool=self._tool,
                 )
-                result = await _read_entrez_handle(handle)
-                return result
+                return await _read_entrez_handle(handle)
 
             result = await self._execute_entrez(_do_spell_check, service_name="ncbi-strategy:espell")
 
@@ -138,8 +137,7 @@ class SearchStrategyGenerator:
                 api_key=self._api_key,
                 tool=self._tool,
             )
-            result = await _read_entrez_handle(handle)
-            return result
+            return await _read_entrez_handle(handle)
 
         async def _search_mesh_quoted():
             """Fall back to quoted search."""
@@ -154,8 +152,7 @@ class SearchStrategyGenerator:
                 api_key=self._api_key,
                 tool=self._tool,
             )
-            result = await _read_entrez_handle(handle)
-            return result
+            return await _read_entrez_handle(handle)
 
         async def _fetch_mesh_text(mesh_id):
             # Use text mode - more reliable than XML
@@ -171,8 +168,7 @@ class SearchStrategyGenerator:
                 api_key=self._api_key,
                 tool=self._tool,
             )
-            content = await _read_text_handle(handle)
-            return content
+            return await _read_text_handle(handle)
 
         def _parse_mesh_text(content: str) -> dict[str, Any]:
             """Parse MeSH text format to extract info."""
@@ -278,8 +274,7 @@ class SearchStrategyGenerator:
                 api_key=self._api_key,
                 tool=self._tool,
             )
-            result = await _read_entrez_handle(handle)
-            return result
+            return await _read_entrez_handle(handle)
 
         try:
             result = await self._execute_entrez(_do_esearch, service_name="ncbi-strategy:analyze-query")

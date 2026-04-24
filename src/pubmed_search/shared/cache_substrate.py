@@ -15,6 +15,7 @@ Maintenance:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import threading
@@ -250,10 +251,8 @@ class JsonFileCacheBackend(CacheBackend):
                 json.dump(payload, handle, ensure_ascii=False, indent=2)
             tmp_path.replace(self._file_path)
         except (OSError, TypeError, ValueError) as exc:
-            try:
+            with contextlib.suppress(OSError):
                 tmp_path.unlink(missing_ok=True)
-            except OSError:
-                pass
             logger.warning("Failed to persist cache backend %s: %s", self._file_path, exc)
 
     def get_entry(self, key: str) -> StoredCacheEntry | None:
