@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import itertools
 import threading
 import time
 from typing import TYPE_CHECKING
@@ -237,29 +238,39 @@ async def test_run_entrez_callable_stress_preserves_runtime_across_many_mixed_ca
     }
 
 
-async def test_run_entrez_callable_high_pressure_throughput_budget() -> None:
-    """Benchmark serialized throughput under high concurrency.
-
-    This is a benchmark-style regression guard rather than a microbenchmark:
-    it checks that lock serialization does not collapse throughput below a
-    practical lower bound when many callers contend for Entrez runtime state.
-    """
+async def test_run_entrez_callable_high_pressure_completes_without_runtime_leakage() -> None:
+    """High concurrency should finish without overlapping or leaking metadata."""
 
     entrez_module = FakeEntrezModule()
+    counter_lock = threading.Lock()
+    active_calls = 0
+    max_active_calls = 0
     task_count = 96
     service_time = 0.0015
-    lower_bound = task_count * service_time
 
-    def _call() -> None:
-        time.sleep(service_time)
+    def _make_callable(index: int) -> Callable[[], dict[str, object]]:
+        def _call() -> dict[str, object]:
+            nonlocal active_calls, max_active_calls
+            with counter_lock:
+                active_calls += 1
+                max_active_calls = max(max_active_calls, active_calls)
+            try:
+                observed = _capture_runtime_state(entrez_module)
+                time.sleep(service_time)
+                return observed
+            finally:
+                with counter_lock:
+                    active_calls -= 1
+
+        return _call
 
     started = time.perf_counter()
-    await asyncio.gather(
+    results = await asyncio.gather(
         *[
             asyncio.to_thread(
                 run_entrez_callable,
                 entrez_module,
-                _call,
+                _make_callable(i),
                 email=f"bench{i}@example.com",
                 api_key=f"bench-key-{i}",
                 tool=f"bench-tool-{i}",
@@ -268,38 +279,48 @@ async def test_run_entrez_callable_high_pressure_throughput_budget() -> None:
         ]
     )
     elapsed = time.perf_counter() - started
-    throughput = task_count / elapsed
-    coordination_overhead = elapsed - lower_bound
 
-    assert elapsed >= lower_bound
-    assert throughput >= 250.0
-    assert coordination_overhead < 0.25
+    assert max_active_calls == 1
+    assert len(results) == task_count
+    assert elapsed < 10.0
+    for index, observed in enumerate(results):
+        assert observed == {
+            "email": f"bench{index}@example.com",
+            "api_key": f"bench-key-{index}",
+            "tool": f"bench-tool-{index}",
+            "max_tries": 1,
+            "sleep_between_tries": 0,
+        }
+    assert _capture_runtime_state(entrez_module) == {
+        "email": "baseline@example.com",
+        "api_key": "baseline-api-key",
+        "tool": "baseline-tool",
+        "max_tries": 7,
+        "sleep_between_tries": 9,
+    }
 
 
-async def test_run_entrez_callable_high_pressure_wait_cost_budget() -> None:
-    """Benchmark queue wait cost introduced by lock serialization.
-
-    The expected mean wait is roughly half the serialized service window; this
-    guard ensures coordination overhead stays bounded instead of exploding far
-    beyond the synthetic critical-section duration.
-    """
+async def test_run_entrez_callable_high_pressure_serializes_entry_windows() -> None:
+    """Queued callers should enter the Entrez critical section one at a time."""
 
     entrez_module = FakeEntrezModule()
     task_count = 72
     service_time = 0.001
-    entered_at: list[float] = [0.0] * task_count
     scheduled_at: list[float] = [0.0] * task_count
 
-    def _make_callable(index: int):
-        def _call() -> None:
-            entered_at[index] = time.perf_counter()
+    def _make_callable(index: int) -> Callable[[], tuple[int, float, float, dict[str, object]]]:
+        def _call() -> tuple[int, float, float, dict[str, object]]:
+            entered = time.perf_counter()
+            observed = _capture_runtime_state(entrez_module)
             time.sleep(service_time)
+            exited = time.perf_counter()
+            return index, entered, exited, observed
 
         return _call
 
-    async def _run_one(index: int) -> None:
+    async def _run_one(index: int) -> tuple[int, float, float, dict[str, object]]:
         scheduled_at[index] = time.perf_counter()
-        await asyncio.to_thread(
+        return await asyncio.to_thread(
             run_entrez_callable,
             entrez_module,
             _make_callable(index),
@@ -308,12 +329,20 @@ async def test_run_entrez_callable_high_pressure_wait_cost_budget() -> None:
             tool=f"wait-tool-{index}",
         )
 
-    await asyncio.gather(*[_run_one(index) for index in range(task_count)])
+    results = await asyncio.gather(*[_run_one(index) for index in range(task_count)])
 
-    waits = sorted(entered - scheduled for entered, scheduled in zip(entered_at, scheduled_at, strict=True))
-    mean_wait = sum(waits) / len(waits)
-    p95_wait = waits[int(len(waits) * 0.95) - 1]
-    theoretical_mean_wait = ((task_count - 1) * service_time) / 2
+    entry_windows = sorted((entered, exited) for _index, entered, exited, _observed in results)
+    for (_previous_entered, previous_exited), (current_entered, _current_exited) in itertools.pairwise(entry_windows):
+        assert previous_exited <= current_entered
 
-    assert mean_wait < theoretical_mean_wait + 0.03
-    assert p95_wait < (task_count * service_time) + 0.03
+    waits = [entered - scheduled_at[index] for index, entered, _exited, _observed in results]
+    assert min(waits) >= 0
+    assert max(waits) < 10.0
+    for index, _entered, _exited, observed in results:
+        assert observed == {
+            "email": f"wait{index}@example.com",
+            "api_key": f"wait-key-{index}",
+            "tool": f"wait-tool-{index}",
+            "max_tries": 1,
+            "sleep_between_tries": 0,
+        }

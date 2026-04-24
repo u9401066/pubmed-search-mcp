@@ -9,6 +9,7 @@
 - ✅ **Source/runtime hardening** — strengthened Entrez runtime isolation, retry/timeout behavior, source-client contracts, fulltext/browser fallback boundaries, and cache cleanup
 - ✅ **Release metadata** — bumped package metadata and lockfile to 0.5.6 with changelog coverage
 - ✅ **Local quality gate** — Ruff, mypy, async-test checker, full pytest (`3207 passed, 34 skipped`), MCP smoke, and `uv build` passed
+- ✅ **CI timing stabilization** — converted high-pressure Entrez runtime isolation tests from runner-specific throughput budgets to cross-platform serialization behavior checks
 
 ### 2026-04-24: v0.5.5 — Windows Python 3.14 MCP Startup Fix
 - ✅ **Removed native DI runtime dependency** — `dependency-injector` is no longer required or imported by the MCP startup path

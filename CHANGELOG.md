@@ -44,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Tests
 
 - Added focused coverage for reference verification, Entrez runtime isolation, generated source clients, file hygiene, session tools, source contracts, and fulltext/source fallbacks.
+- Stabilized high-pressure Entrez runtime isolation tests so macOS and Windows CI validate serialization behavior without depending on runner-specific micro-timing.
 - Revalidated the integrated branch locally with Ruff, mypy, async-test checks, targeted smoke tests, full pytest, build, branch CI, master CI, and publish workflow before release.
 
 ---

@@ -14,6 +14,7 @@
 - `uv run pytest -q`: ✅ 3207 passed, 34 skipped
 - MCP smoke import/create_server: ✅ `pubmed_search.__version__ == "0.5.6"`; `create_server()` initializes successfully
 - `uv build`: ✅ wheel/sdist built for 0.5.6; package metadata has no `dependency-injector`; `requests` is only in the `scripts` extra
+- GitHub Actions branch CI: first run exposed macOS/Windows Entrez timing-test flakiness; fixed by converting those guards to behavior-based serialization checks
 - Integration branch: `codex/integrate-local-v0.5.6`
 
 ## ✅ 已完成本 session
