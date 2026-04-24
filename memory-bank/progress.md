@@ -1,6 +1,12 @@
-# Progress (Updated: 2026-04-03)
+# Progress (Updated: 2026-04-24)
 
 ## Done
+
+### 2026-04-24: v0.5.5 — Windows Python 3.14 MCP Startup Fix
+- ✅ **Removed native DI runtime dependency** — `dependency-injector` is no longer required or imported by the MCP startup path
+- ✅ **Pure-Python application container** — preserved config, singleton, override, and reset provider behavior used by server/tests
+- ✅ **Package metadata verified** — built wheel/sdist do not declare `dependency-injector`
+- ✅ **Quality gate** — `3207 passed, 34 skipped`; mypy and async-test checker passed
 
 ### 2026-04-03: v0.5.0 — Docs Site + Source Contracts + Release Hardening
 - ✅ **Docs site** — `docs/index.html`, generated `docs/site-content/*`, `docs/site.css`, `docs/site.js`, `scripts/build_docs_site.py`
@@ -73,13 +79,13 @@
 - ✅ docs/IMAGE_SEARCH_API.md 完整重寫
 
 ## Doing
-- `release/v0.5.0` branch 已分段 commit，待 push + tag
+- v0.5.5 patch release: push `master`, wait for multi-platform GitHub Actions CI, then tag `v0.5.5`
 
 ## Next
 
 | 優先級 | 項目 | 說明 |
 |:------:|------|------|
-| ⭐⭐⭐ | Push/tag v0.5.0 | 推送 release branch，建立 `v0.5.0` tag，觸發發布流程 |
+| ⭐⭐⭐ | Push/tag v0.5.5 | 先讓 master CI 全綠，再建立 `v0.5.5` tag 觸發 PyPI publish |
 | ⭐⭐⭐ | Session cache dedup cleanup | 評估 `ArticleCache` 與 `SessionManager.article_cache` 是否收斂成單一路徑 |
 | ⭐⭐⭐ | ARCHITECTURE.md 更新 | 仍顯示舊的目錄結構 |
 | ⭐⭐ | Algorithm innovation impl | BM25/RRF/PRF 等算法實作 |
@@ -89,6 +95,7 @@
 
 | 日期 | 決策 | 原因 |
 |------|------|------|
+| 2026-04-24 | v0.5.5 移除 `dependency-injector` runtime dependency | Windows Python 3.14 使用者安裝後啟動 MCP server 時因 native DLL import failed 崩潰；本專案只需要小型 provider 行為，純 Python container 更穩定 |
 | 2026-03-17 | v0.4.5 MCP SDK 擴充 + anti-reinvention | 長任務工具回報 progress/log，並收斂重複 transport/cache 基礎設施 |
 | 2026-02-14 | v0.3.9 品質嚴格化 | ruff ALL + mypy strict + pre-commit 17 hooks + noqa 18→9 |
 | 2026-02-10 | 全面 async-first | 使用者選擇「立即重構 P2 + 加規則」 |

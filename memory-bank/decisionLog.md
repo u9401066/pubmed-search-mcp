@@ -2,6 +2,7 @@
 
 | Date | Decision | Rationale |
 |------|----------|-----------|
+| 2026-04-24 | **Remove `dependency-injector` from the runtime startup path** | Windows Python 3.14 installs failed before MCP startup because the native extension could not load. The server only needs config, singleton, override, and reset provider behavior, so a pure-Python container removes the platform-sensitive dependency while preserving the application boundary. |
 | 2026-04-03 | **建立 shared source adapter contract 層** | 多來源 orchestration 需要一致的 partial-failure、status、error envelope，不應在 search/fulltext/image 各自重造。 |
 | 2026-04-03 | **建立 shared cache substrate** | session/entity 類快取已經出現重複結構；收斂為 memory/json backend + 統一 stats/warmup/invalidation API。 |
 | 2026-04-03 | **將 docs site 產物納入版本控制** | README、ARCH、deployment、tool index 已足夠形成靜態 docs surface；直接提交生成結果可讓發布版立即可瀏覽。 |

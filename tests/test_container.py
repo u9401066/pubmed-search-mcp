@@ -58,13 +58,11 @@ class TestApplicationContainer:
 
     def test_override_provider(self) -> None:
         """Container supports provider overriding for tests."""
-        from dependency_injector import providers
-
         container = ApplicationContainer()
         container.config.from_dict({"email": "test@example.com", "api_key": None, "data_dir": "/tmp"})
 
         mock_searcher = MagicMock()
-        container.searcher.override(providers.Object(mock_searcher))
+        container.searcher.override(mock_searcher)
 
         assert container.searcher() is mock_searcher
 

@@ -14,7 +14,7 @@ Architecture:
 - instructions.py: SERVER_INSTRUCTIONS for AI agents
 - tool_registry.py: Centralized tool registration
 - tools/: Individual tool implementations by category
-- container: DI container (dependency-injector) for service lifecycle
+- container: DI container for service lifecycle
 """
 
 from __future__ import annotations

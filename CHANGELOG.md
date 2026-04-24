@@ -24,6 +24,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.5.5] - 2026-04-24
+
+### Fixed
+
+- Windows installs on Python 3.14 no longer fail during MCP server startup because the runtime no longer imports the native `dependency-injector` extension.
+- Replaced the application DI container dependency with a small pure-Python provider layer while preserving singleton, config, override, and reset behavior used by the server and tests.
+
+### Tests
+
+- Verified package build metadata no longer declares `dependency-injector`.
+- Revalidated MCP server creation plus the full local test suite.
+
+---
+
 ## [0.5.4] - 2026-04-15
 
 ### Added

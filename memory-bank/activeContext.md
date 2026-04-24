@@ -4,15 +4,22 @@
 
 ## 🎯 當前焦點
 
-- **v0.5.0 release preparation** — docs site + source contracts + shared adapter/cache substrate + local MCP release validation
+- **v0.5.5 patch release** — Windows/Python 3.14 MCP startup fix by removing the native `dependency-injector` runtime dependency
 
 ## 📊 測試結果
 
-- `uv run pre-commit run --all-files`: ✅ passed
-- Local MCP smoke validation: ✅ build/install smoke test + Copilot tool calls + targeted fix validation (181 tests)
-- Release branch: `release/v0.5.0`
+- `uv run pytest -q`: ✅ 3207 passed, 34 skipped
+- `uv run mypy src/ tests/`: ✅ passed
+- `uv run python scripts/check_async_tests.py`: ✅ passed
+- `uv build`: ✅ wheel/sdist built; package metadata has no `dependency-injector`
+- Release branch: `master`
 
 ## ✅ 已完成本 session
+
+### v0.5.5: Windows Python 3.14 Startup Fix
+- **Root cause**: Windows installs using Python 3.14 failed before MCP startup because `dependency-injector` loaded a native DLL extension during `pubmed_search.container` import.
+- **Fix**: Replaced the external DI dependency with a pure-Python provider layer preserving config, singleton, override, and reset behavior.
+- **Release scope**: version bump to 0.5.5, changelog update, lockfile metadata update, package build metadata verification.
 
 ### v0.5.0: Release Candidate Hardening + Docs Site
 - **Docs site**: `docs/index.html` + generated `docs/site-content/*` + `scripts/build_docs_site.py`
@@ -22,6 +29,7 @@
 - **Release hardening**: deterministic mutation gate, in-memory MCP protocol test, local MCP RC validation, BaseAPIClient param-path fix, Unpaywall email fallback fix
 
 ## 📈 Version History
+- v0.5.5: Windows/Python 3.14 MCP startup fix; removed native dependency-injector runtime dependency
 - v0.5.0: docs site + source contracts + shared adapter/cache substrate + release hardening
 - v0.4.5: MCP SDK expansion + anti-reinvention cleanup
 - v0.4.4: Article Figure Extraction (40 tools / 15 categories)
@@ -33,8 +41,8 @@
 - v0.3.4: async-first migration
 
 ## 🔜 下一步 (low priority)
-- Push/tag `v0.5.0` and let release pipeline publish artifacts
+- Push/tag `v0.5.5` after GitHub Actions CI is green
 - Algorithm innovation implementation (BM25/RRF/PRF)
 
 ---
-*Last updated: 2026-04-03 — v0.5.0 release preparation*
+*Last updated: 2026-04-24 — v0.5.5 Windows startup patch release*
