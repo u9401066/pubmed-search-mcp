@@ -8,6 +8,7 @@ Tools:
 - get_session_pmids: 取得指定搜尋的 PMID 列表
 - get_cached_article: 從快取取得文章詳情
 - get_session_summary: Session 摘要 (可選包含完整歷史)
+- get_session_log: Session activity log for history review and debugging
 
 Removed in v0.3.1:
 - Legacy separate search-history tool → Merged into get_session_summary(include_history=True)
@@ -15,6 +16,7 @@ Removed in v0.3.1:
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import json
 import logging
@@ -26,6 +28,8 @@ if TYPE_CHECKING:
 
     from pubmed_search.application.session.manager import SessionManager
 
+from .tools.tool_runtime import safe_send_resource_updated
+
 logger = logging.getLogger(__name__)
 _JSON_MIME_TYPE = "application/json"
 ResourceFunc = TypeVar("ResourceFunc", bound=Callable[..., str])
@@ -33,6 +37,7 @@ SESSION_RESOURCE_URIS = (
     "session://last-search",
     "session://last-search/pmids",
     "session://last-search/results",
+    "session://activity",
     "session://context",
 )
 
@@ -67,9 +72,7 @@ async def notify_session_resources_updated(ctx: Context | None) -> None:
     if session is None:
         return
 
-    for uri in SESSION_RESOURCE_URIS:
-        with contextlib.suppress(Exception):
-            await session.send_resource_updated(uri)
+    await asyncio.gather(*(safe_send_resource_updated(session, uri) for uri in SESSION_RESOURCE_URIS))
 
 
 def _json_error(**payload: Any) -> str:
@@ -181,16 +184,26 @@ def _read_session_summary_impl(
         "stats": {
             "cached_articles": len(session_manager.get_session_cached_pmids()),
             "total_searches": len(session.search_history),
+            "event_entries": len(getattr(session, "event_log", [])),
             "reading_list_items": len(session.reading_list),
             "excluded_articles": len(session.excluded_pmids),
         },
         "recent_searches": recent_searches,
+        "recent_events": [
+            {
+                "timestamp": event.get("timestamp", "")[:19],
+                "kind": event.get("kind", ""),
+                "message": event.get("message", ""),
+            }
+            for event in getattr(session, "event_log", [])[-5:]
+        ],
         "cached_pmids_sample": cached_pmids[:20],
         "all_cached_pmids_csv": ",".join(cached_pmids[:100]),
         "hints": [
             "Use get_session_pmids() to get PMIDs from a specific search",
             "Use get_cached_article(pmid) to get article details from cache",
             "Use pmids='last' with prepare_export or get_citation_metrics",
+            "Use get_session_log() to review session activity and debug history",
         ],
     }
 
@@ -215,6 +228,50 @@ def _read_session_summary_impl(
     return json.dumps(result, ensure_ascii=False, indent=2)
 
 
+def _read_session_log_impl(
+    session_manager: SessionManager,
+    *,
+    event_limit: int = 50,
+    kind: str | None = None,
+    include_history: bool = True,
+    history_limit: int = 10,
+) -> str:
+    session = session_manager.get_current_session()
+    if not session:
+        return _json_error(error="No active session", hint="Run a search first to create a session")
+
+    events = session_manager.get_session_event_log(limit=event_limit, kind=kind)
+    history_rows: list[dict[str, Any]] = []
+    if include_history:
+        for search in session.search_history[-history_limit:]:
+            history_rows.append(
+                {
+                    "query": search.get("query", "")[:80],
+                    "timestamp": search.get("timestamp", "")[:19],
+                    "result_count": search.get("result_count", 0),
+                    "pmid_count": len(search.get("pmids", [])),
+                }
+            )
+
+    available_kinds = sorted({str(event.get("kind", "")) for event in getattr(session, "event_log", []) if event})
+    return json.dumps(
+        {
+            "success": True,
+            "session_id": session.session_id,
+            "topic": session.topic,
+            "total_events": len(getattr(session, "event_log", [])),
+            "returned_events": len(events),
+            "event_kind_filter": kind,
+            "available_event_kinds": available_kinds,
+            "events": events,
+            "search_history": history_rows,
+            "hint": "Use kind='<event_kind>' to filter debug events by type",
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
+
+
 def _read_session_dispatch(
     session_manager: SessionManager,
     *,
@@ -232,6 +289,14 @@ def _read_session_dispatch(
         if not pmid:
             return _json_error(error="PMID is required for article action", hint="Provide pmid='<pmid>'")
         return _read_cached_article_impl(session_manager, pmid=pmid)
+    if normalized_action in {"log", "logs", "activity", "events"}:
+        return _read_session_log_impl(
+            session_manager,
+            event_limit=history_limit if history_limit > 0 else 50,
+            kind=query_filter,
+            include_history=include_history,
+            history_limit=history_limit,
+        )
     if normalized_action in {"summary", "context"}:
         return _read_session_summary_impl(
             session_manager,
@@ -241,7 +306,7 @@ def _read_session_dispatch(
 
     return _json_error(
         error=f"Unknown session action: {action}",
-        hint="Use one of: pmids, article, summary",
+        hint="Use one of: pmids, article, summary, log",
     )
 
 
@@ -370,6 +435,40 @@ def register_session_tools(mcp: FastMCP, session_manager: SessionManager):
             logger.exception(f"get_session_summary failed: {exc}")
             return _json_error(error=str(exc))
 
+    @mcp.tool()
+    def get_session_log(
+        event_limit: int = 50,
+        kind: str | None = None,
+        include_history: bool = True,
+        history_limit: int = 10,
+    ) -> str:
+        """
+        取得當前 session 的 activity log 與搜尋歷史摘要。
+
+        適合讓 user 回顧最近做過哪些搜尋、cache/reading-list/exclusion
+        變化，以及作為 debug 時的 session-level 事件檢視。
+
+        Args:
+            event_limit: 回傳的 event 筆數上限 (預設 50)
+            kind: 可選，僅回傳特定 event kind
+            include_history: 是否一併包含搜尋歷史摘要 (預設 True)
+            history_limit: 搜尋歷史摘要筆數上限 (預設 10)
+
+        Returns:
+            Session activity log 與搜尋歷史摘要
+        """
+        try:
+            return _read_session_log_impl(
+                session_manager,
+                event_limit=event_limit,
+                kind=kind,
+                include_history=include_history,
+                history_limit=history_limit,
+            )
+        except Exception as exc:
+            logger.exception(f"get_session_log failed: {exc}")
+            return _json_error(error=str(exc))
+
 
 def register_session_resources(mcp: FastMCP, session_manager: SessionManager):
     """
@@ -476,6 +575,44 @@ def register_session_resources(mcp: FastMCP, session_manager: SessionManager):
 
     @_session_resource_decorator(
         mcp,
+        "session://activity",
+        **cast(
+            "Any",
+            _session_resource_kwargs(
+                name="session_activity",
+                title="Session Activity Log",
+                description="Recent session activity events plus search history for debugging and review.",
+            ),
+        ),
+    )
+    def get_session_activity() -> str:
+        """Recent session activity and search history for user-facing review/debug."""
+        session = session_manager.get_current_session()
+        if not session:
+            return json.dumps({"active": False, "events": [], "search_history": []})
+
+        return json.dumps(
+            {
+                "active": True,
+                "session_id": session.session_id,
+                "topic": session.topic,
+                "event_count": len(getattr(session, "event_log", [])),
+                "events": session_manager.get_session_event_log(limit=25),
+                "search_history": [
+                    {
+                        "query": search.get("query", "")[:80],
+                        "timestamp": search.get("timestamp", "")[:19],
+                        "result_count": search.get("result_count", 0),
+                        "pmid_count": len(search.get("pmids", [])),
+                    }
+                    for search in session.search_history[-10:]
+                ],
+            },
+            ensure_ascii=False,
+        )
+
+    @_session_resource_decorator(
+        mcp,
         "session://context",
         **cast(
             "Any",
@@ -500,6 +637,7 @@ def register_session_resources(mcp: FastMCP, session_manager: SessionManager):
                 "session_id": session.session_id,
                 "cached_articles": len(session_manager.get_session_cached_pmids()),
                 "searches": len(session.search_history),
+                "event_count": len(getattr(session, "event_log", [])),
                 "cached_pmids": session_manager.get_session_cached_pmids(limit=50),
             }
         )

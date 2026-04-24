@@ -362,16 +362,14 @@ class TestBaseModuleEdgeCases:
     """Cover edge cases in base.py."""
 
     async def test_entrez_base_init(self):
-        """Test EntrezBase initialization."""
+        """Test EntrezBase initialization stores credentials on instance."""
         from pubmed_search.infrastructure.ncbi.base import EntrezBase
 
-        EntrezBase(email="test@example.com", api_key="test_key")
+        base = EntrezBase(email="test@example.com", api_key="test_key")
 
-        # Check Entrez was configured
-        from Bio import Entrez
-
-        assert Entrez.email == "test@example.com"
-        assert Entrez.api_key == "test_key"
+        # Globals are NOT set in constructor (per-call isolation via run_entrez_callable).
+        assert base._email == "test@example.com"
+        assert base._api_key == "test_key"
 
     async def test_rate_limit_function(self):
         """Test rate limiting function."""

@@ -12,7 +12,7 @@ class TestClientPubMedClient:
 
     async def test_pubmed_client_search(self):
         """Test await PubMedClient.search() method."""
-        from pubmed_search import PubMedClient
+        from pubmed_search.infrastructure.http import PubMedClient
 
         with patch("pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher") as mock_searcher_class:
             mock_searcher = AsyncMock()
@@ -38,7 +38,7 @@ class TestClientPubMedClient:
 
     async def test_pubmed_client_search_raw(self):
         """Test PubMedClient.search_raw() method."""
-        from pubmed_search import PubMedClient
+        from pubmed_search.infrastructure.http import PubMedClient
 
         with patch("pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher") as mock_searcher_class:
             mock_searcher = AsyncMock()
@@ -53,7 +53,7 @@ class TestClientPubMedClient:
 
     async def test_pubmed_client_fetch_by_pmid(self):
         """Test PubMedClient.fetch_by_pmid() method."""
-        from pubmed_search import PubMedClient
+        from pubmed_search.infrastructure.http import PubMedClient
 
         with patch("pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher") as mock_searcher_class:
             mock_searcher = AsyncMock()
@@ -79,7 +79,7 @@ class TestClientPubMedClient:
 
     async def test_pubmed_client_fetch_by_pmid_not_found(self):
         """Test PubMedClient.fetch_by_pmid() when not found."""
-        from pubmed_search import PubMedClient
+        from pubmed_search.infrastructure.http import PubMedClient
 
         with patch("pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher") as mock_searcher_class:
             mock_searcher = AsyncMock()
@@ -93,7 +93,7 @@ class TestClientPubMedClient:
 
     async def test_pubmed_client_fetch_by_pmids(self):
         """Test PubMedClient.fetch_by_pmids() method."""
-        from pubmed_search import PubMedClient
+        from pubmed_search.infrastructure.http import PubMedClient
 
         with patch("pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher") as mock_searcher_class:
             mock_searcher = AsyncMock()
@@ -128,7 +128,7 @@ class TestClientPubMedClient:
 
     async def test_pubmed_client_fetch_by_pmids_raw(self):
         """Test PubMedClient.fetch_by_pmids_raw() method."""
-        from pubmed_search import PubMedClient
+        from pubmed_search.infrastructure.http import PubMedClient
 
         with patch("pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher") as mock_searcher_class:
             mock_searcher = AsyncMock()
@@ -142,7 +142,7 @@ class TestClientPubMedClient:
 
     async def test_pubmed_client_find_related(self):
         """Test await PubMedClient.find_related() method."""
-        from pubmed_search import PubMedClient
+        from pubmed_search.infrastructure.http import PubMedClient
 
         with patch("pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher") as mock_searcher_class:
             mock_searcher = AsyncMock()
@@ -167,7 +167,7 @@ class TestClientPubMedClient:
 
     async def test_pubmed_client_find_citing(self):
         """Test PubMedClient.find_citing() method."""
-        from pubmed_search import PubMedClient
+        from pubmed_search.infrastructure.http import PubMedClient
 
         with patch("pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher") as mock_searcher_class:
             mock_searcher = AsyncMock()
@@ -192,7 +192,7 @@ class TestClientPubMedClient:
 
     async def test_pubmed_client_get_citation_metrics(self):
         """Test PubMedClient searcher's await get_citation_metrics() method."""
-        from pubmed_search import PubMedClient
+        from pubmed_search.infrastructure.http import PubMedClient
 
         with patch("pubmed_search.infrastructure.http.pubmed_client.LiteratureSearcher") as mock_searcher_class:
             mock_searcher = AsyncMock()
@@ -360,7 +360,7 @@ class TestSearchResultDataclass:
 
     async def test_search_result_from_dict(self):
         """Test SearchResult.from_dict() method."""
-        from pubmed_search import SearchResult
+        from pubmed_search.infrastructure.http.pubmed_client import SearchResult
 
         data = {
             "pmid": "123",
@@ -390,7 +390,7 @@ class TestSearchResultDataclass:
 
     async def test_search_result_to_dict(self):
         """Test SearchResult.to_dict() method."""
-        from pubmed_search import SearchResult
+        from pubmed_search.infrastructure.http.pubmed_client import SearchResult
 
         result = SearchResult(
             pmid="123",
@@ -410,7 +410,7 @@ class TestSearchResultDataclass:
 
     async def test_search_result_defaults(self):
         """Test SearchResult default values."""
-        from pubmed_search import SearchResult
+        from pubmed_search.infrastructure.http.pubmed_client import SearchResult
 
         result = SearchResult(
             pmid="123",

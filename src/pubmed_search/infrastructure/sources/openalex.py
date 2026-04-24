@@ -282,6 +282,65 @@ class OpenAlexClient(BaseAPIClient):
             logger.debug(f"Failed to batch-fetch sources: {e}")
             return {}
 
+    async def get_author(self, author_id: str) -> dict[str, Any] | None:
+        """
+        Get author metadata by OpenAlex author ID or ORCID.
+
+        Args:
+            author_id: OpenAlex author ID (for example ``A123456789``), a full
+                OpenAlex URL, or an ORCID identifier.
+
+        Returns:
+            Normalized author metadata or ``None`` if the author is not found.
+        """
+        try:
+            normalized_author_id = author_id.strip()
+            if normalized_author_id.startswith("https://openalex.org/"):
+                normalized_author_id = normalized_author_id.replace("https://openalex.org/", "")
+            elif not normalized_author_id.startswith("https://orcid.org/") and normalized_author_id.count("-") == 3 and normalized_author_id.replace("-", "").isdigit():
+                normalized_author_id = f"https://orcid.org/{normalized_author_id}"
+
+            params = dict(self._auth_params)
+            encoded_id = urllib.parse.quote(normalized_author_id, safe="")
+            url = f"{OA_AUTHORS_URL}/{encoded_id}?{urllib.parse.urlencode(params)}"
+
+            data = await self._make_request(url)
+            if not isinstance(data, dict):
+                return None
+
+            return self._normalize_author(data)
+        except Exception as e:
+            logger.debug(f"Failed to get author {author_id}: {e}")
+            return None
+
+    async def search_authors(self, query: str, limit: int = 10) -> list[dict[str, Any]]:
+        """
+        Search OpenAlex authors by name.
+
+        Args:
+            query: Author name query.
+            limit: Maximum number of authors to return.
+
+        Returns:
+            List of normalized author metadata dictionaries.
+        """
+        try:
+            params = {
+                "search": query,
+                "per_page": str(min(limit, 200)),
+                **self._auth_params,
+            }
+            url = f"{OA_AUTHORS_URL}?{urllib.parse.urlencode(params)}"
+            data = await self._make_request(url)
+
+            if not isinstance(data, dict):
+                return []
+
+            return [self._normalize_author(author) for author in data.get("results", [])]
+        except Exception as e:
+            logger.debug(f"Failed to search authors for {query}: {e}")
+            return []
+
     @staticmethod
     def _normalize_source(source: dict[str, Any]) -> dict[str, Any]:
         """Normalize OpenAlex source to journal metrics format."""
@@ -312,6 +371,50 @@ class OpenAlexClient(BaseAPIClient):
             "is_in_doaj": source.get("is_in_doaj"),
             "source_type": source.get("type"),
             "subject_areas": subject_areas,
+        }
+
+    @staticmethod
+    def _normalize_author(author: dict[str, Any]) -> dict[str, Any]:
+        """Normalize OpenAlex author metadata for reuse in enrichment flows.
+
+        Args:
+            author: Raw OpenAlex author payload.
+
+        Returns:
+            A compact author metadata dictionary with stable keys.
+        """
+        summary = author.get("summary_stats", {}) or {}
+        ids = author.get("ids", {}) or {}
+        orcid = ids.get("orcid") or author.get("orcid") or ""
+        if orcid.startswith("https://orcid.org/"):
+            orcid = orcid.replace("https://orcid.org/", "")
+
+        institutions = author.get("last_known_institutions", []) or []
+        institution_names = [
+            institution.get("display_name", "")
+            for institution in institutions
+            if isinstance(institution, dict) and institution.get("display_name")
+        ]
+
+        concepts = author.get("x_concepts", []) or []
+        concept_names = [
+            concept.get("display_name", "")
+            for concept in concepts[:5]
+            if isinstance(concept, dict) and concept.get("display_name")
+        ]
+
+        return {
+            "openalex_author_id": author.get("id", "").replace("https://openalex.org/", ""),
+            "display_name": author.get("display_name", ""),
+            "orcid": orcid,
+            "works_count": author.get("works_count"),
+            "cited_by_count": author.get("cited_by_count"),
+            "h_index": summary.get("h_index"),
+            "i10_index": summary.get("i10_index"),
+            "two_year_mean_citedness": summary.get("2yr_mean_citedness"),
+            "last_known_institutions": institution_names,
+            "concepts": concept_names,
+            "_source": "openalex",
         }
 
     def _normalize_work(self, work: dict[str, Any]) -> dict[str, Any]:

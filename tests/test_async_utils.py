@@ -354,3 +354,29 @@ class TestTransportKernel:
                     retry=RetryPolicy(max_attempts=2, base_delay=0.01, max_delay=0.01, jitter=False),
                 ),
             )
+
+    @pytest.mark.asyncio
+    async def test_total_timeout_caps_retry_backoff(self):
+        kernel = get_transport_kernel()
+        attempts = 0
+
+        async def always_retry():
+            nonlocal attempts
+            attempts += 1
+            raise RetryableOperationError("slow retry", retry_after=0.05, status_code=429)
+
+        started = time.monotonic()
+        with pytest.raises(asyncio.TimeoutError, match="total timeout"):
+            await kernel.execute(
+                always_retry,
+                policy=RequestExecutionPolicy(
+                    service_name="test-kernel-budget",
+                    timeout=1.0,
+                    total_timeout=0.01,
+                    retry=RetryPolicy(max_attempts=4, base_delay=0.05, max_delay=0.05, jitter=False),
+                    rate_limit=RateLimitPolicy(name="test-kernel-budget-rate", rate=100.0, per=1.0),
+                ),
+            )
+
+        assert attempts == 1
+        assert time.monotonic() - started < 0.05

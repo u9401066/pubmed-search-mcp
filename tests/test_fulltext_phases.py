@@ -13,10 +13,13 @@ Maintenance:
 
 from __future__ import annotations
 
+import asyncio
+import time
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from pubmed_search.infrastructure.sources import fulltext_discovery as fulltext_discovery_module
 from pubmed_search.infrastructure.sources.fulltext_discovery import FulltextDiscoveryPhase
 from pubmed_search.infrastructure.sources.fulltext_extract import FulltextExtractPhase
 from pubmed_search.infrastructure.sources.fulltext_fetch import FulltextFetchPhase
@@ -59,6 +62,21 @@ async def test_discovery_phase_returns_pmc_and_europe_pmc_links():
 
     assert [link.source for link in links] == [PDFSource.EUROPE_PMC, PDFSource.PMC]
     assert links[0].url.endswith("blobtype=pdf")
+
+
+@pytest.mark.asyncio
+async def test_discovery_phase_pmid_lookup_timeout_does_not_block(monkeypatch):
+    phase = FulltextDiscoveryPhase(AsyncMock())
+
+    def _slow_lookup(_pmid: str):
+        time.sleep(0.05)
+        return []
+
+    monkeypatch.setattr(fulltext_discovery_module, "PMC_LINK_LOOKUP_TIMEOUT_SECONDS", 0.01)
+    monkeypatch.setattr(fulltext_discovery_module, "_lookup_pmc_links_from_entrez", _slow_lookup)
+
+    links = await asyncio.wait_for(phase.get_pmc_links("12345678", None), timeout=0.1)
+    assert links == []
 
 
 @pytest.mark.asyncio

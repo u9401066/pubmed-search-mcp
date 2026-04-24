@@ -183,9 +183,9 @@ def _auto_save_pipeline_report(
         from pubmed_search.domain.entities.pipeline import PipelineRun
 
         now = datetime.now(timezone.utc)
-        run_id = now.strftime("%Y%m%d_%H%M%S")
         pipeline_name = pipeline_name_override or config.name or config.template or "unnamed"
         pipeline_name = pipeline_name.strip().lower().replace(" ", "_")
+        run_id = store.create_run_id(pipeline_name, now)
 
         # Save report markdown
         report_path = store.save_report(

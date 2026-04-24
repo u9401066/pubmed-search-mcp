@@ -15,7 +15,7 @@ from typing import Any
 
 from Bio import Entrez
 
-from .base import execute_entrez_operation
+from .base import DEFAULT_ENTREZ_TOOL, execute_entrez_operation, run_entrez_callable
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +35,22 @@ def _is_retryable(error: Exception) -> bool:
     return any(message in error_str for message in _RETRYABLE_MESSAGES)
 
 
+async def _read_entrez_handle(handle: Any) -> Any:
+    """Read an Entrez handle and close it even if parsing fails."""
+    try:
+        return await asyncio.to_thread(Entrez.read, handle)
+    finally:
+        handle.close()
+
+
+async def _read_text_handle(handle: Any) -> str:
+    """Read text from an Entrez handle and close it even on failure."""
+    try:
+        return await asyncio.to_thread(handle.read)
+    finally:
+        handle.close()
+
+
 class SearchStrategyGenerator:
     """
     Generates intelligent search strategies using NCBI APIs.
@@ -47,10 +63,11 @@ class SearchStrategyGenerator:
     """
 
     def __init__(self, email: str, api_key: str | None = None):
-        Entrez.email = email  # type: ignore[assignment]
+        # NOTE: Entrez global state is not set here; run_entrez_callable() handles
+        # per-call snapshot/set/restore under a threading lock.
+        self._email = email
         self._api_key = api_key
-        if api_key:
-            Entrez.api_key = api_key  # type: ignore[assignment]
+        self._tool = DEFAULT_ENTREZ_TOOL
 
     async def _execute_entrez(self, operation, *, service_name: str, timeout: float = 45.0):
         return await execute_entrez_operation(
@@ -72,9 +89,17 @@ class SearchStrategyGenerator:
         try:
 
             async def _do_spell_check():
-                handle = await asyncio.to_thread(Entrez.espell, db="pubmed", term=query)
-                result = await asyncio.to_thread(Entrez.read, handle)
-                handle.close()
+                handle = await asyncio.to_thread(
+                    run_entrez_callable,
+                    Entrez,
+                    Entrez.espell,
+                    db="pubmed",
+                    term=query,
+                    email=self._email,
+                    api_key=self._api_key,
+                    tool=self._tool,
+                )
+                result = await _read_entrez_handle(handle)
                 return result
 
             result = await self._execute_entrez(_do_spell_check, service_name="ncbi-strategy:espell")
@@ -102,29 +127,51 @@ class SearchStrategyGenerator:
 
         async def _search_mesh_exact():
             """Try exact MeSH term search first."""
-            handle = await asyncio.to_thread(Entrez.esearch, db="mesh", term=f"{term}[MeSH Terms]", retmax=1)
-            result = await asyncio.to_thread(Entrez.read, handle)
-            handle.close()
+            handle = await asyncio.to_thread(
+                run_entrez_callable,
+                Entrez,
+                Entrez.esearch,
+                db="mesh",
+                term=f"{term}[MeSH Terms]",
+                retmax=1,
+                email=self._email,
+                api_key=self._api_key,
+                tool=self._tool,
+            )
+            result = await _read_entrez_handle(handle)
             return result
 
         async def _search_mesh_quoted():
             """Fall back to quoted search."""
-            handle = await asyncio.to_thread(Entrez.esearch, db="mesh", term=f'"{term}"', retmax=1)
-            result = await asyncio.to_thread(Entrez.read, handle)
-            handle.close()
+            handle = await asyncio.to_thread(
+                run_entrez_callable,
+                Entrez,
+                Entrez.esearch,
+                db="mesh",
+                term=f'"{term}"',
+                retmax=1,
+                email=self._email,
+                api_key=self._api_key,
+                tool=self._tool,
+            )
+            result = await _read_entrez_handle(handle)
             return result
 
         async def _fetch_mesh_text(mesh_id):
             # Use text mode - more reliable than XML
             handle = await asyncio.to_thread(
+                run_entrez_callable,
+                Entrez,
                 Entrez.efetch,
                 db="mesh",
                 id=mesh_id,
                 rettype="full",
                 retmode="text",
+                email=self._email,
+                api_key=self._api_key,
+                tool=self._tool,
             )
-            content = await asyncio.to_thread(handle.read)
-            handle.close()
+            content = await _read_text_handle(handle)
             return content
 
         def _parse_mesh_text(content: str) -> dict[str, Any]:
@@ -220,14 +267,18 @@ class SearchStrategyGenerator:
 
         async def _do_esearch():
             handle = await asyncio.to_thread(
+                run_entrez_callable,
+                Entrez,
                 Entrez.esearch,
                 db="pubmed",
                 term=query,
                 retmax=0,  # Don't need results, just translation
                 usehistory="n",
+                email=self._email,
+                api_key=self._api_key,
+                tool=self._tool,
             )
-            result = await asyncio.to_thread(Entrez.read, handle)
-            handle.close()
+            result = await _read_entrez_handle(handle)
             return result
 
         try:

@@ -25,6 +25,7 @@ import logging
 import os
 import sys
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from mcp import types
@@ -289,6 +290,23 @@ def start_http_api_background(session_manager, searcher, port: int = 8765):
     # Create a dedicated event loop for the background thread
     _bg_loop = asyncio.new_event_loop()
 
+    def _fresh_session_manager() -> Any:
+        session_data_dir = getattr(session_manager, "data_dir", None)
+        if isinstance(session_data_dir, (str, os.PathLike, Path)):
+            from pubmed_search.application.session.manager import SessionManager
+
+            return SessionManager(data_dir=str(session_data_dir))
+        return session_manager
+
+    background_searcher = searcher
+    try:
+        from pubmed_search.infrastructure.ncbi import LiteratureSearcher
+
+        if isinstance(searcher, LiteratureSearcher):
+            background_searcher = LiteratureSearcher(email=searcher.email, api_key=searcher.api_key)
+    except Exception:
+        background_searcher = searcher
+
     class MCPAPIHandler(BaseHTTPRequestHandler):
         """Simple HTTP handler for the public auxiliary HTTP API."""
 
@@ -314,7 +332,8 @@ def start_http_api_background(session_manager, searcher, port: int = 8765):
             # Get single cached article
             if path.startswith("/api/cached_article/"):
                 pmid = path.split("/")[-1].split("?")[0]
-                cached_article = session_manager.get_cached_article(pmid)
+                active_session_manager = _fresh_session_manager()
+                cached_article = active_session_manager.get_cached_article(pmid)
                 if cached_article is not None:
                     self._send_json(
                         {
@@ -326,11 +345,10 @@ def start_http_api_background(session_manager, searcher, port: int = 8765):
                     return
 
                 # Try to fetch if not in cache (async → sync bridge)
-                if searcher:
+                if background_searcher:
                     try:
-                        articles = _bg_loop.run_until_complete(searcher.fetch_details([pmid]))
+                        articles = _bg_loop.run_until_complete(background_searcher.fetch_details([pmid]))
                         if articles:
-                            session_manager.warm_article_cache(articles)
                             self._send_json(
                                 {
                                     "source": "pubmed",
@@ -348,7 +366,7 @@ def start_http_api_background(session_manager, searcher, port: int = 8765):
 
             # Get session summary
             if path == "/api/session/summary":
-                self._send_json(session_manager.get_session_summary())
+                self._send_json(_fresh_session_manager().get_session_summary())
                 return
 
             # Root - API info

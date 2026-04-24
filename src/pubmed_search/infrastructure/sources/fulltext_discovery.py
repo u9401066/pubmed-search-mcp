@@ -13,8 +13,12 @@ Maintenance:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
+import urllib.parse
+import urllib.request
+import xml.etree.ElementTree as ET
 from typing import TYPE_CHECKING, Any, cast
 
 from .fulltext_models import PDFLink, PDFSource
@@ -25,6 +29,48 @@ if TYPE_CHECKING:
     import httpx
 
 logger = logging.getLogger(__name__)
+PMC_LINK_LOOKUP_TIMEOUT_SECONDS = 15.0
+NCBI_ELINK_ENDPOINT = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/elink.fcgi"
+
+
+def _lookup_pmc_links_from_entrez(pmid: str) -> list[PDFLink]:
+    """Resolve PMC links via a timeout-bounded ELink request."""
+    links: list[PDFLink] = []
+
+    params = {
+        "dbfrom": "pubmed",
+        "db": "pmc",
+        "id": pmid,
+        "linkname": "pubmed_pmc",
+        "retmode": "xml",
+        "tool": "pubmed-search-mcp",
+    }
+    request_url = f"{NCBI_ELINK_ENDPOINT}?{urllib.parse.urlencode(params)}"
+
+    with urllib.request.urlopen(request_url, timeout=PMC_LINK_LOOKUP_TIMEOUT_SECONDS) as response:
+        payload = response.read()
+
+    root = ET.fromstring(payload)
+    for linkset in root.findall("./LinkSet/LinkSetDb"):
+        link_name = linkset.findtext("LinkName", default="")
+        if link_name != "pubmed_pmc":
+            continue
+        for link in linkset.findall("./Link"):
+            pmc_id = link.findtext("Id", default="").strip()
+            if not pmc_id:
+                continue
+            links.append(
+                PDFLink(
+                    url=f"https://www.ncbi.nlm.nih.gov/pmc/articles/PMC{pmc_id}/pdf/",
+                    source=PDFSource.PMC,
+                    access_type="open_access",
+                    version="published",
+                    is_direct_pdf=True,
+                    confidence=0.95,
+                )
+            )
+            break
+    return links
 
 
 class FulltextDiscoveryPhase:
@@ -64,32 +110,12 @@ class FulltextDiscoveryPhase:
             return links
 
         try:
-            from Bio import Entrez
-
-            handle = Entrez.elink(dbfrom="pubmed", db="pmc", id=pmid, linkname="pubmed_pmc")
-            record = Entrez.read(handle)
-            handle.close()
-            record_any = cast("Any", record)
-            first_record = record_any[0] if record_any else None
-
-            if first_record and first_record.get("LinkSetDb"):
-                for linkset in first_record["LinkSetDb"]:
-                    if linkset.get("LinkName") != "pubmed_pmc":
-                        continue
-                    pmc_links = linkset.get("Link", [])
-                    if not pmc_links:
-                        continue
-                    pmc_id = pmc_links[0]["Id"]
-                    links.append(
-                        PDFLink(
-                            url=f"https://www.ncbi.nlm.nih.gov/pmc/articles/PMC{pmc_id}/pdf/",
-                            source=PDFSource.PMC,
-                            access_type="open_access",
-                            version="published",
-                            is_direct_pdf=True,
-                            confidence=0.95,
-                        )
-                    )
+            links.extend(
+                await asyncio.wait_for(
+                    asyncio.to_thread(_lookup_pmc_links_from_entrez, pmid),
+                    timeout=PMC_LINK_LOOKUP_TIMEOUT_SECONDS,
+                )
+            )
         except Exception as exc:
             logger.debug("PMC lookup failed: %s", exc)
 

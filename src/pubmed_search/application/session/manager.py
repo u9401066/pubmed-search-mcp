@@ -23,6 +23,7 @@ if TYPE_CHECKING:
 from pubmed_search.shared.cache_substrate import CacheBackend, CacheStore, JsonFileCacheBackend, MemoryCacheBackend
 
 logger = logging.getLogger(__name__)
+MAX_SESSION_EVENT_LOG = 200
 
 
 def _utcnow_iso() -> str:
@@ -115,6 +116,7 @@ class ResearchSession:
     cached_pmids: list[str] = field(default_factory=list)
 
     search_history: list[dict[str, Any]] = field(default_factory=list)
+    event_log: list[dict[str, Any]] = field(default_factory=list)
     reading_list: dict[str, dict[str, Any]] = field(default_factory=dict)
     excluded_pmids: list[str] = field(default_factory=list)
     notes: dict[str, str] = field(default_factory=dict)
@@ -127,6 +129,7 @@ class ResearchSession:
     def from_dict(cls, data: dict[str, Any]) -> ResearchSession:
         payload = dict(data)
         payload.setdefault("article_cache", {})
+        payload.setdefault("event_log", [])
         return cls(**payload)
 
     def to_dict(self) -> dict[str, Any]:
@@ -356,6 +359,29 @@ class SessionManager:
         return session
 
     @staticmethod
+    def _append_session_event(
+        session: ResearchSession,
+        *,
+        kind: str,
+        message: str,
+        details: dict[str, Any] | None = None,
+        level: str = "info",
+    ) -> None:
+        """Append one bounded session event for user-visible history and debugging."""
+        session.event_log.append(
+            {
+                "timestamp": _utcnow_iso(),
+                "kind": kind,
+                "level": level,
+                "message": message,
+                "details": details or {},
+            }
+        )
+        overflow = len(session.event_log) - MAX_SESSION_EVENT_LOG
+        if overflow > 0:
+            del session.event_log[:overflow]
+
+    @staticmethod
     def _record_cached_pmids(session: ResearchSession, pmids: Iterable[str]) -> None:
         seen = set(session.cached_pmids)
         for pmid in pmids:
@@ -369,6 +395,12 @@ class SessionManager:
             usedforsecurity=False,
         ).hexdigest()[:12]
         session = ResearchSession(session_id=session_id, topic=topic)
+        self._append_session_event(
+            session,
+            kind="session_created",
+            message="Session created",
+            details={"session_id": session_id, "topic": topic},
+        )
         self._sessions[session_id] = session
         self._current_session_id = session_id
         self._save_session(session)
@@ -393,8 +425,17 @@ class SessionManager:
         if session_id not in self._sessions:
             return None
         self._current_session_id = session_id
-        self._save_sessions_index()
-        return self.get_current_session()
+        session = self._sessions[session_id]
+        self._append_session_event(
+            session,
+            kind="session_switched",
+            message="Session activated",
+            details={"session_id": session_id},
+        )
+        session.touch()
+        self._refresh_session_cache_view(session)
+        self._save_session(session)
+        return session
 
     def list_sessions(self) -> list[dict[str, Any]]:
         return [
@@ -415,6 +456,16 @@ class SessionManager:
         session = self.get_current_session()
         if session:
             self._record_cached_pmids(session, [article.get("pmid", "") for article in articles])
+            if warmed:
+                self._append_session_event(
+                    session,
+                    kind="cache_warmed",
+                    message="Session cache warmed with article payloads",
+                    details={
+                        "article_count": warmed,
+                        "pmids": [article.get("pmid", "") for article in articles[:10] if article.get("pmid")],
+                    },
+                )
             self._refresh_session_cache_view(session)
             self._save_session(session)
         return warmed
@@ -424,6 +475,16 @@ class SessionManager:
         session = self.get_current_session()
         if session:
             self._record_cached_pmids(session, [article.get("pmid", "") for article in articles])
+            if warmed:
+                self._append_session_event(
+                    session,
+                    kind="cache_updated",
+                    message="Cached article payloads added to the active session",
+                    details={
+                        "article_count": warmed,
+                        "pmids": [article.get("pmid", "") for article in articles[:10] if article.get("pmid")],
+                    },
+                )
         if session and not _skip_save:
             self._refresh_session_cache_view(session)
             self._save_session(session)
@@ -477,9 +538,41 @@ class SessionManager:
             "filters": filters or {},
         }
         session.search_history.append(record)
+        self._append_session_event(
+            session,
+            kind="search_recorded",
+            message="Recorded search query in session history",
+            details={
+                "query": query,
+                "result_count": len(pmids),
+                "pmid_count": len(pmids),
+                "filters": filters or {},
+            },
+        )
         session.touch()
         self._refresh_session_cache_view(session)
         self._save_session(session)
+
+    def get_session_event_log(
+        self,
+        *,
+        session: ResearchSession | None = None,
+        limit: int = 50,
+        kind: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return recent session events, optionally filtered by kind."""
+        active_session = session or self.get_current_session()
+        if active_session is None:
+            return []
+
+        events = active_session.event_log
+        if kind:
+            normalized_kind = kind.strip().lower()
+            events = [event for event in events if str(event.get("kind", "")).lower() == normalized_kind]
+
+        if limit <= 0:
+            return []
+        return events[-limit:]
 
     def find_cached_search(self, query: str, limit: int | None = None) -> list[dict[str, Any]] | None:
         session = self.get_current_session()
@@ -516,6 +609,12 @@ class SessionManager:
             "added_at": _utcnow_iso(),
             "notes": notes,
         }
+        self._append_session_event(
+            session,
+            kind="reading_list_updated",
+            message="Article added to reading list",
+            details={"pmid": pmid, "priority": priority},
+        )
         session.touch()
         self._refresh_session_cache_view(session)
         self._save_session(session)
@@ -524,6 +623,12 @@ class SessionManager:
         session = self.get_or_create_session()
         if pmid not in session.excluded_pmids:
             session.excluded_pmids.append(pmid)
+            self._append_session_event(
+                session,
+                kind="article_excluded",
+                message="Article excluded from the active session",
+                details={"pmid": pmid},
+            )
             session.touch()
             self._refresh_session_cache_view(session)
             self._save_session(session)
@@ -539,11 +644,20 @@ class SessionManager:
             "topic": session.topic,
             "cached_articles": len(self.get_session_cached_pmids(session=session)),
             "searches_performed": len(session.search_history),
+            "event_entries": len(session.event_log),
             "reading_list_count": len(session.reading_list),
             "excluded_count": len(session.excluded_pmids),
             "recent_searches": [
                 {"query": search.get("query", ""), "count": search.get("result_count", 0)}
                 for search in session.search_history[-5:]
+            ],
+            "recent_events": [
+                {
+                    "timestamp": event.get("timestamp", "")[:19],
+                    "kind": event.get("kind", ""),
+                    "message": event.get("message", ""),
+                }
+                for event in session.event_log[-5:]
             ],
             "cached_pmids": cached_pmids,
             "reading_list": session.reading_list,

@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 import pytest
 
-from pubmed_search import PubMedClient
+from pubmed_search.infrastructure.http import PubMedClient
 
 # ============================================================
 # Performance Markers

@@ -47,6 +47,7 @@ from pubmed_search.infrastructure.sources.registry import SourceSelectionError, 
 from .agent_output import is_structured_output_format
 from .tool_input import InputNormalizer
 from .tool_response import ResponseFormatter
+from .tool_runtime import safe_report_progress
 from .unified_enrichment import (
     _enrich_with_api_similarity,
     _enrich_with_crossref,
@@ -366,9 +367,7 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         # --- Helper for progress reporting ---
         async def _progress(progress: float, total: float, message: str) -> None:
             """Report progress to MCP client if context is available."""
-            if ctx is not None:
-                with contextlib.suppress(Exception):
-                    await ctx.report_progress(progress, total, message)
+            await safe_report_progress(ctx, progress, total, message)
 
         try:
             # ============================================================

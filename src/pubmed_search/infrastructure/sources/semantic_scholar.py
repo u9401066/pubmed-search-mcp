@@ -20,6 +20,10 @@ import urllib.parse
 from typing import Any
 
 from pubmed_search.infrastructure.sources.base_client import BaseAPIClient
+from pubmed_search.infrastructure.sources.official_generated_clients import (
+    OfficialSemanticScholarGeneratedClient,
+    SemanticScholarSearchRequest,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +47,19 @@ DEFAULT_FIELDS = [
     "isOpenAccess",
     "openAccessPdf",
     "externalIds",  # Contains DOI, PubMed ID, etc.
+]
+
+DEFAULT_AUTHOR_FIELDS = [
+    "authorId",
+    "name",
+    "aliases",
+    "affiliations",
+    "homepage",
+    "paperCount",
+    "citationCount",
+    "hIndex",
+    "externalIds",
+    "url",
 ]
 
 
@@ -74,6 +91,7 @@ class SemanticScholarClient(BaseAPIClient):
                 "Accept": "application/json",
             },
         )
+        self._official_client = OfficialSemanticScholarGeneratedClient(self)
 
     async def _execute_request(
         self,
@@ -114,10 +132,12 @@ class SemanticScholarClient(BaseAPIClient):
             List of paper dictionaries in normalized format
         """
         try:
-            params = {
+            params: dict[str, str | int | None] = {
                 "query": query,
-                "limit": str(min(limit, 100)),
+                "limit": min(limit, 100),
                 "fields": ",".join(fields or DEFAULT_FIELDS),
+                "year": None,
+                "openAccessPdf": None,
             }
 
             # Year filter
@@ -131,18 +151,15 @@ class SemanticScholarClient(BaseAPIClient):
 
             # Open access filter
             if open_access_only:
-                params["openAccessPdf"] = ""  # Only papers with OA PDF
+                params["openAccessPdf"] = ""
 
-            url = f"{S2_SEARCH_URL}?{urllib.parse.urlencode(params)}"
-            data = await self._make_request(url)
-
-            if not isinstance(data, dict):
+            request = SemanticScholarSearchRequest.model_validate(params)
+            response = await self._official_client.search_papers(request)
+            if response is None:
                 return []
 
-            papers = data.get("data", [])
-
             # Normalize to common format
-            return [self._normalize_paper(p) for p in papers]
+            return [self._normalize_paper(paper.model_dump(exclude_none=True)) for paper in response.data]
 
         except Exception as e:
             logger.exception(f"Semantic Scholar search failed: {e}")
@@ -160,16 +177,14 @@ class SemanticScholarClient(BaseAPIClient):
             Paper dictionary or None
         """
         try:
-            # URL encode paper_id (important for DOIs)
-            encoded_id = urllib.parse.quote(paper_id, safe="")
-            params = {"fields": ",".join(fields or DEFAULT_FIELDS)}
-            url = f"{S2_PAPER_URL}/{encoded_id}?{urllib.parse.urlencode(params)}"
-
-            data = await self._make_request(url)
-            if not isinstance(data, dict):
+            response = await self._official_client.get_paper(
+                paper_id,
+                fields=",".join(fields or DEFAULT_FIELDS),
+            )
+            if response is None:
                 return None
 
-            return self._normalize_paper(data)
+            return self._normalize_paper(response.model_dump(exclude_none=True))
 
         except Exception as e:
             logger.exception(f"Failed to get paper {paper_id}: {e}")
@@ -187,19 +202,16 @@ class SemanticScholarClient(BaseAPIClient):
             List of citing papers
         """
         try:
-            encoded_id = urllib.parse.quote(paper_id, safe="")
-            params = {
-                "limit": str(min(limit, 100)),
-                "fields": ",".join(DEFAULT_FIELDS),
-            }
-            url = f"{S2_PAPER_URL}/{encoded_id}/citations?{urllib.parse.urlencode(params)}"
-
-            data = await self._make_request(url)
-            if not isinstance(data, dict):
+            response = await self._official_client.get_citations(
+                paper_id,
+                limit=min(limit, 100),
+                fields=",".join(DEFAULT_FIELDS),
+            )
+            if response is None:
                 return []
 
-            papers = [item.get("citingPaper", {}) for item in data.get("data", [])]
-            return [self._normalize_paper(p) for p in papers if p]
+            papers = [item.citingPaper.model_dump(exclude_none=True) for item in response.data if item.citingPaper]
+            return [self._normalize_paper(paper) for paper in papers]
 
         except Exception as e:
             logger.exception(f"Failed to get citations for {paper_id}: {e}")
@@ -217,19 +229,16 @@ class SemanticScholarClient(BaseAPIClient):
             List of referenced papers
         """
         try:
-            encoded_id = urllib.parse.quote(paper_id, safe="")
-            params = {
-                "limit": str(min(limit, 100)),
-                "fields": ",".join(DEFAULT_FIELDS),
-            }
-            url = f"{S2_PAPER_URL}/{encoded_id}/references?{urllib.parse.urlencode(params)}"
-
-            data = await self._make_request(url)
-            if not isinstance(data, dict):
+            response = await self._official_client.get_references(
+                paper_id,
+                limit=min(limit, 100),
+                fields=",".join(DEFAULT_FIELDS),
+            )
+            if response is None:
                 return []
 
-            papers = [item.get("citedPaper", {}) for item in data.get("data", [])]
-            return [self._normalize_paper(p) for p in papers if p]
+            papers = [item.citedPaper.model_dump(exclude_none=True) for item in response.data if item.citedPaper]
+            return [self._normalize_paper(paper) for paper in papers]
 
         except Exception as e:
             logger.exception(f"Failed to get references for {paper_id}: {e}")
@@ -257,34 +266,87 @@ class SemanticScholarClient(BaseAPIClient):
             List of recommended papers with similarity_score (0.0-1.0)
         """
         try:
-            encoded_id = urllib.parse.quote(paper_id, safe="")
-            params = {
-                "limit": str(min(limit, 500)),
-                "fields": ",".join(fields or DEFAULT_FIELDS),
-            }
-            # Recommendations endpoint
-            url = f"https://api.semanticscholar.org/recommendations/v1/papers/forpaper/{encoded_id}?{urllib.parse.urlencode(params)}"
-
-            data = await self._make_request(url)
-            if not isinstance(data, dict):
+            response = await self._official_client.get_recommendations(
+                paper_id,
+                limit=min(limit, 500),
+                fields=",".join(fields or DEFAULT_FIELDS),
+            )
+            if response is None:
                 return []
 
-            papers = data.get("recommendedPapers", [])
+            papers = response.recommendedPapers
             results = []
             for i, paper in enumerate(papers):
-                if paper:
-                    normalized = self._normalize_paper(paper)
-                    # Calculate similarity score based on ranking position
-                    # First result = 1.0, linearly decreasing
-                    normalized["similarity_score"] = max(0.0, 1.0 - (i / max(len(papers), 1)))
-                    normalized["similarity_source"] = "semantic_scholar"
-                    results.append(normalized)
+                normalized = self._normalize_paper(paper.model_dump(exclude_none=True))
+                # Calculate similarity score based on ranking position
+                # First result = 1.0, linearly decreasing
+                normalized["similarity_score"] = max(0.0, 1.0 - (i / max(len(papers), 1)))
+                normalized["similarity_source"] = "semantic_scholar"
+                results.append(normalized)
 
             return results
 
         except Exception as e:
             logger.exception(f"Failed to get recommendations for {paper_id}: {e}")
             return []
+
+    async def search_authors(
+        self,
+        query: str,
+        limit: int = 10,
+        fields: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """
+        Search Semantic Scholar authors by name.
+
+        Args:
+            query: Author name query.
+            limit: Maximum authors to return.
+            fields: Optional author field selection.
+
+        Returns:
+            List of normalized author metadata dictionaries.
+        """
+        try:
+            params = {
+                "query": query,
+                "limit": str(min(limit, 100)),
+                "fields": ",".join(fields or DEFAULT_AUTHOR_FIELDS),
+            }
+            url = f"{S2_AUTHOR_URL}/search?{urllib.parse.urlencode(params)}"
+            data = await self._make_request(url)
+            if not isinstance(data, dict):
+                return []
+
+            return [self._normalize_author(author) for author in data.get("data", [])]
+        except Exception as e:
+            logger.exception(f"Failed to search authors for {query}: {e}")
+            return []
+
+    async def get_author(self, author_id: str, fields: list[str] | None = None) -> dict[str, Any] | None:
+        """
+        Get an author profile by Semantic Scholar author identifier.
+
+        Args:
+            author_id: Semantic Scholar author identifier.
+            fields: Optional author field selection.
+
+        Returns:
+            Normalized author metadata or ``None`` when the author is not found.
+        """
+        try:
+            encoded_id = urllib.parse.quote(author_id, safe="")
+            params = {"fields": ",".join(fields or DEFAULT_AUTHOR_FIELDS)}
+            url = f"{S2_AUTHOR_URL}/{encoded_id}?{urllib.parse.urlencode(params)}"
+
+            data = await self._make_request(url)
+            if not isinstance(data, dict):
+                return None
+
+            return self._normalize_author(data)
+        except Exception as e:
+            logger.exception(f"Failed to get author {author_id}: {e}")
+            return None
 
     async def get_paper_embedding_similarity(
         self,
@@ -389,4 +451,29 @@ class SemanticScholarClient(BaseAPIClient):
             # Source marker for identification
             "_source": "semantic_scholar",
             "_s2_id": paper.get("paperId", ""),
+        }
+
+    @staticmethod
+    def _normalize_author(author: dict[str, Any]) -> dict[str, Any]:
+        """Normalize Semantic Scholar author metadata for downstream reuse.
+
+        Args:
+            author: Raw author payload from Semantic Scholar.
+
+        Returns:
+            Compact normalized author metadata.
+        """
+        external_ids = author.get("externalIds", {}) or {}
+        return {
+            "author_id": author.get("authorId", ""),
+            "name": author.get("name", ""),
+            "aliases": author.get("aliases", []) or [],
+            "affiliations": author.get("affiliations", []) or [],
+            "homepage": author.get("homepage", "") or "",
+            "profile_url": author.get("url", "") or "",
+            "paper_count": author.get("paperCount", 0),
+            "citation_count": author.get("citationCount", 0),
+            "h_index": author.get("hIndex"),
+            "orcid": external_ids.get("ORCID", ""),
+            "_source": "semantic_scholar",
         }

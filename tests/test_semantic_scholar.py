@@ -326,6 +326,70 @@ class TestRecommendations:
 
 
 # ============================================================
+# author features
+# ============================================================
+
+
+class TestAuthors:
+    @patch.object(SemanticScholarClient, "_make_request")
+    async def test_search_authors_success(self, mock_req, client):
+        mock_req.return_value = {
+            "data": [
+                {
+                    "authorId": "123",
+                    "name": "Jane Doe",
+                    "aliases": ["J Doe"],
+                    "affiliations": ["MIT"],
+                    "paperCount": 42,
+                    "citationCount": 900,
+                    "hIndex": 15,
+                    "externalIds": {"ORCID": "0000-0001-2345-6789"},
+                    "homepage": "https://example.com/~jdoe",
+                    "url": "https://www.semanticscholar.org/author/123",
+                }
+            ]
+        }
+
+        results = await client.search_authors("Jane Doe")
+
+        assert len(results) == 1
+        assert results[0]["author_id"] == "123"
+        assert results[0]["orcid"] == "0000-0001-2345-6789"
+        assert results[0]["affiliations"] == ["MIT"]
+
+    @patch.object(SemanticScholarClient, "_make_request")
+    async def test_search_authors_empty(self, mock_req, client):
+        mock_req.return_value = None
+        assert await client.search_authors("Nobody") == []
+
+    @patch.object(SemanticScholarClient, "_make_request")
+    async def test_get_author_success(self, mock_req, client):
+        mock_req.return_value = {
+            "authorId": "123",
+            "name": "Jane Doe",
+            "aliases": [],
+            "affiliations": ["Stanford University"],
+            "paperCount": 100,
+            "citationCount": 5000,
+            "hIndex": 30,
+            "externalIds": {"ORCID": "0000-0001-2345-6789"},
+            "url": "https://www.semanticscholar.org/author/123",
+        }
+
+        result = await client.get_author("123")
+
+        assert result is not None
+        assert result["name"] == "Jane Doe"
+        assert result["paper_count"] == 100
+        assert result["profile_url"] == "https://www.semanticscholar.org/author/123"
+
+    @patch.object(SemanticScholarClient, "_make_request")
+    async def test_get_author_not_found(self, mock_req, client):
+        mock_req.return_value = None
+        assert await client.get_author("missing") is None
+
+
+# ============================================================
 # get_paper_embedding_similarity
 # ============================================================
 
@@ -452,3 +516,28 @@ class TestNormalizePaper:
         paper = {"paperId": "x", "openAccessPdf": None}
         result = client._normalize_paper(paper)
         assert result["pdf_url"] is None
+
+
+class TestNormalizeAuthor:
+    async def test_normalize_author(self, client):
+        author = {
+            "authorId": "123",
+            "name": "Jane Doe",
+            "aliases": ["J Doe"],
+            "affiliations": ["MIT"],
+            "paperCount": 42,
+            "citationCount": 900,
+            "hIndex": 15,
+            "homepage": "https://example.com/~jdoe",
+            "url": "https://www.semanticscholar.org/author/123",
+            "externalIds": {"ORCID": "0000-0001-2345-6789"},
+        }
+
+        result = client._normalize_author(author)
+
+        assert result["author_id"] == "123"
+        assert result["name"] == "Jane Doe"
+        assert result["aliases"] == ["J Doe"]
+        assert result["homepage"] == "https://example.com/~jdoe"
+        assert result["orcid"] == "0000-0001-2345-6789"
+        assert result["_source"] == "semantic_scholar"

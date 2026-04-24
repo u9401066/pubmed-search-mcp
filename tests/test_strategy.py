@@ -61,6 +61,20 @@ class TestSearchStrategyGenerator:
             assert corrected == "test"
             assert was_corrected is False
 
+    async def test_spell_check_closes_handle_when_read_fails(self, strategy_generator):
+        """Spell check should close the Entrez handle even when parsing fails."""
+        mock_handle = MagicMock()
+
+        with (
+            patch("pubmed_search.infrastructure.ncbi.strategy.Entrez.espell", return_value=mock_handle),
+            patch("pubmed_search.infrastructure.ncbi.strategy.Entrez.read", side_effect=ValueError("bad xml")),
+        ):
+            corrected, was_corrected = await strategy_generator.spell_check("test")
+
+        mock_handle.close.assert_called_once()
+        assert corrected == "test"
+        assert was_corrected is False
+
     async def test_get_mesh_info_found(self, strategy_generator):
         """Test getting MeSH info when term is found."""
         with (

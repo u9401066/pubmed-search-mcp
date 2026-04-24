@@ -48,6 +48,7 @@ class SourceExecutionSettings:
 
     service_name: str
     timeout: float | None = None
+    total_timeout: float | None = None
     min_interval: float | None = None
     max_attempts: int = 4
     base_delay: float = 1.0
@@ -84,6 +85,7 @@ def build_request_execution_policy(settings: SourceExecutionSettings) -> Request
     return RequestExecutionPolicy(
         service_name=settings.service_name,
         timeout=settings.timeout,
+        total_timeout=settings.total_timeout or _derive_total_timeout(settings.timeout, settings.max_attempts, settings.max_delay),
         retry=RetryPolicy(
             max_attempts=max(settings.max_attempts, 1),
             base_delay=settings.base_delay,
@@ -95,6 +97,20 @@ def build_request_execution_policy(settings: SourceExecutionSettings) -> Request
         concurrency_limit=settings.concurrency_limit,
         concurrency_name=settings.concurrency_name,
     )
+
+
+def _derive_total_timeout(timeout: float | None, max_attempts: int, max_delay: float) -> float | None:
+    """Derive a bounded end-to-end budget for adapter calls.
+
+    The per-attempt timeout still caps a single network operation. This helper
+    keeps retries useful but prevents retry/backoff amplification from turning
+    a nominal 15-30s source timeout into multi-minute waits.
+    """
+    if timeout is None:
+        return None
+    if max_attempts <= 1:
+        return timeout
+    return max(timeout, min(timeout * 2, timeout + max_delay))
 
 
 @dataclass(frozen=True)
@@ -324,10 +340,41 @@ async def execute_source_adapter_call(call: SourceAdapterCall[AdapterItem]) -> S
         )
 
 
+async def _execute_source_adapter_call_with_timeout(
+    call: SourceAdapterCall[AdapterItem],
+    *,
+    timeout: float,
+) -> SourceAdapterResult[AdapterItem]:
+    """Execute one adapter call with a soft per-source timeout."""
+    try:
+        return await asyncio.wait_for(execute_source_adapter_call(call), timeout=timeout)
+    except asyncio.TimeoutError:
+        return SourceAdapterResult.failure(
+            source=call.source,
+            operation=call.operation,
+            error=SourceAdapterError(
+                source=call.source,
+                operation=call.operation,
+                message=f"Source adapter timed out after {timeout:.2f}s",
+                kind="timeout",
+                retryable=False,
+            ),
+        )
+
+
 async def gather_source_adapter_calls(
     calls: list[SourceAdapterCall[AdapterItem]],
+    *,
+    per_call_timeout: float | None = None,
 ) -> list[SourceAdapterResult[AdapterItem]]:
     """Execute adapter calls concurrently and always return normalized results."""
     if not calls:
         return []
-    return await asyncio.gather(*(execute_source_adapter_call(call) for call in calls))
+    if per_call_timeout is None:
+        return await asyncio.gather(*(execute_source_adapter_call(call) for call in calls))
+    return await asyncio.gather(
+        *(
+            _execute_source_adapter_call_with_timeout(call, timeout=per_call_timeout)
+            for call in calls
+        )
+    )

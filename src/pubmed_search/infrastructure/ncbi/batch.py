@@ -11,7 +11,7 @@ from typing import Any
 
 from Bio import Entrez
 
-from .base import execute_entrez_operation
+from .base import DEFAULT_ENTREZ_TOOL, execute_entrez_operation, run_entrez_callable
 
 
 class BatchMixin:
@@ -41,9 +41,22 @@ class BatchMixin:
         """
         try:
             api_key = getattr(self, "_api_key", None)
+            email = getattr(self, "_email", None)
+            tool = getattr(self, "_tool", DEFAULT_ENTREZ_TOOL)
 
             async def do_search() -> dict[str, Any]:
-                handle = await asyncio.to_thread(Entrez.esearch, db="pubmed", term=query, usehistory="y", retmax=0)
+                handle = await asyncio.to_thread(
+                    run_entrez_callable,
+                    Entrez,
+                    Entrez.esearch,
+                    db="pubmed",
+                    term=query,
+                    usehistory="y",
+                    retmax=0,
+                    email=email,
+                    api_key=api_key,
+                    tool=tool,
+                )
                 try:
                     return await asyncio.to_thread(Entrez.read, handle)
                 finally:
@@ -93,9 +106,13 @@ class BatchMixin:
         """
         try:
             api_key = getattr(self, "_api_key", None)
+            email = getattr(self, "_email", None)
+            tool = getattr(self, "_tool", DEFAULT_ENTREZ_TOOL)
 
             async def do_fetch() -> Any:
                 handle = await asyncio.to_thread(
+                    run_entrez_callable,
+                    Entrez,
                     Entrez.efetch,
                     db="pubmed",
                     retstart=start,
@@ -103,6 +120,9 @@ class BatchMixin:
                     webenv=webenv,
                     query_key=query_key,
                     retmode="xml",
+                    email=email,
+                    api_key=api_key,
+                    tool=tool,
                 )
                 try:
                     return await asyncio.to_thread(Entrez.read, handle)

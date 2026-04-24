@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import time
 from functools import partial
 from typing import TYPE_CHECKING, Any, Literal
 from urllib.parse import urlparse
@@ -38,6 +39,7 @@ if TYPE_CHECKING:
     import httpx
 
 logger = logging.getLogger(__name__)
+
 
 class FulltextDownloader:
     """Backward-compatible downloader facade that delegates to phase helpers."""
@@ -98,6 +100,58 @@ class FulltextDownloader:
                 concurrency_name="fulltext-download",
             )
         )
+
+    def _derive_end_to_end_timeout(self) -> float:
+        """Bound total downloader work so link retries cannot chain indefinitely."""
+        return max(self._timeout, min(self._timeout * 2, self._timeout + 30.0))
+
+    @staticmethod
+    def _build_deadline(total_timeout: float | None) -> float | None:
+        if total_timeout is None:
+            return None
+        return time.monotonic() + total_timeout
+
+    @staticmethod
+    def _remaining_budget(deadline: float | None) -> float | None:
+        if deadline is None:
+            return None
+        return deadline - time.monotonic()
+
+    def _budget_message(self, phase: str, total_timeout: float | None) -> str:
+        if total_timeout is None:
+            return f"Fulltext retrieval timed out during {phase}"
+        return f"Fulltext retrieval exceeded total timeout of {total_timeout:.2f}s during {phase}"
+
+    def _raise_if_budget_exhausted(
+        self,
+        *,
+        deadline: float | None,
+        total_timeout: float | None,
+        phase: str,
+    ) -> None:
+        remaining = self._remaining_budget(deadline)
+        if remaining is None or remaining > 0:
+            return
+        raise asyncio.TimeoutError(self._budget_message(phase, total_timeout))
+
+    async def _await_with_deadline(
+        self,
+        awaitable: Any,
+        *,
+        deadline: float | None,
+        total_timeout: float | None,
+        phase: str,
+    ) -> Any:
+        self._raise_if_budget_exhausted(deadline=deadline, total_timeout=total_timeout, phase=phase)
+
+        remaining = self._remaining_budget(deadline)
+        if remaining is None:
+            return await awaitable
+
+        try:
+            return await asyncio.wait_for(awaitable, timeout=remaining)
+        except asyncio.TimeoutError as exc:
+            raise asyncio.TimeoutError(self._budget_message(phase, total_timeout)) from exc
 
     def _sync_phase_bindings(self) -> None:
         self._discovery_phase._get_client = self._get_client
@@ -214,10 +268,33 @@ class FulltextDownloader:
         pmid: str | None = None,
         pmcid: str | None = None,
         doi: str | None = None,
+        *,
+        total_timeout: float | None = None,
+        deadline: float | None = None,
     ) -> list[PDFLink]:
         self._sync_phase_bindings()
+        effective_total_timeout = total_timeout if total_timeout is not None else self._derive_end_to_end_timeout()
+        effective_deadline = deadline if deadline is not None else self._build_deadline(effective_total_timeout)
         links: list[PDFLink] = []
-        source_results = await gather_source_adapter_calls(self._build_link_source_calls(pmid, pmcid, doi))
+        per_call_timeout = max(5.0, min(self._timeout, 15.0))
+        remaining = self._remaining_budget(effective_deadline)
+        if remaining is not None:
+            self._raise_if_budget_exhausted(
+                deadline=effective_deadline,
+                total_timeout=effective_total_timeout,
+                phase="link discovery",
+            )
+            per_call_timeout = max(0.05, min(per_call_timeout, remaining))
+
+        source_results = await self._await_with_deadline(
+            gather_source_adapter_calls(
+                self._build_link_source_calls(pmid, pmcid, doi),
+                per_call_timeout=per_call_timeout,
+            ),
+            deadline=effective_deadline,
+            total_timeout=effective_total_timeout,
+            phase="link discovery",
+        )
         for source_result in source_results:
             links.extend(source_result.items)
 
@@ -239,6 +316,9 @@ class FulltextDownloader:
         try_all: bool = True,
         allow_browser_session: bool | None = None,
         candidate_links: list[PDFLink] | None = None,
+        *,
+        total_timeout: float | None = None,
+        deadline: float | None = None,
     ) -> DownloadResult:
         """
         Download PDF from best available source.
@@ -253,8 +333,19 @@ class FulltextDownloader:
         Returns:
             DownloadResult with PDF bytes or error
         """
-        # Get all available links
-        links = list(candidate_links) if candidate_links is not None else await self.get_pdf_links(pmid, pmcid, doi)
+        effective_total_timeout = total_timeout if total_timeout is not None else self._derive_end_to_end_timeout()
+        effective_deadline = deadline if deadline is not None else self._build_deadline(effective_total_timeout)
+
+        try:
+            links = list(candidate_links) if candidate_links is not None else await self.get_pdf_links(
+                pmid,
+                pmcid,
+                doi,
+                total_timeout=effective_total_timeout,
+                deadline=effective_deadline,
+            )
+        except asyncio.TimeoutError as exc:
+            return DownloadResult(success=False, error=str(exc))
 
         if not links:
             return DownloadResult(success=False, error="No PDF links found for this article")
@@ -264,11 +355,22 @@ class FulltextDownloader:
         attempt_errors: list[str] = []
 
         for link in ordered_links:
-            result = await self._download_candidate(
-                link,
-                article_metadata=article_metadata,
-                allow_browser_session=allow_browser_session,
-            )
+            try:
+                self._raise_if_budget_exhausted(
+                    deadline=effective_deadline,
+                    total_timeout=effective_total_timeout,
+                    phase="pdf candidate download",
+                )
+                result = await self._download_candidate(
+                    link,
+                    article_metadata=article_metadata,
+                    allow_browser_session=allow_browser_session,
+                    deadline=effective_deadline,
+                    total_timeout=effective_total_timeout,
+                )
+            except asyncio.TimeoutError as exc:
+                return DownloadResult(success=False, error=str(exc))
+
             if result.success and result.is_pdf:
                 return result
             if not try_all:
@@ -289,85 +391,124 @@ class FulltextDownloader:
         doi: str | None = None,
         strategy: Literal["links_only", "download_best", "extract_text", "try_all"] = "extract_text",
         allow_browser_session: bool | None = None,
+        *,
+        total_timeout: float | None = None,
     ) -> FulltextResult:
         result = FulltextResult(pmid=pmid, pmcid=pmcid, doi=doi)
+        effective_total_timeout = total_timeout if total_timeout is not None else self._derive_end_to_end_timeout()
+        deadline = self._build_deadline(effective_total_timeout)
 
-        if strategy == "links_only":
-            result.pdf_links = await self.get_pdf_links(pmid, pmcid, doi)
-            return result
-
-        if strategy == "try_all" and pmcid:
-            xml_result = await self._get_structured_fulltext(pmcid)
-            if xml_result:
-                result.text_content = xml_result.get("text")
-                result.structured_sections = xml_result.get("sections")
-                result.content_type = "xml"
-                result.source_used = PDFSource.EUROPE_PMC
-                result.title = xml_result.get("title")
-                result.has_references = bool(xml_result.get("references"))
-                if result.text_content:
-                    result.word_count = len(result.text_content.split())
+        try:
+            if strategy == "links_only":
+                result.pdf_links = await self.get_pdf_links(
+                    pmid,
+                    pmcid,
+                    doi,
+                    total_timeout=effective_total_timeout,
+                    deadline=deadline,
+                )
                 return result
 
-        result.pdf_links = await self.get_pdf_links(pmid, pmcid, doi)
-        if not result.pdf_links:
-            result.content_type = "none"
-            result.error = "No PDF links found for this article"
-            return result
+            if strategy == "try_all" and pmcid:
+                xml_result = await self._await_with_deadline(
+                    self._get_structured_fulltext(pmcid),
+                    deadline=deadline,
+                    total_timeout=effective_total_timeout,
+                    phase="structured fulltext retrieval",
+                )
+                if xml_result:
+                    result.text_content = xml_result.get("text")
+                    result.structured_sections = xml_result.get("sections")
+                    result.content_type = "xml"
+                    result.source_used = PDFSource.EUROPE_PMC
+                    result.title = xml_result.get("title")
+                    result.has_references = bool(xml_result.get("references"))
+                    if result.text_content:
+                        result.word_count = len(result.text_content.split())
+                    return result
 
-        if strategy == "download_best":
-            download = await self.download_pdf(
+            result.pdf_links = await self.get_pdf_links(
                 pmid,
                 pmcid,
                 doi,
-                allow_browser_session=allow_browser_session,
-                candidate_links=result.pdf_links,
+                total_timeout=effective_total_timeout,
+                deadline=deadline,
             )
-            if not download.success:
-                result.error = download.error
+            if not result.pdf_links:
+                result.content_type = "none"
+                result.error = "No PDF links found for this article"
                 return result
 
-            self._apply_download_result(result, download)
-            return result
+            if strategy == "download_best":
+                download = await self.download_pdf(
+                    pmid,
+                    pmcid,
+                    doi,
+                    allow_browser_session=allow_browser_session,
+                    candidate_links=result.pdf_links,
+                    total_timeout=effective_total_timeout,
+                    deadline=deadline,
+                )
+                if not download.success:
+                    result.error = download.error
+                    return result
 
-        article_metadata = self._build_article_metadata(pmid=pmid, pmcid=pmcid, doi=doi)
-        best_pdf_download: DownloadResult | None = None
-        extraction_errors: list[str] = []
-
-        for link in self._order_links_for_download(result.pdf_links):
-            download = await self._download_candidate(
-                link,
-                article_metadata=article_metadata,
-                allow_browser_session=allow_browser_session,
-            )
-            if not download.success or not download.is_pdf:
-                if download.error:
-                    extraction_errors.append(f"{link.source.display_name}: {download.error}")
-                continue
-
-            if best_pdf_download is None:
-                best_pdf_download = download
-
-            text = await self._extract_pdf_text(download.content)
-            if text:
                 self._apply_download_result(result, download)
-                result.text_content = text
-                result.extraction_method = "pdf_extraction"
-                result.word_count = len(text.split())
                 return result
 
-            extraction_errors.append(f"{link.source.display_name}: PDF downloaded but text extraction failed")
+            article_metadata = self._build_article_metadata(pmid=pmid, pmcid=pmcid, doi=doi)
+            best_pdf_download: DownloadResult | None = None
+            extraction_errors: list[str] = []
 
-        if best_pdf_download is not None:
-            self._apply_download_result(result, best_pdf_download)
-            result.error = "PDF downloaded successfully, but text extraction failed across all candidate sources"
+            for link in self._order_links_for_download(result.pdf_links):
+                self._raise_if_budget_exhausted(
+                    deadline=deadline,
+                    total_timeout=effective_total_timeout,
+                    phase="pdf candidate download",
+                )
+                download = await self._download_candidate(
+                    link,
+                    article_metadata=article_metadata,
+                    allow_browser_session=allow_browser_session,
+                    deadline=deadline,
+                    total_timeout=effective_total_timeout,
+                )
+                if not download.success or not download.is_pdf:
+                    if download.error:
+                        extraction_errors.append(f"{link.source.display_name}: {download.error}")
+                    continue
+
+                if best_pdf_download is None:
+                    best_pdf_download = download
+
+                text = await self._await_with_deadline(
+                    self._extract_pdf_text(download.content),
+                    deadline=deadline,
+                    total_timeout=effective_total_timeout,
+                    phase="pdf text extraction",
+                )
+                if text:
+                    self._apply_download_result(result, download)
+                    result.text_content = text
+                    result.extraction_method = "pdf_extraction"
+                    result.word_count = len(text.split())
+                    return result
+
+                extraction_errors.append(f"{link.source.display_name}: PDF downloaded but text extraction failed")
+
+            if best_pdf_download is not None:
+                self._apply_download_result(result, best_pdf_download)
+                result.error = "PDF downloaded successfully, but text extraction failed across all candidate sources"
+                return result
+
+            if extraction_errors:
+                result.error = f"All fulltext candidates failed. Attempts: {' | '.join(extraction_errors[:3])}"
+            else:
+                result.error = "All fulltext candidates failed"
             return result
-
-        if extraction_errors:
-            result.error = f"All fulltext candidates failed. Attempts: {' | '.join(extraction_errors[:3])}"
-        else:
-            result.error = "All fulltext candidates failed"
-        return result
+        except asyncio.TimeoutError as exc:
+            result.error = str(exc) or self._budget_message("fulltext retrieval", effective_total_timeout)
+            return result
 
     async def _get_pmc_links(self, pmid: str | None, pmcid: str | None) -> list[PDFLink]:
         self._sync_phase_bindings()
@@ -466,13 +607,20 @@ class FulltextDownloader:
         *,
         article_metadata: dict[str, Any],
         allow_browser_session: bool | None,
+        deadline: float | None,
+        total_timeout: float | None,
     ) -> DownloadResult:
         """Download a candidate link, with optional browser-session fallback."""
         browser_enabled = self._browser_session_allowed(allow_browser_session)
         request_headers = self._build_candidate_headers(link, article_metadata)
 
         if link.is_direct_pdf and link.access_type != "institutional":
-            result = await self._download_from_url(link.url, link.source, headers=request_headers)
+            result = await self._await_with_deadline(
+                self._download_from_url(link.url, link.source, headers=request_headers),
+                deadline=deadline,
+                total_timeout=total_timeout,
+                phase=f"direct PDF download from {link.source.display_name}",
+            )
             if result.success and result.is_pdf:
                 return result
 
@@ -486,7 +634,12 @@ class FulltextDownloader:
                 source=link.source,
             )
 
-        browser_result = await self._download_with_browser_session(link, article_metadata)
+        browser_result = await self._await_with_deadline(
+            self._download_with_browser_session(link, article_metadata),
+            deadline=deadline,
+            total_timeout=total_timeout,
+            phase=f"browser-session fallback for {link.source.display_name}",
+        )
         if browser_result.success and browser_result.is_pdf:
             return browser_result
         return browser_result
@@ -614,7 +767,7 @@ class FulltextDownloader:
         if not download.url or download.source is None:
             return
 
-        access_type = "unknown"
+        access_type: AccessType = "unknown"
         for link in result.pdf_links:
             if link.url == download.url:
                 link.is_direct_pdf = True
@@ -758,6 +911,7 @@ async def download_fulltext(
     doi: str | None = None,
     strategy: Literal["links_only", "download_best", "extract_text", "try_all"] = "extract_text",
     allow_browser_session: bool | None = None,
+    total_timeout: float | None = None,
 ) -> FulltextResult:
     downloader = get_fulltext_downloader()
     return await downloader.get_fulltext(
@@ -766,6 +920,7 @@ async def download_fulltext(
         doi,
         strategy,
         allow_browser_session=allow_browser_session,
+        total_timeout=total_timeout,
     )
 
 

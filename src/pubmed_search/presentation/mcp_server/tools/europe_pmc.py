@@ -26,7 +26,6 @@ Phase 3 Updates (v0.2.8):
 
 from __future__ import annotations
 
-import contextlib
 import logging
 from typing import TYPE_CHECKING, Any, Literal, Union
 
@@ -50,6 +49,7 @@ from .agent_output import (
     serialize_structured_payload,
     sort_source_count_rows,
 )
+from .tool_runtime import safe_log, safe_report_progress
 
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
@@ -565,14 +565,10 @@ def register_europe_pmc_tools(mcp: FastMCP):
         """
 
         async def _progress(progress: float, total: float, message: str) -> None:
-            if ctx is not None:
-                with contextlib.suppress(Exception):
-                    await ctx.report_progress(progress, total, message)
+            await safe_report_progress(ctx, progress, total, message)
 
         async def _log(level: Literal["debug", "info", "warning", "error"], message: str) -> None:
-            if ctx is not None:
-                with contextlib.suppress(Exception):
-                    await ctx.log(level, message, logger_name=__name__)
+            await safe_log(ctx, level, message, logger_name=__name__)
 
         await _progress(1, 6, "Resolving article identifiers...")
         normalized_output_format = normalize_output_format(output_format)
@@ -644,14 +640,20 @@ def register_europe_pmc_tools(mcp: FastMCP):
                 sections=sections,
                 include_figures=include_figures,
                 extended_sources=extended_sources,
+                allow_browser_session=allow_browser_session,
             ),
             progress=_progress,
             log=_log,
         )
 
         # Keep the main service as the primary path, then fall back to
-        # multi-source PDF retrieval when no structured content is available.
-        if not retrieval.fulltext_content and any([detected_pmid, detected_pmcid, detected_doi]):
+        # multi-source PDF retrieval only when the service has not already
+        # attempted the extended downloader path.
+        if (
+            not retrieval.fulltext_content
+            and any([detected_pmid, detected_pmcid, detected_doi])
+            and not retrieval.extended_sources_attempted
+        ):
             await _progress(5.5, 6, "Trying multi-source PDF retrieval fallback...")
             retrieval.sources_tried.append("PDF Retrieval Fallback")
             try:
@@ -927,9 +929,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
         """
 
         async def _progress(progress: float, total: float, message: str) -> None:
-            if ctx is not None:
-                with contextlib.suppress(Exception):
-                    await ctx.report_progress(progress, total, message)
+            await safe_report_progress(ctx, progress, total, message)
 
         # Phase 2.1: Input normalization
         normalized_pmid = InputNormalizer.normalize_pmid_single(pmid) if pmid else None

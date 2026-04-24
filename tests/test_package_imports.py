@@ -49,11 +49,30 @@ class TestPackageImports:
         assert SearchStrategy is not None
 
     async def test_http_client_imports(self):
-        """HTTP client classes should be importable."""
-        from pubmed_search import PubMedClient, SearchResult
+        """HTTP client classes should be importable from their dedicated module."""
+        from pubmed_search.infrastructure.http import PubMedClient
+        from pubmed_search.infrastructure.http.pubmed_client import SearchResult
 
         assert PubMedClient is not None
         assert SearchResult is not None
+
+    async def test_root_package_excludes_legacy_http_exports_from_public_surface(self):
+        """Deprecated HTTP wrapper should not remain in the declared root surface."""
+        import pubmed_search
+
+        assert "PubMedClient" not in pubmed_search.__all__
+        assert "SearchResult" not in pubmed_search.__all__
+        assert not hasattr(pubmed_search, "PubMedClient")
+        assert not hasattr(pubmed_search, "SearchResult")
+
+    async def test_legacy_root_http_attributes_are_removed(self):
+        """Legacy root-level HTTP attributes should be absent after alias removal."""
+        import pubmed_search
+
+        with pytest.raises(AttributeError):
+            getattr(pubmed_search, "PubMedClient")
+        with pytest.raises(AttributeError):
+            getattr(pubmed_search, "SearchResult")
 
     async def test_ncbi_extended_imports(self):
         """NCBI Extended client should be importable."""

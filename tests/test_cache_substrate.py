@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from pubmed_search.shared.cache_substrate import CacheStore, JsonFileCacheBackend, MemoryCacheBackend
+import json
+from concurrent.futures import ThreadPoolExecutor
+
+from pubmed_search.shared.cache_substrate import CacheStore, JsonFileCacheBackend, MemoryCacheBackend, StoredCacheEntry
 
 
 class TestCacheStore:
@@ -44,3 +47,24 @@ class TestCacheStore:
         reloaded = CacheStore[str](JsonFileCacheBackend(file_path), default_ttl=60.0)
 
         assert reloaded.get("paper:123") == "cached"
+
+    def test_json_backend_concurrent_mutations_keep_file_valid(self, tmp_path):
+        file_path = tmp_path / "cache.json"
+        backend = JsonFileCacheBackend(file_path)
+
+        def _mutate(index: int) -> None:
+            key = f"paper:{index:03d}"
+            backend.set_entry(key, StoredCacheEntry(value={"index": index}))
+            if index % 4 == 0:
+                backend.delete(key)
+
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            list(executor.map(_mutate, range(80)))
+
+        payload = json.loads(file_path.read_text(encoding="utf-8"))
+        assert isinstance(payload, dict)
+        assert not file_path.with_name("cache.json.tmp").exists()
+
+        reloaded = JsonFileCacheBackend(file_path)
+        keys = reloaded.keys()
+        assert all(key.startswith("paper:") for key in keys)

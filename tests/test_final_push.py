@@ -18,13 +18,13 @@ class TestClientRemainingMethods:
         """Test LiteratureSearcher class attributes."""
         from pubmed_search import LiteratureSearcher
 
-        LiteratureSearcher(email="test@example.com", api_key="key")
+        searcher = LiteratureSearcher(email="test@example.com", api_key="key")
 
-        # Check attributes are set
-        from Bio import Entrez
-
-        assert Entrez.email == "test@example.com"
-        assert Entrez.api_key == "key"
+        # Constructor must NOT set Biopython globals (per-call isolation via
+        # run_entrez_callable is the correct pattern after fix 1).
+        # Verify that instance attributes are stored correctly instead.
+        assert searcher._email == "test@example.com"
+        assert searcher._api_key == "key"
 
 
 class TestSearchRemainingPaths:

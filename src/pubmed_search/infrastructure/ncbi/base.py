@@ -8,6 +8,8 @@ Includes rate limiting to respect NCBI API limits.
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import threading
 import time
 from enum import Enum
 from typing import TYPE_CHECKING, Any, TypeVar
@@ -27,6 +29,8 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
 T = TypeVar("T")
+_MISSING = object()
+DEFAULT_ENTREZ_TOOL = "pubmed-search-mcp"
 
 
 class SearchStrategy(Enum):
@@ -43,6 +47,7 @@ class SearchStrategy(Enum):
 _last_request_time = 0.0
 _min_request_interval = 0.34  # ~3 requests/second (NCBI limit without API key)
 _rate_lock = asyncio.Lock()
+_entrez_runtime_lock = threading.Lock()
 
 _NCBI_RETRYABLE_MESSAGES = (
     "database is not supported",
@@ -60,6 +65,7 @@ def build_ncbi_execution_policy(
     api_key: str | None = None,
     service_name: str = "ncbi-entrez",
     timeout: float = 45.0,
+    total_timeout: float | None = None,
     max_attempts: int = 3,
     base_delay: float = 1.0,
 ) -> RequestExecutionPolicy:
@@ -69,6 +75,7 @@ def build_ncbi_execution_policy(
     return RequestExecutionPolicy(
         service_name=service_name,
         timeout=timeout,
+        total_timeout=total_timeout or _derive_total_timeout(timeout, max_attempts),
         retry=RetryPolicy(
             max_attempts=max_attempts,
             base_delay=base_delay,
@@ -85,12 +92,49 @@ def build_ncbi_execution_policy(
     )
 
 
+def run_entrez_callable(
+    entrez_module: Any,
+    callable_obj: Any,
+    *args: Any,
+    email: str | None,
+    api_key: str | None,
+    tool: str = DEFAULT_ENTREZ_TOOL,
+    **kwargs: Any,
+) -> Any:
+    """Execute a Bio.Entrez callable with isolated runtime configuration."""
+
+    with _entrez_runtime_lock:
+        snapshot = {
+            "email": getattr(entrez_module, "email", _MISSING),
+            "api_key": getattr(entrez_module, "api_key", _MISSING),
+            "tool": getattr(entrez_module, "tool", _MISSING),
+            "max_tries": getattr(entrez_module, "max_tries", _MISSING),
+            "sleep_between_tries": getattr(entrez_module, "sleep_between_tries", _MISSING),
+        }
+
+        entrez_module.email = email
+        entrez_module.api_key = api_key
+        entrez_module.tool = tool
+        entrez_module.max_tries = 1
+        entrez_module.sleep_between_tries = 0
+        try:
+            return callable_obj(*args, **kwargs)
+        finally:
+            for attr, value in snapshot.items():
+                if value is _MISSING:
+                    with contextlib.suppress(AttributeError):
+                        delattr(entrez_module, attr)
+                    continue
+                setattr(entrez_module, attr, value)
+
+
 async def execute_entrez_operation(
     operation: Callable[[], Awaitable[T]],
     *,
     api_key: str | None = None,
     service_name: str = "ncbi-entrez",
     timeout: float = 45.0,
+    total_timeout: float | None = None,
     max_attempts: int = 3,
     base_delay: float = 1.0,
 ) -> T:
@@ -99,6 +143,7 @@ async def execute_entrez_operation(
         api_key=api_key,
         service_name=service_name,
         timeout=timeout,
+        total_timeout=total_timeout,
         max_attempts=max_attempts,
         base_delay=base_delay,
     )
@@ -133,20 +178,14 @@ class EntrezBase:
             email: Email address required by NCBI Entrez API.
             api_key: Optional NCBI API key for higher rate limits (10/sec vs 3/sec).
         """
-        global _min_request_interval
-
-        Entrez.email = email  # type: ignore[assignment]
-        if api_key:
-            Entrez.api_key = api_key  # type: ignore[assignment]
-            _min_request_interval = 0.1  # 10 requests/second with API key
-        else:
-            _min_request_interval = 0.34  # ~3 requests/second without API key
-
-        Entrez.max_tries = 1
-        Entrez.sleep_between_tries = 0
-
+        # NOTE: Entrez global state (email, api_key, tool) is intentionally NOT set here.
+        # run_entrez_callable() snapshot-sets-restores per call with a threading lock,
+        # which is safe under concurrent asyncio tasks. Setting globals in __init__ was
+        # a no-op in the face of that mechanism and created race conditions under
+        # concurrent instantiation.
         self._email = email
         self._api_key = api_key
+        self._tool = DEFAULT_ENTREZ_TOOL
         self._transport_kernel = get_transport_kernel()
 
     def _build_entrez_policy(
@@ -154,6 +193,7 @@ class EntrezBase:
         *,
         service_name: str = "ncbi-entrez",
         timeout: float = 45.0,
+        total_timeout: float | None = None,
         max_attempts: int = 3,
         base_delay: float = 1.0,
     ) -> RequestExecutionPolicy:
@@ -161,6 +201,7 @@ class EntrezBase:
             api_key=self._api_key,
             service_name=service_name,
             timeout=timeout,
+            total_timeout=total_timeout,
             max_attempts=max_attempts,
             base_delay=base_delay,
         )
@@ -171,6 +212,7 @@ class EntrezBase:
         *,
         service_name: str = "ncbi-entrez",
         timeout: float = 45.0,
+        total_timeout: float | None = None,
         max_attempts: int = 3,
         base_delay: float = 1.0,
     ) -> T:
@@ -179,6 +221,7 @@ class EntrezBase:
             policy=self._build_entrez_policy(
                 service_name=service_name,
                 timeout=timeout,
+                total_timeout=total_timeout,
                 max_attempts=max_attempts,
                 base_delay=base_delay,
             ),
@@ -188,7 +231,16 @@ class EntrezBase:
         """Execute an Entrez call through the shared transport kernel."""
 
         async def call() -> Any:
-            return await asyncio.to_thread(func, *args, **kwargs)
+            return await asyncio.to_thread(
+                run_entrez_callable,
+                Entrez,
+                func,
+                *args,
+                email=self._email,
+                api_key=self._api_key,
+                tool=self._tool,
+                **kwargs,
+            )
 
         return await self._execute_entrez_call(call)
 
@@ -201,3 +253,10 @@ class EntrezBase:
     def api_key(self) -> str | None:
         """Get configured API key."""
         return self._api_key
+
+
+def _derive_total_timeout(timeout: float, max_attempts: int) -> float:
+    """Cap end-to-end Entrez waits so retries do not amplify into minutes."""
+    if max_attempts <= 1:
+        return timeout
+    return max(timeout, min(timeout * 2, timeout + 30.0))

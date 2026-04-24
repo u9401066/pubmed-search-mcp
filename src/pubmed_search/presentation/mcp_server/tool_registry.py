@@ -135,6 +135,11 @@ TOOL_CATEGORIES: dict[str, dict[str, Any]] = {
             "get_citation_metrics",
         ],
     },
+    "reference_verification": {
+        "name": "引用驗證",
+        "description": "Reference list verification with PubMed evidence",
+        "tools": ["verify_reference_list"],
+    },
     "fulltext": {
         "name": "全文工具",
         "description": "全文取得與文本挖掘",
@@ -176,6 +181,7 @@ TOOL_CATEGORIES: dict[str, dict[str, Any]] = {
             "get_session_pmids",
             "get_cached_article",
             "get_session_summary",
+            "get_session_log",
         ],
     },
     "institutional": {

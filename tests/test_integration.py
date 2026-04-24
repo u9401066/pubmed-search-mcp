@@ -10,6 +10,7 @@ Skip with: pytest -m "not integration"
 
 from __future__ import annotations
 
+import asyncio
 import os
 import time
 
@@ -38,10 +39,10 @@ class TestRealPubMedSearch:
     )
     async def test_real_search(self, real_email):
         """Test real PubMed search."""
-        from pubmed_search import PubMedClient
+        from pubmed_search.infrastructure.http import PubMedClient
 
         # Longer delay to avoid NCBI rate limiting when running with other tests
-        time.sleep(2)
+        await asyncio.sleep(2)
 
         client = PubMedClient(email=real_email)
 
@@ -56,10 +57,10 @@ class TestRealPubMedSearch:
                     return  # Success
                 # Empty results, retry after delay
                 last_error = "Empty results returned"
-                time.sleep(2)
+                await asyncio.sleep(2)
             except Exception as e:
                 last_error = str(e)
-                time.sleep(2)
+                await asyncio.sleep(2)
 
         # If we get here, all retries failed
         pytest.skip(f"Integration test flaky: {last_error}")

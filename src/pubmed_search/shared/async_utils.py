@@ -98,12 +98,17 @@ class RequestExecutionPolicy:
 
     service_name: str
     timeout: float | None = None
+    total_timeout: float | None = None
     retry: RetryPolicy = field(default_factory=RetryPolicy)
     rate_limit: RateLimitPolicy | None = None
     circuit_breaker: CircuitBreaker | None = None
     circuit_breaker_policy: CircuitBreakerPolicy | None = None
     concurrency_limit: int | None = None
     concurrency_name: str | None = None
+
+
+class OperationBudgetExceeded(asyncio.TimeoutError):
+    """Raised when the overall execution budget is exhausted."""
 
 
 class RetryableOperationError(Exception):
@@ -311,20 +316,28 @@ class TransportExecutionKernel:
         should_retry: Callable[[BaseException], bool] | None = None,
     ) -> T:
         attempts = max(1, policy.retry.max_attempts)
+        deadline = self._build_deadline(policy.total_timeout)
 
         for attempt in range(attempts):
             limiter = self._resolve_rate_limiter(policy)
             breaker = self._resolve_circuit_breaker(policy)
             bulkhead = self._resolve_bulkhead(policy)
 
+            self._raise_if_budget_exhausted(policy, deadline)
+
             if limiter is not None:
-                await limiter.acquire()
+                await self._await_with_budget(
+                    limiter.acquire(),
+                    policy=policy,
+                    deadline=deadline,
+                    phase="rate limit wait",
+                )
 
             try:
                 async with self._bulkhead_context(bulkhead), self._breaker_context(breaker):
-                    if policy.timeout is None:
-                        return await operation()
-                    return await asyncio.wait_for(operation(), timeout=policy.timeout)
+                    return await self._execute_operation_with_budget(operation, policy=policy, deadline=deadline)
+            except OperationBudgetExceeded:
+                raise
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
@@ -345,9 +358,102 @@ class TransportExecutionKernel:
                     exc,
                     delay,
                 )
-                await asyncio.sleep(delay)
+                await self._sleep_with_budget(delay, policy=policy, deadline=deadline)
 
         raise RuntimeError(f"{policy.service_name} transport execution exhausted unexpectedly")
+
+    @staticmethod
+    def _build_deadline(total_timeout: float | None) -> float | None:
+        if total_timeout is None:
+            return None
+        return time.monotonic() + total_timeout
+
+    @staticmethod
+    def _remaining_budget(deadline: float | None) -> float | None:
+        if deadline is None:
+            return None
+        return deadline - time.monotonic()
+
+    @classmethod
+    def _raise_if_budget_exhausted(
+        cls,
+        policy: RequestExecutionPolicy,
+        deadline: float | None,
+    ) -> None:
+        remaining = cls._remaining_budget(deadline)
+        if remaining is None or remaining > 0:
+            return
+        raise OperationBudgetExceeded(cls._budget_message(policy, "overall execution budget"))
+
+    @staticmethod
+    def _budget_message(policy: RequestExecutionPolicy, phase: str) -> str:
+        if policy.total_timeout is None:
+            return f"{policy.service_name} timed out during {phase}"
+        return (
+            f"{policy.service_name} exceeded total timeout of {policy.total_timeout:.2f}s "
+            f"during {phase}"
+        )
+
+    @classmethod
+    async def _await_with_budget(
+        cls,
+        awaitable: Awaitable[T],
+        *,
+        policy: RequestExecutionPolicy,
+        deadline: float | None,
+        phase: str,
+    ) -> T:
+        remaining = cls._remaining_budget(deadline)
+        if remaining is None:
+            return await awaitable
+        if remaining <= 0:
+            raise OperationBudgetExceeded(cls._budget_message(policy, phase))
+        try:
+            return await asyncio.wait_for(awaitable, timeout=remaining)
+        except asyncio.TimeoutError as exc:
+            raise OperationBudgetExceeded(cls._budget_message(policy, phase)) from exc
+
+    @classmethod
+    async def _execute_operation_with_budget(
+        cls,
+        operation: Callable[[], Awaitable[T]],
+        *,
+        policy: RequestExecutionPolicy,
+        deadline: float | None,
+    ) -> T:
+        remaining = cls._remaining_budget(deadline)
+        timeout = policy.timeout
+        if remaining is not None:
+            if remaining <= 0:
+                raise OperationBudgetExceeded(cls._budget_message(policy, "operation"))
+            timeout = remaining if timeout is None else min(timeout, remaining)
+
+        if timeout is None:
+            return await operation()
+
+        try:
+            return await asyncio.wait_for(operation(), timeout=timeout)
+        except asyncio.TimeoutError as exc:
+            remaining_after_timeout = cls._remaining_budget(deadline)
+            if remaining_after_timeout is not None and remaining_after_timeout <= 0:
+                raise OperationBudgetExceeded(cls._budget_message(policy, "operation")) from exc
+            raise
+
+    @classmethod
+    async def _sleep_with_budget(
+        cls,
+        delay: float,
+        *,
+        policy: RequestExecutionPolicy,
+        deadline: float | None,
+    ) -> None:
+        remaining = cls._remaining_budget(deadline)
+        if remaining is None:
+            await asyncio.sleep(delay)
+            return
+        if remaining <= 0 or delay > remaining:
+            raise OperationBudgetExceeded(cls._budget_message(policy, "retry backoff"))
+        await asyncio.sleep(delay)
 
     @staticmethod
     def _resolve_rate_limiter(policy: RequestExecutionPolicy) -> RateLimiter | None:

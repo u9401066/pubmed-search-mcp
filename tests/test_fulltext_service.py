@@ -107,6 +107,7 @@ class TestFulltextService:
             pmcid=None,
             doi="10.1234/test",
             strategy="extract_text",
+            allow_browser_session=None,
         )
         assert result.fulltext_provenance == "derived"
         assert result.content_sections[0]["title"] == "Extracted PDF Text"

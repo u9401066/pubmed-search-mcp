@@ -317,14 +317,13 @@ class TestBaseAPIKey:
     """Test base module with API key."""
 
     async def test_entrez_base_no_api_key(self):
-        """Test EntrezBase without API key."""
+        """Test EntrezBase without API key stores credentials on instance."""
         from pubmed_search.infrastructure.ncbi.base import EntrezBase
 
-        EntrezBase(email="test@example.com")
+        base = EntrezBase(email="test@example.com")
 
-        from Bio import Entrez
-
-        assert Entrez.email == "test@example.com"
+        # Globals are NOT set in constructor (per-call isolation via run_entrez_callable).
+        assert base._email == "test@example.com"
 
 
 class TestPicoExtraction:

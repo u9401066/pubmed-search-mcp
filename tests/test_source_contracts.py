@@ -1,12 +1,45 @@
 from __future__ import annotations
 
+import asyncio
+
 import httpx
+import pytest
 
 from pubmed_search.shared.async_utils import RetryableOperationError
 from pubmed_search.shared.source_contracts import (
+    SourceAdapterCall,
     _coerce_source_adapter_outcome,
+    gather_source_adapter_calls,
     normalize_source_adapter_error,
 )
+
+
+@pytest.mark.asyncio
+async def test_gather_source_adapter_calls_soft_times_out_straggler() -> None:
+    async def _fast() -> list[str]:
+        return ["ok"]
+
+    async def _slow() -> list[str]:
+        await asyncio.Event().wait()
+        return ["never"]
+
+    results = await asyncio.wait_for(
+        gather_source_adapter_calls(
+            [
+                SourceAdapterCall(source="fast", operation="search", execute=_fast),
+                SourceAdapterCall(source="slow", operation="search", execute=_slow),
+            ],
+            per_call_timeout=0.01,
+        ),
+        timeout=0.1,
+    )
+
+    assert len(results) == 2
+    assert results[0].status == "ok"
+    assert results[0].items == ["ok"]
+    assert results[1].status == "error"
+    assert results[1].errors[0].kind == "timeout"
+    assert "0.01s" in results[1].errors[0].message
 
 
 class TestCoerceSourceAdapterOutcome:

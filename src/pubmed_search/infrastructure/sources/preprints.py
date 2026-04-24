@@ -39,6 +39,7 @@ ARXIV_MEDICAL_CATEGORIES = [
     "cs.LG",  # Machine Learning
     "physics.med-ph",  # Medical Physics
 ]
+PREPRINT_SOURCE_TIMEOUT_SECONDS = 20.0
 
 
 @dataclass
@@ -492,7 +493,10 @@ class PreprintSearcher:
                 )
             )
 
-        adapter_results = await gather_source_adapter_calls(calls)
+        adapter_results = await gather_source_adapter_calls(
+            calls,
+            per_call_timeout=PREPRINT_SOURCE_TIMEOUT_SECONDS,
+        )
         for adapter_result in adapter_results:
             serialized = [article.to_dict() for article in adapter_result.items]
             results["by_source"][adapter_result.source] = serialized

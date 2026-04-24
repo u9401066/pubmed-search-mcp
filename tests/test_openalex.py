@@ -230,6 +230,132 @@ class TestGetCitations:
 
 
 # ============================================================
+# get_source / get_sources_batch
+# ============================================================
+
+
+class TestSourceMetadata:
+    @patch.object(OpenAlexClient, "_make_request")
+    async def test_get_source_success(self, mock_req, client):
+        mock_req.return_value = {
+            "id": "https://openalex.org/S123",
+            "display_name": "Nature Medicine",
+            "issn": ["1078-8956"],
+            "issn_l": "1078-8956",
+            "summary_stats": {
+                "h_index": 200,
+                "2yr_mean_citedness": 12.5,
+                "i10_index": 100,
+            },
+            "works_count": 1000,
+            "cited_by_count": 50000,
+            "is_in_doaj": False,
+            "type": "journal",
+            "x_concepts": [
+                {"display_name": "Medicine", "level": 0},
+                {"display_name": "Oncology", "level": 1},
+            ],
+        }
+
+        result = await client.get_source("https://openalex.org/S123")
+
+        assert result is not None
+        assert result["openalex_source_id"] == "S123"
+        assert result["display_name"] == "Nature Medicine"
+        assert result["subject_areas"] == ["Medicine", "Oncology"]
+
+    @patch.object(OpenAlexClient, "_make_request")
+    async def test_get_sources_batch_success(self, mock_req, client):
+        mock_req.return_value = {
+            "results": [
+                {
+                    "id": "https://openalex.org/S1",
+                    "display_name": "Journal One",
+                    "summary_stats": {},
+                    "x_concepts": [],
+                },
+                {
+                    "id": "https://openalex.org/S2",
+                    "display_name": "Journal Two",
+                    "summary_stats": {},
+                    "x_concepts": [],
+                },
+            ]
+        }
+
+        results = await client.get_sources_batch(["https://openalex.org/S1", "S2"])
+
+        assert set(results) == {"S1", "S2"}
+        assert results["S1"]["display_name"] == "Journal One"
+
+    async def test_get_sources_batch_empty_input(self, client):
+        assert await client.get_sources_batch([]) == {}
+
+
+# ============================================================
+# get_author / search_authors
+# ============================================================
+
+
+class TestAuthorMetadata:
+    @patch.object(OpenAlexClient, "_make_request")
+    async def test_get_author_success(self, mock_req, client):
+        mock_req.return_value = {
+            "id": "https://openalex.org/A123",
+            "display_name": "Jane Doe",
+            "ids": {"orcid": "https://orcid.org/0000-0001-2345-6789"},
+            "summary_stats": {
+                "h_index": 40,
+                "2yr_mean_citedness": 3.2,
+                "i10_index": 80,
+            },
+            "works_count": 120,
+            "cited_by_count": 4500,
+            "last_known_institutions": [{"display_name": "MIT"}],
+            "x_concepts": [{"display_name": "Machine learning"}],
+        }
+
+        result = await client.get_author("A123")
+
+        assert result is not None
+        assert result["openalex_author_id"] == "A123"
+        assert result["orcid"] == "0000-0001-2345-6789"
+        assert result["last_known_institutions"] == ["MIT"]
+        assert result["concepts"] == ["Machine learning"]
+
+    @patch.object(OpenAlexClient, "_make_request")
+    async def test_get_author_normalizes_orcid_identifier(self, mock_req, client):
+        mock_req.return_value = {"id": "https://openalex.org/A123", "display_name": "Jane Doe"}
+
+        await client.get_author("0000-0001-2345-6789")
+
+        url = mock_req.call_args[0][0]
+        assert "https%3A%2F%2Forcid.org%2F0000-0001-2345-6789" in url
+
+    @patch.object(OpenAlexClient, "_make_request")
+    async def test_search_authors_success(self, mock_req, client):
+        mock_req.return_value = {
+            "results": [
+                {
+                    "id": "https://openalex.org/A1",
+                    "display_name": "John Smith",
+                    "summary_stats": {},
+                }
+            ]
+        }
+
+        results = await client.search_authors("John Smith")
+
+        assert len(results) == 1
+        assert results[0]["display_name"] == "John Smith"
+
+    @patch.object(OpenAlexClient, "_make_request")
+    async def test_search_authors_returns_empty_on_none(self, mock_req, client):
+        mock_req.return_value = None
+        assert await client.search_authors("Nobody") == []
+
+
+# ============================================================
 # _normalize_work
 # ============================================================
 

@@ -30,6 +30,15 @@ from typing import Literal
 import httpx
 from typing_extensions import Self
 
+from pubmed_search.shared.async_utils import (
+    RetryableOperationError,
+    create_async_http_client,
+    get_transport_kernel,
+    parse_retry_after,
+)
+
+from .base import build_ncbi_execution_policy
+
 logger = logging.getLogger(__name__)
 
 # API endpoint (redirected from api.ncbi.nlm.nih.gov)
@@ -38,6 +47,26 @@ CITATION_API_BASE = "https://pmc.ncbi.nlm.nih.gov/api/ctxp/v1/pubmed/"
 # Supported export formats
 CitationFormat = Literal["ris", "medline", "csl"]
 OFFICIAL_FORMATS: list[CitationFormat] = ["ris", "medline", "csl"]
+
+# Module-level singleton HTTP client shared across all NCBICitationExporter instances.
+# This converges on the same transport abstraction instead of each instance owning
+# a separate connection pool.
+_SHARED_CITATION_CLIENT: httpx.AsyncClient | None = None
+
+
+def _get_citation_http_client() -> httpx.AsyncClient:
+    """Return the lazily-created module-level citation HTTP client."""
+    global _SHARED_CITATION_CLIENT
+    if _SHARED_CITATION_CLIENT is None:
+        _SHARED_CITATION_CLIENT = create_async_http_client(
+            timeout=60.0,
+            headers={"User-Agent": "PubMedSearchMCP/1.0 (github.com/u9401066/pubmed-search-mcp)"},
+            follow_redirects=True,
+            max_connections=20,
+            max_keepalive_connections=10,
+            keepalive_expiry=30.0,
+        )
+    return _SHARED_CITATION_CLIENT
 
 
 @dataclass
@@ -65,26 +94,33 @@ class NCBICitationExporter:
             print(result.content)
     """
 
-    def __init__(self, timeout: float = 30.0):
+    def __init__(self, timeout: float = 30.0, api_key: str | None = None):
         """
         Initialize citation exporter.
 
         Args:
             timeout: Request timeout in seconds
+            api_key: Optional NCBI API key used to tune shared transport rate limits
         """
         self.timeout = timeout
+        self._api_key = api_key
+        self._transport_kernel = get_transport_kernel()
+        # Instance-level client override (primarily used for testing).
+        # When None the module-level shared client is used automatically.
         self._client: httpx.AsyncClient | None = None
 
     @property
     def client(self) -> httpx.AsyncClient:
-        """Lazy-initialized async HTTP client."""
-        if self._client is None:
-            self._client = httpx.AsyncClient(
-                timeout=self.timeout,
-                follow_redirects=True,
-                headers={"User-Agent": "PubMedSearchMCP/1.0 (github.com/u9401066/pubmed-search-mcp)"},
-            )
-        return self._client
+        """Return the active HTTP client (instance override or shared singleton)."""
+        return self._client if self._client is not None else _get_citation_http_client()
+
+    def _build_execution_policy(self):
+        """Build the shared transport policy for official citation export requests."""
+        return build_ncbi_execution_policy(
+            api_key=self._api_key,
+            service_name="ncbi-citation-exporter",
+            timeout=self.timeout,
+        )
 
     async def export_citations(
         self,
@@ -135,12 +171,23 @@ class NCBICitationExporter:
             "format": format,
             "id": pmid_str,
         }
+        policy = self._build_execution_policy()
 
         try:
-            response = await self.client.get(CITATION_API_BASE, params=params)
-            response.raise_for_status()
+            async def _perform_request() -> str:
+                response = await self.client.get(CITATION_API_BASE, params=params)
 
-            content = response.text
+                if response.status_code in policy.retry.retryable_status_codes:
+                    raise RetryableOperationError(
+                        f"HTTP {response.status_code}",
+                        retry_after=parse_retry_after(response.headers.get("Retry-After")),
+                        status_code=response.status_code,
+                    )
+
+                response.raise_for_status()
+                return response.text
+
+            content = await self._transport_kernel.execute(_perform_request, policy=policy)
 
             # Check for API error response (JSON with error)
             if content.startswith("{") and '"format"' in content:
@@ -186,9 +233,22 @@ class NCBICitationExporter:
                 pmid_count=len(pmids),
                 error=f"Request failed: {e!s}",
             )
+        except Exception as e:  # noqa: BLE001
+            logger.exception(f"Citation exporter request failed: {e}")
+            return CitationResult(
+                success=False,
+                format=format,
+                content="",
+                pmid_count=len(pmids),
+                error=f"Export failed: {e!s}",
+            )
 
     async def close(self) -> None:
-        """Close HTTP client."""
+        """Close the instance-level HTTP client override if one was set.
+
+        The module-level shared singleton is intentionally kept open across
+        requests for connection reuse and is NOT closed here.
+        """
         if self._client is not None:
             await self._client.aclose()
             self._client = None

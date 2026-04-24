@@ -4,8 +4,10 @@ Tests for preprint sources (arXiv, medRxiv, bioRxiv).
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock, patch
 
+from pubmed_search.infrastructure.sources import preprints as preprints_module
 from pubmed_search.infrastructure.sources.preprints import (
     ArXivClient,
     MedBioRxivClient,
@@ -142,6 +144,37 @@ class TestPreprintSearcher:
         assert "articles" in results
         assert results["total"] == 1
         assert "medrxiv" in results["sources_searched"]
+
+    @patch.object(MedBioRxivClient, "search_medrxiv", new_callable=AsyncMock)
+    @patch.object(ArXivClient, "search", new_callable=AsyncMock)
+    async def test_search_soft_times_out_straggler_source(self, mock_arxiv, mock_medrxiv):
+        mock_arxiv.return_value = [
+            PreprintArticle(
+                id="1",
+                title="fast source",
+                abstract="",
+                authors=[],
+                published="2024-01-01",
+                updated=None,
+                source="arxiv",
+                categories=["q-bio.QM"],
+                pdf_url=None,
+                doi=None,
+            )
+        ]
+
+        async def _hang(*args, **kwargs):
+            await asyncio.Event().wait()
+
+        mock_medrxiv.side_effect = _hang
+
+        searcher = PreprintSearcher()
+        with patch.object(preprints_module, "PREPRINT_SOURCE_TIMEOUT_SECONDS", 0.01):
+            async with asyncio.timeout(0.2):
+                results = await searcher.search(query="covid", sources=["arxiv", "medrxiv"], limit=3)
+
+        assert results["total"] == 1
+        assert any("timed out" in error.lower() for error in results["errors"])
 
 
 class TestIcdDetection:

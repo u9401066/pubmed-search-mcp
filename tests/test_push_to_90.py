@@ -127,7 +127,7 @@ class TestClientSearchResult:
 
     async def test_search_result_creation(self):
         """Test SearchResult instantiation."""
-        from pubmed_search import SearchResult
+        from pubmed_search.infrastructure.http.pubmed_client import SearchResult
 
         result = SearchResult(
             pmid="12345",
@@ -145,7 +145,7 @@ class TestClientSearchResult:
 
     async def test_search_result_from_dict(self):
         """Test SearchResult.from_dict method."""
-        from pubmed_search import SearchResult
+        from pubmed_search.infrastructure.http.pubmed_client import SearchResult
 
         data = {
             "pmid": "67890",
@@ -360,15 +360,12 @@ class TestBaseEntrezInit:
     """Test base Entrez initialization."""
 
     async def test_entrez_base_with_api_key_rate_limit(self):
-        """Test rate limit is adjusted with API key."""
+        """Test EntrezBase with API key stores credentials on instance."""
         from pubmed_search.infrastructure.ncbi.base import EntrezBase
 
-        # With API key
-        EntrezBase(email="test@example.com", api_key="test_key")
-
-        from Bio import Entrez
-
-        assert Entrez.api_key == "test_key"
+        # With API key — globals are NOT set in constructor (per-call isolation).
+        base = EntrezBase(email="test@example.com", api_key="test_key")
+        assert base._api_key == "test_key"
 
 
 class TestSearchParseArticle:

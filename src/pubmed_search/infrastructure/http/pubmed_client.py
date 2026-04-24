@@ -1,11 +1,16 @@
-"""
-PubMed Client - High-level wrapper for PubMed API interactions.
+"""PubMed Client - High-level wrapper for PubMed API interactions.
 
 This module provides a clean, user-friendly interface for PubMed searches.
+
+.. deprecated::
+    :class:`PubMedClient` is a thin wrapper over :class:`LiteratureSearcher` and
+    will be removed in a future major version.  Import and use
+    ``LiteratureSearcher`` directly.
 """
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 from typing import Any
 
@@ -109,6 +114,12 @@ class PubMedClient:
             email: Email address required by NCBI Entrez API.
             api_key: Optional NCBI API key for higher rate limits.
         """
+        warnings.warn(
+            "PubMedClient is deprecated and will be removed in a future major version. "
+            "Use LiteratureSearcher directly.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self._searcher = LiteratureSearcher(email=email, api_key=api_key)
 
     @property

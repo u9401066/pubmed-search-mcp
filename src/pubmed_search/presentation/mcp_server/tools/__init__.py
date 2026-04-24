@@ -1,7 +1,7 @@
 """
 PubMed Search MCP Tools (v0.5.2)
 
-🎯 42 個 MCP 工具 / 15 categories：
+🎯 44 個 MCP 工具 / 16 categories：
 
 ✅ 搜尋工具 (1)：
 - unified_search: 統一搜索入口，自動多源搜索 (PubMed, Europe PMC, OpenAlex, Semantic Scholar, CrossRef, CORE)
@@ -12,6 +12,9 @@ PubMed Search MCP Tools (v0.5.2)
 ✅ 文章探索 (5)：
 - fetch_article_details, find_related_articles, find_citing_articles
 - get_article_references, get_citation_metrics
+
+✅ 引用驗證 (1)：
+- verify_reference_list
 
 ✅ 全文工具 (2)：
 - get_fulltext: 多源全文取得
@@ -31,8 +34,8 @@ PubMed Search MCP Tools (v0.5.2)
 ✅ 研究時間軸 (3)：
 - build_research_timeline, analyze_timeline_milestones, compare_timelines
 
-✅ Session 管理 (4) [在 session_tools.py 註冊]：
-- read_session, get_session_pmids, get_cached_article, get_session_summary
+✅ Session 管理 (5) [在 session_tools.py 註冊]：
+- read_session, get_session_pmids, get_cached_article, get_session_summary, get_session_log
 
 ✅ 匯出 (1)：
 - prepare_export
@@ -77,6 +80,7 @@ from .ncbi_extended import register_ncbi_extended_tools
 from .openurl import register_openurl_tools  # Institutional access (OpenURL)
 from .pico import register_pico_tools
 from .pipeline_tools import register_pipeline_tools  # Pipeline persistence & management
+from .reference_verification import register_reference_verification_tools
 from .strategy import register_strategy_tools
 from .timeline import register_timeline_tools
 from .unified import register_unified_search_tools
@@ -89,7 +93,7 @@ if TYPE_CHECKING:
 
 
 def register_all_tools(mcp: FastMCP, searcher: LiteratureSearcher):
-    """註冊全部 42 個 MCP 工具 (15 categories)。"""
+    """註冊全部 44 個 MCP 工具 (16 categories)。"""
     # 1. 搜尋工具 (1)
     register_unified_search_tools(mcp, searcher)
 
@@ -101,6 +105,9 @@ def register_all_tools(mcp: FastMCP, searcher: LiteratureSearcher):
 
     # 4. 文章探索 (5)
     register_discovery_tools(mcp, searcher)
+
+    # 4.5 引用驗證 (1)
+    register_reference_verification_tools(mcp, searcher)
 
     # 5. 匯出工具 (1)
     register_export_tools(mcp, searcher)
@@ -156,4 +163,5 @@ __all__ = [
     "register_image_search_tools",
     "register_pipeline_tools",
     "register_figure_tools",
+    "register_reference_verification_tools",
 ]

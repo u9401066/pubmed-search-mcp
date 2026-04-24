@@ -54,6 +54,7 @@ class TestListRegisteredTools:
             "search",
             "query_intelligence",
             "discovery",
+            "reference_verification",
             "fulltext",
             "figure",
             "ncbi_extended",

@@ -38,6 +38,7 @@ if TYPE_CHECKING:
     from .source_adapters import ImageSourceAdapter
 
 logger = logging.getLogger(__name__)
+IMAGE_SOURCE_TIMEOUT_SECONDS = 20.0
 
 
 @dataclass
@@ -178,7 +179,8 @@ class ImageSearchService:
                 search_fields=search_fields,
                 video_only=video_only,
                 hmp_type=hmp_type,
-            )
+            ),
+            per_call_timeout=IMAGE_SOURCE_TIMEOUT_SECONDS,
         )
         aggregated = self._aggregation_kernel.aggregate(adapter_results, limit=limit)
 

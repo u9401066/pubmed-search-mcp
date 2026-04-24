@@ -15,6 +15,14 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Coroutine
 
 
+async def _read_entrez_handle(handle: Any) -> Any:
+    """Read an Entrez handle and always close it, even on parse failure."""
+    try:
+        return await asyncio.to_thread(Entrez.read, handle)
+    finally:
+        handle.close()
+
+
 class CitationMixin:
     """
     Mixin providing citation network functionality.
@@ -51,8 +59,7 @@ class CitationMixin:
                 id=pmid,
                 linkname="pubmed_pubmed",
             )
-            record = await asyncio.to_thread(Entrez.read, handle)
-            handle.close()
+            record = await _read_entrez_handle(handle)
 
             related_ids = []
             if record and record[0].get("LinkSetDb"):
@@ -87,8 +94,7 @@ class CitationMixin:
                 id=pmid,
                 linkname="pubmed_pubmed_citedin",
             )
-            record = await asyncio.to_thread(Entrez.read, handle)
-            handle.close()
+            record = await _read_entrez_handle(handle)
 
             citing_ids = []
             if record and record[0].get("LinkSetDb"):
@@ -123,8 +129,7 @@ class CitationMixin:
                 id=pmid,
                 linkname="pubmed_pubmed_refs",
             )
-            record = await asyncio.to_thread(Entrez.read, handle)
-            handle.close()
+            record = await _read_entrez_handle(handle)
 
             ref_ids = []
             if record and record[0].get("LinkSetDb"):

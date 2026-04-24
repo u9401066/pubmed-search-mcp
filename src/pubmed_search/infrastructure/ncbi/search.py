@@ -9,18 +9,23 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from typing import Any
+from typing import Any, Literal, cast
 
 from Bio import Entrez
 
-from .base import SearchStrategy, execute_entrez_operation
+from .base import DEFAULT_ENTREZ_TOOL, SearchStrategy, execute_entrez_operation, run_entrez_callable
 from .base import _rate_limit as _base_rate_limit
 
 logger = logging.getLogger(__name__)
 
 _rate_limit = _base_rate_limit
 
-# Retry settings for transient NCBI errors
+# When the number of requested IDs exceeds this threshold the main search flow
+# automatically switches to History-Server-based efetch, which avoids URL-length
+# limits and is more efficient for large result sets.
+_HISTORY_BATCH_THRESHOLD = 200
+
+
 MAX_RETRIES = 3
 RETRY_DELAY = 2  # seconds
 
@@ -143,6 +148,7 @@ class SearchMixin:
         species: str | None = None,
         language: str | None = None,
         clinical_query: str | None = None,
+        detail_level: Literal["summary", "full"] = "full",
     ) -> list[dict[str, Any]]:
         """
         Search PubMed for articles using a specific strategy.
@@ -171,6 +177,12 @@ class SearchMixin:
             clinical_query: Clinical query filter. Options:
                            "therapy", "diagnosis", "prognosis", "etiology", "clinical_prediction"
                            These are validated PubMed clinical query strategies.
+            detail_level: Controls how much data is fetched per article.
+                          - "full" (default): EFetch for complete records including abstract,
+                            MeSH terms, affiliations. Best quality, slower.
+                          - "summary": ESummary for lightweight metadata (title, authors,
+                            journal, year, DOI). Best for result lists where full abstracts
+                            are not immediately needed.
 
         Returns:
             List of dictionaries containing article details.
@@ -272,10 +284,23 @@ class SearchMixin:
             elif validation.has_warnings:
                 logger.debug(f"Query warnings: {validation.warnings}")
 
-            # Step 1: Search for IDs with retry
-            id_list, total_count = await self._search_ids_with_retry(full_query, limit * 2, sort_param)
+            # Step 1: Search for IDs with retry (usehistory=y for large requests)
+            id_list, total_count, webenv, query_key = await self._search_ids_with_retry(
+                full_query, limit * 2, sort_param
+            )
 
-            results = await self.fetch_details(id_list)
+            # Step 2: Fetch article records.
+            # - "summary" mode: ESummary (fast, lightweight metadata only)
+            # - "full" mode: EFetch via History Server when IDs are many, direct otherwise
+            if detail_level == "summary":
+                # quick_fetch_summary is defined in UtilsMixin; resolved via MRO.
+                results = await cast("Any", self).quick_fetch_summary(id_list[:limit])
+            elif webenv and query_key and len(id_list) >= _HISTORY_BATCH_THRESHOLD:
+                # Auto History Server route: avoids large URL ID strings
+                raw = await self._fetch_with_retry(id_list, webenv=webenv, query_key=query_key)
+                results = self._parse_fetch_results(raw)
+            else:
+                results = await self.fetch_details(id_list)
 
             # Attach total count to results for caller to access
             final_results = results[:limit]
@@ -292,18 +317,35 @@ class SearchMixin:
             return [{"error": str(e)}]
 
     async def _search_ids_with_retry(self, query: str, retmax: int, sort: str) -> tuple:
-        """Search for PubMed IDs with retry on transient errors.
+        """Search for PubMed IDs using History Server by default.
+
+        Using ``usehistory="y"`` stores the result set on NCBI servers so that
+        the subsequent efetch can reference it via WebEnv/QueryKey instead of
+        sending a potentially very long ID list over the wire.
 
         Returns:
-            Tuple of (id_list, total_count) where total_count is the total number
-            of articles matching the query in PubMed (not limited by retmax).
+            Tuple of ``(id_list, total_count, webenv, query_key)``.
         """
         api_key = getattr(self, "_api_key", None)
+        email = getattr(self, "_email", None)
+        tool = getattr(self, "_tool", DEFAULT_ENTREZ_TOOL)
 
-        async def do_search() -> tuple[list[str], int]:
-            handle = await asyncio.to_thread(Entrez.esearch, db="pubmed", term=query, retmax=retmax, sort=sort)
+        async def do_search() -> tuple[list[str], int, str, str]:
+            handle = await asyncio.to_thread(
+                run_entrez_callable,
+                Entrez,
+                Entrez.esearch,
+                db="pubmed",
+                term=query,
+                retmax=retmax,
+                sort=sort,
+                usehistory="y",
+                email=email,
+                api_key=api_key,
+                tool=tool,
+            )
             try:
-                record = await asyncio.to_thread(Entrez.read, handle)
+                record: Any = await asyncio.to_thread(Entrez.read, handle)
             finally:
                 handle.close()
 
@@ -321,7 +363,9 @@ class SearchMixin:
                 )
 
             total_count = int(record.get("Count", 0))
-            return record["IdList"], total_count
+            webenv = record.get("WebEnv", "")
+            query_key = record.get("QueryKey", "")
+            return record["IdList"], total_count, webenv, query_key
 
         return await execute_entrez_operation(
             do_search,
@@ -332,12 +376,38 @@ class SearchMixin:
             base_delay=float(RETRY_DELAY),
         )
 
-    async def _fetch_with_retry(self, id_list: list[str]) -> Any:
-        """Fetch PubMed articles with retry on transient errors."""
+    async def _fetch_with_retry(self, id_list: list[str], *, webenv: str = "", query_key: str = "") -> Any:
+        """Fetch PubMed articles with retry on transient errors.
+
+        When *webenv* and *query_key* are provided the efetch call references the
+        stored History Server result set instead of sending the ID list in the
+        URL, which avoids URL-length limits for large requests.
+        """
         api_key = getattr(self, "_api_key", None)
+        email = getattr(self, "_email", None)
+        tool = getattr(self, "_tool", DEFAULT_ENTREZ_TOOL)
 
         async def do_fetch() -> Any:
-            handle = await asyncio.to_thread(Entrez.efetch, db="pubmed", id=id_list, retmode="xml")
+            kwargs: dict[str, Any] = {
+                "db": "pubmed",
+                "retmode": "xml",
+                "email": email,
+                "api_key": api_key,
+                "tool": tool,
+            }
+            if webenv and query_key:
+                # Prefer History Server reference to avoid long URL ID strings
+                kwargs["webenv"] = webenv
+                kwargs["query_key"] = query_key
+                kwargs["retmax"] = len(id_list)
+            else:
+                kwargs["id"] = id_list
+            handle = await asyncio.to_thread(
+                run_entrez_callable,
+                Entrez,
+                Entrez.efetch,
+                **kwargs,
+            )
             try:
                 return await asyncio.to_thread(Entrez.read, handle)
             finally:
@@ -371,16 +441,18 @@ class SearchMixin:
 
         try:
             papers = await self._fetch_with_retry(id_list)
-
-            results = []
-            if "PubmedArticle" in papers:
-                for article in papers["PubmedArticle"]:
-                    result = self._parse_pubmed_article(article)
-                    results.append(result)
-
-            return results
+            return self._parse_fetch_results(papers)
         except Exception as e:
             return [{"error": str(e)}]
+
+    def _parse_fetch_results(self, papers: Any) -> list[dict[str, Any]]:
+        """Parse a raw EFetch response into a list of article dicts."""
+        results = []
+        if "PubmedArticle" in papers:
+            for article in papers["PubmedArticle"]:
+                result = self._parse_pubmed_article(article)
+                results.append(result)
+        return results
 
     def _parse_pubmed_article(self, article: dict) -> dict[str, Any]:
         """

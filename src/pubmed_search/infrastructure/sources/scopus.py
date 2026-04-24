@@ -14,6 +14,10 @@ import logging
 from typing import Any
 
 from pubmed_search.infrastructure.sources.base_client import BaseAPIClient
+from pubmed_search.infrastructure.sources.official_generated_clients import (
+    OfficialScopusGeneratedClient,
+    ScopusSearchRequest,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +51,7 @@ class ScopusClient(BaseAPIClient):
                 "X-ELS-APIKey": self._api_key,
             },
         )
+        self._official_client = OfficialScopusGeneratedClient(self)
 
     async def _execute_request(
         self,
@@ -73,26 +78,20 @@ class ScopusClient(BaseAPIClient):
     ) -> list[dict[str, Any]]:
         """Search Scopus and normalize the response into article-like dicts."""
         scopus_query = self._build_query(query, min_year=min_year, max_year=max_year, open_access_only=open_access_only)
-        params = {
-            "query": scopus_query,
-            "count": str(min(limit, 25)),
-            "start": "0",
-            "view": "COMPLETE",
-        }
+        request = ScopusSearchRequest(
+            query=scopus_query,
+            apiKey=self._api_key,
+            insttoken=self._insttoken,
+            count=min(limit, 25),
+        )
 
-        data = await self._make_request(SCOPUS_SEARCH_PATH, params=params)
-        if not isinstance(data, dict):
-            return []
-
-        payload = data.get("search-results", {})
-        entries = payload.get("entry", [])
-        if not isinstance(entries, list):
+        response = await self._official_client.search_documents(request)
+        if response is None:
             return []
 
         results: list[dict[str, Any]] = []
-        for entry in entries:
-            if isinstance(entry, dict):
-                results.append(self._normalize_entry(entry))
+        for entry in response.entries():
+            results.append(self._normalize_entry(entry.model_dump(by_alias=True, exclude_none=True)))
         return results
 
     def _build_query(

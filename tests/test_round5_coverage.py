@@ -9,6 +9,10 @@ NOTE: search_literature, expand_search_queries, search_europe_pmc are
 
 from __future__ import annotations
 
+import asyncio
+import io
+import json
+import threading
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -56,6 +60,101 @@ class TestMCPAPIHandler:
             thread = start_http_api_background(mock_sm, mock_searcher, port=8765)
             assert thread.daemon is True
             time.sleep(0.2)
+
+    async def test_background_api_uses_fresh_session_manager_view(self, tmp_path):
+        from pubmed_search.presentation.mcp_server.server import start_http_api_background
+
+        original_session_manager = MagicMock()
+        original_session_manager.data_dir = str(tmp_path)
+        fresh_session_manager = MagicMock()
+
+        ready = threading.Event()
+        captured: dict[str, object] = {}
+
+        class FakeHTTPServer:
+            def __init__(self, _addr, handler_cls):
+                captured["handler_cls"] = handler_cls
+                ready.set()
+
+            def serve_forever(self):
+                return None
+
+        with (
+            patch(
+                "http.server.HTTPServer",
+                FakeHTTPServer,
+            ),
+            patch(
+                "pubmed_search.application.session.manager.SessionManager",
+                return_value=fresh_session_manager,
+            ),
+        ):
+            start_http_api_background(original_session_manager, None, port=19998)
+            assert ready.wait(1.0) is True
+            fresh_session_manager.get_cached_article.return_value = {"pmid": "123", "title": "Fresh Cached"}
+            handler_cls = captured["handler_cls"]
+            handler = handler_cls.__new__(handler_cls)
+            handler.path = "/api/cached_article/123"
+            handler.wfile = io.BytesIO()
+            handler.send_response = MagicMock()
+            handler.send_header = MagicMock()
+            handler.end_headers = MagicMock()
+
+            handler_cls.do_GET(handler)
+
+            payload = json.loads(handler.wfile.getvalue().decode())
+            assert payload["data"]["title"] == "Fresh Cached"
+            fresh_session_manager.get_cached_article.assert_called_once_with("123")
+            original_session_manager.get_cached_article.assert_not_called()
+
+    async def test_background_api_fetch_path_does_not_mutate_shared_session_cache(self, tmp_path):
+        from pubmed_search.presentation.mcp_server.server import start_http_api_background
+
+        original_session_manager = MagicMock()
+        original_session_manager.data_dir = str(tmp_path)
+        original_session_manager.warm_article_cache = MagicMock()
+        fresh_session_manager = MagicMock()
+        fresh_session_manager.get_cached_article.return_value = None
+
+        searcher = MagicMock()
+        searcher.fetch_details = AsyncMock(return_value=[{"pmid": "999", "title": "Fetched Live"}])
+
+        ready = threading.Event()
+        captured: dict[str, object] = {}
+
+        class FakeHTTPServer:
+            def __init__(self, _addr, handler_cls):
+                captured["handler_cls"] = handler_cls
+                ready.set()
+
+            def serve_forever(self):
+                return None
+
+        with (
+            patch(
+                "http.server.HTTPServer",
+                FakeHTTPServer,
+            ),
+            patch(
+                "pubmed_search.application.session.manager.SessionManager",
+                return_value=fresh_session_manager,
+            ),
+        ):
+            start_http_api_background(original_session_manager, searcher, port=19997)
+            assert ready.wait(1.0) is True
+            handler_cls = captured["handler_cls"]
+            handler = handler_cls.__new__(handler_cls)
+            handler.path = "/api/cached_article/999"
+            handler.wfile = io.BytesIO()
+            handler.send_response = MagicMock()
+            handler.send_header = MagicMock()
+            handler.end_headers = MagicMock()
+
+            await asyncio.to_thread(handler_cls.do_GET, handler)
+
+            payload = json.loads(handler.wfile.getvalue().decode())
+            assert payload["data"]["title"] == "Fetched Live"
+            original_session_manager.warm_article_cache.assert_not_called()
 
 
 class TestServerModule:
@@ -813,6 +912,32 @@ class TestNCBICitationExporter:
         result = await e.export_citations(["11111", "22222", "33333"], format="ris")
         assert result.success is True
         assert result.pmid_count == 3
+        e._client = None
+
+    async def test_export_uses_shared_transport(self):
+        from pubmed_search.infrastructure.ncbi.citation_exporter import (
+            NCBICitationExporter,
+        )
+
+        e = NCBICitationExporter()
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.text = "TY  - JOUR\nER  -\n"
+        mock_resp.headers = {}
+        mock_resp.raise_for_status = MagicMock()
+        mock_client = AsyncMock()
+        mock_client.get.return_value = mock_resp
+        e._client = mock_client
+
+        async def _run_operation(operation, *, policy):
+            assert policy.service_name == "ncbi-citation-exporter"
+            return await operation()
+
+        with patch.object(e._transport_kernel, "execute", new=AsyncMock(side_effect=_run_operation)) as mock_execute:
+            result = await e.export_citations(["12345"], format="ris")
+
+        assert result.success is True
+        mock_execute.assert_awaited_once()
         e._client = None
 
 

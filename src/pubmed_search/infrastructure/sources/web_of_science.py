@@ -15,6 +15,10 @@ import logging
 from typing import Any, cast
 
 from pubmed_search.infrastructure.sources.base_client import BaseAPIClient
+from pubmed_search.infrastructure.sources.official_generated_clients import (
+    OfficialWebOfScienceGeneratedClient,
+    WebOfScienceSearchRequest,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +50,7 @@ class WebOfScienceClient(BaseAPIClient):
                 "X-ApiKey": self._api_key,
             },
         )
+        self._official_client = OfficialWebOfScienceGeneratedClient(self)
 
     async def search(
         self,
@@ -57,24 +62,19 @@ class WebOfScienceClient(BaseAPIClient):
     ) -> list[dict[str, Any]]:
         """Search Web of Science and normalize the response into article-like dicts."""
         wos_query = self._build_query(query, min_year=min_year, max_year=max_year, open_access_only=open_access_only)
-        params = {
-            "q": wos_query,
-            "limit": str(min(limit, 25)),
-            "page": "1",
-        }
+        request = WebOfScienceSearchRequest(
+            q=wos_query,
+            limit=min(limit, 25),
+            page=1,
+        )
 
-        data = await self._make_request(WEB_OF_SCIENCE_SEARCH_PATH, params=params)
-        if not isinstance(data, dict):
-            return []
-
-        hits = data.get("hits", [])
-        if not isinstance(hits, list):
+        response = await self._official_client.search_documents(request)
+        if response is None:
             return []
 
         results: list[dict[str, Any]] = []
-        for hit in hits:
-            if isinstance(hit, dict):
-                results.append(self._normalize_hit(hit))
+        for hit in response.hits:
+            results.append(self._normalize_hit(hit.model_dump(exclude_none=True)))
         return results
 
     def _build_query(
@@ -124,6 +124,18 @@ class WebOfScienceClient(BaseAPIClient):
         cited_by_count = 0
         if isinstance(citations, dict):
             cited_by_count = int(citations.get("count", 0) or 0)
+        elif isinstance(citations, list):
+            preferred_count = None
+            fallback_count = 0
+            for item in citations:
+                if not isinstance(item, dict):
+                    continue
+                count = int(item.get("count", 0) or 0)
+                if item.get("db") == "WOS":
+                    preferred_count = count
+                    break
+                fallback_count = max(fallback_count, count)
+            cited_by_count = preferred_count if preferred_count is not None else fallback_count
         elif isinstance(citations, int):
             cited_by_count = citations
 

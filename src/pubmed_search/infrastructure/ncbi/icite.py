@@ -18,6 +18,8 @@ from typing import Any
 import httpx
 from cachetools import TTLCache
 
+from pubmed_search.shared.async_utils import get_shared_async_client
+
 logger = logging.getLogger(__name__)
 
 ICITE_API_BASE = "https://icite.od.nih.gov/api/pubs"
@@ -35,12 +37,8 @@ class ICiteMixin:
     """
 
     async def _get_icite_client(self) -> httpx.AsyncClient:
-        """Get or create a reusable httpx.AsyncClient for iCite."""
-        client = getattr(self, "_icite_client", None)
-        if client is None or client.is_closed:
-            client = httpx.AsyncClient(timeout=30.0)
-            self._icite_client = client
-        return client
+        """Get the shared reusable AsyncClient for iCite requests."""
+        return get_shared_async_client()
 
     def _get_icite_cache(self) -> TTLCache[str, dict[str, Any]]:
         """Get or create the per-instance TTL cache for iCite results."""

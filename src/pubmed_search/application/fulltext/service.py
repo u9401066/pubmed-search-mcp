@@ -38,6 +38,7 @@ class FulltextRequest:
     sections: str | None = None
     include_figures: bool = False
     extended_sources: bool = False
+    allow_browser_session: bool | None = None
 
 
 @dataclass
@@ -58,6 +59,7 @@ class FulltextServiceResult:
     fulltext_source_name: str | None = None
     fulltext_canonical_host: str | None = None
     fulltext_provenance: Literal["direct", "indirect", "derived", "mixed"] | None = None
+    extended_sources_attempted: bool = False
 
 
 class FulltextService:
@@ -268,6 +270,7 @@ class FulltextService:
         result: FulltextServiceResult,
         log: LogCallback | None,
     ) -> None:
+        result.extended_sources_attempted = True
         downloader = self._downloader_factory()
         try:
             extended_result = await downloader.get_fulltext(
@@ -275,6 +278,7 @@ class FulltextService:
                 pmcid=request.pmcid,
                 doi=request.doi,
                 strategy="links_only" if result.fulltext_content else "extract_text",
+                allow_browser_session=request.allow_browser_session,
             )
 
             if not result.fulltext_content and extended_result.text_content:

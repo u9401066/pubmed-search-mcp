@@ -204,6 +204,8 @@ src/pubmed_search/
 
 ### AI Workflow Files
 
+- `AGENTS.md` is the shared cross-tool baseline for workspace agents. Put only common rules there.
+- `.clinerules/*.md` and `.clinerules/workflows/*.md` are the Cline-specific overlay. Keep them concise and avoid copying shared guidance from `AGENTS.md`.
 - Repository skills are maintained only under `.claude/skills/*/SKILL.md`.
 - Do not create or mirror repo skills under `.github/skills/`.
 - Repository skills are project-scoped customizations and must stay in git so the team shares the same workflow behavior.

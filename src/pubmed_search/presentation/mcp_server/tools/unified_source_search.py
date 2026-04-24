@@ -43,6 +43,7 @@ if TYPE_CHECKING:
     from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
 logger = logging.getLogger(__name__)
+DEEP_SEARCH_STRATEGY_TIMEOUT_SECONDS = 25.0
 
 
 # ============================================================================
@@ -248,7 +249,7 @@ async def _execute_deep_search(
         return result, articles, total_count
 
     # Execute all strategies in parallel
-    tasks = [execute_strategy(s) for s in strategies]
+    tasks = [asyncio.wait_for(execute_strategy(s), timeout=DEEP_SEARCH_STRATEGY_TIMEOUT_SECONDS) for s in strategies]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     for result in results:

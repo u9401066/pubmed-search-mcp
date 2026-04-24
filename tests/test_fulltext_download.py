@@ -13,6 +13,8 @@ Maintenance:
 
 from __future__ import annotations
 
+import asyncio
+import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -242,6 +244,27 @@ class TestGetPdfLinks:
             mock_pmc.side_effect = Exception("network error")
             links = await d.get_pdf_links(pmcid="PMC123")
             assert links == []  # Exception handled gracefully
+
+
+class TestFulltextBudget:
+    @pytest.mark.asyncio
+    async def test_get_fulltext_honors_end_to_end_timeout(self):
+        d = FulltextDownloader(timeout=30.0)
+        candidate = PDFLink(url="https://example.org/paper.pdf", source=PDFSource.CORE)
+
+        async def _slow_download(*args, **kwargs):
+            await asyncio.Event().wait()
+
+        with (
+            patch.object(d, "get_pdf_links", new_callable=AsyncMock, return_value=[candidate]),
+            patch.object(d, "_download_from_url", new_callable=AsyncMock, side_effect=_slow_download),
+        ):
+            started = time.monotonic()
+            result = await d.get_fulltext(doi="10.1234/test", total_timeout=0.05)
+
+        assert time.monotonic() - started < 0.2
+        assert result.error is not None
+        assert "total timeout" in result.error.lower()
 
 
 class TestCrossrefLinks:

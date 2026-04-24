@@ -259,6 +259,7 @@ search_clinvar("BRCA1", limit=10)
 - get_session_pmids: 取得 session 中暫存的 PMID 列表。
 - get_cached_article: 從 session 快取取得文章詳情。
 - get_session_summary: 取得當前 session 的摘要資訊。
+- get_session_log: 取得當前 session 的 activity log 與搜尋歷史摘要。
 
 ### 機構訂閱
 - configure_institutional_access: Configure your institution's link resolver for full-text access.
@@ -276,6 +277,9 @@ search_clinvar("BRCA1", limit=10)
 - build_research_timeline: Build a research timeline for a topic OR specific PMIDs.
 - analyze_timeline_milestones: Analyze milestone distribution for a research topic.
 - compare_timelines: Compare research timelines of multiple topics.
+
+### 引用驗證
+- verify_reference_list: Verify a plain-text reference list against PubMed evidence.
 
 ### 圖表擷取
 - get_article_figures: Get structured figure metadata (label, caption, image URL) and PDF links from a PMC Open Access arti

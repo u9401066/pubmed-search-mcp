@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -260,6 +262,64 @@ class TestGetFulltext:
         assert ctx.log.await_count >= 1
 
     @pytest.mark.asyncio
+    async def test_hanging_progress_callbacks_do_not_block(self, tools):
+        mock_client = AsyncMock()
+        mock_client.get_fulltext_xml.return_value = "<xml/>"
+        mock_client.parse_fulltext_xml = MagicMock(
+            return_value={
+                "title": "Test Article",
+                "sections": [{"title": "Introduction", "content": "Hello world"}],
+            }
+        )
+
+        async def _hang(*args, **kwargs):
+            await asyncio.Event().wait()
+
+        ctx = MagicMock()
+        ctx.report_progress = AsyncMock(side_effect=_hang)
+        ctx.log = AsyncMock(side_effect=_hang)
+
+        with patch(
+            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
+            return_value=mock_client,
+        ):
+            result = await asyncio.wait_for(tools["get_fulltext"](pmcid="PMC7096777", ctx=ctx), timeout=1.0)
+
+        assert "Test Article" in result
+
+    @pytest.mark.asyncio
+    async def test_progress_callbacks_that_ignore_cancellation_do_not_block(self, tools):
+        mock_client = AsyncMock()
+        mock_client.get_fulltext_xml.return_value = "<xml/>"
+        mock_client.parse_fulltext_xml = MagicMock(
+            return_value={
+                "title": "Test Article",
+                "sections": [{"title": "Introduction", "content": "Hello world"}],
+            }
+        )
+
+        async def _ignore_cancel(*args, **kwargs):
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                await asyncio.sleep(0.2)
+
+        ctx = MagicMock()
+        ctx.report_progress = AsyncMock(side_effect=_ignore_cancel)
+        ctx.log = AsyncMock(side_effect=_ignore_cancel)
+
+        with patch(
+            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
+            return_value=mock_client,
+        ):
+            started = time.monotonic()
+            result = await asyncio.wait_for(tools["get_fulltext"](pmcid="PMC7096777", ctx=ctx), timeout=1.0)
+
+        assert time.monotonic() - started < 0.2
+        assert "Test Article" in result
+        await asyncio.sleep(0.25)
+
+    @pytest.mark.asyncio
     async def test_json_contract(self, tools):
         mock_client = AsyncMock()
         mock_client.get_fulltext_xml.return_value = "<xml/>"
@@ -344,10 +404,72 @@ class TestGetFulltext:
             pmcid=None,
             doi="10.1234/test",
             strategy="extract_text",
+            allow_browser_session=None,
         )
         assert "Institutional PDF text" in result
         assert "publisher.example.edu/paper.pdf" in result
         assert "Institutional" in result
+
+    @pytest.mark.asyncio
+    async def test_extended_sources_do_not_run_downloader_twice(self, tools):
+        mock_client = AsyncMock()
+        mock_client.get_fulltext_xml.return_value = None
+
+        mock_unpaywall = AsyncMock()
+        mock_unpaywall.get_oa_status.return_value = {"is_oa": False}
+
+        mock_core = AsyncMock()
+        mock_core.search.return_value = {"results": []}
+
+        mock_downloader = MagicMock()
+        mock_downloader.get_fulltext = AsyncMock(
+            return_value=FulltextResult(
+                text_content=None,
+                pdf_links=[
+                    PDFLink(
+                        url="https://publisher.example.edu/paper.pdf",
+                        source=PDFSource.INSTITUTIONAL_RESOLVER,
+                        access_type="subscription",
+                        is_direct_pdf=True,
+                    )
+                ],
+                source_used=PDFSource.INSTITUTIONAL_RESOLVER,
+            )
+        )
+        mock_downloader.close = AsyncMock()
+
+        with (
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
+                return_value=mock_client,
+            ),
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_unpaywall_client",
+                return_value=mock_unpaywall,
+            ),
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_core_client",
+                return_value=mock_core,
+            ),
+            patch(
+                "pubmed_search.infrastructure.sources.fulltext_download.FulltextDownloader",
+                return_value=mock_downloader,
+            ),
+        ):
+            result = await tools["get_fulltext"](
+                doi="10.1234/test",
+                extended_sources=True,
+                allow_browser_session=True,
+            )
+
+        assert "publisher.example.edu/paper.pdf" in result
+        mock_downloader.get_fulltext.assert_awaited_once_with(
+            pmid=None,
+            pmcid=None,
+            doi="10.1234/test",
+            strategy="extract_text",
+            allow_browser_session=True,
+        )
 
     @pytest.mark.asyncio
     async def test_browser_session_assisted_fetch(self, tools):

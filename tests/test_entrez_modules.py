@@ -206,7 +206,7 @@ class TestICiteMixin:
         mock_response.raise_for_status = MagicMock()
         mock_http.get = AsyncMock(return_value=mock_response)
 
-        with patch("httpx.AsyncClient", return_value=mock_http):
+        with patch("pubmed_search.infrastructure.ncbi.icite.get_shared_async_client", return_value=mock_http):
             results = await searcher.get_citation_metrics(["12345678"])
 
             assert "12345678" in results
@@ -249,11 +249,14 @@ class TestICiteMixin:
         mock_response.raise_for_status = MagicMock()
         mock_http.get = AsyncMock(return_value=mock_response)
 
-        with patch("httpx.AsyncClient", return_value=mock_http) as MockClient:
+        with patch(
+            "pubmed_search.infrastructure.ncbi.icite.get_shared_async_client",
+            return_value=mock_http,
+        ) as mock_get_client:
             await searcher.get_citation_metrics(pmids)
 
-            # Shared client should be reused across both batches.
-            assert MockClient.call_count == 1
+            # Shared client getter is reused for each batch without allocating new clients.
+            assert mock_get_client.call_count == 2
             assert mock_http.get.await_count == 2
 
     async def test_get_citation_metrics_api_error(self):
@@ -270,10 +273,28 @@ class TestICiteMixin:
         mock_http.is_closed = False
         mock_http.get = AsyncMock(side_effect=Exception("API Error"))
 
-        with patch("httpx.AsyncClient", return_value=mock_http):
+        with patch("pubmed_search.infrastructure.ncbi.icite.get_shared_async_client", return_value=mock_http):
             results = await searcher.get_citation_metrics(["12345"])
             # Should return empty dict on error
             assert results == {}
+
+    async def test_get_related_articles_closes_handle_when_entrez_read_fails(self):
+        """Citation mixin should close handles even when Entrez parsing fails."""
+        from pubmed_search.infrastructure.ncbi.citation import CitationMixin
+
+        class TestSearcher(CitationMixin, EntrezBase):
+            async def fetch_details(self, pmids):
+                return []
+
+        searcher = TestSearcher()
+        handle = MagicMock()
+
+        with patch.object(searcher, "_rate_limited_call", AsyncMock(return_value=handle)):
+            with patch("pubmed_search.infrastructure.ncbi.citation.Entrez.read", side_effect=ValueError("bad xml")):
+                results = await searcher.get_related_articles("999")
+
+        handle.close.assert_called_once()
+        assert results == [{"error": "bad xml"}]
 
 
 class TestBatchMixin:
@@ -357,6 +378,59 @@ class TestBatchMixin:
             assert len(results) == 1
             assert results[0]["pmid"] == "12345"
             assert results[0]["title"] == "Test Article"
+
+
+class TestSearchMixin:
+    """Tests for SearchMixin routing between summary/direct/history paths."""
+
+    async def test_search_summary_uses_quick_fetch_summary(self):
+        """Summary mode should use ESummary-style lightweight fetching."""
+        from pubmed_search.infrastructure.ncbi.search import SearchMixin
+        from pubmed_search.infrastructure.ncbi.utils import UtilsMixin
+
+        class TestSearcher(SearchMixin, UtilsMixin, EntrezBase):
+            pass
+
+        searcher = TestSearcher()
+        searcher.quick_fetch_summary = AsyncMock(return_value=[{"pmid": "12345", "title": "Summary Result"}])
+        searcher.fetch_details = AsyncMock(return_value=[{"pmid": "12345", "title": "Full Result"}])
+
+        with patch.object(searcher, "_search_ids_with_retry", AsyncMock(return_value=(["12345", "67890"], 2, "", ""))):
+            results = await searcher.search("test query", limit=1, detail_level="summary")
+
+        searcher.quick_fetch_summary.assert_awaited_once_with(["12345"])
+        searcher.fetch_details.assert_not_called()
+        assert results[0]["pmid"] == "12345"
+        assert results[0]["_search_metadata"]["total_count"] == 2
+
+    async def test_search_full_auto_uses_history_server_for_large_result_sets(self):
+        """Full-detail searches should switch to History Server when the batch is large enough."""
+        from pubmed_search.infrastructure.ncbi.search import SearchMixin
+        from pubmed_search.infrastructure.ncbi.utils import UtilsMixin
+
+        class TestSearcher(SearchMixin, UtilsMixin, EntrezBase):
+            pass
+
+        searcher = TestSearcher()
+        searcher.fetch_details = AsyncMock(return_value=[{"pmid": "12345", "title": "Direct Result"}])
+        searcher._fetch_with_retry = AsyncMock(return_value={"PubmedArticle": []})
+        searcher._parse_fetch_results = MagicMock(return_value=[{"pmid": "12345", "title": "History Result"}])
+
+        with (
+            patch.object(
+                searcher,
+                "_search_ids_with_retry",
+                AsyncMock(return_value=(["12345", "67890", "13579"], 3, "WEBENV123", "1")),
+            ),
+            patch("pubmed_search.infrastructure.ncbi.search._HISTORY_BATCH_THRESHOLD", 2),
+        ):
+            results = await searcher.search("test query", limit=2, detail_level="full")
+
+        searcher._fetch_with_retry.assert_awaited_once_with(["12345", "67890", "13579"], webenv="WEBENV123", query_key="1")
+        searcher._parse_fetch_results.assert_called_once_with({"PubmedArticle": []})
+        searcher.fetch_details.assert_not_called()
+        assert results[0]["title"] == "History Result"
+        assert results[0]["_search_metadata"]["total_count"] == 3
 
     async def test_fetch_batch_from_history_error(self):
         """Test fetching batch with error."""

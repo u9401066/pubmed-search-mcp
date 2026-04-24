@@ -17,6 +17,8 @@ from typing import Any
 
 from Bio import Entrez
 
+from .base import DEFAULT_ENTREZ_TOOL, execute_entrez_operation, run_entrez_callable
+
 
 class UtilsMixin:
     """
@@ -32,6 +34,25 @@ class UtilsMixin:
         get_database_info: Get database statistics
     """
 
+    async def _execute_entrez(self, operation, *, service_name: str, timeout: float = 45.0):
+        """Execute one utility operation through the shared transport kernel."""
+        if hasattr(self, "_execute_entrez_call"):
+            return await self._execute_entrez_call(operation, service_name=service_name, timeout=timeout)
+        return await execute_entrez_operation(
+            operation,
+            api_key=getattr(self, "_api_key", None),
+            service_name=service_name,
+            timeout=timeout,
+        )
+
+    def _entrez_runtime_kwargs(self) -> dict[str, Any]:
+        """Return consistent Bio.Entrez runtime metadata for this caller."""
+        return {
+            "email": getattr(self, "_email", None),
+            "api_key": getattr(self, "_api_key", None),
+            "tool": getattr(self, "_tool", DEFAULT_ENTREZ_TOOL),
+        }
+
     async def quick_fetch_summary(self, id_list: list[str]) -> list[dict[str, Any]]:
         """
         Fetch article summaries using ESummary (faster than EFetch for metadata only).
@@ -46,9 +67,21 @@ class UtilsMixin:
             return []
 
         try:
-            handle = await asyncio.to_thread(Entrez.esummary, db="pubmed", id=",".join(id_list))
-            summaries = await asyncio.to_thread(Entrez.read, handle)
-            handle.close()
+            async def _do_summary() -> Any:
+                handle = await asyncio.to_thread(
+                    run_entrez_callable,
+                    Entrez,
+                    Entrez.esummary,
+                    db="pubmed",
+                    id=",".join(id_list),
+                    **self._entrez_runtime_kwargs(),
+                )
+                try:
+                    return await asyncio.to_thread(Entrez.read, handle)
+                finally:
+                    handle.close()
+
+            summaries = await self._execute_entrez(_do_summary, service_name="ncbi-utils:esummary")
 
             results = []
             for summary in summaries:
@@ -88,9 +121,21 @@ class UtilsMixin:
             Corrected query string if suggestions found, original query otherwise.
         """
         try:
-            handle = await asyncio.to_thread(Entrez.espell, db="pubmed", term=query)
-            result = await asyncio.to_thread(Entrez.read, handle)
-            handle.close()
+            async def _do_spell_check() -> dict[str, Any]:
+                handle = await asyncio.to_thread(
+                    run_entrez_callable,
+                    Entrez,
+                    Entrez.espell,
+                    db="pubmed",
+                    term=query,
+                    **self._entrez_runtime_kwargs(),
+                )
+                try:
+                    return await asyncio.to_thread(Entrez.read, handle)
+                finally:
+                    handle.close()
+
+            result = await self._execute_entrez(_do_spell_check, service_name="ncbi-utils:espell")
 
             corrected = result.get("CorrectedQuery", "")
             return corrected if corrected else query
@@ -108,9 +153,20 @@ class UtilsMixin:
             Dictionary mapping database names to result counts.
         """
         try:
-            handle = await asyncio.to_thread(Entrez.egquery, term=query)
-            result = await asyncio.to_thread(Entrez.read, handle)
-            handle.close()
+            async def _do_egquery() -> dict[str, Any]:
+                handle = await asyncio.to_thread(
+                    run_entrez_callable,
+                    Entrez,
+                    Entrez.egquery,
+                    term=query,
+                    **self._entrez_runtime_kwargs(),
+                )
+                try:
+                    return await asyncio.to_thread(Entrez.read, handle)
+                finally:
+                    handle.close()
+
+            result = await self._execute_entrez(_do_egquery, service_name="ncbi-utils:egquery")
 
             counts = {}
             for db_result in result["eGQueryResult"]:
@@ -137,16 +193,45 @@ class UtilsMixin:
         """
         try:
             query = " OR ".join([f'"{term}"[MeSH Terms]' for term in terms])
-            handle = await asyncio.to_thread(Entrez.esearch, db="mesh", term=query, retmax=len(terms))
-            result = await asyncio.to_thread(Entrez.read, handle)
-            handle.close()
+
+            async def _do_mesh_search() -> dict[str, Any]:
+                handle = await asyncio.to_thread(
+                    run_entrez_callable,
+                    Entrez,
+                    Entrez.esearch,
+                    db="mesh",
+                    term=query,
+                    retmax=len(terms),
+                    **self._entrez_runtime_kwargs(),
+                )
+                try:
+                    return await asyncio.to_thread(Entrez.read, handle)
+                finally:
+                    handle.close()
+
+            result = await self._execute_entrez(_do_mesh_search, service_name="ncbi-utils:mesh-esearch")
 
             mesh_ids = result.get("IdList", [])
 
             if mesh_ids:
-                handle = await asyncio.to_thread(Entrez.esummary, db="mesh", id=",".join(mesh_ids))
-                summaries = await asyncio.to_thread(Entrez.read, handle)
-                handle.close()
+                async def _do_mesh_summary() -> Any:
+                    handle = await asyncio.to_thread(
+                        run_entrez_callable,
+                        Entrez,
+                        Entrez.esummary,
+                        db="mesh",
+                        id=",".join(mesh_ids),
+                        **self._entrez_runtime_kwargs(),
+                    )
+                    try:
+                        return await asyncio.to_thread(Entrez.read, handle)
+                    finally:
+                        handle.close()
+
+                summaries = await self._execute_entrez(
+                    _do_mesh_summary,
+                    service_name="ncbi-utils:mesh-esummary",
+                )
 
                 validated_terms = []
                 for summary in summaries:
@@ -191,10 +276,21 @@ class UtilsMixin:
         try:
             citation_string = f"{journal}|{year}|{volume}|{first_page}|{author}||"
 
-            handle = await asyncio.to_thread(Entrez.ecitmatch, db="pubmed", bdata=citation_string)
-            result = await asyncio.to_thread(handle.read)
-            result = result.strip()
-            handle.close()
+            async def _do_citation_match() -> str:
+                handle = await asyncio.to_thread(
+                    run_entrez_callable,
+                    Entrez,
+                    Entrez.ecitmatch,
+                    db="pubmed",
+                    bdata=citation_string,
+                    **self._entrez_runtime_kwargs(),
+                )
+                try:
+                    return str((await asyncio.to_thread(handle.read)).strip())
+                finally:
+                    handle.close()
+
+            result = await self._execute_entrez(_do_citation_match, service_name="ncbi-utils:ecitmatch")
 
             if result and "\t" in result:
                 parts = result.split("\t")
@@ -204,6 +300,45 @@ class UtilsMixin:
             return None
         except Exception:
             return None
+
+    async def verify_references(
+        self,
+        citations: list[dict[str, str]],
+    ) -> list[dict[str, Any]]:
+        """
+        Verify a batch of reference citations against PubMed via ECitMatch.
+
+        This promotes ECitMatch from a one-off utility into a first-class
+        reference-verification workflow: each citation is looked up concurrently
+        and the result contains the original citation fields plus the resolved
+        PMID (or None when not found) and a ``verified`` flag.
+
+        Args:
+            citations: List of citation dicts, each may contain any subset of:
+                - ``journal``: Journal name or abbreviation.
+                - ``year``: Publication year.
+                - ``volume``: Volume number.
+                - ``first_page``: First page number.
+                - ``author``: First author last name.
+                Unrecognised keys are passed through unchanged in the result.
+
+        Returns:
+            List of result dicts with the original citation fields plus:
+            - ``pmid``: Resolved PubMed identifier, or ``None`` when not found.
+            - ``verified``: ``True`` when a PMID was found, ``False`` otherwise.
+        """
+        async def _verify_one(citation: dict[str, str]) -> dict[str, Any]:
+            pmid = await self.find_by_citation(
+                journal=citation.get("journal", ""),
+                year=citation.get("year", ""),
+                volume=citation.get("volume", ""),
+                first_page=citation.get("first_page", ""),
+                author=citation.get("author", ""),
+                title=citation.get("title", ""),
+            )
+            return {**citation, "pmid": pmid, "verified": pmid is not None}
+
+        return list(await asyncio.gather(*[_verify_one(c) for c in citations]))
 
     async def export_citations(self, id_list: list[str], fmt: str = "medline") -> str:
         """
@@ -231,17 +366,23 @@ class UtilsMixin:
 
             rettype, retmode = valid_formats[fmt]
 
-            handle = await asyncio.to_thread(
-                Entrez.efetch,
-                db="pubmed",
-                id=id_list,
-                rettype=rettype,
-                retmode=retmode,
-            )
-            result = await asyncio.to_thread(handle.read)
-            handle.close()
+            async def _do_export() -> str:
+                handle = await asyncio.to_thread(
+                    run_entrez_callable,
+                    Entrez,
+                    Entrez.efetch,
+                    db="pubmed",
+                    id=id_list,
+                    rettype=rettype,
+                    retmode=retmode,
+                    **self._entrez_runtime_kwargs(),
+                )
+                try:
+                    return await asyncio.to_thread(handle.read)
+                finally:
+                    handle.close()
 
-            return result
+            return await self._execute_entrez(_do_export, service_name="ncbi-utils:efetch", timeout=60.0)
         except Exception as e:
             return f"Error exporting citations: {e!s}"
 
@@ -258,9 +399,20 @@ class UtilsMixin:
             - available search fields
         """
         try:
-            handle = await asyncio.to_thread(Entrez.einfo, db=db)
-            result = await asyncio.to_thread(Entrez.read, handle)
-            handle.close()
+            async def _do_einfo() -> dict[str, Any]:
+                handle = await asyncio.to_thread(
+                    run_entrez_callable,
+                    Entrez,
+                    Entrez.einfo,
+                    db=db,
+                    **self._entrez_runtime_kwargs(),
+                )
+                try:
+                    return await asyncio.to_thread(Entrez.read, handle)
+                finally:
+                    handle.close()
+
+            result = await self._execute_entrez(_do_einfo, service_name="ncbi-utils:einfo")
 
             db_info = result.get("DbInfo", {})
 

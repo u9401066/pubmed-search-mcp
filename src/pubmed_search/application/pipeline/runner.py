@@ -45,7 +45,7 @@ class StoredPipelineRunner:
         )
 
         started = datetime.now(timezone.utc)
-        run_id = started.strftime("%Y%m%d_%H%M%S")
+        run_id = self._store.create_run_id(meta.name, started)
         previous_run = self._store.get_latest_run(meta.name)
         previous_pmids = set(previous_run.pmids) if previous_run else set()
 

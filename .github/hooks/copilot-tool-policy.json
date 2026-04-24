@@ -16,6 +16,9 @@
       "get_article_references",
       "get_citation_metrics"
     ],
+    "reference_verification": [
+      "verify_reference_list"
+    ],
     "fulltext": [
       "get_fulltext",
       "get_text_mined_terms"
@@ -42,7 +45,8 @@
       "read_session",
       "get_session_pmids",
       "get_cached_article",
-      "get_session_summary"
+      "get_session_summary",
+      "get_session_log"
     ],
     "institutional": [
       "configure_institutional_access",
@@ -126,6 +130,8 @@
         "get_session_pmids",
         "get_cached_article",
         "get_session_summary",
+        "get_session_log",
+        "verify_reference_list",
         "get_gene_details",
         "get_compound_details",
         "get_institutional_link",
@@ -175,6 +181,8 @@
       "get_session_pmids",
       "get_cached_article",
       "get_session_summary",
+      "get_session_log",
+      "verify_reference_list",
       "get_institutional_link",
       "get_gene_details",
       "get_gene_literature",
@@ -210,6 +218,8 @@
       "get_session_pmids",
       "get_cached_article",
       "get_session_summary",
+      "get_session_log",
+      "verify_reference_list",
       "analyze_figure_for_search",
       "convert_icd_mesh",
       "search_biomedical_images",
@@ -243,6 +253,8 @@
       "get_session_pmids",
       "get_cached_article",
       "get_session_summary",
+      "get_session_log",
+      "verify_reference_list",
       "get_institutional_link",
       "build_research_timeline",
       "analyze_timeline_milestones",

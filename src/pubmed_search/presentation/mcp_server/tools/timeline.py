@@ -20,7 +20,6 @@ These tools enable AI agents to:
 
 from __future__ import annotations
 
-import contextlib
 import json
 import logging
 from typing import TYPE_CHECKING, Any, Literal
@@ -31,6 +30,7 @@ from pubmed_search.application.timeline import LandmarkScorer, MilestoneDetector
 from pubmed_search.application.timeline.timeline_builder import format_timeline_text
 
 from ._common import InputNormalizer, ResponseFormatter
+from .tool_runtime import safe_log, safe_report_progress
 
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
@@ -216,14 +216,10 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         """
 
         async def _progress(progress: float, total: float, message: str) -> None:
-            if ctx is not None:
-                with contextlib.suppress(Exception):
-                    await ctx.report_progress(progress, total, message)
+            await safe_report_progress(ctx, progress, total, message)
 
         async def _log(level: Literal["debug", "info", "warning", "error"], message: str) -> None:
-            if ctx is not None:
-                with contextlib.suppress(Exception):
-                    await ctx.log(level, message, logger_name=__name__)
+            await safe_log(ctx, level, message, logger_name=__name__)
 
         try:
             await _progress(1, 4, "Preparing timeline request...")
@@ -355,9 +351,7 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         """
 
         async def _progress(progress: float, total: float, message: str) -> None:
-            if ctx is not None:
-                with contextlib.suppress(Exception):
-                    await ctx.report_progress(progress, total, message)
+            await safe_report_progress(ctx, progress, total, message)
 
         try:
             await _progress(1, 3, "Collecting timeline milestones...")
@@ -438,9 +432,7 @@ def register_timeline_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         """
 
         async def _progress(progress: float, total: float, message: str) -> None:
-            if ctx is not None:
-                with contextlib.suppress(Exception):
-                    await ctx.report_progress(progress, total, message)
+            await safe_report_progress(ctx, progress, total, message)
 
         try:
             topic_list = [t.strip() for t in topics.split(",") if t.strip()]

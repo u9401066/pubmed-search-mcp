@@ -7,6 +7,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 from pubmed_search.application.session import (
+    MAX_SESSION_EVENT_LOG,
     ArticleCache,
     CachedArticle,
     ResearchSession,
@@ -94,6 +95,7 @@ class TestResearchSession:
         assert session.topic == "diabetes research"
         assert session.article_cache == {}
         assert session.search_history == []
+        assert session.event_log == []
 
     async def test_session_touch(self):
         """Test updating session timestamp."""
@@ -239,6 +241,19 @@ class TestSessionManager:
         session = manager.get_current_session()
         assert len(session.search_history) == 1
         assert session.search_history[0]["query"] == "diabetes"
+        assert session.event_log[-1]["kind"] == "search_recorded"
+
+    async def test_event_log_is_bounded(self, temp_dir):
+        """Test that session event log keeps only the most recent entries."""
+        manager = SessionManager(data_dir=str(temp_dir))
+        manager.get_or_create_session("test")
+
+        for index in range(MAX_SESSION_EVENT_LOG + 5):
+            manager.add_search_record(f"query-{index}", [str(index)])
+
+        session = manager.get_current_session()
+        assert len(session.event_log) == MAX_SESSION_EVENT_LOG
+        assert session.event_log[-1]["details"]["query"] == f"query-{MAX_SESSION_EVENT_LOG + 4}"
 
     async def test_find_cached_search(self, temp_dir, mock_article_data):
         """Test finding cached search results."""
@@ -262,6 +277,17 @@ class TestSessionManager:
         # Different query should return None
         not_cached = manager.find_cached_search("cancer therapy")
         assert not_cached is None
+
+    async def test_get_session_summary_includes_recent_events(self, temp_dir):
+        """Test session summary surfaces recent debug events."""
+        manager = SessionManager(data_dir=str(temp_dir))
+        manager.get_or_create_session("test")
+        manager.add_search_record("diabetes", ["123", "456"])
+
+        summary = manager.get_session_summary()
+        assert summary["event_entries"] >= 2
+        assert summary["recent_events"]
+        assert any(event["kind"] == "search_recorded" for event in summary["recent_events"])
 
     async def test_find_cached_search_with_limit(self, temp_dir):
         """Test cache lookup respects limit parameter."""

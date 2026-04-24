@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import time
 from unittest.mock import AsyncMock, MagicMock
 
 from pubmed_search.presentation.mcp_server.session_tools import (
@@ -50,6 +52,7 @@ def _capture_tools(register_fn, *args):
 def _make_session(search_history=None, article_cache=None):
     session = MagicMock()
     session.search_history = search_history or []
+    session.event_log = []
     session.article_cache = article_cache or {}
     session.session_id = "test-session-123"
     session.topic = "test topic"
@@ -83,7 +86,7 @@ class TestSessionToolRegistration:
     def test_registers_read_session_facade(self):
         sm = MagicMock()
         tools = _capture_tools(register_session_tools, sm)
-        assert {"read_session", "get_session_pmids", "get_cached_article", "get_session_summary"} <= set(tools)
+        assert {"read_session", "get_session_pmids", "get_cached_article", "get_session_summary", "get_session_log"} <= set(tools)
 
 
 # ============================================================
@@ -130,6 +133,25 @@ class TestReadSession:
         result = json.loads(self.fn(action="unknown"))
         assert result["success"] is False
         assert "Unknown session action" in result["error"]
+
+    async def test_log_action(self):
+        session = _make_session(search_history=[{"query": "test", "pmids": ["111"], "timestamp": "2024-01-01T00:00:00Z"}])
+        session.event_log = [
+            {
+                "timestamp": "2024-01-01T00:00:00Z",
+                "kind": "search_recorded",
+                "level": "info",
+                "message": "Recorded search query in session history",
+                "details": {"query": "test", "result_count": 1, "pmid_count": 1},
+            }
+        ]
+        self.sm.get_current_session.return_value = session
+        self.sm.get_session_event_log.return_value = session.event_log
+
+        result = json.loads(self.fn(action="log", include_history=True, history_limit=5))
+        assert result["success"] is True
+        assert result["events"][0]["kind"] == "search_recorded"
+        assert result["search_history"][0]["query"] == "test"
 
 
 # ============================================================
@@ -281,6 +303,26 @@ class TestGetSessionSummary:
         assert result["has_session"] is True
         assert result["stats"]["cached_articles"] == 2
         assert result["stats"]["total_searches"] == 1
+        assert result["stats"]["event_entries"] == 0
+
+    async def test_includes_recent_events(self):
+        history = [{"query": "test", "pmids": ["111"], "timestamp": "2024-01-01T00:00:00Z", "result_count": 1}]
+        cache = {"111": {"title": "A"}}
+        session = _make_session(search_history=history, article_cache=cache)
+        session.event_log = [
+            {
+                "timestamp": "2024-01-01T00:00:00Z",
+                "kind": "search_recorded",
+                "level": "info",
+                "message": "Recorded search query in session history",
+                "details": {"query": "test"},
+            }
+        ]
+        self.sm.get_current_session.return_value = session
+        _configure_manager_cache(self.sm, cache)
+
+        result = json.loads(self.fn())
+        assert result["recent_events"][0]["kind"] == "search_recorded"
 
     async def test_with_include_history(self):
         """Test include_history=True (merged from list_search_history in v0.3.1)."""
@@ -397,6 +439,31 @@ class TestSessionResources:
         assert result["cached_results"][0]["title"] == "Cached"
         assert result["missing_pmids"] == ["999"]
 
+    async def test_activity_resource(self):
+        sm = MagicMock()
+        session = _make_session(
+            search_history=[{"query": "covid", "pmids": ["111", "222"], "timestamp": "2024-01-01", "result_count": 2}],
+            article_cache={"111": {"pmid": "111"}},
+        )
+        session.event_log = [
+            {
+                "timestamp": "2024-01-01T00:00:00Z",
+                "kind": "search_recorded",
+                "level": "info",
+                "message": "Recorded search query in session history",
+                "details": {"query": "covid"},
+            }
+        ]
+        sm.get_current_session.return_value = session
+        sm.get_session_event_log.return_value = session.event_log
+        tools = _capture_tools(register_session_resources, sm)
+
+        result = json.loads(tools["session://activity"]())
+        assert result["active"] is True
+        assert result["event_count"] == 1
+        assert result["events"][0]["kind"] == "search_recorded"
+        assert result["search_history"][0]["query"] == "covid"
+
 
 class TestSessionResourceNotifications:
     async def test_notify_session_resources_updated_sends_all_known_uris(self):
@@ -417,3 +484,33 @@ class TestSessionResourceNotifications:
         await notify_session_resources_updated(ctx)
 
         assert ctx.session.send_resource_updated.await_count == len(SESSION_RESOURCE_URIS)
+
+    async def test_notify_session_resources_updated_does_not_block_on_hanging_host(self):
+        ctx = MagicMock()
+        ctx.session = MagicMock()
+
+        async def _hang(*args, **kwargs):
+            await asyncio.Event().wait()
+
+        ctx.session.send_resource_updated = AsyncMock(side_effect=_hang)
+
+        await asyncio.wait_for(notify_session_resources_updated(ctx), timeout=0.5)
+        assert ctx.session.send_resource_updated.await_count == len(SESSION_RESOURCE_URIS)
+
+    async def test_notify_session_resources_updated_does_not_wait_for_cancellation_resistant_host(self):
+        ctx = MagicMock()
+        ctx.session = MagicMock()
+
+        async def _ignore_cancel(*args, **kwargs):
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                await asyncio.sleep(0.2)
+
+        ctx.session.send_resource_updated = AsyncMock(side_effect=_ignore_cancel)
+
+        started = time.monotonic()
+        await asyncio.wait_for(notify_session_resources_updated(ctx), timeout=0.5)
+        assert time.monotonic() - started < 0.2
+        assert ctx.session.send_resource_updated.await_count == len(SESSION_RESOURCE_URIS)
+        await asyncio.sleep(0.25)

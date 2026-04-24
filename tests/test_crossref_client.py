@@ -284,6 +284,52 @@ class TestCrossRefClientGetJournal:
 
 
 # =============================================================================
+# CrossRefClient - funder features
+# =============================================================================
+
+
+class TestCrossRefClientFunders:
+    """Tests for funder lookup and search methods."""
+
+    async def test_get_funder_success(self):
+        """Test successful funder retrieval."""
+        client = CrossRefClient()
+        client._make_request = AsyncMock(
+            return_value={
+                "id": "10.13039/100000001",
+                "name": "National Science Foundation",
+            }
+        )
+
+        result = await client.get_funder("https://doi.org/10.13039/100000001")
+        assert result is not None
+        assert result["name"] == "National Science Foundation"
+
+    async def test_search_funders_success(self):
+        """Test successful funder search."""
+        client = CrossRefClient()
+        client._make_request = AsyncMock(
+            return_value={
+                "items": [
+                    {"id": "10.13039/100000001", "name": "National Science Foundation"},
+                    {"id": "10.13039/100000002", "name": "National Institutes of Health"},
+                ]
+            }
+        )
+
+        results = await client.search_funders("National", limit=5)
+        assert len(results) == 2
+        assert results[0]["id"] == "10.13039/100000001"
+
+    async def test_search_funders_empty(self):
+        """Test funder search with no matches."""
+        client = CrossRefClient()
+        client._make_request = AsyncMock(return_value=None)
+
+        assert await client.search_funders("nonexistent") == []
+
+
+# =============================================================================
 # CrossRefClient - resolve_doi_batch Tests
 # =============================================================================
 
@@ -388,6 +434,11 @@ class TestCrossRefClientDate:
         work = {"published": {"date-parts": [[]]}}
         year, month, day = CrossRefClient.extract_publication_date(work)
         assert year is None
+
+    async def test_normalize_funder_id(self):
+        """Test funder DOI normalization from URL form."""
+        result = CrossRefClient._normalize_funder_id("https://doi.org/10.13039/100000001")
+        assert result == "10.13039/100000001"
 
 
 # =============================================================================

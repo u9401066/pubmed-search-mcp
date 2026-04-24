@@ -643,3 +643,26 @@ class PipelineStore:
         if self._workspace_dir and (self._workspace_pipelines_dir / f"{name}.yaml").exists():
             return True
         return (self._global_pipelines_dir / f"{name}.yaml").exists()
+
+    def create_run_id(self, name: str, started: datetime | None = None) -> str:
+        """Create a collision-resistant run id for persisted pipeline artifacts.
+
+        Run history and reports are both keyed by ``run_id`` on disk. Using only
+        second-level timestamps can overwrite artifacts when multiple executions
+        begin in the same second, so this method uses microseconds and checks the
+        target directories before returning.
+        """
+        normalized_name = name.strip().lower()
+        started_at = started or datetime.now(timezone.utc)
+        base_run_id = started_at.strftime("%Y%m%d_%H%M%S_%f")
+        scope = self._find_pipeline_scope(normalized_name)
+        runs_dir = self._runs_dir_for(scope) / normalized_name
+        reports_dir = self._reports_dir_for(scope) / normalized_name
+
+        candidate = base_run_id
+        suffix = 1
+        while (runs_dir / f"{candidate}.json").exists() or (reports_dir / f"{candidate}.md").exists():
+            candidate = f"{base_run_id}_{suffix:02d}"
+            suffix += 1
+
+        return candidate

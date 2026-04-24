@@ -1521,13 +1521,15 @@ dependencies = [
     { name = "pylatexenc" },
     { name = "pywin32", marker = "sys_platform == 'win32'" },
     { name = "pyyaml" },
-    { name = "requests" },
     { name = "toons" },
 ]
 
 [package.optional-dependencies]
 browser-broker = [
     { name = "playwright" },
+]
+scripts = [
+    { name = "requests" },
 ]
 
 [package.dev-dependencies]
@@ -1554,7 +1556,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "apscheduler", specifier = ">=3.10.4,<4" },
-    { name = "biopython", specifier = ">=1.81" },
+    { name = "biopython", specifier = ">=1.81,<2" },
     { name = "cachetools", specifier = ">=5.0.0" },
     { name = "defusedxml", specifier = ">=0.7.1" },
     { name = "fastapi", specifier = ">=0.128.0" },
@@ -1566,10 +1568,10 @@ requires-dist = [
     { name = "pylatexenc", specifier = ">=2.10" },
     { name = "pywin32", marker = "sys_platform == 'win32'", specifier = ">=311" },
     { name = "pyyaml", specifier = ">=6.0" },
-    { name = "requests", specifier = ">=2.28.0" },
+    { name = "requests", marker = "extra == 'scripts'", specifier = ">=2.28.0" },
     { name = "toons", specifier = ">=0.5.4" },
 ]
-provides-extras = ["browser-broker"]
+provides-extras = ["browser-broker", "scripts"]
 
 [package.metadata.requires-dev]
 dev = [

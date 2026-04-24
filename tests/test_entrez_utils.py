@@ -4,7 +4,7 @@ Tests for Entrez utility functions.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 
 class TestUtilsMixin:
@@ -116,3 +116,27 @@ class TestValidateMeshTerms:
             if hasattr(mixin, "validate_mesh_terms"):
                 result = await mixin.validate_mesh_terms(["Diabetes Mellitus"])
                 assert "Diabetes Mellitus" in result.get("valid", []) or len(result) > 0
+
+
+class TestVerifyReferences:
+    """Tests for batch ECitMatch verification helper."""
+
+    async def test_verify_references_returns_boolean_verified_flag(self):
+        """Batch verification should preserve citation fields and return bool status."""
+        from pubmed_search.infrastructure.ncbi.utils import UtilsMixin
+
+        mixin = UtilsMixin()
+        mixin.find_by_citation = AsyncMock(side_effect=["12345678", None])
+
+        results = await mixin.verify_references(
+            [
+                {"journal": "JAMA", "year": "2023", "author": "Doe"},
+                {"journal": "NEJM", "year": "2024", "author": "Smith"},
+            ]
+        )
+
+        assert results[0]["journal"] == "JAMA"
+        assert results[0]["pmid"] == "12345678"
+        assert results[0]["verified"] is True
+        assert results[1]["pmid"] is None
+        assert results[1]["verified"] is False

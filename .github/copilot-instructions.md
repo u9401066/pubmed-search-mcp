@@ -267,7 +267,7 @@ git status --short | Where-Object { $_ -match '^\?\?' }
 | 類型 | 檔案 |
 |------|------|
 | 設定 | `pyproject.toml`, `Dockerfile`, `docker-compose*.yml`, `.gitignore`, `uv.lock` |
-| 文檔 | `README.md`, `README.zh-TW.md`, `CHANGELOG.md`, `CONSTITUTION.md`, `ARCHITECTURE.md`, `ROADMAP.md`, `CONTRIBUTING.md`, `DEPLOYMENT.md`, `CITATION.cff`, `LICENSE` |
+| 文檔 | `README.md`, `README.zh-TW.md`, `CHANGELOG.md`, `CONSTITUTION.md`, `ARCHITECTURE.md`, `ROADMAP.md`, `CONTRIBUTING.md`, `DEPLOYMENT.md`, `CITATION.cff`, `AGENTS.md`, `LICENSE` |
 | 入口 | `run_copilot.py`, `run_server.py`, `start.sh` |
 
 > ⚠️ **任何不在白名單的檔案出現在根目錄都是錯誤。**
@@ -523,6 +523,7 @@ unified_search(query="<combined_boolean_query>")
 | `get_session_pmids` | 取得 session 中暫存的 PMID 列表。 |
 | `get_cached_article` | 從 session 快取取得文章詳情。 |
 | `get_session_summary` | 取得當前 session 的摘要資訊。 |
+| `get_session_log` | 取得當前 session 的 activity log 與搜尋歷史摘要。 |
 
 
 ### 機構訂閱
@@ -560,6 +561,14 @@ unified_search(query="<combined_boolean_query>")
 | `build_research_timeline` | Build a research timeline for a topic OR specific PMIDs. |
 | `analyze_timeline_milestones` | Analyze milestone distribution for a research topic. |
 | `compare_timelines` | Compare research timelines of multiple topics. |
+
+
+### 引用驗證
+*Reference list verification with PubMed evidence*
+
+| Tool | Purpose |
+|------|---------|
+| `verify_reference_list` | Verify a plain-text reference list against PubMed evidence. |
 
 
 ### 圖表擷取

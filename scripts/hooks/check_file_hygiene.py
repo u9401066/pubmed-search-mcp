@@ -48,6 +48,7 @@ ALLOWED_ROOT_FILES: set[str] = {
     "CONTRIBUTING.md",
     "DEPLOYMENT.md",
     "TOOLS_INDEX.md",
+    "AGENTS.md",
     "LICENSE",
     # Entry points
     "run_copilot.py",
@@ -70,6 +71,7 @@ ALLOWED_ROOT_DIRS: set[str] = {
     ".git",
     ".github",
     ".claude",
+    ".clinerules",
     ".vscode",
     ".ruff_cache",
     ".mypy_cache",

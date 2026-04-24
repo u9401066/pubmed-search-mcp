@@ -308,6 +308,43 @@ class CrossRefClient(BaseAPIClient):
         result = await self._make_request(url)
         return result if isinstance(result, dict) else None
 
+    async def get_funder(self, funder_id: str) -> dict[str, Any] | None:
+        """
+        Get funder metadata by Crossref funder identifier.
+
+        Args:
+            funder_id: Crossref funder DOI, a raw ``10.13039/...`` identifier,
+                or a DOI URL.
+
+        Returns:
+            Funder metadata or ``None`` when no record is found.
+        """
+        normalized_funder_id = self._normalize_funder_id(funder_id)
+        url = f"{CROSSREF_API_BASE}/funders/{urllib.parse.quote(normalized_funder_id, safe='')}"
+        result = await self._make_request(url)
+        return result if isinstance(result, dict) else None
+
+    async def search_funders(self, query: str, limit: int = 10) -> list[dict[str, Any]]:
+        """
+        Search Crossref funders by name.
+
+        Args:
+            query: Funder name query string.
+            limit: Maximum number of funders to return.
+
+        Returns:
+            List of funder metadata dictionaries.
+        """
+        params = {
+            "query": query,
+            "rows": str(min(limit, 1000)),
+        }
+        url = f"{CROSSREF_API_BASE}/funders?{urllib.parse.urlencode(params)}"
+        data = await self._make_request(url)
+        if not isinstance(data, dict):
+            return []
+        return data.get("items", [])
+
     async def resolve_doi_batch(
         self,
         dois: list[str],
@@ -372,6 +409,21 @@ class CrossRefClient(BaseAPIClient):
             if doi.lower().startswith(prefix.lower()):
                 doi = doi[len(prefix) :]
         return doi
+
+    @staticmethod
+    def _normalize_funder_id(funder_id: str) -> str:
+        """Normalize a Crossref funder identifier to its canonical DOI form."""
+        normalized = funder_id.strip()
+        for prefix in [
+            "https://doi.org/",
+            "http://doi.org/",
+            "https://dx.doi.org/",
+            "http://dx.doi.org/",
+            "doi:",
+        ]:
+            if normalized.lower().startswith(prefix.lower()):
+                normalized = normalized[len(prefix) :]
+        return normalized
 
     @staticmethod
     def extract_publication_date(

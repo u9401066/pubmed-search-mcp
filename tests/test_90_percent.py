@@ -247,16 +247,14 @@ class TestBaseMissingLines:
     """Target base.py lines 74-75, 80, 85."""
 
     async def test_entrez_base_api_key(self):
-        """Test EntrezBase with API key."""
+        """Test EntrezBase with API key stores credentials on instance."""
         from pubmed_search.infrastructure.ncbi.base import EntrezBase
 
-        with patch("pubmed_search.infrastructure.ncbi.base.Entrez") as mock_entrez:
-            mock_entrez.email = None
-            mock_entrez.api_key = None
+        base = EntrezBase(email="test@example.com", api_key="test_key")
 
-            EntrezBase(email="test@example.com", api_key="test_key")
-
-            assert mock_entrez.api_key == "test_key"
+        # Globals are NOT set in constructor; per-call isolation via run_entrez_callable.
+        assert base._email == "test@example.com"
+        assert base._api_key == "test_key"
 
 
 class TestFormatsMissingLines:

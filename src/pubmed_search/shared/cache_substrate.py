@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import threading
 from abc import ABC, abstractmethod
 from collections import OrderedDict
 from dataclasses import dataclass, field
@@ -219,73 +220,87 @@ class JsonFileCacheBackend(CacheBackend):
         self._file_path.parent.mkdir(parents=True, exist_ok=True)
         self._max_entries = max_entries
         self._entries: OrderedDict[str, StoredCacheEntry] = OrderedDict()
+        self._lock = threading.RLock()
         self._load()
 
     def _load(self) -> None:
-        if not self._file_path.exists():
-            return
+        with self._lock:
+            if not self._file_path.exists():
+                return
 
-        try:
-            with self._file_path.open(encoding="utf-8") as handle:
-                raw = json.load(handle)
-        except (OSError, ValueError, json.JSONDecodeError) as exc:
-            logger.warning("Failed to load cache backend %s: %s", self._file_path, exc)
-            return
+            try:
+                with self._file_path.open(encoding="utf-8") as handle:
+                    raw = json.load(handle)
+            except (OSError, ValueError, json.JSONDecodeError) as exc:
+                logger.warning("Failed to load cache backend %s: %s", self._file_path, exc)
+                return
 
-        if not isinstance(raw, dict):
-            logger.warning("Cache backend %s contained unexpected payload type", self._file_path)
-            return
+            if not isinstance(raw, dict):
+                logger.warning("Cache backend %s contained unexpected payload type", self._file_path)
+                return
 
-        for key, value in raw.items():
-            self._entries[str(key)] = StoredCacheEntry.from_dict(value)
+            for key, value in raw.items():
+                self._entries[str(key)] = StoredCacheEntry.from_dict(value)
 
     def _save(self) -> None:
         payload = {key: entry.to_dict() for key, entry in self._entries.items()}
+        tmp_path = self._file_path.with_name(f"{self._file_path.name}.tmp")
         try:
-            with self._file_path.open("w", encoding="utf-8") as handle:
+            with tmp_path.open("w", encoding="utf-8") as handle:
                 json.dump(payload, handle, ensure_ascii=False, indent=2)
+            tmp_path.replace(self._file_path)
         except (OSError, TypeError, ValueError) as exc:
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
             logger.warning("Failed to persist cache backend %s: %s", self._file_path, exc)
 
     def get_entry(self, key: str) -> StoredCacheEntry | None:
-        entry = self._entries.get(key)
-        if entry is None:
-            return None
-        self._entries.move_to_end(key)
-        return entry
+        with self._lock:
+            entry = self._entries.get(key)
+            if entry is None:
+                return None
+            self._entries.move_to_end(key)
+            return entry
 
     def set_entry(self, key: str, entry: StoredCacheEntry) -> int:
-        if key in self._entries:
-            del self._entries[key]
-        self._entries[key] = entry
+        with self._lock:
+            if key in self._entries:
+                del self._entries[key]
+            self._entries[key] = entry
 
-        evicted = 0
-        while self._max_entries is not None and len(self._entries) > self._max_entries:
-            self._entries.popitem(last=False)
-            evicted += 1
+            evicted = 0
+            while self._max_entries is not None and len(self._entries) > self._max_entries:
+                self._entries.popitem(last=False)
+                evicted += 1
 
-        self._save()
-        return evicted
+            self._save()
+            return evicted
 
     def delete(self, key: str) -> bool:
-        if key not in self._entries:
-            return False
-        del self._entries[key]
-        self._save()
-        return True
+        with self._lock:
+            if key not in self._entries:
+                return False
+            del self._entries[key]
+            self._save()
+            return True
 
     def clear(self) -> int:
-        count = len(self._entries)
-        if count:
-            self._entries.clear()
-            self._save()
-        return count
+        with self._lock:
+            count = len(self._entries)
+            if count:
+                self._entries.clear()
+                self._save()
+            return count
 
     def keys(self) -> list[str]:
-        return list(self._entries.keys())
+        with self._lock:
+            return list(self._entries.keys())
 
     def items(self) -> list[tuple[str, StoredCacheEntry]]:
-        return list(self._entries.items())
+        with self._lock:
+            return list(self._entries.items())
 
 
 class CacheStore(Generic[T]):

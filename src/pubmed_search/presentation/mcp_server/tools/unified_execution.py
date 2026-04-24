@@ -58,6 +58,7 @@ if TYPE_CHECKING:
     from .unified_planning import ProgressReporter, UnifiedSearchPlan
 
 logger = logging.getLogger(__name__)
+SOURCE_SEARCH_TIMEOUT_SECONDS = 25.0
 
 SearchRunner = Callable[
     [str, int, int | None, int | None, dict[str, Any]], Awaitable[tuple[list[UnifiedArticle], int | None]]
@@ -137,6 +138,13 @@ async def execute_unified_search(
 
             trial_query = " ".join(plan.query.split()[:5])
             clinical_trials_task = asyncio.create_task(search_related_trials(trial_query, limit=3))
+            parent_task = asyncio.current_task()
+            if parent_task is not None:
+                def _cancel_orphaned_trials(_completed_parent: asyncio.Task[Any]) -> None:
+                    if clinical_trials_task is not None and not clinical_trials_task.done():
+                        clinical_trials_task.cancel()
+
+                parent_task.add_done_callback(_cancel_orphaned_trials)
         except Exception:
             logger.debug("Clinical trials module not available, skipping")
 
@@ -193,7 +201,10 @@ async def execute_unified_search(
 
             return SourceAdapterCall(source=source, operation="search", execute=_execute)
 
-        search_results = await gather_source_adapter_calls([_build_search_call(source) for source in search_sources])
+        search_results = await gather_source_adapter_calls(
+            [_build_search_call(source) for source in search_sources],
+            per_call_timeout=SOURCE_SEARCH_TIMEOUT_SECONDS,
+        )
         for result in search_results:
             for error in result.errors:
                 logger.error("Search failed: %s", format_source_adapter_error(error))

@@ -417,6 +417,16 @@ openclaw plugins list  # Should show: mcp-adapter | loaded
 
 ### Cline
 
+PubMed Search MCP now ships a workspace-scoped Cline overlay so project users do not need to recreate rules by hand:
+
+- `AGENTS.md`: shared baseline used to avoid duplicating common rules across agents
+- `.clinerules/*.md`: Cline-only rules, mostly path-scoped to keep context lean
+- `.clinerules/workflows/*.md`: reusable harness workflows for validation, MCP sync, and dual-agent setup
+- `.vscode/extensions.json`: recommended VS Code extensions for Copilot + Cline + Python support
+- `scripts/setup-vscode-ai-harness.sh`: installs the recommended extension set with one command
+
+This split keeps shared behavior in one place while leaving Copilot-specific behavior in `.github/` and Cline-specific automation in `.clinerules/`.
+
 **Config file**: `cline_mcp_settings.json`
 
 ```json
@@ -434,6 +444,14 @@ openclaw plugins list  # Should show: mcp-adapter | loaded
   }
 }
 ```
+
+Recommended first-run sequence:
+
+```bash
+./scripts/setup-vscode-ai-harness.sh
+```
+
+Then restart VS Code, confirm Cline sees the workspace rules/workflows, and confirm Copilot Chat lists the `pubmed-search` MCP server from `.vscode/mcp.json`.
 
 ---
 
