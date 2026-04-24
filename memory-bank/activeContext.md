@@ -4,17 +4,26 @@
 
 ## 🎯 當前焦點
 
-- **v0.5.5 patch release** — Windows/Python 3.14 MCP startup fix by removing the native `dependency-injector` runtime dependency
+- **v0.5.6 integration release** — merge local feature work with all reachable release/feature branches, validate the integrated MCP surface, then publish a new version after local and GitHub Actions checks are green
 
 ## 📊 測試結果
 
-- `uv run pytest -q`: ✅ 3207 passed, 34 skipped
+- `uv run ruff check src/ tests/ scripts/ run_server.py run_copilot.py`: ✅ passed
 - `uv run mypy src/ tests/`: ✅ passed
 - `uv run python scripts/check_async_tests.py`: ✅ passed
-- `uv build`: ✅ wheel/sdist built; package metadata has no `dependency-injector`
-- Release branch: `master`
+- `uv run pytest -q`: ✅ 3207 passed, 34 skipped
+- MCP smoke import/create_server: ✅ `pubmed_search.__version__ == "0.5.6"`; `create_server()` initializes successfully
+- `uv build`: ✅ wheel/sdist built for 0.5.6; package metadata has no `dependency-injector`; `requests` is only in the `scripts` extra
+- Integration branch: `codex/integrate-local-v0.5.6`
 
 ## ✅ 已完成本 session
+
+### v0.5.6: Integrated Local Feature Work + Release Candidate
+- **Branch integration**: created `codex/integrate-local-v0.5.6`, committed the local workspace feature set, and merged all reachable remote release/feature branches; they were already contained in the current history.
+- **New MCP capability**: added `verify_reference_list` for PubMed-backed reference-list verification using PMID, DOI, ECitMatch, and title-search evidence.
+- **Agent workspace assets**: added shared `AGENTS.md`, Cline rules/workflows, Copilot guidance sync, VS Code extension recommendations, and setup harness docs/scripts.
+- **Runtime hardening**: tightened Entrez isolation/retry behavior, source-client contracts, fulltext/browser fallback boundaries, cache cleanup, and MCP callback wrappers.
+- **Release metadata**: bumped package metadata to 0.5.6 and documented the integrated release scope.
 
 ### v0.5.5: Windows Python 3.14 Startup Fix
 - **Root cause**: Windows installs using Python 3.14 failed before MCP startup because `dependency-injector` loaded a native DLL extension during `pubmed_search.container` import.
@@ -29,6 +38,7 @@
 - **Release hardening**: deterministic mutation gate, in-memory MCP protocol test, local MCP RC validation, BaseAPIClient param-path fix, Unpaywall email fallback fix
 
 ## 📈 Version History
+- v0.5.6: integrated local feature work; reference verification tool; AI workspace harness; source/runtime hardening
 - v0.5.5: Windows/Python 3.14 MCP startup fix; removed native dependency-injector runtime dependency
 - v0.5.0: docs site + source contracts + shared adapter/cache substrate + release hardening
 - v0.4.5: MCP SDK expansion + anti-reinvention cleanup
@@ -41,8 +51,8 @@
 - v0.3.4: async-first migration
 
 ## 🔜 下一步 (low priority)
-- Push/tag `v0.5.5` after GitHub Actions CI is green
+- Push integration branch, run multi-platform GitHub Actions CI, merge to `master`, then tag and publish `v0.5.6`
 - Algorithm innovation implementation (BM25/RRF/PRF)
 
 ---
-*Last updated: 2026-04-24 — v0.5.5 Windows startup patch release*
+*Last updated: 2026-04-24 — v0.5.6 integrated release candidate*

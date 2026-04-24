@@ -10,10 +10,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-
-- Optional `OPENALEX_API_KEY` support so OpenAlex requests can use authenticated API-key query parameters instead of mailto-only polite-pool auth
-
 ### Planned
 
 - PRISMA flow tracking (init_prisma_flow, record_screening, get_prisma_diagram)
@@ -21,6 +17,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Quality assessment templates (RoB 2, ROBINS-I, NOS)
 - Research trend analysis (keyword frequency, publication trends)
 - Chart generation (PNG output)
+
+---
+
+## [0.5.6] - 2026-04-24
+
+### Added
+
+- New `verify_reference_list` MCP tool for checking plain-text reference lists against PubMed evidence using PMID, DOI, ECitMatch, and conservative title-search paths.
+- Workspace-level AI agent setup assets: shared `AGENTS.md`, Cline-specific `.clinerules/` rules and workflows, Copilot guidance sync, VS Code extension recommendations, and the VS Code AI harness setup script.
+- Official generated client contract snapshots and source-client regression coverage for OpenAlex, Crossref, Semantic Scholar, Europe PMC, Scopus, Web of Science, and preprint adapters.
+- Optional `OPENALEX_API_KEY` support so OpenAlex requests can use authenticated API-key query parameters instead of mailto-only polite-pool auth.
+
+### Changed
+
+- Moved `requests` out of the runtime dependency set and into the `scripts` optional extra; the packaged MCP server now relies on the async/httpx runtime path.
+- Removed legacy root-package exports for `PubMedClient` and `SearchResult`; import those from their infrastructure modules when needed.
+- Expanded session tooling with activity-log retrieval and stronger session manager coverage.
+
+### Fixed
+
+- Hardened Entrez runtime isolation, retry handling, timeout behavior, and citation/fulltext fallback paths.
+- Tightened source-client XML parsing, cache persistence cleanup, browser-session fallback boundaries, and MCP tool callback wrapping.
+- Cleaned integrated lint issues before release validation.
+
+### Tests
+
+- Added focused coverage for reference verification, Entrez runtime isolation, generated source clients, file hygiene, session tools, source contracts, and fulltext/source fallbacks.
+- Revalidated the integrated branch locally with Ruff, mypy, async-test checks, targeted smoke tests, full pytest, build, branch CI, master CI, and publish workflow before release.
 
 ---
 

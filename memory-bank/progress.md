@@ -2,6 +2,14 @@
 
 ## Done
 
+### 2026-04-24: v0.5.6 — Integrated Local Feature Work + Release Candidate
+- ✅ **Integrated local workspace feature set** — committed local changes on `codex/integrate-local-v0.5.6` and confirmed reachable remote release/feature branches were already merged
+- ✅ **Reference verification MCP surface** — added `verify_reference_list` backed by PMID, DOI, ECitMatch, and title-search evidence paths
+- ✅ **AI workspace harness** — added shared `AGENTS.md`, Cline rules/workflows, Copilot guidance sync, VS Code extension recommendations, and setup harness docs/scripts
+- ✅ **Source/runtime hardening** — strengthened Entrez runtime isolation, retry/timeout behavior, source-client contracts, fulltext/browser fallback boundaries, and cache cleanup
+- ✅ **Release metadata** — bumped package metadata and lockfile to 0.5.6 with changelog coverage
+- ✅ **Local quality gate** — Ruff, mypy, async-test checker, full pytest (`3207 passed, 34 skipped`), MCP smoke, and `uv build` passed
+
 ### 2026-04-24: v0.5.5 — Windows Python 3.14 MCP Startup Fix
 - ✅ **Removed native DI runtime dependency** — `dependency-injector` is no longer required or imported by the MCP startup path
 - ✅ **Pure-Python application container** — preserved config, singleton, override, and reset provider behavior used by server/tests
@@ -79,13 +87,13 @@
 - ✅ docs/IMAGE_SEARCH_API.md 完整重寫
 
 ## Doing
-- v0.5.5 patch release: push `master`, wait for multi-platform GitHub Actions CI, then tag `v0.5.5`
+- v0.5.6 release: push integration branch, wait for multi-platform GitHub Actions CI, merge to `master`, then tag/publish
 
 ## Next
 
 | 優先級 | 項目 | 說明 |
 |:------:|------|------|
-| ⭐⭐⭐ | Push/tag v0.5.5 | 先讓 master CI 全綠，再建立 `v0.5.5` tag 觸發 PyPI publish |
+| ⭐⭐⭐ | Push/tag v0.5.6 | 先讓 integration/master CI 全綠，再建立 `v0.5.6` tag 觸發 PyPI publish |
 | ⭐⭐⭐ | Session cache dedup cleanup | 評估 `ArticleCache` 與 `SessionManager.article_cache` 是否收斂成單一路徑 |
 | ⭐⭐⭐ | ARCHITECTURE.md 更新 | 仍顯示舊的目錄結構 |
 | ⭐⭐ | Algorithm innovation impl | BM25/RRF/PRF 等算法實作 |
@@ -95,6 +103,7 @@
 
 | 日期 | 決策 | 原因 |
 |------|------|------|
+| 2026-04-24 | v0.5.6 先用 integration branch 跑完整 local/CI，再 merge/tag/publish | 這次包含大型本地 feature set 與多來源 runtime hardening，先保留 branch gate 比直接在 master 發版更容易定位回歸 |
 | 2026-04-24 | v0.5.5 移除 `dependency-injector` runtime dependency | Windows Python 3.14 使用者安裝後啟動 MCP server 時因 native DLL import failed 崩潰；本專案只需要小型 provider 行為，純 Python container 更穩定 |
 | 2026-03-17 | v0.4.5 MCP SDK 擴充 + anti-reinvention | 長任務工具回報 progress/log，並收斂重複 transport/cache 基礎設施 |
 | 2026-02-14 | v0.3.9 品質嚴格化 | ruff ALL + mypy strict + pre-commit 17 hooks + noqa 18→9 |
