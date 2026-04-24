@@ -18,7 +18,7 @@ import asyncio
 import logging
 import re
 from functools import partial
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal
 from urllib.parse import urlparse
 
 from pubmed_search.shared.async_utils import RequestExecutionPolicy, create_async_http_client, get_transport_kernel

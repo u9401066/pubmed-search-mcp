@@ -16,6 +16,13 @@ from __future__ import annotations
 
 import pytest
 
+from pubmed_search.application.pipeline import (
+    FixSeverity,
+    PipelineConfig,
+    PipelineExecutionSettings,
+    PipelineOutput,
+    PipelineStep,
+)
 from pubmed_search.application.pipeline.validator import (
     _fuzzy_match_action,
     _fuzzy_match_template,
@@ -23,13 +30,6 @@ from pubmed_search.application.pipeline.validator import (
     parse_and_validate_config,
     validate_and_fix,
     validate_pipeline_name,
-)
-from pubmed_search.application.pipeline import (
-    FixSeverity,
-    PipelineConfig,
-    PipelineExecutionSettings,
-    PipelineOutput,
-    PipelineStep,
 )
 
 # =========================================================================
