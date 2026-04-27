@@ -3025,10 +3025,253 @@ src/pubmed_search/
 
 ---
 
+## 🧭 Phase 15: 系統化文獻檢索演算法框架 (Systematic Literature Retrieval Algorithm) ⭐⭐⭐⭐⭐ NEW
+
+> **核心理念**：把文獻檢索抽象成「**受預算約束的引用語意子圖檢索 (Budget-Constrained Citation-Semantic Subgraph Retrieval, BCSR)**」，把現有散落在 query_analyzer / aggregator / timeline / pipeline 的能力，組成一個完整的演算法管線；同時為「第一次做演算法應用研究」建立完整 R&D 流程（資料、基線、評估、消融、可重現、論文化）。
+>
+> **與既有 Phase 的關係**：
+> - Phase 10.5（A1–C3）給出**個別演算法零件**
+> - Phase 11（11.1/11.4/11.5）給出**學術切角**
+> - Phase 13（Timeline）+ Phase 14（Gap）給出**下游應用**
+> - **Phase 15（本節）**= 把它們綁進一個有契約、有評估、有故事的**演算法產品**
+
+---
+
+### 15.1 問題形式化 (Problem Formulation)
+
+在多層複合圖 $G = (V, E_{\text{cite}} \cup E_{\text{sem}} \cup E_{\text{venue}} \cup E_{\text{time}})$ 上，給定使用者意圖 $q$，在預算 $B$（時間、token、API quota）與來源成本 $c(s_i)$（rate-limit、latency、覆蓋度）限制下：
+
+$$
+V^* = \arg\max_{V' \subseteq V}\; \alpha\, \text{Rel}(V', q) + \beta\, \text{Cov}(V') + \gamma\, \text{Trust}(V') \quad \text{s.t.}\; \sum_{s_i \in S(V')} c(s_i) \le B
+$$
+
+並輸出可重現的檢索軌跡 $\Pi$（Provenance / Chronicle）使結果可被驗證、可被增量演進。
+
+| 符號 | 意義 | 對應現有元件 |
+|---|---|---|
+| $\text{Rel}$ | 相關性（語意 + BM25 + 引用親和度） | `result_aggregator`, `semantic_enhancer` |
+| $\text{Cov}$ | 覆蓋度（multi-source、子主題、時代分布） | `unified_search`, `timeline` |
+| $\text{Trust}$ | 信任度（peer-reviewed、引用指標、來源權威） | `citation_metrics`, `source_trust` |
+| $c(s_i)$ | 來源成本（latency、rate quota、$$$） | 待實作（Phase 15.B） |
+| $\Pi$ | 檢索軌跡 | `reproducibility.py` + Phase 15.E |
+
+---
+
+### 15.2 子任務分解（A–G 七大演算法 Phase）
+
+| Phase | 名稱 | 解決的子問題 | 槓桿 | 風險 | 依賴 | 推薦序 |
+|:-:|---|---|:-:|:-:|---|:-:|
+| **15.A** | Citation Graph Traversal Primitive | 受預算控制的引用樹擴張 | ⭐⭐⭐⭐⭐ | 低 | 既有 citing/reference 工具 | **1** |
+| **15.B** | Cost-aware Source Planner | 多源 dispatch 從規則升級為預算最佳化 | ⭐⭐⭐⭐⭐ | 中 | unified_search, source registry | 3 |
+| **15.C** | Saturation & Coverage Analytics | 「該停了」的客觀訊號 | ⭐⭐⭐⭐ | 低 | session manager | 4 |
+| **15.D** | Era / Trend / Burst Detection | 時代紅利、新興子主題 | ⭐⭐⭐⭐ | 中 | timeline 模組 | 6 |
+| **15.E** | Research Chronicle Artifact | 把檢索軌跡升格為一等公民資產 | ⭐⭐⭐⭐⭐ | 中 | timeline, reproducibility | **2** |
+| **15.F** | Library-aware Frontier (跨 repo) | 把 Zotero owned 視為 visited 節點 | ⭐⭐⭐⭐ | 中 | zotero-keeper 端契約 | 5 |
+| **15.G** | Active Relevance Feedback | 標記 → 自動再擴張 | ⭐⭐⭐ | 高 | 15.A + 向量化 | 7 |
+
+#### 15.A Citation Graph Traversal Primitive ⭐⭐⭐⭐⭐
+- 一個有 frontier / visited / budget / stop 的 first-class API
+- 取代散落的 `get_citing` / `get_references` / `get_related` 多次呼叫
+
+```python
+def traverse_citation_graph(
+    seeds: list[str],                   # PMIDs / DOIs
+    direction: Literal["forward","backward","co-cite","bidirectional"],
+    *,
+    max_depth: int = 2,
+    budget: TraversalBudget,            # max_nodes / max_api_calls / max_seconds
+    relevance_fn: Callable | None = None,
+    stop_when: StopCriteria | None = None,
+    session_id: str | None = None,
+) -> TraversalResult:
+    """每步輸出 marginal gain，供 saturation analytics 使用。"""
+```
+
+- 核心資料結構：`Frontier`（priority queue by relevance × novelty）、`VisitedSet`（接 session）
+- 可重現：每步寫入 `TraversalLog`（→ 15.E）
+
+#### 15.B Cost-aware Source Planner ⭐⭐⭐⭐⭐
+- `SourceCostModel`：`{latency_p50, rate_headroom, coverage_for(intent), trust, freshness, $cost}`
+- ε-greedy / UCB1 bandit 在 session 內 online 學習各來源在當前 query 類型的 reward
+- 對外：`plan_search(query, budget) → DispatchPlan`（含預估成本與信賴區間）
+- 落地：`application/search/source_planner.py`，整合進 `unified_search`
+
+#### 15.C Saturation & Coverage Analytics ⭐⭐⭐⭐
+- Coverage curve：unique DOIs vs cumulative API calls
+- Capture-recapture (Chao1 / Lincoln-Petersen) 估計 missing recall
+- `should_continue_search(session_id) → {continue|stop|pivot, reason, est_missing_recall}`
+
+#### 15.D Era / Trend / Burst Detection ⭐⭐⭐⭐
+- Kleinberg burst on 年度頻率
+- Journal velocity prior（高引用速率期刊）
+- Co-citation clustering (Louvain) → emerging subtopic 標記
+- 對應 Phase 10.5-B2、Phase 11.5；本 phase 將其封裝成 `analyze_topic_landscape(query) → TopicLandscape`
+
+#### 15.E Research Chronicle Artifact ⭐⭐⭐⭐⭐
+- 把「檢索軌跡」從 log 升級為**可儲存、可 diff、可演進**的 entity
+
+```python
+@dataclass
+class Chronicle:
+    id: str
+    query_intent: QueryIntent
+    seeds: list[ArticleRef]
+    traversal_log: list[TraversalStep]
+    milestones: list[Milestone]      # from timeline
+    branches: list[Branch]
+    coverage_summary: CoverageSummary
+    provenance_hash: str             # 接 reproducibility.py
+    created_at: datetime
+    parent_chronicle_id: str | None  # 增量演進
+```
+
+- API：`build_chronicle(session_id) / save_chronicle / load_chronicle / diff_chronicle(a, b)`
+- **跨 repo**：zotero-keeper 端對應 `import_chronicle_to_zotero` → Collection Note + 個別文獻 tag
+
+#### 15.F Library-aware Frontier（跨 repo）⭐⭐⭐⭐
+- zotero-keeper 暴露 `get_owned_dois_pmids(collection?)`
+- pubmed-search-mcp traversal 將 owned 視為 `visited`，預算集中探索鄰居
+- 直接交付 zotero-keeper roadmap 的 `find_missing_citations` / `suggest_related_papers`
+- **契約 (Contract)** 寫入 [docs/research/AGENT_MCP_COLLABORATION.md](docs/research/AGENT_MCP_COLLABORATION.md)
+
+#### 15.G Active Relevance Feedback ⭐⭐⭐
+- `mark_relevance(pmids, label)` 進 session
+- Rocchio 在語意向量空間重排，觸發新一輪 budget-aware traversal
+
+---
+
+### 15.3 演算法 R&D 流程（給「第一次做演算法應用」的完整方法論）
+
+> 你問「我們具體可以怎樣更完整？」這節給出**從問題到論文**的標準作業流程，每個 Phase A–G 都會走一遍。
+
+#### Step 1 — 問題與 Hypothesis 定義（避免越做越散）
+- **明確輸入 / 輸出 / 限制**（已在 15.1 形式化）
+- 寫下 falsifiable hypothesis：
+  > H: 在固定 API budget 下，BCSR (15.A+15.B) 相對 baseline (`unified_search` 平鋪呼叫) 能提升 nDCG@20 至少 X%、減少 API 呼叫數至少 Y%。
+
+#### Step 2 — Benchmark 資料集建構（**最容易被低估、最關鍵**）
+
+| 來源 | 用途 | 規模 | 取得方式 |
+|---|---|---|---|
+| **TREC-COVID / TREC Genomics / TREC PM** | 公認 IR benchmark，含人工相關性標註 | ~50 query × ~1000 docs | 公開下載 |
+| **CSFCube** | scientific document similarity | 1k+ | 公開 |
+| **SciDocs (SPECTER)** | citation prediction、co-view | 大 | 公開 |
+| **自建小型 gold set** | 領域特化（如麻醉、ICU） | 10–20 query × 系統性回顧 reference list | 從既有 Cochrane SR / PROSPERO protocol 反向擷取 |
+
+→ 落地：`tests/benchmarks/`，每個資料集一個 loader + 一份 README 說明授權
+
+#### Step 3 — Baselines（沒有 baseline 的演算法等於沒有結果）
+
+| Tier | Baseline | 為什麼必須有 |
+|---|---|---|
+| Trivial | PubMed 預設排序 | 證明你比「什麼都不做」好 |
+| Naive | term-overlap + recency | 證明你比現有 `_calculate_relevance` 好（Phase 10.5-A1 對照） |
+| Strong | BM25 + RRF | 證明不是只贏 naive |
+| Modern | SPECTER2 dense retrieval | 證明在有預算限制下，BCSR 能贏單純 dense |
+
+→ 全部寫成 `BaselineRetriever` 共同介面，可 plug into 同一個 evaluation harness
+
+#### Step 4 — Metrics（用對指標才不會自欺）
+
+| 維度 | 指標 | 對應 Phase |
+|---|---|---|
+| Relevance | nDCG@k, MAP, Recall@k | 全 phase |
+| Efficiency | API calls per relevant doc, time-to-first-relevant | 15.B, 15.C |
+| Coverage | Subtopic recall, Chao1 estimator | 15.C |
+| Stability | Inter-run variance, deterministic re-run | 15.E (provenance) |
+| Faithfulness | Provenance completeness、可重現率 | 15.E |
+| User-centric | SUS-style usability、time to chronicle | 15.E |
+
+#### Step 5 — Ablation Studies（拆解每個元件的貢獻）
+
+對每個 Phase 設計：「移除此元件後，metrics 下降多少？」表格。沒有 ablation 的演算法論文會被拒。
+
+#### Step 6 — Reproducibility 強制機制
+- 每次實驗強制產生 `experiment.yaml`（query set、seed、source list、budget、git commit、依賴版本 hash）
+- 結果存 `experiments/<exp_id>/{config.yaml, results.parquet, log.jsonl, chronicle.json}`
+- 接上 15.E 的 `provenance_hash`
+
+#### Step 7 — 發表路徑（每個 Phase 對應一個投稿目標）
+
+| Phase | 論文角度 | 候選會議/期刊 |
+|---|---|---|
+| 15.A + 15.C | Budget-aware citation traversal with saturation control | SIGIR, JASIST |
+| 15.B | Online bandit for multi-source biomedical retrieval | CIKM, JCDL |
+| 15.D | Burst-aware era detection in clinical literature | Scientometrics |
+| 15.E | Research Chronicle: a reproducibility artifact for agentic search | JAMIA, JCDL |
+| 15.F | Library-grounded retrieval: leveraging owned references as priors | JASIST |
+| Overall | BCSR: a unified framework for agentic biomedical retrieval | **Nature Methods / JAMIA / TOIS** |
+
+---
+
+### 15.4 開發里程碑（建議 6 個月節奏）
+
+| 月 | 重點 | 交付物 |
+|:-:|---|---|
+| M1 | 15.A traversal primitive + benchmark harness 骨架 | `traverse_citation_graph` α 版、TREC-COVID loader、4 個 baselines、metrics suite |
+| M2 | 15.E Chronicle entity + provenance manifest | `Chronicle` schema、save/load/diff、與 reproducibility 整合 |
+| M3 | 15.B planner + 15.C saturation | `plan_search`, `should_continue_search`, ablation 表 v1 |
+| M4 | 15.F 跨 repo 契約 + zotero-keeper 端整合 | `get_owned_dois_pmids`、`import_chronicle_to_zotero` |
+| M5 | 15.D trend detection + 端到端 e2e 評估 | `analyze_topic_landscape`、整篇實驗報告草稿 |
+| M6 | 15.G feedback loop + 論文化 | Rocchio rerank、preprint 投稿 |
+
+---
+
+### 15.5 建議的單一最小可驗證原型 (MVP) — **第 1 個月就要交付的東西**
+
+> 給「第一次做演算法應用」的人最重要的建議：**先把 evaluation harness 蓋起來，再寫演算法**。
+
+```
+mvp/
+├── benchmarks/
+│   ├── trec_covid_loader.py
+│   └── self_built_anesthesia.yaml      # 10 個查詢 + Cochrane 反向 gold set
+├── baselines/
+│   ├── pubmed_default.py
+│   ├── term_overlap.py
+│   ├── bm25_rrf.py
+│   └── specter2_dense.py
+├── metrics/
+│   ├── ndcg.py
+│   ├── api_efficiency.py
+│   └── coverage.py
+├── runners/
+│   └── harness.py                       # 一鍵跑全 baseline × 全資料集
+└── reports/
+    └── 2026-XX_baseline_table.md
+```
+
+第一個月只要能產出**「baseline × benchmark」對照表**，剩下五個月每個演算法都只是在表上多加一列。
+
+---
+
+### 15.6 風險與止損 (Risk Register)
+
+| 風險 | 機率 | 影響 | 緩解 |
+|---|:-:|:-:|---|
+| Gold set 標註不足 | 高 | 高 | 先用 TREC + 反向 Cochrane SR，後再人工標注 |
+| API rate limit 撞牆 | 高 | 中 | 15.B planner + cache + 分時跑 |
+| 演算法 marginal gain 不顯著 | 中 | 高 | ablation 暴露弱點，及早 pivot 到 15.E（chronicle 是純工程，必勝） |
+| Scope creep | 高 | 高 | 每月只做 1 個 Phase，benchmark harness 鎖死 |
+| 學術寫作門檻 | 中 | 中 | 每 Phase 完成即寫 2 頁 short paper，不要堆到最後 |
+
+---
+
+### 15.7 為什麼 Phase 15 是「最直接的突破點 + 最具價值」
+
+1. **演算法槓桿**：15.A + 15.B 直接把現有 14 個 source 從「平鋪呼叫」升級為「策略性子圖檢索」，token / API quota 預期下降 50%+。
+2. **資產複利**：15.E Chronicle 讓每次搜尋都變成可累積的研究資產，使用者越用越強，是與商用工具最大的差異化。
+3. **跨 repo 整合**：15.F 直接把 pubmed-search-mcp 與 zotero-keeper 從「兩個工具」變成「一個系統」，產品故事完整。
+4. **學術可發表**：15.A–E 每個都有對應投稿目標，演算法工作不會白做。
+5. **第一次做演算法的人友善**：15.3 的 R&D 流程把「做研究」變成可重複的工程流程，先蓋 harness 再寫演算法，避免常見的「跑出好看數字但無法驗證」陷阱。
+
+---
+
 ## 貢獻指南
 
 歡迎貢獻！目前優先需要：
-1. 🔥 Phase 14 研究缺口偵測 (高優先級)
-2. Phase 11/12 學術方向選擇與深入
-3. Phase 5.9 PRISMA 流程工具
-4. 測試案例
+1. 🔥 Phase 15 系統化檢索演算法框架 (BCSR) — 演算法 + 評估管線
+2. 🔥 Phase 14 研究缺口偵測 (高優先級)
+3. Phase 11/12 學術方向選擇與深入
+4. Phase 5.9 PRISMA 流程工具
+5. 測試案例
