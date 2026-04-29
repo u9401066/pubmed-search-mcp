@@ -175,10 +175,11 @@ class TestSaveLiteratureNotes:
         assert parsed["status"] == "success"
         assert parsed["note_format"] == "medpaper"
         assert parsed["files"][0]["citation_key"] == "smith2024_12345678"
-        assert parsed["files"][0]["path"].endswith("12345678/smith2024_12345678.md")
+        note_path = Path(parsed["files"][0]["path"])
+        assert note_path.parts[-2:] == ("12345678", "smith2024_12345678.md")
         assert parsed["files"][0]["wikilink"].startswith("[[smith2024_12345678|")
 
-        note_text = Path(parsed["files"][0]["path"]).read_text(encoding="utf-8")
+        note_text = note_path.read_text(encoding="utf-8")
         assert 'type: "reference"' in note_text
         assert "^key-findings" in note_text
         assert "```json" in note_text

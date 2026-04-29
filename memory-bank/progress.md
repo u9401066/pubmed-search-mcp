@@ -8,7 +8,7 @@
 - ✅ **Pipeline structured output** — `output.format: json` and `output_format="json"` now return structured pipeline JSON with articles and per-step metadata
 - ✅ **Pipeline authoring controls** — added `globals`, `variables`, `dry_run`, and ancestor-only `stop_at`, with saved-pipeline roundtrip coverage
 - ✅ **Zotero boundary** — documented Zotero Keeper as an external integration that consumes RIS/CSL/JSON/wiki exports instead of living in PubMed MCP core
-- ✅ **Quality gate** — Ruff, mypy, async-test checker, full pytest (`3235 passed, 35 skipped`), MCP tool count (`45`), docs generation, and diff whitespace checks passed
+- ✅ **Quality gate** — Ruff, mypy, async-test checker, full pytest (`3236 passed, 34 skipped`), MCP tool count (`45`), docs generation, and diff whitespace checks passed
 
 ### 2026-04-24: v0.5.6 — Integrated Local Feature Work + Release Candidate
 - ✅ **Integrated local workspace feature set** — committed local changes on `codex/integrate-local-v0.5.6` and confirmed reachable remote release/feature branches were already merged

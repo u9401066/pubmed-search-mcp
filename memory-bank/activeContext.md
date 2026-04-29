@@ -11,7 +11,7 @@
 - `uv run ruff check`: ✅ passed
 - `uv run mypy src/ tests/`: ✅ passed
 - `uv run python scripts/check_async_tests.py`: ✅ passed
-- `uv run pytest -q`: ✅ 3235 passed, 35 skipped
+- `uv run pytest -q`: ✅ 3236 passed, 34 skipped
 - `uv run python scripts/count_mcp_tools.py -q`: ✅ 45
 - `git diff --check`: ✅ passed
 
