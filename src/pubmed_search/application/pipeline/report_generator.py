@@ -28,6 +28,14 @@ logger = logging.getLogger(__name__)
 # ── Constants ──────────────────────────────────────────────────────────────
 _ABSTRACT_MAX_LEN = 400
 _TOP_ARTICLES_DEFAULT = 30
+_FILTER_REASON_LABELS = {
+    "year_before_min": "year before min_year",
+    "year_after_max": "year after max_year",
+    "article_type_mismatch": "article type mismatch",
+    "unknown_article_type_filter": "unknown article_types requested",
+    "citation_count_below_min": "citation count below min_citations",
+    "missing_abstract": "missing abstract",
+}
 
 
 def generate_pipeline_report(
@@ -54,6 +62,7 @@ def generate_pipeline_report(
     parts.append(_section_executive_summary(articles, step_results, config))
     parts.append(_section_step_details(step_results, config))
     parts.append(_section_source_statistics(step_results))
+    parts.append(_section_filter_diagnostics(step_results))
     parts.append(_section_evidence_distribution(articles))
     parts.append(_section_articles(articles, config))
     parts.append(_section_methodology_notes(articles, step_results, config))
@@ -147,7 +156,20 @@ def _step_output_summary(sr: StepResult) -> str:
     """Summarize a successful step's output for the table."""
     details: list[str] = []
 
-    if sr.articles:
+    if sr.action == "filter" and sr.metadata.get("before_count") is not None:
+        before = sr.metadata.get("before_count", 0)
+        after = sr.metadata.get("after_count", len(sr.articles))
+        removed = sr.metadata.get("removed_count", max(0, int(before) - int(after)))
+        details.append(f"{before} -> {after} articles")
+        if removed:
+            details.append(f"removed {removed}")
+        reasons = sr.metadata.get("removal_reasons") or {}
+        if reasons:
+            top_reason, top_count = max(reasons.items(), key=lambda item: item[1])
+            label = _FILTER_REASON_LABELS.get(str(top_reason), str(top_reason))
+            details.append(f"top reason: {label} ({top_count})")
+
+    elif sr.articles:
         src_counts = sr.metadata.get("source_api_counts")
         if src_counts:
             breakdown = ", ".join(f"{s}: {c}" for s, c in src_counts.items())
@@ -164,9 +186,6 @@ def _step_output_summary(sr: StepResult) -> str:
             1 for a in sr.articles if a.citation_metrics and a.citation_metrics.citation_count is not None
         )
         details.append(f"{with_metrics}/{len(sr.articles)} enriched")
-
-    if sr.action == "filter" and sr.metadata.get("removed_count") is not None:
-        details.append(f"removed {sr.metadata['removed_count']}")
 
     if sr.action == "merge" and sr.metadata.get("duplicates_removed") is not None:
         details.append(f"{sr.metadata['duplicates_removed']} dups removed")
@@ -203,6 +222,63 @@ def _section_source_statistics(step_results: dict[str, StepResult]) -> str:
     parts.append(f"| **Total** | **{total}** | **100%** |")
     parts.append("")
 
+    return "\n".join(parts)
+
+
+def _section_filter_diagnostics(step_results: dict[str, StepResult]) -> str:
+    """Show per-filter before/after counts and exclusion reasons."""
+    filter_results = [
+        sr
+        for sr in step_results.values()
+        if sr.ok and sr.action == "filter" and sr.metadata.get("before_count") is not None
+    ]
+    if not filter_results:
+        return ""
+
+    parts: list[str] = ["## Filter Diagnostics\n"]
+    parts.append("| Step | Before | After | Removed | Exclusion Reasons |")
+    parts.append("|------|--------|-------|---------|-----------------------|")
+    for sr in filter_results:
+        reasons = sr.metadata.get("removal_reasons") or {}
+        reason_text = "—"
+        if reasons:
+            reason_text = ", ".join(
+                f"{_FILTER_REASON_LABELS.get(str(reason), str(reason))}: {count}"
+                for reason, count in sorted(reasons.items(), key=lambda item: -item[1])
+            )
+        parts.append(
+            f"| `{sr.step_id}` | {sr.metadata.get('before_count', 0)} | "
+            f"{sr.metadata.get('after_count', 0)} | {sr.metadata.get('removed_count', 0)} | {reason_text} |"
+        )
+
+    for sr in filter_results:
+        diagnostics = sr.metadata.get("article_type_diagnostics") or {}
+        warning = sr.metadata.get("warning")
+        examples = sr.metadata.get("excluded_examples") or []
+        if diagnostics or warning or examples:
+            parts.append("")
+            parts.append(f"### `{sr.step_id}` Details\n")
+        if diagnostics:
+            mappings = diagnostics.get("mappings") or {}
+            unknown = diagnostics.get("unknown") or []
+            if mappings:
+                mapping_text = ", ".join(f"`{raw}` -> `{canon}`" for raw, canon in mappings.items())
+                parts.append(f"- Article type mapping: {mapping_text}")
+            if unknown:
+                parts.append(f"- Unknown article_types: {', '.join(f'`{item}`' for item in unknown)}")
+        if warning:
+            parts.append(f"- Warning: {warning}")
+        if examples:
+            parts.append("- Excluded examples:")
+            for item in examples[:3]:
+                title = (item.get("title") or "Untitled")[:70]
+                reasons = ", ".join(_FILTER_REASON_LABELS.get(reason, reason) for reason in item.get("reasons", []))
+                pmid = item.get("pmid") or "no PMID"
+                year = item.get("year") or "no year"
+                article_type = item.get("article_type") or "unknown"
+                parts.append(f"  - PMID {pmid} ({year}, {article_type}): {title} — {reasons}")
+
+    parts.append("")
     return "\n".join(parts)
 
 
@@ -435,6 +511,9 @@ def _section_methodology_notes(
     if not has_metrics and articles:
         suggestions.append("Consider adding a `metrics` step to enrich results with iCite citation data.")
 
+    if any(sr.metadata.get("dry_run") for sr in step_results.values()):
+        suggestions.append("Dry-run mode validated the plan only; run again without `dry_run` to fetch articles.")
+
     # Check for error steps
     error_steps = [s.id for s in config.steps if s.id in step_results and not step_results[s.id].ok]
     if error_steps:
@@ -461,6 +540,7 @@ def _section_methodology_notes(
     parts.append("\n### 📦 Next Steps\n")
     parts.append("- `get_session_pmids()` — retrieve all PMIDs from this pipeline run")
     parts.append('- `prepare_export(pmids="last", format="ris")` — export to reference manager')
+    parts.append('- `save_literature_notes(pmids="last", format="wiki")` — save local wiki/FOAM-compatible notes')
     parts.append('- `get_fulltext(pmcid="PMC...")` — retrieve full text for key articles')
     parts.append('- `build_citation_tree(pmid="...")` — explore citation network')
     parts.append("")

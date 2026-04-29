@@ -517,9 +517,10 @@ class TestParseAndValidateConfig:
         }
         result = parse_and_validate_config(raw)
         assert result.valid is True
+        assert result.config.execution.format == "json"
         assert result.config.execution.limit == 50
         assert result.config.execution.ranking == "impact"
-        assert any(fix.field == "output.format" for fix in result.fixes)
+        assert not any(fix.field == "output.format" for fix in result.fixes)
 
     def test_output_defaults(self):
         raw = {"steps": [{"id": "s1", "action": "search"}]}

@@ -82,6 +82,8 @@ class PipelineConfig:
     steps: list[PipelineStep] = field(default_factory=list)
     name: str = ""
     output: PipelineOutput = field(default_factory=PipelineOutput)
+    globals: dict[str, Any] = field(default_factory=dict)
+    variables: dict[str, Any] = field(default_factory=dict)
 
     # Template-based creation (steps auto-generated from template)
     template: str | None = None
@@ -93,6 +95,8 @@ class PipelineConfig:
         name: str = "",
         output: PipelineOutput | None = None,
         execution: PipelineOutput | None = None,
+        globals: dict[str, Any] | None = None,  # noqa: A002 - public pipeline schema field
+        variables: dict[str, Any] | None = None,
         template: str | None = None,
         template_params: dict[str, Any] | None = None,
     ) -> None:
@@ -101,6 +105,8 @@ class PipelineConfig:
         self.steps = list(steps or [])
         self.name = name
         self.output = effective_output or PipelineOutput()
+        self.globals = dict(globals or {})
+        self.variables = dict(variables or {})
         self.template = template
         self.template_params = dict(template_params or {})
 

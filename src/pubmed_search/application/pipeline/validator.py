@@ -92,6 +92,8 @@ def compute_config_hash(config: PipelineConfig) -> str:
     # Deterministic serialization for hashing
     data: dict[str, Any] = {
         "steps": [{"id": s.id, "action": s.action, "params": s.params, "inputs": s.inputs} for s in config.steps],
+        "globals": config.globals,
+        "variables": config.variables,
         "template": config.template,
         "template_params": config.template_params,
     }
@@ -204,13 +206,14 @@ def _validate_and_fix_output(config: PipelineConfig, fixes: list[ValidationFix])
     """Apply semantic output auto-fixes shared by template and step pipelines."""
     output = config.output
 
-    if output.format != "markdown":
+    valid_formats = {"markdown", "json"}
+    if output.format not in valid_formats:
         fixes.append(
             ValidationFix(
                 field="output.format",
                 original=output.format,
                 corrected="markdown",
-                reason=f"Legacy or invalid output format '{output.format}' is ignored; defaulting to 'markdown'",
+                reason=f"Invalid output format '{output.format}', defaulting to 'markdown'",
                 severity=FixSeverity.INFO,
             )
         )

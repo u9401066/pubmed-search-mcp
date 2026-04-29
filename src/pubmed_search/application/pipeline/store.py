@@ -46,6 +46,11 @@ def _config_to_dict(config: PipelineConfig) -> dict[str, Any]:
     if config.name:
         data["name"] = config.name
 
+    if config.globals:
+        data["globals"] = config.globals
+    if config.variables:
+        data["variables"] = config.variables
+
     if config.template:
         data["template"] = config.template
         if config.template_params:

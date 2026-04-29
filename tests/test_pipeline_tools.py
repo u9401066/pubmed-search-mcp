@@ -151,6 +151,12 @@ class TestManagePipeline:
         output = mcp["manage_pipeline"](action="unknown")
         assert "Unknown pipeline action" in output
 
+    def test_manage_save_non_dict_yaml_has_facade_specific_hint(self, mcp, mock_store):
+        output = mcp["manage_pipeline"](action="save", name="x", config="- just\n- a\n- list")
+        assert "mapping/object" in output
+        assert "manage_pipeline(action='save')" in output
+        assert "save_pipeline" in output
+
 
 # =========================================================================
 # set/get pipeline store
@@ -527,6 +533,18 @@ class TestConfigToDisplayDict:
         )
         d = _config_to_display_dict(config)
         assert "output" in d
+
+    def test_display_includes_json_format_globals_and_variables(self):
+        config = PipelineConfig(
+            steps=[PipelineStep(id="s1", action="search")],
+            execution=PipelineExecutionSettings(format="json", limit=10, ranking="impact"),
+            globals={"sources": "pubmed"},
+            variables={"topic": "remimazolam"},
+        )
+        d = _config_to_display_dict(config)
+        assert d["output"] == {"format": "json", "limit": 10, "ranking": "impact"}
+        assert d["globals"] == {"sources": "pubmed"}
+        assert d["variables"] == {"topic": "remimazolam"}
 
 
 # =========================================================================

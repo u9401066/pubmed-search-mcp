@@ -16,6 +16,7 @@ from pubmed_search.application.pipeline.report_generator import (
     _section_articles,
     _section_evidence_distribution,
     _section_executive_summary,
+    _section_filter_diagnostics,
     _section_header,
     _section_methodology_notes,
     _section_source_statistics,
@@ -396,9 +397,10 @@ class TestStepOutputSummary:
         sr = StepResult(
             step_id="f1",
             action="filter",
-            metadata={"removed_count": 7},
+            metadata={"before_count": 10, "after_count": 3, "removed_count": 7},
         )
         result = _step_output_summary(sr)
+        assert "10 -> 3 articles" in result
         assert "removed 7" in result
 
     def test_merge_action(self) -> None:
@@ -470,6 +472,34 @@ class TestSectionSourceStatistics:
         }
         result = _section_source_statistics(step_results)
         assert "50%" in result
+
+
+class TestSectionFilterDiagnostics:
+    def test_shows_before_after_and_reasons(self) -> None:
+        step_results = {
+            "f1": StepResult(
+                step_id="f1",
+                action="filter",
+                metadata={
+                    "before_count": 10,
+                    "after_count": 4,
+                    "removed_count": 6,
+                    "removal_reasons": {
+                        "article_type_mismatch": 3,
+                        "missing_abstract": 1,
+                        "year_before_min": 1,
+                        "citation_count_below_min": 1,
+                    },
+                },
+            )
+        }
+
+        result = _section_filter_diagnostics(step_results)
+
+        assert "Filter Diagnostics" in result
+        assert "| `f1` | 10 | 4 | 6 |" in result
+        assert "article type mismatch: 3" in result
+        assert "citation count below min_citations: 1" in result
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -703,6 +733,7 @@ class TestSectionMethodologyNotes:
         assert "Next Steps" in result
         assert "get_session_pmids" in result
         assert "prepare_export" in result
+        assert "save_literature_notes" in result
 
 
 # ═══════════════════════════════════════════════════════════════════════════

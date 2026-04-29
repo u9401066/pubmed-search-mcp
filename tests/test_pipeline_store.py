@@ -137,6 +137,16 @@ class TestConfigToDict:
         d = _config_to_dict(config)
         assert d["steps"][0]["on_error"] == "abort"
 
+    def test_globals_and_variables_included(self):
+        config = PipelineConfig(
+            globals={"sources": "pubmed", "limit": "${limit}"},
+            variables={"limit": 25, "topic": "remimazolam"},
+            steps=[PipelineStep(id="s1", action="search", params={"query": "${topic}"})],
+        )
+        d = _config_to_dict(config)
+        assert d["globals"] == {"sources": "pubmed", "limit": "${limit}"}
+        assert d["variables"] == {"limit": 25, "topic": "remimazolam"}
+
 
 # =========================================================================
 # Store Initialization
@@ -193,6 +203,19 @@ class TestStoreSave:
         assert index_path.exists()
         index = json.loads(index_path.read_text(encoding="utf-8"))
         assert "indexed" in index
+
+    def test_save_load_preserves_globals_and_variables(self, store_dual: PipelineStore):
+        config = PipelineConfig(
+            globals={"sources": "pubmed", "limit": "${limit}"},
+            variables={"limit": 25, "topic": "remimazolam"},
+            steps=[PipelineStep(id="s1", action="search", params={"query": "${topic}"})],
+        )
+
+        store_dual.save("with_globals", config)
+        loaded, _meta = store_dual.load("with_globals")
+
+        assert loaded.globals == {"sources": "pubmed", "limit": "${limit}"}
+        assert loaded.variables == {"limit": 25, "topic": "remimazolam"}
 
     def test_save_global_scope(self, store_dual: PipelineStore, simple_config: PipelineConfig, global_dir: Path):
         meta, _ = store_dual.save("global_pipe", simple_config, scope="global")

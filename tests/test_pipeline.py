@@ -117,6 +117,8 @@ class TestPipelineConfig:
         assert len(cfg.steps) == 1
         assert cfg.execution.limit == 20
         assert cfg.execution.ranking == "balanced"
+        assert cfg.globals == {}
+        assert cfg.variables == {}
         assert cfg.template is None
 
     def test_template_mode(self):
@@ -407,6 +409,77 @@ class TestActionFilter:
         assert len(result.articles) == 1
         assert result.articles[0].title == "Has Abstract"
 
+    async def test_filter_diagnostics_and_article_type_alias(self):
+        from pubmed_search.domain.entities.article import ArticleType
+
+        executor = PipelineExecutor()
+        rct = FakeArticle(title="RCT", pmid="1", year=2024, article_type=ArticleType.RANDOMIZED_CONTROLLED_TRIAL)
+        review = FakeArticle(title="Review", pmid="2", year=2024, article_type=ArticleType.REVIEW)
+        old_rct = FakeArticle(title="Old RCT", pmid="3", year=2010, article_type=ArticleType.RANDOMIZED_CONTROLLED_TRIAL)
+        step = PipelineStep(
+            id="f",
+            action="filter",
+            inputs=["s1"],
+            params={"min_year": 2020, "article_types": ["RCT"]},
+        )
+        inputs = {"s1": StepResult(step_id="s1", action="search", articles=_as_articles([rct, review, old_rct]))}
+
+        result = await executor._action_filter(step, inputs)
+
+        assert [article.pmid for article in result.articles] == ["1"]
+        assert result.metadata["before_count"] == 3
+        assert result.metadata["after_count"] == 1
+        assert result.metadata["removed_count"] == 2
+        assert result.metadata["removal_reasons"]["article_type_mismatch"] == 1
+        assert result.metadata["removal_reasons"]["year_before_min"] == 1
+        assert result.metadata["filters"]["normalized_article_types"] == ["randomized-controlled-trial"]
+        assert result.metadata["article_type_diagnostics"]["mappings"] == {
+            "RCT": "randomized-controlled-trial"
+        }
+
+    async def test_unknown_article_type_filter_fails_closed(self):
+        from pubmed_search.domain.entities.article import ArticleType
+
+        executor = PipelineExecutor()
+        articles = _as_articles([FakeArticle(title="Review", pmid="1", article_type=ArticleType.REVIEW)])
+        step = PipelineStep(
+            id="f",
+            action="filter",
+            inputs=["s1"],
+            params={"article_types": ["observational study"]},
+        )
+        inputs = {"s1": StepResult(step_id="s1", action="search", articles=articles)}
+
+        result = await executor._action_filter(step, inputs)
+
+        assert result.articles == []
+        assert result.metadata["removal_reasons"] == {"unknown_article_type_filter": 1}
+        assert result.metadata["warning"] == "No requested article_types could be matched; all articles were excluded."
+
+    async def test_min_citations_uses_unified_article_citation_metrics(self):
+        from pubmed_search.domain.entities.article import CitationMetrics, UnifiedArticle
+
+        executor = PipelineExecutor()
+        high = UnifiedArticle(
+            title="High citation",
+            primary_source="pubmed",
+            pmid="1",
+            citation_metrics=CitationMetrics(citation_count=50),
+        )
+        low = UnifiedArticle(
+            title="Low citation",
+            primary_source="pubmed",
+            pmid="2",
+            citation_metrics=CitationMetrics(citation_count=5),
+        )
+        step = PipelineStep(id="f", action="filter", inputs=["s1"], params={"min_citations": 10})
+        inputs = {"s1": StepResult(step_id="s1", action="search", articles=[high, low])}
+
+        result = await executor._action_filter(step, inputs)
+
+        assert [article.pmid for article in result.articles] == ["1"]
+        assert result.metadata["removal_reasons"] == {"citation_count_below_min": 1}
+
 
 # =========================================================================
 # Executor — Action: Search (with mocked sources)
@@ -588,6 +661,92 @@ class TestFullPipelineExecution:
         )
         with pytest.raises(RuntimeError, match="aborted"):
             await executor.execute(cfg)
+
+    async def test_stop_at_executes_through_named_step(self, mock_searcher):
+        executor = PipelineExecutor(searcher=mock_searcher)
+        cfg = PipelineConfig(
+            steps=[
+                PipelineStep(id="pico", action="pico", params={"P": "ICU", "I": "remimazolam"}),
+                PipelineStep(id="search", action="search", inputs=["pico"]),
+            ]
+        )
+
+        articles, results = await executor.execute(cfg, stop_at="pico")
+
+        assert articles == []
+        assert set(results) == {"pico"}
+        assert results["pico"].ok
+
+    async def test_stop_at_prunes_independent_sibling_steps(self):
+        executor = PipelineExecutor()
+        calls: list[str] = []
+
+        async def _fake_execute_step(step: PipelineStep, inputs: dict[str, StepResult]) -> StepResult:
+            del inputs
+            calls.append(step.id)
+            return StepResult(step_id=step.id, action=step.action)
+
+        executor._execute_step = _fake_execute_step  # type: ignore[method-assign]
+        cfg = PipelineConfig(
+            steps=[
+                PipelineStep(id="s1", action="pico", params={"P": "ICU", "I": "remimazolam"}),
+                PipelineStep(id="s2", action="pico", params={"P": "ICU", "I": "propofol"}),
+            ]
+        )
+
+        _articles, results = await executor.execute(cfg, stop_at="s1")
+
+        assert calls == ["s1"]
+        assert set(results) == {"s1"}
+
+    def test_prepare_config_applies_globals_and_variables(self):
+        executor = PipelineExecutor()
+        cfg = PipelineConfig(
+            globals={"sources": "pubmed", "limit": "${limit}"},
+            variables={"limit": 25, "topic": "remimazolam ICU"},
+            steps=[
+                PipelineStep(
+                    id="s1",
+                    action="search",
+                    params={"query": "${topic}", "limit": 10},
+                )
+            ],
+        )
+
+        prepared = executor.prepare_config(cfg)
+
+        assert prepared.steps[0].params == {
+            "sources": "pubmed",
+            "limit": 10,
+            "query": "remimazolam ICU",
+        }
+        assert prepared.globals == {"sources": "pubmed", "limit": 25}
+
+    def test_dry_run_returns_resolved_plan_without_execution(self):
+        executor = PipelineExecutor()
+        cfg = PipelineConfig(
+            variables={"topic": "ketamine"},
+            steps=[PipelineStep(id="s1", action="search", params={"query": "${topic}"})],
+        )
+
+        articles, results = executor.dry_run(cfg)
+
+        assert articles == []
+        assert results["s1"].metadata["dry_run"] is True
+        assert results["s1"].metadata["resolved_params"]["query"] == "ketamine"
+
+    def test_dry_run_stop_at_prunes_independent_sibling_steps(self):
+        executor = PipelineExecutor()
+        cfg = PipelineConfig(
+            steps=[
+                PipelineStep(id="s1", action="pico", params={"P": "ICU", "I": "remimazolam"}),
+                PipelineStep(id="s2", action="pico", params={"P": "ICU", "I": "propofol"}),
+            ]
+        )
+
+        _articles, results = executor.dry_run(cfg, stop_at="s1")
+
+        assert set(results) == {"s1"}
 
 
 # =========================================================================
@@ -801,6 +960,59 @@ output:
             result = await _execute_pipeline_mode(pipeline_yaml, "markdown", mock_searcher)
 
         assert isinstance(result, str)
+
+    async def test_pipeline_output_format_json_returns_structured_articles(self, mock_searcher):
+        """Pipeline config output.format=json should return machine-readable articles."""
+        from pubmed_search.presentation.mcp_server.tools.unified import (
+            _execute_pipeline_mode,
+        )
+
+        pipeline_yaml = """\
+name: JSON Pipeline
+steps:
+  - id: s1
+    action: pico
+    params:
+      P: ICU
+      I: remimazolam
+output:
+  format: json
+  limit: 5
+"""
+        article = FakeArticle(title="Structured Article", pmid="123", year=2024)
+        step_result = StepResult(step_id="s1", action="pico", articles=_as_articles([article]), pmids=["123"])
+
+        with patch("pubmed_search.application.pipeline.executor.PipelineExecutor") as MockExec:
+            mock_exec = MockExec.return_value
+            mock_exec.execute = AsyncMock(return_value=(_as_articles([article]), {"s1": step_result}))
+            result = await _execute_pipeline_mode(pipeline_yaml, "markdown", mock_searcher)
+
+        data = json.loads(result)
+        assert data["type"] == "pipeline_result"
+        assert data["summary"]["article_count"] == 1
+        assert data["articles"][0]["pmid"] == "123"
+
+    async def test_pipeline_dry_run_preview(self, mock_searcher):
+        """Dry-run validates and previews steps without executing searches."""
+        from pubmed_search.presentation.mcp_server.tools.unified import (
+            _execute_pipeline_mode,
+        )
+
+        pipeline_yaml = """\
+name: Dry Run Pipeline
+variables:
+  topic: remimazolam ICU
+steps:
+  - id: s1
+    action: search
+    params:
+      query: ${topic}
+"""
+
+        result = await _execute_pipeline_mode(pipeline_yaml, "markdown", mock_searcher, dry_run=True)
+
+        assert "Dry-run mode" in result
+        assert "resolved_params" in result
 
     async def test_yaml_exploration_template(self, mock_searcher):
         """Exploration template in YAML."""

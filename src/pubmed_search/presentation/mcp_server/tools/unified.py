@@ -172,6 +172,8 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         filters: Union[str, None] = None,
         options: Union[str, None] = None,
         pipeline: Union[str, None] = None,
+        dry_run: bool = False,
+        stop_at: str = "",
         ctx: Context | None = None,
     ) -> str:
         """
@@ -281,7 +283,7 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                        no_relax       → disable auto-relaxation on 0 results
                        shallow        → disable deep search (faster, keyword-only)
                      Example: "preprints, shallow" or "no_analysis, no_scores"
-            pipeline: JSON string defining a multi-step search pipeline.
+            pipeline: YAML/JSON string defining a multi-step search pipeline.
                      When provided, other parameters (except output_format) are
                      ignored and the pipeline DAG is executed instead.
 
@@ -336,6 +338,14 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                          limit: 20
                          ranking: impact
 
+                     Shared params:
+                       globals: default params inherited by every step
+                       variables: values available as ${name} placeholders
+
+                     Debugging controls:
+                       dry_run: validate/preview the pipeline without searches
+                       stop_at: execute through one step id, e.g. "merged"
+
                      **JSON also supported** (for programmatic use):
                        {"template": "pico", "params": {"P": "ICU patients", "I": "remimazolam"}}
 
@@ -374,7 +384,13 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             # Pipeline Mode — execute structured DAG when pipeline is set
             # ============================================================
             if pipeline:
-                return await _execute_pipeline_mode(pipeline, output_format, searcher)
+                return await _execute_pipeline_mode(
+                    pipeline,
+                    output_format,
+                    searcher,
+                    dry_run=dry_run,
+                    stop_at=stop_at,
+                )
 
             try:
                 request = normalize_unified_search_request(

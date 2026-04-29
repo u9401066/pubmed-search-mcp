@@ -320,6 +320,8 @@ def materialize_pipeline_config(
         limit=config.output.limit,
         ranking=config.output.ranking,
     )
+    materialized.globals = dict(config.globals)
+    materialized.variables = dict(config.variables)
     materialized.template = config.template
     materialized.template_params = dict(config.template_params)
     return materialized

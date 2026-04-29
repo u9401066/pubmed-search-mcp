@@ -78,10 +78,24 @@ def _save_pipeline_impl(
     try:
         raw_data = yaml.safe_load(config)
         if not isinstance(raw_data, dict):
+            expected = "mapping/object"
+            got = type(raw_data).__name__
+            suggestion = (
+                "For manage_pipeline(action='save'), pass config as a YAML/JSON mapping string, not a list/scalar. "
+                "If quoting is awkward in the client, call save_pipeline(name=..., config=...) with the same YAML."
+                if tool_name == "manage_pipeline"
+                else "Provide a valid pipeline config as a YAML/JSON mapping"
+            )
+            example = (
+                'manage_pipeline(action="save", name="my_search", '
+                'config="template: pico\\nparams:\\n  P: ICU patients\\n  I: remimazolam")'
+                if tool_name == "manage_pipeline"
+                else 'save_pipeline(name="my_search", config="template: comprehensive\\ntemplate_params:\\n  query: remimazolam")'
+            )
             return ResponseFormatter.error(
-                "Config must be a YAML or JSON object (dict)",
-                suggestion="Provide a valid pipeline config",
-                example='save_pipeline(name="my_search", config="template: comprehensive\\ntemplate_params:\\n  query: remimazolam")',
+                f"Config must be a YAML or JSON {expected}; parsed as {got}",
+                suggestion=suggestion,
+                example=example,
                 tool_name=tool_name,
             )
     except yaml.YAMLError as exc:
@@ -722,8 +736,14 @@ def _config_to_display_dict(config) -> dict:
             for s in config.steps
         ]
 
+    if getattr(config, "globals", None):
+        data["globals"] = config.globals
+    if getattr(config, "variables", None):
+        data["variables"] = config.variables
+
     execution = config.execution
     data["output"] = {
+        **({"format": execution.format} if execution.format != "markdown" else {}),
         "limit": execution.limit,
         "ranking": execution.ranking,
     }

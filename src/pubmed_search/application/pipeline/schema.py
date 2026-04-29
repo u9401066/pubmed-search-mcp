@@ -158,7 +158,7 @@ class PipelineOutputSchema(_PipelineSchemaModel):
         del info
         if value is None:
             return ""
-        return str(value)
+        return str(value).strip().lower()
 
     @field_validator("limit", mode="before")
     @classmethod
@@ -181,6 +181,8 @@ class _PipelineConfigBaseSchema(_PipelineSchemaModel):
     """Common fields shared by both pipeline config variants."""
 
     name: str = ""
+    globals: dict[str, Any] = Field(default_factory=dict)
+    variables: dict[str, Any] = Field(default_factory=dict)
     output: PipelineOutputSchema = Field(
         default_factory=PipelineOutputSchema,
         validation_alias=AliasChoices("output", "execution"),
@@ -200,6 +202,25 @@ class _PipelineConfigBaseSchema(_PipelineSchemaModel):
             return {}
         return cast("dict[str, Any]", value)
 
+    @field_validator("globals", "variables", mode="before")
+    @classmethod
+    def _coerce_mapping_fields(cls, value: Any, info: ValidationInfo) -> dict[str, Any]:
+        if value is None:
+            return {}
+        if isinstance(value, dict):
+            return value
+        _record_fix(
+            info,
+            ValidationFix(
+                field=str(info.field_name),
+                original=value,
+                corrected={},
+                reason=f"{info.field_name} must be a dict, replaced with empty dict",
+                severity=FixSeverity.WARNING,
+            ),
+        )
+        return {}
+
 
 class StepPipelineConfigSchema(_PipelineConfigBaseSchema):
     """Schema for explicit step DAG pipelines."""
@@ -213,6 +234,8 @@ class StepPipelineConfigSchema(_PipelineConfigBaseSchema):
             name=self.name,
             steps=[step.to_domain() for step in self.steps],
             output=self.output.to_domain(),
+            globals=self.globals,
+            variables=self.variables,
         )
 
 
@@ -254,6 +277,8 @@ class TemplatePipelineConfigSchema(_PipelineConfigBaseSchema):
         return PipelineConfig(
             name=self.name,
             output=self.output.to_domain(),
+            globals=self.globals,
+            variables=self.variables,
             template=self.template,
             template_params=self.template_params,
         )

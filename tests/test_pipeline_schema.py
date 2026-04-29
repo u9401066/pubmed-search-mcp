@@ -73,6 +73,20 @@ class TestParsePipelineSchema:
         assert result.config is not None
         assert result.config.output.limit == 50
 
+    def test_schema_parses_globals_and_variables(self):
+        raw = {
+            "globals": {"sources": "pubmed", "limit": "${limit}"},
+            "variables": {"limit": 25, "topic": "remimazolam"},
+            "steps": [{"id": "s1", "action": "search", "params": {"query": "${topic}"}}],
+        }
+
+        result = parse_pipeline_schema(raw)
+
+        assert result.valid is True
+        assert result.config is not None
+        assert result.config.globals == {"sources": "pubmed", "limit": "${limit}"}
+        assert result.config.variables == {"limit": 25, "topic": "remimazolam"}
+
     def test_schema_reports_step_shape_errors(self):
         raw = {"steps": ["not_a_dict"]}
 

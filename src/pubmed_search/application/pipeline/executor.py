@@ -12,8 +12,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections import defaultdict
+import re
+from collections import Counter, defaultdict
 from collections.abc import Callable, Coroutine
+from difflib import get_close_matches
 from typing import TYPE_CHECKING, Any
 
 from pubmed_search.domain.entities.pipeline import (
@@ -41,6 +43,30 @@ if TYPE_CHECKING:
 AlternateSearchFn = Callable[..., Coroutine[Any, Any, list[dict[str, Any]]]]
 
 logger = logging.getLogger(__name__)
+_VARIABLE_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_.-]*)\}")
+_FULL_VARIABLE_PATTERN = re.compile(r"^\$\{([A-Za-z_][A-Za-z0-9_.-]*)\}$")
+
+_ARTICLE_TYPE_FUZZY_CUTOFF = 0.82
+_ARTICLE_TYPE_ALIASES: dict[str, str] = {
+    "rct": "randomized-controlled-trial",
+    "randomizedtrial": "randomized-controlled-trial",
+    "randomisedtrial": "randomized-controlled-trial",
+    "randomizedcontrolledtrial": "randomized-controlled-trial",
+    "randomisedcontrolledtrial": "randomized-controlled-trial",
+    "controlledclinicaltrial": "clinical-trial",
+    "clinicaltrial": "clinical-trial",
+    "trial": "clinical-trial",
+    "metaanalysis": "meta-analysis",
+    "systematicreview": "systematic-review",
+    "sysreview": "systematic-review",
+    "journalarticle": "journal-article",
+    "originalarticle": "journal-article",
+    "casereport": "case-report",
+    "casereports": "case-report",
+    "conferencepaper": "conference-paper",
+    "proceedings": "conference-paper",
+    "bookchapter": "book-chapter",
+}
 
 
 class PipelineExecutor:
@@ -58,11 +84,19 @@ class PipelineExecutor:
     # Public API
     # =====================================================================
 
-    async def execute(self, config: PipelineConfig) -> tuple[list[UnifiedArticle], dict[str, StepResult]]:
+    async def execute(
+        self,
+        config: PipelineConfig,
+        *,
+        stop_at: str | None = None,
+    ) -> tuple[list[UnifiedArticle], dict[str, StepResult]]:
         """Execute pipeline and return ``(final_articles, all_step_results)``."""
+        config = self.prepare_config(config)
         self._validate(config)
+        self._validate_stop_at(config, stop_at)
 
-        batches = self._topological_batches(config.steps)
+        steps_to_run = self._steps_through_stop_at(config.steps, stop_at)
+        batches = self._topological_batches(steps_to_run)
 
         results: dict[str, StepResult] = {}
         for batch in batches:
@@ -86,7 +120,10 @@ class PipelineExecutor:
                     results[step.id] = outcome
 
         # Collect final articles from the last step
-        final_step = results.get(config.steps[-1].id)
+        final_step_id = stop_at if stop_at else steps_to_run[-1].id
+        if final_step_id not in results and results:
+            final_step_id = next(reversed(results))
+        final_step = results.get(final_step_id)
         final_articles: list[UnifiedArticle] = final_step.articles if final_step and final_step.ok else []
 
         # Apply ranking & limit from output config
@@ -97,6 +134,82 @@ class PipelineExecutor:
             final_articles = final_articles[:limit]
 
         return final_articles, results
+
+    def dry_run(
+        self,
+        config: PipelineConfig,
+        *,
+        stop_at: str | None = None,
+    ) -> tuple[list[UnifiedArticle], dict[str, StepResult]]:
+        """Validate and resolve a pipeline without making external API calls."""
+        config = self.prepare_config(config)
+        self._validate(config)
+        self._validate_stop_at(config, stop_at)
+
+        results: dict[str, StepResult] = {}
+        for batch in self._topological_batches(self._steps_through_stop_at(config.steps, stop_at)):
+            for step in batch:
+                results[step.id] = StepResult(
+                    step_id=step.id,
+                    action=step.action,
+                    metadata={
+                        "dry_run": True,
+                        "planned_inputs": list(step.inputs),
+                        "resolved_params": dict(step.params),
+                        "note": "No searches or external API calls were executed.",
+                    },
+                )
+        return [], results
+
+    def prepare_config(self, config: PipelineConfig) -> PipelineConfig:
+        """Apply globals and variable substitution to step parameters."""
+        variables = dict(config.variables or {})
+        resolved_globals = self._resolve_value(dict(config.globals or {}), variables)
+        variable_scope = {**variables, **resolved_globals}
+
+        prepared_steps: list[PipelineStep] = []
+        for step in config.steps:
+            merged_params = {**resolved_globals, **dict(step.params or {})}
+            resolved_params = self._resolve_value(merged_params, variable_scope)
+            prepared_steps.append(
+                PipelineStep(
+                    id=step.id,
+                    action=step.action,
+                    params=resolved_params,
+                    inputs=list(step.inputs),
+                    on_error=step.on_error,
+                )
+            )
+
+        return PipelineConfig(
+            steps=prepared_steps,
+            name=config.name,
+            output=config.output,
+            globals=resolved_globals,
+            variables=variables,
+            template=config.template,
+            template_params=config.template_params,
+        )
+
+    @classmethod
+    def _resolve_value(cls, value: Any, variables: dict[str, Any]) -> Any:
+        if isinstance(value, str):
+            full_match = _FULL_VARIABLE_PATTERN.match(value)
+            if full_match and full_match.group(1) in variables:
+                return variables[full_match.group(1)]
+
+            def _replace(match: re.Match[str]) -> str:
+                key = match.group(1)
+                if key not in variables:
+                    return match.group(0)
+                return str(variables[key])
+
+            return _VARIABLE_PATTERN.sub(_replace, value)
+        if isinstance(value, list):
+            return [cls._resolve_value(item, variables) for item in value]
+        if isinstance(value, dict):
+            return {str(key): cls._resolve_value(item, variables) for key, item in value.items()}
+        return value
 
     # =====================================================================
     # Validation
@@ -128,6 +241,33 @@ class PipelineExecutor:
                 if inp not in seen_ids:
                     msg = f"Step '{step.id}' references unknown input '{inp}'. Inputs must reference earlier steps."
                     raise ValueError(msg)
+
+    @staticmethod
+    def _validate_stop_at(config: PipelineConfig, stop_at: str | None) -> None:
+        if not stop_at:
+            return
+        if stop_at not in {step.id for step in config.steps}:
+            msg = f"stop_at step '{stop_at}' not found in pipeline"
+            raise ValueError(msg)
+
+    @staticmethod
+    def _steps_through_stop_at(steps: list[PipelineStep], stop_at: str | None) -> list[PipelineStep]:
+        if not stop_at:
+            return steps
+
+        step_map = {step.id: step for step in steps}
+        required_ids: set[str] = set()
+
+        def _visit(step_id: str) -> None:
+            if step_id in required_ids:
+                return
+            step = step_map[step_id]
+            for input_id in step.inputs:
+                _visit(input_id)
+            required_ids.add(step_id)
+
+        _visit(stop_at)
+        return [step for step in steps if step.id in required_ids]
 
     # =====================================================================
     # Topological Sort (Kahn's algorithm — batch by layer)
@@ -265,7 +405,7 @@ class PipelineExecutor:
             action="search",
             articles=all_articles,
             pmids=pmids,
-            metadata={"source_api_counts": source_api_counts},
+            metadata={"query": query, "source_api_counts": source_api_counts},
         )
 
     async def _search_pubmed(
@@ -583,32 +723,193 @@ class PipelineExecutor:
 
         min_year = step.params.get("min_year")
         max_year = step.params.get("max_year")
-        article_types: list[str] = step.params.get("article_types", [])
+        requested_article_types = self._coerce_article_type_list(step.params.get("article_types", []))
+        normalized_article_types, article_type_diagnostics = self._normalize_requested_article_types(
+            requested_article_types
+        )
         min_citations = step.params.get("min_citations")
         require_abstract = step.params.get("has_abstract", False)
+        unknown_only_article_type_filter = bool(requested_article_types and not normalized_article_types)
 
         filtered: list[UnifiedArticle] = []
+        reason_counter: Counter[str] = Counter()
+        excluded_examples: list[dict[str, Any]] = []
         for a in articles:
+            reasons: list[str] = []
             year = getattr(a, "year", None)
             if min_year and year and year < int(min_year):
-                continue
+                reasons.append("year_before_min")
             if max_year and year and year > int(max_year):
-                continue
-            if article_types:
-                a_type = getattr(a, "article_type", None)
-                type_val = str(a_type.value) if a_type is not None and hasattr(a_type, "value") else str(a_type)
-                if type_val not in article_types:
-                    continue
+                reasons.append("year_after_max")
+            if unknown_only_article_type_filter:
+                reasons.append("unknown_article_type_filter")
+            elif normalized_article_types:
+                type_val = self._canonical_article_type_value(getattr(a, "article_type", None))
+                if type_val not in normalized_article_types:
+                    reasons.append("article_type_mismatch")
             if min_citations is not None:
-                cc = getattr(a, "citation_count", 0) or 0
+                cc = self._article_citation_count(a)
                 if cc < int(min_citations):
-                    continue
+                    reasons.append("citation_count_below_min")
             if require_abstract and not getattr(a, "abstract", None):
+                reasons.append("missing_abstract")
+            if reasons:
+                reason_counter.update(reasons)
+                if len(excluded_examples) < 5:
+                    excluded_examples.append(self._excluded_article_example(a, reasons))
                 continue
             filtered.append(a)
 
         pmids = [a.pmid for a in filtered if a.pmid]
-        return StepResult(step_id=step.id, action="filter", articles=filtered, pmids=pmids)
+        metadata: dict[str, Any] = {
+            "before_count": len(articles),
+            "after_count": len(filtered),
+            "removed_count": len(articles) - len(filtered),
+            "filters": {
+                "min_year": min_year,
+                "max_year": max_year,
+                "article_types": requested_article_types,
+                "normalized_article_types": normalized_article_types,
+                "min_citations": min_citations,
+                "has_abstract": require_abstract,
+            },
+            "removal_reasons": dict(reason_counter),
+            "excluded_examples": excluded_examples,
+        }
+        if article_type_diagnostics:
+            metadata["article_type_diagnostics"] = article_type_diagnostics
+        if unknown_only_article_type_filter:
+            metadata["warning"] = "No requested article_types could be matched; all articles were excluded."
+        elif articles and requested_article_types and not filtered:
+            metadata["warning"] = (
+                "Article type filter removed all articles. Check normalized_article_types and removal_reasons."
+            )
+        return StepResult(step_id=step.id, action="filter", articles=filtered, pmids=pmids, metadata=metadata)
+
+    @classmethod
+    def _article_citation_count(cls, article: UnifiedArticle) -> int:
+        direct = getattr(article, "citation_count", None)
+        if direct is not None:
+            return cls._coerce_int(direct)
+
+        metrics = getattr(article, "citation_metrics", None)
+        if metrics is not None:
+            count = getattr(metrics, "citation_count", None)
+            if count is not None:
+                return cls._coerce_int(count)
+
+        pipeline_metrics = getattr(article, "_pipeline_metrics", None)
+        if isinstance(pipeline_metrics, dict):
+            for key in ("citation_count", "citations", "cited_by_count", "citedByCount"):
+                count = pipeline_metrics.get(key)
+                if count is not None:
+                    return cls._coerce_int(count)
+
+        return 0
+
+    @staticmethod
+    def _coerce_int(value: Any) -> int:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return 0
+
+    @classmethod
+    def _coerce_article_type_list(cls, value: Any) -> list[str]:
+        if not value:
+            return []
+        if isinstance(value, str):
+            return [item.strip() for item in value.split(",") if item.strip()]
+        if isinstance(value, (list, tuple, set)):
+            items: list[str] = []
+            for item in value:
+                if isinstance(item, str) and "," in item:
+                    items.extend(cls._coerce_article_type_list(item))
+                elif item is not None:
+                    items.append(str(item).strip())
+            return [item for item in items if item]
+        return [str(value).strip()]
+
+    @classmethod
+    def _normalize_requested_article_types(
+        cls,
+        requested: list[str],
+    ) -> tuple[list[str], dict[str, Any]]:
+        normalized: list[str] = []
+        mappings: dict[str, str] = {}
+        fuzzy_matches: dict[str, str] = {}
+        unknown: list[str] = []
+        for item in requested:
+            canonical, match_kind = cls._normalize_article_type_request(item)
+            if canonical:
+                if canonical not in normalized:
+                    normalized.append(canonical)
+                mappings[item] = canonical
+                if match_kind == "fuzzy":
+                    fuzzy_matches[item] = canonical
+            else:
+                unknown.append(item)
+
+        diagnostics: dict[str, Any] = {}
+        if mappings:
+            diagnostics["mappings"] = mappings
+        if fuzzy_matches:
+            diagnostics["fuzzy_matches"] = fuzzy_matches
+        if unknown:
+            diagnostics["unknown"] = unknown
+        return normalized, diagnostics
+
+    @classmethod
+    def _normalize_article_type_request(cls, value: Any) -> tuple[str | None, str]:
+        key = cls._article_type_key(value)
+        if not key:
+            return None, "unknown"
+
+        valid_map = cls._article_type_valid_map()
+        alias_map = {**valid_map, **_ARTICLE_TYPE_ALIASES}
+        if key in alias_map:
+            match_kind = "exact" if key in valid_map else "alias"
+            return alias_map[key], match_kind
+
+        match = get_close_matches(key, list(alias_map.keys()), n=1, cutoff=_ARTICLE_TYPE_FUZZY_CUTOFF)
+        if match:
+            return alias_map[match[0]], "fuzzy"
+        return None, "unknown"
+
+    @classmethod
+    def _canonical_article_type_value(cls, value: Any) -> str:
+        if value is None:
+            return "unknown"
+        raw = value.value if hasattr(value, "value") else value
+        canonical, _match_kind = cls._normalize_article_type_request(raw)
+        return canonical or str(raw).strip().lower()
+
+    @staticmethod
+    def _article_type_key(value: Any) -> str:
+        if value is None:
+            return ""
+        raw = value.value if hasattr(value, "value") else value
+        return re.sub(r"[^a-z0-9]+", "", str(raw).strip().lower())
+
+    @staticmethod
+    def _article_type_valid_map() -> dict[str, str]:
+        from pubmed_search.domain.entities.article import ArticleType
+
+        mapping: dict[str, str] = {}
+        for article_type in ArticleType:
+            value = article_type.value
+            mapping[re.sub(r"[^a-z0-9]+", "", value)] = value
+        return mapping
+
+    @classmethod
+    def _excluded_article_example(cls, article: UnifiedArticle, reasons: list[str]) -> dict[str, Any]:
+        return {
+            "pmid": getattr(article, "pmid", None),
+            "title": getattr(article, "title", None),
+            "year": getattr(article, "year", None),
+            "article_type": cls._canonical_article_type_value(getattr(article, "article_type", None)),
+            "reasons": reasons,
+        }
 
     # =====================================================================
     # Merge Utilities
