@@ -4,20 +4,25 @@
 
 ## 🎯 當前焦點
 
-- **v0.5.6 integration release** — merge local feature work with all reachable release/feature branches, validate the integrated MCP surface, then publish a new version after local and GitHub Actions checks are green
+- **v0.5.7 release** — publish pipeline diagnostics, structured output, local literature note export, and AI-client guidance updates
 
 ## 📊 測試結果
 
-- `uv run ruff check src/ tests/ scripts/ run_server.py run_copilot.py`: ✅ passed
+- `uv run ruff check`: ✅ passed
 - `uv run mypy src/ tests/`: ✅ passed
 - `uv run python scripts/check_async_tests.py`: ✅ passed
-- `uv run pytest -q`: ✅ 3207 passed, 34 skipped
-- MCP smoke import/create_server: ✅ `pubmed_search.__version__ == "0.5.6"`; `create_server()` initializes successfully
-- `uv build`: ✅ wheel/sdist built for 0.5.6; package metadata has no `dependency-injector`; `requests` is only in the `scripts` extra
-- GitHub Actions branch CI: first run exposed macOS/Windows Entrez timing-test flakiness; fixed by converting those guards to behavior-based serialization checks
-- Integration branch: `codex/integrate-local-v0.5.6`
+- `uv run pytest -q`: ✅ 3235 passed, 35 skipped
+- `uv run python scripts/count_mcp_tools.py -q`: ✅ 45
+- `git diff --check`: ✅ passed
 
 ## ✅ 已完成本 session
+
+### v0.5.7: Pipeline Persistence + Local Literature Notes
+- **Local note export**: added `save_literature_notes` with wiki/Foam/Markdown/MedPaper-style layouts, citation frontmatter, CSL JSON sidecars, and index notes.
+- **Pipeline diagnostics**: added filter before/after counts, full exclusion reasons, article type mappings, warnings, and excluded examples.
+- **Structured pipeline output**: `output.format: json` and `output_format="json"` now return structured pipeline JSON with articles and per-step metadata.
+- **Pipeline controls**: added `globals`, `variables`, `dry_run`, and ancestor-only `stop_at`; saved pipeline serialization preserves globals/variables.
+- **Agent/docs alignment**: updated AGENTS/Copilot/Cline/Claude skills/docs site guidance and kept Zotero Keeper as an external integration boundary.
 
 ### v0.5.6: Integrated Local Feature Work + Release Candidate
 - **Branch integration**: created `codex/integrate-local-v0.5.6`, committed the local workspace feature set, and merged all reachable remote release/feature branches; they were already contained in the current history.
@@ -39,6 +44,7 @@
 - **Release hardening**: deterministic mutation gate, in-memory MCP protocol test, local MCP RC validation, BaseAPIClient param-path fix, Unpaywall email fallback fix
 
 ## 📈 Version History
+- v0.5.7: pipeline diagnostics + structured JSON output + local literature notes + Zotero boundary docs
 - v0.5.6: integrated local feature work; reference verification tool; AI workspace harness; source/runtime hardening
 - v0.5.5: Windows/Python 3.14 MCP startup fix; removed native dependency-injector runtime dependency
 - v0.5.0: docs site + source contracts + shared adapter/cache substrate + release hardening
@@ -52,8 +58,8 @@
 - v0.3.4: async-first migration
 
 ## 🔜 下一步 (low priority)
-- Push integration branch, run multi-platform GitHub Actions CI, merge to `master`, then tag and publish `v0.5.6`
+- Watch v0.5.7 GitHub Actions / PyPI publish workflow after tag push
 - Algorithm innovation implementation (BM25/RRF/PRF)
 
 ---
-*Last updated: 2026-04-24 — v0.5.6 integrated release candidate*
+*Last updated: 2026-04-29 — v0.5.7 release*

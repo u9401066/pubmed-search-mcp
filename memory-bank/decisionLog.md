@@ -2,6 +2,8 @@
 
 | Date | Decision | Rationale |
 |------|----------|-----------|
+| 2026-04-29 | **Keep Zotero Keeper outside PubMed MCP core** | PubMed MCP should expose stable exports and guided local notes; Zotero import, duplicate handling, and VSIX-specific library policies belong in Zotero Keeper or another external client. |
+| 2026-04-29 | **Pipeline PICO support should emphasize diagnostics and guided outputs** | PICO/pipeline runs are structured clinical questions. The valuable artifact is an auditable search/filter/export trail, not a copied storage subsystem from another repository. |
 | 2026-04-24 | **Gate v0.5.6 through an integration branch before release** | The local workspace contained a broad feature and hardening set. Keeping it on `codex/integrate-local-v0.5.6` until local tests and GitHub Actions are green makes regressions easier to isolate before merging, tagging, and publishing. |
 | 2026-04-24 | **Remove `dependency-injector` from the runtime startup path** | Windows Python 3.14 installs failed before MCP startup because the native extension could not load. The server only needs config, singleton, override, and reset provider behavior, so a pure-Python container removes the platform-sensitive dependency while preserving the application boundary. |
 | 2026-04-03 | **建立 shared source adapter contract 層** | 多來源 orchestration 需要一致的 partial-failure、status、error envelope，不應在 search/fulltext/image 各自重造。 |

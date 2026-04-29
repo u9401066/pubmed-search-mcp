@@ -20,6 +20,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.5.7] - 2026-04-29
+
+### Added
+
+- New `save_literature_notes` export path for guided local Markdown/wiki/Foam-compatible literature notes, including citation frontmatter, triage sections, index notes, and CSL JSON sidecars.
+- Pipeline `globals` and `variables` support for reusable YAML configs with `${name}` substitution and saved-pipeline round trips.
+- Pipeline `dry_run` and `stop_at` controls for previewing or partially executing DAGs.
+- Structured pipeline JSON output for `output.format: json` and `output_format="json"`, including per-step metadata and structured articles.
+
+### Changed
+
+- Pipeline filter reports now show before/after counts, full exclusion reasons, article type mappings, warnings, and excluded examples.
+- `article_types` filtering now supports aliases and fuzzy matching for common clinical study types such as RCT, systematic review, and meta-analysis.
+- Pipeline reports now include handoff suggestions for `get_session_pmids`, `prepare_export`, and `save_literature_notes`.
+- Docs and AI-agent guidance now clarify that Zotero Keeper remains an external integration boundary rather than PubMed MCP core behavior.
+
+### Fixed
+
+- Unknown `article_types` now fail closed with diagnostics instead of silently disabling the type filter.
+- `stop_at` now executes only the requested step's ancestor closure, not independent sibling steps in the same topological batch.
+- `min_citations` filters now read real `UnifiedArticle.citation_metrics`, pipeline iCite metadata, and source-specific fallback citation fields.
+- `manage_pipeline(action="save")` now gives clearer errors when YAML/JSON parses to a list or scalar instead of a pipeline mapping.
+
+### Tests
+
+- Added coverage for local literature note export, pipeline filter diagnostics, article type aliases, JSON output, dry-run/stop_at behavior, globals/variables persistence, and improved pipeline save errors.
+- Revalidated with Ruff, mypy, async-test checks, full pytest, MCP tool count, docs generation, and diff whitespace checks.
+
+---
+
 ## [0.5.6] - 2026-04-24
 
 ### Added

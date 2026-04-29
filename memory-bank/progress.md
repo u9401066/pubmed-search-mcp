@@ -1,6 +1,14 @@
-# Progress (Updated: 2026-04-24)
+# Progress (Updated: 2026-04-29)
 
 ## Done
+
+### 2026-04-29: v0.5.7 — Pipeline Persistence + Local Literature Notes
+- ✅ **Guided local note export** — added `save_literature_notes` for wiki/Foam/Markdown/MedPaper-style notes with citation frontmatter, triage sections, index notes, and CSL JSON sidecars
+- ✅ **Pipeline filter diagnostics** — reports now show filter before/after counts, full exclusion reasons, article type mappings, warnings, and excluded examples
+- ✅ **Pipeline structured output** — `output.format: json` and `output_format="json"` now return structured pipeline JSON with articles and per-step metadata
+- ✅ **Pipeline authoring controls** — added `globals`, `variables`, `dry_run`, and ancestor-only `stop_at`, with saved-pipeline roundtrip coverage
+- ✅ **Zotero boundary** — documented Zotero Keeper as an external integration that consumes RIS/CSL/JSON/wiki exports instead of living in PubMed MCP core
+- ✅ **Quality gate** — Ruff, mypy, async-test checker, full pytest (`3235 passed, 35 skipped`), MCP tool count (`45`), docs generation, and diff whitespace checks passed
 
 ### 2026-04-24: v0.5.6 — Integrated Local Feature Work + Release Candidate
 - ✅ **Integrated local workspace feature set** — committed local changes on `codex/integrate-local-v0.5.6` and confirmed reachable remote release/feature branches were already merged
@@ -88,13 +96,13 @@
 - ✅ docs/IMAGE_SEARCH_API.md 完整重寫
 
 ## Doing
-- v0.5.6 release: push integration branch, wait for multi-platform GitHub Actions CI, merge to `master`, then tag/publish
+- v0.5.7 release: segmented commits on `master`, push, then tag/publish
 
 ## Next
 
 | 優先級 | 項目 | 說明 |
 |:------:|------|------|
-| ⭐⭐⭐ | Push/tag v0.5.6 | 先讓 integration/master CI 全綠，再建立 `v0.5.6` tag 觸發 PyPI publish |
+| ⭐⭐⭐ | Watch v0.5.7 publish workflow | tag 推上遠端後檢查 GitHub Actions / PyPI 發布狀態 |
 | ⭐⭐⭐ | Session cache dedup cleanup | 評估 `ArticleCache` 與 `SessionManager.article_cache` 是否收斂成單一路徑 |
 | ⭐⭐⭐ | ARCHITECTURE.md 更新 | 仍顯示舊的目錄結構 |
 | ⭐⭐ | Algorithm innovation impl | BM25/RRF/PRF 等算法實作 |
@@ -104,6 +112,8 @@
 
 | 日期 | 決策 | 原因 |
 |------|------|------|
+| 2026-04-29 | v0.5.7 將 Zotero Keeper 維持為外部整合 | PubMed MCP core 應負責文獻搜尋、匯出與本機 note 產物；Zotero 匯入、去重與 library policy 由外部 client 處理，避免 core 綁定特定 VSIX 行為 |
+| 2026-04-29 | PICO/pipeline 結構化功能優先做 diagnostics + guided export，而非把 note storage 做成大型內部機制 | PICO 是結構化臨床議題，最有價值的是可審計的搜尋/篩選/匯出脈絡；保留輕量 `save_literature_notes` 比複製完整外部 repo 存檔機制更可維護 |
 | 2026-04-24 | v0.5.6 先用 integration branch 跑完整 local/CI，再 merge/tag/publish | 這次包含大型本地 feature set 與多來源 runtime hardening，先保留 branch gate 比直接在 master 發版更容易定位回歸 |
 | 2026-04-24 | v0.5.5 移除 `dependency-injector` runtime dependency | Windows Python 3.14 使用者安裝後啟動 MCP server 時因 native DLL import failed 崩潰；本專案只需要小型 provider 行為，純 Python container 更穩定 |
 | 2026-03-17 | v0.4.5 MCP SDK 擴充 + anti-reinvention | 長任務工具回報 progress/log，並收斂重複 transport/cache 基礎設施 |
