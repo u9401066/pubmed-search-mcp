@@ -27,6 +27,7 @@ class AppSettings(BaseSettings):
 
     data_dir: str = Field(default=DEFAULT_DATA_DIR, alias="PUBMED_DATA_DIR")
     workspace_dir: str | None = Field(default=None, alias="PUBMED_WORKSPACE_DIR")
+    notes_dir: str | None = Field(default=None, alias="PUBMED_NOTES_DIR")
     http_api_port: int = Field(default=DEFAULT_HTTP_API_PORT, alias="PUBMED_HTTP_API_PORT")
 
     profiling_enabled: bool = Field(default=False, alias="PUBMED_PROFILING")
@@ -74,6 +75,7 @@ class AppSettings(BaseSettings):
 
     @field_validator(
         "workspace_dir",
+        "notes_dir",
         "crossref_email",
         "unpaywall_email",
         "openalex_api_key",

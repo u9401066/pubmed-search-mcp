@@ -3,6 +3,7 @@ Exports Module - Citation export and file download functionality.
 
 Provides:
 - Citation export in multiple formats (RIS, BibTeX, CSV, MEDLINE, JSON)
+- Guided local note export for wiki/Foam/Markdown libraries
 - Fulltext link retrieval (PMC, DOI, Publisher)
 - Batch export and download preparation
 
@@ -27,6 +28,7 @@ from .links import (
     get_fulltext_links_with_lookup,
     summarize_access,
 )
+from .notes import SUPPORTED_NOTE_FORMATS, resolve_note_export_dir, write_literature_notes
 
 __all__ = [
     # Format exporters
@@ -37,6 +39,9 @@ __all__ = [
     "export_json",
     "export_articles",  # Unified export function
     "SUPPORTED_FORMATS",
+    "SUPPORTED_NOTE_FORMATS",
+    "resolve_note_export_dir",
+    "write_literature_notes",
     # Link utilities
     "get_fulltext_links",
     "get_fulltext_links_with_lookup",

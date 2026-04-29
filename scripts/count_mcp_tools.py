@@ -281,7 +281,7 @@ def generate_tools_index_markdown(stats: dict, tool_details: dict) -> str:
         "",
         "## Capability Compression",
         "",
-        "The current surface is 40 tools, but the practical comprehension model is 8 capability families.",
+        f"The current surface is {stats['total_tools']} tools, but the practical comprehension model is 8 capability families.",
         "",
         "- Theoretical lower bound without removing capability: 6 multiplexed meta-tools",
         "- Practical minimum for human/agent understanding: 8 capability families",

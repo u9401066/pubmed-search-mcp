@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+import pubmed_search.application.export.notes as notes_module
+from pubmed_search.application.export import write_literature_notes
 from pubmed_search.presentation.mcp_server.tools.export import (
     _format_export_response,
     _get_file_extension,
@@ -105,6 +109,255 @@ class TestPrepareExport:
 
         result = await tools["prepare_export"](pmids="", format="ris")
         assert "error" in result.lower()
+
+
+class TestSaveLiteratureNotes:
+    @pytest.mark.asyncio
+    async def test_save_literature_notes_default_wiki_profile(self, temp_dir, mock_article_data):
+        mcp = MagicMock()
+        searcher = AsyncMock()
+        searcher.fetch_details.return_value = [mock_article_data]
+        tools = _capture_tools(mcp, searcher)
+
+        result = await tools["save_literature_notes"](
+            pmids="12345678",
+            output_dir=str(temp_dir),
+            create_index=False,
+        )
+
+        parsed = json.loads(result)
+        assert parsed["status"] == "success"
+        assert parsed["note_format"] == "wiki"
+        assert "[[12345678-" in parsed["files"][0]["wikilink"]
+        note_text = Path(parsed["files"][0]["path"]).read_text(encoding="utf-8")
+        assert 'note_format: "wiki"' in note_text
+
+    @pytest.mark.asyncio
+    async def test_save_literature_notes_foam(self, temp_dir, mock_article_data):
+        mcp = MagicMock()
+        searcher = AsyncMock()
+        searcher.fetch_details.return_value = [mock_article_data]
+        tools = _capture_tools(mcp, searcher)
+
+        result = await tools["save_literature_notes"](
+            pmids="12345678",
+            output_dir=str(temp_dir),
+            note_format="foam",
+            collection_name="test search",
+        )
+
+        parsed = json.loads(result)
+        assert parsed["status"] == "success"
+        assert parsed["note_format"] == "foam"
+        assert parsed["written_count"] == 1
+        assert parsed["index_file"]["path"].endswith("test-search.md")
+        note_path = parsed["files"][0]["path"]
+        note_text = Path(note_path).read_text(encoding="utf-8")
+        assert "## Triage" in note_text
+        assert parsed["csl_file"]["path"].endswith("references.csl.json")
+        assert "[[12345678-" in parsed["files"][0]["wikilink"]
+
+    @pytest.mark.asyncio
+    async def test_save_literature_notes_medpaper_profile(self, temp_dir, mock_article_data):
+        mcp = MagicMock()
+        searcher = AsyncMock()
+        searcher.fetch_details.return_value = [mock_article_data]
+        tools = _capture_tools(mcp, searcher)
+
+        result = await tools["save_literature_notes"](
+            pmids="12345678",
+            output_dir=str(temp_dir),
+            note_format="medpaper",
+            collection_name="test search",
+        )
+
+        parsed = json.loads(result)
+        assert parsed["status"] == "success"
+        assert parsed["note_format"] == "medpaper"
+        assert parsed["files"][0]["citation_key"] == "smith2024_12345678"
+        assert parsed["files"][0]["path"].endswith("12345678/smith2024_12345678.md")
+        assert parsed["files"][0]["wikilink"].startswith("[[smith2024_12345678|")
+
+        note_text = Path(parsed["files"][0]["path"]).read_text(encoding="utf-8")
+        assert 'type: "reference"' in note_text
+        assert "^key-findings" in note_text
+        assert "```json" in note_text
+
+        metadata_path = Path(parsed["files"][0]["metadata_path"])
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        assert metadata["citation_key"] == "smith2024_12345678"
+        assert metadata["csl_json"]["type"] == "article-journal"
+        assert metadata["csl_json"]["author"][0]["given"] == "John"
+
+    def test_save_literature_notes_supports_real_pubmed_fore_name(self, temp_dir, mock_article_data):
+        article = dict(mock_article_data)
+        article["authors_full"] = [
+            {"last_name": "Smith", "fore_name": "John", "initials": "J"},
+            {"last_name": "Doe", "fore_name": "Jane", "initials": "J"},
+        ]
+
+        result = write_literature_notes(
+            [article],
+            temp_dir,
+            note_format="foam",
+            create_index=False,
+        )
+
+        csl_path = Path(result["csl_file"]["path"])
+        csl_payload = json.loads(csl_path.read_text(encoding="utf-8"))
+        assert csl_payload[0]["author"][0] == {"family": "Smith", "given": "John"}
+
+    @pytest.mark.asyncio
+    async def test_save_literature_notes_custom_template(self, temp_dir, mock_article_data):
+        mcp = MagicMock()
+        searcher = AsyncMock()
+        searcher.fetch_details.return_value = [mock_article_data]
+        tools = _capture_tools(mcp, searcher)
+        template_path = temp_dir / "reference-template.md"
+        template_path.write_text("# {title}\nPMID: {pmid}\nKey: {citation_key}\n{missing}\n", encoding="utf-8")
+
+        result = await tools["save_literature_notes"](
+            pmids="12345678",
+            output_dir=str(temp_dir / "notes"),
+            note_format="foam",
+            template_file=str(template_path),
+            create_index=False,
+        )
+
+        parsed = json.loads(result)
+        note_text = Path(parsed["files"][0]["path"]).read_text(encoding="utf-8")
+        assert note_text.startswith("# Test Article")
+        assert "PMID: 12345678" in note_text
+        assert "Key: smith2024_12345678" in note_text
+
+    @pytest.mark.asyncio
+    async def test_save_literature_notes_template_error_reports_template(self, temp_dir, mock_article_data):
+        mcp = MagicMock()
+        searcher = AsyncMock()
+        searcher.fetch_details.return_value = [mock_article_data]
+        tools = _capture_tools(mcp, searcher)
+        template_path = temp_dir / "bad-template.md"
+        template_path.write_text("# {title}\n{ literal json brace\n", encoding="utf-8")
+
+        result = await tools["save_literature_notes"](
+            pmids="12345678",
+            output_dir=str(temp_dir / "notes"),
+            template_file=str(template_path),
+        )
+
+        assert "template rendering failed" in result.lower()
+        assert "template_file" in result
+
+    def test_medpaper_profile_sanitizes_doi_directory_without_pmid(self, temp_dir, mock_article_data):
+        article = dict(mock_article_data)
+        article["pmid"] = ""
+
+        result = write_literature_notes(
+            [article],
+            temp_dir,
+            note_format="medpaper",
+            create_index=False,
+        )
+
+        note_path = Path(result["files"][0]["path"])
+        assert note_path.parent.name == "10-1000-test-2024-001"
+        assert note_path.name == "smith2024_101000test2024001.md"
+
+    def test_save_literature_notes_uses_available_collision_paths(self, temp_dir, mock_article_data, monkeypatch):
+        class FixedDateTime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return datetime(2024, 1, 1, 12, 0, 0, tzinfo=tz or timezone.utc)
+
+        monkeypatch.setattr(notes_module, "datetime", FixedDateTime)
+        (temp_dir / "references.csl.json").write_text("existing\n", encoding="utf-8")
+        (temp_dir / "references-20240101-120000.csl.json").write_text("existing\n", encoding="utf-8")
+        (temp_dir / "test-search.md").write_text("existing\n", encoding="utf-8")
+        (temp_dir / "test-search-120000.md").write_text("existing\n", encoding="utf-8")
+
+        result = write_literature_notes(
+            [mock_article_data],
+            temp_dir,
+            note_format="foam",
+            collection_name="test search",
+        )
+
+        assert result["csl_file"]["path"].endswith("references-20240101-120000-2.csl.json")
+        assert result["index_file"]["path"].endswith("test-search-120000-2.md")
+
+    @pytest.mark.asyncio
+    async def test_save_literature_notes_skips_existing(self, temp_dir, mock_article_data):
+        mcp = MagicMock()
+        searcher = AsyncMock()
+        searcher.fetch_details.return_value = [mock_article_data]
+        tools = _capture_tools(mcp, searcher)
+
+        first = await tools["save_literature_notes"](
+            pmids="12345678",
+            output_dir=str(temp_dir),
+            create_index=False,
+        )
+        second = await tools["save_literature_notes"](
+            pmids="12345678",
+            output_dir=str(temp_dir),
+            create_index=False,
+        )
+
+        assert json.loads(first)["written_count"] == 1
+        parsed_second = json.loads(second)
+        assert parsed_second["written_count"] == 0
+        assert parsed_second["skipped_count"] == 1
+        assert parsed_second["csl_file"] is None
+        assert parsed_second["index_file"] is None
+        assert len(list(temp_dir.glob("*.csl.json"))) == 1
+
+    def test_save_literature_notes_repeat_export_keeps_named_collection_artifacts(self, temp_dir, mock_article_data):
+        first = write_literature_notes(
+            [mock_article_data],
+            temp_dir,
+            collection_name="named review",
+        )
+        second = write_literature_notes(
+            [mock_article_data],
+            temp_dir,
+            collection_name="named review",
+        )
+
+        assert first["written_count"] == 1
+        assert second["written_count"] == 0
+        assert second["skipped_count"] == 1
+        assert second["csl_file"]["path"].endswith(".csl.json")
+        assert second["index_file"]["path"].endswith(".md")
+        assert len(list(temp_dir.glob("*.csl.json"))) == 2
+
+    def test_save_literature_notes_handles_author_string_payload(self, temp_dir, mock_article_data):
+        article = dict(mock_article_data)
+        article["authors"] = "Smith J; Doe J"
+        article["authors_full"] = []
+
+        result = write_literature_notes(
+            [article],
+            temp_dir,
+            create_index=False,
+        )
+
+        note_text = Path(result["files"][0]["path"]).read_text(encoding="utf-8")
+        assert "- Authors: Smith J; Doe J" in note_text
+
+    @pytest.mark.asyncio
+    async def test_save_literature_notes_invalid_format(self, temp_dir, mock_article_data):
+        mcp = MagicMock()
+        searcher = AsyncMock()
+        searcher.fetch_details.return_value = [mock_article_data]
+        tools = _capture_tools(mcp, searcher)
+
+        result = await tools["save_literature_notes"](
+            pmids="12345678",
+            output_dir=str(temp_dir),
+            note_format="unknown",
+        )
+
+        assert "unsupported note format" in result.lower() or "error" in result.lower()
 
     @pytest.mark.asyncio
     async def test_official_ris(self):

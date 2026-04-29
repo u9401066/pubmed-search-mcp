@@ -28,13 +28,16 @@ from pubmed_search.application.export import (
     SUPPORTED_FORMATS,
     export_articles,
     get_fulltext_links_with_lookup,
+    resolve_note_export_dir,
     summarize_access,
+    write_literature_notes,
 )
 from pubmed_search.infrastructure.ncbi.citation_exporter import (
     OFFICIAL_FORMATS,
     CitationResult,
     export_citations_official,
 )
+from pubmed_search.shared.settings import load_settings
 
 from ._common import InputNormalizer, ResponseFormatter, get_session_manager
 
@@ -183,6 +186,116 @@ def register_export_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 error=e,
                 suggestion="Check PMIDs and format, then try again",
                 tool_name="prepare_export",
+            )
+
+    @mcp.tool()
+    async def save_literature_notes(
+        pmids: Union[str, list, int] = "last",
+        output_dir: str | None = None,
+        note_format: str = "wiki",
+        include_abstract: bool = True,
+        overwrite: bool = False,
+        create_index: bool = True,
+        collection_name: str | None = None,
+        template_file: str | None = None,
+        include_csl_json: bool = True,
+    ) -> str:
+        """
+        Save searched articles as guided local wiki/Foam/Markdown notes.
+
+        ## When to Use
+        - After unified_search, persist the selected literature into a local note library.
+        - Give agents a structured alternative to generic write_file calls.
+        - Create wiki notes with Foam-compatible wikilinks, MedPaper-like reference notes, and frontmatter.
+
+        ## Local Directory Resolution
+        1. output_dir argument, if provided
+        2. PUBMED_NOTES_DIR environment variable
+        3. PUBMED_WORKSPACE_DIR/references
+        4. PUBMED_DATA_DIR/references
+
+        Args:
+            pmids: Articles to save. Accepts "last", comma-separated PMIDs, list, or int.
+            output_dir: Optional target folder for notes.
+            note_format: "wiki" (default, Foam-compatible), "foam", "markdown", or "medpaper".
+            include_abstract: Include abstracts in article notes.
+            overwrite: Overwrite existing per-article notes when filenames collide.
+            create_index: Create a collection index note linking saved articles.
+            collection_name: Optional title/file stem for the index note.
+            template_file: Optional Markdown template with placeholders like {title}, {pmid}, {citation_key}.
+            include_csl_json: Write references.csl.json beside notes for citation-manager handoff.
+
+        Returns:
+            JSON with output_dir, written files, skipped files, and index path.
+
+        Examples:
+            save_literature_notes(pmids="last")
+            save_literature_notes(pmids="last", note_format="medpaper", output_dir="./references")
+            save_literature_notes(pmids="12345678,87654321", template_file="./ref-template.md")
+        """
+        normalized_pmids = InputNormalizer.normalize_pmids(pmids)
+        normalized_abstract = InputNormalizer.normalize_bool(include_abstract, default=True)
+        normalized_overwrite = InputNormalizer.normalize_bool(overwrite, default=False)
+        normalized_create_index = InputNormalizer.normalize_bool(create_index, default=True)
+        normalized_csl = InputNormalizer.normalize_bool(include_csl_json, default=True)
+
+        pmid_list = _resolve_pmids("last") if normalized_pmids == ["last"] else normalized_pmids
+        if not pmid_list:
+            return ResponseFormatter.error(
+                error="No valid PMIDs provided",
+                suggestion="Run unified_search first and use pmids='last', or provide PMID values",
+                example='save_literature_notes(pmids="last", output_dir="./references")',
+                tool_name="save_literature_notes",
+            )
+
+        try:
+            settings = load_settings()
+            target_dir = resolve_note_export_dir(
+                output_dir,
+                notes_dir=settings.notes_dir,
+                workspace_dir=settings.workspace_dir,
+                data_dir=settings.data_dir,
+            )
+            articles = await _get_articles_for_note_export(pmid_list, searcher)
+            if not articles:
+                return ResponseFormatter.no_results(
+                    query=f"PMIDs: {', '.join(pmid_list[:5])}",
+                    suggestions=[
+                        "Check if the PMIDs are correct",
+                        "Use unified_search first, then save_literature_notes(pmids='last')",
+                    ],
+                )
+
+            result = write_literature_notes(
+                articles,
+                target_dir,
+                note_format=note_format,
+                include_abstract=normalized_abstract,
+                overwrite=normalized_overwrite,
+                create_index=normalized_create_index,
+                collection_name=collection_name,
+                search_context=_get_last_search_context() if normalized_pmids == ["last"] else None,
+                template_file=Path(template_file).expanduser() if template_file else None,
+                include_csl_json=normalized_csl,
+            )
+            result["instructions"] = (
+                "Notes were written locally using a guided template; agents can now edit those files directly."
+            )
+            return json.dumps(result, ensure_ascii=False, indent=2)
+
+        except ValueError as e:
+            return ResponseFormatter.error(
+                error=str(e),
+                suggestion="Use note_format='wiki', 'foam', 'markdown', or 'medpaper'; verify template_file path/placeholders",
+                example='save_literature_notes(pmids="last", note_format="wiki")',
+                tool_name="save_literature_notes",
+            )
+        except Exception as e:
+            logger.exception("Error saving literature notes")
+            return ResponseFormatter.error(
+                error=e,
+                suggestion="Check PMIDs and output directory permissions, then try again",
+                tool_name="save_literature_notes",
             )
 
     # ❌ REMOVED v0.1.20: Merged into unified get_fulltext tool
@@ -377,6 +490,47 @@ async def _export_local(
         len(articles),
         source="local",
     )
+
+
+async def _get_articles_for_note_export(
+    pmid_list: list[str],
+    searcher: LiteratureSearcher,
+) -> list[dict]:
+    """Return article payloads for notes, preferring session cache when available."""
+    session_manager = get_session_manager()
+    cached_map: dict[str, dict] = {}
+    missing = list(pmid_list)
+
+    if session_manager:
+        cached_map, missing = session_manager.get_cached_article_map(pmid_list)
+
+    fetched_map: dict[str, dict] = {}
+    if missing:
+        fetched_articles = await searcher.fetch_details(missing)
+        fetched_map = {str(article.get("pmid", "")): article for article in fetched_articles if article.get("pmid")}
+        if session_manager and fetched_articles:
+            session_manager.add_to_cache(fetched_articles)
+
+    merged = {**cached_map, **fetched_map}
+    return [merged[pmid] for pmid in pmid_list if pmid in merged]
+
+
+def _get_last_search_context() -> dict | None:
+    """Return metadata for the latest session search, when available."""
+    session_manager = get_session_manager()
+    if not session_manager:
+        return None
+
+    session = session_manager.get_current_session()
+    if not session or not session.search_history:
+        return None
+
+    latest = session.search_history[-1]
+    return {
+        "query": latest.get("query", ""),
+        "timestamp": latest.get("timestamp", ""),
+        "result_count": latest.get("result_count", len(latest.get("pmids", []))),
+    }
 
 
 def _format_export_response(

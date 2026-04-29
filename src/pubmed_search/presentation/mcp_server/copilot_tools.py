@@ -30,7 +30,7 @@ Microsoft Copilot Studio 在匯入 MCP 工具時，會將工具的 JSON Schema
 - 參數全部使用 primitive types（str, int, bool），不用 Optional/Union
 - 內部呼叫與完整版相同的 searcher/client 方法，邏輯完全一致
 - 透過 InputNormalizer 將哨兵值（0, ""）轉回 None
-- 工具數量較少（11 個 vs 完整版 40 個），只暴露 Copilot Studio 最常用的功能
+- 工具數量較少（11 個 vs 完整版 45 個），只暴露 Copilot Studio 最常用的功能
 
 ========================================================================
 何時使用

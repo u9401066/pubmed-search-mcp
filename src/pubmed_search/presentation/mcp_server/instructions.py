@@ -156,6 +156,7 @@ unified_search(query="E11 treatment outcomes")  # 混合 ICD + 文字也可以
 ═══════════════════════════════════════════════════════════════════════════════
 
 - prepare_export(pmids, format): 匯出引用格式 (ris/bibtex/csv/medline/json)
+- save_literature_notes(pmids="last"): 將搜尋結果保存成本機 wiki note（預設，Foam-compatible）/Markdown/MedPaper-style 筆記與 CSL JSON；可用 PUBMED_NOTES_DIR 指定 wiki references 目錄
 
 ═══════════════════════════════════════════════════════════════════════════════
 📄 全文取得與文本挖掘
@@ -253,6 +254,7 @@ search_clinvar("BRCA1", limit=10)
 
 ### 匯出工具
 - prepare_export: Export citations to reference manager formats.
+- save_literature_notes: Save searched articles as guided local wiki/Foam/Markdown notes.
 
 ### Session 管理
 - read_session: Read session data through a single facade.

@@ -9,12 +9,14 @@ class TestAppSettings:
     def test_defaults(self, monkeypatch):
         monkeypatch.delenv("NCBI_EMAIL", raising=False)
         monkeypatch.delenv("PUBMED_DATA_DIR", raising=False)
+        monkeypatch.delenv("PUBMED_NOTES_DIR", raising=False)
         monkeypatch.delenv("PUBMED_HTTP_API_PORT", raising=False)
 
         settings = load_settings()
 
         assert settings.ncbi_email == DEFAULT_EMAIL
         assert settings.data_dir == DEFAULT_DATA_DIR
+        assert settings.notes_dir is None
         assert settings.http_api_port == DEFAULT_HTTP_API_PORT
 
     def test_disabled_sources_are_normalized(self, monkeypatch):
@@ -47,3 +49,10 @@ class TestAppSettings:
 
         assert settings.openurl_resolver == ""
         assert settings.openurl_preset == ""
+
+    def test_notes_dir_strips_empty_values(self, monkeypatch):
+        monkeypatch.setenv("PUBMED_NOTES_DIR", "  ")
+
+        settings = load_settings()
+
+        assert settings.notes_dir is None

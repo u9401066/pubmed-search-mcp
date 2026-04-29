@@ -170,8 +170,8 @@ TOOL_CATEGORIES: dict[str, dict[str, Any]] = {
     },
     "export": {
         "name": "匯出工具",
-        "description": "引用格式匯出",
-        "tools": ["prepare_export"],
+        "description": "引用格式匯出與本機文獻筆記保存",
+        "tools": ["prepare_export", "save_literature_notes"],
     },
     "session": {
         "name": "Session 管理",
