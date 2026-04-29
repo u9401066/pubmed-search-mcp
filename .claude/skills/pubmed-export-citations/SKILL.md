@@ -1,12 +1,12 @@
 ---
 name: pubmed-export-citations
-description: "Export citations with prepare_export. Triggers: 匯出, export, RIS, BibTeX, EndNote, Zotero, Mendeley, 引用格式, reference manager"
+description: "Export citations and local wiki notes with prepare_export/save_literature_notes. Triggers: 匯出, export, RIS, BibTeX, EndNote, Zotero, Mendeley, 引用格式, wiki note, reference manager"
 ---
 
 # 引用匯出指南
 
 ## 描述
-引用匯出現在統一使用 `prepare_export`。最常見的做法是先搜尋，再用 `pmids="last"` 匯出上一輪搜尋結果；若只想匯出指定文章，則直接傳 PMID 清單。
+引用匯出現在統一使用 `prepare_export`。若要把搜尋結果留成本機知識庫筆記，使用 `save_literature_notes`，預設輸出 wiki note（Foam-compatible wikilinks）並可附 CSL JSON。
 
 ---
 
@@ -17,7 +17,8 @@ description: "Export citations with prepare_export. Triggers: 匯出, export, RI
 ├── EndNote / Zotero / Mendeley → prepare_export(pmids="last", format="ris")
 ├── LaTeX / Overleaf → prepare_export(pmids="last", format="bibtex", source="local")
 ├── Excel / 分析 → prepare_export(pmids="last", format="csv", source="local")
-└── 程式處理 → prepare_export(pmids="last", format="csl")
+├── 程式處理 → prepare_export(pmids="last", format="csl")
+└── 本機知識庫 / Foam / Markdown → save_literature_notes(pmids="last")
 ```
 
 ---
@@ -30,6 +31,13 @@ prepare_export(
     format="ris",
     include_abstract=True,
     source="official"
+)
+
+save_literature_notes(
+    pmids="last",
+    note_format="wiki",
+    output_dir=None,
+    include_csl_json=True
 )
 ```
 
@@ -58,6 +66,8 @@ prepare_export(
 | Excel / 數據分析 | `prepare_export(pmids="last", format="csv", source="local")` |
 | 程式處理 | `prepare_export(pmids="last", format="csl")` |
 | MEDLINE / NBIB 交換 | `prepare_export(pmids="last", format="medline")` |
+| 本機 wiki note / Foam | `save_literature_notes(pmids="last")` |
+| MedPaper-compatible reference note | `save_literature_notes(pmids="last", note_format="medpaper")` |
 
 ---
 
@@ -94,6 +104,30 @@ prepare_export(
 ```python
 prepare_export(pmids="last", format="ris")
 prepare_export(pmids="last", format="csv", source="local")
+```
+
+### 5. 搜尋後存成本機 wiki note
+
+```python
+unified_search(query="remimazolam ICU sedation", limit=30)
+save_literature_notes(pmids="last")
+```
+
+預設輸出：
+
+- 每篇文章一個 `.md` wiki note
+- Foam-compatible `[[wikilink|title]]`
+- YAML frontmatter with PMID/DOI/journal/year/citation_key
+- `references.csl.json` for citation-manager handoff
+
+如需使用者自訂模板：
+
+```python
+save_literature_notes(
+    pmids="last",
+    template_file="./reference-template.md",
+    output_dir="./references"
+)
 ```
 
 ---

@@ -128,6 +128,18 @@ prepare_export(pmids="last", format="bibtex")  # BibTeX (LaTeX)
 prepare_export(pmids="last", format="csv")     # CSV (Excel)
 ```
 
+### 本機 wiki note / Foam-compatible 筆記
+
+搜尋完成後，如果使用者要留下可編輯的知識庫記錄，優先使用 `save_literature_notes`，不要只用一般 write file 自行拼接格式。
+
+```
+save_literature_notes(pmids="last")  # 預設 wiki note + Foam-compatible wikilinks + CSL JSON
+save_literature_notes(pmids="last", note_format="medpaper", output_dir="./references")
+save_literature_notes(pmids="last", template_file="./reference-template.md")
+```
+
+`PUBMED_NOTES_DIR` 可指向使用者的 wiki references 資料夾；`note_format="foam"` 保留為相容別名，`note_format="markdown"` 則輸出一般 Markdown 連結。
+
 ---
 
 ## 🔬 進階功能
@@ -165,13 +177,15 @@ search_biomedical_images(query="chest CT COVID-19")
 1. parse_pico → P=ICU patients, I=remimazolam, O=sedation
 2. generate_search_queries("remimazolam ICU sedation")
 3. unified_search(query=優化查詢, limit=20)
-4. 回報結果摘要 + 詢問是否匯入 Zotero
-5. list_collections → 列出 Collections
-6. 詢問目標 Collection
-7. import_articles → 匯入到指定 Collection + 回報結果
+4. 視需求呼叫 save_literature_notes(pmids="last") 保存 wiki note
+5. 回報結果摘要 + 詢問是否匯入 Zotero
+6. list_collections → 列出 Collections
+7. 詢問目標 Collection
+8. import_articles → 匯入到指定 Collection + 回報結果
 ```
 
 ## ⚠️ 注意事項
 - 不要重複搜尋相同關鍵字（用 Session 取回）
 - 從 Zotero 讀取已存文獻詳情，不要重新 fetch
 - 匯出格式選擇：Zotero 用 RIS，LaTeX 用 BibTeX
+- 本機筆記選擇：預設 wiki note；需要 Zotero Keeper / MedPaper layout 時用 `note_format="medpaper"`

@@ -385,7 +385,7 @@ from ...infrastructure.ncbi import LiteratureSearcher
 ## 🎯 Project Overview
 
 PubMed Search MCP is a **professional literature research assistant** that provides:
-- **40 MCP Tools** for literature search and analysis
+- **45 MCP Tools** for literature search and analysis
 - **Multi-source search**: PubMed, Europe PMC (33M+), CORE (200M+)
 - **NCBI databases**: Gene, PubChem, ClinVar
 - **Full text access**: Direct XML/text retrieval
@@ -507,11 +507,12 @@ unified_search(query="<combined_boolean_query>")
 
 
 ### 匯出工具
-*引用格式匯出*
+*引用格式匯出與本機文獻筆記保存*
 
 | Tool | Purpose |
 |------|---------|
 | `prepare_export` | Export citations to reference manager formats. |
+| `save_literature_notes` | Save searched articles as guided local wiki/Foam/Markdown notes. |
 
 
 ### Session 管理
@@ -643,6 +644,7 @@ get_compound_literature(cid="4943", limit=20)
 ### 6. Export Results
 ```python
 prepare_export(pmids="last", format="ris")  # Last search
+save_literature_notes(pmids="last")  # Default wiki note + Foam-compatible wikilinks + CSL JSON
 get_fulltext(pmid="12345678", extended_sources=True)  # Retrieve selected paper full text
 ```
 
@@ -669,6 +671,8 @@ uv run python scripts/count_mcp_tools.py --update-docs
 - `README.md` / `README.zh-TW.md` — 工具數量
 
 > ⚠️ **必須在 git commit 前執行**。詳見 `.claude/skills/tool-sync/SKILL.md`。
+
+當 `save_literature_notes` 或 pipeline tutorial 這類 agent-facing export/persistence 行為變更時，還要同步 `AGENTS.md`、`.github/agents/research.agent.md`、`.clinerules/`、相關 `.claude/skills/`，並用 `scripts/build_docs_site.py` 更新 `docs/site-content/**` 與 skill reference copies。
 
 ---
 

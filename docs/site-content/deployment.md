@@ -12,7 +12,7 @@
 | --- | --- | --- | --- |
 | stdio | `uvx pubmed-search-mcp` | VS Code、Claude Desktop、Cursor | 預設本機模式 |
 | HTTP | `uv run python run_server.py --transport streamable-http` | 遠端 MCP client、自建服務 | 推薦的 HTTP transport |
-| HTTP + Copilot compatibility | `uv run python run_server.py --transport streamable-http --copilot-compatible` | 想保留完整 42-tool primary MCP surface 並接 Copilot | HTTP response 會做相容轉換 |
+| HTTP + Copilot compatibility | `uv run python run_server.py --transport streamable-http --copilot-compatible` | 想保留完整 45-tool primary MCP surface 並接 Copilot | HTTP response 會做相容轉換 |
 | Copilot simplified | `uv run python run_copilot.py` | Copilot Studio schema 相容性優先 | 暴露精簡版工具集 |
 | HTTPS local | `scripts/start-https-local.sh` | 本機 HTTPS smoke test | `/mcp`、`/health`、`/info` |
 | HTTPS Docker | `scripts/start-https-docker.sh up` | Nginx TLS reverse proxy 測試 | 預設代理到 `/mcp` |
@@ -97,7 +97,7 @@ uv run python run_server.py --transport streamable-http --copilot-compatible --p
 
 這條路線的用途是：
 
-- 保留完整 40 個 tool schema
+- 保留完整 45 個 tool schema
 - 啟用 stateless HTTP + JSON response 相容模式
 - 適合先嘗試完整面，再視 Copilot Studio schema 狀況回退到簡化模式
 

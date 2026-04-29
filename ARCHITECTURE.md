@@ -4,7 +4,7 @@
 
 ## 系統總覽
 
-PubMed Search MCP 是一個以 Domain-Driven Design 為核心的 MCP 伺服器，提供 42 個 MCP tools、session 快取、pipeline 持久化與排程，以及 stdio 與 HTTP 兩種 transport。
+PubMed Search MCP 是一個以 Domain-Driven Design 為核心的 MCP 伺服器，提供 45 個 MCP tools、session 快取、pipeline 持久化與排程，以及 stdio 與 HTTP 兩種 transport。
 
 目前的公開入口已收斂為：
 
@@ -229,7 +229,7 @@ flowchart TB
 ```text
 presentation/mcp_server/
 ├── server.py          MCP server 建立、DI container、stdio 啟動、背景 HTTP API
-├── tool_registry.py   42 tools / 15 categories 的權威 registry
+├── tool_registry.py   45 tools / 16 categories 的權威 registry
 ├── tools/             實際 MCP tool 實作
 ├── session_tools.py   session 相關 tools 與 resources
 ├── prompts.py         預設 prompt workflow
@@ -264,7 +264,7 @@ flowchart LR
 
 ## 工具分類
 
-目前 registry 定義 15 個 category、42 個公開 MCP tools：
+目前 registry 定義 16 個 category、45 個公開 MCP tools：
 
 | 類別 | 工具數 | 代表工具 |
 | --- | --- | --- |
@@ -275,8 +275,8 @@ flowchart LR
 | 圖表擷取 | 1 | `get_article_figures` |
 | NCBI 延伸 | 7 | `search_gene`, `search_compound`, `search_clinvar` |
 | 引用網絡 | 1 | `build_citation_tree` |
-| 匯出工具 | 1 | `prepare_export` |
-| Session 管理 | 4 | `read_session`, `get_session_pmids`, `get_cached_article`, `get_session_summary` |
+| 匯出工具 | 2 | `prepare_export`, `save_literature_notes` |
+| Session 管理 | 5 | `read_session`, `get_session_pmids`, `get_cached_article`, `get_session_summary`, `get_session_log` |
 | 機構訂閱 | 4 | `configure_institutional_access`, `get_institutional_link` |
 | 視覺搜索 | 1 | `analyze_figure_for_search` |
 | ICD 轉換 | 1 | `convert_icd_mesh` |
@@ -452,14 +452,14 @@ flowchart LR
 
 | 路線 | 說明 | 適用情境 |
 | --- | --- | --- |
-| `run_server.py --transport streamable-http --copilot-compatible` | 保留完整 42-tool surface，開啟 Copilot HTTP compatibility | 想盡量保留完整 schema 時 |
+| `run_server.py --transport streamable-http --copilot-compatible` | 保留完整 45-tool surface，開啟 Copilot HTTP compatibility | 想盡量保留完整 schema 時 |
 | `run_copilot.py` | 啟用簡化 schema 的 Copilot 專用工具集 | Copilot Studio schema 相容性優先時 |
 
 `http_compat.py` 會把部分 HTTP 202 responses 正規化為 Copilot 可接受的 200 JSON responses。
 
 ```mermaid
 flowchart TD
-  Need{需要完整 42 tools?}
+  Need{需要完整 45 tools?}
   Full[run_server.py\n--transport streamable-http\n--copilot-compatible]
   Simplified[run_copilot.py]
   Studio{Copilot Studio\n接受 schema 嗎?}

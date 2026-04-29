@@ -90,6 +90,7 @@ This auxiliary API is public in the sense that callers may use it directly, but 
 | `CROSSREF_EMAIL` | No | Email for CrossRef polite pool (faster responses) | — |
 | `UNPAYWALL_EMAIL` | No | Email for Unpaywall API access | — |
 | `PUBMED_SEARCH_DISABLED_SOURCES` | No | Comma-separated source keys to globally disable in unified_search and cross-search | — |
+| `PUBMED_NOTES_DIR` | No | Local wiki/Foam-compatible/Markdown/MedPaper-style note export directory used by `save_literature_notes` | `PUBMED_WORKSPACE_DIR/references` or `PUBMED_DATA_DIR/references` |
 | `SCOPUS_ENABLED` | No | Enable the default-off Scopus connector (`true/false`) | `false` |
 | `SCOPUS_API_KEY` | No | Elsevier Scopus API key. Required when `SCOPUS_ENABLED=true` | — |
 | `SCOPUS_INSTTOKEN` | No | Optional Elsevier institutional token for Scopus | — |
@@ -474,7 +475,7 @@ Copilot Studio ──HTTPS──▶ ngrok ──HTTP──▶ MCP Server (localh
 # Option B: Manual setup
 uv run python run_copilot.py --port 8765
 
-# Option C: Full 42-tool primary MCP surface with Copilot-compatible HTTP semantics
+# Option C: Full 45-tool primary MCP surface with Copilot-compatible HTTP semantics
 uv run python run_server.py --transport streamable-http --copilot-compatible --port 8765
 ```
 
@@ -528,7 +529,7 @@ uv run python -m pubmed_search.presentation.mcp_server
 
 After configuring any client, verify the server is working:
 
-1. **Ask the AI**: "List all available PubMed tools" — the AI should enumerate 42 tools in the primary MCP surface
+1. **Ask the AI**: "List all available PubMed tools" — the AI should enumerate 45 tools in the primary MCP surface
 2. **Simple search**: "Search PubMed for CRISPR gene therapy" — should return article results
 3. **Check tool list**: The server provides tools like `unified_search`, `fetch_article_details`, `get_fulltext`, etc.
 

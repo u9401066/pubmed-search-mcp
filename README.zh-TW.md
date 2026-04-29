@@ -12,7 +12,7 @@
 
 **✨ 包含內容：**
 
-- 🔧 **44 個 MCP 工具** - 精簡的 PubMed、Europe PMC、CORE、NCBI 資料庫存取，及**研究時間軸 / 脈絡圖**功能
+- 🔧 **45 個 MCP 工具** - 精簡的 PubMed、Europe PMC、CORE、NCBI 資料庫存取，及**研究時間軸 / 脈絡圖**功能
 - 🖼️ **OA 圖表擷取** - 從 PMC Open Access 論文直接抽出 figure caption、image URL 與 PDF 連結
 - 📘 **Docs Site** - 用網站方式整合 overview、架構、quick reference、pipeline 教學、source contract、troubleshooting 與 deployment，入口在 [docs/index.html](docs/index.html)
 - 📚 **24 個 Claude Skills** - AI Agent 可直接使用的工作流程指南（Claude Code 專屬）
@@ -316,6 +316,9 @@ S2_API_KEY=your_s2_api_key         # 取得：https://www.semanticscholar.org/pr
 # 選填 - 網路設定
 HTTP_PROXY=http://proxy:8080       # HTTP 代理
 HTTPS_PROXY=https://proxy:8080     # HTTPS 代理
+
+# 選填 - 本機筆記匯出
+PUBMED_NOTES_DIR=/path/to/wiki/references  # save_literature_notes 目標資料夾
 ```
 
 ---
@@ -365,9 +368,9 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS 代理
 
 ## 🛠️ MCP 工具概覽
 
-如果你想真正理解這 40 個工具怎麼用，不要從背工具名開始。
+如果你想真正理解這 45 個工具怎麼用，不要從背工具名開始。
 
-先看[工具使用指南](docs/TOOLS_USAGE_GUIDE.zh-TW.md)：它把目前 40 個工具濃縮成 8 個能力族，說明理論上的最小壓縮邊界，以及人類與 agent 的意圖路由方式。
+先看[工具使用指南](docs/TOOLS_USAGE_GUIDE.zh-TW.md)：它把目前 45 個工具濃縮成 8 個能力族，說明理論上的最小壓縮邊界，以及人類與 agent 的意圖路由方式。
 
 ### 🔍 搜尋與查詢智能
 
@@ -427,7 +430,7 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS 代理
 | **圖表擷取** | `get_article_figures` → 從 PMC Open Access 文章抽出圖號、caption、image URL 與 PDF 連結 |
 | **圖表感知全文** | `get_fulltext(include_figures=True)` → 在全文回應中直接附帶圖表 metadata |
 | **文字探勘** | `get_text_mined_terms` → 擷取基因、疾病、化學物質 |
-| **匯出** | `prepare_export` → RIS、BibTeX、CSV、MEDLINE、JSON |
+| **匯出** | `prepare_export` → RIS、BibTeX、CSV、MEDLINE、JSON；`save_literature_notes` → 本機 wiki/Foam-compatible/Markdown/MedPaper-style 筆記與 CSL JSON |
 
 ### 🖼️ OA 論文圖表優先探索
 
@@ -679,6 +682,9 @@ get_compound_literature(cid="4943", limit=20)
 # 匯出上次搜尋結果
 prepare_export(pmids="last", format="ris")      # → EndNote/Zotero
 prepare_export(pmids="last", format="bibtex")   # → LaTeX
+save_literature_notes(pmids="last")              # → 本機 wiki note + Foam-compatible wikilinks + CSL JSON
+save_literature_notes(pmids="last", note_format="medpaper", output_dir="./references")
+save_literature_notes(pmids="last", template_file="./reference-template.md")
 
 # 對上次搜尋中的指定文章抓全文
 get_fulltext(pmid="12345678", extended_sources=True)

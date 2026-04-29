@@ -14,7 +14,7 @@ A Domain-Driven Design (DDD) based MCP server that serves as an intelligent rese
 
 **✨ What's Included:**
 
-- 🔧 **44 MCP Tools** - Streamlined PubMed, Europe PMC, CORE, NCBI database access, and **Research Timeline / Context Graph**
+- 🔧 **45 MCP Tools** - Streamlined PubMed, Europe PMC, CORE, NCBI database access, and **Research Timeline / Context Graph**
 - 🖼️ **OA Figure Extraction** - Pull figure captions, direct image URLs, and PDF links from PMC Open Access articles
 - 📘 **Docs Site** - Browse overview, architecture, quick reference, pipeline tutorials, source contracts, troubleshooting, and deployment in one place at [docs/index.html](docs/index.html)
 - 📚 **24 Claude Skills** - Ready-to-use workflow guides for AI agents (Claude Code-specific)
@@ -319,6 +319,9 @@ S2_API_KEY=your_s2_api_key         # Get from: https://www.semanticscholar.org/p
 # Optional - Network settings
 HTTP_PROXY=http://proxy:8080       # HTTP proxy for API requests
 HTTPS_PROXY=https://proxy:8080     # HTTPS proxy for API requests
+
+# Optional - Local note export
+PUBMED_NOTES_DIR=/path/to/wiki/references  # save_literature_notes target folder
 ```
 
 ## 🔄 How It Works: The Middleware Architecture
@@ -366,9 +369,9 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS proxy for API requests
 
 ## 🛠️ MCP Tools Overview
 
-If you want to understand the tool surface as a usable system, do not start by memorizing 40 tool names.
+If you want to understand the tool surface as a usable system, do not start by memorizing 45 tool names.
 
-Start with the [Tools Usage Guide](docs/TOOLS_USAGE_GUIDE.md): it compresses the current 40 tools into 8 capability families, explains the theoretical lower bound, and gives intent-based routing for both humans and agents.
+Start with the [Tools Usage Guide](docs/TOOLS_USAGE_GUIDE.md): it compresses the current 45 tools into 8 capability families, explains the theoretical lower bound, and gives intent-based routing for both humans and agents.
 
 ### 🔍 Search & Query Intelligence
 
@@ -429,7 +432,7 @@ Start with the [Tools Usage Guide](docs/TOOLS_USAGE_GUIDE.md): it compresses the
 | **Figures** | `get_article_figures` → Extract figure labels, captions, image URLs, and PDF links from PMC Open Access articles |
 | **Figure-aware Full Text** | `get_fulltext(include_figures=True)` → Embed figure metadata alongside structured fulltext |
 | **Text Mining** | `get_text_mined_terms` → Extract genes, diseases, chemicals |
-| **Export** | `prepare_export` → RIS, BibTeX, CSV, MEDLINE, JSON |
+| **Export** | `prepare_export` → RIS, BibTeX, CSV, MEDLINE, JSON; `save_literature_notes` → local wiki/Foam-compatible/Markdown/MedPaper-style notes plus CSL JSON |
 
 ### 🖼️ OA Figure-First Exploration
 
@@ -682,6 +685,9 @@ get_compound_literature(cid="4943", limit=20)
 # Export last search results
 prepare_export(pmids="last", format="ris")      # → EndNote/Zotero
 prepare_export(pmids="last", format="bibtex")   # → LaTeX
+save_literature_notes(pmids="last")              # → local wiki note + Foam-compatible wikilinks + CSL JSON
+save_literature_notes(pmids="last", note_format="medpaper", output_dir="./references")
+save_literature_notes(pmids="last", template_file="./reference-template.md")
 
 # Retrieve full text for a selected paper from the last search
 get_fulltext(pmid="12345678", extended_sources=True)

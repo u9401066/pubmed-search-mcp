@@ -1,12 +1,10 @@
-<!-- Generated from docs/PIPELINE_MODE_TUTORIAL.en.md by scripts/build_docs_site.py -->
-<!-- markdownlint-configure-file {"MD051": false} -->
-<!-- markdownlint-disable MD051 -->
+<!-- Synced from docs/PIPELINE_MODE_TUTORIAL.en.md by scripts/build_docs_site.py -->
 
 # Pipeline Mode Tutorial
 
 > Status: current API tutorial
 > Last updated: 2026-04-29
-> Language: **English** | [繁體中文](#/pipeline-tutorial-zh)
+> Language: **English** | [繁體中文](pipeline-tutorial.zh-TW.md)
 
 This document only describes pipeline mode behavior that is currently implemented and supported. It does not repeat older RFC or design-draft material. The focus is what you can execute now, save now, schedule now, and inspect through history now.
 

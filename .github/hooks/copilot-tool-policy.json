@@ -39,7 +39,8 @@
       "build_citation_tree"
     ],
     "export": [
-      "prepare_export"
+      "prepare_export",
+      "save_literature_notes"
     ],
     "session": [
       "read_session",
@@ -159,6 +160,7 @@
       "nextInstruction": "prepare_export / build_research_timeline",
       "tools": [
         "prepare_export",
+        "save_literature_notes",
         "build_research_timeline",
         "analyze_timeline_milestones",
         "compare_timelines"
@@ -177,6 +179,7 @@
       "get_article_figures",
       "build_citation_tree",
       "prepare_export",
+      "save_literature_notes",
       "read_session",
       "get_session_pmids",
       "get_cached_article",
@@ -222,6 +225,7 @@
       "verify_reference_list",
       "analyze_figure_for_search",
       "convert_icd_mesh",
+      "save_literature_notes",
       "search_biomedical_images",
       "manage_pipeline",
       "save_pipeline",
@@ -249,6 +253,7 @@
       "search_clinvar",
       "build_citation_tree",
       "prepare_export",
+      "save_literature_notes",
       "read_session",
       "get_session_pmids",
       "get_cached_article",

@@ -1,8 +1,10 @@
+<!-- Synced from docs/PIPELINE_MODE_TUTORIAL.md by scripts/build_docs_site.py -->
+
 # Pipeline Mode Tutorial
 
 > Status: current API tutorial
 > Last updated: 2026-04-29
-> Language: [English](PIPELINE_MODE_TUTORIAL.en.md) | **繁體中文**
+> Language: [English](pipeline-tutorial.md) | **繁體中文**
 
 這份文件只描述目前真的可用的 pipeline mode 行為，不重複 RFC 設計稿。重點是直接可執行、可保存、可排程、可查歷史。
 

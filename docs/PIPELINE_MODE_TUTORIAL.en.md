@@ -1,7 +1,7 @@
 # Pipeline Mode Tutorial
 
 > Status: current API tutorial
-> Last updated: 2026-04-06
+> Last updated: 2026-04-29
 > Language: **English** | [繁體中文](PIPELINE_MODE_TUTORIAL.md)
 
 This document only describes pipeline mode behavior that is currently implemented and supported. It does not repeat older RFC or design-draft material. The focus is what you can execute now, save now, schedule now, and inspect through history now.
@@ -37,7 +37,8 @@ output:
 Notes:
 
 - `unified_search` still requires `query` in the function signature, but once `pipeline` is set, ordinary search parameters are generally ignored. The safe pattern is `query=""`.
-- `output_format` is the only top-level parameter that still overrides `output.format` inside the pipeline.
+- `output_format="json"` forces structured JSON. `output.format: json` inside the pipeline also returns structured JSON.
+- `dry_run=True` previews the resolved DAG without external searches. `stop_at="<step_id>"` executes only through that step.
 
 ### Smallest usable example: save first, then execute
 
@@ -62,6 +63,25 @@ output:
 
 unified_search(query="", pipeline="saved:icu_remi_vs_propofol")
 ```
+
+### Structured output and continuation tools
+
+Pipeline reports now include filter diagnostics and next-step handoffs. At the bottom of a Markdown report, the recommended continuation tools are:
+
+- `get_session_pmids()` for the run PMID set
+- `prepare_export(pmids="last", format="ris")` for Zotero/EndNote/Mendeley-style citation handoff
+- `save_literature_notes(pmids="last", format="wiki")` for local wiki/Foam-compatible Markdown notes
+
+Use structured JSON when another agent or extension should consume articles directly:
+
+```yaml
+output:
+  format: json
+  limit: 20
+  ranking: quality
+```
+
+The JSON response contains `summary`, `steps`, per-step `metadata`, and structured `articles`.
 
 ### Which entry point to use
 
@@ -251,7 +271,39 @@ output:
 | `references` | `pmid`, `limit` | Find references |
 | `metrics` | none | Add iCite metrics |
 | `merge` | `method=union / intersection / rrf` | Merge multiple result streams |
-| `filter` | `min_year`, `max_year`, `article_types`, `min_citations`, `has_abstract` | Post-processing filters |
+| `filter` | `min_year`, `max_year`, `article_types`, `min_citations`, `has_abstract` | Post-processing filters with diagnostics |
+
+### Shared globals and variables
+
+Use `globals` for step parameter defaults and `variables` for `${name}` placeholders. Step-level params override globals.
+
+```yaml
+name: reusable_remi_pipeline
+globals:
+  sources: pubmed,europe_pmc
+  limit: ${per_step_limit}
+  min_year: ${start_year}
+variables:
+  topic: remimazolam ICU sedation
+  per_step_limit: 50
+  start_year: 2020
+steps:
+  - id: search_topic
+    action: search
+    params:
+      query: ${topic}
+  - id: filtered
+    action: filter
+    inputs: [search_topic]
+    params:
+      article_types: [RCT, systematic review]
+      has_abstract: true
+output:
+  limit: 20
+  ranking: quality
+```
+
+`article_types` accepts canonical values such as `randomized-controlled-trial` and common aliases such as `RCT`, `randomized controlled trial`, `systematic review`, and `meta analysis`. Unknown article type requests fail closed with a warning instead of silently disabling the filter. The filter report shows before/after counts, exclusion reasons, mappings, and examples of excluded articles.
 
 ### How `search` consumes upstream outputs
 
@@ -260,6 +312,22 @@ output:
 - When upstream is `pico`, you can use `element: P|I|C|O`
 - When upstream is `pico`, you can also use `use_combined: precision|recall`
 - When upstream is `expand`, you can use `strategy: mesh` or another strategy name
+
+### Dry-run and partial execution
+
+Use `dry_run=True` before long pipelines or while editing variables:
+
+```python
+unified_search(query="", pipeline="<yaml>", dry_run=True)
+```
+
+Use `stop_at` to inspect an intermediate result set:
+
+```python
+unified_search(query="", pipeline="<yaml>", stop_at="merged")
+```
+
+`stop_at` is inclusive: the named step runs, downstream steps are skipped. This is useful when you want to inspect a PICO merge before adding filters or metrics.
 
 ### Full DAG example
 
@@ -298,6 +366,8 @@ template_params:
     scope="workspace",
 )
 ```
+
+`config` must parse to a YAML/JSON mapping, not a list or scalar. If a client has trouble quoting multi-line YAML through `manage_pipeline(action="save")`, call `save_pipeline(name=..., config=...)` with the same YAML string; both tools use the same validator.
 
 `scope` behavior:
 
@@ -428,6 +498,8 @@ Auto-fix currently happens mainly during schema parsing and semantic validation.
 | mistyped output ranking | `impac` | `impact` |
 | invalid output limit | `0` or negative | `20` |
 
+`output.format: json` is valid and is no longer auto-fixed to Markdown.
+
 ### Cases that are not auto-fixed and will fail
 
 | Problem | Why it fails |
@@ -471,3 +543,4 @@ output:
 3. Start custom DAGs from the smallest runnable graph, then add `merge`, `metrics`, and `filter` incrementally.
 4. Use `scope="workspace"` when the pipeline should be shared within a team or repo.
 5. Use `scope="global"` when you only want your own reusable search habits across projects.
+6. Keep Zotero Keeper integration outside PubMed MCP core. PubMed MCP should produce RIS/CSL/JSON/wiki notes; Zotero Keeper or another external client should handle Zotero import, duplicate policy, and library-specific behavior.

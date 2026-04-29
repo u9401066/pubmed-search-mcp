@@ -8,7 +8,7 @@ Copilot Studio 目前有兩條可行路線：
 
 | 模式 | 啟動方式 | 工具面 | 適用情境 |
 | --- | --- | --- | --- |
-| Full schema + compatibility | `uv run python run_server.py --transport streamable-http --copilot-compatible` | 完整 42-tool primary MCP surface | 先嘗試保留完整功能 |
+| Full schema + compatibility | `uv run python run_server.py --transport streamable-http --copilot-compatible` | 完整 45-tool primary MCP surface | 先嘗試保留完整功能 |
 | Simplified Copilot mode | `uv run python run_copilot.py` | 精簡 Copilot-friendly tools | 若完整 schema 被截斷或拒收 |
 
 如果你不確定要選哪個，先用第一種；若 Copilot Studio 對 schema 有問題，再切到第二種。
@@ -79,7 +79,7 @@ ngrok http 8765
 
 ### 完整模式
 
-完整模式下，Copilot Studio 看到的是目前 server registry 的 primary MCP surface，也就是 42 個公開 tools。
+完整模式下，Copilot Studio 看到的是目前 server registry 的 primary MCP surface，也就是 45 個公開 tools。
 
 核心分類包括：
 

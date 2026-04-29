@@ -30,6 +30,18 @@ const DOC_PAGES = [
     file: "site-content/pipeline-tutorial-zh.md",
   },
   {
+    slug: "tools-usage-guide",
+    title: "Tools Usage Guide",
+    blurb: "Capability-first routing guide for search, discovery, full text, export, and local wiki notes.",
+    file: "site-content/tools-usage-guide.md",
+  },
+  {
+    slug: "tools-usage-guide-zh",
+    title: "Tools Usage Guide (zh-TW)",
+    blurb: "能力導向工具使用指南，含本機 wiki note 與 MedPaper-compatible 匯出建議。",
+    file: "site-content/tools-usage-guide-zh.md",
+  },
+  {
     slug: "quick-reference",
     title: "Quick Reference",
     blurb: "Fast lookup for MCP tools and categories.",

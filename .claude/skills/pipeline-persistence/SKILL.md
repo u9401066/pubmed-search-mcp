@@ -20,6 +20,17 @@ description: "Pipeline persistence — save, load, and reuse structured search p
 
 ---
 
+## 可打包參考文件
+
+外部 agent bundle 或 VSIX 若不會讀取 `docs/site-content/`，請使用本 skill 隨附的參考文件：
+
+- `references/pipeline-tutorial.md` — English pipeline tutorial
+- `references/pipeline-tutorial.zh-TW.md` — 繁體中文 pipeline tutorial
+
+這兩份由 `scripts/build_docs_site.py` 從 `docs/PIPELINE_MODE_TUTORIAL*.md` 同步產生；修改正式教學文件後請重跑 docs build。
+
+---
+
 ## 🌟 快速開始
 
 ### 方法 1: 用模板（最簡單）

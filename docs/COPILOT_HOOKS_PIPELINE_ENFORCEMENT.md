@@ -277,7 +277,7 @@ User → Copilot Agent → [preToolUse HOOK] → MCP Tool → Our Server
 
 - `unified_search` 仍保留三層複雜度閾值與 pipeline 強制。
 - 其他 result-bearing MCP tools 不再是「未命中 unified_search 就直接放行」，而是依據共享政策檔做明確分組。
-- 下游工具如 `get_fulltext`、`find_related_articles`、`prepare_export`、`read_session`、`get_pipeline_history` 會檢查是否已有 evidence context，或是否提供明確 identifier/PMID/DOI/name 等參數。
+- 下游工具如 `get_fulltext`、`find_related_articles`、`prepare_export`、`save_literature_notes`、`read_session`、`get_pipeline_history` 會檢查是否已有 evidence context，或是否提供明確 identifier/PMID/DOI/name 等參數。
 - 這些規則是 **Copilot runtime hook**，不是 server-wide policy。
 
 ### 三級複雜度閾值 (Three-Tier Thresholds)
@@ -337,7 +337,7 @@ postToolUse 不再只評估 `unified_search`。目前會對所有 **result-beari
 - Search / retrieval: `unified_search`, `search_gene`, `search_compound`, `search_clinvar`, `search_biomedical_images`
 - Discovery / expansion: `fetch_article_details`, `find_related_articles`, `find_citing_articles`, `get_article_references`, `build_citation_tree`
 - Fulltext / figures: `get_fulltext`, `get_text_mined_terms`, `get_article_figures`
-- Session / evaluation / synthesis: `read_session`, `get_session_pmids`, `get_cached_article`, `get_session_summary`, `get_citation_metrics`, `prepare_export`, timeline tools
+- Session / evaluation / synthesis: `read_session`, `get_session_pmids`, `get_cached_article`, `get_session_summary`, `get_citation_metrics`, `prepare_export`, `save_literature_notes`, timeline tools
 
 不同工具家族使用不同啟發式：article-count、source diversity、fulltext availability、session/detail presence。
 
@@ -539,7 +539,7 @@ postToolUse hook (evaluate-results)
 | 4 | Pipeline Search | `unified_search` (有 pipeline) | 使用 pipeline template 進行精確搜尋 |
 | 5 | Result Evaluation | `get_citation_metrics`, `get_session_summary` | 評估結果品質 (RCR, 引用數) |
 | 6 | Deep Exploration | `find_related_articles`, `find_citing_articles`, `get_fulltext`, `build_citation_tree` | 深入探索重要文獻 |
-| 7 | Export & Synthesis | `prepare_export`, `build_research_timeline` | 匯出引用、建構時間軸 |
+| 7 | Export & Synthesis | `prepare_export`, `save_literature_notes`, `build_research_timeline` | 匯出引用、本機 wiki note、建構時間軸 |
 
 ### State File Schema
 

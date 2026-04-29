@@ -5,7 +5,7 @@
 # Pipeline Mode Tutorial
 
 > Status: current API tutorial
-> Last updated: 2026-04-06
+> Last updated: 2026-04-29
 > Language: [English](#/pipeline-tutorial) | **繁體中文**
 
 這份文件只描述目前真的可用的 pipeline mode 行為，不重複 RFC 設計稿。重點是直接可執行、可保存、可排程、可查歷史。
@@ -41,7 +41,8 @@ output:
 注意:
 
 - `unified_search` 在函式簽名上仍要求 `query`，但只要設定了 `pipeline`，一般搜尋參數會被忽略。保守寫法就是 `query=""`。
-- `output_format` 是唯一仍會覆蓋 pipeline 內 `output.format` 的頂層參數。
+- `output_format="json"` 會強制回 structured JSON。pipeline 內的 `output.format: json` 也會回 structured JSON。
+- `dry_run=True` 會預覽解析後的 DAG，不做外部搜尋。`stop_at="<step_id>"` 則只執行到指定 step。
 
 ### 最短可用範例: 先保存再執行
 
@@ -66,6 +67,25 @@ output:
 
 unified_search(query="", pipeline="saved:icu_remi_vs_propofol")
 ```
+
+### Structured output 與後續工具
+
+Pipeline Markdown report 會包含 filter diagnostics，也會在底部附上後續 handoff 建議：
+
+- `get_session_pmids()` 取回這次 run 的 PMID set
+- `prepare_export(pmids="last", format="ris")` 交給 Zotero/EndNote/Mendeley 類引用管理器
+- `save_literature_notes(pmids="last", format="wiki")` 存成本機 wiki/Foam-compatible Markdown 筆記
+
+如果要讓另一個 agent 或 extension 直接吃結構化文章資料，用 JSON：
+
+```yaml
+output:
+  format: json
+  limit: 20
+  ranking: quality
+```
+
+JSON 回應會包含 `summary`、`steps`、每個 step 的 `metadata`、以及 structured `articles`。
 
 ### 什麼時候用哪一種
 
@@ -255,7 +275,39 @@ output:
 | `references` | `pmid`, `limit` | 找 references |
 | `metrics` | 無需額外 params | 補 iCite metrics |
 | `merge` | `method=union / intersection / rrf` | 合併多路結果 |
-| `filter` | `min_year`, `max_year`, `article_types`, `min_citations`, `has_abstract` | 後處理篩選 |
+| `filter` | `min_year`, `max_year`, `article_types`, `min_citations`, `has_abstract` | 帶 diagnostics 的後處理篩選 |
+
+### Shared globals 與 variables
+
+`globals` 是每個 step 會繼承的預設 params；`variables` 可以在字串中用 `${name}` 替換。step 自己的 params 會覆蓋 globals。
+
+```yaml
+name: reusable_remi_pipeline
+globals:
+  sources: pubmed,europe_pmc
+  limit: ${per_step_limit}
+  min_year: ${start_year}
+variables:
+  topic: remimazolam ICU sedation
+  per_step_limit: 50
+  start_year: 2020
+steps:
+  - id: search_topic
+    action: search
+    params:
+      query: ${topic}
+  - id: filtered
+    action: filter
+    inputs: [search_topic]
+    params:
+      article_types: [RCT, systematic review]
+      has_abstract: true
+output:
+  limit: 20
+  ranking: quality
+```
+
+`article_types` 支援 canonical 值，例如 `randomized-controlled-trial`，也支援常見 alias，例如 `RCT`、`randomized controlled trial`、`systematic review`、`meta analysis`。未知 article type 會 fail closed 並附 warning，不會默默關掉 type filter。Filter report 會顯示篩選前後數量、排除原因、article type mapping、以及被排除文章範例。
 
 ### `search` 會怎麼吃上游結果
 
@@ -264,6 +316,22 @@ output:
 - 上游是 `pico` 時，可用 `element: P|I|C|O`
 - 上游是 `pico` 時，也可用 `use_combined: precision|recall`
 - 上游是 `expand` 時，可用 `strategy: mesh` 或其他 strategy 名稱
+
+### Dry-run 與部分執行
+
+長 pipeline 或正在調整 variables 時，先用 `dry_run=True`：
+
+```python
+unified_search(query="", pipeline="<yaml>", dry_run=True)
+```
+
+要查看中間結果，用 `stop_at`：
+
+```python
+unified_search(query="", pipeline="<yaml>", stop_at="merged")
+```
+
+`stop_at` 是 inclusive：指定的 step 會執行，下游 step 會跳過。這很適合先檢查 PICO merge，再決定要不要加 filter 或 metrics。
 
 ### 完整 DAG 範例
 
@@ -302,6 +370,8 @@ template_params:
     scope="workspace",
 )
 ```
+
+`config` 必須 parse 成 YAML/JSON mapping，不能是 list 或 scalar。如果某個 client 很難正確 quote 多行 YAML 給 `manage_pipeline(action="save")`，可以改用 `save_pipeline(name=..., config=...)` 傳同一段 YAML；兩個工具共用同一套 validator。
 
 `scope` 行為:
 
@@ -432,6 +502,8 @@ history 會顯示:
 | output ranking typo | `impac` | `impact` |
 | output limit 非法 | `0` 或負數 | `20` |
 
+`output.format: json` 是合法格式，不會再被 auto-fix 成 Markdown。
+
 ### 不會自動修正，會直接報錯的情況
 
 | 問題 | 原因 |
@@ -475,3 +547,4 @@ output:
 3. 自訂 DAG 先從最小可跑版本開始，再逐步加 `merge`、`metrics`、`filter`。
 4. 需要團隊共享時用 `scope="workspace"`。
 5. 只想跨專案重用自己的搜尋習慣時用 `scope="global"`。
+6. Zotero Keeper 整合維持在 PubMed MCP core 外部。PubMed MCP 只負責產生 RIS/CSL/JSON/wiki notes；Zotero 匯入、duplicate policy、library-specific 行為交給 Zotero Keeper 或其他外部 client。
