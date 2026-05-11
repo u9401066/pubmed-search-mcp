@@ -18,6 +18,9 @@ from scripts.build_docs_site import (
 from scripts.count_mcp_tools import count_tools
 
 IMAGE_LINK_PATTERN = re.compile(r"!\[[^\]]*\]\(([^)]+)\)")
+CACHE_KEY_PATTERN = re.compile(r"\?v=([a-z0-9-]+)")
+FONT_SIZE_VIEWPORT_PATTERN = re.compile(r"font-size:[^;]*(?:vw|clamp\()", re.IGNORECASE)
+LARGE_RADIUS_PATTERN = re.compile(r"border-radius:\s*(\d+)px", re.IGNORECASE)
 
 
 def _load_embedded_pages() -> dict[str, str]:
@@ -49,6 +52,29 @@ def test_docs_site_router_references_generated_pages() -> None:
     for slug, _title, _source_path in PAGES:
         assert f'slug: "{slug}"' in site_js
         assert f'file: "site-content/{slug}.md"' in site_js
+
+
+def test_docs_site_shell_uses_current_assets_and_mobile_image_wrapping() -> None:
+    index_html = (DOCS_ROOT / "index.html").read_text(encoding="utf-8")
+    site_js = (DOCS_ROOT / "site.js").read_text(encoding="utf-8")
+
+    cache_keys = set(CACHE_KEY_PATTERN.findall(index_html))
+
+    assert cache_keys == {"20260511-ux-polish"}
+    assert 'id="sidebar-backdrop"' in index_html
+    assert "function wrapLocalImages()" in site_js
+    assert "sidebarBackdrop.addEventListener" in site_js
+
+
+def test_docs_site_css_stays_readable_and_tool_like() -> None:
+    site_css = (DOCS_ROOT / "site.css").read_text(encoding="utf-8")
+
+    assert "radial-gradient" not in site_css
+    assert "linear-gradient" not in site_css
+    assert not FONT_SIZE_VIEWPORT_PATTERN.search(site_css)
+
+    large_radii = [int(match.group(1)) for match in LARGE_RADIUS_PATTERN.finditer(site_css) if int(match.group(1)) > 8]
+    assert large_radii == []
 
 
 def test_docs_site_image_links_rewrite_to_published_assets() -> None:

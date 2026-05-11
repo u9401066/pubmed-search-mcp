@@ -215,6 +215,7 @@ const pageTitle = document.getElementById("page-title");
 const pageKicker = document.getElementById("page-kicker");
 const navToggle = document.getElementById("nav-toggle");
 const sidebar = document.getElementById("sidebar");
+const sidebarBackdrop = document.getElementById("sidebar-backdrop");
 const siteEyebrow = document.getElementById("site-eyebrow");
 const siteTagline = document.getElementById("site-tagline");
 const sidebarNoteText = document.getElementById("sidebar-note-text");
@@ -301,6 +302,9 @@ function pageMatchesLanguage(page) {
 function closeSidebar() {
   sidebar.classList.remove("open");
   navToggle.setAttribute("aria-expanded", "false");
+  if (sidebarBackdrop) {
+    sidebarBackdrop.hidden = true;
+  }
 }
 
 function renderLanguageControls() {
@@ -391,6 +395,32 @@ function wrapScrollableTables() {
   });
 }
 
+function wrapLocalImages() {
+  docContent.querySelectorAll("img").forEach((image) => {
+    const source = image.getAttribute("src") || "";
+    if (!source.startsWith("images/") || image.closest(".figure-scroll")) {
+      return;
+    }
+
+    const parent = image.parentElement;
+    if (!parent) {
+      return;
+    }
+
+    const wrapper = document.createElement("figure");
+    wrapper.className = "figure-scroll";
+
+    if (parent.tagName.toLowerCase() === "p" && parent.children.length === 1) {
+      parent.replaceWith(wrapper);
+      wrapper.appendChild(image);
+      return;
+    }
+
+    image.replaceWith(wrapper);
+    wrapper.appendChild(image);
+  });
+}
+
 function buildPageOutline() {
   const headings = Array.from(docContent.querySelectorAll("h2, h3"));
   if (!headings.length) {
@@ -452,7 +482,7 @@ async function renderMermaidBlocks() {
         primaryTextColor: "#1e2a2f",
         primaryBorderColor: "#0f6c5c",
         lineColor: "#355f56",
-        secondaryColor: "#f6f0e4",
+        secondaryColor: "#eef2ff",
         tertiaryColor: "#ffffff",
       },
     });
@@ -576,6 +606,7 @@ async function renderPage() {
     }
     docContent.innerHTML = marked.parse(markdown);
     wrapScrollableTables();
+    wrapLocalImages();
     buildPageOutline();
     wireDocAnchors();
     await renderMermaidBlocks();
@@ -608,6 +639,19 @@ languageControls.forEach((button) => {
 navToggle.addEventListener("click", () => {
   const isOpen = sidebar.classList.toggle("open");
   navToggle.setAttribute("aria-expanded", String(isOpen));
+  if (sidebarBackdrop) {
+    sidebarBackdrop.hidden = !isOpen;
+  }
+});
+
+if (sidebarBackdrop) {
+  sidebarBackdrop.addEventListener("click", closeSidebar);
+}
+
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    closeSidebar();
+  }
 });
 
 window.addEventListener("hashchange", () => {
