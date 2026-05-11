@@ -35,7 +35,7 @@ Capability-first guide for using the 45-tool PubMed Search MCP surface without t
 | Local knowledge-base notes | `save_literature_notes(pmids="last")` |
 | Repeatable search workflow | `save_pipeline` -> `unified_search(pipeline="saved:<name>")` |
 
-Zotero Keeper should remain an external integration boundary. PubMed Search MCP produces RIS/CSL/JSON exports and local wiki notes; Zotero Keeper or another client owns Zotero import, duplicate handling, and library-specific policies.
+Zotero Keeper should remain an external integration boundary. PubMed Search MCP produces official RIS/MEDLINE/CSL JSON exports, local RIS/BibTeX/CSV/MEDLINE/JSON exports, and local wiki notes; Zotero Keeper or another client owns Zotero import, duplicate handling, and library-specific policies.
 
 ## Local Wiki Note Export
 
@@ -54,7 +54,7 @@ The default `note_format` is `wiki`. It writes one `.md` file per article with:
 - triage fields for status, relevance, and decision
 - summary, key findings, methods/population, limitations, and follow-up question sections
 - source links to PubMed, DOI, and PMC when available
-- a CSL JSON sidecar for citation-manager handoff
+- by default, a collection-level `references.csl.json` sidecar when notes or index artifacts are created
 
 Supported note formats:
 
@@ -63,7 +63,7 @@ Supported note formats:
 | `wiki` | `[[note|title]]` | default guided literature note | Foam, Obsidian-style, and general wiki workflows |
 | `foam` | `[[note|title]]` | same compatible profile as `wiki` | existing Foam-specific users |
 | `markdown` | `[title](note.md)` | same guided sections | plain Markdown repositories |
-| `medpaper` | `[[citation_key|title]]` | verified reference note plus `metadata.json` | MedPaper-style or Zotero Keeper-compatible reference libraries |
+| `medpaper` | `[[citation_key|title]]` | per-reference directory containing `<citation_key>.md` plus `metadata.json` | MedPaper-style or Zotero Keeper-compatible reference libraries |
 
 Directory resolution:
 
@@ -136,7 +136,7 @@ save_literature_notes(
 )
 ```
 
-Available placeholders include `{title}`, `{pmid}`, `{doi}`, `{pmc_id}`, `{journal}`, `{year}`, `{authors}`, `{abstract}`, `{citation_key}`, `{reference_id}`, `{note_format}`, `{created}`, `{pubmed_url}`, `{doi_url}`, `{citation}`, `{keywords}`, `{mesh_terms}`, and `{csl_json}`.
+Available placeholders include `{title}`, `{pmid}`, `{doi}`, `{pmc_id}`, `{journal}`, `{journal_abbrev}`, `{year}`, `{volume}`, `{issue}`, `{pages}`, `{authors}`, `{abstract}`, `{citation_key}`, `{reference_id}`, `{note_format}`, `{created}`, `{pubmed_url}`, `{doi_url}`, `{citation}`, `{keywords}`, `{mesh_terms}`, and `{csl_json}`.
 
 ## Pipeline And Packaged Agent References
 

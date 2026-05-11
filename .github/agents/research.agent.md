@@ -124,7 +124,7 @@ search_clinvar("BRCA1", limit=10)
 
 ```
 prepare_export(pmids="last", format="ris")     # RIS (Zotero/EndNote)
-prepare_export(pmids="last", format="bibtex")  # BibTeX (LaTeX)
+prepare_export(pmids="last", format="bibtex", source="local")  # BibTeX (LaTeX)
 prepare_export(pmids="last", format="csv")     # CSV (Excel)
 ```
 

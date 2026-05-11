@@ -56,7 +56,7 @@ For remote access, run the server in HTTP mode:
 
 ```bash
 # Direct HTTP
-uvx pubmed-search-mcp --transport streamable-http --port 8765
+uv run python run_server.py --transport streamable-http --port 8765
 
 # Via run_copilot.py (simplified for Copilot Studio)
 uv run python run_copilot.py --port 8765
@@ -90,7 +90,9 @@ This auxiliary API is public in the sense that callers may use it directly, but 
 | `CROSSREF_EMAIL` | No | Email for CrossRef polite pool (faster responses) | — |
 | `UNPAYWALL_EMAIL` | No | Email for Unpaywall API access | — |
 | `PUBMED_SEARCH_DISABLED_SOURCES` | No | Comma-separated source keys to globally disable in unified_search and cross-search | — |
-| `PUBMED_NOTES_DIR` | No | Local wiki/Foam-compatible/Markdown/MedPaper-style note export directory used by `save_literature_notes` | `PUBMED_WORKSPACE_DIR/references` or `PUBMED_DATA_DIR/references` |
+| `PUBMED_NOTES_DIR` | No | Local wiki/Foam-compatible/Markdown/MedPaper-style note export directory used by `save_literature_notes` | `PUBMED_WORKSPACE_DIR/references`, `PUBMED_DATA_DIR/references`, then `~/.pubmed-search-mcp/references` |
+| `PUBMED_WORKSPACE_DIR` | No | Workspace root used for pipeline persistence and note export fallback | — |
+| `PUBMED_DATA_DIR` | No | User-level data root used for cache/persistence and note export fallback | `~/.pubmed-search-mcp` |
 | `SCOPUS_ENABLED` | No | Enable the default-off Scopus connector (`true/false`) | `false` |
 | `SCOPUS_API_KEY` | No | Elsevier Scopus API key. Required when `SCOPUS_ENABLED=true` | — |
 | `SCOPUS_INSTTOKEN` | No | Optional Elsevier institutional token for Scopus | — |
@@ -105,6 +107,10 @@ This auxiliary API is public in the sense that callers may use it directly, but 
 | `BROWSER_FETCH_BROKER_URL` | No | Local broker endpoint, e.g. `http://127.0.0.1:8766/fetch` | — |
 | `BROWSER_FETCH_TOKEN` | No | Shared bearer token for the local broker | — |
 | `BROWSER_FETCH_ALLOWED_HOSTS` | No | Comma-separated host allow-list for broker targets | — |
+| `BROWSER_FETCH_TIMEOUT` | No | Browser-session client and broker timeout in seconds | `45` |
+| `BROWSER_FETCH_MAX_BYTES` | No | Maximum PDF payload accepted from the broker | `52428800` |
+| `BROWSER_FETCH_REQUIRE_LOCAL` | No | Require the configured broker URL to be localhost | `true` |
+| `BROWSER_FETCH_VERIFY_TLS` | No | Verify TLS when calling an HTTPS broker URL | `true` |
 | `PUBMED_HTTP_API_PORT` | No | Port for background HTTP API (stdio mode) | `8765` |
 | `HTTP_PROXY` / `HTTPS_PROXY` | No | Proxy settings for outbound requests | — |
 | `BROWSER_FETCH_BROKER_TOKEN` | No | Bearer token expected by the local broker server | Falls back to `BROWSER_FETCH_TOKEN` |
@@ -469,13 +475,16 @@ Copilot Studio ──HTTPS──▶ ngrok ──HTTP──▶ MCP Server (localh
 **Step 1**: Start the MCP server with HTTP transport
 
 ```bash
-# Option A: Quick start script (uses ngrok)
+# Option A: Full 45-tool primary MCP surface with compatibility semantics and ngrok
+./scripts/start-copilot-studio.sh --with-ngrok
+
+# Option B: Simplified 11-tool Copilot Studio surface with custom-domain ngrok
 ./scripts/start-copilot-ngrok.sh
 
-# Option B: Manual setup
+# Option C: Manual simplified 11-tool setup
 uv run python run_copilot.py --port 8765
 
-# Option C: Full 45-tool primary MCP surface with Copilot-compatible HTTP semantics
+# Option D: Manual full 45-tool primary MCP surface with Copilot-compatible HTTP semantics
 uv run python run_server.py --transport streamable-http --copilot-compatible --port 8765
 ```
 
@@ -493,7 +502,7 @@ ngrok http --url=your-domain.ngrok.dev 8765
 | Server URL | `https://your-domain.ngrok.dev/mcp` |
 | Authentication | None |
 
-**Environment variables** for the ngrok script:
+**Environment variables** for the simplified custom-domain ngrok script:
 
 ```bash
 export NGROK_DOMAIN="your-domain.ngrok.dev"

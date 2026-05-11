@@ -39,7 +39,7 @@
 | 本機知識庫筆記 | `save_literature_notes(pmids="last")` |
 | 可重複搜尋流程 | `save_pipeline` -> `unified_search(pipeline="saved:<name>")` |
 
-Zotero Keeper 應維持在外部整合邊界。PubMed Search MCP 負責產生 RIS/CSL/JSON 匯出與本機 wiki notes；Zotero 匯入、duplicate 處理、library-specific policy 交給 Zotero Keeper 或其他 client。
+Zotero Keeper 應維持在外部整合邊界。PubMed Search MCP 負責產生 official RIS/MEDLINE/CSL JSON、local RIS/BibTeX/CSV/MEDLINE/JSON 匯出與本機 wiki notes；Zotero 匯入、duplicate 處理、library-specific policy 交給 Zotero Keeper 或其他 client。
 
 ## 本機 Wiki Note 匯出
 
@@ -58,7 +58,7 @@ save_literature_notes(pmids="last")
 - triage 欄位：status、relevance、decision
 - summary、key findings、methods/population、limitations、follow-up questions
 - PubMed、DOI、PMC source links
-- CSL JSON sidecar，方便接引用管理器
+- 預設會在 notes 或 index artifacts 建立時寫出 collection-level `references.csl.json` sidecar，方便接引用管理器
 
 支援格式：
 
@@ -67,7 +67,7 @@ save_literature_notes(pmids="last")
 | `wiki` | `[[note|title]]` | 預設 guided literature note | Foam、Obsidian-style、一般 wiki workflow |
 | `foam` | `[[note|title]]` | 與 `wiki` 相容 | 既有 Foam 使用者 |
 | `markdown` | `[title](note.md)` | 同樣 guided sections | 純 Markdown repo |
-| `medpaper` | `[[citation_key|title]]` | verified reference note + `metadata.json` | MedPaper-style 或 Zotero Keeper-compatible reference library |
+| `medpaper` | `[[citation_key|title]]` | per-reference directory，內含 `<citation_key>.md` 與 `metadata.json` | MedPaper-style 或 Zotero Keeper-compatible reference library |
 
 目錄解析順序：
 
@@ -140,7 +140,7 @@ save_literature_notes(
 )
 ```
 
-可用 placeholder 包含 `{title}`, `{pmid}`, `{doi}`, `{pmc_id}`, `{journal}`, `{year}`, `{authors}`, `{abstract}`, `{citation_key}`, `{reference_id}`, `{note_format}`, `{created}`, `{pubmed_url}`, `{doi_url}`, `{citation}`, `{keywords}`, `{mesh_terms}`, `{csl_json}`。
+可用 placeholder 包含 `{title}`, `{pmid}`, `{doi}`, `{pmc_id}`, `{journal}`, `{journal_abbrev}`, `{year}`, `{volume}`, `{issue}`, `{pages}`, `{authors}`, `{abstract}`, `{citation_key}`, `{reference_id}`, `{note_format}`, `{created}`, `{pubmed_url}`, `{doi_url}`, `{citation}`, `{keywords}`, `{mesh_terms}`, `{csl_json}`。
 
 ## Pipeline 與 Agent Bundle 參考文件
 

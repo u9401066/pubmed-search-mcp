@@ -155,7 +155,7 @@ unified_search(query="E11 treatment outcomes")  # 混合 ICD + 文字也可以
 📦 匯出工具 (搜尋完成後)
 ═══════════════════════════════════════════════════════════════════════════════
 
-- prepare_export(pmids, format): 匯出引用格式 (ris/bibtex/csv/medline/json)
+- prepare_export(pmids, format): 匯出引用格式；official 支援 ris/medline/csl，local 支援 ris/bibtex/csv/medline/json
 - save_literature_notes(pmids="last"): 將搜尋結果保存成本機 wiki note（預設，Foam-compatible）/Markdown/MedPaper-style 筆記與 CSL JSON；可用 PUBMED_NOTES_DIR 指定 wiki references 目錄
 
 ═══════════════════════════════════════════════════════════════════════════════

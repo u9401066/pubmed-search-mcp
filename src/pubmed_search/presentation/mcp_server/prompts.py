@@ -329,7 +329,7 @@ prepare_export(pmids="last", format="ris")
 
 ## Export Specific PMIDs:
 ```python
-prepare_export(pmids="12345678,87654321,11111111", format="bibtex")
+prepare_export(pmids="12345678,87654321,11111111", format="bibtex", source="local")
 ```
 
 ## Retrieve Full Text for a Selected Paper:

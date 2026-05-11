@@ -74,7 +74,7 @@ Pipeline reports now include filter diagnostics and next-step handoffs. At the b
 
 - `get_session_pmids()` for the run PMID set
 - `prepare_export(pmids="last", format="ris")` for Zotero/EndNote/Mendeley-style citation handoff
-- `save_literature_notes(pmids="last", format="wiki")` for local wiki/Foam-compatible Markdown notes
+- `save_literature_notes(pmids="last", note_format="wiki")` for local wiki/Foam-compatible Markdown notes
 
 Use structured JSON when another agent or extension should consume articles directly:
 

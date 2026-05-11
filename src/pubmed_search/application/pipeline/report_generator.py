@@ -540,7 +540,7 @@ def _section_methodology_notes(
     parts.append("\n### 📦 Next Steps\n")
     parts.append("- `get_session_pmids()` — retrieve all PMIDs from this pipeline run")
     parts.append('- `prepare_export(pmids="last", format="ris")` — export to reference manager')
-    parts.append('- `save_literature_notes(pmids="last", format="wiki")` — save local wiki/FOAM-compatible notes')
+    parts.append('- `save_literature_notes(pmids="last", note_format="wiki")` — save local wiki/FOAM-compatible notes')
     parts.append('- `get_fulltext(pmcid="PMC...")` — retrieve full text for key articles')
     parts.append('- `build_citation_tree(pmid="...")` — explore citation network')
     parts.append("")

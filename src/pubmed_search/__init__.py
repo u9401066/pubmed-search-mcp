@@ -58,7 +58,7 @@ Features:
     - Multi-source: OpenAlex, Semantic Scholar, CrossRef
     - Citation network exploration (citing, references, related)
     - NIH iCite metrics (RCR, percentile)
-    - Export: RIS, BibTeX, CSV, MEDLINE, JSON
+    - Export: official RIS/MEDLINE/CSL JSON plus local RIS/BibTeX/CSV/MEDLINE/JSON
     - OpenURL institutional link resolver
     - MCP server for AI agent integration
 

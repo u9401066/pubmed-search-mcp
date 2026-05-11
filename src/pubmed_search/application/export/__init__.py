@@ -2,7 +2,7 @@
 Exports Module - Citation export and file download functionality.
 
 Provides:
-- Citation export in multiple formats (RIS, BibTeX, CSV, MEDLINE, JSON)
+- Citation export in official RIS/MEDLINE/CSL JSON and local RIS/BibTeX/CSV/MEDLINE/JSON
 - Guided local note export for wiki/Foam/Markdown libraries
 - Fulltext link retrieval (PMC, DOI, Publisher)
 - Batch export and download preparation

@@ -16,11 +16,11 @@ def _load_embedded_pages() -> dict[str, str]:
     return json.loads(payload)
 
 
-def test_overview_pages_match_generated_sources() -> None:
+def test_docs_site_pages_match_generated_sources() -> None:
     route_map = _route_map()
     embedded_pages = _load_embedded_pages()
 
-    for slug, title, source_path in PAGES[:2]:
+    for slug, title, source_path in PAGES:
         expected = _render_page(slug, title, source_path, route_map)
         generated = (OUTPUT_DIR / f"{slug}.md").read_text(encoding="utf-8")
 

@@ -275,7 +275,7 @@ Other tools give you raw API access. We give you **vocabulary translation + inte
 | Can't access full text | ✅ **Multi-source fulltext** (Europe PMC, CORE, CrossRef) |
 | Gene/drug info scattered across DBs | ✅ **NCBI Extended** (Gene, PubChem, ClinVar) |
 | Need cutting-edge preprints | ✅ **Preprint search** (arXiv, medRxiv, bioRxiv) with peer-review filtering |
-| Export to reference managers | ✅ **One-click export** (RIS, BibTeX, CSV, MEDLINE) |
+| Export to reference managers | ✅ **One-click export** (official RIS/MEDLINE/CSL JSON; local RIS/BibTeX/CSV/MEDLINE/JSON) |
 
 ### Key Differentiators
 
@@ -326,7 +326,11 @@ HTTPS_PROXY=https://proxy:8080     # HTTPS proxy for API requests
 
 # Optional - Local note export
 PUBMED_NOTES_DIR=/path/to/wiki/references  # save_literature_notes target folder
+PUBMED_WORKSPACE_DIR=/path/to/project       # fallback: references/ under this workspace
+PUBMED_DATA_DIR=~/.pubmed-search-mcp        # fallback: references/ under this data dir
 ```
+
+Local note export resolves directories in this order: `output_dir` argument, `PUBMED_NOTES_DIR`, `PUBMED_WORKSPACE_DIR/references`, `PUBMED_DATA_DIR/references`, then `~/.pubmed-search-mcp/references`.
 
 ## 🔄 How It Works: The Middleware Architecture
 
@@ -436,7 +440,7 @@ Start with the [Tools Usage Guide](#/tools-usage-guide): it compresses the curre
 | **Figures** | `get_article_figures` → Extract figure labels, captions, image URLs, and PDF links from PMC Open Access articles |
 | **Figure-aware Full Text** | `get_fulltext(include_figures=True)` → Embed figure metadata alongside structured fulltext |
 | **Text Mining** | `get_text_mined_terms` → Extract genes, diseases, chemicals |
-| **Export** | `prepare_export` → RIS, BibTeX, CSV, MEDLINE, JSON; `save_literature_notes` → local wiki/Foam-compatible/Markdown/MedPaper-style notes plus CSL JSON |
+| **Export** | `prepare_export` → official RIS/MEDLINE/CSL JSON or local RIS/BibTeX/CSV/MEDLINE/JSON; `save_literature_notes` → local wiki/Foam-compatible/Markdown/MedPaper-style notes plus collection-level CSL JSON |
 
 ### 🖼️ OA Figure-First Exploration
 
@@ -688,7 +692,8 @@ get_compound_literature(cid="4943", limit=20)
 ```python
 # Export last search results
 prepare_export(pmids="last", format="ris")      # → EndNote/Zotero
-prepare_export(pmids="last", format="bibtex")   # → LaTeX
+prepare_export(pmids="last", format="bibtex", source="local")  # → LaTeX
+prepare_export(pmids="last", format="csl")      # → CSL JSON from the official NCBI Citation API
 save_literature_notes(pmids="last")              # → local wiki note + Foam-compatible wikilinks + CSL JSON
 save_literature_notes(pmids="last", note_format="medpaper", output_dir="./references")
 save_literature_notes(pmids="last", template_file="./reference-template.md")
@@ -819,7 +824,7 @@ Pre-built workflow guides in `.claude/skills/`, divided into **Usage Skills** (f
 | `pubmed-paper-exploration` | Citation tree, related articles |
 | `pubmed-gene-drug-research` | Gene/PubChem/ClinVar |
 | `pubmed-fulltext-access` | Europe PMC, CORE full text |
-| `pubmed-export-citations` | RIS/BibTeX/CSV export |
+| `pubmed-export-citations` | RIS/BibTeX/CSV/CSL export guidance |
 | `pubmed-multi-source-search` | Cross-database unified search |
 | `pubmed-mcp-tools-reference` | Complete tool reference guide |
 | `pipeline-persistence` | Save, load, reuse search plans |
@@ -981,17 +986,18 @@ curl -k https://localhost/
 
 | Service | URL | Description |
 | ------- | --- | ----------- |
-| MCP SSE | `https://localhost/sse` | SSE connection (MCP) |
-| Messages | `https://localhost/messages` | MCP POST |
+| MCP | `https://localhost/mcp` | Streamable HTTP MCP endpoint |
 | Health | `https://localhost/health` | Health check |
+| Info | `https://localhost/info` | Runtime transport and endpoint metadata |
+| Exports | `https://localhost/exports` | Prepared export file listing |
 
-### Claude Desktop Configuration
+### Remote MCP Client Configuration
 
 ```json
 {
   "mcpServers": {
     "pubmed-search": {
-      "url": "https://localhost/sse"
+      "url": "https://localhost/mcp"
     }
   }
 }
@@ -1051,7 +1057,7 @@ uv run python run_server.py --transport streamable-http --copilot-compatible --p
 | **HTTPS** | TLS 1.2/1.3 encryption | All traffic encrypted via Nginx |
 | **Rate Limiting** | 30 req/s | Nginx level protection |
 | **Security Headers** | XSS/CSRF protection | X-Frame-Options, X-Content-Type-Options |
-| **SSE Optimization** | 24h timeout | Long-lived connections for real-time |
+| **Streamable HTTP** | `/mcp` endpoint | Modern MCP transport for remote clients |
 | **No Database** | Stateless | No SQL injection risk |
 | **No Secrets** | In-memory only | No credentials stored |
 
@@ -1065,11 +1071,14 @@ Export your search results in formats compatible with major reference managers:
 
 | Format | Compatible With | Use Case |
 | ------ | --------------- | -------- |
-| **RIS** | EndNote, Zotero, Mendeley | Universal import |
-| **BibTeX** | LaTeX, Overleaf, JabRef | Academic writing |
-| **CSV** | Excel, Google Sheets | Data analysis |
-| **MEDLINE** | PubMed native format | Archiving |
-| **JSON** | Programmatic access | Custom processing |
+| Format | Source | Compatible With | Use Case |
+| ------ | ------ | --------------- | -------- |
+| **RIS** | official or local | EndNote, Zotero, Mendeley | Universal import |
+| **MEDLINE** | official or local | PubMed tools | Native PubMed-style archiving |
+| **CSL JSON** | official | Citation processors | Programmatic citation styling |
+| **BibTeX** | local | LaTeX, Overleaf, JabRef | Academic writing |
+| **CSV** | local | Excel, Google Sheets | Data analysis |
+| **JSON** | local | Programmatic access | Custom processing |
 
 ### Exported Fields
 

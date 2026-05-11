@@ -74,7 +74,7 @@ Pipeline Markdown report 會包含 filter diagnostics，也會在底部附上後
 
 - `get_session_pmids()` 取回這次 run 的 PMID set
 - `prepare_export(pmids="last", format="ris")` 交給 Zotero/EndNote/Mendeley 類引用管理器
-- `save_literature_notes(pmids="last", format="wiki")` 存成本機 wiki/Foam-compatible Markdown 筆記
+- `save_literature_notes(pmids="last", note_format="wiki")` 存成本機 wiki/Foam-compatible Markdown 筆記
 
 如果要讓另一個 agent 或 extension 直接吃結構化文章資料，用 JSON：
 

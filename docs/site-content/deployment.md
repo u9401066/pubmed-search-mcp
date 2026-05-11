@@ -214,16 +214,35 @@ az containerapp create \
   --env-vars NCBI_EMAIL=your@email.com MCP_TRANSPORT=streamable-http MCP_COPILOT_COMPATIBLE=true
 ```
 
-## 8. 已不建議的路線
+## 8. GitHub Pages 文件網站
+
+本 repo 的文件網站是 committed static site，來源 Markdown 仍是 canonical source：
+
+```bash
+uv run python scripts/count_mcp_tools.py --update-docs
+uv run python scripts/build_docs_site.py
+```
+
+網站入口與 generated payload：
+
+- `docs/index.html`
+- `docs/site.js`
+- `docs/site.css`
+- `docs/site-content/*.md`
+- `docs/site-content.js`
+
+`Deploy Docs Site` GitHub Actions workflow 會在 `main` / `master` 的 docs 相關變更後自動重建 tool docs 與 docs site payload，然後把 `docs/` 發布到 GitHub Pages。若不用 Actions，也可以在 GitHub repo Settings → Pages 選擇 Deploy from branch，branch 選 `main` 或 `master`，folder 選 `/docs`。
+
+## 9. 已不建議的路線
 
 以下路線仍可能存在於舊文件或歷史腳本中，但不應再當成主要部署方式：
 
-- `/sse` + `/messages` 作為主要遠端入口
+- `/sse` + `/messages` 作為主要遠端入口；新部署請使用 `/mcp` streamable-http
 - 舊的 module 路徑，例如 `uv run python -m pubmed_search.mcp`
 - `pip install -e ".[all]"` 這類非 uv 指令
 - 舊版公開工具名稱，例如 `search_literature`、`search_core`、`merge_search_results`
 
-## 9. 驗證清單
+## 10. 驗證清單
 
 部署後至少驗證以下項目：
 
