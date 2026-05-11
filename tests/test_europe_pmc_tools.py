@@ -89,9 +89,30 @@ class TestGetFulltext:
             },
             "oa_locations": [],
         }
-        with patch(
-            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_unpaywall_client",
-            return_value=mock_unpaywall,
+        mock_core = AsyncMock()
+        mock_core.search.return_value = {"results": []}
+        mock_downloader = AsyncMock()
+        mock_downloader.get_fulltext.return_value = FulltextResult(
+            doi="10.1234/test",
+            pdf_links=[],
+            text_content=None,
+            error="No PDF links found for this article",
+        )
+        mock_downloader.close = AsyncMock()
+
+        with (
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_unpaywall_client",
+                return_value=mock_unpaywall,
+            ),
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_core_client",
+                return_value=mock_core,
+            ),
+            patch(
+                "pubmed_search.infrastructure.sources.fulltext_download.FulltextDownloader",
+                return_value=mock_downloader,
+            ),
         ):
             result = await tools["get_fulltext"](doi="10.1234/test")
         assert "example.com/paper.pdf" in result
