@@ -142,7 +142,9 @@ def update_copilot_instructions(stats: dict, mcp) -> bool:
     # 1. 更新工具數量 "34+ MCP Tools"
     patterns = [
         (r"\*\*(\d+)\+ MCP Tools\*\*", f"**{stats['total_tools']}+ MCP Tools**"),
+        (r"\*\*(\d+) MCP Tools\*\*", f"**{stats['total_tools']} MCP Tools**"),
         (r"(\d+)\+ MCP Tools", f"{stats['total_tools']}+ MCP Tools"),
+        (r"(\d+) MCP Tools", f"{stats['total_tools']} MCP Tools"),
     ]
 
     for pattern, replacement in patterns:

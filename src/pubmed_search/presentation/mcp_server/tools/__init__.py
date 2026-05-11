@@ -1,7 +1,7 @@
 """
 PubMed Search MCP Tools (v0.5.2)
 
-🎯 45 個 MCP 工具 / 16 categories：
+🎯 46 個 MCP 工具 / 16 categories：
 
 ✅ 搜尋工具 (1)：
 - unified_search: 統一搜索入口，自動多源搜索 (PubMed, Europe PMC, OpenAlex, Semantic Scholar, CrossRef, CORE)
@@ -43,9 +43,10 @@ PubMed Search MCP Tools (v0.5.2)
 ✅ 視覺搜索 (1) [實驗性]：
 - analyze_figure_for_search
 
-✅ 機構訂閱 (4)：
+✅ 機構訂閱 (5)：
 - configure_institutional_access, get_institutional_link
 - list_resolver_presets, test_institutional_access
+- diagnose_institutional_access
 
 ✅ ICD 轉換 (1)：
 - convert_icd_mesh
@@ -93,7 +94,7 @@ if TYPE_CHECKING:
 
 
 def register_all_tools(mcp: FastMCP, searcher: LiteratureSearcher):
-    """註冊全部 45 個 MCP 工具 (16 categories)。"""
+    """註冊全部 46 個 MCP 工具 (16 categories)。"""
     # 1. 搜尋工具 (1)
     register_unified_search_tools(mcp, searcher)
 
@@ -130,7 +131,7 @@ def register_all_tools(mcp: FastMCP, searcher: LiteratureSearcher):
     # 10. 視覺搜索 (1)
     register_vision_tools(mcp)
 
-    # 11. 機構訂閱 (4)
+    # 11. 機構訂閱 (5)
     register_openurl_tools(mcp)
 
     # 12. ICD 轉換 (1)

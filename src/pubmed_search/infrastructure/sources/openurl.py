@@ -397,6 +397,7 @@ def get_fulltext_link_with_fallback(
         "url": None,
         "source": None,
         "type": "unknown",
+        "access_mode": "unknown",
         "alternatives": [],
     }
 
@@ -407,37 +408,64 @@ def get_fulltext_link_with_fallback(
         result["url"] = f"https://www.ncbi.nlm.nih.gov/pmc/articles/PMC{pmc_num}/"
         result["source"] = "PubMed Central"
         result["type"] = "open_access"
+        result["access_mode"] = "open_access"
         result["pdf_url"] = f"https://www.ncbi.nlm.nih.gov/pmc/articles/PMC{pmc_num}/pdf/"
 
     # 2. OpenURL (institutional)
     if include_openurl:
         openurl = get_openurl_link(article)
         if openurl:
+            entry = {
+                "url": openurl,
+                "source": "Library (OpenURL)",
+                "type": "institutional",
+                "access_mode": "browser_only",
+            }
             if result["url"]:
-                result["alternatives"].append(
-                    {
-                        "url": openurl,
-                        "source": "Library (OpenURL)",
-                        "type": "institutional",
-                    }
-                )
+                result["alternatives"].append(entry)
             else:
                 result["url"] = openurl
-                result["source"] = "Library (OpenURL)"
-                result["type"] = "institutional"
+                result["source"] = entry["source"]
+                result["type"] = entry["type"]
+                result["access_mode"] = entry["access_mode"]
+
+    # 2b. EZproxy rewritten URL (institutional, agent-fetchable when cookie available)
+    doi = article.get("doi")
+    try:
+        from pubmed_search.infrastructure.sources.institutional_fetch import (
+            EZProxyConfig,
+            rewrite_to_ezproxy,
+        )
+
+        ez_cfg = EZProxyConfig.from_env()
+        if ez_cfg.is_configured and doi:
+            publisher_url = f"https://doi.org/{doi}"
+            ez_url = rewrite_to_ezproxy(publisher_url, ez_cfg.proxy_host)
+            if ez_url:
+                result["alternatives"].append(
+                    {
+                        "url": ez_url,
+                        "source": f"Library (EZproxy {ez_cfg.proxy_host})",
+                        "type": "institutional",
+                        "access_mode": "needs_session_cookie",
+                    }
+                )
+    except Exception:  # pragma: no cover - defensive: never break the fallback chain
+        logger.debug("EZproxy fallback enrichment skipped", exc_info=True)
 
     # 3. DOI link (fallback)
-    doi = article.get("doi")
     if doi and not result["url"]:
         result["url"] = f"https://doi.org/{doi}"
         result["source"] = "Publisher (DOI)"
         result["type"] = "unknown"  # May be paywalled
+        result["access_mode"] = "publisher_direct"
     elif doi:
         result["alternatives"].append(
             {
                 "url": f"https://doi.org/{doi}",
                 "source": "Publisher (DOI)",
                 "type": "unknown",
+                "access_mode": "publisher_direct",
             }
         )
 

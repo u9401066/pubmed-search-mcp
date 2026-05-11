@@ -317,7 +317,7 @@ def get_icd_reference() -> dict:
 
 
 def register_icd_tools(mcp: FastMCP):
-    """Register ICD conversion tools (2 tools)."""
+    """Register the ICD conversion tool."""
 
     @mcp.tool()
     def convert_icd_mesh(

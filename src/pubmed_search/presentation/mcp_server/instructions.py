@@ -163,7 +163,7 @@ unified_search(query="E11 treatment outcomes")  # 混合 ICD + 文字也可以
 ═══════════════════════════════════════════════════════════════════════════════
 
 ### 全文取得
-- get_fulltext(pmcid): 📄 取得解析後的全文 (分段顯示，多源：Europe PMC, Unpaywall, CORE)
+- get_fulltext(pmid/pmcid/doi): 📄 取得解析後的全文 (分段顯示；Europe PMC XML, Unpaywall OA locations, institutional direct/EZproxy, CORE, extended fallback)
 
 ### 文本挖掘
 - get_text_mined_terms(pmid/pmcid): 🔬 取得標註 (基因、疾病、藥物，來自 Europe PMC)
@@ -268,6 +268,7 @@ search_clinvar("BRCA1", limit=10)
 - get_institutional_link: Generate institutional access link (OpenURL) for an article.
 - list_resolver_presets: List available institutional link resolver presets.
 - test_institutional_access: Test your institutional link resolver configuration.
+- diagnose_institutional_access: Diagnose why institutional fulltext access succeeds or fails for an article.
 
 ### 視覺搜索
 - analyze_figure_for_search: Analyze a scientific figure or image for literature search.

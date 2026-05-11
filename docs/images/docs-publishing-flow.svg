@@ -30,7 +30,7 @@
   <rect class="box" x="70" y="342" width="244" height="112" fill="#eef2ff" stroke="#4f68a8"/>
   <text class="label" x="98" y="380">Tool registry</text>
   <text class="body" x="98" y="408">tool_registry.py</text>
-  <text class="body" x="98" y="430">45 tools, categories</text>
+  <text class="body" x="98" y="430">runtime tools, categories</text>
 
   <rect class="box" x="386" y="342" width="244" height="112" fill="#f7f8ff" stroke="#4f68a8"/>
   <text class="label" x="414" y="380">Generated index</text>

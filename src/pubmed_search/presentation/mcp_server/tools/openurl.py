@@ -4,10 +4,8 @@ MCP Tools for OpenURL / Institutional Link Resolver Integration
 Provides tools for:
 - Configuring institutional link resolver (with presets list and auto-test)
 - Generating OpenURL links for articles
-
-Removed in v0.3.1:
-- list_resolver_presets → integrated into configure_institutional_access()
-- test_institutional_access → integrated into configure_institutional_access(test=True)
+- Listing resolver presets and testing OpenURL configuration
+- Diagnosing direct DOI / EZproxy / OpenURL institutional access paths
 """
 
 from __future__ import annotations
@@ -96,6 +94,8 @@ def register_openurl_tools(mcp: FastMCP) -> None:
             resolver_url: Your institution's link resolver URL
             preset: Use a known institution's preset configuration
             enable: Whether to enable OpenURL links (default: True)
+            test: Compatibility flag reserved for clients that still pass it.
+                Use test_institutional_access() for an explicit resolver test.
 
         Returns:
             Configuration status message
@@ -478,6 +478,109 @@ Test your connection:
 """)
 
         return "\n".join(output)
+
+    @mcp.tool()
+    async def diagnose_institutional_access(
+        pmid: str | None = None,
+        doi: str | None = None,
+        try_direct: bool = True,
+        try_ezproxy: bool = True,
+    ) -> str:
+        """
+        Diagnose why institutional fulltext access succeeds or fails for an article.
+
+        Runs up to three probes and reports each path's outcome:
+
+        1. **Direct fetch** (Phase 1, IP-aware) — follows ``https://doi.org/<doi>``
+           and classifies whether the publisher served fulltext, a paywall, or a
+           login page. Works automatically when your network IP is on the
+           publisher's institutional allow-list (campus / VPN).
+
+        2. **EZproxy fetch** (Phase 2, BYO-cookie) — rewrites the publisher
+           hostname to your library's EZproxy host and replays your exported
+           browser session cookie. Configured via env vars:
+           - ``EZPROXY_HOST`` (e.g. ``ezproxy.lib.ntu.edu.tw``)
+           - ``EZPROXY_COOKIE_FILE`` (path to browser-exported cookies.json)
+           - ``EZPROXY_ENABLED=1``
+
+        3. **OpenURL handoff** — generated for you to open manually in a browser
+           when the automated paths fail.
+
+        Args:
+            pmid: PubMed ID (used to enrich the OpenURL).
+            doi: DOI (required for the direct + EZproxy probes).
+            try_direct: Run the Phase 1 direct probe (default True).
+            try_ezproxy: Run the Phase 2 EZproxy probe (default True).
+
+        Returns:
+            Markdown report listing every probe's status, classification, and
+            advice on the next action to take.
+        """
+        from pubmed_search.infrastructure.sources.institutional_fetch import (
+            diagnose_access,
+            safe_url_preview,
+        )
+
+        if not pmid and not doi:
+            return "❌ Please supply at least one of pmid or doi."
+
+        # Resolve DOI from PMID if needed so the probes have something to follow.
+        if not doi and pmid:
+            try:
+                from pubmed_search.infrastructure.ncbi import LiteratureSearcher
+
+                searcher = LiteratureSearcher()
+                details = await searcher.fetch_details([pmid])
+                if details:
+                    doi = details[0].get("doi") or None
+            except Exception:  # pragma: no cover - PMID->DOI resolution is best-effort
+                logger.debug("PMID->DOI resolution skipped", exc_info=True)
+
+        diag = await diagnose_access(
+            pmid=pmid,
+            doi=doi,
+            try_direct=try_direct,
+            try_ezproxy=try_ezproxy,
+        )
+
+        lines: list[str] = ["## 🩺 Institutional Access Diagnosis\n"]
+        if pmid:
+            lines.append(f"- **PMID**: {pmid}")
+        if doi:
+            lines.append(f"- **DOI**: {doi}")
+        lines.append(f"- **Summary**: {diag.summary}")
+        if diag.recommended_path:
+            lines.append(f"- **Recommended path**: `{diag.recommended_path}`")
+        if diag.openurl:
+            lines.append(f"- **OpenURL handoff**: [open in browser]({diag.openurl})")
+        lines.append("")
+
+        for probe in diag.probes:
+            icon = "✅" if probe.success else ("⚠️" if probe.attempted else "⏭️")
+            lines.append(f"### {icon} `{probe.path}` probe")
+            if not probe.attempted:
+                lines.append(f"_Skipped_: {probe.error or 'not configured'}")
+                if probe.advice:
+                    lines.append(f"\n> {probe.advice}")
+                lines.append("")
+                continue
+            lines.append(f"- status: `{probe.status_code}`")
+            lines.append(f"- content_class: `{probe.content_class}`")
+            if probe.final_url:
+                lines.append(f"- final_url: `{safe_url_preview(probe.final_url)}`")
+            if probe.content_length is not None:
+                lines.append(f"- bytes: {probe.content_length}")
+            if probe.duration_ms is not None:
+                lines.append(f"- duration: {probe.duration_ms} ms")
+            if probe.redirect_chain and len(probe.redirect_chain) > 1:
+                lines.append(f"- redirects: {len(probe.redirect_chain) - 1}")
+            if probe.error:
+                lines.append(f"- error: {probe.error}")
+            if probe.advice:
+                lines.append(f"\n> {probe.advice}")
+            lines.append("")
+
+        return "\n".join(lines)
 
 
 def _format_article(article: dict) -> str:

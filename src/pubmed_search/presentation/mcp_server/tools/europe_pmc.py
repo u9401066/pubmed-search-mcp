@@ -524,14 +524,15 @@ def register_europe_pmc_tools(mcp: FastMCP):
         Automatically tries multiple sources to find the best fulltext:
         1. Europe PMC (if PMC ID available)
         2. Unpaywall (finds OA versions via DOI)
-        3. CORE (200M+ open access papers)
+        3. Institutional direct/EZproxy fetch (when DOI-backed and enabled)
+        4. CORE (200M+ open access papers)
 
         With extended_sources=True, also searches:
-        4. CrossRef (publisher links)
-        5. DOAJ (Gold OA journals)
-        6. Zenodo (research repository)
-        7. PubMed LinkOut (external providers)
-        8. Semantic Scholar, OpenAlex, arXiv, bioRxiv, medRxiv
+        5. CrossRef (publisher links)
+        6. DOAJ (Gold OA journals)
+        7. Zenodo (research repository)
+        8. PubMed LinkOut (external providers)
+        9. Semantic Scholar, OpenAlex, arXiv, bioRxiv, medRxiv
 
         Accepts flexible input - provide ANY ONE of:
         - identifier: Auto-detects PMID, PMC ID, or DOI
@@ -548,7 +549,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
             sections: Filter sections (e.g., "introduction,methods,results")
             include_pdf_links: Include PDF download links (default: True)
             include_figures: Include figure metadata with image URLs (default: False)
-            extended_sources: Search 15 sources instead of 3 (default: False)
+            extended_sources: Search the extended downloader chain after the standard policy (default: False)
             output_format: Response format - "markdown" (default), "json", or "toon"
             allow_browser_session: Control browser-session fallback.
                 - True: force broker fallback when configured
@@ -623,6 +624,15 @@ def register_europe_pmc_tools(mcp: FastMCP):
 
         from pubmed_search.infrastructure.sources.figure_client import get_figure_client
         from pubmed_search.infrastructure.sources.fulltext_download import FulltextDownloader
+        from pubmed_search.infrastructure.sources.institutional_fulltext import (
+            InstitutionalFulltextClient,
+        )
+        from pubmed_search.shared.settings import load_settings
+
+        _settings = load_settings()
+        _institutional_factory = (
+            InstitutionalFulltextClient if _settings.institutional_direct_fetch else None
+        )
 
         service = FulltextService(
             europe_pmc_client_factory=get_europe_pmc_client,
@@ -630,6 +640,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
             core_client_factory=get_core_client,
             downloader_factory=FulltextDownloader,
             figure_client_factory=get_figure_client if include_figures else None,
+            institutional_client_factory=_institutional_factory,
         )
         retrieval = await service.retrieve(
             FulltextRequest(

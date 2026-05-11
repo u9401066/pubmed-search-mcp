@@ -63,9 +63,16 @@ DEFAULT_SOURCES: tuple[FulltextSourceDefinition, ...] = (
         capabilities=("pdf", "landing_page_resolution", "fulltext_text"),
     ),
     FulltextSourceDefinition(
+        key="institutional",
+        label="Institutional (direct/EZproxy)",
+        priority=4,
+        identifier_support=("doi",),
+        capabilities=("fulltext_text", "landing_page_resolution"),
+    ),
+    FulltextSourceDefinition(
         key="extended",
         label="Extended (15 sources)",
-        priority=4,
+        priority=5,
         identifier_support=("pmid", "pmcid", "doi"),
         capabilities=("pdf", "landing_page_resolution", "fulltext_text"),
     ),
@@ -75,17 +82,17 @@ DEFAULT_POLICIES: tuple[FulltextPolicyDefinition, ...] = (
     FulltextPolicyDefinition(
         key="structured_first",
         label="Structured first",
-        sources=("europe_pmc", "unpaywall", "core", "extended"),
+        sources=("europe_pmc", "unpaywall", "institutional", "core", "extended"),
     ),
     FulltextPolicyDefinition(
         key="standard_discovery",
         label="Standard discovery",
-        sources=("unpaywall", "core"),
+        sources=("unpaywall", "institutional", "core"),
     ),
     FulltextPolicyDefinition(
         key="expanded_discovery",
         label="Expanded discovery",
-        sources=("unpaywall", "core", "extended"),
+        sources=("unpaywall", "institutional", "core", "extended"),
     ),
 )
 

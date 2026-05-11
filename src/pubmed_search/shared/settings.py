@@ -42,6 +42,13 @@ class AppSettings(BaseSettings):
     openurl_resolver: str = Field(default="", alias="OPENURL_RESOLVER")
     openurl_preset: str = Field(default="", alias="OPENURL_PRESET")
 
+    # Institutional direct/EZproxy fulltext access (Phase 1 + Phase 2)
+    institutional_direct_fetch: bool = Field(default=True, alias="INSTITUTIONAL_DIRECT_FETCH")
+    ezproxy_enabled: bool = Field(default=False, alias="EZPROXY_ENABLED")
+    ezproxy_host: str = Field(default="", alias="EZPROXY_HOST")
+    ezproxy_cookie_file: str = Field(default="", alias="EZPROXY_COOKIE_FILE")
+    ezproxy_cookie: str = Field(default="", alias="EZPROXY_COOKIE")
+
     scopus_enabled: bool = Field(default=False, alias="SCOPUS_ENABLED")
     scopus_api_key: str | None = Field(default=None, alias="SCOPUS_API_KEY")
     scopus_insttoken: str | None = Field(default=None, alias="SCOPUS_INSTTOKEN")
@@ -64,6 +71,9 @@ class AppSettings(BaseSettings):
         "disabled_sources_raw",
         "openurl_resolver",
         "openurl_preset",
+        "ezproxy_host",
+        "ezproxy_cookie_file",
+        "ezproxy_cookie",
         "scheduler_timezone",
         mode="before",
     )

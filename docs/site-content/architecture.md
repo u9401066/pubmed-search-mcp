@@ -8,7 +8,7 @@
 
 ## 系統總覽
 
-PubMed Search MCP 是一個以 Domain-Driven Design 為核心的 MCP 伺服器，提供 45 個 MCP tools、session 快取、pipeline 持久化與排程，以及 stdio 與 HTTP 兩種 transport。
+PubMed Search MCP 是一個以 Domain-Driven Design 為核心的 MCP 伺服器，提供 46 個 MCP tools、session 快取、pipeline 持久化與排程，以及 stdio 與 HTTP 兩種 transport。
 
 目前的公開入口已收斂為：
 
@@ -110,7 +110,7 @@ flowchart LR
   API[Background HTTP API<br/>health / cache / exports]
   App[Application Layer<br/>search timeline pipeline export]
   Domain[Domain Layer<br/>article timeline pipeline entities]
-  Infra[Infrastructure Layer<br/>NCBI / Europe PMC / CORE / OpenAlex / CrossRef]
+  Infra[Infrastructure Layer<br/>NCBI / Europe PMC / CORE / OpenAlex / Unpaywall / institutional]
   Store[Session + Pipeline Store]
 
   Client --> MCP
@@ -131,7 +131,7 @@ flowchart LR
 
 ![全文擷取流程](images/fulltext-retrieval-flow.svg)
 
-`get_fulltext` 不是固定三段式 API 呼叫，而是 identifier-aware 的 retrieval policy：有 PMCID 時優先嘗試 Europe PMC XML；有 DOI 時查 Unpaywall OA locations；若仍沒有正文，會依設定嘗試 institutional direct fetch、CORE，以及 extended PDF retrieval fallback。Browser-session broker 只在本機 broker 已啟用、token 與 allowed hosts 合格，且該 fallback 被允許時才會參與。
+`get_fulltext` 不是固定三段式 API 呼叫，而是 identifier-aware 的 retrieval policy：有 PMCID 時優先嘗試 Europe PMC XML；有 DOI 時查 Unpaywall OA locations；若仍沒有正文，會依設定嘗試 institutional direct/EZproxy fetch、CORE，以及 extended PDF retrieval fallback。Browser-session broker 只在本機 broker 已啟用、token 與 allowed hosts 合格，且該 fallback 被允許時才會參與。
 
 ## 設計原則
 
@@ -201,7 +201,8 @@ Domain
 
 Infrastructure
   ├─ ncbi/        Entrez / iCite / exporter
-  ├─ sources/     Europe PMC / CORE / OpenAlex / Semantic Scholar / CrossRef / Unpaywall / Open-i / preprints / source registry / fulltext registry / fulltext service
+  ├─ fulltext/    fulltext registry 與 identifier-aware orchestration policy
+  ├─ sources/     Europe PMC / CORE / OpenAlex / Semantic Scholar / CrossRef / Unpaywall / Open-i / preprints / institutional direct-EZproxy / browser-session client
   ├─ scheduling/  APScheduler-backed pipeline scheduling
   ├─ pubtator/    semantic enhancement / entity extraction
   └─ http/        shared HTTP client concerns
@@ -241,7 +242,7 @@ flowchart TB
 ```text
 presentation/mcp_server/
 ├── server.py          MCP server 建立、DI container、stdio 啟動、背景 HTTP API
-├── tool_registry.py   45 tools / 16 categories 的權威 registry
+├── tool_registry.py   46 tools / 16 categories 的權威 registry
 ├── tools/             實際 MCP tool 實作
 ├── session_tools.py   session 相關 tools 與 resources
 ├── prompts.py         預設 prompt workflow
@@ -276,20 +277,21 @@ flowchart LR
 
 ## 工具分類
 
-目前 registry 定義 16 個 category、45 個公開 MCP tools：
+目前 registry 定義 16 個 category、46 個公開 MCP tools：
 
 | 類別 | 工具數 | 代表工具 |
 | --- | --- | --- |
 | 搜尋工具 | 1 | `unified_search` |
 | 查詢智能 | 3 | `parse_pico`, `generate_search_queries`, `analyze_search_query` |
 | 文章探索 | 5 | `fetch_article_details`, `find_related_articles`, `find_citing_articles` |
+| 引用驗證 | 1 | `verify_reference_list` |
 | 全文工具 | 2 | `get_fulltext`, `get_text_mined_terms` |
 | 圖表擷取 | 1 | `get_article_figures` |
 | NCBI 延伸 | 7 | `search_gene`, `search_compound`, `search_clinvar` |
 | 引用網絡 | 1 | `build_citation_tree` |
 | 匯出工具 | 2 | `prepare_export`, `save_literature_notes` |
 | Session 管理 | 5 | `read_session`, `get_session_pmids`, `get_cached_article`, `get_session_summary`, `get_session_log` |
-| 機構訂閱 | 4 | `configure_institutional_access`, `get_institutional_link` |
+| 機構訂閱 | 5 | `configure_institutional_access`, `get_institutional_link`, `diagnose_institutional_access` |
 | 視覺搜索 | 1 | `analyze_figure_for_search` |
 | ICD 轉換 | 1 | `convert_icd_mesh` |
 | 研究時間軸 | 3 | `build_research_timeline`, `analyze_timeline_milestones`, `compare_timelines` |
@@ -302,7 +304,7 @@ flowchart LR
 
 多來源搜尋也已改為 registry-driven：`infrastructure/sources/registry.py` 統一管理來源 metadata、`auto/all/-source` expression 解析、default-off 商業來源 gating，以及 `PUBMED_SEARCH_DISABLED_SOURCES` 全域停用機制。
 
-全文路徑也已開始同樣的抽層：`infrastructure/sources/fulltext_registry.py` 定義 retrieval policy 與 source metadata，`infrastructure/sources/fulltext_service.py` 承接 identifier-aware orchestration，讓 `get_fulltext` tool 只保留 normalization、progress/log bridge 與 response formatting。
+全文路徑也已開始同樣的抽層：`application/fulltext/registry.py` 定義 retrieval policy 與 source metadata，`application/fulltext/service.py` 承接 identifier-aware orchestration；`infrastructure/sources/fulltext_registry.py` 與 `fulltext_service.py` 只是歷史 import path 的 compatibility re-export。`get_fulltext` tool 只保留 normalization、progress/log bridge、factory wiring 與 response formatting。
 
 ## 搜尋流程
 
@@ -464,14 +466,14 @@ flowchart LR
 
 | 路線 | 說明 | 適用情境 |
 | --- | --- | --- |
-| `run_server.py --transport streamable-http --copilot-compatible` | 保留完整 45-tool surface，開啟 Copilot HTTP compatibility | 想盡量保留完整 schema 時 |
+| `run_server.py --transport streamable-http --copilot-compatible` | 保留完整 46-tool surface，開啟 Copilot HTTP compatibility | 想盡量保留完整 schema 時 |
 | `run_copilot.py` | 啟用簡化 schema 的 Copilot 專用工具集 | Copilot Studio schema 相容性優先時 |
 
 `http_compat.py` 會把部分 HTTP 202 responses 正規化為 Copilot 可接受的 200 JSON responses。
 
 ```mermaid
 flowchart TD
-  Need{需要完整 45 tools?}
+  Need{需要完整 46 tools?}
   Full[run_server.py\n--transport streamable-http\n--copilot-compatible]
   Simplified[run_copilot.py]
   Studio{Copilot Studio\n接受 schema 嗎?}

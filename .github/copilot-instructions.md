@@ -385,7 +385,7 @@ from ...infrastructure.ncbi import LiteratureSearcher
 ## 🎯 Project Overview
 
 PubMed Search MCP is a **professional literature research assistant** that provides:
-- **45 MCP Tools** for literature search and analysis
+- **46 MCP Tools** for literature search and analysis
 - **Multi-source search**: PubMed, Europe PMC (33M+), CORE (200M+)
 - **NCBI databases**: Gene, PubChem, ClinVar
 - **Full text access**: Direct XML/text retrieval
@@ -536,6 +536,7 @@ unified_search(query="<combined_boolean_query>")
 | `get_institutional_link` | Generate institutional access link (OpenURL) for an article. |
 | `list_resolver_presets` | List available institutional link resolver presets. |
 | `test_institutional_access` | Test your institutional link resolver configuration. |
+| `diagnose_institutional_access` | Diagnose why institutional fulltext access succeeds or fails for an article. |
 
 
 ### 視覺搜索

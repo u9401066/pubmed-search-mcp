@@ -67,7 +67,7 @@ PUBMED_NOTES_DIR=/path/to/references
 
 最重要的規則是：先看研究意圖，不要先看工具清單。
 
-`unified_search` 的參數刻意設計成 agent-friendly strings。`sources`、`filters` 與 `options` 請使用 comma-separated values，不要傳 JSON object。例如：`sources="auto"`、`sources="auto,-semantic_scholar"`、`filters="review,5y"` 或 `options="counts_first,context_graph"`。
+`unified_search` 的參數刻意設計成 agent-friendly strings。`sources`、`filters` 與 `options` 請使用 comma-separated values，不要傳 JSON object。例如：`sources="auto"`、`sources="auto,-semantic_scholar"`、`filters="year:2020-, clinical:therapy"` 或 `options="counts_first,context_graph"`。
 
 ## 日常工作流
 
@@ -124,7 +124,7 @@ For PMID 12345678, fetch details, then find related papers, citing papers, and k
 
 ![全文擷取流程](images/fulltext-retrieval-flow.svg)
 
-摘要不夠時使用 `get_fulltext`。建議使用明確 identifiers，例如 `pmid=`、`pmcid=` 或 `doi=`，避免 agent 從 raw string 推測 identifier type。全文服務會依可用性整合 open sources，可能包含 Europe PMC、CORE、CrossRef、Unpaywall、publisher links，或根據設定使用 browser-session fallback。
+摘要不夠時使用 `get_fulltext`。建議使用明確 identifiers，例如 `pmid=`、`pmcid=` 或 `doi=`，避免 agent 從 raw string 推測 identifier type。全文服務會依 identifier-aware policy 選路徑：有 PMCID 時先走 Europe PMC XML；DOI 文章會查 Unpaywall OA locations；依設定嘗試 institutional direct/EZproxy；再落到 CORE、optional downloader 與 browser-session fallback。CrossRef 是 metadata / publisher-link route，不是全文主機。
 
 需要 captions、image URLs 或 PDF links 時，對 PMC Open Access 文章使用 `get_article_figures`。圖表擷取取決於 open-access availability；沒有結果不代表文章一定沒有圖。
 
@@ -156,8 +156,8 @@ uv run pubmed-browser-fetch-broker --token local-dev-token
 
 ```python
 prepare_export(pmids="last", format="ris")
-prepare_export(pmids="last", format="bibtex")
-prepare_export(pmids="last", format="csl_json")
+prepare_export(pmids="last", format="bibtex", source="local")
+prepare_export(pmids="last", format="csl")
 ```
 
 如果目標是本機知識庫，而不是單一引用檔，使用 `save_literature_notes`：

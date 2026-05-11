@@ -10,6 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Institutional fulltext retrieval is now wired into `get_fulltext`. When a DOI lookup misses on Unpaywall, the orchestration layer attempts the Phase 1 (IP-aware direct DOI fetch) and Phase 2 (EZproxy hostname rewrite + replayed session cookie) paths via the new `InstitutionalFulltextClient`, extracts publisher HTML with `trafilatura` (optional `[institutional]` extra) plus a stdlib fallback, and returns the article body before falling through to CORE / extended sources.
+- New `fetch_direct` / `fetch_ezproxy` retrieval-mode entrypoints in `institutional_fetch.py` complement the existing sniff-only `probe_direct` / `probe_ezproxy` diagnostics. `ProbeResult` gains optional `body` + `content_type` fields that are excluded from `to_dict()` so diagnostic JSON stays compact.
+- `FulltextRegistry` now exposes an `institutional` source (priority 4) and inserts it between `unpaywall` and `core` in all three default policies.
+
 ### Planned
 
 - PRISMA flow tracking (init_prisma_flow, record_screening, get_prisma_diagram)

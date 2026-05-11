@@ -45,6 +45,19 @@ class TestFulltextRegistry:
         assert policy.key == "expanded_discovery"
         assert "extended" in policy.sources
 
+    def test_standard_policy_includes_institutional_before_core(self):
+        registry = FulltextRegistry()
+
+        policy = registry.resolve_policy(
+            pmcid=None,
+            pmid=None,
+            doi="10.1234/test",
+            extended_sources=False,
+        )
+
+        assert policy.key == "standard_discovery"
+        assert policy.sources == ("unpaywall", "institutional", "core")
+
     def test_requires_at_least_one_identifier(self):
         registry = FulltextRegistry()
 

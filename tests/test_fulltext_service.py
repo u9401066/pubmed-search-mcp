@@ -153,3 +153,64 @@ class TestFulltextService:
 
         assert result.figures[0]["label"] == "Figure 1"
         assert result.figures[0]["image_url"] == "https://pmc.example/figure1.png"
+
+    @pytest.mark.asyncio
+    async def test_institutional_collect_populates_fulltext(self):
+        """When Unpaywall finds no OA, institutional client supplies fulltext."""
+        mock_unpaywall = AsyncMock()
+        mock_unpaywall.get_oa_status.return_value = {"is_oa": False}
+
+        mock_core = AsyncMock()
+        mock_core.search.return_value = {"results": []}
+
+        mock_institutional = AsyncMock()
+        mock_institutional.get_fulltext_by_doi.return_value = SimpleNamespace(
+            success=True,
+            text="Full publisher article body fetched via institutional access.",
+            title="Institutional Paper",
+            final_url="https://publisher.example/article/1",
+            source_used="direct",
+            content_class="fulltext_html",
+            error=None,
+        )
+
+        service = FulltextService(
+            europe_pmc_client_factory=lambda: AsyncMock(),
+            unpaywall_client_factory=lambda: mock_unpaywall,
+            core_client_factory=lambda: mock_core,
+            downloader_factory=lambda: MagicMock(),
+            figure_client_factory=None,
+            institutional_client_factory=lambda: mock_institutional,
+        )
+
+        result = await service.retrieve(FulltextRequest(doi="10.1/x"))
+
+        assert "publisher article body" in (result.fulltext_content or "")
+        assert result.fulltext_source_name == "Institutional (direct)"
+        assert result.fulltext_provenance == "direct"
+        assert any(
+            link["url"] == "https://publisher.example/article/1"
+            for link in result.pdf_links
+        )
+        # CORE should be skipped once institutional succeeds
+        mock_core.search.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_institutional_skipped_when_factory_none(self):
+        mock_unpaywall = AsyncMock()
+        mock_unpaywall.get_oa_status.return_value = {"is_oa": False}
+        mock_core = AsyncMock()
+        mock_core.search.return_value = {"results": []}
+
+        service = FulltextService(
+            europe_pmc_client_factory=lambda: AsyncMock(),
+            unpaywall_client_factory=lambda: mock_unpaywall,
+            core_client_factory=lambda: mock_core,
+            downloader_factory=lambda: MagicMock(),
+            figure_client_factory=None,
+            institutional_client_factory=None,
+        )
+        result = await service.retrieve(FulltextRequest(doi="10.1/x"))
+        # No exception and falls back to CORE attempt
+        assert result.fulltext_content is None
+        mock_core.search.assert_called_once()

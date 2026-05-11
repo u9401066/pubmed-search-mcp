@@ -160,6 +160,7 @@ Generation pipeline:
 ```bash
 uv run python scripts/count_mcp_tools.py --update-docs
 uv run python scripts/build_docs_site.py
+uv run python scripts/build_github_wiki.py --output build/github-wiki
 ```
 
 Generated outputs:
@@ -168,6 +169,7 @@ Generated outputs:
 - `docs/site-content/*.md`
 - `docs/site-content.js`
 - selected `.claude/skills/.../references/*.md` pipeline tutorial copies
+- `build/github-wiki/*.md` for the GitHub Wiki sync workflow
 
 When adding a docs page:
 
@@ -178,6 +180,8 @@ When adding a docs page:
 5. Run `uv run pytest tests/test_docs_site_sync.py -q`.
 
 The docs site language switch is client-side state. English and Traditional Chinese pages should share a `group` in `docs/site.js` so the switch can map between translations.
+
+The GitHub Wiki is generated from the same canonical docs by `scripts/build_github_wiki.py` and pushed by `.github/workflows/wiki.yml` to the separate wiki repository. If a page should appear in the Wiki, add it to the wiki builder `PAGES` list as well as the docs-site `PAGES` and `docs/site.js` metadata when appropriate.
 
 ## Validation
 

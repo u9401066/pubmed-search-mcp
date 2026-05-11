@@ -53,7 +53,8 @@
       "configure_institutional_access",
       "get_institutional_link",
       "list_resolver_presets",
-      "test_institutional_access"
+      "test_institutional_access",
+      "diagnose_institutional_access"
     ],
     "vision": [
       "analyze_figure_for_search"
@@ -103,7 +104,8 @@
         "convert_icd_mesh",
         "configure_institutional_access",
         "list_resolver_presets",
-        "test_institutional_access"
+        "test_institutional_access",
+        "diagnose_institutional_access"
       ]
     },
     "initial_search": {
@@ -136,6 +138,7 @@
         "get_gene_details",
         "get_compound_details",
         "get_institutional_link",
+        "diagnose_institutional_access",
         "get_pipeline_history"
       ]
     },
@@ -187,6 +190,7 @@
       "get_session_log",
       "verify_reference_list",
       "get_institutional_link",
+      "diagnose_institutional_access",
       "get_gene_details",
       "get_gene_literature",
       "get_compound_details",
@@ -225,6 +229,7 @@
       "verify_reference_list",
       "analyze_figure_for_search",
       "convert_icd_mesh",
+      "diagnose_institutional_access",
       "save_literature_notes",
       "search_biomedical_images",
       "manage_pipeline",
@@ -261,6 +266,7 @@
       "get_session_log",
       "verify_reference_list",
       "get_institutional_link",
+      "diagnose_institutional_access",
       "build_research_timeline",
       "analyze_timeline_milestones",
       "compare_timelines",

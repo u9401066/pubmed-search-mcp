@@ -69,7 +69,7 @@
 
   <rect class="band" x="52" y="616" width="1096" height="58" fill="#f8eff7"/>
   <text class="band-label" x="78" y="650">Infrastructure</text>
-  <text class="tiny" x="236" y="650">NCBI, Europe PMC, CORE, OpenAlex, Semantic Scholar, CrossRef, Unpaywall, Open-i, cache, stores, HTTP clients</text>
+  <text class="tiny" x="206" y="650">NCBI, Europe PMC, CORE, OpenAlex, Semantic Scholar, CrossRef, Unpaywall, institutional, browser-session, stores, HTTP clients</text>
 
   <path class="arrow" d="M 600 212 V 238"/>
   <path class="arrow" d="M 600 338 V 366"/>

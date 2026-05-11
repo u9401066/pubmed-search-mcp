@@ -1,6 +1,6 @@
 # PubMed Search MCP 工具使用指南
 
-這是一份能力導向指南，目標是讓 agent 和使用者不用死背 45 個 MCP tool，也能穩定選到正確流程。
+這是一份能力導向指南，目標是讓 agent 和使用者不用死背 46 個 MCP tool，也能穩定選到正確流程。
 
 **語言**: [English](TOOLS_USAGE_GUIDE.md) | **繁體中文**
 

@@ -63,7 +63,7 @@ For client-specific setup, see the [Integration Guide](INTEGRATIONS.md). For HTT
 
 The most important rule: start with the research intent, not the tool menu.
 
-`unified_search` parameters are intentionally agent-friendly strings. Use comma-separated values for `sources`, `filters`, and `options` instead of JSON objects. Examples: `sources="auto"`, `sources="auto,-semantic_scholar"`, `filters="review,5y"`, or `options="counts_first,context_graph"`.
+`unified_search` parameters are intentionally agent-friendly strings. Use comma-separated values for `sources`, `filters`, and `options` instead of JSON objects. Examples: `sources="auto"`, `sources="auto,-semantic_scholar"`, `filters="year:2020-, clinical:therapy"`, or `options="counts_first,context_graph"`.
 
 ## Daily Workflow
 
@@ -120,7 +120,7 @@ Use this path when you already trust one seed paper and want to map the surround
 
 ![Full text retrieval flow](images/fulltext-retrieval-flow.svg)
 
-Use `get_fulltext` when abstracts are not enough. Prefer explicit identifiers such as `pmid=`, `pmcid=`, or `doi=` so the agent does not need to infer identifier type from a raw string. The full-text service combines available open sources and may use Europe PMC, CORE, CrossRef, Unpaywall, publisher links, or optional browser-session fallback depending on configuration and access.
+Use `get_fulltext` when abstracts are not enough. Prefer explicit identifiers such as `pmid=`, `pmcid=`, or `doi=` so the agent does not need to infer identifier type from a raw string. The full-text service follows an identifier-aware policy: Europe PMC XML when a PMCID is available, Unpaywall OA locations for DOI-backed articles, institutional direct/EZproxy when configured, CORE, then optional downloader/browser-session fallbacks. CrossRef is a metadata and publisher-link route, not a hosted full-text source.
 
 Use `get_article_figures` for PMC Open Access articles when the task needs captions, image URLs, or PDF links. Figure extraction depends on open-access availability; a missing figure result is not proof that the article has no figures.
 
@@ -152,8 +152,8 @@ Common examples:
 
 ```python
 prepare_export(pmids="last", format="ris")
-prepare_export(pmids="last", format="bibtex")
-prepare_export(pmids="last", format="csl_json")
+prepare_export(pmids="last", format="bibtex", source="local")
+prepare_export(pmids="last", format="csl")
 ```
 
 Use `save_literature_notes` when the goal is a local knowledge base rather than a citation file:

@@ -192,6 +192,7 @@ TOOL_CATEGORIES: dict[str, dict[str, Any]] = {
             "get_institutional_link",
             "list_resolver_presets",
             "test_institutional_access",
+            "diagnose_institutional_access",
         ],
     },
     "vision": {

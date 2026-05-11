@@ -58,8 +58,8 @@
 
   <rect class="box" x="530" y="338" width="190" height="92" fill="#fffaf0" stroke="#b27b21"/>
   <text class="label" x="558" y="374">Institutional</text>
-  <text class="body" x="558" y="402">default-off direct fetch</text>
-  <text class="body" x="558" y="422">resolver / publisher</text>
+  <text class="body" x="558" y="402">direct / EZproxy fetch</text>
+  <text class="body" x="558" y="422">setting-gated path</text>
 
   <rect class="box" x="760" y="338" width="170" height="92" fill="#f8eff7" stroke="#99609a"/>
   <text class="label" x="788" y="374">CORE</text>

@@ -74,6 +74,7 @@ class FulltextService:
         core_client_factory: Callable[[], Any],
         downloader_factory: Callable[[], Any],
         figure_client_factory: Callable[[], Any] | None = None,
+        institutional_client_factory: Callable[[], Any] | None = None,
     ) -> None:
         self._registry = registry or get_fulltext_registry()
         self._europe_pmc_client_factory = europe_pmc_client_factory
@@ -81,6 +82,7 @@ class FulltextService:
         self._core_client_factory = core_client_factory
         self._downloader_factory = downloader_factory
         self._figure_client_factory = figure_client_factory
+        self._institutional_client_factory = institutional_client_factory
 
     async def retrieve(
         self,
@@ -113,6 +115,18 @@ class FulltextService:
             await self._report_progress(progress, 3, 6, "Checking Unpaywall open-access locations...")
             result.sources_tried.append(self._registry.label_for("unpaywall"))
             await self._collect_unpaywall(request, result, log)
+
+        if (
+            request.doi
+            and not result.fulltext_content
+            and "institutional" in policy.sources
+            and self._institutional_client_factory is not None
+        ):
+            await self._report_progress(
+                progress, 3, 6, "Trying institutional direct/EZproxy fetch..."
+            )
+            result.sources_tried.append(self._registry.label_for("institutional"))
+            await self._collect_institutional(request, result, log)
 
         if request.doi and not result.fulltext_content and "core" in policy.sources:
             await self._report_progress(progress, 4, 6, "Trying CORE fallback...")
@@ -218,6 +232,54 @@ class FulltextService:
         except Exception as exc:
             logger.warning("Unpaywall failed: %s", exc)
             await self._report_log(log, "warning", f"Unpaywall lookup failed: {exc!s}")
+
+    async def _collect_institutional(
+        self,
+        request: FulltextRequest,
+        result: FulltextServiceResult,
+        log: LogCallback | None,
+    ) -> None:
+        if self._institutional_client_factory is None or not request.doi:
+            return
+        try:
+            client = self._institutional_client_factory()
+            outcome = await client.get_fulltext_by_doi(request.doi)
+        except Exception as exc:
+            logger.warning("Institutional fetch failed: %s", exc)
+            await self._report_log(
+                log, "warning", f"Institutional fulltext failed: {exc!s}"
+            )
+            return
+
+        if not getattr(outcome, "success", False):
+            return
+        text = getattr(outcome, "text", None)
+        if not text:
+            return
+
+        result.fulltext_content = text
+        result.content_sections = [
+            {"title": "Publisher Article (institutional)", "content": text}
+        ]
+        title = getattr(outcome, "title", None)
+        if title and not result.title:
+            result.title = title
+
+        source_used = getattr(outcome, "source_used", None) or "direct"
+        result.fulltext_source_name = f"Institutional ({source_used})"
+        result.fulltext_canonical_host = "Publisher (institutional access)"
+        result.fulltext_provenance = "direct"
+
+        final_url = getattr(outcome, "final_url", None)
+        if final_url:
+            result.pdf_links.append(
+                {
+                    "source": result.fulltext_source_name,
+                    "url": final_url,
+                    "type": "landing_page",
+                    "access": "institutional",
+                }
+            )
 
     async def _collect_core(
         self,

@@ -12,6 +12,7 @@ from scripts.build_docs_site import (
     _rewrite_links,
     _route_map,
 )
+from scripts.count_mcp_tools import count_tools
 
 
 def _load_embedded_pages() -> dict[str, str]:
@@ -57,3 +58,40 @@ def test_docs_site_image_links_rewrite_to_published_assets() -> None:
     assert _rewrite_links(docs_markdown, DOCS_ROOT / "USER_GUIDE.md", route_map) == (
         "![Workflow](images/research-workflow.svg)"
     )
+
+
+def test_primary_tool_count_mentions_match_runtime_surface() -> None:
+    stats, _mcp = count_tools(include_details=False)
+    total = stats["total_tools"]
+
+    snippets_by_path = {
+        REPO_ROOT / "README.md": [
+            f"**{total} MCP Tools**",
+            f"memorizing {total} tool names",
+            "diagnose_institutional_access",
+        ],
+        REPO_ROOT / "README.zh-TW.md": [
+            f"**{total} 個 MCP 工具**",
+            f"理解這 {total} 個工具",
+            "diagnose_institutional_access",
+        ],
+        DOCS_ROOT / "TOOLS_USAGE_GUIDE.md": [f"{total}-tool PubMed Search MCP surface"],
+        DOCS_ROOT / "TOOLS_USAGE_GUIDE.zh-TW.md": [f"不用死背 {total} 個 MCP tool"],
+        REPO_ROOT / "ARCHITECTURE.md": [
+            f"提供 {total} 個 MCP tools",
+            f"{total} tools / 16 categories",
+            "引用驗證 | 1 | `verify_reference_list`",
+        ],
+        DOCS_ROOT / "INTEGRATIONS.md": [
+            f"Full {total}-tool primary MCP surface",
+            f"enumerate {total} tools in the primary MCP surface",
+        ],
+        REPO_ROOT / "DEPLOYMENT.md": [f"完整 {total}-tool primary MCP surface"],
+        REPO_ROOT / "copilot-studio/README.md": [f"完整 {total}-tool primary MCP surface"],
+        REPO_ROOT / ".github/copilot-instructions.md": [f"**{total} MCP Tools**"],
+    }
+
+    for path, snippets in snippets_by_path.items():
+        content = path.read_text(encoding="utf-8")
+        for snippet in snippets:
+            assert snippet in content, f"{path} is missing {snippet!r}"

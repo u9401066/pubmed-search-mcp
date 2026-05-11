@@ -18,7 +18,7 @@ A Domain-Driven Design (DDD) based MCP server that serves as an intelligent rese
 
 **✨ What's Included:**
 
-- 🔧 **45 MCP Tools** - Streamlined PubMed, Europe PMC, CORE, NCBI database access, and **Research Timeline / Context Graph**
+- 🔧 **46 MCP Tools** - Streamlined PubMed, Europe PMC, CORE, NCBI database access, and **Research Timeline / Context Graph**
 - 🖼️ **OA Figure Extraction** - Pull figure captions, direct image URLs, and PDF links from PMC Open Access articles
 - 📘 **Docs Site** - Browse language-switchable user and developer guides, architecture, quick reference, pipeline tutorials, source contracts, troubleshooting, and deployment in one place at [u9401066.github.io/pubmed-search-mcp](https://u9401066.github.io/pubmed-search-mcp/)
 - 📖 **GitHub Wiki** - GitHub-native mirror of the same canonical documentation at [github.com/u9401066/pubmed-search-mcp/wiki](https://github.com/u9401066/pubmed-search-mcp/wiki)
@@ -273,7 +273,7 @@ Other tools give you raw API access. We give you **vocabulary translation + inte
 | Too many results from one source | ✅ **Parallel multi-source** with dedup |
 | Need to trace research evolution | ✅ **Research Timeline & Tree** with landmark detection, diagnostics, and sub-topic branching |
 | Citation context is unclear | ✅ **Citation Tree** forward/backward/network |
-| Can't access full text | ✅ **Multi-source fulltext** (Europe PMC, CORE, CrossRef) |
+| Can't access full text | ✅ **Multi-source fulltext** (Europe PMC XML, Unpaywall OA locations, institutional direct/EZproxy, CORE, and downloader fallbacks) |
 | Gene/drug info scattered across DBs | ✅ **NCBI Extended** (Gene, PubChem, ClinVar) |
 | Need cutting-edge preprints | ✅ **Preprint search** (arXiv, medRxiv, bioRxiv) with peer-review filtering |
 | Export to reference managers | ✅ **One-click export** (official RIS/MEDLINE/CSL JSON; local RIS/BibTeX/CSV/MEDLINE/JSON) |
@@ -319,11 +319,19 @@ NCBI_EMAIL=your@email.com          # Required by NCBI policy
 # Optional - For higher rate limits
 NCBI_API_KEY=your_ncbi_api_key     # Get from: https://www.ncbi.nlm.nih.gov/account/settings/
 CORE_API_KEY=your_core_api_key     # Get from: https://core.ac.uk/services/api
+CROSSREF_EMAIL=your@email.com      # CrossRef polite pool
+UNPAYWALL_EMAIL=your@email.com     # Unpaywall OA resolver
 S2_API_KEY=your_s2_api_key         # Get from: https://www.semanticscholar.org/product/api
 
 # Optional - Network settings
 HTTP_PROXY=http://proxy:8080       # HTTP proxy for API requests
 HTTPS_PROXY=https://proxy:8080     # HTTPS proxy for API requests
+
+# Optional - Institutional fulltext access
+INSTITUTIONAL_DIRECT_FETCH=true    # Try DOI publisher pages before CORE fallback
+EZPROXY_ENABLED=false              # Enable only after configuring EZPROXY_HOST + cookie
+EZPROXY_HOST=ezproxy.example.edu
+EZPROXY_COOKIE_FILE=/path/to/cookies.json
 
 # Optional - Local note export
 PUBMED_NOTES_DIR=/path/to/wiki/references  # save_literature_notes target folder
@@ -378,9 +386,9 @@ Local note export resolves directories in this order: `output_dir` argument, `PU
 
 ## 🛠️ MCP Tools Overview
 
-If you want to understand the tool surface as a usable system, do not start by memorizing 45 tool names.
+If you want to understand the tool surface as a usable system, do not start by memorizing 46 tool names.
 
-Start with the [Tools Usage Guide](#/tools-usage-guide): it compresses the current 45 tools into 8 capability families, explains the theoretical lower bound, and gives intent-based routing for both humans and agents.
+Start with the [Tools Usage Guide](#/tools-usage-guide): it compresses the current 46 tools into 8 capability families, explains the theoretical lower bound, and gives intent-based routing for both humans and agents.
 
 ### 🔍 Search & Query Intelligence
 
@@ -437,7 +445,7 @@ Start with the [Tools Usage Guide](#/tools-usage-guide): it compresses the curre
 
 | Category | Tools |
 | -------- | ----- |
-| **Full Text** | `get_fulltext` → Multi-source retrieval (Europe PMC, CORE, PubMed, CrossRef) |
+| **Full Text** | `get_fulltext` → Europe PMC XML when a PMCID is available; DOI-backed Unpaywall, institutional direct/EZproxy, CORE, and downloader fallbacks when needed |
 | **Figures** | `get_article_figures` → Extract figure labels, captions, image URLs, and PDF links from PMC Open Access articles |
 | **Figure-aware Full Text** | `get_fulltext(include_figures=True)` → Embed figure metadata alongside structured fulltext |
 | **Text Mining** | `get_text_mined_terms` → Extract genes, diseases, chemicals |
@@ -479,6 +487,7 @@ Use the PMC Open Access path when an agent needs evidence figures, not just arti
 | `get_institutional_link` | Generate OpenURL access link |
 | `list_resolver_presets` | List resolver presets |
 | `test_institutional_access` | Test resolver configuration |
+| `diagnose_institutional_access` | Diagnose direct DOI, EZproxy, and OpenURL handoff paths |
 | `convert_icd_mesh` | Convert between ICD codes and MeSH terms (bidirectional) |
 | `unified_search` | Auto-detect ICD codes in queries and expand them to MeSH |
 
@@ -1070,8 +1079,6 @@ See [DEPLOYMENT.md](#/deployment) for detailed deployment instructions.
 
 Export your search results in formats compatible with major reference managers:
 
-| Format | Compatible With | Use Case |
-| ------ | --------------- | -------- |
 | Format | Source | Compatible With | Use Case |
 | ------ | ------ | --------------- | -------- |
 | **RIS** | official or local | EndNote, Zotero, Mendeley | Universal import |

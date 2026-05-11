@@ -156,6 +156,7 @@ Canonical Markdown sources 仍在 repo 裡。Static site 會 embed generated cop
 ```bash
 uv run python scripts/count_mcp_tools.py --update-docs
 uv run python scripts/build_docs_site.py
+uv run python scripts/build_github_wiki.py --output build/github-wiki
 ```
 
 Generated outputs：
@@ -164,6 +165,7 @@ Generated outputs：
 - `docs/site-content/*.md`
 - `docs/site-content.js`
 - 選定的 `.claude/skills/.../references/*.md` pipeline tutorial copies
+- `build/github-wiki/*.md`，供 GitHub Wiki sync workflow 使用
 
 新增 docs page 時：
 
@@ -174,6 +176,8 @@ Generated outputs：
 5. 執行 `uv run pytest tests/test_docs_site_sync.py -q`。
 
 Docs site 的 language switch 是 client-side state。英文與繁中頁應在 `docs/site.js` 共用同一個 `group`，這樣切換語言時才能映射到對應翻譯。
+
+GitHub Wiki 也由同一批 canonical docs 生成：`scripts/build_github_wiki.py` 會輸出 wiki-friendly Markdown，`.github/workflows/wiki.yml` 再推到獨立的 wiki repository。若新頁面也要出現在 Wiki，除了 docs site 的 `PAGES` 與 `docs/site.js` metadata，需要同步加入 wiki builder 的 `PAGES`。
 
 ## Validation
 

@@ -101,6 +101,11 @@ This auxiliary API is public in the sense that callers may use it directly, but 
 | `OPENURL_RESOLVER` | No | Institutional link resolver base URL | — |
 | `OPENURL_PRESET` | No | Preset name for institutional resolver | — |
 | `OPENURL_ENABLED` | No | Enable/disable OpenURL resolver | `true` |
+| `INSTITUTIONAL_DIRECT_FETCH` | No | Try direct DOI / EZproxy fulltext retrieval inside `get_fulltext` before CORE fallback | `true` |
+| `EZPROXY_ENABLED` | No | Enable EZproxy fulltext retrieval after setting host and cookie | `false` |
+| `EZPROXY_HOST` | No | EZproxy hostname, e.g. `ezproxy.lib.example.edu` | — |
+| `EZPROXY_COOKIE_FILE` | No | Browser-exported cookies JSON file for EZproxy requests | — |
+| `EZPROXY_COOKIE` | No | Inline cookie header string for EZproxy requests | — |
 | `BROWSER_FETCH_CONFIG` | No | Preferred single JSON setting for browser-session broker and auto mode | — |
 | `BROWSER_FETCH_ENABLED` | No | Enable browser-session broker via per-field envs | `false` |
 | `BROWSER_FETCH_AUTO` | No | Auto-use broker when tool call omits allow_browser_session | `false` |
@@ -475,7 +480,7 @@ Copilot Studio ──HTTPS──▶ ngrok ──HTTP──▶ MCP Server (localh
 **Step 1**: Start the MCP server with HTTP transport
 
 ```bash
-# Option A: Full 45-tool primary MCP surface with compatibility semantics and ngrok
+# Option A: Full 46-tool primary MCP surface with compatibility semantics and ngrok
 ./scripts/start-copilot-studio.sh --with-ngrok
 
 # Option B: Simplified 11-tool Copilot Studio surface with custom-domain ngrok
@@ -484,7 +489,7 @@ Copilot Studio ──HTTPS──▶ ngrok ──HTTP──▶ MCP Server (localh
 # Option C: Manual simplified 11-tool setup
 uv run python run_copilot.py --port 8765
 
-# Option D: Manual full 45-tool primary MCP surface with Copilot-compatible HTTP semantics
+# Option D: Manual full 46-tool primary MCP surface with Copilot-compatible HTTP semantics
 uv run python run_server.py --transport streamable-http --copilot-compatible --port 8765
 ```
 
@@ -538,7 +543,7 @@ uv run python -m pubmed_search.presentation.mcp_server
 
 After configuring any client, verify the server is working:
 
-1. **Ask the AI**: "List all available PubMed tools" — the AI should enumerate 45 tools in the primary MCP surface
+1. **Ask the AI**: "List all available PubMed tools" — the AI should enumerate 46 tools in the primary MCP surface
 2. **Simple search**: "Search PubMed for CRISPR gene therapy" — should return article results
 3. **Check tool list**: The server provides tools like `unified_search`, `fetch_article_details`, `get_fulltext`, etc.
 
