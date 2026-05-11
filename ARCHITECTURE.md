@@ -136,7 +136,7 @@ flowchart LR
 | Agent-First | 回傳格式優先支援 AI agent 決策與後續工具編排 |
 | Task-Oriented | 工具以研究工作流分組，不直接暴露每個底層 API client |
 | Domain-Driven | 查詢、文章、timeline、pipeline 等核心概念在 domain/application 中建模 |
-| Multi-Source | PubMed 為核心，並整合 Europe PMC、CORE、OpenAlex、Semantic Scholar、CrossRef、preprint sources |
+| Multi-Source | PubMed 為核心，並整合 Europe PMC、CORE、OpenAlex、Semantic Scholar、CrossRef、first-class preprint sources |
 | Session-Aware | 搜尋結果會自動快取於 session，支援後續全文、匯出與探索 |
 
 ## 目前的 DDD 結構
@@ -343,7 +343,7 @@ sequenceDiagram
 - OpenAlex
 - Semantic Scholar
 - CrossRef
-- Optional preprint crawl: arXiv / medRxiv / bioRxiv
+- Preprint sources: arXiv / medRxiv / bioRxiv can be enabled with `options="preprints"` or explicit source selection; they return main `UnifiedArticle` entries with `article_type=PREPRINT` and are deduplicated/ranked with the rest of the result set.
 
 ```mermaid
 flowchart TD
