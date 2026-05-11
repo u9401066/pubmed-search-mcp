@@ -103,8 +103,8 @@ class TestURLFormats:
                 # CORE might require API key, block unauthenticated, rate limit, or error
                 # 200 = works, 401 = needs auth, 403 = blocked, 429 = rate limited, 5xx = server issue
                 assert resp.status_code < 600, f"CORE API returned unexpected {resp.status_code}"
-            except httpx.ConnectError:
-                pytest.skip("CORE API unreachable")
+            except (httpx.ConnectError, httpx.TimeoutException) as exc:
+                pytest.skip(f"CORE API unreachable in current environment: {exc}")
 
     @pytest.mark.asyncio
     async def test_semantic_scholar_api(self, client):
