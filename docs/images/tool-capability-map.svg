@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760" role="img" aria-labelledby="title desc">
+  <title id="title">PubMed Search MCP capability map</title>
+  <desc id="desc">The MCP tool surface is grouped into practical capability families for users and agents.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#31484f"/>
+    </marker>
+    <style>
+      .bg { fill: #fbfcfa; }
+      .title { font: 700 28px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #17252a; }
+      .subtitle { font: 400 16px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #536269; }
+      .center { fill: #243f46; stroke: #15272d; stroke-width: 2; }
+      .center-text { font: 700 23px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #ffffff; }
+      .center-small { font: 500 15px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #dcebe7; }
+      .card { stroke-width: 2; rx: 20; }
+      .label { font: 700 18px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #17252a; }
+      .body { font: 400 13px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #405057; }
+      .route { fill: none; stroke: #31484f; stroke-width: 2; marker-end: url(#arrow); opacity: 0.7; }
+    </style>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1200" height="760"/>
+  <text class="title" x="52" y="58">Tool surface as capability families</text>
+  <text class="subtitle" x="52" y="86">Use the family that matches the research intent; keep the generated tool index for exact names.</text>
+
+  <rect class="center" x="474" y="302" width="252" height="132" rx="28"/>
+  <text class="center-text" x="548" y="354">User intent</text>
+  <text class="center-small" x="518" y="386">what the researcher</text>
+  <text class="center-small" x="546" y="408">needs next</text>
+
+  <g>
+    <rect class="card" x="66" y="134" width="238" height="128" fill="#eaf4f0" stroke="#3a7c69"/>
+    <text class="label" x="92" y="174">Search entry</text>
+    <text class="body" x="92" y="204">unified_search</text>
+    <text class="body" x="92" y="226">first pass over a topic</text>
+  </g>
+  <g>
+    <rect class="card" x="346" y="134" width="238" height="128" fill="#eef2ff" stroke="#4f68a8"/>
+    <text class="label" x="372" y="174">Query intelligence</text>
+    <text class="body" x="372" y="204">PICO, MeSH, synonyms</text>
+    <text class="body" x="372" y="226">strategy before execution</text>
+  </g>
+  <g>
+    <rect class="card" x="626" y="134" width="238" height="128" fill="#fff5df" stroke="#b27b21"/>
+    <text class="label" x="652" y="174">Discovery</text>
+    <text class="body" x="652" y="204">details, related, citing</text>
+    <text class="body" x="652" y="226">references, citation tree</text>
+  </g>
+  <g>
+    <rect class="card" x="906" y="134" width="238" height="128" fill="#f8eff7" stroke="#99609a"/>
+    <text class="label" x="932" y="174">Full text and figures</text>
+    <text class="body" x="932" y="204">article body, captions</text>
+    <text class="body" x="932" y="226">entities, image URLs</text>
+  </g>
+
+  <g>
+    <rect class="card" x="66" y="498" width="238" height="128" fill="#edf7ff" stroke="#3578a7"/>
+    <text class="label" x="92" y="538">External bio data</text>
+    <text class="body" x="92" y="568">gene, compound, ClinVar</text>
+    <text class="body" x="92" y="590">when papers are not enough</text>
+  </g>
+  <g>
+    <rect class="card" x="346" y="498" width="238" height="128" fill="#f1f5e8" stroke="#71883b"/>
+    <text class="label" x="372" y="538">Evaluation timeline</text>
+    <text class="body" x="372" y="568">citation metrics, timelines</text>
+    <text class="body" x="372" y="590">milestones and comparison</text>
+  </g>
+  <g>
+    <rect class="card" x="626" y="498" width="238" height="128" fill="#f5f1ea" stroke="#947245"/>
+    <text class="label" x="652" y="538">Sessions pipelines</text>
+    <text class="body" x="652" y="568">resume, audit, rerun</text>
+    <text class="body" x="652" y="590">save, load, schedule</text>
+  </g>
+  <g>
+    <rect class="card" x="906" y="498" width="238" height="128" fill="#edf6f5" stroke="#4d8580"/>
+    <text class="label" x="932" y="538">Export local notes</text>
+    <text class="body" x="932" y="568">RIS, BibTeX, CSL JSON</text>
+    <text class="body" x="932" y="590">wiki, Foam, MedPaper</text>
+  </g>
+
+  <path class="route" d="M 304 214 C 388 246 430 284 474 334"/>
+  <path class="route" d="M 465 262 C 486 284 504 302 524 326"/>
+  <path class="route" d="M 702 262 C 678 286 656 306 632 328"/>
+  <path class="route" d="M 906 214 C 818 248 772 284 724 336"/>
+  <path class="route" d="M 304 562 C 388 512 430 474 480 418"/>
+  <path class="route" d="M 465 498 C 492 468 514 448 540 424"/>
+  <path class="route" d="M 702 498 C 674 468 650 448 624 424"/>
+  <path class="route" d="M 906 562 C 820 512 778 474 720 418"/>
+</svg>

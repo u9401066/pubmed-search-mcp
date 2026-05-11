@@ -49,6 +49,8 @@ PUBMED_NOTES_DIR=/path/to/references
 
 ## 先選對路徑
 
+![PubMed Search MCP 研究工作流](images/research-workflow.svg)
+
 | 目標 | 從這裡開始 | 接著使用 |
 | --- | --- | --- |
 | 快速找文獻 | `unified_search` | `fetch_article_details`, `read_session` |
@@ -115,6 +117,8 @@ For PMID 12345678, fetch details, then find related papers, citing papers, and k
 當你已經相信某篇 seed paper 值得追，這條路徑可以快速建立周邊證據地圖。
 
 ### 4. 取得全文與圖表
+
+![全文擷取流程](images/fulltext-retrieval-flow.svg)
 
 摘要不夠時使用 `get_fulltext`。建議使用明確 identifiers，例如 `pmid=`、`pmcid=` 或 `doi=`，避免 agent 從 raw string 推測 identifier type。全文服務會依可用性整合 open sources，可能包含 Europe PMC、CORE、CrossRef、Unpaywall、publisher links，或根據設定使用 browser-session fallback。
 

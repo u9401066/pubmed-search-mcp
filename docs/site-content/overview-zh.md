@@ -12,6 +12,8 @@
 
 > **AI Agent 的專業文獻研究助理** - 不只是 API 包裝器
 
+![PubMed Search MCP 研究工作流](images/research-workflow.svg)
+
 基於 Domain-Driven Design (DDD) 架構的 MCP 伺服器，作為 AI Agent 的智慧研究助理，提供任務導向的文獻搜尋與分析能力。
 
 **✨ 包含內容：**

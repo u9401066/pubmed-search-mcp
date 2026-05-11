@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-labelledby="title desc">
+  <title id="title">Full text retrieval flow</title>
+  <desc id="desc">The get_fulltext flow resolves identifiers, applies policy, tries open and configured sources, and returns text, links, figures, and provenance when available.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#294951"/>
+    </marker>
+    <style>
+      .bg { fill: #fbfcfa; }
+      .title { font: 700 28px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #17252a; }
+      .subtitle { font: 400 16px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #536269; }
+      .box { stroke-width: 2; rx: 18; }
+      .label { font: 700 17px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #16252b; }
+      .body { font: 400 13px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #405057; }
+      .arrow { fill: none; stroke: #294951; stroke-width: 2.5; marker-end: url(#arrow); }
+      .optional { fill: none; stroke: #737f85; stroke-width: 2; marker-end: url(#arrow); stroke-dasharray: 6 6; }
+      .note { fill: #ffffff; stroke: #cbd7d3; stroke-width: 2; rx: 18; }
+    </style>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1200" height="720"/>
+  <text class="title" x="52" y="58">get_fulltext retrieval flow</text>
+  <text class="subtitle" x="52" y="86">Availability depends on identifiers, open access, source APIs, credentials, and optional browser-session fallback.</text>
+
+  <rect class="box" x="70" y="150" width="190" height="96" fill="#eaf4f0" stroke="#3a7c69"/>
+  <text class="label" x="98" y="188">Request</text>
+  <text class="body" x="98" y="216">pmid, pmcid, doi,</text>
+  <text class="body" x="98" y="236">or identifier</text>
+
+  <rect class="box" x="310" y="150" width="200" height="96" fill="#eef2ff" stroke="#4f68a8"/>
+  <text class="label" x="338" y="188">Normalize</text>
+  <text class="body" x="338" y="216">detect identifier type</text>
+  <text class="body" x="338" y="236">validate PMID / PMCID</text>
+
+  <rect class="box" x="560" y="150" width="210" height="96" fill="#fff5df" stroke="#b27b21"/>
+  <text class="label" x="588" y="188">Policy</text>
+  <text class="body" x="588" y="216">resolve source order</text>
+  <text class="body" x="588" y="236">by identifiers and flags</text>
+
+  <rect class="box" x="820" y="150" width="250" height="96" fill="#edf7ff" stroke="#3578a7"/>
+  <text class="label" x="848" y="188">Response shaping</text>
+  <text class="body" x="848" y="216">text, sections, links</text>
+  <text class="body" x="848" y="236">figures, provenance</text>
+
+  <path class="arrow" d="M 260 198 H 298"/>
+  <path class="arrow" d="M 510 198 H 548"/>
+  <path class="arrow" d="M 770 198 H 808"/>
+
+  <rect class="box" x="70" y="338" width="190" height="92" fill="#f7fbf9" stroke="#3a7c69"/>
+  <text class="label" x="98" y="374">Europe PMC</text>
+  <text class="body" x="98" y="402">PMCID XML</text>
+  <text class="body" x="98" y="422">sections and PMC PDF</text>
+
+  <rect class="box" x="300" y="338" width="190" height="92" fill="#f7f8ff" stroke="#4f68a8"/>
+  <text class="label" x="328" y="374">Unpaywall</text>
+  <text class="body" x="328" y="402">OA PDF or landing</text>
+  <text class="body" x="328" y="422">license and version</text>
+
+  <rect class="box" x="530" y="338" width="190" height="92" fill="#fffaf0" stroke="#b27b21"/>
+  <text class="label" x="558" y="374">Institutional</text>
+  <text class="body" x="558" y="402">default-off direct fetch</text>
+  <text class="body" x="558" y="422">resolver / publisher</text>
+
+  <rect class="box" x="760" y="338" width="170" height="92" fill="#f8eff7" stroke="#99609a"/>
+  <text class="label" x="788" y="374">CORE</text>
+  <text class="body" x="788" y="402">repository text</text>
+  <text class="body" x="788" y="422">download URL</text>
+
+  <rect class="box" x="970" y="338" width="180" height="92" fill="#eef7eb" stroke="#5f8d3e"/>
+  <text class="label" x="998" y="374">Extended</text>
+  <text class="body" x="998" y="402">CrossRef, DOAJ,</text>
+  <text class="body" x="998" y="422">LinkOut, preprints</text>
+
+  <path class="arrow" d="M 665 246 C 665 292 165 292 165 326"/>
+  <path class="arrow" d="M 665 246 C 665 292 395 292 395 326"/>
+  <path class="optional" d="M 665 246 C 665 292 625 292 625 326"/>
+  <path class="arrow" d="M 665 246 C 665 292 845 292 845 326"/>
+  <path class="optional" d="M 665 246 C 665 292 1060 292 1060 326"/>
+
+  <rect class="box" x="406" y="526" width="388" height="94" fill="#ffffff" stroke="#77868c"/>
+  <text class="label" x="436" y="562">Optional browser-session broker</text>
+  <text class="body" x="436" y="590">only when configured, token protected, and host allowed</text>
+
+  <path class="optional" d="M 625 430 C 625 476 600 482 600 514"/>
+  <path class="optional" d="M 1060 430 C 1060 504 806 548 794 568"/>
+  <path class="arrow" d="M 945 246 C 945 292 945 300 945 326"/>
+  <path class="arrow" d="M 945 430 C 945 468 945 480 945 506 C 945 562 814 570 806 570"/>
+
+  <rect class="note" x="76" y="536" width="244" height="98"/>
+  <text class="body" x="100" y="570">Open access link collection</text>
+  <text class="body" x="100" y="592">can succeed even when full</text>
+  <text class="body" x="100" y="614">text extraction is unavailable.</text>
+
+  <rect class="note" x="872" y="536" width="252" height="98"/>
+  <text class="body" x="898" y="570">Formatted output can be</text>
+  <text class="body" x="898" y="592">Markdown, JSON, or TOON</text>
+  <text class="body" x="898" y="614">with source provenance.</text>
+</svg>

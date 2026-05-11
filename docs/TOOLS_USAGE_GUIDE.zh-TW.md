@@ -13,6 +13,8 @@
 
 ## 8 個能力族
 
+![PubMed Search MCP 能力族地圖](images/tool-capability-map.svg)
+
 | 能力 | 主要工具 | 何時使用 |
 | --- | --- | --- |
 | 搜尋入口 | `unified_search` | 使用者要找論文、文章、或先對主題做第一輪搜尋。 |

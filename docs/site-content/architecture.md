@@ -101,6 +101,8 @@ flowchart TB
 
 ## 快速架構圖
 
+![DDD 與 runtime 邊界](images/ddd-runtime-boundaries.svg)
+
 ```mermaid
 flowchart LR
   Client[Human / AI Client]
@@ -124,6 +126,12 @@ flowchart LR
 - 所有使用者互動都先進入 MCP presentation layer
 - 真正的工作流編排在 application layer
 - 外部資料源與持久化能力都被隔離在 infrastructure / store 邊界之外
+
+## 全文擷取流程
+
+![全文擷取流程](images/fulltext-retrieval-flow.svg)
+
+`get_fulltext` 不是固定三段式 API 呼叫，而是 identifier-aware 的 retrieval policy：有 PMCID 時優先嘗試 Europe PMC XML；有 DOI 時查 Unpaywall OA locations；若仍沒有正文，會依設定嘗試 institutional direct fetch、CORE，以及 extended PDF retrieval fallback。Browser-session broker 只在本機 broker 已啟用、token 與 allowed hosts 合格，且該 fallback 被允許時才會參與。
 
 ## 設計原則
 

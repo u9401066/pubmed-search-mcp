@@ -8,6 +8,8 @@ Read this with [Architecture](../ARCHITECTURE.md), [AGENTS.md](../AGENTS.md), an
 
 PubMed Search MCP is a Python MCP server with Domain-Driven Design boundaries:
 
+![DDD and runtime boundaries](images/ddd-runtime-boundaries.svg)
+
 ```text
 presentation -> application -> domain
                   application -> infrastructure
@@ -144,6 +146,8 @@ Pipeline changes should consider:
 - packaged tutorial copies
 
 ## Documentation System
+
+![Documentation publishing flow](images/docs-publishing-flow.svg)
 
 Canonical Markdown sources remain in the repository. The static site embeds generated copies so GitHub Pages can serve the docs without a backend.
 

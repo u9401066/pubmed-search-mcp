@@ -12,6 +12,8 @@
 
 PubMed Search MCP 是 Python MCP server，架構遵守 Domain-Driven Design 邊界：
 
+![DDD 與 runtime 邊界](images/ddd-runtime-boundaries.svg)
+
 ```text
 presentation -> application -> domain
                   application -> infrastructure
@@ -148,6 +150,8 @@ Pipeline 變更需要同時考慮：
 - packaged tutorial copies
 
 ## Documentation System
+
+![文件發布流程](images/docs-publishing-flow.svg)
 
 Canonical Markdown sources 仍在 repo 裡。Static site 會 embed generated copies，讓 GitHub Pages 不需要 backend 也能服務文件。
 

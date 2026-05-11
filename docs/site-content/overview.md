@@ -12,7 +12,7 @@
 
 > **Professional Literature Research Assistant for AI Agents** - More than just an API wrapper
 
-![PubMed Search MCP Architecture](images/architecture-overview.jpg)
+![PubMed Search MCP research workflow](images/research-workflow.svg)
 
 A Domain-Driven Design (DDD) based MCP server that serves as an intelligent research assistant for AI agents, providing task-oriented literature search and analysis capabilities.
 

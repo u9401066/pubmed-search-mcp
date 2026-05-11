@@ -53,6 +53,8 @@ For client-specific setup, see the [Integration Guide](#/troubleshooting). For H
 
 ## Choose The Right Path
 
+![PubMed Search MCP research workflow](images/research-workflow.svg)
+
 | Goal | Start With | Then Use |
 | --- | --- | --- |
 | Quick search for papers | `unified_search` | `fetch_article_details`, `read_session` |
@@ -119,6 +121,8 @@ Useful tools:
 Use this path when you already trust one seed paper and want to map the surrounding evidence.
 
 ### 4. Retrieve Full Text And Figures
+
+![Full text retrieval flow](images/fulltext-retrieval-flow.svg)
 
 Use `get_fulltext` when abstracts are not enough. Prefer explicit identifiers such as `pmid=`, `pmcid=`, or `doi=` so the agent does not need to infer identifier type from a raw string. The full-text service combines available open sources and may use Europe PMC, CORE, CrossRef, Unpaywall, publisher links, or optional browser-session fallback depending on configuration and access.
 

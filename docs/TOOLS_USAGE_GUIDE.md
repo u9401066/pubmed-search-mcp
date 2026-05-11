@@ -13,6 +13,8 @@ Capability-first guide for using the 45-tool PubMed Search MCP surface without t
 
 ## The 8 Capability Families
 
+![PubMed Search MCP capability map](images/tool-capability-map.svg)
+
 | Capability | Primary Tools | Use When |
 | --- | --- | --- |
 | Search entry | `unified_search` | The user wants papers, articles, or a first pass over a topic. |

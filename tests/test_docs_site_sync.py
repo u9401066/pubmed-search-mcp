@@ -2,7 +2,16 @@ from __future__ import annotations
 
 import json
 
-from scripts.build_docs_site import DOCS_ROOT, EMBEDDED_CONTENT_FILE, OUTPUT_DIR, PAGES, _render_page, _route_map
+from scripts.build_docs_site import (
+    DOCS_ROOT,
+    EMBEDDED_CONTENT_FILE,
+    OUTPUT_DIR,
+    PAGES,
+    REPO_ROOT,
+    _render_page,
+    _rewrite_links,
+    _route_map,
+)
 
 
 def _load_embedded_pages() -> dict[str, str]:
@@ -34,3 +43,17 @@ def test_docs_site_router_references_generated_pages() -> None:
     for slug, _title, _source_path in PAGES:
         assert f'slug: "{slug}"' in site_js
         assert f'file: "site-content/{slug}.md"' in site_js
+
+
+def test_docs_site_image_links_rewrite_to_published_assets() -> None:
+    route_map = _route_map()
+
+    readme_markdown = "![Workflow](docs/images/research-workflow.svg)"
+    docs_markdown = "![Workflow](images/research-workflow.svg)"
+
+    assert _rewrite_links(readme_markdown, REPO_ROOT / "README.md", route_map) == (
+        "![Workflow](images/research-workflow.svg)"
+    )
+    assert _rewrite_links(docs_markdown, DOCS_ROOT / "USER_GUIDE.md", route_map) == (
+        "![Workflow](images/research-workflow.svg)"
+    )

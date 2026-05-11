@@ -33,3 +33,18 @@ def test_build_github_wiki_outputs_expected_pages(tmp_path) -> None:
     assert "https://u9401066.github.io/pubmed-search-mcp/" in home
     assert "[Tools Usage Guide](Tools-Usage-Guide)" in user_guide
     assert "[Developer Guide](Developer-Guide)" in sidebar
+
+
+def test_build_github_wiki_rewrites_image_links_to_raw_assets() -> None:
+    route_map = build_github_wiki._source_route_map()
+
+    rendered = build_github_wiki._rewrite_links(
+        "![Workflow](images/research-workflow.svg)",
+        build_github_wiki.DOCS_ROOT / "USER_GUIDE.md",
+        route_map,
+    )
+
+    assert rendered == (
+        "![Workflow](https://raw.githubusercontent.com/u9401066/pubmed-search-mcp/master/"
+        "docs/images/research-workflow.svg)"
+    )

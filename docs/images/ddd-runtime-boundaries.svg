@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="700" viewBox="0 0 1200 700" role="img" aria-labelledby="title desc">
+  <title id="title">DDD and runtime boundaries</title>
+  <desc id="desc">A layered view of clients, presentation adapters, application services, domain model, and infrastructure integrations.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#294951"/>
+    </marker>
+    <style>
+      .bg { fill: #f8faf7; }
+      .title { font: 700 28px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #17252a; }
+      .subtitle { font: 400 16px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #526168; }
+      .band { stroke: #c7d3d0; stroke-width: 2; rx: 24; }
+      .band-label { font: 700 18px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #17252a; }
+      .box { stroke-width: 2; rx: 16; }
+      .box-text { font: 650 14px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #213139; }
+      .tiny { font: 400 12px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #4a5960; }
+      .arrow { fill: none; stroke: #294951; stroke-width: 2.4; marker-end: url(#arrow); }
+      .note { fill: #ffffff; stroke: #ccd7d5; stroke-width: 2; rx: 18; }
+    </style>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1200" height="700"/>
+  <text class="title" x="52" y="58">DDD boundaries and runtime surfaces</text>
+  <text class="subtitle" x="52" y="86">MCP tools stay thin; orchestration lives in application services; providers stay behind infrastructure adapters.</text>
+
+  <rect class="band" x="52" y="126" width="1096" height="86" fill="#ffffff"/>
+  <text class="band-label" x="78" y="160">Clients and runtime entry points</text>
+  <rect class="box" x="292" y="146" width="154" height="44" fill="#eaf4f0" stroke="#3a7c69"/>
+  <text class="box-text" x="326" y="174">stdio MCP</text>
+  <rect class="box" x="464" y="146" width="154" height="44" fill="#eef2ff" stroke="#4f68a8"/>
+  <text class="box-text" x="490" y="174">HTTP /mcp</text>
+  <rect class="box" x="636" y="146" width="154" height="44" fill="#fff5df" stroke="#b27b21"/>
+  <text class="box-text" x="662" y="174">Copilot modes</text>
+  <rect class="box" x="808" y="146" width="154" height="44" fill="#f8eff7" stroke="#99609a"/>
+  <text class="box-text" x="830" y="174">browser broker</text>
+  <rect class="box" x="980" y="146" width="136" height="44" fill="#edf7ff" stroke="#3578a7"/>
+  <text class="box-text" x="1010" y="174">docs site</text>
+
+  <rect class="band" x="52" y="246" width="1096" height="92" fill="#f6fbf9"/>
+  <text class="band-label" x="78" y="280">Presentation</text>
+  <rect class="box" x="268" y="268" width="174" height="44" fill="#ffffff" stroke="#3a7c69"/>
+  <text class="box-text" x="294" y="296">mcp_server</text>
+  <rect class="box" x="462" y="268" width="194" height="44" fill="#ffffff" stroke="#3a7c69"/>
+  <text class="box-text" x="486" y="296">tool registry</text>
+  <rect class="box" x="676" y="268" width="194" height="44" fill="#ffffff" stroke="#3a7c69"/>
+  <text class="box-text" x="696" y="296">resources prompts</text>
+  <rect class="box" x="890" y="268" width="174" height="44" fill="#ffffff" stroke="#3a7c69"/>
+  <text class="box-text" x="916" y="296">HTTP compat</text>
+
+  <rect class="band" x="52" y="374" width="1096" height="100" fill="#f7f9ff"/>
+  <text class="band-label" x="78" y="410">Application</text>
+  <rect class="box" x="218" y="398" width="126" height="46" fill="#ffffff" stroke="#4f68a8"/>
+  <text class="box-text" x="256" y="426">search</text>
+  <rect class="box" x="364" y="398" width="126" height="46" fill="#ffffff" stroke="#4f68a8"/>
+  <text class="box-text" x="388" y="426">fulltext</text>
+  <rect class="box" x="510" y="398" width="126" height="46" fill="#ffffff" stroke="#4f68a8"/>
+  <text class="box-text" x="532" y="426">timeline</text>
+  <rect class="box" x="656" y="398" width="126" height="46" fill="#ffffff" stroke="#4f68a8"/>
+  <text class="box-text" x="684" y="426">pipeline</text>
+  <rect class="box" x="802" y="398" width="126" height="46" fill="#ffffff" stroke="#4f68a8"/>
+  <text class="box-text" x="832" y="426">export</text>
+  <rect class="box" x="948" y="398" width="126" height="46" fill="#ffffff" stroke="#4f68a8"/>
+  <text class="box-text" x="974" y="426">session</text>
+
+  <rect class="band" x="52" y="510" width="1096" height="70" fill="#fffaf0"/>
+  <text class="band-label" x="78" y="552">Domain</text>
+  <rect class="box" x="300" y="526" width="600" height="38" fill="#ffffff" stroke="#b27b21"/>
+  <text class="box-text" x="342" y="551">articles, figures, images, timelines, pipelines, research trees, value objects</text>
+
+  <rect class="band" x="52" y="616" width="1096" height="58" fill="#f8eff7"/>
+  <text class="band-label" x="78" y="650">Infrastructure</text>
+  <text class="tiny" x="236" y="650">NCBI, Europe PMC, CORE, OpenAlex, Semantic Scholar, CrossRef, Unpaywall, Open-i, cache, stores, HTTP clients</text>
+
+  <path class="arrow" d="M 600 212 V 238"/>
+  <path class="arrow" d="M 600 338 V 366"/>
+  <path class="arrow" d="M 600 474 V 502"/>
+  <path class="arrow" d="M 600 580 V 608"/>
+
+  <rect class="note" x="76" y="318" width="144" height="74"/>
+  <text class="tiny" x="96" y="350">Thin wrappers:</text>
+  <text class="tiny" x="96" y="370">no workflow logic</text>
+
+  <rect class="note" x="954" y="460" width="156" height="84"/>
+  <text class="tiny" x="976" y="492">Factories inject</text>
+  <text class="tiny" x="976" y="512">provider clients</text>
+  <text class="tiny" x="976" y="532">for testability.</text>
+</svg>
