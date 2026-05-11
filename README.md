@@ -16,13 +16,13 @@ A Domain-Driven Design (DDD) based MCP server that serves as an intelligent rese
 
 - 🔧 **45 MCP Tools** - Streamlined PubMed, Europe PMC, CORE, NCBI database access, and **Research Timeline / Context Graph**
 - 🖼️ **OA Figure Extraction** - Pull figure captions, direct image URLs, and PDF links from PMC Open Access articles
-- 📘 **Docs Site** - Browse overview, architecture, quick reference, pipeline tutorials, source contracts, troubleshooting, and deployment in one place at [docs/index.html](docs/index.html)
+- 📘 **Docs Site** - Browse language-switchable user and developer guides, architecture, quick reference, pipeline tutorials, source contracts, troubleshooting, and deployment in one place at [docs/index.html](docs/index.html)
 - 📚 **24 Claude Skills** - Ready-to-use workflow guides for AI agents (Claude Code-specific)
 - 📖 **Copilot Instructions** - VS Code GitHub Copilot integration guide
 
 **🌐 Language**: **English** | [繁體中文](README.zh-TW.md)
 
-**📘 Tool Usage Docs**: [Capability-first guide](docs/TOOLS_USAGE_GUIDE.md) | [Complete index](src/pubmed_search/presentation/mcp_server/TOOLS_INDEX.md)
+**📘 Tool Usage Docs**: [User guide](docs/USER_GUIDE.md) | [Capability-first guide](docs/TOOLS_USAGE_GUIDE.md) | [Developer guide](docs/DEVELOPER_GUIDE.md) | [Complete index](src/pubmed_search/presentation/mcp_server/TOOLS_INDEX.md)
 
 ---
 

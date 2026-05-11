@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from scripts.build_docs_site import EMBEDDED_CONTENT_FILE, OUTPUT_DIR, PAGES, _render_page, _route_map
+from scripts.build_docs_site import DOCS_ROOT, EMBEDDED_CONTENT_FILE, OUTPUT_DIR, PAGES, _render_page, _route_map
 
 
 def _load_embedded_pages() -> dict[str, str]:
@@ -26,3 +26,11 @@ def test_docs_site_pages_match_generated_sources() -> None:
 
         assert generated == expected
         assert embedded_pages[slug] == expected
+
+
+def test_docs_site_router_references_generated_pages() -> None:
+    site_js = (DOCS_ROOT / "site.js").read_text(encoding="utf-8")
+
+    for slug, _title, _source_path in PAGES:
+        assert f'slug: "{slug}"' in site_js
+        assert f'file: "site-content/{slug}.md"' in site_js

@@ -14,13 +14,13 @@
 
 - 🔧 **45 個 MCP 工具** - 精簡的 PubMed、Europe PMC、CORE、NCBI 資料庫存取，及**研究時間軸 / 脈絡圖**功能
 - 🖼️ **OA 圖表擷取** - 從 PMC Open Access 論文直接抽出 figure caption、image URL 與 PDF 連結
-- 📘 **Docs Site** - 用網站方式整合 overview、架構、quick reference、pipeline 教學、source contract、troubleshooting 與 deployment，入口在 [docs/index.html](docs/index.html)
+- 📘 **Docs Site** - 用語言切換網站整合使用者指南、開發者指南、架構、quick reference、pipeline 教學、source contract、troubleshooting 與 deployment，入口在 [docs/index.html](docs/index.html)
 - 📚 **24 個 Claude Skills** - AI Agent 可直接使用的工作流程指南（Claude Code 專屬）
 - 📖 **Copilot 整合指南** - VS Code GitHub Copilot 使用說明
 
 **🌐 語言**: [English](README.md) | **繁體中文**
 
-**📘 工具使用文件**: [能力導向使用指南](docs/TOOLS_USAGE_GUIDE.zh-TW.md) | [完整工具索引](src/pubmed_search/presentation/mcp_server/TOOLS_INDEX.md)
+**📘 工具使用文件**: [使用者指南](docs/USER_GUIDE.zh-TW.md) | [能力導向使用指南](docs/TOOLS_USAGE_GUIDE.zh-TW.md) | [開發者指南](docs/DEVELOPER_GUIDE.zh-TW.md) | [完整工具索引](src/pubmed_search/presentation/mcp_server/TOOLS_INDEX.md)
 
 ---
 

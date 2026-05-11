@@ -77,6 +77,40 @@ a {
   line-height: 1.6;
 }
 
+.lang-switch {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.25rem;
+  margin: 1.1rem 0 1.2rem;
+  padding: 0.25rem;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.58);
+}
+
+.lang-option {
+  min-height: 2.3rem;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 800;
+}
+
+.lang-option:hover,
+.lang-option:focus-visible {
+  background: rgba(15, 108, 92, 0.08);
+  color: var(--ink);
+}
+
+.lang-option.active {
+  background: var(--accent);
+  color: #ffffff;
+  box-shadow: 0 6px 18px rgba(15, 108, 92, 0.2);
+}
+
 .nav-filter {
   width: 100%;
   margin-bottom: 1rem;
@@ -90,6 +124,26 @@ a {
 .page-nav {
   display: grid;
   gap: 0.5rem;
+}
+
+.nav-section {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.nav-section + .nav-section {
+  margin-top: 0.85rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--line);
+}
+
+.nav-section-title {
+  margin: 0 0 0.15rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
 .page-link {
@@ -122,6 +176,15 @@ a {
 .page-link span {
   color: var(--muted);
   font-size: 0.92rem;
+}
+
+.nav-empty {
+  margin: 0;
+  padding: 0.9rem;
+  border: 1px dashed var(--line);
+  border-radius: 14px;
+  color: var(--muted);
+  line-height: 1.5;
 }
 
 .sidebar-note {

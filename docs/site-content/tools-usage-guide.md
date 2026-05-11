@@ -6,6 +6,8 @@
 
 Capability-first guide for using the 45-tool PubMed Search MCP surface without treating the tool list as a menu to memorize.
 
+**Language**: **English** | [繁體中文](#/tools-usage-guide-zh)
+
 ## Reading Order
 
 1. Start with the capability family that matches the user intent.

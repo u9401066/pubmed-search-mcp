@@ -28,6 +28,10 @@ EMBEDDED_CONTENT_FILE = DOCS_ROOT / "site-content.js"
 PAGES = [
     ("overview", "Overview", REPO_ROOT / "README.md"),
     ("overview-zh", "Overview (zh-TW)", REPO_ROOT / "README.zh-TW.md"),
+    ("user-guide", "User Guide", DOCS_ROOT / "USER_GUIDE.md"),
+    ("user-guide-zh", "User Guide (zh-TW)", DOCS_ROOT / "USER_GUIDE.zh-TW.md"),
+    ("developer-guide", "Developer Guide", DOCS_ROOT / "DEVELOPER_GUIDE.md"),
+    ("developer-guide-zh", "Developer Guide (zh-TW)", DOCS_ROOT / "DEVELOPER_GUIDE.zh-TW.md"),
     ("architecture", "Architecture", REPO_ROOT / "ARCHITECTURE.md"),
     ("pipeline-tutorial", "Pipeline Tutorial", DOCS_ROOT / "PIPELINE_MODE_TUTORIAL.en.md"),
     ("pipeline-tutorial-zh", "Pipeline Tutorial (zh-TW)", DOCS_ROOT / "PIPELINE_MODE_TUTORIAL.md"),
