@@ -45,7 +45,67 @@ Capability-first guide for using the 46-tool PubMed Search MCP surface without t
 
 Zotero Keeper should remain an external integration boundary. PubMed Search MCP produces official RIS/MEDLINE/CSL JSON exports, local RIS/BibTeX/CSV/MEDLINE/JSON exports, and local wiki notes; Zotero Keeper or another client owns Zotero import, duplicate handling, and library-specific policies.
 
+## Capability Workflow Diagrams
+
+Each feature family has a workflow diagram so users and developers can see where a tool sits in the larger research path.
+
+### Search Entry And Query Intelligence
+
+![Search and query intelligence workflow](images/search-query-workflow.svg)
+
+Use this path for `unified_search`, `parse_pico`, `generate_search_queries`, `analyze_search_query`, and ICD-aware search preparation. The important boundary is that strategy tools produce search materials; the agent still chooses the final query and source expression.
+
+### Article Discovery And Citation Mapping
+
+![Article discovery and citation workflow](images/discovery-citation-workflow.svg)
+
+Use this path once you have one or more seed PMIDs. It covers `fetch_article_details`, `find_related_articles`, `find_citing_articles`, `get_article_references`, `build_citation_tree`, and `get_citation_metrics`.
+
+### Reference Verification
+
+![Reference verification workflow](images/reference-verification-workflow.svg)
+
+Use `verify_reference_list` when a manuscript, bibliography, or generated answer needs PubMed-backed citation checking. Treat matches and mismatches as an audit trail, not as prose-only summary.
+
+### Full Text, Figures, And Image Evidence
+
+![Full text, figures, and biomedical image workflow](images/visual-evidence-workflow.svg)
+
+Use this path for `get_fulltext`, `get_text_mined_terms`, `get_article_figures`, `analyze_figure_for_search`, and `search_biomedical_images`. Full text, figure metadata, and image search are separate evidence channels with different availability limits.
+
+### External Biomedical Data
+
+![NCBI extended biomedical data workflow](images/ncbi-extended-workflow.svg)
+
+Use this path for `search_gene`, `get_gene_details`, `get_gene_literature`, `search_compound`, `get_compound_details`, `get_compound_literature`, and `search_clinvar` when the question moves beyond papers into NCBI biomedical records.
+
+### Evaluation, Timeline, And Comparison
+
+![Evaluation and timeline workflow](images/timeline-evaluation-workflow.svg)
+
+Use this path for `get_citation_metrics`, `build_research_timeline`, `analyze_timeline_milestones`, and `compare_timelines` when the user asks what mattered, when the field changed, or how topics diverged.
+
+### Session, Pipeline, And Scheduled Reuse
+
+![Session and pipeline workflow](images/session-pipeline-workflow.svg)
+
+Use this path for `read_session`, `get_session_pmids`, `get_cached_article`, `get_session_summary`, `get_session_log`, `manage_pipeline`, `save_pipeline`, `list_pipelines`, `load_pipeline`, `delete_pipeline`, `get_pipeline_history`, and `schedule_pipeline`.
+
+### Institutional Access
+
+![Institutional access workflow](images/institutional-access-workflow.svg)
+
+Use this path for `configure_institutional_access`, `get_institutional_link`, `list_resolver_presets`, `test_institutional_access`, and `diagnose_institutional_access`. OpenURL is a browser handoff; direct DOI and EZproxy paths become agent-fetchable only when the environment is configured and access is permitted.
+
+### Export And Local Notes
+
+![Export and local notes workflow](images/export-notes-workflow.svg)
+
+Use this path for `prepare_export` and `save_literature_notes`. Citation exports are for reference managers; local notes are editable literature-review artifacts with machine-readable metadata.
+
 ## Local Wiki Note Export
+
+![Export and local notes workflow](images/export-notes-workflow.svg)
 
 Use `save_literature_notes` when the user wants a guided, semi-structured file output after search. This is better than asking an agent to assemble a Markdown note with a generic write-file operation.
 

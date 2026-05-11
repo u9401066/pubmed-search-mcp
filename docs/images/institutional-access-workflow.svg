@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="660" viewBox="0 0 1200 660" role="img" aria-labelledby="title desc">
+  <title id="title">Institutional access workflow</title>
+  <desc id="desc">How OpenURL, direct DOI fetch, EZproxy with cookies, and browser handoff work together for institutional full text access.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#263f46"/>
+    </marker>
+    <style>
+      .bg { fill: #fbfcfa; }
+      .title { font: 700 28px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #17252a; }
+      .subtitle { font: 400 16px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #526168; }
+      .box { stroke-width: 2; rx: 18; }
+      .label { font: 700 18px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #152126; }
+      .body { font: 400 14px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #3e4a50; }
+      .small { font: 600 12px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #435159; }
+      .arrow { fill: none; stroke: #263f46; stroke-width: 2.5; marker-end: url(#arrow); }
+      .soft { fill: none; stroke: #7b8a90; stroke-width: 2; stroke-dasharray: 5 6; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect class="bg" width="1200" height="660"/>
+  <text class="title" x="52" y="58">Institutional access and diagnosis</text>
+  <text class="subtitle" x="52" y="86">OpenURL is a browser handoff; direct and EZproxy paths are agent-fetchable only when configured and permitted.</text>
+
+  <rect class="box" x="58" y="164" width="196" height="116" fill="#eef2ff" stroke="#4f68a8"/>
+  <text class="label" x="84" y="204">Article ID</text>
+  <text class="body" x="84" y="234">PMID and DOI</text>
+  <text class="body" x="84" y="256">from search/session</text>
+
+  <rect class="box" x="318" y="72" width="228" height="116" fill="#eaf4f0" stroke="#3a7c69"/>
+  <text class="label" x="344" y="112">OpenURL resolver</text>
+  <text class="body" x="344" y="142">configure preset or</text>
+  <text class="body" x="344" y="164">custom resolver URL</text>
+
+  <rect class="box" x="318" y="224" width="228" height="116" fill="#fff5df" stroke="#b27b21"/>
+  <text class="label" x="344" y="264">Direct DOI fetch</text>
+  <text class="body" x="344" y="294">campus IP or VPN</text>
+  <text class="body" x="344" y="316">publisher full text</text>
+
+  <rect class="box" x="318" y="376" width="228" height="116" fill="#f8eff7" stroke="#99609a"/>
+  <text class="label" x="344" y="416">EZproxy fetch</text>
+  <text class="body" x="344" y="446">host rewrite plus</text>
+  <text class="body" x="344" y="468">user cookies</text>
+
+  <rect class="box" x="640" y="224" width="236" height="116" fill="#edf7ff" stroke="#3578a7"/>
+  <text class="label" x="666" y="264">diagnose_access</text>
+  <text class="body" x="666" y="294">paywall, login, fulltext,</text>
+  <text class="body" x="666" y="316">advice and final URL</text>
+
+  <rect class="box" x="956" y="138" width="180" height="116" fill="#f1f5e8" stroke="#71883b"/>
+  <text class="label" x="982" y="178">get_fulltext</text>
+  <text class="body" x="982" y="208">uses direct/EZproxy</text>
+  <text class="body" x="982" y="230">before CORE fallback</text>
+
+  <rect class="box" x="956" y="352" width="180" height="116" fill="#f5f1ea" stroke="#947245"/>
+  <text class="label" x="982" y="392">Browser handoff</text>
+  <text class="body" x="982" y="422">OpenURL link or</text>
+  <text class="body" x="982" y="444">local broker fallback</text>
+
+  <path class="arrow" d="M 254 222 C 286 172 302 132 318 130"/>
+  <path class="arrow" d="M 254 222 H 306"/>
+  <path class="arrow" d="M 254 222 C 286 328 302 414 318 434"/>
+  <path class="arrow" d="M 546 282 H 628"/>
+  <path class="arrow" d="M 546 434 C 598 386 626 330 640 300"/>
+  <path class="arrow" d="M 876 270 C 920 248 940 214 956 196"/>
+  <path class="arrow" d="M 876 300 C 920 330 940 382 956 410"/>
+  <path class="soft" d="M 546 130 C 730 82 876 104 956 154"/>
+
+  <rect x="96" y="552" width="1010" height="58" rx="18" fill="#ffffff" stroke="#c9d4d0" stroke-width="2"/>
+  <text class="small" x="122" y="586">Security boundary: EZproxy requires EZPROXY_ENABLED, EZPROXY_HOST, and user-supplied cookies; cookies are not echoed in diagnostic output.</text>
+</svg>

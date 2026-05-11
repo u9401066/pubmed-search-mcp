@@ -45,7 +45,67 @@
 
 Zotero Keeper 應維持在外部整合邊界。PubMed Search MCP 負責產生 official RIS/MEDLINE/CSL JSON、local RIS/BibTeX/CSV/MEDLINE/JSON 匯出與本機 wiki notes；Zotero 匯入、duplicate 處理、library-specific policy 交給 Zotero Keeper 或其他 client。
 
+## 能力工作流程圖
+
+每個功能族都補上 workflow 圖，讓使用者與開發者能看出工具在完整研究流程中的位置。
+
+### 搜尋入口與查詢智能
+
+![搜尋與查詢智能流程](images/search-query-workflow.svg)
+
+這條路徑涵蓋 `unified_search`、`parse_pico`、`generate_search_queries`、`analyze_search_query` 與 ICD-aware search preparation。重點邊界是：策略工具產生搜尋材料，最後 query 與 source expression 仍由 agent 決定。
+
+### 論文探索與引用脈絡
+
+![論文探索與引用流程](images/discovery-citation-workflow.svg)
+
+已有 seed PMID 後使用這條路徑。它涵蓋 `fetch_article_details`、`find_related_articles`、`find_citing_articles`、`get_article_references`、`build_citation_tree` 與 `get_citation_metrics`。
+
+### 引用驗證
+
+![引用驗證流程](images/reference-verification-workflow.svg)
+
+當 manuscript、bibliography 或 agent 產生的回答需要 PubMed-backed citation checking 時，使用 `verify_reference_list`。match / mismatch 應視為 audit trail，而不是只看生成摘要。
+
+### 全文、圖表與圖片證據
+
+![全文、圖表與生醫圖片流程](images/visual-evidence-workflow.svg)
+
+這條路徑涵蓋 `get_fulltext`、`get_text_mined_terms`、`get_article_figures`、`analyze_figure_for_search` 與 `search_biomedical_images`。全文、figure metadata、image search 是不同證據通道，各自有不同可得性限制。
+
+### 外部生醫資料
+
+![NCBI 延伸生醫資料流程](images/ncbi-extended-workflow.svg)
+
+當問題從文獻延伸到 NCBI biomedical records 時，使用 `search_gene`、`get_gene_details`、`get_gene_literature`、`search_compound`、`get_compound_details`、`get_compound_literature` 與 `search_clinvar`。
+
+### 評估、時間軸與比較
+
+![評估與時間軸流程](images/timeline-evaluation-workflow.svg)
+
+使用者問「哪些重要」、「領域何時改變」、「不同主題如何分歧」時，使用 `get_citation_metrics`、`build_research_timeline`、`analyze_timeline_milestones` 與 `compare_timelines`。
+
+### Session、Pipeline 與排程重用
+
+![Session 與 Pipeline 流程](images/session-pipeline-workflow.svg)
+
+這條路徑涵蓋 `read_session`、`get_session_pmids`、`get_cached_article`、`get_session_summary`、`get_session_log`、`manage_pipeline`、`save_pipeline`、`list_pipelines`、`load_pipeline`、`delete_pipeline`、`get_pipeline_history` 與 `schedule_pipeline`。
+
+### 機構存取
+
+![機構存取流程](images/institutional-access-workflow.svg)
+
+這條路徑涵蓋 `configure_institutional_access`、`get_institutional_link`、`list_resolver_presets`、`test_institutional_access` 與 `diagnose_institutional_access`。OpenURL 是 browser handoff；direct DOI 與 EZproxy 只有在環境已設定、且使用者有權存取時才是 agent-fetchable。
+
+### 匯出與本機筆記
+
+![匯出與本機筆記流程](images/export-notes-workflow.svg)
+
+這條路徑涵蓋 `prepare_export` 與 `save_literature_notes`。Citation exports 供 reference manager 使用；local notes 則是帶有 machine-readable metadata、可被人與 agent 後續編輯的 literature-review artifacts。
+
 ## 本機 Wiki Note 匯出
+
+![匯出與本機筆記流程](images/export-notes-workflow.svg)
 
 搜尋完成後，如果使用者要留下受指引、半格式化、可被 agent 繼續編輯的檔案，使用 `save_literature_notes`。這比讓 agent 用一般 write file 自己拼 Markdown 穩定。
 

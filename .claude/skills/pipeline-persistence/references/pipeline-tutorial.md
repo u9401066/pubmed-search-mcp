@@ -10,6 +10,8 @@ This document only describes pipeline mode behavior that is currently implemente
 
 ## Pipeline Mode Quick Start
 
+![Pipeline entry points and execution workflow](../../../../docs/images/pipeline-entrypoints-and-dag.svg)
+
 Pipeline mode currently has 3 practical entry points:
 
 1. Pass YAML or JSON directly into `unified_search(..., pipeline="...")`
@@ -197,6 +199,8 @@ You can directly inspect these examples:
 - `data/pipeline_examples/gene_drug_brca1.yaml`
 
 ## Custom DAG Tutorial
+
+![Custom pipeline DAG workflow](../../../../docs/images/custom-pipeline-dag.svg)
 
 When templates are not enough, define `steps` directly.
 

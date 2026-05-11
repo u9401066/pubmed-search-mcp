@@ -18,6 +18,8 @@ This document answers seven operational questions for each source:
 
 ## Contract Semantics
 
+![Source contracts and provenance map](images/source-contracts-provenance-map.svg)
+
 | Term | Meaning in this repo |
 | ---- | -------------------- |
 | Direct provenance | The API is the primary host or canonical service for the returned object type. |

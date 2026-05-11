@@ -37,6 +37,8 @@ Detailed setup guide for integrating PubMed Search MCP with various AI clients a
 
 PubMed Search MCP supports two transport modes:
 
+![Client integration and deployment workflow](images/integration-deployment-workflow.svg)
+
 | Mode | Protocol | Use Case | Default |
 | --- | --- | --- | --- |
 | **stdio** | Standard I/O | Local clients (VS Code, Claude Desktop, etc.) | ✅ |
@@ -67,6 +69,8 @@ The MCP endpoint will be available at `http://localhost:8765/mcp`.
 > **Note**: SSE transport (`--transport sse`) is deprecated in favor of Streamable HTTP per MCP spec 2025-03-26.
 
 ### Auxiliary HTTP APIs
+
+![Session cache and auxiliary HTTP API workflow](images/session-cache-and-http-api.svg)
 
 Besides the primary MCP contract at `/mcp`, `run_server.py` also exposes a **public auxiliary read-only HTTP API** for cache and session access:
 
@@ -126,6 +130,8 @@ This auxiliary API is public in the sense that callers may use it directly, but 
 | `BROWSER_FETCH_BROKER_DOWNLOAD_DIR` | No | Temporary broker download directory | `~/.pubmed-search-mcp/browser-broker-downloads` |
 
 ### Source Selection and Source Gating
+
+![Search and query intelligence workflow](images/search-query-workflow.svg)
 
 `unified_search` now supports source expressions such as:
 
@@ -468,6 +474,8 @@ Then restart VS Code, confirm Cline sees the workspace rules/workflows, and conf
 ---
 
 ### Microsoft Copilot Studio
+
+![Copilot Studio deployment flow](images/copilot-studio-deployment-flow.svg)
 
 Copilot Studio requires **Streamable HTTP** transport with a public URL.
 

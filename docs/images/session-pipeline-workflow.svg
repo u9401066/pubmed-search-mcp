@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="660" viewBox="0 0 1200 660" role="img" aria-labelledby="title desc">
+  <title id="title">Session and pipeline workflow</title>
+  <desc id="desc">How session cache, saved pipelines, pipeline history, and scheduled runs support repeatable literature workflows.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#263f46"/>
+    </marker>
+    <style>
+      .bg { fill: #fbfcfa; }
+      .title { font: 700 28px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #17252a; }
+      .subtitle { font: 400 16px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #526168; }
+      .box { stroke-width: 2; rx: 18; }
+      .label { font: 700 18px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #152126; }
+      .body { font: 400 14px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #3e4a50; }
+      .small { font: 600 12px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #435159; }
+      .arrow { fill: none; stroke: #263f46; stroke-width: 2.5; marker-end: url(#arrow); }
+      .soft { fill: none; stroke: #7b8a90; stroke-width: 2; stroke-dasharray: 5 6; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect class="bg" width="1200" height="660"/>
+  <text class="title" x="52" y="58">Session memory and repeatable pipelines</text>
+  <text class="subtitle" x="52" y="86">Sessions keep the current evidence set; pipelines make a workflow reusable, auditable, and schedulable.</text>
+
+  <rect class="box" x="68" y="156" width="200" height="118" fill="#eef2ff" stroke="#4f68a8"/>
+  <text class="label" x="94" y="196">unified_search</text>
+  <text class="body" x="94" y="226">result PMIDs and</text>
+  <text class="body" x="94" y="248">article cache</text>
+
+  <rect class="box" x="330" y="156" width="200" height="118" fill="#eaf4f0" stroke="#3a7c69"/>
+  <text class="label" x="356" y="196">read_session</text>
+  <text class="body" x="356" y="226">pmids, articles,</text>
+  <text class="body" x="356" y="248">summary, log</text>
+
+  <rect class="box" x="592" y="156" width="200" height="118" fill="#fff5df" stroke="#b27b21"/>
+  <text class="label" x="618" y="196">manage_pipeline</text>
+  <text class="body" x="618" y="226">save, list, load,</text>
+  <text class="body" x="618" y="248">delete, history</text>
+
+  <rect class="box" x="854" y="156" width="200" height="118" fill="#f8eff7" stroke="#99609a"/>
+  <text class="label" x="880" y="196">schedule_pipeline</text>
+  <text class="body" x="880" y="226">cron schedule,</text>
+  <text class="body" x="880" y="248">diff and notify flags</text>
+
+  <rect class="box" x="214" y="398" width="232" height="112" fill="#edf7ff" stroke="#3578a7"/>
+  <text class="label" x="240" y="438">Workspace store</text>
+  <text class="body" x="240" y="468">.pubmed-search/pipelines</text>
+  <text class="body" x="240" y="490">project-level history</text>
+
+  <rect class="box" x="754" y="398" width="232" height="112" fill="#f1f5e8" stroke="#71883b"/>
+  <text class="label" x="780" y="438">Global store</text>
+  <text class="body" x="780" y="468">~/.pubmed-search-mcp</text>
+  <text class="body" x="780" y="490">user-level reuse</text>
+
+  <path class="arrow" d="M 268 215 H 318"/>
+  <path class="arrow" d="M 530 215 H 580"/>
+  <path class="arrow" d="M 792 215 H 842"/>
+  <path class="arrow" d="M 692 274 C 610 354 500 410 446 442"/>
+  <path class="arrow" d="M 792 242 C 850 304 870 358 870 386"/>
+  <path class="soft" d="M 430 274 C 422 330 388 374 346 398"/>
+  <path class="soft" d="M 954 274 C 1010 360 1006 452 986 454"/>
+
+  <rect x="64" y="560" width="490" height="56" rx="18" fill="#ffffff" stroke="#c9d4d0" stroke-width="2"/>
+  <text class="small" x="90" y="594">Use session tools for short-lived conversational continuity.</text>
+  <rect x="646" y="560" width="490" height="56" rx="18" fill="#ffffff" stroke="#c9d4d0" stroke-width="2"/>
+  <text class="small" x="672" y="594">Use pipelines when the search strategy must be reviewed or rerun.</text>
+</svg>

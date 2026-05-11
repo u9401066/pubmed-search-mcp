@@ -69,6 +69,8 @@ The most important rule: start with the research intent, not the tool menu.
 
 ### 1. Start Broad, Then Narrow
 
+![Search and query intelligence workflow](images/search-query-workflow.svg)
+
 Ask the client to run a modest first pass:
 
 ```text
@@ -99,6 +101,8 @@ The server can help with MeSH, synonyms, and ICD-to-MeSH expansion, but the agen
 
 ### 3. Explore Seed Papers
 
+![Article discovery and citation workflow](images/discovery-citation-workflow.svg)
+
 Once you have an important PMID, move from search to discovery:
 
 ```text
@@ -119,6 +123,8 @@ Use this path when you already trust one seed paper and want to map the surround
 ### 4. Retrieve Full Text And Figures
 
 ![Full text retrieval flow](images/fulltext-retrieval-flow.svg)
+
+![Full text, figures, and biomedical image workflow](images/visual-evidence-workflow.svg)
 
 Use `get_fulltext` when abstracts are not enough. Prefer explicit identifiers such as `pmid=`, `pmcid=`, or `doi=` so the agent does not need to infer identifier type from a raw string. The full-text service follows an identifier-aware policy: Europe PMC XML when a PMCID is available, Unpaywall OA locations for DOI-backed articles, institutional direct/EZproxy when configured, CORE, then optional downloader/browser-session fallbacks. CrossRef is a metadata and publisher-link route, not a hosted full-text source.
 
@@ -145,6 +151,8 @@ Only enable browser-session fallback for hosts you trust and are allowed to acce
 ```
 
 ### 5. Export Citations Or Local Notes
+
+![Export and local notes workflow](images/export-notes-workflow.svg)
 
 Use `prepare_export` for citation manager handoff. Official PubMed-backed formats are `ris`, `medline`, and `csl`; local rendered formats include `bibtex`, `csv`, and `json`.
 
@@ -176,6 +184,8 @@ Local notes keep verified metadata in frontmatter and sidecar files, then leave 
 
 ### 6. Save Repeatable Pipelines
 
+![Session and pipeline workflow](images/session-pipeline-workflow.svg)
+
 Use pipelines when a research process should be rerun or audited. Start with the [Pipeline Tutorial](PIPELINE_MODE_TUTORIAL.en.md).
 
 Typical pipeline jobs:
@@ -190,6 +200,8 @@ The server exposes pipeline operations through `manage_pipeline` and compatibili
 Saved pipelines can be reused from search with `unified_search(pipeline="saved:<name>")`. Pipeline `config` values should be YAML or JSON strings, and scheduled pipelines use standard five-field cron strings.
 
 ## Copilot Studio Notes
+
+![Client integration and deployment workflow](images/integration-deployment-workflow.svg)
 
 There are two Copilot routes:
 

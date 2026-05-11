@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="620" viewBox="0 0 1200 620" role="img" aria-labelledby="title desc">
+  <title id="title">Copilot Studio deployment flow</title>
+  <desc id="desc">How Copilot Studio reaches a public HTTPS tunnel or reverse proxy, then chooses the full or simplified MCP surface.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#263f46"/>
+    </marker>
+    <style>
+      .bg { fill: #fbfcfa; }
+      .title { font: 700 28px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #17252a; }
+      .subtitle { font: 400 16px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #526168; }
+      .box { stroke-width: 2; rx: 18; }
+      .label { font: 700 18px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #152126; }
+      .body { font: 400 14px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #3e4a50; }
+      .small { font: 600 12px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #435159; }
+      .arrow { fill: none; stroke: #263f46; stroke-width: 2.5; marker-end: url(#arrow); }
+      .soft { fill: none; stroke: #7b8a90; stroke-width: 2; stroke-dasharray: 5 6; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect class="bg" width="1200" height="620"/>
+  <text class="title" x="52" y="58">Copilot Studio route selection</text>
+  <text class="subtitle" x="52" y="86">Start with the full MCP surface; fall back to the simplified route only when schema compatibility requires it.</text>
+
+  <rect class="box" x="56" y="202" width="192" height="116" fill="#eef2ff" stroke="#4f68a8"/>
+  <text class="label" x="82" y="242">Copilot Studio</text>
+  <text class="body" x="82" y="272">custom connector</text>
+  <text class="body" x="82" y="294">HTTPS only</text>
+
+  <rect class="box" x="332" y="202" width="192" height="116" fill="#eaf4f0" stroke="#3a7c69"/>
+  <text class="label" x="358" y="242">Public HTTPS</text>
+  <text class="body" x="358" y="272">ngrok, reverse proxy,</text>
+  <text class="body" x="358" y="294">or cloud endpoint</text>
+
+  <rect class="box" x="608" y="110" width="234" height="116" fill="#fff5df" stroke="#b27b21"/>
+  <text class="label" x="634" y="150">Full primary surface</text>
+  <text class="body" x="634" y="180">run_server.py</text>
+  <text class="body" x="634" y="202">--copilot-compatible</text>
+
+  <rect class="box" x="608" y="344" width="234" height="116" fill="#f8eff7" stroke="#99609a"/>
+  <text class="label" x="634" y="384">Simplified surface</text>
+  <text class="body" x="634" y="414">run_copilot.py</text>
+  <text class="body" x="634" y="436">smaller schema</text>
+
+  <rect class="box" x="926" y="202" width="198" height="116" fill="#edf7ff" stroke="#3578a7"/>
+  <text class="label" x="952" y="242">/mcp endpoint</text>
+  <text class="body" x="952" y="272">streamable HTTP</text>
+  <text class="body" x="952" y="294">200 JSON compatibility</text>
+
+  <path class="arrow" d="M 248 260 H 320"/>
+  <path class="arrow" d="M 524 260 C 562 220 580 182 608 168"/>
+  <path class="soft" d="M 524 260 C 562 318 580 382 608 402"/>
+  <path class="arrow" d="M 842 168 C 884 188 908 222 926 250"/>
+  <path class="arrow" d="M 842 402 C 884 376 908 318 926 278"/>
+
+  <rect x="174" y="500" width="852" height="58" rx="18" fill="#ffffff" stroke="#c9d4d0" stroke-width="2"/>
+  <text class="small" x="200" y="534">Compatibility rule: keep the full 46-tool surface when accepted; use simplified only when Copilot rejects or truncates schema.</text>
+</svg>

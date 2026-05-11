@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="620" viewBox="0 0 1200 620" role="img" aria-labelledby="title desc">
+  <title id="title">Article discovery and citation workflow</title>
+  <desc id="desc">How a seed PMID expands into details, related papers, citations, references, metrics, and a citation tree.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#263f46"/>
+    </marker>
+    <style>
+      .bg { fill: #fbfcfa; }
+      .title { font: 700 28px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #17252a; }
+      .subtitle { font: 400 16px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #526168; }
+      .node { stroke-width: 2; rx: 18; }
+      .label { font: 700 18px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #152126; }
+      .body { font: 400 14px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #3e4a50; }
+      .small { font: 600 12px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #435159; }
+      .arrow { fill: none; stroke: #263f46; stroke-width: 2.5; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1200" height="620"/>
+  <text class="title" x="52" y="58">Article discovery and citation mapping</text>
+  <text class="subtitle" x="52" y="86">Start from trusted identifiers, then map surrounding evidence before summarizing.</text>
+
+  <rect class="node" x="494" y="118" width="212" height="112" fill="#243f46" stroke="#15272d"/>
+  <text class="label" x="534" y="158" fill="#ffffff">Seed PMID</text>
+  <text class="body" x="534" y="188" fill="#dcebe7">from search or user</text>
+
+  <rect class="node" x="72" y="300" width="204" height="116" fill="#eaf4f0" stroke="#3a7c69"/>
+  <text class="label" x="98" y="340">fetch_article_details</text>
+  <text class="body" x="98" y="370">metadata, abstract,</text>
+  <text class="body" x="98" y="392">journal, identifiers</text>
+
+  <rect class="node" x="324" y="300" width="204" height="116" fill="#eef2ff" stroke="#4f68a8"/>
+  <text class="label" x="350" y="340">find_related_articles</text>
+  <text class="body" x="350" y="370">semantic neighbors</text>
+  <text class="body" x="350" y="392">and topic variants</text>
+
+  <rect class="node" x="576" y="300" width="204" height="116" fill="#fff5df" stroke="#b27b21"/>
+  <text class="label" x="602" y="340">citations and refs</text>
+  <text class="body" x="602" y="370">citing articles plus</text>
+  <text class="body" x="602" y="392">bibliography links</text>
+
+  <rect class="node" x="828" y="300" width="204" height="116" fill="#f8eff7" stroke="#99609a"/>
+  <text class="label" x="854" y="340">build_citation_tree</text>
+  <text class="body" x="854" y="370">forward, backward,</text>
+  <text class="body" x="854" y="392">network structure</text>
+
+  <rect class="node" x="458" y="476" width="284" height="90" fill="#f1f5e8" stroke="#71883b"/>
+  <text class="label" x="486" y="512">get_citation_metrics</text>
+  <text class="body" x="486" y="540">RCR and influence signals for prioritization</text>
+
+  <path class="arrow" d="M 546 230 C 420 260 280 282 174 300"/>
+  <path class="arrow" d="M 574 230 C 516 260 466 282 426 300"/>
+  <path class="arrow" d="M 626 230 C 650 260 666 282 678 300"/>
+  <path class="arrow" d="M 666 230 C 780 260 882 282 930 300"/>
+  <path class="arrow" d="M 276 358 H 312"/>
+  <path class="arrow" d="M 528 358 H 564"/>
+  <path class="arrow" d="M 780 358 H 816"/>
+  <path class="arrow" d="M 600 416 V 464"/>
+
+  <rect x="72" y="130" width="278" height="92" rx="18" fill="#ffffff" stroke="#c9d4d0" stroke-width="2"/>
+  <text class="small" x="98" y="166">Use when</text>
+  <text class="body" x="98" y="194">one paper is important and you need context.</text>
+
+  <rect x="850" y="130" width="278" height="92" rx="18" fill="#ffffff" stroke="#c9d4d0" stroke-width="2"/>
+  <text class="small" x="876" y="166">Output shape</text>
+  <text class="body" x="876" y="194">ranked article groups plus explainable lineage.</text>
+</svg>

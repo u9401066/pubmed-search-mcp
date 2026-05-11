@@ -73,6 +73,8 @@ PUBMED_NOTES_DIR=/path/to/references
 
 ### 1. 先廣後窄
 
+![搜尋與查詢智能流程](images/search-query-workflow.svg)
+
 可以要求 client 先做中等大小的第一輪搜尋：
 
 ```text
@@ -103,6 +105,8 @@ Server 能協助 MeSH、synonyms 與 ICD-to-MeSH expansion，但 agent 仍應說
 
 ### 3. 從 Seed Paper 探索
 
+![論文探索與引用流程](images/discovery-citation-workflow.svg)
+
 有重要 PMID 之後，從搜尋切換到探索：
 
 ```text
@@ -123,6 +127,8 @@ For PMID 12345678, fetch details, then find related papers, citing papers, and k
 ### 4. 取得全文與圖表
 
 ![全文擷取流程](images/fulltext-retrieval-flow.svg)
+
+![全文、圖表與生醫圖片流程](images/visual-evidence-workflow.svg)
 
 摘要不夠時使用 `get_fulltext`。建議使用明確 identifiers，例如 `pmid=`、`pmcid=` 或 `doi=`，避免 agent 從 raw string 推測 identifier type。全文服務會依 identifier-aware policy 選路徑：有 PMCID 時先走 Europe PMC XML；DOI 文章會查 Unpaywall OA locations；依設定嘗試 institutional direct/EZproxy；再落到 CORE、optional downloader 與 browser-session fallback。CrossRef 是 metadata / publisher-link route，不是全文主機。
 
@@ -149,6 +155,8 @@ uv run pubmed-browser-fetch-broker --token local-dev-token
 ```
 
 ### 5. 匯出引用或本機筆記
+
+![匯出與本機筆記流程](images/export-notes-workflow.svg)
 
 要交給 citation manager 時使用 `prepare_export`。Official PubMed-backed formats 是 `ris`、`medline` 與 `csl`；local rendered formats 包含 `bibtex`、`csv` 與 `json`。
 
@@ -180,6 +188,8 @@ save_literature_notes(pmids="last", output_dir="./references")
 
 ### 6. 保存可重跑 Pipeline
 
+![Session 與 Pipeline 流程](images/session-pipeline-workflow.svg)
+
 當研究流程需要重跑或稽核時使用 pipeline。先從 [Pipeline 教學](#/pipeline-tutorial-zh) 開始。
 
 典型 pipeline 任務：
@@ -194,6 +204,8 @@ Server 透過 `manage_pipeline` 暴露主要 pipeline operations，也保留 `sa
 Saved pipelines 可以透過 `unified_search(pipeline="saved:<name>")` 重用。Pipeline `config` 應是 YAML 或 JSON string；scheduled pipeline 使用標準 five-field cron string。
 
 ## Copilot Studio 注意事項
+
+![Client integration and deployment workflow](images/integration-deployment-workflow.svg)
 
 Copilot 有兩條路：
 

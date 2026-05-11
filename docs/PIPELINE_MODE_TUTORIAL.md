@@ -8,6 +8,8 @@
 
 ## Pipeline Mode 快速上手
 
+![Pipeline entry points and execution workflow](images/pipeline-entrypoints-and-dag.svg)
+
 Pipeline mode 有 3 種最常用入口：
 
 1. 直接把 YAML/JSON 丟給 `unified_search(..., pipeline="...")`
@@ -195,6 +197,8 @@ output:
 - `data/pipeline_examples/gene_drug_brca1.yaml`
 
 ## Custom DAG 教學
+
+![Custom pipeline DAG workflow](images/custom-pipeline-dag.svg)
 
 當 template 不夠時，直接寫 `steps`。
 

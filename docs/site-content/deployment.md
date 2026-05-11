@@ -8,6 +8,8 @@
 
 ## 部署矩陣
 
+![Client integration and deployment workflow](images/integration-deployment-workflow.svg)
+
 | 模式 | 入口 | 適合情境 | 備註 |
 | --- | --- | --- | --- |
 | stdio | `uvx pubmed-search-mcp` | VS Code、Claude Desktop、Cursor | 預設本機模式 |

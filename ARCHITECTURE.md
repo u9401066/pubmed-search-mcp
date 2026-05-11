@@ -369,6 +369,8 @@ flowchart TD
 
 ## Session 與 HTTP API
 
+![Session cache and auxiliary HTTP API workflow](docs/images/session-cache-and-http-api.svg)
+
 ```mermaid
 flowchart LR
   StdIO[stdio client<br/>VS Code / Claude Desktop]

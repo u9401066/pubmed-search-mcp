@@ -388,6 +388,8 @@ Start with the [Tools Usage Guide](docs/TOOLS_USAGE_GUIDE.md): it compresses the
 
 ### 🔍 Search & Query Intelligence
 
+![Search and query intelligence workflow](docs/images/search-query-workflow.svg)
+
 ```text
 ┌─────────────────────────────────────────────────────────────────┐
 │                      SEARCH ENTRY POINT                          │
@@ -414,6 +416,8 @@ Start with the [Tools Usage Guide](docs/TOOLS_USAGE_GUIDE.md): it compresses the
 
 ### 🔬 Discovery Tools (After Finding Key Papers)
 
+![Article discovery and citation workflow](docs/images/discovery-citation-workflow.svg)
+
 ```text
                         Found important paper (PMID)
                                    │
@@ -439,6 +443,8 @@ Start with the [Tools Usage Guide](docs/TOOLS_USAGE_GUIDE.md): it compresses the
 
 ### 📚 Full Text, Figure Extraction & Export
 
+![Full text, figures, and biomedical image workflow](docs/images/visual-evidence-workflow.svg)
+
 | Category | Tools |
 | -------- | ----- |
 | **Full Text** | `get_fulltext` → Europe PMC XML when a PMCID is available; DOI-backed Unpaywall, institutional direct/EZproxy, CORE, and downloader fallbacks when needed |
@@ -457,6 +463,8 @@ Use the PMC Open Access path when an agent needs evidence figures, not just arti
 
 ### 🧬 NCBI Extended Databases
 
+![NCBI extended biomedical data workflow](docs/images/ncbi-extended-workflow.svg)
+
 | Tool | Description |
 | ---- | ----------- |
 | `search_gene` | Search NCBI Gene database |
@@ -469,6 +477,8 @@ Use the PMC Open Access path when an agent needs evidence figures, not just arti
 
 ### 🕰️ Research Timeline & Lineage Tree
 
+![Evaluation and timeline workflow](docs/images/timeline-evaluation-workflow.svg)
+
 | Tool | Description |
 | ---- | ----------- |
 | `build_research_timeline` | Build timeline/tree with landmark detection and formatted diagnostics. Output: text, tree, mermaid, mindmap, json |
@@ -476,6 +486,8 @@ Use the PMC Open Access path when an agent needs evidence figures, not just arti
 | `compare_timelines` | Compare multiple topic timelines with per-topic diagnostics |
 
 ### 🏥 Institutional Access & ICD Conversion
+
+![Institutional access workflow](docs/images/institutional-access-workflow.svg)
 
 | Tool | Description |
 | ---- | ----------- |
@@ -488,6 +500,8 @@ Use the PMC Open Access path when an agent needs evidence figures, not just arti
 | `unified_search` | Auto-detect ICD codes in queries and expand them to MeSH |
 
 ### 💾 Session Management
+
+![Session and pipeline workflow](docs/images/session-pipeline-workflow.svg)
 
 | Tool | Description |
 | ---- | ----------- |
@@ -503,6 +517,8 @@ Dynamic MCP resources are also available for agents that can read resources dire
 - `session://last-search/results` — cached article payloads for the latest search
 
 ### 🔁 Pipeline Management
+
+![Session and pipeline workflow](docs/images/session-pipeline-workflow.svg)
 
 `manage_pipeline` is the primary facade for pipeline CRUD, history, and scheduling. The more specific pipeline tools remain available as compatibility wrappers.
 
@@ -522,6 +538,8 @@ Step-by-step tutorials:
 - 繁體中文: [docs/PIPELINE_MODE_TUTORIAL.md](docs/PIPELINE_MODE_TUTORIAL.md)
 
 ### 👁️ Vision & Image Search
+
+![Full text, figures, and biomedical image workflow](docs/images/visual-evidence-workflow.svg)
 
 | Tool | Description |
 | ---- | ----------- |
@@ -597,6 +615,8 @@ unified_search(query="I10 treatment in E11.9 patients")
 ```
 
 ### 2️⃣ PICO Clinical Question
+
+![PICO clinical search workflow](docs/images/pico-clinical-workflow.svg)
 
 **Simple path** — `unified_search` can search directly (no PICO decomposition):
 
@@ -1072,6 +1092,8 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed deployment instructions.
 ---
 
 ## 📤 Export Formats
+
+![Export and local notes workflow](docs/images/export-notes-workflow.svg)
 
 Export your search results in formats compatible with major reference managers:
 

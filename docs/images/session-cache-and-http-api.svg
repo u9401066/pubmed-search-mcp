@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="620" viewBox="0 0 1200 620" role="img" aria-labelledby="title desc">
+  <title id="title">Session cache and auxiliary HTTP API workflow</title>
+  <desc id="desc">How MCP tool calls write session cache data and the auxiliary read-only HTTP API exposes cached articles and summaries.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#263f46"/>
+    </marker>
+    <style>
+      .bg { fill: #fbfcfa; }
+      .title { font: 700 28px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #17252a; }
+      .subtitle { font: 400 16px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #526168; }
+      .box { stroke-width: 2; rx: 18; }
+      .label { font: 700 18px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #152126; }
+      .body { font: 400 14px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #3e4a50; }
+      .arrow { fill: none; stroke: #263f46; stroke-width: 2.5; marker-end: url(#arrow); }
+      .soft { fill: none; stroke: #7b8a90; stroke-width: 2; stroke-dasharray: 5 6; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect class="bg" width="1200" height="620"/>
+  <text class="title" x="52" y="58">Session cache and auxiliary HTTP API</text>
+  <text class="subtitle" x="52" y="86">The MCP contract is primary; the background HTTP API is a read-only convenience surface for cached data.</text>
+
+  <rect class="box" x="80" y="140" width="210" height="118" fill="#eef2ff" stroke="#4f68a8"/>
+  <text class="label" x="106" y="180">MCP client</text>
+  <text class="body" x="106" y="210">stdio or /mcp</text>
+  <text class="body" x="106" y="232">tool calls</text>
+
+  <rect class="box" x="390" y="140" width="210" height="118" fill="#eaf4f0" stroke="#3a7c69"/>
+  <text class="label" x="416" y="180">MCP server</text>
+  <text class="body" x="416" y="210">search, details,</text>
+  <text class="body" x="416" y="232">fulltext, export</text>
+
+  <rect class="box" x="700" y="140" width="210" height="118" fill="#fff5df" stroke="#b27b21"/>
+  <text class="label" x="726" y="180">Session cache</text>
+  <text class="body" x="726" y="210">PMIDs, articles,</text>
+  <text class="body" x="726" y="232">history, activity log</text>
+
+  <rect class="box" x="390" y="382" width="210" height="118" fill="#f8eff7" stroke="#99609a"/>
+  <text class="label" x="416" y="422">HTTP API</text>
+  <text class="body" x="416" y="452">/api/cached_article</text>
+  <text class="body" x="416" y="474">/api/session/summary</text>
+
+  <rect class="box" x="700" y="382" width="210" height="118" fill="#edf7ff" stroke="#3578a7"/>
+  <text class="label" x="726" y="422">External reader</text>
+  <text class="body" x="726" y="452">dashboard, second MCP,</text>
+  <text class="body" x="726" y="474">or local script</text>
+
+  <path class="arrow" d="M 290 199 H 378"/>
+  <path class="arrow" d="M 600 199 H 688"/>
+  <path class="soft" d="M 805 258 C 720 342 626 398 600 424"/>
+  <path class="arrow" d="M 600 441 H 688"/>
+  <path class="soft" d="M 495 382 C 438 320 402 268 390 226"/>
+
+  <rect class="box" x="986" y="236" width="140" height="144" fill="#f1f5e8" stroke="#71883b"/>
+  <text class="label" x="1012" y="276">Boundary</text>
+  <text class="body" x="1012" y="306">HTTP API is</text>
+  <text class="body" x="1012" y="328">read-only and</text>
+  <text class="body" x="1012" y="350">not tool discovery</text>
+</svg>

@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="580" viewBox="0 0 1200 580" role="img" aria-labelledby="title desc">
+  <title id="title">NCBI extended biomedical data workflow</title>
+  <desc id="desc">How gene, compound, and ClinVar tools connect literature questions to external biomedical records and linked PubMed evidence.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#263f46"/>
+    </marker>
+    <style>
+      .bg { fill: #fbfcfa; }
+      .title { font: 700 28px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #17252a; }
+      .subtitle { font: 400 16px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #526168; }
+      .box { stroke-width: 2; rx: 18; }
+      .label { font: 700 18px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #152126; }
+      .body { font: 400 14px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #3e4a50; }
+      .arrow { fill: none; stroke: #263f46; stroke-width: 2.5; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect class="bg" width="1200" height="580"/>
+  <text class="title" x="52" y="58">External biomedical data beyond papers</text>
+  <text class="subtitle" x="52" y="86">Use NCBI Extended when a literature question becomes a gene, compound, or variant question.</text>
+
+  <rect class="box" x="64" y="198" width="192" height="116" fill="#eef2ff" stroke="#4f68a8"/>
+  <text class="label" x="90" y="238">Research topic</text>
+  <text class="body" x="90" y="268">gene, drug, variant,</text>
+  <text class="body" x="90" y="290">or disease mechanism</text>
+
+  <rect class="box" x="336" y="88" width="224" height="116" fill="#eaf4f0" stroke="#3a7c69"/>
+  <text class="label" x="362" y="128">Gene path</text>
+  <text class="body" x="362" y="158">search_gene</text>
+  <text class="body" x="362" y="180">get_gene_details/literature</text>
+
+  <rect class="box" x="336" y="232" width="224" height="116" fill="#fff5df" stroke="#b27b21"/>
+  <text class="label" x="362" y="272">Compound path</text>
+  <text class="body" x="362" y="302">search_compound</text>
+  <text class="body" x="362" y="324">get_compound_details/literature</text>
+
+  <rect class="box" x="336" y="376" width="224" height="116" fill="#f8eff7" stroke="#99609a"/>
+  <text class="label" x="362" y="416">Variant path</text>
+  <text class="body" x="362" y="446">search_clinvar</text>
+  <text class="body" x="362" y="468">clinical variant records</text>
+
+  <rect class="box" x="654" y="198" width="220" height="116" fill="#edf7ff" stroke="#3578a7"/>
+  <text class="label" x="680" y="238">Linked literature</text>
+  <text class="body" x="680" y="268">PubMed IDs from</text>
+  <text class="body" x="680" y="290">NCBI record links</text>
+
+  <rect class="box" x="966" y="198" width="170" height="116" fill="#f1f5e8" stroke="#71883b"/>
+  <text class="label" x="992" y="238">Evidence set</text>
+  <text class="body" x="992" y="268">details, full text,</text>
+  <text class="body" x="992" y="290">export, notes</text>
+
+  <path class="arrow" d="M 256 256 C 292 202 312 160 336 146"/>
+  <path class="arrow" d="M 256 256 H 324"/>
+  <path class="arrow" d="M 256 256 C 292 330 312 414 336 434"/>
+  <path class="arrow" d="M 560 146 C 608 168 636 204 654 238"/>
+  <path class="arrow" d="M 560 290 H 642"/>
+  <path class="arrow" d="M 560 434 C 608 400 636 324 654 276"/>
+  <path class="arrow" d="M 874 256 H 954"/>
+</svg>

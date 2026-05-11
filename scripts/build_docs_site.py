@@ -61,6 +61,7 @@ PACKAGED_REFERENCES: list[PackagedReference] = [
         "target": REPO_ROOT / ".claude/skills/pipeline-persistence/references/pipeline-tutorial.md",
         "replacements": {
             "PIPELINE_MODE_TUTORIAL.md": "pipeline-tutorial.zh-TW.md",
+            "](images/": "](../../../../docs/images/",
         },
     },
     {
@@ -68,6 +69,7 @@ PACKAGED_REFERENCES: list[PackagedReference] = [
         "target": REPO_ROOT / ".claude/skills/pipeline-persistence/references/pipeline-tutorial.zh-TW.md",
         "replacements": {
             "PIPELINE_MODE_TUTORIAL.en.md": "pipeline-tutorial.md",
+            "](images/": "](../../../../docs/images/",
         },
     },
 ]

@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="640" viewBox="0 0 1200 640" role="img" aria-labelledby="title desc">
+  <title id="title">Pipeline entry points and execution workflow</title>
+  <desc id="desc">Three supported pipeline entry points feed the same validation, DAG execution, session writeback, and history workflow.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#263f46"/>
+    </marker>
+    <style>
+      .bg { fill: #fbfcfa; }
+      .title { font: 700 28px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #17252a; }
+      .subtitle { font: 400 16px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #526168; }
+      .box { stroke-width: 2; rx: 18; }
+      .label { font: 700 18px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #152126; }
+      .body { font: 400 14px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #3e4a50; }
+      .arrow { fill: none; stroke: #263f46; stroke-width: 2.5; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect class="bg" width="1200" height="640"/>
+  <text class="title" x="52" y="58">Pipeline mode entry points</text>
+  <text class="subtitle" x="52" y="86">Inline, saved, and scheduled pipelines all converge on the same validated execution model.</text>
+
+  <rect class="box" x="72" y="126" width="230" height="104" fill="#eef2ff" stroke="#4f68a8"/>
+  <text class="label" x="98" y="166">Inline pipeline</text>
+  <text class="body" x="98" y="196">unified_search(pipeline=YAML)</text>
+
+  <rect class="box" x="72" y="268" width="230" height="104" fill="#eaf4f0" stroke="#3a7c69"/>
+  <text class="label" x="98" y="308">Saved pipeline</text>
+  <text class="body" x="98" y="338">manage_pipeline(save)</text>
+
+  <rect class="box" x="72" y="410" width="230" height="104" fill="#fff5df" stroke="#b27b21"/>
+  <text class="label" x="98" y="450">Scheduled pipeline</text>
+  <text class="body" x="98" y="480">schedule_pipeline cron</text>
+
+  <rect class="box" x="410" y="236" width="230" height="132" fill="#f8eff7" stroke="#99609a"/>
+  <text class="label" x="436" y="276">Validation layer</text>
+  <text class="body" x="436" y="306">schema parse, semantic</text>
+  <text class="body" x="436" y="328">auto-fix, dry run</text>
+
+  <rect class="box" x="748" y="126" width="230" height="104" fill="#edf7ff" stroke="#3578a7"/>
+  <text class="label" x="774" y="166">DAG execution</text>
+  <text class="body" x="774" y="196">search, merge, metrics</text>
+
+  <rect class="box" x="748" y="306" width="230" height="104" fill="#f1f5e8" stroke="#71883b"/>
+  <text class="label" x="774" y="346">Session writeback</text>
+  <text class="body" x="774" y="376">PMIDs and article cache</text>
+
+  <rect class="box" x="748" y="486" width="230" height="104" fill="#f5f1ea" stroke="#947245"/>
+  <text class="label" x="774" y="526">Run history</text>
+  <text class="body" x="774" y="556">reports and diffs</text>
+
+  <path class="arrow" d="M 302 178 C 350 190 382 226 410 270"/>
+  <path class="arrow" d="M 302 320 H 398"/>
+  <path class="arrow" d="M 302 462 C 350 440 382 382 410 334"/>
+  <path class="arrow" d="M 640 302 C 698 252 720 198 748 178"/>
+  <path class="arrow" d="M 863 230 V 294"/>
+  <path class="arrow" d="M 863 410 V 474"/>
+</svg>
