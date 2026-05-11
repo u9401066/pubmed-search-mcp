@@ -18,13 +18,14 @@
 
 - 🔧 **45 個 MCP 工具** - 精簡的 PubMed、Europe PMC、CORE、NCBI 資料庫存取，及**研究時間軸 / 脈絡圖**功能
 - 🖼️ **OA 圖表擷取** - 從 PMC Open Access 論文直接抽出 figure caption、image URL 與 PDF 連結
-- 📘 **Docs Site** - 用語言切換網站整合使用者指南、開發者指南、架構、quick reference、pipeline 教學、source contract、troubleshooting 與 deployment，入口在 [docs/index.html](index.html)
+- 📘 **Docs Site** - 用語言切換網站整合使用者指南、開發者指南、架構、quick reference、pipeline 教學、source contract、troubleshooting 與 deployment，入口在 [u9401066.github.io/pubmed-search-mcp](https://u9401066.github.io/pubmed-search-mcp/)
+- 📖 **GitHub Wiki** - 同一組 canonical docs 的 GitHub 內建文件鏡像，入口在 [github.com/u9401066/pubmed-search-mcp/wiki](https://github.com/u9401066/pubmed-search-mcp/wiki)
 - 📚 **24 個 Claude Skills** - AI Agent 可直接使用的工作流程指南（Claude Code 專屬）
 - 📖 **Copilot 整合指南** - VS Code GitHub Copilot 使用說明
 
 **🌐 語言**: [English](#/overview) | **繁體中文**
 
-**📘 工具使用文件**: [使用者指南](#/user-guide-zh) | [能力導向使用指南](#/tools-usage-guide-zh) | [開發者指南](#/developer-guide-zh) | [完整工具索引](#/quick-reference)
+**📘 文件地圖**：README 是專案入口與快速導覽；[Docs Site](https://u9401066.github.io/pubmed-search-mcp/) 提供最佳閱讀體驗；[GitHub Wiki](https://github.com/u9401066/pubmed-search-mcp/wiki) 提供 GitHub 內建導覽；實際編修以 source docs 為準：[使用者指南](#/user-guide-zh) | [能力導向使用指南](#/tools-usage-guide-zh) | [開發者指南](#/developer-guide-zh) | [完整工具索引](#/quick-reference)
 
 ---
 

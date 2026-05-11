@@ -20,13 +20,14 @@ A Domain-Driven Design (DDD) based MCP server that serves as an intelligent rese
 
 - 🔧 **45 MCP Tools** - Streamlined PubMed, Europe PMC, CORE, NCBI database access, and **Research Timeline / Context Graph**
 - 🖼️ **OA Figure Extraction** - Pull figure captions, direct image URLs, and PDF links from PMC Open Access articles
-- 📘 **Docs Site** - Browse language-switchable user and developer guides, architecture, quick reference, pipeline tutorials, source contracts, troubleshooting, and deployment in one place at [docs/index.html](index.html)
+- 📘 **Docs Site** - Browse language-switchable user and developer guides, architecture, quick reference, pipeline tutorials, source contracts, troubleshooting, and deployment in one place at [u9401066.github.io/pubmed-search-mcp](https://u9401066.github.io/pubmed-search-mcp/)
+- 📖 **GitHub Wiki** - GitHub-native mirror of the same canonical documentation at [github.com/u9401066/pubmed-search-mcp/wiki](https://github.com/u9401066/pubmed-search-mcp/wiki)
 - 📚 **24 Claude Skills** - Ready-to-use workflow guides for AI agents (Claude Code-specific)
 - 📖 **Copilot Instructions** - VS Code GitHub Copilot integration guide
 
 **🌐 Language**: **English** | [繁體中文](#/overview-zh)
 
-**📘 Tool Usage Docs**: [User guide](#/user-guide) | [Capability-first guide](#/tools-usage-guide) | [Developer guide](#/developer-guide) | [Complete index](#/quick-reference)
+**📘 Documentation Map**: README is the quick project entry point. Use the [Docs Site](https://u9401066.github.io/pubmed-search-mcp/) for the best reading experience, the [GitHub Wiki](https://github.com/u9401066/pubmed-search-mcp/wiki) for GitHub-native navigation, and source docs for edits: [User guide](#/user-guide) | [Capability-first guide](#/tools-usage-guide) | [Developer guide](#/developer-guide) | [Complete index](#/quick-reference)
 
 ---
 
