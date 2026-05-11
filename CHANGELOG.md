@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **First-class preprint sources in `unified_search`**: arXiv, medRxiv, and bioRxiv are now selectable via `sources="arxiv,medrxiv,biorxiv"` and are merged into the main result aggregation (deduped against published versions via DOI/title) when `options="preprints"` is set. Previously preprints were fetched on a separate side-channel and displayed in their own section without dedup; now they participate in ranking and aggregation as full `UnifiedArticle` entries with `article_type=PREPRINT` and `oa_status=GREEN`. A new `article_from_preprint` mapper, three `_search_arxiv` / `_search_medrxiv` / `_search_biorxiv` source runners, and registry flags (`selectable_in_unified=True`, `supports_primary_search=True`) underpin the change.
+
+### Removed
+
+- Dead "📄 Preprints (Not Peer-Reviewed)" section in `unified_search` markdown output, the `UnifiedSearchExecutionResult.preprint_results` dataclass field, and the obsolete `PreprintSearcher.search_medical_preprints` convenience method (and its tests). Preprint results now flow through the main aggregator with explicit `article_type=PREPRINT` labelling instead of a parallel side-channel.
 - Institutional fulltext retrieval is now wired into `get_fulltext`. When a DOI lookup misses on Unpaywall, the orchestration layer attempts the Phase 1 (IP-aware direct DOI fetch) and Phase 2 (EZproxy hostname rewrite + replayed session cookie) paths via the new `InstitutionalFulltextClient`, extracts publisher HTML with `trafilatura` (optional `[institutional]` extra) plus a stdlib fallback, and returns the article body before falling through to CORE / extended sources.
 - New `fetch_direct` / `fetch_ezproxy` retrieval-mode entrypoints in `institutional_fetch.py` complement the existing sniff-only `probe_direct` / `probe_ezproxy` diagnostics. `ProbeResult` gains optional `body` + `content_type` fields that are excluded from `to_dict()` so diagnostic JSON stays compact.
 - `FulltextRegistry` now exposes an `institutional` source (priority 4) and inserts it between `unpaywall` and `core` in all three default policies.

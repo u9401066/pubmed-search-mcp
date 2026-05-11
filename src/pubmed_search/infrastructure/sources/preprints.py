@@ -507,22 +507,6 @@ class PreprintSearcher:
 
         return results
 
-    async def search_medical_preprints(
-        self,
-        query: str,
-        limit: int = 10,
-    ) -> dict[str, Any]:
-        """
-        Convenience method for medical/health preprint search.
-        Searches medRxiv + arXiv q-bio.
-        """
-        return await self.search(
-            query=query,
-            sources=["medrxiv", "arxiv"],
-            limit=limit,
-            categories=["q-bio", "stat.AP", "stat.ML"],
-        )
-
     async def get_arxiv_paper(self, arxiv_id: str) -> dict[str, Any] | None:
         """Get specific arXiv paper by ID."""
         article = await self.arxiv.get_by_id(arxiv_id)

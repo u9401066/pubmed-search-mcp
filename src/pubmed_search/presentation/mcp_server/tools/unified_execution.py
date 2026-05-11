@@ -23,7 +23,6 @@ from typing import TYPE_CHECKING, Any
 from pubmed_search.application.search.result_aggregator import ResultAggregator
 from pubmed_search.application.timeline import TimelineBuilder, build_research_tree
 from pubmed_search.domain.entities.article import UnifiedArticle
-from pubmed_search.infrastructure.sources.preprints import PreprintSearcher
 from pubmed_search.infrastructure.sources.registry import get_source_registry
 from pubmed_search.presentation.mcp_server.session_tools import notify_session_resources_updated
 from pubmed_search.shared.source_contracts import (
@@ -59,6 +58,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 SOURCE_SEARCH_TIMEOUT_SECONDS = 25.0
+_PREPRINT_SOURCE_KEYS = frozenset({"arxiv", "medrxiv", "biorxiv"})
 
 SearchRunner = Callable[
     [str, int, int | None, int | None, dict[str, Any]], Awaitable[tuple[list[UnifiedArticle], int | None]]
@@ -71,7 +71,6 @@ class UnifiedSearchExecutionResult:
     stats: Any
     pubmed_total_count: int | None
     source_api_counts: dict[str, tuple[int, int | None]]
-    preprint_results: dict[str, Any]
     deep_search_metrics: SearchDepthMetrics | None
     relaxation_result: RelaxationResult | None
     source_disagreement: SourceDisagreement | None
@@ -79,6 +78,11 @@ class UnifiedSearchExecutionResult:
     research_context_preview: str | None
     research_context_data: dict[str, Any] | None
     prefetched_trials: list[Any] | None
+
+
+def _allows_preprint_articles(*, include_preprints: bool, dispatch_sources: list[str]) -> bool:
+    """Return whether preprints are an explicit part of this unified search."""
+    return include_preprints or any(source in _PREPRINT_SOURCE_KEYS for source in dispatch_sources)
 
 
 async def _search_single_source(
@@ -127,7 +131,6 @@ async def execute_unified_search(
     all_results: list[list[UnifiedArticle]] = []
     pubmed_total_count: int | None = None
     source_api_counts: dict[str, tuple[int, int | None]] = {}
-    preprint_results: dict[str, Any] = {}
     deep_search_metrics: SearchDepthMetrics | None = None
     relaxation_result: RelaxationResult | None = None
 
@@ -221,19 +224,10 @@ async def execute_unified_search(
                 "%s: %s results%s", result.source, len(articles), f" (total: {total_count})" if total_count else ""
             )
 
-    if request.include_preprints:
-        try:
-            preprint_searcher = PreprintSearcher()
-            preprint_query = (
-                plan.query.split("[MeSH]")[0].replace('"', "").strip() if "[MeSH]" in plan.query else plan.query
-            )
-            preprint_results = await preprint_searcher.search_medical_preprints(
-                query=preprint_query, limit=min(request.limit, 10)
-            )
-            logger.info("Preprints: %s results", preprint_results.get("total", 0))
-        except Exception as exc:
-            logger.warning("Preprint search failed: %s", exc)
-            preprint_results = {}
+    # Preprints (arXiv/medRxiv/bioRxiv) are first-class sources injected into
+    # dispatch_sources by unified_planning when include_preprints=True. They
+    # flow through the main aggregator and get deduped against published
+    # versions via DOI/title matching.
 
     await progress(5, 10, "Aggregating results...")
     aggregator = ResultAggregator(plan.ranking_config)
@@ -276,7 +270,14 @@ async def execute_unified_search(
     if enrichment_tasks:
         await asyncio.gather(*enrichment_tasks, return_exceptions=True)
 
-    if request.peer_reviewed_only and articles:
+    if (
+        request.peer_reviewed_only
+        and articles
+        and not _allows_preprint_articles(
+            include_preprints=request.include_preprints,
+            dispatch_sources=plan.dispatch_sources,
+        )
+    ):
         from pubmed_search.domain.entities.article import ArticleType
 
         pre_filter_count = len(articles)
@@ -356,7 +357,6 @@ async def execute_unified_search(
         stats=stats,
         pubmed_total_count=pubmed_total_count,
         source_api_counts=source_api_counts,
-        preprint_results=preprint_results,
         deep_search_metrics=deep_search_metrics,
         relaxation_result=relaxation_result,
         source_disagreement=source_disagreement,

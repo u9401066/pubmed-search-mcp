@@ -428,11 +428,83 @@ def article_from_europe_pmc(data: dict[str, Any]) -> UnifiedArticle:
     return article
 
 
+def article_from_preprint(data: dict[str, Any]) -> UnifiedArticle:
+    """Create UnifiedArticle from a preprint server payload.
+
+    Accepts the dict produced by ``PreprintArticle.to_dict()`` (arXiv / medRxiv /
+    bioRxiv). The ``source`` field on the payload selects the journal label and
+    the primary_source attribution. arXiv IDs are stored on ``arxiv_id`` so that
+    aggregation can dedupe by identifier where possible.
+    """
+    source_key = (data.get("source") or "preprint").lower()
+    journal_map = {
+        "arxiv": "arXiv (preprint)",
+        "medrxiv": "medRxiv (preprint)",
+        "biorxiv": "bioRxiv (preprint)",
+    }
+    journal_label = journal_map.get(source_key, "Preprint Server")
+
+    authors = [Author(full_name=name) for name in data.get("authors", []) if name]
+
+    year: int | None = None
+    pub_date: date | None = None
+    published = data.get("published") or ""
+    if published:
+        with contextlib.suppress(ValueError, TypeError):
+            parts = published.split("-")
+            year = int(parts[0])
+            if len(parts) >= _DATE_PARTS_FULL:
+                pub_date = date(int(parts[0]), int(parts[1]), int(parts[2]))
+
+    arxiv_id = data.get("id") if source_key == "arxiv" else None
+    doi = data.get("doi")
+
+    landing_url = data.get("source_url") or ""
+    pdf_url = data.get("pdf_url") or ""
+    oa_links: list[OpenAccessLink] = []
+    if pdf_url:
+        oa_links.append(
+            OpenAccessLink(
+                url=pdf_url,
+                version="submittedVersion",
+                host_type="preprint",
+                is_best=True,
+            )
+        )
+    if landing_url and landing_url != pdf_url:
+        oa_links.append(
+            OpenAccessLink(
+                url=landing_url,
+                version="submittedVersion",
+                host_type="preprint",
+            )
+        )
+
+    return UnifiedArticle(
+        title=data.get("title", "Unknown Title"),
+        primary_source=source_key,
+        doi=doi,
+        arxiv_id=arxiv_id,
+        authors=authors,
+        abstract=data.get("abstract"),
+        journal=journal_label,
+        year=year,
+        publication_date=pub_date,
+        article_type=ArticleType.PREPRINT,
+        keywords=data.get("categories", []),
+        oa_status=OpenAccessStatus.GREEN,
+        oa_links=oa_links,
+        is_open_access=True,
+        sources=[SourceMetadata(source=source_key, raw_data=data)],
+    )
+
+
 __all__ = [
     "article_from_core",
     "article_from_crossref",
     "article_from_europe_pmc",
     "article_from_openalex",
+    "article_from_preprint",
     "article_from_pubmed",
     "article_from_scopus",
     "article_from_semantic_scholar",

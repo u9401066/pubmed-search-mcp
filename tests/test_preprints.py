@@ -118,35 +118,6 @@ class TestPreprintSearcher:
 
     @patch.object(MedBioRxivClient, "search_medrxiv", new_callable=AsyncMock)
     @patch.object(ArXivClient, "search", new_callable=AsyncMock)
-    async def test_search_medical_preprints(self, mock_arxiv, mock_medrxiv):
-        """Test convenience method for medical preprints."""
-        mock_arxiv.return_value = []
-        mock_medrxiv.return_value = [
-            PreprintArticle(
-                id="2",
-                title="medRxiv paper",
-                abstract="",
-                authors=["Author One"],
-                published="2024-01-02",
-                updated=None,
-                source="medrxiv",
-                categories=["Anesthesiology"],
-                pdf_url=None,
-                doi="10.1101/2024.01.02.123456",
-            )
-        ]
-        searcher = PreprintSearcher()
-        results = await searcher.search_medical_preprints(
-            query="anesthesia",
-            limit=3,
-        )
-
-        assert "articles" in results
-        assert results["total"] == 1
-        assert "medrxiv" in results["sources_searched"]
-
-    @patch.object(MedBioRxivClient, "search_medrxiv", new_callable=AsyncMock)
-    @patch.object(ArXivClient, "search", new_callable=AsyncMock)
     async def test_search_soft_times_out_straggler_source(self, mock_arxiv, mock_medrxiv):
         mock_arxiv.return_value = [
             PreprintArticle(

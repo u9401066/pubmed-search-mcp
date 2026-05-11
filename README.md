@@ -550,15 +550,15 @@ Step-by-step tutorials:
 
 Search **arXiv**, **medRxiv**, and **bioRxiv** preprint servers via `unified_search` `options` flags:
 
-- `preprints`: Enable dedicated preprint search and show results in a separate section.
-- `all_types`: Keep non-peer-reviewed content in main aggregated results.
+- `preprints`: Search preprint servers and merge preprints into the main aggregated result set with `article_type=PREPRINT`.
+- `all_types`: Keep non-peer-reviewed content already returned by selected scholarly sources even without a preprint-server crawl.
 
 **Recommended combinations:**
 
-- Empty `options`: Peer-reviewed results only.
-- `options="preprints"`: Peer-reviewed main results plus a separate preprint section.
-- `options="preprints, all_types"`: Separate preprint section plus non-peer-reviewed content retained in main results.
-- `options="all_types"`: No dedicated preprint crawl, but non-peer-reviewed items from searched sources are retained.
+- Empty `options`: Peer-reviewed results only; preprint-like records are filtered.
+- `options="preprints"`: Searches arXiv, medRxiv, and bioRxiv, then ranks/dedupes those preprints with the main results.
+- `options="preprints, all_types"`: Same preprint-server crawl, plus other non-peer-reviewed records from selected sources are retained.
+- `options="all_types"`: No preprint-server crawl, but non-peer-reviewed items from searched sources are retained.
 
 **Preprint detection** — articles are identified as preprints by:
 
@@ -733,11 +733,11 @@ get_fulltext(pmid="12345678", extended_sources=True)
 ```python
 # Include preprints alongside peer-reviewed results
 unified_search(query="COVID-19 vaccine efficacy", options="preprints")
-# → Main results (peer-reviewed) + Separate preprint section (arXiv, medRxiv, bioRxiv)
+# → Main aggregated results include labelled arXiv, medRxiv, and bioRxiv preprints
 
 # Include preprints and retain non-peer-reviewed items in main results
 unified_search(query="CRISPR gene therapy", options="preprints, all_types")
-# → Separate preprint section + non-peer-reviewed items retained in main results
+# → Preprint-server crawl + non-peer-reviewed items retained in main results
 
 # Only peer-reviewed (default behavior)
 unified_search("diabetes treatment")

@@ -25,6 +25,7 @@ from pubmed_search.infrastructure.sources.article_mapper import (
     article_from_core,
     article_from_europe_pmc,
     article_from_openalex,
+    article_from_preprint,
     article_from_pubmed,
     article_from_scopus,
     article_from_semantic_scholar,
@@ -538,3 +539,86 @@ async def _search_web_of_science(
     except Exception as e:
         logger.exception(f"Web of Science search failed: {e}")
         return [], None
+
+
+# ============================================================================
+# Preprint Source Runners (arXiv / medRxiv / bioRxiv)
+# ============================================================================
+
+
+def _filter_preprints_by_year(
+    articles: list[UnifiedArticle],
+    min_year: int | None,
+    max_year: int | None,
+) -> list[UnifiedArticle]:
+    """Apply year-range filter client-side (preprint APIs do not all support it)."""
+    if min_year is None and max_year is None:
+        return articles
+    result: list[UnifiedArticle] = []
+    for art in articles:
+        if art.year is None:
+            result.append(art)
+            continue
+        if min_year is not None and art.year < min_year:
+            continue
+        if max_year is not None and art.year > max_year:
+            continue
+        result.append(art)
+    return result
+
+
+async def _search_preprint_source(
+    source: str,
+    query: str,
+    limit: int,
+    min_year: int | None,
+    max_year: int | None,
+) -> tuple[list[UnifiedArticle], int | None]:
+    """Shared runner for arxiv / medrxiv / biorxiv."""
+    from pubmed_search.infrastructure.sources.preprints import PreprintSearcher
+
+    try:
+        searcher = PreprintSearcher()
+        results = await searcher.search(query=query, sources=[source], limit=limit)
+        items = results.get("by_source", {}).get(source, [])
+        articles = [article_from_preprint(item) for item in items]
+        articles = _filter_preprints_by_year(articles, min_year, max_year)
+        # total_available = how many the API actually returned for this source
+        # (preprint APIs don't expose a separate "total matches" count, so we
+        # use the pre-year-filter payload count to stay consistent with other
+        # source runners' contract).
+        total_available = len(items)
+        return articles, total_available
+    except Exception as e:
+        logger.exception(f"{source} search failed: {e}")
+        return [], None
+
+
+async def _search_arxiv(
+    query: str,
+    limit: int,
+    min_year: int | None,
+    max_year: int | None,
+) -> tuple[list[UnifiedArticle], int | None]:
+    """Search arXiv preprints and convert to UnifiedArticle."""
+    return await _search_preprint_source("arxiv", query, limit, min_year, max_year)
+
+
+async def _search_medrxiv(
+    query: str,
+    limit: int,
+    min_year: int | None,
+    max_year: int | None,
+) -> tuple[list[UnifiedArticle], int | None]:
+    """Search medRxiv preprints and convert to UnifiedArticle."""
+    return await _search_preprint_source("medrxiv", query, limit, min_year, max_year)
+
+
+async def _search_biorxiv(
+    query: str,
+    limit: int,
+    min_year: int | None,
+    max_year: int | None,
+) -> tuple[list[UnifiedArticle], int | None]:
+    """Search bioRxiv preprints and convert to UnifiedArticle."""
+    return await _search_preprint_source("biorxiv", query, limit, min_year, max_year)

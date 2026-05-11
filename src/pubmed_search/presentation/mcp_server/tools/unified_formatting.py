@@ -297,7 +297,6 @@ async def _format_unified_results(
     include_analysis: bool = True,
     pubmed_total_count: int | None = None,
     icd_matches: list | None = None,
-    preprint_results: dict | None = None,
     include_trials: bool = True,
     original_query: str = "",
     enhanced_entities: list[str] | None = None,
@@ -594,27 +593,10 @@ async def _format_unified_results(
         output_parts.append(research_context_preview)
         output_parts.append("")
 
-    # === Preprint Results Section ===
-    if preprint_results and preprint_results.get("total", 0) > 0:
-        output_parts.append("\n---")
-        output_parts.append("\n## 📄 Preprints (Not Peer-Reviewed)\n")
-        for src, papers in preprint_results.get("by_source", {}).items():
-            if papers:
-                output_parts.append(f"### {src.upper()} ({len(papers)} results)")
-                for j, paper in enumerate(papers[:5], 1):  # Show max 5 per source
-                    output_parts.append(f"\n**{j}. {paper.get('title', 'N/A')}**")
-                    if paper.get("authors"):
-                        authors_str = ", ".join(paper["authors"][:3])
-                        if len(paper["authors"]) > 3:
-                            authors_str += " et al."
-                        output_parts.append(f"*{authors_str}* ({paper.get('published', 'N/A')})")
-                    if paper.get("pdf_url"):
-                        output_parts.append(f"PDF: {paper['pdf_url']}")
-                    if paper.get("source_url"):
-                        output_parts.append(f"Link: {paper['source_url']}")
-                output_parts.append("")
-
     # === Related Clinical Trials (use pre-fetched results) ===
+    # Preprints are now first-class UnifiedArticle entries in the main results
+    # list (article_type=PREPRINT); no separate section needed.
+
     if include_trials and prefetched_trials:
         try:
             from pubmed_search.infrastructure.sources.clinical_trials import (

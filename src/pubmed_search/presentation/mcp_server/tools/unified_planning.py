@@ -114,6 +114,15 @@ async def build_unified_search_plan(
         msg = "No enabled sources are available for unified_search"
         raise ValueError(msg)
 
+    # options="preprints" → first-class merge of arXiv/medRxiv/bioRxiv into
+    # main aggregation (deduped against published versions via DOI/title).
+    # Only inject when the user didn't already select them explicitly.
+    if request.include_preprints:
+        preprint_keys = ("arxiv", "medrxiv", "biorxiv")
+        for key in preprint_keys:
+            if key not in dispatch_sources:
+                dispatch_sources.append(key)
+
     await progress(3, 10, f"Sources: {', '.join(dispatch_sources)}")
     logger.info("Selected sources: %s", dispatch_sources)
 
