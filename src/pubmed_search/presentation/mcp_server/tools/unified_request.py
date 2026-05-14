@@ -43,6 +43,9 @@ class UnifiedSearchRequest:
     include_preprints: bool
     include_research_context: bool
     counts_first: bool
+    compact_output: bool
+    include_next_tools: bool
+    include_section_provenance: bool
     peer_reviewed_only: bool
     auto_relax: bool
     deep_search: bool
@@ -103,6 +106,9 @@ def normalize_unified_search_request(
         include_preprints=parsed_options.get("include_preprints", False),
         include_research_context=parsed_options.get("include_research_context", False),
         counts_first=parsed_options.get("counts_first", False),
+        compact_output=parsed_options.get("compact_output", False),
+        include_next_tools=parsed_options.get("include_next_tools", True),
+        include_section_provenance=parsed_options.get("include_section_provenance", True),
         peer_reviewed_only=parsed_options.get("peer_reviewed_only", True),
         auto_relax=parsed_options.get("auto_relax", True),
         deep_search=parsed_options.get("deep_search", True),

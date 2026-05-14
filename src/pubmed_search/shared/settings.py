@@ -5,12 +5,13 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, field_validator
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_EMAIL = "pubmed-search@example.com"
 DEFAULT_DATA_DIR = str(Path.home() / ".pubmed-search-mcp")
 DEFAULT_HTTP_API_PORT = 8765
+DEFAULT_FULLTEXT_INLINE_MAX_CHARS = 20_000
 
 
 class AppSettings(BaseSettings):
@@ -32,10 +33,19 @@ class AppSettings(BaseSettings):
 
     profiling_enabled: bool = Field(default=False, alias="PUBMED_PROFILING")
     disabled_sources_raw: str = Field(default="", alias="PUBMED_SEARCH_DISABLED_SOURCES")
+    artifact_include_local_paths: bool = Field(default=False, alias="PUBMED_ARTIFACT_INCLUDE_LOCAL_PATHS")
+    fulltext_inline_max_chars: int = Field(
+        default=DEFAULT_FULLTEXT_INLINE_MAX_CHARS,
+        alias="PUBMED_FULLTEXT_INLINE_MAX_CHARS",
+    )
 
     crossref_email: str | None = Field(default=None, alias="CROSSREF_EMAIL")
     unpaywall_email: str | None = Field(default=None, alias="UNPAYWALL_EMAIL")
     openalex_api_key: str | None = Field(default=None, alias="OPENALEX_API_KEY")
+    semantic_scholar_api_key: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("SEMANTIC_SCHOLAR_API_KEY", "S2_API_KEY"),
+    )
     core_api_key: str | None = Field(default=None, alias="CORE_API_KEY")
 
     openurl_enabled: bool = Field(default=True, alias="OPENURL_ENABLED")
@@ -89,6 +99,7 @@ class AppSettings(BaseSettings):
         "crossref_email",
         "unpaywall_email",
         "openalex_api_key",
+        "semantic_scholar_api_key",
         "core_api_key",
         "scopus_api_key",
         "scopus_insttoken",
@@ -106,9 +117,7 @@ class AppSettings(BaseSettings):
     def disabled_sources(self) -> tuple[str, ...]:
         """Normalized disabled source keys from PUBMED_SEARCH_DISABLED_SOURCES."""
         return tuple(
-            token.strip().lower().replace("-", "_")
-            for token in self.disabled_sources_raw.split(",")
-            if token.strip()
+            token.strip().lower().replace("-", "_") for token in self.disabled_sources_raw.split(",") if token.strip()
         )
 
 

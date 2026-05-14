@@ -45,6 +45,7 @@ from pubmed_search.application.timeline import TimelineBuilder, build_research_t
 from pubmed_search.infrastructure.sources.registry import SourceSelectionError, get_source_registry
 
 from .agent_output import is_structured_output_format
+from .artifact_memory import artifact_markdown_note, artifact_persistence_enabled, persist_tool_artifact
 from .tool_input import InputNormalizer
 from .tool_response import ResponseFormatter
 from .tool_runtime import safe_report_progress
@@ -93,6 +94,74 @@ from .unified_source_search import (
     _search_semantic_scholar,
     _search_web_of_science,
 )
+
+
+def _persist_unified_search_artifact(
+    *,
+    request: Any,
+    plan: Any,
+    execution: Any,
+    markdown_response: str | None = None,
+    primary_format: Literal["json", "toon"] = "json",
+) -> dict[str, Any] | None:
+    """Persist the already-computed unified_search response as a session artifact."""
+    if not artifact_persistence_enabled():
+        return None
+
+    try:
+        structured_payload = _format_as_json(
+            execution.ranked,
+            plan.analysis,
+            execution.stats,
+            execution.relaxation_result,
+            execution.deep_search_metrics,
+            source_api_counts=execution.source_api_counts or None,
+            source_disagreement=execution.source_disagreement,
+            reproducibility_score=execution.reproducibility_score,
+            research_context=execution.research_context_data,
+            source_errors=execution.source_errors,
+            counts_first=request.counts_first,
+            compact_output=request.compact_output,
+            include_analysis=request.show_analysis,
+            include_similarity_scores=request.include_similarity_scores,
+            include_next_tools=request.include_next_tools,
+            include_section_provenance=request.include_section_provenance,
+            max_response_chars=None,
+            output_format=primary_format,
+        )
+    except Exception as exc:
+        logger.warning("Failed to prepare unified_search artifact payload: %s", exc)
+        return None
+    primary_file = f"results.{primary_format}"
+    files: dict[str, Any] = {
+        primary_file: structured_payload,
+        "query.md": f"# Query\n\n{plan.analysis.original_query or request.query}\n",
+    }
+    if markdown_response:
+        files["response.md"] = markdown_response
+
+    source_summary = {
+        source: {"returned": counts[0], "available": counts[1]}
+        for source, counts in (execution.source_api_counts or {}).items()
+    }
+    return persist_tool_artifact(
+        tool="unified_search",
+        kind="search_results",
+        files=files,
+        primary_file=primary_file,
+        summary={
+            "query": plan.analysis.original_query or request.query,
+            "returned": len(execution.ranked),
+            "sources": source_summary,
+            "source_errors": execution.source_errors,
+        },
+        metadata={
+            "output_format": request.output_format,
+            "ranking": request.ranking,
+            "limit": request.limit,
+        },
+    )
+
 
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
@@ -286,6 +355,9 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                        no_oa          → skip Unpaywall OA link enrichment
                        no_analysis    → hide query analysis section in output
                        no_scores      → hide similarity/relevance scores
+                       compact        → compact structured JSON/TOON output
+                       no_next        → hide next-tool suggestions in structured output
+                       no_provenance  → hide section provenance in structured output
                        no_relax       → disable auto-relaxation on 0 results
                        shallow        → disable deep search (faster, keyword-only)
                      Example: "preprints, shallow" or "no_analysis, no_scores"
@@ -511,11 +583,7 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                         min_year,
                         max_year,
                     ),
-                    "arxiv": lambda search_query,
-                    search_limit,
-                    min_year,
-                    max_year,
-                    _advanced_filters: _search_arxiv(
+                    "arxiv": lambda search_query, search_limit, min_year, max_year, _advanced_filters: _search_arxiv(
                         search_query,
                         search_limit,
                         min_year,
@@ -549,6 +617,13 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             # === Step 9: Format Output ===
             await _progress(9, 10, "Formatting output...")
             if is_structured_output_format(request.output_format):
+                primary_format = cast("Literal['json', 'toon']", request.output_format)
+                artifact = _persist_unified_search_artifact(
+                    request=request,
+                    plan=plan,
+                    execution=execution,
+                    primary_format=primary_format,
+                )
                 return _format_as_json(
                     execution.ranked,
                     plan.analysis,
@@ -559,11 +634,18 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                     source_disagreement=execution.source_disagreement,
                     reproducibility_score=execution.reproducibility_score,
                     research_context=execution.research_context_data,
+                    source_errors=execution.source_errors,
                     counts_first=request.counts_first,
+                    compact_output=request.compact_output,
+                    include_analysis=request.show_analysis,
+                    include_similarity_scores=request.include_similarity_scores,
+                    include_next_tools=request.include_next_tools,
+                    include_section_provenance=request.include_section_provenance,
                     output_format=request.output_format,
+                    artifact_manifest=artifact,
                 )
 
-            return await _format_unified_results(
+            markdown_response = await _format_unified_results(
                 execution.ranked,
                 plan.analysis,
                 execution.stats,
@@ -571,6 +653,7 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 execution.pubmed_total_count,
                 plan.icd_matches,
                 include_trials=True,
+                include_similarity_scores=request.include_similarity_scores,
                 original_query=plan.analysis.original_query,
                 enhanced_entities=plan.matched_entity_names or None,
                 relaxation_result=execution.relaxation_result,
@@ -579,9 +662,17 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
                 source_api_counts=execution.source_api_counts or None,
                 source_disagreement=execution.source_disagreement,
                 reproducibility_score=execution.reproducibility_score,
+                source_errors=execution.source_errors,
                 research_context_preview=execution.research_context_preview,
                 counts_first=request.counts_first,
             )
+            artifact = _persist_unified_search_artifact(
+                request=request,
+                plan=plan,
+                execution=execution,
+                markdown_response=markdown_response,
+            )
+            return markdown_response + artifact_markdown_note(artifact)
 
         except Exception as e:
             logger.exception("Unified search failed: %s", e)

@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from contextvars import ContextVar
 from typing import Any
 
 import httpx
@@ -22,6 +23,7 @@ from typing_extensions import Self
 from pubmed_search.shared.async_utils import (
     CircuitBreaker,
     RequestExecutionPolicy,
+    RetryableOperationError,
     create_async_http_client,
     get_rate_limiter,
     get_transport_kernel,
@@ -32,6 +34,7 @@ from pubmed_search.shared.source_contracts import SourceExecutionSettings, build
 logger = logging.getLogger(__name__)
 
 _ASYNCIO_COMPAT = asyncio
+_FALLBACK_RATE_LIMIT_COOLDOWN_SECONDS = 30.0
 
 
 class BaseAPIClient:
@@ -98,6 +101,15 @@ class BaseAPIClient:
         )
         self._circuit_breaker = circuit_breaker or CircuitBreaker(failure_threshold=10, recovery_timeout=60.0)
         self._transport_kernel = get_transport_kernel()
+        self._last_retryable_error: ContextVar[RetryableOperationError | None] = ContextVar(
+            f"{self._service_name.lower().replace(' ', '_')}_last_retryable_error_{id(self)}",
+            default=None,
+        )
+
+    @property
+    def last_retryable_error(self) -> RetryableOperationError | None:
+        """Return the most recent exhausted retryable error, if any."""
+        return self._last_retryable_error.get()
 
     def _build_execution_policy(self) -> RequestExecutionPolicy:
         return build_request_execution_policy(
@@ -169,8 +181,6 @@ class BaseAPIClient:
 
             if response.status_code in policy.retry.retryable_status_codes:
                 retry_after = parse_retry_after(response.headers.get("Retry-After"))
-                from pubmed_search.shared.async_utils import RetryableOperationError
-
                 raise RetryableOperationError(
                     f"HTTP {response.status_code}",
                     retry_after=retry_after,
@@ -181,7 +191,12 @@ class BaseAPIClient:
             return self._parse_response(response, expect_json)
 
         try:
+            self._last_retryable_error.set(None)
             return await self._transport_kernel.execute(perform_request, policy=policy)
+        except RetryableOperationError as e:
+            self._last_retryable_error.set(e)
+            await self._handle_exhausted_retryable_error(e, policy)
+            return None
         except httpx.HTTPStatusError as e:
             logger.exception(f"{self._service_name} HTTP error {e.response.status_code}: {e.response.reason_phrase}")
             return None
@@ -192,10 +207,50 @@ class BaseAPIClient:
             from pubmed_search.shared.exceptions import RateLimitError
 
             if isinstance(e, RateLimitError):
-                logger.warning(f"{self._service_name}: Circuit breaker open, skipping request")
+                retryable_error = RetryableOperationError(
+                    str(e) or f"{self._service_name} rate limited",
+                    retry_after=getattr(getattr(e, "context", None), "retry_after", None),
+                )
+                self._last_retryable_error.set(retryable_error)
+                logger.warning("%s: Circuit breaker open or rate limited, skipping request", self._service_name)
                 return None
             logger.exception(f"{self._service_name} request failed: {e}")
             return None
+
+    async def _handle_exhausted_retryable_error(
+        self,
+        error: RetryableOperationError,
+        policy: RequestExecutionPolicy,
+    ) -> None:
+        """Handle an exhausted retryable response without noisy tracebacks."""
+        if error.status_code == 429:
+            cooldown = error.retry_after or _FALLBACK_RATE_LIMIT_COOLDOWN_SECONDS
+            await self._apply_rate_limit_cooldown(policy, cooldown)
+            logger.warning(
+                "%s rate limited by upstream API after retries; returning empty response and cooling down for %.0fs",
+                self._service_name,
+                min(cooldown, policy.retry.retry_after_cap),
+            )
+            return
+
+        logger.warning(
+            "%s transient request failed after retries: %s",
+            self._service_name,
+            error,
+        )
+
+    @staticmethod
+    async def _apply_rate_limit_cooldown(policy: RequestExecutionPolicy, cooldown: float) -> None:
+        """Apply a bounded cooldown to the shared limiter after exhausted 429s."""
+        if cooldown <= 0 or policy.rate_limit is None:
+            return
+
+        limiter = get_rate_limiter(
+            policy.rate_limit.name,
+            rate=policy.rate_limit.rate,
+            per=policy.rate_limit.per,
+        )
+        await limiter.apply_cooldown(min(cooldown, policy.retry.retry_after_cap))
 
     async def _execute_request(
         self,

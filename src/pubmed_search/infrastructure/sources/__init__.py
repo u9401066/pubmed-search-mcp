@@ -31,12 +31,16 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Awaitable, Callable
+from contextvars import ContextVar
 from enum import Enum
 from typing import Any, Literal, cast
 
+from pubmed_search.shared.async_utils import RetryableOperationError
+from pubmed_search.shared.exceptions import RateLimitError
 from pubmed_search.shared.settings import load_settings
 from pubmed_search.shared.source_contracts import (
     SourceAdapterCall,
+    SourceAdapterError,
     SourceAdapterResult,
     format_source_adapter_error,
     gather_source_adapter_calls,
@@ -66,6 +70,19 @@ _openurl_builder = None
 _clinical_trials_client = None
 _openi_client = None
 _browser_session_fetcher = None
+_last_alternate_source_errors: ContextVar[dict[str, SourceAdapterError] | None] = ContextVar(
+    "last_alternate_source_errors",
+    default=None,
+)
+
+
+def _remember_alternate_source_error(source: str, error: SourceAdapterError | None) -> None:
+    errors = dict(_last_alternate_source_errors.get() or {})
+    if error is None:
+        errors.pop(source, None)
+    else:
+        errors[source] = error
+    _last_alternate_source_errors.set(errors)
 
 
 class SearchSource(Enum):
@@ -101,7 +118,8 @@ def get_semantic_scholar_client(api_key: str | None = None):
     if _semantic_scholar_client is None:
         from .semantic_scholar import SemanticScholarClient
 
-        _semantic_scholar_client = SemanticScholarClient(api_key=api_key)
+        settings = load_settings()
+        _semantic_scholar_client = SemanticScholarClient(api_key=api_key or settings.semantic_scholar_api_key)
     return _semantic_scholar_client
 
 
@@ -281,6 +299,7 @@ async def search_alternate_source(
     Returns:
         List of normalized paper dictionaries
     """
+    _remember_alternate_source_error(source, None)
     try:
         return await _search_alternate_source_unchecked(
             query=query,
@@ -293,9 +312,44 @@ async def search_alternate_source(
             email=email,
         )
 
+    except RetryableOperationError as e:
+        _remember_alternate_source_error(
+            source,
+            SourceAdapterError(
+                source=source,
+                operation="search",
+                message=str(e),
+                kind="retryable",
+                retryable=True,
+                status_code=e.status_code,
+            ),
+        )
+        if e.status_code == 429:
+            logger.warning("%s rate limited by upstream API; returning empty results", source)
+        else:
+            logger.warning("Search failed for %s after retries: %s", source, e)
+        return []
+    except RateLimitError as e:
+        _remember_alternate_source_error(
+            source,
+            SourceAdapterError(
+                source=source,
+                operation="search",
+                message=str(e),
+                kind="retryable",
+                retryable=True,
+            ),
+        )
+        logger.warning("Search skipped for %s due to rate limiting: %s", source, e)
+        return []
     except Exception as e:
         logger.exception(f"Search failed for {source}: {e}")
         return []
+
+
+def get_last_alternate_source_error(source: str) -> SourceAdapterError | None:
+    """Return the last recoverable source failure for callers that need diagnostics."""
+    return (_last_alternate_source_errors.get() or {}).get(source)
 
 
 async def _search_alternate_source_unchecked(

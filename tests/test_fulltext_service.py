@@ -114,6 +114,74 @@ class TestFulltextService:
         assert any(link["url"] == "https://publisher.example.edu/paper.pdf" for link in result.pdf_links)
 
     @pytest.mark.asyncio
+    async def test_preserves_raw_extended_text_for_artifacts(self):
+        raw_text = "A" * 12050
+        mock_unpaywall = AsyncMock()
+        mock_unpaywall.get_oa_status.return_value = {"is_oa": False}
+        mock_core = AsyncMock()
+        mock_core.search.return_value = {"results": []}
+        mock_downloader = MagicMock()
+        mock_downloader.get_fulltext = AsyncMock(
+            return_value=FulltextResult(
+                text_content=raw_text,
+                pdf_links=[],
+                source_used=PDFSource.INSTITUTIONAL_RESOLVER,
+            )
+        )
+        mock_downloader.close = AsyncMock()
+        service = FulltextService(
+            europe_pmc_client_factory=lambda: AsyncMock(),
+            unpaywall_client_factory=lambda: mock_unpaywall,
+            core_client_factory=lambda: mock_core,
+            downloader_factory=lambda: mock_downloader,
+            figure_client_factory=None,
+        )
+
+        result = await service.retrieve(FulltextRequest(doi="10.1234/test", extended_sources=True))
+
+        assert result.raw_fulltext_content == raw_text
+        assert len(result.fulltext_content or "") < len(raw_text)
+        assert "characters truncated" in (result.fulltext_content or "")
+
+    @pytest.mark.asyncio
+    async def test_resolves_pmid_to_doi_before_unpaywall_lookup(self):
+        mock_europe_pmc = AsyncMock()
+        mock_europe_pmc.get_article.return_value = {
+            "pmid": "41817525",
+            "doi": "10.1001/jamanetworkopen.2026.1515",
+        }
+
+        mock_unpaywall = AsyncMock()
+        mock_unpaywall.get_oa_status.return_value = {
+            "is_oa": True,
+            "title": "JAMA OA Paper",
+            "oa_status": "gold",
+            "best_oa_location": {
+                "url_for_pdf": "https://jamanetwork.com/articlepdf/example.pdf",
+                "host_type": "publisher",
+                "version": "publishedVersion",
+            },
+            "oa_locations": [],
+        }
+        mock_core = AsyncMock()
+        mock_core.search.return_value = {"results": []}
+
+        service = FulltextService(
+            europe_pmc_client_factory=lambda: mock_europe_pmc,
+            unpaywall_client_factory=lambda: mock_unpaywall,
+            core_client_factory=lambda: mock_core,
+            downloader_factory=lambda: MagicMock(),
+            figure_client_factory=None,
+        )
+
+        result = await service.retrieve(FulltextRequest(pmid="41817525"))
+
+        mock_europe_pmc.get_article.assert_awaited_once_with("MED", "41817525", result_type="core")
+        mock_unpaywall.get_oa_status.assert_awaited_once_with("10.1001/jamanetworkopen.2026.1515")
+        assert result.doi == "10.1001/jamanetworkopen.2026.1515"
+        assert any(link["url"] == "https://jamanetwork.com/articlepdf/example.pdf" for link in result.pdf_links)
+
+    @pytest.mark.asyncio
     async def test_loads_figures_when_requested(self):
         mock_europe_pmc = AsyncMock()
         mock_europe_pmc.get_fulltext_xml.return_value = "<xml/>"
@@ -188,10 +256,7 @@ class TestFulltextService:
         assert "publisher article body" in (result.fulltext_content or "")
         assert result.fulltext_source_name == "Institutional (direct)"
         assert result.fulltext_provenance == "direct"
-        assert any(
-            link["url"] == "https://publisher.example/article/1"
-            for link in result.pdf_links
-        )
+        assert any(link["url"] == "https://publisher.example/article/1" for link in result.pdf_links)
         # CORE should be skipped once institutional succeeds
         mock_core.search.assert_not_called()
 

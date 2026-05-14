@@ -10,7 +10,7 @@ Extracted from unified.py to keep each module under 400 lines.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from pubmed_search.infrastructure.sources.openurl import (
     get_openurl_config,
@@ -39,6 +39,7 @@ if TYPE_CHECKING:
     from .unified_helpers import RelaxationResult, SearchDepthMetrics
 
 logger = logging.getLogger(__name__)
+DEFAULT_STRUCTURED_RESPONSE_MAX_CHARS = 500_000
 
 
 def _serialize_source_counts(
@@ -56,6 +57,26 @@ def _serialize_source_counts(
         rows = [make_source_count_row(source, count) for source, count in by_source.items()]
 
     return sort_source_count_rows(rows)
+
+
+def _format_source_warnings(source_errors: list[dict[str, Any]] | None) -> str | None:
+    """Render source-level partial failure diagnostics for markdown responses."""
+    if not source_errors:
+        return None
+
+    warning_parts = []
+    for error in source_errors:
+        source = error.get("source", "unknown")
+        status = error.get("status") or error.get("kind") or "error"
+        status_code = error.get("status_code")
+        suggestion = error.get("suggestion")
+        message = f"{source} {status}"
+        if status_code:
+            message += f" (HTTP {status_code})"
+        if suggestion:
+            message += f": {suggestion}"
+        warning_parts.append(message)
+    return f"**Source warnings**: {'; '.join(warning_parts)}"
 
 
 def _escape_tool_argument(value: str) -> str:
@@ -298,6 +319,7 @@ async def _format_unified_results(
     pubmed_total_count: int | None = None,
     icd_matches: list | None = None,
     include_trials: bool = True,
+    include_similarity_scores: bool = True,
     original_query: str = "",
     enhanced_entities: list[str] | None = None,
     relaxation_result: RelaxationResult | None = None,
@@ -306,6 +328,7 @@ async def _format_unified_results(
     source_api_counts: dict[str, tuple[int, int | None]] | None = None,
     source_disagreement: SourceDisagreement | None = None,
     reproducibility_score: ReproducibilityScore | None = None,
+    source_errors: list[dict[str, Any]] | None = None,
     research_context_preview: str | None = None,
     counts_first: bool = False,
 ) -> str:
@@ -375,6 +398,11 @@ async def _format_unified_results(
         output_parts.append(f"**Results**: {results_str}")
         output_parts.append("")
 
+    source_warning_text = _format_source_warnings(source_errors)
+    if source_warning_text:
+        output_parts.append(source_warning_text)
+        output_parts.append("")
+
     if counts_first and source_rows:
         output_parts.extend(_format_counts_first_section(source_rows, stats, next_actions))
 
@@ -415,7 +443,9 @@ async def _format_unified_results(
 
     for i, article in enumerate(articles, 1):
         # Article header
-        score_str = f" (score: {article.ranking_score:.2f})" if article.ranking_score else ""
+        score_str = (
+            f" (score: {article.ranking_score:.2f})" if include_similarity_scores and article.ranking_score else ""
+        )
         output_parts.append(f"### {i}. {article.title}{score_str}")
 
         # Identifiers
@@ -522,7 +552,7 @@ async def _format_unified_results(
                 output_parts.append(f"**Journal**: {', '.join(jm_parts)}")
 
         # Similarity score
-        if article.similarity_score is not None:
+        if include_similarity_scores and article.similarity_score is not None:
             sim_str = f"**Relevance**: {article.similarity_score:.0%}"
             if article.similarity_source:
                 sim_str += f" ({article.similarity_source})"
@@ -610,6 +640,146 @@ async def _format_unified_results(
     return "\n".join(output_parts)
 
 
+def _compact_article_payload(article: UnifiedArticle, *, include_scores: bool = True) -> dict[str, Any]:
+    """Build a small article preview for agent-facing structured output."""
+    best_oa_link = article.best_oa_link
+    publication_date = article.publication_date.isoformat() if article.publication_date else None
+    payload: dict[str, Any] = {
+        "title": article.title,
+        "pmid": article.pmid,
+        "doi": article.doi,
+        "pmc": article.pmc,
+        "journal": article.journal,
+        "year": article.year,
+        "publication_date": publication_date,
+        "article_type": article.article_type.value,
+        "open_access": article.has_open_access,
+        "oa_status": article.oa_status.value,
+        "pdf_available": bool(best_oa_link and best_oa_link.is_pdf),
+        "pdf_url": best_oa_link.url if best_oa_link and best_oa_link.is_pdf else None,
+    }
+    if include_scores:
+        if article.ranking_score is not None:
+            payload["score"] = round(article.ranking_score, 4)
+        elif article.similarity_score is not None:
+            payload["score"] = round(article.similarity_score, 4)
+    return payload
+
+
+def _article_payload(
+    article: UnifiedArticle,
+    *,
+    compact_output: bool,
+    include_scores: bool,
+) -> dict[str, Any]:
+    if compact_output:
+        return _compact_article_payload(article, include_scores=include_scores)
+
+    payload = article.to_dict()
+    if not include_scores:
+        payload.pop("_ranking_score", None)
+        payload.pop("similarity", None)
+    return payload
+
+
+def _serialize_with_response_cap(
+    payload: dict[str, Any],
+    *,
+    articles: list[UnifiedArticle],
+    stats: AggregationStats,
+    output_format: OutputFormat,
+    max_response_chars: int | None,
+    include_next_tools: bool,
+) -> str:
+    serialized = serialize_structured_payload(payload, output_format)
+    if max_response_chars is None or len(serialized) <= max_response_chars:
+        return serialized
+
+    total_available = max(len(articles), int(getattr(stats, "unique_articles", 0) or 0))
+    preview_count = min(len(articles), 3)
+    truncated_payload: dict[str, Any] = {
+        "tool": "unified_search",
+        "status": "truncated",
+        "reason": "response_size_exceeded",
+        "result_id": "last",
+        "returned_articles": preview_count,
+        "total_available": total_available,
+        "articles": [_compact_article_payload(article, include_scores=False) for article in articles[:preview_count]],
+        "source_counts": payload.get("source_counts", []),
+    }
+    if include_next_tools:
+        truncated_payload["next"] = (
+            "Use get_session_pmids(search_index=-1) or get_cached_article(pmid=...) to retrieve cached details."
+        )
+    if payload.get("artifact"):
+        truncated_payload["artifact"] = payload["artifact"]
+        if include_next_tools:
+            truncated_payload["next"] += " Full output is also available through the artifact locator."
+    if payload.get("source_errors"):
+        truncated_payload["source_errors"] = payload["source_errors"]
+
+    capped = serialize_structured_payload(truncated_payload, output_format)
+    while max_response_chars is not None and len(capped) > max_response_chars and preview_count > 0:
+        preview_count -= 1
+        truncated_payload["returned_articles"] = preview_count
+        truncated_payload["articles"] = [
+            _compact_article_payload(article, include_scores=False) for article in articles[:preview_count]
+        ]
+        capped = serialize_structured_payload(truncated_payload, output_format)
+
+    minimal_payload: dict[str, Any] | None = None
+    if max_response_chars is not None and len(capped) > max_response_chars:
+        minimal_payload = {"status": "truncated"}
+        if payload.get("source_errors"):
+            minimal_payload["source_errors"] = [
+                {
+                    key: error.get(key)
+                    for key in ("source", "status", "status_code", "suggestion")
+                    if error.get(key) not in (None, "", [])
+                }
+                for error in payload["source_errors"]
+                if isinstance(error, dict)
+            ]
+        if payload.get("artifact"):
+            artifact = payload["artifact"]
+            candidate_artifacts = [
+                {
+                    "artifact_id": artifact.get("artifact_id"),
+                    "artifact_uri": artifact.get("artifact_uri"),
+                    "primary_file": artifact.get("primary_file"),
+                    "read_via": artifact.get("read_via"),
+                },
+                {"artifact_id": artifact.get("artifact_id"), "artifact_uri": artifact.get("artifact_uri")},
+                {"artifact_id": artifact.get("artifact_id")},
+            ]
+            for candidate_artifact in candidate_artifacts:
+                minimal_payload["artifact"] = {
+                    key: value for key, value in candidate_artifact.items() if value not in (None, "", [])
+                }
+                capped = serialize_structured_payload(minimal_payload, output_format)
+                if max_response_chars is None or len(capped) <= max_response_chars:
+                    break
+            else:
+                minimal_payload.pop("artifact", None)
+                capped = serialize_structured_payload(minimal_payload, output_format)
+        else:
+            capped = serialize_structured_payload(minimal_payload, output_format)
+
+    if (
+        max_response_chars is not None
+        and len(capped) > max_response_chars
+        and payload.get("source_errors")
+        and minimal_payload is not None
+    ):
+        minimal_payload.pop("source_errors", None)
+        capped = serialize_structured_payload(minimal_payload, output_format)
+
+    if max_response_chars is not None and len(capped) > max_response_chars:
+        capped = serialize_structured_payload({"status": "truncated"}, output_format)
+
+    return capped
+
+
 def _format_as_json(
     articles: list[UnifiedArticle],
     analysis: AnalyzedQuery,
@@ -620,8 +790,16 @@ def _format_as_json(
     source_disagreement: SourceDisagreement | None = None,
     reproducibility_score: ReproducibilityScore | None = None,
     research_context: dict | None = None,
+    source_errors: list[dict[str, Any]] | None = None,
     counts_first: bool = False,
+    compact_output: bool = False,
+    include_analysis: bool = True,
+    include_similarity_scores: bool = True,
+    include_next_tools: bool = True,
+    include_section_provenance: bool = True,
+    max_response_chars: int | None = DEFAULT_STRUCTURED_RESPONSE_MAX_CHARS,
     output_format: OutputFormat = "json",
+    artifact_manifest: dict[str, Any] | None = None,
 ) -> str:
     """Format results as JSON or TOON for programmatic access."""
     source_rows = _serialize_source_counts(source_api_counts, stats)
@@ -630,16 +808,27 @@ def _format_as_json(
     next_tools, next_commands = finalize_next_tools(next_actions)
     result = {
         "tool": "unified_search",
-        "analysis": analysis.to_dict(),
         "statistics": stats.to_dict(),
-        "articles": [a.to_dict() for a in articles],
+        "articles": [
+            _article_payload(a, compact_output=compact_output, include_scores=include_similarity_scores)
+            for a in articles
+        ],
         "source_counts": source_rows,
-        "next_tools": next_tools,
-        "next_commands": next_commands,
     }
+    if include_analysis:
+        result["analysis"] = analysis.to_dict()
+    if include_next_tools:
+        result["next_tools"] = next_tools
+        result["next_commands"] = next_commands
+
+    if source_errors:
+        result["source_errors"] = source_errors
+
+    if artifact_manifest:
+        result["artifact"] = artifact_manifest
 
     # Add deep search metrics if available
-    if deep_search_metrics:
+    if include_analysis and deep_search_metrics:
         result["deep_search"] = {
             "enabled": True,
             "depth_score": deep_search_metrics.depth_score,
@@ -701,34 +890,44 @@ def _format_as_json(
         }
 
     # Source disagreement analysis
-    if source_disagreement:
+    if include_analysis and source_disagreement:
         result["source_disagreement"] = source_disagreement.to_dict()
 
     # Reproducibility score
-    if reproducibility_score:
+    if include_analysis and reproducibility_score:
         result["reproducibility"] = reproducibility_score.to_dict()
 
     if research_context:
         result["research_context"] = research_context
 
     if counts_first:
-        result["orientation"] = {
+        orientation: dict[str, Any] = {
             "mode": "counts_first",
             "source_counts": source_rows,
             "responded_sources": sum(1 for row in source_rows if int(row["returned"] or 0) > 0),
             "queried_sources": len(source_rows),
-            "next_actions": next_actions,
-            "next_tools": next_tools,
-            "next_commands": next_commands,
         }
+        if include_next_tools:
+            orientation["next_actions"] = next_actions
+            orientation["next_tools"] = next_tools
+            orientation["next_commands"] = next_commands
+        result["orientation"] = orientation
 
-    result["section_provenance"] = _build_unified_section_provenance(
-        source_rows,
-        include_research_context=research_context is not None,
-        include_deep_search=deep_search_metrics is not None,
-        include_relaxation=relaxation_result is not None,
-        include_source_disagreement=source_disagreement is not None,
-        include_reproducibility=reproducibility_score is not None,
+    if include_section_provenance:
+        result["section_provenance"] = _build_unified_section_provenance(
+            source_rows,
+            include_research_context=research_context is not None,
+            include_deep_search=include_analysis and deep_search_metrics is not None,
+            include_relaxation=relaxation_result is not None,
+            include_source_disagreement=include_analysis and source_disagreement is not None,
+            include_reproducibility=include_analysis and reproducibility_score is not None,
+        )
+
+    return _serialize_with_response_cap(
+        result,
+        articles=articles,
+        stats=stats,
+        output_format=output_format,
+        max_response_chars=max_response_chars,
+        include_next_tools=include_next_tools,
     )
-
-    return serialize_structured_payload(result, output_format)

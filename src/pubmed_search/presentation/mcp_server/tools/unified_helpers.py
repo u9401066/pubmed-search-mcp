@@ -279,8 +279,19 @@ _OPTION_FLAGS: dict[str, tuple[str, bool]] = {
     "no_oa": ("include_oa_links", False),
     "no_analysis": ("show_analysis", False),
     "no_scores": ("include_similarity_scores", False),
+    "no_next": ("include_next_tools", False),
+    "no_provenance": ("include_section_provenance", False),
     "no_relax": ("auto_relax", False),
     "shallow": ("deep_search", False),
+}
+_COMPACT_OPTION_FLAGS = {"compact", "minimal"}
+_COMPACT_OPTION_DEFAULTS: dict[str, bool] = {
+    "compact_output": True,
+    "show_analysis": False,
+    "include_similarity_scores": False,
+    "include_next_tools": False,
+    "include_section_provenance": False,
+    "deep_search": False,
 }
 
 
@@ -297,6 +308,9 @@ def _parse_options(options_str: str | None) -> dict[str, bool]:
         no_oa          → skip Unpaywall OA link enrichment
         no_analysis    → hide query analysis section in output
         no_scores      → hide similarity scores
+        compact        → emit compact structured JSON/TOON previews
+        no_next        → hide next-tool suggestions in structured output
+        no_provenance  → hide structured section provenance
         no_relax       → disable auto-relaxation on 0 results
         shallow        → disable deep search (faster, keyword-only)
 
@@ -310,11 +324,14 @@ def _parse_options(options_str: str | None) -> dict[str, bool]:
     result: dict[str, bool] = {}
 
     for flag in flags:
-        if flag in _OPTION_FLAGS:
+        if flag in _COMPACT_OPTION_FLAGS:
+            result.update(_COMPACT_OPTION_DEFAULTS)
+        elif flag in _OPTION_FLAGS:
             internal_key, value = _OPTION_FLAGS[flag]
             result[internal_key] = value
         else:
-            logger.warning(f"Unknown option flag: '{flag}' (available: {', '.join(sorted(_OPTION_FLAGS))})")
+            available = sorted([*_OPTION_FLAGS.keys(), *_COMPACT_OPTION_FLAGS])
+            logger.warning(f"Unknown option flag: '{flag}' (available: {', '.join(available)})")
 
     return result
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from pubmed_search.infrastructure.sources import (
@@ -11,9 +13,27 @@ from pubmed_search.infrastructure.sources import (
     cross_search,
     get_fulltext_parsed,
     get_fulltext_xml,
+    get_last_alternate_source_error,
     get_paper_from_any_source,
     search_alternate_source,
 )
+from pubmed_search.shared.async_utils import RetryableOperationError
+
+
+def test_semantic_scholar_client_uses_env_api_key(monkeypatch):
+    import pubmed_search.infrastructure.sources as sources_module
+
+    monkeypatch.setattr(sources_module, "_semantic_scholar_client", None)
+    monkeypatch.setenv("SEMANTIC_SCHOLAR_API_KEY", "s2-key")
+
+    with patch("pubmed_search.infrastructure.sources.semantic_scholar.SemanticScholarClient") as mock_client_cls:
+        mock_client = object()
+        mock_client_cls.return_value = mock_client
+
+        assert sources_module.get_semantic_scholar_client() is mock_client
+
+    mock_client_cls.assert_called_once_with(api_key="s2-key")
+
 
 # ============================================================
 # SearchSource enum
@@ -121,6 +141,70 @@ class TestSearchAlternateSource:
         mock_get.side_effect = Exception("fail")
         results = await search_alternate_source("test", "semantic_scholar")
         assert results == []
+
+    async def test_rate_limited_source_logs_warning_without_traceback(self, caplog):
+        caplog.set_level(logging.WARNING, logger="pubmed_search.infrastructure.sources")
+
+        with patch(
+            "pubmed_search.infrastructure.sources._search_alternate_source_unchecked",
+            new_callable=AsyncMock,
+            side_effect=RetryableOperationError("HTTP 429", status_code=429),
+        ):
+            results = await search_alternate_source("test", "semantic_scholar")
+
+        assert results == []
+        assert not [record for record in caplog.records if record.levelno >= logging.ERROR]
+        assert any("rate limited" in record.getMessage().lower() for record in caplog.records)
+        assert not any(record.exc_info for record in caplog.records)
+        error = get_last_alternate_source_error("semantic_scholar")
+        assert error is not None
+        assert error.status_code == 429
+        assert error.retryable is True
+
+    async def test_successful_source_call_clears_last_error(self):
+        with patch(
+            "pubmed_search.infrastructure.sources._search_alternate_source_unchecked",
+            new_callable=AsyncMock,
+            side_effect=RetryableOperationError("HTTP 429", status_code=429),
+        ):
+            await search_alternate_source("test", "semantic_scholar")
+
+        assert get_last_alternate_source_error("semantic_scholar") is not None
+
+        with patch(
+            "pubmed_search.infrastructure.sources._search_alternate_source_unchecked",
+            new_callable=AsyncMock,
+            return_value=[],
+        ):
+            await search_alternate_source("test", "semantic_scholar")
+
+        assert get_last_alternate_source_error("semantic_scholar") is None
+
+    async def test_last_source_error_is_task_local_for_concurrent_calls(self):
+        async def fake_unchecked(*, query, **kwargs):
+            del kwargs
+            if query == "fail":
+                raise RetryableOperationError("HTTP 429", status_code=429)
+            await asyncio.sleep(0.01)
+            return []
+
+        async def failed_call():
+            await search_alternate_source("fail", "semantic_scholar")
+            return get_last_alternate_source_error("semantic_scholar")
+
+        async def successful_call():
+            await search_alternate_source("ok", "semantic_scholar")
+            return get_last_alternate_source_error("semantic_scholar")
+
+        with patch(
+            "pubmed_search.infrastructure.sources._search_alternate_source_unchecked",
+            side_effect=fake_unchecked,
+        ):
+            failed_error, successful_error = await asyncio.gather(failed_call(), successful_call())
+
+        assert failed_error is not None
+        assert failed_error.status_code == 429
+        assert successful_error is None
 
     @patch("pubmed_search.infrastructure.sources.get_semantic_scholar_client")
     async def test_passes_params(self, mock_get):

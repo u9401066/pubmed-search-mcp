@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -20,10 +21,12 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
+from pubmed_search.application.session.artifacts import ArtifactStore
 from pubmed_search.shared.cache_substrate import CacheBackend, CacheStore, JsonFileCacheBackend, MemoryCacheBackend
 
 logger = logging.getLogger(__name__)
 MAX_SESSION_EVENT_LOG = 200
+_SAFE_SESSION_ID_RE = re.compile(r"^[A-Za-z0-9_.-]{1,80}$")
 
 
 def _utcnow_iso() -> str:
@@ -120,6 +123,7 @@ class ResearchSession:
     reading_list: dict[str, dict[str, Any]] = field(default_factory=dict)
     excluded_pmids: list[str] = field(default_factory=list)
     notes: dict[str, str] = field(default_factory=dict)
+    artifacts: list[dict[str, Any]] = field(default_factory=list)
 
     def touch(self) -> None:
         """Update the last modified timestamp."""
@@ -130,6 +134,7 @@ class ResearchSession:
         payload = dict(data)
         payload.setdefault("article_cache", {})
         payload.setdefault("event_log", [])
+        payload.setdefault("artifacts", [])
         return cls(**payload)
 
     def to_dict(self) -> dict[str, Any]:
@@ -236,6 +241,7 @@ class SessionManager:
     def __init__(self, data_dir: str | None = None, article_cache: ArticleCache | None = None):
         self.data_dir = Path(data_dir) if data_dir else None
         self.article_cache = article_cache or ArticleCache(cache_dir=str(self.data_dir) if self.data_dir else None)
+        self.artifact_store = ArtifactStore(self.data_dir / "artifacts") if self.data_dir else None
         self._sessions: dict[str, ResearchSession] = {}
         self._current_session_id: str | None = None
 
@@ -251,7 +257,16 @@ class SessionManager:
     def _get_session_file(self, session_id: str) -> Path:
         if self.data_dir is None:
             raise RuntimeError("data_dir not configured")
-        return self.data_dir / f"session_{session_id}.json"
+        if not _SAFE_SESSION_ID_RE.fullmatch(session_id):
+            msg = f"Unsafe session id: {session_id}"
+            raise ValueError(msg)
+        path = (self.data_dir / f"session_{session_id}.json").resolve()
+        try:
+            path.relative_to(self.data_dir.resolve())
+        except ValueError as exc:
+            msg = f"Session path escapes data directory: {path}"
+            raise ValueError(msg) from exc
+        return path
 
     def _load_sessions(self) -> None:
         sessions_file = self._get_sessions_file()
@@ -272,7 +287,11 @@ class SessionManager:
         logger.info("Loaded %s sessions", len(self._sessions))
 
     def _load_session(self, session_id: str) -> None:
-        session_file = self._get_session_file(session_id)
+        try:
+            session_file = self._get_session_file(session_id)
+        except ValueError as exc:
+            logger.warning("Skipping unsafe session id %s: %s", session_id, exc)
+            return
         if not session_file.exists():
             return
 
@@ -415,6 +434,10 @@ class SessionManager:
             return None
         return self._refresh_session_cache_view(session)
 
+    def get_session(self, session_id: str) -> ResearchSession | None:
+        """Return a persisted session by id without switching the active session."""
+        return self._get_session_for_artifact_lookup(session_id)
+
     def get_or_create_session(self, topic: str = "default") -> ResearchSession:
         session = self.get_current_session()
         if session is None:
@@ -552,6 +575,169 @@ class SessionManager:
         session.touch()
         self._refresh_session_cache_view(session)
         self._save_session(session)
+
+    def save_artifact(
+        self,
+        *,
+        tool: str,
+        kind: str,
+        files: dict[str, Any],
+        primary_file: str,
+        summary: dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Persist a tool output artifact and index its manifest in the active session."""
+        if self.artifact_store is None:
+            msg = "Artifact persistence requires SessionManager(data_dir=...)"
+            raise RuntimeError(msg)
+
+        session = self.get_or_create_session()
+        manifest = self.artifact_store.save(
+            session_id=session.session_id,
+            tool=tool,
+            kind=kind,
+            files=files,
+            primary_file=primary_file,
+            summary=summary,
+            metadata=metadata,
+        )
+        session.artifacts.append(manifest)
+        self._append_session_event(
+            session,
+            kind="artifact_saved",
+            message="Persistent MCP output artifact saved",
+            details={
+                "artifact_id": manifest["artifact_id"],
+                "tool": tool,
+                "kind": kind,
+                "primary_file": primary_file,
+            },
+        )
+        session.touch()
+        self._save_session(session)
+        return manifest
+
+    def list_artifacts(
+        self,
+        *,
+        session_id: str | None = None,
+        tool: str | None = None,
+        kind: str | None = None,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        """List recent artifact manifests from one session."""
+        session = self._get_session_for_artifact_lookup(session_id)
+        if session is None:
+            return []
+
+        artifacts = list(getattr(session, "artifacts", []))
+        if tool:
+            artifacts = [artifact for artifact in artifacts if artifact.get("tool") == tool]
+        if kind:
+            artifacts = [artifact for artifact in artifacts if artifact.get("kind") == kind]
+        if limit <= 0:
+            return []
+        return artifacts[-limit:]
+
+    def get_artifact_manifest(
+        self,
+        artifact_id: str,
+        *,
+        artifact_uri: str | None = None,
+        session_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Return one artifact manifest from a specific or active session."""
+        uri_session_id, uri_artifact_id = self._parse_artifact_uri(artifact_uri)
+        lookup_session_id = session_id or uri_session_id
+        lookup_artifact_id = uri_artifact_id or artifact_id
+        if not lookup_artifact_id:
+            return None
+
+        for manifest in self.list_artifacts(session_id=lookup_session_id, limit=10_000):
+            if manifest.get("artifact_id") == lookup_artifact_id:
+                return manifest
+        return None
+
+    def _get_session_for_artifact_lookup(self, session_id: str | None = None) -> ResearchSession | None:
+        if not session_id:
+            return self.get_current_session()
+        if not _SAFE_SESSION_ID_RE.fullmatch(session_id):
+            msg = f"Unsafe session id: {session_id}"
+            raise ValueError(msg)
+
+        session = self._sessions.get(session_id)
+        if session is None and self.data_dir is not None:
+            self._load_session(session_id)
+            session = self._sessions.get(session_id)
+        if session is None:
+            return None
+        return self._refresh_session_cache_view(session)
+
+    @staticmethod
+    def _parse_artifact_uri(artifact_uri: str | None) -> tuple[str | None, str | None]:
+        if not artifact_uri:
+            return None, None
+        value = artifact_uri.strip()
+        if not value.startswith("artifact://"):
+            return None, value or None
+        parts = [part for part in value.removeprefix("artifact://").split("/") if part]
+        if len(parts) >= 2:
+            return parts[0], parts[-1]
+        if parts:
+            return None, parts[0]
+        return None, None
+
+    def read_artifact(
+        self,
+        artifact_id: str = "",
+        *,
+        artifact_uri: str | None = None,
+        session_id: str | None = None,
+        file_name: str | None = None,
+        max_chars: int = 200_000,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """Read an artifact file for remote clients that cannot access local paths."""
+        if self.artifact_store is None:
+            return {"success": False, "error": "Artifact persistence is not configured"}
+
+        try:
+            manifest = self.get_artifact_manifest(
+                artifact_id,
+                artifact_uri=artifact_uri,
+                session_id=session_id,
+            )
+        except Exception as exc:
+            return {"success": False, "error": str(exc)}
+        if manifest is None:
+            return {"success": False, "error": f"Artifact not found: {artifact_uri or artifact_id}"}
+
+        try:
+            file_info, content = self.artifact_store.read_file(manifest, file_name=file_name)
+        except Exception as exc:
+            return {"success": False, "error": str(exc), "artifact": manifest}
+
+        truncated = False
+        start = max(offset, 0)
+        content = content[start:] if start <= len(content) else ""
+        next_offset: int | None = None
+        if max_chars > 0 and len(content) > max_chars:
+            content = content[:max_chars]
+            truncated = True
+            next_offset = start + max_chars
+
+        return {
+            "success": True,
+            "artifact": manifest,
+            "file": {
+                "name": file_name or manifest.get("primary_file"),
+                **file_info,
+            },
+            "content": content,
+            "offset": start,
+            "next_offset": next_offset,
+            "truncated": truncated,
+        }
 
     def get_session_event_log(
         self,

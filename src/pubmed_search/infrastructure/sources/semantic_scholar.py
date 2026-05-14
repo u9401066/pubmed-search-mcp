@@ -24,6 +24,7 @@ from pubmed_search.infrastructure.sources.official_generated_clients import (
     OfficialSemanticScholarGeneratedClient,
     SemanticScholarSearchRequest,
 )
+from pubmed_search.shared.async_utils import RetryableOperationError
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +64,11 @@ DEFAULT_AUTHOR_FIELDS = [
 ]
 
 
+def _raise_retryable_error(error: RetryableOperationError | None) -> None:
+    if error is not None:
+        raise error
+
+
 class SemanticScholarClient(BaseAPIClient):
     """
     Semantic Scholar API client.
@@ -79,13 +85,13 @@ class SemanticScholarClient(BaseAPIClient):
         Initialize client.
 
         Args:
-            api_key: Optional S2 API key (increases rate limit from 100 to 1000 req/s)
+            api_key: Optional S2 API key for higher Semantic Scholar quota
             timeout: Request timeout in seconds
         """
         self._api_key = api_key
         super().__init__(
             timeout=timeout,
-            min_interval=0.5,
+            min_interval=0.5 if api_key else 1.0,
             headers={
                 "User-Agent": "pubmed-search-mcp/1.0",
                 "Accept": "application/json",
@@ -156,11 +162,14 @@ class SemanticScholarClient(BaseAPIClient):
             request = SemanticScholarSearchRequest.model_validate(params)
             response = await self._official_client.search_papers(request)
             if response is None:
+                _raise_retryable_error(self.last_retryable_error)
                 return []
 
             # Normalize to common format
             return [self._normalize_paper(paper.model_dump(exclude_none=True)) for paper in response.data]
 
+        except RetryableOperationError:
+            raise
         except Exception as e:
             logger.exception(f"Semantic Scholar search failed: {e}")
             return []

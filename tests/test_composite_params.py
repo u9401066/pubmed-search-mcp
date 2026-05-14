@@ -123,6 +123,23 @@ class TestParseOptions:
         result = _parse_options("no_scores")
         assert result["include_similarity_scores"] is False
 
+    def test_no_next(self):
+        result = _parse_options("no_next")
+        assert result["include_next_tools"] is False
+
+    def test_no_provenance(self):
+        result = _parse_options("no_provenance")
+        assert result["include_section_provenance"] is False
+
+    def test_compact_expands_to_safe_structured_defaults(self):
+        result = _parse_options("compact")
+        assert result["compact_output"] is True
+        assert result["show_analysis"] is False
+        assert result["include_similarity_scores"] is False
+        assert result["include_next_tools"] is False
+        assert result["include_section_provenance"] is False
+        assert result["deep_search"] is False
+
     def test_no_relax(self):
         result = _parse_options("no_relax")
         assert result["auto_relax"] is False

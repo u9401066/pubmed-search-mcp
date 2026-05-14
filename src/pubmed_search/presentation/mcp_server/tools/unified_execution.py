@@ -78,6 +78,30 @@ class UnifiedSearchExecutionResult:
     research_context_preview: str | None
     research_context_data: dict[str, Any] | None
     prefetched_trials: list[Any] | None
+    source_errors: list[dict[str, Any]]
+
+
+def _source_error_payload(error: Any) -> dict[str, Any]:
+    """Serialize one source adapter error for agent-facing diagnostics."""
+    status_code = getattr(error, "status_code", None)
+    source = str(getattr(error, "source", "unknown"))
+    payload: dict[str, Any] = {
+        "source": source,
+        "operation": str(getattr(error, "operation", "search")),
+        "message": str(getattr(error, "message", "")),
+        "kind": str(getattr(error, "kind", "unexpected")),
+        "retryable": bool(getattr(error, "retryable", False)),
+    }
+    if status_code is not None:
+        payload["status_code"] = status_code
+    if source == "semantic_scholar" and status_code == 429:
+        payload["status"] = "rate_limited"
+        payload["suggestion"] = (
+            'Set S2_API_KEY/SEMANTIC_SCHOLAR_API_KEY, retry later, or use sources="auto,-semantic_scholar".'
+        )
+    else:
+        payload["status"] = "error"
+    return payload
 
 
 def _allows_preprint_articles(*, include_preprints: bool, dispatch_sources: list[str]) -> bool:
@@ -133,6 +157,7 @@ async def execute_unified_search(
     source_api_counts: dict[str, tuple[int, int | None]] = {}
     deep_search_metrics: SearchDepthMetrics | None = None
     relaxation_result: RelaxationResult | None = None
+    source_errors: list[dict[str, Any]] = []
 
     clinical_trials_task: asyncio.Task | None = None
     if not is_structured_output_format(request.output_format):
@@ -143,6 +168,7 @@ async def execute_unified_search(
             clinical_trials_task = asyncio.create_task(search_related_trials(trial_query, limit=3))
             parent_task = asyncio.current_task()
             if parent_task is not None:
+
                 def _cancel_orphaned_trials(_completed_parent: asyncio.Task[Any]) -> None:
                     if clinical_trials_task is not None and not clinical_trials_task.done():
                         clinical_trials_task.cancel()
@@ -180,7 +206,13 @@ async def execute_unified_search(
 
         await progress(4, 10, f"Deep search: {len(enhanced_query.strategies)} strategies...")
         logger.info("Executing DEEP SEARCH with %s strategies", len(enhanced_query.strategies))
-        all_results, deep_search_metrics, pubmed_total_count, source_api_counts = await _execute_deep_search(
+        (
+            all_results,
+            deep_search_metrics,
+            pubmed_total_count,
+            source_api_counts,
+            deep_source_errors,
+        ) = await _execute_deep_search(
             searcher,
             enhanced_query,
             request.limit,
@@ -188,6 +220,9 @@ async def execute_unified_search(
             plan.effective_max_year,
             request.advanced_filters,
         )
+        for error in deep_source_errors:
+            logger.warning("Deep search source warning: %s", format_source_adapter_error(error))
+            source_errors.append(_source_error_payload(error))
         logger.info(
             "Deep search: %s strategies, %s with results, depth score: %.0f",
             deep_search_metrics.strategies_executed,
@@ -210,7 +245,9 @@ async def execute_unified_search(
         )
         for result in search_results:
             for error in result.errors:
-                logger.error("Search failed: %s", format_source_adapter_error(error))
+                log_method = logger.warning if error.retryable else logger.error
+                log_method("Search source warning: %s", format_source_adapter_error(error))
+                source_errors.append(_source_error_payload(error))
 
             articles = result.items
             raw_total_count = result.metadata.get("total_available")
@@ -295,30 +332,32 @@ async def execute_unified_search(
         _enrich_with_similarity_scores(ranked, plan.query)
 
     source_disagreement = None
-    if len(source_api_counts) > 1:
+    if request.show_analysis and len(source_api_counts) > 1:
         from pubmed_search.application.search.ranking_algorithms import analyze_source_disagreement
 
         source_disagreement = analyze_source_disagreement(ranked)
 
-    from pubmed_search.application.search.reproducibility import calculate_reproducibility
+    reproducibility = None
+    if request.show_analysis:
+        from pubmed_search.application.search.reproducibility import calculate_reproducibility
 
-    sources_queried_list = (
-        list(source_api_counts.keys())
-        if source_api_counts
-        else [source for source in plan.dispatch_sources if source != "crossref"]
-    )
-    sources_responded_list = (
-        [source for source in sources_queried_list if source_api_counts.get(source, (0, None))[0] > 0]
-        if source_api_counts
-        else sources_queried_list
-    )
-    reproducibility = calculate_reproducibility(
-        query=plan.query,
-        sources_queried=sources_queried_list,
-        sources_responded=sources_responded_list,
-        articles=ranked,
-        has_source_counts=bool(source_api_counts),
-    )
+        sources_queried_list = (
+            list(source_api_counts.keys())
+            if source_api_counts
+            else [source for source in plan.dispatch_sources if source != "crossref"]
+        )
+        sources_responded_list = (
+            [source for source in sources_queried_list if source_api_counts.get(source, (0, None))[0] > 0]
+            if source_api_counts
+            else sources_queried_list
+        )
+        reproducibility = calculate_reproducibility(
+            query=plan.query,
+            sources_queried=sources_queried_list,
+            sources_responded=sources_responded_list,
+            articles=ranked,
+            has_source_counts=bool(source_api_counts),
+        )
 
     research_context_preview: str | None = None
     research_context_data: dict[str, Any] | None = None
@@ -364,6 +403,7 @@ async def execute_unified_search(
         research_context_preview=research_context_preview,
         research_context_data=research_context_data,
         prefetched_trials=prefetched_trials,
+        source_errors=source_errors,
     )
 
 

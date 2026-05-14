@@ -35,6 +35,7 @@ from pubmed_search.application.fulltext import FulltextRequest, FulltextService
 from pubmed_search.infrastructure.sources import get_europe_pmc_client
 from pubmed_search.infrastructure.sources.core import get_core_client
 from pubmed_search.infrastructure.sources.unpaywall import get_unpaywall_client
+from pubmed_search.shared.settings import load_settings
 
 from ._common import InputNormalizer, ResponseFormatter
 from .agent_output import (
@@ -49,6 +50,7 @@ from .agent_output import (
     serialize_structured_payload,
     sort_source_count_rows,
 )
+from .artifact_memory import artifact_markdown_note, artifact_persistence_enabled, persist_tool_artifact
 from .tool_runtime import safe_log, safe_report_progress
 
 if TYPE_CHECKING:
@@ -158,6 +160,7 @@ def _format_get_fulltext_json(
     include_figures: bool,
     figures: list[dict[str, Any]],
     output_format: OutputFormat = "json",
+    artifact_manifest: dict[str, Any] | None = None,
 ) -> str:
     """Format get_fulltext as an agent-oriented JSON or TOON envelope."""
     section_provenance: dict[str, dict[str, Any]] = {
@@ -223,7 +226,91 @@ def _format_get_fulltext_json(
         "figures": figures,
         "section_provenance": section_provenance,
     }
+    if artifact_manifest:
+        payload["artifact"] = artifact_manifest
     return serialize_structured_payload(payload, output_format)
+
+
+def _artifact_read_hint(artifact: dict[str, Any] | None) -> str:
+    if not artifact:
+        return 'read_session(action="artifact", artifact_id="...")'
+    return str(
+        artifact.get("read_via") or f'read_session(action="artifact", artifact_id="{artifact.get("artifact_id", "")}")'
+    )
+
+
+def _truncate_inline_fulltext(text: str, max_chars: int, artifact: dict[str, Any] | None) -> str:
+    if max_chars <= 0 or len(text) <= max_chars:
+        return text
+    omitted = len(text) - max_chars
+    artifact_id = str((artifact or {}).get("artifact_id") or "")
+    artifact_note = f" Artifact: `{artifact_id}`." if artifact_id else ""
+    return (
+        text[:max_chars]
+        + f"\n\n_... {omitted} characters omitted from inline response.{artifact_note} "
+        + f"Use `{_artifact_read_hint(artifact)}` for the saved full content._"
+    )
+
+
+def _render_fulltext_content_for_artifact(
+    content_sections: list[dict[str, Any]],
+    fallback: str | None,
+) -> str | None:
+    """Render full section text for saved artifacts without inline preview truncation."""
+    rendered_sections: list[str] = []
+    for section in content_sections:
+        content = str(section.get("content") or "")
+        if not content:
+            continue
+        title = str(section.get("title") or "Untitled Section")
+        rendered_sections.append(f"### {title}\n\n{content}")
+    if rendered_sections:
+        return "\n\n".join(rendered_sections)
+    return fallback
+
+
+def _limit_fulltext_payload_for_response(
+    payload_kwargs: dict[str, Any],
+    *,
+    artifact: dict[str, Any] | None,
+    max_chars: int,
+) -> dict[str, Any]:
+    if not artifact or max_chars <= 0:
+        return payload_kwargs
+
+    content = str(payload_kwargs.get("fulltext_content") or "")
+    section_chars = sum(len(str(section.get("content", ""))) for section in payload_kwargs.get("content_sections", []))
+    if len(content) + section_chars <= max_chars:
+        return payload_kwargs
+
+    preview_source = content
+    if not preview_source:
+        preview_source = "\n\n".join(
+            str(section.get("content", "")) for section in payload_kwargs.get("content_sections", [])
+        )
+    preview = _truncate_inline_fulltext(preview_source, max_chars, artifact)
+    limited = dict(payload_kwargs)
+    limited["fulltext_content"] = preview
+    limited["content_sections"] = [{"title": "Inline Preview", "content": preview}] if preview else []
+    return limited
+
+
+def _limit_fulltext_markdown_for_response(
+    output: str,
+    *,
+    artifact: dict[str, Any] | None,
+    max_chars: int,
+) -> str:
+    if not artifact or max_chars <= 0 or len(output) <= max_chars:
+        return output
+    omitted = len(output) - max_chars
+    artifact_id = str(artifact.get("artifact_id") or "")
+    artifact_note = f" Artifact: `{artifact_id}`." if artifact_id else ""
+    return (
+        output[:max_chars]
+        + f"\n\n_... {omitted} characters omitted from inline response.{artifact_note} "
+        + f"Use `{_artifact_read_hint(artifact)}` for the saved full content._\n"
+    )
 
 
 def _format_text_mined_terms_structured(
@@ -573,6 +660,7 @@ def register_europe_pmc_tools(mcp: FastMCP):
 
         await _progress(1, 6, "Resolving article identifiers...")
         normalized_output_format = normalize_output_format(output_format)
+        settings = load_settings()
 
         # Phase 2.2: Smart identifier detection
         detected_pmcid = pmcid
@@ -627,12 +715,8 @@ def register_europe_pmc_tools(mcp: FastMCP):
         from pubmed_search.infrastructure.sources.institutional_fulltext import (
             InstitutionalFulltextClient,
         )
-        from pubmed_search.shared.settings import load_settings
 
-        _settings = load_settings()
-        _institutional_factory = (
-            InstitutionalFulltextClient if _settings.institutional_direct_fetch else None
-        )
+        _institutional_factory = InstitutionalFulltextClient if settings.institutional_direct_fetch else None
 
         service = FulltextService(
             europe_pmc_client_factory=get_europe_pmc_client,
@@ -656,6 +740,9 @@ def register_europe_pmc_tools(mcp: FastMCP):
             progress=_progress,
             log=_log,
         )
+        resolved_pmcid = retrieval.pmcid or (str(detected_pmcid) if detected_pmcid else None)
+        resolved_pmid = retrieval.pmid or (str(detected_pmid) if detected_pmid else None)
+        resolved_doi = retrieval.doi or (str(detected_doi) if detected_doi else None)
 
         # Keep the main service as the primary path, then fall back to
         # multi-source PDF retrieval only when the service has not already
@@ -676,9 +763,9 @@ def register_europe_pmc_tools(mcp: FastMCP):
                 downloader = FulltextDownloader()
                 try:
                     assisted = await downloader.get_fulltext(
-                        pmid=str(detected_pmid) if detected_pmid else None,
-                        pmcid=str(detected_pmcid) if detected_pmcid else None,
-                        doi=str(detected_doi) if detected_doi else None,
+                        pmid=resolved_pmid,
+                        pmcid=resolved_pmcid,
+                        doi=resolved_doi,
                         strategy="extract_text",
                         allow_browser_session=allow_browser_session,
                     )
@@ -702,11 +789,13 @@ def register_europe_pmc_tools(mcp: FastMCP):
                     )
 
                 if assisted.text_content:
-                    retrieval.fulltext_content = assisted.text_content
+                    retrieval.raw_fulltext_content = assisted.text_content
+                    extracted_text = FulltextService._truncate_extracted_text(assisted.text_content)
+                    retrieval.fulltext_content = extracted_text
                     retrieval.content_sections = [
                         {
                             "title": "Extracted PDF Text",
-                            "content": assisted.text_content,
+                            "content": extracted_text,
                         }
                     ]
                     if assisted.source_used:
@@ -746,8 +835,8 @@ def register_europe_pmc_tools(mcp: FastMCP):
                 await _log("warning", f"PDF retrieval fallback failed: {e!s}")
 
         next_tools, next_commands = _build_fulltext_next_tools(
-            pmcid=str(detected_pmcid) if detected_pmcid else None,
-            pmid=str(detected_pmid) if detected_pmid else None,
+            pmcid=resolved_pmcid,
+            pmid=resolved_pmid,
             include_figures=include_figures,
             output_format=normalized_output_format,
         )
@@ -758,32 +847,110 @@ def register_europe_pmc_tools(mcp: FastMCP):
             pdf_links=exposed_pdf_links,
             figures_count=len(retrieval.figures),
         )
+        fulltext_payload_kwargs: dict[str, Any] = {
+            "identifier": identifier,
+            "pmcid": resolved_pmcid,
+            "pmid": resolved_pmid,
+            "doi": resolved_doi,
+            "title": retrieval.title,
+            "fulltext_content": retrieval.fulltext_content,
+            "content_sections": retrieval.content_sections,
+            "pdf_links": exposed_pdf_links,
+            "sources_tried": retrieval.sources_tried,
+            "source_counts": source_counts,
+            "next_tools": next_tools,
+            "next_commands": next_commands,
+            "fulltext_source": retrieval.fulltext_source_name,
+            "fulltext_canonical_host": retrieval.fulltext_canonical_host,
+            "fulltext_provenance": retrieval.fulltext_provenance,
+            "include_figures": include_figures,
+            "figures": retrieval.figures,
+        }
+        raw_fulltext_content = getattr(retrieval, "raw_fulltext_content", None)
+        artifact_fulltext_content = (
+            raw_fulltext_content
+            if raw_fulltext_content and raw_fulltext_content != retrieval.fulltext_content
+            else _render_fulltext_content_for_artifact(retrieval.content_sections, retrieval.fulltext_content)
+        )
+        artifact_content_sections = retrieval.content_sections
+        if raw_fulltext_content and raw_fulltext_content != retrieval.fulltext_content:
+            artifact_content_sections = [{"title": "Full Text", "content": raw_fulltext_content}]
+        artifact_payload_kwargs = {
+            **fulltext_payload_kwargs,
+            "fulltext_content": artifact_fulltext_content,
+            "content_sections": artifact_content_sections,
+        }
+        raw_content_files = (
+            {"raw_content.txt": raw_fulltext_content}
+            if raw_fulltext_content and raw_fulltext_content != retrieval.fulltext_content
+            else {}
+        )
 
         # === BUILD OUTPUT ===
         if is_structured_output_format(normalized_output_format):
+            artifact = None
+            if artifact_persistence_enabled():
+                try:
+                    primary_file = f"fulltext.{normalized_output_format}"
+                    fulltext_payload = _format_get_fulltext_json(
+                        **artifact_payload_kwargs,
+                        output_format=normalized_output_format,
+                    )
+                    artifact = persist_tool_artifact(
+                        tool="get_fulltext",
+                        kind="fulltext",
+                        files={
+                            primary_file: fulltext_payload,
+                            "links.json": exposed_pdf_links,
+                            "provenance.json": {
+                                "identifiers": {
+                                    "identifier": identifier,
+                                    "pmcid": resolved_pmcid,
+                                    "pmid": resolved_pmid,
+                                    "doi": resolved_doi,
+                                },
+                                "sources_tried": retrieval.sources_tried,
+                                "source_counts": source_counts,
+                                "fulltext_source": retrieval.fulltext_source_name,
+                                "fulltext_canonical_host": retrieval.fulltext_canonical_host,
+                                "fulltext_provenance": retrieval.fulltext_provenance,
+                            },
+                            **raw_content_files,
+                        },
+                        primary_file=primary_file,
+                        summary={
+                            "title": retrieval.title,
+                            "pmcid": resolved_pmcid,
+                            "pmid": resolved_pmid,
+                            "doi": resolved_doi,
+                            "fulltext_available": bool(retrieval.fulltext_content),
+                            "pdf_links": len(exposed_pdf_links),
+                        },
+                        metadata={
+                            "output_format": normalized_output_format,
+                            "include_pdf_links": include_pdf_links,
+                            "include_figures": include_figures,
+                            "extended_sources": extended_sources,
+                            "fulltext_source": retrieval.fulltext_source_name,
+                            "fulltext_canonical_host": retrieval.fulltext_canonical_host,
+                            "fulltext_provenance": retrieval.fulltext_provenance,
+                        },
+                    )
+                except Exception as exc:
+                    logger.warning("Failed to prepare get_fulltext artifact payload: %s", exc)
+            response_payload_kwargs = _limit_fulltext_payload_for_response(
+                fulltext_payload_kwargs,
+                artifact=artifact,
+                max_chars=settings.fulltext_inline_max_chars,
+            )
             return _format_get_fulltext_json(
-                identifier=identifier,
-                pmcid=str(detected_pmcid) if detected_pmcid else None,
-                pmid=str(detected_pmid) if detected_pmid else None,
-                doi=str(detected_doi) if detected_doi else None,
-                title=retrieval.title,
-                fulltext_content=retrieval.fulltext_content,
-                content_sections=retrieval.content_sections,
-                pdf_links=exposed_pdf_links,
-                sources_tried=retrieval.sources_tried,
-                source_counts=source_counts,
-                next_tools=next_tools,
-                next_commands=next_commands,
-                fulltext_source=retrieval.fulltext_source_name,
-                fulltext_canonical_host=retrieval.fulltext_canonical_host,
-                fulltext_provenance=retrieval.fulltext_provenance,
-                include_figures=include_figures,
-                figures=retrieval.figures,
+                **response_payload_kwargs,
                 output_format=normalized_output_format,
+                artifact_manifest=artifact,
             )
 
         if not retrieval.fulltext_content and not retrieval.pdf_links:
-            return ResponseFormatter.no_results(
+            no_results_response = ResponseFormatter.no_results(
                 query=f"pmcid={detected_pmcid}, pmid={detected_pmid}, doi={detected_doi}",
                 suggestions=[
                     "Article may not be open access",
@@ -794,6 +961,35 @@ def register_europe_pmc_tools(mcp: FastMCP):
                 output_format=normalized_output_format,
                 tool_name="get_fulltext",
             )
+            artifact = None
+            if artifact_persistence_enabled():
+                artifact = persist_tool_artifact(
+                    tool="get_fulltext",
+                    kind="fulltext",
+                    files={
+                        "response.md": no_results_response,
+                        "provenance.json": {
+                            "identifiers": {
+                                "identifier": identifier,
+                                "pmcid": resolved_pmcid,
+                                "pmid": resolved_pmid,
+                                "doi": resolved_doi,
+                            },
+                            "sources_tried": retrieval.sources_tried,
+                            "source_counts": source_counts,
+                        },
+                    },
+                    primary_file="response.md",
+                    summary={
+                        "pmcid": resolved_pmcid,
+                        "pmid": resolved_pmid,
+                        "doi": resolved_doi,
+                        "fulltext_available": False,
+                        "pdf_links": 0,
+                    },
+                    metadata={"output_format": normalized_output_format},
+                )
+            return no_results_response + artifact_markdown_note(artifact)
 
         # Format output
         await _progress(6, 6, "Formatting fulltext response...")
@@ -847,7 +1043,62 @@ def register_europe_pmc_tools(mcp: FastMCP):
                 if fig.get("image_url"):
                     output += f"**Image URL:** {fig['image_url']}\n\n"
 
-        return output
+        artifact = None
+        if artifact_persistence_enabled():
+            try:
+                structured_payload = _format_get_fulltext_json(
+                    **artifact_payload_kwargs,
+                    output_format="json",
+                )
+                artifact = persist_tool_artifact(
+                    tool="get_fulltext",
+                    kind="fulltext",
+                    files={
+                        "fulltext.md": output,
+                        "payload.json": structured_payload,
+                        "links.json": exposed_pdf_links,
+                        "provenance.json": {
+                            "identifiers": {
+                                "identifier": identifier,
+                                "pmcid": resolved_pmcid,
+                                "pmid": resolved_pmid,
+                                "doi": resolved_doi,
+                            },
+                            "sources_tried": retrieval.sources_tried,
+                            "source_counts": source_counts,
+                            "fulltext_source": retrieval.fulltext_source_name,
+                            "fulltext_canonical_host": retrieval.fulltext_canonical_host,
+                            "fulltext_provenance": retrieval.fulltext_provenance,
+                        },
+                        **raw_content_files,
+                    },
+                    primary_file="payload.json",
+                    summary={
+                        "title": retrieval.title,
+                        "pmcid": resolved_pmcid,
+                        "pmid": resolved_pmid,
+                        "doi": resolved_doi,
+                        "fulltext_available": bool(retrieval.fulltext_content),
+                        "pdf_links": len(exposed_pdf_links),
+                    },
+                    metadata={
+                        "output_format": normalized_output_format,
+                        "include_pdf_links": include_pdf_links,
+                        "include_figures": include_figures,
+                        "extended_sources": extended_sources,
+                        "fulltext_source": retrieval.fulltext_source_name,
+                        "fulltext_canonical_host": retrieval.fulltext_canonical_host,
+                        "fulltext_provenance": retrieval.fulltext_provenance,
+                    },
+                )
+            except Exception as exc:
+                logger.warning("Failed to prepare get_fulltext artifact payload: %s", exc)
+        response_output = _limit_fulltext_markdown_for_response(
+            output,
+            artifact=artifact,
+            max_chars=settings.fulltext_inline_max_chars,
+        )
+        return response_output + artifact_markdown_note(artifact)
 
     # NOTE: get_fulltext_xml is NOT registered as a tool.
     # Use get_fulltext instead - it provides better parsed output.

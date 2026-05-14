@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from .artifacts import ArtifactStore
 from .manager import (
     MAX_SESSION_EVENT_LOG,
     ArticleCache,
@@ -13,6 +14,7 @@ from .manager import (
 
 __all__ = [
     "ArticleCache",
+    "ArtifactStore",
     "CachedArticle",
     "MAX_SESSION_EVENT_LOG",
     "ResearchSession",

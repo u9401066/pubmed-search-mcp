@@ -5,8 +5,10 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
+from pubmed_search.application.session.manager import SessionManager
 from pubmed_search.presentation.mcp_server.session_tools import (
     SESSION_RESOURCE_URIS,
     notify_session_resources_updated,
@@ -86,7 +88,13 @@ class TestSessionToolRegistration:
     def test_registers_read_session_facade(self):
         sm = MagicMock()
         tools = _capture_tools(register_session_tools, sm)
-        assert {"read_session", "get_session_pmids", "get_cached_article", "get_session_summary", "get_session_log"} <= set(tools)
+        assert {
+            "read_session",
+            "get_session_pmids",
+            "get_cached_article",
+            "get_session_summary",
+            "get_session_log",
+        } <= set(tools)
 
 
 # ============================================================
@@ -135,7 +143,9 @@ class TestReadSession:
         assert "Unknown session action" in result["error"]
 
     async def test_log_action(self):
-        session = _make_session(search_history=[{"query": "test", "pmids": ["111"], "timestamp": "2024-01-01T00:00:00Z"}])
+        session = _make_session(
+            search_history=[{"query": "test", "pmids": ["111"], "timestamp": "2024-01-01T00:00:00Z"}]
+        )
         session.event_log = [
             {
                 "timestamp": "2024-01-01T00:00:00Z",
@@ -152,6 +162,93 @@ class TestReadSession:
         assert result["success"] is True
         assert result["events"][0]["kind"] == "search_recorded"
         assert result["search_history"][0]["query"] == "test"
+
+    async def test_artifact_action_reads_persisted_artifact(self, tmp_path):
+        manager = SessionManager(data_dir=str(tmp_path))
+        manifest = manager.save_artifact(
+            tool="unified_search",
+            kind="search_results",
+            files={"results.json": {"tool": "unified_search", "articles": []}, "notes.md": "abcdef"},
+            primary_file="results.json",
+        )
+        fn = _capture_tools(register_session_tools, manager)["read_session"]
+
+        result = json.loads(fn(action="artifact", artifact_id=manifest["artifact_id"]))
+
+        assert result["success"] is True
+        assert result["artifact"]["artifact_id"] == manifest["artifact_id"]
+        assert "local_path" not in result["artifact"]
+        assert "path" not in result["file"]
+        assert json.loads(result["content"])["tool"] == "unified_search"
+
+        page = json.loads(
+            fn(
+                action="artifact",
+                artifact_uri=manifest["artifact_uri"],
+                artifact_file="notes.md",
+                max_chars=3,
+                offset=2,
+            )
+        )
+        assert page["content"] == "cde"
+        assert page["next_offset"] == 5
+
+        local_page = json.loads(
+            fn(
+                action="artifact",
+                artifact_id=manifest["artifact_id"],
+                include_local_paths=True,
+            )
+        )
+        assert "local_path" in local_page["artifact"]
+        assert "path" in local_page["file"]
+
+    async def test_list_artifacts_action(self, tmp_path):
+        manager = SessionManager(data_dir=str(tmp_path))
+        manager.save_artifact(
+            tool="get_fulltext",
+            kind="fulltext",
+            files={"fulltext.md": "Body"},
+            primary_file="fulltext.md",
+        )
+        fn = _capture_tools(register_session_tools, manager)["read_session"]
+
+        result = json.loads(fn(action="list_artifacts"))
+
+        assert result["success"] is True
+        assert result["total_artifacts"] == 1
+        assert result["artifacts"][0]["tool"] == "get_fulltext"
+        assert "local_path" not in result["artifacts"][0]
+
+        local_result = json.loads(fn(action="list_artifacts", include_local_paths=True))
+        assert "local_path" in local_result["artifacts"][0]
+
+    async def test_artifact_read_error_redacts_local_paths(self, tmp_path):
+        manager = SessionManager(data_dir=str(tmp_path))
+        manifest = manager.save_artifact(
+            tool="unified_search",
+            kind="search_results",
+            files={"results.json": {"tool": "unified_search"}},
+            primary_file="results.json",
+        )
+        Path(manifest["local_path"]).unlink()
+        fn = _capture_tools(register_session_tools, manager)["read_session"]
+
+        result = json.loads(fn(action="artifact", artifact_id=manifest["artifact_id"]))
+
+        assert result["success"] is False
+        assert "local_path" not in result["artifact"]
+        assert "manifest_path" not in result["artifact"]
+        assert "root_path" not in result["artifact"]
+
+    async def test_list_artifacts_rejects_unsafe_session_id(self, tmp_path):
+        manager = SessionManager(data_dir=str(tmp_path))
+        fn = _capture_tools(register_session_tools, manager)["read_session"]
+
+        result = json.loads(fn(action="list_artifacts", session_id="../outside"))
+
+        assert result["success"] is False
+        assert "unsafe session id" in result["error"].lower()
 
 
 # ============================================================

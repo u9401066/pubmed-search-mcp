@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -10,6 +12,8 @@ import pytest
 from pubmed_search.infrastructure.sources.semantic_scholar import (
     SemanticScholarClient,
 )
+from pubmed_search.shared.async_utils import RetryableOperationError
+from pubmed_search.shared.exceptions import RateLimitError
 
 
 @pytest.fixture
@@ -90,6 +94,65 @@ class TestMakeRequest:
         client._client.get = AsyncMock(side_effect=httpx.ConnectError("DNS failed", request=MagicMock()))
         assert await client._make_request("https://test.com") is None
 
+    async def test_rate_limit_exhaustion_logs_warning_without_traceback(self, client, caplog):
+        mock_response = MagicMock()
+        mock_response.status_code = 429
+        mock_response.headers = {}
+
+        client._MAX_RETRIES = 0
+        client._client = AsyncMock()
+        client._client.get = AsyncMock(return_value=mock_response)
+
+        caplog.set_level(logging.WARNING, logger="pubmed_search.infrastructure.sources.base_client")
+
+        result = await client._make_request("https://api.semanticscholar.org/test")
+
+        assert result is None
+        assert not [record for record in caplog.records if record.levelno >= logging.ERROR]
+        assert any("rate limited" in record.getMessage().lower() for record in caplog.records)
+        assert not any(record.exc_info for record in caplog.records)
+
+    async def test_retryable_error_is_task_local_between_concurrent_requests(self, client):
+        rate_limited = MagicMock()
+        rate_limited.status_code = 429
+        rate_limited.headers = {}
+
+        success = MagicMock()
+        success.status_code = 200
+        success.json.return_value = {"ok": True}
+        success.raise_for_status = MagicMock()
+
+        client._MAX_RETRIES = 0
+        fail_done = asyncio.Event()
+        ok_done = asyncio.Event()
+
+        async def fake_execute_request(url, **kwargs):
+            del kwargs
+            if "ok" in url:
+                await fail_done.wait()
+                return success
+            return rate_limited
+
+        client._execute_request = AsyncMock(side_effect=fake_execute_request)
+
+        async def fail_call():
+            result = await client._make_request("https://api.semanticscholar.org/fail")
+            fail_done.set()
+            await ok_done.wait()
+            return result, client.last_retryable_error
+
+        async def ok_call():
+            result = await client._make_request("https://api.semanticscholar.org/ok")
+            ok_done.set()
+            return result, client.last_retryable_error
+
+        fail_result, ok_result = await asyncio.gather(fail_call(), ok_call())
+
+        assert fail_result[0] is None
+        assert isinstance(fail_result[1], RetryableOperationError)
+        assert fail_result[1].status_code == 429
+        assert ok_result == ({"ok": True}, None)
+
 
 # ============================================================
 # search
@@ -165,6 +228,18 @@ class TestSearch:
     async def test_search_returns_empty_on_none(self, mock_req, client):
         mock_req.return_value = None
         assert await client.search("test") == []
+
+    async def test_search_raises_retryable_when_transport_rate_limited(self, client):
+        with patch.object(
+            client._transport_kernel,
+            "execute",
+            new=AsyncMock(side_effect=RateLimitError("circuit open", retry_after=7.0)),
+        ):
+            with pytest.raises(RetryableOperationError) as exc_info:
+                await client.search("test")
+
+        assert "circuit open" in str(exc_info.value)
+        assert exc_info.value.retry_after == 7.0
 
     @patch.object(SemanticScholarClient, "_make_request")
     async def test_search_exception(self, mock_req, client):

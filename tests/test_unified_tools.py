@@ -17,6 +17,7 @@ from pubmed_search.application.search.result_aggregator import (
     AggregationStats,
     RankingConfig,
 )
+from pubmed_search.domain.entities.article import Author, OpenAccessLink, UnifiedArticle
 from pubmed_search.presentation.mcp_server.tools.unified import (
     DispatchStrategy,
     _format_as_json,
@@ -158,17 +159,277 @@ class TestDispatchStrategy:
 
 
 class TestFormatAsJson:
-    async def test_basic(self):
+    def _analysis(self):
         analysis = MagicMock(spec=AnalyzedQuery)
         analysis.original_query = "test"
         analysis.intent = QueryIntent.EXPLORATION
         analysis.to_dict.return_value = {"query": "test"}
+        return analysis
+
+    def _stats(self):
         stats = MagicMock(spec=AggregationStats)
-        stats.to_dict.return_value = {"unique": 0}
+        stats.to_dict.return_value = {"unique_articles": 1}
+        stats.by_source = {"pubmed": 1}
+        stats.unique_articles = 1
+        return stats
+
+    async def test_basic(self):
+        analysis = self._analysis()
+        stats = self._stats()
         result = _format_as_json([], analysis, stats)
         parsed = json.loads(result)
         assert "analysis" in parsed
         assert "articles" in parsed
+
+    async def test_structured_output_includes_artifact_manifest(self):
+        manifest = {
+            "artifact_id": "artifact-1",
+            "artifact_uri": "artifact://session/artifact-1",
+            "local_path": "D:/tmp/results.json",
+            "manifest_path": "D:/tmp/manifest.json",
+        }
+
+        result = _format_as_json([], self._analysis(), self._stats(), artifact_manifest=manifest)
+
+        parsed = json.loads(result)
+        assert parsed["artifact"]["artifact_id"] == "artifact-1"
+        assert parsed["artifact"]["local_path"] == "D:/tmp/results.json"
+
+    async def test_structured_output_includes_source_warnings(self):
+        result = _format_as_json(
+            [],
+            self._analysis(),
+            self._stats(),
+            source_errors=[
+                {
+                    "source": "semantic_scholar",
+                    "status": "rate_limited",
+                    "status_code": 429,
+                    "retryable": True,
+                    "suggestion": 'Set S2_API_KEY or use sources="auto,-semantic_scholar".',
+                }
+            ],
+        )
+
+        parsed = json.loads(result)
+        warning = parsed["source_errors"][0]
+        assert warning["source"] == "semantic_scholar"
+        assert warning["status"] == "rate_limited"
+        assert warning["status_code"] == 429
+
+    async def test_compact_payload_omits_heavy_article_fields(self):
+        article = UnifiedArticle(
+            title="Compact Article",
+            primary_source="pubmed",
+            pmid="41817525",
+            doi="10.1001/example",
+            journal="JAMA Network Open",
+            year=2026,
+            abstract="Large abstract " * 100,
+            authors=[Author(full_name="Alice Example"), Author(full_name="Bob Example")],
+            keywords=["ai", "anesthesia"],
+            mesh_terms=["Anesthesiology"],
+            oa_links=[
+                OpenAccessLink(
+                    url="https://jamanetwork.com/articlepdf/example.pdf",
+                    host_type="publisher",
+                    is_best=True,
+                )
+            ],
+        )
+        article.ranking_score = 0.93
+        article.similarity_score = 0.88
+
+        result = _format_as_json(
+            [article],
+            self._analysis(),
+            self._stats(),
+            compact_output=True,
+            include_analysis=False,
+            include_similarity_scores=False,
+            include_next_tools=False,
+            include_section_provenance=False,
+        )
+
+        parsed = json.loads(result)
+        assert "analysis" not in parsed
+        assert "next_tools" not in parsed
+        assert "next_commands" not in parsed
+        assert "section_provenance" not in parsed
+        compact_article = parsed["articles"][0]
+        assert compact_article["title"] == "Compact Article"
+        assert compact_article["pmid"] == "41817525"
+        assert compact_article["pdf_available"] is True
+        assert compact_article["pdf_url"] == "https://jamanetwork.com/articlepdf/example.pdf"
+        assert "abstract" not in compact_article
+        assert "authors" not in compact_article
+        assert "keywords" not in compact_article
+        assert "mesh_terms" not in compact_article
+        assert "similarity" not in compact_article
+        assert "_ranking_score" not in compact_article
+
+    async def test_no_analysis_suppresses_heavy_json_sections(self):
+        deep_search = MagicMock()
+        deep_search.depth_score = 80
+        deep_search.entities_resolved = 3
+        deep_search.mesh_terms_used = 2
+        deep_search.synonyms_expanded = 5
+        deep_search.strategies_generated = 4
+        deep_search.strategies_executed = 4
+        deep_search.strategies_with_results = 3
+        deep_search.estimated_recall = 0.7
+        deep_search.estimated_precision = 0.8
+        deep_search.strategy_results = []
+        source_disagreement = MagicMock()
+        source_disagreement.to_dict.return_value = {"source_agreement_score": 0.5}
+        reproducibility = MagicMock()
+        reproducibility.to_dict.return_value = {"grade": "A"}
+
+        result = _format_as_json(
+            [],
+            self._analysis(),
+            self._stats(),
+            deep_search_metrics=deep_search,
+            source_disagreement=source_disagreement,
+            reproducibility_score=reproducibility,
+            include_analysis=False,
+        )
+
+        parsed = json.loads(result)
+        assert "analysis" not in parsed
+        assert "deep_search" not in parsed
+        assert "source_disagreement" not in parsed
+        assert "reproducibility" not in parsed
+
+    async def test_response_hard_cap_returns_valid_truncated_json(self):
+        articles = [
+            UnifiedArticle(
+                title=f"Article {i}",
+                primary_source="pubmed",
+                pmid=str(1000 + i),
+                abstract="Oversized abstract " * 200,
+                authors=[Author(full_name=f"Author {i}")],
+            )
+            for i in range(5)
+        ]
+
+        result = _format_as_json(
+            articles,
+            self._analysis(),
+            self._stats(),
+            max_response_chars=800,
+            include_next_tools=False,
+        )
+
+        parsed = json.loads(result)
+        assert parsed["status"] == "truncated"
+        assert parsed["reason"] == "response_size_exceeded"
+        assert parsed["returned_articles"] < 5
+        assert parsed["result_id"] == "last"
+        assert "next" not in parsed
+
+    async def test_tiny_response_hard_cap_uses_minimal_valid_json(self):
+        article = UnifiedArticle(
+            title="Oversized Article",
+            primary_source="pubmed",
+            pmid="12345",
+            abstract="Oversized abstract " * 200,
+        )
+
+        result = _format_as_json(
+            [article],
+            self._analysis(),
+            self._stats(),
+            max_response_chars=50,
+            include_next_tools=False,
+        )
+
+        parsed = json.loads(result)
+        assert parsed == {"status": "truncated"}
+        assert len(result) <= 50
+
+    async def test_response_cap_preserves_artifact_locator(self):
+        article = UnifiedArticle(
+            title="Oversized Article",
+            primary_source="pubmed",
+            pmid="12345",
+            abstract="Oversized abstract " * 200,
+        )
+        manifest = {
+            "artifact_id": "artifact-1",
+            "artifact_uri": "artifact://session/artifact-1",
+            "primary_file": "results.json",
+            "read_via": 'read_session(action="artifact", artifact_id="artifact-1")',
+        }
+
+        result = _format_as_json(
+            [article],
+            self._analysis(),
+            self._stats(),
+            max_response_chars=500,
+            include_next_tools=False,
+            artifact_manifest=manifest,
+        )
+
+        parsed = json.loads(result)
+        assert parsed["status"] == "truncated"
+        assert parsed["artifact"]["artifact_id"] == "artifact-1"
+
+    async def test_response_cap_preserves_source_errors(self):
+        article = UnifiedArticle(
+            title="Oversized Article",
+            primary_source="pubmed",
+            pmid="12345",
+            abstract="Oversized abstract " * 200,
+        )
+
+        result = _format_as_json(
+            [article],
+            self._analysis(),
+            self._stats(),
+            max_response_chars=800,
+            include_next_tools=False,
+            source_errors=[
+                {
+                    "source": "semantic_scholar",
+                    "status": "rate_limited",
+                    "status_code": 429,
+                    "suggestion": 'Set S2_API_KEY or use sources="auto,-semantic_scholar".',
+                }
+            ],
+        )
+
+        parsed = json.loads(result)
+        assert parsed["status"] == "truncated"
+        assert parsed["source_errors"][0]["source"] == "semantic_scholar"
+        assert parsed["source_errors"][0]["status_code"] == 429
+
+    async def test_tiny_response_cap_with_artifact_still_honors_cap(self):
+        article = UnifiedArticle(
+            title="Oversized Article",
+            primary_source="pubmed",
+            pmid="12345",
+            abstract="Oversized abstract " * 200,
+        )
+        manifest = {
+            "artifact_id": "artifact-with-a-very-long-identifier-that-cannot-fit",
+            "artifact_uri": "artifact://session/artifact-with-a-very-long-identifier-that-cannot-fit",
+            "primary_file": "results.json",
+            "read_via": 'read_session(action="artifact", artifact_id="artifact-with-a-very-long-identifier-that-cannot-fit")',
+        }
+
+        result = _format_as_json(
+            [article],
+            self._analysis(),
+            self._stats(),
+            max_response_chars=50,
+            include_next_tools=False,
+            artifact_manifest=manifest,
+        )
+
+        parsed = json.loads(result)
+        assert parsed == {"status": "truncated"}
+        assert len(result) <= 50
 
     async def test_counts_first_orientation_payload(self):
         analysis = MagicMock(spec=AnalyzedQuery)
@@ -219,6 +480,34 @@ class TestFormatUnifiedResults:
 
         result = await _format_unified_results([], analysis, stats, include_analysis=False, include_trials=False)
         assert "No results" in result
+
+    async def test_no_scores_hides_markdown_score_fields(self):
+        analysis = MagicMock(spec=AnalyzedQuery)
+        analysis.original_query = "test"
+        analysis.complexity = QueryComplexity.SIMPLE
+        analysis.intent = QueryIntent.EXPLORATION
+        analysis.pico = None
+
+        stats = MagicMock(spec=AggregationStats)
+        stats.by_source = {}
+        stats.unique_articles = 1
+        stats.duplicates_removed = 0
+
+        article = UnifiedArticle(title="Scored Article", primary_source="pubmed", pmid="12345")
+        article.ranking_score = 0.9
+        article.similarity_score = 0.8
+
+        result = await _format_unified_results(
+            [article],
+            analysis,
+            stats,
+            include_analysis=False,
+            include_trials=False,
+            include_similarity_scores=False,
+        )
+
+        assert "(score:" not in result
+        assert "Relevance" not in result
 
     async def test_source_api_counts_displayed(self):
         """Per-source API return counts MUST be displayed to agents (critical feature)."""
@@ -299,6 +588,69 @@ class TestFormatUnifiedResults:
         # Must contain parenthesized counts
         line = sources_line[0]
         assert "(" in line and ")" in line, f"Source counts missing in: {line}"
+
+    async def test_source_warnings_displayed_in_markdown(self):
+        analysis = MagicMock(spec=AnalyzedQuery)
+        analysis.original_query = "test query"
+        analysis.complexity = QueryComplexity.SIMPLE
+        analysis.intent = QueryIntent.EXPLORATION
+        analysis.pico = None
+
+        stats = MagicMock(spec=AggregationStats)
+        stats.by_source = {"pubmed": 1, "semantic_scholar": 0}
+        stats.unique_articles = 1
+        stats.duplicates_removed = 0
+
+        result = await _format_unified_results(
+            [],
+            analysis,
+            stats,
+            include_analysis=True,
+            include_trials=False,
+            source_errors=[
+                {
+                    "source": "semantic_scholar",
+                    "status": "rate_limited",
+                    "status_code": 429,
+                    "suggestion": 'Set S2_API_KEY or use sources="auto,-semantic_scholar".',
+                }
+            ],
+        )
+
+        assert "**Source warnings**:" in result
+        assert "semantic_scholar rate_limited (HTTP 429)" in result
+        assert 'sources="auto,-semantic_scholar"' in result
+
+    async def test_source_warnings_displayed_when_analysis_hidden(self):
+        analysis = MagicMock(spec=AnalyzedQuery)
+        analysis.original_query = "test query"
+        analysis.complexity = QueryComplexity.SIMPLE
+        analysis.intent = QueryIntent.EXPLORATION
+        analysis.pico = None
+
+        stats = MagicMock(spec=AggregationStats)
+        stats.by_source = {"pubmed": 1, "semantic_scholar": 0}
+        stats.unique_articles = 1
+        stats.duplicates_removed = 0
+
+        result = await _format_unified_results(
+            [],
+            analysis,
+            stats,
+            include_analysis=False,
+            include_trials=False,
+            source_errors=[
+                {
+                    "source": "semantic_scholar",
+                    "status": "rate_limited",
+                    "status_code": 429,
+                    "suggestion": 'Set S2_API_KEY or use sources="auto,-semantic_scholar".',
+                }
+            ],
+        )
+
+        assert "**Source warnings**:" in result
+        assert "semantic_scholar rate_limited (HTTP 429)" in result
 
     async def test_does_not_fetch_trials_inline_during_formatting(self):
         from pubmed_search.domain.entities.article import UnifiedArticle
@@ -382,6 +734,46 @@ class TestFormatUnifiedResults:
         assert "fetch_article_details" in result
         assert "get_article_figures" in result
         assert "**Sources**:" not in result
+
+
+class TestDeepSearchDiagnostics:
+    async def test_deep_search_returns_semantic_scholar_rate_limit_error(self):
+        from pubmed_search.application.search.semantic_enhancer import EnhancedQuery, SearchPlan
+        from pubmed_search.presentation.mcp_server.tools.unified_source_search import _execute_deep_search
+        from pubmed_search.shared.async_utils import RetryableOperationError
+
+        enhanced = EnhancedQuery(
+            original_query="remimazolam sedation",
+            strategies=[
+                SearchPlan(
+                    name="s2",
+                    query="remimazolam sedation",
+                    source="semantic_scholar",
+                    priority=1,
+                )
+            ],
+        )
+
+        with patch(
+            "pubmed_search.presentation.mcp_server.tools.unified_source_search._search_semantic_scholar",
+            new_callable=AsyncMock,
+            side_effect=RetryableOperationError("HTTP 429", status_code=429),
+        ):
+            _results, metrics, _pubmed_total, counts, errors = await _execute_deep_search(
+                AsyncMock(),
+                enhanced,
+                10,
+                None,
+                None,
+                {},
+            )
+
+        assert metrics.strategies_executed == 1
+        assert counts["semantic_scholar"] == (0, None)
+        assert len(errors) == 1
+        assert errors[0].source == "semantic_scholar"
+        assert errors[0].status_code == 429
+
 
 # ============================================================
 # Tool capture and registration
@@ -589,7 +981,9 @@ class TestUnifiedSearch:
         with (
             patch("pubmed_search.presentation.mcp_server.tools.unified.QueryAnalyzer") as MockAnalyzer,
             patch("pubmed_search.presentation.mcp_server.tools.unified.get_semantic_enhancer") as mock_enhancer,
-            patch("pubmed_search.presentation.mcp_server.tools.unified._search_openalex", new_callable=AsyncMock) as mock_openalex,
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.unified._search_openalex", new_callable=AsyncMock
+            ) as mock_openalex,
             patch(
                 "pubmed_search.presentation.mcp_server.tools.unified._search_semantic_scholar",
                 new_callable=AsyncMock,
@@ -627,7 +1021,9 @@ class TestUnifiedSearch:
         with (
             patch.dict("os.environ", {"SCOPUS_ENABLED": "true", "SCOPUS_API_KEY": "licensed-key"}, clear=False),
             patch("pubmed_search.presentation.mcp_server.tools.unified.QueryAnalyzer") as MockAnalyzer,
-            patch("pubmed_search.presentation.mcp_server.tools.unified._search_scopus", new_callable=AsyncMock) as mock_scopus,
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.unified._search_scopus", new_callable=AsyncMock
+            ) as mock_scopus,
         ):
             MockAnalyzer.return_value.analyze.return_value = analysis
             mock_scopus.return_value = ([], None)
@@ -677,6 +1073,7 @@ class TestUnifiedSearch:
             )
 
         mock_wos.assert_awaited_once()
+
 
 class TestAnalyzeSearchQuery:
     @pytest.mark.asyncio

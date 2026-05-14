@@ -19,6 +19,7 @@ from pubmed_search.application.search.semantic_enhancer import (
 )
 from pubmed_search.infrastructure.sources import (
     get_core_client,
+    get_last_alternate_source_error,
     search_alternate_source,
 )
 from pubmed_search.infrastructure.sources.article_mapper import (
@@ -31,6 +32,8 @@ from pubmed_search.infrastructure.sources.article_mapper import (
     article_from_semantic_scholar,
     article_from_web_of_science,
 )
+from pubmed_search.shared.async_utils import RetryableOperationError
+from pubmed_search.shared.source_contracts import SourceAdapterError, normalize_source_adapter_error
 
 from .unified_helpers import (
     RelaxationResult,
@@ -45,6 +48,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 DEEP_SEARCH_STRATEGY_TIMEOUT_SECONDS = 25.0
+
+
+def _raise_if_semantic_scholar_rate_limited(error: SourceAdapterError | None) -> None:
+    if error and error.status_code == 429:
+        raise RetryableOperationError(error.message, status_code=error.status_code)
 
 
 # ============================================================================
@@ -123,7 +131,13 @@ async def _execute_deep_search(
     min_year: int | None,
     max_year: int | None,
     advanced_filters: dict,
-) -> tuple[list[list[UnifiedArticle]], SearchDepthMetrics, int | None, dict[str, tuple[int, int | None]]]:
+) -> tuple[
+    list[list[UnifiedArticle]],
+    SearchDepthMetrics,
+    int | None,
+    dict[str, tuple[int, int | None]],
+    list[SourceAdapterError],
+]:
     """
     Execute true deep search using ALL strategies from SemanticEnhancer.
 
@@ -138,7 +152,7 @@ async def _execute_deep_search(
         advanced_filters: Additional PubMed filters
 
     Returns:
-        Tuple of (all_results, depth_metrics, pubmed_total_count, source_api_counts)
+        Tuple of (all_results, depth_metrics, pubmed_total_count, source_api_counts, source_errors)
     """
     import time
 
@@ -152,6 +166,7 @@ async def _execute_deep_search(
 
     all_results: list[list[UnifiedArticle]] = []
     pubmed_total_count: int | None = None
+    source_errors: list[SourceAdapterError] = []
     total_precision = 0.0
     total_recall = 0.0
 
@@ -173,11 +188,12 @@ async def _execute_deep_search(
 
     async def execute_strategy(
         strategy: SearchPlan,
-    ) -> tuple[StrategyResult, list[UnifiedArticle], int | None]:
+    ) -> tuple[StrategyResult, list[UnifiedArticle], int | None, SourceAdapterError | None]:
         """Execute one strategy and return results."""
         start_time = time.perf_counter()
         articles: list[UnifiedArticle] = []
         total_count: int | None = None
+        source_error: SourceAdapterError | None = None
 
         try:
             if strategy.source == "pubmed":
@@ -233,7 +249,8 @@ async def _execute_deep_search(
                 )
 
         except Exception as e:
-            logger.warning(f"Strategy '{strategy.name}' failed: {e}")
+            logger.warning("Strategy '%s' failed: %s", strategy.name, e)
+            source_error = normalize_source_adapter_error(strategy.source, "deep_search", e)
 
         elapsed_ms = (time.perf_counter() - start_time) * 1000
 
@@ -247,7 +264,7 @@ async def _execute_deep_search(
             execution_time_ms=elapsed_ms,
         )
 
-        return result, articles, total_count
+        return result, articles, total_count, source_error
 
     # Execute all strategies in parallel
     tasks = [asyncio.wait_for(execute_strategy(s), timeout=DEEP_SEARCH_STRATEGY_TIMEOUT_SECONDS) for s in strategies]
@@ -259,9 +276,11 @@ async def _execute_deep_search(
             continue
 
         # Type narrowing: result is now tuple, not Exception
-        strategy_result, articles, total_count = result  # type: ignore[misc]
+        strategy_result, articles, total_count, source_error = result  # type: ignore[misc]
         metrics.strategy_results.append(strategy_result)
         metrics.strategies_executed += 1
+        if source_error is not None:
+            source_errors.append(source_error)
 
         if articles:
             all_results.append(articles)
@@ -305,7 +324,7 @@ async def _execute_deep_search(
         prev_returned, prev_total = source_api_counts.get(sr.source, (0, None))
         source_api_counts[sr.source] = (prev_returned + sr.articles_count, prev_total)
 
-    return all_results, metrics, pubmed_total_count, source_api_counts
+    return all_results, metrics, pubmed_total_count, source_api_counts, source_errors
 
 
 # ============================================================================
@@ -447,6 +466,8 @@ async def _search_semantic_scholar(
             min_year=min_year,
             max_year=max_year,
         )
+        source_error = get_last_alternate_source_error("semantic_scholar")
+        _raise_if_semantic_scholar_rate_limited(source_error)
 
         articles = []
         for r in results:
@@ -454,6 +475,8 @@ async def _search_semantic_scholar(
 
         # Semantic Scholar doesn't return total count in our current implementation
         return articles, None
+    except RetryableOperationError:
+        raise
     except Exception as e:
         logger.exception(f"Semantic Scholar search failed: {e}")
         return [], None

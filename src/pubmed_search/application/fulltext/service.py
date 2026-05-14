@@ -18,6 +18,8 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal, cast
 
+from pubmed_search.shared.article_identity import normalize_article_doi
+
 from .registry import FulltextRegistry, get_fulltext_registry
 
 logger = logging.getLogger(__name__)
@@ -52,6 +54,7 @@ class FulltextServiceResult:
     policy_key: str | None = None
     title: str | None = None
     fulltext_content: str | None = None
+    raw_fulltext_content: str | None = None
     content_sections: list[dict[str, Any]] = field(default_factory=list)
     pdf_links: list[dict[str, Any]] = field(default_factory=list)
     sources_tried: list[str] = field(default_factory=list)
@@ -92,6 +95,7 @@ class FulltextService:
         log: LogCallback | None = None,
     ) -> FulltextServiceResult:
         """Execute fulltext retrieval according to registry policy."""
+        request = await self._resolve_identifiers(request, log)
         policy = self._registry.resolve_policy(
             pmcid=request.pmcid,
             pmid=request.pmid,
@@ -122,9 +126,7 @@ class FulltextService:
             and "institutional" in policy.sources
             and self._institutional_client_factory is not None
         ):
-            await self._report_progress(
-                progress, 3, 6, "Trying institutional direct/EZproxy fetch..."
-            )
+            await self._report_progress(progress, 3, 6, "Trying institutional direct/EZproxy fetch...")
             result.sources_tried.append(self._registry.label_for("institutional"))
             await self._collect_institutional(request, result, log)
 
@@ -144,6 +146,60 @@ class FulltextService:
         result.pdf_links = self._deduplicate_link_rows(result.pdf_links)
         return result
 
+    async def _resolve_identifiers(
+        self,
+        request: FulltextRequest,
+        log: LogCallback | None,
+    ) -> FulltextRequest:
+        """Resolve PMID metadata before policy selection so DOI-only sources can run."""
+        normalized_doi = normalize_article_doi(request.doi) or None
+        if not request.pmid or (request.pmcid and normalized_doi):
+            if normalized_doi == request.doi:
+                return request
+            return FulltextRequest(
+                identifier=request.identifier,
+                pmcid=request.pmcid,
+                pmid=request.pmid,
+                doi=normalized_doi,
+                sections=request.sections,
+                include_figures=request.include_figures,
+                extended_sources=request.extended_sources,
+                allow_browser_session=request.allow_browser_session,
+            )
+
+        try:
+            client = self._europe_pmc_client_factory()
+            article = await client.get_article("MED", str(request.pmid), result_type="core")
+        except Exception as exc:
+            logger.warning("PMID metadata resolution failed: %s", exc)
+            await self._report_log(log, "warning", f"PMID metadata resolution failed: {exc!s}")
+            article = None
+
+        resolved_pmcid = request.pmcid
+        resolved_doi = normalized_doi
+        if not isinstance(article, dict):
+            article = None
+
+        if article:
+            raw_pmcid = article.get("pmc_id") or article.get("pmcid")
+            if not resolved_pmcid and raw_pmcid:
+                resolved_pmcid = str(raw_pmcid)
+                if resolved_pmcid and not resolved_pmcid.upper().startswith("PMC"):
+                    resolved_pmcid = f"PMC{resolved_pmcid}"
+            if not resolved_doi:
+                resolved_doi = normalize_article_doi(str(article.get("doi") or "")) or None
+
+        return FulltextRequest(
+            identifier=request.identifier,
+            pmcid=resolved_pmcid,
+            pmid=request.pmid,
+            doi=resolved_doi,
+            sections=request.sections,
+            include_figures=request.include_figures,
+            extended_sources=request.extended_sources,
+            allow_browser_session=request.allow_browser_session,
+        )
+
     async def _collect_europe_pmc(
         self,
         request: FulltextRequest,
@@ -162,6 +218,7 @@ class FulltextService:
 
             result.content_sections = self._select_sections(parsed, request.sections)
             result.fulltext_content = self._render_selected_sections(parsed, result.content_sections)
+            result.raw_fulltext_content = result.fulltext_content
             result.title = parsed.get("title") or result.title
             result.fulltext_source_name = self._registry.label_for("europe_pmc")
             result.fulltext_canonical_host = "PubMed Central"
@@ -246,9 +303,7 @@ class FulltextService:
             outcome = await client.get_fulltext_by_doi(request.doi)
         except Exception as exc:
             logger.warning("Institutional fetch failed: %s", exc)
-            await self._report_log(
-                log, "warning", f"Institutional fulltext failed: {exc!s}"
-            )
+            await self._report_log(log, "warning", f"Institutional fulltext failed: {exc!s}")
             return
 
         if not getattr(outcome, "success", False):
@@ -258,9 +313,7 @@ class FulltextService:
             return
 
         result.fulltext_content = text
-        result.content_sections = [
-            {"title": "Publisher Article (institutional)", "content": text}
-        ]
+        result.content_sections = [{"title": "Publisher Article (institutional)", "content": text}]
         title = getattr(outcome, "title", None)
         if title and not result.title:
             result.title = title
@@ -298,6 +351,7 @@ class FulltextService:
                 result.title = work.get("title")
 
             if work.get("fullText") and not result.fulltext_content:
+                result.raw_fulltext_content = str(work.get("fullText", ""))
                 result.fulltext_content = self._format_core_fulltext(work, request.sections)
                 result.fulltext_source_name = self._registry.label_for("core")
                 result.fulltext_canonical_host = "Repository / OA host"
@@ -344,6 +398,7 @@ class FulltextService:
             )
 
             if not result.fulltext_content and extended_result.text_content:
+                result.raw_fulltext_content = extended_result.text_content
                 extracted_text = self._truncate_extracted_text(extended_result.text_content)
                 result.fulltext_content = extracted_text
                 result.content_sections = [{"title": "Extracted PDF Text", "content": extracted_text}]
@@ -441,7 +496,9 @@ class FulltextService:
             filtered: list[dict[str, Any]] = []
             for section in all_sections:
                 section_title = str(section.get("title", "")).lower()
-                if any(requested_name in section_title or section_title in requested_name for requested_name in requested):
+                if any(
+                    requested_name in section_title or section_title in requested_name for requested_name in requested
+                ):
                     filtered.append(section)
             all_sections = filtered
         return all_sections

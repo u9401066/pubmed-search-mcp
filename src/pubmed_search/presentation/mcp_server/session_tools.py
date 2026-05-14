@@ -28,6 +28,7 @@ if TYPE_CHECKING:
 
     from pubmed_search.application.session.manager import SessionManager
 
+from .tools.artifact_memory import artifact_locator
 from .tools.tool_runtime import safe_send_resource_updated
 
 logger = logging.getLogger(__name__)
@@ -53,9 +54,7 @@ def _session_resource_kwargs(*, name: str, title: str, description: str) -> dict
     }
 
 
-def _session_resource_decorator(
-    mcp: FastMCP, uri: str, **kwargs: object
-) -> Callable[[ResourceFunc], ResourceFunc]:
+def _session_resource_decorator(mcp: FastMCP, uri: str, **kwargs: object) -> Callable[[ResourceFunc], ResourceFunc]:
     """Build a resource decorator that falls back for test doubles without keyword support."""
     resource = cast("Any", mcp.resource)
     with contextlib.suppress(TypeError):
@@ -111,7 +110,9 @@ def _read_session_pmids_impl(
             search = session.search_history[search_index]
             index = search_index if search_index >= 0 else len(session.search_history) + search_index
         except IndexError:
-            return _json_error(error=f"Invalid search_index: {search_index}", total_searches=len(session.search_history))
+            return _json_error(
+                error=f"Invalid search_index: {search_index}", total_searches=len(session.search_history)
+            )
 
     pmids = search.get("pmids", [])
     return json.dumps(
@@ -272,11 +273,87 @@ def _read_session_log_impl(
     )
 
 
+def _read_session_artifacts_impl(
+    session_manager: SessionManager,
+    *,
+    session_id: str = "",
+    tool: str | None = None,
+    kind: str | None = None,
+    include_local_paths: bool = False,
+    limit: int = 20,
+) -> str:
+    try:
+        session = session_manager.get_session(session_id) if session_id else session_manager.get_current_session()
+    except ValueError as exc:
+        return _json_error(error=str(exc))
+    if not session:
+        return _json_error(error="No active session", hint="Run a tool that creates artifacts first")
+
+    artifacts = session_manager.list_artifacts(session_id=session_id or None, tool=tool, kind=kind, limit=limit)
+    return json.dumps(
+        {
+            "success": True,
+            "session_id": session.session_id,
+            "total_artifacts": len(artifacts),
+            "artifacts": [
+                artifact_locator(artifact, include_local_paths=include_local_paths) for artifact in artifacts
+            ],
+            "hint": "Use read_session(action='artifact', artifact_id='...') to read one artifact.",
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
+
+
+def _read_session_artifact_impl(
+    session_manager: SessionManager,
+    *,
+    artifact_id: str,
+    artifact_uri: str = "",
+    session_id: str = "",
+    artifact_file: str = "",
+    include_local_paths: bool = False,
+    max_chars: int = 200_000,
+    offset: int = 0,
+) -> str:
+    if not artifact_id and not artifact_uri:
+        return _json_error(
+            error="artifact_id or artifact_uri is required for artifact action",
+            hint="Use read_session(action='list_artifacts') first.",
+        )
+    result = session_manager.read_artifact(
+        artifact_id,
+        artifact_uri=artifact_uri or None,
+        session_id=session_id or None,
+        file_name=artifact_file or None,
+        max_chars=max_chars,
+        offset=offset,
+    )
+    if isinstance(result.get("artifact"), dict):
+        result["artifact"] = artifact_locator(result["artifact"], include_local_paths=include_local_paths)
+    if not include_local_paths and isinstance(result.get("file"), dict):
+        result["file"].pop("path", None)
+    return json.dumps(
+        result,
+        ensure_ascii=False,
+        indent=2,
+    )
+
+
 def _read_session_dispatch(
     session_manager: SessionManager,
     *,
     action: str,
     pmid: str = "",
+    artifact_id: str = "",
+    artifact_uri: str = "",
+    session_id: str = "",
+    artifact_file: str = "",
+    artifact_tool: str = "",
+    artifact_kind: str = "",
+    include_local_paths: bool = False,
+    max_chars: int = 200_000,
+    offset: int = 0,
     search_index: int = -1,
     query_filter: str | None = None,
     include_history: bool = False,
@@ -297,6 +374,26 @@ def _read_session_dispatch(
             include_history=include_history,
             history_limit=history_limit,
         )
+    if normalized_action in {"list_artifacts", "artifacts"}:
+        return _read_session_artifacts_impl(
+            session_manager,
+            session_id=session_id,
+            tool=artifact_tool or query_filter,
+            kind=artifact_kind or None,
+            include_local_paths=include_local_paths,
+            limit=history_limit if history_limit > 0 else 20,
+        )
+    if normalized_action in {"artifact", "read_artifact"}:
+        return _read_session_artifact_impl(
+            session_manager,
+            artifact_id=artifact_id,
+            artifact_uri=artifact_uri,
+            session_id=session_id,
+            artifact_file=artifact_file,
+            include_local_paths=include_local_paths,
+            max_chars=max_chars,
+            offset=offset,
+        )
     if normalized_action in {"summary", "context"}:
         return _read_session_summary_impl(
             session_manager,
@@ -306,7 +403,7 @@ def _read_session_dispatch(
 
     return _json_error(
         error=f"Unknown session action: {action}",
-        hint="Use one of: pmids, article, summary, log",
+        hint="Use one of: pmids, article, summary, log, list_artifacts, artifact",
     )
 
 
@@ -322,6 +419,15 @@ def register_session_tools(mcp: FastMCP, session_manager: SessionManager):
     def read_session(
         action: str = "summary",
         pmid: str = "",
+        artifact_id: str = "",
+        artifact_uri: str = "",
+        session_id: str = "",
+        artifact_file: str = "",
+        artifact_tool: str = "",
+        artifact_kind: str = "",
+        include_local_paths: bool = False,
+        max_chars: int = 200_000,
+        offset: int = 0,
         search_index: int = -1,
         query_filter: str | None = None,
         include_history: bool = False,
@@ -333,12 +439,28 @@ def register_session_tools(mcp: FastMCP, session_manager: SessionManager):
         - pmids: return PMIDs for one recorded search
         - article: return one cached article payload
         - summary: return current session summary and optional history
+        - list_artifacts: list persistent MCP output artifact manifests
+        - artifact: read one persistent artifact by artifact_id or artifact_uri
+
+        For remote artifact reads, use artifact_file plus offset/max_chars to page
+        through large files without rerunning upstream searches or fulltext calls.
+        Use artifact_tool/artifact_kind to filter list_artifacts. Local paths
+        are redacted unless include_local_paths=True.
         """
         try:
             return _read_session_dispatch(
                 session_manager,
                 action=action,
                 pmid=pmid,
+                artifact_id=artifact_id,
+                artifact_uri=artifact_uri,
+                session_id=session_id,
+                artifact_file=artifact_file,
+                artifact_tool=artifact_tool,
+                artifact_kind=artifact_kind,
+                include_local_paths=include_local_paths,
+                max_chars=max_chars,
+                offset=offset,
                 search_index=search_index,
                 query_filter=query_filter,
                 include_history=include_history,
