@@ -226,7 +226,9 @@ openclaw plugins list  # Should show: mcp-adapter | loaded
       "command": "uvx",
       "args": ["pubmed-search-mcp"],
       "env": {
-        "NCBI_EMAIL": "your@email.com"
+        "NCBI_EMAIL": "your@email.com",
+        "S2_API_KEY": "your_semantic_scholar_key",
+        "PUBMED_SEARCH_DISABLED_SOURCES": ""
       },
       "alwaysAllow": [],
       "disabled": false
@@ -317,7 +319,8 @@ NCBI_API_KEY=your_ncbi_api_key     # Get from: https://www.ncbi.nlm.nih.gov/acco
 CORE_API_KEY=your_core_api_key     # Get from: https://core.ac.uk/services/api
 CROSSREF_EMAIL=your@email.com      # CrossRef polite pool
 UNPAYWALL_EMAIL=your@email.com     # Unpaywall OA resolver
-S2_API_KEY=your_s2_api_key         # Get from: https://www.semanticscholar.org/product/api
+S2_API_KEY=your_s2_api_key         # Alias: SEMANTIC_SCHOLAR_API_KEY
+PUBMED_SEARCH_DISABLED_SOURCES=    # Example: semantic_scholar
 
 # Optional - Network settings
 HTTP_PROXY=http://proxy:8080       # HTTP proxy for API requests
@@ -508,6 +511,7 @@ Use the PMC Open Access path when an agent needs evidence figures, not just arti
 | `get_session_pmids` | Retrieve cached PMID lists |
 | `get_cached_article` | Get article from session cache (no API cost) |
 | `get_session_summary` | Session status overview |
+| `read_session` | Facade for PMIDs, cached articles, history, and persistent artifacts |
 
 Dynamic MCP resources are also available for agents that can read resources directly:
 
@@ -516,7 +520,43 @@ Dynamic MCP resources are also available for agents that can read resources dire
 - `session://last-search/pmids` — latest PMID list + CSV form
 - `session://last-search/results` — cached article payloads for the latest search
 
-### 🔁 Pipeline Management
+### Persistent Artifacts
+
+Persistent MCP output artifacts are saved for reusable `unified_search` and
+`get_fulltext` responses when session persistence is configured. Tool responses
+include a compact `artifact` locator with `artifact_id`, `artifact_uri`,
+`primary_file`, `summary`, file inventory, and an exact `read_session(...)`
+retrieval hint. Set `PUBMED_ARTIFACT_INCLUDE_LOCAL_PATHS=true` when a local MCP
+client should also receive `local_path` and `manifest_path` directly.
+
+Remote clients that cannot read the server filesystem can retrieve the same
+content through the session facade:
+
+```text
+read_session(action="list_artifacts")
+read_session(action="artifact", artifact_id="...")
+read_session(action="artifact", artifact_uri="artifact://...")
+read_session(action="artifact", artifact_id="...", artifact_file="payload.json", offset=0, max_chars=200000)
+read_session(action="list_artifacts", include_local_paths=true)
+```
+
+Artifacts are generated from the already-computed result object, so reading an
+artifact does not rerun searches or fulltext retrieval.
+`read_session` redacts local filesystem paths by default; `local_path` and
+`manifest_path` are server-local paths, not portable client paths. Artifacts
+from `get_fulltext` may contain article body text, including subscription or
+institutionally accessed content. Store and share them according to publisher,
+license, and institutional access terms.
+Large `get_fulltext` responses are returned inline as a preview when an artifact
+is available; use the artifact locator to retrieve the saved full content.
+
+When one source fails but the overall search can continue, JSON responses may
+include `source_errors`; markdown responses show a `Source warnings` line. For
+Semantic Scholar HTTP 429s, set `S2_API_KEY` / `SEMANTIC_SCHOLAR_API_KEY`, retry
+later, or temporarily exclude it with `sources="auto,-semantic_scholar"` or
+`PUBMED_SEARCH_DISABLED_SOURCES=semantic_scholar`.
+
+### Pipeline Management
 
 ![Session and pipeline workflow](docs/images/session-pipeline-workflow.svg)
 

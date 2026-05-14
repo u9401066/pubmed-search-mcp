@@ -103,6 +103,32 @@ Use this path for `configure_institutional_access`, `get_institutional_link`, `l
 
 Use this path for `prepare_export` and `save_literature_notes`. Citation exports are for reference managers; local notes are editable literature-review artifacts with machine-readable metadata.
 
+## Persistent Artifacts For Large Outputs
+
+When session persistence is configured, `unified_search` and `get_fulltext`
+write complete reusable outputs to artifacts and return a compact locator in
+the tool response. Use the session facade for remote clients, and set
+`PUBMED_ARTIFACT_INCLUDE_LOCAL_PATHS=true` only for local MCP clients that
+should receive direct server paths:
+
+```python
+read_session(action="list_artifacts")
+read_session(action="artifact", artifact_id="...")
+read_session(action="artifact", artifact_id="...", artifact_file="payload.json", offset=0)
+```
+
+`local_path` and `manifest_path` are paths on the MCP server host. `read_session`
+redacts local paths by default unless `include_local_paths=true` is requested.
+Large `get_fulltext` responses are capped inline when an artifact exists; use
+the locator to read the saved full content. Full-text artifacts can contain
+article body text, so handle storage and sharing according to publisher,
+license, and institutional access terms.
+
+If a source fails but the search can continue, `unified_search` may return
+`source_errors` in JSON or `Source warnings` in markdown. Semantic Scholar HTTP
+429 warnings usually mean the workflow should set `S2_API_KEY` /
+`SEMANTIC_SCHOLAR_API_KEY`, retry later, or exclude the source.
+
 ## Local Wiki Note Export
 
 ![Export and local notes workflow](images/export-notes-workflow.svg)

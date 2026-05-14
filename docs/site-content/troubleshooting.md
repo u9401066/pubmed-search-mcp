@@ -86,9 +86,49 @@ Besides the primary MCP contract at `/mcp`, `run_server.py` also exposes a **pub
 
 This auxiliary API is public in the sense that callers may use it directly, but it is **not** the primary MCP tool contract. For agent tool discovery and normal runtime usage, `/mcp` remains the canonical external interface.
 
+### Persistent Artifact Retrieval
+
+When session persistence is enabled, `unified_search` and `get_fulltext` write
+complete reusable outputs to local artifact files and return a compact
+`artifact` locator in the MCP response. Local path fields are redacted by
+default; set `PUBMED_ARTIFACT_INCLUDE_LOCAL_PATHS=true` for local MCP clients
+that should receive `local_path` and `manifest_path` directly. Remote clients
+should use the MCP session facade:
+
+```text
+read_session(action="list_artifacts")
+read_session(action="artifact", artifact_id="...")
+read_session(action="artifact", artifact_uri="artifact://...")
+read_session(action="artifact", artifact_id="...", artifact_file="payload.json", offset=0, max_chars=200000)
+read_session(action="list_artifacts", include_local_paths=true)
+```
+
+`read_session(action="artifact")` reads existing artifact files only; it does
+not repeat upstream source calls. Use `offset` and `max_chars` to page through a
+large artifact from remote clients. `read_session` redacts local paths by
+default; pass `include_local_paths=true` for local-server workflows.
+The `local_path` and `manifest_path` fields are paths on the MCP server host,
+not portable client paths. Full-text artifacts can contain copyrighted,
+subscription, or institutionally accessed article text; keep redistribution and
+retention aligned with the applicable publisher, license, and institutional
+terms.
+Large `get_fulltext` responses are capped inline when an artifact is available;
+use `read_session(action="artifact", ...)` to retrieve the saved full content.
+
+`unified_search` can also return partial source diagnostics without failing the
+whole query. JSON responses use `source_errors`; markdown responses include a
+`Source warnings` line. Semantic Scholar HTTP 429 warnings recommend setting
+`S2_API_KEY` / `SEMANTIC_SCHOLAR_API_KEY`, retrying later, or excluding the
+source with `sources="auto,-semantic_scholar"` /
+`PUBMED_SEARCH_DISABLED_SOURCES=semantic_scholar`.
+
 ---
 
 ## Environment Variables
+
+Semantic Scholar accepts either `S2_API_KEY` or `SEMANTIC_SCHOLAR_API_KEY`.
+If repeated 429 responses appear in Cline or other MCP clients, set a key or
+temporarily disable the source with `PUBMED_SEARCH_DISABLED_SOURCES=semantic_scholar`.
 
 | Variable | Required | Description | Default |
 | --- | --- | --- | --- |
@@ -458,7 +498,9 @@ This split keeps shared behavior in one place while leaving Copilot-specific beh
       "command": "uvx",
       "args": ["pubmed-search-mcp"],
       "env": {
-        "NCBI_EMAIL": "your@email.com"
+        "NCBI_EMAIL": "your@email.com",
+        "S2_API_KEY": "your_semantic_scholar_key",
+        "PUBMED_SEARCH_DISABLED_SOURCES": ""
       },
       "alwaysAllow": [],
       "disabled": false
@@ -466,6 +508,10 @@ This split keeps shared behavior in one place while leaving Copilot-specific beh
   }
 }
 ```
+
+For repeated Semantic Scholar 429 responses, either provide `S2_API_KEY` /
+`SEMANTIC_SCHOLAR_API_KEY` or set `PUBMED_SEARCH_DISABLED_SOURCES` to
+`semantic_scholar`.
 
 Recommended first-run sequence:
 
