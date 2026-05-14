@@ -207,6 +207,7 @@ def register_export_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         - After unified_search, persist the selected literature into a local note library.
         - Give agents a structured alternative to generic write_file calls.
         - Create wiki notes with Foam-compatible wikilinks, MedPaper-like reference notes, and frontmatter.
+        - Use stable wiki/Foam link targets and return wiki_validation for unresolved-link checks.
 
         ## Local Directory Resolution
         1. output_dir argument, if provided
@@ -226,7 +227,7 @@ def register_export_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             include_csl_json: Write references.csl.json beside notes for citation-manager handoff.
 
         Returns:
-            JSON with output_dir, written files, skipped files, and index path.
+            JSON with output_dir, written files, skipped files, index path, and wiki_validation.
 
         Examples:
             save_literature_notes(pmids="last")

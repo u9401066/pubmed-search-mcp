@@ -143,9 +143,9 @@ def _build_next_actions(
             f'fetch_article_details(pmids="{lead_pmid}", output_format="{structured_output_format}")',
         )
         add_action(
-            "find_related_articles",
-            "Follow the strongest seed article into its related-paper neighborhood.",
-            f'find_related_articles(pmid="{lead_pmid}", limit=10)',
+            "save_literature_notes",
+            "Persist the current PMID-backed result set as local LLM wiki notes with stable Foam-compatible links.",
+            'save_literature_notes(pmids="last", note_format="wiki")',
         )
 
     if lead_article and getattr(lead_article, "pmc", None):
@@ -159,6 +159,14 @@ def _build_next_actions(
             "get_fulltext",
             "Retrieve structured fulltext with inline figures from the PMC-backed lead article.",
             (f'get_fulltext(pmcid="{lead_pmc}", include_figures=True, output_format="{structured_output_format}")'),
+        )
+
+    if lead_article and getattr(lead_article, "pmid", None):
+        lead_pmid = str(lead_article.pmid)
+        add_action(
+            "find_related_articles",
+            "Follow the strongest seed article into its related-paper neighborhood.",
+            f'find_related_articles(pmid="{lead_pmid}", limit=10)',
         )
 
     if articles and not research_context_preview and any(getattr(article, "pmid", None) for article in articles):

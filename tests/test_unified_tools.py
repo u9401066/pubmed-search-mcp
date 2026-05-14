@@ -465,6 +465,19 @@ class TestFormatAsJson:
         assert parsed["next_commands"]
         assert parsed["section_provenance"]["articles"]["provenance"] == "mixed"
 
+    async def test_pmid_results_suggest_local_wiki_note_export(self):
+        analysis = self._analysis()
+        stats = self._stats()
+        article = UnifiedArticle(title="Wiki Candidate", primary_source="pubmed", pmid="12345678")
+
+        result = _format_as_json([article], analysis, stats)
+
+        parsed = json.loads(result)
+        assert any(action["tool"] == "save_literature_notes" for action in parsed["next_tools"])
+        assert any(
+            command == 'save_literature_notes(pmids="last", note_format="wiki")' for command in parsed["next_commands"]
+        )
+
 
 class TestFormatUnifiedResults:
     async def test_no_articles(self):

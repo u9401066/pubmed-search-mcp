@@ -12,6 +12,7 @@ from typing import Any
 
 SUPPORTED_NOTE_FORMATS = ("wiki", "foam", "markdown", "medpaper")
 WIKILINK_NOTE_FORMATS = {"wiki", "foam", "medpaper"}
+WIKILINK_PATTERN = re.compile(r"\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|[^\]]+)?\]\]")
 
 
 def resolve_note_export_dir(
@@ -143,6 +144,14 @@ def write_literature_notes(
         index_path.write_text(index_content, encoding="utf-8")
         index_file = {"title": index_title, "path": str(index_path), "action": "created"}
 
+    wiki_validation = _validate_generated_wikilinks(
+        output_dir,
+        note_entries,
+        normalized_format,
+        written=written,
+        index_file=index_file,
+    )
+
     return {
         "status": "success",
         "note_format": normalized_format,
@@ -154,6 +163,7 @@ def write_literature_notes(
         "index_file": index_file,
         "files": written,
         "skipped": skipped,
+        "wiki_validation": wiki_validation,
     }
 
 
@@ -161,12 +171,11 @@ def _build_note_entries(articles: list[dict[str, Any]]) -> list[dict[str, Any]]:
     entries: list[dict[str, Any]] = []
     used_stems: set[str] = set()
     for index, article in enumerate(articles, 1):
-        pmid = str(article.get("pmid") or "").strip()
         title = str(article.get("title") or "").strip()
         fallback = f"article-{index}"
         citation_key = _build_citation_key(article, fallback_id=_primary_identifier(article, fallback=fallback))
-        base = "-".join(part for part in (pmid, _slugify(title, fallback=fallback, max_length=70)) if part)
-        stem = _dedupe_stem(_slugify(base, fallback=fallback, max_length=96), used_stems)
+        stable_id = _primary_identifier(article, fallback=title or fallback)
+        stem = _dedupe_stem(_slugify(stable_id, fallback=fallback, max_length=96), used_stems)
         used_stems.add(stem)
         entries.append({"stem": stem, "citation_key": citation_key, "article": article})
     return entries
@@ -569,6 +578,77 @@ def _format_reference_link(
     return f"[{title}]({stem}.md)"
 
 
+def _validate_generated_wikilinks(
+    output_dir: Path,
+    entries: list[dict[str, Any]],
+    note_format: str,
+    *,
+    written: list[dict[str, Any]],
+    index_file: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Validate generated Foam-style wikilinks against known note targets."""
+    if note_format not in WIKILINK_NOTE_FORMATS:
+        return {
+            "status": "skipped",
+            "enabled": False,
+            "reason": f"note_format '{note_format}' does not emit wikilinks",
+            "files_checked": 0,
+            "target_count": 0,
+            "wikilink_count": 0,
+            "unresolved_count": 0,
+            "unresolved": [],
+        }
+
+    known_targets = _known_wikilink_targets(output_dir, entries, note_format)
+    generated_paths = [Path(file["path"]) for file in written if file.get("path")]
+    if index_file and index_file.get("path"):
+        generated_paths.append(Path(index_file["path"]))
+
+    unresolved: list[dict[str, str]] = []
+    wikilink_count = 0
+    for path in generated_paths:
+        if not path.exists():
+            continue
+        text = path.read_text(encoding="utf-8")
+        for target in _extract_wikilink_targets(text):
+            wikilink_count += 1
+            normalized_target = _normalize_wikilink_target(target)
+            if normalized_target not in known_targets:
+                unresolved.append({"path": str(path), "target": target})
+
+    return {
+        "status": "passed" if not unresolved else "failed",
+        "enabled": True,
+        "files_checked": len(generated_paths),
+        "target_count": len(known_targets),
+        "wikilink_count": wikilink_count,
+        "unresolved_count": len(unresolved),
+        "unresolved": unresolved,
+    }
+
+
+def _known_wikilink_targets(output_dir: Path, entries: list[dict[str, Any]], note_format: str) -> set[str]:
+    targets: set[str] = set()
+    for entry in entries:
+        note_path = _note_path(output_dir, entry, note_format)
+        relative_stem = note_path.with_suffix("").relative_to(output_dir).as_posix()
+        targets.add(_normalize_wikilink_target(relative_stem))
+        targets.add(_normalize_wikilink_target(note_path.stem))
+        targets.add(_normalize_wikilink_target(entry["stem"]))
+        if entry.get("citation_key"):
+            targets.add(_normalize_wikilink_target(str(entry["citation_key"])))
+    return {target for target in targets if target}
+
+
+def _extract_wikilink_targets(markdown: str) -> list[str]:
+    return [match.group(1).strip() for match in WIKILINK_PATTERN.finditer(markdown)]
+
+
+def _normalize_wikilink_target(target: str) -> str:
+    normalized = target.strip().replace("\\", "/")
+    return normalized.removesuffix(".md").strip("/")
+
+
 class _SafeTemplateContext(dict[str, str]):
     def __missing__(self, key: str) -> str:
         return ""
@@ -749,13 +829,16 @@ def _format_journal_line(article: dict[str, Any]) -> str:
 
 def _build_aliases(article: dict[str, Any], authors: list[str]) -> list[str]:
     aliases: list[str] = []
+    title = _clean_text(article.get("title", ""))
     pmid = str(article.get("pmid", "")).strip()
     year = str(article.get("year", "")).strip()
+    if title:
+        aliases.append(title)
     if pmid:
         aliases.extend([pmid, f"PMID {pmid}"])
     if authors and year:
         aliases.append(f"{authors[0].split()[0]} {year}")
-    return aliases
+    return list(dict.fromkeys(alias for alias in aliases if alias))
 
 
 def _format_citation(article: dict[str, Any], authors: list[str]) -> str:

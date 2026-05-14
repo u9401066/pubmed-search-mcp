@@ -128,9 +128,14 @@ class TestSaveLiteratureNotes:
         parsed = json.loads(result)
         assert parsed["status"] == "success"
         assert parsed["note_format"] == "wiki"
-        assert "[[12345678-" in parsed["files"][0]["wikilink"]
-        note_text = Path(parsed["files"][0]["path"]).read_text(encoding="utf-8")
+        assert parsed["files"][0]["wikilink"].startswith("[[12345678|")
+        note_path = Path(parsed["files"][0]["path"])
+        assert note_path.name == "12345678.md"
+        note_text = note_path.read_text(encoding="utf-8")
         assert 'note_format: "wiki"' in note_text
+        assert mock_article_data["title"] in note_text
+        assert parsed["wiki_validation"]["status"] == "passed"
+        assert parsed["wiki_validation"]["unresolved_count"] == 0
 
     @pytest.mark.asyncio
     async def test_save_literature_notes_foam(self, temp_dir, mock_article_data):
@@ -155,7 +160,35 @@ class TestSaveLiteratureNotes:
         note_text = Path(note_path).read_text(encoding="utf-8")
         assert "## Triage" in note_text
         assert parsed["csl_file"]["path"].endswith("references.csl.json")
-        assert "[[12345678-" in parsed["files"][0]["wikilink"]
+        assert parsed["files"][0]["wikilink"].startswith("[[12345678|")
+        index_text = Path(parsed["index_file"]["path"]).read_text(encoding="utf-8")
+        assert f"[[12345678|{mock_article_data['title']}]]" in index_text
+        assert parsed["wiki_validation"]["status"] == "passed"
+        assert parsed["wiki_validation"]["unresolved"] == []
+
+    def test_save_literature_notes_wiki_target_survives_title_changes(self, temp_dir, mock_article_data):
+        first_article = dict(mock_article_data)
+        second_article = dict(mock_article_data)
+        second_article["title"] = "A corrected title that should not move the wiki note"
+
+        first = write_literature_notes(
+            [first_article],
+            temp_dir,
+            create_index=False,
+        )
+        second = write_literature_notes(
+            [second_article],
+            temp_dir,
+            create_index=False,
+            overwrite=True,
+        )
+
+        first_file = Path(first["files"][0]["path"])
+        second_file = Path(second["files"][0]["path"])
+        assert first_file.name == "12345678.md"
+        assert second_file == first_file
+        assert second["files"][0]["wikilink"].startswith("[[12345678|")
+        assert second["wiki_validation"]["unresolved_count"] == 0
 
     @pytest.mark.asyncio
     async def test_save_literature_notes_medpaper_profile(self, temp_dir, mock_article_data):
