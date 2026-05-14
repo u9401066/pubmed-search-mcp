@@ -533,7 +533,7 @@ postToolUse hook (evaluate-results)
 
 | Step | 名稱 | 觸發工具 | 說明 |
 |------|------|---------|------|
-| 1 | Query Analysis | `analyze_search_query`, `parse_pico` | 分析查詢複雜度，拆解 PICO |
+| 1 | Query Analysis | `analyze_search_query`, `parse_pico` | 分析查詢複雜度；agent 抽出 P/I/C/O 後用 `parse_pico` 驗證 handoff |
 | 2 | Strategy Formation | `generate_search_queries` | 取得 MeSH 詞彙、同義詞 |
 | 3 | Initial Search | `unified_search` (無 pipeline) | 初始搜尋，評估結果 |
 | 4 | Pipeline Search | `unified_search` (有 pipeline) | 使用 pipeline template 進行精確搜尋 |

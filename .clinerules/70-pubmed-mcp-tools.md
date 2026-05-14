@@ -20,7 +20,7 @@ paths:
 ## Research Workflow Rules
 
 - Use `generate_search_queries` and `analyze_search_query` before complex/systematic searches.
-- Use `parse_pico` for clinical comparison questions.
+- For clinical comparison questions, extract P/I/C/O in the agent, then use `parse_pico` to validate the structured handoff and obtain a `template: pico` pipeline.
 - Use `get_fulltext`, `get_article_figures`, and institutional access tools only when full-text retrieval is requested.
 - Export to RIS for Zotero/EndNote and BibTeX for LaTeX workflows.
 

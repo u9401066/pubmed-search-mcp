@@ -113,7 +113,7 @@ Do not silently add a provider to `source="all"` if it can fail without credenti
 
 ## Search And Session Behavior
 
-`unified_search` is the public text-literature search entry point. Query intelligence tools such as `parse_pico`, `generate_search_queries`, and `analyze_search_query` help the agent plan before execution.
+`unified_search` is the public text-literature search entry point. Query intelligence tools such as `parse_pico`, `generate_search_queries`, and `analyze_search_query` help the agent plan before execution. `parse_pico` is an agent-provided schema handoff: the agent extracts P/I/C/O, and the server validates that structure and returns a runnable PICO pipeline.
 
 Session tools exist so follow-up actions can reuse the latest result set. User docs should encourage `pmids="last"` and session reads instead of conversational PMID memory. Code changes that affect session IDs, cached article shape, or follow-up semantics should include tests that cover multi-step workflows.
 

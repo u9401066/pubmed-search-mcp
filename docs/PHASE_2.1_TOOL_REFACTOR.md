@@ -40,7 +40,7 @@
 | **citation_tree** (2) | build_citation_tree, suggest_citation_tree | 引用網絡 | ✅ |
 | **unified** (2) | unified_search, analyze_search_query | 統一搜尋 | ✅ |
 | **strategy** (2) | generate_search_queries, expand_search_queries | 搜尋策略 | ✅ |
-| **pico** (1) | parse_pico | PICO 解析 | ✅ |
+| **pico** (1) | parse_pico | PICO 結構化 handoff | ✅ |
 | **merge** (1) | merge_search_results | 結果合併 | ✅ |
 
 ---
@@ -274,7 +274,7 @@ STANDARD_PARAMS = {
 │  get_session_pmids     ← Session PMIDs                     │
 │  list_search_history   ← 搜尋歷史                           │
 │  generate_search_queries← 搜尋策略                          │
-│  parse_pico            ← PICO 解析                          │
+│  parse_pico            ← PICO 結構化 handoff                          │
 ├─────────────────────────────────────────────────────────────┤
 │  🔧 進階工具 (特定場景, 24 tools)                            │
 ├─────────────────────────────────────────────────────────────┤

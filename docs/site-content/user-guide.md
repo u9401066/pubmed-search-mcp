@@ -58,7 +58,7 @@ For client-specific setup, see the [Integration Guide](#/troubleshooting). For H
 | Goal | Start With | Then Use |
 | --- | --- | --- |
 | Quick search for papers | `unified_search` | `fetch_article_details`, `read_session` |
-| Clinical question | `parse_pico` | `generate_search_queries`, `unified_search` |
+| Clinical question | Agent extracts P/I/C/O, then `parse_pico` | `generate_search_queries`, `unified_search` |
 | Improve a noisy query | `analyze_search_query` | `generate_search_queries`, `unified_search` |
 | Explore one important article | `fetch_article_details` | `find_related_articles`, `find_citing_articles`, `get_article_references`, `build_citation_tree` |
 | Read deeper evidence | `get_fulltext` | `get_text_mined_terms`, `get_article_figures` |
@@ -87,21 +87,22 @@ Prefer `read_session` or `get_session_pmids` for follow-up work. Do not ask the 
 
 ### 2. Use PICO For Clinical Questions
 
-For clinical comparisons, ask for PICO first:
+For clinical comparisons, ask the agent to extract P/I/C/O first and validate that structured handoff:
 
 ```text
-Parse this as PICO, propose PubMed search queries, then run the most specific one:
+Extract P/I/C/O, validate the handoff with parse_pico, propose PubMed search queries, then run the most specific one:
 In adults with type 2 diabetes and CKD, do SGLT2 inhibitors reduce heart failure hospitalization compared with placebo?
 ```
 
 Expected flow:
 
-1. `parse_pico`
-2. `generate_search_queries`
-3. `unified_search`
-4. optional `analyze_search_query` if the first query is too broad or too narrow
+1. Agent extracts P/I/C/O from the user's clinical question.
+2. `parse_pico(description=..., p=..., i=..., c=..., o=...)` validates the schema and returns a `template: pico` pipeline.
+3. Optional `generate_search_queries` calls expand P/I/C/O into MeSH/synonym fragments.
+4. `unified_search` runs either the returned PICO pipeline or the agent-built Boolean query.
+5. optional `analyze_search_query` if the first query is too broad or too narrow
 
-The server can help with MeSH, synonyms, and ICD-to-MeSH expansion, but the agent should still explain why it chose a final query.
+The server can validate the PICO handoff, build the backend PICO search plan, and help with MeSH, synonyms, and ICD-to-MeSH expansion. The agent remains responsible for the semantic PICO extraction and should explain why it chose a final query.
 
 ### 3. Explore Seed Papers
 
@@ -176,7 +177,9 @@ save_literature_notes(pmids="last", note_format="medpaper")
 save_literature_notes(pmids="last", output_dir="./references")
 ```
 
-The default `note_format` is `wiki`. Directory resolution is:
+The default `note_format` is `wiki`. `unified_search` suggests this tool for PMID-backed result sets, and the generated wiki/Foam targets use stable identifiers such as PMID, DOI, or PMCID instead of title-derived filenames. The response includes `wiki_validation` so agents can detect unresolved wikilinks before editing the note library.
+
+Directory resolution is:
 
 1. `output_dir`
 2. `PUBMED_NOTES_DIR`

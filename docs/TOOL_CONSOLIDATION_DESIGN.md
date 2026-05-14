@@ -31,7 +31,7 @@ Current state after this change:
 | Tool family | Current tools | Why not consolidate now |
 | --- | --- | --- |
 | 搜尋入口 | `unified_search` | Already the facade. Wrapping it again would add naming noise without reducing complexity. |
-| 查詢智能 | `parse_pico`, `generate_search_queries`, `analyze_search_query` | These are distinct stages with distinct outputs: decomposition, term expansion, query analysis. Merging would create a vague meta-tool. |
+| 查詢智能 | `parse_pico`, `generate_search_queries`, `analyze_search_query` | These are distinct stages with distinct outputs: agent-provided PICO handoff, term expansion, query analysis. Merging would create a vague meta-tool. |
 | 文章探索 | `fetch_article_details`, `find_related_articles`, `find_citing_articles`, `get_article_references`, `get_citation_metrics` | Inputs are similar but semantics differ substantially: detail fetch, similarity, forward citation, backward citation, impact scoring. One `explore_article(action=...)` tool would be broader but less legible. |
 | 全文工具 | `get_fulltext`, `get_text_mined_terms` | Same article target, but one is content retrieval and the other is annotation extraction. Different payload contracts and usage cadence. |
 | 圖表擷取 | `get_article_figures` | Single focused capability; no adjacent tool family worth merging into today. |

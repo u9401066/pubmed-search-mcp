@@ -18,7 +18,7 @@
 | 能力 | 主要工具 | 何時使用 |
 | --- | --- | --- |
 | 搜尋入口 | `unified_search` | 使用者要找論文、文章、或先對主題做第一輪搜尋。 |
-| 查詢智能 | `analyze_search_query`, `parse_pico`, `generate_search_queries` | 需要 MeSH、PICO、同義詞擴展、或搜尋策略。 |
+| 查詢智能 | `analyze_search_query`, `parse_pico`, `generate_search_queries` | 需要 MeSH、agent-provided PICO handoff、同義詞擴展、或搜尋策略。 |
 | 論文探索 | `fetch_article_details`, `find_related_articles`, `find_citing_articles`, `get_article_references`, `build_citation_tree` | 已有 seed PMID，要查脈絡、相關研究、引用網路。 |
 | 全文與圖表 | `get_fulltext`, `get_text_mined_terms`, `get_article_figures` | 需要文章段落、證據區段、實體標註、caption 或 image URL。 |
 | 外部生醫資料 | `search_gene`, `get_gene_details`, `search_compound`, `get_compound_details`, `search_clinvar` | 問題從文獻延伸到 NCBI gene、compound、clinical variant。 |
@@ -31,7 +31,7 @@
 | 使用者意圖 | 建議流程 |
 | --- | --- |
 | 快速搜尋文獻 | `unified_search(query=..., limit=...)` |
-| 臨床 A vs B 比較 | `parse_pico` -> `generate_search_queries` -> `unified_search` |
+| 臨床 A vs B 比較 | Agent P/I/C/O -> `parse_pico` -> `unified_search(pipeline="template: pico...")` |
 | 系統性回顧起手式 | `analyze_search_query` -> `generate_search_queries` -> `unified_search` -> `save_pipeline` |
 | 深挖重要論文 | `fetch_article_details` -> `find_related_articles` / `find_citing_articles` / `get_article_references` |
 | 全文 synthesis | `get_fulltext` -> `get_text_mined_terms` -> 結構化摘要 |
@@ -49,7 +49,7 @@ Zotero Keeper 應維持在外部整合邊界。PubMed Search MCP 負責產生 of
 
 ![搜尋與查詢智能流程](images/search-query-workflow.svg)
 
-這條路徑涵蓋 `unified_search`、`parse_pico`、`generate_search_queries`、`analyze_search_query` 與 ICD-aware search preparation。重點邊界是：策略工具產生搜尋材料，最後 query 與 source expression 仍由 agent 決定。
+這條路徑涵蓋 `unified_search`、`parse_pico`、`generate_search_queries`、`analyze_search_query` 與 ICD-aware search preparation。重點邊界是：agent 負責語意上的 PICO 抽取，`parse_pico` 驗證結構化 handoff 並回傳後端 `template: pico` pipeline。
 
 ### 論文探索與引用脈絡
 
@@ -115,17 +115,27 @@ save_literature_notes(pmids="last")
 
 - YAML frontmatter：title、PMID、DOI、PMCID、journal、year、citation key、aliases、tags
 - 產生 index note 時使用 Foam-compatible wikilinks
+- wiki/Foam link target 使用 PMID、DOI、PMCID 或 fallback identifier；title 只作為 link label 與 alias
+- 回應會包含 `wiki_validation`，列出產生的 wikilinks 與 unresolved targets
 - triage 欄位：status、relevance、decision
 - summary、key findings、methods/population、limitations、follow-up questions
 - PubMed、DOI、PMC source links
 - 預設會在 notes 或 index artifacts 建立時寫出 collection-level `references.csl.json` sidecar，方便接引用管理器
 
+當 `unified_search` 回傳 PMID-backed results 時，next-tool suggestions 會主動包含：
+
+```python
+save_literature_notes(pmids="last", note_format="wiki")
+```
+
+這讓 agent 能直接交接到本機 LLM wiki，不需要自己從搜尋結果發明檔名或 wikilink。
+
 支援格式：
 
 | Format | 連結樣式 | 排版 | 適合情境 |
 | --- | --- | --- | --- |
-| `wiki` | `[[note|title]]` | 預設 guided literature note | Foam、Obsidian-style、一般 wiki workflow |
-| `foam` | `[[note|title]]` | 與 `wiki` 相容 | 既有 Foam 使用者 |
+| `wiki` | `[[stable-id|title]]` | 預設 guided literature note | Foam、Obsidian-style、一般 wiki workflow |
+| `foam` | `[[stable-id|title]]` | 與 `wiki` 相容 | 既有 Foam 使用者 |
 | `markdown` | `[title](note.md)` | 同樣 guided sections | 純 Markdown repo |
 | `medpaper` | `[[citation_key|title]]` | per-reference directory，內含 `<citation_key>.md` 與 `metadata.json` | MedPaper-style 或 Zotero Keeper-compatible reference library |
 
@@ -150,7 +160,7 @@ citation_key: "smith2024_12345678"
 source: "PubMed"
 note_format: "wiki"
 tags: ["literature", "pubmed"]
-aliases: ["smith2024_12345678", "12345678", "Smith 2024"]
+aliases: ["smith2024_12345678", "Article title", "12345678", "Smith 2024"]
 ---
 
 # Article title

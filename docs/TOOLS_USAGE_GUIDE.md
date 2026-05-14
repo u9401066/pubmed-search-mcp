@@ -18,7 +18,7 @@ Capability-first guide for using the 46-tool PubMed Search MCP surface without t
 | Capability | Primary Tools | Use When |
 | --- | --- | --- |
 | Search entry | `unified_search` | The user wants papers, articles, or a first pass over a topic. |
-| Query intelligence | `analyze_search_query`, `parse_pico`, `generate_search_queries` | The query needs MeSH, PICO, synonym expansion, or strategy planning. |
+| Query intelligence | `analyze_search_query`, `parse_pico`, `generate_search_queries` | The query needs MeSH, agent-provided PICO handoff, synonym expansion, or strategy planning. |
 | Discovery | `fetch_article_details`, `find_related_articles`, `find_citing_articles`, `get_article_references`, `build_citation_tree` | The user has seed PMIDs and wants context, related work, or citation lineage. |
 | Full text and figures | `get_fulltext`, `get_text_mined_terms`, `get_article_figures` | The user needs article body text, evidence sections, entities, captions, or image URLs. |
 | External biomedical data | `search_gene`, `get_gene_details`, `search_compound`, `get_compound_details`, `search_clinvar` | The research question moves from papers into NCBI gene, compound, or clinical variant data. |
@@ -31,7 +31,7 @@ Capability-first guide for using the 46-tool PubMed Search MCP surface without t
 | User Intent | Recommended Flow |
 | --- | --- |
 | Quick literature search | `unified_search(query=..., limit=...)` |
-| Clinical comparison | `parse_pico` -> `generate_search_queries` -> `unified_search` |
+| Clinical comparison | Agent P/I/C/O -> `parse_pico` -> `unified_search(pipeline="template: pico...")` |
 | Systematic review seed | `analyze_search_query` -> `generate_search_queries` -> `unified_search` -> `save_pipeline` |
 | Important paper exploration | `fetch_article_details` -> `find_related_articles` / `find_citing_articles` / `get_article_references` |
 | Full-text synthesis | `get_fulltext` -> `get_text_mined_terms` -> structured summary |
@@ -49,7 +49,7 @@ Each feature family has a workflow diagram so users and developers can see where
 
 ![Search and query intelligence workflow](images/search-query-workflow.svg)
 
-Use this path for `unified_search`, `parse_pico`, `generate_search_queries`, `analyze_search_query`, and ICD-aware search preparation. The important boundary is that strategy tools produce search materials; the agent still chooses the final query and source expression.
+Use this path for `unified_search`, `parse_pico`, `generate_search_queries`, `analyze_search_query`, and ICD-aware search preparation. The important boundary is that the agent performs semantic PICO extraction, while `parse_pico` validates the structured handoff and returns a backend `template: pico` pipeline.
 
 ### Article Discovery And Citation Mapping
 
@@ -141,17 +141,27 @@ The default `note_format` is `wiki`. It writes one `.md` file per article with:
 
 - YAML frontmatter for title, PMID, DOI, PMCID, journal, year, citation key, aliases, and tags
 - Foam-compatible wikilinks in the generated index note
+- stable wiki/Foam link targets based on PMID, DOI, PMCID, or a fallback identifier; article titles stay as link labels and aliases
+- a `wiki_validation` report showing emitted wikilinks and any unresolved targets
 - triage fields for status, relevance, and decision
 - summary, key findings, methods/population, limitations, and follow-up question sections
 - source links to PubMed, DOI, and PMC when available
 - by default, a collection-level `references.csl.json` sidecar when notes or index artifacts are created
 
+When `unified_search` returns PMID-backed results, its next-tool suggestions include:
+
+```python
+save_literature_notes(pmids="last", note_format="wiki")
+```
+
+That gives agents a local LLM-wiki handoff without requiring them to invent filenames or wikilinks from the search response.
+
 Supported note formats:
 
 | Format | Link Style | Layout | Best For |
 | --- | --- | --- | --- |
-| `wiki` | `[[note|title]]` | default guided literature note | Foam, Obsidian-style, and general wiki workflows |
-| `foam` | `[[note|title]]` | same compatible profile as `wiki` | existing Foam-specific users |
+| `wiki` | `[[stable-id|title]]` | default guided literature note | Foam, Obsidian-style, and general wiki workflows |
+| `foam` | `[[stable-id|title]]` | same compatible profile as `wiki` | existing Foam-specific users |
 | `markdown` | `[title](note.md)` | same guided sections | plain Markdown repositories |
 | `medpaper` | `[[citation_key|title]]` | per-reference directory containing `<citation_key>.md` plus `metadata.json` | MedPaper-style or Zotero Keeper-compatible reference libraries |
 
@@ -176,7 +186,7 @@ citation_key: "smith2024_12345678"
 source: "PubMed"
 note_format: "wiki"
 tags: ["literature", "pubmed"]
-aliases: ["smith2024_12345678", "12345678", "Smith 2024"]
+aliases: ["smith2024_12345678", "Article title", "12345678", "Smith 2024"]
 ---
 
 # Article title

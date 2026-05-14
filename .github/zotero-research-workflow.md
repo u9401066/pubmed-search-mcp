@@ -5,7 +5,7 @@
 ## 🔍 文獻搜尋流程
 
 ### 步驟 1: 了解研究問題
-使用 `parse_pico` 將研究問題拆解為 PICO 結構：
+Agent 先抽出 P/I/C/O，再使用 `parse_pico(description=..., p=..., i=..., c=..., o=...)` 驗證結構化 PICO handoff：
 - **P**opulation: 研究對象
 - **I**ntervention: 介入措施
 - **C**omparison: 對照組
@@ -105,7 +105,7 @@
 用戶: 幫我找最近的 AI 麻醉研究
 
 Copilot 動作:
-1. parse_pico: 分析研究問題
+1. Agent 抽出 P/I/C/O，並用 parse_pico 驗證 handoff / 取得 PICO pipeline
 2. generate_search_queries: 產生搜尋策略
 3. unified_search: 執行搜尋
 4. [回報結果，詢問是否要存入 Zotero]

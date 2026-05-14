@@ -316,7 +316,7 @@ output:
 `search` does not always need its own `query`. It can derive the query from an upstream step:
 
 - When upstream is `pico`, you can use `element: P|I|C|O`
-- When upstream is `pico`, you can also use `use_combined: precision|recall`
+- When upstream is `pico`, you can also use `use_combined: precision|recall|intervention_outcome|comparison_outcome`
 - When upstream is `expand`, you can use `strategy: mesh` or another strategy name
 
 ### Dry-run and partial execution

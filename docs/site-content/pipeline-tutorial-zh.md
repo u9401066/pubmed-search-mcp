@@ -318,7 +318,7 @@ output:
 `search` 不一定要自己寫 `query`，它也能從上游 step 導出 query:
 
 - 上游是 `pico` 時，可用 `element: P|I|C|O`
-- 上游是 `pico` 時，也可用 `use_combined: precision|recall`
+- 上游是 `pico` 時，也可用 `use_combined: precision|recall|intervention_outcome|comparison_outcome`
 - 上游是 `expand` 時，可用 `strategy: mesh` 或其他 strategy 名稱
 
 ### Dry-run 與部分執行

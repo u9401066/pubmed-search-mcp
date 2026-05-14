@@ -113,7 +113,7 @@ Source connector 必須待在 infrastructure boundary 後面。Provider-specific
 
 ## Search 與 Session 行為
 
-`unified_search` 是公開文字文獻搜尋入口。`parse_pico`、`generate_search_queries` 與 `analyze_search_query` 等 query intelligence tools 協助 agent 在執行搜尋前規劃。
+`unified_search` 是公開文字文獻搜尋入口。`parse_pico`、`generate_search_queries` 與 `analyze_search_query` 等 query intelligence tools 協助 agent 在執行搜尋前規劃。`parse_pico` 是 agent-provided schema handoff：agent 抽出 P/I/C/O，server 驗證該結構並回傳可執行的 PICO pipeline。
 
 Session tools 的存在，是讓 follow-up actions 重用最新 result set。User docs 應鼓勵使用 `pmids="last"` 與 session reads，而不是讓模型靠對話記憶 PMID。任何影響 session IDs、cached article shape 或 follow-up semantics 的變更，都應包含多步驟 workflow tests。
 

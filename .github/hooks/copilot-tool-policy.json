@@ -52,9 +52,9 @@
     "institutional": [
       "configure_institutional_access",
       "get_institutional_link",
+      "diagnose_institutional_access",
       "list_resolver_presets",
-      "test_institutional_access",
-      "diagnose_institutional_access"
+      "test_institutional_access"
     ],
     "vision": [
       "analyze_figure_for_search"
@@ -83,7 +83,7 @@
   "workflowSteps": {
     "query_analysis": {
       "label": "Query Analysis",
-      "nextInstruction": "analyze_search_query / parse_pico",
+      "nextInstruction": "analyze_search_query / agent PICO handoff via parse_pico",
       "tools": [
         "parse_pico",
         "analyze_search_query"
@@ -104,8 +104,7 @@
         "convert_icd_mesh",
         "configure_institutional_access",
         "list_resolver_presets",
-        "test_institutional_access",
-        "diagnose_institutional_access"
+        "test_institutional_access"
       ]
     },
     "initial_search": {
@@ -137,8 +136,8 @@
         "verify_reference_list",
         "get_gene_details",
         "get_compound_details",
-        "get_institutional_link",
         "diagnose_institutional_access",
+        "get_institutional_link",
         "get_pipeline_history"
       ]
     },
@@ -182,6 +181,7 @@
       "get_article_figures",
       "build_citation_tree",
       "prepare_export",
+      "save_literature_notes",
       "read_session",
       "get_session_pmids",
       "get_cached_article",
@@ -220,16 +220,16 @@
       "get_compound_literature",
       "search_clinvar",
       "build_citation_tree",
+      "save_literature_notes",
       "read_session",
       "get_session_pmids",
       "get_cached_article",
       "get_session_summary",
       "get_session_log",
       "verify_reference_list",
+      "diagnose_institutional_access",
       "analyze_figure_for_search",
       "convert_icd_mesh",
-      "diagnose_institutional_access",
-      "save_literature_notes",
       "search_biomedical_images",
       "manage_pipeline",
       "save_pipeline",
@@ -257,6 +257,7 @@
       "search_clinvar",
       "build_citation_tree",
       "prepare_export",
+      "save_literature_notes",
       "read_session",
       "get_session_pmids",
       "get_cached_article",

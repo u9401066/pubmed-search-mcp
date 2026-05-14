@@ -424,8 +424,14 @@ unified_search(query="<combined_boolean_query>")
 ### PICO Clinical Question
 **Trigger**: "Is A better than B?", "Does X reduce Y?", comparative questions
 ```python
-# Step 1: Parse PICO
-parse_pico(description="<clinical question>")
+# Step 1: Agent extracts P/I/C/O, then validates the structured handoff
+parse_pico(
+    description="<clinical question>",
+    p="<Population>",
+    i="<Intervention/exposure>",
+    c="<Comparator, optional>",
+    o="<Outcome, recommended>"
+)
 
 # Step 2: Get materials for each PICO element (parallel!)
 generate_search_queries(topic="<P>")
@@ -446,7 +452,7 @@ unified_search(query="<combined_boolean_query>")
 ## 📚 Tool Categories
 
 ### 搜尋工具
-*文獻搜索入口*
+*Unified multi-source literature search gateway*
 
 | Tool | Purpose |
 |------|---------|
@@ -454,11 +460,11 @@ unified_search(query="<combined_boolean_query>")
 
 
 ### 查詢智能
-*MeSH 擴展、PICO 解析*
+*MeSH expansion, agent-provided PICO handoff, and query analysis*
 
 | Tool | Purpose |
 |------|---------|
-| `parse_pico` | Parse a clinical question into PICO elements OR accept pre-parsed PICO. |
+| `parse_pico` | Validate agent-provided PICO elements and return a runnable search plan. |
 | `generate_search_queries` | Gather search intelligence for a topic - returns RAW MATERIALS for Agent to decide. |
 | `analyze_search_query` | Analyze a search query without executing the search. |
 

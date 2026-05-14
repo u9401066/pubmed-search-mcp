@@ -663,7 +663,7 @@ User Query: "Is remimazolam better than propofol for ICU sedation?"
 │  ┌─ 10 Available Actions ─────────────────────────────┐  │
 │  │                                                     │  │
 │  │  🔍 search    → Multi-source parallel search        │  │
-│  │  🏥 pico      → Parse PICO elements                 │  │
+│  │  🏥 pico      → Validate agent-provided PICO         │  │
 │  │  🔬 expand    → Semantic enhancement                │  │
 │  │  📋 details   → Fetch article details               │  │
 │  │  🔗 related   → Find similar articles               │  │

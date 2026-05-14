@@ -235,7 +235,7 @@ search_pubmed_advanced(
 |------|:----:|:----------:|
 | 基本搜尋 | ✅ | ✅ |
 | 進階搜尋 | ✅ MeSH/tiab/pt | ⚠️ 僅欄位篩選 |
-| **PICO 解析** | ✅ | ❌ |
+| **PICO 結構化 handoff** | ✅ | ❌ |
 | **MeSH 擴展** | ✅ | ❌ |
 | **拼字校正** | ✅ ESpell | ❌ |
 | **搜尋策略生成** | ✅ | ❌ |
@@ -247,7 +247,7 @@ search_pubmed_advanced(
 
 **我們的優勢**:
 - ✅ 更完整的 PubMed Entrez API 整合
-- ✅ PICO 解析 (他們沒有)
+- ✅ PICO 結構化 handoff (他們沒有)
 - ✅ MeSH 自動擴展 (他們沒有)
 - ✅ 拼字校正 (他們沒有)
 - ✅ 搜尋策略生成 (他們沒有)
@@ -602,7 +602,7 @@ interface PaperMetadata {
 | 資料來源 | 6 個 | 8 個 | 1 個 (PubMed) |
 | 全文提取 | ✅ 智能 fallback | ✅ PyPDF2 | ✅ PMC |
 | MeSH 支援 | ❌ | ❌ | ✅ |
-| PICO 解析 | ❌ | ❌ | ✅ |
+| PICO 結構化 handoff | ❌ | ❌ | ✅ |
 | 引用分析 | ✅ OpenAlex | ⚠️ 有限 | ❌ |
 | DOI 解析鏈 | ✅ 3 層 | ⚠️ CrossRef only | ❌ |
 | CLI | ✅ | ✅ | ❌ |
@@ -623,7 +623,7 @@ interface PaperMetadata {
 
 ```
 ✅ 我們: PubMed 專精，MeSH 支援完整
-✅ 我們: PICO 解析 (系統性文獻回顧必備)
+✅ 我們: PICO 結構化 handoff (系統性文獻回顧必備)
 ✅ 我們: ESpell 拼字校正
 ✅ 我們: ELink 相關文章推薦
 ✅ 我們: 搜尋策略生成 (Boolean query)
@@ -852,7 +852,7 @@ papers/
 ```
 ✅ 我們: PubMed 專精 (生醫領域)
 ✅ 我們: MeSH hierarchical search (醫學主題詞)
-✅ 我們: PICO 解析 (系統性文獻回顧)
+✅ 我們: PICO 結構化 handoff (系統性文獻回顧)
 ✅ 我們: ESpell 拼字校正
 ✅ 我們: 更多 Tools (8 vs 4)
 
@@ -1143,7 +1143,7 @@ src/
 ```
 ✅ 我們: PubMed 專精 (結構化醫學資料)
 ✅ 我們: MeSH hierarchical search
-✅ 我們: PICO 解析 (系統性文獻回顧)
+✅ 我們: PICO 結構化 handoff (系統性文獻回顧)
 ✅ 我們: ESpell 拼字校正
 ✅ 我們: 官方 API (穩定性高)
 

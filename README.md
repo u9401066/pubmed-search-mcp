@@ -266,7 +266,7 @@ Other tools give you raw API access. We give you **vocabulary translation + inte
 | --------- | ------------ |
 | Agent uses ICD codes, PubMed needs MeSH | ✅ **Auto ICD→MeSH conversion** |
 | Multiple databases, different APIs | ✅ **Unified Search** single entry point |
-| Clinical questions need structured search | ✅ **PICO toolkit** (`parse_pico` + `generate_search_queries` for Agent-driven workflow) |
+| Clinical questions need structured search | ✅ **PICO handoff + pipeline** (`parse_pico` validates agent-provided P/I/C/O and returns a runnable `template: pico` pipeline) |
 | Typos in medical terms | ✅ **ESpell auto-correction** |
 | Too many results from one source | ✅ **Parallel multi-source** with dedup |
 | Need to trace research evolution | ✅ **Research Timeline & Tree** with landmark detection, diagnostics, and sub-topic branching |
@@ -280,7 +280,7 @@ Other tools give you raw API access. We give you **vocabulary translation + inte
 
 1. **Vocabulary Translation Layer** - Agent speaks naturally, we translate to each database's terminology (MeSH, ICD-10, text-mined entities)
 2. **Unified Search Gateway** - One `unified_search()` call, auto-dispatch to PubMed/Europe PMC/CORE/OpenAlex
-3. **PICO Toolkit** - `parse_pico()` decomposes clinical questions into P/I/C/O elements; Agent then calls `generate_search_queries()` per element and builds Boolean query
+3. **PICO Handoff + Pipeline** - the Agent extracts P/I/C/O, `parse_pico()` validates that structured handoff, and the backend `template: pico` pipeline executes O-aware precision/recall searches
 4. **Research Timeline & Lineage Tree** - Detect milestones with policy-driven heuristics, identify landmark papers via multi-signal scoring, surface timeline diagnostics, and visualize research evolution as branching trees by sub-topic
 5. **Citation Network Analysis** - Build multi-level citation trees to map an entire research landscape from a single paper
 6. **Full Research Lifecycle** - From search → discovery → full text → analysis → export, all in one server
@@ -339,6 +339,7 @@ PUBMED_DATA_DIR=~/.pubmed-search-mcp        # fallback: references/ under this d
 ```
 
 Local note export resolves directories in this order: `output_dir` argument, `PUBMED_NOTES_DIR`, `PUBMED_WORKSPACE_DIR/references`, `PUBMED_DATA_DIR/references`, then `~/.pubmed-search-mcp/references`.
+For LLM wiki compatibility, `wiki` and `foam` exports use stable link targets based on PMID, DOI, PMCID, or fallback identifiers; titles remain aliases/display labels, and the response includes `wiki_validation` for unresolved wikilink checks.
 
 ## 🔄 How It Works: The Middleware Architecture
 
@@ -411,7 +412,7 @@ Start with the [Tools Usage Guide](docs/TOOLS_USAGE_GUIDE.md): it compresses the
 │   QUERY INTELLIGENCE                                             │
 │                                                                  │
 │   generate_search_queries() → MeSH expansion + synonym discovery │
-│   parse_pico()              → PICO element decomposition         │
+│   parse_pico()              → Agent-provided PICO handoff        │
 │   analyze_search_query()    → Query analysis without execution   │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
@@ -668,7 +669,7 @@ unified_search(query="Is remimazolam better than propofol for ICU sedation?")
 # For structured PICO search, use the Agent workflow below
 ```
 
-**Agent workflow** — PICO decomposition + MeSH expansion (recommended for clinical questions):
+**Agent workflow** — agent-provided PICO + backend pipeline search (recommended for clinical questions):
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -712,9 +713,15 @@ unified_search(query="Is remimazolam better than propofol for ICU sedation?")
 ```
 
 ```python
-# Step 1: Parse clinical question
-parse_pico("Is remimazolam better than propofol for ICU sedation?")
-# Returns: P=ICU patients, I=remimazolam, C=propofol, O=sedation outcomes
+# Step 1: Agent extracts P/I/C/O, then validates the structured handoff
+pico = parse_pico(
+    description="Is remimazolam better than propofol for ICU sedation?",
+    p="ICU patients requiring sedation",
+    i="remimazolam",
+    c="propofol",
+    o="sedation efficacy, delirium, hypotension"
+)
+# Returns validation plus a ready-to-run `template: pico` pipeline.
 
 # Step 2: Get MeSH for each element (parallel!)
 generate_search_queries(topic="ICU patients")   # P
@@ -722,11 +729,14 @@ generate_search_queries(topic="remimazolam")    # I
 generate_search_queries(topic="propofol")       # C
 generate_search_queries(topic="sedation")       # O
 
-# Step 3: Agent combines with Boolean
-query = '("Intensive Care Units"[MeSH]) AND (remimazolam OR "CNS 7056") AND propofol AND sedation'
+# Step 3: Either pass expanded fragments back as p_query/i_query/c_query/o_query
+# or let the backend pipeline use the structured P/I/C/O labels.
 
-# Step 4: Search (auto multi-source, dedup, rank)
-unified_search(query=query)
+# Step 4: Search (backend runs O-aware precision/recall searches, dedup, rank)
+unified_search(
+    query="Is remimazolam better than propofol for ICU sedation?",
+    pipeline=pico["pipeline"]
+)
 ```
 
 ### 3️⃣ Explore from Key Paper
@@ -853,8 +863,8 @@ manage_pipeline(action="history", name="icu_sedation_weekly")  # View past runs
 │         │       → Quick, auto-routing to best sources                    │
 │         │                                                                │
 │         ├── Have a clinical question (A vs B)?                           │
-│         │   └── parse_pico() → generate_search_queries() × N             │
-│         │       → Agent builds Boolean → unified_search()                │
+│         │   └── Agent P/I/C/O → parse_pico() handoff                  │
+│         │       → unified_search(template:pico) or expanded Boolean    │
 │         │                                                                │
 │         ├── Need comprehensive systematic coverage?                      │
 │         │   └── generate_search_queries() → parallel search              │
@@ -870,7 +880,7 @@ manage_pipeline(action="history", name="icu_sedation_weekly")  # View past runs
 | Mode | Entry Point | Best For | Auto-Features |
 | ---- | ----------- | -------- | ------------- |
 | **Quick** | `unified_search()` | Fast topic search | ICD→MeSH, multi-source, dedup |
-| **PICO** | `parse_pico()` → Agent | Clinical questions | Agent: decompose → MeSH expand → Boolean |
+| **PICO** | Agent P/I/C/O -> `parse_pico()` | Clinical questions | Validate handoff -> `template:pico` backend search |
 | **Systematic** | `generate_search_queries()` | Literature reviews | MeSH expansion, synonyms |
 | **Exploration** | `find_*_articles()` | From key paper | Citation network, related |
 

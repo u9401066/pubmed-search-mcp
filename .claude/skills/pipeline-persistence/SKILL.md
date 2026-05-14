@@ -219,7 +219,7 @@ params:
 | Action | 說明 | 主要參數 |
 |--------|------|----------|
 | `search` | 文獻搜尋 | `query`, `sources`, `limit`, `min_year`, `max_year` |
-| `pico` | PICO 元素解析 | `P`, `I`, `C`, `O` |
+| `pico` | Agent-provided PICO handoff search | `P`, `I`, optional `C`, recommended `O` |
 | `expand` | MeSH/同義詞擴展 | `topic` |
 | `details` | 取得文章詳情 | `pmids` |
 | `related` | 相關文章 | `pmid`, `limit` |
@@ -424,7 +424,7 @@ output:
 
 | 場景 | 推薦模板 | 說明 |
 |------|----------|------|
-| 臨床問題 A vs B | `pico` | 自動解析 PICO、並行搜尋 |
+| 臨床問題 A vs B | `pico` | Agent 提供 P/I/C/O；後端執行含 O 的 precision/recall 搜尋 |
 | 主題綜合搜尋 | `comprehensive` | 多源 + MeSH 擴展 |
 | 已知重要論文 | `exploration` | 三方向探索（related/citing/refs） |
 | 基因/藥物研究 | `gene_drug` | 詞彙擴展 + 多源 |

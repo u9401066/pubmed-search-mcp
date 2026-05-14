@@ -20,7 +20,7 @@ The current surface is 46 tools, but the practical comprehension model is 8 capa
 
 ## 搜尋工具
 
-文獻搜索入口
+Unified multi-source literature search gateway
 
 | Tool | Description |
 | --- | --- |
@@ -28,11 +28,11 @@ The current surface is 46 tools, but the practical comprehension model is 8 capa
 
 ## 查詢智能
 
-MeSH 擴展、PICO 解析
+MeSH expansion, agent-provided PICO handoff, and query analysis
 
 | Tool | Description |
 | --- | --- |
-| `parse_pico` | Parse a clinical question into PICO elements OR accept pre-parsed PICO. |
+| `parse_pico` | Validate agent-provided PICO elements and return a runnable search plan. |
 | `generate_search_queries` | Gather search intelligence for a topic - returns RAW MATERIALS for Agent to decide. |
 | `analyze_search_query` | Analyze a search query without executing the search. |
 
@@ -195,7 +195,7 @@ mcp_server/
     ├── unified.py      # unified_search
     ├── discovery.py    # 搜尋與探索
     ├── strategy.py     # MeSH/查詢策略
-    ├── pico.py         # PICO 解析
+    ├── pico.py         # Agent-provided PICO handoff
     ├── export.py       # 匯出工具
     ├── europe_pmc.py   # Europe PMC 全文
     ├── core.py         # CORE 開放取用

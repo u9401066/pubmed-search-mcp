@@ -58,7 +58,7 @@ PUBMED_NOTES_DIR=/path/to/references
 | 目標 | 從這裡開始 | 接著使用 |
 | --- | --- | --- |
 | 快速找文獻 | `unified_search` | `fetch_article_details`, `read_session` |
-| 臨床問題 | `parse_pico` | `generate_search_queries`, `unified_search` |
+| 臨床問題 | Agent 抽出 P/I/C/O 後呼叫 `parse_pico` | `generate_search_queries`, `unified_search` |
 | 改善太吵或太窄的 query | `analyze_search_query` | `generate_search_queries`, `unified_search` |
 | 從重要文章往外探索 | `fetch_article_details` | `find_related_articles`, `find_citing_articles`, `get_article_references`, `build_citation_tree` |
 | 閱讀更深層證據 | `get_fulltext` | `get_text_mined_terms`, `get_article_figures` |
@@ -90,18 +90,18 @@ Agent 通常應該從 `unified_search` 開始。好的結果會包含使用的 q
 臨床比較問題先做 PICO：
 
 ```text
-Parse this as PICO, propose PubMed search queries, then run the most specific one:
+Extract P/I/C/O, validate the handoff with parse_pico, propose PubMed search queries, then run the most specific one:
 In adults with type 2 diabetes and CKD, do SGLT2 inhibitors reduce heart failure hospitalization compared with placebo?
 ```
 
 預期流程：
 
-1. `parse_pico`
-2. `generate_search_queries`
-3. `unified_search`
-4. 如果第一輪太廣或太窄，再用 `analyze_search_query`
+1. Agent 從使用者的臨床問題抽出 P/I/C/O。
+2. `parse_pico(description=..., p=..., i=..., c=..., o=...)` 驗證 schema 並回傳 `template: pico` pipeline。
+3. 可選：用 `generate_search_queries` 將 P/I/C/O 擴展成 MeSH/同義詞 fragments。
+4. `unified_search` 執行回傳的 PICO pipeline，或執行 agent 組好的 Boolean query。
 
-Server 能協助 MeSH、synonyms 與 ICD-to-MeSH expansion，但 agent 仍應說明最後選擇哪個 query，以及原因。
+Server 能驗證 PICO handoff、建立後端 PICO 搜尋計畫，並協助 MeSH、同義詞與 ICD-to-MeSH 擴展；語意上的 PICO 抽取仍由 agent 負責。
 
 ### 3. 從 Seed Paper 探索
 
@@ -176,7 +176,9 @@ save_literature_notes(pmids="last", note_format="medpaper")
 save_literature_notes(pmids="last", output_dir="./references")
 ```
 
-預設 `note_format` 是 `wiki`。輸出目錄解析順序：
+預設 `note_format` 是 `wiki`。`unified_search` 對 PMID-backed result set 會主動建議這個工具；產生的 wiki/Foam targets 會使用 PMID、DOI、PMCID 等穩定 identifier，而不是從 title 產生檔名。回應也會包含 `wiki_validation`，讓 agent 在編輯 note library 前先檢查 unresolved wikilinks。
+
+輸出目錄解析順序：
 
 1. `output_dir`
 2. `PUBMED_NOTES_DIR`
