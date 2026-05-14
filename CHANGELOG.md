@@ -20,6 +20,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.5.12] - 2026-05-14
+
+### Added
+
+- Production-grade LLM wiki export compatibility for `save_literature_notes`, including stable Foam/wiki link targets, title aliases, and post-export `wiki_validation` for unresolved wikilinks.
+- `unified_search` now suggests `save_literature_notes(pmids="last", note_format="wiki")` for PMID-backed result sets so agents can persist local literature notes without inventing filenames or links.
+- Agent-provided PICO handoff flow: `parse_pico` validates structured P/I/C/O input and returns a runnable `template: pico` pipeline for backend search execution.
+
+### Changed
+
+- Wiki/Foam note filenames and wikilink targets now prefer stable identifiers such as PMID, DOI, or PMCID instead of title-derived slugs, so title corrections do not break local LLM wiki links.
+- Documentation, docs-site payloads, MCP tool references, Copilot/Cline/Claude guidance, and packaged tutorial references were synchronized with the PICO handoff and LLM wiki export workflows.
+
+### Fixed
+
+- Semantic Scholar 429/circuit-open behavior is documented for client remediation and source gating, reducing traceback-heavy agent failures in Cline-style MCP sessions.
+
+### Tests
+
+- Added regression coverage for stable wiki/Foam targets, wikilink validation, `unified_search` note-export suggestions, PICO pipeline handoff behavior, source settings, and source registry boundaries.
+- Revalidated with full pytest, mypy, async-test checks, Ruff, docs-site JavaScript syntax checks, and generated docs alignment.
+
+---
+
 ## [0.5.11] - 2026-05-14
 
 ### Fixed

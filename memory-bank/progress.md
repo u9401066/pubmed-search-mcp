@@ -1,6 +1,13 @@
-# Progress (Updated: 2026-04-29)
+# Progress (Updated: 2026-05-14)
 
 ## Done
+
+### 2026-05-14: v0.5.12 - LLM Wiki Compatibility + PICO Handoff
+- Stable LLM wiki export: `save_literature_notes` writes wiki/Foam notes with stable PMID/DOI/PMCID/fallback targets and reports `wiki_validation`.
+- Unified search handoff: PMID-backed `unified_search` results now suggest `save_literature_notes(pmids="last", note_format="wiki")`.
+- PICO handoff: `parse_pico` validates agent-provided P/I/C/O and returns a runnable `template: pico` backend pipeline.
+- Docs/site sync: README, usage/user guides, generated docs-site content, and agent harness guidance were aligned.
+- Quality gate: full pytest (`3379 passed, 31 skipped`), mypy, async-test checker, Ruff, and docs-site JavaScript syntax checks passed.
 
 ### 2026-04-29: v0.5.7 — Pipeline Persistence + Local Literature Notes
 - ✅ **Guided local note export** — added `save_literature_notes` for wiki/Foam/Markdown/MedPaper-style notes with citation frontmatter, triage sections, index notes, and CSL JSON sidecars

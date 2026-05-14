@@ -1,5 +1,25 @@
 # Active Context
 
+## Current Focus
+
+- v0.5.12 release: production-grade LLM wiki compatibility, agent-provided PICO handoff, synchronized docs/site/agent guidance, segmented commits, push, and tag publish.
+
+## Validation Snapshot
+
+- `uv run pytest -q`: 3379 passed, 31 skipped
+- `uv run mypy src/ tests/`: passed
+- `uv run python scripts/check_async_tests.py`: passed
+- `uv run ruff check ...`: passed for touched code/test files
+- `uv run ruff format --check ...`: passed for touched code/test files
+- `node --check docs/site.js; node --check docs/site-content.js`: passed
+
+## Session Notes
+
+- `save_literature_notes` now emits stable wiki/Foam targets using PMID/DOI/PMCID/fallback identifiers and returns `wiki_validation`.
+- `unified_search` now suggests `save_literature_notes(pmids="last", note_format="wiki")` when results have PMIDs.
+- `parse_pico` is an agent handoff validator: the LLM supplies structured P/I/C/O, then the backend returns a runnable `template: pico` pipeline.
+- Docs, generated docs site content, Cline/Codex/Claude skills, and Copilot guidance were synchronized for release.
+
 > 📌 此檔案記錄當前工作焦點，每次工作階段開始時檢視，結束時更新。
 
 ## 🎯 當前焦點
