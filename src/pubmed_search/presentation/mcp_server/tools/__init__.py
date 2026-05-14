@@ -7,7 +7,8 @@ PubMed Search MCP Tools (v0.5.2)
 - unified_search: 統一搜索入口，自動多源搜索 (PubMed, Europe PMC, OpenAlex, Semantic Scholar, CrossRef, CORE)
 
 ✅ 查詢智能 (3)：
-- parse_pico, generate_search_queries, analyze_search_query
+- parse_pico: validate agent-provided P/I/C/O and return a PICO pipeline handoff
+- generate_search_queries, analyze_search_query
 
 ✅ 文章探索 (5)：
 - fetch_article_details, find_related_articles, find_citing_articles

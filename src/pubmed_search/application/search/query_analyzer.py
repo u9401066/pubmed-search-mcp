@@ -683,8 +683,9 @@ class QueryAnalyzer:
         """
         Detect PICO elements from query.
 
-        This is a heuristic detection - for accurate PICO extraction,
-        use the parse_pico tool.
+        This is heuristic metadata only. The agent is responsible for
+        clinical PICO extraction; parse_pico validates agent-provided
+        structured P/I/C/O and hands off to the PICO pipeline.
         """
         query_lower = query.lower()
 

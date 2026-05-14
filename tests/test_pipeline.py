@@ -299,6 +299,8 @@ class TestActionPico:
         assert result.metadata["elements"] == {"P": "ICU", "I": "remimazolam", "C": "propofol", "O": "sedation"}
         assert "AND" in result.metadata["combined_precision"]
         assert "OR" in result.metadata["combined_recall"]
+        assert result.metadata["combined_intervention_outcome"] == "(remimazolam) AND (sedation)"
+        assert result.metadata["combined_comparison_outcome"] == "(propofol) AND (sedation)"
 
     async def test_pico_without_c_o(self):
         executor = PipelineExecutor()
@@ -308,12 +310,42 @@ class TestActionPico:
         assert "C" not in result.metadata["elements"]
         assert "O" not in result.metadata["elements"]
 
+    async def test_pico_uses_agent_expanded_query_fields(self):
+        executor = PipelineExecutor()
+        step = PipelineStep(
+            id="p",
+            action="pico",
+            params={
+                "P": "ICU patients",
+                "P_query": '("Intensive Care Units"[MeSH] OR ICU[tiab])',
+                "I": "remimazolam",
+                "I_query": "(remimazolam[tiab])",
+                "C": "propofol",
+                "O": "delirium",
+                "O_query": '("Delirium"[MeSH] OR delirium[tiab])',
+            },
+        )
+
+        result = await executor._action_pico(step, {})
+
+        assert result.ok
+        assert result.metadata["elements"]["P"] == "ICU patients"
+        assert result.metadata["query_elements"]["P"] == '("Intensive Care Units"[MeSH] OR ICU[tiab])'
+        assert '"Delirium"[MeSH]' in result.metadata["combined_precision"]
+
     async def test_pico_empty_fails(self):
         executor = PipelineExecutor()
         step = PipelineStep(id="p", action="pico", params={})
         result = await executor._action_pico(step, {})
         assert not result.ok
         assert "No PICO elements" in (result.error or "")
+
+    async def test_pico_missing_required_core_fails(self):
+        executor = PipelineExecutor()
+        step = PipelineStep(id="p", action="pico", params={"P": "ICU patients"})
+        result = await executor._action_pico(step, {})
+        assert not result.ok
+        assert "P and I" in (result.error or "")
 
 
 # =========================================================================
@@ -567,10 +599,14 @@ class TestQueryResolution:
         pico_result = StepResult(
             step_id="p",
             action="pico",
-            metadata={"elements": {"P": "ICU", "I": "remimazolam"}, "combined_precision": "(ICU) AND (remimazolam)"},
+            metadata={
+                "elements": {"P": "ICU", "I": "remimazolam"},
+                "query_elements": {"P": "ICU", "I": "remimazolam[tiab]"},
+                "combined_precision": "(ICU) AND (remimazolam[tiab])",
+            },
         )
         query = PipelineExecutor._resolve_query(step, {"p": pico_result})
-        assert query == "remimazolam"
+        assert query == "remimazolam[tiab]"
 
     def test_from_pico_combined(self):
         step = PipelineStep(id="s", action="search", inputs=["p"], params={})
@@ -581,6 +617,20 @@ class TestQueryResolution:
         )
         query = PipelineExecutor._resolve_query(step, {"p": pico_result})
         assert query == "(ICU)"
+
+    def test_from_pico_intervention_outcome_combined(self):
+        step = PipelineStep(id="s", action="search", inputs=["p"], params={"use_combined": "intervention_outcome"})
+        pico_result = StepResult(
+            step_id="p",
+            action="pico",
+            metadata={
+                "elements": {"P": "ICU", "I": "remimazolam", "O": "delirium"},
+                "combined_precision": "(ICU) AND (remimazolam) AND (delirium)",
+                "combined_intervention_outcome": "(remimazolam) AND (delirium)",
+            },
+        )
+        query = PipelineExecutor._resolve_query(step, {"p": pico_result})
+        assert query == "(remimazolam) AND (delirium)"
 
     def test_from_expand_strategy(self):
         step = PipelineStep(id="s", action="search", inputs=["e"], params={"strategy": "mesh"})
@@ -779,7 +829,30 @@ class TestPicoTemplate:
     def test_pico_with_comparison(self):
         cfg = build_pipeline_from_template("pico", {"P": "ICU", "I": "remimazolam", "C": "propofol", "O": "sedation"})
         search_steps = [s for s in cfg.steps if s.action == "search"]
-        assert len(search_steps) == 3  # P, I, C (no separate O search)
+        assert any(s.params.get("use_combined") == "precision" for s in search_steps)
+        assert any(s.params.get("use_combined") == "recall" for s in search_steps)
+        assert any(s.params.get("use_combined") == "intervention_outcome" for s in search_steps)
+        assert any(s.params.get("use_combined") == "comparison_outcome" for s in search_steps)
+
+    def test_pico_precision_profile_uses_only_precision_search(self):
+        cfg = build_pipeline_from_template(
+            "pico",
+            {"P": "ICU", "I": "remimazolam", "O": "delirium", "profile": "precision"},
+        )
+        search_modes = [s.params.get("use_combined") for s in cfg.steps if s.action == "search"]
+
+        assert search_modes == ["precision"]
+
+    def test_pico_template_rejects_invalid_profile(self):
+        with pytest.raises(ValueError, match="profile"):
+            build_pipeline_from_template("pico", {"P": "ICU", "I": "remimazolam", "profile": "wide-open"})
+
+    def test_pico_template_clamps_limit_to_safe_bounds(self):
+        low_cfg = build_pipeline_from_template("pico", {"P": "ICU", "I": "remimazolam", "limit": 0})
+        high_cfg = build_pipeline_from_template("pico", {"P": "ICU", "I": "remimazolam", "limit": 5000})
+
+        assert next(s for s in low_cfg.steps if s.id == "search_precision").params["limit"] == 3
+        assert next(s for s in high_cfg.steps if s.id == "search_precision").params["limit"] == 300
 
     def test_pico_missing_params(self):
         with pytest.raises(ValueError, match="at least"):

@@ -74,6 +74,23 @@ class TestSourceRegistry:
         assert "core" not in available
         assert selection.sources == ("pubmed", "openalex")
 
+    def test_env_disabled_source_aliases_are_filtered(self):
+        registry = get_source_registry()
+        with patch.dict(
+            "os.environ",
+            {"PUBMED_SEARCH_DISABLED_SOURCES": "semantic-scholar, Europe PMC"},
+            clear=False,
+        ):
+            available = registry.list_unified_sources()
+            selection = registry.resolve_unified_sources(
+                "auto",
+                auto_sources=["pubmed", "semantic_scholar", "europe_pmc", "openalex"],
+            )
+
+        assert "semantic_scholar" not in available
+        assert "europe_pmc" not in available
+        assert selection.sources == ("pubmed", "openalex")
+
     def test_commercial_source_default_off(self):
         registry = get_source_registry()
 
@@ -132,3 +149,20 @@ class TestSourceRegistry:
         assert "pubmed" in sources
         assert "scopus" not in sources
         assert "web_of_science" not in sources
+
+    def test_disabled_source_wins_over_enabled_commercial_credentials(self):
+        registry = get_source_registry()
+        with patch.dict(
+            "os.environ",
+            {
+                "SCOPUS_ENABLED": "true",
+                "SCOPUS_API_KEY": "licensed-key",
+                "PUBMED_SEARCH_DISABLED_SOURCES": "scopus",
+            },
+            clear=False,
+        ):
+            assert registry.is_enabled("scopus") is False
+            with pytest.raises(SourceSelectionError) as exc_info:
+                registry.resolve_unified_sources("scopus", auto_sources=["pubmed"])
+
+        assert "Unavailable source(s): scopus" in str(exc_info.value)

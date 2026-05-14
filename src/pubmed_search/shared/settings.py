@@ -113,6 +113,14 @@ class AppSettings(BaseSettings):
             return stripped or None
         return value
 
+    @field_validator("ncbi_api_key", mode="before")
+    @classmethod
+    def _strip_ncbi_api_key(cls, value: object) -> object:
+        if isinstance(value, str):
+            stripped = value.strip()
+            return stripped or None
+        return value
+
     @property
     def disabled_sources(self) -> tuple[str, ...]:
         """Normalized disabled source keys from PUBMED_SEARCH_DISABLED_SOURCES."""

@@ -32,8 +32,19 @@ from pubmed_search.domain.entities.pipeline import (
 # =========================================================================
 
 
+PICO_PROFILES = {"precision", "balanced", "recall"}
+
+
+def _normalize_template_limit(value: Any, *, default: int = 20, min_value: int = 1, max_value: int = 100) -> int:
+    try:
+        limit = int(value)
+    except (TypeError, ValueError):
+        limit = default
+    return max(min_value, min(limit, max_value))
+
+
 def build_pico_pipeline(params: dict[str, Any]) -> PipelineConfig:
-    """PICO clinical question search pipeline.
+    """Agent-provided PICO clinical question search pipeline.
 
     Required params:
         P: Population description
@@ -41,6 +52,10 @@ def build_pico_pipeline(params: dict[str, Any]) -> PipelineConfig:
     Optional params:
         C: Comparison (default: "")
         O: Outcome (default: "")
+        P_query/I_query/C_query/O_query: expanded query fragments to search
+            instead of the human-readable labels
+        question_type: therapy/diagnosis/prognosis/etiology clinical filter
+        profile: precision/balanced/recall (default: balanced)
         sources: comma-separated sources (default: "pubmed")
         limit: result limit (default: 20)
     """
@@ -48,45 +63,85 @@ def build_pico_pipeline(params: dict[str, Any]) -> PipelineConfig:
     i = params.get("I", "")
     c = params.get("C", "")
     o = params.get("O", "")
-    sources = params.get("sources", "pubmed")
-    limit = int(params.get("limit", 20))
+    profile = str(params.get("profile", "balanced")).strip().lower()
+    if profile not in PICO_PROFILES:
+        msg = "PICO template profile must be one of: precision, balanced, recall"
+        raise ValueError(msg)
+    question_type = str(params.get("question_type", "")).strip()
+    sources = str(params.get("sources", "pubmed")).strip() or "pubmed"
+    limit = _normalize_template_limit(params.get("limit", 20))
 
     if not p or not i:
         msg = "PICO template requires at least 'P' (Population) and 'I' (Intervention)"
         raise ValueError(msg)
 
+    pico_params: dict[str, Any] = {"P": p, "I": i, "C": c, "O": o}
+    for key in ("P_query", "I_query", "C_query", "O_query"):
+        if params.get(key):
+            pico_params[key] = params[key]
+
+    def search_params(*, use_combined: str, step_limit: int) -> dict[str, Any]:
+        search_step_params: dict[str, Any] = {
+            "use_combined": use_combined,
+            "sources": sources,
+            "limit": step_limit,
+        }
+        if question_type:
+            search_step_params["clinical_query"] = question_type
+        return search_step_params
+
     steps: list[PipelineStep] = [
         PipelineStep(
             id="pico",
             action="pico",
-            params={"P": p, "I": i, "C": c, "O": o},
-        ),
-        PipelineStep(
-            id="search_p",
-            action="search",
-            inputs=["pico"],
-            params={"element": "P", "sources": sources, "limit": limit * 3},
-        ),
-        PipelineStep(
-            id="search_i",
-            action="search",
-            inputs=["pico"],
-            params={"element": "I", "sources": sources, "limit": limit * 3},
+            params=pico_params,
         ),
     ]
 
-    merge_inputs = ["search_p", "search_i"]
-
-    if c:
+    merge_inputs: list[str] = []
+    if profile in {"precision", "balanced"}:
         steps.append(
             PipelineStep(
-                id="search_c",
+                id="search_precision",
                 action="search",
                 inputs=["pico"],
-                params={"element": "C", "sources": sources, "limit": limit * 3},
+                params=search_params(use_combined="precision", step_limit=limit * 3),
             )
         )
-        merge_inputs.append("search_c")
+        merge_inputs.append("search_precision")
+
+    if profile in {"balanced", "recall"}:
+        steps.append(
+            PipelineStep(
+                id="search_recall",
+                action="search",
+                inputs=["pico"],
+                params=search_params(use_combined="recall", step_limit=limit * 3),
+            )
+        )
+        merge_inputs.append("search_recall")
+
+    if profile in {"balanced", "recall"} and o:
+        steps.append(
+            PipelineStep(
+                id="search_intervention_outcome",
+                action="search",
+                inputs=["pico"],
+                params=search_params(use_combined="intervention_outcome", step_limit=limit * 2),
+            )
+        )
+        merge_inputs.append("search_intervention_outcome")
+
+    if profile == "balanced" and c and o:
+        steps.append(
+            PipelineStep(
+                id="search_comparison_outcome",
+                action="search",
+                inputs=["pico"],
+                params=search_params(use_combined="comparison_outcome", step_limit=limit * 2),
+            )
+        )
+        merge_inputs.append("search_comparison_outcome")
 
     steps.append(
         PipelineStep(

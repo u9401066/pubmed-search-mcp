@@ -59,10 +59,10 @@ unified_search(
 ```
 
 方法 B — 手動 PICO 流程:
-1. parse_pico(description) → 解析 PICO 元素
-2. 對每個 PICO 元素並行呼叫 generate_search_queries()
-3. 組合 Boolean 查詢: (P) AND (I) AND (C) AND (O)
-4. unified_search(query=組合查詢)
+1. Agent 先從臨床問題抽出 P/I/C/O；不確定時先詢問使用者
+2. parse_pico(description, p, i, c, o) → 驗證 agent-provided PICO 並產生 pipeline
+3. 可選：對每個 PICO 元素並行呼叫 generate_search_queries() 取得 MeSH/同義詞
+4. unified_search(query=原問題, pipeline=parse_pico 回傳的 template:pico pipeline)
 
 ## 情境 4️⃣: 深入探索 (用戶找到一篇重要論文，想看相關的)
 ───────────────────────────────────────────────────────────────────────────────
@@ -225,7 +225,7 @@ search_clinvar("BRCA1", limit=10)
 - unified_search: Unified Search - Single entry point for multi-source academic search.
 
 ### 查詢智能
-- parse_pico: Parse a clinical question into PICO elements OR accept pre-parsed PICO.
+- parse_pico: Validate agent-provided PICO elements and return a runnable search plan.
 - generate_search_queries: Gather search intelligence for a topic - returns RAW MATERIALS for Agent to decide.
 - analyze_search_query: Analyze a search query without executing the search.
 

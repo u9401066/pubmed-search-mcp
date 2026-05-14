@@ -7,7 +7,9 @@ from pubmed_search.shared.settings import (
     DEFAULT_EMAIL,
     DEFAULT_FULLTEXT_INLINE_MAX_CHARS,
     DEFAULT_HTTP_API_PORT,
+    get_settings,
     load_settings,
+    reset_settings_cache,
 )
 
 
@@ -67,6 +69,13 @@ class TestAppSettings:
         monkeypatch.setenv("SEMANTIC_SCHOLAR_API_KEY", " s2-key ")
         assert load_settings().semantic_scholar_api_key == "s2-key"
 
+    def test_ncbi_api_key_strips_empty_values(self, monkeypatch):
+        monkeypatch.setenv("NCBI_API_KEY", "  ")
+        assert load_settings().ncbi_api_key is None
+
+        monkeypatch.setenv("NCBI_API_KEY", " ncbi-key ")
+        assert load_settings().ncbi_api_key == "ncbi-key"
+
     def test_semantic_scholar_api_key_accepts_s2_alias(self, monkeypatch):
         monkeypatch.delenv("SEMANTIC_SCHOLAR_API_KEY", raising=False)
         monkeypatch.setenv("S2_API_KEY", " alias-key ")
@@ -88,3 +97,16 @@ class TestAppSettings:
         settings = load_settings()
 
         assert settings.notes_dir is None
+
+    def test_cached_settings_require_explicit_reset(self, monkeypatch):
+        reset_settings_cache()
+        monkeypatch.setenv("NCBI_EMAIL", "first@example.com")
+        first = get_settings()
+
+        monkeypatch.setenv("NCBI_EMAIL", "second@example.com")
+        assert get_settings() is first
+        assert get_settings().ncbi_email == "first@example.com"
+
+        reset_settings_cache()
+        assert get_settings().ncbi_email == "second@example.com"
+        reset_settings_cache()

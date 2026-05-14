@@ -482,26 +482,50 @@ class PipelineExecutor:
                 action="pico",
                 error="No PICO elements provided (need at least P and I)",
             )
+        missing_required = [key for key in ("P", "I") if key not in elements]
+        if missing_required:
+            return StepResult(
+                step_id=step.id,
+                action="pico",
+                error=f"PICO step requires P and I; missing: {', '.join(missing_required)}",
+            )
+
+        query_elements: dict[str, str] = {}
+        for key, value in elements.items():
+            query_elements[key] = str(step.params.get(f"{key}_query") or value)
 
         # High-precision: all elements ANDed
-        combined_precision = " AND ".join(f"({v})" for v in elements.values())
+        combined_precision = " AND ".join(f"({v})" for v in query_elements.values())
 
-        # High-recall: P AND (I OR C)
+        # High-recall: P AND (I OR C) AND O when O exists.
         recall_parts: list[str] = []
-        if "P" in elements:
-            recall_parts.append(f"({elements['P']})")
-        ic = [elements[k] for k in ("I", "C") if k in elements]
+        if "P" in query_elements:
+            recall_parts.append(f"({query_elements['P']})")
+        ic = [query_elements[k] for k in ("I", "C") if k in query_elements]
         if ic:
             recall_parts.append("(" + " OR ".join(ic) + ")")
+        if "O" in query_elements:
+            recall_parts.append(f"({query_elements['O']})")
         combined_recall = " AND ".join(recall_parts)
+
+        combined_intervention_outcome = ""
+        if "I" in query_elements and "O" in query_elements:
+            combined_intervention_outcome = f"({query_elements['I']}) AND ({query_elements['O']})"
+
+        combined_comparison_outcome = ""
+        if "C" in query_elements and "O" in query_elements:
+            combined_comparison_outcome = f"({query_elements['C']}) AND ({query_elements['O']})"
 
         return StepResult(
             step_id=step.id,
             action="pico",
             metadata={
                 "elements": elements,
+                "query_elements": query_elements,
                 "combined_precision": combined_precision,
                 "combined_recall": combined_recall,
+                "combined_intervention_outcome": combined_intervention_outcome,
+                "combined_comparison_outcome": combined_comparison_outcome,
             },
         )
 
@@ -983,11 +1007,18 @@ class PipelineExecutor:
             # From PICO step
             if inp_result.action == "pico":
                 element = step.params.get("element")
+                query_elements = inp_result.metadata.get("query_elements", {})
+                if element and element in query_elements:
+                    return str(query_elements[element])
                 if element and element in inp_result.metadata.get("elements", {}):
                     return str(inp_result.metadata["elements"][element])
                 use_combined = step.params.get("use_combined", "precision")
                 if use_combined == "recall":
                     return str(inp_result.metadata.get("combined_recall", ""))
+                if use_combined == "intervention_outcome":
+                    return str(inp_result.metadata.get("combined_intervention_outcome", ""))
+                if use_combined == "comparison_outcome":
+                    return str(inp_result.metadata.get("combined_comparison_outcome", ""))
                 return str(inp_result.metadata.get("combined_precision", ""))
 
             # From expand step

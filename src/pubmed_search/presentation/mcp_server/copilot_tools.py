@@ -291,7 +291,7 @@ def register_copilot_compatible_tools(mcp: FastMCP, searcher: LiteratureSearcher
 
     @mcp.tool()
     def analyze_clinical_question(question: str) -> str:
-        """Parse a clinical question into PICO elements (Population, Intervention, Comparison, Outcome).
+        """Return an agent-guided PICO schema for a clinical question.
 
         Args:
             question: Clinical question in natural language
@@ -300,8 +300,21 @@ def register_copilot_compatible_tools(mcp: FastMCP, searcher: LiteratureSearcher
             return json.dumps(
                 {
                     "question": question,
-                    "note": "Use parse_pico MCP tool for full PICO analysis",
-                    "suggestion": f'parse_pico(description="{question}")',
+                    "note": (
+                        "The agent should extract P/I/C/O, then submit the structured handoff "
+                        "with parse_pico. The MCP server validates and builds the pipeline; it "
+                        "does not semantically parse the question by itself."
+                    ),
+                    "pico_schema": {
+                        "p": "Population / patient group",
+                        "i": "Intervention / exposure / index test",
+                        "c": "Comparator, optional",
+                        "o": "Outcome, recommended",
+                    },
+                    "suggestion": (
+                        f'parse_pico(description="{question}", p="<Population>", '
+                        'i="<Intervention>", c="<Comparator>", o="<Outcome>")'
+                    ),
                 },
                 indent=2,
                 ensure_ascii=False,

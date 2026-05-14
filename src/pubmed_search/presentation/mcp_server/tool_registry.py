@@ -113,7 +113,7 @@ def _extract_registered_tool_names(mcp: FastMCP) -> set[str]:
 TOOL_CATEGORIES: dict[str, dict[str, Any]] = {
     "search": {
         "name": "搜尋工具",
-        "description": "文獻搜索入口",
+        "description": "Unified multi-source literature search gateway",
         "tools": [
             "unified_search",
             # Note: search_literature, search_europe_pmc, search_core 已整合到 unified_search
@@ -121,7 +121,7 @@ TOOL_CATEGORIES: dict[str, dict[str, Any]] = {
     },
     "query_intelligence": {
         "name": "查詢智能",
-        "description": "MeSH 擴展、PICO 解析",
+        "description": "MeSH expansion, agent-provided PICO handoff, and query analysis",
         "tools": ["parse_pico", "generate_search_queries", "analyze_search_query"],
     },
     "discovery": {

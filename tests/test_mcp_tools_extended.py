@@ -10,6 +10,27 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 
+def _registered_parse_pico():
+    """Register parse_pico on a mock MCP server and return the captured callable."""
+    from pubmed_search.presentation.mcp_server.tools.pico import register_pico_tools
+
+    mcp = MagicMock()
+    registered_fn = None
+
+    def capture_tool():
+        def decorator(fn):
+            nonlocal registered_fn
+            registered_fn = fn
+            return fn
+
+        return decorator
+
+    mcp.tool = capture_tool
+    register_pico_tools(mcp)
+    assert registered_fn is not None
+    return registered_fn
+
+
 class TestMergeTools:
     """Tests for merge_search_results tool."""
 
@@ -136,10 +157,10 @@ class TestMergeTools:
 
 
 class TestPicoTools:
-    """Tests for PICO parsing tools."""
+    """Tests for agent-provided PICO handoff."""
 
     async def test_parse_pico_structured(self):
-        """Test parsing with pre-structured PICO."""
+        """Structured PICO input should validate and return a runnable pipeline handoff."""
         from pubmed_search.presentation.mcp_server.tools.pico import register_pico_tools
 
         mcp = MagicMock()
@@ -166,14 +187,89 @@ class TestPicoTools:
         )
         parsed = json.loads(result)
 
-        assert parsed["source"] == "user_provided"
+        assert parsed["source"] == "agent_provided"
+        assert parsed["requires_agent_extraction"] is False
+        assert parsed["validation"]["valid"] is True
         assert parsed["pico"]["P"] == "ICU patients"
         assert parsed["pico"]["I"] == "Drug A"
         assert parsed["pico"]["C"] == "Drug B"
         assert parsed["pico"]["O"] == "mortality"
+        assert parsed["next_tool"] == "unified_search"
+        assert "template: pico" in parsed["pipeline"]
+        assert 'P: "ICU patients"' in parsed["pipeline"]
+        assert 'O: "mortality"' in parsed["pipeline"]
+
+    async def test_parse_pico_missing_required_element_does_not_emit_pipeline(self):
+        """Incomplete structured handoff should ask the agent to revise instead of producing a broken pipeline."""
+        registered_fn = _registered_parse_pico()
+
+        result = registered_fn(
+            description="Is remimazolam better for ICU sedation?",
+            p="ICU patients requiring sedation",
+        )
+        parsed = json.loads(result)
+
+        assert parsed["source"] == "agent_provided"
+        assert parsed["requires_agent_extraction"] is True
+        assert parsed["validation"]["valid"] is False
+        assert parsed["validation"]["missing_required"] == ["I"]
+        assert "pipeline" not in parsed
+        assert parsed["next_tool_call"]["tool"] == "parse_pico"
+
+    async def test_parse_pico_normalizes_invalid_runtime_options(self):
+        """Agent-facing runtime options should degrade safely instead of raising from int/YAML conversion."""
+        from pubmed_search.presentation.mcp_server.tools.unified_pipeline import _parse_pipeline_config
+
+        registered_fn = _registered_parse_pico()
+
+        result = registered_fn(
+            description="How accurate is bedside ultrasound for diagnosing pneumonia?",
+            p="adults with suspected pneumonia",
+            i="bedside ultrasound",
+            o="diagnostic accuracy",
+            question_type="not-a-real-filter",
+            profile="wide-open",
+            sources=" ",
+            limit="not-a-number",
+        )
+        parsed = json.loads(result)
+        pipeline = _parse_pipeline_config(parsed["pipeline"])
+
+        assert parsed["question_type"] == "diagnosis"
+        assert parsed["profile"] == "balanced"
+        assert "not-a-real-filter" not in parsed["suggested_filter"]
+        assert pipeline["params"]["sources"] == "pubmed"
+        assert pipeline["params"]["limit"] == 20
+        assert any("question_type" in warning for warning in parsed["normalization_warnings"])
+        assert any("profile" in warning for warning in parsed["normalization_warnings"])
+
+    async def test_parse_pico_pipeline_yaml_round_trips_special_characters(self):
+        """Returned pipeline YAML should remain parseable when labels/query fragments contain quotes, colons, or newlines."""
+        from pubmed_search.application.pipeline.templates import build_pipeline_from_template
+        from pubmed_search.presentation.mcp_server.tools.unified_pipeline import _parse_pipeline_config
+
+        registered_fn = _registered_parse_pico()
+
+        result = registered_fn(
+            description='Is "rapid sequence" induction safer in ED patients?',
+            p='Adults with "severe" asthma: emergency department',
+            i="rapid sequence induction",
+            o="hypotension\noxygen desaturation",
+            p_query='("Asthma"[MeSH] OR "status asthmaticus") AND adult[MeSH]',
+            o_query='("Hypotension"[MeSH] OR "oxygen desaturation"[tiab])',
+        )
+        parsed = json.loads(result)
+        raw_config = _parse_pipeline_config(parsed["pipeline"])
+        cfg = build_pipeline_from_template("pico", raw_config["params"])
+        pico_step = next(step for step in cfg.steps if step.action == "pico")
+
+        assert raw_config["params"]["P"] == 'Adults with "severe" asthma: emergency department'
+        assert raw_config["params"]["O"] == "hypotension\noxygen desaturation"
+        assert pico_step.params["P_query"] == '("Asthma"[MeSH] OR "status asthmaticus") AND adult[MeSH]'
+        assert pico_step.params["O_query"] == '("Hypotension"[MeSH] OR "oxygen desaturation"[tiab])'
 
     async def test_parse_pico_needs_parsing(self):
-        """Test parsing with natural language description."""
+        """Natural-language-only input should guide the agent instead of pretending to parse."""
         from pubmed_search.presentation.mcp_server.tools.pico import register_pico_tools
 
         mcp = MagicMock()
@@ -194,8 +290,12 @@ class TestPicoTools:
         result = registered_fn(description="Is remimazolam better than propofol for ICU sedation?")
         parsed = json.loads(result)
 
-        assert parsed["source"] == "needs_parsing"
-        assert "[Agent:" in parsed["pico"]["P"]
+        assert parsed["source"] == "requires_agent_extraction"
+        assert parsed["requires_agent_extraction"] is True
+        assert "pico_schema" in parsed
+        assert parsed["pico"] == {"P": "", "I": "", "C": "", "O": ""}
+        assert "[Agent:" not in json.dumps(parsed)
+        assert parsed["next_tool_call"]["tool"] == "parse_pico"
 
     async def test_parse_pico_question_type_therapy(self):
         """Test inferring therapy question type."""

@@ -60,8 +60,9 @@ def register_strategy_tools(mcp: FastMCP, searcher: LiteratureSearcher):
         ───────────────────────────────────────
         User: "remimazolam 在 ICU 鎮靜比 propofol 好嗎？會減少 delirium 嗎？"
 
-        Step 1: Call parse_pico() to extract PICO elements
-                → Returns: P=ICU patients, I=remimazolam, C=propofol, O=delirium
+        Step 1: Agent extracts P/I/C/O from the clinical question, then calls
+                parse_pico(description=..., p=..., i=..., c=..., o=...) to
+                validate the structured handoff and get a runnable PICO pipeline.
 
         Step 2: For EACH PICO element, call generate_search_queries() IN PARALLEL:
                 - generate_search_queries("ICU patients")     → P materials

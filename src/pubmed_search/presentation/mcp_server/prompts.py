@@ -112,9 +112,15 @@ Example: "heart attack" → "Myocardial Infarction"[MeSH] → finds all related 
 
 ## Steps:
 
-### Step 1: Parse PICO Structure
+### Step 1: Agent Extracts PICO, Then Validates The Handoff
 ```python
-parse_pico(description="{clinical_question}")
+parse_pico(
+    description="{clinical_question}",
+    p="<Population extracted by the agent>",
+    i="<Intervention/exposure extracted by the agent>",
+    c="<Comparator, optional>",
+    o="<Outcome, recommended>"
+)
 ```
 Returns:
 - P (Population): Who are the patients?
@@ -122,6 +128,10 @@ Returns:
 - C (Comparison): Compared to what?
 - O (Outcome): What result?
 - question_type: therapy/diagnosis/prognosis/etiology
+- pipeline: ready-to-run `template: pico` YAML for `unified_search`
+
+When only `description` is available, `parse_pico` returns the schema the agent
+must fill. It does not semantically decompose the clinical question by itself.
 
 ### Step 2: Generate Materials for Each PICO Element (PARALLEL!)
 ```python
@@ -153,9 +163,11 @@ Based on question_type:
 ```python
 analyze_search_query(query=<combined_query>)
 unified_search(query=<combined_query>, ranking="quality")
+# Or execute the structured backend pipeline returned by parse_pico:
+unified_search(query="{clinical_question}", pipeline="<pipeline from parse_pico>")
 ```
 
-## Example PICO Parsing:
+## Example Agent-Provided PICO Handoff:
 Question: "Is remimazolam better than propofol for ICU sedation?"
 - P: ICU patients requiring sedation
 - I: remimazolam
