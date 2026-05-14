@@ -20,6 +20,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.5.11] - 2026-05-14
+
+### Fixed
+
+- Removed the shebang from the non-executable `scripts/check_cline_skills.py` helper so Unix CI Ruff checks no longer fail on executable-bit hygiene while Windows Ruff remains green.
+
+### Tests
+
+- Revalidated the CI Ruff command locally, reran Cline/Codex skill validation, and republished after the v0.5.10 cloud CI Ruff failure.
+
+---
+
 ## [0.5.10] - 2026-05-14
 
 ### Added
@@ -2144,7 +2156,8 @@ get_citation_metrics(pmids="last", min_rcr=1.5, min_percentile=75)
 - [PyPI Package](https://pypi.org/project/pubmed-search-mcp/)
 - [Smithery](https://smithery.ai/server/pubmed-search-mcp)
 
-[Unreleased]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.5.10...HEAD
+[Unreleased]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.5.11...HEAD
+[0.5.11]: https://github.com/u9401066/pubmed-search-mcp/releases/tag/v0.5.11
 [0.5.10]: https://github.com/u9401066/pubmed-search-mcp/releases/tag/v0.5.10
 [0.5.9]: https://github.com/u9401066/pubmed-search-mcp/releases/tag/v0.5.9
 [0.5.0]: https://github.com/u9401066/pubmed-search-mcp/releases/tag/v0.5.0

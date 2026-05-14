@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Validate repository skills used by Cline and other bundled agent harnesses."""
 
 from __future__ import annotations
