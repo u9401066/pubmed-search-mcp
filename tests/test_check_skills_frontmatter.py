@@ -26,7 +26,7 @@ class TestCheckSkillsFrontmatter:
         skill_file = _write_skill(
             tmp_path,
             "demo-skill",
-            "---\nname: demo-skill\ndescription: \"Valid description\"\n---\n\n# Demo\n",
+            '---\nname: demo-skill\ndescription: "Valid description"\n---\n\n# Demo\n',
         )
 
         assert MODULE.validate_skill_file(skill_file) == []
@@ -35,7 +35,7 @@ class TestCheckSkillsFrontmatter:
         skill_file = _write_skill(
             tmp_path,
             "demo-skill",
-            "---\nname: other-skill\ndescription: \"Valid description\"\n---\n",
+            '---\nname: other-skill\ndescription: "Valid description"\n---\n',
         )
 
         errors = MODULE.validate_skill_file(skill_file)

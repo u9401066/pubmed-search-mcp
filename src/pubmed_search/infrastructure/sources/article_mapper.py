@@ -269,7 +269,9 @@ def article_from_openalex(data: dict[str, Any]) -> UnifiedArticle:
         is_open_access=is_oa,
         oa_status=oa_status,
         oa_links=oa_links,
-        citation_metrics=CitationMetrics(citation_count=data.get("cited_by_count")) if data.get("cited_by_count") else None,
+        citation_metrics=CitationMetrics(citation_count=data.get("cited_by_count"))
+        if data.get("cited_by_count")
+        else None,
         sources=[SourceMetadata(source="openalex", raw_data=data)],
     )
 
@@ -352,7 +354,9 @@ def article_from_core(data: dict[str, Any]) -> UnifiedArticle:
         language=data.get("language"),
         is_open_access=bool(data.get("has_fulltext") or data.get("download_url")),
         oa_links=oa_links,
-        citation_metrics=CitationMetrics(citation_count=data.get("citation_count")) if data.get("citation_count") else None,
+        citation_metrics=CitationMetrics(citation_count=data.get("citation_count"))
+        if data.get("citation_count")
+        else None,
         sources=[SourceMetadata(source="core", raw_data=data)],
     )
 
@@ -381,7 +385,9 @@ def article_from_scopus(data: dict[str, Any]) -> UnifiedArticle:
         year=data.get("year"),
         is_open_access=bool(data.get("is_open_access")),
         oa_links=oa_links,
-        citation_metrics=CitationMetrics(citation_count=data.get("cited_by_count")) if data.get("cited_by_count") else None,
+        citation_metrics=CitationMetrics(citation_count=data.get("cited_by_count"))
+        if data.get("cited_by_count")
+        else None,
         sources=[SourceMetadata(source="scopus", raw_data=data)],
     )
 
@@ -410,7 +416,9 @@ def article_from_web_of_science(data: dict[str, Any]) -> UnifiedArticle:
         year=data.get("year"),
         is_open_access=bool(data.get("is_open_access")),
         oa_links=oa_links,
-        citation_metrics=CitationMetrics(citation_count=data.get("cited_by_count")) if data.get("cited_by_count") else None,
+        citation_metrics=CitationMetrics(citation_count=data.get("cited_by_count"))
+        if data.get("cited_by_count")
+        else None,
         sources=[SourceMetadata(source="web_of_science", raw_data=data)],
     )
 

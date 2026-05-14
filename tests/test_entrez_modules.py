@@ -426,7 +426,9 @@ class TestSearchMixin:
         ):
             results = await searcher.search("test query", limit=2, detail_level="full")
 
-        searcher._fetch_with_retry.assert_awaited_once_with(["12345", "67890", "13579"], webenv="WEBENV123", query_key="1")
+        searcher._fetch_with_retry.assert_awaited_once_with(
+            ["12345", "67890", "13579"], webenv="WEBENV123", query_key="1"
+        )
         searcher._parse_fetch_results.assert_called_once_with({"PubmedArticle": []})
         searcher.fetch_details.assert_not_called()
         assert results[0]["title"] == "History Result"

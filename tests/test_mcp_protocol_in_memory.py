@@ -87,9 +87,7 @@ async def test_unified_search_supports_task_augmented_execution(monkeypatch):
         for _ in range(50):
             task_state = await session.send_request(
                 types.ClientRequest(
-                    types.GetTaskRequest(
-                        params=types.GetTaskRequestParams(taskId=create_task_result.task.taskId)
-                    )
+                    types.GetTaskRequest(params=types.GetTaskRequestParams(taskId=create_task_result.task.taskId))
                 ),
                 types.GetTaskResult,
             )

@@ -41,7 +41,9 @@ PAGES: tuple[WikiPage, ...] = (
     WikiPage("Pipeline-Tutorial", "Pipeline Tutorial", DOCS_ROOT / "PIPELINE_MODE_TUTORIAL.en.md"),
     WikiPage("Pipeline-Tutorial.zh-TW", "Pipeline 教學", DOCS_ROOT / "PIPELINE_MODE_TUTORIAL.md"),
     WikiPage("Architecture", "Architecture", REPO_ROOT / "ARCHITECTURE.md"),
-    WikiPage("Quick-Reference", "Quick Reference", REPO_ROOT / "src/pubmed_search/presentation/mcp_server/TOOLS_INDEX.md"),
+    WikiPage(
+        "Quick-Reference", "Quick Reference", REPO_ROOT / "src/pubmed_search/presentation/mcp_server/TOOLS_INDEX.md"
+    ),
     WikiPage("Source-Contracts", "Source Contracts", DOCS_ROOT / "SOURCE_CONTRACTS.md"),
     WikiPage("Troubleshooting", "Troubleshooting", DOCS_ROOT / "INTEGRATIONS.md"),
     WikiPage("Deployment", "Deployment", REPO_ROOT / "DEPLOYMENT.md"),
@@ -119,7 +121,7 @@ This wiki is a GitHub-native mirror of the main documentation set. The full
 interactive documentation site remains the preferred reading surface:
 
 - **Docs Site**: {DOCS_SITE_URL}
-- **Repository**: {REPO_BLOB_BASE.rsplit('/blob/master', maxsplit=1)[0]}
+- **Repository**: {REPO_BLOB_BASE.rsplit("/blob/master", maxsplit=1)[0]}
 
 ## Start Here
 
@@ -198,7 +200,9 @@ def build_wiki(output_dir: Path) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build GitHub Wiki pages from canonical docs.")
-    parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT_DIR, help="Directory to write wiki markdown files.")
+    parser.add_argument(
+        "--output", type=Path, default=DEFAULT_OUTPUT_DIR, help="Directory to write wiki markdown files."
+    )
     args = parser.parse_args()
 
     build_wiki(args.output)

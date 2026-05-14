@@ -294,9 +294,7 @@ _SEMANTIC_SCHOLAR_AUTO_DISPATCH_PROFILES: tuple[SourceAutoDispatchProfile, ...] 
     "complex_systematic",
 )
 
-_EUROPE_PMC_AUTO_DISPATCH_PROFILES: tuple[SourceAutoDispatchProfile, ...] = (
-    "complex_systematic",
-)
+_EUROPE_PMC_AUTO_DISPATCH_PROFILES: tuple[SourceAutoDispatchProfile, ...] = ("complex_systematic",)
 
 _CROSSREF_AUTO_DISPATCH_PROFILES: tuple[SourceAutoDispatchProfile, ...] = (
     "lookup",
@@ -397,7 +395,7 @@ def get_source_registry() -> SourceRegistry:
                 category="preprint",
                 selectable_in_unified=True,
                 supports_primary_search=True,
-                description="arXiv preprint server (physics, math, CS, q-bio, stats). Use sources=\"arxiv\" or options=\"preprints\".",
+                description='arXiv preprint server (physics, math, CS, q-bio, stats). Use sources="arxiv" or options="preprints".',
             ),
             SourceDefinition(
                 key="medrxiv",
@@ -406,7 +404,7 @@ def get_source_registry() -> SourceRegistry:
                 selectable_in_unified=True,
                 supports_primary_search=True,
                 aliases=("med-rxiv", "med_rxiv"),
-                description="medRxiv medical preprint server. Use sources=\"medrxiv\" or options=\"preprints\".",
+                description='medRxiv medical preprint server. Use sources="medrxiv" or options="preprints".',
             ),
             SourceDefinition(
                 key="biorxiv",
@@ -415,7 +413,7 @@ def get_source_registry() -> SourceRegistry:
                 selectable_in_unified=True,
                 supports_primary_search=True,
                 aliases=("bio-rxiv", "bio_rxiv"),
-                description="bioRxiv biology preprint server. Use sources=\"biorxiv\" or options=\"preprints\".",
+                description='bioRxiv biology preprint server. Use sources="biorxiv" or options="preprints".',
             ),
             SourceDefinition(key="unpaywall", label="Unpaywall", category="fulltext"),
             SourceDefinition(key="openurl", label="OpenURL", category="fulltext"),

@@ -154,7 +154,9 @@ async def _find_pdf_links(page: Any) -> list[str]:
     return [str(link.get("href")) for link in ranked if _candidate_score(link) > 0 and link.get("href")]
 
 
-async def _goto_with_download_capture(page: Any, url: str, *, timeout_ms: int, max_bytes: int) -> tuple[bytes | None, str]:
+async def _goto_with_download_capture(
+    page: Any, url: str, *, timeout_ms: int, max_bytes: int
+) -> tuple[bytes | None, str]:
     download_task = asyncio.create_task(page.wait_for_event("download", timeout=timeout_ms))
     response = None
     try:

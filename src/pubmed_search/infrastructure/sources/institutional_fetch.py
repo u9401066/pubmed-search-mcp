@@ -49,8 +49,7 @@ _MAX_REDIRECTS = 8
 _DEFAULT_TIMEOUT = 15.0
 _PROBE_BYTES = 96 * 1024  # only sniff first 96KB for content classification
 _USER_AGENT = (
-    "Mozilla/5.0 (compatible; PubMed-Search-MCP/institutional-fetch; "
-    "+https://github.com/u9401066/pubmed-search-mcp)"
+    "Mozilla/5.0 (compatible; PubMed-Search-MCP/institutional-fetch; +https://github.com/u9401066/pubmed-search-mcp)"
 )
 
 # Heuristics for response classification. Order matters: paywall signals win
@@ -317,14 +316,19 @@ _JS_LOCATION_RE = re.compile(
 # cookie-consent / preferences interstitials (e.g. Elsevier's
 # linkinghub.elsevier.com/retrieve/articleSelectPrefsPerm?Redirect=...).
 _REDIRECT_QUERY_KEYS: tuple[str, ...] = (
-    "Redirect", "redirect", "url", "URL", "target", "Target", "destination", "next",
+    "Redirect",
+    "redirect",
+    "url",
+    "URL",
+    "target",
+    "Target",
+    "destination",
+    "next",
 )
 
 # Hosts whose interstitials are known to expose the real URL only via a
 # query parameter — for these we skip the slow body scan and read the URL.
-_INTERSTITIAL_HOSTS: tuple[str, ...] = (
-    "linkinghub.elsevier.com",
-)
+_INTERSTITIAL_HOSTS: tuple[str, ...] = ("linkinghub.elsevier.com",)
 
 
 def _extract_redirect_from_query(url: str) -> str | None:
@@ -350,7 +354,7 @@ def _extract_soft_redirect(body: bytes) -> str | None:
     """Return a redirect target URL embedded in HTML/JS, if any."""
     if not body:
         return None
-    snippet = body[:32 * 1024]
+    snippet = body[: 32 * 1024]
     m = _META_REFRESH_RE.search(snippet)
     if m:
         return m.group(1).decode("utf-8", errors="ignore").strip()
@@ -440,9 +444,7 @@ async def probe_direct(
         return result
 
     start = time.monotonic()
-    response, chain, error = await _probe_url(
-        f"https://doi.org/{doi.strip()}", timeout=timeout
-    )
+    response, chain, error = await _probe_url(f"https://doi.org/{doi.strip()}", timeout=timeout)
     result.duration_ms = int((time.monotonic() - start) * 1000)
     result.redirect_chain = chain
 
@@ -462,9 +464,7 @@ async def probe_direct(
     result.status_code = response.status_code
     result.content_class = content_class
     result.content_type = content_type
-    result.content_length = (
-        int(response.headers.get("content-length") or len(response.content) or 0)
-    )
+    result.content_length = int(response.headers.get("content-length") or len(response.content) or 0)
     result.success = response.status_code < 400 and content_class in _SUCCESS_CLASSES
     if return_body:
         result.body = response.content
@@ -521,9 +521,7 @@ async def probe_ezproxy(
 
     # Resolve DOI to publisher URL first so we know which host to rewrite.
     start = time.monotonic()
-    base_response, base_chain, base_error = await _probe_url(
-        f"https://doi.org/{doi.strip()}", timeout=timeout
-    )
+    base_response, base_chain, base_error = await _probe_url(f"https://doi.org/{doi.strip()}", timeout=timeout)
     if base_error or base_response is None or not base_response.url:
         result.attempted = True
         result.error = f"DOI resolution failed: {base_error or 'no response'}"
@@ -564,9 +562,7 @@ async def probe_ezproxy(
     result.status_code = response.status_code
     result.content_class = content_class
     result.content_type = content_type
-    result.content_length = (
-        int(response.headers.get("content-length") or len(response.content) or 0)
-    )
+    result.content_length = int(response.headers.get("content-length") or len(response.content) or 0)
     result.success = response.status_code < 400 and content_class in _SUCCESS_CLASSES
     if return_body:
         result.body = response.content
@@ -659,10 +655,7 @@ async def diagnose_access(
     diag.openurl = get_openurl_link(article) if article else None
 
     if not doi:
-        diag.summary = (
-            "No DOI supplied. Direct/EZproxy fetch needs a DOI; only the OpenURL "
-            "handoff was generated."
-        )
+        diag.summary = "No DOI supplied. Direct/EZproxy fetch needs a DOI; only the OpenURL handoff was generated."
         return diag
 
     if try_direct:
@@ -674,8 +667,7 @@ async def diagnose_access(
     if success:
         diag.recommended_path = success.path
         diag.summary = (
-            f"Fulltext reachable via {success.path} path "
-            f"(status {success.status_code}, {success.content_class})."
+            f"Fulltext reachable via {success.path} path (status {success.status_code}, {success.content_class})."
         )
     else:
         # Pick the most informative failure for the summary.

@@ -207,7 +207,9 @@ class FulltextFetchPhase:
         try:
             visited_urls = set(visited or ())
             if url in visited_urls:
-                return DownloadResult(success=False, error="Landing-page resolution loop detected", url=url, source=source)
+                return DownloadResult(
+                    success=False, error="Landing-page resolution loop detected", url=url, source=source
+                )
 
             visited_urls.add(url)
             client = await self._get_client()

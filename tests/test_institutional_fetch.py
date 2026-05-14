@@ -33,10 +33,7 @@ class TestRewriteToEzproxy:
             "https://www.sciencedirect.com/science/article/pii/S0001",
             "ezproxy.lib.ntu.edu.tw",
         )
-        assert out == (
-            "https://www-sciencedirect-com.ezproxy.lib.ntu.edu.tw"
-            "/science/article/pii/S0001"
-        )
+        assert out == ("https://www-sciencedirect-com.ezproxy.lib.ntu.edu.tw/science/article/pii/S0001")
 
     def test_preserves_query_and_path(self):
         out = rewrite_to_ezproxy(
@@ -349,17 +346,22 @@ class TestDiagnoseAccess:
 
     async def test_success_via_direct(self):
         good = ProbeResult(
-            path="direct", attempted=True, success=True,
-            status_code=200, content_class="fulltext_html",
+            path="direct",
+            attempted=True,
+            success=True,
+            status_code=200,
+            content_class="fulltext_html",
         )
         ezfail = ProbeResult(path="ezproxy", attempted=False, error="EZproxy not configured")
 
-        with patch.object(ifetch, "probe_direct", AsyncMock(return_value=good)), \
-             patch.object(ifetch, "probe_ezproxy", AsyncMock(return_value=ezfail)), \
-             patch(
-                 "pubmed_search.infrastructure.sources.openurl.get_openurl_link",
-                 return_value=None,
-             ):
+        with (
+            patch.object(ifetch, "probe_direct", AsyncMock(return_value=good)),
+            patch.object(ifetch, "probe_ezproxy", AsyncMock(return_value=ezfail)),
+            patch(
+                "pubmed_search.infrastructure.sources.openurl.get_openurl_link",
+                return_value=None,
+            ),
+        ):
             diag = await diagnose_access(doi="10.1000/x")
 
         assert diag.recommended_path == "direct"
@@ -370,12 +372,14 @@ class TestDiagnoseAccess:
         d = ProbeResult(path="direct", attempted=True, success=False, advice="paywall hit")
         e = ProbeResult(path="ezproxy", attempted=False, error="EZproxy not configured")
 
-        with patch.object(ifetch, "probe_direct", AsyncMock(return_value=d)), \
-             patch.object(ifetch, "probe_ezproxy", AsyncMock(return_value=e)), \
-             patch(
-                 "pubmed_search.infrastructure.sources.openurl.get_openurl_link",
-                 return_value="https://library.x.edu/openurl?doi=10.1000/x",
-             ):
+        with (
+            patch.object(ifetch, "probe_direct", AsyncMock(return_value=d)),
+            patch.object(ifetch, "probe_ezproxy", AsyncMock(return_value=e)),
+            patch(
+                "pubmed_search.infrastructure.sources.openurl.get_openurl_link",
+                return_value="https://library.x.edu/openurl?doi=10.1000/x",
+            ),
+        ):
             diag = await diagnose_access(doi="10.1000/x")
 
         # ezproxy was not attempted, so fallback summary picks direct probe advice
@@ -383,12 +387,14 @@ class TestDiagnoseAccess:
         assert diag.openurl is not None
 
     async def test_respects_try_flags(self):
-        with patch.object(ifetch, "probe_direct", AsyncMock()) as md, \
-             patch.object(ifetch, "probe_ezproxy", AsyncMock()) as me, \
-             patch(
-                 "pubmed_search.infrastructure.sources.openurl.get_openurl_link",
-                 return_value=None,
-             ):
+        with (
+            patch.object(ifetch, "probe_direct", AsyncMock()) as md,
+            patch.object(ifetch, "probe_ezproxy", AsyncMock()) as me,
+            patch(
+                "pubmed_search.infrastructure.sources.openurl.get_openurl_link",
+                return_value=None,
+            ),
+        ):
             await diagnose_access(doi="10.1000/x", try_direct=False, try_ezproxy=False)
 
         md.assert_not_called()
@@ -432,10 +438,7 @@ class TestFallbackAccessMode:
         )
         assert result["access_mode"] == "open_access"
         # DOI gets pushed into alternatives with publisher_direct mode
-        assert any(
-            alt.get("access_mode") == "publisher_direct"
-            for alt in result.get("alternatives", [])
-        )
+        assert any(alt.get("access_mode") == "publisher_direct" for alt in result.get("alternatives", []))
 
     def test_doi_only_is_publisher_direct(self):
         from pubmed_search.infrastructure.sources.openurl import (
@@ -531,8 +534,7 @@ class TestInstitutionalFulltextClient:
             InstitutionalFulltextClient,
         )
 
-        body = (b"<html><body><article>" + (b"Lorem ipsum dolor sit amet. " * 100)
-                + b"</article></body></html>")
+        body = b"<html><body><article>" + (b"Lorem ipsum dolor sit amet. " * 100) + b"</article></body></html>"
         probe = ProbeResult(
             path="direct",
             attempted=True,
@@ -548,9 +550,7 @@ class TestInstitutionalFulltextClient:
             "pubmed_search.infrastructure.sources.institutional_fulltext.fetch_direct",
             AsyncMock(return_value=probe),
         ):
-            client = InstitutionalFulltextClient(
-                config=EZProxyConfig(proxy_host="", cookie_file="", cookie_string="")
-            )
+            client = InstitutionalFulltextClient(config=EZProxyConfig(proxy_host="", cookie_file="", cookie_string=""))
             outcome = await client.get_fulltext_by_doi("10.1/x")
 
         assert outcome.success is True
@@ -573,9 +573,7 @@ class TestInstitutionalFulltextClient:
             "pubmed_search.infrastructure.sources.institutional_fulltext.fetch_direct",
             AsyncMock(return_value=probe),
         ):
-            client = InstitutionalFulltextClient(
-                config=EZProxyConfig(proxy_host="", cookie_file="", cookie_string="")
-            )
+            client = InstitutionalFulltextClient(config=EZProxyConfig(proxy_host="", cookie_file="", cookie_string=""))
             outcome = await client.get_fulltext_by_doi("10.1/x")
 
         assert outcome.success is False
@@ -585,9 +583,7 @@ class TestInstitutionalFulltextClient:
             InstitutionalFulltextClient,
         )
 
-        client = InstitutionalFulltextClient(
-            config=EZProxyConfig(proxy_host="", cookie_file="", cookie_string="")
-        )
+        client = InstitutionalFulltextClient(config=EZProxyConfig(proxy_host="", cookie_file="", cookie_string=""))
         outcome = await client.get_fulltext_by_doi("")
         assert outcome.success is False
         assert outcome.error == "no DOI"
@@ -607,9 +603,9 @@ class TestInstitutionalFulltextClient:
         )
 
         direct_probe = ProbeResult(path="direct", success=False, content_class="paywall")
-        body = (b"<html><body><article>"
-                + (b"Detailed methods and results section. " * 100)
-                + b"</article></body></html>")
+        body = (
+            b"<html><body><article>" + (b"Detailed methods and results section. " * 100) + b"</article></body></html>"
+        )
         ezp_probe = ProbeResult(
             path="ezproxy",
             attempted=True,
@@ -621,12 +617,15 @@ class TestInstitutionalFulltextClient:
             content_type="text/html",
         )
 
-        with patch(
-            "pubmed_search.infrastructure.sources.institutional_fulltext.fetch_direct",
-            AsyncMock(return_value=direct_probe),
-        ), patch(
-            "pubmed_search.infrastructure.sources.institutional_fulltext.fetch_ezproxy",
-            AsyncMock(return_value=ezp_probe),
+        with (
+            patch(
+                "pubmed_search.infrastructure.sources.institutional_fulltext.fetch_direct",
+                AsyncMock(return_value=direct_probe),
+            ),
+            patch(
+                "pubmed_search.infrastructure.sources.institutional_fulltext.fetch_ezproxy",
+                AsyncMock(return_value=ezp_probe),
+            ),
         ):
             client = InstitutionalFulltextClient(config=cfg)
             outcome = await client.get_fulltext_by_doi("10.1/x")
@@ -647,10 +646,10 @@ class TestExtractFulltext:
             extract_fulltext,
         )
 
-        html = (b"<html><head><title>My Paper</title></head>"
-                b"<body><article>"
-                + (b"This is the article body. " * 200)
-                + b"</article></body></html>")
+        html = (
+            b"<html><head><title>My Paper</title></head>"
+            b"<body><article>" + (b"This is the article body. " * 200) + b"</article></body></html>"
+        )
         result = extract_fulltext(html, "https://publisher.example/x")
         assert result is not None
         assert result["text"]

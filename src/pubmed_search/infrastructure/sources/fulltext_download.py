@@ -43,6 +43,7 @@ logger = logging.getLogger(__name__)
 
 class FulltextDownloader:
     """Backward-compatible downloader facade that delegates to phase helpers."""
+
     DEFAULT_TIMEOUT = 30.0
     MAX_PDF_SIZE = 50 * 1024 * 1024
     CHUNK_SIZE = 8192
@@ -53,8 +54,7 @@ class FulltextDownloader:
     RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
     USER_AGENT = "Mozilla/5.0 (compatible; PubMed-Search-MCP/1.0; mailto:research@example.com)"
     BROWSERISH_USER_AGENT = (
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
     )
 
     def __init__(
@@ -337,12 +337,16 @@ class FulltextDownloader:
         effective_deadline = deadline if deadline is not None else self._build_deadline(effective_total_timeout)
 
         try:
-            links = list(candidate_links) if candidate_links is not None else await self.get_pdf_links(
-                pmid,
-                pmcid,
-                doi,
-                total_timeout=effective_total_timeout,
-                deadline=effective_deadline,
+            links = (
+                list(candidate_links)
+                if candidate_links is not None
+                else await self.get_pdf_links(
+                    pmid,
+                    pmcid,
+                    doi,
+                    total_timeout=effective_total_timeout,
+                    deadline=effective_deadline,
+                )
             )
         except asyncio.TimeoutError as exc:
             return DownloadResult(success=False, error=str(exc))
@@ -381,7 +385,9 @@ class FulltextDownloader:
             logger.debug(f"Download failed from {link.source.display_name}: {result.error}")
 
         if attempt_errors:
-            return DownloadResult(success=False, error=f"All sources failed. Attempts: {' | '.join(attempt_errors[:3])}")
+            return DownloadResult(
+                success=False, error=f"All sources failed. Attempts: {' | '.join(attempt_errors[:3])}"
+            )
         return DownloadResult(success=False, error="All sources failed without a recoverable error")
 
     async def get_fulltext(
@@ -601,6 +607,7 @@ class FulltextDownloader:
         headers: dict[str, str] | None = None,
     ) -> DownloadResult:
         return await self._download_with_retry(url, source, headers=headers)
+
     async def _download_candidate(
         self,
         link: PDFLink,

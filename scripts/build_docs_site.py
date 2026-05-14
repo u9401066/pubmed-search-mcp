@@ -47,6 +47,7 @@ PAGES = [
     ("deployment", "Deployment", REPO_ROOT / "DEPLOYMENT.md"),
 ]
 
+
 class PackagedReference(TypedDict):
     """A documentation source copied into an agent-bundled reference path."""
 
@@ -117,7 +118,7 @@ def _render_page(slug: str, title: str, source_path: Path, route_map: dict[str, 
     header = (
         (
             f"<!-- Generated from {source_path.relative_to(REPO_ROOT).as_posix()} by scripts/build_docs_site.py -->\n"
-            "<!-- markdownlint-configure-file {\"MD051\": false} -->\n"
+            '<!-- markdownlint-configure-file {"MD051": false} -->\n'
             "<!-- markdownlint-disable MD051 -->\n\n"
         )
         if not rewritten.startswith("<!-- Generated")

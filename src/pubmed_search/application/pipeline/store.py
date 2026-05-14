@@ -496,7 +496,9 @@ class PipelineStore:
     def list_schedules(self) -> list[ScheduleEntry]:
         """List all persisted schedules."""
         schedules = list(self._load_schedules().values())
-        schedules.sort(key=lambda entry: ((entry.next_run or datetime.max.replace(tzinfo=timezone.utc)), entry.pipeline_name))
+        schedules.sort(
+            key=lambda entry: ((entry.next_run or datetime.max.replace(tzinfo=timezone.utc)), entry.pipeline_name)
+        )
         return schedules
 
     def delete_schedule(self, name: str) -> bool:

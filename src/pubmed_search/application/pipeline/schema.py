@@ -244,7 +244,9 @@ class TemplatePipelineConfigSchema(_PipelineConfigBaseSchema):
 
     kind: Literal["template"] = "template"
     template: str
-    template_params: dict[str, Any] = Field(default_factory=dict, validation_alias=AliasChoices("template_params", "params"))
+    template_params: dict[str, Any] = Field(
+        default_factory=dict, validation_alias=AliasChoices("template_params", "params")
+    )
 
     @field_validator("template", mode="before")
     @classmethod

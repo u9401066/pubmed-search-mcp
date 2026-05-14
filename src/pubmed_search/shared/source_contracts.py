@@ -85,7 +85,8 @@ def build_request_execution_policy(settings: SourceExecutionSettings) -> Request
     return RequestExecutionPolicy(
         service_name=settings.service_name,
         timeout=settings.timeout,
-        total_timeout=settings.total_timeout or _derive_total_timeout(settings.timeout, settings.max_attempts, settings.max_delay),
+        total_timeout=settings.total_timeout
+        or _derive_total_timeout(settings.timeout, settings.max_attempts, settings.max_delay),
         retry=RetryPolicy(
             max_attempts=max(settings.max_attempts, 1),
             base_delay=settings.base_delay,
@@ -373,8 +374,5 @@ async def gather_source_adapter_calls(
     if per_call_timeout is None:
         return await asyncio.gather(*(execute_source_adapter_call(call) for call in calls))
     return await asyncio.gather(
-        *(
-            _execute_source_adapter_call_with_timeout(call, timeout=per_call_timeout)
-            for call in calls
-        )
+        *(_execute_source_adapter_call_with_timeout(call, timeout=per_call_timeout) for call in calls)
     )

@@ -110,9 +110,7 @@ def _save_pipeline_impl(
     if not result.valid:
         error_msg = "Pipeline config validation failed:\n" + "\n".join(f"  ❌ {e}" for e in result.errors)
         if result.fixes:
-            error_msg += "\n\nAuto-fixes attempted:\n" + "\n".join(
-                f"  🔧 {f.field}: {f.reason}" for f in result.fixes
-            )
+            error_msg += "\n\nAuto-fixes attempted:\n" + "\n".join(f"  🔧 {f.field}: {f.reason}" for f in result.fixes)
         return ResponseFormatter.error(error_msg, tool_name=tool_name)
 
     pipeline_config = result.config
@@ -198,9 +196,7 @@ def _list_pipelines_impl(*, tool_name: str, tag: str = "", scope: str = "") -> s
             if pipeline.description and len(pipeline.description) > 43
             else (pipeline.description or "-")
         )
-        parts.append(
-            f"| {pipeline.name} | {pipeline.scope.value} | {desc} | {tags_str} | {pipeline.run_count} |"
-        )
+        parts.append(f"| {pipeline.name} | {pipeline.scope.value} | {desc} | {tags_str} | {pipeline.run_count} |")
 
     parts.append("")
     parts.append('💡 Load: load_pipeline(source="<name>")')
@@ -309,7 +305,9 @@ def _get_pipeline_history_impl(*, tool_name: str, name: str, limit: int = 5) -> 
     runs = store.get_history(name, limit=limit)
 
     if not runs:
-        return f'📊 Pipeline "{name}" has no execution history yet.\n\n💡 Execute: unified_search(pipeline="saved:{name}")'
+        return (
+            f'📊 Pipeline "{name}" has no execution history yet.\n\n💡 Execute: unified_search(pipeline="saved:{name}")'
+        )
 
     total_runs = sum(1 for _ in (store._runs_dir_for(store._find_pipeline_scope(name)) / name).glob("*.json"))
 
@@ -326,9 +324,7 @@ def _get_pipeline_history_impl(*, tool_name: str, name: str, limit: int = 5) -> 
         new_str = f"+{len(run.new_pmids)}" if run.new_pmids else "+0"
         removed_str = f"-{len(run.removed_pmids)}" if run.removed_pmids else "-0"
         run_num = total_runs - index
-        parts.append(
-            f"| {run_num} | {date_str} | {run.article_count} | {new_str} | {removed_str} | {status_icon} |"
-        )
+        parts.append(f"| {run_num} | {date_str} | {run.article_count} | {new_str} | {removed_str} | {status_icon} |")
 
     latest = runs[0]
     if latest.new_pmids:

@@ -323,6 +323,4 @@ PUBTYPE_PATTERNS = {
     for policy in DEFAULT_PUBTYPE_POLICIES
 }
 
-LANDMARK_CITATION_THRESHOLDS = {
-    policy.name: policy.minimum_citations for policy in DEFAULT_CITATION_THRESHOLD_POLICIES
-}
+LANDMARK_CITATION_THRESHOLDS = {policy.name: policy.minimum_citations for policy in DEFAULT_CITATION_THRESHOLD_POLICIES}

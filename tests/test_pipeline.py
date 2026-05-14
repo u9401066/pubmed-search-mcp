@@ -415,7 +415,9 @@ class TestActionFilter:
         executor = PipelineExecutor()
         rct = FakeArticle(title="RCT", pmid="1", year=2024, article_type=ArticleType.RANDOMIZED_CONTROLLED_TRIAL)
         review = FakeArticle(title="Review", pmid="2", year=2024, article_type=ArticleType.REVIEW)
-        old_rct = FakeArticle(title="Old RCT", pmid="3", year=2010, article_type=ArticleType.RANDOMIZED_CONTROLLED_TRIAL)
+        old_rct = FakeArticle(
+            title="Old RCT", pmid="3", year=2010, article_type=ArticleType.RANDOMIZED_CONTROLLED_TRIAL
+        )
         step = PipelineStep(
             id="f",
             action="filter",
@@ -433,9 +435,7 @@ class TestActionFilter:
         assert result.metadata["removal_reasons"]["article_type_mismatch"] == 1
         assert result.metadata["removal_reasons"]["year_before_min"] == 1
         assert result.metadata["filters"]["normalized_article_types"] == ["randomized-controlled-trial"]
-        assert result.metadata["article_type_diagnostics"]["mappings"] == {
-            "RCT": "randomized-controlled-trial"
-        }
+        assert result.metadata["article_type_diagnostics"]["mappings"] == {"RCT": "randomized-controlled-trial"}
 
     async def test_unknown_article_type_filter_fails_closed(self):
         from pubmed_search.domain.entities.article import ArticleType

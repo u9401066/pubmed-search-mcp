@@ -137,9 +137,7 @@ class FulltextDiscoveryPhase:
                 if best.get("url_for_pdf"):
                     host_type = best.get("host_type", "unknown")
                     source = (
-                        PDFSource.UNPAYWALL_PUBLISHER
-                        if host_type == "publisher"
-                        else PDFSource.UNPAYWALL_REPOSITORY
+                        PDFSource.UNPAYWALL_PUBLISHER if host_type == "publisher" else PDFSource.UNPAYWALL_REPOSITORY
                     )
                     links.append(
                         PDFLink(
@@ -417,7 +415,9 @@ class FulltextDiscoveryPhase:
                         if not link_url or "ncbi.nlm.nih.gov" in link_url:
                             continue
 
-                        is_pdf = link_url.endswith(".pdf") or "pdf" in link_url.lower() or "fulltext" in provider.lower()
+                        is_pdf = (
+                            link_url.endswith(".pdf") or "pdf" in link_url.lower() or "fulltext" in provider.lower()
+                        )
                         links.append(
                             PDFLink(
                                 url=link_url,

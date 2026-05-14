@@ -125,7 +125,9 @@ def write_literature_notes(
 
     index_file: dict[str, Any] | None = None
     if create_index and should_write_collection_artifacts:
-        index_title = collection_name.strip() if collection_name and collection_name.strip() else _default_index_title(now)
+        index_title = (
+            collection_name.strip() if collection_name and collection_name.strip() else _default_index_title(now)
+        )
         index_stem = _slugify(index_title, fallback="pubmed-literature-notes", max_length=80)
         index_path = output_dir / f"{index_stem}.md"
         if index_path.exists() and not overwrite:
@@ -538,9 +540,7 @@ def _render_index_note(
     for entry in entries:
         article = entry["article"]
         metadata = ", ".join(
-            part
-            for part in (str(article.get("year", "")).strip(), _clean_text(article.get("journal", "")))
-            if part
+            part for part in (str(article.get("year", "")).strip(), _clean_text(article.get("journal", ""))) if part
         )
         link = _format_reference_link(
             entry["stem"],

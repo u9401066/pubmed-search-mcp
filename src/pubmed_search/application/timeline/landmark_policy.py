@@ -39,9 +39,7 @@ DEFAULT_WEIGHT_POLICIES: tuple[ComponentWeightPolicy, ...] = (
     ComponentWeightPolicy("citation_velocity", 0.15),
 )
 
-DEFAULT_WEIGHTS: dict[str, float] = {
-    policy.component: policy.weight for policy in DEFAULT_WEIGHT_POLICIES
-}
+DEFAULT_WEIGHTS: dict[str, float] = {policy.component: policy.weight for policy in DEFAULT_WEIGHT_POLICIES}
 
 MAX_RCR_FOR_NORMALIZATION = 10.0
 MAX_VELOCITY_FOR_NORMALIZATION = 50.0

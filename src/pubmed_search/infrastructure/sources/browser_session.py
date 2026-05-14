@@ -154,9 +154,7 @@ class BrowserSessionConfig:
     def from_env(cls) -> BrowserSessionConfig:
         """Load broker configuration from a JSON setting plus env overrides."""
         config = _load_json_config_from_env()
-        allowed_hosts = _coerce_hosts(
-            _env_or_config("BROWSER_FETCH_ALLOWED_HOSTS", config, "allowed_hosts")
-        )
+        allowed_hosts = _coerce_hosts(_env_or_config("BROWSER_FETCH_ALLOWED_HOSTS", config, "allowed_hosts"))
 
         return cls(
             enabled=_coerce_bool(
@@ -167,9 +165,7 @@ class BrowserSessionConfig:
                 _env_or_config("BROWSER_FETCH_AUTO", config, "auto_enabled"),
                 default=False,
             ),
-            broker_url=_coerce_str(
-                _env_or_config("BROWSER_FETCH_BROKER_URL", config, "broker_url")
-            ),
+            broker_url=_coerce_str(_env_or_config("BROWSER_FETCH_BROKER_URL", config, "broker_url")),
             token=_coerce_str(_env_or_config("BROWSER_FETCH_TOKEN", config, "token")),
             allowed_hosts=allowed_hosts,
             timeout_seconds=_coerce_float(
@@ -203,7 +199,9 @@ class BrowserSessionConfig:
     @property
     def auto_mode_enabled(self) -> bool:
         """Return True when broker fallback should auto-run without per-tool args."""
-        return bool(self.auto_enabled and self.is_configured and (not self.require_local_broker or self.broker_is_local()))
+        return bool(
+            self.auto_enabled and self.is_configured and (not self.require_local_broker or self.broker_is_local())
+        )
 
 
 @dataclass

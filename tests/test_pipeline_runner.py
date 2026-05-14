@@ -55,9 +55,7 @@ class TestStoredPipelineRunner:
         assert run.pipeline_name == "weekly_remi_template"
         assert len(pipeline_store.get_history("weekly_remi_template")) == 1
 
-    async def test_execute_saved_pipeline_uses_unique_run_ids_with_same_timestamp(
-        self, pipeline_store: PipelineStore
-    ):
+    async def test_execute_saved_pipeline_uses_unique_run_ids_with_same_timestamp(self, pipeline_store: PipelineStore):
         pipeline_store.save(
             name="collision_test",
             config=PipelineConfig(

@@ -50,82 +50,82 @@ MUTATION_CASES: tuple[MutationCase, ...] = (
         name="source_contracts tuple metadata branch",
         file_path=REPO_ROOT / "src/pubmed_search/shared/source_contracts.py",
         original=(
-            '            if isinstance(second, dict):\n'
-            '                metadata = dict(second)\n'
-            '            else:\n'
-            '                total_count = int(second)\n'
+            "            if isinstance(second, dict):\n"
+            "                metadata = dict(second)\n"
+            "            else:\n"
+            "                total_count = int(second)\n"
         ),
         mutated=(
-            '            if not isinstance(second, dict):\n'
-            '                metadata = dict(second)\n'
-            '            else:\n'
-            '                total_count = int(second)\n'
+            "            if not isinstance(second, dict):\n"
+            "                metadata = dict(second)\n"
+            "            else:\n"
+            "                total_count = int(second)\n"
         ),
         test_command=SOURCE_CONTRACTS_TEST_COMMAND,
     ),
     MutationCase(
         name="source_contracts resolved total fallback",
         file_path=REPO_ROOT / "src/pubmed_search/shared/source_contracts.py",
-        original='    resolved_total = total_count if total_count is not None else len(items)\n',
-        mutated='    resolved_total = len(items)\n',
+        original="    resolved_total = total_count if total_count is not None else len(items)\n",
+        mutated="    resolved_total = len(items)\n",
         test_command=SOURCE_CONTRACTS_TEST_COMMAND,
     ),
     MutationCase(
         name="source_contracts retryable operation retry flag",
         file_path=REPO_ROOT / "src/pubmed_search/shared/source_contracts.py",
         original=(
-            '    if isinstance(error, RetryableOperationError):\n'
-            '        return SourceAdapterError(\n'
-            '            source=source,\n'
-            '            operation=operation,\n'
-            '            message=str(error),\n'
+            "    if isinstance(error, RetryableOperationError):\n"
+            "        return SourceAdapterError(\n"
+            "            source=source,\n"
+            "            operation=operation,\n"
+            "            message=str(error),\n"
             '            kind="retryable",\n'
-            '            retryable=True,\n'
-            '            status_code=error.status_code,\n'
-            '        )\n'
+            "            retryable=True,\n"
+            "            status_code=error.status_code,\n"
+            "        )\n"
         ),
         mutated=(
-            '    if isinstance(error, RetryableOperationError):\n'
-            '        return SourceAdapterError(\n'
-            '            source=source,\n'
-            '            operation=operation,\n'
-            '            message=str(error),\n'
+            "    if isinstance(error, RetryableOperationError):\n"
+            "        return SourceAdapterError(\n"
+            "            source=source,\n"
+            "            operation=operation,\n"
+            "            message=str(error),\n"
             '            kind="retryable",\n'
-            '            retryable=False,\n'
-            '            status_code=error.status_code,\n'
-            '        )\n'
+            "            retryable=False,\n"
+            "            status_code=error.status_code,\n"
+            "        )\n"
         ),
         test_command=SOURCE_CONTRACTS_TEST_COMMAND,
     ),
     MutationCase(
         name="source_contracts http retry classification",
         file_path=REPO_ROOT / "src/pubmed_search/shared/source_contracts.py",
-        original='            retryable=status_code in {408, 425, 429, 500, 502, 503, 504},\n',
-        mutated='            retryable=False,\n',
+        original="            retryable=status_code in {408, 425, 429, 500, 502, 503, 504},\n",
+        mutated="            retryable=False,\n",
         test_command=SOURCE_CONTRACTS_TEST_COMMAND,
     ),
     MutationCase(
         name="source_contracts timeout kind",
         file_path=REPO_ROOT / "src/pubmed_search/shared/source_contracts.py",
         original=(
-            '    if isinstance(error, httpx.TimeoutException):\n'
-            '        return SourceAdapterError(\n'
-            '            source=source,\n'
-            '            operation=operation,\n'
+            "    if isinstance(error, httpx.TimeoutException):\n"
+            "        return SourceAdapterError(\n"
+            "            source=source,\n"
+            "            operation=operation,\n"
             '            message=str(error) or "Request timed out",\n'
             '            kind="timeout",\n'
-            '            retryable=True,\n'
-            '        )\n'
+            "            retryable=True,\n"
+            "        )\n"
         ),
         mutated=(
-            '    if isinstance(error, httpx.TimeoutException):\n'
-            '        return SourceAdapterError(\n'
-            '            source=source,\n'
-            '            operation=operation,\n'
+            "    if isinstance(error, httpx.TimeoutException):\n"
+            "        return SourceAdapterError(\n"
+            "            source=source,\n"
+            "            operation=operation,\n"
             '            message=str(error) or "Request timed out",\n'
             '            kind="transport",\n'
-            '            retryable=True,\n'
-            '        )\n'
+            "            retryable=True,\n"
+            "        )\n"
         ),
         test_command=SOURCE_CONTRACTS_TEST_COMMAND,
     ),
@@ -133,53 +133,53 @@ MUTATION_CASES: tuple[MutationCase, ...] = (
         name="source_contracts request error kind",
         file_path=REPO_ROOT / "src/pubmed_search/shared/source_contracts.py",
         original=(
-            '    if isinstance(error, httpx.RequestError):\n'
-            '        return SourceAdapterError(\n'
-            '            source=source,\n'
-            '            operation=operation,\n'
-            '            message=str(error),\n'
+            "    if isinstance(error, httpx.RequestError):\n"
+            "        return SourceAdapterError(\n"
+            "            source=source,\n"
+            "            operation=operation,\n"
+            "            message=str(error),\n"
             '            kind="transport",\n'
-            '            retryable=True,\n'
-            '        )\n'
+            "            retryable=True,\n"
+            "        )\n"
         ),
         mutated=(
-            '    if isinstance(error, httpx.RequestError):\n'
-            '        return SourceAdapterError(\n'
-            '            source=source,\n'
-            '            operation=operation,\n'
-            '            message=str(error),\n'
+            "    if isinstance(error, httpx.RequestError):\n"
+            "        return SourceAdapterError(\n"
+            "            source=source,\n"
+            "            operation=operation,\n"
+            "            message=str(error),\n"
             '            kind="unexpected",\n'
-            '            retryable=True,\n'
-            '        )\n'
+            "            retryable=True,\n"
+            "        )\n"
         ),
         test_command=SOURCE_CONTRACTS_TEST_COMMAND,
     ),
     MutationCase(
         name="cache_substrate hit statistics",
         file_path=REPO_ROOT / "src/pubmed_search/shared/cache_substrate.py",
-        original='        self._stats.hits += 1\n',
-        mutated='        self._stats.hits += 0\n',
+        original="        self._stats.hits += 1\n",
+        mutated="        self._stats.hits += 0\n",
         test_command=CACHE_SUBSTRATE_TEST_COMMAND,
     ),
     MutationCase(
         name="cache_substrate persistence payload",
         file_path=REPO_ROOT / "src/pubmed_search/shared/cache_substrate.py",
-        original='        payload = {key: entry.to_dict() for key, entry in self._entries.items()}\n',
-        mutated='        payload = {}\n',
+        original="        payload = {key: entry.to_dict() for key, entry in self._entries.items()}\n",
+        mutated="        payload = {}\n",
         test_command=CACHE_SUBSTRATE_TEST_COMMAND,
     ),
     MutationCase(
         name="cache_substrate warmup statistics",
         file_path=REPO_ROOT / "src/pubmed_search/shared/cache_substrate.py",
-        original='            self._stats.warmups += warmed\n',
-        mutated='            self._stats.warmups += 0\n',
+        original="            self._stats.warmups += warmed\n",
+        mutated="            self._stats.warmups += 0\n",
         test_command=CACHE_SUBSTRATE_TEST_COMMAND,
     ),
     MutationCase(
         name="cache_substrate invalidation statistics",
         file_path=REPO_ROOT / "src/pubmed_search/shared/cache_substrate.py",
-        original='            self._stats.invalidations += 1\n',
-        mutated='            self._stats.invalidations += 0\n',
+        original="            self._stats.invalidations += 1\n",
+        mutated="            self._stats.invalidations += 0\n",
         test_command=CACHE_SUBSTRATE_TEST_COMMAND,
     ),
 )

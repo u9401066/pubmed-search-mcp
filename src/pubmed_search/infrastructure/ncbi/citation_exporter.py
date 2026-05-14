@@ -182,6 +182,7 @@ class NCBICitationExporter:
         policy = self._build_execution_policy()
 
         try:
+
             async def _perform_request() -> str:
                 response = await self.client.get(CITATION_API_BASE, params=params)
 

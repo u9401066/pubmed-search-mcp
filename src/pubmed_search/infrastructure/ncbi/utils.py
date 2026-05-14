@@ -67,6 +67,7 @@ class UtilsMixin:
             return []
 
         try:
+
             async def _do_summary() -> Any:
                 handle = await asyncio.to_thread(
                     run_entrez_callable,
@@ -121,6 +122,7 @@ class UtilsMixin:
             Corrected query string if suggestions found, original query otherwise.
         """
         try:
+
             async def _do_spell_check() -> dict[str, Any]:
                 handle = await asyncio.to_thread(
                     run_entrez_callable,
@@ -153,6 +155,7 @@ class UtilsMixin:
             Dictionary mapping database names to result counts.
         """
         try:
+
             async def _do_egquery() -> dict[str, Any]:
                 handle = await asyncio.to_thread(
                     run_entrez_callable,
@@ -214,6 +217,7 @@ class UtilsMixin:
             mesh_ids = result.get("IdList", [])
 
             if mesh_ids:
+
                 async def _do_mesh_summary() -> Any:
                     handle = await asyncio.to_thread(
                         run_entrez_callable,
@@ -327,6 +331,7 @@ class UtilsMixin:
             - ``pmid``: Resolved PubMed identifier, or ``None`` when not found.
             - ``verified``: ``True`` when a PMID was found, ``False`` otherwise.
         """
+
         async def _verify_one(citation: dict[str, str]) -> dict[str, Any]:
             pmid = await self.find_by_citation(
                 journal=citation.get("journal", ""),
@@ -399,6 +404,7 @@ class UtilsMixin:
             - available search fields
         """
         try:
+
             async def _do_einfo() -> dict[str, Any]:
                 handle = await asyncio.to_thread(
                     run_entrez_callable,

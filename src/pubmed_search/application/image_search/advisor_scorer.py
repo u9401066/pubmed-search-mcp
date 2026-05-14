@@ -84,13 +84,7 @@ def score_image_suitability(query_lower: str) -> tuple[float, list[dict[str, Any
             total_strong_hits += len(matched)
 
     if total_strong_hits:
-        matched_terms = tuple(
-            dict.fromkeys(
-                term
-                for terms in strong_type_hits.values()
-                for term in terms
-            )
-        )
+        matched_terms = tuple(dict.fromkeys(term for terms in strong_type_hits.values() for term in terms))
         contribution = min(total_strong_hits * TYPE_SUITABILITY_WEIGHT, TYPE_SUITABILITY_CAP)
         score += contribution
         feature_hits.append(
@@ -183,8 +177,7 @@ def check_temporal_relevance(query_lower: str) -> tuple[str | None, dict[str, An
     for keyword in sorted(POST_2020_KEYWORDS):
         if keyword in query_lower:
             warning = (
-                f"Open-i 索引凍結於 ~2020，查詢含 '{keyword}' 可能找不到相關結果。"
-                "較新主題建議用 Europe PMC 全文搜尋"
+                f"Open-i 索引凍結於 ~2020，查詢含 '{keyword}' 可能找不到相關結果。較新主題建議用 Europe PMC 全文搜尋"
             )
             hit = _make_feature_hit(
                 category="temporal",

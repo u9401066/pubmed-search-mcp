@@ -60,10 +60,7 @@ async def test_run_entrez_callable_serializes_concurrent_metadata_updates() -> N
 
         return _call
 
-    requested_states = [
-        (f"user{i}@example.com", f"api-key-{i}", f"tool-{i}")
-        for i in range(8)
-    ]
+    requested_states = [(f"user{i}@example.com", f"api-key-{i}", f"tool-{i}") for i in range(8)]
     tasks = [
         asyncio.to_thread(
             run_entrez_callable,

@@ -31,7 +31,7 @@ _DOI_RE = re.compile(r"\b(?:https?://(?:dx\.)?doi\.org/|doi:\s*)?(10\.\d{4,9}/[-
 _PMID_RE = re.compile(r"\bPMID\s*:?\s*(\d{5,9})\b", re.IGNORECASE)
 _YEAR_RE = re.compile(r"(?<!\d)(?:19|20)\d{2}(?!\d)")
 _FIRST_PAGE_RE = re.compile(r":\s*([A-Za-z]?\d+)")
-_VOLUME_RE = re.compile(r";\s*([A-Za-z0-9][A-Za-z0-9 .-]{0,20}?)(?:\(|:|;)" )
+_VOLUME_RE = re.compile(r";\s*([A-Za-z0-9][A-Za-z0-9 .-]{0,20}?)(?:\(|:|;)")
 
 
 @dataclass(slots=True)
@@ -454,7 +454,9 @@ class ReferenceVerificationService:
             "Document acceptance/rejection rationale for each unresolved reference",
         ]
         if method == "title_search":
-            review_checklist.insert(1, "Title-search candidates are weak evidence; prefer DOI/PMID or citation metadata")
+            review_checklist.insert(
+                1, "Title-search candidates are weak evidence; prefer DOI/PMID or citation metadata"
+            )
 
         return {
             "retry_queries": retry_queries,
@@ -580,9 +582,7 @@ class ReferenceVerificationService:
             return {}
 
         ecitmatch_candidates = [
-            parsed
-            for parsed in parsed_entries
-            if not parsed.pmid and not parsed.doi and parsed.journal and parsed.year
+            parsed for parsed in parsed_entries if not parsed.pmid and not parsed.doi and parsed.journal and parsed.year
         ]
         if not ecitmatch_candidates:
             return {}
@@ -633,7 +633,9 @@ class ReferenceVerificationService:
                 cache[pmid] = article
         return cache
 
-    def _choose_best_candidate(self, parsed: ParsedReference, candidates: list[dict[str, Any]]) -> dict[str, Any] | None:
+    def _choose_best_candidate(
+        self, parsed: ParsedReference, candidates: list[dict[str, Any]]
+    ) -> dict[str, Any] | None:
         """Choose the highest-scoring candidate from a small PubMed result set."""
         scored: list[tuple[int, dict[str, Any]]] = []
         for article in candidates:
@@ -713,7 +715,9 @@ class ReferenceVerificationService:
                 for candidate in journal_candidates
             )
         if parsed.volume:
-            comparisons["volume"] = self._normalize_text(parsed.volume) == self._normalize_text(article.get("volume", ""))
+            comparisons["volume"] = self._normalize_text(parsed.volume) == self._normalize_text(
+                article.get("volume", "")
+            )
         if parsed.first_page:
             comparisons["first_page"] = self._normalize_text(parsed.first_page) == self._normalize_text(
                 self._extract_first_page(str(article.get("pages", "")))

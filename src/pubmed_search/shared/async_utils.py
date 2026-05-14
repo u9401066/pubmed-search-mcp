@@ -389,10 +389,7 @@ class TransportExecutionKernel:
     def _budget_message(policy: RequestExecutionPolicy, phase: str) -> str:
         if policy.total_timeout is None:
             return f"{policy.service_name} timed out during {phase}"
-        return (
-            f"{policy.service_name} exceeded total timeout of {policy.total_timeout:.2f}s "
-            f"during {phase}"
-        )
+        return f"{policy.service_name} exceeded total timeout of {policy.total_timeout:.2f}s during {phase}"
 
     @classmethod
     async def _await_with_budget(

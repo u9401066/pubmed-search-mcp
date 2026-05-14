@@ -34,6 +34,7 @@ def __getattr__(name: str):
         return _tool_session.get_strategy_generator()
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
+
 __all__ = [
     "InputNormalizer",
     "KEY_ALIASES",

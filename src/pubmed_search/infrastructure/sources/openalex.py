@@ -297,7 +297,11 @@ class OpenAlexClient(BaseAPIClient):
             normalized_author_id = author_id.strip()
             if normalized_author_id.startswith("https://openalex.org/"):
                 normalized_author_id = normalized_author_id.replace("https://openalex.org/", "")
-            elif not normalized_author_id.startswith("https://orcid.org/") and normalized_author_id.count("-") == 3 and normalized_author_id.replace("-", "").isdigit():
+            elif (
+                not normalized_author_id.startswith("https://orcid.org/")
+                and normalized_author_id.count("-") == 3
+                and normalized_author_id.replace("-", "").isdigit()
+            ):
                 normalized_author_id = f"https://orcid.org/{normalized_author_id}"
 
             params = dict(self._auth_params)
