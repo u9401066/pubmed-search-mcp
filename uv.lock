@@ -1707,7 +1707,7 @@ wheels = [
 
 [[package]]
 name = "pubmed-search-mcp"
-version = "0.5.9"
+version = "0.5.10"
 source = { editable = "." }
 dependencies = [
     { name = "apscheduler" },

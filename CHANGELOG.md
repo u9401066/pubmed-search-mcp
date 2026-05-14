@@ -10,12 +10,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-
-- Institutional fulltext retrieval is now wired into `get_fulltext`. When a DOI lookup misses on Unpaywall, the orchestration layer attempts the Phase 1 (IP-aware direct DOI fetch) and Phase 2 (EZproxy hostname rewrite + replayed session cookie) paths via the new `InstitutionalFulltextClient`, extracts publisher HTML with `trafilatura` (optional `[institutional]` extra) plus a stdlib fallback, and returns the article body before falling through to CORE / extended sources.
-- New `fetch_direct` / `fetch_ezproxy` retrieval-mode entrypoints in `institutional_fetch.py` complement the existing sniff-only `probe_direct` / `probe_ezproxy` diagnostics. `ProbeResult` gains optional `body` + `content_type` fields that are excluded from `to_dict()` so diagnostic JSON stays compact.
-- `FulltextRegistry` now exposes an `institutional` source (priority 4) and inserts it between `unpaywall` and `core` in all three default policies.
-
 ### Planned
 
 - PRISMA flow tracking (init_prisma_flow, record_screening, get_prisma_diagram)
@@ -23,6 +17,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Quality assessment templates (RoB 2, ROBINS-I, NOS)
 - Research trend analysis (keyword frequency, publication trends)
 - Chart generation (PNG output)
+
+---
+
+## [0.5.10] - 2026-05-14
+
+### Added
+
+- Persistent tool artifacts for `unified_search` and `get_fulltext`, with session-backed manifests, checksum validation, paged reads through `read_session(action="artifact")`, and redacted local paths by default.
+- Large `get_fulltext` responses now return an inline preview plus an artifact locator when session persistence is available, while preserving full payloads and raw-content sidecars for agent reuse.
+- Institutional fulltext retrieval is now wired into `get_fulltext`. When a DOI lookup misses on Unpaywall, the orchestration layer attempts the Phase 1 (IP-aware direct DOI fetch) and Phase 2 (EZproxy hostname rewrite + replayed session cookie) paths via `InstitutionalFulltextClient`, extracts publisher HTML with `trafilatura` (optional `[institutional]` extra) plus a stdlib fallback, and returns the article body before falling through to CORE / extended sources.
+- New `fetch_direct` / `fetch_ezproxy` retrieval-mode entrypoints in `institutional_fetch.py` complement the existing sniff-only `probe_direct` / `probe_ezproxy` diagnostics. `ProbeResult` gains optional `body` + `content_type` fields that are excluded from `to_dict()` so diagnostic JSON stays compact.
+
+### Changed
+
+- `FulltextRegistry` now exposes an `institutional` source (priority 4) and inserts it between `unpaywall` and `core` in all three default policies.
+- README, integration docs, generated docs-site content, Cline rules, Codex skills, Claude skills, and Copilot agent/policy assets now document artifact reuse, large-output paging, Semantic Scholar 429 handling, and local-vs-remote path behavior.
+
+### Fixed
+
+- Semantic Scholar HTTP 429 and circuit-open failures now surface as source warnings instead of traceback-heavy tool failures, including deep-search paths and markdown responses with analysis disabled.
+- Source retry state is task-local, preventing concurrent requests from leaking `last_retryable_error` diagnostics across shared client instances.
+- Response-size truncation preserves `source_errors` whenever possible, so agents still receive retry/remediation guidance after capped responses.
+
+### Tests
+
+- Added regression coverage for artifact persistence/reading, `get_fulltext` artifact payloads and raw sidecars, Semantic Scholar 429/circuit behavior, alternate-source diagnostics, source-warning formatting, docs sync, and Cline skill validation.
+- Revalidated with full pytest, Ruff, mypy, async-test checks, MCP tool count generation, docs-site generation, Cline skill audit, and diff whitespace checks.
 
 ---
 
@@ -2123,7 +2144,9 @@ get_citation_metrics(pmids="last", min_rcr=1.5, min_percentile=75)
 - [PyPI Package](https://pypi.org/project/pubmed-search-mcp/)
 - [Smithery](https://smithery.ai/server/pubmed-search-mcp)
 
-[Unreleased]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.5.10...HEAD
+[0.5.10]: https://github.com/u9401066/pubmed-search-mcp/releases/tag/v0.5.10
+[0.5.9]: https://github.com/u9401066/pubmed-search-mcp/releases/tag/v0.5.9
 [0.5.0]: https://github.com/u9401066/pubmed-search-mcp/releases/tag/v0.5.0
 [0.4.6]: https://github.com/u9401066/pubmed-search-mcp/releases/tag/v0.4.6
 [0.4.5]: https://github.com/u9401066/pubmed-search-mcp/releases/tag/v0.4.5
