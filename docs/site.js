@@ -270,7 +270,26 @@ function defaultSlugForLanguage(lang) {
 }
 
 function rawSlugFromHash() {
-  return window.location.hash.replace(/^#\/?/, "").trim();
+  const hash = window.location.hash.trim();
+  if (!hash.startsWith("#/")) {
+    return "";
+  }
+
+  return hash.slice(2).split("#", 1)[0].trim();
+}
+
+function anchorFromHash() {
+  const hash = window.location.hash.trim();
+  if (hash.startsWith("#/")) {
+    const anchor = hash.slice(2).split("#").slice(1).join("#");
+    return anchor ? decodeURIComponent(anchor) : "";
+  }
+
+  if (hash.startsWith("#")) {
+    return decodeURIComponent(hash.slice(1));
+  }
+
+  return "";
 }
 
 function currentSlug() {
@@ -377,9 +396,21 @@ function slugifyHeading(text) {
       .trim()
       .toLowerCase()
       .replace(/[^\p{L}\p{N}\s-]/gu, "")
-      .replace(/\s+/g, "-")
-      .replace(/-+/g, "-") || "section"
+      .replace(/\s/g, "-")
+      .replace(/^-+/g, "") || "section"
   );
+}
+
+function ensureHeadingIds() {
+  const seen = new Map();
+  docContent.querySelectorAll("h1, h2, h3, h4").forEach((heading) => {
+    const baseId = slugifyHeading(heading.textContent || "section");
+    const nextCount = (seen.get(baseId) || 0) + 1;
+    seen.set(baseId, nextCount);
+
+    heading.id = nextCount === 1 ? baseId : `${baseId}-${nextCount}`;
+    heading.tabIndex = -1;
+  });
 }
 
 function wrapScrollableTables() {
@@ -429,18 +460,9 @@ function buildPageOutline() {
     return;
   }
 
-  const seen = new Map();
   const items = headings.map((heading) => {
-    const baseId = slugifyHeading(heading.textContent || "section");
-    const nextCount = (seen.get(baseId) || 0) + 1;
-    seen.set(baseId, nextCount);
-
-    const id = nextCount === 1 ? baseId : `${baseId}-${nextCount}`;
-    heading.id = id;
-    heading.tabIndex = -1;
-
     return {
-      id,
+      id: heading.id,
       level: heading.tagName.toLowerCase(),
       text: heading.textContent?.trim() || "Section",
     };
@@ -508,21 +530,57 @@ async function renderMermaidBlocks() {
   }
 }
 
+function scrollToDocAnchor(targetId, behavior = "smooth") {
+  if (!targetId) {
+    return false;
+  }
+
+  const target = docContent.querySelector(`#${CSS.escape(targetId)}`);
+  if (!target) {
+    return false;
+  }
+
+  target.scrollIntoView({ behavior, block: "start" });
+  return true;
+}
+
 function wireDocAnchors() {
   pageOutline.querySelectorAll("[data-doc-anchor]").forEach((link) => {
     link.addEventListener("click", (event) => {
       event.preventDefault();
       const targetId = link.getAttribute("data-doc-anchor");
-      if (!targetId) {
+      scrollToDocAnchor(targetId);
+    });
+  });
+}
+
+function wireMarkdownAnchors(page) {
+  docContent.querySelectorAll("a[href^='#']").forEach((link) => {
+    link.addEventListener("click", (event) => {
+      const href = link.getAttribute("href") || "";
+      if (!href || href === "#") {
         return;
       }
 
-      const target = docContent.querySelector(`#${CSS.escape(targetId)}`);
-      if (!target) {
+      if (href.startsWith("#/")) {
+        const [targetSlug, targetAnchor = ""] = href.slice(2).split("#");
+        if (targetSlug !== page.slug || !targetAnchor) {
+          return;
+        }
+
+        event.preventDefault();
+        const decodedAnchor = decodeURIComponent(targetAnchor);
+        if (scrollToDocAnchor(decodedAnchor)) {
+          window.history.replaceState(null, "", `#/${page.slug}#${encodeURIComponent(decodedAnchor)}`);
+        }
         return;
       }
 
-      target.scrollIntoView({ behavior: "smooth", block: "start" });
+      event.preventDefault();
+      const decodedAnchor = decodeURIComponent(href.slice(1));
+      if (scrollToDocAnchor(decodedAnchor)) {
+        window.history.replaceState(null, "", `#/${page.slug}#${encodeURIComponent(decodedAnchor)}`);
+      }
     });
   });
 }
@@ -605,10 +663,12 @@ async function renderPage() {
       throw new Error(`Missing embedded content for ${page.slug}. Run uv run python scripts/build_docs_site.py.`);
     }
     docContent.innerHTML = marked.parse(markdown);
+    ensureHeadingIds();
     wrapScrollableTables();
     wrapLocalImages();
     buildPageOutline();
     wireDocAnchors();
+    wireMarkdownAnchors(page);
     await renderMermaidBlocks();
 
     docContent.querySelectorAll("a[href^='http']").forEach((link) => {
@@ -616,7 +676,16 @@ async function renderPage() {
       link.setAttribute("rel", "noreferrer noopener");
     });
 
-    window.scrollTo({ top: 0, behavior: "instant" });
+    const targetAnchor = anchorFromHash();
+    if (targetAnchor) {
+      requestAnimationFrame(() => {
+        if (!scrollToDocAnchor(targetAnchor, "instant")) {
+          window.scrollTo({ top: 0, behavior: "instant" });
+        }
+      });
+    } else {
+      window.scrollTo({ top: 0, behavior: "instant" });
+    }
   } catch (error) {
     docContent.innerHTML = `
       <h3>${uiText("unableTitle")}</h3>

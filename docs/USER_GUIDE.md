@@ -169,11 +169,12 @@ Use `save_literature_notes` when the goal is a local knowledge base rather than 
 
 ```python
 save_literature_notes(pmids="last")
+save_literature_notes(pmids="last", note_format="wiki")
 save_literature_notes(pmids="last", note_format="medpaper")
 save_literature_notes(pmids="last", output_dir="./references")
 ```
 
-The default `note_format` is `wiki`. `unified_search` suggests this tool for PMID-backed result sets, and the generated wiki/Foam targets use stable identifiers such as PMID, DOI, or PMCID instead of title-derived filenames. The response includes `wiki_validation` so agents can detect unresolved wikilinks before editing the note library.
+The default `note_format` is `wiki`. `unified_search` suggests `save_literature_notes(pmids="last", note_format="wiki")` for PMID-backed result sets, and the generated LLM wiki/Foam links use stable `[[stable-id|title]]` targets based on PMID, DOI, or PMCID instead of title-derived filenames. The response includes `wiki_validation` so agents can detect unresolved wikilinks before editing the note library.
 
 Directory resolution is:
 

@@ -90,8 +90,8 @@ Agent 通常應該從 `unified_search` 開始。好的結果會包含使用的 q
 臨床比較問題先做 PICO：
 
 ```text
-Extract P/I/C/O, validate the handoff with parse_pico, propose PubMed search queries, then run the most specific one:
-In adults with type 2 diabetes and CKD, do SGLT2 inhibitors reduce heart failure hospitalization compared with placebo?
+請先抽出 P/I/C/O，用 parse_pico 驗證 handoff，提出 PubMed 搜尋 query，然後執行最精準的一個：
+在成人第二型糖尿病合併 CKD 病人中，SGLT2 inhibitors 相較 placebo 是否能降低 heart failure hospitalization？
 ```
 
 預期流程：
@@ -100,8 +100,9 @@ In adults with type 2 diabetes and CKD, do SGLT2 inhibitors reduce heart failure
 2. `parse_pico(description=..., p=..., i=..., c=..., o=...)` 驗證 schema 並回傳 `template: pico` pipeline。
 3. 可選：用 `generate_search_queries` 將 P/I/C/O 擴展成 MeSH/同義詞 fragments。
 4. `unified_search` 執行回傳的 PICO pipeline，或執行 agent 組好的 Boolean query。
+5. 如果第一個 query 太廣或太窄，可再用 `analyze_search_query`。
 
-Server 能驗證 PICO handoff、建立後端 PICO 搜尋計畫，並協助 MeSH、同義詞與 ICD-to-MeSH 擴展；語意上的 PICO 抽取仍由 agent 負責。
+Server 能驗證 PICO handoff、建立後端 PICO 搜尋計畫，並協助 MeSH、同義詞與 ICD-to-MeSH 擴展；語意上的 PICO 抽取仍由 agent 負責，agent 也應說明為什麼選擇最後執行的 query。
 
 ### 3. 從 Seed Paper 探索
 
@@ -172,11 +173,12 @@ prepare_export(pmids="last", format="csl")
 
 ```python
 save_literature_notes(pmids="last")
+save_literature_notes(pmids="last", note_format="wiki")
 save_literature_notes(pmids="last", note_format="medpaper")
 save_literature_notes(pmids="last", output_dir="./references")
 ```
 
-預設 `note_format` 是 `wiki`。`unified_search` 對 PMID-backed result set 會主動建議這個工具；產生的 wiki/Foam targets 會使用 PMID、DOI、PMCID 等穩定 identifier，而不是從 title 產生檔名。回應也會包含 `wiki_validation`，讓 agent 在編輯 note library 前先檢查 unresolved wikilinks。
+預設 `note_format` 是 `wiki`。`unified_search` 對 PMID-backed result set 會主動建議 `save_literature_notes(pmids="last", note_format="wiki")`；產生的 LLM wiki/Foam links 會使用 PMID、DOI、PMCID 等穩定 identifier 作為 `[[stable-id|title]]` target，而不是從 title 產生檔名。回應也會包含 `wiki_validation`，讓 agent 在編輯 note library 前先檢查 unresolved wikilinks。
 
 輸出目錄解析順序：
 
@@ -221,15 +223,15 @@ Client 能處理時優先用完整工具面。當 Copilot Studio schema compatib
 好的 prompt 會給任務、範圍與輸出形狀：
 
 ```text
-Find recent systematic reviews about GLP-1 receptor agonists and cardiovascular outcomes in type 2 diabetes. Use PubMed Search MCP, show the search strategy, keep the result PMIDs in session, then export the final set as RIS.
+請找第二型糖尿病中 GLP-1 receptor agonists 與 cardiovascular outcomes 的近期 systematic reviews。使用 PubMed Search MCP，顯示搜尋策略，把結果 PMID 保存在 session，最後將篩選後集合匯出成 RIS。
 ```
 
 ```text
-Build a citation tree for this seed PMID, separate direct references from citing papers, and identify which papers look like clinical guidelines, RCTs, or meta-analyses.
+請針對這個 seed PMID 建立 citation tree，分開 direct references 與 citing papers，並標出哪些文章看起來像 clinical guidelines、RCTs 或 meta-analyses。
 ```
 
 ```text
-Save local wiki notes for the last result set. Use the default wiki format and include a collection-level CSL JSON sidecar.
+請把上一輪結果保存成本機 wiki notes。使用預設 wiki format，並包含 collection-level CSL JSON sidecar。
 ```
 
 避免只說「find everything about cancer」。請補上 population、intervention、outcome、date range、article type，或你想支援的決策。
