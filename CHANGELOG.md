@@ -20,6 +20,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.5.14] - 2026-05-15
+
+### Fixed
+
+- Removed stale PICO examples that implied backend natural-language PICO auto-parsing; agent-facing instructions now consistently require agent-provided P/I/C/O followed by `parse_pico` validation and `unified_search` execution.
+- Updated the PICO workflow diagram, Copilot hook enforcement notes, arXiv paper draft wording, and internal MCP tool package header to match the current PICO handoff design.
+
+### Tests
+
+- Added direct MCP wrapper coverage for `diagnose_institutional_access`.
+- Added a guardrail test that fails if critical agent-facing docs reintroduce stale PICO auto-parse examples.
+
+---
+
 ## [0.5.13] - 2026-05-15
 
 ### Changed
