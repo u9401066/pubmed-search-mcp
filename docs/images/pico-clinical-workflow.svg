@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="620" viewBox="0 0 1200 620" role="img" aria-labelledby="title desc">
   <title id="title">PICO clinical search workflow</title>
-  <desc id="desc">How a clinical question is parsed into PICO elements, expanded into MeSH and synonyms, assembled into Boolean search, filtered, and executed.</desc>
+  <desc id="desc">How an agent-provided PICO handoff is validated, expanded into MeSH and synonyms, assembled into Boolean search, filtered, and executed.</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M 0 0 L 10 5 L 0 10 z" fill="#263f46"/>
@@ -19,7 +19,7 @@
   </defs>
   <rect class="bg" width="1200" height="620"/>
   <text class="title" x="52" y="58">PICO clinical search workflow</text>
-  <text class="subtitle" x="52" y="86">Clinical comparison search works best when PICO parsing, query expansion, and final execution are separate steps.</text>
+  <text class="subtitle" x="52" y="86">Clinical comparison search works best when agent extraction, PICO validation, query expansion, and final execution are separate steps.</text>
 
   <rect class="box" x="54" y="160" width="180" height="118" fill="#eef2ff" stroke="#4f68a8"/>
   <text class="label" x="80" y="200">Question</text>
@@ -28,8 +28,8 @@
 
   <rect class="box" x="292" y="160" width="178" height="118" fill="#eaf4f0" stroke="#3a7c69"/>
   <text class="label" x="318" y="200">parse_pico</text>
-  <text class="body" x="318" y="230">P, I, C, O</text>
-  <text class="body" x="318" y="252">question type</text>
+  <text class="body" x="318" y="230">validate P/I/C/O</text>
+  <text class="body" x="318" y="252">return pipeline</text>
 
   <rect class="box" x="528" y="160" width="200" height="118" fill="#fff5df" stroke="#b27b21"/>
   <text class="label" x="554" y="200">Expand elements</text>

@@ -177,18 +177,19 @@ User → Copilot Agent → [preToolUse HOOK] → MCP Tool → Our Server
 │  Agent 看到:                                             │
 │    "Complex query detected without pipeline mode.       │
 │     Please retry with:                                  │
-│     pipeline='template: pico\ntopic: remimazolam...'"   │
+│     call parse_pico with P/I/C/O, then retry with       │
+│     the returned pipeline YAML"                         │
 │                                                         │
 │  Agent 自動重試:                                         │
 │    unified_search(                                      │
 │      query="remimazolam vs propofol ICU sedation",      │
-│      pipeline="template: pico\ntopic: ..."              │
+│      pipeline="<parse_pico returned template:pico YAML>"│
 │    )                                                    │
 │                                                         │
 │  enforce-pipeline.sh 攔截:                               │
 │    pipeline 參數存在 → ALLOW ✓                          │
 │                                                         │
-│  結果: Pipeline mode 執行，自動 PICO 分解 + 平行搜尋     │
+│  結果: Agent 提供 PICO 結構，pipeline 驗證後平行搜尋    │
 └─────────────────────────────────────────────────────────┘
 ```
 

@@ -50,15 +50,22 @@ unified_search(query='"Artificial Intelligence"[MeSH] AND "Anesthesiology"[MeSH]
 ───────────────────────────────────────────────────────────────────────────────
 觸發條件: "A比B好嗎?", "...相比...", "...對...的效果", "在...病人中..."
 
-方法 A — Pipeline 自動化 (推薦):
+方法 A — Agent 提供 PICO handoff (推薦):
 ```
+pico = parse_pico(
+  description="remimazolam vs propofol ICU sedation",
+  p="ICU patients requiring sedation",
+  i="remimazolam",
+  c="propofol",
+  o="sedation quality, delirium, extubation time"
+)
 unified_search(
   query="remimazolam vs propofol ICU sedation",
-  pipeline='template: pico\\ntopic: remimazolam vs propofol for ICU sedation'
+  pipeline="<pipeline field from parse_pico response>"
 )
 ```
 
-方法 B — 手動 PICO 流程:
+方法 B — 手動 inline PICO pipeline:
 1. Agent 先從臨床問題抽出 P/I/C/O；不確定時先詢問使用者
 2. parse_pico(description, p, i, c, o) → 驗證 agent-provided PICO 並產生 pipeline
 3. 可選：對每個 PICO 元素並行呼叫 generate_search_queries() 取得 MeSH/同義詞

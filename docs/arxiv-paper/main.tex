@@ -104,7 +104,7 @@ No search tool automatically detects research \emph{milestones} or constructs a 
 
 \paragraph{Challenge 4: Workflow Reproducibility.}
 PRISMA 2020~\citep{page2021prisma} mandates transparent, reproducible search strategies.
-Yet multi-step research workflows---involving PICO parsing, parallel searches, result merging, and filtering---are ad hoc and not persistable.
+Yet multi-step research workflows---involving agent-provided PICO handoff validation, parallel searches, result merging, and filtering---are ad hoc and not persistable.
 No tool provides \emph{saveable, schedulable, and re-executable} search pipelines.
 
 \paragraph{Challenge 5: End-to-End Integration.}
@@ -198,7 +198,7 @@ Our system is among the first academic search tools built natively on MCP, enabl
 | Presentation Layer: 40 MCP Tools, 9 Prompts, Resources    |
 +-----------------------------------------------------------+
 | Application Layer                                         |
-| +-- QueryAnalyzer (MeSH expansion, PICO parsing)         |
+| +-- QueryAnalyzer (MeSH expansion, PICO handoff validation) |
 | +-- ResultAggregator (dedup, BM25+, RRF, MMR)            |
 | +-- SourceDisagreementAnalyzer (SDA)                      |
 | +-- ReproducibilityScorer                                 |
@@ -632,7 +632,7 @@ Steps within each batch execute concurrently via \texttt{asyncio.gather()}, whil
 \paragraph{Pipeline Templates.}
 Four built-in templates cover common workflows:
 \begin{itemize}
-    \item \textbf{PICO Pipeline}: Clinical question $\rightarrow$ PICO parsing $\rightarrow$ parallel element searches $\rightarrow$ RRF merge
+    \item \textbf{PICO Pipeline}: Agent-provided P/I/C/O $\rightarrow$ validation $\rightarrow$ parallel element searches $\rightarrow$ RRF merge
     \item \textbf{Comprehensive Pipeline}: Multi-source search + MeSH expansion + citation enrichment
     \item \textbf{Exploration Pipeline}: Seed PMID $\rightarrow$ related + citing + reference articles
     \item \textbf{Gene/Drug Pipeline}: NCBI Gene + PubChem compound + literature cross-referencing
@@ -725,7 +725,7 @@ The system exposes 40 MCP tools organized into 14 categories (Table~\ref{tab:too
 \textbf{Category} & \textbf{\#Tools} & \textbf{Purpose} \\
 \midrule
 Search             & 1  & Unified multi-source search entry point \\
-Query Intelligence & 3  & MeSH expansion, PICO parsing, query analysis \\
+Query Intelligence & 3  & MeSH expansion, PICO handoff validation, query analysis \\
 Article Exploration & 5 & Related articles, citations, references \\
 Full Text          & 2  & Full-text retrieval and text mining \\
 NCBI Extended      & 7  & Gene, PubChem, ClinVar databases \\

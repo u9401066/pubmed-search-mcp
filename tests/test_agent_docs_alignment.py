@@ -44,6 +44,26 @@ def test_agent_pico_guidance_preserves_structured_handoff_boundary() -> None:
     assert "When only `description` is provided" in skill
 
 
+def test_pico_guidance_has_no_backend_auto_parse_examples() -> None:
+    critical_paths = [
+        "src/pubmed_search/presentation/mcp_server/instructions.py",
+        "docs/COPILOT_HOOKS_PIPELINE_ENFORCEMENT.md",
+        "docs/images/pico-clinical-workflow.svg",
+        "docs/arxiv-paper/main.tex",
+    ]
+    forbidden = [
+        "template: pico\\ntopic:",
+        "自動 PICO 分解",
+        "How a clinical question is parsed into PICO elements",
+        "PICO parsing",
+    ]
+
+    for path in critical_paths:
+        content = _read(path)
+        for term in forbidden:
+            assert term not in content, f"{path} still contains stale PICO guidance: {term}"
+
+
 def test_user_docs_cover_timeline_image_search_upload_and_artifact_memory() -> None:
     required = [
         "build_research_timeline",
