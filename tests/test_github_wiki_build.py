@@ -11,6 +11,8 @@ def test_build_github_wiki_outputs_expected_pages(tmp_path) -> None:
         "_Sidebar.md",
         "User-Guide.md",
         "User-Guide.zh-TW.md",
+        "Advanced-Research-Workflows.md",
+        "Advanced-Research-Workflows.zh-TW.md",
         "Developer-Guide.md",
         "Developer-Guide.zh-TW.md",
         "Tools-Usage-Guide.md",
@@ -31,7 +33,9 @@ def test_build_github_wiki_outputs_expected_pages(tmp_path) -> None:
     sidebar = (tmp_path / "_Sidebar.md").read_text(encoding="utf-8")
 
     assert "https://u9401066.github.io/pubmed-search-mcp/" in home
+    assert "[Advanced Research Workflows](Advanced-Research-Workflows)" in home
     assert "[Tools Usage Guide](Tools-Usage-Guide)" in user_guide
+    assert "[進階研究工作流](Advanced-Research-Workflows.zh-TW)" in sidebar
     assert "[Developer Guide](Developer-Guide)" in sidebar
 
 

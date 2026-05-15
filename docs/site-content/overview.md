@@ -27,7 +27,7 @@ A Domain-Driven Design (DDD) based MCP server that serves as an intelligent rese
 
 **🌐 Language**: **English** | [繁體中文](#/overview-zh)
 
-**📘 Documentation Map**: README is the quick project entry point. Use the [Docs Site](https://u9401066.github.io/pubmed-search-mcp/) for the best reading experience, the [GitHub Wiki](https://github.com/u9401066/pubmed-search-mcp/wiki) for GitHub-native navigation, and source docs for edits: [User guide](#/user-guide) | [Capability-first guide](#/tools-usage-guide) | [Developer guide](#/developer-guide) | [Complete index](#/quick-reference)
+**📘 Documentation Map**: README is the quick project entry point. Use the [Docs Site](https://u9401066.github.io/pubmed-search-mcp/) for the best reading experience, the [GitHub Wiki](https://github.com/u9401066/pubmed-search-mcp/wiki) for GitHub-native navigation, and source docs for edits: [User guide](#/user-guide) | [Advanced workflows](#/advanced-workflows) | [Capability-first guide](#/tools-usage-guide) | [Developer guide](#/developer-guide) | [Complete index](#/quick-reference)
 
 ---
 
@@ -588,8 +588,14 @@ Step-by-step tutorials:
 
 | Tool | Description |
 | ---- | ----------- |
-| `analyze_figure_for_search` | Analyze scientific figure for search |
+| `analyze_figure_for_search` | Handoff an uploaded image, image URL, or data URI to agent vision for search-term extraction |
 | `search_biomedical_images` | Search biomedical images across Open-i (X-ray, microscopy, photos, diagrams) |
+
+Use `analyze_figure_for_search` when the user supplies an image and the agent
+must interpret its meaning first. The tool returns MCP `ImageContent` plus
+instructions for the LLM agent to extract English biomedical terms, then
+continue with `search_biomedical_images` for similar Open-i images or
+`unified_search` for related papers.
 
 ### 📄 Preprint Search
 

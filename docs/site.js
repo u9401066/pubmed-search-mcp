@@ -36,6 +36,29 @@ const DOC_PAGES = [
     file: "site-content/user-guide-zh.md",
   },
   {
+    slug: "advanced-workflows",
+    group: "advanced-workflows",
+    lang: "en",
+    audience: "user",
+    title: "Advanced Research Workflows",
+    blurb:
+      "Research chronicle/timeline, Open-i image search, uploaded-image handoff, and persistent query memory.",
+    keywords:
+      "build_research_timeline analyze_timeline_milestones compare_timelines context_graph search_biomedical_images Open-i analyze_figure_for_search uploaded image persistent query memory read_session artifact",
+    file: "site-content/advanced-workflows.md",
+  },
+  {
+    slug: "advanced-workflows-zh",
+    group: "advanced-workflows",
+    lang: "zh",
+    audience: "user",
+    title: "進階研究工作流",
+    blurb: "研究脈絡時間軸、Open-i 圖片搜尋、上傳圖片 handoff、持久化 query memory。",
+    keywords:
+      "研究時間軸 研究脈絡 build_research_timeline analyze_timeline_milestones compare_timelines context_graph Open-i 圖片搜尋 search_biomedical_images 上傳圖片 analyze_figure_for_search 持久化 query memory read_session artifact",
+    file: "site-content/advanced-workflows-zh.md",
+  },
+  {
     slug: "tools-usage-guide",
     group: "tools-usage-guide",
     lang: "en",
@@ -593,6 +616,8 @@ function searchHaystack(page) {
     page.titleByLang?.zh,
     page.blurbByLang?.en,
     page.blurbByLang?.zh,
+    page.keywords,
+    embeddedContent[page.slug],
   ]
     .filter(Boolean)
     .join(" ")

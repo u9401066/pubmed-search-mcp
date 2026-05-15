@@ -30,6 +30,12 @@ PAGES = [
     ("overview-zh", "Overview (zh-TW)", REPO_ROOT / "README.zh-TW.md"),
     ("user-guide", "User Guide", DOCS_ROOT / "USER_GUIDE.md"),
     ("user-guide-zh", "User Guide (zh-TW)", DOCS_ROOT / "USER_GUIDE.zh-TW.md"),
+    ("advanced-workflows", "Advanced Research Workflows", DOCS_ROOT / "ADVANCED_RESEARCH_WORKFLOWS.md"),
+    (
+        "advanced-workflows-zh",
+        "Advanced Research Workflows (zh-TW)",
+        DOCS_ROOT / "ADVANCED_RESEARCH_WORKFLOWS.zh-TW.md",
+    ),
     ("developer-guide", "Developer Guide", DOCS_ROOT / "DEVELOPER_GUIDE.md"),
     ("developer-guide-zh", "Developer Guide (zh-TW)", DOCS_ROOT / "DEVELOPER_GUIDE.zh-TW.md"),
     ("architecture", "Architecture", REPO_ROOT / "ARCHITECTURE.md"),

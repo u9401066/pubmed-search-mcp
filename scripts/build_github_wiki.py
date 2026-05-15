@@ -34,6 +34,14 @@ class WikiPage:
 PAGES: tuple[WikiPage, ...] = (
     WikiPage("User-Guide", "User Guide", DOCS_ROOT / "USER_GUIDE.md"),
     WikiPage("User-Guide.zh-TW", "使用者指南", DOCS_ROOT / "USER_GUIDE.zh-TW.md"),
+    WikiPage(
+        "Advanced-Research-Workflows", "Advanced Research Workflows", DOCS_ROOT / "ADVANCED_RESEARCH_WORKFLOWS.md"
+    ),
+    WikiPage(
+        "Advanced-Research-Workflows.zh-TW",
+        "進階研究工作流",
+        DOCS_ROOT / "ADVANCED_RESEARCH_WORKFLOWS.zh-TW.md",
+    ),
     WikiPage("Developer-Guide", "Developer Guide", DOCS_ROOT / "DEVELOPER_GUIDE.md"),
     WikiPage("Developer-Guide.zh-TW", "開發者指南", DOCS_ROOT / "DEVELOPER_GUIDE.zh-TW.md"),
     WikiPage("Tools-Usage-Guide", "Tools Usage Guide", DOCS_ROOT / "TOOLS_USAGE_GUIDE.md"),
@@ -127,6 +135,8 @@ interactive documentation site remains the preferred reading surface:
 
 - [User Guide](User-Guide): practical workflows for search, PICO, full text, exports, local notes, and pipelines
 - [使用者指南](User-Guide.zh-TW): 繁體中文使用者工作流
+- [Advanced Research Workflows](Advanced-Research-Workflows): research timeline/chronicle, Open-i image search, uploaded-image handoff, and persistent query memory
+- [進階研究工作流](Advanced-Research-Workflows.zh-TW): 研究脈絡時間軸、Open-i 圖片搜尋、上傳圖片 handoff、持久化 query memory
 - [Developer Guide](Developer-Guide): DDD boundaries, tool registration, docs generation, validation, and release hygiene
 - [開發者指南](Developer-Guide.zh-TW): 繁體中文開發者指南
 
@@ -161,6 +171,8 @@ def _render_sidebar() -> str:
 
 - [User Guide](User-Guide)
 - [使用者指南](User-Guide.zh-TW)
+- [Advanced Research Workflows](Advanced-Research-Workflows)
+- [進階研究工作流](Advanced-Research-Workflows.zh-TW)
 - [Tools Usage Guide](Tools-Usage-Guide)
 - [工具使用指南](Tools-Usage-Guide.zh-TW)
 - [Pipeline Tutorial](Pipeline-Tutorial)

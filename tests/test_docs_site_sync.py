@@ -21,6 +21,10 @@ IMAGE_LINK_PATTERN = re.compile(r"!\[[^\]]*\]\(([^)]+)\)")
 CACHE_KEY_PATTERN = re.compile(r"\?v=([a-z0-9-]+)")
 FONT_SIZE_VIEWPORT_PATTERN = re.compile(r"font-size:[^;]*(?:vw|clamp\()", re.IGNORECASE)
 LARGE_RADIUS_PATTERN = re.compile(r"border-radius:\s*(\d+)px", re.IGNORECASE)
+DOC_PAGE_ENTRY_PATTERN = re.compile(
+    r'slug:\s*"([^"]+)"[\s\S]*?file:\s*"site-content/([^"]+)"',
+    re.MULTILINE,
+)
 
 
 def _load_embedded_pages() -> dict[str, str]:
@@ -32,6 +36,11 @@ def _load_embedded_pages() -> dict[str, str]:
     payload = payload.removesuffix(";")
 
     return json.loads(payload)
+
+
+def _site_nav_entries() -> list[tuple[str, str]]:
+    site_js = (DOCS_ROOT / "site.js").read_text(encoding="utf-8")
+    return DOC_PAGE_ENTRY_PATTERN.findall(site_js)
 
 
 def test_docs_site_pages_match_generated_sources() -> None:
@@ -52,6 +61,57 @@ def test_docs_site_router_references_generated_pages() -> None:
     for slug, _title, _source_path in PAGES:
         assert f'slug: "{slug}"' in site_js
         assert f'file: "site-content/{slug}.md"' in site_js
+
+
+def test_docs_site_navigation_entries_have_embedded_content() -> None:
+    embedded_pages = _load_embedded_pages()
+    nav_entries = _site_nav_entries()
+
+    assert nav_entries
+    for slug, filename in nav_entries:
+        assert filename == f"{slug}.md"
+        assert slug in embedded_pages
+        assert (OUTPUT_DIR / filename).exists()
+
+
+def test_docs_site_filter_indexes_keywords_and_page_body() -> None:
+    site_js = (DOCS_ROOT / "site.js").read_text(encoding="utf-8")
+    embedded_pages = _load_embedded_pages()
+
+    search_haystack = re.search(r"function searchHaystack\(page\) \{(?P<body>[\s\S]*?)\n\}", site_js)
+    assert search_haystack
+    haystack_body = search_haystack.group("body")
+
+    assert "page.keywords" in haystack_body
+    assert "embeddedContent[page.slug]" in haystack_body
+    assert "searchHaystack(page).includes(normalized)" in site_js
+    assert "context_graph" in embedded_pages["advanced-workflows"]
+    assert "context_graph" in site_js
+
+
+def test_advanced_workflows_are_visible_in_docs_site_navigation() -> None:
+    site_js = (DOCS_ROOT / "site.js").read_text(encoding="utf-8")
+
+    assert 'slug: "advanced-workflows"' in site_js
+    assert 'slug: "advanced-workflows-zh"' in site_js
+
+    for term in [
+        "Research chronicle/timeline",
+        "Open-i image search",
+        "uploaded-image handoff",
+        "persistent query memory",
+        "build_research_timeline",
+        "analyze_timeline_milestones",
+        "compare_timelines",
+        "context_graph",
+        "search_biomedical_images",
+        "analyze_figure_for_search",
+        "read_session artifact",
+        "研究脈絡時間軸",
+        "上傳圖片",
+        "持久化 query memory",
+    ]:
+        assert term in site_js
 
 
 def test_docs_site_shell_uses_current_assets_and_mobile_image_wrapping() -> None:
