@@ -73,6 +73,10 @@ Zotero Keeper 應維持在外部整合邊界。PubMed Search MCP 負責產生 of
 
 這條路徑涵蓋 `get_fulltext`、`get_text_mined_terms`、`get_article_figures`、`analyze_figure_for_search` 與 `search_biomedical_images`。全文、figure metadata、image search 是不同證據通道，各自有不同可得性限制。
 
+當使用者提供 image URL 或上傳圖片 payload，且需要 agent 從視覺內容推論搜尋詞時，使用 `analyze_figure_for_search`。這個 tool 會回傳 MCP `ImageContent`；實際圖片語意解讀由 LLM agent 完成，agent 應接續呼叫 `search_biomedical_images` 或 `unified_search`。
+
+當視覺問題已經文字化時，直接用 `search_biomedical_images`。目前主要來源是 Open-i，支援 `image_type`、`collection`、`article_type`、`specialty`、`license_type`、`search_fields` 等 filter，且需要英文醫學術語。
+
 ### 外部生醫資料
 
 ![NCBI 延伸生醫資料流程](images/ncbi-extended-workflow.svg)
@@ -84,6 +88,8 @@ Zotero Keeper 應維持在外部整合邊界。PubMed Search MCP 負責產生 of
 ![評估與時間軸流程](images/timeline-evaluation-workflow.svg)
 
 使用者問「哪些重要」、「領域何時改變」、「不同主題如何分歧」時，使用 `get_citation_metrics`、`build_research_timeline`、`analyze_timeline_milestones` 與 `compare_timelines`。
+
+`build_research_timeline` 是完整 research chronicle 工具。它接受 `topic=...` 或 `pmids=...` / `pmids="last"`，會偵測 milestone-like papers，並可回傳 `text`、`tree`、`mermaid`、`mindmap`、`json`、`json_tree`、`timeline_js` 或 `d3`。`analyze_timeline_milestones` 用於里程碑分佈 diagnostics；`compare_timelines` 用於最多五個 topic tracks 的比較。
 
 ### Session、Pipeline 與排程重用
 
@@ -102,6 +108,18 @@ Zotero Keeper 應維持在外部整合邊界。PubMed Search MCP 負責產生 of
 ![匯出與本機筆記流程](images/export-notes-workflow.svg)
 
 這條路徑涵蓋 `prepare_export` 與 `save_literature_notes`。Citation exports 供 reference manager 使用；local notes 則是帶有 machine-readable metadata、可被人與 agent 後續編輯的 literature-review artifacts。
+
+## 大型輸出的持久化 Query Memory
+
+當 session persistence 已設定時，`unified_search` 與 `get_fulltext` 會把完整可重用輸出保存為 artifact，tool response 只回傳精簡 locator。Remote client 請透過 `read_session` facade 讀取；只有本機 MCP client 真的需要 server path 時，才設定 `PUBMED_ARTIFACT_INCLUDE_LOCAL_PATHS=true`：
+
+```python
+read_session(action="list_artifacts")
+read_session(action="artifact", artifact_id="...")
+read_session(action="artifact", artifact_id="...", artifact_file="payload.json", offset=0)
+```
+
+`local_path` 與 `manifest_path` 是 MCP server host 上的路徑，預設會被遮蔽。大型 `get_fulltext` 在已有 artifact 時會先回 inline preview；完整內容請用 locator 讀取。這就是持久化 query memory：agent 可以用 artifact ID 重新打開同一份已保存的 search/fulltext output，不必重跑外部來源呼叫。全文 artifact 可能包含文章正文，保存與分享時請遵守 publisher license 與機構授權條款。
 
 ## 本機 Wiki Note 匯出
 

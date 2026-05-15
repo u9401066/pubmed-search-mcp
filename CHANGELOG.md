@@ -20,6 +20,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.5.13] - 2026-05-15
+
+### Changed
+
+- Expanded the user guide and tools usage guide with explicit coverage for research chronicle/timeline workflows, Open-i biomedical image search, uploaded-image-to-literature-search handoff, and persistent query memory artifacts.
+- Clarified that `analyze_figure_for_search` returns MCP image content for the LLM agent to interpret, then continue with `search_biomedical_images` or `unified_search`; the MCP server does not perform standalone visual diagnosis.
+- Updated Copilot hook guidance so export synthesis explicitly includes `save_literature_notes` alongside citation export and research timeline tools.
+
+### Tests
+
+- Added docs/agent alignment tests that fail if Copilot tool policy drifts from the 46-tool registry, PICO guidance loses the agent-provided handoff boundary, or user-facing docs omit timeline, Open-i image search, uploaded-image search, or artifact memory coverage.
+- Revalidated timeline, biomedical image search, vision-search upload handling, session artifacts, docs-site sync, and tool registry coverage.
+
+---
+
 ## [0.5.12] - 2026-05-14
 
 ### Added

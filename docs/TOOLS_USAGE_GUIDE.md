@@ -69,6 +69,10 @@ Use `verify_reference_list` when a manuscript, bibliography, or generated answer
 
 Use this path for `get_fulltext`, `get_text_mined_terms`, `get_article_figures`, `analyze_figure_for_search`, and `search_biomedical_images`. Full text, figure metadata, and image search are separate evidence channels with different availability limits.
 
+Use `analyze_figure_for_search` when the user provides an image URL or uploaded image payload and wants the agent to infer search terms from the visual content. The tool returns MCP `ImageContent`; the LLM agent performs the visual interpretation and should immediately continue with `search_biomedical_images` or `unified_search`.
+
+Use `search_biomedical_images` when the visual question is already textual. Open-i is the current primary source, supports filters such as `image_type`, `collection`, `article_type`, `specialty`, `license_type`, `search_fields`, and requires English medical terminology.
+
 ### External Biomedical Data
 
 ![NCBI extended biomedical data workflow](images/ncbi-extended-workflow.svg)
@@ -80,6 +84,8 @@ Use this path for `search_gene`, `get_gene_details`, `get_gene_literature`, `sea
 ![Evaluation and timeline workflow](images/timeline-evaluation-workflow.svg)
 
 Use this path for `get_citation_metrics`, `build_research_timeline`, `analyze_timeline_milestones`, and `compare_timelines` when the user asks what mattered, when the field changed, or how topics diverged.
+
+`build_research_timeline` is the full research chronicle tool. It accepts either `topic=...` or `pmids=...` / `pmids="last"`, detects milestone-like papers, and can return `text`, `tree`, `mermaid`, `mindmap`, `json`, `json_tree`, `timeline_js`, or `d3`. Use `analyze_timeline_milestones` for milestone distribution diagnostics and `compare_timelines` for up to five topic tracks.
 
 ### Session, Pipeline, And Scheduled Reuse
 
@@ -99,7 +105,7 @@ Use this path for `configure_institutional_access`, `get_institutional_link`, `l
 
 Use this path for `prepare_export` and `save_literature_notes`. Citation exports are for reference managers; local notes are editable literature-review artifacts with machine-readable metadata.
 
-## Persistent Artifacts For Large Outputs
+## Persistent Query Memory For Large Outputs
 
 When session persistence is configured, `unified_search` and `get_fulltext`
 write complete reusable outputs to artifacts and return a compact locator in
@@ -116,9 +122,11 @@ read_session(action="artifact", artifact_id="...", artifact_file="payload.json",
 `local_path` and `manifest_path` are paths on the MCP server host. `read_session`
 redacts local paths by default unless `include_local_paths=true` is requested.
 Large `get_fulltext` responses are capped inline when an artifact exists; use
-the locator to read the saved full content. Full-text artifacts can contain
-article body text, so handle storage and sharing according to publisher,
-license, and institutional access terms.
+the locator to read the saved full content. This is persistent query memory:
+agents can reopen the exact saved search/fulltext output by artifact ID without
+rerunning the external source call. Full-text artifacts can contain article body
+text, so handle storage and sharing according to publisher, license, and
+institutional access terms.
 
 If a source fails but the search can continue, `unified_search` may return
 `source_errors` in JSON or `Source warnings` in markdown. Semantic Scholar HTTP

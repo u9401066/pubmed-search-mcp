@@ -159,7 +159,7 @@
     },
     "export_synthesis": {
       "label": "Export & Synthesis",
-      "nextInstruction": "prepare_export / build_research_timeline",
+      "nextInstruction": "prepare_export / save_literature_notes / build_research_timeline",
       "tools": [
         "prepare_export",
         "save_literature_notes",

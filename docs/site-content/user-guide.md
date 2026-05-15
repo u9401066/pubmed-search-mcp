@@ -62,6 +62,9 @@ For client-specific setup, see the [Integration Guide](#/troubleshooting). For H
 | Improve a noisy query | `analyze_search_query` | `generate_search_queries`, `unified_search` |
 | Explore one important article | `fetch_article_details` | `find_related_articles`, `find_citing_articles`, `get_article_references`, `build_citation_tree` |
 | Read deeper evidence | `get_fulltext` | `get_text_mined_terms`, `get_article_figures` |
+| Search from visual evidence | `analyze_figure_for_search` | `search_biomedical_images`, `unified_search` |
+| Build a research chronicle | `build_research_timeline` | `analyze_timeline_milestones`, `compare_timelines` |
+| Reopen large outputs | `read_session(action="artifact")` | `read_session(action="list_artifacts")` |
 | Build a local literature library | `prepare_export` | `save_literature_notes` |
 | Reuse a workflow | `manage_pipeline` | `save_pipeline`, `load_pipeline`, `schedule_pipeline` |
 
@@ -135,6 +138,23 @@ Use `get_fulltext` when abstracts are not enough. Prefer explicit identifiers su
 
 Use `get_article_figures` for PMC Open Access articles when the task needs captions, image URLs, or PDF links. Figure extraction depends on open-access availability; a missing figure result is not proof that the article has no figures.
 
+For image-first work, use the visual tools as a two-step agent workflow:
+
+```text
+Analyze this uploaded microscopy image with analyze_figure_for_search, extract English search terms, then search related papers and similar biomedical images.
+```
+
+`analyze_figure_for_search` accepts either an image URL or a base64/data-URI image supplied by the MCP client. It returns MCP `ImageContent` plus instructions for the agent to use its own vision capability, extract English biomedical terms, and continue with `search_biomedical_images` or `unified_search`. The server does not perform deep visual diagnosis by itself; the LLM agent performs the image interpretation step.
+
+Use `search_biomedical_images` when the query is already textual and the goal is open biomedical image evidence:
+
+```python
+search_biomedical_images("chest X-ray pneumonia", sources="openi", image_type="x", limit=10)
+search_biomedical_images("histology liver fibrosis", sources="openi", image_type="mc", license_type="by")
+```
+
+Open-i expects English medical terms. For non-English user prompts, ask the agent to translate the visual finding or anatomy into English first, then search.
+
 Optional browser fallback requires a separate local broker:
 
 ```bash
@@ -155,7 +175,35 @@ Only enable browser-session fallback for hosts you trust and are allowed to acce
 }
 ```
 
-### 5. Export Citations Or Local Notes
+### 5. Build A Research Chronicle
+
+![Evaluation and timeline workflow](images/timeline-evaluation-workflow.svg)
+
+Use the timeline tools when the question is not just "what papers exist?" but "how did this field develop?"
+
+```python
+build_research_timeline(topic="remimazolam ICU sedation", output_format="tree", max_events=20)
+build_research_timeline(pmids="last", topic="Last search chronicle", output_format="mermaid")
+analyze_timeline_milestones(topic="CAR-T therapy")
+compare_timelines(topics="remimazolam,propofol,dexmedetomidine", max_events_per_topic=10)
+```
+
+`build_research_timeline` can search by topic or use a known PMID set, including `pmids="last"`. It detects milestone-like papers, can highlight landmark studies, and supports `text`, `tree`, `mermaid`, `mindmap`, `json`, `json_tree`, `timeline_js`, and `d3` outputs. Use `options="context_graph"` in `unified_search` for a lightweight branch preview; use `build_research_timeline` when the user needs the full research chronicle.
+
+### 6. Reopen Persistent Query Memory
+
+When session persistence is configured through `PUBMED_DATA_DIR`, large reusable outputs from `unified_search` and `get_fulltext` are saved as artifacts. The immediate tool response includes a compact locator instead of forcing the agent to receive every token inline.
+
+```python
+read_session(action="list_artifacts")
+read_session(action="artifact", artifact_id="...")
+read_session(action="artifact", artifact_uri="artifact://...")
+read_session(action="artifact", artifact_id="...", artifact_file="payload.json", offset=0, max_chars=200000)
+```
+
+Local paths are redacted by default because remote clients cannot read the server filesystem. Set `PUBMED_ARTIFACT_INCLUDE_LOCAL_PATHS=true` only for local MCP clients that should receive `local_path` and `manifest_path`. Artifact reads never rerun the search; they read the persisted query/fulltext memory.
+
+### 7. Export Citations Or Local Notes
 
 ![Export and local notes workflow](images/export-notes-workflow.svg)
 
@@ -190,7 +238,7 @@ Directory resolution is:
 
 Local notes keep verified metadata in frontmatter and sidecar files, then leave summary, relevance, limitations, and follow-up sections editable.
 
-### 6. Save Repeatable Pipelines
+### 8. Save Repeatable Pipelines
 
 ![Session and pipeline workflow](images/session-pipeline-workflow.svg)
 
