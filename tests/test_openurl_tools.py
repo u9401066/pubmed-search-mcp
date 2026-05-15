@@ -6,6 +6,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from pubmed_search.infrastructure.sources.institutional_fetch import (
+    AccessDiagnosis,
+    ProbeResult,
+)
 from pubmed_search.presentation.mcp_server.tools.openurl import (
     _format_article,
     _test_resolver_url,
@@ -283,3 +287,75 @@ class TestTestInstitutionalAccess:
         ):
             result = await tools["test_institutional_access"](pmid="12345")
         assert "reachable" in result.lower() or "✅" in result
+
+
+# ============================================================
+# diagnose_institutional_access
+# ============================================================
+
+
+class TestDiagnoseInstitutionalAccess:
+    @pytest.mark.asyncio
+    async def test_requires_identifier(self, tools):
+        result = await tools["diagnose_institutional_access"]()
+        assert "supply at least one" in result.lower()
+
+    @pytest.mark.asyncio
+    async def test_formats_diagnosis_and_delegates_flags(self, tools):
+        diagnosis = AccessDiagnosis(
+            pmid="12345",
+            doi="10.1000/example",
+            summary="Fulltext reachable via direct path.",
+            openurl="https://resolver.example/openurl",
+            recommended_path="direct",
+            probes=[
+                ProbeResult(
+                    path="direct",
+                    attempted=True,
+                    success=True,
+                    final_url="https://publisher.example/article",
+                    status_code=200,
+                    content_class="fulltext_html",
+                    content_length=4096,
+                    redirect_chain=[
+                        "https://doi.org/10.1000/example",
+                        "https://publisher.example/article",
+                    ],
+                    duration_ms=120,
+                ),
+                ProbeResult(
+                    path="ezproxy",
+                    attempted=False,
+                    success=False,
+                    error="not configured",
+                    advice="Configure EZPROXY_HOST first.",
+                ),
+            ],
+        )
+
+        with patch(
+            "pubmed_search.infrastructure.sources.institutional_fetch.diagnose_access",
+            new_callable=AsyncMock,
+            return_value=diagnosis,
+        ) as mock_diagnose:
+            result = await tools["diagnose_institutional_access"](
+                pmid="12345",
+                doi="10.1000/example",
+                try_direct=True,
+                try_ezproxy=False,
+            )
+
+        mock_diagnose.assert_awaited_once_with(
+            pmid="12345",
+            doi="10.1000/example",
+            try_direct=True,
+            try_ezproxy=False,
+        )
+        assert "Institutional Access Diagnosis" in result
+        assert "PMID**: 12345" in result
+        assert "DOI**: 10.1000/example" in result
+        assert "Recommended path**: `direct`" in result
+        assert "OpenURL handoff" in result
+        assert "`direct` probe" in result
+        assert "content_class: `fulltext_html`" in result
+        assert "_Skipped_: not configured" in result
