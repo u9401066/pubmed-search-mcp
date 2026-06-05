@@ -44,6 +44,7 @@ fi
 echo "Checking for existing processes..."
 pkill -f "run_copilot.py.*$PORT" 2>/dev/null || true
 pkill -f "run_server.py.*$PORT" 2>/dev/null || true
+pkill -f "pubmed-search-mcp-http.*$PORT" 2>/dev/null || true
 pkill -f "ngrok.*$NGROK_DOMAIN" 2>/dev/null || true
 sleep 1
 

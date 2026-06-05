@@ -1815,9 +1815,10 @@ wheels = [
 
 [[package]]
 name = "pubmed-search-mcp"
-version = "0.5.15"
+version = "0.5.16"
 source = { editable = "." }
 dependencies = [
+    { name = "anyio" },
     { name = "apscheduler" },
     { name = "biopython" },
     { name = "cachetools" },
@@ -1830,6 +1831,7 @@ dependencies = [
     { name = "pylatexenc" },
     { name = "pywin32", marker = "sys_platform == 'win32'" },
     { name = "pyyaml" },
+    { name = "starlette" },
     { name = "toons" },
 ]
 
@@ -1867,6 +1869,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "anyio", specifier = ">=4.0,<5" },
     { name = "apscheduler", specifier = ">=3.10.4,<4" },
     { name = "biopython", specifier = ">=1.81,<2" },
     { name = "cachetools", specifier = ">=5.0.0" },
@@ -1881,6 +1884,7 @@ requires-dist = [
     { name = "pywin32", marker = "sys_platform == 'win32'", specifier = ">=311" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "requests", marker = "extra == 'scripts'", specifier = ">=2.28.0" },
+    { name = "starlette", specifier = ">=1.2,<2" },
     { name = "toons", specifier = ">=0.5.4" },
     { name = "trafilatura", marker = "extra == 'institutional'", specifier = ">=1.12" },
 ]

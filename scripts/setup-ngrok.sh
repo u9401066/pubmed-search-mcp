@@ -171,7 +171,7 @@ start_tunnel() {
     print_info "Starting PubMed Search MCP Server..."
     cd "$PROJECT_DIR"
 
-    uv run python run_server.py --transport streamable-http --port "$port" &
+    uv run pubmed-search-mcp-http --transport streamable-http --port "$port" &
     SERVER_PID=$!
     sleep 2
 

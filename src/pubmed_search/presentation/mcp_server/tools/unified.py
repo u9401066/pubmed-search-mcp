@@ -41,15 +41,11 @@ from pubmed_search.application.search.query_analyzer import (
     QueryAnalyzer,
 )
 from pubmed_search.application.search.semantic_enhancer import get_semantic_enhancer
-from pubmed_search.application.session.artifact_envelope import build_unified_search_artifact_envelope
 from pubmed_search.application.timeline import TimelineBuilder, build_research_tree
-from pubmed_search.infrastructure.sources.registry import SourceSelectionError, get_source_registry
+from pubmed_search.infrastructure.sources.registry import get_source_registry
 
-from .agent_output import is_structured_output_format
-from .artifact_memory import artifact_markdown_note, artifact_persistence_enabled, persist_tool_artifact
 from .tool_input import InputNormalizer
 from .tool_response import ResponseFormatter
-from .tool_runtime import safe_report_progress
 from .unified_enrichment import (
     _enrich_with_api_similarity,
     _enrich_with_crossref,
@@ -59,7 +55,6 @@ from .unified_enrichment import (
     _extract_openalex_source_id,
     _is_preprint,
 )
-from .unified_execution import execute_unified_search
 from .unified_formatting import _format_as_json, _format_unified_results
 from .unified_helpers import (
     ICD9_PATTERN,
@@ -79,8 +74,12 @@ from .unified_pipeline import (
     _execute_pipeline_mode,
     _parse_pipeline_config,
 )
-from .unified_planning import build_unified_search_plan
-from .unified_request import normalize_unified_search_request
+from .unified_runner import (
+    persist_unified_search_artifact as _persist_unified_search_artifact,
+)
+from .unified_runner import (
+    run_unified_search,
+)
 from .unified_source_search import (
     _auto_relax_search,
     _execute_deep_search,
@@ -95,62 +94,6 @@ from .unified_source_search import (
     _search_semantic_scholar,
     _search_web_of_science,
 )
-
-
-def _persist_unified_search_artifact(
-    *,
-    request: Any,
-    plan: Any,
-    execution: Any,
-    markdown_response: str | None = None,
-    primary_format: Literal["json", "toon"] = "json",
-) -> dict[str, Any] | None:
-    """Persist the already-computed unified_search response as a session artifact."""
-    if not artifact_persistence_enabled():
-        return None
-
-    try:
-        structured_payload = _format_as_json(
-            execution.ranked,
-            plan.analysis,
-            execution.stats,
-            execution.relaxation_result,
-            execution.deep_search_metrics,
-            source_api_counts=execution.source_api_counts or None,
-            source_disagreement=execution.source_disagreement,
-            reproducibility_score=execution.reproducibility_score,
-            research_context=execution.research_context_data,
-            source_errors=execution.source_errors,
-            counts_first=False,
-            compact_output=False,
-            include_analysis=True,
-            include_similarity_scores=True,
-            include_next_tools=True,
-            include_section_provenance=True,
-            max_response_chars=None,
-            output_format=primary_format,
-        )
-    except Exception as exc:
-        logger.warning("Failed to prepare unified_search artifact payload: %s", exc)
-        return None
-    primary_file = f"results.{primary_format}"
-    envelope = build_unified_search_artifact_envelope(
-        request=request,
-        plan=plan,
-        execution=execution,
-        structured_payload=structured_payload,
-        markdown_response=markdown_response,
-        primary_format=primary_format,
-    )
-    return persist_tool_artifact(
-        tool="unified_search",
-        kind="search_results",
-        files=envelope.files,
-        primary_file=primary_file,
-        summary=envelope.summary,
-        metadata=envelope.metadata,
-    )
-
 
 if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
@@ -185,6 +128,7 @@ __all__ = [
     "_search_semantic_scholar",
     "_search_core",
     "_search_europe_pmc",
+    "_search_scopus",
     "_search_web_of_science",
     "_search_arxiv",
     "_search_medrxiv",
@@ -200,6 +144,7 @@ __all__ = [
     # formatting
     "_format_unified_results",
     "_format_as_json",
+    "_persist_unified_search_artifact",
     # pipeline
     "_execute_pipeline_mode",
     "_parse_pipeline_config",
@@ -439,233 +384,101 @@ def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             - Relaxation info (if auto_relax triggered)
             - Pipeline step summary (if pipeline mode)
         """
-        logger.info(f"Unified search: query='{query}', limit={limit}, ranking='{ranking}'")
-
-        # --- Helper for progress reporting ---
-        async def _progress(progress: float, total: float, message: str) -> None:
-            """Report progress to MCP client if context is available."""
-            await safe_report_progress(ctx, progress, total, message)
-
-        try:
-            # ============================================================
-            # Pipeline Mode — execute structured DAG when pipeline is set
-            # ============================================================
-            if pipeline:
-                return await _execute_pipeline_mode(
-                    pipeline,
-                    output_format,
+        return await run_unified_search(
+            searcher=searcher,
+            query=query,
+            limit=limit,
+            sources=sources,
+            ranking=ranking,
+            output_format=output_format,
+            filters=filters,
+            options=options,
+            pipeline=pipeline,
+            dry_run=dry_run,
+            stop_at=stop_at,
+            ctx=ctx,
+            analyzer_factory=QueryAnalyzer,
+            enhancer_factory=get_semantic_enhancer,
+            source_registry_factory=get_source_registry,
+            timeline_builder_cls=TimelineBuilder,
+            research_tree_builder=build_research_tree,
+            search_functions={
+                "pubmed": lambda search_query, search_limit, min_year, max_year, advanced_filters: _search_pubmed(
                     searcher,
-                    dry_run=dry_run,
-                    stop_at=stop_at,
-                )
-
-            try:
-                request = normalize_unified_search_request(
-                    query=query,
-                    limit=limit,
-                    sources=sources,
-                    ranking=ranking,
-                    output_format=output_format,
-                    filters=filters,
-                    options=options,
-                    pipeline=pipeline,
-                )
-            except ValueError:
-                return ResponseFormatter.error(
-                    "Empty query",
-                    suggestion="Provide a search query",
-                    example='unified_search(query="machine learning in anesthesia")',
-                    tool_name="unified_search",
-                )
-
-            try:
-                plan = await build_unified_search_plan(
-                    request,
-                    progress=_progress,
-                    analyzer_factory=QueryAnalyzer,
-                    enhancer_factory=get_semantic_enhancer,
-                    source_registry_factory=get_source_registry,
-                )
-            except SourceSelectionError as selection_error:
-                available_sources = get_source_registry().list_unified_sources()
-                return ResponseFormatter.error(
-                    str(selection_error),
-                    suggestion=(
-                        f"Available sources: {', '.join(selection_error.available_sources)}"
-                        if selection_error.available_sources
-                        else f"Available sources: {', '.join(available_sources)}"
-                    ),
-                    example='unified_search(query="...", sources="auto,-semantic_scholar")',
-                    tool_name="unified_search",
-                )
-            except ValueError as exc:
-                return ResponseFormatter.error(
-                    str(exc),
-                    suggestion="Unset PUBMED_SEARCH_DISABLED_SOURCES or specify an enabled source",
-                    example='unified_search(query="...", sources="pubmed")',
-                    tool_name="unified_search",
-                )
-
-            execution = await execute_unified_search(
-                plan,
-                searcher,
-                progress=_progress,
-                ctx=ctx,
-                search_functions={
-                    "pubmed": lambda search_query, search_limit, min_year, max_year, advanced_filters: _search_pubmed(
-                        searcher,
-                        search_query,
-                        search_limit,
-                        min_year,
-                        max_year,
-                        **advanced_filters,
-                    ),
-                    "openalex": lambda search_query,
+                    search_query,
                     search_limit,
                     min_year,
                     max_year,
-                    _advanced_filters: _search_openalex(
-                        search_query,
-                        search_limit,
-                        min_year,
-                        max_year,
-                    ),
-                    "europe_pmc": lambda search_query,
+                    **advanced_filters,
+                ),
+                "openalex": lambda search_query, search_limit, min_year, max_year, _advanced_filters: _search_openalex(
+                    search_query,
                     search_limit,
                     min_year,
                     max_year,
-                    _advanced_filters: _search_europe_pmc(
-                        search_query,
-                        search_limit,
-                        min_year,
-                        max_year,
-                    ),
-                    "semantic_scholar": lambda search_query,
+                ),
+                "europe_pmc": lambda search_query,
+                search_limit,
+                min_year,
+                max_year,
+                _advanced_filters: _search_europe_pmc(
+                    search_query,
                     search_limit,
                     min_year,
                     max_year,
-                    _advanced_filters: _search_semantic_scholar(
-                        search_query,
-                        search_limit,
-                        min_year,
-                        max_year,
-                    ),
-                    "core": lambda search_query, search_limit, min_year, max_year, _advanced_filters: _search_core(
-                        search_query,
-                        search_limit,
-                        min_year,
-                        max_year,
-                    ),
-                    "scopus": lambda search_query, search_limit, min_year, max_year, _advanced_filters: _search_scopus(
-                        search_query,
-                        search_limit,
-                        min_year,
-                        max_year,
-                    ),
-                    "web_of_science": lambda search_query,
+                ),
+                "semantic_scholar": lambda search_query,
+                search_limit,
+                min_year,
+                max_year,
+                _advanced_filters: _search_semantic_scholar(
+                    search_query,
                     search_limit,
                     min_year,
                     max_year,
-                    _advanced_filters: _search_web_of_science(
-                        search_query,
-                        search_limit,
-                        min_year,
-                        max_year,
-                    ),
-                    "arxiv": lambda search_query, search_limit, min_year, max_year, _advanced_filters: _search_arxiv(
-                        search_query,
-                        search_limit,
-                        min_year,
-                        max_year,
-                    ),
-                    "medrxiv": lambda search_query,
+                ),
+                "core": lambda search_query, search_limit, min_year, max_year, _advanced_filters: _search_core(
+                    search_query,
                     search_limit,
                     min_year,
                     max_year,
-                    _advanced_filters: _search_medrxiv(
-                        search_query,
-                        search_limit,
-                        min_year,
-                        max_year,
-                    ),
-                    "biorxiv": lambda search_query,
+                ),
+                "scopus": lambda search_query, search_limit, min_year, max_year, _advanced_filters: _search_scopus(
+                    search_query,
                     search_limit,
                     min_year,
                     max_year,
-                    _advanced_filters: _search_biorxiv(
-                        search_query,
-                        search_limit,
-                        min_year,
-                        max_year,
-                    ),
-                },
-                timeline_builder_cls=TimelineBuilder,
-                research_tree_builder=build_research_tree,
-            )
-
-            # === Step 9: Format Output ===
-            await _progress(9, 10, "Formatting output...")
-            if is_structured_output_format(request.output_format):
-                primary_format = cast("Literal['json', 'toon']", request.output_format)
-                artifact = _persist_unified_search_artifact(
-                    request=request,
-                    plan=plan,
-                    execution=execution,
-                    primary_format=primary_format,
-                )
-                return _format_as_json(
-                    execution.ranked,
-                    plan.analysis,
-                    execution.stats,
-                    execution.relaxation_result,
-                    execution.deep_search_metrics,
-                    source_api_counts=execution.source_api_counts or None,
-                    source_disagreement=execution.source_disagreement,
-                    reproducibility_score=execution.reproducibility_score,
-                    research_context=execution.research_context_data,
-                    source_errors=execution.source_errors,
-                    counts_first=request.counts_first,
-                    compact_output=request.compact_output,
-                    include_analysis=request.show_analysis,
-                    include_similarity_scores=request.include_similarity_scores,
-                    include_next_tools=request.include_next_tools,
-                    include_section_provenance=request.include_section_provenance,
-                    output_format=request.output_format,
-                    artifact_manifest=artifact,
-                )
-
-            markdown_response = await _format_unified_results(
-                execution.ranked,
-                plan.analysis,
-                execution.stats,
-                request.show_analysis,
-                execution.pubmed_total_count,
-                plan.icd_matches,
-                include_trials=True,
-                include_similarity_scores=request.include_similarity_scores,
-                original_query=plan.analysis.original_query,
-                enhanced_entities=plan.matched_entity_names or None,
-                relaxation_result=execution.relaxation_result,
-                deep_search_metrics=execution.deep_search_metrics,
-                prefetched_trials=execution.prefetched_trials,
-                source_api_counts=execution.source_api_counts or None,
-                source_disagreement=execution.source_disagreement,
-                reproducibility_score=execution.reproducibility_score,
-                source_errors=execution.source_errors,
-                research_context_preview=execution.research_context_preview,
-                counts_first=request.counts_first,
-            )
-            artifact = _persist_unified_search_artifact(
-                request=request,
-                plan=plan,
-                execution=execution,
-                markdown_response=markdown_response,
-            )
-            return markdown_response + artifact_markdown_note(artifact)
-
-        except Exception as e:
-            logger.exception("Unified search failed: %s", e)
-            return f"Error: Unified search failed - {e!s}"
+                ),
+                "web_of_science": lambda search_query,
+                search_limit,
+                min_year,
+                max_year,
+                _advanced_filters: _search_web_of_science(
+                    search_query,
+                    search_limit,
+                    min_year,
+                    max_year,
+                ),
+                "arxiv": lambda search_query, search_limit, min_year, max_year, _advanced_filters: _search_arxiv(
+                    search_query,
+                    search_limit,
+                    min_year,
+                    max_year,
+                ),
+                "medrxiv": lambda search_query, search_limit, min_year, max_year, _advanced_filters: _search_medrxiv(
+                    search_query,
+                    search_limit,
+                    min_year,
+                    max_year,
+                ),
+                "biorxiv": lambda search_query, search_limit, min_year, max_year, _advanced_filters: _search_biorxiv(
+                    search_query,
+                    search_limit,
+                    min_year,
+                    max_year,
+                ),
+            },
+        )
 
     @mcp.tool()
     async def analyze_search_query(query: str) -> str:

@@ -12,9 +12,13 @@ from __future__ import annotations
 from importlib import import_module
 from typing import Any
 
-__version__ = "0.5.15"
+__version__ = "0.5.16"
 
 _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
+    # Stable Python SDK facade
+    "PubMedSearchClient": ("pubmed_search.api", "PubMedSearchClient"),
+    "PubMedSearchConfig": ("pubmed_search.api", "PubMedSearchConfig"),
+    "UnifiedSearchResult": ("pubmed_search.api", "UnifiedSearchResult"),
     # Core Entrez API
     "LiteratureSearcher": ("pubmed_search.infrastructure.ncbi", "LiteratureSearcher"),
     "EntrezBase": ("pubmed_search.infrastructure.ncbi", "EntrezBase"),

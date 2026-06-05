@@ -27,6 +27,9 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     # Timeline
     "TimelineBuilder": ("pubmed_search.application.timeline", "TimelineBuilder"),
     "MilestoneDetector": ("pubmed_search.application.timeline", "MilestoneDetector"),
+    # Unified search service contracts
+    "UnifiedSearchRunRequest": ("pubmed_search.application.unified", "UnifiedSearchRunRequest"),
+    "UnifiedSearchService": ("pubmed_search.application.unified", "UnifiedSearchService"),
 }
 
 __all__ = list(_LAZY_EXPORTS)

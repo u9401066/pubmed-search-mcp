@@ -43,7 +43,7 @@ if [ "$1" == "--with-ngrok" ]; then
     fi
 
     # Start server in background
-    uv run python run_server.py --transport streamable-http --copilot-compatible --port $PORT --email "$EMAIL" &
+    uv run pubmed-search-mcp-http --transport streamable-http --copilot-compatible --port $PORT --email "$EMAIL" &
     SERVER_PID=$!
 
     sleep 2
@@ -89,5 +89,5 @@ else
     echo "Local endpoint: http://localhost:$PORT/mcp"
     echo ""
 
-    uv run python run_server.py --transport streamable-http --copilot-compatible --port $PORT --email "$EMAIL"
+    uv run pubmed-search-mcp-http --transport streamable-http --copilot-compatible --port $PORT --email "$EMAIL"
 fi

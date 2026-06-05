@@ -12,7 +12,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy project files
 COPY pyproject.toml uv.lock README.md LICENSE ./
 COPY src/ ./src/
-COPY run_server.py ./
 
 # Install Python dependencies
 RUN uv sync --frozen --no-dev
@@ -29,5 +28,5 @@ EXPOSE 8765
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8765/health || exit 1
 
-# Run the server
-CMD ["uv", "run", "python", "run_server.py", "--transport", "streamable-http"]
+# Run the packaged HTTP server
+CMD ["uv", "run", "pubmed-search-mcp-http", "--transport", "streamable-http"]

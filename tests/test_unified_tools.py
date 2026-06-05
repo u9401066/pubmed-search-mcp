@@ -30,6 +30,7 @@ from pubmed_search.presentation.mcp_server.tools.unified import (
     detect_and_expand_icd_codes,
     register_unified_search_tools,
 )
+from pubmed_search.presentation.mcp_server.tools.unified_runner import run_unified_search
 
 # ============================================================
 # ICD Detection
@@ -155,6 +156,16 @@ class TestDispatchStrategy:
             sources = DispatchStrategy.get_sources(a)
         assert "scopus" not in sources
         assert "web_of_science" not in sources
+
+
+class TestRunUnifiedSearch:
+    async def test_empty_query_returns_structured_error_in_json_mode(self):
+        result = await run_unified_search(searcher=object(), query=" ", output_format="json")
+
+        payload = json.loads(result)
+        assert payload["success"] is False
+        assert payload["tool"] == "unified_search"
+        assert payload["error"] == "Empty query"
 
 
 # ============================================================

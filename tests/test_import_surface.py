@@ -208,3 +208,34 @@ print(json.dumps({
 
     assert result["callable"] is True
     assert not any(result["loaded"].values()), result["loaded"]
+
+
+def test_public_api_import_keeps_mcp_and_http_lazy() -> None:
+    result = _probe(
+        """
+import json
+import sys
+
+from pubmed_search.api import PubMedSearchClient, PubMedSearchConfig
+
+watched = [
+    "httpx",
+    "mcp",
+    "pydantic_settings",
+    "pubmed_search.presentation.mcp_server.server",
+    "pubmed_search.presentation.mcp_server.tools.unified",
+    "pubmed_search.presentation.mcp_server.tools.unified_runner",
+    "pubmed_search.shared.settings",
+    "yaml",
+]
+print(json.dumps({
+    "client": PubMedSearchClient.__name__,
+    "config": PubMedSearchConfig.__name__,
+    "loaded": {name: name in sys.modules for name in watched},
+}))
+"""
+    )
+
+    assert result["client"] == "PubMedSearchClient"
+    assert result["config"] == "PubMedSearchConfig"
+    assert not any(result["loaded"].values()), result["loaded"]
