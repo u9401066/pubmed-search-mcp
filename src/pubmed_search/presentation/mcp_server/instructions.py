@@ -305,6 +305,27 @@ search_clinvar("BRCA1", limit=10)
 - get_cached_article(pmid): 從快取取得文章詳情 (不消耗 API)
 - get_session_summary(): 查看 session 狀態和可用資料
 
+### Research Artifact Envelope
+- `unified_search` returns a compact answer plus `artifact_summary` / `artifact`
+  when durable artifacts were written. The response summary should be detailed
+  enough to answer the user immediately.
+- The artifact locator includes `artifact_id`, `artifact_uri`,
+  `primary_file`, `read_order`, audit status, file inventory, and
+  `read_session(...)` retrieval hints.
+- Use `read_session(action="artifact", artifact_uri=...)` or
+  `read_session(action="artifact", artifact_id=...)` to page through complete
+  evidence without filling the MCP response token budget.
+- For `unified_search`, read `audit.json` first to check source-count and
+  completeness warnings, then `query_strategy.json`, then `results.json` or
+  `results.toon` for the full record list.
+- `read_session` redacts `local_path` and `manifest_path` by default. Set
+  `PUBMED_ARTIFACT_INCLUDE_LOCAL_PATHS=true` only for local MCP clients that
+  should receive server-local paths.
+- Large `get_fulltext` responses may return an inline preview when an artifact
+  exists; use the locator to retrieve the saved full content.
+- When replying to users, mention the summary and tell them that full artifacts
+  are available for deeper inspection.
+
 ### 快捷用法
 - `pmids="last"` - 在 prepare_export, get_citation_metrics 等工具中使用
 - `get_session_pmids()` 回傳 `pmids_csv` 可直接複製使用

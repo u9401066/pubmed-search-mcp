@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -17,12 +18,15 @@ from pubmed_search.application.search.result_aggregator import (
     AggregationStats,
     RankingConfig,
 )
+from pubmed_search.application.session.manager import SessionManager
 from pubmed_search.domain.entities.article import Author, OpenAccessLink, UnifiedArticle
+from pubmed_search.presentation.mcp_server.tools._common import set_session_manager
 from pubmed_search.presentation.mcp_server.tools.unified import (
     DispatchStrategy,
     _format_as_json,
     _format_unified_results,
     _is_preprint,
+    _persist_unified_search_artifact,
     detect_and_expand_icd_codes,
     register_unified_search_tools,
 )
@@ -194,6 +198,34 @@ class TestFormatAsJson:
         parsed = json.loads(result)
         assert parsed["artifact"]["artifact_id"] == "artifact-1"
         assert parsed["artifact"]["local_path"] == "D:/tmp/results.json"
+
+    async def test_structured_output_includes_artifact_summary_for_token_offload(self):
+        manifest = {
+            "artifact_id": "artifact-1",
+            "artifact_uri": "artifact://session/artifact-1",
+            "primary_file": "results.json",
+            "files": ["audit.json", "query_strategy.json", "results.json"],
+            "read_order": ["audit.json", "query_strategy.json", "results.json"],
+            "audit_status": "warn",
+            "read_files": {
+                "audit.json": 'read_session(action="artifact", artifact_id="artifact-1", artifact_file="audit.json")'
+            },
+            "read_files_by_uri": {
+                "audit.json": 'read_session(action="artifact", artifact_uri="artifact://session/artifact-1", artifact_file="audit.json")'
+            },
+        }
+
+        result = _format_as_json([], self._analysis(), self._stats(), artifact_manifest=manifest)
+
+        parsed = json.loads(result)
+        summary = parsed["artifact_summary"]
+        assert summary["audit_status"] == "warn"
+        assert summary["artifact_uri"] == "artifact://session/artifact-1"
+        assert summary["recommended_read_order"][0] == "audit.json"
+        assert 'artifact_uri="artifact://session/artifact-1"' in summary["start_with"]
+        assert summary["start_with_uri"] == summary["start_with"]
+        assert "audit.json" in summary["read_files_by_uri"]
+        assert "compact summary" in summary["note"]
 
     async def test_structured_output_includes_source_warnings(self):
         result = _format_as_json(
@@ -477,6 +509,160 @@ class TestFormatAsJson:
         assert any(
             command == 'save_literature_notes(pmids="last", note_format="wiki")' for command in parsed["next_commands"]
         )
+
+
+class TestUnifiedSearchArtifactPersistence:
+    def test_persist_unified_search_artifact_uses_research_envelope(self, tmp_path):
+        request = SimpleNamespace(
+            query="remimazolam ICU sedation",
+            limit=10,
+            sources="pubmed",
+            ranking="balanced",
+            output_format="json",
+            advanced_filters={},
+            deep_search=False,
+            counts_first=False,
+            compact_output=False,
+            show_analysis=True,
+            include_similarity_scores=True,
+            include_next_tools=True,
+            include_section_provenance=True,
+        )
+        analysis = MagicMock(spec=AnalyzedQuery)
+        analysis.original_query = "remimazolam ICU sedation"
+        analysis.normalized_query = "remimazolam icu sedation"
+        analysis.intent = QueryIntent.EXPLORATION
+        analysis.to_dict.return_value = {"query": "remimazolam ICU sedation"}
+        plan = SimpleNamespace(
+            request=request,
+            query="remimazolam ICU sedation",
+            analysis=analysis,
+            icd_matches=[],
+            enhanced_query=None,
+            matched_entity_names=[],
+            user_sources=["pubmed"],
+            dispatch_sources=["pubmed"],
+            effective_min_year=None,
+            effective_max_year=None,
+        )
+        stats = MagicMock(spec=AggregationStats)
+        stats.to_dict.return_value = {"unique_articles": 0}
+        stats.by_source = {"pubmed": 0}
+        stats.total_input = 0
+        stats.unique_articles = 0
+        stats.duplicates_removed = 0
+        execution = SimpleNamespace(
+            ranked=[],
+            stats=stats,
+            relaxation_result=None,
+            deep_search_metrics=None,
+            source_api_counts={"pubmed": (0, 0)},
+            source_disagreement=None,
+            reproducibility_score=None,
+            research_context_data=None,
+            source_errors=[],
+        )
+        manager = SessionManager(data_dir=str(tmp_path))
+        set_session_manager(manager)
+        try:
+            artifact = _persist_unified_search_artifact(
+                request=request,
+                plan=plan,
+                execution=execution,
+                primary_format="json",
+            )
+        finally:
+            set_session_manager(None)
+
+        assert artifact is not None
+        assert artifact["audit_status"] == "pass"
+        assert {"audit.json", "query_strategy.json", "results.json", "query.md"} <= set(artifact["files"])
+        assert artifact["read_order"][:3] == ["audit.json", "query_strategy.json", "results.json"]
+        assert "artifact_uri=" in artifact["read_files_by_uri"]["audit.json"]
+
+        audit = manager.read_artifact(artifact["artifact_id"], file_name="audit.json")
+        strategy = manager.read_artifact(artifact["artifact_id"], file_name="query_strategy.json")
+        assert json.loads(audit["content"])["status"] == "pass"
+        assert json.loads(strategy["content"])["dispatch_sources"] == ["pubmed"]
+
+    def test_persist_unified_search_artifact_ignores_inline_compact_options(self, tmp_path):
+        request = SimpleNamespace(
+            query="remimazolam ICU sedation",
+            limit=10,
+            sources="pubmed",
+            ranking="balanced",
+            output_format="json",
+            advanced_filters={},
+            deep_search=False,
+            counts_first=True,
+            compact_output=True,
+            show_analysis=False,
+            include_similarity_scores=False,
+            include_next_tools=False,
+            include_section_provenance=False,
+        )
+        analysis = MagicMock(spec=AnalyzedQuery)
+        analysis.original_query = "remimazolam ICU sedation"
+        analysis.normalized_query = "remimazolam icu sedation"
+        analysis.intent = QueryIntent.EXPLORATION
+        analysis.to_dict.return_value = {"query": "remimazolam ICU sedation"}
+        plan = SimpleNamespace(
+            request=request,
+            query="remimazolam ICU sedation",
+            analysis=analysis,
+            icd_matches=[],
+            enhanced_query=None,
+            matched_entity_names=[],
+            user_sources=["pubmed"],
+            dispatch_sources=["pubmed"],
+            effective_min_year=None,
+            effective_max_year=None,
+        )
+        stats = MagicMock(spec=AggregationStats)
+        stats.to_dict.return_value = {"unique_articles": 1}
+        stats.by_source = {"pubmed": 1}
+        stats.total_input = 1
+        stats.unique_articles = 1
+        stats.duplicates_removed = 0
+        article = UnifiedArticle(
+            title="Full Artifact Article",
+            primary_source="pubmed",
+            pmid="12345",
+            abstract="This abstract should survive artifact serialization.",
+            authors=[Author(full_name="Alice Example")],
+            journal="J Test",
+            year=2026,
+        )
+        execution = SimpleNamespace(
+            ranked=[article],
+            stats=stats,
+            relaxation_result=None,
+            deep_search_metrics=None,
+            source_api_counts={"pubmed": (1, 1)},
+            source_disagreement=None,
+            reproducibility_score=None,
+            research_context_data=None,
+            source_errors=[],
+        )
+        manager = SessionManager(data_dir=str(tmp_path))
+        set_session_manager(manager)
+        try:
+            artifact = _persist_unified_search_artifact(
+                request=request,
+                plan=plan,
+                execution=execution,
+                primary_format="json",
+            )
+        finally:
+            set_session_manager(None)
+
+        assert artifact is not None
+        results = manager.read_artifact(artifact["artifact_id"], file_name="results.json")
+        payload = json.loads(results["content"])
+        saved_article = payload["articles"][0]
+        assert "analysis" in payload
+        assert saved_article["abstract"] == "This abstract should survive artifact serialization."
+        assert saved_article["authors"][0]["name"] == "Alice Example"
 
 
 class TestFormatUnifiedResults:

@@ -41,6 +41,7 @@ from pubmed_search.application.search.query_analyzer import (
     QueryAnalyzer,
 )
 from pubmed_search.application.search.semantic_enhancer import get_semantic_enhancer
+from pubmed_search.application.session.artifact_envelope import build_unified_search_artifact_envelope
 from pubmed_search.application.timeline import TimelineBuilder, build_research_tree
 from pubmed_search.infrastructure.sources.registry import SourceSelectionError, get_source_registry
 
@@ -120,12 +121,12 @@ def _persist_unified_search_artifact(
             reproducibility_score=execution.reproducibility_score,
             research_context=execution.research_context_data,
             source_errors=execution.source_errors,
-            counts_first=request.counts_first,
-            compact_output=request.compact_output,
-            include_analysis=request.show_analysis,
-            include_similarity_scores=request.include_similarity_scores,
-            include_next_tools=request.include_next_tools,
-            include_section_provenance=request.include_section_provenance,
+            counts_first=False,
+            compact_output=False,
+            include_analysis=True,
+            include_similarity_scores=True,
+            include_next_tools=True,
+            include_section_provenance=True,
             max_response_chars=None,
             output_format=primary_format,
         )
@@ -133,33 +134,21 @@ def _persist_unified_search_artifact(
         logger.warning("Failed to prepare unified_search artifact payload: %s", exc)
         return None
     primary_file = f"results.{primary_format}"
-    files: dict[str, Any] = {
-        primary_file: structured_payload,
-        "query.md": f"# Query\n\n{plan.analysis.original_query or request.query}\n",
-    }
-    if markdown_response:
-        files["response.md"] = markdown_response
-
-    source_summary = {
-        source: {"returned": counts[0], "available": counts[1]}
-        for source, counts in (execution.source_api_counts or {}).items()
-    }
+    envelope = build_unified_search_artifact_envelope(
+        request=request,
+        plan=plan,
+        execution=execution,
+        structured_payload=structured_payload,
+        markdown_response=markdown_response,
+        primary_format=primary_format,
+    )
     return persist_tool_artifact(
         tool="unified_search",
         kind="search_results",
-        files=files,
+        files=envelope.files,
         primary_file=primary_file,
-        summary={
-            "query": plan.analysis.original_query or request.query,
-            "returned": len(execution.ranked),
-            "sources": source_summary,
-            "source_errors": execution.source_errors,
-        },
-        metadata={
-            "output_format": request.output_format,
-            "ranking": request.ranking,
-            "limit": request.limit,
-        },
+        summary=envelope.summary,
+        metadata=envelope.metadata,
     )
 
 

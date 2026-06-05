@@ -6,10 +6,12 @@ import asyncio
 import json
 import time
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from pubmed_search.application.session.manager import SessionManager
 from pubmed_search.presentation.mcp_server.session_tools import (
+    DEFAULT_ARTIFACT_READ_MAX_CHARS,
+    LAST_SEARCH_RESOURCE_ARTICLE_LIMIT,
     SESSION_RESOURCE_URIS,
     notify_session_resources_updated,
     register_session_resources,
@@ -193,15 +195,56 @@ class TestReadSession:
         assert page["content"] == "cde"
         assert page["next_offset"] == 5
 
-        local_page = json.loads(
-            fn(
-                action="artifact",
-                artifact_id=manifest["artifact_id"],
-                include_local_paths=True,
+        local_page = json.loads(fn(action="artifact", artifact_id=manifest["artifact_id"], include_local_paths=True))
+        assert "local_path" not in local_page["artifact"]
+        assert "path" not in local_page["file"]
+
+        with patch("pubmed_search.presentation.mcp_server.session_tools.load_settings") as mock_settings:
+            mock_settings.return_value.artifact_include_local_paths = True
+            local_page = json.loads(
+                fn(action="artifact", artifact_id=manifest["artifact_id"], include_local_paths=True)
             )
-        )
         assert "local_path" in local_page["artifact"]
         assert "path" in local_page["file"]
+
+    async def test_artifact_action_clamps_non_positive_max_chars(self, tmp_path):
+        manager = SessionManager(data_dir=str(tmp_path))
+        content = "a" * (DEFAULT_ARTIFACT_READ_MAX_CHARS + 10)
+        manifest = manager.save_artifact(
+            tool="unified_search",
+            kind="search_results",
+            files={"notes.md": content},
+            primary_file="notes.md",
+        )
+        fn = _capture_tools(register_session_tools, manager)["read_session"]
+
+        zero = json.loads(fn(action="artifact", artifact_id=manifest["artifact_id"], max_chars=0))
+        negative = json.loads(fn(action="artifact", artifact_id=manifest["artifact_id"], max_chars=-1))
+
+        assert len(zero["content"]) == DEFAULT_ARTIFACT_READ_MAX_CHARS
+        assert zero["next_offset"] == DEFAULT_ARTIFACT_READ_MAX_CHARS
+        assert zero["truncated"] is True
+        assert len(negative["content"]) == DEFAULT_ARTIFACT_READ_MAX_CHARS
+        assert negative["next_offset"] == DEFAULT_ARTIFACT_READ_MAX_CHARS
+        assert negative["truncated"] is True
+
+    async def test_log_action_history_limit_does_not_limit_events(self):
+        session = _make_session(
+            search_history=[{"query": f"q{i}", "pmids": [str(i)], "timestamp": "2024-01-01"} for i in range(10)]
+        )
+        session.event_log = [{"timestamp": "2024-01-01", "kind": "event", "message": f"event {i}"} for i in range(20)]
+        self.sm.get_current_session.return_value = session
+
+        def _get_events(*, limit=50, kind=None):
+            del kind
+            return session.event_log[-limit:]
+
+        self.sm.get_session_event_log.side_effect = _get_events
+
+        result = json.loads(self.fn(action="log", include_history=True, history_limit=5))
+
+        assert result["returned_events"] == 20
+        assert len(result["search_history"]) == 5
 
     async def test_list_artifacts_action(self, tmp_path):
         manager = SessionManager(data_dir=str(tmp_path))
@@ -221,6 +264,11 @@ class TestReadSession:
         assert "local_path" not in result["artifacts"][0]
 
         local_result = json.loads(fn(action="list_artifacts", include_local_paths=True))
+        assert "local_path" not in local_result["artifacts"][0]
+
+        with patch("pubmed_search.presentation.mcp_server.session_tools.load_settings") as mock_settings:
+            mock_settings.return_value.artifact_include_local_paths = True
+            local_result = json.loads(fn(action="list_artifacts", include_local_paths=True))
         assert "local_path" in local_result["artifacts"][0]
 
     async def test_artifact_read_error_redacts_local_paths(self, tmp_path):
@@ -535,6 +583,25 @@ class TestSessionResources:
         assert result["cached_count"] == 1
         assert result["cached_results"][0]["title"] == "Cached"
         assert result["missing_pmids"] == ["999"]
+
+    async def test_last_search_results_resource_caps_cached_payloads(self):
+        sm = MagicMock()
+        pmids = [str(i) for i in range(30)]
+        cache = {pmid: {"pmid": pmid, "title": f"Cached {pmid}"} for pmid in pmids}
+        session = _make_session(search_history=[{"query": "covid", "pmids": pmids, "result_count": len(pmids)}])
+        sm.get_current_session.return_value = session
+        _configure_manager_cache(sm, cache)
+
+        tools = _capture_tools(register_session_resources, sm)
+        result = json.loads(tools["session://last-search/results"]())
+
+        assert result["cached_count"] == LAST_SEARCH_RESOURCE_ARTICLE_LIMIT
+        assert result["returned_pmid_count"] == LAST_SEARCH_RESOURCE_ARTICLE_LIMIT
+        assert result["total_pmid_count"] == len(pmids)
+        assert result["resource_limit"] == LAST_SEARCH_RESOURCE_ARTICLE_LIMIT
+        assert result["truncated"] is True
+        assert result["omitted_pmids"] == pmids[LAST_SEARCH_RESOURCE_ARTICLE_LIMIT:]
+        assert result["cached_results"][-1]["pmid"] == pmids[LAST_SEARCH_RESOURCE_ARTICLE_LIMIT - 1]
 
     async def test_activity_resource(self):
         sm = MagicMock()

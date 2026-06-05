@@ -178,7 +178,11 @@ class ArticleCache:
             return raw
         if not isinstance(raw, dict):
             raise TypeError("Article cache payload must be a dict")
-        return CachedArticle(**raw)
+        try:
+            return CachedArticle(**raw)
+        except TypeError:
+            pmid = str(raw.get("pmid") or "")
+            return CachedArticle.from_article_data(pmid, raw)
 
     def get(self, pmid: str) -> CachedArticle | None:
         return self._store.get(pmid)
@@ -732,6 +736,21 @@ class SessionManager:
             "file": {
                 "name": file_name or manifest.get("primary_file"),
                 **file_info,
+            },
+            "available_files": sorted((manifest.get("files") or {}).keys()),
+            "read_order": [
+                file
+                for file in (manifest.get("summary") or {}).get("read_order", [])
+                if file in (manifest.get("files") or {})
+            ],
+            "retrieval": {
+                "artifact_id": manifest.get("artifact_id"),
+                "artifact_uri": manifest.get("artifact_uri"),
+                "artifact_file": file_name or manifest.get("primary_file"),
+                "offset": start,
+                "max_chars": max_chars,
+                "supports_paging": True,
+                "next_offset": next_offset,
             },
             "content": content,
             "offset": start,

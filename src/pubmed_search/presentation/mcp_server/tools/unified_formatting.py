@@ -40,6 +40,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 DEFAULT_STRUCTURED_RESPONSE_MAX_CHARS = 500_000
+TINY_STRUCTURED_RESPONSE_CAP_CHARS = 100
+PRETRUNCATE_STRUCTURED_RESPONSE_CAP_CHARS = 1_000
 
 
 def _serialize_source_counts(
@@ -690,7 +692,20 @@ def _article_payload(
     return payload
 
 
-def _serialize_with_response_cap(
+def _should_pretruncate_structured_response(
+    articles: list[UnifiedArticle],
+    *,
+    max_response_chars: int | None,
+    compact_output: bool,
+) -> bool:
+    if max_response_chars is None:
+        return False
+    if max_response_chars <= TINY_STRUCTURED_RESPONSE_CAP_CHARS:
+        return True
+    return not compact_output and len(articles) > 3 and max_response_chars <= PRETRUNCATE_STRUCTURED_RESPONSE_CAP_CHARS
+
+
+def _serialize_truncated_response_payload(
     payload: dict[str, Any],
     *,
     articles: list[UnifiedArticle],
@@ -699,10 +714,6 @@ def _serialize_with_response_cap(
     max_response_chars: int | None,
     include_next_tools: bool,
 ) -> str:
-    serialized = serialize_structured_payload(payload, output_format)
-    if max_response_chars is None or len(serialized) <= max_response_chars:
-        return serialized
-
     total_available = max(len(articles), int(getattr(stats, "unique_articles", 0) or 0))
     preview_count = min(len(articles), 3)
     truncated_payload: dict[str, Any] = {
@@ -723,6 +734,8 @@ def _serialize_with_response_cap(
         truncated_payload["artifact"] = payload["artifact"]
         if include_next_tools:
             truncated_payload["next"] += " Full output is also available through the artifact locator."
+    if payload.get("artifact_summary"):
+        truncated_payload["artifact_summary"] = payload["artifact_summary"]
     if payload.get("source_errors"):
         truncated_payload["source_errors"] = payload["source_errors"]
 
@@ -788,6 +801,73 @@ def _serialize_with_response_cap(
     return capped
 
 
+def _serialize_with_response_cap(
+    payload: dict[str, Any],
+    *,
+    articles: list[UnifiedArticle],
+    stats: AggregationStats,
+    output_format: OutputFormat,
+    max_response_chars: int | None,
+    include_next_tools: bool,
+) -> str:
+    serialized = serialize_structured_payload(payload, output_format)
+    if max_response_chars is None or len(serialized) <= max_response_chars:
+        return serialized
+
+    return _serialize_truncated_response_payload(
+        payload,
+        articles=articles,
+        stats=stats,
+        output_format=output_format,
+        max_response_chars=max_response_chars,
+        include_next_tools=include_next_tools,
+    )
+
+
+def _artifact_response_summary(artifact_manifest: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Build a compact token-offload note for structured responses."""
+    if not artifact_manifest:
+        return None
+
+    files = list(artifact_manifest.get("files") or [])
+    read_order = list(artifact_manifest.get("read_order") or files)
+    read_files = cast(
+        "dict[str, Any]",
+        artifact_manifest.get("read_files") if isinstance(artifact_manifest.get("read_files"), dict) else {},
+    )
+    read_files_by_uri = cast(
+        "dict[str, Any]",
+        artifact_manifest.get("read_files_by_uri")
+        if isinstance(artifact_manifest.get("read_files_by_uri"), dict)
+        else {},
+    )
+    first_file = str((read_order[0] if read_order else artifact_manifest.get("primary_file")) or "")
+    remote_retrieval = cast(
+        "dict[str, Any]",
+        artifact_manifest.get("remote_retrieval")
+        if isinstance(artifact_manifest.get("remote_retrieval"), dict)
+        else {},
+    )
+    start_with_uri = read_files_by_uri.get(first_file) or remote_retrieval.get("read_via") or ""
+    start_with = start_with_uri or read_files.get(first_file) or artifact_manifest.get("read_via") or ""
+    return {
+        "note": (
+            "This MCP response is a compact summary. Use the artifact files for complete results, "
+            "query strategy, and audit evidence."
+        ),
+        "artifact_id": artifact_manifest.get("artifact_id"),
+        "artifact_uri": artifact_manifest.get("artifact_uri"),
+        "primary_file": artifact_manifest.get("primary_file"),
+        "audit_status": artifact_manifest.get("audit_status"),
+        "available_files": files,
+        "recommended_read_order": read_order,
+        "start_with": start_with,
+        "start_with_uri": start_with_uri,
+        "read_files_by_uri": read_files_by_uri,
+        "supports_paging": bool(remote_retrieval.get("supports_paging", True)),
+    }
+
+
 def _format_as_json(
     articles: list[UnifiedArticle],
     analysis: AnalyzedQuery,
@@ -811,6 +891,31 @@ def _format_as_json(
 ) -> str:
     """Format results as JSON or TOON for programmatic access."""
     source_rows = _serialize_source_counts(source_api_counts, stats)
+    artifact_summary = _artifact_response_summary(artifact_manifest)
+    if _should_pretruncate_structured_response(
+        articles,
+        max_response_chars=max_response_chars,
+        compact_output=compact_output,
+    ):
+        cap_context: dict[str, Any] = {
+            "tool": "unified_search",
+            "source_counts": source_rows,
+        }
+        if source_errors:
+            cap_context["source_errors"] = source_errors
+        if artifact_manifest:
+            cap_context["artifact"] = artifact_manifest
+        if artifact_summary:
+            cap_context["artifact_summary"] = artifact_summary
+        return _serialize_truncated_response_payload(
+            cap_context,
+            articles=articles,
+            stats=stats,
+            output_format=output_format,
+            max_response_chars=max_response_chars,
+            include_next_tools=include_next_tools,
+        )
+
     structured_output_format = preferred_structured_output_format(output_format)
     next_actions = _build_next_actions(articles, analysis, source_rows, None, structured_output_format)
     next_tools, next_commands = finalize_next_tools(next_actions)
@@ -834,6 +939,8 @@ def _format_as_json(
 
     if artifact_manifest:
         result["artifact"] = artifact_manifest
+    if artifact_summary:
+        result["artifact_summary"] = artifact_summary
 
     # Add deep search metrics if available
     if include_analysis and deep_search_metrics:
