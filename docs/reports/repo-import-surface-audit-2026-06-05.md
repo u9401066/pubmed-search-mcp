@@ -43,7 +43,7 @@ Final import-surface audit (`scripts/_tmp/import_surface_audit_final.json`) foun
 
 - Not orphaned:
   - `presentation/mcp_server/copilot_tools.py` is used by `run_copilot.py`.
-  - `presentation/mcp_server/http_compat.py` is used by `run_server.py`, `run_copilot.py`, and `scripts/run_https_local.py`.
+  - `presentation/mcp_server/http_compat.py` is used by `presentation/mcp_server/http_cli.py`, `run_copilot.py`, and `scripts/run_https_local.py`; `run_server.py` is now a source-tree wrapper around the packaged HTTP CLI.
 - Tests-only but intentional compatibility shims:
   - `infrastructure/sources/fulltext_registry.py`
   - `infrastructure/sources/fulltext_service.py`

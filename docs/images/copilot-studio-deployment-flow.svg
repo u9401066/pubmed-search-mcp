@@ -33,7 +33,7 @@
 
   <rect class="box" x="608" y="110" width="234" height="116" fill="#fff5df" stroke="#b27b21"/>
   <text class="label" x="634" y="150">Full primary surface</text>
-  <text class="body" x="634" y="180">run_server.py</text>
+  <text class="body" x="634" y="180">pubmed-search-mcp-http</text>
   <text class="body" x="634" y="202">--copilot-compatible</text>
 
   <rect class="box" x="608" y="344" width="234" height="116" fill="#f8eff7" stroke="#99609a"/>

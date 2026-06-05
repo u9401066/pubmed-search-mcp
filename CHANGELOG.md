@@ -10,6 +10,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [0.5.16] - 2026-06-05
+
+### Added
+
+- Stable Python SDK facade at `pubmed_search.api` with `PubMedSearchClient`, `PubMedSearchConfig`, and `UnifiedSearchResult`.
+- Packaged HTTP MCP server CLI entry point: `pubmed-search-mcp-http`.
+- Design note documenting the separated MCP tool, Python SDK, and HTTP CLI contracts.
+
+### Changed
+
+- MCP `unified_search` now delegates through a reusable presentation runner while preserving existing MCP behavior and private test patch points.
+- Docker and full-surface Copilot/ngrok helper scripts now launch the packaged `pubmed-search-mcp-http` CLI; `run_server.py` is a thin source-tree wrapper.
+- Documentation now distinguishes MCP tool usage, Python SDK imports, and auxiliary HTTP cache/session APIs.
+
+### Fixed
+
+- `UnifiedSearchResult.articles` now reads the real unified-search `articles` JSON schema while keeping a legacy `results` fallback.
+- Structured `unified_search` errors now honor JSON/TOON output mode so SDK JSON callers receive parseable error payloads.
+
 ### Planned
 
 - PRISMA flow tracking (init_prisma_flow, record_screening, get_prisma_diagram)

@@ -11,7 +11,7 @@ paths:
 
 ## Tool Contract Rules
 
-- Keep `unified_search` as the primary search facade.
+- Keep MCP `unified_search` as the primary agent search facade; Python callers should use `pubmed_search.api`.
 - Preserve session-aware flows: cached articles, last PMIDs, search history, and pipeline state.
 - Return source counts and warnings when a source fails or contributes zero results.
 - Keep output formats stable for markdown, JSON, RIS, BibTeX, CSV, and MEDLINE.

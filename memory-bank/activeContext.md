@@ -2,7 +2,7 @@
 
 ## Current Focus
 
-- v0.5.15 release: research artifact envelopes, repo performance/import-surface hardening, synchronized README/docs-site/memory-bank guidance, segmented commits, push, and tag publish.
+- Post-v0.5.15 architecture follow-up: stable Python SDK facade, packaged HTTP CLI, and unified-search MCP wrapper thinning while preserving existing MCP behavior.
 
 ## Validation Snapshot
 
@@ -16,6 +16,10 @@
 
 ## Session Notes
 
+- Added `pubmed_search.api` for external Python callers: `PubMedSearchClient`, `PubMedSearchConfig`, and `UnifiedSearchResult`.
+- Added `pubmed_search.application.unified` service contracts and a presentation `unified_runner` so MCP `unified_search` and the SDK can share the runtime path without making SDK imports load MCP.
+- Added packaged `pubmed-search-mcp-http` entrypoint; `run_server.py` remains a source-tree development wrapper.
+- Documentation now distinguishes three contracts: MCP tool surface, Python SDK facade, and HTTP MCP server CLI / auxiliary read-only HTTP APIs.
 - `unified_search` artifacts now use a `research-artifact/v1` envelope: `audit.json`, `query_strategy.json`, `results.json` / `results.toon`, `query.md`, and optional `response.md`.
 - MCP responses stay compact but include counts, warnings, `artifact_summary`, audit status, and retrieval hints so agents can answer first and page through artifacts.
 - Artifact locators now include schema version, audit status, read order, URI-first read hints, and remote/sandbox-friendly paging metadata.

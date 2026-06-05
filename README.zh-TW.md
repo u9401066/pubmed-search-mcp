@@ -58,6 +58,25 @@ uv add pubmed-search-mcp
 pip install pubmed-search-mcp
 ```
 
+### Python SDK facade
+
+若是在 Python 套件、notebook、或自動化程式中直接呼叫，請使用穩定的
+`pubmed_search.api` facade，不要 import MCP tool module：
+
+```python
+from pubmed_search.api import PubMedSearchClient, PubMedSearchConfig
+
+client = PubMedSearchClient(PubMedSearchConfig(email="your@email.com"))
+result = await client.unified_search("remimazolam ICU sedation", limit=20)
+
+print(result.articles)
+print(result.source_counts)
+print(result.artifact)  # 啟用 persistence 時會有 artifact locator
+```
+
+`uvx pubmed-search-mcp` 與 `/mcp` 是給 AI agent / MCP client 的工具合約；
+Python SDK 則是給外部 Python code 的 in-process 合約。
+
 ---
 
 ## ⚙️ 設定方式
@@ -934,7 +953,7 @@ src/pubmed_search/
 ├── presentation/               # 使用者介面
 │   ├── mcp_server/             # MCP 工具、prompts、resources
 │   │   └── tools/              # discovery, strategy, pico, export...
-│   └── api/                    # REST API（Copilot Studio）
+│   └── api/                    # Auxiliary HTTP API routes（不是 pubmed_search.api）
 └── shared/                     # 跨切面關注
     ├── exceptions.py           # 統一錯誤處理
     └── async_utils.py          # Rate limiter, retry, circuit breaker
@@ -1075,10 +1094,10 @@ curl -k https://localhost/
 
 ```bash
 # 使用 Streamable HTTP transport 啟動（Copilot Studio 要求）
-uv run python run_server.py --transport streamable-http --port 8765
+pubmed-search-mcp-http --transport streamable-http --port 8765
 
 # 若要保留完整工具 schema，同時開啟 Copilot 相容 HTTP 行為
-uv run python run_server.py --transport streamable-http --copilot-compatible --port 8765
+pubmed-search-mcp-http --transport streamable-http --copilot-compatible --port 8765
 
 # 或使用專用腳本搭配 ngrok
 ./scripts/start-copilot-studio.sh --with-ngrok
@@ -1094,7 +1113,7 @@ uv run python run_server.py --transport streamable-http --copilot-compatible --p
 
 > 📖 **完整文件**: [copilot-studio/README.md](copilot-studio/README.md)
 >
-> 若只需要 Copilot 相容 HTTP 行為，用 `run_server.py --copilot-compatible`；若還需要簡化後的工具 schema，使用 `run_copilot.py`。
+> 若只需要 Copilot 相容 HTTP 行為，用 `pubmed-search-mcp-http --copilot-compatible`；若還需要簡化後的工具 schema，使用 `run_copilot.py`。
 >
 > ⚠️ **注意**: SSE transport 自 2025 年 8 月起棄用。使用 `streamable-http`。
 

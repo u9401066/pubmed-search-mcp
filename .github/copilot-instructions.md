@@ -270,7 +270,7 @@ git status --short | Where-Object { $_ -match '^\?\?' }
 | 設定 | `pyproject.toml`, `Dockerfile`, `docker-compose*.yml`, `.gitignore`, `uv.lock` |
 | 狀態 | `.instruction_drift_fingerprint` |
 | 文檔 | `README.md`, `README.zh-TW.md`, `CHANGELOG.md`, `CONSTITUTION.md`, `ARCHITECTURE.md`, `ROADMAP.md`, `CONTRIBUTING.md`, `DEPLOYMENT.md`, `CITATION.cff`, `AGENTS.md`, `LICENSE` |
-| 入口 | `run_copilot.py`, `run_server.py`, `start.sh` |
+| Entrypoints | `pubmed-search-mcp`, `pubmed-search-mcp-http`, `pubmed-browser-fetch-broker`, `run_copilot.py`, `run_server.py` |
 
 > ⚠️ **任何不在白名單的檔案出現在根目錄都是錯誤。**
 
@@ -339,7 +339,7 @@ src/pubmed_search/
 │   └── http/               # HTTP 客戶端
 ├── presentation/           # 使用者介面
 │   ├── mcp_server/         # MCP 工具、提示、資源
-│   └── api/                # REST API
+│   └── api/                # Auxiliary HTTP API (not pubmed_search.api)
 └── shared/                 # 跨層共用
     ├── exceptions.py       # 例外處理
     └── async_utils.py      # 非同步工具 (CircuitBreaker, RateLimiter, etc.)
@@ -372,10 +372,12 @@ class MySourceClient(BaseAPIClient):
 ### 導入規則
 
 ```python
-# ✅ 正確：從頂層 pubmed_search 導入
-from pubmed_search import LiteratureSearcher, export_articles
+# Stable Python SDK facade for external package/notebook callers
+from pubmed_search.api import PubMedSearchClient, PubMedSearchConfig
 
-# ✅ 正確：絕對導入
+client = PubMedSearchClient(PubMedSearchConfig(email="your@email.com"))
+
+# Low-level/internal usage only
 from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
 # ❌ 避免：深層相對導入

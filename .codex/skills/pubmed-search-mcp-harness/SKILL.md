@@ -28,6 +28,7 @@ pipeline state, fulltext access, exports, and release checks.
 ## Research Guardrails
 
 - Prefer `unified_search` as the primary multi-source entrypoint.
+- For external Python package/API questions, prefer the stable `pubmed_search.api` facade over MCP presentation modules.
 - Preserve session/pipeline state instead of relying on agent memory.
 - Respect NCBI email/API-key policy and institutional access configuration.
 - Keep exported citations reproducible with PMIDs, DOI, source, date filters, and query strategy.

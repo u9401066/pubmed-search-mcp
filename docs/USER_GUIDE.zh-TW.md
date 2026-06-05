@@ -257,7 +257,7 @@ Saved pipelines 可以透過 `unified_search(pipeline="saved:<name>")` 重用。
 
 Copilot 有兩條路：
 
-- 完整 primary MCP surface：透過 `run_server.py --transport streamable-http --copilot-compatible`
+- 完整 primary MCP surface：透過 `pubmed-search-mcp-http --transport streamable-http --copilot-compatible`
 - 簡化 Copilot Studio surface：透過 `run_copilot.py` 暴露較小的 11-tool schema
 
 Client 能處理時優先用完整工具面。當 Copilot Studio schema compatibility 是第一優先時，使用簡化工具面。

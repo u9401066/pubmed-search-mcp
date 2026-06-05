@@ -38,6 +38,7 @@ PAGES = [
     ),
     ("developer-guide", "Developer Guide", DOCS_ROOT / "DEVELOPER_GUIDE.md"),
     ("developer-guide-zh", "Developer Guide (zh-TW)", DOCS_ROOT / "DEVELOPER_GUIDE.zh-TW.md"),
+    ("python-sdk-http-cli-design", "Python SDK And HTTP CLI Design", DOCS_ROOT / "PYTHON_SDK_AND_HTTP_CLI_DESIGN.md"),
     ("architecture", "Architecture", REPO_ROOT / "ARCHITECTURE.md"),
     ("pipeline-tutorial", "Pipeline Tutorial", DOCS_ROOT / "PIPELINE_MODE_TUTORIAL.en.md"),
     ("pipeline-tutorial-zh", "Pipeline Tutorial (zh-TW)", DOCS_ROOT / "PIPELINE_MODE_TUTORIAL.md"),

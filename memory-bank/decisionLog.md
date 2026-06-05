@@ -1,3 +1,17 @@
+## [2026-06-05] Separate MCP, Python SDK, And HTTP CLI Contracts
+
+### Context
+External package users needed a stable Python import surface, while agent users needed the existing MCP tool registry and remote deployments needed an installed HTTP launcher. Mixing these contracts encouraged imports from `presentation.mcp_server.tools`.
+
+### Decision
+Expose `pubmed_search.api` as the stable Python SDK facade, keep MCP tools as presentation adapters, and add `pubmed-search-mcp-http` as the packaged HTTP server CLI. Keep `run_server.py` as a source-tree development wrapper.
+
+### Consequences
+- SDK imports must stay lightweight and must not load MCP, FastMCP, settings, or source clients.
+- `unified_search` runtime logic is delegated through a runner so MCP behavior remains compatible while the SDK avoids direct presentation imports at import time.
+- Docs must distinguish MCP tool surface, Python SDK facade, and auxiliary HTTP APIs.
+
+---
 # Decision Log
 
 | Date | Decision | Rationale |

@@ -5,7 +5,8 @@ These rules are meant for Cline usage in the PubMed Search MCP repository.
 ## Goals
 
 - Provide a robust MCP server for biomedical literature search, analysis, full-text access, and citation export.
-- Make `unified_search` the default entrypoint while preserving specialized tools for PICO, MeSH, full text, citations, and pipelines.
+- Make MCP `unified_search` the default agent entrypoint while preserving specialized tools for PICO, MeSH, full text, citations, and pipelines.
+- Keep `pubmed_search.api` as the stable Python SDK facade for external package/notebook callers.
 - Keep outputs useful for downstream agents and for Zotero Keeper imports.
 
 ## Repo Layout

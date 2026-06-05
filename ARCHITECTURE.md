@@ -392,7 +392,7 @@ stdio 模式下，server 會啟動背景 HTTP API，提供**public auxiliary rea
 - `/api/cached_articles?pmids=...`
 - `/api/session/summary`
 
-HTTP 模式由 `run_server.py` 建立額外 routes，並提供：
+HTTP 模式由 `pubmed-search-mcp-http` 建立額外 routes，並提供：
 
 - MCP endpoint: `/mcp`（streamable-http）或 `/sse` + `/messages`（legacy SSE）
 - `/health`
@@ -464,7 +464,7 @@ flowchart LR
 
 | 路線 | 說明 | 適用情境 |
 | --- | --- | --- |
-| `run_server.py --transport streamable-http --copilot-compatible` | 保留完整 46-tool surface，開啟 Copilot HTTP compatibility | 想盡量保留完整 schema 時 |
+| `pubmed-search-mcp-http --transport streamable-http --copilot-compatible` | 保留完整 46-tool surface，開啟 Copilot HTTP compatibility | 想盡量保留完整 schema 時 |
 | `run_copilot.py` | 啟用簡化 schema 的 Copilot 專用工具集 | Copilot Studio schema 相容性優先時 |
 
 `http_compat.py` 會把部分 HTTP 202 responses 正規化為 Copilot 可接受的 200 JSON responses。
@@ -472,7 +472,7 @@ flowchart LR
 ```mermaid
 flowchart TD
   Need{需要完整 46 tools?}
-  Full[run_server.py\n--transport streamable-http\n--copilot-compatible]
+  Full[pubmed-search-mcp-http\n--transport streamable-http\n--copilot-compatible]
   Simplified[run_copilot.py]
   Studio{Copilot Studio\n接受 schema 嗎?}
 
@@ -498,7 +498,7 @@ MCP Client / Copilot Studio
 flowchart LR
     Client[MCP Client / Copilot Studio]
     Proxy[HTTPS Reverse Proxy<br/>Nginx / Cloud LB]
-    MCPHTTP[run_server.py<br/>streamable-http]
+    MCPHTTP[pubmed-search-mcp-http<br/>streamable-http]
     Endpoint[/mcp]
     Utility[/health /info /exports]
 

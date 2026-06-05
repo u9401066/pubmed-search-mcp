@@ -65,8 +65,10 @@ MCP Tools (Presentation) → Entrez/Sources (Infrastructure) → NCBI API (Exter
 ## 🚀 部署方式
 
 1. **PyPI 安裝**: `pip install pubmed-search-mcp`
-2. **Docker**: `docker-compose up`
-3. **SSE Server**: `python run_server.py` (port 8765)
+2. **MCP stdio**: `uvx pubmed-search-mcp`
+3. **Streamable HTTP MCP**: `pubmed-search-mcp-http --transport streamable-http`
+4. **Python SDK facade**: `from pubmed_search.api import PubMedSearchClient`
+5. **Docker**: `docker-compose up`
 
 ---
 *Last updated: 2025-01-XX*

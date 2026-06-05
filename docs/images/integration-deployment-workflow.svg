@@ -38,7 +38,7 @@
 
   <rect class="box" x="350" y="374" width="216" height="118" fill="#fff5df" stroke="#b27b21"/>
   <text class="label" x="376" y="414">streamable HTTP</text>
-  <text class="body" x="376" y="444">run_server.py /mcp</text>
+  <text class="body" x="376" y="444">pubmed-search-mcp-http</text>
   <text class="body" x="376" y="466">or run_copilot.py</text>
 
   <rect class="box" x="648" y="374" width="216" height="118" fill="#edf7ff" stroke="#3578a7"/>

@@ -13,6 +13,7 @@ Detailed setup guide for integrating PubMed Search MCP with various AI clients a
   - [Transport Modes](#transport-modes)
     - [stdio (Default)](#stdio-default)
     - [Streamable HTTP](#streamable-http)
+    - [Python SDK Facade](#python-sdk-facade)
   - [Environment Variables](#environment-variables)
     - [Getting API Keys](#getting-api-keys)
   - [Client Configurations](#client-configurations)
@@ -58,7 +59,7 @@ For remote access, run the server in HTTP mode:
 
 ```bash
 # Direct HTTP
-uv run python run_server.py --transport streamable-http --port 8765
+pubmed-search-mcp-http --transport streamable-http --port 8765
 
 # Via run_copilot.py (simplified for Copilot Studio)
 uv run python run_copilot.py --port 8765
@@ -72,7 +73,7 @@ The MCP endpoint will be available at `http://localhost:8765/mcp`.
 
 ![Session cache and auxiliary HTTP API workflow](images/session-cache-and-http-api.svg)
 
-Besides the primary MCP contract at `/mcp`, `run_server.py` also exposes a **public auxiliary read-only HTTP API** for cache and session access:
+Besides the primary MCP contract at `/mcp`, the packaged HTTP CLI also exposes a **public auxiliary read-only HTTP API** for cache and session access:
 
 | Endpoint | Purpose |
 | --- | --- |
@@ -81,6 +82,26 @@ Besides the primary MCP contract at `/mcp`, `run_server.py` also exposes a **pub
 | `/api/session/summary` | Read current session summary |
 
 This auxiliary API is public in the sense that callers may use it directly, but it is **not** the primary MCP tool contract. For agent tool discovery and normal runtime usage, `/mcp` remains the canonical external interface.
+
+### Python SDK Facade
+
+For in-process Python integrations, use the SDK facade instead of importing MCP
+tool modules or relying on auxiliary HTTP endpoints:
+
+```python
+from pubmed_search.api import PubMedSearchClient, PubMedSearchConfig
+
+client = PubMedSearchClient(PubMedSearchConfig(email="your@email.com"))
+result = await client.unified_search("remimazolam ICU sedation", limit=20)
+
+articles = result.articles
+source_counts = result.source_counts
+artifact = result.artifact
+```
+
+Use `/mcp` for agent tool discovery and task-oriented MCP calls. Use
+`pubmed_search.api` for Python package, notebook, or application code that wants
+an in-process object contract.
 
 ### Persistent Artifact Retrieval
 
@@ -544,7 +565,7 @@ Copilot Studio ──HTTPS──▶ ngrok ──HTTP──▶ MCP Server (localh
 uv run python run_copilot.py --port 8765
 
 # Option D: Manual full 46-tool primary MCP surface with Copilot-compatible HTTP semantics
-uv run python run_server.py --transport streamable-http --copilot-compatible --port 8765
+pubmed-search-mcp-http --transport streamable-http --copilot-compatible --port 8765
 ```
 
 **Step 2**: Expose via ngrok (if not using the script)

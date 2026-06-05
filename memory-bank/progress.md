@@ -2,6 +2,13 @@
 
 ## Done
 
+### 2026-06-05: Python SDK Facade + Packaged HTTP CLI
+- Stable package API: added `pubmed_search.api` with `PubMedSearchClient`, `PubMedSearchConfig`, and `UnifiedSearchResult` for in-process Python callers.
+- Unified search runner split: MCP `unified_search` now delegates to `presentation.mcp_server.tools.unified_runner`, keeping old patch points while reducing wrapper logic.
+- Application contract: added `pubmed_search.application.unified` request/service contracts so SDK callers do not import MCP presentation modules at import time.
+- Packaged HTTP entrypoint: added `pubmed-search-mcp-http` for Streamable HTTP/SSE server deployment; `run_server.py` is now documented as a source-tree development wrapper.
+- Docs alignment: README, integrations guide, developer guide, agent rules, and design docs now distinguish MCP tool surface, Python SDK facade, and auxiliary HTTP APIs.
+
 ### 2026-06-05: v0.5.15 - Research Artifact Envelope + Repo Hardening
 - Research artifact envelope: `unified_search` now persists `audit.json`, `query_strategy.json`, complete `results.json` / `results.toon`, `query.md`, and optional `response.md`.
 - Token offload contract: MCP responses stay compact but include counts, source warnings, artifact summary, audit status, read order, and retrieval hints so agents can answer first and read artifacts repeatedly.

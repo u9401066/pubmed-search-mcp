@@ -1,5 +1,13 @@
 # System Architect
 
+## Current Runtime Contracts
+
+- MCP tool surface: `uvx pubmed-search-mcp` for stdio and `/mcp` when served over Streamable HTTP.
+- Python SDK facade: `pubmed_search.api.PubMedSearchClient` for in-process package/notebook callers.
+- HTTP MCP server CLI: `pubmed-search-mcp-http --transport streamable-http` for packaged remote deployments.
+- Auxiliary HTTP cache/session endpoints are convenience APIs, not the Python SDK contract.
+- MCP tools must remain presentation adapters over application/domain behavior; SDK imports must not load MCP presentation modules.
+
 > 📌 此檔案記錄重大架構決策，架構變更時更新。
 
 ## 🌐 系統架構圖
