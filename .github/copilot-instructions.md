@@ -4,6 +4,10 @@ This document provides guidance for AI assistants working with the PubMed Search
 
 ---
 
+## Repository Hook Notes
+
+- `unicode-mojibake` blocks newly staged corrupted emoji/UTF-8 artifacts while allowing valid emoji; restore garbled text as UTF-8 before committing.
+
 ## ⚡ 開發環境規範 (CRITICAL)
 
 ### 套件管理：使用 UV (NOT pip)

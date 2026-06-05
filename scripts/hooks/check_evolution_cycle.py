@@ -33,6 +33,8 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import tomllib
+
 # Force UTF-8 output on Windows
 if sys.stdout.encoding and sys.stdout.encoding.lower().startswith("cp"):
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
@@ -125,6 +127,7 @@ def check_hooks_documented(report: ValidationReport) -> None:
             "mypy",
             "async-test-checker",
             "file-hygiene",
+            "unicode-mojibake",
             "commit-size-guard",
             "tool-count-sync",
             "skills-frontmatter",
@@ -212,7 +215,7 @@ def check_version_staleness(report: ValidationReport) -> None:
 
 
 def check_pyproject_addopts(report: ValidationReport) -> None:
-    """Check pyproject.toml addopts is consistent with pre-push hook."""
+    """Check pyproject.toml addopts follows the OOM-safe pytest policy."""
     pyproject = ROOT / "pyproject.toml"
     if not pyproject.exists():
         return
@@ -220,24 +223,35 @@ def check_pyproject_addopts(report: ValidationReport) -> None:
     pyproject_text = pyproject.read_text(encoding="utf-8")
     config_text = PRECOMMIT_CONFIG.read_text(encoding="utf-8")
 
-    # Check addopts has -n (multi-core enforcement)
-    if "addopts" in pyproject_text:
-        addopts_match = re.search(r'addopts\s*=\s*"([^"]*)"', pyproject_text)
-        if addopts_match:
-            addopts = addopts_match.group(1)
-            if "-n " not in addopts:
-                report.add(
-                    "error",
-                    "config-sync",
-                    "pyproject.toml addopts missing '-n' (multi-core enforcement)",
-                    fix_hint='Set addopts = "-n 8 --timeout=60" in [tool.pytest.ini_options]',
-                )
-    else:
+    try:
+        pyproject_data = tomllib.loads(pyproject_text)
+    except tomllib.TOMLDecodeError as exc:
         report.add(
             "error",
             "config-sync",
-            "pyproject.toml missing addopts (multi-core not enforced)",
-            fix_hint='Add addopts = "-n 8 --timeout=60" to [tool.pytest.ini_options]',
+            f"pyproject.toml is not valid TOML: {exc}",
+            fix_hint="Fix pyproject.toml syntax before committing",
+        )
+        return
+
+    tool_config = pyproject_data.get("tool", {})
+    pytest_config = tool_config.get("pytest", {}) if isinstance(tool_config, dict) else {}
+    pytest_ini = pytest_config.get("ini_options", {}) if isinstance(pytest_config, dict) else {}
+    addopts = pytest_ini.get("addopts") if isinstance(pytest_ini, dict) else None
+
+    if not isinstance(addopts, str) or not addopts.strip():
+        report.add(
+            "error",
+            "config-sync",
+            "pyproject.toml missing addopts (timeout not enforced)",
+            fix_hint='Add addopts = "--timeout=60" to [tool.pytest.ini_options]',
+        )
+    elif "--timeout=" not in addopts:
+        report.add(
+            "error",
+            "config-sync",
+            "pyproject.toml addopts missing '--timeout=' (OOM-safe timeout enforcement)",
+            fix_hint='Set addopts = "--timeout=60" in [tool.pytest.ini_options]',
         )
 
     # Check pre-push hook exists

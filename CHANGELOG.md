@@ -10,6 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `unicode-mojibake` pre-commit hook to block newly staged corrupted emoji/UTF-8 artifacts while allowing valid emoji.
+
+### Changed
+
+- `evolution-cycle` now validates the OOM-safe pytest timeout policy via `tomllib` instead of requiring global xdist workers in `pyproject.toml`.
+
 ---
 
 ## [0.5.16] - 2026-06-05

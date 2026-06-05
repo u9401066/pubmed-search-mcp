@@ -148,6 +148,15 @@ repos:
         pass_filenames: false
         always_run: true
 
+      # Unicode mojibake guard
+      - id: unicode-mojibake
+        name: Unicode mojibake guard
+        entry: uv run python scripts/hooks/check_unicode_mojibake.py
+        language: system
+        pass_filenames: false
+        always_run: true
+        # Blocks newly staged corrupted emoji/UTF-8 artifacts.
+
       # ── Commit size guard ──────────────────────────────────
       - id: commit-size-guard
         name: commit size guard (≤30 files)

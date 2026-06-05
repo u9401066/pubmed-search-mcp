@@ -273,3 +273,7 @@ git commit --no-verify -m "emergency"       # 跳過所有 hooks (慎用!)
 | `scripts/hooks/check_todo_scanner.py` | TODO/FIXME 掃描 |
 | `scripts/hooks/check_instruction_drift.py` | 工具 docstring 變更偵測 |
 | `scripts/check_async_tests.py` | async/sync 測試一致性 |
+
+## Unicode Mojibake Hook
+
+- `unicode-mojibake` uses `scripts/hooks/check_unicode_mojibake.py` to block newly staged corrupted emoji/UTF-8 artifacts while allowing valid emoji.

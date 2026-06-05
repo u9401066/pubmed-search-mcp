@@ -30,6 +30,9 @@ tool-native locations such as `.github/copilot-instructions.md` or
   generated artifacts in sync.
 - When note export behavior changes, keep skills, Copilot instructions, Cline
   rules, generated docs, and packaged references aligned.
+- The `unicode-mojibake` pre-commit hook scans newly staged diff lines for
+  corrupted emoji/UTF-8 artifacts; restore UTF-8 text instead of accepting
+  garbled glyphs.
 - Prefer existing repo assets over creating parallel variants. If a shared rule
   belongs here, do not duplicate it in `.clinerules/` or Copilot-only files.
 
