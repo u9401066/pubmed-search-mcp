@@ -808,9 +808,15 @@ def get_shared_async_client() -> Any:
 async def close_shared_async_client() -> None:
     """Close the shared async HTTP client (call on shutdown)."""
     global _shared_async_client
-    if _shared_async_client is not None and not _shared_async_client.is_closed:
-        await _shared_async_client.aclose()
-        _shared_async_client = None
+    client = _shared_async_client
+    _shared_async_client = None
+    if client is not None and not client.is_closed:
+        try:
+            await client.aclose()
+        except RuntimeError as exc:
+            if "Event loop is closed" not in str(exc):
+                raise
+            logger.debug("Ignoring shared async client close after event loop shutdown")
 
 
 # =============================================================================

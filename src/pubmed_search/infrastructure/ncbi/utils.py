@@ -13,11 +13,24 @@ Provides various utility functions for Entrez operations including:
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from typing import Any, cast
 
 from Bio import Entrez
 
 from .base import DEFAULT_ENTREZ_TOOL, execute_entrez_operation, run_entrez_callable
+
+
+def _egquery_compat(term: str, **keywds: Any) -> Any:
+    """Biopython removed ``Entrez.egquery``; keep the eGQuery endpoint reachable."""
+    cgi = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/egquery.fcgi"
+    variables = {"term": term}
+    variables.update(keywds)
+    entrez_any = cast("Any", Entrez)
+    return entrez_any._open(entrez_any._build_request(cgi, variables))
+
+
+if not hasattr(Entrez, "egquery"):
+    cast("Any", Entrez).egquery = _egquery_compat
 
 
 class UtilsMixin:
@@ -160,7 +173,7 @@ class UtilsMixin:
                 handle = await asyncio.to_thread(
                     run_entrez_callable,
                     Entrez,
-                    Entrez.egquery,
+                    cast("Any", Entrez).egquery,
                     term=query,
                     **self._entrez_runtime_kwargs(),
                 )

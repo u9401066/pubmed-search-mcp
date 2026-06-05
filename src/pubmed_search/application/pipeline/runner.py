@@ -12,7 +12,7 @@ from pubmed_search.application.pipeline.templates import materialize_pipeline_co
 from pubmed_search.domain.entities.pipeline import PipelineRun
 
 if TYPE_CHECKING:
-    from pubmed_search.application.pipeline.executor import AlternateSearchFn
+    from pubmed_search.application.pipeline.executor import AlternateSearchFn, SourceKeyResolver
     from pubmed_search.application.pipeline.store import PipelineStore
     from pubmed_search.domain.entities.article import UnifiedArticle
 
@@ -28,10 +28,12 @@ class StoredPipelineRunner:
         store: PipelineStore,
         searcher: Any,
         alternate_search_fn: AlternateSearchFn | None = None,
+        source_key_resolver: SourceKeyResolver | None = None,
     ) -> None:
         self._store = store
         self._searcher = searcher
         self._alternate_search_fn = alternate_search_fn
+        self._source_key_resolver = source_key_resolver
 
     async def execute_saved_pipeline(self, name: str) -> PipelineRun:
         """Execute one saved pipeline and persist report + run history."""
@@ -42,6 +44,7 @@ class StoredPipelineRunner:
         executor = PipelineExecutor(
             searcher=self._searcher,
             alternate_search_fn=self._alternate_search_fn,
+            source_key_resolver=self._source_key_resolver,
         )
 
         started = datetime.now(timezone.utc)

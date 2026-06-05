@@ -34,6 +34,15 @@ PMC_LINK_LOOKUP_TIMEOUT_SECONDS = 15.0
 NCBI_ELINK_ENDPOINT = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/elink.fcgi"
 
 
+def _normalize_crossref_doi(doi: str) -> str:
+    normalized = doi.strip()
+    for prefix in ("https://doi.org/", "http://doi.org/", "https://dx.doi.org/", "http://dx.doi.org/", "doi:"):
+        if normalized.lower().startswith(prefix):
+            normalized = normalized[len(prefix) :]
+            break
+    return normalized.strip()
+
+
 def _lookup_pmc_links_from_entrez(pmid: str) -> list[PDFLink]:
     """Resolve PMC links via a timeout-bounded ELink request."""
     links: list[PDFLink] = []
@@ -49,7 +58,9 @@ def _lookup_pmc_links_from_entrez(pmid: str) -> list[PDFLink]:
     request_url = f"{NCBI_ELINK_ENDPOINT}?{urllib.parse.urlencode(params)}"
 
     # The URL is assembled from a fixed HTTPS NCBI endpoint plus encoded scalar parameters.
-    with urllib.request.urlopen(request_url, timeout=PMC_LINK_LOOKUP_TIMEOUT_SECONDS) as response:  # noqa: S310
+    with urllib.request.urlopen(  # noqa: S310  # nosec B310
+        request_url, timeout=PMC_LINK_LOOKUP_TIMEOUT_SECONDS
+    ) as response:
         payload = response.read()
 
     root = ElementTree.fromstring(payload)
@@ -349,7 +360,8 @@ class FulltextDiscoveryPhase:
 
         try:
             client = await self._get_client()
-            url = f"https://api.crossref.org/works/{doi}?mailto=pubmed-search@example.com"
+            encoded_doi = urllib.parse.quote(_normalize_crossref_doi(doi), safe="")
+            url = f"https://api.crossref.org/works/{encoded_doi}?mailto=pubmed-search@example.com"
             resp = await client.get(url)
             if resp.status_code != 200:
                 return links

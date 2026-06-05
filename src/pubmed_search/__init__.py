@@ -1,240 +1,84 @@
 """
 PubMed Search MCP package surface.
 
-This top-level package intentionally separates three different surfaces:
-
-1. Python library surface
-    Import `LiteratureSearcher`, `NCBIExtendedClient`, export helpers, and related
-    query-analysis utilities from `pubmed_search` when you are using this project as
-    a Python library.
-
-2. MCP primary surface
-    Use `create_mcp_server` or `mcp_main` when you want the Model Context Protocol
-    server. The actual MCP tool contract is discovered dynamically at runtime through
-    the MCP server itself.
-
-3. Auxiliary HTTP surface
-    Cache/session HTTP endpoints such as `/api/cached_article/{pmid}` and
-    `/api/session/summary` live in `run_server.py` and `presentation.api.server`.
-    They are public auxiliary read APIs, but they are not re-exported from this
-    package root and should not be confused with the primary MCP contract.
-
-In short: import from `pubmed_search` for Python library usage, start the MCP server
-through the MCP entrypoints below for tool usage, and treat the auxiliary HTTP API as
-an explicit secondary surface.
-
-Quick Start:
-    from pubmed_search import LiteratureSearcher
-
-    searcher = LiteratureSearcher(email="your@email.com")
-    results = searcher.search("diabetes treatment", limit=10)
-
-    for article in results:
-        print(f"{article['pmid']}: {article['title']}")
-
-Extended Usage:
-    # NCBI Extended (Gene, PubChem, ClinVar)
-    from pubmed_search import NCBIExtendedClient
-    ncbi = NCBIExtendedClient(email="your@email.com")
-    genes = ncbi.search_gene("BRCA1", organism="human")
-
-    # Europe PMC (fulltext, text mining)
-    from pubmed_search import EuropePMCClient
-    pmc = EuropePMCClient()
-    fulltext = pmc.get_fulltext_xml("PMC1234567")
-
-    # Export citations
-    from pubmed_search import export_articles
-    ris_content = export_articles(articles, format="ris")
-
-    # OpenURL / Institutional access
-    from pubmed_search import get_openurl_link, list_openurl_presets
-    link = get_openurl_link(article, preset="ntu")
-
-Features:
-    - PubMed search with various strategies (recent, relevance, etc.)
-    - NCBI Extended: Gene, PubChem, ClinVar databases
-    - Europe PMC: Fulltext XML, text-mined annotations
-    - Multi-source: OpenAlex, Semantic Scholar, CrossRef
-    - Citation network exploration (citing, references, related)
-    - NIH iCite metrics (RCR, percentile)
-    - Export: official RIS/MEDLINE/CSL JSON plus local RIS/BibTeX/CSV/MEDLINE/JSON
-    - OpenURL institutional link resolver
-    - MCP server for AI agent integration
-
-Architecture (DDD):
-    domain/          - Core business logic (entities, value objects)
-    application/     - Use cases (search, export, session)
-    infrastructure/  - External systems (NCBI, Europe PMC, etc.)
-    presentation/    - User interfaces (MCP server, auxiliary HTTP API)
-    shared/          - Cross-cutting concerns (exceptions, utils)
+The package root is a convenience API for Python callers. Exports are resolved
+lazily so a lightweight ``import pubmed_search`` does not also import the MCP
+server, every MCP tool module, HTTP clients, YAML support, or optional citation
+formatters.
 """
 
 from __future__ import annotations
 
-# ═══════════════════════════════════════════════════════════════════
-# Core Entrez API
-# ═══════════════════════════════════════════════════════════════════
-# ═══════════════════════════════════════════════════════════════════
-# Export functionality
-# ═══════════════════════════════════════════════════════════════════
-from .application.export import (
-    SUPPORTED_FORMATS,
-    export_articles,
-    export_bibtex,
-    export_csv,
-    export_json,
-    export_medline,
-    export_ris,
-    get_fulltext_links,
-)
+from importlib import import_module
+from typing import Any
 
-# ═══════════════════════════════════════════════════════════════════
-# Strategy & Query Analysis
-# ═══════════════════════════════════════════════════════════════════
-from .application.search import (
-    AnalyzedQuery,
-    QueryAnalyzer,
-    QueryComplexity,
-    QueryIntent,
-    RankingConfig,
-    ResultAggregator,
-)
+__version__ = "0.5.15"
 
-# ═══════════════════════════════════════════════════════════════════
-# Domain Entities
-# ═══════════════════════════════════════════════════════════════════
-from .domain.entities.article import UnifiedArticle
-from .infrastructure.ncbi import (
-    BatchMixin,
-    CitationMixin,
-    EntrezBase,
-    LiteratureSearcher,
-    PDFMixin,
-    SearchMixin,
-    SearchStrategy,
-    UtilsMixin,
-)
-
-# iCite metrics
-from .infrastructure.ncbi.icite import ICiteMixin
-
-# Strategy generator
-from .infrastructure.ncbi.strategy import SearchStrategyGenerator
-
-# ═══════════════════════════════════════════════════════════════════
-# Multi-source clients (lazy-loaded)
-# ═══════════════════════════════════════════════════════════════════
-from .infrastructure.sources import (
-    SearchSource,
-    get_crossref_client,
-    get_europe_pmc_client,
-    get_ncbi_extended_client,
-    get_openalex_client,
-    get_semantic_scholar_client,
-    get_unpaywall_client,
-)
-
-# ═══════════════════════════════════════════════════════════════════
-# Europe PMC (fulltext, text mining)
-# ═══════════════════════════════════════════════════════════════════
-from .infrastructure.sources.europe_pmc import EuropePMCClient
-
-# ═══════════════════════════════════════════════════════════════════
-# NCBI Extended (Gene, PubChem, ClinVar)
-# ═══════════════════════════════════════════════════════════════════
-from .infrastructure.sources.ncbi_extended import NCBIExtendedClient
-
-# ═══════════════════════════════════════════════════════════════════
-# OpenURL / Institutional access
-# ═══════════════════════════════════════════════════════════════════
-from .infrastructure.sources.openurl import (
-    configure_openurl,
-    get_openurl_config,
-    get_openurl_link,
-)
-from .infrastructure.sources.openurl import (
-    list_presets as list_openurl_presets,
-)
-
-# ═══════════════════════════════════════════════════════════════════
-# Presentation - MCP primary surface
-# ═══════════════════════════════════════════════════════════════════
-from .presentation.mcp_server import (
-    create_server as create_mcp_server,
-)
-from .presentation.mcp_server import (
-    main as mcp_main,
-)
-
-__version__ = "0.5.14"
-
-__all__ = [
-    # ═══════════════════════════════════════════════════════════════════
+_LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     # Core Entrez API
-    # ═══════════════════════════════════════════════════════════════════
-    "LiteratureSearcher",
-    "EntrezBase",
-    "SearchStrategy",
-    "SearchMixin",
-    "PDFMixin",
-    "CitationMixin",
-    "BatchMixin",
-    "UtilsMixin",
-    "ICiteMixin",
-    # ═══════════════════════════════════════════════════════════════════
-    # NCBI Extended (Gene, PubChem, ClinVar)
-    # ═══════════════════════════════════════════════════════════════════
-    "NCBIExtendedClient",
-    # ═══════════════════════════════════════════════════════════════════
-    # Europe PMC (fulltext, text mining)
-    # ═══════════════════════════════════════════════════════════════════
-    "EuropePMCClient",
-    # ═══════════════════════════════════════════════════════════════════
-    # Multi-source clients (lazy-loaded)
-    # ═══════════════════════════════════════════════════════════════════
-    "get_semantic_scholar_client",
-    "get_openalex_client",
-    "get_europe_pmc_client",
-    "get_ncbi_extended_client",
-    "get_crossref_client",
-    "get_unpaywall_client",
-    "SearchSource",
-    # ═══════════════════════════════════════════════════════════════════
+    "LiteratureSearcher": ("pubmed_search.infrastructure.ncbi", "LiteratureSearcher"),
+    "EntrezBase": ("pubmed_search.infrastructure.ncbi", "EntrezBase"),
+    "SearchStrategy": ("pubmed_search.infrastructure.ncbi", "SearchStrategy"),
+    "SearchMixin": ("pubmed_search.infrastructure.ncbi", "SearchMixin"),
+    "PDFMixin": ("pubmed_search.infrastructure.ncbi", "PDFMixin"),
+    "CitationMixin": ("pubmed_search.infrastructure.ncbi", "CitationMixin"),
+    "BatchMixin": ("pubmed_search.infrastructure.ncbi", "BatchMixin"),
+    "UtilsMixin": ("pubmed_search.infrastructure.ncbi", "UtilsMixin"),
+    "ICiteMixin": ("pubmed_search.infrastructure.ncbi.icite", "ICiteMixin"),
+    # NCBI Extended / Europe PMC
+    "NCBIExtendedClient": ("pubmed_search.infrastructure.sources.ncbi_extended", "NCBIExtendedClient"),
+    "EuropePMCClient": ("pubmed_search.infrastructure.sources.europe_pmc", "EuropePMCClient"),
+    # Multi-source clients
+    "get_semantic_scholar_client": ("pubmed_search.infrastructure.sources", "get_semantic_scholar_client"),
+    "get_openalex_client": ("pubmed_search.infrastructure.sources", "get_openalex_client"),
+    "get_europe_pmc_client": ("pubmed_search.infrastructure.sources", "get_europe_pmc_client"),
+    "get_ncbi_extended_client": ("pubmed_search.infrastructure.sources", "get_ncbi_extended_client"),
+    "get_crossref_client": ("pubmed_search.infrastructure.sources", "get_crossref_client"),
+    "get_unpaywall_client": ("pubmed_search.infrastructure.sources", "get_unpaywall_client"),
+    "SearchSource": ("pubmed_search.infrastructure.sources", "SearchSource"),
     # Export functionality
-    # ═══════════════════════════════════════════════════════════════════
-    "export_ris",
-    "export_bibtex",
-    "export_csv",
-    "export_medline",
-    "export_json",
-    "export_articles",
-    "SUPPORTED_FORMATS",
-    "get_fulltext_links",
-    # ═══════════════════════════════════════════════════════════════════
-    # OpenURL / Institutional access
-    # ═══════════════════════════════════════════════════════════════════
-    "get_openurl_link",
-    "list_openurl_presets",
-    "configure_openurl",
-    "get_openurl_config",
-    # ═══════════════════════════════════════════════════════════════════
-    # Strategy & Query Analysis
-    # ═══════════════════════════════════════════════════════════════════
-    "SearchStrategyGenerator",
-    "QueryAnalyzer",
-    "QueryComplexity",
-    "QueryIntent",
-    "AnalyzedQuery",
-    "ResultAggregator",
-    "RankingConfig",
-    # ═══════════════════════════════════════════════════════════════════
-    # Domain Entities
-    # ═══════════════════════════════════════════════════════════════════
-    "UnifiedArticle",
-    # ═══════════════════════════════════════════════════════════════════
+    "export_ris": ("pubmed_search.application.export.formats", "export_ris"),
+    "export_bibtex": ("pubmed_search.application.export.formats", "export_bibtex"),
+    "export_csv": ("pubmed_search.application.export.formats", "export_csv"),
+    "export_medline": ("pubmed_search.application.export.formats", "export_medline"),
+    "export_json": ("pubmed_search.application.export.formats", "export_json"),
+    "export_articles": ("pubmed_search.application.export.formats", "export_articles"),
+    "SUPPORTED_FORMATS": ("pubmed_search.application.export.formats", "SUPPORTED_FORMATS"),
+    "get_fulltext_links": ("pubmed_search.application.export.links", "get_fulltext_links"),
+    # OpenURL / institutional access
+    "get_openurl_link": ("pubmed_search.infrastructure.sources.openurl", "get_openurl_link"),
+    "list_openurl_presets": ("pubmed_search.infrastructure.sources.openurl", "list_presets"),
+    "configure_openurl": ("pubmed_search.infrastructure.sources.openurl", "configure_openurl"),
+    "get_openurl_config": ("pubmed_search.infrastructure.sources.openurl", "get_openurl_config"),
+    # Strategy and query analysis
+    "SearchStrategyGenerator": ("pubmed_search.infrastructure.ncbi.strategy", "SearchStrategyGenerator"),
+    "QueryAnalyzer": ("pubmed_search.application.search.query_analyzer", "QueryAnalyzer"),
+    "QueryComplexity": ("pubmed_search.application.search.query_analyzer", "QueryComplexity"),
+    "QueryIntent": ("pubmed_search.application.search.query_analyzer", "QueryIntent"),
+    "AnalyzedQuery": ("pubmed_search.application.search.query_analyzer", "AnalyzedQuery"),
+    "ResultAggregator": ("pubmed_search.application.search.result_aggregator", "ResultAggregator"),
+    "RankingConfig": ("pubmed_search.application.search.result_aggregator", "RankingConfig"),
+    # Domain entities
+    "UnifiedArticle": ("pubmed_search.domain.entities.article", "UnifiedArticle"),
     # MCP primary surface
-    # ═══════════════════════════════════════════════════════════════════
-    "create_mcp_server",
-    "mcp_main",
-]
+    "create_mcp_server": ("pubmed_search.presentation.mcp_server.server", "create_server"),
+    "mcp_main": ("pubmed_search.presentation.mcp_server.server", "main"),
+}
+
+__all__ = list(_LAZY_EXPORTS)
+
+
+def __getattr__(name: str) -> Any:
+    """Resolve public root exports on first use."""
+    try:
+        module_name, attr_name = _LAZY_EXPORTS[name]
+    except KeyError as exc:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from exc
+
+    value = getattr(import_module(module_name), attr_name)
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    return sorted([*globals(), *_LAZY_EXPORTS])

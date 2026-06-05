@@ -321,6 +321,13 @@ class BrowserSessionFetcher:
 
         content_type = response.headers.get("Content-Type", "")
         if "application/pdf" in content_type.lower():
+            if response.content[:4] != b"%PDF":
+                return BrowserFetchResult(
+                    success=False,
+                    error="Broker response content is not a PDF",
+                    final_url=str(response.url),
+                    status_code=response.status_code,
+                )
             return BrowserFetchResult(
                 success=True,
                 content=response.content,
@@ -346,6 +353,13 @@ class BrowserSessionFetcher:
             content = base64.b64decode(encoded)
         except Exception as exc:
             return BrowserFetchResult(success=False, error=f"Invalid broker base64 payload: {exc}")
+        if content[:4] != b"%PDF":
+            return BrowserFetchResult(
+                success=False,
+                error="Broker response content is not a PDF",
+                final_url=data.get("final_url") or str(response.url),
+                status_code=data.get("status_code", response.status_code),
+            )
 
         return BrowserFetchResult(
             success=True,

@@ -1,38 +1,34 @@
 """
-PubMed Search MCP Server
+PubMed Search MCP server entrypoints.
 
-This module provides a Model Context Protocol (MCP) server for PubMed search.
-
-Usage as standalone server:
-    uv run python -m pubmed_search.presentation.mcp_server
-
-Or in mcp.json:
-    {
-        "servers": {
-            "pubmed-search": {
-                "type": "stdio",
-                "command": "uv",
-                "args": ["run", "pubmed-search-mcp"]
-            }
-        }
-    }
-
-Usage for integration:
-    from pubmed_search.presentation.mcp_server import create_server, register_all_tools
-
-    # Option 1: Create standalone server
-    server = create_server(email="your@email.com")
-    server.run()
-
-    # Option 2: Register tools to existing server
-    from pubmed_search import LiteratureSearcher
-    searcher = LiteratureSearcher(email="your@email.com")
-    register_all_tools(your_mcp_server, searcher)
+Exports are lazy to keep ``import pubmed_search.presentation.mcp_server`` cheap
+unless the caller actually creates a server or registers tools.
 """
 
 from __future__ import annotations
 
-from .server import create_server, main
-from .tools import register_all_tools
+from importlib import import_module
+from typing import Any
 
-__all__ = ["create_server", "main", "register_all_tools"]
+_LAZY_EXPORTS: dict[str, tuple[str, str]] = {
+    "create_server": ("pubmed_search.presentation.mcp_server.server", "create_server"),
+    "main": ("pubmed_search.presentation.mcp_server.server", "main"),
+    "register_all_tools": ("pubmed_search.presentation.mcp_server.tools", "register_all_tools"),
+}
+
+__all__ = list(_LAZY_EXPORTS)
+
+
+def __getattr__(name: str) -> Any:
+    try:
+        module_name, attr_name = _LAZY_EXPORTS[name]
+    except KeyError as exc:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from exc
+
+    value = getattr(import_module(module_name), attr_name)
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    return sorted([*globals(), *_LAZY_EXPORTS])

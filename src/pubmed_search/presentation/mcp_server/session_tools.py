@@ -28,11 +28,17 @@ if TYPE_CHECKING:
 
     from pubmed_search.application.session.manager import SessionManager
 
+from pubmed_search.shared.settings import load_settings
+
 from .tools.artifact_memory import artifact_locator
 from .tools.tool_runtime import safe_send_resource_updated
 
 logger = logging.getLogger(__name__)
 _JSON_MIME_TYPE = "application/json"
+DEFAULT_ARTIFACT_READ_MAX_CHARS = 200_000
+DEFAULT_SESSION_EVENT_LIMIT = 50
+DEFAULT_SESSION_HISTORY_LIMIT = 10
+LAST_SEARCH_RESOURCE_ARTICLE_LIMIT = 20
 ResourceFunc = TypeVar("ResourceFunc", bound=Callable[..., str])
 SESSION_RESOURCE_URIS = (
     "session://last-search",
@@ -78,6 +84,16 @@ def _json_error(**payload: Any) -> str:
     """Serialize an error payload consistently for session tools."""
     payload.setdefault("success", False)
     return json.dumps(payload, ensure_ascii=False)
+
+
+def _positive_limit(value: int, *, default: int) -> int:
+    return value if value > 0 else default
+
+
+def _allow_local_paths(requested: bool) -> bool:
+    if not requested:
+        return False
+    return bool(load_settings().artifact_include_local_paths)
 
 
 def _read_session_pmids_impl(
@@ -209,11 +225,12 @@ def _read_session_summary_impl(
     }
 
     if include_history:
+        history_limit = _positive_limit(history_limit, default=DEFAULT_SESSION_HISTORY_LIMIT)
         history = session.search_history[-history_limit:]
         total = len(session.search_history)
         formatted_history: list[dict[str, Any]] = []
         for index, search in enumerate(history):
-            actual_index = total - history_limit + index if total > history_limit else index
+            actual_index = max(total - history_limit, 0) + index
             formatted_history.append(
                 {
                     "index": actual_index,
@@ -244,6 +261,7 @@ def _read_session_log_impl(
     events = session_manager.get_session_event_log(limit=event_limit, kind=kind)
     history_rows: list[dict[str, Any]] = []
     if include_history:
+        history_limit = _positive_limit(history_limit, default=DEFAULT_SESSION_HISTORY_LIMIT)
         for search in session.search_history[-history_limit:]:
             history_rows.append(
                 {
@@ -289,6 +307,8 @@ def _read_session_artifacts_impl(
     if not session:
         return _json_error(error="No active session", hint="Run a tool that creates artifacts first")
 
+    limit = _positive_limit(limit, default=20)
+    include_local_paths = _allow_local_paths(include_local_paths)
     artifacts = session_manager.list_artifacts(session_id=session_id or None, tool=tool, kind=kind, limit=limit)
     return json.dumps(
         {
@@ -321,6 +341,8 @@ def _read_session_artifact_impl(
             error="artifact_id or artifact_uri is required for artifact action",
             hint="Use read_session(action='list_artifacts') first.",
         )
+    include_local_paths = _allow_local_paths(include_local_paths)
+    max_chars = _positive_limit(max_chars, default=DEFAULT_ARTIFACT_READ_MAX_CHARS)
     result = session_manager.read_artifact(
         artifact_id,
         artifact_uri=artifact_uri or None,
@@ -358,6 +380,7 @@ def _read_session_dispatch(
     query_filter: str | None = None,
     include_history: bool = False,
     history_limit: int = 10,
+    event_limit: int = DEFAULT_SESSION_EVENT_LIMIT,
 ) -> str:
     normalized_action = action.strip().lower().replace("-", "_")
     if normalized_action in {"pmids", "get_pmids", "search_pmids"}:
@@ -369,7 +392,7 @@ def _read_session_dispatch(
     if normalized_action in {"log", "logs", "activity", "events"}:
         return _read_session_log_impl(
             session_manager,
-            event_limit=history_limit if history_limit > 0 else 50,
+            event_limit=_positive_limit(event_limit, default=DEFAULT_SESSION_EVENT_LIMIT),
             kind=query_filter,
             include_history=include_history,
             history_limit=history_limit,
@@ -381,7 +404,7 @@ def _read_session_dispatch(
             tool=artifact_tool or query_filter,
             kind=artifact_kind or None,
             include_local_paths=include_local_paths,
-            limit=history_limit if history_limit > 0 else 20,
+            limit=history_limit,
         )
     if normalized_action in {"artifact", "read_artifact"}:
         return _read_session_artifact_impl(
@@ -398,7 +421,7 @@ def _read_session_dispatch(
         return _read_session_summary_impl(
             session_manager,
             include_history=include_history,
-            history_limit=history_limit,
+            history_limit=_positive_limit(history_limit, default=DEFAULT_SESSION_HISTORY_LIMIT),
         )
 
     return _json_error(
@@ -432,6 +455,7 @@ def register_session_tools(mcp: FastMCP, session_manager: SessionManager):
         query_filter: str | None = None,
         include_history: bool = False,
         history_limit: int = 10,
+        event_limit: int = DEFAULT_SESSION_EVENT_LIMIT,
     ) -> str:
         """Read session data through a single facade.
 
@@ -465,6 +489,7 @@ def register_session_tools(mcp: FastMCP, session_manager: SessionManager):
                 query_filter=query_filter,
                 include_history=include_history,
                 history_limit=history_limit,
+                event_limit=event_limit,
             )
         except Exception as exc:
             logger.exception(f"read_session failed: {exc}")
@@ -681,16 +706,24 @@ def register_session_resources(mcp: FastMCP, session_manager: SessionManager):
 
         last_search = session.search_history[-1]
         pmids = last_search.get("pmids", [])
-        cached_map, missing_pmids = session_manager.get_cached_article_map(pmids)
-        cached_articles = [cached_map[pmid] for pmid in pmids if pmid in cached_map]
+        returned_pmids = pmids[:LAST_SEARCH_RESOURCE_ARTICLE_LIMIT]
+        omitted_pmids = pmids[LAST_SEARCH_RESOURCE_ARTICLE_LIMIT:]
+        cached_map, missing_pmids = session_manager.get_cached_article_map(returned_pmids)
+        cached_articles = [cached_map[pmid] for pmid in returned_pmids if pmid in cached_map]
         return json.dumps(
             {
                 "active": True,
                 "query": last_search.get("query", ""),
                 "result_count": last_search.get("result_count", 0),
+                "total_pmid_count": len(pmids),
+                "returned_pmid_count": len(returned_pmids),
+                "resource_limit": LAST_SEARCH_RESOURCE_ARTICLE_LIMIT,
+                "truncated": bool(omitted_pmids),
                 "cached_results": cached_articles,
                 "cached_count": len(cached_articles),
                 "missing_pmids": missing_pmids,
+                "omitted_pmids": omitted_pmids,
+                "next_step": "Use get_session_pmids() plus get_cached_article() or read_session(action='cached') for more results.",
             },
             ensure_ascii=False,
         )

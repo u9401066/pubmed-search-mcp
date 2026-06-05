@@ -340,8 +340,8 @@ async def _search_europe_pmc(
 ) -> tuple[list[UnifiedArticle], int | None]:
     """Search Europe PMC and convert to UnifiedArticle.
 
-    Europe PMC's normalized format is close to PubMed, but mapping lives in
-    infrastructure/article_mapper.py rather than the domain entity.
+    Europe PMC's normalized format is close to PubMed, but deterministic mapping
+    lives in domain/services/article_mapper.py behind the compatibility wrapper.
     """
     try:
         results = await search_alternate_source(

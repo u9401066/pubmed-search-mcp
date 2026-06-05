@@ -578,6 +578,33 @@ class TestInstitutionalFulltextClient:
 
         assert outcome.success is False
 
+    async def test_direct_pdf_success_is_not_discarded(self):
+        from pubmed_search.infrastructure.sources.institutional_fulltext import (
+            InstitutionalFulltextClient,
+        )
+
+        probe = ProbeResult(
+            path="direct",
+            attempted=True,
+            success=True,
+            final_url="https://publisher.example/paper.pdf",
+            status_code=200,
+            content_class="pdf",
+            body=b"%PDF-1.4 content",
+            content_type="application/pdf",
+        )
+        with patch(
+            "pubmed_search.infrastructure.sources.institutional_fulltext.fetch_direct",
+            AsyncMock(return_value=probe),
+        ):
+            client = InstitutionalFulltextClient(config=EZProxyConfig(proxy_host="", cookie_file="", cookie_string=""))
+            outcome = await client.get_fulltext_by_doi("10.1/x")
+
+        assert outcome.success is True
+        assert outcome.content_class == "pdf"
+        assert outcome.final_url == "https://publisher.example/paper.pdf"
+        assert outcome.source_used == "direct"
+
     async def test_no_doi_returns_failure(self):
         from pubmed_search.infrastructure.sources.institutional_fulltext import (
             InstitutionalFulltextClient,

@@ -163,6 +163,29 @@ def _parse_pubmed_date(value: Any) -> tuple[int | None, date | None]:
     return year, pub_date
 
 
+def _append_unique_preserving_order(target: list[Any], values: list[Any]) -> None:
+    """Append values not already present, using a set when values are hashable."""
+    try:
+        seen: set[Any] | None = set(target)
+    except TypeError:
+        seen = None
+
+    for value in values:
+        if seen is not None:
+            try:
+                if value in seen:
+                    continue
+                seen.add(value)
+            except TypeError:
+                seen = None
+            else:
+                target.append(value)
+                continue
+
+        if value not in target:
+            target.append(value)
+
+
 class ArticleType(Enum):
     """Standard article types across sources."""
 
@@ -656,7 +679,7 @@ class UnifiedArticle:
 
         Expected format: Result from unified_search(), fetch_article_details(), or raw PubMed extraction
         """
-        from pubmed_search.infrastructure.sources.article_mapper import article_from_pubmed
+        from pubmed_search.domain.services.article_mapper import article_from_pubmed
 
         return article_from_pubmed(data)
 
@@ -667,7 +690,7 @@ class UnifiedArticle:
 
         Expected format: Single work from CrossRef /works/{doi} endpoint
         """
-        from pubmed_search.infrastructure.sources.article_mapper import article_from_crossref
+        from pubmed_search.domain.services.article_mapper import article_from_crossref
 
         return article_from_crossref(data)
 
@@ -678,35 +701,35 @@ class UnifiedArticle:
 
         Expected format: Single work from OpenAlex /works endpoint
         """
-        from pubmed_search.infrastructure.sources.article_mapper import article_from_openalex
+        from pubmed_search.domain.services.article_mapper import article_from_openalex
 
         return article_from_openalex(data)
 
     @classmethod
     def from_semantic_scholar(cls, data: dict[str, Any]) -> UnifiedArticle:
         """Create UnifiedArticle from Semantic Scholar API response."""
-        from pubmed_search.infrastructure.sources.article_mapper import article_from_semantic_scholar
+        from pubmed_search.domain.services.article_mapper import article_from_semantic_scholar
 
         return article_from_semantic_scholar(data)
 
     @classmethod
     def from_core(cls, data: dict[str, Any]) -> UnifiedArticle:
         """Create UnifiedArticle from CORE API normalized response."""
-        from pubmed_search.infrastructure.sources.article_mapper import article_from_core
+        from pubmed_search.domain.services.article_mapper import article_from_core
 
         return article_from_core(data)
 
     @classmethod
     def from_scopus(cls, data: dict[str, Any]) -> UnifiedArticle:
         """Create UnifiedArticle from Scopus normalized response."""
-        from pubmed_search.infrastructure.sources.article_mapper import article_from_scopus
+        from pubmed_search.domain.services.article_mapper import article_from_scopus
 
         return article_from_scopus(data)
 
     @classmethod
     def from_web_of_science(cls, data: dict[str, Any]) -> UnifiedArticle:
         """Create UnifiedArticle from Web of Science normalized response."""
-        from pubmed_search.infrastructure.sources.article_mapper import article_from_web_of_science
+        from pubmed_search.domain.services.article_mapper import article_from_web_of_science
 
         return article_from_web_of_science(data)
 
@@ -776,13 +799,9 @@ class UnifiedArticle:
 
         # Merge keywords/MeSH
         if other.keywords:
-            for kw in other.keywords:
-                if kw not in self.keywords:
-                    self.keywords.append(kw)
+            _append_unique_preserving_order(self.keywords, other.keywords)
         if other.mesh_terms:
-            for term in other.mesh_terms:
-                if term not in self.mesh_terms:
-                    self.mesh_terms.append(term)
+            _append_unique_preserving_order(self.mesh_terms, other.mesh_terms)
 
         # Merge OA info
         if self.oa_status == OpenAccessStatus.UNKNOWN:
@@ -839,9 +858,11 @@ class UnifiedArticle:
                     self.journal_metrics.i10_index = other.journal_metrics.i10_index
 
         # Track sources
+        existing_sources = {source.source for source in self.sources}
         for source in other.sources:
-            if source.source not in [s.source for s in self.sources]:
+            if source.source not in existing_sources:
                 self.sources.append(source)
+                existing_sources.add(source.source)
 
     def to_dict(self) -> dict[str, Any]:
         """
@@ -849,6 +870,7 @@ class UnifiedArticle:
 
         This is the format returned by MCP tools.
         """
+        best_oa_link = self.best_oa_link
         result: dict[str, Any] = {
             "title": self.title,
             "primary_source": self.primary_source,
@@ -878,7 +900,7 @@ class UnifiedArticle:
             "open_access": {
                 "is_oa": self.has_open_access,
                 "status": self.oa_status.value,
-                "best_link": self.best_oa_link.url if self.best_oa_link else None,
+                "best_link": best_oa_link.url if best_oa_link else None,
                 "links": [
                     {
                         "url": link.url,

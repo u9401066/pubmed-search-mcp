@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pubmed-search-mcp"
-version = "0.5.14"
+version = "0.5.15"
 description = "MCP server for PubMed literature search with MeSH, PICO, and intelligent query expansion"
 readme = "README.md"
 license = "Apache-2.0"
@@ -93,7 +93,7 @@ asyncio_default_fixture_loop_scope = "function"
 # -n 8: 限制 worker 數量避免 OOM（32 logical cores × ~1.5GB/worker > 48GB RAM）
 # pytest-benchmark 在 xdist 模式下自動停用（無需手動處理）
 # pytest-cov 完全支援 xdist（自 pytest-cov 2.0+）
-addopts = "-n 4 --timeout=60"
+addopts = "--timeout=60"
 markers = [
     "integration: marks tests as integration tests (may make real API calls)",
     "slow: marks tests as slow running",
@@ -132,7 +132,7 @@ dev = [
     "vulture>=2.14",
     "types-requests>=2.32.4.20260107",
     "types-cachetools>=6.2.0",
-    "types-PyYAML>=6.0",
+    "types-pyyaml>=6.0",
     "pytest-xdist>=3.8.0",
     "pre-commit>=3.8",
 ]

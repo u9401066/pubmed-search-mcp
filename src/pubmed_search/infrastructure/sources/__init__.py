@@ -37,21 +37,12 @@ from typing import Any, Literal, cast
 
 from pubmed_search.shared.async_utils import RetryableOperationError
 from pubmed_search.shared.exceptions import RateLimitError
-from pubmed_search.shared.settings import load_settings
 from pubmed_search.shared.source_contracts import (
     SourceAdapterCall,
     SourceAdapterError,
     SourceAdapterResult,
     format_source_adapter_error,
     gather_source_adapter_calls,
-)
-
-from .registry import (
-    SourceDefinition,
-    SourceRegistry,
-    SourceSelection,
-    SourceSelectionError,
-    get_source_registry,
 )
 
 logger = logging.getLogger(__name__)
@@ -74,6 +65,35 @@ _last_alternate_source_errors: ContextVar[dict[str, SourceAdapterError] | None] 
     "last_alternate_source_errors",
     default=None,
 )
+_REGISTRY_EXPORTS: dict[str, tuple[str, str]] = {
+    "SourceDefinition": ("pubmed_search.infrastructure.sources.registry", "SourceDefinition"),
+    "SourceRegistry": ("pubmed_search.infrastructure.sources.registry", "SourceRegistry"),
+    "SourceSelection": ("pubmed_search.infrastructure.sources.registry", "SourceSelection"),
+    "SourceSelectionError": ("pubmed_search.infrastructure.sources.registry", "SourceSelectionError"),
+}
+
+
+def __getattr__(name: str) -> Any:
+    if name in _REGISTRY_EXPORTS:
+        from importlib import import_module
+
+        module_name, attr_name = _REGISTRY_EXPORTS[name]
+        value = getattr(import_module(module_name), attr_name)
+        globals()[name] = value
+        return value
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def _load_settings():
+    from pubmed_search.shared.settings import load_settings
+
+    return load_settings()
+
+
+def get_source_registry():
+    from .registry import get_source_registry as _get_source_registry
+
+    return _get_source_registry()
 
 
 def _remember_alternate_source_error(source: str, error: SourceAdapterError | None) -> None:
@@ -118,7 +138,7 @@ def get_semantic_scholar_client(api_key: str | None = None):
     if _semantic_scholar_client is None:
         from .semantic_scholar import SemanticScholarClient
 
-        settings = load_settings()
+        settings = _load_settings()
         _semantic_scholar_client = SemanticScholarClient(api_key=api_key or settings.semantic_scholar_api_key)
     return _semantic_scholar_client
 
@@ -129,7 +149,7 @@ def get_openalex_client(email: str | None = None, api_key: str | None = None):
     if _openalex_client is None:
         from .openalex import OpenAlexClient
 
-        settings = load_settings()
+        settings = _load_settings()
 
         _openalex_client = OpenAlexClient(
             email=email or settings.ncbi_email,
@@ -154,7 +174,7 @@ def get_core_client(api_key: str | None = None):
     if _core_client is None:
         from .core import COREClient
 
-        settings = load_settings()
+        settings = _load_settings()
         _core_client = COREClient(api_key=api_key or settings.core_api_key)
     return _core_client
 
@@ -165,7 +185,7 @@ def get_scopus_client(api_key: str | None = None, insttoken: str | None = None):
     if _scopus_client is None:
         from .scopus import ScopusClient
 
-        settings = load_settings()
+        settings = _load_settings()
         resolved_api_key = api_key or settings.scopus_api_key
         resolved_insttoken = insttoken or settings.scopus_insttoken
         _scopus_client = ScopusClient(api_key=resolved_api_key, insttoken=resolved_insttoken)
@@ -178,7 +198,7 @@ def get_web_of_science_client(api_key: str | None = None):
     if _web_of_science_client is None:
         from .web_of_science import WebOfScienceClient
 
-        settings = load_settings()
+        settings = _load_settings()
         resolved_api_key = api_key or settings.web_of_science_api_key
         _web_of_science_client = WebOfScienceClient(api_key=resolved_api_key)
     return _web_of_science_client
@@ -190,7 +210,7 @@ def get_ncbi_extended_client(email: str | None = None, api_key: str | None = Non
     if _ncbi_extended_client is None:
         from .ncbi_extended import NCBIExtendedClient
 
-        settings = load_settings()
+        settings = _load_settings()
 
         _ncbi_extended_client = NCBIExtendedClient(
             email=email or settings.ncbi_email,
@@ -205,7 +225,7 @@ def get_crossref_client(email: str | None = None):
     if _crossref_client is None:
         from .crossref import CrossRefClient
 
-        settings = load_settings()
+        settings = _load_settings()
 
         _crossref_client = CrossRefClient(
             email=email or settings.crossref_email,
@@ -219,7 +239,7 @@ def get_unpaywall_client(email: str | None = None):
     if _unpaywall_client is None:
         from .unpaywall import UnpaywallClient
 
-        settings = load_settings()
+        settings = _load_settings()
 
         _unpaywall_client = UnpaywallClient(
             email=email or settings.unpaywall_email or settings.ncbi_email,
@@ -233,7 +253,7 @@ def get_openurl_builder(resolver_base: str | None = None, preset: str | None = N
     if _openurl_builder is None:
         from .openurl import OpenURLBuilder, get_openurl_config
 
-        settings = load_settings()
+        settings = _load_settings()
 
         # Try preset first, then resolver_base, then env var
         if preset:

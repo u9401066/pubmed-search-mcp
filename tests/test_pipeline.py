@@ -527,13 +527,14 @@ class TestActionSearch:
         executor = PipelineExecutor(searcher=mock_searcher)
         step = PipelineStep(id="s1", action="search", params={"query": "test", "sources": "pubmed", "limit": 10})
 
-        with patch("pubmed_search.domain.entities.article.UnifiedArticle") as MockUA:
+        with patch("pubmed_search.application.pipeline.executor.article_from_pubmed") as mock_article_from_pubmed:
             fake = FakeArticle(title="Paper 1", pmid="111")
-            MockUA.from_pubmed.return_value = fake
+            mock_article_from_pubmed.return_value = fake
             result = await executor._action_search(step, {})
 
         assert result.ok
         mock_searcher.search.assert_called_once()
+        assert result.articles == [fake, fake]
 
     async def test_search_no_query_fails(self):
         executor = PipelineExecutor()
@@ -567,13 +568,14 @@ class TestActionSearch:
                 },
                 clear=False,
             ),
-            patch("pubmed_search.domain.entities.article.UnifiedArticle") as MockUA,
+            patch("pubmed_search.application.pipeline.executor.article_from_scopus") as mock_scopus,
+            patch("pubmed_search.application.pipeline.executor.article_from_web_of_science") as mock_wos,
             patch("pubmed_search.application.search.result_aggregator.ResultAggregator") as MockRA,
         ):
             scopus_article = FakeArticle(title="Scopus Paper", doi="10.1/scopus", primary_source="scopus")
             wos_article = FakeArticle(title="WoS Paper", doi="10.1/wos", primary_source="web_of_science")
-            MockUA.from_scopus.return_value = scopus_article
-            MockUA.from_web_of_science.return_value = wos_article
+            mock_scopus.return_value = scopus_article
+            mock_wos.return_value = wos_article
             MockRA.return_value.aggregate.return_value = ([scopus_article, wos_article], MagicMock())
 
             result = await executor._action_search(step, {})
@@ -582,6 +584,25 @@ class TestActionSearch:
         assert len(result.articles) == 2
         assert result.metadata["source_api_counts"] == {"scopus": 1, "web_of_science": 1}
         assert alternate_search.await_count == 2
+
+    async def test_search_uses_injected_source_key_resolver(self):
+        alternate_search = AsyncMock(return_value=[{"title": "OpenAlex Paper", "doi": "10.1/openalex"}])
+        executor = PipelineExecutor(
+            alternate_search_fn=alternate_search,
+            source_key_resolver=lambda value: {"oa": "openalex"}.get(value, value),
+        )
+        step = PipelineStep(
+            id="s1",
+            action="search",
+            params={"query": "test", "sources": "oa", "limit": 10},
+        )
+
+        result = await executor._action_search(step, {})
+
+        assert result.ok
+        assert result.metadata["source_api_counts"] == {"openalex": 1}
+        alternate_search.assert_awaited_once()
+        assert alternate_search.await_args.kwargs["source"] == "openalex"
 
 
 # =========================================================================
@@ -670,9 +691,9 @@ class TestFullPipelineExecution:
             execution=PipelineExecutionSettings(limit=10),
         )
 
-        with patch("pubmed_search.domain.entities.article.UnifiedArticle") as MockUA:
+        with patch("pubmed_search.application.pipeline.executor.article_from_pubmed") as mock_article_from_pubmed:
             fake = FakeArticle(title="Paper 1", pmid="111")
-            MockUA.from_pubmed.return_value = fake
+            mock_article_from_pubmed.return_value = fake
 
             with patch("pubmed_search.application.search.result_aggregator.ResultAggregator") as MockRA:
                 MockRA.return_value.rank.return_value = [fake]

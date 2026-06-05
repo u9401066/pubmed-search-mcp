@@ -1,117 +1,69 @@
 """
-Unified Search Gateway
+Search application exports.
 
-This module provides intelligent query analysis and result aggregation
-for multi-source academic search.
-
-Key Components:
-- QueryAnalyzer: Analyzes search queries to determine optimal strategy
-- ResultAggregator: Combines and ranks results from multiple sources
-
-Architecture:
-    User Query
-        │
-        ▼
-    ┌──────────────────┐
-    │  QueryAnalyzer   │  ← Determines complexity, detects PICO
-    └────────┬─────────┘
-             │
-             ▼
-    ┌──────────────────┐
-    │  DispatchMatrix  │  ← Selects sources based on query type
-    └────────┬─────────┘
-             │
-    ┌────────┴────────┐
-    ▼        ▼        ▼
-  PubMed  CrossRef  OpenAlex  ← Parallel queries
-    │        │        │
-    └────────┴────────┘
-             │
-             ▼
-    ┌──────────────────┐
-    │ ResultAggregator │  ← Dedup + Multi-dimensional ranking
-    └────────┬─────────┘
-             │
-             ▼
-    UnifiedArticle[]
+The search package exposes query analysis, validation, ranking, aggregation,
+and semantic enhancement. Exports are lazy so local-only utilities such as
+``QueryAnalyzer`` do not import multi-source HTTP clients.
 """
 
 from __future__ import annotations
 
-from .query_analyzer import (
-    AnalyzedQuery,
-    QueryAnalyzer,
-    QueryComplexity,
-    QueryIntent,
-)
-from .query_validator import (
-    QueryValidationResult,
-    QueryValidator,
-    validate_query,
-)
-from .ranking_algorithms import (
-    BM25Corpus,
-    MMRResult,
-    RRFResult,
-    SourceDisagreement,
-    analyze_source_disagreement,
-    bm25_score,
-    bm25_score_normalized,
-    mmr_diversify,
-    reciprocal_rank_fusion,
-)
-from .reproducibility import (
-    ReproducibilityScore,
-    calculate_reproducibility,
-)
-from .result_aggregator import (
-    AggregationStats,
-    RankingConfig,
-    RankingDimension,
-    ResultAggregator,
-)
-from .semantic_enhancer import (
-    EnhancedQuery,
-    ExpandedTerm,
-    SearchPlan,
-    SemanticEnhancer,
-    enhance_query,
-    get_semantic_enhancer,
-)
+from importlib import import_module
+from typing import Any
 
-__all__ = [
-    # Query Analysis
-    "QueryAnalyzer",
-    "QueryComplexity",
-    "QueryIntent",
-    "AnalyzedQuery",
-    # Semantic Enhancement (Phase 3)
-    "SemanticEnhancer",
-    "EnhancedQuery",
-    "ExpandedTerm",
-    "SearchPlan",
-    "enhance_query",
-    "get_semantic_enhancer",
-    # Query Validation
-    "QueryValidator",
-    "QueryValidationResult",
-    "validate_query",
-    # Result Aggregation
-    "ResultAggregator",
-    "RankingConfig",
-    "RankingDimension",
-    "AggregationStats",
-    # v0.4.2: Advanced Ranking Algorithms
-    "BM25Corpus",
-    "bm25_score",
-    "bm25_score_normalized",
-    "RRFResult",
-    "reciprocal_rank_fusion",
-    "MMRResult",
-    "mmr_diversify",
-    "SourceDisagreement",
-    "analyze_source_disagreement",
-    # v0.4.2: Reproducibility
-    "ReproducibilityScore",
-    "calculate_reproducibility",
-]
+_LAZY_EXPORTS: dict[str, tuple[str, str]] = {
+    # Query analysis
+    "QueryAnalyzer": ("pubmed_search.application.search.query_analyzer", "QueryAnalyzer"),
+    "QueryComplexity": ("pubmed_search.application.search.query_analyzer", "QueryComplexity"),
+    "QueryIntent": ("pubmed_search.application.search.query_analyzer", "QueryIntent"),
+    "AnalyzedQuery": ("pubmed_search.application.search.query_analyzer", "AnalyzedQuery"),
+    # Semantic enhancement
+    "SemanticEnhancer": ("pubmed_search.application.search.semantic_enhancer", "SemanticEnhancer"),
+    "EnhancedQuery": ("pubmed_search.application.search.semantic_enhancer", "EnhancedQuery"),
+    "ExpandedTerm": ("pubmed_search.application.search.semantic_enhancer", "ExpandedTerm"),
+    "SearchPlan": ("pubmed_search.application.search.semantic_enhancer", "SearchPlan"),
+    "enhance_query": ("pubmed_search.application.search.semantic_enhancer", "enhance_query"),
+    "get_semantic_enhancer": ("pubmed_search.application.search.semantic_enhancer", "get_semantic_enhancer"),
+    # Query validation
+    "QueryValidator": ("pubmed_search.application.search.query_validator", "QueryValidator"),
+    "QueryValidationResult": ("pubmed_search.application.search.query_validator", "QueryValidationResult"),
+    "validate_query": ("pubmed_search.application.search.query_validator", "validate_query"),
+    # Result aggregation
+    "ResultAggregator": ("pubmed_search.application.search.result_aggregator", "ResultAggregator"),
+    "RankingConfig": ("pubmed_search.application.search.result_aggregator", "RankingConfig"),
+    "RankingDimension": ("pubmed_search.application.search.result_aggregator", "RankingDimension"),
+    "AggregationStats": ("pubmed_search.application.search.result_aggregator", "AggregationStats"),
+    # Ranking algorithms
+    "BM25Corpus": ("pubmed_search.application.search.ranking_algorithms", "BM25Corpus"),
+    "bm25_score": ("pubmed_search.application.search.ranking_algorithms", "bm25_score"),
+    "bm25_score_normalized": ("pubmed_search.application.search.ranking_algorithms", "bm25_score_normalized"),
+    "RRFResult": ("pubmed_search.application.search.ranking_algorithms", "RRFResult"),
+    "reciprocal_rank_fusion": ("pubmed_search.application.search.ranking_algorithms", "reciprocal_rank_fusion"),
+    "MMRResult": ("pubmed_search.application.search.ranking_algorithms", "MMRResult"),
+    "mmr_diversify": ("pubmed_search.application.search.ranking_algorithms", "mmr_diversify"),
+    "SourceDisagreement": ("pubmed_search.application.search.ranking_algorithms", "SourceDisagreement"),
+    "analyze_source_disagreement": (
+        "pubmed_search.application.search.ranking_algorithms",
+        "analyze_source_disagreement",
+    ),
+    # Reproducibility
+    "ReproducibilityScore": ("pubmed_search.application.search.reproducibility", "ReproducibilityScore"),
+    "calculate_reproducibility": ("pubmed_search.application.search.reproducibility", "calculate_reproducibility"),
+}
+
+__all__ = list(_LAZY_EXPORTS)
+
+
+def __getattr__(name: str) -> Any:
+    try:
+        module_name, attr_name = _LAZY_EXPORTS[name]
+    except KeyError as exc:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from exc
+
+    value = getattr(import_module(module_name), attr_name)
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    return sorted([*globals(), *_LAZY_EXPORTS])

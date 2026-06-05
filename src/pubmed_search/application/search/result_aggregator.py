@@ -500,14 +500,15 @@ class ResultAggregator:
 
         # === Step 2: Calculate dimension scores for each article ===
         article_dim_scores: dict[str, dict[str, float]] = {}
+        use_bm25_relevance = bool(config.use_bm25 and query and ra and max_bm25 > 0)
         for article in articles:
             key = _article_key(article)
-            scores = self._calculate_dimension_scores(article, config, query)
-
-            # Replace relevance with BM25 if enabled
-            if config.use_bm25 and query and ra and max_bm25 > 0:
+            bm25_relevance = None
+            if use_bm25_relevance:
                 raw_bm25 = bm25_scores.get(key, 0.0)
-                scores["relevance"] = min(raw_bm25 / max_bm25, 1.0)
+                bm25_relevance = min(raw_bm25 / max_bm25, 1.0)
+
+            scores = self._calculate_dimension_scores(article, config, query, relevance_score=bm25_relevance)
 
             article_dim_scores[key] = scores
 
@@ -792,10 +793,12 @@ class ResultAggregator:
         article: UnifiedArticle,
         config: RankingConfig,
         query: str | None,
+        *,
+        relevance_score: float | None = None,
     ) -> dict[str, float]:
         """Calculate scores for each ranking dimension."""
         return {
-            "relevance": self._calculate_relevance(article, query),
+            "relevance": relevance_score if relevance_score is not None else self._calculate_relevance(article, query),
             "quality": self._calculate_quality(article, config),
             "recency": self._calculate_recency(article, config),
             "impact": self._calculate_impact(article),

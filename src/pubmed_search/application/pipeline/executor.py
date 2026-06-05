@@ -14,8 +14,10 @@ import asyncio
 import logging
 import re
 from collections import Counter, defaultdict
-from collections.abc import Callable, Coroutine
+from collections.abc import Callable, Coroutine, Mapping
 from difflib import get_close_matches
+from functools import lru_cache
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 from pubmed_search.domain.entities.pipeline import (
@@ -25,7 +27,7 @@ from pubmed_search.domain.entities.pipeline import (
     PipelineStep,
     StepResult,
 )
-from pubmed_search.infrastructure.sources.article_mapper import (
+from pubmed_search.domain.services.article_mapper import (
     article_from_core,
     article_from_europe_pmc,
     article_from_openalex,
@@ -41,10 +43,21 @@ if TYPE_CHECKING:
 
 # Type alias for alternate source search function (dependency injection)
 AlternateSearchFn = Callable[..., Coroutine[Any, Any, list[dict[str, Any]]]]
+SourceKeyResolver = Callable[[str], str | None]
 
 logger = logging.getLogger(__name__)
 _VARIABLE_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_.-]*)\}")
 _FULL_VARIABLE_PATTERN = re.compile(r"^\$\{([A-Za-z_][A-Za-z0-9_.-]*)\}$")
+_PIPELINE_ALTERNATE_SOURCES = frozenset(
+    {
+        "semantic_scholar",
+        "openalex",
+        "europe_pmc",
+        "core",
+        "scopus",
+        "web_of_science",
+    }
+)
 
 _ARTICLE_TYPE_FUZZY_CUTOFF = 0.82
 _ARTICLE_TYPE_ALIASES: dict[str, str] = {
@@ -76,9 +89,11 @@ class PipelineExecutor:
         self,
         searcher: Any = None,
         alternate_search_fn: AlternateSearchFn | None = None,
+        source_key_resolver: SourceKeyResolver | None = None,
     ) -> None:
         self._searcher = searcher
         self._alternate_search_fn = alternate_search_fn
+        self._source_key_resolver = source_key_resolver
 
     # =====================================================================
     # Public API
@@ -338,8 +353,6 @@ class PipelineExecutor:
 
     async def _action_search(self, step: PipelineStep, inputs: dict[str, StepResult]) -> StepResult:
         """Execute parallel multi-source literature search."""
-        from pubmed_search.infrastructure.sources.registry import get_source_registry
-
         query = self._resolve_query(step, inputs)
         if not query:
             return StepResult(
@@ -357,26 +370,17 @@ class PipelineExecutor:
         all_articles: list[UnifiedArticle] = []
         coros: list[Any] = []
         source_order: list[str] = []
-        registry = get_source_registry()
 
         for source in source_list:
-            resolved_source = registry.resolve_key(source) or source
+            resolved_source = self._resolve_source_key(source)
             if resolved_source == "pubmed" and self._searcher:
                 coros.append(self._search_pubmed(query, limit, min_year, max_year, step.params))
                 source_order.append("pubmed")
                 continue
 
-            definition = registry.get(resolved_source)
-            if (
-                definition
-                and definition.key != "pubmed"
-                and definition.selectable_in_unified
-                and definition.supports_primary_search
-                and definition.alternate_search_runner
-                and registry.is_enabled(definition.key)
-            ):
-                coros.append(self._search_alternate(definition.key, query, limit, min_year, max_year))
-                source_order.append(definition.key)
+            if resolved_source in _PIPELINE_ALTERNATE_SOURCES and self._alternate_search_fn:
+                coros.append(self._search_alternate(resolved_source, query, limit, min_year, max_year))
+                source_order.append(resolved_source)
 
         # Track per-source API return counts
         source_api_counts: dict[str, int] = {}
@@ -407,6 +411,13 @@ class PipelineExecutor:
             pmids=pmids,
             metadata={"query": query, "source_api_counts": source_api_counts},
         )
+
+    def _resolve_source_key(self, source: str) -> str:
+        """Normalize a requested source key without depending on infrastructure."""
+        source_key = source.strip().lower()
+        if self._source_key_resolver is None:
+            return source_key
+        return self._source_key_resolver(source_key) or source_key
 
     async def _search_pubmed(
         self,
@@ -890,7 +901,7 @@ class PipelineExecutor:
             return None, "unknown"
 
         valid_map = cls._article_type_valid_map()
-        alias_map = {**valid_map, **_ARTICLE_TYPE_ALIASES}
+        alias_map = cls._article_type_alias_map()
         if key in alias_map:
             match_kind = "exact" if key in valid_map else "alias"
             return alias_map[key], match_kind
@@ -916,14 +927,20 @@ class PipelineExecutor:
         return re.sub(r"[^a-z0-9]+", "", str(raw).strip().lower())
 
     @staticmethod
-    def _article_type_valid_map() -> dict[str, str]:
+    @lru_cache(maxsize=1)
+    def _article_type_valid_map() -> Mapping[str, str]:
         from pubmed_search.domain.entities.article import ArticleType
 
         mapping: dict[str, str] = {}
         for article_type in ArticleType:
             value = article_type.value
             mapping[re.sub(r"[^a-z0-9]+", "", value)] = value
-        return mapping
+        return MappingProxyType(mapping)
+
+    @staticmethod
+    @lru_cache(maxsize=1)
+    def _article_type_alias_map() -> Mapping[str, str]:
+        return MappingProxyType({**PipelineExecutor._article_type_valid_map(), **_ARTICLE_TYPE_ALIASES})
 
     @classmethod
     def _excluded_article_example(cls, article: UnifiedArticle, reasons: list[str]) -> dict[str, Any]:

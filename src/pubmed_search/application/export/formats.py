@@ -18,17 +18,67 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-# For LaTeX special character handling
-try:
-    from pylatexenc.latexencode import unicode_to_latex
-
-    HAS_PYLATEXENC = True
-except ImportError:
-    HAS_PYLATEXENC = False
+# Updated when LaTeX conversion is first requested. Kept for compatibility with
+# callers that introspect the module attribute.
+HAS_PYLATEXENC = False
 
 logger = logging.getLogger(__name__)
 
 SUPPORTED_FORMATS = ["ris", "bibtex", "csv", "medline", "json"]
+
+
+def _stringify(value: Any) -> str:
+    if value is None:
+        return ""
+    return str(value)
+
+
+def _normalize_author(author: Any) -> str:
+    if isinstance(author, str):
+        return author
+    if isinstance(author, dict):
+        for key in ("name", "full_name", "display_name", "author_string"):
+            value = author.get(key)
+            if value:
+                return str(value)
+        given = author.get("given_name") or author.get("given")
+        family = author.get("family_name") or author.get("family")
+        return " ".join(str(part) for part in (family, given) if part)
+    return str(author) if author else ""
+
+
+def _normalize_string_list(value: Any) -> list[str]:
+    if not value:
+        return []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        return [_stringify(item) for item in value if item not in (None, "")]
+    return [_stringify(value)]
+
+
+def _normalize_article_for_export(article: dict[str, Any]) -> dict[str, Any]:
+    raw_identifiers = article.get("identifiers")
+    identifiers: dict[str, Any] = raw_identifiers if isinstance(raw_identifiers, dict) else {}
+    raw_urls = article.get("urls")
+    urls: dict[str, Any] = raw_urls if isinstance(raw_urls, dict) else {}
+    normalized = dict(article)
+    normalized["pmid"] = _stringify(article.get("pmid") or identifiers.get("pmid"))
+    normalized["doi"] = _stringify(article.get("doi") or identifiers.get("doi"))
+    normalized["pmc_id"] = _stringify(
+        article.get("pmc_id") or article.get("pmc") or identifiers.get("pmc") or identifiers.get("pmc_id")
+    )
+    normalized["authors"] = [_normalize_author(author) for author in article.get("authors", [])]
+    normalized["keywords"] = _normalize_string_list(article.get("keywords"))
+    normalized["mesh_terms"] = _normalize_string_list(article.get("mesh_terms"))
+    normalized["publication_types"] = _normalize_string_list(
+        article.get("publication_types") or article.get("article_type")
+    )
+    normalized["pub_date"] = _stringify(article.get("pub_date") or article.get("publication_date"))
+    normalized["pubmed_url"] = _stringify(article.get("pubmed_url") or urls.get("pubmed"))
+    normalized["doi_url"] = _stringify(article.get("doi_url") or urls.get("doi"))
+    normalized["pmc_url"] = _stringify(article.get("pmc_url") or urls.get("pmc"))
+    return normalized
 
 
 def _convert_to_latex(text: str) -> str:
@@ -40,7 +90,13 @@ def _convert_to_latex(text: str) -> str:
     if not text:
         return text
 
-    if HAS_PYLATEXENC:
+    global HAS_PYLATEXENC
+    try:
+        from pylatexenc.latexencode import unicode_to_latex
+    except ImportError:
+        HAS_PYLATEXENC = False
+    else:
+        HAS_PYLATEXENC = True
         return str(unicode_to_latex(text))
 
     # Fallback: basic character mapping
@@ -162,7 +218,8 @@ def export_ris(articles: list[dict[str, Any]], include_abstract: bool = True) ->
     """
     lines = []
 
-    for article in articles:
+    for raw_article in articles:
+        article = _normalize_article_for_export(raw_article)
         # Type of reference (JOUR = Journal Article)
         lines.append("TY  - JOUR")
 
@@ -304,7 +361,8 @@ def export_bibtex(articles: list[dict[str, Any]], include_abstract: bool = True)
     """
     entries = []
 
-    for article in articles:
+    for raw_article in articles:
+        article = _normalize_article_for_export(raw_article)
         # Generate citation key: FirstAuthorLastNameYear_PMID
         authors = article.get("authors", [])
         year = article.get("year", "")
@@ -470,7 +528,8 @@ def export_csv(articles: list[dict[str, Any]], include_abstract: bool = True, de
     writer = csv.DictWriter(output, fieldnames=columns, delimiter=delimiter, extrasaction="ignore")
     writer.writeheader()
 
-    for article in articles:
+    for raw_article in articles:
+        article = _normalize_article_for_export(raw_article)
         authors = article.get("authors", [])
         first_author = authors[0] if authors else ""
 
@@ -532,7 +591,8 @@ def export_medline(articles: list[dict[str, Any]]) -> str:
     """
     lines = []
 
-    for article in articles:
+    for raw_article in articles:
+        article = _normalize_article_for_export(raw_article)
         # PMID
         if article.get("pmid"):
             lines.append(f"PMID- {article['pmid']}")
@@ -616,7 +676,8 @@ def export_json(articles: list[dict[str, Any]], include_abstract: bool = True, p
         "articles": [],
     }
 
-    for article in articles:
+    for raw_article in articles:
+        article = _normalize_article_for_export(raw_article)
         export_article = {
             "pmid": article.get("pmid", ""),
             "title": article.get("title", ""),

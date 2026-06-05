@@ -32,12 +32,6 @@ from pubmed_search.application.export import (
     summarize_access,
     write_literature_notes,
 )
-from pubmed_search.infrastructure.ncbi.citation_exporter import (
-    OFFICIAL_FORMATS,
-    CitationResult,
-    export_citations_official,
-)
-from pubmed_search.shared.settings import load_settings
 
 from ._common import InputNormalizer, ResponseFormatter, get_session_manager
 
@@ -45,11 +39,20 @@ if TYPE_CHECKING:
     from mcp.server.fastmcp import FastMCP
 
     from pubmed_search.infrastructure.ncbi import LiteratureSearcher
+    from pubmed_search.infrastructure.ncbi.citation_exporter import CitationResult
 
 logger = logging.getLogger(__name__)
 
 # Export directory for prepared files
 EXPORT_DIR = Path(tempfile.gettempdir()) / "pubmed_exports"
+OFFICIAL_FORMATS = ("ris", "medline", "csl")
+
+
+async def export_citations_official(pmids: list[str], format: str = "ris"):
+    """Lazy wrapper around the official NCBI citation exporter."""
+    from pubmed_search.infrastructure.ncbi.citation_exporter import export_citations_official as official_export
+
+    return await official_export(pmids, format=format)  # type: ignore[arg-type]
 
 
 def register_export_tools(mcp: FastMCP, searcher: LiteratureSearcher):
@@ -250,6 +253,8 @@ def register_export_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             )
 
         try:
+            from pubmed_search.shared.settings import load_settings
+
             settings = load_settings()
             target_dir = resolve_note_export_dir(
                 output_dir,

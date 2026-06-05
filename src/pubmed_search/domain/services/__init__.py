@@ -1,10 +1,10 @@
-"""Domain service interface exports.
+"""Domain service exports.
 
 Design:
-        This package exposes abstract service contracts used by the domain and
-        application layers to depend on capabilities instead of concrete providers.
+        This package exposes deterministic domain-facing services and abstract
+        service contracts used by the domain and application layers.
 
 Maintenance:
-        Keep only interfaces and domain-facing protocols here. Adapter selection
-        and implementation wiring belong in infrastructure and composition roots.
+        Keep adapter selection, network calls, persistence, and implementation
+        wiring in infrastructure and composition roots.
 """

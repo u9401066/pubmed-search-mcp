@@ -4,6 +4,7 @@ Tests for Session management and Article caching.
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta
 
 from pubmed_search.application.session import (
@@ -161,6 +162,36 @@ class TestArticleCache:
         retrieved = cache2.get("99999")
         assert retrieved is not None
         assert retrieved.title == "Persistent Article"
+
+    async def test_cache_reads_legacy_unwrapped_article_payload_with_extra_fields(self, temp_dir):
+        """Legacy cache payloads can be raw article dicts with extra metadata fields."""
+        cache_file = temp_dir / "article_cache.json"
+        cache_file.write_text(
+            json.dumps(
+                {
+                    "12345": {
+                        "pmid": "12345",
+                        "title": "Legacy Article",
+                        "authors": ["Author"],
+                        "abstract": "",
+                        "journal": "Journal",
+                        "journal_abbrev": "J",
+                        "year": "2024",
+                        "identifiers": {"pmid": "12345", "doi": "10.1000/legacy"},
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        cache = ArticleCache(cache_dir=str(temp_dir))
+        retrieved = cache.get("12345")
+
+        assert retrieved is not None
+        assert retrieved.title == "Legacy Article"
+        payload = retrieved.as_article_dict()
+        assert payload["journal_abbrev"] == "J"
+        assert payload["identifiers"]["doi"] == "10.1000/legacy"
 
     async def test_cache_miss(self):
         """Test cache miss returns None."""

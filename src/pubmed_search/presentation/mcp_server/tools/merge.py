@@ -1,8 +1,10 @@
 """
-Merge Tool - Combine and deduplicate search results.
+Legacy merge helper - combine and deduplicate ad hoc search-result batches.
 
-Tools:
-- merge_search_results: Merge multiple searches, remove duplicates, identify high-relevance
+``merge_search_results`` is intentionally not part of the primary MCP tool
+surface. It remains importable for backwards compatibility and direct tests;
+new agent workflows should use ``unified_search`` sources/options or pipeline
+``merge`` steps.
 """
 
 from __future__ import annotations

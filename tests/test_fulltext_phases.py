@@ -115,6 +115,44 @@ async def test_fetch_phase_resolves_landing_page_pdf_link():
 
 
 @pytest.mark.asyncio
+async def test_fetch_phase_preserves_retryable_error_from_landing_page_pdf_candidate():
+    landing_url = "https://resolver.example.edu/openurl?id=1"
+    pdf_url = "https://resolver.example.edu/downloads/paper.pdf"
+    landing_page = b"""
+    <html>
+        <head>
+            <meta name=\"citation_pdf_url\" content=\"/downloads/paper.pdf\" />
+        </head>
+    </html>
+    """
+    client = _MockAsyncClient(
+        {
+            landing_url: _MockStreamResponse(headers={"Content-Type": "text/html"}, chunks=[landing_page]),
+            pdf_url: _MockStreamResponse(
+                status_code=503,
+                headers={"Content-Type": "text/html", "Retry-After": "7"},
+                chunks=[b"temporarily unavailable"],
+            ),
+        }
+    )
+    phase = FulltextFetchPhase(
+        client_getter=AsyncMock(return_value=client),
+        execution_policy_factory=MagicMock(),
+        transport_kernel=MagicMock(),
+        max_pdf_size=1024 * 1024,
+        chunk_size=8192,
+        retryable_status_codes={429, 500, 502, 503, 504},
+        max_concurrent=5,
+    )
+
+    result = await phase.download_from_url_impl(landing_url, PDFSource.INSTITUTIONAL_RESOLVER)
+
+    assert result.success is False
+    assert result.error == "HTTP 503"
+    assert result.retry_after == 7
+
+
+@pytest.mark.asyncio
 async def test_extract_phase_structured_fulltext_uses_client_factory():
     mock_client = MagicMock()
     mock_client.get_fulltext_xml = AsyncMock(return_value="<article />")

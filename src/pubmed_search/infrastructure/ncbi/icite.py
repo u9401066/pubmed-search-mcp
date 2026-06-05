@@ -13,18 +13,34 @@ API Documentation: https://icite.od.nih.gov/api
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import httpx
 from cachetools import TTLCache
 
-from pubmed_search.shared.async_utils import get_shared_async_client
+if TYPE_CHECKING:
+    import httpx
+else:
+
+    class _HttpxProxy:
+        def __getattr__(self, name: str) -> Any:
+            import httpx as httpx_module
+
+            return getattr(httpx_module, name)
+
+    httpx = _HttpxProxy()
 
 logger = logging.getLogger(__name__)
 
 ICITE_API_BASE = "https://icite.od.nih.gov/api/pubs"
 MAX_PMIDS_PER_REQUEST = 200  # iCite API limit
 ICITE_CACHE_TTL = 1800  # 30 minutes cache for citation metrics
+
+
+def get_shared_async_client() -> Any:
+    """Lazy patch seam for the shared async HTTP client."""
+    from pubmed_search.shared.async_utils import get_shared_async_client as _get_shared_async_client
+
+    return _get_shared_async_client()
 
 
 class ICiteMixin:

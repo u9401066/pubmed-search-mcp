@@ -1,20 +1,34 @@
 """
-Presentation Layer - User Interface and External APIs
+Presentation layer entrypoints.
 
-Contains:
-- mcp_server: Model Context Protocol server and tools
-- api: REST API (for Copilot Studio)
+This module keeps presentation imports lazy so importing the package does not
+initialize the MCP server or auxiliary HTTP dependencies.
 """
 
 from __future__ import annotations
 
-from .mcp_server import create_server, main
+from importlib import import_module
+from typing import Any
 
-# Alias for consistency
-create_mcp_server = create_server
+_LAZY_EXPORTS: dict[str, tuple[str, str]] = {
+    "create_server": ("pubmed_search.presentation.mcp_server.server", "create_server"),
+    "create_mcp_server": ("pubmed_search.presentation.mcp_server.server", "create_server"),
+    "main": ("pubmed_search.presentation.mcp_server.server", "main"),
+}
 
-__all__ = [
-    "create_mcp_server",
-    "create_server",
-    "main",
-]
+__all__ = list(_LAZY_EXPORTS)
+
+
+def __getattr__(name: str) -> Any:
+    try:
+        module_name, attr_name = _LAZY_EXPORTS[name]
+    except KeyError as exc:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from exc
+
+    value = getattr(import_module(module_name), attr_name)
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    return sorted([*globals(), *_LAZY_EXPORTS])

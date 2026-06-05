@@ -18,8 +18,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-import yaml
-
 from pubmed_search.application.pipeline.validator import parse_and_validate_config
 from pubmed_search.presentation.mcp_server.tools._common import ResponseFormatter
 
@@ -76,6 +74,8 @@ def _save_pipeline_impl(
         )
 
     try:
+        import yaml
+
         raw_data = yaml.safe_load(config)
         if not isinstance(raw_data, dict):
             expected = "mapping/object"
@@ -229,6 +229,8 @@ def _load_pipeline_impl(*, tool_name: str, source: str) -> str:
         )
     except ValueError as exc:
         return ResponseFormatter.error(str(exc), tool_name=tool_name)
+
+    import yaml
 
     config_dict = _config_to_display_dict(config)
     yaml_str = yaml.dump(config_dict, allow_unicode=True, default_flow_style=False, sort_keys=False)

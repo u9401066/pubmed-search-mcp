@@ -287,6 +287,9 @@ class FulltextFetchPhase:
                         )
                         if candidate_result.success and candidate_result.is_pdf:
                             return candidate_result
+                        status_code = self.extract_status_code(candidate_result.error)
+                        if status_code in self._retryable_status_codes:
+                            return candidate_result
 
                     return DownloadResult(
                         success=False,

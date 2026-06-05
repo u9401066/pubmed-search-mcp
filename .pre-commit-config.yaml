@@ -79,7 +79,7 @@ repos:
   #    Run `uv run pre-commit autoupdate` to bump
   # ─────────────────────────────────────────────────────────────
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.8
+    rev: v0.14.14
     hooks:
       - id: ruff
         name: ruff lint (auto-fix)

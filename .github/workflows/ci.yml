@@ -54,5 +54,8 @@ jobs:
       - name: Async test consistency
         run: uv run python scripts/check_async_tests.py
 
+      - name: Mypy
+        run: uv run mypy src/ tests/
+
       - name: Pytest
-        run: uv run pytest -q
+        run: uv run pytest -q -m "not integration"

@@ -633,10 +633,21 @@ class FulltextDownloader:
 
             if not browser_enabled or not self._should_try_browser_fallback(link, result):
                 return result
+        elif not link.is_direct_pdf:
+            result = await self._await_with_deadline(
+                self._download_from_url(link.url, link.source, headers=request_headers),
+                deadline=deadline,
+                total_timeout=total_timeout,
+                phase=f"landing-page PDF resolution from {link.source.display_name}",
+            )
+            if result.success and result.is_pdf:
+                return result
+            if not browser_enabled:
+                return result
         elif not browser_enabled:
             return DownloadResult(
                 success=False,
-                error="Institutional/landing-page fetch requires browser-session assist",
+                error="Institutional PDF fetch requires browser-session assist",
                 url=link.url,
                 source=link.source,
             )

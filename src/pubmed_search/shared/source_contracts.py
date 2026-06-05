@@ -17,8 +17,6 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar, cast
 
-import httpx
-
 from pubmed_search.shared.async_utils import (
     CircuitBreaker,
     CircuitBreakerPolicy,
@@ -30,6 +28,17 @@ from pubmed_search.shared.async_utils import (
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
+
+    import httpx
+else:
+
+    class _HttpxProxy:
+        def __getattr__(self, name: str) -> Any:
+            import httpx as httpx_module
+
+            return getattr(httpx_module, name)
+
+    httpx = _HttpxProxy()
 
 logger = logging.getLogger(__name__)
 

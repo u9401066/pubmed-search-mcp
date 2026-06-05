@@ -294,6 +294,22 @@ class TestCrossrefLinks:
         assert links[0].is_direct_pdf is True
         assert links[0].source == PDFSource.CROSSREF
 
+    @pytest.mark.asyncio
+    async def test_doi_url_is_normalized_and_quoted_for_crossref_lookup(self):
+        d = FulltextDownloader()
+        mock_response = MagicMock()
+        mock_response.status_code = 404
+        mock_response.json.return_value = {"message": {}}
+        mock_client = AsyncMock()
+        mock_client.get.return_value = mock_response
+
+        with patch.object(d, "_get_client", new_callable=AsyncMock, return_value=mock_client):
+            await d._get_crossref_links("https://doi.org/10.1001/jama.2025.27019")
+
+        requested_url = mock_client.get.await_args.args[0]
+        assert requested_url.startswith("https://api.crossref.org/works/10.1001%2Fjama.2025.27019?")
+        assert "https://doi.org" not in requested_url
+
 
 # ============================================================
 # _get_pmc_links
@@ -417,6 +433,35 @@ class TestDownloadPdf:
             result = await d.download_pdf(doi="10.1234/test")
             assert result.success is True
             assert result.is_pdf is True
+
+    @pytest.mark.asyncio
+    async def test_non_direct_landing_page_uses_http_resolver_when_browser_disabled(self):
+        d = FulltextDownloader()
+        link = PDFLink(
+            url="https://publisher.example/article",
+            source=PDFSource.CROSSREF,
+            is_direct_pdf=False,
+        )
+
+        with patch.object(d, "_download_from_url", new_callable=AsyncMock) as mock_download:
+            mock_download.return_value = DownloadResult(
+                success=True,
+                content=b"%PDF-1.4 content",
+                source=PDFSource.CROSSREF,
+                url="https://publisher.example/article.pdf",
+            )
+
+            result = await d._download_candidate(
+                link,
+                article_metadata={},
+                allow_browser_session=False,
+                deadline=None,
+                total_timeout=None,
+            )
+
+        assert result.success is True
+        assert result.is_pdf is True
+        mock_download.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_all_sources_fail(self):

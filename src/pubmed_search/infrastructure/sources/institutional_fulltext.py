@@ -38,6 +38,10 @@ def _success_with_body(probe: ProbeResult) -> bool:
     return bool(probe.success and probe.body and probe.content_class == "fulltext_html")
 
 
+def _success_with_pdf(probe: ProbeResult) -> bool:
+    return bool(probe.success and probe.body and probe.content_class == "pdf")
+
+
 class InstitutionalFulltextClient:
     """Retrieve fulltext through direct DOI or EZproxy proxied access."""
 
@@ -55,6 +59,13 @@ class InstitutionalFulltextClient:
             return InstitutionalFulltextResult(success=False, error="no DOI")
 
         direct = await fetch_direct(doi)
+        if _success_with_pdf(direct):
+            return InstitutionalFulltextResult(
+                success=True,
+                final_url=direct.final_url,
+                source_used="direct",
+                content_class=direct.content_class,
+            )
         extracted = self._extract_if_html(direct)
         if extracted is not None:
             return InstitutionalFulltextResult(
@@ -68,6 +79,13 @@ class InstitutionalFulltextClient:
 
         if self._config.is_configured:
             ezp = await fetch_ezproxy(doi, config=self._config)
+            if _success_with_pdf(ezp):
+                return InstitutionalFulltextResult(
+                    success=True,
+                    final_url=ezp.final_url,
+                    source_used="ezproxy",
+                    content_class=ezp.content_class,
+                )
             extracted = self._extract_if_html(ezp)
             if extracted is not None:
                 return InstitutionalFulltextResult(

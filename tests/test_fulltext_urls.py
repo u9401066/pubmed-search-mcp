@@ -11,6 +11,8 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 import pytest
 
+pytestmark = pytest.mark.integration
+
 
 class TestURLFormats:
     """Test URL formats for each fulltext source."""

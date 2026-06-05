@@ -153,6 +153,13 @@ class CacheBackend(ABC):
     def set_entry(self, key: str, entry: StoredCacheEntry) -> int:
         raise NotImplementedError
 
+    def set_entries(self, entries: list[tuple[str, StoredCacheEntry]]) -> int:
+        """Store multiple entries, returning total evictions."""
+        evicted = 0
+        for key, entry in entries:
+            evicted += self.set_entry(key, entry)
+        return evicted
+
     @abstractmethod
     def delete(self, key: str) -> bool:
         raise NotImplementedError
@@ -268,6 +275,24 @@ class JsonFileCacheBackend(CacheBackend):
             if key in self._entries:
                 del self._entries[key]
             self._entries[key] = entry
+
+            evicted = 0
+            while self._max_entries is not None and len(self._entries) > self._max_entries:
+                self._entries.popitem(last=False)
+                evicted += 1
+
+            self._save()
+            return evicted
+
+    def set_entries(self, entries: list[tuple[str, StoredCacheEntry]]) -> int:
+        with self._lock:
+            if not entries:
+                return 0
+
+            for key, entry in entries:
+                if key in self._entries:
+                    del self._entries[key]
+                self._entries[key] = entry
 
             evicted = 0
             while self._max_entries is not None and len(self._entries) > self._max_entries:
@@ -400,18 +425,15 @@ class CacheStore(Generic[T]):
         metadata_factory: Callable[[str, T], dict[str, Any] | None] | None = None,
     ) -> int:
         pairs = entries.items() if isinstance(entries, dict) else entries
-        warmed = 0
-        evicted = 0
+        stored_entries: list[tuple[str, StoredCacheEntry]] = []
 
         for key, value in pairs:
             metadata = metadata_factory(key, value) if metadata_factory else None
-            evicted += self._backend.set_entry(
-                self._normalize_key(key),
-                self._build_entry(value, ttl=ttl, metadata=metadata),
-            )
-            warmed += 1
+            stored_entries.append((self._normalize_key(key), self._build_entry(value, ttl=ttl, metadata=metadata)))
 
+        warmed = len(stored_entries)
         if warmed:
+            evicted = self._backend.set_entries(stored_entries)
             self._stats.warmups += warmed
             self._stats.evictions += evicted
         return warmed

@@ -1,46 +1,47 @@
 """
-Application Layer - Use Cases and Business Logic Orchestration
+Application layer public exports.
 
-Contains:
-- search: Search use cases (query analysis, result aggregation)
-- discovery: Citation discovery
-- export: Citation export services
-- session: Session management
-- timeline: Research timeline building (v0.2.8)
+Exports are lazy so importing one use-case subpackage does not initialize
+unrelated search, timeline, source, or settings dependencies.
 """
 
 from __future__ import annotations
 
-from .export.formats import SUPPORTED_FORMATS, export_articles
-from .export.links import (
-    get_fulltext_links,
-    get_fulltext_links_with_lookup,
-    summarize_access,
-)
-from .search.query_analyzer import (
-    AnalyzedQuery,
-    QueryAnalyzer,
-    QueryComplexity,
-    QueryIntent,
-)
-from .search.result_aggregator import RankingConfig, ResultAggregator
-from .timeline import MilestoneDetector, TimelineBuilder
+from importlib import import_module
+from typing import Any
 
-__all__ = [
+_LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     # Search
-    "QueryAnalyzer",
-    "QueryComplexity",
-    "QueryIntent",
-    "AnalyzedQuery",
-    "ResultAggregator",
-    "RankingConfig",
+    "QueryAnalyzer": ("pubmed_search.application.search.query_analyzer", "QueryAnalyzer"),
+    "QueryComplexity": ("pubmed_search.application.search.query_analyzer", "QueryComplexity"),
+    "QueryIntent": ("pubmed_search.application.search.query_analyzer", "QueryIntent"),
+    "AnalyzedQuery": ("pubmed_search.application.search.query_analyzer", "AnalyzedQuery"),
+    "ResultAggregator": ("pubmed_search.application.search.result_aggregator", "ResultAggregator"),
+    "RankingConfig": ("pubmed_search.application.search.result_aggregator", "RankingConfig"),
     # Export
-    "export_articles",
-    "SUPPORTED_FORMATS",
-    "get_fulltext_links",
-    "get_fulltext_links_with_lookup",
-    "summarize_access",
-    # Timeline (v0.2.8)
-    "TimelineBuilder",
-    "MilestoneDetector",
-]
+    "export_articles": ("pubmed_search.application.export.formats", "export_articles"),
+    "SUPPORTED_FORMATS": ("pubmed_search.application.export.formats", "SUPPORTED_FORMATS"),
+    "get_fulltext_links": ("pubmed_search.application.export.links", "get_fulltext_links"),
+    "get_fulltext_links_with_lookup": ("pubmed_search.application.export.links", "get_fulltext_links_with_lookup"),
+    "summarize_access": ("pubmed_search.application.export.links", "summarize_access"),
+    # Timeline
+    "TimelineBuilder": ("pubmed_search.application.timeline", "TimelineBuilder"),
+    "MilestoneDetector": ("pubmed_search.application.timeline", "MilestoneDetector"),
+}
+
+__all__ = list(_LAZY_EXPORTS)
+
+
+def __getattr__(name: str) -> Any:
+    try:
+        module_name, attr_name = _LAZY_EXPORTS[name]
+    except KeyError as exc:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from exc
+
+    value = getattr(import_module(module_name), attr_name)
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    return sorted([*globals(), *_LAZY_EXPORTS])

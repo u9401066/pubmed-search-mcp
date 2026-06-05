@@ -8,6 +8,8 @@ import json
 
 import pytest
 
+from pubmed_search.domain.entities.article import Author, UnifiedArticle
+
 
 class TestExportFormats:
     """Tests for export format functions."""
@@ -133,6 +135,23 @@ class TestExportFormats:
         result = export_ris([])
         assert result == ""
 
+    async def test_export_ris_accepts_unified_article_payload(self):
+        from pubmed_search.application.export.formats import export_ris
+
+        payload = UnifiedArticle(
+            title="Unified Payload",
+            primary_source="pubmed",
+            pmid="12345",
+            doi="10.1000/unified",
+            authors=[Author(full_name="Smith John")],
+        ).to_dict()
+
+        result = export_ris([payload])
+
+        assert "AU  - Smith, John" in result
+        assert "AN  - 12345" in result
+        assert "DO  - 10.1000/unified" in result
+
 
 class TestExportBibTeX:
     """Tests for BibTeX export."""
@@ -176,6 +195,24 @@ class TestExportBibTeX:
         result = export_bibtex([article])
         assert "@article{" in result
 
+    async def test_export_bibtex_accepts_unified_article_payload(self):
+        from pubmed_search.application.export.formats import export_bibtex
+
+        payload = UnifiedArticle(
+            title="Unified Payload",
+            primary_source="pubmed",
+            pmid="12345",
+            doi="10.1000/unified",
+            authors=[Author(full_name="Smith John")],
+            year=2024,
+        ).to_dict()
+
+        result = export_bibtex([payload])
+
+        assert "@article{Smith2024_12345" in result
+        assert "author = {Smith, John}" in result
+        assert "doi = {10.1000/unified}" in result
+
 
 class TestExportCSV:
     """Tests for CSV export."""
@@ -216,6 +253,23 @@ class TestExportCSV:
         result = export_csv([])
         # Should still have headers or be empty
         assert result is not None
+
+    async def test_export_csv_accepts_unified_article_payload(self):
+        from pubmed_search.application.export.formats import export_csv
+
+        payload = UnifiedArticle(
+            title="Unified Payload",
+            primary_source="pubmed",
+            pmid="12345",
+            doi="10.1000/unified",
+            authors=[Author(full_name="Smith John")],
+        ).to_dict()
+
+        result = export_csv([payload])
+
+        assert "Smith John" in result
+        assert "12345" in result
+        assert "10.1000/unified" in result
 
 
 class TestExportMEDLINE:
@@ -275,6 +329,27 @@ class TestExportJSON:
         parsed = json.loads(result)
         assert parsed["articles"] == []
         assert parsed["article_count"] == 0
+
+    async def test_export_json_accepts_unified_article_payload(self):
+        from pubmed_search.application.export.formats import export_json
+
+        payload = UnifiedArticle(
+            title="Unified Payload",
+            primary_source="pubmed",
+            pmid="12345",
+            doi="10.1000/unified",
+            pmc="PMC12345",
+            authors=[Author(full_name="Smith John")],
+        ).to_dict()
+
+        result = export_json([payload])
+        parsed = json.loads(result)
+
+        article = parsed["articles"][0]
+        assert article["pmid"] == "12345"
+        assert article["doi"] == "10.1000/unified"
+        assert article["pmc_id"] == "PMC12345"
+        assert article["authors"] == ["Smith John"]
 
 
 class TestExportArticles:

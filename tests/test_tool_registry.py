@@ -48,6 +48,11 @@ class TestListRegisteredTools:
         result = list_registered_tools()
         assert "unified_search" in result["search"]
 
+    async def test_legacy_merge_tool_is_not_primary_surface(self):
+        result = list_registered_tools()
+        all_tools = {tool for tools in result.values() for tool in tools}
+        assert "merge_search_results" not in all_tools
+
     async def test_all_categories_present(self):
         result = list_registered_tools()
         expected = {
@@ -220,6 +225,24 @@ class TestValidateToolRegistry:
 
         result = validate_tool_registry(mcp)
         assert result["registered"] == ["unified_search"]
+
+    async def test_runtime_registration_matches_tool_registry(self):
+        from mcp.server.fastmcp import FastMCP
+
+        from pubmed_search.infrastructure.ncbi import LiteratureSearcher
+        from pubmed_search.presentation.mcp_server.session_tools import register_session_tools
+        from pubmed_search.presentation.mcp_server.tools import register_all_tools
+
+        mcp = FastMCP(name="registry-sync-test")
+        searcher = LiteratureSearcher(email="test@example.com")
+        session_manager = MagicMock()
+
+        register_all_tools(mcp, searcher)
+        register_session_tools(mcp, session_manager)
+        result = validate_tool_registry(mcp)
+
+        assert result["valid"] is True
+        assert "merge_search_results" not in result["registered"]
 
 
 # ============================================================

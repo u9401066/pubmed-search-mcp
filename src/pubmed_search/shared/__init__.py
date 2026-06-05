@@ -1,101 +1,70 @@
 """
-Core module for PubMed Search MCP.
+Shared utilities and exceptions.
 
-Provides:
-- Unified exception hierarchy
-- Async utilities for efficient API calls
-- Caching utilities
-- Type definitions
-
-Python 3.12+ features:
-- Type parameter syntax (PEP 695)
-- ExceptionGroup support (PEP 654)
-- asyncio.TaskGroup (PEP 654)
-- @override decorator support
+The shared package intentionally keeps root exports lazy. Importing a specific
+submodule, for example ``pubmed_search.shared.async_utils``, should not also
+load settings/pydantic or every shared helper.
 """
 
 from __future__ import annotations
 
-from .article_identity import canonical_article_key, normalize_article_doi, normalize_article_title
-from .async_utils import (
-    # Fault tolerance
-    CircuitBreaker,
-    # Rate limiting
-    RateLimiter,
-    batch_process,
-    # Shared HTTP client
-    close_shared_async_client,
-    # Parallel execution
-    gather_with_errors,
-    get_rate_limiter,
-    get_shared_async_client,
-    # Utilities
-    timeout_with_fallback,
-)
-from .exceptions import (
-    # API errors
-    APIError,
-    # Configuration errors
-    ConfigurationError,
-    # Data errors
-    DataError,
-    ErrorCategory,
-    ErrorContext,
-    ErrorSeverity,
-    InvalidParameterError,
-    InvalidPMIDError,
-    InvalidQueryError,
-    NetworkError,
-    NotFoundError,
-    ParseError,
-    # Base
-    PubMedSearchError,
-    RateLimitError,
-    ServiceUnavailableError,
-    # Validation errors
-    ValidationError,
-    # Utilities
-    create_error_group,
-    get_retry_delay,
-    is_retryable_error,
-)
-from .settings import AppSettings, get_settings, load_settings, reset_settings_cache
+from importlib import import_module
+from typing import Any
 
-__all__ = [
+_LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     # Exceptions
-    "PubMedSearchError",
-    "ErrorContext",
-    "ErrorSeverity",
-    "ErrorCategory",
-    "APIError",
-    "RateLimitError",
-    "NetworkError",
-    "ServiceUnavailableError",
-    "ValidationError",
-    "InvalidPMIDError",
-    "InvalidQueryError",
-    "InvalidParameterError",
-    "DataError",
-    "NotFoundError",
-    "ParseError",
-    "ConfigurationError",
-    "create_error_group",
-    "is_retryable_error",
-    "get_retry_delay",
+    "PubMedSearchError": ("pubmed_search.shared.exceptions", "PubMedSearchError"),
+    "ErrorContext": ("pubmed_search.shared.exceptions", "ErrorContext"),
+    "ErrorSeverity": ("pubmed_search.shared.exceptions", "ErrorSeverity"),
+    "ErrorCategory": ("pubmed_search.shared.exceptions", "ErrorCategory"),
+    "APIError": ("pubmed_search.shared.exceptions", "APIError"),
+    "RateLimitError": ("pubmed_search.shared.exceptions", "RateLimitError"),
+    "NetworkError": ("pubmed_search.shared.exceptions", "NetworkError"),
+    "ServiceUnavailableError": ("pubmed_search.shared.exceptions", "ServiceUnavailableError"),
+    "ValidationError": ("pubmed_search.shared.exceptions", "ValidationError"),
+    "InvalidPMIDError": ("pubmed_search.shared.exceptions", "InvalidPMIDError"),
+    "InvalidQueryError": ("pubmed_search.shared.exceptions", "InvalidQueryError"),
+    "InvalidParameterError": ("pubmed_search.shared.exceptions", "InvalidParameterError"),
+    "DataError": ("pubmed_search.shared.exceptions", "DataError"),
+    "NotFoundError": ("pubmed_search.shared.exceptions", "NotFoundError"),
+    "ParseError": ("pubmed_search.shared.exceptions", "ParseError"),
+    "ConfigurationError": ("pubmed_search.shared.exceptions", "ConfigurationError"),
+    "create_error_group": ("pubmed_search.shared.exceptions", "create_error_group"),
+    "is_retryable_error": ("pubmed_search.shared.exceptions", "is_retryable_error"),
+    "get_retry_delay": ("pubmed_search.shared.exceptions", "get_retry_delay"),
     # Async utilities
-    "RateLimiter",
-    "get_rate_limiter",
-    "gather_with_errors",
-    "batch_process",
-    "CircuitBreaker",
-    "get_shared_async_client",
-    "close_shared_async_client",
-    "timeout_with_fallback",
-    "canonical_article_key",
-    "normalize_article_doi",
-    "normalize_article_title",
-    "AppSettings",
-    "get_settings",
-    "load_settings",
-    "reset_settings_cache",
-]
+    "RateLimiter": ("pubmed_search.shared.async_utils", "RateLimiter"),
+    "get_rate_limiter": ("pubmed_search.shared.async_utils", "get_rate_limiter"),
+    "gather_with_errors": ("pubmed_search.shared.async_utils", "gather_with_errors"),
+    "batch_process": ("pubmed_search.shared.async_utils", "batch_process"),
+    "CircuitBreaker": ("pubmed_search.shared.async_utils", "CircuitBreaker"),
+    "get_shared_async_client": ("pubmed_search.shared.async_utils", "get_shared_async_client"),
+    "close_shared_async_client": ("pubmed_search.shared.async_utils", "close_shared_async_client"),
+    "timeout_with_fallback": ("pubmed_search.shared.async_utils", "timeout_with_fallback"),
+    # Article identity
+    "canonical_article_key": ("pubmed_search.shared.article_identity", "canonical_article_key"),
+    "normalize_article_doi": ("pubmed_search.shared.article_identity", "normalize_article_doi"),
+    "normalize_article_title": ("pubmed_search.shared.article_identity", "normalize_article_title"),
+    # Settings
+    "AppSettings": ("pubmed_search.shared.settings", "AppSettings"),
+    "get_settings": ("pubmed_search.shared.settings", "get_settings"),
+    "load_settings": ("pubmed_search.shared.settings", "load_settings"),
+    "reset_settings_cache": ("pubmed_search.shared.settings", "reset_settings_cache"),
+}
+
+__all__ = list(_LAZY_EXPORTS)
+
+
+def __getattr__(name: str) -> Any:
+    try:
+        module_name, attr_name = _LAZY_EXPORTS[name]
+    except KeyError as exc:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from exc
+
+    value = getattr(import_module(module_name), attr_name)
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    return sorted([*globals(), *_LAZY_EXPORTS])

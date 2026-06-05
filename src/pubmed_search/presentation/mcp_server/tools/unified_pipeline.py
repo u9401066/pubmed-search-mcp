@@ -144,11 +144,12 @@ async def _execute_pipeline_mode(
         )
 
     # Execute
-    from pubmed_search.infrastructure.sources import search_alternate_source
+    from pubmed_search.infrastructure.sources import get_source_registry, search_alternate_source
 
     executor = PipelineExecutor(
         searcher=searcher,
         alternate_search_fn=search_alternate_source,
+        source_key_resolver=get_source_registry().resolve_key,
     )
     prepared_config = config
     prepare_config = getattr(executor, "prepare_config", None)
