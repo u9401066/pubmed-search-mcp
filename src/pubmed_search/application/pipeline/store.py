@@ -392,7 +392,7 @@ class PipelineStore:
         Returns:
             List of PipelineMeta, sorted by updated date (newest first).
         """
-        results: list[PipelineMeta] = []
+        indexed_results: list[tuple[int, PipelineMeta]] = []
 
         scopes_to_check = []
         if scope == "workspace":
@@ -414,15 +414,19 @@ class PipelineStore:
                     continue  # workspace already seen, skip global duplicate
                 if tag and tag.lower() not in [t.lower() for t in meta.tags]:
                     continue
-                results.append(meta)
+                indexed_results.append((len(indexed_results), meta))
                 seen_names.add(name)
 
-        # Sort by updated (newest first)
-        results.sort(
-            key=lambda m: m.updated or datetime.min.replace(tzinfo=timezone.utc),
+        # Sort by updated (newest first). Preserve newest save order when
+        # consecutive writes share the same timestamp resolution.
+        indexed_results.sort(
+            key=lambda item: (
+                item[1].updated or datetime.min.replace(tzinfo=timezone.utc),
+                item[0],
+            ),
             reverse=True,
         )
-        return results
+        return [meta for _, meta in indexed_results]
 
     def delete(self, name: str) -> tuple[PipelineScope, int]:
         """Delete a pipeline and its history.
