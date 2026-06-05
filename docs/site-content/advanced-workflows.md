@@ -78,7 +78,8 @@ stay compact while the reusable payload remains available for later reads.
 read_session(action="list_artifacts")
 read_session(action="artifact", artifact_id="...")
 read_session(action="artifact", artifact_uri="artifact://...")
-read_session(action="artifact", artifact_id="...", artifact_file="payload.json", offset=0, max_chars=200000)
+read_session(action="artifact", artifact_uri="artifact://...", artifact_file="audit.json")
+read_session(action="artifact", artifact_uri="artifact://...", artifact_file="results.json", offset=0, max_chars=200000)
 ```
 
 Artifacts are query memory, not a second search. Reading them does not rerun
@@ -86,6 +87,13 @@ external source calls. Local filesystem paths are redacted by default because
 remote clients cannot read the server host path. Set
 `PUBMED_ARTIFACT_INCLUDE_LOCAL_PATHS=true` only for local MCP clients that really
 need `local_path` and `manifest_path`.
+
+For `unified_search`, artifact files are intentionally richer than the immediate
+MCP response. Read `audit.json` first for completeness warnings, then
+`query_strategy.json` for the executed source/query plan, then `results.json` or
+`results.toon` for the full article list. This keeps response tokens small while
+leaving enough evidence for repeated agent reads, sandboxed clients, and future
+remote artifact backends.
 
 ## Verification Status
 

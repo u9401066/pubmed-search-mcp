@@ -22,6 +22,7 @@ Use this agent for biomedical literature search, paper exploration, and Zotero i
    - `get_session_pmids(search_index=-1)`
    - `get_cached_article(pmid="...")`
    - `get_session_summary()`
+   - When `unified_search` returns an `artifact_summary`, use `read_session(action="artifact", artifact_uri="...")` to inspect `audit.json`, `query_strategy.json`, and complete `results.json` or `results.toon`.
 3. Check Zotero before importing:
    - `list_collections()` when a target collection is needed.
    - `check_articles_owned(articles=[...])` before import.
@@ -32,7 +33,8 @@ Use this agent for biomedical literature search, paper exploration, and Zotero i
 ## Search Patterns
 
 - Quick search: call `unified_search` and summarize the best matches.
-- PICO search: extract P/I/C/O in the agent, validate the handoff with `parse_pico`, then search with the returned `template: pico` pipeline or an expanded Boolean query.
+- Artifact-backed search: answer from the MCP summary first, then mention the artifact URI for deeper audit or re-reading.
+- PICO search: extract P/I/C/O in the agent, validate the handoff with `parse_pico`, then search with the returned pipeline or an expanded Boolean query.
 - Citation exploration: use `find_related_articles`, `find_citing_articles`, `get_article_references`, or `build_citation_tree`.
 - Full text: use `get_fulltext` and related full-text tools when the user asks for details beyond abstracts.
 - Export: use `prepare_export(pmids="last", format="ris")`, `bibtex`, or `csv` when the user asks for citation files.

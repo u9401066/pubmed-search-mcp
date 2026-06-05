@@ -125,7 +125,7 @@
     },
     "result_evaluation": {
       "label": "Result Evaluation",
-      "nextInstruction": "get_citation_metrics / get_session_summary",
+      "nextInstruction": "read_session artifact audit / get_citation_metrics / get_session_summary",
       "tools": [
         "get_citation_metrics",
         "read_session",

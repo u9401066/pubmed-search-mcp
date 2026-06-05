@@ -57,10 +57,13 @@ Server 本身不做 standalone visual diagnosis。正確流程是：
 read_session(action="list_artifacts")
 read_session(action="artifact", artifact_id="...")
 read_session(action="artifact", artifact_uri="artifact://...")
-read_session(action="artifact", artifact_id="...", artifact_file="payload.json", offset=0, max_chars=200000)
+read_session(action="artifact", artifact_uri="artifact://...", artifact_file="audit.json")
+read_session(action="artifact", artifact_uri="artifact://...", artifact_file="results.json", offset=0, max_chars=200000)
 ```
 
 Artifact 是 query memory，不是第二次搜尋。讀取 artifact 不會重跑外部 source calls。Local filesystem paths 預設會被遮蔽，因為 remote client 不能讀 MCP server host path。只有本機 MCP client 真的需要 `local_path` 與 `manifest_path` 時，才設定 `PUBMED_ARTIFACT_INCLUDE_LOCAL_PATHS=true`。
+
+對 `unified_search` 來說，artifact files 會比即時 MCP response 更完整。建議先讀 `audit.json` 看完整性警告，再讀 `query_strategy.json` 檢查實際來源與搜尋策略，最後用 `results.json` 或 `results.toon` 取回完整文章清單。這能節省 response token，也讓 agent、sandbox client 與未來遠端 artifact backend 都能重複讀取同一份 evidence。
 
 ## 驗證狀態
 

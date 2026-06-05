@@ -2,23 +2,25 @@
 
 ## Current Focus
 
-- v0.5.12 release: production-grade LLM wiki compatibility, agent-provided PICO handoff, synchronized docs/site/agent guidance, segmented commits, push, and tag publish.
+- v0.5.15 release: research artifact envelopes, repo performance/import-surface hardening, synchronized README/docs-site/memory-bank guidance, segmented commits, push, and tag publish.
 
 ## Validation Snapshot
 
-- `uv run pytest -q`: 3379 passed, 31 skipped
+- `uv run pytest -q -m "not integration" --timeout=60 -o addopts=""`: 3403 passed, 21 skipped, 30 deselected
 - `uv run mypy src/ tests/`: passed
 - `uv run python scripts/check_async_tests.py`: passed
-- `uv run ruff check ...`: passed for touched code/test files
-- `uv run ruff format --check ...`: passed for touched code/test files
-- `node --check docs/site.js; node --check docs/site-content.js`: passed
+- `uv run ruff check src tests scripts`: passed
+- `uv run ruff format --check src tests scripts`: passed
+- `uv run python scripts/count_mcp_tools.py`: 46 tools, validation passed
+- `uv lock --check`: passed
 
 ## Session Notes
 
-- `save_literature_notes` now emits stable wiki/Foam targets using PMID/DOI/PMCID/fallback identifiers and returns `wiki_validation`.
-- `unified_search` now suggests `save_literature_notes(pmids="last", note_format="wiki")` when results have PMIDs.
-- `parse_pico` is an agent handoff validator: the LLM supplies structured P/I/C/O, then the backend returns a runnable `template: pico` pipeline.
-- Docs, generated docs site content, Cline/Codex/Claude skills, and Copilot guidance were synchronized for release.
+- `unified_search` artifacts now use a `research-artifact/v1` envelope: `audit.json`, `query_strategy.json`, `results.json` / `results.toon`, `query.md`, and optional `response.md`.
+- MCP responses stay compact but include counts, warnings, `artifact_summary`, audit status, and retrieval hints so agents can answer first and page through artifacts.
+- Artifact locators now include schema version, audit status, read order, URI-first read hints, and remote/sandbox-friendly paging metadata.
+- Repo optimization work added complexity/import-surface reports, lazy import surfaces, cache/aggregation/pipeline/export/fulltext hardening, and regression coverage.
+- README, generated docs site content, CHANGELOG, and memory-bank are synchronized for v0.5.15.
 
 > 📌 此檔案記錄當前工作焦點，每次工作階段開始時檢視，結束時更新。
 
@@ -78,8 +80,8 @@
 - v0.3.4: async-first migration
 
 ## 🔜 下一步 (low priority)
-- Watch v0.5.7 GitHub Actions / PyPI publish workflow after tag push
+- Watch v0.5.15 GitHub Actions / PyPI publish workflow after tag push
 - Algorithm innovation implementation (BM25/RRF/PRF)
 
 ---
-*Last updated: 2026-04-29 — v0.5.7 release*
+*Last updated: 2026-06-05 - v0.5.15 release*

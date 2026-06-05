@@ -1,6 +1,14 @@
-# Progress (Updated: 2026-05-14)
+# Progress (Updated: 2026-06-05)
 
 ## Done
+
+### 2026-06-05: v0.5.15 - Research Artifact Envelope + Repo Hardening
+- Research artifact envelope: `unified_search` now persists `audit.json`, `query_strategy.json`, complete `results.json` / `results.toon`, `query.md`, and optional `response.md`.
+- Token offload contract: MCP responses stay compact but include counts, source warnings, artifact summary, audit status, read order, and retrieval hints so agents can answer first and read artifacts repeatedly.
+- Remote/sandbox retrieval: artifact locators expose `artifact_uri`-based read commands, available files, paging metadata, and local path redaction by default.
+- Performance/import hardening: added complexity/import-surface audits, lazy package barrels, and targeted optimizations in aggregation, cache/session, pipeline, export, fulltext, and async cleanup paths.
+- Docs/site/MEM sync: README, tools usage guide, advanced workflows, generated docs-site content, CHANGELOG, and memory-bank updated for release.
+- Quality gate: non-integration pytest (`3403 passed, 21 skipped, 30 deselected`), Ruff, Ruff format, mypy, async-test checker, MCP tool count, and lockfile check passed.
 
 ### 2026-05-14: v0.5.12 - LLM Wiki Compatibility + PICO Handoff
 - Stable LLM wiki export: `save_literature_notes` writes wiki/Foam notes with stable PMID/DOI/PMCID/fallback targets and reports `wiki_validation`.
@@ -103,13 +111,13 @@
 - ✅ docs/IMAGE_SEARCH_API.md 完整重寫
 
 ## Doing
-- v0.5.7 release: segmented commits on `master`, push, then tag/publish
+- v0.5.15 release: segmented commits on `master`, push, then tag/publish
 
 ## Next
 
 | 優先級 | 項目 | 說明 |
 |:------:|------|------|
-| ⭐⭐⭐ | Watch v0.5.7 publish workflow | tag 推上遠端後檢查 GitHub Actions / PyPI 發布狀態 |
+| ⭐⭐⭐ | Watch v0.5.15 publish workflow | tag push / GitHub Actions / PyPI publish |
 | ⭐⭐⭐ | Session cache dedup cleanup | 評估 `ArticleCache` 與 `SessionManager.article_cache` 是否收斂成單一路徑 |
 | ⭐⭐⭐ | ARCHITECTURE.md 更新 | 仍顯示舊的目錄結構 |
 | ⭐⭐ | Algorithm innovation impl | BM25/RRF/PRF 等算法實作 |

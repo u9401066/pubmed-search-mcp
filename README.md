@@ -525,10 +525,13 @@ Dynamic MCP resources are also available for agents that can read resources dire
 
 Persistent MCP output artifacts are saved for reusable `unified_search` and
 `get_fulltext` responses when session persistence is configured. Tool responses
-include a compact `artifact` locator with `artifact_id`, `artifact_uri`,
-`primary_file`, `summary`, file inventory, and an exact `read_session(...)`
-retrieval hint. Set `PUBMED_ARTIFACT_INCLUDE_LOCAL_PATHS=true` when a local MCP
-client should also receive `local_path` and `manifest_path` directly.
+act like index cards: they include enough counts, source warnings, and artifact
+hints for an agent to answer immediately, while the full evidence payload stays
+in files that can be read repeatedly. The compact `artifact` locator includes
+`artifact_id`, `artifact_uri`, `primary_file`, `summary`, file inventory,
+`read_order`, audit status, and exact `read_session(...)` retrieval hints. Set
+`PUBMED_ARTIFACT_INCLUDE_LOCAL_PATHS=true` only when a local MCP client should
+also receive `local_path` and `manifest_path` directly.
 
 Remote clients that cannot read the server filesystem can retrieve the same
 content through the session facade:
@@ -537,9 +540,17 @@ content through the session facade:
 read_session(action="list_artifacts")
 read_session(action="artifact", artifact_id="...")
 read_session(action="artifact", artifact_uri="artifact://...")
-read_session(action="artifact", artifact_id="...", artifact_file="payload.json", offset=0, max_chars=200000)
+read_session(action="artifact", artifact_uri="artifact://...", artifact_file="audit.json")
+read_session(action="artifact", artifact_uri="artifact://...", artifact_file="query_strategy.json")
+read_session(action="artifact", artifact_uri="artifact://...", artifact_file="results.json", offset=0, max_chars=200000)
 read_session(action="list_artifacts", include_local_paths=true)
 ```
+
+`unified_search` artifacts use a research envelope. Start with `audit.json` for
+source-count and completeness warnings, then `query_strategy.json` for the exact
+executed plan, and finally `results.json` / `results.toon` for the complete
+article list. This keeps MCP response tokens small without losing academic
+traceability.
 
 Artifacts are generated from the already-computed result object, so reading an
 artifact does not rerun searches or fulltext retrieval.

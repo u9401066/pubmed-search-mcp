@@ -20,6 +20,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.5.15] - 2026-06-05
+
+### Added
+
+- Research artifact envelopes for `unified_search` persisted outputs. Saved artifacts now include `audit.json`, `query_strategy.json`, `results.json` / `results.toon`, `query.md`, and optional `response.md` so agents can read complete evidence repeatedly without spending MCP response tokens.
+- Artifact completeness auditing in default `source-counts` mode, covering result-count consistency, per-source counts, source errors, PMID uniqueness, missing identifiers/core metadata, and deep-search strategy execution.
+- Remote/sandbox-friendly artifact retrieval hints: locators now expose schema version, audit status, recommended read order, `read_files`, URI-based read commands, and paged retrieval metadata.
+- Repo complexity/import-surface audit scripts and reports for ongoing performance review.
+
+### Changed
+
+- `unified_search` structured responses now include `artifact_summary` when an artifact is available, keeping the inline response useful enough for immediate agent replies while directing full evidence reads to artifact files.
+- Large structured responses preserve artifact retrieval metadata and source warnings through truncation paths when space allows.
+- README, Tools Usage Guide, Advanced Research Workflows, generated docs-site content, and memory-bank notes now document the artifact-as-token-offload contract.
+- Import surfaces and optional-heavy dependencies were made lazier across package/application/infrastructure/presentation barrels and several export/source helpers.
+
+### Fixed
+
+- Hardened session artifact reads with richer available-file and paging metadata while keeping local filesystem paths redacted by default.
+- Reduced avoidable import/runtime cost and several internal performance hot spots in aggregation, session/cache handling, pipeline execution, export formatting, and fulltext fallback flows.
+- Hardened Windows async client shutdown against event-loop-closed cleanup noise.
+
+### Tests
+
+- Added artifact envelope, import-surface, complexity-scan, browser-session, and performance optimization regression coverage.
+- Revalidated with Ruff, Ruff format, mypy, async-test checker, MCP tool count validation, docs-site sync, lockfile check, and full non-integration pytest (`3403 passed, 21 skipped, 30 deselected`).
+
+---
+
 ## [0.5.14] - 2026-05-15
 
 ### Fixed

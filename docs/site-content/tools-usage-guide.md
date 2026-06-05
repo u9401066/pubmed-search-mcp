@@ -113,15 +113,25 @@ Use this path for `prepare_export` and `save_literature_notes`. Citation exports
 
 When session persistence is configured, `unified_search` and `get_fulltext`
 write complete reusable outputs to artifacts and return a compact locator in
-the tool response. Use the session facade for remote clients, and set
-`PUBMED_ARTIFACT_INCLUDE_LOCAL_PATHS=true` only for local MCP clients that
-should receive direct server paths:
+the tool response. Treat the response as an index card: it has enough counts,
+warnings, and artifact hints for the agent to answer immediately, while the
+complete evidence payload stays in retrievable files. Use the session facade for
+remote clients, and set `PUBMED_ARTIFACT_INCLUDE_LOCAL_PATHS=true` only for
+local MCP clients that should receive direct server paths:
 
 ```python
 read_session(action="list_artifacts")
 read_session(action="artifact", artifact_id="...")
-read_session(action="artifact", artifact_id="...", artifact_file="payload.json", offset=0)
+read_session(action="artifact", artifact_uri="artifact://...")
+read_session(action="artifact", artifact_uri="artifact://...", artifact_file="audit.json")
+read_session(action="artifact", artifact_uri="artifact://...", artifact_file="results.json", offset=0, max_chars=200000)
 ```
+
+`unified_search` artifacts use a research envelope. Start with `audit.json` to
+check completeness warnings, then `query_strategy.json` for the exact query
+plan, and `results.json` / `results.toon` for the full result list. This avoids
+spending MCP response tokens on long article lists while still making the run
+auditable and reproducible.
 
 `local_path` and `manifest_path` are paths on the MCP server host. `read_session`
 redacts local paths by default unless `include_local_paths=true` is requested.

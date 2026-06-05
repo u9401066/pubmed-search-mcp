@@ -111,13 +111,17 @@ Zotero Keeper 應維持在外部整合邊界。PubMed Search MCP 負責產生 of
 
 ## 大型輸出的持久化 Query Memory
 
-當 session persistence 已設定時，`unified_search` 與 `get_fulltext` 會把完整可重用輸出保存為 artifact，tool response 只回傳精簡 locator。Remote client 請透過 `read_session` facade 讀取；只有本機 MCP client 真的需要 server path 時，才設定 `PUBMED_ARTIFACT_INCLUDE_LOCAL_PATHS=true`：
+當 session persistence 已設定時，`unified_search` 與 `get_fulltext` 會把完整可重用輸出保存為 artifact，tool response 只回傳精簡 locator。請把 tool response 視為索引卡：它會有足夠的 counts、warnings 與 artifact hints 讓 agent 先回覆使用者；完整 evidence payload 則留在可重複讀取的 artifact files。Remote client 請透過 `read_session` facade 讀取；只有本機 MCP client 真的需要 server path 時，才設定 `PUBMED_ARTIFACT_INCLUDE_LOCAL_PATHS=true`：
 
 ```python
 read_session(action="list_artifacts")
 read_session(action="artifact", artifact_id="...")
-read_session(action="artifact", artifact_id="...", artifact_file="payload.json", offset=0)
+read_session(action="artifact", artifact_uri="artifact://...")
+read_session(action="artifact", artifact_uri="artifact://...", artifact_file="audit.json")
+read_session(action="artifact", artifact_uri="artifact://...", artifact_file="results.json", offset=0, max_chars=200000)
 ```
+
+`unified_search` artifacts 會使用 research envelope。建議先讀 `audit.json` 確認完整性警告，再讀 `query_strategy.json` 檢查實際搜尋策略，最後用 `results.json` / `results.toon` 取回完整結果清單。這樣不需要把長篇 article list 塞進 MCP response token，也保留可審計、可重現的搜尋紀錄。
 
 `local_path` 與 `manifest_path` 是 MCP server host 上的路徑，預設會被遮蔽。大型 `get_fulltext` 在已有 artifact 時會先回 inline preview；完整內容請用 locator 讀取。這就是持久化 query memory：agent 可以用 artifact ID 重新打開同一份已保存的 search/fulltext output，不必重跑外部來源呼叫。全文 artifact 可能包含文章正文，保存與分享時請遵守 publisher license 與機構授權條款。
 

@@ -2,6 +2,7 @@
 
 | Date | Decision | Rationale |
 |------|----------|-----------|
+| 2026-06-05 | **Treat research artifacts as the durable evidence channel** | MCP responses should remain small enough for agents to answer immediately, while complete search results, query strategy, source-count audit, and retrieval metadata live in paged artifact files that local, remote, and sandboxed clients can read repeatedly without rerunning external APIs. |
 | 2026-04-29 | **Keep Zotero Keeper outside PubMed MCP core** | PubMed MCP should expose stable exports and guided local notes; Zotero import, duplicate handling, and VSIX-specific library policies belong in Zotero Keeper or another external client. |
 | 2026-04-29 | **Pipeline PICO support should emphasize diagnostics and guided outputs** | PICO/pipeline runs are structured clinical questions. The valuable artifact is an auditable search/filter/export trail, not a copied storage subsystem from another repository. |
 | 2026-04-24 | **Gate v0.5.6 through an integration branch before release** | The local workspace contained a broad feature and hardening set. Keeping it on `codex/integrate-local-v0.5.6` until local tests and GitHub Actions are green makes regressions easier to isolate before merging, tagging, and publishing. |

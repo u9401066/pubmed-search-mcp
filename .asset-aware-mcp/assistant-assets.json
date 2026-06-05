@@ -54,6 +54,12 @@
     },
     ".clinerules/workflows/skills-audit.md": {
       "sha256": "992c1137b9d37d2309491a83cb6ef748b570c771d14d66486fd6c0416c9473e2"
+    },
+    ".github/bylaws/ddd-architecture.md": {
+      "sha256": "9e916fa6d1cd7627d91deee221de528acaacc71227f3affd2898196bbce58687"
+    },
+    ".github/bylaws/memory-bank.md": {
+      "sha256": "ceab7cc367a7db8249bd918d1593fe46863cc2fdd4dbddb9b182af67b8a5b994"
     }
   }
 }
