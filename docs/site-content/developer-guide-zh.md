@@ -34,13 +34,15 @@ Presentation layer 負責 MCP tools、prompts、resources 與 HTTP compatibility
 | Surface | Entry | 用途 |
 | --- | --- | --- |
 | Local MCP stdio | `uvx pubmed-search-mcp` 或 `uv run python -m pubmed_search.presentation.mcp_server` | 預設本機 client 模式 |
-| Streamable HTTP | `uv run python run_server.py --transport streamable-http` | 遠端 MCP clients 與 service deployments |
-| Full Copilot-compatible HTTP | `uv run python run_server.py --transport streamable-http --copilot-compatible` | 保留完整 primary MCP surface，並加上 Copilot-compatible HTTP semantics |
+| Streamable HTTP | `pubmed-search-mcp-http --transport streamable-http` | 遠端 MCP clients 與 service deployments |
+| Full Copilot-compatible HTTP | `pubmed-search-mcp-http --transport streamable-http --copilot-compatible` | 保留完整 primary MCP surface，並加上 Copilot-compatible HTTP semantics |
+| Python SDK facade | `from pubmed_search.api import PubMedSearchClient` | Python package、notebook、app 的 in-process integration |
 | Simplified Copilot Studio | `uv run python run_copilot.py` | Copilot Studio compatibility 優先的小型 schema |
 | Browser fetch broker | `uv run pubmed-browser-fetch-broker --token ...` | 可選的本機 Playwright broker，用於 authenticated PDF download capture |
 | Static docs site | `docs/index.html` 加 generated payload | GitHub Pages 文件網站 |
 
-不要把這些當成彼此分裂的產品。除了 `run_copilot.py` 有意暴露 Copilot-specific simplified surface，其餘多數都是同一核心能力的不同 adapter。
+
+MCP tools、Python SDK facade、HTTP CLI 是同一組核心能力上的三個獨立 contract，不是三個彼此分裂的產品。`run_server.py` 只保留為 source-tree development wrapper；installed package 與遠端部署應使用 `pubmed-search-mcp-http`。`run_copilot.py` 則刻意暴露 Copilot-specific simplified surface。
 
 ## Code Map
 

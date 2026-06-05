@@ -261,7 +261,7 @@ Saved pipelines can be reused from search with `unified_search(pipeline="saved:<
 
 There are two Copilot routes:
 
-- full primary MCP surface through `run_server.py --transport streamable-http --copilot-compatible`
+- full primary MCP surface through `pubmed-search-mcp-http --transport streamable-http --copilot-compatible`
 - simplified Copilot Studio surface: a smaller 11-tool schema through `run_copilot.py`
 
 Use the full surface when your client can handle it. Use the simplified surface when Copilot Studio schema compatibility is the priority.

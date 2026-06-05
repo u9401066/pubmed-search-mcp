@@ -13,8 +13,8 @@
 | 模式 | 入口 | 適合情境 | 備註 |
 | --- | --- | --- | --- |
 | stdio | `uvx pubmed-search-mcp` | VS Code、Claude Desktop、Cursor | 預設本機模式 |
-| HTTP | `uv run python run_server.py --transport streamable-http` | 遠端 MCP client、自建服務 | 推薦的 HTTP transport |
-| HTTP + Copilot compatibility | `uv run python run_server.py --transport streamable-http --copilot-compatible` | 想保留完整 46-tool primary MCP surface 並接 Copilot | HTTP response 會做相容轉換 |
+| HTTP | `pubmed-search-mcp-http --transport streamable-http` | 遠端 MCP client、自建服務 | 推薦的 HTTP transport |
+| HTTP + Copilot compatibility | `pubmed-search-mcp-http --transport streamable-http --copilot-compatible` | 想保留完整 46-tool primary MCP surface 並接 Copilot | HTTP response 會做相容轉換 |
 | Copilot simplified | `uv run python run_copilot.py` | Copilot Studio schema 相容性優先 | 暴露精簡版工具集 |
 | HTTPS local | `scripts/start-https-local.sh` | 本機 HTTPS smoke test | `/mcp`、`/health`、`/info` |
 | HTTPS Docker | `scripts/start-https-docker.sh up` | Nginx TLS reverse proxy 測試 | 預設代理到 `/mcp` |
@@ -25,8 +25,8 @@ flowchart TD
   Local{只給本機 AI client?}
   Remote{需要遠端 / Copilot / HTTPS?}
   StdIO[stdio\nuvx pubmed-search-mcp]
-  HTTP[HTTP\nrun_server.py --transport streamable-http]
-  Full[Full Copilot\nrun_server.py --copilot-compatible]
+  HTTP[HTTP\npubmed-search-mcp-http]
+  Full[Full Copilot\npubmed-search-mcp-http --copilot-compatible]
   Simple[Simple Copilot\nrun_copilot.py]
   TLS[HTTPS\nstart-https-local.sh / start-https-docker.sh]
 
@@ -81,7 +81,7 @@ uv run python -m pubmed_search.presentation.mcp_server
 ### 標準 streamable-http
 
 ```bash
-uv run python run_server.py --transport streamable-http --port 8765 --email your@email.com
+pubmed-search-mcp-http --transport streamable-http --port 8765 --email your@email.com
 ```
 
 主要端點：
@@ -94,7 +94,7 @@ uv run python run_server.py --transport streamable-http --port 8765 --email your
 ### Copilot 相容 HTTP 語意，但保留完整工具面
 
 ```bash
-uv run python run_server.py --transport streamable-http --copilot-compatible --port 8765 --email your@email.com
+pubmed-search-mcp-http --transport streamable-http --copilot-compatible --port 8765 --email your@email.com
 ```
 
 這條路線的用途是：
@@ -164,7 +164,7 @@ uv run python run_copilot.py --port 8765 --email your@email.com
 flowchart LR
     Client[MCP Client / Copilot Studio]
     Proxy[HTTPS Reverse Proxy]
-    Server[PubMed Search MCP\nrun_server.py]
+    Server[PubMed Search MCP\npubmed-search-mcp-http]
     Endpoint[/mcp]
     Utility[/health /info /exports]
 
@@ -185,7 +185,7 @@ docker run -p 8765:8765 -e NCBI_EMAIL=your@email.com pubmed-search-mcp
 Dockerfile 預設會啟動：
 
 ```bash
-uv run python run_server.py --transport streamable-http
+uv run pubmed-search-mcp-http --transport streamable-http
 ```
 
 ## 7. 雲端部署

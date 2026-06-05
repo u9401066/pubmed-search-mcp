@@ -113,6 +113,17 @@ const DOC_PAGES = [
     file: "site-content/developer-guide-zh.md",
   },
   {
+    slug: "python-sdk-http-cli-design",
+    group: "python-sdk-http-cli-design",
+    lang: "all",
+    audience: "developer",
+    title: "Python SDK And HTTP CLI Design",
+    titleByLang: { zh: "Python SDK 與 HTTP CLI 設計" },
+    blurb: "Separated contracts for MCP tools, Python package callers, and remote HTTP deployments.",
+    blurbByLang: { zh: "MCP tools、Python package callers 與遠端 HTTP deployments 的分離合約。" },
+    file: "site-content/python-sdk-http-cli-design.md",
+  },
+  {
     slug: "architecture",
     group: "architecture",
     lang: "all",

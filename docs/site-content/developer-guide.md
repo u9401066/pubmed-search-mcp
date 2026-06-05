@@ -34,13 +34,14 @@ Shared rules:
 | Surface | Entry | Purpose |
 | --- | --- | --- |
 | Local MCP stdio | `uvx pubmed-search-mcp` or `uv run python -m pubmed_search.presentation.mcp_server` | Default local client mode |
-| Streamable HTTP | `uv run python run_server.py --transport streamable-http` | Remote MCP clients and service deployments |
-| Full Copilot-compatible HTTP | `uv run python run_server.py --transport streamable-http --copilot-compatible` | Keep the full primary MCP surface with Copilot-compatible HTTP semantics |
+| Streamable HTTP | `pubmed-search-mcp-http --transport streamable-http` | Remote MCP clients and service deployments |
+| Full Copilot-compatible HTTP | `pubmed-search-mcp-http --transport streamable-http --copilot-compatible` | Keep the full primary MCP surface with Copilot-compatible HTTP semantics |
+| Python SDK facade | `from pubmed_search.api import PubMedSearchClient` | In-process Python package, notebook, and app integrations |
 | Simplified Copilot Studio | `uv run python run_copilot.py` | Smaller schema for Copilot Studio compatibility |
 | Browser fetch broker | `uv run pubmed-browser-fetch-broker --token ...` | Optional local Playwright broker for authenticated PDF download capture |
 | Static docs site | `docs/index.html` plus generated payload | GitHub Pages documentation surface |
 
-Do not treat these as separate products. They are adapters over the same core capabilities, except `run_copilot.py`, which intentionally exposes a simplified Copilot-specific surface.
+Do not treat these as separate products. MCP tools, the Python SDK facade, and the HTTP CLI are separate contracts over the same core capabilities. `run_server.py` is a source-tree development wrapper; installed packages should use `pubmed-search-mcp-http`. `run_copilot.py` intentionally exposes a simplified Copilot-specific surface.
 
 ## Code Map
 
@@ -60,12 +61,14 @@ Important presentation files:
 - `presentation/mcp_server/tools/*.py`: MCP adapters
 - `presentation/mcp_server/copilot_tools.py`: simplified Copilot Studio surface
 - `presentation/mcp_server/http_compat.py`: Copilot HTTP compatibility middleware
+- `presentation/mcp_server/http_cli.py`: packaged Streamable HTTP/SSE launcher
 - `presentation/browser_fetch_broker.py`: local browser broker CLI
 
 Important documentation files:
 
 - `scripts/count_mcp_tools.py`: regenerates the tool index from the registry
 - `scripts/build_docs_site.py`: generates `docs/site-content/*.md` and `docs/site-content.js`
+- `docs/PYTHON_SDK_AND_HTTP_CLI_DESIGN.md`: records the separated MCP, SDK, and HTTP CLI contracts
 - `docs/site.js`: client-side docs router and language switch
 - `tests/test_docs_site_sync.py`: verifies generated docs payloads match canonical Markdown
 
@@ -77,20 +80,21 @@ Use this sequence for primary MCP tools:
 2. Add or update the MCP adapter under `src/pubmed_search/presentation/mcp_server/tools/`.
 3. Register the tool in `tool_registry.py` with the right category and description.
 4. Add or update unit tests around the service behavior and presentation adapter.
-5. Regenerate the tool index:
+5. If the behavior is also available through the Python SDK, update `pubmed_search.api`, `application.unified`, and SDK contract tests.
+6. Regenerate the tool index:
 
    ```bash
    uv run python scripts/count_mcp_tools.py --update-docs
    ```
 
-6. Update capability docs if the user-facing behavior changed.
-7. Rebuild the docs site:
+7. Update capability docs if the user-facing behavior changed.
+8. Rebuild the docs site:
 
    ```bash
    uv run python scripts/build_docs_site.py
    ```
 
-8. Run the narrowest relevant tests first, then broader checks if the registry, docs, transport, or generated artifacts changed.
+9. Run the narrowest relevant tests first, then broader checks if the registry, docs, SDK facade, transport, or generated artifacts changed.
 
 The generated `TOOLS_INDEX.md` should be treated as an output of the registry, not a hand-maintained source.
 

@@ -62,6 +62,26 @@ uv add pubmed-search-mcp
 pip install pubmed-search-mcp
 ```
 
+### Python SDK Facade
+
+For in-process Python integrations, use the stable SDK facade instead of
+importing MCP tool modules:
+
+```python
+from pubmed_search.api import PubMedSearchClient, PubMedSearchConfig
+
+client = PubMedSearchClient(PubMedSearchConfig(email="your@email.com"))
+result = await client.unified_search("remimazolam ICU sedation", limit=20)
+
+print(result.articles)
+print(result.source_counts)
+print(result.artifact)  # artifact locator when persistence is enabled
+```
+
+Use `uvx pubmed-search-mcp` or `/mcp` for agent tool discovery. Use the SDK for
+Python package/notebook calls where a typed object is easier than parsing an MCP
+response string.
+
 ---
 
 ## ⚙️ Configuration
@@ -969,7 +989,7 @@ src/pubmed_search/
 ├── presentation/               # User interfaces
 │   ├── mcp_server/             # MCP tools, prompts, resources
 │   │   └── tools/              # discovery, strategy, pico, export...
-│   └── api/                    # REST API (Copilot Studio)
+│   └── api/                    # Auxiliary HTTP API routes (not pubmed_search.api)
 └── shared/                     # Cross-cutting concerns
     ├── exceptions.py           # Unified error handling
     └── async_utils.py          # Rate limiter, retry, circuit breaker
@@ -1110,10 +1130,10 @@ Integrate PubMed Search MCP with **Microsoft 365 Copilot** (Word, Teams, Outlook
 
 ```bash
 # Start with Streamable HTTP transport (required by Copilot Studio)
-uv run python run_server.py --transport streamable-http --port 8765
+pubmed-search-mcp-http --transport streamable-http --port 8765
 
 # Enable Copilot-compatible HTTP semantics while keeping full tool schemas
-uv run python run_server.py --transport streamable-http --copilot-compatible --port 8765
+pubmed-search-mcp-http --transport streamable-http --copilot-compatible --port 8765
 
 # Or use the dedicated script with ngrok
 ./scripts/start-copilot-studio.sh --with-ngrok
@@ -1129,7 +1149,7 @@ uv run python run_server.py --transport streamable-http --copilot-compatible --p
 
 > 📖 **Full documentation**: [copilot-studio/README.md](copilot-studio/README.md)
 >
-> Use `--copilot-compatible` with `run_server.py` for Copilot HTTP semantics, or `run_copilot.py` if you also need simplified tool schemas.
+> Use `pubmed-search-mcp-http --copilot-compatible` for packaged Copilot HTTP semantics. `run_server.py` remains a source-tree development wrapper; use `run_copilot.py` only when you need simplified tool schemas.
 >
 > ⚠️ **Note**: SSE transport deprecated since Aug 2025. Use `streamable-http`.
 
