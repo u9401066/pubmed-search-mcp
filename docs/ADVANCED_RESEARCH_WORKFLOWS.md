@@ -1,7 +1,7 @@
 # Advanced Research Workflows
 
 This page makes the newer research surfaces visible from the docs-site
-navigation: research chronicle/timeline, Open-i image search, uploaded-image
+navigation: research timeline/lineage tree, Open-i image search, uploaded-image
 handoff, and persistent query memory.
 
 ## Quick Map
@@ -13,23 +13,26 @@ handoff, and persistent query memory.
 | Upload or pass an image and search by its meaning | `analyze_figure_for_search` | `search_biomedical_images`, `unified_search` |
 | Re-open large search/fulltext outputs without rerunning | `read_session(action="artifact")` | `read_session(action="list_artifacts")` |
 
-## Research Chronicle / Timeline
+## Research Timeline / Lineage Tree
 
 Use timeline tools when the user asks how a field changed, which papers look like
 milestones, or how two research tracks compare.
 
 ```python
 build_research_timeline(topic="remimazolam ICU sedation", output_format="tree", max_events=20)
-build_research_timeline(pmids="last", topic="Last search chronicle", output_format="mermaid")
+build_research_timeline(pmids="12345678,23456789", topic="Selected studies", output_format="mermaid")
 analyze_timeline_milestones(topic="CAR-T therapy")
 compare_timelines(topics="remimazolam,propofol,dexmedetomidine")
 ```
 
 `build_research_timeline` accepts either a topic or a known PMID set, including
-`pmids="last"`. It supports `text`, `tree`, `mermaid`, `mindmap`, `json`,
-`json_tree`, `timeline_js`, and `d3` output formats. For a lightweight preview
-inside a normal search response, use `unified_search(options="context_graph")`;
-for a full research chronicle, use `build_research_timeline`.
+explicit comma-separated PMIDs. It supports `text`, `tree`, `mermaid`,
+`mindmap`, `json`, `json_tree`, `timeline_js`, and `d3` output formats. For a
+lightweight preview inside a normal search response, use
+`unified_search(options="context_graph")`; it is a preview from the current
+PMID-backed ranked set, not a complete graph. The planned persistent/versioned
+Research Chronicle is specified in
+[Research Chronicle Rebuild Spec](RESEARCH_CHRONICLE_REFACTOR_SPEC.md).
 
 ## Open-i Biomedical Image Search
 

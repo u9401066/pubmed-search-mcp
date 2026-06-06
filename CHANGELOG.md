@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - `evolution-cycle` now validates the OOM-safe pytest timeout policy via `tomllib` instead of requiring global xdist workers in `pyproject.toml`.
+- Rewrote the Research Chronicle rebuild spec as the single canonical contract for timeline, lineage tree, context graph preview, citation graph, artifact persistence, and planned chronicle tools.
+- Documentation now distinguishes current timeline/lineage-tree projections from the planned persistent/versioned Research Chronicle.
 
 ---
 

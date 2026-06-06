@@ -1,7 +1,11 @@
+<!-- Generated from docs/RESEARCH_CHRONICLE_REFACTOR_SPEC.md by scripts/build_docs_site.py -->
+<!-- markdownlint-configure-file {"MD051": false} -->
+<!-- markdownlint-disable MD051 -->
+
 # Research Chronicle, Timeline, And Graph Rebuild Spec
 
-Status: Canonical pre-rebuild spec v2  
-Last updated: 2026-06-06  
+Status: Canonical pre-rebuild spec v2
+Last updated: 2026-06-06
 Scope: design/specification only; this document prepares the next implementation cycle.
 
 ## 1. Purpose

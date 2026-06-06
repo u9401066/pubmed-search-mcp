@@ -42,6 +42,11 @@ PAGES: tuple[WikiPage, ...] = (
         "進階研究工作流",
         DOCS_ROOT / "ADVANCED_RESEARCH_WORKFLOWS.zh-TW.md",
     ),
+    WikiPage(
+        "Research-Chronicle-Rebuild-Spec",
+        "Research Chronicle Rebuild Spec",
+        DOCS_ROOT / "RESEARCH_CHRONICLE_REFACTOR_SPEC.md",
+    ),
     WikiPage("Developer-Guide", "Developer Guide", DOCS_ROOT / "DEVELOPER_GUIDE.md"),
     WikiPage("Developer-Guide.zh-TW", "開發者指南", DOCS_ROOT / "DEVELOPER_GUIDE.zh-TW.md"),
     WikiPage("Tools-Usage-Guide", "Tools Usage Guide", DOCS_ROOT / "TOOLS_USAGE_GUIDE.md"),

@@ -17,12 +17,12 @@
 
 ```python
 build_research_timeline(topic="remimazolam ICU sedation", output_format="tree", max_events=20)
-build_research_timeline(pmids="last", topic="Last search chronicle", output_format="mermaid")
+build_research_timeline(pmids="12345678,23456789", topic="Selected studies", output_format="mermaid")
 analyze_timeline_milestones(topic="CAR-T therapy")
 compare_timelines(topics="remimazolam,propofol,dexmedetomidine")
 ```
 
-`build_research_timeline` 可以依 topic 搜尋，也可以使用既有 PMID set，包括 `pmids="last"`。輸出格式支援 `text`、`tree`、`mermaid`、`mindmap`、`json`、`json_tree`、`timeline_js`、`d3`。如果只是想在一般搜尋回應裡看輕量分支預覽，用 `unified_search(options="context_graph")`；若需要完整 research chronicle，請用 `build_research_timeline`。
+`build_research_timeline` 可以依 topic 搜尋，也可以使用明確的 comma-separated PMID set。輸出格式支援 `text`、`tree`、`mermaid`、`mindmap`、`json`、`json_tree`、`timeline_js`、`d3`。如果只是想在一般搜尋回應裡看輕量分支預覽，用 `unified_search(options="context_graph")`；它只根據本次 PMID-backed ranked set 產生 preview，不是完整 graph。持久化、版本化的 Research Chronicle 是下一輪重建目標，詳見 [Research Chronicle Rebuild Spec](RESEARCH_CHRONICLE_REFACTOR_SPEC.md)。
 
 ## Open-i 生醫圖片搜尋
 

@@ -89,7 +89,15 @@ Use this path for `search_gene`, `get_gene_details`, `get_gene_literature`, `sea
 
 Use this path for `get_citation_metrics`, `build_research_timeline`, `analyze_timeline_milestones`, and `compare_timelines` when the user asks what mattered, when the field changed, or how topics diverged.
 
-`build_research_timeline` is the full research chronicle tool. It accepts either `topic=...` or `pmids=...` / `pmids="last"`, detects milestone-like papers, and can return `text`, `tree`, `mermaid`, `mindmap`, `json`, `json_tree`, `timeline_js`, or `d3`. Use `analyze_timeline_milestones` for milestone distribution diagnostics and `compare_timelines` for up to five topic tracks.
+`build_research_timeline` is the current timeline/lineage-tree tool. It accepts either `topic=...` or explicit comma-separated `pmids=...`, detects milestone-like papers, and can return `text`, `tree`, `mermaid`, `mindmap`, `json`, `json_tree`, `timeline_js`, or `d3`. Use `analyze_timeline_milestones` for milestone distribution diagnostics and `compare_timelines` for up to five topic tracks.
+
+Use precise terms:
+
+- **Timeline**: chronological milestone projection.
+- **Lineage tree**: branch projection from timeline events.
+- **Context graph preview**: `unified_search(options="context_graph")`, a lightweight preview from the current PMID-backed ranked set.
+- **Citation tree**: `build_citation_tree`, a single-seed forward/backward citation network.
+- **Research Chronicle**: planned persistent/versioned artifact; see [Research Chronicle Rebuild Spec](#/research-chronicle-rebuild-spec).
 
 ### Session, Pipeline, And Scheduled Reuse
 

@@ -2,7 +2,7 @@
 
 ## Current Focus
 
-- Post-v0.5.15 architecture follow-up: stable Python SDK facade, packaged HTTP CLI, and unified-search MCP wrapper thinning while preserving existing MCP behavior.
+- Research Chronicle pre-rebuild alignment: the repo now treats current timeline/lineage tree/context graph preview/citation tree as existing projections, while persistent/versioned Research Chronicle is a planned artifact-backed source of truth defined in `docs/RESEARCH_CHRONICLE_REFACTOR_SPEC.md`.
 
 ## Validation Snapshot
 
@@ -16,6 +16,10 @@
 
 ## Session Notes
 
+- Multiple read-only subagents audited the current implementation/API, documentation claims, and tests for timeline, chronicle, context graph, and citation tree.
+- Canonical terminology was clarified: `build_research_timeline` is the current timeline/lineage-tree tool; `unified_search(options="context_graph")` is a lightweight preview from the ranked PMID-backed set; `build_citation_tree` is the current citation network tool; Research Chronicle is planned.
+- The rebuild spec now includes target domain entities, typed graph invariants, artifact envelope requirements, MCP API plan, phase plan, and acceptance tests for the next implementation cycle.
+- Key next-cycle blockers: fix or de-document `pmids="last"` for timeline, add output-format matrix tests, harden context graph preview boundaries, extract citation graph logic out of presentation, and persist chronicle artifacts via `read_session`.
 - Added `pubmed_search.api` for external Python callers: `PubMedSearchClient`, `PubMedSearchConfig`, and `UnifiedSearchResult`.
 - Added `pubmed_search.application.unified` service contracts and a presentation `unified_runner` so MCP `unified_search` and the SDK can share the runtime path without making SDK imports load MCP.
 - Added packaged `pubmed-search-mcp-http` entrypoint; `run_server.py` remains a source-tree development wrapper.

@@ -36,6 +36,11 @@ PAGES = [
         "Advanced Research Workflows (zh-TW)",
         DOCS_ROOT / "ADVANCED_RESEARCH_WORKFLOWS.zh-TW.md",
     ),
+    (
+        "research-chronicle-rebuild-spec",
+        "Research Chronicle Rebuild Spec",
+        DOCS_ROOT / "RESEARCH_CHRONICLE_REFACTOR_SPEC.md",
+    ),
     ("developer-guide", "Developer Guide", DOCS_ROOT / "DEVELOPER_GUIDE.md"),
     ("developer-guide-zh", "Developer Guide (zh-TW)", DOCS_ROOT / "DEVELOPER_GUIDE.zh-TW.md"),
     ("python-sdk-http-cli-design", "Python SDK And HTTP CLI Design", DOCS_ROOT / "PYTHON_SDK_AND_HTTP_CLI_DESIGN.md"),
@@ -142,10 +147,14 @@ def _render_packaged_reference(source_path: Path, replacements: dict[str, str]) 
     return header + raw
 
 
-def _write_text(path: Path, content: str) -> None:
-    """Write generated docs files with stable LF endings and trimmed lines."""
+def _normalize_generated_text(content: str) -> str:
+    """Normalize generated docs content with stable LF endings and trimmed lines."""
     clean_lines = [line.rstrip() for line in content.replace("\r\n", "\n").replace("\r", "\n").split("\n")]
-    normalized = "\n".join(clean_lines).rstrip("\n") + "\n"
+    return "\n".join(clean_lines).rstrip("\n") + "\n"
+
+
+def _write_text(path: Path, content: str) -> None:
+    normalized = _normalize_generated_text(content)
     with path.open("w", encoding="utf-8", newline="") as handle:
         handle.write(normalized)
 
@@ -156,7 +165,7 @@ def build_site() -> None:
     embedded_content: dict[str, str] = {}
 
     for slug, title, source_path in PAGES:
-        rendered = _render_page(slug, title, source_path, route_map)
+        rendered = _normalize_generated_text(_render_page(slug, title, source_path, route_map))
         output_path = OUTPUT_DIR / f"{slug}.md"
         _write_text(output_path, rendered)
         embedded_content[slug] = rendered
@@ -169,7 +178,7 @@ def build_site() -> None:
     for reference in PACKAGED_REFERENCES:
         target_path = reference["target"]
         target_path.parent.mkdir(parents=True, exist_ok=True)
-        rendered = _render_packaged_reference(reference["source"], reference["replacements"])
+        rendered = _normalize_generated_text(_render_packaged_reference(reference["source"], reference["replacements"]))
         _write_text(target_path, rendered)
 
 

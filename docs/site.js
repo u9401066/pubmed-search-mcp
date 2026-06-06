@@ -42,7 +42,7 @@ const DOC_PAGES = [
     audience: "user",
     title: "Advanced Research Workflows",
     blurb:
-      "Research chronicle/timeline, Open-i image search, uploaded-image handoff, and persistent query memory.",
+      "Research timeline/lineage tree, Open-i image search, uploaded-image handoff, and persistent query memory.",
     keywords:
       "build_research_timeline analyze_timeline_milestones compare_timelines context_graph search_biomedical_images Open-i analyze_figure_for_search uploaded image persistent query memory read_session artifact",
     file: "site-content/advanced-workflows.md",
@@ -57,6 +57,22 @@ const DOC_PAGES = [
     keywords:
       "研究時間軸 研究脈絡 build_research_timeline analyze_timeline_milestones compare_timelines context_graph Open-i 圖片搜尋 search_biomedical_images 上傳圖片 analyze_figure_for_search 持久化 query memory read_session artifact",
     file: "site-content/advanced-workflows-zh.md",
+  },
+  {
+    slug: "research-chronicle-rebuild-spec",
+    group: "research-chronicle-rebuild-spec",
+    lang: "all",
+    audience: "developer",
+    title: "Research Chronicle Rebuild Spec",
+    titleByLang: { zh: "Research Chronicle 重建規格" },
+    blurb:
+      "Canonical pre-rebuild contract for timeline, lineage tree, context graph preview, citation graph, artifacts, and the planned persistent Research Chronicle.",
+    blurbByLang: {
+      zh: "Timeline、lineage tree、context graph preview、citation graph、artifact 與 planned persistent Research Chronicle 的權威重建規格。",
+    },
+    keywords:
+      "research chronicle timeline lineage tree context graph preview citation graph artifact read_session rebuild spec",
+    file: "site-content/research-chronicle-rebuild-spec.md",
   },
   {
     slug: "tools-usage-guide",

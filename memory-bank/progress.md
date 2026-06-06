@@ -2,6 +2,12 @@
 
 ## Done
 
+### 2026-06-06: Research Chronicle Rebuild Spec Alignment
+- Rewrote `docs/RESEARCH_CHRONICLE_REFACTOR_SPEC.md` as the canonical pre-rebuild contract for timeline, lineage tree, context graph preview, citation graph, artifacts, and the planned persistent Research Chronicle.
+- Cross-checked implementation, documentation, and test gaps with multiple read-only subagents.
+- Clarified terminology: current `build_research_timeline` is timeline/lineage-tree projection; `unified_search(options="context_graph")` is a lightweight preview; `build_citation_tree` is the current citation network tool; Research Chronicle remains planned.
+- Captured rebuild blockers: broken/untested `pmids="last"` timeline path, incomplete timeline format coverage, context graph boundary tests, citation tree response-contract tests, presentation-layer citation graph logic, and projection formatting in domain entities.
+
 ### 2026-06-05: Python SDK Facade + Packaged HTTP CLI
 - Stable package API: added `pubmed_search.api` with `PubMedSearchClient`, `PubMedSearchConfig`, and `UnifiedSearchResult` for in-process Python callers.
 - Unified search runner split: MCP `unified_search` now delegates to `presentation.mcp_server.tools.unified_runner`, keeping old patch points while reducing wrapper logic.

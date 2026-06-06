@@ -16,6 +16,7 @@ Expose `pubmed_search.api` as the stable Python SDK facade, keep MCP tools as pr
 
 | Date | Decision | Rationale |
 |------|----------|-----------|
+| 2026-06-06 | **Make Research Chronicle a planned persisted source-of-truth, not a synonym for timeline** | Current code implements timeline, lineage tree, context graph preview, and citation tree, but no persistent/versioned chronicle layer. The canonical rebuild spec now defines Chronicle as an auditable artifact with entries, evidence bundles, typed provenance graph, revisions, deltas, and projections. |
 | 2026-06-05 | **Treat research artifacts as the durable evidence channel** | MCP responses should remain small enough for agents to answer immediately, while complete search results, query strategy, source-count audit, and retrieval metadata live in paged artifact files that local, remote, and sandboxed clients can read repeatedly without rerunning external APIs. |
 | 2026-04-29 | **Keep Zotero Keeper outside PubMed MCP core** | PubMed MCP should expose stable exports and guided local notes; Zotero import, duplicate handling, and VSIX-specific library policies belong in Zotero Keeper or another external client. |
 | 2026-04-29 | **Pipeline PICO support should emphasize diagnostics and guided outputs** | PICO/pipeline runs are structured clinical questions. The valuable artifact is an auditable search/filter/export trail, not a copied storage subsystem from another repository. |

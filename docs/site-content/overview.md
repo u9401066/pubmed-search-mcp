@@ -509,9 +509,13 @@ Use the PMC Open Access path when an agent needs evidence figures, not just arti
 
 | Tool | Description |
 | ---- | ----------- |
-| `build_research_timeline` | Build timeline/tree with landmark detection and formatted diagnostics. Output: text, tree, mermaid, mindmap, json |
+| `build_research_timeline` | Build timeline/tree with landmark detection and formatted diagnostics. Output: text, tree, mermaid, mindmap, json, json_tree, timeline_js, d3 |
 | `analyze_timeline_milestones` | Analyze milestone distribution with diagnostics payload |
 | `compare_timelines` | Compare multiple topic timelines with per-topic diagnostics |
+
+Current timeline and tree outputs are projections, not a persisted chronicle
+asset. The planned persistent/versioned Research Chronicle is specified in
+[docs/RESEARCH_CHRONICLE_REFACTOR_SPEC.md](#/research-chronicle-rebuild-spec).
 
 ### 🏥 Institutional Access & ICD Conversion
 
@@ -655,7 +659,7 @@ Search **arXiv**, **medRxiv**, and **bioRxiv** preprint servers via `unified_sea
 
 | Option Flag | Description |
 | ----------- | ----------- |
-| `context_graph` | Append a Research Context Graph preview to Markdown output and include `research_context` in JSON output |
+| `context_graph` | Append a lightweight Research Context Graph preview from the current PMID-backed ranked set to Markdown output and include `research_context` in JSON output |
 
 This is useful when an agent needs quick thematic branching without making a second `build_research_timeline` call.
 

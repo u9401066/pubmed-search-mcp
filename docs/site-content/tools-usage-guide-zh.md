@@ -89,7 +89,15 @@ Zotero Keeper 應維持在外部整合邊界。PubMed Search MCP 負責產生 of
 
 使用者問「哪些重要」、「領域何時改變」、「不同主題如何分歧」時，使用 `get_citation_metrics`、`build_research_timeline`、`analyze_timeline_milestones` 與 `compare_timelines`。
 
-`build_research_timeline` 是完整 research chronicle 工具。它接受 `topic=...` 或 `pmids=...` / `pmids="last"`，會偵測 milestone-like papers，並可回傳 `text`、`tree`、`mermaid`、`mindmap`、`json`、`json_tree`、`timeline_js` 或 `d3`。`analyze_timeline_milestones` 用於里程碑分佈 diagnostics；`compare_timelines` 用於最多五個 topic tracks 的比較。
+`build_research_timeline` 是目前的 timeline / lineage-tree 工具。它接受 `topic=...` 或明確的 comma-separated `pmids=...`，會偵測 milestone-like papers，並可回傳 `text`、`tree`、`mermaid`、`mindmap`、`json`、`json_tree`、`timeline_js` 或 `d3`。`analyze_timeline_milestones` 用於里程碑分佈 diagnostics；`compare_timelines` 用於最多五個 topic tracks 的比較。
+
+用詞請保持精準：
+
+- **Timeline**：按時間排序的 milestone projection。
+- **Lineage tree**：由 timeline events 分支而成的主題樹。
+- **Context graph preview**：`unified_search(options="context_graph")`，只根據本次 PMID-backed ranked set 產生輕量預覽。
+- **Citation tree**：`build_citation_tree`，從單一 seed PMID 建立 forward/backward citation network。
+- **Research Chronicle**：規劃中的持久化、版本化 artifact；詳見 [Research Chronicle Rebuild Spec](#/research-chronicle-rebuild-spec)。
 
 ### Session、Pipeline 與排程重用
 

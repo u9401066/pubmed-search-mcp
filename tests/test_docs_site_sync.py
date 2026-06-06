@@ -10,6 +10,7 @@ from scripts.build_docs_site import (
     PACKAGED_REFERENCES,
     PAGES,
     REPO_ROOT,
+    _normalize_generated_text,
     _render_packaged_reference,
     _render_page,
     _rewrite_links,
@@ -48,7 +49,7 @@ def test_docs_site_pages_match_generated_sources() -> None:
     embedded_pages = _load_embedded_pages()
 
     for slug, title, source_path in PAGES:
-        expected = _render_page(slug, title, source_path, route_map)
+        expected = _normalize_generated_text(_render_page(slug, title, source_path, route_map))
         generated = (OUTPUT_DIR / f"{slug}.md").read_text(encoding="utf-8")
 
         assert generated == expected
@@ -96,7 +97,7 @@ def test_advanced_workflows_are_visible_in_docs_site_navigation() -> None:
     assert 'slug: "advanced-workflows-zh"' in site_js
 
     for term in [
-        "Research chronicle/timeline",
+        "Research timeline/lineage tree",
         "Open-i image search",
         "uploaded-image handoff",
         "persistent query memory",
@@ -170,7 +171,7 @@ def test_packaged_references_match_generated_sources_and_images_exist() -> None:
     missing_assets: list[str] = []
 
     for reference in PACKAGED_REFERENCES:
-        expected = _render_packaged_reference(reference["source"], reference["replacements"])
+        expected = _normalize_generated_text(_render_packaged_reference(reference["source"], reference["replacements"]))
         target_path = reference["target"]
 
         assert target_path.read_text(encoding="utf-8") == expected
