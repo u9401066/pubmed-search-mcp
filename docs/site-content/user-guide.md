@@ -38,14 +38,15 @@ NCBI_EMAIL=your@email.com
 ```
 
 `NCBI_EMAIL` is required because NCBI asks API users to identify themselves. Add `NCBI_API_KEY` when you want higher NCBI rate limits. Add optional source keys only when you use those sources.
+OpenAlex, CrossRef, and Unpaywall reuse the runtime server contact email unless you set `OPENALEX_API_KEY`, `CROSSREF_EMAIL`, or `UNPAYWALL_EMAIL`.
 
 Common optional values:
 
 ```bash
 NCBI_API_KEY=your_ncbi_api_key
 CORE_API_KEY=your_core_api_key
-CROSSREF_EMAIL=your@email.com
-UNPAYWALL_EMAIL=your@email.com
+CROSSREF_EMAIL=your@email.com      # optional override; defaults to server/NCBI email
+UNPAYWALL_EMAIL=your@email.com     # optional override; defaults to server/NCBI email
 PUBMED_NOTES_DIR=/path/to/references
 ```
 

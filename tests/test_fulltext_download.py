@@ -310,6 +310,28 @@ class TestCrossrefLinks:
         assert requested_url.startswith("https://api.crossref.org/works/10.1001%2Fjama.2025.27019?")
         assert "https://doi.org" not in requested_url
 
+    @pytest.mark.asyncio
+    async def test_crossref_lookup_uses_configured_source_contact_email(self):
+        from pubmed_search.infrastructure.sources import configure_source_contact_email
+
+        configure_source_contact_email("runtime@example.com")
+
+        try:
+            d = FulltextDownloader()
+            mock_response = MagicMock()
+            mock_response.status_code = 404
+            mock_response.json.return_value = {"message": {}}
+            mock_client = AsyncMock()
+            mock_client.get.return_value = mock_response
+
+            with patch.object(d, "_get_client", new_callable=AsyncMock, return_value=mock_client):
+                await d._get_crossref_links("10.1001/jama.2025.27019")
+
+            requested_url = mock_client.get.await_args.args[0]
+            assert "mailto=runtime%40example.com" in requested_url
+        finally:
+            configure_source_contact_email(None)
+
 
 # ============================================================
 # _get_pmc_links

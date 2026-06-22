@@ -20,6 +20,7 @@ import urllib.parse
 from typing import Any
 
 from pubmed_search.infrastructure.sources.base_client import BaseAPIClient
+from pubmed_search.infrastructure.sources.contact import first_contact_email, get_configured_source_contact_email
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +54,7 @@ class OpenAlexClient(BaseAPIClient):
             api_key: Optional OpenAlex API key for authenticated requests
             timeout: Request timeout in seconds
         """
-        self._email = email or DEFAULT_EMAIL
+        self._email = first_contact_email(email, get_configured_source_contact_email(), DEFAULT_EMAIL) or DEFAULT_EMAIL
         self._api_key = api_key.strip() if isinstance(api_key, str) and api_key.strip() else None
         self._auth_params = {"api_key": self._api_key} if self._api_key else {"mailto": self._email}
         super().__init__(

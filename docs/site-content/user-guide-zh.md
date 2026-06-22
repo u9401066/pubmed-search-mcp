@@ -38,14 +38,15 @@ NCBI_EMAIL=your@email.com
 ```
 
 `NCBI_EMAIL` 是 NCBI API policy 需要的使用者識別。需要較高 NCBI rate limit 時再加 `NCBI_API_KEY`。其他來源的 key 只有在你使用那些來源時才需要。
+OpenAlex、CrossRef 與 Unpaywall 會重用 runtime server contact email；若需要覆寫再設定 `OPENALEX_API_KEY`、`CROSSREF_EMAIL` 或 `UNPAYWALL_EMAIL`。
 
 常見可選值：
 
 ```bash
 NCBI_API_KEY=your_ncbi_api_key
 CORE_API_KEY=your_core_api_key
-CROSSREF_EMAIL=your@email.com
-UNPAYWALL_EMAIL=your@email.com
+CROSSREF_EMAIL=your@email.com      # 選填覆寫；預設使用 server/NCBI email
+UNPAYWALL_EMAIL=your@email.com     # 選填覆寫；預設使用 server/NCBI email
 PUBMED_NOTES_DIR=/path/to/references
 ```
 

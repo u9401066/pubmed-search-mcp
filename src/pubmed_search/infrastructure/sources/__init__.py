@@ -45,6 +45,14 @@ from pubmed_search.shared.source_contracts import (
     gather_source_adapter_calls,
 )
 
+from .contact import (
+    configure_source_contact_email as _configure_source_contact_email,
+)
+from .contact import (
+    first_contact_email,
+    get_configured_source_contact_email,
+)
+
 logger = logging.getLogger(__name__)
 
 # Lazy imports to avoid startup overhead
@@ -71,6 +79,32 @@ _REGISTRY_EXPORTS: dict[str, tuple[str, str]] = {
     "SourceSelection": ("pubmed_search.infrastructure.sources.registry", "SourceSelection"),
     "SourceSelectionError": ("pubmed_search.infrastructure.sources.registry", "SourceSelectionError"),
 }
+
+
+def configure_source_contact_email(email: str | None) -> None:
+    """Configure the fallback contact email used by source clients."""
+    global _openalex_client, _europe_pmc_client, _ncbi_extended_client, _crossref_client, _unpaywall_client
+
+    _configure_source_contact_email(email)
+    _openalex_client = None
+    _europe_pmc_client = None
+    _ncbi_extended_client = None
+    _crossref_client = None
+    _unpaywall_client = None
+
+    try:
+        from . import crossref as crossref_module
+
+        crossref_module._crossref_client = None
+    except Exception as exc:  # pragma: no cover - defensive cache reset
+        logger.debug("Could not reset direct CrossRef client cache: %s", exc)
+
+    try:
+        from . import unpaywall as unpaywall_module
+
+        unpaywall_module._unpaywall_client = None
+    except Exception as exc:  # pragma: no cover - defensive cache reset
+        logger.debug("Could not reset direct Unpaywall client cache: %s", exc)
 
 
 def __getattr__(name: str) -> Any:
@@ -152,7 +186,7 @@ def get_openalex_client(email: str | None = None, api_key: str | None = None):
         settings = _load_settings()
 
         _openalex_client = OpenAlexClient(
-            email=email or settings.ncbi_email,
+            email=first_contact_email(email, get_configured_source_contact_email(), settings.ncbi_email),
             api_key=api_key or settings.openalex_api_key,
         )
     return _openalex_client
@@ -164,7 +198,10 @@ def get_europe_pmc_client(email: str | None = None):
     if _europe_pmc_client is None:
         from .europe_pmc import EuropePMCClient
 
-        _europe_pmc_client = EuropePMCClient(email=email)
+        settings = _load_settings()
+        _europe_pmc_client = EuropePMCClient(
+            email=first_contact_email(email, get_configured_source_contact_email(), settings.ncbi_email)
+        )
     return _europe_pmc_client
 
 
@@ -213,7 +250,7 @@ def get_ncbi_extended_client(email: str | None = None, api_key: str | None = Non
         settings = _load_settings()
 
         _ncbi_extended_client = NCBIExtendedClient(
-            email=email or settings.ncbi_email,
+            email=first_contact_email(email, get_configured_source_contact_email(), settings.ncbi_email),
             api_key=api_key or settings.ncbi_api_key,
         )
     return _ncbi_extended_client
@@ -228,7 +265,12 @@ def get_crossref_client(email: str | None = None):
         settings = _load_settings()
 
         _crossref_client = CrossRefClient(
-            email=email or settings.crossref_email,
+            email=first_contact_email(
+                email,
+                settings.crossref_email,
+                get_configured_source_contact_email(),
+                settings.ncbi_email,
+            ),
         )
     return _crossref_client
 
@@ -242,7 +284,12 @@ def get_unpaywall_client(email: str | None = None):
         settings = _load_settings()
 
         _unpaywall_client = UnpaywallClient(
-            email=email or settings.unpaywall_email or settings.ncbi_email,
+            email=first_contact_email(
+                email,
+                settings.unpaywall_email,
+                get_configured_source_contact_email(),
+                settings.ncbi_email,
+            ),
         )
     return _unpaywall_client
 
@@ -821,6 +868,7 @@ __all__ = [
     "SourceRegistry",
     "SourceSelection",
     "SourceSelectionError",
+    "configure_source_contact_email",
     "cross_search",
     "get_core_client",
     "get_crossref_client",

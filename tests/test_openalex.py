@@ -28,10 +28,30 @@ def client():
 
 class TestInit:
     async def test_defaults(self):
-        c = OpenAlexClient()
-        assert c._email == DEFAULT_EMAIL
-        assert c._api_key is None
-        assert c._auth_params == {"mailto": DEFAULT_EMAIL}
+        from pubmed_search.infrastructure.sources import configure_source_contact_email
+
+        configure_source_contact_email(None)
+
+        try:
+            c = OpenAlexClient()
+            assert c._email == DEFAULT_EMAIL
+            assert c._api_key is None
+            assert c._auth_params == {"mailto": DEFAULT_EMAIL}
+        finally:
+            configure_source_contact_email(None)
+
+    async def test_default_uses_configured_source_contact_email(self):
+        from pubmed_search.infrastructure.sources import configure_source_contact_email
+
+        configure_source_contact_email("runtime@example.com")
+
+        try:
+            c = OpenAlexClient()
+
+            assert c._email == "runtime@example.com"
+            assert c._auth_params == {"mailto": "runtime@example.com"}
+        finally:
+            configure_source_contact_email(None)
 
     async def test_api_key_overrides_mailto_auth(self):
         c = OpenAlexClient(email="test@example.com", api_key="oa-key")

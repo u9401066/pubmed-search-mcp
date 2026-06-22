@@ -156,8 +156,8 @@ temporarily disable the source with `PUBMED_SEARCH_DISABLED_SOURCES=semantic_sch
 | `NCBI_EMAIL` | **Yes** | Email for NCBI API policy compliance | `user@example.com` |
 | `NCBI_API_KEY` | No | NCBI API key for higher rate limits (10 req/s vs 3 req/s) | — |
 | `CORE_API_KEY` | No | [CORE API](https://core.ac.uk/services/api) key for open access search | — |
-| `CROSSREF_EMAIL` | No | Email for CrossRef polite pool (faster responses) | — |
-| `UNPAYWALL_EMAIL` | No | Email for Unpaywall API access | — |
+| `CROSSREF_EMAIL` | No | Optional CrossRef polite-pool email override. Defaults to the runtime server contact email. | `NCBI_EMAIL`, CLI `--email`, or detected git email |
+| `UNPAYWALL_EMAIL` | No | Optional Unpaywall email override. Defaults to the runtime server contact email. | `NCBI_EMAIL`, CLI `--email`, or detected git email |
 | `PUBMED_SEARCH_DISABLED_SOURCES` | No | Comma-separated source keys to globally disable in unified_search and cross-search | — |
 | `PUBMED_NOTES_DIR` | No | Local wiki/Foam-compatible/Markdown/MedPaper-style note export directory used by `save_literature_notes` | `PUBMED_WORKSPACE_DIR/references`, `PUBMED_DATA_DIR/references`, then `~/.pubmed-search-mcp/references` |
 | `PUBMED_WORKSPACE_DIR` | No | Workspace root used for pipeline persistence and note export fallback | — |
@@ -634,6 +634,7 @@ After configuring any client, verify the server is working:
 | Server not connecting | Check the config file path and JSON syntax |
 | `NCBI_EMAIL` warning | Set the `NCBI_EMAIL` environment variable in the config |
 | Slow responses | Add `NCBI_API_KEY` for 10 req/s (vs 3 req/s default) |
+| Source API uses placeholder email | Set `NCBI_EMAIL` or pass `--email`; CrossRef, Unpaywall, and OpenAlex reuse that runtime contact unless a source-specific override/API key is configured |
 | CORE search fails | Set `CORE_API_KEY` — [get one free](https://core.ac.uk/services/api) |
 | Behind proxy | Set `HTTP_PROXY` / `HTTPS_PROXY` environment variables |
 

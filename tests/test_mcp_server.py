@@ -44,6 +44,21 @@ class TestServerModule:
 
         assert callable(create_server)
 
+    async def test_create_server_configures_source_contact_email(self):
+        """Server-selected email is reused by external source clients."""
+        from pubmed_search.infrastructure.sources import configure_source_contact_email
+        from pubmed_search.infrastructure.sources.contact import get_configured_source_contact_email
+        from pubmed_search.presentation.mcp_server.server import create_server
+
+        configure_source_contact_email(None)
+
+        try:
+            create_server(email="runtime@example.com")
+
+            assert get_configured_source_contact_email() == "runtime@example.com"
+        finally:
+            configure_source_contact_email(None)
+
 
 class TestToolsRegistration:
     """Tests for tools registration."""

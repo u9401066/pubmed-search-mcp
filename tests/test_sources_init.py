@@ -457,6 +457,28 @@ class TestFulltext:
 
 
 class TestLazyInit:
+    async def test_configured_contact_email_is_source_client_fallback(self, monkeypatch):
+        import pubmed_search.infrastructure.sources as mod
+
+        mod._openalex_client = None
+        mod._crossref_client = None
+        mod._unpaywall_client = None
+        monkeypatch.delenv("NCBI_EMAIL", raising=False)
+        monkeypatch.delenv("CROSSREF_EMAIL", raising=False)
+        monkeypatch.delenv("UNPAYWALL_EMAIL", raising=False)
+
+        mod.configure_source_contact_email("runtime@example.com")
+
+        try:
+            assert mod.get_openalex_client()._email == "runtime@example.com"
+            assert mod.get_crossref_client()._email == "runtime@example.com"
+            assert mod.get_unpaywall_client()._email == "runtime@example.com"
+        finally:
+            mod.configure_source_contact_email(None)
+            mod._openalex_client = None
+            mod._crossref_client = None
+            mod._unpaywall_client = None
+
     async def test_get_openalex_client_uses_settings_api_key(self, monkeypatch):
         import pubmed_search.infrastructure.sources as mod
 

@@ -219,6 +219,10 @@ def create_server(
     global _container
     logger.info("Initializing PubMed Search MCP Server...")
 
+    from pubmed_search.infrastructure.sources import configure_source_contact_email
+
+    configure_source_contact_email(email)
+
     # ── DI container ────────────────────────────────────────────────────
     _container = ApplicationContainer()
     _container.config.from_dict(

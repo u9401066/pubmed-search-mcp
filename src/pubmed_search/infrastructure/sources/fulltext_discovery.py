@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
 import urllib.parse
 import urllib.request
@@ -22,6 +23,7 @@ from typing import TYPE_CHECKING
 
 from defusedxml import ElementTree
 
+from .contact import first_contact_email, get_configured_source_contact_email
 from .fulltext_models import PDFLink, PDFSource
 
 if TYPE_CHECKING:
@@ -32,6 +34,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 PMC_LINK_LOOKUP_TIMEOUT_SECONDS = 15.0
 NCBI_ELINK_ENDPOINT = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/elink.fcgi"
+DEFAULT_CROSSREF_MAILTO = "pubmed-search@example.com"
 
 
 def _normalize_crossref_doi(doi: str) -> str:
@@ -361,7 +364,13 @@ class FulltextDiscoveryPhase:
         try:
             client = await self._get_client()
             encoded_doi = urllib.parse.quote(_normalize_crossref_doi(doi), safe="")
-            url = f"https://api.crossref.org/works/{encoded_doi}?mailto=pubmed-search@example.com"
+            mailto = first_contact_email(
+                os.environ.get("CROSSREF_EMAIL"),
+                get_configured_source_contact_email(),
+                os.environ.get("NCBI_EMAIL"),
+                DEFAULT_CROSSREF_MAILTO,
+            )
+            url = f"https://api.crossref.org/works/{encoded_doi}?mailto={urllib.parse.quote(mailto or DEFAULT_CROSSREF_MAILTO)}"
             resp = await client.get(url)
             if resp.status_code != 200:
                 return links

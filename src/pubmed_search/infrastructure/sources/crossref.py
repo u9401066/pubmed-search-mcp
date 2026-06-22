@@ -30,6 +30,7 @@ import urllib.parse
 from typing import TYPE_CHECKING, Any
 
 from pubmed_search.infrastructure.sources.base_client import _CONTINUE, BaseAPIClient
+from pubmed_search.infrastructure.sources.contact import first_contact_email, get_configured_source_contact_email
 
 if TYPE_CHECKING:
     import httpx
@@ -78,7 +79,7 @@ class CrossRefClient(BaseAPIClient):
             email: Contact email for polite pool access (strongly recommended)
             timeout: Request timeout in seconds
         """
-        self._email = email or DEFAULT_EMAIL
+        self._email = first_contact_email(email, get_configured_source_contact_email(), DEFAULT_EMAIL) or DEFAULT_EMAIL
         super().__init__(
             timeout=timeout,
             min_interval=0.05,
@@ -472,7 +473,14 @@ def get_crossref_client(email: str | None = None) -> CrossRefClient:
     if _crossref_client is None:
         import os
 
-        _crossref_client = CrossRefClient(email=email or os.environ.get("CROSSREF_EMAIL"))
+        _crossref_client = CrossRefClient(
+            email=first_contact_email(
+                email,
+                os.environ.get("CROSSREF_EMAIL"),
+                os.environ.get("NCBI_EMAIL"),
+                get_configured_source_contact_email(),
+            )
+        )
     return _crossref_client
 
 

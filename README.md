@@ -43,7 +43,7 @@ A Domain-Driven Design (DDD) based MCP server that serves as an intelligent rese
 
 - **NCBI Email** — Required by [NCBI API policy](https://www.ncbi.nlm.nih.gov/books/NBK25497/#chapter2.Usage_Guidelines_and_Requiremen). Any valid email address.
 - **NCBI API Key** *(optional)* — [Get one here](https://www.ncbi.nlm.nih.gov/account/settings/) for higher rate limits (10 req/s vs 3 req/s)
-- **OpenAlex API Key** *(optional)* — set `OPENALEX_API_KEY` to use authenticated OpenAlex requests instead of mailto-only polite-pool auth
+- **OpenAlex API Key** *(optional)* — set `OPENALEX_API_KEY` to use authenticated OpenAlex requests instead of mailto-only polite-pool auth. Without source-specific emails, the server reuses the configured runtime contact email for OpenAlex, CrossRef, and Unpaywall.
 
 ### Install & Run
 
@@ -337,8 +337,8 @@ NCBI_EMAIL=your@email.com          # Required by NCBI policy
 # Optional - For higher rate limits
 NCBI_API_KEY=your_ncbi_api_key     # Get from: https://www.ncbi.nlm.nih.gov/account/settings/
 CORE_API_KEY=your_core_api_key     # Get from: https://core.ac.uk/services/api
-CROSSREF_EMAIL=your@email.com      # CrossRef polite pool
-UNPAYWALL_EMAIL=your@email.com     # Unpaywall OA resolver
+CROSSREF_EMAIL=your@email.com      # Optional override; defaults to server/NCBI email
+UNPAYWALL_EMAIL=your@email.com     # Optional override; defaults to server/NCBI email
 S2_API_KEY=your_s2_api_key         # Alias: SEMANTIC_SCHOLAR_API_KEY
 PUBMED_SEARCH_DISABLED_SOURCES=    # Example: semantic_scholar
 
@@ -357,6 +357,10 @@ PUBMED_NOTES_DIR=/path/to/wiki/references  # save_literature_notes target folder
 PUBMED_WORKSPACE_DIR=/path/to/project       # fallback: references/ under this workspace
 PUBMED_DATA_DIR=~/.pubmed-search-mcp        # fallback: references/ under this data dir
 ```
+
+CrossRef, Unpaywall, and OpenAlex reuse the runtime server contact email
+(`NCBI_EMAIL`, CLI `--email`, or detected git email) unless a source-specific
+email/API key is configured.
 
 Local note export resolves directories in this order: `output_dir` argument, `PUBMED_NOTES_DIR`, `PUBMED_WORKSPACE_DIR/references`, `PUBMED_DATA_DIR/references`, then `~/.pubmed-search-mcp/references`.
 For LLM wiki compatibility, `wiki` and `foam` exports use stable link targets based on PMID, DOI, PMCID, or fallback identifiers; titles remain aliases/display labels, and the response includes `wiki_validation` for unresolved wikilink checks.

@@ -31,11 +31,35 @@ def client():
 
 class TestInit:
     async def test_defaults(self):
-        c = UnpaywallClient()
-        assert c._email == DEFAULT_EMAIL
+        from pubmed_search.infrastructure.sources import configure_source_contact_email
+
+        configure_source_contact_email(None)
+
+        try:
+            c = UnpaywallClient()
+            assert c._email == DEFAULT_EMAIL
+        finally:
+            configure_source_contact_email(None)
 
     async def test_custom_email(self, client):
         assert client._email == "test@example.com"
+
+    async def test_singleton_uses_configured_source_contact_email(self, monkeypatch):
+        import pubmed_search.infrastructure.sources.unpaywall as mod
+        from pubmed_search.infrastructure.sources import configure_source_contact_email
+
+        mod._unpaywall_client = None
+        monkeypatch.delenv("NCBI_EMAIL", raising=False)
+        monkeypatch.delenv("UNPAYWALL_EMAIL", raising=False)
+        configure_source_contact_email("runtime@example.com")
+
+        try:
+            client = mod.get_unpaywall_client()
+
+            assert client._email == "runtime@example.com"
+        finally:
+            configure_source_contact_email(None)
+            mod._unpaywall_client = None
 
 
 # ============================================================

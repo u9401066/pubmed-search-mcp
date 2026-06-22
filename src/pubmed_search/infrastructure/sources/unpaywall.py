@@ -30,6 +30,7 @@ import urllib.parse
 from typing import TYPE_CHECKING, Any, Literal
 
 from pubmed_search.infrastructure.sources.base_client import _CONTINUE, BaseAPIClient
+from pubmed_search.infrastructure.sources.contact import first_contact_email, get_configured_source_contact_email
 
 if TYPE_CHECKING:
     import httpx
@@ -75,7 +76,16 @@ class UnpaywallClient(BaseAPIClient):
             email: Contact email (required by Unpaywall ToS)
             timeout: Request timeout in seconds
         """
-        self._email = email or os.environ.get("NCBI_EMAIL", "").strip() or DEFAULT_EMAIL
+        self._email = (
+            first_contact_email(
+                email,
+                os.environ.get("UNPAYWALL_EMAIL"),
+                os.environ.get("NCBI_EMAIL"),
+                get_configured_source_contact_email(),
+                DEFAULT_EMAIL,
+            )
+            or DEFAULT_EMAIL
+        )
         super().__init__(
             timeout=timeout,
             min_interval=0.1,
@@ -303,7 +313,14 @@ def get_unpaywall_client(email: str | None = None) -> UnpaywallClient:
     if _unpaywall_client is None:
         import os
 
-        _unpaywall_client = UnpaywallClient(email=email or os.environ.get("UNPAYWALL_EMAIL"))
+        _unpaywall_client = UnpaywallClient(
+            email=first_contact_email(
+                email,
+                os.environ.get("UNPAYWALL_EMAIL"),
+                os.environ.get("NCBI_EMAIL"),
+                get_configured_source_contact_email(),
+            )
+        )
     return _unpaywall_client
 
 
