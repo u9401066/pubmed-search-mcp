@@ -1815,7 +1815,7 @@ wheels = [
 
 [[package]]
 name = "pubmed-search-mcp"
-version = "0.5.16"
+version = "0.5.17"
 source = { editable = "." }
 dependencies = [
     { name = "anyio" },

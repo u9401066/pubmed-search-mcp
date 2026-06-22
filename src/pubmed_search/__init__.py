@@ -12,7 +12,7 @@ from __future__ import annotations
 from importlib import import_module
 from typing import Any
 
-__version__ = "0.5.16"
+__version__ = "0.5.17"
 
 _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     # Stable Python SDK facade
