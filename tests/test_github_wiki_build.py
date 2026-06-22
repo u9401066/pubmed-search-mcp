@@ -17,6 +17,7 @@ def test_build_github_wiki_outputs_expected_pages(tmp_path) -> None:
         "Developer-Guide.zh-TW.md",
         "Tools-Usage-Guide.md",
         "Tools-Usage-Guide.zh-TW.md",
+        "Research-Chronicle-Rebuild-Spec.md",
         "Pipeline-Tutorial.md",
         "Pipeline-Tutorial.zh-TW.md",
         "Architecture.md",
