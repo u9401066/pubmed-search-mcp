@@ -43,7 +43,7 @@ unified_search(
 | `find_citing_articles` | 找誰引用這篇 | 往未來 |
 | `get_citation_metrics` | 看引用影響力 | 評估重要性 |
 | `build_citation_tree` | 建立引用網路 | 視覺化 |
-| `build_research_timeline` | 建立時間軸 | 演化脈絡 |
+| `build_research_chronicle` | 建立研究編年史 | 演化脈絡 |
 
 ---
 
@@ -127,23 +127,23 @@ build_citation_tree(
 
 ## 如果想看時間演化
 
-### 以單篇或一組 PMID 建時間軸
+### 以單篇或一組 PMID 建編年史
 
 ```python
-build_research_timeline(
+build_research_chronicle(
     pmids="30217674,35678901,34567890",
     topic="Remimazolam Clinical Development",
-    output_format="mermaid"
+    output="mermaid"
 )
 ```
 
-### 以主題建時間軸
+### 以主題建編年史
 
 ```python
-build_research_timeline(
+build_research_chronicle(
     topic="remimazolam",
     max_events=20,
-    output_format="text"
+    output="summary"
 )
 ```
 
@@ -180,7 +180,7 @@ get_article_figures(pmid="30217674")
 優先看：
 
 - `find_citing_articles` 的最近年份文章
-- `build_research_timeline` 中最近幾個 milestone
+- `build_research_chronicle` 中最近幾個 milestone
 
 ### 找基礎文獻
 

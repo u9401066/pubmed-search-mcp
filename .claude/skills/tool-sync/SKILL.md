@@ -62,7 +62,7 @@ uv run python scripts/count_mcp_tools.py --update-docs
 # 檢查工具數量是否正確
 uv run python scripts/count_mcp_tools.py
 
-# 檢查驗證是否通過（TOOL_CATEGORIES 與 FastMCP runtime 同步）
+# 檢查驗證是否通過（TOOL_CATEGORIES 與 MCPServer runtime 同步）
 uv run python scripts/count_mcp_tools.py --verbose
 ```
 
@@ -92,7 +92,7 @@ uv run python scripts/count_mcp_tools.py --verbose
 ### 🔴 必須遵守
 1. **任何工具變更後都要執行** `count_mcp_tools.py --update-docs`
 2. **先修改源頭**（tool_registry.py + tools/__init__.py），再執行腳本
-3. **驗證必須通過** — `TOOL_CATEGORIES` 與 FastMCP runtime 必須同步
+3. **驗證必須通過** — `TOOL_CATEGORIES` 與 MCPServer runtime 必須同步
 
 ### ⚠️ 注意事項
 - `count_mcp_tools.py` 會自動偵測 `TOOL_CATEGORIES` 中所有類別（動態取得，不再硬編碼）

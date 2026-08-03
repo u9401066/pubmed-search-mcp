@@ -92,6 +92,7 @@ uv run pre-commit autoupdate
 - **no-type-ignore-bare** 禁止裸 `# type: ignore` (`scripts/hooks/check_type_ignore.py`)
 - **docstring-tools** MCP 工具必須有文檔字串 (`scripts/hooks/check_docstring_tools.py`)
 - **no-env-inner-layers** 禁止內層 DDD 使用 os.environ (`scripts/hooks/check_env_config.py`)
+- **tenant-scoped-storage** presentation 層儲存路徑須經 `tenant_data_dir()` (`scripts/hooks/check_tenant_scoped_storage.py`)
 - **source-counts-guard** 確保每來源 API 回傳量顯示 (`scripts/hooks/check_source_counts.py`)
 - **todo-scanner** TODO/FIXME 掃描器 (警告, 不阻擋) (`scripts/hooks/check_todo_scanner.py`)
 - **instruction-drift** 工具 docstring 變更偵測 (警告, 不阻擋) (`scripts/hooks/check_instruction_drift.py`)
@@ -393,7 +394,7 @@ from ...infrastructure.ncbi import LiteratureSearcher
 ## 🎯 Project Overview
 
 PubMed Search MCP is a **professional literature research assistant** that provides:
-- **46 MCP Tools** for literature search and analysis
+- **45 MCP Tools** for literature search and analysis
 - **Multi-source search**: PubMed, Europe PMC (33M+), CORE (200M+)
 - **NCBI databases**: Gene, PubChem, ClinVar
 - **Full text access**: Direct XML/text retrieval
@@ -569,16 +570,6 @@ unified_search(query="<combined_boolean_query>")
 | `convert_icd_mesh` | Convert between ICD codes and MeSH terms (bidirectional). |
 
 
-### 研究時間軸
-*研究演化追蹤與里程碑偵測*
-
-| Tool | Purpose |
-|------|---------|
-| `build_research_timeline` | Build a research timeline for a topic OR specific PMIDs. |
-| `analyze_timeline_milestones` | Analyze milestone distribution for a research topic. |
-| `compare_timelines` | Compare research timelines of multiple topics. |
-
-
 ### 引用驗證
 *Reference list verification with PubMed evidence*
 
@@ -593,6 +584,15 @@ unified_search(query="<combined_boolean_query>")
 | Tool | Purpose |
 |------|---------|
 | `get_article_figures` | Get structured figure metadata (label, caption, image URL) and PDF links from a PMC Open Access arti |
+
+
+### 研究編年史
+*研究演化脈絡：持久化、可版本比對、證據支撐的時序主軸與分支投影*
+
+| Tool | Purpose |
+|------|---------|
+| `build_research_chronicle` | Build a persisted, versioned, evidence-backed Research Chronicle. |
+| `read_research_chronicle` | Read stored Research Chronicles: load, list, diff, narrate, analyze, compare. |
 
 
 ### 圖片搜尋

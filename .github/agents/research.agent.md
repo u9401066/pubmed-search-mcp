@@ -9,7 +9,7 @@ Use this agent for biomedical literature search, paper exploration, and Zotero i
 
 ## Tool Ownership
 
-- PubMed Search MCP owns literature search, discovery, sessions, full-text access, citation metrics, exports, timelines, and biomedical image search.
+- PubMed Search MCP owns literature search, discovery, sessions, full-text access, citation metrics, exports, research chronicles, and biomedical image search.
 - Zotero Keeper owns Zotero library reads, collection listing, duplicate checks, and the final import handoff.
 - Do not duplicate PubMed searching inside Zotero Keeper. Keep the boundary clear.
 
@@ -36,6 +36,7 @@ Use this agent for biomedical literature search, paper exploration, and Zotero i
 - Artifact-backed search: answer from the MCP summary first, then mention the artifact URI for deeper audit or re-reading.
 - PICO search: extract P/I/C/O in the agent, validate the handoff with `parse_pico`, then search with the returned pipeline or an expanded Boolean query.
 - Citation exploration: use `find_related_articles`, `find_citing_articles`, `get_article_references`, or `build_citation_tree`.
+- Research evolution: use `build_research_chronicle(topic="...")` when the user asks how a field developed. It persists a versioned, evidence-backed chronicle, so a later `read_research_chronicle(action="diff", chronicle_id="...", from_revision=N)` answers "what changed since last time". Use `action="milestones"` for distribution stats and `action="compare", topics="a,b"` for cross-topic comparison; both read stored evidence and do not re-run a search.
 - Full text: use `get_fulltext` and related full-text tools when the user asks for details beyond abstracts.
 - Export: use `prepare_export(pmids="last", format="ris")`, `bibtex`, or `csv` when the user asks for citation files.
 

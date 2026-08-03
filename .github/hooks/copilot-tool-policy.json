@@ -62,10 +62,9 @@
     "icd": [
       "convert_icd_mesh"
     ],
-    "timeline": [
-      "build_research_timeline",
-      "analyze_timeline_milestones",
-      "compare_timelines"
+    "chronicle": [
+      "build_research_chronicle",
+      "read_research_chronicle"
     ],
     "image_search": [
       "search_biomedical_images"
@@ -159,13 +158,12 @@
     },
     "export_synthesis": {
       "label": "Export & Synthesis",
-      "nextInstruction": "prepare_export / save_literature_notes / build_research_timeline",
+      "nextInstruction": "prepare_export / save_literature_notes / build_research_chronicle",
       "tools": [
         "prepare_export",
         "save_literature_notes",
-        "build_research_timeline",
-        "analyze_timeline_milestones",
-        "compare_timelines"
+        "build_research_chronicle",
+        "read_research_chronicle"
       ]
     }
   },
@@ -194,9 +192,8 @@
       "get_gene_literature",
       "get_compound_details",
       "get_compound_literature",
-      "build_research_timeline",
-      "analyze_timeline_milestones",
-      "compare_timelines",
+      "build_research_chronicle",
+      "read_research_chronicle",
       "get_pipeline_history"
     ],
     "feedbackRemediation": [
@@ -266,9 +263,8 @@
       "verify_reference_list",
       "get_institutional_link",
       "diagnose_institutional_access",
-      "build_research_timeline",
-      "analyze_timeline_milestones",
-      "compare_timelines",
+      "build_research_chronicle",
+      "read_research_chronicle",
       "search_biomedical_images",
       "get_pipeline_history"
     ]

@@ -73,6 +73,7 @@ description: "Orchestrate pre-commit workflow including Memory Bank sync, README
 │  ✅ no-type-ignore-bare│                                    │
 │  ✅ docstring-tools  │                                      │
 │  ✅ no-env-inner-layers│                                    │
+│  ✅ tenant-scoped-storage│                                  │
 │  ✅ source-counts-guard│                                    │
 │  ✅ todo-scanner     │                                      │
 │  ✅ instruction-drift│                                      │
@@ -269,6 +270,7 @@ git commit --no-verify -m "emergency"       # 跳過所有 hooks (慎用!)
 | `scripts/hooks/check_type_ignore.py` | 禁止裸 type: ignore |
 | `scripts/hooks/check_docstring_tools.py` | MCP tool docstring 檢查 |
 | `scripts/hooks/check_env_config.py` | 禁止內層使用 os.environ |
+| `scripts/hooks/check_tenant_scoped_storage.py` | presentation 層儲存路徑須經 tenant_data_dir() |
 | `scripts/hooks/check_source_counts.py` | 確保每來源 API 回傳量顯示 |
 | `scripts/hooks/check_todo_scanner.py` | TODO/FIXME 掃描 |
 | `scripts/hooks/check_instruction_drift.py` | 工具 docstring 變更偵測 |

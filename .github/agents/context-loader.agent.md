@@ -35,7 +35,7 @@ You are a context loading specialist for **Academic Figures MCP**. Your job is t
 ### 專案概要
 - **名稱**: Academic Figures MCP
 - **目標**: PubMed → 學術圖表 MCP Server
-- **技術棧**: Python 3.10+, FastMCP, google-genai, uv
+- **技術棧**: Python 3.10+, MCP Python SDK v2 (MCPServer), uv
 - **架構**: DDD (Domain → Application → Infrastructure → Presentation)
 
 ### 當前焦點
