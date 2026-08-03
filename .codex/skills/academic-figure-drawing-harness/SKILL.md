@@ -31,4 +31,3 @@ description: "Codex drawing harness integration. Triggers: 繪圖, draw, figure,
   - 若需精美點陣圖，呼叫 generate_figure。
 - **Step 3: 附加上下文與組裝 (Assemble)**
   產生最終圖片的 Markdown 嵌入格式 ![Figure Name](output_path)，並加上完整的學術來源與 PICO/MeSH 背景說明。
-

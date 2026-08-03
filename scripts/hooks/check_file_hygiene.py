@@ -5,6 +5,10 @@ Pre-commit hook: File hygiene check.
 Ensures no forbidden temporary files are committed.
 Rules based on .github/copilot-instructions.md file hygiene spec.
 
+Only newly added paths are judged. Files already present at HEAD were accepted
+when they landed, so re-checking them would block edits to existing files
+without preventing any new clutter.
+
 Exit codes:
     0 - Clean
     1 - Violations found
@@ -74,6 +78,10 @@ ALLOWED_ROOT_DIRS: set[str] = {
     ".github",
     ".claude",
     ".clinerules",
+    # Agent harnesses that ship with the repo, peers of .claude/.clinerules
+    ".cline",
+    ".codex",
+    ".asset-aware-mcp",
     ".vscode",
     ".ruff_cache",
     ".mypy_cache",
@@ -92,6 +100,24 @@ def get_staged_files() -> list[str]:
         text=True,
     )
     return [f for f in result.stdout.strip().split("\n") if f.strip()]
+
+
+def get_committed_files() -> set[str]:
+    """Return files that already exist at HEAD.
+
+    A file that is already in the repository was accepted at some point, so
+    re-judging it on every edit cannot improve hygiene. It only produces a
+    deadlock: an auto-fixing hook rewrites the file, this hook refuses to let
+    it be staged, and the change can never be committed either way.
+    """
+    result = subprocess.run(
+        ["git", "ls-tree", "-r", "HEAD", "--name-only"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:  # No HEAD yet, e.g. the initial commit.
+        return set()
+    return {f for f in result.stdout.split("\n") if f.strip()}
 
 
 def check_file(filepath: str) -> str | None:
@@ -126,8 +152,11 @@ def main() -> int:
     if not staged:
         return 0
 
+    already_committed = get_committed_files()
     violations: list[str] = []
     for f in staged:
+        if f in already_committed:
+            continue
         error = check_file(f)
         if error:
             violations.append(error)

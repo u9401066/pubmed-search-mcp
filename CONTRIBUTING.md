@@ -129,7 +129,7 @@ uv run pre-commit run --all-files                  # test all hooks manually
 | **commit** | ~~semgrep~~ | — | *Moved to pre-push (OOM prevention)* |
 | **commit** | ~~mypy~~ | — | *Moved to pre-push (OOM prevention)* |
 | **commit** | async-test-checker | — | Validates async/sync consistency in tests |
-| **commit** | file-hygiene | — | Blocks forbidden temp files |
+| **commit** | file-hygiene | — | Blocks forbidden temp files among *newly added* paths (files already at HEAD are not re-judged) |
 | **commit** | commit-size-guard | — | Limits commits to ≤30 files |
 | **commit** | tool-count-sync | ✅ | Syncs MCP tool documentation |
 | **commit** | skills-frontmatter | — | Validates `.claude/skills/*/SKILL.md` YAML frontmatter |

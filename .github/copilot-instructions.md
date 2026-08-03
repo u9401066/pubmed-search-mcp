@@ -81,7 +81,7 @@ uv run pre-commit autoupdate
 - **semgrep** SAST 靜態安全分析 — **已移至 pre-push** (記憶體 300-500MB)
 - **mypy** type check — **已移至 pre-push** (記憶體 500MB-1GB)
 - **async-test-checker** async/sync 測試一致性 (`scripts/check_async_tests.py`)
-- **file-hygiene** 檔案衛生檢查 (`scripts/hooks/check_file_hygiene.py`)
+- **file-hygiene** 檔案衛生檢查 (`scripts/hooks/check_file_hygiene.py`)，只審查**新增**路徑；已在 HEAD 的檔案當初已被接受，再擋一次只會跟自動修復型 hook 互鎖
 - **commit-size-guard** 限制每次 commit ≤30 檔案 (`scripts/hooks/check_commit_size.py`)
 - **tool-count-sync** MCP 工具文檔同步 (`scripts/hooks/check_tool_sync.py`, 自動修復)
 - **skills-frontmatter** 驗證 `.claude/skills/*/SKILL.md` 的 YAML frontmatter (`scripts/hooks/check_skills_frontmatter.py`)
