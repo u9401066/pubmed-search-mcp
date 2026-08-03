@@ -123,7 +123,7 @@ suggestion_for_mode() {
             fi
             ;;
         *)
-            if echo "$tool_name" | grep -qiE 'prepare_export|build_research_timeline|analyze_timeline_milestones|compare_timelines'; then
+            if echo "$tool_name" | grep -qiE 'prepare_export|save_literature_notes|build_research_chronicle|read_research_chronicle'; then
                 echo "Gather PMIDs or session context first, then retry the synthesis step."
             elif echo "$tool_name" | grep -qiE 'read_session|get_session_|get_cached_article'; then
                 echo "Run a search first or provide explicit session / PMID context before using this session tool."

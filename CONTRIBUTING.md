@@ -139,6 +139,7 @@ uv run pre-commit run --all-files                  # test all hooks manually
 | **commit** | no-type-ignore-bare | — | Requires error codes on `# type: ignore` |
 | **commit** | docstring-tools | — | MCP `@tool` functions must have docstrings |
 | **commit** | no-env-inner-layers | — | Bans `os.environ` in domain/application layers |
+| **commit** | tenant-scoped-storage | — | Presentation-layer storage roots must use `tenant_data_dir()` |
 | **commit** | source-counts-guard | — | Ensures per-source API return counts are displayed |
 | **commit** | todo-scanner | — | Scans TODO/FIXME markers (warning only) |
 | **commit** | instruction-drift | — | Warns when tool docstrings change (review instructions.py) |

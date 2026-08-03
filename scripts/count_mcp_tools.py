@@ -2,7 +2,7 @@
 """
 MCP 工具統計腳本
 
-統計並輸出所有已註冊的 MCP 工具（從 FastMCP runtime 取得）。
+統計並輸出所有已註冊的 MCP 工具（從 MCPServer runtime 取得）。
 可用於：
 1. 確認工具數量
 2. 追蹤工具變化
@@ -14,7 +14,7 @@ Usage:
 Notes:
     - 只統計透過 MCP 協議暴露的工具（等同 tools/list 響應）
     - 內部函數不會被計入
-    - 工具描述從 FastMCP Tool.description 屬性取得
+    - 工具描述從 MCPServer Tool.description 屬性取得
     - 建議在 git commit 前執行 --update-docs 確保文檔同步
 """
 
@@ -48,7 +48,7 @@ def get_registered_tools(mcp) -> list[str]:
 
 def get_tool_details(mcp) -> dict[str, dict]:
     """
-    從 FastMCP runtime 取得每個工具的詳細資訊。
+    從 MCPServer runtime 取得每個工具的詳細資訊。
 
     Returns:
         dict: {tool_name: {"description": str, "parameters": list[str]}}
@@ -486,7 +486,7 @@ def update_skill_tools_reference(stats: dict, mcp) -> bool:
     """
     更新 .claude/skills/pubmed-mcp-tools-reference/SKILL.md。
 
-    從 FastMCP runtime 自動生成完整的工具參考。
+    從 MCPServer runtime 自動生成完整的工具參考。
     """
     skill_path = Path(__file__).parent.parent / ".claude" / "skills" / "pubmed-mcp-tools-reference" / "SKILL.md"
 
@@ -621,7 +621,7 @@ def _generate_skill_tools_reference(stats: dict, tool_details: dict) -> str:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Count and document MCP tools (from FastMCP runtime)",
+        description="Count and document MCP tools (from MCPServer runtime)",
         epilog="Examples:\n"
         "  uv run python scripts/count_mcp_tools.py           # Basic stats\n"
         "  uv run python scripts/count_mcp_tools.py --json    # JSON output\n"
@@ -650,7 +650,7 @@ def main():
     print("=" * 60)
     print("  PubMed Search MCP - Tool Statistics")
     print(f"  Generated: {stats['timestamp'][:19]}")
-    print("  Source: FastMCP runtime (MCP tools/list equivalent)")
+    print("  Source: MCPServer runtime (MCP tools/list equivalent)")
     print("=" * 60)
     print()
     print(f"  📊 Total MCP Tools: {stats['total_tools']}")

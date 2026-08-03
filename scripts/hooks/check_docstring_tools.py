@@ -8,7 +8,7 @@ Scope:     src/pubmed_search/presentation/mcp_server/tools/**/*.py
 Why it matters:
   - MCP tool docstrings become the tool description shown to AI agents
   - Missing docstrings make tools invisible/unusable to agents
-  - FastMCP uses the function docstring as the tool's help text
+  - MCPServer uses the function docstring as the tool's help text
 
 Exit codes:
     0 - All tool functions have docstrings

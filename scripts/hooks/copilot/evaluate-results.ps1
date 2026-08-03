@@ -195,7 +195,7 @@ function Get-Suggestion {
             return "Broaden the query, relax filters, or expand with related / citing / fulltext tools."
         }
         default {
-            if ($ToolName -match 'prepare_export|build_research_timeline|analyze_timeline_milestones|compare_timelines') {
+            if ($ToolName -match 'prepare_export|save_literature_notes|build_research_chronicle|read_research_chronicle') {
                 return "Gather PMIDs or session context first, then retry the synthesis step."
             }
             if ($ToolName -match 'read_session|get_session_|get_cached_article') {

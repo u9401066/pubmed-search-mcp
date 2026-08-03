@@ -241,6 +241,15 @@ repos:
         files: ^src/pubmed_search/(domain|application|shared)/
         # Config via DI container, not os.environ
 
+      # ── Multi-tenant storage isolation guard ───────────────
+      - id: tenant-scoped-storage
+        name: tenant-scoped storage paths
+        entry: uv run python scripts/hooks/check_tenant_scoped_storage.py
+        language: system
+        pass_filenames: false
+        files: ^src/pubmed_search/presentation/
+        # Stores under data_dir must route through tenant_data_dir()
+
       # ── Per-source API count guard ─────────────────────────
       - id: source-counts-guard
         name: per-source API count display guard
