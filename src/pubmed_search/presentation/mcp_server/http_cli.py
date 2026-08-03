@@ -10,11 +10,15 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from pubmed_search import __version__
+from pubmed_search.application.session.registry import SessionManagerRegistry
+from pubmed_search.presentation.mcp_server.auth import build_auth
 from pubmed_search.presentation.mcp_server.http_compat import wrap_copilot_compatibility
-from pubmed_search.presentation.mcp_server.server import create_server, get_container
+from pubmed_search.presentation.mcp_server.http_security import AuxiliaryApiGuard
+from pubmed_search.presentation.mcp_server.server import build_asgi_app, create_server, get_container
+from pubmed_search.presentation.mcp_server.tools._common import get_session_registry
+from pubmed_search.shared.settings import load_settings
 
 if TYPE_CHECKING:
-    from pubmed_search.application.session.manager import SessionManager
     from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
 logger = logging.getLogger(__name__)
@@ -89,16 +93,33 @@ def _mount_auxiliary_routes(
     transport: str,
     port: int,
     export_dir: Path,
-    session_manager: SessionManager,
+    guard: AuxiliaryApiGuard,
     searcher: LiteratureSearcher,
 ) -> None:
-    """Mount public auxiliary HTTP endpoints onto the MCP ASGI app."""
+    """Mount the auxiliary HTTP endpoints onto the MCP ASGI app.
+
+    ``/health`` and ``/ready`` stay open for orchestrator probes; every route
+    that returns session data goes through *guard* and is scoped to the calling
+    tenant.
+    """
     from anyio import Path as AsyncPath
     from starlette.responses import FileResponse, JSONResponse
     from starlette.routing import Route as StarletteRoute
 
     async def health(_request: Any) -> Any:
-        return JSONResponse({"status": "ok", "service": "pubmed-search-mcp"})
+        return JSONResponse({"status": "ok", "service": "pubmed-search-mcp", "version": __version__})
+
+    async def ready(_request: Any) -> Any:
+        return JSONResponse(
+            {
+                "status": "ready",
+                "service": "pubmed-search-mcp",
+                "version": __version__,
+                "transport": transport,
+                "auth_enforced": guard.enforcing,
+                "tenants": guard.registry.stats(),
+            }
+        )
 
     async def info(_request: Any) -> Any:
         if transport == "streamable-http":
@@ -121,6 +142,7 @@ def _mount_auxiliary_routes(
                         "info": "/info",
                         "root_info": "/",
                         "health": "/health",
+                        "ready": "/ready",
                         "downloads": "/download/{filename}",
                         "list_exports": "/exports",
                     },
@@ -130,7 +152,8 @@ def _mount_auxiliary_routes(
                     "note": "Use the SDK for in-process Python calls; /mcp remains the agent tool contract.",
                 },
                 "auxiliary_http_api": {
-                    "classification": "public auxiliary read-only API",
+                    "classification": "read-only API, bearer-authenticated when PUBMED_AUTH_TOKENS is set",
+                    "auth_enforced": guard.enforcing,
                     "example": f"GET http://localhost:{port}/api/cached_article/12345678",
                 },
             }
@@ -178,6 +201,11 @@ def _mount_auxiliary_routes(
         )
 
     async def api_get_cached_article(request: Any) -> Any:
+        outcome = await guard.authenticate(request)
+        if outcome.identity is None:
+            return JSONResponse({"detail": outcome.detail}, status_code=outcome.status_code)
+        session_manager = guard.session_manager_for(outcome.identity)
+
         pmid = str(request.path_params["pmid"])
         fetch_if_missing = request.query_params.get("fetch_if_missing", "true").lower() == "true"
 
@@ -198,6 +226,11 @@ def _mount_auxiliary_routes(
         return JSONResponse({"detail": f"Article PMID:{pmid} not found in cache"}, status_code=404)
 
     async def api_get_multiple_articles(request: Any) -> Any:
+        outcome = await guard.authenticate(request)
+        if outcome.identity is None:
+            return JSONResponse({"detail": outcome.detail}, status_code=outcome.status_code)
+        session_manager = guard.session_manager_for(outcome.identity)
+
         pmid_list = [pmid.strip() for pmid in request.query_params.get("pmids", "").split(",") if pmid.strip()]
         fetch_if_missing = request.query_params.get("fetch_if_missing", "false").lower() == "true"
         if not pmid_list:
@@ -226,13 +259,17 @@ def _mount_auxiliary_routes(
             }
         )
 
-    async def api_session_summary(_request: Any) -> Any:
-        return JSONResponse(session_manager.get_session_summary())
+    async def api_session_summary(request: Any) -> Any:
+        outcome = await guard.authenticate(request)
+        if outcome.identity is None:
+            return JSONResponse({"detail": outcome.detail}, status_code=outcome.status_code)
+        return JSONResponse(guard.session_manager_for(outcome.identity).get_session_summary())
 
     app.router.routes[:0] = [
         StarletteRoute("/", info),
         StarletteRoute("/info", info),
         StarletteRoute("/health", health),
+        StarletteRoute("/ready", ready),
         StarletteRoute("/exports", list_exports),
         StarletteRoute("/download/{filename}", download_file),
         StarletteRoute("/api/cached_article/{pmid}", api_get_cached_article),
@@ -258,14 +295,22 @@ def main() -> None:
         workspace_dir=args.workspace_dir,
     )
 
-    app: Any = server.sse_app() if args.transport == "sse" else server.streamable_http_app()
+    app: Any = build_asgi_app(server, args.transport, host=args.host)
     container = get_container()
+    settings = load_settings()
+    token_verifier, _ = build_auth(settings)
+    registry_root = settings.data_dir  # tenant-ok: registry splits per tenant below
+    registry = get_session_registry() or SessionManagerRegistry(registry_root)
     _mount_auxiliary_routes(
         app,
         transport=args.transport,
         port=args.port,
         export_dir=_default_export_dir(),
-        session_manager=cast("SessionManager", container.session_manager()),
+        guard=AuxiliaryApiGuard(
+            verifier=token_verifier,
+            registry=registry,
+            require_auth=settings.auth_required,
+        ),
         searcher=cast("LiteratureSearcher", container.searcher()),
     )
     if args.copilot_compatible:
@@ -273,6 +318,8 @@ def main() -> None:
 
     logger.info("Starting PubMed Search MCP HTTP server on http://%s:%s", args.host, args.port)
     logger.info("MCP endpoint: %s", "/mcp" if args.transport == "streamable-http" else "/sse")
+    logger.info("Auth: %s", "bearer tokens enforced" if token_verifier else "OPEN (no tokens configured)")
+    logger.info("Tenant isolation: %s", "on" if settings.tenant_isolation else "off")
     logger.info("Python SDK facade: from pubmed_search.api import PubMedSearchClient")
 
     import uvicorn

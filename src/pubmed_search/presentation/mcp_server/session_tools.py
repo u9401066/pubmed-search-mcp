@@ -24,12 +24,13 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 if TYPE_CHECKING:
-    from mcp.server.fastmcp import Context, FastMCP
+    from mcp.server.mcpserver import Context, MCPServer
 
     from pubmed_search.application.session.manager import SessionManager
 
 from pubmed_search.shared.settings import load_settings
 
+from .tools._common import get_session_manager
 from .tools.artifact_memory import artifact_locator
 from .tools.tool_runtime import safe_send_resource_updated
 
@@ -49,6 +50,25 @@ SESSION_RESOURCE_URIS = (
 )
 
 
+class _TenantScopedSessionManager:
+    """Forward every attribute to the session manager of the current tenant.
+
+    Session tools and resources are registered once at startup, so capturing a
+    manager in their closures would pin every caller to the registration-time
+    tenant. This proxy defers the lookup to call time instead, which keeps the
+    tool bodies unchanged and makes it impossible to miss a call site.
+    """
+
+    __slots__ = ("_fallback",)
+
+    def __init__(self, fallback: SessionManager) -> None:
+        self._fallback = fallback
+
+    def __getattr__(self, name: str) -> Any:
+        target = get_session_manager() or self._fallback
+        return getattr(target, name)
+
+
 def _session_resource_kwargs(*, name: str, title: str, description: str) -> dict[str, object]:
     """Build consistent host-facing metadata for dynamic session resources."""
     return {
@@ -60,7 +80,7 @@ def _session_resource_kwargs(*, name: str, title: str, description: str) -> dict
     }
 
 
-def _session_resource_decorator(mcp: FastMCP, uri: str, **kwargs: object) -> Callable[[ResourceFunc], ResourceFunc]:
+def _session_resource_decorator(mcp: MCPServer, uri: str, **kwargs: object) -> Callable[[ResourceFunc], ResourceFunc]:
     """Build a resource decorator that falls back for test doubles without keyword support."""
     resource = cast("Any", mcp.resource)
     with contextlib.suppress(TypeError):
@@ -430,13 +450,14 @@ def _read_session_dispatch(
     )
 
 
-def register_session_tools(mcp: FastMCP, session_manager: SessionManager):
+def register_session_tools(mcp: MCPServer, session_manager: SessionManager):
     """
     Register session tools for PMID persistence.
 
     These tools help Agent access cached data without
     relying on context memory.
     """
+    session_manager = cast("SessionManager", _TenantScopedSessionManager(session_manager))
 
     @mcp.tool()
     def read_session(
@@ -617,11 +638,12 @@ def register_session_tools(mcp: FastMCP, session_manager: SessionManager):
             return _json_error(error=str(exc))
 
 
-def register_session_resources(mcp: FastMCP, session_manager: SessionManager):
+def register_session_resources(mcp: MCPServer, session_manager: SessionManager):
     """
     Resources for debugging/monitoring only.
     Agent doesn't need to use these for normal operation.
     """
+    session_manager = cast("SessionManager", _TenantScopedSessionManager(session_manager))
 
     @_session_resource_decorator(
         mcp,

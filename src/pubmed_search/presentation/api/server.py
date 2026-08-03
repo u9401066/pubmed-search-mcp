@@ -66,7 +66,7 @@ async def lifespan(app: FastAPI):
     settings = load_settings()
     email = settings.ncbi_email
     api_key = settings.ncbi_api_key
-    data_dir = settings.data_dir
+    data_dir = settings.data_dir  # tenant-ok: legacy single-tenant CLI server, no tenancy middleware
 
     logger.info(f"Initializing HTTP API server with email: {email}")
     logger.info(f"Session data directory: {data_dir}")
@@ -304,5 +304,5 @@ if __name__ == "__main__":
         port=args.port,
         email=args.email,
         api_key=args.api_key,
-        data_dir=args.data_dir,
+        data_dir=args.data_dir,  # tenant-ok: explicit CLI argument for a single-tenant process
     )
