@@ -16,14 +16,14 @@ from typing import TYPE_CHECKING
 from ._common import ResponseFormatter
 
 if TYPE_CHECKING:
-    from mcp.server.fastmcp import FastMCP
+    from mcp.server.mcpserver import MCPServer
 
     from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
 logger = logging.getLogger(__name__)
 
 
-def register_merge_tools(mcp: FastMCP, searcher: LiteratureSearcher):
+def register_merge_tools(mcp: MCPServer, searcher: LiteratureSearcher):
     """Register result merging tools."""
 
     @mcp.tool()

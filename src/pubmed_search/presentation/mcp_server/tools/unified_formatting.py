@@ -173,9 +173,9 @@ def _build_next_actions(
 
     if articles and not research_context_preview and any(getattr(article, "pmid", None) for article in articles):
         add_action(
-            "build_research_timeline",
-            "You have PMID-backed results; build a lineage view before moving to export or citation chasing.",
-            f'build_research_timeline(pmids="last", topic="{escaped_query}", output_format="tree")',
+            "build_research_chronicle",
+            "You have PMID-backed results; build a persistent chronicle before moving to export or citation chasing.",
+            f'build_research_chronicle(pmids="last", topic="{escaped_query}")',
         )
 
     if len(articles) >= 5:

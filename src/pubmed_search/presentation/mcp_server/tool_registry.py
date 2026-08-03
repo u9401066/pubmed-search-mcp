@@ -26,7 +26,7 @@ from pubmed_search.shared.settings import load_settings
 if TYPE_CHECKING:
     from collections.abc import Awaitable
 
-    from mcp.server.fastmcp import FastMCP
+    from mcp.server.mcpserver import MCPServer
 
     from pubmed_search.application.session.manager import SessionManager
     from pubmed_search.infrastructure.ncbi import LiteratureSearcher
@@ -70,7 +70,7 @@ def _resolve_awaitable(awaitable: Awaitable[Any]) -> Any:
     return _run_awaitable_in_thread(awaitable)
 
 
-def _extract_registered_tool_names(mcp: FastMCP) -> set[str]:
+def _extract_registered_tool_names(mcp: MCPServer) -> set[str]:
     """Get registered tool names using public APIs when available."""
     list_tools = getattr(mcp, "list_tools", None)
     if callable(list_tools):
@@ -80,7 +80,7 @@ def _extract_registered_tool_names(mcp: FastMCP) -> set[str]:
                 raw_tools = _resolve_awaitable(raw_tools)
             except Exception:
                 logger.debug(
-                    "FastMCP.list_tools() is awaitable but could not be resolved; falling back to private registry"
+                    "MCPServer.list_tools() is awaitable but could not be resolved; falling back to private registry"
                 )
                 raw_tools = None
 
@@ -102,7 +102,7 @@ def _extract_registered_tool_names(mcp: FastMCP) -> set[str]:
     if tools is not None:
         return set(tools.keys())
 
-    msg = "Cannot access FastMCP tools registry"
+    msg = "Cannot access MCPServer tools registry"
     raise AttributeError(msg)
 
 
@@ -206,13 +206,12 @@ TOOL_CATEGORIES: dict[str, dict[str, Any]] = {
         "tools": ["convert_icd_mesh"],
         # Note: search_by_icd 已廢棄 → unified_search 支援 ICD 自動偵測
     },
-    "timeline": {
-        "name": "研究時間軸",
-        "description": "研究演化追蹤與里程碑偵測",
+    "chronicle": {
+        "name": "研究編年史",
+        "description": "研究演化脈絡：持久化、可版本比對、證據支撐的時序主軸與分支投影",
         "tools": [
-            "build_research_timeline",
-            "analyze_timeline_milestones",
-            "compare_timelines",
+            "build_research_chronicle",
+            "read_research_chronicle",
         ],
     },
     "image_search": {
@@ -242,7 +241,7 @@ TOOL_CATEGORIES: dict[str, dict[str, Any]] = {
 
 
 def register_all_mcp_tools(
-    mcp: FastMCP,
+    mcp: MCPServer,
     searcher: LiteratureSearcher,
     session_manager: SessionManager,
     strategy_generator: Any | None = None,
@@ -252,7 +251,7 @@ def register_all_mcp_tools(
     註冊所有 MCP 工具。
 
     Args:
-        mcp: FastMCP server instance
+        mcp: MCPServer instance
         searcher: LiteratureSearcher instance
         session_manager: SessionManager instance
         strategy_generator: Optional strategy generator
@@ -278,8 +277,8 @@ def register_all_mcp_tools(
     from .tools.pipeline_tools import set_pipeline_scheduler, set_pipeline_store
 
     data_dir = (
-        str(session_manager.data_dir)
-        if session_manager.data_dir
+        str(session_manager.data_dir)  # tenant-ok: base root; get_pipeline_store() derives per tenant
+        if session_manager.data_dir  # tenant-ok: see above
         else str(__import__("pathlib").Path.home() / ".pubmed-search-mcp")
     )
 
@@ -433,12 +432,12 @@ def generate_tools_index_markdown() -> str:
 # ============================================================================
 
 
-def validate_tool_registry(mcp: FastMCP) -> dict[str, Any]:
+def validate_tool_registry(mcp: MCPServer) -> dict[str, Any]:
     """
     驗證 TOOL_CATEGORIES 與實際註冊的工具是否同步。
 
     Args:
-        mcp: FastMCP server instance (after tools are registered)
+        mcp: MCPServer instance (after tools are registered)
 
     Returns:
         Dict with:
@@ -456,14 +455,14 @@ def validate_tool_registry(mcp: FastMCP) -> dict[str, Any]:
     try:
         registered_tools = _extract_registered_tool_names(mcp)
     except AttributeError:
-        logger.warning("Cannot access registered tools from FastMCP instance")
+        logger.warning("Cannot access registered tools from MCPServer instance")
         return {
             "defined": list(defined_tools),
             "registered": [],
             "missing": [],
             "extra": [],
             "valid": False,
-            "error": "Cannot access FastMCP tools registry",
+            "error": "Cannot access MCPServer tools registry",
         }
 
     # Calculate differences
@@ -486,12 +485,12 @@ def validate_tool_registry(mcp: FastMCP) -> dict[str, Any]:
     return result
 
 
-def check_tool_registration(mcp: FastMCP, raise_on_error: bool = False) -> bool:
+def check_tool_registration(mcp: MCPServer, raise_on_error: bool = False) -> bool:
     """
     生產環境檢查：驗證所有工具都已正確註冊。
 
     Args:
-        mcp: FastMCP server instance
+        mcp: MCPServer instance
         raise_on_error: If True, raise exception on validation failure
 
     Returns:

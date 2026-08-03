@@ -48,7 +48,7 @@ from .agent_output import (
 )
 
 if TYPE_CHECKING:
-    from mcp.server.fastmcp import FastMCP
+    from mcp.server.mcpserver import MCPServer
 
     from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
@@ -323,7 +323,7 @@ def _format_citation_metrics_structured(
     return serialize_structured_payload(payload, output_format)
 
 
-def register_discovery_tools(mcp: FastMCP, searcher: LiteratureSearcher):
+def register_discovery_tools(mcp: MCPServer, searcher: LiteratureSearcher):
     """Register discovery tools for exploring PubMed."""
 
     # Supported alternate sources

@@ -20,130 +20,107 @@ Architecture:
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import os
 import sys
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
-from mcp import types
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
-from mcp.shared.exceptions import McpError
 
+from pubmed_search import __version__
+from pubmed_search.application.session.registry import SessionManagerRegistry
 from pubmed_search.container import ApplicationContainer
 from pubmed_search.shared.settings import DEFAULT_DATA_DIR, DEFAULT_EMAIL, load_settings
 
+from .auth import build_auth
 from .instructions import SERVER_INSTRUCTIONS
+from .tenancy import build_tenancy_middleware
 from .tool_registry import register_all_mcp_tools
+from .tools._common import set_session_registry
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable
+
+    from starlette.applications import Starlette
 
     from pubmed_search.application.session.manager import SessionManager
     from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
 logger = logging.getLogger(__name__)
 
-_EXPERIMENTAL_TASK_TOOL_SUPPORT: dict[str, types.TaskExecutionMode] = {"unified_search": "optional"}
-_UNIFIED_SEARCH_TASK_IMMEDIATE_RESPONSE = (
-    "unified_search is running as an experimental MCP task. Poll tasks/get and tasks/result for completion."
-)
-
 # ── Module-level DI container ──────────────────────────────────────────────
 _container: ApplicationContainer | None = None
 
-
-class _TaskProgressContext:
-    """Proxy FastMCP context that maps progress updates onto task status."""
-
-    def __init__(self, base_context: Any, task_context: Any) -> None:
-        self._base_context = base_context
-        self._task_context = task_context
-
-    async def report_progress(self, progress: float, total: float, message: str) -> None:
-        del progress, total
-        await self._task_context.update_status(message or "Task running")
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._base_context, name)
+_TRANSPORT_OPTIONS_ATTR = "_pubmed_transport_options"
 
 
-def _as_call_tool_result(result: Any) -> types.CallToolResult:
-    """Normalize task work output into a task-storable CallToolResult."""
-    if isinstance(result, types.CallToolResult):
-        return result
+@dataclass(frozen=True)
+class TransportOptions:
+    """Transport-level settings chosen at ``create_server()`` time.
 
-    if isinstance(result, str):
-        return types.CallToolResult(content=[types.TextContent(type="text", text=result)])
+    MCP SDK v2 moved these keywords off the server constructor and onto
+    ``run()`` / ``sse_app()`` / ``streamable_http_app()``. We record the caller's
+    intent here so the launcher that builds the ASGI app can replay it.
 
-    if isinstance(result, dict):
-        return types.CallToolResult(
-            content=[types.TextContent(type="text", text=json.dumps(result, ensure_ascii=False))],
-            structuredContent=result,
+    Attributes:
+        json_response: Return JSON bodies instead of SSE for Streamable HTTP.
+        stateless_http: Serve every request with a fresh transport (no session id).
+        transport_security: DNS-rebinding protection settings, or ``None`` for the
+            SDK default (auto-enabled for loopback hosts).
+    """
+
+    json_response: bool = False
+    stateless_http: bool = False
+    transport_security: TransportSecuritySettings | None = None
+
+
+def get_transport_options(server: MCPServer[Any]) -> TransportOptions:
+    """Read the transport options recorded on *server* by :func:`create_server`.
+
+    Args:
+        server: A server instance produced by :func:`create_server`.
+
+    Returns:
+        The recorded :class:`TransportOptions`, or defaults for servers built
+        outside :func:`create_server`.
+    """
+    options = getattr(server, _TRANSPORT_OPTIONS_ATTR, None)
+    return options if isinstance(options, TransportOptions) else TransportOptions()
+
+
+def build_asgi_app(server: MCPServer[Any], transport: str = "streamable-http", *, host: str = "127.0.0.1") -> Starlette:
+    """Build the ASGI app for *server* using its recorded transport options.
+
+    Args:
+        server: A server instance produced by :func:`create_server`.
+        transport: Either ``"streamable-http"`` or ``"sse"``.
+        host: Bind host, used only to decide whether the SDK auto-enables DNS
+            rebinding protection.
+
+    Returns:
+        A Starlette app ready to be served by uvicorn.
+
+    Raises:
+        ValueError: If *transport* is not a supported HTTP transport.
+    """
+    options = get_transport_options(server)
+
+    if transport == "sse":
+        return server.sse_app(transport_security=options.transport_security, host=host)
+    if transport == "streamable-http":
+        return server.streamable_http_app(
+            json_response=options.json_response,
+            stateless_http=options.stateless_http,
+            transport_security=options.transport_security,
+            host=host,
         )
 
-    if isinstance(result, tuple) and len(result) == 2 and isinstance(result[1], dict):
-        return types.CallToolResult(content=list(result[0]), structuredContent=result[1])
-
-    return types.CallToolResult(content=list(result))
-
-
-def _configure_experimental_task_support(mcp: FastMCP[Any]) -> None:
-    """Enable experimental task support for selected long-running tools only."""
-    mcp._mcp_server.experimental.enable_tasks()
-
-    async def _list_tools() -> list[types.Tool]:
-        tools = await mcp.list_tools()
-        for tool in tools:
-            task_mode = _EXPERIMENTAL_TASK_TOOL_SUPPORT.get(tool.name)
-            if task_mode is None:
-                continue
-
-            tool.execution = types.ToolExecution(taskSupport=task_mode)
-            merged_meta = dict(tool.meta or {})
-            merged_meta["pubmedSearch"] = {
-                **merged_meta.get("pubmedSearch", {}),
-                "experimentalTaskSupport": task_mode,
-            }
-            tool.meta = merged_meta
-
-        return tools
-
-    async def _call_tool(name: str, arguments: dict[str, Any]) -> Any:
-        context = mcp.get_context()
-        experimental = context.request_context.experimental
-
-        if not experimental.is_task:
-            return await mcp.call_tool(name, arguments)
-
-        if name not in _EXPERIMENTAL_TASK_TOOL_SUPPORT:
-            raise McpError(
-                types.ErrorData(
-                    code=-32601,
-                    message="Task-augmented execution is only available experimentally for unified_search.",
-                )
-            )
-
-        async def _work(task_context: Any) -> types.CallToolResult:
-            proxied_context = _TaskProgressContext(context, task_context)
-            result = await mcp._tool_manager.call_tool(
-                name,
-                arguments,
-                context=cast("Any", proxied_context),
-                convert_result=True,
-            )
-            return _as_call_tool_result(result)
-
-        return await experimental.run_task(
-            _work,
-            model_immediate_response=_UNIFIED_SEARCH_TASK_IMMEDIATE_RESPONSE,
-        )
-
-    mcp._mcp_server.list_tools()(_list_tools)
-    mcp._mcp_server.call_tool()(_call_tool)
+    msg = f"Unsupported transport: {transport!r}. Use 'streamable-http' or 'sse'."
+    raise ValueError(msg)
 
 
 def get_container() -> ApplicationContainer:
@@ -160,11 +137,11 @@ def get_container() -> ApplicationContainer:
 
 def _make_lifespan(
     container: ApplicationContainer,
-) -> Callable[[FastMCP[Any]], AbstractAsyncContextManager[ApplicationContainer]]:
-    """Create a FastMCP lifespan handler bound to *container*."""
+) -> Callable[[MCPServer[Any]], AbstractAsyncContextManager[ApplicationContainer]]:
+    """Create an MCPServer lifespan handler bound to *container*."""
 
     @asynccontextmanager
-    async def _lifespan(server: FastMCP[Any]) -> AsyncIterator[ApplicationContainer]:
+    async def _lifespan(server: MCPServer[Any]) -> AsyncIterator[ApplicationContainer]:
         """Application lifecycle: startup → yield → shutdown."""
         from pubmed_search.presentation.mcp_server.tools.pipeline_tools import get_pipeline_scheduler
 
@@ -195,7 +172,7 @@ def create_server(
     workspace_dir: str | None = None,
     json_response: bool = False,
     stateless_http: bool = False,
-) -> FastMCP:
+) -> MCPServer[Any]:
     """
     Create and configure the PubMed Search MCP server.
 
@@ -214,7 +191,8 @@ def create_server(
         stateless_http: Use stateless HTTP mode (no session management, for Copilot Studio).
 
     Returns:
-        Configured FastMCP server instance.
+        Configured MCPServer instance. Transport-level options are recorded on the
+        instance and replayed by :func:`build_asgi_app`.
     """
     global _container
     logger.info("Initializing PubMed Search MCP Server...")
@@ -240,6 +218,16 @@ def create_server(
     logger.info("Strategy generator initialized (ESpell + MeSH)")
     logger.info("Session data directory: %s", data_dir or DEFAULT_DATA_DIR)
 
+    settings = load_settings()
+
+    # ── Authentication ──────────────────────────────────────────────────
+    token_verifier, auth_settings = build_auth(settings)
+    if token_verifier is not None:
+        logger.info("Bearer auth enabled for %d principal(s)", len(token_verifier))
+    elif settings.auth_required:
+        msg = "PUBMED_AUTH_REQUIRED is set but PUBMED_AUTH_TOKENS is empty; refusing to start unauthenticated."
+        raise RuntimeError(msg)
+
     # ── Transport security ──────────────────────────────────────────────
     if disable_security:
         transport_security = TransportSecuritySettings(enable_dns_rebinding_protection=False)
@@ -248,13 +236,29 @@ def create_server(
         transport_security = None
 
     # ── Create MCP server with lifespan ─────────────────────────────────
-    mcp = FastMCP(
+    mcp: MCPServer[Any] = MCPServer(
         name,
         instructions=SERVER_INSTRUCTIONS,
-        transport_security=transport_security,
-        json_response=json_response,
-        stateless_http=stateless_http,
+        version=__version__,
         lifespan=_make_lifespan(_container),
+        token_verifier=token_verifier,
+        auth=auth_settings,
+    )
+    # MCPServer has no public middleware hook yet; the low-level server does.
+    mcp._lowlevel_server.middleware.append(
+        build_tenancy_middleware(
+            isolation_enabled=settings.tenant_isolation,
+            max_concurrency=settings.tenant_max_concurrency,
+        )
+    )
+    setattr(
+        mcp,
+        _TRANSPORT_OPTIONS_ATTR,
+        TransportOptions(
+            json_response=json_response,
+            stateless_http=stateless_http,
+            transport_security=transport_security,
+        ),
     )
 
     # ── Register all tools via centralized registry ─────────────────────
@@ -267,13 +271,25 @@ def create_server(
     )
     logger.info("Tool registration complete: %s", stats)
 
+    # ── Per-tenant session isolation ────────────────────────────────────
+    # Installed after registration: register_all_mcp_tools() calls
+    # set_session_manager(), which intentionally clears any registry.
+    if settings.tenant_isolation:
+        set_session_registry(SessionManagerRegistry(data_dir or DEFAULT_DATA_DIR))
+        logger.info("Tenant isolation enabled (max %d concurrent requests per tenant)", settings.tenant_max_concurrency)
+        if token_verifier is None:
+            logger.warning(
+                "Tenant isolation is on but no auth is configured. Remote callers would be separated only by "
+                "the client-supplied mcp-session-id header, which is not an authorization boundary, so tools "
+                "that persist research artifacts will refuse to write. Set PUBMED_AUTH_TOKENS to enable them."
+            )
+
     # ── Install performance profiling (optional) ────────────────────────
-    from pubmed_search.shared.profiling import install_http_profiling, install_profiling
+    from pubmed_search.infrastructure.sources.profiling import install_http_profiling
+    from pubmed_search.shared.profiling import install_profiling
 
     if install_profiling(mcp):
         install_http_profiling()
-
-    _configure_experimental_task_support(mcp)
 
     logger.info("PubMed Search MCP Server initialized successfully")
 
@@ -478,7 +494,7 @@ def main():
     server = create_server(
         email=email,
         api_key=api_key,
-        data_dir=settings.data_dir,
+        data_dir=settings.data_dir,  # tenant-ok: root for the session registry, which splits per tenant
         workspace_dir=workspace_dir,
     )
 

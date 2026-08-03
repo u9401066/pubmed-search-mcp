@@ -11,6 +11,8 @@ Maintenance:
     compatibility alias is required.
 """
 
+from __future__ import annotations
+
 from . import tool_session as _tool_session
 from .tool_input import KEY_ALIASES, InputNormalizer, apply_key_aliases
 from .tool_response import ResponseFormatter, format_search_results
@@ -20,8 +22,10 @@ from .tool_session import (
     check_cache,
     get_last_search_pmids,
     get_session_manager,
+    get_session_registry,
     get_strategy_generator,
     set_session_manager,
+    set_session_registry,
     set_strategy_generator,
 )
 
@@ -46,7 +50,9 @@ __all__ = [
     "format_search_results",
     "get_last_search_pmids",
     "get_session_manager",
+    "get_session_registry",
     "get_strategy_generator",
     "set_session_manager",
+    "set_session_registry",
     "set_strategy_generator",
 ]

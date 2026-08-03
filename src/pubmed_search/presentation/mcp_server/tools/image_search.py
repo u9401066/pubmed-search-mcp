@@ -27,12 +27,12 @@ from pubmed_search.application.image_search import ImageSearchResult, ImageSearc
 from ._common import InputNormalizer, ResponseFormatter
 
 if TYPE_CHECKING:
-    from mcp.server.fastmcp import FastMCP
+    from mcp.server.mcpserver import MCPServer
 
 logger = logging.getLogger(__name__)
 
 
-def register_image_search_tools(mcp: FastMCP):
+def register_image_search_tools(mcp: MCPServer):
     """Register biomedical image search MCP tools.
 
     Note: Does not need searcher parameter. ImageSearchService

@@ -2,8 +2,11 @@
 
 Design:
     Progress, logging, and resource update callbacks should never block core
-    tool execution. These helpers apply a short deadline and swallow host-side
-    issues so external backpressure does not turn into apparent tool hangs.
+    tool execution. These helpers hand callbacks to the event loop and swallow
+    host-side issues so external backpressure does not turn into apparent tool
+    hangs. They intentionally do not cancel in-flight host callbacks because
+    cancelling MCP progress/resource notification coroutines can surface to
+    clients as spurious "Canceled" tool output.
 """
 
 from __future__ import annotations
@@ -14,7 +17,7 @@ import weakref
 from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
-    from mcp.server.fastmcp import Context
+    from mcp.server.mcpserver import Context
 
 HOST_CALLBACK_TIMEOUT_SECONDS = 0.1
 _BACKGROUND_HOST_CALLBACKS: weakref.WeakSet[asyncio.Task[Any]] = weakref.WeakSet()
@@ -26,28 +29,22 @@ def _finalize_background_task(task: asyncio.Task[Any]) -> None:
         task.result()
 
 
-def _cancel_background_task(task: asyncio.Task[Any]) -> None:
-    """Cancel a lingering host callback task after its grace window expires."""
-    if not task.done():
-        task.cancel()
-
-
 async def best_effort_host_callback(
     awaitable: Any,
     *,
     timeout: float = HOST_CALLBACK_TIMEOUT_SECONDS,
 ) -> None:
-    """Let a host callback run briefly without pinning the main tool path.
+    """Schedule a host callback without pinning the main tool path.
 
-    The callback is scheduled as a background task, waited on only for a short
-    grace period, and then cancelled if it does not finish in time.
+    The callback is scheduled as a background task and given one event-loop tick
+    to start. ``timeout`` is kept for API compatibility with older callers; it
+    is no longer used as a cancellation deadline.
     """
+    del timeout
     task = asyncio.create_task(awaitable)
     _BACKGROUND_HOST_CALLBACKS.add(task)
     task.add_done_callback(_finalize_background_task)
 
-    loop = asyncio.get_running_loop()
-    loop.call_later(timeout, _cancel_background_task, task)
     await asyncio.sleep(0)
 
 

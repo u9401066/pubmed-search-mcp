@@ -17,7 +17,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from mcp.server.fastmcp import FastMCP
+    from mcp.server.mcpserver import MCPServer
 
 logger = logging.getLogger(__name__)
 
@@ -316,7 +316,7 @@ def get_icd_reference() -> dict:
 # ============================================================================
 
 
-def register_icd_tools(mcp: FastMCP):
+def register_icd_tools(mcp: MCPServer):
     """Register the ICD conversion tool."""
 
     @mcp.tool()

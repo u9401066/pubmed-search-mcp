@@ -18,14 +18,14 @@ from typing import TYPE_CHECKING, Union
 from ._common import InputNormalizer, ResponseFormatter, get_strategy_generator
 
 if TYPE_CHECKING:
-    from mcp.server.fastmcp import FastMCP
+    from mcp.server.mcpserver import MCPServer
 
     from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
 logger = logging.getLogger(__name__)
 
 
-def register_strategy_tools(mcp: FastMCP, searcher: LiteratureSearcher):
+def register_strategy_tools(mcp: MCPServer, searcher: LiteratureSearcher):
     """Register search strategy tools."""
 
     @mcp.tool()

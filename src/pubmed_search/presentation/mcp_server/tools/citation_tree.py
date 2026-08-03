@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING, Any, Union
 from ._common import InputNormalizer, ResponseFormatter
 
 if TYPE_CHECKING:
-    from mcp.server.fastmcp import FastMCP
+    from mcp.server.mcpserver import MCPServer
 
     from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
@@ -371,7 +371,7 @@ def _escape_mermaid(text: str) -> str:
 # ============================================================================
 
 
-def register_citation_tree_tools(mcp: FastMCP, searcher: LiteratureSearcher):
+def register_citation_tree_tools(mcp: MCPServer, searcher: LiteratureSearcher):
     """Register citation tree tools."""
 
     @mcp.tool()

@@ -14,11 +14,15 @@ from typing import TYPE_CHECKING, Any
 from ._common import set_session_manager, set_strategy_generator
 
 if TYPE_CHECKING:
-    from mcp.server.fastmcp import FastMCP
+    from mcp.server.mcpserver import MCPServer
 
     from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
 _TOOL_REGISTRARS: dict[str, tuple[str, str]] = {
+    "register_chronicle_tools": (
+        "pubmed_search.presentation.mcp_server.tools.chronicle",
+        "register_chronicle_tools",
+    ),
     "register_citation_tree_tools": (
         "pubmed_search.presentation.mcp_server.tools.citation_tree",
         "register_citation_tree_tools",
@@ -50,7 +54,6 @@ _TOOL_REGISTRARS: dict[str, tuple[str, str]] = {
         "register_reference_verification_tools",
     ),
     "register_strategy_tools": ("pubmed_search.presentation.mcp_server.tools.strategy", "register_strategy_tools"),
-    "register_timeline_tools": ("pubmed_search.presentation.mcp_server.tools.timeline", "register_timeline_tools"),
     "register_unified_search_tools": (
         "pubmed_search.presentation.mcp_server.tools.unified",
         "register_unified_search_tools",
@@ -76,7 +79,7 @@ def __dir__() -> list[str]:
     return sorted([*globals(), *_TOOL_REGISTRARS])
 
 
-def register_all_tools(mcp: FastMCP, searcher: LiteratureSearcher) -> None:
+def register_all_tools(mcp: MCPServer, searcher: LiteratureSearcher) -> None:
     """Register all primary MCP tools."""
     _load_registrar("register_unified_search_tools")(mcp, searcher)
     _load_registrar("register_pico_tools")(mcp)
@@ -88,7 +91,7 @@ def register_all_tools(mcp: FastMCP, searcher: LiteratureSearcher) -> None:
     _load_registrar("register_figure_tools")(mcp)
     _load_registrar("register_ncbi_extended_tools")(mcp)
     _load_registrar("register_citation_tree_tools")(mcp, searcher)
-    _load_registrar("register_timeline_tools")(mcp, searcher)
+    _load_registrar("register_chronicle_tools")(mcp, searcher)
     _load_registrar("register_vision_tools")(mcp)
     _load_registrar("register_openurl_tools")(mcp)
     _load_registrar("register_icd_tools")(mcp)
@@ -100,6 +103,7 @@ __all__ = [
     "register_all_tools",
     "set_session_manager",
     "set_strategy_generator",
+    "register_chronicle_tools",
     "register_citation_tree_tools",
     "register_discovery_tools",
     "register_europe_pmc_tools",
@@ -113,7 +117,6 @@ __all__ = [
     "register_pipeline_tools",
     "register_reference_verification_tools",
     "register_strategy_tools",
-    "register_timeline_tools",
     "register_unified_search_tools",
     "register_vision_tools",
 ]

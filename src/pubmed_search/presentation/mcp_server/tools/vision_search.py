@@ -250,7 +250,7 @@ def register_vision_tools(mcp):
                 ImageContent(
                     type="image",
                     data=image_data,
-                    mimeType=mime_type,
+                    mime_type=mime_type,
                 )
             )
 

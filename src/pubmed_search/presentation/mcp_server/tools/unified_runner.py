@@ -1,7 +1,7 @@
 """Reusable runtime runner for the MCP unified_search implementation.
 
 This module is still in presentation because it formats MCP-compatible strings,
-persists MCP session artifacts, and can report FastMCP progress. The stable
+persists MCP session artifacts, and can report MCPServer progress. The stable
 Python SDK imports it lazily only when a caller actually runs unified search
 without injecting a custom runner.
 """
@@ -42,7 +42,7 @@ from .unified_source_search import (
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from mcp.server.fastmcp import Context
+    from mcp.server.mcpserver import Context
 
     from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 

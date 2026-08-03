@@ -35,7 +35,7 @@ import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Literal, TypeVar, Union, cast
 
-from mcp.server.fastmcp import Context  # noqa: TC002 - FastMCP needs runtime access for type annotation injection
+from mcp.server.mcpserver import Context  # noqa: TC002 - MCPServer needs runtime access for type annotation injection
 
 from pubmed_search.application.search.query_analyzer import (
     QueryAnalyzer,
@@ -96,7 +96,7 @@ from .unified_source_search import (
 )
 
 if TYPE_CHECKING:
-    from mcp.server.fastmcp import FastMCP
+    from mcp.server.mcpserver import MCPServer
 
     from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
@@ -157,7 +157,7 @@ __all__ = [
 # ============================================================================
 
 
-def _tool_decorator_with_optional_meta(mcp: FastMCP) -> Callable[[ToolFunc], ToolFunc]:
+def _tool_decorator_with_optional_meta(mcp: MCPServer) -> Callable[[ToolFunc], ToolFunc]:
     """Return a tool decorator that tolerates simple test doubles without keyword support."""
     tool = cast("Any", mcp.tool)
     with contextlib.suppress(TypeError):
@@ -168,7 +168,7 @@ def _tool_decorator_with_optional_meta(mcp: FastMCP) -> Callable[[ToolFunc], Too
     return cast("Callable[[ToolFunc], ToolFunc]", tool())
 
 
-def register_unified_search_tools(mcp: FastMCP, searcher: LiteratureSearcher):
+def register_unified_search_tools(mcp: MCPServer, searcher: LiteratureSearcher):
     """Register unified search MCP tools."""
 
     @_tool_decorator_with_optional_meta(mcp)

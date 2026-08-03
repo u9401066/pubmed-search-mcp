@@ -18,12 +18,12 @@ from typing import TYPE_CHECKING, Union
 from ._common import InputNormalizer, ResponseFormatter
 
 if TYPE_CHECKING:
-    from mcp.server.fastmcp import FastMCP
+    from mcp.server.mcpserver import MCPServer
 
 logger = logging.getLogger(__name__)
 
 
-def register_ncbi_extended_tools(mcp: FastMCP) -> None:
+def register_ncbi_extended_tools(mcp: MCPServer) -> None:
     """Register NCBI Extended database tools with MCP server."""
 
     # =========================================================================

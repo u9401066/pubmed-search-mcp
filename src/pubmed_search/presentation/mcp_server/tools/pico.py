@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 from ._common import InputNormalizer, ResponseFormatter
 
 if TYPE_CHECKING:
-    from mcp.server.fastmcp import FastMCP
+    from mcp.server.mcpserver import MCPServer
 
 logger = logging.getLogger(__name__)
 
@@ -130,7 +130,7 @@ def _validation(elements: dict[str, str]) -> dict[str, object]:
     }
 
 
-def register_pico_tools(mcp: FastMCP):
+def register_pico_tools(mcp: MCPServer):
     """Register the PICO handoff tool."""
 
     @mcp.tool()

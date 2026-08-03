@@ -28,14 +28,14 @@ from .agent_output import (
 )
 
 if TYPE_CHECKING:
-    from mcp.server.fastmcp import FastMCP
+    from mcp.server.mcpserver import MCPServer
 
     from pubmed_search.domain.entities.figure import ArticleFiguresResult
 
 logger = logging.getLogger(__name__)
 
 
-def register_figure_tools(mcp: FastMCP):
+def register_figure_tools(mcp: MCPServer):
     """Register figure extraction MCP tools."""
 
     @mcp.tool()

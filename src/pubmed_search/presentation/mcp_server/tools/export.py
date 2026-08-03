@@ -36,7 +36,7 @@ from pubmed_search.application.export import (
 from ._common import InputNormalizer, ResponseFormatter, get_session_manager
 
 if TYPE_CHECKING:
-    from mcp.server.fastmcp import FastMCP
+    from mcp.server.mcpserver import MCPServer
 
     from pubmed_search.infrastructure.ncbi import LiteratureSearcher
     from pubmed_search.infrastructure.ncbi.citation_exporter import CitationResult
@@ -55,7 +55,7 @@ async def export_citations_official(pmids: list[str], format: str = "ris"):
     return await official_export(pmids, format=format)  # type: ignore[arg-type]
 
 
-def register_export_tools(mcp: FastMCP, searcher: LiteratureSearcher):
+def register_export_tools(mcp: MCPServer, searcher: LiteratureSearcher):
     """Register export-related tools."""
 
     @mcp.tool()
@@ -253,14 +253,20 @@ def register_export_tools(mcp: FastMCP, searcher: LiteratureSearcher):
             )
 
         try:
+            from pubmed_search.presentation.mcp_server.tenancy import durable_storage_denied
             from pubmed_search.shared.settings import load_settings
+            from pubmed_search.shared.tenancy import tenant_data_dir
+
+            denied = durable_storage_denied("save_literature_notes")
+            if denied:
+                return denied
 
             settings = load_settings()
             target_dir = resolve_note_export_dir(
                 output_dir,
                 notes_dir=settings.notes_dir,
                 workspace_dir=settings.workspace_dir,
-                data_dir=settings.data_dir,
+                data_dir=tenant_data_dir(settings.data_dir),
             )
             articles = await _get_articles_for_note_export(pmid_list, searcher)
             if not articles:

@@ -16,13 +16,16 @@ Compatibility wrappers:
 from __future__ import annotations
 
 import logging
+import threading
 from typing import TYPE_CHECKING
 
 from pubmed_search.application.pipeline.validator import parse_and_validate_config
+from pubmed_search.presentation.mcp_server.tenancy import durable_storage_denied
 from pubmed_search.presentation.mcp_server.tools._common import ResponseFormatter
+from pubmed_search.shared.tenancy import DEFAULT_TENANT_ID, current_tenant_id, tenant_data_dir
 
 if TYPE_CHECKING:
-    from mcp.server.fastmcp import FastMCP
+    from mcp.server.mcpserver import MCPServer
 
     from pubmed_search.application.pipeline.store import PipelineStore
     from pubmed_search.infrastructure.scheduling import APSPipelineScheduler
@@ -33,16 +36,49 @@ logger = logging.getLogger(__name__)
 _pipeline_store: PipelineStore | None = None
 _pipeline_scheduler: APSPipelineScheduler | None = None
 
+# Stores derived from ``_pipeline_store`` for non-default tenants.
+_tenant_stores: dict[str, PipelineStore] = {}
+_tenant_stores_lock = threading.Lock()
+
 
 def set_pipeline_store(store: PipelineStore | None) -> None:
-    """Set the PipelineStore instance for tools."""
+    """Set the base PipelineStore instance for tools.
+
+    The store registered here backs the default tenant. Other tenants get a
+    derived store rooted in their own data directory, so saved pipelines never
+    cross tenant boundaries.
+    """
     global _pipeline_store
-    _pipeline_store = store
+    with _tenant_stores_lock:
+        _pipeline_store = store
+        _tenant_stores.clear()
 
 
 def get_pipeline_store() -> PipelineStore | None:
-    """Get the current PipelineStore."""
-    return _pipeline_store
+    """Get the PipelineStore for the tenant of the current request.
+
+    Returns ``None`` for callers that cannot own durable storage, so an
+    ephemeral connection never creates a pipeline directory it could not
+    find again.
+    """
+    base = _pipeline_store
+    if base is None:
+        return None
+
+    tenant_id = current_tenant_id()
+    if tenant_id == DEFAULT_TENANT_ID:
+        return base
+
+    root = tenant_data_dir(base.global_data_dir)
+    if root is None:
+        return None
+
+    with _tenant_stores_lock:
+        scoped = _tenant_stores.get(tenant_id)
+        if scoped is None:
+            scoped = base.rebased(root)
+            _tenant_stores[tenant_id] = scoped
+        return scoped
 
 
 def set_pipeline_scheduler(scheduler: APSPipelineScheduler | None) -> None:
@@ -56,6 +92,15 @@ def get_pipeline_scheduler() -> APSPipelineScheduler | None:
     return _pipeline_scheduler
 
 
+def _store_unavailable(tool_name: str) -> str:
+    """Explain why no pipeline store is available to this caller."""
+    return durable_storage_denied(tool_name) or ResponseFormatter.error(
+        "Pipeline store not initialized",
+        suggestion="Server may not be fully started",
+        tool_name=tool_name,
+    )
+
+
 def _save_pipeline_impl(
     *,
     tool_name: str,
@@ -67,11 +112,11 @@ def _save_pipeline_impl(
 ) -> str:
     store = get_pipeline_store()
     if not store:
-        return ResponseFormatter.error(
-            "Pipeline store not initialized",
-            suggestion="Server may not be fully started",
-            tool_name=tool_name,
-        )
+        return _store_unavailable(tool_name)
+
+    denied = durable_storage_denied(tool_name)
+    if denied:
+        return denied
 
     try:
         import yaml
@@ -161,7 +206,7 @@ def _save_pipeline_impl(
 def _list_pipelines_impl(*, tool_name: str, tag: str = "", scope: str = "") -> str:
     store = get_pipeline_store()
     if not store:
-        return ResponseFormatter.error("Pipeline store not initialized", tool_name=tool_name)
+        return _store_unavailable(tool_name)
 
     pipelines = store.list_pipelines(tag=tag, scope=scope)
 
@@ -207,7 +252,7 @@ def _list_pipelines_impl(*, tool_name: str, tag: str = "", scope: str = "") -> s
 def _load_pipeline_impl(*, tool_name: str, source: str) -> str:
     store = get_pipeline_store()
     if not store:
-        return ResponseFormatter.error("Pipeline store not initialized", tool_name=tool_name)
+        return _store_unavailable(tool_name)
 
     source = source.strip()
 
@@ -271,7 +316,7 @@ def _load_pipeline_impl(*, tool_name: str, source: str) -> str:
 def _delete_pipeline_impl(*, tool_name: str, name: str) -> str:
     store = get_pipeline_store()
     if not store:
-        return ResponseFormatter.error("Pipeline store not initialized", tool_name=tool_name)
+        return _store_unavailable(tool_name)
 
     try:
         scheduler = get_pipeline_scheduler()
@@ -295,7 +340,7 @@ def _delete_pipeline_impl(*, tool_name: str, name: str) -> str:
 def _get_pipeline_history_impl(*, tool_name: str, name: str, limit: int = 5) -> str:
     store = get_pipeline_store()
     if not store:
-        return ResponseFormatter.error("Pipeline store not initialized", tool_name=tool_name)
+        return _store_unavailable(tool_name)
 
     if not store.exists(name):
         return ResponseFormatter.error(
@@ -361,6 +406,14 @@ def _schedule_pipeline_impl(
         return ResponseFormatter.error(
             "Pipeline scheduler not initialized",
             suggestion="Server may not be fully started",
+            tool_name=tool_name,
+        )
+    if current_tenant_id() != DEFAULT_TENANT_ID:
+        # The scheduler is a single process-wide instance bound to the default
+        # tenant's store. Scheduling here would run another tenant's pipeline.
+        return ResponseFormatter.error(
+            "Scheduling is not available for isolated tenants",
+            suggestion="Run the pipeline on demand, or schedule it from an external scheduler",
             tool_name=tool_name,
         )
 
@@ -485,7 +538,7 @@ def _manage_pipeline_dispatch(
     )
 
 
-def register_pipeline_tools(mcp: FastMCP) -> None:
+def register_pipeline_tools(mcp: MCPServer) -> None:
     """Register facade + compatibility pipeline management MCP tools."""
 
     @mcp.tool()

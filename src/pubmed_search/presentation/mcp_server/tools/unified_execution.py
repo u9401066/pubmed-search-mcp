@@ -49,7 +49,7 @@ from .unified_source_search import (
 )
 
 if TYPE_CHECKING:
-    from mcp.server.fastmcp import Context
+    from mcp.server.mcpserver import Context
 
     from pubmed_search.application.search.ranking_algorithms import SourceDisagreement
     from pubmed_search.infrastructure.ncbi import LiteratureSearcher

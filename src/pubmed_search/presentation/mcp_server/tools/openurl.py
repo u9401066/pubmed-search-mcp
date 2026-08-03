@@ -20,12 +20,12 @@ from pubmed_search.infrastructure.sources.openurl import (
 )
 
 if TYPE_CHECKING:
-    from mcp.server.fastmcp import FastMCP
+    from mcp.server.mcpserver import MCPServer
 
 logger = logging.getLogger(__name__)
 
 
-def register_openurl_tools(mcp: FastMCP) -> None:
+def register_openurl_tools(mcp: MCPServer) -> None:
     """Register OpenURL-related MCP tools."""
 
     @mcp.tool()

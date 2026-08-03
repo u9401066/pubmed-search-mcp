@@ -29,7 +29,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, Literal, Union
 
-from mcp.server.fastmcp import Context  # noqa: TC002 - FastMCP needs runtime access for tool context injection
+from mcp.server.mcpserver import Context  # noqa: TC002 - MCPServer needs runtime access for tool context injection
 
 from pubmed_search.application.fulltext import FulltextRequest, FulltextService
 from pubmed_search.infrastructure.sources import get_europe_pmc_client
@@ -54,7 +54,7 @@ from .artifact_memory import artifact_markdown_note, artifact_persistence_enable
 from .tool_runtime import safe_log, safe_report_progress
 
 if TYPE_CHECKING:
-    from mcp.server.fastmcp import FastMCP
+    from mcp.server.mcpserver import MCPServer
 
 logger = logging.getLogger(__name__)
 
@@ -421,7 +421,7 @@ def _format_text_mined_terms_structured(
     return serialize_structured_payload(payload, output_format)
 
 
-def register_europe_pmc_tools(mcp: FastMCP):
+def register_europe_pmc_tools(mcp: MCPServer):
     """
     Register Europe PMC tools for fulltext access and text mining.
 

@@ -20,12 +20,12 @@ from typing import TYPE_CHECKING, Union
 from ._common import InputNormalizer, ResponseFormatter
 
 if TYPE_CHECKING:
-    from mcp.server.fastmcp import FastMCP
+    from mcp.server.mcpserver import MCPServer
 
 logger = logging.getLogger(__name__)
 
 
-def register_core_tools(mcp: FastMCP) -> None:
+def register_core_tools(mcp: MCPServer) -> None:
     """Register CORE API tools with MCP server."""
 
     @mcp.tool()

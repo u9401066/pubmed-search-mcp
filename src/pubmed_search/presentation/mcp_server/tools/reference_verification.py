@@ -14,14 +14,14 @@ from typing import TYPE_CHECKING
 from pubmed_search.application.reference_verification import ReferenceVerificationService
 
 if TYPE_CHECKING:
-    from mcp.server.fastmcp import FastMCP
+    from mcp.server.mcpserver import MCPServer
 
     from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
 logger = logging.getLogger(__name__)
 
 
-def register_reference_verification_tools(mcp: FastMCP, searcher: LiteratureSearcher) -> None:
+def register_reference_verification_tools(mcp: MCPServer, searcher: LiteratureSearcher) -> None:
     """Register MCP tools for evidence-first reference verification."""
 
     service = ReferenceVerificationService(searcher)
