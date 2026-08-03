@@ -615,7 +615,7 @@ class TestAdvisorIntegration:
         """Presentation layer should format advisor warnings in output."""
         from unittest.mock import patch
 
-        from mcp.server.fastmcp import FastMCP
+        from mcp.server.mcpserver import MCPServer
 
         from pubmed_search.application.image_search import ImageSearchResult
         from pubmed_search.domain.entities.image import ImageResult, ImageSource
@@ -623,7 +623,7 @@ class TestAdvisorIntegration:
             register_image_search_tools,
         )
 
-        mcp = FastMCP("test")
+        mcp = MCPServer("test")
         register_image_search_tools(mcp)
         tools = mcp._tool_manager._tools
         tool_fn = tools["search_biomedical_images"].fn
@@ -657,7 +657,7 @@ class TestAdvisorIntegration:
         """Presentation layer should show query diagnostics when available."""
         from unittest.mock import patch
 
-        from mcp.server.fastmcp import FastMCP
+        from mcp.server.mcpserver import MCPServer
 
         from pubmed_search.application.image_search import ImageSearchResult
         from pubmed_search.domain.entities.image import ImageResult, ImageSource
@@ -665,7 +665,7 @@ class TestAdvisorIntegration:
             register_image_search_tools,
         )
 
-        mcp = FastMCP("test")
+        mcp = MCPServer("test")
         register_image_search_tools(mcp)
         tools = mcp._tool_manager._tools
         tool_fn = tools["search_biomedical_images"].fn

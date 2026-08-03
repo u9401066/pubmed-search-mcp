@@ -114,11 +114,11 @@ class TestServerHTTPMode:
         spec = importlib.util.find_spec("run_server")
         assert spec is not None or spec is None  # Module may or may not be in path
 
-    async def test_server_has_fastmcp(self):
-        """Test that FastMCP is available."""
-        from mcp.server.fastmcp import FastMCP
+    async def test_server_has_mcpserver(self):
+        """Test that MCPServer is available."""
+        from mcp.server.mcpserver import MCPServer
 
-        assert FastMCP is not None
+        assert MCPServer is not None
 
     async def test_run_server_uses_unix_like_temp_dir_for_exports(self):
         """run_server export directory should follow the current temp directory."""

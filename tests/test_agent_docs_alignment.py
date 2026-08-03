@@ -66,9 +66,8 @@ def test_pico_guidance_has_no_backend_auto_parse_examples() -> None:
 
 def test_user_docs_cover_timeline_image_search_upload_and_artifact_memory() -> None:
     required = [
-        "build_research_timeline",
-        "analyze_timeline_milestones",
-        "compare_timelines",
+        "build_research_chronicle",
+        "read_research_chronicle",
         "Research Chronicle",
         "Research Chronicle Rebuild Spec",
         "search_biomedical_images",
@@ -86,9 +85,8 @@ def test_user_docs_cover_timeline_image_search_upload_and_artifact_memory() -> N
         assert term in english_docs
 
     zh_required = [
-        "build_research_timeline",
-        "analyze_timeline_milestones",
-        "compare_timelines",
+        "build_research_chronicle",
+        "read_research_chronicle",
         "Research Chronicle",
         "Research Chronicle Rebuild Spec",
         "search_biomedical_images",

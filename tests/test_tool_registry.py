@@ -69,7 +69,7 @@ class TestListRegisteredTools:
             "institutional",
             "vision",
             "icd",
-            "timeline",
+            "chronicle",
             "image_search",
             "pipeline",
         }
@@ -125,9 +125,9 @@ class TestGetToolsByCategory:
         tools = get_tools_by_category("ncbi_extended")
         assert len(tools) == 7
 
-    async def test_timeline_has_3_tools(self):
-        tools = get_tools_by_category("timeline")
-        assert len(tools) == 3
+    async def test_chronicle_has_2_tools(self):
+        tools = get_tools_by_category("chronicle")
+        assert len(tools) == 2
 
 
 # ============================================================
@@ -227,13 +227,13 @@ class TestValidateToolRegistry:
         assert result["registered"] == ["unified_search"]
 
     async def test_runtime_registration_matches_tool_registry(self):
-        from mcp.server.fastmcp import FastMCP
+        from mcp.server.mcpserver import MCPServer
 
         from pubmed_search.infrastructure.ncbi import LiteratureSearcher
         from pubmed_search.presentation.mcp_server.session_tools import register_session_tools
         from pubmed_search.presentation.mcp_server.tools import register_all_tools
 
-        mcp = FastMCP(name="registry-sync-test")
+        mcp = MCPServer(name="registry-sync-test")
         searcher = LiteratureSearcher(email="test@example.com")
         session_manager = MagicMock()
 

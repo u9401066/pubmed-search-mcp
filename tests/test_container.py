@@ -88,7 +88,7 @@ class TestApplicationContainer:
 
 
 class TestLifecycle:
-    """Test FastMCP lifespan handler startup/shutdown."""
+    """Test MCPServer lifespan handler startup/shutdown."""
 
     async def test_lifespan_yields_container(self) -> None:
         """Lifespan handler yields the ApplicationContainer."""

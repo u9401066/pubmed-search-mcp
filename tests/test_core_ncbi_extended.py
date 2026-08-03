@@ -284,11 +284,11 @@ class TestCOREMCPTools:
 
     async def test_tools_registered(self):
         """Test that CORE tools can be registered."""
-        from mcp.server.fastmcp import FastMCP
+        from mcp.server.mcpserver import MCPServer
 
         from pubmed_search.presentation.mcp_server.tools.core import register_core_tools
 
-        mcp = FastMCP(name="test")
+        mcp = MCPServer(name="test")
         register_core_tools(mcp)
 
         # Check tools are registered
@@ -305,13 +305,13 @@ class TestNCBIExtendedMCPTools:
 
     async def test_tools_registered(self):
         """Test that NCBI Extended tools can be registered."""
-        from mcp.server.fastmcp import FastMCP
+        from mcp.server.mcpserver import MCPServer
 
         from pubmed_search.presentation.mcp_server.tools.ncbi_extended import (
             register_ncbi_extended_tools,
         )
 
-        mcp = FastMCP(name="test")
+        mcp = MCPServer(name="test")
         register_ncbi_extended_tools(mcp)
 
         # Check tools are registered
@@ -336,12 +336,12 @@ class TestAllToolsRegistration:
 
     async def test_register_all_tools_includes_new_sources(self):
         """Test register_all_tools includes CORE and NCBI Extended."""
-        from mcp.server.fastmcp import FastMCP
+        from mcp.server.mcpserver import MCPServer
 
         from pubmed_search.infrastructure.ncbi import LiteratureSearcher
         from pubmed_search.presentation.mcp_server.tools import register_all_tools
 
-        mcp = FastMCP(name="test")
+        mcp = MCPServer(name="test")
         searcher = LiteratureSearcher(email="test@example.com")
         register_all_tools(mcp, searcher)
 

@@ -12,7 +12,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 
 class TestUnifiedImports:
@@ -113,7 +113,7 @@ class TestToolRegistration:
             register_unified_search_tools,
         )
 
-        mcp = FastMCP(name="test")
+        mcp = MCPServer(name="test")
         mock_searcher = Mock()
 
         register_unified_search_tools(mcp, mock_searcher)
@@ -127,7 +127,7 @@ class TestToolRegistration:
             register_unified_search_tools,
         )
 
-        mcp = FastMCP(name="test")
+        mcp = MCPServer(name="test")
         mock_searcher = Mock()
 
         register_unified_search_tools(mcp, mock_searcher)
@@ -141,7 +141,7 @@ class TestToolRegistration:
             register_unified_search_tools,
         )
 
-        mcp = FastMCP(name="test")
+        mcp = MCPServer(name="test")
         mock_searcher = Mock()
 
         register_unified_search_tools(mcp, mock_searcher)

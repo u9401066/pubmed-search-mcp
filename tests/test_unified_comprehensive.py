@@ -480,13 +480,13 @@ class TestFormatFunctions:
     async def test_format_as_json_structure(self):
         """Test JSON format function exists and works."""
         # This function is internal, so just test registration works
-        from mcp.server.fastmcp import FastMCP
+        from mcp.server.mcpserver import MCPServer
 
         from pubmed_search.presentation.mcp_server.tools.unified import (
             register_unified_search_tools,
         )
 
-        mcp = FastMCP(name="test")
+        mcp = MCPServer(name="test")
         mock_searcher = AsyncMock()
         register_unified_search_tools(mcp, mock_searcher)
 
@@ -505,13 +505,13 @@ class TestToolRegistrationExtended:
 
     async def test_register_all_tools(self):
         """Test full tool registration."""
-        from mcp.server.fastmcp import FastMCP
+        from mcp.server.mcpserver import MCPServer
 
         from pubmed_search.presentation.mcp_server.tools.unified import (
             register_unified_search_tools,
         )
 
-        mcp = FastMCP(name="test")
+        mcp = MCPServer(name="test")
         mock_searcher = AsyncMock()
 
         register_unified_search_tools(mcp, mock_searcher)
@@ -522,13 +522,13 @@ class TestToolRegistrationExtended:
 
     async def test_unified_search_parameters(self):
         """Test unified_search tool has expected parameters."""
-        from mcp.server.fastmcp import FastMCP
+        from mcp.server.mcpserver import MCPServer
 
         from pubmed_search.presentation.mcp_server.tools.unified import (
             register_unified_search_tools,
         )
 
-        mcp = FastMCP(name="test")
+        mcp = MCPServer(name="test")
         mock_searcher = AsyncMock()
 
         register_unified_search_tools(mcp, mock_searcher)

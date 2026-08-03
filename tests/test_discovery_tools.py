@@ -105,7 +105,7 @@ class TestSearchLiteratureTool:
 
     @pytest.fixture
     def mock_mcp(self):
-        """Create mock FastMCP."""
+        """Create mock MCPServer."""
         mcp = MagicMock()
         mcp.tool = lambda: lambda f: f
         return mcp

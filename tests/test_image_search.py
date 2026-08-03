@@ -759,9 +759,9 @@ class TestSearchBiomedicalImagesTool:
 
     def _get_tool(self):
         """Register and return the tool function."""
-        from mcp.server.fastmcp import FastMCP
+        from mcp.server.mcpserver import MCPServer
 
-        mcp = FastMCP("test")
+        mcp = MCPServer("test")
         from pubmed_search.presentation.mcp_server.tools.image_search import (
             register_image_search_tools,
         )

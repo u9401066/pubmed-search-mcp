@@ -97,13 +97,12 @@ def test_advanced_workflows_are_visible_in_docs_site_navigation() -> None:
     assert 'slug: "advanced-workflows-zh"' in site_js
 
     for term in [
-        "Research timeline/lineage tree",
+        "Research chronicle",
         "Open-i image search",
         "uploaded-image handoff",
         "persistent query memory",
-        "build_research_timeline",
-        "analyze_timeline_milestones",
-        "compare_timelines",
+        "build_research_chronicle",
+        "read_research_chronicle",
         "context_graph",
         "search_biomedical_images",
         "analyze_figure_for_search",
@@ -187,8 +186,11 @@ def test_packaged_references_match_generated_sources_and_images_exist() -> None:
 
 
 def test_primary_tool_count_mentions_match_runtime_surface() -> None:
+    from pubmed_search.presentation.mcp_server.tool_registry import TOOL_CATEGORIES
+
     stats, _mcp = count_tools(include_details=False)
     total = stats["total_tools"]
+    categories = len(TOOL_CATEGORIES)
 
     snippets_by_path = {
         REPO_ROOT / "README.md": [
@@ -205,7 +207,7 @@ def test_primary_tool_count_mentions_match_runtime_surface() -> None:
         DOCS_ROOT / "TOOLS_USAGE_GUIDE.zh-TW.md": [f"不用死背 {total} 個 MCP tool"],
         REPO_ROOT / "ARCHITECTURE.md": [
             f"提供 {total} 個 MCP tools",
-            f"{total} tools / 16 categories",
+            f"{total} tools / {categories} categories",
             "引用驗證 | 1 | `verify_reference_list`",
         ],
         DOCS_ROOT / "INTEGRATIONS.md": [

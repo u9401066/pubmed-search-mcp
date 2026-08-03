@@ -296,7 +296,7 @@ class TestMCPToolsAccessible:
     """Test that MCP tools are registered and accessible."""
 
     async def test_create_server_returns_valid_server(self):
-        """create_mcp_server should return a valid FastMCP server."""
+        """create_mcp_server should return a valid MCPServer instance."""
         from pubmed_search import create_mcp_server
 
         # Use correct API: email, api_key (not ncbi_api_key)

@@ -689,7 +689,7 @@ class TestCopilotToolsIntegration:
 
     @pytest.fixture
     def mock_mcp(self):
-        """Create a mock FastMCP."""
+        """Create a mock MCPServer."""
         mcp = MagicMock()
         tools = {}
 

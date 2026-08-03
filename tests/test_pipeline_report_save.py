@@ -331,7 +331,7 @@ class TestExplicitWorkspaceConfiguration:
             patch.object(LiteratureSearcher, "__init__", return_value=None),
             patch.object(SearchStrategyGenerator, "__init__", return_value=None),
             patch.object(SessionManager, "__init__", return_value=None),
-            patch("pubmed_search.presentation.mcp_server.server.FastMCP") as mock_mcp,
+            patch("pubmed_search.presentation.mcp_server.server.MCPServer") as mock_mcp,
             patch("pubmed_search.presentation.mcp_server.server.register_all_mcp_tools") as mock_register,
         ):
             mock_mcp.return_value = MagicMock()
