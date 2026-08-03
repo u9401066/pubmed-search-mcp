@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any, cast
 from .tool_registry import TOOL_CATEGORIES as TOOL_REGISTRY_CATEGORIES
 
 if TYPE_CHECKING:
-    from mcp.server.fastmcp import FastMCP
+    from mcp.server.mcpserver import MCPServer
 
 logger = logging.getLogger(__name__)
 _JSON_MIME_TYPE = "application/json"
@@ -181,7 +181,7 @@ TOOL_CATEGORIES = TOOL_REGISTRY_CATEGORIES
 # ============================================================================
 
 
-def register_resources(mcp: FastMCP):
+def register_resources(mcp: MCPServer):
     """Register all MCP resources for filter and tool documentation."""
 
     @mcp.resource(

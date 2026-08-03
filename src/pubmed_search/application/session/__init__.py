@@ -19,6 +19,7 @@ from .manager import (
     SearchRecord,
     SessionManager,
 )
+from .registry import TENANT_DIR_NAME, SessionManagerRegistry
 
 __all__ = [
     "ARTIFACT_SCHEMA_VERSION",
@@ -31,6 +32,8 @@ __all__ = [
     "ResearchSession",
     "SearchRecord",
     "SessionManager",
+    "SessionManagerRegistry",
+    "TENANT_DIR_NAME",
     "audit_unified_search_artifact",
     "build_unified_search_artifact_envelope",
     "build_unified_search_query_strategy",

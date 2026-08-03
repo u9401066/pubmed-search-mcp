@@ -118,7 +118,7 @@ unified_search(query="remimazolam ICU sedation", options="context_graph")
 unified_search(query="propofol delirium ICU", options="context_graph, preprints")
 ```
 
-注意：這是輕量預覽；若需要完整時間軸/樹/mermaid，改用 `build_research_timeline`。
+注意：這是輕量預覽；若需要完整時間軸/樹/mermaid，改用 `build_research_chronicle`。
 
 ## 情境 6️⃣: 指定搜尋來源
 ───────────────────────────────────────────────────────────────────────────────
@@ -158,32 +158,58 @@ unified_search(query="E11 treatment outcomes")  # 混合 ICD + 文字也可以
 
 如需手動轉換 ICD ↔ MeSH（不搜尋），使用 convert_icd_mesh。
 
-═══════════════════════════════════════════════════════════════════════════════
-� 研究時間軸與 Lineage Tree (v0.4.3 NEW)
-═══════════════════════════════════════════════════════════════════════════════
+## 情境 8️⃣: 研究脈絡（可持久化、可版本比對）
+───────────────────────────────────────────────────────────────────────────────
+觸發條件: "研究脈絡", "研究演變", "這個領域怎麼走到今天", "上次之後有什麼新的",
+          "幫我追蹤這個主題", "research chronicle", "研究編年史"
 
-build_research_timeline 提供多種輸出格式，可視化研究演化歷程：
+**build_research_chronicle 是研究演化的唯一入口**，也是可以持續回頭維護的
+研究脈絡。它會以遞增 revision 持久化儲存，所以之後重跑就能做版本比對。
 
-### 基本使用
+每個 chronicle entry 都帶有：一句附引用的 claim、supporting/contradicting/
+updating 證據、所屬研究分支 (lineage)、confidence。型別化 provenance graph 以
+Topic → Branch → Entry → EvidenceArticle 相連並驗證 edge invariants。audit 會
+回報證據覆蓋率、識別碼覆蓋率、分支覆蓋率、graph 完整性與時序缺口。
+
 ```
-# 文字格式（預設）
-build_research_timeline(topic="remimazolam")
+# 建立/更新研究脈絡（重跑會產生 revision N+1）
+build_research_chronicle(topic="remimazolam")
+build_research_chronicle(pmids="last", topic="My Reading List")
 
-# 從已有 PMIDs 建構
-build_research_timeline(pmids="last", topic="My Timeline")
+# 讀取
+read_research_chronicle(action="list")
+read_research_chronicle(chronicle_id="remimazolam-9f2b1c4d", output="tree")
+
+# 版本比對：上次之後新增/退場/更新了什麼
+read_research_chronicle(action="diff", chronicle_id="remimazolam-9f2b1c4d", from_revision=1)
+
+# 有證據支撐的敘事（每句 claim 都附 entry ID 與 PMID/DOI）
+read_research_chronicle(action="narrate", chronicle_id="remimazolam-9f2b1c4d", mode="full")
 ```
 
-### 輸出格式 (output_format 參數)
+output 可選: summary（預設）, json, timeline, tree, graph, evidence, mermaid,
+mindmap, narrative。完整 snapshot、投影、證據表與 audit 一律寫入 artifact。
+
+═══════════════════════════════════════════════════════════════════════════════
+📜 研究脈絡輸出格式與 Lineage Tree
+═══════════════════════════════════════════════════════════════════════════════
+
+編年史的**主軸是時序**（線性），**分支 (lineage) 是次要組織維度**。兩者都是
+同一份 snapshot 的投影，所以 timeline 與 tree 永遠不會互相矛盾。
+
+### 輸出格式 (output 參數)
 | 格式 | 說明 | 適用場景 |
 |------|------|----------|
-| text | 人類可讀文字（預設） | 一般閱讀 |
-| tree | 🌳 研究脈絡樹 (NEW) | 分支式研究演化 |
-| mindmap | 🧠 Mermaid 心智圖 (NEW) | VS Code / GitHub 預覽 |
+| summary | 緊湊 Markdown，含時序主軸（預設） | 一般閱讀 |
+| timeline | 時序投影 JSON | 程式處理 |
+| tree | 🌳 研究脈絡樹 JSON | 分支式研究演化 |
+| graph | 型別化 provenance graph | 證據溯源 / 視覺化 |
+| evidence | 去重後的證據表 | 核對引用 |
+| milestones | 里程碑分佈與證據品質統計 | 領域診斷 |
 | mermaid | Mermaid 時間軸 | 嵌入文檔 |
-| json | 完整 JSON 資料 | 程式處理 |
-| json_tree | 🌳 JSON 樹狀結構 (NEW) | API 整合 |
-| timeline_js | TimelineJS 格式 | 互動式時間軸 |
-| d3 | D3.js 視覺化格式 | 自訂視覺化 |
+| mindmap | 🧠 Mermaid 心智圖 | VS Code / GitHub 預覽 |
+| narrative | 有證據支撐的敘事 | 寫作 / 報告 |
+| json | 完整 snapshot | API 整合 |
 
 ### Research Lineage Tree (tree 格式)
 將研究按主題自動分支為 8 個類別：
@@ -198,13 +224,13 @@ build_research_timeline(pmids="last", topic="My Timeline")
 
 ```
 # 產生研究脈絡樹
-build_research_timeline(topic="pembrolizumab", output_format="tree")
+build_research_chronicle(topic="pembrolizumab", output="tree")
 
 # 心智圖（適合 VS Code 預覽）
-build_research_timeline(topic="CRISPR", output_format="mindmap")
+build_research_chronicle(topic="CRISPR", output="mindmap")
 ```
 
-### Landmark Detection (highlight_landmarks 參數)
+### Landmark Detection
 自動識別高影響力里程碑論文，使用 5 維複合評分：
 - 引用影響力（iCite RCR / NIH percentile）
 - 多源一致性（Source Disagreement Analysis）
@@ -213,14 +239,11 @@ build_research_timeline(topic="CRISPR", output_format="mindmap")
 - 引用速度（每年引用成長率）
 
 ```
-# 開啟 landmark 標記（預設已開啟）
-build_research_timeline(topic="propofol", highlight_landmarks=True)
+# 里程碑分佈統計（讀已儲存的 chronicle，不重跑搜尋）
+read_research_chronicle(action="milestones", chronicle_id="remimazolam-9f2b1c4d")
 
-# 分析里程碑分佈統計
-analyze_timeline_milestones(topic="remimazolam", max_results=100)
-
-# 比較多個主題的時間軸
-compare_timelines(topics="remimazolam,propofol,dexmedetomidine")
+# 比較多個主題（含共用證據分析）
+read_research_chronicle(action="compare", topics="remimazolam,propofol,dexmedetomidine")
 ```
 
 ═══════════════════════════════════════════════════════════════════════════════
@@ -389,16 +412,15 @@ search_clinvar("BRCA1", limit=10)
 ### ICD 轉換
 - convert_icd_mesh: Convert between ICD codes and MeSH terms (bidirectional).
 
-### 研究時間軸
-- build_research_timeline: Build a research timeline for a topic OR specific PMIDs.
-- analyze_timeline_milestones: Analyze milestone distribution for a research topic.
-- compare_timelines: Compare research timelines of multiple topics.
-
 ### 引用驗證
 - verify_reference_list: Verify a plain-text reference list against PubMed evidence.
 
 ### 圖表擷取
 - get_article_figures: Get structured figure metadata (label, caption, image URL) and PDF links from a PMC Open Access arti
+
+### 研究編年史
+- build_research_chronicle: Build a persisted, versioned, evidence-backed Research Chronicle.
+- read_research_chronicle: Read stored Research Chronicles: load, list, diff, narrate, analyze, compare.
 
 ### 圖片搜尋
 - search_biomedical_images: Search biomedical images across Open-i and Europe PMC.
@@ -421,7 +443,7 @@ NOTE: 每次搜尋結果會顯示各來源的 API 回傳量（如 **Sources**: p
 💡 進階使用提示
 ═══════════════════════════════════════════════════════════════════════════════
 
-1. **Timeline + Landmark 組合**：先用 build_research_timeline(output_format="tree")
+1. **Chronicle + Citation Tree 組合**：先用 build_research_chronicle(output="tree")
    看研究脈絡，再用 build_citation_tree 深入探索關鍵論文的引用網絡。
 
 2. **多源驗證**：Landmark Detection 使用 Source Disagreement Analysis (SDA)，

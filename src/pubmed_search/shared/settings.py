@@ -12,6 +12,7 @@ DEFAULT_EMAIL = "pubmed-search@example.com"
 DEFAULT_DATA_DIR = str(Path.home() / ".pubmed-search-mcp")
 DEFAULT_HTTP_API_PORT = 8765
 DEFAULT_FULLTEXT_INLINE_MAX_CHARS = 20_000
+DEFAULT_TENANT_MAX_CONCURRENCY = 8
 
 
 class AppSettings(BaseSettings):
@@ -37,6 +38,16 @@ class AppSettings(BaseSettings):
     fulltext_inline_max_chars: int = Field(
         default=DEFAULT_FULLTEXT_INLINE_MAX_CHARS,
         alias="PUBMED_FULLTEXT_INLINE_MAX_CHARS",
+    )
+
+    # Multi-agent deployment: auth, tenant isolation, and per-tenant fairness.
+    auth_tokens_raw: str = Field(default="", alias="PUBMED_AUTH_TOKENS")
+    auth_required: bool = Field(default=False, alias="PUBMED_AUTH_REQUIRED")
+    auth_issuer_url: str = Field(default="", alias="PUBMED_AUTH_ISSUER_URL")
+    tenant_isolation: bool = Field(default=True, alias="PUBMED_TENANT_ISOLATION")
+    tenant_max_concurrency: int = Field(
+        default=DEFAULT_TENANT_MAX_CONCURRENCY,
+        alias="PUBMED_TENANT_MAX_CONCURRENCY",
     )
 
     crossref_email: str | None = Field(default=None, alias="CROSSREF_EMAIL")

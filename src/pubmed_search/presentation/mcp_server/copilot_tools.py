@@ -17,7 +17,7 @@ Microsoft Copilot Studio 在匯入 MCP 工具時，會將工具的 JSON Schema
 2. **exclusiveMinimum 必須是 boolean**
    - JSON Schema Draft 4 用 boolean，Draft 6+ 用 number
    - Copilot Studio 只接受 Draft 4 的 boolean 形式
-   - Pydantic v2 / FastMCP 預設產生 Draft 6+ 格式 → 衝突
+   - Pydantic v2 / MCPServer 預設產生 Draft 6+ 格式 → 衝突
 
 3. **$ref 參照型別不支援**
    - 巢狀 Pydantic model 會產生 $ref → 無法解析
@@ -61,7 +61,7 @@ from .tools._common import (
 if TYPE_CHECKING:
     from collections.abc import Callable, Coroutine
 
-    from mcp.server.fastmcp import FastMCP
+    from mcp.server.mcpserver import MCPServer
 
     from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
@@ -141,7 +141,7 @@ async def _ncbi_extended_search(
 # ---------------------------------------------------------------------------
 
 
-def register_copilot_compatible_tools(mcp: FastMCP, searcher: LiteratureSearcher):
+def register_copilot_compatible_tools(mcp: MCPServer, searcher: LiteratureSearcher):
     """Register Copilot Studio compatible tools (simplified schemas)."""
 
     # ========================================================================

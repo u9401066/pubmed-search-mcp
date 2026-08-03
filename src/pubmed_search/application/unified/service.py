@@ -1,7 +1,7 @@
 """Application-level unified-search service facade.
 
 The service owns the stable request shape used by external Python callers. It
-does not import MCP, FastMCP, tool modules, or settings. Adapters inject the
+does not import MCP, MCPServer, tool modules, or settings. Adapters inject the
 actual runtime runner so the MCP surface and SDK can evolve without binding
 callers to presentation internals.
 """

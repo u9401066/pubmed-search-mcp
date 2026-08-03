@@ -15,6 +15,24 @@ from .article import (
     SourceMetadata,
     UnifiedArticle,
 )
+from .chronicle import (
+    CHRONICLE_SCHEMA_VERSION,
+    ChronicleAudit,
+    ChronicleAuditFinding,
+    ChronicleBranch,
+    ChronicleEdgeType,
+    ChronicleEntry,
+    ChronicleEntryStatus,
+    ChronicleEntryType,
+    ChronicleGraph,
+    ChronicleGraphEdge,
+    ChronicleGraphNode,
+    ChronicleInputScope,
+    ChronicleNodeType,
+    ChronicleSnapshot,
+    EvidenceArticle,
+    EvidenceBundle,
+)
 from .figure import ArticleFigure, ArticleFiguresResult
 from .image import ImageResult, ImageSource
 from .research_tree import ResearchBranch, ResearchTree
@@ -50,4 +68,21 @@ __all__ = [
     # Research Tree entities
     "ResearchBranch",
     "ResearchTree",
+    # Research Chronicle entities
+    "CHRONICLE_SCHEMA_VERSION",
+    "ChronicleAudit",
+    "ChronicleAuditFinding",
+    "ChronicleBranch",
+    "ChronicleEdgeType",
+    "ChronicleEntry",
+    "ChronicleEntryStatus",
+    "ChronicleEntryType",
+    "ChronicleGraph",
+    "ChronicleGraphEdge",
+    "ChronicleGraphNode",
+    "ChronicleInputScope",
+    "ChronicleNodeType",
+    "ChronicleSnapshot",
+    "EvidenceArticle",
+    "EvidenceBundle",
 ]

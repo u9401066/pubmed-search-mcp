@@ -105,6 +105,26 @@ class PipelineStore:
             self._workspace_pipelines_dir.mkdir(parents=True, exist_ok=True)
             self._workspace_runs_dir.mkdir(parents=True, exist_ok=True)
 
+    def rebased(self, global_data_dir: str | Path) -> PipelineStore:
+        """Return an equivalent store rooted at a different global directory.
+
+        Used to give each tenant its own global pipeline scope while keeping the
+        workspace scope, which is a property of the checkout rather than of the
+        caller.
+
+        Args:
+            global_data_dir: New global data directory for the derived store.
+
+        Returns:
+            A new :class:`PipelineStore` sharing this store's workspace scope.
+        """
+        return PipelineStore(global_data_dir=global_data_dir, workspace_dir=self._workspace_dir)
+
+    @property
+    def global_data_dir(self) -> Path:
+        """Return the global data directory backing this store."""
+        return self._global_dir
+
     # ── Directory helpers ────────────────────────────────────────────────
 
     @property
