@@ -1,11 +1,21 @@
-# Progress (Updated: 2026-06-05)
+# Progress (Updated: 2026-08-03)
 
 ## Done
+
+### 2026-08-03: v0.6.0 — SDK v2, Research Chronicle, Multi-Agent Service Mode
+- Migrated to MCP Python SDK v2 (`mcp>=2,<3`, protocol 2026-07-28); experimental tasks removed with the spec, transport keywords moved into `build_asgi_app()`.
+- Research Chronicle shipped as the single research-evolution entry point; `build_research_timeline` / `analyze_timeline_milestones` / `compare_timelines` retired into it (48 → 45 tools, 17 → 16 categories).
+- Multi-agent service mode: per-tenant sessions/cache/artifacts, bearer-token auth, per-tenant fair-share concurrency, `/ready`.
+- Security model: durable artifacts require an authenticated caller, because `mcp-session-id` is client-supplied and changes on reconnect. Ephemeral callers get in-memory sessions and never touch disk.
+- Cross-tenant leaks closed in chronicle, pipeline, and literature-note storage; `tenant-scoped-storage` pre-commit hook added so the class of bug cannot recur.
+- Upstream rate limiting consolidated to one shared budget per service; loop-scoped primitives re-keyed by loop object to stop stale-state reuse.
+- Verification: 3601 tests passing; 10 mutation regressions all caught; boundary tests for hostile tenant ids and rate-limiter budgets; protocol smoke tests for the tool surface and both HTTP transports.
+- Known limitation: the pipeline scheduler is process-wide and bound to the default tenant, so `schedule_pipeline` is refused for isolated tenants.
 
 ### 2026-06-06: Research Chronicle Rebuild Spec Alignment
 - Rewrote `docs/RESEARCH_CHRONICLE_REFACTOR_SPEC.md` as the canonical pre-rebuild contract for timeline, lineage tree, context graph preview, citation graph, artifacts, and the planned persistent Research Chronicle.
 - Cross-checked implementation, documentation, and test gaps with multiple read-only subagents.
-- Clarified terminology: current `build_research_timeline` is timeline/lineage-tree projection; `unified_search(options="context_graph")` is a lightweight preview; `build_citation_tree` is the current citation network tool; Research Chronicle remains planned.
+- Terminology: `build_research_chronicle` is the single research-evolution entry point (timeline / lineage tree / milestones / comparison are all projections or actions of it); `unified_search(options="context_graph")` is a lightweight preview; `build_citation_tree` is the citation network tool.
 - Captured rebuild blockers: broken/untested `pmids="last"` timeline path, incomplete timeline format coverage, context graph boundary tests, citation tree response-contract tests, presentation-layer citation graph logic, and projection formatting in domain entities.
 
 ### 2026-06-05: Python SDK Facade + Packaged HTTP CLI
@@ -63,7 +73,7 @@
 - ✅ **Quality gate** — `uv run pre-commit run --all-files` 全綠
 
 ### 2026-03-17: v0.4.5 — MCP SDK 擴充 + 反重造輪子重構
-- ✅ **FastMCP Context 擴充** — timeline tools 與 Europe PMC fulltext/text-mining 支援 progress/log
+- ✅ **MCP Context 擴充** — chronicle tools 與 Europe PMC fulltext/text-mining 支援 progress/log
 - ✅ **Dynamic session resources** — `session://last-search*` 讓 Agent 直接讀取最近搜尋狀態
 - ✅ **MCP 版本下限收斂** — `mcp>=1.23.3`
 - ✅ **PubTatorClient 重構** — 改走 `BaseAPIClient` 共用 transport

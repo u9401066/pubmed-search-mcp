@@ -7,7 +7,7 @@ External package users needed a stable Python import surface, while agent users 
 Expose `pubmed_search.api` as the stable Python SDK facade, keep MCP tools as presentation adapters, and add `pubmed-search-mcp-http` as the packaged HTTP server CLI. Keep `run_server.py` as a source-tree development wrapper.
 
 ### Consequences
-- SDK imports must stay lightweight and must not load MCP, FastMCP, settings, or source clients.
+- SDK imports must stay lightweight and must not load MCP, MCPServer, settings, or source clients.
 - `unified_search` runtime logic is delegated through a runner so MCP behavior remains compatible while the SDK avoids direct presentation imports at import time.
 - Docs must distinguish MCP tool surface, Python SDK facade, and auxiliary HTTP APIs.
 

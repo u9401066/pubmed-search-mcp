@@ -10,6 +10,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-03
+
+### Added
+
+- `tenant-scoped-storage` pre-commit hook — flags any presentation-layer storage root that does not route through `tenant_data_dir()`, so cross-tenant leaks cannot be reintroduced. Legitimate shared roots are annotated with `# tenant-ok: <reason>`.
+- **Multi-agent service mode** — the server can now be deployed once and called concurrently by many agents.
+  - **Per-tenant isolation**: sessions, article cache, search history, `pmids="last"`, and artifacts are scoped per caller. Previously every client shared one process-wide `SessionManager` with a single mutable "current session", so concurrent agents read each other's data.
+  - Identity precedence: verified bearer-token principal (a real security boundary) → server-issued `mcp-session-id` (isolation only) → `default` for stdio.
+  - `SessionManagerRegistry` gives each tenant its own manager and storage root (`PUBMED_DATA_DIR/tenants/<id>`); the `default` tenant keeps the existing root so single-user installs upgrade in place.
+  - **Bearer-token auth** via `PUBMED_AUTH_TOKENS="principal:token,..."`, wired into `MCPServer(token_verifier=..., auth=...)`. Tokens are stored only as SHA-256 digests and compared with `hmac.compare_digest`. `PUBMED_AUTH_REQUIRED=true` makes the server refuse to start unauthenticated.
+  - The auxiliary HTTP API (`/api/cached_article`, `/api/cached_articles`, `/api/session/summary`) now requires the same bearer token and only ever returns the calling tenant's data. It was previously unauthenticated.
+  - **Per-tenant fair share**: `PUBMED_TENANT_MAX_CONCURRENCY` caps in-flight requests per caller so one agent cannot consume the whole upstream budget. Upstream per-API rate limits stay global on purpose, because NCBI meters per API key rather than per caller.
+  - New `/ready` readiness probe reporting transport, whether auth is enforced, and active tenant count.
+  - `PUBMED_TENANT_ISOLATION=false` restores the previous single-tenant behavior.
+
+- **Research Chronicle** — a persisted, versioned, evidence-backed record of how a research topic evolved.
+  - Domain entities in `domain/entities/chronicle.py`: `ChronicleSnapshot`, `ChronicleEntry`, `ChronicleBranch`, `EvidenceBundle`, `EvidenceArticle`, typed `ChronicleGraph` with enforced edge invariants, and `ChronicleAudit`.
+  - Application services in `application/chronicle/`: assembler, graph builder, audit, projectors, narrator, differ, revision store, and orchestrating `ChronicleService`.
+  - New MCP tools `build_research_chronicle` and `read_research_chronicle` (load / list / diff / narrate / milestones / compare) are now the **single entry point for research evolution**, replacing the three timeline tools. The primary surface is 45 tools across 16 categories.
+  - Chronology is the primary axis and research branches are a secondary projection of the same snapshot, so `output="timeline"` and `output="tree"` can never disagree. The default `summary` leads with the chronological spine.
+  - Revisions are monotonic and immutable, so re-running a chronicle produces revision N+1 and `action="diff"` reports added, retired, and updated entries plus evidence and branch churn.
+  - Every entry carries a citation-bearing claim; `action="narrate"` renders Markdown where each claim ends with its entry ID and article identifiers.
+  - Each build persists a `research-chronicle-artifact/v1` artifact containing `snapshot.json`, `timeline.json`, `lineage_tree.json`, `graph.json`, `evidence.json`, `milestones.json`, `audit.json`, `narrative.md`, and `response.md`.
+
+### Changed
+
+- **Migrated to MCP Python SDK v2** (`mcp>=2.0,<3`, protocol revision 2026-07-28).
+  - `FastMCP` → `MCPServer` (`mcp.server.fastmcp` → `mcp.server.mcpserver`) across the server, tool registry, resources, prompts, and all tool modules.
+  - Transport keywords (`json_response`, `stateless_http`, `transport_security`) moved off the server constructor per the v2 API; `create_server()` records them as `TransportOptions` and the new `build_asgi_app()` replays them when building the ASGI app.
+  - The server now reports its own package version in `serverInfo` instead of the SDK version.
+  - In-memory protocol tests use the new first-class `Client(server)` instead of the removed `create_connected_server_and_client_session`.
+  - `anyio` floor raised to `>=4.9` to match the SDK requirement.
+- Research Chronicle rebuild spec updated from design-only to implementation reference, including the planned-tool → shipped-tool mapping.
+- **Durable artifacts now require an authenticated caller.** Without auth the tenant can only be derived from `mcp-session-id`, which changes on every reconnect *and* is client-supplied. It therefore separates callers without authenticating them. `build_research_chronicle`, `read_research_chronicle`, `save_pipeline` / `manage_pipeline(action="save")`, and `save_literature_notes` now refuse such callers with an explanation instead of writing data that is both unreachable later and unprotected from others. Read-only tools are unaffected, and stdio/local behaviour is unchanged.
+- **Upstream rate limits are now shared per service.** `BaseAPIClient` keyed its limiter by `id(self)`, so every client instance got its own budget; because clients are created ad hoc in several code paths, a parallel fan-out multiplied the real request rate by the number of instances. The limiter is now keyed by upstream service name, and `get_rate_limiter(..., conservative=True)` guarantees a client configured with an API key cannot raise the budget for clients without one.
+- `install_http_profiling()` moved from `shared/profiling.py` to `infrastructure/sources/profiling.py`; the shared layer no longer imports infrastructure.
+- Scheduling is explicitly refused for isolated tenants: the pipeline scheduler is a single process-wide instance bound to the default tenant, so scheduling from another tenant would have run the wrong store's pipeline.
+
+### Removed
+
+- Experimental MCP task support for `unified_search` (`tasks/get`, `tasks/result`). SEP-1686 was removed from the MCP specification and dropped from the SDK; long-running progress is reported through `ctx.report_progress()` and `progress_callback=` on the client instead.
+- `build_research_timeline`, `analyze_timeline_milestones`, and `compare_timelines` — consolidated into the two chronicle tools. `analyze_timeline_milestones` becomes `read_research_chronicle(action="milestones")` and `compare_timelines` becomes `read_research_chronicle(action="compare", topics="a,b")`. Because chronicles are persisted, analysis and comparison now read stored evidence instead of re-running a search, and comparison additionally reports the evidence articles two topics share. The `application/timeline/` services (milestone detection, landmark scoring, branch detection) are unchanged and now feed the chronicle assembler.
+
+### Fixed
+
+- Session tools and resources resolved their session manager at registration time, which under tenancy would have pinned every caller to the startup tenant; they now resolve per request.
+- Chronicle, pipeline, and literature-note storage roots were still derived from the global `PUBMED_DATA_DIR` and, for chronicles, captured once at tool-registration time. Every agent therefore shared one chronicle store and one pipeline store. All three now resolve per request through `tenant_data_dir()`.
+- Resolving a tenant eagerly created its directory, so an unauthenticated client reconnecting N times left N unreachable directories behind. Callers that cannot own durable storage now get an in-memory session manager and no storage root at all.
+- Shared asyncio primitives were registered under a key containing `id(loop)`. CPython recycles ids, so a new event loop could inherit a stale rate limiter or an already-tripped circuit breaker from a collected loop, and dead loops' entries were never released. They are now keyed by the loop object through a `WeakKeyDictionary`.
+- `RateLimiter` accepted a non-positive `rate` or `per` and then raised `ZeroDivisionError` from inside `acquire()`; the budget is now validated at construction.
+- `build_research_timeline(pmids="last")` resolved PMIDs from session search history instead of passing the literal `"last"` sentinel to PMID fetch; the fix carries over to `build_research_chronicle(pmids="last")`.
+- `ImageContent` in `analyze_figure_for_search` uses the v2 `mime_type` field name.
+
 ---
 
 ## [0.5.17] - 2026-06-22

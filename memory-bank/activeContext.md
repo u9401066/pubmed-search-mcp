@@ -2,24 +2,28 @@
 
 ## Current Focus
 
-- Research Chronicle pre-rebuild alignment: the repo now treats current timeline/lineage tree/context graph preview/citation tree as existing projections, while persistent/versioned Research Chronicle is a planned artifact-backed source of truth defined in `docs/RESEARCH_CHRONICLE_REFACTOR_SPEC.md`.
+- Released **v0.6.0**. Five landed cycles: (1) MCP Python SDK v1 -> v2 migration, (2) Research Chronicle implemented and the three timeline tools consolidated into it, (3) multi-agent service mode with per-tenant isolation and bearer auth, (4) durable-storage-requires-auth security model, (5) shared per-service upstream rate limiting.
 
 ## Validation Snapshot
 
-- `uv run pytest -q -m "not integration" --timeout=60 -o addopts=""`: 3403 passed, 21 skipped, 30 deselected
+- `uv run pytest -q --no-header -p no:randomly --deselect tests/test_fulltext_urls.py`: 3601 passed, 33 skipped
 - `uv run mypy src/ tests/`: passed
 - `uv run python scripts/check_async_tests.py`: passed
-- `uv run ruff check src tests scripts`: passed
-- `uv run ruff format --check src tests scripts`: passed
-- `uv run python scripts/count_mcp_tools.py`: 46 tools, validation passed
-- `uv lock --check`: passed
+- `uv run ruff check .`: passed
+- `uv run python scripts/count_mcp_tools.py`: 45 tools / 16 categories, validation passed
+- `uv run pre-commit run --all-files`: passed (only `no-commit-to-branch` blocks, as expected on master)
+- Mutation-checked: 10 deliberate regressions across tenancy, rate limiting, and the tool registry were all caught by the suite.
 
 ## Session Notes
 
-- Multiple read-only subagents audited the current implementation/API, documentation claims, and tests for timeline, chronicle, context graph, and citation tree.
-- Canonical terminology was clarified: `build_research_timeline` is the current timeline/lineage-tree tool; `unified_search(options="context_graph")` is a lightweight preview from the ranked PMID-backed set; `build_citation_tree` is the current citation network tool; Research Chronicle is planned.
-- The rebuild spec now includes target domain entities, typed graph invariants, artifact envelope requirements, MCP API plan, phase plan, and acceptance tests for the next implementation cycle.
-- Key next-cycle blockers: fix or de-document `pmids="last"` for timeline, add output-format matrix tests, harden context graph preview boundaries, extract citation graph logic out of presentation, and persist chronicle artifacts via `read_session`.
+- Migrated to `mcp>=2,<3` (protocol 2026-07-28): `FastMCP` -> `MCPServer`, transport keywords moved off the constructor into `build_asgi_app()`, experimental MCP tasks removed with the spec, in-memory tests now use `Client(server)`.
+- Research Chronicle shipped: `domain/entities/chronicle.py`, `application/chronicle/`, and two MCP tools `build_research_chronicle` / `read_research_chronicle`. Chronology is the primary axis; branches are a secondary projection of the same snapshot.
+- `build_research_timeline`, `analyze_timeline_milestones`, and `compare_timelines` were retired into the chronicle. `application/timeline/` is unchanged and now feeds the chronicle assembler.
+- Multi-agent service mode: `shared/tenancy.py`, `application/session/registry.py`, `infrastructure/auth/`, plus tenancy middleware and an auxiliary-API guard. Previously every client shared one process-wide `SessionManager`, so concurrent agents read each other's data.
+- **Durable storage requires authentication.** `mcp-session-id` changes on every reconnect and is client-supplied, so it isolates without authenticating. Chronicle / pipeline / notes tools refuse such callers; ephemeral tenants get an in-memory session manager and never create a directory.
+- **One shared rate-limit budget per upstream.** `BaseAPIClient` keyed its limiter by `id(self)`; ad-hoc client construction therefore multiplied the real request rate. Circuit breakers deliberately stay per instance.
+- Shared asyncio primitives are keyed by the event loop object via `WeakKeyDictionary`, never `id(loop)` (ids get recycled and handed stale state to new loops).
+- Tenancy invariants that are easy to break are recorded in `.clinerules/70-pubmed-mcp-tools.md` and enforced by the `tenant-scoped-storage` hook.
 - Added `pubmed_search.api` for external Python callers: `PubMedSearchClient`, `PubMedSearchConfig`, and `UnifiedSearchResult`.
 - Added `pubmed_search.application.unified` service contracts and a presentation `unified_runner` so MCP `unified_search` and the SDK can share the runtime path without making SDK imports load MCP.
 - Added packaged `pubmed-search-mcp-http` entrypoint; `run_server.py` remains a source-tree development wrapper.

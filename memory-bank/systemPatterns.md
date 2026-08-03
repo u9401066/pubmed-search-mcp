@@ -11,7 +11,7 @@
 - NCBI Entrez: await asyncio.to_thread(Entrez.*)
 - Rate limit: await asyncio.sleep() (取代 time.sleep)
 - 並行: asyncio.gather() (取代 ThreadPoolExecutor)
-- MCP tools: async def (FastMCP 原生支援)
+- MCP tools: async def (MCP Python SDK v2 原生支援)
 ```
 
 ### MCP Tool 模式
