@@ -317,8 +317,11 @@ repos:
 
       - id: pytest
         name: pytest (multi-core)
-        entry: uv run pytest tests/ -n 4 --timeout=60 -q --no-header
+        entry: uv run pytest tests/ -n 4 --timeout=60 -q --no-header -m "not integration"
         language: system
         pass_filenames: false
         always_run: true
         stages: [pre-push]
+        # Integration tests call live third-party APIs, so they would make
+        # pushing depend on someone else's uptime. Run them on demand with
+        # `uv run pytest -m integration`.

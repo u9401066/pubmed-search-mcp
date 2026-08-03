@@ -146,7 +146,7 @@ uv run pre-commit run --all-files                  # test all hooks manually
 | **commit** | evolution-cycle | — | Validates instruction/skill/hook consistency |
 | **push** | mypy | — | Type checks `src/` (~500MB-1GB RAM) |
 | **push** | semgrep | — | SAST security analysis (~300-500MB RAM) |
-| **push** | pytest | — | Runs full test suite (multi-core) |
+| **push** | pytest | — | Runs the suite excluding `integration` (multi-core); run those with `uv run pytest -m integration` |
 
 `unicode-mojibake` is a commit-stage hook that scans newly staged diff lines for corrupted emoji/UTF-8 artifacts. Valid emoji are allowed; restore garbled text as UTF-8 before committing.
 

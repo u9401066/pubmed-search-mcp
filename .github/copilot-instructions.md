@@ -100,7 +100,7 @@ uv run pre-commit autoupdate
 **Push 階段自動檢查：**
 - **mypy** type check (`uv run mypy src/`, 記憶體 500MB-1GB)
 - **semgrep** SAST 靜態安全分析 (`p/python` ruleset, 記憶體 300-500MB)
-- **pytest** 全套測試 (`-n auto --timeout=60`)
+- **pytest** 全套測試 (`-n auto --timeout=60 -m "not integration"`)，排除會打真實第三方 API 的 integration 測試；需要時手動跑 `uv run pytest -m integration`
 
 ```bash
 # 跳過特定 hook
