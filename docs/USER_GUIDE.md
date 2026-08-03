@@ -60,7 +60,7 @@ For client-specific setup, see the [Integration Guide](INTEGRATIONS.md). For HTT
 | Explore one important article | `fetch_article_details` | `find_related_articles`, `find_citing_articles`, `get_article_references`, `build_citation_tree` |
 | Read deeper evidence | `get_fulltext` | `get_text_mined_terms`, `get_article_figures` |
 | Search from visual evidence | `analyze_figure_for_search` | `search_biomedical_images`, `unified_search` |
-| Build a research timeline / lineage tree | `build_research_timeline` | `analyze_timeline_milestones`, `compare_timelines` |
+| Build a research chronicle / lineage tree | `build_research_chronicle` | `read_research_chronicle` |
 | Reopen large outputs | `read_session(action="artifact")` | `read_session(action="list_artifacts")` |
 | Build a local literature library | `prepare_export` | `save_literature_notes` |
 | Reuse a workflow | `manage_pipeline` | `save_pipeline`, `load_pipeline`, `schedule_pipeline` |
@@ -172,20 +172,20 @@ Only enable browser-session fallback for hosts you trust and are allowed to acce
 }
 ```
 
-### 5. Build A Research Timeline Or Lineage Tree
+### 5. Build A Research Chronicle Or Lineage Tree
 
 ![Evaluation and timeline workflow](images/timeline-evaluation-workflow.svg)
 
-Use the timeline tools when the question is not just "what papers exist?" but "how did this field develop?"
+Use the chronicle tools when the question is not just "what papers exist?" but "how did this field develop?"
 
 ```python
-build_research_timeline(topic="remimazolam ICU sedation", output_format="tree", max_events=20)
-build_research_timeline(pmids="12345678,23456789", topic="Selected studies", output_format="mermaid")
-analyze_timeline_milestones(topic="CAR-T therapy")
-compare_timelines(topics="remimazolam,propofol,dexmedetomidine", max_events_per_topic=10)
+build_research_chronicle(topic="remimazolam ICU sedation", output="tree", max_events=20)
+build_research_chronicle(pmids="12345678,23456789", topic="Selected studies", output="mermaid")
+read_research_chronicle(action="milestones", chronicle_id="car-t-therapy-...")
+read_research_chronicle(action="compare", topics="remimazolam,propofol,dexmedetomidine")
 ```
 
-`build_research_timeline` can search by topic or use an explicit PMID set. It detects milestone-like papers, can highlight landmark studies, and supports `text`, `tree`, `mermaid`, `mindmap`, `json`, `json_tree`, `timeline_js`, and `d3` outputs. Use `options="context_graph"` in `unified_search` for a lightweight branch preview from the current ranked PMID-backed results. A persistent/versioned Research Chronicle is planned separately; see [Research Chronicle Rebuild Spec](RESEARCH_CHRONICLE_REFACTOR_SPEC.md).
+`build_research_chronicle` can search by topic or use an explicit PMID set. Its primary axis is chronological and research branches are a secondary projection, so `output="timeline"` and `output="tree"` always agree. It supports `summary`, `timeline`, `tree`, `graph`, `evidence`, `milestones`, `mermaid`, `mindmap`, `narrative`, and `json` outputs. Use `options="context_graph"` in `unified_search` for a lightweight branch preview from the current ranked PMID-backed results. The chronicle is persistent and versioned; see [Research Chronicle Rebuild Spec](RESEARCH_CHRONICLE_REFACTOR_SPEC.md).
 
 ### 6. Reopen Persistent Query Memory
 
@@ -299,6 +299,7 @@ Keep these limits in mind:
 | Server does not start | Confirm `uvx pubmed-search-mcp` runs in a terminal. |
 | Client cannot find tools | Check the client config path and JSON syntax in [Integration Guide](INTEGRATIONS.md). |
 | NCBI warning or slow responses | Set `NCBI_EMAIL`; optionally add `NCBI_API_KEY`. |
+| Tool call shows `Canceled: Canceled` while progress is updating | Use a build with non-cancelling best-effort progress callbacks; for genuinely long searches, retry with `options="shallow"` or narrower `sources`. |
 | Empty or sparse full text | Try `get_fulltext` on a PMC Open Access article, then check source availability. |
 | Local notes saved somewhere unexpected | Check `output_dir`, `PUBMED_NOTES_DIR`, `PUBMED_WORKSPACE_DIR`, and `PUBMED_DATA_DIR`. |
 | GitHub Pages docs look stale | Run `uv run python scripts/build_docs_site.py` locally, then check the Pages workflow. |

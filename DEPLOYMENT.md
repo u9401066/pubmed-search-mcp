@@ -10,7 +10,7 @@
 | --- | --- | --- | --- |
 | stdio | `uvx pubmed-search-mcp` | VS Code、Claude Desktop、Cursor | 預設本機模式 |
 | HTTP | `pubmed-search-mcp-http --transport streamable-http` | 遠端 MCP client、自建服務 | 推薦的 HTTP transport |
-| HTTP + Copilot compatibility | `pubmed-search-mcp-http --transport streamable-http --copilot-compatible` | 想保留完整 46-tool primary MCP surface 並接 Copilot | HTTP response 會做相容轉換 |
+| HTTP + Copilot compatibility | `pubmed-search-mcp-http --transport streamable-http --copilot-compatible` | 想保留完整 45-tool primary MCP surface 並接 Copilot | HTTP response 會做相容轉換 |
 | Copilot simplified | `uv run python run_copilot.py` | Copilot Studio schema 相容性優先 | 暴露精簡版工具集 |
 | HTTPS local | `scripts/start-https-local.sh` | 本機 HTTPS smoke test | `/mcp`、`/health`、`/info` |
 | HTTPS Docker | `scripts/start-https-docker.sh up` | Nginx TLS reverse proxy 測試 | 預設代理到 `/mcp` |
@@ -34,6 +34,120 @@ flowchart TD
   Remote -->|Copilot 且 schema 要最穩| Simple
   Remote -->|需要 HTTPS 包裝| TLS
 ```
+
+## 0. 多 Agent 正式服務 (Multi-Agent Service Mode)
+
+如果這個 server 不是只給你自己的編輯器用，而是要「一個服務、多個 agent 呼叫」，
+先讀這一節。預設的本機模式刻意保持零設定，但那不是多租戶安全的組態。
+
+### 0.1 一分鐘啟動
+
+```bash
+export PUBMED_AUTH_TOKENS="team-a:$(openssl rand -hex 32),team-b:$(openssl rand -hex 32)"
+export PUBMED_AUTH_REQUIRED=true
+export PUBMED_TENANT_ISOLATION=true
+export PUBMED_TENANT_MAX_CONCURRENCY=8
+export PUBMED_DATA_DIR=/var/lib/pubmed-search-mcp
+export NCBI_EMAIL="ops@example.org"
+export NCBI_API_KEY="..."          # 大幅提高 NCBI 速率上限
+
+pubmed-search-mcp-http --transport streamable-http --host 0.0.0.0 --port 8765
+```
+
+Agent 端帶上 bearer token：
+
+```jsonc
+{
+  "servers": {
+    "pubmed-search": {
+      "url": "https://mcp.example.org/mcp",
+      "headers": { "Authorization": "Bearer <team-a 的 token>" }
+    }
+  }
+}
+```
+
+### 0.2 隔離模型
+
+| 層級 | 隔離依據 | 是否為安全邊界 |
+| --- | --- | --- |
+| 已認證呼叫端 | bearer token 的 principal | ✅ 是 |
+| 未認證但有 HTTP session | server 發出的 `mcp-session-id` | ⚠️ 否，只防「意外互看」 |
+| stdio | 單一 process 單一使用者 | n/a |
+
+每個 tenant 擁有各自的 session、article cache、搜尋歷史、`pmids="last"`、
+artifacts、chronicle 與 pipeline 儲存。`default` tenant 仍寫入 `PUBMED_DATA_DIR`
+本身（保留既有單機安裝的資料），其他 tenant 寫入
+`PUBMED_DATA_DIR/tenants/<tenant_id>/`。
+
+> ⚠️ **沒設 `PUBMED_AUTH_TOKENS` 就對外開放，等同任何人都能讀寫。**
+> 正式部署請同時設定 `PUBMED_AUTH_TOKENS` 與 `PUBMED_AUTH_REQUIRED=true`，
+> 後者會讓 server 在誤設定時直接拒絕啟動，而不是安靜地開放。
+
+### 0.2.1 持久化需要認證身分
+
+沒有 auth 時，tenant 只能從 `mcp-session-id` header 推導。這個值有兩個致命
+問題：**每次重連都會改變**（存下去的資料下次就找不回來），而且**由 client 自己
+送出**（任何人都能冒用他人的值）。因此它可以分隔執行期狀態，但不是授權邊界。
+
+所以會保存長期產物的工具 —— `build_research_chronicle`、`save_pipeline` /
+`manage_pipeline(action="save")`、`save_literature_notes` —— 在
+transport 推導的身分下會**明確拒絕寫入並說明原因**，而不是寫到一個之後找不到、
+也擋不住別人的目錄。搜尋、全文、匯出等唯讀工具不受影響。
+
+| 身分來源 | 可持久化 | 說明 |
+| --- | --- | --- |
+| `stdio` | ✅ | 本機單一使用者，資料就在自己電腦上 |
+| `auth` | ✅ | 經驗證的 principal，穩定且是授權邊界 |
+| `explicit` | ✅ | 營運方指定 |
+| `transport` | ❌ | 重連即改變且可冒用 |
+
+啟動時若偵測到「開了 tenant 隔離但沒設 auth」，server 會記錄警告。
+
+### 0.3 部署設定
+
+| 環境變數 | 預設 | 說明 |
+| --- | --- | --- |
+| `PUBMED_AUTH_TOKENS` | *(空)* | `principal:token` 逗號分隔清單。設了才會啟用 bearer 認證 |
+| `PUBMED_AUTH_REQUIRED` | `false` | 為 `true` 時，沒有 token 設定就拒絕啟動（fail closed） |
+| `PUBMED_AUTH_ISSUER_URL` | *(內建)* | OAuth metadata 對外宣告的 issuer |
+| `PUBMED_TENANT_ISOLATION` | `true` | 關閉後所有呼叫端共用 `default` tenant（回到舊行為） |
+| `PUBMED_TENANT_MAX_CONCURRENCY` | `8` | 單一 tenant 同時在途的請求上限；`0` 表示不限 |
+| `PUBMED_DATA_DIR` | `~/.pubmed-search-mcp` | 所有 tenant 儲存的根目錄 |
+
+Token 只以 SHA-256 digest 保存並用 `hmac.compare_digest` 比對，不會出現在
+log 或物件 repr 中。
+
+### 0.4 配額與上游速率
+
+兩種限制是互補的，不要混淆：
+
+- **上游速率限制是全域的**（每個外部 API 一組）。NCBI 等來源是依 API key 計量，
+  不是依你的呼叫端計量，所以全域才是正確的。
+- **每租戶並行上限**（`PUBMED_TENANT_MAX_CONCURRENCY`）負責公平性，
+  避免單一 agent 把全域預算吃光、讓其他 agent 排隊。
+
+### 0.5 健康檢查與可觀測性
+
+| 端點 | 認證 | 用途 |
+| --- | --- | --- |
+| `/health` | 開放 | liveness probe |
+| `/ready` | 開放 | readiness probe；回報 transport、是否強制認證、活躍 tenant 數 |
+| `/info` | 開放 | 端點與能力清單 |
+| `/api/*` | **需要 bearer**（設了 token 時） | 唯讀快取查詢，且只會回傳呼叫端自己 tenant 的資料 |
+
+MCP SDK v2 預設啟用 OpenTelemetry：若部署環境已設定 global tracer provider，
+client 與 server span 會自動產生，無需改程式碼。
+
+### 0.6 水平擴充
+
+目前 session 狀態存在本機檔案系統，因此多副本部署需要：
+
+- 以 sticky session（依 `Authorization` 或 `mcp-session-id`）導流到同一副本，或
+- 每個副本掛載共用的 `PUBMED_DATA_DIR`（需支援檔案鎖的儲存），或
+- 單副本垂直擴充（多數團隊的實務選擇）
+
+跨副本共享的 session backend 尚未實作。
 
 ## 1. 前置需求
 

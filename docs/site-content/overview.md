@@ -18,11 +18,12 @@ A Domain-Driven Design (DDD) based MCP server that serves as an intelligent rese
 
 **✨ What's Included:**
 
-- 🔧 **46 MCP Tools** - Streamlined PubMed, Europe PMC, CORE, NCBI database access, and **Research Timeline / Context Graph**
-- 🖼️ **OA Figure Extraction** - Pull figure captions, direct image URLs, and PDF links from PMC Open Access articles
+- 🔧 **45 MCP Tools** - Streamlined PubMed, Europe PMC, CORE, NCBI database access, and **Research Chronicle / Context Graph**
+- �️ **Multi-Agent Service Mode** - Deploy once and serve many agents: per-tenant sessions, caches, and artifacts, bearer-token auth, and per-tenant fair-share limits. See [DEPLOYMENT.md](#/deployment)
+- �🖼️ **OA Figure Extraction** - Pull figure captions, direct image URLs, and PDF links from PMC Open Access articles
 - 📘 **Docs Site** - Browse language-switchable user and developer guides, architecture, quick reference, pipeline tutorials, source contracts, troubleshooting, and deployment in one place at [u9401066.github.io/pubmed-search-mcp](https://u9401066.github.io/pubmed-search-mcp/)
 - 📖 **GitHub Wiki** - GitHub-native mirror of the same canonical documentation at [github.com/u9401066/pubmed-search-mcp/wiki](https://github.com/u9401066/pubmed-search-mcp/wiki)
-- 📚 **24 Claude Skills** - Ready-to-use workflow guides for AI agents (Claude Code-specific)
+- 📚 **26 Claude Skills** - Ready-to-use workflow guides for AI agents (Claude Code-specific)
 - 📖 **Copilot Instructions** - VS Code GitHub Copilot integration guide
 
 **🌐 Language**: **English** | [繁體中文](#/overview-zh)
@@ -293,7 +294,7 @@ Other tools give you raw API access. We give you **vocabulary translation + inte
 | Clinical questions need structured search | ✅ **PICO handoff + pipeline** (`parse_pico` validates agent-provided P/I/C/O and returns a runnable `template: pico` pipeline) |
 | Typos in medical terms | ✅ **ESpell auto-correction** |
 | Too many results from one source | ✅ **Parallel multi-source** with dedup |
-| Need to trace research evolution | ✅ **Research Timeline & Tree** with landmark detection, diagnostics, and sub-topic branching |
+| Need to trace research evolution | ✅ **Research Chronicle & Tree** with landmark detection, diagnostics, sub-topic branching, and versioned revisions |
 | Citation context is unclear | ✅ **Citation Tree** forward/backward/network |
 | Can't access full text | ✅ **Multi-source fulltext** (Europe PMC XML, Unpaywall OA locations, institutional direct/EZproxy, CORE, and downloader fallbacks) |
 | Gene/drug info scattered across DBs | ✅ **NCBI Extended** (Gene, PubChem, ClinVar) |
@@ -305,7 +306,7 @@ Other tools give you raw API access. We give you **vocabulary translation + inte
 1. **Vocabulary Translation Layer** - Agent speaks naturally, we translate to each database's terminology (MeSH, ICD-10, text-mined entities)
 2. **Unified Search Gateway** - One `unified_search()` call, auto-dispatch to PubMed/Europe PMC/CORE/OpenAlex
 3. **PICO Handoff + Pipeline** - the Agent extracts P/I/C/O, `parse_pico()` validates that structured handoff, and the backend `template: pico` pipeline executes O-aware precision/recall searches
-4. **Research Timeline & Lineage Tree** - Detect milestones with policy-driven heuristics, identify landmark papers via multi-signal scoring, surface timeline diagnostics, and visualize research evolution as branching trees by sub-topic
+4. **Research Chronicle & Lineage Tree** - Detect milestones with policy-driven heuristics, identify landmark papers via multi-signal scoring, surface diagnostics, persist versioned revisions you can diff, and visualize research evolution as branching trees by sub-topic
 5. **Citation Network Analysis** - Build multi-level citation trees to map an entire research landscape from a single paper
 6. **Full Research Lifecycle** - From search → discovery → full text → analysis → export, all in one server
 7. **Agent-First Design** - Output optimized for machine decision-making, not human reading
@@ -414,7 +415,7 @@ For LLM wiki compatibility, `wiki` and `foam` exports use stable link targets ba
 
 ## 🛠️ MCP Tools Overview
 
-If you want to understand the tool surface as a usable system, do not start by memorizing 46 tool names.
+If you want to understand the tool surface as a usable system, do not start by memorizing 45 tool names.
 
 Start with the [Tools Usage Guide](#/tools-usage-guide): it compresses the current 46 tools into 8 capability families, explains the theoretical lower bound, and gives intent-based routing for both humans and agents.
 
@@ -507,15 +508,14 @@ Use the PMC Open Access path when an agent needs evidence figures, not just arti
 | `get_compound_literature` | PubMed articles linked to a compound |
 | `search_clinvar` | Search ClinVar clinical variants |
 
-### 🕰️ Research Timeline & Lineage Tree
+### 🕰️ Research Chronicle & Lineage Tree
 
 ![Evaluation and timeline workflow](images/timeline-evaluation-workflow.svg)
 
 | Tool | Description |
 | ---- | ----------- |
-| `build_research_timeline` | Build timeline/tree with landmark detection and formatted diagnostics. Output: text, tree, mermaid, mindmap, json, json_tree, timeline_js, d3 |
-| `analyze_timeline_milestones` | Analyze milestone distribution with diagnostics payload |
-| `compare_timelines` | Compare multiple topic timelines with per-topic diagnostics |
+| `build_research_chronicle` | Build a persisted, versioned chronicle with landmark detection. Output: summary, timeline, tree, graph, evidence, milestones, mermaid, mindmap, narrative, json |
+| `read_research_chronicle` | Load, list, diff revisions, narrate with citations, analyze milestone distribution, or compare up to five topics |
 
 Current timeline and tree outputs are projections, not a persisted chronicle
 asset. The planned persistent/versioned Research Chronicle is specified in
@@ -665,7 +665,7 @@ Search **arXiv**, **medRxiv**, and **bioRxiv** preprint servers via `unified_sea
 | ----------- | ----------- |
 | `context_graph` | Append a lightweight Research Context Graph preview from the current PMID-backed ranked set to Markdown output and include `research_context` in JSON output |
 
-This is useful when an agent needs quick thematic branching without making a second `build_research_timeline` call.
+This is useful when an agent needs quick thematic branching without making a second `build_research_chronicle` call.
 
 ### 📊 Count-First Orientation
 
@@ -685,8 +685,11 @@ This mode is useful when the agent should decide whether to expand a source, ins
 
 ### ⏱️ MCP Progress Reporting
 
-When the MCP client provides a progress token, `unified_search`, `build_research_timeline`, `analyze_timeline_milestones`, `compare_timelines`, `get_fulltext`, and `get_text_mined_terms` emit progress updates for their major phases.
+When the MCP client provides a progress token, `unified_search`, `build_research_chronicle`, `get_fulltext`, and `get_text_mined_terms` emit progress updates for their major phases.
 This reduces the "black box" wait time for agents during longer searches.
+Progress callbacks are best-effort and are not cancelled by the server while a
+tool call is active, which avoids host-side `Canceled: Canceled` messages caused
+by progress-notification backpressure.
 
 ---
 
@@ -939,7 +942,7 @@ manage_pipeline(action="history", name="icu_sedation_weekly")  # View past runs
 
 Pre-built workflow guides in `.claude/skills/`, divided into **Usage Skills** (for using the MCP server) and **Development Skills** (for maintaining the project):
 
-### 📚 Usage Skills (10) — For AI Agents Using This MCP Server
+### 📚 Usage Skills (11) — For AI Agents Using This MCP Server
 
 | Skill | Description |
 | ----- | ----------- |
@@ -947,6 +950,7 @@ Pre-built workflow guides in `.claude/skills/`, divided into **Usage Skills** (f
 | `pubmed-systematic-search` | MeSH expansion, comprehensive |
 | `pubmed-pico-search` | Clinical question decomposition |
 | `pubmed-paper-exploration` | Citation tree, related articles |
+| `pubmed-research-chronicle` | Persistent, versioned research evolution |
 | `pubmed-gene-drug-research` | Gene/PubChem/ClinVar |
 | `pubmed-fulltext-access` | Europe PMC, CORE full text |
 | `pubmed-export-citations` | RIS/BibTeX/CSV/CSL export guidance |

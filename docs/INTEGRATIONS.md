@@ -69,6 +69,39 @@ The MCP endpoint will be available at `http://localhost:8765/mcp`.
 
 > **Note**: SSE transport (`--transport sse`) is deprecated in favor of Streamable HTTP per MCP spec 2025-03-26.
 
+### Serving Multiple Agents (Auth & Tenant Isolation)
+
+A server started without `PUBMED_AUTH_TOKENS` is **open**: anyone who can reach the
+port can call it. For anything beyond a private local instance, configure tokens:
+
+```bash
+export PUBMED_AUTH_TOKENS="team-a:$(openssl rand -hex 32),team-b:$(openssl rand -hex 32)"
+export PUBMED_AUTH_REQUIRED=true      # refuse to start if tokens are missing
+pubmed-search-mcp-http --transport streamable-http --host 0.0.0.0 --port 8765
+```
+
+Clients then present the token as a bearer credential:
+
+```jsonc
+{
+  "servers": {
+    "pubmed-search": {
+      "type": "http",
+      "url": "https://mcp.example.org/mcp",
+      "headers": { "Authorization": "Bearer <your token>" }
+    }
+  }
+}
+```
+
+Each authenticated principal gets its **own** session, article cache, search
+history, `pmids="last"`, artifacts, chronicles, and pipelines. Without auth,
+concurrent HTTP callers are still separated by the server-issued `mcp-session-id`,
+but that is isolation only — not an authorization boundary.
+
+See [DEPLOYMENT.md](../DEPLOYMENT.md) section 0 for the full deployment matrix,
+fair-share concurrency limits, and health/readiness probes.
+
 ### Auxiliary HTTP APIs
 
 ![Session cache and auxiliary HTTP API workflow](images/session-cache-and-http-api.svg)
@@ -77,11 +110,19 @@ Besides the primary MCP contract at `/mcp`, the packaged HTTP CLI also exposes a
 
 | Endpoint | Purpose |
 | --- | --- |
+| `/health` | Liveness probe (open) |
+| `/ready` | Readiness probe: transport, whether auth is enforced, active tenant count (open) |
 | `/api/cached_article/{pmid}` | Read one cached article, optionally fetch on miss |
 | `/api/cached_articles?pmids=...` | Read multiple cached articles |
 | `/api/session/summary` | Read current session summary |
 
-This auxiliary API is public in the sense that callers may use it directly, but it is **not** the primary MCP tool contract. For agent tool discovery and normal runtime usage, `/mcp` remains the canonical external interface.
+When `PUBMED_AUTH_TOKENS` is configured, every `/api/*` route requires the same
+bearer token as `/mcp` and returns only the calling tenant's data. `/health` and
+`/ready` stay open for orchestrator probes.
+
+This auxiliary API is a convenience for cache and session reads; it is **not** the
+primary MCP tool contract. For agent tool discovery and normal runtime usage,
+`/mcp` remains the canonical external interface.
 
 ### Python SDK Facade
 
@@ -555,7 +596,7 @@ Copilot Studio ──HTTPS──▶ ngrok ──HTTP──▶ MCP Server (localh
 **Step 1**: Start the MCP server with HTTP transport
 
 ```bash
-# Option A: Full 46-tool primary MCP surface with compatibility semantics and ngrok
+# Option A: Full 45-tool primary MCP surface with compatibility semantics and ngrok
 ./scripts/start-copilot-studio.sh --with-ngrok
 
 # Option B: Simplified 11-tool Copilot Studio surface with custom-domain ngrok
@@ -564,7 +605,7 @@ Copilot Studio ──HTTPS──▶ ngrok ──HTTP──▶ MCP Server (localh
 # Option C: Manual simplified 11-tool setup
 uv run python run_copilot.py --port 8765
 
-# Option D: Manual full 46-tool primary MCP surface with Copilot-compatible HTTP semantics
+# Option D: Manual full 45-tool primary MCP surface with Copilot-compatible HTTP semantics
 pubmed-search-mcp-http --transport streamable-http --copilot-compatible --port 8765
 ```
 
@@ -618,7 +659,7 @@ uv run python -m pubmed_search.presentation.mcp_server
 
 After configuring any client, verify the server is working:
 
-1. **Ask the AI**: "List all available PubMed tools" — the AI should enumerate 46 tools in the primary MCP surface
+1. **Ask the AI**: "List all available PubMed tools" — the AI should enumerate 45 tools in the primary MCP surface
 2. **Simple search**: "Search PubMed for CRISPR gene therapy" — should return article results
 3. **Check tool list**: The server provides tools like `unified_search`, `fetch_article_details`, `get_fulltext`, etc.
 
@@ -630,6 +671,7 @@ After configuring any client, verify the server is working:
 | Server not connecting | Check the config file path and JSON syntax |
 | `NCBI_EMAIL` warning | Set the `NCBI_EMAIL` environment variable in the config |
 | Slow responses | Add `NCBI_API_KEY` for 10 req/s (vs 3 req/s default) |
+| Tool output shows `Canceled: Canceled` during progress reporting | Update to a build with non-cancelling best-effort progress callbacks. If a specific broad search still exceeds your client's own tool timeout, retry with `options="shallow"` or specify narrower `sources`. |
 | Source API uses placeholder email | Set `NCBI_EMAIL` or pass `--email`; CrossRef, Unpaywall, and OpenAlex reuse that runtime contact unless a source-specific override/API key is configured |
 | CORE search fails | Set `CORE_API_KEY` — [get one free](https://core.ac.uk/services/api) |
 | Behind proxy | Set `HTTP_PROXY` / `HTTPS_PROXY` environment variables |

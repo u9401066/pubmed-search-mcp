@@ -1,6 +1,6 @@
 # PubMed Search MCP Tools Usage Guide
 
-Capability-first guide for using the 46-tool PubMed Search MCP surface without treating the tool list as a menu to memorize.
+Capability-first guide for using the 45-tool PubMed Search MCP surface without treating the tool list as a menu to memorize.
 
 **Language**: **English** | [繁體中文](TOOLS_USAGE_GUIDE.zh-TW.md)
 
@@ -22,7 +22,8 @@ Capability-first guide for using the 46-tool PubMed Search MCP surface without t
 | Discovery | `fetch_article_details`, `find_related_articles`, `find_citing_articles`, `get_article_references`, `build_citation_tree` | The user has seed PMIDs and wants context, related work, or citation lineage. |
 | Full text and figures | `get_fulltext`, `get_text_mined_terms`, `get_article_figures` | The user needs article body text, evidence sections, entities, captions, or image URLs. |
 | External biomedical data | `search_gene`, `get_gene_details`, `search_compound`, `get_compound_details`, `search_clinvar` | The research question moves from papers into NCBI gene, compound, or clinical variant data. |
-| Evaluation and timeline | `get_citation_metrics`, `build_research_timeline`, `analyze_timeline_milestones`, `compare_timelines` | The user asks what matters, what changed over time, or how fields compare. |
+| Evaluation and research evolution | `get_citation_metrics`, `build_research_chronicle`, `read_research_chronicle` | The user asks what matters, what changed over time, or how fields compare. |
+| Research chronicle | `build_research_chronicle`, `read_research_chronicle` | The user wants a persistent, versioned, evidence-backed research narrative they can revisit and diff. |
 | Persistence and sessions | `read_session`, `get_session_pmids`, `get_cached_article`, `get_session_summary`, pipeline tools | The user wants to resume, repeat, audit, schedule, or save a search workflow. |
 | Export and local notes | `prepare_export`, `save_literature_notes` | The user wants Zotero/EndNote/BibTeX files or local Markdown/wiki notes. |
 
@@ -83,9 +84,9 @@ Use this path for `search_gene`, `get_gene_details`, `get_gene_literature`, `sea
 
 ![Evaluation and timeline workflow](images/timeline-evaluation-workflow.svg)
 
-Use this path for `get_citation_metrics`, `build_research_timeline`, `analyze_timeline_milestones`, and `compare_timelines` when the user asks what mattered, when the field changed, or how topics diverged.
+Use this path for `get_citation_metrics`, `build_research_chronicle`, and `read_research_chronicle` when the user asks what mattered, when the field changed, or how topics diverged.
 
-`build_research_timeline` is the current timeline/lineage-tree tool. It accepts either `topic=...` or explicit comma-separated `pmids=...`, detects milestone-like papers, and can return `text`, `tree`, `mermaid`, `mindmap`, `json`, `json_tree`, `timeline_js`, or `d3`. Use `analyze_timeline_milestones` for milestone distribution diagnostics and `compare_timelines` for up to five topic tracks.
+`build_research_chronicle` is the single research-evolution tool. It accepts either `topic=...` or explicit comma-separated `pmids=...`, detects milestone-like papers, and can return `summary`, `timeline`, `tree`, `graph`, `evidence`, `milestones`, `mermaid`, `mindmap`, `narrative`, or `json`. Use `read_research_chronicle(action="milestones")` for milestone distribution diagnostics and `read_research_chronicle(action="compare", topics="a,b")` for up to five topic tracks.
 
 Use precise terms:
 
@@ -93,7 +94,21 @@ Use precise terms:
 - **Lineage tree**: branch projection from timeline events.
 - **Context graph preview**: `unified_search(options="context_graph")`, a lightweight preview from the current PMID-backed ranked set.
 - **Citation tree**: `build_citation_tree`, a single-seed forward/backward citation network.
-- **Research Chronicle**: planned persistent/versioned artifact; see [Research Chronicle Rebuild Spec](RESEARCH_CHRONICLE_REFACTOR_SPEC.md).
+- **Research Chronicle**: `build_research_chronicle` / `read_research_chronicle`, the persistent, versioned, evidence-backed record. See [Research Chronicle Rebuild Spec](RESEARCH_CHRONICLE_REFACTOR_SPEC.md).
+
+### Research Chronicle
+
+Use `build_research_chronicle` whenever the user asks how a field evolved. It replaces the older one-shot timeline tools: the chronicle is persisted with a monotonic revision number, so re-running it later lets you diff revisions and answer "what changed since last time".
+
+Chronology is the primary axis and research branches are a secondary projection of the same stored snapshot, so `output="timeline"` and `output="tree"` can never disagree.
+
+Each chronicle entry carries a one-sentence claim with inline citations, its supporting/contradicting/updating evidence, a branch (lineage) assignment, and a confidence score. A typed provenance graph links Topic → Branch → Entry → EvidenceArticle and is validated against edge invariants. The audit reports evidence coverage, identifier coverage, branch coverage, graph integrity, chronology gaps, and per-source retrieval counts.
+
+- `build_research_chronicle(topic=...)` or `build_research_chronicle(pmids="last")` creates revision N+1 and persists a `research-chronicle-artifact/v1` artifact.
+- `read_research_chronicle(action="list")` lists stored chronicles.
+- `read_research_chronicle(chronicle_id=..., output="tree"|"timeline"|"graph"|"evidence")` reads one revision.
+- `read_research_chronicle(action="diff", chronicle_id=..., from_revision=1)` reports added, retired, and updated entries plus evidence and branch churn.
+- `read_research_chronicle(action="narrate", chronicle_id=..., mode="full")` renders prose where every claim cites its entry ID and article identifiers.
 
 ### Session, Pipeline, And Scheduled Reuse
 

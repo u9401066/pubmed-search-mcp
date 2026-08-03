@@ -1,6 +1,6 @@
 # PubMed Search MCP 工具使用指南
 
-這是一份能力導向指南，目標是讓 agent 和使用者不用死背 46 個 MCP tool，也能穩定選到正確流程。
+這是一份能力導向指南，目標是讓 agent 和使用者不用死背 45 個 MCP tool，也能穩定選到正確流程。
 
 **語言**: [English](TOOLS_USAGE_GUIDE.md) | **繁體中文**
 
@@ -22,7 +22,8 @@
 | 論文探索 | `fetch_article_details`, `find_related_articles`, `find_citing_articles`, `get_article_references`, `build_citation_tree` | 已有 seed PMID，要查脈絡、相關研究、引用網路。 |
 | 全文與圖表 | `get_fulltext`, `get_text_mined_terms`, `get_article_figures` | 需要文章段落、證據區段、實體標註、caption 或 image URL。 |
 | 外部生醫資料 | `search_gene`, `get_gene_details`, `search_compound`, `get_compound_details`, `search_clinvar` | 問題從文獻延伸到 NCBI gene、compound、clinical variant。 |
-| 評估與時間軸 | `get_citation_metrics`, `build_research_timeline`, `analyze_timeline_milestones`, `compare_timelines` | 使用者問哪些重要、領域如何演進、或多主題比較。 |
+| 評估與研究演化 | `get_citation_metrics`, `build_research_chronicle`, `read_research_chronicle` | 使用者問哪些重要、領域如何演進、或多主題比較。 |
+| 研究編年史 | `build_research_chronicle`, `read_research_chronicle` | 使用者需要一份可以回頭查看、可版本比對、有證據支撐的研究脈絡。 |
 | 持久化與 session | `read_session`, `get_session_pmids`, `get_cached_article`, `get_session_summary`, pipeline tools | 使用者要恢復、重跑、審計、排程、保存搜尋流程。 |
 | 匯出與本機筆記 | `prepare_export`, `save_literature_notes` | 使用者要 Zotero/EndNote/BibTeX，或本機 Markdown/wiki 筆記。 |
 
@@ -83,9 +84,9 @@ Zotero Keeper 應維持在外部整合邊界。PubMed Search MCP 負責產生 of
 
 ![評估與時間軸流程](images/timeline-evaluation-workflow.svg)
 
-使用者問「哪些重要」、「領域何時改變」、「不同主題如何分歧」時，使用 `get_citation_metrics`、`build_research_timeline`、`analyze_timeline_milestones` 與 `compare_timelines`。
+使用者問「哪些重要」、「領域何時改變」、「不同主題如何分歧」時，使用 `get_citation_metrics`、`build_research_chronicle` 與 `read_research_chronicle`。
 
-`build_research_timeline` 是目前的 timeline / lineage-tree 工具。它接受 `topic=...` 或明確的 comma-separated `pmids=...`，會偵測 milestone-like papers，並可回傳 `text`、`tree`、`mermaid`、`mindmap`、`json`、`json_tree`、`timeline_js` 或 `d3`。`analyze_timeline_milestones` 用於里程碑分佈 diagnostics；`compare_timelines` 用於最多五個 topic tracks 的比較。
+`build_research_chronicle` 是唯一的研究演化工具。它接受 `topic=...` 或明確的 comma-separated `pmids=...`，會偵測 milestone-like papers，並可回傳 `summary`、`timeline`、`tree`、`graph`、`evidence`、`milestones`、`mermaid`、`mindmap`、`narrative` 或 `json`。`read_research_chronicle(action="milestones")` 用於里程碑分佈 diagnostics；`read_research_chronicle(action="compare", topics="a,b")` 用於最多五個 topic tracks 的比較。
 
 用詞請保持精準：
 
@@ -93,7 +94,19 @@ Zotero Keeper 應維持在外部整合邊界。PubMed Search MCP 負責產生 of
 - **Lineage tree**：由 timeline events 分支而成的主題樹。
 - **Context graph preview**：`unified_search(options="context_graph")`，只根據本次 PMID-backed ranked set 產生輕量預覽。
 - **Citation tree**：`build_citation_tree`，從單一 seed PMID 建立 forward/backward citation network。
-- **Research Chronicle**：規劃中的持久化、版本化 artifact；詳見 [Research Chronicle Rebuild Spec](RESEARCH_CHRONICLE_REFACTOR_SPEC.md)。
+- **Research Chronicle**：`build_research_chronicle` / `read_research_chronicle`，持久化、版本化、有證據支撐的研究紀錄；詳見 [Research Chronicle Rebuild Spec](RESEARCH_CHRONICLE_REFACTOR_SPEC.md)。
+
+### 研究編年史 (Research Chronicle)
+
+當使用者要的不是一次性快照，而是一份可以持續回頭維護的研究脈絡時，使用 `build_research_chronicle`。它取代了舊的一次性 timeline 工具：chronicle 會以遞增 revision 持久化儲存，之後重跡就能做版本比對，回答「上次之後改變了什麼」。主軸是時序，分支是同一份 snapshot 的次要投影。
+
+每個 chronicle entry 都帶有一句附引用的 claim、supporting / contradicting / updating 證據、所屬研究分支 (lineage)，以及 confidence。型別化 provenance graph 以 Topic → Branch → Entry → EvidenceArticle 相連，並依 edge invariants 驗證。audit 會回報證據覆蓋率、識別碼覆蓋率、分支覆蓋率、graph 完整性、時序缺口與各來源回傳量。
+
+- `build_research_chronicle(topic=...)` 或 `build_research_chronicle(pmids="last")`：建立 revision N+1 並持久化 `research-chronicle-artifact/v1` artifact。
+- `read_research_chronicle(action="list")`：列出已儲存的 chronicles。
+- `read_research_chronicle(chronicle_id=..., output="tree"|"timeline"|"graph"|"evidence")`：讀取單一 revision。
+- `read_research_chronicle(action="diff", chronicle_id=..., from_revision=1)`：回報新增、退場、更新的 entries 與證據/分支變化。
+- `read_research_chronicle(action="narrate", chronicle_id=..., mode="full")`：產出每句 claim 都附 entry ID 與文獻識別碼的敘述。
 
 ### Session、Pipeline 與排程重用
 

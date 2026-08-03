@@ -64,7 +64,7 @@ PUBMED_NOTES_DIR=/path/to/references
 | 從重要文章往外探索 | `fetch_article_details` | `find_related_articles`, `find_citing_articles`, `get_article_references`, `build_citation_tree` |
 | 閱讀更深層證據 | `get_fulltext` | `get_text_mined_terms`, `get_article_figures` |
 | 從視覺證據搜尋 | `analyze_figure_for_search` | `search_biomedical_images`, `unified_search` |
-| 建立研究時間軸 / 脈絡樹 | `build_research_timeline` | `analyze_timeline_milestones`, `compare_timelines` |
+| 建立研究編年史 / 脈絡樹 | `build_research_chronicle` | `read_research_chronicle` |
 | 重新讀取大型輸出 | `read_session(action="artifact")` | `read_session(action="list_artifacts")` |
 | 建立本機文獻庫 | `prepare_export` | `save_literature_notes` |
 | 重用工作流 | `manage_pipeline` | `save_pipeline`, `load_pipeline`, `schedule_pipeline` |
@@ -180,16 +180,16 @@ uv run pubmed-browser-fetch-broker --token local-dev-token
 
 ![評估與時間軸流程](images/timeline-evaluation-workflow.svg)
 
-當問題不是「有哪些文章？」而是「這個領域怎麼演進？」時，使用 timeline tools。
+當問題不是「有哪些文章？」而是「這個領域怎麼演進？」時，使用 chronicle tools。
 
 ```python
-build_research_timeline(topic="remimazolam ICU sedation", output_format="tree", max_events=20)
-build_research_timeline(pmids="12345678,23456789", topic="Selected studies", output_format="mermaid")
-analyze_timeline_milestones(topic="CAR-T therapy")
-compare_timelines(topics="remimazolam,propofol,dexmedetomidine", max_events_per_topic=10)
+build_research_chronicle(topic="remimazolam ICU sedation", output="tree", max_events=20)
+build_research_chronicle(pmids="12345678,23456789", topic="Selected studies", output="mermaid")
+read_research_chronicle(action="milestones", chronicle_id="car-t-therapy-...")
+read_research_chronicle(action="compare", topics="remimazolam,propofol,dexmedetomidine")
 ```
 
-`build_research_timeline` 可以依 topic 搜尋，也可以使用明確 PMID set。它會偵測 milestone-like papers、可 highlight landmark studies，並支援 `text`、`tree`、`mermaid`、`mindmap`、`json`、`json_tree`、`timeline_js` 與 `d3` 輸出。`unified_search` 的 `options="context_graph"` 適合先看本次 PMID-backed ranked results 的輕量分支預覽。持久化、版本化的 Research Chronicle 是下一輪重建目標，詳見 [Research Chronicle Rebuild Spec](#/research-chronicle-rebuild-spec)。
+`build_research_chronicle` 可以依 topic 搜尋，也可以使用明確 PMID set。主軸是時序，分支 (lineage) 是同一份 snapshot 的次要投影，所以 `output="timeline"` 與 `output="tree"` 永遠一致。支援 `summary`、`timeline`、`tree`、`graph`、`evidence`、`milestones`、`mermaid`、`mindmap`、`narrative` 與 `json` 輸出。`unified_search` 的 `options="context_graph"` 適合先看本次 PMID-backed ranked results 的輕量分支預覽。chronicle 本身已持久化且版本化，詳見 [Research Chronicle Rebuild Spec](#/research-chronicle-rebuild-spec)。
 
 ### 6. 重新讀取持久化 Query Memory
 

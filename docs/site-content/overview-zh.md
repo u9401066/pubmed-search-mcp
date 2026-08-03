@@ -18,11 +18,12 @@
 
 **✨ 包含內容：**
 
-- 🔧 **46 個 MCP 工具** - 精簡的 PubMed、Europe PMC、CORE、NCBI 資料庫存取，及**研究時間軸 / 脈絡圖**功能
+- 🔧 **45 個 MCP 工具** - 精簡的 PubMed、Europe PMC、CORE、NCBI 資料庫存取，及**研究編年史 / 脈絡圖**功能
+- 🛡️ **多 Agent 服務模式** - 部署一次供多個 agent 共用：session、快取與 artifact 依租戶隔離，支援 bearer token 認證與各租戶公平配額。詳見 [DEPLOYMENT.md](#/deployment)
 - 🖼️ **OA 圖表擷取** - 從 PMC Open Access 論文直接抽出 figure caption、image URL 與 PDF 連結
 - 📘 **Docs Site** - 用語言切換網站整合使用者指南、開發者指南、架構、quick reference、pipeline 教學、source contract、troubleshooting 與 deployment，入口在 [u9401066.github.io/pubmed-search-mcp](https://u9401066.github.io/pubmed-search-mcp/)
 - 📖 **GitHub Wiki** - 同一組 canonical docs 的 GitHub 內建文件鏡像，入口在 [github.com/u9401066/pubmed-search-mcp/wiki](https://github.com/u9401066/pubmed-search-mcp/wiki)
-- 📚 **24 個 Claude Skills** - AI Agent 可直接使用的工作流程指南（Claude Code 專屬）
+- 📚 **26 個 Claude Skills** - AI Agent 可直接使用的工作流程指南（Claude Code 專屬）
 - 📖 **Copilot 整合指南** - VS Code GitHub Copilot 使用說明
 
 **🌐 語言**: [English](#/overview) | **繁體中文**
@@ -411,7 +412,7 @@ email/API key。
 
 ## 🛠️ MCP 工具概覽
 
-如果你想真正理解這 46 個工具怎麼用，不要從背工具名開始。
+如果你想真正理解這 45 個工具怎麼用，不要從背工具名開始。
 
 先看[工具使用指南](#/tools-usage-guide-zh)：它把目前 46 個工具濃縮成 8 個能力族，說明理論上的最小壓縮邊界，以及人類與 agent 的意圖路由方式。
 
@@ -503,17 +504,16 @@ email/API key。
 | `get_compound_literature` | 取得與化合物相關的 PubMed 文章 |
 | `search_clinvar` | 搜尋 ClinVar 臨床變異 |
 
-### 🕰️ 研究時間軸 & 脈絡樹
+### 🕰️ 研究編年史 & 脈絡樹
 
 ![評估與時間軸流程](images/timeline-evaluation-workflow.svg)
 
 | 工具 | 說明 |
 | ---- | ---- |
-| `build_research_timeline` | 建構時間軸/脈絡樹，支援重要文獻偵測與格式化 diagnostics。格式：text, tree, mermaid, mindmap, json, json_tree, timeline_js, d3 |
-| `analyze_timeline_milestones` | 分析里程碑分佈，並回傳 diagnostics payload |
-| `compare_timelines` | 比較多個主題的時間軸，附每個主題的 diagnostics |
+| `build_research_chronicle` | 建構持久化、可版本比對的研究脈絡，支援重要文獻偵測。格式：summary, timeline, tree, graph, evidence, milestones, mermaid, mindmap, narrative, json |
+| `read_research_chronicle` | 讀取、列表、版本 diff、有證據支撐的敘述、里程碑分佈分析，或比較最多五個主題 |
 
-目前 timeline 與 tree 是 projection，不是持久化 chronicle asset。下一輪規劃中的持久化、版本化 Research Chronicle 規格請見 [docs/RESEARCH_CHRONICLE_REFACTOR_SPEC.md](#/research-chronicle-rebuild-spec)。
+編年史的主軸是時序，分支 (lineage) 是同一份 snapshot 的次要投影；timeline 與 tree 永遠不會互相矛盾。完整規格見 [docs/RESEARCH_CHRONICLE_REFACTOR_SPEC.md](#/research-chronicle-rebuild-spec)。
 
 ### 🏥 機構訂閱與 ICD 轉換
 
@@ -632,7 +632,7 @@ agent 的指令；agent 抽出英文 biomedical terms 後，再接續用
 | -------- | ---- |
 | `context_graph` | Markdown 輸出附帶由本次 PMID-backed ranked set 產生的輕量 Research Context Graph preview；JSON 輸出附帶 `research_context` 欄位 |
 
-這適合 Agent 在不額外呼叫 `build_research_timeline` 的情況下，先快速掌握主題分支。
+這適合 Agent 在不額外呼叫 `build_research_chronicle` 的情況下，先快速掌握主題分支。
 
 ### 📊 Count-First Orientation
 
@@ -652,7 +652,9 @@ unified_search(query="remimazolam ICU sedation", options="counts_first")
 
 ### ⏱️ MCP 進度回報
 
-當 MCP client 提供 progress token 時，`unified_search`、`build_research_timeline`、`analyze_timeline_milestones`、`compare_timelines`、`get_fulltext`、`get_text_mined_terms` 都會回報主要階段進度，降低 Agent 長時間等待時的黑箱感。
+當 MCP client 提供 progress token 時，`unified_search`、`build_research_chronicle`、`get_fulltext`、`get_text_mined_terms` 都會回報主要階段進度，降低 Agent 長時間等待時的黑箱感。
+進度 callback 採 best-effort，不會在 tool call 仍執行時由 server 主動取消，
+避免 progress notification backpressure 造成 host 顯示 `Canceled: Canceled`。
 
 ---
 
@@ -905,7 +907,7 @@ manage_pipeline(action="history", name="icu_sedation_weekly")  # 查看過去執
 
 預建工作流程指南位於 `.claude/skills/`，分為**使用 Skills**（使用 MCP server）和**開發 Skills**（維護專案）：
 
-### 📚 使用 Skills (10) — 給使用此 MCP Server 的 AI Agent
+### 📚 使用 Skills (11) — 給使用此 MCP Server 的 AI Agent
 
 | Skill | 說明 |
 | ----- | ---- |
@@ -913,6 +915,7 @@ manage_pipeline(action="history", name="icu_sedation_weekly")  # 查看過去執
 | `pubmed-systematic-search` | MeSH 擴展，全面性 |
 | `pubmed-pico-search` | 臨床問題分解 |
 | `pubmed-paper-exploration` | 引用樹，相關文章 |
+| `pubmed-research-chronicle` | 持久化、可版本比對的研究脈絡 |
 | `pubmed-gene-drug-research` | Gene/PubChem/ClinVar |
 | `pubmed-fulltext-access` | Europe PMC, CORE 全文 |
 | `pubmed-export-citations` | RIS/BibTeX/CSV/CSL 匯出指引 |

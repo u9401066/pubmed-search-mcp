@@ -8,26 +8,30 @@ handoff, and persistent query memory.
 
 | Need | Start here | Continue with |
 | --- | --- | --- |
-| See how a topic evolved over time | `build_research_timeline` | `analyze_timeline_milestones`, `compare_timelines` |
+| See how a topic evolved over time | `build_research_chronicle` | `read_research_chronicle` |
 | Find biomedical images from text | `search_biomedical_images` | `get_article_figures`, `unified_search` |
 | Upload or pass an image and search by its meaning | `analyze_figure_for_search` | `search_biomedical_images`, `unified_search` |
 | Re-open large search/fulltext outputs without rerunning | `read_session(action="artifact")` | `read_session(action="list_artifacts")` |
 
-## Research Timeline / Lineage Tree
+## Research Chronicle / Lineage Tree
 
-Use timeline tools when the user asks how a field changed, which papers look like
-milestones, or how two research tracks compare.
+Use the chronicle tools when the user asks how a field changed, which papers look
+like milestones, or how two research tracks compare.
 
 ```python
-build_research_timeline(topic="remimazolam ICU sedation", output_format="tree", max_events=20)
-build_research_timeline(pmids="12345678,23456789", topic="Selected studies", output_format="mermaid")
-analyze_timeline_milestones(topic="CAR-T therapy")
-compare_timelines(topics="remimazolam,propofol,dexmedetomidine")
+build_research_chronicle(topic="remimazolam ICU sedation", output="tree", max_events=20)
+build_research_chronicle(pmids="12345678,23456789", topic="Selected studies", output="mermaid")
+read_research_chronicle(action="milestones", chronicle_id="car-t-therapy-...")
+read_research_chronicle(action="compare", topics="remimazolam,propofol,dexmedetomidine")
 ```
 
-`build_research_timeline` accepts either a topic or a known PMID set, including
-explicit comma-separated PMIDs. It supports `text`, `tree`, `mermaid`,
-`mindmap`, `json`, `json_tree`, `timeline_js`, and `d3` output formats. For a
+`build_research_chronicle` accepts either a topic or a known PMID set, including
+explicit comma-separated PMIDs. It supports `summary`, `timeline`, `tree`,
+`graph`, `evidence`, `milestones`, `mermaid`, `mindmap`, `narrative`, and `json`
+output formats. Chronology is the primary axis and branches are a secondary
+projection of the same stored snapshot. Because revisions are persisted,
+`action="milestones"` and `action="compare"` read stored evidence instead of
+re-running a search. For a
 lightweight preview inside a normal search response, use
 `unified_search(options="context_graph")`; it is a preview from the current
 PMID-backed ranked set, not a complete graph. The planned persistent/versioned
@@ -96,9 +100,9 @@ remote artifact backends.
 
 ## Verification Status
 
-The current primary 46-tool MCP server exposes these tools directly:
+The current primary 45-tool MCP server exposes these tools directly:
 
-- Timeline: `build_research_timeline`, `analyze_timeline_milestones`, `compare_timelines`
+- Research chronicle: `build_research_chronicle`, `read_research_chronicle`
 - Image search: `search_biomedical_images`
 - Uploaded-image handoff: `analyze_figure_for_search`
 - Query memory: `read_session(action="artifact")`

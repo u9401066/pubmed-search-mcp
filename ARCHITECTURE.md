@@ -4,7 +4,7 @@
 
 ## 系統總覽
 
-PubMed Search MCP 是一個以 Domain-Driven Design 為核心的 MCP 伺服器，提供 46 個 MCP tools、session 快取、pipeline 持久化與排程，以及 stdio 與 HTTP 兩種 transport。
+PubMed Search MCP 是一個以 Domain-Driven Design 為核心的 MCP 伺服器，提供 45 個 MCP tools、session 快取、pipeline 持久化與排程，以及 stdio 與 HTTP 兩種 transport。
 
 目前的公開入口已收斂為：
 
@@ -238,7 +238,7 @@ flowchart TB
 ```text
 presentation/mcp_server/
 ├── server.py          MCP server 建立、DI container、stdio 啟動、背景 HTTP API
-├── tool_registry.py   46 tools / 16 categories 的權威 registry
+├── tool_registry.py   45 tools / 16 categories 的權威 registry
 ├── tools/             實際 MCP tool 實作
 ├── session_tools.py   session 相關 tools 與 resources
 ├── prompts.py         預設 prompt workflow
@@ -290,14 +290,54 @@ flowchart LR
 | 機構訂閱 | 5 | `configure_institutional_access`, `get_institutional_link`, `diagnose_institutional_access` |
 | 視覺搜索 | 1 | `analyze_figure_for_search` |
 | ICD 轉換 | 1 | `convert_icd_mesh` |
-| 研究時間軸 | 3 | `build_research_timeline`, `analyze_timeline_milestones`, `compare_timelines` |
+| 研究編年史 | 2 | `build_research_chronicle`, `read_research_chronicle` |
 | 圖片搜尋 | 1 | `search_biomedical_images` |
 | Pipeline 管理 | 7 | `manage_pipeline`, `save_pipeline`, `list_pipelines`, `load_pipeline`, `delete_pipeline`, `get_pipeline_history`, `schedule_pipeline` |
 
+## 多 Agent 服務模型
+
+這個 server 可以只當本機工具，也可以當成一個被多個 agent 同時呼叫的服務。差別在於
+「當前 session 是誰的」這件事必須有作用域。
+
+```mermaid
+flowchart LR
+  A1[Agent A<br/>Bearer token A]
+  A2[Agent B<br/>Bearer token B]
+  A3[本機 stdio client]
+  MW[Tenancy middleware<br/>解析身分 + 公平配額]
+  REG[SessionManagerRegistry]
+  SA[(tenant A store)]
+  SB[(tenant B store)]
+  SD[(default store)]
+
+  A1 --> MW
+  A2 --> MW
+  A3 --> MW
+  MW --> REG
+  REG --> SA
+  REG --> SB
+  REG --> SD
+```
+
+身分來源優先序：已驗證的 bearer token principal（真正的安全邊界）→ server 發出的
+`mcp-session-id`（只防意外互看，不是授權）→ stdio 的 `default`。
+
+| 關注點 | 模組 |
+| --- | --- |
+| 租戶身分與 context 綁定 | `shared/tenancy.py` |
+| 每租戶 session 池與儲存根目錄 | `application/session/registry.py` |
+| Bearer token 驗證 | `infrastructure/auth/static_tokens.py` |
+| 每請求綁定 + 公平配額 | `presentation/mcp_server/tenancy.py` |
+| 輔助 HTTP API 守門 | `presentation/mcp_server/http_security.py` |
+
+上游速率限制刻意維持全域（NCBI 依 API key 計量），每租戶並行上限則負責公平性。
+實際設定與運維細節見 [DEPLOYMENT.md](DEPLOYMENT.md) 的「多 Agent 正式服務」章節。
+
+> `presentation/api/server.py` 的 FastAPI 輔助伺服器是單租戶的歷史元件，
+> 不在多 agent MCP 路徑上，也未被任何 launcher 掛載。
+
 ## Runtime 設定與來源治理
-
 目前 runtime config 已集中到 `shared/settings.py`，由 Pydantic Settings 解析環境變數，避免 presentation / infrastructure 各自直接讀取 `os.environ`。
-
 多來源搜尋也已改為 registry-driven：`infrastructure/sources/registry.py` 統一管理來源 metadata、`auto/all/-source` expression 解析、default-off 商業來源 gating，以及 `PUBMED_SEARCH_DISABLED_SOURCES` 全域停用機制。
 
 全文路徑也已開始同樣的抽層：`application/fulltext/registry.py` 定義 retrieval policy 與 source metadata，`application/fulltext/service.py` 承接 identifier-aware orchestration；`infrastructure/sources/fulltext_registry.py` 與 `fulltext_service.py` 只是歷史 import path 的 compatibility re-export。`get_fulltext` tool 只保留 normalization、progress/log bridge、factory wiring 與 response formatting。
@@ -464,7 +504,7 @@ flowchart LR
 
 | 路線 | 說明 | 適用情境 |
 | --- | --- | --- |
-| `pubmed-search-mcp-http --transport streamable-http --copilot-compatible` | 保留完整 46-tool surface，開啟 Copilot HTTP compatibility | 想盡量保留完整 schema 時 |
+| `pubmed-search-mcp-http --transport streamable-http --copilot-compatible` | 保留完整 45-tool surface，開啟 Copilot HTTP compatibility | 想盡量保留完整 schema 時 |
 | `run_copilot.py` | 啟用簡化 schema 的 Copilot 專用工具集 | Copilot Studio schema 相容性優先時 |
 
 `http_compat.py` 會把部分 HTTP 202 responses 正規化為 Copilot 可接受的 200 JSON responses。

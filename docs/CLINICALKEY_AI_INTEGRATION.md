@@ -1271,4 +1271,3 @@ MCP `error` object MUST 包含：
 - [ ] `INTEGRATIONS.md`、`SOURCE_CONTRACTS.md`、`DEPLOYMENT.md`、`README*.md`、`copilot-instructions.md`、`instructions.py`、`SKILL.md`、`TOOLS_INDEX.md`、`CHANGELOG.md` 全部更新
 - [ ] `uv run python scripts/count_mcp_tools.py --update-docs` 通過
 - [ ] `uv run pre-commit run --all-files` 通過
-

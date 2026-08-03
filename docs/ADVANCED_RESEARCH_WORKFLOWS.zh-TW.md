@@ -6,23 +6,23 @@
 
 | 需求 | 從這裡開始 | 接著使用 |
 | --- | --- | --- |
-| 看一個主題如何演進 | `build_research_timeline` | `analyze_timeline_milestones`, `compare_timelines` |
+| 看一個主題如何演進 | `build_research_chronicle` | `read_research_chronicle` |
 | 用文字找 biomedical images | `search_biomedical_images` | `get_article_figures`, `unified_search` |
 | 上傳圖片，依圖片語意找相關文獻 | `analyze_figure_for_search` | `search_biomedical_images`, `unified_search` |
 | 重新讀取大型搜尋/全文輸出，不重跑外部來源 | `read_session(action="artifact")` | `read_session(action="list_artifacts")` |
 
 ## 研究脈絡 / Research Timeline
 
-當使用者問「這個領域怎麼演進？」、「哪些文章像里程碑？」或「兩個研究路線差在哪？」時，用 timeline tools。
+當使用者問「這個領域怎麼演進？」、「哪些文章像里程碑？」或「兩個研究路線差在哪？」時，用 chronicle tools。
 
 ```python
-build_research_timeline(topic="remimazolam ICU sedation", output_format="tree", max_events=20)
-build_research_timeline(pmids="12345678,23456789", topic="Selected studies", output_format="mermaid")
-analyze_timeline_milestones(topic="CAR-T therapy")
-compare_timelines(topics="remimazolam,propofol,dexmedetomidine")
+build_research_chronicle(topic="remimazolam ICU sedation", output="tree", max_events=20)
+build_research_chronicle(pmids="12345678,23456789", topic="Selected studies", output="mermaid")
+read_research_chronicle(action="milestones", chronicle_id="car-t-therapy-...")
+read_research_chronicle(action="compare", topics="remimazolam,propofol,dexmedetomidine")
 ```
 
-`build_research_timeline` 可以依 topic 搜尋，也可以使用明確的 comma-separated PMID set。輸出格式支援 `text`、`tree`、`mermaid`、`mindmap`、`json`、`json_tree`、`timeline_js`、`d3`。如果只是想在一般搜尋回應裡看輕量分支預覽，用 `unified_search(options="context_graph")`；它只根據本次 PMID-backed ranked set 產生 preview，不是完整 graph。持久化、版本化的 Research Chronicle 是下一輪重建目標，詳見 [Research Chronicle Rebuild Spec](RESEARCH_CHRONICLE_REFACTOR_SPEC.md)。
+`build_research_chronicle` 可以依 topic 搜尋，也可以使用明確的 comma-separated PMID set。輸出格式支援 `summary`、`timeline`、`tree`、`graph`、`evidence`、`milestones`、`mermaid`、`mindmap`、`narrative`、`json`。主軸是時序，分支是同一份 snapshot 的次要投影；因為 revision 已持久化，`action="milestones"` 與 `action="compare"` 都是讀已儲存證據，不會重跑搜尋。如果只是想在一般搜尋回應裡看輕量分支預覽，用 `unified_search(options="context_graph")`；它只根據本次 PMID-backed ranked set 產生 preview，不是完整 graph。詳見 [Research Chronicle Rebuild Spec](RESEARCH_CHRONICLE_REFACTOR_SPEC.md)。
 
 ## Open-i 生醫圖片搜尋
 
@@ -67,9 +67,9 @@ Artifact 是 query memory，不是第二次搜尋。讀取 artifact 不會重跑
 
 ## 驗證狀態
 
-目前 primary 46-tool MCP server 直接暴露這些功能：
+目前 primary 45-tool MCP server 直接暴露這些功能：
 
-- Timeline: `build_research_timeline`, `analyze_timeline_milestones`, `compare_timelines`
+- Research chronicle: `build_research_chronicle`, `read_research_chronicle`
 - Image search: `search_biomedical_images`
 - 上傳圖片 handoff: `analyze_figure_for_search`
 - Query memory: `read_session(action="artifact")`

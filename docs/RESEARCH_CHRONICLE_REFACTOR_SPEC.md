@@ -1,8 +1,58 @@
 # Research Chronicle, Timeline, And Graph Rebuild Spec
 
-Status: Canonical pre-rebuild spec v2  
-Last updated: 2026-06-06  
-Scope: design/specification only; this document prepares the next implementation cycle.
+Status: Phases 0-4 implemented (chronicle snapshot, evidence, delta, narrative, graph)  
+Last updated: 2026-08-03  
+Scope: this document is now both the design contract and the implementation reference.
+
+## 0. Implementation Status
+
+The Research Chronicle described below is implemented and shipped.
+
+| Layer | Module |
+| --- | --- |
+| Domain | `src/pubmed_search/domain/entities/chronicle.py` |
+| Application | `src/pubmed_search/application/chronicle/` (`assembler`, `graph`, `audit`, `projectors`, `narrator`, `differ`, `store`, `service`) |
+| Presentation | `src/pubmed_search/presentation/mcp_server/tools/chronicle.py` |
+| Tests | `tests/test_chronicle.py` |
+
+The planned six chronicle tools were consolidated into two, matching the repo's
+facade convention (`read_session`, `manage_pipeline`):
+
+| Planned tool | Shipped as |
+| --- | --- |
+| `build_research_chronicle` | `build_research_chronicle(topic=..., pmids=..., chronicle_id=...)` |
+| `update_research_chronicle` | `build_research_chronicle(chronicle_id=...)` — writes revision N+1 |
+| `load_research_chronicle` | `read_research_chronicle(action="load", ...)` |
+| `list_research_chronicles` | `read_research_chronicle(action="list", ...)` |
+| `diff_research_chronicle` | `read_research_chronicle(action="diff", ...)` |
+| `narrate_research_chronicle` | `read_research_chronicle(action="narrate", ...)` |
+
+The three timeline tools were also folded in rather than kept alongside the
+chronicle, superseding section 12's backward-compatibility note:
+
+| Retired tool | Replacement |
+| --- | --- |
+| `build_research_timeline` | `build_research_chronicle` |
+| `analyze_timeline_milestones` | `read_research_chronicle(action="milestones")` |
+| `compare_timelines` | `read_research_chronicle(action="compare", topics="a,b")` |
+
+Because chronicles are persisted, milestone analysis and comparison read stored
+evidence instead of re-running a search, and comparison additionally reports the
+evidence articles two topics share. `application/timeline/` is unchanged and now
+feeds the chronicle assembler as its evidence provider.
+
+### Chronology Is The Primary Axis
+
+The chronicle stores entries, branches, and a typed graph; the linear timeline
+and the branch tree are both *projections*, so there is no storage-level choice
+between them. The product decision is that **chronology is the primary axis and
+branches are the secondary organizing dimension** - that is what makes the
+artifact a chronicle rather than a taxonomy. The default `output="summary"`
+therefore leads with the chronological spine and lists research lines beneath it.
+
+Also fixed during implementation: `build_research_timeline(pmids="last")`
+resolved session PMIDs instead of passing the `"last"` sentinel through to PMID
+fetch; the behavior carried over to `build_research_chronicle`.
 
 ## 1. Purpose
 
@@ -22,11 +72,11 @@ The main decision is:
 
 | Term | Current status | Canonical meaning |
 | --- | --- | --- |
-| Research Timeline | Implemented | A chronological milestone view built from topic search or explicit PMIDs. |
+| Research Timeline | Retired as an MCP tool | A chronological milestone view. Now the `timeline` projection of a chronicle. |
 | Research Lineage Tree | Implemented as `ResearchTree` | A deterministic branch projection from timeline events by milestone type. It is a tree/branch view, not a general knowledge graph. |
 | Research Context Graph Preview | Implemented as `unified_search(options="context_graph")` | A lightweight preview synthesized from the current ranked PMID-backed search results. It is not persisted and is not a full graph. |
 | Citation Tree | Implemented as `build_citation_tree` | A single-seed citation network using forward/backward citation relationships. |
-| Research Chronicle | Planned | A persisted, versioned, evidence-backed research artifact with entries, evidence bundles, typed provenance graph, revisions, deltas, audit files, and projections. |
+| Research Chronicle | Implemented | A persisted, versioned, evidence-backed research artifact with entries, evidence bundles, typed provenance graph, revisions, deltas, audit files, and projections. |
 
 Documentation must not call the current timeline tool a complete Research
 Chronicle. Until the rebuild lands, say "timeline/lineage tree" for current
