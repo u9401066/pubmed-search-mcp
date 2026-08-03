@@ -56,9 +56,9 @@ def create_copilot_server(
                        If False, use simplified Copilot-compatible tools
 
     Returns:
-        FastMCP server instance
+        MCPServer instance
     """
-    from mcp.server.fastmcp import FastMCP
+    from mcp.server.mcpserver import MCPServer
     from mcp.server.transport_security import TransportSecuritySettings
 
     from pubmed_search.container import ApplicationContainer
@@ -84,7 +84,7 @@ def create_copilot_server(
     session_manager = cast("SessionManager", container.session_manager())
 
     # Create MCP server with Copilot Studio settings
-    mcp = FastMCP(
+    mcp = MCPServer(
         "pubmed-search-copilot",
         instructions="""PubMed Search MCP Server - Copilot Studio Edition
 
@@ -101,10 +101,14 @@ Available tools:
 - search_gene: Search NCBI Gene database
 - search_compound: Search PubChem compounds
 """,
-        transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
-        json_response=True,
-        stateless_http=True,  # Required for Copilot Studio
     )
+
+    # Transport-level settings moved to the app factory in MCP SDK v2
+    mcp.copilot_transport_kwargs = {  # type: ignore[attr-defined]
+        "transport_security": TransportSecuritySettings(enable_dns_rebinding_protection=False),
+        "json_response": True,
+        "stateless_http": True,  # Required for Copilot Studio
+    }
 
     # Set global references
     cast("Callable[[SessionManager], None]", set_session_manager)(session_manager)
@@ -152,8 +156,8 @@ def main() -> None:
     # Create server with appropriate tool set
     server = create_copilot_server(email=args.email, api_key=args.api_key, use_full_tools=args.full_tools)
 
-    # Get the streamable-http app directly from FastMCP
-    app: Any = server.streamable_http_app()
+    # Get the streamable-http app directly from MCPServer
+    app: Any = server.streamable_http_app(**getattr(server, "copilot_transport_kwargs", {}))
 
     # Wrap with Copilot Studio compatibility middleware
     app = wrap_copilot_compatibility(app)

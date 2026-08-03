@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pubmed-search-mcp"
-version = "0.5.17"
+version = "0.6.0"
 description = "MCP server for PubMed literature search with MeSH, PICO, and intelligent query expansion"
 readme = "README.md"
 license = "Apache-2.0"
@@ -39,8 +39,8 @@ dependencies = [
     "apscheduler>=3.10.4,<4",
     "biopython>=1.81,<2",
     "pylatexenc>=2.10",  # Unicode to LaTeX conversion for BibTeX export
-    "mcp>=1.27,<2",  # Streamable HTTP fixes, resource metadata, and task support require MCP 1.27.x
-    "anyio>=4.0,<5",
+    "mcp>=2.0,<3",  # MCPServer (ex-FastMCP), 2026-07-28 protocol era, mcp-types split
+    "anyio>=4.9,<5",
     "fastapi>=0.128.0",
     "httpx>=0.28.1",
     "pydantic>=2.12,<3",
