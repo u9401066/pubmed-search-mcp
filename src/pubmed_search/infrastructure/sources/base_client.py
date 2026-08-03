@@ -90,7 +90,10 @@ class BaseAPIClient:
         self._timeout = timeout
         self._min_interval = min_interval
         self._last_request_time = 0.0
-        self._rate_limiter_name = f"source:{self._service_name.lower()}:{id(self)}"
+        # Keyed by upstream service, never by object identity: every client for
+        # the same API must draw from one shared budget, otherwise a parallel
+        # fan-out multiplies our real request rate by the number of instances.
+        self._rate_limiter_name = f"source:{self._service_name.lower()}"
         self._client = create_async_http_client(
             timeout=self._timeout,
             headers=headers or {},
@@ -99,6 +102,9 @@ class BaseAPIClient:
             max_keepalive_connections=10,
             keepalive_expiry=30.0,
         )
+        # Fault tolerance stays per instance: an open breaker must not stop
+        # unrelated callers, and the shared rate limiter above is what keeps us
+        # inside the upstream budget.
         self._circuit_breaker = circuit_breaker or CircuitBreaker(failure_threshold=10, recovery_timeout=60.0)
         self._transport_kernel = get_transport_kernel()
         self._last_retryable_error: ContextVar[RetryableOperationError | None] = ContextVar(
@@ -129,7 +135,12 @@ class BaseAPIClient:
             self._last_request_time = time.time()
             return
 
-        limiter = get_rate_limiter(self._rate_limiter_name, rate=1.0, per=self._min_interval)
+        limiter = get_rate_limiter(
+            self._rate_limiter_name,
+            rate=1.0,
+            per=self._min_interval,
+            conservative=True,
+        )
         await limiter.acquire()
         self._last_request_time = time.time()
 

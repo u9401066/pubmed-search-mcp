@@ -30,9 +30,7 @@ from typing import TYPE_CHECKING, Any
 from pubmed_search.shared.settings import get_settings
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
-
-    from mcp.server.fastmcp import FastMCP
+    from mcp.server.mcpserver import MCPServer
 
 logger = logging.getLogger(__name__)
 
@@ -183,7 +181,7 @@ def format_metrics_report() -> str:
 # ── Installation ────────────────────────────────────────────────────────────
 
 
-def install_profiling(mcp: FastMCP) -> bool:
+def install_profiling(mcp: MCPServer) -> bool:
     """
     Install performance profiling on the MCP server.
 
@@ -201,14 +199,14 @@ def install_profiling(mcp: FastMCP) -> bool:
     # ── Patch call_tool ─────────────────────────────────────────────────
     original_call_tool = mcp.call_tool
 
-    async def profiled_call_tool(name: str, arguments: dict[str, Any]) -> Sequence[Any] | dict[str, Any]:
+    async def profiled_call_tool(name: str, arguments: dict[str, Any], *args: Any, **kwargs: Any) -> Any:
         # Set up HTTP time accumulator for this call
         http_times: list[float] = []
         token = _http_time_accumulator.set(http_times)
 
         start = time.perf_counter()
         try:
-            return await original_call_tool(name, arguments)
+            return await original_call_tool(name, arguments, *args, **kwargs)
         finally:
             elapsed_ms = (time.perf_counter() - start) * 1000
             http_ms = sum(http_times)
@@ -261,31 +259,4 @@ def install_profiling(mcp: FastMCP) -> bool:
         return report
 
     logger.info("Registered dev tool: get_performance_metrics")
-    return True
-
-
-def install_http_profiling() -> bool:
-    """
-    Instrument BaseAPIClient._make_request to track HTTP time.
-
-    Call this once at startup (after imports).
-    Returns True if installed, False if profiling disabled.
-    """
-    if not PROFILING_ENABLED:
-        return False
-
-    from pubmed_search.infrastructure.sources.base_client import BaseAPIClient
-
-    original_make_request = BaseAPIClient._make_request  # noqa: SLF001
-
-    async def profiled_make_request(self: Any, url: str, **kwargs: Any) -> Any:
-        start = time.perf_counter()
-        try:
-            return await original_make_request(self, url, **kwargs)
-        finally:
-            elapsed_ms = (time.perf_counter() - start) * 1000
-            record_http_time(elapsed_ms)
-
-    BaseAPIClient._make_request = profiled_make_request  # type: ignore[assignment]  # noqa: SLF001
-    logger.info("HTTP profiling installed on BaseAPIClient")
     return True

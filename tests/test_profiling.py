@@ -227,15 +227,15 @@ class TestInstallProfiling:
 
 class TestInstallHttpProfiling:
     def test_disabled_returns_false(self):
-        with patch("pubmed_search.shared.profiling.PROFILING_ENABLED", False):
-            from pubmed_search.shared.profiling import install_http_profiling
+        with patch("pubmed_search.infrastructure.sources.profiling.PROFILING_ENABLED", False):
+            from pubmed_search.infrastructure.sources.profiling import install_http_profiling
 
             assert install_http_profiling() is False
 
     def test_enabled_patches_base_client(self):
-        with patch("pubmed_search.shared.profiling.PROFILING_ENABLED", True):
+        with patch("pubmed_search.infrastructure.sources.profiling.PROFILING_ENABLED", True):
             from pubmed_search.infrastructure.sources.base_client import BaseAPIClient
-            from pubmed_search.shared.profiling import install_http_profiling
+            from pubmed_search.infrastructure.sources.profiling import install_http_profiling
 
             original = BaseAPIClient._make_request
             try:

@@ -7,6 +7,7 @@ import time
 
 import pytest
 
+from pubmed_search.infrastructure.sources.base_client import BaseAPIClient
 from pubmed_search.shared.async_utils import (
     CircuitBreaker,
     RateLimiter,
@@ -380,3 +381,82 @@ class TestTransportKernel:
 
         assert attempts == 1
         assert time.monotonic() - started < 0.05
+
+
+class TestSharedUpstreamBudget:
+    """Parallel fan-out must draw from one budget per upstream, not one each."""
+
+    class _StubClient(BaseAPIClient):
+        _service_name = "Budget Stub"
+
+        def __init__(self, min_interval: float = 0.01) -> None:
+            super().__init__(base_url="https://example.invalid", min_interval=min_interval)
+
+    async def test_two_clients_of_one_service_use_the_same_limiter(self, monkeypatch):
+        used: list[int] = []
+        original = RateLimiter.acquire
+
+        async def spy(limiter: RateLimiter) -> None:
+            used.append(id(limiter))
+            await original(limiter)
+
+        monkeypatch.setattr(RateLimiter, "acquire", spy)
+
+        # Both clients must stay alive: freeing the first would let CPython reuse
+        # its address, which would mask an id-keyed limiter.
+        first = self._StubClient()
+        second = self._StubClient()
+        await first._rate_limit()
+        await second._rate_limit()
+
+        assert len(used) == 2
+        assert len(set(used)) == 1, "each client got its own budget, so the real request rate doubles"
+
+    async def test_a_slower_client_lowers_the_shared_budget(self):
+        fast = get_rate_limiter("shared-budget-test", rate=1.0, per=0.1, conservative=True)
+        slow = get_rate_limiter("shared-budget-test", rate=1.0, per=5.0, conservative=True)
+
+        assert slow is fast
+        assert fast.per == 5.0
+
+    async def test_a_faster_client_cannot_raise_the_shared_budget(self):
+        slow = get_rate_limiter("raise-budget-test", rate=1.0, per=5.0, conservative=True)
+        faster = get_rate_limiter("raise-budget-test", rate=1.0, per=0.1, conservative=True)
+
+        assert faster is slow
+        assert slow.per == 5.0, "a client with an API key must not lift the limit for everyone"
+
+    async def test_primitives_are_not_shared_across_event_loops(self):
+        first = get_rate_limiter("loop-scope-test", rate=1.0, per=1.0)
+        second = await asyncio.to_thread(
+            lambda: asyncio.run(_resolve_limiter("loop-scope-test")),
+        )
+        assert second is not first
+
+
+async def _resolve_limiter(name: str) -> RateLimiter:
+    return get_rate_limiter(name, rate=1.0, per=1.0)
+
+
+class TestRateLimiterBoundaries:
+    """A zero or negative budget used to divide by zero deep inside acquire()."""
+
+    @pytest.mark.parametrize(("rate", "per"), [(1.0, 0.0), (0.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (0.0, 0.0)])
+    def test_non_positive_budget_is_rejected_at_construction(self, rate, per):
+        with pytest.raises(ValueError, match="positive budget"):
+            RateLimiter(rate=rate, per=per)
+
+    def test_smallest_usable_budget_is_accepted(self):
+        assert RateLimiter(rate=1e-6, per=1e-6).rate == 1e-6
+
+    async def test_cooldown_of_zero_is_a_no_op(self):
+        limiter = RateLimiter(rate=100.0, per=1.0)
+        await limiter.apply_cooldown(0)
+        await asyncio.wait_for(limiter.acquire(), timeout=1)
+
+    async def test_server_cooldown_delays_the_next_acquire(self):
+        limiter = RateLimiter(rate=100.0, per=1.0)
+        await limiter.apply_cooldown(0.05)
+        started = time.monotonic()
+        await limiter.acquire()
+        assert time.monotonic() - started >= 0.04

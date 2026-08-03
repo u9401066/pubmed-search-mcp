@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import TYPE_CHECKING, Any, TypeVar
+from weakref import WeakKeyDictionary
 
 from typing_extensions import Self
 
@@ -38,7 +39,8 @@ from .exceptions import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
+    from asyncio import AbstractEventLoop
+    from collections.abc import AsyncIterator, Awaitable, Callable, MutableMapping, Sequence
 
 logger = logging.getLogger(__name__)
 
@@ -176,6 +178,9 @@ class RateLimiter:
     _lock: asyncio.Lock = field(init=False, default_factory=asyncio.Lock)
 
     def __post_init__(self) -> None:
+        if self.rate <= 0 or self.per <= 0:
+            # Otherwise the token maths divides by zero deep inside acquire().
+            raise ValueError(f"RateLimiter needs a positive budget, got rate={self.rate}, per={self.per}")
         self._tokens = self.rate
         self._last_update = time.monotonic()
 
@@ -224,31 +229,83 @@ class RateLimiter:
         pass
 
 
-# Global rate limiters for different APIs
-_rate_limiters: dict[str, RateLimiter] = {}
-_circuit_breakers: dict[str, CircuitBreaker] = {}
-_bulkheads: dict[str, asyncio.Semaphore] = {}
+# Concurrency primitives are scoped to the event loop that owns them. The loop
+# object itself is the key, never id(loop): CPython recycles ids, so an id-keyed
+# registry can hand a brand new loop the stale limiter or tripped breaker that
+# belonged to a loop it happens to share an address with. Weak keys also let a
+# finished loop's entries be collected instead of accumulating forever.
+_rate_limiters: WeakKeyDictionary[AbstractEventLoop, dict[str, RateLimiter]] = WeakKeyDictionary()
+_circuit_breakers: WeakKeyDictionary[AbstractEventLoop, dict[str, CircuitBreaker]] = WeakKeyDictionary()
+_bulkheads: WeakKeyDictionary[AbstractEventLoop, dict[str, asyncio.Semaphore]] = WeakKeyDictionary()
+
+# Used when no loop is running, e.g. during synchronous construction.
+_rate_limiters_no_loop: dict[str, RateLimiter] = {}
+_circuit_breakers_no_loop: dict[str, CircuitBreaker] = {}
+_bulkheads_no_loop: dict[str, asyncio.Semaphore] = {}
+
+_PrimitiveT = TypeVar("_PrimitiveT")
 
 
-def _registry_key(name: str) -> str:
-    """Isolate asyncio primitives per event loop to avoid cross-loop reuse."""
+def _loop_scoped(
+    registry: MutableMapping[AbstractEventLoop, dict[str, _PrimitiveT]],
+    fallback: dict[str, _PrimitiveT],
+) -> dict[str, _PrimitiveT]:
+    """Return the name-to-primitive table belonging to the running event loop."""
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
-        return f"{name}:global"
-    return f"{name}:loop-{id(loop)}"
+        return fallback
+
+    scoped = registry.get(loop)
+    if scoped is None:
+        scoped = {}
+        registry[loop] = scoped
+    return scoped
 
 
-def get_rate_limiter(api_name: str, rate: float = 3.0, per: float = 1.0) -> RateLimiter:
-    """Get or create a rate limiter for an API."""
-    key = _registry_key(api_name)
-    if key not in _rate_limiters:
-        _rate_limiters[key] = RateLimiter(rate=rate, per=per)
-    else:
-        limiter = _rate_limiters[key]
-        if limiter.rate != rate or limiter.per != per:
-            limiter.reconfigure(rate=rate, per=per)
-    return _rate_limiters[key]
+def get_rate_limiter(
+    api_name: str,
+    rate: float = 3.0,
+    per: float = 1.0,
+    *,
+    conservative: bool = False,
+) -> RateLimiter:
+    """Get or create the process-wide rate limiter for an API.
+
+    The limiter is shared by every caller of *api_name* on the current event
+    loop. That is the point: upstreams meter us per API key or per IP, so a
+    parallel fan-out across sources or agents must draw from one budget rather
+    than one budget each.
+
+    Args:
+        api_name: Logical upstream name, e.g. ``"ncbi-entrez"``.
+        rate: Requests allowed per *per* seconds.
+        per: Length of the accounting window in seconds.
+        conservative: When True, an existing limiter is only ever slowed down,
+            never sped up. Use this when several clients of the same upstream
+            may be configured differently (for example with and without an API
+            key) and the safest budget must win.
+
+    Returns:
+        The shared limiter for *api_name*.
+    """
+    table = _loop_scoped(_rate_limiters, _rate_limiters_no_loop)
+    limiter = table.get(api_name)
+    if limiter is None:
+        limiter = RateLimiter(rate=rate, per=per)
+        table[api_name] = limiter
+        return limiter
+
+    if limiter.rate != rate or limiter.per != per:
+        if conservative and _throughput(rate, per) >= _throughput(limiter.rate, limiter.per):
+            return limiter
+        limiter.reconfigure(rate=rate, per=per)
+    return limiter
+
+
+def _throughput(rate: float, per: float) -> float:
+    """Return requests per second, guarding against a zero-length window."""
+    return rate / per if per > 0 else float("inf")
 
 
 def get_circuit_breaker(
@@ -259,26 +316,68 @@ def get_circuit_breaker(
     half_open_max_calls: int = 3,
 ) -> CircuitBreaker:
     """Get or create a shared circuit breaker for a service."""
-    key = _registry_key(name)
-    breaker = _circuit_breakers.get(key)
+    table = _loop_scoped(_circuit_breakers, _circuit_breakers_no_loop)
+    breaker = table.get(name)
     if breaker is None:
         breaker = CircuitBreaker(
             failure_threshold=failure_threshold,
             recovery_timeout=recovery_timeout,
             half_open_max_calls=half_open_max_calls,
         )
-        _circuit_breakers[key] = breaker
+        table[name] = breaker
     return breaker
 
 
 def get_bulkhead(name: str, limit: int) -> asyncio.Semaphore:
     """Get or create a shared concurrency limiter for a service."""
-    key = _registry_key(name)
-    semaphore = _bulkheads.get(key)
+    table = _loop_scoped(_bulkheads, _bulkheads_no_loop)
+    semaphore = table.get(name)
     if semaphore is None:
         semaphore = asyncio.Semaphore(limit)
-        _bulkheads[key] = semaphore
+        table[name] = semaphore
     return semaphore
+
+
+def get_tenant_bulkhead(tenant_id: str, limit: int) -> asyncio.Semaphore:
+    """Get or create the in-flight request cap for one tenant.
+
+    Upstream rate limiters stay global on purpose: NCBI and friends meter us per
+    API key, not per caller. This cap is the complementary fairness control - it
+    stops one agent from occupying the whole global budget while other agents
+    wait.
+
+    Args:
+        tenant_id: Normalized tenant identifier.
+        limit: Maximum concurrent operations for that tenant.
+
+    Returns:
+        A semaphore private to the tenant and the running event loop.
+    """
+    return get_bulkhead(f"tenant:{tenant_id}", limit)
+
+
+@asynccontextmanager
+async def tenant_slot(limit: int, tenant_id: str | None = None) -> AsyncIterator[str]:
+    """Hold a fair-share slot for the calling tenant.
+
+    Args:
+        limit: Maximum concurrent operations per tenant. Values below 1 disable
+            the cap entirely.
+        tenant_id: Tenant to charge. Defaults to the tenant bound to the current
+            request context.
+
+    Yields:
+        The tenant id that the slot was charged to.
+    """
+    from pubmed_search.shared.tenancy import current_tenant_id
+
+    resolved = tenant_id or current_tenant_id()
+    if limit < 1:
+        yield resolved
+        return
+
+    async with get_tenant_bulkhead(resolved, limit):
+        yield resolved
 
 
 def create_async_http_client(
