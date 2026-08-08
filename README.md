@@ -5,6 +5,7 @@
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![MCP](https://img.shields.io/badge/MCP-Compatible-green.svg)](https://modelcontextprotocol.io/)
 [![Test Coverage](https://img.shields.io/badge/coverage-84%25-green.svg)](https://github.com/u9401066/pubmed-search-mcp)
+[![SafeSkill 87/100](https://img.shields.io/badge/SafeSkill-87%2F100_Passes%20with%20Notes-yellow)](https://safeskill.dev/scan/u9401066-pubmed-search-mcp)
 
 > **Professional Literature Research Assistant for AI Agents** - More than just an API wrapper
 
