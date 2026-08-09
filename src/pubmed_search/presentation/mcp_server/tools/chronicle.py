@@ -32,10 +32,9 @@ from pubmed_search.application.chronicle import (
 )
 from pubmed_search.application.timeline import LandmarkScorer, MilestoneDetector, TimelineBuilder
 from pubmed_search.presentation.mcp_server.tenancy import durable_storage_denied
-from pubmed_search.shared.settings import DEFAULT_DATA_DIR, load_settings
-from pubmed_search.shared.tenancy import tenant_data_dir
+from pubmed_search.shared.settings import DEFAULT_DATA_DIR
 
-from ._common import InputNormalizer, ResponseFormatter, get_last_search_pmids
+from ._common import InputNormalizer, ResponseFormatter, get_last_search_pmids, get_session_manager
 from .artifact_memory import artifact_markdown_note, persist_tool_artifact
 from .tool_runtime import safe_log, safe_report_progress
 
@@ -77,8 +76,8 @@ def _chronicle_store() -> ChronicleStore:
     Callers that cannot own durable storage are turned away by
     ``durable_storage_denied`` before reaching here, so the root is never None.
     """
-    settings = load_settings()
-    root = tenant_data_dir(getattr(settings, "data_dir", None) or DEFAULT_DATA_DIR)
+    manager = get_session_manager()
+    root = getattr(manager, "data_dir", None) or DEFAULT_DATA_DIR
     return ChronicleStore(f"{root}/chronicles")
 
 

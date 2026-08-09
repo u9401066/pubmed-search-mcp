@@ -105,6 +105,7 @@ async def _auto_relax_search(
                 result.successful_step = step
                 result.relaxed_query = step.query
                 result.total_results = total_count or len(articles)
+                result.articles = articles
                 logger.info(f"Auto-relaxation succeeded at level {step.level} ({step.action}): {len(articles)} results")
                 return result
 
@@ -131,6 +132,8 @@ async def _execute_deep_search(
     min_year: int | None,
     max_year: int | None,
     advanced_filters: dict,
+    *,
+    strategies: list[SearchPlan] | None = None,
 ) -> tuple[
     list[list[UnifiedArticle]],
     SearchDepthMetrics,
@@ -162,7 +165,6 @@ async def _execute_deep_search(
     metrics.entities_resolved = len(enhanced_query.entities)
     metrics.mesh_terms_used = len([e for e in enhanced_query.entities if e.mesh_id])
     metrics.synonyms_expanded = len([t for t in enhanced_query.expanded_terms if t.source != "original"])
-    metrics.strategies_generated = len(enhanced_query.strategies)
 
     all_results: list[list[UnifiedArticle]] = []
     pubmed_total_count: int | None = None
@@ -171,17 +173,22 @@ async def _execute_deep_search(
     total_recall = 0.0
 
     # Execute each strategy
-    strategies = enhanced_query.strategies or [
-        # Fallback: at least search original query
-        SearchPlan(
-            name="original",
-            query=enhanced_query.original_query,
-            source="pubmed",
-            priority=1,
-            expected_precision=0.5,
-            expected_recall=0.5,
-        )
-    ]
+    strategies = (
+        strategies
+        or enhanced_query.strategies
+        or [
+            # Fallback: at least search original query
+            SearchPlan(
+                name="original",
+                query=enhanced_query.original_query,
+                source="pubmed",
+                priority=1,
+                expected_precision=0.5,
+                expected_recall=0.5,
+            )
+        ]
+    )
+    metrics.strategies_generated = len(strategies)
 
     # Sort by priority (highest first)
     strategies = sorted(strategies, key=lambda s: s.priority, reverse=True)
@@ -247,6 +254,27 @@ async def _execute_deep_search(
                     min_year,
                     max_year,
                 )
+            elif strategy.source == "arxiv":
+                articles, total_count = await _search_arxiv(
+                    strategy.query,
+                    limit,
+                    min_year,
+                    max_year,
+                )
+            elif strategy.source == "medrxiv":
+                articles, total_count = await _search_medrxiv(
+                    strategy.query,
+                    limit,
+                    min_year,
+                    max_year,
+                )
+            elif strategy.source == "biorxiv":
+                articles, total_count = await _search_biorxiv(
+                    strategy.query,
+                    limit,
+                    min_year,
+                    max_year,
+                )
 
         except Exception as e:
             logger.warning("Strategy '%s' failed: %s", strategy.name, e)
@@ -270,9 +298,22 @@ async def _execute_deep_search(
     tasks = [asyncio.wait_for(execute_strategy(s), timeout=DEEP_SEARCH_STRATEGY_TIMEOUT_SECONDS) for s in strategies]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
-    for result in results:
+    for strategy, result in zip(strategies, results):
         if isinstance(result, Exception):
-            logger.error(f"Strategy execution error: {result}")
+            logger.error("Strategy '%s' execution error: %s", strategy.name, result)
+            source_errors.append(normalize_source_adapter_error(strategy.source, "deep_search", result))
+            metrics.strategy_results.append(
+                StrategyResult(
+                    strategy_name=strategy.name,
+                    query=strategy.query,
+                    source=strategy.source,
+                    articles_count=0,
+                    expected_precision=strategy.expected_precision,
+                    expected_recall=strategy.expected_recall,
+                    execution_time_ms=DEEP_SEARCH_STRATEGY_TIMEOUT_SECONDS * 1000,
+                )
+            )
+            metrics.strategies_executed += 1
             continue
 
         # Type narrowing: result is now tuple, not Exception
@@ -289,7 +330,7 @@ async def _execute_deep_search(
             total_recall += strategy_result.expected_recall
 
             # Keep first PubMed total count
-            if total_count and pubmed_total_count is None:
+            if strategy_result.source == "pubmed" and total_count and pubmed_total_count is None:
                 pubmed_total_count = total_count
 
     # Calculate combined metrics

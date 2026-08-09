@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING
 from pubmed_search.application.pipeline.validator import parse_and_validate_config
 from pubmed_search.presentation.mcp_server.tenancy import durable_storage_denied
 from pubmed_search.presentation.mcp_server.tools._common import ResponseFormatter
-from pubmed_search.shared.tenancy import DEFAULT_TENANT_ID, current_tenant_id, tenant_data_dir
+from pubmed_search.shared.tenancy import DEFAULT_TENANT_ID, current_tenant, current_tenant_id, tenant_data_dir
 
 if TYPE_CHECKING:
     from mcp.server.mcpserver import MCPServer
@@ -250,11 +250,18 @@ def _list_pipelines_impl(*, tool_name: str, tag: str = "", scope: str = "") -> s
 
 
 def _load_pipeline_impl(*, tool_name: str, source: str) -> str:
+    source = source.strip()
+    if source.startswith("file:") and current_tenant().is_authenticated:
+        return ResponseFormatter.error(
+            "Authenticated service callers cannot read pipeline files from the server filesystem",
+            suggestion="Save the pipeline in your tenant store and load it by name",
+            example='load_pipeline(source="saved:my_pipeline")',
+            tool_name=tool_name,
+        )
+
     store = get_pipeline_store()
     if not store:
         return _store_unavailable(tool_name)
-
-    source = source.strip()
 
     try:
         if source.startswith("file:"):
@@ -356,7 +363,7 @@ def _get_pipeline_history_impl(*, tool_name: str, name: str, limit: int = 5) -> 
             f'📊 Pipeline "{name}" has no execution history yet.\n\n💡 Execute: unified_search(pipeline="saved:{name}")'
         )
 
-    total_runs = sum(1 for _ in (store._runs_dir_for(store._find_pipeline_scope(name)) / name).glob("*.json"))
+    total_runs = store.count_history(name)
 
     parts = [
         f'📊 Execution History for "{name}" (showing {len(runs)} of {total_runs}):',
@@ -671,7 +678,7 @@ def register_pipeline_tools(mcp: MCPServer) -> None:
 
         Loads from one of three sources:
         - Saved name: "weekly_remimazolam" or "saved:weekly_remimazolam"
-        - Local file: "file:path/to/pipeline.yaml"
+        - Local-only file: "file:path/to/pipeline.yaml" (disabled for authenticated service callers)
 
         The returned YAML can be reviewed, modified, and then:
         - Executed directly: unified_search(pipeline="<yaml>")
