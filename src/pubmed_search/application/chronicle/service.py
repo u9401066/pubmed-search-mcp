@@ -13,12 +13,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Protocol
 
 from pubmed_search.application.timeline import build_research_tree
-from pubmed_search.domain.entities.chronicle import ChronicleInputScope, ChronicleSnapshot
+from pubmed_search.domain.entities.chronicle import ChronicleInputScope, ChronicleSnapshot, utc_now_iso
 
 from .analytics import analyze_milestones, compare_chronicles
 from .assembler import assemble_chronicle, derive_chronicle_id
 from .audit import audit_chronicle
 from .differ import diff_chronicles
+from .graph import build_chronicle_graph
 from .narrator import narrate_chronicle
 from .projectors import (
     project_evidence,
@@ -154,21 +155,26 @@ class ChronicleService:
         )
 
         resolved_id = chronicle_id or derive_chronicle_id(resolved_topic)
-        previous = self._store.load(resolved_id)
-        revision = (previous.revision + 1) if previous else 1
-
         snapshot = assemble_chronicle(
             topic=resolved_topic,
             timeline=timeline,
             tree=build_research_tree(timeline) if timeline.events else None,
             scope=scope,
             chronicle_id=resolved_id,
-            revision=revision,
-            created_at=previous.created_at if previous else None,
         )
-        snapshot.audit = audit_chronicle(snapshot, artifact_files=self.artifact_file_names())
-        self._store.save(snapshot)
-        return snapshot
+
+        def _finalize(revision: int, created_at: str | None) -> ChronicleSnapshot:
+            committed_at = utc_now_iso()
+            snapshot.revision = revision
+            snapshot.created_at = created_at or committed_at
+            snapshot.updated_at = committed_at
+            # The topic node embeds the revision, so rebuild it only after the
+            # transaction has allocated the final monotonic number.
+            snapshot.graph = build_chronicle_graph(snapshot)
+            snapshot.audit = audit_chronicle(snapshot, artifact_files=self.artifact_file_names())
+            return snapshot
+
+        return self._store.commit_next(resolved_id, _finalize)
 
     def load(self, chronicle_id: str, revision: int | None = None) -> ChronicleSnapshot | None:
         """Load one chronicle revision, defaulting to the latest."""

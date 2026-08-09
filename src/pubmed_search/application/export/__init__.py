@@ -13,6 +13,13 @@ This module focuses on citation formats and link aggregation.
 
 from __future__ import annotations
 
+from .artifacts import (
+    EXPORTS_DIR_NAME,
+    list_export_artifacts,
+    resolve_export_artifact,
+    tenant_export_root,
+    write_export_artifact,
+)
 from .formats import (
     SUPPORTED_FORMATS,
     export_articles,
@@ -40,7 +47,12 @@ __all__ = [
     "export_articles",  # Unified export function
     "SUPPORTED_FORMATS",
     "SUPPORTED_NOTE_FORMATS",
+    "EXPORTS_DIR_NAME",
+    "list_export_artifacts",
+    "resolve_export_artifact",
     "resolve_note_export_dir",
+    "tenant_export_root",
+    "write_export_artifact",
     "write_literature_notes",
     # Link utilities
     "get_fulltext_links",

@@ -7,9 +7,14 @@ root directory.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
+import os
 import re
+import shutil
+import tempfile
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -64,60 +69,80 @@ class ArtifactStore:
         safe_session = _safe_token(session_id)
         safe_tool = _safe_token(tool)
         safe_kind = _safe_token(kind)
+        for file_name in files:
+            self._validate_file_name(file_name)
+
         created_at = _utcnow_iso()
-        seed = json.dumps(
-            {
+        artifact_id = uuid.uuid4().hex
+        artifact_parent = self._resolve_under_root(safe_session, safe_tool, safe_kind)
+        artifact_parent.mkdir(parents=True, exist_ok=True)
+        artifact_dir = self._resolve_under_root(safe_session, safe_tool, safe_kind, artifact_id)
+        staging_dir = Path(
+            tempfile.mkdtemp(
+                dir=artifact_parent,
+                prefix=f".{artifact_id}.",
+                suffix=".staging",
+            )
+        ).resolve()
+        self._assert_under(staging_dir, artifact_parent)
+
+        try:
+            file_manifests: dict[str, dict[str, Any]] = {}
+            primary_sha = ""
+            primary_size = 0
+            for file_name, content in files.items():
+                data = _serialize_content(content)
+                staging_path = (staging_dir / file_name).resolve()
+                self._assert_under(staging_path, staging_dir)
+                with staging_path.open("wb") as handle:
+                    handle.write(data)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+
+                published_path = (artifact_dir / file_name).resolve()
+                self._assert_under(published_path, artifact_dir)
+                digest = hashlib.sha256(data).hexdigest()
+                file_manifests[file_name] = {
+                    "path": str(published_path),
+                    "size_bytes": len(data),
+                    "sha256": digest,
+                }
+                if file_name == primary_file:
+                    primary_sha = digest
+                    primary_size = len(data)
+
+            manifest_path = artifact_dir / "manifest.json"
+            manifest: dict[str, Any] = {
+                "artifact_id": artifact_id,
                 "session_id": session_id,
                 "tool": tool,
                 "kind": kind,
                 "created_at": created_at,
-                "files": sorted(files),
-            },
-            sort_keys=True,
-        ).encode("utf-8")
-        artifact_id = f"{safe_tool}_{safe_kind}_{hashlib.sha256(seed).hexdigest()[:16]}"
-        artifact_dir = self._resolve_under_root(safe_session, safe_tool, safe_kind, artifact_id)
-        artifact_dir.mkdir(parents=True, exist_ok=True)
-
-        file_manifests: dict[str, dict[str, Any]] = {}
-        primary_sha = ""
-        primary_size = 0
-        for file_name, content in files.items():
-            self._validate_file_name(file_name)
-            data = _serialize_content(content)
-            file_path = (artifact_dir / file_name).resolve()
-            self._assert_under(file_path, artifact_dir)
-            file_path.write_bytes(data)
-            digest = hashlib.sha256(data).hexdigest()
-            file_manifests[file_name] = {
-                "path": str(file_path),
-                "size_bytes": len(data),
-                "sha256": digest,
+                "artifact_uri": f"artifact://{safe_session}/{artifact_id}",
+                "root_path": str(artifact_dir),
+                "manifest_path": str(manifest_path.resolve()),
+                "local_path": file_manifests[primary_file]["path"],
+                "primary_file": primary_file,
+                "size_bytes": primary_size,
+                "sha256": primary_sha,
+                "files": file_manifests,
+                "summary": summary or {},
+                "metadata": metadata or {},
             }
-            if file_name == primary_file:
-                primary_sha = digest
-                primary_size = len(data)
+            staging_manifest = staging_dir / "manifest.json"
+            with staging_manifest.open("w", encoding="utf-8", newline="") as handle:
+                json.dump(manifest, handle, ensure_ascii=False, indent=2)
+                handle.flush()
+                os.fsync(handle.fileno())
 
-        manifest_path = artifact_dir / "manifest.json"
-        manifest: dict[str, Any] = {
-            "artifact_id": artifact_id,
-            "session_id": session_id,
-            "tool": tool,
-            "kind": kind,
-            "created_at": created_at,
-            "artifact_uri": f"artifact://{safe_session}/{artifact_id}",
-            "root_path": str(artifact_dir),
-            "manifest_path": str(manifest_path.resolve()),
-            "local_path": file_manifests[primary_file]["path"],
-            "primary_file": primary_file,
-            "size_bytes": primary_size,
-            "sha256": primary_sha,
-            "files": file_manifests,
-            "summary": summary or {},
-            "metadata": metadata or {},
-        }
-        manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
-        return manifest
+            # The final directory name is never visible until every payload and
+            # the manifest are complete. UUID identity makes a destination
+            # collision practically impossible without relying on wall clock.
+            staging_dir.replace(artifact_dir)
+            return manifest
+        except BaseException:
+            self._cleanup_staging_dir(staging_dir, artifact_parent)
+            raise
 
     def read_file(self, manifest: dict[str, Any], file_name: str | None = None) -> tuple[dict[str, Any], str]:
         files = manifest.get("files")
@@ -161,10 +186,33 @@ class ArtifactStore:
             msg = f"Unsafe artifact file name: {file_name}"
             raise ValueError(msg)
 
+    @classmethod
+    def _cleanup_staging_dir(cls, staging_dir: Path, artifact_parent: Path) -> None:
+        """Remove a failed private staging tree after validating its scope."""
+        cls._assert_under(staging_dir, artifact_parent)
+        if not staging_dir.name.startswith(".") or not staging_dir.name.endswith(".staging"):
+            return
+        with contextlib.suppress(OSError):
+            shutil.rmtree(staging_dir)
+
     @staticmethod
     def _assert_under(path: Path, root: Path) -> None:
+        def _canonical(candidate: Path) -> Path:
+            resolved = str(candidate.resolve())
+            if os.name == "nt":
+                # Concurrent Windows resolution can return the same path in
+                # extended-length form (\\?\C:\...) for one thread and normal
+                # drive form for another. Normalize that namespace before the
+                # containment check without weakening symlink resolution.
+                if resolved.startswith("\\\\?\\UNC\\"):
+                    resolved = f"\\\\{resolved[8:]}"
+                elif resolved.startswith("\\\\?\\"):
+                    resolved = resolved[4:]
+                resolved = os.path.normcase(resolved)
+            return Path(resolved)
+
         try:
-            path.relative_to(root.resolve())
+            _canonical(path).relative_to(_canonical(root))
         except ValueError as exc:
             msg = f"Artifact path escapes root: {path}"
             raise ValueError(msg) from exc

@@ -4,15 +4,38 @@ from __future__ import annotations
 
 import html
 import json
+import os
 import re
+import threading
 import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from pubmed_search.shared.file_io import atomic_write_text
+
 SUPPORTED_NOTE_FORMATS = ("wiki", "foam", "markdown", "medpaper")
 WIKILINK_NOTE_FORMATS = {"wiki", "foam", "medpaper"}
 WIKILINK_PATTERN = re.compile(r"\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|[^\]]+)?\]\]")
+
+# A literature-note export is a batch: article notes, sidecars, CSL JSON, and
+# the collection index must agree on the filenames selected for that batch.
+# MCP SDK v2 may run synchronous tools concurrently in worker threads, so
+# serialize batches that target the same canonical output root. Different note
+# libraries remain independent and can still be written in parallel.
+_NOTE_BATCH_LOCKS: dict[str, threading.RLock] = {}
+_NOTE_BATCH_LOCKS_GUARD = threading.Lock()
+
+
+def _note_batch_lock(output_dir: Path) -> threading.RLock:
+    """Return the process-local re-entrant lock for one note-library root."""
+    key = os.path.normcase(str(output_dir.resolve()))
+    with _NOTE_BATCH_LOCKS_GUARD:
+        lock = _NOTE_BATCH_LOCKS.get(key)
+        if lock is None:
+            lock = threading.RLock()
+            _NOTE_BATCH_LOCKS[key] = lock
+        return lock
 
 
 def resolve_note_export_dir(
@@ -47,7 +70,36 @@ def write_literature_notes(
     template_file: Path | None = None,
     include_csl_json: bool = True,
 ) -> dict[str, Any]:
-    """Write article metadata as guided local notes and return a JSON-ready result."""
+    """Write one crash-safe note batch and return a JSON-ready result."""
+    with _note_batch_lock(output_dir):
+        return _write_literature_notes_locked(
+            articles,
+            output_dir,
+            note_format=note_format,
+            include_abstract=include_abstract,
+            overwrite=overwrite,
+            create_index=create_index,
+            collection_name=collection_name,
+            search_context=search_context,
+            template_file=template_file,
+            include_csl_json=include_csl_json,
+        )
+
+
+def _write_literature_notes_locked(
+    articles: list[dict[str, Any]],
+    output_dir: Path,
+    *,
+    note_format: str,
+    include_abstract: bool,
+    overwrite: bool,
+    create_index: bool,
+    collection_name: str | None,
+    search_context: dict[str, Any] | None,
+    template_file: Path | None,
+    include_csl_json: bool,
+) -> dict[str, Any]:
+    """Write a note batch while the canonical output-root lock is held."""
     normalized_format = str(note_format or "wiki").strip().lower()
     if normalized_format not in SUPPORTED_NOTE_FORMATS:
         supported = ", ".join(SUPPORTED_NOTE_FORMATS)
@@ -91,7 +143,7 @@ def write_literature_notes(
             created_at=now,
             template_text=template_text,
         )
-        note_path.write_text(content, encoding="utf-8")
+        atomic_write_text(note_path, content)
         metadata_path = _write_metadata_sidecar(
             note_path.parent,
             article,
@@ -141,7 +193,7 @@ def write_literature_notes(
             created_at=now,
             search_context=search_context,
         )
-        index_path.write_text(index_content, encoding="utf-8")
+        atomic_write_text(index_path, index_content)
         index_file = {"title": index_title, "path": str(index_path), "action": "created"}
 
     wiki_validation = _validate_generated_wikilinks(
@@ -258,7 +310,7 @@ def _write_metadata_sidecar(
         return path
 
     payload = _metadata_payload(article, citation_key=citation_key)
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    atomic_write_text(path, json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
     return path
 
 
@@ -285,7 +337,7 @@ def _write_csl_json(
         path = _next_available_path(output_dir / f"references-{suffix}.csl.json")
 
     payload = [_to_csl_json(entry["article"], citation_key=entry["citation_key"]) for entry in entries]
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    atomic_write_text(path, json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
     return path
 
 
