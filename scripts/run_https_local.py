@@ -20,6 +20,17 @@ async def health(_request: Any) -> JSONResponse:
     return JSONResponse({"status": "ok", "service": "pubmed-search-mcp"})
 
 
+async def ready(_request: Any) -> JSONResponse:
+    return JSONResponse(
+        {
+            "status": "ready",
+            "service": "pubmed-search-mcp",
+            "mode": "local",
+            "auth_required": False,
+        }
+    )
+
+
 async def info(_request: Any) -> JSONResponse:
     return JSONResponse(
         {
@@ -29,29 +40,31 @@ async def info(_request: Any) -> JSONResponse:
             "endpoints": {
                 "mcp": "/mcp",
                 "health": "/health",
+                "ready": "/ready",
                 "info": "/info",
             },
         }
     )
 
 
-def create_https_app(email: str, api_key: str | None) -> Any:
+def create_https_app(email: str, api_key: str | None, *, host: str = "127.0.0.1") -> Any:
     sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
     from pubmed_search.presentation.mcp_server.http_compat import wrap_copilot_compatibility
-    from pubmed_search.presentation.mcp_server.server import create_server
+    from pubmed_search.presentation.mcp_server.server import build_asgi_app, create_server
 
     server = create_server(
         email=email,
         api_key=api_key,
-        disable_security=True,
         json_response=True,
         stateless_http=True,
+        mode="local",
     )
-    mcp_app: Any = server.streamable_http_app()
+    mcp_app: Any = build_asgi_app(server, "streamable-http", host=host)
 
     mcp_app.router.routes[:0] = [
         Route("/health", health),
+        Route("/ready", ready),
         Route("/info", info),
     ]
     return wrap_copilot_compatibility(mcp_app)
@@ -69,7 +82,7 @@ def main() -> None:
     parser.add_argument("--keyfile", type=Path, default=default_ssl_dir / "server.key")
     args = parser.parse_args()
 
-    app = create_https_app(email=args.email, api_key=args.api_key)
+    app = create_https_app(email=args.email, api_key=args.api_key, host=args.host)
 
     uvicorn.run(
         app,

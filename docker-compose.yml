@@ -1,17 +1,44 @@
+# Single-user local HTTP demo. This profile is intentionally reachable only
+# from the host loopback interface. Use docker-compose.service.yml for a
+# remotely reachable, authenticated multi-user service.
 services:
   pubmed-mcp:
     build: .
+    command:
+      - uv
+      - run
+      - pubmed-search-mcp-http
+      - --mode
+      - local
+      - --allow-container-bind
+      - --transport
+      - streamable-http
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8765"
     ports:
-      - "8765:8765"
+      - "127.0.0.1:${PUBMED_LOCAL_PORT:-8765}:8765"
     environment:
-      - NCBI_EMAIL=${NCBI_EMAIL:-pubmed-search@example.com}
-      - NCBI_API_KEY=${NCBI_API_KEY:-}
-      - MCP_PORT=8765
-      - MCP_HOST=0.0.0.0
+      NCBI_EMAIL: ${NCBI_EMAIL:-pubmed-search@example.com}
+      NCBI_API_KEY: ${NCBI_API_KEY:-}
+      MCP_PORT: "8765"
+      MCP_HOST: 0.0.0.0
+      MCP_TRANSPORT: streamable-http
+      PUBMED_SERVER_MODE: local
+      PUBMED_LOCAL_ALLOW_CONTAINER_BIND: "1"
+      PUBMED_ALLOWED_HOSTS: "localhost,localhost:*,127.0.0.1,127.0.0.1:*,[::1],[::1]:*"
+      PUBMED_ALLOWED_ORIGINS: http://localhost:${PUBMED_LOCAL_PORT:-8765},http://127.0.0.1:${PUBMED_LOCAL_PORT:-8765}
+      PUBMED_DATA_DIR: /var/lib/pubmed-search-mcp
+    volumes:
+      - pubmed-local-data:/var/lib/pubmed-search-mcp
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8765/"]
+      test: ["CMD", "curl", "-f", "http://localhost:8765/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
+
+volumes:
+  pubmed-local-data:

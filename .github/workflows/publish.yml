@@ -3,32 +3,97 @@ name: Publish to PyPI
 on:
   push:
     tags:
-      - 'v*'  # Trigger on version tags like v0.1.10
+      - "v*"
+
+permissions:
+  contents: read
 
 jobs:
-  build-and-publish:
+  verify:
+    name: Verify tag, tests, and distributions
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout tagged source
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.11.24"
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Sync locked dependencies
+        run: uv sync --frozen --dev --python 3.13
+
+      - name: Verify tag and package versions
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          uv run python - <<'PY'
+          import os
+          import re
+          import tomllib
+          from pathlib import Path
+
+          package_version = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+          init_text = Path("src/pubmed_search/__init__.py").read_text(encoding="utf-8")
+          init_version = re.search(r'^__version__\s*=\s*"([^"]+)"', init_text, re.MULTILINE)
+          expected_tag = f"v{package_version}"
+          if init_version is None or init_version.group(1) != package_version:
+              raise SystemExit("pyproject.toml and package __version__ differ")
+          if os.environ["RELEASE_TAG"] != expected_tag:
+              raise SystemExit(f"tag {os.environ['RELEASE_TAG']!r} must equal {expected_tag!r}")
+          PY
+
+      - name: Quality and documentation gates
+        run: |
+          uv run ruff check src/ tests/ scripts/ run_server.py run_copilot.py
+          uv run ruff format --check src/ tests/ scripts/ run_server.py run_copilot.py
+          uv run python scripts/check_async_tests.py
+          uv run mypy src/ tests/
+          uv run pytest -q -m "not integration"
+
+      - name: Build distributions
+        run: uv build
+
+      - name: Install and smoke-test wheel
+        run: |
+          uv venv --python 3.13 .wheel-smoke
+          uv pip install --python .wheel-smoke/bin/python dist/*.whl
+          .wheel-smoke/bin/python -c "import pubmed_search; from pubmed_search.api import PubMedSearchClient"
+          .wheel-smoke/bin/pubmed-search-mcp-http --help
+
+      - name: Build and smoke-test container image
+        run: |
+          docker build --tag pubmed-search-mcp:release .
+          docker run --rm pubmed-search-mcp:release uv run --no-sync pubmed-search-mcp-http --help
+
+      - name: Upload verified distributions
+        uses: actions/upload-artifact@v7
+        with:
+          name: python-distributions
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish verified distributions
+    needs: verify
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
-      id-token: write  # Required for trusted publishing
-
+      id-token: write
+      contents: read
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
+      - name: Download verified distributions
+        uses: actions/download-artifact@v8
         with:
-          version: "latest"
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Build package
-        run: uv build
+          name: python-distributions
+          path: dist
 
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        # Uses trusted publishing - no API token needed!
-        # Configure at: https://pypi.org/manage/project/pubmed-search-mcp/settings/publishing/
+        uses: pypa/gh-action-pypi-publish@v1.14.2

@@ -10,6 +10,101 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-08-09
+
+### Added
+
+- Explicit `local` and `service` HTTP deployment profiles. Local HTTP is a
+  loopback-only single-user server; service mode fails closed unless bearer
+  principals, the public MCP resource URL, Host/Origin allowlists, and tenant
+  isolation are configured.
+- A dedicated authenticated `docker-compose.service.yml` profile, service
+  environment template, tenant-safe export endpoints, non-root container
+  runtime, and pinned `uv` build tool.
+- Broker contract documentation covering source planning, concurrent dispatch,
+  conservative shared quotas, normalized partial failures, identifier-first
+  deduplication, and the requirements for admitting another upstream API.
+- Release-level edge and smoke coverage for real stdio and Streamable HTTP MCP
+  traffic, hostile Host/Origin requests, tenant export isolation and traversal,
+  local/service startup contracts, and fresh-wheel console entry points.
+- MCP SDK v2 worker-thread regressions for concurrent pipeline/session/cache
+  transactions, immutable Chronicle revisions, note and artifact collisions,
+  plus an opt-in live upstream suite and container build/entrypoint smoke gate.
+
+### Changed
+
+- Runtime code, the Copilot helper, and tool-count validation now use MCP SDK
+  v2 public facades (`mcp.server.MCPServer`, `list_tools()`, and constructor
+  middleware) instead of private `_lowlevel_server` / `_tool_manager` state.
+- `unified_search` now treats all configured primary sources, including arXiv,
+  medRxiv, and bioRxiv, as first-class broker branches in normal and deep
+  search. Per-source empty/error/partial outcomes and provenance are retained.
+- Upstream source policies are conservative across client instances: arXiv is
+  serialized at a three-second interval, Semantic Scholar uses a one-request-
+  per-second budget, OpenAlex page sizes stay within its supported maximum, and
+  source calls have bounded end-to-end deadlines.
+- The documentation site, bilingual READMEs, architecture/deployment guides,
+  GitHub Wiki inputs, SVG/Mermaid diagrams, Copilot schema, and GitHub Actions
+  release gates are synchronized with the 45-tool MCP v2 surface.
+- The website is now the complete role-oriented handbook rather than a README
+  mirror: quick paths lead researchers, AI-client users, operators, and
+  maintainers through workflows, integrations, broker/source behavior,
+  deployment, troubleshooting, testing, and release operations. Repository
+  description, homepage, topics, and triage labels were refreshed to match.
+- The authenticated service Compose profile disables the process-local pipeline
+  scheduler by default. Scheduling remains available locally; a service must
+  add a separately elected leader before enabling it across workers or hosts.
+- Public Copilot Studio and ngrok launchers now require an assigned HTTPS
+  domain, reject occupied backend ports, start authenticated service mode, and
+  verify readiness plus anonymous rejection before opening the tunnel. The
+  simplified Copilot helper and local HTTPS launcher remain loopback-only; the
+  latter now exposes the documented `/ready` probe.
+- Documentation-site link generation now preserves routed anchors, maps
+  repository-only files to GitHub, and keeps every deployed internal link
+  inside the handbook. Cloud examples build into an operator-owned registry
+  instead of referring to an unpublished project container image.
+
+### Fixed
+
+- Modern anonymous HTTP can no longer fall through to the durable stdio tenant
+  in service mode. Authenticated principals own isolated sessions, caches, and
+  exports; trusted local HTTP deliberately shares the one local durable tenant
+  so `pmids="last"` and session workflows survive across tool calls.
+- Large HTTP exports use opaque UUID artifact ids under the caller's tenant
+  root. Listing and download routes enforce the same principal and reject
+  traversal, symlink, anonymous, and cross-tenant access.
+- The HTTP launcher now injects `PUBMED_DATA_DIR` into the server registry, so
+  sessions and exports persist in the configured volume instead of silently
+  falling back to the user-home default.
+- Explicit source selection no longer falls back to PubMed after an empty
+  response; PubMed auto-relaxation only runs when PubMed was planned and reuses
+  the successful relaxed result. Disabled-source policy also applies to the
+  `preprints` option.
+- Provider identifiers now participate in aggregation deduplication, including
+  PMC, OpenAlex, Semantic Scholar, CORE, and arXiv ids, with a deterministic
+  fallback for records lacking titles.
+- MCP SDK v2 sync handlers can run in AnyIO worker threads. Pipeline and session
+  read-modify-write transactions are now serialized in-process and use unique
+  same-directory atomic replacement; pipeline metadata can rebuild from YAML,
+  run ids carry random entropy, and in-memory caches are thread-safe.
+- Pipeline CRUD rejects traversal names, tenant-derived stores cannot inherit a
+  checkout-wide workspace, and authenticated service callers cannot read an
+  arbitrary `file:` pipeline or select server note/template paths. Per-tenant
+  notes resolve from the installed session registry root.
+- Chronicle commits allocate revisions transactionally at publish time and
+  never overwrite immutable history. Artifact bundles use UUID identities and
+  hidden staging directories; notes and large exports publish atomically.
+- Every local HTTP surface, including opt-in stdio auxiliary routes and the
+  browser fetch broker, now rejects hostile Host/Origin requests. The browser
+  broker no longer accepts a published fixed token and generates a high-entropy
+  value when the operator does not provide one.
+- Untrusted principals can no longer collide with an already-normalized tenant
+  id or claim the reserved local `default` tenant, including through blank or
+  whitespace-only identities.
+- Token-bucket waits now account for elapsed time exactly once, preventing the
+  effective two-times burst that could violate shared arXiv and upstream API
+  budgets after a throttled request.
+
 ## [0.6.0] - 2026-08-03
 
 ### Added
@@ -17,7 +112,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `tenant-scoped-storage` pre-commit hook — flags any presentation-layer storage root that does not route through `tenant_data_dir()`, so cross-tenant leaks cannot be reintroduced. Legitimate shared roots are annotated with `# tenant-ok: <reason>`.
 - **Multi-agent service mode** — the server can now be deployed once and called concurrently by many agents.
   - **Per-tenant isolation**: sessions, article cache, search history, `pmids="last"`, and artifacts are scoped per caller. Previously every client shared one process-wide `SessionManager` with a single mutable "current session", so concurrent agents read each other's data.
-  - Identity precedence: verified bearer-token principal (a real security boundary) → server-issued `mcp-session-id` (isolation only) → `default` for stdio.
+  - The v0.6.0 legacy HTTP path used verified bearer principal → client-supplied `mcp-session-id` correlation → `default` for stdio. The v0.6.1 modern HTTP hardening supersedes this: MCP 2026-07-28 has no transport session header, service callers require a bearer principal, and explicit loopback local mode owns the durable default tenant.
   - `SessionManagerRegistry` gives each tenant its own manager and storage root (`PUBMED_DATA_DIR/tenants/<id>`); the `default` tenant keeps the existing root so single-user installs upgrade in place.
   - **Bearer-token auth** via `PUBMED_AUTH_TOKENS="principal:token,..."`, wired into `MCPServer(token_verifier=..., auth=...)`. Tokens are stored only as SHA-256 digests and compared with `hmac.compare_digest`. `PUBMED_AUTH_REQUIRED=true` makes the server refuse to start unauthenticated.
   - The auxiliary HTTP API (`/api/cached_article`, `/api/cached_articles`, `/api/session/summary`) now requires the same bearer token and only ever returns the calling tenant's data. It was previously unauthenticated.
@@ -43,7 +138,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - In-memory protocol tests use the new first-class `Client(server)` instead of the removed `create_connected_server_and_client_session`.
   - `anyio` floor raised to `>=4.9` to match the SDK requirement.
 - Research Chronicle rebuild spec updated from design-only to implementation reference, including the planned-tool → shipped-tool mapping.
-- **Durable artifacts now require an authenticated caller.** Without auth the tenant can only be derived from `mcp-session-id`, which changes on every reconnect *and* is client-supplied. It therefore separates callers without authenticating them. `build_research_chronicle`, `read_research_chronicle`, `save_pipeline` / `manage_pipeline(action="save")`, and `save_literature_notes` now refuse such callers with an explanation instead of writing data that is both unreachable later and unprotected from others. Read-only tools are unaffected, and stdio/local behaviour is unchanged.
+- **Durable artifacts now require a trusted storage owner.** In the v0.6.0 legacy HTTP compatibility path, a client-supplied `mcp-session-id` could correlate requests but could not authenticate them. Modern MCP 2026-07-28 no longer supplies that header: authenticated service principals own isolated storage, explicit loopback local/stdio callers own the durable default tenant, and other HTTP callers cannot persist. `build_research_chronicle`, `read_research_chronicle`, `save_pipeline` / `manage_pipeline(action="save")`, and `save_literature_notes` enforce this boundary.
 - **Upstream rate limits are now shared per service.** `BaseAPIClient` keyed its limiter by `id(self)`, so every client instance got its own budget; because clients are created ad hoc in several code paths, a parallel fan-out multiplied the real request rate by the number of instances. The limiter is now keyed by upstream service name, and `get_rate_limiter(..., conservative=True)` guarantees a client configured with an API key cannot raise the budget for clients without one.
 - `install_http_profiling()` moved from `shared/profiling.py` to `infrastructure/sources/profiling.py`; the shared layer no longer imports infrastructure.
 - Scheduling is explicitly refused for isolated tenants: the pipeline scheduler is a single process-wide instance bound to the default tenant, so scheduling from another tenant would have run the wrong store's pipeline.
@@ -2330,7 +2425,9 @@ get_citation_metrics(pmids="last", min_rcr=1.5, min_percentile=75)
 - [PyPI Package](https://pypi.org/project/pubmed-search-mcp/)
 - [Smithery](https://smithery.ai/server/pubmed-search-mcp)
 
-[Unreleased]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.5.11...HEAD
+[Unreleased]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.6.0...v0.6.1
+[0.6.0]: https://github.com/u9401066/pubmed-search-mcp/tree/v0.6.0
 [0.5.11]: https://github.com/u9401066/pubmed-search-mcp/releases/tag/v0.5.11
 [0.5.10]: https://github.com/u9401066/pubmed-search-mcp/releases/tag/v0.5.10
 [0.5.9]: https://github.com/u9401066/pubmed-search-mcp/releases/tag/v0.5.9

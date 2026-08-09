@@ -235,7 +235,7 @@ def _target_pipeline_filter(n: int) -> float:
     executor = PipelineExecutor()
 
     async def run_async() -> None:
-        await executor._action_filter(step, inputs)
+        await executor._action_filter(step, inputs)  # noqa: SLF001 - intentional microbenchmark target
 
     return _time_callable(run_async, repeats=3)
 
