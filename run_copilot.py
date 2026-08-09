@@ -20,16 +20,21 @@ Usage:
 """
 
 import argparse
+import asyncio
+import ipaddress
 import logging
 import os
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
+from mcp.server import MCPServer
+from mcp.server.transport_security import TransportSecuritySettings
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
 from pubmed_search.presentation.mcp_server.http_compat import wrap_copilot_compatibility
-from pubmed_search.presentation.mcp_server.server import DEFAULT_EMAIL
+from pubmed_search.shared.settings import DEFAULT_EMAIL
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -40,12 +45,50 @@ if TYPE_CHECKING:
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
+_LOOPBACK_ALLOWED_HOSTS = [
+    "127.0.0.1",
+    "127.0.0.1:*",
+    "localhost",
+    "localhost:*",
+    "[::1]",
+    "[::1]:*",
+]
+_LOOPBACK_ALLOWED_ORIGINS = [
+    "http://127.0.0.1",
+    "http://127.0.0.1:*",
+    "http://localhost",
+    "http://localhost:*",
+    "http://[::1]",
+    "http://[::1]:*",
+    "https://127.0.0.1",
+    "https://127.0.0.1:*",
+    "https://localhost",
+    "https://localhost:*",
+    "https://[::1]",
+    "https://[::1]:*",
+]
+
+
+def _is_loopback_host(host: str) -> bool:
+    normalized = host.strip().lower().removeprefix("[").removesuffix("]")
+    if normalized == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(normalized).is_loopback
+    except ValueError:
+        return False
+
+
+async def _count_registered_tools(server: MCPServer[Any]) -> int:
+    """Count tools through the MCP SDK v2 public facade."""
+    return len(await server.list_tools())
+
 
 def create_copilot_server(
     email: str,
     api_key: str | None = None,
     use_full_tools: bool = False,
-) -> Any:
+) -> MCPServer[Any]:
     """
     Create MCP server optimized for Copilot Studio.
 
@@ -58,9 +101,6 @@ def create_copilot_server(
     Returns:
         MCPServer instance
     """
-    from mcp.server.mcpserver import MCPServer
-    from mcp.server.transport_security import TransportSecuritySettings
-
     from pubmed_search.container import ApplicationContainer
     from pubmed_search.presentation.mcp_server.tools._common import (
         set_session_manager,
@@ -105,7 +145,11 @@ Available tools:
 
     # Transport-level settings moved to the app factory in MCP SDK v2
     mcp.copilot_transport_kwargs = {  # type: ignore[attr-defined]
-        "transport_security": TransportSecuritySettings(enable_dns_rebinding_protection=False),
+        "transport_security": TransportSecuritySettings(
+            enable_dns_rebinding_protection=True,
+            allowed_hosts=_LOOPBACK_ALLOWED_HOSTS,
+            allowed_origins=_LOOPBACK_ALLOWED_ORIGINS,
+        ),
         "json_response": True,
         "stateless_http": True,  # Required for Copilot Studio
     }
@@ -140,7 +184,7 @@ Available tools:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run PubMed Search MCP for Copilot Studio")
     parser.add_argument("--port", type=int, default=int(os.environ.get("MCP_PORT") or os.environ.get("PORT") or "8765"))
-    parser.add_argument("--host", default=os.environ.get("MCP_HOST", "0.0.0.0"))  # nosec B104
+    parser.add_argument("--host", default=os.environ.get("MCP_HOST", "127.0.0.1"))
     parser.add_argument("--email", default=os.environ.get("NCBI_EMAIL", DEFAULT_EMAIL))
     parser.add_argument("--api-key", default=os.environ.get("NCBI_API_KEY"))
     parser.add_argument(
@@ -150,6 +194,13 @@ def main() -> None:
         help="Use full tool set (may have schema issues with Copilot Studio)",
     )
     args = parser.parse_args()
+
+    if not _is_loopback_host(args.host):
+        parser.error(
+            "run_copilot.py is local-only and requires a loopback --host. "
+            "For remote or multi-user deployment use "
+            "`pubmed-search-mcp-http --mode service`."
+        )
 
     logger.info("Creating PubMed Search MCP Server for Copilot Studio...")
 
@@ -163,7 +214,7 @@ def main() -> None:
     app = wrap_copilot_compatibility(app)
 
     # Get tool count for display
-    tool_count = len(server._tool_manager.list_tools())
+    tool_count = asyncio.run(_count_registered_tools(server))
     tool_mode = "FULL (may have issues)" if args.full_tools else "SIMPLIFIED (Copilot-compatible)"
 
     logger.info("")

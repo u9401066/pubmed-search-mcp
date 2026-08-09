@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pubmed-search-mcp"
-version = "0.6.0"
+version = "0.6.1"
 description = "MCP server for PubMed literature search with MeSH, PICO, and intelligent query expansion"
 readme = "README.md"
 license = "Apache-2.0"
@@ -257,7 +257,6 @@ known-first-party = ["pubmed_search"]
     "INP001",  # implicit namespace package — scripts dir
     "PLR0913", # too many arguments — script functions
     "PLR2004", # magic values — scripts use literals
-    "SLF001",  # private member — FastMCP internal access
     "SIM102",  # nested-if — script readability
     "DTZ005",  # datetime-now — scripts don't need tz
     "ARG001",  # unused argument — script callbacks
@@ -266,14 +265,12 @@ known-first-party = ["pubmed_search"]
 ]
 "run_copilot.py" = [
     "PTH",     # pathlib — sys.path manipulation
-    "SLF001",  # private member — FastMCP internal access
     "PLR2004", # magic values — HTTP status codes
     "S104",    # bind-all — server intentional
     "INP001",  # namespace package
 ]
 "run_server.py" = [
     "PTH",     # pathlib — sys.path manipulation
-    "SLF001",  # private member — FastMCP internal access
     "S104",    # bind-all — server intentional
     "S108",    # hardcoded temp — export dir
     "N806",    # variable uppercase — EXPORT_DIR constant
@@ -295,7 +292,6 @@ known-first-party = ["pubmed_search"]
     "PLR2004", # magic-value — HTTP 狀態碼、限制值
     "ARG001",  # unused-function-argument — MCP 框架要求的參數簽名
     "ARG002",  # unused-method-argument — 同上
-    "SLF001",  # private-member-access — FastMCP 內部 API 整合
     "A002",    # builtin-shadowing — `type`, `id`, `format` 是 MCP tool 參數
 ]
 "src/pubmed_search/application/**/*.py" = [

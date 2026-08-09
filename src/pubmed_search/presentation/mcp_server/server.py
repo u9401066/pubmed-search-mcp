@@ -20,15 +20,15 @@ Architecture:
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import logging
 import os
 import sys
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
-from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
-from mcp.server.mcpserver import MCPServer
+from mcp.server import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 
 from pubmed_search import __version__
@@ -37,10 +37,11 @@ from pubmed_search.container import ApplicationContainer
 from pubmed_search.shared.settings import DEFAULT_DATA_DIR, DEFAULT_EMAIL, load_settings
 
 from .auth import build_auth
+from .http_security import is_allowed_host, is_allowed_origin
 from .instructions import SERVER_INSTRUCTIONS
 from .tenancy import build_tenancy_middleware
 from .tool_registry import register_all_mcp_tools
-from .tools._common import set_session_registry
+from .tools._common import get_session_manager, set_session_registry
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable
@@ -56,6 +57,27 @@ logger = logging.getLogger(__name__)
 _container: ApplicationContainer | None = None
 
 _TRANSPORT_OPTIONS_ATTR = "_pubmed_transport_options"
+
+ServerMode = Literal["local", "service"]
+
+_LOCAL_ALLOWED_HOSTS = (
+    "127.0.0.1",
+    "127.0.0.1:*",
+    "localhost",
+    "localhost:*",
+    "[::1]",
+    "[::1]:*",
+)
+_LOCAL_ALLOWED_ORIGINS = (
+    "http://127.0.0.1",
+    "http://127.0.0.1:*",
+    "http://localhost",
+    "http://localhost:*",
+    "https://127.0.0.1",
+    "https://127.0.0.1:*",
+    "https://localhost",
+    "https://localhost:*",
+)
 
 
 @dataclass(frozen=True)
@@ -76,6 +98,19 @@ class TransportOptions:
     json_response: bool = False
     stateless_http: bool = False
     transport_security: TransportSecuritySettings | None = None
+    mode: ServerMode = "local"
+    allow_container_bind: bool = False
+
+
+def _is_loopback_host(host: str) -> bool:
+    """Return whether *host* is a loopback-only bind target."""
+    normalized = host.strip().lower().removeprefix("[").removesuffix("]")
+    if normalized == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(normalized).is_loopback
+    except ValueError:
+        return False
 
 
 def get_transport_options(server: MCPServer[Any]) -> TransportOptions:
@@ -108,6 +143,13 @@ def build_asgi_app(server: MCPServer[Any], transport: str = "streamable-http", *
         ValueError: If *transport* is not a supported HTTP transport.
     """
     options = get_transport_options(server)
+
+    if options.mode == "local" and not _is_loopback_host(host) and not options.allow_container_bind:
+        msg = (
+            "Local server mode only binds loopback addresses. Use --mode service for remote access, "
+            "or explicitly enable PUBMED_LOCAL_ALLOW_CONTAINER_BIND for a loopback-published container."
+        )
+        raise RuntimeError(msg)
 
     if transport == "sse":
         return server.sse_app(transport_security=options.transport_security, host=host)
@@ -172,6 +214,8 @@ def create_server(
     workspace_dir: str | None = None,
     json_response: bool = False,
     stateless_http: bool = False,
+    mode: ServerMode | None = None,
+    allow_container_bind: bool | None = None,
 ) -> MCPServer[Any]:
     """
     Create and configure the PubMed Search MCP server.
@@ -183,12 +227,16 @@ def create_server(
         email: Email address for NCBI Entrez API (required by NCBI).
         api_key: Optional NCBI API key for higher rate limits.
         name: Server name.
-        disable_security: Disable DNS rebinding protection (needed for remote access).
+        disable_security: Disable DNS rebinding protection in local development only.
         data_dir: Directory for session data persistence. Default: ~/.pubmed-search-mcp
         workspace_dir: Explicit workspace root for workspace-scoped pipeline storage.
             When omitted, workspace-scoped pipeline persistence is disabled.
         json_response: Use JSON responses instead of SSE (for Copilot Studio compatibility).
         stateless_http: Use stateless HTTP mode (no session management, for Copilot Studio).
+        mode: ``"local"`` for stdio/loopback single-user use or ``"service"``
+            for authenticated multi-tenant HTTP.
+        allow_container_bind: Permit a local-mode all-interface bind only when
+            a container port is published to host loopback.
 
     Returns:
         Configured MCPServer instance. Transport-level options are recorded on the
@@ -219,6 +267,7 @@ def create_server(
     logger.info("Session data directory: %s", data_dir or DEFAULT_DATA_DIR)
 
     settings = load_settings()
+    effective_mode: ServerMode = mode or settings.server_mode
 
     # ── Authentication ──────────────────────────────────────────────────
     token_verifier, auth_settings = build_auth(settings)
@@ -228,12 +277,48 @@ def create_server(
         msg = "PUBMED_AUTH_REQUIRED is set but PUBMED_AUTH_TOKENS is empty; refusing to start unauthenticated."
         raise RuntimeError(msg)
 
+    if effective_mode == "service":
+        if disable_security:
+            msg = "Service mode forbids --no-security. Configure explicit Host and Origin allowlists instead."
+            raise RuntimeError(msg)
+        if token_verifier is None:
+            msg = "Service mode requires PUBMED_AUTH_TOKENS; refusing to start an anonymous multi-user server."
+            raise RuntimeError(msg)
+        if not settings.auth_resource_server_url:
+            msg = "Service mode requires PUBMED_AUTH_RESOURCE_SERVER_URL pointing to the public MCP endpoint."
+            raise RuntimeError(msg)
+        if not settings.tenant_isolation:
+            msg = "Service mode requires PUBMED_TENANT_ISOLATION=true."
+            raise RuntimeError(msg)
+        if not settings.allowed_hosts or not settings.allowed_origins:
+            msg = "Service mode requires non-empty PUBMED_ALLOWED_HOSTS and PUBMED_ALLOWED_ORIGINS allowlists."
+            raise RuntimeError(msg)
+
     # ── Transport security ──────────────────────────────────────────────
     if disable_security:
         transport_security = TransportSecuritySettings(enable_dns_rebinding_protection=False)
-        logger.info("DNS rebinding protection disabled for remote access")
+        logger.warning("DNS rebinding protection disabled for local development")
     else:
-        transport_security = None
+        allowed_hosts = settings.allowed_hosts or _LOCAL_ALLOWED_HOSTS
+        allowed_origins = settings.allowed_origins or _LOCAL_ALLOWED_ORIGINS
+        transport_security = TransportSecuritySettings(
+            enable_dns_rebinding_protection=True,
+            allowed_hosts=list(allowed_hosts),
+            allowed_origins=list(allowed_origins),
+        )
+
+    # Always install a registry. Trusted local HTTP and stdio share its durable
+    # default tenant; authenticated service callers receive isolated tenants.
+    tenant_registry = SessionManagerRegistry(
+        data_dir or DEFAULT_DATA_DIR,
+        default_manager=session_manager,
+    )
+    tenancy_middleware = build_tenancy_middleware(
+        isolation_enabled=settings.tenant_isolation,
+        max_concurrency=settings.tenant_max_concurrency,
+        registry=tenant_registry,
+        trusted_local_http=effective_mode == "local",
+    )
 
     # ── Create MCP server with lifespan ─────────────────────────────────
     mcp: MCPServer[Any] = MCPServer(
@@ -243,13 +328,7 @@ def create_server(
         lifespan=_make_lifespan(_container),
         token_verifier=token_verifier,
         auth=auth_settings,
-    )
-    # MCPServer has no public middleware hook yet; the low-level server does.
-    mcp._lowlevel_server.middleware.append(
-        build_tenancy_middleware(
-            isolation_enabled=settings.tenant_isolation,
-            max_concurrency=settings.tenant_max_concurrency,
-        )
+        middleware=[tenancy_middleware],
     )
     setattr(
         mcp,
@@ -258,6 +337,10 @@ def create_server(
             json_response=json_response,
             stateless_http=stateless_http,
             transport_security=transport_security,
+            mode=effective_mode,
+            allow_container_bind=(
+                settings.local_allow_container_bind if allow_container_bind is None else allow_container_bind
+            ),
         ),
     )
 
@@ -274,15 +357,16 @@ def create_server(
     # ── Per-tenant session isolation ────────────────────────────────────
     # Installed after registration: register_all_mcp_tools() calls
     # set_session_manager(), which intentionally clears any registry.
+    set_session_registry(tenant_registry)
     if settings.tenant_isolation:
-        set_session_registry(SessionManagerRegistry(data_dir or DEFAULT_DATA_DIR))
         logger.info("Tenant isolation enabled (max %d concurrent requests per tenant)", settings.tenant_max_concurrency)
-        if token_verifier is None:
+        if token_verifier is None and effective_mode == "local":
             logger.warning(
-                "Tenant isolation is on but no auth is configured. Remote callers would be separated only by "
-                "the client-supplied mcp-session-id header, which is not an authorization boundary, so tools "
-                "that persist research artifacts will refuse to write. Set PUBMED_AUTH_TOKENS to enable them."
+                "Local mode has no auth. Loopback HTTP and stdio share the single-user durable tenant; "
+                "never expose this mode beyond the trusted local boundary."
             )
+    else:
+        logger.info("Caller isolation disabled; local transports share the durable default tenant")
 
     # ── Install performance profiling (optional) ────────────────────────
     from pubmed_search.infrastructure.sources.profiling import install_http_profiling
@@ -309,14 +393,11 @@ def start_http_api_background(session_manager, searcher, port: int = 8765):
 
     # Create a dedicated event loop for the background thread
     _bg_loop = asyncio.new_event_loop()
-
-    def _fresh_session_manager() -> Any:
-        session_data_dir = getattr(session_manager, "data_dir", None)
-        if isinstance(session_data_dir, (str, os.PathLike, Path)):
-            from pubmed_search.application.session.manager import SessionManager
-
-            return SessionManager(data_dir=str(session_data_dir))
-        return session_manager
+    background_transport_security = TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=list(_LOCAL_ALLOWED_HOSTS),
+        allowed_origins=list(_LOCAL_ALLOWED_ORIGINS),
+    )
 
     background_searcher = searcher
     try:
@@ -337,11 +418,25 @@ def start_http_api_background(session_manager, searcher, port: int = 8765):
         def _send_json(self, data: dict, status: int = 200):
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
-            self.send_header("Access-Control-Allow-Origin", "*")
+            origin = self.headers.get("Origin")
+            if origin and is_allowed_origin(origin, background_transport_security):
+                self.send_header("Access-Control-Allow-Origin", origin)
+                self.send_header("Vary", "Origin")
             self.end_headers()
             self.wfile.write(json.dumps(data).encode())
 
+        def _reject_untrusted_request(self) -> bool:
+            if not is_allowed_host(self.headers.get("Host"), background_transport_security):
+                self._send_json({"detail": "Invalid Host header"}, 421)
+                return True
+            if not is_allowed_origin(self.headers.get("Origin"), background_transport_security):
+                self._send_json({"detail": "Invalid Origin header"}, 403)
+                return True
+            return False
+
         def do_GET(self):
+            if self._reject_untrusted_request():
+                return
             path = self.path
 
             # Health check
@@ -352,8 +447,7 @@ def start_http_api_background(session_manager, searcher, port: int = 8765):
             # Get single cached article
             if path.startswith("/api/cached_article/"):
                 pmid = path.split("/")[-1].split("?")[0]
-                active_session_manager = _fresh_session_manager()
-                cached_article = active_session_manager.get_cached_article(pmid)
+                cached_article = session_manager.get_cached_article(pmid)
                 if cached_article is not None:
                     self._send_json(
                         {
@@ -386,7 +480,7 @@ def start_http_api_background(session_manager, searcher, port: int = 8765):
 
             # Get session summary
             if path == "/api/session/summary":
-                self._send_json(_fresh_session_manager().get_session_summary())
+                self._send_json(session_manager.get_session_summary())
                 return
 
             # Root - API info
@@ -483,8 +577,6 @@ def main():
     # Get API key: CLI arg → settings/env
     api_key = sys.argv[2] if len(sys.argv) > 2 else (settings.ncbi_api_key or None)
 
-    http_api_port = settings.http_api_port
-
     # Create server
     configured_workspace_dir = getattr(settings, "workspace_dir", None)
     workspace_dir = str(configured_workspace_dir).strip() if configured_workspace_dir else None
@@ -496,16 +588,19 @@ def main():
         api_key=api_key,
         data_dir=settings.data_dir,  # tenant-ok: root for the session registry, which splits per tenant
         workspace_dir=workspace_dir,
+        mode="local",
     )
 
-    # Start background HTTP API for MCP-to-MCP communication
-    # This runs alongside the stdio MCP server
-    container = get_container()
-    start_http_api_background(
-        container.session_manager(),
-        container.searcher(),
-        port=http_api_port,
-    )
+    # The stdio contract is local-only by default. The legacy auxiliary HTTP
+    # bridge must be explicitly requested because it opens another API surface.
+    if settings.stdio_aux_http_enabled:
+        container = get_container()
+        installed_session_manager = get_session_manager() or container.session_manager()
+        start_http_api_background(
+            installed_session_manager,
+            container.searcher(),
+            port=settings.http_api_port,
+        )
 
     # Run stdio MCP server (blocks)
     server.run()

@@ -5,23 +5,29 @@ from __future__ import annotations
 import argparse
 import asyncio
 import base64
+import ipaddress
+import logging
 import os
+import secrets
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse, Response
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8766
-DEFAULT_TOKEN = "local-dev-token"  # noqa: S105 - documented local development bearer token
 DEFAULT_TIMEOUT_SECONDS = 45
 DEFAULT_MAX_BYTES = 50 * 1024 * 1024
+GENERATED_TOKEN_BYTES = 32
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
+    from collections.abc import AsyncIterator, Awaitable, Callable
 
 
 @dataclass(frozen=True)
@@ -59,6 +65,53 @@ def _default_path(env_name: str, suffix: str) -> Path:
     return Path(os.environ.get(env_name, Path.home() / ".pubmed-search-mcp" / suffix)).expanduser()
 
 
+def _is_loopback_host(host: str) -> bool:
+    """Return whether *host* names a literal loopback or localhost."""
+    normalized = host.strip().lower().removeprefix("[").removesuffix("]").rstrip(".")
+    if normalized == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(normalized).is_loopback
+    except ValueError:
+        return False
+
+
+def _is_loopback_authority(authority: str | None) -> bool:
+    """Validate an HTTP Host/authority without resolving attacker-controlled DNS."""
+    if not authority:
+        return False
+    try:
+        parsed = urlsplit(f"//{authority}")
+        if parsed.username is not None or parsed.password is not None or parsed.path:
+            return False
+        # Accessing ``port`` also rejects malformed and out-of-range ports.
+        _ = parsed.port
+    except ValueError:
+        return False
+    return _is_loopback_host(parsed.hostname or "")
+
+
+def _is_loopback_origin(origin: str) -> bool:
+    """Return whether a browser Origin is an explicit local HTTP(S) origin."""
+    try:
+        parsed = urlsplit(origin)
+        if parsed.scheme not in {"http", "https"} or parsed.username is not None or parsed.password is not None:
+            return False
+        if parsed.path not in {"", "/"} or parsed.query or parsed.fragment:
+            return False
+        _ = parsed.port
+    except ValueError:
+        return False
+    return _is_loopback_host(parsed.hostname or "")
+
+
+def _resolve_broker_token(explicit_token: str | None) -> tuple[str, bool]:
+    """Keep explicit tokens compatible, otherwise create a high-entropy token."""
+    if explicit_token is not None and explicit_token.strip():
+        return explicit_token, False
+    return secrets.token_urlsafe(GENERATED_TOKEN_BYTES), True
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Run the local PubMed Search browser-session PDF fetch broker.",
@@ -67,8 +120,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--port", type=int, default=_env_int("BROWSER_FETCH_BROKER_PORT", default=DEFAULT_PORT))
     parser.add_argument(
         "--token",
-        default=os.environ.get("BROWSER_FETCH_BROKER_TOKEN") or os.environ.get("BROWSER_FETCH_TOKEN") or DEFAULT_TOKEN,
-        help="Bearer token required by MCP browser-session fetch requests.",
+        default=os.environ.get("BROWSER_FETCH_BROKER_TOKEN") or os.environ.get("BROWSER_FETCH_TOKEN") or None,
+        help="Bearer token required by MCP requests. A high-entropy runtime token is generated when omitted.",
     )
     parser.add_argument(
         "--headless",
@@ -223,6 +276,12 @@ async def _fetch_pdf_with_browser(app: FastAPI, payload: dict[str, Any]) -> dict
 
 def create_app(config: BrokerConfig) -> FastAPI:
     """Create the broker FastAPI app."""
+    if not _is_loopback_host(config.host):
+        msg = "Browser fetch broker may only bind a loopback host"
+        raise ValueError(msg)
+    if not config.token.strip():
+        msg = "Browser fetch broker requires a non-empty bearer token"
+        raise ValueError(msg)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -252,6 +311,19 @@ def create_app(config: BrokerConfig) -> FastAPI:
     app = FastAPI(title="PubMed Search Browser Fetch Broker", lifespan=lifespan)
     app.state.config = config
 
+    @app.middleware("http")
+    async def enforce_local_boundary(
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        """Block DNS rebinding before health, auth, or browser state is reached."""
+        if not _is_loopback_authority(request.headers.get("host")):
+            return PlainTextResponse("Invalid Host header", status_code=421)
+        origin = request.headers.get("origin")
+        if origin is not None and not _is_loopback_origin(origin):
+            return PlainTextResponse("Invalid Origin header", status_code=403)
+        return await call_next(request)
+
     @app.get("/health")
     async def health() -> dict[str, str]:
         return {"status": "ok", "service": "pubmed-browser-fetch-broker"}
@@ -259,7 +331,7 @@ def create_app(config: BrokerConfig) -> FastAPI:
     @app.post("/fetch")
     async def fetch(request: Request) -> JSONResponse:
         auth_header = request.headers.get("authorization", "")
-        if auth_header != f"Bearer {config.token}":
+        if not secrets.compare_digest(auth_header, f"Bearer {config.token}"):
             raise HTTPException(status_code=401, detail="Invalid bearer token")
 
         payload = await request.json()
@@ -279,10 +351,19 @@ def main() -> None:
     """Run the browser fetch broker."""
     parser = _build_parser()
     args = parser.parse_args()
+    if not _is_loopback_host(args.host):
+        parser.error("browser fetch broker is local-only; --host must be a loopback address")
+    token, generated = _resolve_broker_token(args.token)
+    if generated:
+        logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+        logger.warning(
+            "No browser broker token was configured. Generated runtime token (copy it to BROWSER_FETCH_TOKEN): %s",
+            token,
+        )
     config = BrokerConfig(
         host=args.host,
         port=args.port,
-        token=args.token,
+        token=token,
         headless=args.headless,
         user_data_dir=Path(args.user_data_dir).expanduser(),
         download_dir=Path(args.download_dir).expanduser(),

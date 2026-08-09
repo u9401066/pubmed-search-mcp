@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -31,6 +32,8 @@ class AppSettings(BaseSettings):
     workspace_dir: str | None = Field(default=None, alias="PUBMED_WORKSPACE_DIR")
     notes_dir: str | None = Field(default=None, alias="PUBMED_NOTES_DIR")
     http_api_port: int = Field(default=DEFAULT_HTTP_API_PORT, alias="PUBMED_HTTP_API_PORT")
+    stdio_aux_http_enabled: bool = Field(default=False, alias="PUBMED_STDIO_AUX_HTTP")
+    local_allow_container_bind: bool = Field(default=False, alias="PUBMED_LOCAL_ALLOW_CONTAINER_BIND")
 
     profiling_enabled: bool = Field(default=False, alias="PUBMED_PROFILING")
     disabled_sources_raw: str = Field(default="", alias="PUBMED_SEARCH_DISABLED_SOURCES")
@@ -44,6 +47,11 @@ class AppSettings(BaseSettings):
     auth_tokens_raw: str = Field(default="", alias="PUBMED_AUTH_TOKENS")
     auth_required: bool = Field(default=False, alias="PUBMED_AUTH_REQUIRED")
     auth_issuer_url: str = Field(default="", alias="PUBMED_AUTH_ISSUER_URL")
+    auth_resource_server_url: str = Field(default="", alias="PUBMED_AUTH_RESOURCE_SERVER_URL")
+    server_mode: Literal["local", "service"] = Field(default="local", alias="PUBMED_SERVER_MODE")
+    allowed_hosts_raw: str = Field(default="", alias="PUBMED_ALLOWED_HOSTS")
+    allowed_origins_raw: str = Field(default="", alias="PUBMED_ALLOWED_ORIGINS")
+    trusted_proxy_ips_raw: str = Field(default="", alias="PUBMED_TRUSTED_PROXY_IPS")
     tenant_isolation: bool = Field(default=True, alias="PUBMED_TENANT_ISOLATION")
     tenant_max_concurrency: int = Field(
         default=DEFAULT_TENANT_MAX_CONCURRENCY,
@@ -96,6 +104,12 @@ class AppSettings(BaseSettings):
         "ezproxy_cookie_file",
         "ezproxy_cookie",
         "scheduler_timezone",
+        "auth_tokens_raw",
+        "auth_issuer_url",
+        "auth_resource_server_url",
+        "allowed_hosts_raw",
+        "allowed_origins_raw",
+        "trusted_proxy_ips_raw",
         mode="before",
     )
     @classmethod
@@ -132,12 +146,39 @@ class AppSettings(BaseSettings):
             return stripped or None
         return value
 
+    @field_validator("server_mode", mode="before")
+    @classmethod
+    def _normalize_server_mode(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip().lower()
+        return value
+
     @property
     def disabled_sources(self) -> tuple[str, ...]:
         """Normalized disabled source keys from PUBMED_SEARCH_DISABLED_SOURCES."""
         return tuple(
             token.strip().lower().replace("-", "_") for token in self.disabled_sources_raw.split(",") if token.strip()
         )
+
+    @staticmethod
+    def _csv_values(raw: str) -> tuple[str, ...]:
+        """Return non-empty comma-separated configuration values."""
+        return tuple(value.strip() for value in raw.split(",") if value.strip())
+
+    @property
+    def allowed_hosts(self) -> tuple[str, ...]:
+        """Host-header allowlist for MCP HTTP transports."""
+        return self._csv_values(self.allowed_hosts_raw)
+
+    @property
+    def allowed_origins(self) -> tuple[str, ...]:
+        """Origin-header allowlist for MCP HTTP transports."""
+        return self._csv_values(self.allowed_origins_raw)
+
+    @property
+    def trusted_proxy_ips(self) -> tuple[str, ...]:
+        """Proxy addresses allowed to supply forwarded headers."""
+        return self._csv_values(self.trusted_proxy_ips_raw)
 
 
 def load_settings() -> AppSettings:

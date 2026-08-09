@@ -6,19 +6,24 @@ Starlette routes and would otherwise be reachable by anyone who can hit the
 port. This module applies the same static tokens to them and resolves the
 caller's tenant so one agent cannot read another's cache.
 
-When no tokens are configured the guard allows every caller and maps them to the
-default tenant, which keeps single-user local deployments working unchanged.
+When no tokens are configured, explicit local mode maps loopback HTTP to the
+single-user durable default tenant. Service mode always fails closed.
 """
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
-from pubmed_search.shared.tenancy import DEFAULT_TENANT, TenantIdentity
+from starlette.datastructures import Headers
+from starlette.responses import Response
+
+from pubmed_search.shared.tenancy import LOCAL_HTTP_TENANT, TenantIdentity, bind_tenant
 
 if TYPE_CHECKING:
+    from mcp.server.transport_security import TransportSecuritySettings
+
     from pubmed_search.application.session.manager import SessionManager
     from pubmed_search.application.session.registry import SessionManagerRegistry
     from pubmed_search.infrastructure.auth import StaticTokenVerifier
@@ -26,6 +31,57 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _BEARER_PREFIX = "bearer "
+
+
+def _matches_allowed_value(value: str, allowed_values: list[str]) -> bool:
+    """Match an exact value or a ``:*`` pattern with a numeric TCP port."""
+    normalized = value.strip().lower()
+    for allowed in allowed_values:
+        candidate = allowed.strip().lower()
+        if normalized == candidate:
+            return True
+        if not candidate.endswith(":*"):
+            continue
+        prefix = candidate[:-1]
+        if not normalized.startswith(prefix):
+            continue
+        port = normalized[len(prefix) :]
+        if port.isdigit() and 0 < int(port) <= 65535:
+            return True
+    return False
+
+
+def is_allowed_host(host: str | None, settings: TransportSecuritySettings) -> bool:
+    """Return whether *host* satisfies the configured DNS-rebinding allowlist."""
+    return bool(host and _matches_allowed_value(host, settings.allowed_hosts))
+
+
+def is_allowed_origin(origin: str | None, settings: TransportSecuritySettings) -> bool:
+    """Return whether *origin* is absent or satisfies the configured allowlist."""
+    return origin is None or _matches_allowed_value(origin, settings.allowed_origins)
+
+
+class TransportSecurityASGIMiddleware:
+    """Apply MCP Host/Origin protection to every HTTP route in an ASGI app."""
+
+    def __init__(self, app: Any, *, settings: TransportSecuritySettings) -> None:
+        self._app = app
+        self._settings = settings
+
+    async def __call__(self, scope: dict[str, Any], receive: Any, send: Any) -> None:
+        if scope.get("type") != "http" or not self._settings.enable_dns_rebinding_protection:
+            await self._app(scope, receive, send)
+            return
+
+        headers = Headers(scope=scope)
+        if not is_allowed_host(headers.get("host"), self._settings):
+            await Response("Invalid Host header", status_code=421)(scope, receive, send)
+            return
+        if not is_allowed_origin(headers.get("origin"), self._settings):
+            await Response("Invalid Origin header", status_code=403)(scope, receive, send)
+            return
+
+        await self._app(scope, receive, send)
 
 
 @dataclass(frozen=True)
@@ -56,6 +112,7 @@ class AuxiliaryApiGuard:
         *,
         verifier: StaticTokenVerifier | None,
         registry: SessionManagerRegistry,
+        mode: Literal["local", "service"],
         require_auth: bool = False,
     ) -> None:
         """Create the guard.
@@ -63,17 +120,20 @@ class AuxiliaryApiGuard:
         Args:
             verifier: Token verifier, or ``None`` for an open deployment.
             registry: Per-tenant session manager registry.
+            mode: Explicit local or service trust contract. Service mode fails
+                closed even if its caller forgets to set ``require_auth``.
             require_auth: Reject unauthenticated requests even when no verifier
                 is configured. Use this to fail closed on misconfiguration.
         """
         self._verifier = verifier
         self._registry = registry
+        self._mode = mode
         self._require_auth = require_auth
 
     @property
     def enforcing(self) -> bool:
         """Return whether requests must present a valid bearer token."""
-        return self._verifier is not None or self._require_auth
+        return self._verifier is not None or self._require_auth or self._mode == "service"
 
     @property
     def registry(self) -> SessionManagerRegistry:
@@ -90,9 +150,9 @@ class AuxiliaryApiGuard:
             An :class:`AuthOutcome` carrying the tenant, or the rejection reason.
         """
         if self._verifier is None:
-            if self._require_auth:
+            if self._require_auth or self._mode == "service":
                 return AuthOutcome(None, 503, "Auth is required but no tokens are configured")
-            return AuthOutcome(DEFAULT_TENANT)
+            return AuthOutcome(LOCAL_HTTP_TENANT)
 
         header = str(request.headers.get("authorization", "")).strip()
         if not header.lower().startswith(_BEARER_PREFIX):
@@ -107,7 +167,14 @@ class AuxiliaryApiGuard:
 
     def session_manager_for(self, identity: TenantIdentity) -> SessionManager:
         """Return the session manager owned by *identity*."""
-        return self._registry.for_tenant(identity.tenant_id)
+        with bind_tenant(identity):
+            return self._registry.for_tenant()
 
 
-__all__ = ["AuthOutcome", "AuxiliaryApiGuard"]
+__all__ = [
+    "AuthOutcome",
+    "AuxiliaryApiGuard",
+    "TransportSecurityASGIMiddleware",
+    "is_allowed_host",
+    "is_allowed_origin",
+]

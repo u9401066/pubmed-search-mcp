@@ -5,20 +5,26 @@ from __future__ import annotations
 import argparse
 import logging
 import os
-import tempfile
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from pubmed_search import __version__
+from pubmed_search.application.export import list_export_artifacts, resolve_export_artifact, tenant_export_root
 from pubmed_search.application.session.registry import SessionManagerRegistry
 from pubmed_search.presentation.mcp_server.auth import build_auth
 from pubmed_search.presentation.mcp_server.http_compat import wrap_copilot_compatibility
-from pubmed_search.presentation.mcp_server.http_security import AuxiliaryApiGuard
-from pubmed_search.presentation.mcp_server.server import build_asgi_app, create_server, get_container
+from pubmed_search.presentation.mcp_server.http_security import AuxiliaryApiGuard, TransportSecurityASGIMiddleware
+from pubmed_search.presentation.mcp_server.server import (
+    build_asgi_app,
+    create_server,
+    get_container,
+    get_transport_options,
+)
 from pubmed_search.presentation.mcp_server.tools._common import get_session_registry
 from pubmed_search.shared.settings import load_settings
 
 if TYPE_CHECKING:
+    from mcp.server.transport_security import TransportSecuritySettings
+
     from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
 logger = logging.getLogger(__name__)
@@ -33,13 +39,15 @@ def _default_port() -> int:
     return int(port)
 
 
-def _default_export_dir() -> Path:
-    return Path(tempfile.gettempdir()) / "pubmed_exports"
-
-
 def build_parser() -> argparse.ArgumentParser:
     """Build the packaged HTTP CLI parser."""
     parser = argparse.ArgumentParser(description="Run PubMed Search MCP Server in HTTP mode")
+    parser.add_argument(
+        "--mode",
+        choices=["local", "service"],
+        default=os.environ.get("PUBMED_SERVER_MODE", "local").strip().lower(),
+        help="Deployment profile: local loopback or authenticated multi-tenant service",
+    )
     parser.add_argument(
         "--email",
         default=os.environ.get("NCBI_EMAIL", "pubmed-search@example.com"),
@@ -58,8 +66,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--host",
-        default=os.environ.get("MCP_HOST", "0.0.0.0"),  # noqa: S104  # nosec B104
-        help="Server host (default: 0.0.0.0)",
+        default=os.environ.get("MCP_HOST") or None,
+        help="Server host (default: 127.0.0.1 in local mode; 0.0.0.0 in service mode)",
     )
     parser.add_argument(
         "--port",
@@ -80,6 +88,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Disable DNS rebinding protection (not recommended for production)",
     )
     parser.add_argument(
+        "--allow-container-bind",
+        action="store_true",
+        default=_env_flag("PUBMED_LOCAL_ALLOW_CONTAINER_BIND"),
+        help="Allow local mode to bind 0.0.0.0 inside a container published only to host loopback",
+    )
+    parser.add_argument(
+        "--trusted-proxy-ips",
+        default=os.environ.get("PUBMED_TRUSTED_PROXY_IPS", ""),
+        help="Comma-separated proxy IPs allowed to supply forwarded headers (default: none)",
+    )
+    parser.add_argument(
         "--workspace-dir",
         default=os.environ.get("PUBMED_WORKSPACE_DIR"),
         help="Explicit workspace root for workspace-scoped pipeline persistence",
@@ -92,7 +111,8 @@ def _mount_auxiliary_routes(
     *,
     transport: str,
     port: int,
-    export_dir: Path,
+    data_dir: str,
+    transport_security: TransportSecuritySettings,
     guard: AuxiliaryApiGuard,
     searcher: LiteratureSearcher,
 ) -> None:
@@ -102,7 +122,7 @@ def _mount_auxiliary_routes(
     that returns session data goes through *guard* and is scoped to the calling
     tenant.
     """
-    from anyio import Path as AsyncPath
+    from anyio import to_thread
     from starlette.responses import FileResponse, JSONResponse
     from starlette.routing import Route as StarletteRoute
 
@@ -110,6 +130,7 @@ def _mount_auxiliary_routes(
         return JSONResponse({"status": "ok", "service": "pubmed-search-mcp", "version": __version__})
 
     async def ready(_request: Any) -> Any:
+        registry_stats = guard.registry.stats()
         return JSONResponse(
             {
                 "status": "ready",
@@ -117,7 +138,7 @@ def _mount_auxiliary_routes(
                 "version": __version__,
                 "transport": transport,
                 "auth_enforced": guard.enforcing,
-                "tenants": guard.registry.stats(),
+                "active_tenants": registry_stats["active_tenants"],
             }
         )
 
@@ -143,7 +164,7 @@ def _mount_auxiliary_routes(
                         "root_info": "/",
                         "health": "/health",
                         "ready": "/ready",
-                        "downloads": "/download/{filename}",
+                        "downloads": "/download/{export_id}",
                         "list_exports": "/exports",
                     },
                 },
@@ -159,32 +180,30 @@ def _mount_auxiliary_routes(
             }
         )
 
-    async def list_exports(_request: Any) -> Any:
-        async_export_dir = AsyncPath(export_dir)
-        if not await async_export_dir.exists():
-            return JSONResponse({"export_dir": str(export_dir), "files": []})
+    async def list_exports(request: Any) -> Any:
+        outcome = await guard.authenticate(request)
+        if outcome.identity is None:
+            return JSONResponse({"detail": outcome.detail}, status_code=outcome.status_code)
+        export_root = tenant_export_root(data_dir, outcome.identity)
+        if export_root is None:
+            return JSONResponse({"detail": "Durable storage is required"}, status_code=403)
 
-        files = []
-        async for entry in async_export_dir.iterdir():
-            if await entry.is_file():
-                stat = await entry.stat()
-                files.append(
-                    {
-                        "filename": entry.name,
-                        "size_bytes": stat.st_size,
-                        "download_url": f"/download/{entry.name}",
-                    }
-                )
-        return JSONResponse({"export_dir": str(export_dir), "files": sorted(files, key=lambda x: x["filename"])})
+        files = await to_thread.run_sync(list_export_artifacts, export_root)
+        for item in files:
+            item["download_url"] = f"/download/{item['export_id']}"
+        return JSONResponse({"files": files})
 
     async def download_file(request: Any) -> Any:
-        filename = str(request.path_params["filename"])
-        if ".." in filename or "/" in filename or "\\" in filename:
-            return JSONResponse({"error": "Invalid filename"}, status_code=400)
+        outcome = await guard.authenticate(request)
+        if outcome.identity is None:
+            return JSONResponse({"detail": outcome.detail}, status_code=outcome.status_code)
+        export_root = tenant_export_root(data_dir, outcome.identity)
+        if export_root is None:
+            return JSONResponse({"detail": "Durable storage is required"}, status_code=403)
 
-        filepath = export_dir / filename
-        async_filepath = AsyncPath(filepath)
-        if not await async_filepath.exists():
+        export_id = str(request.path_params["export_id"])
+        filepath = await to_thread.run_sync(resolve_export_artifact, export_root, export_id)
+        if filepath is None:
             return JSONResponse({"error": "File not found"}, status_code=404)
 
         content_types = {
@@ -197,7 +216,7 @@ def _mount_auxiliary_routes(
         return FileResponse(
             str(filepath),
             media_type=content_types.get(filepath.suffix.lower(), "application/octet-stream"),
-            filename=filename,
+            filename=export_id,
         )
 
     async def api_get_cached_article(request: Any) -> Any:
@@ -271,11 +290,14 @@ def _mount_auxiliary_routes(
         StarletteRoute("/health", health),
         StarletteRoute("/ready", ready),
         StarletteRoute("/exports", list_exports),
-        StarletteRoute("/download/{filename}", download_file),
+        StarletteRoute("/download/{export_id}", download_file),
+        StarletteRoute("/api/exports", list_exports),
+        StarletteRoute("/api/exports/{export_id}/download", download_file),
         StarletteRoute("/api/cached_article/{pmid}", api_get_cached_article),
         StarletteRoute("/api/cached_articles", api_get_multiple_articles),
         StarletteRoute("/api/session/summary", api_session_summary),
     ]
+    app.add_middleware(TransportSecurityASGIMiddleware, settings=transport_security)
 
 
 def main() -> None:
@@ -285,6 +307,13 @@ def main() -> None:
     args = parser.parse_args()
     if args.copilot_compatible and args.transport != "streamable-http":
         parser.error("--copilot-compatible requires --transport streamable-http")
+    if args.mode == "service" and args.no_security:
+        parser.error("--no-security is forbidden in service mode")
+    if args.mode == "service" and args.allow_container_bind:
+        parser.error("--allow-container-bind applies only to local mode")
+
+    host = args.host or ("127.0.0.1" if args.mode == "local" else "0.0.0.0")  # noqa: S104  # nosec B104
+    settings = load_settings()
 
     server = create_server(
         email=args.email,
@@ -292,44 +321,59 @@ def main() -> None:
         disable_security=args.no_security,
         json_response=args.copilot_compatible,
         stateless_http=args.copilot_compatible,
+        data_dir=settings.data_dir,
         workspace_dir=args.workspace_dir,
+        mode=args.mode,
+        allow_container_bind=args.allow_container_bind,
     )
 
-    app: Any = build_asgi_app(server, args.transport, host=args.host)
+    app: Any = build_asgi_app(server, args.transport, host=host)
     container = get_container()
-    settings = load_settings()
     token_verifier, _ = build_auth(settings)
+    transport_security = get_transport_options(server).transport_security
+    if transport_security is None:  # pragma: no cover - create_server always installs explicit settings
+        msg = "Packaged HTTP server is missing transport security settings"
+        raise RuntimeError(msg)
     registry_root = settings.data_dir  # tenant-ok: registry splits per tenant below
     registry = get_session_registry() or SessionManagerRegistry(registry_root)
     _mount_auxiliary_routes(
         app,
         transport=args.transport,
         port=args.port,
-        export_dir=_default_export_dir(),
+        data_dir=settings.data_dir,
+        transport_security=transport_security,
         guard=AuxiliaryApiGuard(
             verifier=token_verifier,
             registry=registry,
-            require_auth=settings.auth_required,
+            mode=args.mode,
+            require_auth=settings.auth_required or args.mode == "service",
         ),
         searcher=cast("LiteratureSearcher", container.searcher()),
     )
     if args.copilot_compatible:
         app = wrap_copilot_compatibility(app)
 
-    logger.info("Starting PubMed Search MCP HTTP server on http://%s:%s", args.host, args.port)
+    logger.info("Starting PubMed Search MCP HTTP server on http://%s:%s", host, args.port)
+    logger.info("Server mode: %s", args.mode)
     logger.info("MCP endpoint: %s", "/mcp" if args.transport == "streamable-http" else "/sse")
-    logger.info("Auth: %s", "bearer tokens enforced" if token_verifier else "OPEN (no tokens configured)")
+    logger.info(
+        "Auth: %s",
+        "bearer tokens enforced"
+        if token_verifier
+        else "trusted local single-user HTTP (shared durable default tenant)",
+    )
     logger.info("Tenant isolation: %s", "on" if settings.tenant_isolation else "off")
     logger.info("Python SDK facade: from pubmed_search.api import PubMedSearchClient")
 
     import uvicorn
 
+    trusted_proxy_ips = args.trusted_proxy_ips.strip()
     uvicorn.run(
         app,
-        host=args.host,
+        host=host,
         port=args.port,
-        proxy_headers=True,
-        forwarded_allow_ips="*",
+        proxy_headers=bool(trusted_proxy_ips),
+        forwarded_allow_ips=trusted_proxy_ips,
         server_header=False,
     )
 

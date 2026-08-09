@@ -1,285 +1,213 @@
 #!/usr/bin/env python3
-"""
-Test script to simulate Copilot Studio's MCP communication flow.
+"""Exercise the MCP SDK v2 modern HTTP contract used by Copilot Studio.
 
-This script helps debug MCP integration by:
-1. Sending the exact same requests as Copilot Studio
-2. Showing detailed error messages
-3. Validating the full handshake process
+MCP protocol revision 2026-07-28 removed the initialize exchange and
+``Mcp-Session-Id`` lifecycle. Every request therefore carries modern protocol
+metadata and is independently routable.
 
 Usage:
-    uv run python scripts/test-copilot-mcp.py [URL]
-    uv run python scripts/test-copilot-mcp.py https://kmuh-ai.ngrok.dev/mcp
+    uv run python scripts/test-copilot-mcp.py http://127.0.0.1:8765/mcp
+    uv run python scripts/test-copilot-mcp.py https://mcp.example.org/mcp --token "$TOKEN"
+    uv run python scripts/test-copilot-mcp.py http://127.0.0.1:8765/mcp --live-search
 """
 
+from __future__ import annotations
+
+import argparse
 import json
-import sys
+import os
+from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 import requests
+from mcp.types.version import LATEST_MODERN_VERSION
+from mcp_types import CLIENT_CAPABILITIES_META_KEY, PROTOCOL_VERSION_META_KEY
+
+REQUEST_TIMEOUT_SECONDS = 30
+LIVE_SEARCH_TIMEOUT_SECONDS = 60
 
 
-# Colors for terminal output
-class Colors:
-    GREEN = "\033[92m"
-    RED = "\033[91m"
-    YELLOW = "\033[93m"
-    BLUE = "\033[94m"
-    RESET = "\033[0m"
-    BOLD = "\033[1m"
+def _endpoint_url(value: str) -> str:
+    """Normalize a server URL to its MCP endpoint."""
+    parsed = urlsplit(value.strip())
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        msg = "URL must be an absolute http:// or https:// address"
+        raise argparse.ArgumentTypeError(msg)
+    path = parsed.path.rstrip("/")
+    if not path:
+        path = "/mcp"
+    return urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
 
 
-def print_step(step: int, title: str):
-    print(f"\n{Colors.BLUE}{Colors.BOLD}[Step {step}] {title}{Colors.RESET}")
-    print("-" * 60)
+def _health_url(endpoint: str) -> str:
+    parsed = urlsplit(endpoint)
+    return urlunsplit((parsed.scheme, parsed.netloc, "/health", "", ""))
 
 
-def print_success(msg: str):
-    print(f"{Colors.GREEN}✅ {msg}{Colors.RESET}")
+def _headers(method: str, token: str | None) -> dict[str, str]:
+    headers = {
+        "Accept": "application/json, text/event-stream",
+        "Content-Type": "application/json; charset=utf-8",
+        "MCP-Protocol-Version": LATEST_MODERN_VERSION,
+        "MCP-Method": method,
+        "X-Ms-User-Agent": "CopilotStudio-modern-http-smoke/2.0",
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
 
 
-def print_error(msg: str):
-    print(f"{Colors.RED}❌ {msg}{Colors.RESET}")
+def _params(values: dict[str, Any] | None = None) -> dict[str, Any]:
+    result = dict(values or {})
+    result["_meta"] = {
+        PROTOCOL_VERSION_META_KEY: LATEST_MODERN_VERSION,
+        CLIENT_CAPABILITIES_META_KEY: {},
+    }
+    return result
 
 
-def print_warning(msg: str):
-    print(f"{Colors.YELLOW}⚠️  {msg}{Colors.RESET}")
+def _decode_response(response: requests.Response) -> dict[str, Any]:
+    """Decode either JSON mode or a one-event SSE response."""
+    content_type = response.headers.get("content-type", "").lower()
+    if "application/json" in content_type:
+        payload = response.json()
+        return payload if isinstance(payload, dict) else {"result": payload}
+
+    for line in response.text.splitlines():
+        if line.startswith("data:"):
+            payload = json.loads(line.removeprefix("data:").strip())
+            return payload if isinstance(payload, dict) else {"result": payload}
+    msg = f"Unsupported MCP response content type: {content_type or 'missing'}"
+    raise ValueError(msg)
 
 
-def print_json(data: dict):
-    print(json.dumps(data, indent=2, ensure_ascii=False)[:1000])
-    if len(json.dumps(data)) > 1000:
-        print("... (truncated)")
+def _post(
+    session: requests.Session,
+    endpoint: str,
+    *,
+    method: str,
+    request_id: int,
+    token: str | None,
+    params: dict[str, Any] | None = None,
+    timeout: int = REQUEST_TIMEOUT_SECONDS,
+) -> dict[str, Any]:
+    payload = {
+        "jsonrpc": "2.0",
+        "id": request_id,
+        "method": method,
+        "params": _params(params),
+    }
+    response = session.post(
+        endpoint,
+        json=payload,
+        headers=_headers(method, token),
+        timeout=timeout,
+    )
+    response.raise_for_status()
+    if "mcp-session-id" in {name.lower() for name in response.headers}:
+        msg = "Server returned legacy Mcp-Session-Id under the modern protocol"
+        raise RuntimeError(msg)
+    decoded = _decode_response(response)
+    if "error" in decoded:
+        msg = f"MCP {method} failed: {decoded['error']}"
+        raise RuntimeError(msg)
+    return decoded
 
 
-def test_mcp_server(base_url: str):
-    """Simulate Copilot Studio's MCP communication."""
+def _select_diagnostic_tool(tool_names: set[str]) -> tuple[str, dict[str, Any]] | None:
+    """Choose a deterministic, non-network tool shared by the two surfaces."""
+    if "analyze_clinical_question" in tool_names:
+        return "analyze_clinical_question", {"question": "Does treatment A improve outcome B in adults?"}
+    if "analyze_search_query" in tool_names:
+        return "analyze_search_query", {"query": "remimazolam ICU sedation"}
+    return None
 
+
+def _select_live_search(tool_names: set[str]) -> tuple[str, dict[str, Any]] | None:
+    if "search_pubmed" in tool_names:
+        return "search_pubmed", {"query": "remimazolam ICU sedation", "limit": 3}
+    if "unified_search" in tool_names:
+        return "unified_search", {
+            "query": "remimazolam ICU sedation",
+            "limit": 3,
+            "output_format": "json",
+            "options": "shallow,no_analysis,no_scores,no_relax",
+        }
+    return None
+
+
+def test_mcp_server(endpoint: str, *, token: str | None, live_search: bool) -> bool:
+    """Validate health, tool discovery, and modern stateless tool calls."""
     session = requests.Session()
 
-    # Copilot Studio's exact headers
-    headers = {
-        "Content-Type": "application/json; charset=utf-8",
-        "Accept": "application/json,text/event-stream",
-        "X-Ms-User-Agent": "CopilotStudio PowerFx/1.5.0-test",
-    }
+    health = session.get(_health_url(endpoint), timeout=REQUEST_TIMEOUT_SECONDS)
+    health.raise_for_status()
+    print(f"[ok] health: {health.status_code} {_health_url(endpoint)}")
 
-    session_id: str | None = None
+    listed = _post(
+        session,
+        endpoint,
+        method="tools/list",
+        request_id=1,
+        token=token,
+    )
+    tools = listed.get("result", {}).get("tools", [])
+    tool_names = {str(tool.get("name")) for tool in tools if isinstance(tool, dict)}
+    if not tool_names:
+        msg = "tools/list returned no tools"
+        raise RuntimeError(msg)
+    print(f"[ok] modern tools/list: {len(tool_names)} tools; no initialize/session header")
 
-    # =========================================================================
-    # Step 1: Initialize
-    # =========================================================================
-    print_step(1, "Initialize (MCP Handshake)")
+    diagnostic = _select_diagnostic_tool(tool_names)
+    if diagnostic is not None:
+        name, arguments = diagnostic
+        _post(
+            session,
+            endpoint,
+            method="tools/call",
+            request_id=2,
+            token=token,
+            params={"name": name, "arguments": arguments},
+        )
+        print(f"[ok] deterministic tools/call: {name}")
+    else:
+        print("[warn] no deterministic diagnostic tool found; discovery still passed")
 
-    init_payload = {
-        "jsonrpc": "2.0",
-        "method": "initialize",
-        "params": {
-            "protocolVersion": "2024-11-05",
-            "capabilities": {},
-            "clientInfo": {"name": "CopilotStudio", "version": "1.0"},
-        },
-        "id": "1",
-    }
+    if live_search:
+        selected = _select_live_search(tool_names)
+        if selected is None:
+            msg = "No supported search tool is available"
+            raise RuntimeError(msg)
+        name, arguments = selected
+        _post(
+            session,
+            endpoint,
+            method="tools/call",
+            request_id=3,
+            token=token,
+            params={"name": name, "arguments": arguments},
+            timeout=LIVE_SEARCH_TIMEOUT_SECONDS,
+        )
+        print(f"[ok] live tools/call: {name}")
 
-    print(f"Request URL: {base_url}")
-    print("Request Headers:")
-    for k, v in headers.items():
-        print(f"  {k}: {v}")
-    print("Request Body:")
-    print_json(init_payload)
-
-    try:
-        resp = session.post(base_url, json=init_payload, headers=headers, timeout=30)
-        print(f"\nResponse Status: {resp.status_code}")
-        print("Response Headers:")
-        for k, v in resp.headers.items():
-            print(f"  {k}: {v}")
-
-        if resp.status_code == 200:
-            session_id = resp.headers.get("Mcp-Session-Id")
-            if session_id:
-                print_success(f"Session ID: {session_id}")
-            else:
-                print_warning("No Mcp-Session-Id in response headers")
-
-            data = resp.json()
-            server_info = data.get("result", {}).get("serverInfo", {})
-            print_success(f"Server: {server_info.get('name')} v{server_info.get('version')}")
-            print("Response (truncated):")
-            print_json(data)
-        else:
-            print_error(f"HTTP {resp.status_code}: {resp.text[:500]}")
-            return False
-
-    except requests.exceptions.ConnectionError as e:
-        print_error(f"Connection failed: {e}")
-        return False
-    except requests.exceptions.Timeout:
-        print_error("Request timed out (30s)")
-        return False
-    except Exception as e:
-        print_error(f"Error: {e}")
-        return False
-
-    # =========================================================================
-    # Step 2: Send initialized notification
-    # =========================================================================
-    print_step(2, "Send 'initialized' notification")
-
-    if session_id:
-        headers["Mcp-Session-Id"] = session_id
-
-    notif_payload = {"jsonrpc": "2.0", "method": "notifications/initialized"}
-
-    print("Request Body:")
-    print_json(notif_payload)
-
-    try:
-        resp = session.post(base_url, json=notif_payload, headers=headers, timeout=30)
-        print(f"\nResponse Status: {resp.status_code}")
-
-        if resp.status_code in [200, 202]:
-            print_success(f"Notification accepted (HTTP {resp.status_code})")
-            if resp.text:
-                print(f"Response: {resp.text[:200]}")
-        else:
-            print_error(f"HTTP {resp.status_code}: {resp.text[:500]}")
-
-    except Exception as e:
-        print_error(f"Error: {e}")
-
-    # =========================================================================
-    # Step 3: List tools
-    # =========================================================================
-    print_step(3, "List available tools")
-
-    tools_payload = {"jsonrpc": "2.0", "method": "tools/list", "id": "2"}
-
-    print("Request Body:")
-    print_json(tools_payload)
-
-    try:
-        resp = session.post(base_url, json=tools_payload, headers=headers, timeout=30)
-        print(f"\nResponse Status: {resp.status_code}")
-
-        if resp.status_code == 200:
-            data = resp.json()
-            tools = data.get("result", {}).get("tools", [])
-            print_success(f"Found {len(tools)} tools")
-            print("First 5 tools:")
-            for t in tools[:5]:
-                print(f"  - {t.get('name')}: {t.get('description', '')[:50]}...")
-        else:
-            print_error(f"HTTP {resp.status_code}: {resp.text[:500]}")
-
-    except Exception as e:
-        print_error(f"Error: {e}")
-
-    # =========================================================================
-    # Step 4: Call a simple tool (search_pubmed for Copilot mode)
-    # =========================================================================
-    print_step(4, "Call 'search_pubmed' tool (simple test)")
-
-    call_payload = {
-        "jsonrpc": "2.0",
-        "method": "tools/call",
-        "params": {
-            "name": "search_pubmed",
-            "arguments": {"query": "COVID-19 vaccine efficacy", "limit": 3},
-        },
-        "id": "3",
-    }
-
-    print("Request Body:")
-    print_json(call_payload)
-
-    try:
-        resp = session.post(base_url, json=call_payload, headers=headers, timeout=60)
-        print(f"\nResponse Status: {resp.status_code}")
-
-        if resp.status_code == 200:
-            data = resp.json()
-            if "result" in data:
-                print_success("Tool call succeeded!")
-                # Show content summary
-                content = data.get("result", {}).get("content", [])
-                if content and len(content) > 0:
-                    text = content[0].get("text", "")[:500]
-                    print(f"Result preview: {text}...")
-            elif "error" in data:
-                print_error(f"Tool error: {data['error']}")
-                print_json(data)
-        else:
-            print_error(f"HTTP {resp.status_code}: {resp.text[:500]}")
-
-    except Exception as e:
-        print_error(f"Error: {e}")
-
-    # =========================================================================
-    # Step 5: Call get_article (real test)
-    # =========================================================================
-    print_step(5, "Call 'get_article' tool")
-
-    search_payload = {
-        "jsonrpc": "2.0",
-        "method": "tools/call",
-        "params": {"name": "get_article", "arguments": {"pmid": "33301246"}},
-        "id": "4",
-    }
-
-    print("Request Body:")
-    print_json(search_payload)
-
-    try:
-        resp = session.post(base_url, json=search_payload, headers=headers, timeout=60)
-        print(f"\nResponse Status: {resp.status_code}")
-
-        if resp.status_code == 200:
-            data = resp.json()
-            if "result" in data:
-                print_success("Article fetch succeeded!")
-                # Show content summary
-                content = data.get("result", {}).get("content", [])
-                if content and len(content) > 0:
-                    text = content[0].get("text", "")[:500]
-                    print(f"Result preview: {text}...")
-            elif "error" in data:
-                print_error(f"Tool error: {data['error']}")
-        else:
-            print_error(f"HTTP {resp.status_code}: {resp.text[:500]}")
-
-    except Exception as e:
-        print_error(f"Error: {e}")
-
-    # =========================================================================
-    # Summary
-    # =========================================================================
-    print(f"\n{'=' * 60}")
-    print(f"{Colors.BOLD}Summary{Colors.RESET}")
-    print(f"{'=' * 60}")
-    print(f"Server URL: {base_url}")
-    print(f"Session ID: {session_id or 'N/A'}")
-    print("\nIf all steps passed, your MCP server is ready for Copilot Studio!")
-    print("\nTo add to Copilot Studio:")
-    print("  1. Go to copilotstudio.microsoft.com")
-    print("  2. Open your Agent > Tools > Add a tool > New tool")
-    print("  3. Select 'Model Context Protocol'")
-    print("  4. Enter:")
-    print("     - Server name: PubMed Search")
-    print(f"     - Server URL: {base_url}")
-    print("     - Authentication: None")
-
+    print(f"[ok] MCP modern HTTP smoke passed: {endpoint}")
     return True
 
 
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Test MCP SDK v2 modern HTTP / Copilot compatibility")
+    parser.add_argument("url", nargs="?", type=_endpoint_url, default="http://127.0.0.1:8765/mcp")
+    parser.add_argument("--token", default=os.environ.get("PUBMED_BEARER_TOKEN"))
+    parser.add_argument("--live-search", action="store_true", help="Also make one real upstream PubMed search")
+    args = parser.parse_args()
+
+    try:
+        test_mcp_server(args.url, token=args.token, live_search=args.live_search)
+    except (requests.RequestException, RuntimeError, ValueError, json.JSONDecodeError) as exc:
+        print(f"[failed] {exc}")
+        return 1
+    return 0
+
+
 if __name__ == "__main__":
-    url = sys.argv[1] if len(sys.argv) > 1 else "https://kmuh-ai.ngrok.dev/mcp"
-
-    print("""
-╔══════════════════════════════════════════════════════════════╗
-║  Copilot Studio MCP Compatibility Test                       ║
-║  Simulates the exact communication flow of Copilot Studio    ║
-╚══════════════════════════════════════════════════════════════╝
-""")
-
-    test_mcp_server(url)
+    raise SystemExit(main())
