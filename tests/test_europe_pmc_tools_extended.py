@@ -11,6 +11,8 @@ NOTE: search_europe_pmc, get_fulltext_xml, get_europe_pmc_citations are
 
 from __future__ import annotations
 
+import ipaddress
+import socket
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -36,6 +38,62 @@ def _capture_tools(mcp):
 @pytest.fixture
 def tools():
     return _capture_tools(MagicMock())
+
+
+@pytest.fixture(autouse=True)
+def hermetic_fulltext_fallbacks(monkeypatch):
+    """Keep this unit-test module fail-closed against accidental live HTTP."""
+    network_attempts: list[str] = []
+    original_getaddrinfo = socket.getaddrinfo
+    original_connect = socket.socket.connect
+
+    def _is_loopback(host) -> bool:
+        value = host.decode() if isinstance(host, bytes) else str(host)
+        if value.lower() in {"localhost", "localhost.localdomain"}:
+            return True
+        try:
+            address = ipaddress.ip_address(value.strip("[]"))
+        except ValueError:
+            return False
+        return address.is_loopback or address.is_unspecified
+
+    def _blocked_getaddrinfo(host, port, *args, **kwargs):
+        if _is_loopback(host):
+            return original_getaddrinfo(host, port, *args, **kwargs)
+        network_attempts.append(f"dns:{host}:{port}")
+        raise OSError(f"Unexpected DNS lookup in unit test: {host}:{port}")
+
+    def _blocked_connect(sock, address):
+        if not isinstance(address, tuple) or not address or _is_loopback(address[0]):
+            return original_connect(sock, address)
+        network_attempts.append(f"connect:{address}")
+        raise OSError(f"Unexpected socket connection in unit test: {address}")
+
+    monkeypatch.setattr(socket, "getaddrinfo", _blocked_getaddrinfo)
+    monkeypatch.setattr(socket.socket, "connect", _blocked_connect)
+
+    default_downloader = AsyncMock()
+    default_downloader.get_fulltext.return_value = FulltextResult(
+        error="No PDF links found for this article",
+    )
+    default_downloader.close = AsyncMock()
+
+    institutional_client = AsyncMock()
+    institutional_client.get_fulltext_by_doi.return_value = MagicMock(success=False)
+
+    with (
+        patch(
+            "pubmed_search.infrastructure.sources.fulltext_download.FulltextDownloader",
+            return_value=default_downloader,
+        ),
+        patch(
+            "pubmed_search.infrastructure.sources.institutional_fulltext.InstitutionalFulltextClient",
+            return_value=institutional_client,
+        ),
+    ):
+        yield
+
+    assert not network_attempts, "Unexpected live network attempts: " + ", ".join(network_attempts)
 
 
 # ============================================================

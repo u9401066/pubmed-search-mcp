@@ -14,7 +14,10 @@ Maintenance:
 from __future__ import annotations
 
 import asyncio
+import socket
 import time
+from contextlib import contextmanager
+from typing import TYPE_CHECKING, NoReturn
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -28,6 +31,37 @@ from pubmed_search.infrastructure.sources.fulltext_download import (
     download_fulltext,
     get_fulltext_downloader,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterator
+    from contextlib import AbstractContextManager
+
+
+@pytest.fixture
+def fail_closed_network_probe() -> Callable[[], AbstractContextManager[list[str]]]:
+    """Build a guard that rejects and records DNS/socket use after the event loop starts."""
+
+    @contextmanager
+    def guard() -> Iterator[list[str]]:
+        attempts: list[str] = []
+
+        def reject_dns(host: object, *args: object, **kwargs: object) -> NoReturn:
+            del args, kwargs
+            attempts.append(f"dns:{host}")
+            raise AssertionError(f"Unit test attempted DNS resolution for {host!r}")
+
+        def reject_socket(_sock: socket.socket, address: object) -> NoReturn:
+            attempts.append(f"socket:{address}")
+            raise AssertionError(f"Unit test attempted a socket connection to {address!r}")
+
+        with (
+            patch.object(socket, "getaddrinfo", new=reject_dns),
+            patch.object(socket.socket, "connect", new=reject_socket),
+            patch.object(socket.socket, "connect_ex", new=reject_socket),
+        ):
+            yield attempts
+
+    return guard
 
 
 class _MockStreamResponse:
@@ -542,7 +576,10 @@ class TestDownloadPdf:
         assert first_call_url == "https://publisher.example/paper.pdf"
 
     @pytest.mark.asyncio
-    async def test_browser_session_fallback_for_institutional_link(self):
+    async def test_browser_session_fallback_for_institutional_link(
+        self,
+        fail_closed_network_probe: Callable[[], AbstractContextManager[list[str]]],
+    ):
         d = FulltextDownloader()
         openurl_link = PDFLink(
             url="https://resolver.library.edu/openurl?doi=10.1234/test",
@@ -562,7 +599,19 @@ class TestDownloadPdf:
         )
 
         with (
+            fail_closed_network_probe() as network_attempts,
             patch.object(d, "get_pdf_links", new_callable=AsyncMock, return_value=[openurl_link]),
+            patch.object(
+                d,
+                "_download_from_url",
+                new_callable=AsyncMock,
+                return_value=DownloadResult(
+                    success=False,
+                    error="Institutional landing page requires browser authentication",
+                    source=PDFSource.OPENURL,
+                    url=openurl_link.url,
+                ),
+            ) as mock_http_download,
             patch(
                 "pubmed_search.infrastructure.sources.browser_session.get_browser_session_fetcher",
                 return_value=mock_fetcher,
@@ -573,9 +622,15 @@ class TestDownloadPdf:
         assert result.success is True
         assert result.source == PDFSource.BROWSER_SESSION
         assert result.url == "https://publisher.example/download.pdf"
+        mock_http_download.assert_awaited_once()
+        mock_fetcher.fetch_pdf.assert_awaited_once()
+        assert network_attempts == []
 
     @pytest.mark.asyncio
-    async def test_browser_session_auto_mode_for_institutional_link(self):
+    async def test_browser_session_auto_mode_for_institutional_link(
+        self,
+        fail_closed_network_probe: Callable[[], AbstractContextManager[list[str]]],
+    ):
         d = FulltextDownloader()
         openurl_link = PDFLink(
             url="https://resolver.library.edu/openurl?doi=10.1234/test",
@@ -595,7 +650,19 @@ class TestDownloadPdf:
         )
 
         with (
+            fail_closed_network_probe() as network_attempts,
             patch.object(d, "get_pdf_links", new_callable=AsyncMock, return_value=[openurl_link]),
+            patch.object(
+                d,
+                "_download_from_url",
+                new_callable=AsyncMock,
+                return_value=DownloadResult(
+                    success=False,
+                    error="Institutional landing page requires browser authentication",
+                    source=PDFSource.OPENURL,
+                    url=openurl_link.url,
+                ),
+            ) as mock_http_download,
             patch(
                 "pubmed_search.infrastructure.sources.browser_session.get_browser_session_fetcher",
                 return_value=mock_fetcher,
@@ -606,17 +673,34 @@ class TestDownloadPdf:
         assert result.success is True
         assert result.source == PDFSource.BROWSER_SESSION
         assert result.url == "https://publisher.example/download.pdf"
+        mock_http_download.assert_awaited_once()
+        mock_fetcher.fetch_pdf.assert_awaited_once()
+        assert network_attempts == []
 
     @pytest.mark.asyncio
-    async def test_get_pdf_links_includes_openurl_when_configured(self):
+    async def test_get_pdf_links_includes_openurl_when_configured(
+        self,
+        fail_closed_network_probe: Callable[[], AbstractContextManager[list[str]]],
+    ):
         d = FulltextDownloader()
-        with patch(
-            "pubmed_search.infrastructure.sources.openurl.get_openurl_link",
-            return_value="https://resolver.library.edu/openurl?doi=10.1234/test",
+        with (
+            fail_closed_network_probe() as network_attempts,
+            patch(
+                "pubmed_search.infrastructure.sources.openurl.get_openurl_link",
+                return_value="https://resolver.library.edu/openurl?doi=10.1234/test",
+            ),
+            patch.object(d, "_get_unpaywall_links", new_callable=AsyncMock, return_value=[]),
+            patch.object(d, "_get_crossref_links", new_callable=AsyncMock, return_value=[]),
+            patch.object(d, "_get_core_links", new_callable=AsyncMock, return_value=[]),
+            patch.object(d, "_get_semantic_scholar_links", new_callable=AsyncMock, return_value=[]),
+            patch.object(d, "_get_openalex_links", new_callable=AsyncMock, return_value=[]),
+            patch.object(d, "_get_doaj_links", new_callable=AsyncMock, return_value=[]),
+            patch.object(d, "_get_zenodo_links", new_callable=AsyncMock, return_value=[]),
         ):
             links = await d.get_pdf_links(doi="10.1234/test")
 
         assert any(link.source == PDFSource.OPENURL for link in links)
+        assert network_attempts == []
 
     @pytest.mark.asyncio
     async def test_builds_jama_referer_for_articlepdf_links(self):
