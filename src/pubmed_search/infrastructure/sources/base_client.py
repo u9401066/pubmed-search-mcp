@@ -74,6 +74,8 @@ class BaseAPIClient:
         min_interval: float = 0.1,
         headers: dict[str, str] | None = None,
         circuit_breaker: CircuitBreaker | None = None,
+        concurrency_limit: int | None = None,
+        concurrency_name: str | None = None,
     ) -> None:
         """
         Initialize base client.
@@ -89,6 +91,8 @@ class BaseAPIClient:
         self._base_url = base_url.rstrip("/")
         self._timeout = timeout
         self._min_interval = min_interval
+        self._concurrency_limit = concurrency_limit
+        self._concurrency_name = concurrency_name
         self._last_request_time = 0.0
         # Keyed by upstream service, never by object identity: every client for
         # the same API must draw from one shared budget, otherwise a parallel
@@ -126,6 +130,8 @@ class BaseAPIClient:
                 max_attempts=self._MAX_RETRIES + 1,
                 rate_limit_name=self._rate_limiter_name,
                 circuit_breaker=self._circuit_breaker,
+                concurrency_limit=self._concurrency_limit,
+                concurrency_name=self._concurrency_name,
             )
         )
 

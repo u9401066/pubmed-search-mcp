@@ -236,7 +236,7 @@ def normalize_source_adapter_error(
             status_code=status_code,
         )
 
-    if isinstance(error, httpx.TimeoutException):
+    if isinstance(error, (asyncio.TimeoutError, httpx.TimeoutException)):
         return SourceAdapterError(
             source=source,
             operation=operation,
@@ -367,7 +367,7 @@ async def _execute_source_adapter_call_with_timeout(
                 operation=call.operation,
                 message=f"Source adapter timed out after {timeout:.2f}s",
                 kind="timeout",
-                retryable=False,
+                retryable=True,
             ),
         )
 

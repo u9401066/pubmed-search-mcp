@@ -91,7 +91,10 @@ class SemanticScholarClient(BaseAPIClient):
         self._api_key = api_key
         super().__init__(
             timeout=timeout,
-            min_interval=0.5 if api_key else 1.0,
+            # New API keys start at one request per second across endpoints.
+            # Higher grants should be introduced through explicit configuration,
+            # never inferred merely from the presence of a key.
+            min_interval=1.0,
             headers={
                 "User-Agent": "pubmed-search-mcp/1.0",
                 "Accept": "application/json",

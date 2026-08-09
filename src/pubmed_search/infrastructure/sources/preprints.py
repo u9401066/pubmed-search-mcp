@@ -92,7 +92,9 @@ class ArXivClient(BaseAPIClient):
     def __init__(self, timeout: float = 30.0):
         super().__init__(
             timeout=timeout,
-            min_interval=0.0,
+            min_interval=3.0,
+            concurrency_limit=1,
+            concurrency_name="source:preprints:arxiv",
             headers={
                 "User-Agent": "pubmed-search-mcp/1.0",
                 "Accept": "application/atom+xml",

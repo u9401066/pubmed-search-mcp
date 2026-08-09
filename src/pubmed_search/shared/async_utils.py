@@ -203,7 +203,15 @@ class RateLimiter:
                 wait_time = (1 - self._tokens) * (self.per / self.rate)
                 logger.debug(f"Rate limit: waiting {wait_time:.2f}s")
                 await asyncio.sleep(wait_time)
-                self._tokens = 0
+                # Account for the elapsed wait and consume exactly the token
+                # acquired by this caller.  Leaving ``_last_update`` at its
+                # pre-sleep value lets the next caller count the same wait a
+                # second time, producing back-to-back requests at up to twice
+                # the configured upstream rate.
+                after_wait = time.monotonic()
+                available = self._tokens + (after_wait - self._last_update) * (self.rate / self.per)
+                self._tokens = min(self.rate, max(0.0, available - 1.0))
+                self._last_update = after_wait
             else:
                 self._tokens -= 1
 
@@ -556,7 +564,12 @@ class TransportExecutionKernel:
         rate_policy = policy.rate_limit
         if rate_policy is None:
             return None
-        return get_rate_limiter(rate_policy.name, rate=rate_policy.rate, per=rate_policy.per)
+        return get_rate_limiter(
+            rate_policy.name,
+            rate=rate_policy.rate,
+            per=rate_policy.per,
+            conservative=True,
+        )
 
     @staticmethod
     def _resolve_circuit_breaker(policy: RequestExecutionPolicy) -> CircuitBreaker | None:
