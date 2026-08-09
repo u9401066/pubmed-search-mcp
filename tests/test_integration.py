@@ -4,7 +4,7 @@ Integration tests - Tests that may make real API calls.
 These tests are marked with @pytest.mark.integration and can be skipped
 in CI environments or when running quick tests.
 
-Run with: pytest -m integration
+Run live with: PUBMED_RUN_LIVE_TESTS=1 pytest -m integration
 Skip with: pytest -m "not integration"
 """
 
@@ -12,14 +12,19 @@ from __future__ import annotations
 
 import asyncio
 import os
-import time
 
 import pytest
 
-# Skip all integration tests - they make real API calls, not for CI
+_RUN_LIVE_TESTS = os.environ.get("PUBMED_RUN_LIVE_TESTS", "").strip().lower() in {"1", "true", "yes"}
+_SKIP_INTEGRATION = os.environ.get("SKIP_INTEGRATION", "").strip().lower() == "true"
+
+# Live tests are explicit opt-in so a plain local pytest run remains hermetic.
 pytestmark = [
     pytest.mark.integration,
-    pytest.mark.skip(reason="Integration test - makes real API calls, not for CI"),
+    pytest.mark.skipif(
+        not _RUN_LIVE_TESTS or _SKIP_INTEGRATION,
+        reason="Set PUBMED_RUN_LIVE_TESTS=1 to run external API integration tests",
+    ),
 ]
 
 
@@ -121,12 +126,12 @@ class TestRealImageSearch:
     - API can be unreliable (502/timeout) — tests use skip on failure
     """
 
-    def _search_with_retry(self, service, query, image_type, limit=3, max_retries=3):
+    async def _search_with_retry(self, service, query, image_type, limit=3, max_retries=3):
         """Helper: retry search with exponential backoff. Returns (result, success)."""
         result = None
         for attempt in range(max_retries):
             try:
-                result = service.search(
+                result = await service.search(
                     query=query,
                     image_type=image_type,
                     limit=limit,
@@ -134,9 +139,9 @@ class TestRealImageSearch:
                 if result.total_count > 0:
                     return result, True  # Success
                 # Empty result, might be API issue - retry
-                time.sleep(2 * (attempt + 1))
+                await asyncio.sleep(2 * (attempt + 1))
             except Exception:
-                time.sleep(2 * (attempt + 1))
+                await asyncio.sleep(2 * (attempt + 1))
         # All retries exhausted
         return result, False
 
@@ -148,10 +153,10 @@ class TestRealImageSearch:
         """Test real Open-i search for X-ray images."""
         from pubmed_search.application.image_search import ImageSearchService
 
-        time.sleep(2)  # Respect API rate limits
+        await asyncio.sleep(2)  # Respect API rate limits
 
         service = ImageSearchService()
-        result, success = self._search_with_retry(service, "chest pneumonia", "xg")
+        result, success = await self._search_with_retry(service, "chest pneumonia", "xg")
 
         if not success:
             pytest.skip("Open-i API unreliable (timeout/empty after retries)")
@@ -169,10 +174,10 @@ class TestRealImageSearch:
         """Test real Open-i search for microscopy images."""
         from pubmed_search.application.image_search import ImageSearchService
 
-        time.sleep(2)
+        await asyncio.sleep(2)
 
         service = ImageSearchService()
-        result, success = self._search_with_retry(service, "liver histology", "mc")
+        result, success = await self._search_with_retry(service, "liver histology", "mc")
 
         if not success:
             pytest.skip("Open-i API unreliable (timeout/empty after retries)")
@@ -191,7 +196,7 @@ class TestRealImageSearch:
             ImageSearchService,
         )
 
-        time.sleep(2)
+        await asyncio.sleep(2)
 
         # Step 1: Advisor analyzes query
         advisor = ImageQueryAdvisor()
@@ -202,7 +207,11 @@ class TestRealImageSearch:
 
         # Step 2: Service executes search with advisor guidance
         service = ImageSearchService()
-        result, success = self._search_with_retry(service, "chest X-ray pneumonia", advice.recommended_image_type)
+        result, success = await self._search_with_retry(
+            service,
+            "chest X-ray pneumonia",
+            advice.recommended_image_type,
+        )
 
         if not success:
             pytest.skip("Open-i API unreliable (timeout/empty after retries)")
@@ -219,7 +228,7 @@ class TestRealImageSearch:
         """Test that temporal warnings are accurate with real API."""
         from pubmed_search.application.image_search import ImageSearchService
 
-        time.sleep(2)
+        await asyncio.sleep(2)
 
         # covid-19 should trigger temporal warning (Open-i frozen ~2020)
         service = ImageSearchService()
@@ -247,7 +256,7 @@ class TestRealImageSearch:
             ImageSearchService,
         )
 
-        time.sleep(2)
+        await asyncio.sleep(2)
 
         # Pharmacokinetics is not an image query
         advisor = ImageQueryAdvisor()
@@ -274,7 +283,7 @@ class TestRealImageSearch:
         """Test image_type mismatch warning with real API."""
         from pubmed_search.application.image_search import ImageSearchService
 
-        time.sleep(2)
+        await asyncio.sleep(2)
 
         # histology query with xg (X-ray) type should warn
         service = ImageSearchService()

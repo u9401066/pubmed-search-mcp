@@ -35,6 +35,12 @@ def tools():
     return _capture_tools(MagicMock())
 
 
+@pytest.fixture(autouse=True)
+def _disable_live_institutional_fetch(monkeypatch):
+    """Keep unit tests hermetic; direct DOI retrieval has dedicated adapter tests."""
+    monkeypatch.setenv("INSTITUTIONAL_DIRECT_FETCH", "false")
+
+
 # ============================================================
 # get_fulltext
 # ============================================================
@@ -151,8 +157,30 @@ class TestGetFulltext:
     @pytest.mark.asyncio
     async def test_pmid_identifier_auto_detect(self, tools):
         """Test auto-detection of PMID from identifier string."""
-        result = await tools["get_fulltext"](identifier="12345678")
-        # Should detect as PMID, result will depend on API but shouldn't crash
+        mock_client = AsyncMock()
+        mock_client.get_article.return_value = None
+        mock_downloader = AsyncMock()
+        mock_downloader.get_fulltext.return_value = FulltextResult(
+            pmid="12345678",
+            error="No PDF links found for this article",
+        )
+        mock_downloader.close = AsyncMock()
+
+        with (
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
+                return_value=mock_client,
+            ),
+            patch(
+                "pubmed_search.infrastructure.sources.fulltext_download.FulltextDownloader",
+                return_value=mock_downloader,
+            ),
+        ):
+            result = await tools["get_fulltext"](identifier="12345678")
+
+        mock_client.get_article.assert_awaited_once_with("MED", "12345678", result_type="core")
+        mock_downloader.get_fulltext.assert_awaited_once()
+        assert mock_downloader.get_fulltext.await_args.kwargs["pmid"] == "12345678"
         assert isinstance(result, str)
 
     @pytest.mark.asyncio
@@ -448,6 +476,8 @@ class TestGetFulltext:
             },
             "oa_locations": [],
         }
+        mock_core = AsyncMock()
+        mock_core.search.return_value = {"results": []}
         mock_downloader = AsyncMock()
         mock_downloader.get_fulltext.return_value = FulltextResult(
             doi="10.1001/jamanetworkopen.2026.1515",
@@ -465,6 +495,10 @@ class TestGetFulltext:
             patch(
                 "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_unpaywall_client",
                 return_value=mock_unpaywall,
+            ),
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_core_client",
+                return_value=mock_core,
             ),
             patch(
                 "pubmed_search.infrastructure.sources.fulltext_download.FulltextDownloader",

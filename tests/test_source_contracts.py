@@ -39,6 +39,7 @@ async def test_gather_source_adapter_calls_soft_times_out_straggler() -> None:
     assert results[0].items == ["ok"]
     assert results[1].status == "error"
     assert results[1].errors[0].kind == "timeout"
+    assert results[1].errors[0].retryable is True
     assert "0.01s" in results[1].errors[0].message
 
 

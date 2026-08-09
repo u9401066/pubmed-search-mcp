@@ -36,6 +36,16 @@ ARXIV_ATOM_RESPONSE = """<?xml version='1.0' encoding='UTF-8'?>
 class TestArXivClient:
     """Tests for arXiv API client."""
 
+    async def test_official_request_interval_and_single_connection_contract(self):
+        client = ArXivClient(timeout=30.0)
+        try:
+            policy = client._build_execution_policy()
+            assert client._min_interval == 3.0
+            assert policy.concurrency_limit == 1
+            assert policy.concurrency_name == "source:preprints:arxiv"
+        finally:
+            await client.close()
+
     async def test_arxiv_search_basic(self):
         """Test basic arXiv search."""
         client = ArXivClient(timeout=30.0)

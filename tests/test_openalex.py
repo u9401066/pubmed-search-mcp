@@ -162,7 +162,7 @@ class TestSearch:
         mock_req.return_value = {"results": []}
         await client.search("test", limit=500)
         url = mock_req.call_args[0][0]
-        assert "per_page=200" in url
+        assert "per_page=100" in url
 
     @patch.object(OpenAlexClient, "_make_request")
     async def test_returns_empty_on_none(self, mock_req, client):

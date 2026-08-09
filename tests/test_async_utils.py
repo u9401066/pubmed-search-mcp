@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from types import SimpleNamespace
 
 import pytest
 
@@ -59,6 +60,27 @@ class TestRateLimiter:
         # Wait a bit for replenish
         await asyncio.sleep(0.15)
         await rl.acquire()  # Should succeed
+
+    @pytest.mark.asyncio
+    async def test_waited_token_time_is_not_counted_twice(self, monkeypatch):
+        """A 1-per-3s limiter must not emit pairs at t=3, t=6, ... ."""
+        from pubmed_search.shared import async_utils
+
+        clock = [0.0]
+
+        async def advance(delay: float) -> None:
+            clock[0] += delay
+
+        monkeypatch.setattr(async_utils, "time", SimpleNamespace(monotonic=lambda: clock[0]))
+        monkeypatch.setattr(async_utils, "asyncio", SimpleNamespace(sleep=advance))
+        limiter = RateLimiter(rate=1.0, per=3.0)
+        acquired_at: list[float] = []
+
+        for _ in range(5):
+            await limiter.acquire()
+            acquired_at.append(clock[0])
+
+        assert acquired_at == [0.0, 3.0, 6.0, 9.0, 12.0]
 
 
 class TestGetRateLimiter:
@@ -425,6 +447,25 @@ class TestSharedUpstreamBudget:
 
         assert faster is slow
         assert slow.per == 5.0, "a client with an API key must not lift the limit for everyone"
+
+    async def test_transport_kernel_cannot_raise_an_existing_shared_budget(self):
+        kernel = get_transport_kernel()
+        slow = kernel._resolve_rate_limiter(
+            RequestExecutionPolicy(
+                service_name="kernel-shared-budget",
+                rate_limit=RateLimitPolicy(name="kernel-shared-budget", rate=1.0, per=5.0),
+            )
+        )
+        faster = kernel._resolve_rate_limiter(
+            RequestExecutionPolicy(
+                service_name="kernel-shared-budget",
+                rate_limit=RateLimitPolicy(name="kernel-shared-budget", rate=1.0, per=0.1),
+            )
+        )
+
+        assert slow is not None
+        assert faster is slow
+        assert slow.per == 5.0
 
     async def test_primitives_are_not_shared_across_event_loops(self):
         first = get_rate_limiter("loop-scope-test", rate=1.0, per=1.0)
