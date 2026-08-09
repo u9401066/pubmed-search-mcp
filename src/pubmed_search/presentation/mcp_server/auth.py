@@ -25,6 +25,17 @@ logger = logging.getLogger(__name__)
 DEFAULT_ISSUER_URL = "https://pubmed-search-mcp.local"
 
 
+def _resource_origin(resource_url: AnyHttpUrl) -> str:
+    """Return the network origin advertised by a public resource URL."""
+    host = str(resource_url.host or "")
+    if ":" in host and not host.startswith("["):
+        host = f"[{host}]"
+    default_port = 443 if resource_url.scheme == "https" else 80
+    port = resource_url.port
+    port_suffix = f":{port}" if port is not None and port != default_port else ""
+    return f"{resource_url.scheme}://{host}{port_suffix}"
+
+
 def build_auth(settings: AppSettings) -> tuple[StaticTokenVerifier | None, AuthSettings | None]:
     """Build the verifier and auth settings for the configured tokens.
 
@@ -40,12 +51,16 @@ def build_auth(settings: AppSettings) -> tuple[StaticTokenVerifier | None, AuthS
     if not principals:
         return None, None
 
-    issuer = settings.auth_issuer_url.strip() or DEFAULT_ISSUER_URL
+    resource_server_url_raw = settings.auth_resource_server_url.strip()
+    resource_server_url = AnyHttpUrl(resource_server_url_raw) if resource_server_url_raw else None
+    issuer = settings.auth_issuer_url.strip()
+    if not issuer:
+        issuer = _resource_origin(resource_server_url) if resource_server_url is not None else DEFAULT_ISSUER_URL
     return (
         StaticTokenVerifier(principals),
         AuthSettings(
             issuer_url=AnyHttpUrl(issuer),
-            resource_server_url=None,
+            resource_server_url=resource_server_url,
             required_scopes=[DEFAULT_SCOPE],
         ),
     )

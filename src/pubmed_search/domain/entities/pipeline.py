@@ -14,11 +14,14 @@ Persistence entities:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Literal
 
+from pubmed_search.shared.datetime_utils import parse_iso8601_datetime
+
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from pubmed_search.domain.entities.article import UnifiedArticle
 
 # Valid pipeline actions
@@ -187,8 +190,8 @@ class PipelineMeta:
             tags=data.get("tags", []),
             config_hash=data.get("config_hash", ""),
             step_count=data.get("step_count", 0),
-            created=datetime.fromisoformat(data["created"]) if data.get("created") else None,
-            updated=datetime.fromisoformat(data["updated"]) if data.get("updated") else None,
+            created=parse_iso8601_datetime(data["created"]) if data.get("created") else None,
+            updated=parse_iso8601_datetime(data["updated"]) if data.get("updated") else None,
             run_count=data.get("run_count", 0),
         )
 
@@ -231,8 +234,8 @@ class PipelineRun:
         return cls(
             run_id=data.get("run_id", ""),
             pipeline_name=data.get("pipeline_name", ""),
-            started=datetime.fromisoformat(data["started"]) if data.get("started") else None,
-            finished=datetime.fromisoformat(data["finished"]) if data.get("finished") else None,
+            started=parse_iso8601_datetime(data["started"]) if data.get("started") else None,
+            finished=parse_iso8601_datetime(data["finished"]) if data.get("finished") else None,
             status=data.get("status", "success"),
             article_count=data.get("article_count", 0),
             pmids=data.get("pmids", []),
@@ -283,8 +286,8 @@ class ScheduleEntry:
             diff_mode=data.get("diff_mode", True),
             notify=data.get("notify", True),
             timezone=data.get("timezone", "UTC"),
-            next_run=datetime.fromisoformat(data["next_run"]) if data.get("next_run") else None,
-            last_run=datetime.fromisoformat(data["last_run"]) if data.get("last_run") else None,
+            next_run=parse_iso8601_datetime(data["next_run"]) if data.get("next_run") else None,
+            last_run=parse_iso8601_datetime(data["last_run"]) if data.get("last_run") else None,
             last_status=data.get("last_status", "scheduled"),
             last_error=data.get("last_error"),
         )

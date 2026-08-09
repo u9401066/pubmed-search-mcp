@@ -18,6 +18,7 @@ from pubmed_search.infrastructure.sources.openurl import (
     get_openurl_config,
     list_presets,
 )
+from pubmed_search.shared.tenancy import current_tenant
 
 if TYPE_CHECKING:
     from mcp.server.mcpserver import MCPServer
@@ -44,6 +45,11 @@ def register_openurl_tools(mcp: MCPServer) -> None:
 
         This tool configures OpenURL link resolver integration, allowing you to
         access paywalled articles through your institution's library subscription.
+
+        Authenticated service callers may call this tool with no configuration
+        arguments to inspect the operator-installed configuration, but cannot
+        mutate process-global OpenURL settings. Configure those at deployment
+        time or from a trusted local server instead.
 
         ═══════════════════════════════════════════════════════════════════════════════
         HOW IT WORKS:
@@ -101,6 +107,14 @@ def register_openurl_tools(mcp: MCPServer) -> None:
             Configuration status message
         """
         try:
+            mutates_global_config = not enable or bool(preset) or bool(resolver_url)
+            if current_tenant().is_authenticated and mutates_global_config:
+                return (
+                    "❌ Authenticated service callers cannot change process-global institutional access settings.\n\n"
+                    "Call configure_institutional_access() without arguments to inspect the current configuration, "
+                    "or ask the server operator to configure OpenURL for the deployment."
+                )
+
             if not enable:
                 configure_openurl(enabled=False)
                 return "🔒 Institutional access disabled. Only open access links will be shown."

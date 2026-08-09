@@ -237,6 +237,17 @@ class SourceRegistry:
                 available_sources=available_sources,
             )
 
+        primary_sources = [
+            source
+            for source in resolved
+            if (definition := self.get(source)) is not None and definition.supports_primary_search
+        ]
+        if not primary_sources:
+            raise SourceSelectionError(
+                "At least one primary search source is required; enrichment-only sources cannot run a search",
+                available_sources=available_sources,
+            )
+
         return SourceSelection(
             mode=mode,
             sources=tuple(resolved),

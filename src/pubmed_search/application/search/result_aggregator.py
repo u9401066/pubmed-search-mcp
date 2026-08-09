@@ -41,6 +41,7 @@ from typing import TYPE_CHECKING, Any, cast
 from pubmed_search.shared.article_identity import (
     canonical_article_key,
     normalize_article_doi,
+    normalize_article_identifier,
     normalize_article_title,
 )
 
@@ -300,6 +301,7 @@ class AggregationStats:
     by_source: dict[str, int] = field(default_factory=dict)
     dedup_by_doi: int = 0
     dedup_by_pmid: int = 0
+    dedup_by_identifier: int = 0
     dedup_by_title: int = 0
 
     def to_dict(self) -> dict[str, Any]:
@@ -312,6 +314,7 @@ class AggregationStats:
             "by_source": self.by_source,
             "dedup_by_doi": self.dedup_by_doi,
             "dedup_by_pmid": self.dedup_by_pmid,
+            "dedup_by_identifier": self.dedup_by_identifier,
             "dedup_by_title": self.dedup_by_title,
         }
 
@@ -658,6 +661,7 @@ class ResultAggregator:
         # Build indexes and union
         doi_to_idx: dict[str, int] = {}
         pmid_to_idx: dict[str, int] = {}
+        identifier_to_idx: dict[tuple[str, str], int] = {}
         title_to_idx: dict[str, int] = {}
 
         min_title_len = self._config.title_min_length
@@ -687,6 +691,26 @@ class ResultAggregator:
                         stats.dedup_by_pmid += 1
                 else:
                     pmid_to_idx[article.pmid] = i
+
+            # Provider identifiers are strong identities too.  Indexing them
+            # prevents records carrying OpenAlex/S2/CORE/arXiv/PMC IDs from
+            # being excluded from both identifier and title deduplication.
+            for attr, kind in (
+                ("pmc", "pmc"),
+                ("openalex_id", "openalex"),
+                ("s2_id", "s2"),
+                ("core_id", "core"),
+                ("arxiv_id", "arxiv"),
+            ):
+                identifier = normalize_article_identifier(kind, getattr(article, attr, None))
+                if not identifier:
+                    continue
+                key = (kind, identifier)
+                if key in identifier_to_idx:
+                    if uf.union(i, identifier_to_idx[key]):
+                        stats.dedup_by_identifier += 1
+                else:
+                    identifier_to_idx[key] = i
 
             # Title matching (if enabled)
             if use_title and article.title and not self._has_strong_identifier(article):

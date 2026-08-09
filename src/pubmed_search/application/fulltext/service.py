@@ -399,7 +399,7 @@ class FulltextService:
 
             if not result.fulltext_content and extended_result.text_content:
                 result.raw_fulltext_content = extended_result.text_content
-                extracted_text = self._truncate_extracted_text(extended_result.text_content)
+                extracted_text = self.truncate_extracted_text(extended_result.text_content)
                 result.fulltext_content = extracted_text
                 result.content_sections = [{"title": "Extracted PDF Text", "content": extracted_text}]
                 if not result.title and extended_result.title:
@@ -482,7 +482,8 @@ class FulltextService:
         return deduped
 
     @staticmethod
-    def _truncate_extracted_text(text: str, max_chars: int = 10000) -> str:
+    def truncate_extracted_text(text: str, max_chars: int = 10000) -> str:
+        """Bound extracted PDF text for inline service responses."""
         if len(text) <= max_chars:
             return text
         truncated_count = len(text) - max_chars

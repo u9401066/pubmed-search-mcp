@@ -246,7 +246,7 @@ extra-index-url = ["https://your-private-pypi.com/simple"]
 | 安裝開發依賴 | `uv add --dev package` | `pip install package` |
 | 安裝全部 | `uv sync` | `pip install -r requirements.txt` |
 | 更新 lock | `uv lock` | `pip-compile` |
-| 執行命令 | `uv run pytest` (自動 -n auto) | `pytest` |
+| 執行命令 | `uv run pytest`（預設單 process + timeout） | `pytest` |
 | 查看依賴 | `uv pip list` | `pip list` |
 
 ---

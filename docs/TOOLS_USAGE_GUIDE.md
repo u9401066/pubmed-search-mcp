@@ -23,7 +23,6 @@ Capability-first guide for using the 45-tool PubMed Search MCP surface without t
 | Full text and figures | `get_fulltext`, `get_text_mined_terms`, `get_article_figures` | The user needs article body text, evidence sections, entities, captions, or image URLs. |
 | External biomedical data | `search_gene`, `get_gene_details`, `search_compound`, `get_compound_details`, `search_clinvar` | The research question moves from papers into NCBI gene, compound, or clinical variant data. |
 | Evaluation and research evolution | `get_citation_metrics`, `build_research_chronicle`, `read_research_chronicle` | The user asks what matters, what changed over time, or how fields compare. |
-| Research chronicle | `build_research_chronicle`, `read_research_chronicle` | The user wants a persistent, versioned, evidence-backed research narrative they can revisit and diff. |
 | Persistence and sessions | `read_session`, `get_session_pmids`, `get_cached_article`, `get_session_summary`, pipeline tools | The user wants to resume, repeat, audit, schedule, or save a search workflow. |
 | Export and local notes | `prepare_export`, `save_literature_notes` | The user wants Zotero/EndNote/BibTeX files or local Markdown/wiki notes. |
 
@@ -116,6 +115,13 @@ Each chronicle entry carries a one-sentence claim with inline citations, its sup
 
 Use this path for `read_session`, `get_session_pmids`, `get_cached_article`, `get_session_summary`, `get_session_log`, `manage_pipeline`, `save_pipeline`, `list_pipelines`, `load_pipeline`, `delete_pipeline`, `get_pipeline_history`, and `schedule_pipeline`.
 
+Local and service capabilities are intentionally different. A trusted local
+caller may use workspace scope, `file:` pipeline sources, and the in-process
+scheduler. An authenticated service caller can only read saved pipelines from
+its tenant-derived store; process-wide workspace/file reads are blocked, and
+the service Compose profile disables scheduling unless an operator supplies a
+single external leader/lease.
+
 ### Institutional Access
 
 ![Institutional access workflow](images/institutional-access-workflow.svg)
@@ -203,16 +209,20 @@ Supported note formats:
 | --- | --- | --- | --- |
 | `wiki` | `[[stable-id|title]]` | default guided literature note | Foam, Obsidian-style, and general wiki workflows |
 | `foam` | `[[stable-id|title]]` | same compatible profile as `wiki` | existing Foam-specific users |
-| `markdown` | `[title](note.md)` | same guided sections | plain Markdown repositories |
+| `markdown` | `` `[title](note.md)` `` | same guided sections | plain Markdown repositories |
 | `medpaper` | `[[citation_key|title]]` | per-reference directory containing `<citation_key>.md` plus `metadata.json` | MedPaper-style or Zotero Keeper-compatible reference libraries |
 
-Directory resolution:
+Local-mode directory resolution:
 
 1. `output_dir`, if provided
 2. `PUBMED_NOTES_DIR`
 3. `PUBMED_WORKSPACE_DIR/references`
 4. `PUBMED_DATA_DIR/references`
 5. `~/.pubmed-search-mcp/references`
+
+Authenticated service callers do not participate in that host-path resolution.
+They cannot supply `output_dir` or `template_file`; notes use a built-in format
+and stay below the current principal's isolated `references/` directory.
 
 ## Good Markdown Note Shape
 
@@ -267,7 +277,7 @@ Keep verified metadata machine-readable in frontmatter and sidecars. Keep interp
 
 ## Custom Templates
 
-Use `template_file` when a user has a house style:
+In trusted local mode, use `template_file` when a user has a house style:
 
 ```python
 save_literature_notes(
@@ -278,6 +288,9 @@ save_literature_notes(
 ```
 
 Available placeholders include `{title}`, `{pmid}`, `{doi}`, `{pmc_id}`, `{journal}`, `{journal_abbrev}`, `{year}`, `{volume}`, `{issue}`, `{pages}`, `{authors}`, `{abstract}`, `{citation_key}`, `{reference_id}`, `{note_format}`, `{created}`, `{pubmed_url}`, `{doi_url}`, `{citation}`, `{keywords}`, `{mesh_terms}`, and `{csl_json}`.
+
+For an authenticated service, choose one of the built-in note formats instead;
+reading an arbitrary template from the server filesystem is rejected.
 
 ## Pipeline And Packaged Agent References
 

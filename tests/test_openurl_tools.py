@@ -15,6 +15,7 @@ from pubmed_search.presentation.mcp_server.tools.openurl import (
     _test_resolver_url,
     register_openurl_tools,
 )
+from pubmed_search.shared.tenancy import TenantIdentity, bind_tenant
 
 
 def _capture_tools(mcp):
@@ -155,6 +156,47 @@ class TestConfigureInstitutionalAccess:
         ):
             result = tools["configure_institutional_access"]()
         assert "configuration" in result.lower() or "Status" in result
+
+    @pytest.mark.parametrize(
+        "arguments",
+        [
+            {"enable": False},
+            {"preset": "ntu"},
+            {"resolver_url": "https://library.example/openurl"},
+        ],
+    )
+    async def test_authenticated_service_cannot_mutate_process_global_config(self, tools, arguments):
+        identity = TenantIdentity.for_principal("remote-team", source="auth")
+
+        with (
+            patch("pubmed_search.presentation.mcp_server.tools.openurl.configure_openurl") as configure,
+            bind_tenant(identity),
+        ):
+            result = tools["configure_institutional_access"](**arguments)
+
+        assert "cannot change process-global" in result
+        configure.assert_not_called()
+
+    async def test_authenticated_service_may_read_current_config(self, tools):
+        identity = TenantIdentity.for_principal("remote-team", source="auth")
+        mock_config = MagicMock(enabled=True, resolver_base="https://operator.example/openurl", preset=None)
+
+        with (
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.openurl.get_openurl_config",
+                return_value=mock_config,
+            ),
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.openurl.list_presets",
+                return_value={"ntu": "https://ntu.example/openurl"},
+            ),
+            patch("pubmed_search.presentation.mcp_server.tools.openurl.configure_openurl") as configure,
+            bind_tenant(identity),
+        ):
+            result = tools["configure_institutional_access"]()
+
+        assert "https://operator.example/openurl" in result
+        configure.assert_not_called()
 
     async def test_exception(self, tools):
         with patch(

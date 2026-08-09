@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
+from pubmed_search.application.session.manager import SessionManager
 from pubmed_search.application.session.registry import TENANT_DIR_NAME, SessionManagerRegistry
 from pubmed_search.infrastructure.auth import (
     StaticTokenVerifier,
@@ -23,8 +27,10 @@ from pubmed_search.presentation.mcp_server.tools import _common
 from pubmed_search.shared.async_utils import tenant_slot
 from pubmed_search.shared.settings import AppSettings
 from pubmed_search.shared.tenancy import (
+    ANONYMOUS_HTTP_TENANT,
     DEFAULT_TENANT,
     DEFAULT_TENANT_ID,
+    LOCAL_HTTP_TENANT,
     TenantIdentity,
     bind_tenant,
     current_tenant,
@@ -76,6 +82,27 @@ class TestTenantIdentity:
     def test_normalization_is_idempotent(self):
         once = normalize_tenant_id("agent-alpha")
         assert normalize_tenant_id(once) == once
+
+    def test_raw_principal_cannot_forge_an_already_normalized_id(self, tmp_path):
+        first = TenantIdentity.for_principal("a", source="auth")
+        forged_text = str(first.tenant_id)
+        forged = TenantIdentity.for_principal(forged_text, source="auth")
+        registry = SessionManagerRegistry(tmp_path, factory=FakeSessionManager)
+        first_manager = registry.for_tenant(first.tenant_id)
+        forged_manager = registry.for_tenant(forged.tenant_id)
+
+        assert forged.tenant_id != first.tenant_id
+        assert forged_manager is not first_manager
+        assert forged_manager.data_dir != first_manager.data_dir
+
+    @pytest.mark.parametrize("principal", [DEFAULT_TENANT_ID, "", "   "])
+    def test_authenticated_principal_cannot_enter_local_default_tenant(self, tmp_path, principal):
+        identity = TenantIdentity.for_principal(principal, source="auth")
+        registry = SessionManagerRegistry(tmp_path, factory=FakeSessionManager)
+
+        assert identity.tenant_id != DEFAULT_TENANT_ID
+        assert identity.is_default is False
+        assert registry.for_tenant(identity.tenant_id) is not registry.for_tenant(DEFAULT_TENANT_ID)
 
     def test_distinct_principals_never_collide_after_sanitization(self):
         # Both sanitize to the same slug, so only the digest keeps them apart.
@@ -160,6 +187,30 @@ class TestSessionManagerRegistry:
         assert first is not other
         assert len(registry.known_tenants()) == 2
 
+    def test_durable_context_manager_is_memoized_and_never_returns_none(self, tmp_path):
+        registry = SessionManagerRegistry(tmp_path, factory=FakeSessionManager)
+
+        with bind_tenant(TenantIdentity.for_principal("agent-a", source="auth")):
+            first = registry.for_tenant()
+            second = registry.for_tenant()
+
+        assert first is second
+        assert first is not None
+        assert len(registry.known_tenants()) == 1
+
+    def test_anonymous_request_manager_is_scoped_and_never_cached(self, tmp_path):
+        registry = SessionManagerRegistry(tmp_path, factory=FakeSessionManager)
+
+        with bind_tenant(ANONYMOUS_HTTP_TENANT), registry.bind_request(ANONYMOUS_HTTP_TENANT) as scoped:
+            assert registry.for_tenant() is scoped
+            assert registry.for_tenant() is scoped
+
+        with bind_tenant(ANONYMOUS_HTTP_TENANT), registry.bind_request(ANONYMOUS_HTTP_TENANT) as next_scope:
+            assert next_scope is not scoped
+
+        assert registry.known_tenants() == []
+        assert not (tmp_path / TENANT_DIR_NAME).exists()
+
     def test_resolves_from_bound_context_when_no_argument(self, tmp_path):
         registry = SessionManagerRegistry(tmp_path, factory=FakeSessionManager)
 
@@ -180,6 +231,54 @@ class TestSessionManagerRegistry:
         stats = registry.stats()
         assert stats["active_tenants"] == 1
         assert stats["data_dir"] == str(tmp_path)
+
+    def test_default_manager_is_reused_without_invoking_factory(self, tmp_path):
+        default_manager = SessionManager(data_dir=str(tmp_path))
+        factory_calls: list[str | None] = []
+
+        def factory(path: str | None) -> SessionManager:
+            factory_calls.append(path)
+            return SessionManager(data_dir=path)
+
+        registry = SessionManagerRegistry(
+            tmp_path,
+            factory=factory,
+            default_manager=default_manager,
+        )
+
+        assert registry.for_tenant(DEFAULT_TENANT_ID) is default_manager
+        assert registry.for_tenant(DEFAULT_TENANT_ID) is default_manager
+        assert factory_calls == []
+
+    def test_concurrent_factory_and_stats_snapshots_are_consistent(self, tmp_path):
+        factory_calls = 0
+        factory_lock = threading.Lock()
+        registry_ref: SessionManagerRegistry | None = None
+
+        def factory(path: str | None) -> SessionManager:
+            nonlocal factory_calls
+            with factory_lock:
+                factory_calls += 1
+            assert registry_ref is not None
+            snapshot = registry_ref.stats()
+            tenants = snapshot["tenants"]
+            assert isinstance(tenants, list)
+            assert snapshot["active_tenants"] == len(tenants)
+            return SessionManager(data_dir=path)
+
+        registry = SessionManagerRegistry(tmp_path, factory=factory)
+        registry_ref = registry
+
+        with ThreadPoolExecutor(max_workers=16) as executor:
+            managers = list(executor.map(lambda _index: registry.for_tenant("shared-agent"), range(64)))
+
+        assert all(manager is managers[0] for manager in managers)
+        assert factory_calls == 1
+        snapshot = registry.stats()
+        tenants = snapshot["tenants"]
+        assert isinstance(tenants, list)
+        assert snapshot["active_tenants"] == 1
+        assert snapshot["active_tenants"] == len(tenants)
 
 
 # ── Tenant-routed session access ────────────────────────────────────────────
@@ -314,6 +413,17 @@ class TestStaticTokenAuth:
         assert auth_settings is not None
         assert "mcp.example.com" in str(auth_settings.issuer_url)
 
+    def test_build_auth_derives_issuer_from_public_resource_origin(self):
+        _verifier, auth_settings = build_auth(
+            make_settings(
+                PUBMED_AUTH_TOKENS="team-a:secret",
+                PUBMED_AUTH_RESOURCE_SERVER_URL="https://mcp.example.com:8443/mcp",
+            )
+        )
+
+        assert auth_settings is not None
+        assert str(auth_settings.issuer_url) == "https://mcp.example.com:8443/"
+
 
 # ── Tenant resolution from a request ────────────────────────────────────────
 
@@ -336,7 +446,7 @@ class TestResolveTenant:
             fake_request_context({"mcp-session-id": "sess-123"}),
             isolation_enabled=False,
         )
-        assert identity == DEFAULT_TENANT
+        assert identity == ANONYMOUS_HTTP_TENANT
 
     def test_authenticated_principal_wins_over_transport(self, monkeypatch):
         monkeypatch.setattr(
@@ -349,7 +459,21 @@ class TestResolveTenant:
         assert identity.principal == "team-a"
 
     def test_tolerates_transports_without_headers(self):
-        assert resolve_tenant(SimpleNamespace(method="ping", request=object())) == DEFAULT_TENANT
+        assert resolve_tenant(SimpleNamespace(method="ping", request=object())) == ANONYMOUS_HTTP_TENANT
+
+    def test_modern_http_without_session_header_is_non_durable(self):
+        identity = resolve_tenant(fake_request_context({}))
+
+        assert identity == ANONYMOUS_HTTP_TENANT
+        assert identity.source == "anonymous_http"
+        assert identity.owns_durable_storage is False
+
+    def test_trusted_local_http_maps_to_durable_default_tenant(self):
+        identity = resolve_tenant(fake_request_context({}), trusted_local_http=True)
+
+        assert identity == LOCAL_HTTP_TENANT
+        assert identity.source == "local_http"
+        assert identity.owns_durable_storage is True
 
 
 class TestTenancyMiddleware:
@@ -381,6 +505,39 @@ class TestTenancyMiddleware:
 
         assert current_tenant_id() == DEFAULT_TENANT_ID
 
+    async def test_anonymous_modern_http_gets_one_fresh_manager_per_request(self, tmp_path):
+        registry = SessionManagerRegistry(tmp_path, factory=FakeSessionManager)
+        middleware = build_tenancy_middleware(registry=registry)
+        seen: list[object] = []
+
+        async def call_next(_ctx: object) -> str:
+            first = registry.for_tenant()
+            assert registry.for_tenant() is first
+            seen.append(first)
+            return "ok"
+
+        await middleware(fake_request_context({}), call_next)
+        await middleware(fake_request_context({}), call_next)
+
+        assert seen[0] is not seen[1]
+        assert registry.known_tenants() == []
+
+    async def test_trusted_local_http_reuses_durable_default_manager(self, tmp_path):
+        registry = SessionManagerRegistry(tmp_path, factory=FakeSessionManager)
+        middleware = build_tenancy_middleware(registry=registry, trusted_local_http=True)
+        seen: list[object] = []
+
+        async def call_next(_ctx: object) -> str:
+            seen.append(registry.for_tenant())
+            return "ok"
+
+        await middleware(fake_request_context({}), call_next)
+        await middleware(fake_request_context({}), call_next)
+
+        assert seen[0] is seen[1]
+        assert registry.known_tenants() == [DEFAULT_TENANT_ID]
+        assert registry.for_tenant(DEFAULT_TENANT_ID).data_dir == str(tmp_path)
+
 
 # ── Auxiliary HTTP API guard ────────────────────────────────────────────────
 
@@ -393,21 +550,23 @@ class TestAuxiliaryApiGuard:
         headers = {"authorization": authorization} if authorization else {}
         return SimpleNamespace(headers=headers)
 
-    async def test_open_deployment_allows_anonymous_default_tenant(self, tmp_path):
+    async def test_local_deployment_allows_durable_default_tenant(self, tmp_path):
         guard = AuxiliaryApiGuard(
             verifier=None,
             registry=SessionManagerRegistry(tmp_path, factory=FakeSessionManager),
+            mode="local",
         )
 
         outcome = await guard.authenticate(self._request())
         assert guard.enforcing is False
         assert outcome.allowed is True
-        assert outcome.identity == DEFAULT_TENANT
+        assert outcome.identity == LOCAL_HTTP_TENANT
 
     async def test_missing_token_is_rejected(self, tmp_path):
         guard = AuxiliaryApiGuard(
             verifier=StaticTokenVerifier(parse_static_tokens("team-a:secret")),
             registry=SessionManagerRegistry(tmp_path, factory=FakeSessionManager),
+            mode="service",
         )
 
         outcome = await guard.authenticate(self._request())
@@ -418,6 +577,7 @@ class TestAuxiliaryApiGuard:
         guard = AuxiliaryApiGuard(
             verifier=StaticTokenVerifier(parse_static_tokens("team-a:secret")),
             registry=SessionManagerRegistry(tmp_path, factory=FakeSessionManager),
+            mode="service",
         )
 
         outcome = await guard.authenticate(self._request("Bearer wrong"))
@@ -429,6 +589,7 @@ class TestAuxiliaryApiGuard:
         guard = AuxiliaryApiGuard(
             verifier=StaticTokenVerifier(parse_static_tokens("team-a:secret")),
             registry=registry,
+            mode="service",
         )
 
         outcome = await guard.authenticate(self._request("Bearer secret"))
@@ -442,6 +603,7 @@ class TestAuxiliaryApiGuard:
         guard = AuxiliaryApiGuard(
             verifier=None,
             registry=SessionManagerRegistry(tmp_path, factory=FakeSessionManager),
+            mode="service",
             require_auth=True,
         )
 
@@ -455,6 +617,7 @@ class TestAuxiliaryApiGuard:
         guard = AuxiliaryApiGuard(
             verifier=StaticTokenVerifier(parse_static_tokens("team-a:tok-a,team-b:tok-b")),
             registry=registry,
+            mode="service",
         )
 
         first = await guard.authenticate(self._request("Bearer tok-a"))
@@ -463,6 +626,19 @@ class TestAuxiliaryApiGuard:
         assert first.identity is not None
         assert second.identity is not None
         assert guard.session_manager_for(first.identity) is not guard.session_manager_for(second.identity)
+
+    async def test_service_mode_fails_closed_even_without_require_auth_flag(self, tmp_path):
+        guard = AuxiliaryApiGuard(
+            verifier=None,
+            registry=SessionManagerRegistry(tmp_path, factory=FakeSessionManager),
+            mode="service",
+        )
+
+        outcome = await guard.authenticate(self._request())
+
+        assert guard.enforcing is True
+        assert outcome.allowed is False
+        assert outcome.status_code == 503
 
 
 # ── Per-tenant fair share ───────────────────────────────────────────────────
@@ -518,10 +694,11 @@ class TestTenantDataDir:
         assert tenant_data_dir("/data") == "/data"
 
     def test_other_tenants_get_an_isolated_subdirectory(self):
-        scoped = tenant_data_dir("/data", "agent-a")
+        root = Path("data")
+        scoped = tenant_data_dir(root, "agent-a")
         assert scoped is not None
-        assert scoped.startswith(f"/data/{TENANT_DIR_NAME}/")
-        assert scoped != "/data"
+        assert Path(scoped).parent.name == TENANT_DIR_NAME
+        assert Path(scoped) != root
 
     def test_distinct_tenants_never_share_a_directory(self):
         assert tenant_data_dir("/data", "agent-a") != tenant_data_dir("/data", "agent-b")
@@ -537,10 +714,18 @@ class TestTenantDataDir:
 class TestChronicleStoreIsolation:
     """Chronicles are per-agent research artifacts and must not be shared."""
 
-    def test_store_root_follows_the_current_tenant(self, tmp_path, monkeypatch):
+    @pytest.fixture(autouse=True)
+    def _restore_registry(self):
+        previous_registry = _common.get_session_registry()
+        previous_manager = _common.get_session_manager()
+        yield
+        _common.set_session_manager(previous_manager)
+        _common.set_session_registry(previous_registry)
+
+    def test_store_root_follows_the_current_tenant(self, tmp_path):
         from pubmed_search.presentation.mcp_server.tools import chronicle
 
-        monkeypatch.setattr(chronicle, "load_settings", lambda: make_settings(PUBMED_DATA_DIR=str(tmp_path)))
+        _common.set_session_registry(SessionManagerRegistry(tmp_path, factory=FakeSessionManager))
 
         default_root = chronicle._chronicle_store().root_dir
         with bind_tenant(TenantIdentity.for_principal("agent-a", source="auth")):
@@ -550,11 +735,11 @@ class TestChronicleStoreIsolation:
 
         assert len({default_root, agent_a_root, agent_b_root}) == 3
 
-    def test_a_chronicle_saved_by_one_agent_is_invisible_to_another(self, tmp_path, monkeypatch):
+    def test_a_chronicle_saved_by_one_agent_is_invisible_to_another(self, tmp_path):
         from pubmed_search.domain.entities.chronicle import ChronicleSnapshot
         from pubmed_search.presentation.mcp_server.tools import chronicle
 
-        monkeypatch.setattr(chronicle, "load_settings", lambda: make_settings(PUBMED_DATA_DIR=str(tmp_path)))
+        _common.set_session_registry(SessionManagerRegistry(tmp_path, factory=FakeSessionManager))
         snapshot = ChronicleSnapshot(chronicle_id="shared-topic", topic="shared topic")
 
         with bind_tenant(TenantIdentity.for_principal("agent-a", source="auth")):
@@ -745,6 +930,7 @@ class TestTenantIdBoundaries:
         assert normalize_tenant_id("team/a") != normalize_tenant_id("team/b")
 
     def test_a_hostile_id_cannot_escape_the_storage_root(self):
-        resolved = tenant_data_dir("/data", "../../etc/passwd")
+        root = Path("data").resolve()
+        resolved = tenant_data_dir(root, "../../etc/passwd")
         assert resolved is not None
-        assert resolved.startswith("/data/")
+        assert Path(resolved).resolve().is_relative_to(root)

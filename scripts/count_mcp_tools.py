@@ -19,12 +19,17 @@ Notes:
 """
 
 import argparse
+import asyncio
 import io
 import json
 import re
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Any
+
+from mcp.server import MCPServer
+from mcp_types import Tool
 
 # Fix Windows cp950 encoding for emoji output
 if sys.stdout.encoding and sys.stdout.encoding.lower() not in ("utf-8", "utf8"):
@@ -37,16 +42,25 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.pubmed_search.presentation.mcp_server.server import create_server
 from src.pubmed_search.presentation.mcp_server.tool_registry import (
     TOOL_CATEGORIES,
-    validate_tool_registry,
 )
 
 
-def get_registered_tools(mcp) -> list[str]:
-    """取得所有已註冊的 MCP 工具名稱（透過 MCP 協議暴露的）"""
-    return sorted(mcp._tool_manager._tools.keys())
+async def _list_registered_tool_models(mcp: MCPServer[Any]) -> list[Tool]:
+    """透過 MCP SDK v2 公開 facade 取得工具模型。"""
+    return list(await mcp.list_tools())
 
 
-def get_tool_details(mcp) -> dict[str, dict]:
+def _registered_tool_models(mcp: MCPServer[Any]) -> list[Tool]:
+    """Bridge the async MCP v2 facade for this synchronous CLI."""
+    return asyncio.run(_list_registered_tool_models(mcp))
+
+
+def get_registered_tools(mcp: MCPServer[Any]) -> list[str]:
+    """取得所有已註冊的 MCP 工具名稱（透過 MCP 公開 tools/list facade）。"""
+    return sorted(tool.name for tool in _registered_tool_models(mcp))
+
+
+def get_tool_details(mcp: MCPServer[Any]) -> dict[str, dict[str, Any]]:
     """
     從 MCPServer runtime 取得每個工具的詳細資訊。
 
@@ -54,7 +68,8 @@ def get_tool_details(mcp) -> dict[str, dict]:
         dict: {tool_name: {"description": str, "parameters": list[str]}}
     """
     details = {}
-    for name, tool in mcp._tool_manager._tools.items():
+    for tool in _registered_tool_models(mcp):
+        name = tool.name
         # 取得描述（第一行或前 100 字元）
         desc = tool.description.strip() if tool.description else ""
         # 取得第一行作為簡短描述
@@ -62,10 +77,12 @@ def get_tool_details(mcp) -> dict[str, dict]:
         # 移除開頭的 emoji 和空格
         first_line = re.sub(r"^[^\w\s]+\s*", "", first_line)
 
+        input_schema = tool.input_schema or {}
+        properties = input_schema.get("properties", {})
         details[name] = {
             "description": first_line[:100] if len(first_line) > 100 else first_line,
             "full_description": desc,
-            "parameters": list(tool.parameters.keys()) if tool.parameters else [],
+            "parameters": list(properties) if isinstance(properties, dict) else [],
         }
     return details
 
@@ -80,7 +97,7 @@ def get_category_info() -> dict[str, dict]:
     return {cat: {"name": info["name"], "description": info["description"]} for cat, info in TOOL_CATEGORIES.items()}
 
 
-def count_tools(include_details: bool = False):
+def count_tools(include_details: bool = False) -> tuple[dict[str, Any], MCPServer[Any]]:
     """
     統計工具數量。
 
@@ -99,7 +116,10 @@ def count_tools(include_details: bool = False):
     tools = get_registered_tools(mcp)
     categories = get_tools_by_category()
     category_info = get_category_info()
-    validation = validate_tool_registry(mcp)
+    declared_tools = {name for category in TOOL_CATEGORIES.values() for name in category["tools"]}
+    registered_tools = set(tools)
+    missing = sorted(declared_tools - registered_tools)
+    extra = sorted(registered_tools - declared_tools)
 
     result = {
         "timestamp": datetime.now().isoformat(),
@@ -116,9 +136,9 @@ def count_tools(include_details: bool = False):
             for cat, t in categories.items()
         },
         "validation": {
-            "valid": validation["valid"],
-            "missing": validation["missing"],
-            "extra": validation["extra"],
+            "valid": not missing and not extra,
+            "missing": missing,
+            "extra": extra,
         },
     }
 
@@ -128,7 +148,7 @@ def count_tools(include_details: bool = False):
     return result, mcp
 
 
-def update_copilot_instructions(stats: dict, mcp) -> bool:
+def update_copilot_instructions(stats: dict, mcp: MCPServer[Any]) -> bool:
     """更新 copilot-instructions.md 中的工具數量和列表"""
     instructions_path = Path(__file__).parent.parent / ".github" / "copilot-instructions.md"
 
@@ -234,7 +254,7 @@ def generate_tool_categories_markdown(stats: dict, tool_details: dict) -> str:
     return "\n".join(lines)
 
 
-def update_tools_index(stats: dict, mcp) -> bool:
+def update_tools_index(stats: dict, mcp: MCPServer[Any]) -> bool:
     """更新 TOOLS_INDEX.md 中的工具數量和列表"""
     index_path = (
         Path(__file__).parent.parent / "src" / "pubmed_search" / "presentation" / "mcp_server" / "TOOLS_INDEX.md"
@@ -416,7 +436,7 @@ def update_all_readmes(stats: dict) -> int:
     return updated_count
 
 
-def update_instructions_py(stats: dict, mcp) -> bool:
+def update_instructions_py(stats: dict, mcp: MCPServer[Any]) -> bool:
     """
     更新 instructions.py 中的「所有可用工具」區塊。
 
@@ -482,7 +502,7 @@ def _generate_instructions_tool_list(stats: dict, tool_details: dict) -> str:
     return "\n".join(lines)
 
 
-def update_skill_tools_reference(stats: dict, mcp) -> bool:
+def update_skill_tools_reference(stats: dict, mcp: MCPServer[Any]) -> bool:
     """
     更新 .claude/skills/pubmed-mcp-tools-reference/SKILL.md。
 
@@ -619,7 +639,7 @@ def _generate_skill_tools_reference(stats: dict, tool_details: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="Count and document MCP tools (from MCPServer runtime)",
         epilog="Examples:\n"

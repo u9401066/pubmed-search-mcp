@@ -1,12 +1,57 @@
-# Progress (Updated: 2026-08-03)
+# Progress (Updated: 2026-08-10)
 
 ## Done
+
+### 2026-08-10: MCP v2 / Broker / Deployment Hardening
+- Synchronized the workspace to upstream v0.6.0 and verified the locked MCP
+  Python SDK and `mcp-types` are both 2.0.0.
+- Removed remaining production use of MCP private tool/middleware state and
+  replaced the stale initialize/session-based Copilot diagnostic with the
+  2026-07-28 modern request contract.
+- Split HTTP into trusted loopback `local` and fail-closed authenticated
+  `service` profiles; preserved cross-request local session state while keeping
+  service sessions, caches, exports, chronicles, and pipelines principal-scoped.
+- Added tenant-safe opaque exports, shared `PUBMED_DATA_DIR` injection, global
+  Host/Origin guards, trusted-proxy allowlists, and safe opt-in stdio auxiliary
+  HTTP behavior.
+- Hardened the local browser fetch broker against DNS rebinding, remote binds,
+  and published default tokens.
+- Made every public Copilot/ngrok path start authenticated service mode, kept
+  local Copilot/HTTPS helpers loopback-only, and aligned `/health` plus `/ready`
+  probes with deployment documentation.
+- Removed tenant-id normalization collisions (including forged `default` and
+  blank principals) and corrected token-bucket post-wait accounting that could
+  otherwise double an upstream request budget.
+- Corrected broker planning for explicit/deep/preprint sources, PubMed-only
+  relaxation, conservative provider quotas, normalized partial failures, and
+  provider-identifier deduplication.
+- Made session/cache/pipeline/chronicle/artifact/note persistence safe under MCP
+  v2 worker-thread execution with process locks, atomic publication, detached
+  snapshots, containment checks, and concurrent lost-update regressions.
+- Refreshed bilingual README/site/wiki/deployment diagrams, 45-tool capability
+  routing, source broker contracts, Compose profiles, Nginx, Copilot schema,
+  GitHub metadata/topics/labels, and release workflows.
+- Fixed generated handbook links so routed anchors stay valid and repository-
+  only files resolve to GitHub; cloud examples now build to an operator-owned
+  registry instead of referring to an unpublished project image.
+- Added real stdio/Streamable HTTP/fresh-wheel smoke tests plus local/service,
+  export, Host/Origin, browser-broker, rate, source-selection, and identity edge
+  regressions.
+- Restored the declared Python 3.10 contract with compatible task cleanup,
+  timeout handling, atomic publication, RFC 3339 `Z` parsing, and direct
+  compatibility dependencies; also stabilized the macOS auxiliary-HTTP probe.
+- Final local gates: `3762 passed, 22 skipped, 30 deselected` for the complete
+  non-integration suite; `28 passed, 2 skipped` for opt-in live providers;
+  Python 3.10's PR condition passed `3745 passed, 22 skipped, 47 deselected`;
+  `33 passed` for release transport/fresh-wheel smoke; `27 passed` for
+  documentation/site/wiki integrity; Ruff, format, mypy, async checker, and
+  browser QA all pass.
 
 ### 2026-08-03: v0.6.0 — SDK v2, Research Chronicle, Multi-Agent Service Mode
 - Migrated to MCP Python SDK v2 (`mcp>=2,<3`, protocol 2026-07-28); experimental tasks removed with the spec, transport keywords moved into `build_asgi_app()`.
 - Research Chronicle shipped as the single research-evolution entry point; `build_research_timeline` / `analyze_timeline_milestones` / `compare_timelines` retired into it (48 → 45 tools, 17 → 16 categories).
 - Multi-agent service mode: per-tenant sessions/cache/artifacts, bearer-token auth, per-tenant fair-share concurrency, `/ready`.
-- Security model: durable artifacts require an authenticated caller, because `mcp-session-id` is client-supplied and changes on reconnect. Ephemeral callers get in-memory sessions and never touch disk.
+- Security model at the v0.6.0 boundary: legacy `mcp-session-id` was correlation only, never identity. The 2026-08-09 modern profile supersedes it with authenticated service principals and an explicit durable loopback-local tenant; other HTTP callers never touch disk.
 - Cross-tenant leaks closed in chronicle, pipeline, and literature-note storage; `tenant-scoped-storage` pre-commit hook added so the class of bug cannot recur.
 - Upstream rate limiting consolidated to one shared budget per service; loop-scoped primitives re-keyed by loop object to stop stale-state reuse.
 - Verification: 3601 tests passing; 10 mutation regressions all caught; boundary tests for hostile tenant ids and rate-limiter budgets; protocol smoke tests for the tool surface and both HTTP transports.
@@ -134,17 +179,16 @@
 - ✅ docs/IMAGE_SEARCH_API.md 完整重寫
 
 ## Doing
-- v0.5.15 release: segmented commits on `master`, push, then tag/publish
+- v0.6.1 release lifecycle and post-release monitoring.
 
 ## Next
 
 | 優先級 | 項目 | 說明 |
 |:------:|------|------|
-| ⭐⭐⭐ | Watch v0.5.15 publish workflow | tag push / GitHub Actions / PyPI publish |
-| ⭐⭐⭐ | Session cache dedup cleanup | 評估 `ArticleCache` 與 `SessionManager.article_cache` 是否收斂成單一路徑 |
-| ⭐⭐⭐ | ARCHITECTURE.md 更新 | 仍顯示舊的目錄結構 |
-| ⭐⭐ | Algorithm innovation impl | BM25/RRF/PRF 等算法實作 |
-| ⭐⭐ | clinical_trials + preprints → async httpx | 仍用 sync httpx |
+| ⭐⭐⭐ | Distributed service state | 多 worker 前先導入 shared transactional store、distributed locks、object storage 與 scheduler leader election |
+| ⭐⭐ | Provider admission | 只有具不同 corpus、identifier 或 access path 且有 rate/provenance contract 的來源才加入 broker |
+| ⭐⭐ | Session cache dedup cleanup | 評估 `ArticleCache` 與 `SessionManager.article_cache` 是否收斂成單一路徑 |
+| ⭐⭐ | Algorithm innovation | 評估 BM25/RRF/PRF 等排序功能，不把無驗證 heuristics 混入目前 broker |
 
 ## Design Decisions Log
 

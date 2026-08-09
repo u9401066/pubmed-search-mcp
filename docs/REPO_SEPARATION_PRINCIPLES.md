@@ -82,8 +82,8 @@ raw input
 
 pipeline 已經是這個模式的第一個正式樣板：
 
-- [src/pubmed_search/application/pipeline/schema.py](src/pubmed_search/application/pipeline/schema.py) 處理 structural parsing
-- [src/pubmed_search/application/pipeline/validator.py](src/pubmed_search/application/pipeline/validator.py) 處理 semantic auto-fix
+- [src/pubmed_search/application/pipeline/schema.py](../src/pubmed_search/application/pipeline/schema.py) 處理 structural parsing
+- [src/pubmed_search/application/pipeline/validator.py](../src/pubmed_search/application/pipeline/validator.py) 處理 semantic auto-fix
 
 這個分離要被視為 repo pattern，不是 pipeline 特例。
 
@@ -145,11 +145,11 @@ request / context
 ### Policy vs Runtime Current Examples
 
 - Copilot hooks:
-  - [/.github/hooks/copilot-tool-policy.json](.github/hooks/copilot-tool-policy.json) 持有 policy
-  - [scripts/hooks/copilot/enforce-pipeline.ps1](scripts/hooks/copilot/enforce-pipeline.ps1) 與 [scripts/hooks/copilot/evaluate-results.ps1](scripts/hooks/copilot/evaluate-results.ps1) 執行 runtime side effects
+  - [.github/hooks/copilot-tool-policy.json](../.github/hooks/copilot-tool-policy.json) 持有 policy
+  - [scripts/hooks/copilot/enforce-pipeline.ps1](../scripts/hooks/copilot/enforce-pipeline.ps1) 與 [scripts/hooks/copilot/evaluate-results.ps1](../scripts/hooks/copilot/evaluate-results.ps1) 執行 runtime side effects
 - source selection:
-  - [src/pubmed_search/infrastructure/sources/registry.py](src/pubmed_search/infrastructure/sources/registry.py) 持有 source policy 與 gating metadata
-  - [src/pubmed_search/presentation/mcp_server/tools/unified.py](src/pubmed_search/presentation/mcp_server/tools/unified.py) 消費決策結果後才做實際 dispatch
+  - [src/pubmed_search/infrastructure/sources/registry.py](../src/pubmed_search/infrastructure/sources/registry.py) 持有 source policy 與 gating metadata
+  - [src/pubmed_search/presentation/mcp_server/tools/unified.py](../src/pubmed_search/presentation/mcp_server/tools/unified.py) 消費決策結果後才做實際 dispatch
 
 ### Policy vs Runtime Expected Extensions
 
@@ -205,17 +205,17 @@ MCP tool
 ### Tool vs Service Current Examples
 
 - facade pattern:
-  - [src/pubmed_search/presentation/mcp_server/session_tools.py](src/pubmed_search/presentation/mcp_server/session_tools.py) 的 `read_session`
-  - [src/pubmed_search/presentation/mcp_server/tools/pipeline_tools.py](src/pubmed_search/presentation/mcp_server/tools/pipeline_tools.py) 的 `manage_pipeline`
+  - [src/pubmed_search/presentation/mcp_server/session_tools.py](../src/pubmed_search/presentation/mcp_server/session_tools.py) 的 `read_session`
+  - [src/pubmed_search/presentation/mcp_server/tools/pipeline_tools.py](../src/pubmed_search/presentation/mcp_server/tools/pipeline_tools.py) 的 `manage_pipeline`
 - application service direction:
-  - [src/pubmed_search/application/pipeline/runner.py](src/pubmed_search/application/pipeline/runner.py)
-  - [src/pubmed_search/infrastructure/scheduling/pipeline_scheduler.py](src/pubmed_search/infrastructure/scheduling/pipeline_scheduler.py)
+  - [src/pubmed_search/application/pipeline/runner.py](../src/pubmed_search/application/pipeline/runner.py)
+  - [src/pubmed_search/infrastructure/scheduling/pipeline_scheduler.py](../src/pubmed_search/infrastructure/scheduling/pipeline_scheduler.py)
 
 ### Tool vs Service Next Target
 
 fulltext 是下一個應該明確落實這條分離線的地方。
 
-目標狀態已在 [docs/FULLTEXT_REGISTRY_REFACTOR.md](docs/FULLTEXT_REGISTRY_REFACTOR.md) 定義：
+目標狀態已在 [FULLTEXT_REGISTRY_REFACTOR.md](FULLTEXT_REGISTRY_REFACTOR.md) 定義：
 
 - `get_fulltext` tool 只保留 normalization / progress / formatting
 - orchestration 移入 FulltextService

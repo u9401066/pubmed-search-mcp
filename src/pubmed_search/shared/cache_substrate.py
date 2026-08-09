@@ -26,6 +26,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
+from pubmed_search.shared.datetime_utils import parse_iso8601_datetime
+
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
@@ -46,7 +48,7 @@ def _parse_datetime(value: str | None) -> datetime | None:
     if not value:
         return None
 
-    parsed = datetime.fromisoformat(value)
+    parsed = parse_iso8601_datetime(value)
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed
@@ -183,41 +185,53 @@ class MemoryCacheBackend(CacheBackend):
     def __init__(self, max_entries: int | None = None):
         self._entries: OrderedDict[str, StoredCacheEntry] = OrderedDict()
         self._max_entries = max_entries
+        self._lock = threading.RLock()
 
     def get_entry(self, key: str) -> StoredCacheEntry | None:
-        entry = self._entries.get(key)
-        if entry is None:
-            return None
-        self._entries.move_to_end(key)
-        return entry
+        with self._lock:
+            entry = self._entries.get(key)
+            if entry is None:
+                return None
+            self._entries.move_to_end(key)
+            return entry
 
     def set_entry(self, key: str, entry: StoredCacheEntry) -> int:
-        if key in self._entries:
-            del self._entries[key]
-        self._entries[key] = entry
+        with self._lock:
+            if key in self._entries:
+                del self._entries[key]
+            self._entries[key] = entry
 
-        evicted = 0
-        while self._max_entries is not None and len(self._entries) > self._max_entries:
-            self._entries.popitem(last=False)
-            evicted += 1
-        return evicted
+            evicted = 0
+            while self._max_entries is not None and len(self._entries) > self._max_entries:
+                self._entries.popitem(last=False)
+                evicted += 1
+            return evicted
+
+    def set_entries(self, entries: list[tuple[str, StoredCacheEntry]]) -> int:
+        """Store a batch without exposing its intermediate LRU states."""
+        with self._lock:
+            return super().set_entries(entries)
 
     def delete(self, key: str) -> bool:
-        if key not in self._entries:
-            return False
-        del self._entries[key]
-        return True
+        with self._lock:
+            if key not in self._entries:
+                return False
+            del self._entries[key]
+            return True
 
     def clear(self) -> int:
-        count = len(self._entries)
-        self._entries.clear()
-        return count
+        with self._lock:
+            count = len(self._entries)
+            self._entries.clear()
+            return count
 
     def keys(self) -> list[str]:
-        return list(self._entries.keys())
+        with self._lock:
+            return list(self._entries.keys())
 
     def items(self) -> list[tuple[str, StoredCacheEntry]]:
-        return list(self._entries.items())
+        with self._lock:
+            return list(self._entries.items())
 
 
 class JsonFileCacheBackend(CacheBackend):

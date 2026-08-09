@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="favicon-title favicon-desc">
+  <title id="favicon-title">PubMed Search MCP</title>
+  <desc id="favicon-desc">An open research book with a magnifying glass.</desc>
+  <rect width="64" height="64" rx="14" fill="#0b4f6c"/>
+  <path d="M13 17c8-2 14 0 19 5v27c-5-5-11-7-19-5V17Z" fill="#e8f4f8"/>
+  <path d="M51 17c-8-2-14 0-19 5v27c5-5 11-7 19-5V17Z" fill="#c7e7ef"/>
+  <circle cx="43" cy="37" r="8" fill="none" stroke="#f7b32b" stroke-width="4"/>
+  <path d="m49 43 7 7" fill="none" stroke="#f7b32b" stroke-linecap="round" stroke-width="4"/>
+</svg>

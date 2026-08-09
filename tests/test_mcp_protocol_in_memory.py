@@ -23,6 +23,7 @@ async def test_in_memory_protocol_lists_tools_resources_and_prompts():
         tool_result = await client.list_tools()
         unified_tool = next(tool for tool in tool_result.tools if tool.name == "unified_search")
         assert unified_tool.description
+        assert "experimentalTaskSupport" not in str(unified_tool.meta or {})
 
         analyze_result = await client.call_tool(
             "analyze_search_query",

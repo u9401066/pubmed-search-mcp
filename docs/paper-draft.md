@@ -21,9 +21,9 @@ through Agent-Assisted Multi-Source Literature Retrieval
 
 **Background**: Large Language Model (LLM) agents increasingly assist researchers in literature review tasks. However, current tools provide only static snapshots of search results, lacking the ability to reveal how research knowledge evolves over time. Understanding the temporal progression of scientific discoveries—from initial findings through controversies to consensus—is crucial for comprehensive literature reviews.
 
-**Objective**: We present PubMed-Search-MCP, an open-source Model Context Protocol (MCP) server that enables AI agents to perform multi-source biomedical literature searches with a novel research timeline exploration capability. The system automatically identifies research milestones, tracks knowledge evolution, and detects ongoing scientific controversies.
+**Objective**: We present PubMed-Search-MCP, an open-source Model Context Protocol (MCP) server that enables AI agents to perform multi-source biomedical literature searches with a versioned Research Chronicle. The system identifies research milestones, tracks knowledge evolution, and preserves evidence provenance across chronological and lineage projections.
 
-**Methods**: The system integrates six literature sources (PubMed, Europe PMC, CORE, OpenAlex, Semantic Scholar, CrossRef) through 35+ MCP tools. Key innovations include: (1) automatic research timeline construction with milestone detection, (2) controversy identification through claim extraction and comparison, (3) knowledge evolution tracking across publication years, and (4) session-aware contextual retrieval. We evaluate the system using [benchmark dataset] and [user study/case studies].
+**Methods**: The system exposes 45 MCP tools across eight user-facing capability families and brokers PubMed, Europe PMC, CORE, OpenAlex, Semantic Scholar, Crossref, preprint servers, and optional commercial indexes under explicit source contracts. Key innovations include: (1) versioned Research Chronicle construction with milestone detection, (2) controversy identification through claim extraction and comparison, (3) knowledge evolution tracking across publication years, and (4) session-aware contextual retrieval with tenant-safe provenance. We evaluate the system using [benchmark dataset] and [user study/case studies].
 
 **Results**: [TODO: 需要驗證實驗]
 - Timeline accuracy metrics
@@ -103,7 +103,7 @@ This temporal dimension of research—the **research timeline**—is crucial for
 ┌─────────────────────────────────────────────────────────────────────┐
 │                         PubMed-Search-MCP Server                    │
 ├─────────────────────────────────────────────────────────────────────┤
-│  Presentation: 35+ MCP Tools, 9 Prompts                             │
+│  Presentation: 45 MCP Tools / 8 Capability Families                 │
 ├─────────────────────────────────────────────────────────────────────┤
 │  Application Layer                                                   │
 │  ├── TimelineBuilder ⭐ (NEW)                                       │

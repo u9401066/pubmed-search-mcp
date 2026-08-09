@@ -3,7 +3,7 @@
 # Pipeline Mode Tutorial
 
 > Status: current API tutorial
-> Last updated: 2026-04-29
+> Last updated: 2026-08-09
 > Language: [English](pipeline-tutorial.md) | **繁體中文**
 
 這份文件只描述目前真的可用的 pipeline mode 行為，不重複 RFC 設計稿。重點是直接可執行、可保存、可排程、可查歷史。
@@ -17,6 +17,11 @@ Pipeline mode 有 3 種最常用入口：
 1. 直接把 YAML/JSON 丟給 `unified_search(..., pipeline="...")`
 2. 先用 `manage_pipeline` 或 `save_pipeline` 保存，再用 `saved:<name>` 執行
 3. 保存後交給 `schedule_pipeline` 或 `manage_pipeline(action="schedule")` 定期跑
+
+> **先選擇 runtime。** 可信任的本機 stdio/loopback caller 可使用 project workspace
+> scope、`file:` source 與 in-process scheduler。認證 service caller 只使用當前
+> principal 隔離的 saved-pipeline store：不存取 process-wide workspace，也不讀
+> `file:`。Service Compose 會停用 scheduler，直到維運者提供單一 external leader/lease。
 
 ### 最短可用範例: inline template
 
@@ -93,8 +98,9 @@ JSON 回應會包含 `summary`、`steps`、每個 step 的 `metadata`、以及 s
 | ---- | -------- |
 | 只想快速跑一次 | inline `unified_search(..., pipeline="...")` |
 | 想重複使用同一個搜尋策略 | `manage_pipeline(action="save")` |
-| 想看歷史 diff 或排程 | 先保存，再用 `saved:<name>` / `schedule_pipeline` |
-| 想從本機 YAML 檔載入再調整 | `load_pipeline(source="file:path/to/pipeline.yaml")` |
+| 想看歷史 diff 或本機排程 | 先保存，再用 `saved:<name>` / `schedule_pipeline` |
+| 可信任的本機 caller 想從 YAML 檔載入 | `load_pipeline(source="file:path/to/pipeline.yaml")` |
+| 認證 service caller 要重用 | 存入 tenant store，再用 `saved:<name>` |
 
 ## Template Pipeline 教學
 
@@ -377,9 +383,11 @@ template_params:
 
 `scope` 行為:
 
-- `workspace`: 存在專案底下 `.pubmed-search/pipelines/`
-- `global`: 存在使用者資料目錄 `~/.pubmed-search-mcp/pipelines/`
-- `auto`: 有 workspace 就存 workspace，否則 global
+- 本機 `workspace`：存在專案底下 `.pubmed-search/pipelines/`
+- 本機 `global`：存在使用者資料目錄 `~/.pubmed-search-mcp/pipelines/`
+- 本機 `auto`：有 workspace 就存 workspace，否則 global
+- 認證 service：tenant-derived store 刻意沒有 process-wide workspace root；
+  `auto` 會解析到該 principal 隔離的 data root，`workspace` 不可用
 
 ### `action="load"`
 
@@ -393,8 +401,9 @@ manage_pipeline(action="load", source="file:data/pipeline_examples/pico_remimazo
 
 - 已保存名稱
 - `saved:<name>`
-- `file:path/to/pipeline.yaml`
+- 僅本機的 `file:path/to/pipeline.yaml`
 
+認證 service caller 不能從 server host 讀取 `file:` path；請先以名稱存入 YAML。
 目前不承諾直接從 URL 載入。
 
 ### `action="delete"`
@@ -443,6 +452,10 @@ manage_pipeline(
 
 ### 排程
 
+下列範例需要已啟用 scheduler 的可信任本機 process。`docker-compose.service.yml`
+會停用 in-process scheduler；在 service 中存下 schedule metadata 不代表它會自動執行。
+啟用 recurring execution 前，請改用手動 run 或提供單一 external leader/lease。
+
 ```python
 schedule_pipeline(name="weekly_remimazolam", cron="0 9 * * 1")
 schedule_pipeline(name="monthly_crispr_review", cron="0 8 1 * *")
@@ -480,6 +493,7 @@ history 會顯示:
 
 - 目前沒有獨立的 `list_schedules()` MCP tool
 - 想要穩定追蹤 history / diff，請優先使用「已保存 pipeline」而不是臨時 inline pipeline
+- Service mode 保持單 process/單 replica，且其 Compose profile 不執行 scheduled pipelines
 
 ## 常見錯誤與 Auto-fix 行為
 
@@ -547,6 +561,7 @@ output:
 1. 想吃到 auto-fix、history、schedule，先保存再跑。
 2. Template pipeline 只在參數很簡單時 inline；要 review / 版本控管就存 YAML。
 3. 自訂 DAG 先從最小可跑版本開始，再逐步加 `merge`、`metrics`、`filter`。
-4. 需要團隊共享時用 `scope="workspace"`。
-5. 只想跨專案重用自己的搜尋習慣時用 `scope="global"`。
-6. Zotero Keeper 整合維持在 PubMed MCP core 外部。PubMed MCP 只負責產生 RIS/CSL/JSON/wiki notes；Zotero 匯入、duplicate policy、library-specific 行為交給 Zotero Keeper 或其他外部 client。
+4. 本機模式需要在可信任 repo 共用時，用 `scope="workspace"`。
+5. 本機模式只是自己跨專案重用時，用 `scope="global"`。
+6. 認證 service mode 省略 workspace/file paths，並從當前 tenant store 重用 named pipeline。
+7. Zotero Keeper 整合維持在 PubMed MCP core 外部。PubMed MCP 只負責產生 RIS/CSL/JSON/wiki notes；Zotero 匯入、duplicate policy、library-specific 行為交給 Zotero Keeper 或其他外部 client。

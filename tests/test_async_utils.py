@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from types import SimpleNamespace
 
 import pytest
 
@@ -60,6 +61,27 @@ class TestRateLimiter:
         await asyncio.sleep(0.15)
         await rl.acquire()  # Should succeed
 
+    @pytest.mark.asyncio
+    async def test_waited_token_time_is_not_counted_twice(self, monkeypatch):
+        """A 1-per-3s limiter must not emit pairs at t=3, t=6, ... ."""
+        from pubmed_search.shared import async_utils
+
+        clock = [0.0]
+
+        async def advance(delay: float) -> None:
+            clock[0] += delay
+
+        monkeypatch.setattr(async_utils, "time", SimpleNamespace(monotonic=lambda: clock[0]))
+        monkeypatch.setattr(async_utils, "asyncio", SimpleNamespace(sleep=advance))
+        limiter = RateLimiter(rate=1.0, per=3.0)
+        acquired_at: list[float] = []
+
+        for _ in range(5):
+            await limiter.acquire()
+            acquired_at.append(clock[0])
+
+        assert acquired_at == [0.0, 3.0, 6.0, 9.0, 12.0]
+
 
 class TestGetRateLimiter:
     async def test_creates_new(self):
@@ -80,15 +102,16 @@ class TestGetRateLimiter:
 
 class TestGatherWithErrors:
     @pytest.mark.asyncio
-    async def test_all_success(self):
-        async def task(n):
+    async def test_all_success_preserves_input_order(self):
+        async def task(n, delay):
+            await asyncio.sleep(delay)
             return n * 2
 
-        results = await gather_with_errors(task(1), task(2), task(3))
-        assert sorted(results) == [2, 4, 6]
+        results = await gather_with_errors(task(1, 0.02), task(2, 0.01), task(3, 0))
+        assert results == [2, 4, 6]
 
     @pytest.mark.asyncio
-    async def test_with_exceptions_returned(self):
+    async def test_with_exceptions_returned_in_input_order(self):
         async def ok():
             return "ok"
 
@@ -96,8 +119,52 @@ class TestGatherWithErrors:
             raise ValueError("bad")
 
         results = await gather_with_errors(ok(), fail(), return_exceptions=True)
-        assert any(isinstance(r, str) for r in results)
-        assert any(isinstance(r, ValueError) for r in results)
+        assert results[0] == "ok"
+        assert isinstance(results[1], ValueError)
+
+    @pytest.mark.asyncio
+    async def test_failure_cancels_and_drains_unfinished_children(self):
+        child_started = asyncio.Event()
+        child_cleaned_up = asyncio.Event()
+
+        async def wait_forever():
+            child_started.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                await asyncio.sleep(0)
+                child_cleaned_up.set()
+
+        async def fail_after_child_starts():
+            await child_started.wait()
+            raise RuntimeError("boom")
+
+        with pytest.raises(RuntimeError, match="boom"):
+            await gather_with_errors(wait_forever(), fail_after_child_starts())
+
+        assert child_cleaned_up.is_set()
+
+    @pytest.mark.asyncio
+    async def test_caller_cancellation_is_propagated_after_child_cleanup(self):
+        child_started = asyncio.Event()
+        child_cleaned_up = asyncio.Event()
+
+        async def wait_forever():
+            child_started.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                await asyncio.sleep(0)
+                child_cleaned_up.set()
+
+        parent = asyncio.create_task(gather_with_errors(wait_forever(), return_exceptions=True))
+        await asyncio.wait_for(child_started.wait(), timeout=1)
+        parent.cancel()
+
+        with pytest.raises(asyncio.CancelledError):
+            await parent
+
+        assert child_cleaned_up.is_set()
 
     @pytest.mark.asyncio
     async def test_empty(self):
@@ -425,6 +492,25 @@ class TestSharedUpstreamBudget:
 
         assert faster is slow
         assert slow.per == 5.0, "a client with an API key must not lift the limit for everyone"
+
+    async def test_transport_kernel_cannot_raise_an_existing_shared_budget(self):
+        kernel = get_transport_kernel()
+        slow = kernel._resolve_rate_limiter(
+            RequestExecutionPolicy(
+                service_name="kernel-shared-budget",
+                rate_limit=RateLimitPolicy(name="kernel-shared-budget", rate=1.0, per=5.0),
+            )
+        )
+        faster = kernel._resolve_rate_limiter(
+            RequestExecutionPolicy(
+                service_name="kernel-shared-budget",
+                rate_limit=RateLimitPolicy(name="kernel-shared-budget", rate=1.0, per=0.1),
+            )
+        )
+
+        assert slow is not None
+        assert faster is slow
+        assert slow.per == 5.0
 
     async def test_primitives_are_not_shared_across_event_loops(self):
         first = get_rate_limiter("loop-scope-test", rate=1.0, per=1.0)

@@ -270,23 +270,25 @@ class SemanticEnhancer:
         enhanced = EnhancedQuery(original_query=query)
 
         try:
-            # Run enhancement phases in parallel (with timeout)
-            async with asyncio.timeout(self._timeout):  # type: ignore[attr-defined]
-                # Phase 1: Entity resolution + term extraction
-                entities, terms = await self._resolve_and_expand(query)
-                enhanced.entities = entities
-                enhanced.expanded_terms = terms
+            # Run the asynchronous enhancement phase with a bounded timeout.
+            # Phase 1: Entity resolution + term extraction
+            entities, terms = await asyncio.wait_for(
+                self._resolve_and_expand(query),
+                timeout=self._timeout,
+            )
+            enhanced.entities = entities
+            enhanced.expanded_terms = terms
 
-                # Phase 2: Generate search strategies
-                enhanced.strategies = self._generate_strategies(query, entities, terms)
+            # Phase 2: Generate search strategies
+            enhanced.strategies = self._generate_strategies(query, entities, terms)
 
-                # Add metadata
-                enhanced.metadata["enhancement_version"] = "1.0"
-                enhanced.metadata["entity_count"] = len(entities)
-                enhanced.metadata["term_count"] = len(terms)
-                enhanced.metadata["strategy_count"] = len(enhanced.strategies)
+            # Add metadata
+            enhanced.metadata["enhancement_version"] = "1.0"
+            enhanced.metadata["entity_count"] = len(entities)
+            enhanced.metadata["term_count"] = len(terms)
+            enhanced.metadata["strategy_count"] = len(enhanced.strategies)
 
-        except TimeoutError:
+        except (asyncio.TimeoutError, TimeoutError):
             logger.warning(f"Enhancement timeout for query: {query[:50]}")
             # Fall back to basic enhancement
             enhanced = self._basic_enhancement(query)

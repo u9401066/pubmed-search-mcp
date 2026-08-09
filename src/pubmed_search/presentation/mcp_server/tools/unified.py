@@ -30,10 +30,8 @@ Implementation details are in:
 
 from __future__ import annotations
 
-import contextlib
 import logging
-from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, Literal, TypeVar, Union, cast
+from typing import TYPE_CHECKING, Literal, Union
 
 from mcp.server.mcpserver import Context  # noqa: TC002 - MCPServer needs runtime access for type annotation injection
 
@@ -96,12 +94,11 @@ from .unified_source_search import (
 )
 
 if TYPE_CHECKING:
-    from mcp.server.mcpserver import MCPServer
+    from mcp.server import MCPServer
 
     from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
 logger = logging.getLogger(__name__)
-ToolFunc = TypeVar("ToolFunc", bound=Callable[..., Any])
 
 # ---------------------------------------------------------------------------
 # Backward-compatible re-exports (used by tests and __init__.py)
@@ -157,21 +154,10 @@ __all__ = [
 # ============================================================================
 
 
-def _tool_decorator_with_optional_meta(mcp: MCPServer) -> Callable[[ToolFunc], ToolFunc]:
-    """Return a tool decorator that tolerates simple test doubles without keyword support."""
-    tool = cast("Any", mcp.tool)
-    with contextlib.suppress(TypeError):
-        return cast(
-            "Callable[[ToolFunc], ToolFunc]",
-            tool(meta={"pubmedSearch": {"experimentalTaskSupport": "optional"}}),
-        )
-    return cast("Callable[[ToolFunc], ToolFunc]", tool())
-
-
 def register_unified_search_tools(mcp: MCPServer, searcher: LiteratureSearcher):
     """Register unified search MCP tools."""
 
-    @_tool_decorator_with_optional_meta(mcp)
+    @mcp.tool()
     async def unified_search(
         query: str,
         limit: Union[int, str] = 10,

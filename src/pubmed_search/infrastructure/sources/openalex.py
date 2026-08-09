@@ -81,7 +81,7 @@ class OpenAlexClient(BaseAPIClient):
 
         Args:
             query: Search query (searches title, abstract, fulltext)
-            limit: Maximum results (max 200 per page)
+            limit: Maximum results (max 100 per page)
             min_year: Filter by minimum publication year
             max_year: Filter by maximum publication year
             open_access_only: Only return open access works
@@ -110,7 +110,7 @@ class OpenAlexClient(BaseAPIClient):
 
             params = {
                 "search": query,
-                "per_page": str(min(limit, 200)),
+                "per_page": str(min(limit, 100)),
                 **self._auth_params,
             }
 

@@ -36,6 +36,16 @@ ARXIV_ATOM_RESPONSE = """<?xml version='1.0' encoding='UTF-8'?>
 class TestArXivClient:
     """Tests for arXiv API client."""
 
+    async def test_official_request_interval_and_single_connection_contract(self):
+        client = ArXivClient(timeout=30.0)
+        try:
+            policy = client._build_execution_policy()
+            assert client._min_interval == 3.0
+            assert policy.concurrency_limit == 1
+            assert policy.concurrency_name == "source:preprints:arxiv"
+        finally:
+            await client.close()
+
     async def test_arxiv_search_basic(self):
         """Test basic arXiv search."""
         client = ArXivClient(timeout=30.0)
@@ -140,9 +150,15 @@ class TestPreprintSearcher:
         mock_medrxiv.side_effect = _hang
 
         searcher = PreprintSearcher()
+
+        async def _search_with_straggler():
+            return await searcher.search(query="covid", sources=["arxiv", "medrxiv"], limit=3)
+
         with patch.object(preprints_module, "PREPRINT_SOURCE_TIMEOUT_SECONDS", 0.01):
-            async with asyncio.timeout(0.2):
-                results = await searcher.search(query="covid", sources=["arxiv", "medrxiv"], limit=3)
+            results = await asyncio.wait_for(
+                _search_with_straggler(),
+                timeout=0.2,
+            )
 
         assert results["total"] == 1
         assert any("timed out" in error.lower() for error in results["errors"])

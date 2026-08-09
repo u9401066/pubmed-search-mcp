@@ -3,7 +3,7 @@
 # Pipeline Mode Tutorial
 
 > Status: current API tutorial
-> Last updated: 2026-04-29
+> Last updated: 2026-08-09
 > Language: **English** | [繁體中文](pipeline-tutorial.zh-TW.md)
 
 This document only describes pipeline mode behavior that is currently implemented and supported. It does not repeat older RFC or design-draft material. The focus is what you can execute now, save now, schedule now, and inspect through history now.
@@ -17,6 +17,13 @@ Pipeline mode currently has 3 practical entry points:
 1. Pass YAML or JSON directly into `unified_search(..., pipeline="...")`
 2. Save the config first with `manage_pipeline` or `save_pipeline`, then run it with `saved:<name>`
 3. Save it first, then schedule recurring runs with `schedule_pipeline` or `manage_pipeline(action="schedule")`
+
+> **Choose the runtime first.** Trusted local stdio/loopback callers can use
+> project workspace scope, `file:` sources, and the in-process scheduler.
+> Authenticated service callers use only their principal-scoped saved-pipeline
+> store: no process-wide workspace scope or `file:` reads. The service Compose
+> profile disables the scheduler until an operator supplies a single external
+> leader/lease.
 
 ### Smallest usable example: inline template
 
@@ -93,8 +100,9 @@ The JSON response contains `summary`, `steps`, per-step `metadata`, and structur
 | ---- | -------- |
 | You only want to run it once quickly | inline `unified_search(..., pipeline="...")` |
 | You want to reuse the same search strategy | `manage_pipeline(action="save")` |
-| You want history diffs or scheduling | save first, then use `saved:<name>` or `schedule_pipeline` |
-| You want to load a local YAML file and adjust it | `load_pipeline(source="file:path/to/pipeline.yaml")` |
+| You want history diffs or local scheduling | save first, then use `saved:<name>` or `schedule_pipeline` |
+| A trusted local caller wants to load a YAML file | `load_pipeline(source="file:path/to/pipeline.yaml")` |
+| An authenticated service caller wants reuse | save in the tenant store, then use `saved:<name>` |
 
 ## Template Pipeline Tutorial
 
@@ -377,9 +385,12 @@ template_params:
 
 `scope` behavior:
 
-- `workspace`: saved under `.pubmed-search/pipelines/` inside the project
-- `global`: saved under the user data directory `~/.pubmed-search-mcp/pipelines/`
-- `auto`: save to workspace when available, otherwise global
+- local `workspace`: saved under `.pubmed-search/pipelines/` inside the project
+- local `global`: saved under the user data directory `~/.pubmed-search-mcp/pipelines/`
+- local `auto`: save to workspace when available, otherwise global
+- authenticated service: the tenant-derived store deliberately has no
+  process-wide workspace root; `auto` resolves to that principal's isolated
+  data root and `workspace` is unavailable
 
 ### `action="load"`
 
@@ -393,9 +404,11 @@ manage_pipeline(action="load", source="file:data/pipeline_examples/pico_remimazo
 
 - saved names
 - `saved:<name>`
-- `file:path/to/pipeline.yaml`
+- local-only `file:path/to/pipeline.yaml`
 
-Direct URL loading is not currently part of the supported contract.
+Authenticated service callers cannot read `file:` paths from the server host;
+save the YAML by name first. Direct URL loading is not currently part of the
+supported contract.
 
 ### `action="delete"`
 
@@ -443,6 +456,11 @@ manage_pipeline(
 
 ### Scheduling
 
+The examples below require a trusted local process with the scheduler enabled.
+`docker-compose.service.yml` disables the in-process scheduler. Storing schedule
+metadata in a service does not make it execute; use manual runs or provide one
+external leader/lease before enabling recurring execution.
+
 ```python
 schedule_pipeline(name="weekly_remimazolam", cron="0 9 * * 1")
 schedule_pipeline(name="monthly_crispr_review", cron="0 8 1 * *")
@@ -480,6 +498,8 @@ History shows:
 
 - There is no standalone `list_schedules()` MCP tool yet
 - If you want stable history and diffs, prefer saved pipelines over one-off inline pipelines
+- Service mode stays single-process/single-replica, and its Compose profile does
+  not run scheduled pipelines
 
 ## Common errors and auto-fix behavior
 
@@ -547,6 +567,7 @@ output:
 1. If you want auto-fix, history, and scheduling, save first and run second.
 2. Use inline template pipelines only for small parameter sets. For review and versioning, save YAML files.
 3. Start custom DAGs from the smallest runnable graph, then add `merge`, `metrics`, and `filter` incrementally.
-4. Use `scope="workspace"` when the pipeline should be shared within a team or repo.
-5. Use `scope="global"` when you only want your own reusable search habits across projects.
-6. Keep Zotero Keeper integration outside PubMed MCP core. PubMed MCP should produce RIS/CSL/JSON/wiki notes; Zotero Keeper or another external client should handle Zotero import, duplicate policy, and library-specific behavior.
+4. In local mode, use `scope="workspace"` when the pipeline should be shared in a trusted repo.
+5. In local mode, use `scope="global"` for your own reusable search habits across projects.
+6. In authenticated service mode, omit workspace/file paths and reuse named pipelines from the current tenant store.
+7. Keep Zotero Keeper integration outside PubMed MCP core. PubMed MCP should produce RIS/CSL/JSON/wiki notes; Zotero Keeper or another external client should handle Zotero import, duplicate policy, and library-specific behavior.

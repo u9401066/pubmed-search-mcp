@@ -1043,7 +1043,7 @@ template_params:
 ## 附錄 B：MCP Resource Template 範例
 
 ```python
-# FastMCP resource template 語法
+# MCP SDK v2 MCPServer resource template decorator 語法
 @mcp.resource("pipeline://saved/{name}")
 async def read_saved_pipeline(name: str) -> str:
     """MCP clients can read saved pipelines via resources/read."""

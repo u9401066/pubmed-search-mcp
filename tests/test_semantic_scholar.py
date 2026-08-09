@@ -42,6 +42,13 @@ class TestInit:
         assert c._api_key is None
         assert c._timeout == 30.0
 
+    async def test_api_key_does_not_assume_a_higher_than_default_quota(self):
+        c = SemanticScholarClient(api_key="test-key")
+        try:
+            assert c._min_interval == 1.0
+        finally:
+            await c.close()
+
     async def test_with_key(self, client_with_key):
         assert client_with_key._api_key == "test_key"
 

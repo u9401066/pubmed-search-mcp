@@ -8,7 +8,7 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![MCP](https://img.shields.io/badge/MCP-Compatible-green.svg)](https://modelcontextprotocol.io/)
-[![Test Coverage](https://img.shields.io/badge/coverage-84%25-green.svg)](https://github.com/u9401066/pubmed-search-mcp)
+[![CI](https://github.com/u9401066/pubmed-search-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/u9401066/pubmed-search-mcp/actions/workflows/ci.yml)
 
 > **AI Agent 的專業文獻研究助理** - 不只是 API 包裝器
 
@@ -21,7 +21,7 @@
 - 🔧 **45 個 MCP 工具** - 精簡的 PubMed、Europe PMC、CORE、NCBI 資料庫存取，及**研究編年史 / 脈絡圖**功能
 - 🛡️ **多 Agent 服務模式** - 部署一次供多個 agent 共用：session、快取與 artifact 依租戶隔離，支援 bearer token 認證與各租戶公平配額。詳見 [DEPLOYMENT.md](#/deployment)
 - 🖼️ **OA 圖表擷取** - 從 PMC Open Access 論文直接抽出 figure caption、image URL 與 PDF 連結
-- 📘 **Docs Site** - 用語言切換網站整合使用者指南、開發者指南、架構、quick reference、pipeline 教學、source contract、troubleshooting 與 deployment，入口在 [u9401066.github.io/pubmed-search-mcp](https://u9401066.github.io/pubmed-search-mcp/)
+- 📘 **Docs Site** - 完整雙語手冊：使用者工作流、架構、45-tool reference、pipeline 教學、source/broker contracts、整合與維運、安全與部署，入口在 [u9401066.github.io/pubmed-search-mcp](https://u9401066.github.io/pubmed-search-mcp/)
 - 📖 **GitHub Wiki** - 同一組 canonical docs 的 GitHub 內建文件鏡像，入口在 [github.com/u9401066/pubmed-search-mcp/wiki](https://github.com/u9401066/pubmed-search-mcp/wiki)
 - 📚 **26 個 Claude Skills** - AI Agent 可直接使用的工作流程指南（Claude Code 專屬）
 - 📖 **Copilot 整合指南** - VS Code GitHub Copilot 使用說明
@@ -46,7 +46,7 @@
   powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
   ```
 
-- **NCBI Email** — [NCBI API 政策](https://www.ncbi.nlm.nih.gov/books/NBK25497/#chapter2.Usage_Guidelines_and_Requiremen)要求，任何有效的電子郵件地址
+- **NCBI Email** — [NCBI API 政策](https://www.ncbi.nlm.nih.gov/books/NBK25497/#chapter2.Usage_Guidelines_and_Requirements)要求，任何有效的電子郵件地址
 - **NCBI API Key**（*選填*）— [在此取得](https://www.ncbi.nlm.nih.gov/account/settings/)，可提高 API 限額（10 req/s vs 3 req/s）
 - **OpenAlex API Key**（*選填*）— 設定 `OPENALEX_API_KEY` 後，OpenAlex 會改用已驗證請求，而不是只靠 mailto polite-pool auth。若未設定來源專用 email，server 會把 runtime contact email 重用於 OpenAlex、CrossRef 與 Unpaywall。
 
@@ -82,6 +82,28 @@ print(result.artifact)  # 啟用 persistence 時會有 artifact locator
 `uvx pubmed-search-mcp` 與 `/mcp` 是給 AI agent / MCP client 的工具合約；
 Python SDK 則是給外部 Python code 的 in-process 合約。
 
+### 選擇 runtime 合約
+
+| 合約 | 指令 | 網路與信任邊界 |
+| --- | --- | --- |
+| **本機 stdio** | `uvx pubmed-search-mcp` | 建議給單一本機 AI client；不開啟 MCP listening port |
+| **本機 loopback HTTP** | `pubmed-search-mcp-http --mode local --host 127.0.0.1` | 可信單使用者整合；各 MCP request 共用 durable `default` tenant，且不可對外發布此 port |
+| **多使用者 service** | `pubmed-search-mcp-http --mode service` | 團隊/遠端使用必須置於 HTTPS 後方，並強制 bearer auth、allowed hosts/origins 與 principal-scoped storage |
+
+本機與 service 是刻意分開的合約。不可只改 bind address 就把本機 HTTP
+當成公開服務。顯式 local profile 會把 `pmids="last"`、session、cache 與 export
+保留在 durable `default` tenant，跨 MCP requests 與重連仍可使用；這只在強制
+loopback/Host/Origin 邊界內才安全。Service mode 不繼承此信任，無 bearer
+principal 時會 fail closed。完整環境與 Compose profile 見 [DEPLOYMENT.md](#/deployment)。
+目前 service profile 可在單一 server process 服務多個已認證 principal；在 session、
+lock、artifact 與 subscription 都有共享 backend 前，必須維持單副本。
+
+Protocol baseline 是 MCP SDK v2（`mcp>=2.0,<3`）。現代 2026-07-28 client 會直接送
+`tools/list` 與 `tools/call`，不先做 `initialize` handshake，也不依賴 `Mcp-Session-Id`。
+本機模式保留 filesystem 能力；認證 service caller 不能載入 `file:` pipeline、選擇 note
+`output_dir`/`template_file`，也不繼承 process-wide pipeline workspace；service Compose
+scheduler 會停用。完整能力矩陣見 [整合與維運指南](#/troubleshooting)。
+
 ---
 
 ## ⚙️ 設定方式
@@ -116,7 +138,7 @@ Python SDK 則是給外部 Python code 的 in-process 合約。
       "args": ["pubmed-search-mcp"],
       "env": {
         "NCBI_EMAIL": "your@email.com",
-        "BROWSER_FETCH_CONFIG": "{\"enabled\":true,\"auto_enabled\":true,\"broker_url\":\"http://127.0.0.1:8766/fetch\",\"token\":\"local-dev-token\",\"allowed_hosts\":[\"jamanetwork.com\",\"*.jamanetwork.com\",\"nejm.org\",\"*.nejm.org\"]}"
+        "BROWSER_FETCH_CONFIG": "{\"enabled\":true,\"auto_enabled\":true,\"broker_url\":\"http://127.0.0.1:8766/fetch\",\"token\":\"<random-32-byte-token>\",\"allowed_hosts\":[\"jamanetwork.com\",\"*.jamanetwork.com\",\"nejm.org\",\"*.nejm.org\"]}"
       }
     }
   }
@@ -130,10 +152,15 @@ Python SDK 則是給外部 Python code 的 in-process 合約。
 ```bash
 uv sync --extra browser-broker
 uv run playwright install chromium
-uv run pubmed-browser-fetch-broker --token local-dev-token
+uv run python -c "import secrets; print(secrets.token_urlsafe(32))"
+uv run pubmed-browser-fetch-broker --token "<same-random-32-byte-token>"
 ```
 
-這個 broker 會啟動一個可重複使用的瀏覽器 profile，並攔截下載事件。你只要在 broker 控制的瀏覽器裡登入一次，之後 PDF 下載就會直接落到暫存目錄並回傳給 MCP，不會再跳出手動另存對話框。
+請把產生的值填入命令與 MCP 設定，絕不要重用文件裡的公開範例 token。若省略
+`--token`，broker 會產生並顯示一組高熵 runtime token。這個 broker 會啟動一個
+可重複使用的瀏覽器 profile，並攔截下載事件。你只要在 broker 控制的瀏覽器裡
+登入一次，之後 PDF 下載就會直接落到暫存目錄並回傳給 MCP，不會再跳出手動另存
+對話框。
 
 ### Claude Desktop (`claude_desktop_config.json`)
 
@@ -363,6 +390,8 @@ CrossRef、Unpaywall 與 OpenAlex 會重用 runtime server contact email
 email/API key。
 
 本機筆記目錄解析順序是：`output_dir` 參數、`PUBMED_NOTES_DIR`、`PUBMED_WORKSPACE_DIR/references`、`PUBMED_DATA_DIR/references`、最後 `~/.pubmed-search-mcp/references`。
+這套 path/template 選擇只適用於可信任的本機模式。認證 service notes 一律使用內建
+format，寫到當前 tenant 隔離的 `references/` 目錄。
 為了相容 LLM wiki，`wiki` 與 `foam` 匯出會使用 PMID、DOI、PMCID 或 fallback identifier 作為穩定 link target；title 只作為 alias/display label，回應會包含 `wiki_validation` 方便檢查 unresolved wikilinks。
 
 ---
@@ -414,7 +443,7 @@ email/API key。
 
 如果你想真正理解這 45 個工具怎麼用，不要從背工具名開始。
 
-先看[工具使用指南](#/tools-usage-guide-zh)：它把目前 46 個工具濃縮成 8 個能力族，說明理論上的最小壓縮邊界，以及人類與 agent 的意圖路由方式。
+先看[工具使用指南](#/tools-usage-guide-zh)：它把目前 45 個工具濃縮成 8 個能力族，說明理論上的最小壓縮邊界，以及人類與 agent 的意圖路由方式。
 
 ### 🔍 搜尋與查詢智能
 
@@ -578,10 +607,13 @@ read_session(action="list_artifacts", include_local_paths=true)
 | `manage_pipeline` | 主要 façade，統一處理 save、list、load、delete、history、schedule |
 | `save_pipeline` | 保存 Pipeline 配置供後續重複使用（YAML/JSON，自動驗證） |
 | `list_pipelines` | 列出已保存的 Pipeline（可按標籤/範圍過濾） |
-| `load_pipeline` | 從名稱或檔案載入 Pipeline 以檢視/編輯 |
+| `load_pipeline` | 以已保存名稱載入；可信任的本機 caller 也可載入檔案 |
 | `delete_pipeline` | 刪除 Pipeline 及其執行歷史 |
 | `get_pipeline_history` | 查看執行歷史與文章 diff 分析 |
 | `schedule_pipeline` | 建立、更新或移除定期執行排程 |
+
+認證 service caller 在 tenant-derived store 中以名稱重用 pipeline；`workspace` 與
+`file:` 存取只限本機。Service Compose 不會執行 schedules，除非另外設計單一 leader。
 
 逐步教學：
 
@@ -923,7 +955,7 @@ manage_pipeline(action="history", name="icu_sedation_weekly")  # 查看過去執
 | `pubmed-mcp-tools-reference` | 完整工具參考指南 |
 | `pipeline-persistence` | 保存、載入、重複使用搜尋計畫 |
 
-### 🔧 開發 Skills (13) — 給專案貢獻者
+### 🔧 開發 Skills (15) — 給專案貢獻者
 
 | Skill | 說明 |
 | ----- | ---- |
@@ -935,11 +967,13 @@ manage_pipeline(action="history", name="icu_sedation_weekly")  # 查看過去執
 | `git-precommit` | Pre-commit 工作流程編排 |
 | `memory-checkpoint` | 儲存上下文到 Memory Bank |
 | `memory-updater` | 更新 Memory Bank 檔案 |
+| `pdf-asset-extractor` | 擷取並盤點可引用的 PDF assets |
 | `project-init` | 初始化新專案 |
 | `readme-i18n` | 多語言 README 同步 |
 | `readme-updater` | 同步 README 與程式碼變更 |
 | `roadmap-updater` | 更新 ROADMAP.md 狀態 |
 | `test-generator` | 產生測試套件 |
+| `tool-sync` | 同步 MCP registry 與自動產生的工具文件 |
 
 > 📁 **位置**: `.claude/skills/*/SKILL.md`（Claude Code 專屬，也是 repo skills 的唯一來源）
 > 不要再另外鏡像或拆分到 `.github/skills/`。
@@ -1059,11 +1093,13 @@ unified_search(query="I10 treatment outcomes")
 
 ---
 
-## 🔒 HTTPS 部署
+## 🔒 本機 HTTPS 示範與 service 部署
 
-為生產環境啟用 HTTPS 安全通訊。
+內建自簽憑證與 `curl -k` 流程是**本機 TLS 示範**，不是 production security
+profile。共用 service 應使用已認證的 service Compose 與可信憑證，見
+[DEPLOYMENT.md](#/deployment)。
 
-### HTTPS 快速開始
+### 本機 HTTPS smoke test
 
 ```bash
 # Step 1: 生成 SSL 憑證
@@ -1082,8 +1118,9 @@ curl -k https://localhost/
 | ---- | --- | ---- |
 | MCP | `https://localhost/mcp` | Streamable HTTP MCP endpoint |
 | Health | `https://localhost/health` | 健康檢查 |
+| Ready | `https://localhost/ready` | Readiness 檢查 |
 | Info | `https://localhost/info` | Runtime transport 與 endpoint metadata |
-| Exports | `https://localhost/exports` | 已準備匯出檔案列表 |
+| Exports | `https://localhost/exports` | 本機匯出列表；service mode 必須 bearer auth 並依 tenant 分區 |
 
 ### 遠端 MCP client 設定
 
@@ -1106,13 +1143,13 @@ curl -k https://localhost/
 ### Copilot Studio 快速開始
 
 ```bash
-# 使用 Streamable HTTP transport 啟動（Copilot Studio 要求）
-pubmed-search-mcp-http --transport streamable-http --port 8765
+# 僅供未發布的本機 schema/protocol smoke；禁止把 local mode 接到 tunnel
+pubmed-search-mcp-http --mode local --transport streamable-http \
+  --copilot-compatible --host 127.0.0.1 --port 8765
 
-# 若要保留完整工具 schema，同時開啟 Copilot 相容 HTTP 行為
-pubmed-search-mcp-http --transport streamable-http --copilot-compatible --port 8765
-
-# 或使用專用腳本搭配 ngrok
+# 公開 Copilot endpoint：必須使用 authenticated service mode
+export PUBMED_AUTH_TOKENS="copilot:$(openssl rand -hex 32)"
+export NGROK_DOMAIN="your-assigned-domain.ngrok.dev"
 ./scripts/start-copilot-studio.sh --with-ngrok
 ```
 
@@ -1122,11 +1159,11 @@ pubmed-search-mcp-http --transport streamable-http --copilot-compatible --port 8
 | ---- | -- |
 | **Server name** | `PubMed Search` |
 | **Server URL** | `https://your-server.com/mcp` |
-| **Authentication** | `None`（或 API Key） |
+| **Authentication** | service mode 使用 bearer token；`None` 僅限未對外發布的本機示範 |
 
-> 📖 **完整文件**: [copilot-studio/README.md](copilot-studio/README.md)
+> 📖 **完整文件**: [copilot-studio/README.md](https://github.com/u9401066/pubmed-search-mcp/blob/master/copilot-studio/README.md)
 >
-> 若只需要 Copilot 相容 HTTP 行為，用 `pubmed-search-mcp-http --copilot-compatible`；若還需要簡化後的工具 schema，使用 `run_copilot.py`。
+> 若只需要 Copilot 相容 HTTP 行為，用 `pubmed-search-mcp-http --copilot-compatible`；`run_copilot.py` 只供 loopback 簡化 schema smoke，禁止接到公網 tunnel。Tunnel 腳本要求已指派的 `NGROK_DOMAIN`、拒絕已占用的 backend port，並只會在 `--mode service` 通過 readiness 與匿名拒絕檢查後公開。
 >
 > ⚠️ **注意**: SSE transport 自 2025 年 8 月起棄用。使用 `streamable-http`。
 
@@ -1138,7 +1175,7 @@ pubmed-search-mcp-http --transport streamable-http --copilot-compatible --port 8
 > - Pipeline Mode 教學（繁中） → [docs/PIPELINE_MODE_TUTORIAL.md](#/pipeline-tutorial-zh)
 > - Pipeline Mode 教學（English） → [docs/PIPELINE_MODE_TUTORIAL.en.md](#/pipeline-tutorial)
 > - 部署指南 → [DEPLOYMENT.md](#/deployment)
-> - Copilot Studio → [copilot-studio/README.md](copilot-studio/README.md)
+> - Copilot Studio → [copilot-studio/README.md](https://github.com/u9401066/pubmed-search-mcp/blob/master/copilot-studio/README.md)
 
 ---
 
@@ -1148,12 +1185,12 @@ pubmed-search-mcp-http --transport streamable-http --copilot-compatible --port 8
 
 | 層級 | 功能 | 說明 |
 | ---- | ---- | ---- |
-| **HTTPS** | TLS 1.2/1.3 加密 | 所有流量透過 Nginx 加密 |
-| **Rate Limiting** | 30 req/s | Nginx 層級保護 |
-| **Security Headers** | XSS/CSRF 防護 | X-Frame-Options, X-Content-Type-Options |
-| **Streamable HTTP** | `/mcp` endpoint | 現代 MCP remote client transport |
-| **No Database** | 無狀態 | 無 SQL 注入風險 |
-| **No Secrets** | 僅記憶體 | 不儲存憑證 |
+| **HTTPS** | TLS termination | 遠端憑證必須加密；內建自簽組態僅用於本機 |
+| **Bearer 認證** | 穩定 principal | service mode 強制啟用，並作為 tenant 授權邊界 |
+| **Tenant storage** | 檔案系統隔離 | Session、artifact、export、chronicle 與 pipeline 依已認證 principal 分區 |
+| **公平性與 rate policy** | Tenant concurrency + 共用上游預算 | 避免單一呼叫端倍增外部 API 配額 |
+| **Security headers** | Clickjacking/MIME hardening | Reverse-proxy headers 是認證的補強，不是 CSRF 授權 |
+| **Secret handling** | Runtime secret injection | API key 與 bearer token 必須由部署秘密/環境注入，不可 commit 或寫入 log |
 
 詳見 [DEPLOYMENT.md](#/deployment) 完整部署說明。
 
@@ -1192,7 +1229,7 @@ pubmed-search-mcp-http --transport streamable-http --copilot-compatible --port 8
 
 ## 📚 引用
 
-GitHub 會根據 [CITATION.cff](CITATION.cff) 顯示 **Cite this repository**。若你在論文、methods section、技術報告或內部研究文件中使用 PubMed Search MCP，建議直接使用 GitHub 產生的引用格式，或重用這份 repository citation metadata。
+GitHub 會根據 [CITATION.cff](https://github.com/u9401066/pubmed-search-mcp/blob/master/CITATION.cff) 顯示 **Cite this repository**。若你在論文、methods section、技術報告或內部研究文件中使用 PubMed Search MCP，建議直接使用 GitHub 產生的引用格式，或重用這份 repository citation metadata。
 
 ```bibtex
 @software{pubmed_search_mcp,
@@ -1206,7 +1243,7 @@ GitHub 會根據 [CITATION.cff](CITATION.cff) 顯示 **Cite this repository**。
 
 ## 📄 授權
 
-Apache License 2.0 - 詳見 [LICENSE](LICENSE)
+Apache License 2.0 - 詳見 [LICENSE](https://github.com/u9401066/pubmed-search-mcp/blob/master/LICENSE)
 
 ---
 

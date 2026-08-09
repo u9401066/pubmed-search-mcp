@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any
 
 from pubmed_search.application.search.query_analyzer import AnalyzedQuery, QueryAnalyzer
 from pubmed_search.application.search.result_aggregator import RankingConfig
-from pubmed_search.application.search.semantic_enhancer import EnhancedQuery, get_semantic_enhancer
+from pubmed_search.application.search.semantic_enhancer import EnhancedQuery, SearchPlan, get_semantic_enhancer
 from pubmed_search.infrastructure.sources.registry import SourceSelectionError, get_source_registry
 
 from .unified_helpers import DispatchStrategy, detect_and_expand_icd_codes
@@ -43,12 +43,54 @@ class UnifiedSearchPlan:
     analysis: AnalyzedQuery
     icd_matches: list[dict[str, Any]]
     enhanced_query: EnhancedQuery | None
+    deep_strategies: list[SearchPlan]
     matched_entity_names: list[str]
     user_sources: list[str] | None
     dispatch_sources: list[str]
     ranking_config: RankingConfig
     effective_min_year: int | None
     effective_max_year: int | None
+
+
+def _build_deep_strategies(
+    *,
+    query: str,
+    enhanced_query: EnhancedQuery | None,
+    dispatch_sources: list[str],
+    registry: Any,
+) -> list[SearchPlan]:
+    """Preserve every planned primary source while retaining semantic variants.
+
+    Semantic enhancement contributes query variants; it must not silently
+    narrow the source set selected by the planner.  Each planned primary or
+    preprint source therefore receives at least one baseline strategy.
+    """
+    if enhanced_query is None:
+        return []
+
+    primary_sources = [
+        source
+        for source in dispatch_sources
+        if (definition := registry.get(source)) is not None and definition.supports_primary_search
+    ]
+    strategies = [strategy for strategy in enhanced_query.strategies if strategy.source in primary_sources]
+    covered_sources = {strategy.source for strategy in strategies}
+
+    for source in primary_sources:
+        if source in covered_sources:
+            continue
+        strategies.append(
+            SearchPlan(
+                name=f"source_baseline_{source}",
+                query=query,
+                source=source,
+                priority=1,
+                expected_precision=0.5,
+                expected_recall=0.5,
+            )
+        )
+
+    return strategies
 
 
 async def build_unified_search_plan(
@@ -120,8 +162,15 @@ async def build_unified_search_plan(
     if request.include_preprints:
         preprint_keys = ("arxiv", "medrxiv", "biorxiv")
         for key in preprint_keys:
-            if key not in dispatch_sources:
+            if registry.is_enabled(key) and key not in dispatch_sources:
                 dispatch_sources.append(key)
+
+    deep_strategies = _build_deep_strategies(
+        query=query,
+        enhanced_query=enhanced_query,
+        dispatch_sources=dispatch_sources,
+        registry=registry,
+    )
 
     await progress(3, 10, f"Sources: {', '.join(dispatch_sources)}")
     logger.info("Selected sources: %s", dispatch_sources)
@@ -144,6 +193,7 @@ async def build_unified_search_plan(
         analysis=analysis,
         icd_matches=icd_matches,
         enhanced_query=enhanced_query,
+        deep_strategies=deep_strategies,
         matched_entity_names=matched_entity_names,
         user_sources=user_sources,
         dispatch_sources=dispatch_sources,
@@ -153,4 +203,10 @@ async def build_unified_search_plan(
     )
 
 
-__all__ = ["UnifiedSearchPlan", "build_unified_search_plan", "ProgressReporter", "SourceSelectionError"]
+__all__ = [
+    "UnifiedSearchPlan",
+    "_build_deep_strategies",
+    "build_unified_search_plan",
+    "ProgressReporter",
+    "SourceSelectionError",
+]

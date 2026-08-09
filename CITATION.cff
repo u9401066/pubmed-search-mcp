@@ -2,9 +2,10 @@ cff-version: 1.2.0
 message: "If you use this repository, please cite it using the metadata from this file."
 title: "PubMed Search MCP"
 type: software
-version: 0.6.0
+version: 0.6.1
+date-released: 2026-08-10
 license: Apache-2.0
-abstract: "MCP server for PubMed literature search with MeSH, PICO, and intelligent query expansion."
+abstract: "MCP SDK v2 server for PubMed and multi-source biomedical literature research."
 repository-code: "https://github.com/u9401066/pubmed-search-mcp"
 url: "https://github.com/u9401066/pubmed-search-mcp"
 keywords:
@@ -19,7 +20,7 @@ authors:
 preferred-citation:
   type: software
   title: "PubMed Search MCP"
-  version: 0.6.0
+  version: 0.6.1
   authors:
     - family-names: u9401066
       email: u9401066@gap.kmu.edu.tw

@@ -5,7 +5,7 @@
 > **最後更新**: 2026-04-06
 > **維護者**: Eric
 > **狀態**: PoC 實作完成 + Workflow Tracker
-> **Scope Boundary**: 這套 Hook 約束只在 GitHub Copilot 載入 [.github/hooks/pipeline-enforcer.json](.github/hooks/pipeline-enforcer.json) 的執行路徑生效。它不是 MCP server 對所有 client 的通用約束；其他 MCP host 仍只會看到 server 端本身的工具行為。
+> **Scope Boundary**: 這套 Hook 約束只在 GitHub Copilot 載入 [.github/hooks/pipeline-enforcer.json](../.github/hooks/pipeline-enforcer.json) 的執行路徑生效。它不是 MCP server 對所有 client 的通用約束；其他 MCP host 仍只會看到 server 端本身的工具行為。
 
 ---
 
@@ -110,7 +110,7 @@ User → Copilot Agent → [preToolUse HOOK] → MCP Tool → Our Server
                        ▼
 ┌─────────────────────────────────────────────────────────────┐
 │  MCP Tool Layer                                             │
-│  40 MCP 工具 (unified_search, find_related, etc.)           │
+│  45 MCP 工具 (unified_search, find_related, etc.)           │
 │                                                             │
 │  ┌─────────────────────────────────────────────────────┐    │
 │  │  Pipeline Engine (DAG Executor)                     │    │
@@ -540,7 +540,7 @@ postToolUse hook (evaluate-results)
 | 4 | Pipeline Search | `unified_search` (有 pipeline) | 使用 pipeline template 進行精確搜尋 |
 | 5 | Result Evaluation | `get_citation_metrics`, `get_session_summary` | 評估結果品質 (RCR, 引用數) |
 | 6 | Deep Exploration | `find_related_articles`, `find_citing_articles`, `get_fulltext`, `build_citation_tree` | 深入探索重要文獻 |
-| 7 | Export & Synthesis | `prepare_export`, `save_literature_notes`, `build_research_timeline` | 匯出引用、本機 wiki note、建構時間軸 |
+| 7 | Export & Synthesis | `prepare_export`, `save_literature_notes`, `build_research_chronicle` | 匯出引用、本機 wiki note、建構可版本比對的研究編年史 |
 
 ### State File Schema
 

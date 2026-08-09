@@ -161,8 +161,12 @@ Browser fallback 需要另外啟動本機 broker：
 ```bash
 uv sync --extra browser-broker
 uv run playwright install chromium
-uv run pubmed-browser-fetch-broker --token local-dev-token
+uv run python -c "import secrets; print(secrets.token_urlsafe(32))"
+uv run pubmed-browser-fetch-broker --token "<same-random-32-byte-token>"
 ```
+
+請把產生的值同時填入 broker 命令與 MCP 設定，絕不要直接沿用公開文件中的 token。
+Broker 也會強制 loopback bind，並驗證 loopback Host 與 Origin。
 
 只對你信任且有權存取的 host 啟用 browser-session fallback：
 
@@ -171,7 +175,7 @@ uv run pubmed-browser-fetch-broker --token local-dev-token
   "enabled": true,
   "auto_enabled": true,
   "broker_url": "http://127.0.0.1:8766/fetch",
-  "token": "local-dev-token",
+  "token": "<same-random-32-byte-token>",
   "allowed_hosts": ["jamanetwork.com", "*.jamanetwork.com"]
 }
 ```
@@ -218,7 +222,7 @@ prepare_export(pmids="last", format="bibtex", source="local")
 prepare_export(pmids="last", format="csl")
 ```
 
-如果目標是本機知識庫，而不是單一引用檔，使用 `save_literature_notes`：
+如果目標是 note library，而不是單一引用檔，使用 `save_literature_notes`：
 
 ```python
 save_literature_notes(pmids="last")
@@ -229,7 +233,12 @@ save_literature_notes(pmids="last", output_dir="./references")
 
 預設 `note_format` 是 `wiki`。`unified_search` 對 PMID-backed result set 會主動建議 `save_literature_notes(pmids="last", note_format="wiki")`；產生的 LLM wiki/Foam links 會使用 PMID、DOI、PMCID 等穩定 identifier 作為 `[[stable-id|title]]` target，而不是從 title 產生檔名。回應也會包含 `wiki_validation`，讓 agent 在編輯 note library 前先檢查 unresolved wikilinks。
 
-輸出目錄解析順序：
+`output_dir` 範例與自訂 `template_file` 都是**本機模式能力**。認證 service
+caller 不能選擇 server host path，也不能讀取任意 template file；應省略這兩個
+arguments、選擇內建 `note_format`，由 server 寫入該 principal 隔離的
+`references/` 目錄。
+
+本機模式的輸出目錄解析順序：
 
 1. `output_dir`
 2. `PUBMED_NOTES_DIR`
@@ -256,16 +265,22 @@ Server 透過 `manage_pipeline` 暴露主要 pipeline operations，也保留 `sa
 
 Saved pipelines 可以透過 `unified_search(pipeline="saved:<name>")` 重用。Pipeline `config` 應是 YAML 或 JSON string；scheduled pipeline 使用標準 five-field cron string。
 
+Runtime 邊界：本機 caller 可使用 `workspace` scope 與
+`load_pipeline(source="file:...")`。認證 service caller 只使用 tenant-derived saved-pipeline
+store；它不繼承 process-wide workspace path，並會拒絕 `file:` source。Service Compose
+也預設停用 in-process scheduler；在啟用 recurring execution 前，維運者必須改用手動
+run，或設計單一 external leader/lease。
+
 ## Copilot Studio 注意事項
 
 ![Client integration and deployment workflow](images/integration-deployment-workflow.svg)
 
 Copilot 有兩條路：
 
-- 完整 primary MCP surface：透過 `pubmed-search-mcp-http --transport streamable-http --copilot-compatible`
-- 簡化 Copilot Studio surface：透過 `run_copilot.py` 暴露較小的 11-tool schema
+- 可公開的 primary MCP surface：透過 authenticated `pubmed-search-mcp-http --mode service --transport streamable-http --copilot-compatible`
+- 僅 loopback 的 schema smoke：透過 `run_copilot.py` 檢查較小的 11-tool schema
 
-Client 能處理時優先用完整工具面。當 Copilot Studio schema compatibility 是第一優先時，使用簡化工具面。
+只有完整 authenticated service 可以公開。簡化工具面僅供本機檢查 Copilot Studio schema compatibility；任何 public endpoint 都必須回到 service launcher，禁止 tunnel `run_copilot.py`。
 
 ## 怎樣問 Agent 比較好
 
@@ -305,6 +320,8 @@ Client 能處理時優先用完整工具面。當 Copilot Studio schema compatib
 | NCBI warning 或速度慢 | 設定 `NCBI_EMAIL`；需要時加 `NCBI_API_KEY`。 |
 | 全文為空或很少 | 先對 PMC Open Access article 測 `get_fulltext`，再確認來源可用性。 |
 | 本機筆記存到非預期位置 | 檢查 `output_dir`、`PUBMED_NOTES_DIR`、`PUBMED_WORKSPACE_DIR` 與 `PUBMED_DATA_DIR`。 |
+| Service 拒絕 note path、template、pipeline file 或 workspace scope | 省略 server-host path；使用內建 note format，並以名稱存入 authenticated tenant store。 |
+| Service Compose 已保存 schedule 但沒有執行 | Service scheduler 刻意預設停用；請手動執行或提供單一 external leader/lease。 |
 | GitHub Pages 文件看起來沒更新 | 本機跑 `uv run python scripts/build_docs_site.py`，再看 Pages workflow。 |
 
 ## 下一步

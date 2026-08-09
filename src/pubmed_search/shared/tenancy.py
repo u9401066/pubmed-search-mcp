@@ -9,10 +9,13 @@ Identity precedence, strongest first:
 
 1. ``auth`` - an authenticated principal from a verified bearer token. This is
    the only source that is a real security boundary.
-2. ``transport`` - the server-issued Streamable HTTP session id. It prevents
-   accidental crosstalk between concurrent agents but is not an authorization
-   decision, so treat it as isolation-only.
-3. ``stdio`` - one caller per process; everything maps to the default tenant.
+2. ``transport`` - a legacy Streamable HTTP session id. It prevents accidental
+   crosstalk but is client-supplied and not an authorization decision.
+3. ``local_http`` - trusted loopback HTTP in explicit single-user local mode;
+   it shares the durable default store but is distinct from stdio for responses.
+4. ``anonymous_http`` - modern/stateless HTTP without a verified principal.
+   It is request-scoped and may never own persisted data.
+5. ``stdio`` - one local caller per process; everything maps to the default tenant.
 
 Tenant ids reach the filesystem, so :func:`normalize_tenant_id` always returns a
 slug plus a digest of the raw value: sanitizing alone could let two different
@@ -35,47 +38,67 @@ if TYPE_CHECKING:
 #: Tenant used for stdio and for unauthenticated single-user deployments.
 DEFAULT_TENANT_ID = "default"
 
+#: Stable diagnostic id for anonymous HTTP. Its session manager is request-scoped,
+#: so this identifier is never a key in the persistent registry cache.
+ANONYMOUS_HTTP_TENANT_ID = "anonymous-http"
+
 #: Subdirectory holding per-tenant storage roots.
 TENANT_DIR_NAME = "tenants"
 
 #: Where a tenant identity came from, strongest first.
-TenantSource = Literal["auth", "transport", "explicit", "stdio"]
+TenantSource = Literal["auth", "transport", "local_http", "anonymous_http", "explicit", "stdio"]
 
 #: Identity sources stable and trustworthy enough to own persisted artifacts.
-_DURABLE_SOURCES: frozenset[str] = frozenset({"auth", "explicit", "stdio"})
+_DURABLE_SOURCES: frozenset[str] = frozenset({"auth", "local_http", "explicit", "stdio"})
 
 _SLUG_RE = re.compile(r"[^a-z0-9]+")
 _MAX_SLUG_LENGTH = 40
 
-#: Separator between slug and digest. Slugification maps every non-alphanumeric
-#: character to "-", so a "." can only come from a value we normalized already.
+#: Separator between slug and digest.
 _DIGEST_SEPARATOR = "."
-_NORMALIZED_RE = re.compile(r"^[a-z0-9-]{1,40}\.[0-9a-f]{12}$")
 
 
-def normalize_tenant_id(raw: str | None) -> str:
+class _NormalizedTenantId(str):
+    """Opaque marker for ids normalized inside this process.
+
+    A textual shape cannot prove that a value has already been normalized: an
+    untrusted principal can deliberately choose that same shape.  Keeping the
+    marker in the string's runtime type preserves idempotency for internal
+    re-resolution without granting raw principals a collision primitive.
+    """
+
+    __slots__ = ()
+
+
+def normalize_tenant_id(raw: str | None, *, allow_default: bool = True) -> str:
     """Return a filesystem-safe, collision-free tenant id for *raw*.
 
-    The function is idempotent: passing an already-normalized id returns it
-    unchanged, so resolving a tenant twice cannot silently split its storage.
+    The function is idempotent for values it previously returned.  It does not
+    infer that status from a caller-controlled string pattern, because a raw
+    principal could otherwise impersonate another principal's normalized id.
 
     Args:
         raw: Untrusted identifier such as a token subject or transport session id.
+        allow_default: Preserve the reserved local ``default`` tenant.  Remote
+            principal construction disables this so an authenticated subject
+            named ``default`` cannot enter the single-user storage root.
 
     Returns:
-        ``"default"`` for empty input, otherwise a lowercase slug joined to a
-        digest of the original value so distinct principals never share a
-        directory after sanitization.
+        ``"default"`` for empty input when ``allow_default`` is enabled,
+        otherwise a lowercase slug joined to a digest of the original value so
+        distinct principals never share a directory after sanitization.
     """
+    if isinstance(raw, _NormalizedTenantId):
+        return raw
+
     value = (raw or "").strip()
-    if not value or value == DEFAULT_TENANT_ID:
+    if allow_default and (not value or value == DEFAULT_TENANT_ID):
         return DEFAULT_TENANT_ID
-    if _NORMALIZED_RE.match(value):
-        return value
 
     slug = _SLUG_RE.sub("-", value.lower()).strip("-")[:_MAX_SLUG_LENGTH]
     digest = hashlib.sha256(value.encode("utf-8")).hexdigest()[:12]
-    return f"{slug}{_DIGEST_SEPARATOR}{digest}" if slug else f"tenant{_DIGEST_SEPARATOR}{digest}"
+    normalized = f"{slug}{_DIGEST_SEPARATOR}{digest}" if slug else f"tenant{_DIGEST_SEPARATOR}{digest}"
+    return _NormalizedTenantId(normalized)
 
 
 @dataclass(frozen=True)
@@ -127,10 +150,20 @@ class TenantIdentity:
     @classmethod
     def for_principal(cls, principal: str, *, source: TenantSource = "auth") -> TenantIdentity:
         """Build an identity from an authenticated principal or session id."""
-        return cls(tenant_id=normalize_tenant_id(principal), principal=principal, source=source)
+        return cls(
+            tenant_id=normalize_tenant_id(principal, allow_default=False),
+            principal=principal,
+            source=source,
+        )
 
 
 DEFAULT_TENANT = TenantIdentity()
+LOCAL_HTTP_TENANT = TenantIdentity(source="local_http")
+ANONYMOUS_HTTP_TENANT = TenantIdentity(
+    tenant_id=ANONYMOUS_HTTP_TENANT_ID,
+    principal=None,
+    source="anonymous_http",
+)
 
 _current_tenant: ContextVar[TenantIdentity] = ContextVar("pubmed_current_tenant", default=DEFAULT_TENANT)
 
@@ -199,8 +232,11 @@ def tenant_data_dir(root: str | Path | None, tenant_id: str | None = None) -> st
 
 
 __all__ = [
+    "ANONYMOUS_HTTP_TENANT",
+    "ANONYMOUS_HTTP_TENANT_ID",
     "DEFAULT_TENANT",
     "DEFAULT_TENANT_ID",
+    "LOCAL_HTTP_TENANT",
     "TENANT_DIR_NAME",
     "TenantIdentity",
     "TenantSource",

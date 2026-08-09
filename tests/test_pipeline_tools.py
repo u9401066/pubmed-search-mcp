@@ -36,6 +36,7 @@ from pubmed_search.presentation.mcp_server.tools.pipeline_tools import (
     set_pipeline_scheduler,
     set_pipeline_store,
 )
+from pubmed_search.shared.tenancy import TenantIdentity, bind_tenant
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -363,6 +364,15 @@ class TestLoadPipeline:
         assert "file" in output.lower()
         mock_store.load_from_path.assert_called_once_with("path/to/pipe.yaml")
 
+    def test_authenticated_service_cannot_load_pipeline_from_server_file(self, mcp, mock_store):
+        identity = TenantIdentity.for_principal("remote-team", source="auth")
+
+        with bind_tenant(identity):
+            output = mcp["load_pipeline"](source="file:path/to/pipe.yaml")
+
+        assert "cannot read pipeline files" in output.lower()
+        mock_store.load_from_path.assert_not_called()
+
     def test_load_not_found(self, mcp, mock_store):
         mock_store.load.side_effect = FileNotFoundError("not found")
         output = mcp["load_pipeline"](source="nonexistent")
@@ -432,19 +442,13 @@ class TestGetPipelineHistory:
             ),
         ]
         mock_store.get_history.return_value = runs
-
-        # Mock the _runs_dir_for and _find_pipeline_scope
-        mock_runs_dir = MagicMock()
-        mock_pipe_dir = MagicMock()
-        mock_pipe_dir.glob.return_value = [MagicMock() for _ in range(5)]  # 5 total runs
-        mock_runs_dir.__truediv__ = MagicMock(return_value=mock_pipe_dir)
-        mock_store._runs_dir_for.return_value = mock_runs_dir
-        mock_store._find_pipeline_scope.return_value = PipelineScope.WORKSPACE
+        mock_store.count_history.return_value = 5
 
         output = mcp["get_pipeline_history"](name="hist")
         assert "hist" in output
         assert "run_002" not in output  # run_id is not displayed directly
         assert "10" in output  # article_count
+        mock_store.count_history.assert_called_once_with("hist")
 
     def test_history_empty(self, mcp, mock_store):
         mock_store.exists.return_value = True

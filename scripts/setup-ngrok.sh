@@ -161,67 +161,14 @@ start_tunnel() {
     local domain=$1
     local port=${2:-8765}
 
-    print_header "Starting ngrok Tunnel"
-
+    print_header "Starting authenticated ngrok service"
     echo "Domain: $domain"
     echo "Local port: $port"
-    echo ""
+    echo "PUBMED_AUTH_TOKENS is required; anonymous public tunnels are refused."
 
-    # Start the MCP server in background
-    print_info "Starting PubMed Search MCP Server..."
-    cd "$PROJECT_DIR"
-
-    uv run pubmed-search-mcp-http --transport streamable-http --port "$port" &
-    SERVER_PID=$!
-    sleep 2
-
-    if ! kill -0 $SERVER_PID 2>/dev/null; then
-        print_error "Failed to start MCP server"
-        exit 1
-    fi
-    print_success "MCP server started (PID: $SERVER_PID)"
-
-    # Start ngrok with domain
-    print_info "Starting ngrok tunnel..."
-    ngrok http --domain="$domain" $port &
-    NGROK_PID=$!
-    sleep 3
-
-    if ! kill -0 $NGROK_PID 2>/dev/null; then
-        print_error "Failed to start ngrok tunnel"
-        kill $SERVER_PID 2>/dev/null
-        exit 1
-    fi
-
-    print_header "🎉 Ready for Microsoft Copilot Studio!"
-
-    echo ""
-    echo "Your MCP server is now accessible at:"
-    echo ""
-    echo -e "  ${GREEN}https://${domain}/mcp${NC}"
-    echo ""
-    echo "═══════════════════════════════════════════════════════════════"
-    echo ""
-    echo "Copilot Studio Configuration:"
-    echo "  Server name:        PubMed Search"
-    echo "  Server URL:         https://${domain}/mcp"
-    echo "  Authentication:     None"
-    echo ""
-    echo "═══════════════════════════════════════════════════════════════"
-    echo ""
-    echo "Quick test:"
-    echo "  curl -X POST https://${domain}/mcp"
-    echo ""
-    echo "ngrok dashboard: http://localhost:4040"
-    echo ""
-    echo "Press Ctrl+C to stop"
-    echo ""
-
-    # Handle shutdown
-    trap "echo ''; echo 'Shutting down...'; kill $SERVER_PID $NGROK_PID 2>/dev/null; exit 0" SIGINT SIGTERM
-
-    # Wait
-    wait
+    export NGROK_DOMAIN="$domain"
+    export MCP_PORT="$port"
+    exec "$SCRIPT_DIR/start-copilot-studio.sh" --with-ngrok
 }
 
 # Show status

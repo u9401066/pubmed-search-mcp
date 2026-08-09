@@ -6,7 +6,7 @@
 
 這份指南給 maintainer 與 contributor。它說明 codebase 組織、行為應放在哪一層、文件如何生成，以及哪些驗證命令保護整合面。
 
-請搭配 [架構文件](#/architecture)、[AGENTS.md](../AGENTS.md) 與 [工具使用指南](#/tools-usage-guide-zh) 閱讀。
+請搭配 [架構文件](#/architecture)、[AGENTS.md](https://github.com/u9401066/pubmed-search-mcp/blob/master/AGENTS.md) 與 [工具使用指南](#/tools-usage-guide-zh) 閱讀。
 
 ## Repository 契約
 
@@ -34,15 +34,20 @@ Presentation layer 負責 MCP tools、prompts、resources 與 HTTP compatibility
 | Surface | Entry | 用途 |
 | --- | --- | --- |
 | Local MCP stdio | `uvx pubmed-search-mcp` 或 `uv run python -m pubmed_search.presentation.mcp_server` | 預設本機 client 模式 |
-| Streamable HTTP | `pubmed-search-mcp-http --transport streamable-http` | 遠端 MCP clients 與 service deployments |
-| Full Copilot-compatible HTTP | `pubmed-search-mcp-http --transport streamable-http --copilot-compatible` | 保留完整 primary MCP surface，並加上 Copilot-compatible HTTP semantics |
+| Local Streamable HTTP | `pubmed-search-mcp-http --mode local --host 127.0.0.1` | 可信任的單使用者 loopback 整合 |
+| Authenticated service | `pubmed-search-mcp-http --mode service` | Fail-closed 多使用者 HTTP 與 principal-scoped state |
+| Full Copilot-compatible HTTP | `pubmed-search-mcp-http --mode service --transport streamable-http --copilot-compatible` | 經認證的遠端 primary MCP surface，並加上 Copilot-compatible HTTP semantics |
 | Python SDK facade | `from pubmed_search.api import PubMedSearchClient` | Python package、notebook、app 的 in-process integration |
-| Simplified Copilot Studio | `uv run python run_copilot.py` | Copilot Studio compatibility 優先的小型 schema |
+| Simplified Copilot smoke | `uv run python run_copilot.py` | 僅 loopback 本機 schema/protocol 驗證；禁止接公網 tunnel |
 | Browser fetch broker | `uv run pubmed-browser-fetch-broker --token ...` | 可選的本機 Playwright broker，用於 authenticated PDF download capture |
 | Static docs site | `docs/index.html` 加 generated payload | GitHub Pages 文件網站 |
 
 
-MCP tools、Python SDK facade、HTTP CLI 是同一組核心能力上的三個獨立 contract，不是三個彼此分裂的產品。`run_server.py` 只保留為 source-tree development wrapper；installed package 與遠端部署應使用 `pubmed-search-mcp-http`。`run_copilot.py` 則刻意暴露 Copilot-specific simplified surface。
+MCP tools、Python SDK facade、HTTP CLI 是同一組核心能力上的三個獨立 contract，不是三個彼此分裂的產品。`run_server.py` 只保留為 source-tree development wrapper；installed package 與遠端部署應使用 `pubmed-search-mcp-http`。`run_copilot.py` 則刻意暴露 Copilot-specific simplified surface，但只允許 loopback，禁止放在公網 tunnel 後；遠端 Copilot 一律使用 authenticated `--mode service`。
+
+MCP contract 使用 SDK v2。當前 client 會不透過 `initialize` 或 `Mcp-Session-Id`，直接呼叫
+`tools/list` 與 `tools/call`；legacy compatibility 絕不能用來識別身分或選擇 tenant。
+Service 每個 request 都必須以 bearer principal 授權。
 
 ## Code Map
 
@@ -108,7 +113,9 @@ Source connector 必須待在 infrastructure boundary 後面。Provider-specific
 2. 任何穩定的跨來源概念，先在 domain/application 建模，再進 presentation。
 3. Commercial 或 credentialed connectors 要用 explicit settings gate。
 4. 依賴 licensed access 的 connector 預設保持 default-off。
-5. CI 使用 mocked tests；live integration tests 保持 opt-in。
+5. CI 使用 mocked tests；live integration tests 必須明確 opt-in：先設定
+   `PUBMED_RUN_LIVE_TESTS=1`（PowerShell 用 `$env:PUBMED_RUN_LIVE_TESTS='1'`），
+   再執行 `uv run pytest -m integration`。
 6. 更新 source contracts 與 user docs，說明 rate limits、rights expectations、optional keys 與 provenance behavior。
 
 如果某 provider 沒 credential 會失敗或有授權限制，不要默默加進 `source="all"`。
@@ -130,6 +137,9 @@ Export layer 屬於 `application/export/`。Presentation tools 不應手動組 R
 - Local note defaults 使用 wiki-note semantics。
 - Foam-compatible wikilinks、MedPaper-style layouts、CSL JSON 與 user templates 是 export profiles，不是 presentation-only behavior。
 - 輸出目錄解析順序必須保持文件化：`output_dir`、`PUBMED_NOTES_DIR`、`PUBMED_WORKSPACE_DIR/references`、`PUBMED_DATA_DIR/references`、`~/.pubmed-search-mcp/references`。
+- 這套 directory/template resolution 只屬於本機模式。Authenticated service tools 必須拒絕
+  caller-selected `output_dir` 與 `template_file`，並將內建 format 寫到 installed tenant
+  session root 之下。
 
 Note export 行為改變時，要同步更新 user docs、generated docs、描述同一行為的 skills 或 packaged references，以及 tests。
 
@@ -148,6 +158,10 @@ Pipeline 變更需要同時考慮：
 - validation errors
 - execution history
 - scheduling behavior
+- local 與 authenticated-service storage：tenant-derived store 不能繼承 process-wide
+  workspace，service caller 不能載入 `file:`
+- scheduler ownership：在具備單一 leader/lease 前，service Compose profile 必須停用，不能
+  每個 worker 各自執行 scheduler
 - docs site routing
 - packaged tutorial copies
 

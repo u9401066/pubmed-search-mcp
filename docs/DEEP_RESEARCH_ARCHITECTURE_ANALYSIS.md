@@ -5,6 +5,11 @@
 > **最後更新**: 2026-02-15
 > **維護者**: Eric
 > **分析對象**: 8 個系統（含本專案）
+>
+> **歷史 snapshot 說明 (2026-08-09)**: 下文的競品資料、40-tool 數字與
+> 比較結論保留 2026-02 當時語境，不代表當前 runtime。現行本 repo
+> 是 MCP SDK v2 `MCPServer`、45-tool primary surface、registry-backed
+> multi-source broker，並已分開 local 與 authenticated service 合約。
 
 ---
 

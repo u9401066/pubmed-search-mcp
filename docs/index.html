@@ -3,12 +3,17 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
     <title>PubMed Search MCP Docs</title>
     <meta
       name="description"
-      content="Browse PubMed Search MCP documentation for users and developers: overview, workflows, architecture, tools usage, pipeline tutorials, source contracts, troubleshooting, and deployment."
+      content="The complete PubMed Search MCP SDK v2 handbook: installation, 45-tool research workflows, multi-source broker behavior, local and authenticated service deployment, security, troubleshooting, and development."
     />
-    <link rel="stylesheet" href="site.css?v=20260511-ux-polish" />
+    <link rel="icon" href="images/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="site.css?v=20260809-handbook" />
   </head>
   <body>
     <div class="layout-shell">
@@ -16,7 +21,7 @@
         <div class="brand-block">
           <p id="site-eyebrow" class="eyebrow">Documentation Site</p>
           <h1>PubMed Search MCP</h1>
-          <p id="site-tagline" class="tagline">Role-aware documentation for researchers, AI-client users, and maintainers.</p>
+          <p id="site-tagline" class="tagline">The complete operating handbook for researchers, AI-client users, service operators, and maintainers.</p>
         </div>
 
         <div class="lang-switch" role="group" aria-label="Language">
@@ -53,18 +58,36 @@
           </div>
           <div class="hero-metrics">
             <div>
-              <strong>Registry</strong>
-              <span id="tool-metric-label">generated tool index</span>
+              <strong>45</strong>
+              <span id="tool-metric-label">MCP tools</span>
             </div>
             <div>
-              <strong>Counts-first</strong>
-              <span id="routing-metric-label">agent routing support</span>
+              <strong>8</strong>
+              <span id="routing-metric-label">capability families</span>
             </div>
             <div>
-              <strong>OA-aware</strong>
-              <span id="oa-metric-label">full text and figures</span>
+              <strong>3</strong>
+              <span id="oa-metric-label">runtime contracts</span>
             </div>
           </div>
+        </section>
+
+        <section id="journey-grid" class="journey-grid" aria-label="Documentation quick paths">
+          <a class="journey-card" href="#/overview" data-page-group="overview">
+            <span id="journey-local-kicker" class="journey-kicker">Start in five minutes</span>
+            <strong id="journey-local-title">Run locally</strong>
+            <span id="journey-local-copy">Install with uvx, connect an AI client, and make the first search.</span>
+          </a>
+          <a class="journey-card" href="#/user-guide" data-page-group="user-guide">
+            <span id="journey-research-kicker" class="journey-kicker">Research handbook</span>
+            <strong id="journey-research-title">Use the 45 tools</strong>
+            <span id="journey-research-copy">Choose a capability, search multiple sources, read full text, and preserve evidence.</span>
+          </a>
+          <a class="journey-card" href="#/deployment" data-page-group="deployment">
+            <span id="journey-service-kicker" class="journey-kicker">Operator runbook</span>
+            <strong id="journey-service-title">Deploy safely</strong>
+            <span id="journey-service-copy">Keep local and authenticated multi-user service contracts separate.</span>
+          </a>
         </section>
 
         <div class="doc-layout">
@@ -74,9 +97,25 @@
       </main>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
-    <script src="site-content.js?v=20260511-ux-polish"></script>
-    <script src="site.js?v=20260511-ux-polish"></script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/marked@18.0.7/lib/marked.umd.js"
+      integrity="sha384-7njNzKcJUBdezPGfqUrIFizi2QkXJH0M6wF3o1h9GE/nce6X4YdecMwh31B19yTi"
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer"
+    ></script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/dompurify@3.4.12/dist/purify.min.js"
+      integrity="sha384-piCcpDdJ7qVeK4Tv8Z6Hpcr3ZBIgP16TxQTPVfsLFdZ5uDgwc3Y8Ho7oUnqf12qu"
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer"
+    ></script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/mermaid@11.16.0/dist/mermaid.min.js"
+      integrity="sha384-T/0lMUdJpd2S1ZHtRiofG3htU3xPCrFVeAQ1UUE2TJwlEJSV5NUwn30kP28n238E"
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer"
+    ></script>
+    <script src="site-content.js?v=20260809-handbook"></script>
+    <script src="site.js?v=20260809-handbook"></script>
   </body>
 </html>

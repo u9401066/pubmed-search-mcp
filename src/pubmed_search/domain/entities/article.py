@@ -982,17 +982,21 @@ class UnifiedArticle:
         if self.pmid and other.pmid:
             return self.pmid == other.pmid
 
-        # PMC match
-        if self.pmc and other.pmc:
-            return self._normalize_pmc(self.pmc) == self._normalize_pmc(other.pmc)
+        # Provider identifiers are equally strong within their own namespaces.
+        # Normalize URLs/case/arXiv versions before comparing.
+        from pubmed_search.shared.article_identity import normalize_article_identifier
 
-        # OpenAlex ID match
-        if self.openalex_id and other.openalex_id:
-            return self.openalex_id == other.openalex_id
-
-        # S2 ID match
-        if self.s2_id and other.s2_id:
-            return self.s2_id.lower() == other.s2_id.lower()
+        for attr, kind in (
+            ("pmc", "pmc"),
+            ("openalex_id", "openalex"),
+            ("s2_id", "s2"),
+            ("core_id", "core"),
+            ("arxiv_id", "arxiv"),
+        ):
+            left = normalize_article_identifier(kind, getattr(self, attr))
+            right = normalize_article_identifier(kind, getattr(other, attr))
+            if left and right:
+                return left == right
 
         return False
 

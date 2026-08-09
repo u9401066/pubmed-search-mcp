@@ -2,56 +2,68 @@
 
 這份文件描述目前仍受支援、且已與實際程式碼對齊的部署方式。
 
-## 部署矩陣
+## 三種部署合約
 
 ![Client integration and deployment workflow](docs/images/integration-deployment-workflow.svg)
 
-| 模式 | 入口 | 適合情境 | 備註 |
+| 合約 | 入口 | 適用情境 | 安全邊界 |
 | --- | --- | --- | --- |
-| stdio | `uvx pubmed-search-mcp` | VS Code、Claude Desktop、Cursor | 預設本機模式 |
-| HTTP | `pubmed-search-mcp-http --transport streamable-http` | 遠端 MCP client、自建服務 | 推薦的 HTTP transport |
-| HTTP + Copilot compatibility | `pubmed-search-mcp-http --transport streamable-http --copilot-compatible` | 想保留完整 45-tool primary MCP surface 並接 Copilot | HTTP response 會做相容轉換 |
-| Copilot simplified | `uv run python run_copilot.py` | Copilot Studio schema 相容性優先 | 暴露精簡版工具集 |
-| HTTPS local | `scripts/start-https-local.sh` | 本機 HTTPS smoke test | `/mcp`、`/health`、`/info` |
-| HTTPS Docker | `scripts/start-https-docker.sh up` | Nginx TLS reverse proxy 測試 | 預設代理到 `/mcp` |
+| **本機 stdio** | `uvx pubmed-search-mcp` | VS Code、Claude Desktop、Cursor | 單一本機使用者；無 MCP listening port |
+| **本機 loopback HTTP** | `pubmed-search-mcp-http --mode local --host 127.0.0.1` | 本機開發、connector smoke | 可信單使用者 durable `default` tenant；僅 loopback，不可對外 |
+| **多使用者 service** | `pubmed-search-mcp-http --mode service` | 團隊、雲端、Copilot Studio | HTTPS + bearer principal + Host/Origin allowlist；啟動時 fail closed |
+
+Copilot compatibility 只是 HTTP response/schema 的變體，不是第四種信任模型。
+Service mode 即使加上 `--copilot-compatible`，仍然強制認證與 allowlist。
 
 ```mermaid
 flowchart TD
-  Start[要怎麼部署?]
-  Local{只給本機 AI client?}
-  Remote{需要遠端 / Copilot / HTTPS?}
-  StdIO[stdio\nuvx pubmed-search-mcp]
-  HTTP[HTTP\npubmed-search-mcp-http]
-  Full[Full Copilot\npubmed-search-mcp-http --copilot-compatible]
-  Simple[Simple Copilot\nrun_copilot.py]
-  TLS[HTTPS\nstart-https-local.sh / start-https-docker.sh]
+  Start[選擇執行邊界]
+  One{只有一位本機使用者?}
+  NeedHTTP{需要 HTTP connector?}
+  StdIO[本機 stdio\nuvx pubmed-search-mcp]
+  LocalHTTP[本機 loopback HTTP\n--mode local]
+  Service[多使用者 service\n--mode service + HTTPS + bearer]
 
-  Start --> Local
-  Local -->|是| StdIO
-  Local -->|否| Remote
-  Remote -->|一般遠端 MCP| HTTP
-  Remote -->|Copilot 且要完整 tools| Full
-  Remote -->|Copilot 且 schema 要最穩| Simple
-  Remote -->|需要 HTTPS 包裝| TLS
+  Start --> One
+  One -->|是| NeedHTTP
+  NeedHTTP -->|否| StdIO
+  NeedHTTP -->|是| LocalHTTP
+  One -->|否| Service
 ```
 
-## 0. 多 Agent 正式服務 (Multi-Agent Service Mode)
+## 0. 多使用者 service（Multi-Agent Service Mode）
 
-如果這個 server 不是只給你自己的編輯器用，而是要「一個服務、多個 agent 呼叫」，
-先讀這一節。預設的本機模式刻意保持零設定，但那不是多租戶安全的組態。
+本機 profile 刻意維持低設定成本，但不是遠端授權邊界。只要 port
+會被另一台機器、共用 runner 或多位 agent 存取，就必須使用 service mode。
 
-### 0.1 一分鐘啟動
+### 0.1 Compose 啟動
 
 ```bash
+cp .env.service.example .env
+# 編輯 .env；真實 token/API key 不可 commit
+docker compose --env-file .env -f docker-compose.service.yml up -d
+```
+
+`docker-compose.service.yml` 會強制必要變數、掛載 persistent volume，並將
+application port 只 publish 至 host loopback，供同一台 host 上的可信 TLS reverse proxy
+使用。它固定單副本/單 server process，因為目前尚無共享 session backend。
+
+不使用 Compose 時，等價設定為：
+
+```bash
+export PUBMED_SERVER_MODE=service
 export PUBMED_AUTH_TOKENS="team-a:$(openssl rand -hex 32),team-b:$(openssl rand -hex 32)"
-export PUBMED_AUTH_REQUIRED=true
-export PUBMED_TENANT_ISOLATION=true
+export PUBMED_AUTH_RESOURCE_SERVER_URL="https://mcp.example.org/mcp"
+# Optional; defaults to the public resource URL origin (https://mcp.example.org)
+export PUBMED_AUTH_ISSUER_URL="https://mcp.example.org"
+export PUBMED_ALLOWED_HOSTS="mcp.example.org"
+export PUBMED_ALLOWED_ORIGINS="https://mcp.example.org"
+export PUBMED_TRUSTED_PROXY_IPS="127.0.0.1"
 export PUBMED_TENANT_MAX_CONCURRENCY=8
 export PUBMED_DATA_DIR=/var/lib/pubmed-search-mcp
 export NCBI_EMAIL="ops@example.org"
-export NCBI_API_KEY="..."          # 大幅提高 NCBI 速率上限
 
-pubmed-search-mcp-http --transport streamable-http --host 0.0.0.0 --port 8765
+pubmed-search-mcp-http --mode service --transport streamable-http --host 0.0.0.0 --port 8765
 ```
 
 Agent 端帶上 bearer token：
@@ -61,93 +73,88 @@ Agent 端帶上 bearer token：
   "servers": {
     "pubmed-search": {
       "url": "https://mcp.example.org/mcp",
-      "headers": { "Authorization": "Bearer <team-a 的 token>" }
+      "headers": { "Authorization": "Bearer <team-a token>" }
     }
   }
 }
 ```
 
-### 0.2 隔離模型
+### 0.2 身分、隔離與持久化
 
-| 層級 | 隔離依據 | 是否為安全邊界 |
+| 合約 | 身分/隔離依據 | 可持久化 |
 | --- | --- | --- |
-| 已認證呼叫端 | bearer token 的 principal | ✅ 是 |
-| 未認證但有 HTTP session | server 發出的 `mcp-session-id` | ⚠️ 否，只防「意外互看」 |
-| stdio | 單一 process 單一使用者 | n/a |
+| 本機 stdio | 當前 OS 使用者與 local process | ✅ local store |
+| 本機 loopback HTTP | 顯式 local profile 的單使用者 `default` tenant | ✅ local durable store，跨 MCP requests/reconnects |
+| service | 已驗證 bearer principal | ✅ `PUBMED_DATA_DIR/tenants/<principal>/` |
+| service anonymous | 無可驗證身分 | ❌ 啟動/請求即拒絕 |
 
-每個 tenant 擁有各自的 session、article cache、搜尋歷史、`pmids="last"`、
-artifacts、chronicle 與 pipeline 儲存。`default` tenant 仍寫入 `PUBMED_DATA_DIR`
-本身（保留既有單機安裝的資料），其他 tenant 寫入
-`PUBMED_DATA_DIR/tenants/<tenant_id>/`。
+Local stdio 與 local loopback HTTP 都使用 `PUBMED_DATA_DIR` 下的 durable `default`
+tenant。MCP transport session identifier 只屬於 protocol lifecycle，**不是 service tenant
+身分或授權邊界**。Service 的 session、article cache、搜尋歷史、`pmids="last"`、artifacts、
+exports、chronicles 與 pipelines 全部依已驗證 principal 分區。
 
-> ⚠️ **沒設 `PUBMED_AUTH_TOKENS` 就對外開放，等同任何人都能讀寫。**
-> 正式部署請同時設定 `PUBMED_AUTH_TOKENS` 與 `PUBMED_AUTH_REQUIRED=true`，
-> 後者會讓 server 在誤設定時直接拒絕啟動，而不是安靜地開放。
+MCP SDK v2 的 2026-07-28 request model 會直接送 `tools/list` / `tools/call`，
+不使用 `initialize` handshake 或 `Mcp-Session-Id`。Service 仍必須在每個 protected
+request 驗證 bearer principal；legacy compatibility 不是身分或持久化來源。
 
-### 0.2.1 持久化需要認證身分
-
-沒有 auth 時，tenant 只能從 `mcp-session-id` header 推導。這個值有兩個致命
-問題：**每次重連都會改變**（存下去的資料下次就找不回來），而且**由 client 自己
-送出**（任何人都能冒用他人的值）。因此它可以分隔執行期狀態，但不是授權邊界。
-
-所以會保存長期產物的工具 —— `build_research_chronicle`、`save_pipeline` /
-`manage_pipeline(action="save")`、`save_literature_notes` —— 在
-transport 推導的身分下會**明確拒絕寫入並說明原因**，而不是寫到一個之後找不到、
-也擋不住別人的目錄。搜尋、全文、匯出等唯讀工具不受影響。
-
-| 身分來源 | 可持久化 | 說明 |
+| Filesystem 能力 | 本機 stdio / loopback | Authenticated service |
 | --- | --- | --- |
-| `stdio` | ✅ | 本機單一使用者，資料就在自己電腦上 |
-| `auth` | ✅ | 經驗證的 principal，穩定且是授權邊界 |
-| `explicit` | ✅ | 營運方指定 |
-| `transport` | ❌ | 重連即改變且可冒用 |
+| Pipeline store | `workspace` / `global` / `auto` | tenant-derived store；`auto` 只解析到該 principal root |
+| Pipeline file | 可讀 `file:path.yaml` | 拒絕 server-host `file:` read |
+| Note output | 可選 `output_dir` 與 `template_file` | 不接受 host path；使用內建 format 寫入 `<tenant-root>/references/` |
+| Scheduler | 可在可信 local process 啟用 | Service Compose 停用；未來需單一 leader/lease |
 
-啟動時若偵測到「開了 tenant 隔離但沒設 auth」，server 會記錄警告。
+Service 中的 pipeline `workspace` 不代表共用 repo；tenant-derived store 刻意不繼承
+process-wide workspace root，避免一個 principal 讀到另一個 principal 的 host files。
 
-### 0.3 部署設定
+### 0.3 Service 環境變數
 
-| 環境變數 | 預設 | 說明 |
+| 環境變數 | Service 要求 | 說明 |
 | --- | --- | --- |
-| `PUBMED_AUTH_TOKENS` | *(空)* | `principal:token` 逗號分隔清單。設了才會啟用 bearer 認證 |
-| `PUBMED_AUTH_REQUIRED` | `false` | 為 `true` 時，沒有 token 設定就拒絕啟動（fail closed） |
-| `PUBMED_AUTH_ISSUER_URL` | *(內建)* | OAuth metadata 對外宣告的 issuer |
-| `PUBMED_TENANT_ISOLATION` | `true` | 關閉後所有呼叫端共用 `default` tenant（回到舊行為） |
-| `PUBMED_TENANT_MAX_CONCURRENCY` | `8` | 單一 tenant 同時在途的請求上限；`0` 表示不限 |
-| `PUBMED_DATA_DIR` | `~/.pubmed-search-mcp` | 所有 tenant 儲存的根目錄 |
+| `PUBMED_SERVER_MODE` | `service` | 啟用遠端 fail-closed profile |
+| `PUBMED_AUTH_TOKENS` | **必填** | `principal:token` 逗號分隔清單；不可 commit |
+| `PUBMED_AUTH_RESOURCE_SERVER_URL` | **必填** | 公開 HTTPS MCP endpoint，包含 `/mcp` |
+| `PUBMED_AUTH_ISSUER_URL` | 選填 | Metadata 公告的 issuer；未設定時從 resource URL 導出同一 public origin |
+| `PUBMED_ALLOWED_HOSTS` | **必填** | 逗號分隔的對外 host names |
+| `PUBMED_ALLOWED_ORIGINS` | **必填** | 逗號分隔的 HTTPS origins |
+| `PUBMED_TRUSTED_PROXY_IPS` | 視拓撲 | 只列實際 TLS proxy IP；空值不信任 forwarded headers |
+| `PUBMED_TENANT_ISOLATION` | 強制 `true` | service 不允許關閉 tenant isolation |
+| `PUBMED_TENANT_MAX_CONCURRENCY` | 預設 `8` | 單一 tenant 同時在途的請求上限 |
+| `PUBMED_DATA_DIR` | persistent volume | tenant storage 根目錄 |
 
-Token 只以 SHA-256 digest 保存並用 `hmac.compare_digest` 比對，不會出現在
-log 或物件 repr 中。
+Token 只以 digest 比對，不應出現在 log 或 object repr。正式環境應由
+orchestrator secret store 注入，不要把 `.env` 或 token 寫進 image。
 
 ### 0.4 配額與上游速率
 
-兩種限制是互補的，不要混淆：
+- **上游速率限制是全域的**（每個外部 API 一組），因為 NCBI 等來源依
+  API key 計量。
+- **每租戶並行上限**負責公平性，避免單一 agent 吃光全域預算。
 
-- **上游速率限制是全域的**（每個外部 API 一組）。NCBI 等來源是依 API key 計量，
-  不是依你的呼叫端計量，所以全域才是正確的。
-- **每租戶並行上限**（`PUBMED_TENANT_MAX_CONCURRENCY`）負責公平性，
-  避免單一 agent 把全域預算吃光、讓其他 agent 排隊。
+### 0.5 健康檢查與 auxiliary routes
 
-### 0.5 健康檢查與可觀測性
-
-| 端點 | 認證 | 用途 |
+| 端點 | Service 認證 | 用途 |
 | --- | --- | --- |
 | `/health` | 開放 | liveness probe |
-| `/ready` | 開放 | readiness probe；回報 transport、是否強制認證、活躍 tenant 數 |
-| `/info` | 開放 | 端點與能力清單 |
-| `/api/*` | **需要 bearer**（設了 token 時） | 唯讀快取查詢，且只會回傳呼叫端自己 tenant 的資料 |
+| `/ready` | 開放 | readiness probe |
+| `/info` | 開放 | transport 與 endpoint metadata；不回傳 tenant 資料 |
+| `/mcp` | **bearer** | primary Streamable HTTP MCP contract |
+| `/api/*` | **bearer** | principal-scoped cache/session reads |
+| `/exports`, `/download/*` | **bearer** | principal-scoped export listing/download |
 
-MCP SDK v2 預設啟用 OpenTelemetry：若部署環境已設定 global tracer provider，
-client 與 server span 會自動產生，無需改程式碼。
+MCP SDK v2 可與 OpenTelemetry tracer provider 整合；實際 exporter、retention 與私密過濾應由
+部署環境明確設定。
 
-### 0.6 水平擴充
+### 0.6 擴充限制
 
-目前 session 狀態存在本機檔案系統，因此多副本部署需要：
+目前 session、scheduler 與部分持久狀態是 process/filesystem scoped。在尚無共享
+session backend、distributed lock 與 scheduler leader election 前：
 
-- 以 sticky session（依 `Authorization` 或 `mcp-session-id`）導流到同一副本，或
-- 每個副本掛載共用的 `PUBMED_DATA_DIR`（需支援檔案鎖的儲存），或
-- 單副本垂直擴充（多數團隊的實務選擇）
-
-跨副本共享的 session backend 尚未實作。
+- 保持單副本、單 server process（service Compose 已固定 `replicas: 1`）。
+- `docker-compose.service.yml` 預設停用 pipeline scheduler；若未來需要排程，請用
+  單獨的 leader process/分散式 lease 啟用，不能讓每個 request worker 各自執行。
+- 使用 persistent `PUBMED_DATA_DIR` volume 並建立備份/retention 政策。
+- 不要以複製 container 當作無狀態水平擴充。
 
 ## 1. 前置需求
 
@@ -174,7 +181,8 @@ UNPAYWALL_EMAIL=your@email.com
 
 ## 2. 本機 stdio 模式
 
-給本機 MCP client 使用時，不需要額外部署 HTTP。
+給本機 MCP client 使用時，不需要額外部署 HTTP。stdio entrypoint 會強制
+local mode，而且預設不啟動 auxiliary HTTP port。
 
 ```bash
 uvx pubmed-search-mcp
@@ -186,36 +194,56 @@ uvx pubmed-search-mcp
 uv run python -m pubmed_search.presentation.mcp_server
 ```
 
-## 3. HTTP 模式
+只有明確需要與本機其他 process 共用 read-only cache API 時，才設定
+`PUBMED_STDIO_AUX_HTTP=1`；該 API 仍只能綁定 loopback。
+
+## 3. 本機 loopback HTTP
 
 ### 標準 streamable-http
 
 ```bash
-pubmed-search-mcp-http --transport streamable-http --port 8765 --email your@email.com
+pubmed-search-mcp-http --mode local --transport streamable-http \
+  --host 127.0.0.1 --port 8765 --email your@email.com
 ```
 
 主要端點：
 
 - MCP: `http://localhost:8765/mcp`
 - Health: `http://localhost:8765/health`
+- Ready: `http://localhost:8765/ready`
 - Info: `http://localhost:8765/info`
 - Exports: `http://localhost:8765/exports`
+
+這個 profile 給單一可信本機操作者，不可把 port publish 至 LAN/公網。Docker
+本機示範請直接用 `docker compose up -d`；Compose 會顯式開啟 container-bind
+例外，同時只把 port publish 至 host `127.0.0.1`。
+
+顯式 `--mode local` 是可信單使用者合約。所有 loopback MCP requests 共用
+durable `default` tenant，因此 `pmids="last"`、session、article cache 與 export 在同一
+server 重連後仍可讀取。這不是遠端認證模型；安全性來自 launcher 強制
+loopback bind 與 Host/Origin allowlist。Service mode 不會映射到 `default` tenant，且無
+bearer token 時會拒絕請求。
 
 ### Copilot 相容 HTTP 語意，但保留完整工具面
 
 ```bash
-pubmed-search-mcp-http --transport streamable-http --copilot-compatible --port 8765 --email your@email.com
+pubmed-search-mcp-http --mode local --transport streamable-http \
+  --copilot-compatible --host 127.0.0.1 --port 8765 --email your@email.com
 ```
 
 這條路線的用途是：
 
-- 保留完整 46 個 tool schema
-- 啟用 stateless HTTP + JSON response 相容模式
+- 保留完整 45-tool primary MCP surface
+- 啟用 Copilot 所需的 JSON response/HTTP compatibility，不改變安全合約
 - 適合先嘗試完整面，再視 Copilot Studio schema 狀況回退到簡化模式
+
+遠端 Copilot 不可使用上述 local 指令；請套用第 0 節的 service 環境，並改用
+`--mode service --copilot-compatible`。
 
 ## 4. Copilot Studio 專用模式
 
-若 Copilot Studio 對完整 schema 仍有解析限制，使用簡化模式：
+若 Copilot Studio 對完整 schema 仍有解析限制，可在本機使用簡化模式做
+schema compatibility 測試：
 
 ```bash
 uv run python run_copilot.py --port 8765 --email your@email.com
@@ -227,9 +255,14 @@ uv run python run_copilot.py --port 8765 --email your@email.com
 - 開啟 Copilot compatibility middleware
 - 暴露 Copilot Studio 友善的精簡工具集
 
+`run_copilot.py` 是 source-tree compatibility wrapper，不取代 service-mode auth 合約。多使用者
+部署優先使用 packaged `pubmed-search-mcp-http --mode service --copilot-compatible`。
+
 ## 5. HTTPS 部署
 
 ### 本機 HTTPS 測試
+
+這兩組 script 與自簽憑證只是 local smoke test，不是 production TLS profile。
 
 ```bash
 ./scripts/start-https-local.sh
@@ -239,6 +272,7 @@ uv run python run_copilot.py --port 8765 --email your@email.com
 
 - MCP: `https://localhost:8443/mcp`
 - Health: `https://localhost:8443/health`
+- Ready: `https://localhost:8443/ready`
 - Info: `https://localhost:8443/info`
 
 停止：
@@ -247,7 +281,7 @@ uv run python run_copilot.py --port 8765 --email your@email.com
 ./scripts/start-https-local.sh stop
 ```
 
-### Docker + Nginx HTTPS
+### Docker + Nginx 本機 HTTPS 示範
 
 ```bash
 ./scripts/start-https-docker.sh up
@@ -258,6 +292,7 @@ uv run python run_copilot.py --port 8765 --email your@email.com
 - MCP: `https://localhost/mcp`
 - Info: `https://localhost/info`
 - Health: `https://localhost/health`
+- Ready: `https://localhost/ready`
 - Exports: `https://localhost/exports`
 
 其他指令：
@@ -275,8 +310,8 @@ flowchart LR
     Client[MCP Client / Copilot Studio]
     Proxy[HTTPS Reverse Proxy]
     Server[PubMed Search MCP\npubmed-search-mcp-http]
-    Endpoint[/mcp]
-    Utility[/health /info /exports]
+    Endpoint["/mcp"]
+    Utility["/health · /ready · /info · /exports"]
 
     Client --> Proxy
     Proxy --> Endpoint
@@ -285,18 +320,30 @@ flowchart LR
     Utility --> Server
 ```
 
-## 6. Docker 直接啟動
+### Service TLS reverse proxy 要求
+
+正式 service 請使用可信 CA 憑證與獍立 reverse proxy/load balancer。代理必須：
+
+- 把 `/mcp` request/response buffering 關閉，並保留長連線 timeout。
+- 轉送 `Authorization`，且只從 `PUBMED_TRUSTED_PROXY_IPS` 列出的 proxy 接受 forwarded headers。
+- 代理 `/health` 與 `/ready`；不要用需認證或會建立 session 的端點當 probe。
+- 不公開 app container port；`docker-compose.service.yml` 只 publish host loopback。
+
+## 6. Docker 啟動
 
 ```bash
-docker build -t pubmed-search-mcp .
-docker run -p 8765:8765 -e NCBI_EMAIL=your@email.com pubmed-search-mcp
+# 單使用者 loopback demo
+docker compose up -d
+
+# 多使用者 service（先完成 .env）
+docker compose --env-file .env -f docker-compose.service.yml up -d
 ```
 
-Dockerfile 預設會啟動：
-
-```bash
-uv run pubmed-search-mcp-http --transport streamable-http
-```
+Service profile 必須使用 persistent volume、單副本，並在外層做 TLS termination。
+Image 固定在 Python `3.11.15-slim-trixie` 的 multi-platform digest，uv 固定為
+`0.11.24`，local HTTPS demo 也固定 Nginx `1.31.3-alpine` digest；runtime 使用
+非 root UID/GID `10001`；
+`PUBMED_DATA_DIR=/var/lib/pubmed-search-mcp` 必須掛載成該使用者可寫的 volume。
 
 ## 7. 雲端部署
 
@@ -306,25 +353,42 @@ uv run pubmed-search-mcp-http --transport streamable-http
 railway up
 ```
 
-建議環境變數：
+必要環境/秘密：
 
 ```bash
 NCBI_EMAIL=your@email.com
-MCP_TRANSPORT=streamable-http
-MCP_COPILOT_COMPATIBLE=true
+PUBMED_SERVER_MODE=service
+PUBMED_AUTH_TOKENS=<secret reference>
+PUBMED_AUTH_RESOURCE_SERVER_URL=https://mcp.example.org/mcp
+PUBMED_AUTH_ISSUER_URL=https://mcp.example.org  # optional; defaults to resource origin
+PUBMED_ALLOWED_HOSTS=mcp.example.org
+PUBMED_ALLOWED_ORIGINS=https://mcp.example.org
+PUBMED_TRUSTED_PROXY_IPS=<platform ingress IPs>
+PUBMED_DATA_DIR=/var/lib/pubmed-search-mcp
 ```
 
 ### Azure Container Apps
 
 ```bash
+# This repository does not currently publish a public GHCR image. Build the
+# reviewed source into your own Azure Container Registry first.
+az acr build \
+  --registry myregistry \
+  --image pubmed-search-mcp:0.6.1 \
+  .
+
 az containerapp create \
   --name pubmed-mcp \
   --resource-group myRG \
-  --image ghcr.io/u9401066/pubmed-search-mcp:latest \
+  --image myregistry.azurecr.io/pubmed-search-mcp:0.6.1 \
   --target-port 8765 \
-  --ingress external \
-  --env-vars NCBI_EMAIL=your@email.com MCP_TRANSPORT=streamable-http MCP_COPILOT_COMPATIBLE=true
+  --ingress external
 ```
+
+請先設定 Container Apps 對該 registry 的 pull identity，再透過 secret references
+注入上述 service 變數；不要把 token 寫在 shell history 或版本控制的 YAML。同時固定
+單 replica，並掛載可備份的持久儲存。不要引用本 repo 未發布的 `ghcr.io/...:latest`
+映像。
 
 ## 8. GitHub Pages 文件網站
 
@@ -359,10 +423,11 @@ uv run python scripts/build_docs_site.py
 部署後至少驗證以下項目：
 
 1. `GET /health` 回傳 `status: ok`
-2. `GET /info` 顯示正確 transport 與 MCP endpoint
-3. `POST /mcp` 可被 MCP client 成功握手
-4. 能成功執行一次 `unified_search`
-5. 若是 Copilot Studio，確認 tools 有正確被發現
+2. `GET /ready` 回傳 ready，`GET /info` 顯示正確 transport/endpoint
+3. Service 未帶 bearer 的 `POST /mcp`、`/api/*`、`/exports` 回傳 401/403
+4. 有效 bearer 可直接完成現代 MCP `tools/list` 與一次 `unified_search`；2026-07-28 transport 不再送 `initialize` 或 `Mcp-Session-Id`
+5. 不同 principal 無法互讀 session、artifact、export、chronicle 或 pipeline
+6. 若是 Copilot Studio，確認 45-tool primary surface 正確被發現
 
 ## 相關文件
 

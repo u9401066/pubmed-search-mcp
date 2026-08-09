@@ -790,7 +790,7 @@ def register_europe_pmc_tools(mcp: MCPServer):
 
                 if assisted.text_content:
                     retrieval.raw_fulltext_content = assisted.text_content
-                    extracted_text = FulltextService._truncate_extracted_text(assisted.text_content)
+                    extracted_text = FulltextService.truncate_extracted_text(assisted.text_content)
                     retrieval.fulltext_content = extracted_text
                     retrieval.content_sections = [
                         {

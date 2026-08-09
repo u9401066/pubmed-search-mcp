@@ -1,3 +1,63 @@
+## [2026-08-09] Separate Local Trust From Multi-User Service Identity
+
+### Decision
+Treat stdio and explicit loopback HTTP as one trusted single-user deployment
+profile with a durable `default` tenant. Treat remote/team HTTP as a distinct
+service profile that cannot start without bearer principals, tenant isolation,
+a public MCP resource URL, and explicit Host/Origin allowlists.
+
+### Consequences
+- Modern HTTP no longer derives a security identity from `Mcp-Session-Id` or
+  `clientInfo`; only a verified token principal is a service tenant boundary.
+- Local HTTP preserves `pmids="last"`, cache, session, and exports across calls,
+  but may never be exposed merely by changing the bind address.
+- Filesystem-backed service deployment remains one process/replica until a
+  transactional shared store, distributed locks, and an external artifact
+  backend are implemented.
+- Every HTTP surface, including auxiliary routes and the browser-session broker,
+  must enforce its own Host/Origin boundary because SDK middleware protects only
+  the MCP route.
+
+---
+
+## [2026-08-09] Serialize File-Backed State Under MCP v2 Worker Threads
+
+### Decision
+Treat every sync MCP handler as concurrently executable. Protect in-process
+read/modify/write paths with shared locks, publish files and artifact
+directories atomically, and return detached snapshots instead of mutable store
+objects. Do not advertise horizontal service scaling while state is local.
+
+### Consequences
+- Pipeline indices, sessions, chronicles, notes, caches, exports, and artifacts
+  have concurrent lost-update/collision/corruption regressions.
+- Persistence failures propagate to the caller rather than being logged as a
+  false success.
+- Multi-worker service requires a transactional shared store, distributed
+  locking, object storage, and scheduler leader election before enablement.
+
+---
+
+## [2026-08-09] Make Unified Search A Registry-Backed Broker Contract
+
+### Decision
+Keep `unified_search` as the stable gateway rather than adding more top-level
+tools or APIs without a distinct evidence role. Explicit source selection is
+binding; every provider uses shared conservative quotas and normalized outcomes,
+and new adapters must prove corpus/identifier/access value plus edge coverage.
+
+### Consequences
+- An empty explicit OpenAlex/preprint search cannot silently substitute PubMed.
+- PubMed relaxation runs only when PubMed was planned and reuses its successful
+  result.
+- Disabled-source policy applies to automatic, explicit, `all`, and preprint
+  expansion paths.
+- The public tool count remains 45 for compatibility, presented as eight
+  capability families; duplicate timeline entry points stay consolidated into
+  the Research Chronicle tools.
+
+---
+
 ## [2026-06-05] Separate MCP, Python SDK, And HTTP CLI Contracts
 
 ### Context

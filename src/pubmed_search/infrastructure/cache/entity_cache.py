@@ -12,7 +12,7 @@ Maintenance:
 
 from __future__ import annotations
 
-import asyncio
+import threading
 from typing import TYPE_CHECKING, Any, TypeVar
 
 from pubmed_search.shared.cache_substrate import CacheStats, CacheStore, MemoryCacheBackend
@@ -59,12 +59,13 @@ class EntityCache:
             key_normalizer=self._normalize_key,
             name="entity-cache",
         )
-        self._lock = asyncio.Lock()
+        self._lock = threading.RLock()
 
     @property
     def stats(self) -> CacheStats:
         """Get cache statistics."""
-        return self._store.stats
+        with self._lock:
+            return self._store.stats
 
     def _normalize_key(self, key: str) -> str:
         """Normalize cache key."""
@@ -80,7 +81,8 @@ class EntityCache:
         Returns:
             Cached value or None if not found/expired
         """
-        return self._store.get(key)
+        with self._lock:
+            return self._store.get(key)
 
     def set(self, key: str, value: Any) -> None:
         """
@@ -90,7 +92,8 @@ class EntityCache:
             key: Cache key
             value: Value to cache
         """
-        self._store.set(key, value)
+        with self._lock:
+            self._store.set(key, value)
 
     async def get_or_fetch(
         self,
@@ -122,7 +125,8 @@ class EntityCache:
         Returns:
             True if entry was removed
         """
-        return self._store.invalidate(key)
+        with self._lock:
+            return self._store.invalidate(key)
 
     def clear(self) -> int:
         """
@@ -131,7 +135,8 @@ class EntityCache:
         Returns:
             Number of entries cleared
         """
-        return self._store.clear()
+        with self._lock:
+            return self._store.clear()
 
     def cleanup_expired(self) -> int:
         """
@@ -143,24 +148,29 @@ class EntityCache:
         Returns:
             Number of entries removed
         """
-        return self._store.cleanup_expired()
+        with self._lock:
+            return self._store.cleanup_expired()
 
     def warmup(self, entries: dict[str, Any]) -> int:
         """Preload multiple entity values using the same substrate API."""
-        return self._store.warmup(entries)
+        with self._lock:
+            return self._store.warmup(entries)
 
     def __len__(self) -> int:
         """Get number of cached entries."""
-        return len(self._store)
+        with self._lock:
+            return len(self._store)
 
     def __contains__(self, key: str) -> bool:
         """Check if a normalized key resolves to a live cache entry."""
-        return key in self._store
+        with self._lock:
+            return key in self._store
 
 
 # ==================== Singleton Factory ====================
 
 _entity_cache: EntityCache | None = None
+_entity_cache_lock = threading.RLock()
 
 
 def get_entity_cache() -> EntityCache:
@@ -171,14 +181,16 @@ def get_entity_cache() -> EntityCache:
         Shared EntityCache instance
     """
     global _entity_cache
-    if _entity_cache is None:
-        _entity_cache = EntityCache(max_size=1000, ttl=3600)
-    return _entity_cache
+    with _entity_cache_lock:
+        if _entity_cache is None:
+            _entity_cache = EntityCache(max_size=1000, ttl=3600)
+        return _entity_cache
 
 
 def reset_entity_cache() -> None:
     """Reset singleton cache (for testing)."""
     global _entity_cache
-    if _entity_cache is not None:
-        _entity_cache.clear()
-    _entity_cache = None
+    with _entity_cache_lock:
+        if _entity_cache is not None:
+            _entity_cache.clear()
+        _entity_cache = None

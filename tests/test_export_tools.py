@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -11,12 +13,15 @@ import pytest
 
 import pubmed_search.application.export.notes as notes_module
 from pubmed_search.application.export import write_literature_notes
+from pubmed_search.application.session.registry import SessionManagerRegistry
+from pubmed_search.presentation.mcp_server.tools._common import get_session_registry, set_session_registry
 from pubmed_search.presentation.mcp_server.tools.export import (
     _format_export_response,
     _get_file_extension,
     _resolve_pmids,
     register_export_tools,
 )
+from pubmed_search.shared.tenancy import TenantIdentity, bind_tenant
 
 # ============================================================
 # Pure helpers
@@ -136,6 +141,99 @@ class TestSaveLiteratureNotes:
         assert mock_article_data["title"] in note_text
         assert parsed["wiki_validation"]["status"] == "passed"
         assert parsed["wiki_validation"]["unresolved_count"] == 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("unsafe_argument", "expected"),
+        [
+            ({"output_dir": "./server-path"}, "cannot choose output_dir"),
+            ({"template_file": "./server-template.md"}, "cannot read template_file"),
+        ],
+    )
+    async def test_authenticated_service_rejects_remote_note_paths(
+        self,
+        temp_dir,
+        mock_article_data,
+        unsafe_argument,
+        expected,
+    ):
+        mcp = MagicMock()
+        searcher = AsyncMock()
+        searcher.fetch_details.return_value = [mock_article_data]
+        tools = _capture_tools(mcp, searcher)
+        identity = TenantIdentity.for_principal("remote-team", source="auth")
+
+        with (
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.export.get_session_manager",
+                return_value=MagicMock(data_dir=temp_dir / "tenant"),
+            ),
+            bind_tenant(identity),
+        ):
+            result = await tools["save_literature_notes"](pmids="12345678", **unsafe_argument)
+
+        assert expected in result
+        searcher.fetch_details.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_authenticated_notes_use_installed_tenant_roots_and_ignore_shared_environment(
+        self,
+        temp_dir,
+        mock_article_data,
+        monkeypatch,
+    ):
+        installed_root = temp_dir / "installed"
+        shared_notes = temp_dir / "shared-notes"
+        shared_workspace = temp_dir / "shared-workspace"
+        shared_data = temp_dir / "shared-data"
+        monkeypatch.setenv("PUBMED_NOTES_DIR", str(shared_notes))
+        monkeypatch.setenv("PUBMED_WORKSPACE_DIR", str(shared_workspace))
+        monkeypatch.setenv("PUBMED_DATA_DIR", str(shared_data))
+
+        registry = SessionManagerRegistry(installed_root)
+        identity_a = TenantIdentity.for_principal("team-a", source="auth")
+        identity_b = TenantIdentity.for_principal("team-b", source="auth")
+        article_a = dict(mock_article_data, pmid="11111111", title="Tenant A evidence")
+        article_b = dict(mock_article_data, pmid="22222222", title="Tenant B evidence")
+        mcp = MagicMock()
+        searcher = AsyncMock()
+        searcher.fetch_details.side_effect = [[article_a], [article_b]]
+        tools = _capture_tools(mcp, searcher)
+
+        previous_registry = get_session_registry()
+        set_session_registry(registry)
+        try:
+            with (
+                patch(
+                    "pubmed_search.shared.settings.load_settings",
+                    side_effect=AssertionError("authenticated notes must not read process-wide paths"),
+                ),
+                bind_tenant(identity_a),
+            ):
+                result_a = json.loads(await tools["save_literature_notes"](pmids="11111111", create_index=False))
+            with (
+                patch(
+                    "pubmed_search.shared.settings.load_settings",
+                    side_effect=AssertionError("authenticated notes must not read process-wide paths"),
+                ),
+                bind_tenant(identity_b),
+            ):
+                result_b = json.loads(await tools["save_literature_notes"](pmids="22222222", create_index=False))
+        finally:
+            set_session_registry(previous_registry)
+
+        root_a = Path(registry.tenant_data_dir(identity_a.tenant_id) or "") / "references"
+        root_b = Path(registry.tenant_data_dir(identity_b.tenant_id) or "") / "references"
+        path_a = Path(result_a["files"][0]["path"])
+        path_b = Path(result_b["files"][0]["path"])
+        assert path_a.parent == root_a.resolve()
+        assert path_b.parent == root_b.resolve()
+        assert path_a.read_text(encoding="utf-8").find("Tenant B evidence") == -1
+        assert path_b.read_text(encoding="utf-8").find("Tenant A evidence") == -1
+        assert root_a != root_b
+        assert not shared_notes.exists()
+        assert not shared_workspace.exists()
+        assert not shared_data.exists()
 
     @pytest.mark.asyncio
     async def test_save_literature_notes_foam(self, temp_dir, mock_article_data):
@@ -318,6 +416,41 @@ class TestSaveLiteratureNotes:
 
         assert result["csl_file"]["path"].endswith("references-20240101-120000-2.csl.json")
         assert result["index_file"]["path"].endswith("test-search-120000-2.md")
+
+    def test_concurrent_fixed_clock_note_batches_are_atomic_and_collision_free(
+        self,
+        temp_dir,
+        mock_article_data,
+        monkeypatch,
+    ):
+        class FixedDateTime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return datetime(2024, 1, 1, 12, 0, 0, tzinfo=tz or timezone.utc)
+
+        monkeypatch.setattr(notes_module, "datetime", FixedDateTime)
+        worker_count = 8
+        barrier = threading.Barrier(worker_count)
+
+        def export_batch(_index: int):
+            barrier.wait()
+            return write_literature_notes(
+                [mock_article_data],
+                temp_dir,
+                note_format="foam",
+                collection_name="concurrent review",
+            )
+
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            results = list(executor.map(export_batch, range(worker_count)))
+
+        csl_paths = [Path(result["csl_file"]["path"]) for result in results]
+        index_paths = [Path(result["index_file"]["path"]) for result in results]
+        assert len(set(csl_paths)) == worker_count
+        assert len(set(index_paths)) == worker_count
+        assert all(json.loads(path.read_text(encoding="utf-8")) for path in csl_paths)
+        assert all("# concurrent review" in path.read_text(encoding="utf-8") for path in index_paths)
+        assert not list(temp_dir.rglob("*.tmp"))
 
     @pytest.mark.asyncio
     async def test_save_literature_notes_skips_existing(self, temp_dir, mock_article_data):

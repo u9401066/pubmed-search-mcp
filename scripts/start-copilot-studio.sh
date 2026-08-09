@@ -1,93 +1,179 @@
-#!/bin/bash
-# Start PubMed Search MCP Server for Microsoft Copilot Studio
+#!/usr/bin/env bash
+# Start PubMed Search MCP for Microsoft Copilot Studio.
 #
-# Copilot Studio requires:
-# - Streamable HTTP transport (SSE deprecated since Aug 2025)
-# - Public HTTPS URL
-# - /mcp endpoint
-#
-# Usage:
-#   ./scripts/start-copilot-studio.sh
-#   ./scripts/start-copilot-studio.sh --with-ngrok
+# Local invocation is an unpublished loopback smoke test. ``--with-ngrok`` is
+# a public deployment path and therefore always starts fail-closed service
+# mode; it refuses to create a tunnel without explicit bearer credentials.
 
-set -e
+set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
 cd "$PROJECT_DIR"
 
-# Default settings
-PORT=${MCP_PORT:-8765}
-HOST=${MCP_HOST:-0.0.0.0}
-EMAIL=${NCBI_EMAIL:-pubmed-search@example.com}
+PORT="${MCP_PORT:-8765}"
+EMAIL="${NCBI_EMAIL:-pubmed-search@example.com}"
+SERVER_PID=""
+NGROK_PID=""
 
-echo "=========================================="
+cleanup() {
+    # Close the public edge before stopping its authenticated backend.
+    if [ -n "$NGROK_PID" ]; then
+        kill "$NGROK_PID" 2>/dev/null || true
+        wait "$NGROK_PID" 2>/dev/null || true
+    fi
+    if [ -n "$SERVER_PID" ]; then
+        kill "$SERVER_PID" 2>/dev/null || true
+        wait "$SERVER_PID" 2>/dev/null || true
+    fi
+}
+
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+if ! command -v uv >/dev/null 2>&1; then
+    echo "ERROR: uv is required." >&2
+    exit 1
+fi
+
 echo "PubMed Search MCP for Copilot Studio"
-echo "=========================================="
-echo ""
-echo "Transport: streamable-http (required by Copilot Studio)"
+echo "Transport: streamable-http"
 echo "Endpoint:  /mcp"
 echo "Port:      $PORT"
-echo ""
 
-# Check if ngrok mode
-if [ "$1" == "--with-ngrok" ]; then
-    echo "Starting with ngrok tunnel..."
-    echo ""
+if [ "${1:-}" = "--with-ngrok" ]; then
+    : "${PUBMED_AUTH_TOKENS:?Set PUBMED_AUTH_TOKENS to principal:high-entropy-token before opening a public tunnel}"
+    : "${NGROK_DOMAIN:?Set NGROK_DOMAIN to an assigned ngrok HTTPS domain before opening a public tunnel}"
 
-    # Check if ngrok is installed
-    if ! command -v ngrok &> /dev/null; then
-        echo "❌ ngrok not found. Install from https://ngrok.com/download"
+    for dependency in ngrok curl; do
+        if ! command -v "$dependency" >/dev/null 2>&1; then
+            echo "ERROR: $dependency is required for --with-ngrok." >&2
+            exit 1
+        fi
+    done
+
+    PUBLIC_HOST="$(
+        uv run python -c \
+            'import sys; from urllib.parse import urlsplit; raw=sys.argv[1].strip(); parsed=urlsplit(raw if "://" in raw else f"https://{raw}"); valid=parsed.scheme == "https" and bool(parsed.hostname) and parsed.username is None and parsed.password is None and parsed.port is None and parsed.path in ("", "/") and not parsed.query and not parsed.fragment; sys.exit(2) if not valid else None; print(parsed.hostname)' \
+            "$NGROK_DOMAIN"
+    )" || {
+        echo "ERROR: NGROK_DOMAIN must be one assigned HTTPS host without a path, query, or port." >&2
+        exit 1
+    }
+    PUBLIC_ORIGIN="https://${PUBLIC_HOST}"
+
+    # Never point a tunnel at an existing listener. The service is started and
+    # verified before ngrok is allowed to publish this port.
+    if ! uv run python - "$PORT" <<'PY'
+import socket
+import sys
+
+port = int(sys.argv[1])
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+    probe.bind(("127.0.0.1", port))
+PY
+    then
+        echo "ERROR: 127.0.0.1:$PORT is already in use; refusing to expose an existing listener." >&2
         exit 1
     fi
 
-    # Start server in background
-    uv run pubmed-search-mcp-http --transport streamable-http --copilot-compatible --port $PORT --email "$EMAIL" &
+    export PUBMED_AUTH_RESOURCE_SERVER_URL="${PUBLIC_ORIGIN}/mcp"
+    export PUBMED_ALLOWED_HOSTS="$PUBLIC_HOST"
+    export PUBMED_ALLOWED_ORIGINS="$PUBLIC_ORIGIN"
+    export PUBMED_TRUSTED_PROXY_IPS="127.0.0.1"
+
+    echo "Starting authenticated MCP backend on loopback..."
+    uv run pubmed-search-mcp-http \
+        --mode service \
+        --transport streamable-http \
+        --copilot-compatible \
+        --host 127.0.0.1 \
+        --port "$PORT" \
+        --email "$EMAIL" &
     SERVER_PID=$!
 
-    sleep 2
+    BACKEND_URL="http://127.0.0.1:${PORT}"
+    BACKEND_READY=""
+    for _attempt in $(seq 1 40); do
+        if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+            break
+        fi
+        READY_BODY="$(curl -fsS --max-time 1 -H "Host: $PUBLIC_HOST" "$BACKEND_URL/ready" 2>/dev/null || true)"
+        if [ -n "$READY_BODY" ] && printf '%s' "$READY_BODY" | uv run python -c \
+            'import json,sys; data=json.load(sys.stdin); raise SystemExit(0 if data.get("status") == "ready" and data.get("auth_enforced") is True else 1)' \
+            >/dev/null 2>&1; then
+            BACKEND_READY="1"
+            break
+        fi
+        sleep 0.25
+    done
 
-    # Start ngrok
-    echo "Starting ngrok tunnel..."
-    ngrok http $PORT &
+    if [ -z "$BACKEND_READY" ]; then
+        echo "ERROR: authenticated MCP service did not become ready; tunnel was not opened." >&2
+        exit 1
+    fi
+
+    AUTH_STATUS="$(
+        curl -sS --max-time 2 -o /dev/null -w '%{http_code}' \
+            -H "Host: $PUBLIC_HOST" \
+            -H 'Content-Type: application/json' \
+            --data '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
+            "$BACKEND_URL/mcp" 2>/dev/null || true
+    )"
+    if [ "$AUTH_STATUS" != "401" ]; then
+        echo "ERROR: backend auth boundary returned HTTP $AUTH_STATUS instead of 401; tunnel was not opened." >&2
+        exit 1
+    fi
+
+    echo "Backend ready with bearer authentication enforced. Starting ngrok tunnel..."
+    ngrok http --url="$PUBLIC_HOST" "$PORT" &
     NGROK_PID=$!
 
-    sleep 3
+    NGROK_URL=""
+    for _attempt in $(seq 1 20); do
+        if ! kill -0 "$NGROK_PID" 2>/dev/null; then
+            break
+        fi
+        NGROK_URL="$(
+            curl -fsS http://127.0.0.1:4040/api/tunnels 2>/dev/null |
+                uv run python -c 'import json,sys; print(next((t["public_url"] for t in json.load(sys.stdin).get("tunnels", []) if t.get("public_url", "").startswith("https://")), ""))' \
+                2>/dev/null || true
+        )"
+        if [ "${NGROK_URL%/}" = "$PUBLIC_ORIGIN" ]; then
+            break
+        fi
+        NGROK_URL=""
+        sleep 0.5
+    done
 
-    # Get ngrok URL
-    NGROK_URL=$(curl -s http://localhost:4040/api/tunnels | python3 -c "import sys, json; print(json.load(sys.stdin)['tunnels'][0]['public_url'])" 2>/dev/null || echo "")
-
-    if [ -n "$NGROK_URL" ]; then
-        echo ""
-        echo "=========================================="
-        echo "✅ Server ready for Copilot Studio!"
-        echo "=========================================="
-        echo ""
-        echo "Copilot Studio Configuration:"
-        echo "  Server URL: ${NGROK_URL}/mcp"
-        echo "  Auth Type:  None"
-        echo ""
-        echo "Press Ctrl+C to stop"
-        echo ""
-
-        # Wait for Ctrl+C
-        trap "kill $SERVER_PID $NGROK_PID 2>/dev/null; exit 0" SIGINT SIGTERM
-        wait
-    else
-        echo "⚠️  Could not get ngrok URL. Check ngrok dashboard: http://localhost:4040"
-        wait $SERVER_PID
+    if [ -z "$NGROK_URL" ]; then
+        echo "ERROR: ngrok did not publish the assigned HTTPS domain $PUBLIC_ORIGIN." >&2
+        exit 1
     fi
-else
-    echo "Starting server locally..."
-    echo ""
-    echo "For Copilot Studio, you need a public HTTPS URL."
-    echo "Options:"
-    echo "  1. Use ngrok:   $0 --with-ngrok"
-    echo "  2. Deploy to:   Azure, Railway, Render, etc."
-    echo ""
-    echo "Local endpoint: http://localhost:$PORT/mcp"
-    echo ""
 
-    uv run pubmed-search-mcp-http --transport streamable-http --copilot-compatible --port $PORT --email "$EMAIL"
+    echo "Server URL:     ${PUBLIC_ORIGIN}/mcp"
+    echo "Authentication: Bearer token (the token value configured in PUBMED_AUTH_TOKENS)"
+    echo "Press Ctrl+C to stop."
+    while kill -0 "$SERVER_PID" 2>/dev/null && kill -0 "$NGROK_PID" 2>/dev/null; do
+        sleep 1
+    done
+    if ! kill -0 "$NGROK_PID" 2>/dev/null; then
+        echo "ERROR: ngrok exited; stopping the authenticated backend." >&2
+        exit 1
+    fi
+    wait "$SERVER_PID"
+else
+    echo "Starting unpublished local-only schema/protocol smoke server."
+    echo "Do not place this local mode behind ngrok or another public tunnel."
+    echo "Local endpoint: http://127.0.0.1:$PORT/mcp"
+
+    uv run pubmed-search-mcp-http \
+        --mode local \
+        --transport streamable-http \
+        --copilot-compatible \
+        --host 127.0.0.1 \
+        --port "$PORT" \
+        --email "$EMAIL"
 fi

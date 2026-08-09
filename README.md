@@ -4,7 +4,7 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![MCP](https://img.shields.io/badge/MCP-Compatible-green.svg)](https://modelcontextprotocol.io/)
-[![Test Coverage](https://img.shields.io/badge/coverage-84%25-green.svg)](https://github.com/u9401066/pubmed-search-mcp)
+[![CI](https://github.com/u9401066/pubmed-search-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/u9401066/pubmed-search-mcp/actions/workflows/ci.yml)
 
 > **Professional Literature Research Assistant for AI Agents** - More than just an API wrapper
 
@@ -15,9 +15,9 @@ A Domain-Driven Design (DDD) based MCP server that serves as an intelligent rese
 **✨ What's Included:**
 
 - 🔧 **45 MCP Tools** - Streamlined PubMed, Europe PMC, CORE, NCBI database access, and **Research Chronicle / Context Graph**
-- �️ **Multi-Agent Service Mode** - Deploy once and serve many agents: per-tenant sessions, caches, and artifacts, bearer-token auth, and per-tenant fair-share limits. See [DEPLOYMENT.md](DEPLOYMENT.md)
-- �🖼️ **OA Figure Extraction** - Pull figure captions, direct image URLs, and PDF links from PMC Open Access articles
-- 📘 **Docs Site** - Browse language-switchable user and developer guides, architecture, quick reference, pipeline tutorials, source contracts, troubleshooting, and deployment in one place at [u9401066.github.io/pubmed-search-mcp](https://u9401066.github.io/pubmed-search-mcp/)
+- 🛡️ **Multi-Agent Service Mode** - Deploy once and serve many agents: per-tenant sessions, caches, and artifacts, bearer-token auth, and per-tenant fair-share limits. See [DEPLOYMENT.md](DEPLOYMENT.md)
+- 🖼️ **OA Figure Extraction** - Pull figure captions, direct image URLs, and PDF links from PMC Open Access articles
+- 📘 **Docs Site** - Browse the complete language-switchable handbook: user workflows, architecture, 45-tool reference, pipeline tutorials, source/broker contracts, integrations and operations, security, and deployment at [u9401066.github.io/pubmed-search-mcp](https://u9401066.github.io/pubmed-search-mcp/)
 - 📖 **GitHub Wiki** - GitHub-native mirror of the same canonical documentation at [github.com/u9401066/pubmed-search-mcp/wiki](https://github.com/u9401066/pubmed-search-mcp/wiki)
 - 📚 **26 Claude Skills** - Ready-to-use workflow guides for AI agents (Claude Code-specific)
 - 📖 **Copilot Instructions** - VS Code GitHub Copilot integration guide
@@ -42,7 +42,7 @@ A Domain-Driven Design (DDD) based MCP server that serves as an intelligent rese
   powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
   ```
 
-- **NCBI Email** — Required by [NCBI API policy](https://www.ncbi.nlm.nih.gov/books/NBK25497/#chapter2.Usage_Guidelines_and_Requiremen). Any valid email address.
+- **NCBI Email** — Required by [NCBI API policy](https://www.ncbi.nlm.nih.gov/books/NBK25497/#chapter2.Usage_Guidelines_and_Requirements). Any valid email address.
 - **NCBI API Key** *(optional)* — [Get one here](https://www.ncbi.nlm.nih.gov/account/settings/) for higher rate limits (10 req/s vs 3 req/s)
 - **OpenAlex API Key** *(optional)* — set `OPENALEX_API_KEY` to use authenticated OpenAlex requests instead of mailto-only polite-pool auth. Without source-specific emails, the server reuses the configured runtime contact email for OpenAlex, CrossRef, and Unpaywall.
 
@@ -79,6 +79,33 @@ Use `uvx pubmed-search-mcp` or `/mcp` for agent tool discovery. Use the SDK for
 Python package/notebook calls where a typed object is easier than parsing an MCP
 response string.
 
+### Choose a Runtime Contract
+
+| Contract | Command | Network and trust boundary |
+| --- | --- | --- |
+| **Local stdio** | `uvx pubmed-search-mcp` | Recommended for one local AI client; no listening MCP port |
+| **Local loopback HTTP** | `pubmed-search-mcp-http --mode local --host 127.0.0.1` | Trusted single-user integration; MCP requests share the durable `default` tenant, and the port must never be published |
+| **Multi-user service** | `pubmed-search-mcp-http --mode service` | Remote/team use behind HTTPS; bearer auth, allowed hosts/origins, and per-principal storage are mandatory |
+
+Local and service deployments are intentionally separate contracts. Do not turn
+the local HTTP command into a public service by changing only its bind address.
+The explicit local profile retains `pmids="last"`, sessions, cache, and exports
+across MCP requests and reconnects in its durable `default` tenant; this is safe
+only inside the enforced loopback/Host/Origin boundary. Service mode never
+inherits that trust: it fails closed without a bearer principal. Use
+[DEPLOYMENT.md](DEPLOYMENT.md) for the service environment and Compose profile.
+The current service profile supports many authenticated principals in one
+server process; keep one replica until sessions, locks, artifacts, and
+subscriptions have shared backends.
+
+The protocol baseline is MCP SDK v2 (`mcp>=2.0,<3`). Modern 2026-07-28 clients
+send `tools/list` and `tools/call` directly, without an `initialize` handshake or
+`Mcp-Session-Id`. Local mode retains filesystem features. Authenticated service
+callers cannot load `file:` pipelines, select note `output_dir`/`template_file`,
+or inherit a process-wide pipeline workspace; the service Compose scheduler is
+disabled. See the [Integrations & Operations Guide](docs/INTEGRATIONS.md) for the
+capability matrix.
+
 ---
 
 ## ⚙️ Configuration
@@ -113,7 +140,7 @@ Optional: enable browser-session PDF fallback once and let tools auto-use it:
       "args": ["pubmed-search-mcp"],
       "env": {
         "NCBI_EMAIL": "your@email.com",
-        "BROWSER_FETCH_CONFIG": "{\"enabled\":true,\"auto_enabled\":true,\"broker_url\":\"http://127.0.0.1:8766/fetch\",\"token\":\"local-dev-token\",\"allowed_hosts\":[\"jamanetwork.com\",\"*.jamanetwork.com\",\"nejm.org\",\"*.nejm.org\"]}"
+        "BROWSER_FETCH_CONFIG": "{\"enabled\":true,\"auto_enabled\":true,\"broker_url\":\"http://127.0.0.1:8766/fetch\",\"token\":\"<random-32-byte-token>\",\"allowed_hosts\":[\"jamanetwork.com\",\"*.jamanetwork.com\",\"nejm.org\",\"*.nejm.org\"]}"
       }
     }
   }
@@ -127,10 +154,16 @@ Run the local broker with download interception:
 ```bash
 uv sync --extra browser-broker
 uv run playwright install chromium
-uv run pubmed-browser-fetch-broker --token local-dev-token
+uv run python -c "import secrets; print(secrets.token_urlsafe(32))"
+uv run pubmed-browser-fetch-broker --token "<same-random-32-byte-token>"
 ```
 
-The broker launches a persistent browser profile with download interception enabled. Log in once inside that broker-controlled browser window, and subsequent PDF downloads will be captured automatically without a native "Save As" dialog.
+Copy the generated value into both commands/configurations; never reuse a
+published example token. If `--token` is omitted, the broker generates and
+prints a high-entropy runtime token. The broker launches a persistent browser
+profile with download interception enabled. Log in once inside that
+broker-controlled browser window, and subsequent PDF downloads will be captured
+automatically without a native "Save As" dialog.
 
 ### Claude Desktop (`claude_desktop_config.json`)
 
@@ -364,6 +397,9 @@ CrossRef, Unpaywall, and OpenAlex reuse the runtime server contact email
 email/API key is configured.
 
 Local note export resolves directories in this order: `output_dir` argument, `PUBMED_NOTES_DIR`, `PUBMED_WORKSPACE_DIR/references`, `PUBMED_DATA_DIR/references`, then `~/.pubmed-search-mcp/references`.
+This path/template selection applies only to trusted local mode. Authenticated
+service notes always use a built-in format below the current tenant's isolated
+`references/` directory.
 For LLM wiki compatibility, `wiki` and `foam` exports use stable link targets based on PMID, DOI, PMCID, or fallback identifiers; titles remain aliases/display labels, and the response includes `wiki_validation` for unresolved wikilink checks.
 
 ## 🔄 How It Works: The Middleware Architecture
@@ -413,7 +449,7 @@ For LLM wiki compatibility, `wiki` and `foam` exports use stable link targets ba
 
 If you want to understand the tool surface as a usable system, do not start by memorizing 45 tool names.
 
-Start with the [Tools Usage Guide](docs/TOOLS_USAGE_GUIDE.md): it compresses the current 46 tools into 8 capability families, explains the theoretical lower bound, and gives intent-based routing for both humans and agents.
+Start with the [Tools Usage Guide](docs/TOOLS_USAGE_GUIDE.md): it compresses the current 45 tools into 8 capability families, explains the theoretical lower bound, and gives intent-based routing for both humans and agents.
 
 ### 🔍 Search & Query Intelligence
 
@@ -607,10 +643,14 @@ later, or temporarily exclude it with `sources="auto,-semantic_scholar"` or
 | `manage_pipeline` | Primary facade for save, list, load, delete, history, and schedule actions |
 | `save_pipeline` | Save a pipeline config for later reuse (YAML/JSON, auto-validated) |
 | `list_pipelines` | List saved pipelines (filter by tag/scope) |
-| `load_pipeline` | Load pipeline from name or file for review/editing |
+| `load_pipeline` | Load by saved name; trusted local callers may also load a file |
 | `delete_pipeline` | Delete pipeline and its execution history |
 | `get_pipeline_history` | View execution history with article diff analysis |
 | `schedule_pipeline` | Create, update, or remove recurring pipeline schedules |
+
+Authenticated service callers use named pipelines in their tenant-derived
+store; `workspace` and `file:` access are local-only. The service Compose
+profile does not execute schedules without a separately designed single leader.
 
 Step-by-step tutorials:
 
@@ -954,7 +994,7 @@ Pre-built workflow guides in `.claude/skills/`, divided into **Usage Skills** (f
 | `pubmed-mcp-tools-reference` | Complete tool reference guide |
 | `pipeline-persistence` | Save, load, reuse search plans |
 
-### 🔧 Development Skills (13) — For Project Contributors
+### 🔧 Development Skills (15) — For Project Contributors
 
 | Skill | Description |
 | ----- | ----------- |
@@ -966,11 +1006,13 @@ Pre-built workflow guides in `.claude/skills/`, divided into **Usage Skills** (f
 | `git-precommit` | Pre-commit workflow orchestration |
 | `memory-checkpoint` | Save context to Memory Bank |
 | `memory-updater` | Update Memory Bank files |
+| `pdf-asset-extractor` | Extract and inventory citation-ready PDF assets |
 | `project-init` | Initialize new projects |
 | `readme-i18n` | Multilingual README sync |
 | `readme-updater` | Sync README with code changes |
 | `roadmap-updater` | Update ROADMAP.md status |
 | `test-generator` | Generate test suites |
+| `tool-sync` | Keep the MCP registry and generated tool documentation aligned |
 
 > 📁 **Location**: `.claude/skills/*/SKILL.md` (Claude Code-specific, and the single source of truth for repo skills)
 > Do not mirror or split repo skills into `.github/skills/`.
@@ -1090,11 +1132,14 @@ When calling `generate_search_queries("remimazolam sedation")`, internally it:
 
 ---
 
-## 🔒 HTTPS Deployment
+## 🔒 Local HTTPS Demo and Service Deployment
 
-Enable HTTPS secure communication for production environments.
+The bundled self-signed certificates and `curl -k` flow are a **local TLS demo**,
+not a production security profile. For a shared service, use the authenticated
+service Compose file and a trusted certificate as described in
+[DEPLOYMENT.md](DEPLOYMENT.md).
 
-### Copilot Studio Quick Start
+### Local HTTPS Smoke Test
 
 ```bash
 # Step 1: Generate SSL certificates
@@ -1113,8 +1158,9 @@ curl -k https://localhost/
 | ------- | --- | ----------- |
 | MCP | `https://localhost/mcp` | Streamable HTTP MCP endpoint |
 | Health | `https://localhost/health` | Health check |
+| Ready | `https://localhost/ready` | Readiness check |
 | Info | `https://localhost/info` | Runtime transport and endpoint metadata |
-| Exports | `https://localhost/exports` | Prepared export file listing |
+| Exports | `https://localhost/exports` | Local prepared export listing; service mode requires bearer auth and tenant scope |
 
 ### Remote MCP Client Configuration
 
@@ -1137,13 +1183,13 @@ Integrate PubMed Search MCP with **Microsoft 365 Copilot** (Word, Teams, Outlook
 ### Quick Start
 
 ```bash
-# Start with Streamable HTTP transport (required by Copilot Studio)
-pubmed-search-mcp-http --transport streamable-http --port 8765
+# Unpublished local schema/protocol smoke only; never tunnel local mode
+pubmed-search-mcp-http --mode local --transport streamable-http \
+  --copilot-compatible --host 127.0.0.1 --port 8765
 
-# Enable Copilot-compatible HTTP semantics while keeping full tool schemas
-pubmed-search-mcp-http --transport streamable-http --copilot-compatible --port 8765
-
-# Or use the dedicated script with ngrok
+# Public Copilot endpoint: authenticated service mode is mandatory
+export PUBMED_AUTH_TOKENS="copilot:$(openssl rand -hex 32)"
+export NGROK_DOMAIN="your-assigned-domain.ngrok.dev"
 ./scripts/start-copilot-studio.sh --with-ngrok
 ```
 
@@ -1153,11 +1199,11 @@ pubmed-search-mcp-http --transport streamable-http --copilot-compatible --port 8
 | ----- | ----- |
 | **Server name** | `PubMed Search` |
 | **Server URL** | `https://your-server.com/mcp` |
-| **Authentication** | `None` (or API Key) |
+| **Authentication** | Bearer token for service mode; `None` only for an unpublished local demo |
 
 > 📖 **Full documentation**: [copilot-studio/README.md](copilot-studio/README.md)
 >
-> Use `pubmed-search-mcp-http --copilot-compatible` for packaged Copilot HTTP semantics. `run_server.py` remains a source-tree development wrapper; use `run_copilot.py` only when you need simplified tool schemas.
+> Use `pubmed-search-mcp-http --copilot-compatible` for packaged Copilot HTTP semantics. `run_server.py` remains a source-tree development wrapper; use `run_copilot.py` only for loopback-only simplified-schema smoke tests. The tunnel script requires an assigned `NGROK_DOMAIN`, refuses occupied backend ports, and publishes only after `--mode service` passes readiness and unauthenticated-rejection checks.
 >
 > ⚠️ **Note**: SSE transport deprecated since Aug 2025. Use `streamable-http`.
 
@@ -1179,12 +1225,12 @@ pubmed-search-mcp-http --transport streamable-http --copilot-compatible --port 8
 
 | Layer | Feature | Description |
 | ----- | ------- | ----------- |
-| **HTTPS** | TLS 1.2/1.3 encryption | All traffic encrypted via Nginx |
-| **Rate Limiting** | 30 req/s | Nginx level protection |
-| **Security Headers** | XSS/CSRF protection | X-Frame-Options, X-Content-Type-Options |
-| **Streamable HTTP** | `/mcp` endpoint | Modern MCP transport for remote clients |
-| **No Database** | Stateless | No SQL injection risk |
-| **No Secrets** | In-memory only | No credentials stored |
+| **HTTPS** | TLS termination | Required for remote credentials; the bundled self-signed profile is local-only |
+| **Bearer authentication** | Stable principal | Mandatory in service mode and used for tenant authorization |
+| **Tenant storage** | Filesystem isolation | Sessions, artifacts, exports, chronicles, and pipelines are stored below the authenticated principal |
+| **Fairness and rate policy** | Tenant concurrency + shared upstream budgets | Prevents one caller from multiplying an upstream API allowance |
+| **Security headers** | Clickjacking/MIME hardening | Reverse-proxy headers complement authentication; they are not CSRF authorization |
+| **Secret handling** | Runtime secret injection | API keys and bearer tokens must come from deployment secrets/environment and must not be committed or logged |
 
 See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed deployment instructions.
 

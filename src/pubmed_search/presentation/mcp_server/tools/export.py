@@ -20,7 +20,6 @@ from __future__ import annotations
 import json
 import logging
 import tempfile
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Union
 
@@ -30,10 +29,13 @@ from pubmed_search.application.export import (
     get_fulltext_links_with_lookup,
     resolve_note_export_dir,
     summarize_access,
+    tenant_export_root,
+    write_export_artifact,
     write_literature_notes,
 )
+from pubmed_search.shared.tenancy import current_tenant
 
-from ._common import InputNormalizer, ResponseFormatter, get_session_manager
+from ._common import InputNormalizer, ResponseFormatter, get_session_manager, get_session_registry
 
 if TYPE_CHECKING:
     from mcp.server.mcpserver import MCPServer
@@ -218,6 +220,12 @@ def register_export_tools(mcp: MCPServer, searcher: LiteratureSearcher):
         3. PUBMED_WORKSPACE_DIR/references
         4. PUBMED_DATA_DIR/references
 
+        ## Authenticated Service Boundary
+        Remote authenticated callers cannot choose output_dir or template_file.
+        Their notes always go to references/ under the current tenant's installed
+        SessionManager data root; process-wide notes/workspace environment paths
+        are intentionally ignored.
+
         Args:
             pmids: Articles to save. Accepts "last", comma-separated PMIDs, list, or int.
             output_dir: Optional target folder for notes.
@@ -254,20 +262,62 @@ def register_export_tools(mcp: MCPServer, searcher: LiteratureSearcher):
 
         try:
             from pubmed_search.presentation.mcp_server.tenancy import durable_storage_denied
-            from pubmed_search.shared.settings import load_settings
-            from pubmed_search.shared.tenancy import tenant_data_dir
 
             denied = durable_storage_denied("save_literature_notes")
             if denied:
                 return denied
 
-            settings = load_settings()
-            target_dir = resolve_note_export_dir(
-                output_dir,
-                notes_dir=settings.notes_dir,
-                workspace_dir=settings.workspace_dir,
-                data_dir=tenant_data_dir(settings.data_dir),
-            )
+            identity = current_tenant()
+            resolved_template_file: Path | None
+            if identity.is_authenticated:
+                if output_dir is not None:
+                    return ResponseFormatter.error(
+                        error="Authenticated service callers cannot choose output_dir",
+                        suggestion=(
+                            "Omit output_dir; notes are saved under the current tenant's isolated references directory"
+                        ),
+                        tool_name="save_literature_notes",
+                    )
+                if template_file is not None:
+                    return ResponseFormatter.error(
+                        error="Authenticated service callers cannot read template_file from the server filesystem",
+                        suggestion="Omit template_file and use a built-in note_format",
+                        tool_name="save_literature_notes",
+                    )
+
+                session_manager = get_session_manager()
+                installed_data_dir = getattr(session_manager, "data_dir", None)
+                if not isinstance(installed_data_dir, (str, Path)):
+                    return ResponseFormatter.error(
+                        error="No persistent tenant note directory is installed for this caller",
+                        suggestion="Ask the server operator to configure a persistent PUBMED_DATA_DIR",
+                        tool_name="save_literature_notes",
+                    )
+
+                tenant_root = Path(installed_data_dir).expanduser().resolve()
+                target_dir = (tenant_root / "references").resolve()
+                try:
+                    target_dir.relative_to(tenant_root)
+                except ValueError:
+                    return ResponseFormatter.error(
+                        error="Tenant references directory resolves outside the installed tenant data root",
+                        suggestion="Ask the server operator to repair the tenant references directory",
+                        tool_name="save_literature_notes",
+                    )
+                resolved_template_file = None
+            else:
+                from pubmed_search.shared.settings import load_settings
+                from pubmed_search.shared.tenancy import tenant_data_dir
+
+                settings = load_settings()
+                target_dir = resolve_note_export_dir(
+                    output_dir,
+                    notes_dir=settings.notes_dir,
+                    workspace_dir=settings.workspace_dir,
+                    data_dir=tenant_data_dir(settings.data_dir),
+                )
+                resolved_template_file = Path(template_file).expanduser() if template_file else None
+
             articles = await _get_articles_for_note_export(pmid_list, searcher)
             if not articles:
                 return ResponseFormatter.no_results(
@@ -287,7 +337,7 @@ def register_export_tools(mcp: MCPServer, searcher: LiteratureSearcher):
                 create_index=normalized_create_index,
                 collection_name=collection_name,
                 search_context=_get_last_search_context() if normalized_pmids == ["last"] else None,
-                template_file=Path(template_file).expanduser() if template_file else None,
+                template_file=resolved_template_file,
                 include_csl_json=normalized_csl,
             )
             result["instructions"] = (
@@ -444,18 +494,32 @@ def _resolve_pmids(pmids: str) -> list:
 
 
 def _save_export_file(content: str, format: str, count: int) -> str:
-    """Save export content to a temporary file."""
-    EXPORT_DIR.mkdir(parents=True, exist_ok=True)
-
-    timestamp = datetime.now(tz=timezone.utc).strftime("%Y%m%d_%H%M%S")
-    extension = _get_file_extension(format)
-    filename = f"pubmed_export_{count}_{timestamp}.{extension}"
-    file_path = EXPORT_DIR / filename
-
-    with file_path.open("w", encoding="utf-8") as f:
-        f.write(content)
-
+    """Save a local stdio export to the legacy temporary directory."""
+    del count  # Kept in the private compatibility signature used by older tests.
+    _export_id, file_path = write_export_artifact(
+        content,
+        extension=_get_file_extension(format),
+        root=EXPORT_DIR,
+    )
     return str(file_path)
+
+
+def _configured_export_data_dir() -> str | None:
+    """Return the data root installed with the active server.
+
+    Programmatic callers may pass ``data_dir`` directly to ``create_server``;
+    that injected registry is authoritative over process-wide environment
+    settings. An explicitly in-memory registry must also stay in-memory.
+    """
+    registry = get_session_registry()
+    if registry is not None:
+        return registry.data_dir
+
+    # Keep the export tool's import surface lightweight. Settings pulls in
+    # pydantic-settings and is only needed for this no-registry fallback.
+    from pubmed_search.shared.settings import load_settings
+
+    return load_settings().data_dir
 
 
 def _get_file_extension(format: str) -> str:
@@ -559,6 +623,44 @@ def _format_export_response(
     """
     # For large exports, save to file
     if count > 20:
+        identity = current_tenant()
+        if not identity.owns_durable_storage:
+            return json.dumps(
+                {
+                    "status": "success",
+                    "article_count": count,
+                    "format": format_str,
+                    "source": source,
+                    "export_text": content,
+                    "message": "Ephemeral HTTP callers receive large exports inline; no server file was created",
+                }
+            )
+
+        if identity.source != "stdio":
+            export_root = tenant_export_root(_configured_export_data_dir(), identity)
+            if export_root is None:  # pragma: no cover - guarded by durable identity
+                return ResponseFormatter.error(
+                    error="No tenant export directory is available",
+                    suggestion="Ask the server operator to configure PUBMED_DATA_DIR",
+                    tool_name="prepare_export",
+                )
+            export_id, _file_path = write_export_artifact(
+                content,
+                extension=_get_file_extension(format_str),
+                root=export_root,
+            )
+            return json.dumps(
+                {
+                    "status": "success",
+                    "article_count": count,
+                    "format": format_str,
+                    "source": source,
+                    "message": "Large export saved to tenant-scoped storage",
+                    "export_id": export_id,
+                    "download_url": f"/download/{export_id}",
+                }
+            )
+
         file_path = _save_export_file(content, format_str, count)
         return json.dumps(
             {

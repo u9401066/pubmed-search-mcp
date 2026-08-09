@@ -8,16 +8,17 @@ Copilot Studio 目前有兩條可行路線：
 
 | 模式 | 啟動方式 | 工具面 | 適用情境 |
 | --- | --- | --- | --- |
-| Full schema + compatibility | `uv run python run_server.py --transport streamable-http --copilot-compatible` | 完整 45-tool primary MCP surface | 先嘗試保留完整功能 |
-| Simplified Copilot mode | `uv run python run_copilot.py` | 精簡 Copilot-friendly tools | 若完整 schema 被截斷或拒收 |
+| Full schema + compatibility | `pubmed-search-mcp-http --mode service --transport streamable-http --copilot-compatible` | 完整 45-tool primary MCP surface | 正式遠端服務，強制 bearer/allowlist |
+| Simplified Copilot smoke | `uv run python run_copilot.py` | 精簡 Copilot-friendly tools | 僅供本機診斷 schema；不可發布 |
 
-如果你不確定要選哪個，先用第一種；若 Copilot Studio 對 schema 有問題，再切到第二種。
+如果你不確定要選哪個，先用第一種；若 schema 有問題，可用第二種在本機診斷，修正後仍須回到 authenticated full service 才能發布。
 
 ```mermaid
 flowchart LR
   Choose[Choose mode]
-  Full[run_server.py --copilot-compatible]
+  Full[pubmed-search-mcp-http\n--mode service --copilot-compatible]
   Simple[run_copilot.py]
+  Local[Loopback schema smoke]
   Tunnel[Public HTTPS URL\nngrok / cloud]
   Studio[Copilot Studio]
   Agent[Published agent]
@@ -25,7 +26,8 @@ flowchart LR
   Choose --> Full
   Choose --> Simple
   Full --> Tunnel
-  Simple --> Tunnel
+  Simple --> Local
+  Local --> Full
   Tunnel --> Studio
   Studio --> Agent
 ```
@@ -37,28 +39,39 @@ flowchart LR
 | Transport | streamable-http |
 | Public URL | 必須是可公開存取的 HTTPS |
 | MCP endpoint | `/mcp` |
-| 認證 | None、API Key 或 OAuth 2.0 |
+| 認證 | Service bearer token（`Authorization: Bearer ...`） |
 
 ## 快速啟動
 
 ### 方法 1：使用內建腳本
 
 ```bash
+export PUBMED_AUTH_TOKENS="copilot:$(openssl rand -hex 32)"
+export NGROK_DOMAIN="your-assigned-domain.ngrok.dev"
 ./scripts/start-copilot-studio.sh --with-ngrok
 ```
 
 這會：
 
-- 用 `run_server.py --copilot-compatible` 啟動完整 MCP surface
-- 開一條 ngrok HTTPS 公網 URL
+- 用 `pubmed-search-mcp-http --mode service --copilot-compatible` 啟動完整 MCP surface
+- 從已指派的 ngrok dev/custom domain 設定 resource URL 與 Host/Origin allowlists
+- 確認 backend port 未被占用，先啟動 service 並驗證 readiness 與 bearer auth 邊界
+- 驗證完成後才開 ngrok HTTPS 公網 URL
 - 輸出可直接填進 Copilot Studio 的 `/mcp` URL
 
-### 方法 2：簡化模式
+腳本在未設定 `PUBMED_AUTH_TOKENS` 或已指派的 `NGROK_DOMAIN` 時會拒絕建立公網
+tunnel。請把冒號後的 token 值安全地設定為 Copilot Studio bearer credential；
+腳本不會把 token 印到 console，也不會把既有 local listener 暫時暴露出去。
+
+### 方法 2：簡化 schema 的本機 smoke
 
 ```bash
 uv run python run_copilot.py --port 8765 --email your@email.com
-ngrok http 8765
 ```
+
+`run_copilot.py` 只綁 loopback，供未發布的本機 schema/protocol 檢查。它不是
+multi-user service，禁止放到 ngrok 或其他公網 tunnel 後方。公開端點一律使用方法
+1 的 authenticated service。
 
 ## 在 Copilot Studio 中設定
 
@@ -73,7 +86,7 @@ ngrok http 8765
 | --- | --- |
 | Server name | `PubMed Search` |
 | Server URL | `https://your-domain.example.com/mcp` |
-| Authentication | `None` 或你的認證方式 |
+| Authentication | Bearer token；`None` 僅限未發布的本機 smoke test |
 
 ## 工具面說明
 
@@ -129,9 +142,9 @@ ngrok http 8765
 
 ## 常見選擇建議
 
-- 想保留完整功能：用 `run_server.py --copilot-compatible`
-- 想降低 schema 風險：用 `run_copilot.py`
-- 想快速做外網驗證：搭配 ngrok
+- 想保留完整功能：用 `pubmed-search-mcp-http --mode service --copilot-compatible`
+- 想降低 schema 風險：在本機用 `run_copilot.py` 檢查，不對外發布
+- 想做外網驗證：用 `start-copilot-studio.sh --with-ngrok` 的 authenticated service
 
 ## 相關文件
 

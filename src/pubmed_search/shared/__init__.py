@@ -44,6 +44,7 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     # Article identity
     "canonical_article_key": ("pubmed_search.shared.article_identity", "canonical_article_key"),
     "normalize_article_doi": ("pubmed_search.shared.article_identity", "normalize_article_doi"),
+    "normalize_article_identifier": ("pubmed_search.shared.article_identity", "normalize_article_identifier"),
     "normalize_article_title": ("pubmed_search.shared.article_identity", "normalize_article_title"),
     # Settings
     "AppSettings": ("pubmed_search.shared.settings", "AppSettings"),

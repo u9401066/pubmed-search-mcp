@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import pytest
+
+from pubmed_search.application.session import artifacts as artifact_module
+from pubmed_search.application.session.artifacts import ArtifactStore
 from pubmed_search.application.session.manager import SessionManager
 from pubmed_search.presentation.mcp_server.tools._common import set_session_manager
 from pubmed_search.presentation.mcp_server.tools.artifact_memory import persist_tool_artifact
@@ -38,6 +43,47 @@ def test_session_manager_saves_artifact_files_and_manifest(tmp_path: Path):
     artifacts = reloaded.list_artifacts()
     assert len(artifacts) == 1
     assert artifacts[0]["artifact_id"] == manifest["artifact_id"]
+
+
+def test_artifact_ids_stay_unique_and_readable_with_frozen_clock(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(artifact_module, "_utcnow_iso", lambda: "2026-08-09T00:00:00+00:00")
+    store = ArtifactStore(tmp_path / "artifacts")
+
+    def _save(index: int) -> dict[str, object]:
+        return store.save(
+            session_id="concurrent-session",
+            tool="unified_search",
+            kind="search_results",
+            files={"results.json": {"index": index}},
+            primary_file="results.json",
+        )
+
+    with ThreadPoolExecutor(max_workers=16) as executor:
+        manifests = list(executor.map(_save, range(16)))
+
+    artifact_ids = [str(manifest["artifact_id"]) for manifest in manifests]
+    assert len(set(artifact_ids)) == 16
+    assert all(len(artifact_id) == 32 for artifact_id in artifact_ids)
+    for index, manifest in enumerate(manifests):
+        _file_info, content = store.read_file(manifest)
+        assert json.loads(content) == {"index": index}
+    assert not list((tmp_path / "artifacts").rglob("*.staging"))
+
+
+def test_failed_artifact_publish_cleans_private_staging_tree(tmp_path: Path):
+    store = ArtifactStore(tmp_path / "artifacts")
+
+    with pytest.raises(TypeError):
+        store.save(
+            session_id="session",
+            tool="unified_search",
+            kind="search_results",
+            files={"ok.txt": "complete", "bad.json": object()},
+            primary_file="ok.txt",
+        )
+
+    assert not list((tmp_path / "artifacts").rglob("*.staging"))
+    assert not list((tmp_path / "artifacts").rglob("manifest.json"))
 
 
 def test_session_manager_reads_artifact_content_by_id(tmp_path: Path):
@@ -103,7 +149,11 @@ def test_artifact_read_rejects_missing_checksum(tmp_path: Path):
         files={"results.json": {"ok": True}},
         primary_file="results.json",
     )
-    manifest["files"]["results.json"].pop("sha256")
+    session_path = tmp_path / f"session_{manifest['session_id']}.json"
+    session_payload = json.loads(session_path.read_text(encoding="utf-8"))
+    session_payload["artifacts"][0]["files"]["results.json"].pop("sha256")
+    session_path.write_text(json.dumps(session_payload), encoding="utf-8")
+    manager = SessionManager(data_dir=str(tmp_path))
 
     result = manager.read_artifact(manifest["artifact_id"])
 
@@ -119,7 +169,11 @@ def test_session_manager_rejects_tampered_artifact_root_path(tmp_path: Path):
         files={"results.json": "body"},
         primary_file="results.json",
     )
-    manifest["root_path"] = str(tmp_path.parent)
+    session_path = tmp_path / f"session_{manifest['session_id']}.json"
+    session_payload = json.loads(session_path.read_text(encoding="utf-8"))
+    session_payload["artifacts"][0]["root_path"] = str(tmp_path.parent)
+    session_path.write_text(json.dumps(session_payload), encoding="utf-8")
+    manager = SessionManager(data_dir=str(tmp_path))
 
     result = manager.read_artifact(manifest["artifact_id"])
 

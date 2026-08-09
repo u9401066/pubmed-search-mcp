@@ -5,7 +5,11 @@ Tests for Session management and Article caching.
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
+from unittest.mock import patch
+
+import pytest
 
 from pubmed_search.application.session import (
     MAX_SESSION_EVENT_LOG,
@@ -273,6 +277,66 @@ class TestSessionManager:
         assert len(session.search_history) == 1
         assert session.search_history[0]["query"] == "diabetes"
         assert session.event_log[-1]["kind"] == "search_recorded"
+
+    def test_concurrent_search_writes_are_not_lost_and_files_remain_parseable(self, temp_dir):
+        manager = SessionManager(data_dir=str(temp_dir))
+        session = manager.get_or_create_session("concurrent")
+        session_file = temp_dir / f"session_{session.session_id}.json"
+        index_file = temp_dir / "sessions.json"
+
+        def _record(index: int) -> None:
+            manager.add_search_record(f"query-{index}", [str(index)], {"worker": index})
+
+        with ThreadPoolExecutor(max_workers=12) as executor:
+            list(executor.map(_record, range(80)))
+
+        session_payload = json.loads(session_file.read_text(encoding="utf-8"))
+        index_payload = json.loads(index_file.read_text(encoding="utf-8"))
+        assert isinstance(session_payload, dict)
+        assert isinstance(index_payload, dict)
+        assert list(temp_dir.glob(".*.tmp")) == []
+
+        current = manager.get_current_session()
+        assert current is not None
+        assert len(current.search_history) == 80
+        assert {record["query"] for record in current.search_history} == {f"query-{index}" for index in range(80)}
+
+        reloaded = SessionManager(data_dir=str(temp_dir)).get_current_session()
+        assert reloaded is not None
+        assert len(reloaded.search_history) == 80
+
+    def test_session_queries_and_search_inputs_are_detached(self, temp_dir):
+        manager = SessionManager(data_dir=str(temp_dir))
+        manager.get_or_create_session("detached")
+        pmids = ["123"]
+        filters = {"nested": {"terms": ["initial"]}}
+
+        manager.add_search_record("query", pmids, filters)
+        pmids.append("caller-mutation")
+        filters["nested"]["terms"].append("caller-mutation")
+
+        first = manager.get_current_session()
+        assert first is not None
+        assert first.search_history[0]["pmids"] == ["123"]
+        assert first.search_history[0]["filters"] == {"nested": {"terms": ["initial"]}}
+
+        first.search_history[0]["pmids"].append("snapshot-mutation")
+        second = manager.get_current_session()
+        assert second is not None
+        assert second.search_history[0]["pmids"] == ["123"]
+
+    def test_persistence_failure_is_reported_to_the_caller(self, temp_dir):
+        manager = SessionManager(data_dir=str(temp_dir))
+        manager.get_or_create_session("persistence")
+
+        with (
+            patch(
+                "pubmed_search.application.session.manager.atomic_write_json",
+                side_effect=OSError("disk unavailable"),
+            ),
+            pytest.raises(OSError, match="disk unavailable"),
+        ):
+            manager.add_search_record("must-persist", ["123"])
 
     async def test_event_log_is_bounded(self, temp_dir):
         """Test that session event log keeps only the most recent entries."""

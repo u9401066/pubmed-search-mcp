@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import re
+from urllib.parse import unquote
 
+import pytest
 from scripts.build_docs_site import (
     DOCS_ROOT,
     EMBEDDED_CONTENT_FILE,
@@ -15,10 +17,14 @@ from scripts.build_docs_site import (
     _render_page,
     _rewrite_links,
     _route_map,
+    _site_heading_ids,
 )
 from scripts.count_mcp_tools import count_tools
 
 IMAGE_LINK_PATTERN = re.compile(r"!\[[^\]]*\]\(([^)]+)\)")
+MARKDOWN_LINK_PATTERN = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
+FENCED_CODE_PATTERN = re.compile(r"^```.*?^```\s*$", re.MULTILINE | re.DOTALL)
+INLINE_CODE_PATTERN = re.compile(r"`[^`\n]*`")
 CACHE_KEY_PATTERN = re.compile(r"\?v=([a-z0-9-]+)")
 FONT_SIZE_VIEWPORT_PATTERN = re.compile(r"font-size:[^;]*(?:vw|clamp\()", re.IGNORECASE)
 LARGE_RADIUS_PATTERN = re.compile(r"border-radius:\s*(\d+)px", re.IGNORECASE)
@@ -120,10 +126,57 @@ def test_docs_site_shell_uses_current_assets_and_mobile_image_wrapping() -> None
 
     cache_keys = set(CACHE_KEY_PATTERN.findall(index_html))
 
-    assert cache_keys == {"20260511-ux-polish"}
+    assert cache_keys == {"20260809-handbook"}
     assert 'id="sidebar-backdrop"' in index_html
+    assert index_html.count('data-page-group="') == 3
+    assert "45</strong>" in index_html
+    assert "runtime contracts" in index_html
     assert "function wrapLocalImages()" in site_js
     assert "sidebarBackdrop.addEventListener" in site_js
+
+
+def test_docs_site_quick_paths_follow_the_active_language() -> None:
+    index_html = (DOCS_ROOT / "index.html").read_text(encoding="utf-8")
+    site_js = (DOCS_ROOT / "site.js").read_text(encoding="utf-8")
+
+    for group in ("overview", "user-guide", "deployment"):
+        assert f'data-page-group="{group}"' in index_html
+
+    assert 'document.querySelectorAll("[data-page-group]")' in site_js
+    assert "page.group === group && page.lang === activeLang" in site_js
+    assert 'link.setAttribute("href", `#/${target.slug}`)' in site_js
+    assert 'journeyLabel: "Documentation quick paths"' in site_js
+    assert 'journeyLabel: "文件快速路徑"' in site_js
+
+
+def test_docs_site_navigation_exposes_the_current_operating_handbook() -> None:
+    site_js = (DOCS_ROOT / "site.js").read_text(encoding="utf-8")
+    embedded_pages = _load_embedded_pages()
+
+    for term in [
+        "MCP SDK v2",
+        "Integrations & Operations",
+        "整合與維運",
+        "Multi-source broker stages",
+        "authenticated multi-user contracts",
+        "45 MCP tools across 16 registry categories",
+    ]:
+        assert term in site_js
+
+    integrations = embedded_pages["troubleshooting"]
+    for term in [
+        "MCP SDK v2 Protocol Baseline",
+        "does **not** begin with `initialize`",
+        "Authenticated service callers cannot read `file:` paths",
+        "service Compose profile forces it off",
+        "Running the local browser broker",
+        "Verification & Troubleshooting",
+    ]:
+        assert term in integrations
+
+    source_contracts = embedded_pages["source-contracts"]
+    for term in ["Unified Search Broker", "Scopus", "Web of Science", "process-wide conservative rate budget"]:
+        assert term in source_contracts
 
 
 def test_docs_site_css_stays_readable_and_tool_like() -> None:
@@ -149,6 +202,71 @@ def test_docs_site_image_links_rewrite_to_published_assets() -> None:
     assert _rewrite_links(docs_markdown, DOCS_ROOT / "USER_GUIDE.md", route_map) == (
         "![Workflow](images/research-workflow.svg)"
     )
+
+
+def test_docs_site_links_preserve_fragments_and_route_repo_files() -> None:
+    route_map = _route_map()
+
+    assert (
+        _rewrite_links(
+            "[README section](../README.md#-configuration)",
+            DOCS_ROOT / "INTEGRATIONS.md",
+            route_map,
+        )
+        == "[README section](#/overview#configuration)"
+    )
+    assert (
+        _rewrite_links(
+            "[Deployment check](../DEPLOYMENT.md#10-驗證清單)",
+            DOCS_ROOT / "INTEGRATIONS.md",
+            route_map,
+        )
+        == "[Deployment check](#/deployment#10-%E9%A9%97%E8%AD%89%E6%B8%85%E5%96%AE)"
+    )
+    assert (
+        _rewrite_links(
+            "[Citation](CITATION.cff)",
+            REPO_ROOT / "README.md",
+            route_map,
+        )
+        == "[Citation](https://github.com/u9401066/pubmed-search-mcp/blob/master/CITATION.cff)"
+    )
+
+
+def test_docs_site_link_rewrite_rejects_missing_routed_heading() -> None:
+    with pytest.raises(ValueError, match=r"DEPLOYMENT\.md#9-驗證清單"):
+        _rewrite_links(
+            "[Stale deployment check](../DEPLOYMENT.md#9-驗證清單)",
+            DOCS_ROOT / "INTEGRATIONS.md",
+            _route_map(),
+        )
+
+
+def test_generated_docs_site_has_no_broken_repo_relative_links() -> None:
+    embedded_pages = _load_embedded_pages()
+    valid_slugs = {slug for slug, _title, _source in PAGES}
+    heading_ids_by_slug = {slug: set(_site_heading_ids(source_path)) for slug, _title, source_path in PAGES}
+    broken: list[str] = []
+
+    for slug, markdown in embedded_pages.items():
+        prose = INLINE_CODE_PATTERN.sub("", FENCED_CODE_PATTERN.sub("", markdown))
+        for target in MARKDOWN_LINK_PATTERN.findall(prose):
+            if target.startswith("#/"):
+                routed_target = target.removeprefix("#/")
+                target_slug, separator, fragment = routed_target.partition("#")
+                if target_slug not in valid_slugs:
+                    broken.append(f"{slug}: unknown route {target}")
+                elif separator and unquote(fragment) not in heading_ids_by_slug[target_slug]:
+                    broken.append(f"{slug}: missing route heading {target}")
+                continue
+            if target.startswith(("#", "http://", "https://", "mailto:")):
+                continue
+
+            local_target = target.split("#", 1)[0]
+            if not (DOCS_ROOT / local_target).exists():
+                broken.append(f"{slug}: missing published target {target}")
+
+    assert broken == []
 
 
 def test_generated_docs_site_image_assets_exist() -> None:

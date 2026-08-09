@@ -61,6 +61,12 @@ class TestSourceRegistry:
 
         assert "Invalid source(s): unknown_source" in str(exc_info.value)
 
+    def test_enrichment_only_source_raises(self):
+        registry = get_source_registry()
+
+        with pytest.raises(SourceSelectionError, match="primary search source"):
+            registry.resolve_unified_sources("crossref", auto_sources=["pubmed"])
+
     def test_env_disabled_source_is_filtered(self):
         registry = get_source_registry()
         with patch.dict("os.environ", {"PUBMED_SEARCH_DISABLED_SOURCES": "semantic_scholar, core"}, clear=False):

@@ -484,6 +484,28 @@ class TestResultAggregator:
         assert len(articles) == 1
         assert stats.dedup_by_pmid == 1
 
+    @pytest.mark.parametrize(
+        ("field", "left", "right"),
+        [
+            ("pmc", "PMC12345", "12345"),
+            ("openalex_id", "https://openalex.org/W123", "W123"),
+            ("s2_id", "ABCDEF", "abcdef"),
+            ("core_id", "CORE-123", "core-123"),
+            ("arxiv_id", "https://arxiv.org/abs/2301.12345v1", "2301.12345v2"),
+        ],
+    )
+    async def test_aggregate_dedup_by_provider_identifier(self, field, left, right):
+        first = UnifiedArticle(title="First source title", primary_source="pubmed")
+        second = UnifiedArticle(title="Second source title", primary_source="openalex")
+        setattr(first, field, left)
+        setattr(second, field, right)
+
+        articles, stats = ResultAggregator().aggregate([[first], [second]])
+
+        assert len(articles) == 1
+        assert stats.dedup_by_identifier == 1
+        assert stats.merged_records == 1
+
     async def test_aggregate_dedup_by_title_moderate(self, mock_article):
         """Test deduplication by title with MODERATE strategy."""
         same_title = "Machine Learning Applications in Medical Diagnosis"

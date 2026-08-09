@@ -9,10 +9,12 @@ application layer.
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import logging
 import re
+import threading
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -23,6 +25,9 @@ if TYPE_CHECKING:
 
 from pubmed_search.application.session.artifacts import ArtifactStore
 from pubmed_search.shared.cache_substrate import CacheBackend, CacheStore, JsonFileCacheBackend, MemoryCacheBackend
+from pubmed_search.shared.datetime_utils import parse_iso8601_datetime
+from pubmed_search.shared.file_io import atomic_write_json
+from pubmed_search.shared.locking import synchronized
 
 logger = logging.getLogger(__name__)
 MAX_SESSION_EVENT_LOG = 200
@@ -50,7 +55,7 @@ class CachedArticle:
 
     def is_expired(self, max_age_days: int = 7) -> bool:
         """Check if cache entry is expired."""
-        cached_time = datetime.fromisoformat(self.cached_at)
+        cached_time = parse_iso8601_datetime(self.cached_at)
         now = datetime.now(tz=timezone.utc)
         if cached_time.tzinfo is None:
             cached_time = cached_time.replace(tzinfo=timezone.utc)
@@ -58,7 +63,7 @@ class CachedArticle:
 
     @classmethod
     def from_article_data(cls, pmid: str, article_data: dict[str, Any]) -> CachedArticle:
-        payload = dict(article_data)
+        payload = copy.deepcopy(article_data)
         raw_cached_at = payload.get("cached_at")
         cached_at = raw_cached_at if isinstance(raw_cached_at, str) else _utcnow_iso()
         payload["cached_at"] = cached_at
@@ -79,10 +84,10 @@ class CachedArticle:
 
     def as_article_dict(self) -> dict[str, Any]:
         """Return a dict payload suitable for API/tools responses."""
-        payload = dict(self.full_data)
+        payload = copy.deepcopy(self.full_data)
         payload.setdefault("pmid", self.pmid)
         payload.setdefault("title", self.title)
-        payload.setdefault("authors", self.authors)
+        payload.setdefault("authors", list(self.authors))
         payload.setdefault("abstract", self.abstract)
         payload.setdefault("journal", self.journal)
         payload.setdefault("year", self.year)
@@ -243,6 +248,7 @@ class SessionManager:
     """Manage research sessions and coordinate the shared article cache."""
 
     def __init__(self, data_dir: str | None = None, article_cache: ArticleCache | None = None):
+        self._lock = threading.RLock()
         self.data_dir = Path(data_dir) if data_dir else None
         self.article_cache = article_cache or ArticleCache(cache_dir=str(self.data_dir) if self.data_dir else None)
         self.artifact_store = ArtifactStore(self.data_dir / "artifacts") if self.data_dir else None
@@ -327,10 +333,10 @@ class SessionManager:
 
         session_file = self._get_session_file(session.session_id)
         try:
-            with session_file.open("w", encoding="utf-8") as handle:
-                json.dump(session.to_dict(), handle, ensure_ascii=False, indent=2)
+            atomic_write_json(session_file, session.to_dict())
         except Exception as exc:
             logger.warning("Failed to save session: %s", exc)
+            raise
 
         self._save_sessions_index()
 
@@ -344,10 +350,10 @@ class SessionManager:
             "sessions": list(self._sessions.keys()),
         }
         try:
-            with sessions_file.open("w", encoding="utf-8") as handle:
-                json.dump(index, handle, ensure_ascii=False, indent=2)
+            atomic_write_json(sessions_file, index)
         except Exception as exc:
             logger.warning("Failed to save sessions index: %s", exc)
+            raise
 
     def _session_related_pmids(self, session: ResearchSession) -> list[str]:
         ordered: list[str] = []
@@ -397,7 +403,7 @@ class SessionManager:
                 "kind": kind,
                 "level": level,
                 "message": message,
-                "details": details or {},
+                "details": copy.deepcopy(details) if details else {},
             }
         )
         overflow = len(session.event_log) - MAX_SESSION_EVENT_LOG
@@ -412,7 +418,7 @@ class SessionManager:
                 seen.add(pmid)
                 session.cached_pmids.append(pmid)
 
-    def create_session(self, topic: str = "") -> ResearchSession:
+    def _create_session(self, topic: str = "") -> ResearchSession:
         session_id = hashlib.md5(  # nosec B324
             f"{topic}{_utcnow_iso()}".encode(),
             usedforsecurity=False,
@@ -430,7 +436,7 @@ class SessionManager:
         logger.info("Created session %s: %s", session_id, topic)
         return self._refresh_session_cache_view(session)
 
-    def get_current_session(self) -> ResearchSession | None:
+    def _current_session(self) -> ResearchSession | None:
         if not self._current_session_id:
             return None
         session = self._sessions.get(self._current_session_id)
@@ -438,16 +444,32 @@ class SessionManager:
             return None
         return self._refresh_session_cache_view(session)
 
+    def _get_or_create_session(self, topic: str = "default") -> ResearchSession:
+        session = self._current_session()
+        return session if session is not None else self._create_session(topic)
+
+    def _snapshot_session(self, session: ResearchSession | None) -> ResearchSession | None:
+        """Detach a coherent query result from mutable manager-owned state."""
+        return copy.deepcopy(session) if session is not None else None
+
+    @synchronized
+    def create_session(self, topic: str = "") -> ResearchSession:
+        return copy.deepcopy(self._create_session(topic))
+
+    @synchronized
+    def get_current_session(self) -> ResearchSession | None:
+        return self._snapshot_session(self._current_session())
+
+    @synchronized
     def get_session(self, session_id: str) -> ResearchSession | None:
         """Return a persisted session by id without switching the active session."""
-        return self._get_session_for_artifact_lookup(session_id)
+        return self._snapshot_session(self._get_session_for_artifact_lookup(session_id))
 
+    @synchronized
     def get_or_create_session(self, topic: str = "default") -> ResearchSession:
-        session = self.get_current_session()
-        if session is None:
-            session = self.create_session(topic)
-        return session
+        return copy.deepcopy(self._get_or_create_session(topic))
 
+    @synchronized
     def switch_session(self, session_id: str) -> ResearchSession | None:
         if session_id not in self._sessions:
             return None
@@ -462,8 +484,9 @@ class SessionManager:
         session.touch()
         self._refresh_session_cache_view(session)
         self._save_session(session)
-        return session
+        return self._snapshot_session(session)
 
+    @synchronized
     def list_sessions(self) -> list[dict[str, Any]]:
         return [
             {
@@ -478,9 +501,10 @@ class SessionManager:
             for session in self._sessions.values()
         ]
 
+    @synchronized
     def warm_article_cache(self, articles: list[dict[str, Any]]) -> int:
         warmed = self.article_cache.put_many(articles)
-        session = self.get_current_session()
+        session = self._current_session()
         if session:
             self._record_cached_pmids(session, [article.get("pmid", "") for article in articles])
             if warmed:
@@ -497,9 +521,10 @@ class SessionManager:
             self._save_session(session)
         return warmed
 
+    @synchronized
     def add_to_cache(self, articles: list[dict[str, Any]], *, _skip_save: bool = False) -> int:
         warmed = self.article_cache.put_many(articles)
-        session = self.get_current_session()
+        session = self._current_session()
         if session:
             self._record_cached_pmids(session, [article.get("pmid", "") for article in articles])
             if warmed:
@@ -519,50 +544,58 @@ class SessionManager:
             self._refresh_session_cache_view(session)
         return warmed
 
+    @synchronized
     def get_cached_article(self, pmid: str) -> dict[str, Any] | None:
         cached = self.article_cache.get(pmid)
         if cached is None:
             return None
         return cached.as_article_dict()
 
+    @synchronized
     def get_cached_article_map(self, pmids: Iterable[str]) -> tuple[dict[str, dict[str, Any]], list[str]]:
         pmid_list = [pmid for pmid in pmids if pmid]
         cached, missing = self.article_cache.get_many(pmid_list)
         return ({pmid: article.as_article_dict() for pmid, article in cached.items()}, missing)
 
+    @synchronized
     def get_from_cache(self, pmids: str | list[str]) -> tuple[list[dict[str, Any]], list[str]]:
         pmid_list = [pmids] if isinstance(pmids, str) else pmids
         cached_map, missing = self.get_cached_article_map(pmid_list)
         ordered = [cached_map[pmid] for pmid in pmid_list if pmid in cached_map]
         return ordered, missing
 
+    @synchronized
     def get_session_cached_pmids(
         self,
         *,
         session: ResearchSession | None = None,
         limit: int | None = None,
     ) -> list[str]:
-        active_session = session or self.get_current_session()
+        active_session = session or self._current_session()
         if active_session is None:
             return []
 
         cached_pmids = [pmid for pmid in self._session_related_pmids(active_session) if pmid in self.article_cache]
         return cached_pmids[:limit] if limit is not None else cached_pmids
 
+    @synchronized
     def is_searched(self, pmid: str) -> bool:
-        session = self.get_current_session()
+        session = self._current_session()
         if session is None:
             return False
         return pmid in self._session_related_pmids(session)
 
+    @synchronized
     def add_search_record(self, query: str, pmids: list[str], filters: dict[str, Any] | None = None) -> None:
-        session = self.get_or_create_session()
+        session = self._get_or_create_session()
+        recorded_pmids = list(pmids)
+        recorded_filters = copy.deepcopy(filters) if filters else {}
         record = {
             "query": query,
             "timestamp": _utcnow_iso(),
-            "result_count": len(pmids),
-            "pmids": pmids,
-            "filters": filters or {},
+            "result_count": len(recorded_pmids),
+            "pmids": recorded_pmids,
+            "filters": recorded_filters,
         }
         session.search_history.append(record)
         self._append_session_event(
@@ -571,15 +604,16 @@ class SessionManager:
             message="Recorded search query in session history",
             details={
                 "query": query,
-                "result_count": len(pmids),
-                "pmid_count": len(pmids),
-                "filters": filters or {},
+                "result_count": len(recorded_pmids),
+                "pmid_count": len(recorded_pmids),
+                "filters": recorded_filters,
             },
         )
         session.touch()
         self._refresh_session_cache_view(session)
         self._save_session(session)
 
+    @synchronized
     def save_artifact(
         self,
         *,
@@ -595,7 +629,7 @@ class SessionManager:
             msg = "Artifact persistence requires SessionManager(data_dir=...)"
             raise RuntimeError(msg)
 
-        session = self.get_or_create_session()
+        session = self._get_or_create_session()
         manifest = self.artifact_store.save(
             session_id=session.session_id,
             tool=tool,
@@ -605,7 +639,7 @@ class SessionManager:
             summary=summary,
             metadata=metadata,
         )
-        session.artifacts.append(manifest)
+        session.artifacts.append(copy.deepcopy(manifest))
         self._append_session_event(
             session,
             kind="artifact_saved",
@@ -619,8 +653,9 @@ class SessionManager:
         )
         session.touch()
         self._save_session(session)
-        return manifest
+        return copy.deepcopy(manifest)
 
+    @synchronized
     def list_artifacts(
         self,
         *,
@@ -641,8 +676,9 @@ class SessionManager:
             artifacts = [artifact for artifact in artifacts if artifact.get("kind") == kind]
         if limit <= 0:
             return []
-        return artifacts[-limit:]
+        return copy.deepcopy(artifacts[-limit:])
 
+    @synchronized
     def get_artifact_manifest(
         self,
         artifact_id: str,
@@ -664,7 +700,7 @@ class SessionManager:
 
     def _get_session_for_artifact_lookup(self, session_id: str | None = None) -> ResearchSession | None:
         if not session_id:
-            return self.get_current_session()
+            return self._current_session()
         if not _SAFE_SESSION_ID_RE.fullmatch(session_id):
             msg = f"Unsafe session id: {session_id}"
             raise ValueError(msg)
@@ -691,6 +727,7 @@ class SessionManager:
             return None, parts[0]
         return None, None
 
+    @synchronized
     def read_artifact(
         self,
         artifact_id: str = "",
@@ -758,6 +795,7 @@ class SessionManager:
             "truncated": truncated,
         }
 
+    @synchronized
     def get_session_event_log(
         self,
         *,
@@ -766,7 +804,7 @@ class SessionManager:
         kind: str | None = None,
     ) -> list[dict[str, Any]]:
         """Return recent session events, optionally filtered by kind."""
-        active_session = session or self.get_current_session()
+        active_session = session or self._current_session()
         if active_session is None:
             return []
 
@@ -777,10 +815,11 @@ class SessionManager:
 
         if limit <= 0:
             return []
-        return events[-limit:]
+        return copy.deepcopy(events[-limit:])
 
+    @synchronized
     def find_cached_search(self, query: str, limit: int | None = None) -> list[dict[str, Any]] | None:
-        session = self.get_current_session()
+        session = self._current_session()
         if session is None:
             return None
 
@@ -806,8 +845,9 @@ class SessionManager:
 
         return None
 
+    @synchronized
     def add_to_reading_list(self, pmid: str, priority: int = 3, notes: str = "") -> None:
-        session = self.get_or_create_session()
+        session = self._get_or_create_session()
         session.reading_list[pmid] = {
             "priority": priority,
             "status": "unread",
@@ -824,8 +864,9 @@ class SessionManager:
         self._refresh_session_cache_view(session)
         self._save_session(session)
 
+    @synchronized
     def exclude_article(self, pmid: str) -> None:
-        session = self.get_or_create_session()
+        session = self._get_or_create_session()
         if pmid not in session.excluded_pmids:
             session.excluded_pmids.append(pmid)
             self._append_session_event(
@@ -838,8 +879,9 @@ class SessionManager:
             self._refresh_session_cache_view(session)
             self._save_session(session)
 
+    @synchronized
     def get_session_summary(self) -> dict[str, Any]:
-        session = self.get_current_session()
+        session = self._current_session()
         if session is None:
             return {"status": "no_active_session"}
 
@@ -865,6 +907,6 @@ class SessionManager:
                 for event in session.event_log[-5:]
             ],
             "cached_pmids": cached_pmids,
-            "reading_list": session.reading_list,
+            "reading_list": copy.deepcopy(session.reading_list),
             "cache_stats": self.article_cache.stats(),
         }

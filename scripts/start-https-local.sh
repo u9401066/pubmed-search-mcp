@@ -78,7 +78,7 @@ echo -e "${BLUE}🚀 啟動 MCP Server (HTTPS, port 8443, streamable-http)...${N
 
 # Run in background
 nohup uv run python scripts/run_https_local.py \
-    --host 0.0.0.0 \
+    --host 127.0.0.1 \
     --port 8443 \
     --certfile "$SSL_DIR/server.crt" \
     --keyfile "$SSL_DIR/server.key" > "$PROJECT_ROOT/https-server.log" 2>&1 &
@@ -92,6 +92,7 @@ echo ""
 echo "端點："
 echo "  MCP:      https://localhost:8443/mcp"
 echo "  Health:   https://localhost:8443/health"
+echo "  Ready:    https://localhost:8443/ready"
 echo "  Info:     https://localhost:8443/info"
 echo ""
 echo "日誌："

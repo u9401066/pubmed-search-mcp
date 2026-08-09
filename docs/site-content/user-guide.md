@@ -161,8 +161,13 @@ Optional browser fallback requires a separate local broker:
 ```bash
 uv sync --extra browser-broker
 uv run playwright install chromium
-uv run pubmed-browser-fetch-broker --token local-dev-token
+uv run python -c "import secrets; print(secrets.token_urlsafe(32))"
+uv run pubmed-browser-fetch-broker --token "<same-random-32-byte-token>"
 ```
+
+Copy the generated value into both the broker command and MCP configuration;
+never use a token copied from public documentation. The broker also enforces a
+loopback bind plus loopback Host and Origin headers.
 
 Only enable browser-session fallback for hosts you trust and are allowed to access:
 
@@ -171,7 +176,7 @@ Only enable browser-session fallback for hosts you trust and are allowed to acce
   "enabled": true,
   "auto_enabled": true,
   "broker_url": "http://127.0.0.1:8766/fetch",
-  "token": "local-dev-token",
+  "token": "<same-random-32-byte-token>",
   "allowed_hosts": ["jamanetwork.com", "*.jamanetwork.com"]
 }
 ```
@@ -218,7 +223,7 @@ prepare_export(pmids="last", format="bibtex", source="local")
 prepare_export(pmids="last", format="csl")
 ```
 
-Use `save_literature_notes` when the goal is a local knowledge base rather than a citation file:
+Use `save_literature_notes` when the goal is a note library rather than a citation file:
 
 ```python
 save_literature_notes(pmids="last")
@@ -229,7 +234,13 @@ save_literature_notes(pmids="last", output_dir="./references")
 
 The default `note_format` is `wiki`. `unified_search` suggests `save_literature_notes(pmids="last", note_format="wiki")` for PMID-backed result sets, and the generated LLM wiki/Foam links use stable `[[stable-id|title]]` targets based on PMID, DOI, or PMCID instead of title-derived filenames. The response includes `wiki_validation` so agents can detect unresolved wikilinks before editing the note library.
 
-Directory resolution is:
+The `output_dir` example and custom `template_file` are **local-mode features**.
+An authenticated service caller cannot select a server-host path or read an
+arbitrary template file. It omits both arguments, chooses a built-in
+`note_format`, and the server writes below that principal's isolated
+`references/` directory.
+
+In local mode, directory resolution is:
 
 1. `output_dir`
 2. `PUBMED_NOTES_DIR`
@@ -256,16 +267,23 @@ The server exposes pipeline operations through `manage_pipeline` and compatibili
 
 Saved pipelines can be reused from search with `unified_search(pipeline="saved:<name>")`. Pipeline `config` values should be YAML or JSON strings, and scheduled pipelines use standard five-field cron strings.
 
+Runtime boundary: local callers may use `workspace` scope and
+`load_pipeline(source="file:...")`. Authenticated service callers use only their
+tenant-derived saved-pipeline store; it does not inherit the process-wide
+workspace path, and `file:` sources are rejected. The service Compose profile
+also disables the in-process scheduler. A service operator must use manual runs
+or design a single external leader/lease before enabling recurring execution.
+
 ## Copilot Studio Notes
 
 ![Client integration and deployment workflow](images/integration-deployment-workflow.svg)
 
 There are two Copilot routes:
 
-- full primary MCP surface through `pubmed-search-mcp-http --transport streamable-http --copilot-compatible`
-- simplified Copilot Studio surface: a smaller 11-tool schema through `run_copilot.py`
+- public primary MCP surface through authenticated `pubmed-search-mcp-http --mode service --transport streamable-http --copilot-compatible`
+- loopback-only schema smoke: a smaller 11-tool schema through `run_copilot.py`
 
-Use the full surface when your client can handle it. Use the simplified surface when Copilot Studio schema compatibility is the priority.
+Only the full authenticated service is publishable. Use the simplified surface locally to inspect Copilot Studio schema compatibility, then return to the service launcher for any public endpoint; never tunnel `run_copilot.py`.
 
 ## Ask The Agent Well
 
@@ -306,6 +324,8 @@ Keep these limits in mind:
 | Tool call shows `Canceled: Canceled` while progress is updating | Use a build with non-cancelling best-effort progress callbacks; for genuinely long searches, retry with `options="shallow"` or narrower `sources`. |
 | Empty or sparse full text | Try `get_fulltext` on a PMC Open Access article, then check source availability. |
 | Local notes saved somewhere unexpected | Check `output_dir`, `PUBMED_NOTES_DIR`, `PUBMED_WORKSPACE_DIR`, and `PUBMED_DATA_DIR`. |
+| Service rejects a note path, template, pipeline file, or workspace scope | Omit server-host paths; use built-in note formats and save pipelines by name in the authenticated tenant store. |
+| A scheduled pipeline is saved but does not run in service Compose | The service scheduler is intentionally disabled; run it manually or provide one external leader/lease. |
 | GitHub Pages docs look stale | Run `uv run python scripts/build_docs_site.py` locally, then check the Pages workflow. |
 
 ## Where To Go Next

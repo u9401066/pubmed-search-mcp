@@ -303,10 +303,12 @@ class TestSessionManagerCoverage:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             manager = SessionManager(data_dir=tmpdir)
-            session = manager.get_or_create_session()
+            manager.get_or_create_session()
 
             manager.add_search_record(query="test query", pmids=["123", "456"])
 
+            session = manager.get_current_session()
+            assert session is not None
             assert len(session.search_history) == 1
 
     async def test_session_add_to_cache(self):

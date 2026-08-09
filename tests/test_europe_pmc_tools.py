@@ -35,6 +35,27 @@ def tools():
     return _capture_tools(MagicMock())
 
 
+@pytest.fixture
+def empty_fulltext_downloader():
+    """Keep tool fallback tests hermetic while proving the downloader branch runs."""
+    downloader = AsyncMock()
+    downloader.get_fulltext.return_value = FulltextResult(
+        error="No PDF links found for this article",
+    )
+    downloader.close = AsyncMock()
+    with patch(
+        "pubmed_search.infrastructure.sources.fulltext_download.FulltextDownloader",
+        return_value=downloader,
+    ):
+        yield downloader
+
+
+@pytest.fixture(autouse=True)
+def _disable_live_institutional_fetch(monkeypatch):
+    """Keep unit tests hermetic; direct DOI retrieval has dedicated adapter tests."""
+    monkeypatch.setenv("INSTITUTIONAL_DIRECT_FETCH", "false")
+
+
 # ============================================================
 # get_fulltext
 # ============================================================
@@ -66,7 +87,7 @@ class TestGetFulltext:
         assert "Introduction" in result
 
     @pytest.mark.asyncio
-    async def test_pmcid_no_xml(self, tools):
+    async def test_pmcid_no_xml(self, tools, empty_fulltext_downloader):
         mock_client = AsyncMock()
         mock_client.get_fulltext_xml.return_value = None
         with patch(
@@ -74,6 +95,7 @@ class TestGetFulltext:
             return_value=mock_client,
         ):
             result = await tools["get_fulltext"](pmcid="PMC9999999")
+        empty_fulltext_downloader.get_fulltext.assert_awaited_once()
         # Should still succeed if unpaywall / core have nothing either
         assert isinstance(result, str)
 
@@ -151,12 +173,34 @@ class TestGetFulltext:
     @pytest.mark.asyncio
     async def test_pmid_identifier_auto_detect(self, tools):
         """Test auto-detection of PMID from identifier string."""
-        result = await tools["get_fulltext"](identifier="12345678")
-        # Should detect as PMID, result will depend on API but shouldn't crash
+        mock_client = AsyncMock()
+        mock_client.get_article.return_value = None
+        mock_downloader = AsyncMock()
+        mock_downloader.get_fulltext.return_value = FulltextResult(
+            pmid="12345678",
+            error="No PDF links found for this article",
+        )
+        mock_downloader.close = AsyncMock()
+
+        with (
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
+                return_value=mock_client,
+            ),
+            patch(
+                "pubmed_search.infrastructure.sources.fulltext_download.FulltextDownloader",
+                return_value=mock_downloader,
+            ),
+        ):
+            result = await tools["get_fulltext"](identifier="12345678")
+
+        mock_client.get_article.assert_awaited_once_with("MED", "12345678", result_type="core")
+        mock_downloader.get_fulltext.assert_awaited_once()
+        assert mock_downloader.get_fulltext.await_args.kwargs["pmid"] == "12345678"
         assert isinstance(result, str)
 
     @pytest.mark.asyncio
-    async def test_doi_identifier_auto_detect(self, tools):
+    async def test_doi_identifier_auto_detect(self, tools, empty_fulltext_downloader):
         """Test auto-detection of DOI from identifier string."""
         mock_unpaywall = AsyncMock()
         mock_unpaywall.get_oa_status.return_value = {"is_oa": False}
@@ -171,10 +215,11 @@ class TestGetFulltext:
             ),
         ):
             result = await tools["get_fulltext"](identifier="10.1038/s41586-021-03819-2")
+        empty_fulltext_downloader.get_fulltext.assert_awaited_once()
         assert isinstance(result, str)
 
     @pytest.mark.asyncio
-    async def test_pmc_identifier_auto_detect(self, tools):
+    async def test_pmc_identifier_auto_detect(self, tools, empty_fulltext_downloader):
         """Test auto-detection of PMC ID from identifier string."""
         mock_client = AsyncMock()
         mock_client.get_fulltext_xml.return_value = None
@@ -183,6 +228,7 @@ class TestGetFulltext:
             return_value=mock_client,
         ):
             result = await tools["get_fulltext"](identifier="PMC7096777")
+        empty_fulltext_downloader.get_fulltext.assert_awaited_once()
         assert isinstance(result, str)
 
     @pytest.mark.asyncio
@@ -207,7 +253,7 @@ class TestGetFulltext:
         assert "Intro text" in result or "Results text" in result
 
     @pytest.mark.asyncio
-    async def test_europe_pmc_exception(self, tools):
+    async def test_europe_pmc_exception(self, tools, empty_fulltext_downloader):
         mock_client = AsyncMock()
         mock_client.get_fulltext_xml.side_effect = RuntimeError("API down")
         with patch(
@@ -216,12 +262,21 @@ class TestGetFulltext:
         ):
             # Should not crash, just log and continue to other sources
             result = await tools["get_fulltext"](pmcid="PMC7096777")
+        empty_fulltext_downloader.get_fulltext.assert_awaited_once()
         assert isinstance(result, str)
 
     @pytest.mark.asyncio
-    async def test_no_results_at_all(self, tools):
+    async def test_no_results_at_all(self, tools, empty_fulltext_downloader):
         """When all sources fail, should return no results message."""
-        result = await tools["get_fulltext"](pmid="99999999")
+        mock_client = AsyncMock()
+        mock_client.get_article.return_value = None
+        with patch(
+            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
+            return_value=mock_client,
+        ):
+            result = await tools["get_fulltext"](pmid="99999999")
+        mock_client.get_article.assert_awaited_once()
+        empty_fulltext_downloader.get_fulltext.assert_awaited_once()
         assert "no" in result.lower() or "not" in result.lower()
 
     @pytest.mark.asyncio
@@ -448,6 +503,8 @@ class TestGetFulltext:
             },
             "oa_locations": [],
         }
+        mock_core = AsyncMock()
+        mock_core.search.return_value = {"results": []}
         mock_downloader = AsyncMock()
         mock_downloader.get_fulltext.return_value = FulltextResult(
             doi="10.1001/jamanetworkopen.2026.1515",
@@ -465,6 +522,10 @@ class TestGetFulltext:
             patch(
                 "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_unpaywall_client",
                 return_value=mock_unpaywall,
+            ),
+            patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_core_client",
+                return_value=mock_core,
             ),
             patch(
                 "pubmed_search.infrastructure.sources.fulltext_download.FulltextDownloader",

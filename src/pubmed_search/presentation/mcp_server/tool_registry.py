@@ -26,7 +26,7 @@ from pubmed_search.shared.settings import load_settings
 if TYPE_CHECKING:
     from collections.abc import Awaitable
 
-    from mcp.server.mcpserver import MCPServer
+    from mcp.server import MCPServer
 
     from pubmed_search.application.session.manager import SessionManager
     from pubmed_search.infrastructure.ncbi import LiteratureSearcher
@@ -71,39 +71,26 @@ def _resolve_awaitable(awaitable: Awaitable[Any]) -> Any:
 
 
 def _extract_registered_tool_names(mcp: MCPServer) -> set[str]:
-    """Get registered tool names using public APIs when available."""
+    """Get registered tool names through the public MCP v2 API."""
     list_tools = getattr(mcp, "list_tools", None)
-    if callable(list_tools):
-        raw_tools = list_tools()
-        if inspect.isawaitable(raw_tools):
-            try:
-                raw_tools = _resolve_awaitable(raw_tools)
-            except Exception:
-                logger.debug(
-                    "MCPServer.list_tools() is awaitable but could not be resolved; falling back to private registry"
-                )
-                raw_tools = None
+    if not callable(list_tools):
+        msg = "MCPServer.list_tools() public API is unavailable"
+        raise TypeError(msg)
 
-        names: set[str] = set()
-        if raw_tools is not None:
-            for tool in raw_tools:
-                if isinstance(tool, str):
-                    names.add(tool)
-                    continue
+    raw_tools = list_tools()
+    if inspect.isawaitable(raw_tools):
+        raw_tools = _resolve_awaitable(raw_tools)
 
-                tool_name = getattr(tool, "name", None)
-                if isinstance(tool_name, str):
-                    names.add(tool_name)
-            if names:
-                return names
+    names: set[str] = set()
+    for tool in raw_tools:
+        if isinstance(tool, str):
+            names.add(tool)
+            continue
 
-    tool_manager = getattr(mcp, "_tool_manager", None)
-    tools = getattr(tool_manager, "_tools", None)
-    if tools is not None:
-        return set(tools.keys())
-
-    msg = "Cannot access MCPServer tools registry"
-    raise AttributeError(msg)
+        tool_name = getattr(tool, "name", None)
+        if isinstance(tool_name, str):
+            names.add(tool_name)
+    return names
 
 
 # ============================================================================
@@ -454,15 +441,15 @@ def validate_tool_registry(mcp: MCPServer) -> dict[str, Any]:
 
     try:
         registered_tools = _extract_registered_tool_names(mcp)
-    except AttributeError:
-        logger.warning("Cannot access registered tools from MCPServer instance")
+    except (AttributeError, TypeError) as exc:
+        logger.warning("Cannot access registered tools through MCPServer.list_tools(): %s", exc)
         return {
             "defined": list(defined_tools),
             "registered": [],
             "missing": [],
             "extra": [],
             "valid": False,
-            "error": "Cannot access MCPServer tools registry",
+            "error": str(exc),
         }
 
     # Calculate differences

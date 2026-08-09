@@ -1,8 +1,8 @@
 """
 Unified Exception Hierarchy for PubMed Search MCP.
 
-Python 3.12+ features used:
-- ExceptionGroup for multi-error handling
+Python 3.10-compatible exception handling:
+- Native ExceptionGroup on Python 3.11+ with a Python 3.10 fallback
 - Modern type annotations
 - @override decorator compatibility
 
@@ -418,17 +418,17 @@ def create_error_group(
     """
     Create an ExceptionGroup from multiple errors.
 
-    Python 3.11+ feature for handling multiple concurrent errors.
+    Uses the native Python 3.11+ type or the compatible Python 3.10 fallback.
 
     Example:
-        try:
-            async with asyncio.TaskGroup() as tg:
-                tg.create_task(fetch_from_source_a())
-                tg.create_task(fetch_from_source_b())
-        except* APIError as eg:
-            # Handle all API errors
-            for exc in eg.exceptions:
-                log_error(exc)
+        results = await asyncio.gather(
+            fetch_from_source_a(),
+            fetch_from_source_b(),
+            return_exceptions=True,
+        )
+        errors = [result for result in results if isinstance(result, Exception)]
+        if errors:
+            raise create_error_group("Source failures", errors)
     """
     return ExceptionGroup(message, errors)
 

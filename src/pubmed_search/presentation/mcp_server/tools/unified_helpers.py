@@ -13,6 +13,7 @@ import contextlib
 import logging
 import re
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from pubmed_search.application.search.query_analyzer import (
     AnalyzedQuery,
@@ -26,6 +27,9 @@ from pubmed_search.infrastructure.sources.registry import (
 )
 
 from .icd import lookup_icd_to_mesh
+
+if TYPE_CHECKING:
+    from pubmed_search.domain.entities.article import UnifiedArticle
 
 logger = logging.getLogger(__name__)
 
@@ -511,6 +515,7 @@ class RelaxationResult:
     steps_tried: list[RelaxationStep]
     successful_step: RelaxationStep | None
     total_results: int
+    articles: list[UnifiedArticle] = field(default_factory=list)
 
 
 def _generate_relaxation_steps(

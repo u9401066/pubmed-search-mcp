@@ -14,7 +14,6 @@ Maintenance:
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import logging
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
@@ -23,7 +22,6 @@ from typing import TYPE_CHECKING, Any
 from pubmed_search.application.search.result_aggregator import ResultAggregator
 from pubmed_search.application.timeline import TimelineBuilder, build_research_tree
 from pubmed_search.domain.entities.article import UnifiedArticle
-from pubmed_search.infrastructure.sources.registry import get_source_registry
 from pubmed_search.presentation.mcp_server.session_tools import notify_session_resources_updated
 from pubmed_search.shared.source_contracts import (
     SourceAdapterCall,
@@ -45,7 +43,6 @@ from .unified_helpers import DispatchStrategy, RelaxationResult, SearchDepthMetr
 from .unified_source_search import (
     _auto_relax_search,
     _execute_deep_search,
-    _search_pubmed,
 )
 
 if TYPE_CHECKING:
@@ -58,6 +55,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 SOURCE_SEARCH_TIMEOUT_SECONDS = 25.0
+CLINICAL_TRIALS_PREFETCH_TIMEOUT_SECONDS = 0.5
 _PREPRINT_SOURCE_KEYS = frozenset({"arxiv", "medrxiv", "biorxiv"})
 
 SearchRunner = Callable[
@@ -79,6 +77,7 @@ class UnifiedSearchExecutionResult:
     research_context_data: dict[str, Any] | None
     prefetched_trials: list[Any] | None
     source_errors: list[dict[str, Any]]
+    source_statuses: dict[str, str]
 
 
 def _source_error_payload(error: Any) -> dict[str, Any]:
@@ -121,11 +120,13 @@ async def _search_single_source(
     advanced_filters = plan.request.advanced_filters
 
     if source == "crossref":
-        return SourceAdapterResult.empty(source="crossref", operation="search")
+        msg = "Crossref is an enrichment source and cannot be used as the only primary search adapter"
+        raise ValueError(msg)
 
     runner = search_functions.get(source)
     if runner is None:
-        return SourceAdapterResult.empty(source=source, operation="search")
+        msg = f"No search adapter is registered for source '{source}'"
+        raise ValueError(msg)
 
     articles, total_count = await runner(query, limit, min_year, max_year, advanced_filters)
     return SourceAdapterResult(
@@ -150,14 +151,13 @@ async def execute_unified_search(
     """Execute a planned unified search and return normalized output state."""
     request = plan.request
     analysis = plan.analysis
-    registry = get_source_registry()
-
     all_results: list[list[UnifiedArticle]] = []
     pubmed_total_count: int | None = None
     source_api_counts: dict[str, tuple[int, int | None]] = {}
     deep_search_metrics: SearchDepthMetrics | None = None
     relaxation_result: RelaxationResult | None = None
     source_errors: list[dict[str, Any]] = []
+    source_statuses: dict[str, str] = {}
 
     clinical_trials_task: asyncio.Task | None = None
     if not is_structured_output_format(request.output_format):
@@ -177,35 +177,10 @@ async def execute_unified_search(
         except Exception:
             logger.debug("Clinical trials module not available, skipping")
 
-    if request.deep_search and plan.enhanced_query and plan.enhanced_query.strategies:
+    if request.deep_search and plan.enhanced_query and plan.deep_strategies:
         enhanced_query = plan.enhanced_query
-        if plan.user_sources:
-            original_count = len(enhanced_query.strategies)
-            enhanced_query.strategies = [
-                strategy for strategy in enhanced_query.strategies if strategy.source in plan.user_sources
-            ]
-            if not enhanced_query.strategies:
-                from pubmed_search.application.search.semantic_enhancer import SearchPlan
-
-                for source in plan.user_sources:
-                    definition = registry.get(source)
-                    if definition and definition.supports_primary_search and source != "crossref":
-                        enhanced_query.strategies.append(
-                            SearchPlan(
-                                name=f"user_specified_{source}",
-                                query=enhanced_query.original_query,
-                                source=source,
-                                priority=1,
-                                expected_precision=0.5,
-                                expected_recall=0.5,
-                            )
-                        )
-            filtered_count = original_count - len(enhanced_query.strategies)
-            if filtered_count > 0:
-                logger.info("Filtered %s strategies to match user sources: %s", filtered_count, plan.user_sources)
-
-        await progress(4, 10, f"Deep search: {len(enhanced_query.strategies)} strategies...")
-        logger.info("Executing DEEP SEARCH with %s strategies", len(enhanced_query.strategies))
+        await progress(4, 10, f"Deep search: {len(plan.deep_strategies)} strategies...")
+        logger.info("Executing DEEP SEARCH with %s strategies", len(plan.deep_strategies))
         (
             all_results,
             deep_search_metrics,
@@ -219,10 +194,17 @@ async def execute_unified_search(
             plan.effective_min_year,
             plan.effective_max_year,
             request.advanced_filters,
+            strategies=plan.deep_strategies,
         )
         for error in deep_source_errors:
             logger.warning("Deep search source warning: %s", format_source_adapter_error(error))
             source_errors.append(_source_error_payload(error))
+        failed_sources = {error.source for error in deep_source_errors}
+        for source, (returned, _total) in source_api_counts.items():
+            if source in failed_sources:
+                source_statuses[source] = "partial" if returned else "error"
+            else:
+                source_statuses[source] = "ok" if returned else "empty"
         logger.info(
             "Deep search: %s strategies, %s with results, depth score: %.0f",
             deep_search_metrics.strategies_executed,
@@ -255,6 +237,7 @@ async def execute_unified_search(
             if articles:
                 all_results.append(articles)
             source_api_counts[result.source] = (len(articles), total_count)
+            source_statuses[result.source] = result.status
             if result.source == "pubmed" and total_count is not None:
                 pubmed_total_count = total_count
             logger.info(
@@ -271,7 +254,12 @@ async def execute_unified_search(
     articles, stats = aggregator.aggregate(all_results)
     logger.info("Aggregation: %s unique from %s total", stats.unique_articles, stats.total_input)
 
-    if request.auto_relax and stats.unique_articles == 0 and not analysis.identifiers:
+    if (
+        request.auto_relax
+        and stats.unique_articles == 0
+        and not analysis.identifiers
+        and "pubmed" in plan.dispatch_sources
+    ):
         logger.info("0 results — attempting auto-relaxation")
         relaxation_result = await _auto_relax_search(
             searcher,
@@ -283,15 +271,7 @@ async def execute_unified_search(
         )
         if relaxation_result and relaxation_result.successful_step:
             step = relaxation_result.successful_step
-            relaxed_articles, _ = await _search_pubmed(
-                searcher,
-                step.query,
-                request.limit,
-                step.min_year,
-                step.max_year,
-                **step.advanced_filters,
-            )
-            all_results = [relaxed_articles]
+            all_results = [relaxation_result.articles]
             articles, stats = aggregator.aggregate(all_results)
             pubmed_total_count = relaxation_result.total_results
             logger.info("Auto-relaxation: %s results at level %s (%s)", stats.unique_articles, step.level, step.action)
@@ -347,7 +327,11 @@ async def execute_unified_search(
             else [source for source in plan.dispatch_sources if source != "crossref"]
         )
         sources_responded_list = (
-            [source for source in sources_queried_list if source_api_counts.get(source, (0, None))[0] > 0]
+            [
+                source
+                for source in sources_queried_list
+                if source_statuses.get(source, "empty") in {"ok", "empty", "partial"}
+            ]
             if source_api_counts
             else sources_queried_list
         )
@@ -381,15 +365,18 @@ async def execute_unified_search(
 
     prefetched_trials: list[Any] | None = None
     if clinical_trials_task:
-        if clinical_trials_task.done():
-            try:
-                prefetched_trials = clinical_trials_task.result()
-            except Exception:
-                prefetched_trials = None
-        else:
-            clinical_trials_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await clinical_trials_task
+        try:
+            prefetched_trials = await asyncio.wait_for(
+                clinical_trials_task,
+                timeout=CLINICAL_TRIALS_PREFETCH_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            logger.debug(
+                "Clinical trials prefetch exceeded %.2fs budget",
+                CLINICAL_TRIALS_PREFETCH_TIMEOUT_SECONDS,
+            )
+        except Exception:
+            prefetched_trials = None
 
     return UnifiedSearchExecutionResult(
         ranked=ranked,
@@ -404,6 +391,7 @@ async def execute_unified_search(
         research_context_data=research_context_data,
         prefetched_trials=prefetched_trials,
         source_errors=source_errors,
+        source_statuses=source_statuses,
     )
 
 

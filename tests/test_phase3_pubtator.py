@@ -11,6 +11,7 @@ Tests:
 from __future__ import annotations
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -29,6 +30,7 @@ from pubmed_search.application.search.semantic_enhancer import (
 )
 from pubmed_search.infrastructure.cache.entity_cache import (
     EntityCache,
+    get_entity_cache,
     reset_entity_cache,
 )
 from pubmed_search.infrastructure.pubtator.models import (
@@ -188,7 +190,8 @@ class TestSemanticEnhancerAsync:
         enhanced = await enhancer.enhance("test query")
 
         # Should fall back to basic enhancement
-        assert enhanced.metadata.get("timeout") is True or enhanced.metadata.get("fallback") is True
+        assert enhanced.metadata["timeout"] is True
+        assert "error" not in enhanced.metadata
 
 
 # =============================================================================
@@ -295,6 +298,36 @@ class TestEntityCache:
         removed = cache.cleanup_expired()
         assert removed == 2
         assert len(cache) == 0
+
+    def test_sync_operations_keep_stats_consistent_under_thread_contention(self):
+        cache = EntityCache(max_size=64, ttl=3600)
+
+        def _mutate(worker: int) -> None:
+            for step in range(100):
+                key = f"{worker}:{step}"
+                cache.set(key, step)
+                cache.get(key)
+                if step % 7 == 0:
+                    cache.invalidate(key)
+                if step % 23 == 0:
+                    cache.warmup({f"warm:{worker}:{step}": step})
+                if step % 31 == 0:
+                    len(cache)
+
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            list(executor.map(_mutate, range(8)))
+
+        assert cache.stats.writes == 800
+        assert len(cache) <= 64
+
+    def test_singleton_factory_is_consistent_across_threads(self):
+        reset_entity_cache()
+        try:
+            with ThreadPoolExecutor(max_workers=16) as executor:
+                caches = list(executor.map(lambda _index: get_entity_cache(), range(64)))
+            assert all(cache is caches[0] for cache in caches)
+        finally:
+            reset_entity_cache()
 
 
 # =============================================================================

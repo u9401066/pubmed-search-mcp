@@ -8,6 +8,12 @@ on:
       - release/**
   pull_request:
   workflow_dispatch:
+    inputs:
+      run_live_integrations:
+        description: Run opt-in external API integration probes
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -17,39 +23,32 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test-matrix:
-    name: ${{ matrix.os }} / py${{ matrix.python-version }}
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - ubuntu-latest
-          - macos-latest
-          - windows-latest
-        python-version:
-          - "3.11"
-
+  quality-and-package:
+    name: Quality, docs, and wheel smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
-          version: latest
+          version: "0.11.24"
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.13"
 
       - name: Sync dependencies
-        run: uv sync --frozen --dev
+        run: uv sync --frozen --dev --python 3.13
 
-      - name: Ruff
+      - name: Ruff lint
         run: uv run ruff check src/ tests/ scripts/ run_server.py run_copilot.py
+
+      - name: Ruff format
+        run: uv run ruff format --check src/ tests/ scripts/ run_server.py run_copilot.py
 
       - name: Async test consistency
         run: uv run python scripts/check_async_tests.py
@@ -57,5 +56,101 @@ jobs:
       - name: Mypy
         run: uv run mypy src/ tests/
 
+      - name: Documentation integrity
+        run: uv run pytest -q tests/test_docs_site_sync.py tests/test_documentation_integrity.py tests/test_github_wiki_build.py
+
+      - name: MCP subprocess and HTTP protocol smoke
+        run: uv run pytest -q tests/test_release_transport_smoke.py -m "not slow"
+
+      - name: Build distributions
+        run: uv build
+
+      - name: Install and smoke-test wheel
+        run: |
+          uv venv --python 3.13 .wheel-smoke
+          uv pip install --python .wheel-smoke/bin/python dist/*.whl
+          .wheel-smoke/bin/python -c "import pubmed_search; from pubmed_search.api import PubMedSearchClient"
+          .wheel-smoke/bin/pubmed-search-mcp-http --help
+
+  test-matrix:
+    name: ${{ matrix.os }} / py${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python-version: "3.10"
+          - os: ubuntu-latest
+            python-version: "3.11"
+          - os: ubuntu-latest
+            python-version: "3.12"
+          - os: ubuntu-latest
+            python-version: "3.13"
+          - os: macos-latest
+            python-version: "3.13"
+          - os: windows-latest
+            python-version: "3.13"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.11.24"
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Sync dependencies
+        run: uv sync --frozen --dev --python ${{ matrix.python-version }}
+
       - name: Pytest
-        run: uv run pytest -q -m "not integration"
+        run: uv run pytest -q -m "not integration and not slow"
+
+  container-smoke:
+    name: Container build and entrypoint smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Build pinned non-root image
+        run: docker build --tag pubmed-search-mcp:ci .
+
+      - name: Smoke packaged HTTP entrypoint
+        run: docker run --rm pubmed-search-mcp:ci uv run --no-sync pubmed-search-mcp-http --help
+
+  live-integrations:
+    name: External API integration probes
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_live_integrations }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PUBMED_RUN_LIVE_TESTS: "1"
+      NCBI_EMAIL: ${{ vars.NCBI_EMAIL || 'pubmed-search@example.com' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.11.24"
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+
+      - name: Sync dependencies
+        run: uv sync --frozen --dev --python 3.13
+
+      - name: Run live integration probes
+        run: uv run pytest -q -m integration -rs

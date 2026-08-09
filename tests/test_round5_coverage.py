@@ -61,12 +61,12 @@ class TestMCPAPIHandler:
             assert thread.daemon is True
             time.sleep(0.2)
 
-    async def test_background_api_uses_fresh_session_manager_view(self, tmp_path):
+    async def test_background_api_reuses_installed_session_manager(self, tmp_path):
         from pubmed_search.presentation.mcp_server.server import start_http_api_background
 
         original_session_manager = MagicMock()
         original_session_manager.data_dir = str(tmp_path)
-        fresh_session_manager = MagicMock()
+        original_session_manager.get_cached_article.return_value = {"pmid": "123", "title": "Shared Cached"}
 
         ready = threading.Event()
         captured: dict[str, object] = {}
@@ -86,15 +86,14 @@ class TestMCPAPIHandler:
             ),
             patch(
                 "pubmed_search.application.session.manager.SessionManager",
-                return_value=fresh_session_manager,
-            ),
+            ) as session_manager_constructor,
         ):
             start_http_api_background(original_session_manager, None, port=19998)
             assert ready.wait(1.0) is True
-            fresh_session_manager.get_cached_article.return_value = {"pmid": "123", "title": "Fresh Cached"}
             handler_cls = captured["handler_cls"]
             handler = handler_cls.__new__(handler_cls)
             handler.path = "/api/cached_article/123"
+            handler.headers = {"Host": "localhost:19998"}
             handler.wfile = io.BytesIO()
             handler.send_response = MagicMock()
             handler.send_header = MagicMock()
@@ -103,9 +102,9 @@ class TestMCPAPIHandler:
             handler_cls.do_GET(handler)
 
             payload = json.loads(handler.wfile.getvalue().decode())
-            assert payload["data"]["title"] == "Fresh Cached"
-            fresh_session_manager.get_cached_article.assert_called_once_with("123")
-            original_session_manager.get_cached_article.assert_not_called()
+            assert payload["data"]["title"] == "Shared Cached"
+            original_session_manager.get_cached_article.assert_called_once_with("123")
+            session_manager_constructor.assert_not_called()
 
     async def test_background_api_fetch_path_does_not_mutate_shared_session_cache(self, tmp_path):
         from pubmed_search.presentation.mcp_server.server import start_http_api_background
@@ -113,8 +112,7 @@ class TestMCPAPIHandler:
         original_session_manager = MagicMock()
         original_session_manager.data_dir = str(tmp_path)
         original_session_manager.warm_article_cache = MagicMock()
-        fresh_session_manager = MagicMock()
-        fresh_session_manager.get_cached_article.return_value = None
+        original_session_manager.get_cached_article.return_value = None
 
         searcher = MagicMock()
         searcher.fetch_details = AsyncMock(return_value=[{"pmid": "999", "title": "Fetched Live"}])
@@ -137,14 +135,14 @@ class TestMCPAPIHandler:
             ),
             patch(
                 "pubmed_search.application.session.manager.SessionManager",
-                return_value=fresh_session_manager,
-            ),
+            ) as session_manager_constructor,
         ):
             start_http_api_background(original_session_manager, searcher, port=19997)
             assert ready.wait(1.0) is True
             handler_cls = captured["handler_cls"]
             handler = handler_cls.__new__(handler_cls)
             handler.path = "/api/cached_article/999"
+            handler.headers = {"Host": "localhost:19997"}
             handler.wfile = io.BytesIO()
             handler.send_response = MagicMock()
             handler.send_header = MagicMock()
@@ -155,6 +153,7 @@ class TestMCPAPIHandler:
             payload = json.loads(handler.wfile.getvalue().decode())
             assert payload["data"]["title"] == "Fetched Live"
             original_session_manager.warm_article_cache.assert_not_called()
+            session_manager_constructor.assert_not_called()
 
 
 class TestServerModule:

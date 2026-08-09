@@ -1,0 +1,60 @@
+# Authenticated multi-user service profile. Supply secrets at runtime (for
+# example from an untracked .env file or a deployment secret manager). The
+# application port is published only on host loopback for a same-host TLS
+# reverse proxy; do not expose it directly to the Internet.
+services:
+  pubmed-mcp:
+    build: .
+    command:
+      - uv
+      - run
+      - pubmed-search-mcp-http
+      - --mode
+      - service
+      - --transport
+      - streamable-http
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8765"
+    ports:
+      - "127.0.0.1:${PUBMED_SERVICE_PORT:-8765}:8765"
+    environment:
+      NCBI_EMAIL: ${NCBI_EMAIL:?Set NCBI_EMAIL in the deployment secret store}
+      NCBI_API_KEY: ${NCBI_API_KEY:-}
+      MCP_PORT: "8765"
+      MCP_HOST: 0.0.0.0
+      MCP_TRANSPORT: streamable-http
+      PUBMED_SERVER_MODE: service
+      PUBMED_AUTH_TOKENS: ${PUBMED_AUTH_TOKENS:?Set principal:token credentials in the deployment secret store}
+      PUBMED_AUTH_RESOURCE_SERVER_URL: ${PUBMED_AUTH_RESOURCE_SERVER_URL:?Set the public HTTPS MCP URL, including /mcp}
+      PUBMED_AUTH_ISSUER_URL: ${PUBMED_AUTH_ISSUER_URL:-}
+      PUBMED_ALLOWED_HOSTS: ${PUBMED_ALLOWED_HOSTS:?Set comma-separated public host names}
+      PUBMED_ALLOWED_ORIGINS: ${PUBMED_ALLOWED_ORIGINS:?Set comma-separated HTTPS origins}
+      PUBMED_TRUSTED_PROXY_IPS: ${PUBMED_TRUSTED_PROXY_IPS:-}
+      PUBMED_TENANT_ISOLATION: "true"
+      PUBMED_TENANT_MAX_CONCURRENCY: ${PUBMED_TENANT_MAX_CONCURRENCY:-8}
+      PUBMED_DATA_DIR: /var/lib/pubmed-search-mcp
+      # Scheduling needs a separately elected leader before horizontal service
+      # deployment; authenticated request workers keep it disabled.
+      PUBMED_SCHEDULER_ENABLED: "false"
+    volumes:
+      - pubmed-service-data:/var/lib/pubmed-search-mcp
+    restart: unless-stopped
+    healthcheck:
+      # The whole ASGI surface enforces Host allowlists. Reuse the first
+      # configured public host so the internal probe is not rejected with 421.
+      test:
+        - CMD-SHELL
+        - 'health_host="$${PUBMED_ALLOWED_HOSTS%%,*}"; curl -fsS -H "Host: $$health_host" http://127.0.0.1:8765/ready'
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    # Filesystem-backed sessions are process-local. Keep one replica/worker
+    # until a shared session backend and distributed scheduler are available.
+    deploy:
+      replicas: 1
+
+volumes:
+  pubmed-service-data:
