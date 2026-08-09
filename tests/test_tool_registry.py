@@ -218,13 +218,15 @@ class TestValidateToolRegistry:
         assert result["valid"] is False
         assert "error" in result
 
-    async def test_private_registry_fallback(self):
+    async def test_private_registry_is_not_used_as_a_production_fallback(self):
         mcp = MagicMock()
         del mcp.list_tools
         mcp._tool_manager._tools.keys.return_value = {"unified_search"}
 
         result = validate_tool_registry(mcp)
-        assert result["registered"] == ["unified_search"]
+        assert result["valid"] is False
+        assert result["registered"] == []
+        assert "public API" in result["error"]
 
     async def test_runtime_registration_matches_tool_registry(self):
         from mcp.server.mcpserver import MCPServer
