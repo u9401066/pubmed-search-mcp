@@ -5,6 +5,9 @@
 > **狀態**: ✅ **已完成** (v0.3.0, 2026-02-09)
 >
 > **API 參考**: [docs/IMAGE_SEARCH_API.md](IMAGE_SEARCH_API.md)
+>
+> **Current runtime note (2026-08-09)**: 下列範例已對齊 MCP SDK v2
+> `MCPServer`；Phase 數據與當時的 roadmap 狀態仍是歷史實作記錄。
 
 ---
 
@@ -428,7 +431,7 @@ class ImageSearchResult:
 ```python
 # src/pubmed_search/presentation/mcp_server/tools/image_search.py
 
-def register_image_search_tools(mcp: FastMCP):
+def register_image_search_tools(mcp: MCPServer):
     """Register biomedical image search MCP tools.
 
     Note: 不需要 searcher 參數，ImageSearchService 自行管理 client。

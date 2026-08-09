@@ -273,12 +273,12 @@ flowchart LR
 
 ## 工具分類
 
-目前 registry 定義 16 個 category、46 個公開 MCP tools：
+目前 registry 定義 16 個 category、45 個公開 MCP tools：
 
 | 類別 | 工具數 | 代表工具 |
 | --- | --- | --- |
 | 搜尋工具 | 1 | `unified_search` |
-- `parse_pico`, `generate_search_queries`, `analyze_search_query`: query intelligence; `parse_pico` validates agent-provided P/I/C/O and returns a runnable PICO pipeline.
+| 查詢智能 | 3 | `parse_pico`, `generate_search_queries`, `analyze_search_query` |
 | 文章探索 | 5 | `fetch_article_details`, `find_related_articles`, `find_citing_articles` |
 | 引用驗證 | 1 | `verify_reference_list` |
 | 全文工具 | 2 | `get_fulltext`, `get_text_mined_terms` |
@@ -294,33 +294,47 @@ flowchart LR
 | 圖片搜尋 | 1 | `search_biomedical_images` |
 | Pipeline 管理 | 7 | `manage_pipeline`, `save_pipeline`, `list_pipelines`, `load_pipeline`, `delete_pipeline`, `get_pipeline_history`, `schedule_pipeline` |
 
-## 多 Agent 服務模型
+## Runtime 與多 Agent 服務模型
 
-這個 server 可以只當本機工具，也可以當成一個被多個 agent 同時呼叫的服務。差別在於
-「當前 session 是誰的」這件事必須有作用域。
+這個 server 將執行邊界分成三個明確合約，不以單純改 bind address 來互換：
+
+| 合約 | 身分/狀態 | 網路邊界 |
+| --- | --- | --- |
+| 本機 stdio | 單一本機使用者與 local store | 無 MCP listening port；背景 auxiliary HTTP 預設關閉 |
+| 本機 loopback HTTP | 可信單使用者；跨 request 共用 durable `default` tenant | 僅能 loopback；container bind 必須顯式 opt-in 且 host 只 publish loopback |
+| 多使用者 service | bearer token principal 與 principal-scoped store | 遠端 HTTPS；auth、resource URL、Host/Origin allowlist 全部 fail closed |
+
+Protocol baseline 是 MCP SDK v2。現代 2026-07-28 request model 直接送
+`tools/list` / `tools/call`，不建立 `initialize` handshake，也不依賴
+`Mcp-Session-Id`。Legacy transport compatibility 只是 protocol adapter，不能成為身分、租戶或
+durability 邊界。
 
 ```mermaid
 flowchart LR
   A1[Agent A<br/>Bearer token A]
   A2[Agent B<br/>Bearer token B]
-  A3[本機 stdio client]
-  MW[Tenancy middleware<br/>解析身分 + 公平配額]
+  Stdio[本機 stdio]
+  LocalHTTP[本機 loopback HTTP]
+  MW[Service tenancy middleware<br/>驗證 bearer principal + 公平配額]
   REG[SessionManagerRegistry]
   SA[(tenant A store)]
   SB[(tenant B store)]
-  SD[(default store)]
+  SD[(durable default tenant)]
 
   A1 --> MW
   A2 --> MW
-  A3 --> MW
+  Stdio --> SD
+  LocalHTTP --> SD
   MW --> REG
   REG --> SA
   REG --> SB
-  REG --> SD
 ```
 
-身分來源優先序：已驗證的 bearer token principal（真正的安全邊界）→ server 發出的
-`mcp-session-id`（只防意外互看，不是授權）→ stdio 的 `default`。
+Local stdio 與顯式 `--mode local` 的 loopback HTTP 都是單使用者合約，使用 durable
+`default` tenant，因此 `pmids="last"`、session、cache 與 export 可跨 MCP requests
+保留。Service mode 只接受已驗證的 bearer principal 作為 tenant 與授權邊界；
+匿名 service request 會 fail closed。
+MCP transport session identifier 不是身分、不用於租戶授權，也不能賦予持久化權限。
 
 | 關注點 | 模組 |
 | --- | --- |
@@ -425,7 +439,9 @@ flowchart LR
   Session --> API
 ```
 
-stdio 模式下，server 會啟動背景 HTTP API，提供**public auxiliary read-only API**，讓其他 MCP server 或外部流程直接讀取快取資料；主要 external contract 仍然是 MCP `/mcp` 或 stdio tool surface：
+stdio 模式預設**不會**啟動背景 HTTP API。只有本機整合明確設定
+`PUBMED_STDIO_AUX_HTTP=1` 時，才開啟 loopback auxiliary read-only API；主要
+external contract 仍是 stdio tool surface：
 
 - `/health`
 - `/api/cached_article/{pmid}`
@@ -436,9 +452,13 @@ HTTP 模式由 `pubmed-search-mcp-http` 建立額外 routes，並提供：
 
 - MCP endpoint: `/mcp`（streamable-http）或 `/sse` + `/messages`（legacy SSE）
 - `/health`
-- `/download/{filename}`
+- `/ready`
+- `/download/{export_id}`
 - `/exports`
 - `/info`
+
+Service mode 中，會讀取 tenant/session 或 export 的 auxiliary routes 必須與
+`/mcp` 使用同一 bearer principal；只有 liveness/readiness 可保持未認證。
 
 ## Pipeline 架構與狀態
 
@@ -453,9 +473,9 @@ Pipeline 系統已經不是純設計稿，而是可保存、驗證、排程、�
 - `delete_pipeline`
 - `get_pipeline_history`
 - `schedule_pipeline`
-- workspace/global 雙層儲存
+- 本機 workspace/global 雙層儲存；authenticated service 只使用 tenant-global root
 - Pydantic schema parsing + semantic auto-fix
-- APScheduler-backed persisted scheduling
+- APScheduler-backed persisted scheduling（local opt-in；service Compose 預設停用）
 - `StoredPipelineRunner` 執行已保存 pipeline 並寫回 run/report artifacts
 - built-in templates: `pico`, `comprehensive`, `exploration`, `gene_drug`
 
@@ -467,17 +487,24 @@ Pipeline 系統已經不是純設計稿，而是可保存、驗證、排程、�
 ### 儲存模型
 
 ```text
-Workspace scope:
+Local workspace scope:
   {workspace}/.pubmed-search/pipelines/{name}.yaml
   {workspace}/.pubmed-search/pipeline_runs/{name}/*.json
 
-Global scope:
+Local global scope:
   ~/.pubmed-search-mcp/pipelines/{name}.yaml
   ~/.pubmed-search-mcp/pipeline_runs/{name}/*.json
   ~/.pubmed-search-mcp/schedules.json
+
+Authenticated service tenant scope:
+  {PUBMED_DATA_DIR}/tenants/{principal}/pipelines/{name}.yaml
+  {PUBMED_DATA_DIR}/tenants/{principal}/pipeline_runs/{name}/*.json
+  # no inherited process-wide workspace and no caller-supplied file: reads
 ```
 
-`unified_search` 仍是唯一的搜尋執行入口；pipeline 管理工具負責保存、載入、回看歷史與 APScheduler-backed 排程介面。
+`unified_search` 仍是唯一的搜尋執行入口；pipeline 管理工具負責保存、載入、回看歷史與 APScheduler-backed 排程介面。Authenticated service
+的 derived store 刻意不繼承 process-wide workspace，`file:` source 也會被拒絕。
+Service Compose 不啟動 scheduler；未來若啟用，必須有單一 leader 或 distributed lease。
 
 ```mermaid
 flowchart LR
@@ -504,24 +531,28 @@ flowchart LR
 
 | 路線 | 說明 | 適用情境 |
 | --- | --- | --- |
-| `pubmed-search-mcp-http --transport streamable-http --copilot-compatible` | 保留完整 45-tool surface，開啟 Copilot HTTP compatibility | 想盡量保留完整 schema 時 |
-| `run_copilot.py` | 啟用簡化 schema 的 Copilot 專用工具集 | Copilot Studio schema 相容性優先時 |
+| `pubmed-search-mcp-http --mode service --transport streamable-http --copilot-compatible` | 以 bearer principal 保護完整 45-tool surface，開啟 Copilot HTTP compatibility | 唯一可公開的 Copilot service 路線 |
+| `run_copilot.py` | 啟用簡化 schema 的 loopback-only 本機 smoke | 本機檢查 schema 相容性；禁止接公網 tunnel |
 
 `http_compat.py` 會把部分 HTTP 202 responses 正規化為 Copilot 可接受的 200 JSON responses。
 
 ```mermaid
 flowchart TD
-  Need{需要完整 46 tools?}
-  Full[pubmed-search-mcp-http\n--transport streamable-http\n--copilot-compatible]
-  Simplified[run_copilot.py]
-  Studio{Copilot Studio\n接受 schema 嗎?}
+  Publish{要建立 public endpoint?}
+  Full[pubmed-search-mcp-http\n--mode service\n--copilot-compatible]
+  Simplified[run_copilot.py\nloopback smoke only]
+  Studio[Copilot Studio]
 
-  Need -->|是| Full
-  Need -->|否| Simplified
+  Publish -->|是| Full
+  Publish -->|否，只檢查 schema| Simplified
+  Simplified -->|確認後回到 authenticated service| Full
   Full --> Studio
-  Studio -->|接受| Full
-  Studio -->|截斷/拒收| Simplified
 ```
+
+`run_copilot.py` 沒有 multi-user service identity/storage contract；即使 tunnel
+只轉發到 loopback，也不得將它公開。Ngrok helper 會要求
+`PUBMED_AUTH_TOKENS` 與已指派的 `NGROK_DOMAIN`，確認 backend port 未被占用，
+並在 `--mode service` 通過 readiness 與匿名拒絕檢查後才建立 tunnel。
 
 ## HTTPS 部署拓撲
 
@@ -539,8 +570,8 @@ flowchart LR
     Client[MCP Client / Copilot Studio]
     Proxy[HTTPS Reverse Proxy<br/>Nginx / Cloud LB]
     MCPHTTP[pubmed-search-mcp-http<br/>streamable-http]
-    Endpoint[/mcp]
-    Utility[/health /info /exports]
+    Endpoint["/mcp"]
+    Utility["/health · /ready · /info · /exports"]
 
     Client --> Proxy
     Proxy --> Endpoint

@@ -4,6 +4,12 @@
 > **目的**: 收集其他專案的亮點功能，供未來擴展參考  
 > **最後更新**: 2026-02-10  
 > **維護者**: Eric
+>
+> **歷史邊界 (2026-08-09)**: 本文的 stars、競品 tool count 與 FastMCP
+> 描述是 2026-02 的比較 snapshot，不是當前 PubMed Search MCP runtime
+> 合約。本 repo 現已使用 MCP SDK v2 `MCPServer`、45-tool primary
+> surface 與分離的 local/authenticated-service profiles；競品專案仍可依其
+> 當時架構保留 FastMCP 名稱。
 
 ---
 
@@ -366,7 +372,10 @@ client/
 └── index.ts                  # Gemini AI 整合範例
 ```
 
-### Streamable HTTP Transport (值得學習)
+### Streamable HTTP Transport（歷史實作，非本專案現行協定）
+
+> 下例記錄競品在舊版 Streamable HTTP 的 session 設計；MCP 2026-07-28
+> 現代 transport 已移除 `initialize` 與 `Mcp-Session-Id`，不得照此例實作身分或持久化邊界。
 
 ```typescript
 // 支援 POST (請求) + GET (SSE 串流)
@@ -932,7 +941,7 @@ compare_papers(id1, id2)      # 兩篇論文比較
 |------|:---------------:|:----------------:|
 | **Stars** | 8 | **1.9k** |
 | 語言 | Python | Python |
-| 框架 | FastMCP | mcp.server |
+| 框架 | FastMCP（當時競品 snapshot） | MCP SDK v2 `MCPServer`（當前本 repo） |
 | Tools | 4 | 4 |
 | Prompts | 2 | 4+ (更完整) |
 | Resources | ✅ URI-based | ❌ |

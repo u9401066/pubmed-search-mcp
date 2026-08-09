@@ -30,7 +30,7 @@ uv add <package>           # 新增依賴
 uv add --dev <package>     # 新增開發依賴
 uv remove <package>        # 移除依賴
 uv sync                    # 同步依賴
-uv run pytest              # 透過 uv 執行測試（自動多核）
+uv run pytest              # 透過 uv 執行測試（預設單 process，避免 OOM）
 uv run python script.py    # 透過 uv 執行 Python
 ```
 
@@ -41,8 +41,8 @@ uv run ruff check .        # Lint 檢查
 uv run ruff check . --fix  # Lint 自動修復
 uv run ruff format .       # 格式化
 uv run mypy src/ tests/    # 型別檢查（含 src 和 tests）
-uv run pytest              # ⩡ 多核平行測試（預設 -n auto --timeout=60）
-uv run pytest --cov        # 多核 + 覆蓋率
+uv run pytest              # 預設單 process + --timeout=60
+uv run pytest --cov        # 單 process + 覆蓋率
 ```
 
 > ⚠️ **永遠不要**直接呼叫 `pytest`、`ruff`、`mypy`，一律使用 `uv run` 前綴。
@@ -100,7 +100,7 @@ uv run pre-commit autoupdate
 **Push 階段自動檢查：**
 - **mypy** type check (`uv run mypy src/`, 記憶體 500MB-1GB)
 - **semgrep** SAST 靜態安全分析 (`p/python` ruleset, 記憶體 300-500MB)
-- **pytest** 全套測試 (`-n auto --timeout=60 -m "not integration"`)，排除會打真實第三方 API 的 integration 測試；需要時手動跑 `uv run pytest -m integration`
+- **pytest** 全套測試 (`--timeout=60 -m "not integration"`，預設單 process)，排除會打真實第三方 API 的 integration 測試；需要時明確設定 `PUBMED_RUN_LIVE_TESTS=1` 再跑 `uv run pytest -m integration`
 
 ```bash
 # 跳過特定 hook
@@ -147,35 +147,34 @@ uv run pre-commit run --all-files  # 驗證更新後所有 hook 正常
 
 ### ⏱️ 測試執行時間 (IMPORTANT - 請務必閱讀)
 
-本專案**強制**使用 **pytest-xdist** 多核平行測試（透過 `addopts = "-n auto --timeout=60"` 全局強制）。
+本專案預設使用**單 process** `--timeout=60`，避免 agent/CI 環境因
+`-n auto` 同時建立過多 worker 而 OOM。`pytest-xdist` 只是顯式 opt-in；必須
+已知記憶體預算且 focused tests 已確認隔離安全，才使用固定 worker 數。
 
 ```bash
-# ✅ 所有測試命令自動帶 -n auto --timeout=60（不需手動加）
-uv run pytest                # 多核執行（~67 秒）
-uv run pytest tests/ -q      # 多核 + 簡潔輸出
+# ✅ pyproject 自動帶 --timeout=60
+uv run pytest
+uv run pytest tests/ -q
 
-# ✅ 導向檔案避免 terminal buffer 溢出
-uv run pytest tests/ -q --no-header 2>&1 > scripts/_tmp/test_result.txt
-# 等待 ~70 秒後再讀取結果
-
-# ✅ 多核 + 覆蓋率（pytest-cov 完全支援 xdist）
+# ✅ 覆蓋率
 uv run pytest --cov -q
 
-# ⚠️ 僅在需要 benchmark 時停用 xdist
+# 選用：資源充足時只開固定少量 worker
+uv run pytest tests/unit -n 2
+
+# benchmark 保持單 process
 uv run pytest tests/test_performance.py --benchmark-only -p no:xdist
 ```
 
 | 指標 | 數值 |
 |------|------|
-| 測試檔案數 | 60+ |
-| 測試案例數 | 2200+ |
-| 測試程式碼行數 | 30,000+ |
-| ⚡ 多核執行時間 (`-n auto`) | **~67 秒** |
+| 測試檔案數 | 149+ |
+| 測試案例數 | 3700+ |
 | 每個測試超時 | 60 秒 (`--timeout=60`) |
-| 建議 terminal timeout | **120,000+ ms** |
+| 平行原則 | 預設關閉；資源允許時才顯式 `-n 2` |
 
-> 💡 **pytest-xdist** 使用多 process 平行化，每個 worker 為獨立 process，singleton 隔離無衝突。
-> ⚠️ `pytest-benchmark` 在 xdist 模式下自動停用（benchmark 需要單核確保精確度）。
+> ⚠️ 不要假設 multi-process 會自動解決 singleton、port、filesystem 或上游
+> quota 衝突。`pytest-benchmark` 與共用狀態測試保持單 process。
 
 ### 🔄 Async/Sync 測試一致性檢查 (MANDATORY)
 

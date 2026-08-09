@@ -59,7 +59,7 @@
 % =====================================================================
 Existing literature search tools return ranked lists of papers but fail to reveal \emph{how} research knowledge evolves---from initial discovery through clinical trials to guideline adoption.
 We present \system{}, an open-source platform that transforms multi-source biomedical literature retrieval from a static search into a dynamic research exploration workflow.
-The system integrates six academic databases---PubMed, Europe PMC, OpenAlex, Semantic Scholar, CORE, and CrossRef---through 40 Model Context Protocol (MCP) tools, covering the complete pipeline from search to timeline.
+The system exposes 45 Model Context Protocol (MCP) tools over a registry-backed broker for PubMed, Europe PMC, OpenAlex, Semantic Scholar, CORE, arXiv, medRxiv, bioRxiv, and optional licensed Scopus/Web of Science discovery, with Crossref enrichment, covering the complete pipeline from search to timeline.
 
 We contribute seven innovations:
 (1)~a \textbf{BM25$^{+}$ + Reciprocal Rank Fusion + Maximal Marginal Relevance} ranking pipeline with field-level boosting for biomedical metadata;
@@ -70,7 +70,7 @@ We contribute seven innovations:
 (6)~\textbf{Pipeline Persistence} with DAG-based workflow orchestration using topological batching for reproducible, schedulable searches;
 and (7)~a \textbf{Reproducibility Score} grading search reproducibility from A to F.
 We describe the algorithmic contributions with formal definitions, demonstrate the system through case studies, and compare it against existing tools across the end-to-end systematic review workflow.
-The system is released as open-source software with 2{,}900+ automated tests.
+The system is released as open-source software with 3{,}700+ automated tests.
 
 \medskip
 \noindent\textbf{Keywords:} Information Retrieval, Multi-Source Search, BM25, Reciprocal Rank Fusion, Research Timeline, Landmark Detection, Research Lineage Tree, Pipeline Orchestration, Milestone Detection, Source Disagreement, Biomedical Literature
@@ -117,7 +117,7 @@ No single platform covers the complete pipeline from query to timeline.
 We address these challenges through the following contributions:
 
 \begin{enumerate}
-    \item \textbf{Multi-source integration architecture:} An MCP-based system integrating six academic databases through a Domain-Driven Design architecture with 40 tools (Section~\ref{sec:architecture}).
+    \item \textbf{Multi-source integration architecture:} An MCP SDK v2 system exposing 45 tools over registry-selected biomedical, scholarly-graph, open-access, preprint, and optional licensed sources through a Domain-Driven Design architecture (Section~\ref{sec:architecture}).
 
     \item \textbf{BM25$^{+}$ + RRF + MMR ranking pipeline:} A three-stage pipeline with field-boosted BM25 ($\beta_{\text{title}} = 2.0$, $\beta_{\text{MeSH}} = 1.5$), calibration-free RRF fusion across six dimensions, and MeSH-based MMR diversification (Sections~\ref{sec:bm25}--\ref{sec:mmr}).
 
@@ -195,7 +195,7 @@ Our system is among the first academic search tools built natively on MCP, enabl
                    MCP Protocol (JSON-RPC)
                           |
 +-----------------------------------------------------------+
-| Presentation Layer: 40 MCP Tools, 9 Prompts, Resources    |
+| Presentation Layer: 45 MCP Tools, 9 Prompts, Resources    |
 +-----------------------------------------------------------+
 | Application Layer                                         |
 | +-- QueryAnalyzer (MeSH expansion, PICO handoff validation) |
@@ -212,8 +212,9 @@ Our system is among the first academic search tools built natively on MCP, enabl
 +-----------------------------------------------------------+
 | Infrastructure Layer                                      |
 | +-- PubMed/Entrez  +-- Europe PMC  +-- OpenAlex           |
-| +-- Sem. Scholar   +-- CORE        +-- CrossRef           |
-| +-- iCite          +-- Unpaywall   +-- Open-i             |
+| +-- Sem. Scholar   +-- CORE        +-- Preprint servers   |
+| +-- Scopus/WoS*    +-- Crossref    +-- Unpaywall/Open-i   |
+|     (* explicit, licensed opt-in)                         |
 +-----------------------------------------------------------+
 \end{verbatim}
 \caption{System architecture following Domain-Driven Design. The Application Layer contains the novel ranking and analysis algorithms.}
@@ -222,27 +223,28 @@ Our system is among the first academic search tools built natively on MCP, enabl
 
 \subsection{Multi-Source Integration}
 
-Table~\ref{tab:sources} summarizes the six primary academic data sources integrated by \system{}.
+Table~\ref{tab:sources} summarizes the current discovery and enrichment source families integrated by \system{}.
 
 \begin{table}[htbp]
 \centering
-\caption{Academic data sources integrated by \system{}.}
+\caption{Registry-backed source contracts integrated by \system{}.}
 \label{tab:sources}
-\begin{tabular}{lrll}
+\begin{tabular}{llll}
 \toprule
-\textbf{Source} & \textbf{Coverage} & \textbf{Unique Value} & \textbf{Stability} \\
+\textbf{Source family} & \textbf{Role} & \textbf{Access} & \textbf{Provenance} \\
 \midrule
-PubMed/MEDLINE & 36M+ & Gold standard, MeSH & 0.95 \\
-Europe PMC     & 45M+ & Full-text OA (6.5M) & 0.90 \\
-OpenAlex       & 250M+ & Concepts, topics     & 0.80 \\
-Semantic Scholar & 215M+ & Citation context    & 0.75 \\
-CORE           & 200M+ & Preprints, repos     & 0.70 \\
-CrossRef       & 150M+ & DOI metadata         & 0.92 \\
+PubMed/MEDLINE & Primary biomedical search & Email; key optional & Canonical PMID records \\
+Europe PMC & Search and OA XML & Open & Aggregated records; hosted OA XML \\
+OpenAlex/Semantic Scholar & Scholarly graph discovery & Optional keys & Indirect graph metadata \\
+CORE & Open-repository discovery & Key recommended & Repository aggregator \\
+arXiv/medRxiv/bioRxiv & Preprint discovery & Open & Native preprint records \\
+Scopus/Web of Science & Licensed index discovery & Explicit keys and opt-in & Native index records \\
+Crossref & DOI enrichment & Polite-pool email & Canonical DOI metadata \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-All source clients inherit from a common \texttt{BaseAPIClient} that provides automatic retry on HTTP 429 (rate limit) with \texttt{Retry-After} header support, configurable rate limiting, and circuit breaker error tolerance.
+The broker normalizes adapter outcomes into shared result envelopes and applies process-wide conservative provider budgets, source-specific concurrency, bounded timeouts, retry/backoff for retryable failures, and partial-failure reporting. Creating a second client does not create a second upstream quota.
 
 \subsection{Unified Article Model}
 
@@ -709,12 +711,12 @@ The overall R-Score $\in [0, 1]$ maps to letter grades:
 \label{sec:implementation}
 % =====================================================================
 
-\system{} is implemented in Python 3.12 using the FastMCP framework for MCP server capabilities.
+\system{} is implemented in Python using the MCP SDK v2 \texttt{MCPServer} API for MCP server capabilities.
 The codebase follows Domain-Driven Design with strict layer separation enforced by automated pre-commit hooks.
 
 \subsection{MCP Tool Interface}
 
-The system exposes 40 MCP tools organized into 14 categories (Table~\ref{tab:tools}).
+The system exposes 45 MCP tools organized into 16 registry categories (Table~\ref{tab:tools}).
 
 \begin{table}[htbp]
 \centering
@@ -728,16 +730,18 @@ Search             & 1  & Unified multi-source search entry point \\
 Query Intelligence & 3  & MeSH expansion, PICO handoff validation, query analysis \\
 Article Exploration & 5 & Related articles, citations, references \\
 Full Text          & 2  & Full-text retrieval and text mining \\
+Figure Extraction  & 1  & PMC Open Access figure metadata \\
 NCBI Extended      & 7  & Gene, PubChem, ClinVar databases \\
 Citation Network   & 1  & Citation tree construction \\
-Export             & 1  & RIS, BibTeX, MEDLINE, CSV, JSON \\
-Session Management & 3  & Search history, PMID caching \\
-Institutional      & 4  & OpenURL link resolver \\
+Reference Verification & 1 & Citation-list verification \\
+Export             & 2  & Citation files and literature notes \\
+Session Management & 5  & Search history, artifacts, PMID caching \\
+Institutional      & 5  & OpenURL and access diagnostics \\
 ICD Conversion     & 1  & ICD-10 $\leftrightarrow$ MeSH mapping \\
-Research Timeline  & 3  & Milestone detection, timeline comparison \\
+Research Chronicle & 2  & Versioned timeline, lineage, and comparison \\
 Image Search       & 1  & Biomedical image search \\
 Visual Analysis    & 1  & Figure analysis for search \\
-Pipeline           & 6  & Save, load, schedule search workflows \\
+Pipeline           & 7  & Facade, persistence, history, and schedules \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -761,7 +765,7 @@ The ranking pipeline is integrated into the unified search workflow:
 
 \subsection{Quality Assurance}
 
-The project maintains 2{,}900+ automated tests executed via pytest with parallel execution (\texttt{pytest-xdist}, $\sim$67s on multi-core systems).
+The project maintains 3{,}700+ automated tests executed via pytest, including hermetic edge cases, protocol smoke tests, and opt-in live integration checks.
 Pre-commit hooks enforce: code formatting (Ruff), type checking (mypy), security scanning (Bandit, Semgrep), dead code detection (Vulture), DDD layer import rules, and async/sync test consistency.
 
 % =====================================================================
@@ -928,7 +932,7 @@ A large-scale evaluation on benchmarks like BioASQ~\citep{tsatsaronis2015bioasq}
 
 We presented \system{}, a platform that transforms multi-source biomedical literature retrieval from static search into dynamic research exploration---\emph{from search to timeline to lineage tree}.
 
-Our ranking pipeline---BM25$^{+}$ with field-level boosting, RRF multi-dimensional fusion, and MeSH-based MMR diversification---addresses the challenge of combining results from six heterogeneous academic databases without score calibration.
+Our ranking pipeline---BM25$^{+}$ with field-level boosting, RRF multi-dimensional fusion, and MeSH-based MMR diversification---addresses the challenge of combining heterogeneous biomedical, scholarly-graph, open-access, preprint, and optional licensed sources without score calibration.
 Source Disagreement Analysis provides a novel quality signal by quantifying cross-source ranking consistency, enabling researchers to distinguish well-established topics from emerging or interdisciplinary ones.
 Automated Research Timeline construction with multi-signal milestone detection transforms flat result lists into structured temporal narratives of knowledge evolution.
 Landmark Paper Detection (\lscore{}) replaces na\"ive citation-count sorting with a principled five-signal composite that leverages field-normalized impact (RCR), cross-source agreement, milestone confidence, evidence quality, and citation velocity---surfacing truly important papers regardless of raw citation count or journal prestige.
@@ -936,9 +940,9 @@ The Research Lineage Tree further transforms flat timelines into branching struc
 Pipeline Persistence with DAG-based orchestration makes complex multi-step workflows reproducible and schedulable.
 
 The system covers the systematic review pipeline from initial query through temporal analysis, landmark identification, lineage visualization, and export---a scope unmatched by existing tools.
-With 40 MCP tools, 2{,}900+ automated tests, and integration with six academic databases, \system{} demonstrates that the gap between literature \emph{search} and literature \emph{understanding} can be bridged through principled algorithms and thoughtful system design.
+With 45 MCP tools, 3{,}700+ automated tests, and a registry-backed multi-source broker, \system{} demonstrates that the gap between literature \emph{search} and literature \emph{understanding} can be bridged through principled algorithms and thoughtful system design.
 
-The system is open-source and available at \url{https://github.com/punkpeye/pubmed-search-mcp}.
+The system is open-source and available at \url{https://github.com/u9401066/pubmed-search-mcp}.
 
 % =====================================================================
 % References

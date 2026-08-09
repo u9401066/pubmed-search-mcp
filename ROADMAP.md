@@ -3132,7 +3132,7 @@ class Chronicle:
 - zotero-keeper 暴露 `get_owned_dois_pmids(collection?)`
 - pubmed-search-mcp traversal 將 owned 視為 `visited`，預算集中探索鄰居
 - 直接交付 zotero-keeper roadmap 的 `find_missing_citations` / `suggest_related_papers`
-- **契約 (Contract)** 寫入 [docs/research/AGENT_MCP_COLLABORATION.md](docs/research/AGENT_MCP_COLLABORATION.md)
+- **契約 (Contract)** 規劃於 `docs/research/AGENT_MCP_COLLABORATION.md`（文件建立後再加入連結）
 
 #### 15.G Active Relevance Feedback ⭐⭐⭐
 - `mark_relevance(pmids, label)` 進 session
