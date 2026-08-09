@@ -232,9 +232,9 @@ class TestSessionToolsResourceFunction:
         with tempfile.TemporaryDirectory() as tmpdir:
             manager = SessionManager(data_dir=tmpdir)
             # Create a session with some data
-            session = manager.create_session("Test Topic")
+            manager.create_session("Test Topic")
             manager.add_to_cache([{"pmid": "123", "title": "Cached"}])
-            session.search_history.append({"query": "test"})
+            manager.add_search_record(query="test", pmids=[])
 
             register_session_resources(mock_mcp, manager)
 

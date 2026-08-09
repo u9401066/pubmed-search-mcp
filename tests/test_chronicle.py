@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import pytest
@@ -532,6 +534,20 @@ class TestChronicleStore:
         assert store.list_revisions(snapshot.chronicle_id) == [1, 3]
         assert store.load(snapshot.chronicle_id).revision == 3
 
+    def test_fixed_revision_cannot_overwrite_history(self, store):
+        snapshot = build_snapshot(BASE_EVENTS)
+        store.save(snapshot)
+        original = store.load(snapshot.chronicle_id, 1)
+
+        snapshot.topic = "mutated"
+        with pytest.raises(FileExistsError, match="immutable"):
+            store.save(snapshot)
+
+        reloaded = store.load(snapshot.chronicle_id, 1)
+        assert reloaded is not None
+        assert original is not None
+        assert reloaded.to_dict() == original.to_dict()
+
     def test_missing_chronicle_returns_none(self, store):
         assert store.load("nope-00000000") is None
         assert store.latest_revision("nope-00000000") is None
@@ -574,6 +590,28 @@ class TestChronicleService:
         assert second.chronicle_id == first.chronicle_id
         assert second.created_at == first.created_at
         assert store.list_revisions(first.chronicle_id) == [1, 2]
+
+    def test_concurrent_builds_commit_monotonic_immutable_revisions(self, tmp_path):
+        root = tmp_path / "chronicles"
+
+        def _build_one() -> int:
+            # Separate service/store instances reproduce MCP worker-thread
+            # requests converging on the same process-local storage root.
+            service = ChronicleService(FakeEvidenceProvider(BASE_EVENTS), ChronicleStore(root))
+            return asyncio.run(service.build(topic="drug X")).revision
+
+        with ThreadPoolExecutor(max_workers=16) as executor:
+            revisions = list(executor.map(lambda _: _build_one(), range(16)))
+
+        store = ChronicleStore(root)
+        assert sorted(revisions) == list(range(1, 17))
+        assert store.list_revisions(derive_chronicle_id("drug X")) == list(range(1, 17))
+        for revision in range(1, 17):
+            snapshot = store.load(derive_chronicle_id("drug X"), revision)
+            assert snapshot is not None
+            assert snapshot.revision == revision
+            topic_nodes = [node for node in snapshot.graph.nodes.values() if node.node_type is ChronicleNodeType.TOPIC]
+            assert dict(topic_nodes[0].attributes)["revision"] == revision
 
     async def test_build_from_pmids_uses_pmid_mode(self, store):
         provider = FakeEvidenceProvider(EXTENDED_EVENTS)

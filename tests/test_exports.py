@@ -5,10 +5,58 @@ Tests for Export modules - formats.py and links.py.
 from __future__ import annotations
 
 import json
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
+from typing import TYPE_CHECKING
 
 import pytest
 
 from pubmed_search.domain.entities.article import Author, UnifiedArticle
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+
+def test_large_export_is_invisible_until_atomic_publish(tmp_path: Path, monkeypatch):
+    from pubmed_search.application.export import artifacts as export_artifacts
+    from pubmed_search.shared import file_io
+
+    root = tmp_path / "exports"
+    export_id = f"{'a' * 32}.ris"
+    replacement_ready = threading.Event()
+    allow_publish = threading.Event()
+    original_replace = file_io.os.replace
+
+    def _blocking_replace(source: str | Path, destination: str | Path) -> None:
+        replacement_ready.set()
+        if not allow_publish.wait(timeout=5):
+            msg = "Timed out waiting to publish export"
+            raise TimeoutError(msg)
+        original_replace(source, destination)
+
+    monkeypatch.setattr(export_artifacts.uuid, "uuid4", lambda: SimpleNamespace(hex="a" * 32))
+    monkeypatch.setattr(file_io.os, "replace", _blocking_replace)
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(
+            export_artifacts.write_export_artifact,
+            "x" * 2_000_000,
+            extension="ris",
+            root=root,
+        )
+        try:
+            assert replacement_ready.wait(timeout=5)
+            assert export_artifacts.resolve_export_artifact(root, export_id) is None
+            assert export_artifacts.list_export_artifacts(root) == []
+            assert not (root / export_id).exists()
+        finally:
+            allow_publish.set()
+        published_id, published_path = future.result(timeout=5)
+
+    assert published_id == export_id
+    assert published_path.stat().st_size == 2_000_000
+    assert export_artifacts.resolve_export_artifact(root, export_id) == published_path.resolve()
 
 
 class TestExportFormats:

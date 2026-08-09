@@ -68,3 +68,39 @@ class TestCacheStore:
         reloaded = JsonFileCacheBackend(file_path)
         keys = reloaded.keys()
         assert all(key.startswith("paper:") for key in keys)
+
+    def test_memory_backend_operations_are_safe_under_thread_contention(self):
+        backend = MemoryCacheBackend(max_entries=32)
+
+        def _mutate(worker: int) -> None:
+            for step in range(160):
+                key = f"worker:{worker}:slot:{step % 40}"
+                backend.set_entry(key, StoredCacheEntry(value={"worker": worker, "step": step}))
+                backend.get_entry(key)
+                if step % 5 == 0:
+                    backend.delete(f"worker:{worker}:slot:{(step - 1) % 40}")
+                if step % 11 == 0:
+                    backend.set_entries(
+                        [
+                            (f"batch:{worker}:{step}:a", StoredCacheEntry(value="a")),
+                            (f"batch:{worker}:{step}:b", StoredCacheEntry(value="b")),
+                        ]
+                    )
+                if step % 17 == 0:
+                    backend.keys()
+                    backend.items()
+                if step % 79 == 0:
+                    backend.clear()
+
+        with ThreadPoolExecutor(max_workers=12) as executor:
+            list(executor.map(_mutate, range(12)))
+
+        keys = backend.keys()
+        items = backend.items()
+        assert len(keys) <= 32
+        assert len(keys) == len(set(keys))
+        assert {key for key, _entry in items} == set(keys)
+
+        removed = backend.clear()
+        assert removed == len(keys)
+        assert backend.keys() == []

@@ -485,6 +485,7 @@ class TestStoreRunHistory:
         history = store_dual.get_history("history_pipe")
         assert len(history) == 1
         assert history[0].run_id == "run_001"
+        assert store_dual.count_history("history_pipe") == 1
 
     def test_history_limit(self, store_dual: PipelineStore, simple_config: PipelineConfig):
         store_dual.save("limited", simple_config)
