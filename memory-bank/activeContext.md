@@ -9,8 +9,9 @@
 
 ## Validation Snapshot
 
-- Non-integration suite: `3759 passed, 22 skipped, 30 deselected`.
-- Opt-in live API suite: `28 passed, 2 skipped, 3768 deselected`; Europe PMC
+- Non-integration suite: `3762 passed, 22 skipped, 30 deselected`.
+- Python 3.10 CI condition: `3745 passed, 22 skipped, 47 deselected`.
+- Opt-in live API suite: `28 passed, 2 skipped`; Europe PMC
   and CORE were the two unreachable-provider skips.
 - Real stdio/modern HTTP/fresh-wheel entrypoint smoke: `33 passed`.
 - Documentation/site/wiki integrity: `27 passed`.
@@ -66,4 +67,4 @@
 
 ---
 
-*Last updated: 2026-08-09 — v0.6.1 release hardening*
+*Last updated: 2026-08-10 — v0.6.1 release hardening*

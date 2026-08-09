@@ -1,8 +1,8 @@
-# Progress (Updated: 2026-08-09)
+# Progress (Updated: 2026-08-10)
 
 ## Done
 
-### 2026-08-09: MCP v2 / Broker / Deployment Hardening
+### 2026-08-10: MCP v2 / Broker / Deployment Hardening
 - Synchronized the workspace to upstream v0.6.0 and verified the locked MCP
   Python SDK and `mcp-types` are both 2.0.0.
 - Removed remaining production use of MCP private tool/middleware state and
@@ -37,8 +37,12 @@
 - Added real stdio/Streamable HTTP/fresh-wheel smoke tests plus local/service,
   export, Host/Origin, browser-broker, rate, source-selection, and identity edge
   regressions.
-- Final local gates: `3759 passed, 22 skipped, 30 deselected` for the complete
+- Restored the declared Python 3.10 contract with compatible task cleanup,
+  timeout handling, atomic publication, RFC 3339 `Z` parsing, and direct
+  compatibility dependencies; also stabilized the macOS auxiliary-HTTP probe.
+- Final local gates: `3762 passed, 22 skipped, 30 deselected` for the complete
   non-integration suite; `28 passed, 2 skipped` for opt-in live providers;
+  Python 3.10's PR condition passed `3745 passed, 22 skipped, 47 deselected`;
   `33 passed` for release transport/fresh-wheel smoke; `27 passed` for
   documentation/site/wiki integrity; Ruff, format, mypy, async checker, and
   browser QA all pass.
