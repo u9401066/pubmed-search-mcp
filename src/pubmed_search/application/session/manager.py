@@ -25,6 +25,7 @@ if TYPE_CHECKING:
 
 from pubmed_search.application.session.artifacts import ArtifactStore
 from pubmed_search.shared.cache_substrate import CacheBackend, CacheStore, JsonFileCacheBackend, MemoryCacheBackend
+from pubmed_search.shared.datetime_utils import parse_iso8601_datetime
 from pubmed_search.shared.file_io import atomic_write_json
 from pubmed_search.shared.locking import synchronized
 
@@ -54,7 +55,7 @@ class CachedArticle:
 
     def is_expired(self, max_age_days: int = 7) -> bool:
         """Check if cache entry is expired."""
-        cached_time = datetime.fromisoformat(self.cached_at)
+        cached_time = parse_iso8601_datetime(self.cached_at)
         now = datetime.now(tz=timezone.utc)
         if cached_time.tzinfo is None:
             cached_time = cached_time.replace(tzinfo=timezone.utc)

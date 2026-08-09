@@ -7,15 +7,12 @@ from __future__ import annotations
 import json
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from types import SimpleNamespace
-from typing import TYPE_CHECKING
 
 import pytest
 
 from pubmed_search.domain.entities.article import Author, UnifiedArticle
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 def test_large_export_is_invisible_until_atomic_publish(tmp_path: Path, monkeypatch):
@@ -27,8 +24,10 @@ def test_large_export_is_invisible_until_atomic_publish(tmp_path: Path, monkeypa
     replacement_ready = threading.Event()
     allow_publish = threading.Event()
     original_replace = file_io.os.replace
+    replacement_calls: list[tuple[Path, Path]] = []
 
     def _blocking_replace(source: str | Path, destination: str | Path) -> None:
+        replacement_calls.append((Path(source), Path(destination)))
         replacement_ready.set()
         if not allow_publish.wait(timeout=5):
             msg = "Timed out waiting to publish export"
@@ -47,6 +46,13 @@ def test_large_export_is_invisible_until_atomic_publish(tmp_path: Path, monkeypa
         )
         try:
             assert replacement_ready.wait(timeout=5)
+            assert len(replacement_calls) == 1
+            staging_path, destination_path = replacement_calls[0]
+            assert destination_path == root / export_id
+            assert staging_path.parent == root
+            assert staging_path.name.startswith(f".{export_id}.")
+            assert staging_path.suffix == ".tmp"
+            assert staging_path.stat().st_size == 2_000_000
             assert export_artifacts.resolve_export_artifact(root, export_id) is None
             assert export_artifacts.list_export_artifacts(root) == []
             assert not (root / export_id).exists()
@@ -56,6 +62,7 @@ def test_large_export_is_invisible_until_atomic_publish(tmp_path: Path, monkeypa
 
     assert published_id == export_id
     assert published_path.stat().st_size == 2_000_000
+    assert not staging_path.exists()
     assert export_artifacts.resolve_export_artifact(root, export_id) == published_path.resolve()
 
 

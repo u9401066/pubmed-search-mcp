@@ -190,7 +190,8 @@ class TestSemanticEnhancerAsync:
         enhanced = await enhancer.enhance("test query")
 
         # Should fall back to basic enhancement
-        assert enhanced.metadata.get("timeout") is True or enhanced.metadata.get("fallback") is True
+        assert enhanced.metadata["timeout"] is True
+        assert "error" not in enhanced.metadata
 
 
 # =============================================================================

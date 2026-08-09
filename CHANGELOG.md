@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.6.1] - 2026-08-09
+## [0.6.1] - 2026-08-10
 
 ### Added
 
@@ -104,6 +104,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Token-bucket waits now account for elapsed time exactly once, preventing the
   effective two-times burst that could violate shared arXiv and upstream API
   budgets after a throttled request.
+- Python 3.10 now uses `tomli`, compatible parallel-task cleanup and timeout
+  primitives, consistent built-in timeout classification, and an explicit
+  `os.replace` atomic-publication boundary across supported Python versions.
+  RFC 3339 timestamps ending in `Z` now parse consistently in caches, sessions,
+  and pipeline metadata on every supported runtime.
+- Auxiliary-HTTP startup probes use short connection attempts within a larger
+  readiness budget so loaded macOS ARM runners do not fail spuriously.
 
 ## [0.6.0] - 2026-08-03
 

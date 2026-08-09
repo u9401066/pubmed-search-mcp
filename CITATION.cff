@@ -3,9 +3,9 @@ message: "If you use this repository, please cite it using the metadata from thi
 title: "PubMed Search MCP"
 type: software
 version: 0.6.1
-date-released: 2026-08-09
+date-released: 2026-08-10
 license: Apache-2.0
-abstract: "MCP server for PubMed literature search with MeSH, PICO, and intelligent query expansion."
+abstract: "MCP SDK v2 server for PubMed and multi-source biomedical literature research."
 repository-code: "https://github.com/u9401066/pubmed-search-mcp"
 url: "https://github.com/u9401066/pubmed-search-mcp"
 keywords:

@@ -150,9 +150,15 @@ class TestPreprintSearcher:
         mock_medrxiv.side_effect = _hang
 
         searcher = PreprintSearcher()
+
+        async def _search_with_straggler():
+            return await searcher.search(query="covid", sources=["arxiv", "medrxiv"], limit=3)
+
         with patch.object(preprints_module, "PREPRINT_SOURCE_TIMEOUT_SECONDS", 0.01):
-            async with asyncio.timeout(0.2):
-                results = await searcher.search(query="covid", sources=["arxiv", "medrxiv"], limit=3)
+            results = await asyncio.wait_for(
+                _search_with_straggler(),
+                timeout=0.2,
+            )
 
         assert results["total"] == 1
         assert any("timed out" in error.lower() for error in results["errors"])

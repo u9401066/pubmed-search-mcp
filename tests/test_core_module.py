@@ -1,10 +1,10 @@
 """
 Tests for core module - exceptions and async utilities.
 
-Python 3.12+ features tested:
-- Type parameter syntax
-- ExceptionGroup
-- asyncio.TaskGroup
+Python 3.10-compatible core behavior tested:
+- Generic async utilities
+- ExceptionGroup compatibility
+- Structured cancellation cleanup
 - Modern dataclass features
 """
 

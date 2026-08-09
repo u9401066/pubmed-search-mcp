@@ -30,7 +30,11 @@ def atomic_write_text(path: str | Path, content: str, *, encoding: str = "utf-8"
             handle.write(content)
             handle.flush()
             os.fsync(handle.fileno())
-        temporary.replace(destination)
+        # Call ``os.replace`` directly instead of routing through
+        # ``Path.replace``.  Besides matching the contract documented above,
+        # this keeps the atomic publication boundary explicit and consistent
+        # across Python versions (``pathlib`` used a cached accessor on 3.10).
+        os.replace(temporary, destination)  # noqa: PTH105 -- see compatibility note
     except BaseException:
         with contextlib.suppress(OSError):
             temporary.unlink(missing_ok=True)

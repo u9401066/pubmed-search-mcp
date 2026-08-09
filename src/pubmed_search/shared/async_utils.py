@@ -1,13 +1,13 @@
 """
 Async Utilities for Efficient API Calls.
 
-Python 3.12+ features used:
-- asyncio.TaskGroup for structured concurrency (3.11+)
-- Type parameter syntax for generic classes
-- Modern async patterns
+Python 3.10-compatible async patterns:
+- Deterministic parallel execution with explicit cancellation cleanup
+- TypeVar-based generic helpers
+- Modern async context managers
 
 Provides:
-- Parallel API calls with TaskGroup
+- Parallel API calls with ordered results and structured cleanup
 - Rate limiting with token bucket
 - Connection pooling
 - Circuit breaker for fault tolerance
@@ -686,7 +686,7 @@ def get_transport_kernel() -> TransportExecutionKernel:
 
 
 # =============================================================================
-# Parallel Execution with TaskGroup (Python 3.11+)
+# Parallel Execution (Python 3.10+)
 # =============================================================================
 
 
@@ -695,12 +695,13 @@ async def gather_with_errors(
     return_exceptions: bool = False,
 ) -> list[T | Exception]:
     """
-    Execute coroutines in parallel using TaskGroup.
+    Execute awaitables in parallel while preserving their input order.
 
-    Python 3.11+ TaskGroup provides structured concurrency:
-    - All tasks are properly cancelled on failure
-    - Exceptions are properly propagated
-    - Resources are cleaned up
+    This uses Python 3.10-compatible asyncio primitives with explicit structured
+    cleanup: if an error or caller cancellation is propagated, unfinished child
+    tasks are cancelled and drained before the error is re-raised. Normal
+    ``Exception`` instances are returned in place when ``return_exceptions`` is
+    enabled; cancellation is always propagated.
 
     Args:
         *coros: Coroutines to execute
@@ -716,27 +717,26 @@ async def gather_with_errors(
             return_exceptions=True
         )
     """
-    results: list[T | Exception] = []
+    if not coros:
+        return []
 
-    if return_exceptions:
-        # Collect all results, including exceptions
-        async def safe_run(coro: Awaitable[T]) -> None:
-            try:
-                result = await coro
-                results.append(result)
-            except Exception as e:  # noqa: BLE001
-                results.append(e)
+    async def run(coro: Awaitable[T]) -> T | Exception:
+        try:
+            return await coro
+        except Exception as error:
+            if return_exceptions:
+                return error
+            raise
 
-        async with asyncio.TaskGroup() as tg:  # type: ignore[attr-defined]
-            for coro in coros:
-                tg.create_task(safe_run(coro))
-    else:
-        # Fail fast on any exception
-        async with asyncio.TaskGroup() as tg:  # type: ignore[attr-defined]
-            tasks = [tg.create_task(coro) for coro in coros]
-        results = [task.result() for task in tasks]
-
-    return results
+    tasks = [asyncio.ensure_future(run(coro)) for coro in coros]
+    try:
+        return list(await asyncio.gather(*tasks))
+    except BaseException:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
 
 
 async def batch_process(

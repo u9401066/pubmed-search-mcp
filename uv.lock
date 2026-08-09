@@ -1878,6 +1878,7 @@ dependencies = [
     { name = "pyyaml" },
     { name = "starlette" },
     { name = "toons" },
+    { name = "typing-extensions" },
 ]
 
 [package.optional-dependencies]
@@ -1906,6 +1907,7 @@ dev = [
     { name = "pytest-xdist" },
     { name = "ruff" },
     { name = "safety" },
+    { name = "tomli", marker = "python_full_version < '3.11'" },
     { name = "types-cachetools" },
     { name = "types-pyyaml" },
     { name = "types-requests" },
@@ -1932,6 +1934,7 @@ requires-dist = [
     { name = "starlette", specifier = ">=1.2,<2" },
     { name = "toons", specifier = ">=0.5.4" },
     { name = "trafilatura", marker = "extra == 'institutional'", specifier = ">=1.12" },
+    { name = "typing-extensions", specifier = ">=4.12" },
 ]
 provides-extras = ["browser-broker", "scripts", "institutional"]
 
@@ -1950,6 +1953,7 @@ dev = [
     { name = "pytest-xdist", specifier = ">=3.8.0" },
     { name = "ruff", specifier = ">=0.14,<0.15" },
     { name = "safety", specifier = ">=3.2.10" },
+    { name = "tomli", marker = "python_full_version < '3.11'", specifier = ">=2.0" },
     { name = "types-cachetools", specifier = ">=6.2.0" },
     { name = "types-pyyaml", specifier = ">=6.0" },
     { name = "types-requests", specifier = ">=2.32.4.20260107" },

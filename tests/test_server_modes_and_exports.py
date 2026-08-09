@@ -472,7 +472,9 @@ def test_stdio_auxiliary_http_enforces_host_origin_and_safe_cors(tmp_path):
     start_http_api_background(session_manager, None, port=port)
 
     def _request(host: str, origin: str | None = None):
-        connection = HTTPConnection("127.0.0.1", port, timeout=2)
+        # Keep each probe short so one slow connect cannot consume the entire
+        # startup budget on loaded macOS ARM runners.
+        connection = HTTPConnection("127.0.0.1", port, timeout=0.25)
         connection.putrequest("GET", "/api/session/summary", skip_host=True)
         connection.putheader("Host", host)
         if origin is not None:
@@ -483,7 +485,7 @@ def test_stdio_auxiliary_http_enforces_host_origin_and_safe_cors(tmp_path):
         connection.close()
         return response
 
-    deadline = time.monotonic() + 2
+    deadline = time.monotonic() + 10
     while True:
         try:
             allowed = _request(f"localhost:{port}", f"http://localhost:{port}")

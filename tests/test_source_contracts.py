@@ -118,6 +118,18 @@ class TestNormalizeSourceAdapterError:
         assert normalized.status_code is None
         assert normalized.message == "timed out"
 
+    def test_builtin_timeout_exception(self):
+        normalized = normalize_source_adapter_error(
+            "openalex",
+            "search",
+            TimeoutError("upstream timed out"),
+        )
+
+        assert normalized.kind == "timeout"
+        assert normalized.retryable is True
+        assert normalized.status_code is None
+        assert normalized.message == "upstream timed out"
+
     def test_request_error(self):
         request = httpx.Request("GET", "https://example.org")
         error = httpx.ConnectError("connection failed", request=request)

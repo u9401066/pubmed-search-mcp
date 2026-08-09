@@ -4,7 +4,10 @@ import re
 from pathlib import Path
 from urllib.parse import unquote
 
-import tomllib
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - exercised by the Python 3.10 CI job
+    import tomli as tomllib
 import yaml
 from defusedxml import ElementTree
 

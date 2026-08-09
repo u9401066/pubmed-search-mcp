@@ -236,7 +236,7 @@ def normalize_source_adapter_error(
             status_code=status_code,
         )
 
-    if isinstance(error, (asyncio.TimeoutError, httpx.TimeoutException)):
+    if isinstance(error, (asyncio.TimeoutError, TimeoutError, httpx.TimeoutException)):
         return SourceAdapterError(
             source=source,
             operation=operation,

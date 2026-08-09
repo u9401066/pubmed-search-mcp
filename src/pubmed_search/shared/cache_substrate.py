@@ -26,6 +26,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
+from pubmed_search.shared.datetime_utils import parse_iso8601_datetime
+
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
@@ -46,7 +48,7 @@ def _parse_datetime(value: str | None) -> datetime | None:
     if not value:
         return None
 
-    parsed = datetime.fromisoformat(value)
+    parsed = parse_iso8601_datetime(value)
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed
