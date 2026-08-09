@@ -6,7 +6,7 @@
 
 This guide is for maintainers and contributors. It explains how the codebase is organized, where behavior belongs, how documentation is generated, and which validation commands protect the integration surface.
 
-Read this with [Architecture](#/architecture), [AGENTS.md](../AGENTS.md), and the [Tools Usage Guide](#/tools-usage-guide).
+Read this with [Architecture](#/architecture), [AGENTS.md](https://github.com/u9401066/pubmed-search-mcp/blob/master/AGENTS.md), and the [Tools Usage Guide](#/tools-usage-guide).
 
 ## Repository Contract
 
@@ -34,14 +34,20 @@ Shared rules:
 | Surface | Entry | Purpose |
 | --- | --- | --- |
 | Local MCP stdio | `uvx pubmed-search-mcp` or `uv run python -m pubmed_search.presentation.mcp_server` | Default local client mode |
-| Streamable HTTP | `pubmed-search-mcp-http --transport streamable-http` | Remote MCP clients and service deployments |
-| Full Copilot-compatible HTTP | `pubmed-search-mcp-http --transport streamable-http --copilot-compatible` | Keep the full primary MCP surface with Copilot-compatible HTTP semantics |
+| Local Streamable HTTP | `pubmed-search-mcp-http --mode local --host 127.0.0.1` | Trusted single-user loopback integrations |
+| Authenticated service | `pubmed-search-mcp-http --mode service` | Fail-closed multi-user HTTP with principal-scoped state |
+| Full Copilot-compatible HTTP | `pubmed-search-mcp-http --mode service --transport streamable-http --copilot-compatible` | Authenticated remote primary MCP surface with Copilot-compatible HTTP semantics |
 | Python SDK facade | `from pubmed_search.api import PubMedSearchClient` | In-process Python package, notebook, and app integrations |
-| Simplified Copilot Studio | `uv run python run_copilot.py` | Smaller schema for Copilot Studio compatibility |
+| Simplified Copilot smoke | `uv run python run_copilot.py` | Loopback-only local schema/protocol validation; never a public tunnel |
 | Browser fetch broker | `uv run pubmed-browser-fetch-broker --token ...` | Optional local Playwright broker for authenticated PDF download capture |
 | Static docs site | `docs/index.html` plus generated payload | GitHub Pages documentation surface |
 
-Do not treat these as separate products. MCP tools, the Python SDK facade, and the HTTP CLI are separate contracts over the same core capabilities. `run_server.py` is a source-tree development wrapper; installed packages should use `pubmed-search-mcp-http`. `run_copilot.py` intentionally exposes a simplified Copilot-specific surface.
+Do not treat these as separate products. MCP tools, the Python SDK facade, and the HTTP CLI are separate contracts over the same core capabilities. `run_server.py` is a source-tree development wrapper; installed packages should use `pubmed-search-mcp-http`. `run_copilot.py` intentionally exposes a simplified Copilot-specific surface, but it is loopback-only and must never be placed behind a public tunnel. Remote Copilot deployments use authenticated `--mode service`.
+
+The MCP contract uses SDK v2. Current clients call `tools/list` and `tools/call`
+without `initialize` or `Mcp-Session-Id`; legacy compatibility must never be
+used for identity or tenant selection. Keep every service request authorized by
+its bearer principal.
 
 ## Code Map
 
@@ -110,7 +116,9 @@ Recommended flow:
 2. Model any stable cross-source concept in domain/application before it reaches presentation.
 3. Gate commercial or credentialed connectors behind explicit settings.
 4. Make the connector default-off if it depends on licensed access.
-5. Add mocked tests for CI. Keep live integration tests opt-in.
+5. Add mocked tests for CI. Keep live integration tests opt-in with
+   `PUBMED_RUN_LIVE_TESTS=1 uv run pytest -m integration` (PowerShell: set
+   `$env:PUBMED_RUN_LIVE_TESTS='1'` first).
 6. Update source contracts and user docs with rate limits, rights expectations, optional keys, and provenance behavior.
 
 Do not silently add a provider to `source="all"` if it can fail without credentials or has licensing constraints.
@@ -132,6 +140,9 @@ Boundary rules:
 - Local note defaults use wiki-note semantics.
 - Foam-compatible wikilinks, MedPaper-style layouts, CSL JSON, and user templates are export profiles, not presentation-only behavior.
 - Directory resolution must stay documented: `output_dir`, `PUBMED_NOTES_DIR`, `PUBMED_WORKSPACE_DIR/references`, `PUBMED_DATA_DIR/references`, then `~/.pubmed-search-mcp/references`.
+- That directory/template resolution is local-only. Authenticated service tools
+  must reject caller-selected `output_dir` and `template_file`, then write built-in
+  formats below the installed tenant session root.
 
 When note export behavior changes, update user docs, generated docs, skills or packaged references that describe the same behavior, and tests.
 
@@ -149,6 +160,10 @@ Pipeline changes should consider:
 - schema compatibility
 - validation errors
 - execution history
+- local versus authenticated-service storage: a tenant-derived store must not
+  inherit the process-wide workspace, and service callers cannot load `file:`
+- scheduler ownership: the service Compose profile is disabled until there is
+  a single leader/lease rather than one scheduler per worker
 - scheduling behavior
 - docs site routing
 - packaged tutorial copies

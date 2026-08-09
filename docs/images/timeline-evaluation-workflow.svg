@@ -42,7 +42,7 @@
   <text class="body" x="620" y="290">topic phase changes</text>
 
   <rect class="box" x="876" y="198" width="220" height="116" fill="#edf7ff" stroke="#3578a7"/>
-  <text class="label" x="902" y="238">compare_timelines</text>
+  <text class="label" x="902" y="238">read_research_chronicle</text>
   <text class="body" x="902" y="268">parallel topics,</text>
   <text class="body" x="902" y="290">gaps and divergence</text>
 

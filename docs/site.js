@@ -5,7 +5,8 @@ const DOC_PAGES = [
     lang: "en",
     audience: "start",
     title: "Overview",
-    blurb: "Project positioning, quick install, supported clients, and core workflow framing.",
+    blurb: "Quick install, MCP SDK v2 runtime choice, supported clients, and the complete product map.",
+    keywords: "MCP 2.0 MCP SDK v2 local stdio loopback service 45 tools broker security",
     file: "site-content/overview.md",
   },
   {
@@ -14,7 +15,8 @@ const DOC_PAGES = [
     lang: "zh",
     audience: "start",
     title: "總覽",
-    blurb: "專案定位、快速安裝、支援 client 與核心工作流概覽。",
+    blurb: "快速安裝、MCP SDK v2 runtime 選擇、支援 client 與完整產品地圖。",
+    keywords: "MCP 2.0 MCP SDK v2 本機 stdio loopback 多人 service 45 工具 broker 安全",
     file: "site-content/overview-zh.md",
   },
   {
@@ -23,7 +25,8 @@ const DOC_PAGES = [
     lang: "en",
     audience: "user",
     title: "User Guide",
-    blurb: "Practical workflows for searching, exploring, full text, exports, notes, and pipelines.",
+    blurb: "Practical multi-source search, broker, full-text, evidence, export, note, and pipeline workflows.",
+    keywords: "unified_search broker source errors rate limits artifacts local service filesystem",
     file: "site-content/user-guide.md",
   },
   {
@@ -32,7 +35,8 @@ const DOC_PAGES = [
     lang: "zh",
     audience: "user",
     title: "使用者指南",
-    blurb: "搜尋、探索、全文、匯出、筆記與 pipeline 的實務工作流。",
+    blurb: "多來源搜尋、broker、全文、證據、匯出、筆記與 pipeline 實務。",
+    keywords: "unified_search broker source errors rate limits artifact 本機 service filesystem",
     file: "site-content/user-guide-zh.md",
   },
   {
@@ -66,9 +70,9 @@ const DOC_PAGES = [
     title: "Research Chronicle Rebuild Spec",
     titleByLang: { zh: "Research Chronicle 重建規格" },
     blurb:
-      "Canonical pre-rebuild contract for timeline, lineage tree, context graph preview, citation graph, artifacts, and the planned persistent Research Chronicle.",
+      "Implementation reference for the shipped persistent Research Chronicle, timeline, lineage tree, evidence graph, artifacts, and migration mapping.",
     blurbByLang: {
-      zh: "Timeline、lineage tree、context graph preview、citation graph、artifact 與 planned persistent Research Chronicle 的權威重建規格。",
+      zh: "已發布 persistent Research Chronicle、timeline、lineage tree、evidence graph、artifact 與 migration mapping 的實作參考。",
     },
     keywords:
       "research chronicle timeline lineage tree context graph preview citation graph artifact read_session rebuild spec",
@@ -146,8 +150,9 @@ const DOC_PAGES = [
     audience: "developer",
     title: "Architecture",
     titleByLang: { zh: "架構" },
-    blurb: "DDD layers, orchestration flow, and runtime surfaces.",
-    blurbByLang: { zh: "DDD 分層、orchestration flow 與 runtime surfaces。" },
+    blurb: "MCP SDK v2 request model, DDD layers, broker orchestration, tenant state, and runtime surfaces.",
+    blurbByLang: { zh: "MCP SDK v2 request model、DDD 分層、broker orchestration、tenant state 與 runtime surfaces。" },
+    keywords: "MCP 2.0 SDK v2 no initialize no session id DDD broker tenant concurrency",
     file: "site-content/architecture.md",
   },
   {
@@ -157,8 +162,9 @@ const DOC_PAGES = [
     audience: "developer",
     title: "Quick Reference",
     titleByLang: { zh: "快速索引" },
-    blurb: "Fast lookup for MCP tools and categories.",
-    blurbByLang: { zh: "MCP tools 與 categories 的快速查找。" },
+    blurb: "Fast lookup for all 45 MCP tools across 16 registry categories.",
+    blurbByLang: { zh: "45 個 MCP tools 與 16 個 registry categories 的快速查找。" },
+    keywords: "45 tools 16 categories tool index parameters",
     file: "site-content/quick-reference.md",
   },
   {
@@ -168,8 +174,9 @@ const DOC_PAGES = [
     audience: "developer",
     title: "Source Contracts",
     titleByLang: { zh: "資料來源契約" },
-    blurb: "Rate limits, rights, optional keys, and provenance semantics.",
-    blurbByLang: { zh: "Rate limits、rights、optional keys 與 provenance semantics。" },
+    blurb: "Multi-source broker stages, source selection, shared rate budgets, rights, and provenance.",
+    blurbByLang: { zh: "多來源 broker 階段、source selection、共用 rate budget、rights 與 provenance。" },
+    keywords: "broker PubMed Europe PMC OpenAlex Semantic Scholar CORE arXiv medRxiv bioRxiv retry backoff dedup",
     file: "site-content/source-contracts.md",
   },
   {
@@ -177,10 +184,11 @@ const DOC_PAGES = [
     group: "troubleshooting",
     lang: "all",
     audience: "reference",
-    title: "Troubleshooting",
-    titleByLang: { zh: "疑難排解" },
-    blurb: "Setup, verification, integration checks, and failure recovery.",
-    blurbByLang: { zh: "設定、驗證、整合檢查與 failure recovery。" },
+    title: "Integrations & Operations",
+    titleByLang: { zh: "整合與維運" },
+    blurb: "MCP SDK v2, client setup, broker configuration, environment reference, verification, and recovery.",
+    blurbByLang: { zh: "MCP SDK v2、client 設定、broker 組態、環境變數、驗證與故障排除。" },
+    keywords: "MCP 2.0 operations clients environment browser broker health ready troubleshooting security",
     file: "site-content/troubleshooting.md",
   },
   {
@@ -190,8 +198,9 @@ const DOC_PAGES = [
     audience: "reference",
     title: "Deployment",
     titleByLang: { zh: "部署" },
-    blurb: "HTTPS, Docker, Copilot Studio, and production deployment guidance.",
-    blurbByLang: { zh: "HTTPS、Docker、Copilot Studio 與 production deployment 指南。" },
+    blurb: "Separate local and authenticated multi-user contracts, security, probes, storage, and scaling limits.",
+    blurbByLang: { zh: "分開本機與認證多人合約，含安全、probe、storage 與 scaling 邊界。" },
+    keywords: "local stdio loopback multi-user service bearer auth tenant Host Origin scheduler replica backup",
     file: "site-content/deployment.md",
   },
 ];
@@ -206,22 +215,32 @@ const NAV_GROUPS = ["start", "user", "developer", "reference"];
 const UI_COPY = {
   en: {
     siteEyebrow: "Documentation Site",
-    tagline: "Role-aware documentation for researchers, AI-client users, and maintainers.",
+    tagline: "The complete operating handbook for researchers, AI-client users, service operators, and maintainers.",
     filterLabel: "Filter pages",
     filterPlaceholder: "overview, guide, tutorial, deployment...",
     sidebarNote: "Use the language switch for translated pages. Reference pages without a separate translation stay visible in both modes.",
-    heroKicker: "Docs for users and developers",
+    heroKicker: "Current MCP SDK v2 handbook",
     heroCopy:
-      "This site turns the repository docs into a role-aware handbook: user workflows, developer architecture, generated tool references, pipeline tutorials, source contracts, troubleshooting, and deployment.",
+      "Start with a working local search, then move through all 45 tools, broker/source behavior, evidence workflows, authenticated service deployment, troubleshooting, architecture, testing, and release operations under the modern MCP 2.0 request model.",
     menu: "Menu",
     outlineTitle: "On This Page",
     noPages: "No pages match this filter.",
     unableTitle: "Unable to load page",
     regenerate: "Run",
     regenerateSuffix: "to regenerate site content.",
-    toolMetric: "generated tool index",
-    routingMetric: "agent routing support",
-    oaMetric: "full text and figures",
+    toolMetric: "MCP tools",
+    routingMetric: "capability families",
+    oaMetric: "runtime contracts",
+    journeyLocalKicker: "Start in five minutes",
+    journeyLocalTitle: "Run locally",
+    journeyLocalCopy: "Install with uvx, connect an AI client, and make the first search.",
+    journeyResearchKicker: "Research handbook",
+    journeyResearchTitle: "Use the 45 tools",
+    journeyResearchCopy: "Choose a capability, search multiple sources, read full text, and preserve evidence.",
+    journeyServiceKicker: "Operator runbook",
+    journeyServiceTitle: "Deploy safely",
+    journeyServiceCopy: "Keep local and authenticated multi-user service contracts separate.",
+    journeyLabel: "Documentation quick paths",
     groups: {
       start: "Start Here",
       user: "For Users",
@@ -231,22 +250,32 @@ const UI_COPY = {
   },
   zh: {
     siteEyebrow: "文件網站",
-    tagline: "給研究者、AI client 使用者與維護者的角色導向文件。",
+    tagline: "給研究者、AI client 使用者、服務維運者與維護者的完整操作手冊。",
     filterLabel: "篩選頁面",
     filterPlaceholder: "總覽、指南、教學、部署...",
     sidebarNote: "使用語言切換查看翻譯頁；沒有獨立翻譯的 reference 頁會在兩種語言模式都顯示。",
-    heroKicker: "給使用者與開發者的文件",
+    heroKicker: "當前 MCP SDK v2 完整手冊",
     heroCopy:
-      "這個網站把 repo 文件整理成角色導向手冊：使用者工作流、開發者架構、生成工具索引、pipeline 教學、source contracts、疑難排解與部署。",
+      "從可立即使用的本機搜尋開始，再在現代 MCP 2.0 request model 下完整掌握 45 個工具、broker/source 行為、證據工作流、認證多人服務部署、疑難排解、架構、測試與發佈操作。",
     menu: "選單",
     outlineTitle: "本頁內容",
     noPages: "沒有符合篩選條件的頁面。",
     unableTitle: "無法載入頁面",
     regenerate: "請執行",
     regenerateSuffix: "重新生成 site content。",
-    toolMetric: "生成工具索引",
-    routingMetric: "agent 路由支援",
-    oaMetric: "全文與圖表",
+    toolMetric: "MCP 工具",
+    routingMetric: "能力家族",
+    oaMetric: "執行合約",
+    journeyLocalKicker: "五分鐘開始",
+    journeyLocalTitle: "本機執行",
+    journeyLocalCopy: "用 uvx 安裝、接上 AI client，並完成第一次搜尋。",
+    journeyResearchKicker: "研究操作手冊",
+    journeyResearchTitle: "使用 45 個工具",
+    journeyResearchCopy: "依能力選工具、平行查多來源、取得全文並保存證據。",
+    journeyServiceKicker: "維運手冊",
+    journeyServiceTitle: "安全部署",
+    journeyServiceCopy: "完整分開本機與認證多人 service 的信任合約。",
+    journeyLabel: "文件快速路徑",
     groups: {
       start: "開始",
       user: "使用者",
@@ -274,15 +303,30 @@ const heroCopy = document.getElementById("hero-copy");
 const toolMetricLabel = document.getElementById("tool-metric-label");
 const routingMetricLabel = document.getElementById("routing-metric-label");
 const oaMetricLabel = document.getElementById("oa-metric-label");
+const journeyGrid = document.getElementById("journey-grid");
+const journeyLinks = Array.from(document.querySelectorAll("[data-page-group]"));
 const languageControls = Array.from(document.querySelectorAll("[data-lang]"));
+const localizedJourneyElements = {
+  journeyLocalKicker: document.getElementById("journey-local-kicker"),
+  journeyLocalTitle: document.getElementById("journey-local-title"),
+  journeyLocalCopy: document.getElementById("journey-local-copy"),
+  journeyResearchKicker: document.getElementById("journey-research-kicker"),
+  journeyResearchTitle: document.getElementById("journey-research-title"),
+  journeyResearchCopy: document.getElementById("journey-research-copy"),
+  journeyServiceKicker: document.getElementById("journey-service-kicker"),
+  journeyServiceTitle: document.getElementById("journey-service-title"),
+  journeyServiceCopy: document.getElementById("journey-service-copy"),
+};
 const embeddedContent = window.DOC_PAGE_CONTENT || {};
 let mermaidInitialized = false;
 let activeLang = preferredLanguage();
 
-marked.setOptions({
-  gfm: true,
-  breaks: false,
-});
+if (window.marked) {
+  window.marked.setOptions({
+    gfm: true,
+    breaks: false,
+  });
+}
 
 function preferredLanguage() {
   try {
@@ -420,6 +464,22 @@ function localizeStaticText() {
   if (oaMetricLabel) {
     oaMetricLabel.textContent = uiText("oaMetric");
   }
+  if (journeyGrid) {
+    journeyGrid.setAttribute("aria-label", uiText("journeyLabel"));
+  }
+  journeyLinks.forEach((link) => {
+    const group = link.dataset.pageGroup;
+    const target = DOC_PAGES.find((page) => page.group === group && page.lang === activeLang)
+      || DOC_PAGES.find((page) => page.group === group && page.lang === "all");
+    if (target) {
+      link.setAttribute("href", `#/${target.slug}`);
+    }
+  });
+  Object.entries(localizedJourneyElements).forEach(([key, element]) => {
+    if (element) {
+      element.textContent = uiText(key);
+    }
+  });
 }
 
 function switchLanguage(nextLang) {
@@ -546,7 +606,7 @@ async function renderMermaidBlocks() {
   if (!mermaidInitialized) {
     window.mermaid.initialize({
       startOnLoad: false,
-      securityLevel: "loose",
+      securityLevel: "strict",
       theme: "base",
       themeVariables: {
         fontFamily: '"Segoe UI Variable Text", "Segoe UI", sans-serif',
@@ -714,7 +774,14 @@ async function renderPage() {
     if (!markdown) {
       throw new Error(`Missing embedded content for ${page.slug}. Run uv run python scripts/build_docs_site.py.`);
     }
-    docContent.innerHTML = marked.parse(markdown);
+    if (!window.marked || !window.DOMPurify) {
+      throw new Error("The pinned Markdown renderer or sanitizer failed to load.");
+    }
+    const rendered = window.marked.parse(markdown);
+    docContent.innerHTML = window.DOMPurify.sanitize(rendered, {
+      USE_PROFILES: { html: true },
+      FORBID_TAGS: ["style"],
+    });
     ensureHeadingIds();
     wrapScrollableTables();
     wrapLocalImages();

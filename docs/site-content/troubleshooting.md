@@ -2,23 +2,31 @@
 <!-- markdownlint-configure-file {"MD051": false} -->
 <!-- markdownlint-disable MD051 -->
 
-# External Integrations Guide
+# Integrations & Operations Guide
 
-Detailed setup guide for integrating PubMed Search MCP with various AI clients and platforms.
+The complete operator-facing extension of the README: choose a runtime contract,
+connect an AI client, configure the multi-source and browser brokers, verify the
+modern MCP SDK v2 protocol, and recover common failures.
 
-> **Quick Start**: For minimal configuration snippets, see the main [README.md](../README.md#-configuration).
+> **Quick Start**: For minimal configuration snippets, see the main [README.md](#/overview#configuration).
 
 ---
 
 ## Table of Contents
 
-- [External Integrations Guide](#external-integrations-guide)
+- [Integrations & Operations Guide](#integrations--operations-guide)
   - [Table of Contents](#table-of-contents)
-  - [Transport Modes](#transport-modes)
+  - [Runtime and Transport Contracts](#runtime-and-transport-contracts)
+    - [MCP SDK v2 Protocol Baseline](#mcp-sdk-v2-protocol-baseline)
     - [stdio (Default)](#stdio-default)
-    - [Streamable HTTP](#streamable-http)
+    - [Local Loopback Streamable HTTP](#local-loopback-streamable-http)
+    - [Multi-User Service](#multi-user-service-auth-and-tenant-isolation)
+    - [Auxiliary HTTP APIs](#auxiliary-http-apis)
     - [Python SDK Facade](#python-sdk-facade)
+    - [Persistent Artifact Retrieval](#persistent-artifact-retrieval)
   - [Environment Variables](#environment-variables)
+    - [Source Selection and Source Gating](#source-selection-and-source-gating)
+    - [Commercial Connectors](#commercial-connectors)
     - [Getting API Keys](#getting-api-keys)
   - [Client Configurations](#client-configurations)
     - [VS Code / Cursor](#vs-code--cursor)
@@ -38,50 +46,80 @@ Detailed setup guide for integrating PubMed Search MCP with various AI clients a
 
 ---
 
-## Transport Modes
+## Runtime and Transport Contracts
 
-PubMed Search MCP supports two transport modes:
+Choose the trust boundary before choosing client-specific options:
 
 ![Client integration and deployment workflow](images/integration-deployment-workflow.svg)
 
-| Mode | Protocol | Use Case | Default |
-| --- | --- | --- | --- |
-| **stdio** | Standard I/O | Local clients (VS Code, Claude Desktop, etc.) | ✅ |
-| **Streamable HTTP** | HTTP POST/SSE | Remote/cloud clients (Copilot Studio, web apps) | — |
+| Contract | Entry point | State and network boundary |
+| --- | --- | --- |
+| **Local stdio** | `uvx pubmed-search-mcp` | One local OS user, durable local store, no MCP listening port |
+| **Local loopback HTTP** | `pubmed-search-mcp-http --mode local --host 127.0.0.1` | Trusted single-user integration; MCP requests share the durable `default` tenant |
+| **Multi-user service** | `pubmed-search-mcp-http --mode service` | Remote/team use behind HTTPS; bearer principal and Host/Origin allowlists are mandatory |
+
+### MCP SDK v2 Protocol Baseline
+
+This release uses `mcp>=2.0,<3` and the modern 2026-07-28 MCP request model.
+A current HTTP client sends JSON-RPC `tools/list` and `tools/call` requests
+directly; it does **not** begin with `initialize` and does not depend on
+`Mcp-Session-Id`. Service clients must send their bearer credential on every
+protected request. Legacy protocol compatibility, when used by an older client,
+never becomes an identity, authorization, or persistence boundary.
+
+Use Streamable HTTP for current remote clients. The legacy SSE transport remains
+available only as a compatibility surface. See the
+[MCP protocol update](https://blog.modelcontextprotocol.io/posts/2026-07-28/)
+and the repository's [deployment smoke checklist](#/deployment#10-%E9%A9%97%E8%AD%89%E6%B8%85%E5%96%AE).
 
 ### stdio (Default)
 
-The client spawns the server as a subprocess and communicates via stdin/stdout. Zero configuration needed for networking.
+The client spawns the server as a subprocess and communicates via stdin/stdout.
+No networking configuration is needed. The stdio entry point always uses local
+mode and does not start an auxiliary HTTP listener unless
+`PUBMED_STDIO_AUX_HTTP=1` is explicitly set.
 
 ```bash
 uvx pubmed-search-mcp
 ```
 
-### Streamable HTTP
+### Local Loopback Streamable HTTP
 
-For remote access, run the server in HTTP mode:
+For a local connector or protocol smoke test:
 
 ```bash
-# Direct HTTP
-pubmed-search-mcp-http --transport streamable-http --port 8765
+# Local loopback HTTP
+pubmed-search-mcp-http --mode local --transport streamable-http \
+  --host 127.0.0.1 --port 8765
 
 # Via run_copilot.py (simplified for Copilot Studio)
 uv run python run_copilot.py --port 8765
 ```
 
-The MCP endpoint will be available at `http://localhost:8765/mcp`.
+The MCP endpoint is available at `http://localhost:8765/mcp`. Do not change only
+the bind address and treat this as a remote service. Explicit local mode is a
+trusted single-user contract: its loopback MCP requests use the durable
+`default` tenant, so `pmids="last"`, sessions, article cache, and exports survive
+across requests and reconnects. The launcher-enforced loopback bind and
+Host/Origin allowlists are the security boundary.
 
-> **Note**: SSE transport (`--transport sse`) is deprecated in favor of Streamable HTTP per MCP spec 2025-03-26.
+> **Note**: Legacy SSE (`--transport sse`) is retained for older integrations;
+> new deployments should use Streamable HTTP.
 
-### Serving Multiple Agents (Auth & Tenant Isolation)
+### Multi-User Service (Auth and Tenant Isolation)
 
-A server started without `PUBMED_AUTH_TOKENS` is **open**: anyone who can reach the
-port can call it. For anything beyond a private local instance, configure tokens:
+Service mode is fail closed. It refuses startup unless bearer credentials, the
+public resource-server URL, and Host/Origin allowlists are all configured:
 
 ```bash
+export PUBMED_SERVER_MODE=service
 export PUBMED_AUTH_TOKENS="team-a:$(openssl rand -hex 32),team-b:$(openssl rand -hex 32)"
-export PUBMED_AUTH_REQUIRED=true      # refuse to start if tokens are missing
-pubmed-search-mcp-http --transport streamable-http --host 0.0.0.0 --port 8765
+export PUBMED_AUTH_RESOURCE_SERVER_URL="https://mcp.example.org/mcp"
+export PUBMED_AUTH_ISSUER_URL="https://mcp.example.org"  # optional; defaults to resource origin
+export PUBMED_ALLOWED_HOSTS="mcp.example.org"
+export PUBMED_ALLOWED_ORIGINS="https://mcp.example.org"
+export PUBMED_TRUSTED_PROXY_IPS="127.0.0.1"  # only the actual TLS proxy
+pubmed-search-mcp-http --mode service --transport streamable-http --host 0.0.0.0 --port 8765
 ```
 
 Clients then present the token as a bearer credential:
@@ -99,18 +137,40 @@ Clients then present the token as a bearer credential:
 ```
 
 Each authenticated principal gets its **own** session, article cache, search
-history, `pmids="last"`, artifacts, chronicles, and pipelines. Without auth,
-concurrent HTTP callers are still separated by the server-issued `mcp-session-id`,
-but that is isolation only — not an authorization boundary.
+history, `pmids="last"`, artifacts, exports, chronicles, and pipelines. An MCP
+transport session identifier is protocol lifecycle state, not tenant identity or
+authorization, and never grants persistence.
 
-See [DEPLOYMENT.md](#/deployment) section 0 for the full deployment matrix,
-fair-share concurrency limits, and health/readiness probes.
+Filesystem-facing capabilities are deliberately narrower for authenticated
+service callers:
+
+| Capability | Local stdio / loopback HTTP | Authenticated service |
+| --- | --- | --- |
+| Saved pipelines | `workspace`, `global`, or `auto`; caller may load `file:path.yaml` | Tenant-derived store only; `auto` resolves below that principal's data root and `file:` reads are rejected |
+| Literature notes | Caller may choose `output_dir` and `template_file` | Caller cannot choose host paths or read a template file; built-in formats write below `<tenant-root>/references/` |
+| Scheduler | May be enabled for a trusted local process | Disabled by `docker-compose.service.yml`; future scheduling needs one leader/lease, not one scheduler per request worker |
+| Institutional settings | Local user may configure process-owned access settings | Authenticated callers cannot mutate process-global institutional configuration |
+| Server-local paths | May be exposed explicitly to a trusted local client | Redacted by default; remote clients retrieve artifacts through `read_session` |
+
+The word `workspace` never means a shared team directory in service mode. A
+tenant-derived pipeline store intentionally drops the process-wide workspace
+root so one principal cannot read another principal's repository files.
+Authenticated service callers cannot read `file:` paths from the server
+filesystem; save the pipeline in the current tenant store and load it by name.
+They also cannot choose `output_dir` or `template_file` for notes; use a built-in
+format in the principal-scoped `references/` directory.
+
+For containers, use `docker-compose.yml` only as a single-user loopback demo and
+`docker-compose.service.yml` for the authenticated, persistent, single-replica
+service. See [DEPLOYMENT.md](#/deployment) for the complete contract.
 
 ### Auxiliary HTTP APIs
 
 ![Session cache and auxiliary HTTP API workflow](images/session-cache-and-http-api.svg)
 
-Besides the primary MCP contract at `/mcp`, the packaged HTTP CLI also exposes a **public auxiliary read-only HTTP API** for cache and session access:
+Besides the primary MCP contract at `/mcp`, the packaged HTTP CLI exposes
+auxiliary routes. Only liveness/readiness metadata is public in service mode;
+tenant data and exports require the same bearer principal as MCP:
 
 | Endpoint | Purpose |
 | --- | --- |
@@ -119,10 +179,14 @@ Besides the primary MCP contract at `/mcp`, the packaged HTTP CLI also exposes a
 | `/api/cached_article/{pmid}` | Read one cached article, optionally fetch on miss |
 | `/api/cached_articles?pmids=...` | Read multiple cached articles |
 | `/api/session/summary` | Read current session summary |
+| `/exports` | List opaque export ids belonging to the current local or authenticated tenant |
+| `/download/{export_id}` | Download one opaque export id belonging to that tenant |
 
-When `PUBMED_AUTH_TOKENS` is configured, every `/api/*` route requires the same
-bearer token as `/mcp` and returns only the calling tenant's data. `/health` and
-`/ready` stay open for orchestrator probes.
+In service mode, `/api/*`, `/exports`, and `/download/*` require the same bearer
+token as `/mcp` and return only that principal's data. `/health` and `/ready`
+stay open for orchestrator probes. In explicit local mode these routes use the
+same durable single-user `default` tenant as `/mcp`; in service mode an
+anonymous request is always rejected and never falls back to local state.
 
 This auxiliary API is a convenience for cache and session reads; it is **not** the
 primary MCP tool contract. For agent tool discovery and normal runtime usage,
@@ -194,15 +258,33 @@ temporarily disable the source with `PUBMED_SEARCH_DISABLED_SOURCES=semantic_sch
 
 | Variable | Required | Description | Default |
 | --- | --- | --- | --- |
-| `NCBI_EMAIL` | **Yes** | Email for NCBI API policy compliance | `user@example.com` |
+| `NCBI_EMAIL` | **Yes** | Email for NCBI API policy compliance | `pubmed-search@example.com` |
 | `NCBI_API_KEY` | No | NCBI API key for higher rate limits (10 req/s vs 3 req/s) | — |
 | `CORE_API_KEY` | No | [CORE API](https://core.ac.uk/services/api) key for open access search | — |
+| `OPENALEX_API_KEY` | No | OpenAlex API key; the runtime contact email is still used for polite-pool identification | — |
 | `CROSSREF_EMAIL` | No | Optional CrossRef polite-pool email override. Defaults to the runtime server contact email. | `NCBI_EMAIL`, CLI `--email`, or detected git email |
 | `UNPAYWALL_EMAIL` | No | Optional Unpaywall email override. Defaults to the runtime server contact email. | `NCBI_EMAIL`, CLI `--email`, or detected git email |
 | `PUBMED_SEARCH_DISABLED_SOURCES` | No | Comma-separated source keys to globally disable in unified_search and cross-search | — |
+| `PUBMED_SERVER_MODE` | HTTP only | `local` for loopback development or `service` for fail-closed remote/team use | `local` |
+| `PUBMED_LOCAL_ALLOW_CONTAINER_BIND` | No | Explicit local-container exception permitting an internal `0.0.0.0` bind; the host port must still publish only to loopback | `false` |
+| `PUBMED_STDIO_AUX_HTTP` | No | Opt in to the stdio process's loopback auxiliary HTTP API | `false` |
+| `PUBMED_AUTH_TOKENS` | **Service: yes** | Comma-separated `principal:token` credentials; inject from a secret store | — |
+| `PUBMED_AUTH_RESOURCE_SERVER_URL` | **Service: yes** | Public HTTPS MCP resource-server URL, including `/mcp` | — |
+| `PUBMED_AUTH_ISSUER_URL` | No | Issuer advertised in auth metadata; defaults to the public resource URL origin | Resource URL origin |
+| `PUBMED_ALLOWED_HOSTS` | **Service: yes** | Comma-separated public Host allowlist | Safe loopback defaults in local mode |
+| `PUBMED_ALLOWED_ORIGINS` | **Service: yes** | Comma-separated HTTPS Origin allowlist | Safe loopback defaults in local mode |
+| `PUBMED_TRUSTED_PROXY_IPS` | No | Exact reverse-proxy IP allowlist; empty means forwarded headers are not trusted | — |
+| `PUBMED_TENANT_ISOLATION` | Service forces `true` | Keep authenticated principals in separate state/storage scopes | `true` |
+| `PUBMED_TENANT_MAX_CONCURRENCY` | No | Maximum in-flight requests per authenticated principal | `8` |
 | `PUBMED_NOTES_DIR` | No | Local wiki/Foam-compatible/Markdown/MedPaper-style note export directory used by `save_literature_notes` | `PUBMED_WORKSPACE_DIR/references`, `PUBMED_DATA_DIR/references`, then `~/.pubmed-search-mcp/references` |
 | `PUBMED_WORKSPACE_DIR` | No | Workspace root used for pipeline persistence and note export fallback | — |
 | `PUBMED_DATA_DIR` | No | User-level data root used for cache/persistence and note export fallback | `~/.pubmed-search-mcp` |
+| `PUBMED_PROFILING` | No | Enable runtime profiling diagnostics | `false` |
+| `PUBMED_ARTIFACT_INCLUDE_LOCAL_PATHS` | No | Include server-local artifact paths for trusted local clients | `false` |
+| `PUBMED_FULLTEXT_INLINE_MAX_CHARS` | No | Maximum inline full-text characters before artifact paging | `20000` |
+| `PUBMED_SCHEDULER_ENABLED` | No | Enable the saved-pipeline scheduler for a trusted local process; the authenticated service Compose profile forces it off | `true` |
+| `PUBMED_SCHEDULER_TIMEZONE` | No | Scheduler timezone | `UTC` |
+| `PUBMED_SCHEDULER_MAX_INSTANCES` | No | Maximum scheduler instances per process; it does not provide distributed leader election | `1` |
 | `SCOPUS_ENABLED` | No | Enable the default-off Scopus connector (`true/false`) | `false` |
 | `SCOPUS_API_KEY` | No | Elsevier Scopus API key. Required when `SCOPUS_ENABLED=true` | — |
 | `SCOPUS_INSTTOKEN` | No | Optional Elsevier institutional token for Scopus | — |
@@ -228,7 +310,7 @@ temporarily disable the source with `PUBMED_SEARCH_DISABLED_SOURCES=semantic_sch
 | `BROWSER_FETCH_VERIFY_TLS` | No | Verify TLS when calling an HTTPS broker URL | `true` |
 | `PUBMED_HTTP_API_PORT` | No | Port for background HTTP API (stdio mode) | `8765` |
 | `HTTP_PROXY` / `HTTPS_PROXY` | No | Proxy settings for outbound requests | — |
-| `BROWSER_FETCH_BROKER_TOKEN` | No | Bearer token expected by the local broker server | Falls back to `BROWSER_FETCH_TOKEN` |
+| `BROWSER_FETCH_BROKER_TOKEN` | No | Bearer token expected by the local broker server | Falls back to `BROWSER_FETCH_TOKEN`; otherwise a high-entropy runtime token is generated and printed |
 | `BROWSER_FETCH_BROKER_HOST` | No | Broker bind host | `127.0.0.1` |
 | `BROWSER_FETCH_BROKER_PORT` | No | Broker bind port | `8766` |
 | `BROWSER_FETCH_BROKER_HEADLESS` | No | Run broker browser headless | `false` |
@@ -338,7 +420,7 @@ Recommended practice for future commercial sources:
       "args": ["pubmed-search-mcp"],
       "env": {
         "NCBI_EMAIL": "your@email.com",
-        "BROWSER_FETCH_CONFIG": "{\"enabled\":true,\"auto_enabled\":true,\"broker_url\":\"http://127.0.0.1:8766/fetch\",\"token\":\"local-dev-token\",\"allowed_hosts\":[\"jamanetwork.com\",\"*.jamanetwork.com\"]}"
+        "BROWSER_FETCH_CONFIG": "{\"enabled\":true,\"auto_enabled\":true,\"broker_url\":\"http://127.0.0.1:8766/fetch\",\"token\":\"<random-32-byte-token>\",\"allowed_hosts\":[\"jamanetwork.com\",\"*.jamanetwork.com\"]}"
       }
     }
   }
@@ -354,8 +436,14 @@ The MCP server only contains the broker client. To eliminate manual browser down
 ```bash
 uv sync --extra browser-broker
 uv run playwright install chromium
-uv run pubmed-browser-fetch-broker --token local-dev-token
+uv run python -c "import secrets; print(secrets.token_urlsafe(32))"
+uv run pubmed-browser-fetch-broker --token "<same-random-32-byte-token>"
 ```
+
+Use the generated value in both the broker command and MCP client config; do
+not reuse a published example token. When `--token` is omitted, the broker
+generates and prints a high-entropy runtime token. It always rejects non-loopback
+binds, Host headers, and browser Origins.
 
 Recommended first run:
 
@@ -600,20 +688,30 @@ Copilot Studio ──HTTPS──▶ ngrok ──HTTP──▶ MCP Server (localh
 **Step 1**: Start the MCP server with HTTP transport
 
 ```bash
-# Option A: Full 45-tool primary MCP surface with compatibility semantics and ngrok
+# Option A: Full 45-tool primary MCP surface with an assigned ngrok dev/custom domain
+export PUBMED_AUTH_TOKENS="copilot:$(openssl rand -hex 32)"
+export NGROK_DOMAIN="your-domain.ngrok.dev"
 ./scripts/start-copilot-studio.sh --with-ngrok
 
-# Option B: Simplified 11-tool Copilot Studio surface with custom-domain ngrok
+# Option B: the same authenticated service with an assigned ngrok domain
+export PUBMED_AUTH_TOKENS="copilot:$(openssl rand -hex 32)"
+export NGROK_DOMAIN="your-domain.ngrok.dev"
 ./scripts/start-copilot-ngrok.sh
 
-# Option C: Manual simplified 11-tool setup
+# Option C: simplified 11-tool local schema smoke (never tunnel this mode)
 uv run python run_copilot.py --port 8765
 
-# Option D: Manual full 45-tool primary MCP surface with Copilot-compatible HTTP semantics
-pubmed-search-mcp-http --transport streamable-http --copilot-compatible --port 8765
+# Option D: manual service when the public URL is already known
+export PUBMED_AUTH_TOKENS="copilot:$(openssl rand -hex 32)"
+export PUBMED_AUTH_RESOURCE_SERVER_URL="https://your-domain.ngrok.dev/mcp"
+export PUBMED_ALLOWED_HOSTS="your-domain.ngrok.dev"
+export PUBMED_ALLOWED_ORIGINS="https://your-domain.ngrok.dev"
+pubmed-search-mcp-http --mode service --transport streamable-http \
+  --copilot-compatible --host 127.0.0.1 --port 8765
 ```
 
-**Step 2**: Expose via ngrok (if not using the script)
+**Step 2**: Expose the already configured service via ngrok (if not using a
+script)
 
 ```bash
 ngrok http --url=your-domain.ngrok.dev 8765
@@ -625,17 +723,25 @@ ngrok http --url=your-domain.ngrok.dev 8765
 | --- | --- |
 | Server name | `PubMed Search` |
 | Server URL | `https://your-domain.ngrok.dev/mcp` |
-| Authentication | None |
+| Authentication | Bearer token for service mode; `None` only during an unpublished local smoke test |
 
-**Environment variables** for the simplified custom-domain ngrok script:
+**Environment variables** for the authenticated custom-domain ngrok wrapper:
 
 ```bash
 export NGROK_DOMAIN="your-domain.ngrok.dev"
 export COPILOT_PORT=8765
+export PUBMED_AUTH_TOKENS="copilot:$(openssl rand -hex 32)"
 ./scripts/start-copilot-ngrok.sh
 ```
 
-> See [copilot-studio/README.md](../copilot-studio/README.md) for the full OpenAPI schema and Copilot Studio setup walkthrough.
+Both tunnel scripts converge on the same fail-closed `--mode service` launcher.
+They require bearer credentials plus an assigned `NGROK_DOMAIN`, reject an
+already occupied backend port, start the loopback service first, and verify
+`/ready` plus unauthenticated `/mcp` rejection before ngrok is started. The
+resource URL and Host/Origin allowlists are derived from that known HTTPS
+domain. `run_copilot.py` remains loopback-only and must not be tunneled.
+
+> See [copilot-studio/README.md](https://github.com/u9401066/pubmed-search-mcp/blob/master/copilot-studio/README.md) for the full OpenAPI schema and Copilot Studio setup walkthrough.
 
 ---
 
@@ -663,9 +769,11 @@ uv run python -m pubmed_search.presentation.mcp_server
 
 After configuring any client, verify the server is working:
 
-1. **Ask the AI**: "List all available PubMed tools" — the AI should enumerate 45 tools in the primary MCP surface
-2. **Simple search**: "Search PubMed for CRISPR gene therapy" — should return article results
-3. **Check tool list**: The server provides tools like `unified_search`, `fetch_article_details`, `get_fulltext`, etc.
+1. **Local stdio**: ask the AI to list PubMed tools; it should enumerate 45 tools in the primary MCP surface.
+2. **HTTP probes**: confirm `/health`, `/ready`, and `/info`; a service-mode health probe must use an allowed `Host`.
+3. **Modern MCP call**: send authenticated `tools/list` directly, without `initialize` or `Mcp-Session-Id`.
+4. **Simple search**: ask for "CRISPR gene therapy" and confirm `unified_search` reports source counts or explicit source warnings.
+5. **Isolation check**: in service mode, verify two bearer principals cannot read each other's session, export, artifact, chronicle, note, or pipeline state.
 
 ### Common Issues
 
@@ -679,6 +787,10 @@ After configuring any client, verify the server is working:
 | Source API uses placeholder email | Set `NCBI_EMAIL` or pass `--email`; CrossRef, Unpaywall, and OpenAlex reuse that runtime contact unless a source-specific override/API key is configured |
 | CORE search fails | Set `CORE_API_KEY` — [get one free](https://core.ac.uk/services/api) |
 | Behind proxy | Set `HTTP_PROXY` / `HTTPS_PROXY` environment variables |
+| Modern client waits for an MCP session id | Remove the obsolete initialize/session-id handshake; send `tools/list` or `tools/call` directly |
+| Service note export rejects `output_dir` or `template_file` | This is intentional; omit host paths and use a built-in note format in the tenant's isolated `references/` directory |
+| Service pipeline rejects `file:` or `workspace` scope | Save the YAML into the authenticated tenant store and load it as `saved:<name>`; service callers cannot read process-wide workspace files |
+| Scheduled service pipeline does not run | The service Compose profile disables the in-process scheduler; run manually or design a single external leader/lease before enabling schedules |
 
 ### Debug Mode
 
@@ -715,20 +827,23 @@ If you're behind a corporate proxy:
 
 ## Advanced: Docker Deployment
 
-For production deployments or team sharing:
+The default Compose file is a single-user loopback demo. Team/remote use has a
+separate fail-closed service profile:
 
 ```bash
-# Build
-docker build -t pubmed-search-mcp .
+# Local loopback demo
+docker compose up -d
 
-# Run with HTTP transport
-docker run -p 8765:8765 \
-  -e NCBI_EMAIL=your@email.com \
-  -e NCBI_API_KEY=your_key \
-  pubmed-search-mcp
-
-# With HTTPS (nginx reverse proxy)
+# Local self-signed HTTPS smoke test
 docker compose -f docker-compose.https.yml up -d
+
+# Authenticated service (populate the ignored .env from the example first)
+cp .env.service.example .env
+docker compose --env-file .env -f docker-compose.service.yml up -d
 ```
 
-See [DEPLOYMENT.md](#/deployment) for full production deployment instructions.
+The service profile uses a persistent volume, one replica/server process, a
+disabled in-process scheduler, and a host-loopback application port intended for
+a trusted same-host TLS proxy. See
+[DEPLOYMENT.md](#/deployment) for proxy, secret, backup, and readiness
+requirements.

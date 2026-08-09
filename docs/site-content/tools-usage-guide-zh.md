@@ -27,7 +27,6 @@
 | 全文與圖表 | `get_fulltext`, `get_text_mined_terms`, `get_article_figures` | 需要文章段落、證據區段、實體標註、caption 或 image URL。 |
 | 外部生醫資料 | `search_gene`, `get_gene_details`, `search_compound`, `get_compound_details`, `search_clinvar` | 問題從文獻延伸到 NCBI gene、compound、clinical variant。 |
 | 評估與研究演化 | `get_citation_metrics`, `build_research_chronicle`, `read_research_chronicle` | 使用者問哪些重要、領域如何演進、或多主題比較。 |
-| 研究編年史 | `build_research_chronicle`, `read_research_chronicle` | 使用者需要一份可以回頭查看、可版本比對、有證據支撐的研究脈絡。 |
 | 持久化與 session | `read_session`, `get_session_pmids`, `get_cached_article`, `get_session_summary`, pipeline tools | 使用者要恢復、重跑、審計、排程、保存搜尋流程。 |
 | 匯出與本機筆記 | `prepare_export`, `save_literature_notes` | 使用者要 Zotero/EndNote/BibTeX，或本機 Markdown/wiki 筆記。 |
 
@@ -118,6 +117,11 @@ Zotero Keeper 應維持在外部整合邊界。PubMed Search MCP 負責產生 of
 
 這條路徑涵蓋 `read_session`、`get_session_pmids`、`get_cached_article`、`get_session_summary`、`get_session_log`、`manage_pipeline`、`save_pipeline`、`list_pipelines`、`load_pipeline`、`delete_pipeline`、`get_pipeline_history` 與 `schedule_pipeline`。
 
+本機與 service 能力刻意不同。可信任的本機 caller 可使用 workspace scope、`file:`
+pipeline source 與 in-process scheduler。認證 service caller 只能讀取 tenant-derived store 中
+已保存的 pipeline；process-wide workspace/file reads 會被阻擋，service Compose 也停用
+scheduler，除非維運者另外提供單一 external leader/lease。
+
 ### 機構存取
 
 ![機構存取流程](images/institutional-access-workflow.svg)
@@ -183,16 +187,20 @@ save_literature_notes(pmids="last", note_format="wiki")
 | --- | --- | --- | --- |
 | `wiki` | `[[stable-id|title]]` | 預設 guided literature note | Foam、Obsidian-style、一般 wiki workflow |
 | `foam` | `[[stable-id|title]]` | 與 `wiki` 相容 | 既有 Foam 使用者 |
-| `markdown` | `[title](note.md)` | 同樣 guided sections | 純 Markdown repo |
+| `markdown` | `` `[title](note.md)` `` | 同樣 guided sections | 純 Markdown repo |
 | `medpaper` | `[[citation_key|title]]` | per-reference directory，內含 `<citation_key>.md` 與 `metadata.json` | MedPaper-style 或 Zotero Keeper-compatible reference library |
 
-目錄解析順序：
+本機模式的目錄解析順序：
 
 1. `output_dir`
 2. `PUBMED_NOTES_DIR`
 3. `PUBMED_WORKSPACE_DIR/references`
 4. `PUBMED_DATA_DIR/references`
 5. `~/.pubmed-search-mcp/references`
+
+認證 service caller 不會進入這套 host-path resolution。它們不能傳入 `output_dir` 或
+`template_file`；筆記必須使用內建 format，並保存在當前 principal 隔離的
+`references/` 目錄下。
 
 ## 好的 Markdown 文獻筆記排版
 
@@ -247,7 +255,7 @@ frontmatter 和 sidecar 放 verified metadata；正文區塊留給摘要、判�
 
 ## 自訂 Template
 
-使用者有自己的排版時，用 `template_file`：
+在可信任的本機模式中，使用者有自己的排版時，用 `template_file`：
 
 ```python
 save_literature_notes(
@@ -258,6 +266,8 @@ save_literature_notes(
 ```
 
 可用 placeholder 包含 `{title}`, `{pmid}`, `{doi}`, `{pmc_id}`, `{journal}`, `{journal_abbrev}`, `{year}`, `{volume}`, `{issue}`, `{pages}`, `{authors}`, `{abstract}`, `{citation_key}`, `{reference_id}`, `{note_format}`, `{created}`, `{pubmed_url}`, `{doi_url}`, `{citation}`, `{keywords}`, `{mesh_terms}`, `{csl_json}`。
+
+認證 service 請改用內建 note format；server 會拒絕從 host filesystem 讀取任意 template。
 
 ## Pipeline 與 Agent Bundle 參考文件
 

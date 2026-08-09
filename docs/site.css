@@ -299,6 +299,53 @@ a:focus-visible {
   border-left: 1px solid var(--line);
 }
 
+.journey-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.journey-card {
+  display: grid;
+  gap: 0.3rem;
+  min-height: 8.5rem;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 5px 16px rgba(23, 33, 38, 0.05);
+  color: var(--ink);
+  text-decoration: none;
+  transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+}
+
+.journey-card:hover,
+.journey-card:focus-visible {
+  border-color: var(--accent);
+  box-shadow: var(--shadow);
+  color: var(--ink);
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.journey-card strong {
+  font-size: 1.1rem;
+}
+
+.journey-card > span:last-child {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.journey-kicker {
+  color: var(--accent-strong);
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
 .hero-metrics strong {
   display: block;
   font-size: 1rem;
@@ -564,6 +611,14 @@ a:focus-visible {
 }
 
 @media (max-width: 720px) {
+  .journey-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .journey-card {
+    min-height: auto;
+  }
+
   .page-title,
   .doc-content h1 {
     font-size: 1.55rem;

@@ -25,15 +25,15 @@ The project now has three explicit external contracts:
 | --- | --- | --- |
 | MCP tool surface | `uvx pubmed-search-mcp` and `/mcp` | AI agents and MCP clients |
 | Python SDK facade | `from pubmed_search.api import PubMedSearchClient` | Python packages and notebooks |
-| HTTP MCP server CLI | `pubmed-search-mcp-http --transport streamable-http` | Remote MCP deployments |
+| HTTP MCP server CLI | `pubmed-search-mcp-http --mode service --transport streamable-http` | Authenticated remote MCP deployments |
 
 These contracts are related but separate. The auxiliary HTTP cache API is not
 the Python SDK, and the Python SDK is not a replacement for MCP tool discovery.
 
 ## Design
 
-`pubmed_search.api` is a lightweight facade. Importing it must not load MCP,
-FastMCP, HTTP clients, settings, YAML, or source registries. The client creates
+`pubmed_search.api` is a lightweight facade. Importing it must not load MCP SDK v2 `MCPServer`,
+HTTP clients, settings, YAML, or source registries. The client creates
 runtime dependencies lazily when a method is called.
 
 `pubmed_search.application.unified` owns the stable request/service contract for
@@ -42,7 +42,8 @@ not import MCP presentation modules at import time.
 
 `pubmed_search.presentation.mcp_server.tools.unified_runner` remains in the
 presentation layer because it still formats MCP-compatible strings, reports
-FastMCP progress, records MCP session state, and persists session artifacts.
+MCP SDK v2 progress, records request-scoped MCP session state, and persists
+tenant-owned session artifacts.
 The MCP tool wrapper injects its module-level dependencies into the runner so
 existing tests and private patch points remain compatible.
 
