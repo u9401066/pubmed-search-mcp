@@ -44,6 +44,10 @@
 - Removed a release-gate session flake by injecting the server-owned tenant
   registry into registered tools/resources. A leaked process registry can no
   longer override an explicitly supplied single-user or SDK session manager.
+- Published annotated tag `v0.6.2` from verified commit `f253fd7` through PyPI
+  trusted publishing, then attached the identical workflow-built wheel and
+  source distribution to the GitHub Release. Cross-platform CI, including
+  Windows PowerShell 5.1 hook coverage, completed successfully.
 
 ### 2026-08-10: MCP v2 / Broker / Deployment Hardening
 - Synchronized the workspace to upstream v0.6.0 and verified the locked MCP
@@ -223,9 +227,8 @@
 
 ## Doing
 
-- v0.6.2 corrective-release lifecycle: version/lock metadata, segmented release
-  commits, push, tag, and publication. v0.6.1 remains the published baseline
-  until these steps complete.
+- No v0.6.2 release-lifecycle work remains. Monitor published-package feedback
+  and preserve the released Chronicle evidence and rendering contracts.
 
 ## Next
 

@@ -2,10 +2,9 @@
 
 ## Current Focus
 
-- Prepare the v0.6.2 corrective release for Research Chronicle integrity and
-  visualization hardening. The implementation and documentation are complete;
-  release metadata, segmented commits, push, tag, and publication are the next
-  lifecycle steps.
+- v0.6.2 is published. Maintain the released Research Chronicle integrity and
+  visualization contract, and treat future changes as evidence-model or
+  rendering-contract changes rather than presentation-only edits.
 - Chronicle is the durable, auditable research-evolution record. Its canonical
   visual projection is a left-to-right year-anchor spine with observational
   topic branches, not a causal tree and not a list sorted only by publication
@@ -78,12 +77,13 @@
 
 ## Repository Notes
 
-- v0.6.1 remains the last published baseline until the v0.6.2 release lifecycle
-  completes; do not describe the Chronicle hardening as already published.
+- v0.6.2 was published to PyPI and GitHub Releases from annotated tag
+  `v0.6.2`, targeting verified source commit `f253fd7`. The attached wheel and
+  sdist match the trusted-publishing artifacts and PyPI SHA-256 records.
 - Preserve unrelated user workspace files and changes during release commits.
 - The docs website is generated from the human handbook sources and must remain
   synchronized with README, tool contracts, skills, and generated mirrors.
 
 ---
 
-*Last updated: 2026-08-12 — v0.6.2 Research Chronicle release checkpoint*
+*Last updated: 2026-08-12 — v0.6.2 Research Chronicle published*

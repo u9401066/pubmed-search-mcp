@@ -73,10 +73,10 @@ revision does not mean that evidence has been refuted or retired.
 
 ## Release State
 
-- v0.6.1 is the last published baseline at this checkpoint.
-- v0.6.2 is the prepared corrective release for Chronicle semantics,
-  persistence integrity, validation, and Mermaid resilience; publication is a
-  separate release-lifecycle step.
+- v0.6.2 is the current published baseline for Chronicle semantics,
+  persistence integrity, validation, and Mermaid resilience.
+- Annotated tag `v0.6.2` targets verified source commit `f253fd7`; PyPI and the
+  GitHub Release carry the same workflow-built wheel and source distribution.
 
 ---
 
