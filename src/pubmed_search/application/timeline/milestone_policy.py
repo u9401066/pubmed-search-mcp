@@ -200,10 +200,10 @@ DEFAULT_PUBTYPE_POLICIES: tuple[PublicationTypeMilestonePolicy, ...] = (
     PublicationTypeMilestonePolicy(
         name="rct",
         publication_type="Randomized Controlled Trial",
-        milestone_type=MilestoneType.PHASE_3,
+        milestone_type=MilestoneType.RANDOMIZED_TRIAL,
         label="RCT",
-        confidence=0.7,
-        reason="PubMed publication type 標示為 RCT",
+        confidence=0.9,
+        reason="PubMed publication type 標示為 RCT；未明示試驗 phase，不推論為 Phase III",
     ),
     PublicationTypeMilestonePolicy(
         name="phase_1_pubtype",

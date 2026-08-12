@@ -20,6 +20,7 @@ Example:
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 from typing import Any
 
 from pubmed_search.domain.entities.timeline import (
@@ -99,56 +100,55 @@ class MilestoneDetector:
             TimelineEvent if milestone detected, None otherwise.
         """
         pmid = str(article.get("pmid", ""))
-        title = article.get("title", "")
+        title = str(article.get("title") or "")
         year = article.get("year") or article.get("pub_year")
-        abstract = article.get("abstract", "")
+        abstract = str(article.get("abstract") or "")
 
-        if not pmid or not year:
+        if not pmid or self._parse_year(year) is None:
             return None
 
-        # Try different detection methods
-        result = None
+        # Earliest-in-scope is provenance, not a scientific milestone type.
+        # Detect the article's actual milestone first so an early FDA approval,
+        # guideline, or trial cannot be overwritten by a generic "first" tag.
+        result = self._detect_from_pubtype(article, include_unphased_rct=False)
 
-        # 1. First report detection (highest priority for earliest article)
-        if is_first:
-            result = self._create_event(
-                article=article,
-                milestone_type=MilestoneType.FIRST_REPORT,
-                label="First Report",
-                confidence=0.85,
-                metadata={
-                    "milestone_detection": {
-                        "strategy": "first_report",
-                        "policy": "first_report",
-                        "reason": "最早的時間排序文章預設標記為 First Report",
-                        "confidence": 0.85,
-                    }
-                },
-            )
-
-        # 2. Publication type matching (high confidence)
-        if not result:
-            result = self._detect_from_pubtype(article)
-
-        # 3. Title pattern matching
+        # 2. Title pattern matching
         if not result:
             result = self._detect_from_title(article, title)
 
-        # 4. Abstract pattern matching (lower confidence)
+        # 3. Abstract pattern matching (lower confidence)
         if not result and abstract:
             result = self._detect_from_title(article, abstract, confidence_penalty=0.2)
+
+        # 4. A generic RCT publication type is meaningful, but it is less
+        # specific than an explicit phase or regulatory title signal.
+        if not result:
+            result = self._detect_from_pubtype(article, include_unphased_rct=True)
 
         # 5. Citation-based landmark detection
         if not result:
             result = self._detect_from_citations(article)
 
+        if result is not None and is_first:
+            metadata = dict(result.metadata)
+            metadata.update(
+                {
+                    "earliest_observed_in_scope": True,
+                    "earliest_observed_scope_note": (
+                        "Earliest dated article in the retrieved candidate scope; "
+                        "this does not establish the first publication in the field."
+                    ),
+                }
+            )
+            result = replace(result, metadata=metadata)
         return result
 
     def detect_milestones_batch(self, articles: list[dict[str, Any]]) -> list[TimelineEvent]:
         """
         Detect milestones from a batch of articles.
 
-        Handles first-report detection by sorting chronologically.
+        Marks the earliest dated input article when it is a milestone, without
+        changing its scientific milestone classification.
 
         Args:
             articles: List of article dicts
@@ -163,29 +163,37 @@ class MilestoneDetector:
         sorted_articles = sorted(
             articles,
             key=lambda a: (
-                a.get("year") or a.get("pub_year") or 9999,
-                a.get("pmid", ""),
+                self._parse_year(a.get("year") or a.get("pub_year")) or 9999,
+                str(a.get("pmid", "")),
             ),
         )
 
-        events = []
-        for i, article in enumerate(sorted_articles):
-            is_first = i == 0
+        events: list[TimelineEvent] = []
+        for index, article in enumerate(sorted_articles):
+            is_first = index == 0
             event = self.detect_milestone(article, is_first=is_first)
             if event:
                 events.append(event)
 
         return events
 
-    def _detect_from_pubtype(self, article: dict[str, Any]) -> TimelineEvent | None:
+    def _detect_from_pubtype(
+        self,
+        article: dict[str, Any],
+        *,
+        include_unphased_rct: bool = True,
+    ) -> TimelineEvent | None:
         """Detect milestone from publication type."""
         pub_types = article.get("publication_types", [])
         if isinstance(pub_types, str):
             pub_types = [pub_types]
 
-        for pub_type in pub_types:
+        for raw_pub_type in pub_types:
+            pub_type = str(raw_pub_type)
             for policy in self._pubtype_policies:
-                if pub_type != policy.publication_type:
+                if not include_unphased_rct and policy.milestone_type is MilestoneType.RANDOMIZED_TRIAL:
+                    continue
+                if pub_type.casefold() != policy.publication_type.casefold():
                     continue
                 if policy.confidence >= self.min_confidence:
                     return self._create_event(
@@ -242,7 +250,10 @@ class MilestoneDetector:
         if not citations:
             return None
 
-        citation_count = int(citations)
+        try:
+            citation_count = int(citations)
+        except (TypeError, ValueError):
+            return None
         for policy in self._citation_threshold_policies:
             if citation_count < policy.minimum_citations or not policy.emit_event:
                 continue
@@ -278,8 +289,8 @@ class MilestoneDetector:
         pmid = str(article.get("pmid", ""))
 
         # Ensure year and month are int (BioPython may return StringElement)
-        raw_year = article.get("year") or article.get("pub_year") or 0
-        year = int(raw_year) if raw_year else 0
+        raw_year = article.get("year") or article.get("pub_year")
+        year = self._parse_year(raw_year) or 0
 
         raw_month = article.get("month") or article.get("pub_month")
         month = self._parse_month(raw_month)
@@ -296,12 +307,15 @@ class MilestoneDetector:
         # Determine evidence level from publication type
         evidence_level = self._infer_evidence_level(article)
 
+        event_metadata = self.article_context_metadata(article)
+        event_metadata.update(metadata or {})
+
         return TimelineEvent(
             pmid=pmid,
             year=year,
             month=month,
             milestone_type=milestone_type,
-            title=article.get("title", ""),
+            title=str(article.get("title") or ""),
             milestone_label=label,
             description=article.get("abstract", "")[:200] if article.get("abstract") else None,
             evidence_level=evidence_level,
@@ -310,8 +324,34 @@ class MilestoneDetector:
             first_author=first_author,
             doi=article.get("doi"),
             confidence_score=confidence,
-            metadata=metadata or {},
+            metadata=event_metadata,
         )
+
+    @staticmethod
+    def article_context_metadata(article: dict[str, Any]) -> dict[str, Any]:
+        """Preserve article signals needed by downstream lineage analysis.
+
+        Milestone detection explains why an article became a timeline event;
+        MeSH descriptors and author keywords explain which topical research
+        line it belongs to.  Both kinds of provenance must survive the
+        article-to-event boundary.
+        """
+
+        def _strings(value: Any) -> list[str]:
+            if isinstance(value, str):
+                return [value] if value.strip() else []
+            if not isinstance(value, (list, tuple, set)):
+                return []
+            return [str(item) for item in value if str(item).strip()]
+
+        publication_types = _strings(article.get("publication_types"))
+        return {
+            "mesh_terms": _strings(article.get("mesh_terms")),
+            "keywords": _strings(article.get("keywords")),
+            "publication_types": publication_types,
+            "publication_type": publication_types[0] if publication_types else None,
+            "pmcid": article.get("pmc_id") or article.get("pmcid"),
+        }
 
     def _build_title_policies(
         self, title_patterns: list[tuple[str, MilestoneType, str, float]] | None
@@ -395,6 +435,17 @@ class MilestoneDetector:
         }
 
         return month_names.get(month_str.lower())
+
+    @staticmethod
+    def _parse_year(raw_year: Any) -> int | None:
+        """Parse a plausible four-digit publication year without raising."""
+        if isinstance(raw_year, bool) or raw_year is None:
+            return None
+        text = str(raw_year).strip()
+        if len(text) != 4 or not text.isdecimal():
+            return None
+        year = int(text)
+        return year if 1000 <= year <= 9999 else None
 
     def infer_evidence_level(self, article: dict[str, Any]) -> EvidenceLevel:
         """Infer evidence level from publication type."""

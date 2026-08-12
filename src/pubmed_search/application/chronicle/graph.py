@@ -14,19 +14,17 @@ from typing import TYPE_CHECKING
 
 from pubmed_search.domain.entities.chronicle import (
     ChronicleEdgeType,
-    ChronicleEntryStatus,
-    ChronicleEntryType,
     ChronicleGraph,
     ChronicleGraphEdge,
     ChronicleGraphNode,
     ChronicleNodeType,
+    resolve_chronicle_membership,
 )
+
+from .ordering import chronology_key, definitely_precedes
 
 if TYPE_CHECKING:
     from pubmed_search.domain.entities.chronicle import ChronicleSnapshot
-
-#: Entry types whose evidence disputes rather than supports the claim.
-_CONTESTED_ENTRY_TYPES = {ChronicleEntryType.CONTROVERSY, ChronicleEntryType.SAFETY}
 
 
 def topic_node_id(chronicle_id: str) -> str:
@@ -64,12 +62,20 @@ def build_chronicle_graph(snapshot: ChronicleSnapshot) -> ChronicleGraph:
 
     for branch in snapshot.branches:
         node_id = branch_node_id(branch.branch_id)
+        lineage_basis = next(
+            (tag.split(":", 1)[1] for tag in branch.tags if tag.startswith("lineage_basis:")),
+            None,
+        )
         graph.add_node(
             ChronicleGraphNode(
                 node_id=node_id,
                 node_type=ChronicleNodeType.BRANCH,
                 label=branch.name,
-                attributes=(("entry_count", len(branch.entry_ids)),),
+                attributes=(
+                    ("entry_count", len(branch.entry_ids)),
+                    ("confidence", round(branch.confidence, 3)),
+                    ("lineage_basis", lineage_basis),
+                ),
             )
         )
         if branch.parent_branch_id:
@@ -89,7 +95,8 @@ def build_chronicle_graph(snapshot: ChronicleSnapshot) -> ChronicleGraph:
                 )
             )
 
-    for entry in snapshot.entries:
+    membership = resolve_chronicle_membership(snapshot)
+    for entry_index, entry in enumerate(snapshot.entries):
         graph.add_node(
             ChronicleGraphNode(
                 node_id=entry.entry_id,
@@ -103,10 +110,11 @@ def build_chronicle_graph(snapshot: ChronicleSnapshot) -> ChronicleGraph:
                 ),
             )
         )
-        if entry.branch_id:
+        branch_index = membership.branch_index_by_entry[entry_index]
+        if branch_index is not None:
             graph.add_edge(
                 ChronicleGraphEdge(
-                    source=branch_node_id(entry.branch_id),
+                    source=branch_node_id(snapshot.branches[branch_index].branch_id),
                     target=entry.entry_id,
                     edge_type=ChronicleEdgeType.CONTAINS,
                 )
@@ -114,7 +122,7 @@ def build_chronicle_graph(snapshot: ChronicleSnapshot) -> ChronicleGraph:
 
         _add_evidence_edges(graph, entry)
 
-    _add_chronological_edges(graph, snapshot)
+    _add_chronological_edges(graph, snapshot, membership.branch_index_by_entry)
     _add_provenance_edges(graph, snapshot, topic_id)
     return graph
 
@@ -126,11 +134,8 @@ def _add_evidence_edges(graph: ChronicleGraph, entry: object) -> None:
         return
 
     entry_id = str(getattr(entry, "entry_id", ""))
-    entry_type = getattr(entry, "entry_type", None)
-    default_edge = ChronicleEdgeType.CONTRADICTS if entry_type in _CONTESTED_ENTRY_TYPES else ChronicleEdgeType.SUPPORTS
-
     roles = (
-        (evidence.supporting_articles, default_edge),
+        (evidence.supporting_articles, ChronicleEdgeType.SUPPORTS),
         (evidence.contradicting_articles, ChronicleEdgeType.CONTRADICTS),
         (evidence.updating_articles, ChronicleEdgeType.UPDATES),
     )
@@ -158,40 +163,28 @@ def _add_evidence_edges(graph: ChronicleGraph, entry: object) -> None:
             )
 
 
-def _add_chronological_edges(graph: ChronicleGraph, snapshot: ChronicleSnapshot) -> None:
-    """Link consecutive entries within each branch with ``precedes`` edges."""
-    by_branch: dict[str, list[tuple[int, str]]] = {}
-    for entry in snapshot.entries:
-        key = entry.branch_id or "__unassigned__"
-        by_branch.setdefault(key, []).append((entry.year or 0, entry.entry_id))
+def _add_chronological_edges(
+    graph: ChronicleGraph,
+    snapshot: ChronicleSnapshot,
+    branch_index_by_entry: tuple[int | None, ...],
+) -> None:
+    """Link only provably ordered consecutive entries within valid branches."""
+    by_branch: dict[int, list[object]] = {}
+    for entry_index, entry in enumerate(snapshot.entries):
+        branch_index = branch_index_by_entry[entry_index]
+        if branch_index is not None:
+            by_branch.setdefault(branch_index, []).append(entry)
 
     for ordered in by_branch.values():
-        ordered.sort()
-        for (_, previous_id), (_, current_id) in pairwise(ordered):
+        ordered.sort(key=chronology_key)
+        for previous, current in pairwise(ordered):
+            if not definitely_precedes(previous, current):
+                continue
             graph.add_edge(
                 ChronicleGraphEdge(
-                    source=previous_id,
-                    target=current_id,
+                    source=str(getattr(previous, "entry_id", "")),
+                    target=str(getattr(current, "entry_id", "")),
                     edge_type=ChronicleEdgeType.PRECEDES,
-                )
-            )
-
-    superseded = [entry for entry in snapshot.entries if entry.status is ChronicleEntryStatus.SUPERSEDED]
-    for entry in superseded:
-        successors = [
-            other
-            for other in snapshot.entries
-            if other.branch_id == entry.branch_id
-            and other.entry_id != entry.entry_id
-            and (other.year or 0) > (entry.year or 0)
-        ]
-        if successors:
-            successor = min(successors, key=lambda item: item.year or 0)
-            graph.add_edge(
-                ChronicleGraphEdge(
-                    source=successor.entry_id,
-                    target=entry.entry_id,
-                    edge_type=ChronicleEdgeType.SUPERSEDES,
                 )
             )
 

@@ -9,6 +9,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from pubmed_search.domain.entities.chronicle import resolve_chronicle_membership
+
+from .analytics import landmark_rank_key
+from .ordering import chronology_key
+
 if TYPE_CHECKING:
     from pubmed_search.domain.entities.chronicle import ChronicleEntry, ChronicleSnapshot
 
@@ -16,7 +21,14 @@ if TYPE_CHECKING:
 _BRIEF_ENTRIES_PER_BRANCH = 3
 
 
-def _citations(entry: ChronicleEntry) -> str:
+def _select_brief_entries(entries: list[ChronicleEntry], limit: int) -> list[ChronicleEntry]:
+    """Select scientifically important entries without using detection confidence."""
+    selected = sorted(entries, key=landmark_rank_key)[:limit]
+    selected.sort(key=chronology_key)
+    return selected
+
+
+def narrative_citation(entry: ChronicleEntry) -> str:
     """Return a bracketed citation list for *entry*."""
     ids = [article.evidence_id for article in entry.evidence.all_articles]
     return f"[{entry.entry_id}; {', '.join(ids)}]" if ids else f"[{entry.entry_id}; no evidence]"
@@ -27,8 +39,8 @@ def narrate_chronicle(snapshot: ChronicleSnapshot, *, mode: str = "brief") -> st
 
     Args:
         snapshot: The revision to narrate.
-        mode: ``brief`` limits each branch to its most confident entries;
-            ``full`` includes every entry.
+        mode: ``brief`` selects entries by explicit landmark importance, with
+            citation counts as fallback; ``full`` includes every entry.
 
     Returns:
         Markdown text in which every claim line ends with its entry ID and
@@ -51,32 +63,43 @@ def narrate_chronicle(snapshot: ChronicleSnapshot, *, mode: str = "brief") -> st
         lines.append("No chronicle entries were assembled, so no claims can be made.")
         return "\n".join(lines)
 
-    entry_index = snapshot.entry_index
+    membership = resolve_chronicle_membership(snapshot)
+    global_rank = {
+        entry_index: order
+        for order, entry_index in enumerate(
+            sorted(range(len(snapshot.entries)), key=lambda index: chronology_key(snapshot.entries[index]))
+        )
+    }
     limit = None if mode == "full" else _BRIEF_ENTRIES_PER_BRANCH
 
-    for branch in snapshot.branches:
-        entries = [entry_index[entry_id] for entry_id in branch.entry_ids if entry_id in entry_index]
+    for branch_index, branch in enumerate(snapshot.branches):
+        entry_indices = list(membership.branch_entry_indices[branch_index])
+        entry_indices.sort(key=lambda index: (chronology_key(snapshot.entries[index]), global_rank[index]))
+        entries = [snapshot.entries[index] for index in entry_indices]
         if not entries:
             continue
-        entries.sort(key=lambda entry: (entry.year or 0, entry.entry_id))
-        selected = entries if limit is None else sorted(entries, key=lambda entry: -entry.confidence)[:limit]
-        selected.sort(key=lambda entry: (entry.year or 0, entry.entry_id))
+        selected = entries if limit is None else _select_brief_entries(entries, limit)
+        if limit is None:
+            selected.sort(key=chronology_key)
 
         lines.append(f"## {branch.name}")
         lines.append("")
         for entry in selected:
-            lines.append(f"- {entry.summary_claim} {_citations(entry)}")
+            lines.append(f"- {entry.summary_claim} {narrative_citation(entry)}")
         if limit is not None and len(entries) > len(selected):
             lines.append(f"- _{len(entries) - len(selected)} further entries omitted in brief mode._")
         lines.append("")
 
-    unassigned = [entry for entry in snapshot.entries if not entry.branch_id]
+    unassigned_indices = sorted(membership.repaired_entry_indices, key=lambda index: global_rank[index])
+    unassigned = [snapshot.entries[index] for index in unassigned_indices]
     if unassigned:
         lines.append("## Unassigned Entries")
         lines.append("")
-        shown = unassigned if limit is None else unassigned[:limit]
+        shown = unassigned if limit is None else _select_brief_entries(unassigned, limit)
         for entry in shown:
-            lines.append(f"- {entry.summary_claim} {_citations(entry)}")
+            lines.append(f"- {entry.summary_claim} {narrative_citation(entry)}")
+        if limit is not None and len(unassigned) > len(shown):
+            lines.append(f"- _{len(unassigned) - len(shown)} further repaired entries omitted in brief mode._")
         lines.append("")
 
     if snapshot.audit.warnings:
@@ -88,4 +111,4 @@ def narrate_chronicle(snapshot: ChronicleSnapshot, *, mode: str = "brief") -> st
     return "\n".join(lines).rstrip() + "\n"
 
 
-__all__ = ["narrate_chronicle"]
+__all__ = ["narrate_chronicle", "narrative_citation"]

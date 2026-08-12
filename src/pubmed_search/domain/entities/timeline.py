@@ -59,6 +59,7 @@ class MilestoneType(Enum):
     PHASE_2 = "phase_2"  # Dose-finding
     PHASE_3 = "phase_3"  # Pivotal trials
     PHASE_4 = "phase_4"  # Post-marketing
+    RANDOMIZED_TRIAL = "randomized_trial"  # RCT with no phase inferred
 
     # Regulatory Milestones
     FDA_APPROVAL = "fda_approval"  # US FDA
@@ -201,6 +202,8 @@ class TimelineEvent:
     @property
     def date_label(self) -> str:
         """Return formatted date label."""
+        if self.year <= 0:
+            return "Undated"
         if self.month:
             return f"{self.year}-{self.month:02d}"
         return str(self.year)
@@ -208,7 +211,7 @@ class TimelineEvent:
     @property
     def sort_key(self) -> tuple[int, int, str]:
         """Return sort key for chronological ordering."""
-        return (self.year, self.month or 0, self.pmid)
+        return (self.year if self.year > 0 else 10000, self.month or 0, self.pmid)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
@@ -296,9 +299,9 @@ class ResearchTimeline:
     @property
     def year_range(self) -> tuple[int, int] | None:
         """Return (start_year, end_year) or None if empty."""
-        if not self.events:
+        years = [event.year for event in self.events if event.year > 0]
+        if not years:
             return None
-        years = [e.year for e in self.events]
         return (min(years), max(years))
 
     @property
@@ -376,9 +379,9 @@ class ResearchTimeline:
             events_by_year[event.year].append(event)
 
         # Generate timeline sections
-        for year in sorted(events_by_year.keys()):
+        for year in sorted(events_by_year, key=lambda value: value if value > 0 else 10000):
             year_events = events_by_year[year]
-            lines.append(f"    section {year}")
+            lines.append(f"    section {year if year > 0 else 'Undated'}")
             for event in year_events:
                 # Escape special characters in label
                 label = event.milestone_label.replace(":", " -")

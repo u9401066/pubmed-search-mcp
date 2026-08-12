@@ -20,11 +20,16 @@ be persisted as JSON artifacts and re-read by remote agents.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from enum import Enum
 from typing import Any
 
 CHRONICLE_SCHEMA_VERSION = "research-chronicle/v1"
+_VALID_DATE_PART_COUNTS = frozenset({1, 2, 3})
+_YEAR_DIGITS = 4
+_MAX_CALENDAR_YEAR = 9999
+_MONTH_PRECISION_PARTS = 2
+_DAY_PRECISION_PARTS = 3
 
 #: Audit statuses ordered from best to worst.
 AUDIT_STATUS_ORDER = ("pass", "warn", "fail")
@@ -325,8 +330,25 @@ class ChronicleEntry:
     @property
     def year(self) -> int | None:
         """Return the entry's starting year when parseable."""
-        head = self.time_start[:4]
-        return int(head) if head.isdigit() else None
+        value = self.time_start.strip()
+        parts = value.split("-")
+        if (
+            len(parts) not in _VALID_DATE_PART_COUNTS
+            or len(parts[0]) != _YEAR_DIGITS
+            or not all(part.isdigit() for part in parts)
+        ):
+            return None
+        year = int(parts[0])
+        if not 1 <= year <= _MAX_CALENDAR_YEAR:
+            return None
+        try:
+            if len(parts) == _MONTH_PRECISION_PARTS:
+                date(year, int(parts[1]), 1)
+            elif len(parts) == _DAY_PRECISION_PARTS:
+                date(year, int(parts[1]), int(parts[2]))
+        except ValueError:
+            return None
+        return year
 
     @property
     def requires_evidence(self) -> bool:
@@ -406,13 +428,14 @@ class ChronicleBranch:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ChronicleBranch:
         """Rebuild a chronicle branch from its serialized form."""
+        raw_confidence = data.get("confidence")
         return cls(
             branch_id=str(data.get("branch_id") or ""),
             name=str(data.get("name") or ""),
             description=str(data.get("description") or ""),
             parent_branch_id=data.get("parent_branch_id"),
             entry_ids=_as_str_list(data.get("entry_ids")),
-            confidence=float(data.get("confidence") or 1.0),
+            confidence=float(raw_confidence) if raw_confidence is not None else 1.0,
             tags=_as_str_list(data.get("tags")),
         )
 
@@ -739,6 +762,13 @@ class ChronicleSnapshot:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ChronicleSnapshot:
         """Rebuild a snapshot from its serialized form."""
+        raw_schema_version = data.get("schema_version")
+        if raw_schema_version is not None and str(raw_schema_version) != CHRONICLE_SCHEMA_VERSION:
+            msg = (
+                f"Unsupported Chronicle schema version {raw_schema_version!r}; "
+                f"this runtime supports {CHRONICLE_SCHEMA_VERSION!r}."
+            )
+            raise ValueError(msg)
         entries_raw = data.get("entries") or []
         branches_raw = data.get("branches") or []
         return cls(
@@ -757,6 +787,96 @@ class ChronicleSnapshot:
         )
 
 
+@dataclass(frozen=True)
+class ChronicleMembershipResolution:
+    """Occurrence-aware reconciliation of entry and branch ownership fields."""
+
+    branch_index_by_entry: tuple[int | None, ...]
+    repair_reasons_by_entry: tuple[tuple[str, ...], ...]
+    branch_entry_indices: tuple[tuple[int, ...], ...]
+    dangling_memberships: tuple[tuple[int, str], ...]
+
+    @property
+    def repaired_entry_indices(self) -> tuple[int, ...]:
+        """Return entry occurrences that cannot be assigned without guessing."""
+        return tuple(index for index, branch_index in enumerate(self.branch_index_by_entry) if branch_index is None)
+
+
+def resolve_chronicle_membership(snapshot: ChronicleSnapshot) -> ChronicleMembershipResolution:
+    """Reconcile redundant branch ownership without silently choosing a side.
+
+    An entry is assigned only when its ID is unique and the redundant ownership
+    fields identify one branch occurrence without conflict.  A duplicated
+    branch ID can therefore still be disambiguated when exactly one matching
+    branch occurrence lists the entry exactly once.  Every genuinely ambiguous
+    occurrence is retained as repaired/unassigned data by projections and
+    reported by the audit.
+    """
+    entry_id_counts: dict[str, int] = {}
+    for entry in snapshot.entries:
+        entry_id_counts[entry.entry_id] = entry_id_counts.get(entry.entry_id, 0) + 1
+
+    branch_occurrences: dict[str, list[int]] = {}
+    memberships: dict[str, list[int]] = {}
+    dangling: list[tuple[int, str]] = []
+    known_entry_ids = set(entry_id_counts)
+    for branch_index, branch in enumerate(snapshot.branches):
+        branch_occurrences.setdefault(branch.branch_id, []).append(branch_index)
+        for entry_id in branch.entry_ids:
+            memberships.setdefault(entry_id, []).append(branch_index)
+            if entry_id not in known_entry_ids:
+                dangling.append((branch_index, entry_id))
+
+    resolved: list[int | None] = []
+    reasons_by_entry: list[tuple[str, ...]] = []
+    branch_entries: list[list[int]] = [[] for _branch in snapshot.branches]
+    for entry_index, entry in enumerate(snapshot.entries):
+        reasons: list[str] = []
+        if not entry.entry_id:
+            reasons.append("empty_entry_id")
+        if entry_id_counts.get(entry.entry_id, 0) != 1:
+            reasons.append("duplicate_entry_id")
+
+        branch_candidates = branch_occurrences.get(entry.branch_id or "", [])
+        listed_in = memberships.get(entry.entry_id, [])
+        if not entry.branch_id:
+            reasons.append("missing_entry_branch_id")
+        elif not branch_candidates:
+            reasons.append("unknown_entry_branch_id")
+        if len(branch_candidates) == 1:
+            declared_index = branch_candidates[0]
+        elif len(branch_candidates) > 1 and len(listed_in) == 1 and listed_in[0] in branch_candidates:
+            declared_index = listed_in[0]
+        else:
+            declared_index = None
+            if len(branch_candidates) > 1:
+                reasons.append("ambiguous_entry_branch_id")
+
+        declared_occurrences = listed_in.count(declared_index) if declared_index is not None else 0
+        if declared_index is not None and declared_occurrences == 0:
+            reasons.append("missing_from_declared_branch")
+        elif declared_occurrences > 1:
+            reasons.append("duplicate_membership_in_declared_branch")
+        if any(branch_index != declared_index for branch_index in listed_in):
+            reasons.append("conflicting_branch_membership")
+        if len(listed_in) > 1 and "duplicate_membership_in_declared_branch" not in reasons:
+            reasons.append("multiple_branch_memberships")
+
+        if reasons or declared_index is None:
+            resolved.append(None)
+        else:
+            resolved.append(declared_index)
+            branch_entries[declared_index].append(entry_index)
+        reasons_by_entry.append(tuple(reasons))
+
+    return ChronicleMembershipResolution(
+        branch_index_by_entry=tuple(resolved),
+        repair_reasons_by_entry=tuple(reasons_by_entry),
+        branch_entry_indices=tuple(tuple(indices) for indices in branch_entries),
+        dangling_memberships=tuple(dangling),
+    )
+
+
 __all__ = [
     "AUDIT_STATUS_ORDER",
     "CHRONICLE_SCHEMA_VERSION",
@@ -772,9 +892,11 @@ __all__ = [
     "ChronicleGraphEdge",
     "ChronicleGraphNode",
     "ChronicleInputScope",
+    "ChronicleMembershipResolution",
     "ChronicleNodeType",
     "ChronicleSnapshot",
     "EvidenceArticle",
     "EvidenceBundle",
+    "resolve_chronicle_membership",
     "utc_now_iso",
 ]

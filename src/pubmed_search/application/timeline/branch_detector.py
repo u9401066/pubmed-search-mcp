@@ -39,6 +39,7 @@ _TYPE_TO_BRANCH: dict[MilestoneType, str] = {
     MilestoneType.PHASE_2: "clinical",
     MilestoneType.PHASE_3: "clinical",
     MilestoneType.PHASE_4: "clinical",
+    MilestoneType.RANDOMIZED_TRIAL: "clinical",
     # Regulatory
     MilestoneType.FDA_APPROVAL: "regulatory",
     MilestoneType.EMA_APPROVAL: "regulatory",
@@ -147,6 +148,7 @@ def _build_clinical_branch(
     """
     early = [e for e in events if e.milestone_type in _CLINICAL_EARLY]
     late = [e for e in events if e.milestone_type in _CLINICAL_LATE]
+    unphased = [e for e in events if e.milestone_type is MilestoneType.RANDOMIZED_TRIAL]
 
     # Only create sub-branches if we have events in multiple phases
     has_multi_phase = bool(early) and bool(late)
@@ -175,6 +177,7 @@ def _build_clinical_branch(
             branch_id="clinical",
             label=label,
             icon=icon,
+            events=unphased,
             sub_branches=sub_branches,
             order=order,
         )

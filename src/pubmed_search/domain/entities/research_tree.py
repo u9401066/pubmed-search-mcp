@@ -88,9 +88,9 @@ class ResearchBranch:
     def year_range(self) -> tuple[int, int] | None:
         """Year range of all events (including sub-branches)."""
         all_ev = self.all_events
-        if not all_ev:
+        years = [event.year for event in all_ev if event.year > 0]
+        if not years:
             return None
-        years = [e.year for e in all_ev]
         return (min(years), max(years))
 
     @property

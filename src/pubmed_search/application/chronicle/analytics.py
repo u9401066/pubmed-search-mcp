@@ -8,15 +8,58 @@ between topics - something a per-call timeline could never do.
 
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING, Any
+
+from .ordering import chronology_key
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from pubmed_search.domain.entities.chronicle import ChronicleSnapshot
+    from pubmed_search.domain.entities.chronicle import ChronicleEntry, ChronicleSnapshot
 
 #: How many landmark entries the milestone analysis reports.
 LANDMARK_LIMIT = 5
+
+
+def landmark_importance_score(entry: ChronicleEntry) -> float | None:
+    """Return a validated scientific-importance score from provenance.
+
+    ``ChronicleEntry.confidence`` is milestone *detection* confidence. It must
+    never be reused as evidence that an entry is scientifically important.
+    """
+    raw_score = entry.provenance.get("landmark_importance_score")
+    if raw_score is None or isinstance(raw_score, bool):
+        return None
+    try:
+        score = float(raw_score)
+    except (TypeError, ValueError):
+        return None
+    return score if math.isfinite(score) and 0.0 <= score <= 1.0 else None
+
+
+def entry_max_citations(entry: ChronicleEntry) -> int:
+    """Return the largest non-negative citation count in an entry's evidence."""
+    counts = [article.citation_count for article in entry.evidence.all_articles]
+    return max((count for count in counts if count is not None and count >= 0), default=0)
+
+
+def landmark_rank_key(entry: ChronicleEntry) -> tuple[int, float, int, tuple[int, int, int, int, int], str]:
+    """Sort by explicit landmark importance, with citations as fallback.
+
+    Entries carrying a valid ``provenance.landmark_importance_score`` are ranked
+    together by that score. Entries without one form a fallback tier ranked by
+    citations. Detection confidence is intentionally absent from this key.
+    """
+    importance = landmark_importance_score(entry)
+    citations = entry_max_citations(entry)
+    return (
+        0 if importance is not None else 1,
+        -(importance or 0.0),
+        -citations,
+        chronology_key(entry),
+        entry.entry_id,
+    )
 
 
 def _activity_by_year(snapshot: ChronicleSnapshot) -> dict[str, int]:
@@ -41,7 +84,8 @@ def _entry_digest(snapshot: ChronicleSnapshot, *, newest: bool) -> dict[str, Any
     dated = [entry for entry in snapshot.entries if entry.year is not None]
     if not dated:
         return None
-    entry = max(dated, key=lambda e: e.year or 0) if newest else min(dated, key=lambda e: e.year or 0)
+    ordered = sorted(dated, key=chronology_key)
+    entry = ordered[-1] if newest else ordered[0]
     return {
         "entry_id": entry.entry_id,
         "year": entry.year,
@@ -66,13 +110,7 @@ def analyze_milestones(snapshot: ChronicleSnapshot) -> dict[str, Any]:
     citations = [a.citation_count for a in articles if a.citation_count is not None]
     year_range = snapshot.year_range
 
-    landmarks = sorted(
-        snapshot.entries,
-        key=lambda entry: (
-            -max((a.citation_count or 0) for a in entry.evidence.all_articles) if entry.evidence.all_articles else 0,
-            -entry.confidence,
-        ),
-    )[:LANDMARK_LIMIT]
+    landmarks = sorted(snapshot.entries, key=landmark_rank_key)[:LANDMARK_LIMIT]
 
     return {
         "projection": "milestones",
@@ -103,14 +141,24 @@ def analyze_milestones(snapshot: ChronicleSnapshot) -> dict[str, Any]:
                 "entry_id": entry.entry_id,
                 "year": entry.year,
                 "title": entry.title,
-                "confidence": round(entry.confidence, 3),
-                "citations": max((a.citation_count or 0) for a in entry.evidence.all_articles)
-                if entry.evidence.all_articles
-                else 0,
+                "landmark_importance_score": landmark_importance_score(entry),
+                "ranking_basis": (
+                    "provenance.landmark_importance_score"
+                    if landmark_importance_score(entry) is not None
+                    else "citation_count_fallback"
+                ),
+                "milestone_detection_confidence": round(entry.confidence, 3),
+                "confidence_semantics": "milestone_detection_confidence_not_scientific_importance",
+                "citations": entry_max_citations(entry),
                 "evidence_ids": [a.evidence_id for a in entry.evidence.all_articles],
             }
             for entry in landmarks
         ],
+        "landmark_ranking": {
+            "primary": "provenance.landmark_importance_score",
+            "fallback": "maximum evidence citation_count when importance is unavailable",
+            "excluded": "milestone detection confidence",
+        },
         "audit_status": snapshot.audit.status,
         "warnings": snapshot.audit.warnings,
     }
@@ -179,4 +227,11 @@ def compare_chronicles(snapshots: Sequence[ChronicleSnapshot]) -> dict[str, Any]
     }
 
 
-__all__ = ["LANDMARK_LIMIT", "analyze_milestones", "compare_chronicles"]
+__all__ = [
+    "LANDMARK_LIMIT",
+    "analyze_milestones",
+    "compare_chronicles",
+    "entry_max_citations",
+    "landmark_importance_score",
+    "landmark_rank_key",
+]
