@@ -338,7 +338,7 @@ postToolUse 不再只評估 `unified_search`。目前會對所有 **result-beari
 - Search / retrieval: `unified_search`, `search_gene`, `search_compound`, `search_clinvar`, `search_biomedical_images`
 - Discovery / expansion: `fetch_article_details`, `find_related_articles`, `find_citing_articles`, `get_article_references`, `build_citation_tree`
 - Fulltext / figures: `get_fulltext`, `get_text_mined_terms`, `get_article_figures`
-- Session / evaluation / synthesis: `read_session`, `get_session_pmids`, `get_cached_article`, `get_session_summary`, `get_citation_metrics`, `prepare_export`, `save_literature_notes`, timeline tools
+- Session / evaluation / synthesis: `read_session`, `get_session_pmids`, `get_cached_article`, `get_session_summary`, `get_citation_metrics`, `prepare_export`, `save_literature_notes`, `build_research_chronicle`, `read_research_chronicle`
 
 不同工具家族使用不同啟發式：article-count、source diversity、fulltext availability、session/detail presence。
 

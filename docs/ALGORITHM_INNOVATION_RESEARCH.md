@@ -1,5 +1,14 @@
 # PubMed Search MCP — 演算法創新差距分析與提升研究
 
+> [!CAUTION]
+> **歷史／已取代的內部研究草稿。** 本文件反映 2026-02-15 的設計盤點；其中
+> timeline 模組路徑、待建工具與「第一篇」規則不是 v0.6.2 的現行契約。
+> 現行入口是 `build_research_chronicle(...)`，已儲存的里程碑與主題比較使用
+> `read_research_chronicle(action="milestones")`／
+> `read_research_chronicle(action="compare")`。Chronicle 的起點語意是
+> `earliest_observed_in_scope`，不證明整個領域的 first report。下文保留作
+> 演算法研究與產品決策沿革，不應當成目前工具參考。
+
 > **文件性質**: 內部研究文件  
 > **狀態**: 初稿 v1.3  
 > **目的**: 誠實評估現有演算法深度，識別學術創新機會，規劃提升路線  

@@ -1,5 +1,13 @@
 # PubMed-Search-MCP: Paper Draft
 
+> [!CAUTION]
+> **歷史／已取代的論文草稿。** 本 v0.2 草稿早於 v0.6.2 Research Chronicle
+> 實作，包含尚未驗證的研究主張、TODO 與已移除的 timeline 工具名稱，不能當成
+> 現行產品規格或實驗結果引用。現行建立／更新使用
+> `build_research_chronicle(...)`；里程碑與主題比較分別使用
+> `read_research_chronicle(action="milestones")` 與
+> `read_research_chronicle(action="compare")`。下文舊規格保留作研究沿革。
+
 > **狀態**: 草稿 v0.2
 > **最後更新**: 2026-01-28
 > **目標期刊**: JAMIA / JBI / Bioinformatics

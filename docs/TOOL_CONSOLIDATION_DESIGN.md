@@ -8,7 +8,10 @@ Current state after this change:
 
 - `manage_pipeline()` is the new facade for pipeline CRUD/history/scheduling.
 - `read_session()` is the new facade for session reads.
-- Legacy tools remain available as compatibility wrappers.
+- `build_research_chronicle()` is the single Chronicle build/update entry point;
+  `read_research_chronicle()` owns stored reads and analyses.
+- Session and pipeline legacy tools remain available as compatibility wrappers;
+  the removed pre-Chronicle timeline names do not.
 
 ## Consolidation Principles
 
@@ -24,6 +27,7 @@ Current state after this change:
 | --- | --- | --- | --- | --- |
 | Session 管理 | `get_session_pmids`, `get_cached_article`, `get_session_summary` | `read_session(action=pmids\|article\|summary)` | Same backing object (`SessionManager`), same user mental model, all are read-only accessors into one active session | 已實作，保留 legacy wrappers |
 | Pipeline 管理 | `save_pipeline`, `list_pipelines`, `load_pipeline`, `delete_pipeline`, `get_pipeline_history`, `schedule_pipeline` | `manage_pipeline(action=save\|list\|load\|delete\|history\|schedule)` | Same backing object (`PipelineStore`), same resource type, clear CRUD/history lifecycle | 已實作，保留 legacy wrappers |
+| 研究編年史 | `build_research_timeline`, `analyze_timeline_milestones`, `compare_timelines` | `build_research_chronicle(...)` + `read_research_chronicle(action=milestones\|compare)` | Build/update is separated from read-only analysis while all projections share one immutable, evidence-backed Chronicle aggregate | v0.6.2 已實作；舊 timeline tools 已移除 |
 | 機構訂閱 | `configure_institutional_access`, `get_institutional_link`, `list_resolver_presets`, `test_institutional_access` | `manage_institutional_access(action=configure\|link\|list_presets\|test)` | Same configuration domain, one resolver profile lifecycle, current split mostly reflects implementation not API needs | 適合下一波收斂 |
 
 ## 不適合收
@@ -40,8 +44,24 @@ Current state after this change:
 | 匯出工具 | `prepare_export` | Single focused capability. |
 | 視覺搜索 | `analyze_figure_for_search` | Single focused capability with distinct multimodal input. |
 | ICD 轉換 | `convert_icd_mesh` | Single focused bidirectional converter; already compact. |
-| 研究時間軸 | `build_research_timeline`, `analyze_timeline_milestones`, `compare_timelines` | These are related but intentionally separate: build, analyze, compare. A single timeline mega-tool would become mode-heavy and harder to validate. |
+| 研究編年史 | `build_research_chronicle`, `read_research_chronicle` | Already split at the write/read boundary. `read_research_chronicle` multiplexes only read-only actions (`load`, `list`, `diff`, `narrate`, `milestones`, `compare`) over the same stored aggregate. |
 | 圖片搜尋 | `search_biomedical_images` | Single focused capability. |
+
+## 已完成的 Timeline → Chronicle 遷移
+
+The pre-Chronicle timeline tools are not compatibility wrappers. They were
+removed when the persisted Chronicle aggregate became the authoritative public
+surface:
+
+| Removed tool | Shipped mapping |
+| --- | --- |
+| `build_research_timeline(...)` | `build_research_chronicle(...)` |
+| `analyze_timeline_milestones(...)` | `read_research_chronicle(action="milestones", chronicle_id="...")` |
+| `compare_timelines(...)` | `read_research_chronicle(action="compare", topics="A,B")` or `chronicle_ids="id-a,id-b"` |
+
+Chronicle comparison and milestone analysis read stored evidence; they do not
+silently rerun a search. The legacy-wrapper policy below applies to the session
+and pipeline facades, not to these removed timeline names.
 
 ## 應淘汰 legacy wrapper
 

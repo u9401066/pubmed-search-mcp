@@ -85,9 +85,9 @@ Chronicle ID 會出現在 summary 裡，後續 `read_research_chronicle` 都要�
 ### 時序與檢索範圍
 
 - `earliest_observed_in_scope` 只表示檢索候選集中最早的有日期文章，不證明它是整個領域的 first report；topic query、PMID set、年份限制與來源可用性都會改變可觀察範圍。
-- 排序會保留 year / month / day precision。兩筆記錄若只知道同一年，或日期區間重疊，畫面可有 deterministic display order，但 graph 不會據此建立 `precedes` / `supersedes`。
+- 排序會保留 year / month / day precision。兩筆記錄若只知道同一年，或日期區間重疊，畫面可有 deterministic display order，但 graph 不會據此建立 `precedes` / `supersedes`。沒有可靠日期者標示為 `Undated`、排在 dated entries 後面，且不計入 year span。
 - Topic mode 會把 `min_year`／`max_year` 送到 PubMed，再做 bounded retrieval；最後保留觀察到的首篇、末篇、landmark 與 temporal spread。audit 的 `source_counts.pubmed` 分開記錄 `returned`／`available`；總量未知、來源有 cap 或後續 selection 截斷時必須揭露 warning。
-- PubMed error 或完全沒有 article evidence 時不建立空 snapshot，也不發布 revision。明確 PMID 只接受 ASCII digits 或 `PMID:` prefix；不可把 DOI 或混合文字抽數字後當 PMID。
+- PubMed error 或完全沒有 article evidence 時不建立空 snapshot，也不發布 revision。明確 PMID 只接受正 ASCII digits（最多 20 位）或 `PMID:` prefix；不可把 DOI 或混合文字抽數字後當 PMID。
 - entry ID 依 PMID、其次 DOI 的 evidence identity 保持穩定；日期或 milestone reclassification 應出現在 `updated`，不應造成假的 remove/add。topic identity、exact lookup、compare 與 continuity 共用 Unicode normalization、case-folding、空白折疊後的 canonical key。
 
 ---

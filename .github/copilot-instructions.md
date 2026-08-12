@@ -397,7 +397,7 @@ PubMed Search MCP is a **professional literature research assistant** that provi
 - **Multi-source search**: PubMed, Europe PMC (33M+), CORE (200M+)
 - **NCBI databases**: Gene, PubChem, ClinVar
 - **Full text access**: Direct XML/text retrieval
-- **Research Timeline**: Milestone detection, temporal evolution analysis
+- **Research Chronicle**: Versioned evidence, a horizontal chronological spine with lineage branches, milestone analysis, and stored revision/topic comparison
 - **Official Citation Export**: NCBI Citation Exporter API (RIS, MEDLINE, CSL)
 
 ---
@@ -694,7 +694,7 @@ uv run python scripts/count_mcp_tools.py --update-docs
 
 1. **Session Auto-management**: Search results are automatically cached. Use `pmids="last"` to reference previous searches.
 
-1. **Tool Progress**: `unified_search`, timeline tools, and Europe PMC fulltext/text-mining tools can emit MCP progress updates when the client provides a progress token.
+1. **Tool Progress**: `unified_search`, `build_research_chronicle`, and Europe PMC fulltext/text-mining tools can emit MCP progress updates when the client provides a progress token.
 
 2. **Session Resources and Artifacts**: Agents that support MCP resources can read `session://last-search`, `session://last-search/pmids`, and `session://last-search/results` instead of reconstructing recent search state from chat context. When `unified_search` returns an `artifact_summary`, use its `artifact_uri` with `read_session(action="artifact", artifact_uri=...)`; inspect `audit.json`, `query_strategy.json`, and `results.json` or `results.toon` for complete evidence.
 

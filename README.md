@@ -577,8 +577,10 @@ warns when availability is unknown or any retrieval/selection cap makes the
 view non-exhaustive. PubMed errors or a scope with no article evidence do not
 publish an empty revision.
 
-Explicit PMID input is strict (`12345678` or `PMID:12345678`); DOI or mixed text
-is rejected instead of being coerced. Entry IDs follow PMID/DOI evidence
+Explicit PMID input is strict (`12345678` or `PMID:12345678`, positive ASCII
+digits, at most 20 digits); DOI or mixed text is rejected instead of being
+coerced. Records without a reliable publication date appear as `Undated` after
+dated entries and are excluded from the displayed year span. Entry IDs follow PMID/DOI evidence
 identity across date or classifier corrections, and topic continuity uses one
 Unicode/case/whitespace canonical key. Multi-signal papers keep one primary
 branch plus explicit cross-links; overlap of 20% or more is audited as a

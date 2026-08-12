@@ -37,12 +37,12 @@ flowchart LR
     planner --> scheduler["Concurrent broker scheduler"]
     scheduler --> pubmed["PubMed"]
     scheduler --> epmc["Europe PMC"]
-    scheduler --> graph["OpenAlex and Semantic Scholar"]
+    scheduler --> knowledge_graph["OpenAlex and Semantic Scholar"]
     scheduler --> oa["CORE and preprint servers"]
     scheduler --> licensed["Scopus and Web of Science<br/>explicit opt-in"]
     pubmed --> envelope["SourceAdapterResult envelopes"]
     epmc --> envelope
-    graph --> envelope
+    knowledge_graph --> envelope
     oa --> envelope
     licensed --> envelope
     envelope --> merge["Identifier-first deduplication and ranking"]

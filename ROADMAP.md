@@ -3,7 +3,14 @@
 <!-- markdownlint-disable MD022 MD024 MD031 MD032 MD040 MD058 MD060 -->
 
 > 本文件記錄**待實作**功能。已完成功能請參閱 [CHANGELOG.md](CHANGELOG.md)。
-> **最後更新**: 2026-04-07
+> **最後更新**: 2026-08-12
+
+> [!IMPORTANT]
+> **v0.6.2 現況補記**：Phase 13 的 timeline 規格是歷史提案，現已由持久化、
+> 可版本比對且具證據溯源的 Research Chronicle 取代。現行建立／更新入口是
+> `build_research_chronicle(...)`；載入、diff、敘述、里程碑與主題比較使用
+> `read_research_chronicle(...)`。以下舊名稱與範例保留作設計沿革，不是現行 API
+> 或「整個領域首篇／完整因果譜系」的產品保證。
 
 ---
 
@@ -2267,6 +2274,14 @@ Consensus 做了: 人工整理共識
 ---
 
 ## 🕐 Phase 13: 研究時間軸系統 (Research Timeline) ⭐⭐⭐⭐⭐
+> [!CAUTION]
+> **歷史規劃，已由 v0.6.2 Research Chronicle 取代。** 舊
+> `build_research_timeline` 對應 `build_research_chronicle`；舊
+> `analyze_timeline_milestones` 對應
+> `read_research_chronicle(action="milestones")`；舊 `compare_timelines` 對應
+> `read_research_chronicle(action="compare")`。Chronicle 圖中的起點只表示
+> **本次證據範圍內最早觀察到的有日期文章**，不宣稱是整個領域的 first report。
+>
 > **核心洞察**: 研究有先後順序，知識會演化，但現有工具只提供「靜態快照」
 > **創新點**: 自動建構研究演化時間軸，追蹤里程碑、共識變化、爭議解決
 > **狀態**: 規劃中 - 核心創新方向
@@ -2964,7 +2979,7 @@ def analyze_population_coverage(topic: str) -> PopulationCoverage:
 | `search_literature` | 計算各交集的文獻數量 |
 | `unified_search` | 跨資料庫驗證缺口 |
 | `get_citation_metrics` | 評估現有研究的影響力 |
-| `build_research_timeline` | 追蹤缺口是否正在被填補 |
+| `build_research_chronicle` + `read_research_chronicle(action="diff")` | 以不可變 revision 追蹤本次證據範圍內的缺口變化 |
 | `get_text_mined_terms` | 擷取族群/結局/方法標籤 |
 | ClinicalTrials.gov (Phase 9.3) | 檢查進行中試驗 |
 
