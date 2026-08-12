@@ -951,11 +951,16 @@ async function renderPage() {
       window.scrollTo({ top: 0, behavior: "instant" });
     }
   } catch (error) {
-    docContent.innerHTML = `
-      <h3>${uiText("unableTitle")}</h3>
-      <p>${String(error)}</p>
-      <p>${uiText("regenerate")} <code>uv run python scripts/build_docs_site.py</code> ${uiText("regenerateSuffix")}</p>
-    `;
+    const title = document.createElement("h3");
+    title.textContent = uiText("unableTitle");
+    const detail = document.createElement("p");
+    detail.textContent = String(error);
+    const recovery = document.createElement("p");
+    recovery.append(`${uiText("regenerate")} `);
+    const command = document.createElement("code");
+    command.textContent = "uv run python scripts/build_docs_site.py";
+    recovery.append(command, ` ${uiText("regenerateSuffix")}`);
+    docContent.replaceChildren(title, detail, recovery);
   }
 }
 

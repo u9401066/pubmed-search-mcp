@@ -151,7 +151,7 @@ def test_docs_site_dependencies_and_rendering_are_hardened() -> None:
 
     assert "marked@18.0.7" in index_html
     assert "dompurify@3.4.12" in index_html
-    assert "mermaid@11.16.0" in index_html
+    assert "mermaid@11.16.1" in index_html
     assert index_html.count('integrity="sha384-') == 3
     assert "Content-Security-Policy" in index_html
     assert "window.DOMPurify.sanitize" in site_js
