@@ -118,6 +118,28 @@ def test_save_never_overwrites_an_immutable_revision(tmp_path: Path) -> None:
     assert restored.topic == "Original topic"
 
 
+def test_commit_next_compatibility_callback_keeps_original_created_at(tmp_path: Path) -> None:
+    store = ChronicleStore(tmp_path / "chronicles")
+    chronicle_id = "topic-alpha-commit-next"
+    received_created_at: list[str | None] = []
+
+    def build_snapshot(revision: int, created_at: str | None) -> ChronicleSnapshot:
+        received_created_at.append(created_at)
+        snapshot = _snapshot(chronicle_id, revision)
+        if created_at is not None:
+            snapshot.created_at = created_at
+        return snapshot
+
+    first = store.commit_next(chronicle_id, build_snapshot)
+    second = store.commit_next(chronicle_id, build_snapshot)
+
+    assert first.revision == 1
+    assert second.revision == 2
+    assert received_created_at == [None, first.created_at]
+    assert second.created_at == first.created_at
+    assert store.list_revisions(chronicle_id) == [1, 2]
+
+
 def test_nonfinite_snapshot_values_are_rejected_before_revision_publication(tmp_path: Path) -> None:
     store = ChronicleStore(tmp_path / "chronicles")
     chronicle_id = "topic-alpha-nonfinite"

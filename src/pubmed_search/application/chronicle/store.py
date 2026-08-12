@@ -158,6 +158,27 @@ class ChronicleStore:
             self._save_locked(snapshot, self._serialize_snapshot(snapshot), chronicle_dir)
             return snapshot
 
+    def commit_next(
+        self,
+        chronicle_id: str,
+        build_snapshot: Callable[[int, str | None], ChronicleSnapshot],
+    ) -> ChronicleSnapshot:
+        """Compatibility wrapper for the pre-v0.6.2 revision callback.
+
+        New callers should use :meth:`append`, whose callback receives the
+        complete previous snapshot. Keeping this adapter avoids breaking
+        embedders that only need the original creation timestamp while still
+        using the same cross-process allocation and exclusive publication path.
+        """
+
+        return self.append(
+            chronicle_id,
+            lambda revision, previous: build_snapshot(
+                revision,
+                previous.created_at if previous is not None else None,
+            ),
+        )
+
     def load(self, chronicle_id: str, revision: int | None = None) -> ChronicleSnapshot | None:
         """Load one revision of a chronicle.
 
