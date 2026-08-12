@@ -92,7 +92,9 @@ class TestCopilotHookPolicy:
 
         for source in (bash_analyzer, powershell_analyzer):
             assert 'intent = "chronicle"' in source.lower() or 'INTENT="chronicle"' in source
-            assert "研究編年史" in source
+        assert "研究編年史" in bash_analyzer
+        assert r"\u7814\u7A76\u7DE8\u5E74\u53F2" in powershell_analyzer
+        assert powershell_analyzer.isascii(), "Windows PowerShell 5.1 requires the BOM-less hook to remain ASCII"
         for source in (bash_guard, powershell_guard):
             assert "chronicle_id" in source
             assert "topic" in source

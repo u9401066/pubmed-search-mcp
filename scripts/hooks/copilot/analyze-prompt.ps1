@@ -66,7 +66,7 @@ try {
     $complexity = "simple"
     $template = "comprehensive"
 
-    if ($prompt -match 'chronicle|time.?line|research (evolution|history|trajectory)|milestone|研究編年史|研究脈絡|研究演變|里程碑|時間軸') {
+    if ($prompt -match 'chronicle|time.?line|research (evolution|history|trajectory)|milestone|\u7814\u7A76\u7DE8\u5E74\u53F2|\u7814\u7A76\u8108\u7D61|\u7814\u7A76\u6F14\u8B8A|\u91CC\u7A0B\u7891|\u6642\u9593\u8EF8') {
         $intent = "chronicle"; $complexity = "moderate"; $template = "comprehensive"
     } elseif ($prompt -match '\bvs\.?\b|versus|compared?\s+(to|with)') {
         $intent = "comparison"; $complexity = "complex"; $template = "pico"
