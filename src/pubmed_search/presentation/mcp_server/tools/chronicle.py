@@ -475,9 +475,11 @@ def register_chronicle_tools(mcp: MCPServer, searcher: LiteratureSearcher) -> No
                     (legacy flat timeline), "mindmap", or "narrative".
 
         Returns:
-            The requested rendering plus a persistent artifact locator. The full
-            snapshot, projections, evidence table, milestone analysis, and audit
-            are always written to the artifact regardless of `output`.
+            The requested rendering plus an artifact locator when durable
+            artifact persistence is enabled and succeeds. The artifact contains
+            the full snapshot, projections, evidence table, milestone analysis,
+            and audit regardless of `output`. Artifact failure is reported but
+            does not roll back the already saved Chronicle revision.
 
         Examples:
             build_research_chronicle(topic="remimazolam")
@@ -662,8 +664,9 @@ def register_chronicle_tools(mcp: MCPServer, searcher: LiteratureSearcher) -> No
         Actions:
         - "load": read one revision (defaults to latest) in any output format
         - "list": list stored chronicles, most recently updated first
-        - "diff": compare two revisions — added, retired, and updated entries,
-          evidence churn, branch churn, and the audit status transition
+        - "diff": compare two revisions — added, not observed/removed from the
+          later view, and updated entries, plus evidence churn, branch churn,
+          and the audit status transition. Absence does not prove retirement.
         - "narrate": render evidence-backed Markdown where every claim carries
           its entry ID and article identifiers
         - "milestones": entry-type and status distribution, per-year activity,

@@ -180,15 +180,17 @@ build_research_chronicle(pmids="last", topic="My Reading List")
 read_research_chronicle(action="list")
 read_research_chronicle(chronicle_id="remimazolam-9f2b1c4d", output="tree")
 
-# 版本比對：上次之後新增/退場/更新了什麼
+# 版本比對：上次之後新增/未觀察到/更新了什麼
 read_research_chronicle(action="diff", chronicle_id="remimazolam-9f2b1c4d", from_revision=1)
 
 # 有證據支撐的敘事（每句 claim 都附 entry ID 與 PMID/DOI）
 read_research_chronicle(action="narrate", chronicle_id="remimazolam-9f2b1c4d", mode="full")
 ```
 
-output 可選: summary（預設）, json, timeline, tree, graph, evidence, mermaid,
-mindmap, narrative。完整 snapshot、投影、證據表與 audit 一律寫入 artifact。
+output 可選: summary（預設）, json, chronicle_map, timeline, tree, graph,
+evidence, milestones, mermaid, timeline_mermaid, mindmap, narrative。啟用 durable
+artifact 且寫入成功時，會保存完整 snapshot、投影、證據表與 audit；artifact 失敗
+不會回滾已提交的 Chronicle revision，回應會明確警告。
 
 ═══════════════════════════════════════════════════════════════════════════════
 📜 研究脈絡輸出格式與 Lineage Tree
@@ -206,21 +208,19 @@ mindmap, narrative。完整 snapshot、投影、證據表與 audit 一律寫入 
 | graph | 型別化 provenance graph | 證據溯源 / 視覺化 |
 | evidence | 去重後的證據表 | 核對引用 |
 | milestones | 里程碑分佈與證據品質統計 | 領域診斷 |
-| mermaid | Mermaid 時間軸 | 嵌入文檔 |
+| chronicle_map | 橫向時間主軸與研究分支座標 JSON | 完整可稽核視覺資料 |
+| mermaid | 橫向年份主軸與觀察到的主題分支 | 標準嵌入圖 |
+| timeline_mermaid | 舊式平面 Mermaid timeline | 相容舊閱讀方式 |
 | mindmap | 🧠 Mermaid 心智圖 | VS Code / GitHub 預覽 |
 | narrative | 有證據支撐的敘事 | 寫作 / 報告 |
 | json | 完整 snapshot | API 整合 |
 
 ### Research Lineage Tree (tree 格式)
-將研究按主題自動分支為 8 個類別：
-- 🔬 Discovery & Mechanism（發現與機制）
-- 🏥 Clinical Development（臨床開發，含 Phase I-IV 子分支）
-- 📋 Regulatory Milestones（法規里程碑）
-- 📊 Evidence Synthesis（證據綜合）
-- 📖 Guidelines & Practice（指引與實務）
-- ⚠️ Safety & Pharmacovigilance（安全性）
-- 🏆 Landmark Studies（里程碑研究）
-- 📄 Other Studies（其他）
+主題分支優先由多篇論文重複出現的 MeSH descriptor 與作者 keyword 建立；一篇
+論文只有一個 primary branch，但可用 matched signals 與 cross-links 保留跨主題
+關聯。當只有 singleton 或語意訊號不足時，才使用研究階段 fallback，並在 audit
+明確警告。Branch point 只表示本次範圍內最早觀察到的有日期證據，不代表因果、
+研究取代關係或整個領域的 first report。
 
 ```
 # 產生研究脈絡樹
@@ -231,12 +231,9 @@ build_research_chronicle(topic="CRISPR", output="mindmap")
 ```
 
 ### Landmark Detection
-自動識別高影響力里程碑論文，使用 5 維複合評分：
-- 引用影響力（iCite RCR / NIH percentile）
-- 多源一致性（Source Disagreement Analysis）
-- 里程碑置信度（臨床試驗階段、FDA 核准等）
-- 證據品質等級
-- 引用速度（每年引用成長率）
+里程碑分析優先使用 evidence provider 儲存的明確
+`landmark_importance_score`，缺少時才以引用數作 fallback。Milestone detection
+confidence 只描述分類信心，不會被當成科學重要性。
 
 ```
 # 里程碑分佈統計（讀已儲存的 chronicle，不重跑搜尋）
