@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-08-12
+
 ### Added
 
 - Research Chronicle now provides a canonical horizontal Mermaid map with a chronological spine and evidence-derived topic branches, plus deterministic validation, repair, and rich → safe → minimal fallbacks. Artifact bundles include the pure `chronicle.mmd` source, `chronicle_map.json`, and `mermaid_validation.json` diagnostics.
@@ -2456,7 +2458,8 @@ get_citation_metrics(pmids="last", min_rcr=1.5, min_percentile=75)
 - [PyPI Package](https://pypi.org/project/pubmed-search-mcp/)
 - [Smithery](https://smithery.ai/server/pubmed-search-mcp)
 
-[Unreleased]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.6.2...HEAD
+[0.6.2]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/u9401066/pubmed-search-mcp/tree/v0.6.0
 [0.5.11]: https://github.com/u9401066/pubmed-search-mcp/releases/tag/v0.5.11

@@ -11,7 +11,7 @@ info:
     Recommended runtime modes:
     - Full schema mode: pubmed-search-mcp-http --mode service --transport streamable-http --copilot-compatible
     - Local-only simplified schema smoke: run_copilot.py (never publish or tunnel)
-  version: 0.6.1
+  version: 0.6.2
   contact:
     name: PubMed Search MCP
     url: https://github.com/u9401066/pubmed-search-mcp
@@ -43,7 +43,7 @@ paths:
 
         The tool surface is discovered dynamically by the MCP client at runtime.
         This public endpoint must run the authenticated service profile and
-        exposes the full primary MCP surface (45 tools in v0.6.1).
+        exposes the full primary MCP surface (45 tools in v0.6.2).
         The simplified run_copilot.py launcher is loopback-only and is not a
         valid deployment target for this bearer-authenticated connector.
       x-ms-agentic-protocol: mcp-streamable-1.0
