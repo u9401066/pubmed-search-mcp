@@ -22,7 +22,13 @@ read_research_chronicle(action="milestones", chronicle_id="car-t-therapy-...")
 read_research_chronicle(action="compare", topics="remimazolam,propofol,dexmedetomidine")
 ```
 
-`build_research_chronicle` 可以依 topic 搜尋，也可以使用明確的 comma-separated PMID set。輸出格式支援 `summary`、`timeline`、`tree`、`graph`、`evidence`、`milestones`、`mermaid`、`mindmap`、`narrative`、`json`。主軸是時序，分支是同一份 snapshot 的次要投影；因為 revision 已持久化，`action="milestones"` 與 `action="compare"` 都是讀已儲存證據，不會重跑搜尋。如果只是想在一般搜尋回應裡看輕量分支預覽，用 `unified_search(options="context_graph")`；它只根據本次 PMID-backed ranked set 產生 preview，不是完整 graph。詳見 [Research Chronicle Rebuild Spec](RESEARCH_CHRONICLE_REFACTOR_SPEC.md)。
+`build_research_chronicle` 可以依 topic 搜尋，也可以使用明確的 comma-separated PMID set。`mermaid` 是標準合併圖：年份是橫向主軸，各觀察研究線從本次檢索範圍內最早的有日期論文所在年份分岔；`chronicle_map` 回傳同一座標契約的 JSON。多篇論文共同出現的 MeSH descriptor 與作者 keyword 會用來推導語意主題分支；訊號不足時 audit 會標示為研究階段 fallback，`timeline_mermaid` 則保留舊的平面 timeline。其他格式包括 `summary`、`timeline`、`tree`、`graph`、`evidence`、`milestones`、`mindmap`、`narrative`、`json`。因為 revision 已持久化，`action="milestones"` 與 `action="compare"` 都是讀已儲存證據，不會重跑搜尋。如果只是想在一般搜尋回應裡看輕量分支預覽，用 `unified_search(options="context_graph")`；它只根據本次 PMID-backed ranked set 產生 preview，不是完整 graph。詳見 [Research Chronicle Rebuild Spec](RESEARCH_CHRONICLE_REFACTOR_SPEC.md)。
+
+請把分支解讀為受檢索範圍限制的觀察分組，而不是因果祖譜。branch point 是本次候選集內最早的有日期論文，不一定是整個領域的首篇。單篇獨有的 MeSH term 或 keyword 不足以建立語意分支；訊號不足時會改用研究階段 fallback 並警告。日期 precision 也會保留：兩筆只知道同一年的記錄可以有固定顯示順序，但 graph 不會因此推論其中一篇 `precedes` 或 `supersedes` 另一篇。
+
+Revision 不可變，N+1 的配置與寫入是原子操作。以 topic 比較時使用正規化後的完整 stored-topic 名稱；若同名對應多個 Chronicle，系統會回報 ambiguity 並要求明確的 `chronicle_ids`，重複目標也會拒絕。啟用 session artifact persistence 後若 artifact 寫入失敗，回應會揭露失敗，但已保存的 Chronicle revision 不會遺失。
+
+Topic 年份 filter 會先在 PubMed server-side 套用，再進行有界檢索。event selection 保留觀察到的時序首尾、landmark 與 temporal spread；`returned`／`available` coverage 若受 cap 限制或總量未知，audit 會警告。PubMed error 或零篇 evidence 不發布 revision。PMID／DOI evidence identity 讓 entry ID 在修正後保持穩定，同一套 canonical topic key 負責 ID derivation 與 exact lookup。diff 的缺席只是觀察結果，不是已證實退場。多訊號論文保留 primary assignment 與 cross-links，重疊達 20% 會警告；importance ranking 不使用 milestone detection confidence。Artifact preflight 會檢查實際準備的 payload names。
 
 ## Open-i 生醫圖片搜尋
 

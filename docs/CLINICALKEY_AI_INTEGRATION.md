@@ -290,7 +290,7 @@ sequenceDiagram
     Caller->>CK: API call
     alt 401 (race / leaked token)
         CK-->>Caller: 401 Unauthorized
-        Caller->>OAuth: invalidate(); refresh_once()
+        Caller->>OAuth: invalidate and refresh_once
         OAuth->>CK: POST /token (refresh_token)
         CK-->>OAuth: new tokens
         OAuth-->>Caller: new bearer_token

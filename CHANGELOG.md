@@ -10,6 +10,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Research Chronicle now provides a canonical horizontal Mermaid map with a chronological spine and evidence-derived topic branches, plus deterministic validation, repair, and rich → safe → minimal fallbacks. Artifact bundles include the pure `chronicle.mmd` source, `chronicle_map.json`, and `mermaid_validation.json` diagnostics.
+- Chronicle audits now check snapshot identity, bidirectional branch membership, complete graph projection coverage, date precision, narrative citation preservation, lineage semantics, and artifact-bundle preflight integrity.
+
+### Changed
+
+- Chronicle chronology now uses one precision-aware ordering contract across graph, map, timeline, tree, and narrative projections. Equal-year publications are no longer asserted to precede one another without sufficient date precision.
+- Topic branches require repeated assigned-paper evidence; sparse data is explicitly labeled as a research-stage fallback instead of being presented as discovered semantic lineage.
+- Chronicle MCP schemas now constrain output modes, narrative modes, years, revisions, limits, IDs, and request sizes. Machine-readable actions return machine-readable errors, and exact stored-topic lookup replaces derived-ID guessing for comparisons.
+- Revision persistence is immutable and atomic, with serialized revision allocation and topic-continuity checks when an explicit Chronicle ID is reused.
+- Topic Chronicle retrieval now applies year filters at PubMed before bounded selection, records returned/available source counts, preserves chronological boundaries plus landmark/temporal spread, and warns when coverage is capped or unknown.
+- Semantic lineage now keeps one primary branch plus explicit cross-signal links for multi-signal papers; overlap at or above 20% is surfaced as an audit warning. Landmark ranking uses explicit importance with citation fallback and excludes milestone-detection confidence.
+- Chronicle identity now uses PMID/DOI-stable entry IDs and one canonical Unicode/case/whitespace topic key. Revision absence is reported as `not_observed_in_revision` / `removed_from_view`; the legacy `retired` field is non-conclusive compatibility output.
+
+### Fixed
+
+- Preserved the declared evidence role in provenance edges instead of treating every safety or controversy paper as contradicting evidence.
+- Generic randomized trials are no longer mislabeled as Phase III, explicit PMID chronicles retain non-milestone papers, and “earliest observed in scope” provenance no longer overwrites an article's actual milestone.
+- Withdrawal entries remain active unless explicit updating evidence supersedes them; later publications no longer imply supersession by chronology alone.
+- Chronicle IDs for untitled PMID sets are derived from normalized unique PMIDs, artifact persistence failures are surfaced without losing the saved revision, and comparison rejects duplicate or ambiguous targets.
+- Copilot hooks recognize Chronicle intent and Chronicle-specific context, and treat `warn` / `fail` audit output as actionable quality feedback.
+- PubMed error/no-result payloads no longer create empty Chronicle revisions; explicit PMID input rejects DOI/mixed text instead of coercing digits, and artifact preflight now checks the concrete prepared payload rather than a parallel declared file list.
+
 ## [0.6.1] - 2026-08-10
 
 ### Added

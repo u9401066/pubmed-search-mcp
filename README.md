@@ -546,12 +546,44 @@ Use the PMC Open Access path when an agent needs evidence figures, not just arti
 
 | Tool | Description |
 | ---- | ----------- |
-| `build_research_chronicle` | Build a persisted, versioned chronicle with landmark detection. Output: summary, timeline, tree, graph, evidence, milestones, mermaid, mindmap, narrative, json |
+| `build_research_chronicle` | Build a persisted, versioned chronicle with landmark detection. Output: summary, chronicle_map, timeline, tree, graph, evidence, milestones, mermaid, timeline_mermaid, mindmap, narrative, json |
 | `read_research_chronicle` | Load, list, diff revisions, narrate with citations, analyze milestone distribution, or compare up to five topics |
 
-Current timeline and tree outputs are projections, not a persisted chronicle
-asset. The planned persistent/versioned Research Chronicle is specified in
+`mermaid` is the canonical combined view: a horizontal year spine with each
+observed research line branching at its earliest dated paper **within the
+retrieved scope**. This is an explainable grouping, not a causal genealogy or a
+claim about the field's true first paper. Lineages prefer MeSH descriptors and
+author keywords shared by multiple papers; singleton-only or insufficient
+signals trigger a warned research-stage fallback. Same-year display order is
+stable, but does not assert precedence when publication precision cannot prove
+it. `timeline_mermaid` preserves the older flat timeline view. See the
+implemented contract in
 [docs/RESEARCH_CHRONICLE_REFACTOR_SPEC.md](docs/RESEARCH_CHRONICLE_REFACTOR_SPEC.md).
+
+Chronicle Mermaid output is built from structured nodes and edges, with safe
+label escaping, cycle/orphan repair, collision-resistant IDs, and bounded graph
+size. It falls back from rich to safe to minimal syntax instead of failing the
+whole chronicle. `mermaid_validation.json` records every correction, fallback,
+and omitted visual item; `chronicle.mmd` remains pure Mermaid source.
+
+Chronicle revisions are immutable and appended atomically. When session
+artifact persistence is enabled, artifact failure is surfaced explicitly while
+the saved Chronicle revision remains available.
+
+Topic builds send year limits to PubMed before bounded retrieval, then preserve
+the first and last observed papers while filling the cap with landmarks and
+temporal spread. The audit records PubMed `returned` / `available` counts and
+warns when availability is unknown or any retrieval/selection cap makes the
+view non-exhaustive. PubMed errors or a scope with no article evidence do not
+publish an empty revision.
+
+Explicit PMID input is strict (`12345678` or `PMID:12345678`); DOI or mixed text
+is rejected instead of being coerced. Entry IDs follow PMID/DOI evidence
+identity across date or classifier corrections, and topic continuity uses one
+Unicode/case/whitespace canonical key. Multi-signal papers keep one primary
+branch plus explicit cross-links; overlap of 20% or more is audited as a
+warning. In revision diffs, absence means `not_observed_in_revision` /
+`removed_from_view`, never conclusive retirement.
 
 ### 🏥 Institutional Access & ICD Conversion
 

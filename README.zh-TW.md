@@ -535,10 +535,18 @@ format，寫到當前 tenant 隔離的 `references/` 目錄。
 
 | 工具 | 說明 |
 | ---- | ---- |
-| `build_research_chronicle` | 建構持久化、可版本比對的研究脈絡，支援重要文獻偵測。格式：summary, timeline, tree, graph, evidence, milestones, mermaid, mindmap, narrative, json |
+| `build_research_chronicle` | 建構持久化、可版本比對的研究脈絡，支援重要文獻偵測。格式：summary, chronicle_map, timeline, tree, graph, evidence, milestones, mermaid, timeline_mermaid, mindmap, narrative, json |
 | `read_research_chronicle` | 讀取、列表、版本 diff、有證據支撐的敘述、里程碑分佈分析，或比較最多五個主題 |
 
-編年史的主軸是時序，分支 (lineage) 是同一份 snapshot 的次要投影；timeline 與 tree 永遠不會互相矛盾。完整規格見 [docs/RESEARCH_CHRONICLE_REFACTOR_SPEC.md](docs/RESEARCH_CHRONICLE_REFACTOR_SPEC.md)。
+`mermaid` 是標準合併圖：以年份作橫向主軸，各研究線從**本次檢索範圍內最早的有日期論文**所在年份分岔。這是可解釋的觀察分組，不是因果譜系，也不代表找到整個領域的真正首篇論文。lineage 優先由多篇論文共同出現的 MeSH descriptor 與作者 keyword 推導；只有 singleton 或訊號不足時，audit 會警告分支只是研究階段 fallback。同年項目的顯示順序雖然固定，但日期 precision 不足時不宣稱先後。舊的平面 timeline 保留為 `timeline_mermaid`。完整規格見 [docs/RESEARCH_CHRONICLE_REFACTOR_SPEC.md](docs/RESEARCH_CHRONICLE_REFACTOR_SPEC.md)。
+
+Chronicle Mermaid 由結構化 node/edge 生成，會自動跳脫 label、修正循環與孤兒 parent、避免 ID 碰撞並限制圖形大小；rich 圖失敗時依序降級為 safe 與 minimal syntax，不會讓整份 chronicle 建立失敗。`mermaid_validation.json` 記錄每個 correction、fallback 與被摘要的視覺項目，`chronicle.mmd` 則維持純 Mermaid source。
+
+Chronicle revisions 不可變，並以原子操作追加。啟用 session artifact persistence 時，如果 artifact 寫入失敗，回應會明確警告；已保存的 Chronicle revision 仍可讀取。
+
+Topic build 會先把年份限制送到 PubMed，再做有界檢索；輸出上限會保留觀察到的首篇、末篇，並以 landmark 與時間分散度補齊。audit 會記錄 PubMed `returned` / `available` 數量；若總量未知，或檢索／選取上限使內容不是完整 census，就會警告。PubMed 錯誤或範圍內沒有任何論文證據時，不會發布空的 revision。
+
+明確 PMID input 採嚴格格式（`12345678` 或 `PMID:12345678`），不會把 DOI 或混合文字強制轉成 PMID。entry ID 依 PMID／DOI 證據身分產生，日期或分類修正後仍保持穩定；topic 延續性則共用同一套 Unicode、大小寫與空白 canonical key。符合多個訊號的論文只指定一個 primary branch，其他關聯保留為 explicit cross-links；重疊達 20% 會產生 audit warning。revision diff 中缺席只代表 `not_observed_in_revision`／`removed_from_view`，不能宣稱研究已退場。
 
 ### 🏥 機構訂閱與 ICD 轉換
 
