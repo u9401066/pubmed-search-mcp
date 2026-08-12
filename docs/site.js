@@ -70,9 +70,9 @@ const DOC_PAGES = [
     title: "Research Chronicle Rebuild Spec",
     titleByLang: { zh: "Research Chronicle 重建規格" },
     blurb:
-      "Implementation reference for the shipped persistent Research Chronicle, timeline, lineage tree, evidence graph, artifacts, and migration mapping.",
+      "Implemented contract for the persistent Research Chronicle, horizontal chronological branch map, evidence graph, artifacts, and migration mapping.",
     blurbByLang: {
-      zh: "已發布 persistent Research Chronicle、timeline、lineage tree、evidence graph、artifact 與 migration mapping 的實作參考。",
+      zh: "Persistent Research Chronicle、橫向時序分岔圖、evidence graph、artifact 與 migration mapping 的實作契約。",
     },
     keywords:
       "research chronicle timeline lineage tree context graph preview citation graph artifact read_session rebuild spec",
@@ -228,6 +228,10 @@ const UI_COPY = {
     unableTitle: "Unable to load page",
     regenerate: "Run",
     regenerateSuffix: "to regenerate site content.",
+    mermaidErrorTitle: "Diagram unavailable",
+    mermaidErrorBody: "This diagram could not be rendered. Its source is preserved below; other diagrams remain available.",
+    diagramLabel: "diagram",
+    markdownFallback: "The Markdown renderer or sanitizer did not load. Raw documentation is preserved below.",
     toolMetric: "MCP tools",
     routingMetric: "capability families",
     oaMetric: "runtime contracts",
@@ -263,6 +267,10 @@ const UI_COPY = {
     unableTitle: "無法載入頁面",
     regenerate: "請執行",
     regenerateSuffix: "重新生成 site content。",
+    mermaidErrorTitle: "圖表無法顯示",
+    mermaidErrorBody: "這張圖無法完成渲染；下方保留原始碼，頁面中的其他圖仍可正常顯示。",
+    diagramLabel: "圖表",
+    markdownFallback: "Markdown 渲染器或 sanitizer 未載入；下方保留完整原始文件。",
     toolMetric: "MCP 工具",
     routingMetric: "能力家族",
     oaMetric: "執行合約",
@@ -319,6 +327,8 @@ const localizedJourneyElements = {
 };
 const embeddedContent = window.DOC_PAGE_CONTENT || {};
 let mermaidInitialized = false;
+let mermaidDiagramId = 0;
+let pageRenderGeneration = 0;
 let activeLang = preferredLanguage();
 
 if (window.marked) {
@@ -597,47 +607,183 @@ function buildPageOutline() {
   `;
 }
 
-async function renderMermaidBlocks() {
+function replaceMermaidBlock(block, index) {
+  const source = block.textContent || "";
+  const sourceContainer = block.parentElement;
+  if (!sourceContainer) {
+    return null;
+  }
+
+  const shell = document.createElement("div");
+  shell.className = "mermaid-shell";
+  shell.dataset.mermaidIndex = String(index);
+
+  const diagram = document.createElement("div");
+  diagram.className = "mermaid";
+  diagram.id = `mermaid-diagram-${++mermaidDiagramId}`;
+  diagram.textContent = source;
+
+  shell.appendChild(diagram);
+  sourceContainer.replaceWith(shell);
+  return { diagram, shell, source };
+}
+
+function showMermaidFailure(renderTarget, error) {
+  if (!renderTarget || !renderTarget.shell.isConnected) {
+    return;
+  }
+
+  const { shell, source } = renderTarget;
+  const notice = document.createElement("div");
+  notice.className = "mermaid-error";
+  notice.setAttribute("role", "status");
+
+  const title = document.createElement("strong");
+  title.textContent = uiText("mermaidErrorTitle");
+
+  const message = document.createElement("p");
+  message.textContent = uiText("mermaidErrorBody");
+
+  const detail = document.createElement("p");
+  detail.className = "mermaid-error-detail";
+  detail.textContent = mermaidErrorMessage(error);
+
+  const sourceContainer = document.createElement("pre");
+  const sourceCode = document.createElement("code");
+  sourceCode.className = "mermaid-source";
+  sourceCode.textContent = source;
+  sourceContainer.appendChild(sourceCode);
+
+  notice.append(title, message, detail);
+  shell.replaceChildren(notice, sourceContainer);
+  shell.dataset.mermaidStatus = "error";
+}
+
+function mermaidErrorMessage(error) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (error && typeof error === "object") {
+    const knownMessage = error.message || error.str || error.error?.message;
+    if (knownMessage) {
+      return String(knownMessage);
+    }
+    try {
+      return JSON.stringify(error);
+    } catch (_serializationError) {
+      return String(error);
+    }
+  }
+  return String(error || "Unknown Mermaid error");
+}
+
+function nameRenderedDiagram(renderTarget, index) {
+  const svg = renderTarget.shell.querySelector("svg");
+  if (!svg) {
+    return;
+  }
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", `${pageTitle.textContent || "Documentation"} — ${uiText("diagramLabel")} ${index + 1}`);
+}
+
+async function renderMermaidBlock(block, index, generation) {
+  if (generation !== pageRenderGeneration || !block.isConnected) {
+    return;
+  }
+  const renderTarget = replaceMermaidBlock(block, index);
+  if (!renderTarget) {
+    return;
+  }
+
+  try {
+    await window.mermaid.parse(renderTarget.source);
+    if (generation !== pageRenderGeneration || !renderTarget.shell.isConnected) {
+      return;
+    }
+    await window.mermaid.run({ nodes: [renderTarget.diagram], suppressErrors: false });
+    if (generation !== pageRenderGeneration || !renderTarget.shell.isConnected) {
+      return;
+    }
+    nameRenderedDiagram(renderTarget, index);
+    renderTarget.shell.dataset.mermaidStatus = "rendered";
+  } catch (error) {
+    console.error(`Mermaid diagram ${index + 1} failed`, error);
+    if (generation === pageRenderGeneration) {
+      showMermaidFailure(renderTarget, error);
+    }
+  }
+}
+
+async function renderMermaidBlocks(generation) {
   const blocks = Array.from(docContent.querySelectorAll("pre > code.language-mermaid"));
-  if (!blocks.length || !window.mermaid) {
+  if (!blocks.length) {
+    return;
+  }
+
+  if (!window.mermaid) {
+    blocks.forEach((block, index) => {
+      const renderTarget = replaceMermaidBlock(block, index);
+      showMermaidFailure(renderTarget, new Error("Mermaid library did not load."));
+    });
     return;
   }
 
   if (!mermaidInitialized) {
-    window.mermaid.initialize({
-      startOnLoad: false,
-      securityLevel: "strict",
-      theme: "base",
-      themeVariables: {
-        fontFamily: '"Segoe UI Variable Text", "Segoe UI", sans-serif',
-        primaryColor: "#eef5ef",
-        primaryTextColor: "#1e2a2f",
-        primaryBorderColor: "#0f6c5c",
-        lineColor: "#355f56",
-        secondaryColor: "#eef2ff",
-        tertiaryColor: "#ffffff",
-      },
+    try {
+      window.mermaid.initialize({
+        startOnLoad: false,
+        securityLevel: "strict",
+        suppressErrorRendering: true,
+        theme: "base",
+        themeVariables: {
+          fontFamily: '"Segoe UI Variable Text", "Segoe UI", sans-serif',
+          primaryColor: "#eef5ef",
+          primaryTextColor: "#1e2a2f",
+          primaryBorderColor: "#0f6c5c",
+          lineColor: "#355f56",
+          secondaryColor: "#eef2ff",
+          tertiaryColor: "#ffffff",
+        },
+      });
+      mermaidInitialized = true;
+    } catch (error) {
+      console.error("Mermaid initialization failed", error);
+      blocks.forEach((block, index) => {
+        const renderTarget = replaceMermaidBlock(block, index);
+        showMermaidFailure(renderTarget, error);
+      });
+      return;
+    }
+  }
+
+  for (const [index, block] of blocks.entries()) {
+    if (generation !== pageRenderGeneration) {
+      break;
+    }
+    await renderMermaidBlock(block, index, generation);
+  }
+}
+
+function renderMarkdown(markdown) {
+  if (window.marked && window.DOMPurify) {
+    const rendered = window.marked.parse(markdown);
+    docContent.innerHTML = window.DOMPurify.sanitize(rendered, {
+      USE_PROFILES: { html: true },
+      FORBID_TAGS: ["style"],
     });
-    mermaidInitialized = true;
+    return true;
   }
 
-  blocks.forEach((block) => {
-    const shell = document.createElement("div");
-    shell.className = "mermaid-shell";
-
-    const diagram = document.createElement("div");
-    diagram.className = "mermaid";
-    diagram.textContent = block.textContent || "";
-
-    shell.appendChild(diagram);
-    block.parentElement.replaceWith(shell);
-  });
-
-  try {
-    await window.mermaid.run({ nodes: Array.from(docContent.querySelectorAll(".mermaid")) });
-  } catch (error) {
-    console.error("Mermaid rendering failed", error);
-  }
+  const notice = document.createElement("p");
+  notice.className = "dependency-warning";
+  notice.setAttribute("role", "status");
+  notice.textContent = uiText("markdownFallback");
+  const sourceContainer = document.createElement("pre");
+  const sourceCode = document.createElement("code");
+  sourceCode.textContent = markdown;
+  sourceContainer.appendChild(sourceCode);
+  docContent.replaceChildren(notice, sourceContainer);
+  return false;
 }
 
 function scrollToDocAnchor(targetId, behavior = "smooth") {
@@ -749,6 +895,7 @@ function renderNav(filter = "") {
 }
 
 async function renderPage() {
+  const generation = ++pageRenderGeneration;
   const requestedSlug = currentSlug();
   let page = pageBySlug(requestedSlug);
 
@@ -774,21 +921,19 @@ async function renderPage() {
     if (!markdown) {
       throw new Error(`Missing embedded content for ${page.slug}. Run uv run python scripts/build_docs_site.py.`);
     }
-    if (!window.marked || !window.DOMPurify) {
-      throw new Error("The pinned Markdown renderer or sanitizer failed to load.");
+    if (!renderMarkdown(markdown)) {
+      return;
     }
-    const rendered = window.marked.parse(markdown);
-    docContent.innerHTML = window.DOMPurify.sanitize(rendered, {
-      USE_PROFILES: { html: true },
-      FORBID_TAGS: ["style"],
-    });
     ensureHeadingIds();
     wrapScrollableTables();
     wrapLocalImages();
     buildPageOutline();
     wireDocAnchors();
     wireMarkdownAnchors(page);
-    await renderMermaidBlocks();
+    await renderMermaidBlocks(generation);
+    if (generation !== pageRenderGeneration) {
+      return;
+    }
 
     docContent.querySelectorAll("a[href^='http']").forEach((link) => {
       link.setAttribute("target", "_blank");

@@ -30,17 +30,48 @@ read_research_chronicle(action="compare", topics="remimazolam,propofol,dexmedeto
 ```
 
 `build_research_chronicle` accepts either a topic or a known PMID set, including
-explicit comma-separated PMIDs. It supports `summary`, `timeline`, `tree`,
-`graph`, `evidence`, `milestones`, `mermaid`, `mindmap`, `narrative`, and `json`
-output formats. Chronology is the primary axis and branches are a secondary
-projection of the same stored snapshot. Because revisions are persisted,
+explicit comma-separated PMIDs. Use `mermaid` for the canonical horizontal
+year spine with observed research lines branching at the year of their earliest
+dated paper in the retrieved scope;
+use `chronicle_map` for the equivalent JSON coordinate contract. Shared MeSH
+descriptors and author keywords drive semantic topic branches. If those signals
+are insufficient, the audit marks the result as a research-stage fallback;
+`timeline_mermaid` remains available for the flat legacy diagram. Other formats
+are `summary`, `timeline`, `tree`, `graph`, `evidence`, `milestones`, `mindmap`,
+`narrative`, and `json`. Because revisions are persisted,
 `action="milestones"` and `action="compare"` read stored evidence instead of
 re-running a search. For a
 lightweight preview inside a normal search response, use
 `unified_search(options="context_graph")`; it is a preview from the current
-PMID-backed ranked set, not a complete graph. The planned persistent/versioned
+PMID-backed ranked set, not a complete graph. The implemented persistent/versioned
 Research Chronicle is specified in
 [Research Chronicle Rebuild Spec](#/research-chronicle-rebuild-spec).
+
+Treat the branches as retrieval-bounded, observational groupings rather than
+causal ancestry. A branch point marks its earliest dated paper in the retrieved
+candidate set, not necessarily the first paper in the field. A singleton MeSH
+term or keyword cannot establish a semantic branch; insufficient signals
+produce a warned research-stage fallback. Date precision is also preserved:
+two year-only records from the same year may have a stable display order, but
+the graph does not infer that one precedes or supersedes the other.
+
+Revisions are immutable and N+1 allocation/write is atomic. Topic-based
+comparison uses normalized exact stored-topic names; duplicate matches are
+reported as ambiguous and require explicit `chronicle_ids`, while repeated
+targets are rejected. If session artifact persistence is enabled but artifact
+writing fails, the response exposes that failure without discarding the saved
+Chronicle revision.
+
+Topic year filters run server-side at PubMed before bounded retrieval. Event
+selection preserves the observed chronological boundaries, landmarks, and
+temporal spread; `returned` / `available` coverage is warned when capped or
+unknown. PubMed errors or zero evidence publish no revision. PMID/DOI evidence
+identity keeps entry IDs stable across corrections, while one canonical topic
+key governs ID derivation and exact lookup. Diff absence is observational, not
+conclusive retirement. Multi-signal papers keep a primary assignment and
+cross-links, with an overlap warning at 20%; importance ranking excludes
+milestone-detection confidence. Artifact preflight inspects the actual prepared
+payload names.
 
 ## Open-i Biomedical Image Search
 

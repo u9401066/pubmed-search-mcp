@@ -89,29 +89,41 @@ Use this path for `search_gene`, `get_gene_details`, `get_gene_literature`, `sea
 
 Use this path for `get_citation_metrics`, `build_research_chronicle`, and `read_research_chronicle` when the user asks what mattered, when the field changed, or how topics diverged.
 
-`build_research_chronicle` is the single research-evolution tool. It accepts either `topic=...` or explicit comma-separated `pmids=...`, detects milestone-like papers, and can return `summary`, `timeline`, `tree`, `graph`, `evidence`, `milestones`, `mermaid`, `mindmap`, `narrative`, or `json`. Use `read_research_chronicle(action="milestones")` for milestone distribution diagnostics and `read_research_chronicle(action="compare", topics="a,b")` for up to five topic tracks.
+`build_research_chronicle` is the single research-evolution tool. It accepts either `topic=...` or explicit comma-separated `pmids=...`, detects milestone-like papers, and can return `summary`, `chronicle_map`, `timeline`, `tree`, `graph`, `evidence`, `milestones`, `mermaid`, `timeline_mermaid`, `mindmap`, `narrative`, or `json`. `mermaid` combines a horizontal year spine and lineage branches; `chronicle_map` is its JSON coordinate contract. Use `read_research_chronicle(action="milestones")` for milestone distribution diagnostics and `read_research_chronicle(action="compare", topics="a,b")` for up to five topic tracks.
 
 Use precise terms:
 
 - **Timeline**: chronological milestone projection.
-- **Lineage tree**: branch projection from timeline events.
+- **Lineage tree**: retrieval-bounded branch projection from timeline events, not a causal genealogy.
+- **Chronicle map**: one horizontal time spine with observed lines anchored at their earliest dated papers in the retrieved scope. Semantic branches require a signal shared by multiple papers; singleton-only or insufficient MeSH/keyword support produces a warned research-stage fallback. Same-year layout does not imply precedence when date precision cannot establish it.
 - **Context graph preview**: `unified_search(options="context_graph")`, a lightweight preview from the current PMID-backed ranked set.
 - **Citation tree**: `build_citation_tree`, a single-seed forward/backward citation network.
 - **Research Chronicle**: `build_research_chronicle` / `read_research_chronicle`, the persistent, versioned, evidence-backed record. See [Research Chronicle Rebuild Spec](#/research-chronicle-rebuild-spec).
 
 ### Research Chronicle
 
-Use `build_research_chronicle` whenever the user asks how a field evolved. It replaces the older one-shot timeline tools: the chronicle is persisted with a monotonic revision number, so re-running it later lets you diff revisions and answer "what changed since last time".
+Use `build_research_chronicle` whenever the user asks how a field evolved. It replaces the older one-shot timeline tools: each immutable revision is appended atomically with a monotonic number, so re-running it later lets you diff revisions and answer "what changed since last time".
 
-Chronology is the primary axis and research branches are a secondary projection of the same stored snapshot, so `output="timeline"` and `output="tree"` can never disagree.
+Chronology is the primary axis and research branches are a secondary projection of the same stored entries. Branches describe patterns observed in the selected query/PMID/source/year scope, not causal descent. `earliest_observed_in_scope` identifies the earliest dated retrieved candidate only; it does not establish the field's true first report. Date-precision intervals must be disjoint before the graph can assert `precedes` or `supersedes`.
 
-Each chronicle entry carries a one-sentence claim with inline citations, its supporting/contradicting/updating evidence, a branch (lineage) assignment, and a confidence score. A typed provenance graph links Topic → Branch → Entry → EvidenceArticle and is validated against edge invariants. The audit reports evidence coverage, identifier coverage, branch coverage, graph integrity, chronology gaps, and per-source retrieval counts.
+Each chronicle entry carries a one-sentence claim with inline citations, its supporting/contradicting/updating evidence, a branch (lineage) assignment, and a confidence score. A typed provenance graph links Topic → Branch → Entry → EvidenceArticle and is validated against edge invariants. The audit reports evidence coverage, identifier coverage, branch coverage, semantic-lineage basis/coverage, graph integrity, chronology gaps, and per-source retrieval counts.
 
-- `build_research_chronicle(topic=...)` or `build_research_chronicle(pmids="last")` creates revision N+1 and persists a `research-chronicle-artifact/v1` artifact.
+Topic mode applies `min_year` / `max_year` in the PubMed request before the relevance-capped fetch. Final event selection pins the first and last observed papers, prioritizes explicit landmark importance/citations, then fills the remaining capacity across the largest temporal gaps. Audit source coverage distinguishes PubMed `returned` from `available` and warns for capped samples, downstream selection, or unknown availability. An upstream PubMed error or zero article evidence returns an error and publishes no Chronicle revision.
+
+PMID input accepts only ASCII digits with an optional `PMID:` prefix and explicit separators; DOI or arbitrary mixed identifier text is rejected. Entry IDs use PMID, then DOI, as stable evidence identity so date and milestone reclassification becomes an update rather than false remove/add churn. Chronicle derivation, topic lookup, comparison, and continuity share a Unicode-normalized, case-folded, whitespace-collapsed topic key while preserving the stored display topic.
+
+A paper matching several selected semantic signals has one primary branch and explicit secondary cross-links in lineage diagnostics. If at least 20% of all or assigned entries overlap, the audit warns that branches are not cleanly separated. `confidence` remains milestone-detection confidence; landmark ordering uses explicit landmark importance and falls back to citation count, never detection confidence.
+
+- `build_research_chronicle(topic=...)` or `build_research_chronicle(pmids="last")` atomically creates revision N+1. When session artifact persistence is enabled, it also writes a `research-chronicle-artifact/v1` bundle; a write failure is visible in Markdown or as `artifact.status="failed"` in structured output, while the revision remains saved.
 - `read_research_chronicle(action="list")` lists stored chronicles.
-- `read_research_chronicle(chronicle_id=..., output="tree"|"timeline"|"graph"|"evidence")` reads one revision.
-- `read_research_chronicle(action="diff", chronicle_id=..., from_revision=1)` reports added, retired, and updated entries plus evidence and branch churn.
+- `read_research_chronicle(chronicle_id=..., output="mermaid"|"chronicle_map"|"tree"|"timeline"|"graph"|"evidence")` reads one revision or the combined map.
+- `read_research_chronicle(action="diff", chronicle_id=..., from_revision=1)` reports added, updated, and absent entries plus evidence and branch churn. The legacy `retired` key is a compatibility alias for `not_observed_in_revision` / `removed_from_view`; absence is never conclusive retirement.
 - `read_research_chronicle(action="narrate", chronicle_id=..., mode="full")` renders prose where every claim cites its entry ID and article identifiers.
+- `read_research_chronicle(action="compare", topics="a,b")` uses normalized exact stored-topic names. Multiple chronicles with the same topic are reported as ambiguous; pass distinct `chronicle_ids` instead. Duplicate targets are not a valid comparison.
+
+The public schema and runtime checks bound Chronicle requests: `max_events` is 1–200, an explicit set has at most 500 unique PMIDs, topic text has at most 500 characters, list limits are 1–100, and comparisons contain 2–5 distinct chronicles. JSON projections and structured read actions keep validation/not-found errors structured.
+
+Artifact preflight audits the names produced by the actual artifact payload builder (plus the store-generated manifest), rather than trusting a parallel declared list. It validates preparation only; persistence success is reported separately by the artifact locator/status.
 
 ### Session, Pipeline, And Scheduled Reuse
 

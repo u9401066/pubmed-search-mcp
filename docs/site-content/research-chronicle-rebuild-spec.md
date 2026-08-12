@@ -4,8 +4,8 @@
 
 # Research Chronicle, Timeline, And Graph Rebuild Spec
 
-Status: Phases 0-4 implemented (chronicle snapshot, evidence, delta, narrative, graph)
-Last updated: 2026-08-03
+Status: Phases 0-6 implemented (snapshot, evidence, delta, narrative, graph, chronological lineage map, integrity hardening)
+Last updated: 2026-08-12
 Scope: this document is now both the design contract and the implementation reference.
 
 ## 0. Implementation Status
@@ -15,9 +15,9 @@ The Research Chronicle described below is implemented and shipped.
 | Layer | Module |
 | --- | --- |
 | Domain | `src/pubmed_search/domain/entities/chronicle.py` |
-| Application | `src/pubmed_search/application/chronicle/` (`assembler`, `graph`, `audit`, `projectors`, `narrator`, `differ`, `store`, `service`) |
+| Application | `src/pubmed_search/application/chronicle/` (`assembler`, `lineage`, `ordering`, `graph`, `mermaid`, `audit`, `projectors`, `narrator`, `differ`, `store`, `service`) |
 | Presentation | `src/pubmed_search/presentation/mcp_server/tools/chronicle.py` |
-| Tests | `tests/test_chronicle.py` |
+| Tests | `tests/test_chronicle.py`, `tests/test_chronicle_mermaid*.py`, `tests/test_chronicle_projection_robustness.py`, `tests/test_chronicle_semantic_hardening.py`, `tests/test_chronicle_revision_integrity.py`, and `tests/test_chronicle_cross_projection_integrity.py` |
 
 The planned six chronicle tools were consolidated into two, matching the repo's
 facade convention (`read_session`, `manage_pipeline`):
@@ -42,8 +42,39 @@ chronicle, superseding section 12's backward-compatibility note:
 
 Because chronicles are persisted, milestone analysis and comparison read stored
 evidence instead of re-running a search, and comparison additionally reports the
-evidence articles two topics share. `application/timeline/` is unchanged and now
-feeds the chronicle assembler as its evidence provider.
+evidence articles two topics share. Topic comparison uses a normalized exact
+stored-topic match. If more than one Chronicle has that topic, the request is
+reported as ambiguous and must use distinct Chronicle IDs instead. The hardened
+`application/timeline/` components feed the chronicle assembler as its evidence
+provider.
+
+### Final Integrity Semantics
+
+- Topic builds pass year filters to PubMed before bounded retrieval. Final
+  selection pins the first and last observed events, ranks explicit landmark
+  importance/citations, and fills remaining capacity by temporal spread.
+  Source coverage records `returned` and `available`; capped samples,
+  downstream selection, and unknown availability produce warnings.
+- PubMed error sentinels and zero-article scopes publish no revision. Explicit
+  PMID input accepts only ASCII digits with an optional `PMID:` prefix and
+  supported separators; DOI or arbitrary mixed text is not coerced.
+- Entry IDs use PMID, then DOI, as stable evidence identity across date and
+  classifier corrections. Chronicle derivation, exact topic lookup,
+  comparison, and continuity share one NFC/case-folded/whitespace-collapsed
+  canonical topic key while preserving the stored display topic.
+- Semantic lineage gives each paper one primary branch and retains other
+  selected-signal matches as explicit cross-links. Overlap at or above 20% of
+  all or assigned entries is an audit warning, not evidence of cleanly
+  separated or causal lineages.
+- Entry `confidence` is milestone-detection confidence. Landmark ranking uses
+  explicit landmark importance and citation count fallback; detection
+  confidence is excluded from scientific-importance ordering.
+- Revision absence is always observational: `not_observed_in_revision` and
+  `removed_from_view`. The legacy `retired` field is only a compatibility alias
+  and is never conclusive retirement.
+- Artifact-bundle preflight checks the names emitted by the actual payload
+  builder plus the store-generated manifest. It verifies preparation, not
+  persistence success.
 
 ### Chronology Is The Primary Axis
 
@@ -54,41 +85,63 @@ branches are the secondary organizing dimension** - that is what makes the
 artifact a chronicle rather than a taxonomy. The default `output="summary"`
 therefore leads with the chronological spine and lists research lines beneath it.
 
+The canonical visual projection is now the **chronicle map**. It keeps one
+horizontal year spine and anchors every observed research line at the year of
+its earliest dated paper **within the retrieved scope**; this does not establish
+the field's first publication. Entries within a branch retain both global
+chronological order and branch-local order. These branches are explainable
+groupings of the selected evidence, not causal ancestry. Semantic branches
+prefer distinctive MeSH descriptors and author keywords shared by multiple
+papers; a singleton term is not sufficient. If signals cannot support at least
+two branches with adequate coverage, the system falls back to deterministic
+research-stage branches and emits an audit warning. A stage fallback must not be
+described as discovered semantic topic evolution.
+
+Chronology preserves year/month/day precision. A deterministic display order
+may place two records from the same year, but `precedes` or `supersedes` is only
+asserted when their reported date intervals prove the relationship. The topic
+query or PMID set, source availability, year filters, and result limits remain
+part of the interpretation boundary for every Chronicle.
+
 Also fixed during implementation: `build_research_timeline(pmids="last")`
 resolved session PMIDs instead of passing the `"last"` sentinel through to PMID
 fetch; the behavior carried over to `build_research_chronicle`.
 
 ## 1. Purpose
 
-The project currently exposes useful research-evolution features, but the terms
+The project exposed useful research-evolution features, but the terms
 `timeline`, `research tree`, `context graph`, `citation tree`, and `research
-chronicle` have drifted across code and documentation. This spec consolidates
-the current state and defines the target design for the next full rebuild.
+chronicle` had drifted across code and documentation. This spec records the
+implemented consolidation and its compatibility boundaries.
 
 The main decision is:
 
-> A future **Research Chronicle** is the durable, versioned,
-> evidence-backed source of truth. Timeline, lineage tree, context graph,
-> citation graph, and narrative outputs are projections from chronicle or graph
-> data, not separate competing source-of-truth models.
+> **Research Chronicle** is the durable, versioned, evidence-backed source of
+> truth for one retrieval-bounded snapshot. Timeline, lineage tree, context
+> graph, citation graph, and narrative outputs are projections from chronicle or
+> graph data, not separate competing source-of-truth models.
 
 ## 2. Canonical Terminology
 
 | Term | Current status | Canonical meaning |
 | --- | --- | --- |
 | Research Timeline | Retired as an MCP tool | A chronological milestone view. Now the `timeline` projection of a chronicle. |
-| Research Lineage Tree | Implemented as `ResearchTree` | A deterministic branch projection from timeline events by milestone type. It is a tree/branch view, not a general knowledge graph. |
+| Research Lineage Tree | Implemented as `ResearchTree` | A deterministic, retrieval-bounded branch projection using shared semantic signals or an explicit research-stage fallback. It is neither causal genealogy nor a general knowledge graph. |
 | Research Context Graph Preview | Implemented as `unified_search(options="context_graph")` | A lightweight preview synthesized from the current ranked PMID-backed search results. It is not persisted and is not a full graph. |
 | Citation Tree | Implemented as `build_citation_tree` | A single-seed citation network using forward/backward citation relationships. |
-| Research Chronicle | Implemented | A persisted, versioned, evidence-backed research artifact with entries, evidence bundles, typed provenance graph, revisions, deltas, audit files, and projections. |
+| Research Chronicle | Implemented | A persisted, versioned, evidence-backed record of the selected retrieval scope, with entries, evidence bundles, typed provenance graph, revisions, deltas, audit files, and projections. |
 
-Documentation must not call the current timeline tool a complete Research
-Chronicle. Until the rebuild lands, say "timeline/lineage tree" for current
-features and "planned Research Chronicle" for this design.
+Documentation must reserve **Research Chronicle** for the persisted,
+evidence-backed artifact. `timeline`, `tree`, and `chronicle_map` are projections;
+`unified_search(options="context_graph")` remains a non-persisted preview.
 
-## 3. Current Implementation Audit
+## 3. Pre-Rebuild Implementation Audit (Historical)
 
-### 3.1 MCP Surface
+> This section preserves the audit inputs that motivated the rebuild. It does
+> not describe the current MCP surface; see Section 0 for the shipped modules
+> and Section 8 for current tool outputs.
+
+### 3.1 Historical MCP Surface
 
 | Capability | Current entry point | Files | Notes |
 | --- | --- | --- | --- |
@@ -98,7 +151,7 @@ features and "planned Research Chronicle" for this design.
 | Context graph preview | `unified_search(options="context_graph")` | `unified_helpers.py`, `unified_execution.py`, `unified_formatting.py` | Builds a temporary timeline/tree from up to 20 ranked PMIDs and includes preview text / JSON `research_context`. |
 | Citation tree | `build_citation_tree` | `src/pubmed_search/presentation/mcp_server/tools/citation_tree.py` | Produces citation graph formats: `cytoscape`, `g6`, `d3`, `vis`, `graphml`, `mermaid`. |
 
-### 3.2 Existing Domain And Application Types
+### 3.2 Historical Domain And Application Types
 
 - `domain/entities/timeline.py`
   - `MilestoneType`
@@ -117,7 +170,7 @@ features and "planned Research Chronicle" for this design.
   - `build_research_tree`
   - milestone/landmark policies and diagnostics helpers
 
-### 3.3 Current Known Gaps
+### 3.3 Pre-Rebuild Gaps
 
 These are rebuild inputs, not incidental polish:
 
@@ -140,11 +193,11 @@ These are rebuild inputs, not incidental polish:
 - Current timeline artifacts are not persisted with the research artifact
   envelope used by `unified_search`.
 
-## 4. Target Architecture
+## 4. Implemented Architecture
 
 ### 4.1 Layering
 
-The rebuild must preserve the repo's DDD direction:
+The implementation preserves the repo's DDD direction:
 
 ```text
 presentation/mcp_server/tools
@@ -158,7 +211,7 @@ Business logic must not live in MCP tool functions. Tool modules validate
 inputs, call application services, format responses, and attach artifact
 locators.
 
-### 4.2 Proposed Modules
+### 4.2 Modules
 
 ```text
 src/pubmed_search/
@@ -170,7 +223,11 @@ src/pubmed_search/
     assembler.py
     audit.py
     differ.py
+    graph.py
+    lineage.py
+    mermaid.py
     narrator.py
+    ordering.py
     projectors.py
     service.py
     store.py
@@ -211,7 +268,9 @@ The chronicle service should depend on small ports, not concrete tool modules:
 ### 5.1 ChronicleSnapshot
 
 `ChronicleSnapshot` is the immutable source-of-truth object for one chronicle
-revision.
+revision. Stored revisions are never overwritten; next-revision allocation and
+publication occur under a per-Chronicle process/thread-safe lock with atomic
+file publication.
 
 Required fields:
 
@@ -240,6 +299,11 @@ Captures how the chronicle was produced:
 - `filters: dict[str, Any]`
 - `source_counts: dict[str, Any]`
 
+This scope is a scientific interpretation boundary. In particular,
+`earliest_observed_in_scope` means the earliest dated record among the retrieved
+candidates after these constraints; it is not a claim about the first paper in
+the full field.
+
 ### 5.3 ChronicleEntry
 
 One interpretable research event or claim.
@@ -261,6 +325,11 @@ Required fields:
 
 Every entry must have at least one supporting, updating, or contradicting
 article unless its status is explicitly `background`.
+
+`entry_id` is evidence-identity-stable: PMID is preferred, DOI is the secondary
+identity, and publication date or milestone classification is excluded from the
+seed. Continuing an older Chronicle reuses unambiguous historical IDs by
+evidence identity so corrections appear as updates.
 
 ### 5.4 EvidenceBundle
 
@@ -305,9 +374,18 @@ Required fields:
 - `confidence: float`
 - `tags: list[str]`
 
-The initial implementation may keep deterministic branch policies from
-`application/timeline/branch_detector.py`, but the interface must allow later
-community detection or semantic clustering.
+Semantic branches require a distinguishing MeSH/keyword signal observed in more
+than one paper. Singleton-only or otherwise insufficient signals use the
+deterministic research-stage fallback and must produce an audit warning. Branch
+membership is observational organization, not evidence of causal descent; the
+interface may later support additional clustering methods without changing that
+interpretation rule.
+
+When one paper matches several selected signals, the tree records one primary
+assignment and retains secondary memberships as explicit `cross_signal_links`
+in lineage diagnostics. An overlap ratio at or above 0.20, measured over all
+entries or assigned entries, produces a warning that the branches are not
+cleanly separated.
 
 ### 5.6 ChronicleGraph
 
@@ -340,6 +418,8 @@ Invariants:
 - `supports`, `contradicts`, and `updates` connect `EvidenceArticle` to
   `ChronicleEntry`.
 - `precedes` and `supersedes` connect `ChronicleEntry` to `ChronicleEntry`.
+- `precedes` and `supersedes` are emitted only when reported date precision
+  proves the temporal order; stable display order is not sufficient.
 - `branches_from` connects `Branch` to `Branch`.
 - `observed_in_session` connects `SessionEvent` to evidence or entries.
 - `persisted_as_artifact` connects snapshots/projections to artifact nodes.
@@ -353,36 +433,47 @@ The chronicle is source of truth. These projections may be materialized:
 | --- | --- | --- |
 | `timeline` | Chronological milestone/event list | JSON object plus text/mermaid renderers. |
 | `lineage_tree` | Branch-oriented view | JSON tree plus text/mindmap renderers. |
+| `chronicle_map` | Combined chronological and lineage view | Horizontal year anchors, ordered entry IDs, earliest-observed-in-scope branch points, global/branch display order, lineage basis, and Mermaid `flowchart LR` renderer. It does not assert causal branching or same-year precedence. |
 | `context_preview` | Lightweight inline preview for `unified_search` | Max 20 PMID-backed records, never advertised as complete. |
 | `citation_graph` | Seed or chronicle-wide citation relationships | Nodes + edges, all supported graph formats. |
 | `narrative` | Evidence-backed prose | Every substantive claim cites entry IDs and PMIDs/DOIs. |
-| `delta_report` | Revision comparison | Added/updated/retired entries, evidence flips, branch changes, unresolved conflicts. |
+| `delta_report` | Revision comparison | Added/updated/not-observed entries, evidence flips, branch changes, unresolved conflicts. `retired` is a compatibility alias for `not_observed_in_revision` / `removed_from_view`, not a conclusive lifecycle claim. |
 
-Existing timeline tools remain compatible. A future implementation may build
-their output from chronicle projectors internally, but external tool names and
-basic return shape should not break without a major release.
+The retired timeline tool concepts remain available through Chronicle output
+modes. `timeline_mermaid` is the bounded flat compatibility view; `mermaid` is
+the canonical combined chronological-lineage map.
 
 ## 7. Artifact Envelope Contract
 
-Chronicle outputs must use the existing artifact-as-token-offload pattern.
-Inline MCP responses are index cards; full evidence belongs in files retrievable
-through `read_session`.
+When session artifact persistence is enabled, Chronicle outputs use the existing
+artifact-as-token-offload pattern. Inline MCP responses are index cards; full
+evidence belongs in files retrievable through `read_session`. The immutable
+Chronicle revision store is separate: a revision may be saved successfully even
+if preparation or persistence of the optional session artifact later fails.
 
-Each persisted chronicle uses schema `research-chronicle-artifact/v1` and should
-write:
+Preflight derives its file-name evidence from the concrete artifact payload
+builder, then adds the manifest generated by the artifact store. Passing
+preflight means the payload was prepared completely; only the persistence
+result/locator can establish that it was written.
+
+Each successfully persisted Chronicle artifact uses schema
+`research-chronicle-artifact/v1` and writes:
 
 - `manifest.json`
 - `snapshot.json`
+- `chronicle_map.json`
+- `chronicle.mmd`
+- `mermaid_validation.json`
 - `timeline.json`
 - `lineage_tree.json`
 - `graph.json`
 - `evidence.json`
+- `milestones.json`
 - `audit.json`
-- `narrative.md` when requested
-- `delta.json` when comparing revisions
-- `response.md` when a Markdown response was generated
+- `narrative.md`
+- `response.md`
 
-The inline response must include:
+On artifact success, the inline response includes:
 
 - `chronicle_id`
 - `revision`
@@ -393,6 +484,10 @@ The inline response must include:
 - warnings
 - artifact locator with `artifact_id`, `artifact_uri`, file inventory, read
   order, and paged `read_session(...)` examples
+
+If artifact persistence was enabled but returns no locator or raises after the
+revision was saved, Markdown exposes a warning and structured output includes
+`artifact.status="failed"`. The response must not imply that the artifact exists.
 
 Remote clients and sandboxed agents must be able to retrieve every file via:
 
@@ -406,38 +501,43 @@ default.
 
 ## 8. MCP API Design
 
-### 8.1 Preserve Current Tools
+### 8.1 Current Tools
 
 Current tools remain:
 
-- `build_research_timeline`
-- `analyze_timeline_milestones`
-- `compare_timelines`
+- `build_research_chronicle`
+- `read_research_chronicle`
 - `unified_search(options="context_graph")`
 - `build_citation_tree`
 
-Required fixes before or during rebuild:
+The Chronicle wrappers validate arguments, call `ChronicleService`, format the
+requested projection, and attach artifact locators. Retrieval, assembly,
+lineage inference, repair, audit, persistence, and comparison remain in the
+application layer.
 
-- Resolve `pmids="last"` through session PMIDs or remove the claim from docs and
-  tool examples until it is supported.
-- Validate `output_format` explicitly and return actionable errors for invalid
-  values.
-- Move format rendering out of domain entities.
-- Move citation graph traversal/formatting out of presentation.
+### 8.2 Chronicle Tool Surface
 
-### 8.2 Planned Chronicle Tools
+- `build_research_chronicle(topic=None, pmids=None, max_events=30,
+  min_year=None, max_year=None, chronicle_id=None, output="summary")`
+- `read_research_chronicle(action="load", chronicle_id=None, revision=None,
+  from_revision=None, to_revision=None, topic=None, topics=None,
+  chronicle_ids=None, output="summary", mode="brief", limit=20)`
 
-Introduce these only after the application/domain layer exists:
+Read actions are `load`, `list`, `diff`, `narrate`, `milestones`, and `compare`.
+Rebuilding with an existing `chronicle_id` writes revision N+1, so separate
+update/diff/narrate MCP tools are unnecessary.
 
-- `build_research_chronicle(topic=None, pmids=None, artifact_uri=None, pipeline=None, output="summary")`
-- `load_research_chronicle(chronicle_id, revision="latest", artifact_file=None, offset=0, max_chars=200000)`
-- `list_research_chronicles(topic=None, limit=20)`
-- `update_research_chronicle(chronicle_id, topic=None, pmids=None, artifact_uri=None)`
-- `diff_research_chronicle(chronicle_id, from_revision, to_revision="latest")`
-- `narrate_research_chronicle(chronicle_id, revision="latest", mode="brief")`
+Current bounds are enforced in both the MCP schema and runtime validation:
+`max_events` 1–200, up to 500 unique explicit PMIDs, topic text up to 500
+characters, list limits 1–100, positive revisions, and comparisons of 2–5
+distinct Chronicles. `topics=...` comparison uses normalized exact stored-topic
+matching; zero matches are not found, multiple matches are ambiguous, and
+callers can disambiguate with `chronicle_ids=...`.
 
-Tool wrappers must stay thin. Business logic belongs in
-`application/chronicle/service.py`.
+Topic-mode `min_year` / `max_year` filters are sent to PubMed before the bounded
+fetch and are also defended locally. Zero usable articles and PubMed error
+sentinels return an error without allocating a revision. Explicit PMID tokens
+are strict and never inferred by stripping non-digits from DOI or mixed text.
 
 ### 8.3 Output Modes
 
@@ -445,14 +545,21 @@ Structured modes should be parseable without stripping prose:
 
 - `summary`: compact Markdown + artifact locator
 - `json`: `ChronicleSnapshot` JSON
+- `chronicle_map`: combined horizontal-spine/lineage projection JSON
 - `timeline`: timeline projection JSON
 - `tree`: lineage tree projection JSON
 - `graph`: typed graph JSON
 - `narrative`: evidence-backed Markdown
 - `delta`: revision delta JSON
+- `mermaid`: combined horizontal-spine/lineage Mermaid flowchart
+- `timeline_mermaid`: legacy flat Mermaid timeline
 
 If a tool returns Markdown plus JSON for compatibility, the structured payload
-must also be saved to artifacts.
+must also be present in the prepared artifact bundle and, on successful
+persistence, in the stored artifact.
+
+Validation and not-found errors for JSON projections and structured read actions
+remain JSON rather than switching to prose.
 
 ## 9. Audit And Completeness Requirements
 
@@ -463,69 +570,109 @@ must also be saved to artifacts.
 - evidence coverage: entries with supporting evidence, conflicting evidence,
   missing identifiers, missing year, missing DOI/PMID
 - branch coverage: empty branches, orphan entries, unassigned entries
+- lineage semantics: MeSH/keyword basis, semantic coverage, selected signals,
+  singleton rejection, and explicit research-stage fallback warnings
+- Mermaid renderability: deterministic structural validation, correction list,
+  rich/safe/minimal tier, source digest, and omitted visual item counts
 - graph integrity: invalid edge endpoints, duplicate node IDs, invariant
   violations
-- chronology checks: impossible dates, unordered supersedes/precedes edges
+- chronology checks: impossible dates, earliest-observed scope provenance, and
+  supersedes/precedes edges unsupported by reported date precision
 - narrative checks: claims without entry IDs or evidence IDs
-- artifact checks: required files present, schema versions, read order
+- artifact bundle/preflight checks: required prepared files, schema versions,
+  and read order (not a claim that persistence itself succeeded)
+- selection semantics: chronological boundaries, landmark/citation priority,
+  temporal spread, and warnings whenever retrieval or output caps prevent an
+  exhaustive view
+- lineage overlap: primary assignment, secondary cross-links, and a warning at
+  20% overlap among all or assigned entries
+- ranking semantics: milestone-detection confidence is reported separately and
+  excluded from landmark-importance ordering
 
 Audit findings use `pass`, `warn`, or `fail` with actionable messages.
 
-## 10. Rebuild Phases
+### 9.1 Mermaid repair contract
+
+The canonical renderer consumes the structured `chronicle_map` instead of
+concatenating user text into Mermaid syntax. It normalizes controls and bidi
+characters, entity-escapes delimiters inside quoted labels, assigns opaque
+collision-resistant node IDs, removes cyclic parents, repairs orphan branches,
+deduplicates repeated visual entries, and caps graph size. Serialization then
+falls through `rich -> safe -> minimal`; a rendering failure must never abort
+chronicle creation. Any omitted content or fallback tier is disclosed in
+`mermaid_validation.json`, while the complete records remain in JSON artifacts.
+
+`chronicle.mmd` is pure Mermaid source. Markdown fences and persistent-artifact
+notes belong only in `response.md` or the inline response. CI uses Mermaid
+11.16.1 to parse and render current rich, repaired, safe, minimal, timeline, and
+mindmap fixtures to SVG; documentation rendering isolates failures per diagram
+and preserves the failed source visibly.
+
+## 10. Completed Rebuild Phases
+
+The following phase list records the shipped Chronicle implementation. Earlier
+proposals for six separate MCP tools were consolidated into the two-tool facade.
 
 ### Phase 0: Documentation And Contract Alignment
 
-- Rewrite this spec as the single source of truth.
-- Update README, user docs, docs site, memory-bank notes, and agent routing
-  language to distinguish current timeline/tree features from planned
-  chronicle.
-- Stop advertising unsupported `pmids="last"` timeline behavior until fixed.
+- Align the spec, README, user docs, docs site, and agent routing language.
+- Distinguish Chronicle projections from context-graph previews and citation trees.
 
 ### Phase 1: Current Feature Hardening
 
-- Add tests and fix `pmids="last"` resolution.
-- Add timeline output-format matrix tests.
-- Clean ResearchTree mojibake connector output.
-- Move timeline/tree formatters out of domain entities.
-- Extract citation graph builder/formatters into application services.
-- Add citation tree response contract tests for all supported formats.
+- Resolve `pmids="last"` through session state and validate output modes.
+- Preserve article MeSH, keyword, publication, and identifier context across the
+  timeline boundary.
+- Add regression coverage for timeline, tree, graph, and citation projections.
 
 ### Phase 2: Chronicle Snapshot Foundation
 
-- Add chronicle domain entities and serialization tests.
-- Add chronicle store/index/revision persistence.
-- Assemble snapshots from topic searches, explicit PMIDs, and session/artifact
-  inputs.
-- Persist `research-chronicle-artifact/v1` envelopes.
-- Add build/load/list MCP wrappers.
+- Add Chronicle domain entities, serialization, store/index, and monotonic revisions.
+- Assemble snapshots from topic searches, explicit PMIDs, and session PMIDs.
+- Persist `research-chronicle-artifact/v1` envelopes and expose build/read facades.
 
 ### Phase 3: Evidence And Delta
 
-- Add `EvidenceBundle` enrichment from citation metrics, reference
-  verification, fulltext artifacts, and figure links where available.
-- Add revision update and diff services.
-- Add `update_research_chronicle` and `diff_research_chronicle`.
+- Preserve evidence bundles and source coverage.
+- Add revision update and diff services behind build/read actions.
 
 ### Phase 4: Narrative And Graph Analytics
 
 - Add evidence-backed narrative generation with strict citation IDs.
-- Add graph analytics behind application services, not MCP wrappers.
-- Add `narrate_research_chronicle`.
-- Consider community detection only after deterministic branch projections are
-  stable.
+- Add typed graph and milestone analytics behind application services.
+- Expose narrative, milestones, and comparisons as read actions.
 
-## 11. Acceptance Tests For The Next Rebuild
+### Phase 5: Chronological Lineage Map And Mermaid Hardening
 
-### Current Feature Regression Tests
+- Derive explainable topic branches from MeSH descriptors and author keywords,
+  with an explicit research-stage fallback.
+- Add the horizontal `chronicle_map` coordinate contract and canonical Mermaid
+  flowchart.
+- Add deterministic repair, bounded output, rich/safe/minimal fallback,
+  validation artifacts, per-diagram docs isolation, and real Mermaid SVG CI.
 
-- `build_research_timeline(pmids="last")` resolves the previous search PMID
+### Phase 6: Scientific And Persistence Integrity Hardening
+
+- Treat the first dated record as earliest-observed-in-scope provenance without
+  masking its actual milestone type; preserve ordinary papers from explicit
+  PMID sets.
+- Reject singleton semantic signals, preserve biomedical slash terms, and make
+  stage fallback warnings explicit.
+- Share precision-aware chronology across projections, graph, audit, and
+  narrative; do not infer temporal edges for equal or overlapping precision.
+- Make revisions immutable and atomically allocated, use exact topic comparison
+  with explicit ambiguity, expand revision diffs, and surface artifact failure.
+- Bound MCP inputs and keep structured-action errors machine-readable.
+
+## 11. Acceptance And Regression Tests
+
+### Surface Regression Tests
+
+- `build_research_chronicle(pmids="last")` resolves the previous search PMID
   list or returns a clear error when no last search exists.
-- `build_research_timeline` supports every documented output format:
-  `text`, `tree`, `mermaid`, `mindmap`, `json`, `json_tree`, `timeline_js`,
-  `d3`.
-- Invalid timeline `output_format` returns an actionable error.
-- `ResearchTimeline` and `ResearchTree` projections are tested with real domain
-  fixtures, not only fake timeline objects.
+- Build/read support every documented output mode and reject unknown modes.
+- Timeline, lineage tree, Chronicle map, and graph projections share stable
+  Chronicle entry IDs.
 - Context graph preview covers: no PMID results, empty timeline, builder
   exception, 20-PMID cap, JSON `research_context`, and provenance metadata.
 - Citation tree tool-level tests cover: `forward`, `backward`, `both`, depth
@@ -537,23 +684,38 @@ Audit findings use `pass`, `warn`, or `fail` with actionable messages.
 - Chronicle entities round-trip through JSON without losing required fields.
 - Chronicle graph invariants reject invalid edges.
 - Store creates monotonic revisions and stable `chronicle_id`.
+- Concurrent revision allocation is atomic and stored revisions cannot be
+  overwritten.
 - Snapshot assembly preserves source counts, query strategy, PMIDs, and
   artifact provenance.
+- PubMed errors/no-results publish no revision; year filters reach PubMed;
+  returned/available counts and capped/unknown coverage remain auditable.
+- Event caps preserve chronological boundaries, landmark importance, and
+  temporal spread without using detection confidence as importance.
+- PMID/DOI entry identity and canonical topic normalization remain stable across
+  reclassification, correction, lookup, comparison, and continuation.
+- Diff absence is non-conclusive and semantic overlap preserves cross-links,
+  warning at the 20% threshold.
 - Projection outputs are generated from the same snapshot and reference the same
   entry IDs.
 - Audit catches missing evidence, duplicate IDs, missing required artifact
-  files, and narrative claims without evidence IDs.
-- MCP wrappers return compact summaries with artifact locators and remote-safe
-  `read_session` hints.
+  bundle files, unsupported chronology edges, projection membership mismatch,
+  and narrative claims without evidence IDs.
+- Earliest-observed provenance, singleton fallback, exact/ambiguous comparison,
+  and structured validation errors have focused regression coverage.
+- MCP wrappers reject malformed PMID strings, return compact summaries with
+  artifact locators and remote-safe `read_session` hints, and preflight the
+  actual artifact payload.
 
 ## 12. Backward Compatibility
 
-- Keep existing timeline and citation tree tool names.
-- Keep existing MCP string responses unless a caller requests structured output.
+- The retired one-shot timeline MCP tools are replaced by
+  `build_research_chronicle` and `read_research_chronicle`; their concepts remain
+  available as chronicle projections.
+- Keep citation-tree tool names and formats stable.
+- Keep MCP Markdown responses readable and structured modes parseable.
 - Keep `unified_search(options="context_graph")` as preview-only.
-- Add chronicle tools as new capabilities, not as silent behavior changes.
-- If `pmids="last"` cannot be fixed immediately, remove it from examples until
-  it is implemented and tested.
+- Resolve `pmids="last"` through session state before Chronicle retrieval.
 
 ## 13. Documentation Rules
 
@@ -562,14 +724,14 @@ After this spec lands:
 - `README.md` and `README.zh-TW.md` are entry points, not detailed specs.
 - `docs/TOOLS_USAGE_GUIDE*.md` define current tool routing.
 - `docs/ADVANCED_RESEARCH_WORKFLOWS*.md` show user workflows.
-- This file defines the planned chronicle rebuild.
+- This file defines the implemented Chronicle contract and its historical rationale.
 - Generated docs in `docs/site-content/` and `docs/site-content.js` must be
   rebuilt from canonical sources.
 - Agent instructions should use this terminology:
-  - "timeline/lineage tree" for current `build_research_timeline`
+  - "timeline/lineage tree" for Chronicle projections
   - "context graph preview" for `unified_search(options="context_graph")`
   - "citation tree" for `build_citation_tree`
-  - "Research Chronicle" only for the planned persisted/versioned artifact
+  - "Research Chronicle" only for the persisted/versioned artifact
 
 ## 14. Subagent Audit Inputs
 
@@ -586,7 +748,8 @@ This spec incorporates three independent read-only audits:
 
 ## 15. Decision Summary
 
-The next rebuild should not grow another mode-heavy timeline tool. It should
-create a chronicle bounded context with typed, persisted, auditable artifacts.
-Timeline, tree, graph, and narrative views become projections from that source
-of truth, while existing MCP tools remain stable wrappers for compatibility.
+The implementation does not grow another mode-heavy timeline tool. It uses a
+Chronicle bounded context with typed, persisted, auditable, retrieval-bounded
+snapshots. Timeline, tree, chronological-lineage map, graph, and narrative views
+are projections from that source of truth; their branches remain observational,
+not causal claims, while MCP tools remain thin application wrappers.

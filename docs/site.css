@@ -490,6 +490,30 @@ a:focus-visible {
   background: #fbfcfd;
 }
 
+.mermaid-error,
+.dependency-warning {
+  padding: 0.75rem;
+  border-left: 4px solid #b45309;
+  background: #fff7ed;
+  color: #7c2d12;
+}
+
+.mermaid-error p {
+  margin: 0.35rem 0 0;
+}
+
+.mermaid-error-detail {
+  font-family: Consolas, "Cascadia Mono", monospace;
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+.mermaid-shell[data-mermaid-status="error"] pre {
+  margin-bottom: 0;
+  max-height: 24rem;
+  overflow: auto;
+}
+
 .page-outline {
   position: sticky;
   top: 1rem;

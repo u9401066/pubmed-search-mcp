@@ -89,27 +89,41 @@ Zotero Keeper 應維持在外部整合邊界。PubMed Search MCP 負責產生 of
 
 使用者問「哪些重要」、「領域何時改變」、「不同主題如何分歧」時，使用 `get_citation_metrics`、`build_research_chronicle` 與 `read_research_chronicle`。
 
-`build_research_chronicle` 是唯一的研究演化工具。它接受 `topic=...` 或明確的 comma-separated `pmids=...`，會偵測 milestone-like papers，並可回傳 `summary`、`timeline`、`tree`、`graph`、`evidence`、`milestones`、`mermaid`、`mindmap`、`narrative` 或 `json`。`read_research_chronicle(action="milestones")` 用於里程碑分佈 diagnostics；`read_research_chronicle(action="compare", topics="a,b")` 用於最多五個 topic tracks 的比較。
+`build_research_chronicle` 是唯一的研究演化工具。它接受 `topic=...` 或明確的 comma-separated `pmids=...`，會偵測 milestone-like papers，並可回傳 `summary`、`chronicle_map`、`timeline`、`tree`、`graph`、`evidence`、`milestones`、`mermaid`、`timeline_mermaid`、`mindmap`、`narrative` 或 `json`。`mermaid` 把橫向年份主軸與 lineage 分支畫在同一張圖；`chronicle_map` 是同一座標契約的 JSON。`read_research_chronicle(action="milestones")` 用於里程碑分佈 diagnostics；`read_research_chronicle(action="compare", topics="a,b")` 用於最多五個 topic tracks 的比較。
 
 用詞請保持精準：
 
 - **Timeline**：按時間排序的 milestone projection。
-- **Lineage tree**：由 timeline events 分支而成的主題樹。
+- **Lineage tree**：由 timeline events 產生、受檢索範圍限制的分支投影，不是因果祖譜。
+- **Chronicle map**：單一橫向時間主軸，各觀察研究線錨定在本次檢索範圍內最早的有日期論文；語意分支必須有多篇論文共同支持的訊號，只有 singleton 或 MeSH/keyword 訊號不足時會產生 audit warning 並退回研究階段分類。同年排列在日期 precision 不足時不代表先後。
 - **Context graph preview**：`unified_search(options="context_graph")`，只根據本次 PMID-backed ranked set 產生輕量預覽。
 - **Citation tree**：`build_citation_tree`，從單一 seed PMID 建立 forward/backward citation network。
 - **Research Chronicle**：`build_research_chronicle` / `read_research_chronicle`，持久化、版本化、有證據支撐的研究紀錄；詳見 [Research Chronicle Rebuild Spec](#/research-chronicle-rebuild-spec)。
 
 ### 研究編年史 (Research Chronicle)
 
-當使用者要的不是一次性快照，而是一份可以持續回頭維護的研究脈絡時，使用 `build_research_chronicle`。它取代了舊的一次性 timeline 工具：chronicle 會以遞增 revision 持久化儲存，之後重跡就能做版本比對，回答「上次之後改變了什麼」。主軸是時序，分支是同一份 snapshot 的次要投影。
+當使用者要的不是一次性快照，而是一份可以持續回頭維護的研究脈絡時，使用 `build_research_chronicle`。它取代了舊的一次性 timeline 工具：每個不可變 revision 都以原子操作和遞增編號追加，之後重跑就能做版本比對，回答「上次之後改變了什麼」。主軸是時序，分支是同一組 stored entries 的次要投影。
 
-每個 chronicle entry 都帶有一句附引用的 claim、supporting / contradicting / updating 證據、所屬研究分支 (lineage)，以及 confidence。型別化 provenance graph 以 Topic → Branch → Entry → EvidenceArticle 相連，並依 edge invariants 驗證。audit 會回報證據覆蓋率、識別碼覆蓋率、分支覆蓋率、graph 完整性、時序缺口與各來源回傳量。
+分支描述選定 query / PMID / source / year 範圍裡觀察到的模式，不是因果演化。`earliest_observed_in_scope` 只標示 retrieved candidates 中最早的有日期文章，不證明它是整個領域的 first report。只有在日期 precision 所代表的區間互不重疊時，graph 才會宣稱 `precedes` 或 `supersedes`。
 
-- `build_research_chronicle(topic=...)` 或 `build_research_chronicle(pmids="last")`：建立 revision N+1 並持久化 `research-chronicle-artifact/v1` artifact。
+每個 chronicle entry 都帶有一句附引用的 claim、supporting / contradicting / updating 證據、所屬研究分支 (lineage)，以及 confidence。型別化 provenance graph 以 Topic → Branch → Entry → EvidenceArticle 相連，並依 edge invariants 驗證。audit 會回報證據覆蓋率、識別碼覆蓋率、分支覆蓋率、語意 lineage 的依據與覆蓋率、graph 完整性、時序缺口與各來源回傳量。
+
+Topic mode 會在 relevance-capped fetch 前，先把 `min_year`／`max_year` 套用到 PubMed request。最後的 event selection 固定保留觀察到的首篇與末篇，優先選明確的 landmark importance／citation，再用最大的時間缺口補足容量。source coverage audit 會區分 PubMed `returned` 與 `available`，並針對 capped sample、後續選取或未知總量提出警告。PubMed upstream error 或零篇論文證據會直接回錯，不發布 Chronicle revision。
+
+PMID input 只接受 ASCII digits、可選的 `PMID:` prefix 與明確分隔符；DOI 或任意混合 identifier text 會被拒絕。entry ID 先依 PMID、再依 DOI 作為穩定 evidence identity，因此日期與 milestone 分類修正會成為 update，而不是假的 remove/add churn。Chronicle ID derivation、topic lookup、compare 與 continuity 共用 Unicode normalization、case-folding、空白折疊後的 topic key，但保留已儲存的顯示名稱。
+
+同時符合多個 semantic signals 的論文會有一個 primary branch，並在 lineage diagnostics 保留 explicit secondary cross-links。若全部 entries 或已分派 entries 的重疊比例至少 20%，audit 會警告 branches 並非清楚分離。`confidence` 只代表 milestone detection confidence；landmark ranking 使用明確的 landmark importance，缺少時才退回 citation count，絕不使用 detection confidence。
+
+- `build_research_chronicle(topic=...)` 或 `build_research_chronicle(pmids="last")`：以原子操作建立 revision N+1。啟用 session artifact persistence 時也會寫入 `research-chronicle-artifact/v1` bundle；若寫入失敗，Markdown 或 structured output 的 `artifact.status="failed"` 會明確揭露，而 revision 仍已保存。
 - `read_research_chronicle(action="list")`：列出已儲存的 chronicles。
-- `read_research_chronicle(chronicle_id=..., output="tree"|"timeline"|"graph"|"evidence")`：讀取單一 revision。
-- `read_research_chronicle(action="diff", chronicle_id=..., from_revision=1)`：回報新增、退場、更新的 entries 與證據/分支變化。
+- `read_research_chronicle(chronicle_id=..., output="mermaid"|"chronicle_map"|"tree"|"timeline"|"graph"|"evidence")`：讀取單一 revision 或合併圖。
+- `read_research_chronicle(action="diff", chronicle_id=..., from_revision=1)`：回報新增、更新與本次缺席的 entries，以及證據／分支變化。舊的 `retired` key 只是 `not_observed_in_revision`／`removed_from_view` 的相容 alias；缺席絕不等於已證實退場。
 - `read_research_chronicle(action="narrate", chronicle_id=..., mode="full")`：產出每句 claim 都附 entry ID 與文獻識別碼的敘述。
+- `read_research_chronicle(action="compare", topics="a,b")`：使用正規化後的完整 stored-topic 名稱。同名對應多個 Chronicle 時會回報 ambiguity，需改傳不同的 `chronicle_ids`；重複目標不構成有效比較。
+
+Public schema 與 runtime validation 都限制 Chronicle request：`max_events` 1–200、明確 set 最多 500 個 unique PMIDs、topic 最多 500 字元、list limit 1–100、compare 需 2–5 個不同 Chronicles。JSON projections 與 structured read actions 的 validation / not-found 錯誤也維持結構化。
+
+Artifact preflight 會檢查實際 artifact payload builder 產出的檔名（再加上 store 產生的 manifest），而不是信任另一份平行常數清單。這只驗證 payload preparation；是否真的持久化成功，仍由 artifact locator／status 另外回報。
 
 ### Session、Pipeline 與排程重用
 

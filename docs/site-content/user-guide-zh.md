@@ -193,7 +193,15 @@ read_research_chronicle(action="milestones", chronicle_id="car-t-therapy-...")
 read_research_chronicle(action="compare", topics="remimazolam,propofol,dexmedetomidine")
 ```
 
-`build_research_chronicle` 可以依 topic 搜尋，也可以使用明確 PMID set。主軸是時序，分支 (lineage) 是同一份 snapshot 的次要投影，所以 `output="timeline"` 與 `output="tree"` 永遠一致。支援 `summary`、`timeline`、`tree`、`graph`、`evidence`、`milestones`、`mermaid`、`mindmap`、`narrative` 與 `json` 輸出。`unified_search` 的 `options="context_graph"` 適合先看本次 PMID-backed ranked results 的輕量分支預覽。chronicle 本身已持久化且版本化，詳見 [Research Chronicle Rebuild Spec](#/research-chronicle-rebuild-spec)。
+`build_research_chronicle` 可以依 topic 搜尋，也可以使用明確 PMID set。主軸是時序，分支 (lineage) 是同一組 entries 的次要投影。`output="mermaid"` 是標準圖：年份構成橫向主軸，各觀察研究線從本次檢索範圍內最早的有日期論文所在年份分岔；`output="chronicle_map"` 則回傳同一座標契約的 JSON。主題分支優先使用多篇論文共同出現的 MeSH descriptor 與作者 keyword；只有 singleton 或語意訊號不足時，audit 會明確標示為研究階段 fallback。`timeline_mermaid` 保留舊的平面圖。其他輸出包括 `summary`、`timeline`、`tree`、`graph`、`evidence`、`milestones`、`mindmap`、`narrative` 與 `json`。`unified_search(options="context_graph")` 只適合本次 PMID-backed ranked results 的輕量預覽。chronicle 本身已持久化且版本化，詳見 [Research Chronicle Rebuild Spec](#/research-chronicle-rebuild-spec)。
+
+Lineage 是本次 retrieved snapshot 的可解釋分組，不是因果祖譜。`earliest_observed_in_scope` 不代表找到整個領域的首篇論文；query、PMID set、年份 filter、來源可用性與結果上限都會限制可觀察範圍。日期 precision 會保留：同年或日期區間重疊的項目可以固定顯示順序，但不會據此推論 `precedes` 或 `supersedes` 關係。
+
+Revision 不可變，並以原子操作追加。`action="compare"` 使用正規化後的完整 stored-topic 名稱；同名對應多個 Chronicle 時必須明確傳 `chronicle_ids`，重複目標會拒絕。Build input 有界限（`max_events` 1–200、明確 PMID 最多 500 個 unique values、topic 最多 500 字元），structured actions 的錯誤也維持結構化。啟用的 session artifact persistence 若在 revision 保存後失敗，回應會揭露失敗，不會回傳誤導性的 locator。
+
+Topic 年份 filter 會先由 PubMed 套用，再進行有界檢索。輸出上限會保留觀察到的首篇、末篇、明確 landmark 與時間分散度；audit 會區分 `returned` 和 `available`，並在 coverage 受限或總量未知時警告。PubMed error 或零篇 evidence 不會保存 revision。明確 PMID 字串採嚴格格式，PMID／DOI evidence identity 則讓 entry ID 在日期或分類修正後保持穩定。diff 中缺席一律是 `not_observed_in_revision`／`removed_from_view`，不是已證實退場。多訊號論文保留一個 primary branch 加 cross-links，重疊達 20% 會警告；landmark ranking 不會把 detection confidence 當成科學重要性。Artifact preflight 檢查的是實際準備持久化的 payload。
+
+Mermaid label、ID、parent link、循環、重複項目與圖形大小都會做 deterministic 修正；rich syntax 被拒絕時，會依序降級為 safe 與 minimal。請從 `mermaid_validation.json` 查看 correction、fallback tier 與 omitted count；完整座標資料仍保存在 `chronicle_map.json`。
 
 ### 6. 重新讀取持久化 Query Memory
 
@@ -319,6 +327,7 @@ Copilot 有兩條路：
 | Client 找不到 tools | 檢查 [整合指南](#/troubleshooting) 中的 config path 與 JSON syntax。 |
 | NCBI warning 或速度慢 | 設定 `NCBI_EMAIL`；需要時加 `NCBI_API_KEY`。 |
 | 全文為空或很少 | 先對 PMC Open Access article 測 `get_fulltext`，再確認來源可用性。 |
+| Chronicle Mermaid 被簡化或 client 無法呈現 | 先讀 `mermaid_validation.json`；使用純 source 的 `chronicle.mmd`，並從 `chronicle_map.json` 檢查被省略的視覺項目。 |
 | 本機筆記存到非預期位置 | 檢查 `output_dir`、`PUBMED_NOTES_DIR`、`PUBMED_WORKSPACE_DIR` 與 `PUBMED_DATA_DIR`。 |
 | Service 拒絕 note path、template、pipeline file 或 workspace scope | 省略 server-host path；使用內建 note format，並以名稱存入 authenticated tenant store。 |
 | Service Compose 已保存 schedule 但沒有執行 | Service scheduler 刻意預設停用；請手動執行或提供單一 external leader/lease。 |
