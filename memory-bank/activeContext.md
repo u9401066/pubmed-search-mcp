@@ -46,7 +46,7 @@
 
 ## Validation Snapshot
 
-- Complete non-integration suite: `3909 passed, 24 skipped, 30 deselected`.
+- Complete non-integration suite: `3910 passed, 24 skipped, 30 deselected`.
 - Strict mypy: 355 source/test files clean; Ruff and the async-test checker pass.
 - Pinned Mermaid 11.16.1 with jsdom 26.1.0 parsed and rendered 47 repository,
   documentation, and runtime-fixture diagrams to SVG.
@@ -71,6 +71,10 @@
   state is filesystem-backed; horizontal scaling still requires a shared
   transactional store, distributed locks, object storage, and scheduler leader
   election.
+- Session tools and resources receive their owning server's tenant registry by
+  explicit injection. Without a registry, the registered single-user/SDK
+  manager remains authoritative and cannot be replaced by unrelated global
+  state.
 
 ## Repository Notes
 

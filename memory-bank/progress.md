@@ -37,10 +37,13 @@
   validation, snapshot completeness, and forward-only revision diffs.
 - Synchronized README, bilingual handbook/site content, Chronicle spec,
   CHANGELOG, skills, Copilot/Cline guidance, hooks, and generated references.
-- Deterministic quality gate: `3909 passed, 24 skipped, 30 deselected`; strict
+- Deterministic quality gate: `3910 passed, 24 skipped, 30 deselected`; strict
   mypy (355 files), Ruff, async-test checker, docs checks, and Mermaid rendering
   passed. One opt-in live run had three CORE/Unpaywall timeouts caused by
   upstream connectivity; no deterministic Chronicle gate failed.
+- Removed a release-gate session flake by injecting the server-owned tenant
+  registry into registered tools/resources. A leaked process registry can no
+  longer override an explicitly supplied single-user or SDK session manager.
 
 ### 2026-08-10: MCP v2 / Broker / Deployment Hardening
 - Synchronized the workspace to upstream v0.6.0 and verified the locked MCP
