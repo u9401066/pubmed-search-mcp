@@ -126,6 +126,12 @@ has_explicit_context() {
             (.name? // "" | tostring | gsub("^\\s+|\\s+$"; "") | length) > 0 or
             (.source? // "" | tostring | gsub("^\\s+|\\s+$"; "") | length) > 0 or
             (.sources? // "" | tostring | gsub("^\\s+|\\s+$"; "") | length) > 0 or
+            (.topic? // "" | tostring | gsub("^\\s+|\\s+$"; "") | length) > 0 or
+            (.topics? // "" | tostring | gsub("^\\s+|\\s+$"; "") | length) > 0 or
+            (.chronicle_id? // "" | tostring | gsub("^\\s+|\\s+$"; "") | length) > 0 or
+            (.chronicle_ids? // "" | tostring | gsub("^\\s+|\\s+$"; "") | length) > 0 or
+            (.artifact_id? // "" | tostring | gsub("^\\s+|\\s+$"; "") | length) > 0 or
+            (.artifact_uri? // "" | tostring | gsub("^\\s+|\\s+$"; "") | length) > 0 or
             ((.pmids? // []) | if type == "array" then length else (tostring | length) end) > 0
         )
     ' >/dev/null 2>&1

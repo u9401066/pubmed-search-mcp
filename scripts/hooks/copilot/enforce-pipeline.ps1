@@ -112,7 +112,8 @@ function Test-HasExplicitContext {
 
     foreach ($field in @(
         "query", "pipeline", "pmid", "pmids", "pmcid", "doi", "identifier",
-        "term", "gene_id", "cid", "mesh_term", "code", "name", "source", "sources"
+        "term", "gene_id", "cid", "mesh_term", "code", "name", "source", "sources",
+        "topic", "topics", "chronicle_id", "chronicle_ids", "artifact_id", "artifact_uri"
     )) {
         $prop = $ToolArgs.PSObject.Properties[$field]
         if (-not $prop) {

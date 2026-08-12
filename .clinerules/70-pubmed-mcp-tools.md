@@ -21,7 +21,7 @@ paths:
 
 - Use `generate_search_queries` and `analyze_search_query` before complex/systematic searches.
 - For clinical comparison questions, extract P/I/C/O in the agent, then use `parse_pico` to validate the structured handoff and obtain a runnable PICO pipeline.
-- `build_research_chronicle` is the single research-evolution entry point; the old timeline tools were folded into it. Read stored chronicles with `read_research_chronicle` (`load` / `list` / `diff` / `narrate` / `milestones` / `compare`) instead of rebuilding.
+- `build_research_chronicle` is the single research-evolution entry point; the old timeline tools were folded into it. Use `output="mermaid"` for the horizontal time-spine/lineage map. Preserve warnings from `mermaid_validation.json` when a safe/minimal tier is used or visual items are omitted, and preserve audit warnings for research-stage fallback, capped/unknown source coverage, or at least 20% multi-signal branch overlap. In diffs, absence is `not_observed_in_revision`, never conclusive retirement. Read stored chronicles with `read_research_chronicle` (`load` / `list` / `diff` / `narrate` / `milestones` / `compare`) instead of rebuilding.
 - When `unified_search` returns an `artifact_summary`, preserve the user-facing summary and use `read_session(action="artifact", artifact_uri=...)` for deeper audit files.
 - Use `get_fulltext`, `get_article_figures`, and institutional access tools only when full-text retrieval is requested.
 - Export to RIS for Zotero/EndNote and BibTeX for LaTeX workflows.

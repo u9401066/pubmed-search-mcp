@@ -29,7 +29,9 @@ INTENT="unknown"
 COMPLEXITY="simple"
 TEMPLATE="comprehensive"
 
-if echo "$PROMPT" | grep -qiE '\bvs\.?\b|versus|compared?\s+(to|with)'; then
+if echo "$PROMPT" | grep -qiE 'chronicle|time.?line|research (evolution|history|trajectory)|milestone|研究編年史|研究脈絡|研究演變|里程碑|時間軸'; then
+    INTENT="chronicle"; COMPLEXITY="moderate"; TEMPLATE="comprehensive"
+elif echo "$PROMPT" | grep -qiE '\bvs\.?\b|versus|compared?\s+(to|with)'; then
     INTENT="comparison"; COMPLEXITY="complex"; TEMPLATE="pico"
 elif echo "$PROMPT" | grep -qiE 'systematic|comprehensive|review|meta.?analysis'; then
     INTENT="systematic"; COMPLEXITY="complex"; TEMPLATE="comprehensive"

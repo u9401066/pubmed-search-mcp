@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, cast
 
 from pubmed_search.shared.settings import load_settings
@@ -10,6 +11,7 @@ from pubmed_search.shared.settings import load_settings
 from ._common import get_session_manager
 
 logger = logging.getLogger(__name__)
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 def artifact_persistence_enabled() -> bool:
@@ -29,9 +31,32 @@ def artifact_locator(
     primary_file = str(manifest.get("primary_file") or "")
     artifact_id = str(manifest.get("artifact_id") or "")
     artifact_uri = str(manifest.get("artifact_uri") or "")
+    raw_files = manifest.get("files")
+    if not (artifact_id or artifact_uri) or not primary_file or not isinstance(raw_files, dict):
+        logger.warning("Ignoring malformed artifact manifest without identity, primary file, or file index")
+        return None
+    if primary_file not in raw_files:
+        logger.warning("Ignoring malformed artifact manifest whose primary file is not indexed")
+        return None
+    for file_name, raw_info in raw_files.items():
+        if not isinstance(file_name, str) or not file_name or not isinstance(raw_info, dict):
+            logger.warning("Ignoring malformed artifact manifest with an invalid file record")
+            return None
+        checksum = raw_info.get("sha256")
+        if not isinstance(checksum, str) or _SHA256_RE.fullmatch(checksum) is None:
+            logger.warning("Ignoring malformed artifact manifest with a missing or invalid checksum")
+            return None
+    primary_checksum = manifest.get("sha256")
+    if (
+        not isinstance(primary_checksum, str)
+        or _SHA256_RE.fullmatch(primary_checksum) is None
+        or primary_checksum != raw_files[primary_file].get("sha256")
+    ):
+        logger.warning("Ignoring malformed artifact manifest with an unverifiable primary checksum")
+        return None
     summary = cast("dict[str, Any]", manifest.get("summary") if isinstance(manifest.get("summary"), dict) else {})
     metadata = cast("dict[str, Any]", manifest.get("metadata") if isinstance(manifest.get("metadata"), dict) else {})
-    files = sorted((manifest.get("files") or {}).keys())
+    files = sorted(raw_files)
     read_order = [file for file in summary.get("read_order", []) if file in files]
     for file in files:
         if file not in read_order:
@@ -137,7 +162,7 @@ def artifact_markdown_note(artifact: dict[str, Any] | None) -> str:
         f"- Audit status: `{audit_status}`",
         f"- Files: {', '.join(f'`{file}`' for file in read_order)}",
         "",
-        "The response above is a compact summary. Use artifact files for the full result list, query strategy, and audit.",
+        "The response above is a compact summary. Use artifact files for the full persisted payload and audit trail.",
     ]
     if uri_start:
         lines.append(f"- Start with URI: `{uri_start}`")

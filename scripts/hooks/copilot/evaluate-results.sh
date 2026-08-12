@@ -202,6 +202,18 @@ else
     fi
 fi
 
+if echo "$TOOL_NAME" | grep -qiE '^build_research_chronicle$|^read_research_chronicle$'; then
+    if echo "$RESULT_TEXT" | grep -qiE '"audit_status"[[:space:]]*:[[:space:]]*"fail"|"status"[[:space:]]*:[[:space:]]*"fail"|Audit:[[:space:]]*\*{0,2}fail'; then
+        QUALITY="poor"
+        SUGGESTION="Inspect the Chronicle audit findings, narrow or expand the evidence scope as indicated, then rebuild before relying on the chronology."
+    elif echo "$RESULT_TEXT" | grep -qiE '"audit_status"[[:space:]]*:[[:space:]]*"warn"|"status"[[:space:]]*:[[:space:]]*"warn"|Audit:[[:space:]]*\*{0,2}warn'; then
+        if [ "$QUALITY" = "good" ]; then
+            QUALITY="acceptable"
+        fi
+        SUGGESTION="Review the Chronicle completeness caveats before treating the branch structure as a complete research history."
+    fi
+fi
+
 if [ "$TOOL_NAME" = "unified_search" ] && [ "$PENDING_TIER" = "moderate" ] && { [ -z "$HAD_PIPELINE" ] || [ "$HAD_PIPELINE" = "null" ]; } && { [ "$QUALITY" = "good" ] || [ "$QUALITY" = "acceptable" ]; }; then
     QUALITY="suggest_supplement"
     SUGGESTION="Quick search returned ${RESULT_COUNT} results - good start. For comprehensive coverage, also run a pipeline search to include more sources and semantic expansion."

@@ -66,7 +66,9 @@ try {
     $complexity = "simple"
     $template = "comprehensive"
 
-    if ($prompt -match '\bvs\.?\b|versus|compared?\s+(to|with)') {
+    if ($prompt -match 'chronicle|time.?line|research (evolution|history|trajectory)|milestone|研究編年史|研究脈絡|研究演變|里程碑|時間軸') {
+        $intent = "chronicle"; $complexity = "moderate"; $template = "comprehensive"
+    } elseif ($prompt -match '\bvs\.?\b|versus|compared?\s+(to|with)') {
         $intent = "comparison"; $complexity = "complex"; $template = "pico"
     } elseif ($prompt -match 'systematic|comprehensive|review|meta.?analysis') {
         $intent = "systematic"; $complexity = "complex"; $template = "comprehensive"

@@ -97,11 +97,12 @@ def resolve_tenant(
     return ANONYMOUS_HTTP_TENANT
 
 
-def durable_storage_denied(tool_name: str) -> str | None:
+def durable_storage_denied(tool_name: str, *, output_format: str = "markdown") -> str | None:
     """Return a formatted refusal when the caller may not own persisted data.
 
     Args:
         tool_name: Tool to name in the error payload.
+        output_format: Response format used when access must be refused.
 
     Returns:
         ``None`` when the caller may persist, otherwise a formatted error.
@@ -125,6 +126,7 @@ def durable_storage_denied(tool_name: str) -> str | None:
             "server locally over stdio."
         ),
         tool_name=tool_name,
+        output_format=output_format,
     )
 
 

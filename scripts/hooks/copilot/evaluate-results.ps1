@@ -324,6 +324,18 @@ try {
         }
     }
 
+    if ($toolName -match '^build_research_chronicle$|^read_research_chronicle$') {
+        if ($resultText -match '"audit_status"\s*:\s*"fail"|"status"\s*:\s*"fail"|Audit:\s*\*{0,2}fail') {
+            $quality = "poor"
+            $suggestion = "Inspect the Chronicle audit findings, narrow or expand the evidence scope as indicated, then rebuild before relying on the chronology."
+        } elseif ($resultText -match '"audit_status"\s*:\s*"warn"|"status"\s*:\s*"warn"|Audit:\s*\*{0,2}warn') {
+            if ($quality -eq "good") {
+                $quality = "acceptable"
+            }
+            $suggestion = "Review the Chronicle completeness caveats before treating the branch structure as a complete research history."
+        }
+    }
+
     if (
         $toolName -eq "unified_search" -and
         $pendingTier -eq "moderate" -and
