@@ -105,11 +105,18 @@ request 驗證 bearer principal；legacy compatibility 不是身分或持久化�
 | --- | --- | --- |
 | Pipeline store | `workspace` / `global` / `auto` | tenant-derived store；`auto` 只解析到該 principal root |
 | Pipeline file | 可讀 `file:path.yaml` | 拒絕 server-host `file:` read |
+| Chronicle revisions | `<tenant-root>/chronicles/` 下不可變 revision | 同一路徑按 principal 隔離；index 可由 revision 重建 |
+| Chronicle artifacts | `<tenant-root>/artifacts/` 下的 manifest、JSON 與純 `.mmd` source | 同一路徑按 principal 隔離；不需 server-side Node.js |
 | Note output | 可選 `output_dir` 與 `template_file` | 不接受 host path；使用內建 format 寫入 `<tenant-root>/references/` |
 | Scheduler | 可在可信 local process 啟用 | Service Compose 停用；未來需單一 leader/lease |
 
 Service 中的 pipeline `workspace` 不代表共用 repo；tenant-derived store 刻意不繼承
 process-wide workspace root，避免一個 principal 讀到另一個 principal 的 host files。
+Chronicle revision 以原子發布保存，權威 revision 檔不會被後續寫入覆蓋；損壞或遺失的
+衍生 index 可由 revision 重建。Artifact bundle 若因 I/O 失敗而未完成，已提交的
+revision 仍有效，MCP 回應會明確回報 artifact warning。客戶端應顯示
+`mermaid_validation` warning，並以完整的 `chronicle_map.json`／`snapshot.json` 作為
+圖形簡化時的可稽核資料來源。
 
 ### 0.3 Service 環境變數
 
@@ -378,13 +385,13 @@ PUBMED_DATA_DIR=/var/lib/pubmed-search-mcp
 # reviewed source into your own Azure Container Registry first.
 az acr build \
   --registry myregistry \
-  --image pubmed-search-mcp:0.6.1 \
+  --image pubmed-search-mcp:0.6.2 \
   .
 
 az containerapp create \
   --name pubmed-mcp \
   --resource-group myRG \
-  --image myregistry.azurecr.io/pubmed-search-mcp:0.6.1 \
+  --image myregistry.azurecr.io/pubmed-search-mcp:0.6.2 \
   --target-port 8765 \
   --ingress external
 ```

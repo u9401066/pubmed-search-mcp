@@ -24,7 +24,7 @@ PubMed Search MCP 是一個以 Domain-Driven Design 為核心的 MCP 伺服器�
 | 使用者 / 情境 | 他想完成什麼 | 典型入口 |
 | --- | --- | --- |
 | 臨床工作者 | 快速回答臨床問題、比較治療、追研究證據 | Agent P/I/C/O -> `parse_pico` -> `unified_search(template:pico)` |
-| 研究者 / 學生 | 找代表性文獻、讀全文、追引用脈絡、匯出引用 | `unified_search`, `get_fulltext`, `find_citing_articles`, `prepare_export` |
+| 研究者 / 學生 | 找代表性文獻、讀全文、追引用與主題發展脈絡、匯出引用 | `unified_search`, `get_fulltext`, `build_research_chronicle`, `prepare_export` |
 | AI agent / workflow builder | 把搜尋、判讀、匯出、排程串成可重跑流程 | `unified_search`, `read_session`, `manage_pipeline` |
 
 這個文件後面會談 DDD 與 transport，但產品上真正交付的是一條研究工作流：
@@ -48,7 +48,7 @@ journey
       執行多來源搜尋並快取結果: 5: MCP
     section 深入判讀
       看相關文章、被引用與參考文獻: 5: User, Agent
-      讀全文、圖表、時間軸與指標: 4: User, Agent
+      讀全文、圖表、研究編年史與指標: 4: User, Agent
     section 整理與重用
       匯出 RIS 或 BibTeX: 5: User
       保存 pipeline 供後續重跑: 4: User, Team
@@ -69,7 +69,7 @@ flowchart TB
   subgraph Understand[2. 理解證據]
     U1[Article exploration<br/>related / citing / references / citation tree]
     U2[Full text and figures<br/>get_fulltext / get_article_figures / text-mined terms]
-    U3[Impact and evolution<br/>citation metrics / research timeline]
+    U3[Impact and evolution<br/>citation metrics / versioned research chronicle]
   end
 
   subgraph Specialize[3. 延伸查詢]
@@ -108,10 +108,10 @@ flowchart LR
   Client[Human / AI Client]
   MCP[MCP Server<br/>presentation/mcp_server]
   API[Background HTTP API<br/>health / cache / exports]
-  App[Application Layer<br/>search timeline pipeline export]
-  Domain[Domain Layer<br/>article timeline pipeline entities]
+  App[Application Layer<br/>search chronicle timeline pipeline export]
+  Domain[Domain Layer<br/>article chronicle timeline pipeline entities]
   Infra[Infrastructure Layer<br/>NCBI / Europe PMC / CORE / OpenAlex / Unpaywall / institutional]
-  Store[Session + Pipeline Store]
+  Store[Session + Pipeline + Chronicle Store]
 
   Client --> MCP
   MCP --> App
@@ -139,7 +139,7 @@ flowchart LR
 | --- | --- |
 | Agent-First | 回傳格式優先支援 AI agent 決策與後續工具編排 |
 | Task-Oriented | 工具以研究工作流分組，不直接暴露每個底層 API client |
-| Domain-Driven | 查詢、文章、timeline、pipeline 等核心概念在 domain/application 中建模 |
+| Domain-Driven | 查詢、文章、chronicle、timeline、pipeline 等核心概念在 domain/application 中建模 |
 | Multi-Source | PubMed 為核心，並整合 Europe PMC、CORE、OpenAlex、Semantic Scholar、CrossRef、first-class preprint sources |
 | Session-Aware | 搜尋結果會自動快取於 session，支援後續全文、匯出與探索 |
 
@@ -150,6 +150,7 @@ src/pubmed_search/
 ├── domain/
 │   ├── entities/
 │   │   ├── article.py
+│   │   ├── chronicle.py
 │   │   ├── figure.py
 │   │   ├── image.py
 │   │   ├── pipeline.py
@@ -158,6 +159,7 @@ src/pubmed_search/
 │   ├── services/
 │   └── value_objects/
 ├── application/
+│   ├── chronicle/
 │   ├── export/
 │   ├── image_search/
 │   ├── pipeline/
@@ -188,6 +190,7 @@ Presentation
   └─ api/server.py
 
 Application
+  ├─ chronicle/   immutable revision 組裝、lineage、projection、audit、diff、narration 與 Mermaid 修復
   ├─ search/      查詢分析、語意增強、多源整合、重現性/排序
   ├─ timeline/    timeline 建構、policy-driven milestone 分析、landmark scoring、diagnostics 聚合
   ├─ pipeline/    executor、schema、validator、runner、store、report、templates
@@ -196,7 +199,8 @@ Application
   └─ image_search 視覺查詢建議
 
 Domain
-  ├─ UnifiedArticle / Figure / Timeline / Pipeline entities
+  ├─ UnifiedArticle / ChronicleSnapshot / ChronicleEntry / ChronicleBranch / ChronicleGraph
+  ├─ Figure / Timeline / Pipeline entities
   └─ value objects / domain services
 
 Infrastructure
@@ -221,6 +225,17 @@ Timeline 子系統目前拆分為：
 - `milestone_policy.py`：regex、publication type、citation threshold policy tables
 - `diagnostics.py`：把 event-level detection/landmark 診斷整理成 MCP 可用的穩定 payload
 - `landmark_policy.py` / `landmark_scorer.py`：多訊號 landmark scoring policy 與計分實作
+
+Chronicle 子系統在 timeline evidence provider 之上建立不可變 revision，並由同一份
+`ChronicleSnapshot` 投影出 timeline、tree、narrative、graph 與 `chronicle_map`。其中
+`chronicle_map` 以橫向年份主軸保留論文先後，再依重複出現的 MeSH／關鍵詞訊號切出
+主題分支；branch point 只代表「本次範圍內最早觀察到」，不宣稱因果或全領域首創。
+
+Mermaid 輸出會先做 deterministic label／結構正規化，再依 `rich → safe → minimal`
+降級；完整座標與省略診斷仍保留在 `chronicle_map.json` 與
+`mermaid_validation.json`。Runtime 不依賴 Node.js，而 CI 使用固定 Mermaid 11.16.1
+與 jsdom 26.1.0 對文件及 smoke fixtures 執行真實 parse／SVG render，避免只有字串
+lint 通過但客戶端仍無法顯示。
 
 ```mermaid
 flowchart TB

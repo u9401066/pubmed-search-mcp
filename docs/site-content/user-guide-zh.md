@@ -199,7 +199,7 @@ Lineage 是本次 retrieved snapshot 的可解釋分組，不是因果祖譜。`
 
 Revision 不可變，並以原子操作追加。`action="compare"` 使用正規化後的完整 stored-topic 名稱；同名對應多個 Chronicle 時必須明確傳 `chronicle_ids`，重複目標會拒絕。Build input 有界限（`max_events` 1–200、明確 PMID 最多 500 個 unique values、topic 最多 500 字元），structured actions 的錯誤也維持結構化。啟用的 session artifact persistence 若在 revision 保存後失敗，回應會揭露失敗，不會回傳誤導性的 locator。
 
-Topic 年份 filter 會先由 PubMed 套用，再進行有界檢索。輸出上限會保留觀察到的首篇、末篇、明確 landmark 與時間分散度；audit 會區分 `returned` 和 `available`，並在 coverage 受限或總量未知時警告。PubMed error 或零篇 evidence 不會保存 revision。明確 PMID 字串採嚴格格式，PMID／DOI evidence identity 則讓 entry ID 在日期或分類修正後保持穩定。diff 中缺席一律是 `not_observed_in_revision`／`removed_from_view`，不是已證實退場。多訊號論文保留一個 primary branch 加 cross-links，重疊達 20% 會警告；landmark ranking 不會把 detection confidence 當成科學重要性。Artifact preflight 檢查的是實際準備持久化的 payload。
+Topic 年份 filter 會先由 PubMed 套用，再進行有界檢索。輸出上限會保留觀察到的首篇、末篇、明確 landmark 與時間分散度；audit 會區分 `returned` 和 `available`，並在 coverage 受限或總量未知時警告。PubMed error 或零篇 evidence 不會保存 revision。明確 PMID 字串只接受正 ASCII 數字且最多 20 位；PMID／DOI evidence identity 則讓 entry ID 在日期或分類修正後保持穩定。沒有可靠日期的記錄標示為 `Undated`、排列在 dated entries 之後，且不擴張顯示的年份範圍。diff 中缺席一律是 `not_observed_in_revision`／`removed_from_view`，不是已證實退場。多訊號論文保留一個 primary branch 加 cross-links，重疊達 20% 會警告；landmark ranking 不會把 detection confidence 當成科學重要性。Artifact preflight 檢查的是實際準備持久化的 payload。
 
 Mermaid label、ID、parent link、循環、重複項目與圖形大小都會做 deterministic 修正；rich syntax 被拒絕時，會依序降級為 safe 與 minimal。請從 `mermaid_validation.json` 查看 correction、fallback tier 與 omitted count；完整座標資料仍保存在 `chronicle_map.json`。
 

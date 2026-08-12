@@ -550,7 +550,7 @@ Chronicle revisions 不可變，並以原子操作追加。啟用 session artifa
 
 Topic build 會先把年份限制送到 PubMed，再做有界檢索；輸出上限會保留觀察到的首篇、末篇，並以 landmark 與時間分散度補齊。audit 會記錄 PubMed `returned` / `available` 數量；若總量未知，或檢索／選取上限使內容不是完整 census，就會警告。PubMed 錯誤或範圍內沒有任何論文證據時，不會發布空的 revision。
 
-明確 PMID input 採嚴格格式（`12345678` 或 `PMID:12345678`），不會把 DOI 或混合文字強制轉成 PMID。entry ID 依 PMID／DOI 證據身分產生，日期或分類修正後仍保持穩定；topic 延續性則共用同一套 Unicode、大小寫與空白 canonical key。符合多個訊號的論文只指定一個 primary branch，其他關聯保留為 explicit cross-links；重疊達 20% 會產生 audit warning。revision diff 中缺席只代表 `not_observed_in_revision`／`removed_from_view`，不能宣稱研究已退場。
+明確 PMID input 採嚴格格式（`12345678` 或 `PMID:12345678`；正 ASCII 數字、最多 20 位），不會把 DOI 或混合文字強制轉成 PMID。沒有可靠出版日期的記錄會標示為 `Undated`、排列在 dated entries 之後，且不計入顯示的年份範圍。entry ID 依 PMID／DOI 證據身分產生，日期或分類修正後仍保持穩定；topic 延續性則共用同一套 Unicode、大小寫與空白 canonical key。符合多個訊號的論文只指定一個 primary branch，其他關聯保留為 explicit cross-links；重疊達 20% 會產生 audit warning。revision diff 中缺席只代表 `not_observed_in_revision`／`removed_from_view`，不能宣稱研究已退場。
 
 ### 🏥 機構訂閱與 ICD 轉換
 
