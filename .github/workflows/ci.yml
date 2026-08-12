@@ -23,10 +23,55 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  mermaid-rendering:
+    name: Mermaid parse and SVG rendering
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+
+      - name: Install pinned Mermaid rendering dependencies
+        shell: bash
+        run: |
+          validator_root="$RUNNER_TEMP/pubmed-mermaid-validator"
+          mkdir -p "$validator_root"
+          npm install --prefix "$validator_root" --no-save --no-package-lock \
+            --ignore-scripts --no-audit --fund=false \
+            mermaid@11.16.1 jsdom@26.1.0
+
+      - name: Parse Mermaid and render SVG
+        shell: bash
+        env:
+          MERMAID_NODE_MODULES: ${{ runner.temp }}/pubmed-mermaid-validator/node_modules
+        run: |
+          fixture_directory="$RUNNER_TEMP/pubmed-mermaid-fixtures"
+          PYTHONPATH=src python3 -S scripts/export_mermaid_smoke_fixtures.py "$fixture_directory"
+          node scripts/check_mermaid_rendering.mjs \
+            docs \
+            ARCHITECTURE.md \
+            CHANGELOG.md \
+            DEPLOYMENT.md \
+            ROADMAP.md \
+             copilot-studio/README.md \
+             "$fixture_directory"
+
   quality-and-package:
     name: Quality, docs, and wheel smoke
     runs-on: ubuntu-latest
     timeout-minutes: 25
+
     steps:
       - name: Checkout
         uses: actions/checkout@v7

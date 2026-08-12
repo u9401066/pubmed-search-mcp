@@ -126,7 +126,7 @@ def test_docs_site_shell_uses_current_assets_and_mobile_image_wrapping() -> None
 
     cache_keys = set(CACHE_KEY_PATTERN.findall(index_html))
 
-    assert cache_keys == {"20260809-handbook"}
+    assert cache_keys == {"20260812-mermaid-guard"}
     assert 'id="sidebar-backdrop"' in index_html
     assert index_html.count('data-page-group="') == 3
     assert "45</strong>" in index_html
@@ -177,6 +177,28 @@ def test_docs_site_navigation_exposes_the_current_operating_handbook() -> None:
     source_contracts = embedded_pages["source-contracts"]
     for term in ["Unified Search Broker", "Scopus", "Web of Science", "process-wide conservative rate budget"]:
         assert term in source_contracts
+
+
+def test_docs_site_isolates_mermaid_rendering_and_preserves_failed_source() -> None:
+    index_html = (DOCS_ROOT / "index.html").read_text(encoding="utf-8")
+    site_js = (DOCS_ROOT / "site.js").read_text(encoding="utf-8")
+
+    assert "mermaid@11.16.1/dist/mermaid.min.js" in index_html
+    assert 'securityLevel: "strict"' in site_js
+    assert "suppressErrorRendering: true" in site_js
+    assert "for (const [index, block] of blocks.entries())" in site_js
+    assert "await renderMermaidBlock(block, index, generation)" in site_js
+    assert "await window.mermaid.parse(renderTarget.source)" in site_js
+    assert "await window.mermaid.run({ nodes: [renderTarget.diagram], suppressErrors: false })" in site_js
+    assert "sourceCode.textContent = source" in site_js
+    assert 'shell.dataset.mermaidStatus = "error"' in site_js
+    assert "generation !== pageRenderGeneration" in site_js
+    assert 'svg.setAttribute("aria-label"' in site_js
+    assert 'notice.setAttribute("role", "status")' in site_js
+    assert "error.message || error.str || error.error?.message" in site_js
+    assert "if (window.marked)" in site_js
+    assert "docContent.replaceChildren(notice, sourceContainer)" in site_js
+    assert 'securityLevel: "loose"' not in site_js
 
 
 def test_docs_site_css_stays_readable_and_tool_like() -> None:

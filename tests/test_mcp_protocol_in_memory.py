@@ -132,9 +132,9 @@ async def test_in_memory_caller_is_the_default_tenant_and_may_persist():
     seen: list[str] = []
     original = chronicle_tools.durable_storage_denied
 
-    def record(tool_name: str) -> str | None:
+    def record(tool_name: str, *, output_format: str = "markdown") -> str | None:
         seen.append(current_tenant().source)
-        return original(tool_name)
+        return original(tool_name, output_format=output_format)
 
     chronicle_tools.durable_storage_denied = record
     try:

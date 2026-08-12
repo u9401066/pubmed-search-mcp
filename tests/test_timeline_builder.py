@@ -8,6 +8,7 @@ import pytest
 
 from pubmed_search.application.timeline.timeline_builder import (
     TimelineBuilder,
+    TimelineRetrievalError,
     format_timeline_text,
 )
 from pubmed_search.domain.entities.timeline import (
@@ -104,6 +105,8 @@ class TestBuildTimeline:
         assert isinstance(timeline, ResearchTimeline)
         assert timeline.topic == "nonexistent drug"
         assert len(timeline.events) == 0
+        assert timeline.metadata["source_counts"] == {"pubmed": {"returned": 0, "available": 0}}
+        assert timeline.metadata["search_status"] == "no_results"
 
     @pytest.mark.asyncio
     async def test_with_articles(self, builder, mock_searcher, sample_articles):
@@ -113,11 +116,14 @@ class TestBuildTimeline:
         # Milestone detection should find at least some events
         assert isinstance(timeline.events, list)
         assert "diagnostics" in timeline.metadata
+        assert timeline.metadata["source_counts"] == {"pubmed": {"returned": len(sample_articles), "available": None}}
 
     @pytest.mark.asyncio
     async def test_year_filter(self, builder, mock_searcher, sample_articles):
         mock_searcher.search.return_value = sample_articles
         timeline = await builder.build_timeline("drug X", min_year=2015, max_year=2020)
+        assert mock_searcher.search.await_args.kwargs["min_year"] == 2015
+        assert mock_searcher.search.await_args.kwargs["max_year"] == 2020
         # Only articles from 2015-2020 should be included
         for event in timeline.events:
             assert 2015 <= event.year <= 2020
@@ -144,8 +150,17 @@ class TestBuildTimeline:
             for i in range(20)
         ]
         mock_searcher.search.return_value = articles
-        timeline = await builder.build_timeline("topic", max_events=5, include_all=True)
-        assert len(timeline.events) <= 5
+        timeline = await builder.build_timeline(
+            "topic",
+            max_events=5,
+            include_all=True,
+            highlight_landmarks=False,
+        )
+        assert len(timeline.events) == 5
+        assert timeline.events[0].pmid == "0"
+        assert timeline.events[-1].pmid == "19"
+        assert timeline.metadata["events_before_output_cap"] == 20
+        assert timeline.metadata["diagnostics"]["search"]["event_selection"].startswith("chronological_boundaries")
 
     @pytest.mark.asyncio
     async def test_auto_periods(self, builder, mock_searcher, sample_articles):
@@ -183,6 +198,7 @@ class TestBuildTimelineFromPmids:
         timeline = await builder.build_timeline_from_pmids([])
         assert timeline.topic == "Custom Timeline"
         assert len(timeline.events) == 0
+        assert timeline.metadata["source_counts"] == {"pubmed": {"returned": 0, "available": 0}}
 
     @pytest.mark.asyncio
     async def test_with_pmids(self, builder, mock_searcher, sample_articles):
@@ -191,12 +207,16 @@ class TestBuildTimelineFromPmids:
         assert timeline.topic == "My Timeline"
         assert isinstance(timeline.events, list)
         assert "diagnostics" in timeline.metadata
+        assert timeline.metadata["source_counts"] == {
+            "pubmed": {"returned": len(sample_articles), "available": len(sample_articles)}
+        }
 
     @pytest.mark.asyncio
     async def test_fetch_returns_empty(self, builder, mock_searcher):
         mock_searcher.fetch_details.return_value = []
         timeline = await builder.build_timeline_from_pmids(["99999"])
         assert len(timeline.events) == 0
+        assert timeline.metadata["source_counts"] == {"pubmed": {"returned": 0, "available": 1}}
 
 
 # ============================================================
@@ -227,8 +247,34 @@ class TestSearchTopic:
     @pytest.mark.asyncio
     async def test_search_exception(self, builder, mock_searcher):
         mock_searcher.search.side_effect = Exception("fail")
-        results = await builder._search_topic("topic")
-        assert results == []
+        with pytest.raises(TimelineRetrievalError, match="PubMed search failed"):
+            await builder._search_topic("topic")
+
+    @pytest.mark.asyncio
+    async def test_error_sentinel_never_becomes_article(self, builder, mock_searcher):
+        mock_searcher.search.return_value = [{"error": "NCBI unavailable"}]
+
+        with pytest.raises(TimelineRetrievalError, match="NCBI unavailable"):
+            await builder.build_timeline("topic", include_all=True)
+
+    @pytest.mark.asyncio
+    async def test_metadata_only_row_is_not_an_article(self, builder, mock_searcher):
+        mock_searcher.search.return_value = [{"_search_metadata": {"total_count": 12}}]
+
+        timeline = await builder.build_timeline("topic", include_all=True)
+
+        assert timeline.events == []
+        assert timeline.metadata["source_counts"] == {"pubmed": {"returned": 0, "available": 12}}
+
+    @pytest.mark.asyncio
+    async def test_total_available_is_preserved(self, builder, mock_searcher):
+        mock_searcher.search.return_value = [
+            {"pmid": "1", "title": "Paper", "year": "2020", "_search_metadata": {"total_count": 99}}
+        ]
+
+        timeline = await builder.build_timeline("topic", include_all=True)
+
+        assert timeline.metadata["source_counts"] == {"pubmed": {"returned": 1, "available": 99}}
 
     @pytest.mark.asyncio
     async def test_citation_sorting_failure_graceful(self, builder, mock_searcher):
@@ -297,6 +343,8 @@ class TestCreateGenericEvent:
             "authors": [{"name": "Smith J"}],
             "journal": "Nature",
             "doi": "10.1/test",
+            "mesh_terms": ["Drug Safety"],
+            "keywords": ["pharmacovigilance"],
         }
         event = builder._create_generic_event(article)
         assert isinstance(event, TimelineEvent)
@@ -305,6 +353,8 @@ class TestCreateGenericEvent:
         assert event.month == 1
         assert event.milestone_type == MilestoneType.OTHER
         assert event.first_author == "Smith J"
+        assert event.metadata["mesh_terms"] == ["Drug Safety"]
+        assert event.metadata["keywords"] == ["pharmacovigilance"]
 
     async def test_string_author(self, builder):
         article = {"pmid": "1", "title": "T", "year": "2023", "authors": ["Doe A"]}
@@ -325,6 +375,16 @@ class TestCreateGenericEvent:
         article = {"pmid": "1", "title": "T", "authors": []}
         event = builder._create_generic_event(article)
         assert event.year == 0
+        assert event.date_label == "Undated"
+
+    async def test_undated_events_sort_last_and_do_not_expand_year_range(self, builder):
+        undated = builder._create_generic_event({"pmid": "2", "title": "Undated", "authors": []})
+        dated = builder._create_generic_event({"pmid": "1", "title": "Dated", "year": "2020", "authors": []})
+
+        timeline = ResearchTimeline("topic", [undated, dated])
+
+        assert [event.pmid for event in timeline.events] == ["1", "2"]
+        assert timeline.year_range == (2020, 2020)
 
     async def test_source_field(self, builder):
         article = {

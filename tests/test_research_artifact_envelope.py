@@ -6,6 +6,8 @@ import json
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
+import pytest
+
 from pubmed_search.application.session.artifact_envelope import (
     ARTIFACT_SCHEMA_VERSION,
     audit_unified_search_artifact,
@@ -240,3 +242,20 @@ def test_artifact_locator_exposes_remote_safe_read_hints(tmp_path: Path):
 
     full_page = manager.read_artifact(manifest["artifact_id"], file_name="audit.json")
     assert json.loads(full_page["content"])["status"] == "warn"
+
+
+@pytest.mark.parametrize(
+    "manifest",
+    [
+        {"primary_file": "snapshot.json", "files": {}},
+        {"artifact_id": "artifact-1", "primary_file": "snapshot.json", "files": {}},
+        {
+            "artifact_id": "artifact-1",
+            "primary_file": "snapshot.json",
+            "files": {"snapshot.json": {"sha256": "not-a-checksum"}},
+            "sha256": "not-a-checksum",
+        },
+    ],
+)
+def test_artifact_locator_rejects_unverifiable_manifests(manifest: dict[str, object]) -> None:
+    assert artifact_locator(manifest) is None

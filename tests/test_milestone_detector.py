@@ -67,8 +67,8 @@ class TestMilestoneDetectorBasic:
 class TestMilestoneDetectorFirstReport:
     """Tests for first report detection."""
 
-    async def test_detect_first_report(self):
-        """Test first report detection."""
+    async def test_earliest_regular_article_is_not_promoted_to_first_report(self):
+        """Earliest-in-scope is provenance, not a scientific milestone."""
         detector = MilestoneDetector()
         article = {
             "pmid": "12345678",
@@ -76,9 +76,7 @@ class TestMilestoneDetectorFirstReport:
             "year": 2020,
         }
         event = detector.detect_milestone(article, is_first=True)
-        assert event is not None
-        assert event.milestone_type == MilestoneType.FIRST_REPORT
-        assert event.milestone_label == "First Report"
+        assert event is None
 
     async def test_detect_non_first_article(self):
         """Test non-first article without other milestones."""
@@ -111,7 +109,7 @@ class TestMilestoneDetectorPubType:
         }
         event = detector.detect_milestone(article)
         assert event is not None
-        assert event.milestone_type == MilestoneType.PHASE_3
+        assert event.milestone_type == MilestoneType.RANDOMIZED_TRIAL
 
     async def test_detect_phase1_pubtype(self):
         """Test Phase 1 detection from publication type."""
@@ -252,6 +250,26 @@ class TestMilestoneDetectorTitlePatterns:
         assert event.milestone_type == MilestoneType.FDA_APPROVAL
         assert event.metadata["milestone_detection"]["strategy"] == "title_pattern"
         assert event.metadata["milestone_detection"]["policy"] == "fda_approval"
+
+    async def test_preserves_mesh_keywords_and_publication_context_for_lineage(self):
+        detector = MilestoneDetector()
+        article = {
+            "pmid": "12345678",
+            "title": "Phase III trial of an immune checkpoint inhibitor",
+            "year": 2024,
+            "mesh_terms": ["Immune Checkpoint Inhibitors"],
+            "keywords": ["immunotherapy"],
+            "publication_types": ["Randomized Controlled Trial"],
+            "pmc_id": "PMC123",
+        }
+
+        event = detector.detect_milestone(article)
+
+        assert event is not None
+        assert event.metadata["mesh_terms"] == ["Immune Checkpoint Inhibitors"]
+        assert event.metadata["keywords"] == ["immunotherapy"]
+        assert event.metadata["publication_type"] == "Randomized Controlled Trial"
+        assert event.metadata["pmcid"] == "PMC123"
 
     async def test_detect_ema_approval(self):
         """Test EMA approval detection from title."""
@@ -480,8 +498,7 @@ class TestMilestoneDetectorBatch:
             {"pmid": "1", "title": "First study", "year": 2020},
         ]
         events = detector.detect_milestones_batch(articles)
-        assert len(events) == 1
-        assert events[0].milestone_type == MilestoneType.FIRST_REPORT
+        assert events == []
 
     async def test_detect_milestones_batch_chronological(self):
         """Test batch detection sorts chronologically."""
@@ -496,13 +513,15 @@ class TestMilestoneDetectorBatch:
         assert len(events) == 2
         # Events should be from chronological order: 2020 then 2022
         assert events[0].year == 2020
+        assert events[0].milestone_type == MilestoneType.FDA_APPROVAL
+        assert events[0].metadata["earliest_observed_in_scope"] is True
         assert events[1].year == 2022
 
     async def test_detect_milestones_batch_pub_year_field(self):
         """Test batch detection with pub_year field."""
         detector = MilestoneDetector()
         articles = [
-            {"pmid": "1", "title": "Study", "pub_year": 2020},
+            {"pmid": "1", "title": "FDA approves therapy", "pub_year": 2020},
         ]
         events = detector.detect_milestones_batch(articles)
         assert len(events) == 1

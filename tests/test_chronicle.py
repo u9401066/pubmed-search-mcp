@@ -15,14 +15,17 @@ from pubmed_search.application.chronicle import (
     analyze_milestones,
     assemble_chronicle,
     audit_chronicle,
+    build_chronicle_lineage,
     compare_chronicles,
     derive_chronicle_id,
     diff_chronicles,
     narrate_chronicle,
+    project_chronicle_map,
     project_evidence,
     project_graph,
     project_lineage_tree,
     project_timeline,
+    render_chronicle_mermaid,
     render_lineage_mindmap,
     render_timeline_mermaid,
 )
@@ -57,6 +60,7 @@ def make_event(
     label: str,
     title: str = "",
     citations: int = 10,
+    mesh_terms: list[str] | None = None,
 ) -> TimelineEvent:
     """Build a timeline event with sensible defaults for chronicle tests."""
     return TimelineEvent(
@@ -70,19 +74,20 @@ def make_event(
         doi=f"10.1000/{pmid}",
         confidence_score=0.8,
         evidence_level=EvidenceLevel.LEVEL_2,
+        metadata={"mesh_terms": list(mesh_terms or []), "keywords": []},
     )
 
 
 BASE_EVENTS = [
-    make_event("1", 2015, MilestoneType.FIRST_REPORT, "First report"),
-    make_event("2", 2018, MilestoneType.PHASE_3, "Phase 3 trial"),
-    make_event("3", 2020, MilestoneType.FDA_APPROVAL, "FDA approval"),
+    make_event("1", 2015, MilestoneType.FIRST_REPORT, "First report", mesh_terms=["Molecular Mechanisms"]),
+    make_event("2", 2018, MilestoneType.PHASE_3, "Phase 3 trial", mesh_terms=["Clinical Efficacy"]),
+    make_event("3", 2020, MilestoneType.FDA_APPROVAL, "FDA approval", mesh_terms=["Clinical Efficacy"]),
 ]
 
 EXTENDED_EVENTS = [
     *BASE_EVENTS,
-    make_event("4", 2023, MilestoneType.SAFETY_ALERT, "Safety alert"),
-    make_event("5", 2024, MilestoneType.META_ANALYSIS, "Meta-analysis"),
+    make_event("4", 2023, MilestoneType.SAFETY_ALERT, "Safety alert", mesh_terms=["Drug Safety"]),
+    make_event("5", 2024, MilestoneType.META_ANALYSIS, "Meta-analysis", mesh_terms=["Drug Safety"]),
 ]
 
 
@@ -93,12 +98,13 @@ class FakeEvidenceProvider:
         self.events = events
         self.source_counts = source_counts or {"pubmed": len(events)}
         self.topic_calls: list[str] = []
+        self.topic_call_kwargs: list[dict[str, Any]] = []
         self.pmid_calls: list[list[str]] = []
 
     async def build_timeline(self, topic: str, **kwargs: Any) -> ResearchTimeline:
         """Return the canned timeline for a topic search."""
-        del kwargs
         self.topic_calls.append(topic)
+        self.topic_call_kwargs.append(dict(kwargs))
         return ResearchTimeline(
             topic=topic,
             events=list(self.events),
@@ -124,7 +130,7 @@ def build_snapshot(events: list[TimelineEvent], topic: str = "drug X") -> Chroni
     snapshot = assemble_chronicle(
         topic=topic,
         timeline=timeline,
-        tree=build_research_tree(timeline),
+        tree=build_chronicle_lineage(timeline),
         scope=ChronicleInputScope(mode="topic", query=topic, source_counts={"pubmed": len(events)}),
     )
     snapshot.audit = audit_chronicle(snapshot)
@@ -246,10 +252,11 @@ class TestChronicleAssembler:
         assert any(node.node_type is ChronicleNodeType.TOPIC for node in snapshot.graph.nodes.values())
         assert any(edge.edge_type is ChronicleEdgeType.SUPPORTS for edge in snapshot.graph.edges.values())
 
-    def test_safety_entries_use_contradicts_edges(self):
+    def test_safety_entries_keep_their_declared_supporting_role(self):
         snapshot = build_snapshot(EXTENDED_EVENTS)
         edge_types = {edge.edge_type for edge in snapshot.graph.edges.values()}
-        assert ChronicleEdgeType.CONTRADICTS in edge_types
+        assert ChronicleEdgeType.SUPPORTS in edge_types
+        assert ChronicleEdgeType.CONTRADICTS not in edge_types
 
     def test_empty_timeline_produces_empty_snapshot(self):
         timeline = ResearchTimeline(topic="nothing", events=[])
@@ -258,6 +265,32 @@ class TestChronicleAssembler:
         assert snapshot.entries == []
         assert snapshot.branches == []
         assert snapshot.year_range is None
+
+    def test_semantic_lineage_uses_mesh_signals(self):
+        snapshot = build_snapshot(EXTENDED_EVENTS)
+
+        assert snapshot.metadata["lineage_diagnostics"]["basis"] == "topic_signals"
+        branch_names = {branch.name for branch in snapshot.branches}
+        assert {"Clinical Efficacy", "Drug Safety"} <= branch_names
+        assert all("lineage_basis:" in " ".join(branch.tags) for branch in snapshot.branches)
+
+    def test_lineage_falls_back_to_research_stages_when_topic_signals_are_missing(self):
+        events = [
+            make_event("11", 2010, MilestoneType.FIRST_REPORT, "First"),
+            make_event("12", 2015, MilestoneType.PHASE_3, "Trial"),
+        ]
+        timeline = ResearchTimeline(topic="signal-poor", events=events)
+        snapshot = assemble_chronicle(
+            topic="signal-poor",
+            timeline=timeline,
+            tree=build_chronicle_lineage(timeline),
+        )
+        snapshot.audit = audit_chronicle(snapshot)
+
+        assert snapshot.metadata["lineage_diagnostics"]["basis"] == "research_stage_fallback"
+        finding = next(item for item in snapshot.audit.findings if item.check == "lineage_semantics")
+        assert finding.status == "warn"
+        assert "rather than semantic sub-topics" in finding.message
 
 
 # ── Audit ───────────────────────────────────────────────────────────────────
@@ -309,7 +342,7 @@ class TestChronicleAudit:
         snapshot = build_snapshot(BASE_EVENTS)
         audit = audit_chronicle(snapshot, artifact_files=["snapshot.json"])
 
-        finding = next(f for f in audit.findings if f.check == "artifact_files")
+        finding = next(f for f in audit.findings if f.check == "artifact_bundle_preflight")
         assert finding.status == "fail"
         assert "audit.json" in finding.details["missing"]
 
@@ -320,6 +353,82 @@ class TestChronicleAudit:
 
         finding = next(f for f in audit.findings if f.check == "source_coverage")
         assert finding.status == "warn"
+
+    def test_bounded_source_sample_warns_instead_of_claiming_complete_coverage(self):
+        snapshot = build_snapshot(BASE_EVENTS)
+        snapshot.input_scope.source_counts = {"pubmed": {"returned": 3, "available": 250}}
+
+        finding = next(f for f in audit_chronicle(snapshot).findings if f.check == "source_coverage")
+
+        assert finding.status == "warn"
+        assert finding.details["incomplete_sources"] == ["pubmed"]
+        assert "observed, ranked sample" in finding.message
+
+    def test_output_selection_cap_is_a_source_coverage_caveat(self):
+        snapshot = build_snapshot(BASE_EVENTS)
+        snapshot.metadata["timeline_metadata"] = {
+            "total_searched": 90,
+            "articles_after_filters": 90,
+            "milestone_candidates": 60,
+            "events_before_output_cap": 60,
+        }
+
+        finding = next(f for f in audit_chronicle(snapshot).findings if f.check == "source_coverage")
+
+        assert finding.status == "warn"
+        assert finding.details["selection_limited"] is True
+        assert finding.details["selection_counts"]["events_emitted"] == len(BASE_EVENTS)
+
+    def test_explicit_pmid_audit_compares_identifier_sets(self):
+        timeline = ResearchTimeline(topic="custom", events=[BASE_EVENTS[0]])
+        snapshot = assemble_chronicle(
+            topic="custom",
+            timeline=timeline,
+            scope=ChronicleInputScope(mode="pmids", query="custom", pmids=["999999"]),
+        )
+
+        finding = next(f for f in audit_chronicle(snapshot).findings if f.check == "input_coverage")
+
+        assert finding.status == "fail"
+        assert finding.details["missing_requested_pmids"] == ["999999"]
+        assert finding.details["unexpected_retrieved_pmids"] == [BASE_EVENTS[0].pmid]
+
+    def test_duplicate_and_orphan_branch_references_warn(self):
+        snapshot = build_snapshot(BASE_EVENTS)
+        snapshot.branches.append(snapshot.branches[0])
+        snapshot.branches[0].parent_branch_id = "missing-parent"
+        snapshot.entries[0].branch_id = "missing-branch"
+
+        audit = audit_chronicle(snapshot)
+        finding = next(f for f in audit.findings if f.check == "branch_coverage")
+
+        assert finding.status == "warn"
+        assert finding.details["duplicate_branch_ids"]
+        assert finding.details["invalid_entry_assignments"] == [snapshot.entries[0].entry_id]
+        assert finding.details["invalid_parent_branches"]
+
+    def test_visually_summarized_mermaid_is_not_audit_pass(self):
+        events = [
+            make_event(str(index), 1800 + index, MilestoneType.PHASE_1, f"Trial {index}") for index in range(1, 131)
+        ]
+        snapshot = build_snapshot(events)
+
+        finding = next(item for item in audit_chronicle(snapshot).findings if item.check == "mermaid_renderability")
+
+        assert finding.status == "warn"
+        assert finding.details["omitted_counts"]
+        assert "complete record" in finding.message
+
+    def test_cyclic_branch_structure_is_repaired_with_audit_warning(self):
+        snapshot = build_snapshot(BASE_EVENTS)
+        assert len(snapshot.branches) >= 2
+        snapshot.branches[0].parent_branch_id = snapshot.branches[1].branch_id
+        snapshot.branches[1].parent_branch_id = snapshot.branches[0].branch_id
+
+        finding = next(item for item in audit_chronicle(snapshot).findings if item.check == "mermaid_renderability")
+
+        assert finding.status == "warn"
+        assert "branch_cycle_removed" in finding.message
 
 
 # ── Projections ─────────────────────────────────────────────────────────────
@@ -360,16 +469,48 @@ class TestChronicleProjections:
         for article in projection["articles"]:
             assert article["backs_entry_ids"]
 
+    def test_chronicle_map_combines_horizontal_spine_and_branch_order(self):
+        snapshot = build_snapshot(EXTENDED_EVENTS)
+        projection = project_chronicle_map(snapshot)
+
+        assert projection["layout"] == "horizontal_time_spine_with_lineage_branches"
+        assert projection["spine"]["orientation"] == "horizontal"
+        assert [anchor["year"] for anchor in projection["spine"]["year_anchors"]] == [
+            2015,
+            2018,
+            2020,
+            2023,
+            2024,
+        ]
+        assert projection["lineage_diagnostics"]["basis"] == "topic_signals"
+        for branch in projection["branches"]:
+            orders = [entry["global_order"] for entry in branch["entries"]]
+            assert orders == sorted(orders)
+            if branch["entries"]:
+                assert branch["branch_point"]["year"] == branch["entries"][0]["year"]
+                assert branch["entries"][0]["paper_title"].startswith("Study")
+
     def test_mermaid_and_mindmap_render(self):
         snapshot = build_snapshot(EXTENDED_EVENTS)
 
         mermaid = render_timeline_mermaid(snapshot)
         assert mermaid.startswith("timeline")
-        assert "section 2015" in mermaid
+        assert "2015 : First report" in mermaid
 
         mindmap = render_lineage_mindmap(snapshot)
         assert mindmap.startswith("mindmap")
         assert "drug X" in mindmap
+
+    def test_chronicle_mermaid_has_horizontal_spine_and_year_anchored_branches(self):
+        snapshot = build_snapshot(EXTENDED_EVENTS)
+
+        mermaid = render_chronicle_mermaid(snapshot)
+
+        assert mermaid.startswith("flowchart LR")
+        assert mermaid.count("==>") == 5
+        assert "-.->" in mermaid
+        assert "pmid#58;2" in mermaid
+        assert "classDef spine fill:#dbeafe" in mermaid
 
     def test_projections_share_entry_ids(self):
         snapshot = build_snapshot(EXTENDED_EVENTS)
@@ -427,6 +568,19 @@ class TestChronicleAnalytics:
         assert comparison["summary"]["earliest_research"] == 2015
         assert comparison["summary"]["shared_evidence_count"] == 3
         assert comparison["shared_evidence"][0]["shared_by"] == ["drug X", "drug Y"]
+
+    def test_comparison_entry_digests_use_precision_aware_dates(self):
+        first = build_snapshot(BASE_EVENTS, topic="drug X")
+        first.entries[0].time_start = "2020-11"
+        first.entries[1].time_start = "2020-02"
+        first.entries[2].time_start = "2020-07-15"
+        second = build_snapshot(BASE_EVENTS, topic="drug Y")
+
+        comparison = compare_chronicles([first, second])
+        digest = comparison["chronicles"][0]
+
+        assert digest["first_entry"]["entry_id"] == first.entries[1].entry_id
+        assert digest["latest_entry"]["entry_id"] == first.entries[0].entry_id
 
     def test_comparison_requires_two_chronicles(self):
         with pytest.raises(ValueError, match="at least 2"):
@@ -578,8 +732,10 @@ class TestChronicleService:
         snapshot = await service.build(topic="drug X")
 
         assert snapshot.revision == 1
-        assert snapshot.audit.status == "pass"
+        assert snapshot.audit.status == "warn"
+        assert any(finding.check == "lineage_semantics" for finding in snapshot.audit.findings)
         assert provider.topic_calls == ["drug X"]
+        assert provider.topic_call_kwargs[0]["include_all"] is True
         assert store.load(snapshot.chronicle_id) is not None
 
     async def test_rebuild_creates_next_revision(self, store):
@@ -654,6 +810,9 @@ class TestChronicleService:
 
         assert {
             "snapshot.json",
+            "chronicle_map.json",
+            "chronicle.mmd",
+            "mermaid_validation.json",
             "timeline.json",
             "lineage_tree.json",
             "graph.json",
@@ -661,13 +820,33 @@ class TestChronicleService:
             "audit.json",
         } <= set(files)
         assert files["narrative.md"] == "# note"
+        assert files["chronicle.mmd"].startswith("flowchart LR")
+        assert "```" not in files["chronicle.mmd"]
+        assert files["mermaid_validation.json"]["schema_version"] == "mermaid-validation/v1"
+        assert files["mermaid_validation.json"]["structural_valid"] is True
+        assert files["mermaid_validation.json"] == snapshot.metadata["mermaid_validation"]
+
+    async def test_service_audits_the_actual_artifact_payload_keys(self, store, monkeypatch):
+        original_builder = ChronicleService.build_artifact_files
+
+        def incomplete_builder(snapshot, *, narrative=None):
+            files = original_builder(snapshot, narrative=narrative)
+            files.pop("graph.json")
+            return files
+
+        monkeypatch.setattr(ChronicleService, "build_artifact_files", staticmethod(incomplete_builder))
+        snapshot = await ChronicleService(FakeEvidenceProvider(BASE_EVENTS), store).build(topic="drug X")
+        finding = next(f for f in snapshot.audit.findings if f.check == "artifact_bundle_preflight")
+
+        assert finding.status == "fail"
+        assert finding.details["missing"] == ["graph.json"]
 
     async def test_render_supports_every_documented_format(self, store):
         snapshot = await ChronicleService(FakeEvidenceProvider(EXTENDED_EVENTS), store).build(topic="drug X")
 
-        for output_format in ("json", "timeline", "tree", "graph", "evidence"):
+        for output_format in ("json", "chronicle_map", "timeline", "tree", "graph", "evidence"):
             assert isinstance(ChronicleService.render(snapshot, output_format), dict)
-        for output_format in ("mermaid", "mindmap", "narrative"):
+        for output_format in ("mermaid", "timeline_mermaid", "mindmap", "narrative"):
             assert isinstance(ChronicleService.render(snapshot, output_format), str)
 
     async def test_render_rejects_unknown_format(self, store):
@@ -690,7 +869,13 @@ class TestChronicleTools:
     """Thin MCP wrappers over the chronicle service."""
 
     @staticmethod
-    def _register(monkeypatch, tmp_path, events: list[TimelineEvent]):
+    def _register(
+        monkeypatch,
+        tmp_path,
+        events: list[TimelineEvent],
+        *,
+        persistence_enabled: bool = False,
+    ):
         from mcp.server.mcpserver import MCPServer
 
         from pubmed_search.presentation.mcp_server.tools import chronicle as chronicle_tools
@@ -706,10 +891,39 @@ class TestChronicleTools:
             lambda *args, **kwargs: FakeEvidenceProvider(events),
         )
         monkeypatch.setattr(chronicle_tools, "persist_tool_artifact", lambda **kwargs: None)
+        monkeypatch.setattr(chronicle_tools, "artifact_persistence_enabled", lambda: persistence_enabled)
 
         mcp = MCPServer(name="chronicle-test")
         chronicle_tools.register_chronicle_tools(mcp, object())
         return {name: tool.fn for name, tool in mcp._tool_manager._tools.items()}
+
+    async def test_tool_schema_bounds_modes_and_identifiers(self, monkeypatch, tmp_path):
+        from mcp.server.mcpserver import MCPServer
+
+        from pubmed_search.presentation.mcp_server.tools import chronicle as chronicle_tools
+
+        monkeypatch.setattr(chronicle_tools, "_chronicle_store", lambda: ChronicleStore(tmp_path / "chronicles"))
+        monkeypatch.setattr(
+            chronicle_tools, "TimelineBuilder", lambda *args, **kwargs: FakeEvidenceProvider(BASE_EVENTS)
+        )
+        mcp = MCPServer(name="chronicle-schema-test")
+        chronicle_tools.register_chronicle_tools(mcp, object())
+
+        build_schema = mcp._tool_manager._tools["build_research_chronicle"].parameters
+        read_schema = mcp._tool_manager._tools["read_research_chronicle"].parameters
+        assert build_schema["properties"]["max_events"]["minimum"] == 1
+        assert build_schema["properties"]["max_events"]["maximum"] == 200
+        assert "mermaid" in build_schema["properties"]["output"]["enum"]
+        assert read_schema["properties"]["mode"]["enum"] == ["brief", "full"]
+        chronicle_id_schema = read_schema["properties"]["chronicle_id"]["anyOf"][0]
+        assert chronicle_id_schema["pattern"] == r"^[A-Za-z0-9][A-Za-z0-9_.-]*$"
+        assert build_schema["additionalProperties"] is False
+        assert read_schema["additionalProperties"] is False
+
+        for tool_name in ("build_research_chronicle", "read_research_chronicle"):
+            argument_model = mcp._tool_manager._tools[tool_name].fn_metadata.arg_model
+            with pytest.raises(ValueError, match="Extra inputs are not permitted"):
+                argument_model.model_validate({"unexpected_argument": True})
 
     async def test_tools_are_registered(self, monkeypatch, tmp_path):
         tools = self._register(monkeypatch, tmp_path, BASE_EVENTS)
@@ -756,6 +970,71 @@ class TestChronicleTools:
         result = await tools["build_research_chronicle"](pmids="last")
         assert "No usable PMIDs resolved" in result
 
+    async def test_build_accepts_only_strict_explicit_pmid_tokens(self, monkeypatch, tmp_path):
+        tools = self._register(monkeypatch, tmp_path, BASE_EVENTS)
+
+        result = await tools["build_research_chronicle"](
+            pmids="PMID: 1, 2 PMID:3",
+            topic="Selected",
+        )
+
+        assert "# Research Chronicle: Selected" in result
+        assert "Entries: 3" in result
+
+    @pytest.mark.parametrize(
+        "pmids",
+        [
+            "10.1000/123456",
+            "1, DOI:10.1000/2, 3",
+            "pubmed:123456",
+            "PMID123456",
+            "123abc",
+            "１２３４５６",
+        ],
+    )
+    async def test_build_rejects_non_pmid_and_mixed_identifier_tokens(self, monkeypatch, tmp_path, pmids):
+        tools = self._register(monkeypatch, tmp_path, BASE_EVENTS)
+
+        payload = json.loads(await tools["build_research_chronicle"](pmids=pmids, output="json"))
+
+        assert payload["success"] is False
+        assert "ASCII digits" in payload["error"]
+        listed = json.loads(await tools["read_research_chronicle"](action="list"))
+        assert listed == {"total": 0, "chronicles": []}
+
+    @pytest.mark.parametrize(
+        ("kwargs", "field"),
+        [
+            ({"topic": ["drug X"]}, "topic"),
+            ({"pmids": 123456}, "pmids"),
+            ({"chronicle_id": {"id": "x"}}, "chronicle_id"),
+        ],
+    )
+    async def test_build_direct_call_non_string_inputs_return_structured_errors(
+        self,
+        monkeypatch,
+        tmp_path,
+        kwargs,
+        field,
+    ):
+        tools = self._register(monkeypatch, tmp_path, BASE_EVENTS)
+
+        payload = json.loads(await tools["build_research_chronicle"](**kwargs, output="json"))
+
+        assert payload["success"] is False
+        assert f"{field} must be a string" in payload["error"]
+
+    async def test_build_direct_call_non_string_output_returns_error_instead_of_type_error(
+        self,
+        monkeypatch,
+        tmp_path,
+    ):
+        tools = self._register(monkeypatch, tmp_path, BASE_EVENTS)
+
+        result = await tools["build_research_chronicle"](topic="drug X", output=["json"])
+
+        assert "output must be a string" in result
+
     async def test_build_json_output_is_parseable(self, monkeypatch, tmp_path):
         tools = self._register(monkeypatch, tmp_path, BASE_EVENTS)
 
@@ -764,6 +1043,91 @@ class TestChronicleTools:
 
         assert payload["schema_version"] == CHRONICLE_SCHEMA_VERSION
         assert len(payload["entries"]) == 3
+
+    async def test_build_structured_errors_remain_json(self, monkeypatch, tmp_path):
+        tools = self._register(monkeypatch, tmp_path, BASE_EVENTS)
+
+        payload = json.loads(await tools["build_research_chronicle"](output="json", max_events=0))
+
+        assert payload["success"] is False
+        assert "max_events" in payload["error"]
+
+    async def test_build_rejects_reversed_year_range(self, monkeypatch, tmp_path):
+        tools = self._register(monkeypatch, tmp_path, BASE_EVENTS)
+
+        result = await tools["build_research_chronicle"](topic="drug X", min_year=2025, max_year=2020)
+
+        assert "min_year cannot be later" in result
+
+    async def test_artifact_failure_is_visible_without_losing_saved_revision(self, monkeypatch, tmp_path):
+        tools = self._register(monkeypatch, tmp_path, BASE_EVENTS, persistence_enabled=True)
+
+        result = await tools["build_research_chronicle"](topic="drug X", output="json")
+        payload = json.loads(result)
+
+        assert payload["revision"] == 1
+        assert payload["artifact"]["status"] == "failed"
+        listed = json.loads(await tools["read_research_chronicle"](action="list"))
+        assert listed["chronicles"][0]["latest_revision"] == 1
+
+    async def test_build_mermaid_keeps_artifact_note_outside_source(self, monkeypatch, tmp_path):
+        from pubmed_search.presentation.mcp_server.tools import chronicle as chronicle_tools
+
+        tools = self._register(monkeypatch, tmp_path, BASE_EVENTS)
+        persisted: dict[str, Any] = {}
+
+        def capture_artifact(**kwargs: Any) -> dict[str, Any]:
+            persisted.update(kwargs)
+            return {
+                "artifact_id": "artifact-1",
+                "artifact_uri": "artifact://artifact-1",
+                "audit_status": "pass",
+                "read_order": ["audit.json", "chronicle.mmd"],
+            }
+
+        monkeypatch.setattr(chronicle_tools, "persist_tool_artifact", capture_artifact)
+
+        result = await tools["build_research_chronicle"](topic="drug X", output="mermaid")
+        diagram = result.split("```mermaid\n", maxsplit=1)[1].split("\n```", maxsplit=1)[0]
+
+        assert result.startswith("```mermaid\nflowchart LR")
+        assert "## Persistent Artifact" in result
+        assert "Persistent Artifact" not in diagram
+        assert diagram == persisted["files"]["chronicle.mmd"]
+        assert persisted["files"]["response.md"].startswith("```mermaid\nflowchart LR")
+        assert persisted["files"]["response.md"].endswith("\n```")
+
+    async def test_read_mermaid_returns_a_renderable_markdown_fence(self, monkeypatch, tmp_path):
+        tools = self._register(monkeypatch, tmp_path, BASE_EVENTS)
+        summary = await tools["build_research_chronicle"](topic="drug X")
+        chronicle_id = summary.split("Chronicle ID: `")[1].split("`")[0]
+
+        result = await tools["read_research_chronicle"](chronicle_id=chronicle_id, output="mermaid")
+
+        assert result.startswith("```mermaid\nflowchart LR")
+        assert result.endswith("\n```")
+
+    async def test_json_output_stays_parseable_when_artifact_is_persisted(self, monkeypatch, tmp_path):
+        from pubmed_search.presentation.mcp_server.tools import chronicle as chronicle_tools
+
+        tools = self._register(monkeypatch, tmp_path, BASE_EVENTS)
+        monkeypatch.setattr(
+            chronicle_tools,
+            "persist_tool_artifact",
+            lambda **_kwargs: {
+                "artifact_id": "artifact-1",
+                "artifact_uri": "artifact://artifact-1",
+                "audit_status": "pass",
+                "read_order": ["audit.json"],
+            },
+        )
+
+        result = await tools["build_research_chronicle"](topic="drug X", output="json")
+
+        payload = json.loads(result)
+        assert payload["topic"] == "drug X"
+        assert payload["artifact"]["artifact_id"] == "artifact-1"
+        assert "Persistent Artifact" not in result
 
     async def test_read_list_then_load_then_diff(self, monkeypatch, tmp_path):
         tools = self._register(monkeypatch, tmp_path, BASE_EVENTS)
@@ -798,6 +1162,40 @@ class TestChronicleTools:
         result = await tools["read_research_chronicle"](action="explode")
         assert "Unsupported action" in result
 
+    @pytest.mark.parametrize(
+        ("kwargs", "field"),
+        [
+            ({"action": "load", "chronicle_id": 123}, "chronicle_id"),
+            ({"action": "list", "topic": ["drug X"]}, "topic"),
+            ({"action": "compare", "topics": ["a", "b"]}, "topics"),
+            ({"action": "compare", "chronicle_ids": {"a", "b"}}, "chronicle_ids"),
+            ({"action": "narrate", "mode": ["full"]}, "mode"),
+        ],
+    )
+    async def test_read_direct_call_non_string_inputs_return_structured_errors(
+        self,
+        monkeypatch,
+        tmp_path,
+        kwargs,
+        field,
+    ):
+        tools = self._register(monkeypatch, tmp_path, BASE_EVENTS)
+
+        payload = json.loads(await tools["read_research_chronicle"](**kwargs, output="json"))
+
+        assert payload["success"] is False
+        assert f"{field} must be a string" in payload["error"]
+
+    async def test_read_direct_call_non_string_action_and_output_do_not_raise(self, monkeypatch, tmp_path):
+        tools = self._register(monkeypatch, tmp_path, BASE_EVENTS)
+
+        action_payload = json.loads(await tools["read_research_chronicle"](action=["load"], output="json"))
+        output_result = await tools["read_research_chronicle"](action="load", output=["json"])
+
+        assert action_payload["success"] is False
+        assert "action must be a string" in action_payload["error"]
+        assert "output must be a string" in output_result
+
     async def test_read_requires_chronicle_id(self, monkeypatch, tmp_path):
         tools = self._register(monkeypatch, tmp_path, BASE_EVENTS)
 
@@ -822,8 +1220,8 @@ class TestChronicleTools:
     async def test_list_with_no_chronicles_reports_no_results(self, monkeypatch, tmp_path):
         tools = self._register(monkeypatch, tmp_path, BASE_EVENTS)
 
-        result = await tools["read_research_chronicle"](action="list")
-        assert "build_research_chronicle" in result
+        result = json.loads(await tools["read_research_chronicle"](action="list"))
+        assert result == {"total": 0, "chronicles": []}
 
     async def test_milestones_action_returns_analysis(self, monkeypatch, tmp_path):
         tools = self._register(monkeypatch, tmp_path, EXTENDED_EVENTS)
@@ -849,6 +1247,24 @@ class TestChronicleTools:
 
         result = await tools["read_research_chronicle"](action="compare", topics="drug X")
         assert "Need at least 2 chronicles" in result
+
+    async def test_compare_rejects_duplicate_target(self, monkeypatch, tmp_path):
+        tools = self._register(monkeypatch, tmp_path, BASE_EVENTS)
+        await tools["build_research_chronicle"](topic="drug X")
+
+        payload = json.loads(await tools["read_research_chronicle"](action="compare", topics="drug X,drug X"))
+
+        assert payload["success"] is False
+        assert "distinct" in payload["error"]
+
+    async def test_compare_uses_exact_stored_topic_for_custom_id(self, monkeypatch, tmp_path):
+        tools = self._register(monkeypatch, tmp_path, BASE_EVENTS)
+        await tools["build_research_chronicle"](topic="drug X", chronicle_id="custom-x")
+        await tools["build_research_chronicle"](topic="drug Y", chronicle_id="custom-y")
+
+        payload = json.loads(await tools["read_research_chronicle"](action="compare", topics="drug x,drug y"))
+
+        assert {row["chronicle_id"] for row in payload["chronicles"]} == {"custom-x", "custom-y"}
 
     async def test_compare_rejects_too_many_chronicles(self, monkeypatch, tmp_path):
         tools = self._register(monkeypatch, tmp_path, BASE_EVENTS)

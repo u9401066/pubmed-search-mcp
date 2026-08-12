@@ -75,6 +75,31 @@ class TestCopilotHookPolicy:
         assert "get_session_summary" in guarded_tools
         assert "get_pipeline_history" in guarded_tools
 
+    def test_chronicle_topic_build_and_persisted_reads_are_not_pre_search_guarded(self):
+        policy = json.loads(POLICY_PATH.read_text(encoding="utf-8"))
+        guarded_tools = set(policy["rules"]["requiresEvidenceOrIdentifiers"])
+
+        assert guarded_tools.isdisjoint({"build_research_chronicle", "read_research_chronicle"})
+        assert {"build_research_chronicle", "read_research_chronicle"} <= set(policy["rules"]["feedbackRemediation"])
+
+    def test_chronicle_hook_contracts_cover_intent_context_and_audit_failure(self):
+        bash_analyzer = Path("scripts/hooks/copilot/analyze-prompt.sh").read_text(encoding="utf-8")
+        powershell_analyzer = Path("scripts/hooks/copilot/analyze-prompt.ps1").read_text(encoding="utf-8")
+        bash_guard = Path("scripts/hooks/copilot/enforce-pipeline.sh").read_text(encoding="utf-8")
+        powershell_guard = Path("scripts/hooks/copilot/enforce-pipeline.ps1").read_text(encoding="utf-8")
+        bash_evaluator = Path("scripts/hooks/copilot/evaluate-results.sh").read_text(encoding="utf-8")
+        powershell_evaluator = Path("scripts/hooks/copilot/evaluate-results.ps1").read_text(encoding="utf-8")
+
+        for source in (bash_analyzer, powershell_analyzer):
+            assert 'intent = "chronicle"' in source.lower() or 'INTENT="chronicle"' in source
+            assert "研究編年史" in source
+        for source in (bash_guard, powershell_guard):
+            assert "chronicle_id" in source
+            assert "topic" in source
+        for source in (bash_evaluator, powershell_evaluator):
+            assert "audit_status" in source
+            assert "before relying on the chronology" in source
+
     def test_policy_has_no_duplicate_tools_within_sections(self):
         policy = json.loads(POLICY_PATH.read_text(encoding="utf-8"))
 
