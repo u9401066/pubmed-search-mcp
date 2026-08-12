@@ -9,18 +9,91 @@
 所有 IO 操作必須使用 async/await:
 - HTTP: httpx.AsyncClient (取代 urllib/requests)
 - NCBI Entrez: await asyncio.to_thread(Entrez.*)
+- Local sync stores: await asyncio.to_thread(store.*)
 - Rate limit: await asyncio.sleep() (取代 time.sleep)
 - 並行: asyncio.gather() (取代 ThreadPoolExecutor)
 - MCP tools: async def (MCP Python SDK v2 原生支援)
 ```
 
+`async def` alone does not make a path non-blocking. Filesystem-backed
+Chronicle/session/pipeline/artifact operations must be moved to
+`asyncio.to_thread` when invoked from async application or MCP code.
+
+### DDD Dependency Direction
+
+```text
+presentation -> application -> domain
+infrastructure -------> application/domain contracts
+```
+
+- MCP tools validate/adapt requests and delegate; they do not own Chronicle,
+  search, export, pipeline, or persistence business rules.
+- Domain entities and rules do not import MCP/HTTP presentation modules.
+- Infrastructure errors are normalized before they become application results;
+  an error sentinel must never be mapped into a paper/evidence entity.
+
+### Research Chronicle Projection Pattern (2026-08-12)
+
+```text
+authoritative Chronicle snapshot
+        |
+        +--> audit / diff / narrative / graph
+        `--> structured Mermaid projection
+                  `--> rich -> safe -> minimal
+```
+
+- Canonical Mermaid is `flowchart LR` with a horizontal year-anchor spine;
+  date precision governs stable global and within-branch entry order.
+- Repeated MeSH/keyword signals create semantic branches only when at least two
+  supported branches cover 60% of events; otherwise disclose
+  `research_stage_fallback`. One paper has one primary branch; matched signals
+  and cross-links preserve overlap.
+- Branches are not causal lineage. Definite chronology may produce `PRECEDES`;
+  ordering alone never produces `SUPERSEDES`.
+- Absence from a later retrieval is `not_observed_in_revision`.
+- Selection caps preserve earliest/latest evidence, explicit landmarks,
+  citations, and temporal spread before filling remaining slots.
+
+### Deterministic Mermaid Repair Pattern (2026-08-12)
+
+- Build graphs from structured nodes/edges; never interpolate untrusted labels
+  directly into Mermaid syntax.
+- Normalize line breaks, directives, control/bidi characters, invalid Unicode,
+  identifiers, quotes, and HTML-sensitive text.
+- Repair duplicate ids, orphans, self-loops, cycles, malformed rows, invalid
+  dates, and output-size limits deterministically.
+- Surface corrections, warnings, omissions, fallback tier, and structural
+  validation status. A fallback must remain valid and must not silently claim
+  completeness.
+- Pin a real Mermaid parser/renderer in CI and render runtime fixtures plus
+  repository/documentation code blocks to SVG.
+
+### Immutable Revision + Rebuildable Index Pattern (2026-08-12)
+
+```text
+atomic immutable revision JSON  <-- authority
+              |
+              `--> index.json   <-- rebuildable cache
+```
+
+- Use stable evidence identity (PMID, then DOI, then bibliographic fallback)
+  independent of mutable year/classifier output.
+- Protect append/rebuild paths with process/thread locks and atomic file
+  replacement; reject non-finite JSON values.
+- Recover missing, corrupt, or stale indices from revision files.
+- A post-commit index-refresh failure must not erase or falsely fail an already
+  authoritative revision.
+- Refuse to publish an empty evidence revision.
+
 ### MCP Tool 模式
 ```
-MCP Server → Tools → Entrez/Sources → External APIs
+MCP client → presentation tool adapter → application service → domain
+                                      `→ infrastructure adapter → External API
 ```
-- 每個 Tool 是獨立的 MCP function
-- Tools 組合使用 Entrez 模組
-- 結果透過 SearchSession 快取
+- Tool 只處理 schema、request adaptation、progress/log bridge 與 response formatting
+- 搜尋、Chronicle、pipeline、export 與持久化規則屬於 application/domain
+- Entrez 與其他來源藏在 infrastructure adapter 後；presentation 不直接擁有來源邏輯
+- 需要重用的搜尋結果透過 application-owned SearchSession 快取
 
 ### 多來源整合模式
 ```
@@ -86,8 +159,9 @@ TTL / LRU cache → cachetools.TTLCache
 
 ### MCP Tools
 - 每個 tool 有獨立的 docstring
-- 參數使用 JSON Schema
-- 回傳格式統一為 JSON string
+- 參數使用嚴格 JSON Schema；枚舉/範圍明確，未知欄位拒絕
+- 應用層再次驗證 topic、year、limit、positive ASCII PMID 與 revision
+- 回傳 structured content/errors；Mermaid code fence 僅包裝已驗證的純 `.mmd`
 
 ## 🔧 API 使用模式
 
@@ -109,4 +183,4 @@ except HTTPError as e:
 ```
 
 ---
-*Last updated: 2026-03-17*
+*Last updated: 2026-08-12 — v0.6.2 Chronicle patterns*

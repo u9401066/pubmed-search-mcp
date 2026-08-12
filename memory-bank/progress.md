@@ -1,6 +1,46 @@
-# Progress (Updated: 2026-08-10)
+# Progress (Updated: 2026-08-12)
 
 ## Done
+
+### 2026-08-12: v0.6.2 Research Chronicle Integrity and Mermaid Hardening
+
+- Reworked the canonical Chronicle diagram into a horizontal `flowchart LR`
+  year-anchor spine with observational topic branches. Repeated MeSH/keyword
+  signals are accepted only when at least two supported branches cover 60% of
+  events; otherwise diagnostics disclose `research_stage_fallback`. Date
+  precision controls stable entry ordering; undated evidence is explicit and
+  placed last.
+- Made lineage claims conservative: definite chronology may produce
+  `PRECEDES`, but the classifier does not invent `SUPERSEDES`; evidence absent
+  from a later revision is `not_observed_in_revision`, not automatically
+  retired. Branch overlap and cross-links are reported without causal wording.
+- Improved capped selection so earliest/latest boundaries, explicit landmarks,
+  citations, and temporal spread survive instead of retaining only the first
+  chronological block. Empty retrieval and PubMed error sentinels cannot create
+  a false paper or publish an empty evidence revision.
+- Added deterministic Mermaid normalization and repair for unsafe Unicode and
+  directives, malformed labels/rows, duplicate ids, orphaned parents,
+  self-loops, cycles, invalid dates, and size limits. Rendering uses auditable
+  `rich -> safe -> minimal` fallback tiers with corrections, warnings, and
+  omitted counts.
+- Added pinned Mermaid 11.16.1/jsdom 26.1.0 CI that parses and renders runtime
+  fixtures plus repository/documentation diagrams to SVG. Forty-seven diagrams
+  passed real rendering, alongside seeded hostile-input and 1,000-case
+  structural/determinism fuzz coverage.
+- Hardened Chronicle persistence: immutable revision JSON is authoritative,
+  the index is a rebuildable cache, publication is atomic and lock-protected,
+  and stale/corrupt/missing indices recover from revisions. Store calls from
+  async application/MCP paths use `asyncio.to_thread`.
+- Tightened topic/year/PMID/revision/MCP input validation, canonical topic and
+  evidence identity, exact explicit-PMID auditing, source-coverage diagnostics,
+  prepared artifact file-set preflight, artifact-store locator/checksum
+  validation, snapshot completeness, and forward-only revision diffs.
+- Synchronized README, bilingual handbook/site content, Chronicle spec,
+  CHANGELOG, skills, Copilot/Cline guidance, hooks, and generated references.
+- Deterministic quality gate: `3909 passed, 24 skipped, 30 deselected`; strict
+  mypy (355 files), Ruff, async-test checker, docs checks, and Mermaid rendering
+  passed. One opt-in live run had three CORE/Unpaywall timeouts caused by
+  upstream connectivity; no deterministic Chronicle gate failed.
 
 ### 2026-08-10: MCP v2 / Broker / Deployment Hardening
 - Synchronized the workspace to upstream v0.6.0 and verified the locked MCP
@@ -179,7 +219,10 @@
 - ✅ docs/IMAGE_SEARCH_API.md 完整重寫
 
 ## Doing
-- v0.6.1 release lifecycle and post-release monitoring.
+
+- v0.6.2 corrective-release lifecycle: version/lock metadata, segmented release
+  commits, push, tag, and publication. v0.6.1 remains the published baseline
+  until these steps complete.
 
 ## Next
 

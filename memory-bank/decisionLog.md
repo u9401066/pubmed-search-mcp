@@ -1,3 +1,62 @@
+# Decision Log
+
+## [2026-08-12] Make Chronicle Projections Chronological, Observational, and Repairable
+
+### Decision
+
+Use a left-to-right year-anchor spine as the canonical Chronicle view and
+attach evidence to topic branches inferred from repeated signals when at least
+two supported branches cover 60% of events. Otherwise disclose a deterministic
+research-stage fallback. Treat all branches as observational groupings, not
+causal descent. Generate Mermaid from a structured projection, normalize and
+repair it deterministically, and expose `rich -> safe -> minimal` diagnostics.
+
+### Consequences
+
+- Date precision determines the stable entry ordering; equal-time ties preserve
+  input order for display without asserting `PRECEDES`. Undated evidence is
+  retained explicitly after dated evidence.
+- A paper has one primary branch while matched signals and cross-links preserve
+  multi-topic evidence without duplicating its identity.
+- `PRECEDES` requires definite chronology. `SUPERSEDES` is never inferred from
+  ordering alone, and absence means `not_observed_in_revision` rather than
+  scientific retirement.
+- Mermaid labels, identifiers, graph topology, and output bounds are repaired
+  before delivery. Corrections, omissions, fallback tier, and validation status
+  are part of the projection contract.
+- CI pins Mermaid 11.16.1 and jsdom 26.1.0 and must parse and render repository,
+  documentation, and runtime-fixture diagrams to real SVG.
+
+---
+
+## [2026-08-12] Treat Revision Files as Chronicle Authority and the Index as Cache
+
+### Decision
+
+Persist every Chronicle revision as an immutable, atomically published JSON
+record. Derive list/latest/topic lookup state from those revisions and treat the
+index only as a rebuildable performance cache. Move blocking store work off the
+async event loop with `asyncio.to_thread`.
+
+### Consequences
+
+- Missing, corrupt, or stale indices are repaired from revision files instead
+  of becoming a second source of truth.
+- Process/thread locks protect local append and index-rebuild paths; a failed
+  post-commit index refresh cannot turn a successfully persisted revision into
+  a false build failure.
+- Empty retrieval cannot publish an evidence-free revision, and failed PubMed
+  responses cannot be represented as papers.
+- Local filesystem persistence remains a single-process/single-replica service
+  boundary; distributed deployment still needs a transactional shared store,
+  distributed locks, and object storage.
+- Service and MCP boundaries validate topic identity, years, positive ASCII
+  PMIDs, revision direction, exact evidence sets, prepared artifact file sets,
+  and source coverage. The artifact store separately verifies persisted
+  locators and checksums.
+
+---
+
 ## [2026-08-09] Separate Local Trust From Multi-User Service Identity
 
 ### Decision
@@ -72,11 +131,11 @@ Expose `pubmed_search.api` as the stable Python SDK facade, keep MCP tools as pr
 - Docs must distinguish MCP tool surface, Python SDK facade, and auxiliary HTTP APIs.
 
 ---
-# Decision Log
+## Earlier Decision Index
 
 | Date | Decision | Rationale |
 |------|----------|-----------|
-| 2026-06-06 | **Make Research Chronicle a planned persisted source-of-truth, not a synonym for timeline** | Current code implements timeline, lineage tree, context graph preview, and citation tree, but no persistent/versioned chronicle layer. The canonical rebuild spec now defines Chronicle as an auditable artifact with entries, evidence bundles, typed provenance graph, revisions, deltas, and projections. |
+| 2026-06-06 | **Make Research Chronicle a planned persisted source-of-truth, not a synonym for timeline** | At the time, the code had timeline/tree previews but no persistent Chronicle. The resulting auditable aggregate, revisions, deltas, evidence bundles, and projections shipped before the v0.6.2 hardening. |
 | 2026-06-05 | **Treat research artifacts as the durable evidence channel** | MCP responses should remain small enough for agents to answer immediately, while complete search results, query strategy, source-count audit, and retrieval metadata live in paged artifact files that local, remote, and sandboxed clients can read repeatedly without rerunning external APIs. |
 | 2026-04-29 | **Keep Zotero Keeper outside PubMed MCP core** | PubMed MCP should expose stable exports and guided local notes; Zotero import, duplicate handling, and VSIX-specific library policies belong in Zotero Keeper or another external client. |
 | 2026-04-29 | **Pipeline PICO support should emphasize diagnostics and guided outputs** | PICO/pipeline runs are structured clinical questions. The valuable artifact is an auditable search/filter/export trail, not a copied storage subsystem from another repository. |
