@@ -351,12 +351,14 @@ def create_server(
         session_manager=session_manager,
         strategy_generator=strategy_generator,
         workspace_dir=workspace_dir,
+        session_registry=tenant_registry,
     )
     logger.info("Tool registration complete: %s", stats)
 
     # ── Per-tenant session isolation ────────────────────────────────────
     # Installed after registration: register_all_mcp_tools() calls
-    # set_session_manager(), which intentionally clears any registry.
+    # set_session_manager(), which intentionally clears any process accessor.
+    # Session closures already hold this registry through explicit injection.
     set_session_registry(tenant_registry)
     if settings.tenant_isolation:
         logger.info("Tenant isolation enabled (max %d concurrent requests per tenant)", settings.tenant_max_concurrency)

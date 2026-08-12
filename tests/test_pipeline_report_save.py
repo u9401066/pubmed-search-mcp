@@ -338,3 +338,4 @@ class TestExplicitWorkspaceConfiguration:
             create_server(email="test@example.com", workspace_dir="/tmp/workspace")
 
         assert mock_register.call_args.kwargs["workspace_dir"] == "/tmp/workspace"
+        assert mock_register.call_args.kwargs["session_registry"] is not None

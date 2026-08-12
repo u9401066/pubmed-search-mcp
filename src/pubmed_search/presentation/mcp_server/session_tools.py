@@ -27,10 +27,10 @@ if TYPE_CHECKING:
     from mcp.server.mcpserver import Context, MCPServer
 
     from pubmed_search.application.session.manager import SessionManager
+    from pubmed_search.application.session.registry import SessionManagerRegistry
 
 from pubmed_search.shared.settings import load_settings
 
-from .tools._common import get_session_manager
 from .tools.artifact_memory import artifact_locator
 from .tools.tool_runtime import safe_send_resource_updated
 
@@ -51,21 +51,27 @@ SESSION_RESOURCE_URIS = (
 
 
 class _TenantScopedSessionManager:
-    """Forward every attribute to the session manager of the current tenant.
+    """Forward attributes through an installed tenant registry when present.
 
     Session tools and resources are registered once at startup, so capturing a
-    manager in their closures would pin every caller to the registration-time
-    tenant. This proxy defers the lookup to call time instead, which keeps the
-    tool bodies unchanged and makes it impossible to miss a call site.
+    manager in their closures must not pin multi-tenant callers to the startup
+    tenant. A registry therefore resolves the current tenant at call time. In
+    single-manager mode, the explicitly registered fallback remains authoritative
+    instead of being replaced by unrelated process-global test or SDK state.
     """
 
-    __slots__ = ("_fallback",)
+    __slots__ = ("_fallback", "_registry")
 
-    def __init__(self, fallback: SessionManager) -> None:
+    def __init__(
+        self,
+        fallback: SessionManager,
+        registry: SessionManagerRegistry | None = None,
+    ) -> None:
         self._fallback = fallback
+        self._registry = registry
 
     def __getattr__(self, name: str) -> Any:
-        target = get_session_manager() or self._fallback
+        target = self._registry.for_tenant() if self._registry is not None else self._fallback
         return getattr(target, name)
 
 
@@ -450,14 +456,19 @@ def _read_session_dispatch(
     )
 
 
-def register_session_tools(mcp: MCPServer, session_manager: SessionManager):
+def register_session_tools(
+    mcp: MCPServer,
+    session_manager: SessionManager,
+    *,
+    session_registry: SessionManagerRegistry | None = None,
+):
     """
     Register session tools for PMID persistence.
 
     These tools help Agent access cached data without
     relying on context memory.
     """
-    session_manager = cast("SessionManager", _TenantScopedSessionManager(session_manager))
+    session_manager = cast("SessionManager", _TenantScopedSessionManager(session_manager, session_registry))
 
     @mcp.tool()
     def read_session(
@@ -638,12 +649,17 @@ def register_session_tools(mcp: MCPServer, session_manager: SessionManager):
             return _json_error(error=str(exc))
 
 
-def register_session_resources(mcp: MCPServer, session_manager: SessionManager):
+def register_session_resources(
+    mcp: MCPServer,
+    session_manager: SessionManager,
+    *,
+    session_registry: SessionManagerRegistry | None = None,
+):
     """
     Resources for debugging/monitoring only.
     Agent doesn't need to use these for normal operation.
     """
-    session_manager = cast("SessionManager", _TenantScopedSessionManager(session_manager))
+    session_manager = cast("SessionManager", _TenantScopedSessionManager(session_manager, session_registry))
 
     @_session_resource_decorator(
         mcp,

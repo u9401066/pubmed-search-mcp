@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from mcp.server import MCPServer
 
     from pubmed_search.application.session.manager import SessionManager
+    from pubmed_search.application.session.registry import SessionManagerRegistry
     from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
 logger = logging.getLogger(__name__)
@@ -233,6 +234,7 @@ def register_all_mcp_tools(
     session_manager: SessionManager,
     strategy_generator: Any | None = None,
     workspace_dir: str | None = None,
+    session_registry: SessionManagerRegistry | None = None,
 ) -> dict[str, int]:
     """
     註冊所有 MCP 工具。
@@ -243,6 +245,7 @@ def register_all_mcp_tools(
         session_manager: SessionManager instance
         strategy_generator: Optional strategy generator
         workspace_dir: Explicit workspace root for workspace-scoped pipeline persistence.
+        session_registry: Optional request-time tenant router for session tools and resources.
 
     Returns:
         Dict with category names and tool counts
@@ -306,9 +309,9 @@ def register_all_mcp_tools(
 
     # 2. Session tools
     logger.info("Registering session tools...")
-    register_session_tools(mcp, session_manager)
+    register_session_tools(mcp, session_manager, session_registry=session_registry)
     session_tool_count = len(_extract_registered_tool_names(mcp)) - core_tool_count
-    register_session_resources(mcp, session_manager)
+    register_session_resources(mcp, session_manager, session_registry=session_registry)
     stats["session"] = session_tool_count
 
     # 3. Resources (filter docs, etc.)

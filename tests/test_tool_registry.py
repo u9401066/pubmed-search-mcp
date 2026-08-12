@@ -290,6 +290,7 @@ class TestRegisterAllMcpTools:
         searcher = MagicMock()
         sm = MagicMock()
         sg = MagicMock()
+        session_registry = MagicMock()
 
         with patch.object(reg_mod, "__name__", reg_mod.__name__):  # Keep module identity
             with (
@@ -303,11 +304,20 @@ class TestRegisterAllMcpTools:
                 patch("pubmed_search.application.pipeline.store.PipelineStore") as _mock_ps,
                 patch("pubmed_search.presentation.mcp_server.tools.pipeline_tools.set_pipeline_store") as _mock_sps,
             ):
-                stats = register_all_mcp_tools(mcp, searcher, sm, sg, workspace_dir="/tmp/ws")
+                stats = register_all_mcp_tools(
+                    mcp,
+                    searcher,
+                    sm,
+                    sg,
+                    workspace_dir="/tmp/ws",
+                    session_registry=session_registry,
+                )
 
             mock_set_sm.assert_called_once_with(sm)
             mock_set_sg.assert_called_once_with(sg)
             mock_all.assert_called_once_with(mcp, searcher)
+            _mock_stools.assert_called_once_with(mcp, sm, session_registry=session_registry)
+            _mock_sres.assert_called_once_with(mcp, sm, session_registry=session_registry)
             _mock_ps.assert_called_once_with(global_data_dir=str(sm.data_dir), workspace_dir="/tmp/ws")
             assert isinstance(stats, dict)
 

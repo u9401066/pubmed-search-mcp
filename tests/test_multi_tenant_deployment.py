@@ -333,8 +333,7 @@ class TestTenantScopedSessionAccess:
         from pubmed_search.presentation.mcp_server.session_tools import _TenantScopedSessionManager
 
         registry = SessionManagerRegistry(tmp_path, factory=FakeSessionManager)
-        _common.set_session_registry(registry)
-        proxy = _TenantScopedSessionManager(FakeSessionManager("startup"))
+        proxy = _TenantScopedSessionManager(FakeSessionManager("startup"), registry)
 
         with bind_tenant(TenantIdentity.for_principal("alpha", source="auth")):
             proxy.add_search_record("alpha", ["1"])
@@ -353,6 +352,18 @@ class TestTenantScopedSessionAccess:
 
         _TenantScopedSessionManager(fallback).add_search_record("q", ["1"])
         assert fallback.records == [("q", ["1"])]
+
+    def test_proxy_ignores_unrelated_global_registry(self, tmp_path):
+        from pubmed_search.presentation.mcp_server.session_tools import _TenantScopedSessionManager
+
+        unrelated = SessionManagerRegistry(tmp_path / "unrelated", factory=FakeSessionManager)
+        fallback = FakeSessionManager("registered")
+        _common.set_session_registry(unrelated)
+
+        _TenantScopedSessionManager(fallback).add_search_record("q", ["1"])
+
+        assert fallback.records == [("q", ["1"])]
+        assert unrelated.known_tenants() == []
 
 
 # ── Static token auth ───────────────────────────────────────────────────────

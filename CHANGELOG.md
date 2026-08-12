@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Chronicle IDs for untitled PMID sets are derived from normalized unique PMIDs, artifact persistence failures are surfaced without losing the saved revision, and comparison rejects duplicate or ambiguous targets.
 - Copilot hooks recognize Chronicle intent and Chronicle-specific context, and treat `warn` / `fail` audit output as actionable quality feedback.
 - PubMed error/no-result payloads no longer create empty Chronicle revisions; explicit PMID input rejects DOI/mixed text instead of coercing digits, and artifact preflight now checks the concrete prepared payload rather than a parallel declared file list.
+- Session tools and resources now capture their server's tenant registry explicitly, preventing unrelated process-global registry state from replacing an injected single-user or SDK session manager.
 
 ## [0.6.1] - 2026-08-10
 
