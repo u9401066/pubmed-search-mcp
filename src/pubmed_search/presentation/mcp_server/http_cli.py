@@ -302,7 +302,10 @@ def _mount_auxiliary_routes(
 
 def main() -> None:
     """Run the packaged HTTP MCP server."""
+    from pubmed_search.shared.logging_utils import harden_http_client_logging
+
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    harden_http_client_logging()
     parser = build_parser()
     args = parser.parse_args()
     if args.copilot_compatible and args.transport != "streamable-http":

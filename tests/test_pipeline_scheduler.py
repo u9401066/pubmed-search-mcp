@@ -120,6 +120,32 @@ class TestAPSPipelineScheduler:
         assert entry.last_status == "error"
         assert entry.last_error == "boom"
 
+    async def test_execute_job_preserves_partial_runner_status(
+        self,
+        pipeline_store: PipelineStore,
+        scheduler_settings: AppSettings,
+    ):
+        runner = AsyncMock()
+        runner.execute_saved_pipeline = AsyncMock(
+            return_value=PipelineRun(
+                run_id="run_partial",
+                pipeline_name="weekly_remi",
+                started=datetime.now(timezone.utc),
+                finished=datetime.now(timezone.utc),
+                status="partial",
+                error_message="Pipeline execution completed with source warnings or failed steps",
+            )
+        )
+        scheduler = APSPipelineScheduler(store=pipeline_store, runner=runner, settings=scheduler_settings)
+        scheduler.schedule("weekly_remi", "0 9 * * 1")
+
+        await scheduler._execute_job("weekly_remi")
+
+        entry = pipeline_store.get_schedule("weekly_remi")
+        assert entry is not None
+        assert entry.last_status == "partial"
+        assert entry.last_error == "Pipeline execution completed with source warnings or failed steps"
+
     def test_invalid_cron_raises(
         self,
         pipeline_store: PipelineStore,

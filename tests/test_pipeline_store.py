@@ -179,6 +179,40 @@ class TestStoreInit:
 class TestStoreSave:
     """Tests for PipelineStore.save()."""
 
+    def test_rejects_credential_bearing_pipeline_config(self, store_global_only: PipelineStore):
+        sentinel = "PIPELINE_STORE_TOPSECRET"
+        config = PipelineConfig(
+            steps=[
+                PipelineStep(
+                    id="s1",
+                    action="search",
+                    params={"query": f"cancer OPENALEX_API_KEY={sentinel}"},
+                )
+            ]
+        )
+
+        with pytest.raises(ValueError, match="credential material") as error:
+            store_global_only.save("secret_pipeline", config)
+
+        assert sentinel not in str(error.value)
+
+    def test_load_rejects_legacy_credential_file_before_validation(
+        self,
+        store_global_only: PipelineStore,
+        global_dir: Path,
+    ):
+        sentinel = "LEGACY_FILE_TOPSECRET"
+        yaml_path = global_dir / "pipelines" / "legacy_secret.yaml"
+        yaml_path.write_text(
+            f"template: S2_API_KEY={sentinel}\nparams: {{}}\n",
+            encoding="utf-8",
+        )
+
+        with pytest.raises(ValueError, match="credential material") as error:
+            store_global_only.load("legacy_secret")
+
+        assert sentinel not in str(error.value)
+
     def test_save_creates_yaml_file(
         self, store_dual: PipelineStore, simple_config: PipelineConfig, workspace_dir: Path
     ):

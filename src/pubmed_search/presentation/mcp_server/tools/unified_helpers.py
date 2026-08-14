@@ -9,11 +9,10 @@ Extracted from unified.py to keep each module under 400 lines.
 
 from __future__ import annotations
 
-import contextlib
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from pubmed_search.application.search.query_analyzer import (
     AnalyzedQuery,
@@ -63,12 +62,13 @@ def detect_and_expand_icd_codes(query: str) -> tuple[str, list[dict]]:
     for match in ICD10_PATTERN.finditer(query):
         code = match.group(1).upper()
         result = lookup_icd_to_mesh(code)
-        if result:
+        mesh_term = (result.get("mesh_term") or result.get("mesh")) if result else None
+        if isinstance(mesh_term, str) and mesh_term:
             icd_matches.append(
                 {
                     "code": code,
                     "type": "ICD-10",
-                    "mesh": result["mesh"],
+                    "mesh": mesh_term,
                     "description": result.get("description", ""),
                 }
             )
@@ -81,12 +81,13 @@ def detect_and_expand_icd_codes(query: str) -> tuple[str, list[dict]]:
             base = int(code.split(".")[0])
             if 1 <= base <= 999:
                 result = lookup_icd_to_mesh(code)
-                if result:
+                mesh_term = (result.get("mesh_term") or result.get("mesh")) if result else None
+                if isinstance(mesh_term, str) and mesh_term:
                     icd_matches.append(
                         {
                             "code": code,
                             "type": "ICD-9",
-                            "mesh": result["mesh"],
+                            "mesh": mesh_term,
                             "description": result.get("description", ""),
                         }
                     )
@@ -109,8 +110,10 @@ def detect_and_expand_icd_codes(query: str) -> tuple[str, list[dict]]:
             flags=re.IGNORECASE,
         )
 
-    logger.info(f"ICD codes detected: {[i['code'] for i in icd_matches]}")
-    logger.info(f"Expanded query: {expanded_query}")
+    # Queries and diagnosis codes may be sensitive in a multi-user service.
+    # Operational logs retain only cardinality; exact query provenance belongs
+    # in the caller-scoped artifact, never in the process-wide log stream.
+    logger.info("Expanded %s ICD code(s) into provider-specific query forms", len(icd_matches))
 
     return expanded_query, icd_matches
 
@@ -211,6 +214,130 @@ class DispatchStrategy:
 # ============================================================================
 
 
+_ALLOWED_AGE_GROUPS = frozenset(
+    {
+        "newborn",
+        "infant",
+        "preschool",
+        "child",
+        "adolescent",
+        "young_adult",
+        "adult",
+        "middle_aged",
+        "aged",
+        "aged_80",
+    }
+)
+_ALLOWED_SEX_FILTERS = frozenset({"male", "female"})
+_ALLOWED_SPECIES_FILTERS = frozenset({"humans", "animals"})
+_ALLOWED_CLINICAL_FILTERS = frozenset(
+    {
+        "therapy",
+        "therapy_narrow",
+        "diagnosis",
+        "diagnosis_narrow",
+        "prognosis",
+        "prognosis_narrow",
+        "etiology",
+        "etiology_narrow",
+        "clinical_prediction",
+        "clinical_prediction_narrow",
+    }
+)
+
+
+def _parse_filters_detailed(filters_str: str | None) -> tuple[dict[str, Any], tuple[str, ...]]:
+    """Parse filters and retain every ignored or malformed token.
+
+    The legacy :func:`_parse_filters` facade still returns only the parsed
+    mapping.  ``unified_search`` uses this detailed form so a typo can never
+    silently turn a constrained search into a broader one.
+    """
+    if not filters_str:
+        return {}, ()
+
+    result: dict[str, Any] = {}
+    diagnostics: list[str] = []
+    for raw_part in filters_str.split(","):
+        part = raw_part.strip()
+        if not part:
+            continue
+        if ":" not in part:
+            diagnostics.append(f"filter '{part}' must use key:value syntax")
+            continue
+
+        key, value = part.split(":", 1)
+        key = key.strip().lower()
+        value = value.strip()
+        if not value:
+            diagnostics.append(f"filter '{key}' has an empty value")
+            continue
+
+        if key == "year":
+            try:
+                if "-" in value:
+                    lower, upper = (piece.strip() for piece in value.split("-", 1))
+                    if not lower and not upper:
+                        diagnostics.append(f"filter 'year:{value}' is not a valid year or range")
+                        continue
+                    if lower:
+                        result["min_year"] = int(lower)
+                    if upper:
+                        result["max_year"] = int(upper)
+                else:
+                    result["min_year"] = int(value)
+            except ValueError:
+                diagnostics.append(f"filter 'year:{value}' is not a valid year or range")
+                continue
+            min_year = result.get("min_year")
+            max_year = result.get("max_year")
+            if isinstance(min_year, int) and not 1000 <= min_year <= 2100:
+                diagnostics.append(f"minimum year {min_year} is outside 1000-2100")
+                result.pop("min_year", None)
+            if isinstance(max_year, int) and not 1000 <= max_year <= 2100:
+                diagnostics.append(f"maximum year {max_year} is outside 1000-2100")
+                result.pop("max_year", None)
+            min_year = result.get("min_year")
+            max_year = result.get("max_year")
+            if isinstance(min_year, int) and isinstance(max_year, int) and min_year > max_year:
+                diagnostics.append(f"year range {min_year}-{max_year} is reversed")
+                result.pop("min_year", None)
+                result.pop("max_year", None)
+        elif key in ("age", "age_group"):
+            normalized = value.lower().replace(" ", "_").replace("-", "_")
+            if normalized not in _ALLOWED_AGE_GROUPS:
+                diagnostics.append(f"unsupported age filter '{value}'")
+            else:
+                result["age_group"] = normalized
+        elif key == "sex":
+            normalized = value.lower()
+            if normalized not in _ALLOWED_SEX_FILTERS:
+                diagnostics.append(f"unsupported sex filter '{value}'")
+            else:
+                result["sex"] = normalized
+        elif key == "species":
+            normalized = value.lower()
+            if normalized not in _ALLOWED_SPECIES_FILTERS:
+                diagnostics.append(f"unsupported species filter '{value}'")
+            else:
+                result["species"] = normalized
+        elif key in ("lang", "language"):
+            if not re.fullmatch(r"[A-Za-z][A-Za-z _-]{0,39}", value):
+                diagnostics.append(f"unsupported language filter '{value}'")
+            else:
+                result["language"] = value.lower()
+        elif key in ("clinical", "clinical_query"):
+            normalized = value.lower().replace(" ", "_").replace("-", "_")
+            if normalized not in _ALLOWED_CLINICAL_FILTERS:
+                diagnostics.append(f"unsupported clinical filter '{value}'")
+            else:
+                result["clinical_query"] = normalized
+        else:
+            diagnostics.append(f"unknown filter key '{key}'")
+
+    return result, tuple(diagnostics)
+
+
 def _parse_filters(filters_str: str | None) -> dict:
     """Parse composite filters string into individual filter values.
 
@@ -230,44 +357,8 @@ def _parse_filters(filters_str: str | None) -> dict:
     Returns:
         Dict with keys: min_year, max_year, age_group, sex, species, language, clinical_query
     """
-    if not filters_str:
-        return {}
-
-    result: dict = {}
-    for raw_part in filters_str.split(","):
-        part = raw_part.strip()
-        if not part or ":" not in part:
-            continue
-        key, value = part.split(":", 1)
-        key = key.strip().lower()
-        value = value.strip()
-        if not value:
-            continue
-
-        if key == "year":
-            if "-" in value:
-                parts = value.split("-", 1)
-                if parts[0].strip():
-                    with contextlib.suppress(ValueError):
-                        result["min_year"] = int(parts[0].strip())
-                if parts[1].strip():
-                    with contextlib.suppress(ValueError):
-                        result["max_year"] = int(parts[1].strip())
-            else:
-                with contextlib.suppress(ValueError):
-                    result["min_year"] = int(value)
-        elif key in ("age", "age_group"):
-            result["age_group"] = value
-        elif key == "sex":
-            result["sex"] = value
-        elif key == "species":
-            result["species"] = value
-        elif key in ("lang", "language"):
-            result["language"] = value
-        elif key in ("clinical", "clinical_query"):
-            result["clinical_query"] = value
-
-    return result
+    parsed, _diagnostics = _parse_filters_detailed(filters_str)
+    return parsed
 
 
 # Mapping of option flag names to (internal_key, value_when_set)
@@ -275,8 +366,15 @@ _OPTION_FLAGS: dict[str, tuple[str, bool]] = {
     # Turn ON features (default OFF)
     "preprints": ("include_preprints", True),
     "context_graph": ("include_research_context", True),
+    "trials": ("include_clinical_trials", True),
+    "clinical_trials": ("include_clinical_trials", True),
     "counts_first": ("counts_first", True),
     "counts-first": ("counts_first", True),
+    # Provider-neutral retrieval policies.  These remain options on the one
+    # unified_search facade; they never become provider-shaped MCP tools.
+    "native_semantic": ("native_semantic", True),
+    "native-semantic": ("native_semantic", True),
+    "systematic": ("systematic_search", True),
     # Turn OFF features (default ON)
     "all_types": ("peer_reviewed_only", False),
     "no_peer_review": ("peer_reviewed_only", False),
@@ -299,6 +397,25 @@ _COMPACT_OPTION_DEFAULTS: dict[str, bool] = {
 }
 
 
+def _parse_options_detailed(options_str: str | None) -> tuple[dict[str, bool], tuple[str, ...]]:
+    """Parse option flags while retaining unknown tokens for validation."""
+    if not options_str:
+        return {}, ()
+
+    flags = {flag.strip().lower() for flag in options_str.split(",") if flag.strip()}
+    result: dict[str, bool] = {}
+    diagnostics: list[str] = []
+    for flag in flags:
+        if flag in _COMPACT_OPTION_FLAGS:
+            result.update(_COMPACT_OPTION_DEFAULTS)
+        elif flag in _OPTION_FLAGS:
+            internal_key, value = _OPTION_FLAGS[flag]
+            result[internal_key] = value
+        else:
+            diagnostics.append(f"unknown option '{flag}'")
+    return result, tuple(diagnostics)
+
+
 def _parse_options(options_str: str | None) -> dict[str, bool]:
     """Parse composite options string into boolean flags.
 
@@ -307,7 +424,10 @@ def _parse_options(options_str: str | None) -> dict[str, bool]:
     Supported flags:
         preprints      → include preprint servers (arXiv, medRxiv, bioRxiv)
         context_graph  → append research context tree preview from PMID-backed results
+        trials         → explicitly query ClinicalTrials.gov for related studies
         counts_first   → front-load source counts and next-tool recommendations
+        native_semantic → use a provider's native semantic retrieval capability
+        systematic     → prefer reproducible bulk/cursor retrieval capabilities
         all_types      → include non-peer-reviewed articles
         no_oa          → skip Unpaywall OA link enrichment
         no_analysis    → hide query analysis section in output
@@ -321,22 +441,10 @@ def _parse_options(options_str: str | None) -> dict[str, bool]:
     Returns:
         Dict with boolean values for each recognized flag.
     """
-    if not options_str:
-        return {}
-
-    flags = {f.strip().lower() for f in options_str.split(",") if f.strip()}
-    result: dict[str, bool] = {}
-
-    for flag in flags:
-        if flag in _COMPACT_OPTION_FLAGS:
-            result.update(_COMPACT_OPTION_DEFAULTS)
-        elif flag in _OPTION_FLAGS:
-            internal_key, value = _OPTION_FLAGS[flag]
-            result[internal_key] = value
-        else:
-            available = sorted([*_OPTION_FLAGS.keys(), *_COMPACT_OPTION_FLAGS])
-            logger.warning(f"Unknown option flag: '{flag}' (available: {', '.join(available)})")
-
+    result, diagnostics = _parse_options_detailed(options_str)
+    if diagnostics:
+        available = sorted([*_OPTION_FLAGS.keys(), *_COMPACT_OPTION_FLAGS])
+        logger.warning("%s (available: %s)", "; ".join(diagnostics), ", ".join(available))
     return result
 
 
@@ -412,6 +520,12 @@ class StrategyResult:
     expected_precision: float
     expected_recall: float
     execution_time_ms: float = 0.0
+    status: str = "ok"
+    allocated_limit: int = 0
+    total_available: int | None = None
+    physical_query: str | None = None
+    query_executed: bool = False
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -476,6 +590,11 @@ class SearchDepthMetrics:
                     "query": s.query[:100] + "..." if len(s.query) > 100 else s.query,
                     "source": s.source,
                     "articles": s.articles_count,
+                    "status": s.status,
+                    "allocated_limit": s.allocated_limit,
+                    "total_available": s.total_available,
+                    "physical_query": s.physical_query,
+                    "query_executed": s.query_executed,
                 }
                 for s in self.strategy_results
             ],

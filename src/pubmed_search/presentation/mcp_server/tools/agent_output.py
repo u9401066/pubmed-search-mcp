@@ -26,7 +26,7 @@ class SourceCountRow(TypedDict):
     source: str
     returned: int
     total_available: int | None
-    has_more: bool
+    has_more: bool | None
 
 
 ProvenanceKind = Literal["direct", "indirect", "derived", "mixed"]
@@ -92,7 +92,7 @@ def make_source_count_row(
         "source": source,
         "returned": returned_count,
         "total_available": total_count,
-        "has_more": total_count is not None and total_count > returned_count,
+        "has_more": total_count > returned_count if total_count is not None else None,
     }
 
 

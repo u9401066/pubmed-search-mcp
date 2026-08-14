@@ -543,6 +543,36 @@ class TestActionSearch:
         assert not result.ok
         assert "No query" in (result.error or "")
 
+    async def test_search_rejects_unknown_explicit_source_before_provider_io(self, mock_searcher):
+        executor = PipelineExecutor(searcher=mock_searcher)
+        step = PipelineStep(
+            id="s1",
+            action="search",
+            params={"query": "test", "sources": "pubmed,typo_provider", "limit": 10},
+        )
+
+        result = await executor._action_search(step, {})
+
+        assert not result.ok
+        assert result.error == "Unsupported pipeline search source(s): typo_provider"
+        assert result.metadata["requested_sources"] == ["pubmed", "typo_provider"]
+        mock_searcher.search.assert_not_awaited()
+
+    @pytest.mark.parametrize("invalid_limit", [0, 101, True, 1.5, "not-an-integer"])
+    async def test_search_rejects_invalid_limit_before_provider_io(self, mock_searcher, invalid_limit):
+        executor = PipelineExecutor(searcher=mock_searcher)
+        step = PipelineStep(
+            id="s1",
+            action="search",
+            params={"query": "test", "sources": "pubmed", "limit": invalid_limit},
+        )
+
+        result = await executor._action_search(step, {})
+
+        assert not result.ok
+        assert "limit must" in (result.error or "")
+        mock_searcher.search.assert_not_awaited()
+
     async def test_search_enabled_commercial_alternate_sources(self):
         alternate_search = AsyncMock(
             side_effect=[

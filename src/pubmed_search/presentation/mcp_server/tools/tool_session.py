@@ -86,7 +86,7 @@ def check_cache(query: str, limit: int | None = None) -> list[dict] | None:
     try:
         return session_manager.find_cached_search(query, limit)
     except Exception as exc:
-        logger.warning("Cache lookup failed: %s", exc)
+        logger.warning("Cache lookup failed (%s)", type(exc).__name__)
         return None
 
 
@@ -100,7 +100,7 @@ def _cache_results(results: list, query: str | None = None):
                 session_manager.add_search_record(query, pmids)
             logger.debug("Cached %s articles", len(results))
         except Exception as exc:
-            logger.warning("Failed to cache results: %s", exc)
+            logger.warning("Failed to cache results (%s)", type(exc).__name__)
 
 
 def _record_search_only(results: list, query: str):
@@ -121,9 +121,9 @@ def _record_search_only(results: list, query: str):
     if pmids:
         try:
             session_manager.add_search_record(query, pmids)
-            logger.debug("Recorded search '%s' with %s PMIDs", query, len(pmids))
+            logger.debug("Recorded search with %s PMIDs", len(pmids))
         except Exception as exc:
-            logger.warning("Failed to record search: %s", exc)
+            logger.warning("Failed to record search (%s)", type(exc).__name__)
 
 
 def get_last_search_pmids() -> list[str]:
@@ -140,7 +140,7 @@ def get_last_search_pmids() -> list[str]:
             return last_search.pmids
         return []
     except Exception as exc:
-        logger.warning("Failed to get last search PMIDs: %s", exc)
+        logger.warning("Failed to get last search PMIDs (%s)", type(exc).__name__)
         return []
 
 
