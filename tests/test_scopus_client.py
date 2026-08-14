@@ -49,6 +49,9 @@ class TestScopusClient:
         assert "OPENACCESS(1)" in params["query"]
         assert "PUBYEAR > 2019" in params["query"]
         assert "PUBYEAR < 2026" in params["query"]
+        assert "apiKey" not in params
+        assert "insttoken" not in params
+        assert "licensed-key" not in repr(params)
 
     async def test_search_handles_empty_payload(self):
         client = ScopusClient(api_key="licensed-key")

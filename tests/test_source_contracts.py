@@ -140,3 +140,20 @@ class TestNormalizeSourceAdapterError:
         assert normalized.retryable is True
         assert normalized.status_code is None
         assert normalized.message == "connection failed"
+
+    def test_request_error_redacts_query_and_credentials(self):
+        request = httpx.Request(
+            "GET",
+            "https://api.example.test/search?query=rare-patient-phenotype&api_key=SENTINEL",
+        )
+        error = httpx.ConnectError(
+            "failed https://api.example.test/search?query=rare-patient-phenotype&api_key=SENTINEL Bearer SECRET-TOKEN",
+            request=request,
+        )
+
+        normalized = normalize_source_adapter_error("semantic_scholar", "search", error)
+
+        assert normalized.message == "failed https://api.example.test/search Bearer [REDACTED]"
+        assert "rare-patient-phenotype" not in normalized.message
+        assert "SENTINEL" not in normalized.message
+        assert "SECRET-TOKEN" not in normalized.message

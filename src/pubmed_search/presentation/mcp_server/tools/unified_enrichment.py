@@ -67,7 +67,7 @@ async def _enrich_with_crossref(articles: list[UnifiedArticle]) -> None:
 
         for result in results:
             if isinstance(result, Exception):
-                logger.debug(f"CrossRef enrichment skipped: {result}")
+                logger.debug("CrossRef enrichment skipped (%s)", type(result).__name__)
                 continue
             # Type narrowing: result is now tuple, not Exception
             idx, work = result  # type: ignore[misc]
@@ -75,11 +75,11 @@ async def _enrich_with_crossref(articles: list[UnifiedArticle]) -> None:
                 try:
                     crossref_article = article_from_crossref(work)
                     articles[idx].merge_from(crossref_article)
-                except Exception as e:
-                    logger.debug(f"CrossRef enrichment skipped: {e}")
+                except Exception as exc:
+                    logger.debug("CrossRef enrichment skipped (%s)", type(exc).__name__)
 
-    except Exception as e:
-        logger.warning(f"CrossRef enrichment failed: {e}")
+    except Exception as exc:
+        logger.warning("CrossRef enrichment failed (%s)", type(exc).__name__)
 
 
 # ============================================================================
@@ -154,8 +154,8 @@ async def _enrich_with_journal_metrics(articles: list[UnifiedArticle]) -> None:
                 f"Journal metrics: enriched {enriched}/{len(articles)} articles from {len(source_data)} unique journals"
             )
 
-    except Exception as e:
-        logger.warning(f"Journal metrics enrichment failed: {e}")
+    except Exception as exc:
+        logger.warning("Journal metrics enrichment failed (%s)", type(exc).__name__)
 
 
 def _extract_openalex_source_id(article: UnifiedArticle) -> str | None:
@@ -220,7 +220,7 @@ async def _enrich_with_unpaywall(articles: list[UnifiedArticle]) -> None:
 
         for result in results:
             if isinstance(result, Exception):
-                logger.debug(f"Unpaywall enrichment skipped: {result}")
+                logger.debug("Unpaywall enrichment skipped (%s)", type(result).__name__)
                 continue
             # Type narrowing: result is now tuple, not Exception
             idx, oa_info = result  # type: ignore[misc]
@@ -257,11 +257,11 @@ async def _enrich_with_unpaywall(articles: list[UnifiedArticle]) -> None:
                                     is_best=link_data.get("is_best", False),
                                 )
                             )
-                except Exception as e:
-                    logger.debug(f"Unpaywall enrichment skipped: {e}")
+                except Exception as exc:
+                    logger.debug("Unpaywall enrichment skipped (%s)", type(exc).__name__)
 
-    except Exception as e:
-        logger.warning(f"Unpaywall enrichment failed: {e}")
+    except Exception as exc:
+        logger.warning("Unpaywall enrichment failed (%s)", type(exc).__name__)
 
 
 # ============================================================================
@@ -395,8 +395,8 @@ def _enrich_with_similarity_scores(
 
         logger.debug(f"Enriched {len(articles)} articles with similarity scores")
 
-    except Exception as e:
-        logger.warning(f"Similarity enrichment failed: {e}")
+    except Exception as exc:
+        logger.warning("Similarity enrichment failed (%s)", type(exc).__name__)
 
 
 async def _enrich_with_api_similarity(
@@ -452,5 +452,5 @@ async def _enrich_with_api_similarity(
 
         logger.debug("Enriched articles with API similarity scores")
 
-    except Exception as e:
-        logger.debug(f"API similarity enrichment skipped: {e}")
+    except Exception as exc:
+        logger.debug("API similarity enrichment skipped (%s)", type(exc).__name__)

@@ -63,6 +63,10 @@ class TestScopusGeneratedClient:
         assert response.entries()[0].title == "Scopus Article"
         owner._make_request.assert_awaited_once()
         assert owner._make_request.await_args.args[0] == "/content/search/scopus"
+        params = owner._make_request.await_args.kwargs["params"]
+        assert "apiKey" not in params
+        assert "insttoken" not in params
+        assert "licensed-key" not in repr(params)
 
 
 class TestWebOfScienceGeneratedClient:

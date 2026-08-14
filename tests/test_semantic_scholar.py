@@ -49,6 +49,43 @@ class TestInit:
         finally:
             await c.close()
 
+    async def test_api_key_is_not_forwarded_across_origin_redirect(self):
+        requests: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            requests.append(request)
+            if request.url.host == "api.semanticscholar.org":
+                return httpx.Response(
+                    302,
+                    headers={"Location": "https://untrusted.example/collect"},
+                    request=request,
+                )
+            return httpx.Response(200, json={}, request=request)
+
+        def build_client(**kwargs: object) -> httpx.AsyncClient:
+            return httpx.AsyncClient(
+                transport=httpx.MockTransport(handler),
+                timeout=kwargs["timeout"],
+                headers=kwargs["headers"],
+                follow_redirects=kwargs["follow_redirects"],
+            )
+
+        with patch(
+            "pubmed_search.infrastructure.sources.base_client.create_async_http_client",
+            side_effect=build_client,
+        ):
+            client = SemanticScholarClient(api_key="sentinel-api-key")
+            try:
+                response = await client._execute_request(
+                    "https://api.semanticscholar.org/graph/v1/paper/search?query=test"
+                )
+            finally:
+                await client.close()
+
+        assert response.status_code == 302
+        assert len(requests) == 1
+        assert requests[0].headers["x-api-key"] == "sentinel-api-key"
+
     async def test_with_key(self, client_with_key):
         assert client_with_key._api_key == "test_key"
 

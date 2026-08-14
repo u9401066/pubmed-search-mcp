@@ -478,7 +478,11 @@ def register_europe_pmc_tools(mcp: MCPServer):
         normalized_oa_only = InputNormalizer.normalize_bool(open_access_only, default=False)
         normalized_fulltext = InputNormalizer.normalize_bool(has_fulltext, default=False)
 
-        logger.info(f"Searching Europe PMC: query='{normalized_query}', limit={normalized_limit}")
+        logger.info(
+            "Searching Europe PMC (query_length=%s, limit=%s)",
+            len(normalized_query),
+            normalized_limit,
+        )
 
         try:
             client = get_europe_pmc_client()
@@ -584,7 +588,7 @@ def register_europe_pmc_tools(mcp: MCPServer):
             return output
 
         except Exception as e:
-            logger.exception(f"Europe PMC search failed: {e}")
+            logger.warning("Europe PMC search failed (%s)", type(e).__name__)
             return ResponseFormatter.error(
                 error=e,
                 suggestion="Check query syntax and try again",
@@ -831,7 +835,7 @@ def register_europe_pmc_tools(mcp: MCPServer):
                 if note_parts:
                     browser_session_note = "\n".join(note_parts)
             except Exception as e:
-                logger.warning(f"PDF retrieval fallback failed: {e}")
+                logger.warning("PDF retrieval fallback failed (%s)", type(e).__name__)
                 await _log("warning", f"PDF retrieval fallback failed: {e!s}")
 
         next_tools, next_commands = _build_fulltext_next_tools(
@@ -937,7 +941,7 @@ def register_europe_pmc_tools(mcp: MCPServer):
                         },
                     )
                 except Exception as exc:
-                    logger.warning("Failed to prepare get_fulltext artifact payload: %s", exc)
+                    logger.warning("Failed to prepare get_fulltext artifact payload (%s)", type(exc).__name__)
             response_payload_kwargs = _limit_fulltext_payload_for_response(
                 fulltext_payload_kwargs,
                 artifact=artifact,
@@ -1092,7 +1096,7 @@ def register_europe_pmc_tools(mcp: MCPServer):
                     },
                 )
             except Exception as exc:
-                logger.warning("Failed to prepare get_fulltext artifact payload: %s", exc)
+                logger.warning("Failed to prepare get_fulltext artifact payload (%s)", type(exc).__name__)
         response_output = _limit_fulltext_markdown_for_response(
             output,
             artifact=artifact,
@@ -1154,7 +1158,7 @@ def register_europe_pmc_tools(mcp: MCPServer):
             return output
 
         except Exception as e:
-            logger.exception(f"Get fulltext XML failed: {e}")
+            logger.warning("Full-text XML lookup failed (%s)", type(e).__name__)
             return ResponseFormatter.error(
                 error=e,
                 suggestion="Check if the PMC ID is correct",
@@ -1302,7 +1306,7 @@ def register_europe_pmc_tools(mcp: MCPServer):
             return output
 
         except Exception as e:
-            logger.exception(f"Get text-mined terms failed: {e}")
+            logger.warning("Text-mined term lookup failed (%s)", type(e).__name__)
             return ResponseFormatter.error(
                 error=e,
                 suggestion="Check the ID and try again",
@@ -1424,7 +1428,7 @@ def register_europe_pmc_tools(mcp: MCPServer):
             return output
 
         except Exception as e:
-            logger.exception(f"Get Europe PMC citations failed: {e}")
+            logger.warning("Europe PMC citation lookup failed (%s)", type(e).__name__)
             return ResponseFormatter.error(
                 error=e,
                 suggestion="Check the ID and direction parameter",

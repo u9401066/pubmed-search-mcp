@@ -165,7 +165,7 @@ async def test_search_arxiv_runner_uses_preprint_searcher():
         }
         articles, total = await _search_arxiv("ml", 5, None, None)
     mock_search.assert_awaited_once()
-    assert total == 1
+    assert total is None
     assert len(articles) == 1
     assert articles[0].primary_source == "arxiv"
     assert articles[0].article_type == ArticleType.PREPRINT
