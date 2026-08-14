@@ -150,6 +150,7 @@ def test_release_and_tool_metadata_stay_synchronized() -> None:
     assert github_release["permissions"]["contents"] == "write"
     release_command = github_release["steps"][-1]["run"]
     assert 'gh release create "$GITHUB_REF_NAME" dist/*' in release_command
+    assert release_command.count('--repo "$GITHUB_REPOSITORY"') == 3
     assert "--verify-tag" in release_command
     assert "--generate-notes" in release_command
 
