@@ -264,7 +264,10 @@ uv run python run_copilot.py --port 8765 --email your@email.com
 
 - 固定使用 streamable-http
 - 開啟 Copilot compatibility middleware
-- 暴露 Copilot Studio 友善的精簡工具集
+- 暴露 12 個 Copilot Studio 友善、只用 primitive parameters 的精簡工具
+- 保持 generic literature search 名稱為 `unified_search`，並呼叫共用 unified runner；不是 PubMed-only 或第二套搜尋宇宙
+- 在精簡 schema 仍提供 string 型 `sources` 與 `options`，可使用相同的 source expression 與 broker retrieval flags
+- 提供 primitive-schema `read_session`，可回讀 search runs、取得不自動執行的 replay arguments，或讀取 persisted artifact
 
 `run_copilot.py` 是 source-tree compatibility wrapper，不取代 service-mode auth 合約。多使用者
 部署優先使用 packaged `pubmed-search-mcp-http --mode service --copilot-compatible`。
@@ -385,13 +388,13 @@ PUBMED_DATA_DIR=/var/lib/pubmed-search-mcp
 # reviewed source into your own Azure Container Registry first.
 az acr build \
   --registry myregistry \
-  --image pubmed-search-mcp:0.6.2 \
+  --image pubmed-search-mcp:0.6.3 \
   .
 
 az containerapp create \
   --name pubmed-mcp \
   --resource-group myRG \
-  --image myregistry.azurecr.io/pubmed-search-mcp:0.6.2 \
+  --image myregistry.azurecr.io/pubmed-search-mcp:0.6.3 \
   --target-port 8765 \
   --ingress external
 ```

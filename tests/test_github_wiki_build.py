@@ -6,6 +6,14 @@ from scripts import build_github_wiki
 def test_build_github_wiki_outputs_expected_pages(tmp_path) -> None:
     build_github_wiki.build_wiki(tmp_path)
 
+    for page in (
+        "Semantic-Scholar-Data-Plane.md",
+        "OpenAlex-Search-And-Data-Plane.md",
+        "ClinicalKey-AI-Boundary.md",
+        "BioMCP-Architecture-Analysis.md",
+    ):
+        assert (tmp_path / page).exists()
+
     expected_pages = {
         "Home.md",
         "_Sidebar.md",
@@ -23,6 +31,10 @@ def test_build_github_wiki_outputs_expected_pages(tmp_path) -> None:
         "Architecture.md",
         "Quick-Reference.md",
         "Source-Contracts.md",
+        "Semantic-Scholar-Data-Plane.md",
+        "OpenAlex-Search-And-Data-Plane.md",
+        "ClinicalKey-AI-Boundary.md",
+        "BioMCP-Architecture-Analysis.md",
         "Troubleshooting.md",
         "Deployment.md",
     }
@@ -38,6 +50,13 @@ def test_build_github_wiki_outputs_expected_pages(tmp_path) -> None:
     assert "[Tools Usage Guide](Tools-Usage-Guide)" in user_guide
     assert "[進階研究工作流](Advanced-Research-Workflows.zh-TW)" in sidebar
     assert "[Developer Guide](Developer-Guide)" in sidebar
+    assert "[Semantic Scholar Data Plane](Semantic-Scholar-Data-Plane)" in sidebar
+    assert "[BioMCP Architecture Analysis](BioMCP-Architecture-Analysis)" in home
+
+    source_contracts = (tmp_path / "Source-Contracts.md").read_text(encoding="utf-8")
+    biomcp = (tmp_path / "BioMCP-Architecture-Analysis.md").read_text(encoding="utf-8")
+    assert 'options="native_semantic"' in source_contracts
+    assert "本輪已落地與後續邊界" in biomcp
 
 
 def test_build_github_wiki_rewrites_image_links_to_raw_assets() -> None:

@@ -92,9 +92,14 @@ For a local connector or protocol smoke test:
 pubmed-search-mcp-http --mode local --transport streamable-http \
   --host 127.0.0.1 --port 8765
 
-# Via run_copilot.py (simplified for Copilot Studio)
+# Via run_copilot.py (12-tool primitive-schema smoke for Copilot Studio)
 uv run python run_copilot.py --port 8765
 ```
+
+The simplified inventory includes `unified_search` plus primitive-schema
+`read_session`, so a Copilot smoke can inspect durable search runs, obtain
+non-executing replay arguments, and read a persisted artifact without switching
+to the full schema.
 
 The MCP endpoint is available at `http://localhost:8765/mcp`. Do not change only
 the bind address and treat this as a remote service. Explicit local mode is a
@@ -256,12 +261,46 @@ Semantic Scholar accepts either `S2_API_KEY` or `SEMANTIC_SCHOLAR_API_KEY`.
 If repeated 429 responses appear in Cline or other MCP clients, set a key or
 temporarily disable the source with `PUBMED_SEARCH_DISABLED_SOURCES=semantic_scholar`.
 
+Live provider queries and bulk datasets are intentionally separate. Semantic
+Scholar release/manifest/diff inspection is an operator data-plane workflow;
+it never downloads a dataset partition during `unified_search`. OpenAlex cursor
+and native semantic modes are likewise bounded broker capabilities, while an
+entire-corpus mirror must use the operator snapshot path. See
+[Semantic Scholar data plane](#/semantic-scholar-api),
+[OpenAlex search/data plane](#/openalex-api), and the
+[ClinicalKey AI licensed boundary](#/clinicalkey-ai).
+
+Provider-native execution stays behind the single literature-search facade:
+
+```text
+unified_search(query="treatment resistance",
+               sources="openalex",
+               options="native_semantic")
+
+unified_search(query="melanoma AND immunotherapy",
+               sources="pubmed,openalex,semantic_scholar",
+               options="systematic")
+```
+
+The flags are mutually exclusive and disable multi-strategy deep expansion.
+Explicit unsupported source/mode pairs fail before I/O; automatic mode keeps
+capable sources only. The per-source MCP `limit` stays at most 100. Inspect
+`source_metadata` and the artifact's `query_strategy.json` for the actual
+provider mode, compiled/canonical query, continuation, cost/rate fields, and
+warnings. This bounded mode is not an exhaustive systematic-review claim.
+
 | Variable | Required | Description | Default |
 | --- | --- | --- | --- |
 | `NCBI_EMAIL` | **Yes** | Email for NCBI API policy compliance | `pubmed-search@example.com` |
 | `NCBI_API_KEY` | No | NCBI API key for higher rate limits (10 req/s vs 3 req/s) | — |
 | `CORE_API_KEY` | No | [CORE API](https://core.ac.uk/services/api) key for open access search | — |
-| `OPENALEX_API_KEY` | No | OpenAlex API key; the runtime contact email is still used for polite-pool identification | — |
+| `S2_API_KEY` / `SEMANTIC_SCHOLAR_API_KEY` | No | Semantic Scholar `x-api-key`; improves live quota stability and is required to obtain dataset partition/diff URLs | — |
+| `OPENALEX_API_KEY` | No | OpenAlex API key for a higher credit budget; runtime decisions still use response rate/cost metadata | — |
+| `CLINICALKEY_AI_ENABLED` | No | Enables only the default-off ClinicalKey application/data-plane adapter; it never adds an MCP tool/source | `false` |
+| `CLINICALKEY_AI_ENTITLEMENT_CONFIRMED` | ClinicalKey adapter | Operator assertion that licensed API entitlement is active | `false` |
+| `CLINICALKEY_AI_CONTRACT_ACKNOWLEDGED` | ClinicalKey adapter | Operator assertion that MCP/retention/use terms were reviewed for this deployment | `false` |
+| `CLINICALKEY_AI_CLIENT_ID` | ClinicalKey adapter | OAuth client id held by the operator secret store | — |
+| `CLINICALKEY_AI_CLIENT_SECRET` | ClinicalKey adapter | OAuth client secret; never logged or persisted | — |
 | `CROSSREF_EMAIL` | No | Optional CrossRef polite-pool email override. Defaults to the runtime server contact email. | `NCBI_EMAIL`, CLI `--email`, or detected git email |
 | `UNPAYWALL_EMAIL` | No | Optional Unpaywall email override. Defaults to the runtime server contact email. | `NCBI_EMAIL`, CLI `--email`, or detected git email |
 | `PUBMED_SEARCH_DISABLED_SOURCES` | No | Comma-separated source keys to globally disable in unified_search and cross-search | — |
@@ -361,6 +400,8 @@ Recommended practice for future commercial sources:
 | --- | --- | --- |
 | [NCBI API Key](https://www.ncbi.nlm.nih.gov/account/settings/) | Create NCBI account → Settings → API Key | 10 req/s (vs 3 req/s) |
 | [CORE API Key](https://core.ac.uk/services/api) | Register at core.ac.uk | Access 200M+ open access papers |
+| [Semantic Scholar API Key](https://www.semanticscholar.org/product/api) | Request through the official API page | More stable live quota; dataset file/diff manifests require a key |
+| [OpenAlex API Key](https://help.openalex.org/api/authentication/) | Follow the official authentication guide | Higher credit budget; actual rate/cost remains response-driven |
 | Scopus API Key | Elsevier Developer Portal / licensed institutional access | Adds Scopus as an explicit or `all` source when enabled |
 | Web of Science API Key | Clarivate Developer Portal / licensed institutional access | Adds Web of Science as an explicit or `all` source when enabled |
 
@@ -401,6 +442,8 @@ Recommended practice for future commercial sources:
         "NCBI_EMAIL": "your@email.com",
         "NCBI_API_KEY": "your_api_key",
         "CORE_API_KEY": "your_core_key",
+        "S2_API_KEY": "your_semantic_scholar_key",
+        "OPENALEX_API_KEY": "your_openalex_key",
         "CROSSREF_EMAIL": "your@email.com",
         "UNPAYWALL_EMAIL": "your@email.com"
       }
@@ -698,7 +741,7 @@ export PUBMED_AUTH_TOKENS="copilot:$(openssl rand -hex 32)"
 export NGROK_DOMAIN="your-domain.ngrok.dev"
 ./scripts/start-copilot-ngrok.sh
 
-# Option C: simplified 11-tool local schema smoke (never tunnel this mode)
+# Option C: simplified 12-tool local schema smoke (never tunnel this mode)
 uv run python run_copilot.py --port 8765
 
 # Option D: manual service when the public URL is already known
@@ -740,6 +783,12 @@ already occupied backend port, start the loopback service first, and verify
 `/ready` plus unauthenticated `/mcp` rejection before ngrok is started. The
 resource URL and Host/Origin allowlists are derived from that known HTTPS
 domain. `run_copilot.py` remains loopback-only and must not be tunneled.
+
+The simplified surface still exposes the generic search as `unified_search`,
+not a PubMed-only alias. Its primitive schema accepts `query`, `limit`,
+`min_year`, `max_year`, `sources`, and `options`, then delegates to the
+same unified runner as the primary surface. This keeps the single-search
+contract while avoiding Copilot Studio `anyOf` / `$ref` schema problems.
 
 > See [copilot-studio/README.md](https://github.com/u9401066/pubmed-search-mcp/blob/master/copilot-studio/README.md) for the full OpenAPI schema and Copilot Studio setup walkthrough.
 

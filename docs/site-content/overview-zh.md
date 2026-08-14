@@ -28,7 +28,7 @@
 
 **🌐 語言**: [English](#/overview) | **繁體中文**
 
-**📘 文件地圖**：README 是專案入口與快速導覽；[Docs Site](https://u9401066.github.io/pubmed-search-mcp/) 提供最佳閱讀體驗；[GitHub Wiki](https://github.com/u9401066/pubmed-search-mcp/wiki) 提供 GitHub 內建導覽；實際編修以 source docs 為準：[使用者指南](#/user-guide-zh) | [進階研究工作流](#/advanced-workflows-zh) | [能力導向使用指南](#/tools-usage-guide-zh) | [開發者指南](#/developer-guide-zh) | [完整工具索引](#/quick-reference)
+**📘 文件地圖**：README 是專案入口與快速導覽；[Docs Site](https://u9401066.github.io/pubmed-search-mcp/) 提供最佳閱讀體驗；[GitHub Wiki](https://github.com/u9401066/pubmed-search-mcp/wiki) 提供 GitHub 內建導覽；實際編修以 source docs 為準：[使用者指南](#/user-guide-zh) | [進階研究工作流](#/advanced-workflows-zh) | [能力導向使用指南](#/tools-usage-guide-zh) | [Provider 資料平面](#/semantic-scholar-api) | [BioMCP 架構分析](#/biomcp-analysis) | [開發者指南](#/developer-guide-zh) | [完整工具索引](#/quick-reference)
 
 ---
 
@@ -48,7 +48,7 @@
 
 - **NCBI Email** — [NCBI API 政策](https://www.ncbi.nlm.nih.gov/books/NBK25497/#chapter2.Usage_Guidelines_and_Requirements)要求，任何有效的電子郵件地址
 - **NCBI API Key**（*選填*）— [在此取得](https://www.ncbi.nlm.nih.gov/account/settings/)，可提高 API 限額（10 req/s vs 3 req/s）
-- **OpenAlex API Key**（*選填*）— 設定 `OPENALEX_API_KEY` 後，OpenAlex 會改用已驗證請求，而不是只靠 mailto polite-pool auth。若未設定來源專用 email，server 會把 runtime contact email 重用於 OpenAlex、CrossRef 與 Unpaywall。
+- **OpenAlex API Key**（*選填*）— 設定 `OPENALEX_API_KEY` 後會使用 authenticated credit allocation；未設定時則依 OpenAlex 當下的匿名 casual-use budget。`mailto` 只是 contact metadata，不是認證。若未設定來源專用 email，server 會把 runtime contact email 重用於 OpenAlex、CrossRef 與 Unpaywall。
 
 ### 安裝與執行
 
@@ -328,7 +328,7 @@ NCBI_EMAIL=your@email.com uvx pubmed-search-mcp
 ### 核心差異化
 
 1. **詞彙翻譯層** - Agent 自然語言表達，我們翻譯成各資料庫術語 (MeSH, ICD-10, text-mined entities)
-2. **統一搜尋閘道** - 一個 `unified_search()` 呼叫，自動分流到 PubMed/Europe PMC/CORE/OpenAlex
+2. **統一搜尋閘道** - 一個 `unified_search()` 呼叫，依能力分流到 PubMed、Europe PMC、CORE、OpenAlex、Semantic Scholar 與已啟用的預印本／商用來源
 3. **PICO Handoff + Pipeline** - Agent 先抽出 P/I/C/O，`parse_pico()` 驗證這份結構化 handoff，後端 `template: pico` pipeline 執行含 O 的 precision/recall 搜尋
 4. **研究時間軸 & 脈絡樹** - 以 policy-driven 規則自動偵測里程碑，結合多訊號重要文獻評分（引用影響力+多源交叉驗證+引用速度），並輸出 timeline diagnostics 與子議題分支視覺化
 5. **引用網路分析** - 從單篇論文建構多層引用樹，繪製完整研究版圖
@@ -349,8 +349,8 @@ NCBI_EMAIL=your@email.com uvx pubmed-search-mcp
 | **NCBI Entrez** | 多資料庫 | MeSH | ✅ 原生支援 | Gene, PubChem, ClinVar |
 | **Europe PMC** | 33M+ | Text-mined | ✅ 擷取 | 全文 XML 存取 |
 | **CORE** | 200M+ | 無 | ➡️ 自由文字 | 開放取用聚合器 |
-| **Semantic Scholar** | 200M+ | S2 Fields | ➡️ 自由文字 | AI 驅動推薦 |
-| **OpenAlex** | 250M+ | Concepts | ➡️ 自由文字 | 開放學術元資料 |
+| **Semantic Scholar** | 持續演進的 graph + operator datasets | S2 fields / bulk syntax | ✅ Broker 編譯模式 | Relevance、bounded bulk、batch、citation graph 與 metadata-only release/diff plane；不下載 partition |
+| **OpenAlex** | 持續演進的開放研究圖譜 | Topics / keywords | ✅ Keyword + bounded native semantic | Cursor、cost provenance、entity graph 與已宣告的 operator snapshot 路徑；尚無 local index |
 | **NIH iCite** | PubMed | N/A | N/A | 引用指標 (RCR) |
 
 > **🔑 說明**: ✅ = 完整詞彙支援 | ➡️ = 查詢直接傳遞（無控制詞彙）
@@ -368,6 +368,7 @@ CORE_API_KEY=your_core_api_key     # 取得：https://core.ac.uk/services/api
 CROSSREF_EMAIL=your@email.com      # 選填覆寫；預設使用 server/NCBI email
 UNPAYWALL_EMAIL=your@email.com     # 選填覆寫；預設使用 server/NCBI email
 S2_API_KEY=your_s2_api_key         # 取得：https://www.semanticscholar.org/product/api
+OPENALEX_API_KEY=your_openalex_key # 提高 OpenAlex credit budget；實際額度依 response
 
 # 選填 - 網路設定
 HTTP_PROXY=http://proxy:8080       # HTTP 代理
@@ -385,9 +386,10 @@ PUBMED_WORKSPACE_DIR=/path/to/project       # fallback：使用此 workspace 下
 PUBMED_DATA_DIR=~/.pubmed-search-mcp        # fallback：使用此 data dir 下的 references/
 ```
 
-CrossRef、Unpaywall 與 OpenAlex 會重用 runtime server contact email
-（`NCBI_EMAIL`、CLI `--email` 或偵測到的 git email），除非你另外設定來源專用
-email/API key。
+CrossRef 與 Unpaywall 會重用 runtime server contact email（`NCBI_EMAIL`、CLI
+`--email` 或偵測到的 git email），除非另設來源專用 email。OpenAlex 支援 casual
+anonymous usage 與選填 API key；broker 依 response 的 credit/rate metadata 決策，
+不再假設永久的「polite pool」額度。
 
 本機筆記目錄解析順序是：`output_dir` 參數、`PUBMED_NOTES_DIR`、`PUBMED_WORKSPACE_DIR/references`、`PUBMED_DATA_DIR/references`、最後 `~/.pubmed-search-mcp/references`。
 這套 path/template 選擇只適用於可信任的本機模式。認證 service notes 一律使用內建
@@ -457,10 +459,12 @@ format，寫到當前 tenant 隔離的 `references/` 目錄。
 │   unified_search()          ← 🌟 單一入口，涵蓋所有來源            │
 │        │                                                         │
 │        ├── 快速搜尋     → 直接多源查詢                             │
+│        ├── Native semantic → 有界 OpenAlex 語意模式                 │
+│        ├── Systematic   → 有界 provider bulk/cursor 模式           │
 │        ├── PICO 提示    → 偵測比較結構，顯示 P/I/C/O               │
 │        └── ICD 擴展     → 自動 ICD→MeSH 轉換                      │
 │                                                                  │
-│   來源: PubMed · Europe PMC · CORE · OpenAlex                    │
+│   來源: PubMed · Europe PMC · CORE · OpenAlex · S2               │
 │   自動: 去重 → 排序 → 補充全文連結                                  │
 │                                                                  │
 ├─────────────────────────────────────────────────────────────────┤
@@ -472,6 +476,53 @@ format，寫到當前 tenant 隔離的 `references/` 目錄。
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+#### 單一搜尋入口，三種 retrieval policy
+
+一般文獻發現對外固定只有一個 MCP tool：`unified_search`。Provider-specific
+API 保持在 broker 內部，以 capability 而不是新 tool 表達：
+
+```python
+# 預設：在已啟用來源中做 relevance/keyword 路由
+unified_search(query="treatment resistance")
+
+# OpenAlex native semantic（provider 上限 50 筆）
+unified_search(
+    query="mechanisms of treatment resistance",
+    sources="openalex",
+    options="native_semantic",
+)
+
+# 可重現的有界檢索：依來源選用 OpenAlex cursor / S2 bulk
+unified_search(
+    query="melanoma AND immunotherapy",
+    sources="pubmed,openalex,semantic_scholar",
+    options="systematic",
+)
+```
+
+`native_semantic` 與 `systematic` 互斥，並會關閉多策略 deep-search
+expansion。明確指定不支援該 mode 的來源時，broker 會在發送 network
+request 前拒絕；自動選源則只保留有能力的 provider。`limit` 每來源仍最多
+100，所以 `systematic` 指的是 deterministic / bounded provider execution，不是
+「已完整覆蓋系統性回顧」的保證。Structured output 與 artifact 會保存
+`retrieval_mode` 及每來源 `source_metadata`（requested/provider mode、canonical 或
+compiled query、continuation、cost/rate metadata 與 warnings）。
+
+公開 request boundary 採 fail-closed。`limit` 必須是 1 到 100 的整數；未知或
+格式錯誤的 `filters` / `options`、反向或超出範圍的年份，以及不支援的 ranking
+或 output mode，都會在 provider I/O 前回傳 validation error。預設 deep-search
+policy 中，`limit` 是分配給每個來源所有 query strategies 的**總額度**，不是每個
+strategy 都各取 `limit` 筆。Strategy calls 有全域／每來源 concurrency 與 timeout
+上限；單一來源 timeout、rate limit 或失敗時，其他來源的成功結果仍可使用。
+
+Europe PMC、Scopus 與 Web of Science 在本版仍是 keyword-only；明確指定
+這些來源的 systematic 請求會在 I/O 前失敗，不會把單頁結果誤標為
+systematic coverage。
+
+Provider 上限與 operator data-plane 邊界見[Source Contracts](#/source-contracts)、
+[Semantic Scholar](#/semantic-scholar-api) 與
+[OpenAlex](#/openalex-api)。
 
 ### 🔬 探索工具（找到關鍵論文後）
 
@@ -575,7 +626,7 @@ Topic build 會先把年份限制送到 PubMed，再做有界檢索；輸出上�
 | `get_session_pmids` | 取得暫存的 PMID 列表 |
 | `get_cached_article` | 從 Session 快取取得文章（不消耗 API） |
 | `get_session_summary` | Session 狀態概覽 |
-| `read_session` | 讀取 PMID、快取文章、歷史紀錄與持久化 artifacts 的 facade |
+| `read_session` | 讀取 PMID、快取文章、持久化 search runs、replay arguments、歷史與 artifacts 的 facade |
 
 若 MCP client 支援直接讀取 resources，也可使用以下動態 session resources：
 
@@ -598,9 +649,57 @@ read_session(action="artifact", artifact_uri="artifact://...", artifact_file="re
 read_session(action="list_artifacts", include_local_paths=true)
 ```
 
+### 可回復的 search runs
+
+Session manager 可用時，每一次 `unified_search` invocation 都會取得穩定 run ID，
+包括一般搜尋、validation/planning failure，以及 inline、`saved:<name>` 或
+`dry_run=true` pipeline execution。Structured result 與 error 會附上 `search_run`
+handoff；Markdown 會以精簡 recovery note 回傳相同 run ID。一般 literature-result
+envelope 會分開提供兩個 machine contract：
+
+- `search_status` 描述有界檢索結果：`state`（`completed`、`empty`、
+  `partial` 或 `failed`）、`bounded=true`、`exhaustive=false`、回傳筆數、
+  attempted/successful/failed/retryable sources，以及有 continuation 或完整度
+  未知的 source lists。
+- `search_run` 是 recovery handoff：穩定 `run_id`、journal status、
+  `recoverable`、可直接交給 `read_session` 的 inspect/replay arguments，以及成功
+  保存時的 artifact URI。
+
+Tenant-scoped `search-run/v1` journal 會在 provider I/O 或 terminal validation
+response 前發布，並記錄 sanitized request、plan、每來源或每 pipeline step 的實際
+attempts、counts、安全化 failure、result references，以及適用時的 artifact locator。
+最後狀態為 `completed`、`partial`、`failed` 或 `cancelled`；
+合法的零結果搜尋是 `completed` run，但 `search_status.state` 為 `empty`。Server
+重啟時，尚未結束的 `started` / `planned` / `running` 只會被回復一次為
+`interrupted`，不會無聲消失。非 dry-run 的 saved pipeline 還會另外保留
+PipelineStore report/run history；它補充 invocation-level search journal，不會取代它。
+
+Pipeline replay 會保存原本的 inline 或 `saved:<name>` argument，以及 `dry_run` /
+`stop_at`。含有 key、token、cookie、password 或其他 credential material 的 pipeline
+text 會被拒絕並記成 failed run；provider credentials 必須放在 server
+environment/configuration，不能寫進 pipeline YAML/JSON。
+
+```text
+read_session(action="search_runs")
+read_session(action="search_runs", run_status="partial")
+read_session(action="search_run", run_id="...")
+read_session(action="replay_search", run_id="...")
+```
+
+`replay_search` 只回傳原本、已移除 credential 的 `unified_search` kwargs，不會
+自動發出任何 network call；agent 或使用者必須先檢查再明確提交。Provider
+cursor/token 會以 opaque provenance 保存在 `source_metadata` 與
+`query_strategy.json`，但目前尚無公開 cursor-resume 參數，因此 replay 會開始一輪
+新的 bounded search。
+
+如果 terminal journal write 無法復原，response 會回報
+`search_run.status="history_unavailable"`、`history_available=false`、預期 terminal
+status 與 warning。此時會刻意省略 inspect/replay actions，因為 durable recovery
+無法保證；搜尋結果本身仍可能可用。
+
 `unified_search` artifacts 會使用 research envelope。建議先讀 `audit.json` 確認 source-counts 與完整性警告，再讀 `query_strategy.json` 檢查實際執行的搜尋策略，最後用 `results.json` / `results.toon` 取回完整文章清單。這樣可以節省 MCP response token，同時保留學術可追溯性。
 
-`read_session` 只讀既有 artifact，不會重跑搜尋或全文擷取。遠端 client 應使用 `read_session(action="artifact")` 分段讀取；`local_path` / `manifest_path` 是 MCP server host 上的本機路徑，不是可攜的 client 路徑，且預設會被遮蔽。大型 `get_fulltext` 回應在已有 artifact 時會先回 inline preview；要讀完整內容請使用 artifact locator。`get_fulltext` artifact 可能包含全文、訂閱或機構授權內容，正式環境請依 publisher license、機構條款與 retention policy 處理保存與分享。
+`read_session` 只讀既有 artifact，不會重跑搜尋或全文擷取。若 crash 發生在 artifact directory 已原子發布、但 session index 尚未更新之間，session reload 只會發現結構完整且 checksum 已索引的 manifests，並透過 `search_run_id` 把 orphan artifact 重新連到 search run；舊 artifact 才使用保守的 query match fallback。遠端 client 應使用 `read_session(action="artifact")` 分段讀取；`local_path` / `manifest_path` 是 MCP server host 上的本機路徑，不是可攜的 client 路徑，且預設會被遮蔽。大型 `get_fulltext` 回應在已有 artifact 時會先回 inline preview；要讀完整內容請使用 artifact locator。`get_fulltext` artifact 可能包含全文、訂閱或機構授權內容，正式環境請依 publisher license、機構條款與 retention policy 處理保存與分享。
 
 當單一來源失敗但整體搜尋仍可繼續時，`unified_search` JSON 會回傳 `source_errors`，Markdown 會顯示 `Source warnings`。Semantic Scholar HTTP 429 可設定 `S2_API_KEY` / `SEMANTIC_SCHOLAR_API_KEY`、稍後重試，或用 `sources="auto,-semantic_scholar"` / `PUBMED_SEARCH_DISABLED_SOURCES=semantic_scholar` 暫時排除。
 
@@ -673,6 +772,18 @@ agent 的指令；agent 抽出英文 biomedical terms 後，再接續用
 | `context_graph` | Markdown 輸出附帶由本次 PMID-backed ranked set 產生的輕量 Research Context Graph preview；JSON 輸出附帶 `research_context` 欄位 |
 
 這適合 Agent 在不額外呼叫 `build_research_chronicle` 的情況下，先快速掌握主題分支。
+
+### 🧪 臨床試驗登錄附加區塊
+
+系統不會隱式查詢 ClinicalTrials.gov。只有在 Markdown 搜尋明確加上
+`options="trials"` 時，才會執行有上限的 registry adjunct。它不會混入
+literature source plan 或 source counts；persistent artifact 會在
+`adjunct_queries` 記錄截短後的 physical query 與執行結果。JSON/TOON
+不執行這個只用於顯示的附加區塊。
+
+```python
+unified_search(query="remimazolam ICU sedation", options="trials")
+```
 
 ### 📊 Count-First Orientation
 
@@ -938,7 +1049,8 @@ manage_pipeline(action="history", name="icu_sedation_weekly")  # 查看過去執
 | ---- | ---- | -------- | -------- |
 | **快速** | `unified_search()` | 快速主題搜尋 | ICD→MeSH, 多源, 去重 |
 | **PICO** | Agent P/I/C/O → `parse_pico()` | 臨床問題 | 驗證 handoff → `template:pico` 後端搜尋 |
-| **系統** | `generate_search_queries()` | 文獻回顧 | MeSH 擴展, 同義詞 |
+| **系統** | `generate_search_queries()` → `unified_search(options="systematic")` | 可重現的 review seed | MeSH/同義詞 + 有界 bulk/cursor；不代表已窮盡全庫 |
+| **Native semantic** | `unified_search(options="native_semantic")` | title/abstract 概念相似性 | capability 驗證；OpenAlex semantic，最多 50 |
 | **探索** | `find_*_articles()` | 從關鍵論文 | 引用網絡, 相關 |
 
 ---
@@ -1036,8 +1148,8 @@ src/pubmed_search/
 | **PubMed / NCBI** | MeSH (醫學主題詞表) | ✅ 完整支援 `expand_with_mesh()` |
 | **ICD 碼** | ICD-10-CM / ICD-9-CM | ✅ 自動偵測並轉換為 MeSH |
 | **Europe PMC** | 文字探勘實體 (Gene, Disease, Chemical) | ✅ `get_text_mined_terms()` 擷取 |
-| **OpenAlex** | OpenAlex Concepts (已棄用) | ❌ 僅支援自由文字 |
-| **Semantic Scholar** | S2 Field of Study | ❌ 僅支援自由文字 |
+| **OpenAlex** | Topics / keywords（模型推論） | ✅ Broker keyword mode；選取時使用 bounded native semantic mode |
+| **Semantic Scholar** | S2 fields / bulk query syntax | ✅ Broker 選 relevance 或 bounded bulk mode，provider annotation 保留 provenance |
 | **CORE** | 無 | ❌ 僅支援自由文字 |
 | **CrossRef** | 無 | ❌ 僅支援自由文字 |
 
@@ -1171,7 +1283,7 @@ export NGROK_DOMAIN="your-assigned-domain.ngrok.dev"
 
 > 📖 **完整文件**: [copilot-studio/README.md](https://github.com/u9401066/pubmed-search-mcp/blob/master/copilot-studio/README.md)
 >
-> 若只需要 Copilot 相容 HTTP 行為，用 `pubmed-search-mcp-http --copilot-compatible`；`run_copilot.py` 只供 loopback 簡化 schema smoke，禁止接到公網 tunnel。Tunnel 腳本要求已指派的 `NGROK_DOMAIN`、拒絕已占用的 backend port，並只會在 `--mode service` 通過 readiness 與匿名拒絕檢查後公開。
+> 若只需要 Copilot 相容 HTTP 行為，用 `pubmed-search-mcp-http --copilot-compatible`；`run_copilot.py` 只供 loopback 的 12-tool primitive-schema smoke，禁止接到公網 tunnel。精簡 surface 仍透過 `unified_search(query, limit, min_year, max_year, sources, options)` 呼叫共用 runner，並提供 primitive-schema `read_session` 以回讀 search run、replay arguments 與 artifacts；它不提供 PubMed-only generic-search alias。Tunnel 腳本要求已指派的 `NGROK_DOMAIN`、拒絕已占用的 backend port，並只會在 `--mode service` 通過 readiness 與匿名拒絕檢查後公開。
 >
 > ⚠️ **注意**: SSE transport 自 2025 年 8 月起棄用。使用 `streamable-http`。
 

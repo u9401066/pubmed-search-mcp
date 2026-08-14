@@ -36,7 +36,8 @@ Capability-first guide for using the 45-tool PubMed Search MCP surface without t
 | --- | --- |
 | Quick literature search | `unified_search(query=..., limit=...)` |
 | Clinical comparison | Agent P/I/C/O -> `parse_pico` -> `unified_search(pipeline="template: pico...")` |
-| Systematic review seed | `analyze_search_query` -> `generate_search_queries` -> `unified_search` -> `save_pipeline` |
+| Systematic review seed | `analyze_search_query` -> `generate_search_queries` -> `unified_search(options="systematic")` -> `save_pipeline` |
+| Provider-native semantic retrieval | `unified_search(sources="openalex", options="native_semantic")` |
 | Important paper exploration | `fetch_article_details` -> `find_related_articles` / `find_citing_articles` / `get_article_references` |
 | Full-text synthesis | `get_fulltext` -> `get_text_mined_terms` -> structured summary |
 | Zotero handoff | `prepare_export(pmids="last", format="ris")` or Zotero Keeper import tools |
@@ -54,6 +55,53 @@ Each feature family has a workflow diagram so users and developers can see where
 ![Search and query intelligence workflow](images/search-query-workflow.svg)
 
 Use this path for `unified_search`, `parse_pico`, `generate_search_queries`, `analyze_search_query`, and ICD-aware search preparation. The important boundary is that the agent performs semantic PICO extraction, while `parse_pico` validates the structured handoff and returns a backend `template: pico` pipeline.
+
+There is exactly one generic literature-search tool. Choose its retrieval
+policy with `options` instead of looking for provider-specific search tools:
+
+| Policy | Example | Contract |
+| --- | --- | --- |
+| Default | `unified_search(query="sepsis biomarkers")` | Relevance/keyword routing across the normal capable source plan. |
+| Native semantic | `unified_search(query="mechanisms of resistance", sources="openalex", options="native_semantic")` | OpenAlex title/abstract semantic retrieval; provider maximum 50. |
+| Systematic | `unified_search(query="melanoma AND immunotherapy", sources="pubmed,openalex,semantic_scholar", options="systematic")` | Deterministic, bounded provider execution: OpenAlex cursor and Semantic Scholar bulk where selected. |
+
+`native_semantic` and `systematic` are mutually exclusive. Both disable the
+multi-strategy deep-search expansion so the selected provider-native plan stays
+auditable. An explicit unsupported source/mode combination fails before the
+network call; automatic routing retains capable sources only. The public
+`limit` remains at most 100 per source, so `systematic` is a reproducible
+retrieval primitive, not proof of exhaustive systematic-review coverage.
+
+Input validation is strict and occurs before provider I/O. `limit` must be an
+integer in `1..100`; filter tokens must use supported `key:value` forms; year
+bounds must be within 1000–2100 and ordered; and unknown option flags, ranking
+modes, or output formats are rejected instead of silently ignored. In normal
+deep mode, the same public `limit` is the **total budget for one source across
+all of its generated strategies**. The broker allocates that budget across the
+strategies, clips over-returning adapters, and applies bounded global and
+per-source concurrency plus strategy deadlines.
+
+JSON/TOON output and persistent artifacts preserve `retrieval_mode` and
+per-source `source_metadata`, including requested/provider mode, canonical or
+compiled query, opaque continuation token/cursor when returned, cost/rate
+metadata, and warnings. Continuation data is currently provenance only: the
+public facade has no cursor-resume argument. Consult
+[Source Contracts](#/source-contracts),
+[Semantic Scholar](#/semantic-scholar-api), and [OpenAlex](#/openalex-api)
+before interpreting provider totals or continuing a search.
+
+For agent decisions on a normal result envelope, prefer the structured
+`search_status` object over rendered text length. It labels the retrieval as
+bounded and non-exhaustive and
+separates `completed`, valid `empty`, `partial`, and all-source `failed`
+outcomes. It also reports returned count, attempted/successful/failed/retryable
+sources, continuation sources, and sources whose completeness is unknown.
+
+ClinicalTrials.gov is an explicit adjunct, not another literature-search leg.
+Use `options="trials"` only when a Markdown response should include up to three
+related registry records. The request is never made by default, does not affect
+article ranking/source counts, and is recorded separately in the search
+artifact. JSON/TOON output does not run the display-only adjunct.
 
 ### Article Discovery And Citation Mapping
 
@@ -168,11 +216,54 @@ read_session(action="artifact", artifact_uri="artifact://...", artifact_file="au
 read_session(action="artifact", artifact_uri="artifact://...", artifact_file="results.json", offset=0, max_chars=200000)
 ```
 
+When session management is active, every `unified_search` invocation includes a
+stable `search_run.run_id`: normal search, validation/planning failure, inline
+pipeline, `saved:<name>`, and pipeline `dry_run=true`. The tenant-scoped
+`search-run/v1` journal is written before provider I/O or a terminal validation
+response and retains a credential-sanitized replay request, normalized plan,
+per-source or per-pipeline-step attempts, safe failure details, compact result
+references, warnings, and an artifact locator when applicable. Structured
+responses attach the handoff and Markdown adds a compact run note.
+
+Successful, zero-result, partial, planning/execution failure, and cancelled
+invocations therefore leave inspectable state. A valid zero-result run has
+journal status `completed` while `search_status.state` is `empty`; an unfinished
+active run is changed to `interrupted` once during restart recovery. A non-dry-
+run saved pipeline additionally keeps its PipelineStore report/run history.
+PipelineStore history and the invocation journal are complementary.
+
+```python
+read_session(action="search_runs")
+read_session(action="search_runs", run_status="partial", history_limit=20)
+read_session(action="search_run", run_id="...")
+read_session(action="replay_search", run_id="...")
+```
+
+`replay_search` is intentionally read-only. It returns exact, credential-free
+`unified_search` kwargs and `automatic_execution=false`; an agent must review
+and explicitly call `unified_search` to run them. Pipeline replay includes its
+inline or `saved:<name>` argument plus `dry_run` / `stop_at`. Pipeline text that
+contains credentials is rejected as a failed run; use server environment
+configuration for provider keys, tokens, cookies, and secrets. Because there is no public
+cursor-resume input yet, opaque cursor/token provenance cannot resume a page in
+place and replay begins a new bounded request.
+
+If the terminal history commit cannot be recovered, the bounded handoff changes
+to `status="history_unavailable"` with `history_available=false`, the intended
+status, and a warning. Inspect/replay actions are omitted in that degraded state
+because durable recovery cannot be promised.
+
 `unified_search` artifacts use a research envelope. Start with `audit.json` to
 check completeness warnings, then `query_strategy.json` for the exact query
 plan, and `results.json` / `results.toon` for the full result list. This avoids
 spending MCP response tokens on long article lists while still making the run
 auditable and reproducible.
+
+Artifact publication and session indexing are separate atomic boundaries. On
+session reload, the store discovers only complete checksum-indexed manifests
+that are missing from the session index and relinks a recovered search artifact
+by `search_run_id`; a conservative same-query fallback exists for older
+artifacts that predate that metadata.
 
 `local_path` and `manifest_path` are paths on the MCP server host. `read_session`
 redacts local paths by default unless `include_local_paths=true` is requested.
