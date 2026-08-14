@@ -298,6 +298,44 @@ class TestReadSession:
         assert result["success"] is False
         assert "unsafe session id" in result["error"].lower()
 
+    async def test_search_run_actions_expose_recovery_and_explicit_replay(self, tmp_path):
+        manager = SessionManager(data_dir=str(tmp_path))
+        run = manager.start_search_run(
+            "durable query",
+            request={"query": "durable query", "limit": 30, "options": "systematic"},
+        )
+        manager.fail_search_run(str(run["run_id"]), "provider unavailable", stage="execution")
+        fn = _capture_tools(register_session_tools, manager)["read_session"]
+
+        listing = json.loads(fn(action="search_runs", run_status="failed"))
+        detail = json.loads(fn(action="search_run", run_id=run["run_id"]))
+        replay = json.loads(fn(action="replay_search", run_id=run["run_id"]))
+
+        assert listing["success"] is True
+        assert listing["returned_runs"] == 1
+        assert listing["runs"][0]["run_id"] == run["run_id"]
+        assert detail["run"]["failure"]["stage"] == "execution"
+        assert replay["automatic_execution"] is False
+        assert replay["replay"]["tool"] == "unified_search"
+        assert replay["replay"]["arguments"] == {
+            "query": "durable query",
+            "limit": 30,
+            "options": "systematic",
+        }
+
+    async def test_search_run_actions_require_known_run_id(self, tmp_path):
+        manager = SessionManager(data_dir=str(tmp_path))
+        manager.get_or_create_session("empty")
+        fn = _capture_tools(register_session_tools, manager)["read_session"]
+
+        missing = json.loads(fn(action="search_run"))
+        unknown = json.loads(fn(action="replay_search", run_id="unknown"))
+
+        assert missing["success"] is False
+        assert "run_id is required" in missing["error"]
+        assert unknown["success"] is False
+        assert "not found" in unknown["error"].lower()
+
 
 # ============================================================
 # get_session_pmids

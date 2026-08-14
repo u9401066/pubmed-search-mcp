@@ -44,6 +44,7 @@ def _request() -> SimpleNamespace:
         peer_reviewed_only=True,
         auto_relax=True,
         deep_search=True,
+        include_clinical_trials=False,
         advanced_filters={"language": "english"},
     )
 
@@ -74,6 +75,7 @@ def _plan(request: SimpleNamespace) -> SimpleNamespace:
     return SimpleNamespace(
         request=request,
         query='"Remimazolam"[MeSH Terms] ICU sedation',
+        provider_neutral_query="remimazolam ICU sedation",
         analysis=analysis,
         icd_matches=[],
         enhanced_query=enhanced_query,
@@ -127,6 +129,13 @@ def _execution() -> SimpleNamespace:
         deep_search_metrics=deep_metrics,
         relaxation_result=None,
         pubmed_total_count=25,
+        source_metadata={
+            "pubmed": {"provider_mode": "default"},
+            "openalex": {
+                "provider_mode": "keyword",
+                "canonical_query": "title_and_abstract.search:remimazolam",
+            },
+        },
     )
 
 
@@ -152,7 +161,14 @@ def test_unified_search_envelope_writes_complete_artifact_files():
 
     strategy = envelope.files["query_strategy.json"]
     assert strategy["original_query"] == "remimazolam ICU sedation"
-    assert strategy["executed_query"] == '"Remimazolam"[MeSH Terms] ICU sedation'
+    assert strategy["executed_query"] is None
+    assert strategy["pubmed_query"] == '"Remimazolam"[MeSH Terms] ICU sedation'
+    assert strategy["provider_neutral_query"] == "remimazolam ICU sedation"
+    assert strategy["source_queries"]["pubmed"]["logical_query"] == strategy["pubmed_query"]
+    assert strategy["source_queries"]["pubmed"]["physical_query"] is None
+    assert strategy["source_queries"]["pubmed"]["physical_queries"] == ['"Remimazolam"[MeSH Terms] AND ICU']
+    assert strategy["source_queries"]["openalex"]["physical_query"] == "title_and_abstract.search:remimazolam"
+    assert strategy["source_queries"]["openalex"]["executed"] is True
     assert strategy["dispatch_sources"] == ["pubmed", "openalex"]
     assert strategy["deep_search"]["strategies_generated"] == 2
     assert strategy["deep_search"]["strategy_results"][0]["query"] == '"Remimazolam"[MeSH Terms] AND ICU'
@@ -165,6 +181,133 @@ def test_unified_search_envelope_writes_complete_artifact_files():
     assert any(check["check"] == "missing_identifiers" and check["severity"] == "warn" for check in audit["checks"])
     assert envelope.summary["audit"]["status"] == "warn"
     assert envelope.summary["audit"]["warnings"] >= 1
+
+
+def test_query_strategy_records_only_attempted_primary_legs() -> None:
+    request = _request()
+    plan = _plan(request)
+    plan.dispatch_sources.append("crossref")
+    execution = _execution()
+
+    envelope = build_unified_search_artifact_envelope(
+        request=request,
+        plan=plan,
+        execution=execution,
+        structured_payload='{"tool":"unified_search","articles":[]}',
+        primary_format="json",
+    )
+
+    strategy = envelope.files["query_strategy.json"]
+    assert set(strategy["source_queries"]) == {"pubmed", "openalex"}
+    assert "crossref" not in strategy["source_queries"]
+
+
+def test_non_pubmed_only_strategy_uses_provider_neutral_executed_query() -> None:
+    request = _request()
+    request.sources = "openalex"
+    plan = _plan(request)
+    plan.query = '("Essential Hypertension"[MeSH] OR I10) treatment'
+    plan.provider_neutral_query = '("Essential Hypertension" OR I10) treatment'
+    plan.dispatch_sources = ["openalex"]
+    execution = _execution()
+    execution.deep_search_metrics = None
+    execution.source_api_counts = {"openalex": (0, None)}
+    execution.source_metadata = {
+        "openalex": {
+            "provider_mode": "keyword",
+            "physical_query": "title_and_abstract.search:Essential Hypertension",
+        }
+    }
+
+    envelope = build_unified_search_artifact_envelope(
+        request=request,
+        plan=plan,
+        execution=execution,
+        structured_payload='{"tool":"unified_search","articles":[]}',
+        primary_format="json",
+    )
+
+    strategy = envelope.files["query_strategy.json"]
+    assert strategy["executed_query"] == plan.provider_neutral_query
+    assert strategy["pubmed_query"] == plan.query
+
+
+def test_not_executed_query_is_not_misreported_as_physical_query() -> None:
+    request = _request()
+    request.sources = "semantic_scholar"
+    request.include_clinical_trials = True
+    plan = _plan(request)
+    plan.dispatch_sources = ["semantic_scholar"]
+    execution = _execution()
+    execution.source_api_counts = {"semantic_scholar": (0, None)}
+    execution.source_metadata = {
+        "semantic_scholar": {
+            "provider_mode": "bulk",
+            "physical_query": None,
+            "query_executed": False,
+            "query_compilation_error": "unsupported field tag",
+        }
+    }
+    execution.clinical_trials_query = "remimazolam ICU sedation"
+    execution.clinical_trials_status = "empty"
+
+    envelope = build_unified_search_artifact_envelope(
+        request=request,
+        plan=plan,
+        execution=execution,
+        structured_payload='{"tool":"unified_search","articles":[]}',
+        primary_format="json",
+    )
+
+    strategy = envelope.files["query_strategy.json"]
+    source_query = strategy["source_queries"]["semantic_scholar"]
+    assert source_query["physical_query"] is None
+    assert source_query["executed"] is False
+    assert strategy["adjunct_queries"]["clinical_trials"] == {
+        "logical_query": plan.provider_neutral_query,
+        "physical_query": "remimazolam ICU sedation",
+        "status": "empty",
+    }
+
+
+def test_query_strategy_preserves_exact_pubmed_query_and_preprint_local_filter() -> None:
+    request = _request()
+    request.deep_search = False
+    plan = _plan(request)
+    plan.dispatch_sources = ["pubmed", "medrxiv"]
+    execution = _execution()
+    execution.deep_search_metrics = None
+    execution.source_api_counts = {"pubmed": (0, 0), "medrxiv": (0, None)}
+    execution.source_metadata = {
+        "pubmed": {
+            "provider_mode": "keyword",
+            "physical_query": 'remimazolam AND 2020/01/01:3000/12/31[dp] AND "Female"[MeSH]',
+            "query_executed": True,
+        },
+        "medrxiv": {
+            "provider_mode": "date_feed_with_local_keyword_filter",
+            "physical_query": "details/medrxiv/2025-01-01/2025-04-01/0",
+            "query_executed": True,
+            "local_filter": {
+                "query_mode": "all_terms_case_insensitive",
+                "year_range": {"min": 2020, "max": None},
+            },
+        },
+    }
+
+    envelope = build_unified_search_artifact_envelope(
+        request=request,
+        plan=plan,
+        execution=execution,
+        structured_payload='{"tool":"unified_search","articles":[]}',
+        primary_format="json",
+    )
+
+    source_queries = envelope.files["query_strategy.json"]["source_queries"]
+    assert source_queries["pubmed"]["physical_query"].endswith('AND "Female"[MeSH]')
+    assert source_queries["pubmed"]["executed"] is True
+    assert source_queries["medrxiv"]["physical_query"] == "details/medrxiv/2025-01-01/2025-04-01/0"
+    assert source_queries["medrxiv"]["local_filter"] == execution.source_metadata["medrxiv"]["local_filter"]
 
 
 def test_limited_search_does_not_warn_when_unique_articles_exceed_returned_limit():
@@ -194,6 +337,24 @@ def test_limited_search_does_not_warn_when_unique_articles_exceed_returned_limit
         check["check"] == "result_count_consistency" and check["severity"] == "pass" for check in audit["checks"]
     )
     assert any(check["check"] == "result_limit_applied" and check["severity"] == "info" for check in audit["checks"])
+
+
+def test_unknown_provider_total_keeps_has_more_unknown() -> None:
+    request = _request()
+    plan = _plan(request)
+    execution = _execution()
+    execution.source_api_counts = {"openalex": (10, None)}
+    execution.source_metadata = {"openalex": {"provider_mode": "keyword"}}
+
+    envelope = build_unified_search_artifact_envelope(
+        request=request,
+        plan=plan,
+        execution=execution,
+        structured_payload='{"tool":"unified_search","articles":[]}',
+        primary_format="json",
+    )
+
+    assert envelope.files["query_strategy.json"]["source_counts"]["openalex"]["has_more"] is None
 
 
 def test_artifact_locator_exposes_remote_safe_read_hints(tmp_path: Path):

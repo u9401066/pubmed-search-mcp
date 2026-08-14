@@ -100,12 +100,19 @@ class TestLifecycle:
         lifespan = _make_lifespan(container)
         mock_server = MagicMock()
 
-        with patch(
-            "pubmed_search.shared.async_utils.close_shared_async_client",
-            new_callable=AsyncMock,
-        ) as mock_close:
+        with (
+            patch(
+                "pubmed_search.infrastructure.sources.close_source_clients",
+                new_callable=AsyncMock,
+            ) as mock_source_close,
+            patch(
+                "pubmed_search.shared.async_utils.close_shared_async_client",
+                new_callable=AsyncMock,
+            ) as mock_close,
+        ):
             async with lifespan(mock_server) as ctx:
                 assert ctx is container
+            mock_source_close.assert_awaited_once()
             mock_close.assert_awaited_once()
 
     async def test_lifespan_closes_http_client_on_shutdown(self) -> None:
@@ -118,14 +125,22 @@ class TestLifecycle:
         lifespan = _make_lifespan(container)
         mock_server = MagicMock()
 
-        with patch(
-            "pubmed_search.shared.async_utils.close_shared_async_client",
-            new_callable=AsyncMock,
-        ) as mock_close:
+        with (
+            patch(
+                "pubmed_search.infrastructure.sources.close_source_clients",
+                new_callable=AsyncMock,
+            ) as mock_source_close,
+            patch(
+                "pubmed_search.shared.async_utils.close_shared_async_client",
+                new_callable=AsyncMock,
+            ) as mock_close,
+        ):
             async with lifespan(mock_server):
                 # Server is "running"
+                mock_source_close.assert_not_awaited()
                 mock_close.assert_not_awaited()
             # After exit: shutdown occurred
+            mock_source_close.assert_awaited_once()
             mock_close.assert_awaited_once()
 
 

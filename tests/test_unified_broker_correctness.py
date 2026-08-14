@@ -152,27 +152,19 @@ async def test_deep_metrics_count_injected_source_baselines() -> None:
         SearchPlan(name="source_baseline_openalex", query=query, source="openalex"),
     ]
 
-    with (
-        patch(
-            "pubmed_search.presentation.mcp_server.tools.unified_source_search._search_pubmed",
-            new_callable=AsyncMock,
-            return_value=([], 0),
-        ),
-        patch(
-            "pubmed_search.presentation.mcp_server.tools.unified_source_search._search_openalex",
-            new_callable=AsyncMock,
-            return_value=([], 0),
-        ),
-    ):
-        _results, metrics, _pubmed_total, counts, errors = await _execute_deep_search(
-            AsyncMock(),
-            _enhanced(query),
-            limit=10,
-            min_year=None,
-            max_year=None,
-            advanced_filters={},
-            strategies=strategies,
-        )
+    async def _empty_adapter(*_args, **_kwargs):
+        return [], 0
+
+    _results, metrics, _pubmed_total, counts, errors = await _execute_deep_search(
+        AsyncMock(),
+        _enhanced(query),
+        limit=10,
+        min_year=None,
+        max_year=None,
+        advanced_filters={},
+        strategies=strategies,
+        search_functions={"pubmed": _empty_adapter, "openalex": _empty_adapter},
+    )
 
     assert metrics.strategies_generated == len(strategies)
     assert metrics.strategies_executed == len(strategies)
@@ -212,7 +204,7 @@ async def test_shallow_execution_calls_exactly_the_requested_primary_sources() -
 
 
 @pytest.mark.asyncio
-async def test_clinical_trials_prefetch_only_runs_for_the_markdown_renderer() -> None:
+async def test_clinical_trials_prefetch_requires_explicit_markdown_opt_in() -> None:
     clinical_trials = AsyncMock(return_value=[{"nct_id": "NCT00000001"}])
     query = "diabetes"
 
@@ -230,6 +222,26 @@ async def test_clinical_trials_prefetch_only_runs_for_the_markdown_renderer() ->
                 analyzer_factory=lambda: _StaticAnalyzer(_analysis(query)),
                 search_functions={"pubmed": _empty_search},
             )
+
+        await run_unified_search(
+            searcher=AsyncMock(),
+            query=query,
+            sources="pubmed",
+            output_format="markdown",
+            options="trials,shallow,no_relax,no_analysis,no_scores",
+            analyzer_factory=lambda: _StaticAnalyzer(_analysis(query)),
+            search_functions={"pubmed": _empty_search},
+        )
+
+        await run_unified_search(
+            searcher=AsyncMock(),
+            query=query,
+            sources="pubmed",
+            output_format="json",
+            options="trials,shallow,no_relax,no_analysis,no_scores",
+            analyzer_factory=lambda: _StaticAnalyzer(_analysis(query)),
+            search_functions={"pubmed": _empty_search},
+        )
 
     assert clinical_trials.await_count == 1
     assert {call.args[0] for call in clinical_trials.await_args_list} == {query}
@@ -349,3 +361,32 @@ async def test_successful_empty_source_counts_as_responded_but_error_does_not() 
     payload = json.loads(result)
     assert payload["source_errors"][0]["source"] == "openalex"
     assert payload["source_errors"][0]["kind"] == "timeout"
+
+
+@pytest.mark.asyncio
+async def test_failed_systematic_leg_keeps_attempted_physical_query() -> None:
+    query = "melanoma AND immunotherapy"
+
+    async def _failed(*_args, **_kwargs):
+        raise TimeoutError("upstream timed out")
+
+    with patch(
+        "pubmed_search.infrastructure.sources.clinical_trials.search_related_trials",
+        new_callable=AsyncMock,
+        return_value=[],
+    ):
+        result = await run_unified_search(
+            searcher=AsyncMock(),
+            query=query,
+            sources="semantic_scholar",
+            output_format="json",
+            options="systematic,no_analysis,no_scores",
+            analyzer_factory=lambda: _StaticAnalyzer(_analysis(query)),
+            search_functions={"semantic_scholar": _failed},
+        )
+
+    payload = json.loads(result)
+    metadata = payload["source_metadata"]["semantic_scholar"]
+    assert metadata["logical_query"] == query
+    assert metadata["physical_query"] == "melanoma + immunotherapy"
+    assert metadata["provider_mode"] == "bulk"

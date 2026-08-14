@@ -160,21 +160,21 @@ class TestToolRegistration:
 class TestIntegrationWithServer:
     """Integration tests with full MCP server."""
 
-    async def test_unified_tools_in_full_server(self):
+    async def test_unified_tools_in_full_server(self, tmp_path):
         """Unified tools should be registered in full server."""
         from pubmed_search.presentation.mcp_server import create_server
 
-        mcp = create_server()
+        mcp = create_server(data_dir=str(tmp_path / "server-data"))
         tool_names = [t.name for t in mcp._tool_manager._tools.values()]
 
         assert "unified_search" in tool_names
         assert "analyze_search_query" in tool_names
 
-    async def test_server_has_expected_tool_count(self):
+    async def test_server_has_expected_tool_count(self, tmp_path):
         """Server should have expected number of tools including unified."""
         from pubmed_search.presentation.mcp_server import create_server
 
-        mcp = create_server()
+        mcp = create_server(data_dir=str(tmp_path / "server-data"))
         tool_count = len(mcp._tool_manager._tools)
 
         # v0.1.21: Consolidated from 35+ to ~21-25 tools
