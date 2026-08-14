@@ -124,6 +124,9 @@ class TestCopilotHookPolicy:
             assert "hook_runtime.py" in bash
             assert "hook_runtime.py" in powershell
             assert powershell.isascii(), "Windows PowerShell 5.1 wrappers must remain ASCII"
+            assert "[Console]::InputEncoding = $utf8" in powershell
+            assert "[Console]::OutputEncoding = $utf8" in powershell
+            assert "$OutputEncoding = $utf8" in powershell
 
     def test_policy_has_no_duplicate_tools_within_sections(self):
         policy = json.loads(POLICY_PATH.read_text(encoding="utf-8"))
