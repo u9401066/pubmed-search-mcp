@@ -19,7 +19,8 @@ import logging
 import urllib.parse
 from typing import TYPE_CHECKING, Any
 
-from pubmed_search.infrastructure.sources.base_client import _CONTINUE, BaseAPIClient
+from pubmed_search.infrastructure.sources.base_client import _CONTINUE, APIRequestError, BaseAPIClient
+from pubmed_search.shared.async_utils import RetryableOperationError
 
 if TYPE_CHECKING:
     import httpx
@@ -97,6 +98,25 @@ class COREClient(BaseAPIClient):
             return None
         return _CONTINUE
 
+    @staticmethod
+    def compile_query(
+        query: str,
+        *,
+        year_from: int | None = None,
+        year_to: int | None = None,
+        has_fulltext: bool = False,
+    ) -> str:
+        """Compile the exact CORE query string sent in the ``q`` parameter."""
+
+        query_parts = [query]
+        if year_from:
+            query_parts.append(f'yearPublished>="{year_from}"')
+        if year_to:
+            query_parts.append(f'yearPublished<="{year_to}"')
+        if has_fulltext:
+            query_parts.append("_exists_:fullText")
+        return " AND ".join(query_parts) if len(query_parts) > 1 else query
+
     async def search(
         self,
         query: str,
@@ -107,6 +127,7 @@ class COREClient(BaseAPIClient):
         year_to: int | None = None,
         has_fulltext: bool = False,
         sort: str | None = None,
+        strict: bool = False,
     ) -> dict[str, Any]:
         """
         Search CORE for research outputs.
@@ -125,17 +146,12 @@ class COREClient(BaseAPIClient):
             Dict with results and metadata
         """
         try:
-            # Build query with filters
-            query_parts = [query]
-
-            if year_from:
-                query_parts.append(f'yearPublished>="{year_from}"')
-            if year_to:
-                query_parts.append(f'yearPublished<="{year_to}"')
-            if has_fulltext:
-                query_parts.append("_exists_:fullText")
-
-            full_query = " AND ".join(query_parts) if len(query_parts) > 1 else query
+            full_query = self.compile_query(
+                query,
+                year_from=year_from,
+                year_to=year_to,
+                has_fulltext=has_fulltext,
+            )
 
             params = {
                 "q": full_query,
@@ -149,12 +165,20 @@ class COREClient(BaseAPIClient):
             url = f"{CORE_API_BASE}/search/{entity_type}?{urllib.parse.urlencode(params)}"
             data = await self._make_request(url)
 
-            if not data or isinstance(data, str):
+            if not isinstance(data, dict):
+                if strict:
+                    self._raise_strict_request_error()
+                return {"total_hits": 0, "results": []}
+
+            raw_results = data.get("results")
+            if not isinstance(raw_results, list):
+                if strict:
+                    self._raise_strict_request_error()
                 return {"total_hits": 0, "results": []}
 
             # Normalize results
             results = []
-            for item in data.get("results", []):
+            for item in raw_results:
                 results.append(self._normalize_work(item))
 
             result = {
@@ -165,15 +189,19 @@ class COREClient(BaseAPIClient):
             }
 
             if result["total_hits"] == 0:
-                logger.warning(
-                    "CORE search returned 0 results for query: %s",
-                    query[:100],
-                )
+                logger.debug("CORE search returned 0 results")
 
             return result
 
-        except Exception as e:
-            logger.exception(f"CORE search failed: {e}")
+        except (APIRequestError, RetryableOperationError):
+            if strict:
+                raise
+            logger.warning("CORE search failed (upstream request error)")
+            return {"total_hits": 0, "results": []}
+        except Exception as exc:
+            logger.warning("CORE search failed (%s)", type(exc).__name__)
+            if strict:
+                raise APIRequestError(self._service_name) from None
             return {"total_hits": 0, "results": []}
 
     async def search_fulltext(

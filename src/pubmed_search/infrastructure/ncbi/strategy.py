@@ -105,7 +105,11 @@ class SearchStrategyGenerator:
 
             corrected = result.get("CorrectedQuery", "")
             if corrected and corrected != query:
-                logger.info(f"Spelling correction: '{query}' → '{corrected}'")
+                logger.info(
+                    "NCBI spelling correction applied (input_length=%s, output_length=%s)",
+                    len(query),
+                    len(corrected),
+                )
                 return corrected, True
             return query, False
         except Exception as e:

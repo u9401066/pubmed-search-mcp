@@ -147,13 +147,13 @@ class ClinicalTrialsClient:
             return [self._normalize_study(s) for s in studies]
 
         except httpx.TimeoutException:
-            logger.warning(f"ClinicalTrials.gov timeout for query: {query}")
+            logger.warning("ClinicalTrials.gov search timed out (query_length=%s)", len(query))
             return []
-        except httpx.HTTPStatusError as e:
-            logger.warning(f"ClinicalTrials.gov HTTP error: {e}")
+        except httpx.HTTPStatusError as exc:
+            logger.warning("ClinicalTrials.gov HTTP error (status=%s)", exc.response.status_code)
             return []
-        except Exception as e:
-            logger.warning(f"ClinicalTrials.gov error: {e}")
+        except Exception as exc:
+            logger.warning("ClinicalTrials.gov search failed (%s)", type(exc).__name__)
             return []
 
     def _normalize_study(self, study: dict) -> dict[str, Any]:
@@ -227,8 +227,8 @@ class ClinicalTrialsClient:
             response.raise_for_status()
             return self._normalize_study(response.json())
 
-        except Exception as e:
-            logger.warning(f"Failed to get study {nct_id}: {e}")
+        except Exception as exc:
+            logger.warning("ClinicalTrials.gov study lookup failed (%s)", type(exc).__name__)
             return None
 
     async def close(self):

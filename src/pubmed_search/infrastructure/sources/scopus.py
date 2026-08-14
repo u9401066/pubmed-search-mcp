@@ -13,11 +13,12 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from pubmed_search.infrastructure.sources.base_client import BaseAPIClient
+from pubmed_search.infrastructure.sources.base_client import APIRequestError, BaseAPIClient
 from pubmed_search.infrastructure.sources.official_generated_clients import (
     OfficialScopusGeneratedClient,
     ScopusSearchRequest,
 )
+from pubmed_search.shared.async_utils import RetryableOperationError
 
 logger = logging.getLogger(__name__)
 
@@ -75,26 +76,40 @@ class ScopusClient(BaseAPIClient):
         min_year: int | None = None,
         max_year: int | None = None,
         open_access_only: bool = False,
+        strict: bool = False,
     ) -> list[dict[str, Any]]:
         """Search Scopus and normalize the response into article-like dicts."""
-        scopus_query = self._build_query(query, min_year=min_year, max_year=max_year, open_access_only=open_access_only)
-        request = ScopusSearchRequest(
-            query=scopus_query,
-            apiKey=self._api_key,
-            insttoken=self._insttoken,
-            count=min(limit, 25),
-        )
+        try:
+            scopus_query = self.compile_query(
+                query,
+                min_year=min_year,
+                max_year=max_year,
+                open_access_only=open_access_only,
+            )
+            request = ScopusSearchRequest(
+                query=scopus_query,
+                count=min(limit, 25),
+            )
 
-        response = await self._official_client.search_documents(request)
-        if response is None:
-            return []
+            response = await self._official_client.search_documents(request)
+            if response is None:
+                if strict:
+                    self._raise_strict_request_error()
+                return []
 
-        results: list[dict[str, Any]] = []
-        for entry in response.entries():
-            results.append(self._normalize_entry(entry.model_dump(by_alias=True, exclude_none=True)))
-        return results
+            results: list[dict[str, Any]] = []
+            for entry in response.entries():
+                results.append(self._normalize_entry(entry.model_dump(by_alias=True, exclude_none=True)))
+            return results
+        except (APIRequestError, RetryableOperationError):
+            raise
+        except Exception as exc:
+            if strict:
+                raise APIRequestError(self._service_name) from None
+            logger.warning("Scopus search failed (%s)", type(exc).__name__)
+            raise
 
-    def _build_query(
+    def compile_query(
         self,
         query: str,
         *,
@@ -110,6 +125,23 @@ class ScopusClient(BaseAPIClient):
         if open_access_only:
             terms.append("OPENACCESS(1)")
         return " AND ".join(terms)
+
+    def _build_query(
+        self,
+        query: str,
+        *,
+        min_year: int | None,
+        max_year: int | None,
+        open_access_only: bool,
+    ) -> str:
+        """Compatibility wrapper for callers using the former private helper."""
+
+        return self.compile_query(
+            query,
+            min_year=min_year,
+            max_year=max_year,
+            open_access_only=open_access_only,
+        )
 
     def _normalize_entry(self, entry: dict[str, Any]) -> dict[str, Any]:
         cover_date = str(entry.get("prism:coverDate", ""))

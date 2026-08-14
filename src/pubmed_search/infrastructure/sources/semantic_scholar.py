@@ -16,10 +16,12 @@ Features:
 from __future__ import annotations
 
 import logging
+import re
 import urllib.parse
-from typing import Any
+from typing import Any, NoReturn
 
-from pubmed_search.infrastructure.sources.base_client import BaseAPIClient
+from pubmed_search.application.search.source_models import SourceSearchPage, coerce_optional_total
+from pubmed_search.infrastructure.sources.base_client import APIRequestError, BaseAPIClient
 from pubmed_search.infrastructure.sources.official_generated_clients import (
     OfficialSemanticScholarGeneratedClient,
     SemanticScholarSearchRequest,
@@ -31,8 +33,16 @@ logger = logging.getLogger(__name__)
 # Semantic Scholar API endpoints
 S2_API_BASE = "https://api.semanticscholar.org/graph/v1"
 S2_SEARCH_URL = f"{S2_API_BASE}/paper/search"
+S2_BULK_SEARCH_URL = f"{S2_API_BASE}/paper/search/bulk"
+S2_PAPER_BATCH_URL = f"{S2_API_BASE}/paper/batch"
 S2_PAPER_URL = f"{S2_API_BASE}/paper"
 S2_AUTHOR_URL = f"{S2_API_BASE}/author"
+S2_RELEVANCE_MAX_RESULTS = 100
+S2_BULK_MAX_RESULTS = 10_000_000
+S2_BULK_MAX_PAGES = 10_000
+S2_BATCH_MAX_IDS = 500
+_S2_BULK_SORT_PATTERN = re.compile(r"^(paperId|publicationDate|citationCount)(?::(asc|desc))?$")
+_PUBMED_FIELD_TAG_PATTERN = re.compile(r"\[[^\]]+\]")
 
 # Default fields to request (optimized for token efficiency)
 DEFAULT_FIELDS = [
@@ -69,6 +79,41 @@ def _raise_retryable_error(error: RetryableOperationError | None) -> None:
         raise error
 
 
+def _raise_api_request_error(service_name: str) -> NoReturn:
+    """Raise outside request parsing blocks so the public error stays sanitized."""
+    raise APIRequestError(service_name)
+
+
+def _require_result_list(value: object) -> list[object]:
+    """Validate provider collection shape without accepting false-empty drift."""
+    if not isinstance(value, list):
+        raise TypeError("Semantic Scholar data must be a list")
+    return value
+
+
+def compile_semantic_scholar_bulk_query(query: str) -> str:
+    """Compile common Boolean syntax to S2 bulk syntax without silent loss."""
+
+    normalized = query.strip()
+    if not normalized:
+        raise ValueError("Semantic Scholar bulk search requires a non-empty query")
+    if _PUBMED_FIELD_TAG_PATTERN.search(normalized):
+        raise ValueError("PubMed field tags cannot be translated safely to Semantic Scholar bulk search")
+    if normalized.count('"') % 2:
+        raise ValueError("Semantic Scholar bulk query contains an unbalanced quote")
+    if normalized.count("(") != normalized.count(")"):
+        raise ValueError("Semantic Scholar bulk query contains unbalanced parentheses")
+
+    segments = re.split(r'("(?:[^"\\]|\\.)*")', normalized)
+    for index in range(0, len(segments), 2):
+        segment = segments[index]
+        segment = re.sub(r"\bNOT\s+", "-", segment, flags=re.IGNORECASE)
+        segment = re.sub(r"\bAND\b", "+", segment, flags=re.IGNORECASE)
+        segment = re.sub(r"\bOR\b", "|", segment, flags=re.IGNORECASE)
+        segments[index] = segment
+    return " ".join("".join(segments).split())
+
+
 class SemanticScholarClient(BaseAPIClient):
     """
     Semantic Scholar API client.
@@ -99,6 +144,7 @@ class SemanticScholarClient(BaseAPIClient):
                 "User-Agent": "pubmed-search-mcp/1.0",
                 "Accept": "application/json",
             },
+            follow_redirects=False,
         )
         self._official_client = OfficialSemanticScholarGeneratedClient(self)
 
@@ -125,9 +171,12 @@ class SemanticScholarClient(BaseAPIClient):
         max_year: int | None = None,
         open_access_only: bool = False,
         fields: list[str] | None = None,
+        offset: int = 0,
     ) -> list[dict[str, Any]]:
-        """
-        Search Semantic Scholar.
+        """Search Semantic Scholar using the legacy normalized-list contract.
+
+        Unified search consumes :meth:`search_page`, whose items remain raw
+        Semantic Scholar DTOs until the single domain-mapping boundary.
 
         Args:
             query: Search query
@@ -141,41 +190,230 @@ class SemanticScholarClient(BaseAPIClient):
             List of paper dictionaries in normalized format
         """
         try:
+            page = await self.search_page(
+                query,
+                limit=limit,
+                min_year=min_year,
+                max_year=max_year,
+                open_access_only=open_access_only,
+                fields=fields,
+                offset=offset,
+            )
+        except APIRequestError as exc:
+            logger.warning("Semantic Scholar legacy search returned no items (%s)", type(exc).__name__)
+            return []
+        return [self._normalize_paper(paper) for paper in page.items]
+
+    async def search_page(
+        self,
+        query: str,
+        limit: int = 10,
+        min_year: int | None = None,
+        max_year: int | None = None,
+        open_access_only: bool = False,
+        fields: list[str] | None = None,
+        offset: int = 0,
+    ) -> SourceSearchPage[dict[str, Any]]:
+        """Return one relevance-ranked page of raw Semantic Scholar DTOs."""
+
+        page_limit = max(1, min(limit, S2_RELEVANCE_MAX_RESULTS))
+        if offset < 0 or offset + page_limit > 1_000:
+            raise ValueError("Semantic Scholar relevance search window is limited to 1,000 results")
+        try:
             params: dict[str, str | int | None] = {
                 "query": query,
-                "limit": min(limit, 100),
+                "limit": page_limit,
+                "offset": offset,
                 "fields": ",".join(fields or DEFAULT_FIELDS),
-                "year": None,
-                "openAccessPdf": None,
+                "year": self._year_filter(min_year, max_year),
+                "openAccessPdf": "" if open_access_only else None,
             }
-
-            # Year filter
-            if min_year or max_year:
-                if min_year and max_year:
-                    params["year"] = f"{min_year}-{max_year}"
-                elif min_year:
-                    params["year"] = f"{min_year}-"
-                else:
-                    params["year"] = f"-{max_year}"
-
-            # Open access filter
-            if open_access_only:
-                params["openAccessPdf"] = ""
-
             request = SemanticScholarSearchRequest.model_validate(params)
             response = await self._official_client.search_papers(request)
             if response is None:
                 _raise_retryable_error(self.last_retryable_error)
-                return []
+                _raise_api_request_error(self._service_name)
 
-            # Normalize to common format
-            return [self._normalize_paper(paper.model_dump(exclude_none=True)) for paper in response.data]
-
+            total, warnings = coerce_optional_total(response.total)
+            return SourceSearchPage(
+                source="semantic_scholar",
+                items=[paper.model_dump(exclude_none=True) for paper in response.data],
+                total=total,
+                next_token=response.next,
+                query=query,
+                warnings=warnings,
+                mode="relevance",
+                metadata={"offset": response.offset},
+            )
         except RetryableOperationError:
             raise
-        except Exception as e:
-            logger.exception(f"Semantic Scholar search failed: {e}")
+        except APIRequestError:
+            raise
+        except Exception as exc:
+            logger.warning("Semantic Scholar search failed (%s)", type(exc).__name__)
+        raise APIRequestError(self._service_name)
+
+    async def bulk_search_page(
+        self,
+        query: str,
+        *,
+        token: str | None = None,
+        min_year: int | None = None,
+        max_year: int | None = None,
+        open_access_only: bool = False,
+        fields: list[str] | None = None,
+        sort: str = "paperId",
+    ) -> SourceSearchPage[dict[str, Any]]:
+        """Return one raw S2 bulk page; continuation tokens stay opaque."""
+
+        if not query.strip():
+            raise ValueError("Semantic Scholar bulk search requires a non-empty query")
+        if not _S2_BULK_SORT_PATTERN.fullmatch(sort):
+            raise ValueError("Unsupported Semantic Scholar bulk sort")
+
+        try:
+            params: dict[str, str] = {
+                "query": query,
+                "fields": ",".join(fields or DEFAULT_FIELDS),
+                "sort": sort,
+            }
+            if token:
+                params["token"] = token
+            year = self._year_filter(min_year, max_year)
+            if year:
+                params["year"] = year
+            if open_access_only:
+                params["openAccessPdf"] = ""
+
+            url = f"{S2_BULK_SEARCH_URL}?{urllib.parse.urlencode(params)}"
+            payload = await self._make_request(url)
+            if not isinstance(payload, dict):
+                _raise_retryable_error(self.last_retryable_error)
+                _raise_api_request_error(self._service_name)
+
+            raw_data = payload.get("data")
+            if raw_data is None:
+                raw_data = []
+            raw_data = _require_result_list(raw_data)
+            items = [paper for paper in raw_data if isinstance(paper, dict)]
+            total, warnings = coerce_optional_total(payload.get("total"))
+            next_token = payload.get("token")
+            if not isinstance(next_token, str):
+                next_token = None
+            return SourceSearchPage(
+                source="semantic_scholar",
+                items=items,
+                total=total,
+                next_token=next_token,
+                query=query,
+                warnings=warnings,
+                mode="bulk",
+                metadata={"sort": sort},
+            )
+        except RetryableOperationError:
+            raise
+        except APIRequestError:
+            raise
+        except Exception as exc:
+            logger.warning("Semantic Scholar bulk search failed (%s)", type(exc).__name__)
+        raise APIRequestError(self._service_name)
+
+    async def bulk_search(
+        self,
+        query: str,
+        *,
+        max_results: int = 1_000,
+        max_pages: int = 10,
+        min_year: int | None = None,
+        max_year: int | None = None,
+        open_access_only: bool = False,
+        fields: list[str] | None = None,
+        sort: str = "paperId",
+    ) -> SourceSearchPage[dict[str, Any]]:
+        """Run a bounded S2 bulk-token traversal without approaching corpus scale."""
+
+        if not 1 <= max_results <= S2_BULK_MAX_RESULTS:
+            raise ValueError(f"max_results must be between 1 and {S2_BULK_MAX_RESULTS}")
+        if not 1 <= max_pages <= S2_BULK_MAX_PAGES:
+            raise ValueError(f"max_pages must be between 1 and {S2_BULK_MAX_PAGES}")
+
+        items: list[dict[str, Any]] = []
+        warnings: list[str] = []
+        seen_tokens: set[str] = set()
+        token: str | None = None
+        total: int | None = None
+        pages_fetched = 0
+
+        while pages_fetched < max_pages and len(items) < max_results:
+            page = await self.bulk_search_page(
+                query,
+                token=token,
+                min_year=min_year,
+                max_year=max_year,
+                open_access_only=open_access_only,
+                fields=fields,
+                sort=sort,
+            )
+            pages_fetched += 1
+            items.extend(page.items[: max_results - len(items)])
+            warnings.extend(page.warnings)
+            total = page.total if total is None else total
+            next_token = page.next_token if isinstance(page.next_token, str) else None
+            if not next_token:
+                token = None
+                break
+            if next_token in seen_tokens:
+                warnings.append("Semantic Scholar returned a repeated bulk token; pagination stopped")
+                token = next_token
+                break
+            seen_tokens.add(next_token)
+            token = next_token
+
+        if token and pages_fetched >= max_pages and len(items) < max_results:
+            warnings.append("Semantic Scholar bulk pagination stopped at max_pages")
+
+        return SourceSearchPage(
+            source="semantic_scholar",
+            items=items,
+            total=total,
+            next_token=token,
+            query=query,
+            warnings=warnings,
+            mode="bulk",
+            metadata={"pages_fetched": pages_fetched, "bounded": True, "sort": sort},
+        )
+
+    async def get_papers_batch(
+        self,
+        paper_ids: list[str],
+        *,
+        fields: list[str] | None = None,
+    ) -> list[dict[str, Any] | None]:
+        """Fetch up to 500 paper DTOs while preserving response order/nulls."""
+
+        if len(paper_ids) > S2_BATCH_MAX_IDS:
+            raise ValueError(f"Semantic Scholar paper batch accepts at most {S2_BATCH_MAX_IDS} IDs")
+        if not paper_ids:
             return []
+        params = {"fields": ",".join(fields or DEFAULT_FIELDS)}
+        url = f"{S2_PAPER_BATCH_URL}?{urllib.parse.urlencode(params)}"
+        # The shared transport historically annotates JSON roots as mappings;
+        # this official endpoint is the intentional array-root exception.
+        payload: Any = await self._make_request(url, method="POST", data={"ids": paper_ids})
+        if not isinstance(payload, list):
+            _raise_retryable_error(self.last_retryable_error)
+            raise APIRequestError(self._service_name)
+        return [paper if isinstance(paper, dict) else None for paper in payload]
+
+    @staticmethod
+    def _year_filter(min_year: int | None, max_year: int | None) -> str | None:
+        if min_year and max_year:
+            return f"{min_year}-{max_year}"
+        if min_year:
+            return f"{min_year}-"
+        if max_year:
+            return f"-{max_year}"
+        return None
 
     async def get_paper(self, paper_id: str, fields: list[str] | None = None) -> dict[str, Any] | None:
         """
@@ -331,8 +569,8 @@ class SemanticScholarClient(BaseAPIClient):
                 return []
 
             return [self._normalize_author(author) for author in data.get("data", [])]
-        except Exception as e:
-            logger.exception(f"Failed to search authors for {query}: {e}")
+        except Exception as exc:
+            logger.warning("Semantic Scholar author search failed (%s)", type(exc).__name__)
             return []
 
     async def get_author(self, author_id: str, fields: list[str] | None = None) -> dict[str, Any] | None:

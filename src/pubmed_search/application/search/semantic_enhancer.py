@@ -27,7 +27,9 @@ Example:
 from __future__ import annotations
 
 import asyncio
+import hmac
 import logging
+import secrets
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -37,8 +39,19 @@ from pubmed_search.infrastructure.pubtator import (
     PubTatorEntity,
     get_pubtator_client,
 )
+from pubmed_search.shared.tenancy import current_tenant_id
 
 logger = logging.getLogger(__name__)
+_ENTITY_CACHE_KEY_SECRET = secrets.token_bytes(32)
+
+
+def _entity_cache_key(term: str) -> str:
+    """Return an opaque, tenant-scoped key for one terminology lookup."""
+
+    normalized = term.casefold().strip()
+    payload = f"{current_tenant_id()}\0{normalized}".encode()
+    digest = hmac.digest(_ENTITY_CACHE_KEY_SECRET, payload, "sha256").hex()
+    return f"entity:v2:{digest}"
 
 
 # =============================================================================
@@ -289,16 +302,16 @@ class SemanticEnhancer:
             enhanced.metadata["strategy_count"] = len(enhanced.strategies)
 
         except (asyncio.TimeoutError, TimeoutError):
-            logger.warning(f"Enhancement timeout for query: {query[:50]}")
+            logger.warning("Semantic enhancement timed out (query_length=%s)", len(query))
             # Fall back to basic enhancement
             enhanced = self._basic_enhancement(query)
             enhanced.metadata["timeout"] = True
 
-        except Exception as e:
-            logger.exception(f"Enhancement failed: {e}")
+        except Exception as exc:
+            logger.warning("Semantic enhancement failed (%s)", type(exc).__name__)
             # Fall back to basic enhancement
             enhanced = self._basic_enhancement(query)
-            enhanced.metadata["error"] = str(e)
+            enhanced.metadata["error"] = type(exc).__name__
 
         return enhanced
 
@@ -333,7 +346,7 @@ class SemanticEnhancer:
         # Resolve entities in parallel
         async def resolve_one(term: str) -> PubTatorEntity | None:
             # Check cache first
-            cache_key = f"entity:{term.lower()}"
+            cache_key = _entity_cache_key(term)
             if cache:
                 cached = cache.get(cache_key)
                 if cached is not None:

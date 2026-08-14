@@ -458,11 +458,11 @@ class TransportExecutionKernel:
 
                 delay = self._compute_retry_delay(policy.retry, attempt, retry_after)
                 logger.warning(
-                    "%s attempt %s/%s failed: %s; retrying in %.2fs",
+                    "%s attempt %s/%s failed (%s); retrying in %.2fs",
                     policy.service_name,
                     attempt + 1,
                     attempts,
-                    exc,
+                    type(exc).__name__,
                     delay,
                 )
                 await self._sleep_with_budget(delay, policy=policy, deadline=deadline)

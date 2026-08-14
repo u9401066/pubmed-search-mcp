@@ -106,7 +106,7 @@ class CrossRefClient(BaseAPIClient):
     def _handle_expected_status(self, response: httpx.Response, url: str) -> Any:
         """Handle 404 (DOI not found)."""
         if response.status_code == 404:
-            logger.debug(f"CrossRef: DOI not found - {url}")
+            logger.debug("CrossRef DOI not found")
             return None
         return _CONTINUE
 

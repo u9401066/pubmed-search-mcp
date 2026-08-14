@@ -14,11 +14,12 @@ from __future__ import annotations
 import logging
 from typing import Any, cast
 
-from pubmed_search.infrastructure.sources.base_client import BaseAPIClient
+from pubmed_search.infrastructure.sources.base_client import APIRequestError, BaseAPIClient
 from pubmed_search.infrastructure.sources.official_generated_clients import (
     OfficialWebOfScienceGeneratedClient,
     WebOfScienceSearchRequest,
 )
+from pubmed_search.shared.async_utils import RetryableOperationError
 
 logger = logging.getLogger(__name__)
 
@@ -59,25 +60,41 @@ class WebOfScienceClient(BaseAPIClient):
         min_year: int | None = None,
         max_year: int | None = None,
         open_access_only: bool = False,
+        strict: bool = False,
     ) -> list[dict[str, Any]]:
         """Search Web of Science and normalize the response into article-like dicts."""
-        wos_query = self._build_query(query, min_year=min_year, max_year=max_year, open_access_only=open_access_only)
-        request = WebOfScienceSearchRequest(
-            q=wos_query,
-            limit=min(limit, 25),
-            page=1,
-        )
+        try:
+            wos_query = self.compile_query(
+                query,
+                min_year=min_year,
+                max_year=max_year,
+                open_access_only=open_access_only,
+            )
+            request = WebOfScienceSearchRequest(
+                q=wos_query,
+                limit=min(limit, 25),
+                page=1,
+            )
 
-        response = await self._official_client.search_documents(request)
-        if response is None:
-            return []
+            response = await self._official_client.search_documents(request)
+            if response is None:
+                if strict:
+                    self._raise_strict_request_error()
+                return []
 
-        results: list[dict[str, Any]] = []
-        for hit in response.hits:
-            results.append(self._normalize_hit(hit.model_dump(exclude_none=True)))
-        return results
+            results: list[dict[str, Any]] = []
+            for hit in response.hits:
+                results.append(self._normalize_hit(hit.model_dump(exclude_none=True)))
+            return results
+        except (APIRequestError, RetryableOperationError):
+            raise
+        except Exception as exc:
+            if strict:
+                raise APIRequestError(self._service_name) from None
+            logger.warning("Web of Science search failed (%s)", type(exc).__name__)
+            raise
 
-    def _build_query(
+    def compile_query(
         self,
         query: str,
         *,
@@ -95,6 +112,23 @@ class WebOfScienceClient(BaseAPIClient):
         if open_access_only:
             terms.append("OA=(Y)")
         return " AND ".join(terms)
+
+    def _build_query(
+        self,
+        query: str,
+        *,
+        min_year: int | None,
+        max_year: int | None,
+        open_access_only: bool,
+    ) -> str:
+        """Compatibility wrapper for callers using the former private helper."""
+
+        return self.compile_query(
+            query,
+            min_year=min_year,
+            max_year=max_year,
+            open_access_only=open_access_only,
+        )
 
     def _normalize_hit(self, hit: dict[str, Any]) -> dict[str, Any]:
         raw_source = hit.get("source")

@@ -6,7 +6,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import AliasChoices, Field, field_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_EMAIL = "pubmed-search@example.com"
@@ -60,8 +60,8 @@ class AppSettings(BaseSettings):
 
     crossref_email: str | None = Field(default=None, alias="CROSSREF_EMAIL")
     unpaywall_email: str | None = Field(default=None, alias="UNPAYWALL_EMAIL")
-    openalex_api_key: str | None = Field(default=None, alias="OPENALEX_API_KEY")
-    semantic_scholar_api_key: str | None = Field(
+    openalex_api_key: SecretStr | None = Field(default=None, alias="OPENALEX_API_KEY")
+    semantic_scholar_api_key: SecretStr | None = Field(
         default=None,
         validation_alias=AliasChoices("SEMANTIC_SCHOLAR_API_KEY", "S2_API_KEY"),
     )
@@ -84,6 +84,23 @@ class AppSettings(BaseSettings):
 
     web_of_science_enabled: bool = Field(default=False, alias="WEB_OF_SCIENCE_ENABLED")
     web_of_science_api_key: str | None = Field(default=None, alias="WEB_OF_SCIENCE_API_KEY")
+
+    # ClinicalKey AI is an entitlement- and contract-gated application data plane.
+    # It is deliberately separate from unified-search source configuration.
+    clinicalkey_ai_enabled: bool = Field(default=False, alias="CLINICALKEY_AI_ENABLED")
+    clinicalkey_ai_entitlement_confirmed: bool = Field(
+        default=False,
+        alias="CLINICALKEY_AI_ENTITLEMENT_CONFIRMED",
+    )
+    clinicalkey_ai_contract_acknowledged: bool = Field(
+        default=False,
+        alias="CLINICALKEY_AI_CONTRACT_ACKNOWLEDGED",
+    )
+    clinicalkey_ai_client_id: str | None = Field(default=None, alias="CLINICALKEY_AI_CLIENT_ID")
+    clinicalkey_ai_client_secret: SecretStr | None = Field(
+        default=None,
+        alias="CLINICALKEY_AI_CLIENT_SECRET",
+    )
 
     scheduler_enabled: bool = Field(default=True, alias="PUBMED_SCHEDULER_ENABLED")
     scheduler_timezone: str = Field(default="UTC", alias="PUBMED_SCHEDULER_TIMEZONE")
@@ -129,6 +146,8 @@ class AppSettings(BaseSettings):
         "scopus_api_key",
         "scopus_insttoken",
         "web_of_science_api_key",
+        "clinicalkey_ai_client_id",
+        "clinicalkey_ai_client_secret",
         mode="before",
     )
     @classmethod
