@@ -284,12 +284,12 @@ def register_all_mcp_tools(
     )
     set_pipeline_store(pipeline_store)
 
-    from pubmed_search.infrastructure.sources import get_source_registry, search_alternate_source
+    from pubmed_search.infrastructure.sources import get_source_registry, search_alternate_source_page
 
     pipeline_runner = StoredPipelineRunner(
         store=pipeline_store,
         searcher=searcher,
-        alternate_search_fn=search_alternate_source,
+        alternate_search_page_fn=search_alternate_source_page,
         source_key_resolver=get_source_registry().resolve_key,
     )
     pipeline_scheduler = APSPipelineScheduler(

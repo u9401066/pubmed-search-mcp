@@ -187,6 +187,8 @@ class SearchMixin:
         Returns:
             List of dictionaries containing article details.
         """
+        executed_query: str | None = None
+        query_executed = False
         try:
             # Map strategy to PubMed sort parameter
             sort_param = "relevance"
@@ -277,14 +279,16 @@ class SearchMixin:
 
             validation = validate_query(full_query)
             if not validation.is_valid:
-                logger.warning(f"Query syntax issues detected: {validation.errors}. Original: {full_query}")
+                logger.warning("PubMed query syntax validation found %s issue(s)", len(validation.errors))
                 if validation.corrected_query:
-                    logger.info(f"Auto-corrected query: {validation.corrected_query}")
+                    logger.info("Applied PubMed query syntax correction")
                     full_query = validation.corrected_query
             elif validation.has_warnings:
-                logger.debug(f"Query warnings: {validation.warnings}")
+                logger.debug("PubMed query syntax validation found %s warning(s)", len(validation.warnings))
 
             # Step 1: Search for IDs with retry (usehistory=y for large requests)
+            executed_query = full_query
+            query_executed = True
             id_list, total_count, webenv, query_key = await self._search_ids_with_retry(
                 full_query, limit * 2, sort_param
             )
@@ -304,17 +308,32 @@ class SearchMixin:
 
             # Attach total count to results for caller to access
             final_results = results[:limit]
+            search_metadata = {
+                "total_count": total_count,
+                "physical_query": executed_query,
+                "query_executed": query_executed,
+            }
             # Store metadata in a way that doesn't break existing code
             if final_results:
-                final_results[0]["_search_metadata"] = {"total_count": total_count}
-            elif total_count > 0:
-                # No detailed results but we have a count
-                final_results = [{"_search_metadata": {"total_count": total_count}}]
+                final_results[0]["_search_metadata"] = search_metadata
+            else:
+                # Preserve the exact executed query even when PubMed returns no
+                # records (or details could not be fetched for a non-zero count).
+                final_results = [{"_search_metadata": search_metadata}]
 
             return final_results
 
         except Exception as e:
-            return [{"error": str(e)}]
+            return [
+                {
+                    "error": str(e),
+                    "_search_metadata": {
+                        "total_count": None,
+                        "physical_query": executed_query if query_executed else None,
+                        "query_executed": query_executed,
+                    },
+                }
+            ]
 
     async def _search_ids_with_retry(self, query: str, retmax: int, sort: str) -> tuple:
         """Search for PubMed IDs using History Server by default.
@@ -354,13 +373,11 @@ class SearchMixin:
             if warning_list:
                 for warn_type, warn_msgs in warning_list.items():
                     if isinstance(warn_msgs, list) and warn_msgs:
-                        logger.warning(f"NCBI {warn_type}: {warn_msgs}")
+                        logger.warning("NCBI %s returned %s warning message(s)", warn_type, len(warn_msgs))
 
             translation_set = record.get("TranslationSet", [])
             if translation_set:
-                logger.debug(
-                    f"NCBI query translation: {[(t.get('From', ''), t.get('To', '')) for t in translation_set]}"
-                )
+                logger.debug("NCBI translated %s query term(s)", len(translation_set))
 
             total_count = int(record.get("Count", 0))
             webenv = record.get("WebEnv", "")

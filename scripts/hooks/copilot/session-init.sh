@@ -1,35 +1,12 @@
-#!/bin/bash
-# =============================================================================
-# Session Init - sessionStart Hook
-# =============================================================================
-# Log session start and prepare state directory.
-# =============================================================================
-set -e
+#!/usr/bin/env bash
+# Thin wrapper; shared decisions live in hook_runtime.py for shell parity.
+set -u
 
-# --- Dependency check ---
-if ! command -v jq >/dev/null 2>&1; then
-    mkdir -p ".github/hooks/_state"
-    exit 0
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+PYTHON_BIN=${PUBMED_HOOK_PYTHON:-}
+if [ -z "$PYTHON_BIN" ]; then
+    PYTHON_BIN=$(command -v python3 2>/dev/null || command -v python 2>/dev/null || true)
 fi
-
-INPUT=$(cat)
-SOURCE=$(echo "$INPUT" | jq -r '.source // "new"' 2>/dev/null) || SOURCE="unknown"
-
-STATE_DIR=".github/hooks/_state"
-mkdir -p "$STATE_DIR"
-
-# Clear stale state from previous session
-rm -f "$STATE_DIR/last_search_eval.json" 2>/dev/null
-rm -f "$STATE_DIR/last_research_eval.json" 2>/dev/null
-rm -f "$STATE_DIR/pending_complexity.json" 2>/dev/null
-rm -f "$STATE_DIR/workflow_tracker.json" 2>/dev/null
-
-# Log session start
-jq -n \
-    --arg timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    --arg source "$SOURCE" \
-    --arg event "session_start" \
-    '{timestamp: $timestamp, source: $source, event: $event}' \
-    >> "$STATE_DIR/search_audit.jsonl" 2>/dev/null
-
+[ -n "$PYTHON_BIN" ] || exit 0
+"$PYTHON_BIN" "$SCRIPT_DIR/hook_runtime.py" session-init || exit 0
 exit 0

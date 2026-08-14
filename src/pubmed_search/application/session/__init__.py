@@ -13,10 +13,14 @@ from .artifact_envelope import (
 from .artifacts import ArtifactStore
 from .manager import (
     MAX_SESSION_EVENT_LOG,
+    SEARCH_RUN_ACTIVE_STATUSES,
+    SEARCH_RUN_SCHEMA_VERSION,
+    SEARCH_RUN_TERMINAL_STATUSES,
     ArticleCache,
     CachedArticle,
     ResearchSession,
     SearchRecord,
+    SearchRun,
     SessionManager,
 )
 from .registry import TENANT_DIR_NAME, SessionManagerRegistry
@@ -30,7 +34,11 @@ __all__ = [
     "MAX_SESSION_EVENT_LOG",
     "ResearchArtifactEnvelope",
     "ResearchSession",
+    "SEARCH_RUN_ACTIVE_STATUSES",
+    "SEARCH_RUN_SCHEMA_VERSION",
+    "SEARCH_RUN_TERMINAL_STATUSES",
     "SearchRecord",
+    "SearchRun",
     "SessionManager",
     "SessionManagerRegistry",
     "TENANT_DIR_NAME",

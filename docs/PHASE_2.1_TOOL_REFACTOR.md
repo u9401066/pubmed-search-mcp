@@ -1,5 +1,12 @@
 # Phase 2.1: Agent-Friendly Tool Refactoring
 
+> **歷史／非 runtime archive（2025-01-11）**：本文保存當時 34-tool
+> refactor 的決策與名稱，只供考古，不是目前 MCP surface、工具數或建議用法。
+> 目前 runtime 以 registry／`tools/list`、45-tool reference 與唯一 generic
+> literature search `unified_search` 為準；本文出現的
+> `search_literature`、`search_core`、`search_europe_pmc`、
+> `merge_search_results` 等名稱不得視為已註冊工具。
+>
 > **目標**: 讓 34 個 MCP Tools 對 Agent（尤其是較弱的模型）更友善
 >
 > **狀態**: ✅ **已完成** (2025-01-11)

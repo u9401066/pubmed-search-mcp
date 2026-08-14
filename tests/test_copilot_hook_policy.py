@@ -42,6 +42,27 @@ class TestCopilotHookPolicy:
 
         assert _flatten_mapping_values(policy["toolGroups"]) == _all_registry_tools()
 
+    def test_search_group_keeps_one_generic_literature_search_entry(self):
+        policy = json.loads(POLICY_PATH.read_text(encoding="utf-8"))
+
+        assert TOOL_CATEGORIES["search"]["tools"] == ["unified_search"]
+        assert policy["toolGroups"]["search"] == ["unified_search"]
+
+    def test_runtime_contract_is_privacy_safe_advisory_and_recoverable(self):
+        policy = json.loads(POLICY_PATH.read_text(encoding="utf-8"))
+        contract = policy["runtimeContract"]
+
+        assert contract["stateSchemaVersion"] == 2
+        assert contract["decisionMode"] == "advisory_allow"
+        assert contract["privacy"] == {
+            "persistRawPrompt": False,
+            "persistRawQuery": False,
+            "persistRenderedToolResult": False,
+            "identifier": "session-keyed-hmac-sha256",
+        }
+        assert contract["evaluationPriority"][:2] == ["structuredContent", "jsonTextContent"]
+        assert contract["recovery"]["artifactReader"] == "read_session"
+
     def test_workflow_steps_cover_all_registered_tools(self):
         policy = json.loads(POLICY_PATH.read_text(encoding="utf-8"))
 
@@ -83,24 +104,29 @@ class TestCopilotHookPolicy:
         assert {"build_research_chronicle", "read_research_chronicle"} <= set(policy["rules"]["feedbackRemediation"])
 
     def test_chronicle_hook_contracts_cover_intent_context_and_audit_failure(self):
-        bash_analyzer = Path("scripts/hooks/copilot/analyze-prompt.sh").read_text(encoding="utf-8")
-        powershell_analyzer = Path("scripts/hooks/copilot/analyze-prompt.ps1").read_text(encoding="utf-8")
-        bash_guard = Path("scripts/hooks/copilot/enforce-pipeline.sh").read_text(encoding="utf-8")
-        powershell_guard = Path("scripts/hooks/copilot/enforce-pipeline.ps1").read_text(encoding="utf-8")
-        bash_evaluator = Path("scripts/hooks/copilot/evaluate-results.sh").read_text(encoding="utf-8")
-        powershell_evaluator = Path("scripts/hooks/copilot/evaluate-results.ps1").read_text(encoding="utf-8")
+        runtime = Path("scripts/hooks/copilot/hook_runtime.py").read_text(encoding="utf-8")
 
-        for source in (bash_analyzer, powershell_analyzer):
-            assert 'intent = "chronicle"' in source.lower() or 'INTENT="chronicle"' in source
-        assert "研究編年史" in bash_analyzer
-        assert r"\u7814\u7A76\u7DE8\u5E74\u53F2" in powershell_analyzer
-        assert powershell_analyzer.isascii(), "Windows PowerShell 5.1 requires the BOM-less hook to remain ASCII"
-        for source in (bash_guard, powershell_guard):
-            assert "chronicle_id" in source
-            assert "topic" in source
-        for source in (bash_evaluator, powershell_evaluator):
-            assert "audit_status" in source
-            assert "before relying on the chronology" in source
+        assert 'return "chronicle", "moderate", "comprehensive"' in runtime
+        assert r"\u7814\u7a76\u7de8\u5e74\u53f2" in runtime
+        assert "chronicle_id" in runtime
+        assert "topic" in runtime
+        assert "audit_status" in runtime
+
+        for phase in (
+            "analyze-prompt",
+            "enforce-pipeline",
+            "evaluate-results",
+            "session-init",
+            "session-cleanup",
+        ):
+            bash = Path(f"scripts/hooks/copilot/{phase}.sh").read_text(encoding="utf-8")
+            powershell = Path(f"scripts/hooks/copilot/{phase}.ps1").read_text(encoding="utf-8")
+            assert "hook_runtime.py" in bash
+            assert "hook_runtime.py" in powershell
+            assert powershell.isascii(), "Windows PowerShell 5.1 wrappers must remain ASCII"
+            assert "[Console]::InputEncoding = $utf8" in powershell
+            assert "[Console]::OutputEncoding = $utf8" in powershell
+            assert "$OutputEncoding = $utf8" in powershell
 
     def test_policy_has_no_duplicate_tools_within_sections(self):
         policy = json.loads(POLICY_PATH.read_text(encoding="utf-8"))

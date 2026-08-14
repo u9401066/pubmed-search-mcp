@@ -32,7 +32,8 @@
 | --- | --- |
 | 快速搜尋文獻 | `unified_search(query=..., limit=...)` |
 | 臨床 A vs B 比較 | Agent P/I/C/O -> `parse_pico` -> `unified_search(pipeline="template: pico...")` |
-| 系統性回顧起手式 | `analyze_search_query` -> `generate_search_queries` -> `unified_search` -> `save_pipeline` |
+| 系統性回顧起手式 | `analyze_search_query` -> `generate_search_queries` -> `unified_search(options="systematic")` -> `save_pipeline` |
+| Provider-native 語意檢索 | `unified_search(sources="openalex", options="native_semantic")` |
 | 深挖重要論文 | `fetch_article_details` -> `find_related_articles` / `find_citing_articles` / `get_article_references` |
 | 全文 synthesis | `get_fulltext` -> `get_text_mined_terms` -> 結構化摘要 |
 | Zotero handoff | `prepare_export(pmids="last", format="ris")` 或 Zotero Keeper import tools |
@@ -50,6 +51,48 @@ Zotero Keeper 應維持在外部整合邊界。PubMed Search MCP 負責產生 of
 ![搜尋與查詢智能流程](images/search-query-workflow.svg)
 
 這條路徑涵蓋 `unified_search`、`parse_pico`、`generate_search_queries`、`analyze_search_query` 與 ICD-aware search preparation。重點邊界是：agent 負責語意上的 PICO 抽取，`parse_pico` 驗證結構化 handoff 並回傳後端 `template: pico` pipeline。
+
+通用文獻搜尋只有一個 tool。使用 `options` 選 retrieval policy，不要尋找
+provider-specific search tool：
+
+| Policy | 範例 | 合約 |
+| --- | --- | --- |
+| 預設 | `unified_search(query="sepsis biomarkers")` | 在一般有能力的 source plan 中做 relevance/keyword 路由。 |
+| Native semantic | `unified_search(query="mechanisms of resistance", sources="openalex", options="native_semantic")` | OpenAlex title/abstract 語意檢索；provider 最多 50 筆。 |
+| Systematic | `unified_search(query="melanoma AND immunotherapy", sources="pubmed,openalex,semantic_scholar", options="systematic")` | 可稽核的有界 provider execution；選到時用 OpenAlex cursor 與 Semantic Scholar bulk。 |
+
+`native_semantic` 與 `systematic` 互斥。兩者都會關閉多策略 deep-search
+expansion，保留可稽核的 provider-native plan。明確 source/mode 不相容時，系統在
+network call 前拒絕；自動路由則只保留有能力的 source。Public `limit` 每 source
+仍最多 100，所以 `systematic` 是可重現的 retrieval primitive，不是已窮盡所有
+systematic-review evidence 的證明。
+
+Input validation 會在 provider I/O 前嚴格執行。`limit` 必須是 `1..100` 的整數；
+filter token 必須使用支援的 `key:value`；year bounds 必須在 1000–2100 內且順序
+正確；未知 option、ranking mode 或 output format 會直接被拒絕，不會無聲忽略。
+一般 deep mode 中，公開 `limit` 是單一 source 所有 generated strategies 共用的
+**總額度**。Broker 會把額度分配到 strategies、裁切超額 adapter response，並套用
+有界的全域／每來源 concurrency 與 strategy deadline。
+
+JSON/TOON 與 persistent artifact 會保存 `retrieval_mode` 及每來源
+`source_metadata`，包括 requested/provider mode、canonical 或 compiled query、
+provider 回傳的 opaque continuation token/cursor、cost/rate metadata 與 warnings。
+Continuation data 目前只作為 provenance；公開 facade 尚無 cursor-resume argument。
+解讀 provider total 或繼續擷取前，請先看
+[Source Contracts](SOURCE_CONTRACTS.md)、[Semantic Scholar](SEMANTIC_SCHOLAR_API.md) 與
+[OpenAlex](OPENALEX_API.md)。
+
+Agent 對一般 result envelope 做決策時，應以 structured `search_status` 為準，不要用
+rendered text 長度判斷。它會明確標示 bounded、non-exhaustive，區分
+`completed`、合法的 `empty`、
+`partial` 與所有來源皆失敗的 `failed`，並列出 returned count、
+attempted/successful/failed/retryable sources、有 continuation 的 sources 與完整度未知
+的 sources。
+
+ClinicalTrials.gov 是明確選擇的 adjunct，不是另一個 literature-search leg。
+只有需要 Markdown 回應附帶最多三筆相關 registry records 時才使用
+`options="trials"`。預設不會發出請求，不影響 article ranking/source
+counts，並在 search artifact 中獨立記錄。JSON/TOON 不執行這個僅用於顯示的 adjunct。
 
 ### 論文探索與引用脈絡
 
@@ -156,7 +199,46 @@ read_session(action="artifact", artifact_uri="artifact://...", artifact_file="au
 read_session(action="artifact", artifact_uri="artifact://...", artifact_file="results.json", offset=0, max_chars=200000)
 ```
 
+Session management 啟用時，每一次 `unified_search` invocation 都會帶有穩定的
+`search_run.run_id`：一般搜尋、validation/planning failure、inline pipeline、
+`saved:<name>` 與 pipeline `dry_run=true`。Tenant-scoped `search-run/v1` journal 會在
+provider I/O 或 terminal validation response 前寫入，保存已移除 credentials 的
+replay request、normalized plan、每來源或每 pipeline step attempts、安全化 failure
+details、精簡 result references、warnings，以及適用時的 artifact locator。
+Structured response 會附 handoff，Markdown 則加入精簡 run note。
+
+因此成功、零結果、partial、planning/execution failure 與 cancelled invocation 都能
+被檢查。合法零結果的 journal status 是 `completed`，同時
+`search_status.state` 是 `empty`；server restart 時，未完成的 active run 只會被轉成
+`interrupted` 一次。非 dry-run saved pipeline 還會另外保存 PipelineStore report/run
+history；PipelineStore history 與 invocation journal 是互補關係。
+
+```python
+read_session(action="search_runs")
+read_session(action="search_runs", run_status="partial", history_limit=20)
+read_session(action="search_run", run_id="...")
+read_session(action="replay_search", run_id="...")
+```
+
+`replay_search` 刻意保持 read-only。它回傳精確且不含 credential 的
+`unified_search` kwargs 與 `automatic_execution=false`；agent 必須先檢查，再明確
+呼叫 `unified_search`。Pipeline replay 會包含 inline 或 `saved:<name>` argument，
+以及 `dry_run` / `stop_at`。包含 credentials 的 pipeline text 會被拒絕並記成 failed
+run；provider key、token、cookie 與 secret 應放在 server environment
+configuration。因為目前沒有公開 cursor-resume input，opaque cursor/token
+provenance 無法就地續頁，replay 會開始新的 bounded request。
+
+如果 terminal history commit 無法復原，bounded handoff 會變成
+`status="history_unavailable"`，並帶有 `history_available=false`、預期 status 與
+warning。Degraded state 會省略 inspect/replay actions，因為 durable recovery
+無法保證。
+
 `unified_search` artifacts 會使用 research envelope。建議先讀 `audit.json` 確認完整性警告，再讀 `query_strategy.json` 檢查實際搜尋策略，最後用 `results.json` / `results.toon` 取回完整結果清單。這樣不需要把長篇 article list 塞進 MCP response token，也保留可審計、可重現的搜尋紀錄。
+
+Artifact publication 與 session indexing 是兩個獨立的 atomic boundaries。Session
+reload 時，store 只會發現 session index 缺少、但結構完整且 checksum 已索引的
+manifests，再透過 `search_run_id` 把 recovered search artifact 連回 run；只有早於該
+metadata 的舊 artifacts 才使用保守的同 query fallback。
 
 `local_path` 與 `manifest_path` 是 MCP server host 上的路徑，預設會被遮蔽。大型 `get_fulltext` 在已有 artifact 時會先回 inline preview；完整內容請用 locator 讀取。這就是持久化 query memory：agent 可以用 artifact ID 重新打開同一份已保存的 search/fulltext output，不必重跑外部來源呼叫。全文 artifact 可能包含文章正文，保存與分享時請遵守 publisher license 與機構授權條款。
 

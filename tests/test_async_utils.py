@@ -407,6 +407,29 @@ class TestTransportKernel:
         assert attempts == 2
 
     @pytest.mark.asyncio
+    async def test_retry_log_never_serializes_exception_message(self, caplog: pytest.LogCaptureFixture):
+        kernel = get_transport_kernel()
+        private_url = "https://provider.invalid/search?query=private-phenotype&apiKey=SENTINEL"
+
+        async def always_retry():
+            raise RetryableOperationError(private_url, retry_after=0.0, status_code=429)
+
+        with caplog.at_level("WARNING", logger="pubmed_search.shared.async_utils"):
+            with pytest.raises(RetryableOperationError):
+                await kernel.execute(
+                    always_retry,
+                    policy=RequestExecutionPolicy(
+                        service_name="redaction-test",
+                        timeout=1.0,
+                        retry=RetryPolicy(max_attempts=2, base_delay=0.0, max_delay=0.0, jitter=False),
+                    ),
+                )
+
+        assert "RetryableOperationError" in caplog.text
+        assert "private-phenotype" not in caplog.text
+        assert "SENTINEL" not in caplog.text
+
+    @pytest.mark.asyncio
     async def test_non_retryable_error_propagates(self):
         kernel = get_transport_kernel()
 

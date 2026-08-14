@@ -906,6 +906,7 @@ class UnifiedArticle:
                         "url": link.url,
                         "version": link.version,
                         "host_type": link.host_type,
+                        "license": link.license,
                     }
                     for link in self.oa_links
                 ],

@@ -10,6 +10,7 @@ from pubmed_search.infrastructure.sources import (
     SearchSource,
     _deduplicate_results,
     _normalize_title,
+    close_source_clients,
     cross_search,
     get_fulltext_parsed,
     get_fulltext_xml,
@@ -33,6 +34,24 @@ def test_semantic_scholar_client_uses_env_api_key(monkeypatch):
         assert sources_module.get_semantic_scholar_client() is mock_client
 
     mock_client_cls.assert_called_once_with(api_key="s2-key")
+
+
+async def test_close_source_clients_closes_and_resets_cached_clients(monkeypatch):
+    import pubmed_search.infrastructure.sources as sources_module
+
+    first = MagicMock()
+    first.close = AsyncMock()
+    second = MagicMock()
+    second.close = AsyncMock()
+    monkeypatch.setattr(sources_module, "_openalex_client", first)
+    monkeypatch.setattr(sources_module, "_semantic_scholar_client", second)
+
+    await close_source_clients()
+
+    first.close.assert_awaited_once()
+    second.close.assert_awaited_once()
+    assert sources_module._openalex_client is None
+    assert sources_module._semantic_scholar_client is None
 
 
 # ============================================================
@@ -490,9 +509,10 @@ class TestLazyInit:
 
         assert client._email == "test@example.com"
         assert client._api_key == "oa-key"
-        assert client._auth_params == {"api_key": "oa-key"}
+        assert client._auth_params == {"mailto": "test@example.com"}
+        assert client._client.headers["Authorization"] == "Bearer oa-key"
 
-        mod._openalex_client = None
+        await mod.close_source_clients()
 
     async def test_get_fulltext_downloader(self):
         import pubmed_search.infrastructure.sources as mod

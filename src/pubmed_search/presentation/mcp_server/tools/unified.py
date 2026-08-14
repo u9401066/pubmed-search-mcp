@@ -82,15 +82,25 @@ from .unified_source_search import (
     _auto_relax_search,
     _execute_deep_search,
     _search_arxiv,
+    _search_arxiv_adapter,
     _search_biorxiv,
+    _search_biorxiv_adapter,
     _search_core,
+    _search_core_adapter,
     _search_europe_pmc,
+    _search_europe_pmc_adapter,
     _search_medrxiv,
+    _search_medrxiv_adapter,
     _search_openalex,
+    _search_openalex_adapter,
     _search_pubmed,
+    _search_pubmed_adapter,
     _search_scopus,
+    _search_scopus_adapter,
     _search_semantic_scholar,
+    _search_semantic_scholar_adapter,
     _search_web_of_science,
+    _search_web_of_science_adapter,
 )
 
 if TYPE_CHECKING:
@@ -215,6 +225,15 @@ def register_unified_search_tools(mcp: MCPServer, searcher: LiteratureSearcher):
         Include preprints + shallow search:
             unified_search("COVID-19 vaccine", options="preprints, shallow")
 
+        Provider-native semantic retrieval (OpenAlex capability):
+            unified_search("mechanisms of treatment resistance",
+                          sources="openalex", options="native_semantic")
+
+        Reproducible systematic retrieval (bulk/cursor where supported):
+            unified_search("melanoma AND immunotherapy",
+                          sources="pubmed,openalex,semantic_scholar",
+                          options="systematic")
+
         Full control:
             unified_search("propofol vs remimazolam",
                           sources="pubmed,semantic_scholar,europe_pmc",
@@ -271,6 +290,8 @@ def register_unified_search_tools(mcp: MCPServer, searcher: LiteratureSearcher):
             options: Comma-separated flags to toggle behaviors.
                      Supported flags:
                        preprints      → also search arXiv, medRxiv, bioRxiv
+                       trials         → add a bounded ClinicalTrials.gov adjunct
+                                        section to Markdown output (explicit opt-in)
                        all_types      → include non-peer-reviewed articles
                        no_oa          → skip Unpaywall OA link enrichment
                        no_analysis    → hide query analysis section in output
@@ -279,7 +300,13 @@ def register_unified_search_tools(mcp: MCPServer, searcher: LiteratureSearcher):
                        no_next        → hide next-tool suggestions in structured output
                        no_provenance  → hide section provenance in structured output
                        no_relax       → disable auto-relaxation on 0 results
+                       native_semantic → use provider-native semantic retrieval;
+                                         currently OpenAlex, max 50 results
+                       systematic     → use deterministic bulk/cursor retrieval where
+                                         supported (for example S2 and OpenAlex)
                        shallow        → disable deep search (faster, keyword-only)
+                     `native_semantic` and `systematic` are mutually exclusive
+                     and automatically disable multi-strategy query expansion.
                      Example: "preprints, shallow" or "no_analysis, no_scores"
             pipeline: YAML/JSON string defining a multi-step search pipeline.
                      When provided, other parameters (except output_format) are
@@ -389,79 +416,108 @@ def register_unified_search_tools(mcp: MCPServer, searcher: LiteratureSearcher):
             timeline_builder_cls=TimelineBuilder,
             research_tree_builder=build_research_tree,
             search_functions={
-                "pubmed": lambda search_query, search_limit, min_year, max_year, advanced_filters: _search_pubmed(
+                "pubmed": lambda search_query,
+                search_limit,
+                min_year,
+                max_year,
+                advanced_filters: _search_pubmed_adapter(
                     searcher,
                     search_query,
                     search_limit,
                     min_year,
                     max_year,
-                    **advanced_filters,
+                    advanced_filters,
                 ),
-                "openalex": lambda search_query, search_limit, min_year, max_year, _advanced_filters: _search_openalex(
+                "openalex": lambda search_query,
+                search_limit,
+                min_year,
+                max_year,
+                advanced_filters: _search_openalex_adapter(
                     search_query,
                     search_limit,
                     min_year,
                     max_year,
+                    advanced_filters,
                 ),
                 "europe_pmc": lambda search_query,
                 search_limit,
                 min_year,
                 max_year,
-                _advanced_filters: _search_europe_pmc(
+                advanced_filters: _search_europe_pmc_adapter(
                     search_query,
                     search_limit,
                     min_year,
                     max_year,
+                    advanced_filters,
                 ),
                 "semantic_scholar": lambda search_query,
                 search_limit,
                 min_year,
                 max_year,
-                _advanced_filters: _search_semantic_scholar(
+                advanced_filters: _search_semantic_scholar_adapter(
                     search_query,
                     search_limit,
                     min_year,
                     max_year,
+                    advanced_filters,
                 ),
-                "core": lambda search_query, search_limit, min_year, max_year, _advanced_filters: _search_core(
+                "core": lambda search_query, search_limit, min_year, max_year, advanced_filters: _search_core_adapter(
                     search_query,
                     search_limit,
                     min_year,
                     max_year,
+                    advanced_filters,
                 ),
-                "scopus": lambda search_query, search_limit, min_year, max_year, _advanced_filters: _search_scopus(
+                "scopus": lambda search_query,
+                search_limit,
+                min_year,
+                max_year,
+                advanced_filters: _search_scopus_adapter(
                     search_query,
                     search_limit,
                     min_year,
                     max_year,
+                    advanced_filters,
                 ),
                 "web_of_science": lambda search_query,
                 search_limit,
                 min_year,
                 max_year,
-                _advanced_filters: _search_web_of_science(
+                advanced_filters: _search_web_of_science_adapter(
                     search_query,
                     search_limit,
                     min_year,
                     max_year,
+                    advanced_filters,
                 ),
-                "arxiv": lambda search_query, search_limit, min_year, max_year, _advanced_filters: _search_arxiv(
+                "arxiv": lambda search_query, search_limit, min_year, max_year, advanced_filters: _search_arxiv_adapter(
                     search_query,
                     search_limit,
                     min_year,
                     max_year,
+                    advanced_filters,
                 ),
-                "medrxiv": lambda search_query, search_limit, min_year, max_year, _advanced_filters: _search_medrxiv(
+                "medrxiv": lambda search_query,
+                search_limit,
+                min_year,
+                max_year,
+                advanced_filters: _search_medrxiv_adapter(
                     search_query,
                     search_limit,
                     min_year,
                     max_year,
+                    advanced_filters,
                 ),
-                "biorxiv": lambda search_query, search_limit, min_year, max_year, _advanced_filters: _search_biorxiv(
+                "biorxiv": lambda search_query,
+                search_limit,
+                min_year,
+                max_year,
+                advanced_filters: _search_biorxiv_adapter(
                     search_query,
                     search_limit,
                     min_year,
                     max_year,
+                    advanced_filters,
                 ),
             },
         )

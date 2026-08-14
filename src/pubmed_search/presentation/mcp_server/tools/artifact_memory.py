@@ -139,7 +139,7 @@ def persist_tool_artifact(
         settings = load_settings()
         return artifact_locator(manifest, include_local_paths=settings.artifact_include_local_paths)
     except Exception as exc:
-        logger.warning("Failed to persist %s artifact: %s", tool, exc)
+        logger.warning("Failed to persist %s artifact (%s)", tool, type(exc).__name__)
         return None
 
 

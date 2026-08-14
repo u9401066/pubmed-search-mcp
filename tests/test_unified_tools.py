@@ -31,6 +31,7 @@ from pubmed_search.presentation.mcp_server.tools.unified import (
     register_unified_search_tools,
 )
 from pubmed_search.presentation.mcp_server.tools.unified_runner import run_unified_search
+from pubmed_search.shared.source_contracts import SourceAdapterResult
 
 # ============================================================
 # ICD Detection
@@ -940,6 +941,7 @@ class TestFormatUnifiedResults:
 
         assert "Count-First Orientation" in result
         assert "| pubmed | 2 | 25 | backlog |" in result
+        assert "| openalex | 1 | ? | unknown |" in result
         assert "Next Tools" in result
         assert "fetch_article_details" in result
         assert "get_article_figures" in result
@@ -964,19 +966,16 @@ class TestDeepSearchDiagnostics:
             ],
         )
 
-        with patch(
-            "pubmed_search.presentation.mcp_server.tools.unified_source_search._search_semantic_scholar",
-            new_callable=AsyncMock,
-            side_effect=RetryableOperationError("HTTP 429", status_code=429),
-        ):
-            _results, metrics, _pubmed_total, counts, errors = await _execute_deep_search(
-                AsyncMock(),
-                enhanced,
-                10,
-                None,
-                None,
-                {},
-            )
+        semantic_scholar = AsyncMock(side_effect=RetryableOperationError("HTTP 429", status_code=429))
+        _results, metrics, _pubmed_total, counts, errors = await _execute_deep_search(
+            AsyncMock(),
+            enhanced,
+            10,
+            None,
+            None,
+            {},
+            search_functions={"semantic_scholar": semantic_scholar},
+        )
 
         assert metrics.strategies_executed == 1
         assert counts["semantic_scholar"] == (0, None)
@@ -1163,7 +1162,7 @@ class TestUnifiedSearch:
                 tools["unified_search"](
                     query="dexmedetomidine bladder discomfort",
                     output_format="markdown",
-                    options="no_scores",
+                    options="trials,no_scores",
                 ),
                 timeout=2.0,
             )
@@ -1192,10 +1191,11 @@ class TestUnifiedSearch:
             patch("pubmed_search.presentation.mcp_server.tools.unified.QueryAnalyzer") as MockAnalyzer,
             patch("pubmed_search.presentation.mcp_server.tools.unified.get_semantic_enhancer") as mock_enhancer,
             patch(
-                "pubmed_search.presentation.mcp_server.tools.unified._search_openalex", new_callable=AsyncMock
+                "pubmed_search.presentation.mcp_server.tools.unified._search_openalex_adapter",
+                new_callable=AsyncMock,
             ) as mock_openalex,
             patch(
-                "pubmed_search.presentation.mcp_server.tools.unified._search_semantic_scholar",
+                "pubmed_search.presentation.mcp_server.tools.unified._search_semantic_scholar_adapter",
                 new_callable=AsyncMock,
             ) as mock_semantic,
         ):
@@ -1232,11 +1232,12 @@ class TestUnifiedSearch:
             patch.dict("os.environ", {"SCOPUS_ENABLED": "true", "SCOPUS_API_KEY": "licensed-key"}, clear=False),
             patch("pubmed_search.presentation.mcp_server.tools.unified.QueryAnalyzer") as MockAnalyzer,
             patch(
-                "pubmed_search.presentation.mcp_server.tools.unified._search_scopus", new_callable=AsyncMock
+                "pubmed_search.presentation.mcp_server.tools.unified._search_scopus_adapter",
+                new_callable=AsyncMock,
             ) as mock_scopus,
         ):
             MockAnalyzer.return_value.analyze.return_value = analysis
-            mock_scopus.return_value = ([], None)
+            mock_scopus.return_value = SourceAdapterResult.empty(source="scopus", operation="search")
 
             await tools["unified_search"](
                 query="licensed query",
@@ -1269,12 +1270,12 @@ class TestUnifiedSearch:
             ),
             patch("pubmed_search.presentation.mcp_server.tools.unified.QueryAnalyzer") as MockAnalyzer,
             patch(
-                "pubmed_search.presentation.mcp_server.tools.unified._search_web_of_science",
+                "pubmed_search.presentation.mcp_server.tools.unified._search_web_of_science_adapter",
                 new_callable=AsyncMock,
             ) as mock_wos,
         ):
             MockAnalyzer.return_value.analyze.return_value = analysis
-            mock_wos.return_value = ([], None)
+            mock_wos.return_value = SourceAdapterResult.empty(source="web_of_science", operation="search")
 
             await tools["unified_search"](
                 query="licensed query",

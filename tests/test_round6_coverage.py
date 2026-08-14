@@ -127,29 +127,34 @@ class TestSearchOpenAlex:
     """Test _search_openalex function."""
 
     @patch(
-        "pubmed_search.presentation.mcp_server.tools.unified_source_search.search_alternate_source",
+        "pubmed_search.presentation.mcp_server.tools.unified_source_search.search_alternate_source_page",
         new_callable=AsyncMock,
     )
     async def test_search_openalex_success(self, mock_search):
         """Test successful OpenAlex search."""
+        from pubmed_search.application.search.source_models import SourceSearchPage
         from pubmed_search.presentation.mcp_server.tools.unified import _search_openalex
 
-        mock_search.return_value = [
-            {
-                "id": "W12345",
-                "title": "OpenAlex Article",
-                "doi": "10.1234/test",
-                "publication_year": 2024,
-                "authorships": [{"author": {"display_name": "Author A"}}],
-                "primary_location": {"source": {"display_name": "Journal"}},
-                "cited_by_count": 10,
-            }
-        ]
+        mock_search.return_value = SourceSearchPage(
+            source="openalex",
+            total=1,
+            items=[
+                {
+                    "id": "W12345",
+                    "title": "OpenAlex Article",
+                    "doi": "10.1234/test",
+                    "publication_year": 2024,
+                    "authorships": [{"author": {"display_name": "Author A"}}],
+                    "primary_location": {"source": {"display_name": "Journal"}},
+                    "cited_by_count": 10,
+                }
+            ],
+        )
 
         articles, total = await _search_openalex("test query", 10, None, None)
 
         assert len(articles) == 1
-        mock_search.assert_called_once_with(
+        mock_search.assert_awaited_once_with(
             query="test query",
             source="openalex",
             limit=10,
@@ -158,7 +163,7 @@ class TestSearchOpenAlex:
         )
 
     @patch(
-        "pubmed_search.presentation.mcp_server.tools.unified_source_search.search_alternate_source",
+        "pubmed_search.presentation.mcp_server.tools.unified_source_search.search_alternate_source_page",
         new_callable=AsyncMock,
     )
     async def test_search_openalex_exception(self, mock_search):
@@ -177,33 +182,42 @@ class TestSearchSemanticScholar:
     """Test _search_semantic_scholar function."""
 
     @patch(
-        "pubmed_search.presentation.mcp_server.tools.unified_source_search.search_alternate_source",
+        "pubmed_search.presentation.mcp_server.tools.unified_source_search.search_alternate_source_page",
         new_callable=AsyncMock,
     )
     async def test_search_s2_success(self, mock_search):
         """Test successful Semantic Scholar search."""
+        from pubmed_search.application.search.source_models import SourceSearchPage
         from pubmed_search.presentation.mcp_server.tools.unified import (
             _search_semantic_scholar,
         )
 
-        mock_search.return_value = [
-            {
-                "paperId": "abc123",
-                "title": "S2 Article",
-                "externalIds": {"DOI": "10.1234/test"},
-                "year": 2024,
-                "authors": [{"name": "Author A"}],
-                "citationCount": 5,
-            }
-        ]
+        mock_search.return_value = SourceSearchPage(
+            source="semantic_scholar",
+            total=1,
+            items=[
+                {
+                    "paperId": "abc123",
+                    "title": "S2 Article",
+                    "externalIds": {"DOI": "10.1234/test"},
+                    "year": 2024,
+                    "authors": [{"name": "Author A"}],
+                    "citationCount": 5,
+                }
+            ],
+        )
 
-        articles, total = await _search_semantic_scholar("test query", 10, 2020, None)
+        with patch(
+            "pubmed_search.presentation.mcp_server.tools.unified_source_search.get_last_alternate_source_error",
+            return_value=None,
+        ):
+            articles, total = await _search_semantic_scholar("test query", 10, 2020, None)
 
         assert len(articles) == 1
         mock_search.assert_called_once()
 
     @patch(
-        "pubmed_search.presentation.mcp_server.tools.unified_source_search.search_alternate_source",
+        "pubmed_search.presentation.mcp_server.tools.unified_source_search.search_alternate_source_page",
         new_callable=AsyncMock,
     )
     async def test_search_s2_exception(self, mock_search):

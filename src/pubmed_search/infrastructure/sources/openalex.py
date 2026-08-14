@@ -4,10 +4,10 @@ OpenAlex Integration
 Provides open access academic search via OpenAlex API.
 This is an internal module - not exposed as separate MCP tools.
 
-API Documentation: https://docs.openalex.org/
+API Documentation: https://help.openalex.org/api/
 
 Features:
-- Completely free and open (no API key required)
+- Credit-aware anonymous or API-key access
 - Open access filter (DOAJ integration built-in)
 - Comprehensive coverage (200M+ works)
 - Institution and concept relationships
@@ -17,10 +17,12 @@ from __future__ import annotations
 
 import logging
 import urllib.parse
-from typing import Any
+from typing import Any, NoReturn
 
-from pubmed_search.infrastructure.sources.base_client import BaseAPIClient
+from pubmed_search.application.search.source_models import SourceSearchPage, coerce_optional_total
+from pubmed_search.infrastructure.sources.base_client import APIRequestError, BaseAPIClient
 from pubmed_search.infrastructure.sources.contact import first_contact_email, get_configured_source_contact_email
+from pubmed_search.shared.async_utils import RetryableOperationError, get_rate_limiter
 
 logger = logging.getLogger(__name__)
 
@@ -29,9 +31,52 @@ OA_API_BASE = "https://api.openalex.org"
 OA_WORKS_URL = f"{OA_API_BASE}/works"
 OA_AUTHORS_URL = f"{OA_API_BASE}/authors"
 
-# Polite pool email (required for higher rate limits)
-# Users should set their email in NCBI_EMAIL env var
 DEFAULT_EMAIL = "pubmed-search-mcp@example.com"
+
+# ``select`` only accepts root fields.  Keep this provider DTO compact while
+# retaining every field needed by the domain mapper.
+OPENALEX_WORK_SELECT = (
+    "id",
+    "doi",
+    "ids",
+    "title",
+    "display_name",
+    "abstract_inverted_index",
+    "authorships",
+    "publication_year",
+    "publication_date",
+    "type",
+    "open_access",
+    "best_oa_location",
+    "primary_location",
+    "cited_by_count",
+)
+OPENALEX_MAX_PER_PAGE = 100
+OPENALEX_SEMANTIC_MAX_QUERY_CHARS = 2_000
+OPENALEX_SEMANTIC_MAX_RESULTS = 50
+OPENALEX_CURSOR_MAX_RESULTS = 100_000
+OPENALEX_CURSOR_MAX_PAGES = 1_000
+
+
+def _raise_retryable_error(error: RetryableOperationError | None) -> None:
+    if error is not None:
+        raise RetryableOperationError(
+            str(error),
+            retry_after=error.retry_after,
+            status_code=error.status_code,
+        )
+
+
+def _raise_api_request_error(service_name: str) -> NoReturn:
+    """Raise outside request parsing blocks so the public error stays sanitized."""
+    raise APIRequestError(service_name)
+
+
+def _require_result_list(value: object) -> list[object]:
+    """Validate the provider collection shape without accepting false-empty drift."""
+    if not isinstance(value, list):
+        raise TypeError("OpenAlex results must be a list")
+    return value
 
 
 class OpenAlexClient(BaseAPIClient):
@@ -50,20 +95,27 @@ class OpenAlexClient(BaseAPIClient):
         Initialize client.
 
         Args:
-            email: Email for polite pool (higher rate limits)
-            api_key: Optional OpenAlex API key for authenticated requests
+            email: Contact email used for responsible anonymous access.
+            api_key: Optional OpenAlex API key for a larger daily credit budget.
             timeout: Request timeout in seconds
         """
         self._email = first_contact_email(email, get_configured_source_contact_email(), DEFAULT_EMAIL) or DEFAULT_EMAIL
         self._api_key = api_key.strip() if isinstance(api_key, str) and api_key.strip() else None
-        self._auth_params = {"api_key": self._api_key} if self._api_key else {"mailto": self._email}
+        # Keep credentials out of URLs: exceptions and reverse-proxy access
+        # logs commonly include the complete query string. OpenAlex supports a
+        # Bearer API key, while ``mailto`` remains a non-secret contact hint.
+        self._auth_params = {"mailto": self._email}
+        request_headers = {
+            "User-Agent": f"pubmed-search-mcp/1.0 (mailto:{self._email})",
+            "Accept": "application/json",
+        }
+        if self._api_key:
+            request_headers["Authorization"] = f"Bearer {self._api_key}"
         super().__init__(
             timeout=timeout,
             min_interval=0.1,
-            headers={
-                "User-Agent": f"pubmed-search-mcp/1.0 (mailto:{self._email})",
-                "Accept": "application/json",
-            },
+            headers=request_headers,
+            follow_redirects=False,
         )
 
     async def search(
@@ -76,8 +128,10 @@ class OpenAlexClient(BaseAPIClient):
         is_doaj: bool = False,
         sort: str | None = None,
     ) -> list[dict[str, Any]]:
-        """
-        Search OpenAlex works.
+        """Search OpenAlex and return the legacy normalized list contract.
+
+        Unified search uses :meth:`search_page` instead so raw OpenAlex DTOs
+        cross the domain mapper exactly once.
 
         Args:
             query: Search query (searches title, abstract, fulltext)
@@ -96,46 +150,296 @@ class OpenAlexClient(BaseAPIClient):
             List of work dictionaries in normalized format
         """
         try:
-            # Build filter string
-            filters = []
+            page = await self.search_page(
+                query,
+                limit=limit,
+                min_year=min_year,
+                max_year=max_year,
+                open_access_only=open_access_only,
+                is_doaj=is_doaj,
+                sort=sort,
+            )
+        except APIRequestError as exc:
+            logger.warning("OpenAlex legacy search returned no items (%s)", type(exc).__name__)
+            return []
+        return [self._normalize_work(work) for work in page.items]
 
-            if min_year:
-                filters.append(f"from_publication_date:{min_year}-01-01")
-            if max_year:
-                filters.append(f"to_publication_date:{max_year}-12-31")
-            if open_access_only:
-                filters.append("is_oa:true")
-            if is_doaj:
-                filters.append("locations.source.is_in_doaj:true")
+    async def search_page(
+        self,
+        query: str,
+        limit: int = 10,
+        min_year: int | None = None,
+        max_year: int | None = None,
+        open_access_only: bool = False,
+        is_doaj: bool = False,
+        sort: str | None = None,
+        *,
+        cursor: str | None = None,
+    ) -> SourceSearchPage[dict[str, Any]]:
+        """Return one keyword-search page containing raw OpenAlex work DTOs."""
 
+        return await self._search_work_page(
+            query_parameter="search",
+            query=query,
+            limit=limit,
+            min_year=min_year,
+            max_year=max_year,
+            open_access_only=open_access_only,
+            is_doaj=is_doaj,
+            sort=sort,
+            cursor=cursor,
+            mode="keyword",
+        )
+
+    async def search_semantic_page(
+        self,
+        query: str,
+        limit: int = 10,
+        min_year: int | None = None,
+        max_year: int | None = None,
+        open_access_only: bool = False,
+        is_doaj: bool = False,
+    ) -> SourceSearchPage[dict[str, Any]]:
+        """Run native OpenAlex semantic search within its hard API limits."""
+
+        if len(query) > OPENALEX_SEMANTIC_MAX_QUERY_CHARS:
+            msg = f"OpenAlex semantic queries are limited to {OPENALEX_SEMANTIC_MAX_QUERY_CHARS} characters"
+            raise ValueError(msg)
+        semantic_limiter = get_rate_limiter(
+            "source:openalex:semantic",
+            rate=1.0,
+            per=1.0,
+            conservative=True,
+        )
+        await semantic_limiter.acquire()
+        return await self._search_work_page(
+            query_parameter="search.semantic",
+            query=query,
+            limit=min(limit, OPENALEX_SEMANTIC_MAX_RESULTS),
+            min_year=min_year,
+            max_year=max_year,
+            open_access_only=open_access_only,
+            is_doaj=is_doaj,
+            sort=None,
+            cursor=None,
+            mode="semantic",
+        )
+
+    async def search_cursor(
+        self,
+        query: str,
+        *,
+        max_results: int = 1_000,
+        max_pages: int = 10,
+        min_year: int | None = None,
+        max_year: int | None = None,
+        open_access_only: bool = False,
+        is_doaj: bool = False,
+        sort: str | None = None,
+    ) -> SourceSearchPage[dict[str, Any]]:
+        """Traverse keyword results with an explicitly bounded cursor loop."""
+
+        if not 1 <= max_results <= OPENALEX_CURSOR_MAX_RESULTS:
+            msg = f"max_results must be between 1 and {OPENALEX_CURSOR_MAX_RESULTS}"
+            raise ValueError(msg)
+        if not 1 <= max_pages <= OPENALEX_CURSOR_MAX_PAGES:
+            msg = f"max_pages must be between 1 and {OPENALEX_CURSOR_MAX_PAGES}"
+            raise ValueError(msg)
+
+        items: list[dict[str, Any]] = []
+        warnings: list[str] = []
+        seen_cursors: set[str] = set()
+        cursor = "*"
+        total: int | None = None
+        canonical_query: str | None = query
+        total_cost = 0.0
+        cost_seen = False
+        pages_fetched = 0
+
+        while cursor and pages_fetched < max_pages and len(items) < max_results:
+            if cursor in seen_cursors:
+                warnings.append("OpenAlex returned a repeated cursor; pagination stopped")
+                break
+            seen_cursors.add(cursor)
+            page = await self.search_page(
+                query,
+                limit=min(OPENALEX_MAX_PER_PAGE, max_results - len(items)),
+                min_year=min_year,
+                max_year=max_year,
+                open_access_only=open_access_only,
+                is_doaj=is_doaj,
+                sort=sort,
+                cursor=cursor,
+            )
+            pages_fetched += 1
+            items.extend(page.items[: max_results - len(items)])
+            warnings.extend(page.warnings)
+            total = page.total if total is None else total
+            canonical_query = page.query or canonical_query
+            if page.cost is not None:
+                total_cost += page.cost
+                cost_seen = True
+            cursor = page.cursor or ""
+
+        if cursor and pages_fetched >= max_pages and len(items) < max_results:
+            warnings.append("OpenAlex cursor pagination stopped at max_pages")
+
+        return SourceSearchPage(
+            source="openalex",
+            items=items,
+            total=total,
+            cursor=cursor or None,
+            query=canonical_query,
+            cost=total_cost if cost_seen else None,
+            warnings=warnings,
+            mode="keyword",
+            metadata={"pages_fetched": pages_fetched, "bounded": True},
+        )
+
+    async def _search_work_page(
+        self,
+        *,
+        query_parameter: str,
+        query: str,
+        limit: int,
+        min_year: int | None,
+        max_year: int | None,
+        open_access_only: bool,
+        is_doaj: bool,
+        sort: str | None,
+        cursor: str | None,
+        mode: str,
+    ) -> SourceSearchPage[dict[str, Any]]:
+        """Execute one works request without normalizing provider DTOs."""
+
+        try:
+            filters = self._build_work_filters(
+                min_year=min_year,
+                max_year=max_year,
+                open_access_only=open_access_only,
+                is_doaj=is_doaj,
+            )
             params = {
-                "search": query,
-                "per_page": str(min(limit, 100)),
+                query_parameter: query,
+                "per_page": str(max(1, min(limit, OPENALEX_MAX_PER_PAGE))),
+                "select": ",".join(OPENALEX_WORK_SELECT),
                 **self._auth_params,
             }
-
-            # Only add sort if explicitly provided
-            # Note: relevance_score is the default when search is active
             if sort:
                 params["sort"] = sort
-
             if filters:
                 params["filter"] = ",".join(filters)
+            if cursor is not None:
+                params["cursor"] = cursor
 
             url = f"{OA_WORKS_URL}?{urllib.parse.urlencode(params)}"
             data = await self._make_request(url)
-
             if not isinstance(data, dict):
-                return []
+                retryable = self.last_retryable_error
+                _raise_retryable_error(retryable)
+                _raise_api_request_error(self._service_name)
 
-            works = data.get("results", [])
+            raw_results = data.get("results")
+            if raw_results is None:
+                raw_results = []
+            raw_results = _require_result_list(raw_results)
+            works = [work for work in raw_results if isinstance(work, dict)]
+            meta = data.get("meta") or {}
+            total, warnings = coerce_optional_total(meta.get("count"))
+            raw_x_query = meta.get("x_query")
+            if isinstance(raw_x_query, str):
+                canonical_query = raw_x_query
+            elif isinstance(raw_x_query, dict) and isinstance(raw_x_query.get("oql"), str):
+                canonical_query = raw_x_query["oql"]
+            else:
+                canonical_query = query
+            next_cursor = meta.get("next_cursor")
+            if not isinstance(next_cursor, str):
+                next_cursor = None
+            cost = self._coerce_cost(meta.get("cost_usd"), warnings)
+            rate_limit = self.last_rate_limit_headers
+            self._append_low_credit_warning(rate_limit, warnings)
+            return SourceSearchPage(
+                source="openalex",
+                items=works,
+                total=total,
+                cursor=next_cursor,
+                query=canonical_query,
+                cost=cost,
+                warnings=warnings,
+                mode=mode,
+                metadata={
+                    "request_query": query,
+                    "meta": {key: value for key, value in meta.items() if key != "x_query"},
+                    "x_query": (
+                        {key: value for key, value in raw_x_query.items() if key in {"oql", "oqo"}}
+                        if isinstance(raw_x_query, dict)
+                        else raw_x_query
+                    ),
+                    "rate_limit": rate_limit,
+                },
+            )
+        except RetryableOperationError:
+            raise
+        except APIRequestError:
+            raise
+        except Exception as exc:
+            logger.warning("OpenAlex %s search failed (%s)", mode, type(exc).__name__)
+        raise APIRequestError(self._service_name)
 
-            # Normalize to common format
-            return [self._normalize_work(w) for w in works]
+    @staticmethod
+    def _build_work_filters(
+        *,
+        min_year: int | None,
+        max_year: int | None,
+        open_access_only: bool,
+        is_doaj: bool,
+    ) -> list[str]:
+        filters: list[str] = []
+        if min_year:
+            filters.append(f"from_publication_date:{min_year}-01-01")
+        if max_year:
+            filters.append(f"to_publication_date:{max_year}-12-31")
+        if open_access_only:
+            filters.append("is_oa:true")
+        if is_doaj:
+            filters.append("locations.source.is_in_doaj:true")
+        return filters
 
-        except Exception as e:
-            logger.exception(f"OpenAlex search failed: {e}")
-            return []
+    @staticmethod
+    def _coerce_cost(value: object, warnings: list[str]) -> float | None:
+        if value is None:
+            return None
+        if isinstance(value, bool):
+            warnings.append("OpenAlex returned an invalid boolean cost")
+            return None
+        if not isinstance(value, (int, float, str)):
+            warnings.append(f"OpenAlex returned a non-numeric cost: {value!r}")
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            warnings.append(f"OpenAlex returned a non-numeric cost: {value!r}")
+            return None
+
+    @staticmethod
+    def _append_low_credit_warning(rate_limit: dict[str, str], warnings: list[str]) -> None:
+        """Surface a response-driven warning before the daily budget is empty."""
+
+        thresholds = {
+            "x-ratelimit-remaining": 10.0,
+            "x-ratelimit-remaining-usd": 0.01,
+        }
+        for header, threshold in thresholds.items():
+            raw = rate_limit.get(header)
+            if raw is None:
+                continue
+            try:
+                remaining = float(raw)
+            except ValueError:
+                continue
+            if remaining <= threshold:
+                warnings.append(f"OpenAlex credit budget is low ({header}={raw})")
 
     async def get_work(self, work_id: str) -> dict[str, Any] | None:
         """
@@ -165,8 +469,8 @@ class OpenAlexClient(BaseAPIClient):
 
             return self._normalize_work(data)
 
-        except Exception as e:
-            logger.exception(f"Failed to get work {work_id}: {e}")
+        except Exception as exc:
+            logger.warning("OpenAlex work lookup failed (%s)", type(exc).__name__)
             return None
 
     async def get_citations(self, work_id: str, limit: int = 10) -> list[dict[str, Any]]:
@@ -184,7 +488,7 @@ class OpenAlexClient(BaseAPIClient):
             # Use filter to find citing works
             params = {
                 "filter": f"cites:{work_id}",
-                "per_page": str(min(limit, 200)),
+                "per_page": str(max(1, min(limit, OPENALEX_MAX_PER_PAGE))),
                 "sort": "cited_by_count:desc",
                 **self._auth_params,
             }
@@ -197,8 +501,8 @@ class OpenAlexClient(BaseAPIClient):
 
             return [self._normalize_work(w) for w in data.get("results", [])]
 
-        except Exception as e:
-            logger.exception(f"Failed to get citations for {work_id}: {e}")
+        except Exception as exc:
+            logger.warning("OpenAlex citation lookup failed (%s)", type(exc).__name__)
             return []
 
     async def get_source(self, source_id: str) -> dict[str, Any] | None:
@@ -231,8 +535,8 @@ class OpenAlexClient(BaseAPIClient):
 
             return self._normalize_source(data)
 
-        except Exception as e:
-            logger.debug(f"Failed to get source {source_id}: {e}")
+        except Exception as exc:
+            logger.debug("OpenAlex source lookup failed (%s)", type(exc).__name__)
             return None
 
     async def get_sources_batch(self, source_ids: list[str]) -> dict[str, dict[str, Any]]:
@@ -279,8 +583,8 @@ class OpenAlexClient(BaseAPIClient):
 
             return result
 
-        except Exception as e:
-            logger.debug(f"Failed to batch-fetch sources: {e}")
+        except Exception as exc:
+            logger.debug("OpenAlex source batch lookup failed (%s)", type(exc).__name__)
             return {}
 
     async def get_author(self, author_id: str) -> dict[str, Any] | None:
@@ -314,8 +618,8 @@ class OpenAlexClient(BaseAPIClient):
                 return None
 
             return self._normalize_author(data)
-        except Exception as e:
-            logger.debug(f"Failed to get author {author_id}: {e}")
+        except Exception as exc:
+            logger.debug("OpenAlex author lookup failed (%s)", type(exc).__name__)
             return None
 
     async def search_authors(self, query: str, limit: int = 10) -> list[dict[str, Any]]:
@@ -332,7 +636,7 @@ class OpenAlexClient(BaseAPIClient):
         try:
             params = {
                 "search": query,
-                "per_page": str(min(limit, 200)),
+                "per_page": str(max(1, min(limit, OPENALEX_MAX_PER_PAGE))),
                 **self._auth_params,
             }
             url = f"{OA_AUTHORS_URL}?{urllib.parse.urlencode(params)}"
@@ -342,8 +646,8 @@ class OpenAlexClient(BaseAPIClient):
                 return []
 
             return [self._normalize_author(author) for author in data.get("results", [])]
-        except Exception as e:
-            logger.debug(f"Failed to search authors for {query}: {e}")
+        except Exception as exc:
+            logger.debug("OpenAlex author search failed (%s)", type(exc).__name__)
             return []
 
     @staticmethod
@@ -530,6 +834,6 @@ class OpenAlexClient(BaseAPIClient):
             word_positions.sort(key=lambda x: x[0])
             return " ".join(word for _, word in word_positions)
 
-        except Exception as e:
-            logger.warning(f"Failed to reconstruct abstract: {e}")
+        except Exception as exc:
+            logger.warning("OpenAlex abstract reconstruction failed (%s)", type(exc).__name__)
             return ""

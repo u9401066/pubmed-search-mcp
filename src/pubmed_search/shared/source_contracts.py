@@ -14,8 +14,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar, cast
+from urllib.parse import urlsplit, urlunsplit
 
 from pubmed_search.shared.async_utils import (
     CircuitBreaker,
@@ -42,12 +44,35 @@ else:
 
 logger = logging.getLogger(__name__)
 
+_URL_IN_ERROR_RE = re.compile(r"https?://[^\s\])}>\"']+", re.IGNORECASE)
+_URL_SECRET_RE = re.compile(r"(?i)(\b(?:api[_-]?key|access[_-]?token|client[_-]?secret|key|token)=)[^&#\s,;]+")
+_BEARER_RE = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/-]+=*")
+
+
+def _safe_adapter_error_message(error: BaseException) -> str:
+    """Remove query strings and credentials from shared source diagnostics."""
+
+    def _strip_url(match: re.Match[str]) -> str:
+        candidate = match.group(0)
+        try:
+            parsed = urlsplit(candidate)
+        except ValueError:
+            return "[upstream-url]"
+        return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))
+
+    message = str(error) or type(error).__name__
+    message = _URL_IN_ERROR_RE.sub(_strip_url, message)
+    message = _URL_SECRET_RE.sub(r"\1[REDACTED]", message)
+    message = _BEARER_RE.sub("Bearer [REDACTED]", message)
+    return message[:1_000]
+
+
 AdapterItem = TypeVar("AdapterItem")
 SourceAdapterStatus = Literal["ok", "empty", "partial", "error"]
 SourceAdapterErrorKind = Literal["http", "timeout", "transport", "retryable", "unexpected"]
 TWO_ITEM_TUPLE_LEN = 2
 THREE_ITEM_TUPLE_LEN = 3
-TwoItemSourceAdapterOutcome = tuple[list[AdapterItem], dict[str, Any] | int]
+TwoItemSourceAdapterOutcome = tuple[list[AdapterItem], dict[str, Any] | int | None]
 ThreeItemSourceAdapterOutcome = tuple[list[AdapterItem], int, dict[str, Any]]
 
 
@@ -219,7 +244,7 @@ def normalize_source_adapter_error(
         return SourceAdapterError(
             source=source,
             operation=operation,
-            message=str(error),
+            message=_safe_adapter_error_message(error),
             kind="retryable",
             retryable=True,
             status_code=error.status_code,
@@ -240,7 +265,7 @@ def normalize_source_adapter_error(
         return SourceAdapterError(
             source=source,
             operation=operation,
-            message=str(error) or "Request timed out",
+            message=_safe_adapter_error_message(error) or "Request timed out",
             kind="timeout",
             retryable=True,
         )
@@ -249,7 +274,7 @@ def normalize_source_adapter_error(
         return SourceAdapterError(
             source=source,
             operation=operation,
-            message=str(error),
+            message=_safe_adapter_error_message(error),
             kind="transport",
             retryable=True,
         )
@@ -257,7 +282,7 @@ def normalize_source_adapter_error(
     return SourceAdapterError(
         source=source,
         operation=operation,
-        message=str(error),
+        message=_safe_adapter_error_message(error),
         kind="unexpected",
         retryable=False,
     )
@@ -301,7 +326,7 @@ def _coerce_source_adapter_outcome(
             second = two_item_outcome[1]
             if isinstance(second, dict):
                 metadata = dict(second)
-            else:
+            elif second is not None:
                 total_count = int(second)
         elif len(outcome) == THREE_ITEM_TUPLE_LEN:
             three_item_outcome = cast("ThreeItemSourceAdapterOutcome", outcome)

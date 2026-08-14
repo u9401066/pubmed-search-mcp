@@ -126,7 +126,7 @@ def test_docs_site_shell_uses_current_assets_and_mobile_image_wrapping() -> None
 
     cache_keys = set(CACHE_KEY_PATTERN.findall(index_html))
 
-    assert cache_keys == {"20260812-mermaid-guard"}
+    assert cache_keys == {"20260814-provider-broker"}
     assert 'id="sidebar-backdrop"' in index_html
     assert index_html.count('data-page-group="') == 3
     assert "45</strong>" in index_html
@@ -160,6 +160,10 @@ def test_docs_site_navigation_exposes_the_current_operating_handbook() -> None:
         "Multi-source broker stages",
         "authenticated multi-user contracts",
         "45 MCP tools across 16 registry categories",
+        "Semantic Scholar Data Plane",
+        "OpenAlex Search And Data Plane",
+        "ClinicalKey AI Boundary",
+        "BioMCP Architecture Analysis",
     ]:
         assert term in site_js
 
@@ -170,13 +174,85 @@ def test_docs_site_navigation_exposes_the_current_operating_handbook() -> None:
         "Authenticated service callers cannot read `file:` paths",
         "service Compose profile forces it off",
         "Running the local browser broker",
+        "same unified runner",
         "Verification & Troubleshooting",
     ]:
         assert term in integrations
 
+    assert "12-tool primitive-schema smoke tests" in embedded_pages["overview"]
+    assert "primitive-schema `read_session`" in embedded_pages["overview"]
+    assert "12-tool schema" in embedded_pages["user-guide"]
+    assert "search-run, replay-argument" in embedded_pages["user-guide"]
+    assert "12-tool primitive-schema smoke" in embedded_pages["troubleshooting"]
+    assert "generic literature search 名稱為 `unified_search`" in embedded_pages["deployment"]
+
     source_contracts = embedded_pages["source-contracts"]
     for term in ["Unified Search Broker", "Scopus", "Web of Science", "process-wide conservative rate budget"]:
         assert term in source_contracts
+
+    assert "dataset partition" in embedded_pages["semantic-scholar-api"]
+    assert 'options="systematic"' in embedded_pages["semantic-scholar-api"]
+    assert "search.semantic" in embedded_pages["openalex-api"]
+    assert 'options="native_semantic"' in embedded_pages["openalex-api"]
+    assert "not an MCP source/tool" in embedded_pages["clinicalkey-ai"]
+    assert "HTTP 2xx" in embedded_pages["clinicalkey-ai"]
+    assert "unified_search" in embedded_pages["biomcp-analysis"]
+    assert "本輪已落地與後續邊界" in embedded_pages["biomcp-analysis"]
+
+
+def test_docs_site_exposes_recoverable_bounded_unified_search_contract() -> None:
+    embedded_pages = _load_embedded_pages()
+
+    overview = embedded_pages["overview"]
+    for term in [
+        "exactly one MCP",
+        "divided across that source's query strategies",
+        "search-run/v1",
+        'read_session(action="replay_search"',
+        "no public cursor-resume parameter yet",
+        "inline, `saved:<name>`, or `dry_run=true` pipeline execution",
+        'search_run.status="history_unavailable"',
+    ]:
+        assert term in overview
+
+    overview_zh = embedded_pages["overview-zh"]
+    for term in [
+        "固定只有一個 MCP tool",
+        "所有 query strategies 的**總額度**",
+        "可回復的 search runs",
+        "`replay_search` 只回傳原本、已移除 credential",
+    ]:
+        assert term in overview_zh
+
+    tools = embedded_pages["tools-usage-guide"]
+    for term in [
+        "`search_status` object over rendered text length",
+        "credential-free",
+        "PipelineStore history and the invocation journal are complementary",
+        "contains credentials is rejected as a failed run",
+    ]:
+        assert term in tools
+
+    source_contracts = embedded_pages["source-contracts"]
+    for term in [
+        "Structured outcome and durable recovery contract",
+        "bounded=true",
+        "automatic_execution=false",
+        "ArtifactStore.discover()",
+        "every `unified_search` invocation",
+        'status="history_unavailable"',
+    ]:
+        assert term in source_contracts
+
+    architecture = embedded_pages["architecture"]
+    for term in [
+        "Start tenant search-run journal",
+        "search_status + search_run handoff + results",
+        "published orphan",
+        "Inline / saved / dry-run pipeline mode",
+        "history_available=false",
+    ]:
+        assert term in architecture
 
 
 def test_docs_site_isolates_mermaid_rendering_and_preserves_failed_source() -> None:

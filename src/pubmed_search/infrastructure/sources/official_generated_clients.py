@@ -109,10 +109,13 @@ class ScopusSearchRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     query: str
-    api_key: str = Field(alias="apiKey")
-    http_accept: str = Field(default="application/json", alias="httpAccept")
-    insttoken: str | None = None
-    access_token: str | None = None
+    # Elsevier's schema lists these as request parameters, but this repository
+    # authenticates with headers.  Keep compatibility inputs while preventing
+    # credentials from entering request URLs, model reprs, proxies, or logs.
+    api_key: str | None = Field(default=None, alias="apiKey", exclude=True, repr=False)
+    http_accept: str = Field(default="application/json", alias="httpAccept", exclude=True)
+    insttoken: str | None = Field(default=None, exclude=True, repr=False)
+    access_token: str | None = Field(default=None, exclude=True, repr=False)
     count: int = 10
     start: int = 0
     view: str = "COMPLETE"
@@ -323,6 +326,7 @@ class SemanticScholarSearchRequest(BaseModel):
 
     query: str
     limit: int = 10
+    offset: int = 0
     fields: str
     year: str | None = None
     openAccessPdf: str | None = None

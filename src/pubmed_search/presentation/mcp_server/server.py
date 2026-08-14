@@ -194,13 +194,15 @@ def _make_lifespan(
         try:
             yield container
         finally:
-            # Shutdown: close shared httpx client
+            # Shutdown: close source-owned clients and the shared httpx client.
+            from pubmed_search.infrastructure.sources import close_source_clients
             from pubmed_search.shared.async_utils import close_shared_async_client
 
             if scheduler is not None:
                 scheduler.shutdown()
+            await close_source_clients()
             await close_shared_async_client()
-            logger.info("Lifecycle: shutdown - shared HTTP client closed")
+            logger.info("Lifecycle: shutdown - source and shared HTTP clients closed")
 
     return _lifespan
 
@@ -554,11 +556,14 @@ def _detect_git_email() -> str | None:
 def main():
     """Run the MCP server."""
 
+    from pubmed_search.shared.logging_utils import harden_http_client_logging
+
     # Configure logging
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
+    harden_http_client_logging()
 
     settings = load_settings()
 
@@ -571,10 +576,10 @@ def main():
         if not email:
             email = _detect_git_email()
             if email:
-                logger.info(f"Using git config email: {email}")
+                logger.info("Using contact email from git config")
             else:
                 email = DEFAULT_EMAIL
-                logger.info(f"No email configured, using default: {email}")
+                logger.info("No contact email configured; using the packaged default")
 
     # Get API key: CLI arg → settings/env
     api_key = sys.argv[2] if len(sys.argv) > 2 else (settings.ncbi_api_key or None)

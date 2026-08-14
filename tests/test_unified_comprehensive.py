@@ -343,18 +343,23 @@ class TestSearchOpenAlex:
 
     async def test_search_openalex_success(self):
         """Test _search_openalex with mocked results."""
+        from pubmed_search.application.search.source_models import SourceSearchPage
         from pubmed_search.presentation.mcp_server.tools.unified import _search_openalex
 
         with patch(
-            "pubmed_search.presentation.mcp_server.tools.unified_source_search.search_alternate_source"
+            "pubmed_search.presentation.mcp_server.tools.unified_source_search.search_alternate_source_page"
         ) as mock_search:
-            mock_search.return_value = [
-                {
-                    "openalex_id": "W1234567",
-                    "title": "Test OpenAlex Article",
-                    "doi": "10.1234/test",
-                }
-            ]
+            mock_search.return_value = SourceSearchPage(
+                source="openalex",
+                items=[
+                    {
+                        "id": "https://openalex.org/W1234567",
+                        "title": "Test OpenAlex Article",
+                        "ids": {"doi": "https://doi.org/10.1234/test"},
+                    }
+                ],
+                total=1,
+            )
 
             articles, total_count = await _search_openalex(
                 query="machine learning",
@@ -363,14 +368,15 @@ class TestSearchOpenAlex:
                 max_year=None,
             )
 
-            assert len(articles) >= 0  # May succeed or not depending on mock
+            assert len(articles) == 1
+            assert total_count == 1
 
     async def test_search_openalex_error(self):
         """Test _search_openalex handles errors."""
         from pubmed_search.presentation.mcp_server.tools.unified import _search_openalex
 
         with patch(
-            "pubmed_search.presentation.mcp_server.tools.unified_source_search.search_alternate_source"
+            "pubmed_search.presentation.mcp_server.tools.unified_source_search.search_alternate_source_page"
         ) as mock_search:
             mock_search.side_effect = Exception("OpenAlex error")
 
@@ -389,14 +395,15 @@ class TestSearchSemanticScholar:
 
     async def test_search_semantic_scholar_success(self):
         """Test _search_semantic_scholar."""
+        from pubmed_search.application.search.source_models import SourceSearchPage
         from pubmed_search.presentation.mcp_server.tools.unified import (
             _search_semantic_scholar,
         )
 
         with patch(
-            "pubmed_search.presentation.mcp_server.tools.unified_source_search.search_alternate_source"
+            "pubmed_search.presentation.mcp_server.tools.unified_source_search.search_alternate_source_page"
         ) as mock_search:
-            mock_search.return_value = []
+            mock_search.return_value = SourceSearchPage(source="semantic_scholar")
 
             articles, total_count = await _search_semantic_scholar(
                 query="deep learning",
@@ -414,7 +421,7 @@ class TestSearchSemanticScholar:
         )
 
         with patch(
-            "pubmed_search.presentation.mcp_server.tools.unified_source_search.search_alternate_source"
+            "pubmed_search.presentation.mcp_server.tools.unified_source_search.search_alternate_source_page"
         ) as mock_search:
             mock_search.side_effect = Exception("S2 error")
 

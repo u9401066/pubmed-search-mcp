@@ -37,6 +37,16 @@ _ASYNCIO_COMPAT = asyncio
 _FALLBACK_RATE_LIMIT_COOLDOWN_SECONDS = 30.0
 
 
+class APIRequestError(RuntimeError):
+    """Sanitized strict-mode upstream failure without URL/body/credentials."""
+
+    def __init__(self, service_name: str, *, status_code: int | None = None) -> None:
+        suffix = f" with HTTP {status_code}" if status_code is not None else ""
+        super().__init__(f"{service_name} request failed{suffix}")
+        self.service_name = service_name
+        self.status_code = status_code
+
+
 class BaseAPIClient:
     """
     Base class for external API clients.
@@ -76,6 +86,8 @@ class BaseAPIClient:
         circuit_breaker: CircuitBreaker | None = None,
         concurrency_limit: int | None = None,
         concurrency_name: str | None = None,
+        strict_errors: bool = False,
+        follow_redirects: bool = True,
     ) -> None:
         """
         Initialize base client.
@@ -87,12 +99,14 @@ class BaseAPIClient:
             headers: Default headers for all requests
             circuit_breaker: Optional circuit breaker for fault tolerance.
                              If None, a default one is created (threshold=10, recovery=60s).
+            follow_redirects: Whether the transport may follow HTTP redirects.
         """
         self._base_url = base_url.rstrip("/")
         self._timeout = timeout
         self._min_interval = min_interval
         self._concurrency_limit = concurrency_limit
         self._concurrency_name = concurrency_name
+        self._strict_errors = strict_errors
         self._last_request_time = 0.0
         # Keyed by upstream service, never by object identity: every client for
         # the same API must draw from one shared budget, otherwise a parallel
@@ -101,7 +115,7 @@ class BaseAPIClient:
         self._client = create_async_http_client(
             timeout=self._timeout,
             headers=headers or {},
-            follow_redirects=True,
+            follow_redirects=follow_redirects,
             max_connections=20,
             max_keepalive_connections=10,
             keepalive_expiry=30.0,
@@ -115,11 +129,39 @@ class BaseAPIClient:
             f"{self._service_name.lower().replace(' ', '_')}_last_retryable_error_{id(self)}",
             default=None,
         )
+        self._last_rate_limit_headers: ContextVar[dict[str, str] | None] = ContextVar(
+            f"{self._service_name.lower().replace(' ', '_')}_last_rate_headers_{id(self)}",
+            default=None,
+        )
 
     @property
     def last_retryable_error(self) -> RetryableOperationError | None:
         """Return the most recent exhausted retryable error, if any."""
         return self._last_retryable_error.get()
+
+    @property
+    def last_rate_limit_headers(self) -> dict[str, str]:
+        """Return task-local, allowlisted upstream budget headers."""
+
+        return dict(self._last_rate_limit_headers.get() or {})
+
+    def _raise_strict_request_error(self) -> None:
+        """Raise a sanitized failure after a soft transport returned ``None``.
+
+        Legacy source clients default to soft-fail behavior for their public
+        Python APIs.  Unified search can opt into a strict adapter seam and use
+        this helper to distinguish an upstream outage from a successful empty
+        response without exposing request URLs, queries, or response bodies.
+        """
+
+        retryable = self.last_retryable_error
+        if retryable is not None:
+            raise RetryableOperationError(
+                f"{self._service_name} request failed",
+                retry_after=retryable.retry_after,
+                status_code=retryable.status_code,
+            ) from None
+        raise APIRequestError(self._service_name) from None
 
     def _build_execution_policy(self) -> RequestExecutionPolicy:
         return build_request_execution_policy(
@@ -191,6 +233,15 @@ class BaseAPIClient:
                 params=params,
                 headers=headers,
             )
+            self._last_rate_limit_headers.set(
+                {
+                    key.lower(): value
+                    for key, value in response.headers.items()
+                    if key.lower() == "retry-after"
+                    or key.lower().startswith("x-ratelimit-")
+                    or key.lower().startswith("ratelimit-")
+                }
+            )
 
             expected = self._handle_expected_status(response, full_url)
             if expected is not _CONTINUE:
@@ -209,16 +260,31 @@ class BaseAPIClient:
 
         try:
             self._last_retryable_error.set(None)
+            self._last_rate_limit_headers.set(None)
             return await self._transport_kernel.execute(perform_request, policy=policy)
         except RetryableOperationError as e:
             self._last_retryable_error.set(e)
             await self._handle_exhausted_retryable_error(e, policy)
+            if self._strict_errors:
+                raise
             return None
         except httpx.HTTPStatusError as e:
-            logger.exception(f"{self._service_name} HTTP error {e.response.status_code}: {e.response.reason_phrase}")
+            logger.warning(
+                "%s HTTP error %s: %s",
+                self._service_name,
+                e.response.status_code,
+                e.response.reason_phrase,
+            )
+            if self._strict_errors:
+                raise APIRequestError(self._service_name, status_code=e.response.status_code) from None
             return None
         except httpx.RequestError as e:
-            logger.exception(f"{self._service_name} request failed: {e}")
+            # httpx exception strings commonly include the complete request
+            # URL. Provider queries and contact emails are private request
+            # data in a multi-tenant service, so log only the exception class.
+            logger.warning("%s request failed (%s)", self._service_name, type(e).__name__)
+            if self._strict_errors:
+                raise APIRequestError(self._service_name) from None
             return None
         except Exception as e:
             from pubmed_search.shared.exceptions import RateLimitError
@@ -230,8 +296,12 @@ class BaseAPIClient:
                 )
                 self._last_retryable_error.set(retryable_error)
                 logger.warning("%s: Circuit breaker open or rate limited, skipping request", self._service_name)
+                if self._strict_errors:
+                    raise retryable_error from None
                 return None
-            logger.exception(f"{self._service_name} request failed: {e}")
+            logger.warning("%s request failed (%s)", self._service_name, type(e).__name__)
+            if self._strict_errors:
+                raise APIRequestError(self._service_name) from None
             return None
 
     async def _handle_exhausted_retryable_error(

@@ -7,6 +7,7 @@ This document provides guidance for AI assistants working with the PubMed Search
 ## Repository Hook Notes
 
 - `unicode-mojibake` blocks newly staged corrupted emoji/UTF-8 artifacts while allowing valid emoji; restore garbled text as UTF-8 before committing.
+- Copilot research hooks use a shared Python runtime for Bash/PowerShell parity. They persist only HMAC fingerprints, structured source status, and safe artifact locators; heuristic messages are advisory and must never override MCP/server validation.
 
 ## ⚡ 開發環境規範 (CRITICAL)
 

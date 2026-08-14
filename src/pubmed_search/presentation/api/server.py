@@ -68,7 +68,7 @@ async def lifespan(app: FastAPI):
     api_key = settings.ncbi_api_key
     data_dir = settings.data_dir  # tenant-ok: legacy single-tenant CLI server, no tenancy middleware
 
-    logger.info(f"Initializing HTTP API server with email: {email}")
+    logger.info("Initializing HTTP API server with configured contact email")
     logger.info(f"Session data directory: {data_dir}")
 
     _session_manager = SessionManager(data_dir=data_dir)
@@ -285,6 +285,8 @@ def run_api_server(
 if __name__ == "__main__":
     import argparse
 
+    from pubmed_search.shared.logging_utils import harden_http_client_logging
+
     parser = argparse.ArgumentParser(description="PubMed Search HTTP API Server")
     parser.add_argument("--host", default="127.0.0.1", help="Host to bind to")
     parser.add_argument("--port", type=int, default=DEFAULT_API_PORT, help="Port to bind to")
@@ -298,6 +300,7 @@ if __name__ == "__main__":
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
+    harden_http_client_logging()
 
     run_api_server(
         host=args.host,

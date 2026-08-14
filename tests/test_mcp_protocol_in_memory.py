@@ -14,6 +14,7 @@ from pubmed_search.presentation.mcp_server.tenancy import build_tenancy_middlewa
 from pubmed_search.presentation.mcp_server.tool_registry import TOOL_CATEGORIES
 from pubmed_search.presentation.mcp_server.tools import chronicle as chronicle_tools
 from pubmed_search.presentation.mcp_server.tools import unified as unified_module
+from pubmed_search.shared.source_contracts import SourceAdapterResult
 from pubmed_search.shared.tenancy import TenantIdentity, bind_tenant, current_tenant
 
 
@@ -62,11 +63,21 @@ async def test_in_memory_protocol_lists_tools_resources_and_prompts():
 
 @pytest.mark.asyncio
 async def test_unified_search_reports_progress_and_persists_session(monkeypatch):
-    async def _fake_search_pubmed(*args, **kwargs):
+    async def _fake_search_pubmed_adapter(*args, **kwargs):
         del args, kwargs
-        return ([UnifiedArticle(title="Mock Article", primary_source="pubmed", pmid="12345")], 1)
+        return SourceAdapterResult(
+            source="pubmed",
+            operation="search",
+            items=[UnifiedArticle(title="Mock Article", primary_source="pubmed", pmid="12345")],
+            total_count=1,
+            metadata={
+                "total_available": 1,
+                "physical_query": "diabetes",
+                "query_executed": True,
+            },
+        )
 
-    monkeypatch.setattr(unified_module, "_search_pubmed", _fake_search_pubmed)
+    monkeypatch.setattr(unified_module, "_search_pubmed_adapter", _fake_search_pubmed_adapter)
 
     progress_updates: list[tuple[float, float | None, str | None]] = []
 

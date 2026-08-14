@@ -36,6 +36,7 @@ from pubmed_search.domain.entities.pipeline import (
     ScheduleEntry,
     ValidationResult,
 )
+from pubmed_search.shared.credential_sanitizer import contains_credential_material
 from pubmed_search.shared.file_io import atomic_write_json, atomic_write_text
 from pubmed_search.shared.locking import synchronized
 
@@ -254,7 +255,10 @@ class PipelineStore:
     ) -> PipelineMeta | None:
         """Best-effort metadata reconstruction for an orphaned YAML file."""
         try:
-            raw_data = yaml.safe_load(path.read_text(encoding="utf-8"))
+            raw_text = path.read_text(encoding="utf-8")
+            if contains_credential_material(raw_text):
+                return None
+            raw_data = yaml.safe_load(raw_text)
             if not isinstance(raw_data, dict):
                 return None
             result = parse_and_validate_config(raw_data)
@@ -274,8 +278,8 @@ class PipelineStore:
                 if runs_dir.is_dir()
                 else 0,
             )
-        except (OSError, TypeError, ValueError, yaml.YAMLError):
-            logger.warning("Unable to rebuild pipeline metadata from %s", path, exc_info=True)
+        except (OSError, TypeError, ValueError, yaml.YAMLError) as exc:
+            logger.warning("Unable to rebuild pipeline metadata (%s)", type(exc).__name__)
             return None
 
     def _save_index(self, scope: PipelineScope, index: dict[str, PipelineMeta]) -> None:
@@ -358,6 +362,10 @@ class PipelineStore:
 
         # Save YAML file
         config_dict = _config_to_dict(config)
+        serialized_config = yaml.safe_dump(config_dict, allow_unicode=True, sort_keys=False)
+        if contains_credential_material(serialized_config):
+            msg = "Pipeline config contains credential material; use server environment configuration instead"
+            raise ValueError(msg)
         yaml_path = pipelines_dir / f"{name}.yaml"
         atomic_write_text(
             yaml_path,
@@ -418,6 +426,9 @@ class PipelineStore:
     def _load_from_file(self, path: Path, scope: PipelineScope, name: str) -> tuple[PipelineConfig, PipelineMeta]:
         """Load and validate a pipeline from a YAML file."""
         raw_text = path.read_text(encoding="utf-8")
+        if contains_credential_material(raw_text):
+            msg = "Pipeline config contains credential material; use server environment configuration instead"
+            raise ValueError(msg)
         raw_data = yaml.safe_load(raw_text)
 
         if not isinstance(raw_data, dict):

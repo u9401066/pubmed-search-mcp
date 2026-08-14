@@ -156,8 +156,15 @@ class APSPipelineScheduler:
         try:
             run = await self._runner.execute_saved_pipeline(pipeline_name)
             entry.last_run = run.finished or run.started or datetime.now(timezone.utc)
-            entry.last_status = "success"
-            entry.last_error = None
+            if run.status == "success":
+                entry.last_status = "success"
+                entry.last_error = None
+            elif run.status == "partial":
+                entry.last_status = "partial"
+                entry.last_error = run.error_message or "Pipeline execution completed partially"
+            else:
+                entry.last_status = "error"
+                entry.last_error = run.error_message or f"Pipeline execution ended with status {run.status}"
         except Exception as exc:
             entry.last_run = datetime.now(timezone.utc)
             entry.last_status = "error"

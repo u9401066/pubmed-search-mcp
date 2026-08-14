@@ -22,7 +22,6 @@ from typing import TYPE_CHECKING, Any
 from pubmed_search.application.search.result_aggregator import ResultAggregator
 from pubmed_search.application.timeline import TimelineBuilder, build_research_tree
 from pubmed_search.domain.entities.article import UnifiedArticle
-from pubmed_search.presentation.mcp_server.session_tools import notify_session_resources_updated
 from pubmed_search.shared.source_contracts import (
     SourceAdapterCall,
     SourceAdapterResult,
@@ -31,7 +30,6 @@ from pubmed_search.shared.source_contracts import (
 )
 
 from .agent_output import is_structured_output_format
-from .tool_session import _record_search_only
 from .unified_enrichment import (
     _enrich_with_crossref,
     _enrich_with_journal_metrics,
@@ -58,9 +56,8 @@ SOURCE_SEARCH_TIMEOUT_SECONDS = 25.0
 CLINICAL_TRIALS_PREFETCH_TIMEOUT_SECONDS = 0.5
 _PREPRINT_SOURCE_KEYS = frozenset({"arxiv", "medrxiv", "biorxiv"})
 
-SearchRunner = Callable[
-    [str, int, int | None, int | None, dict[str, Any]], Awaitable[tuple[list[UnifiedArticle], int | None]]
-]
+SearchRunnerOutcome = tuple[list[UnifiedArticle], int | None] | SourceAdapterResult[UnifiedArticle]
+SearchRunner = Callable[[str, int, int | None, int | None, dict[str, Any]], Awaitable[SearchRunnerOutcome]]
 
 
 @dataclass
@@ -76,8 +73,11 @@ class UnifiedSearchExecutionResult:
     research_context_preview: str | None
     research_context_data: dict[str, Any] | None
     prefetched_trials: list[Any] | None
+    clinical_trials_query: str | None
+    clinical_trials_status: str
     source_errors: list[dict[str, Any]]
     source_statuses: dict[str, str]
+    source_metadata: dict[str, dict[str, Any]]
 
 
 def _source_error_payload(error: Any) -> dict[str, Any]:
@@ -93,10 +93,12 @@ def _source_error_payload(error: Any) -> dict[str, Any]:
     }
     if status_code is not None:
         payload["status_code"] = status_code
-    if source == "semantic_scholar" and status_code == 429:
+    if status_code == 429:
         payload["status"] = "rate_limited"
         payload["suggestion"] = (
             'Set S2_API_KEY/SEMANTIC_SCHOLAR_API_KEY, retry later, or use sources="auto,-semantic_scholar".'
+            if source == "semantic_scholar"
+            else f"Respect {source} retry/reset guidance, reduce request frequency, or retry after the shared cooldown."
         )
     else:
         payload["status"] = "error"
@@ -112,12 +114,16 @@ async def _search_single_source(
     source: str,
     plan: UnifiedSearchPlan,
     search_functions: Mapping[str, SearchRunner],
+    *,
+    limit_override: int | None = None,
 ) -> SourceAdapterResult[UnifiedArticle]:
-    query = plan.query
-    limit = plan.request.limit
+    query = plan.query if source == "pubmed" else plan.provider_neutral_query
+    limit = plan.request.limit if limit_override is None else limit_override
     min_year = plan.effective_min_year
     max_year = plan.effective_max_year
-    advanced_filters = plan.request.advanced_filters
+    runner_options: dict[str, Any] = dict(plan.request.advanced_filters)
+    if source in {"openalex", "semantic_scholar"}:
+        runner_options["_retrieval_mode"] = plan.request.retrieval_mode
 
     if source == "crossref":
         msg = "Crossref is an enrichment source and cannot be used as the only primary search adapter"
@@ -128,13 +134,36 @@ async def _search_single_source(
         msg = f"No search adapter is registered for source '{source}'"
         raise ValueError(msg)
 
-    articles, total_count = await runner(query, limit, min_year, max_year, advanced_filters)
+    outcome = await runner(query, limit, min_year, max_year, runner_options)
+    if isinstance(outcome, SourceAdapterResult):
+        outcome.metadata.setdefault("requested_mode", plan.request.retrieval_mode)
+        if source != "pubmed" and plan.request.advanced_filters:
+            warnings = outcome.metadata.setdefault("warnings", [])
+            warning = (
+                f"{source} does not apply PubMed-only filter(s): {', '.join(sorted(plan.request.advanced_filters))}"
+            )
+            if isinstance(warnings, list) and warning not in warnings:
+                warnings.append(warning)
+        return outcome
+
+    articles, total_count = outcome
+    filter_warnings: list[str] = []
+    if source != "pubmed" and plan.request.advanced_filters:
+        filter_warnings.append(
+            f"{source} does not apply PubMed-only filter(s): {', '.join(sorted(plan.request.advanced_filters))}"
+        )
     return SourceAdapterResult(
         source=source,
         operation="search",
         items=articles,
         total_count=total_count or len(articles),
-        metadata={"total_available": total_count},
+        status="ok" if articles else "empty",
+        metadata={
+            "total_available": total_count,
+            "requested_mode": plan.request.retrieval_mode,
+            "provider_mode": "default",
+            "warnings": filter_warnings,
+        },
     )
 
 
@@ -158,14 +187,21 @@ async def execute_unified_search(
     relaxation_result: RelaxationResult | None = None
     source_errors: list[dict[str, Any]] = []
     source_statuses: dict[str, str] = {}
+    source_metadata: dict[str, dict[str, Any]] = {}
 
     clinical_trials_task: asyncio.Task | None = None
-    if not is_structured_output_format(request.output_format):
+    clinical_trials_query: str | None = None
+    clinical_trials_status = "not_requested"
+    if request.include_clinical_trials and is_structured_output_format(request.output_format):
+        clinical_trials_status = "not_run_structured_output"
+    if request.include_clinical_trials and not is_structured_output_format(request.output_format):
+        clinical_trials_status = "starting"
         try:
             from pubmed_search.infrastructure.sources.clinical_trials import search_related_trials
 
-            trial_query = " ".join(plan.query.split()[:5])
-            clinical_trials_task = asyncio.create_task(search_related_trials(trial_query, limit=3))
+            clinical_trials_query = " ".join(plan.provider_neutral_query.split()[:5])
+            clinical_trials_task = asyncio.create_task(search_related_trials(clinical_trials_query, limit=3))
+            clinical_trials_status = "pending"
             parent_task = asyncio.current_task()
             if parent_task is not None:
 
@@ -175,6 +211,7 @@ async def execute_unified_search(
 
                 parent_task.add_done_callback(_cancel_orphaned_trials)
         except Exception:
+            clinical_trials_status = "unavailable"
             logger.debug("Clinical trials module not available, skipping")
 
     if request.deep_search and plan.enhanced_query and plan.deep_strategies:
@@ -195,16 +232,69 @@ async def execute_unified_search(
             plan.effective_max_year,
             request.advanced_filters,
             strategies=plan.deep_strategies,
+            search_functions=search_functions,
         )
         for error in deep_source_errors:
             logger.warning("Deep search source warning: %s", format_source_adapter_error(error))
             source_errors.append(_source_error_payload(error))
-        failed_sources = {error.source for error in deep_source_errors}
         for source, (returned, _total) in source_api_counts.items():
-            if source in failed_sources:
-                source_statuses[source] = "partial" if returned else "error"
+            attempts = [strategy for strategy in deep_search_metrics.strategy_results if strategy.source == source]
+            executed_attempts = [attempt for attempt in attempts if attempt.status != "skipped_budget"]
+            attempt_statuses = {attempt.status for attempt in executed_attempts}
+            has_failure = "error" in attempt_statuses
+            has_response = bool(attempt_statuses & {"ok", "empty", "partial"})
+            if has_failure and has_response:
+                source_statuses[source] = "partial"
+            elif has_failure:
+                source_statuses[source] = "error"
+            elif "partial" in attempt_statuses:
+                source_statuses[source] = "partial"
             else:
                 source_statuses[source] = "ok" if returned else "empty"
+
+            physical_queries = list(
+                dict.fromkeys(
+                    attempt.physical_query
+                    for attempt in executed_attempts
+                    if isinstance(attempt.physical_query, str) and attempt.physical_query
+                )
+            )
+            logical_queries = list(dict.fromkeys(attempt.query for attempt in executed_attempts if attempt.query))
+            warning_values: list[str] = []
+            for attempt in attempts:
+                attempt_warnings = attempt.metadata.get("warnings")
+                if isinstance(attempt_warnings, list):
+                    warning_values.extend(str(warning) for warning in attempt_warnings)
+            warnings = list(dict.fromkeys(warning_values))
+            source_metadata[source] = {
+                "requested_mode": request.retrieval_mode,
+                "provider_mode": "deep_strategy",
+                "logical_query": plan.query if source == "pubmed" else plan.provider_neutral_query,
+                "logical_queries": logical_queries,
+                "physical_query": physical_queries[0] if len(physical_queries) == 1 else None,
+                "physical_queries": physical_queries,
+                "query_executed": any(attempt.query_executed for attempt in executed_attempts),
+                "warnings": warnings,
+                "budget": {
+                    "per_source_limit": request.limit,
+                    "allocated": sum(attempt.allocated_limit for attempt in attempts),
+                    "returned": returned,
+                },
+                "attempts": [
+                    {
+                        "strategy": attempt.strategy_name,
+                        "status": attempt.status,
+                        "logical_query": attempt.query,
+                        "physical_query": attempt.physical_query,
+                        "query_executed": attempt.query_executed,
+                        "allocated_limit": attempt.allocated_limit,
+                        "returned": attempt.articles_count,
+                        "total_available": attempt.total_available,
+                        "metadata": dict(attempt.metadata),
+                    }
+                    for attempt in attempts
+                ],
+            }
         logger.info(
             "Deep search: %s strategies, %s with results, depth score: %.0f",
             deep_search_metrics.strategies_executed,
@@ -225,7 +315,95 @@ async def execute_unified_search(
             [_build_search_call(source) for source in search_sources],
             per_call_timeout=SOURCE_SEARCH_TIMEOUT_SECONDS,
         )
+
+        # A default simple/lookup search often has one fast primary leg. If
+        # that leg failed (rather than returning a valid empty set), make one
+        # bounded provider-neutral attempt so a transient provider outage does
+        # not become a false "no literature" answer. Explicit source choices
+        # and provider-native/systematic contracts remain fail-closed.
+        if (
+            request.sources is None
+            and request.retrieval_mode == "auto"
+            and (analysis.complexity.value == "simple" or analysis.intent.value == "lookup")
+            and search_results
+            and all(result.status == "error" for result in search_results)
+        ):
+            from pubmed_search.infrastructure.sources.registry import get_source_registry
+
+            registry = get_source_registry()
+            fallback_source = next(
+                (
+                    source
+                    for source in ("europe_pmc", "openalex")
+                    if source not in search_sources and source in search_functions and registry.is_enabled(source)
+                ),
+                None,
+            )
+            if fallback_source is not None:
+                initial_failed_sources = [result.source for result in search_results]
+
+                async def _execute_fallback() -> SourceAdapterResult[UnifiedArticle]:
+                    return await _search_single_source(
+                        fallback_source,
+                        plan,
+                        search_functions,
+                        limit_override=min(request.limit, 20),
+                    )
+
+                fallback_call: SourceAdapterCall[UnifiedArticle] = SourceAdapterCall(
+                    source=fallback_source,
+                    operation="fallback_search",
+                    execute=_execute_fallback,
+                )
+                fallback_results: list[SourceAdapterResult[UnifiedArticle]] = await gather_source_adapter_calls(
+                    [fallback_call],
+                    per_call_timeout=SOURCE_SEARCH_TIMEOUT_SECONDS,
+                )
+                fallback_result = fallback_results[0]
+                fallback_result.metadata.update(
+                    {
+                        "fallback": True,
+                        "fallback_reason": "all_auto_primary_sources_failed",
+                        "fallback_from": initial_failed_sources,
+                        "fallback_limit": min(request.limit, 20),
+                    }
+                )
+                search_results.append(fallback_result)
+
         for result in search_results:
+            attempt_metadata = dict(result.metadata)
+            logical_query = plan.query if result.source == "pubmed" else plan.provider_neutral_query
+            attempt_metadata.setdefault("logical_query", logical_query)
+            if result.source == "semantic_scholar" and request.retrieval_mode == "systematic":
+                from pubmed_search.infrastructure.sources.semantic_scholar import (
+                    compile_semantic_scholar_bulk_query,
+                )
+
+                try:
+                    attempt_metadata.setdefault(
+                        "physical_query",
+                        compile_semantic_scholar_bulk_query(logical_query),
+                    )
+                    attempt_metadata.setdefault("query_executed", True)
+                except ValueError as exc:
+                    attempt_metadata.setdefault("query_compilation_error", str(exc))
+                    attempt_metadata.setdefault("physical_query", None)
+                    attempt_metadata.setdefault("query_executed", False)
+                attempt_metadata.setdefault("provider_mode", "bulk")
+            else:
+                attempt_metadata.setdefault("physical_query", logical_query)
+                attempt_metadata.setdefault("query_executed", True)
+                attempt_metadata.setdefault("provider_mode", request.retrieval_mode)
+            attempt_metadata.setdefault("requested_mode", request.retrieval_mode)
+            if result.source != "pubmed" and request.advanced_filters:
+                warnings = attempt_metadata.setdefault("warnings", [])
+                warning = (
+                    f"{result.source} does not apply PubMed-only filter(s): "
+                    f"{', '.join(sorted(request.advanced_filters))}"
+                )
+                if isinstance(warnings, list) and warning not in warnings:
+                    warnings.append(warning)
+
             for error in result.errors:
                 log_method = logger.warning if error.retryable else logger.error
                 log_method("Search source warning: %s", format_source_adapter_error(error))
@@ -238,6 +416,7 @@ async def execute_unified_search(
                 all_results.append(articles)
             source_api_counts[result.source] = (len(articles), total_count)
             source_statuses[result.source] = result.status
+            source_metadata[result.source] = attempt_metadata
             if result.source == "pubmed" and total_count is not None:
                 pubmed_total_count = total_count
             logger.info(
@@ -259,6 +438,7 @@ async def execute_unified_search(
         and stats.unique_articles == 0
         and not analysis.identifiers
         and "pubmed" in plan.dispatch_sources
+        and source_statuses.get("pubmed") == "empty"
     ):
         logger.info("0 results — attempting auto-relaxation")
         relaxation_result = await _auto_relax_search(
@@ -274,6 +454,21 @@ async def execute_unified_search(
             all_results = [relaxation_result.articles]
             articles, stats = aggregator.aggregate(all_results)
             pubmed_total_count = relaxation_result.total_results
+            source_api_counts["pubmed"] = (
+                len(relaxation_result.articles),
+                relaxation_result.total_results,
+            )
+            source_statuses["pubmed"] = "ok"
+            source_metadata["pubmed"] = {
+                "total_available": relaxation_result.total_results,
+                "requested_mode": request.retrieval_mode,
+                "provider_mode": "auto_relax",
+                "original_query": relaxation_result.original_query,
+                "canonical_query": relaxation_result.relaxed_query,
+                "relaxation_level": step.level,
+                "relaxation_action": step.action,
+                "replaces_empty_federation": True,
+            }
             logger.info("Auto-relaxation: %s results at level %s (%s)", stats.unique_articles, step.level, step.action)
 
     await progress(6, 10, "Enriching results...")
@@ -358,10 +553,7 @@ async def execute_unified_search(
                     research_context_preview = context_tree.to_text_tree()
                     research_context_data = context_tree.to_dict()
             except Exception as exc:
-                logger.debug("Research context graph skipped: %s", exc)
-
-    _record_search_only(ranked, analysis.original_query)
-    await notify_session_resources_updated(ctx)
+                logger.debug("Research context graph skipped (%s)", type(exc).__name__)
 
     prefetched_trials: list[Any] | None = None
     if clinical_trials_task:
@@ -370,13 +562,16 @@ async def execute_unified_search(
                 clinical_trials_task,
                 timeout=CLINICAL_TRIALS_PREFETCH_TIMEOUT_SECONDS,
             )
+            clinical_trials_status = "ok" if prefetched_trials else "empty"
         except asyncio.TimeoutError:
+            clinical_trials_status = "timeout"
             logger.debug(
                 "Clinical trials prefetch exceeded %.2fs budget",
                 CLINICAL_TRIALS_PREFETCH_TIMEOUT_SECONDS,
             )
         except Exception:
             prefetched_trials = None
+            clinical_trials_status = "error"
 
     return UnifiedSearchExecutionResult(
         ranked=ranked,
@@ -390,8 +585,11 @@ async def execute_unified_search(
         research_context_preview=research_context_preview,
         research_context_data=research_context_data,
         prefetched_trials=prefetched_trials,
+        clinical_trials_query=clinical_trials_query,
+        clinical_trials_status=clinical_trials_status,
         source_errors=source_errors,
         source_statuses=source_statuses,
+        source_metadata=source_metadata,
     )
 
 

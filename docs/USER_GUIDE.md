@@ -285,7 +285,9 @@ or design a single external leader/lease before enabling recurring execution.
 There are two Copilot routes:
 
 - public primary MCP surface through authenticated `pubmed-search-mcp-http --mode service --transport streamable-http --copilot-compatible`
-- loopback-only schema smoke: a smaller 11-tool schema through `run_copilot.py`
+- loopback-only schema smoke: a smaller 12-tool schema through `run_copilot.py`,
+  including primitive-schema `read_session` for search-run, replay-argument,
+  and artifact recovery
 
 Only the full authenticated service is publishable. Use the simplified surface locally to inspect Copilot Studio schema compatibility, then return to the service launcher for any public endpoint; never tunnel `run_copilot.py`.
 

@@ -48,6 +48,12 @@ class TestListRegisteredTools:
         result = list_registered_tools()
         assert "unified_search" in result["search"]
 
+    async def test_unified_search_is_the_only_generic_literature_search_tool(self):
+        """Provider adapters and entity lookups must not expand the search facade."""
+        result = list_registered_tools()
+
+        assert result["search"] == ["unified_search"]
+
     async def test_legacy_merge_tool_is_not_primary_surface(self):
         result = list_registered_tools()
         all_tools = {tool for tools in result.values() for tool in tools}
@@ -245,6 +251,7 @@ class TestValidateToolRegistry:
 
         assert result["valid"] is True
         assert "merge_search_results" not in result["registered"]
+        assert set(TOOL_CATEGORIES["search"]["tools"]) == {"unified_search"}
 
 
 # ============================================================

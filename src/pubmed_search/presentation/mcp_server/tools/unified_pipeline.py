@@ -9,8 +9,18 @@ Extracted from unified.py to keep each module under 400 lines.
 
 from __future__ import annotations
 
+import json
 import logging
-from typing import TYPE_CHECKING, Any
+from dataclasses import asdict, dataclass, field
+from typing import TYPE_CHECKING, Any, Literal
+
+from pubmed_search.application.pipeline.executor import (
+    PipelineOutcomeStatus,
+    classify_pipeline_outcome,
+    pipeline_outcome_message,
+    pipeline_run_status,
+)
+from pubmed_search.shared.credential_sanitizer import contains_credential_material
 
 from ._common import ResponseFormatter
 
@@ -18,6 +28,41 @@ if TYPE_CHECKING:
     from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class PipelineModeOutcome:
+    """Typed execution envelope used by the unified-search run journal."""
+
+    response: str
+    status: Literal["completed", "partial", "failed"]
+    articles: list[Any] = field(default_factory=list)
+    step_results: dict[str, Any] = field(default_factory=dict)
+    error: str | None = None
+    plan: dict[str, Any] = field(default_factory=dict)
+    response_format: Literal["markdown", "json"] = "markdown"
+
+
+def _pipeline_failure(
+    error: str,
+    *,
+    output_format: str,
+    suggestion: str | None = None,
+    example: str | None = None,
+) -> PipelineModeOutcome:
+    response_format: Literal["markdown", "json"] = "json" if output_format in {"json", "toon"} else "markdown"
+    return PipelineModeOutcome(
+        response=ResponseFormatter.error(
+            error,
+            suggestion=suggestion,
+            example=example,
+            tool_name="unified_search",
+            output_format=response_format,
+        ),
+        status="failed",
+        error=error,
+        response_format=response_format,
+    )
 
 
 def _parse_pipeline_config(text: str) -> dict:
@@ -53,14 +98,14 @@ def _parse_pipeline_config(text: str) -> dict:
     raise ValueError(msg)
 
 
-async def _execute_pipeline_mode(
+async def _execute_pipeline_mode_outcome(
     pipeline_text: str,
     output_format: str,
     searcher: LiteratureSearcher,
     *,
     dry_run: bool = False,
     stop_at: str = "",
-) -> str:
+) -> PipelineModeOutcome:
     """Parse and execute a pipeline config, returning formatted results.
 
     Accepts:
@@ -74,49 +119,56 @@ async def _execute_pipeline_mode(
 
     pipeline_name_override: str | None = None
 
+    if contains_credential_material(pipeline_text):
+        return _pipeline_failure(
+            "Pipeline config contains credential material; use server environment configuration instead",
+            suggestion="Remove provider keys, tokens, cookies, and secrets from pipeline parameters",
+            output_format=output_format,
+        )
+
     # ── Saved pipeline mode ──────────────────────────────────────────────
     stripped = pipeline_text.strip()
     if stripped.startswith("saved:"):
         pipeline_name = stripped[6:].strip()
         if not pipeline_name:
-            return ResponseFormatter.error(
+            return _pipeline_failure(
                 'Missing pipeline name after "saved:"',
                 suggestion='Use saved:<name>, e.g. pipeline="saved:weekly_remimazolam"',
-                tool_name="unified_search",
+                output_format=output_format,
             )
         from pubmed_search.presentation.mcp_server.tools.pipeline_tools import get_pipeline_store
 
         store = get_pipeline_store()  # PipelineStore | None
         if not store:
-            return ResponseFormatter.error(
+            return _pipeline_failure(
                 "Pipeline store not initialized",
                 suggestion="Server may not be fully started",
-                tool_name="unified_search",
+                output_format=output_format,
             )
         try:
             config, _meta = store.load(pipeline_name)
             pipeline_name_override = _meta.name
         except FileNotFoundError:
-            return ResponseFormatter.error(
-                f"Saved pipeline '{pipeline_name}' not found",
+            return _pipeline_failure(
+                "Saved pipeline was not found",
                 suggestion="Use list_pipelines() to see available pipelines",
-                tool_name="unified_search",
+                output_format=output_format,
             )
-        except ValueError as exc:
-            return ResponseFormatter.error(
-                f"Saved pipeline '{pipeline_name}' has errors: {exc}",
-                tool_name="unified_search",
+        except ValueError:
+            return _pipeline_failure(
+                "Saved pipeline could not be loaded because its configuration is invalid or unsafe",
+                output_format=output_format,
             )
     else:
         # ── Inline YAML/JSON mode ───────────────────────────────────────
         try:
             raw = _parse_pipeline_config(pipeline_text)
         except Exception as exc:
-            return ResponseFormatter.error(
+            return _pipeline_failure(
                 f"Invalid pipeline config: {exc}",
                 suggestion="Provide valid YAML or JSON for the pipeline parameter",
                 example=('pipeline="template: pico\nparams:\n  P: ICU patients\n  I: remimazolam"'),
-                tool_name="unified_search",
+                output_format=output_format,
             )
 
         result = parse_and_validate_config(raw)
@@ -126,29 +178,36 @@ async def _execute_pipeline_mode(
                 error_msg += "\n\nAuto-fixes attempted:\n" + "\n".join(
                     f"  🔧 {f.field}: {f.reason}" for f in result.fixes
                 )
-            return ResponseFormatter.error(error_msg, tool_name="unified_search")
+            return _pipeline_failure(error_msg, output_format=output_format)
         config = result.config  # type: ignore[assignment]
         if config is None:
-            return ResponseFormatter.error(
+            return _pipeline_failure(
                 "Failed to parse pipeline config",
-                tool_name="unified_search",
+                output_format=output_format,
             )
 
     try:
         config = materialize_pipeline_config(config)
     except ValueError as exc:
-        return ResponseFormatter.error(
+        return _pipeline_failure(
             f"Template error: {exc}",
             suggestion="Check template name and required params",
-            tool_name="unified_search",
+            output_format=output_format,
+        )
+
+    if contains_credential_material(json.dumps(asdict(config), ensure_ascii=False, default=str)):
+        return _pipeline_failure(
+            "Pipeline config contains credential material; use server environment configuration instead",
+            suggestion="Remove provider keys, tokens, cookies, and secrets from pipeline parameters",
+            output_format=output_format,
         )
 
     # Execute
-    from pubmed_search.infrastructure.sources import get_source_registry, search_alternate_source
+    from pubmed_search.infrastructure.sources import get_source_registry, search_alternate_source_page
 
     executor = PipelineExecutor(
         searcher=searcher,
-        alternate_search_fn=search_alternate_source,
+        alternate_search_page_fn=search_alternate_source_page,
         source_key_resolver=get_source_registry().resolve_key,
     )
     prepared_config = config
@@ -165,10 +224,12 @@ async def _execute_pipeline_mode(
         else:
             articles, step_results = await executor.execute(prepared_config, stop_at=stop_at_step)
     except (ValueError, RuntimeError) as exc:
-        return ResponseFormatter.error(
+        return _pipeline_failure(
             f"Pipeline execution failed: {exc}",
-            tool_name="unified_search",
+            output_format=output_format,
         )
+
+    status = classify_pipeline_outcome(articles, step_results)
 
     from pubmed_search.application.pipeline.report_generator import generate_pipeline_report
 
@@ -176,18 +237,73 @@ async def _execute_pipeline_mode(
 
     # ── Auto-save report to workspace/global ─────────────────────────────
     if not dry_run:
-        _auto_save_pipeline_report(prepared_config, articles, report, pipeline_name_override=pipeline_name_override)
+        _auto_save_pipeline_report(
+            prepared_config,
+            articles,
+            report,
+            status=status,
+            pipeline_name_override=pipeline_name_override,
+        )
 
-    if output_format == "json" or prepared_config.output.format == "json":
-        return _format_pipeline_json(
+    if output_format in {"json", "toon"} or prepared_config.output.format == "json":
+        response = _format_pipeline_json(
             articles=articles,
             step_results=step_results,
             config=prepared_config,
             dry_run=dry_run,
             stop_at=stop_at_step,
         )
+        response_format: Literal["markdown", "json"] = "json"
+    else:
+        response = report
+        response_format = "markdown"
 
-    return report
+    return PipelineModeOutcome(
+        response=response,
+        status=status,
+        articles=list(articles),
+        step_results=dict(step_results),
+        error=pipeline_outcome_message(status) if status == "failed" else None,
+        plan={
+            "mode": "pipeline",
+            "name": prepared_config.name or "",
+            "template": prepared_config.template,
+            "dry_run": dry_run,
+            "stop_at": stop_at_step,
+            "steps": [
+                {"id": step.id, "action": step.action, "inputs": list(step.inputs)} for step in prepared_config.steps
+            ],
+        },
+        response_format=response_format,
+    )
+
+
+async def _execute_pipeline_mode(
+    pipeline_text: str,
+    output_format: str,
+    searcher: LiteratureSearcher,
+    *,
+    dry_run: bool = False,
+    stop_at: str = "",
+) -> str:
+    """Backward-compatible string facade for direct pipeline-mode callers."""
+    outcome = await _execute_pipeline_mode_outcome(
+        pipeline_text,
+        output_format,
+        searcher,
+        dry_run=dry_run,
+        stop_at=stop_at,
+    )
+    if output_format == "toon" and outcome.response_format == "json":
+        from .agent_output import serialize_structured_payload
+
+        try:
+            payload = json.loads(outcome.response)
+        except (TypeError, ValueError):
+            return outcome.response
+        if isinstance(payload, dict):
+            return serialize_structured_payload(payload, "toon")
+    return outcome.response
 
 
 def _format_pipeline_json(
@@ -282,6 +398,8 @@ def _auto_save_pipeline_report(
     config: Any,
     articles: list,
     report: str,
+    *,
+    status: PipelineOutcomeStatus = "completed",
     pipeline_name_override: str | None = None,
 ) -> None:
     """Best-effort auto-save of pipeline report and run record."""
@@ -316,12 +434,16 @@ def _auto_save_pipeline_report(
                 pipeline_name=pipeline_name,
                 started=now,
                 finished=datetime.now(timezone.utc),
-                status="success",
+                status=pipeline_run_status(status),
                 article_count=len(articles),
                 pmids=pmids,
+                error_message=pipeline_outcome_message(status),
             )
             store.save_run(pipeline_name, run)
 
         logger.info("Pipeline report saved: %s", report_path)
-    except Exception:
-        logger.warning("Failed to auto-save pipeline report", exc_info=True)
+    except Exception as exc:
+        # Pipeline errors can contain provider URLs or the original biomedical
+        # query.  Operational logs only need the failure class; durable run
+        # metadata carries a separately sanitized diagnostic.
+        logger.warning("Failed to auto-save pipeline report (%s)", type(exc).__name__)

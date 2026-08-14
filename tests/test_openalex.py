@@ -53,10 +53,11 @@ class TestInit:
         finally:
             configure_source_contact_email(None)
 
-    async def test_api_key_overrides_mailto_auth(self):
+    async def test_api_key_uses_bearer_and_keeps_contact_hint(self):
         c = OpenAlexClient(email="test@example.com", api_key="oa-key")
         assert c._api_key == "oa-key"
-        assert c._auth_params == {"api_key": "oa-key"}
+        assert c._auth_params == {"mailto": "test@example.com"}
+        assert c._client.headers["Authorization"] == "Bearer oa-key"
 
     async def test_context_manager(self):
         async with OpenAlexClient() as c:
@@ -154,8 +155,9 @@ class TestSearch:
         client = OpenAlexClient(email="test@example.com", api_key="oa-key")
         await client.search("test")
         url = mock_req.call_args[0][0]
-        assert "api_key=oa-key" in url
-        assert "mailto=" not in url
+        assert "oa-key" not in url
+        assert "mailto=" in url
+        assert client._client.headers["Authorization"] == "Bearer oa-key"
 
     @patch.object(OpenAlexClient, "_make_request")
     async def test_limit_capped(self, mock_req, client):
@@ -218,8 +220,9 @@ class TestGetWork:
         client = OpenAlexClient(email="test@example.com", api_key="oa-key")
         await client.get_work("10.1234/test")
         url = mock_req.call_args[0][0]
-        assert "api_key=oa-key" in url
-        assert "mailto=" not in url
+        assert "oa-key" not in url
+        assert "mailto=" in url
+        assert client._client.headers["Authorization"] == "Bearer oa-key"
 
 
 # ============================================================

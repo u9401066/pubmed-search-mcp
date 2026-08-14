@@ -349,6 +349,8 @@ def create_app(config: BrokerConfig) -> FastAPI:
 
 def main() -> None:
     """Run the browser fetch broker."""
+    from pubmed_search.shared.logging_utils import harden_http_client_logging
+
     parser = _build_parser()
     args = parser.parse_args()
     if not _is_loopback_host(args.host):
@@ -360,6 +362,7 @@ def main() -> None:
             "No browser broker token was configured. Generated runtime token (copy it to BROWSER_FETCH_TOKEN): %s",
             token,
         )
+    harden_http_client_logging()
     config = BrokerConfig(
         host=args.host,
         port=args.port,

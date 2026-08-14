@@ -204,7 +204,7 @@ class PipelineRun:
     pipeline_name: str
     started: datetime | None = None
     finished: datetime | None = None
-    status: Literal["success", "error", "timeout"] = "success"
+    status: Literal["success", "partial", "error", "timeout"] = "success"
     article_count: int = 0
     pmids: list[str] = field(default_factory=list)
     new_pmids: list[str] = field(default_factory=list)
@@ -258,7 +258,7 @@ class ScheduleEntry:
     timezone: str = "UTC"
     next_run: datetime | None = None
     last_run: datetime | None = None
-    last_status: Literal["scheduled", "success", "error"] = "scheduled"
+    last_status: Literal["scheduled", "success", "partial", "error"] = "scheduled"
     last_error: str | None = None
 
     def to_dict(self) -> dict[str, Any]:

@@ -8,7 +8,12 @@ summary metadata, and local/source-count audits for later retrieval.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Literal, cast
+
+from pubmed_search.shared.credential_sanitizer import (
+    extract_credential_values,
+    redact_known_credential_values,
+)
 
 ARTIFACT_SCHEMA_VERSION = "research-artifact/v1"
 DEFAULT_AUDIT_MODE = "source-counts"
@@ -35,6 +40,8 @@ class UnifiedSearchArtifactRequest:
     output_format: str
     advanced_filters: dict[str, Any]
     deep_search: bool
+    retrieval_mode: str = "auto"
+    include_clinical_trials: bool = False
 
 
 @dataclass(frozen=True)
@@ -43,6 +50,7 @@ class UnifiedSearchArtifactPlan:
 
     request: UnifiedSearchArtifactRequest
     query: str
+    provider_neutral_query: str
     analysis: Any
     icd_matches: list[Any]
     enhanced_query: Any
@@ -66,6 +74,10 @@ class UnifiedSearchArtifactExecution:
     source_disagreement: Any = None
     reproducibility_score: Any = None
     research_context_data: dict[str, Any] | None = None
+    source_metadata: dict[str, dict[str, Any]] | None = None
+    source_statuses: dict[str, str] | None = None
+    clinical_trials_query: str | None = None
+    clinical_trials_status: str = "not_requested"
 
 
 @dataclass(frozen=True)
@@ -95,6 +107,8 @@ def normalize_unified_search_artifact_input(
             output_format=str(getattr(request, "output_format", "json") or "json"),
             advanced_filters=dict(getattr(request, "advanced_filters", {}) or {}),
             deep_search=bool(getattr(request, "deep_search", False)),
+            retrieval_mode=str(getattr(request, "retrieval_mode", "auto") or "auto"),
+            include_clinical_trials=bool(getattr(request, "include_clinical_trials", False)),
         )
 
     if isinstance(plan, UnifiedSearchArtifactPlan):
@@ -103,6 +117,9 @@ def normalize_unified_search_artifact_input(
         normalized_plan = UnifiedSearchArtifactPlan(
             request=normalized_request,
             query=str(getattr(plan, "query", "") or normalized_request.query),
+            provider_neutral_query=str(
+                getattr(plan, "provider_neutral_query", "") or getattr(plan, "query", "") or normalized_request.query
+            ),
             analysis=getattr(plan, "analysis", None),
             icd_matches=list(getattr(plan, "icd_matches", []) or []),
             enhanced_query=getattr(plan, "enhanced_query", None),
@@ -126,6 +143,12 @@ def normalize_unified_search_artifact_input(
             source_disagreement=getattr(execution, "source_disagreement", None),
             reproducibility_score=getattr(execution, "reproducibility_score", None),
             research_context_data=getattr(execution, "research_context_data", None),
+            source_metadata=dict(getattr(execution, "source_metadata", {}) or {}),
+            source_statuses=dict(getattr(execution, "source_statuses", {}) or {}),
+            clinical_trials_query=getattr(execution, "clinical_trials_query", None),
+            clinical_trials_status=str(
+                getattr(execution, "clinical_trials_status", "not_requested") or "not_requested"
+            ),
         )
 
     return UnifiedSearchArtifactInput(
@@ -188,7 +211,7 @@ def _source_counts_payload(source_api_counts: dict[str, tuple[int, int | None]] 
         payload[str(source)] = {
             "returned": int(returned or 0),
             "available": int(total) if isinstance(total, int) else None,
-            "has_more": isinstance(total, int) and total > int(returned or 0),
+            "has_more": total > int(returned or 0) if isinstance(total, int) else None,
         }
     return payload
 
@@ -273,12 +296,73 @@ def build_unified_search_query_strategy(*, request: Any, plan: Any, execution: A
         "max_year": getattr(plan, "effective_max_year", None),
         "advanced_filters": getattr(request, "advanced_filters", {}),
     }
+    source_metadata = dict(getattr(execution, "source_metadata", {}) or {})
+    pubmed_query = str(getattr(plan, "query", "") or getattr(request, "query", ""))
+    provider_query = str(getattr(plan, "provider_neutral_query", "") or pubmed_query)
+    deep_strategy_queries: dict[str, list[str]] = {}
+    deep_metrics = getattr(execution, "deep_search_metrics", None)
+    for strategy in _list_attr(deep_metrics, "strategy_results"):
+        source = str(getattr(strategy, "source", "") or "")
+        query = str(getattr(strategy, "query", "") or "")
+        if source and query:
+            deep_strategy_queries.setdefault(source, []).append(query)
+    source_counts = dict(getattr(execution, "source_api_counts", {}) or {})
+    source_statuses = dict(getattr(execution, "source_statuses", {}) or {})
+    attempted_sources = list(source_counts)
+    for source in source_statuses:
+        if source not in attempted_sources:
+            attempted_sources.append(source)
+    for error in list(getattr(execution, "source_errors", []) or []):
+        source = str(error.get("source", "")) if isinstance(error, dict) else ""
+        if source and source not in attempted_sources:
+            attempted_sources.append(source)
+    if not attempted_sources:
+        attempted_sources = [
+            str(source) for source in list(getattr(plan, "dispatch_sources", []) or []) if source != "crossref"
+        ]
+
+    source_queries: dict[str, dict[str, Any]] = {}
+    for source in attempted_sources:
+        logical_query = pubmed_query if source == "pubmed" else provider_query
+        metadata = source_metadata.get(source, {})
+        physical_queries = list(metadata.get("physical_queries", []) or deep_strategy_queries.get(source, []))
+        if physical_queries:
+            physical_query = None
+        elif "physical_query" in metadata:
+            physical_query = metadata["physical_query"]
+        else:
+            physical_query = metadata.get("canonical_query") or logical_query
+        source_query: dict[str, Any] = {
+            "logical_query": logical_query,
+            "physical_query": physical_query,
+            "provider_mode": metadata.get("provider_mode", "default"),
+            "executed": bool(metadata.get("query_executed", bool(physical_queries) or physical_query is not None)),
+        }
+        if physical_queries:
+            source_query["physical_queries"] = physical_queries
+        if "local_filter" in metadata:
+            source_query["local_filter"] = metadata["local_filter"]
+        source_queries[str(source)] = source_query
+    executed_query = (
+        None if deep_metrics is not None else pubmed_query if "pubmed" in attempted_sources else provider_query
+    )
+    adjunct_queries: dict[str, dict[str, Any]] = {}
+    if request.include_clinical_trials:
+        adjunct_queries["clinical_trials"] = {
+            "logical_query": provider_query,
+            "physical_query": getattr(execution, "clinical_trials_query", None),
+            "status": getattr(execution, "clinical_trials_status", "not_requested"),
+        }
     return {
         "schema_version": ARTIFACT_SCHEMA_VERSION,
         "tool": "unified_search",
         "original_query": str(getattr(analysis, "original_query", "") or getattr(request, "query", "")),
         "normalized_query": str(getattr(analysis, "normalized_query", "") or ""),
-        "executed_query": str(getattr(plan, "query", "") or getattr(request, "query", "")),
+        "executed_query": executed_query,
+        "pubmed_query": pubmed_query,
+        "provider_neutral_query": provider_query,
+        "source_queries": source_queries,
+        "adjunct_queries": adjunct_queries,
         "analysis": _to_dict(analysis),
         "filters": filters,
         "requested_sources": getattr(request, "sources", None),
@@ -286,9 +370,12 @@ def build_unified_search_query_strategy(*, request: Any, plan: Any, execution: A
         "dispatch_sources": list(getattr(plan, "dispatch_sources", []) or []),
         "ranking": _value(getattr(request, "ranking", "")),
         "limit": int(getattr(request, "limit", 0) or 0),
+        "retrieval_mode": str(getattr(request, "retrieval_mode", "auto") or "auto"),
+        "clinical_trials_requested": bool(getattr(request, "include_clinical_trials", False)),
         "icd_matches": list(getattr(plan, "icd_matches", []) or []),
         "matched_entity_names": list(getattr(plan, "matched_entity_names", []) or []),
         "source_counts": _source_counts_payload(getattr(execution, "source_api_counts", None)),
+        "source_metadata": source_metadata,
         "deep_search": _deep_search_payload(plan, execution),
         "relaxation": _relaxation_payload(execution),
     }
@@ -558,6 +645,7 @@ def build_unified_search_artifact_envelope(
         "returned": len(list(getattr(execution, "ranked", []) or [])),
         "sources": source_summary,
         "source_errors": list(getattr(execution, "source_errors", []) or []),
+        "source_metadata": dict(getattr(execution, "source_metadata", {}) or {}),
         "audit": audit["summary"],
         "audit_status": audit["status"],
         "read_order": read_order,
@@ -574,6 +662,7 @@ def build_unified_search_artifact_envelope(
         "output_format": getattr(request, "output_format", primary_format),
         "primary_format": primary_format,
         "ranking": _value(getattr(request, "ranking", "")),
+        "retrieval_mode": str(getattr(request, "retrieval_mode", "auto") or "auto"),
         "limit": int(getattr(request, "limit", 0) or 0),
         "retrieval_contract": {
             "transport": "session-artifact",
@@ -581,7 +670,13 @@ def build_unified_search_artifact_envelope(
             "supports_paging": True,
         },
     }
-    return ResearchArtifactEnvelope(files=files, primary_file=primary_file, summary=summary, metadata=metadata)
+    credential_values = extract_credential_values(str(getattr(request, "query", "") or ""))
+    return ResearchArtifactEnvelope(
+        files=cast("dict[str, Any]", redact_known_credential_values(files, credential_values)),
+        primary_file=primary_file,
+        summary=cast("dict[str, Any]", redact_known_credential_values(summary, credential_values)),
+        metadata=cast("dict[str, Any]", redact_known_credential_values(metadata, credential_values)),
+    )
 
 
 __all__ = [

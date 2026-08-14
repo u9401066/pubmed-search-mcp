@@ -23,6 +23,8 @@ Use this agent for biomedical literature search, paper exploration, and Zotero i
    - `get_cached_article(pmid="...")`
    - `get_session_summary()`
    - When `unified_search` returns an `artifact_summary`, use `read_session(action="artifact", artifact_uri="...")` to inspect `audit.json`, `query_strategy.json`, and complete `results.json` or `results.toon`.
+   - Treat `source_errors` plus non-empty articles as a partial success. Preserve successful evidence, read the artifact audit first, and retry only failed/retryable sources when broader coverage is still required.
+   - For an interrupted or repeatable run, use `read_session(action="search_runs")`, inspect the selected `search_run`, then request `replay_search`; replay returns arguments and never executes a search implicitly.
 3. Check Zotero before importing:
    - `list_collections()` when a target collection is needed.
    - `check_articles_owned(articles=[...])` before import.
@@ -34,6 +36,7 @@ Use this agent for biomedical literature search, paper exploration, and Zotero i
 
 - Quick search: call `unified_search` and summarize the best matches.
 - Artifact-backed search: answer from the MCP summary first, then mention the artifact URI for deeper audit or re-reading.
+- Recoverable search: prefer stored artifact/search-run state over reconstructing a query from conversation or Copilot hook files.
 - PICO search: extract P/I/C/O in the agent, validate the handoff with `parse_pico`, then search with the returned pipeline or an expanded Boolean query.
 - Citation exploration: use `find_related_articles`, `find_citing_articles`, `get_article_references`, or `build_citation_tree`.
 - Research evolution: use `build_research_chronicle(topic="...")` when the user asks how a field developed. For a figure, use `output="mermaid"`: it combines a horizontal year spine with MeSH/keyword-supported lineage branches. Inspect `mermaid_validation.json` and disclose fallback tiers or omitted visual items; also report research-stage fallback, capped/unknown `returned` / `available` coverage, or at least 20% multi-signal branch overlap. It persists a versioned, evidence-backed chronicle, so a later `read_research_chronicle(action="diff", chronicle_id="...", from_revision=N)` answers "what changed since last time"; interpret absent entries as `not_observed_in_revision`, never proven retirement. Use `action="milestones"` for distribution stats and `action="compare", topics="a,b"` for cross-topic comparison; both read stored evidence and do not re-run a search.
@@ -46,3 +49,4 @@ Use this agent for biomedical literature search, paper exploration, and Zotero i
 - Prefer `collection_name` over raw collection keys unless the user gives an exact key.
 - Do not use hidden legacy Zotero PubMed bridge tools unless the user explicitly enables `ZOTERO_KEEPER_ENABLE_LEGACY_PUBMED_TOOLS=1`.
 - Mention API quota-sensitive actions when a workflow would fetch many records or full texts.
+- Copilot hook complexity and quality messages are advisory. Use structured counts, source status, artifact audit, and server validation as the authority; do not treat a short rendered response or zero-result search as a hook failure by itself.

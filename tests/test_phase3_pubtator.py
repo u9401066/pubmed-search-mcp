@@ -26,6 +26,7 @@ from pubmed_search.application.search.semantic_enhancer import (
     ExpandedTerm,
     SearchPlan,
     SemanticEnhancer,
+    _entity_cache_key,
     enhance_query,
 )
 from pubmed_search.infrastructure.cache.entity_cache import (
@@ -38,6 +39,7 @@ from pubmed_search.infrastructure.pubtator.models import (
     PubTatorEntity,
     RelationMatch,
 )
+from pubmed_search.shared.tenancy import TenantIdentity, bind_tenant
 
 # =============================================================================
 # SemanticEnhancer Tests
@@ -171,7 +173,7 @@ class TestSemanticEnhancerAsync:
         assert len(enhanced.strategies) >= 2
 
     @pytest.mark.asyncio
-    async def test_enhance_timeout_fallback(self):
+    async def test_enhance_timeout_fallback(self, caplog):
         """Test timeout handling."""
 
         # Create enhancer with very short timeout
@@ -187,11 +189,28 @@ class TestSemanticEnhancerAsync:
             timeout=0.1,  # Very short timeout
         )
 
-        enhanced = await enhancer.enhance("test query")
+        sensitive_query = "private patient cohort test query"
+        with caplog.at_level("WARNING"):
+            enhanced = await enhancer.enhance(sensitive_query)
 
         # Should fall back to basic enhancement
         assert enhanced.metadata["timeout"] is True
         assert "error" not in enhanced.metadata
+        assert sensitive_query not in caplog.text
+        assert f"query_length={len(sensitive_query)}" in caplog.text
+
+    def test_entity_cache_keys_are_opaque_and_tenant_scoped(self):
+        sensitive_term = "rare-private-phenotype-7f0a"
+        with bind_tenant(TenantIdentity.for_principal("researcher-a")):
+            first = _entity_cache_key(sensitive_term)
+        with bind_tenant(TenantIdentity.for_principal("researcher-b")):
+            second = _entity_cache_key(sensitive_term)
+
+        assert first.startswith("entity:v2:")
+        assert second.startswith("entity:v2:")
+        assert first != second
+        assert sensitive_term not in first
+        assert "researcher-a" not in first
 
 
 # =============================================================================

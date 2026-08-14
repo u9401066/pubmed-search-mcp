@@ -1,46 +1,19 @@
-# Session Init - sessionStart Hook (PowerShell)
-# ENCODING: Forces UTF-8 output.
-$ErrorActionPreference = "Stop"
-
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$OutputEncoding = [System.Text.Encoding]::UTF8
-
-try {
-    $rawInput = [Console]::In.ReadToEnd()
-    $source = "unknown"
-    if ($rawInput -and $rawInput.Trim().Length -gt 0) {
-        try {
-            $inputJson = $rawInput | ConvertFrom-Json -ErrorAction Stop
-            $source = if ($inputJson.source) { $inputJson.source } else { "unknown" }
-        } catch {
-            # Malformed input - continue with defaults
-        }
-    }
-
-    $stateDir = ".github/hooks/_state"
-    if (-not (Test-Path $stateDir)) {
-        New-Item -ItemType Directory -Path $stateDir -Force | Out-Null
-    }
-
-    # Clear stale state from previous session
-    Remove-Item "$stateDir/last_search_eval.json" -Force -ErrorAction SilentlyContinue
-    Remove-Item "$stateDir/last_research_eval.json" -Force -ErrorAction SilentlyContinue
-    Remove-Item "$stateDir/pending_complexity.json" -Force -ErrorAction SilentlyContinue
-    Remove-Item "$stateDir/workflow_tracker.json" -Force -ErrorAction SilentlyContinue
-
-    # Log session start
-    try {
-        $logEntry = @{
-            timestamp = (Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ")
-            source    = $source
-            event     = "session_start"
-        }
-        $logEntry | ConvertTo-Json -Compress | Add-Content "$stateDir/search_audit.jsonl" -Encoding UTF8
-    } catch {
-        # Audit log write failed - non-critical
-    }
-    exit 0
-} catch {
-    # Fail open - session init should never block
+# Thin wrapper; shared decisions live in hook_runtime.py for shell parity.
+$ErrorActionPreference = "SilentlyContinue"
+$utf8 = New-Object System.Text.UTF8Encoding($false)
+[Console]::InputEncoding = $utf8
+[Console]::OutputEncoding = $utf8
+$OutputEncoding = $utf8
+$rawInput = [Console]::In.ReadToEnd()
+$runtime = Join-Path $PSScriptRoot "hook_runtime.py"
+$python = if ($env:PUBMED_HOOK_PYTHON) {
+    $env:PUBMED_HOOK_PYTHON
+} elseif (Get-Command "python" -ErrorAction SilentlyContinue) {
+    "python"
+} elseif (Get-Command "python3" -ErrorAction SilentlyContinue) {
+    "python3"
+} else {
     exit 0
 }
+$rawInput | & $python $runtime "session-init" 2>$null
+exit 0

@@ -30,6 +30,8 @@ from .agent_output import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+
     from pubmed_search.application.search.query_analyzer import AnalyzedQuery
     from pubmed_search.application.search.ranking_algorithms import SourceDisagreement
     from pubmed_search.application.search.reproducibility import ReproducibilityScore
@@ -296,7 +298,7 @@ def _format_counts_first_section(
 
     for row in source_rows:
         total = row["total_available"] if row["total_available"] is not None else "?"
-        signal = "backlog" if row["has_more"] else "sampled"
+        signal = "unknown" if row["has_more"] is None else "backlog" if row["has_more"] else "sampled"
         output_parts.append(f"| {row['source']} | {row['returned']} | {total} | {signal} |")
 
     responded = sum(1 for row in source_rows if int(row["returned"] or 0) > 0)
@@ -339,6 +341,7 @@ async def _format_unified_results(
     source_disagreement: SourceDisagreement | None = None,
     reproducibility_score: ReproducibilityScore | None = None,
     source_errors: list[dict[str, Any]] | None = None,
+    source_metadata: dict[str, dict[str, Any]] | None = None,
     research_context_preview: str | None = None,
     counts_first: bool = False,
 ) -> str:
@@ -401,6 +404,12 @@ async def _format_unified_results(
             source_parts = [f"{row['source']} ({row['returned']})" for row in source_rows]
             output_parts.append(f"**Sources**: {', '.join(source_parts)}")
 
+        if source_metadata:
+            modes = [
+                f"{source}={metadata.get('provider_mode', 'default')}" for source, metadata in source_metadata.items()
+            ]
+            output_parts.append(f"**Retrieval modes**: {', '.join(modes)}")
+
         # Show total count info with PubMed total
         results_str = f"{stats.unique_articles} unique ({stats.duplicates_removed} duplicates removed)"
         if pubmed_total_count is not None and pubmed_total_count > stats.unique_articles:
@@ -411,6 +420,17 @@ async def _format_unified_results(
     source_warning_text = _format_source_warnings(source_errors)
     if source_warning_text:
         output_parts.append(source_warning_text)
+        output_parts.append("")
+
+    capability_warnings = [
+        f"- **{source}**: {warning}"
+        for source, metadata in (source_metadata or {}).items()
+        for warning in metadata.get("warnings", [])
+        if isinstance(warning, str) and warning
+    ]
+    if capability_warnings:
+        output_parts.append("### ⚠️ Retrieval capability notes\n")
+        output_parts.extend(capability_warnings)
         output_parts.append("")
 
     if counts_first and source_rows:
@@ -644,8 +664,8 @@ async def _format_unified_results(
             )
 
             output_parts.append(format_trials_section(prefetched_trials, max_display=3))
-        except Exception as e:
-            logger.debug(f"Clinical trials search skipped: {e}")
+        except Exception as exc:
+            logger.debug("Clinical trials search skipped (%s)", type(exc).__name__)
 
     return "\n".join(output_parts)
 
@@ -738,6 +758,10 @@ def _serialize_truncated_response_payload(
         truncated_payload["artifact_summary"] = payload["artifact_summary"]
     if payload.get("source_errors"):
         truncated_payload["source_errors"] = payload["source_errors"]
+    if payload.get("search_status"):
+        truncated_payload["search_status"] = payload["search_status"]
+    if payload.get("search_run"):
+        truncated_payload["search_run"] = payload["search_run"]
 
     capped = serialize_structured_payload(truncated_payload, output_format)
     while max_response_chars is not None and len(capped) > max_response_chars and preview_count > 0:
@@ -751,6 +775,13 @@ def _serialize_truncated_response_payload(
     minimal_payload: dict[str, Any] | None = None
     if max_response_chars is not None and len(capped) > max_response_chars:
         minimal_payload = {"status": "truncated"}
+        if payload.get("search_run"):
+            search_run = payload["search_run"]
+            minimal_payload["search_run"] = {
+                key: search_run.get(key)
+                for key in ("run_id", "status", "recoverable")
+                if search_run.get(key) not in (None, "", [])
+            }
         if payload.get("source_errors"):
             minimal_payload["source_errors"] = [
                 {
@@ -868,6 +899,66 @@ def _artifact_response_summary(artifact_manifest: dict[str, Any] | None) -> dict
     }
 
 
+def _build_search_status(
+    *,
+    articles: list[UnifiedArticle],
+    source_rows: Sequence[Mapping[str, Any]],
+    source_errors: list[dict[str, Any]] | None,
+    source_metadata: dict[str, dict[str, Any]] | None,
+    source_statuses: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
+    """Build a truthful, machine-oriented bounded-search outcome summary."""
+    errors = [error for error in list(source_errors or []) if isinstance(error, dict)]
+    error_sources = {str(error.get("source")) for error in errors if error.get("source")}
+    statuses = dict(source_statuses or {})
+    responding_statuses = {"ok", "empty", "partial", "completed"}
+    failed_sources = sorted(
+        source for source in error_sources if statuses.get(source, "error") not in responding_statuses
+    )
+    retryable_sources = sorted(
+        {str(error.get("source")) for error in errors if error.get("source") and error.get("retryable")}
+    )
+    attempted_sources = [str(row.get("source")) for row in source_rows if row.get("source")]
+    for source in failed_sources:
+        if source not in attempted_sources:
+            attempted_sources.append(source)
+    successful_sources = [
+        source
+        for source in attempted_sources
+        if statuses.get(source) in responding_statuses or (source not in error_sources and source not in failed_sources)
+    ]
+    continuation_sources = sorted(
+        source
+        for source, metadata in dict(source_metadata or {}).items()
+        if isinstance(metadata, dict) and metadata.get("continuation_available") is True
+    )
+    unknown_completeness_sources = sorted(
+        str(row.get("source")) for row in source_rows if row.get("source") and row.get("has_more") is None
+    )
+
+    if errors and (articles or successful_sources):
+        state = "partial"
+    elif errors:
+        state = "failed"
+    elif articles:
+        state = "completed"
+    else:
+        state = "empty"
+
+    return {
+        "state": state,
+        "bounded": True,
+        "exhaustive": False,
+        "returned": len(articles),
+        "attempted_sources": attempted_sources,
+        "successful_sources": successful_sources,
+        "failed_sources": failed_sources,
+        "retryable_sources": retryable_sources,
+        "continuation_available_sources": continuation_sources,
+        "unknown_completeness_sources": unknown_completeness_sources,
+    }
+
+
 def _format_as_json(
     articles: list[UnifiedArticle],
     analysis: AnalyzedQuery,
@@ -879,6 +970,8 @@ def _format_as_json(
     reproducibility_score: ReproducibilityScore | None = None,
     research_context: dict | None = None,
     source_errors: list[dict[str, Any]] | None = None,
+    source_metadata: dict[str, dict[str, Any]] | None = None,
+    source_statuses: Mapping[str, str] | None = None,
     counts_first: bool = False,
     compact_output: bool = False,
     include_analysis: bool = True,
@@ -888,10 +981,18 @@ def _format_as_json(
     max_response_chars: int | None = DEFAULT_STRUCTURED_RESPONSE_MAX_CHARS,
     output_format: OutputFormat = "json",
     artifact_manifest: dict[str, Any] | None = None,
+    search_run_handoff: dict[str, Any] | None = None,
 ) -> str:
     """Format results as JSON or TOON for programmatic access."""
     source_rows = _serialize_source_counts(source_api_counts, stats)
     artifact_summary = _artifact_response_summary(artifact_manifest)
+    search_status = _build_search_status(
+        articles=articles,
+        source_rows=source_rows,
+        source_errors=source_errors,
+        source_metadata=source_metadata,
+        source_statuses=source_statuses,
+    )
     if _should_pretruncate_structured_response(
         articles,
         max_response_chars=max_response_chars,
@@ -900,13 +1001,18 @@ def _format_as_json(
         cap_context: dict[str, Any] = {
             "tool": "unified_search",
             "source_counts": source_rows,
+            "search_status": search_status,
         }
         if source_errors:
             cap_context["source_errors"] = source_errors
+        if source_metadata:
+            cap_context["source_metadata"] = source_metadata
         if artifact_manifest:
             cap_context["artifact"] = artifact_manifest
         if artifact_summary:
             cap_context["artifact_summary"] = artifact_summary
+        if search_run_handoff:
+            cap_context["search_run"] = search_run_handoff
         return _serialize_truncated_response_payload(
             cap_context,
             articles=articles,
@@ -927,6 +1033,7 @@ def _format_as_json(
             for a in articles
         ],
         "source_counts": source_rows,
+        "search_status": search_status,
     }
     if include_analysis:
         result["analysis"] = analysis.to_dict()
@@ -936,11 +1043,15 @@ def _format_as_json(
 
     if source_errors:
         result["source_errors"] = source_errors
+    if source_metadata:
+        result["source_metadata"] = source_metadata
 
     if artifact_manifest:
         result["artifact"] = artifact_manifest
     if artifact_summary:
         result["artifact_summary"] = artifact_summary
+    if search_run_handoff:
+        result["search_run"] = search_run_handoff
 
     # Add deep search metrics if available
     if include_analysis and deep_search_metrics:

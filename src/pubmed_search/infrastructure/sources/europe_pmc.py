@@ -24,7 +24,8 @@ from typing import TYPE_CHECKING, Any
 
 from defusedxml import ElementTree  # Security: prevent XML attacks
 
-from pubmed_search.infrastructure.sources.base_client import BaseAPIClient
+from pubmed_search.infrastructure.sources.base_client import APIRequestError, BaseAPIClient
+from pubmed_search.shared.async_utils import RetryableOperationError
 
 if TYPE_CHECKING:
     from xml.etree.ElementTree import Element
@@ -83,6 +84,7 @@ class EuropePMCClient(BaseAPIClient):
         has_fulltext: bool = False,
         sort: str | None = None,
         cursor_mark: str = "*",
+        strict: bool = False,
     ) -> dict[str, Any]:
         """
         Search Europe PMC publications.
@@ -131,9 +133,20 @@ class EuropePMCClient(BaseAPIClient):
             data = await self._make_request(url)
 
             if not isinstance(data, dict):
+                if strict:
+                    self._raise_strict_request_error()
                 return {"results": [], "hit_count": 0}
 
-            results = data.get("resultList", {}).get("result", [])
+            raw_result_list = data.get("resultList")
+            if not isinstance(raw_result_list, dict):
+                if strict:
+                    self._raise_strict_request_error()
+                return {"results": [], "hit_count": 0}
+            results = raw_result_list.get("result", [])
+            if not isinstance(results, list):
+                if strict:
+                    self._raise_strict_request_error()
+                return {"results": [], "hit_count": 0}
 
             return {
                 "results": [self._normalize_article(r) for r in results],
@@ -142,8 +155,15 @@ class EuropePMCClient(BaseAPIClient):
                 "next_page_url": data.get("nextPageUrl"),
             }
 
-        except Exception as e:
-            logger.exception(f"Europe PMC search failed: {e}")
+        except (APIRequestError, RetryableOperationError):
+            if strict:
+                raise
+            logger.warning("Europe PMC search failed (upstream request error)")
+            return {"results": [], "hit_count": 0}
+        except Exception as exc:
+            logger.warning("Europe PMC search failed (%s)", type(exc).__name__)
+            if strict:
+                raise APIRequestError(self._service_name) from None
             return {"results": [], "hit_count": 0}
 
     async def get_article(

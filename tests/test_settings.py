@@ -60,14 +60,17 @@ class TestAppSettings:
         assert settings.scopus_api_key == "licensed-key"
         assert settings.web_of_science_enabled is True
         assert settings.web_of_science_api_key == "wos-key"
-        assert settings.openalex_api_key == "openalex-key"
+        assert settings.openalex_api_key is not None
+        assert settings.openalex_api_key.get_secret_value() == "openalex-key"
 
     def test_semantic_scholar_api_key_strips_empty_values(self, monkeypatch):
         monkeypatch.setenv("SEMANTIC_SCHOLAR_API_KEY", "  ")
         assert load_settings().semantic_scholar_api_key is None
 
         monkeypatch.setenv("SEMANTIC_SCHOLAR_API_KEY", " s2-key ")
-        assert load_settings().semantic_scholar_api_key == "s2-key"
+        semantic_key = load_settings().semantic_scholar_api_key
+        assert semantic_key is not None
+        assert semantic_key.get_secret_value() == "s2-key"
 
     def test_ncbi_api_key_strips_empty_values(self, monkeypatch):
         monkeypatch.setenv("NCBI_API_KEY", "  ")
@@ -80,7 +83,19 @@ class TestAppSettings:
         monkeypatch.delenv("SEMANTIC_SCHOLAR_API_KEY", raising=False)
         monkeypatch.setenv("S2_API_KEY", " alias-key ")
 
-        assert load_settings().semantic_scholar_api_key == "alias-key"
+        semantic_key = load_settings().semantic_scholar_api_key
+        assert semantic_key is not None
+        assert semantic_key.get_secret_value() == "alias-key"
+
+    def test_provider_keys_are_redacted_from_settings_repr(self, monkeypatch):
+        monkeypatch.setenv("OPENALEX_API_KEY", "openalex-secret")
+        monkeypatch.setenv("SEMANTIC_SCHOLAR_API_KEY", "semantic-secret")
+
+        rendered = repr(load_settings())
+
+        assert "openalex-secret" not in rendered
+        assert "semantic-secret" not in rendered
+        assert "**********" in rendered
 
     def test_empty_openurl_values_are_allowed(self, monkeypatch):
         monkeypatch.setenv("OPENURL_RESOLVER", "")

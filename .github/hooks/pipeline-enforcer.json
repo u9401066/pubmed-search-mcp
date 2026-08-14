@@ -8,7 +8,7 @@
         "powershell": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/hooks/copilot/session-init.ps1",
         "cwd": ".",
         "timeoutSec": 10,
-        "comment": "Load available pipelines and set context for the agent"
+        "comment": "Recover privacy-safe workflow state and set agent context"
       }
     ],
     "userPromptSubmitted": [
@@ -18,7 +18,7 @@
         "powershell": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/hooks/copilot/analyze-prompt.ps1",
         "cwd": ".",
         "timeoutSec": 5,
-        "comment": "Detect research intent and recommend pipeline mode"
+        "comment": "Detect research intent transiently and persist only an opaque fingerprint"
       }
     ],
     "preToolUse": [
@@ -28,7 +28,7 @@
         "powershell": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/hooks/copilot/enforce-pipeline.ps1",
         "cwd": ".",
         "timeoutSec": 5,
-        "comment": "Copilot-only workflow guardrails for search, discovery, fulltext, session, export, and pipeline tools"
+        "comment": "Copilot-only advisory guidance; heuristic rules never hard-block a valid tool call"
       }
     ],
     "postToolUse": [
@@ -38,7 +38,7 @@
         "powershell": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/hooks/copilot/evaluate-results.ps1",
         "cwd": ".",
         "timeoutSec": 10,
-        "comment": "Copilot-only evaluation of research tool quality and workflow state for the next preToolUse"
+        "comment": "Evaluate structured result, source status, and artifact recovery state"
       }
     ],
     "sessionEnd": [
@@ -48,7 +48,7 @@
         "powershell": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/hooks/copilot/session-cleanup.ps1",
         "cwd": ".",
         "timeoutSec": 5,
-        "comment": "Clean up temporary state files"
+        "comment": "Remove ephemeral markers while preserving a recoverable workflow tracker"
       }
     ]
   }

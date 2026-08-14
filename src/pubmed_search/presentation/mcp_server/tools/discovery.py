@@ -375,7 +375,13 @@ def register_discovery_tools(mcp: MCPServer, searcher: LiteratureSearcher):
         # cross_search_fallback: Auto-search alternate sources if PubMed < threshold
         # cross_search_threshold: Minimum results before triggering cross-search
 
-        logger.info(f"Searching literature: query='{query}', limit={limit}, source='{source}', strategy='{strategy}'")
+        logger.info(
+            "Searching literature (query_length=%s, limit=%s, source=%s, strategy=%s)",
+            len(query),
+            limit,
+            source,
+            strategy,
+        )
         try:
             if not query:
                 return "Error: Query is required."
@@ -402,7 +408,7 @@ def register_discovery_tools(mcp: MCPServer, searcher: LiteratureSearcher):
             if not force_refresh and not has_filters:
                 cached = check_cache(query, limit)
                 if cached:
-                    logger.info(f"Returning {len(cached)} cached results for '{query}'")
+                    logger.info("Returning %s cached literature results", len(cached))
                     result = format_search_results(cached[:limit]) + "\n\n_(cached results)_"
                     result += _format_ambiguity_hint(ambiguous, query)
                     return result
@@ -476,7 +482,7 @@ def register_discovery_tools(mcp: MCPServer, searcher: LiteratureSearcher):
 
             return result
         except Exception as e:
-            logger.exception(f"Search failed: {e}")
+            logger.warning("Literature search failed (%s)", type(e).__name__)
             return f"Error: {e}"
 
     async def _search_alternate_source_internal(
@@ -524,7 +530,7 @@ def register_discovery_tools(mcp: MCPServer, searcher: LiteratureSearcher):
             return result
 
         except Exception as e:
-            logger.exception(f"Alternate source search failed: {e}")
+            logger.warning("Alternate source search failed (%s)", type(e).__name__)
             return f"Error searching {source}: {e}"
 
     async def _perform_cross_search_fallback(
@@ -575,7 +581,7 @@ def register_discovery_tools(mcp: MCPServer, searcher: LiteratureSearcher):
             return output
 
         except Exception as e:
-            logger.warning(f"Cross-search fallback failed: {e}")
+            logger.warning("Cross-search fallback failed (%s)", type(e).__name__)
             return ""
 
     @mcp.tool()
@@ -668,7 +674,7 @@ def register_discovery_tools(mcp: MCPServer, searcher: LiteratureSearcher):
             output += format_search_results(results)
             return output
         except Exception as e:
-            logger.exception(f"Find related articles failed: {e}")
+            logger.warning("Related-article lookup failed (%s)", type(e).__name__)
             return ResponseFormatter.error(
                 error=e,
                 suggestion="Check PMID format and try again",
@@ -756,7 +762,7 @@ def register_discovery_tools(mcp: MCPServer, searcher: LiteratureSearcher):
             output += format_search_results(results)
             return output
         except Exception as e:
-            logger.exception(f"Find citing articles failed: {e}")
+            logger.warning("Citing-article lookup failed (%s)", type(e).__name__)
             return ResponseFormatter.error(
                 error=e,
                 suggestion="Check PMID format and try again",
@@ -847,7 +853,7 @@ def register_discovery_tools(mcp: MCPServer, searcher: LiteratureSearcher):
             output += format_search_results(results)
             return output
         except Exception as e:
-            logger.exception(f"Get article references failed: {e}")
+            logger.warning("Article-reference lookup failed (%s)", type(e).__name__)
             return ResponseFormatter.error(
                 error=e,
                 suggestion="Check PMID format and try again",
@@ -955,7 +961,7 @@ def register_discovery_tools(mcp: MCPServer, searcher: LiteratureSearcher):
 
             return format_search_results(results, include_doi=True)
         except Exception as e:
-            logger.exception(f"Fetch details failed: {e}")
+            logger.warning("Article-detail lookup failed (%s)", type(e).__name__)
             return ResponseFormatter.error(
                 error=e,
                 suggestion="Check PMID format and try again",
@@ -1146,7 +1152,7 @@ def register_discovery_tools(mcp: MCPServer, searcher: LiteratureSearcher):
             return output
 
         except Exception as e:
-            logger.exception(f"Get citation metrics failed: {e}")
+            logger.warning("Citation-metrics lookup failed (%s)", type(e).__name__)
             return ResponseFormatter.error(
                 error=e,
                 suggestion="Check PMID format and try again",

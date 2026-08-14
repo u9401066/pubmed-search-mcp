@@ -49,6 +49,8 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     # Reproducibility
     "ReproducibilityScore": ("pubmed_search.application.search.reproducibility", "ReproducibilityScore"),
     "calculate_reproducibility": ("pubmed_search.application.search.reproducibility", "calculate_reproducibility"),
+    # Provider-neutral source contract
+    "SourceSearchPage": ("pubmed_search.application.search.source_models", "SourceSearchPage"),
 }
 
 __all__ = list(_LAZY_EXPORTS)

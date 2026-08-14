@@ -1,265 +1,193 @@
-# OpenAlex API Reference
+# OpenAlex：Capability-aware Search、Cursor 與 Snapshot
 
-> 官方文檔: https://docs.openalex.org/
+> Verified against the official service on **2026-08-14**. OpenAlex is an
+> internal source of `unified_search`; it is not a separate MCP search tool.
 
-## 概述
+## 決策摘要
 
-OpenAlex 是完全開放的學術文獻目錄，命名來自亞歷山大圖書館。
-- **收錄量**: 240M+ works，每天新增約 50,000 篇
-- **免費**: 無需 API key，每日 100,000 requests
-- **Polite Pool**: 加上 `mailto=your@email.com` 可獲得更高限額
+OpenAlex 在本專案有三種不同尺度：
 
-## API 基礎
+1. **Keyword API**：一般跨領域 discovery。
+2. **Native semantic API**：使用者或 planner 明確需要語意檢索時的 bounded mode。
+3. **Snapshot/sync data plane**：operator 管理的大型本地資料流程。
 
-```
-Base URL: https://api.openalex.org
-```
+Cursor、semantic 與 snapshot 都是 broker/application capability，不新增
+`search_openalex`、`semantic_search` 或 `snapshot_search` MCP tool；通用文獻搜尋
+仍只有 `unified_search`。
 
-### Rate Limits
-- 無 API key: 100,000 requests/day
-- Polite pool (有 email): 更高限額
-- 建議: 每個請求加上 `mailto` 參數
+### 本輪 runtime 狀態
 
-## Works 搜尋
+| 能力 | 已落地行為 | 公開邊界 |
+| --- | --- | --- |
+| Keyword | raw works DTO 經 `SourceSearchPage` 只 map 一次；`per_page <= 100`、root-only `select` | `unified_search(sources="openalex")` |
+| Native semantic | `options="native_semantic"` 選 `search.semantic`；2,000 chars、50 results、獨立 1 RPS limiter | 同一個 `unified_search` |
+| Systematic | `options="systematic"` 使用 publication-date ascending 的 bounded cursor traversal | 同一個 `unified_search`；public `limit <= 100` |
+| Cost/provenance | 保存 safe `x_query` / OQL、`meta.cost_usd` 與 allowlisted rate headers；低 credit 產生 warning | JSON/TOON `source_metadata` 與 artifact query strategy |
+| Snapshot | registry 宣告 provider 有 operator data plane | 尚未實作 local snapshot downloader/index adapter |
 
-### 基本搜尋
-```
-GET /works?search=<query>
-```
+有 API key 時，本 repo 以 `Authorization: Bearer ...` 傳送，避免 secret 進入
+query string；`mailto` 仍是非秘密 contact hint。Key 在 settings 中以 secret
+型別保存，只有建立 client 時解包。
 
-搜尋範圍：title, abstract, fulltext
+## 官方契約
 
-**範例:**
-```
-https://api.openalex.org/works?search=machine%20learning
-```
+- [API endpoints](https://help.openalex.org/api/endpoints/)
+- [Authentication and budgets](https://help.openalex.org/api/authentication/)
+- [Searching](https://help.openalex.org/api/searching/)
+- [Semantic search](https://help.openalex.org/api/semantic-search/)
+- [Filtering](https://help.openalex.org/api/filtering/)
+- [Paging and cursor](https://help.openalex.org/api/paging/)
+- [Selecting fields](https://help.openalex.org/api/selecting-fields/)
+- [Errors](https://help.openalex.org/api/errors/)
+- [Snapshot](https://help.openalex.org/access/snapshot/)
+- [Sync](https://help.openalex.org/access/sync/)
+- [Full-text rights](https://help.openalex.org/access/fulltext/)
 
-### 進階搜尋語法
+OpenAlex 的 budget/pricing 與 corpus size 會變動。程式以 response headers、
+`meta.cost_usd`、manifest 與當前 operator plan 為準，不把文件快照寫成永久 SLA。
 
-#### Boolean 搜尋
-- `AND`, `OR`, `NOT` (必須大寫)
-- 引號精確匹配: `"exact phrase"`
-- 括號控制優先級
+## Endpoint families
 
-**範例:**
-```
-/works?search=(diabetes AND treatment) NOT review
-/works?search="machine learning" AND healthcare
-```
+OpenAlex 不只 `/works`。目前主要 entity families 包括 works、authors、sources、
+institutions、publishers、funders、awards、topics/subfields/fields/domains、keywords、
+SDGs，以及 vocabulary endpoints。`concepts` 已 deprecated；新知識工作流應優先
+使用 topics/keywords，並標記它們是 OpenAlex model inference。
 
-#### 搜尋特定欄位
-```
-/works?filter=title.search:machine%20learning
-/works?filter=abstract.search:deep%20learning
-/works?filter=fulltext.search:CRISPR
-/works?filter=title_and_abstract.search:neural%20network
-```
+本 repo 的文獻 broker 以 `/works` 為主；其他 entity metadata 應作 enrichment 或
+Research Chronicle/knowledge graph 的明確 section，不直接擴張 MCP 搜尋工具表面。
 
-## Filters 過濾器
+## Keyword search
 
-### 日期過濾
-```
-from_publication_date:2020-01-01
-to_publication_date:2024-12-31
-publication_year:2023
-```
+Works `search` 查 title、abstract 與可用 full text。重要限制：
 
-### Open Access 過濾
-```
-is_oa:true                              # 任何 OA
-open_access.oa_status:gold              # Gold OA
-open_access.oa_status:green             # Green OA
-locations.source.is_in_doaj:true        # DOAJ 期刊
-has_oa_accepted_or_published_version:true
-```
+- supported `per_page <= 100`；舊有 200 頁面大小不得再使用
+- basic paging 視窗最多 10,000；更深的 bounded traversal 使用 cursor
+- OR values 每組最多 100
+- `select` 只能選 root-level fields，不能 dotted nested select
+- URL 長度有限；大型 OR query 要由 compiler 分塊、union/dedup 並保存 physical
+  query provenance
+- `search`、`search.exact`、`search.semantic` 一次只能使用一種
 
-### 識別碼過濾
-```
-doi:10.1234/example
-ids.pmid:12345678                       # 或 pmid:12345678
-ids.pmcid:PMC1234567
-has_pmid:true
-has_doi:true
-```
+為避免大 payload，works search 只取 mapper 所需 root fields，例如 identifiers、
+title/display name、abstract inverted index、publication date/year、authorships、
+primary location、OA locations、citation count 與 type。
 
-### 引用過濾
-```
-cited_by_count:>100                     # 被引用超過100次
-cites:W2741809807                       # 引用特定論文
-cited_by:W2766808518                    # 被特定論文引用
-```
+## Native semantic search
 
-### 組合過濾 (邏輯運算)
+`search.semantic` 使用 title/abstract embeddings。官方限制：
 
-| 運算 | 符號 | 範例 |
-|------|------|------|
-| AND | `,` 或 `+` | `is_oa:true,cited_by_count:>10` |
-| OR | `|` | `publication_year:2022|2023` |
-| NOT | `!` | `country_code:!us` |
+- input 最多 2,000 characters
+- 最多 50 results
+- 1 request/second
+- 只有 works endpoint
+- 部分 filters 不支援，包括官方列出的 country/citation-related filters
 
-## Sort 排序
+Semantic mode 必須是 capability-aware plan：
 
-```
-?sort=<field>:<direction>
-```
+1. validate query length、limit 與 filters；
+2. 使用獨立 shared limiter；
+3. 保存 mode、canonical query 與 warnings；
+4. 若 policy 允許 fallback keyword，必須明示語意改變，不能 silent fallback。
 
-可用欄位:
-- `display_name` - 標題
-- `cited_by_count` - 引用次數
-- `publication_date` - 出版日期
-- `relevance_score` - 相關性 (需有 search)
+目前明確指定不支援 semantic mode 的 source 會在 network call 前拒絕；未指定
+`sources` 時 planner 只保留／補入有 semantic capability 的 OpenAlex。Runtime
+不做 silent keyword fallback：
 
-**範例:**
-```
-/works?search=diabetes&sort=cited_by_count:desc
-/works?search=AI&sort=publication_date:desc,relevance_score:desc
-```
-
-**注意**: `relevance_score` 只有在有 search 查詢時才能使用！
-
-## 分頁
-
-```
-?per_page=50&page=2
-```
-- `per_page`: 每頁筆數 (最大 200)
-- `page`: 頁碼
-
-## Work Object 重要欄位
-
-```json
-{
-  "id": "https://openalex.org/W2741809807",
-  "doi": "https://doi.org/10.1038/s41586-019-1099-1",
-  "title": "...",
-  "display_name": "...",
-  "publication_year": 2019,
-  "publication_date": "2019-04-17",
-  "type": "article",
-
-  "ids": {
-    "openalex": "https://openalex.org/W2741809807",
-    "doi": "https://doi.org/10.1038/s41586-019-1099-1",
-    "pmid": "https://pubmed.ncbi.nlm.nih.gov/30971826",
-    "pmcid": "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6538672"
-  },
-
-  "authorships": [
-    {
-      "author": {
-        "id": "https://openalex.org/A1234567890",
-        "display_name": "Author Name",
-        "orcid": "https://orcid.org/0000-0001-2345-6789"
-      },
-      "institutions": [...],
-      "is_corresponding": true
-    }
-  ],
-
-  "primary_location": {
-    "source": {
-      "id": "https://openalex.org/S123456789",
-      "display_name": "Nature",
-      "issn_l": "0028-0836",
-      "is_in_doaj": false
-    },
-    "is_oa": true
-  },
-
-  "open_access": {
-    "is_oa": true,
-    "oa_status": "gold",
-    "any_repository_has_fulltext": true
-  },
-
-  "best_oa_location": {
-    "pdf_url": "https://...",
-    "is_oa": true,
-    "version": "publishedVersion"
-  },
-
-  "cited_by_count": 1234,
-  "referenced_works": [...],
-  "abstract_inverted_index": {...}
-}
-```
-
-### Abstract Inverted Index
-
-OpenAlex 使用倒排索引儲存摘要以節省空間：
-
-```json
-{
-  "abstract_inverted_index": {
-    "This": [0],
-    "study": [1, 15],
-    "examines": [2],
-    "the": [3, 10],
-    ...
-  }
-}
-```
-
-重建方法：
 ```python
-def reconstruct_abstract(inverted_index):
-    word_positions = []
-    for word, positions in inverted_index.items():
-        for pos in positions:
-            word_positions.append((pos, word))
-    word_positions.sort()
-    return " ".join(word for _, word in word_positions)
+unified_search(
+    query="mechanisms of treatment resistance",
+    sources="openalex",
+    options="native_semantic",
+    limit=50,
+    output_format="json",
+)
 ```
 
-## 實用查詢範例
+## Cursor 與 bounded pagination
 
-### 1. 搜尋最新高引用 OA 論文
-```
-/works?search=machine%20learning&filter=is_oa:true,cited_by_count:>50,from_publication_date:2020-01-01&sort=cited_by_count:desc&per_page=20
+Cursor 起始為 `cursor=*`，每頁使用 `meta.next_cursor`，null 表示終止。Broker
+必須：
+
+- 設定 max pages/results/time/cost
+- 偵測 repeated cursor
+- partial failure 時回傳已取得資料與 structured warning
+- 把 opaque cursor 視為短期 continuation/checkpoint，不當永久 record ID
+- 保存 `meta.count`、`meta.x_query`、`meta.cost_usd` 與 page provenance
+
+官方明示不應用 cursor 下載整個 corpus；整庫與本地 mirror 使用 snapshot。
+
+`options="systematic"` 會以 `publication_date:asc` 執行 bounded cursor，
+並保存 `pages_fetched`、`bounded`、canonical query、continuation 與 cost。
+由於 public `unified_search limit <= 100`，目前這是有界 reproducibility mode，
+不是通往全 corpus 的隱藏下載路徑。
+
+## Authentication、credits 與 resilience
+
+- anonymous casual usage 仍可運作，但 budget 很小且不是 SLA。
+- API key 提供較高的日 credit budget；上游可接受 query param 或 Bearer，本 repo
+  固定使用 Bearer，避免把 key 放進 loggable URL。
+- 最大 request rate 與 daily credits 是兩個不同限制；低於 RPS 仍可能耗盡 credits。
+- 保存並解析 `X-RateLimit-Limit`、`Remaining`、`Credits-Used`、`Reset` 與
+  `meta.cost_usd`，讓 broker 做 bounded budget 決策。
+- 400 不重試；429/5xx 遵守 Retry-After/backoff/circuit breaker。
+- 多 worker service 不能讓每個 process 各自放大同一 credential budget；正式水平
+  擴展需要 shared ledger/limiter。
+
+## Snapshot 與 sync data plane
+
+Public snapshot 提供壓縮 JSONL/Parquet，規模是數百 GB、解壓後數 TB；不屬於預設
+安裝或 MCP request 路徑。
+
+- manifest 最後發布；指定 format/entity 的 manifest 存在才代表 release 完成
+- 下載前後重取 manifest；若 release 改變，不 commit 混合版本
+- partitions 依 updated date 移動，local index 以 OpenAlex ID upsert
+- 必須 reconciliation 消失／deleted records；不能自行猜 merged aliases
+- current snapshot 與 API shape 大致相同，但不是所有欄位完全一致
+- 預設只規劃 selective profile；full corpus、content、TEI/PDF 全部 opt-in
+
+這些 snapshot/sync 條目是後續 operator contract。本輪 registry 的
+`operator_data_plane="provider_available"` 只表示官方路徑存在；repo 尚未宣稱已
+建立 manifest checkpoint、downloader 或可搜尋的 local OpenAlex index。
+
+OpenAlex metadata 是 CC0，但 linked PDF/full text 保留原始 copyright/license。
+Metadata openness 不能推導出全文或 figure 的再散布權。
+
+## 正規化與 provenance
+
+OpenAlex payload 只 map 一次：
+
+```text
+OpenAlex response DTO + meta/rate headers
+  -> source response envelope
+  -> article mapper
+  -> UnifiedArticle
+  -> aggregation / ranking / Chronicle
 ```
 
-### 2. 搜尋有 PMID 的醫學論文
-```
-/works?search=diabetes%20treatment&filter=has_pmid:true&sort=relevance_score:desc
-```
+不得先把原生 authorships/IDs/OA fields 改成 PubMed-like dict，再交給期待原生
+OpenAlex schema 的 mapper。Envelope 應保留：
 
-### 3. 搜尋 DOAJ 期刊的 Gold OA 論文
-```
-/works?search=anesthesia&filter=locations.source.is_in_doaj:true,is_oa:true&sort=publication_date:desc
-```
+- items、total、next cursor
+- keyword/semantic mode
+- canonical `x_query` 與 physical chunks
+- cost/rate metadata
+- access path、fetched/release time
+- unsupported-filter/fallback warnings
 
-### 4. 找出引用特定論文的文獻
-```
-/works?filter=cites:W2741809807&sort=cited_by_count:desc
-```
+Topics、keywords 與 related-work signals 要標記 `inferred_by_openalex`；它們可協助
+branching/ranking，但不能被敘述成作者明示的研究結論。
 
-### 5. 搜尋特定年份範圍
-```
-/works?search=propofol&filter=from_publication_date:2020-01-01,to_publication_date:2024-12-31
-```
+## 測試契約
 
-## 與 PubMed 格式對應
+- runtime search tool group exact 等於 `['unified_search']`
+- raw fixture 經 client→runner→mapper 保留 OpenAlex ID、authors、DOI/PMID、OA、
+  article type 與 citation metrics
+- 所有 list endpoints page size <=100
+- root-only select、OR 100、URL chunk union/dedup
+- cursor null/repeat/resume/budget/partial failure
+- semantic 2,000-char、50-result、1-RPS 與 unsupported filters
+- cost/rate headers、429 reset、400 no-retry、5xx backoff
+- snapshot manifest-before/after consistency、atomic publish、partition reconciliation
 
-| OpenAlex | PubMed |
-|----------|--------|
-| `id` | - |
-| `ids.pmid` | `pmid` |
-| `ids.pmcid` | `pmc_id` |
-| `ids.doi` | `doi` |
-| `display_name` / `title` | `title` |
-| `authorships[].author.display_name` | `authors` |
-| `abstract_inverted_index` | `abstract` |
-| `primary_location.source.display_name` | `journal` |
-| `publication_year` | `year` |
-| `publication_date` | `pub_date` |
-| `cited_by_count` | - |
-| `open_access.is_oa` | - |
-| `best_oa_location.pdf_url` | - |
-
-## 注意事項
-
-1. **Sort relevance_score**: 只有在有 search 查詢時才能排序，否則會報 400 錯誤
-2. **Abstract**: 需要從 inverted_index 重建，或使用 `select` 參數
-3. **Rate limit**: 加上 `mailto` 參數可獲得更好的服務
-4. **ID 格式**: OpenAlex ID 是完整 URL (e.g., `https://openalex.org/W123`)
-5. **PMID/DOI**: 在 `ids` 物件中，格式包含完整 URL
+Gated live smoke 最多查少量 keyword records；semantic/cursor smoke 只有在 operator
+明確提供 key 與 budget 時才執行，永不以 live cursor 擷取整庫。

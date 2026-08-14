@@ -146,6 +146,20 @@ class TestOpenAccessLink:
         assert link.license is None
         assert link.is_best is False
 
+    async def test_article_serialization_preserves_explicit_and_unknown_license(self):
+        article = UnifiedArticle(
+            title="Rights-aware article",
+            primary_source="openalex",
+            oa_links=[
+                OpenAccessLink(url="https://example.test/unknown.pdf"),
+                OpenAccessLink(url="https://example.test/ccby.pdf", license="cc-by"),
+            ],
+        )
+
+        links = article.to_dict()["open_access"]["links"]
+        assert links[0]["license"] is None
+        assert links[1]["license"] == "cc-by"
+
 
 # =============================================================================
 # CitationMetrics Tests

@@ -144,6 +144,15 @@ def test_release_and_tool_metadata_stay_synchronized() -> None:
     assert 'PUBMED_RUN_LIVE_TESTS: "1"' in ci_workflow
     assert "pytest -q -m integration -rs" in ci_workflow
 
+    publish_workflow = yaml.safe_load((REPO_ROOT / ".github/workflows/publish.yml").read_text(encoding="utf-8"))
+    github_release = publish_workflow["jobs"]["github-release"]
+    assert github_release["needs"] == "publish"
+    assert github_release["permissions"]["contents"] == "write"
+    release_command = github_release["steps"][-1]["run"]
+    assert 'gh release create "$GITHUB_REF_NAME" dist/*' in release_command
+    assert "--verify-tag" in release_command
+    assert "--generate-notes" in release_command
+
 
 def test_docs_site_dependencies_and_rendering_are_hardened() -> None:
     index_html = (REPO_ROOT / "docs/index.html").read_text(encoding="utf-8")
@@ -295,9 +304,16 @@ def test_public_copilot_docs_require_service_auth_and_keep_simplified_mode_local
 
     assert "Both tunnel scripts converge on the same fail-closed `--mode service` launcher" in integrations
     assert "must not be tunneled" in integrations
+    assert "same unified runner" in integrations
     assert "temporary ngrok URL" not in integrations
     assert "禁止放到 ngrok" in copilot
+    assert "12 個 Copilot-friendly 工具" in copilot
+    assert "- `unified_search`（`query`" in copilot
+    assert "- `read_session`（`search_runs`、`search_run`、`replay_search`、`artifact`" in copilot
+    assert "執行一次 `unified_search` 或 `search_pubmed`" not in copilot
     assert "Simple --> Tunnel" not in copilot
+    assert "12 個 Copilot Studio 友善" in deployment
+    assert "primitive-schema `read_session`" in deployment
     assert "--mode service" in architecture
     assert "loopback-only and is not a\n        valid deployment target" in openapi
     assert "ghcr.io/u9401066/pubmed-search-mcp" not in deployment

@@ -161,6 +161,8 @@ def _read_session_pmids_impl(
         {
             "success": True,
             "search_index": index,
+            "run_id": search.get("run_id"),
+            "status": search.get("status", "completed"),
             "query": search.get("query", ""),
             "timestamp": search.get("timestamp", ""),
             "total_pmids": len(pmids),
@@ -216,6 +218,11 @@ def _read_session_summary_impl(
         {"query": search.get("query", "")[:60], "count": len(search.get("pmids", []))}
         for search in session.search_history[-5:]
     ]
+    recent_runs = session_manager.list_search_runs(limit=5)
+    run_statuses: dict[str, int] = {}
+    for run in session_manager.list_search_runs(limit=100_000):
+        status = str(run.get("status") or "unknown")
+        run_statuses[status] = run_statuses.get(status, 0) + 1
     cached_pmids = session_manager.get_session_cached_pmids(limit=100)
 
     result: dict[str, Any] = {
@@ -227,11 +234,23 @@ def _read_session_summary_impl(
         "stats": {
             "cached_articles": len(session_manager.get_session_cached_pmids()),
             "total_searches": len(session.search_history),
+            "total_search_runs": sum(run_statuses.values()),
+            "search_run_statuses": run_statuses,
             "event_entries": len(getattr(session, "event_log", [])),
             "reading_list_items": len(session.reading_list),
             "excluded_articles": len(session.excluded_pmids),
         },
         "recent_searches": recent_searches,
+        "recent_search_runs": [
+            {
+                "run_id": run.get("run_id"),
+                "query": str(run.get("query") or "")[:80],
+                "status": run.get("status"),
+                "result_count": (run.get("result") or {}).get("count", 0),
+                "artifact_uri": (run.get("artifact") or {}).get("artifact_uri"),
+            }
+            for run in recent_runs
+        ],
         "recent_events": [
             {
                 "timestamp": event.get("timestamp", "")[:19],
@@ -247,6 +266,7 @@ def _read_session_summary_impl(
             "Use get_cached_article(pmid) to get article details from cache",
             "Use pmids='last' with prepare_export or get_citation_metrics",
             "Use get_session_log() to review session activity and debug history",
+            "Use read_session(action='search_runs') to inspect recoverable unified_search runs",
         ],
     }
 
@@ -260,7 +280,9 @@ def _read_session_summary_impl(
             formatted_history.append(
                 {
                     "index": actual_index,
+                    "run_id": search.get("run_id"),
                     "query": search.get("query", "")[:80],
+                    "status": search.get("status", "completed"),
                     "timestamp": search.get("timestamp", "")[:19],
                     "result_count": search.get("result_count", 0),
                     "pmid_count": len(search.get("pmids", [])),
@@ -292,6 +314,8 @@ def _read_session_log_impl(
             history_rows.append(
                 {
                     "query": search.get("query", "")[:80],
+                    "run_id": search.get("run_id"),
+                    "status": search.get("status", "completed"),
                     "timestamp": search.get("timestamp", "")[:19],
                     "result_count": search.get("result_count", 0),
                     "pmid_count": len(search.get("pmids", [])),
@@ -388,6 +412,106 @@ def _read_session_artifact_impl(
     )
 
 
+def _read_search_runs_impl(
+    session_manager: SessionManager,
+    *,
+    session_id: str = "",
+    status: str = "",
+    limit: int = 20,
+) -> str:
+    """List compact durable search-run envelopes for agent recovery."""
+    session = session_manager.get_session(session_id) if session_id else session_manager.get_current_session()
+    if session is None:
+        return _json_error(error="No active session", hint="Run unified_search first")
+    runs = session_manager.list_search_runs(
+        session_id=session_id or None,
+        status=status or None,
+        limit=_positive_limit(limit, default=20),
+    )
+    return json.dumps(
+        {
+            "success": True,
+            "session_id": session.session_id,
+            "status_filter": status or None,
+            "returned_runs": len(runs),
+            "runs": [
+                {
+                    "run_id": run.get("run_id"),
+                    "query": run.get("query"),
+                    "status": run.get("status"),
+                    "created_at": run.get("created_at"),
+                    "updated_at": run.get("updated_at"),
+                    "source_attempts": len(run.get("source_attempts") or []),
+                    "result_count": (run.get("result") or {}).get("count", 0),
+                    "artifact_uri": (run.get("artifact") or {}).get("artifact_uri"),
+                    "recoverable": bool(run.get("recoverable")),
+                }
+                for run in runs
+            ],
+            "next_step": "Use read_session(action='search_run', run_id='...') for the full envelope.",
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
+
+
+def _read_search_run_impl(
+    session_manager: SessionManager,
+    *,
+    run_id: str,
+    session_id: str = "",
+) -> str:
+    if not run_id:
+        return _json_error(error="run_id is required", hint="Use read_session(action='search_runs') first")
+    session = session_manager.get_session(session_id) if session_id else session_manager.get_current_session()
+    if session is None:
+        return _json_error(error="No active session", hint="Run unified_search first")
+    run = session_manager.get_search_run(run_id, session_id=session_id or None)
+    if run is None:
+        return _json_error(error=f"Search run not found: {run_id}")
+    return json.dumps(
+        {
+            "success": True,
+            "session_id": session.session_id,
+            "run": run,
+            "replay_available": bool(run.get("request")),
+            "next_step": (
+                "Use read_session(action='replay_search', run_id='...') to obtain exact unified_search kwargs."
+            ),
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
+
+
+def _read_search_replay_impl(
+    session_manager: SessionManager,
+    *,
+    run_id: str,
+    session_id: str = "",
+) -> str:
+    """Return replay instructions; replay remains an explicit agent decision."""
+    if not run_id:
+        return _json_error(error="run_id is required", hint="Use read_session(action='search_runs') first")
+    session = session_manager.get_session(session_id) if session_id else session_manager.get_current_session()
+    if session is None:
+        return _json_error(error="No active session", hint="Run unified_search first")
+    replay = session_manager.get_search_run_replay(run_id, session_id=session_id or None)
+    if replay is None:
+        return _json_error(error=f"Search run not found: {run_id}")
+    return json.dumps(
+        {
+            "success": True,
+            "run_id": run_id,
+            "replay": replay,
+            "automatic_execution": False,
+            "hint": "Call unified_search with replay.arguments to create a new, independently journaled run.",
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
+
+
 def _read_session_dispatch(
     session_manager: SessionManager,
     *,
@@ -399,6 +523,8 @@ def _read_session_dispatch(
     artifact_file: str = "",
     artifact_tool: str = "",
     artifact_kind: str = "",
+    run_id: str = "",
+    run_status: str = "",
     include_local_paths: bool = False,
     max_chars: int = 200_000,
     offset: int = 0,
@@ -443,6 +569,17 @@ def _read_session_dispatch(
             max_chars=max_chars,
             offset=offset,
         )
+    if normalized_action in {"search_runs", "runs", "search_history_runs"}:
+        return _read_search_runs_impl(
+            session_manager,
+            session_id=session_id,
+            status=run_status,
+            limit=history_limit,
+        )
+    if normalized_action in {"search_run", "run"}:
+        return _read_search_run_impl(session_manager, run_id=run_id, session_id=session_id)
+    if normalized_action in {"replay_search", "search_replay", "replay"}:
+        return _read_search_replay_impl(session_manager, run_id=run_id, session_id=session_id)
     if normalized_action in {"summary", "context"}:
         return _read_session_summary_impl(
             session_manager,
@@ -452,7 +589,9 @@ def _read_session_dispatch(
 
     return _json_error(
         error=f"Unknown session action: {action}",
-        hint="Use one of: pmids, article, summary, log, list_artifacts, artifact",
+        hint=(
+            "Use one of: pmids, article, summary, log, list_artifacts, artifact, search_runs, search_run, replay_search"
+        ),
     )
 
 
@@ -480,6 +619,8 @@ def register_session_tools(
         artifact_file: str = "",
         artifact_tool: str = "",
         artifact_kind: str = "",
+        run_id: str = "",
+        run_status: str = "",
         include_local_paths: bool = False,
         max_chars: int = 200_000,
         offset: int = 0,
@@ -497,6 +638,9 @@ def register_session_tools(
         - summary: return current session summary and optional history
         - list_artifacts: list persistent MCP output artifact manifests
         - artifact: read one persistent artifact by artifact_id or artifact_uri
+        - search_runs: list durable unified_search run envelopes
+        - search_run: read one run by stable run_id
+        - replay_search: return credential-free unified_search replay arguments
 
         For remote artifact reads, use artifact_file plus offset/max_chars to page
         through large files without rerunning upstream searches or fulltext calls.
@@ -514,6 +658,8 @@ def register_session_tools(
                 artifact_file=artifact_file,
                 artifact_tool=artifact_tool,
                 artifact_kind=artifact_kind,
+                run_id=run_id,
+                run_status=run_status,
                 include_local_paths=include_local_paths,
                 max_chars=max_chars,
                 offset=offset,

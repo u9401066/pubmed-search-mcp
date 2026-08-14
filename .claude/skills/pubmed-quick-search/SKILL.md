@@ -161,6 +161,13 @@ generate_search_queries(topic="remimazolam ICU sedation")
 4. 抓全文：`get_fulltext(pmid="12345678")`
 5. 匯出引用：`prepare_export(pmids="last", format="ris")`
 
+若 structured output 同時有文章與 `source_errors`，這是 partial success，不是整次失敗：
+
+1. 先保留已回傳的文章。
+2. 用 `artifact_summary.artifact_uri` 讀取 `audit.json` 與 `query_strategy.json`。
+3. 只有在 coverage 仍不足時，才針對 failed/retryable sources 補查。
+4. 需要重現或中斷續接時，透過 `read_session(action="search_runs")` 找 run，再讀 `replay_search` arguments；不要從 agent hook state 重建原始 query。
+
 ---
 
 ## 什麼時候不要停在這個 skill

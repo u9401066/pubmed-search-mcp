@@ -105,15 +105,19 @@ flowchart LR
   MCP[MCP Server<br/>presentation/mcp_server]
   API[Background HTTP API<br/>health / cache / exports]
   App[Application Layer<br/>search chronicle timeline pipeline export]
+  Broker[Capability-aware Literature Broker<br/>one unified_search facade]
   Domain[Domain Layer<br/>article chronicle timeline pipeline entities]
   Infra[Infrastructure Layer<br/>NCBI / Europe PMC / CORE / OpenAlex / Unpaywall / institutional]
+  DataPlane[Operator Data Plane<br/>release manifest / diff / snapshot checkpoint]
   Store[Session + Pipeline + Chronicle Store]
 
   Client --> MCP
   MCP --> App
   MCP --> API
-  App --> Domain
-  App --> Infra
+  App --> Broker
+  Broker --> Domain
+  Broker --> Infra
+  DataPlane --> Infra
   App --> Store
 ```
 
@@ -122,6 +126,64 @@ flowchart LR
 - 所有使用者互動都先進入 MCP presentation layer
 - 真正的工作流編排在 application layer
 - 外部資料源與持久化能力都被隔離在 infrastructure / store 邊界之外
+- 通用文獻搜尋只有 `unified_search`；provider relevance/bulk/semantic/cursor
+  都是 capability-aware broker 的內部 execution mode
+- 大型 dataset/snapshot 是 operator data plane，絕不在 MCP request 中下載
+
+### Provider-aware broker 的實際資料流
+
+```mermaid
+flowchart LR
+  Request[unified_search request] --> Normalize[Strict options / filters validation]
+  Normalize --> Journal[Start tenant search-run journal]
+  Journal --> Cap[SourceCapabilities validation]
+  Cap -->|default| Relevance[Keyword / relevance adapters]
+  Cap -->|native_semantic| OASem[OpenAlex search.semantic]
+  Cap -->|systematic| Bounded[OpenAlex cursor / S2 bulk]
+  Relevance --> Page[SourceSearchPage raw DTO envelope]
+  OASem --> Page
+  Bounded --> Page
+  Page --> Map[Single provider mapper boundary]
+  Map --> Merge[Dedup / rank / provenance]
+  Merge --> Outcome[search_status + source_metadata]
+  Outcome --> Artifact[Optional atomic artifact publish]
+  Artifact --> Commit[Terminal search-run commit]
+  Outcome -->|persistence disabled| Commit
+  Commit --> Result[Articles + recovery handoff]
+```
+
+`SourceCapabilities` 目前提供 search modes、pagination、page/mode limits、
+batch limit、counts/provenance 與 operator data-plane status；planner 會在 I/O 前
+拒絕明確且不相容的 source/mode。Normalization 也會 fail-closed：未知／格式錯誤的
+filter 或 option、非 `1..100` 的 limit、反向／越界年份及不支援的 ranking/output
+不會被靜默忽略。`SourceSearchPage` 保留 raw provider items、
+total、opaque continuation、canonical query、cost、warnings 與 safe metadata，
+直到 domain mapper 只做一次轉換。JSON/TOON 和 artifact 的
+`source_metadata`／`query_strategy.json` 會保留實際 requested/provider mode、
+compiled query、continuation 與 cost/rate diagnostics。
+
+`options="native_semantic"` 與 `options="systematic"` 互斥並關閉多策略 deep
+expansion；public per-source `limit` 仍最多 100。因此 systematic 是 bounded
+retrieval policy，不代表已下載全 corpus 或保證 systematic-review exhaustiveness。
+一般 deep mode 則把同一個 per-source `limit` 分配到該來源的所有 strategies，
+並以全域／每來源 semaphore、strategy timeout 與 clipping 保證 budget 不因 query
+expansion 倍增。單一來源失敗只形成 source-scoped error，其他成功來源仍可形成
+partial response。
+
+Structured `search_status` 明確回報 `completed`／`empty`／`partial`／`failed`、
+`bounded=true`、`exhaustive=false`、source sets 與 continuation/unknown-completeness。
+Continuation token/cursor 目前只保留為 provenance；公開 `unified_search` 尚未提供
+cursor-resume input。
+Semantic Scholar dataset client 本輪只處理 release/dataset/diff metadata；
+OpenAlex 只宣告官方 snapshot 路徑可供 operator 規劃，兩者都尚未形成 runtime local
+index。ClinicalKey AI 則以獨立 governance policy 保持 default-off、
+entitlement/contract gated、metadata-only、zero-persistence，且不註冊為 source/tool。
+
+> **DDD 遷移註記**：上述 capability planning/execution 目前仍實作在
+> `presentation/mcp_server/tools/unified_planning.py` 與
+> `unified_execution.py`；`application/unified` 現階段只是 injected-runner
+> facade。這是已知技術債。目標是把不依賴 MCP progress/session/renderer 的純
+> planner 與 broker core 下移 application，presentation 僅保留 transport adapter。
 
 ## 全文擷取流程
 
@@ -137,6 +199,8 @@ flowchart LR
 | Task-Oriented | 工具以研究工作流分組，不直接暴露每個底層 API client |
 | Domain-Driven | 查詢、文章、chronicle、timeline、pipeline 等核心概念在 domain/application 中建模 |
 | Multi-Source | PubMed 為核心，並整合 Europe PMC、CORE、OpenAlex、Semantic Scholar、CrossRef、first-class preprint sources |
+| Capability-Aware | Query intent 先轉成 provider-neutral plan，再依 source 的 mode/filter/page/cost/rights 能力編譯；不支援的條件不會被無聲忽略 |
+| Rights-Aware Data Plane | Live API、local snapshot 與 licensed evidence 各自有 retention、provenance、cost 與 operator 邊界 |
 | Session-Aware | 搜尋結果會自動快取於 session，支援後續全文、匯出與探索 |
 
 ## 目前的 DDD 結構
@@ -376,14 +440,14 @@ MCP transport session identifier 不是身分、不用於租戶授權，也不�
 `unified_search` 的高階流程如下：
 
 ```text
-User Query
-  → QueryAnalyzer
-  → SemanticEnhancer (必要時)
-  → source selection / dispatch
-  → PubMed + external sources parallel search
-  → dedupe / rank / enrich
-  → session cache
-  → formatted response
+unified_search(query or pipeline)
+  → mode-aware normalization
+  → start search-run/v1 journal
+  → capability validation / credential-bearing pipeline rejection
+  → query: analyze / enhance / dispatch / dedupe / rank
+  → pipeline: parse inline or load saved / dry-run or execute / checkpoint steps
+  → optional artifact publish + terminal run commit
+  → session cache + formatted response
 ```
 
 ```mermaid
@@ -392,17 +456,54 @@ sequenceDiagram
   participant M as MCP Tool
   participant Q as QueryAnalyzer
   participant S as Source Clients
-  participant C as Session Cache
+  participant P as Pipeline Executor
+  participant J as SearchRun Journal
+  participant A as Artifact / Session Store
 
-  U->>M: unified_search(query)
-  M->>Q: analyze / enrich query
-  Q-->>M: source plan + rewritten query
-  M->>S: parallel search
-  S-->>M: raw results
-  M->>M: dedupe / rank / enrich
-  M->>C: cache articles + PMIDs
-  M-->>U: formatted response
+  U->>M: unified_search(query or pipeline)
+  M->>M: mode-aware normalization
+  M->>J: start(run_id, sanitized request)
+  M->>M: validate capability / pipeline credentials
+  alt Literature broker mode
+    M->>Q: analyze / enrich query
+    Q-->>M: source plan + rewritten query
+    M->>J: persist resolved provider plan
+    M->>S: parallel search
+    S-->>M: typed pages / source-scoped errors
+    M->>J: checkpoint source attempts
+    M->>M: dedupe / rank / enrich
+    M->>A: atomically publish optional artifact
+  else Inline / saved / dry-run pipeline mode
+    M->>J: persist safe pipeline plan snapshot
+    M->>P: execute or dry-run pipeline
+    P-->>M: articles + typed step outcomes
+    M->>J: checkpoint pipeline step attempts
+  end
+  M->>J: terminal commit + result references
+  M-->>U: search_status + search_run handoff + results
 ```
+
+當 session management 啟用時，每次 `unified_search` 都會取得 stable run ID，包括
+一般搜尋、validation/planning failure、inline pipeline、`saved:<name>` 與 pipeline
+`dry_run=true`。Run 會橫跨 plan、source/pipeline-step attempts、result references 與
+適用時的 artifact locator。有效零結果是 journal
+`completed`、但 `search_status.state="empty"`；source-scoped failure 可形成
+`partial`；planning/execution exception 與 cancellation 也有 terminal record。重啟
+時尚未結束的 active run 只會轉成一次 `interrupted`。`read_session` 的
+`search_runs`／`search_run`／`replay_search` actions 可檢視及取回已移除 credential
+的 exact kwargs；replay 本身不執行搜尋。非 dry-run saved pipeline 仍會額外寫入
+PipelineStore report/run history，描述 saved workflow 的長期執行；search-run journal
+則描述這一次 facade invocation。
+
+含 key、token、cookie、password 或 secret 的 pipeline config 會在 execution 前被
+拒絕並記為 failed run，provider credentials 只能來自 server configuration。若 terminal
+commit 無法復原，handoff 會明確標成 `history_unavailable`／
+`history_available=false` 並省略 inspect/replay actions；這表示 durable history
+無法保證，不代表已回傳的 evidence 自動失效。
+
+Artifact directory 先原子發布、session index 後更新。若兩者之間 crash，reload
+會驗證完整 manifest/checksum，重新索引 published orphan，再以 `search_run_id`
+連回 journal；舊 artifact 才使用保守的同 query fallback。
 
 支援的主要來源：
 

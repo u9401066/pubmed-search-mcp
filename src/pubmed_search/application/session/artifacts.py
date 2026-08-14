@@ -19,6 +19,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from pubmed_search.shared.credential_sanitizer import is_credential_field, redact_credential_assignments
+
 _SAFE_FILE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 _SHA256_RE = re.compile(r"^[a-fA-F0-9]{64}$")
 
@@ -33,9 +35,28 @@ def _safe_token(value: str) -> str:
     return token[:80] or "artifact"
 
 
+def _redact_artifact_text(value: str) -> str:
+    return redact_credential_assignments(value)
+
+
+def _sanitize_artifact_value(value: Any) -> Any:
+    """Remove credentials at the final durable artifact boundary."""
+    if isinstance(value, dict):
+        return {
+            str(key): "[REDACTED]" if is_credential_field(str(key)) else _sanitize_artifact_value(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [_sanitize_artifact_value(item) for item in value]
+    if isinstance(value, str):
+        return _redact_artifact_text(value)
+    return value
+
+
 def _serialize_content(content: Any) -> bytes:
     if isinstance(content, bytes):
         return content
+    content = _sanitize_artifact_value(content)
     if isinstance(content, str):
         return content.encode("utf-8")
     return json.dumps(content, ensure_ascii=False, indent=2).encode("utf-8")
@@ -126,8 +147,8 @@ class ArtifactStore:
                 "size_bytes": primary_size,
                 "sha256": primary_sha,
                 "files": file_manifests,
-                "summary": summary or {},
-                "metadata": metadata or {},
+                "summary": _sanitize_artifact_value(summary or {}),
+                "metadata": _sanitize_artifact_value(metadata or {}),
             }
             staging_manifest = staging_dir / "manifest.json"
             with staging_manifest.open("w", encoding="utf-8", newline="") as handle:
@@ -174,6 +195,86 @@ class ArtifactStore:
             msg = f"Artifact checksum mismatch: {selected}"
             raise ValueError(msg)
         return file_info, data.decode("utf-8")
+
+    def discover(self, *, session_id: str) -> list[dict[str, Any]]:
+        """Return fully published manifests that belong to *session_id*.
+
+        Session indexing intentionally happens after an artifact directory is
+        atomically published.  A process crash (or a full disk while updating
+        the session JSON) can therefore leave a valid artifact that is not yet
+        referenced by the session aggregate.  Discovery is the recovery side
+        of that publication protocol: only complete, structurally consistent
+        manifests under the expected session subtree are returned.
+        """
+        safe_session = _safe_token(session_id)
+        if safe_session != session_id:
+            msg = f"Unsafe artifact session id: {session_id}"
+            raise ValueError(msg)
+
+        session_root = self._resolve_under_root(safe_session)
+        if not session_root.is_dir():
+            return []
+
+        manifests: list[dict[str, Any]] = []
+        # The fixed tool/kind/artifact hierarchy avoids following arbitrary
+        # recursive layouts while still supporting every current artifact.
+        for manifest_path in sorted(session_root.glob("*/*/*/manifest.json")):
+            resolved_manifest = manifest_path.resolve()
+            self._assert_under(resolved_manifest, session_root)
+            try:
+                raw = json.loads(resolved_manifest.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, json.JSONDecodeError):
+                continue
+            if not isinstance(raw, dict) or raw.get("session_id") != session_id:
+                continue
+
+            artifact_dir = resolved_manifest.parent
+            artifact_id = artifact_dir.name
+            if raw.get("artifact_id") != artifact_id:
+                continue
+            if raw.get("artifact_uri") != f"artifact://{safe_session}/{artifact_id}":
+                continue
+            try:
+                declared_root = Path(str(raw.get("root_path") or "")).resolve()
+                declared_manifest = Path(str(raw.get("manifest_path") or "")).resolve()
+                self._assert_under(declared_root, session_root)
+                self._assert_under(declared_manifest, declared_root)
+            except (OSError, ValueError):
+                continue
+            if declared_root != artifact_dir or declared_manifest != resolved_manifest:
+                continue
+
+            files = raw.get("files")
+            primary_file = raw.get("primary_file")
+            if not isinstance(files, dict) or not isinstance(primary_file, str) or primary_file not in files:
+                continue
+            primary_info = files.get(primary_file)
+            if (
+                not isinstance(primary_info, dict)
+                or raw.get("sha256") != primary_info.get("sha256")
+                or raw.get("size_bytes") != primary_info.get("size_bytes")
+            ):
+                continue
+            valid = True
+            for file_name, file_info in files.items():
+                if not isinstance(file_name, str) or not isinstance(file_info, dict):
+                    valid = False
+                    break
+                try:
+                    file_path = Path(str(file_info.get("path") or "")).resolve()
+                    self._assert_under(file_path, artifact_dir)
+                except (OSError, ValueError):
+                    valid = False
+                    break
+                checksum = str(file_info.get("sha256") or "")
+                if not file_path.is_file() or _SHA256_RE.fullmatch(checksum) is None:
+                    valid = False
+                    break
+            if valid:
+                manifests.append(raw)
+
+        manifests.sort(key=lambda item: (str(item.get("created_at") or ""), str(item.get("artifact_id") or "")))
+        return manifests
 
     def _resolve_under_root(self, *parts: str) -> Path:
         path = self.root_dir.joinpath(*parts).resolve()

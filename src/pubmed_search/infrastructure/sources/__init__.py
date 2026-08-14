@@ -33,8 +33,10 @@ import re
 from collections.abc import Awaitable, Callable
 from contextvars import ContextVar
 from enum import Enum
+from inspect import isawaitable
 from typing import Any, Literal, cast
 
+from pubmed_search.application.search.source_models import SourceSearchPage
 from pubmed_search.shared.async_utils import RetryableOperationError
 from pubmed_search.shared.exceptions import RateLimitError
 from pubmed_search.shared.source_contracts import (
@@ -69,6 +71,7 @@ _openurl_builder = None
 _clinical_trials_client = None
 _openi_client = None
 _browser_session_fetcher = None
+_retired_source_clients: list[Any] = []
 _last_alternate_source_errors: ContextVar[dict[str, SourceAdapterError] | None] = ContextVar(
     "last_alternate_source_errors",
     default=None,
@@ -86,6 +89,17 @@ def configure_source_contact_email(email: str | None) -> None:
     global _openalex_client, _europe_pmc_client, _ncbi_extended_client, _crossref_client, _unpaywall_client
 
     _configure_source_contact_email(email)
+    _retired_source_clients.extend(
+        client
+        for client in (
+            _openalex_client,
+            _europe_pmc_client,
+            _ncbi_extended_client,
+            _crossref_client,
+            _unpaywall_client,
+        )
+        if client is not None
+    )
     _openalex_client = None
     _europe_pmc_client = None
     _ncbi_extended_client = None
@@ -122,6 +136,17 @@ def _load_settings():
     from pubmed_search.shared.settings import load_settings
 
     return load_settings()
+
+
+def _secret_value(value: object) -> str | None:
+    """Unwrap Pydantic secret settings only at the client construction edge."""
+
+    if value is None:
+        return None
+    getter = getattr(value, "get_secret_value", None)
+    raw = getter() if callable(getter) else value
+    normalized = str(raw).strip()
+    return normalized or None
 
 
 def get_source_registry():
@@ -164,6 +189,10 @@ AlternateSourceRunner = Callable[
     [str, int, int | None, int | None, bool, bool, str | None],
     Awaitable[list[dict[str, Any]]],
 ]
+AlternateSourcePageRunner = Callable[
+    [str, int, int | None, int | None, bool, bool, str | None],
+    Awaitable[SourceSearchPage[dict[str, Any]]],
+]
 
 
 def get_semantic_scholar_client(api_key: str | None = None):
@@ -173,7 +202,9 @@ def get_semantic_scholar_client(api_key: str | None = None):
         from .semantic_scholar import SemanticScholarClient
 
         settings = _load_settings()
-        _semantic_scholar_client = SemanticScholarClient(api_key=api_key or settings.semantic_scholar_api_key)
+        _semantic_scholar_client = SemanticScholarClient(
+            api_key=api_key or _secret_value(settings.semantic_scholar_api_key)
+        )
     return _semantic_scholar_client
 
 
@@ -187,7 +218,7 @@ def get_openalex_client(email: str | None = None, api_key: str | None = None):
 
         _openalex_client = OpenAlexClient(
             email=first_contact_email(email, get_configured_source_contact_email(), settings.ncbi_email),
-            api_key=api_key or settings.openalex_api_key,
+            api_key=api_key or _secret_value(settings.openalex_api_key),
         )
     return _openalex_client
 
@@ -410,13 +441,129 @@ async def search_alternate_source(
         logger.warning("Search skipped for %s due to rate limiting: %s", source, e)
         return []
     except Exception as e:
-        logger.exception(f"Search failed for {source}: {e}")
+        _remember_alternate_source_error(
+            source,
+            SourceAdapterError(
+                source=source,
+                operation="search",
+                message=f"{source} search failed",
+                kind="unexpected",
+                retryable=False,
+            ),
+        )
+        logger.warning("Search failed for %s (%s)", source, type(e).__name__)
         return []
+
+
+async def search_alternate_source_page(
+    query: str,
+    source: AlternateSearchSource,
+    limit: int = 10,
+    min_year: int | None = None,
+    max_year: int | None = None,
+    open_access_only: bool = False,
+    has_fulltext: bool = False,
+    email: str | None = None,
+) -> SourceSearchPage[dict[str, Any]]:
+    """Search one source through the raw provider-DTO page contract."""
+
+    _remember_alternate_source_error(source, None)
+    try:
+        return await _search_alternate_source_page_unchecked(
+            query=query,
+            source=source,
+            limit=limit,
+            min_year=min_year,
+            max_year=max_year,
+            open_access_only=open_access_only,
+            has_fulltext=has_fulltext,
+            email=email,
+        )
+    except RetryableOperationError as exc:
+        error = SourceAdapterError(
+            source=source,
+            operation="search",
+            message=str(exc),
+            kind="retryable",
+            retryable=True,
+            status_code=exc.status_code,
+        )
+        _remember_alternate_source_error(source, error)
+        raise
+    except RateLimitError as exc:
+        error = SourceAdapterError(
+            source=source,
+            operation="search",
+            message=str(exc),
+            kind="retryable",
+            retryable=True,
+        )
+        _remember_alternate_source_error(source, error)
+        raise RetryableOperationError(f"{source} rate limited") from None
+    except Exception as exc:
+        _remember_alternate_source_error(
+            source,
+            SourceAdapterError(
+                source=source,
+                operation="search",
+                message=f"{source} search failed",
+                kind="unexpected",
+                retryable=False,
+            ),
+        )
+        logger.warning("Search page failed for %s (%s)", source, type(exc).__name__)
+    from pubmed_search.infrastructure.sources.base_client import APIRequestError
+
+    raise APIRequestError(source)
 
 
 def get_last_alternate_source_error(source: str) -> SourceAdapterError | None:
     """Return the last recoverable source failure for callers that need diagnostics."""
     return (_last_alternate_source_errors.get() or {}).get(source)
+
+
+async def _search_alternate_source_page_unchecked(
+    query: str,
+    source: AlternateSearchSource,
+    limit: int = 10,
+    min_year: int | None = None,
+    max_year: int | None = None,
+    open_access_only: bool = False,
+    has_fulltext: bool = False,
+    email: str | None = None,
+) -> SourceSearchPage[dict[str, Any]]:
+    """Dispatch a source page without swallowing source-level exceptions."""
+
+    registry = get_source_registry()
+    resolved_source = registry.resolve_key(source) or source
+    if not _is_alternate_source(resolved_source):
+        return SourceSearchPage.empty(source, query=query, warning="Unknown alternate source")
+
+    runner = _ALTERNATE_SOURCE_PAGE_RUNNERS.get(resolved_source)
+    if runner is not None:
+        return await runner(
+            query,
+            limit,
+            min_year,
+            max_year,
+            open_access_only,
+            has_fulltext,
+            email,
+        )
+
+    legacy_runner = _ALTERNATE_SOURCE_RUNNERS.get(resolved_source)
+    if legacy_runner is None:
+        return SourceSearchPage.empty(source, query=query, warning="No alternate source runner registered")
+    items = await legacy_runner(
+        query,
+        limit,
+        min_year,
+        max_year,
+        open_access_only,
+        has_fulltext,
+        email,
+    )
+    return SourceSearchPage(source=resolved_source, items=items, query=query)
 
 
 async def _search_alternate_source_unchecked(
@@ -484,6 +631,46 @@ async def _run_openalex_search(
     del has_fulltext
     client = get_openalex_client(email)
     return await client.search(
+        query=query,
+        limit=limit,
+        min_year=min_year,
+        max_year=max_year,
+        open_access_only=open_access_only,
+    )
+
+
+async def _run_semantic_scholar_search_page(
+    query: str,
+    limit: int,
+    min_year: int | None,
+    max_year: int | None,
+    open_access_only: bool,
+    has_fulltext: bool,
+    email: str | None,
+) -> SourceSearchPage[dict[str, Any]]:
+    del has_fulltext, email
+    client = get_semantic_scholar_client()
+    return await client.search_page(
+        query=query,
+        limit=limit,
+        min_year=min_year,
+        max_year=max_year,
+        open_access_only=open_access_only,
+    )
+
+
+async def _run_openalex_search_page(
+    query: str,
+    limit: int,
+    min_year: int | None,
+    max_year: int | None,
+    open_access_only: bool,
+    has_fulltext: bool,
+    email: str | None,
+) -> SourceSearchPage[dict[str, Any]]:
+    del has_fulltext
+    client = get_openalex_client(email)
+    return await client.search_page(
         query=query,
         limit=limit,
         min_year=min_year,
@@ -582,6 +769,11 @@ _ALTERNATE_SOURCE_RUNNERS: dict[str, AlternateSourceRunner] = {
     "core": _run_core_search,
     "scopus": _run_scopus_search,
     "web_of_science": _run_web_of_science_search,
+}
+
+_ALTERNATE_SOURCE_PAGE_RUNNERS: dict[str, AlternateSourcePageRunner] = {
+    "semantic_scholar": _run_semantic_scholar_search_page,
+    "openalex": _run_openalex_search_page,
 }
 
 
@@ -861,6 +1053,65 @@ def get_fulltext_downloader():
     return _fulltext_downloader
 
 
+async def close_source_clients() -> None:
+    """Close and reset every lazily cached source client at server shutdown."""
+
+    global _semantic_scholar_client, _openalex_client, _europe_pmc_client
+    global _core_client, _scopus_client, _web_of_science_client
+    global _ncbi_extended_client, _crossref_client, _unpaywall_client
+    global _openurl_builder, _clinical_trials_client, _openi_client
+    global _browser_session_fetcher, _fulltext_downloader
+    global _retired_source_clients
+
+    cached = (
+        _semantic_scholar_client,
+        _openalex_client,
+        _europe_pmc_client,
+        _core_client,
+        _scopus_client,
+        _web_of_science_client,
+        _ncbi_extended_client,
+        _crossref_client,
+        _unpaywall_client,
+        _openurl_builder,
+        _clinical_trials_client,
+        _openi_client,
+        _browser_session_fetcher,
+        _fulltext_downloader,
+        *_retired_source_clients,
+    )
+    seen: set[int] = set()
+    for client in cached:
+        if client is None or id(client) in seen:
+            continue
+        seen.add(id(client))
+        closer = getattr(client, "close", None) or getattr(client, "aclose", None)
+        if not callable(closer):
+            continue
+        try:
+            outcome = closer()
+            if isawaitable(outcome):
+                await outcome
+        except Exception as exc:  # pragma: no cover - defensive shutdown path
+            logger.warning("Failed to close source client %s: %s", type(client).__name__, exc)
+
+    _semantic_scholar_client = None
+    _openalex_client = None
+    _europe_pmc_client = None
+    _core_client = None
+    _scopus_client = None
+    _web_of_science_client = None
+    _ncbi_extended_client = None
+    _crossref_client = None
+    _unpaywall_client = None
+    _openurl_builder = None
+    _clinical_trials_client = None
+    _openi_client = None
+    _browser_session_fetcher = None
+    _fulltext_downloader = None
+    _retired_source_clients = []
+
+
 # Export for convenience
 __all__ = [
     "SearchSource",
@@ -869,6 +1120,7 @@ __all__ = [
     "SourceSelection",
     "SourceSelectionError",
     "configure_source_contact_email",
+    "close_source_clients",
     "cross_search",
     "get_core_client",
     "get_crossref_client",
@@ -888,4 +1140,5 @@ __all__ = [
     "get_semantic_scholar_client",
     "get_unpaywall_client",
     "search_alternate_source",
+    "search_alternate_source_page",
 ]

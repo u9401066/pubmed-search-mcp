@@ -22,6 +22,9 @@ from pubmed_search.shared.settings import load_settings
 SourceCategory = Literal["search", "enrichment", "fulltext", "preprint", "image", "structured"]
 SourceAccessTier = Literal["open", "commercial", "institutional"]
 SourceSelectionMode = Literal["auto", "explicit", "all"]
+SourceSearchMode = Literal["relevance", "keyword", "semantic", "systematic", "enrichment"]
+SourcePagination = Literal["page", "offset", "cursor", "token", "none"]
+SourceOperatorDataPlane = Literal["none", "metadata_only", "provider_available"]
 SourceAutoDispatchProfile = Literal[
     "lookup_identifier",
     "lookup",
@@ -42,6 +45,37 @@ def normalize_source_name(value: str) -> str:
 
 
 @dataclass(frozen=True)
+class SourceCapabilities:
+    """Provider-neutral capabilities used by search planning and diagnostics.
+
+    The model describes supported integration behavior, not credentials or
+    deployment configuration. Tuples keep the frozen value deeply immutable.
+    """
+
+    search_modes: tuple[SourceSearchMode, ...] = ()
+    pagination: tuple[SourcePagination, ...] = ("none",)
+    max_page_size: int | None = None
+    mode_limits: tuple[tuple[SourceSearchMode, int], ...] = ()
+    batch_limit: int | None = None
+    operator_data_plane: SourceOperatorDataPlane = "none"
+    supports_counts: bool = False
+    supports_provenance: bool = False
+
+    def to_manifest(self) -> dict[str, object]:
+        """Return a JSON-safe projection without configuration or secrets."""
+        return {
+            "search_modes": list(self.search_modes),
+            "pagination": list(self.pagination),
+            "max_page_size": self.max_page_size,
+            "mode_limits": dict(self.mode_limits),
+            "batch_limit": self.batch_limit,
+            "operator_data_plane": self.operator_data_plane,
+            "supports_counts": self.supports_counts,
+            "supports_provenance": self.supports_provenance,
+        }
+
+
+@dataclass(frozen=True)
 class SourceDefinition:
     """Metadata for one external source integration."""
 
@@ -58,6 +92,7 @@ class SourceDefinition:
     enable_env_var: str | None = None
     alternate_search_runner: str | None = None
     auto_dispatch_profiles: tuple[SourceAutoDispatchProfile, ...] = ()
+    capabilities: SourceCapabilities = field(default_factory=SourceCapabilities)
     description: str = ""
 
 
@@ -104,6 +139,25 @@ class SourceRegistry:
         if key is None:
             return None
         return self._definitions.get(key)
+
+    def get_capabilities(self, value: str) -> SourceCapabilities | None:
+        """Return immutable capabilities for a source key or alias."""
+        definition = self.get(value)
+        return definition.capabilities if definition is not None else None
+
+    def capability_manifest(self) -> dict[str, dict[str, object]]:
+        """Return a JSON-safe, credential-free manifest for all registered sources."""
+        return {
+            definition.key: {
+                "label": definition.label,
+                "category": definition.category,
+                "access_tier": definition.access_tier,
+                "selectable_in_unified": definition.selectable_in_unified,
+                "supports_primary_search": definition.supports_primary_search,
+                **definition.capabilities.to_manifest(),
+            }
+            for definition in self._definitions.values()
+        }
 
     def list_unified_sources(self) -> list[str]:
         return [
@@ -326,6 +380,14 @@ def get_source_registry() -> SourceRegistry:
                 selectable_in_unified=True,
                 supports_primary_search=True,
                 auto_dispatch_profiles=_ALL_AUTO_DISPATCH_PROFILES,
+                capabilities=SourceCapabilities(
+                    search_modes=("keyword", "systematic"),
+                    pagination=("offset",),
+                    max_page_size=500,
+                    batch_limit=500,
+                    supports_counts=True,
+                    supports_provenance=True,
+                ),
             ),
             SourceDefinition(
                 key="openalex",
@@ -335,6 +397,15 @@ def get_source_registry() -> SourceRegistry:
                 supports_primary_search=True,
                 alternate_search_runner="openalex",
                 auto_dispatch_profiles=_OPENALEX_AUTO_DISPATCH_PROFILES,
+                capabilities=SourceCapabilities(
+                    search_modes=("keyword", "semantic", "systematic"),
+                    pagination=("page", "cursor"),
+                    max_page_size=100,
+                    mode_limits=(("keyword", 100), ("semantic", 50), ("systematic", 100)),
+                    operator_data_plane="provider_available",
+                    supports_counts=True,
+                    supports_provenance=True,
+                ),
             ),
             SourceDefinition(
                 key="semantic_scholar",
@@ -345,6 +416,16 @@ def get_source_registry() -> SourceRegistry:
                 aliases=("semantic-scholar",),
                 alternate_search_runner="semantic_scholar",
                 auto_dispatch_profiles=_SEMANTIC_SCHOLAR_AUTO_DISPATCH_PROFILES,
+                capabilities=SourceCapabilities(
+                    search_modes=("relevance", "systematic"),
+                    pagination=("offset", "token"),
+                    max_page_size=1000,
+                    mode_limits=(("relevance", 100), ("systematic", 1000)),
+                    batch_limit=500,
+                    operator_data_plane="metadata_only",
+                    supports_counts=True,
+                    supports_provenance=True,
+                ),
             ),
             SourceDefinition(
                 key="europe_pmc",
@@ -355,6 +436,18 @@ def get_source_registry() -> SourceRegistry:
                 aliases=("europe-pmc",),
                 alternate_search_runner="europe_pmc",
                 auto_dispatch_profiles=_EUROPE_PMC_AUTO_DISPATCH_PROFILES,
+                capabilities=SourceCapabilities(
+                    # Europe PMC exposes a cursor, but this repository has not
+                    # implemented bounded multi-page systematic traversal yet.
+                    # Keep the broker declaration honest until that path and
+                    # checkpoint contract exist.
+                    search_modes=("keyword",),
+                    pagination=("cursor",),
+                    max_page_size=1000,
+                    mode_limits=(("keyword", 1000),),
+                    supports_counts=True,
+                    supports_provenance=True,
+                ),
             ),
             SourceDefinition(
                 key="core",
@@ -363,6 +456,13 @@ def get_source_registry() -> SourceRegistry:
                 selectable_in_unified=True,
                 supports_primary_search=True,
                 alternate_search_runner="core",
+                capabilities=SourceCapabilities(
+                    search_modes=("keyword",),
+                    pagination=("offset",),
+                    max_page_size=100,
+                    supports_counts=True,
+                    supports_provenance=True,
+                ),
             ),
             SourceDefinition(
                 key="scopus",
@@ -376,6 +476,13 @@ def get_source_registry() -> SourceRegistry:
                 required_env_vars=("SCOPUS_API_KEY",),
                 enable_env_var="SCOPUS_ENABLED",
                 alternate_search_runner="scopus",
+                capabilities=SourceCapabilities(
+                    search_modes=("keyword",),
+                    pagination=("offset",),
+                    max_page_size=25,
+                    mode_limits=(("keyword", 25),),
+                    supports_provenance=True,
+                ),
                 description="Elsevier Scopus connector. Default off until licensed credentials are configured.",
             ),
             SourceDefinition(
@@ -390,6 +497,13 @@ def get_source_registry() -> SourceRegistry:
                 required_env_vars=("WEB_OF_SCIENCE_API_KEY",),
                 enable_env_var="WEB_OF_SCIENCE_ENABLED",
                 alternate_search_runner="web_of_science",
+                capabilities=SourceCapabilities(
+                    search_modes=("keyword",),
+                    pagination=("offset",),
+                    max_page_size=25,
+                    mode_limits=(("keyword", 25),),
+                    supports_provenance=True,
+                ),
                 description="Clarivate Web of Science connector. Default off until licensed credentials are configured.",
             ),
             SourceDefinition(
@@ -399,6 +513,13 @@ def get_source_registry() -> SourceRegistry:
                 selectable_in_unified=True,
                 supports_primary_search=False,
                 auto_dispatch_profiles=_CROSSREF_AUTO_DISPATCH_PROFILES,
+                capabilities=SourceCapabilities(
+                    search_modes=("enrichment",),
+                    pagination=("offset",),
+                    max_page_size=1000,
+                    supports_counts=True,
+                    supports_provenance=True,
+                ),
             ),
             SourceDefinition(
                 key="arxiv",
@@ -406,6 +527,11 @@ def get_source_registry() -> SourceRegistry:
                 category="preprint",
                 selectable_in_unified=True,
                 supports_primary_search=True,
+                capabilities=SourceCapabilities(
+                    search_modes=("keyword",),
+                    max_page_size=100,
+                    supports_provenance=True,
+                ),
                 description='arXiv preprint server (physics, math, CS, q-bio, stats). Use sources="arxiv" or options="preprints".',
             ),
             SourceDefinition(
@@ -415,6 +541,11 @@ def get_source_registry() -> SourceRegistry:
                 selectable_in_unified=True,
                 supports_primary_search=True,
                 aliases=("med-rxiv", "med_rxiv"),
+                capabilities=SourceCapabilities(
+                    search_modes=("keyword",),
+                    max_page_size=100,
+                    supports_provenance=True,
+                ),
                 description='medRxiv medical preprint server. Use sources="medrxiv" or options="preprints".',
             ),
             SourceDefinition(
@@ -424,6 +555,11 @@ def get_source_registry() -> SourceRegistry:
                 selectable_in_unified=True,
                 supports_primary_search=True,
                 aliases=("bio-rxiv", "bio_rxiv"),
+                capabilities=SourceCapabilities(
+                    search_modes=("keyword",),
+                    max_page_size=100,
+                    supports_provenance=True,
+                ),
                 description='bioRxiv biology preprint server. Use sources="biorxiv" or options="preprints".',
             ),
             SourceDefinition(key="unpaywall", label="Unpaywall", category="fulltext"),
@@ -437,8 +573,12 @@ def get_source_registry() -> SourceRegistry:
 
 __all__ = [
     "SourceAutoDispatchProfile",
+    "SourceOperatorDataPlane",
+    "SourceCapabilities",
     "SourceDefinition",
+    "SourcePagination",
     "SourceRegistry",
+    "SourceSearchMode",
     "SourceSelection",
     "SourceSelectionError",
     "get_source_registry",

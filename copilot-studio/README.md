@@ -9,7 +9,7 @@ Copilot Studio 目前有兩條可行路線：
 | 模式 | 啟動方式 | 工具面 | 適用情境 |
 | --- | --- | --- | --- |
 | Full schema + compatibility | `pubmed-search-mcp-http --mode service --transport streamable-http --copilot-compatible` | 完整 45-tool primary MCP surface | 正式遠端服務，強制 bearer/allowlist |
-| Simplified Copilot smoke | `uv run python run_copilot.py` | 精簡 Copilot-friendly tools | 僅供本機診斷 schema；不可發布 |
+| Simplified Copilot smoke | `uv run python run_copilot.py` | 12 個 primitive-schema tools；generic search 仍是 `unified_search`，並有 `read_session` recovery facade | 僅供本機診斷 schema；不可發布 |
 
 如果你不確定要選哪個，先用第一種；若 schema 有問題，可用第二種在本機診斷，修正後仍須回到 authenticated full service 才能發布。
 
@@ -105,11 +105,12 @@ multi-user service，禁止放到 ngrok 或其他公網 tunnel 後方。公開�
 
 ### 簡化模式
 
-簡化模式暴露的是 Copilot-friendly 工具集，重點在 schema 相容性，而不是工具數量最大化。
+簡化模式暴露的是 12 個 Copilot-friendly 工具，重點在 schema 相容性，而不是工具數量最大化。它沒有第二套 `search_pubmed`：唯一 generic literature search 仍叫 `unified_search`，只是參數全部保持 primitive schema，並直接呼叫與完整模式共用的 unified runner。`read_session` 也維持 primitive schema，讓 `unified_search` 回傳的 run ID 與 artifact locator 在精簡模式中可以實際回讀。
 
 目前簡化模式聚焦於：
 
-- `search_pubmed`
+- `unified_search`（`query`、`limit`、`min_year`、`max_year`、`sources`、`options`）
+- `read_session`（`search_runs`、`search_run`、`replay_search`、`artifact`；replay 只回傳 arguments，不會自動搜尋）
 - `get_article`
 - `find_related`
 - `find_citations`
@@ -137,8 +138,9 @@ multi-user service，禁止放到 ngrok 或其他公網 tunnel 後方。公開�
 
 1. Copilot Studio 可以成功建立 MCP 連線
 2. 工具列表能被發現
-3. 執行一次 `unified_search` 或 `search_pubmed` 能成功回傳
-4. 若使用完整模式，確認沒有 schema 截斷問題
+3. 執行一次 `unified_search` 能成功回傳，且 `sources`／`options` 仍是 primitive strings
+4. 用 `read_session(action="search_run", run_id="...")` 回讀該搜尋；需要 replay 時先取得 arguments，再明確呼叫 `unified_search`
+5. 若使用完整模式，確認沒有 schema 截斷問題
 
 ## 常見選擇建議
 

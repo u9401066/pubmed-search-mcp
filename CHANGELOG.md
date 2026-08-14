@@ -10,6 +10,100 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-08-14
+
+### Added
+
+- Added provider-neutral `SourceCapabilities` and raw `SourceSearchPage`
+  contracts so the unified broker validates search mode, pagination, page/mode
+  limits, batch support, and operator data-plane status before mapping each
+  provider DTO exactly once.
+- Added `unified_search(options="native_semantic")` for bounded OpenAlex
+  native semantic retrieval and `options="systematic"` for deterministic
+  provider execution, including OpenAlex cursor traversal and a fail-closed
+  Semantic Scholar Boolean-to-bulk compiler. Both remain modes of the one
+  generic literature-search tool.
+- Added Semantic Scholar raw relevance/bulk pages, ordered batch lookup for up
+  to 500 IDs, and a metadata-only release/dataset/diff client that never
+  downloads dataset partitions during an MCP request.
+- Added an entitlement- and contract-gated ClinicalKey AI citation metadata
+  adapter with OAuth single-flight refresh, required end-user context,
+  allowlisted output fields, zero persistence, and no MCP tool/source
+  registration.
+- Added a current BioMCP architecture analysis, official Semantic Scholar,
+  OpenAlex, and ClinicalKey integration references, plus docs-site and GitHub
+  Wiki navigation for the new provider/data-plane pages.
+- Added a tenant-scoped SearchRun journal for every direct, inline, saved, and
+  dry-run `unified_search` invocation. Runs retain plan, per-source attempts,
+  terminal state, artifact locator, and credential-free replay arguments, and
+  can be inspected with `read_session(search_runs/search_run/replay_search)`.
+- Added deterministic in-memory and real-stdio MCP smoke tests covering tool
+  discovery, partial upstream failure, artifact reads, restart recovery,
+  pipeline handoff, replay, and credential-safe persistence.
+
+### Changed
+
+- `unified_search` now preserves per-source `source_metadata` and artifact
+  retrieval strategy, including requested/provider modes, logical/physical or
+  canonical query, continuation availability, safe cost/rate metadata, and
+  capability warnings.
+- OpenAlex API keys are held as secrets and sent with Bearer authorization
+  instead of a query parameter; Semantic Scholar keys remain header-only.
+  Source clients share conservative upstream budgets and are closed/reset with
+  the server lifecycle.
+- Bilingual README, tools guide, architecture, integrations, source contracts,
+  provider boundaries, docs site, and Wiki now describe the single-search
+  invariant and distinguish bounded live queries from operator-managed
+  snapshot/dataset workflows.
+- Deep/federated execution now treats `limit` as a per-source total budget
+  across strategies, with bounded global/per-source concurrency, end-to-end
+  deadlines, cancellation propagation, exact attempt provenance, and safe
+  fallback rules that never widen explicit or systematic requests.
+- Copilot Bash and PowerShell hooks now share one advisory Python runtime with
+  structured completed/partial/empty/failed/recoverable states, atomic bounded
+  state, HMAC query fingerprints, and artifact/SearchRun-aware handoff.
+- The tag publication workflow now creates or repairs the GitHub Release from
+  the same verified distributions published to PyPI. Release guidance uses
+  reviewed path staging, PR CI, and a verified master commit before tagging.
+
+### Fixed
+
+- Removed the lossy double-normalization seam between OpenAlex/Semantic Scholar
+  clients and the unified mapper, while retaining canonical identifiers,
+  authors, OA/license hints, citation metrics, totals, continuation, and
+  warnings.
+- Added exact regression coverage that the runtime search category remains
+  `["unified_search"]`, including hook-policy and generated documentation
+  surfaces.
+- Search failures can no longer masquerade as valid empty responses. Structured
+  output, durable history, pipeline output, and artifacts now agree on empty,
+  partial, rate-limited, failed, cancelled, interrupted, and persistence-
+  unavailable states.
+- Query options, modes, filters, ranges, provider query translation, and
+  systematic auto-relaxation now fail closed instead of silently changing the
+  requested search. Exact logical/physical queries and local-filter semantics
+  are retained without fabricating unknown totals or continuation state.
+- Search artifacts recover after an index-write interruption, validate manifest
+  structure and checksums, and reconcile safely with the owning tenant's run on
+  restart. JSON and TOON pipeline responses remain parseable after SearchRun
+  handoff injection.
+- Pipeline searches now reject unknown explicit sources and non-integer or
+  out-of-range limits before provider I/O. Auto-saved, scheduled, and stored
+  pipeline history shares one completed/partial/failed classifier instead of
+  recording degraded or failed runs as successful.
+
+### Security
+
+- Centralized credential-material detection and recursive persistence redaction
+  across requests, source provenance, pipelines, sessions, artifacts, and
+  replay envelopes, including provider-specific environment and header aliases.
+- Removed raw biomedical queries, contact addresses, credential-bearing URLs,
+  and exception messages from unified/pipeline/provider logs; server entry
+  points also suppress `httpx`/`httpcore` request-URL logging.
+- Saved and inline pipelines containing credential material are rejected before
+  validation or execution, including legacy malformed files, without echoing
+  the rejected value to responses, logs, or durable storage.
+
 ## [0.6.2] - 2026-08-12
 
 ### Added
@@ -2459,7 +2553,8 @@ get_citation_metrics(pmids="last", min_rcr=1.5, min_percentile=75)
 - [PyPI Package](https://pypi.org/project/pubmed-search-mcp/)
 - [Smithery](https://smithery.ai/server/pubmed-search-mcp)
 
-[Unreleased]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.6.2...HEAD
+[Unreleased]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.6.3...HEAD
+[0.6.3]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/u9401066/pubmed-search-mcp/tree/v0.6.0

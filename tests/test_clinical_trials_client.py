@@ -147,7 +147,7 @@ class TestClinicalTrialsClientSearch:
 
         assert results == []
 
-    async def test_search_timeout_error(self):
+    async def test_search_timeout_error(self, caplog):
         """Test search handles timeout gracefully."""
         import httpx
 
@@ -158,9 +158,13 @@ class TestClinicalTrialsClientSearch:
         client = ClinicalTrialsClient()
         client._client = mock_async_client
 
-        results = await client.search("diabetes treatment")
+        sensitive_query = "private cohort diabetes treatment"
+        with caplog.at_level("WARNING"):
+            results = await client.search(sensitive_query)
 
         assert results == []
+        assert sensitive_query not in caplog.text
+        assert f"query_length={len(sensitive_query)}" in caplog.text
 
     async def test_search_http_error(self):
         """Test search handles HTTP errors gracefully."""

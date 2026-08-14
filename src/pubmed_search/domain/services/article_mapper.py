@@ -186,15 +186,49 @@ def article_from_crossref(data: dict[str, Any]) -> UnifiedArticle:
     )
 
 
+def _openalex_abstract(data: dict[str, Any]) -> str | None:
+    """Reconstruct OpenAlex's root-level inverted-index abstract."""
+
+    abstract = data.get("abstract")
+    if isinstance(abstract, str) and abstract:
+        return abstract
+
+    inverted_index = data.get("abstract_inverted_index")
+    if not isinstance(inverted_index, dict):
+        return None
+
+    positioned_words: list[tuple[int, str]] = []
+    for word, positions in inverted_index.items():
+        if not isinstance(word, str) or not isinstance(positions, list):
+            continue
+        positioned_words.extend((position, word) for position in positions if isinstance(position, int))
+    positioned_words.sort(key=lambda item: item[0])
+    return " ".join(word for _, word in positioned_words) or None
+
+
+def _normalize_pmc_identifier(value: object) -> str | None:
+    """Return a stable ``PMC...`` identifier from provider URL or ID forms."""
+
+    if not isinstance(value, str) or not value.strip():
+        return None
+    normalized = value.strip().rstrip("/")
+    marker = normalized.upper().rfind("PMC")
+    if marker >= 0:
+        suffix = normalized[marker + 3 :]
+        return f"PMC{suffix}" if suffix else None
+    return f"PMC{normalized}"
+
+
 def article_from_openalex(data: dict[str, Any]) -> UnifiedArticle:
     """Create UnifiedArticle from OpenAlex work metadata."""
-    authors = [
-        Author(
-            full_name=authorship.get("author", {}).get("display_name"),
-            orcid=authorship.get("author", {}).get("orcid"),
-        )
-        for authorship in data.get("authorships", [])
-    ]
+    authors = []
+    for authorship in data.get("authorships") or []:
+        if not isinstance(authorship, dict):
+            continue
+        author = authorship.get("author") or {}
+        if not isinstance(author, dict):
+            continue
+        authors.append(Author(full_name=author.get("display_name"), orcid=author.get("orcid")))
 
     year = data.get("publication_year")
     pub_date = None
@@ -205,17 +239,20 @@ def article_from_openalex(data: dict[str, Any]) -> UnifiedArticle:
     doi = None
     pmid = None
     pmc = None
-    if data.get("doi"):
-        doi = data["doi"].replace("https://doi.org/", "")
-    ids = data.get("ids", {})
+    ids = data.get("ids") or {}
+    doi_value = data.get("doi") or ids.get("doi")
+    if isinstance(doi_value, str):
+        doi = doi_value.replace("https://doi.org/", "")
     if ids.get("pmid"):
         pmid = ids["pmid"].replace("https://pubmed.ncbi.nlm.nih.gov/", "").rstrip("/")
     if ids.get("pmcid"):
-        pmc = ids["pmcid"].replace("https://www.ncbi.nlm.nih.gov/pmc/articles/", "").rstrip("/")
+        pmc = _normalize_pmc_identifier(ids["pmcid"])
 
-    is_oa = data.get("open_access", {}).get("is_oa", False)
-    oa_url = data.get("open_access", {}).get("oa_url")
-    oa_status_str = data.get("open_access", {}).get("oa_status", "unknown")
+    open_access = data.get("open_access") or {}
+    best_oa_location = data.get("best_oa_location") or {}
+    is_oa = open_access.get("is_oa", False)
+    oa_url = open_access.get("oa_url") or best_oa_location.get("landing_page_url") or best_oa_location.get("pdf_url")
+    oa_status_str = open_access.get("oa_status", "unknown")
     oa_status_map = {
         "gold": OpenAccessStatus.GOLD,
         "green": OpenAccessStatus.GREEN,
@@ -227,11 +264,18 @@ def article_from_openalex(data: dict[str, Any]) -> UnifiedArticle:
 
     oa_links: list[OpenAccessLink] = []
     if oa_url:
-        oa_links.append(OpenAccessLink(url=oa_url, is_best=True))
+        raw_license = best_oa_location.get("license")
+        oa_links.append(
+            OpenAccessLink(
+                url=oa_url,
+                license=raw_license if isinstance(raw_license, str) else None,
+                is_best=True,
+            )
+        )
 
     journal = None
-    location = data.get("primary_location", {})
-    source = location.get("source", {})
+    location = data.get("primary_location") or {}
+    source = location.get("source") or {}
     if source:
         journal = source.get("display_name")
 
@@ -261,7 +305,7 @@ def article_from_openalex(data: dict[str, Any]) -> UnifiedArticle:
         pmid=pmid,
         pmc=pmc,
         authors=authors,
-        abstract=data.get("abstract"),
+        abstract=_openalex_abstract(data),
         journal=journal,
         year=year,
         publication_date=pub_date,
@@ -278,20 +322,30 @@ def article_from_openalex(data: dict[str, Any]) -> UnifiedArticle:
 
 def article_from_semantic_scholar(data: dict[str, Any]) -> UnifiedArticle:
     """Create UnifiedArticle from Semantic Scholar paper metadata."""
-    authors = [Author(full_name=author.get("name")) for author in data.get("authors", [])]
+    authors = [Author(full_name=author.get("name")) for author in data.get("authors") or [] if isinstance(author, dict)]
 
-    doi = data.get("externalIds", {}).get("DOI")
-    pmid = data.get("externalIds", {}).get("PubMed")
-    pmc = data.get("externalIds", {}).get("PubMedCentral")
-    arxiv = data.get("externalIds", {}).get("ArXiv")
+    external_ids = data.get("externalIds") or {}
+    doi = external_ids.get("DOI")
+    pmid = external_ids.get("PubMed")
+    pmc = _normalize_pmc_identifier(external_ids.get("PubMedCentral"))
+    arxiv = external_ids.get("ArXiv")
 
     is_oa = data.get("isOpenAccess", False)
     oa_links: list[OpenAccessLink] = []
-    if data.get("openAccessPdf", {}).get("url"):
-        oa_links.append(OpenAccessLink(url=data["openAccessPdf"]["url"], is_best=True))
+    open_access_pdf = data.get("openAccessPdf") or {}
+    if open_access_pdf.get("url"):
+        raw_license = open_access_pdf.get("license")
+        oa_links.append(
+            OpenAccessLink(
+                url=open_access_pdf["url"],
+                license=raw_license if isinstance(raw_license, str) else None,
+                is_best=True,
+            )
+        )
 
     article_type = ArticleType.UNKNOWN
-    venue_type = (data.get("publicationVenue", {}) or {}).get("type", "").lower()
+    publication_venue = data.get("publicationVenue") or {}
+    venue_type = publication_venue.get("type", "").lower() if isinstance(publication_venue, dict) else ""
     if venue_type == "journal":
         article_type = ArticleType.JOURNAL_ARTICLE
     elif venue_type == "conference":
@@ -305,11 +359,11 @@ def article_from_semantic_scholar(data: dict[str, Any]) -> UnifiedArticle:
         s2_id=data.get("paperId"),
         doi=doi,
         pmid=pmid,
-        pmc=f"PMC{pmc}" if pmc else None,
+        pmc=pmc,
         arxiv_id=arxiv,
         authors=authors,
         abstract=data.get("abstract"),
-        journal=data.get("venue"),
+        journal=(publication_venue.get("name") if isinstance(publication_venue, dict) else None) or data.get("venue"),
         year=data.get("year"),
         article_type=article_type,
         is_open_access=is_oa,

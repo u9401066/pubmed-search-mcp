@@ -2,14 +2,141 @@
 
 from __future__ import annotations
 
+import json
+from dataclasses import FrozenInstanceError
 from unittest.mock import patch
 
 import pytest
 
-from pubmed_search.infrastructure.sources.registry import SourceSelectionError, get_source_registry
+from pubmed_search.infrastructure.sources.registry import (
+    SourceCapabilities,
+    SourceSelectionError,
+    get_source_registry,
+)
 
 
 class TestSourceRegistry:
+    def test_capabilities_are_immutable_and_alias_aware(self):
+        registry = get_source_registry()
+        capabilities = registry.get_capabilities("semantic-scholar")
+
+        assert capabilities == registry.get_capabilities("semantic_scholar")
+        assert capabilities is not None
+        with pytest.raises(FrozenInstanceError):
+            capabilities.max_page_size = 1  # type: ignore[misc]
+
+    def test_openalex_capabilities_cover_semantic_cursor_search(self):
+        capabilities = get_source_registry().get_capabilities("openalex")
+
+        assert capabilities is not None
+        assert capabilities.search_modes == ("keyword", "semantic", "systematic")
+        assert capabilities.pagination == ("page", "cursor")
+        assert capabilities.max_page_size == 100
+        assert capabilities.mode_limits == (("keyword", 100), ("semantic", 50), ("systematic", 100))
+        assert capabilities.operator_data_plane == "provider_available"
+        assert capabilities.supports_counts is True
+
+    def test_semantic_scholar_capabilities_cover_bounded_bulk_and_dataset_plane(self):
+        capabilities = get_source_registry().get_capabilities("semantic_scholar")
+
+        assert capabilities is not None
+        assert capabilities.search_modes == ("relevance", "systematic")
+        assert capabilities.pagination == ("offset", "token")
+        assert capabilities.max_page_size == 1000
+        assert capabilities.mode_limits == (("relevance", 100), ("systematic", 1000))
+        assert capabilities.batch_limit == 500
+        assert capabilities.operator_data_plane == "metadata_only"
+        assert capabilities.supports_counts is True
+
+    def test_capability_manifest_is_json_safe_and_contains_no_configuration_secrets(self):
+        registry = get_source_registry()
+        manifest = registry.capability_manifest()
+
+        encoded = json.dumps(manifest)
+        assert json.loads(encoded) == manifest
+        assert "required_env_vars" not in encoded
+        assert "enable_env_var" not in encoded
+        assert "SCOPUS_API_KEY" not in encoded
+        assert "CLINICALKEY" not in encoded.upper()
+        assert "clinicalkey_ai" not in manifest
+
+    def test_conservative_capabilities_for_other_selectable_source_classes(self):
+        registry = get_source_registry()
+
+        europe_pmc = registry.get_capabilities("europe_pmc")
+        core = registry.get_capabilities("core")
+        scopus = registry.get_capabilities("scopus")
+        arxiv = registry.get_capabilities("arxiv")
+        crossref = registry.get_capabilities("crossref")
+
+        assert europe_pmc == SourceCapabilities(
+            search_modes=("keyword",),
+            pagination=("cursor",),
+            max_page_size=1000,
+            mode_limits=(("keyword", 1000),),
+            supports_counts=True,
+            supports_provenance=True,
+        )
+        assert core == SourceCapabilities(
+            search_modes=("keyword",),
+            pagination=("offset",),
+            max_page_size=100,
+            supports_counts=True,
+            supports_provenance=True,
+        )
+        assert scopus == SourceCapabilities(
+            search_modes=("keyword",),
+            pagination=("offset",),
+            max_page_size=25,
+            mode_limits=(("keyword", 25),),
+            supports_provenance=True,
+        )
+        assert arxiv == SourceCapabilities(
+            search_modes=("keyword",),
+            max_page_size=100,
+            supports_provenance=True,
+        )
+        assert crossref == SourceCapabilities(
+            search_modes=("enrichment",),
+            pagination=("offset",),
+            max_page_size=1000,
+            supports_counts=True,
+            supports_provenance=True,
+        )
+
+    def test_capability_metadata_does_not_change_unified_source_selection(self):
+        registry = get_source_registry()
+        with patch.dict(
+            "os.environ",
+            {
+                "SCOPUS_ENABLED": "false",
+                "SCOPUS_API_KEY": "",
+                "WEB_OF_SCIENCE_ENABLED": "false",
+                "WEB_OF_SCIENCE_API_KEY": "",
+                "PUBMED_SEARCH_DISABLED_SOURCES": "",
+            },
+            clear=False,
+        ):
+            available = registry.list_unified_sources()
+            selection = registry.resolve_unified_sources(
+                "pubmed,openalex,semantic-scholar,crossref",
+                auto_sources=["pubmed"],
+            )
+
+        assert available == [
+            "pubmed",
+            "openalex",
+            "semantic_scholar",
+            "europe_pmc",
+            "core",
+            "crossref",
+            "arxiv",
+            "medrxiv",
+            "biorxiv",
+        ]
+        assert selection.mode == "explicit"
+        assert selection.sources == ("pubmed", "openalex", "semantic_scholar", "crossref")
+
     def test_list_unified_sources_contains_current_sources(self):
         registry = get_source_registry()
         available = registry.list_unified_sources()
