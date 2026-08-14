@@ -389,6 +389,20 @@ output:
 
 ## Agent 產生 Pipeline 的最佳實踐
 
+### 從中斷的搜尋回復
+
+先讀 server-side durable state，不要依賴對話記憶或 `.github/hooks/_state`：
+
+```python
+read_session(action="search_runs")
+read_session(action="search_run", run_id="<selected-run-id>")
+read_session(action="replay_search", run_id="<selected-run-id>")
+```
+
+`replay_search` 只回傳 credential-free `unified_search` arguments，不會自動執行或消耗
+provider quota。Agent 檢查 source status、artifact audit 與使用者意圖後，再明確呼叫
+`unified_search`。如果原 run 已有 artifact，優先讀 artifact，只有需要最新結果時才 replay。
+
 ### 將對話搜尋轉為 Pipeline
 
 Agent 在完成一次成功搜尋後，可以：

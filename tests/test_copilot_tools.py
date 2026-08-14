@@ -715,8 +715,8 @@ class TestCopilotToolsIntegration:
         # Check that tools were registered
         assert len(mock_mcp._tools) > 0
 
-    async def test_search_pubmed_tool(self, mock_mcp, mock_searcher):
-        """Test search_pubmed tool functionality."""
+    async def test_unified_search_tool(self, mock_mcp, mock_searcher):
+        """Test the simplified profile's unified_search functionality."""
         from pubmed_search.presentation.mcp_server.copilot_tools import (
             register_copilot_compatible_tools,
         )
@@ -724,7 +724,7 @@ class TestCopilotToolsIntegration:
         register_copilot_compatible_tools(mock_mcp, mock_searcher)
 
         # Get the registered tool
-        search_tool = mock_mcp._tools.get("search_pubmed")
+        search_tool = mock_mcp._tools.get("unified_search")
         if search_tool:
             result = await search_tool("cancer treatment", limit=10)
             assert "Test Article" in result
@@ -778,4 +778,4 @@ class TestCopilotToolCount:
             COPILOT_TOOL_COUNT,
         )
 
-        assert COPILOT_TOOL_COUNT == 11
+        assert COPILOT_TOOL_COUNT == 12

@@ -30,7 +30,7 @@ Microsoft Copilot Studio 在匯入 MCP 工具時，會將工具的 JSON Schema
 - 參數全部使用 primitive types（str, int, bool），不用 Optional/Union
 - 內部呼叫與完整版相同的 searcher/client 方法，邏輯完全一致
 - 透過 InputNormalizer 將哨兵值（0, ""）轉回 None
-- 工具數量較少（11 個 vs 完整版 45 個），只暴露 Copilot Studio 最常用的功能
+- 工具數量較少（12 個 vs 完整版 45 個），只暴露 Copilot Studio 最常用的功能
 
 ========================================================================
 何時使用
@@ -149,35 +149,94 @@ def register_copilot_compatible_tools(mcp: MCPServer, searcher: LiteratureSearch
     # ========================================================================
 
     @mcp.tool()
-    async def search_pubmed(
+    async def unified_search(
         query: str,
         limit: int = 10,
         min_year: int = 0,
         max_year: int = 0,
+        sources: str = "",
+        options: str = "",
     ) -> str:
-        """Search PubMed for scientific literature.
+        """Unified multi-source literature search with a Copilot-safe schema.
 
         Args:
             query: Search query (keywords, MeSH terms, etc.)
             limit: Maximum results (1-100, default 10)
             min_year: Minimum publication year (0 = no filter)
             max_year: Maximum publication year (0 = no filter)
+            sources: Comma-separated source expression; empty means auto
+            options: Comma-separated unified-search behavior flags
         """
-        limit = InputNormalizer.normalize_limit(limit, default=10, max_val=100)
-        try:
-            results = await searcher.search(
-                query=query,
-                limit=limit,
-                min_year=min_year if min_year > 1900 else None,
-                max_year=max_year if max_year > 1900 else None,
+        from pubmed_search.presentation.mcp_server.tools.unified_runner import run_unified_search
+
+        year_filters: list[str] = []
+        if min_year > 1900 and max_year > 1900:
+            year_filters.append(f"year:{min_year}-{max_year}")
+        elif min_year > 1900:
+            year_filters.append(f"year:{min_year}-")
+        elif max_year > 1900:
+            year_filters.append(f"year:-{max_year}")
+
+        return await run_unified_search(
+            searcher=searcher,
+            query=query,
+            limit=limit,
+            sources=sources or None,
+            filters=", ".join(year_filters) or None,
+            options=options or None,
+        )
+
+    @mcp.tool()
+    def read_session(
+        action: str = "search_runs",
+        run_id: str = "",
+        run_status: str = "",
+        artifact_id: str = "",
+        artifact_uri: str = "",
+        artifact_file: str = "",
+        max_chars: int = 200_000,
+    ) -> str:
+        """Recover simplified-profile search runs and persisted artifacts.
+
+        Args:
+            action: search_runs, search_run, replay_search, or artifact
+            run_id: Stable run ID returned by unified_search
+            run_status: Optional status filter for search_runs
+            artifact_id: Optional persisted artifact ID
+            artifact_uri: Portable artifact URI returned by unified_search
+            artifact_file: Artifact member to read (for example audit.json)
+            max_chars: Maximum artifact characters to return
+        """
+        from pubmed_search.presentation.mcp_server.session_tools import _read_session_dispatch
+        from pubmed_search.presentation.mcp_server.tools.tool_session import get_session_manager
+
+        session_manager = get_session_manager()
+        if session_manager is None:
+            return json.dumps(
+                {
+                    "success": False,
+                    "error": "Session persistence is unavailable",
+                    "hint": "Run unified_search in a durable local or authenticated service profile first",
+                },
+                ensure_ascii=False,
             )
-            if not results:
-                return ResponseFormatter.no_results(query=query)
-            _cache_results(results, query)
-            return format_search_results(results)
-        except Exception as e:
-            logger.exception(f"Search failed: {e}")
-            return ResponseFormatter.error(e, tool_name="search_pubmed")
+        try:
+            return _read_session_dispatch(
+                session_manager,
+                action=action,
+                run_id=run_id,
+                run_status=run_status,
+                artifact_id=artifact_id,
+                artifact_uri=artifact_uri,
+                artifact_file=artifact_file,
+                max_chars=max_chars,
+            )
+        except Exception as exc:
+            logger.warning("Simplified read_session failed (%s)", type(exc).__name__)
+            return json.dumps(
+                {"success": False, "error": "Session recovery request failed"},
+                ensure_ascii=False,
+            )
 
     @mcp.tool()
     async def get_article(pmid: str) -> str:
@@ -488,4 +547,4 @@ def register_copilot_compatible_tools(mcp: MCPServer, searcher: LiteratureSearch
         )
 
 
-COPILOT_TOOL_COUNT = 11
+COPILOT_TOOL_COUNT = 12

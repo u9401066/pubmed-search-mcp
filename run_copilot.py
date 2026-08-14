@@ -34,6 +34,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
 from pubmed_search.presentation.mcp_server.http_compat import wrap_copilot_compatibility
+from pubmed_search.shared.logging_utils import harden_http_client_logging
 from pubmed_search.shared.settings import DEFAULT_EMAIL
 
 if TYPE_CHECKING:
@@ -43,6 +44,7 @@ if TYPE_CHECKING:
     from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+harden_http_client_logging()
 logger = logging.getLogger(__name__)
 
 _LOOPBACK_ALLOWED_HOSTS = [
@@ -129,7 +131,8 @@ def create_copilot_server(
         instructions="""PubMed Search MCP Server - Copilot Studio Edition
 
 Available tools:
-- search_pubmed: Search for scientific literature
+- unified_search: Single multi-source literature search entry point
+- read_session: Recover search runs, replay arguments, and persisted artifacts
 - get_article: Get article details by PMID
 - find_related: Find related articles
 - find_citations: Find articles that cite a paper

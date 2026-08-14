@@ -1,33 +1,12 @@
-#!/bin/bash
-# Session Cleanup - sessionEnd Hook
-set -e
+#!/usr/bin/env bash
+# Thin wrapper; shared decisions live in hook_runtime.py for shell parity.
+set -u
 
-# --- Dependency check ---
-if ! command -v jq >/dev/null 2>&1; then
-    # Best-effort cleanup without jq
-    rm -f ".github/hooks/_state/last_search_eval.json" 2>/dev/null
-    rm -f ".github/hooks/_state/last_research_eval.json" 2>/dev/null
-    rm -f ".github/hooks/_state/pending_complexity.json" 2>/dev/null
-    exit 0
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+PYTHON_BIN=${PUBMED_HOOK_PYTHON:-}
+if [ -z "$PYTHON_BIN" ]; then
+    PYTHON_BIN=$(command -v python3 2>/dev/null || command -v python 2>/dev/null || true)
 fi
-
-INPUT=$(cat)
-REASON=$(echo "$INPUT" | jq -r '.reason // "unknown"' 2>/dev/null) || REASON="unknown"
-STATE_DIR=".github/hooks/_state"
-
-# Log session end
-if [ -d "$STATE_DIR" ]; then
-    jq -n \
-        --arg timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-        --arg event "session_end" \
-        --arg reason "$REASON" \
-        '{timestamp: $timestamp, event: $event, reason: $reason}' \
-        >> "$STATE_DIR/search_audit.jsonl" 2>/dev/null
-
-    # Clean up state (keep audit log)
-    rm -f "$STATE_DIR/last_search_eval.json" 2>/dev/null
-    rm -f "$STATE_DIR/last_research_eval.json" 2>/dev/null
-    rm -f "$STATE_DIR/pending_complexity.json" 2>/dev/null
-fi
-
+[ -n "$PYTHON_BIN" ] || exit 0
+"$PYTHON_BIN" "$SCRIPT_DIR/hook_runtime.py" session-cleanup || exit 0
 exit 0

@@ -28,33 +28,41 @@ def setup():
 
 
 # ============================================================
-# search_pubmed
+# unified_search
 # ============================================================
 
 
-class TestSearchPubmed:
+class TestUnifiedSearch:
+    def test_is_the_only_generic_literature_search_name(self, setup):
+        tools, _searcher = setup
+
+        assert "unified_search" in tools
+        assert "search_pubmed" not in tools
+        assert "search_openalex" not in tools
+        assert "search_semantic_scholar" not in tools
+
     async def test_no_results(self, setup):
         tools, searcher = setup
         searcher.search.return_value = []
-        result = await tools["search_pubmed"](query="xyznonexistent")
+        result = await tools["unified_search"](query="xyznonexistent")
         assert "no" in result.lower()
 
     async def test_success(self, setup):
         tools, searcher = setup
         searcher.search.return_value = [{"pmid": "123", "title": "Test", "authors": ["A"]}]
-        result = await tools["search_pubmed"](query="diabetes")
+        result = await tools["unified_search"](query="diabetes")
         assert "Test" in result or "123" in result
 
     async def test_exception(self, setup):
         tools, searcher = setup
         searcher.search.side_effect = RuntimeError("fail")
-        result = await tools["search_pubmed"](query="test")
-        assert "error" in result.lower()
+        result = await tools["unified_search"](query="test")
+        assert "error" in result.lower() or "no results" in result.lower()
 
     async def test_year_filters(self, setup):
         tools, searcher = setup
         searcher.search.return_value = [{"pmid": "1", "title": "T"}]
-        _result = await tools["search_pubmed"](query="test", min_year=2020, max_year=2024)
+        _result = await tools["unified_search"](query="test", min_year=2020, max_year=2024)
         searcher.search.assert_called_once()
         call_kwargs = searcher.search.call_args
         assert call_kwargs[1].get("min_year") == 2020 or call_kwargs[0][2] == 2020

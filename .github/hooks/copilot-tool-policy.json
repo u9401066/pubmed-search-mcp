@@ -1,5 +1,25 @@
 {
   "version": 1,
+  "runtimeContract": {
+    "stateSchemaVersion": 2,
+    "decisionMode": "advisory_allow",
+    "privacy": {
+      "persistRawPrompt": false,
+      "persistRawQuery": false,
+      "persistRenderedToolResult": false,
+      "identifier": "session-keyed-hmac-sha256"
+    },
+    "evaluationPriority": [
+      "structuredContent",
+      "jsonTextContent",
+      "resultType"
+    ],
+    "recovery": {
+      "tracker": "workflow_tracker.json",
+      "previousTracker": "workflow_tracker.previous.json",
+      "artifactReader": "read_session"
+    }
+  },
   "toolGroups": {
     "search": [
       "unified_search"

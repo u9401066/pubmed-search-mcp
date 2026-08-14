@@ -124,8 +124,6 @@ def _select_diagnostic_tool(tool_names: set[str]) -> tuple[str, dict[str, Any]] 
 
 
 def _select_live_search(tool_names: set[str]) -> tuple[str, dict[str, Any]] | None:
-    if "search_pubmed" in tool_names:
-        return "search_pubmed", {"query": "remimazolam ICU sedation", "limit": 3}
     if "unified_search" in tool_names:
         return "unified_search", {
             "query": "remimazolam ICU sedation",
