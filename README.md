@@ -24,7 +24,7 @@ A Domain-Driven Design (DDD) based MCP server that serves as an intelligent rese
 
 **🌐 Language**: **English** | [繁體中文](README.zh-TW.md)
 
-**📘 Documentation Map**: README is the quick project entry point. Use the [Docs Site](https://u9401066.github.io/pubmed-search-mcp/) for the best reading experience, the [GitHub Wiki](https://github.com/u9401066/pubmed-search-mcp/wiki) for GitHub-native navigation, and source docs for edits: [User guide](docs/USER_GUIDE.md) | [Advanced workflows](docs/ADVANCED_RESEARCH_WORKFLOWS.md) | [Capability-first guide](docs/TOOLS_USAGE_GUIDE.md) | [Developer guide](docs/DEVELOPER_GUIDE.md) | [Complete index](src/pubmed_search/presentation/mcp_server/TOOLS_INDEX.md)
+**📘 Documentation Map**: README is the quick project entry point. Use the [Docs Site](https://u9401066.github.io/pubmed-search-mcp/) for the best reading experience, the [GitHub Wiki](https://github.com/u9401066/pubmed-search-mcp/wiki) for GitHub-native navigation, and source docs for edits: [User guide](docs/USER_GUIDE.md) | [Advanced workflows](docs/ADVANCED_RESEARCH_WORKFLOWS.md) | [Capability-first guide](docs/TOOLS_USAGE_GUIDE.md) | [Provider data planes](docs/SEMANTIC_SCHOLAR_API.md) | [BioMCP architecture analysis](docs/BIOMCP_ARCHITECTURE_ANALYSIS.md) | [Developer guide](docs/DEVELOPER_GUIDE.md) | [Complete index](src/pubmed_search/presentation/mcp_server/TOOLS_INDEX.md)
 
 ---
 
@@ -44,7 +44,7 @@ A Domain-Driven Design (DDD) based MCP server that serves as an intelligent rese
 
 - **NCBI Email** — Required by [NCBI API policy](https://www.ncbi.nlm.nih.gov/books/NBK25497/#chapter2.Usage_Guidelines_and_Requirements). Any valid email address.
 - **NCBI API Key** *(optional)* — [Get one here](https://www.ncbi.nlm.nih.gov/account/settings/) for higher rate limits (10 req/s vs 3 req/s)
-- **OpenAlex API Key** *(optional)* — set `OPENALEX_API_KEY` to use authenticated OpenAlex requests instead of mailto-only polite-pool auth. Without source-specific emails, the server reuses the configured runtime contact email for OpenAlex, CrossRef, and Unpaywall.
+- **OpenAlex API Key** *(optional)* — set `OPENALEX_API_KEY` to use an authenticated credit allocation; without it, requests use OpenAlex's current anonymous casual-use budget. `mailto` is contact metadata, not authentication. Without source-specific emails, the server reuses the configured runtime contact email for OpenAlex, CrossRef, and Unpaywall.
 
 ### Install & Run
 
@@ -333,7 +333,7 @@ Other tools give you raw API access. We give you **vocabulary translation + inte
 ### Key Differentiators
 
 1. **Vocabulary Translation Layer** - Agent speaks naturally, we translate to each database's terminology (MeSH, ICD-10, text-mined entities)
-2. **Unified Search Gateway** - One `unified_search()` call, auto-dispatch to PubMed/Europe PMC/CORE/OpenAlex
+2. **Unified Search Gateway** - One `unified_search()` call, capability-aware dispatch across PubMed, Europe PMC, CORE, OpenAlex, Semantic Scholar, and enabled preprint/commercial sources
 3. **PICO Handoff + Pipeline** - the Agent extracts P/I/C/O, `parse_pico()` validates that structured handoff, and the backend `template: pico` pipeline executes O-aware precision/recall searches
 4. **Research Chronicle & Lineage Tree** - Detect milestones with policy-driven heuristics, identify landmark papers via multi-signal scoring, surface diagnostics, persist versioned revisions you can diff, and visualize research evolution as branching trees by sub-topic
 5. **Citation Network Analysis** - Build multi-level citation trees to map an entire research landscape from a single paper
@@ -354,8 +354,8 @@ This MCP server integrates with multiple academic databases and APIs:
 | **NCBI Entrez** | Multi-DB | MeSH | ✅ Native | Gene, PubChem, ClinVar |
 | **Europe PMC** | 33M+ | Text-mined | ✅ Extraction | Full text XML access |
 | **CORE** | 200M+ | None | ➡️ Free-text | Open access aggregator |
-| **Semantic Scholar** | 200M+ | S2 Fields | ➡️ Free-text | AI-powered recommendations |
-| **OpenAlex** | 250M+ | Concepts | ➡️ Free-text | Open scholarly metadata |
+| **Semantic Scholar** | Evolving graph + operator datasets | S2 fields / bulk syntax | ✅ Broker-compiled modes | Relevance, bounded bulk, batch, citation graph, and metadata-only release/diff plane; no partition download |
+| **OpenAlex** | Evolving open research graph | Topics / keywords | ✅ Keyword + bounded native semantic | Cursor, cost provenance, entity graph, and declared operator snapshot path; no local index yet |
 | **NIH iCite** | PubMed | N/A | N/A | Citation metrics (RCR) |
 
 > **🔑 Key**: ✅ = Full vocabulary support | ➡️ = Query pass-through (no controlled vocabulary)
@@ -374,6 +374,7 @@ CORE_API_KEY=your_core_api_key     # Get from: https://core.ac.uk/services/api
 CROSSREF_EMAIL=your@email.com      # Optional override; defaults to server/NCBI email
 UNPAYWALL_EMAIL=your@email.com     # Optional override; defaults to server/NCBI email
 S2_API_KEY=your_s2_api_key         # Alias: SEMANTIC_SCHOLAR_API_KEY
+OPENALEX_API_KEY=your_openalex_key # Raises the OpenAlex credit budget; actual grant is response-driven
 PUBMED_SEARCH_DISABLED_SOURCES=    # Example: semantic_scholar
 
 # Optional - Network settings
@@ -392,9 +393,11 @@ PUBMED_WORKSPACE_DIR=/path/to/project       # fallback: references/ under this w
 PUBMED_DATA_DIR=~/.pubmed-search-mcp        # fallback: references/ under this data dir
 ```
 
-CrossRef, Unpaywall, and OpenAlex reuse the runtime server contact email
-(`NCBI_EMAIL`, CLI `--email`, or detected git email) unless a source-specific
-email/API key is configured.
+CrossRef and Unpaywall reuse the runtime server contact email (`NCBI_EMAIL`,
+CLI `--email`, or detected git email) unless a source-specific email is
+configured. OpenAlex accepts casual anonymous use and an optional API key; the
+broker reads its response credit/rate metadata instead of assuming a permanent
+"polite pool" quota.
 
 Local note export resolves directories in this order: `output_dir` argument, `PUBMED_NOTES_DIR`, `PUBMED_WORKSPACE_DIR/references`, `PUBMED_DATA_DIR/references`, then `~/.pubmed-search-mcp/references`.
 This path/template selection applies only to trusted local mode. Authenticated
@@ -463,10 +466,12 @@ Start with the [Tools Usage Guide](docs/TOOLS_USAGE_GUIDE.md): it compresses the
 │   unified_search()          ← 🌟 Single entry for all sources    │
 │        │                                                         │
 │        ├── Quick search     → Direct multi-source query          │
+│        ├── Native semantic → Bounded OpenAlex semantic mode    │
+│        ├── Systematic       → Bounded provider bulk/cursor mode  │
 │        ├── PICO hints       → Detects comparison, shows P/I/C/O  │
 │        └── ICD expansion    → Auto ICD→MeSH conversion           │
 │                                                                  │
-│   Sources: PubMed · Europe PMC · CORE · OpenAlex                 │
+│   Sources: PubMed · Europe PMC · CORE · OpenAlex · S2            │
 │   Auto: Deduplicate → Rank → Enrich full-text links              │
 │                                                                  │
 ├─────────────────────────────────────────────────────────────────┤
@@ -478,6 +483,59 @@ Start with the [Tools Usage Guide](docs/TOOLS_USAGE_GUIDE.md): it compresses the
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+#### One search entry, three retrieval policies
+
+Generic literature discovery is intentionally exposed through exactly one MCP
+tool: `unified_search`. Provider-specific APIs remain internal broker
+capabilities:
+
+```python
+# Default relevance/keyword routing across enabled sources
+unified_search(query="treatment resistance")
+
+# OpenAlex native semantic search (provider maximum 50 results)
+unified_search(
+    query="mechanisms of treatment resistance",
+    sources="openalex",
+    options="native_semantic",
+)
+
+# Deterministic/bounded retrieval: OpenAlex cursor and S2 bulk where selected
+unified_search(
+    query="melanoma AND immunotherapy",
+    sources="pubmed,openalex,semantic_scholar",
+    options="systematic",
+)
+```
+
+`native_semantic` and `systematic` are mutually exclusive and disable the
+multi-strategy deep-search expansion. Explicit source selections fail before a
+network call when a requested retrieval mode is unsupported; automatic source
+selection retains only capable providers. `limit` remains at most 100 per
+source, so `systematic` means deterministic, bounded provider execution—not an
+exhaustive systematic-review guarantee. Structured output and artifacts record
+`retrieval_mode` plus per-source `source_metadata` (requested/provider mode,
+canonical or compiled query, continuation availability, cost/rate metadata,
+and warnings when available).
+
+The public request boundary is fail-closed. `limit` must be an integer from 1
+through 100; unknown or malformed `filters` / `options`, reversed or out-of-range
+years, and unsupported ranking or output modes return a validation error before
+provider I/O. In the default deep-search policy, `limit` is one **total budget
+per source** divided across that source's query strategies—not `limit` results
+for every strategy. Strategy calls use bounded global/per-source concurrency
+and timeouts, and successful sources remain usable when another source times
+out, is rate-limited, or fails.
+
+Europe PMC, Scopus, and Web of Science remain keyword-only in this release;
+explicit systematic requests for those sources fail before I/O instead of
+mislabeling a single page as systematic coverage.
+
+See [Source Contracts](docs/SOURCE_CONTRACTS.md),
+[Semantic Scholar](docs/SEMANTIC_SCHOLAR_API.md), and
+[OpenAlex](docs/OPENALEX_API.md) for provider limits and operator data-plane
+boundaries.
 
 ### 🔬 Discovery Tools (After Finding Key Papers)
 
@@ -610,7 +668,7 @@ warning. In revision diffs, absence means `not_observed_in_revision` /
 | `get_session_pmids` | Retrieve cached PMID lists |
 | `get_cached_article` | Get article from session cache (no API cost) |
 | `get_session_summary` | Session status overview |
-| `read_session` | Facade for PMIDs, cached articles, history, and persistent artifacts |
+| `read_session` | Facade for PMIDs, cached articles, durable search runs, replay arguments, history, and persistent artifacts |
 
 Dynamic MCP resources are also available for agents that can read resources directly:
 
@@ -644,6 +702,59 @@ read_session(action="artifact", artifact_uri="artifact://...", artifact_file="re
 read_session(action="list_artifacts", include_local_paths=true)
 ```
 
+### Recoverable search runs
+
+When session management is active, every `unified_search` invocation receives a
+stable run ID. This includes normal searches, validation/planning failures, and
+inline, `saved:<name>`, or `dry_run=true` pipeline execution. Structured results
+and errors attach the `search_run` handoff; Markdown returns the same run ID as
+a compact recovery note. Normal literature-result envelopes expose two separate
+machine contracts:
+
+- `search_status` describes the bounded retrieval outcome: `state`
+  (`completed`, `empty`, `partial`, or `failed`), `bounded=true`,
+  `exhaustive=false`, returned count, attempted/successful/failed/retryable
+  sources, and continuation/unknown-completeness source lists.
+- `search_run` is the recovery handoff: stable `run_id`, journal status,
+  `recoverable`, exact `read_session` inspect/replay arguments, and the artifact
+  URI when one was committed.
+
+The tenant-scoped `search-run/v1` journal is published before provider I/O or a
+terminal validation response and records the sanitized request, plan,
+physical per-source or per-pipeline-step attempts, counts, safe failures,
+result references, and artifact locator when applicable. It reaches a terminal
+`completed`, `partial`, `failed`, or `cancelled` state; a valid zero-result
+search is a `completed` run whose `search_status.state` is `empty`. On restart,
+an unfinished `started` / `planned` / `running` entry is recovered once as
+`interrupted` instead of disappearing. A non-dry-run saved pipeline additionally
+keeps its PipelineStore report/run history; that is complementary to the
+invocation-level search journal, not a replacement for it.
+
+Pipeline replay preserves the original inline or `saved:<name>` argument plus
+`dry_run` / `stop_at`. Pipeline text containing keys, tokens, cookies, passwords,
+or other credential material is rejected and recorded as a failed run; provider
+credentials belong in server environment/configuration, never pipeline YAML or
+JSON.
+
+```text
+read_session(action="search_runs")
+read_session(action="search_runs", run_status="partial")
+read_session(action="search_run", run_id="...")
+read_session(action="replay_search", run_id="...")
+```
+
+`replay_search` only returns the original credential-free `unified_search`
+kwargs. It never executes a network call automatically; the agent or user must
+review and explicitly submit them. Provider cursor/token values are retained
+as opaque provenance in `source_metadata` and `query_strategy.json`, but there
+is no public cursor-resume parameter yet, so replay starts a new bounded search.
+
+If the terminal journal write cannot be recovered, the response reports
+`search_run.status="history_unavailable"`, `history_available=false`, the
+intended terminal status, and a warning. It deliberately omits inspect/replay
+actions because durable recovery is not guaranteed; the search result itself
+may still be usable.
+
 `unified_search` artifacts use a research envelope. Start with `audit.json` for
 source-count and completeness warnings, then `query_strategy.json` for the exact
 executed plan, and finally `results.json` / `results.toon` for the complete
@@ -652,6 +763,10 @@ traceability.
 
 Artifacts are generated from the already-computed result object, so reading an
 artifact does not rerun searches or fulltext retrieval.
+If a crash occurs after an artifact directory is atomically published but
+before the session index is updated, session reload discovers only complete,
+checksum-indexed manifests and relinks the orphaned artifact to its search run
+by `search_run_id` (with a conservative query match for older artifacts).
 `read_session` redacts local filesystem paths by default; `local_path` and
 `manifest_path` are server-local paths, not portable client paths. Artifacts
 from `get_fulltext` may contain article body text, including subscription or
@@ -736,6 +851,18 @@ Search **arXiv**, **medRxiv**, and **bioRxiv** preprint servers via `unified_sea
 | `context_graph` | Append a lightweight Research Context Graph preview from the current PMID-backed ranked set to Markdown output and include `research_context` in JSON output |
 
 This is useful when an agent needs quick thematic branching without making a second `build_research_chronicle` call.
+
+### 🧪 Clinical-Trial Registry Adjunct
+
+ClinicalTrials.gov is never queried implicitly. Add `options="trials"` to a
+Markdown search when a bounded registry adjunct is useful. It remains separate
+from the literature-source plan and source counts; the durable artifact records
+its truncated physical query and outcome under `adjunct_queries`. Structured
+JSON/TOON searches do not run this display-only adjunct.
+
+```python
+unified_search(query="remimazolam ICU sedation", options="trials")
+```
 
 ### 📊 Count-First Orientation
 
@@ -1003,7 +1130,8 @@ manage_pipeline(action="history", name="icu_sedation_weekly")  # View past runs
 | ---- | ----------- | -------- | ------------- |
 | **Quick** | `unified_search()` | Fast topic search | ICD→MeSH, multi-source, dedup |
 | **PICO** | Agent P/I/C/O -> `parse_pico()` | Clinical questions | Validate handoff -> `template:pico` backend search |
-| **Systematic** | `generate_search_queries()` | Literature reviews | MeSH expansion, synonyms |
+| **Systematic** | `generate_search_queries()` → `unified_search(options="systematic")` | Reproducible review seed | MeSH/synonyms plus bounded bulk/cursor execution; not an exhaustiveness claim |
+| **Native semantic** | `unified_search(options="native_semantic")` | Conceptual similarity in title/abstract space | Capability validation; OpenAlex semantic mode, max 50 |
 | **Exploration** | `find_*_articles()` | From key paper | Citation network, related |
 
 ---
@@ -1101,8 +1229,8 @@ Different data sources use different controlled vocabulary systems. This server 
 | **PubMed / NCBI** | MeSH (Medical Subject Headings) | ✅ Full support via `expand_with_mesh()` |
 | **ICD Codes** | ICD-10-CM / ICD-9-CM | ✅ Auto-detect & convert to MeSH |
 | **Europe PMC** | Text-mined entities (Gene, Disease, Chemical) | ✅ `get_text_mined_terms()` extraction |
-| **OpenAlex** | OpenAlex Concepts (deprecated) | ❌ Free-text only |
-| **Semantic Scholar** | S2 Field of Study | ❌ Free-text only |
+| **OpenAlex** | Topics / keywords (model-inferred) | ✅ Broker keyword mode; bounded native semantic mode when selected |
+| **Semantic Scholar** | S2 fields / bulk query syntax | ✅ Broker chooses relevance or bounded bulk mode; provider annotations keep provenance |
 | **CORE** | None | ❌ Free-text only |
 | **CrossRef** | None | ❌ Free-text only |
 
@@ -1237,7 +1365,7 @@ export NGROK_DOMAIN="your-assigned-domain.ngrok.dev"
 
 > 📖 **Full documentation**: [copilot-studio/README.md](copilot-studio/README.md)
 >
-> Use `pubmed-search-mcp-http --copilot-compatible` for packaged Copilot HTTP semantics. `run_server.py` remains a source-tree development wrapper; use `run_copilot.py` only for loopback-only simplified-schema smoke tests. The tunnel script requires an assigned `NGROK_DOMAIN`, refuses occupied backend ports, and publishes only after `--mode service` passes readiness and unauthenticated-rejection checks.
+> Use `pubmed-search-mcp-http --copilot-compatible` for packaged Copilot HTTP semantics. `run_server.py` remains a source-tree development wrapper; use `run_copilot.py` only for loopback-only 12-tool primitive-schema smoke tests. That simplified surface still calls the shared runner through `unified_search(query, limit, min_year, max_year, sources, options)` and exposes primitive-schema `read_session` for search-run, replay-argument, and artifact recovery; it does not expose a PubMed-only generic-search alias. The tunnel script requires an assigned `NGROK_DOMAIN`, refuses occupied backend ports, and publishes only after `--mode service` passes readiness and unauthenticated-rejection checks.
 >
 > ⚠️ **Note**: SSE transport deprecated since Aug 2025. Use `streamable-http`.
 

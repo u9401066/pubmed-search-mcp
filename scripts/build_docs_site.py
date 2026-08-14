@@ -60,6 +60,10 @@ PAGES = [
         REPO_ROOT / "src" / "pubmed_search" / "presentation" / "mcp_server" / "TOOLS_INDEX.md",
     ),
     ("source-contracts", "Source Contracts", DOCS_ROOT / "SOURCE_CONTRACTS.md"),
+    ("semantic-scholar-api", "Semantic Scholar Data Plane", DOCS_ROOT / "SEMANTIC_SCHOLAR_API.md"),
+    ("openalex-api", "OpenAlex Search And Data Plane", DOCS_ROOT / "OPENALEX_API.md"),
+    ("clinicalkey-ai", "ClinicalKey AI Boundary", DOCS_ROOT / "CLINICALKEY_AI_INTEGRATION.md"),
+    ("biomcp-analysis", "BioMCP Architecture Analysis", DOCS_ROOT / "BIOMCP_ARCHITECTURE_ANALYSIS.md"),
     ("troubleshooting", "Integrations & Operations", DOCS_ROOT / "INTEGRATIONS.md"),
     ("deployment", "Deployment", REPO_ROOT / "DEPLOYMENT.md"),
 ]

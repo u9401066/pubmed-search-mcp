@@ -2,6 +2,14 @@
 
 <!-- markdownlint-disable MD022 MD024 MD031 MD032 MD040 MD058 MD060 -->
 
+> **Historical planning archive:** this roadmap preserves names and milestones
+> from earlier tool surfaces. It is not the current runtime contract. Use the
+> generated registry / MCP `tools/list` as the source of truth; the only generic
+> literature-search tool in every supported runtime is `unified_search`.
+> Names such as `search_pubmed`, `search_openalex`, `search_literature`, and
+> `search_core` below are historical plan references or internal pipeline step
+> labels, not current public MCP search tools.
+
 > 本文件記錄**待實作**功能。已完成功能請參閱 [CHANGELOG.md](CHANGELOG.md)。
 > **最後更新**: 2026-08-12
 

@@ -58,6 +58,12 @@ PAGES: tuple[WikiPage, ...] = (
         "Quick-Reference", "Quick Reference", REPO_ROOT / "src/pubmed_search/presentation/mcp_server/TOOLS_INDEX.md"
     ),
     WikiPage("Source-Contracts", "Source Contracts", DOCS_ROOT / "SOURCE_CONTRACTS.md"),
+    WikiPage("Semantic-Scholar-Data-Plane", "Semantic Scholar Data Plane", DOCS_ROOT / "SEMANTIC_SCHOLAR_API.md"),
+    WikiPage("OpenAlex-Search-And-Data-Plane", "OpenAlex Search And Data Plane", DOCS_ROOT / "OPENALEX_API.md"),
+    WikiPage("ClinicalKey-AI-Boundary", "ClinicalKey AI Boundary", DOCS_ROOT / "CLINICALKEY_AI_INTEGRATION.md"),
+    WikiPage(
+        "BioMCP-Architecture-Analysis", "BioMCP Architecture Analysis", DOCS_ROOT / "BIOMCP_ARCHITECTURE_ANALYSIS.md"
+    ),
     WikiPage("Troubleshooting", "Troubleshooting", DOCS_ROOT / "INTEGRATIONS.md"),
     WikiPage("Deployment", "Deployment", REPO_ROOT / "DEPLOYMENT.md"),
 )
@@ -152,6 +158,10 @@ interactive documentation site remains the preferred reading surface:
 - [Architecture](Architecture)
 - [Quick Reference](Quick-Reference)
 - [Source Contracts](Source-Contracts)
+- [Semantic Scholar Data Plane](Semantic-Scholar-Data-Plane)
+- [OpenAlex Search And Data Plane](OpenAlex-Search-And-Data-Plane)
+- [ClinicalKey AI Boundary](ClinicalKey-AI-Boundary)
+- [BioMCP Architecture Analysis](BioMCP-Architecture-Analysis)
 - [Troubleshooting](Troubleshooting)
 - [Deployment](Deployment)
 
@@ -189,6 +199,10 @@ def _render_sidebar() -> str:
 - [開發者指南](Developer-Guide.zh-TW)
 - [Architecture](Architecture)
 - [Source Contracts](Source-Contracts)
+- [Semantic Scholar Data Plane](Semantic-Scholar-Data-Plane)
+- [OpenAlex Search And Data Plane](OpenAlex-Search-And-Data-Plane)
+- [ClinicalKey AI Boundary](ClinicalKey-AI-Boundary)
+- [BioMCP Architecture Analysis](BioMCP-Architecture-Analysis)
 - [Quick Reference](Quick-Reference)
 
 ## Operations

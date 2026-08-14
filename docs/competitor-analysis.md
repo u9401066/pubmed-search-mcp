@@ -1,15 +1,20 @@
-# 競品賣點分析 (內部文件)
+# 競品賣點分析（歷史快照／內部文件）
 
-> **文件性質**: 內部參考  
-> **目的**: 收集其他專案的亮點功能，供未來擴展參考  
-> **最後更新**: 2026-02-10  
-> **維護者**: Eric
+> **文件性質**：只讀式歷史比較資料，不是目前產品／競品規格
 >
-> **歷史邊界 (2026-08-09)**: 本文的 stars、競品 tool count 與 FastMCP
-> 描述是 2026-02 的比較 snapshot，不是當前 PubMed Search MCP runtime
-> 合約。本 repo 現已使用 MCP SDK v2 `MCPServer`、45-tool primary
-> surface 與分離的 local/authenticated-service profiles；競品專案仍可依其
-> 當時架構保留 FastMCP 名稱。
+> **原始比較截止**：2026-02-10
+> **維護者**：Eric
+>
+> 本文保留當時觀察到的 stars、forks、語言比例、tool/source count、FastMCP
+> 名稱與 roadmap；這些數字**全部可能已過期**，不可用來描述 2026-08-14 的
+> repository 現況，也不可作為 implementation contract。PubMed Search MCP 目前的
+> runtime 以 MCP SDK v2、45-tool primary surface、唯一 generic literature search
+> `unified_search` 與分離的 local/authenticated-service profiles 為準。
+>
+> BioMCP 的重新驗證、逐項 source/entity/rights 分析及本輪實作狀態，請只引用
+> [BioMCP 架構分析與本專案採用決策](BIOMCP_ARCHITECTURE_ANALYSIS.md)。本歷史檔
+> 的 BioMCP stars、Python 比例、24 tools/10 sources 與「Think Tool」描述不得
+> 當作現況轉述。
 
 ---
 
@@ -39,7 +44,7 @@
 | 10 | **zotero-mcp** ⭐⭐ | [54yyyu/zotero-mcp](https://github.com/54yyyu/zotero-mcp) | Zotero 語義搜尋 + Embeddings + PDF 註釋 (751 stars) |
 | 11 | **pubmearch** | [Darkroaster/pubmearch](https://github.com/Darkroaster/pubmearch) | PubMed 熱點分析 + 趨勢追蹤 + 發文統計 (142 stars) |
 | 12 | **mcp-simple-pubmed** | [andybrandt/mcp-simple-pubmed](https://github.com/andybrandt/mcp-simple-pubmed) | PubMed 輕量 + 全文取得 + Smithery (142 stars) |
-| 13 | **BioMCP** ⭐⭐⭐ | [genomoncology/biomcp](https://github.com/genomoncology/biomcp) | 生醫全局 (24 Tools + 10 數據源 + 統一查詢語言) (413 stars) |
+| 13 | **BioMCP** ⭐⭐⭐ | [genomoncology/biomcp](https://github.com/genomoncology/biomcp) | 歷史觀察；現況與採用決策見[專篇](BIOMCP_ARCHITECTURE_ANALYSIS.md) |
 | 14 | **pubmedmcp** | [grll/pubmedmcp](https://github.com/grll/pubmedmcp) | PubMed 極簡 + uvx 一鍵運行 (95 stars) |
 | 15 | **pubmed-mcp-server** ⭐ | [cyanheads/pubmed-mcp-server](https://github.com/cyanheads/pubmed-mcp-server) | PubMed TypeScript + 圖表生成 + HTTP (52 stars) |
 | 16 | **paper-search-mcp-nodejs** | [Dianel555/paper-search-mcp-nodejs](https://github.com/Dianel555/paper-search-mcp-nodejs) | 14 平台搜尋 + 安全特性 (91 stars) 🆕 |
@@ -1627,12 +1632,17 @@ generate_comprehensive_analysis  # 綜合報告生成
 
 ## 15. BioMCP (genomoncology) ⭐⭐⭐ 生醫全局型
 
-> **定位**: 生醫領域全局型 MCP — 多數據源 + 統一查詢語言  
-> **GitHub**: https://github.com/genomoncology/biomcp  
-> **Stars**: ⭐ 367 | **Forks**: 67 | **Contributors**: 9  
-> **語言**: Python 95.2%  
-> **網站**: https://biomcp.org/  
-> **數據來源**: 10+ 個生醫資料庫
+> **歷史資料警告**：以下小節是 2024-12 至 2026-02 的舊快照，數字與架構敘述
+> 不再維護。請改讀 2026-08-14 驗證的
+> [BioMCP 架構分析與本專案採用決策](BIOMCP_ARCHITECTURE_ANALYSIS.md)；該文件以
+> executable spec/current source 優先，並把本輪已落地與後續工作分開。
+>
+> **當時定位**：生醫領域全局型 MCP — 多數據源 + 統一查詢語言
+>
+> **GitHub**：<https://github.com/genomoncology/biomcp>
+>
+> **當時記錄**：367 stars、67 forks、9 contributors、Python 95.2%、10+ sources
+> **網站**：<https://biomcp.org/>
 
 ### 核心賣點
 
