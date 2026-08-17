@@ -227,13 +227,13 @@ def _optional_string_error(name: str, value: Any, *, max_length: int | None = No
 def _forbid_extra_tool_arguments(mcp: MCPServer, *tool_names: str) -> None:
     """Make the two Chronicle argument models reject unknown MCP properties.
 
-    FastMCP currently has no decorator-level model-config hook.  Keep this
+    MCPServer currently has no decorator-level model-config hook.  Keep this
     post-registration adjustment local to Chronicle rather than changing the
     argument behavior of every server tool.
     """
     manager = getattr(mcp, "_tool_manager", None)
     get_tool = getattr(manager, "get_tool", None)
-    if not callable(get_tool):  # pragma: no cover - compatibility with a future FastMCP implementation
+    if not callable(get_tool):  # pragma: no cover - compatibility with a future MCPServer implementation
         logger.warning("Could not enable strict extra-property rejection for Chronicle tools")
         return
     for tool_name in tool_names:
@@ -244,9 +244,9 @@ def _forbid_extra_tool_arguments(mcp: MCPServer, *tool_names: str) -> None:
         argument_model = tool.fn_metadata.arg_model
         if not isinstance(argument_model, type) or not issubclass(argument_model, BaseModel):
             # Lightweight MCP doubles used by embedders may expose a callable
-            # ``get_tool`` without constructing FastMCP's Pydantic metadata.
+            # ``get_tool`` without constructing MCP SDK 2's Pydantic metadata.
             # Registration must remain compatible with those hosts; the real
-            # FastMCP path below is still hardened and covered by protocol tests.
+            # MCP SDK 2 path below is still hardened and covered by protocol tests.
             logger.debug("Skipping Chronicle schema hardening for non-Pydantic tool %s", tool_name)
             continue
         argument_model.model_config["extra"] = "forbid"
