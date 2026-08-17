@@ -41,7 +41,7 @@ dependencies = [
     "apscheduler>=3.10.4,<4",
     "biopython>=1.81,<2",
     "pylatexenc>=2.10",  # Unicode to LaTeX conversion for BibTeX export
-    "mcp>=2.0,<3",  # MCPServer (ex-FastMCP), 2026-07-28 protocol era, mcp-types split
+    "mcp>=2.0,<3",  # MCPServer, 2026-07-28 protocol era, mcp-types split
     "anyio>=4.9,<5",
     "fastapi>=0.128.0",
     "httpx>=0.28.1",
@@ -124,6 +124,7 @@ warmup_iterations = 1
 dev = [
     "deptry>=0.24.0",
     "mypy>=1.15",
+    "numpy<2.5",  # NumPy 2.5 stubs require Python 3.12 syntax; mypy targets supported Python 3.10
     "pytest>=9.0",
     "pytest-asyncio>=0.26",
     "pytest-cov>=7.0",
