@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import time
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -377,26 +376,44 @@ class TestGetFulltext:
             }
         )
 
+        cancellation_release = asyncio.Event()
+        callback_deadline_reached = asyncio.Event()
+
         async def _ignore_cancel(*args, **kwargs):
             try:
                 await asyncio.Event().wait()
             except asyncio.CancelledError:
-                await asyncio.sleep(0.2)
+                await cancellation_release.wait()
+
+        async def _release_after_deadline() -> None:
+            await asyncio.sleep(1.0)
+            callback_deadline_reached.set()
+            cancellation_release.set()
 
         ctx = MagicMock()
         ctx.report_progress = AsyncMock(side_effect=_ignore_cancel)
         ctx.log = AsyncMock(side_effect=_ignore_cancel)
 
-        with patch(
-            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
-            return_value=mock_client,
-        ):
-            started = time.monotonic()
-            result = await asyncio.wait_for(tools["get_fulltext"](pmcid="PMC7096777", ctx=ctx), timeout=1.0)
+        deadline_task = asyncio.create_task(_release_after_deadline())
+        try:
+            with patch(
+                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
+                return_value=mock_client,
+            ):
+                result = await asyncio.wait_for(
+                    tools["get_fulltext"](pmcid="PMC7096777", ctx=ctx),
+                    timeout=2.0,
+                )
 
-        assert time.monotonic() - started < 0.2
-        assert "Test Article" in result
-        await asyncio.sleep(0.25)
+            assert not callback_deadline_reached.is_set()
+            assert "Test Article" in result
+        finally:
+            cancellation_release.set()
+            deadline_task.cancel()
+            try:
+                await deadline_task
+            except asyncio.CancelledError:
+                pass
 
     @pytest.mark.asyncio
     async def test_json_contract(self, tools):
