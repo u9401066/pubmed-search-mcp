@@ -1,0 +1,149 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="680" viewBox="0 0 1200 680" role="img" aria-labelledby="title desc">
+  <title id="title">Research Chronicle Architecture and Lineage Flow</title>
+  <desc id="desc">How biomedical literature is structured into an evidence-backed chronological spine with thematic lineage branches, immutable revision store, and multi-format projections.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#263f46"/>
+    </marker>
+    <style>
+      .bg { fill: #fbfcfa; }
+      .title { font: 700 28px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #17252a; }
+      .subtitle { font: 400 15px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #526168; }
+      .box { stroke-width: 2; rx: 16; }
+      .label { font: 700 17px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #152126; }
+      .tool { font-size: 13.5px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+      .body { font: 400 13.5px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #3e4a50; }
+      .badge { font: 600 12px system-ui, sans-serif; fill: #ffffff; }
+      .arrow { fill: none; stroke: #263f46; stroke-width: 2.5; marker-end: url(#arrow); }
+      .dashed-arrow { fill: none; stroke: #526168; stroke-width: 2; stroke-dasharray: 5 4; marker-end: url(#arrow); }
+      .axis { stroke: #3578a7; stroke-width: 3; }
+      .dot { stroke: #ffffff; stroke-width: 2.5; }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1200" height="680"/>
+  <text class="title" x="52" y="52">Research Chronicle: Architecture &amp; Lineage Flow</text>
+  <text class="subtitle" x="52" y="78">Evidence-backed chronological spine, semantic lineage branches, versioned immutable store, and multi-format projections.</text>
+
+  <!-- Column 1: Input & Scope -->
+  <rect class="box" x="50" y="115" width="220" height="150" fill="#eef2ff" stroke="#4f68a8"/>
+  <rect x="65" y="125" width="90" height="22" rx="6" fill="#4f68a8"/>
+  <text class="badge" x="73" y="140">INPUT SCOPE</text>
+  <text class="label" x="65" y="172">Evidence Selection</text>
+  <text class="body" x="65" y="196">• Topic (with year filters)</text>
+  <text class="body" x="65" y="216">• Explicit PMIDs / "last"</text>
+  <text class="body" x="65" y="236">• Chronicle ID (re-run)</text>
+  <text class="body tool" x="65" y="255">build_research_chronicle</text>
+
+  <!-- Column 2: Intelligence & Assembly -->
+  <rect class="box" x="315" y="115" width="250" height="150" fill="#eaf4f0" stroke="#3a7c69"/>
+  <rect x="330" y="125" width="115" height="22" rx="6" fill="#3a7c69"/>
+  <text class="badge" x="338" y="140">ASSEMBLER &amp; SDA</text>
+  <text class="label" x="330" y="172">Landmarks &amp; Lineages</text>
+  <text class="body" x="330" y="196">• Landmark scoring (SDA/RCR)</text>
+  <text class="body" x="330" y="216">• MeSH &amp; Keyword clustering</text>
+  <text class="body" x="330" y="236">• Primary branch + Cross-links</text>
+  <text class="body" x="330" y="255">• Epistemic audit &amp; graph invariants</text>
+
+  <!-- Column 3: Immutable Versioned Storage -->
+  <rect class="box" x="610" y="115" width="250" height="150" fill="#fff5df" stroke="#b27b21"/>
+  <rect x="625" y="125" width="125" height="22" rx="6" fill="#b27b21"/>
+  <text class="badge" x="633" y="140">VERSIONED STORE</text>
+  <text class="label" x="625" y="172">Revision N+1 (Atomic)</text>
+  <text class="body" x="625" y="196">• snapshot.json &amp; audit.json</text>
+  <text class="body" x="625" y="216">• graph.json &amp; evidence.json</text>
+  <text class="body" x="625" y="236">• chronicle_map.json (coords)</text>
+  <text class="body" x="625" y="255">• Process-safe file locking</text>
+
+  <!-- Column 4: Unified Read Facade -->
+  <rect class="box" x="905" y="115" width="245" height="150" fill="#f8eff7" stroke="#99609a"/>
+  <rect x="920" y="125" width="105" height="22" rx="6" fill="#99609a"/>
+  <text class="badge" x="928" y="140">READ FACADE</text>
+  <text class="label" x="920" y="172">Instant Analysis</text>
+  <text class="body" x="920" y="196">• action="load" / "milestones"</text>
+  <text class="body" x="920" y="216">• action="diff" (scope &amp; churn)</text>
+  <text class="body" x="920" y="236">• action="compare" (2-5 tracks)</text>
+  <text class="body tool" x="920" y="255">read_research_chronicle</text>
+
+  <!-- Flow Arrows between columns -->
+  <path class="arrow" d="M 270 190 H 307"/>
+  <path class="arrow" d="M 565 190 H 602"/>
+  <path class="arrow" d="M 860 190 H 897"/>
+
+  <!-- Lower Section: Projections & Visual Output Formats -->
+  <rect class="box" x="50" y="300" width="1100" height="350" fill="#f0f7fc" stroke="#3578a7"/>
+  <rect x="65" y="312" width="160" height="22" rx="6" fill="#3578a7"/>
+  <text class="badge" x="73" y="327">PROJECTION ENGINE</text>
+  <text class="label" x="240" y="329">Dual-Projection Coordinate System (Single Source of Truth)</text>
+
+  <!-- X-Y Axis Visual representation -->
+  <!-- X-Axis Line (Time Spine) -->
+  <line class="axis" x1="120" y1="410" x2="1080" y2="410"/>
+  <polygon points="1080,405 1095,410 1080,415" fill="#3578a7"/>
+  <text class="label" x="960" y="398" fill="#3578a7">X 軸: 時間主脊柱 (Time Spine)</text>
+
+  <!-- Year Anchors on Spine -->
+  <circle class="dot" cx="200" cy="410" r="9" fill="#4f68a8"/>
+  <text class="body" x="180" y="435" font-weight="700">2020 年</text>
+
+  <circle class="dot" cx="420" cy="410" r="9" fill="#3a7c69"/>
+  <text class="body" x="400" y="435" font-weight="700">2022 年</text>
+
+  <circle class="dot" cx="660" cy="410" r="9" fill="#b27b21"/>
+  <text class="body" x="640" y="435" font-weight="700">2024 年</text>
+
+  <circle class="dot" cx="900" cy="410" r="9" fill="#99609a"/>
+  <text class="body" x="880" y="435" font-weight="700">2026 年</text>
+
+  <!-- Y-Axis Branches (Branching upwards and downwards) -->
+  <!-- Branch 1 (Upper) -->
+  <path class="arrow" d="M 200 401 C 200 365 240 365 270 365"/>
+  <rect x="275" y="348" width="180" height="34" rx="8" fill="#ffffff" stroke="#4f68a8" stroke-width="1.5"/>
+  <text class="body" x="285" y="370" font-weight="600">Branch A: Propofol 對比</text>
+
+  <!-- Article Blocks on Branch A -->
+  <path class="dashed-arrow" d="M 455 365 H 500"/>
+  <rect x="505" y="348" width="220" height="34" rx="6" fill="#eef2ff" stroke="#4f68a8"/>
+  <text class="body" x="515" y="370">[2020] Phase 2/3 (PMID: 32417976)</text>
+
+  <path class="dashed-arrow" d="M 725 365 H 770"/>
+  <rect x="775" y="348" width="240" height="34" rx="6" fill="#fff5df" stroke="#b27b21"/>
+  <text class="body" x="785" y="370">[2024] Meta-Analysis (PMID: 39069837)</text>
+
+  <!-- Branch 2 (Lower 1) -->
+  <path class="arrow" d="M 420 419 C 420 475 460 475 490 475"/>
+  <rect x="495" y="458" width="195" height="34" rx="8" fill="#ffffff" stroke="#3a7c69" stroke-width="1.5"/>
+  <text class="body" x="505" y="480" font-weight="600">Branch B: 鎮靜與腦電監測</text>
+
+  <path class="dashed-arrow" d="M 690 475 H 740"/>
+  <rect x="745" y="458" width="220" height="34" rx="6" fill="#eaf4f0" stroke="#3a7c69"/>
+  <text class="body" x="755" y="480">[2022] Study (PMID: 34999964)</text>
+
+  <!-- Branch 3 (Lower 2) -->
+  <path class="arrow" d="M 660 419 C 660 540 690 540 720 540"/>
+  <rect x="725" y="523" width="195" height="34" rx="8" fill="#ffffff" stroke="#99609a" stroke-width="1.5"/>
+  <text class="body" x="735" y="545" font-weight="600">Branch C: 複雜術式 (TAVI)</text>
+
+  <path class="dashed-arrow" d="M 920 540 H 960"/>
+  <rect x="965" y="523" width="165" height="34" rx="6" fill="#f8eff7" stroke="#99609a"/>
+  <text class="body" x="975" y="545">[2025] RCT (PMID: 39715979)</text>
+
+  <!-- Output format pill tags at the bottom -->
+  <rect x="80" y="595" width="1040" height="42" rx="10" fill="#ffffff" stroke="#b0cddf"/>
+  <text class="body" x="100" y="621" font-weight="700" fill="#152126">支援輸出格式 (Outputs):</text>
+  <text class="body tool" x="270" y="621" fill="#2563eb">mermaid</text>
+  <text class="body" x="332" y="621">•</text>
+  <text class="body tool" x="345" y="621" fill="#0891b2">mindmap</text>
+  <text class="body" x="410" y="621">•</text>
+  <text class="body tool" x="425" y="621" fill="#059669">timeline</text>
+  <text class="body" x="480" y="621">•</text>
+  <text class="body tool" x="495" y="621" fill="#7c3aed">chronicle_map</text>
+  <text class="body" x="600" y="621">•</text>
+  <text class="body tool" x="615" y="621" fill="#d97706">milestones</text>
+  <text class="body" x="690" y="621">•</text>
+  <text class="body tool" x="705" y="621" fill="#db2777">tree / graph</text>
+  <text class="body" x="790" y="621">•</text>
+  <text class="body tool" x="805" y="621" fill="#475569">narrative / summary</text>
+  <text class="body" x="955" y="621">•</text>
+  <text class="body tool" x="970" y="621" fill="#0f172a">json</text>
+</svg>

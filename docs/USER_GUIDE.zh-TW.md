@@ -178,18 +178,27 @@ Broker 也會強制 loopback bind，並驗證 loopback Host 與 Origin。
 
 ### 5. 建立研究脈絡年表
 
+![Research Chronicle 架構與脈絡流程](images/research-chronicle-lineage-flow.svg)
 ![評估與時間軸流程](images/timeline-evaluation-workflow.svg)
 
 當問題不是「有哪些文章？」而是「這個領域怎麼演進？」時，使用 chronicle tools。
 
 ```python
-build_research_chronicle(topic="remimazolam ICU sedation", output="tree", max_events=20)
-build_research_chronicle(pmids="12345678,23456789", topic="Selected studies", output="mermaid")
-read_research_chronicle(action="milestones", chronicle_id="car-t-therapy-...")
-read_research_chronicle(action="compare", topics="remimazolam,propofol,dexmedetomidine")
+# 1. 依主題建立（自動檢索 PubMed、計算 Landmark 分數並聚類分支）
+build_research_chronicle(topic="remimazolam intraoperative", output="mermaid", max_events=30)
+
+# 2. 從既有搜尋結果或自訂 PMID 清單建立
+build_research_chronicle(pmids="last", topic="Selected studies")
+
+# 3. 延續既有編年史（自動繼承前版的 topic 與檢索範圍，建立 Revision N+1）
+build_research_chronicle(chronicle_id="remimazolam-intraoperative-08c229f3")
+
+# 4. 讀取里程碑分析或多主題比較
+read_research_chronicle(action="milestones", chronicle_id="remimazolam-intraoperative-08c229f3")
+read_research_chronicle(action="compare", topics="remimazolam intraoperative,propofol intraoperative")
 ```
 
-`build_research_chronicle` 可以依 topic 搜尋，也可以使用明確 PMID set。主軸是時序，分支 (lineage) 是同一組 entries 的次要投影。`output="mermaid"` 是標準圖：年份構成橫向主軸，各觀察研究線從本次檢索範圍內最早的有日期論文所在年份分岔；`output="chronicle_map"` 則回傳同一座標契約的 JSON。主題分支優先使用多篇論文共同出現的 MeSH descriptor 與作者 keyword；只有 singleton 或語意訊號不足時，audit 會明確標示為研究階段 fallback。`timeline_mermaid` 保留舊的平面圖。其他輸出包括 `summary`、`timeline`、`tree`、`graph`、`evidence`、`milestones`、`mindmap`、`narrative` 與 `json`。`unified_search(options="context_graph")` 只適合本次 PMID-backed ranked results 的輕量預覽。chronicle 本身已持久化且版本化，詳見 [Research Chronicle Rebuild Spec](RESEARCH_CHRONICLE_REFACTOR_SPEC.md)。
+`build_research_chronicle` 可以依 topic 搜尋，也可以使用明確 PMID set。主軸是時序，分支 (lineage) 是同一組 entries 的次要投影。`output="mermaid"` 是標準圖：年份構成橫向主軸，各觀察研究線從本次檢索範圍內最早的有日期論文所在年份分岔；`output="chronicle_map"` 則回傳同一座標契約的 JSON。主題分支優先使用多篇論文共同出現的 MeSH descriptor 與作者 keyword；只有 singleton 或語意訊號不足時，audit 會明確標示為研究階段 fallback。`timeline_mermaid` 保留舊的平面圖。其他輸出包括 `summary`、`timeline`、`tree`、`graph`、`evidence`、`milestones`、`mindmap`、`narrative` 與 `json`。`unified_search(options="context_graph")` 只適合本次 PMID-backed ranked results 的輕量預覽。chronicle 本身已持久化且版本化，詳見 [進階研究工作流](ADVANCED_RESEARCH_WORKFLOWS.zh-TW.md) 與 [Research Chronicle Rebuild Spec](RESEARCH_CHRONICLE_REFACTOR_SPEC.md)。
 
 Lineage 是本次 retrieved snapshot 的可解釋分組，不是因果祖譜。`earliest_observed_in_scope` 不代表找到整個領域的首篇論文；query、PMID set、年份 filter、來源可用性與結果上限都會限制可觀察範圍。日期 precision 會保留：同年或日期區間重疊的項目可以固定顯示順序，但不會據此推論 `precedes` 或 `supersedes` 關係。
 

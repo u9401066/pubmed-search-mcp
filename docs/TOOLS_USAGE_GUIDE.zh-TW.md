@@ -124,11 +124,12 @@ counts，並在 search artifact 中獨立記錄。JSON/TOON 不執行這個僅�
 
 ### 評估、時間軸與比較
 
+![Research Chronicle 架構與脈絡流程](images/research-chronicle-lineage-flow.svg)
 ![評估與時間軸流程](images/timeline-evaluation-workflow.svg)
 
 使用者問「哪些重要」、「領域何時改變」、「不同主題如何分歧」時，使用 `get_citation_metrics`、`build_research_chronicle` 與 `read_research_chronicle`。
 
-`build_research_chronicle` 是唯一的研究演化工具。它接受 `topic=...` 或明確的 comma-separated `pmids=...`，會偵測 milestone-like papers，並可回傳 `summary`、`chronicle_map`、`timeline`、`tree`、`graph`、`evidence`、`milestones`、`mermaid`、`timeline_mermaid`、`mindmap`、`narrative` 或 `json`。`mermaid` 把橫向年份主軸與 lineage 分支畫在同一張圖；`chronicle_map` 是同一座標契約的 JSON。`read_research_chronicle(action="milestones")` 用於里程碑分佈 diagnostics；`read_research_chronicle(action="compare", topics="a,b")` 用於最多五個 topic tracks 的比較。
+`build_research_chronicle` 是唯一的研究演化工具。它接受 `topic=...`、明確的 comma-separated `pmids=...` 或既有的 `chronicle_id=...`，會偵測 milestone-like papers，並可回傳 `summary`、`chronicle_map`、`timeline`、`tree`、`graph`、`evidence`、`milestones`、`mermaid`、`timeline_mermaid`、`mindmap`、`narrative` 或 `json`。`mermaid` 把橫向年份主軸與 lineage 分支畫在同一張圖；`chronicle_map` 是同一座標契約的 JSON。`read_research_chronicle(action="milestones")` 用於里程碑分佈 diagnostics；`read_research_chronicle(action="compare", topics="a,b")` 用於最多五個 topic tracks 的比較。
 
 用詞請保持精準：
 
@@ -137,7 +138,7 @@ counts，並在 search artifact 中獨立記錄。JSON/TOON 不執行這個僅�
 - **Chronicle map**：單一橫向時間主軸，各觀察研究線錨定在本次檢索範圍內最早的有日期論文；語意分支必須有多篇論文共同支持的訊號，只有 singleton 或 MeSH/keyword 訊號不足時會產生 audit warning 並退回研究階段分類。同年排列在日期 precision 不足時不代表先後。
 - **Context graph preview**：`unified_search(options="context_graph")`，只根據本次 PMID-backed ranked set 產生輕量預覽。
 - **Citation tree**：`build_citation_tree`，從單一 seed PMID 建立 forward/backward citation network。
-- **Research Chronicle**：`build_research_chronicle` / `read_research_chronicle`，持久化、版本化、有證據支撐的研究紀錄；詳見 [Research Chronicle Rebuild Spec](RESEARCH_CHRONICLE_REFACTOR_SPEC.md)。
+- **Research Chronicle**：`build_research_chronicle` / `read_research_chronicle`，持久化、版本化、有證據支撐的研究紀錄；詳見 [進階研究工作流](ADVANCED_RESEARCH_WORKFLOWS.zh-TW.md) 與 [Research Chronicle Rebuild Spec](RESEARCH_CHRONICLE_REFACTOR_SPEC.md)。
 
 ### 研究編年史 (Research Chronicle)
 
@@ -154,8 +155,9 @@ PMID input 只接受 ASCII digits、可選的 `PMID:` prefix 與明確分隔符�
 同時符合多個 semantic signals 的論文會有一個 primary branch，並在 lineage diagnostics 保留 explicit secondary cross-links。若全部 entries 或已分派 entries 的重疊比例至少 20%，audit 會警告 branches 並非清楚分離。`confidence` 只代表 milestone detection confidence；landmark ranking 使用明確的 landmark importance，缺少時才退回 citation count，絕不使用 detection confidence。
 
 - `build_research_chronicle(topic=...)` 或 `build_research_chronicle(pmids="last")`：以原子操作建立 revision N+1。啟用 session artifact persistence 時也會寫入 `research-chronicle-artifact/v1` bundle；若寫入失敗，Markdown 或 structured output 的 `artifact.status="failed"` 會明確揭露，而 revision 仍已保存。
+- `build_research_chronicle(chronicle_id=...)`：只傳 `chronicle_id` 即可自動沿用前一版的 topic/PMID 與檢索條件再跑一次，產出乾淨反映研究進展的 Revision N+1。
 - `read_research_chronicle(action="list")`：列出已儲存的 chronicles。
-- `read_research_chronicle(chronicle_id=..., output="mermaid"|"chronicle_map"|"tree"|"timeline"|"graph"|"evidence")`：讀取單一 revision 或合併圖。
+- `read_research_chronicle(chronicle_id=..., output="mermaid"|"mindmap"|"chronicle_map"|"tree"|"timeline"|"graph"|"evidence")`：讀取單一 revision 或合併圖。
 - `read_research_chronicle(action="diff", chronicle_id=..., from_revision=1)`：回報新增、更新與本次缺席的 entries，以及證據／分支變化。舊的 `retired` key 只是 `not_observed_in_revision`／`removed_from_view` 的相容 alias；缺席絕不等於已證實退場。
 - `read_research_chronicle(action="narrate", chronicle_id=..., mode="full")`：產出每句 claim 都附 entry ID 與文獻識別碼的敘述。
 - `read_research_chronicle(action="compare", topics="a,b")`：使用正規化後的完整 stored-topic 名稱。同名對應多個 Chronicle 時會回報 ambiguity，需改傳不同的 `chronicle_ids`；重複目標不構成有效比較。

@@ -179,18 +179,27 @@ Only enable browser-session fallback for hosts you trust and are allowed to acce
 
 ### 5. Build A Research Chronicle Or Lineage Tree
 
+![Research Chronicle Architecture and Lineage Flow](images/research-chronicle-lineage-flow.svg)
 ![Evaluation and timeline workflow](images/timeline-evaluation-workflow.svg)
 
 Use the chronicle tools when the question is not just "what papers exist?" but "how did this field develop?"
 
 ```python
-build_research_chronicle(topic="remimazolam ICU sedation", output="tree", max_events=20)
-build_research_chronicle(pmids="12345678,23456789", topic="Selected studies", output="mermaid")
-read_research_chronicle(action="milestones", chronicle_id="car-t-therapy-...")
-read_research_chronicle(action="compare", topics="remimazolam,propofol,dexmedetomidine")
+# 1. Build from topic (retrieves PubMed, scores landmarks, clusters lineages)
+build_research_chronicle(topic="remimazolam intraoperative", output="mermaid", max_events=30)
+
+# 2. Build from previous search results or explicit PMIDs
+build_research_chronicle(pmids="last", topic="Selected studies")
+
+# 3. Continue an existing chronicle (inherits stored topic and filters to produce Revision N+1)
+build_research_chronicle(chronicle_id="remimazolam-intraoperative-08c229f3")
+
+# 4. Milestone analysis or cross-topic comparison
+read_research_chronicle(action="milestones", chronicle_id="remimazolam-intraoperative-08c229f3")
+read_research_chronicle(action="compare", topics="remimazolam intraoperative,propofol intraoperative")
 ```
 
-`build_research_chronicle` can search by topic or use an explicit PMID set. Its primary axis is chronological and research branches are a secondary projection of the same entries. Use `output="mermaid"` for the canonical horizontal year spine with observed research lines branching at their earliest dated papers in the retrieved scope, or `output="chronicle_map"` for the same coordinate contract as JSON. Topic branches prefer MeSH descriptors and author keywords shared by multiple papers; singleton-only or insufficient signals produce a warned research-stage fallback. `timeline_mermaid` keeps the flat legacy diagram. Other outputs are `summary`, `timeline`, `tree`, `graph`, `evidence`, `milestones`, `mindmap`, `narrative`, and `json`. Use `options="context_graph"` in `unified_search` only for a lightweight preview from the current ranked PMID-backed results. The chronicle is persistent and versioned; see [Research Chronicle Rebuild Spec](RESEARCH_CHRONICLE_REFACTOR_SPEC.md).
+`build_research_chronicle` can search by topic or use an explicit PMID set. Its primary axis is chronological and research branches are a secondary projection of the same entries. Use `output="mermaid"` for the canonical horizontal year spine with observed research lines branching at their earliest dated papers in the retrieved scope, or `output="chronicle_map"` for the same coordinate contract as JSON. Topic branches prefer MeSH descriptors and author keywords shared by multiple papers; singleton-only or insufficient signals produce a warned research-stage fallback. `timeline_mermaid` keeps the flat legacy diagram. Other outputs are `summary`, `timeline`, `tree`, `graph`, `evidence`, `milestones`, `mindmap`, `narrative`, and `json`. Use `options="context_graph"` in `unified_search` only for a lightweight preview from the current ranked PMID-backed results. The chronicle is persistent and versioned; see [Advanced Research Workflows](ADVANCED_RESEARCH_WORKFLOWS.md) and [Research Chronicle Rebuild Spec](RESEARCH_CHRONICLE_REFACTOR_SPEC.md).
 
 Lineage is an explainable grouping of the retrieved snapshot, not causal ancestry. `earliest_observed_in_scope` does not establish the first publication in the field, and the query, PMID set, year filters, source availability, and result cap all constrain what can be observed. Date precision is retained: same-year or overlapping date intervals can be displayed deterministically, but do not create an inferred `precedes` or `supersedes` relationship.
 

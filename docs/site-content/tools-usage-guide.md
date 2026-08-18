@@ -133,11 +133,12 @@ Use this path for `search_gene`, `get_gene_details`, `get_gene_literature`, `sea
 
 ### Evaluation, Timeline, And Comparison
 
+![Research Chronicle Architecture and Lineage Flow](images/research-chronicle-lineage-flow.svg)
 ![Evaluation and timeline workflow](images/timeline-evaluation-workflow.svg)
 
 Use this path for `get_citation_metrics`, `build_research_chronicle`, and `read_research_chronicle` when the user asks what mattered, when the field changed, or how topics diverged.
 
-`build_research_chronicle` is the single research-evolution tool. It accepts either `topic=...` or explicit comma-separated `pmids=...`, detects milestone-like papers, and can return `summary`, `chronicle_map`, `timeline`, `tree`, `graph`, `evidence`, `milestones`, `mermaid`, `timeline_mermaid`, `mindmap`, `narrative`, or `json`. `mermaid` combines a horizontal year spine and lineage branches; `chronicle_map` is its JSON coordinate contract. Use `read_research_chronicle(action="milestones")` for milestone distribution diagnostics and `read_research_chronicle(action="compare", topics="a,b")` for up to five topic tracks.
+`build_research_chronicle` is the single research-evolution tool. It accepts `topic=...`, explicit comma-separated `pmids=...`, or an existing `chronicle_id=...`, detects milestone-like papers, and can return `summary`, `chronicle_map`, `timeline`, `tree`, `graph`, `evidence`, `milestones`, `mermaid`, `timeline_mermaid`, `mindmap`, `narrative`, or `json`. `mermaid` combines a horizontal year spine and lineage branches; `chronicle_map` is its JSON coordinate contract. Use `read_research_chronicle(action="milestones")` for milestone distribution diagnostics and `read_research_chronicle(action="compare", topics="a,b")` for up to five topic tracks.
 
 Use precise terms:
 
@@ -146,7 +147,7 @@ Use precise terms:
 - **Chronicle map**: one horizontal time spine with observed lines anchored at their earliest dated papers in the retrieved scope. Semantic branches require a signal shared by multiple papers; singleton-only or insufficient MeSH/keyword support produces a warned research-stage fallback. Same-year layout does not imply precedence when date precision cannot establish it.
 - **Context graph preview**: `unified_search(options="context_graph")`, a lightweight preview from the current PMID-backed ranked set.
 - **Citation tree**: `build_citation_tree`, a single-seed forward/backward citation network.
-- **Research Chronicle**: `build_research_chronicle` / `read_research_chronicle`, the persistent, versioned, evidence-backed record. See [Research Chronicle Rebuild Spec](#/research-chronicle-rebuild-spec).
+- **Research Chronicle**: `build_research_chronicle` / `read_research_chronicle`, the persistent, versioned, evidence-backed record. See [Advanced Research Workflows](#/advanced-workflows) and [Research Chronicle Rebuild Spec](#/research-chronicle-rebuild-spec).
 
 ### Research Chronicle
 
@@ -163,8 +164,9 @@ PMID input accepts only ASCII digits with an optional `PMID:` prefix and explici
 A paper matching several selected semantic signals has one primary branch and explicit secondary cross-links in lineage diagnostics. If at least 20% of all or assigned entries overlap, the audit warns that branches are not cleanly separated. `confidence` remains milestone-detection confidence; landmark ordering uses explicit landmark importance and falls back to citation count, never detection confidence.
 
 - `build_research_chronicle(topic=...)` or `build_research_chronicle(pmids="last")` atomically creates revision N+1. When session artifact persistence is enabled, it also writes a `research-chronicle-artifact/v1` bundle; a write failure is visible in Markdown or as `artifact.status="failed"` in structured output, while the revision remains saved.
+- `build_research_chronicle(chronicle_id=...)` re-runs the continued revision's own topic/PMID set and filters to produce revision N+1 reflecting research movement cleanly.
 - `read_research_chronicle(action="list")` lists stored chronicles.
-- `read_research_chronicle(chronicle_id=..., output="mermaid"|"chronicle_map"|"tree"|"timeline"|"graph"|"evidence")` reads one revision or the combined map.
+- `read_research_chronicle(chronicle_id=..., output="mermaid"|"mindmap"|"chronicle_map"|"tree"|"timeline"|"graph"|"evidence")` reads one revision or the combined map.
 - `read_research_chronicle(action="diff", chronicle_id=..., from_revision=1)` reports added, updated, and absent entries plus evidence and branch churn. The legacy `retired` key is a compatibility alias for `not_observed_in_revision` / `removed_from_view`; absence is never conclusive retirement.
 - `read_research_chronicle(action="narrate", chronicle_id=..., mode="full")` renders prose where every claim cites its entry ID and article identifiers.
 - `read_research_chronicle(action="compare", topics="a,b")` uses normalized exact stored-topic names. Multiple chronicles with the same topic are reported as ambiguous; pass distinct `chronicle_ids` instead. Duplicate targets are not a valid comparison.
