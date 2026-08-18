@@ -45,7 +45,7 @@
   <rect class="box" x="876" y="136" width="276" height="116" fill="#f8eff7" stroke="#99609a"/>
   <text class="label" x="900" y="174">5. Deep reading</text>
   <text class="body" x="900" y="202">details, citations, full text</text>
-  <text class="body" x="900" y="224">figures, timelines, metrics</text>
+  <text class="body" x="900" y="224">figures, chronicles, metrics</text>
 
   <path class="arrow" d="M 208 194 H 236"/>
   <path class="arrow" d="M 416 194 H 444"/>

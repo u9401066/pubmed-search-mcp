@@ -604,6 +604,7 @@ Use the PMC Open Access path when an agent needs evidence figures, not just arti
 
 ### 🕰️ Research Chronicle & Lineage Tree
 
+![Research Chronicle Architecture and Lineage Flow](images/research-chronicle-lineage-flow.svg)
 ![Evaluation and timeline workflow](images/timeline-evaluation-workflow.svg)
 
 | Tool | Description |
@@ -611,15 +612,28 @@ Use the PMC Open Access path when an agent needs evidence figures, not just arti
 | `build_research_chronicle` | Build a persisted, versioned chronicle with landmark detection. Output: summary, chronicle_map, timeline, tree, graph, evidence, milestones, mermaid, timeline_mermaid, mindmap, narrative, json |
 | `read_research_chronicle` | Load, list, diff revisions, narrate with citations, analyze milestone distribution, or compare up to five topics |
 
-`mermaid` is the canonical combined view: a horizontal year spine with each
-observed research line branching at its earliest dated paper **within the
+```python
+# 1. Build from topic (retrieves PubMed, scores landmarks, clusters lineages)
+build_research_chronicle(topic="remimazolam intraoperative", output="mermaid", max_events=30)
+
+# 2. Continue an existing chronicle (inherits stored topic and filters to produce Revision N+1)
+build_research_chronicle(chronicle_id="remimazolam-intraoperative-08c229f3")
+
+# 3. Read revision diff, milestone analytics, or cross-topic comparison
+read_research_chronicle(action="diff", chronicle_id="remimazolam-intraoperative-08c229f3", from_revision=1)
+read_research_chronicle(action="milestones", chronicle_id="remimazolam-intraoperative-08c229f3")
+read_research_chronicle(action="compare", topics="remimazolam intraoperative,propofol intraoperative")
+```
+
+`mermaid` is the canonical combined view: a horizontal year spine (X-axis) with each
+observed research line (Y-axis) branching at its earliest dated paper **within the
 retrieved scope**. This is an explainable grouping, not a causal genealogy or a
 claim about the field's true first paper. Lineages prefer MeSH descriptors and
 author keywords shared by multiple papers; singleton-only or insufficient
 signals trigger a warned research-stage fallback. Same-year display order is
 stable, but does not assert precedence when publication precision cannot prove
-it. `timeline_mermaid` preserves the older flat timeline view. See the
-implemented contract in
+it. `timeline_mermaid` preserves the older flat timeline view. See
+[Advanced Research Workflows (docs/ADVANCED_RESEARCH_WORKFLOWS.md)](#/advanced-workflows) and
 [docs/RESEARCH_CHRONICLE_REFACTOR_SPEC.md](#/research-chronicle-rebuild-spec).
 
 Chronicle Mermaid output is built from structured nodes and edges, with safe

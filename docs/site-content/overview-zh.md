@@ -586,6 +586,7 @@ Provider 上限與 operator data-plane 邊界見[Source Contracts](#/source-cont
 
 ### 🕰️ 研究編年史 & 脈絡樹
 
+![Research Chronicle 架構與脈絡流程](images/research-chronicle-lineage-flow.svg)
 ![評估與時間軸流程](images/timeline-evaluation-workflow.svg)
 
 | 工具 | 說明 |
@@ -593,7 +594,20 @@ Provider 上限與 operator data-plane 邊界見[Source Contracts](#/source-cont
 | `build_research_chronicle` | 建構持久化、可版本比對的研究脈絡，支援重要文獻偵測。格式：summary, chronicle_map, timeline, tree, graph, evidence, milestones, mermaid, timeline_mermaid, mindmap, narrative, json |
 | `read_research_chronicle` | 讀取、列表、版本 diff、有證據支撐的敘述、里程碑分佈分析，或比較最多五個主題 |
 
-`mermaid` 是標準合併圖：以年份作橫向主軸，各研究線從**本次檢索範圍內最早的有日期論文**所在年份分岔。這是可解釋的觀察分組，不是因果譜系，也不代表找到整個領域的真正首篇論文。lineage 優先由多篇論文共同出現的 MeSH descriptor 與作者 keyword 推導；只有 singleton 或訊號不足時，audit 會警告分支只是研究階段 fallback。同年項目的顯示順序雖然固定，但日期 precision 不足時不宣稱先後。舊的平面 timeline 保留為 `timeline_mermaid`。完整規格見 [docs/RESEARCH_CHRONICLE_REFACTOR_SPEC.md](#/research-chronicle-rebuild-spec)。
+```python
+# 1. 依主題建立（自動檢索 PubMed、計算 Landmark 分數並聚類分支）
+build_research_chronicle(topic="remimazolam intraoperative", output="mermaid", max_events=30)
+
+# 2. 延續既有編年史（自動繼承前版的 topic 與檢索範圍，建立 Revision N+1）
+build_research_chronicle(chronicle_id="remimazolam-intraoperative-08c229f3")
+
+# 3. 讀取版本差異、里程碑分析或多主題比較（讀取儲存資料，不重跑檢索）
+read_research_chronicle(action="diff", chronicle_id="remimazolam-intraoperative-08c229f3", from_revision=1)
+read_research_chronicle(action="milestones", chronicle_id="remimazolam-intraoperative-08c229f3")
+read_research_chronicle(action="compare", topics="remimazolam intraoperative,propofol intraoperative")
+```
+
+`mermaid` 是標準合併圖：以年份作橫向主軸（X 軸），各研究線（Y 軸）從**本次檢索範圍內最早的有日期論文**所在年份分岔。這是可解釋的觀察分組，不是因果譜系，也不代表找到整個領域的真正首篇論文。lineage 優先由多篇論文共同出現的 MeSH descriptor 與作者 keyword 推導；只有 singleton 或訊號不足時，audit 會警告分支只是研究階段 fallback。同年項目的顯示順序雖然固定，但日期 precision 不足時不宣稱先後。舊的平面 timeline 保留為 `timeline_mermaid`。完整指南見 [進階研究工作流 (docs/ADVANCED_RESEARCH_WORKFLOWS.zh-TW.md)](#/advanced-workflows-zh) 與規格 [docs/RESEARCH_CHRONICLE_REFACTOR_SPEC.md](#/research-chronicle-rebuild-spec)。
 
 Chronicle Mermaid 由結構化 node/edge 生成，會自動跳脫 label、修正循環與孤兒 parent、避免 ID 碰撞並限制圖形大小；rich 圖失敗時依序降級為 safe 與 minimal syntax，不會讓整份 chronicle 建立失敗。`mermaid_validation.json` 記錄每個 correction、fallback 與被摘要的視覺項目，`chronicle.mmd` 則維持純 Mermaid source。
 
