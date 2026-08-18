@@ -16,6 +16,7 @@
     <link rel="stylesheet" href="site.css?v=20260814-provider-broker" />
   </head>
   <body>
+    <div id="reading-progress" class="reading-progress" aria-hidden="true"></div>
     <div class="layout-shell">
       <aside class="sidebar" id="sidebar">
         <div class="brand-block">
@@ -28,6 +29,12 @@
           <button class="lang-option active" type="button" data-lang="en" aria-pressed="true">EN</button>
           <button class="lang-option" type="button" data-lang="zh" aria-pressed="false">繁中</button>
         </div>
+
+        <button id="global-search-btn" class="global-search-btn" type="button">
+          <span class="search-btn-icon">🔍</span>
+          <span id="global-search-text" class="search-btn-text">Search docs &amp; 45 tools...</span>
+          <kbd class="search-kbd">Ctrl K</kbd>
+        </button>
 
         <label id="filter-label" class="search-label" for="nav-filter">Filter pages</label>
         <input id="nav-filter" class="nav-filter" type="search" placeholder="overview, guide, tutorial, deployment..." />
@@ -45,10 +52,16 @@
           <button id="nav-toggle" class="nav-toggle" type="button" aria-expanded="false" aria-controls="sidebar">
             Menu
           </button>
-          <div>
+          <div class="topbar-main">
+            <nav id="doc-breadcrumb" class="doc-breadcrumb" aria-label="Breadcrumb"></nav>
             <p id="page-kicker" class="page-kicker">Overview</p>
             <h2 id="page-title" class="page-title">PubMed Search MCP Docs</h2>
           </div>
+          <button id="topbar-search-btn" class="topbar-search-btn" type="button" title="Quick Search (Ctrl+K)">
+            <span>🔍</span>
+            <span id="topbar-search-label" class="topbar-search-label">Quick Search</span>
+            <kbd class="search-kbd">⌘K</kbd>
+          </button>
         </header>
 
         <section class="hero-panel">
@@ -72,6 +85,15 @@
           </div>
         </section>
 
+        <nav id="topic-hub-nav" class="topic-hub-nav" aria-label="Topic Navigation">
+          <button class="topic-hub-btn active" data-hub="all" type="button">📌 <span id="hub-all-text">All Sections</span></button>
+          <button class="topic-hub-btn" data-hub="tools" type="button">🛠️ <span id="hub-tools-text">45 Tools Explorer</span></button>
+          <button class="topic-hub-btn" data-hub="user" type="button">📖 <span id="hub-user-text">User Guides</span></button>
+          <button class="topic-hub-btn" data-hub="chronicle" type="button">🕰️ <span id="hub-chronicle-text">Research Chronicle</span></button>
+          <button class="topic-hub-btn" data-hub="pipeline" type="button">🔁 <span id="hub-pipeline-text">Pipelines</span></button>
+          <button class="topic-hub-btn" data-hub="dev" type="button">🏛️ <span id="hub-dev-text">Architecture &amp; Ops</span></button>
+        </nav>
+
         <section id="journey-grid" class="journey-grid" aria-label="Documentation quick paths">
           <a class="journey-card" href="#/overview" data-page-group="overview">
             <span id="journey-local-kicker" class="journey-kicker">Start in five minutes</span>
@@ -90,12 +112,50 @@
           </a>
         </section>
 
+        <!-- Interactive 45-Tool Explorer Widget -->
+        <section id="tool-explorer-widget" class="tool-explorer-widget">
+          <div class="tool-explorer-header">
+            <div class="tool-explorer-title-wrap">
+              <span class="tool-explorer-badge">Interactive Index</span>
+              <h3 id="tool-explorer-title" class="tool-explorer-title">🛠️ 45 MCP Tools Interactive Explorer</h3>
+              <p id="tool-explorer-subtitle" class="tool-explorer-subtitle">Filter tools by capability, search keywords in English or Chinese, and copy execution examples with one click.</p>
+            </div>
+            <div class="tool-explorer-search-wrap">
+              <input id="tool-search-input" class="tool-search-input" type="search" placeholder="Search tool name, keyword (e.g. pmid, fulltext, pico, figure, 基因, rct, export)..." />
+              <span id="tool-count-badge" class="tool-count-badge">45 / 45</span>
+            </div>
+          </div>
+          <div id="tool-category-chips" class="tool-category-chips"></div>
+          <div id="tool-cards-grid" class="tool-cards-grid"></div>
+        </section>
+
         <div class="doc-layout">
           <article id="doc-content" class="doc-content" aria-live="polite"></article>
           <aside id="page-outline" class="page-outline" aria-label="On this page" hidden></aside>
         </div>
       </main>
     </div>
+
+    <!-- Global Search Modal Dialog -->
+    <div id="search-modal-backdrop" class="search-modal-backdrop" hidden>
+      <div id="search-modal" class="search-modal" role="dialog" aria-modal="true" aria-labelledby="modal-search-label">
+        <div class="modal-search-header">
+          <span class="modal-search-icon">🔍</span>
+          <input id="modal-search-input" class="modal-search-input" type="search" placeholder="Search pages, headings, and 45 tools across entire site..." />
+          <button id="modal-search-close" class="modal-search-close" type="button" aria-label="Close search">✕</button>
+        </div>
+        <div id="modal-search-results" class="modal-search-results">
+          <p class="modal-search-hint">Type a keyword or tool name to search across all documentation sections...</p>
+        </div>
+        <div class="modal-search-footer">
+          <span><kbd>↑</kbd> <kbd>↓</kbd> Navigate</span>
+          <span><kbd>↵</kbd> Select</span>
+          <span><kbd>ESC</kbd> Close</span>
+        </div>
+      </div>
+    </div>
+
+    <button id="back-to-top" class="back-to-top" type="button" title="Back to top" aria-label="Back to top">↑</button>
 
     <script
       src="https://cdn.jsdelivr.net/npm/marked@18.0.7/lib/marked.umd.js"
