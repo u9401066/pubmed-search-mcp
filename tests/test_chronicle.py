@@ -825,6 +825,19 @@ class TestChronicleService:
 
         assert provider.topic_call_kwargs[0]["max_events"] == 12
 
+    async def test_build_drops_out_of_range_stored_filters(self, store):
+        first = await ChronicleService(FakeEvidenceProvider(BASE_EVENTS), store).build(topic="drug X")
+        tampered = store.load(first.chronicle_id)
+        tampered.input_scope.filters = {"max_events": 9999, "min_year": 12, "max_year": None}
+        tampered.revision = 2
+        store.save(tampered)
+
+        provider = FakeEvidenceProvider(BASE_EVENTS)
+        await ChronicleService(provider, store).build(chronicle_id=first.chronicle_id)
+
+        assert provider.topic_call_kwargs[0]["max_events"] == 30
+        assert provider.topic_call_kwargs[0]["min_year"] is None
+
     async def test_build_rejects_unknown_chronicle_id_without_scope(self, store):
         service = ChronicleService(FakeEvidenceProvider(BASE_EVENTS), store)
 

@@ -75,13 +75,17 @@ _MAX_PMID_DIGITS = 20
 DEFAULT_CHRONICLE_EVENTS = 30
 
 
-def _inherit_filter(requested: int | None, stored: Any, fallback: int | None) -> int | None:
-    """Resolve one retrieval filter: explicit value, then stored, then default."""
+def _inherit_filter(requested: int | None, stored: Any, low: int, high: int) -> int | None:
+    """Resolve one retrieval filter, keeping a stored value only if still in range.
+
+    Stored filters are read back from disk, so an out-of-range value is dropped
+    rather than raising: the caller asked to continue, not to supply that bound.
+    """
     if requested is not None:
         return requested
-    if isinstance(stored, int) and not isinstance(stored, bool):
+    if isinstance(stored, int) and not isinstance(stored, bool) and low <= stored <= high:
         return stored
-    return fallback
+    return None
 
 
 class ChronicleEvidenceProvider(Protocol):
@@ -224,15 +228,11 @@ class ChronicleService:
         else:
             resolved_topic = provided_topic or (existing_hint.topic if existing_hint else "Custom Chronicle")
 
-        max_events = _inherit_filter(max_events, inherited.get("max_events"), DEFAULT_CHRONICLE_EVENTS)
-        min_year = _inherit_filter(min_year, inherited.get("min_year"), None)
-        max_year = _inherit_filter(max_year, inherited.get("max_year"), None)
-        # Stored filters come from disk, so re-bound them before they drive retrieval.
-        if max_events is None or not 1 <= max_events <= _MAX_CHRONICLE_EVENTS:
+        max_events = _inherit_filter(max_events, inherited.get("max_events"), 1, _MAX_CHRONICLE_EVENTS)
+        min_year = _inherit_filter(min_year, inherited.get("min_year"), 1000, latest_year)
+        max_year = _inherit_filter(max_year, inherited.get("max_year"), 1000, latest_year)
+        if max_events is None:
             max_events = DEFAULT_CHRONICLE_EVENTS
-        for label, year in (("min_year", min_year), ("max_year", max_year)):
-            if year is not None and not 1000 <= year <= latest_year:
-                raise ValueError(f"{label} must be an integer between 1000 and {latest_year}")
         if min_year is not None and max_year is not None and min_year > max_year:
             raise ValueError("min_year cannot be later than max_year")
 
