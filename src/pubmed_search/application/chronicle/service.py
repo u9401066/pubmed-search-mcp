@@ -71,6 +71,18 @@ _MAX_CHRONICLE_PMIDS = 500
 _MAX_CHRONICLE_EVENTS = 200
 _MAX_PMID_DIGITS = 20
 
+#: Timeline events considered when the caller does not specify a bound.
+DEFAULT_CHRONICLE_EVENTS = 30
+
+
+def _inherit_filter(requested: int | None, stored: Any, fallback: int | None) -> int | None:
+    """Resolve one retrieval filter: explicit value, then stored, then default."""
+    if requested is not None:
+        return requested
+    if isinstance(stored, int) and not isinstance(stored, bool):
+        return stored
+    return fallback
+
 
 class ChronicleEvidenceProvider(Protocol):
     """Retrieval port supplying timeline evidence for chronicle assembly."""
@@ -118,7 +130,7 @@ class ChronicleService:
         *,
         topic: str | None = None,
         pmids: list[str] | None = None,
-        max_events: int = 30,
+        max_events: int | None = None,
         min_year: int | None = None,
         max_year: int | None = None,
         chronicle_id: str | None = None,
@@ -131,10 +143,17 @@ class ChronicleService:
         given), the new snapshot becomes ``latest_revision + 1`` and inherits the
         original creation timestamp.
 
+        Passing only *chronicle_id* re-runs the stored revision's own scope, so
+        a later diff reflects research movement rather than a silently reset
+        retrieval window.
+
         Args:
-            topic: Research topic. Required unless *pmids* is supplied.
+            topic: Research topic. Required unless *pmids* or a stored
+                *chronicle_id* is supplied.
             pmids: Explicit PMIDs to chronicle instead of running a search.
             max_events: Maximum timeline events to consider (topic mode).
+                ``None`` inherits the continued revision's value, else
+                :data:`DEFAULT_CHRONICLE_EVENTS`.
             min_year: Earliest publication year to include (topic mode).
             max_year: Latest publication year to include (topic mode).
             chronicle_id: Continue an existing chronicle instead of deriving one.
@@ -145,7 +164,7 @@ class ChronicleService:
             The persisted :class:`ChronicleSnapshot`, audit included.
 
         Raises:
-            ValueError: If neither *topic* nor *pmids* is provided.
+            ValueError: If no topic, PMIDs, or stored chronicle can be resolved.
         """
         if topic is not None and not isinstance(topic, str):
             raise ValueError("topic must be a string")
@@ -154,7 +173,7 @@ class ChronicleService:
         provided_topic = topic.strip() if topic and topic.strip() else None
         if provided_topic is not None and len(provided_topic) > _MAX_TOPIC_CHARS:
             raise ValueError(f"topic must contain at most {_MAX_TOPIC_CHARS} characters")
-        if (
+        if max_events is not None and (
             isinstance(max_events, bool)
             or not isinstance(max_events, int)
             or not 1 <= max_events <= _MAX_CHRONICLE_EVENTS
@@ -166,8 +185,6 @@ class ChronicleService:
                 isinstance(year, bool) or not isinstance(year, int) or not 1000 <= year <= latest_year
             ):
                 raise ValueError(f"{label} must be an integer between 1000 and {latest_year}")
-        if min_year is not None and max_year is not None and min_year > max_year:
-            raise ValueError("min_year cannot be later than max_year")
 
         if pmids is not None and not isinstance(pmids, list):
             raise ValueError("pmids must be a list of PubMed ID strings")
@@ -187,14 +204,38 @@ class ChronicleService:
         normalized_pmids = sorted({pmid.strip().lstrip("0") for pmid in raw_pmids})
         if len(normalized_pmids) > _MAX_CHRONICLE_PMIDS:
             raise ValueError(f"At most {_MAX_CHRONICLE_PMIDS} unique PMIDs can be chronicled at once")
-        if provided_topic is None and not normalized_pmids:
-            msg = "Provide either 'topic' or 'pmids' to build a chronicle."
-            raise ValueError(msg)
 
-        existing_hint = (
-            await asyncio.to_thread(self._store.load, chronicle_id) if chronicle_id and provided_topic is None else None
-        )
-        resolved_topic = provided_topic or (existing_hint.topic if existing_hint else "Custom Chronicle")
+        existing_hint = await asyncio.to_thread(self._store.load, chronicle_id) if chronicle_id else None
+        inherited: dict[str, Any] = {}
+        if provided_topic is None and not normalized_pmids:
+            if existing_hint is None:
+                if chronicle_id:
+                    msg = f"Chronicle '{chronicle_id}' not found. Provide 'topic' or 'pmids' to create a new chronicle."
+                else:
+                    msg = "Provide either 'topic', 'pmids', or an existing 'chronicle_id' to build a chronicle."
+                raise ValueError(msg)
+            if existing_hint.input_scope.mode == "pmids" and existing_hint.input_scope.pmids:
+                normalized_pmids = sorted(set(existing_hint.input_scope.pmids))
+                resolved_topic = existing_hint.topic
+            else:
+                resolved_topic = existing_hint.input_scope.query or existing_hint.topic
+                provided_topic = resolved_topic
+            inherited = existing_hint.input_scope.filters
+        else:
+            resolved_topic = provided_topic or (existing_hint.topic if existing_hint else "Custom Chronicle")
+
+        max_events = _inherit_filter(max_events, inherited.get("max_events"), DEFAULT_CHRONICLE_EVENTS)
+        min_year = _inherit_filter(min_year, inherited.get("min_year"), None)
+        max_year = _inherit_filter(max_year, inherited.get("max_year"), None)
+        # Stored filters come from disk, so re-bound them before they drive retrieval.
+        if max_events is None or not 1 <= max_events <= _MAX_CHRONICLE_EVENTS:
+            max_events = DEFAULT_CHRONICLE_EVENTS
+        for label, year in (("min_year", min_year), ("max_year", max_year)):
+            if year is not None and not 1000 <= year <= latest_year:
+                raise ValueError(f"{label} must be an integer between 1000 and {latest_year}")
+        if min_year is not None and max_year is not None and min_year > max_year:
+            raise ValueError("min_year cannot be later than max_year")
+
         if normalized_pmids:
             timeline = await self._evidence.build_timeline_from_pmids(
                 pmids=normalized_pmids,
@@ -320,15 +361,23 @@ class ChronicleService:
             The delta report from :func:`diff_chronicles`.
 
         Raises:
-            ValueError: If either revision cannot be loaded.
+            ValueError: If the range is not forward or either revision is absent.
         """
+        if to_revision is not None and from_revision >= to_revision:
+            msg = f"Chronicle diffs must be forward and strictly increasing: revision {from_revision} -> {to_revision}"
+            raise ValueError(msg)
+
         before = self._store.load(chronicle_id, from_revision)
         after = self._store.load(chronicle_id, to_revision)
-        if before is None:
-            msg = f"Revision {from_revision} not found for chronicle {chronicle_id}"
-            raise ValueError(msg)
-        if after is None:
-            msg = f"Revision {to_revision or 'latest'} not found for chronicle {chronicle_id}"
+        missing = [
+            str(requested)
+            for requested, snapshot in ((from_revision, before), (to_revision or "latest", after))
+            if snapshot is None
+        ]
+        if missing or before is None or after is None:
+            stored = self._store.list_revisions(chronicle_id)
+            available = f"Stored revisions: {stored}" if stored else "No revisions are stored yet"
+            msg = f"Revision {' and '.join(missing)} not found for chronicle {chronicle_id}. {available}."
             raise ValueError(msg)
         return diff_chronicles(before, after)
 

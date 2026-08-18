@@ -176,6 +176,11 @@ Topic → Branch → Entry → EvidenceArticle 相連並驗證 edge invariants�
 build_research_chronicle(topic="remimazolam")
 build_research_chronicle(pmids="last", topic="My Reading List")
 
+# 只給 chronicle_id 就是「照原本的檢索範圍再跑一次」：
+# topic/pmids 與 max_events/min_year/max_year 都沿用上一版，
+# 所以 diff 看到的是研究進展，而不是被悄悄改掉的檢索窗口。
+build_research_chronicle(chronicle_id="remimazolam-9f2b1c4d")
+
 # 讀取
 read_research_chronicle(action="list")
 read_research_chronicle(chronicle_id="remimazolam-9f2b1c4d", output="tree")

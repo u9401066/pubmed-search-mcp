@@ -4,7 +4,7 @@ FROM python:3.11.15-slim-trixie@sha256:90744cff8f32887f075c47d747a173ff333e9e988
 LABEL org.opencontainers.image.title="PubMed Search MCP" \
       org.opencontainers.image.description="MCP SDK v2 server for multi-source biomedical literature research" \
       org.opencontainers.image.source="https://github.com/u9401066/pubmed-search-mcp" \
-      org.opencontainers.image.version="0.6.3" \
+      org.opencontainers.image.version="0.6.5" \
       org.opencontainers.image.licenses="Apache-2.0"
 
 # Pin the build tool so an upstream ``latest`` image cannot change release

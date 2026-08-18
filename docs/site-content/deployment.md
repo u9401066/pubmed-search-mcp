@@ -388,13 +388,13 @@ PUBMED_DATA_DIR=/var/lib/pubmed-search-mcp
 # reviewed source into your own Azure Container Registry first.
 az acr build \
   --registry myregistry \
-  --image pubmed-search-mcp:0.6.3 \
+  --image pubmed-search-mcp:0.6.5 \
   .
 
 az containerapp create \
   --name pubmed-mcp \
   --resource-group myRG \
-  --image myregistry.azurecr.io/pubmed-search-mcp:0.6.3 \
+  --image myregistry.azurecr.io/pubmed-search-mcp:0.6.5 \
   --target-port 8765 \
   --ingress external
 ```

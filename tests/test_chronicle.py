@@ -786,6 +786,51 @@ class TestChronicleService:
         with pytest.raises(ValueError, match=r"topic.*pmids"):
             await service.build()
 
+    async def test_build_continues_stored_topic_scope_from_chronicle_id_alone(self, store):
+        first = await ChronicleService(FakeEvidenceProvider(BASE_EVENTS), store).build(
+            topic="drug X", max_events=40, min_year=2015, max_year=2024
+        )
+
+        provider = FakeEvidenceProvider(EXTENDED_EVENTS)
+        second = await ChronicleService(provider, store).build(chronicle_id=first.chronicle_id)
+
+        assert second.revision == 2
+        assert second.topic == "drug X"
+        assert provider.topic_calls == ["drug X"]
+        assert provider.topic_call_kwargs[0]["max_events"] == 40
+        assert provider.topic_call_kwargs[0]["min_year"] == 2015
+        assert provider.topic_call_kwargs[0]["max_year"] == 2024
+        assert second.input_scope.filters == first.input_scope.filters
+        delta = ChronicleService(provider, store).diff(first.chronicle_id, 1)
+        assert "filters" not in delta["scope"]["changes"]
+
+    async def test_build_continues_stored_pmid_scope_from_chronicle_id_alone(self, store):
+        first = await ChronicleService(FakeEvidenceProvider(EXTENDED_EVENTS), store).build(
+            pmids=["1", "3"], topic="Selected"
+        )
+
+        provider = FakeEvidenceProvider(EXTENDED_EVENTS)
+        second = await ChronicleService(provider, store).build(chronicle_id=first.chronicle_id)
+
+        assert second.revision == 2
+        assert provider.pmid_calls == [["1", "3"]]
+        assert provider.topic_calls == []
+        assert second.input_scope.mode == "pmids"
+
+    async def test_build_explicit_arguments_override_inherited_scope(self, store):
+        first = await ChronicleService(FakeEvidenceProvider(BASE_EVENTS), store).build(topic="drug X", max_events=40)
+
+        provider = FakeEvidenceProvider(EXTENDED_EVENTS)
+        await ChronicleService(provider, store).build(chronicle_id=first.chronicle_id, max_events=12)
+
+        assert provider.topic_call_kwargs[0]["max_events"] == 12
+
+    async def test_build_rejects_unknown_chronicle_id_without_scope(self, store):
+        service = ChronicleService(FakeEvidenceProvider(BASE_EVENTS), store)
+
+        with pytest.raises(ValueError, match="not found"):
+            await service.build(chronicle_id="never-stored-chronicle")
+
     async def test_diff_between_stored_revisions(self, store):
         first = await ChronicleService(FakeEvidenceProvider(BASE_EVENTS), store).build(topic="drug X")
         await ChronicleService(FakeEvidenceProvider(EXTENDED_EVENTS), store).build(topic="drug X")
@@ -801,8 +846,15 @@ class TestChronicleService:
         snapshot = await ChronicleService(FakeEvidenceProvider(BASE_EVENTS), store).build(topic="drug X")
         service = ChronicleService(FakeEvidenceProvider(BASE_EVENTS), store)
 
-        with pytest.raises(ValueError, match="not found"):
+        with pytest.raises(ValueError, match=r"not found.*Stored revisions: \[1\]"):
             service.diff(snapshot.chronicle_id, 99)
+
+    async def test_diff_rejects_reversed_range_before_reading_storage(self, store):
+        snapshot = await ChronicleService(FakeEvidenceProvider(BASE_EVENTS), store).build(topic="drug X")
+        service = ChronicleService(FakeEvidenceProvider(BASE_EVENTS), store)
+
+        with pytest.raises(ValueError, match="forward and strictly increasing"):
+            service.diff(snapshot.chronicle_id, 3, 1)
 
     async def test_artifact_files_cover_required_names(self, store):
         snapshot = await ChronicleService(FakeEvidenceProvider(BASE_EVENTS), store).build(topic="drug X")
@@ -911,8 +963,10 @@ class TestChronicleTools:
 
         build_schema = mcp._tool_manager._tools["build_research_chronicle"].parameters
         read_schema = mcp._tool_manager._tools["read_research_chronicle"].parameters
-        assert build_schema["properties"]["max_events"]["minimum"] == 1
-        assert build_schema["properties"]["max_events"]["maximum"] == 200
+        max_events_schema = build_schema["properties"]["max_events"]["anyOf"][0]
+        assert max_events_schema["minimum"] == 1
+        assert max_events_schema["maximum"] == 200
+        assert build_schema["properties"]["max_events"]["default"] is None
         assert "mermaid" in build_schema["properties"]["output"]["enum"]
         assert read_schema["properties"]["mode"]["enum"] == ["brief", "full"]
         chronicle_id_schema = read_schema["properties"]["chronicle_id"]["anyOf"][0]
@@ -1141,11 +1195,29 @@ class TestChronicleTools:
         assert json.loads(loaded)["projection"] == "timeline"
 
         extended = self._register(monkeypatch, tmp_path, EXTENDED_EVENTS)
-        await extended["build_research_chronicle"](topic="drug X")
+        # Continue existing chronicle by chronicle_id alone without passing topic
+        revision_2 = await extended["build_research_chronicle"](chronicle_id=chronicle_id)
+        assert "Revision: 2" in revision_2
+        assert f"Chronicle ID: `{chronicle_id}`" in revision_2
+
         delta = json.loads(
             await extended["read_research_chronicle"](action="diff", chronicle_id=chronicle_id, from_revision=1)
         )
         assert len(delta["entries"]["added"]) == 2
+
+    async def test_build_with_unknown_chronicle_id_without_topic_fails(self, monkeypatch, tmp_path):
+        tools = self._register(monkeypatch, tmp_path, BASE_EVENTS)
+        result = await tools["build_research_chronicle"](chronicle_id="nonexistent-chronicle-id")
+        assert "not found" in result.lower()
+
+    async def test_read_diff_reports_stored_revisions_for_unknown_revision(self, monkeypatch, tmp_path):
+        tools = self._register(monkeypatch, tmp_path, BASE_EVENTS)
+        summary = await tools["build_research_chronicle"](topic="drug X")
+        chronicle_id = summary.split("Chronicle ID: `")[1].split("`")[0]
+
+        result = await tools["read_research_chronicle"](action="diff", chronicle_id=chronicle_id, from_revision=99)
+
+        assert "Stored revisions: [1]" in result
 
     async def test_read_narrate_returns_cited_markdown(self, monkeypatch, tmp_path):
         tools = self._register(monkeypatch, tmp_path, EXTENDED_EVENTS)

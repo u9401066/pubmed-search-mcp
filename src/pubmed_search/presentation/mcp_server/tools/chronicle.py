@@ -427,7 +427,7 @@ def register_chronicle_tools(mcp: MCPServer, searcher: LiteratureSearcher) -> No
     async def build_research_chronicle(
         topic: TopicText | None = None,
         pmids: Annotated[str, Field(max_length=10000)] | None = None,
-        max_events: MaxEvents = 30,
+        max_events: MaxEvents | None = None,
         min_year: PublicationYear | None = None,
         max_year: PublicationYear | None = None,
         chronicle_id: ChronicleIdText | None = None,
@@ -460,19 +460,25 @@ def register_chronicle_tools(mcp: MCPServer, searcher: LiteratureSearcher) -> No
 
         Args:
             topic: Research topic (drug, gene, disease, intervention).
-                   Required unless `pmids` is supplied.
+                   Required unless `pmids` or a stored `chronicle_id` is supplied.
             pmids: Comma-separated PMIDs, or "last" to chronicle the previous
                    search results instead of running a new search.
             max_events: Maximum timeline events to consider (topic mode).
+                        Omit to inherit the continued revision's value, else 30.
             min_year: Earliest publication year to include (topic mode).
             max_year: Latest publication year to include (topic mode).
             chronicle_id: Continue an existing chronicle (creates revision N+1)
-                          instead of deriving the ID from the topic.
+                          instead of deriving the ID from the topic. Passing it
+                          alone re-runs the stored scope, so the resulting diff
+                          shows research movement rather than a changed window.
             output: "summary" (default compact Markdown with the chronological
                     spine), "json", "chronicle_map", "timeline", "tree",
                     "graph", "evidence", "milestones", "mermaid" (horizontal
                     time spine with lineage branches), "timeline_mermaid"
                     (legacy flat timeline), "mindmap", or "narrative".
+                    "json", "chronicle_map", "timeline", "tree", "graph",
+                    "evidence", and "milestones" return JSON; the rest return
+                    Markdown.
 
         Returns:
             The requested rendering plus an artifact locator when durable
@@ -485,6 +491,7 @@ def register_chronicle_tools(mcp: MCPServer, searcher: LiteratureSearcher) -> No
             build_research_chronicle(topic="remimazolam")
             build_research_chronicle(pmids="last", topic="My Reading List")
             build_research_chronicle(topic="CAR-T therapy", output="mermaid")
+            build_research_chronicle(chronicle_id="remimazolam-9f2b1c4d")
         """
         if not isinstance(output, str):
             return ResponseFormatter.error(
@@ -521,7 +528,9 @@ def register_chronicle_tools(mcp: MCPServer, searcher: LiteratureSearcher) -> No
                 tool_name="build_research_chronicle",
                 output_format=response_format,
             )
-        if isinstance(max_events, bool) or not isinstance(max_events, int) or not 1 <= max_events <= 200:
+        if max_events is not None and (
+            isinstance(max_events, bool) or not isinstance(max_events, int) or not 1 <= max_events <= 200
+        ):
             return ResponseFormatter.error(
                 error="max_events must be an integer between 1 and 200",
                 suggestion="Use 30 for a compact Chronicle or up to 200 for broader coverage",
@@ -568,10 +577,10 @@ def register_chronicle_tools(mcp: MCPServer, searcher: LiteratureSearcher) -> No
                 tool_name="build_research_chronicle",
                 output_format=response_format,
             )
-        if not topic and not pmid_list:
+        if not topic and not pmid_list and not chronicle_id:
             return ResponseFormatter.error(
-                error="Must provide either 'topic' or 'pmids'",
-                suggestion='Examples: topic="remimazolam" OR pmids="last"',
+                error="Must provide either 'topic' or 'pmids' (or an existing 'chronicle_id' to continue)",
+                suggestion='Examples: topic="remimazolam", pmids="last", or chronicle_id="remimazolam-intraoperative-08c229f3"',
                 tool_name="build_research_chronicle",
                 output_format=response_format,
             )

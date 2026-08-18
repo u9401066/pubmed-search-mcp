@@ -10,6 +10,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.5] - 2026-08-18
+
+### Fixed
+
+- `build_research_chronicle(chronicle_id=...)` now re-runs the continued
+  revision's own retrieval scope. `max_events`, `min_year`, and `max_year` are
+  inherited from the stored revision instead of silently resetting to defaults,
+  so a follow-up `read_research_chronicle(action="diff")` reports research
+  movement rather than a changed retrieval window. Explicitly passed values
+  still win, and stored filters are re-bounded before they drive retrieval.
+- `ChronicleService.diff` now rejects a reversed or equal revision range before
+  reading storage, and a missing revision error lists the stored revisions
+  instead of failing without a recovery hint.
+
+### Changed
+
+- `build_research_chronicle` exposes `max_events` as optional. Omitting it
+  inherits the continued revision's value, otherwise it falls back to 30.
+
+## [0.6.4] - 2026-08-18
+
+### Changed
+
+- Enhanced `build_research_chronicle` so providing an existing `chronicle_id`
+  without re-specifying `topic` or `pmids` automatically reuses the existing
+  scope and builds revision N+1 seamlessly.
+- Improved validation error suggestions for `build_research_chronicle` to
+  explicitly state that an existing `chronicle_id` can be used to continue
+  a chronicle.
+
 ## [0.6.3] - 2026-08-14
 
 ### Added
@@ -2553,7 +2583,9 @@ get_citation_metrics(pmids="last", min_rcr=1.5, min_percentile=75)
 - [PyPI Package](https://pypi.org/project/pubmed-search-mcp/)
 - [Smithery](https://smithery.ai/server/pubmed-search-mcp)
 
-[Unreleased]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.6.3...HEAD
+[Unreleased]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.6.5...HEAD
+[0.6.5]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.6.4...v0.6.5
+[0.6.4]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.6.0...v0.6.1

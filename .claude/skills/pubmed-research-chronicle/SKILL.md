@@ -43,6 +43,11 @@ build_research_chronicle(pmids="last", topic="My Reading List")
 
 # 明確接續某個 chronicle
 build_research_chronicle(topic="remimazolam", chronicle_id="remimazolam-9f2b1c4d")
+
+# 只給 chronicle_id：照原本的檢索範圍再跑一次。
+# topic/pmids 以及 max_events/min_year/max_year 都沿用上一版，
+# 所以 diff 反映的是研究進展，而不是被悄悄改掉的檢索窗口。
+build_research_chronicle(chronicle_id="remimazolam-9f2b1c4d")
 ```
 
 回傳的 `summary` 開頭就是**時序主軸 (Chronological Spine)**，下面才是研究分支。
