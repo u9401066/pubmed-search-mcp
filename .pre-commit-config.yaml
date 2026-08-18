@@ -71,7 +71,9 @@ repos:
       - id: name-tests-test
         args: [--pytest-test-first]
         files: ^tests/
-        # Ensures test files follow test_*.py naming
+        exclude: ^tests/fixtures/
+        # Ensures test files follow test_*.py naming.
+        # tests/fixtures/ holds shared support modules, not test modules.
 
   # ─────────────────────────────────────────────────────────────
   # 2. Ruff — ultra-fast linter + formatter (auto-fix enabled)
@@ -98,7 +100,10 @@ repos:
       - id: bandit
         name: bandit security scan
         args: [-c, pyproject.toml, -ll, --quiet]
+        additional_dependencies: ["tomli>=1.1.0"]
         # Medium+ severity only. Config in [tool.bandit]
+        # tomli is bandit's [toml] extra; without it bandit cannot read
+        # [tool.bandit] from pyproject.toml and the hook errors out.
         # Skip: SKIP=bandit git commit
 
   - repo: local
