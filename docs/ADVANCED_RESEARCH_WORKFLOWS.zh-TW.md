@@ -8,8 +8,8 @@
 | --- | --- | --- |
 | 看一個主題如何隨時間演進、分支與沉澱 | `build_research_chronicle` | `read_research_chronicle` |
 | 用文字找生物醫學圖片（放射線、病理切片） | `search_biomedical_images` | `get_article_figures`, `unified_search` |
-| 上傳圖片，依圖片視覺語意找相關文獻 | `analyze_figure_for_search` | `search_biomedical_images`, `unified_search` |
-| 重新讀取大型搜尋/全文輸出，不重跑外部來源 | `read_session(action="artifact")` | `read_session(action="list_artifacts")` |
+| 上傳圖片，依圖片視覺語意找相關文獻 | `prepare_figure_search` | `search_biomedical_images`, `unified_search` |
+| 重新讀取大型搜尋/全文輸出，不重跑外部來源 | `read_session(request={"action":"artifact","locator":{"kind":"artifact_id","value":"..."}})` | `read_session(request={"action":"list_artifacts"})` |
 
 ---
 
@@ -23,7 +23,7 @@
 
 - **以時序為主脊柱（X 軸）**：年代（Years）構成橫向主軸，串聯起整個領域的歷史演進。
 - **以語意分支為組織維度（Y 軸）**：由多篇論文重複出現的 MeSH descriptors 與作者關鍵字自動聚類出研究路線（Research Lines），從該路線最早觀察到的文獻年份分岔展開。
-- **單一事實來源（Single Source of Truth）**：所有輸出（時序、樹狀圖、心智圖、Mermaid、敘事、JSON）均來自同一份 `ChronicleSnapshot`，保證不同檢視角度絕不相互矛盾。如果只是想在一般搜尋回應裡看輕量分支預覽，可使用 `unified_search(options="context_graph")`（只根據本次 PMID-backed ranked set 產生 preview，而非完整的持久化編年史）。
+- **單一事實來源（Single Source of Truth）**：所有輸出（時序、樹狀圖、Mermaid、敘事、JSON）均來自同一份 `ChronicleSnapshot`，保證不同檢視角度絕不相互矛盾。Research Chronicle 是唯一研究 lineage 能力；`unified_search` 只會建議下一步建立 Chronicle，不會另產生第二套脈絡 projection。
 - **不可變版本持久化（Immutable Revision Store）**：每次重跑同一主題或給定 `chronicle_id` 時，系統以原子鎖寫入 `Revision N+1`，支援版本比對（Diff）。
 - **認識論嚴謹性（Epistemic Audit）**：文獻在不同版本中的缺席嚴格標記為 `not_observed_in_revision`（檢索範圍未觀察到），而非斷言該論文「被學界淘汰」；每份 Chronicle 皆附帶完整度審計報告（Audit）。
 
@@ -51,21 +51,19 @@ build_research_chronicle(chronicle_id="remimazolam-intraoperative-08c229f3")
 
 | Action | 說明 | 適用情境與範例 |
 | --- | --- | --- |
-| `load` | 載入特定版本並以指定格式輸出（預設 latest） | `read_research_chronicle(chronicle_id="...", output="mermaid")` |
-| `list` | 列出已保存的所有編年史清單與最新版本號 | `read_research_chronicle(action="list")` |
-| `diff` | 比較兩個版本（新增、未觀察到、角色轉變、審計狀態） | `read_research_chronicle(action="diff", chronicle_id="...", from_revision=1)` |
-| `milestones` | 統計條目分佈、歷年趨勢、證據品質與重大地基論文 | `read_research_chronicle(action="milestones", chronicle_id="...")` |
-| `compare` | 橫向比對 2–5 個主題編年史（含共同證據分析） | `read_research_chronicle(action="compare", topics="remimazolam,propofol")` |
-| `narrate` | 輸出帶有完整引用（PMID/DOI）的連貫學術敘事 Markdown | `read_research_chronicle(action="narrate", chronicle_id="...", mode="full")` |
+| `load` | 載入特定版本並以指定格式輸出（預設 latest） | `read_research_chronicle(request={"action":"load","chronicle_id":"...","output":"mermaid"})` |
+| `list` | 列出已保存的所有編年史清單與最新版本號 | `read_research_chronicle(request={"action":"list"})` |
+| `diff` | 比較兩個版本（新增、未觀察到、角色轉變、審計狀態） | `read_research_chronicle(request={"action":"diff","chronicle_id":"...","from_revision":1})` |
+| `milestones` | 統計條目分佈、歷年趨勢、證據品質與重大地基論文 | `read_research_chronicle(request={"action":"milestones","chronicle_id":"..."})` |
+| `compare` | 橫向比對 2–5 個主題編年史（含共同證據分析） | `read_research_chronicle(request={"action":"compare","selection":{"kind":"topics","values":["remimazolam","propofol"]}})` |
+| `narrate` | 輸出帶有完整引用（PMID/DOI）的連貫學術敘事 Markdown | `read_research_chronicle(request={"action":"narrate","chronicle_id":"...","mode":"full"})` |
 
-#### 🎨 支援的 12 種輸出格式 (`output` 參數)
+#### 🎨 支援的 10 種輸出格式 (`output` 參數)
 
 | 輸出格式 | 類型 | 說明與適用場景 |
 | --- | :---: | --- |
 | `summary` | Markdown | 緊湊摘要（預設）。包含時序主軸、研究分支列表與重大亮點。 |
 | `mermaid` | 圖表 | **標準 X-Y 軸演化樹**。橫向年份軸 + 主題分支 + 論文區塊（Mermaid Flowchart LR）。 |
-| `mindmap` | 圖表 | **研究分支心智圖**。放射狀展示主題聚類與重要文獻（Mermaid Mindmap）。 |
-| `timeline_mermaid` | 圖表 | 平面時序圖（Mermaid Timeline 語法）。 |
 | `chronicle_map` | JSON | 包含完整圖形座標契約的結構化 JSON（前端視覺化與繪圖專用）。 |
 | `timeline` | JSON | 時序投影 JSON，依時間嚴格排列。 |
 | `tree` | JSON | 樹狀分支投影 JSON，依主題與子主題層級組織。 |
@@ -166,33 +164,7 @@ flowchart LR
 
 ---
 
-#### 範例 2：研究分支心智圖 (`output="mindmap"`)
-
-```mermaid
-mindmap
-  root["Remimazolam 術中應用研究脈絡"]
-    branch_propofol["Propofol 對比試驗"]
-      entry_p1["2020 — Phase 2b/3 關鍵地基試驗 (PMID: 32417976)"]
-      entry_p2["血流動力學: 低血壓發生率顯著降低"]
-      entry_p3["注射痛 (Injection Pain) 顯著減少"]
-      entry_p4["2024-2025 多中心 Meta-Analysis 統合分析"]
-    branch_neuro["麻醉深度與神經監測"]
-      entry_n1["EEG / BIS 腦電雙頻指數監測指標"]
-      entry_n2["術後譫妄 (Delirium) 發生率降低"]
-      entry_n3["老年圍術期神經認知障礙 (PND) 改善"]
-    branch_cardio["心血管與複雜手術"]
-      entry_c1["經導管主動脈瓣置換術 (TAVI)"]
-      entry_c2["體外循環冠狀動脈搭橋 (CABG)"]
-      entry_c3["重症高風險患者全身麻醉管理"]
-    branch_antidote["甦醒管理與特異性拮抗"]
-      entry_a1["Flumazenil (氟馬西尼) 特異性快速逆轉"]
-      entry_a2["甦醒期躁動 (Emergence Agitation) 評估"]
-      entry_a3["組織羧酸酯酶 (CES-1) 水解特性"]
-```
-
----
-
-#### 範例 3：核心關鍵論文雙向引用網絡圖 (`build_citation_tree`)
+#### 範例 2：核心關鍵論文雙向引用網絡圖 (`build_citation_tree`)
 
 以 2020 年奠基性臨床試驗 **Doi et al. (PMID: 32417976)** 為根節點，向前追蹤後續最新引用，向後回溯基礎藥理學奠基文獻：
 
@@ -273,15 +245,18 @@ Open-i 需要英文醫學詞。中文或其他非英文提示應先由 agent 翻
 
 ## 上傳圖片到文獻搜尋
 
-`analyze_figure_for_search` 是給 MCP client 上傳圖片或傳 image URL 時使用的 handoff tool。它接受 image URL 或 base64/data-URI image，回傳 MCP `ImageContent` 與給 LLM agent 的搜尋指令。
+`prepare_figure_search` 是給 MCP client 上傳圖片或傳 image URL 時使用的 handoff tool。它接受 image URL 或 base64/data-URI image，回傳 MCP `ImageContent` 與給 LLM agent 的搜尋指令。
 
 ```python
-analyze_figure_for_search(image="data:image/png;base64,...", search_type="medical")
+prepare_figure_search(
+    source={"kind":"base64","data":"iVBORw0KGgo..."},
+    search_type="medical",
+)
 ```
 
 Server 本身不做 standalone visual diagnosis。正確流程是：
 
-1. MCP client 把上傳圖片或 image URL 傳給 `analyze_figure_for_search`。
+1. MCP client 把上傳圖片或 image URL 傳給 `prepare_figure_search`。
 2. LLM agent 用自己的 vision capability 判讀圖片，抽出英文 biomedical search terms。
 3. Agent 接著呼叫 `search_biomedical_images` 找相似 biomedical images，或用 `unified_search` 找相關論文。
 
@@ -292,11 +267,11 @@ Server 本身不做 standalone visual diagnosis。正確流程是：
 當 session persistence 有設定時，大型 `unified_search` 與 `get_fulltext` 輸出可以保存成 artifact。即時 tool response 可以保持精簡，同時把可重用 payload 留在 session artifact 裡。
 
 ```python
-read_session(action="list_artifacts")
-read_session(action="artifact", artifact_id="...")
-read_session(action="artifact", artifact_uri="artifact://...")
-read_session(action="artifact", artifact_uri="artifact://...", artifact_file="audit.json")
-read_session(action="artifact", artifact_uri="artifact://...", artifact_file="results.json", offset=0, max_chars=200000)
+read_session(request={"action":"list_artifacts"})
+read_session(request={"action":"artifact","locator":{"kind":"artifact_id","value":"..."}})
+read_session(request={"action":"artifact","locator":{"kind":"artifact_uri","value":"artifact://..."}})
+read_session(request={"action":"artifact","locator":{"kind":"artifact_uri","value":"artifact://..."},"artifact_file":"audit.json"})
+read_session(request={"action":"artifact","locator":{"kind":"artifact_uri","value":"artifact://..."},"artifact_file":"results.json","offset":0,"max_chars":200000})
 ```
 
 Artifact 是 query memory，不是第二次搜尋。讀取 artifact 不會重跑外部 source calls。Local filesystem paths 預設會被遮蔽，因為 remote client 不能讀 MCP server host path。只有本機 MCP client 真的需要 `local_path` 與 `manifest_path` 時，才設定 `PUBMED_ARTIFACT_INCLUDE_LOCAL_PATHS=true`。
@@ -307,11 +282,11 @@ Artifact 是 query memory，不是第二次搜尋。讀取 artifact 不會重跑
 
 ## 驗證狀態
 
-目前 primary 45-tool MCP server 直接暴露這些功能：
+目前 primary 41-tool MCP server 直接暴露這些功能：
 
 - Research chronicle: `build_research_chronicle`, `read_research_chronicle`
 - Image search: `search_biomedical_images`
-- 上傳圖片 handoff: `analyze_figure_for_search`
-- Query memory: `read_session(action="artifact")`
+- 上傳圖片 handoff: `prepare_figure_search`
+- Query memory: `read_session(request={"action":"artifact","locator":{"kind":"artifact_id","value":"..."}})`
 
 這些功能有 docs alignment tests、tool registry tests、image-search tests、vision-search tests、timeline tests、session artifact tests 守住。

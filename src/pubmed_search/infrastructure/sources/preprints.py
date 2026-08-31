@@ -17,10 +17,16 @@ from typing import Any
 
 import defusedxml.ElementTree as ET  # noqa: N817  # Security: prevent XML attacks
 
-from pubmed_search.infrastructure.sources.base_client import APIRequestError, BaseAPIClient
+from pubmed_search.infrastructure.sources.base_client import (
+    APIRequestError,
+    BaseAPIClient,
+    raise_provider_schema_error,
+    raise_sanitized_retryable_error,
+)
 from pubmed_search.shared.async_utils import RetryableOperationError
 from pubmed_search.shared.source_contracts import (
     SourceAdapterCall,
+    SourceAdapterResult,
     format_source_adapter_error,
     gather_source_adapter_calls,
 )
@@ -41,6 +47,7 @@ ARXIV_MEDICAL_CATEGORIES = [
     "physics.med-ph",  # Medical Physics
 ]
 PREPRINT_SOURCE_TIMEOUT_SECONDS = 20.0
+_RXIV_UNSUPPORTED_QUERY_SYNTAX_RE = re.compile(r'\b(?:AND|OR|NOT)\b|[()"]')
 
 
 def compile_arxiv_query(query: str, categories: list[str] | None = None) -> str:
@@ -64,6 +71,21 @@ def default_rxiv_date_range(*, now: datetime | None = None) -> tuple[str, str]:
         (current - timedelta(days=90)).strftime("%Y-%m-%d"),
         current.strftime("%Y-%m-%d"),
     )
+
+
+def compile_rxiv_local_terms(query: str) -> tuple[str, ...]:
+    """Compile the exact local medRxiv/bioRxiv all-term predicate.
+
+    Their date-feed endpoints do not execute a literature query. Supporting a
+    Boolean-looking string by splitting it into literal words would silently
+    change caller intent, so only plain terms are accepted.
+    """
+
+    if not isinstance(query, str) or not query.strip():
+        raise ValueError("medRxiv/bioRxiv local filtering requires a non-empty plain-term query")
+    if _RXIV_UNSUPPORTED_QUERY_SYNTAX_RE.search(query):
+        raise ValueError("medRxiv/bioRxiv local filtering does not support Boolean or grouped query syntax")
+    return tuple(query.casefold().split())
 
 
 @dataclass
@@ -131,7 +153,6 @@ class ArXivClient(BaseAPIClient):
         limit: int = 10,
         categories: list[str] | None = None,
         sort_by: str = "relevance",  # relevance, lastUpdatedDate, submittedDate
-        strict: bool = False,
     ) -> list[PreprintArticle]:
         """
         Search arXiv for preprints.
@@ -174,24 +195,19 @@ class ArXivClient(BaseAPIClient):
                 expect_json=False,
             )
             if not isinstance(response_text, str):
-                if strict:
-                    self._raise_strict_request_error()
-                return []
+                raise_provider_schema_error(self._service_name)
 
-            return self._parse_atom_response(response_text, strict=strict)
+            return self._parse_atom_response(response_text)
 
-        except (APIRequestError, RetryableOperationError):
-            if strict:
-                raise
-            logger.warning("arXiv search failed (upstream request error)")
-            return []
+        except APIRequestError:
+            raise
+        except RetryableOperationError as exc:
+            raise_sanitized_retryable_error(self._service_name, exc)
         except Exception as exc:
             logger.warning("arXiv search failed (%s)", type(exc).__name__)
-            if strict:
-                raise APIRequestError(self._service_name) from None
-            return []
+            raise APIRequestError(self._service_name) from exc
 
-    def _parse_atom_response(self, xml_text: str, *, strict: bool = False) -> list[PreprintArticle]:
+    def _parse_atom_response(self, xml_text: str) -> list[PreprintArticle]:
         """Parse Atom XML response from arXiv."""
         articles = []
 
@@ -280,16 +296,13 @@ class ArXivClient(BaseAPIClient):
 
                 except Exception as exc:
                     logger.warning("Error parsing arXiv entry (%s)", type(exc).__name__)
-                    if strict:
-                        raise APIRequestError(self._service_name) from None
-                    continue
+                    raise APIRequestError(self._service_name) from exc
 
         except APIRequestError:
             raise
         except Exception as exc:
             logger.warning("Error parsing arXiv XML (%s)", type(exc).__name__)
-            if strict:
-                raise APIRequestError(self._service_name) from None
+            raise APIRequestError(self._service_name) from exc
 
         return articles
 
@@ -303,14 +316,18 @@ class ArXivClient(BaseAPIClient):
                 expect_json=False,
             )
             if not isinstance(response_text, str):
-                return None
+                raise_provider_schema_error(self._service_name)
 
             articles = self._parse_atom_response(response_text)
             return articles[0] if articles else None
 
-        except Exception as e:
-            logger.exception(f"arXiv get by ID error: {e}")
-            return None
+        except APIRequestError:
+            raise
+        except RetryableOperationError as exc:
+            raise_sanitized_retryable_error(self._service_name, exc)
+        except Exception as exc:
+            logger.warning("arXiv identifier lookup failed (%s)", type(exc).__name__)
+            raise APIRequestError(self._service_name) from exc
 
 
 class MedBioRxivClient(BaseAPIClient):
@@ -334,7 +351,6 @@ class MedBioRxivClient(BaseAPIClient):
         limit: int = 10,
         from_date: str | None = None,
         to_date: str | None = None,
-        strict: bool = False,
     ) -> list[PreprintArticle]:
         """
         Search medRxiv for medical preprints.
@@ -355,7 +371,6 @@ class MedBioRxivClient(BaseAPIClient):
             limit=limit,
             from_date=from_date,
             to_date=to_date,
-            strict=strict,
         )
 
     async def search_biorxiv(
@@ -364,7 +379,6 @@ class MedBioRxivClient(BaseAPIClient):
         limit: int = 10,
         from_date: str | None = None,
         to_date: str | None = None,
-        strict: bool = False,
     ) -> list[PreprintArticle]:
         """Search bioRxiv for biology preprints."""
         return await self._search_rxiv(
@@ -374,7 +388,6 @@ class MedBioRxivClient(BaseAPIClient):
             limit=limit,
             from_date=from_date,
             to_date=to_date,
-            strict=strict,
         )
 
     async def _search_rxiv(
@@ -385,7 +398,6 @@ class MedBioRxivClient(BaseAPIClient):
         limit: int,
         from_date: str | None,
         to_date: str | None,
-        strict: bool,
     ) -> list[PreprintArticle]:
         """Common search logic for medRxiv/bioRxiv."""
         try:
@@ -403,19 +415,14 @@ class MedBioRxivClient(BaseAPIClient):
 
             data = await self._make_request(url, expect_json=True)
             if not isinstance(data, dict):
-                if strict:
-                    self._raise_strict_request_error()
-                return []
+                raise_provider_schema_error(self._service_name)
 
             collection = data.get("collection")
-            if not isinstance(collection, list):
-                if strict:
-                    self._raise_strict_request_error()
-                return []
+            if not isinstance(collection, list) or any(not isinstance(item, dict) for item in collection):
+                raise_provider_schema_error(self._service_name)
 
             articles = []
-            query_lower = query.lower()
-            query_terms = query_lower.split()
+            query_terms = compile_rxiv_local_terms(query)
 
             for item in collection:
                 try:
@@ -454,22 +461,17 @@ class MedBioRxivClient(BaseAPIClient):
 
                 except Exception as exc:
                     logger.warning("Error parsing %s entry (%s)", source, type(exc).__name__)
-                    if strict:
-                        raise APIRequestError(self._service_name) from None
-                    continue
+                    raise APIRequestError(self._service_name) from exc
 
             return articles[:limit]
 
-        except (APIRequestError, RetryableOperationError):
-            if strict:
-                raise
-            logger.warning("%s search failed (upstream request error)", source)
-            return []
+        except APIRequestError:
+            raise
+        except RetryableOperationError as exc:
+            raise_sanitized_retryable_error(self._service_name, exc)
         except Exception as exc:
             logger.warning("%s search failed (%s)", source, type(exc).__name__)
-            if strict:
-                raise APIRequestError(self._service_name) from None
-            return []
+            raise APIRequestError(self._service_name) from exc
 
 
 class PreprintSearcher:
@@ -487,7 +489,6 @@ class PreprintSearcher:
         categories: list[str] | None = None,
         from_date: str | None = None,
         to_date: str | None = None,
-        strict: bool = False,
     ) -> dict[str, Any]:
         """
         Search across preprint servers.
@@ -504,6 +505,9 @@ class PreprintSearcher:
         """
         if sources is None:
             sources = ["arxiv", "medrxiv", "biorxiv"]
+        unknown_sources = set(sources) - {"arxiv", "medrxiv", "biorxiv"}
+        if unknown_sources:
+            raise ValueError("Unsupported preprint source")
 
         results = {
             "query": query,
@@ -516,44 +520,74 @@ class PreprintSearcher:
         calls: list[SourceAdapterCall[PreprintArticle]] = []
 
         if "arxiv" in sources:
+
+            async def _search_arxiv() -> SourceAdapterResult[PreprintArticle]:
+                articles = await self.arxiv.search(
+                    query=query,
+                    limit=limit,
+                    categories=categories or ARXIV_MEDICAL_CATEGORIES,
+                )
+                return SourceAdapterResult(
+                    source="arxiv",
+                    operation="search",
+                    items=articles,
+                    total_count=len(articles),
+                    status="ok" if articles else "empty",
+                )
+
             calls.append(
                 SourceAdapterCall(
                     source="arxiv",
                     operation="search",
-                    execute=lambda: self.arxiv.search(
-                        query=query,
-                        limit=limit,
-                        categories=categories or ARXIV_MEDICAL_CATEGORIES,
-                        strict=strict,
-                    ),
+                    execute=_search_arxiv,
                 )
             )
         if "medrxiv" in sources:
+
+            async def _search_medrxiv() -> SourceAdapterResult[PreprintArticle]:
+                articles = await self.rxiv.search_medrxiv(
+                    query=query,
+                    limit=limit,
+                    from_date=from_date,
+                    to_date=to_date,
+                )
+                return SourceAdapterResult(
+                    source="medrxiv",
+                    operation="search",
+                    items=articles,
+                    total_count=len(articles),
+                    status="ok" if articles else "empty",
+                )
+
             calls.append(
                 SourceAdapterCall(
                     source="medrxiv",
                     operation="search",
-                    execute=lambda: self.rxiv.search_medrxiv(
-                        query=query,
-                        limit=limit,
-                        from_date=from_date,
-                        to_date=to_date,
-                        strict=strict,
-                    ),
+                    execute=_search_medrxiv,
                 )
             )
         if "biorxiv" in sources:
+
+            async def _search_biorxiv() -> SourceAdapterResult[PreprintArticle]:
+                articles = await self.rxiv.search_biorxiv(
+                    query=query,
+                    limit=limit,
+                    from_date=from_date,
+                    to_date=to_date,
+                )
+                return SourceAdapterResult(
+                    source="biorxiv",
+                    operation="search",
+                    items=articles,
+                    total_count=len(articles),
+                    status="ok" if articles else "empty",
+                )
+
             calls.append(
                 SourceAdapterCall(
                     source="biorxiv",
                     operation="search",
-                    execute=lambda: self.rxiv.search_biorxiv(
-                        query=query,
-                        limit=limit,
-                        from_date=from_date,
-                        to_date=to_date,
-                        strict=strict,
-                    ),
+                    execute=_search_biorxiv,
                 )
             )
 
@@ -562,7 +596,7 @@ class PreprintSearcher:
             per_call_timeout=PREPRINT_SOURCE_TIMEOUT_SECONDS,
         )
         for adapter_result in adapter_results:
-            if strict and adapter_result.errors:
+            if len(calls) == 1 and adapter_result.errors:
                 error = adapter_result.errors[0]
                 if error.retryable:
                     raise RetryableOperationError(

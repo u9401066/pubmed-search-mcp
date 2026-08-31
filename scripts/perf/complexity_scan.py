@@ -212,7 +212,7 @@ def _target_format_unified_results(n: int) -> float:
             analysis,
             stats,
             include_trials=False,
-            include_similarity_scores=True,
+            include_rank_scores=True,
             original_query="remimazolam ICU sedation randomized trial",
             source_api_counts={"pubmed": (n, n * 3)},
         )

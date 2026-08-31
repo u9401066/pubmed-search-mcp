@@ -9,9 +9,19 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Annotated
 
-from pubmed_search.application.reference_verification import ReferenceVerificationService
+from pydantic import Field
+
+from pubmed_search.application.reference_verification import (
+    MAX_REFERENCE_TEXT_CHARS,
+    MAX_REFERENCES,
+    MAX_SOURCE_NAME_CHARS,
+    ReferenceVerificationInputError,
+    ReferenceVerificationService,
+)
+
+from .tool_response import ResponseFormatter
 
 if TYPE_CHECKING:
     from mcp.server.mcpserver import MCPServer
@@ -19,6 +29,13 @@ if TYPE_CHECKING:
     from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
 logger = logging.getLogger(__name__)
+
+ReferenceText = Annotated[
+    str,
+    Field(min_length=1, max_length=MAX_REFERENCE_TEXT_CHARS),
+]
+ReferenceSourceName = Annotated[str, Field(max_length=MAX_SOURCE_NAME_CHARS)]
+ReferenceLimit = Annotated[int, Field(ge=1, le=MAX_REFERENCES)]
 
 
 def register_reference_verification_tools(mcp: MCPServer, searcher: LiteratureSearcher) -> None:
@@ -28,9 +45,9 @@ def register_reference_verification_tools(mcp: MCPServer, searcher: LiteratureSe
 
     @mcp.tool()
     async def verify_reference_list(
-        reference_text: str,
-        source_name: str = "",
-        max_references: int = 100,
+        reference_text: ReferenceText,
+        source_name: ReferenceSourceName = "",
+        max_references: ReferenceLimit = 100,
     ) -> str:
         """Verify a plain-text reference list against PubMed evidence.
 
@@ -46,23 +63,26 @@ def register_reference_verification_tools(mcp: MCPServer, searcher: LiteratureSe
 
         Args:
             reference_text: Plain-text references, ideally one per line or a
-                numbered reference list extracted from a file.
-            source_name: Optional file label for reporting.
-            max_references: Maximum number of references to process.
+                numbered reference list extracted from a file. Limited to
+                200,000 characters / 400,000 UTF-8 bytes; each entry is limited
+                to 4,000 characters / 8,000 UTF-8 bytes.
+            source_name: Optional single-line file label for reporting (up to
+                255 characters / 512 UTF-8 bytes).
+            max_references: Hard input-entry limit from 1 through 200. Inputs
+                above the selected limit are rejected instead of truncated.
 
         Returns:
             JSON verification report with parsed fields, matched PubMed evidence,
-            and per-reference verification status.
+            per-reference verification status, and explicit
+            ``source_unavailable`` / ``not_checked`` rows when evidence could
+            not be assessed.
         """
         if not reference_text.strip():
-            return json.dumps(
-                {
-                    "success": False,
-                    "error": "Empty reference_text",
-                    "hint": "Pass a plain-text reference list extracted from the user file",
-                },
-                ensure_ascii=False,
-                indent=2,
+            return ResponseFormatter.error(
+                error="Empty reference_text",
+                suggestion="Pass a plain-text reference list extracted from the user file",
+                tool_name="verify_reference_list",
+                output_format="json",
             )
 
         try:
@@ -72,14 +92,18 @@ def register_reference_verification_tools(mcp: MCPServer, searcher: LiteratureSe
                 limit=max_references,
             )
             return json.dumps(report, ensure_ascii=False, indent=2)
+        except ReferenceVerificationInputError as exc:
+            return ResponseFormatter.error(
+                error=exc,
+                suggestion="Check the reference-list boundaries and source label",
+                tool_name="verify_reference_list",
+                output_format="json",
+            )
         except Exception as exc:
-            logger.exception("verify_reference_list failed: %s", exc)
-            return json.dumps(
-                {
-                    "success": False,
-                    "error": str(exc),
-                    "hint": "Check the reference list format and try again with fewer entries if needed",
-                },
-                ensure_ascii=False,
-                indent=2,
+            logger.warning("verify_reference_list failed (%s)", type(exc).__name__)
+            return ResponseFormatter.error(
+                error="Reference verification could not be completed",
+                suggestion="Check the reference-list boundaries and retry unavailable sources later",
+                tool_name="verify_reference_list",
+                output_format="json",
             )

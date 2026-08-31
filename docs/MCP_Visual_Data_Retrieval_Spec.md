@@ -1,5 +1,10 @@
 # MCP Visual Data Retrieval Enhancement Specification
 
+> **Superseded draft:** 本規格保留 2026-02-25 的提案名稱，不代表
+> v0.7.0 現行 MCP 工具契約。請以
+> [`TOOLS_INDEX.md`](../src/pubmed_search/presentation/mcp_server/TOOLS_INDEX.md) 與
+> [`TOOL_QUALITY_AUDIT.md`](TOOL_QUALITY_AUDIT.md) 為準。
+
 > **Version**: 1.1.0  
 > **Date**: 2026-02-25  
 > **Status**: Draft (Reviewed)  

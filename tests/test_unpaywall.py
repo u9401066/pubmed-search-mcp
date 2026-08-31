@@ -6,20 +6,17 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from pubmed_search.infrastructure.sources.base_client import APIRequestError
 from pubmed_search.infrastructure.sources.unpaywall import (
     DEFAULT_EMAIL,
     UnpaywallClient,
-    find_oa_link,
-    find_pdf_link,
-    get_oa_status,
-    is_open_access,
 )
+from pubmed_search.shared.async_utils import RetryableOperationError
 
 
 @pytest.fixture
 def client():
     c = UnpaywallClient(email="test@example.com")
-    c._last_request_time = 0
     c._min_interval = 0
     return c
 
@@ -31,35 +28,26 @@ def client():
 
 class TestInit:
     async def test_defaults(self):
-        from pubmed_search.infrastructure.sources import configure_source_contact_email
+        from pubmed_search.infrastructure.sources.runtime import SourceRuntime, bind_source_runtime
 
-        configure_source_contact_email(None)
-
-        try:
+        with bind_source_runtime(SourceRuntime()):
             c = UnpaywallClient()
             assert c._email == DEFAULT_EMAIL
-        finally:
-            configure_source_contact_email(None)
 
     async def test_custom_email(self, client):
         assert client._email == "test@example.com"
 
     async def test_singleton_uses_configured_source_contact_email(self, monkeypatch):
-        import pubmed_search.infrastructure.sources.unpaywall as mod
-        from pubmed_search.infrastructure.sources import configure_source_contact_email
+        from pubmed_search.infrastructure.sources import get_unpaywall_client
+        from pubmed_search.infrastructure.sources.runtime import SourceRuntime, bind_source_runtime
 
-        mod._unpaywall_client = None
         monkeypatch.delenv("NCBI_EMAIL", raising=False)
         monkeypatch.delenv("UNPAYWALL_EMAIL", raising=False)
-        configure_source_contact_email("runtime@example.com")
 
-        try:
-            client = mod.get_unpaywall_client()
+        with bind_source_runtime(SourceRuntime(contact_email="runtime@example.com")):
+            client = get_unpaywall_client()
 
             assert client._email == "runtime@example.com"
-        finally:
-            configure_source_contact_email(None)
-            mod._unpaywall_client = None
 
 
 # ============================================================
@@ -73,10 +61,10 @@ class TestMakeRequest:
 
         mock_response = MagicMock()
         mock_response.status_code = 200
+        mock_response.headers = {}
         mock_response.json.return_value = {"is_oa": True}
         mock_response.raise_for_status = MagicMock()
-        client._client = MagicMock()
-        client._client.get = AsyncMock(return_value=mock_response)
+        client._execute_request = AsyncMock(return_value=mock_response)
         result = await client._make_request("https://api.unpaywall.org/v2/test")
         assert result == {"is_oa": True}
 
@@ -85,8 +73,7 @@ class TestMakeRequest:
 
         mock_response = MagicMock()
         mock_response.status_code = 404
-        client._client = MagicMock()
-        client._client.get = AsyncMock(return_value=mock_response)
+        client._execute_request = AsyncMock(return_value=mock_response)
         assert await client._make_request("https://test.com") is None
 
     async def test_422(self, client):
@@ -94,8 +81,7 @@ class TestMakeRequest:
 
         mock_response = MagicMock()
         mock_response.status_code = 422
-        client._client = MagicMock()
-        client._client.get = AsyncMock(return_value=mock_response)
+        client._execute_request = AsyncMock(return_value=mock_response)
         assert await client._make_request("https://test.com") is None
 
     async def test_429(self, client):
@@ -104,9 +90,10 @@ class TestMakeRequest:
         mock_response = MagicMock()
         mock_response.status_code = 429
         mock_response.headers = {"Retry-After": "0"}
-        client._client = MagicMock()
-        client._client.get = AsyncMock(return_value=mock_response)
-        assert await client._make_request("https://test.com") is None
+        client._MAX_RETRIES = 0
+        client._execute_request = AsyncMock(return_value=mock_response)
+        with pytest.raises(RetryableOperationError, match="Unpaywall request failed"):
+            await client._make_request("https://test.com")
 
     async def test_500(self, client):
         from unittest.mock import AsyncMock
@@ -119,25 +106,28 @@ class TestMakeRequest:
         mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
             "Server Error", request=MagicMock(), response=mock_response
         )
-        client._client = MagicMock()
-        client._client.get = AsyncMock(return_value=mock_response)
-        assert await client._make_request("https://test.com") is None
+        client._MAX_RETRIES = 0
+        client._execute_request = AsyncMock(return_value=mock_response)
+        with pytest.raises(RetryableOperationError, match="Unpaywall request failed"):
+            await client._make_request("https://test.com")
 
     async def test_url_error(self, client):
         from unittest.mock import AsyncMock
 
         import httpx
 
-        client._client = MagicMock()
-        client._client.get = AsyncMock(side_effect=httpx.RequestError("DNS failed", request=MagicMock()))
-        assert await client._make_request("https://test.com") is None
+        client._MAX_RETRIES = 0
+        client._execute_request = AsyncMock(side_effect=httpx.RequestError("DNS failed", request=MagicMock()))
+        with pytest.raises(APIRequestError, match="Unpaywall request failed"):
+            await client._make_request("https://test.com")
 
     async def test_generic_error(self, client):
         from unittest.mock import AsyncMock
 
-        client._client = MagicMock()
-        client._client.get = AsyncMock(side_effect=Exception("unexpected"))
-        assert await client._make_request("https://test.com") is None
+        client._MAX_RETRIES = 0
+        client._execute_request = AsyncMock(side_effect=Exception("unexpected"))
+        with pytest.raises(APIRequestError, match="Unpaywall request failed"):
+            await client._make_request("https://test.com")
 
 
 # ============================================================
@@ -351,60 +341,3 @@ class TestStaticMethods:
         assert "paywall" in UnpaywallClient.get_oa_status_description("closed")
         assert "not determined" in UnpaywallClient.get_oa_status_description("unknown")
         assert "Unknown" in UnpaywallClient.get_oa_status_description("XXX")
-
-
-# ============================================================
-# Convenience functions
-# ============================================================
-
-
-class TestConvenienceFunctions:
-    async def test_find_oa_link(self):
-        import pubmed_search.infrastructure.sources.unpaywall as mod
-
-        mod._unpaywall_client = None
-        with patch.object(UnpaywallClient, "get_best_oa_link", return_value="https://oa.example.com"):
-            result = await find_oa_link("10.1234/test")
-            assert result == "https://oa.example.com"
-        mod._unpaywall_client = None
-
-    async def test_find_pdf_link(self):
-        import pubmed_search.infrastructure.sources.unpaywall as mod
-
-        mod._unpaywall_client = None
-        with patch.object(UnpaywallClient, "get_pdf_link", return_value="https://pdf.example.com"):
-            result = await find_pdf_link("10.1234/test")
-            assert result == "https://pdf.example.com"
-        mod._unpaywall_client = None
-
-    async def test_is_open_access(self):
-        import pubmed_search.infrastructure.sources.unpaywall as mod
-
-        mod._unpaywall_client = None
-        with patch.object(UnpaywallClient, "get_oa_status", return_value={"is_oa": True}):
-            assert await is_open_access("10.1234/test") is True
-        mod._unpaywall_client = None
-
-    async def test_is_open_access_none(self):
-        import pubmed_search.infrastructure.sources.unpaywall as mod
-
-        mod._unpaywall_client = None
-        with patch.object(UnpaywallClient, "get_oa_status", return_value=None):
-            assert await is_open_access("10.1234/test") is False
-        mod._unpaywall_client = None
-
-    async def test_get_oa_status_func(self):
-        import pubmed_search.infrastructure.sources.unpaywall as mod
-
-        mod._unpaywall_client = None
-        with patch.object(UnpaywallClient, "get_oa_status", return_value={"oa_status": "gold"}):
-            assert await get_oa_status("10.1234/test") == "gold"
-        mod._unpaywall_client = None
-
-    async def test_get_oa_status_func_none(self):
-        import pubmed_search.infrastructure.sources.unpaywall as mod
-
-        mod._unpaywall_client = None
-        with patch.object(UnpaywallClient, "get_oa_status", return_value=None):
-            assert await get_oa_status("10.1234/test") == "unknown"
-        mod._unpaywall_client = None

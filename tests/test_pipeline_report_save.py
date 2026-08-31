@@ -16,10 +16,14 @@ import pytest
 
 from pubmed_search.application.pipeline import (
     PipelineConfig,
-    PipelineExecutionSettings,
+    PipelineOutput,
 )
 from pubmed_search.application.pipeline.store import PipelineStore
 from pubmed_search.domain.entities.pipeline import PipelineScope
+from pubmed_search.presentation.mcp_server.tools.unified_pipeline import (
+    _auto_save_pipeline_report,
+    _execute_pipeline_mode_outcome,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -60,7 +64,8 @@ def sample_config() -> PipelineConfig:
     return PipelineConfig(
         name="test-pipeline",
         template="comprehensive",
-        execution=PipelineExecutionSettings(),
+        template_params={"query": "test"},
+        output=PipelineOutput(),
     )
 
 
@@ -75,7 +80,7 @@ class TestSaveReportGlobal:
     def test_save_report_creates_file(self, global_store: PipelineStore, sample_report: str, tmp_path: Path):
         """Report file should be created at expected path."""
         # First save a pipeline so it exists
-        config = PipelineConfig(template="comprehensive")
+        config = PipelineConfig(template="comprehensive", template_params={"query": "test"})
         global_store.save(name="my-pipe", config=config)
 
         path = global_store.save_report("my-pipe", "20260215_120000", sample_report)
@@ -87,7 +92,7 @@ class TestSaveReportGlobal:
 
     def test_save_report_content_matches(self, global_store: PipelineStore, sample_report: str):
         """Saved report content should match input."""
-        config = PipelineConfig(template="comprehensive")
+        config = PipelineConfig(template="comprehensive", template_params={"query": "test"})
         global_store.save(name="content-test", config=config)
 
         path = global_store.save_report("content-test", "run_001", sample_report)
@@ -97,7 +102,7 @@ class TestSaveReportGlobal:
 
     def test_save_report_creates_subdirectory(self, global_store: PipelineStore, sample_report: str):
         """Should create the pipeline name subdirectory automatically."""
-        config = PipelineConfig(template="pico")
+        config = PipelineConfig(template="pico", template_params={"P": "ICU", "I": "remimazolam"})
         global_store.save(name="new-pipe", config=config)
 
         path = global_store.save_report("new-pipe", "run_001", sample_report)
@@ -106,7 +111,7 @@ class TestSaveReportGlobal:
 
     def test_save_multiple_reports(self, global_store: PipelineStore, sample_report: str):
         """Multiple reports for the same pipeline should coexist."""
-        config = PipelineConfig(template="comprehensive")
+        config = PipelineConfig(template="comprehensive", template_params={"query": "test"})
         global_store.save(name="multi-run", config=config)
 
         p1 = global_store.save_report("multi-run", "run_001", sample_report)
@@ -127,7 +132,7 @@ class TestSaveReportWorkspace:
 
     def test_save_report_in_workspace(self, workspace_store: PipelineStore, sample_report: str, tmp_path: Path):
         """Report should be saved under workspace/.pubmed-search/pipeline_reports/."""
-        config = PipelineConfig(template="comprehensive")
+        config = PipelineConfig(template="comprehensive", template_params={"query": "test"})
         workspace_store.save(name="ws-pipe", config=config, scope="workspace")
 
         path = workspace_store.save_report("ws-pipe", "run_001", sample_report)
@@ -140,7 +145,7 @@ class TestSaveReportWorkspace:
 
     def test_workspace_report_is_git_trackable(self, workspace_store: PipelineStore, sample_report: str):
         """Reports in workspace scope should be in a git-trackable location."""
-        config = PipelineConfig(template="pico")
+        config = PipelineConfig(template="pico", template_params={"P": "ICU", "I": "remimazolam"})
         workspace_store.save(name="git-pipe", config=config, scope="workspace")
 
         path = workspace_store.save_report("git-pipe", "run_001", sample_report)
@@ -184,20 +189,23 @@ class TestAutoSavePipelineReport:
 
     def test_auto_save_with_named_pipeline(self, workspace_store: PipelineStore):
         """Auto-save should create report for named pipeline."""
-        from pubmed_search.presentation.mcp_server.tools.pipeline_tools import set_pipeline_store
-
-        set_pipeline_store(workspace_store)
-
         # Save a pipeline first
-        config = PipelineConfig(name="auto-test", template="comprehensive")
+        config = PipelineConfig(
+            name="auto-test",
+            template="comprehensive",
+            template_params={"query": "test"},
+        )
         workspace_store.save(name="auto-test", config=config, scope="workspace")
-
-        from pubmed_search.presentation.mcp_server.tools.unified import _auto_save_pipeline_report
 
         mock_article = MagicMock()
         mock_article.pmid = "12345678"
 
-        _auto_save_pipeline_report(config, [mock_article], "# Test Report")
+        _auto_save_pipeline_report(
+            config,
+            [mock_article],
+            "# Test Report",
+            pipeline_store=workspace_store,
+        )
 
         # Verify report file exists
         reports_dir = workspace_store._reports_dir_for(PipelineScope.WORKSPACE) / "auto-test"
@@ -205,56 +213,42 @@ class TestAutoSavePipelineReport:
         assert len(report_files) == 1
         assert report_files[0].read_text(encoding="utf-8") == "# Test Report"
 
-        # Cleanup
-        set_pipeline_store(None)
-
     def test_auto_save_with_template_only(self, global_store: PipelineStore):
         """Auto-save should work even for template-only configs (no saved pipeline)."""
-        from pubmed_search.presentation.mcp_server.tools.pipeline_tools import set_pipeline_store
+        config = PipelineConfig(template="comprehensive", template_params={"query": "test"})
 
-        set_pipeline_store(global_store)
-
-        config = PipelineConfig(template="comprehensive")
-
-        from pubmed_search.presentation.mcp_server.tools.unified import _auto_save_pipeline_report
-
-        _auto_save_pipeline_report(config, [], "# Template Report")
+        _auto_save_pipeline_report(config, [], "# Template Report", pipeline_store=global_store)
 
         # Should still save the report (under template name)
         reports_dir = global_store._reports_dir_for(PipelineScope.GLOBAL) / "comprehensive"
         report_files = list(reports_dir.glob("*.md"))
         assert len(report_files) == 1
 
-        set_pipeline_store(None)
-
     def test_auto_save_no_store_does_nothing(self):
         """When no store is available, auto-save should silently do nothing."""
-        from pubmed_search.presentation.mcp_server.tools.pipeline_tools import set_pipeline_store
-
-        set_pipeline_store(None)
-
-        config = PipelineConfig(template="pico")
-
-        from pubmed_search.presentation.mcp_server.tools.unified import _auto_save_pipeline_report
+        config = PipelineConfig(template="pico", template_params={"P": "ICU", "I": "remimazolam"})
 
         # Should not raise
-        _auto_save_pipeline_report(config, [], "# Report")
+        _auto_save_pipeline_report(config, [], "# Report", pipeline_store=None)
 
     def test_auto_save_records_run_for_saved_pipeline(self, workspace_store: PipelineStore):
         """Auto-save should also create a PipelineRun record if pipeline exists."""
-        from pubmed_search.presentation.mcp_server.tools.pipeline_tools import set_pipeline_store
-
-        set_pipeline_store(workspace_store)
-
-        config = PipelineConfig(name="run-test", template="comprehensive")
+        config = PipelineConfig(
+            name="run-test",
+            template="comprehensive",
+            template_params={"query": "test"},
+        )
         workspace_store.save(name="run-test", config=config, scope="workspace")
-
-        from pubmed_search.presentation.mcp_server.tools.unified import _auto_save_pipeline_report
 
         mock_article = MagicMock()
         mock_article.pmid = "99999999"
 
-        _auto_save_pipeline_report(config, [mock_article], "# Run Report")
+        _auto_save_pipeline_report(
+            config,
+            [mock_article],
+            "# Run Report",
+            pipeline_store=workspace_store,
+        )
 
         # Verify run record was saved
         history = workspace_store.get_history("run-test")
@@ -262,31 +256,23 @@ class TestAutoSavePipelineReport:
         assert history[0].article_count == 1
         assert "99999999" in history[0].pmids
 
-        set_pipeline_store(None)
-
     def test_auto_save_handles_errors_gracefully(self, workspace_store: PipelineStore):
         """Auto-save failures should be caught, not propagate to user."""
-        from pubmed_search.presentation.mcp_server.tools.pipeline_tools import set_pipeline_store
-
         # Use a store that will fail on save_report
         broken_store = MagicMock()
         broken_store.save_report.side_effect = OSError("disk full")
-        set_pipeline_store(broken_store)
 
-        config = PipelineConfig(name="broken", template="comprehensive")
-
-        from pubmed_search.presentation.mcp_server.tools.unified import _auto_save_pipeline_report
+        config = PipelineConfig(
+            name="broken",
+            template="comprehensive",
+            template_params={"query": "test"},
+        )
 
         # Should not raise
-        _auto_save_pipeline_report(config, [], "# Report")
-
-        set_pipeline_store(None)
+        _auto_save_pipeline_report(config, [], "# Report", pipeline_store=broken_store)
 
     async def test_execute_saved_template_pipeline_records_run_under_saved_name(self, workspace_store: PipelineStore):
         """saved:<name> should persist report/history using the saved pipeline name."""
-        from pubmed_search.presentation.mcp_server.tools.pipeline_tools import set_pipeline_store
-
-        set_pipeline_store(workspace_store)
         workspace_store.save(
             name="weekly_remi_template",
             config=PipelineConfig(
@@ -296,21 +282,23 @@ class TestAutoSavePipelineReport:
             scope="workspace",
         )
 
-        from pubmed_search.presentation.mcp_server.tools.unified import _execute_pipeline_mode
-
         with patch("pubmed_search.application.pipeline.executor.PipelineExecutor") as MockExec:
             mock_exec = MockExec.return_value
             mock_exec.execute = AsyncMock(return_value=([], {}))
-            result = await _execute_pipeline_mode("saved:weekly_remi_template", "markdown", MagicMock())
+            outcome = await _execute_pipeline_mode_outcome(
+                "saved:weekly_remi_template",
+                "markdown",
+                MagicMock(),
+                pipeline_store=workspace_store,
+            )
 
-        assert isinstance(result, str)
+        assert outcome.status == "completed"
+        assert isinstance(outcome.response, str)
         assert mock_exec.execute.await_count == 1
         history = workspace_store.get_history("weekly_remi_template")
         assert len(history) == 1
         reports_dir = workspace_store._reports_dir_for(PipelineScope.WORKSPACE) / "weekly_remi_template"
         assert len(list(reports_dir.glob("*.md"))) == 1
-
-        set_pipeline_store(None)
 
 
 # =========================================================================
@@ -331,11 +319,13 @@ class TestExplicitWorkspaceConfiguration:
             patch.object(LiteratureSearcher, "__init__", return_value=None),
             patch.object(SearchStrategyGenerator, "__init__", return_value=None),
             patch.object(SessionManager, "__init__", return_value=None),
-            patch("pubmed_search.presentation.mcp_server.server.MCPServer") as mock_mcp,
+            patch("pubmed_search.presentation.mcp_server.server.PubMedMCPServer") as mock_mcp,
+            patch("pubmed_search.presentation.mcp_server.server.build_pipeline_runtime") as mock_runtime,
             patch("pubmed_search.presentation.mcp_server.server.register_all_mcp_tools") as mock_register,
         ):
             mock_mcp.return_value = MagicMock()
             create_server(email="test@example.com", workspace_dir="/tmp/workspace")
 
-        assert mock_register.call_args.kwargs["workspace_dir"] == "/tmp/workspace"
+        assert mock_runtime.call_args.kwargs["workspace_dir"] == "/tmp/workspace"
+        assert mock_register.call_args.kwargs["pipeline_runtime"] is mock_runtime.return_value
         assert mock_register.call_args.kwargs["session_registry"] is not None

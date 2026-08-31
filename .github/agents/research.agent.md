@@ -17,14 +17,14 @@ Use this agent for biomedical literature search, paper exploration, and Zotero i
 
 1. Search with PubMed Search MCP:
    - `unified_search(query="...", limit=20, output_format="json")`
-   - Use `options="preprints"` or `options="all_types"` when the user asks for broader evidence.
+   - Use `options="preprints"` to search preprint servers, or `options="include_detected_preprints"` to retain detected preprints already returned by selected sources. Detection is heuristic and does not establish peer-review status for other records.
 2. Reuse session results when possible:
-   - `get_session_pmids(search_index=-1)`
-   - `get_cached_article(pmid="...")`
-   - `get_session_summary()`
-   - When `unified_search` returns an `artifact_summary`, use `read_session(action="artifact", artifact_uri="...")` to inspect `audit.json`, `query_strategy.json`, and complete `results.json` or `results.toon`.
+   - `read_session(request={"action":"pmids","search_index":-1})`
+   - `read_session(request={"action":"article","pmid":"12345678"})`
+   - `read_session(request={"action":"summary"})`
+   - When `unified_search` returns an `artifact_summary`, use `read_session(request={"action":"artifact","locator":{"kind":"artifact_uri","value":"artifact://..."},"artifact_file":"audit.json"})`, then inspect `query_strategy.json` and complete `results.json` or `results.toon` as needed.
    - Treat `source_errors` plus non-empty articles as a partial success. Preserve successful evidence, read the artifact audit first, and retry only failed/retryable sources when broader coverage is still required.
-   - For an interrupted or repeatable run, use `read_session(action="search_runs")`, inspect the selected `search_run`, then request `replay_search`; replay returns arguments and never executes a search implicitly.
+   - For an interrupted or repeatable run, use `read_session(request={"action":"search_runs"})`, then `read_session(request={"action":"search_run","run_id":"..."})` or `read_session(request={"action":"replay_search","run_id":"..."})`; replay returns arguments and never executes a search implicitly.
 3. Check Zotero before importing:
    - `list_collections()` when a target collection is needed.
    - `check_articles_owned(articles=[...])` before import.
@@ -37,9 +37,9 @@ Use this agent for biomedical literature search, paper exploration, and Zotero i
 - Quick search: call `unified_search` and summarize the best matches.
 - Artifact-backed search: answer from the MCP summary first, then mention the artifact URI for deeper audit or re-reading.
 - Recoverable search: prefer stored artifact/search-run state over reconstructing a query from conversation or Copilot hook files.
-- PICO search: extract P/I/C/O in the agent, validate the handoff with `parse_pico`, then search with the returned pipeline or an expanded Boolean query.
+- PICO search: extract P/I/C/O in the agent, validate the handoff with `validate_pico_plan`, then search with the returned pipeline or an expanded Boolean query.
 - Citation exploration: use `find_related_articles`, `find_citing_articles`, `get_article_references`, or `build_citation_tree`.
-- Research evolution: use `build_research_chronicle(topic="...")` when the user asks how a field developed. For a figure, use `output="mermaid"`: it combines a horizontal year spine with MeSH/keyword-supported lineage branches. Inspect `mermaid_validation.json` and disclose fallback tiers or omitted visual items; also report research-stage fallback, capped/unknown `returned` / `available` coverage, or at least 20% multi-signal branch overlap. It persists a versioned, evidence-backed chronicle, so a later `read_research_chronicle(action="diff", chronicle_id="...", from_revision=N)` answers "what changed since last time"; interpret absent entries as `not_observed_in_revision`, never proven retirement. Use `action="milestones"` for distribution stats and `action="compare", topics="a,b"` for cross-topic comparison; both read stored evidence and do not re-run a search.
+- Research evolution: use `build_research_chronicle(topic="...")` when the user asks how a field developed. For a figure, use `output="mermaid"`: it combines a horizontal year spine with MeSH/keyword-supported lineage branches. Inspect `mermaid_validation.json` and disclose fallback tiers or omitted visual items; also report research-stage fallback, capped/unknown `returned` / `available` coverage, or at least 20% multi-signal branch overlap. It persists a versioned, evidence-backed chronicle, so a later `read_research_chronicle(request={"action":"diff","chronicle_id":"...","from_revision":N})` answers "what changed since last time"; interpret absent entries as `not_observed_in_revision`, never proven retirement. Use `request={"action":"milestones","chronicle_id":"..."}` for distribution stats and `request={"action":"compare","selection":{"kind":"topics","values":["a","b"]}}` for cross-topic comparison; both read stored evidence and do not re-run a search.
 - Full text: use `get_fulltext` and related full-text tools when the user asks for details beyond abstracts.
 - Export: use `prepare_export(pmids="last", format="ris")`, `bibtex`, or `csv` when the user asks for citation files.
 

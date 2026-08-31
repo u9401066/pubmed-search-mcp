@@ -4,7 +4,7 @@ Final push to reach 90% coverage - targeting specific uncovered lines.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 
 class TestSearchFilterResults:
@@ -15,7 +15,7 @@ class TestSearchFilterResults:
         from pubmed_search.infrastructure.ncbi.search import SearchMixin
 
         class TestSearcher(SearchMixin):
-            def fetch_details(self, pmids):
+            async def fetch_details(self, pmids):
                 return [{"pmid": p} for p in pmids]
 
         searcher = TestSearcher()
@@ -38,7 +38,7 @@ class TestSearchAmbiguousTerms:
         from pubmed_search.infrastructure.ncbi.search import SearchMixin
 
         class TestSearcher(SearchMixin):
-            def fetch_details(self, pmids):
+            async def fetch_details(self, pmids):
                 return [{"pmid": p} for p in pmids]
 
         searcher = TestSearcher()
@@ -47,13 +47,13 @@ class TestSearchAmbiguousTerms:
             patch("pubmed_search.infrastructure.ncbi.search.Entrez.esearch") as mock_esearch,
             patch("pubmed_search.infrastructure.ncbi.search.Entrez.read") as mock_read,
         ):
-            mock_read.return_value = {"IdList": ["123"]}
+            mock_read.return_value = {"IdList": ["123"], "Count": "1"}
             mock_esearch.return_value = MagicMock()
 
             # Search with short ambiguous term
-            results = await searcher.search("GI")
+            page = await searcher.search_page("GI")
 
-            assert isinstance(results, list)
+            assert page.items == [{"pmid": "123"}]
 
 
 class TestSearchResultParsing:
@@ -137,23 +137,27 @@ class TestStrategyBuildQueries:
 class TestClientConvenienceMethods:
     """Test client convenience methods."""
 
-    async def test_literature_searcher_search_method(self):
-        """Test LiteratureSearcher.search method."""
+    async def test_literature_searcher_search_page_method(self):
+        """Test the sole typed LiteratureSearcher search method."""
         from pubmed_search import LiteratureSearcher
+        from pubmed_search.application.search.source_models import SourceSearchPage
 
         searcher = LiteratureSearcher(email="test@example.com")
 
         with (
-            patch.object(searcher, "_search_ids_with_retry", return_value=["12345"]),
+            patch.object(searcher, "_search_ids", return_value=(["12345"], 1, "", "")),
             patch.object(
                 searcher,
                 "fetch_details",
-                return_value=[{"pmid": "12345", "title": "Test"}],
+                new=AsyncMock(return_value=[{"pmid": "12345", "title": "Test"}]),
             ),
         ):
-            results = await searcher.search("test query")
+            page = await searcher.search_page("test query")
 
-            assert len(results) >= 0
+            assert isinstance(page, SourceSearchPage)
+            assert page.items == [{"pmid": "12345", "title": "Test"}]
+            assert page.total == 1
+            assert not hasattr(searcher, "search")
 
 
 class TestSessionStatePersistence:
@@ -303,21 +307,3 @@ class TestMergeResultsStatistics:
 
         assert len(unique) == 4
         assert "222" in unique
-
-
-class TestBaseRateLimit:
-    """Test rate limiting in base module."""
-
-    async def test_rate_limit_interval(self):
-        """Test rate limiting respects interval."""
-        import time
-
-        from pubmed_search.infrastructure.ncbi.base import _rate_limit
-
-        start = time.time()
-        await _rate_limit()
-        await _rate_limit()
-        elapsed = time.time() - start
-
-        # Should have some delay
-        assert elapsed >= 0

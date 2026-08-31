@@ -12,7 +12,7 @@ from __future__ import annotations
 from importlib import import_module
 from typing import Any
 
-__version__ = "0.6.5"
+__version__ = "0.7.0"
 
 _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     # Stable Python SDK facade
@@ -39,7 +39,6 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     "get_ncbi_extended_client": ("pubmed_search.infrastructure.sources", "get_ncbi_extended_client"),
     "get_crossref_client": ("pubmed_search.infrastructure.sources", "get_crossref_client"),
     "get_unpaywall_client": ("pubmed_search.infrastructure.sources", "get_unpaywall_client"),
-    "SearchSource": ("pubmed_search.infrastructure.sources", "SearchSource"),
     # Export functionality
     "export_ris": ("pubmed_search.application.export.formats", "export_ris"),
     "export_bibtex": ("pubmed_search.application.export.formats", "export_bibtex"),

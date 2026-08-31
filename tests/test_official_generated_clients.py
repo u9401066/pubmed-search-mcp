@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock
 
+import pytest
+from pydantic import ValidationError
+
 from pubmed_search.infrastructure.sources.official_generated_clients import (
     SCOPUS_SEARCH_OPERATION,
     SEMANTIC_SCHOLAR_CITATIONS_OPERATION,
@@ -40,12 +43,15 @@ class TestScopusGeneratedClient:
         owner = _FakeOwner(
             {
                 "search-results": {
+                    "opensearch:totalResults": "37",
+                    "opensearch:startIndex": "5",
+                    "opensearch:itemsPerPage": "5",
                     "entry": [
                         {
                             "dc:title": "Scopus Article",
                             "prism:doi": "10.1000/scopus",
                         }
-                    ]
+                    ],
                 }
             }
         )
@@ -54,19 +60,25 @@ class TestScopusGeneratedClient:
         response = await client.search_documents(
             ScopusSearchRequest(
                 query="TITLE-ABS-KEY(test)",
-                apiKey="licensed-key",
                 count=5,
             )
         )
 
         assert response is not None
         assert response.entries()[0].title == "Scopus Article"
+        assert response.search_results.total_results == 37
+        assert response.search_results.start_index == 5
+        assert response.search_results.items_per_page == 5
         owner._make_request.assert_awaited_once()
         assert owner._make_request.await_args.args[0] == "/content/search/scopus"
         params = owner._make_request.await_args.kwargs["params"]
         assert "apiKey" not in params
         assert "insttoken" not in params
-        assert "licensed-key" not in repr(params)
+
+    @pytest.mark.parametrize("retired_input", ["apiKey", "httpAccept", "insttoken", "access_token"])
+    def test_request_rejects_retired_transport_and_credential_fields(self, retired_input: str):
+        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+            ScopusSearchRequest(query="TITLE-ABS-KEY(test)", **{retired_input: "secret"})
 
 
 class TestWebOfScienceGeneratedClient:
@@ -88,6 +100,9 @@ class TestWebOfScienceGeneratedClient:
 
         assert response is not None
         assert response.hits[0].uid == "WOS:1"
+        assert response.metadata.total == 1
+        assert response.metadata.page == 1
+        assert response.metadata.limit == 10
         owner._make_request.assert_awaited_once()
         assert owner._make_request.await_args.args[0] == "/documents"
 

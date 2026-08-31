@@ -446,11 +446,11 @@ def compact_search_run_handoff(run: dict[str, Any] | None) -> dict[str, Any] | N
             "history_available": True,
             "inspect": {
                 "tool": "read_session",
-                "arguments": {"action": "search_run", "run_id": run_id},
+                "arguments": {"request": {"action": "search_run", "run_id": run_id}},
             },
             "replay": {
                 "tool": "read_session",
-                "arguments": {"action": "replay_search", "run_id": run_id},
+                "arguments": {"request": {"action": "replay_search", "run_id": run_id}},
             },
         }
     )
@@ -476,8 +476,10 @@ def search_run_markdown_note(run: dict[str, Any] | None) -> str:
     return (
         "\n\n---\n"
         f"Search run: `{run_id}` ({status}). "
-        f'Inspect with `read_session(action="search_run", run_id="{run_id}")`; '
-        f'recover replay arguments with `read_session(action="replay_search", run_id="{run_id}")`.'
+        'Inspect with `read_session(request={"action":"search_run",'
+        f'"run_id":"{run_id}"}})`; recover replay arguments with '
+        '`read_session(request={"action":"replay_search",'
+        f'"run_id":"{run_id}"}})`.'
     )
 
 

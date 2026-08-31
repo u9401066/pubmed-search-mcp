@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from pubmed_search.application.search.source_models import SourceSearchPage
 from pubmed_search.application.timeline.timeline_builder import (
     TimelineBuilder,
     TimelineRetrievalError,
@@ -22,12 +23,22 @@ from pubmed_search.domain.entities.timeline import (
 # ============================================================
 
 
+def _pubmed_page(items, *, total=None, query="topic"):
+    return SourceSearchPage(
+        source="pubmed",
+        items=list(items),
+        total=total,
+        query=query,
+        metadata={"physical_query": query, "query_executed": True},
+    )
+
+
 @pytest.fixture
 def mock_searcher():
     searcher = MagicMock()
-    searcher.search = AsyncMock(return_value=[])
+    searcher.search_page = AsyncMock(return_value=_pubmed_page([], total=0))
     searcher.fetch_details = AsyncMock(return_value=[])
-    searcher.get_citation_metrics = AsyncMock(return_value=None)
+    searcher.get_citation_metrics = AsyncMock(return_value={})
     return searcher
 
 
@@ -100,17 +111,19 @@ class TestInit:
 class TestBuildTimeline:
     @pytest.mark.asyncio
     async def test_empty_results(self, builder, mock_searcher):
-        mock_searcher.search.return_value = []
+        mock_searcher.search_page.return_value = _pubmed_page([], total=0)
         timeline = await builder.build_timeline("nonexistent drug")
         assert isinstance(timeline, ResearchTimeline)
         assert timeline.topic == "nonexistent drug"
         assert len(timeline.events) == 0
         assert timeline.metadata["source_counts"] == {"pubmed": {"returned": 0, "available": 0}}
         assert timeline.metadata["search_status"] == "no_results"
+        assert timeline.metadata["retrieval"]["ranking"] == "pubmed_relevance"
+        assert timeline.metadata["retrieval"]["citation_metrics"]["status"] == "not_requested"
 
     @pytest.mark.asyncio
     async def test_with_articles(self, builder, mock_searcher, sample_articles):
-        mock_searcher.search.return_value = sample_articles
+        mock_searcher.search_page.return_value = _pubmed_page(sample_articles)
         timeline = await builder.build_timeline("drug X", max_events=50)
         assert timeline.topic == "drug X"
         # Milestone detection should find at least some events
@@ -120,17 +133,17 @@ class TestBuildTimeline:
 
     @pytest.mark.asyncio
     async def test_year_filter(self, builder, mock_searcher, sample_articles):
-        mock_searcher.search.return_value = sample_articles
+        mock_searcher.search_page.return_value = _pubmed_page(sample_articles)
         timeline = await builder.build_timeline("drug X", min_year=2015, max_year=2020)
-        assert mock_searcher.search.await_args.kwargs["min_year"] == 2015
-        assert mock_searcher.search.await_args.kwargs["max_year"] == 2020
+        assert mock_searcher.search_page.await_args.kwargs["min_year"] == 2015
+        assert mock_searcher.search_page.await_args.kwargs["max_year"] == 2020
         # Only articles from 2015-2020 should be included
         for event in timeline.events:
             assert 2015 <= event.year <= 2020
 
     @pytest.mark.asyncio
     async def test_include_all(self, builder, mock_searcher, sample_articles):
-        mock_searcher.search.return_value = sample_articles
+        mock_searcher.search_page.return_value = _pubmed_page(sample_articles)
         timeline = await builder.build_timeline("drug X", include_all=True, max_events=50)
         # With include_all, even non-milestone articles should appear
         assert len(timeline.events) >= len(sample_articles) or len(timeline.events) > 0
@@ -149,7 +162,7 @@ class TestBuildTimeline:
             }
             for i in range(20)
         ]
-        mock_searcher.search.return_value = articles
+        mock_searcher.search_page.return_value = _pubmed_page(articles)
         timeline = await builder.build_timeline(
             "topic",
             max_events=5,
@@ -164,27 +177,41 @@ class TestBuildTimeline:
 
     @pytest.mark.asyncio
     async def test_auto_periods(self, builder, mock_searcher, sample_articles):
-        mock_searcher.search.return_value = sample_articles
+        mock_searcher.search_page.return_value = _pubmed_page(sample_articles)
         timeline = await builder.build_timeline("drug X", auto_periods=True)
         # Periods may or may not be created depending on milestone detection
         assert isinstance(timeline.periods, list)
 
     @pytest.mark.asyncio
     async def test_no_auto_periods(self, builder, mock_searcher, sample_articles):
-        mock_searcher.search.return_value = sample_articles
+        mock_searcher.search_page.return_value = _pubmed_page(sample_articles)
         timeline = await builder.build_timeline("drug X", auto_periods=False)
         assert timeline.periods == []
 
     @pytest.mark.asyncio
     async def test_citation_sorting(self, builder, mock_searcher, sample_articles):
-        mock_searcher.search.return_value = sample_articles
-        mock_searcher.get_citation_metrics.return_value = [
-            {"pmid": "11111", "citation_count": 100},
-            {"pmid": "22222", "citation_count": 500},
-            {"pmid": "33333", "citation_count": 50},
-        ]
+        mock_searcher.search_page.return_value = _pubmed_page(sample_articles)
+        mock_searcher.get_citation_metrics.return_value = {
+            "11111": {"pmid": "11111", "citation_count": 100},
+            "22222": {"pmid": "22222", "citation_count": 500},
+            "33333": {"pmid": "33333", "citation_count": 50},
+        }
         timeline = await builder.build_timeline("drug X", sort_by_citations=True)
         assert isinstance(timeline, ResearchTimeline)
+        retrieval = timeline.metadata["retrieval"]
+        assert retrieval["ranking_requested"] == "icite_citation_count_then_pubmed_relevance"
+        assert retrieval["ranking"] == "icite_citation_count_then_pubmed_relevance"
+        assert retrieval["citation_metrics"] == {
+            "schema_version": "citation-metrics-coverage/v1",
+            "source": "nih_icite",
+            "status": "complete",
+            "requested": 3,
+            "returned": 3,
+            "applied": 3,
+            "citation_counts_applied": 3,
+            "complete": True,
+            "error": None,
+        }
 
 
 # ============================================================
@@ -227,16 +254,18 @@ class TestBuildTimelineFromPmids:
 class TestSearchTopic:
     @pytest.mark.asyncio
     async def test_basic_search(self, builder, mock_searcher):
-        mock_searcher.search.return_value = [{"pmid": "1", "title": "Test"}]
+        mock_searcher.search_page.return_value = _pubmed_page([{"pmid": "1", "title": "Test"}])
         results = await builder._search_topic("topic")
         assert len(results) == 1
 
     @pytest.mark.asyncio
     async def test_search_with_citation_sorting(self, builder, mock_searcher):
-        mock_searcher.search.return_value = [
-            {"pmid": "1", "title": "Low cited"},
-            {"pmid": "2", "title": "High cited"},
-        ]
+        mock_searcher.search_page.return_value = _pubmed_page(
+            [
+                {"pmid": "1", "title": "Low cited"},
+                {"pmid": "2", "title": "High cited"},
+            ]
+        )
         mock_searcher.get_citation_metrics.return_value = {
             "1": {"pmid": "1", "citation_count": 10},
             "2": {"pmid": "2", "citation_count": 1000},
@@ -246,42 +275,135 @@ class TestSearchTopic:
 
     @pytest.mark.asyncio
     async def test_search_exception(self, builder, mock_searcher):
-        mock_searcher.search.side_effect = Exception("fail")
+        mock_searcher.search_page.side_effect = Exception("fail")
         with pytest.raises(TimelineRetrievalError, match="PubMed search failed"):
             await builder._search_topic("topic")
 
     @pytest.mark.asyncio
-    async def test_error_sentinel_never_becomes_article(self, builder, mock_searcher):
-        mock_searcher.search.return_value = [{"error": "NCBI unavailable"}]
+    async def test_malformed_source_row_never_becomes_empty_timeline(self, builder, mock_searcher):
+        mock_searcher.search_page.return_value = _pubmed_page([{"unexpected": "private upstream payload"}])
 
-        with pytest.raises(TimelineRetrievalError, match="NCBI unavailable"):
+        with pytest.raises(TimelineRetrievalError, match="malformed article row") as exc_info:
+            await builder.build_timeline("topic", include_all=True)
+
+        assert "private upstream payload" not in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_retired_untyped_search_result_is_rejected(self, builder, mock_searcher):
+        mock_searcher.search_page.return_value = [{"_search_metadata": {"total_count": 12}}]
+
+        with pytest.raises(TimelineRetrievalError, match="invalid search page"):
             await builder.build_timeline("topic", include_all=True)
 
     @pytest.mark.asyncio
-    async def test_metadata_only_row_is_not_an_article(self, builder, mock_searcher):
-        mock_searcher.search.return_value = [{"_search_metadata": {"total_count": 12}}]
-
-        timeline = await builder.build_timeline("topic", include_all=True)
-
-        assert timeline.events == []
-        assert timeline.metadata["source_counts"] == {"pubmed": {"returned": 0, "available": 12}}
-
-    @pytest.mark.asyncio
     async def test_total_available_is_preserved(self, builder, mock_searcher):
-        mock_searcher.search.return_value = [
-            {"pmid": "1", "title": "Paper", "year": "2020", "_search_metadata": {"total_count": 99}}
-        ]
+        mock_searcher.search_page.return_value = _pubmed_page(
+            [{"pmid": "1", "title": "Paper", "year": "2020"}], total=99, query="physical query"
+        )
 
         timeline = await builder.build_timeline("topic", include_all=True)
 
         assert timeline.metadata["source_counts"] == {"pubmed": {"returned": 1, "available": 99}}
+        assert timeline.metadata["retrieval"]["physical_query"] == "physical query"
 
     @pytest.mark.asyncio
     async def test_citation_sorting_failure_graceful(self, builder, mock_searcher):
-        mock_searcher.search.return_value = [{"pmid": "1", "title": "Test"}]
-        mock_searcher.get_citation_metrics.side_effect = Exception("iCite down")
-        results = await builder._search_topic("topic", sort_by_citations=True)
-        assert len(results) == 1  # Still returns results despite citation failure
+        mock_searcher.search_page.return_value = _pubmed_page([{"pmid": "1", "title": "Test"}])
+        secret = "iCite down at https://private.invalid/?token=secret"
+        mock_searcher.get_citation_metrics.side_effect = RuntimeError(secret)
+
+        timeline = await builder.build_timeline(
+            "topic",
+            include_all=True,
+            highlight_landmarks=False,
+            sort_by_citations=True,
+        )
+
+        assert len(timeline.events) == 1
+        retrieval = timeline.metadata["retrieval"]
+        assert retrieval["ranking_requested"] == "icite_citation_count_then_pubmed_relevance"
+        assert retrieval["ranking"] == "pubmed_relevance"
+        coverage = retrieval["citation_metrics"]
+        assert coverage["status"] == "error"
+        assert coverage["requested"] == 1
+        assert coverage["applied"] == 0
+        assert coverage["error"] == {
+            "source": "nih_icite",
+            "operation": "citation_metrics",
+            "kind": "unexpected",
+            "message": "Source adapter failed",
+            "retryable": False,
+            "status_code": None,
+            "exception_type": "RuntimeError",
+        }
+        assert secret not in str(coverage)
+
+        from pubmed_search.application.chronicle import assemble_chronicle, audit_chronicle
+
+        snapshot = assemble_chronicle(topic="topic", timeline=timeline)
+        audit_finding = next(
+            finding for finding in audit_chronicle(snapshot).findings if finding.check == "citation_metrics_coverage"
+        )
+        assert audit_finding.status == "warn"
+        assert audit_finding.details["status"] == "error"
+        assert secret not in str(audit_finding.to_dict())
+
+    @pytest.mark.asyncio
+    async def test_partial_citation_coverage_records_effective_ranking(self, builder, mock_searcher):
+        mock_searcher.search_page.return_value = _pubmed_page(
+            [
+                {"pmid": "1", "title": "No iCite row", "year": "2020"},
+                {"pmid": "2", "title": "Covered", "year": "2021"},
+            ]
+        )
+        mock_searcher.get_citation_metrics.return_value = {
+            "2": {"pmid": "2", "citation_count": 7},
+        }
+
+        timeline = await builder.build_timeline(
+            "topic",
+            include_all=True,
+            highlight_landmarks=False,
+            sort_by_citations=True,
+        )
+
+        retrieval = timeline.metadata["retrieval"]
+        assert retrieval["ranking"] == "icite_citation_count_then_pubmed_relevance"
+        assert retrieval["citation_metrics"]["status"] == "partial"
+        assert retrieval["citation_metrics"]["applied"] == 1
+        assert retrieval["citation_metrics"]["citation_counts_applied"] == 1
+
+    @pytest.mark.asyncio
+    async def test_invalid_citation_response_does_not_claim_icite_ranking(self, builder, mock_searcher):
+        mock_searcher.search_page.return_value = _pubmed_page([{"pmid": "1", "title": "Paper", "year": "2020"}])
+        mock_searcher.get_citation_metrics.return_value = [{"pmid": "1", "citation_count": 10}]
+
+        timeline = await builder.build_timeline("topic", include_all=True, highlight_landmarks=False)
+
+        retrieval = timeline.metadata["retrieval"]
+        assert retrieval["ranking"] == "pubmed_relevance"
+        assert retrieval["citation_metrics"]["status"] == "error"
+        assert retrieval["citation_metrics"]["error"]["kind"] == "validation"
+
+    @pytest.mark.asyncio
+    async def test_unrequested_icite_row_invalidates_the_whole_enrichment(self, builder, mock_searcher):
+        mock_searcher.search_page.return_value = _pubmed_page([{"pmid": "1", "title": "Paper", "year": "2020"}])
+        mock_searcher.get_citation_metrics.return_value = {
+            "1": {"pmid": "1", "citation_count": 10},
+            "private-unrequested-id": {"pmid": "private-unrequested-id", "citation_count": 999},
+        }
+
+        timeline = await builder.build_timeline(
+            "topic",
+            include_all=True,
+            highlight_landmarks=False,
+            sort_by_citations=True,
+        )
+
+        retrieval = timeline.metadata["retrieval"]
+        assert retrieval["ranking"] == "pubmed_relevance"
+        assert retrieval["citation_metrics"]["status"] == "error"
+        assert "private-unrequested-id" not in str(retrieval)
 
 
 # ============================================================

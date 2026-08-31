@@ -127,7 +127,7 @@ The manifest currently exposes these stable keys:
 | --- | --- | --- |
 | default | Normal auto/explicit/all source plan | Keyword/relevance adapters |
 | `options="native_semantic"` | Explicit capability mismatch fails before I/O; auto keeps capable sources | OpenAlex `search.semantic`, at most 50 |
-| `options="systematic"` | Selects sources declaring systematic support; disables multi-strategy deep expansion | PubMed executes the supplied Boolean strategy; OpenAlex uses a bounded cursor; Semantic Scholar uses bounded bulk |
+| `options="systematic"` | Selects sources declaring systematic support; disables multi-strategy deep expansion | OpenAlex uses a bounded cursor; Semantic Scholar uses bounded bulk. PubMed is keyword-only and an explicit PubMed systematic request fails before I/O. |
 
 The two explicit modes are mutually exclusive. The public per-source `limit`
 is capped at 100, so systematic mode is deterministic and bounded, not a
@@ -138,9 +138,9 @@ warnings, and safe cost/rate fields where the upstream returns them. Opaque
 cursor/token values are also retained when a provider supplies them. The same
 metadata is retained in `query_strategy.json` and artifact summaries, but the
 public facade does not yet accept a continuation/cursor-resume input.
-Europe PMC, Scopus, and Web of Science currently expose one-page keyword
-adapters only; an explicit systematic request naming one of them fails before
-I/O rather than pretending that one page is systematic coverage. Their keyword
+PubMed, Europe PMC, Scopus, and Web of Science expose keyword-only retrieval
+through this facade; an explicit systematic request naming one of them fails
+before I/O rather than pretending that a bounded page is systematic coverage. Their keyword
 artifacts still retain provider counts when available and the exact compiled
 physical query (`TITLE-ABS-KEY(...)` or `TS=(...)` for licensed connectors).
 Auto-mode PubTator terminology lookups use an in-memory TTL cache whose keys
@@ -163,6 +163,23 @@ PubTator at all.
   `partial`.
 - Crossref and other enrichment adapters run only after primary discovery and
   cannot be selected as the sole search corpus.
+
+### PubMed page contract
+
+The low-level `LiteratureSearcher` exposes exactly one search operation:
+`search_page(...) -> SourceSearchPage[dict]`. Article dictionaries exist only
+in `page.items`; corpus count, physical query, provider sort, year bounds,
+detail level, boundedness, and materialization count live in the page envelope.
+A successful zero-hit search is `items=[]` with `total=0`. An NCBI outage
+raises `NCBIInfrastructureError`; it is never encoded as an empty page or an
+article-shaped error row.
+
+The canonical low-level date filter is inclusive publication-year
+`min_year`/`max_year`. Retired precise-date aliases are not accepted. Strategy,
+detail level, age, sex, species, language, and clinical-query values must match
+their canonical enumerations exactly; invalid values fail before Entrez I/O.
+The old list-returning `.search()` method and first-row `_search_metadata`
+sentinel are absent.
 
 ### Structured outcome and durable recovery contract
 
@@ -207,9 +224,9 @@ Agents recover state through the existing `read_session` facade—no second
 generic search tool is introduced:
 
 ```text
-read_session(action="search_runs", run_status="partial")
-read_session(action="search_run", run_id="...")
-read_session(action="replay_search", run_id="...")
+read_session(request={"action":"search_runs","status":"partial"})
+read_session(request={"action":"search_run","run_id":"..."})
+read_session(request={"action":"replay_search","run_id":"..."})
 ```
 
 `replay_search` returns exact allowed `unified_search` kwargs after recursive
@@ -234,8 +251,8 @@ artifacts without that identifier.
 ### Adding another API
 
 A new adapter should be admitted only when it adds a distinct corpus,
-identifier authority, or legal-access path. It must register aliases and
-capabilities, declare credentials and a conservative upstream policy, emit the
+identifier authority, or legal-access path. It must register one canonical,
+exact source key plus capabilities (source aliases are not accepted), declare credentials and a conservative upstream policy, emit the
 shared result/error envelope, preserve canonical identifiers and licenses, and
 ship contract, timeout, 429, empty-result, deduplication, and partial-failure
 tests. This prevents a larger source list from merely multiplying duplicate
@@ -248,7 +265,7 @@ records and rate-limit failures.
 | PubMed / NCBI Entrez | Primary biomedical search, identifiers, abstracts, citation links | 0.34 s between requests without key, 0.1 s with key in Entrez base client | `NCBI_EMAIL` required by policy, `NCBI_API_KEY` optional | Metadata and abstracts direct; full text is indirect via PMC, DOI, LinkOut, or downstream resolvers | No single article-content license; metadata and abstract visibility follow NCBI plus publisher rights | Low for PubMed records themselves; higher once you pivot to PMC/LinkOut for content |
 | Europe PMC | Search, OA/fulltext discovery, fullTextXML, text-mined terms | 0.1 s minimum interval | No API key; email is used for polite identification | Direct OA fullTextXML for supported records; can surface PMC-backed figures/full text | Article-level OA licenses vary by record | Yes. Europe PMC aggregates PubMed plus partner sources and mirrors OA content |
 | OpenAlex | Broad discovery, OA indicators, entity graph, inferred topics/keywords, journal context | Keyword client uses a shared budget; native semantic mode has a separate 1 RPS contract; cursor traversal is bounded by pages/results/time/cost | Casual anonymous use; `OPENALEX_API_KEY` raises the credit budget. Actual limits/cost come from response headers/meta | No hosted full text; only OA location hints and metadata | Metadata is CC0; linked full text/figures retain their original rights | Yes. OpenAlex aggregates and infers graph metadata; semantic/topics must retain provider provenance |
-| Semantic Scholar | Cross-domain relevance/bulk discovery, batch enrichment, citation graph, OA PDF hints; release/diff manifests live in the operator data plane | Authenticated keys begin conservatively at one shared request/second; unauthenticated calls use an unstable shared pool; exhausted 429s enter cooldown | `S2_API_KEY` or `SEMANTIC_SCHOLAR_API_KEY` optional for live calls and required for dataset partition/diff URLs | No hosted full text in live search; may expose `openAccessPdf` hints. Dataset content rights are release/record specific | Preserve each release README/license; linked article/full-text rights do not become uniform | Yes. Metadata, machine annotations and OA hints are aggregated or inferred |
+| Semantic Scholar | Cross-domain relevance/bulk discovery, batch enrichment, citation graph, OA PDF hints; release/diff manifests live in the operator data plane | Authenticated keys begin conservatively at one shared request/second; unauthenticated calls use an unstable shared pool; exhausted 429s enter cooldown | `SEMANTIC_SCHOLAR_API_KEY` is optional for live calls and required for dataset partition/diff URLs | No hosted full text in live search; may expose `openAccessPdf` hints. Dataset content rights are release/record specific | Preserve each release README/license; linked article/full-text rights do not become uniform | Yes. Metadata, machine annotations and OA hints are aggregated or inferred |
 | CORE | Large OA aggregator for repositories and full-text-enabled outputs | 6.0 s without key, 2.5 s with key | `CORE_API_KEY` optional but strongly recommended | Can return OA records and full-text-backed outputs when repositories expose them | Repository-specific; no single global content license | Yes. CORE aggregates thousands of repositories and providers |
 | Crossref | DOI registry, title lookup, funder metadata, references, enrichment | 0.05 s minimum interval | `CROSSREF_EMAIL` optional but recommended for polite pool | No direct full text; metadata and DOI resolution only | Metadata only; full-text rights remain with publisher or OA host | Yes. Crossref points to publisher and registry records rather than hosting article content |
 | arXiv | Preprint discovery across quantitative biology, statistics, computing, and adjacent fields | 3.0 s minimum interval and one in-flight request | No API key | Abstract metadata plus direct arXiv PDF links | Record-level arXiv license; do not infer peer review or downstream reuse rights | Low for arXiv records; published-version matching is an indirect DOI/title link |
@@ -265,7 +282,7 @@ records and rate-limit failures.
 | PMC Open Access / FigureClient | Structured figure extraction and PMC-backed visual retrieval | 0.2 s minimum interval in figure client | No dedicated key | Direct figure metadata and image URLs only for PMC Open Access-compatible articles | Article-level OA license; figure reuse depends on the article's license | Mixed. FigureClient uses Europe PMC XML, PMC efetch XML, and PMC BioC fallback |
 | FulltextDownloader chain | PDF/fulltext link collection and fallback routing | Concurrency-limited downloader with per-source fallbacks; no single shared interval | No single key; downstream keys come from CORE, Unpaywall, and source-specific services | Can return direct PDF links, text, or structured sections depending on the source | License varies by the final OA host | Yes. This layer is intentionally indirect and should cite the final host it selected |
 | Open-i | Biomedical image discovery across image-bearing biomedical articles | 1.0 s minimum interval | No API key | Image metadata and URLs; not general article full text | Supports license filtering by CC-style Open-i license codes | Yes. Open-i is an image-focused aggregator rather than the canonical publisher host |
-| ClinicalTrials.gov | Explicit `options="trials"` Markdown adjunct; never an implicit literature-search leg | One bounded request, three displayed records, 0.5 s prefetch budget | No key | Structured registry records only; no article full text | Registry data, not article-license content | Low. Canonical trial registry, but not a paper/full-text source; query/outcome are stored separately under artifact `adjunct_queries` |
+| ClinicalTrials.gov | Explicit `options="clinical_trials"` Markdown adjunct; never an implicit literature-search leg | One bounded request, three displayed records, 0.5 s prefetch budget | No key | Structured registry records only; no article full text | Registry data, not article-license content | Low. Canonical trial registry, but not a paper/full-text source; query/outcome are stored separately under artifact `adjunct_queries` |
 | OpenURL resolver | Institutional subscription handoff | No outbound fetch in resolver builder itself | `OPENURL_RESOLVER` or preset config | Subscription access handoff only; not a content corpus | Governed by your institution's subscription agreements | Yes. This is a redirect/access layer, not a source of record |
 
 ## Licensed AI Evidence Adapters

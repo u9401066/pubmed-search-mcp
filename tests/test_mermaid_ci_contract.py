@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -40,3 +43,24 @@ def test_render_smoke_rejects_version_drift_oversize_and_error_svg() -> None:
     assert "mermaid.parse(diagram.source" in checker
     assert "mermaid.render(" in checker
     assert "await withTimeout(" in checker
+
+
+def test_runtime_fixture_export_remains_third_party_free(tmp_path: Path) -> None:
+    """The CI fixture exporter must still run under its documented ``-S`` boundary."""
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-S",
+            "scripts/export_mermaid_smoke_fixtures.py",
+            str(tmp_path),
+        ],
+        cwd=REPO_ROOT,
+        env={**os.environ, "PYTHONPATH": str(REPO_ROOT / "src")},
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert "Exported 6 Mermaid smoke fixtures" in completed.stdout
+    assert len(list(tmp_path.glob("*.mmd"))) == 6

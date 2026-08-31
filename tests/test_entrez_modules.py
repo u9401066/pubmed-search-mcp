@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from pubmed_search.infrastructure.ncbi.base import EntrezBase
+from pubmed_search.infrastructure.ncbi.base import EntrezBase, NCBIInfrastructureError
 
 
 class TestCitationMixin:
@@ -81,11 +81,16 @@ class TestCitationMixin:
         searcher = TestSearcher()
 
         with patch("pubmed_search.infrastructure.ncbi.citation.Entrez.elink") as mock_elink:
-            mock_elink.side_effect = Exception("API Error")
+            upstream = Exception("API Error with token=private")
+            mock_elink.side_effect = upstream
 
-            results = await searcher.get_related_articles("999")
-            assert len(results) == 1
-            assert "error" in results[0]
+            with pytest.raises(NCBIInfrastructureError) as exc_info:
+                await searcher.get_related_articles("999")
+
+        assert str(exc_info.value) == "NCBI related_articles failed"
+        assert exc_info.value.upstream_type == "Exception"
+        assert exc_info.value.__cause__ is upstream
+        assert "private" not in str(exc_info.value)
 
     async def test_get_citing_articles_success(self):
         """Test getting citing articles successfully."""
@@ -146,24 +151,6 @@ class TestCitationMixin:
             results = await searcher.get_article_references("999", limit=20)
 
             assert len(results) == 2
-
-    async def test_aliases_work(self):
-        """Test that alias methods work."""
-        from pubmed_search.infrastructure.ncbi.citation import CitationMixin
-
-        class TestSearcher(CitationMixin, EntrezBase):
-            async def fetch_details(self, pmids):
-                return []
-
-        searcher = TestSearcher()
-
-        with patch.object(searcher, "get_related_articles", return_value=[]) as mock_get:
-            await searcher.find_related_articles("123")
-            mock_get.assert_called_once_with("123", 5)
-
-        with patch.object(searcher, "get_citing_articles", return_value=[]) as mock_get:
-            await searcher.find_citing_articles("123")
-            mock_get.assert_called_once_with("123", 10)
 
 
 class TestICiteMixin:
@@ -260,8 +247,9 @@ class TestICiteMixin:
             assert mock_http.get.await_count == 2
 
     async def test_get_citation_metrics_api_error(self):
-        """Test getting citation metrics with API error."""
+        """Transport failures are distinct from a legitimate empty iCite result."""
         from pubmed_search.infrastructure.ncbi.icite import ICiteMixin
+        from pubmed_search.shared.exceptions import ServiceUnavailableError
 
         class TestSearcher(ICiteMixin):
             pass
@@ -274,9 +262,51 @@ class TestICiteMixin:
         mock_http.get = AsyncMock(side_effect=Exception("API Error"))
 
         with patch("pubmed_search.infrastructure.ncbi.icite.get_shared_async_client", return_value=mock_http):
-            results = await searcher.get_citation_metrics(["12345"])
-            # Should return empty dict on error
-            assert results == {}
+            with pytest.raises(ServiceUnavailableError, match="NIH iCite: request failed") as exc_info:
+                await searcher.get_citation_metrics(["12345"])
+
+        assert exc_info.value.retryable is True
+
+    async def test_get_citation_metrics_rejects_invalid_response(self):
+        """Malformed upstream JSON cannot masquerade as an unindexed PMID."""
+        from pubmed_search.infrastructure.ncbi.icite import ICiteMixin
+        from pubmed_search.shared.exceptions import ServiceUnavailableError
+
+        class TestSearcher(ICiteMixin):
+            pass
+
+        searcher = TestSearcher()
+        searcher._get_icite_cache().clear()
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {"unexpected": []}
+        mock_http = AsyncMock()
+        mock_http.get = AsyncMock(return_value=mock_response)
+
+        with patch("pubmed_search.infrastructure.ncbi.icite.get_shared_async_client", return_value=mock_http):
+            with pytest.raises(ServiceUnavailableError, match="returned an invalid response"):
+                await searcher.get_citation_metrics(["12345"])
+
+    async def test_get_citation_metrics_forces_pmid_mapping_field(self):
+        """Custom field selections still request PMID for deterministic mapping."""
+        from pubmed_search.infrastructure.ncbi.icite import ICiteMixin
+
+        class TestSearcher(ICiteMixin):
+            pass
+
+        searcher = TestSearcher()
+        searcher._get_icite_cache().clear()
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {"data": [{"pmid": 12345, "citation_count": 2}]}
+        mock_http = AsyncMock()
+        mock_http.get = AsyncMock(return_value=mock_response)
+
+        with patch("pubmed_search.infrastructure.ncbi.icite.get_shared_async_client", return_value=mock_http):
+            result = await searcher.get_citation_metrics(["12345"], fields=["citation_count"])
+
+        assert result["12345"]["citation_count"] == 2
+        assert mock_http.get.await_args.kwargs["params"]["fl"] == "pmid,citation_count"
 
     async def test_get_related_articles_closes_handle_when_entrez_read_fails(self):
         """Citation mixin should close handles even when Entrez parsing fails."""
@@ -291,10 +321,10 @@ class TestICiteMixin:
 
         with patch.object(searcher, "_rate_limited_call", AsyncMock(return_value=handle)):
             with patch("pubmed_search.infrastructure.ncbi.citation.Entrez.read", side_effect=ValueError("bad xml")):
-                results = await searcher.get_related_articles("999")
+                with pytest.raises(NCBIInfrastructureError, match="NCBI related_articles failed"):
+                    await searcher.get_related_articles("999")
 
         handle.close.assert_called_once()
-        assert results == [{"error": "bad xml"}]
 
 
 class TestBatchMixin:
@@ -338,8 +368,8 @@ class TestBatchMixin:
         with patch("pubmed_search.infrastructure.ncbi.batch.Entrez.esearch") as mock_search:
             mock_search.side_effect = Exception("API Error")
 
-            result = await searcher.search_with_history("test")
-            assert "error" in result
+            with pytest.raises(NCBIInfrastructureError, match="NCBI history_search failed"):
+                await searcher.search_with_history("test")
 
     async def test_fetch_batch_from_history_success(self):
         """Test fetching batch from history."""
@@ -395,13 +425,14 @@ class TestSearchMixin:
         searcher.quick_fetch_summary = AsyncMock(return_value=[{"pmid": "12345", "title": "Summary Result"}])
         searcher.fetch_details = AsyncMock(return_value=[{"pmid": "12345", "title": "Full Result"}])
 
-        with patch.object(searcher, "_search_ids_with_retry", AsyncMock(return_value=(["12345", "67890"], 2, "", ""))):
-            results = await searcher.search("test query", limit=1, detail_level="summary")
+        with patch.object(searcher, "_search_ids", AsyncMock(return_value=(["12345", "67890"], 2, "", ""))):
+            page = await searcher.search_page("test query", limit=1, detail_level="summary")
 
         searcher.quick_fetch_summary.assert_awaited_once_with(["12345"])
         searcher.fetch_details.assert_not_called()
-        assert results[0]["pmid"] == "12345"
-        assert results[0]["_search_metadata"]["total_count"] == 2
+        assert page.items[0]["pmid"] == "12345"
+        assert page.total == 2
+        assert page.metadata["detail_level"] == "summary"
 
     async def test_search_full_auto_uses_history_server_for_large_result_sets(self):
         """Full-detail searches should switch to History Server when the batch is large enough."""
@@ -413,26 +444,30 @@ class TestSearchMixin:
 
         searcher = TestSearcher()
         searcher.fetch_details = AsyncMock(return_value=[{"pmid": "12345", "title": "Direct Result"}])
-        searcher._fetch_with_retry = AsyncMock(return_value={"PubmedArticle": []})
+        searcher._fetch_articles = AsyncMock(return_value={"PubmedArticle": []})
         searcher._parse_fetch_results = MagicMock(return_value=[{"pmid": "12345", "title": "History Result"}])
 
         with (
             patch.object(
                 searcher,
-                "_search_ids_with_retry",
+                "_search_ids",
                 AsyncMock(return_value=(["12345", "67890", "13579"], 3, "WEBENV123", "1")),
             ),
             patch("pubmed_search.infrastructure.ncbi.search._HISTORY_BATCH_THRESHOLD", 2),
         ):
-            results = await searcher.search("test query", limit=2, detail_level="full")
+            page = await searcher.search_page("test query", limit=2, detail_level="full")
 
-        searcher._fetch_with_retry.assert_awaited_once_with(
+        searcher._fetch_articles.assert_awaited_once_with(
             ["12345", "67890", "13579"], webenv="WEBENV123", query_key="1"
         )
-        searcher._parse_fetch_results.assert_called_once_with({"PubmedArticle": []})
+        searcher._parse_fetch_results.assert_called_once_with(
+            {"PubmedArticle": []},
+            expected_pmids=["12345", "67890", "13579"],
+        )
         searcher.fetch_details.assert_not_called()
-        assert results[0]["title"] == "History Result"
-        assert results[0]["_search_metadata"]["total_count"] == 3
+        assert page.items[0]["title"] == "History Result"
+        assert page.total == 3
+        assert page.metadata["detail_level"] == "full"
 
     async def test_fetch_batch_from_history_error(self):
         """Test fetching batch with error."""
@@ -446,6 +481,5 @@ class TestSearchMixin:
         with patch("pubmed_search.infrastructure.ncbi.batch.Entrez.efetch") as mock_fetch:
             mock_fetch.side_effect = Exception("API Error")
 
-            results = await searcher.fetch_batch_from_history("WEB_ENV", "1", 0, 10)
-            assert len(results) == 1
-            assert "error" in results[0]
+            with pytest.raises(NCBIInfrastructureError, match="NCBI history_fetch failed"):
+                await searcher.fetch_batch_from_history("WEB_ENV", "1", 0, 10)

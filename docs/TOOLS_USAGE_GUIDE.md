@@ -1,6 +1,6 @@
 # PubMed Search MCP Tools Usage Guide
 
-Capability-first guide for using the 45-tool PubMed Search MCP surface without treating the tool list as a menu to memorize.
+Capability-first guide for using the 41-tool PubMed Search MCP surface without treating the tool list as a menu to memorize.
 
 **Language**: **English** | [繁體中文](TOOLS_USAGE_GUIDE.zh-TW.md)
 
@@ -18,12 +18,12 @@ Capability-first guide for using the 45-tool PubMed Search MCP surface without t
 | Capability | Primary Tools | Use When |
 | --- | --- | --- |
 | Search entry | `unified_search` | The user wants papers, articles, or a first pass over a topic. |
-| Query intelligence | `analyze_search_query`, `parse_pico`, `generate_search_queries` | The query needs MeSH, agent-provided PICO handoff, synonym expansion, or strategy planning. |
+| Query intelligence | `analyze_search_query`, `validate_pico_plan`, `generate_search_queries` | The query needs MeSH, agent-provided PICO handoff, synonym expansion, or strategy planning. |
 | Discovery | `fetch_article_details`, `find_related_articles`, `find_citing_articles`, `get_article_references`, `build_citation_tree` | The user has seed PMIDs and wants context, related work, or citation lineage. |
 | Full text and figures | `get_fulltext`, `get_text_mined_terms`, `get_article_figures` | The user needs article body text, evidence sections, entities, captions, or image URLs. |
 | External biomedical data | `search_gene`, `get_gene_details`, `search_compound`, `get_compound_details`, `search_clinvar` | The research question moves from papers into NCBI gene, compound, or clinical variant data. |
 | Evaluation and research evolution | `get_citation_metrics`, `build_research_chronicle`, `read_research_chronicle` | The user asks what matters, what changed over time, or how fields compare. |
-| Persistence and sessions | `read_session`, `get_session_pmids`, `get_cached_article`, `get_session_summary`, pipeline tools | The user wants to resume, repeat, audit, schedule, or save a search workflow. |
+| Persistence and sessions | `read_session` plus the seven pipeline tools | The user wants to resume, repeat, audit, schedule, or save a search workflow. |
 | Export and local notes | `prepare_export`, `save_literature_notes` | The user wants Zotero/EndNote/BibTeX files or local Markdown/wiki notes. |
 
 ## Intent Routing
@@ -31,7 +31,7 @@ Capability-first guide for using the 45-tool PubMed Search MCP surface without t
 | User Intent | Recommended Flow |
 | --- | --- |
 | Quick literature search | `unified_search(query=..., limit=...)` |
-| Clinical comparison | Agent P/I/C/O -> `parse_pico` -> `unified_search(pipeline="template: pico...")` |
+| Clinical comparison | Agent P/I/C/O -> `validate_pico_plan` -> `unified_search(pipeline="template: pico...")` |
 | Systematic review seed | `analyze_search_query` -> `generate_search_queries` -> `unified_search(options="systematic")` -> `save_pipeline` |
 | Provider-native semantic retrieval | `unified_search(sources="openalex", options="native_semantic")` |
 | Important paper exploration | `fetch_article_details` -> `find_related_articles` / `find_citing_articles` / `get_article_references` |
@@ -50,7 +50,7 @@ Each feature family has a workflow diagram so users and developers can see where
 
 ![Search and query intelligence workflow](images/search-query-workflow.svg)
 
-Use this path for `unified_search`, `parse_pico`, `generate_search_queries`, `analyze_search_query`, and ICD-aware search preparation. The important boundary is that the agent performs semantic PICO extraction, while `parse_pico` validates the structured handoff and returns a backend `template: pico` pipeline.
+Use this path for `unified_search`, `validate_pico_plan`, `generate_search_queries`, `analyze_search_query`, and ICD-aware search preparation. The important boundary is that the agent performs semantic PICO extraction, while `validate_pico_plan` validates the structured handoff and returns a backend `template: pico` pipeline.
 
 There is exactly one generic literature-search tool. Choose its retrieval
 policy with `options` instead of looking for provider-specific search tools:
@@ -59,7 +59,7 @@ policy with `options` instead of looking for provider-specific search tools:
 | --- | --- | --- |
 | Default | `unified_search(query="sepsis biomarkers")` | Relevance/keyword routing across the normal capable source plan. |
 | Native semantic | `unified_search(query="mechanisms of resistance", sources="openalex", options="native_semantic")` | OpenAlex title/abstract semantic retrieval; provider maximum 50. |
-| Systematic | `unified_search(query="melanoma AND immunotherapy", sources="pubmed,openalex,semantic_scholar", options="systematic")` | Deterministic, bounded provider execution: OpenAlex cursor and Semantic Scholar bulk where selected. |
+| Systematic | `unified_search(query="melanoma AND immunotherapy", sources="openalex,semantic_scholar", options="systematic")` | Deterministic, bounded provider execution: OpenAlex cursor and Semantic Scholar bulk. PubMed is keyword-only and is rejected in this mode. |
 
 `native_semantic` and `systematic` are mutually exclusive. Both disable the
 multi-strategy deep-search expansion so the selected provider-native plan stays
@@ -71,8 +71,12 @@ retrieval primitive, not proof of exhaustive systematic-review coverage.
 Input validation is strict and occurs before provider I/O. `limit` must be an
 integer in `1..100`; filter tokens must use supported `key:value` forms; year
 bounds must be within 1000–2100 and ordered; and unknown option flags, ranking
-modes, or output formats are rejected instead of silently ignored. In normal
-deep mode, the same public `limit` is the **total budget for one source across
+modes, or output formats are rejected instead of silently ignored.
+Source identifiers must be exact canonical keys such as `semantic_scholar`,
+`europe_pmc`, and `web_of_science`; aliases, case variants, surrounding token
+whitespace, empty tokens, and duplicates are rejected. Canonical filter keys
+are `year`, `age_group`, `sex`, `species`, `language`, and `clinical_query`.
+In normal deep mode, the same public `limit` is the **total budget for one source across
 all of its generated strategies**. The broker allocates that budget across the
 strategies, clips over-returning adapters, and applies bounded global and
 per-source concurrency plus strategy deadlines.
@@ -94,10 +98,11 @@ outcomes. It also reports returned count, attempted/successful/failed/retryable
 sources, continuation sources, and sources whose completeness is unknown.
 
 ClinicalTrials.gov is an explicit adjunct, not another literature-search leg.
-Use `options="trials"` only when a Markdown response should include up to three
-related registry records. The request is never made by default, does not affect
-article ranking/source counts, and is recorded separately in the search
-artifact. JSON/TOON output does not run the display-only adjunct.
+Use `options="clinical_trials"` only when related registry records are useful.
+The request is never made by default and does not affect article ranking or
+literature-source counts. Markdown renders up to three rows; JSON/TOON keeps
+the structured rows. Response and artifact both carry the same versioned
+`clinical-trials-adjunct/v1` retrieval/format coverage and sanitized failures.
 
 ### Article Discovery And Citation Mapping
 
@@ -115,11 +120,16 @@ Use `verify_reference_list` when a manuscript, bibliography, or generated answer
 
 ![Full text, figures, and biomedical image workflow](images/visual-evidence-workflow.svg)
 
-Use this path for `get_fulltext`, `get_text_mined_terms`, `get_article_figures`, `analyze_figure_for_search`, and `search_biomedical_images`. Full text, figure metadata, and image search are separate evidence channels with different availability limits.
+Use this path for `get_fulltext`, `get_text_mined_terms`, `get_article_figures`, `prepare_figure_search`, and `search_biomedical_images`. Full text, figure metadata, and image search are separate evidence channels with different availability limits.
 
-Use `analyze_figure_for_search` when the user provides an image URL or uploaded image payload and wants the agent to infer search terms from the visual content. The tool returns MCP `ImageContent`; the LLM agent performs the visual interpretation and should immediately continue with `search_biomedical_images` or `unified_search`.
+Use `prepare_figure_search` when the user provides an image URL or uploaded image payload and wants the agent to infer search terms from the visual content. The tool returns MCP `ImageContent`; the LLM agent performs the visual interpretation and should immediately continue with `search_biomedical_images` or `unified_search`.
 
 Use `search_biomedical_images` when the visual question is already textual. Open-i is the current primary source, supports filters such as `image_type`, `collection`, `article_type`, `specialty`, `license_type`, `search_fields`, and requires English medical terminology.
+
+Read its typed source coverage before interpreting an empty display. Only a
+valid Open-i page with `total=0` and no rows is empty; an outage or malformed
+page is failed, and mixed valid/invalid rows are partial. Markdown preserves
+that distinction and unknown totals.
 
 ### External Biomedical Data
 
@@ -134,14 +144,14 @@ Use this path for `search_gene`, `get_gene_details`, `get_gene_literature`, `sea
 
 Use this path for `get_citation_metrics`, `build_research_chronicle`, and `read_research_chronicle` when the user asks what mattered, when the field changed, or how topics diverged.
 
-`build_research_chronicle` is the single research-evolution tool. It accepts `topic=...`, explicit comma-separated `pmids=...`, or an existing `chronicle_id=...`, detects milestone-like papers, and can return `summary`, `chronicle_map`, `timeline`, `tree`, `graph`, `evidence`, `milestones`, `mermaid`, `timeline_mermaid`, `mindmap`, `narrative`, or `json`. `mermaid` combines a horizontal year spine and lineage branches; `chronicle_map` is its JSON coordinate contract. Use `read_research_chronicle(action="milestones")` for milestone distribution diagnostics and `read_research_chronicle(action="compare", topics="a,b")` for up to five topic tracks.
+`build_research_chronicle` is the single research-evolution builder. It accepts `topic=...`, explicit comma-separated `pmids=...`, or an existing `chronicle_id=...`, detects milestone-like papers, and can return `summary`, `chronicle_map`, `timeline`, `tree`, `graph`, `evidence`, `milestones`, `mermaid`, `narrative`, or `json`. `mermaid` is the canonical audited diagram: a horizontal year spine with lineage branches; `chronicle_map` is its JSON coordinate contract. Use typed `read_research_chronicle(request={...})` actions for stored diagnostics and comparisons.
 
 Use precise terms:
 
 - **Timeline**: chronological milestone projection.
 - **Lineage tree**: retrieval-bounded branch projection from timeline events, not a causal genealogy.
 - **Chronicle map**: one horizontal time spine with observed lines anchored at their earliest dated papers in the retrieved scope. Semantic branches require a signal shared by multiple papers; singleton-only or insufficient MeSH/keyword support produces a warned research-stage fallback. Same-year layout does not imply precedence when date precision cannot establish it.
-- **Context graph preview**: `unified_search(options="context_graph")`, a lightweight preview from the current PMID-backed ranked set.
+- **Research lineage**: use `build_research_chronicle`; it is the sole persistent chronological and branching context capability.
 - **Citation tree**: `build_citation_tree`, a single-seed forward/backward citation network.
 - **Research Chronicle**: `build_research_chronicle` / `read_research_chronicle`, the persistent, versioned, evidence-backed record. See [Advanced Research Workflows](ADVANCED_RESEARCH_WORKFLOWS.md) and [Research Chronicle Rebuild Spec](RESEARCH_CHRONICLE_REFACTOR_SPEC.md).
 
@@ -161,11 +171,11 @@ A paper matching several selected semantic signals has one primary branch and ex
 
 - `build_research_chronicle(topic=...)` or `build_research_chronicle(pmids="last")` atomically creates revision N+1. When session artifact persistence is enabled, it also writes a `research-chronicle-artifact/v1` bundle; a write failure is visible in Markdown or as `artifact.status="failed"` in structured output, while the revision remains saved.
 - `build_research_chronicle(chronicle_id=...)` re-runs the continued revision's own topic/PMID set and filters to produce revision N+1 reflecting research movement cleanly.
-- `read_research_chronicle(action="list")` lists stored chronicles.
-- `read_research_chronicle(chronicle_id=..., output="mermaid"|"mindmap"|"chronicle_map"|"tree"|"timeline"|"graph"|"evidence")` reads one revision or the combined map.
-- `read_research_chronicle(action="diff", chronicle_id=..., from_revision=1)` reports added, updated, and absent entries plus evidence and branch churn. The legacy `retired` key is a compatibility alias for `not_observed_in_revision` / `removed_from_view`; absence is never conclusive retirement.
-- `read_research_chronicle(action="narrate", chronicle_id=..., mode="full")` renders prose where every claim cites its entry ID and article identifiers.
-- `read_research_chronicle(action="compare", topics="a,b")` uses normalized exact stored-topic names. Multiple chronicles with the same topic are reported as ambiguous; pass distinct `chronicle_ids` instead. Duplicate targets are not a valid comparison.
+- `read_research_chronicle(request={"action":"list"})` lists stored chronicles.
+- `read_research_chronicle(request={"action":"load","chronicle_id":"...","output":"mermaid"})` reads one revision or the combined map.
+- `read_research_chronicle(request={"action":"diff","chronicle_id":"...","from_revision":1})` reports added, updated, and not-observed entries plus evidence and branch churn. Absence is never conclusive retirement.
+- `read_research_chronicle(request={"action":"narrate","chronicle_id":"...","mode":"full"})` renders prose where every claim cites its entry ID and article identifiers.
+- `read_research_chronicle(request={"action":"compare","selection":{"kind":"topics","values":["a","b"]}})` uses normalized exact stored-topic names. Multiple chronicles with the same topic are reported as ambiguous; select distinct Chronicle IDs instead. Duplicate targets are invalid.
 
 The public schema and runtime checks bound Chronicle requests: `max_events` is 1–200, an explicit set has at most 500 unique PMIDs, topic text has at most 500 characters, list limits are 1–100, and comparisons contain 2–5 distinct chronicles. JSON projections and structured read actions keep validation/not-found errors structured.
 
@@ -175,7 +185,7 @@ Artifact preflight audits the names produced by the actual artifact payload buil
 
 ![Session and pipeline workflow](images/session-pipeline-workflow.svg)
 
-Use this path for `read_session`, `get_session_pmids`, `get_cached_article`, `get_session_summary`, `get_session_log`, `manage_pipeline`, `save_pipeline`, `list_pipelines`, `load_pipeline`, `delete_pipeline`, `get_pipeline_history`, and `schedule_pipeline`.
+Use this path for `read_session`, `save_pipeline`, `list_pipelines`, `load_pipeline`, `delete_pipeline`, `get_pipeline_history`, `schedule_pipeline`, and `unschedule_pipeline`.
 
 Local and service capabilities are intentionally different. A trusted local
 caller may use workspace scope, `file:` pipeline sources, and the in-process
@@ -184,11 +194,19 @@ its tenant-derived store; process-wide workspace/file reads are blocked, and
 the service Compose profile disables scheduling unless an operator supplies a
 single external leader/lease.
 
+History reads are fail-closed. A malformed persisted run record produces a
+sanitized error; it is never skipped to produce a misleading partial or empty
+history.
+
 ### Institutional Access
 
 ![Institutional access workflow](images/institutional-access-workflow.svg)
 
 Use this path for `configure_institutional_access`, `get_institutional_link`, `list_resolver_presets`, `test_institutional_access`, and `diagnose_institutional_access`. OpenURL is a browser handoff; direct DOI and EZproxy paths become agent-fetchable only when the environment is configured and access is permitted.
+
+Resolver bases cannot contain query parameters or embedded credentials. For a
+PMID input, diagnosis exposes the DOI-resolution state separately, preserving
+the distinction between a confirmed missing DOI and a PubMed failure.
 
 ### Export And Local Notes
 
@@ -207,11 +225,11 @@ remote clients, and set `PUBMED_ARTIFACT_INCLUDE_LOCAL_PATHS=true` only for
 local MCP clients that should receive direct server paths:
 
 ```python
-read_session(action="list_artifacts")
-read_session(action="artifact", artifact_id="...")
-read_session(action="artifact", artifact_uri="artifact://...")
-read_session(action="artifact", artifact_uri="artifact://...", artifact_file="audit.json")
-read_session(action="artifact", artifact_uri="artifact://...", artifact_file="results.json", offset=0, max_chars=200000)
+read_session(request={"action":"list_artifacts"})
+read_session(request={"action":"artifact","locator":{"kind":"artifact_id","value":"..."}})
+read_session(request={"action":"artifact","locator":{"kind":"artifact_uri","value":"artifact://..."}})
+read_session(request={"action":"artifact","locator":{"kind":"artifact_uri","value":"artifact://..."},"artifact_file":"audit.json"})
+read_session(request={"action":"artifact","locator":{"kind":"artifact_uri","value":"artifact://..."},"artifact_file":"results.json","offset":0,"max_chars":200000})
 ```
 
 When session management is active, every `unified_search` invocation includes a
@@ -231,10 +249,10 @@ run saved pipeline additionally keeps its PipelineStore report/run history.
 PipelineStore history and the invocation journal are complementary.
 
 ```python
-read_session(action="search_runs")
-read_session(action="search_runs", run_status="partial", history_limit=20)
-read_session(action="search_run", run_id="...")
-read_session(action="replay_search", run_id="...")
+read_session(request={"action":"search_runs"})
+read_session(request={"action":"search_runs","status":"partial","limit":20})
+read_session(request={"action":"search_run","run_id":"..."})
+read_session(request={"action":"replay_search","run_id":"..."})
 ```
 
 `replay_search` is intentionally read-only. It returns exact, credential-free
@@ -274,7 +292,7 @@ institutional access terms.
 
 If a source fails but the search can continue, `unified_search` may return
 `source_errors` in JSON or `Source warnings` in markdown. Semantic Scholar HTTP
-429 warnings usually mean the workflow should set `S2_API_KEY` /
+429 warnings usually mean the workflow should set
 `SEMANTIC_SCHOLAR_API_KEY`, retry later, or exclude the source.
 
 ## Local Wiki Note Export
@@ -395,7 +413,8 @@ save_literature_notes(
 Available placeholders include `{title}`, `{pmid}`, `{doi}`, `{pmc_id}`, `{journal}`, `{journal_abbrev}`, `{year}`, `{volume}`, `{issue}`, `{pages}`, `{authors}`, `{abstract}`, `{citation_key}`, `{reference_id}`, `{note_format}`, `{created}`, `{pubmed_url}`, `{doi_url}`, `{citation}`, `{keywords}`, `{mesh_terms}`, and `{csl_json}`.
 
 For an authenticated service, choose one of the built-in note formats instead;
-reading an arbitrary template from the server filesystem is rejected.
+reading an arbitrary template from the server filesystem is rejected. The
+response replaces every host path with a tenant-relative logical locator.
 
 ## Pipeline And Packaged Agent References
 

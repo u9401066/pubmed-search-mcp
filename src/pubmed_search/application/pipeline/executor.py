@@ -12,21 +12,30 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import re
 from collections import Counter, defaultdict
 from collections.abc import Callable, Coroutine, Mapping
-from difflib import get_close_matches
-from functools import lru_cache
-from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Literal
+from contextvars import ContextVar
+from typing import TYPE_CHECKING, Any, Literal, cast
 
-from pubmed_search.application.search.source_models import SourceSearchPage
-from pubmed_search.domain.entities.article import (
-    CitationMetrics,
-    OpenAccessLink,
-    OpenAccessStatus,
-    SourceMetadata,
+from pubmed_search.application.pipeline.action_contracts import (
+    PIPELINE_SEARCH_SOURCES,
+    allowed_pipeline_action_param_keys,
+    canonical_article_type_values,
+    validate_pipeline_action_contracts,
+    validate_pipeline_details_pmids,
+    validate_pipeline_discovery_pmid,
 )
+from pubmed_search.application.pipeline.budgets import (
+    PipelineBudgetExceededError,
+    PipelineExecutionPolicy,
+    PipelineRunBudget,
+    action_limit,
+    validate_pipeline_budgets,
+)
+from pubmed_search.application.search.source_models import SourceSearchPage
+from pubmed_search.domain.entities.article import CitationMetrics
 from pubmed_search.domain.entities.pipeline import (
     MAX_PIPELINE_STEPS,
     VALID_ACTIONS,
@@ -44,41 +53,29 @@ from pubmed_search.domain.services.article_mapper import (
     article_from_web_of_science,
 )
 from pubmed_search.shared.article_identity import canonical_article_key
-from pubmed_search.shared.source_contracts import normalize_source_adapter_error
+from pubmed_search.shared.source_contracts import (
+    SourceAdapterResult,
+    normalize_source_adapter_error,
+    validate_source_adapter_mapping_result,
+    validate_source_adapter_result,
+)
 
 if TYPE_CHECKING:
     from pubmed_search.domain.entities.article import UnifiedArticle
 
 # Dependency-injection contracts for alternate-source search.
 #
-# ``AlternateSearchPageFn`` is the preferred contract: items are provider DTOs
-# and are mapped exactly once below. ``LegacyAlternateSearchFn`` remains for
-# callers that already inject the historical PubMed-like normalized list. The
-# two contracts use separate constructor arguments so the executor never has
-# to guess an item's contract from dictionary keys.
-AlternateSearchPageFn = Callable[
+# ``AlternateSearchAdapterFn`` is the sole contract: items are provider DTOs and
+# are mapped exactly once below.
+AlternateSearchAdapterFn = Callable[
     ...,
-    Coroutine[Any, Any, SourceSearchPage[dict[str, Any]]],
+    Coroutine[Any, Any, SourceAdapterResult[dict[str, Any]]],
 ]
-LegacyAlternateSearchFn = Callable[..., Coroutine[Any, Any, list[dict[str, Any]]]]
-AlternateSearchFn = LegacyAlternateSearchFn
-SourceKeyResolver = Callable[[str], str | None]
 
 logger = logging.getLogger(__name__)
 _VARIABLE_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_.-]*)\}")
 _FULL_VARIABLE_PATTERN = re.compile(r"^\$\{([A-Za-z_][A-Za-z0-9_.-]*)\}$")
-_PIPELINE_ALTERNATE_SOURCES = frozenset(
-    {
-        "semantic_scholar",
-        "openalex",
-        "europe_pmc",
-        "core",
-        "scopus",
-        "web_of_science",
-    }
-)
-_PIPELINE_SEARCH_SOURCES = frozenset({"pubmed", *_PIPELINE_ALTERNATE_SOURCES})
-PIPELINE_SEARCH_MAX_LIMIT = 100
+_PIPELINE_ALTERNATE_SOURCES = frozenset(PIPELINE_SEARCH_SOURCES - {"pubmed"})
 PipelineOutcomeStatus = Literal["completed", "partial", "failed"]
 
 
@@ -127,27 +124,29 @@ def pipeline_outcome_message(status: PipelineOutcomeStatus) -> str | None:
     return None
 
 
-_ARTICLE_TYPE_FUZZY_CUTOFF = 0.82
-_ARTICLE_TYPE_ALIASES: dict[str, str] = {
-    "rct": "randomized-controlled-trial",
-    "randomizedtrial": "randomized-controlled-trial",
-    "randomisedtrial": "randomized-controlled-trial",
-    "randomizedcontrolledtrial": "randomized-controlled-trial",
-    "randomisedcontrolledtrial": "randomized-controlled-trial",
-    "controlledclinicaltrial": "clinical-trial",
-    "clinicaltrial": "clinical-trial",
-    "trial": "clinical-trial",
-    "metaanalysis": "meta-analysis",
-    "systematicreview": "systematic-review",
-    "sysreview": "systematic-review",
-    "journalarticle": "journal-article",
-    "originalarticle": "journal-article",
-    "casereport": "case-report",
-    "casereports": "case-report",
-    "conferencepaper": "conference-paper",
-    "proceedings": "conference-paper",
-    "bookchapter": "book-chapter",
-}
+def _query_safe_action_failure(
+    action: str,
+    error: Exception,
+    *,
+    unexpected_message: str,
+) -> tuple[str, dict[str, Any]]:
+    """Normalize an action failure without persisting raw exception text."""
+    normalized = normalize_source_adapter_error("pipeline", action, error)
+    messages = {
+        "http": "Pipeline action failed with an upstream HTTP error",
+        "timeout": "Pipeline action timed out",
+        "transport": "Pipeline action could not reach its upstream service",
+        "retryable": "Pipeline action failed after a retryable upstream error",
+        "unexpected": unexpected_message,
+    }
+    metadata: dict[str, Any] = {
+        "error_type": type(error).__name__,
+        "error_kind": normalized.kind,
+        "retryable": normalized.retryable,
+    }
+    if normalized.status_code is not None:
+        metadata["status_code"] = normalized.status_code
+    return messages[normalized.kind], metadata
 
 
 class PipelineExecutor:
@@ -156,23 +155,20 @@ class PipelineExecutor:
     def __init__(
         self,
         searcher: Any = None,
-        alternate_search_fn: AlternateSearchFn | None = None,
-        source_key_resolver: SourceKeyResolver | None = None,
-        alternate_search_page_fn: AlternateSearchPageFn | None = None,
+        alternate_search_adapter: AlternateSearchAdapterFn | None = None,
+        execution_policy: PipelineExecutionPolicy | None = None,
+        semantic_enhancer_factory: Callable[[], Any] | None = None,
     ) -> None:
-        """Create an executor with explicit raw-page and legacy-list seams.
-
-        ``alternate_search_page_fn`` must return provider DTOs in a
-        :class:`SourceSearchPage`; this is the production contract.
-        ``alternate_search_fn`` is retained for backward compatibility and
-        must return the historical normalized, PubMed-like list contract.
-        When both are supplied, the raw-page contract takes precedence.
-        """
+        """Create an executor with one validated provider-adapter seam."""
 
         self._searcher = searcher
-        self._alternate_search_fn = alternate_search_fn
-        self._alternate_search_page_fn = alternate_search_page_fn
-        self._source_key_resolver = source_key_resolver
+        self._alternate_search_adapter = alternate_search_adapter
+        self._execution_policy = execution_policy or PipelineExecutionPolicy()
+        self._semantic_enhancer_factory = semantic_enhancer_factory
+        self._run_budget: ContextVar[PipelineRunBudget | None] = ContextVar(
+            "pipeline_run_budget",
+            default=None,
+        )
 
     # =====================================================================
     # Public API
@@ -192,50 +188,153 @@ class PipelineExecutor:
         steps_to_run = self._steps_through_stop_at(config.steps, stop_at)
         batches = self._topological_batches(steps_to_run)
 
+        budget = PipelineRunBudget(self._execution_policy)
+        budget_token = self._run_budget.set(budget)
         results: dict[str, StepResult] = {}
-        for batch in batches:
-            coros = []
-            for step in batch:
-                step_inputs = {sid: results[sid] for sid in step.inputs if sid in results}
-                coros.append(self._execute_step(step, step_inputs))
-
-            batch_outcomes = await asyncio.gather(*coros, return_exceptions=True)
-            for step, outcome in zip(batch, batch_outcomes):
-                if isinstance(outcome, BaseException):
-                    if not isinstance(outcome, Exception):
-                        raise outcome
-                    safe_error = normalize_source_adapter_error("pipeline", step.action, outcome)
-                    safe_message = (
-                        f"Unexpected upstream error ({type(outcome).__name__})"
-                        if safe_error.kind == "unexpected"
-                        else safe_error.message
+        try:
+            for batch_index, batch in enumerate(batches):
+                remaining = budget.remaining_seconds()
+                if remaining <= 0:
+                    budget.mark_deadline_exhausted()
+                    self._record_unexecuted_budget_steps(
+                        results,
+                        [step for pending_batch in batches[batch_index:] for step in pending_batch],
+                        budget,
+                        reason="deadline_exhausted",
                     )
-                    results[step.id] = StepResult(
-                        step_id=step.id,
-                        action=step.action,
-                        error=safe_message,
+                    break
+
+                tasks: list[asyncio.Task[StepResult]] = []
+                for step in batch:
+                    step_inputs = {sid: results[sid] for sid in step.inputs if sid in results}
+                    tasks.append(asyncio.create_task(self._execute_step(step, step_inputs)))
+
+                _done, pending = await asyncio.wait(tasks, timeout=remaining)
+                for step, task in zip(batch, tasks):
+                    if task in pending:
+                        continue
+                    try:
+                        outcome: StepResult | BaseException = task.result()
+                    except BaseException as exc:  # task results preserve cancellation semantics below
+                        outcome = exc
+                    self._record_step_outcome(results, step, outcome, budget)
+
+                if pending:
+                    budget.mark_deadline_exhausted()
+                    for task in pending:
+                        task.cancel()
+                    await asyncio.gather(*pending, return_exceptions=True)
+                    pending_steps = [step for step, task in zip(batch, tasks) if task in pending]
+                    future_steps = [step for pending_batch in batches[batch_index + 1 :] for step in pending_batch]
+                    self._record_unexecuted_budget_steps(
+                        results,
+                        [*pending_steps, *future_steps],
+                        budget,
+                        reason="deadline_exhausted",
                     )
-                    if step.on_error == "abort":
-                        msg = f"Pipeline aborted at step '{step.id}' ({type(outcome).__name__})"
-                        raise RuntimeError(msg)
-                else:
-                    results[step.id] = outcome
+                    break
 
-        # Collect final articles from the last step
-        final_step_id = stop_at if stop_at else steps_to_run[-1].id
-        if final_step_id not in results and results:
-            final_step_id = next(reversed(results))
-        final_step = results.get(final_step_id)
-        final_articles: list[UnifiedArticle] = final_step.articles if final_step and final_step.ok else []
+            # Attach the aggregate budget to the terminal step even when it
+            # completed normally, so callers can audit actual resource use.
+            terminal_step = next((step for step in reversed(steps_to_run) if step.id in results), None)
+            if terminal_step is not None:
+                results[terminal_step.id].metadata["run_budget"] = budget.snapshot()
 
-        # Apply ranking & limit from output config
-        if final_articles:
-            final_articles = self._apply_ranking(final_articles, config)
-        limit = config.output.limit
-        if limit and len(final_articles) > limit:
-            final_articles = final_articles[:limit]
+            # Collect final articles from the last step. If a run budget ended
+            # the DAG, retain the latest completed evidence as a typed partial.
+            final_step_id = stop_at if stop_at else steps_to_run[-1].id
+            if final_step_id not in results and results:
+                final_step_id = next(reversed(results))
+            final_step = results.get(final_step_id)
+            final_articles: list[UnifiedArticle] = final_step.articles if final_step and final_step.ok else []
+            budget_exhausted = budget.snapshot()["exhausted_reason"] is not None
+            if budget_exhausted and not final_articles:
+                for step in reversed(steps_to_run):
+                    candidate = results.get(step.id)
+                    if candidate and candidate.ok and candidate.articles:
+                        final_articles = candidate.articles
+                        break
 
-        return final_articles, results
+            # Apply ranking & limit from output config
+            if final_articles:
+                final_articles = self._apply_ranking(final_articles, config)
+            limit = config.output.limit
+            if limit and len(final_articles) > limit:
+                final_articles = final_articles[:limit]
+
+            return final_articles, results
+        finally:
+            self._run_budget.reset(budget_token)
+
+    def _record_step_outcome(
+        self,
+        results: dict[str, StepResult],
+        step: PipelineStep,
+        outcome: StepResult | BaseException,
+        budget: PipelineRunBudget,
+    ) -> None:
+        """Record one task outcome using query-safe typed budget failures."""
+        if not isinstance(outcome, BaseException):
+            results[step.id] = outcome
+            return
+        if not isinstance(outcome, Exception):
+            raise outcome
+        if isinstance(outcome, PipelineBudgetExceededError):
+            results[step.id] = self._budget_failure_result(step, budget, outcome.reason)
+        else:
+            safe_error = normalize_source_adapter_error("pipeline", step.action, outcome)
+            safe_message = (
+                f"Unexpected upstream error ({type(outcome).__name__})"
+                if safe_error.kind == "unexpected"
+                else safe_error.message
+            )
+            results[step.id] = StepResult(
+                step_id=step.id,
+                action=step.action,
+                error=safe_message,
+            )
+        if step.on_error == "abort":
+            msg = f"Pipeline aborted at step '{step.id}' ({type(outcome).__name__})"
+            raise RuntimeError(msg)
+
+    @classmethod
+    def _record_unexecuted_budget_steps(
+        cls,
+        results: dict[str, StepResult],
+        steps: list[PipelineStep],
+        budget: PipelineRunBudget,
+        *,
+        reason: str,
+    ) -> None:
+        for step in steps:
+            results[step.id] = cls._budget_failure_result(step, budget, reason)
+
+    @staticmethod
+    def _budget_failure_result(
+        step: PipelineStep,
+        budget: PipelineRunBudget,
+        reason: str,
+    ) -> StepResult:
+        message = (
+            "Pipeline run deadline exhausted"
+            if reason == "deadline_exhausted"
+            else "Pipeline external-call quota exhausted"
+        )
+        return StepResult(
+            step_id=step.id,
+            action=step.action,
+            error=message,
+            metadata={
+                "terminal_reason": reason,
+                "retryable": True,
+                "run_budget": budget.snapshot(),
+            },
+        )
+
+    async def _reserve_external_call(self) -> None:
+        budget = self._run_budget.get()
+        if budget is not None:
+            await budget.reserve_external_call()
 
     def dry_run(
         self,
@@ -265,13 +364,19 @@ class PipelineExecutor:
 
     def prepare_config(self, config: PipelineConfig) -> PipelineConfig:
         """Apply globals and variable substitution to step parameters."""
+        validate_pipeline_action_contracts(config, allow_variable_references=True)
         variables = dict(config.variables or {})
         resolved_globals = self._resolve_value(dict(config.globals or {}), variables)
         variable_scope = {**variables, **resolved_globals}
 
         prepared_steps: list[PipelineStep] = []
         for step in config.steps:
-            merged_params = {**resolved_globals, **dict(step.params or {})}
+            action_global_params = {
+                key: value
+                for key, value in resolved_globals.items()
+                if key in allowed_pipeline_action_param_keys(step.action)
+            }
+            merged_params = {**action_global_params, **dict(step.params or {})}
             resolved_params = self._resolve_value(merged_params, variable_scope)
             prepared_steps.append(
                 PipelineStep(
@@ -304,13 +409,20 @@ class PipelineExecutor:
                 key = match.group(1)
                 if key not in variables:
                     return match.group(0)
-                return str(variables[key])
+                replacement = variables[key]
+                if not isinstance(replacement, str):
+                    msg = f"Embedded pipeline variable '{key}' must resolve to a string"
+                    raise TypeError(msg)
+                return replacement
 
             return _VARIABLE_PATTERN.sub(_replace, value)
         if isinstance(value, list):
             return [cls._resolve_value(item, variables) for item in value]
         if isinstance(value, dict):
-            return {str(key): cls._resolve_value(item, variables) for key, item in value.items()}
+            if any(not isinstance(key, str) for key in value):
+                msg = "Pipeline parameter keys must be strings"
+                raise TypeError(msg)
+            return {key: cls._resolve_value(item, variables) for key, item in value.items()}
         return value
 
     # =====================================================================
@@ -324,6 +436,8 @@ class PipelineExecutor:
         if len(config.steps) > MAX_PIPELINE_STEPS:
             msg = f"Pipeline exceeds maximum of {MAX_PIPELINE_STEPS} steps"
             raise ValueError(msg)
+        validate_pipeline_budgets(config)
+        validate_pipeline_action_contracts(config)
 
         seen_ids: set[str] = set()
         for step in config.steps:
@@ -448,47 +562,36 @@ class PipelineExecutor:
                 error="No query provided or derivable from inputs",
             )
 
-        sources_value = step.params.get("sources", "pubmed")
-        if not isinstance(sources_value, str):
+        sources_value = step.params.get("sources", ["pubmed"])
+        if not isinstance(sources_value, list) or any(not isinstance(source, str) for source in sources_value):
             return StepResult(
                 step_id=step.id,
                 action="search",
-                error="Pipeline search sources must be a comma-separated string",
+                error="Pipeline search sources must be an array of canonical strings",
                 metadata={"source_api_counts": {}, "source_errors": []},
             )
-        source_list = list(dict.fromkeys(s.strip().lower() for s in sources_value.split(",") if s.strip()))
+        source_list = sources_value
 
-        raw_limit = step.params.get("limit", 50)
-        if isinstance(raw_limit, bool) or (isinstance(raw_limit, float) and not raw_limit.is_integer()):
-            return StepResult(
-                step_id=step.id,
-                action="search",
-                error=f"Pipeline search limit must be an integer from 1 to {PIPELINE_SEARCH_MAX_LIMIT}",
-                metadata={"source_api_counts": {}, "source_errors": []},
-            )
         try:
-            limit = int(raw_limit)
-        except (TypeError, ValueError):
-            return StepResult(
-                step_id=step.id,
-                action="search",
-                error=f"Pipeline search limit must be an integer from 1 to {PIPELINE_SEARCH_MAX_LIMIT}",
-                metadata={"source_api_counts": {}, "source_errors": []},
+            limit = action_limit("search", step.params.get("limit"))
+        except ValueError as exc:
+            message, error_metadata = _query_safe_action_failure(
+                "search",
+                exc,
+                unexpected_message="Invalid pipeline search limit",
             )
-        if not 1 <= limit <= PIPELINE_SEARCH_MAX_LIMIT:
             return StepResult(
                 step_id=step.id,
                 action="search",
-                error=f"Pipeline search limit must be between 1 and {PIPELINE_SEARCH_MAX_LIMIT}",
-                metadata={"source_api_counts": {}, "source_errors": []},
+                error=message,
+                metadata={
+                    "source_api_counts": {},
+                    "source_errors": [],
+                    **error_metadata,
+                },
             )
 
-        resolved_sources = [self._resolve_source_key(source) for source in source_list]
-        unsupported_sources = [
-            source
-            for source, resolved in zip(source_list, resolved_sources)
-            if resolved not in _PIPELINE_SEARCH_SOURCES
-        ]
+        unsupported_sources = [source for source in source_list if source not in PIPELINE_SEARCH_SOURCES]
         if unsupported_sources:
             return StepResult(
                 step_id=step.id,
@@ -502,14 +605,10 @@ class PipelineExecutor:
             )
 
         unavailable_sources = [
-            resolved
-            for resolved in resolved_sources
-            if (resolved == "pubmed" and self._searcher is None)
-            or (
-                resolved in _PIPELINE_ALTERNATE_SOURCES
-                and self._alternate_search_page_fn is None
-                and self._alternate_search_fn is None
-            )
+            source
+            for source in source_list
+            if (source == "pubmed" and self._searcher is None)
+            or (source in _PIPELINE_ALTERNATE_SOURCES and self._alternate_search_adapter is None)
         ]
         if unavailable_sources:
             return StepResult(
@@ -530,21 +629,21 @@ class PipelineExecutor:
         coros: list[Any] = []
         source_order: list[str] = []
 
-        for resolved_source in dict.fromkeys(resolved_sources):
-            if resolved_source == "pubmed" and self._searcher:
+        for source in source_list:
+            if source == "pubmed" and self._searcher:
                 coros.append(self._search_pubmed(query, limit, min_year, max_year, step.params))
                 source_order.append("pubmed")
                 continue
 
-            if resolved_source in _PIPELINE_ALTERNATE_SOURCES and (
-                self._alternate_search_page_fn or self._alternate_search_fn
-            ):
-                coros.append(self._search_alternate(resolved_source, query, limit, min_year, max_year))
-                source_order.append(resolved_source)
+            if source in _PIPELINE_ALTERNATE_SOURCES and self._alternate_search_adapter:
+                coros.append(self._search_alternate(source, query, limit, min_year, max_year))
+                source_order.append(source)
 
         # Track per-source API return counts
         source_api_counts: dict[str, int] = {}
         source_errors: list[dict[str, Any]] = []
+        source_results: dict[str, dict[str, Any]] = {}
+        failed_sources: set[str] = set()
         if not coros:
             return StepResult(
                 step_id=step.id,
@@ -558,6 +657,22 @@ class PipelineExecutor:
             if isinstance(outcome, BaseException):
                 if not isinstance(outcome, Exception):
                     raise outcome
+                if isinstance(outcome, PipelineBudgetExceededError):
+                    source_api_counts[src] = 0
+                    failed_sources.add(src)
+                    source_errors.append(
+                        {
+                            "source": src,
+                            "operation": "pipeline_search",
+                            "message": str(outcome),
+                            "kind": "budget",
+                            "retryable": True,
+                            "status_code": None,
+                            "status": "budget_exhausted",
+                            "terminal_reason": outcome.reason,
+                        }
+                    )
+                    continue
                 normalized_error = normalize_source_adapter_error(src, "pipeline_search", outcome)
                 safe_message = (
                     f"Unexpected upstream error ({type(outcome).__name__})"
@@ -566,6 +681,7 @@ class PipelineExecutor:
                 )
                 logger.warning("Pipeline source %s failed (%s)", src, type(outcome).__name__)
                 source_api_counts[src] = 0
+                failed_sources.add(src)
                 source_errors.append(
                     {
                         "source": src,
@@ -577,9 +693,37 @@ class PipelineExecutor:
                         "status": "rate_limited" if normalized_error.status_code == 429 else "error",
                     }
                 )
-            else:
-                all_articles.extend(outcome)
-                source_api_counts[src] = len(outcome)
+                continue
+
+            adapter_result = validate_source_adapter_result(
+                outcome,
+                expected_source=src,
+                expected_operation="search",
+            )
+            all_articles.extend(adapter_result.items)
+            source_api_counts[src] = len(adapter_result.items)
+            source_results[src] = {
+                "status": adapter_result.status,
+                "total_count": adapter_result.total_count,
+                "next_token": adapter_result.next_token,
+                "cursor": adapter_result.cursor,
+                "cost": adapter_result.cost,
+                "provenance": adapter_result.provenance,
+            }
+            if adapter_result.status == "error":
+                failed_sources.add(src)
+            for adapter_error in adapter_result.errors:
+                source_errors.append(
+                    {
+                        "source": src,
+                        "operation": adapter_error.operation,
+                        "message": f"{src} search failed safely ({adapter_error.kind})",
+                        "kind": adapter_error.kind,
+                        "retryable": adapter_error.retryable,
+                        "status_code": adapter_error.status_code,
+                        "status": "rate_limited" if adapter_error.status_code == 429 else "error",
+                    }
+                )
 
         # Deduplicate when multiple sources
         if len(source_list) > 1 and len(all_articles) > 1:
@@ -591,7 +735,7 @@ class PipelineExecutor:
             all_articles, _ = aggregator.aggregate([all_articles])
 
         pmids = [a.pmid for a in all_articles if a.pmid]
-        all_sources_failed = bool(source_order) and len(source_errors) == len(source_order)
+        all_sources_failed = bool(source_order) and len(failed_sources) == len(source_order)
         return StepResult(
             step_id=step.id,
             action="search",
@@ -601,71 +745,117 @@ class PipelineExecutor:
                 "query": query,
                 "source_api_counts": source_api_counts,
                 "source_errors": source_errors,
+                "source_results": source_results,
             },
             error="All selected search sources failed" if all_sources_failed else None,
         )
-
-    def _resolve_source_key(self, source: str) -> str:
-        """Normalize a requested source key without depending on infrastructure."""
-        source_key = source.strip().lower()
-        if self._source_key_resolver is None:
-            return source_key
-        return self._source_key_resolver(source_key) or source_key
 
     async def _search_pubmed(
         self,
         query: str,
         limit: int,
-        min_year: Any,
-        max_year: Any,
+        min_year: int | None,
+        max_year: int | None,
         params: dict[str, Any],
-    ) -> list[UnifiedArticle]:
+    ) -> SourceAdapterResult[UnifiedArticle]:
         kwargs: dict[str, Any] = {}
-        if min_year:
-            kwargs["min_year"] = int(min_year)
-        if max_year:
-            kwargs["max_year"] = int(max_year)
+        if min_year is not None:
+            kwargs["min_year"] = min_year
+        if max_year is not None:
+            kwargs["max_year"] = max_year
         for key in ("age_group", "sex", "species", "language", "clinical_query"):
             if key in params:
                 kwargs[key] = params[key]
 
         assert self._searcher is not None  # noqa: S101
-        raw = await self._searcher.search(query=query, limit=limit, **kwargs)
-        return [article_from_pubmed(r) for r in raw if r and "error" not in r]
+        await self._reserve_external_call()
+        page = await self._searcher.search_page(query=query, limit=limit, **kwargs)
+        if not isinstance(page, SourceSearchPage) or page.source != "pubmed":
+            raise TypeError("PubMed search must return a pubmed SourceSearchPage")
+        if any(not isinstance(item, dict) or not str(item.get("pmid") or "").strip() for item in page.items):
+            raise TypeError("PubMed search page contains an invalid article")
+        if page.total is not None and (
+            not isinstance(page.total, int) or isinstance(page.total, bool) or page.total < len(page.items)
+        ):
+            raise TypeError("PubMed search page contains an invalid total")
+        articles = [article_from_pubmed(record) for record in page.items]
+        physical_query = page.metadata.get("physical_query") or page.query
+        return SourceAdapterResult(
+            source="pubmed",
+            operation="search",
+            items=articles,
+            total_count=page.total if page.total is not None else len(articles),
+            status="ok" if articles else "empty",
+            metadata={
+                "total_available": page.total,
+                "provider_mode": page.mode,
+                "logical_query": query,
+                "physical_query": physical_query,
+                "query_executed": True,
+                "provider_metadata": dict(page.metadata),
+                "warnings": list(page.warnings),
+            },
+            next_token=page.next_token,
+            cursor=page.cursor,
+            cost=page.cost,
+            provenance={
+                "logical_query": query,
+                "physical_query": physical_query,
+                "provider_mode": page.mode,
+                "query_executed": True,
+                "provider_metadata": dict(page.metadata),
+            },
+        )
 
     async def _search_alternate(
         self,
         source: str,
         query: str,
         limit: int,
-        min_year: Any,
-        max_year: Any,
-    ) -> list[UnifiedArticle]:
+        min_year: int | None,
+        max_year: int | None,
+    ) -> SourceAdapterResult[UnifiedArticle]:
         kwargs = {
             "query": query,
             "source": source,
             "limit": limit,
-            "min_year": int(min_year) if min_year else None,
-            "max_year": int(max_year) if max_year else None,
+            "min_year": min_year,
+            "max_year": max_year,
         }
-        if self._alternate_search_page_fn is not None:
-            page = await self._alternate_search_page_fn(**kwargs)
-            if not isinstance(page, SourceSearchPage):
-                msg = "alternate_search_page_fn must return SourceSearchPage"
-                raise TypeError(msg)
-            return self._map_provider_items(source, page.items)
-
-        if self._alternate_search_fn is None:
-            return []
-        normalized = await self._alternate_search_fn(**kwargs)
-        if not isinstance(normalized, list):
-            msg = "alternate_search_fn must return a legacy normalized list"
-            raise TypeError(msg)
-        return self._map_legacy_normalized_items(source, normalized)
+        if self._alternate_search_adapter is None:
+            return SourceAdapterResult.empty(source=source, operation="search")
+        await self._reserve_external_call()
+        raw_result = validate_source_adapter_mapping_result(
+            await self._alternate_search_adapter(**kwargs),
+            expected_source=source,
+            expected_operation="search",
+        )
+        mapped_items = self._map_provider_items(source, raw_result.items)
+        mapped = SourceAdapterResult(
+            source=raw_result.source,
+            operation=raw_result.operation,
+            items=mapped_items,
+            total_count=raw_result.total_count,
+            status=raw_result.status,
+            errors=list(raw_result.errors),
+            metadata=dict(raw_result.metadata),
+            next_token=raw_result.next_token,
+            cursor=raw_result.cursor,
+            cost=raw_result.cost,
+            provenance=dict(raw_result.provenance),
+        )
+        return cast(
+            "SourceAdapterResult[UnifiedArticle]",
+            validate_source_adapter_result(
+                mapped,
+                expected_source=source,
+                expected_operation="search",
+            ),
+        )
 
     @staticmethod
     def _map_provider_items(source: str, raw: list[dict[str, Any]]) -> list[UnifiedArticle]:
-        """Map provider DTOs from the preferred page seam exactly once."""
+        """Map provider DTOs from the validated adapter seam exactly once."""
 
         if source == "openalex":
             return [article_from_openalex(r) for r in raw]
@@ -683,72 +873,6 @@ class PipelineExecutor:
 
         return [article_from_pubmed(r) for r in raw]
 
-    @staticmethod
-    def _map_legacy_normalized_items(
-        source: str,
-        normalized: list[dict[str, Any]],
-    ) -> list[UnifiedArticle]:
-        """Map the historical PubMed-like alternate-source list contract.
-
-        OpenAlex and Semantic Scholar clients historically normalized their
-        responses before returning a list. Sending those records through the
-        raw provider mappers loses authors and provider identifiers. Convert
-        that explicit legacy contract through the common mapper instead; no
-        record-shape inference is performed.
-        """
-
-        if source not in {"openalex", "semantic_scholar"}:
-            return PipelineExecutor._map_provider_items(source, normalized)
-
-        articles: list[UnifiedArticle] = []
-        for record in normalized:
-            common = dict(record)
-            if common.get("pmc_id") and not common.get("pmc"):
-                common["pmc"] = common["pmc_id"]
-            if common.get("journal_abbrev") and not common.get("source"):
-                common["source"] = common["journal_abbrev"]
-
-            article = article_from_pubmed(common)
-            article.primary_source = source
-            article.sources = [SourceMetadata(source=source, raw_data=record)]
-
-            if source == "openalex":
-                openalex_id = record.get("_openalex_id")
-                if isinstance(openalex_id, str):
-                    article.openalex_id = openalex_id.replace("https://openalex.org/", "") or None
-            else:
-                s2_id = record.get("_s2_id")
-                article.s2_id = s2_id if isinstance(s2_id, str) and s2_id else None
-
-            arxiv_id = record.get("arxiv_id")
-            article.arxiv_id = arxiv_id if isinstance(arxiv_id, str) and arxiv_id else None
-
-            citation_count = record.get("citation_count")
-            influential_count = record.get("influential_citations")
-            if citation_count is not None or influential_count is not None:
-                article.citation_metrics = CitationMetrics(
-                    citation_count=citation_count,
-                    influential_citation_count=influential_count,
-                )
-
-            if "is_open_access" in record:
-                article.is_open_access = bool(record["is_open_access"])
-            pdf_url = record.get("pdf_url")
-            if isinstance(pdf_url, str) and pdf_url:
-                article.oa_links = [OpenAccessLink(url=pdf_url, is_best=True)]
-            oa_status = record.get("oa_status")
-            if isinstance(oa_status, str):
-                article.oa_status = {
-                    "gold": OpenAccessStatus.GOLD,
-                    "green": OpenAccessStatus.GREEN,
-                    "hybrid": OpenAccessStatus.HYBRID,
-                    "bronze": OpenAccessStatus.BRONZE,
-                    "closed": OpenAccessStatus.CLOSED,
-                }.get(oa_status.lower(), article.oa_status)
-            articles.append(article)
-
-        return articles
-
     # =====================================================================
     # Actions — Intelligence (PICO, Expand)
     # =====================================================================
@@ -759,7 +883,9 @@ class PipelineExecutor:
         for key in ("P", "I", "C", "O"):
             val = step.params.get(key, "")
             if val:
-                elements[key] = str(val)
+                if not isinstance(val, str):
+                    raise TypeError(f"PICO {key} must be a string")
+                elements[key] = val
 
         if not elements:
             return StepResult(
@@ -777,7 +903,10 @@ class PipelineExecutor:
 
         query_elements: dict[str, str] = {}
         for key, value in elements.items():
-            query_elements[key] = str(step.params.get(f"{key}_query") or value)
+            query_value = step.params.get(f"{key}_query") or value
+            if not isinstance(query_value, str):
+                raise TypeError(f"PICO {key}_query must be a string")
+            query_elements[key] = query_value
 
         # High-precision: all elements ANDed
         combined_precision = " AND ".join(f"({v})" for v in query_elements.values())
@@ -821,11 +950,14 @@ class PipelineExecutor:
             return StepResult(step_id=step.id, action="expand", error="No 'topic' provided")
 
         try:
-            from pubmed_search.application.search.semantic_enhancer import (
-                get_semantic_enhancer,
-            )
-
-            enhancer = get_semantic_enhancer()
+            if self._semantic_enhancer_factory is None:
+                return StepResult(
+                    step_id=step.id,
+                    action="expand",
+                    error="Semantic enhancer adapter is not configured",
+                )
+            enhancer = self._semantic_enhancer_factory()
+            await self._reserve_external_call()
             enhanced = await enhancer.enhance(topic)
 
             strategies = [
@@ -868,6 +1000,8 @@ class PipelineExecutor:
                     "entities": entities,
                 },
             )
+        except PipelineBudgetExceededError:
+            raise
         except Exception as exc:
             logger.warning("Semantic enhancement failed, using original (%s)", type(exc).__name__)
             return StepResult(
@@ -893,11 +1027,11 @@ class PipelineExecutor:
 
     async def _action_details(self, step: PipelineStep, inputs: dict[str, StepResult]) -> StepResult:
         """Fetch article details by PMIDs."""
-        pmids: list[str] = list(step.params.get("pmids", []))
+        pmids = validate_pipeline_details_pmids(step.params.get("pmids", []))
         for inp in inputs.values():
             if inp.ok and inp.pmids:
                 pmids.extend(inp.pmids)
-        pmids = list(dict.fromkeys(pmids))  # dedup, preserve order
+        pmids = validate_pipeline_details_pmids(pmids)
 
         if not pmids or not self._searcher:
             return StepResult(
@@ -906,8 +1040,9 @@ class PipelineExecutor:
                 error="No PMIDs or searcher unavailable",
             )
 
+        await self._reserve_external_call()
         raw = await self._searcher.fetch_details(pmids)
-        articles = [article_from_pubmed(r) for r in raw if r and "error" not in r]
+        articles = [article_from_pubmed(row) for row in self._require_pubmed_rows(raw, operation="fetch_details")]
         return StepResult(
             step_id=step.id,
             action="details",
@@ -916,13 +1051,25 @@ class PipelineExecutor:
         )
 
     async def _action_related(self, step: PipelineStep, inputs: dict[str, StepResult]) -> StepResult:
-        pmid = str(step.params.get("pmid", ""))
-        limit = int(step.params.get("limit", 20))
+        raw_pmid = step.params.get("pmid")
+        pmid = validate_pipeline_discovery_pmid(raw_pmid, action="related") if raw_pmid is not None else ""
+        try:
+            limit = action_limit("related", step.params.get("limit"))
+        except ValueError as exc:
+            message, metadata = _query_safe_action_failure(
+                "related",
+                exc,
+                unexpected_message="Invalid pipeline related-article limit",
+            )
+            return StepResult(step_id=step.id, action="related", error=message, metadata=metadata)
         if not pmid or not self._searcher:
             return StepResult(step_id=step.id, action="related", error="No PMID or searcher")
 
+        await self._reserve_external_call()
         raw = await self._searcher.get_related_articles(pmid, limit)
-        articles = [article_from_pubmed(r) for r in raw if r and "error" not in r]
+        articles = [
+            article_from_pubmed(row) for row in self._require_pubmed_rows(raw, operation="get_related_articles")
+        ]
         return StepResult(
             step_id=step.id,
             action="related",
@@ -931,13 +1078,23 @@ class PipelineExecutor:
         )
 
     async def _action_citing(self, step: PipelineStep, inputs: dict[str, StepResult]) -> StepResult:
-        pmid = str(step.params.get("pmid", ""))
-        limit = int(step.params.get("limit", 20))
+        raw_pmid = step.params.get("pmid")
+        pmid = validate_pipeline_discovery_pmid(raw_pmid, action="citing") if raw_pmid is not None else ""
+        try:
+            limit = action_limit("citing", step.params.get("limit"))
+        except ValueError as exc:
+            message, metadata = _query_safe_action_failure(
+                "citing",
+                exc,
+                unexpected_message="Invalid pipeline citing-article limit",
+            )
+            return StepResult(step_id=step.id, action="citing", error=message, metadata=metadata)
         if not pmid or not self._searcher:
             return StepResult(step_id=step.id, action="citing", error="No PMID or searcher")
 
+        await self._reserve_external_call()
         raw = await self._searcher.get_citing_articles(pmid, limit)
-        articles = [article_from_pubmed(r) for r in raw if r and "error" not in r]
+        articles = [article_from_pubmed(row) for row in self._require_pubmed_rows(raw, operation="get_citing_articles")]
         return StepResult(
             step_id=step.id,
             action="citing",
@@ -946,19 +1103,40 @@ class PipelineExecutor:
         )
 
     async def _action_references(self, step: PipelineStep, inputs: dict[str, StepResult]) -> StepResult:
-        pmid = str(step.params.get("pmid", ""))
-        limit = int(step.params.get("limit", 50))
+        raw_pmid = step.params.get("pmid")
+        pmid = validate_pipeline_discovery_pmid(raw_pmid, action="references") if raw_pmid is not None else ""
+        try:
+            limit = action_limit("references", step.params.get("limit"))
+        except ValueError as exc:
+            message, metadata = _query_safe_action_failure(
+                "references",
+                exc,
+                unexpected_message="Invalid pipeline reference limit",
+            )
+            return StepResult(step_id=step.id, action="references", error=message, metadata=metadata)
         if not pmid or not self._searcher:
             return StepResult(step_id=step.id, action="references", error="No PMID or searcher")
 
+        await self._reserve_external_call()
         raw = await self._searcher.get_article_references(pmid, limit)
-        articles = [article_from_pubmed(r) for r in raw if r and "error" not in r]
+        articles = [
+            article_from_pubmed(row) for row in self._require_pubmed_rows(raw, operation="get_article_references")
+        ]
         return StepResult(
             step_id=step.id,
             action="references",
             articles=articles,
             pmids=[a.pmid for a in articles if a.pmid],
         )
+
+    @staticmethod
+    def _require_pubmed_rows(value: object, *, operation: str) -> list[dict[str, Any]]:
+        """Validate PubMed client rows without legacy error-sentinel filtering."""
+        if not isinstance(value, list):
+            raise TypeError(f"{operation} must return a list of article dictionaries")
+        if any(not isinstance(row, dict) or not row for row in value):
+            raise TypeError(f"{operation} returned an invalid article row")
+        return cast("list[dict[str, Any]]", value)
 
     # =====================================================================
     # Actions — Enrichment (metrics)
@@ -975,22 +1153,82 @@ class PipelineExecutor:
         if not pmids or not self._searcher:
             return StepResult(step_id=step.id, action="metrics", articles=articles, pmids=pmids)
 
+        metadata: dict[str, Any] = {"metrics_requested": len(pmids), "metrics_enriched": 0}
         try:
+            await self._reserve_external_call()
             metrics_data = await self._searcher.get_citation_metrics(pmids)
-            if metrics_data and isinstance(metrics_data, list):
-                pmid_map: dict[str, dict[str, Any]] = {
-                    str(md.get("pmid", "")): md for md in metrics_data if isinstance(md, dict)
-                }
-                for article in articles:
-                    if article.pmid and article.pmid in pmid_map:
-                        md = pmid_map[article.pmid]
-                        # Store metrics in article metadata (best-effort)
-                        if not hasattr(article, "_pipeline_metrics"):
-                            object.__setattr__(article, "_pipeline_metrics", md)
+            pmid_map = self._require_icite_mapping(metrics_data)
+
+            for article in articles:
+                if not article.pmid or article.pmid not in pmid_map:
+                    continue
+                self._apply_icite_metrics(article, pmid_map[article.pmid])
+                metadata["metrics_enriched"] += 1
+        except PipelineBudgetExceededError:
+            raise
         except Exception as exc:
             logger.warning("iCite enrichment failed (%s)", type(exc).__name__)
+            metadata["warning"] = f"iCite enrichment failed safely ({type(exc).__name__})"
 
-        return StepResult(step_id=step.id, action="metrics", articles=articles, pmids=pmids)
+        return StepResult(
+            step_id=step.id,
+            action="metrics",
+            articles=articles,
+            pmids=pmids,
+            metadata=metadata,
+        )
+
+    @staticmethod
+    def _require_icite_mapping(value: object) -> dict[str, dict[str, Any]]:
+        """Validate the canonical PMID-keyed iCite response contract."""
+        if not isinstance(value, dict):
+            raise TypeError("get_citation_metrics must return a PMID-keyed mapping")
+        normalized: dict[str, dict[str, Any]] = {}
+        for raw_pmid, raw_metrics in value.items():
+            if not isinstance(raw_metrics, dict):
+                raise TypeError("get_citation_metrics returned a non-mapping metric row")
+            normalized[str(raw_pmid)] = raw_metrics
+        return normalized
+
+    @classmethod
+    def _apply_icite_metrics(cls, article: UnifiedArticle, raw: dict[str, Any]) -> None:
+        """Merge one canonical iCite row into the article domain model."""
+        metrics = article.citation_metrics or CitationMetrics()
+        citation_count = cls._optional_int(raw.get("citation_count"))
+        rcr = cls._optional_float(raw.get("relative_citation_ratio"))
+        percentile = cls._optional_float(raw.get("nih_percentile"))
+        apt = cls._optional_float(raw.get("apt"))
+        citations_per_year = cls._optional_float(raw.get("citations_per_year"))
+        if citation_count is not None:
+            metrics.citation_count = citation_count
+        if rcr is not None:
+            metrics.relative_citation_ratio = rcr
+        if percentile is not None:
+            metrics.nih_percentile = percentile
+        if apt is not None:
+            metrics.apt = apt
+        if citations_per_year is not None:
+            metrics.citations_per_year = citations_per_year
+        article.citation_metrics = metrics
+
+    @staticmethod
+    def _optional_int(value: Any) -> int | None:
+        if value is None or isinstance(value, bool):
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError, OverflowError):
+            return None
+
+    @staticmethod
+    def _optional_float(value: Any) -> float | None:
+        if value is None or isinstance(value, bool):
+            return None
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError, OverflowError):
+            return None
+        return parsed if math.isfinite(parsed) else None
 
     # =====================================================================
     # Actions — Aggregation (merge, filter)
@@ -1012,13 +1250,16 @@ class PipelineExecutor:
             articles = self._intersect_articles(input_lists)
         elif method == "rrf":
             articles = self._rrf_merge(input_lists)
-        else:  # union (default)
+        elif method == "union":
             from pubmed_search.application.search.result_aggregator import (
                 ResultAggregator,
             )
 
             aggregator = ResultAggregator()
             articles, _ = aggregator.aggregate(input_lists)
+        else:
+            msg = "Pipeline merge method must be one of: intersection, rrf, union"
+            raise ValueError(msg)
 
         pmids = [a.pmid for a in articles if a.pmid]
         return StepResult(step_id=step.id, action="merge", articles=articles, pmids=pmids)
@@ -1032,13 +1273,12 @@ class PipelineExecutor:
 
         min_year = step.params.get("min_year")
         max_year = step.params.get("max_year")
-        requested_article_types = self._coerce_article_type_list(step.params.get("article_types", []))
-        normalized_article_types, article_type_diagnostics = self._normalize_requested_article_types(
-            requested_article_types
-        )
+        article_types_value = step.params.get("article_types", [])
+        if not isinstance(article_types_value, list):
+            raise TypeError("Pipeline filter article_types must be an array of canonical strings")
+        requested_article_types = article_types_value
         min_citations = step.params.get("min_citations")
         require_abstract = step.params.get("has_abstract", False)
-        unknown_only_article_type_filter = bool(requested_article_types and not normalized_article_types)
 
         filtered: list[UnifiedArticle] = []
         reason_counter: Counter[str] = Counter()
@@ -1046,19 +1286,17 @@ class PipelineExecutor:
         for a in articles:
             reasons: list[str] = []
             year = getattr(a, "year", None)
-            if min_year and year and year < int(min_year):
+            if min_year is not None and year and year < min_year:
                 reasons.append("year_before_min")
-            if max_year and year and year > int(max_year):
+            if max_year is not None and year and year > max_year:
                 reasons.append("year_after_max")
-            if unknown_only_article_type_filter:
-                reasons.append("unknown_article_type_filter")
-            elif normalized_article_types:
+            if requested_article_types:
                 type_val = self._canonical_article_type_value(getattr(a, "article_type", None))
-                if type_val not in normalized_article_types:
+                if type_val not in requested_article_types:
                     reasons.append("article_type_mismatch")
             if min_citations is not None:
                 cc = self._article_citation_count(a)
-                if cc < int(min_citations):
+                if cc < min_citations:
                     reasons.append("citation_count_below_min")
             if require_abstract and not getattr(a, "abstract", None):
                 reasons.append("missing_abstract")
@@ -1078,21 +1316,15 @@ class PipelineExecutor:
                 "min_year": min_year,
                 "max_year": max_year,
                 "article_types": requested_article_types,
-                "normalized_article_types": normalized_article_types,
+                "normalized_article_types": requested_article_types,
                 "min_citations": min_citations,
                 "has_abstract": require_abstract,
             },
             "removal_reasons": dict(reason_counter),
             "excluded_examples": excluded_examples,
         }
-        if article_type_diagnostics:
-            metadata["article_type_diagnostics"] = article_type_diagnostics
-        if unknown_only_article_type_filter:
-            metadata["warning"] = "No requested article_types could be matched; all articles were excluded."
-        elif articles and requested_article_types and not filtered:
-            metadata["warning"] = (
-                "Article type filter removed all articles. Check normalized_article_types and removal_reasons."
-            )
+        if articles and requested_article_types and not filtered:
+            metadata["warning"] = "Article type filter removed all articles. Check article_types and removal_reasons."
         return StepResult(step_id=step.id, action="filter", articles=filtered, pmids=pmids, metadata=metadata)
 
     @classmethod
@@ -1123,98 +1355,14 @@ class PipelineExecutor:
         except (TypeError, ValueError):
             return 0
 
-    @classmethod
-    def _coerce_article_type_list(cls, value: Any) -> list[str]:
-        if not value:
-            return []
-        if isinstance(value, str):
-            return [item.strip() for item in value.split(",") if item.strip()]
-        if isinstance(value, (list, tuple, set)):
-            items: list[str] = []
-            for item in value:
-                if isinstance(item, str) and "," in item:
-                    items.extend(cls._coerce_article_type_list(item))
-                elif item is not None:
-                    items.append(str(item).strip())
-            return [item for item in items if item]
-        return [str(value).strip()]
-
-    @classmethod
-    def _normalize_requested_article_types(
-        cls,
-        requested: list[str],
-    ) -> tuple[list[str], dict[str, Any]]:
-        normalized: list[str] = []
-        mappings: dict[str, str] = {}
-        fuzzy_matches: dict[str, str] = {}
-        unknown: list[str] = []
-        for item in requested:
-            canonical, match_kind = cls._normalize_article_type_request(item)
-            if canonical:
-                if canonical not in normalized:
-                    normalized.append(canonical)
-                mappings[item] = canonical
-                if match_kind == "fuzzy":
-                    fuzzy_matches[item] = canonical
-            else:
-                unknown.append(item)
-
-        diagnostics: dict[str, Any] = {}
-        if mappings:
-            diagnostics["mappings"] = mappings
-        if fuzzy_matches:
-            diagnostics["fuzzy_matches"] = fuzzy_matches
-        if unknown:
-            diagnostics["unknown"] = unknown
-        return normalized, diagnostics
-
-    @classmethod
-    def _normalize_article_type_request(cls, value: Any) -> tuple[str | None, str]:
-        key = cls._article_type_key(value)
-        if not key:
-            return None, "unknown"
-
-        valid_map = cls._article_type_valid_map()
-        alias_map = cls._article_type_alias_map()
-        if key in alias_map:
-            match_kind = "exact" if key in valid_map else "alias"
-            return alias_map[key], match_kind
-
-        match = get_close_matches(key, list(alias_map.keys()), n=1, cutoff=_ARTICLE_TYPE_FUZZY_CUTOFF)
-        if match:
-            return alias_map[match[0]], "fuzzy"
-        return None, "unknown"
-
-    @classmethod
-    def _canonical_article_type_value(cls, value: Any) -> str:
+    @staticmethod
+    def _canonical_article_type_value(value: Any) -> str:
         if value is None:
             return "unknown"
         raw = value.value if hasattr(value, "value") else value
-        canonical, _match_kind = cls._normalize_article_type_request(raw)
-        return canonical or str(raw).strip().lower()
-
-    @staticmethod
-    def _article_type_key(value: Any) -> str:
-        if value is None:
-            return ""
-        raw = value.value if hasattr(value, "value") else value
-        return re.sub(r"[^a-z0-9]+", "", str(raw).strip().lower())
-
-    @staticmethod
-    @lru_cache(maxsize=1)
-    def _article_type_valid_map() -> Mapping[str, str]:
-        from pubmed_search.domain.entities.article import ArticleType
-
-        mapping: dict[str, str] = {}
-        for article_type in ArticleType:
-            value = article_type.value
-            mapping[re.sub(r"[^a-z0-9]+", "", value)] = value
-        return MappingProxyType(mapping)
-
-    @staticmethod
-    @lru_cache(maxsize=1)
-    def _article_type_alias_map() -> Mapping[str, str]:
-        return MappingProxyType({**PipelineExecutor._article_type_valid_map(), **_ARTICLE_TYPE_ALIASES})
+        if isinstance(raw, str) and raw in canonical_article_type_values():
+            return raw
+        return "unknown"
 
     @classmethod
     def _excluded_article_example(cls, article: UnifiedArticle, reasons: list[str]) -> dict[str, Any]:
@@ -1286,8 +1434,10 @@ class PipelineExecutor:
     def _resolve_query(step: PipelineStep, inputs: dict[str, StepResult]) -> str:
         """Derive search query from step params or upstream step results."""
         # 1. Explicit query param
-        query = str(step.params.get("query", ""))
-        if query:
+        query = step.params.get("query")
+        if query is not None:
+            if not isinstance(query, str):
+                raise TypeError("Pipeline search query must be a string")
             return query
 
         # 2. Derive from upstream inputs
@@ -1299,29 +1449,55 @@ class PipelineExecutor:
             if inp_result.action == "pico":
                 element = step.params.get("element")
                 query_elements = inp_result.metadata.get("query_elements", {})
+                if not isinstance(query_elements, dict):
+                    raise TypeError("PICO query_elements metadata must be a mapping")
                 if element and element in query_elements:
-                    return str(query_elements[element])
-                if element and element in inp_result.metadata.get("elements", {}):
-                    return str(inp_result.metadata["elements"][element])
+                    return PipelineExecutor._require_query_metadata(query_elements[element], "PICO query element")
+                elements = inp_result.metadata.get("elements", {})
+                if not isinstance(elements, dict):
+                    raise TypeError("PICO elements metadata must be a mapping")
+                if element and element in elements:
+                    return PipelineExecutor._require_query_metadata(elements[element], "PICO element")
                 use_combined = step.params.get("use_combined", "precision")
-                if use_combined == "recall":
-                    return str(inp_result.metadata.get("combined_recall", ""))
-                if use_combined == "intervention_outcome":
-                    return str(inp_result.metadata.get("combined_intervention_outcome", ""))
-                if use_combined == "comparison_outcome":
-                    return str(inp_result.metadata.get("combined_comparison_outcome", ""))
-                return str(inp_result.metadata.get("combined_precision", ""))
+                metadata_key = {
+                    "precision": "combined_precision",
+                    "recall": "combined_recall",
+                    "intervention_outcome": "combined_intervention_outcome",
+                    "comparison_outcome": "combined_comparison_outcome",
+                }.get(use_combined)
+                if metadata_key is None:
+                    raise ValueError(f"Unknown PICO combined query mode: {use_combined}")
+                return PipelineExecutor._require_query_metadata(
+                    inp_result.metadata.get(metadata_key, ""),
+                    f"PICO {use_combined} query",
+                )
 
             # From expand step
             if inp_result.action == "expand":
-                strategy_name = step.params.get("strategy", "original")
-                for strat in inp_result.metadata.get("strategies", []):
-                    if strat.get("name") == strategy_name:
-                        return str(strat.get("query", ""))
-                # Fallback to expanded_query
-                return str(inp_result.metadata.get("expanded_query", ""))
+                strategy_name = step.params.get("strategy")
+                if strategy_name is None:
+                    return PipelineExecutor._require_query_metadata(
+                        inp_result.metadata.get("expanded_query", ""),
+                        "expanded query",
+                    )
+                strategies = inp_result.metadata.get("strategies", [])
+                if not isinstance(strategies, list):
+                    raise TypeError("Expansion strategies metadata must be an array")
+                for strategy in strategies:
+                    if isinstance(strategy, dict) and strategy.get("name") == strategy_name:
+                        return PipelineExecutor._require_query_metadata(
+                            strategy.get("query", ""),
+                            f"expansion strategy '{strategy_name}'",
+                        )
+                raise ValueError(f"Expansion strategy '{strategy_name}' was not produced by the upstream step")
 
         return ""
+
+    @staticmethod
+    def _require_query_metadata(value: Any, label: str) -> str:
+        if not isinstance(value, str):
+            raise TypeError(f"{label} metadata must be a string")
+        return value
 
     # =====================================================================
     # Output Ranking

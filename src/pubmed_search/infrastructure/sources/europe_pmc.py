@@ -24,11 +24,20 @@ from typing import TYPE_CHECKING, Any
 
 from defusedxml import ElementTree  # Security: prevent XML attacks
 
-from pubmed_search.infrastructure.sources.base_client import APIRequestError, BaseAPIClient
+from pubmed_search.infrastructure.sources.base_client import (
+    _CONTINUE,
+    APIRequestError,
+    BaseAPIClient,
+    raise_provider_schema_error,
+    raise_sanitized_retryable_error,
+)
 from pubmed_search.shared.async_utils import RetryableOperationError
+from pubmed_search.shared.exceptions import ParseError
 
 if TYPE_CHECKING:
     from xml.etree.ElementTree import Element
+
+    import httpx
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +82,13 @@ class EuropePMCClient(BaseAPIClient):
             },
         )
 
+    def _handle_expected_status(self, response: httpx.Response, url: str) -> Any:
+        """Treat only a real provider 404 as an absent Europe PMC record."""
+
+        if response.status_code == 404:
+            return None
+        return _CONTINUE
+
     async def search(
         self,
         query: str,
@@ -84,7 +100,6 @@ class EuropePMCClient(BaseAPIClient):
         has_fulltext: bool = False,
         sort: str | None = None,
         cursor_mark: str = "*",
-        strict: bool = False,
     ) -> dict[str, Any]:
         """
         Search Europe PMC publications.
@@ -133,38 +148,32 @@ class EuropePMCClient(BaseAPIClient):
             data = await self._make_request(url)
 
             if not isinstance(data, dict):
-                if strict:
-                    self._raise_strict_request_error()
-                return {"results": [], "hit_count": 0}
+                raise_provider_schema_error(self._service_name)
 
             raw_result_list = data.get("resultList")
             if not isinstance(raw_result_list, dict):
-                if strict:
-                    self._raise_strict_request_error()
-                return {"results": [], "hit_count": 0}
-            results = raw_result_list.get("result", [])
-            if not isinstance(results, list):
-                if strict:
-                    self._raise_strict_request_error()
-                return {"results": [], "hit_count": 0}
+                raise_provider_schema_error(self._service_name)
+            results = raw_result_list.get("result")
+            if not isinstance(results, list) or any(not isinstance(result, dict) for result in results):
+                raise_provider_schema_error(self._service_name)
+            hit_count = data.get("hitCount")
+            if isinstance(hit_count, bool) or not isinstance(hit_count, int) or hit_count < len(results):
+                raise_provider_schema_error(self._service_name)
 
             return {
                 "results": [self._normalize_article(r) for r in results],
-                "hit_count": data.get("hitCount", 0),
+                "hit_count": hit_count,
                 "next_cursor": data.get("nextCursorMark"),
                 "next_page_url": data.get("nextPageUrl"),
             }
 
-        except (APIRequestError, RetryableOperationError):
-            if strict:
-                raise
-            logger.warning("Europe PMC search failed (upstream request error)")
-            return {"results": [], "hit_count": 0}
+        except APIRequestError:
+            raise
+        except RetryableOperationError as exc:
+            raise_sanitized_retryable_error(self._service_name, exc)
         except Exception as exc:
             logger.warning("Europe PMC search failed (%s)", type(exc).__name__)
-            if strict:
-                raise APIRequestError(self._service_name) from None
-            return {"results": [], "hit_count": 0}
+            raise APIRequestError(self._service_name) from exc
 
     async def get_article(
         self,
@@ -192,18 +201,23 @@ class EuropePMCClient(BaseAPIClient):
             url = f"{EPMC_ARTICLE_URL}/{source}/{article_id}?{urllib.parse.urlencode(params)}"
             data = await self._make_request(url)
 
-            if not isinstance(data, dict):
+            if data is None:
                 return None
+            if not isinstance(data, dict):
+                raise_provider_schema_error(self._service_name)
 
             result = data.get("result")
-            if result:
-                return self._normalize_article(result)
+            if not isinstance(result, dict):
+                raise_provider_schema_error(self._service_name)
+            return self._normalize_article(result)
 
-            return None
-
-        except Exception as e:
-            logger.exception(f"Failed to get article {source}/{article_id}: {e}")
-            return None
+        except APIRequestError:
+            raise
+        except RetryableOperationError as exc:
+            raise_sanitized_retryable_error(self._service_name, exc)
+        except Exception as exc:
+            logger.warning("Europe PMC article lookup failed (%s)", type(exc).__name__)
+            raise APIRequestError(self._service_name) from exc
 
     async def get_fulltext_xml(self, pmcid: str) -> str | None:
         """
@@ -224,11 +238,19 @@ class EuropePMCClient(BaseAPIClient):
 
             url = f"{EPMC_API_BASE}/{pmcid}/fullTextXML"
             result = await self._make_request(url, headers={"Accept": "application/xml"}, expect_json=False)
-            return result if isinstance(result, str) else None
+            if result is None:
+                return None
+            if not isinstance(result, str):
+                raise_provider_schema_error(self._service_name)
+            return result
 
-        except Exception as e:
-            logger.exception(f"Failed to get fulltext for {pmcid}: {e}")
-            return None
+        except APIRequestError:
+            raise
+        except RetryableOperationError as exc:
+            raise_sanitized_retryable_error(self._service_name, exc)
+        except Exception as exc:
+            logger.warning("Europe PMC fulltext lookup failed (%s)", type(exc).__name__)
+            raise APIRequestError(self._service_name) from exc
 
     async def get_references(
         self,
@@ -256,15 +278,26 @@ class EuropePMCClient(BaseAPIClient):
             url = f"{EPMC_API_BASE}/{source}/{article_id}/references?{urllib.parse.urlencode(params)}"
             data = await self._make_request(url)
 
-            if not isinstance(data, dict):
+            if data is None:
                 return []
+            if not isinstance(data, dict):
+                raise_provider_schema_error(self._service_name)
 
-            refs = data.get("referenceList", {}).get("reference", [])
+            reference_list = data.get("referenceList")
+            if not isinstance(reference_list, dict):
+                raise_provider_schema_error(self._service_name)
+            refs = reference_list.get("reference")
+            if not isinstance(refs, list) or any(not isinstance(ref, dict) for ref in refs):
+                raise_provider_schema_error(self._service_name)
             return [self._normalize_reference(r) for r in refs]
 
-        except Exception as e:
-            logger.exception(f"Failed to get references for {source}/{article_id}: {e}")
-            return []
+        except APIRequestError:
+            raise
+        except RetryableOperationError as exc:
+            raise_sanitized_retryable_error(self._service_name, exc)
+        except Exception as exc:
+            logger.warning("Europe PMC reference lookup failed (%s)", type(exc).__name__)
+            raise APIRequestError(self._service_name) from exc
 
     async def get_citations(
         self,
@@ -292,15 +325,26 @@ class EuropePMCClient(BaseAPIClient):
             url = f"{EPMC_API_BASE}/{source}/{article_id}/citations?{urllib.parse.urlencode(params)}"
             data = await self._make_request(url)
 
-            if not isinstance(data, dict):
+            if data is None:
                 return []
+            if not isinstance(data, dict):
+                raise_provider_schema_error(self._service_name)
 
-            citations = data.get("citationList", {}).get("citation", [])
+            citation_list = data.get("citationList")
+            if not isinstance(citation_list, dict):
+                raise_provider_schema_error(self._service_name)
+            citations = citation_list.get("citation")
+            if not isinstance(citations, list) or any(not isinstance(citation, dict) for citation in citations):
+                raise_provider_schema_error(self._service_name)
             return [self._normalize_article(c) for c in citations]
 
-        except Exception as e:
-            logger.exception(f"Failed to get citations for {source}/{article_id}: {e}")
-            return []
+        except APIRequestError:
+            raise
+        except RetryableOperationError as exc:
+            raise_sanitized_retryable_error(self._service_name, exc)
+        except Exception as exc:
+            logger.warning("Europe PMC citation lookup failed (%s)", type(exc).__name__)
+            raise APIRequestError(self._service_name) from exc
 
     async def get_text_mined_terms(
         self,
@@ -327,14 +371,26 @@ class EuropePMCClient(BaseAPIClient):
             url = f"{EPMC_API_BASE}/{source}/{article_id}/textMinedTerms?{urllib.parse.urlencode(params)}"
             data = await self._make_request(url)
 
-            if not isinstance(data, dict):
+            if data is None:
                 return []
+            if not isinstance(data, dict):
+                raise_provider_schema_error(self._service_name)
 
-            return data.get("semanticTypeList", {}).get("semanticType", [])
+            semantic_type_list = data.get("semanticTypeList")
+            if not isinstance(semantic_type_list, dict):
+                raise_provider_schema_error(self._service_name)
+            terms = semantic_type_list.get("semanticType")
+            if not isinstance(terms, list) or any(not isinstance(term, dict) for term in terms):
+                raise_provider_schema_error(self._service_name)
+            return terms
 
-        except Exception as e:
-            logger.exception(f"Failed to get text-mined terms for {source}/{article_id}: {e}")
-            return []
+        except APIRequestError:
+            raise
+        except RetryableOperationError as exc:
+            raise_sanitized_retryable_error(self._service_name, exc)
+        except Exception as exc:
+            logger.warning("Europe PMC text-mining lookup failed (%s)", type(exc).__name__)
+            raise APIRequestError(self._service_name) from exc
 
     def _normalize_article(self, article: dict[str, Any]) -> dict[str, Any]:
         """
@@ -503,9 +559,12 @@ class EuropePMCClient(BaseAPIClient):
 
             return result
 
-        except Exception as e:
-            logger.exception(f"Failed to parse fulltext XML: {e}")
-            return {"error": str(e)}
+        except Exception as exc:
+            logger.warning("Europe PMC full-text XML parsing failed (%s)", type(exc).__name__)
+            raise ParseError(
+                "Europe PMC returned XML that could not be parsed",
+                source="Europe PMC",
+            ) from exc
 
     def _get_text(self, elem: Element) -> str:
         """Recursively get all text from an element."""
@@ -629,73 +688,29 @@ class EuropePMCClient(BaseAPIClient):
             limit: Maximum similar articles
 
         Returns:
-            List of similar articles with similarity_score (0.0-1.0)
+            Similar-query articles with order-derived ``rank_percentile`` metadata
         """
-        try:
-            if not pmid and not pmcid:
-                logger.warning("get_similar_articles requires pmid or pmcid")
-                return []
+        if not pmid and not pmcid:
+            raise ValueError("get_similar_articles requires pmid or pmcid")
 
+        try:
             # Build SIMILAR query
             query = f"SIMILAR:{pmid}" if pmid else f"SIMILAR:PMC{pmcid.replace('PMC', '')}" if pmcid else ""
 
             result = await self.search(query=query, limit=limit)
             articles = result.get("results", [])
 
-            # Add similarity scores based on ranking
+            # Preserve provider order without inventing a similarity metric.
             for i, article in enumerate(articles):
-                # First result = 1.0, decreasing linearly
-                article["similarity_score"] = max(0.0, 1.0 - (i / max(len(articles), 1)))
-                article["similarity_source"] = "europe_pmc"
+                article["rank_percentile"] = (len(articles) - i) / len(articles)
+                article["rank_percentile_source"] = "europe_pmc_similar_query_order"
 
             return articles
 
-        except Exception as e:
-            logger.exception(f"Failed to get similar articles: {e}")
-            return []
-
-
-# Convenience functions
-async def search_europe_pmc(
-    query: str,
-    limit: int = 10,
-    open_access_only: bool = False,
-    has_fulltext: bool = False,
-    email: str | None = None,
-) -> list[dict[str, Any]]:
-    """
-    Quick search function for Europe PMC.
-
-    Args:
-        query: Search query
-        limit: Maximum results
-        open_access_only: Only OA articles
-        has_fulltext: Only articles with full text
-        email: Contact email
-
-    Returns:
-        List of article dictionaries
-    """
-    client = EuropePMCClient(email=email)
-    result = await client.search(
-        query=query,
-        limit=limit,
-        open_access_only=open_access_only,
-        has_fulltext=has_fulltext,
-    )
-    return result.get("results", [])
-
-
-async def get_fulltext(pmcid: str, email: str | None = None) -> str | None:
-    """
-    Quick function to get full text XML.
-
-    Args:
-        pmcid: PMC ID
-        email: Contact email
-
-    Returns:
-        Full text XML string or None
-    """
-    client = EuropePMCClient(email=email)
-    return await client.get_fulltext_xml(pmcid)
+        except APIRequestError:
+            raise
+        except RetryableOperationError as exc:
+            raise_sanitized_retryable_error(self._service_name, exc)
+        except Exception as exc:
+            logger.warning("Europe PMC similar-article lookup failed (%s)", type(exc).__name__)
+            raise APIRequestError(self._service_name) from exc

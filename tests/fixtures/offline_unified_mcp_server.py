@@ -5,8 +5,8 @@ from __future__ import annotations
 import os
 
 from pubmed_search.domain.entities.article import UnifiedArticle
+from pubmed_search.infrastructure.sources import unified_broker
 from pubmed_search.presentation.mcp_server import create_server
-from pubmed_search.presentation.mcp_server.tools import unified as unified_module
 from pubmed_search.shared.source_contracts import SourceAdapterError, SourceAdapterResult
 
 
@@ -50,8 +50,8 @@ async def _offline_semantic_scholar(*args: object, **kwargs: object) -> SourceAd
 
 
 def main() -> None:
-    unified_module._search_pubmed_adapter = _offline_pubmed  # type: ignore[attr-defined]
-    unified_module._search_semantic_scholar_adapter = _offline_semantic_scholar  # type: ignore[attr-defined]
+    unified_broker._search_pubmed_adapter = _offline_pubmed  # type: ignore[attr-defined]
+    unified_broker._search_semantic_scholar_adapter = _offline_semantic_scholar  # type: ignore[attr-defined]
     server = create_server(
         email="offline-smoke@example.com",
         data_dir=os.environ["PUBMED_DATA_DIR"],

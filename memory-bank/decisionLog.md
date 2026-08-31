@@ -1,5 +1,411 @@
 # Decision Log
 
+## [2026-09-01] Require Explicit Browser-Broker Secrets
+
+### Decision
+
+Require the local browser fetch broker to receive a caller-provisioned bearer
+token through `--token`, `BROWSER_FETCH_BROKER_TOKEN`, or
+`BROWSER_FETCH_TOKEN`. Reject missing, whitespace-bearing, or shorter-than-32-
+character values before Uvicorn starts. Never generate or log a broker secret.
+
+### Consequences
+
+- Process logs cannot become a bearer-token disclosure channel.
+- Broker and MCP configuration share one deliberate secret instead of relying
+  on an unusable server-only runtime token.
+- Existing broker launchers without an explicit strong token fail closed and
+  must adopt the documented token-generation command.
+
+---
+
+## [2026-09-01] Fail Closed at Note, Pipeline-History, and OpenURL Boundaries
+
+### Decision
+
+Return only tenant-relative logical locators from authenticated literature-note
+exports. Reject query-bearing or credential-bearing OpenURL bases and remove
+ordinary search endpoints from resolver presets. Record PMID-to-DOI resolution
+as `resolved`, `not_found`, or `error`. Abort a pipeline-history read when any
+selected persisted run is invalid instead of skipping it.
+
+### Consequences
+
+- Remote callers cannot learn server directory layouts from note results.
+- A PubMed outage cannot be described as evidence that an article lacks a DOI.
+- Pipeline history is complete or explicitly unavailable, never silently
+  partial, and corrupt-record logs contain neither host paths nor raw content.
+
+---
+
+## [2026-09-01] Make Provider Absence and Query-Intelligence Coverage Exact
+
+### Decision
+
+For full-text link discovery, classify only HTTP 204/404 or a successfully
+parsed zero-link response as absence. Convert timeouts, transport/other HTTP
+failures, and parse failures into sanitized source errors so sibling success is
+`partial` and total source failure is `unavailable`.
+
+For `generate_search_queries`, report spelling, MeSH, and PubMed query analysis
+as separate `completed`/`partial`/`failed` coverage. Preserve unchanged
+spelling, a completed no-match MeSH lookup, and a genuine zero-result analysis
+as successful outcomes; provider failure emits only generic warnings.
+
+Validate PubMed EFetch and NCBI Extended ESearch/ESummary/ELink envelopes and
+requested-row identities before mapping. Run an explicitly requested
+ClinicalTrials.gov adjunct for every output format and carry one
+`clinical-trials-adjunct/v1` retrieval/formatting record through output and
+artifacts.
+
+Require Open-i to return a strict image-provider page. Treat mixed row validity
+as partial, invalid/all-invalid results as failed, and only a valid explicit
+zero page as empty; carry this source coverage into Markdown unchanged.
+
+### Consequences
+
+- Absence and outage cannot make the same full-text availability claim.
+- Query-building output remains usable during optional-provider failure without
+  claiming that spelling, vocabulary, or PubMed translation was verified.
+- Raw provider messages do not cross either public coverage boundary.
+- NCBI malformed payloads cannot become no-results, and structured output no
+  longer disables a caller-requested ClinicalTrials.gov adjunct.
+- Open-i outages/malformed payloads cannot inflate source-use or total claims
+  and cannot be rendered as “no images.”
+
+---
+
+## [2026-09-01] Make Unified Search Application-Owned and SDK-Side-Effect-Free
+
+### Decision
+
+Make `application/unified.UnifiedSearchUseCase` the canonical normal-search
+orchestrator shared by MCP and the Python SDK. Define explicit planner,
+executor, source-broker, source-registry, enrichment, progress, and
+plan-observer ports, and return one typed `UnifiedSearchOutcome`. Keep source
+brokering, enrichment, PubTator resolution, caches, and provider clients in
+infrastructure implementations injected through those ports.
+
+Restrict the MCP runner to protocol concerns: rejected-input handling,
+SearchRun journaling, host progress, response formatting, artifact persistence,
+and recovery handoffs. Make `PubMedSearchClient.unified_search()` compose the
+same use case directly and return typed articles, source coverage/errors, and
+filter counts without importing presentation or creating MCP/session/journal/
+artifact side effects.
+
+### Consequences
+
+- MCP and SDK execute the same planning, source, enrichment, filtering, and
+  ranking policy without importing one another.
+- SDK callers no longer receive an MCP-formatted or serialized artifact facade;
+  durable artifacts and SearchRun journals remain an explicit MCP adapter
+  capability.
+- Application code has no runtime dependency on presentation or infrastructure
+  modules; outer composition selects concrete broker, enrichment, registry,
+  semantic resolver, cache, and lifecycle owners.
+- Future entries must add application behavior through the use case or its
+  ports rather than placing orchestration back into an MCP tool module.
+
+---
+
+## [2026-09-01] Make Enrichment Deterministic and Delete Provider Soft-Fail Facades
+
+### Decision
+
+Run optional Crossref, journal-metrics, and Unpaywall enrichment as immutable
+typed patch/outcome tasks. Select candidates through the requested ranking
+policy with canonical identity tie-breaks, apply patches centrally in fixed
+provider/article order, then compute the final rank. Preserve only sanitized
+failure categories and explicit completed/partial/failed coverage.
+
+Make `BaseAPIClient` use one transport-kernel rate/retry path that raises
+sanitized typed failures. Delete `strict_errors`, mutable last-error state, the
+second rate limiter, raw upstream reason logging, duplicate CORE/Europe PMC
+search/getter facades, and Crossref/Unpaywall lookup facades. Runtime-owned
+factories remain at the infrastructure package boundary.
+
+### Consequences
+
+- Concurrent provider completion order cannot mutate shared articles or change
+  public ranking.
+- Optional-provider failure remains visible in output, artifact, and audit
+  diagnostics instead of masquerading as successful enrichment or an empty
+  search.
+- There is one provider lifecycle/factory seam and one transport policy; dead
+  module-level facades cannot bypass typed result validation.
+
+---
+
+## [2026-09-01] Derive Tool Schema Quality From the Runtime and Inject Feature Ports
+
+### Decision
+
+Audit the registered MCP runtime rather than maintaining a hand-written schema
+claim. Require 41 unique tool owners in 16 categories, recursive closure of all
+74 object schemas, explicit bounds for all 215 string/array/integer/number
+nodes, and exact required discriminator/constant-variant mappings for all 10
+tagged unions. Also verify required/default coherence and annotation/side-effect
+agreement.
+
+Move the curated ICD/MeSH crosswalk and lookup policy into
+`application/search/icd.py`, leaving the MCP module as registration/formatting
+only. Define `ImageSourceAdapter` and `OpenIClientPort` in the image-search
+application package and inject the server-owned Open-i factory from the
+composition root through `SourceRuntime`.
+
+### Consequences
+
+- Registry additions or schema regressions fail against the actual exported
+  surface, including nested objects and discriminated variants.
+- ICD domain data no longer lives in presentation, and image orchestration no
+  longer constructs or imports a concrete infrastructure client.
+- A new image provider must implement the application port and be explicitly
+  installed by composition; unknown or absent sources fail closed.
+
+---
+
+## [2026-09-01] Preserve Full-Text Partial Coverage End to End
+
+### Decision
+
+Make `PDFLinkDiscoveryResult` the only extended full-text link-discovery
+contract. It carries immutable links, exact attempted/completed source keys,
+sanitized typed source errors, and computed `complete`/`partial`/`unavailable`
+coverage through download, extraction, the application service, MCP output,
+and artifacts. Remove the list-only facade and never expose raw downstream
+error strings.
+
+### Consequences
+
+- A successful link or extracted article cannot erase a sibling-source
+  failure; callers can distinguish complete from partial access coverage.
+- Machine-readable coverage uses stable canonical source keys; human display
+  labels remain presentation metadata.
+- Provider URL, response, credential, and local-path details do not cross the
+  public failure boundary.
+
+---
+
+## [2026-08-31] Use Exact Page and Failure Contracts Without Read-Time Migration
+
+### Decision
+
+Make a typed source page the only PubMed/licensed-search result and make typed
+provider failure the only representation of an unsuccessful upstream call.
+Persist sessions only in the exact v1 session/index schemas with first-class
+search runs. Remove list facades, mutable search metadata, error-sentinel rows,
+soft `[]` failure paths, cache warmup payloads, and legacy history projection.
+
+### Consequences
+
+- Empty means the provider successfully reported no matching records; timeout,
+  rate limit, authentication, malformed payload, and provider failure remain
+  distinguishable to unified search, pipelines, artifacts, and users.
+- Total count, offset, continuation, warnings, source identity, and operation
+  provenance travel together instead of through mutable client state.
+- Old persisted payloads fail closed and require an explicit offline migration
+  if one is ever designed; production reads do not guess or rewrite them.
+- `application/fulltext` remains the single full-text coordinator, and exact
+  source keys plus `SEMANTIC_SCHOLAR_API_KEY` are the only runtime contract.
+
+---
+
+## [2026-08-31] Publish One Strict 41-Tool Registry Without Public Compatibility Aliases
+
+### Decision
+
+Expose exactly 41 tools in 16 categories through stdio, Streamable HTTP,
+Copilot, tests, and generated documentation. Remove retired public aliases,
+alternate Copilot registries, presentation facades, and loose request
+normalizers. Require one discriminated request for session and Chronicle reads,
+canonical pipeline `output`, and typed/bounded PMID inputs.
+
+### Consequences
+
+- A removed tool name or legacy flat request fails clearly instead of silently
+  choosing a new action. This is an intentional v0.7.0 breaking boundary.
+- `run_copilot.py` launches the canonical registry; transport compatibility
+  middleware may adapt HTTP acknowledgements but does not define another tool
+  surface.
+- Registry, READMEs, handbook/site, OpenAPI/Copilot material, tool index, tests,
+  and agent guidance must agree on the same count and schemas.
+- Future aliases require an explicit product decision and a removal plan; they
+  cannot be added incidentally inside MCP wrappers.
+- Delete the hidden profiling tool/monkeypatch, orphan standalone FastAPI app,
+  and stdio background-HTTP bridge. Supported HTTP companion routes remain on
+  the canonical server with the same tenant/auth/runtime ownership and do not
+  define another registry.
+
+---
+
+## [2026-08-31] Make Pipeline Discrimination and Action Parameters Schema-Exact
+
+### Decision
+
+Template pipelines accept only the top-level `template_params` field; the
+retired template `params` alias and `execution` output shape fail closed. Infer
+pipeline `kind` only when the discriminator is omitted. If the caller supplies
+`kind`, preserve it unchanged so contradictory mode fields reach strict
+discriminated-union validation instead of being silently reclassified.
+
+Require exact action/template names, step and dependency identifiers, enums,
+and action-specific parameter schemas. Reject unknown fields, fuzzy or alias
+matching, scalar/CSV-to-array repair, numeric/string conversion, and other
+explicit-value coercion. Documented defaults may fill omitted fields; bounded
+safety budgets may cap work but do not reinterpret caller intent.
+
+### Consequences
+
+- A typo or contradictory discriminator produces a validation error rather
+  than executing a different pipeline.
+- Template-level `params` cannot be confused with the canonical per-step
+  `params` mapping.
+- Persisted configs, inline `unified_search` pipelines, templates, scheduler
+  runs, and dry runs share the same parsing and action-contract boundary.
+- Compatibility helpers and fuzzy normalization must not be restored below the
+  presentation layer.
+
+---
+
+## [2026-08-31] Make Typed Source Outcomes the Only Unified-Search Boundary
+
+### Decision
+
+Route source work through `SourceAdapterCall`, `SourceAdapterResult`, and
+`SourceAdapterError`, with one fail-closed validator shared by shallow search,
+auto-relaxation, deep execution, full-text, preprint, and image paths. Validate
+the expected source and operation, supported runtime types, nested error
+identity, status/items/errors coherence, and
+`total_count >= len(items) >= 0`.
+
+### Consequences
+
+- Provider dictionaries and compatibility facades no longer bypass provenance
+  or status validation.
+- Partial failures retain items and typed diagnostics; an errored or malformed
+  outcome cannot be misreported as a successful empty search.
+- Pipeline/search integration should converge on this same outcome type rather
+  than reconstructing totals, cursor, cost, or provenance independently.
+- Search handoffs expose directly executable canonical arguments and shared
+  response bounds/sanitation apply after application formatting.
+
+---
+
+## [2026-08-31] Scope Mutable Runtime and Source Lifecycles to Each MCP Server
+
+### Decision
+
+Each `PubMedMCPServer` owns its `ToolSessionRuntime`, tenant/session manager,
+strategy registry, application container, pipeline runtime, source contacts,
+source-client pool, and outbound-client lifecycle. Use context-local binding to
+carry the owning runtime through a call, never mutable process globals as an
+ownership mechanism.
+
+### Consequences
+
+- Constructing server B cannot overwrite server A's tenant, strategy, source
+  contact, cache, or container configuration.
+- Closing one server closes only the clients it owns and cannot poison another
+  event loop or live server.
+- Saved scheduler jobs bind the creating server's source and shared-HTTP
+  runtime around the complete DAG.
+- The Python SDK owns a separate lazy `SourceRuntime`, bound around
+  `unified_search` and closed through `async with` or `aclose()`.
+- Provider/event-loop rate and resilience policy can remain shared explicitly;
+  mutable clients, contacts, caches, exporters, and HTTP pools are owned by one
+  server or SDK client.
+- Two-server construction/call/close regressions are release-gating tests.
+
+---
+
+## [2026-08-31] Share Bounded Task Ownership Across Host and Citation Work
+
+### Decision
+
+Use one reusable `BoundedTaskSupervisor` for capacity, ownership, disposal,
+reaping, and bounded shutdown. Schedule MCP progress, logging, and
+resource-update callbacks through the thin `HostCallbackRuntime` owned by the
+active server. Observe each with
+`asyncio.wait` under its configured hard deadline. If the host stalls, request
+cancellation and yield once; quarantine callbacks that suppress cancellation
+in the owning runtime, capped at 32 pending tasks. Reject and dispose new
+callbacks when the supervisor is full, and invoke bounded `aclose()` cleanup
+from server lifespan. Citation expansion uses an independently owned thin
+`CitationTaskSupervisor` with the same primitive and a 128-task cap.
+
+### Consequences
+
+- Best-effort notifications cannot block core tool work indefinitely.
+- Cancellation-resistant callbacks remain owned and observable without
+  accumulating beyond the fixed capacity.
+- Saturation produces load shedding rather than more background work.
+- Tests must cover cooperative and cancellation-resistant callbacks, capacity
+  rejection, per-server isolation, lifecycle cleanup, and propagation of
+  enclosing cancellation.
+- Host and citation work retain separate capacities and semantics without
+  duplicating detached-task lifecycle code; the owning server closes both.
+
+---
+
+## [2026-08-31] Use One Redirect-Aware Safe-Outbound Boundary
+
+### Decision
+
+All URL-following provider paths, including full text, figures, and
+institutional access, use the shared outbound implementation. Validate scheme,
+embedded credentials, DNS/IP destination, and every redirect hop; block
+private/local/reserved targets and DNS rebinding; bound response bytes and the
+end-to-end deadline.
+
+### Consequences
+
+- A provider-supplied public URL cannot redirect to a local service.
+- Timeout and size policy includes the entire redirect/read sequence, not only
+  one socket operation.
+- New URL-retrieval features must reuse this boundary rather than implement
+  another whitelist or raw `httpx` redirect loop.
+
+---
+
+## [2026-09-01] Make Chronicle Ranking Claims Evidence-Effective
+
+### Decision
+
+Persist caller ranking intent separately from the ranking that actually ran.
+Record iCite enrichment in `citation-metrics-coverage/v1`, validate the complete
+PMID-keyed response before mutation, and claim iCite ordering only when at least
+one valid citation count was applied.
+
+### Consequences
+
+- Empty, partial, malformed, and outage outcomes remain distinct and sanitized.
+- PubMed relevance remains the effective ranking when no sortable iCite count
+  exists.
+- Chronicle audit warns on incomplete enrichment and fails provenance that
+  claims an unavailable or unrequested ranking.
+
+---
+
+## [2026-08-31] Share Mermaid Repair and Preserve Nested Chronicle Chronology
+
+### Decision
+
+Generate Chronicle and other supported Mermaid diagrams through the shared
+structured graph kernel with deterministic `rich -> safe -> minimal` repair.
+In the Chronicle projection, connect nested topics both to their thematic
+parent and to the year anchor of their own evidence.
+
+### Consequences
+
+- A viewer can read chronological order and thematic divergence from one
+  horizontal diagram without mistaking the thematic edge for causality.
+- Identifier, label, Unicode, topology, cycle, orphan, and size repair behavior
+  is consistent across features and exposes corrections/omissions/fallback
+  metadata.
+- Real Mermaid parse/render smoke tests remain part of the release boundary.
+
+---
+
 ## [2026-08-12] Make Chronicle Projections Chronological, Observational, and Repairable
 
 ### Decision
@@ -111,9 +517,10 @@ and new adapters must prove corpus/identifier/access value plus edge coverage.
   result.
 - Disabled-source policy applies to automatic, explicit, `all`, and preprint
   expansion paths.
-- The public tool count remains 45 for compatibility, presented as eight
-  capability families; duplicate timeline entry points stay consolidated into
-  the Research Chronicle tools.
+- This historical broker decision kept a larger compatibility surface. It is
+  superseded by the 2026-08-31 v0.7.0 decision: the canonical surface is 41
+  strict tools in 16 categories, with duplicate timeline and other retired
+  aliases removed.
 
 ---
 
@@ -127,7 +534,10 @@ Expose `pubmed_search.api` as the stable Python SDK facade, keep MCP tools as pr
 
 ### Consequences
 - SDK imports must stay lightweight and must not load MCP, MCPServer, settings, or source clients.
-- `unified_search` runtime logic is delegated through a runner so MCP behavior remains compatible while the SDK avoids direct presentation imports at import time.
+- `unified_search` runtime logic is delegated through an application-facing
+  runner so the SDK avoids presentation imports at import time. v0.7.0 removes
+  the old presentation compatibility wrappers; both supported surfaces consume
+  canonical application/source contracts.
 - Docs must distinguish MCP tool surface, Python SDK facade, and auxiliary HTTP APIs.
 
 ---
@@ -169,11 +579,11 @@ Expose `pubmed_search.api` as the stable Python SDK facade, keep MCP tools as pr
 | 2026-01 | Stateless HTTP 模式 | Microsoft 官方 MCP 範例使用 `sessionIdGenerator: undefined` |
 | 2026-01 | Python 3.12 升級 | 支援 Python 3.12+ 泛型語法，使用 uv 管理虛擬環境 |
 | 2026-01-26 | **HTTP Client 重構 (中度)** | 統一錯誤處理 + 自動重試機制 |
-| 2026-01-13 | **建立簡化 Copilot 工具集** | **解決 anyOf schema truncation 問題** |
+| 2026-01-13 | **建立簡化 Copilot 工具集（已由 2026-08-31 決策取代）** | 當時用於避開 anyOf schema truncation；v0.7.0 改由同一 41-tool strict registry 處理所有 launcher |
 
 ---
 
-## [2026-01-26] HTTP Client 重構 (Option B: 中度重構)
+## [2026-01-26] HTTP Client 重構 (Option B: 中度重構；歷史決策)
 
 ### 背景
 HTTP 錯誤處理不一致：76 個 `return None` vs 4 個 `raise Exception`，無法區分錯誤類型。
@@ -197,7 +607,7 @@ HTTP 錯誤處理不一致：76 個 `return None` vs 4 個 `raise Exception`，�
        # Exponential backoff: 1s, 2s, 4s
    ```
 
-3. **Backward Compatibility**:
+3. **當時的相容策略（不等同 v0.7.0 公開工具相容層）**:
    - 保留 `http_get_safe()`, `http_post_safe()` 返回 None
    - 新增 `http_get()`, `http_post()` 拋出異常
 
@@ -216,11 +626,12 @@ HTTP 錯誤處理不一致：76 個 `return None` vs 4 個 `raise Exception`，�
 - 中度重構平衡收益與風險
 - 異常層級讓上層可精細處理錯誤
 - Retry decorator 提高穩定性（處理暫時性網路問題）
-- 保留 backward compatibility 避免破壞現有代碼
+- 當時保留低階 HTTP helper 以避免一次破壞內部呼叫；v0.7.0 的公開
+  tool/source contract 不因此保留舊 alias 或 presentation facade
 
 ---
 
-## [2026-01-13] Copilot Studio Schema 相容性修復
+## [2026-01-13] Copilot Studio Schema 相容性修復（已由 v0.7.0 取代）
 
 ### 背景
 儘管 MCP 伺服器本地測試通過，Copilot Studio 仍回報 "SystemError"。
@@ -241,6 +652,9 @@ HTTP 錯誤處理不一致：76 個 `return None` vs 4 個 `raise Exception`，�
 - 內部使用 `InputNormalizer` 處理彈性輸入
 - 避免任何 `anyOf`、`oneOf`、`$ref` 模式
 
+> Historical note: v0.7.0 deletes this reduced registry. `run_copilot.py` now
+> uses the same canonical strict 41-tool registry as every other launcher.
+
 ### 新工具集
 ```
 search_pubmed          - 搜尋 PubMed
@@ -258,10 +672,10 @@ search_compound       - 搜尋化合物
 
 ### 使用方式
 ```bash
-# Copilot 相容模式（預設）
+# 當時的 Copilot 相容模式（已移除）
 python run_copilot.py --port 8765
 
-# 完整工具集（可能有問題）
+# 當時的完整工具集切換（已移除）
 python run_copilot.py --port 8765 --full-tools
 ```
 

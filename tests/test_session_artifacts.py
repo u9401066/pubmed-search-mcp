@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -11,6 +13,7 @@ import pytest
 from pubmed_search.application.session import artifacts as artifact_module
 from pubmed_search.application.session.artifacts import ArtifactStore
 from pubmed_search.application.session.manager import SessionManager
+from pubmed_search.presentation.mcp_server.tools import artifact_memory as artifact_memory_module
 from pubmed_search.presentation.mcp_server.tools._common import set_session_manager
 from pubmed_search.presentation.mcp_server.tools.artifact_memory import persist_tool_artifact
 
@@ -138,7 +141,7 @@ def test_artifact_read_rejects_checksum_mismatch(tmp_path: Path):
     result = manager.read_artifact(manifest["artifact_id"])
 
     assert result["success"] is False
-    assert "checksum mismatch" in result["error"].lower()
+    assert result["error"] == "Artifact file could not be read"
 
 
 def test_artifact_read_rejects_missing_checksum(tmp_path: Path):
@@ -158,7 +161,7 @@ def test_artifact_read_rejects_missing_checksum(tmp_path: Path):
     result = manager.read_artifact(manifest["artifact_id"])
 
     assert result["success"] is False
-    assert "checksum missing or invalid" in result["error"].lower()
+    assert result["error"] == "Artifact file could not be read"
 
 
 def test_session_manager_rejects_tampered_artifact_root_path(tmp_path: Path):
@@ -178,7 +181,7 @@ def test_session_manager_rejects_tampered_artifact_root_path(tmp_path: Path):
     result = manager.read_artifact(manifest["artifact_id"])
 
     assert result["success"] is False
-    assert "escapes root" in result["error"]
+    assert result["error"] == "Artifact file could not be read"
 
 
 def test_session_manager_rejects_unsafe_session_id(tmp_path: Path):
@@ -187,14 +190,15 @@ def test_session_manager_rejects_unsafe_session_id(tmp_path: Path):
     result = manager.read_artifact("anything", session_id="../outside")
 
     assert result["success"] is False
-    assert "unsafe session id" in result["error"].lower()
+    assert result["error"] == "Artifact lookup failed"
 
 
-def test_persist_tool_artifact_returns_none_without_data_dir():
+@pytest.mark.asyncio
+async def test_persist_tool_artifact_returns_none_without_data_dir():
     manager = SessionManager()
     set_session_manager(manager)
     try:
-        result = persist_tool_artifact(
+        result = await persist_tool_artifact(
             tool="unified_search",
             kind="search_results",
             files={"results.json": "{}"},
@@ -206,12 +210,13 @@ def test_persist_tool_artifact_returns_none_without_data_dir():
     assert result is None
 
 
-def test_persist_tool_artifact_redacts_local_paths_by_default(tmp_path: Path, monkeypatch):
+@pytest.mark.asyncio
+async def test_persist_tool_artifact_redacts_local_paths_by_default(tmp_path: Path, monkeypatch):
     monkeypatch.delenv("PUBMED_ARTIFACT_INCLUDE_LOCAL_PATHS", raising=False)
     manager = SessionManager(data_dir=str(tmp_path))
     set_session_manager(manager)
     try:
-        result = persist_tool_artifact(
+        result = await persist_tool_artifact(
             tool="unified_search",
             kind="search_results",
             files={"results.json": "{}"},
@@ -225,12 +230,13 @@ def test_persist_tool_artifact_redacts_local_paths_by_default(tmp_path: Path, mo
     assert "manifest_path" not in result
 
 
-def test_persist_tool_artifact_can_include_local_paths_for_local_workflows(tmp_path: Path, monkeypatch):
+@pytest.mark.asyncio
+async def test_persist_tool_artifact_can_include_local_paths_for_local_workflows(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("PUBMED_ARTIFACT_INCLUDE_LOCAL_PATHS", "true")
     manager = SessionManager(data_dir=str(tmp_path))
     set_session_manager(manager)
     try:
-        result = persist_tool_artifact(
+        result = await persist_tool_artifact(
             tool="unified_search",
             kind="search_results",
             files={"results.json": "{}"},
@@ -242,3 +248,91 @@ def test_persist_tool_artifact_can_include_local_paths_for_local_workflows(tmp_p
     assert result is not None
     assert Path(result["local_path"]).is_file()
     assert Path(result["manifest_path"]).is_file()
+
+
+@pytest.mark.asyncio
+async def test_persist_tool_artifact_offloads_save_and_settings_without_blocking_loop(tmp_path: Path, monkeypatch):
+    manager = SessionManager(data_dir=str(tmp_path))
+    original_save = manager.save_artifact
+    original_load_settings = artifact_memory_module.load_settings
+    save_started = threading.Event()
+    release_save = threading.Event()
+    heartbeat_ran = asyncio.Event()
+    main_thread = threading.get_ident()
+    worker_threads: dict[str, int] = {}
+
+    def blocking_save(**kwargs):
+        worker_threads["save"] = threading.get_ident()
+        save_started.set()
+        if not release_save.wait(timeout=1.0):
+            raise RuntimeError("event loop did not release artifact save")
+        return original_save(**kwargs)
+
+    def tracked_load_settings():
+        worker_threads["settings"] = threading.get_ident()
+        return original_load_settings()
+
+    async def heartbeat() -> None:
+        while not save_started.is_set():
+            await asyncio.sleep(0)
+        heartbeat_ran.set()
+        release_save.set()
+
+    monkeypatch.setattr(manager, "save_artifact", blocking_save)
+    monkeypatch.setattr(artifact_memory_module, "load_settings", tracked_load_settings)
+    set_session_manager(manager)
+    heartbeat_task = asyncio.create_task(heartbeat())
+    try:
+        result = await asyncio.wait_for(
+            persist_tool_artifact(
+                tool="get_fulltext",
+                kind="fulltext",
+                files={"fulltext.md": "body"},
+                primary_file="fulltext.md",
+            ),
+            timeout=0.5,
+        )
+        await heartbeat_task
+    finally:
+        release_save.set()
+        set_session_manager(None)
+
+    assert result is not None
+    assert heartbeat_ran.is_set()
+    assert worker_threads["save"] != main_thread
+    assert worker_threads["settings"] != main_thread
+
+
+def test_read_artifact_lookup_failure_does_not_leak_path_or_credentials(tmp_path: Path, caplog):
+    manager = SessionManager(data_dir=str(tmp_path))
+    secret = "api_key=private-lookup"
+
+    result = manager.read_artifact("artifact", session_id=f"../{secret}")
+
+    rendered = json.dumps(result)
+    assert result == {"success": False, "error": "Artifact lookup failed"}
+    assert secret not in rendered
+    assert str(tmp_path) not in rendered
+    assert secret not in caplog.text
+    assert str(tmp_path) not in caplog.text
+
+
+def test_read_artifact_file_failure_does_not_leak_host_path_or_credentials(tmp_path: Path, caplog):
+    private_dir = tmp_path / "api_key=private-read"
+    manager = SessionManager(data_dir=str(private_dir))
+    manifest = manager.save_artifact(
+        tool="get_fulltext",
+        kind="fulltext",
+        files={"fulltext.md": "body"},
+        primary_file="fulltext.md",
+    )
+    Path(manifest["local_path"]).unlink()
+
+    result = manager.read_artifact(manifest["artifact_id"])
+
+    rendered = json.dumps(result)
+    assert result == {"success": False, "error": "Artifact file could not be read"}
+    assert "private-read" not in rendered
+    assert str(private_dir) not in rendered
+    assert "private-read" not in caplog.text
+    assert str(private_dir) not in caplog.text

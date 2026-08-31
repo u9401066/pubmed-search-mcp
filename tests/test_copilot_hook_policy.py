@@ -76,15 +76,11 @@ class TestCopilotHookPolicy:
             assert metadata["nextInstruction"], f"workflowSteps.{step_name} missing nextInstruction"
             assert isinstance(metadata["tools"], list), f"workflowSteps.{step_name}.tools must be a list"
 
-    def test_quality_evaluation_is_not_search_only(self):
+    def test_quality_evaluation_covers_every_registered_tool(self):
         policy = json.loads(POLICY_PATH.read_text(encoding="utf-8"))
         quality_tools = set(policy["rules"]["qualityEvaluation"])
 
-        assert "unified_search" in quality_tools
-        assert "find_related_articles" in quality_tools
-        assert "get_fulltext" in quality_tools
-        assert "prepare_export" in quality_tools
-        assert "read_session" in quality_tools
+        assert quality_tools == _all_registry_tools()
 
     def test_requires_evidence_is_not_search_only(self):
         policy = json.loads(POLICY_PATH.read_text(encoding="utf-8"))
@@ -93,7 +89,7 @@ class TestCopilotHookPolicy:
         assert "get_fulltext" in guarded_tools
         assert "find_related_articles" in guarded_tools
         assert "prepare_export" in guarded_tools
-        assert "get_session_summary" in guarded_tools
+        assert "read_session" in guarded_tools
         assert "get_pipeline_history" in guarded_tools
 
     def test_chronicle_topic_build_and_persisted_reads_are_not_pre_search_guarded(self):

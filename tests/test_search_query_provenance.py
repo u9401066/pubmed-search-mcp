@@ -8,15 +8,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from pubmed_search.application.search.query_validator import QueryValidationResult
 from pubmed_search.infrastructure.ncbi.search import SearchMixin
-from pubmed_search.infrastructure.sources.core import COREClient
-from pubmed_search.presentation.mcp_server.tools.unified_runner import run_unified_search
-from pubmed_search.presentation.mcp_server.tools.unified_source_search import (
+from pubmed_search.infrastructure.sources.unified_broker import (
     _search_core_adapter,
     _search_preprint_source_adapter,
     _search_pubmed_adapter,
 )
+from pubmed_search.presentation.mcp_server.tools.unified_runner import run_unified_search
+from pubmed_search.shared.source_contracts import SourceAdapterResult
 
 PRIVATE_QUERY = "private-patient-marker-8d3e"
 
@@ -28,7 +27,7 @@ class _SearchMixinHarness(SearchMixin):
         self.failure = failure
         self.executed_queries: list[str] = []
 
-    async def _search_ids_with_retry(self, query: str, _retmax: int, _sort: str):
+    async def _search_ids(self, query: str, _retmax: int, _sort: str):
         self.executed_queries.append(query)
         if self.failure is not None:
             raise self.failure
@@ -39,31 +38,23 @@ class _SearchMixinHarness(SearchMixin):
 
 
 @pytest.mark.asyncio
-async def test_pubmed_filtered_corrected_query_reaches_unified_source_metadata() -> None:
+async def test_pubmed_filtered_compiled_query_reaches_unified_source_metadata() -> None:
     searcher = _SearchMixinHarness()
-    corrected_query = f'({PRIVATE_QUERY}) AND 2020/01/01:3000/12/31[dp] AND "Female"[MeSH]'
+    compiled_query = f'{PRIVATE_QUERY} AND 2020/01/01:2100/12/31[dp] AND "Female"[MeSH]'
 
-    with patch(
-        "pubmed_search.application.search.query_validator.validate_query",
-        return_value=QueryValidationResult(
-            is_valid=False,
-            errors=["repairable syntax"],
-            corrected_query=corrected_query,
-        ),
-    ):
-        result = await run_unified_search(
-            searcher=searcher,  # type: ignore[arg-type]
-            query=PRIVATE_QUERY,
-            sources="pubmed",
-            filters="year:2020-, sex:female",
-            output_format="json",
-            options="shallow,no_relax,no_analysis,no_scores",
-        )
+    result = await run_unified_search(
+        searcher=searcher,  # type: ignore[arg-type]
+        query=PRIVATE_QUERY,
+        sources="pubmed",
+        filters="year:2020-,sex:female",
+        output_format="json",
+        options="shallow,no_relax,no_analysis,no_scores",
+    )
 
     metadata = json.loads(result)["source_metadata"]["pubmed"]
-    assert searcher.executed_queries == [corrected_query]
+    assert searcher.executed_queries == [compiled_query]
     assert metadata["logical_query"] == PRIVATE_QUERY
-    assert metadata["physical_query"] == corrected_query
+    assert metadata["physical_query"] == compiled_query
     assert metadata["query_executed"] is True
 
 
@@ -73,7 +64,7 @@ async def test_pubmed_failure_preserves_attempted_query_without_logging_it(
 ) -> None:
     caplog.set_level(logging.DEBUG)
     searcher = _SearchMixinHarness(failure=RuntimeError(f"upstream failed for {PRIVATE_QUERY}"))
-    expected_query = f'{PRIVATE_QUERY} AND 2021/01/01:3000/12/31[dp] AND "Male"[MeSH]'
+    expected_query = f'{PRIVATE_QUERY} AND 2021/01/01:2100/12/31[dp] AND "Male"[MeSH]'
 
     result = await _search_pubmed_adapter(
         searcher,  # type: ignore[arg-type]
@@ -97,7 +88,7 @@ async def test_pubmed_failure_without_execution_reports_null_physical_query(
 ) -> None:
     caplog.set_level(logging.DEBUG)
     searcher = MagicMock()
-    searcher.search = AsyncMock(side_effect=RuntimeError(f"preflight failed for {PRIVATE_QUERY}"))
+    searcher.search_page = AsyncMock(side_effect=RuntimeError(f"preflight failed for {PRIVATE_QUERY}"))
 
     result = await _search_pubmed_adapter(searcher, PRIVATE_QUERY, 5, None, None, {})
 
@@ -110,19 +101,31 @@ async def test_pubmed_failure_without_execution_reports_null_physical_query(
 
 @pytest.mark.asyncio
 async def test_core_year_filters_use_provider_compiled_physical_query() -> None:
-    client = MagicMock(spec=COREClient)
-    client.compile_query.side_effect = COREClient.compile_query
-    client.search = AsyncMock(return_value={"results": [], "total_hits": 0})
+    physical_query = f'{PRIVATE_QUERY} AND yearPublished>="2020" AND yearPublished<="2024"'
+    raw_result = SourceAdapterResult.empty(source="core", operation="search")
+    raw_result.provenance = {
+        "logical_query": PRIVATE_QUERY,
+        "physical_query": physical_query,
+        "provider_mode": "keyword",
+        "query_executed": True,
+    }
 
     with patch(
-        "pubmed_search.presentation.mcp_server.tools.unified_source_search.get_core_client",
-        return_value=client,
-    ):
+        "pubmed_search.infrastructure.sources.unified_broker.search_alternate_source_adapter",
+        new=AsyncMock(return_value=raw_result),
+    ) as adapter_search:
         result = await _search_core_adapter(PRIVATE_QUERY, 10, 2020, 2024, {})
 
     assert result.status == "empty"
-    assert result.metadata["physical_query"] == (f'{PRIVATE_QUERY} AND yearPublished>="2020" AND yearPublished<="2024"')
+    assert result.metadata["physical_query"] == physical_query
     assert result.metadata["query_executed"] is True
+    adapter_search.assert_awaited_once_with(
+        query=PRIVATE_QUERY,
+        source="core",
+        limit=10,
+        min_year=2020,
+        max_year=2024,
+    )
 
 
 @pytest.mark.asyncio
@@ -188,5 +191,4 @@ async def test_rxiv_records_date_request_and_explicit_local_filters() -> None:
         categories=None,
         from_date="2025-01-01",
         to_date="2025-04-01",
-        strict=True,
     )

@@ -15,7 +15,7 @@
 #   unified_search(pipeline="saved:ai_anesthesia_scan")
 # ============================================================================
 
-name: "AI in Anesthesiology Multi-Source Scan"
+name: ai_in_anesthesiology_multi_source_scan
 
 steps:
   # ── Phase 1: 語意擴展 (MeSH + PubTator3) ──
@@ -29,7 +29,7 @@ steps:
     action: search
     params:
       query: '"Artificial Intelligence"[MeSH] AND "Anesthesiology"[MeSH]'
-      sources: pubmed
+      sources: [pubmed]
       limit: 100
       min_year: 2019
 
@@ -37,7 +37,7 @@ steps:
     action: search
     params:
       query: "artificial intelligence anesthesia OR anesthesiology"
-      sources: openalex
+      sources: [openalex]
       limit: 80
       min_year: 2019
 
@@ -46,7 +46,7 @@ steps:
     inputs: [expand]
     params:
       strategy: mesh
-      sources: pubmed,europe_pmc
+      sources: [pubmed, europe_pmc]
       limit: 80
       min_year: 2019
 

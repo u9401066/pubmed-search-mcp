@@ -17,7 +17,6 @@ class ImageSource(str, Enum):
     """Image source identifier (consistent with ArticleType/MilestoneType Enum pattern)."""
 
     OPENI = "openi"
-    EUROPE_PMC = "europe_pmc"
     MEDPIX = "medpix"
 
 

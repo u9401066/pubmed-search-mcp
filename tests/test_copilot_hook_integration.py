@@ -259,14 +259,15 @@ def test_structured_partial_result_persists_recoverable_safe_state(
     assert handoff == {
         "tool": "read_session",
         "arguments": {
-            "action": "artifact",
-            "artifact_uri": "artifact://session/run-123",
-            "artifact_file": "audit.json",
+            "request": {
+                "action": "artifact",
+                "locator": {"kind": "artifact_uri", "value": "artifact://session/run-123"},
+                "artifact_file": "audit.json",
+            },
         },
     }
     assert evaluation["recovery"]["search_run"]["replay"]["arguments"] == {
-        "action": "replay_search",
-        "run_id": "run-opaque-123",
+        "request": {"action": "replay_search", "run_id": "run-opaque-123"},
     }
     tracker = json.loads((state_dir / "workflow_tracker.json").read_text(encoding="utf-8"))
     assert tracker["steps"]["initial_search"]["status"] == "completed_with_warnings"
@@ -299,8 +300,11 @@ def test_partial_result_nudge_points_to_artifact_without_blocking(
     decision = json.loads(result.stdout)
     assert decision["permissionDecision"] == "allow"
     assert "artifact://session/run-123" in decision["permissionDecisionReason"]
-    assert 'read_session(action="artifact"' in decision["permissionDecisionReason"]
-    assert 'read_session(action="replay_search", run_id="run-opaque-123")' in decision["permissionDecisionReason"]
+    assert 'read_session(request={"action":"artifact"' in decision["permissionDecisionReason"]
+    assert (
+        'read_session(request={"action":"replay_search","run_id":"run-opaque-123"})'
+        in decision["permissionDecisionReason"]
+    )
 
 
 @pytest.mark.parametrize(("shell_name", "suffix"), SHELL_PHASES)
@@ -339,6 +343,106 @@ def test_empty_structured_search_is_not_misclassified_as_failure(
     assert evaluation["outcome"] == "empty"
     assert evaluation["quality"] == "acceptable"
     assert evaluation["count_known"] is True
+
+
+@pytest.mark.parametrize(("shell_name", "suffix"), SHELL_PHASES)
+def test_real_mcp_scalar_wrapper_is_decoded_before_classification(
+    tmp_path: Path,
+    shell_name: str,
+    suffix: str,
+) -> None:
+    """The declared result:string schema must not hide its JSON payload."""
+    runtime_root = _copy_hook_runtime(tmp_path)
+    result = _run_hook(
+        runtime_root,
+        shell_name,
+        f"scripts/hooks/copilot/evaluate-results{suffix}",
+        {
+            "toolName": "unified_search",
+            "toolArgs": {"query": "wrapped"},
+            "toolResult": {
+                "resultType": "success",
+                "structuredContent": {
+                    "result": json.dumps(
+                        {
+                            "tool": "unified_search",
+                            "search_status": "partial",
+                            "articles": [{"pmid": "12345"}],
+                            "source_counts": {"pubmed": 1, "openalex": 0},
+                            "source_errors": [{"source": "openalex", "status": "timeout", "retryable": True}],
+                        }
+                    )
+                },
+            },
+        },
+    )
+
+    assert result.returncode == 0, result.stderr
+    evaluation = json.loads(
+        (runtime_root / ".github" / "hooks" / "_state" / "last_research_eval.json").read_text(encoding="utf-8")
+    )
+    assert evaluation["outcome"] == "partial"
+    assert evaluation["result_count"] == 1
+    assert evaluation["failed_sources"] == ["openalex"]
+
+
+@pytest.mark.parametrize(("shell_name", "suffix"), SHELL_PHASES)
+def test_real_mcp_scalar_wrapper_does_not_turn_rendered_error_into_success(
+    tmp_path: Path,
+    shell_name: str,
+    suffix: str,
+) -> None:
+    runtime_root = _copy_hook_runtime(tmp_path)
+    secret = "PRIVATE_ERROR_DETAIL_MUST_NOT_PERSIST"
+    result = _run_hook(
+        runtime_root,
+        shell_name,
+        f"scripts/hooks/copilot/evaluate-results{suffix}",
+        {
+            "toolName": "analyze_search_query",
+            "toolArgs": {"query": ""},
+            "toolResult": {
+                "resultType": "success",
+                "structuredContent": {"result": f"\u274c **Error**: invalid query {secret}"},
+            },
+        },
+    )
+
+    assert result.returncode == 0, result.stderr
+    evaluation = json.loads(
+        (runtime_root / ".github" / "hooks" / "_state" / "last_research_eval.json").read_text(encoding="utf-8")
+    )
+    assert evaluation["outcome"] == "failed"
+    assert evaluation["quality"] == "poor"
+    assert secret not in _state_text(runtime_root)
+
+
+@pytest.mark.parametrize(("shell_name", "suffix"), SHELL_PHASES)
+def test_mcp_is_error_flag_has_priority_over_rendered_content(
+    tmp_path: Path,
+    shell_name: str,
+    suffix: str,
+) -> None:
+    runtime_root = _copy_hook_runtime(tmp_path)
+    result = _run_hook(
+        runtime_root,
+        shell_name,
+        f"scripts/hooks/copilot/evaluate-results{suffix}",
+        {
+            "toolName": "get_fulltext",
+            "toolArgs": {"pmid": "12345678"},
+            "toolResult": {
+                "isError": True,
+                "structuredContent": {"result": "provider failed"},
+            },
+        },
+    )
+
+    assert result.returncode == 0, result.stderr
+    evaluation = json.loads(
+        (runtime_root / ".github" / "hooks" / "_state" / "last_research_eval.json").read_text(encoding="utf-8")
+    )
+    assert evaluation["outcome"] == "failed"
 
 
 @pytest.mark.parametrize(("shell_name", "suffix"), SHELL_PHASES)

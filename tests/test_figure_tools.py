@@ -7,8 +7,10 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 import toons
+from pydantic import ValidationError
 
 from pubmed_search.domain.entities.figure import ArticleFigure, ArticleFiguresResult
+from pubmed_search.presentation.mcp_server.tools.article_source import PMCIDSource, PMIDSource
 
 
 class TestGetArticleFiguresTool:
@@ -55,8 +57,8 @@ class TestGetArticleFiguresTool:
         """An error ArticleFiguresResult."""
         return ArticleFiguresResult(
             pmcid="PMC999",
-            error="source_unavailable",
-            error_detail="All figure extraction sources failed",
+            error="token=secret https://user:pass@example.test/private/path",
+            error_detail="/srv/private/figure-cache",
         )
 
     async def _call_tool(self, **kwargs):
@@ -90,7 +92,7 @@ class TestGetArticleFiguresTool:
         mock_client.get_article_figures.return_value = mock_result
         mock_get_client.return_value = mock_client
 
-        output = await self._call_tool(pmcid="PMC12086443")
+        output = await self._call_tool(source=PMCIDSource(kind="pmcid", value="PMC12086443"))
 
         assert "Figure 1" in output
         assert "Figure 2" in output
@@ -98,13 +100,13 @@ class TestGetArticleFiguresTool:
         mock_client.get_article_figures.assert_called_once()
 
     @patch("pubmed_search.infrastructure.sources.figure_client.get_figure_client")
-    async def test_with_identifier_pmc(self, mock_get_client, mock_result):
-        """Test identifier auto-detection for PMC IDs."""
+    async def test_explicit_pmcid_source(self, mock_get_client, mock_result):
+        """Test the schema-exact PMCID source contract."""
         mock_client = AsyncMock()
         mock_client.get_article_figures.return_value = mock_result
         mock_get_client.return_value = mock_client
 
-        output = await self._call_tool(identifier="PMC12086443")
+        output = await self._call_tool(source=PMCIDSource(kind="pmcid", value="PMC12086443"))
 
         assert "Figure 1" in output
         mock_client.get_article_figures.assert_called_once()
@@ -118,9 +120,18 @@ class TestGetArticleFiguresTool:
         mock_client.get_article_figures.return_value = mock_result
         mock_get_client.return_value = mock_client
 
-        output = await self._call_tool(pmid="40384072")
+        output = await self._call_tool(
+            source=PMIDSource(kind="pmid", value="40384072"),
+            output_format="json",
+        )
+        parsed = json.loads(output)
 
-        assert "Figure 1" in output
+        assert parsed["figure_count"] == 2
+        assert parsed["identifiers"]["requested"] == {"kind": "pmid", "value": "40384072"}
+        assert any(
+            'get_fulltext(source={"kind":"pmid","value":"40384072"}' in command for command in parsed["next_commands"]
+        )
+        assert all("get_fulltext(pmid=" not in command for command in parsed["next_commands"])
         mock_resolve.assert_called_once()
 
     @patch("pubmed_search.presentation.mcp_server.tools.figure_tools._resolve_pmid_to_pmcid")
@@ -128,15 +139,30 @@ class TestGetArticleFiguresTool:
         """Test PMID that has no PMC ID."""
         mock_resolve.return_value = None
 
-        output = await self._call_tool(pmid="99999999")
+        output = await self._call_tool(source=PMIDSource(kind="pmid", value="99999999"))
 
         assert "not available in PMC" in output or "error" in output.lower()
 
-    async def test_no_identifier_provided(self):
-        """Test error when no identifier is given."""
-        output = await self._call_tool()
+    @patch("pubmed_search.presentation.mcp_server.tools.figure_tools._resolve_pmid_to_pmcid")
+    async def test_resolution_outage_is_not_reported_as_missing_article(self, mock_resolve):
+        mock_resolve.side_effect = RuntimeError("token=super-secret")
 
-        assert "error" in output.lower() or "No valid identifier" in output
+        output = await self._call_tool(source=PMIDSource(kind="pmid", value="99999999"))
+
+        assert "resolution source unavailable" in output
+        assert "not available in PMC" not in output
+        assert "super-secret" not in output
+
+    async def test_source_is_required(self):
+        """Compatibility-era optional identifier arguments are gone."""
+        with pytest.raises(TypeError, match="source"):
+            await self._call_tool()
+
+    def test_source_models_reject_non_string_and_unprefixed_values(self):
+        with pytest.raises(ValidationError):
+            PMIDSource(kind="pmid", value=123)
+        with pytest.raises(ValidationError):
+            PMCIDSource(kind="pmcid", value="12086443")
 
     @patch("pubmed_search.infrastructure.sources.figure_client.get_figure_client")
     async def test_error_result(self, mock_get_client, mock_error_result):
@@ -145,22 +171,26 @@ class TestGetArticleFiguresTool:
         mock_client.get_article_figures.return_value = mock_error_result
         mock_get_client.return_value = mock_client
 
-        output = await self._call_tool(pmcid="PMC999")
+        output = await self._call_tool(source=PMCIDSource(kind="pmcid", value="PMC999"))
 
-        assert "source_unavailable" in output or "error" in output.lower()
+        assert "error" in output.lower()
+        assert "secret" not in output
+        assert "example.test" not in output
+        assert "/srv/private" not in output
 
+    @patch("pubmed_search.presentation.mcp_server.tools.figure_tools._resolve_pmid_to_pmcid")
     @patch("pubmed_search.infrastructure.sources.figure_client.get_figure_client")
-    async def test_identifier_large_number_as_pmcid(self, mock_get_client, mock_result):
-        """Test that large numeric identifier (>8 digits) is treated as PMCID."""
+    async def test_explicit_pmid_source_is_resolved(self, mock_get_client, mock_resolve, mock_result):
+        """The discriminator, rather than a numeric heuristic, selects PMID."""
+        mock_resolve.return_value = "PMC12086443"
         mock_client = AsyncMock()
         mock_client.get_article_figures.return_value = mock_result
         mock_get_client.return_value = mock_client
 
-        await self._call_tool(identifier="123456789")
+        await self._call_tool(source=PMIDSource(kind="pmid", value="123456789"))
 
-        call_kwargs = mock_client.get_article_figures.call_args
-        # Should be treated as PMCID (PMC prefix added)
-        assert call_kwargs is not None
+        mock_resolve.assert_awaited_once_with("123456789")
+        mock_client.get_article_figures.assert_awaited_once()
 
     @patch("pubmed_search.infrastructure.sources.figure_client.get_figure_client")
     async def test_output_includes_pdf_links(self, mock_get_client, mock_result):
@@ -169,7 +199,7 @@ class TestGetArticleFiguresTool:
         mock_client.get_article_figures.return_value = mock_result
         mock_get_client.return_value = mock_client
 
-        output = await self._call_tool(pmcid="PMC12086443")
+        output = await self._call_tool(source=PMCIDSource(kind="pmcid", value="PMC12086443"))
 
         assert "PDF" in output or "pdf" in output
         assert "ncbi.nlm.nih.gov" in output
@@ -181,7 +211,7 @@ class TestGetArticleFiguresTool:
         mock_client.get_article_figures.return_value = mock_result
         mock_get_client.return_value = mock_client
 
-        output = await self._call_tool(pmcid="PMC12086443")
+        output = await self._call_tool(source=PMCIDSource(kind="pmcid", value="PMC12086443"))
 
         assert "europepmc.org" in output
         assert "fig1.jpg" in output
@@ -193,13 +223,19 @@ class TestGetArticleFiguresTool:
         mock_client.get_article_figures.return_value = mock_result
         mock_get_client.return_value = mock_client
 
-        output = await self._call_tool(pmcid="PMC12086443", output_format="json")
+        output = await self._call_tool(source=PMCIDSource(kind="pmcid", value="PMC12086443"), output_format="json")
         parsed = json.loads(output)
 
         assert parsed["tool"] == "get_article_figures"
         assert parsed["figure_count"] == 2
         assert parsed["figures"][0]["label"] == "Figure 1"
+        assert parsed["identifiers"]["requested"] == {"kind": "pmcid", "value": "PMC12086443"}
         assert parsed["next_tools"]
+        assert any(
+            'get_text_mined_terms(source={"kind":"pmcid","value":"PMC12086443"}' in command
+            for command in parsed["next_commands"]
+        )
+        assert all("get_text_mined_terms(pmcid=" not in command for command in parsed["next_commands"])
         assert parsed["section_provenance"]["figures"]["canonical_host"] == "PubMed Central"
 
     @patch("pubmed_search.infrastructure.sources.figure_client.get_figure_client")
@@ -209,7 +245,7 @@ class TestGetArticleFiguresTool:
         mock_client.get_article_figures.return_value = mock_result
         mock_get_client.return_value = mock_client
 
-        output = await self._call_tool(pmcid="PMC12086443", output_format="toon")
+        output = await self._call_tool(source=PMCIDSource(kind="pmcid", value="PMC12086443"), output_format="toon")
         parsed = toons.loads(output)
 
         assert parsed["tool"] == "get_article_figures"
@@ -260,8 +296,8 @@ class TestResolvePmidToPmcid:
             "pubmed_search.infrastructure.sources.get_europe_pmc_client",
             side_effect=Exception("Connection failed"),
         ):
-            result = await _resolve_pmid_to_pmcid("12345")
-            assert result is None
+            with pytest.raises(Exception, match="Connection failed"):
+                await _resolve_pmid_to_pmcid("12345")
 
 
 class TestFormatFiguresOutput:
@@ -335,3 +371,33 @@ class TestFormatFiguresOutput:
 
         output = _format_figures_output(result)
         assert "Sub-figures" in output or "(A)" in output
+
+    def test_format_neutralizes_markdown_and_active_urls(self):
+        from pubmed_search.presentation.mcp_server.tools.figure_tools import (
+            _format_figures_output,
+        )
+
+        result = ArticleFiguresResult(
+            pmcid="PMC123",
+            article_title="Title\n# injected",
+            total_figures=1,
+            figures=[
+                ArticleFigure(
+                    figure_id="f1",
+                    label="[click](https://attacker.invalid)",
+                    caption_text="caption\n```mermaid\ngraph TD",
+                    image_url="javascript:alert(1)",
+                    graphic_href="`break`",
+                )
+            ],
+            pdf_links=[{"source": "bad\n# heading", "url": "javascript:alert(1)", "type": "pdf"}],
+            source="external",
+        )
+
+        output = _format_figures_output(result)
+
+        assert "\n# injected" not in output
+        assert "\n```mermaid" not in output
+        assert "javascript:" not in output
+        assert "unsafe URL omitted" in output
+        assert "\\[click\\]\\(https://attacker.invalid\\)" in output

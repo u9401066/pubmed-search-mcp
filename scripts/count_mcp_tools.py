@@ -290,6 +290,25 @@ def _render_markdown_table(headers: list[str], rows: list[list[str]]) -> list[st
     return rendered
 
 
+def _generate_mcp_server_file_tree() -> list[str]:
+    """Render the current MCP presentation files without a stale hand list."""
+    mcp_root = Path(__file__).parent.parent / "src" / "pubmed_search" / "presentation" / "mcp_server"
+    root_files = sorted(
+        path.name
+        for path in mcp_root.iterdir()
+        if path.is_file() and (path.suffix == ".py" or path.name == "TOOLS_INDEX.md")
+    )
+    tool_files = sorted(path.name for path in (mcp_root / "tools").glob("*.py"))
+
+    lines = ["mcp_server/"]
+    lines.extend(f"├── {name}" for name in root_files)
+    lines.append("└── tools/")
+    for index, name in enumerate(tool_files):
+        branch = "└──" if index == len(tool_files) - 1 else "├──"
+        lines.append(f"    {branch} {name}")
+    return lines
+
+
 def generate_tools_index_markdown(stats: dict, tool_details: dict) -> str:
     """生成完整的 TOOLS_INDEX.md 內容"""
     lines = [
@@ -336,29 +355,7 @@ def generate_tools_index_markdown(stats: dict, tool_details: dict) -> str:
             "## 檔案結構",
             "",
             "```text",
-            "mcp_server/",
-            "├── server.py           # Server 創建與配置",
-            "├── instructions.py     # AI Agent 使用說明",
-            "├── tool_registry.py    # 工具註冊中心",
-            "├── session_tools.py    # Session 管理工具",
-            "├── resources.py        # MCP Resources",
-            "├── prompts.py          # MCP Prompts",
-            "├── TOOLS_INDEX.md      # 本檔案 (工具索引)",
-            "└── tools/              # 工具實作",
-            "    ├── __init__.py     # 統一入口",
-            "    ├── _common.py      # 共用工具函數",
-            "    ├── unified.py      # unified_search",
-            "    ├── discovery.py    # 搜尋與探索",
-            "    ├── strategy.py     # MeSH/查詢策略",
-            "    ├── pico.py         # Agent-provided PICO handoff",
-            "    ├── export.py       # 匯出工具",
-            "    ├── europe_pmc.py   # Europe PMC 全文",
-            "    ├── core.py         # CORE 開放取用",
-            "    ├── ncbi_extended.py # Gene/PubChem/ClinVar",
-            "    ├── citation_tree.py # 引用網路",
-            "    ├── openurl.py      # 機構訂閱",
-            "    ├── vision_search.py # 視覺搜索",
-            "    └── icd.py          # ICD 轉換工具",
+            *_generate_mcp_server_file_tree(),
             "```",
             "",
             "---",
@@ -616,7 +613,7 @@ def _generate_skill_tools_reference(stats: dict, tool_details: dict) -> str:
             "",
             "### PICO 搜尋",
             "```",
-            "Agent P/I/C/O -> parse_pico handoff -> unified_search(template:pico) / expanded Boolean",
+            "Agent P/I/C/O -> validate_pico_plan handoff -> unified_search(template:pico) / expanded Boolean",
             "```",
             "",
             "### 論文探索",

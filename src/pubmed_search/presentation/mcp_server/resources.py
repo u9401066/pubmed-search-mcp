@@ -53,7 +53,7 @@ AGE_GROUP_REFERENCE = {
         "aged": {"mesh": '"Aged"[MeSH]', "age_range": "65+ years"},
         "aged_80": {"mesh": '"Aged, 80 and over"[MeSH]', "age_range": "80+ years"},
     },
-    "usage_example": 'unified_search(query="diabetes", filters="age:aged")',
+    "usage_example": 'unified_search(query="diabetes", filters="age_group:aged")',
 }
 
 SEX_REFERENCE = {
@@ -88,8 +88,8 @@ LANGUAGE_REFERENCE = {
         "portuguese": {"syntax": "por[la]"},
         "russian": {"syntax": "rus[la]"},
     },
-    "note": "也可使用其他 ISO 語言代碼如 'jpn', 'kor' 等",
-    "usage_example": 'unified_search(query="COVID-19", filters="lang:english")',
+    "note": "Use one exact lowercase option key listed above.",
+    "usage_example": 'unified_search(query="COVID-19", filters="language:english")',
 }
 
 CLINICAL_QUERY_REFERENCE = {
@@ -147,7 +147,7 @@ CLINICAL_QUERY_REFERENCE = {
             "use_case": "驗證過的預測工具",
         },
     },
-    "usage_example": 'unified_search(query="diabetes treatment", filters="clinical:therapy")',
+    "usage_example": 'unified_search(query="diabetes treatment", filters="clinical_query:therapy")',
 }
 
 ARTICLE_TYPE_REFERENCE = {
@@ -336,19 +336,14 @@ def register_resources(mcp: MCPServer):
         ),
     )
     def get_icd_mapping() -> str:
-        """ICD-9/10 to MeSH mapping reference."""
-        return json.dumps(
-            {
-                "description": "ICD to MeSH bidirectional mapping",
-                "supported_icd10_codes": "See tools/icd.py",
-                "supported_icd9_codes": "See tools/icd.py",
-                "usage": {
-                    "icd_to_mesh": 'convert_icd_mesh(code="E11")',
-                    "mesh_to_icd": 'convert_icd_mesh(mesh_term="Diabetes Mellitus")',
-                },
-            },
-            indent=2,
-            ensure_ascii=False,
-        )
+        """Return the canonical curated ICD/MeSH reference payload."""
+        from pubmed_search.application.search.icd import get_icd_reference
+
+        reference = get_icd_reference()
+        reference["usage"] = {
+            "icd_to_mesh": 'convert_icd_mesh(direction="icd_to_mesh", value="E11")',
+            "mesh_to_icd": ('convert_icd_mesh(direction="mesh_to_icd", value="Diabetes Mellitus")'),
+        }
+        return json.dumps(reference, indent=2, ensure_ascii=False)
 
     logger.info("Registered MCP resources for filters and tools")

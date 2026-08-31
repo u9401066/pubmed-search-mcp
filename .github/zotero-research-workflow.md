@@ -5,7 +5,7 @@
 ## 🔍 文獻搜尋流程
 
 ### 步驟 1: 了解研究問題
-Agent 先抽出 P/I/C/O，再使用 `parse_pico(description=..., p=..., i=..., c=..., o=...)` 驗證結構化 PICO handoff：
+Agent 先抽出 P/I/C/O，再使用 `validate_pico_plan(description=..., p=..., i=..., c=..., o=...)` 驗證結構化 PICO handoff：
 - **P**opulation: 研究對象
 - **I**ntervention: 介入措施
 - **C**omparison: 對照組
@@ -20,7 +20,7 @@ Agent 先抽出 P/I/C/O，再使用 `parse_pico(description=..., p=..., i=..., c
 ### 步驟 3: 執行搜尋
 使用 `unified_search` 執行搜尋，注意：
 - 結果會自動快取到 Session
-- 使用 `get_session_pmids` 取得已搜尋的 PMID
+- 使用 `read_session(request={"action":"pmids"})` 取得已搜尋的 PMID
 - **不要重複搜尋相同的關鍵字**
 - `unified_search` 會自動合併去重多個來源的結果
 
@@ -44,7 +44,7 @@ Agent 先抽出 P/I/C/O，再使用 `parse_pico(description=..., p=..., i=..., c
 
 ### 匯入前確認清單
 1. ✅ 已詢問目標 Collection
-2. ✅ 已確認文章或 PMID 來源（例如 `unified_search` 結果或 `get_session_pmids`）
+2. ✅ 已確認文章或 PMID 來源（例如 `unified_search` 結果或 `read_session(request={"action":"pmids"})`）
 3. ✅ 已提醒用戶文獻數量
 
 ---
@@ -58,12 +58,12 @@ Agent 先抽出 P/I/C/O，再使用 `parse_pico(description=..., p=..., i=..., c
 
 ### Session 工具使用時機
 
-| 工具 | 何時使用 |
+| 呼叫 | 何時使用 |
 |------|----------|
-| `get_session_pmids` | 需要取得之前搜尋的 PMID |
-| `list_search_history` | 查看本次對話的搜尋紀錄 |
-| `get_cached_article` | 取得已快取的文章詳情（避免重複 fetch） |
-| `get_session_summary` | 檢查 Session 狀態 |
+| `read_session(request={"action":"pmids"})` | 取得之前搜尋的 PMID |
+| `read_session(request={"action":"log"})` | 查看本次對話的搜尋紀錄 |
+| `read_session(request={"action":"article","pmid":"12345678"})` | 取得已快取的文章詳情（避免重複 fetch） |
+| `read_session(request={"action":"summary"})` | 檢查 Session 狀態 |
 
 ---
 
@@ -93,7 +93,7 @@ Agent 先抽出 P/I/C/O，再使用 `parse_pico(description=..., p=..., i=..., c
 
 ### ✅ 正確做法
 1. 搜尋 → 確認結果 → 詢問 Collection → 匯入
-2. 用 `get_session_pmids` 取得已有的 PMID
+2. 用 `read_session(request={"action":"pmids"})` 取得已有的 PMID
 3. 用 `get_item` 從 Zotero 讀取已存文獻的詳情
 4. 匯入前用 `check_articles_owned` 檢查重複，再用 `import_articles` 存入 Zotero
 
@@ -105,7 +105,7 @@ Agent 先抽出 P/I/C/O，再使用 `parse_pico(description=..., p=..., i=..., c
 用戶: 幫我找最近的 AI 麻醉研究
 
 Copilot 動作:
-1. Agent 抽出 P/I/C/O，並用 parse_pico 驗證 handoff / 取得 PICO pipeline
+1. Agent 抽出 P/I/C/O，並用 validate_pico_plan 驗證 handoff / 取得 PICO pipeline
 2. generate_search_queries: 產生搜尋策略
 3. unified_search: 執行搜尋
 4. [回報結果，詢問是否要存入 Zotero]

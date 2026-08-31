@@ -13,6 +13,14 @@ from pathlib import Path
 from typing import Any
 
 from pubmed_search.shared.file_io import atomic_write_text
+from pubmed_search.shared.markdown import (
+    escape_markdown_block,
+    escape_markdown_text,
+    escape_markdown_wikilink_label,
+    markdown_code_block,
+    markdown_link,
+    markdown_relative_link,
+)
 
 SUPPORTED_NOTE_FORMATS = ("wiki", "foam", "markdown", "medpaper")
 WIKILINK_NOTE_FORMATS = {"wiki", "foam", "medpaper"}
@@ -100,11 +108,11 @@ def _write_literature_notes_locked(
     include_csl_json: bool,
 ) -> dict[str, Any]:
     """Write a note batch while the canonical output-root lock is held."""
-    normalized_format = str(note_format or "wiki").strip().lower()
-    if normalized_format not in SUPPORTED_NOTE_FORMATS:
+    if note_format not in SUPPORTED_NOTE_FORMATS:
         supported = ", ".join(SUPPORTED_NOTE_FORMATS)
         msg = f"Unsupported note format: {note_format}. Use one of: {supported}"
         raise ValueError(msg)
+    normalized_format = note_format
 
     output_dir.mkdir(parents=True, exist_ok=True)
     now = datetime.now(tz=timezone.utc)
@@ -504,6 +512,10 @@ def _render_article_note(
             created_at=created_at,
         )
 
+    safe_title = escape_markdown_text(title)
+    safe_journal = escape_markdown_text(journal)
+    safe_year = escape_markdown_text(year)
+    safe_authors = "; ".join(escape_markdown_text(author) for author in authors)
     lines = [
         "---",
         f"title: {_yaml_string(title)}",
@@ -520,15 +532,15 @@ def _render_article_note(
         f"aliases: {_yaml_list(aliases)}",
         "---",
         "",
-        f"# {title}",
+        f"# {safe_title}",
         "",
         "## Metadata",
         f"- PMID: {_format_pubmed_link(pmid)}" if pmid else "- PMID:",
         f"- DOI: {_format_doi_link(doi)}" if doi else "- DOI:",
         f"- PMC: {_format_pmc_link(pmc_id)}" if pmc_id else "- PMC:",
-        f"- Journal: {journal}" if journal else "- Journal:",
-        f"- Year: {year}" if year else "- Year:",
-        f"- Authors: {'; '.join(authors)}" if authors else "- Authors:",
+        f"- Journal: {safe_journal}" if journal else "- Journal:",
+        f"- Year: {safe_year}" if year else "- Year:",
+        f"- Authors: {safe_authors}" if authors else "- Authors:",
         "",
         "## Triage",
         "- Status:",
@@ -551,7 +563,7 @@ def _render_article_note(
         "-",
         "",
         "## Citation",
-        f"- {_format_citation(article, authors)}",
+        f"- {escape_markdown_text(_format_citation(article, authors))}",
         "",
         "## Links",
     ]
@@ -560,7 +572,7 @@ def _render_article_note(
         lines.append(f"- {link}")
 
     if include_abstract and article.get("abstract"):
-        lines.extend(["", "## Abstract", "", _clean_text(article.get("abstract", ""))])
+        lines.extend(["", "## Abstract", "", escape_markdown_block(article.get("abstract", ""))])
 
     return "\n".join(lines).rstrip() + "\n"
 
@@ -582,7 +594,7 @@ def _render_index_note(
         'tags: ["literature", "pubmed", "index"]',
         "---",
         "",
-        f"# {title}",
+        f"# {escape_markdown_text(title)}",
         "",
     ]
 
@@ -590,9 +602,9 @@ def _render_index_note(
         lines.extend(
             [
                 "## Search Context",
-                f"- Query: {search_context.get('query', '')}",
-                f"- Timestamp: {search_context.get('timestamp', '')}",
-                f"- Result count: {search_context.get('result_count', '')}",
+                f"- Query: {escape_markdown_text(search_context.get('query', ''))}",
+                f"- Timestamp: {escape_markdown_text(search_context.get('timestamp', ''))}",
+                f"- Result count: {escape_markdown_text(search_context.get('result_count', ''))}",
                 "",
             ]
         )
@@ -609,7 +621,7 @@ def _render_index_note(
             note_format,
             citation_key=entry["citation_key"],
         )
-        suffix = f" - {metadata}" if metadata else ""
+        suffix = f" - {escape_markdown_text(metadata)}" if metadata else ""
         lines.append(f"- {link}{suffix}")
 
     lines.extend(["", "## Synthesis Notes", "-"])
@@ -626,8 +638,8 @@ def _format_reference_link(
     title = _clean_text(article.get("title", "Untitled article"))
     if note_format in WIKILINK_NOTE_FORMATS:
         target = citation_key if note_format == "medpaper" and citation_key else stem
-        return f"[[{target}|{title}]]"
-    return f"[{title}]({stem}.md)"
+        return f"[[{target}|{escape_markdown_wikilink_label(title)}]]"
+    return markdown_relative_link(title, f"{stem}.md")
 
 
 def _validate_generated_wikilinks(
@@ -809,26 +821,26 @@ def _render_medpaper_note(
         'user_read_status: "unread"',
         "---",
         "",
-        f"# {title}",
+        f"# {escape_markdown_text(title)}",
         "",
-        f"**Authors**: {'; '.join(authors)}",
+        f"**Authors**: {'; '.join(escape_markdown_text(author) for author in authors)}",
         "",
         f"**Journal**: {_format_journal_line(article)}",
         "",
-        f"**Reference ID**: {_unique_reference_id(article, fallback=citation_key)}",
-        f"**PMID**: {pmid}",
+        f"**Reference ID**: {escape_markdown_text(_unique_reference_id(article, fallback=citation_key))}",
+        f"**PMID**: {escape_markdown_text(pmid)}",
     ]
     if doi:
-        lines.append(f"**DOI**: [{doi}](https://doi.org/{doi})")
+        lines.append(f"**DOI**: {markdown_link(doi, f'https://doi.org/{doi}')}")
     if pmc_id:
-        lines.append(f"**PMC**: {pmc_id}")
+        lines.append(f"**PMC**: {escape_markdown_text(pmc_id)}")
 
     if include_abstract and article.get("abstract"):
-        lines.extend(["", "## Abstract", "", _clean_text(article.get("abstract", ""))])
+        lines.extend(["", "## Abstract", "", escape_markdown_block(article.get("abstract", ""))])
 
     summary = _clean_text(article.get("abstract", ""))[:500]
     if summary:
-        lines.extend(["", "## Key Findings", "", summary, "", "^key-findings"])
+        lines.extend(["", "## Key Findings", "", escape_markdown_block(summary), "", "^key-findings"])
 
     lines.extend(
         [
@@ -849,24 +861,25 @@ def _render_medpaper_note(
             "",
             "## Citation Formats",
             "",
-            f"**Reference**: {_format_citation(article, authors)}",
+            f"**Reference**: {escape_markdown_text(_format_citation(article, authors))}",
             "",
             "**CSL JSON**:",
             "",
-            "```json",
-            json.dumps(_to_csl_json(article, citation_key=citation_key), ensure_ascii=False, indent=2),
-            "```",
+            markdown_code_block(
+                json.dumps(_to_csl_json(article, citation_key=citation_key), ensure_ascii=False, indent=2),
+                language="json",
+            ),
         ]
     )
     return "\n".join(lines).rstrip() + "\n"
 
 
 def _format_journal_line(article: dict[str, Any]) -> str:
-    journal = _clean_text(article.get("journal", ""))
-    year = str(article.get("year", "")).strip()
-    volume = str(article.get("volume", "")).strip()
-    issue = str(article.get("issue", "")).strip()
-    pages = str(article.get("pages", "")).strip()
+    journal = escape_markdown_text(_clean_text(article.get("journal", "")))
+    year = escape_markdown_text(str(article.get("year", "")).strip())
+    volume = escape_markdown_text(str(article.get("volume", "")).strip())
+    issue = escape_markdown_text(str(article.get("issue", "")).strip())
+    pages = escape_markdown_text(str(article.get("pages", "")).strip())
 
     line = journal
     if year:
@@ -911,24 +924,24 @@ def _format_citation(article: dict[str, Any], authors: list[str]) -> str:
 def _article_links(pmid: str, doi: str, pmc_id: str) -> list[str]:
     links: list[str] = []
     if pmid:
-        links.append(f"PubMed: https://pubmed.ncbi.nlm.nih.gov/{pmid}/")
+        links.append(f"PubMed: {markdown_link(pmid, f'https://pubmed.ncbi.nlm.nih.gov/{pmid}/')}")
     if doi:
-        links.append(f"DOI: https://doi.org/{doi}")
+        links.append(f"DOI: {markdown_link(doi, f'https://doi.org/{doi}')}")
     if pmc_id:
-        links.append(f"PMC: https://www.ncbi.nlm.nih.gov/pmc/articles/{pmc_id}/")
+        links.append(f"PMC: {markdown_link(pmc_id, f'https://www.ncbi.nlm.nih.gov/pmc/articles/{pmc_id}/')}")
     return links or ["PubMed:"]
 
 
 def _format_pubmed_link(pmid: str) -> str:
-    return f"[{pmid}](https://pubmed.ncbi.nlm.nih.gov/{pmid}/)"
+    return markdown_link(pmid, f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/")
 
 
 def _format_doi_link(doi: str) -> str:
-    return f"[{doi}](https://doi.org/{doi})"
+    return markdown_link(doi, f"https://doi.org/{doi}")
 
 
 def _format_pmc_link(pmc_id: str) -> str:
-    return f"[{pmc_id}](https://www.ncbi.nlm.nih.gov/pmc/articles/{pmc_id}/)"
+    return markdown_link(pmc_id, f"https://www.ncbi.nlm.nih.gov/pmc/articles/{pmc_id}/")
 
 
 def _yaml_string(value: str) -> str:

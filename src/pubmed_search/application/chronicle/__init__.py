@@ -40,8 +40,6 @@ from .projectors import (
     project_timeline,
     render_chronicle_mermaid,
     render_chronicle_mermaid_result,
-    render_lineage_mindmap,
-    render_timeline_mermaid,
 )
 from .service import (
     CHRONICLE_ARTIFACT_FILES,
@@ -81,7 +79,5 @@ __all__ = [
     "render_chronicle_mermaid",
     "render_chronicle_mermaid_projection",
     "render_chronicle_mermaid_result",
-    "render_lineage_mindmap",
-    "render_timeline_mermaid",
     "validate_mermaid_source",
 ]

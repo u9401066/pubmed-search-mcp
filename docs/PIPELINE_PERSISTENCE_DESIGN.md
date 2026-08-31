@@ -1,6 +1,10 @@
 # Pipeline 持久化與排程搜尋設計文件
 
-> **Status**: RFC（Request for Comments）
+> **Status**: Superseded historical RFC. v0.7.0 的 canonical contract 是七個 strict 工具，
+> 以 `schedule_pipeline` / `unschedule_pipeline` 分開設定與解除排程；不接受 action bag、
+> alias、fuzzy repair 或錯型 coercion。現行使用方式請見
+> [Pipeline Mode Tutorial](PIPELINE_MODE_TUTORIAL.md) 與
+> [MCP Tool Quality Audit](TOOL_QUALITY_AUDIT.zh-TW.md)。以下保留為歷史設計記錄，不是現行 API 規格。
 > **Created**: 2026-02-15
 > **Scope**: Pipeline 持久化、MCP 檔案傳輸、排程搜尋
 

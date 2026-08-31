@@ -137,7 +137,7 @@ unified_search(
 )
 
 # 對選中的 PMID / DOI 進一步抓全文
-get_fulltext(pmid="12345678", extended_sources=True)
+get_fulltext(source={"kind":"pmid","value":"12345678"}, extended_sources=True)
 ```
 
 ### 情境 3：跨來源搜尋後做探索
@@ -168,7 +168,7 @@ get_citation_metrics(pmids="12345678,23456789")
 ## 何時使用 options
 
 ```python
-options="preprints, shallow"
+options="preprints,shallow"
 ```
 
 ### 常見組合
@@ -206,7 +206,7 @@ non-exhaustive、source sets 與 continuation/unknown-completeness。一般 deep
 會在 provider I/O 前 fail closed。
 
 需要回復歷程時，依序使用
-`read_session(action="search_runs")`、`search_run`、`replay_search`。Replay 只回傳
+`read_session(request={"action":"search_runs"})`、`read_session(request={"action":"search_run","run_id":"..."})`、`read_session(request={"action":"replay_search","run_id":"..."})`。Replay 只回傳
 已移除 credentials 的 `unified_search` kwargs，不會自動執行；provider cursor/token
 目前只保存在 provenance，尚不能透過公開 facade 就地續頁。
 

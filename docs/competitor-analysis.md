@@ -8,7 +8,7 @@
 > 本文保留當時觀察到的 stars、forks、語言比例、tool/source count、FastMCP
 > 名稱與 roadmap；這些數字**全部可能已過期**，不可用來描述 2026-08-14 的
 > repository 現況，也不可作為 implementation contract。PubMed Search MCP 目前的
-> runtime 以 MCP SDK v2、45-tool primary surface、唯一 generic literature search
+> runtime 以 MCP SDK v2、41-tool primary surface、唯一 generic literature search
 > `unified_search` 與分離的 local/authenticated-service profiles 為準。
 >
 > BioMCP 的重新驗證、逐項 source/entity/rights 分析及本輪實作狀態，請只引用

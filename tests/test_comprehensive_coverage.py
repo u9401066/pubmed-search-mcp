@@ -22,29 +22,28 @@ class TestSearchMixinEdgeCases:
         from pubmed_search.infrastructure.ncbi.search import SearchMixin
 
         class TestSearcher(SearchMixin):
-            def fetch_details(self, id_list):
+            async def fetch_details(self, id_list):
                 return [{"pmid": pid} for pid in id_list]
 
         return TestSearcher()
 
     async def test_search_with_date_range(self, search_mixin):
-        """Test search with precise date range."""
+        """Test the canonical publication-year range."""
         with (
             patch("pubmed_search.infrastructure.ncbi.search.Entrez.esearch") as mock_esearch,
             patch("pubmed_search.infrastructure.ncbi.search.Entrez.read") as mock_read,
         ):
-            mock_read.return_value = {"IdList": ["123", "456"]}
+            mock_read.return_value = {"IdList": ["123", "456"], "Count": "2"}
             mock_esearch.return_value = MagicMock()
 
-            results = await search_mixin.search(
+            page = await search_mixin.search_page(
                 query="diabetes",
-                date_from="2024/01/01",
-                date_to="2024/12/31",
-                date_type="edat",
+                min_year=2024,
+                max_year=2024,
             )
 
-            # Should include date range in query
-            assert isinstance(results, list)
+            assert page.total == 2
+            assert "2024/01/01:2024/12/31[dp]" in str(page.query)
 
     async def test_search_with_min_max_year(self, search_mixin):
         """Test search with legacy year range."""
@@ -52,12 +51,12 @@ class TestSearchMixinEdgeCases:
             patch("pubmed_search.infrastructure.ncbi.search.Entrez.esearch") as mock_esearch,
             patch("pubmed_search.infrastructure.ncbi.search.Entrez.read") as mock_read,
         ):
-            mock_read.return_value = {"IdList": ["123"]}
+            mock_read.return_value = {"IdList": ["123"], "Count": "1"}
             mock_esearch.return_value = MagicMock()
 
-            results = await search_mixin.search(query="cancer", min_year=2020, max_year=2024)
+            page = await search_mixin.search_page(query="cancer", min_year=2020, max_year=2024)
 
-            assert isinstance(results, list)
+            assert page.items == [{"pmid": "123"}]
 
     async def test_search_with_article_type(self, search_mixin):
         """Test search with article type filter."""
@@ -65,12 +64,12 @@ class TestSearchMixinEdgeCases:
             patch("pubmed_search.infrastructure.ncbi.search.Entrez.esearch") as mock_esearch,
             patch("pubmed_search.infrastructure.ncbi.search.Entrez.read") as mock_read,
         ):
-            mock_read.return_value = {"IdList": ["789"]}
+            mock_read.return_value = {"IdList": ["789"], "Count": "1"}
             mock_esearch.return_value = MagicMock()
 
-            results = await search_mixin.search(query="surgery", article_type="Review")
+            page = await search_mixin.search_page(query="surgery", article_type="Review")
 
-            assert isinstance(results, list)
+            assert page.items == [{"pmid": "789"}]
 
     async def test_search_strategies(self, search_mixin):
         """Test different search strategies."""
@@ -81,13 +80,13 @@ class TestSearchMixinEdgeCases:
                 patch("pubmed_search.infrastructure.ncbi.search.Entrez.esearch") as mock_esearch,
                 patch("pubmed_search.infrastructure.ncbi.search.Entrez.read") as mock_read,
             ):
-                mock_read.return_value = {"IdList": ["123"]}
+                mock_read.return_value = {"IdList": ["123"], "Count": "1"}
                 mock_esearch.return_value = MagicMock()
 
-                results = await search_mixin.search(query="test", strategy=strategy)
-                assert isinstance(results, list)
+                page = await search_mixin.search_page(query="test", strategy=strategy)
+                assert page.items == [{"pmid": "123"}]
 
-    async def test_search_ids_with_retry_transient_error(self, search_mixin):
+    async def test_search_ids_transient_error(self, search_mixin):
         """Test retry logic on transient errors."""
         with (
             patch("pubmed_search.infrastructure.ncbi.search.Entrez.esearch") as mock_esearch,
@@ -96,31 +95,27 @@ class TestSearchMixinEdgeCases:
                 "pubmed_search.infrastructure.ncbi.search.asyncio.sleep",
                 new_callable=AsyncMock,
             ),
-            patch(
-                "pubmed_search.infrastructure.ncbi.search._rate_limit",
-                new_callable=AsyncMock,
-            ),
         ):
             # First call fails, second succeeds
             mock_esearch.side_effect = [
                 Exception("temporarily unavailable"),
                 MagicMock(),
             ]
-            mock_read.return_value = {"IdList": ["123"]}
+            mock_read.return_value = {"IdList": ["123"], "Count": "1"}
 
-            result = await search_mixin._search_ids_with_retry("test query", 10, "relevance")
+            result = await search_mixin._search_ids("test query", 10, "relevance")
 
-            assert result[0] == ["123"] or result == (["123"], 0)
+            assert result == (["123"], 1, "", "")
 
     async def test_search_error_handling(self, search_mixin):
-        """Test search error handling."""
+        """Search raises a typed failure rather than an article-shaped row."""
+        from pubmed_search.infrastructure.ncbi.base import NCBIInfrastructureError
+
         with patch("pubmed_search.infrastructure.ncbi.search.Entrez.esearch") as mock_esearch:
             mock_esearch.side_effect = Exception("Unknown error")
 
-            results = await search_mixin.search(query="test")
-
-            # Should return error dict
-            assert len(results) >= 1
+            with pytest.raises(NCBIInfrastructureError, match="NCBI search failed"):
+                await search_mixin.search_page(query="test")
 
 
 class TestServerCreateServer:
@@ -137,7 +132,8 @@ class TestServerCreateServer:
             patch.object(LiteratureSearcher, "__init__", return_value=None),
             patch.object(SearchStrategyGenerator, "__init__", return_value=None),
             patch.object(SessionManager, "__init__", return_value=None),
-            patch("pubmed_search.presentation.mcp_server.server.MCPServer") as mock_mcp,
+            patch("pubmed_search.presentation.mcp_server.server.PubMedMCPServer") as mock_mcp,
+            patch("pubmed_search.presentation.mcp_server.server.build_pipeline_runtime", return_value=MagicMock()),
             patch("pubmed_search.presentation.mcp_server.server.register_all_mcp_tools"),
         ):
             mock_mcp.return_value = MagicMock()
@@ -157,7 +153,8 @@ class TestServerCreateServer:
             patch.object(LiteratureSearcher, "__init__", return_value=None),
             patch.object(SearchStrategyGenerator, "__init__", return_value=None),
             patch.object(SessionManager, "__init__", return_value=None),
-            patch("pubmed_search.presentation.mcp_server.server.MCPServer") as mock_mcp,
+            patch("pubmed_search.presentation.mcp_server.server.PubMedMCPServer") as mock_mcp,
+            patch("pubmed_search.presentation.mcp_server.server.build_pipeline_runtime", return_value=MagicMock()),
             patch("pubmed_search.presentation.mcp_server.server.register_all_mcp_tools"),
         ):
             mock_mcp.return_value = MagicMock()
@@ -177,7 +174,8 @@ class TestServerCreateServer:
             patch.object(LiteratureSearcher, "__init__", return_value=None),
             patch.object(SearchStrategyGenerator, "__init__", return_value=None),
             patch.object(SessionManager, "__init__", return_value=None),
-            patch("pubmed_search.presentation.mcp_server.server.MCPServer") as mock_mcp,
+            patch("pubmed_search.presentation.mcp_server.server.PubMedMCPServer") as mock_mcp,
+            patch("pubmed_search.presentation.mcp_server.server.build_pipeline_runtime", return_value=MagicMock()),
             patch("pubmed_search.presentation.mcp_server.server.register_all_mcp_tools"),
         ):
             mock_mcp.return_value = MagicMock()
@@ -252,7 +250,7 @@ class TestExportToolsFunctions:
             with patch("pubmed_search.presentation.mcp_server.tools.export.EXPORT_DIR", Path(tmpdir)):
                 content = "TY  - JOUR\nPMID- 12345\nER  -"
 
-                file_path = _save_export_file(content, "ris", 5)
+                file_path = _save_export_file(content, "ris")
 
                 assert os.path.exists(file_path)
                 with open(file_path) as f:
@@ -332,7 +330,10 @@ class TestSessionManagerCoverage:
             manager.add_to_cache(articles)
 
             session = manager.get_current_session()
-            assert "12345" in session.article_cache
+            assert session is not None
+            assert "12345" in session.cached_pmids
+            assert manager.get_cached_article("12345") is not None
+            assert not hasattr(session, "article_cache")
 
 
 class TestStrategyGeneratorEdgeCases:
@@ -410,25 +411,11 @@ class TestCommonModuleMoreCoverage:
 class TestDiscoveryToolsMoreCoverage:
     """More coverage for discovery.py."""
 
-    async def test_search_literature_with_force_refresh(self):
-        """Test search_literature with force_refresh."""
-        # This tests the force_refresh parameter path
-        from pubmed_search.presentation.mcp_server.tools._common import (
-            set_session_manager,
-        )
-
-        # Set no session manager
-        set_session_manager(None)
-
-        # The tool would be tested through the MCP interface
-        # Here we just verify the parameter is accepted
-        assert True
-
     async def test_find_related_normal(self):
-        """Test find_related_articles works normally."""
+        """Test the canonical related-article operation is available."""
         from pubmed_search import LiteratureSearcher
 
         searcher = LiteratureSearcher(email="test@example.com")
 
-        # The mixin method is find_related_articles
-        assert hasattr(searcher, "find_related_articles")
+        assert hasattr(searcher, "get_related_articles")
+        assert not hasattr(searcher, "find_related_articles")

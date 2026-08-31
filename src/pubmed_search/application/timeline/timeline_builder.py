@@ -16,16 +16,22 @@ Example:
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from math import isfinite
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
+from pubmed_search.application.search.source_models import SourceSearchPage
 from pubmed_search.domain.entities.timeline import (
     LandmarkScore,
     MilestoneType,
     ResearchTimeline,
     TimelineEvent,
     TimelinePeriod,
+)
+from pubmed_search.shared.markdown import escape_markdown_text
+from pubmed_search.shared.source_contracts import (
+    SourceAdapterError,
+    normalize_source_adapter_error,
 )
 
 from .diagnostics import build_timeline_diagnostics
@@ -43,13 +49,68 @@ class TimelineRetrievalError(RuntimeError):
     """Raised when PubMed retrieval fails instead of returning article evidence."""
 
 
+class _CitationMetricsResponseError(TypeError):
+    """Raised when iCite violates its PMID-to-metrics mapping contract."""
+
+
+_CitationMetricsStatus = Literal["not_requested", "complete", "partial", "empty", "error"]
+_EffectiveRanking = Literal["pubmed_relevance", "icite_citation_count_then_pubmed_relevance"]
+
+
+@dataclass(frozen=True)
+class _CitationMetricsCoverage:
+    """Typed, query-safe provenance for one iCite enrichment attempt."""
+
+    status: _CitationMetricsStatus = "not_requested"
+    requested: int = 0
+    returned: int = 0
+    applied: int = 0
+    citation_counts_applied: int = 0
+    error: SourceAdapterError | None = None
+    error_type: str | None = None
+
+    @property
+    def complete(self) -> bool:
+        """Whether every requested PMID received a valid iCite metric row."""
+        return self.requested > 0 and self.applied == self.requested and self.status == "complete"
+
+    def to_metadata(self) -> dict[str, Any]:
+        """Serialize without carrying raw exception messages or request identifiers."""
+        error_metadata: dict[str, Any] | None = None
+        if self.error is not None:
+            error_metadata = {
+                "source": self.error.source,
+                "operation": self.error.operation,
+                "kind": self.error.kind,
+                "message": self.error.message,
+                "retryable": self.error.retryable,
+                "status_code": self.error.status_code,
+                "exception_type": self.error_type,
+            }
+        return {
+            "schema_version": "citation-metrics-coverage/v1",
+            "source": "nih_icite",
+            "status": self.status,
+            "requested": self.requested,
+            "returned": self.returned,
+            "applied": self.applied,
+            "citation_counts_applied": self.citation_counts_applied,
+            "complete": self.complete,
+            "error": error_metadata,
+        }
+
+
 @dataclass(frozen=True)
 class _SearchBatch:
-    """Sanitized PubMed rows plus retrieval-level provenance."""
+    """Validated PubMed rows plus retrieval-level provenance."""
 
     articles: list[dict[str, Any]]
     total_count: int | None = None
-    omitted_rows: int = 0
+    physical_query: str | None = None
+    provider_mode: str = "relevance"
+    provider_metadata: dict[str, Any] | None = None
+    citation_metrics: _CitationMetricsCoverage = field(default_factory=_CitationMetricsCoverage)
+    effective_ranking: _EffectiveRanking = "pubmed_relevance"
 
 
 # Period definitions for auto-grouping
@@ -158,7 +219,7 @@ class TimelineBuilder:
         Returns:
             ResearchTimeline with detected milestones and landmark scores
         """
-        logger.info(f"Building timeline for: {topic}")
+        logger.info("Building timeline (topic_length=%s)", len(topic))
 
         # Step 1: Search for articles
         batch = await self._search_topic_batch(
@@ -173,7 +234,7 @@ class TimelineBuilder:
         available_count = batch.total_count if batch.total_count is not None else (0 if not articles else None)
 
         if not articles:
-            logger.warning(f"No articles found for: {topic}")
+            logger.warning("Timeline search returned no articles")
             return ResearchTimeline(
                 topic=topic,
                 metadata={
@@ -187,12 +248,12 @@ class TimelineBuilder:
                         min_year=min_year,
                         max_year=max_year,
                         sort_by_citations=sort_by_citations,
-                        omitted_rows=batch.omitted_rows,
+                        batch=batch,
                     ),
                 },
             )
 
-        logger.info(f"Found {len(articles)} articles for: {topic}")
+        logger.info("Timeline search returned %s articles", len(articles))
 
         # Step 2: Filter by year if specified
         if min_year or max_year:
@@ -292,7 +353,7 @@ class TimelineBuilder:
                     min_year=min_year,
                     max_year=max_year,
                     sort_by_citations=sort_by_citations,
-                    omitted_rows=batch.omitted_rows,
+                    batch=batch,
                 ),
                 "diagnostics": diagnostics,
             },
@@ -333,11 +394,10 @@ class TimelineBuilder:
         try:
             raw_articles = await self.searcher.fetch_details(pmids)
         except Exception as exc:
-            msg = f"PubMed detail retrieval failed for {len(pmids)} requested PMIDs: {exc}"
-            raise TimelineRetrievalError(msg) from exc
+            logger.warning("PubMed detail retrieval failed (%s)", type(exc).__name__)
+            raise TimelineRetrievalError("PubMed detail retrieval failed") from exc
 
-        batch = self._sanitize_search_rows(raw_articles)
-        articles = batch.articles
+        articles = self._validate_article_rows(raw_articles)
 
         if not articles:
             return ResearchTimeline(
@@ -349,7 +409,6 @@ class TimelineBuilder:
                         "source": "pubmed",
                         "mode": "explicit_pmids",
                         "requested": len(pmids),
-                        "omitted_non_article_rows": batch.omitted_rows,
                         "algorithm_version": "chronicle-timeline/v2",
                     },
                 },
@@ -389,7 +448,6 @@ class TimelineBuilder:
                     "source": "pubmed",
                     "mode": "explicit_pmids",
                     "requested": len(pmids),
-                    "omitted_non_article_rows": batch.omitted_rows,
                     "algorithm_version": "chronicle-timeline/v2",
                 },
                 "diagnostics": diagnostics,
@@ -479,80 +537,194 @@ class TimelineBuilder:
                 search_kwargs["min_year"] = min_year
             if max_year is not None:
                 search_kwargs["max_year"] = max_year
-            raw_results = await self.searcher.search(topic, **search_kwargs)
+            page = await self.searcher.search_page(topic, **search_kwargs)
         except Exception as exc:
-            msg = f"PubMed search failed for {topic!r}: {exc}"
-            raise TimelineRetrievalError(msg) from exc
+            logger.warning("PubMed timeline search failed (%s)", type(exc).__name__)
+            raise TimelineRetrievalError("PubMed search failed") from exc
 
-        batch = self._sanitize_search_rows(raw_results)
+        batch = self._validate_search_page(page)
         results = batch.articles
+        citation_metrics = _CitationMetricsCoverage()
+        effective_ranking: _EffectiveRanking = "pubmed_relevance"
 
         # Fetch iCite metrics for all articles
         if results:
-            pmids = [str(r.get("pmid", "")) for r in results if r.get("pmid")]
+            pmids = list(dict.fromkeys(str(r.get("pmid", "")) for r in results if r.get("pmid")))
             if pmids:
                 try:
-                    citation_data = await self.searcher.get_citation_metrics(pmids)
-                    if citation_data:
-                        for article in results:
-                            pmid = str(article.get("pmid", ""))
-                            if pmid in citation_data:
-                                metrics = citation_data[pmid]
-                                # Keep full iCite data for landmark scoring
-                                article["icite"] = metrics
-                                article["citation_count"] = metrics.get("citation_count", 0)
+                    raw_citation_data = await self.searcher.get_citation_metrics(pmids)
+                    citation_data, citation_metrics = self._validate_citation_metrics(raw_citation_data, pmids)
 
-                        # Sort by citations if requested
-                        if sort_by_citations:
-                            results.sort(
-                                key=lambda x: x.get("citation_count", 0),
-                                reverse=True,
-                            )
+                    for article in results:
+                        pmid = str(article.get("pmid", ""))
+                        metrics = citation_data.get(pmid)
+                        if metrics is None:
+                            continue
+                        # Keep full iCite data for landmark scoring only after
+                        # the complete response contract has been validated.
+                        article["icite"] = metrics
+                        citation_count = self._valid_citation_count(metrics.get("citation_count"))
+                        if citation_count is not None:
+                            article["citation_count"] = citation_count
+
+                    # Python's sort is stable, so PubMed relevance remains the
+                    # tiebreaker. Missing iCite counts rank below a genuine zero.
+                    if sort_by_citations and citation_metrics.citation_counts_applied:
+                        results.sort(
+                            key=self._citation_sort_key,
+                            reverse=True,
+                        )
+                        effective_ranking = "icite_citation_count_then_pubmed_relevance"
+                except _CitationMetricsResponseError as exc:
+                    citation_metrics = self._citation_metrics_failure(
+                        requested=len(pmids),
+                        error=SourceAdapterError(
+                            source="nih_icite",
+                            operation="citation_metrics",
+                            message="iCite returned an invalid metrics response",
+                            kind="validation",
+                            retryable=False,
+                        ),
+                        error_type=type(exc).__name__,
+                    )
+                    logger.debug("iCite enrichment failed (%s)", type(exc).__name__)
                 except Exception as exc:
-                    logger.debug(f"iCite enrichment failed: {exc}")
+                    normalized_error = normalize_source_adapter_error("nih_icite", "citation_metrics", exc)
+                    if normalized_error.kind == "unexpected" and bool(getattr(exc, "retryable", False)):
+                        normalized_error = SourceAdapterError(
+                            source="nih_icite",
+                            operation="citation_metrics",
+                            message="Upstream request failed",
+                            kind="retryable",
+                            retryable=True,
+                        )
+                    citation_metrics = self._citation_metrics_failure(
+                        requested=len(pmids),
+                        error=normalized_error,
+                        error_type=type(exc).__name__,
+                    )
+                    logger.debug("iCite enrichment failed (%s)", type(exc).__name__)
 
         return _SearchBatch(
             articles=results,
             total_count=batch.total_count,
-            omitted_rows=batch.omitted_rows,
+            physical_query=batch.physical_query,
+            provider_mode=batch.provider_mode,
+            provider_metadata=batch.provider_metadata,
+            citation_metrics=citation_metrics,
+            effective_ranking=effective_ranking,
+        )
+
+    @classmethod
+    def _validate_citation_metrics(
+        cls,
+        raw_metrics: Any,
+        requested_pmids: list[str],
+    ) -> tuple[dict[str, dict[str, Any]], _CitationMetricsCoverage]:
+        """Validate iCite's typed mapping before enriching any article."""
+        if not isinstance(raw_metrics, dict):
+            raise _CitationMetricsResponseError
+
+        requested = set(requested_pmids)
+        metrics_by_pmid: dict[str, dict[str, Any]] = {}
+        for raw_pmid, raw_row in raw_metrics.items():
+            if not isinstance(raw_pmid, str) or raw_pmid not in requested or not isinstance(raw_row, dict):
+                raise _CitationMetricsResponseError
+            row_pmid = raw_row.get("pmid")
+            if row_pmid in (None, "") or isinstance(row_pmid, bool) or str(row_pmid) != raw_pmid:
+                raise _CitationMetricsResponseError
+            if (
+                "citation_count" in raw_row
+                and raw_row["citation_count"] is not None
+                and cls._valid_citation_count(raw_row["citation_count"]) is None
+            ):
+                raise _CitationMetricsResponseError
+            metrics_by_pmid[raw_pmid] = dict(raw_row)
+
+        matched_metrics = dict(metrics_by_pmid)
+        applied = len(matched_metrics)
+        if applied == len(requested):
+            status: _CitationMetricsStatus = "complete"
+        elif applied:
+            status = "partial"
+        else:
+            status = "empty"
+        citation_counts_applied = sum(
+            cls._valid_citation_count(metrics.get("citation_count")) is not None for metrics in matched_metrics.values()
+        )
+        return matched_metrics, _CitationMetricsCoverage(
+            status=status,
+            requested=len(requested),
+            returned=len(metrics_by_pmid),
+            applied=applied,
+            citation_counts_applied=citation_counts_applied,
         )
 
     @staticmethod
-    def _sanitize_search_rows(raw_rows: Any) -> _SearchBatch:
-        """Separate PubMed article rows from metadata and error sentinels."""
+    def _citation_metrics_failure(
+        *,
+        requested: int,
+        error: SourceAdapterError,
+        error_type: str,
+    ) -> _CitationMetricsCoverage:
+        """Build a typed failure without preserving the exception message."""
+        return _CitationMetricsCoverage(
+            status="error",
+            requested=requested,
+            error=error,
+            error_type=error_type,
+        )
+
+    @staticmethod
+    def _valid_citation_count(value: Any) -> int | None:
+        """Return a non-negative integer citation count, excluding booleans."""
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+            return value
+        return None
+
+    @classmethod
+    def _citation_sort_key(cls, article: dict[str, Any]) -> int:
+        """Rank missing iCite counts below an observed count of zero."""
+        citation_count = cls._valid_citation_count(article.get("citation_count"))
+        return citation_count if citation_count is not None else -1
+
+    @staticmethod
+    def _validate_article_rows(raw_rows: Any) -> list[dict[str, Any]]:
+        """Validate article rows without accepting transport sentinels."""
         if not isinstance(raw_rows, list):
-            msg = f"PubMed returned an invalid response type: {type(raw_rows).__name__}"
+            msg = f"PubMed returned an invalid article response type: {type(raw_rows).__name__}"
             raise TimelineRetrievalError(msg)
 
         articles: list[dict[str, Any]] = []
-        errors: list[str] = []
-        total_count: int | None = None
-        omitted_rows = 0
         for raw_row in raw_rows:
             if not isinstance(raw_row, dict):
-                omitted_rows += 1
-                continue
+                raise TimelineRetrievalError("PubMed returned a malformed article row")
             row = dict(raw_row)
-            raw_metadata = row.pop("_search_metadata", None)
-            if isinstance(raw_metadata, dict):
-                raw_total = raw_metadata.get("total_count")
-                if isinstance(raw_total, int) and not isinstance(raw_total, bool) and raw_total >= 0:
-                    total_count = raw_total
-            if "error" in row:
-                errors.append(str(row.get("error") or "unknown PubMed retrieval error"))
-                omitted_rows += 1
-                continue
-            # A genuine PubMed article always has a PMID. This prevents
-            # metadata-only/error pseudo-rows from becoming undated fake papers.
             if not str(row.get("pmid") or "").strip():
-                omitted_rows += 1
-                continue
+                raise TimelineRetrievalError("PubMed returned a malformed article row")
             articles.append(row)
+        return articles
 
-        if errors:
-            detail = "; ".join(dict.fromkeys(errors))
-            raise TimelineRetrievalError(f"PubMed retrieval returned an error: {detail}")
-        return _SearchBatch(articles=articles, total_count=total_count, omitted_rows=omitted_rows)
+    @classmethod
+    def _validate_search_page(cls, raw_page: Any) -> _SearchBatch:
+        """Validate the sole typed PubMed page contract."""
+        if not isinstance(raw_page, SourceSearchPage) or raw_page.source != "pubmed":
+            raise TimelineRetrievalError("PubMed returned an invalid search page")
+        if raw_page.total is not None and (
+            not isinstance(raw_page.total, int)
+            or isinstance(raw_page.total, bool)
+            or raw_page.total < len(raw_page.items)
+        ):
+            raise TimelineRetrievalError("PubMed returned an invalid total count")
+        if not isinstance(raw_page.metadata, dict):
+            raise TimelineRetrievalError("PubMed returned invalid search provenance")
+        return _SearchBatch(
+            articles=cls._validate_article_rows(raw_page.items),
+            total_count=raw_page.total,
+            physical_query=raw_page.query,
+            provider_mode=raw_page.mode,
+            provider_metadata=dict(raw_page.metadata),
+        )
 
     @staticmethod
     def _retrieval_metadata(
@@ -562,7 +734,7 @@ class TimelineBuilder:
         min_year: int | None,
         max_year: int | None,
         sort_by_citations: bool,
-        omitted_rows: int,
+        batch: _SearchBatch,
     ) -> dict[str, Any]:
         """Describe the bounded retrieval strategy used for reproducibility."""
         return {
@@ -574,8 +746,14 @@ class TimelineBuilder:
             "max_year": max_year,
             "returned_limit": max_events * 3,
             "candidate_multiplier": 3,
-            "ranking": "pubmed_relevance_then_icite" if sort_by_citations else "pubmed_relevance",
-            "omitted_non_article_rows": omitted_rows,
+            "ranking_requested": (
+                "icite_citation_count_then_pubmed_relevance" if sort_by_citations else "pubmed_relevance"
+            ),
+            "ranking": batch.effective_ranking,
+            "citation_metrics": batch.citation_metrics.to_metadata(),
+            "physical_query": batch.physical_query,
+            "provider_mode": batch.provider_mode,
+            "provider_metadata": dict(batch.provider_metadata or {}),
             "algorithm_version": "chronicle-timeline/v2",
         }
 
@@ -926,11 +1104,11 @@ def format_timeline_text(timeline: ResearchTimeline) -> str:
     Highlights landmark papers with star ratings and multi-signal scores.
     """
     if not timeline.events:
-        return f"No timeline events found for: {timeline.topic}"
+        return f"No timeline events found for: {escape_markdown_text(timeline.topic)}"
 
     # Header
     lines = [
-        f"## Research Timeline: {timeline.topic}",
+        f"## Research Timeline: {escape_markdown_text(timeline.topic)}",
         f"**Period**: {timeline.year_range[0]} - {timeline.year_range[1]} ({timeline.duration_years} years)"
         if timeline.year_range
         else "",
@@ -965,10 +1143,10 @@ def format_timeline_text(timeline: ResearchTimeline) -> str:
         if event.landmark_score and event.landmark_score.stars:
             parts.append(event.landmark_score.stars)
 
-        parts.append(f"[{event.milestone_label}]")
+        parts.append(f"[{escape_markdown_text(event.milestone_label)}]")
         title_text = event.title[:80] + ("..." if len(event.title) > 80 else "")
-        parts.append(title_text)
-        parts.append(f"(PMID: {event.pmid})")
+        parts.append(escape_markdown_text(title_text))
+        parts.append(f"(PMID: {escape_markdown_text(event.pmid)})")
 
         # Landmark details
         if event.landmark_score and event.landmark_score.overall >= 0.25:

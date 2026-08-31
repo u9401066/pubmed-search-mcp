@@ -14,15 +14,23 @@ from pubmed_search.application.pipeline import (
     VALID_ACTIONS,
     VALID_TEMPLATES,
     PipelineConfig,
-    PipelineExecutionSettings,
+    PipelineOutput,
     PipelineStep,
     StepResult,
+)
+from pubmed_search.application.pipeline.config_parser import (
+    parse_pipeline_config_text as _parse_pipeline_config,
 )
 from pubmed_search.application.pipeline.executor import PipelineExecutor
 from pubmed_search.application.pipeline.templates import (
     PIPELINE_TEMPLATES,
     build_pipeline_from_template,
 )
+from pubmed_search.application.search.source_models import SourceSearchPage
+from pubmed_search.presentation.mcp_server.tools.unified_pipeline import (
+    _execute_pipeline_mode_outcome,
+)
+from pubmed_search.shared.source_contracts import SourceAdapterResult
 
 if TYPE_CHECKING:
     from pubmed_search.domain.entities.article import UnifiedArticle
@@ -47,6 +55,7 @@ class FakeArticle:
     ranking_score: float = 0.5
     relevance_score: float = 0.5
     quality_score: float = 0.5
+    citation_metrics: Any = None
     sources: list = field(default_factory=list)
 
 
@@ -72,16 +81,26 @@ def _pmids(articles: list[UnifiedArticle]) -> list[str]:
     return [article.pmid for article in articles if article.pmid is not None]
 
 
+def _pubmed_page(items: list[dict[str, Any]], *, total: int | None = None) -> SourceSearchPage[dict[str, Any]]:
+    return SourceSearchPage(
+        source="pubmed",
+        items=items,
+        total=len(items) if total is None else total,
+        query="test",
+        metadata={"physical_query": "test", "query_executed": True},
+    )
+
+
 @pytest.fixture()
 def mock_searcher():
     """LiteratureSearcher mock with common methods."""
     s = AsyncMock()
-    s.search = AsyncMock(return_value=[])
+    s.search_page = AsyncMock(return_value=_pubmed_page([], total=0))
     s.fetch_details = AsyncMock(return_value=[])
     s.get_related_articles = AsyncMock(return_value=[])
     s.get_citing_articles = AsyncMock(return_value=[])
     s.get_article_references = AsyncMock(return_value=[])
-    s.get_citation_metrics = AsyncMock(return_value=[])
+    s.get_citation_metrics = AsyncMock(return_value={})
     return s
 
 
@@ -115,8 +134,8 @@ class TestPipelineConfig:
     def test_minimal(self):
         cfg = PipelineConfig(steps=[PipelineStep(id="s1", action="search", params={"query": "test"})])
         assert len(cfg.steps) == 1
-        assert cfg.execution.limit == 20
-        assert cfg.execution.ranking == "balanced"
+        assert cfg.output.limit == 20
+        assert cfg.output.ranking == "balanced"
         assert cfg.globals == {}
         assert cfg.variables == {}
         assert cfg.template is None
@@ -349,6 +368,113 @@ class TestActionPico:
 
 
 # =========================================================================
+# Executor — Action: Details
+# =========================================================================
+
+
+class TestActionDetails:
+    async def test_details_rejects_duplicate_pmids_instead_of_deduplicating(self, mock_searcher):
+        executor = PipelineExecutor(searcher=mock_searcher)
+        config = PipelineConfig(
+            steps=[
+                PipelineStep(
+                    id="details",
+                    action="details",
+                    params={"pmids": ["33475315", "12345678", "33475315"]},
+                )
+            ]
+        )
+
+        with pytest.raises(ValueError, match="must not contain duplicates"):
+            await executor.execute(config)
+
+        mock_searcher.fetch_details.assert_not_awaited()
+
+    async def test_details_preserves_unique_pmid_order(self, mock_searcher):
+        executor = PipelineExecutor(searcher=mock_searcher)
+        config = PipelineConfig(
+            steps=[
+                PipelineStep(
+                    id="details",
+                    action="details",
+                    params={"pmids": ["33475315", "12345678"]},
+                )
+            ]
+        )
+
+        await executor.execute(config)
+
+        mock_searcher.fetch_details.assert_awaited_once_with(["33475315", "12345678"])
+
+    async def test_details_rejects_scalar_pmid_instead_of_splitting_characters(self, mock_searcher):
+        executor = PipelineExecutor(searcher=mock_searcher)
+        config = PipelineConfig(steps=[PipelineStep(id="details", action="details", params={"pmids": "33475315"})])
+
+        with pytest.raises(ValueError, match="Invalid details params"):
+            await executor.execute(config)
+
+        mock_searcher.fetch_details.assert_not_awaited()
+
+
+# =========================================================================
+# Executor — Action: Metrics
+# =========================================================================
+
+
+class TestActionMetrics:
+    async def test_metrics_maps_the_canonical_pmid_dictionary(self, mock_searcher):
+        article = _make_articles(1)[0]
+        mock_searcher.get_citation_metrics.return_value = {
+            "10000000": {
+                "citation_count": "42",
+                "relative_citation_ratio": 2.5,
+                "nih_percentile": 91.0,
+                "apt": 0.7,
+                "citations_per_year": 4.2,
+            }
+        }
+        executor = PipelineExecutor(searcher=mock_searcher)
+        step = PipelineStep(id="metrics", action="metrics", inputs=["source"])
+        inputs = {
+            "source": StepResult(
+                step_id="source",
+                action="search",
+                articles=[article],
+                pmids=["10000000"],
+            )
+        }
+
+        result = await executor._action_metrics(step, inputs)
+
+        assert result.metadata == {"metrics_requested": 1, "metrics_enriched": 1}
+        assert article.citation_metrics.citation_count == 42
+        assert article.citation_metrics.relative_citation_ratio == 2.5
+        assert article.citation_metrics.nih_percentile == 91.0
+        assert article.citation_metrics.apt == 0.7
+        assert article.citation_metrics.citations_per_year == 4.2
+
+    async def test_metrics_rejects_the_retired_list_shape_safely(self, mock_searcher):
+        article = _make_articles(1)[0]
+        mock_searcher.get_citation_metrics.return_value = [{"pmid": "10000000", "citation_count": 42}]
+        executor = PipelineExecutor(searcher=mock_searcher)
+        result = await executor._action_metrics(
+            PipelineStep(id="metrics", action="metrics"),
+            {
+                "source": StepResult(
+                    step_id="source",
+                    action="search",
+                    articles=[article],
+                    pmids=["10000000"],
+                )
+            },
+        )
+
+        assert result.metadata["metrics_enriched"] == 0
+        assert "failed safely" in result.metadata["warning"]
+        assert article.citation_metrics is None
+
+
+# =========================================================================
 # Executor — Action: Merge
 # =========================================================================
 
@@ -441,7 +567,7 @@ class TestActionFilter:
         assert len(result.articles) == 1
         assert result.articles[0].title == "Has Abstract"
 
-    async def test_filter_diagnostics_and_article_type_alias(self):
+    async def test_filter_diagnostics_with_canonical_article_type(self):
         from pubmed_search.domain.entities.article import ArticleType
 
         executor = PipelineExecutor()
@@ -454,7 +580,7 @@ class TestActionFilter:
             id="f",
             action="filter",
             inputs=["s1"],
-            params={"min_year": 2020, "article_types": ["RCT"]},
+            params={"min_year": 2020, "article_types": ["randomized-controlled-trial"]},
         )
         inputs = {"s1": StepResult(step_id="s1", action="search", articles=_as_articles([rct, review, old_rct]))}
 
@@ -467,26 +593,21 @@ class TestActionFilter:
         assert result.metadata["removal_reasons"]["article_type_mismatch"] == 1
         assert result.metadata["removal_reasons"]["year_before_min"] == 1
         assert result.metadata["filters"]["normalized_article_types"] == ["randomized-controlled-trial"]
-        assert result.metadata["article_type_diagnostics"]["mappings"] == {"RCT": "randomized-controlled-trial"}
 
-    async def test_unknown_article_type_filter_fails_closed(self):
-        from pubmed_search.domain.entities.article import ArticleType
-
+    def test_unknown_article_type_filter_fails_closed_before_execution(self):
         executor = PipelineExecutor()
-        articles = _as_articles([FakeArticle(title="Review", pmid="1", article_type=ArticleType.REVIEW)])
-        step = PipelineStep(
-            id="f",
-            action="filter",
-            inputs=["s1"],
-            params={"article_types": ["observational study"]},
+        config = PipelineConfig(
+            steps=[
+                PipelineStep(
+                    id="f",
+                    action="filter",
+                    params={"article_types": ["observational study"]},
+                )
+            ]
         )
-        inputs = {"s1": StepResult(step_id="s1", action="search", articles=articles)}
 
-        result = await executor._action_filter(step, inputs)
-
-        assert result.articles == []
-        assert result.metadata["removal_reasons"] == {"unknown_article_type_filter": 1}
-        assert result.metadata["warning"] == "No requested article_types could be matched; all articles were excluded."
+        with pytest.raises(ValueError, match="Invalid filter params"):
+            executor.dry_run(config)
 
     async def test_min_citations_uses_unified_article_citation_metrics(self):
         from pubmed_search.domain.entities.article import CitationMetrics, UnifiedArticle
@@ -520,12 +641,14 @@ class TestActionFilter:
 
 class TestActionSearch:
     async def test_search_pubmed(self, mock_searcher):
-        mock_searcher.search.return_value = [
-            {"title": "Paper 1", "pmid": "111", "abstract": "text"},
-            {"title": "Paper 2", "pmid": "222", "abstract": "text"},
-        ]
+        mock_searcher.search_page.return_value = _pubmed_page(
+            [
+                {"title": "Paper 1", "pmid": "111", "abstract": "text"},
+                {"title": "Paper 2", "pmid": "222", "abstract": "text"},
+            ]
+        )
         executor = PipelineExecutor(searcher=mock_searcher)
-        step = PipelineStep(id="s1", action="search", params={"query": "test", "sources": "pubmed", "limit": 10})
+        step = PipelineStep(id="s1", action="search", params={"query": "test", "sources": ["pubmed"], "limit": 10})
 
         with patch("pubmed_search.application.pipeline.executor.article_from_pubmed") as mock_article_from_pubmed:
             fake = FakeArticle(title="Paper 1", pmid="111")
@@ -533,12 +656,35 @@ class TestActionSearch:
             result = await executor._action_search(step, {})
 
         assert result.ok
-        mock_searcher.search.assert_called_once()
+        mock_searcher.search_page.assert_called_once()
         assert result.articles == [fake, fake]
+
+    async def test_search_pubmed_accepts_typed_empty_page(self, mock_searcher):
+        mock_searcher.search_page.return_value = _pubmed_page([], total=0)
+        executor = PipelineExecutor(searcher=mock_searcher)
+        step = PipelineStep(id="s1", action="search", params={"query": "test", "sources": ["pubmed"]})
+
+        result = await executor._action_search(step, {})
+
+        assert result.ok
+        assert result.articles == []
+        assert result.metadata["source_api_counts"] == {"pubmed": 0}
+
+    async def test_search_pubmed_surfaces_provider_exception_as_source_failure(self, mock_searcher):
+        mock_searcher.search_page.side_effect = RuntimeError("private provider details")
+        executor = PipelineExecutor(searcher=mock_searcher)
+        step = PipelineStep(id="s1", action="search", params={"query": "test", "sources": ["pubmed"]})
+
+        result = await executor._action_search(step, {})
+
+        assert not result.ok
+        assert result.error == "All selected search sources failed"
+        assert result.metadata["source_errors"][0]["source"] == "pubmed"
+        assert "private provider details" not in str(result.metadata)
 
     async def test_search_no_query_fails(self):
         executor = PipelineExecutor()
-        step = PipelineStep(id="s1", action="search", params={"sources": "pubmed"})
+        step = PipelineStep(id="s1", action="search", params={"sources": ["pubmed"]})
         result = await executor._action_search(step, {})
         assert not result.ok
         assert "No query" in (result.error or "")
@@ -548,7 +694,7 @@ class TestActionSearch:
         step = PipelineStep(
             id="s1",
             action="search",
-            params={"query": "test", "sources": "pubmed,typo_provider", "limit": 10},
+            params={"query": "test", "sources": ["pubmed", "typo_provider"], "limit": 10},
         )
 
         result = await executor._action_search(step, {})
@@ -556,35 +702,48 @@ class TestActionSearch:
         assert not result.ok
         assert result.error == "Unsupported pipeline search source(s): typo_provider"
         assert result.metadata["requested_sources"] == ["pubmed", "typo_provider"]
-        mock_searcher.search.assert_not_awaited()
+        mock_searcher.search_page.assert_not_awaited()
 
-    @pytest.mark.parametrize("invalid_limit", [0, 101, True, 1.5, "not-an-integer"])
+    @pytest.mark.parametrize("invalid_limit", [0, 101, True, 1.0, 1.5, "10", "not-an-integer"])
     async def test_search_rejects_invalid_limit_before_provider_io(self, mock_searcher, invalid_limit):
         executor = PipelineExecutor(searcher=mock_searcher)
         step = PipelineStep(
             id="s1",
             action="search",
-            params={"query": "test", "sources": "pubmed", "limit": invalid_limit},
+            params={"query": "test", "sources": ["pubmed"], "limit": invalid_limit},
         )
 
         result = await executor._action_search(step, {})
 
         assert not result.ok
-        assert "limit must" in (result.error or "")
-        mock_searcher.search.assert_not_awaited()
+        assert result.error == "Invalid pipeline search limit"
+        assert result.metadata["error_type"] == "ValueError"
+        assert result.metadata["error_kind"] == "unexpected"
+        assert result.metadata["retryable"] is False
+        mock_searcher.search_page.assert_not_awaited()
 
     async def test_search_enabled_commercial_alternate_sources(self):
         alternate_search = AsyncMock(
             side_effect=[
-                [{"title": "Scopus Paper", "doi": "10.1/scopus", "source": "scopus"}],
-                [{"title": "WoS Paper", "doi": "10.1/wos", "source": "web_of_science"}],
+                SourceAdapterResult(
+                    source="scopus",
+                    operation="search",
+                    items=[{"title": "Scopus Paper", "doi": "10.1/scopus", "source": "scopus"}],
+                    total_count=1,
+                ),
+                SourceAdapterResult(
+                    source="web_of_science",
+                    operation="search",
+                    items=[{"title": "WoS Paper", "doi": "10.1/wos", "source": "web_of_science"}],
+                    total_count=1,
+                ),
             ]
         )
-        executor = PipelineExecutor(alternate_search_fn=alternate_search)
+        executor = PipelineExecutor(alternate_search_adapter=alternate_search)
         step = PipelineStep(
             id="s1",
             action="search",
-            params={"query": "test", "sources": "scopus,web_of_science", "limit": 10},
+            params={"query": "test", "sources": ["scopus", "web_of_science"], "limit": 10},
         )
 
         with (
@@ -615,24 +774,37 @@ class TestActionSearch:
         assert result.metadata["source_api_counts"] == {"scopus": 1, "web_of_science": 1}
         assert alternate_search.await_count == 2
 
-    async def test_search_uses_injected_source_key_resolver(self):
-        alternate_search = AsyncMock(return_value=[{"title": "OpenAlex Paper", "doi": "10.1/openalex"}])
-        executor = PipelineExecutor(
-            alternate_search_fn=alternate_search,
-            source_key_resolver=lambda value: {"oa": "openalex"}.get(value, value),
+    async def test_search_source_alias_is_rejected_before_provider_io(self):
+        alternate_search = AsyncMock(
+            return_value=SourceAdapterResult(
+                source="openalex",
+                operation="search",
+                items=[
+                    {
+                        "id": "https://openalex.org/W123",
+                        "display_name": "OpenAlex Paper",
+                        "doi": "https://doi.org/10.1/openalex",
+                        "authorships": [],
+                        "publication_year": 2024,
+                    }
+                ],
+                total_count=1,
+            )
         )
-        step = PipelineStep(
-            id="s1",
-            action="search",
-            params={"query": "test", "sources": "oa", "limit": 10},
+        executor = PipelineExecutor(alternate_search_adapter=alternate_search)
+        config = PipelineConfig(
+            steps=[
+                PipelineStep(
+                    id="s1",
+                    action="search",
+                    params={"query": "test", "sources": ["oa"], "limit": 10},
+                )
+            ]
         )
 
-        result = await executor._action_search(step, {})
-
-        assert result.ok
-        assert result.metadata["source_api_counts"] == {"openalex": 1}
-        alternate_search.assert_awaited_once()
-        assert alternate_search.await_args.kwargs["source"] == "openalex"
+        with pytest.raises(ValueError, match="unknown source"):
+            await executor.execute(config)
+        alternate_search.assert_not_awaited()
 
 
 # =========================================================================
@@ -712,13 +884,11 @@ class TestQueryResolution:
 class TestFullPipelineExecution:
     async def test_single_step_pipeline(self, mock_searcher):
         """Simplest pipeline: one search step."""
-        mock_searcher.search.return_value = [
-            {"title": "Paper 1", "pmid": "111"},
-        ]
+        mock_searcher.search_page.return_value = _pubmed_page([{"title": "Paper 1", "pmid": "111"}])
         executor = PipelineExecutor(searcher=mock_searcher)
         cfg = PipelineConfig(
-            steps=[PipelineStep(id="s1", action="search", params={"query": "test", "sources": "pubmed"})],
-            execution=PipelineExecutionSettings(limit=10),
+            steps=[PipelineStep(id="s1", action="search", params={"query": "test", "sources": ["pubmed"]})],
+            output=PipelineOutput(limit=10),
         )
 
         with patch("pubmed_search.application.pipeline.executor.article_from_pubmed") as mock_article_from_pubmed:
@@ -803,7 +973,7 @@ class TestFullPipelineExecution:
     def test_prepare_config_applies_globals_and_variables(self):
         executor = PipelineExecutor()
         cfg = PipelineConfig(
-            globals={"sources": "pubmed", "limit": "${limit}"},
+            globals={"sources": ["pubmed"], "limit": "${limit}"},
             variables={"limit": 25, "topic": "remimazolam ICU"},
             steps=[
                 PipelineStep(
@@ -817,11 +987,11 @@ class TestFullPipelineExecution:
         prepared = executor.prepare_config(cfg)
 
         assert prepared.steps[0].params == {
-            "sources": "pubmed",
+            "sources": ["pubmed"],
             "limit": 10,
             "query": "remimazolam ICU",
         }
-        assert prepared.globals == {"sources": "pubmed", "limit": 25}
+        assert prepared.globals == {"sources": ["pubmed"], "limit": 25}
 
     def test_dry_run_returns_resolved_plan_without_execution(self):
         executor = PipelineExecutor()
@@ -898,15 +1068,13 @@ class TestPicoTemplate:
         with pytest.raises(ValueError, match="profile"):
             build_pipeline_from_template("pico", {"P": "ICU", "I": "remimazolam", "profile": "wide-open"})
 
-    def test_pico_template_clamps_limit_to_safe_bounds(self):
-        low_cfg = build_pipeline_from_template("pico", {"P": "ICU", "I": "remimazolam", "limit": 0})
-        high_cfg = build_pipeline_from_template("pico", {"P": "ICU", "I": "remimazolam", "limit": 5000})
-
-        assert next(s for s in low_cfg.steps if s.id == "search_precision").params["limit"] == 3
-        assert next(s for s in high_cfg.steps if s.id == "search_precision").params["limit"] == 300
+    @pytest.mark.parametrize("invalid_limit", [0, 34, 5000])
+    def test_pico_template_rejects_limits_outside_exact_budget(self, invalid_limit):
+        with pytest.raises(ValueError, match="limit"):
+            build_pipeline_from_template("pico", {"P": "ICU", "I": "remimazolam", "limit": invalid_limit})
 
     def test_pico_missing_params(self):
-        with pytest.raises(ValueError, match="at least"):
+        with pytest.raises(ValueError, match="Field required"):
             build_pipeline_from_template("pico", {"P": "ICU"})
 
 
@@ -917,7 +1085,7 @@ class TestComprehensiveTemplate:
         actions = [s.action for s in cfg.steps]
         assert "expand" in actions
         assert "merge" in actions
-        assert cfg.execution.ranking == "quality"
+        assert cfg.output.ranking == "quality"
 
     def test_with_year_filter(self):
         cfg = build_pipeline_from_template("comprehensive", {"query": "AI", "min_year": 2020})
@@ -937,7 +1105,7 @@ class TestExplorationTemplate:
         assert "related" in actions
         assert "citing" in actions
         assert "references" in actions
-        assert cfg.execution.ranking == "impact"
+        assert cfg.output.ranking == "impact"
 
     def test_missing_pmid(self):
         with pytest.raises(ValueError, match="pmid"):
@@ -964,49 +1132,49 @@ class TestUnknownTemplate:
 
 
 # =========================================================================
-# Integration: Pipeline JSON Parsing (via _execute_pipeline_mode)
+# Integration: Pipeline JSON Parsing (via typed pipeline outcome)
 # =========================================================================
 
 
 class TestPipelineConfigParsing:
-    """Test YAML and JSON → PipelineConfig parsing in unified.py's _execute_pipeline_mode."""
+    """Test YAML and JSON to PipelineConfig parsing through the typed execution seam."""
 
     async def test_template_json(self, mock_searcher):
-        from pubmed_search.presentation.mcp_server.tools.unified import (
-            _execute_pipeline_mode,
-        )
-
         pipeline_json = json.dumps(
             {
                 "template": "pico",
-                "params": {"P": "ICU patients", "I": "remimazolam", "C": "propofol"},
+                "template_params": {"P": "ICU patients", "I": "remimazolam", "C": "propofol"},
             }
         )
 
-        # Mock executor at its source module (lazy import inside _execute_pipeline_mode)
+        # Mock executor at its application source module.
         with patch("pubmed_search.application.pipeline.executor.PipelineExecutor") as MockExec:
             mock_exec = MockExec.return_value
             mock_exec.execute = AsyncMock(return_value=([], {}))
-            result = await _execute_pipeline_mode(pipeline_json, "markdown", mock_searcher)
+            outcome = await _execute_pipeline_mode_outcome(
+                pipeline_json,
+                "markdown",
+                mock_searcher,
+                pipeline_store=None,
+            )
 
-        assert "Pipeline Results" in result or "No articles" in result
+        assert outcome.status == "completed"
+        assert "Pipeline Results" in outcome.response or "No articles" in outcome.response
 
     async def test_invalid_config(self, mock_searcher):
-        from pubmed_search.presentation.mcp_server.tools.unified import (
-            _execute_pipeline_mode,
+        outcome = await _execute_pipeline_mode_outcome(
+            "not valid: [",
+            "markdown",
+            mock_searcher,
+            pipeline_store=None,
         )
-
-        result = await _execute_pipeline_mode("not valid: [", "markdown", mock_searcher)
-        assert "Invalid pipeline config" in result
+        assert outcome.status == "failed"
+        assert "Invalid pipeline config" in outcome.response
 
     async def test_custom_pipeline_json(self, mock_searcher):
-        from pubmed_search.presentation.mcp_server.tools.unified import (
-            _execute_pipeline_mode,
-        )
-
         pipeline_json = json.dumps(
             {
-                "name": "Test Pipeline",
+                "name": "test_pipeline",
                 "steps": [
                     {"id": "s1", "action": "pico", "params": {"P": "test", "I": "drug"}},
                 ],
@@ -1017,19 +1185,21 @@ class TestPipelineConfigParsing:
         with patch("pubmed_search.application.pipeline.executor.PipelineExecutor") as MockExec:
             mock_exec = MockExec.return_value
             mock_exec.execute = AsyncMock(return_value=([], {}))
-            result = await _execute_pipeline_mode(pipeline_json, "markdown", mock_searcher)
+            outcome = await _execute_pipeline_mode_outcome(
+                pipeline_json,
+                "markdown",
+                mock_searcher,
+                pipeline_store=None,
+            )
 
-        assert isinstance(result, str)
+        assert outcome.status == "completed"
+        assert isinstance(outcome.response, str)
 
     async def test_template_yaml(self, mock_searcher):
         """YAML template config — human-readable format."""
-        from pubmed_search.presentation.mcp_server.tools.unified import (
-            _execute_pipeline_mode,
-        )
-
         pipeline_yaml = """\
 template: pico
-params:
+template_params:
   P: ICU patients
   I: remimazolam
   C: propofol
@@ -1039,30 +1209,32 @@ params:
         with patch("pubmed_search.application.pipeline.executor.PipelineExecutor") as MockExec:
             mock_exec = MockExec.return_value
             mock_exec.execute = AsyncMock(return_value=([], {}))
-            result = await _execute_pipeline_mode(pipeline_yaml, "markdown", mock_searcher)
+            outcome = await _execute_pipeline_mode_outcome(
+                pipeline_yaml,
+                "markdown",
+                mock_searcher,
+                pipeline_store=None,
+            )
 
-        assert "Pipeline Results" in result or "No articles" in result
+        assert outcome.status == "completed"
+        assert "Pipeline Results" in outcome.response or "No articles" in outcome.response
 
     async def test_custom_pipeline_yaml(self, mock_searcher):
         """Full custom pipeline in YAML — readable DAG definition."""
-        from pubmed_search.presentation.mcp_server.tools.unified import (
-            _execute_pipeline_mode,
-        )
-
         pipeline_yaml = """\
-name: YAML Custom Pipeline
+name: yaml_custom_pipeline
 steps:
   - id: s1
     action: search
     params:
       query: remimazolam ICU
-      sources: pubmed
+      sources: [pubmed]
       limit: 50
   - id: s2
     action: search
     params:
       query: propofol ICU
-      sources: pubmed
+      sources: [pubmed]
       limit: 50
   - id: merged
     action: merge
@@ -1081,18 +1253,20 @@ output:
         with patch("pubmed_search.application.pipeline.executor.PipelineExecutor") as MockExec:
             mock_exec = MockExec.return_value
             mock_exec.execute = AsyncMock(return_value=([], {}))
-            result = await _execute_pipeline_mode(pipeline_yaml, "markdown", mock_searcher)
+            outcome = await _execute_pipeline_mode_outcome(
+                pipeline_yaml,
+                "markdown",
+                mock_searcher,
+                pipeline_store=None,
+            )
 
-        assert isinstance(result, str)
+        assert outcome.status == "completed"
+        assert isinstance(outcome.response, str)
 
     async def test_pipeline_output_format_json_returns_structured_articles(self, mock_searcher):
         """Pipeline config output.format=json should return machine-readable articles."""
-        from pubmed_search.presentation.mcp_server.tools.unified import (
-            _execute_pipeline_mode,
-        )
-
         pipeline_yaml = """\
-name: JSON Pipeline
+name: json_pipeline
 steps:
   - id: s1
     action: pico
@@ -1109,21 +1283,23 @@ output:
         with patch("pubmed_search.application.pipeline.executor.PipelineExecutor") as MockExec:
             mock_exec = MockExec.return_value
             mock_exec.execute = AsyncMock(return_value=(_as_articles([article]), {"s1": step_result}))
-            result = await _execute_pipeline_mode(pipeline_yaml, "markdown", mock_searcher)
+            outcome = await _execute_pipeline_mode_outcome(
+                pipeline_yaml,
+                "markdown",
+                mock_searcher,
+                pipeline_store=None,
+            )
 
-        data = json.loads(result)
+        assert outcome.status == "completed"
+        data = json.loads(outcome.response)
         assert data["type"] == "pipeline_result"
         assert data["summary"]["article_count"] == 1
         assert data["articles"][0]["pmid"] == "123"
 
     async def test_pipeline_dry_run_preview(self, mock_searcher):
         """Dry-run validates and previews steps without executing searches."""
-        from pubmed_search.presentation.mcp_server.tools.unified import (
-            _execute_pipeline_mode,
-        )
-
         pipeline_yaml = """\
-name: Dry Run Pipeline
+name: dry_run_pipeline
 variables:
   topic: remimazolam ICU
 steps:
@@ -1133,20 +1309,23 @@ steps:
       query: ${topic}
 """
 
-        result = await _execute_pipeline_mode(pipeline_yaml, "markdown", mock_searcher, dry_run=True)
+        outcome = await _execute_pipeline_mode_outcome(
+            pipeline_yaml,
+            "markdown",
+            mock_searcher,
+            pipeline_store=None,
+            dry_run=True,
+        )
 
-        assert "Dry-run mode" in result
-        assert "resolved_params" in result
+        assert outcome.status == "completed"
+        assert "Dry-run mode" in outcome.response
+        assert "resolved\\_params" in outcome.response
 
     async def test_yaml_exploration_template(self, mock_searcher):
         """Exploration template in YAML."""
-        from pubmed_search.presentation.mcp_server.tools.unified import (
-            _execute_pipeline_mode,
-        )
-
         pipeline_yaml = """\
 template: exploration
-params:
+template_params:
   pmid: "12345678"
   limit: 30
 """
@@ -1154,33 +1333,41 @@ params:
         with patch("pubmed_search.application.pipeline.executor.PipelineExecutor") as MockExec:
             mock_exec = MockExec.return_value
             mock_exec.execute = AsyncMock(return_value=([], {}))
-            result = await _execute_pipeline_mode(pipeline_yaml, "markdown", mock_searcher)
+            outcome = await _execute_pipeline_mode_outcome(
+                pipeline_yaml,
+                "markdown",
+                mock_searcher,
+                pipeline_store=None,
+            )
 
-        assert isinstance(result, str)
+        assert outcome.status == "completed"
+        assert isinstance(outcome.response, str)
 
-    async def test_template_yaml_supports_template_params_alias_and_autofix(self, mock_searcher):
-        """Inline template mode should accept template_params and schema/semantic auto-fixes."""
-        from pubmed_search.presentation.mcp_server.tools.unified import (
-            _execute_pipeline_mode,
-        )
-
+    async def test_template_yaml_uses_canonical_values(self, mock_searcher):
+        """Inline template mode accepts the canonical template contract."""
         pipeline_yaml = """\
-template: clinical
+template: pico
 template_params:
     P: ICU patients
     I: remimazolam
 output:
-    format: xml
-    limit: 0
-    ranking: impac
+    format: markdown
+    limit: 20
+    ranking: impact
 """
 
         with patch("pubmed_search.application.pipeline.executor.PipelineExecutor") as MockExec:
             mock_exec = MockExec.return_value
             mock_exec.execute = AsyncMock(return_value=([], {}))
-            result = await _execute_pipeline_mode(pipeline_yaml, "markdown", mock_searcher)
+            outcome = await _execute_pipeline_mode_outcome(
+                pipeline_yaml,
+                "markdown",
+                mock_searcher,
+                pipeline_store=None,
+            )
 
-        assert isinstance(result, str)
+        assert outcome.status == "completed"
+        assert isinstance(outcome.response, str)
         assert mock_exec.execute.await_args is not None
         executed_config = mock_exec.execute.await_args.args[0]
         assert executed_config.steps[0].action == "pico"
@@ -1188,14 +1375,27 @@ output:
         assert executed_config.output.limit == 20
         assert executed_config.output.ranking == "impact"
 
-    async def test_bare_string_not_dict_error(self, mock_searcher):
-        """A plain string that YAML parses to a scalar should error."""
-        from pubmed_search.presentation.mcp_server.tools.unified import (
-            _execute_pipeline_mode,
+    async def test_template_yaml_rejects_retired_aliases(self, mock_searcher):
+        outcome = await _execute_pipeline_mode_outcome(
+            "template: clinical\nparams:\n  P: ICU patients\n  I: remimazolam\n",
+            "markdown",
+            mock_searcher,
+            pipeline_store=None,
         )
 
-        result = await _execute_pipeline_mode("just a plain string", "markdown", mock_searcher)
-        assert "Invalid pipeline config" in result or "error" in result.lower()
+        assert outcome.status == "failed"
+        assert "Pipeline config error" in outcome.response
+
+    async def test_bare_string_not_dict_error(self, mock_searcher):
+        """A plain string that YAML parses to a scalar should error."""
+        outcome = await _execute_pipeline_mode_outcome(
+            "just a plain string",
+            "markdown",
+            mock_searcher,
+            pipeline_store=None,
+        )
+        assert outcome.status == "failed"
+        assert "Invalid pipeline config" in outcome.response or "error" in outcome.response.lower()
 
 
 # =========================================================================
@@ -1207,29 +1407,17 @@ class TestParsePipelineConfig:
     """Unit tests for the YAML/JSON parser function."""
 
     def test_parse_json(self):
-        from pubmed_search.presentation.mcp_server.tools.unified import (
-            _parse_pipeline_config,
-        )
-
-        result = _parse_pipeline_config('{"template": "pico", "params": {"P": "test"}}')
+        result = _parse_pipeline_config('{"template": "pico", "template_params": {"P": "test"}}')
         assert result["template"] == "pico"
-        assert result["params"]["P"] == "test"
+        assert result["template_params"]["P"] == "test"
 
     def test_parse_yaml(self):
-        from pubmed_search.presentation.mcp_server.tools.unified import (
-            _parse_pipeline_config,
-        )
-
-        result = _parse_pipeline_config("template: pico\nparams:\n  P: test\n  I: drug\n")
+        result = _parse_pipeline_config("template: pico\ntemplate_params:\n  P: test\n  I: drug\n")
         assert result["template"] == "pico"
-        assert result["params"]["P"] == "test"
-        assert result["params"]["I"] == "drug"
+        assert result["template_params"]["P"] == "test"
+        assert result["template_params"]["I"] == "drug"
 
     def test_parse_yaml_multiline_steps(self):
-        from pubmed_search.presentation.mcp_server.tools.unified import (
-            _parse_pipeline_config,
-        )
-
         yaml_text = """\
 name: Test
 steps:
@@ -1250,10 +1438,6 @@ steps:
     def test_parse_invalid_raises(self):
         import pytest as _pytest
 
-        from pubmed_search.presentation.mcp_server.tools.unified import (
-            _parse_pipeline_config,
-        )
-
         with _pytest.raises(Exception):
             _parse_pipeline_config("not valid: [: invalid")
 
@@ -1261,12 +1445,14 @@ steps:
         """A YAML scalar (not dict) should fail at JSON fallback."""
         import pytest as _pytest
 
-        from pubmed_search.presentation.mcp_server.tools.unified import (
-            _parse_pipeline_config,
-        )
-
         with _pytest.raises(Exception):
             _parse_pipeline_config("42")
+
+    def test_parse_rejects_yaml_aliases_before_expansion(self):
+        import pytest as _pytest
+
+        with _pytest.raises(ValueError, match="YAML aliases are not supported"):
+            _parse_pipeline_config("params: &shared\n  query: cancer\ncopy: *shared\n")
 
 
 # =========================================================================
@@ -1291,7 +1477,7 @@ class TestFormatPipelineResults:
                 PipelineStep(id="s1", action="search"),
                 PipelineStep(id="merge", action="merge", inputs=["s1"]),
             ],
-            execution=PipelineExecutionSettings(limit=10),
+            output=PipelineOutput(limit=10),
         )
         result = generate_pipeline_report(articles, step_results, config)
         assert "Test" in result
@@ -1354,7 +1540,7 @@ class TestFormatPipelineResults:
                 PipelineStep(id="s2", action="search"),
                 PipelineStep(id="merge", action="merge", inputs=["s1", "s2"]),
             ],
-            execution=PipelineExecutionSettings(limit=10),
+            output=PipelineOutput(limit=10),
         )
         result = generate_pipeline_report(articles, step_results, config)
 

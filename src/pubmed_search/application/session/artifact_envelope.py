@@ -7,13 +7,19 @@ summary metadata, and local/source-count audits for later retrieval.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Literal, cast
 
+from pubmed_search.application.unified.clinical_trials import (
+    ClinicalTrialsCoverage,
+    ClinicalTrialsResponseError,
+    validate_clinical_trials_rows,
+)
 from pubmed_search.shared.credential_sanitizer import (
     extract_credential_values,
     redact_known_credential_values,
 )
+from pubmed_search.shared.markdown import markdown_indented_code_block
 
 ARTIFACT_SCHEMA_VERSION = "research-artifact/v1"
 DEFAULT_AUDIT_MODE = "source-counts"
@@ -73,11 +79,13 @@ class UnifiedSearchArtifactExecution:
     relaxation_result: Any
     source_disagreement: Any = None
     reproducibility_score: Any = None
-    research_context_data: dict[str, Any] | None = None
     source_metadata: dict[str, dict[str, Any]] | None = None
     source_statuses: dict[str, str] | None = None
     clinical_trials_query: str | None = None
-    clinical_trials_status: str = "not_requested"
+    clinical_trials_coverage: ClinicalTrialsCoverage = field(default_factory=ClinicalTrialsCoverage)
+    clinical_trials: list[dict[str, Any]] = field(default_factory=list)
+    result_filter_counts: dict[str, int] | None = None
+    enrichment_metadata: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -133,6 +141,16 @@ def normalize_unified_search_artifact_input(
     if isinstance(execution, UnifiedSearchArtifactExecution):
         normalized_execution = execution
     else:
+        raw_clinical_trials_coverage = getattr(execution, "clinical_trials_coverage", None)
+        if isinstance(raw_clinical_trials_coverage, ClinicalTrialsCoverage):
+            clinical_trials_coverage = raw_clinical_trials_coverage
+        elif normalized_request.include_clinical_trials:
+            clinical_trials_coverage = ClinicalTrialsCoverage.requested_search(markdown_output=False)
+            clinical_trials_coverage.record_validation_failure(ClinicalTrialsResponseError())
+        else:
+            clinical_trials_coverage = ClinicalTrialsCoverage()
+        raw_clinical_trials = getattr(execution, "prefetched_trials", [])
+        clinical_trials = validate_clinical_trials_rows(raw_clinical_trials, limit=3)
         normalized_execution = UnifiedSearchArtifactExecution(
             ranked=list(getattr(execution, "ranked", []) or []),
             stats=getattr(execution, "stats", None),
@@ -142,13 +160,13 @@ def normalize_unified_search_artifact_input(
             relaxation_result=getattr(execution, "relaxation_result", None),
             source_disagreement=getattr(execution, "source_disagreement", None),
             reproducibility_score=getattr(execution, "reproducibility_score", None),
-            research_context_data=getattr(execution, "research_context_data", None),
             source_metadata=dict(getattr(execution, "source_metadata", {}) or {}),
             source_statuses=dict(getattr(execution, "source_statuses", {}) or {}),
             clinical_trials_query=getattr(execution, "clinical_trials_query", None),
-            clinical_trials_status=str(
-                getattr(execution, "clinical_trials_status", "not_requested") or "not_requested"
-            ),
+            clinical_trials_coverage=clinical_trials_coverage,
+            clinical_trials=clinical_trials,
+            result_filter_counts=dict(getattr(execution, "result_filter_counts", {}) or {}),
+            enrichment_metadata=dict(getattr(execution, "enrichment_metadata", {}) or {}),
         )
 
     return UnifiedSearchArtifactInput(
@@ -351,7 +369,7 @@ def build_unified_search_query_strategy(*, request: Any, plan: Any, execution: A
         adjunct_queries["clinical_trials"] = {
             "logical_query": provider_query,
             "physical_query": getattr(execution, "clinical_trials_query", None),
-            "status": getattr(execution, "clinical_trials_status", "not_requested"),
+            "coverage": execution.clinical_trials_coverage.to_dict(),
         }
     return {
         "schema_version": ARTIFACT_SCHEMA_VERSION,
@@ -376,6 +394,8 @@ def build_unified_search_query_strategy(*, request: Any, plan: Any, execution: A
         "matched_entity_names": list(getattr(plan, "matched_entity_names", []) or []),
         "source_counts": _source_counts_payload(getattr(execution, "source_api_counts", None)),
         "source_metadata": source_metadata,
+        "result_filter_counts": dict(getattr(execution, "result_filter_counts", {}) or {}),
+        "enrichment": dict(getattr(execution, "enrichment_metadata", {}) or {}),
         "deep_search": _deep_search_payload(plan, execution),
         "relaxation": _relaxation_payload(execution),
     }
@@ -409,15 +429,19 @@ def audit_unified_search_artifact(*, request: Any, plan: Any, execution: Any) ->
     stats = getattr(execution, "stats", None)
     source_counts = _source_counts_payload(getattr(execution, "source_api_counts", None))
     source_errors = list(getattr(execution, "source_errors", []) or [])
+    enrichment = dict(getattr(execution, "enrichment_metadata", {}) or {})
+    clinical_trials_coverage = execution.clinical_trials_coverage.to_dict()
     checks: list[dict[str, Any]] = []
 
     expected_unique = getattr(stats, "unique_articles", None)
+    result_filter_counts = dict(getattr(execution, "result_filter_counts", {}) or {})
     requested_limit = int(getattr(request, "limit", 0) or 0)
     expected_unique_count = int(expected_unique or 0) if expected_unique is not None else None
+    eligible_unique_count = result_filter_counts.get("eligible_unique", expected_unique_count)
     expected_returned_count = (
-        min(expected_unique_count, requested_limit)
-        if expected_unique_count is not None and requested_limit > 0
-        else expected_unique_count
+        min(eligible_unique_count, requested_limit)
+        if eligible_unique_count is not None and requested_limit > 0
+        else eligible_unique_count
     )
     if expected_returned_count is not None and expected_returned_count != len(ranked):
         _add_check(
@@ -428,6 +452,7 @@ def audit_unified_search_artifact(*, request: Any, plan: Any, execution: Any) ->
             details={
                 "ranked_count": len(ranked),
                 "stats_unique_articles": expected_unique_count,
+                "eligible_unique_articles": eligible_unique_count,
                 "requested_limit": requested_limit,
                 "expected_returned_count": expected_returned_count,
             },
@@ -441,10 +466,11 @@ def audit_unified_search_artifact(*, request: Any, plan: Any, execution: Any) ->
             details={
                 "ranked_count": len(ranked),
                 "stats_unique_articles": expected_unique_count,
+                "eligible_unique_articles": eligible_unique_count,
                 "requested_limit": requested_limit,
             },
         )
-        if expected_unique_count is not None and requested_limit > 0 and expected_unique_count > requested_limit:
+        if eligible_unique_count is not None and requested_limit > 0 and eligible_unique_count > requested_limit:
             _add_check(
                 checks,
                 check="result_limit_applied",
@@ -452,7 +478,7 @@ def audit_unified_search_artifact(*, request: Any, plan: Any, execution: Any) ->
                 message="The result set was intentionally capped by the requested limit.",
                 details={
                     "returned": len(ranked),
-                    "available_unique_articles": expected_unique_count,
+                    "available_unique_articles": eligible_unique_count,
                     "requested_limit": requested_limit,
                 },
             )
@@ -488,6 +514,68 @@ def audit_unified_search_artifact(*, request: Any, plan: Any, execution: Any) ->
             check="source_errors",
             severity="pass",
             message="No source errors were reported.",
+        )
+
+    clinical_trials_requested = bool(request.include_clinical_trials)
+    clinical_trials_returned = len(execution.clinical_trials)
+    if int(clinical_trials_coverage["returned"]) != clinical_trials_returned:
+        _add_check(
+            checks,
+            check="clinical_trials_adjunct",
+            severity="fail",
+            message="ClinicalTrials.gov coverage count disagrees with the persisted result set.",
+            details={"coverage": clinical_trials_coverage, "persisted_trials": clinical_trials_returned},
+        )
+    elif bool(clinical_trials_coverage["requested"]) != clinical_trials_requested:
+        _add_check(
+            checks,
+            check="clinical_trials_adjunct",
+            severity="fail",
+            message="ClinicalTrials.gov request and coverage provenance disagree.",
+            details={"coverage": clinical_trials_coverage, "requested": clinical_trials_requested},
+        )
+    elif clinical_trials_coverage["requested"]:
+        if clinical_trials_coverage["complete"]:
+            _add_check(
+                checks,
+                check="clinical_trials_adjunct",
+                severity="pass",
+                message="The requested ClinicalTrials.gov adjunct completed.",
+                details={"coverage": clinical_trials_coverage},
+            )
+        else:
+            _add_check(
+                checks,
+                check="clinical_trials_adjunct",
+                severity="warn",
+                message="The requested ClinicalTrials.gov adjunct did not complete.",
+                details={"coverage": clinical_trials_coverage},
+            )
+    else:
+        _add_check(
+            checks,
+            check="clinical_trials_adjunct",
+            severity="pass",
+            message="The ClinicalTrials.gov adjunct was not requested.",
+            details={"coverage": clinical_trials_coverage},
+        )
+
+    enrichment_failures = int(enrichment.get("failed", 0) or 0)
+    if enrichment_failures:
+        _add_check(
+            checks,
+            check="enrichment_coverage",
+            severity="warn",
+            message="Optional metadata enrichment completed with partial coverage.",
+            details={"enrichment": enrichment},
+        )
+    elif enrichment:
+        _add_check(
+            checks,
+            check="enrichment_coverage",
+            severity="pass",
+            message="Optional metadata enrichment reported no failures.",
+            details={"enrichment": enrichment},
         )
 
     pmids = [_article_identifier(article, "pmid") for article in ranked if _article_identifier(article, "pmid")]
@@ -600,6 +688,7 @@ def audit_unified_search_artifact(*, request: Any, plan: Any, execution: Any) ->
             "total_input": int(getattr(stats, "total_input", 0) or 0),
             "unique_articles": int(getattr(stats, "unique_articles", len(ranked)) or 0),
             "duplicates_removed": int(getattr(stats, "duplicates_removed", 0) or 0),
+            "result_filter_counts": result_filter_counts,
         },
         "checks": checks,
     }
@@ -629,7 +718,7 @@ def build_unified_search_artifact_envelope(
         primary_file: structured_payload,
         "query_strategy.json": strategy,
         "audit.json": audit,
-        "query.md": f"# Query\n\n{query}\n",
+        "query.md": f"# Query\n\n{markdown_indented_code_block(query)}\n",
     }
     if markdown_response:
         files["response.md"] = markdown_response
@@ -646,6 +735,12 @@ def build_unified_search_artifact_envelope(
         "sources": source_summary,
         "source_errors": list(getattr(execution, "source_errors", []) or []),
         "source_metadata": dict(getattr(execution, "source_metadata", {}) or {}),
+        "result_filter_counts": dict(getattr(execution, "result_filter_counts", {}) or {}),
+        "enrichment": dict(getattr(execution, "enrichment_metadata", {}) or {}),
+        "clinical_trials": {
+            "coverage": execution.clinical_trials_coverage.to_dict(),
+            "returned": len(execution.clinical_trials),
+        },
         "audit": audit["summary"],
         "audit_status": audit["status"],
         "read_order": read_order,
@@ -664,6 +759,11 @@ def build_unified_search_artifact_envelope(
         "ranking": _value(getattr(request, "ranking", "")),
         "retrieval_mode": str(getattr(request, "retrieval_mode", "auto") or "auto"),
         "limit": int(getattr(request, "limit", 0) or 0),
+        "enrichment": dict(getattr(execution, "enrichment_metadata", {}) or {}),
+        "clinical_trials": {
+            "coverage": execution.clinical_trials_coverage.to_dict(),
+            "returned": len(execution.clinical_trials),
+        },
         "retrieval_contract": {
             "transport": "session-artifact",
             "addressing": "artifact_uri + artifact_file + offset + max_chars",

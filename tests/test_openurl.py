@@ -72,6 +72,31 @@ class TestOpenURLBuilder:
         with pytest.raises(ValueError, match="Unknown preset"):
             OpenURLBuilder.from_preset("unknown_university")
 
+    @pytest.mark.parametrize(
+        "resolver_url",
+        [
+            "ftp://library.example/openurl",
+            "https://user:secret@library.example/openurl",
+            "https://library.example:8443/openurl",
+            "https://library.example/openurl?api_key=secret",
+            "https://library.example/openurl#fragment",
+        ],
+    )
+    async def test_rejects_unsafe_resolver_urls(self, resolver_url):
+        from pubmed_search.infrastructure.sources.openurl import OpenURLBuilder
+
+        with pytest.raises(ValueError, match="OpenURL resolver URL"):
+            OpenURLBuilder(resolver_base=resolver_url)
+
+    async def test_all_presets_are_query_free_openurl_bases(self):
+        from urllib.parse import urlsplit
+
+        from pubmed_search.infrastructure.sources.openurl import RESOLVER_PRESETS
+
+        assert "worldcat" not in RESOLVER_PRESETS
+        assert "pubmed_linkout" not in RESOLVER_PRESETS
+        assert all(not urlsplit(value).query for value in RESOLVER_PRESETS.values())
+
     async def test_no_resolver_returns_none(self):
         """Test that empty resolver returns None."""
         from pubmed_search.infrastructure.sources.openurl import OpenURLBuilder
@@ -137,6 +162,16 @@ class TestOpenURLConfig:
         config = OpenURLConfig.from_env()
 
         assert config.enabled is False
+        assert config.get_builder() is None
+
+    async def test_invalid_preset_does_not_fall_back_to_resolver_base(self):
+        from pubmed_search.infrastructure.sources.openurl import OpenURLConfig
+
+        config = OpenURLConfig(
+            preset="misspelled-preset",
+            resolver_base="https://library.example/openurl",
+        )
+
         assert config.get_builder() is None
 
 

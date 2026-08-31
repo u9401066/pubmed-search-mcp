@@ -48,7 +48,7 @@
 
   <rect class="box" x="946" y="264" width="190" height="118" fill="#f1f5e8" stroke="#71883b"/>
   <text class="label" x="972" y="304">MCP surface</text>
-  <text class="body" x="972" y="334">45-tool primary</text>
+  <text class="body" x="972" y="334">41-tool primary</text>
   <text class="body" x="972" y="356">authenticated service</text>
 
   <rect class="box" x="648" y="112" width="216" height="118" fill="#f5f1ea" stroke="#947245"/>

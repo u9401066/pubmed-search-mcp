@@ -479,14 +479,14 @@ class TestSourceDisagreement:
         assert result.per_source_unique["pubmed"] == 1
         assert result.per_source_unique["openalex"] == 1
 
-    def test_rank_correlation_pairs(self):
+    def test_pairwise_overlap_pairs(self):
         articles = [
             _make_article(pmid="1", sources=["pubmed", "openalex"]),
             _make_article(pmid="2", sources=["pubmed"]),
             _make_article(pmid="3", sources=["openalex"]),
         ]
         result = analyze_source_disagreement(articles)
-        assert "openalex↔pubmed" in result.rank_correlation or "pubmed↔openalex" in result.rank_correlation
+        assert "openalex↔pubmed" in result.pairwise_overlap or "pubmed↔openalex" in result.pairwise_overlap
 
     def test_empty_articles(self):
         result = analyze_source_disagreement([])
@@ -503,7 +503,8 @@ class TestSourceDisagreement:
         assert "source_agreement_score" in d
         assert "source_complementarity" in d
         assert "per_source_unique" in d
-        assert "rank_correlation" in d
+        assert "pairwise_overlap" in d
+        assert "rank_correlation" not in d
         assert isinstance(d["source_agreement_score"], float)
 
     def test_three_sources(self):
@@ -514,8 +515,8 @@ class TestSourceDisagreement:
             _make_article(pmid="4", sources=["core"]),
         ]
         result = analyze_source_disagreement(articles)
-        # Should have 3 pairwise correlations: core↔openalex, core↔pubmed, openalex↔pubmed
-        assert len(result.rank_correlation) == 3
+        # Three pairwise overlap coefficients: core↔openalex, core↔pubmed, openalex↔pubmed
+        assert len(result.pairwise_overlap) == 3
         assert result.cross_source_articles >= 2  # articles 1 and 3
 
 

@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
-import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from pubmed_search.infrastructure.sources import get_ncbi_extended_client
+from pubmed_search.infrastructure.sources.base_client import APIRequestError
 from pubmed_search.infrastructure.sources.ncbi_extended import (
     DEFAULT_EMAIL,
     NCBIExtendedClient,
-    get_ncbi_extended_client,
 )
+from pubmed_search.shared.async_utils import RetryableOperationError
 
 # ============================================================
 # Fixtures
@@ -53,20 +54,6 @@ class TestInit:
 
 
 # ============================================================
-# Rate Limiting
-# ============================================================
-
-
-class TestRateLimit:
-    async def test_rate_limit_waits(self, client):
-        client._last_request_time = time.time()
-        start = time.time()
-        await client._rate_limit()
-        # Should have waited at least some time
-        assert client._last_request_time >= start
-
-
-# ============================================================
 # _make_request
 # ============================================================
 
@@ -75,10 +62,10 @@ class TestMakeRequest:
     async def test_json_response(self, client):
         mock_response = MagicMock()
         mock_response.status_code = 200
+        mock_response.headers = {}
         mock_response.json.return_value = {"result": "ok"}
         mock_response.text = '{"result": "ok"}'
-        client._client = AsyncMock()
-        client._client.get = AsyncMock(return_value=mock_response)
+        client._execute_request = AsyncMock(return_value=mock_response)
 
         result = await client._make_request("https://example.com/api", expect_json=True)
         assert result == {"result": "ok"}
@@ -86,9 +73,9 @@ class TestMakeRequest:
     async def test_text_response(self, client):
         mock_response = MagicMock()
         mock_response.status_code = 200
+        mock_response.headers = {}
         mock_response.text = "<xml>data</xml>"
-        client._client = AsyncMock()
-        client._client.get = AsyncMock(return_value=mock_response)
+        client._execute_request = AsyncMock(return_value=mock_response)
 
         result = await client._make_request("https://example.com/api", expect_json=False)
         assert result == "<xml>data</xml>"
@@ -102,30 +89,30 @@ class TestMakeRequest:
         mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
             "Server Error", request=MagicMock(), response=mock_response
         )
-        client._client = AsyncMock()
-        client._client.get = AsyncMock(return_value=mock_response)
+        client._execute_request = AsyncMock(return_value=mock_response)
 
-        result = await client._make_request("https://example.com/api")
-        assert result is None
+        with pytest.raises(RetryableOperationError):
+            await client._make_request("https://example.com/api")
 
     async def test_generic_error(self, client):
-        client._client = AsyncMock()
-        client._client.get = AsyncMock(side_effect=Exception("Connection failed"))
+        client._execute_request = AsyncMock(side_effect=Exception("Connection failed"))
 
-        result = await client._make_request("https://example.com/api")
-        assert result is None
+        with pytest.raises(APIRequestError, match="NCBI request failed"):
+            await client._make_request("https://example.com/api")
 
     async def test_adds_email_and_tool(self, client):
         mock_response = MagicMock()
         mock_response.status_code = 200
+        mock_response.headers = {}
         mock_response.text = "ok"
-        client._client = AsyncMock()
-        client._client.get = AsyncMock(return_value=mock_response)
-
-        await client._make_request("https://example.com/api?db=gene")
+        with patch(
+            "pubmed_search.infrastructure.sources.base_client.BaseAPIClient._execute_request",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ) as execute_request:
+            await client._make_request("https://example.com/api?db=gene")
         # Check the URL includes email and tool params
-        call_args = client._client.get.call_args
-        url = call_args[0][0]
+        url = execute_request.await_args.args[0]
         assert "email=" in url
         assert "tool=pubmed-search-mcp" in url
 
@@ -143,6 +130,7 @@ class TestSearchGene:
             {"esearchresult": {"idlist": ["672"]}},
             {
                 "result": {
+                    "uids": ["672"],
                     "672": {
                         "uid": "672",
                         "name": "BRCA1",
@@ -153,7 +141,7 @@ class TestSearchGene:
                         "otheraliases": "BRCAI,BRCC1",
                         "summary": "Tumor suppressor",
                         "geneticsource": "protein-coding",
-                    }
+                    },
                 }
             },
         ]
@@ -184,7 +172,8 @@ class TestSearchGene:
     @patch.object(NCBIExtendedClient, "_make_request")
     async def test_search_gene_search_fails(self, mock_req, client):
         mock_req.return_value = None
-        assert await client.search_gene("BRCA1") == []
+        with pytest.raises(APIRequestError):
+            await client.search_gene("BRCA1")
 
     @patch.object(NCBIExtendedClient, "_make_request")
     async def test_search_gene_summary_fails(self, mock_req, client):
@@ -192,12 +181,14 @@ class TestSearchGene:
             {"esearchresult": {"idlist": ["672"]}},
             None,
         ]
-        assert await client.search_gene("BRCA1") == []
+        with pytest.raises(APIRequestError):
+            await client.search_gene("BRCA1")
 
     @patch.object(NCBIExtendedClient, "_make_request")
     async def test_search_gene_exception(self, mock_req, client):
         mock_req.side_effect = Exception("fail")
-        assert await client.search_gene("BRCA1") == []
+        with pytest.raises(APIRequestError, match="NCBI request failed"):
+            await client.search_gene("BRCA1")
 
 
 class TestGetGene:
@@ -205,6 +196,7 @@ class TestGetGene:
     async def test_get_gene_success(self, mock_req, client):
         mock_req.return_value = {
             "result": {
+                "uids": ["672"],
                 "672": {
                     "uid": "672",
                     "name": "BRCA1",
@@ -215,7 +207,7 @@ class TestGetGene:
                     "otheraliases": "",
                     "summary": "",
                     "geneticsource": "",
-                }
+                },
             }
         }
         gene = await client.get_gene("672")
@@ -224,18 +216,20 @@ class TestGetGene:
 
     @patch.object(NCBIExtendedClient, "_make_request")
     async def test_get_gene_not_found(self, mock_req, client):
-        mock_req.return_value = {"result": {}}
+        mock_req.return_value = {"result": {"uids": []}}
         assert await client.get_gene("99999") is None
 
     @patch.object(NCBIExtendedClient, "_make_request")
     async def test_get_gene_request_fails(self, mock_req, client):
         mock_req.return_value = None
-        assert await client.get_gene("672") is None
+        with pytest.raises(APIRequestError):
+            await client.get_gene("672")
 
     @patch.object(NCBIExtendedClient, "_make_request")
     async def test_get_gene_exception(self, mock_req, client):
         mock_req.side_effect = Exception("fail")
-        assert await client.get_gene("672") is None
+        with pytest.raises(APIRequestError):
+            await client.get_gene("672")
 
 
 class TestGetGenePubmedLinks:
@@ -244,9 +238,11 @@ class TestGetGenePubmedLinks:
         mock_req.return_value = {
             "linksets": [
                 {
+                    "dbfrom": "gene",
+                    "ids": ["672"],
                     "linksetdbs": [
                         {"dbto": "pubmed", "links": [12345, 67890]},
-                    ]
+                    ],
                 }
             ]
         }
@@ -258,9 +254,11 @@ class TestGetGenePubmedLinks:
         mock_req.return_value = {
             "linksets": [
                 {
+                    "dbfrom": "gene",
+                    "ids": ["672"],
                     "linksetdbs": [
-                        {"dbto": "pubmed", "links": list(range(100))},
-                    ]
+                        {"dbto": "pubmed", "links": list(range(1, 101))},
+                    ],
                 }
             ]
         }
@@ -269,18 +267,20 @@ class TestGetGenePubmedLinks:
 
     @patch.object(NCBIExtendedClient, "_make_request")
     async def test_no_links(self, mock_req, client):
-        mock_req.return_value = {"linksets": [{"linksetdbs": []}]}
+        mock_req.return_value = {"linksets": [{"dbfrom": "gene", "ids": ["672"], "linksetdbs": []}]}
         assert await client.get_gene_pubmed_links("672") == []
 
     @patch.object(NCBIExtendedClient, "_make_request")
     async def test_request_fails(self, mock_req, client):
         mock_req.return_value = None
-        assert await client.get_gene_pubmed_links("672") == []
+        with pytest.raises(APIRequestError):
+            await client.get_gene_pubmed_links("672")
 
     @patch.object(NCBIExtendedClient, "_make_request")
     async def test_exception(self, mock_req, client):
         mock_req.side_effect = Exception("fail")
-        assert await client.get_gene_pubmed_links("672") == []
+        with pytest.raises(APIRequestError):
+            await client.get_gene_pubmed_links("672")
 
 
 # ============================================================
@@ -295,6 +295,7 @@ class TestSearchCompound:
             {"esearchresult": {"idlist": ["2244"]}},
             {
                 "result": {
+                    "uids": ["2244"],
                     "2244": {
                         "uid": "2244",
                         "synonymlist": ["Aspirin", "Acetylsalicylic acid"],
@@ -310,7 +311,7 @@ class TestSearchCompound:
                         "rotatablebondcount": 3,
                         "hydrogenbonddonorcount": 1,
                         "hydrogenbondacceptorcount": 4,
-                    }
+                    },
                 }
             },
         ]
@@ -329,7 +330,8 @@ class TestSearchCompound:
     @patch.object(NCBIExtendedClient, "_make_request")
     async def test_exception(self, mock_req, client):
         mock_req.side_effect = Exception("fail")
-        assert await client.search_compound("aspirin") == []
+        with pytest.raises(APIRequestError):
+            await client.search_compound("aspirin")
 
 
 class TestGetCompound:
@@ -337,6 +339,7 @@ class TestGetCompound:
     async def test_success(self, mock_req, client):
         mock_req.return_value = {
             "result": {
+                "uids": ["2244"],
                 "2244": {
                     "uid": "2244",
                     "synonymlist": ["Aspirin"],
@@ -347,7 +350,7 @@ class TestGetCompound:
                     "isomericsmiles": "",
                     "inchi": "",
                     "inchikey": "",
-                }
+                },
             }
         }
         compound = await client.get_compound("2244")
@@ -356,13 +359,14 @@ class TestGetCompound:
 
     @patch.object(NCBIExtendedClient, "_make_request")
     async def test_not_found(self, mock_req, client):
-        mock_req.return_value = {"result": {}}
+        mock_req.return_value = {"result": {"uids": []}}
         assert await client.get_compound("99999") is None
 
     @patch.object(NCBIExtendedClient, "_make_request")
     async def test_exception(self, mock_req, client):
         mock_req.side_effect = Exception("fail")
-        assert await client.get_compound("2244") is None
+        with pytest.raises(APIRequestError):
+            await client.get_compound("2244")
 
 
 class TestGetCompoundPubmedLinks:
@@ -371,9 +375,11 @@ class TestGetCompoundPubmedLinks:
         mock_req.return_value = {
             "linksets": [
                 {
+                    "dbfrom": "pccompound",
+                    "ids": ["2244"],
                     "linksetdbs": [
                         {"dbto": "pubmed", "links": [11111, 22222]},
-                    ]
+                    ],
                 }
             ]
         }
@@ -383,7 +389,8 @@ class TestGetCompoundPubmedLinks:
     @patch.object(NCBIExtendedClient, "_make_request")
     async def test_exception(self, mock_req, client):
         mock_req.side_effect = Exception("fail")
-        assert await client.get_compound_pubmed_links("2244") == []
+        with pytest.raises(APIRequestError):
+            await client.get_compound_pubmed_links("2244")
 
 
 # ============================================================
@@ -398,6 +405,7 @@ class TestSearchClinvar:
             {"esearchresult": {"idlist": ["12345"]}},
             {
                 "result": {
+                    "uids": ["12345"],
                     "12345": {
                         "uid": "12345",
                         "accession": "VCV000012345",
@@ -410,7 +418,7 @@ class TestSearchClinvar:
                         "start": 43057051,
                         "stop": 43057051,
                         "trait_set": [{"trait_name": "Breast-ovarian cancer"}],
-                    }
+                    },
                 }
             },
         ]
@@ -427,12 +435,13 @@ class TestSearchClinvar:
             {"esearchresult": {"idlist": ["1"]}},
             {
                 "result": {
+                    "uids": ["1"],
                     "1": {
                         "uid": "1",
                         "clinical_significance": "Benign",
                         "genes": [],
                         "trait_set": [],
-                    }
+                    },
                 }
             },
         ]
@@ -442,7 +451,8 @@ class TestSearchClinvar:
     @patch.object(NCBIExtendedClient, "_make_request")
     async def test_exception(self, mock_req, client):
         mock_req.side_effect = Exception("fail")
-        assert await client.search_clinvar("BRCA1") == []
+        with pytest.raises(APIRequestError):
+            await client.search_clinvar("BRCA1")
 
 
 # ============================================================
@@ -506,10 +516,11 @@ class TestNormalizeClinvar:
 
 class TestSingleton:
     async def test_get_ncbi_extended_client(self):
-        import pubmed_search.infrastructure.sources.ncbi_extended as mod
+        import pubmed_search.infrastructure.sources as mod
 
         mod._ncbi_extended_client = None
-        with patch.dict("os.environ", {"NCBI_EMAIL": "e@e.com", "NCBI_API_KEY": "k"}):
-            c = get_ncbi_extended_client()
-            assert c is not None
+        c = get_ncbi_extended_client(email="e@e.com", api_key="k")
+        assert c is not None
+        assert c._email == "e@e.com"
+        assert c._api_key == "k"
         mod._ncbi_extended_client = None  # Reset

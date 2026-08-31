@@ -7,7 +7,10 @@ Dataclasses for PubTator3 API responses.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from pubmed_search.application.search.semantic_enhancer import ResolvedEntity
 
 EntityType = Literal["gene", "disease", "chemical", "species", "variant"]
 RelationType = Literal["treat", "associate", "cause", "interact", "inhibit", "stimulate"]
@@ -75,31 +78,6 @@ class RelationMatch:
 
 
 @dataclass
-class PubTatorEntity:
-    """
-    Resolved entity with full context.
-
-    Used after entity resolution to provide standardized
-    identifiers for downstream processing.
-    """
-
-    original_text: str  # Original user input
-    resolved_name: str  # Standardized name
-    entity_type: str  # Type category (gene, disease, chemical, etc.)
-    entity_id: str  # PubTator3 ID
-    mesh_id: str | None = None  # MeSH ID (if available)
-    ncbi_id: str | None = None  # NCBI Gene/Taxonomy ID (if applicable)
-
-    def to_search_term(self) -> str:
-        """Generate optimal search term for PubMed."""
-        if self.mesh_id:
-            return f'"{self.resolved_name}"[MeSH Terms]'
-        if self.entity_type == "gene" and self.ncbi_id:
-            return f"{self.resolved_name}[Gene Name]"
-        return f'"{self.resolved_name}"'
-
-
-@dataclass
 class EntitySearchResult:
     """
     Result from entity-based search.
@@ -107,6 +85,6 @@ class EntitySearchResult:
     Combines entity information with document counts.
     """
 
-    entity: PubTatorEntity
+    entity: ResolvedEntity
     document_count: int = 0
     related_entities: list[str] = field(default_factory=list)

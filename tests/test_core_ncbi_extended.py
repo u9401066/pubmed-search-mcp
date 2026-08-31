@@ -4,6 +4,8 @@ Tests for CORE API and NCBI Extended Database integration.
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock
+
 # =============================================================================
 # CORE API Client Tests
 # =============================================================================
@@ -25,18 +27,6 @@ class TestCOREClient:
         client = COREClient(api_key="test-key")
         assert client._api_key == "test-key"
         assert client._min_interval == 2.5  # Faster with key
-
-    async def test_get_core_client_singleton(self):
-        """Test singleton pattern."""
-        # Reset singleton
-        import pubmed_search.infrastructure.sources.core as core_module
-        from pubmed_search.infrastructure.sources.core import get_core_client
-
-        core_module._core_client = None
-
-        client1 = get_core_client()
-        client2 = get_core_client()
-        assert client1 is client2
 
     async def test_normalize_work(self):
         """Test work normalization."""
@@ -87,21 +77,6 @@ class TestCOREClient:
         assert hasattr(client, "search_by_pmid")
 
 
-class TestCOREConvenienceFunctions:
-    """Test convenience functions."""
-
-    async def test_search_core_function(self):
-        """Test search_core convenience function exists."""
-        from pubmed_search.infrastructure.sources.core import (
-            search_core,
-            search_core_fulltext,
-        )
-
-        # Functions should be callable
-        assert callable(search_core)
-        assert callable(search_core_fulltext)
-
-
 # =============================================================================
 # NCBI Extended Client Tests
 # =============================================================================
@@ -129,10 +104,8 @@ class TestNCBIExtendedClient:
     async def test_get_ncbi_extended_client_singleton(self):
         """Test singleton pattern."""
         # Reset singleton
-        import pubmed_search.infrastructure.sources.ncbi_extended as ncbi_module
-        from pubmed_search.infrastructure.sources.ncbi_extended import (
-            get_ncbi_extended_client,
-        )
+        import pubmed_search.infrastructure.sources as ncbi_module
+        from pubmed_search.infrastructure.sources import get_ncbi_extended_client
 
         ncbi_module._ncbi_extended_client = None
 
@@ -236,24 +209,21 @@ class TestNCBIExtendedClient:
 class TestSourcesIntegration:
     """Test sources module integration."""
 
-    async def test_search_source_enum(self):
-        """Test SearchSource enum includes CORE."""
-        from pubmed_search.infrastructure.sources import SearchSource
+    async def test_core_is_declared_by_the_source_registry(self):
+        """The registry, not a parallel enum, owns source identity."""
+        from pubmed_search.infrastructure.sources import get_source_registry
 
-        assert hasattr(SearchSource, "CORE")
-        assert SearchSource.CORE.value == "core"
+        definition = get_source_registry().get("core")
+        assert definition is not None
+        assert definition.key == "core"
+        assert definition.supports_primary_search is True
 
     async def test_get_clients(self):
         """Test client getter functions."""
-        # Reset singletons
-        from pubmed_search.infrastructure import sources
         from pubmed_search.infrastructure.sources import (
             get_core_client,
             get_ncbi_extended_client,
         )
-
-        sources._core_client = None
-        sources._ncbi_extended_client = None
 
         core_client = get_core_client()
         assert core_client is not None
@@ -261,43 +231,16 @@ class TestSourcesIntegration:
         ncbi_client = get_ncbi_extended_client()
         assert ncbi_client is not None
 
-    async def test_cross_search_includes_core(self):
-        """Test that cross_search default sources include CORE."""
-        import inspect
+    async def test_core_uses_the_typed_alternate_source_seam(self):
+        """All non-PubMed search orchestration goes through one adapter API."""
+        from pubmed_search.infrastructure.sources import search_alternate_source_adapter
 
-        from pubmed_search.infrastructure.sources import cross_search
-
-        # Check the function signature
-        inspect.signature(cross_search)
-        # Default should include "core"
-        # We can't easily test this without mocking, but we verify the function exists
-        assert callable(cross_search)
+        assert callable(search_alternate_source_adapter)
 
 
 # =============================================================================
 # MCP Tools Tests
 # =============================================================================
-
-
-class TestCOREMCPTools:
-    """Test CORE MCP tools."""
-
-    async def test_tools_registered(self):
-        """Test that CORE tools can be registered."""
-        from mcp.server.mcpserver import MCPServer
-
-        from pubmed_search.presentation.mcp_server.tools.core import register_core_tools
-
-        mcp = MCPServer(name="test")
-        register_core_tools(mcp)
-
-        # Check tools are registered
-        tool_names = [t.name for t in mcp._tool_manager.list_tools()]
-        assert "search_core" in tool_names
-        assert "search_core_fulltext" in tool_names
-        assert "get_core_paper" in tool_names
-        assert "get_core_fulltext" in tool_names
-        assert "find_in_core" in tool_names
 
 
 class TestNCBIExtendedMCPTools:
@@ -340,10 +283,16 @@ class TestAllToolsRegistration:
 
         from pubmed_search.infrastructure.ncbi import LiteratureSearcher
         from pubmed_search.presentation.mcp_server.tools import register_all_tools
+        from pubmed_search.presentation.mcp_server.tools.pipeline_tools import PipelineToolRuntime
 
         mcp = MCPServer(name="test")
         searcher = LiteratureSearcher(email="test@example.com")
-        register_all_tools(mcp, searcher)
+        register_all_tools(
+            mcp,
+            searcher,
+            image_search_service=MagicMock(),
+            pipeline_runtime=PipelineToolRuntime(base_store=None),
+        )
 
         tool_names = [t.name for t in mcp._tool_manager.list_tools()]
 

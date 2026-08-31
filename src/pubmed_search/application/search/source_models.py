@@ -18,9 +18,9 @@ SourceItemT = TypeVar("SourceItemT")
 class SourceSearchPage(Generic[SourceItemT]):
     """One provider response page plus reproducibility and budget metadata.
 
-    ``items`` deliberately retains provider DTOs.  Adapters that need a legacy
-    PubMed-like dictionary must opt into that conversion separately; callers on
-    the unified-search path map these DTOs exactly once in the domain layer.
+    ``items`` deliberately retains provider DTOs. Callers map those DTOs exactly
+    once at the explicit domain-service boundary; clients do not expose a second
+    normalized-list search contract.
     """
 
     source: str

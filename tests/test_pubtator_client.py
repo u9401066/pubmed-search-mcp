@@ -2,7 +2,7 @@
 Tests for infrastructure/pubtator/client.py.
 
 Covers: PubTatorClient, rate limiting, find_entity, search_by_entity,
-        resolve_entity, find_relations, get_annotations, singleton.
+        resolve_entity, find_relations, annotations, and runtime ownership.
 """
 
 from __future__ import annotations
@@ -19,6 +19,8 @@ from pubmed_search.infrastructure.pubtator.client import (
 from pubmed_search.infrastructure.pubtator.models import (
     EntityMatch,
 )
+from pubmed_search.infrastructure.sources.base_client import APIRequestError
+from pubmed_search.shared.async_utils import RetryableOperationError
 
 
 @pytest.fixture
@@ -140,7 +142,7 @@ class TestRequest:
 
     @pytest.mark.asyncio
     async def test_timeout_retries(self, client):
-        """Timeout triggers retry, returns None if all fail."""
+        """Timeout retries, then raises a sanitized typed failure."""
         import httpx
 
         mock_http = AsyncMock()
@@ -148,8 +150,8 @@ class TestRequest:
         mock_http.is_closed = False
 
         client._client = mock_http
-        result = await client._request("test")
-        assert result is None
+        with pytest.raises(APIRequestError, match="PubTator3 request failed"):
+            await client._request("test")
         assert mock_http.get.call_count == client._MAX_RETRIES + 1
 
     @pytest.mark.asyncio
@@ -168,12 +170,13 @@ class TestRequest:
 
         client._client = mock_http
         with patch("asyncio.sleep", new_callable=AsyncMock):
-            result = await client._request("test")
-        assert result is None
+            with pytest.raises(RetryableOperationError, match="PubTator3 request failed") as caught:
+                await client._request("test")
+        assert caught.value.status_code == 500
 
     @pytest.mark.asyncio
-    async def test_client_error_returns_none(self, client):
-        """4xx (not 429) should fail gracefully via shared BaseAPIClient."""
+    async def test_client_error_raises_sanitized_failure(self, client):
+        """4xx (not 429) raises the shared sanitized typed failure."""
         import httpx
 
         mock_resp = MagicMock()
@@ -187,8 +190,9 @@ class TestRequest:
         mock_http.is_closed = False
 
         client._client = mock_http
-        result = await client._request("test")
-        assert result is None
+        with pytest.raises(APIRequestError, match="PubTator3 request failed with HTTP 400") as caught:
+            await client._request("test")
+        assert caught.value.status_code == 400
 
     @pytest.mark.asyncio
     async def test_autocomplete_404_disables_future_entity_requests(self, client):
@@ -218,8 +222,8 @@ class TestRequest:
         mock_http.is_closed = False
 
         client._client = mock_http
-        result = await client._request("test")
-        assert result is None
+        with pytest.raises(APIRequestError, match="PubTator3 request failed"):
+            await client._request("test")
 
 
 # ============================================================
@@ -390,33 +394,55 @@ class TestGetAnnotations:
 
 
 # ============================================================
-# Singleton
+# Runtime ownership
 # ============================================================
 
 
-class TestSingleton:
+class TestRuntimeOwnership:
     async def test_get_pubtator_client(self):
-        import pubmed_search.infrastructure.pubtator.client as mod
+        from pubmed_search.infrastructure.sources.runtime import SourceRuntime, bind_source_runtime
 
-        mod._client_instance = None
-        c1 = get_pubtator_client()
-        c2 = get_pubtator_client()
+        runtime_a = SourceRuntime()
+        runtime_b = SourceRuntime()
+        with bind_source_runtime(runtime_a):
+            c1 = get_pubtator_client()
+            c2 = get_pubtator_client()
+        with bind_source_runtime(runtime_b):
+            c3 = get_pubtator_client()
+
         assert c1 is c2
-        mod._client_instance = None
+        assert c1 is not c3
+        await runtime_a.close()
+        await runtime_b.close()
 
     @pytest.mark.asyncio
-    async def test_close_pubtator_client(self):
-        import pubmed_search.infrastructure.pubtator.client as mod
+    async def test_close_pubtator_client_closes_only_active_runtime(self):
+        from pubmed_search.infrastructure.sources.runtime import SourceRuntime, bind_source_runtime
 
-        mod._client_instance = None
-        _ = get_pubtator_client()
-        await close_pubtator_client()
-        assert mod._client_instance is None
+        runtime_a = SourceRuntime()
+        runtime_b = SourceRuntime()
+        with bind_source_runtime(runtime_a):
+            client_a = get_pubtator_client()
+        with bind_source_runtime(runtime_b):
+            client_b = get_pubtator_client()
+        client_a.close = AsyncMock()
+        client_b.close = AsyncMock()
+
+        with bind_source_runtime(runtime_a):
+            await close_pubtator_client()
+
+        client_a.close.assert_awaited_once()
+        client_b.close.assert_not_awaited()
+        with bind_source_runtime(runtime_a):
+            assert get_pubtator_client() is not client_a
+        await runtime_a.close()
+        await runtime_b.close()
 
     @pytest.mark.asyncio
     async def test_close_when_none(self):
-        import pubmed_search.infrastructure.pubtator.client as mod
+        from pubmed_search.infrastructure.sources.runtime import SourceRuntime, bind_source_runtime
 
-        mod._client_instance = None
-        await close_pubtator_client()
-        assert mod._client_instance is None
+        runtime = SourceRuntime()
+        with bind_source_runtime(runtime):
+            await close_pubtator_client()
+        assert runtime.cached_clients() == ()

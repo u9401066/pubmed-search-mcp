@@ -11,7 +11,12 @@ from typing import Any
 
 from Bio import Entrez
 
-from .base import DEFAULT_ENTREZ_TOOL, execute_entrez_operation, run_entrez_callable
+from .base import (
+    DEFAULT_ENTREZ_TOOL,
+    execute_entrez_operation,
+    raise_ncbi_infrastructure_error,
+    run_entrez_callable,
+)
 
 
 class BatchMixin:
@@ -75,8 +80,8 @@ class BatchMixin:
                 "count": int(search_results.get("Count", 0)),
                 "batch_size": batch_size,
             }
-        except Exception as e:
-            return {"error": str(e)}
+        except Exception as exc:
+            raise_ncbi_infrastructure_error("history_search", exc)
 
     async def fetch_batch_from_history(
         self, webenv: str, query_key: str, start: int, batch_size: int
@@ -166,5 +171,5 @@ class BatchMixin:
                     )
 
             return results
-        except Exception as e:
-            return [{"error": str(e)}]
+        except Exception as exc:
+            raise_ncbi_infrastructure_error("history_fetch", exc)

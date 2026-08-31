@@ -73,7 +73,7 @@ flowchart LR
 - 結構化 `result_count` 與 `count_known`
 - attempted／failed sources 與 retryable/status code
 - safe `artifact://` URI、audit status、available file names
-- 可直接交給 agent 的 `read_session(action="artifact", ...)` recovery arguments
+- 可直接交給 agent 的 `read_session(request={"action":"artifact","locator":{"kind":"artifact_uri","value":"artifact://..."}})` recovery arguments
 
 合法的零結果是 `empty`，不是 failure。只要有結果且一個以上來源失敗，就是 `partial`，
 而不是把整次 federation 偽裝成完整成功；若所有 attempted providers 都失敗且沒有結果，
@@ -141,9 +141,9 @@ Agent 收到部分來源失敗時：
 2. 從 `artifact_summary.artifact_uri` 讀 `audit.json`。
 3. 讀 `query_strategy.json`，確認每個 provider 的 logical/physical query 與 executed status。
 4. 只補查 failed/retryable provider；不要盲目重跑全部來源。
-5. 需要精確重現時，使用 `read_session(action="search_runs")`、
-   `read_session(action="search_run", run_id="...")` 與
-   `read_session(action="replay_search", run_id="...")` 取得 credential-free arguments；
+5. 需要精確重現時，使用 `read_session(request={"action":"search_runs"})`、
+   `read_session(request={"action":"search_run","run_id":"..."})` 與
+   `read_session(request={"action":"replay_search","run_id":"..."})` 取得 credential-free arguments；
    replay 仍由 agent 明確呼叫 `unified_search`，不在 hook 背景自動執行。
 
 ## False-block Policy

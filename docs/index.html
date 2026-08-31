@@ -10,10 +10,10 @@
     <title>PubMed Search MCP Docs</title>
     <meta
       name="description"
-      content="The complete PubMed Search MCP SDK v2 handbook: installation, 45-tool research workflows, multi-source broker behavior, local and authenticated service deployment, security, troubleshooting, and development."
+      content="The complete PubMed Search MCP SDK v2 handbook: installation, 41-tool research workflows, multi-source broker behavior, local and authenticated service deployment, security, troubleshooting, and development."
     />
     <link rel="icon" href="images/favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="site.css?v=20260814-provider-broker" />
+    <link rel="stylesheet" href="site.css?v=20260901-v07" />
   </head>
   <body>
     <div id="reading-progress" class="reading-progress" aria-hidden="true"></div>
@@ -32,7 +32,7 @@
 
         <button id="global-search-btn" class="global-search-btn" type="button">
           <span class="search-btn-icon">🔍</span>
-          <span id="global-search-text" class="search-btn-text">Search docs &amp; 45 tools...</span>
+          <span id="global-search-text" class="search-btn-text">Search docs &amp; 41 tools...</span>
           <kbd class="search-kbd">Ctrl K</kbd>
         </button>
 
@@ -71,7 +71,7 @@
           </div>
           <div class="hero-metrics">
             <div>
-              <strong>45</strong>
+              <strong>41</strong>
               <span id="tool-metric-label">MCP tools</span>
             </div>
             <div>
@@ -87,7 +87,8 @@
 
         <nav id="topic-hub-nav" class="topic-hub-nav" aria-label="Topic Navigation">
           <button class="topic-hub-btn active" data-hub="all" type="button">📌 <span id="hub-all-text">All Sections</span></button>
-          <button class="topic-hub-btn" data-hub="tools" type="button">🛠️ <span id="hub-tools-text">45 Tools Explorer</span></button>
+          <button class="topic-hub-btn" data-hub="tools" type="button">🛠️ <span id="hub-tools-text">41 Tools Explorer</span></button>
+          <button class="topic-hub-btn" data-hub="unified-search" type="button">🔎 <span id="hub-unified-search-text">Unified Search</span></button>
           <button class="topic-hub-btn" data-hub="user" type="button">📖 <span id="hub-user-text">User Guides</span></button>
           <button class="topic-hub-btn" data-hub="chronicle" type="button">🕰️ <span id="hub-chronicle-text">Research Chronicle</span></button>
           <button class="topic-hub-btn" data-hub="pipeline" type="button">🔁 <span id="hub-pipeline-text">Pipelines</span></button>
@@ -102,7 +103,7 @@
           </a>
           <a class="journey-card" href="#/user-guide" data-page-group="user-guide">
             <span id="journey-research-kicker" class="journey-kicker">Research handbook</span>
-            <strong id="journey-research-title">Use the 45 tools</strong>
+            <strong id="journey-research-title">Use the 41 tools</strong>
             <span id="journey-research-copy">Choose a capability, search multiple sources, read full text, and preserve evidence.</span>
           </a>
           <a class="journey-card" href="#/deployment" data-page-group="deployment">
@@ -112,17 +113,17 @@
           </a>
         </section>
 
-        <!-- Interactive 45-Tool Explorer Widget -->
+        <!-- Interactive 41-Tool Explorer Widget -->
         <section id="tool-explorer-widget" class="tool-explorer-widget">
           <div class="tool-explorer-header">
             <div class="tool-explorer-title-wrap">
               <span class="tool-explorer-badge">Interactive Index</span>
-              <h3 id="tool-explorer-title" class="tool-explorer-title">🛠️ 45 MCP Tools Interactive Explorer</h3>
+              <h3 id="tool-explorer-title" class="tool-explorer-title">🛠️ 41 MCP Tools Interactive Explorer</h3>
               <p id="tool-explorer-subtitle" class="tool-explorer-subtitle">Filter tools by capability, search keywords in English or Chinese, and copy execution examples with one click.</p>
             </div>
             <div class="tool-explorer-search-wrap">
               <input id="tool-search-input" class="tool-search-input" type="search" placeholder="Search tool name, keyword (e.g. pmid, fulltext, pico, figure, 基因, rct, export)..." />
-              <span id="tool-count-badge" class="tool-count-badge">45 / 45</span>
+              <span id="tool-count-badge" class="tool-count-badge">41 / 41</span>
             </div>
           </div>
           <div id="tool-category-chips" class="tool-category-chips"></div>
@@ -141,7 +142,7 @@
       <div id="search-modal" class="search-modal" role="dialog" aria-modal="true" aria-labelledby="modal-search-label">
         <div class="modal-search-header">
           <span class="modal-search-icon">🔍</span>
-          <input id="modal-search-input" class="modal-search-input" type="search" placeholder="Search pages, headings, and 45 tools across entire site..." />
+          <input id="modal-search-input" class="modal-search-input" type="search" placeholder="Search pages, headings, and 41 tools across entire site..." />
           <button id="modal-search-close" class="modal-search-close" type="button" aria-label="Close search">✕</button>
         </div>
         <div id="modal-search-results" class="modal-search-results">
@@ -175,7 +176,7 @@
       crossorigin="anonymous"
       referrerpolicy="no-referrer"
     ></script>
-    <script src="site-content.js?v=20260814-provider-broker"></script>
-    <script src="site.js?v=20260814-provider-broker"></script>
+    <script src="site-content.js?v=20260901-v07"></script>
+    <script src="site.js?v=20260901-v07"></script>
   </body>
 </html>

@@ -25,6 +25,20 @@ _ASSIGNMENT_RE = re.compile(
     rf"(?:[\"']?(?:{_GENERIC_CREDENTIAL_LABEL}|{_KNOWN_CREDENTIAL_LABEL})[\"']?)"
     r"\s*[:=]\s*(?:\"([^\"]+)\"|'([^']+)'|([^\s,;&#}]+))"
 )
+_CLI_CREDENTIAL_RE = re.compile(
+    r"(?i)(?:^|\s)"
+    rf"--(?:{_GENERIC_CREDENTIAL_LABEL}|{_KNOWN_CREDENTIAL_LABEL})"
+    r"(?:\s*=\s*|\s+)(?:\"([^\"]+)\"|'([^']+)'|([^\s,;&#}]+))"
+)
+_KNOWN_SPACE_CREDENTIAL_RE = re.compile(
+    r"(?i)(?:^|[\s,:{;])"
+    rf"(?:[\"']?(?:{_KNOWN_CREDENTIAL_LABEL})[\"']?)"
+    r"\s+(?:\"([^\"]+)\"|'([^']+)'|([^\s,;&#}]+))"
+)
+_AUTHORIZATION_HEADER_RE = re.compile(
+    r"(?i)(?P<prefix>[\"']?(?:proxy-)?authorization[\"']?\s*:\s*)"
+    r'(?:"(?P<double>[^"]*)"|\'(?P<single>[^\']*)\'|(?P<bare>[^\r\n,;}]+))'
+)
 _BEARER_RE = re.compile(r"(?i)\bBearer\s+([A-Za-z0-9._~+/-]+=*)")
 _SECRET_FIELD_RE = re.compile(
     rf"(?i)(?:(?:^|[_-])(?:{_GENERIC_CREDENTIAL_LABEL})(?:$|[_-])|^(?:{_KNOWN_CREDENTIAL_LABEL})$)"
@@ -34,10 +48,15 @@ _SECRET_FIELD_RE = re.compile(
 def extract_credential_values(text: str) -> frozenset[str]:
     """Return credential values that were explicitly labelled in *text*."""
     values: set[str] = set()
-    for match in _ASSIGNMENT_RE.finditer(text):
-        value = next((group for group in match.groups() if group), "")
+    for match in _AUTHORIZATION_HEADER_RE.finditer(text):
+        value = next((match.group(name) for name in ("double", "single", "bare") if match.group(name)), "")
         if value:
-            values.add(value)
+            values.add(value.strip())
+    for pattern in (_ASSIGNMENT_RE, _CLI_CREDENTIAL_RE, _KNOWN_SPACE_CREDENTIAL_RE):
+        for match in pattern.finditer(text):
+            value = next((group for group in match.groups() if group), "")
+            if value:
+                values.add(value)
     values.update(match.group(1) for match in _BEARER_RE.finditer(text) if match.group(1))
     return frozenset(values)
 
@@ -55,6 +74,14 @@ def is_credential_field(name: str) -> bool:
 def redact_credential_assignments(text: str) -> str:
     """Redact labelled credentials while preserving the surrounding syntax."""
 
+    def _redact_authorization_header(match: re.Match[str]) -> str:
+        prefix = match.group("prefix")
+        if match.group("double") is not None:
+            return f'{prefix}"[REDACTED]"'
+        if match.group("single") is not None:
+            return f"{prefix}'[REDACTED]'"
+        return f"{prefix}[REDACTED]"
+
     def _redact_match(match: re.Match[str]) -> str:
         matched = match.group(0)
         for group_index in range(1, 4):
@@ -65,7 +92,9 @@ def redact_credential_assignments(text: str) -> str:
             return f"{matched[:start]}[REDACTED]{matched[end:]}"
         return "[REDACTED]"
 
-    redacted = _ASSIGNMENT_RE.sub(_redact_match, text)
+    redacted = _AUTHORIZATION_HEADER_RE.sub(_redact_authorization_header, text)
+    for pattern in (_ASSIGNMENT_RE, _CLI_CREDENTIAL_RE, _KNOWN_SPACE_CREDENTIAL_RE):
+        redacted = pattern.sub(_redact_match, redacted)
     return _BEARER_RE.sub("Bearer [REDACTED]", redacted)
 
 

@@ -32,9 +32,9 @@
   <text class="body" x="356" y="248">summary, log</text>
 
   <rect class="box" x="592" y="156" width="200" height="118" fill="#fff5df" stroke="#b27b21"/>
-  <text class="label" x="618" y="196">manage_pipeline</text>
-  <text class="body" x="618" y="226">save, list, load,</text>
-  <text class="body" x="618" y="248">delete, history</text>
+  <text class="label" x="618" y="196">save_pipeline</text>
+  <text class="body" x="618" y="226">list / load / delete</text>
+  <text class="body" x="618" y="248">get_pipeline_history</text>
 
   <rect class="box" x="854" y="156" width="200" height="118" fill="#f8eff7" stroke="#99609a"/>
   <text class="label" x="880" y="196">schedule_pipeline</text>

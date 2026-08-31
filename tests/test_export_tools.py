@@ -18,6 +18,7 @@ from pubmed_search.presentation.mcp_server.tools._common import get_session_regi
 from pubmed_search.presentation.mcp_server.tools.export import (
     _format_export_response,
     _get_file_extension,
+    _redact_tenant_note_paths,
     _resolve_pmids,
     register_export_tools,
 )
@@ -26,6 +27,14 @@ from pubmed_search.shared.tenancy import TenantIdentity, bind_tenant
 # ============================================================
 # Pure helpers
 # ============================================================
+
+
+def test_authenticated_note_path_redaction_rejects_escape(tmp_path: Path):
+    root = tmp_path / "tenant" / "references"
+    result = {"files": [{"path": str(tmp_path / "outside-private.md")}], "output_dir": str(root)}
+
+    with pytest.raises(ValueError, match="escaped"):
+        _redact_tenant_note_paths(result, root)
 
 
 class TestGetFileExtension:
@@ -118,6 +127,28 @@ class TestPrepareExport:
 
 class TestSaveLiteratureNotes:
     @pytest.mark.asyncio
+    async def test_save_literature_notes_rejects_entire_malformed_pmid_batch(self):
+        mcp = MagicMock()
+        searcher = AsyncMock()
+        tools = _capture_tools(mcp, searcher)
+
+        result = await tools["save_literature_notes"](pmids=["12345678", "not-a-pmid"])
+
+        assert "PMID must be positive ASCII digits" in result
+        searcher.fetch_details.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_save_literature_notes_rejects_string_boolean_coercion(self):
+        mcp = MagicMock()
+        searcher = AsyncMock()
+        tools = _capture_tools(mcp, searcher)
+
+        result = await tools["save_literature_notes"](pmids="12345678", overwrite="true")
+
+        assert "overwrite must be a boolean" in result
+        searcher.fetch_details.assert_not_awaited()
+
+    @pytest.mark.asyncio
     async def test_save_literature_notes_default_wiki_profile(self, temp_dir, mock_article_data):
         mcp = MagicMock()
         searcher = AsyncMock()
@@ -172,7 +203,7 @@ class TestSaveLiteratureNotes:
         ):
             result = await tools["save_literature_notes"](pmids="12345678", **unsafe_argument)
 
-        assert expected in result
+        assert expected.replace("_", "\\_") in result
         searcher.fetch_details.assert_not_awaited()
 
     @pytest.mark.asyncio
@@ -224,12 +255,25 @@ class TestSaveLiteratureNotes:
 
         root_a = Path(registry.tenant_data_dir(identity_a.tenant_id) or "") / "references"
         root_b = Path(registry.tenant_data_dir(identity_b.tenant_id) or "") / "references"
-        path_a = Path(result_a["files"][0]["path"])
-        path_b = Path(result_b["files"][0]["path"])
-        assert path_a.parent == root_a.resolve()
-        assert path_b.parent == root_b.resolve()
+        locator_a = result_a["files"][0]["locator"]
+        locator_b = result_b["files"][0]["locator"]
+        assert locator_a["kind"] == "tenant_reference"
+        assert locator_b["kind"] == "tenant_reference"
+        assert locator_a["value"].startswith("references/")
+        assert locator_b["value"].startswith("references/")
+        path_a = root_a / Path(locator_a["value"]).relative_to("references")
+        path_b = root_b / Path(locator_b["value"]).relative_to("references")
         assert path_a.read_text(encoding="utf-8").find("Tenant B evidence") == -1
         assert path_b.read_text(encoding="utf-8").find("Tenant A evidence") == -1
+        for result, root in ((result_a, root_a), (result_b, root_b)):
+            encoded = json.dumps(result)
+            assert "output_dir" not in result
+            assert result["storage_locator"] == {"kind": "tenant_references", "value": "references"}
+            assert result["path_visibility"] == "redacted"
+            assert result["csl_file"]["locator"]["value"].startswith("references/")
+            assert str(root.resolve()) not in encoded
+            assert '"path"' not in encoded
+            assert '"metadata_path"' not in encoded
         assert root_a != root_b
         assert not shared_notes.exists()
         assert not shared_workspace.exists()
@@ -378,7 +422,7 @@ class TestSaveLiteratureNotes:
         )
 
         assert "template rendering failed" in result.lower()
-        assert "template_file" in result
+        assert "template\\_file" in result
 
     def test_medpaper_profile_sanitizes_doi_directory_without_pmid(self, temp_dir, mock_article_data):
         article = dict(mock_article_data)
@@ -526,6 +570,15 @@ class TestSaveLiteratureNotes:
 
         assert "unsupported note format" in result.lower() or "error" in result.lower()
 
+    @pytest.mark.parametrize("note_format", ["WIKI", " wiki", "wiki ", "", None])
+    def test_application_note_format_does_not_repair_aliases(self, temp_dir, mock_article_data, note_format):
+        with pytest.raises(ValueError, match="Unsupported note format"):
+            write_literature_notes(
+                [mock_article_data],
+                temp_dir,
+                note_format=note_format,  # type: ignore[arg-type]
+            )
+
     @pytest.mark.asyncio
     async def test_official_ris(self):
         mcp = MagicMock()
@@ -536,10 +589,12 @@ class TestSaveLiteratureNotes:
         mock_result.success = True
         mock_result.content = "TY  - JOUR\nER  -\n"
         mock_result.pmid_count = 1
+        exporter = MagicMock()
+        exporter.export_citations = AsyncMock(return_value=mock_result)
 
         with patch(
-            "pubmed_search.presentation.mcp_server.tools.export.export_citations_official",
-            return_value=mock_result,
+            "pubmed_search.infrastructure.ncbi.citation_exporter.get_exporter",
+            return_value=exporter,
         ):
             result = await tools["prepare_export"](pmids="12345678", format="ris", source="official")
         parsed = json.loads(result)
@@ -572,30 +627,45 @@ class TestSaveLiteratureNotes:
         assert "unsupported" in result.lower() or "error" in result.lower()
 
     @pytest.mark.asyncio
-    async def test_official_api_failure_falls_back(self):
+    async def test_official_api_failure_does_not_change_provenance(self):
         mcp = MagicMock()
         searcher = AsyncMock()
-        searcher.fetch_details.return_value = [{"pmid": "123", "title": "T"}]
         tools = _capture_tools(mcp, searcher)
 
         mock_result = MagicMock()
         mock_result.success = False
-        mock_result.error = "API down"
+        mock_result.error = "API down token=secret /srv/private/export-cache"
+        exporter = MagicMock()
+        exporter.export_citations = AsyncMock(return_value=mock_result)
 
         with (
             patch(
-                "pubmed_search.presentation.mcp_server.tools.export.export_citations_official",
-                return_value=mock_result,
+                "pubmed_search.infrastructure.ncbi.citation_exporter.get_exporter",
+                return_value=exporter,
             ),
-            patch(
-                "pubmed_search.presentation.mcp_server.tools.export.export_articles",
-                return_value="TY  - JOUR\n",
-            ),
+            patch("pubmed_search.presentation.mcp_server.tools.export.export_articles") as local_export,
         ):
             result = await tools["prepare_export"](pmids="123", format="ris", source="official")
         parsed = json.loads(result)
-        assert parsed["status"] == "success"
-        assert parsed["source"] == "local"
+        assert parsed["success"] is False
+        assert parsed["error"] == "Official NCBI citation export failed"
+        assert "secret" not in result
+        assert "/srv/private" not in result
+        assert "retry" in parsed["suggestion"].lower()
+        local_export.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_official_source_rejects_local_only_format(self):
+        mcp = MagicMock()
+        searcher = AsyncMock()
+        tools = _capture_tools(mcp, searcher)
+
+        result = await tools["prepare_export"](pmids="123", format="bibtex", source="official")
+
+        parsed = json.loads(result)
+        assert parsed["success"] is False
+        assert "source='local'" in parsed["suggestion"]
+        searcher.fetch_details.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_exception_handling(self):
@@ -604,8 +674,11 @@ class TestSaveLiteratureNotes:
         tools = _capture_tools(mcp, searcher)
 
         with patch(
-            "pubmed_search.presentation.mcp_server.tools.export.export_citations_official",
-            side_effect=RuntimeError("network error"),
+            "pubmed_search.infrastructure.ncbi.citation_exporter.get_exporter",
+            side_effect=RuntimeError("token=secret /srv/private/export-cache"),
         ):
             result = await tools["prepare_export"](pmids="123", format="ris", source="official")
-        assert "error" in result.lower()
+        parsed = json.loads(result)
+        assert parsed["error"] == "Citation export could not be completed"
+        assert "secret" not in result
+        assert "/srv/private" not in result

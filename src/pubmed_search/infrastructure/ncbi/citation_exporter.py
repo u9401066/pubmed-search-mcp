@@ -48,11 +48,6 @@ CITATION_API_BASE = "https://pmc.ncbi.nlm.nih.gov/api/ctxp/v1/pubmed/"
 CitationFormat = Literal["ris", "medline", "csl"]
 OFFICIAL_FORMATS: list[CitationFormat] = ["ris", "medline", "csl"]
 
-# Module-level singleton HTTP client shared across all NCBICitationExporter instances.
-# This converges on the same transport abstraction instead of each instance owning
-# a separate connection pool.
-_SHARED_CITATION_CLIENT: httpx.AsyncClient | None = None
-
 
 def _raise_for_retryable_status(response: httpx.Response) -> None:
     raise RetryableOperationError(
@@ -60,21 +55,6 @@ def _raise_for_retryable_status(response: httpx.Response) -> None:
         retry_after=parse_retry_after(response.headers.get("Retry-After")),
         status_code=response.status_code,
     )
-
-
-def _get_citation_http_client() -> httpx.AsyncClient:
-    """Return the lazily-created module-level citation HTTP client."""
-    global _SHARED_CITATION_CLIENT
-    if _SHARED_CITATION_CLIENT is None:
-        _SHARED_CITATION_CLIENT = create_async_http_client(
-            timeout=60.0,
-            headers={"User-Agent": "PubMedSearchMCP/1.0 (github.com/u9401066/pubmed-search-mcp)"},
-            follow_redirects=True,
-            max_connections=20,
-            max_keepalive_connections=10,
-            keepalive_expiry=30.0,
-        )
-    return _SHARED_CITATION_CLIENT
 
 
 @dataclass
@@ -113,14 +93,24 @@ class NCBICitationExporter:
         self.timeout = timeout
         self._api_key = api_key
         self._transport_kernel = get_transport_kernel()
-        # Instance-level client override (primarily used for testing).
-        # When None the module-level shared client is used automatically.
+        # Each exporter owns one lazy pool. The surrounding SourceRuntime owns
+        # and closes the exporter, so clients never cross server/event-loop
+        # boundaries. Tests may still inject a client directly.
         self._client: httpx.AsyncClient | None = None
 
     @property
     def client(self) -> httpx.AsyncClient:
-        """Return the active HTTP client (instance override or shared singleton)."""
-        return self._client if self._client is not None else _get_citation_http_client()
+        """Return this exporter's lazily-created HTTP client."""
+        if self._client is None:
+            self._client = create_async_http_client(
+                timeout=60.0,
+                headers={"User-Agent": "PubMedSearchMCP/1.0 (github.com/u9401066/pubmed-search-mcp)"},
+                follow_redirects=True,
+                max_connections=20,
+                max_keepalive_connections=10,
+                keepalive_expiry=30.0,
+            )
+        return self._client
 
     def _build_execution_policy(self):
         """Build the shared transport policy for official citation export requests."""
@@ -206,7 +196,7 @@ class NCBICitationExporter:
                             format=format,
                             content="",
                             pmid_count=0,
-                            error=f"Invalid format: {error_data['format']}",
+                            error="Citation API rejected the requested format",
                         )
                 except json.JSONDecodeError:
                     pass  # Not an error response, continue
@@ -220,43 +210,40 @@ class NCBICitationExporter:
                 pmid_count=len(pmids),
             )
 
-        except httpx.HTTPStatusError as e:
-            logger.exception(f"HTTP error from Citation API: {e}")
+        except httpx.HTTPStatusError as exc:
+            logger.warning("Citation API returned HTTP %s", exc.response.status_code)
             return CitationResult(
                 success=False,
                 format=format,
                 content="",
                 pmid_count=len(pmids),
-                error=f"HTTP {e.response.status_code}: {e.response.text[:200]}",
+                error=f"Citation API request failed with HTTP {exc.response.status_code}",
             )
-        except httpx.RequestError as e:
-            logger.exception(f"Request error: {e}")
+        except httpx.RequestError as exc:
+            logger.warning("Citation API request failed (%s)", type(exc).__name__)
             return CitationResult(
                 success=False,
                 format=format,
                 content="",
                 pmid_count=len(pmids),
-                error=f"Request failed: {e!s}",
+                error="Citation API request failed",
             )
-        except Exception as e:
-            logger.exception(f"Citation exporter request failed: {e}")
+        except Exception as exc:
+            logger.warning("Citation export failed (%s)", type(exc).__name__)
             return CitationResult(
                 success=False,
                 format=format,
                 content="",
                 pmid_count=len(pmids),
-                error=f"Export failed: {e!s}",
+                error="Citation export failed",
             )
 
     async def close(self) -> None:
-        """Close the instance-level HTTP client override if one was set.
-
-        The module-level shared singleton is intentionally kept open across
-        requests for connection reuse and is NOT closed here.
-        """
-        if self._client is not None:
-            await self._client.aclose()
-            self._client = None
+        """Close and forget this exporter's HTTP client."""
+        client = self._client
+        self._client = None
+        if client is not None and not client.is_closed:
+            await client.aclose()
 
     async def __aenter__(self) -> Self:
         return self
@@ -265,38 +252,11 @@ class NCBICitationExporter:
         await self.close()
 
 
-# Module-level singleton for convenience
-_default_exporter: NCBICitationExporter | None = None
-
-
 def get_exporter() -> NCBICitationExporter:
-    """Get default citation exporter instance."""
-    global _default_exporter
-    if _default_exporter is None:
-        _default_exporter = NCBICitationExporter()
-    return _default_exporter
+    """Return the citation exporter owned by the active source runtime."""
+    from pubmed_search.infrastructure.sources.runtime import get_source_runtime
 
-
-async def export_citations_official(
-    pmids: list[str],
-    format: CitationFormat = "ris",
-) -> CitationResult:
-    """
-    Convenience function to export citations via official API.
-
-    This is the recommended way to export citations.
-    Falls back gracefully on failure.
-
-    Args:
-        pmids: List of PubMed IDs
-        format: Export format (ris, medline, csl)
-
-    Returns:
-        CitationResult with formatted content
-
-    Example:
-        result = await export_citations_official(["37654670", "37654671"])
-        if result.success:
-            save_to_file(result.content, "references.ris")
-    """
-    return await get_exporter().export_citations(pmids, format)
+    return get_source_runtime().get_or_create_client(
+        ("ncbi_citation_exporter",),
+        NCBICitationExporter,
+    )

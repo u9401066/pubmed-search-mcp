@@ -4,16 +4,34 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
+from pubmed_search.infrastructure.sources.base_client import APIRequestError
 from pubmed_search.infrastructure.sources.preprints import (
     ArXivClient,
     MedBioRxivClient,
     PreprintArticle,
     PreprintSearcher,
+    compile_rxiv_local_terms,
 )
 
 # ============================================================
 # PreprintArticle (extended)
 # ============================================================
+
+
+def test_compile_rxiv_local_terms_is_exact_and_rejects_boolean_syntax():
+    assert compile_rxiv_local_terms("CRISPR therapy") == ("crispr", "therapy")
+    for query in ("crispr AND therapy", "crispr OR therapy", "NOT review", '"gene therapy"', "(crispr)"):
+        with pytest.raises(ValueError, match="does not support"):
+            compile_rxiv_local_terms(query)
+
+
+def test_compile_rxiv_local_terms_rejects_empty_or_non_string():
+    with pytest.raises(ValueError, match="non-empty"):
+        compile_rxiv_local_terms("")
+    with pytest.raises(ValueError, match="non-empty"):
+        compile_rxiv_local_terms(123)  # type: ignore[arg-type]
 
 
 class TestPreprintArticleExtended:
@@ -144,12 +162,13 @@ class TestArXivClientExtended:
         </feed>"""
 
         mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.headers = {}
         mock_response.text = xml_response
         mock_response.raise_for_status = MagicMock()
-        mock_client.get.return_value = mock_response
 
         client = ArXivClient()
-        client._client = mock_client
+        client._execute_request = AsyncMock(return_value=mock_response)
         results = await client.search("deep learning", limit=10)
 
         assert len(results) == 1
@@ -164,12 +183,13 @@ class TestArXivClientExtended:
         mock_client.is_closed = False
         MockClient.return_value = mock_client
         mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.headers = {}
         mock_response.text = '<feed xmlns="http://www.w3.org/2005/Atom"></feed>'
         mock_response.raise_for_status = MagicMock()
-        mock_client.get.return_value = mock_response
 
         client = ArXivClient()
-        client._client = mock_client
+        client._execute_request = AsyncMock(return_value=mock_response)
         results = await client.search("nonexistent topic xyz")
         assert results == []
 
@@ -178,12 +198,10 @@ class TestArXivClientExtended:
         mock_client = AsyncMock()
         mock_client.is_closed = False
         MockClient.return_value = mock_client
-        mock_client.get.side_effect = Exception("network error")
-
         client = ArXivClient()
-        client._client = mock_client
-        results = await client.search("test")
-        assert results == []
+        client._execute_request = AsyncMock(side_effect=Exception("network error"))
+        with pytest.raises(APIRequestError):
+            await client.search("test")
 
     @patch("httpx.AsyncClient")
     async def test_get_by_id(self, MockClient):
@@ -202,12 +220,13 @@ class TestArXivClientExtended:
         </feed>"""
 
         mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.headers = {}
         mock_response.text = xml_response
         mock_response.raise_for_status = MagicMock()
-        mock_client.get.return_value = mock_response
 
         client = ArXivClient()
-        client._client = mock_client
+        client._execute_request = AsyncMock(return_value=mock_response)
         result = await client.get_by_id("2301.00001")
         assert result is not None
         assert result.title == "Found Paper"
@@ -218,12 +237,13 @@ class TestArXivClientExtended:
         mock_client.is_closed = False
         MockClient.return_value = mock_client
         mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.headers = {}
         mock_response.text = '<feed xmlns="http://www.w3.org/2005/Atom"></feed>'
         mock_response.raise_for_status = MagicMock()
-        mock_client.get.return_value = mock_response
 
         client = ArXivClient()
-        client._client = mock_client
+        client._execute_request = AsyncMock(return_value=mock_response)
         assert await client.get_by_id("9999.99999") is None
 
     @patch("httpx.AsyncClient")
@@ -231,11 +251,10 @@ class TestArXivClientExtended:
         mock_client = AsyncMock()
         mock_client.is_closed = False
         MockClient.return_value = mock_client
-        mock_client.get.side_effect = Exception("error")
-
         client = ArXivClient()
-        client._client = mock_client
-        assert await client.get_by_id("2301.00001") is None
+        client._execute_request = AsyncMock(side_effect=Exception("error"))
+        with pytest.raises(APIRequestError):
+            await client.get_by_id("2301.00001")
 
 
 # ============================================================
@@ -251,6 +270,8 @@ class TestMedBioRxivClientExtended:
         MockClient.return_value = mock_client
 
         mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.headers = {}
         mock_response.json.return_value = {
             "collection": [
                 {
@@ -264,10 +285,9 @@ class TestMedBioRxivClientExtended:
             ]
         }
         mock_response.raise_for_status = MagicMock()
-        mock_client.get.return_value = mock_response
 
         client = MedBioRxivClient()
-        client._client = mock_client
+        client._execute_request = AsyncMock(return_value=mock_response)
         results = await client.search_medrxiv("COVID-19 treatment")
 
         assert len(results) == 1
@@ -280,6 +300,8 @@ class TestMedBioRxivClientExtended:
         MockClient.return_value = mock_client
 
         mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.headers = {}
         mock_response.json.return_value = {
             "collection": [
                 {
@@ -293,10 +315,9 @@ class TestMedBioRxivClientExtended:
             ]
         }
         mock_response.raise_for_status = MagicMock()
-        mock_client.get.return_value = mock_response
 
         client = MedBioRxivClient()
-        client._client = mock_client
+        client._execute_request = AsyncMock(return_value=mock_response)
         results = await client.search_biorxiv("CRISPR gene editing")
 
         assert len(results) == 1
@@ -309,6 +330,8 @@ class TestMedBioRxivClientExtended:
         MockClient.return_value = mock_client
 
         mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.headers = {}
         mock_response.json.return_value = {
             "collection": [
                 {
@@ -330,10 +353,9 @@ class TestMedBioRxivClientExtended:
             ]
         }
         mock_response.raise_for_status = MagicMock()
-        mock_client.get.return_value = mock_response
 
         client = MedBioRxivClient()
-        client._client = mock_client
+        client._execute_request = AsyncMock(return_value=mock_response)
         results = await client.search_medrxiv("COVID")
         assert len(results) == 1
 
@@ -342,12 +364,10 @@ class TestMedBioRxivClientExtended:
         mock_client = AsyncMock()
         mock_client.is_closed = False
         MockClient.return_value = mock_client
-        mock_client.get.side_effect = Exception("network error")
-
         client = MedBioRxivClient()
-        client._client = mock_client
-        results = await client.search_medrxiv("test")
-        assert results == []
+        client._execute_request = AsyncMock(side_effect=Exception("network error"))
+        with pytest.raises(APIRequestError):
+            await client.search_medrxiv("test")
 
     @patch("httpx.AsyncClient")
     async def test_limit_applied(self, MockClient):
@@ -367,12 +387,13 @@ class TestMedBioRxivClientExtended:
             for i in range(20)
         ]
         mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.headers = {}
         mock_response.json.return_value = {"collection": articles}
         mock_response.raise_for_status = MagicMock()
-        mock_client.get.return_value = mock_response
 
         client = MedBioRxivClient()
-        client._client = mock_client
+        client._execute_request = AsyncMock(return_value=mock_response)
         results = await client.search_medrxiv("test", limit=5)
         assert len(results) <= 5
 
@@ -456,7 +477,7 @@ class TestPreprintSearcherExtended:
 
         assert result["total"] == 1
         assert len(result["articles"]) == 1
-        assert any("medrxiv" in error and "offline" in error for error in result["errors"])
+        assert result["errors"] == ["medrxiv: Source adapter failed"]
 
     @patch.object(ArXivClient, "get_by_id", new_callable=AsyncMock)
     async def test_get_arxiv_paper_found(self, mock_get):

@@ -45,19 +45,14 @@ class TestServerModule:
         assert callable(create_server)
 
     async def test_create_server_configures_source_contact_email(self):
-        """Server-selected email is reused by external source clients."""
-        from pubmed_search.infrastructure.sources import configure_source_contact_email
-        from pubmed_search.infrastructure.sources.contact import get_configured_source_contact_email
+        """Server-selected email belongs to that server's source runtime."""
         from pubmed_search.presentation.mcp_server.server import create_server
 
-        configure_source_contact_email(None)
+        server = create_server(email="runtime@example.com")
+        source_runtime = server.get_tool_session_runtime().source_runtime
 
-        try:
-            create_server(email="runtime@example.com")
-
-            assert get_configured_source_contact_email() == "runtime@example.com"
-        finally:
-            configure_source_contact_email(None)
+        assert source_runtime is not None
+        assert source_runtime.contact_email == "runtime@example.com"
 
 
 class TestToolsRegistration:

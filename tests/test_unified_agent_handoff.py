@@ -6,8 +6,8 @@ import json
 
 from pubmed_search.application.search.query_analyzer import QueryAnalyzer
 from pubmed_search.application.search.result_aggregator import AggregationStats
+from pubmed_search.application.unified.execution import _source_error_payload
 from pubmed_search.domain.entities.article import UnifiedArticle
-from pubmed_search.presentation.mcp_server.tools.unified_execution import _source_error_payload
 from pubmed_search.presentation.mcp_server.tools.unified_formatting import _format_as_json
 from pubmed_search.shared.source_contracts import SourceAdapterError
 
@@ -39,7 +39,7 @@ def test_structured_result_exposes_partial_bounded_status_and_recovery_handoff()
                 "recoverable": True,
                 "inspect": {
                     "tool": "read_session",
-                    "arguments": {"action": "search_run", "run_id": "run-123"},
+                    "arguments": {"request": {"action": "search_run", "run_id": "run-123"}},
                 },
             },
         )

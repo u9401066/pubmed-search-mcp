@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -26,6 +27,41 @@ def pipeline_store(tmp_path: Path) -> PipelineStore:
 
 
 class TestStoredPipelineRunner:
+    async def test_execute_saved_pipeline_binds_full_execution_context(self, pipeline_store: PipelineStore):
+        pipeline_store.save(
+            name="runtime_bound",
+            config=PipelineConfig(
+                name="runtime_bound",
+                steps=[PipelineStep(id="expand", action="expand", params={"topic": "interleukin 6"})],
+            ),
+            scope="workspace",
+        )
+        events: list[str] = []
+
+        @contextmanager
+        def execution_context():
+            events.append("enter")
+            try:
+                yield
+            finally:
+                events.append("exit")
+
+        runner = StoredPipelineRunner(
+            store=pipeline_store,
+            searcher=MagicMock(),
+            execution_context=execution_context,
+        )
+
+        async def execute(_config: PipelineConfig):
+            assert events == ["enter"]
+            return [], {}
+
+        with patch("pubmed_search.application.pipeline.runner.PipelineExecutor") as executor_cls:
+            executor_cls.return_value.execute = AsyncMock(side_effect=execute)
+            await runner.execute_saved_pipeline("runtime_bound")
+
+        assert events == ["enter", "exit"]
+
     async def test_execute_saved_template_pipeline_materializes_steps(self, pipeline_store: PipelineStore):
         pipeline_store.save(
             name="weekly_remi_template",
@@ -36,12 +72,11 @@ class TestStoredPipelineRunner:
             scope="workspace",
         )
 
-        page_search = AsyncMock()
+        adapter_search = AsyncMock()
         runner = StoredPipelineRunner(
             store=pipeline_store,
             searcher=MagicMock(),
-            alternate_search_fn=None,
-            alternate_search_page_fn=page_search,
+            alternate_search_adapter=adapter_search,
         )
 
         with patch("pubmed_search.application.pipeline.runner.PipelineExecutor") as MockExec:
@@ -54,7 +89,7 @@ class TestStoredPipelineRunner:
         assert executed_config.name == "weekly_remi_template"
         assert len(executed_config.steps) > 0
         assert executed_config.steps[0].action == "pico"
-        assert MockExec.call_args.kwargs["alternate_search_page_fn"] is page_search
+        assert MockExec.call_args.kwargs["alternate_search_adapter"] is adapter_search
         assert run.pipeline_name == "weekly_remi_template"
         assert run.status == "success"
         assert len(pipeline_store.get_history("weekly_remi_template")) == 1
@@ -94,7 +129,7 @@ class TestStoredPipelineRunner:
             ),
             scope="workspace",
         )
-        runner = StoredPipelineRunner(store=pipeline_store, searcher=MagicMock(), alternate_search_fn=None)
+        runner = StoredPipelineRunner(store=pipeline_store, searcher=MagicMock())
 
         with patch("pubmed_search.application.pipeline.runner.PipelineExecutor") as executor_cls:
             executor_cls.return_value.execute = AsyncMock(return_value=([], {"search": step_result}))
@@ -119,7 +154,6 @@ class TestStoredPipelineRunner:
         runner = StoredPipelineRunner(
             store=pipeline_store,
             searcher=MagicMock(),
-            alternate_search_fn=None,
         )
 
         fixed_now = datetime(2026, 4, 22, 12, 0, 0, 123456, tzinfo=timezone.utc)
@@ -154,7 +188,7 @@ class TestStoredPipelineRunner:
             ),
             scope="workspace",
         )
-        runner = StoredPipelineRunner(store=pipeline_store, searcher=MagicMock(), alternate_search_fn=None)
+        runner = StoredPipelineRunner(store=pipeline_store, searcher=MagicMock())
 
         with patch("pubmed_search.application.pipeline.runner.PipelineExecutor") as executor_cls:
             executor_cls.return_value.execute = AsyncMock(

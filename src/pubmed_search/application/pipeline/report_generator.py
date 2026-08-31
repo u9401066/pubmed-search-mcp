@@ -19,6 +19,14 @@ from collections import Counter
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
+from pubmed_search.shared.markdown import (
+    escape_markdown_block,
+    escape_markdown_code,
+    escape_markdown_identifier,
+    escape_markdown_text,
+    markdown_link,
+)
+
 if TYPE_CHECKING:
     from pubmed_search.domain.entities.article import UnifiedArticle
     from pubmed_search.domain.entities.pipeline import PipelineConfig, StepResult
@@ -79,7 +87,7 @@ def _section_header(
     config: PipelineConfig,
 ) -> str:
     """Report title and generation timestamp."""
-    name = config.name or "Pipeline"
+    name = escape_markdown_text(config.name or "Pipeline")
     now = datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     return f"# 📋 Pipeline Research Report: {name}\n\n*Generated: {now}*\n"
 
@@ -98,14 +106,14 @@ def _section_executive_summary(
 
     parts.append("| Metric | Value |")
     parts.append("|--------|-------|")
-    parts.append(f"| Pipeline | {config.name or '(unnamed)'} |")
+    parts.append(f"| Pipeline | {escape_markdown_text(config.name or '(unnamed)')} |")
     parts.append(
         f"| Steps executed | {ok_steps}/{total_steps}{' (' + str(error_steps) + ' errors)' if error_steps else ''} |"
     )
     parts.append(f"| Total unique articles | {len(articles)} |")
     parts.append(f"| Output limit | {config.output.limit} |")
     if config.output.ranking:
-        parts.append(f"| Ranking | {config.output.ranking} |")
+        parts.append(f"| Ranking | {escape_markdown_text(config.output.ranking)} |")
 
     # Year range from articles
     years = [a.year for a in articles if a.year]
@@ -128,16 +136,18 @@ def _section_step_details(
 
     for idx, step in enumerate(config.steps, 1):
         sr = step_results.get(step.id)
-        inputs_str = ", ".join(step.inputs) if step.inputs else "—"
+        inputs_str = ", ".join(escape_markdown_identifier(item) for item in step.inputs) if step.inputs else "—"
+        step_id = escape_markdown_code(step.id)
+        action = escape_markdown_text(step.action)
 
         if sr is None:
-            parts.append(f"| {idx} | `{step.id}` | {step.action} | {inputs_str} | ⏭ skipped | — |")
+            parts.append(f"| {idx} | `{step_id}` | {action} | {inputs_str} | ⏭ skipped | — |")
         elif not sr.ok:
-            err_msg = (sr.error or "unknown")[:80]
-            parts.append(f"| {idx} | `{step.id}` | {step.action} | {inputs_str} | ❌ error | {err_msg} |")
+            err_msg = escape_markdown_text((sr.error or "unknown")[:80])
+            parts.append(f"| {idx} | `{step_id}` | {action} | {inputs_str} | ❌ error | {err_msg} |")
         else:
             output = _step_output_summary(sr)
-            parts.append(f"| {idx} | `{step.id}` | {step.action} | {inputs_str} | ✅ | {output} |")
+            parts.append(f"| {idx} | `{step_id}` | {action} | {inputs_str} | ✅ | {output} |")
 
     parts.append("")
 
@@ -146,7 +156,7 @@ def _section_step_details(
     if errors:
         parts.append("### ⚠️ Step Errors\n")
         for step_id, sr in errors:
-            parts.append(f"- **{step_id}**: {sr.error}")
+            parts.append(f"- **{escape_markdown_identifier(step_id)}**: {escape_markdown_text(sr.error)}")
         parts.append("")
 
     return "\n".join(parts)
@@ -166,20 +176,24 @@ def _step_output_summary(sr: StepResult) -> str:
         reasons = sr.metadata.get("removal_reasons") or {}
         if reasons:
             top_reason, top_count = max(reasons.items(), key=lambda item: item[1])
-            label = _FILTER_REASON_LABELS.get(str(top_reason), str(top_reason))
-            details.append(f"top reason: {label} ({top_count})")
+            label = escape_markdown_identifier(_FILTER_REASON_LABELS.get(str(top_reason), str(top_reason)))
+            details.append(f"top reason: {label} ({escape_markdown_text(top_count)})")
 
     elif sr.articles:
         src_counts = sr.metadata.get("source_api_counts")
         if src_counts:
-            breakdown = ", ".join(f"{s}: {c}" for s, c in src_counts.items())
+            breakdown = ", ".join(
+                f"{escape_markdown_identifier(source)}: {escape_markdown_text(count)}"
+                for source, count in src_counts.items()
+            )
             details.append(f"{len(sr.articles)} articles ({breakdown})")
         else:
             details.append(f"{len(sr.articles)} articles")
 
     if sr.action == "expand" and sr.metadata.get("expanded_query"):
-        q = sr.metadata["expanded_query"]
-        details.append(f"query: `{q[:60]}{'…' if len(q) > 60 else ''}`")
+        query = str(sr.metadata["expanded_query"])
+        preview = f"{query[:60]}{'…' if len(query) > 60 else ''}"
+        details.append(f"query: `{escape_markdown_code(preview)}`")
 
     if sr.action == "metrics" and sr.articles:
         with_metrics = sum(
@@ -188,16 +202,16 @@ def _step_output_summary(sr: StepResult) -> str:
         details.append(f"{with_metrics}/{len(sr.articles)} enriched")
 
     if sr.action == "merge" and sr.metadata.get("duplicates_removed") is not None:
-        details.append(f"{sr.metadata['duplicates_removed']} dups removed")
+        details.append(f"{escape_markdown_text(sr.metadata['duplicates_removed'])} dups removed")
 
     if not details:
         # Fallback: show metadata keys
         if sr.metadata:
-            keys = ", ".join(sorted(sr.metadata.keys())[:4])
+            keys = ", ".join(escape_markdown_text(key) for key in sorted(sr.metadata.keys())[:4])
             return f"metadata: {keys}"
         return "ok"
 
-    return " | ".join(details)
+    return " · ".join(details)
 
 
 def _section_source_statistics(step_results: dict[str, StepResult]) -> str:
@@ -218,7 +232,7 @@ def _section_source_statistics(step_results: dict[str, StepResult]) -> str:
     parts.append("|--------|----------|-------|")
     for src, count in sorted(aggregated.items(), key=lambda x: -x[1]):
         pct = count / total * 100 if total else 0
-        parts.append(f"| {src} | {count} | {pct:.0f}% |")
+        parts.append(f"| {escape_markdown_identifier(src)} | {count} | {pct:.0f}% |")
     parts.append(f"| **Total** | **{total}** | **100%** |")
     parts.append("")
 
@@ -243,12 +257,14 @@ def _section_filter_diagnostics(step_results: dict[str, StepResult]) -> str:
         reason_text = "—"
         if reasons:
             reason_text = ", ".join(
-                f"{_FILTER_REASON_LABELS.get(str(reason), str(reason))}: {count}"
+                f"{escape_markdown_identifier(_FILTER_REASON_LABELS.get(str(reason), str(reason)))}: "
+                f"{escape_markdown_text(count)}"
                 for reason, count in sorted(reasons.items(), key=lambda item: -item[1])
             )
         parts.append(
-            f"| `{sr.step_id}` | {sr.metadata.get('before_count', 0)} | "
-            f"{sr.metadata.get('after_count', 0)} | {sr.metadata.get('removed_count', 0)} | {reason_text} |"
+            f"| `{escape_markdown_code(sr.step_id)}` | {escape_markdown_text(sr.metadata.get('before_count', 0))} | "
+            f"{escape_markdown_text(sr.metadata.get('after_count', 0))} | "
+            f"{escape_markdown_text(sr.metadata.get('removed_count', 0))} | {reason_text} |"
         )
 
     for sr in filter_results:
@@ -257,25 +273,32 @@ def _section_filter_diagnostics(step_results: dict[str, StepResult]) -> str:
         examples = sr.metadata.get("excluded_examples") or []
         if diagnostics or warning or examples:
             parts.append("")
-            parts.append(f"### `{sr.step_id}` Details\n")
+            parts.append(f"### `{escape_markdown_code(sr.step_id)}` Details\n")
         if diagnostics:
             mappings = diagnostics.get("mappings") or {}
             unknown = diagnostics.get("unknown") or []
             if mappings:
-                mapping_text = ", ".join(f"`{raw}` -> `{canon}`" for raw, canon in mappings.items())
+                mapping_text = ", ".join(
+                    f"`{escape_markdown_code(raw)}` -> `{escape_markdown_code(canonical)}`"
+                    for raw, canonical in mappings.items()
+                )
                 parts.append(f"- Article type mapping: {mapping_text}")
             if unknown:
-                parts.append(f"- Unknown article_types: {', '.join(f'`{item}`' for item in unknown)}")
+                unknown_items = ", ".join(f"`{escape_markdown_code(item)}`" for item in unknown)
+                parts.append(f"- Unknown article_types: {unknown_items}")
         if warning:
-            parts.append(f"- Warning: {warning}")
+            parts.append(f"- Warning: {escape_markdown_text(warning)}")
         if examples:
             parts.append("- Excluded examples:")
             for item in examples[:3]:
-                title = (item.get("title") or "Untitled")[:70]
-                reasons = ", ".join(_FILTER_REASON_LABELS.get(reason, reason) for reason in item.get("reasons", []))
-                pmid = item.get("pmid") or "no PMID"
-                year = item.get("year") or "no year"
-                article_type = item.get("article_type") or "unknown"
+                title = escape_markdown_text((item.get("title") or "Untitled")[:70])
+                reasons = ", ".join(
+                    escape_markdown_text(_FILTER_REASON_LABELS.get(reason, reason))
+                    for reason in item.get("reasons", [])
+                )
+                pmid = escape_markdown_text(item.get("pmid") or "no PMID")
+                year = escape_markdown_text(item.get("year") or "no year")
+                article_type = escape_markdown_text(item.get("article_type") or "unknown")
                 parts.append(f"  - PMID {pmid} ({year}, {article_type}): {title} — {reasons}")
 
     parts.append("")
@@ -337,7 +360,7 @@ def _section_evidence_distribution(articles: list[UnifiedArticle]) -> str:
         if article_type == "unknown":
             continue
         level = level_labels.get(article_type, "—")
-        parts.append(f"| {article_type} | {count} | {level} |")
+        parts.append(f"| {escape_markdown_text(article_type)} | {count} | {level} |")
 
     if type_counter.get("unknown", 0):
         parts.append(f"| *(unclassified)* | {type_counter['unknown']} | — |")
@@ -365,7 +388,7 @@ def _section_articles(
     if len(articles) > limit:
         parts.append(
             f"\n*… and {len(articles) - limit} more articles not shown. "
-            f'Use `get_session_pmids()` or `prepare_export(pmids="last")` '
+            f'Use `read_session(request={{"action":"pmids"}})` or `prepare_export(pmids="last")` '
             f"to access all results.*\n"
         )
 
@@ -377,7 +400,7 @@ def _format_article(index: int, article: UnifiedArticle) -> str:
     from pubmed_search.domain.entities.article import ArticleType
 
     parts: list[str] = []
-    title = article.title or "Unknown Title"
+    title = escape_markdown_text(article.title or "Unknown Title")
 
     # Score annotation
     score_str = ""
@@ -389,11 +412,11 @@ def _format_article(index: int, article: UnifiedArticle) -> str:
     # Identifiers
     ids: list[str] = []
     if article.pmid:
-        ids.append(f"PMID: {article.pmid}")
+        ids.append(f"PMID: {escape_markdown_text(article.pmid)}")
     if article.doi:
-        ids.append(f"DOI: {article.doi}")
+        ids.append(f"DOI: {escape_markdown_text(article.doi)}")
     if getattr(article, "pmc", None):
-        ids.append(f"PMC: {article.pmc}")
+        ids.append(f"PMC: {escape_markdown_text(article.pmc)}")
     if ids:
         parts.append(" | ".join(ids))
 
@@ -407,36 +430,37 @@ def _format_article(index: int, article: UnifiedArticle) -> str:
             ArticleType.REVIEW: "⚪ Review",
             ArticleType.CASE_REPORT: "🟠 Case Report (4)",
         }
-        badge = _type_badges.get(article.article_type, f"📄 {article.article_type.value}")
+        badge = _type_badges.get(article.article_type, f"📄 {escape_markdown_text(article.article_type.value)}")
         parts.append(f"**Type**: {badge}")
 
     # Authors
     author_str = getattr(article, "author_string", None)
     if author_str:
-        parts.append(f"**Authors**: {author_str}")
+        parts.append(f"**Authors**: {escape_markdown_text(author_str)}")
 
     # Journal + bibliographic details
     if article.journal:
-        journal_str = article.journal
+        journal_str = escape_markdown_text(article.journal)
         if article.year:
-            journal_str += f" ({article.year})"
+            journal_str += f" ({escape_markdown_text(article.year)})"
         if getattr(article, "volume", None):
-            journal_str += f"; {article.volume}"
+            journal_str += f"; {escape_markdown_text(article.volume)}"
             if getattr(article, "issue", None):
-                journal_str += f"({article.issue})"
+                journal_str += f"({escape_markdown_text(article.issue)})"
         if getattr(article, "pages", None):
-            journal_str += f": {article.pages}"
+            journal_str += f": {escape_markdown_text(article.pages)}"
         parts.append(f"**Journal**: {journal_str}")
     elif article.year:
-        parts.append(f"**Year**: {article.year}")
+        parts.append(f"**Year**: {escape_markdown_text(article.year)}")
 
     # Open Access
     if getattr(article, "has_open_access", False):
         oa_link = getattr(article, "best_oa_link", None)
+        oa_status = escape_markdown_text(article.oa_status.value)
         if oa_link:
-            parts.append(f"**OA**: ✅ [{article.oa_status.value}]({oa_link.url})")
+            parts.append(f"**OA**: ✅ {markdown_link(article.oa_status.value, oa_link.url)}")
         else:
-            parts.append(f"**OA**: ✅ {article.oa_status.value}")
+            parts.append(f"**OA**: ✅ {oa_status}")
 
     # Citation metrics
     _cm = getattr(article, "citation_metrics", None)
@@ -477,11 +501,13 @@ def _format_article(index: int, article: UnifiedArticle) -> str:
         abstract = article.abstract
         if len(abstract) > _ABSTRACT_MAX_LEN:
             abstract = abstract[:_ABSTRACT_MAX_LEN] + "..."
-        parts.append(f"\n> {abstract}")
+        safe_abstract = escape_markdown_block(abstract)
+        quoted_abstract = "\n".join(f"> {line}" if line else ">" for line in safe_abstract.splitlines())
+        parts.append(f"\n{quoted_abstract}")
 
     # Sources
     if getattr(article, "sources", None):
-        source_names = [s.source for s in article.sources]
+        source_names = [escape_markdown_text(source.source) for source in article.sources]
         parts.append(f"\n*Sources: {', '.join(source_names)}*")
 
     parts.append("")
@@ -497,10 +523,10 @@ def _section_methodology_notes(
     parts: list[str] = ["## Methodology Notes\n"]
 
     # Pipeline config summary
-    step_actions = [s.action for s in config.steps]
-    parts.append(f"- **Pipeline type**: {config.name or 'custom'}")
+    step_actions = [escape_markdown_text(step.action) for step in config.steps]
+    parts.append(f"- **Pipeline type**: {escape_markdown_text(config.name or 'custom')}")
     parts.append(f"- **Steps**: {' → '.join(step_actions)}")
-    parts.append(f"- **Ranking**: {config.output.ranking or 'default'}")
+    parts.append(f"- **Ranking**: {escape_markdown_text(config.output.ranking or 'default')}")
     parts.append(f"- **Output limit**: {config.output.limit}")
 
     # Warnings / suggestions
@@ -517,7 +543,8 @@ def _section_methodology_notes(
     # Check for error steps
     error_steps = [s.id for s in config.steps if s.id in step_results and not step_results[s.id].ok]
     if error_steps:
-        suggestions.append(f"Steps with errors: {', '.join(error_steps)}. Review step parameters or retry.")
+        safe_error_steps = ", ".join(escape_markdown_identifier(step_id) for step_id in error_steps)
+        suggestions.append(f"Steps with errors: {safe_error_steps}. Review step parameters or retry.")
 
     # Check output truncation
     if len(articles) > config.output.limit:
@@ -538,10 +565,10 @@ def _section_methodology_notes(
 
     # Session hint
     parts.append("\n### 📦 Next Steps\n")
-    parts.append("- `get_session_pmids()` — retrieve all PMIDs from this pipeline run")
+    parts.append('- `read_session(request={"action":"pmids"})` — retrieve all PMIDs from this pipeline run')
     parts.append('- `prepare_export(pmids="last", format="ris")` — export to reference manager')
     parts.append('- `save_literature_notes(pmids="last", note_format="wiki")` — save local wiki/FOAM-compatible notes')
-    parts.append('- `get_fulltext(pmcid="PMC...")` — retrieve full text for key articles')
+    parts.append('- `get_fulltext(source={"kind":"pmcid","value":"PMC..."})` — retrieve full text for key articles')
     parts.append('- `build_citation_tree(pmid="...")` — explore citation network')
     parts.append("")
 

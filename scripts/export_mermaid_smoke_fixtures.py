@@ -6,17 +6,8 @@ import argparse
 from pathlib import Path
 from typing import Any
 
-from pubmed_search.application.chronicle import (
-    render_chronicle_mermaid_projection,
-    render_lineage_mindmap,
-    render_timeline_mermaid,
-)
-from pubmed_search.domain.entities.chronicle import (
-    ChronicleBranch,
-    ChronicleEntry,
-    ChronicleEntryType,
-    ChronicleSnapshot,
-)
+from pubmed_search.application.chronicle import render_chronicle_mermaid_projection
+from pubmed_search.application.visualization import MermaidGraphBuilder, render_mermaid_graph
 
 
 def _base_projection() -> dict[str, Any]:
@@ -76,8 +67,30 @@ def _base_projection() -> dict[str, Any]:
 
 
 def build_smoke_fixtures() -> dict[str, str]:
-    """Return current rich, repaired, fallback, timeline, and mindmap syntax."""
+    """Return every Mermaid tier emitted by canonical public tools."""
     rich = render_chronicle_mermaid_projection(_base_projection()).source
+
+    citation_builder = MermaidGraphBuilder()
+    citation_root = citation_builder.add_node(
+        "pmid",
+        "1",
+        "Root [trial]\r\n%%{init: {}}%% ``` \u202e — PMID 1",
+        "root",
+    )
+    citing = citation_builder.add_node("pmid", "2", "Citing paper — PMID 2", "citing")
+    reference = citation_builder.add_node("pmid", "3", "Reference paper — PMID 3", "reference")
+    shared = citation_builder.add_node("pmid", "4", "Convergent paper — PMID 4", "shared")
+    citation_builder.add_edge(citing, citation_root)
+    citation_builder.add_edge(citation_root, reference)
+    citation_builder.add_edge(shared, citing)
+    citation_builder.add_edge(shared, reference)
+    citation = render_mermaid_graph(
+        citation_builder.graph,
+        direction="TD",
+        style_roles=("root", "citing", "reference", "shared", "notice"),
+        repairs=citation_builder.repairs,
+        omitted=citation_builder.omitted,
+    ).source
 
     multibyte_label = "研究脈絡🧬免疫療法臨床轉譯" * 20
     byte_budget_projection: dict[str, Any] = {
@@ -129,53 +142,13 @@ def build_smoke_fixtures() -> dict[str, str]:
     safe = render_chronicle_mermaid_projection(_base_projection(), validator=accept_safe).source
     minimal = render_chronicle_mermaid_projection(_base_projection(), validator=lambda _source: False).source
 
-    legacy_entries = [
-        ChronicleEntry(
-            entry_id=f"legacy-{index}",
-            entry_type=ChronicleEntryType.MILESTONE,
-            title=f"{hostile} event {index}",
-            time_start=str(1950 + (index % 75)),
-            summary_claim="Smoke-test claim",
-            branch_id=f"branch-{min(index, 79)}",
-        )
-        for index in range(300)
-    ]
-    legacy_branches = [
-        ChronicleBranch(
-            branch_id=f"branch-{index}",
-            name=f"{hostile} branch {index}",
-            parent_branch_id=f"branch-{index - 1}" if index else None,
-            entry_ids=[f"legacy-{index}"],
-        )
-        for index in range(80)
-    ]
-    legacy_branches.extend(
-        [
-            ChronicleBranch("orphan", "Orphan branch", parent_branch_id="missing"),
-            ChronicleBranch("cycle-a", "Cycle A", parent_branch_id="cycle-b"),
-            ChronicleBranch("cycle-b", "Cycle B", parent_branch_id="cycle-a"),
-        ]
-    )
-    legacy_snapshot = ChronicleSnapshot(
-        chronicle_id="mermaid-runtime-smoke",
-        topic=hostile,
-        entries=legacy_entries,
-        branches=legacy_branches,
-    )
-    timeline = render_timeline_mermaid(legacy_snapshot)
-    mindmap = render_lineage_mindmap(legacy_snapshot)
-    if len(timeline.encode("utf-8")) >= 49_000 or "omitted" not in timeline.casefold():
-        raise RuntimeError("bounded timeline Mermaid smoke fixture contract failed")
-    if len(mindmap.encode("utf-8")) >= 49_000 or "omitted" not in mindmap.casefold():
-        raise RuntimeError("bounded mindmap Mermaid smoke fixture contract failed")
     return {
+        "citation-rich.mmd": citation,
         "chronicle-byte-budget.mmd": byte_budget,
         "chronicle-rich.mmd": rich,
         "chronicle-repaired.mmd": repaired,
         "chronicle-safe.mmd": safe,
         "chronicle-minimal.mmd": minimal,
-        "chronicle-timeline.mmd": timeline,
-        "chronicle-mindmap.mmd": mindmap,
     }
 
 

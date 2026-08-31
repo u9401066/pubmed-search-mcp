@@ -234,7 +234,8 @@ class TestFulltextDownloader:
 
         downloader = FulltextDownloader()
         try:
-            links = await downloader.get_pdf_links(pmcid="PMC7096777")
+            discovery = await downloader.get_pdf_links(pmcid="PMC7096777")
+            links = discovery.links
 
             assert len(links) > 0, "Should find at least one PDF link"
 
@@ -309,7 +310,8 @@ class TestFulltextDownloader:
 
         downloader._client = mock_client
         try:
-            links = await downloader.get_pdf_links(doi="10.1038/nature12373")
+            discovery = await downloader.get_pdf_links(doi="10.1038/nature12373")
+            links = discovery.links
 
             # Should find at least one link from mocked sources
             print(f"Found {len(links)} links for DOI")
@@ -333,7 +335,8 @@ class TestFulltextDownloader:
         downloader = FulltextDownloader()
         try:
             # arXiv DOI format
-            links = await downloader.get_pdf_links(doi="10.48550/arXiv.2301.00001")
+            discovery = await downloader.get_pdf_links(doi="10.48550/arXiv.2301.00001")
+            links = discovery.links
 
             # Should include arXiv source
             arxiv_links = [lnk for lnk in links if lnk.source == PDFSource.ARXIV]
@@ -356,7 +359,8 @@ class TestFulltextDownloader:
         downloader = FulltextDownloader()
         try:
             # bioRxiv DOI starts with 10.1101
-            links = await downloader.get_pdf_links(doi="10.1101/2024.01.15.575635")
+            discovery = await downloader.get_pdf_links(doi="10.1101/2024.01.15.575635")
+            links = discovery.links
 
             # Should include bioRxiv source
             biorxiv_links = [lnk for lnk in links if lnk.source == PDFSource.BIORXIV]
@@ -378,7 +382,8 @@ class TestFulltextDownloader:
         downloader = FulltextDownloader()
         try:
             # Known PMID with external links
-            links = await downloader.get_pdf_links(pmid="23903782")
+            discovery = await downloader.get_pdf_links(pmid="23903782")
+            links = discovery.links
 
             print(f"Found {len(links)} links for PMID")
             for link in links:

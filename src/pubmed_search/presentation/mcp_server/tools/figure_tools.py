@@ -12,9 +12,17 @@ Architecture:
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Literal, Union
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 
-from ._common import InputNormalizer, ResponseFormatter
+from pydantic import Field
+
+from pubmed_search.domain.value_objects.article_identifiers import (
+    IdentifierValidationError,
+    normalize_pmcid,
+)
+from pubmed_search.shared.markdown import escape_markdown_code, escape_markdown_text, safe_markdown_url
+
+from ._common import ResponseFormatter
 from .agent_output import (
     OutputFormat,
     finalize_next_tools,
@@ -26,6 +34,7 @@ from .agent_output import (
     preferred_structured_output_format,
     serialize_structured_payload,
 )
+from .article_source import PubmedSource, normalize_article_source
 
 if TYPE_CHECKING:
     from mcp.server.mcpserver import MCPServer
@@ -34,17 +43,17 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+StrictBool = Annotated[bool, Field(strict=True)]
+
 
 def register_figure_tools(mcp: MCPServer):
     """Register figure extraction MCP tools."""
 
     @mcp.tool()
     async def get_article_figures(
-        identifier: str | None = None,
-        pmcid: Union[str, int] | None = None,
-        pmid: Union[str, int] | None = None,
-        include_subfigures: bool = False,
-        include_tables: bool = False,
+        source: PubmedSource,
+        include_subfigures: StrictBool = False,
+        include_tables: StrictBool = False,
         output_format: Literal["markdown", "json", "toon"] = "markdown",
     ) -> str:
         """Get structured figure metadata (label, caption, image URL) and PDF links from a PMC Open Access article.
@@ -52,16 +61,12 @@ def register_figure_tools(mcp: MCPServer):
         Returns all figures with their captions and direct image URLs, plus
         PDF download links for the complete article.
 
-        Accepts flexible input - provide ANY ONE of:
-        - identifier: Auto-detects PMID or PMC ID
-        - pmcid: Direct PMC ID
-        - pmid: PubMed ID (requires PMC ID lookup)
+        ``source`` is a discriminated identifier object, so the schema itself
+        requires exactly one explicit PMID or PMCID.
 
         Args:
-            identifier: Auto-detect format - PMID or PMC ID.
-                       Examples: "PMC12086443", "40384072"
-            pmcid: PubMed Central ID (e.g., "PMC12086443" or "12086443").
-            pmid: PubMed ID (e.g., "40384072"). The article must be in PMC.
+            source: {"kind":"pmcid","value":"PMC12086443"} or
+                    {"kind":"pmid","value":"40384072"}.
             include_subfigures: Parse sub-figures (e.g., Figure 3A, 3B) as separate entries.
             include_tables: Also extract tables rendered as images.
 
@@ -69,44 +74,34 @@ def register_figure_tools(mcp: MCPServer):
             Structured figure data with image URLs, captions, and PDF links.
 
         Example:
-            get_article_figures(identifier="PMC12086443")
-            get_article_figures(pmid="40384072")
+            get_article_figures(source={"kind":"pmcid","value":"PMC12086443"})
         """
-        # Smart identifier detection
         normalized_output_format = normalize_output_format(output_format)
-        detected_pmcid = pmcid
-        detected_pmid = pmid
-
-        if identifier:
-            identifier = str(identifier).strip()
-            if identifier.upper().startswith("PMC"):
-                detected_pmcid = identifier
-            elif identifier.isdigit() and len(identifier) > 8:
-                detected_pmcid = f"PMC{identifier}"
-            elif identifier.isdigit():
-                detected_pmid = identifier
-            else:
-                detected_pmid = identifier
-
-        # Normalize inputs
-        if detected_pmcid:
-            detected_pmcid = InputNormalizer.normalize_pmcid(str(detected_pmcid))
-        if detected_pmid:
-            detected_pmid = InputNormalizer.normalize_pmid_single(detected_pmid)
-
-        # Need at least PMCID to proceed
-        if not detected_pmcid and not detected_pmid:
+        try:
+            normalized_source = normalize_article_source(source)
+            detected_pmcid = normalized_source.value if normalized_source.kind == "pmcid" else None
+            detected_pmid = normalized_source.value if normalized_source.kind == "pmid" else None
+        except IdentifierValidationError as exc:
             return ResponseFormatter.error(
-                error="No valid identifier provided",
-                suggestion="Provide a PMC ID or PubMed ID",
-                example='get_article_figures(pmcid="PMC12086443")',
+                error=exc,
+                suggestion="Provide exactly one strict PMID or PMC-prefixed PMCID.",
+                example='get_article_figures(source={"kind":"pmcid","value":"PMC12086443"})',
                 tool_name="get_article_figures",
                 output_format=normalized_output_format,
             )
 
         # If only PMID, try to resolve to PMCID
         if not detected_pmcid and detected_pmid:
-            detected_pmcid = await _resolve_pmid_to_pmcid(detected_pmid)
+            try:
+                detected_pmcid = await _resolve_pmid_to_pmcid(detected_pmid)
+            except Exception as exc:
+                logger.warning("PMID to PMCID resolution failed (%s)", type(exc).__name__)
+                return ResponseFormatter.error(
+                    error="PMC identifier resolution source unavailable.",
+                    suggestion="Retry later or provide a known PMC-prefixed PMCID.",
+                    tool_name="get_article_figures",
+                    output_format=normalized_output_format,
+                )
             if not detected_pmcid:
                 return ResponseFormatter.error(
                     error="Article not available in PMC",
@@ -119,7 +114,7 @@ def register_figure_tools(mcp: MCPServer):
                     output_format=normalized_output_format,
                 )
 
-        logger.info("Extracting figures: pmcid=%s, pmid=%s", detected_pmcid, detected_pmid)
+        logger.info("Extracting figures for one normalized article identifier")
 
         try:
             from pubmed_search.infrastructure.sources.figure_client import (
@@ -136,8 +131,8 @@ def register_figure_tools(mcp: MCPServer):
 
             if result.error:
                 return ResponseFormatter.error(
-                    error=result.error,
-                    suggestion=(result.error_detail or "Try a different article or check if it's in PMC"),
+                    error="Figure extraction sources were unavailable.",
+                    suggestion="Figure extraction sources were unavailable; retry later.",
                     tool_name="get_article_figures",
                     output_format=normalized_output_format,
                 )
@@ -145,7 +140,7 @@ def register_figure_tools(mcp: MCPServer):
             if is_structured_output_format(normalized_output_format):
                 return _format_figures_structured(
                     result,
-                    identifier=identifier,
+                    requested_source={"kind": normalized_source.kind, "value": normalized_source.value},
                     pmcid=str(detected_pmcid) if detected_pmcid else None,
                     pmid=str(detected_pmid) if detected_pmid else None,
                     include_subfigures=include_subfigures,
@@ -156,10 +151,10 @@ def register_figure_tools(mcp: MCPServer):
             return _format_figures_output(result)
 
         except Exception as e:
-            logger.exception("Figure extraction failed: %s", e)
+            logger.warning("Figure extraction failed (%s)", type(e).__name__)
             return ResponseFormatter.error(
-                error=e,
-                suggestion="Check if the article is Open Access in PMC",
+                error="Figure extraction source unavailable.",
+                suggestion="Retry later after confirming that the article is Open Access in PMC.",
                 tool_name="get_article_figures",
                 output_format=normalized_output_format,
             )
@@ -167,27 +162,27 @@ def register_figure_tools(mcp: MCPServer):
 
 async def _resolve_pmid_to_pmcid(pmid: str) -> str | None:
     """Resolve PMID to PMCID using NCBI ID converter."""
-    try:
-        from pubmed_search.infrastructure.sources import get_europe_pmc_client
+    from pubmed_search.infrastructure.sources import get_europe_pmc_client
 
-        client = get_europe_pmc_client()
-        result = await client.search(
-            query=f"EXT_ID:{pmid} AND SRC:MED",
-            limit=1,
-            result_type="lite",
-        )
-        articles = result.get("results", [])
-        if articles and articles[0].get("pmc_id"):
-            return articles[0]["pmc_id"]
-    except Exception as e:
-        logger.warning("PMID→PMCID resolution failed for %s: %s", pmid, e)
+    client = get_europe_pmc_client()
+    result = await client.search(
+        query=f"EXT_ID:{pmid} AND SRC:MED",
+        limit=1,
+        result_type="lite",
+    )
+    articles = result.get("results", [])
+    if articles and articles[0].get("pmc_id"):
+        try:
+            return normalize_pmcid(str(articles[0]["pmc_id"]))
+        except IdentifierValidationError as exc:
+            raise RuntimeError("Europe PMC returned a malformed PMCID") from exc
     return None
 
 
 def _format_figures_structured(
     result: ArticleFiguresResult,
     *,
-    identifier: str | None,
+    requested_source: dict[str, str],
     pmcid: str | None,
     pmid: str | None,
     include_subfigures: bool,
@@ -212,7 +207,8 @@ def _format_figures_structured(
                 "get_fulltext",
                 "Pull the article text with figures enabled so captions and narrative stay aligned.",
                 (
-                    f'get_fulltext(pmid="{pmid}", include_figures=True, extended_sources=True, '
+                    f'get_fulltext(source={{"kind":"pmid","value":"{pmid}"}}, '
+                    f"include_figures=True, extended_sources=True, "
                     f'output_format="{structured_output_format}")'
                 ),
             )
@@ -222,7 +218,10 @@ def _format_figures_structured(
             make_next_tool(
                 "get_text_mined_terms",
                 "Pair figure evidence with Europe PMC text-mined entities from the same PMC article.",
-                f'get_text_mined_terms(pmcid="{pmcid}", output_format="{structured_output_format}")',
+                (
+                    f'get_text_mined_terms(source={{"kind":"pmcid","value":"{pmcid}"}}, '
+                    f'output_format="{structured_output_format}")'
+                ),
             )
         )
 
@@ -232,7 +231,7 @@ def _format_figures_structured(
     )
     payload: dict[str, Any] = {
         "tool": "get_article_figures",
-        "identifiers": {"identifier": identifier, "pmcid": pmcid, "pmid": pmid},
+        "identifiers": {"requested": requested_source, "pmcid": pmcid, "pmid": pmid},
         "title": result.article_title or None,
         "figure_count": len(figures),
         "total_figures": result.total_figures,
@@ -283,11 +282,11 @@ def _format_figures_structured(
 
 def _format_figures_output(result: ArticleFiguresResult) -> str:
     """Format ArticleFiguresResult as markdown for MCP response."""
-    output = f"🖼️ **Article Figures: {result.article_title or result.pmcid}**\n"
-    output += f"📑 PMC ID: {result.pmcid}"
+    output = f"🖼️ **Article Figures: {escape_markdown_text(result.article_title or result.pmcid)}**\n"
+    output += f"📑 PMC ID: {escape_markdown_text(result.pmcid)}"
     if result.pmid:
-        output += f" | PMID: {result.pmid}"
-    output += f" | Source: {result.source}\n"
+        output += f" | PMID: {escape_markdown_text(result.pmid)}"
+    output += f" | Source: {escape_markdown_text(result.source)}\n"
     output += f"📊 Total figures: **{result.total_figures}**\n\n"
 
     # === PDF Links section ===
@@ -295,34 +294,44 @@ def _format_figures_output(result: ArticleFiguresResult) -> str:
         output += "## 📥 PDF / Article Links\n\n"
         for link in result.pdf_links:
             icon = "📄" if link.get("type") == "pdf" else "🔗"
-            output += f"- {icon} **{link.get('source', 'Unknown')}**: {link.get('url', '')}\n"
+            safe_url = safe_markdown_url(link.get("url"))
+            source = escape_markdown_text(link.get("source", "Unknown"))
+            if safe_url:
+                output += f"- {icon} **{source}**: {safe_url}\n"
+            else:
+                output += f"- {icon} **{source}**: unsafe URL omitted\n"
         output += "\n"
 
     # === Figures section ===
     if result.figures:
         output += "## 🖼️ Figures\n\n"
         for fig in result.figures:
-            output += f"### {fig.label or fig.figure_id}\n"
+            output += f"### {escape_markdown_text(fig.label or fig.figure_id)}\n"
             if fig.caption_title:
-                output += f"**{fig.caption_title}**\n\n"
+                output += f"**{escape_markdown_text(fig.caption_title)}**\n\n"
             if fig.caption_text:
-                output += f"{fig.caption_text}\n\n"
+                output += f"{escape_markdown_text(fig.caption_text)}\n\n"
             if fig.image_url:
-                output += f"🔗 **Image URL**: {fig.image_url}\n"
+                safe_url = safe_markdown_url(fig.image_url)
+                output += f"🔗 **Image URL**: {safe_url or 'unsafe URL omitted'}\n"
             if fig.graphic_href:
-                output += f"📎 Graphic ref: `{fig.graphic_href}`\n"
+                output += f"📎 Graphic ref: `{escape_markdown_code(fig.graphic_href)}`\n"
             if fig.mentioned_in_sections:
-                output += f"📍 Referenced in: {', '.join(fig.mentioned_in_sections)}\n"
+                sections = ", ".join(escape_markdown_text(section) for section in fig.mentioned_in_sections)
+                output += f"📍 Referenced in: {sections}\n"
 
             # Subfigures
             if fig.subfigures:
                 output += "\n**Sub-figures:**\n"
                 for sf in fig.subfigures:
+                    excerpt = sf.caption_text[:100]
                     output += (
-                        f"  - **{sf.label}**: {sf.caption_text[:100]}{'...' if len(sf.caption_text) > 100 else ''}"
+                        f"  - **{escape_markdown_text(sf.label)}**: {escape_markdown_text(excerpt)}"
+                        f"{'...' if len(sf.caption_text) > 100 else ''}"
                     )
                     if sf.image_url:
-                        output += f"\n    🔗 {sf.image_url}"
+                        safe_url = safe_markdown_url(sf.image_url)
+                        output += f"\n    🔗 {safe_url or 'unsafe URL omitted'}"
                     output += "\n"
 
             output += "\n"
@@ -334,7 +343,8 @@ def _format_figures_output(result: ArticleFiguresResult) -> str:
         output += "---\n"
         output += "💡 **Tips**:\n"
         output += "- Image URLs can be opened directly in a browser\n"
-        output += "- Use `get_fulltext(include_figures=True)` to get figures inline with text\n"
+        output += '- Use `get_fulltext(source={"kind":"pmcid","value":"PMC..."}, include_figures=True)` '
+        output += "to get figures inline with text\n"
         if result.pdf_links:
             output += "- PDF links contain the complete article with all formatting\n"
 

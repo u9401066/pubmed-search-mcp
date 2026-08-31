@@ -6,11 +6,12 @@ import asyncio
 
 import pytest
 
-from pubmed_search.presentation.mcp_server.tools.tool_runtime import best_effort_host_callback
+from pubmed_search.presentation.mcp_server.tools.tool_runtime import HostCallbackRuntime, best_effort_host_callback
+from pubmed_search.presentation.mcp_server.tools.tool_session import ToolSessionRuntime, bind_tool_session_runtime
 
 
 @pytest.mark.asyncio
-async def test_best_effort_host_callback_does_not_cancel_transiently_slow_host_callback():
+async def test_best_effort_host_callback_cancels_cooperative_stalled_host_callback():
     started = asyncio.Event()
     release = asyncio.Event()
     completed = asyncio.Event()
@@ -27,10 +28,28 @@ async def test_best_effort_host_callback_does_not_cancel_transiently_slow_host_c
 
     await best_effort_host_callback(_slow_host_callback(), timeout=0.01)
 
-    await asyncio.wait_for(started.wait(), timeout=0.1)
-    await asyncio.sleep(0.03)
+    assert started.is_set()
+    assert cancelled.is_set()
+    assert not completed.is_set()
 
-    assert not cancelled.is_set()
 
-    release.set()
-    await asyncio.wait_for(completed.wait(), timeout=0.1)
+@pytest.mark.asyncio
+async def test_best_effort_host_callback_bounds_cancellation_resistant_tasks():
+    release = asyncio.Event()
+    callbacks = HostCallbackRuntime(max_pending=2)
+
+    async def _ignore_cancellation() -> None:
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            await release.wait()
+
+    with bind_tool_session_runtime(ToolSessionRuntime(host_callbacks=callbacks)):
+        for _ in range(3):
+            await best_effort_host_callback(_ignore_cancellation(), timeout=0.001)
+
+        assert callbacks.pending_count == 2
+        release.set()
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        assert callbacks.pending_count == 0

@@ -14,6 +14,7 @@ from apscheduler.triggers.cron import CronTrigger
 
 from pubmed_search.domain.entities.pipeline import ScheduleEntry
 from pubmed_search.shared.settings import AppSettings, load_settings
+from pubmed_search.shared.source_contracts import normalize_source_adapter_error
 
 if TYPE_CHECKING:
     from pubmed_search.application.pipeline.runner import StoredPipelineRunner
@@ -72,7 +73,7 @@ class APSPipelineScheduler:
             msg = "Pipeline scheduler is disabled via settings"
             raise RuntimeError(msg)
 
-        pipeline_name = name.strip().lower()
+        pipeline_name = name
         if not self._store.exists(pipeline_name):
             msg = f"Pipeline '{pipeline_name}' not found"
             raise FileNotFoundError(msg)
@@ -100,7 +101,7 @@ class APSPipelineScheduler:
 
     def unschedule(self, name: str) -> ScheduleEntry | None:
         """Remove a persisted pipeline schedule and any live APScheduler job."""
-        pipeline_name = name.strip().lower()
+        pipeline_name = name
         entry = self.get_schedule(pipeline_name)
 
         if self._started:
@@ -112,7 +113,7 @@ class APSPipelineScheduler:
 
     def get_schedule(self, name: str) -> ScheduleEntry | None:
         """Get one schedule, merging in the current live next-run time if available."""
-        pipeline_name = name.strip().lower()
+        pipeline_name = name
         entry = self._store.get_schedule(pipeline_name)
         if entry is None:
             return None
@@ -161,14 +162,27 @@ class APSPipelineScheduler:
                 entry.last_error = None
             elif run.status == "partial":
                 entry.last_status = "partial"
-                entry.last_error = run.error_message or "Pipeline execution completed partially"
+                entry.last_error = "Pipeline execution completed partially"
             else:
                 entry.last_status = "error"
-                entry.last_error = run.error_message or f"Pipeline execution ended with status {run.status}"
+                entry.last_error = "Pipeline execution failed"
         except Exception as exc:
+            normalized = normalize_source_adapter_error("pipeline", "scheduled_execute", exc)
+            messages = {
+                "http": "Scheduled pipeline failed with an upstream HTTP error",
+                "timeout": "Scheduled pipeline execution timed out",
+                "transport": "Scheduled pipeline could not reach an upstream service",
+                "retryable": "Scheduled pipeline failed after a retryable upstream error",
+                "unexpected": "Scheduled pipeline execution failed",
+            }
+            logger.warning(
+                "Scheduled pipeline execution failed (%s, %s)",
+                type(exc).__name__,
+                normalized.kind,
+            )
             entry.last_run = datetime.now(timezone.utc)
             entry.last_status = "error"
-            entry.last_error = str(exc)
+            entry.last_error = messages[normalized.kind]
         finally:
             job = self._scheduler.get_job(self._job_id(pipeline_name))
             entry.next_run = job.next_run_time if job is not None else None

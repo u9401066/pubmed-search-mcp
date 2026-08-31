@@ -15,18 +15,19 @@ import logging
 import re
 import threading
 import uuid
-from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import yaml
 
+from pubmed_search.application.pipeline.config_parser import parse_pipeline_config_file
 from pubmed_search.application.pipeline.validator import (
     compute_config_hash,
     parse_and_validate_config,
-    validate_and_fix,
+    validate_pipeline_config,
     validate_pipeline_name,
+    validate_pipeline_tags,
 )
 from pubmed_search.domain.entities.pipeline import (
     PipelineConfig,
@@ -52,6 +53,10 @@ _SAFE_RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 # intentionally remain single-process/single-replica until this file storage is
 # replaced with a transactional shared backend.
 _PIPELINE_PERSISTENCE_LOCK = threading.RLock()
+
+
+class PipelineHistoryError(RuntimeError):
+    """A persisted pipeline run record could not be decoded safely."""
 
 
 def _config_to_dict(config: PipelineConfig) -> dict[str, Any]:
@@ -217,21 +222,38 @@ class PipelineStore:
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
                 if not isinstance(data, dict):
-                    logger.warning("Pipeline index at %s is not a JSON object; rebuilding", path)
+                    logger.warning("Pipeline index is not a JSON object; rebuilding")
                     dirty = True
                 else:
                     for name, meta in data.items():
                         try:
-                            index[name] = PipelineMeta.from_dict(meta)
+                            canonical_name = self._validate_name(name)
+                            decoded = PipelineMeta.from_dict(meta)
+                            if decoded.name != canonical_name:
+                                logger.warning(
+                                    "Dropping pipeline index entry whose metadata name does not match key %s",
+                                    name,
+                                )
+                                dirty = True
+                                continue
+                            decoded.tags = validate_pipeline_tags(decoded.tags)
+                            index[canonical_name] = decoded
                         except (AttributeError, TypeError, ValueError):
-                            logger.warning("Dropping malformed pipeline index entry %s from %s", name, path)
+                            logger.warning("Dropping malformed pipeline index entry")
                             dirty = True
             except (OSError, TypeError, ValueError):
-                logger.warning("Failed to load index at %s; rebuilding from pipeline files", path)
+                logger.warning("Failed to load pipeline index; rebuilding from pipeline files")
                 dirty = True
 
         pipelines_dir = self._pipelines_dir_for(scope)
-        yaml_names = {candidate.stem for candidate in pipelines_dir.glob("*.yaml") if candidate.is_file()}
+        yaml_names: set[str] = set()
+        for candidate in pipelines_dir.glob("*.yaml"):
+            if not candidate.is_file():
+                continue
+            try:
+                yaml_names.add(self._validate_name(candidate.stem))
+            except ValueError:
+                logger.warning("Ignoring pipeline file with a noncanonical name")
 
         for stale_name in set(index).difference(yaml_names):
             index.pop(stale_name, None)
@@ -255,12 +277,7 @@ class PipelineStore:
     ) -> PipelineMeta | None:
         """Best-effort metadata reconstruction for an orphaned YAML file."""
         try:
-            raw_text = path.read_text(encoding="utf-8")
-            if contains_credential_material(raw_text):
-                return None
-            raw_data = yaml.safe_load(raw_text)
-            if not isinstance(raw_data, dict):
-                return None
+            raw_data = parse_pipeline_config_file(path)
             result = parse_and_validate_config(raw_data)
             config = result.config
             if not result.valid or config is None:
@@ -278,7 +295,7 @@ class PipelineStore:
                 if runs_dir.is_dir()
                 else 0,
             )
-        except (OSError, TypeError, ValueError, yaml.YAMLError) as exc:
+        except (OSError, TypeError, ValueError) as exc:
             logger.warning("Unable to rebuild pipeline metadata (%s)", type(exc).__name__)
             return None
 
@@ -289,16 +306,12 @@ class PipelineStore:
         atomic_write_json(path, data)
 
     @staticmethod
-    def _normalize_name(name: str, *, allow_saved_prefix: bool = False) -> str:
-        """Return one filesystem-safe pipeline name for every CRUD path."""
-        candidate = name.strip().lower()
+    def _validate_name(name: str, *, allow_saved_prefix: bool = False) -> str:
+        """Return a canonical name without rewriting caller-provided identity."""
+        candidate = name
         if allow_saved_prefix:
             candidate = candidate.removeprefix("saved:")
-        if "/" in candidate or "\\" in candidate or re.match(r"^[a-z]:", candidate):
-            msg = f"Unsafe pipeline name: {name}"
-            raise ValueError(msg)
-        normalized, _ = validate_pipeline_name(candidate)
-        return normalized
+        return validate_pipeline_name(candidate)
 
     @staticmethod
     def _validate_run_id(run_id: str) -> str:
@@ -323,30 +336,27 @@ class PipelineStore:
     ) -> tuple[PipelineMeta, ValidationResult]:
         """Save a pipeline configuration.
 
-        Validates + auto-fixes the config before saving.
+        Strictly validates the config without rewriting caller input.
 
         Args:
-            name: Pipeline name (will be normalized).
+            name: Canonical pipeline name.
             config: Pipeline configuration.
             tags: Optional tags.
             description: Optional description.
             scope: "workspace", "global", or "auto".
 
         Returns:
-            (PipelineMeta, ValidationResult) — metadata + any fixes applied.
+            (PipelineMeta, ValidationResult) — metadata + validation result.
 
         Raises:
-            ValueError: If name is invalid or config has unfixable errors.
+            ValueError: If name or config is invalid.
         """
-        # Normalize name
-        if "/" in name or "\\" in name or re.match(r"^[a-zA-Z]:", name.strip()):
-            msg = f"Unsafe pipeline name: {name}"
-            raise ValueError(msg)
-        name, name_fixes = validate_pipeline_name(name)
+        # Validate identity before an upsert: caller inputs are never rewritten
+        # into an existing pipeline key.
+        name = validate_pipeline_name(name)
+        validated_tags = validate_pipeline_tags(tags)
 
-        # Validate + auto-fix config
-        result = validate_and_fix(config)
-        result.fixes = name_fixes + result.fixes
+        result = validate_pipeline_config(config)
 
         if not result.valid:
             msg = f"Pipeline config validation failed: {'; '.join(result.errors)}"
@@ -367,10 +377,7 @@ class PipelineStore:
             msg = "Pipeline config contains credential material; use server environment configuration instead"
             raise ValueError(msg)
         yaml_path = pipelines_dir / f"{name}.yaml"
-        atomic_write_text(
-            yaml_path,
-            yaml.dump(config_dict, allow_unicode=True, default_flow_style=False, sort_keys=False),
-        )
+        atomic_write_text(yaml_path, serialized_config)
 
         # Update index
         now = datetime.now(timezone.utc)
@@ -380,7 +387,7 @@ class PipelineStore:
             name=name,
             scope=resolved_scope,
             description=description,
-            tags=tags or [],
+            tags=validated_tags,
             config_hash=compute_config_hash(config),
             step_count=len(config.steps) if config.steps else 0,
             created=existing.created if existing else now,
@@ -390,7 +397,7 @@ class PipelineStore:
         index[name] = meta
         self._save_index(resolved_scope, index)
 
-        logger.info("Saved pipeline '%s' to %s scope", name, resolved_scope.value)
+        logger.info("Saved one pipeline to %s scope", resolved_scope.value)
         return meta, result
 
     @synchronized
@@ -403,7 +410,7 @@ class PipelineStore:
         Raises:
             FileNotFoundError: If pipeline not found in any scope.
         """
-        name = self._normalize_name(name, allow_saved_prefix=True)
+        name = self._validate_name(name, allow_saved_prefix=True)
 
         # Try workspace first
         if self._workspace_dir:
@@ -425,15 +432,7 @@ class PipelineStore:
 
     def _load_from_file(self, path: Path, scope: PipelineScope, name: str) -> tuple[PipelineConfig, PipelineMeta]:
         """Load and validate a pipeline from a YAML file."""
-        raw_text = path.read_text(encoding="utf-8")
-        if contains_credential_material(raw_text):
-            msg = "Pipeline config contains credential material; use server environment configuration instead"
-            raise ValueError(msg)
-        raw_data = yaml.safe_load(raw_text)
-
-        if not isinstance(raw_data, dict):
-            msg = f"Pipeline file '{path}' is not a valid YAML dict"
-            raise ValueError(msg)  # noqa: TRY004 — malformed YAML content, not type error
+        raw_data = parse_pipeline_config_file(path)
 
         result = parse_and_validate_config(raw_data)
 
@@ -445,20 +444,6 @@ class PipelineStore:
         if config is None:
             msg = f"Pipeline '{name}' parsed but no config returned"
             raise ValueError(msg)
-
-        if result.has_fixes:
-            # Auto-save fixes back to file
-            logger.info(
-                "Auto-fixed %d issue(s) in pipeline '%s': %s",
-                len(result.fixes),
-                name,
-                result.summary(),
-            )
-            config_dict = _config_to_dict(config)
-            atomic_write_text(
-                path,
-                yaml.dump(config_dict, allow_unicode=True, default_flow_style=False, sort_keys=False),
-            )
 
         # Get or create metadata
         index = self._load_index(scope)
@@ -491,12 +476,7 @@ class PipelineStore:
             msg = f"Pipeline file not found: {filepath}"
             raise FileNotFoundError(msg)
 
-        raw_text = filepath.read_text(encoding="utf-8")
-        raw_data = yaml.safe_load(raw_text)
-
-        if not isinstance(raw_data, dict):
-            msg = f"Pipeline file '{filepath}' is not a valid YAML dict"
-            raise ValueError(msg)  # noqa: TRY004 — malformed YAML content, not type error
+        raw_data = parse_pipeline_config_file(filepath)
 
         result = parse_and_validate_config(raw_data)
         if not result.valid:
@@ -572,7 +552,7 @@ class PipelineStore:
         Raises:
             FileNotFoundError: If pipeline not found.
         """
-        name = self._normalize_name(name, allow_saved_prefix=True)
+        name = self._validate_name(name)
 
         # Try workspace first
         if self._workspace_dir:
@@ -612,7 +592,7 @@ class PipelineStore:
         self._save_index(scope, index)
         self.delete_schedule(name)
 
-        logger.info("Deleted pipeline '%s' from %s scope (%d runs)", name, scope.value, run_count)
+        logger.info("Deleted one pipeline from %s scope (%d runs)", scope.value, run_count)
         return scope, run_count
 
     # ── Schedule Persistence ────────────────────────────────────────────
@@ -620,17 +600,15 @@ class PipelineStore:
     @synchronized
     def save_schedule(self, entry: ScheduleEntry) -> None:
         """Persist schedule metadata in the global schedules index."""
-        normalized_name = self._normalize_name(entry.pipeline_name, allow_saved_prefix=True)
-        if normalized_name != entry.pipeline_name:
-            entry = replace(entry, pipeline_name=normalized_name)
+        pipeline_name = self._validate_name(entry.pipeline_name)
         schedules = self._load_schedules()
-        schedules[entry.pipeline_name] = entry
+        schedules[pipeline_name] = entry
         self._save_schedules(schedules)
 
     @synchronized
     def get_schedule(self, name: str) -> ScheduleEntry | None:
         """Get persisted schedule metadata for one pipeline."""
-        return self._load_schedules().get(self._normalize_name(name, allow_saved_prefix=True))
+        return self._load_schedules().get(self._validate_name(name))
 
     @synchronized
     def list_schedules(self) -> list[ScheduleEntry]:
@@ -644,7 +622,7 @@ class PipelineStore:
     @synchronized
     def delete_schedule(self, name: str) -> bool:
         """Delete persisted schedule metadata if present."""
-        normalized_name = self._normalize_name(name, allow_saved_prefix=True)
+        normalized_name = self._validate_name(name)
         schedules = self._load_schedules()
         removed = schedules.pop(normalized_name, None)
         if removed is None:
@@ -660,9 +638,23 @@ class PipelineStore:
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
         except Exception:
-            logger.warning("Failed to load schedules at %s, starting fresh", path)
+            logger.warning("Failed to load pipeline schedules; starting fresh")
             return {}
-        return {name: ScheduleEntry.from_dict(entry) for name, entry in data.items()}
+        schedules: dict[str, ScheduleEntry] = {}
+        if not isinstance(data, dict):
+            logger.warning("Schedule index is not a JSON object")
+            return schedules
+        for name, raw_entry in data.items():
+            try:
+                canonical_name = self._validate_name(name)
+                entry = ScheduleEntry.from_dict(raw_entry)
+                if entry.pipeline_name != canonical_name:
+                    logger.warning("Dropping schedule entry whose pipeline name does not match its key")
+                    continue
+                schedules[canonical_name] = entry
+            except (AttributeError, TypeError, ValueError):
+                logger.warning("Dropping malformed pipeline schedule entry")
+        return schedules
 
     def _save_schedules(self, schedules: dict[str, ScheduleEntry]) -> None:
         """Persist schedule metadata to disk."""
@@ -675,7 +667,7 @@ class PipelineStore:
     @synchronized
     def save_run(self, name: str, run: PipelineRun) -> None:
         """Save an execution record for a pipeline."""
-        name = self._normalize_name(name, allow_saved_prefix=True)
+        name = self._validate_name(name)
         run_id = self._validate_run_id(run.run_id)
         # Find which scope the pipeline lives in
         scope = self._find_pipeline_scope(name)
@@ -695,7 +687,7 @@ class PipelineStore:
         # Prune old history
         self._prune_history(runs_dir)
 
-        logger.info("Saved run '%s' for pipeline '%s'", run.run_id, name)
+        logger.info("Saved one pipeline run")
 
     @synchronized
     def get_history(self, name: str, limit: int = 5) -> list[PipelineRun]:
@@ -704,7 +696,7 @@ class PipelineStore:
         Returns:
             List of PipelineRun, newest first.
         """
-        name = self._normalize_name(name, allow_saved_prefix=True)
+        name = self._validate_name(name)
         scope = self._find_pipeline_scope(name)
         runs_dir = self._runs_dir_for(scope) / name
 
@@ -719,8 +711,11 @@ class PipelineStore:
             try:
                 data = json.loads(f.read_text(encoding="utf-8"))
                 runs.append(PipelineRun.from_dict(data))
-            except Exception:
-                logger.warning("Failed to load run file %s", f)
+            except Exception as exc:
+                logger.warning("Failed to load a pipeline run record (%s)", type(exc).__name__)
+                raise PipelineHistoryError(
+                    "Pipeline run history is unavailable because a stored record is invalid"
+                ) from exc
 
         return runs
 
@@ -733,7 +728,7 @@ class PipelineStore:
     @synchronized
     def count_history(self, name: str) -> int:
         """Count persisted execution records without exposing store paths."""
-        normalized_name = self._normalize_name(name, allow_saved_prefix=True)
+        normalized_name = self._validate_name(name)
         scope = self._find_pipeline_scope(normalized_name)
         runs_dir = self._runs_dir_for(scope) / normalized_name
         if not runs_dir.exists():
@@ -742,7 +737,7 @@ class PipelineStore:
 
     def _find_pipeline_scope(self, name: str) -> PipelineScope:
         """Find which scope a pipeline lives in."""
-        name = self._normalize_name(name, allow_saved_prefix=True)
+        name = self._validate_name(name)
         if self._workspace_dir:
             ws_path = self._workspace_pipelines_dir / f"{name}.yaml"
             if ws_path.exists():
@@ -780,7 +775,7 @@ class PipelineStore:
         Returns:
             Path to the saved report file.
         """
-        name = self._normalize_name(name, allow_saved_prefix=True)
+        name = self._validate_name(name)
         run_id = self._validate_run_id(run_id)
         scope = self._find_pipeline_scope(name)
         reports_dir = self._reports_dir_for(scope) / name
@@ -789,7 +784,7 @@ class PipelineStore:
         report_path = reports_dir / f"{run_id}.md"
         atomic_write_text(report_path, report_markdown)
 
-        logger.info("Saved report for pipeline '%s' run '%s' at %s", name, run_id, report_path)
+        logger.info("Saved one pipeline run report")
         return report_path
 
     def _reports_dir_for(self, scope: PipelineScope) -> Path:
@@ -804,7 +799,7 @@ class PipelineStore:
     @synchronized
     def exists(self, name: str) -> bool:
         """Check if a pipeline exists in any scope."""
-        name = self._normalize_name(name, allow_saved_prefix=True)
+        name = self._validate_name(name)
         if self._workspace_dir and (self._workspace_pipelines_dir / f"{name}.yaml").exists():
             return True
         return (self._global_pipelines_dir / f"{name}.yaml").exists()
@@ -818,7 +813,7 @@ class PipelineStore:
         begin in the same second, so this method uses microseconds and checks the
         target directories before returning.
         """
-        normalized_name = self._normalize_name(name, allow_saved_prefix=True)
+        normalized_name = self._validate_name(name)
         started_at = started or datetime.now(timezone.utc)
         base_run_id = f"{started_at.strftime('%Y%m%d_%H%M%S_%f')}_{uuid.uuid4().hex[:12]}"
         scope = self._find_pipeline_scope(normalized_name)

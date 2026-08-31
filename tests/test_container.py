@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -93,55 +93,78 @@ class TestLifecycle:
     async def test_lifespan_yields_container(self) -> None:
         """Lifespan handler yields the ApplicationContainer."""
         from pubmed_search.presentation.mcp_server.server import _make_lifespan
+        from pubmed_search.presentation.mcp_server.tools.pipeline_tools import PipelineToolRuntime
 
         container = ApplicationContainer()
         container.config.from_dict({"email": "test@example.com", "api_key": None, "data_dir": "/tmp"})
 
-        lifespan = _make_lifespan(container)
+        source_runtime = MagicMock()
+        source_runtime.close_source_clients = AsyncMock()
+        source_runtime.shared_http.close = AsyncMock()
+        lifespan = _make_lifespan(container, PipelineToolRuntime(base_store=None), source_runtime)
         mock_server = MagicMock()
 
-        with (
-            patch(
-                "pubmed_search.infrastructure.sources.close_source_clients",
-                new_callable=AsyncMock,
-            ) as mock_source_close,
-            patch(
-                "pubmed_search.shared.async_utils.close_shared_async_client",
-                new_callable=AsyncMock,
-            ) as mock_close,
-        ):
-            async with lifespan(mock_server) as ctx:
-                assert ctx is container
-            mock_source_close.assert_awaited_once()
-            mock_close.assert_awaited_once()
+        async with lifespan(mock_server) as ctx:
+            assert ctx is container
+        source_runtime.close_source_clients.assert_awaited_once()
+        source_runtime.shared_http.close.assert_awaited_once()
 
     async def test_lifespan_closes_http_client_on_shutdown(self) -> None:
         """Shutdown phase calls close_shared_async_client()."""
         from pubmed_search.presentation.mcp_server.server import _make_lifespan
+        from pubmed_search.presentation.mcp_server.tools.pipeline_tools import PipelineToolRuntime
 
         container = ApplicationContainer()
         container.config.from_dict({"email": "test@example.com", "api_key": None, "data_dir": "/tmp"})
 
-        lifespan = _make_lifespan(container)
+        source_runtime = MagicMock()
+        source_runtime.close_source_clients = AsyncMock()
+        source_runtime.shared_http.close = AsyncMock()
+        lifespan = _make_lifespan(container, PipelineToolRuntime(base_store=None), source_runtime)
         mock_server = MagicMock()
 
-        with (
-            patch(
-                "pubmed_search.infrastructure.sources.close_source_clients",
-                new_callable=AsyncMock,
-            ) as mock_source_close,
-            patch(
-                "pubmed_search.shared.async_utils.close_shared_async_client",
-                new_callable=AsyncMock,
-            ) as mock_close,
-        ):
-            async with lifespan(mock_server):
-                # Server is "running"
-                mock_source_close.assert_not_awaited()
-                mock_close.assert_not_awaited()
-            # After exit: shutdown occurred
-            mock_source_close.assert_awaited_once()
-            mock_close.assert_awaited_once()
+        async with lifespan(mock_server):
+            source_runtime.close_source_clients.assert_not_awaited()
+            source_runtime.shared_http.close.assert_not_awaited()
+        source_runtime.close_source_clients.assert_awaited_once()
+        source_runtime.shared_http.close.assert_awaited_once()
+
+    async def test_two_lifespans_manage_only_their_own_pipeline_scheduler(self) -> None:
+        """A later server cannot replace another server's lifecycle dependency."""
+        from pubmed_search.presentation.mcp_server.server import _make_lifespan
+        from pubmed_search.presentation.mcp_server.tools.pipeline_tools import PipelineToolRuntime
+
+        container_a = ApplicationContainer()
+        container_b = ApplicationContainer()
+        scheduler_a = MagicMock()
+        scheduler_b = MagicMock()
+        source_runtime_a = MagicMock()
+        source_runtime_a.close_source_clients = AsyncMock()
+        source_runtime_a.shared_http.close = AsyncMock()
+        source_runtime_b = MagicMock()
+        source_runtime_b.close_source_clients = AsyncMock()
+        source_runtime_b.shared_http.close = AsyncMock()
+        lifespan_a = _make_lifespan(
+            container_a,
+            PipelineToolRuntime(base_store=None, scheduler=scheduler_a),
+            source_runtime_a,
+        )
+        lifespan_b = _make_lifespan(
+            container_b,
+            PipelineToolRuntime(base_store=None, scheduler=scheduler_b),
+            source_runtime_b,
+        )
+
+        async with lifespan_a(MagicMock()):
+            scheduler_a.start.assert_called_once_with()
+            scheduler_b.start.assert_not_called()
+            async with lifespan_b(MagicMock()):
+                scheduler_b.start.assert_called_once_with()
+                scheduler_a.shutdown.assert_not_called()
+            scheduler_b.shutdown.assert_called_once_with()
+            scheduler_a.shutdown.assert_not_called()
+
+        scheduler_a.shutdown.assert_called_once_with()
 
 
 # ============================================================================
@@ -150,27 +173,19 @@ class TestLifecycle:
 
 
 class TestGetContainer:
-    """Test the module-level container accessor."""
+    """Test the server-owned container accessor."""
 
     def test_get_container_before_init_raises(self) -> None:
         from pubmed_search.presentation.mcp_server import server as srv_mod
 
-        original = srv_mod._container
-        try:
-            srv_mod._container = None
-            with pytest.raises(RuntimeError, match="Container not initialized"):
-                srv_mod.get_container()
-        finally:
-            srv_mod._container = original
+        with pytest.raises(TypeError, match="container is unavailable"):
+            srv_mod.get_container(MagicMock())
 
     def test_get_container_returns_container(self) -> None:
         from pubmed_search.presentation.mcp_server import server as srv_mod
 
         container = ApplicationContainer()
         container.config.from_dict({"email": "a@b.com", "api_key": None, "data_dir": "/tmp"})
-        original = srv_mod._container
-        try:
-            srv_mod._container = container
-            assert srv_mod.get_container() is container
-        finally:
-            srv_mod._container = original
+        server = MagicMock()
+        setattr(server, srv_mod._APPLICATION_CONTAINER_ATTR, container)
+        assert srv_mod.get_container(server) is container

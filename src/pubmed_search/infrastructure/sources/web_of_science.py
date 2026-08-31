@@ -14,7 +14,12 @@ from __future__ import annotations
 import logging
 from typing import Any, cast
 
-from pubmed_search.infrastructure.sources.base_client import APIRequestError, BaseAPIClient
+from pubmed_search.application.search.source_models import SourceSearchPage
+from pubmed_search.infrastructure.sources.base_client import (
+    APIRequestError,
+    BaseAPIClient,
+    raise_provider_schema_error,
+)
 from pubmed_search.infrastructure.sources.official_generated_clients import (
     OfficialWebOfScienceGeneratedClient,
     WebOfScienceSearchRequest,
@@ -53,16 +58,22 @@ class WebOfScienceClient(BaseAPIClient):
         )
         self._official_client = OfficialWebOfScienceGeneratedClient(self)
 
-    async def search(
+    async def search_page(
         self,
         query: str,
         limit: int = 10,
         min_year: int | None = None,
         max_year: int | None = None,
         open_access_only: bool = False,
-        strict: bool = False,
-    ) -> list[dict[str, Any]]:
-        """Search Web of Science and normalize the response into article-like dicts."""
+        *,
+        page: int = 1,
+    ) -> SourceSearchPage[dict[str, Any]]:
+        """Return one normalized Web of Science page with official metadata."""
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 25:
+            raise ValueError("Web of Science page limit must be between 1 and 25")
+        if isinstance(page, bool) or not isinstance(page, int) or page < 1:
+            raise ValueError("Web of Science page must be a positive integer")
+
         try:
             wos_query = self.compile_query(
                 query,
@@ -72,27 +83,58 @@ class WebOfScienceClient(BaseAPIClient):
             )
             request = WebOfScienceSearchRequest(
                 q=wos_query,
-                limit=min(limit, 25),
-                page=1,
+                limit=limit,
+                page=page,
             )
 
             response = await self._official_client.search_documents(request)
             if response is None:
-                if strict:
-                    self._raise_strict_request_error()
-                return []
+                raise_provider_schema_error(self._service_name)
 
-            results: list[dict[str, Any]] = []
-            for hit in response.hits:
-                results.append(self._normalize_hit(hit.model_dump(exclude_none=True)))
-            return results
+            items = [self._normalize_hit(hit.model_dump(exclude_none=True)) for hit in response.hits]
+            response_page = response.metadata.page
+            response_limit = response.metadata.limit
+            total = response.metadata.total
+            offset = (response_page - 1) * response_limit
+            self._validate_pagination(total=total, offset=offset, returned=len(items))
+            next_offset = response_page * response_limit if response_page * response_limit < total else None
+            next_page = response_page + 1 if next_offset is not None else None
+            warnings: list[str] = []
+            if response_page != page:
+                warnings.append("Web of Science response page differs from the requested page")
+            if response_limit != limit:
+                warnings.append("Web of Science response limit differs from the requested limit")
+
+            return SourceSearchPage(
+                source="web_of_science",
+                items=items,
+                total=total,
+                next_token=next_page,
+                query=wos_query,
+                warnings=warnings,
+                mode="keyword",
+                metadata={
+                    "page": response_page,
+                    "requested_page": page,
+                    "limit": response_limit,
+                    "requested_limit": limit,
+                    "offset": offset,
+                    "returned": len(items),
+                    "next_page": next_page,
+                    "next_offset": next_offset,
+                },
+            )
         except (APIRequestError, RetryableOperationError):
             raise
         except Exception as exc:
-            if strict:
-                raise APIRequestError(self._service_name) from None
             logger.warning("Web of Science search failed (%s)", type(exc).__name__)
-            raise
+            raise APIRequestError(self._service_name) from None
+
+    @staticmethod
+    def _validate_pagination(*, total: int, offset: int, returned: int) -> None:
+        """Reject an official envelope whose count cannot contain its page."""
+        if total < offset + returned:
+            raise ValueError("Web of Science returned inconsistent pagination metadata")
 
     def compile_query(
         self,
@@ -112,23 +154,6 @@ class WebOfScienceClient(BaseAPIClient):
         if open_access_only:
             terms.append("OA=(Y)")
         return " AND ".join(terms)
-
-    def _build_query(
-        self,
-        query: str,
-        *,
-        min_year: int | None,
-        max_year: int | None,
-        open_access_only: bool,
-    ) -> str:
-        """Compatibility wrapper for callers using the former private helper."""
-
-        return self.compile_query(
-            query,
-            min_year=min_year,
-            max_year=max_year,
-            open_access_only=open_access_only,
-        )
 
     def _normalize_hit(self, hit: dict[str, Any]) -> dict[str, Any]:
         raw_source = hit.get("source")

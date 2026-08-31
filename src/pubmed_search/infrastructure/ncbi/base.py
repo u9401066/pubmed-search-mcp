@@ -9,10 +9,10 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import threading
-import time
 from enum import Enum
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, NoReturn, TypeVar
 
 from Bio import Entrez
 
@@ -21,9 +21,9 @@ from pubmed_search.shared.async_utils import (
     RateLimitPolicy,
     RequestExecutionPolicy,
     RetryPolicy,
-    get_rate_limiter,
     get_transport_kernel,
 )
+from pubmed_search.shared.exceptions import APIError, ErrorContext, is_retryable_error
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -31,6 +31,88 @@ if TYPE_CHECKING:
 T = TypeVar("T")
 _MISSING = object()
 DEFAULT_ENTREZ_TOOL = "pubmed-search-mcp"
+logger = logging.getLogger(__name__)
+
+
+class NCBIInfrastructureError(APIError):
+    """Sanitized failure raised by the NCBI infrastructure boundary.
+
+    The public message is deliberately independent of the upstream exception
+    value, which may contain a query, URL, credential, or response fragment.
+    ``upstream_type`` and the chained cause remain available for diagnostics
+    without turning an outage into an article-shaped compatibility row.
+    """
+
+    def __init__(
+        self,
+        operation: str,
+        *,
+        upstream_type: str,
+        retryable: bool,
+        retry_after: float | None = None,
+        status_code: int | None = None,
+        execution_metadata: dict[str, Any] | None = None,
+    ) -> None:
+        self.operation = operation
+        self.upstream_type = upstream_type
+        self.retry_after = retry_after
+        self.status_code = status_code
+        self.execution_metadata = dict(execution_metadata or {})
+        super().__init__(
+            f"NCBI {operation} failed",
+            context=ErrorContext(
+                operation=operation,
+                retry_after=retry_after,
+                metadata={"upstream_type": upstream_type, **self.execution_metadata},
+            ),
+            retryable=retryable,
+        )
+
+
+class NCBIProviderSchemaError(NCBIInfrastructureError):
+    """Typed, query-safe failure for a malformed NCBI response payload."""
+
+    def __init__(self, operation: str) -> None:
+        super().__init__(
+            operation,
+            upstream_type="ProviderSchemaError",
+            retryable=False,
+        )
+
+
+def raise_ncbi_infrastructure_error(
+    operation: str,
+    error: Exception,
+    *,
+    execution_metadata: dict[str, Any] | None = None,
+) -> NoReturn:
+    """Raise one query-safe NCBI failure while retaining diagnostic lineage."""
+    if isinstance(error, NCBIInfrastructureError):
+        upstream_type = error.upstream_type
+        retryable = error.retryable
+        retry_after = error.retry_after
+        status_code = error.status_code
+        inherited_metadata = error.execution_metadata
+    else:
+        upstream_type = type(error).__name__
+        retryable = is_retryable_error(error)
+        raw_retry_after = getattr(error, "retry_after", None)
+        retry_after = float(raw_retry_after) if isinstance(raw_retry_after, (int, float)) else None
+        raw_status_code = getattr(error, "status_code", None)
+        status_code = raw_status_code if isinstance(raw_status_code, int) else None
+        inherited_metadata = {}
+
+    merged_metadata = {**inherited_metadata, **(execution_metadata or {})}
+
+    logger.warning("NCBI %s failed (%s)", operation, upstream_type)
+    raise NCBIInfrastructureError(
+        operation,
+        upstream_type=upstream_type,
+        retryable=retryable,
+        retry_after=retry_after,
+        status_code=status_code,
+        execution_metadata=merged_metadata,
+    ) from error
 
 
 class SearchStrategy(Enum):
@@ -43,10 +125,6 @@ class SearchStrategy(Enum):
     AGENT_DECIDED = "agent_decided"
 
 
-# Global rate limiter state
-_last_request_time = 0.0
-_min_request_interval = 0.34  # ~3 requests/second (NCBI limit without API key)
-_rate_lock = asyncio.Lock()
 _entrez_runtime_lock = threading.Lock()
 
 _NCBI_RETRYABLE_MESSAGES = (
@@ -148,15 +226,6 @@ async def execute_entrez_operation(
         base_delay=base_delay,
     )
     return await get_transport_kernel().execute(operation, policy=policy)
-
-
-async def _rate_limit():
-    """Compatibility wrapper around the shared NCBI rate limiter."""
-    global _last_request_time
-    async with _rate_lock:
-        limiter = get_rate_limiter("ncbi-entrez", rate=1.0 / _min_request_interval, per=1.0)
-        await limiter.acquire()
-        _last_request_time = time.time()
 
 
 class EntrezBase:

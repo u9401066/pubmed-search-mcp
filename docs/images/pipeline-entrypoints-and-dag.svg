@@ -25,7 +25,7 @@
 
   <rect class="box" x="72" y="268" width="230" height="104" fill="#eaf4f0" stroke="#3a7c69"/>
   <text class="label" x="98" y="308">Saved pipeline</text>
-  <text class="body" x="98" y="338">manage_pipeline(save)</text>
+  <text class="body" x="98" y="338">save_pipeline(config=YAML)</text>
 
   <rect class="box" x="72" y="410" width="230" height="104" fill="#fff5df" stroke="#b27b21"/>
   <text class="label" x="98" y="450">Scheduled pipeline</text>
@@ -33,8 +33,8 @@
 
   <rect class="box" x="410" y="236" width="230" height="132" fill="#f8eff7" stroke="#99609a"/>
   <text class="label" x="436" y="276">Validation layer</text>
-  <text class="body" x="436" y="306">schema parse, semantic</text>
-  <text class="body" x="436" y="328">auto-fix, dry run</text>
+  <text class="body" x="436" y="306">strict schema and semantics</text>
+  <text class="body" x="436" y="328">reject invalid, dry run</text>
 
   <rect class="box" x="748" y="126" width="230" height="104" fill="#edf7ff" stroke="#3578a7"/>
   <text class="label" x="774" y="166">DAG execution</text>
@@ -42,7 +42,7 @@
 
   <rect class="box" x="748" y="306" width="230" height="104" fill="#f1f5e8" stroke="#71883b"/>
   <text class="label" x="774" y="346">Session writeback</text>
-  <text class="body" x="774" y="376">PMIDs and article cache</text>
+  <text class="body" x="774" y="376">PMIDs and search-run summary</text>
 
   <rect class="box" x="748" y="486" width="230" height="104" fill="#f5f1ea" stroke="#947245"/>
   <text class="label" x="774" y="526">Run history</text>

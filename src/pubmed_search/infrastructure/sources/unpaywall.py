@@ -27,10 +27,14 @@ from __future__ import annotations
 import logging
 import os
 import urllib.parse
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
-from pubmed_search.infrastructure.sources.base_client import _CONTINUE, BaseAPIClient
-from pubmed_search.infrastructure.sources.contact import first_contact_email, get_configured_source_contact_email
+from pubmed_search.infrastructure.sources.base_client import (
+    _CONTINUE,
+    BaseAPIClient,
+    raise_provider_schema_error,
+)
+from pubmed_search.infrastructure.sources.contact import first_contact_email, get_source_contact_email
 
 if TYPE_CHECKING:
     import httpx
@@ -81,7 +85,7 @@ class UnpaywallClient(BaseAPIClient):
                 email,
                 os.environ.get("UNPAYWALL_EMAIL"),
                 os.environ.get("NCBI_EMAIL"),
-                get_configured_source_contact_email(),
+                get_source_contact_email(),
                 DEFAULT_EMAIL,
             )
             or DEFAULT_EMAIL
@@ -135,12 +139,10 @@ class UnpaywallClient(BaseAPIClient):
         url = f"{UNPAYWALL_API_BASE}/{urllib.parse.quote(doi, safe='/')}?email={urllib.parse.quote(self._email, safe='@')}"
 
         data = await self._make_request(url)
-        if not data:
+        if data is None:
             return None
-
-        # Normalize response
-        if isinstance(data, str):
-            return None
+        if not isinstance(data, dict):
+            raise_provider_schema_error(self._service_name)
         return self._normalize_response(data)
 
     async def get_best_oa_link(self, doi: str) -> str | None:
@@ -297,57 +299,3 @@ class UnpaywallClient(BaseAPIClient):
             "unknown": "OA status not determined",
         }
         return descriptions.get(status, f"Unknown status: {status}")
-
-
-# OA Status type for type hints
-OAStatus = Literal["gold", "green", "hybrid", "bronze", "closed", "unknown"]
-
-
-# Singleton instance
-_unpaywall_client: UnpaywallClient | None = None
-
-
-def get_unpaywall_client(email: str | None = None) -> UnpaywallClient:
-    """Get or create Unpaywall client singleton."""
-    global _unpaywall_client
-    if _unpaywall_client is None:
-        import os
-
-        _unpaywall_client = UnpaywallClient(
-            email=first_contact_email(
-                email,
-                os.environ.get("UNPAYWALL_EMAIL"),
-                os.environ.get("NCBI_EMAIL"),
-                get_configured_source_contact_email(),
-            )
-        )
-    return _unpaywall_client
-
-
-# Convenience functions
-async def find_oa_link(doi: str) -> str | None:
-    """Find best OA link for a DOI."""
-    client = get_unpaywall_client()
-    return await client.get_best_oa_link(doi)
-
-
-async def find_pdf_link(doi: str) -> str | None:
-    """Find PDF link for a DOI."""
-    client = get_unpaywall_client()
-    return await client.get_pdf_link(doi)
-
-
-async def is_open_access(doi: str) -> bool:
-    """Check if DOI has an OA version."""
-    client = get_unpaywall_client()
-    oa_info = await client.get_oa_status(doi)
-    return oa_info.get("is_oa", False) if oa_info else False
-
-
-async def get_oa_status(doi: str) -> OAStatus:
-    """Get OA status for a DOI."""
-    client = get_unpaywall_client()
-    oa_info = await client.get_oa_status(doi)
-    if oa_info:
-        return oa_info.get("oa_status", "unknown")
-    return "unknown"

@@ -23,14 +23,12 @@ from pubmed_search.infrastructure.pubtator.client import (
 )
 from pubmed_search.infrastructure.pubtator.models import (
     EntityMatch,
-    PubTatorEntity,
     RelationMatch,
 )
 
 __all__ = [
     "EntityMatch",
     "PubTatorClient",
-    "PubTatorEntity",
     "RelationMatch",
     "get_pubtator_client",
 ]

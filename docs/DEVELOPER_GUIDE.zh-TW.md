@@ -34,12 +34,12 @@ Presentation layer 負責 MCP tools、prompts、resources 與 HTTP compatibility
 | Authenticated service | `pubmed-search-mcp-http --mode service` | Fail-closed 多使用者 HTTP 與 principal-scoped state |
 | Full Copilot-compatible HTTP | `pubmed-search-mcp-http --mode service --transport streamable-http --copilot-compatible` | 經認證的遠端 primary MCP surface，並加上 Copilot-compatible HTTP semantics |
 | Python SDK facade | `from pubmed_search.api import PubMedSearchClient` | Python package、notebook、app 的 in-process integration |
-| Simplified Copilot smoke | `uv run python run_copilot.py` | 僅 loopback 本機 schema/protocol 驗證；禁止接公網 tunnel |
+| Canonical Copilot smoke | `uv run python run_copilot.py` | 僅 loopback 驗證同一套 strict registry；禁止接公網 tunnel |
 | Browser fetch broker | `uv run pubmed-browser-fetch-broker --token ...` | 可選的本機 Playwright broker，用於 authenticated PDF download capture |
 | Static docs site | `docs/index.html` 加 generated payload | GitHub Pages 文件網站 |
 
 
-MCP tools、Python SDK facade、HTTP CLI 是同一組核心能力上的三個獨立 contract，不是三個彼此分裂的產品。`run_server.py` 只保留為 source-tree development wrapper；installed package 與遠端部署應使用 `pubmed-search-mcp-http`。`run_copilot.py` 則刻意暴露 Copilot-specific simplified surface，但只允許 loopback，禁止放在公網 tunnel 後；遠端 Copilot 一律使用 authenticated `--mode service`。
+MCP tools、Python SDK facade、HTTP CLI 是同一組核心能力上的三個獨立 contract，不是三個彼此分裂的產品。`run_server.py` 只保留為 source-tree development wrapper；installed package 與遠端部署應使用 `pubmed-search-mcp-http`。`run_copilot.py` 透過 loopback-only Copilot HTTP semantics 暴露同一套 canonical registry，禁止放在公網 tunnel 後；遠端 Copilot 一律使用 authenticated `--mode service`。
 
 MCP contract 使用 SDK v2。當前 client 會不透過 `initialize` 或 `Mcp-Session-Id`，直接呼叫
 `tools/list` 與 `tools/call`；legacy compatibility 絕不能用來識別身分或選擇 tenant。
@@ -52,16 +52,15 @@ src/pubmed_search/
 ├── domain/          # entities, value objects, domain services
 ├── application/     # search, export, timeline, pipeline, session orchestration
 ├── infrastructure/  # NCBI, Europe PMC, CORE, OpenAlex, CrossRef, cache, HTTP, sources
-├── presentation/    # MCP server, HTTP API, browser broker entry point
-└── shared/          # settings, async helpers, errors, profiling
+├── presentation/    # MCP server, canonical HTTP CLI, browser broker entry point
+└── shared/          # settings, async helpers, errors
 ```
 
 重要 presentation 檔案：
 
-- `presentation/mcp_server/server.py`：server creation、DI container、stdio startup、background API
+- `presentation/mcp_server/server.py`：server creation、DI container 與 stdio startup
 - `presentation/mcp_server/tool_registry.py`：primary tool registry 的權威來源
 - `presentation/mcp_server/tools/*.py`：MCP adapters
-- `presentation/mcp_server/copilot_tools.py`：Copilot Studio simplified surface
 - `presentation/mcp_server/http_compat.py`：Copilot HTTP compatibility middleware
 - `presentation/browser_fetch_broker.py`：local browser broker CLI
 
@@ -118,7 +117,7 @@ Source connector 必須待在 infrastructure boundary 後面。Provider-specific
 
 ## Search 與 Session 行為
 
-`unified_search` 是公開文字文獻搜尋入口。`parse_pico`、`generate_search_queries` 與 `analyze_search_query` 等 query intelligence tools 協助 agent 在執行搜尋前規劃。`parse_pico` 是 agent-provided schema handoff：agent 抽出 P/I/C/O，server 驗證該結構並回傳可執行的 PICO pipeline。
+`unified_search` 是公開文字文獻搜尋入口。`validate_pico_plan`、`generate_search_queries` 與 `analyze_search_query` 等 query intelligence tools 協助 agent 在執行搜尋前規劃。`validate_pico_plan` 是 agent-provided schema handoff：agent 抽出 P/I/C/O，server 驗證該結構並回傳可執行的 PICO pipeline。
 
 Session tools 的存在，是讓 follow-up actions 重用最新 result set。User docs 應鼓勵使用 `pmids="last"` 與 session reads，而不是讓模型靠對話記憶 PMID。任何影響 session IDs、cached article shape 或 follow-up semantics 的變更，都應包含多步驟 workflow tests。
 
@@ -242,7 +241,7 @@ Live site 由 GitHub Pages 發布 `docs/` artifact。如果 deployed site 看起
 | 把 source 描述成永遠可用 | 說明 keys、rate limits、rights 與 default-off behavior |
 | 加 browser fallback 但沒限制 host | 要求 token 與 `allowed_hosts` |
 | 改 note output shape 卻不改 docs | 更新 user docs、generated docs、templates 與 tests |
-| 把 Copilot simplified tools 當 primary surface | Primary behavior 應對齊 primary tool registry |
+| 新增 Copilot-only tool facade | 直接修正並驗證 canonical primary tool registry |
 
 ## Release Hygiene
 

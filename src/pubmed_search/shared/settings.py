@@ -6,14 +6,15 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import AliasChoices, Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_EMAIL = "pubmed-search@example.com"
 DEFAULT_DATA_DIR = str(Path.home() / ".pubmed-search-mcp")
-DEFAULT_HTTP_API_PORT = 8765
 DEFAULT_FULLTEXT_INLINE_MAX_CHARS = 20_000
 DEFAULT_TENANT_MAX_CONCURRENCY = 8
+DEFAULT_PIPELINE_RUN_TIMEOUT_SECONDS = 120.0
+DEFAULT_PIPELINE_MAX_EXTERNAL_CALLS = 40
 
 
 class AppSettings(BaseSettings):
@@ -31,16 +32,26 @@ class AppSettings(BaseSettings):
     data_dir: str = Field(default=DEFAULT_DATA_DIR, alias="PUBMED_DATA_DIR")
     workspace_dir: str | None = Field(default=None, alias="PUBMED_WORKSPACE_DIR")
     notes_dir: str | None = Field(default=None, alias="PUBMED_NOTES_DIR")
-    http_api_port: int = Field(default=DEFAULT_HTTP_API_PORT, alias="PUBMED_HTTP_API_PORT")
-    stdio_aux_http_enabled: bool = Field(default=False, alias="PUBMED_STDIO_AUX_HTTP")
     local_allow_container_bind: bool = Field(default=False, alias="PUBMED_LOCAL_ALLOW_CONTAINER_BIND")
-
-    profiling_enabled: bool = Field(default=False, alias="PUBMED_PROFILING")
     disabled_sources_raw: str = Field(default="", alias="PUBMED_SEARCH_DISABLED_SOURCES")
     artifact_include_local_paths: bool = Field(default=False, alias="PUBMED_ARTIFACT_INCLUDE_LOCAL_PATHS")
     fulltext_inline_max_chars: int = Field(
         default=DEFAULT_FULLTEXT_INLINE_MAX_CHARS,
         alias="PUBMED_FULLTEXT_INLINE_MAX_CHARS",
+        ge=256,
+        le=200_000,
+    )
+    pipeline_run_timeout_seconds: float = Field(
+        default=DEFAULT_PIPELINE_RUN_TIMEOUT_SECONDS,
+        alias="PUBMED_PIPELINE_RUN_TIMEOUT_SECONDS",
+        gt=0,
+        le=3_600,
+    )
+    pipeline_max_external_calls: int = Field(
+        default=DEFAULT_PIPELINE_MAX_EXTERNAL_CALLS,
+        alias="PUBMED_PIPELINE_MAX_EXTERNAL_CALLS",
+        ge=1,
+        le=1_000,
     )
 
     # Multi-agent deployment: auth, tenant isolation, and per-tenant fairness.
@@ -61,10 +72,7 @@ class AppSettings(BaseSettings):
     crossref_email: str | None = Field(default=None, alias="CROSSREF_EMAIL")
     unpaywall_email: str | None = Field(default=None, alias="UNPAYWALL_EMAIL")
     openalex_api_key: SecretStr | None = Field(default=None, alias="OPENALEX_API_KEY")
-    semantic_scholar_api_key: SecretStr | None = Field(
-        default=None,
-        validation_alias=AliasChoices("SEMANTIC_SCHOLAR_API_KEY", "S2_API_KEY"),
-    )
+    semantic_scholar_api_key: SecretStr | None = Field(default=None, alias="SEMANTIC_SCHOLAR_API_KEY")
     core_api_key: str | None = Field(default=None, alias="CORE_API_KEY")
 
     openurl_enabled: bool = Field(default=True, alias="OPENURL_ENABLED")
@@ -174,10 +182,8 @@ class AppSettings(BaseSettings):
 
     @property
     def disabled_sources(self) -> tuple[str, ...]:
-        """Normalized disabled source keys from PUBMED_SEARCH_DISABLED_SOURCES."""
-        return tuple(
-            token.strip().lower().replace("-", "_") for token in self.disabled_sources_raw.split(",") if token.strip()
-        )
+        """Exact canonical source keys from PUBMED_SEARCH_DISABLED_SOURCES."""
+        return self._csv_values(self.disabled_sources_raw)
 
     @staticmethod
     def _csv_values(raw: str) -> tuple[str, ...]:

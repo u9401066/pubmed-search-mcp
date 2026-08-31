@@ -5,13 +5,13 @@ Tests for MCP Tools - merge, pico, strategy, and export tools.
 from __future__ import annotations
 
 import json
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 
-def _registered_parse_pico():
-    """Register parse_pico on a mock MCP server and return the captured callable."""
+def _registered_validate_pico_plan():
+    """Register validate_pico_plan on a mock MCP server and return the captured callable."""
     from pubmed_search.presentation.mcp_server.tools.pico import register_pico_tools
 
     mcp = MagicMock()
@@ -31,135 +31,10 @@ def _registered_parse_pico():
     return registered_fn
 
 
-class TestMergeTools:
-    """Tests for merge_search_results tool."""
-
-    async def test_merge_simple_format(self):
-        """Test merging results in simple list format."""
-        from pubmed_search.presentation.mcp_server.tools.merge import (
-            register_merge_tools,
-        )
-
-        mcp = MagicMock()
-        searcher = AsyncMock()
-
-        # Capture the registered function
-        registered_fn = None
-
-        def capture_tool():
-            def decorator(fn):
-                nonlocal registered_fn
-                registered_fn = fn
-                return fn
-
-            return decorator
-
-        mcp.tool = capture_tool
-        register_merge_tools(mcp, searcher)
-
-        # Test the function
-        input_json = json.dumps([["12345", "67890"], ["67890", "11111"]])
-
-        result = registered_fn(input_json)
-        parsed = json.loads(result)
-
-        assert parsed["total_unique"] == 3
-        assert parsed["duplicates_removed"] == 1
-        assert "67890" in parsed["high_relevance"]["pmids"]
-
-    async def test_merge_query_id_format(self):
-        """Test merging results with query IDs."""
-        from pubmed_search.presentation.mcp_server.tools.merge import (
-            register_merge_tools,
-        )
-
-        mcp = MagicMock()
-        searcher = AsyncMock()
-
-        registered_fn = None
-
-        def capture_tool():
-            def decorator(fn):
-                nonlocal registered_fn
-                registered_fn = fn
-                return fn
-
-            return decorator
-
-        mcp.tool = capture_tool
-        register_merge_tools(mcp, searcher)
-
-        input_json = json.dumps(
-            [
-                {"query_id": "q1_title", "pmids": ["123", "456"]},
-                {"query_id": "q2_tiab", "pmids": ["456", "789"]},
-            ]
-        )
-
-        result = registered_fn(input_json)
-        parsed = json.loads(result)
-
-        assert parsed["total_unique"] == 3
-        assert "q1_title" in parsed["by_source"]
-        assert "q2_tiab" in parsed["by_source"]
-
-    async def test_merge_invalid_json(self):
-        """Test merging with invalid JSON."""
-        from pubmed_search.presentation.mcp_server.tools.merge import (
-            register_merge_tools,
-        )
-
-        mcp = MagicMock()
-        searcher = AsyncMock()
-
-        registered_fn = None
-
-        def capture_tool():
-            def decorator(fn):
-                nonlocal registered_fn
-                registered_fn = fn
-                return fn
-
-            return decorator
-
-        mcp.tool = capture_tool
-        register_merge_tools(mcp, searcher)
-
-        result = registered_fn("not valid json")
-        assert "Error" in result
-
-    async def test_merge_empty(self):
-        """Test merging empty results."""
-        from pubmed_search.presentation.mcp_server.tools.merge import (
-            register_merge_tools,
-        )
-
-        mcp = MagicMock()
-        searcher = AsyncMock()
-
-        registered_fn = None
-
-        def capture_tool():
-            def decorator(fn):
-                nonlocal registered_fn
-                registered_fn = fn
-                return fn
-
-            return decorator
-
-        mcp.tool = capture_tool
-        register_merge_tools(mcp, searcher)
-
-        result = registered_fn(json.dumps([]))
-        parsed = json.loads(result)
-
-        assert parsed["total_unique"] == 0
-
-
 class TestPicoTools:
     """Tests for agent-provided PICO handoff."""
 
-    async def test_parse_pico_structured(self):
+    async def test_validate_pico_plan_structured(self):
         """Structured PICO input should validate and return a runnable pipeline handoff."""
         from pubmed_search.presentation.mcp_server.tools.pico import register_pico_tools
 
@@ -199,9 +74,9 @@ class TestPicoTools:
         assert 'P: "ICU patients"' in parsed["pipeline"]
         assert 'O: "mortality"' in parsed["pipeline"]
 
-    async def test_parse_pico_missing_required_element_does_not_emit_pipeline(self):
+    async def test_validate_pico_plan_missing_required_element_does_not_emit_pipeline(self):
         """Incomplete structured handoff should ask the agent to revise instead of producing a broken pipeline."""
-        registered_fn = _registered_parse_pico()
+        registered_fn = _registered_validate_pico_plan()
 
         result = registered_fn(
             description="Is remimazolam better for ICU sedation?",
@@ -214,13 +89,11 @@ class TestPicoTools:
         assert parsed["validation"]["valid"] is False
         assert parsed["validation"]["missing_required"] == ["I"]
         assert "pipeline" not in parsed
-        assert parsed["next_tool_call"]["tool"] == "parse_pico"
+        assert parsed["next_tool_call"]["tool"] == "validate_pico_plan"
 
-    async def test_parse_pico_normalizes_invalid_runtime_options(self):
-        """Agent-facing runtime options should degrade safely instead of raising from int/YAML conversion."""
-        from pubmed_search.presentation.mcp_server.tools.unified_pipeline import _parse_pipeline_config
-
-        registered_fn = _registered_parse_pico()
+    async def test_validate_pico_plan_rejects_invalid_runtime_options(self):
+        """Invalid enums and scalar source syntax must fail instead of mutating the request."""
+        registered_fn = _registered_validate_pico_plan()
 
         result = registered_fn(
             description="How accurate is bedside ultrasound for diagnosing pneumonia?",
@@ -233,22 +106,31 @@ class TestPicoTools:
             limit="not-a-number",
         )
         parsed = json.loads(result)
+        assert parsed["success"] is False
+        assert "question_type" in parsed["error"]
+
+    async def test_validate_pico_plan_accepts_explicit_source_array(self):
+        from pubmed_search.presentation.mcp_server.tools.unified_pipeline import _parse_pipeline_config
+
+        registered_fn = _registered_validate_pico_plan()
+        parsed = json.loads(
+            registered_fn(
+                description="Therapy question",
+                p="adults",
+                i="intervention",
+                sources=["pubmed", "europe_pmc"],
+            )
+        )
         pipeline = _parse_pipeline_config(parsed["pipeline"])
+        assert parsed["sources"] == ["pubmed", "europe_pmc"]
+        assert pipeline["template_params"]["sources"] == ["pubmed", "europe_pmc"]
 
-        assert parsed["question_type"] == "diagnosis"
-        assert parsed["profile"] == "balanced"
-        assert "not-a-real-filter" not in parsed["suggested_filter"]
-        assert pipeline["params"]["sources"] == "pubmed"
-        assert pipeline["params"]["limit"] == 20
-        assert any("question_type" in warning for warning in parsed["normalization_warnings"])
-        assert any("profile" in warning for warning in parsed["normalization_warnings"])
-
-    async def test_parse_pico_pipeline_yaml_round_trips_special_characters(self):
+    async def test_validate_pico_plan_pipeline_yaml_round_trips_special_characters(self):
         """Returned pipeline YAML should remain parseable when labels/query fragments contain quotes, colons, or newlines."""
         from pubmed_search.application.pipeline.templates import build_pipeline_from_template
         from pubmed_search.presentation.mcp_server.tools.unified_pipeline import _parse_pipeline_config
 
-        registered_fn = _registered_parse_pico()
+        registered_fn = _registered_validate_pico_plan()
 
         result = registered_fn(
             description='Is "rapid sequence" induction safer in ED patients?',
@@ -260,15 +142,15 @@ class TestPicoTools:
         )
         parsed = json.loads(result)
         raw_config = _parse_pipeline_config(parsed["pipeline"])
-        cfg = build_pipeline_from_template("pico", raw_config["params"])
+        cfg = build_pipeline_from_template("pico", raw_config["template_params"])
         pico_step = next(step for step in cfg.steps if step.action == "pico")
 
-        assert raw_config["params"]["P"] == 'Adults with "severe" asthma: emergency department'
-        assert raw_config["params"]["O"] == "hypotension\noxygen desaturation"
+        assert raw_config["template_params"]["P"] == 'Adults with "severe" asthma: emergency department'
+        assert raw_config["template_params"]["O"] == "hypotension\noxygen desaturation"
         assert pico_step.params["P_query"] == '("Asthma"[MeSH] OR "status asthmaticus") AND adult[MeSH]'
         assert pico_step.params["O_query"] == '("Hypotension"[MeSH] OR "oxygen desaturation"[tiab])'
 
-    async def test_parse_pico_needs_parsing(self):
+    async def test_validate_pico_plan_needs_parsing(self):
         """Natural-language-only input should guide the agent instead of pretending to parse."""
         from pubmed_search.presentation.mcp_server.tools.pico import register_pico_tools
 
@@ -295,9 +177,9 @@ class TestPicoTools:
         assert "pico_schema" in parsed
         assert parsed["pico"] == {"P": "", "I": "", "C": "", "O": ""}
         assert "[Agent:" not in json.dumps(parsed)
-        assert parsed["next_tool_call"]["tool"] == "parse_pico"
+        assert parsed["next_tool_call"]["tool"] == "validate_pico_plan"
 
-    async def test_parse_pico_question_type_therapy(self):
+    async def test_validate_pico_plan_question_type_therapy(self):
         """Test inferring therapy question type."""
         from pubmed_search.presentation.mcp_server.tools.pico import register_pico_tools
 
@@ -321,7 +203,7 @@ class TestPicoTools:
 
         assert parsed["question_type"] == "therapy"
 
-    async def test_parse_pico_question_type_diagnosis(self):
+    async def test_validate_pico_plan_question_type_diagnosis(self):
         """Test inferring diagnosis question type."""
         from pubmed_search.presentation.mcp_server.tools.pico import register_pico_tools
 
@@ -345,7 +227,7 @@ class TestPicoTools:
 
         assert parsed["question_type"] == "diagnosis"
 
-    async def test_parse_pico_question_type_prognosis(self):
+    async def test_validate_pico_plan_question_type_prognosis(self):
         """Test inferring prognosis question type."""
         from pubmed_search.presentation.mcp_server.tools.pico import register_pico_tools
 
@@ -488,11 +370,23 @@ class TestExportTools:
         mcp.tool = capture_tool
         register_export_tools(mcp, searcher)
 
-        result = await registered_fns["prepare_export"](pmids="123", format="ris")
+        official_result = MagicMock(
+            success=True,
+            content="TY  - JOUR\nID  - 123\nER  -\n",
+            pmid_count=1,
+        )
+        exporter = MagicMock()
+        exporter.export_citations = AsyncMock(return_value=official_result)
+        with patch(
+            "pubmed_search.infrastructure.ncbi.citation_exporter.get_exporter",
+            return_value=exporter,
+        ):
+            result = await registered_fns["prepare_export"](pmids="123", format="ris")
         parsed = json.loads(result)
 
         assert parsed["status"] == "success"
         assert parsed["format"] == "ris"
+        exporter.export_citations.assert_awaited_once_with(["123"], format="ris")
 
     async def test_prepare_export_invalid_format(self):
         """Test prepare_export with invalid format."""
@@ -517,13 +411,9 @@ class TestExportTools:
 
         result = await registered_fns["prepare_export"](pmids="123", format="invalid")
 
-        # Result could be JSON or plain text error message
-        try:
-            parsed = json.loads(result)
-            assert parsed.get("status") == "error" or "unsupported" in str(parsed).lower()
-        except json.JSONDecodeError:
-            # Plain text error message
-            assert "unsupported" in result.lower() or "error" in result.lower()
+        parsed = json.loads(result)
+        assert parsed.get("success") is False
+        assert "not supported" in str(parsed).lower()
 
     # v0.1.21: get_article_fulltext_links has been integrated into get_fulltext
     @pytest.mark.skip(reason="v0.1.21: get_article_fulltext_links integrated into get_fulltext")

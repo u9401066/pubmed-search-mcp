@@ -5,6 +5,8 @@ from __future__ import annotations
 import tempfile
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
+import pytest
+
 
 class TestClientMissingLines:
     """Target client.py lines 153-165, 185, 207-210, etc."""
@@ -133,7 +135,7 @@ class TestDiscoveryMissingLines:
             mock_read.return_value = [{"LinkSetDb": []}]
             mock_elink.return_value = MagicMock()
 
-            results = await searcher.find_related_articles("12345")
+            results = await searcher.get_related_articles("12345")
 
             assert results == []
 
@@ -202,7 +204,7 @@ class TestSearchMissingLines:
         from pubmed_search.infrastructure.ncbi.search import SearchMixin
 
         class TestSearcher(SearchMixin):
-            def fetch_details(self, pmids):
+            async def fetch_details(self, pmids):
                 return [{"pmid": p} for p in pmids]
 
         searcher = TestSearcher()
@@ -214,19 +216,20 @@ class TestSearchMissingLines:
             mock_read.return_value = {"IdList": ["123"], "Count": "1"}
             mock_esearch.return_value = MagicMock()
 
-            results = await searcher.search("diabetes", article_type="Review", limit=5)
+            page = await searcher.search_page("diabetes", article_type="Review", limit=5)
 
-            assert isinstance(results, list)
+            assert page.items == [{"pmid": "123"}]
+            assert page.total == 1
 
     async def test_search_impact_strategy(self):
         """Test search with impact strategy."""
         from pubmed_search.infrastructure.ncbi.search import SearchMixin
 
         class TestSearcher(SearchMixin):
-            def fetch_details(self, pmids):
+            async def fetch_details(self, pmids):
                 return [{"pmid": p} for p in pmids]
 
-            def get_citation_metrics(self, pmids):
+            async def get_citation_metrics(self, pmids):
                 return {p: {"citation_count": 10} for p in pmids}
 
         searcher = TestSearcher()
@@ -238,9 +241,10 @@ class TestSearchMissingLines:
             mock_read.return_value = {"IdList": ["123", "456"], "Count": "2"}
             mock_esearch.return_value = MagicMock()
 
-            results = await searcher.search("test", strategy="impact", limit=5)
+            page = await searcher.search_page("test", strategy="impact", limit=5)
 
-            assert isinstance(results, list)
+            assert [item["pmid"] for item in page.items] == ["123", "456"]
+            assert page.total == 2
 
 
 class TestBaseMissingLines:
@@ -338,8 +342,9 @@ class TestICiteMissingLines:
     """Target icite.py remaining lines."""
 
     async def test_icite_error_handling(self):
-        """Test iCite error handling."""
+        """Test that iCite outages raise an explicit retryable error."""
         from pubmed_search.infrastructure.ncbi.icite import ICiteMixin
+        from pubmed_search.shared.exceptions import ServiceUnavailableError
 
         class TestSearcher(ICiteMixin):
             pass
@@ -347,14 +352,14 @@ class TestICiteMissingLines:
         searcher = TestSearcher()
         searcher._get_icite_cache().clear()
 
-        with patch("pubmed_search.infrastructure.ncbi.icite.httpx.AsyncClient") as mock_client_cls:
-            mock_client = AsyncMock()
-            mock_client.get = AsyncMock(side_effect=Exception("Network error"))
-            mock_client_cls.return_value = mock_client
-
-            # Should handle error gracefully
-            result = await searcher.get_citation_metrics(["123"])
-            assert result is not None and isinstance(result, dict)
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(side_effect=Exception("Network error"))
+        with patch(
+            "pubmed_search.infrastructure.ncbi.icite.get_shared_async_client",
+            return_value=mock_client,
+        ):
+            with pytest.raises(ServiceUnavailableError):
+                await searcher.get_citation_metrics(["123"])
 
 
 class TestCitationMissingLines:
@@ -379,27 +384,6 @@ class TestCitationMissingLines:
             mock_read.return_value = [{}]
             mock_elink.return_value = MagicMock()
 
-            results = await searcher.find_citing_articles("12345")
+            results = await searcher.get_citing_articles("12345")
 
             assert results == []
-
-
-class TestMergeToolsMissingLines:
-    """Target merge tool remaining paths."""
-
-    async def test_register_merge_tools(self):
-        """Test merge tools registration."""
-        from pubmed_search import LiteratureSearcher
-        from pubmed_search.presentation.mcp_server.tools.merge import (
-            register_merge_tools,
-        )
-
-        mock_mcp = Mock()
-        mock_mcp.tool = Mock(return_value=lambda f: f)
-
-        with patch("pubmed_search.infrastructure.ncbi.base.Entrez"):
-            searcher = LiteratureSearcher(email="test@example.com")
-
-            register_merge_tools(mock_mcp, searcher)
-
-            assert mock_mcp.tool.called

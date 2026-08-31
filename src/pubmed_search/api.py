@@ -1,22 +1,25 @@
-"""Stable Python SDK facade for PubMed Search MCP.
+"""Stable, typed Python SDK facade for PubMed Search MCP.
 
-This module is intentionally lightweight. Importing it must not initialize MCP,
-HTTP clients, pydantic settings, or source registries. Runtime dependencies are
-created lazily when a method is called, and tests/integrations can inject their
-own searcher or unified-search runner.
+The SDK composes the same application use case as MCP without importing the
+presentation package or producing MCP response strings, session records, and
+artifacts. Runtime clients are created lazily and owned by this client.
 """
 
 from __future__ import annotations
 
-import json
-from dataclasses import dataclass, field
-from typing import Any, Literal
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Literal
 
-from pubmed_search.application.unified import (
-    UnifiedSearchRunner,
-    UnifiedSearchRunRequest,
-    UnifiedSearchService,
-)
+from typing_extensions import Self
+
+from pubmed_search.application.search.source_models import SourceSearchPage
+
+if TYPE_CHECKING:
+    from pubmed_search.application.unified.planning import UnifiedSearchPlan
+    from pubmed_search.application.unified.request import UnifiedSearchRequest
+    from pubmed_search.application.unified.use_case import UnifiedSearchUseCase
+    from pubmed_search.domain.entities.article import UnifiedArticle
+    from pubmed_search.infrastructure.sources.runtime import SourceRuntime
 
 
 @dataclass(frozen=True)
@@ -28,66 +31,64 @@ class PubMedSearchConfig:
     data_dir: str | None = None
 
 
-@dataclass
+@dataclass(frozen=True, slots=True)
+class UnifiedSourceCount:
+    """Typed provider coverage row returned by the Python SDK."""
+
+    source: str
+    returned: int
+    total_available: int | None
+    status: str
+
+
+@dataclass(frozen=True, slots=True)
 class UnifiedSearchResult:
-    """Structured SDK result for `PubMedSearchClient.unified_search`."""
+    """Typed application result with no MCP serialization side effects."""
 
-    raw: str
-    output_format: Literal["markdown", "json", "toon"] = "json"
-    structured: dict[str, Any] = field(init=False)
+    request: UnifiedSearchRequest
+    plan: UnifiedSearchPlan
+    articles: tuple[UnifiedArticle, ...]
+    source_counts: tuple[UnifiedSourceCount, ...]
+    source_errors: tuple[dict[str, Any], ...]
+    result_filter_counts: dict[str, int]
 
-    def __post_init__(self) -> None:
-        if self.output_format != "json":
-            self.structured = {}
-            return
-        try:
-            parsed = json.loads(self.raw)
-        except json.JSONDecodeError as exc:
-            msg = "Unable to parse unified_search JSON response"
-            raise ValueError(msg) from exc
-        if not isinstance(parsed, dict):
-            msg = "Expected unified_search JSON response to be an object"
-            raise TypeError(msg)
-        self.structured = parsed
-
-    @property
-    def articles(self) -> list[dict[str, Any]]:
-        """Return article dictionaries from structured JSON/TOON output."""
-        results = self.structured.get("articles", self.structured.get("results", []))
-        return list(results) if isinstance(results, list) else []
-
-    @property
-    def source_counts(self) -> list[dict[str, Any]]:
-        """Return per-source count rows when present."""
-        counts = self.structured.get("source_counts", [])
-        return list(counts) if isinstance(counts, list) else []
-
-    @property
-    def artifact(self) -> dict[str, Any] | None:
-        """Return artifact locator summary when unified_search persisted one."""
-        artifact = self.structured.get("artifact_summary")
-        return dict(artifact) if isinstance(artifact, dict) else None
+    @classmethod
+    def from_outcome(cls, outcome: Any) -> UnifiedSearchResult:
+        """Project an application outcome into the SDK result contract."""
+        execution = outcome.execution
+        counts = tuple(
+            UnifiedSourceCount(
+                source=source,
+                returned=returned,
+                total_available=total_available,
+                status=execution.source_statuses.get(source, "unknown"),
+            )
+            for source, (returned, total_available) in sorted(execution.source_api_counts.items())
+        )
+        return cls(
+            request=outcome.request,
+            plan=outcome.plan,
+            articles=tuple(execution.ranked),
+            source_counts=counts,
+            source_errors=tuple(dict(error) for error in execution.source_errors),
+            result_filter_counts=dict(execution.result_filter_counts),
+        )
 
 
 class PubMedSearchClient:
-    """High-level Python client for package consumers.
-
-    The client deliberately exposes a smaller, stable contract than the MCP
-    tool registry. For full agent-oriented behavior, keep using the MCP server.
-    """
+    """High-level in-process client for package and notebook consumers."""
 
     def __init__(
         self,
         config: PubMedSearchConfig | None = None,
         *,
         searcher: Any | None = None,
-        unified_search_runner: UnifiedSearchRunner | None = None,
+        unified_search_use_case: UnifiedSearchUseCase | None = None,
     ) -> None:
         self.config = config or PubMedSearchConfig()
         self._searcher = searcher
-        self._unified_search_service = (
-            UnifiedSearchService(unified_search_runner) if unified_search_runner is not None else None
-        )
+        self._source_runtime: SourceRuntime | None = None
+        self._unified_search_use_case = unified_search_use_case
 
     @property
     def searcher(self) -> Any:
@@ -98,16 +99,18 @@ class PubMedSearchClient:
             self._searcher = LiteratureSearcher(email=self.config.email, api_key=self.config.api_key)
         return self._searcher
 
-    async def search_pubmed(
+    async def search_pubmed_page(
         self,
         query: str,
         *,
         limit: int = 10,
         **kwargs: Any,
-    ) -> list[dict[str, Any]]:
-        """Search PubMed directly through the low-level Entrez searcher."""
-        result = await self.searcher.search(query=query, limit=limit, **kwargs)
-        return list(result)
+    ) -> SourceSearchPage[dict[str, Any]]:
+        """Search PubMed through the sole typed provider-page contract."""
+        page = await self.searcher.search_page(query=query, limit=limit, **kwargs)
+        if not isinstance(page, SourceSearchPage) or page.source != "pubmed":
+            raise TypeError("PubMed searcher must return a pubmed SourceSearchPage")
+        return page
 
     async def fetch_details(self, pmids: list[str]) -> list[dict[str, Any]]:
         """Fetch PubMed article details by PMID."""
@@ -118,44 +121,89 @@ class PubMedSearchClient:
         self,
         query: str,
         *,
-        limit: int | str = 10,
+        limit: int = 10,
         sources: str | None = None,
         ranking: Literal["balanced", "impact", "recency", "quality"] = "balanced",
-        output_format: Literal["markdown", "json", "toon"] = "json",
         filters: str | None = None,
         options: str | None = None,
-        pipeline: str | None = None,
-        dry_run: bool = False,
-        stop_at: str = "",
     ) -> UnifiedSearchResult:
-        """Run unified_search and return an SDK result object.
+        """Execute the application use case and return typed search state."""
+        from pubmed_search.application.unified.request import normalize_unified_search_request
 
-        `output_format` defaults to JSON for Python callers. Markdown remains
-        available for callers that want the MCP-style human response.
-        """
-        service = self._get_unified_search_service()
-        raw = await service.search(
-            UnifiedSearchRunRequest(
-                query=query,
-                limit=limit,
-                sources=sources,
-                ranking=ranking,
-                output_format=output_format,
-                filters=filters,
-                options=options,
-                pipeline=pipeline,
-                dry_run=dry_run,
-                stop_at=stop_at,
-            )
+        request = normalize_unified_search_request(
+            query=query,
+            limit=limit,
+            sources=sources,
+            ranking=ranking,
+            output_format="json",
+            filters=filters,
+            options=options,
         )
-        return UnifiedSearchResult(raw=raw, output_format=output_format)
+        use_case = self._get_unified_search_use_case()
 
-    def _get_unified_search_service(self) -> UnifiedSearchService:
-        if self._unified_search_service is None:
-            from pubmed_search.presentation.mcp_server.tools.unified_runner import make_mcp_unified_search_runner
+        from pubmed_search.infrastructure.sources.runtime import bind_source_runtime
+        from pubmed_search.shared.async_utils import bind_shared_async_client_runtime
 
-            self._unified_search_service = UnifiedSearchService(make_mcp_unified_search_runner(self.searcher))
-        return self._unified_search_service
+        source_runtime = self._get_source_runtime()
+        with (
+            bind_source_runtime(source_runtime),
+            bind_shared_async_client_runtime(source_runtime.shared_http),
+        ):
+            outcome = await use_case.execute(request, progress=_ignore_progress)
+        return UnifiedSearchResult.from_outcome(outcome)
+
+    async def aclose(self) -> None:
+        """Close provider clients and HTTP pools owned by this SDK client."""
+        runtime = self._source_runtime
+        self._source_runtime = None
+        if runtime is not None:
+            await runtime.close()
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(self, *args: object) -> None:
+        await self.aclose()
+
+    def _get_source_runtime(self) -> SourceRuntime:
+        if self._source_runtime is None:
+            from pubmed_search.infrastructure.sources.runtime import SourceRuntime
+
+            self._source_runtime = SourceRuntime(contact_email=self.config.email)
+        return self._source_runtime
+
+    def _get_unified_search_use_case(self) -> UnifiedSearchUseCase:
+        if self._unified_search_use_case is None:
+            from pubmed_search.application.search.query_analyzer import QueryAnalyzer
+            from pubmed_search.application.unified.execution import execute_unified_search
+            from pubmed_search.application.unified.planning import build_unified_search_plan
+            from pubmed_search.application.unified.use_case import UnifiedSearchUseCase
+            from pubmed_search.infrastructure.pubtator.semantic_adapter import get_semantic_enhancer
+            from pubmed_search.infrastructure.sources.registry import get_source_registry
+            from pubmed_search.infrastructure.sources.unified_broker import UnifiedSourceBroker
+            from pubmed_search.infrastructure.sources.unified_enrichment import UnifiedEnrichmentAdapter
+
+            self._unified_search_use_case = UnifiedSearchUseCase(
+                planner=build_unified_search_plan,
+                executor=execute_unified_search,
+                source_broker=UnifiedSourceBroker(self.searcher),
+                enrichment=UnifiedEnrichmentAdapter(),
+                analyzer_factory=QueryAnalyzer,
+                enhancer_factory=get_semantic_enhancer,
+                source_registry_factory=get_source_registry,
+            )
+        return self._unified_search_use_case
 
 
-__all__ = ["PubMedSearchClient", "PubMedSearchConfig", "UnifiedSearchResult"]
+async def _ignore_progress(progress: float, total: float, message: str) -> None:
+    """SDK progress adapter used when the caller has no reporting channel."""
+    del progress, total, message
+
+
+__all__ = [
+    "PubMedSearchClient",
+    "PubMedSearchConfig",
+    "SourceSearchPage",
+    "UnifiedSearchResult",
+    "UnifiedSourceCount",
+]

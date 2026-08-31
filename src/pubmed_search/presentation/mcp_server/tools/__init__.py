@@ -1,22 +1,17 @@
-"""
-PubMed Search MCP tool registration.
-
-The package exposes the same registrar functions as before, but loads category
-modules only when a registrar is requested. This keeps server/package imports
-from pulling the entire tool tree into memory.
-"""
+"""Canonical lazy registration for every PubMed Search MCP tool category."""
 
 from __future__ import annotations
 
 from importlib import import_module
 from typing import TYPE_CHECKING, Any
 
-from ._common import set_session_manager, set_strategy_generator
-
 if TYPE_CHECKING:
     from mcp.server.mcpserver import MCPServer
 
+    from pubmed_search.application.image_search import ImageSearchService
     from pubmed_search.infrastructure.ncbi import LiteratureSearcher
+
+    from .pipeline_tools import PipelineToolRuntime
 
 _TOOL_REGISTRARS: dict[str, tuple[str, str]] = {
     "register_chronicle_tools": (
@@ -79,9 +74,19 @@ def __dir__() -> list[str]:
     return sorted([*globals(), *_TOOL_REGISTRARS])
 
 
-def register_all_tools(mcp: MCPServer, searcher: LiteratureSearcher) -> None:
-    """Register all primary MCP tools."""
-    _load_registrar("register_unified_search_tools")(mcp, searcher)
+def register_all_tools(
+    mcp: MCPServer,
+    searcher: LiteratureSearcher,
+    *,
+    image_search_service: ImageSearchService,
+    pipeline_runtime: PipelineToolRuntime,
+) -> None:
+    """Register all primary MCP tools with server-scoped dependencies."""
+    _load_registrar("register_unified_search_tools")(
+        mcp,
+        searcher,
+        pipeline_runtime=pipeline_runtime,
+    )
     _load_registrar("register_pico_tools")(mcp)
     _load_registrar("register_strategy_tools")(mcp, searcher)
     _load_registrar("register_discovery_tools")(mcp, searcher)
@@ -93,16 +98,14 @@ def register_all_tools(mcp: MCPServer, searcher: LiteratureSearcher) -> None:
     _load_registrar("register_citation_tree_tools")(mcp, searcher)
     _load_registrar("register_chronicle_tools")(mcp, searcher)
     _load_registrar("register_vision_tools")(mcp)
-    _load_registrar("register_openurl_tools")(mcp)
+    _load_registrar("register_openurl_tools")(mcp, searcher)
     _load_registrar("register_icd_tools")(mcp)
-    _load_registrar("register_image_search_tools")(mcp)
-    _load_registrar("register_pipeline_tools")(mcp)
+    _load_registrar("register_image_search_tools")(mcp, image_search_service)
+    _load_registrar("register_pipeline_tools")(mcp, runtime=pipeline_runtime)
 
 
 __all__ = [
     "register_all_tools",
-    "set_session_manager",
-    "set_strategy_generator",
     "register_chronicle_tools",
     "register_citation_tree_tools",
     "register_discovery_tools",

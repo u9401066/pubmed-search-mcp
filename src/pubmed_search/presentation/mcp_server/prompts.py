@@ -114,7 +114,7 @@ Example: "heart attack" → "Myocardial Infarction"[MeSH] → finds all related 
 
 ### Step 1: Agent Extracts PICO, Then Validates The Handoff
 ```python
-parse_pico(
+validate_pico_plan(
     description="{clinical_question}",
     p="<Population extracted by the agent>",
     i="<Intervention/exposure extracted by the agent>",
@@ -130,7 +130,7 @@ Returns:
 - question_type: therapy/diagnosis/prognosis/etiology
 - pipeline: ready-to-run `template: pico` YAML for `unified_search`
 
-When only `description` is available, `parse_pico` returns the schema the agent
+When only `description` is available, `validate_pico_plan` returns the schema the agent
 must fill. It does not semantically decompose the clinical question by itself.
 
 ### Step 2: Generate Materials for Each PICO Element (PARALLEL!)
@@ -163,8 +163,8 @@ Based on question_type:
 ```python
 analyze_search_query(query=<combined_query>)
 unified_search(query=<combined_query>, ranking="quality")
-# Or execute the structured backend pipeline returned by parse_pico:
-unified_search(query="{clinical_question}", pipeline="<pipeline from parse_pico>")
+# Or execute the structured backend pipeline returned by validate_pico_plan:
+unified_search(query="{clinical_question}", pipeline="<pipeline from validate_pico_plan>")
 ```
 
 ## Example Agent-Provided PICO Handoff:
@@ -221,8 +221,8 @@ get_article_references(pmid="{pmid}", limit=30)
 ```python
 build_citation_tree(pmid="{pmid}", depth=2, direction="both", output_format="mermaid")
 ```
-- Builds complete research context map
-- Best for: Literature review, understanding research landscape
+- Builds a citation-network map around one seed paper
+- Best for: Inspecting forward/backward citation relationships
 
 ## Recommended Flow:
 1. Start with `find_related_articles` for quick exploration
@@ -232,7 +232,7 @@ build_citation_tree(pmid="{pmid}", depth=2, direction="both", output_format="mer
 
 ## Get Full Text (if needed):
 ```python
-get_fulltext(pmid="{pmid}", extended_sources=True)
+get_fulltext(source={{"kind":"pmid","value":"{pmid}"}}, extended_sources=True)
 ```
 """
 
@@ -346,12 +346,16 @@ prepare_export(pmids="12345678,87654321,11111111", format="bibtex", source="loca
 
 ## Retrieve Full Text for a Selected Paper:
 ```python
-get_fulltext(pmid="12345678", sections="introduction,methods,results", extended_sources=True)
+get_fulltext(
+    source={"kind":"pmid","value":"12345678"},
+    sections="introduction,methods,results",
+    extended_sources=True,
+)
 ```
 
 ## If OA Is Not Available:
 ```python
-get_institutional_link(pmid="12345678")
+get_institutional_link(source={"kind":"pmid","value":"12345678"})
 ```
 """
 
@@ -380,15 +384,15 @@ unified_search(
 
 ## Strategy 2: Retrieve Full Text for a Known PMID / DOI / PMCID
 ```python
-get_fulltext(identifier="PMC7096777")
-get_fulltext(pmid="12345678", extended_sources=True)
-get_fulltext(doi="10.1234/example", extended_sources=True)
+get_fulltext(source={{"kind":"pmcid","value":"PMC7096777"}})
+get_fulltext(source={{"kind":"pmid","value":"12345678"}}, extended_sources=True)
+get_fulltext(source={{"kind":"doi","value":"10.1097/ALN.0000000000003599"}}, extended_sources=True)
 ```
 - Automatically tries Europe PMC, Unpaywall, CORE, and extended sources when enabled
 
 ## Strategy 3: Fall Back to Institutional Access
 ```python
-get_institutional_link(pmid="12345678")
+get_institutional_link(source={{"kind":"pmid","value":"12345678"}})
 ```
 - Use when the paper is not open access but the institution may subscribe
 
@@ -399,7 +403,7 @@ get_institutional_link(pmid="12345678")
 
 ## Get Full Text Content:
 ```python
-get_fulltext(pmcid="PMC...", sections="all")
+get_fulltext(source={{"kind":"pmcid","value":"PMC7096777"}}, sections="all")
 ```
 """
 
@@ -474,13 +478,13 @@ Only keep high-impact papers.
 ### 4.1 Get Full Texts (Europe PMC)
 ```python
 # For papers with PMC IDs:
-get_fulltext(pmcid="PMC...", sections="introduction,discussion")
+get_fulltext(source={{"kind":"pmcid","value":"PMC7096777"}}, sections="introduction,discussion")
 ```
 
 ### 4.2 Extract Key Entities
 ```python
-get_text_mined_terms(pmid="...", semantic_type="GENE_PROTEIN")
-get_text_mined_terms(pmid="...", semantic_type="DISEASE")
+get_text_mined_terms(source={{"kind":"pmid","value":"12345678"}}, semantic_type="GENE_PROTEIN")
+get_text_mined_terms(source={{"kind":"pmid","value":"12345678"}}, semantic_type="DISEASE")
 ```
 
 ## Phase 5: Export
@@ -504,6 +508,9 @@ prepare_export(pmids="<final_list>", format="ris", include_abstract=True)
 
         Use when: User wants to extract genes, diseases, chemicals mentioned in papers.
         """
+        normalized_identifier = pmid_or_pmcid.strip()
+        source_kind = "pmcid" if normalized_identifier.upper().startswith("PMC") else "pmid"
+        source_value = normalized_identifier.upper() if source_kind == "pmcid" else normalized_identifier
         return f"""# Text Mining Workflow
 
 ## Target Paper: {pmid_or_pmcid}
@@ -512,31 +519,31 @@ prepare_export(pmids="<final_list>", format="ris", include_abstract=True)
 
 ### Gene/Protein Mentions
 ```python
-get_text_mined_terms(pmid="{pmid_or_pmcid}", semantic_type="GENE_PROTEIN")
+get_text_mined_terms(source={{"kind":"{source_kind}","value":"{source_value}"}}, semantic_type="GENE_PROTEIN")
 ```
 Returns: Gene names, positions in text, confidence scores
 
 ### Disease Mentions
 ```python
-get_text_mined_terms(pmid="{pmid_or_pmcid}", semantic_type="DISEASE")
+get_text_mined_terms(source={{"kind":"{source_kind}","value":"{source_value}"}}, semantic_type="DISEASE")
 ```
 Returns: Disease names with MeSH/DOID mappings
 
 ### Chemical/Drug Mentions
 ```python
-get_text_mined_terms(pmid="{pmid_or_pmcid}", semantic_type="CHEMICAL")
+get_text_mined_terms(source={{"kind":"{source_kind}","value":"{source_value}"}}, semantic_type="CHEMICAL")
 ```
 Returns: Chemical names with ChEBI/PubChem IDs
 
 ### Organism Mentions
 ```python
-get_text_mined_terms(pmid="{pmid_or_pmcid}", semantic_type="ORGANISM")
+get_text_mined_terms(source={{"kind":"{source_kind}","value":"{source_value}"}}, semantic_type="ORGANISM")
 ```
 Returns: Species names with NCBI Taxonomy IDs
 
 ### All Annotations
 ```python
-get_text_mined_terms(pmid="{pmid_or_pmcid}")  # No filter = all types
+get_text_mined_terms(source={{"kind":"{source_kind}","value":"{source_value}"}})  # No filter = all types
 ```
 
 ## Cross-Reference Workflow:

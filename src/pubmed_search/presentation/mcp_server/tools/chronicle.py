@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 from mcp.server.mcpserver import Context  # noqa: TC002 - MCPServer needs runtime access for tool context injection
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from pubmed_search.application.chronicle import (
     CHRONICLE_READ_ORDER,
@@ -39,6 +39,7 @@ from pubmed_search.application.chronicle import (
 )
 from pubmed_search.application.timeline import LandmarkScorer, MilestoneDetector, TimelineBuilder
 from pubmed_search.presentation.mcp_server.tenancy import durable_storage_denied
+from pubmed_search.shared.markdown import escape_markdown_code, escape_markdown_text
 from pubmed_search.shared.settings import DEFAULT_DATA_DIR
 
 from ._common import ResponseFormatter, get_last_search_pmids, get_session_manager
@@ -64,8 +65,6 @@ BUILD_OUTPUTS = (
     "evidence",
     "milestones",
     "mermaid",
-    "timeline_mermaid",
-    "mindmap",
     "narrative",
 )
 
@@ -82,28 +81,97 @@ ChronicleOutput = Literal[
     "evidence",
     "milestones",
     "mermaid",
-    "timeline_mermaid",
-    "mindmap",
     "narrative",
 ]
-ChronicleReadAction = Literal["load", "list", "diff", "narrate", "milestones", "compare"]
 NarrativeMode = Literal["brief", "full"]
 
 MaxEvents = Annotated[int, Field(ge=1, le=200, description="Maximum Chronicle events")]
 PublicationYear = Annotated[int, Field(ge=1000, le=2100, description="Four-digit publication year")]
-PositiveRevision = Annotated[int, Field(ge=1, description="Positive Chronicle revision")]
+PositiveRevision = Annotated[int, Field(ge=1, le=2_000_000_000, description="Positive Chronicle revision")]
 ListLimit = Annotated[int, Field(ge=1, le=100, description="Maximum Chronicle records")]
-TopicText = Annotated[str, Field(min_length=1, max_length=500)]
+TopicText = Annotated[str, Field(min_length=1, max_length=500, pattern=r".*\S.*")]
 ChronicleIdText = Annotated[
     str,
     Field(min_length=1, max_length=200, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]*$"),
 ]
 
+
+class _StrictChronicleReadRequest(BaseModel):
+    """Base contract for one schema-exact Chronicle read operation."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+
+class ChronicleLoadRequest(_StrictChronicleReadRequest):
+    action: Literal["load"]
+    chronicle_id: ChronicleIdText
+    revision: PositiveRevision | None = None
+    output: ChronicleOutput = "summary"
+
+
+class ChronicleListRequest(_StrictChronicleReadRequest):
+    action: Literal["list"]
+    topic: TopicText | None = None
+    limit: ListLimit = 20
+
+
+class ChronicleDiffRequest(_StrictChronicleReadRequest):
+    action: Literal["diff"]
+    chronicle_id: ChronicleIdText
+    from_revision: PositiveRevision
+    to_revision: PositiveRevision | None = None
+
+
+class ChronicleNarrateRequest(_StrictChronicleReadRequest):
+    action: Literal["narrate"]
+    chronicle_id: ChronicleIdText
+    revision: PositiveRevision | None = None
+    mode: NarrativeMode = "brief"
+
+
+class ChronicleMilestonesRequest(_StrictChronicleReadRequest):
+    action: Literal["milestones"]
+    chronicle_id: ChronicleIdText
+    revision: PositiveRevision | None = None
+
+
+CompareTopics = Annotated[list[TopicText], Field(min_length=2, max_length=5)]
+CompareChronicleIds = Annotated[list[ChronicleIdText], Field(min_length=2, max_length=5)]
+
+
+class ChronicleTopicsSelection(_StrictChronicleReadRequest):
+    kind: Literal["topics"]
+    values: CompareTopics
+
+
+class ChronicleIdsSelection(_StrictChronicleReadRequest):
+    kind: Literal["chronicle_ids"]
+    values: CompareChronicleIds
+
+
+ChronicleCompareSelection = Annotated[
+    ChronicleTopicsSelection | ChronicleIdsSelection,
+    Field(discriminator="kind"),
+]
+
+
+class ChronicleCompareRequest(_StrictChronicleReadRequest):
+    action: Literal["compare"]
+    selection: ChronicleCompareSelection
+
+
+ChronicleReadRequest = Annotated[
+    ChronicleLoadRequest
+    | ChronicleListRequest
+    | ChronicleDiffRequest
+    | ChronicleNarrateRequest
+    | ChronicleMilestonesRequest
+    | ChronicleCompareRequest,
+    Field(discriminator="action"),
+]
+
 #: How many spine entries the default summary shows.
 _SPINE_LIMIT = 12
-
-#: Maximum topics/chronicles accepted by ``action="compare"``.
-_MAX_COMPARE = 5
 
 #: Maximum explicit evidence set accepted in one request.
 _MAX_PMIDS = 500
@@ -169,21 +237,19 @@ def _resolve_pmids(pmids: str | None) -> list[str]:
     return [value.lstrip("0") for value in tokens]
 
 
-def _split_csv(value: str | None) -> list[str]:
-    """Split a comma-separated argument into trimmed, non-empty parts."""
-    return [part.strip() for part in (value or "").split(",") if part.strip()]
-
-
 def _build_response_format(output: str) -> str:
     """Return the formatter mode appropriate for a Chronicle build output."""
     return "json" if output in _STRUCTURED_OUTPUTS else "markdown"
 
 
-def _read_response_format(action: str, output: str) -> str:
+def _read_response_format(request: ChronicleReadRequest) -> str:
     """Keep errors machine-readable for read actions whose success is JSON."""
-    if action in {"list", "diff", "milestones", "compare"}:
+    if isinstance(
+        request,
+        ChronicleListRequest | ChronicleDiffRequest | ChronicleMilestonesRequest | ChronicleCompareRequest,
+    ):
         return "json"
-    if action == "load" and output in _STRUCTURED_OUTPUTS:
+    if isinstance(request, ChronicleLoadRequest) and request.output in _STRUCTURED_OUTPUTS:
         return "json"
     return "markdown"
 
@@ -224,36 +290,6 @@ def _optional_string_error(name: str, value: Any, *, max_length: int | None = No
     return None
 
 
-def _forbid_extra_tool_arguments(mcp: MCPServer, *tool_names: str) -> None:
-    """Make the two Chronicle argument models reject unknown MCP properties.
-
-    MCPServer currently has no decorator-level model-config hook.  Keep this
-    post-registration adjustment local to Chronicle rather than changing the
-    argument behavior of every server tool.
-    """
-    manager = getattr(mcp, "_tool_manager", None)
-    get_tool = getattr(manager, "get_tool", None)
-    if not callable(get_tool):  # pragma: no cover - compatibility with a future MCPServer implementation
-        logger.warning("Could not enable strict extra-property rejection for Chronicle tools")
-        return
-    for tool_name in tool_names:
-        tool = get_tool(tool_name)
-        if tool is None:  # pragma: no cover - registration invariant
-            logger.warning("Could not find registered Chronicle tool %s for schema hardening", tool_name)
-            continue
-        argument_model = tool.fn_metadata.arg_model
-        if not isinstance(argument_model, type) or not issubclass(argument_model, BaseModel):
-            # Lightweight MCP doubles used by embedders may expose a callable
-            # ``get_tool`` without constructing MCP SDK 2's Pydantic metadata.
-            # Registration must remain compatible with those hosts; the real
-            # MCP SDK 2 path below is still hardened and covered by protocol tests.
-            logger.debug("Skipping Chronicle schema hardening for non-Pydantic tool %s", tool_name)
-            continue
-        argument_model.model_config["extra"] = "forbid"
-        argument_model.model_rebuild(force=True)
-        tool.parameters = argument_model.model_json_schema(by_alias=True)
-
-
 def _artifact_failure() -> dict[str, str]:
     """Return the structured marker used when optional artifact persistence fails."""
     return {
@@ -277,16 +313,16 @@ def _format_summary(snapshot: ChronicleSnapshot) -> str:
         else str(lineage_basis)
     )
     lines = [
-        f"# Research Chronicle: {snapshot.topic}",
+        f"# Research Chronicle: {escape_markdown_text(snapshot.topic)}",
         "",
-        f"- Chronicle ID: `{snapshot.chronicle_id}`",
-        f"- Revision: {snapshot.revision} (mode: {snapshot.input_scope.mode})",
+        f"- Chronicle ID: `{escape_markdown_code(snapshot.chronicle_id)}`",
+        f"- Revision: {snapshot.revision} (mode: {escape_markdown_text(snapshot.input_scope.mode)})",
         f"- Entries: {len(snapshot.entries)} across {len(snapshot.branches)} branches",
         f"- Evidence articles: {len(snapshot.evidence_articles)}",
         f"- Year span: {span}",
         f"- Graph: {len(snapshot.graph.nodes)} nodes, {len(snapshot.graph.edges)} edges",
-        f"- Lineage basis: {lineage_label}",
-        f"- Audit: **{snapshot.audit.status}**",
+        f"- Lineage basis: {escape_markdown_text(lineage_label)}",
+        f"- Audit: **{escape_markdown_text(snapshot.audit.status)}**",
         "",
     ]
 
@@ -295,8 +331,11 @@ def _format_summary(snapshot: ChronicleSnapshot) -> str:
         lines.append("## Chronological Spine")
         lines.append("")
         for entry in spine[:_SPINE_LIMIT]:
-            branch_note = f" ({entry.branch_id})" if entry.branch_id else ""
-            lines.append(f"- **{entry.time_start}** {entry.title}{branch_note} `[{entry.entry_id}]`")
+            branch_note = f" ({escape_markdown_text(entry.branch_id)})" if entry.branch_id else ""
+            lines.append(
+                f"- **{escape_markdown_text(entry.time_start)}** {escape_markdown_text(entry.title)}"
+                f"{branch_note} `[{escape_markdown_code(entry.entry_id)}]`"
+            )
         if len(spine) > _SPINE_LIMIT:
             lines.append(f'- _{len(spine) - _SPINE_LIMIT} further entries; use `output="timeline"` for all._')
         lines.append("")
@@ -306,7 +345,7 @@ def _format_summary(snapshot: ChronicleSnapshot) -> str:
         lines.append("")
         for branch in snapshot.branches:
             if branch.entry_ids:
-                lines.append(f"- **{branch.name}** \u2014 {len(branch.entry_ids)} entries")
+                lines.append(f"- **{escape_markdown_text(branch.name)}** \u2014 {len(branch.entry_ids)} entries")
         lines.append("")
 
     highlights = sorted(snapshot.entries, key=landmark_rank_key)[:5]
@@ -314,26 +353,32 @@ def _format_summary(snapshot: ChronicleSnapshot) -> str:
         lines.append("## Evidence-informed Highlights")
         lines.append("")
         for entry in highlights:
-            citations = ", ".join(a.evidence_id for a in entry.evidence.all_articles) or "no evidence"
+            citations = ", ".join(escape_markdown_code(a.evidence_id) for a in entry.evidence.all_articles)
+            citations = citations or "no evidence"
             importance = landmark_importance_score(entry)
             ranking_note = (
                 f"landmark importance {importance:.2f}"
                 if importance is not None
                 else f"citation-count fallback {entry_max_citations(entry)}"
             )
-            lines.append(f"- {entry.summary_claim} `[{entry.entry_id}; {citations}; {ranking_note}]`")
+            lines.append(
+                f"- {escape_markdown_text(entry.summary_claim)} "
+                f"`[{escape_markdown_code(entry.entry_id)}; {citations}; {escape_markdown_code(ranking_note)}]`"
+            )
         lines.append("")
 
     if snapshot.audit.warnings:
         lines.append("## Completeness Caveats")
         lines.append("")
-        lines.extend(f"- {warning}" for warning in snapshot.audit.warnings)
+        lines.extend(f"- {escape_markdown_text(warning)}" for warning in snapshot.audit.warnings)
         lines.append("")
 
     lines.append(
-        f'Next: `read_research_chronicle(chronicle_id="{snapshot.chronicle_id}", output="mermaid")` '
+        'Next: `read_research_chronicle(request={"action":"load",'
+        f'"chronicle_id":"{snapshot.chronicle_id}","output":"mermaid"}})` '
         "for the horizontal time-spine/lineage map, or "
-        f'`read_research_chronicle(action="diff", chronicle_id="{snapshot.chronicle_id}", from_revision=1)`'
+        '`read_research_chronicle(request={"action":"diff",'
+        f'"chronicle_id":"{snapshot.chronicle_id}","from_revision":1}})`'
     )
     return "\n".join(lines)
 
@@ -357,7 +402,7 @@ def _with_artifact_note(
 ) -> str:
     """Keep outputs parseable while exposing artifact success or failure."""
     note = artifact_markdown_note(artifact)
-    if output in {"mermaid", "timeline_mermaid", "mindmap"}:
+    if output == "mermaid":
         rendered = _markdown_response_body(body, output=output) + note
         if persistence_failed:
             rendered += "\n\n> ⚠️ The Chronicle revision was saved, but its session artifact could not be persisted."
@@ -381,16 +426,20 @@ def _with_artifact_note(
 
 def _markdown_response_body(body: str, *, output: str) -> str:
     """Wrap Mermaid renderings for Markdown artifacts without altering source files."""
-    return f"```mermaid\n{body}\n```" if output in {"mermaid", "timeline_mermaid", "mindmap"} else body
+    return f"```mermaid\n{body}\n```" if output == "mermaid" else body
 
 
-def _persist_chronicle_artifact(snapshot: ChronicleSnapshot, *, response_markdown: str) -> dict[str, Any] | None:
+async def _persist_chronicle_artifact(
+    snapshot: ChronicleSnapshot,
+    *,
+    response_markdown: str,
+) -> dict[str, Any] | None:
     """Persist the full chronicle revision as a session artifact."""
     files = ChronicleService.build_artifact_files(snapshot, narrative=narrate_chronicle(snapshot, mode="full"))
     files["response.md"] = response_markdown
     raw_lineage = snapshot.metadata.get("lineage_diagnostics")
     lineage_basis = raw_lineage.get("basis") if isinstance(raw_lineage, dict) else None
-    return persist_tool_artifact(
+    return await persist_tool_artifact(
         tool="build_research_chronicle",
         kind="research_chronicle",
         files=files,
@@ -474,8 +523,7 @@ def register_chronicle_tools(mcp: MCPServer, searcher: LiteratureSearcher) -> No
             output: "summary" (default compact Markdown with the chronological
                     spine), "json", "chronicle_map", "timeline", "tree",
                     "graph", "evidence", "milestones", "mermaid" (horizontal
-                    time spine with lineage branches), "timeline_mermaid"
-                    (legacy flat timeline), "mindmap", or "narrative".
+                    time spine with lineage branches), or "narrative".
                     "json", "chronicle_map", "timeline", "tree", "graph",
                     "evidence", and "milestones" return JSON; the rest return
                     Markdown.
@@ -614,13 +662,16 @@ def register_chronicle_tools(mcp: MCPServer, searcher: LiteratureSearcher) -> No
             persistence_expected = artifact_persistence_enabled()
             persistence_failed = False
             try:
-                artifact = _persist_chronicle_artifact(
+                artifact = await _persist_chronicle_artifact(
                     snapshot,
                     response_markdown=_markdown_response_body(body, output=output),
                 )
                 persistence_failed = persistence_expected and artifact is None
-            except Exception:
-                logger.exception("Chronicle revision saved, but artifact preparation or persistence failed")
+            except Exception as exc:
+                logger.warning(
+                    "Chronicle revision saved, but artifact preparation or persistence failed (%s)",
+                    type(exc).__name__,
+                )
                 artifact = None
                 persistence_failed = True
             return _with_artifact_note(
@@ -631,16 +682,17 @@ def register_chronicle_tools(mcp: MCPServer, searcher: LiteratureSearcher) -> No
             )
 
         except ValueError as exc:
+            logger.warning("Chronicle build request failed (%s)", type(exc).__name__)
             return ResponseFormatter.error(
-                error=str(exc),
+                error="Research Chronicle request could not be completed",
                 suggestion="Check the topic, PMIDs, and output format",
                 tool_name="build_research_chronicle",
                 output_format=response_format,
             )
         except Exception as exc:
-            logger.exception("Chronicle build failed")
+            logger.warning("Chronicle build failed (%s)", type(exc).__name__)
             return ResponseFormatter.error(
-                error=str(exc),
+                error="Research Chronicle evidence retrieval or persistence failed",
                 suggestion="Try a narrower topic or check network connectivity",
                 tool_name="build_research_chronicle",
                 output_format=response_format,
@@ -648,17 +700,7 @@ def register_chronicle_tools(mcp: MCPServer, searcher: LiteratureSearcher) -> No
 
     @mcp.tool()
     async def read_research_chronicle(
-        action: ChronicleReadAction = "load",
-        chronicle_id: ChronicleIdText | None = None,
-        revision: PositiveRevision | None = None,
-        from_revision: PositiveRevision | None = None,
-        to_revision: PositiveRevision | None = None,
-        topic: TopicText | None = None,
-        topics: Annotated[str, Field(max_length=2500)] | None = None,
-        chronicle_ids: Annotated[str, Field(max_length=1100)] | None = None,
-        output: ChronicleOutput = "summary",
-        mode: NarrativeMode = "brief",
-        limit: ListLimit = 20,
+        request: ChronicleReadRequest,
         ctx: Context | None = None,
     ) -> str:
         """
@@ -683,119 +725,22 @@ def register_chronicle_tools(mcp: MCPServer, searcher: LiteratureSearcher) -> No
         - "compare": compare 2-5 chronicles side by side, including the evidence
           articles they share
 
-        Args:
-            action: "load", "list", "diff", "narrate", "milestones", or "compare".
-            chronicle_id: Chronicle to read. Required for load/diff/narrate/milestones.
-            revision: Revision to load/narrate/analyze. Defaults to the latest.
-            from_revision: Earlier revision for "diff".
-            to_revision: Later revision for "diff". Defaults to the latest.
-            topic: Case-insensitive topic filter for "list".
-            topics: Comma-separated topics for "compare" (resolved to chronicle
-                    IDs; each topic must already have a chronicle).
-            chronicle_ids: Comma-separated chronicle IDs for "compare".
-            output: For "load": "summary", "json", "chronicle_map", "timeline",
-                    "tree", "graph", "evidence", "milestones", "mermaid",
-                    "timeline_mermaid", "mindmap", or "narrative".
-            mode: For "narrate": "brief" (top claims per branch) or "full".
-            limit: Maximum records returned by "list".
+        The required ``request`` discriminator makes invalid field combinations
+        unrepresentable. ``compare`` takes one typed ``selection`` containing
+        either 2-5 topic strings or 2-5 Chronicle IDs.
 
         Returns:
             Markdown or JSON text depending on the action and output format.
 
         Examples:
-            read_research_chronicle(action="list")
-            read_research_chronicle(chronicle_id="remimazolam-9f2b1c4d", output="tree")
-            read_research_chronicle(action="diff", chronicle_id="remimazolam-9f2b1c4d", from_revision=1)
-            read_research_chronicle(action="narrate", chronicle_id="remimazolam-9f2b1c4d", mode="full")
-            read_research_chronicle(action="milestones", chronicle_id="remimazolam-9f2b1c4d")
-            read_research_chronicle(action="compare", topics="remimazolam,propofol")
+            read_research_chronicle(request={"action":"list"})
+            read_research_chronicle(request={"action":"load","chronicle_id":"remimazolam-9f2b1c4d","output":"tree"})
+            read_research_chronicle(request={"action":"diff","chronicle_id":"remimazolam-9f2b1c4d","from_revision":1})
+            read_research_chronicle(request={"action":"narrate","chronicle_id":"remimazolam-9f2b1c4d","mode":"full"})
+            read_research_chronicle(request={"action":"milestones","chronicle_id":"remimazolam-9f2b1c4d"})
+            read_research_chronicle(request={"action":"compare","selection":{"kind":"topics","values":["remimazolam","propofol"]}})
         """
-        fallback_response_format = "json" if isinstance(output, str) and output == "json" else "markdown"
-        if not isinstance(action, str):
-            return ResponseFormatter.error(
-                error="action must be a string",
-                suggestion=f"Choose one of: {', '.join(READ_ACTIONS)}",
-                tool_name="read_research_chronicle",
-                output_format=fallback_response_format,
-            )
-        if not isinstance(output, str):
-            return ResponseFormatter.error(
-                error="output must be a string",
-                suggestion=f"Choose one of: {', '.join(BUILD_OUTPUTS)}",
-                tool_name="read_research_chronicle",
-            )
-        if action not in READ_ACTIONS:
-            return ResponseFormatter.error(
-                error=f"Unsupported action: {action!r}",
-                suggestion=f"Choose one of: {', '.join(READ_ACTIONS)}",
-                tool_name="read_research_chronicle",
-                output_format=fallback_response_format,
-            )
-
-        response_format = _read_response_format(action, output)
-        input_error_format = "json" if output == "json" else response_format
-        for name, string_value, max_length in (
-            ("chronicle_id", chronicle_id, 200),
-            ("topic", topic, 500),
-            ("topics", topics, 2_500),
-            ("chronicle_ids", chronicle_ids, 1_100),
-        ):
-            string_error = _optional_string_error(name, string_value, max_length=max_length)
-            if string_error:
-                return ResponseFormatter.error(
-                    error=string_error,
-                    suggestion="Pass text values exactly as documented by the tool schema",
-                    tool_name="read_research_chronicle",
-                    output_format=input_error_format,
-                )
-        if not isinstance(mode, str):
-            return ResponseFormatter.error(
-                error="mode must be a string",
-                suggestion="Choose 'brief' or 'full'",
-                tool_name="read_research_chronicle",
-                output_format=input_error_format,
-            )
-        if action == "load" and output not in BUILD_OUTPUTS:
-            return ResponseFormatter.error(
-                error=f"Unsupported output: {output!r}",
-                suggestion=f"Choose one of: {', '.join(BUILD_OUTPUTS)}",
-                tool_name="read_research_chronicle",
-            )
-        if action == "narrate" and mode not in {"brief", "full"}:
-            return ResponseFormatter.error(
-                error=f"Unsupported narrative mode: {mode!r}",
-                suggestion="Choose 'brief' or 'full'",
-                tool_name="read_research_chronicle",
-            )
-        if action == "list" and (isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100):
-            return ResponseFormatter.error(
-                error="limit must be an integer between 1 and 100",
-                suggestion="Use limit=20 for the default Chronicle index page",
-                tool_name="read_research_chronicle",
-                output_format=response_format,
-            )
-        for label, revision_value in (
-            ("revision", revision),
-            ("from_revision", from_revision),
-            ("to_revision", to_revision),
-        ):
-            if revision_value is not None and (
-                isinstance(revision_value, bool) or not isinstance(revision_value, int) or revision_value < 1
-            ):
-                return ResponseFormatter.error(
-                    error=f"{label} must be a positive integer",
-                    suggestion="List the Chronicle first to inspect its available revisions",
-                    tool_name="read_research_chronicle",
-                    output_format=response_format,
-                )
-        id_error = _validate_chronicle_id(chronicle_id)
-        if id_error:
-            return ResponseFormatter.error(
-                error=id_error,
-                suggestion="Use a Chronicle ID returned by action='list'",
-                tool_name="read_research_chronicle",
-                output_format=response_format,
-            )
+        response_format = _read_response_format(request)
 
         denied = durable_storage_denied("read_research_chronicle", output_format=response_format)
         if denied:
@@ -803,41 +748,25 @@ def register_chronicle_tools(mcp: MCPServer, searcher: LiteratureSearcher) -> No
 
         chronicle_service = service()
         try:
-            if action == "list":
+            if isinstance(request, ChronicleListRequest):
                 records = await asyncio.to_thread(
                     chronicle_service.list_chronicles,
-                    topic=topic.strip() if topic else None,
-                    limit=limit,
+                    topic=request.topic.strip() if request.topic else None,
+                    limit=request.limit,
                 )
                 if not records:
                     return json.dumps({"total": 0, "chronicles": []}, indent=2, ensure_ascii=False)
                 return json.dumps({"total": len(records), "chronicles": records}, indent=2, ensure_ascii=False)
 
-            if action == "compare":
-                requested_ids = _split_csv(chronicle_ids)
-                requested_topics = _split_csv(topics)
-                if requested_ids and requested_topics:
-                    return ResponseFormatter.error(
-                        error="Pass either 'topics' or 'chronicle_ids', not both",
-                        suggestion="Use topics for exact stored-topic lookup, or IDs from action='list'",
-                        tool_name="read_research_chronicle",
-                        output_format=response_format,
-                    )
-                raw_requested = requested_topics or requested_ids
-                if len(raw_requested) < 2:
-                    return ResponseFormatter.error(
-                        error="Need at least 2 chronicles to compare, and they must be distinct",
-                        suggestion='Pass topics="a,b" or chronicle_ids="id1,id2"',
-                        tool_name="read_research_chronicle",
-                        output_format=response_format,
-                    )
-                if len(raw_requested) > _MAX_COMPARE:
-                    return ResponseFormatter.error(
-                        error=f"Maximum {_MAX_COMPARE} chronicles for comparison",
-                        suggestion="Compare fewer topics at a time",
-                        tool_name="read_research_chronicle",
-                        output_format=response_format,
-                    )
+            if isinstance(request, ChronicleCompareRequest):
+                requested_topics = (
+                    [topic.strip() for topic in request.selection.values]
+                    if isinstance(request.selection, ChronicleTopicsSelection)
+                    else []
+                )
+                requested_ids = (
+                    list(request.selection.values) if isinstance(request.selection, ChronicleIdsSelection) else []
+                )
                 requested: list[str] = []
                 if requested_topics:
                     match_sets = await asyncio.gather(
@@ -864,45 +793,28 @@ def register_chronicle_tools(mcp: MCPServer, searcher: LiteratureSearcher) -> No
                         requested.append(matches[0])
                 else:
                     requested = requested_ids
-                    for requested_id in requested:
-                        compare_id_error = _validate_chronicle_id(requested_id)
-                        if compare_id_error:
-                            return ResponseFormatter.error(
-                                error=f"Invalid comparison ID {requested_id!r}: {compare_id_error}",
-                                suggestion="Use Chronicle IDs returned by action='list'",
-                                tool_name="read_research_chronicle",
-                                output_format=response_format,
-                            )
                 requested = list(dict.fromkeys(requested))
                 if len(requested) < 2:
                     return ResponseFormatter.error(
                         error="Need at least 2 chronicles to compare, and they must be distinct",
-                        suggestion='Pass topics="a,b" or chronicle_ids="id1,id2"',
+                        suggestion="Pass 2-5 distinct values in the typed comparison selection",
                         tool_name="read_research_chronicle",
                         output_format=response_format,
                     )
                 comparison = await asyncio.to_thread(chronicle_service.compare, requested)
                 return json.dumps(comparison, indent=2, ensure_ascii=False)
 
-            if not chronicle_id:
-                return ResponseFormatter.error(
-                    error="chronicle_id is required for this action",
-                    suggestion='List stored chronicles first: read_research_chronicle(action="list")',
-                    tool_name="read_research_chronicle",
-                    output_format=response_format,
+            if isinstance(request, ChronicleDiffRequest):
+                delta = await asyncio.to_thread(
+                    chronicle_service.diff,
+                    request.chronicle_id,
+                    request.from_revision,
+                    request.to_revision,
                 )
-
-            if action == "diff":
-                if from_revision is None:
-                    return ResponseFormatter.error(
-                        error="from_revision is required for action='diff'",
-                        suggestion="Pass the earlier revision number, e.g. from_revision=1",
-                        tool_name="read_research_chronicle",
-                        output_format=response_format,
-                    )
-                delta = await asyncio.to_thread(chronicle_service.diff, chronicle_id, from_revision, to_revision)
                 return json.dumps(delta, indent=2, ensure_ascii=False)
 
+            chronicle_id = request.chronicle_id
+            revision = request.revision
             snapshot = await asyncio.to_thread(chronicle_service.load, chronicle_id, revision)
             if snapshot is None:
                 revisions = await asyncio.to_thread(chronicle_service.list_revisions, chronicle_id)
@@ -919,33 +831,29 @@ def register_chronicle_tools(mcp: MCPServer, searcher: LiteratureSearcher) -> No
                 f"Loaded chronicle {chronicle_id} revision {snapshot.revision}",
                 logger_name=__name__,
             )
-            if action == "narrate":
-                return chronicle_service.narrate(snapshot, mode=mode)
-            if action == "milestones":
+            if isinstance(request, ChronicleNarrateRequest):
+                return chronicle_service.narrate(snapshot, mode=request.mode)
+            if isinstance(request, ChronicleMilestonesRequest):
                 return _render_output(snapshot, "milestones")
-            return _markdown_response_body(_render_output(snapshot, output), output=output)
+            return _markdown_response_body(_render_output(snapshot, request.output), output=request.output)
 
         except ValueError as exc:
+            logger.warning("Chronicle read request failed (%s)", type(exc).__name__)
             return ResponseFormatter.error(
-                error=str(exc),
+                error="Research Chronicle read request could not be completed",
                 suggestion="Check the chronicle ID and revision numbers",
                 tool_name="read_research_chronicle",
                 output_format=response_format,
             )
         except Exception as exc:
-            logger.exception("Chronicle read failed")
+            logger.warning("Chronicle read failed (%s)", type(exc).__name__)
             return ResponseFormatter.error(
-                error=str(exc),
+                error="Research Chronicle storage read failed",
                 suggestion="Verify the chronicle store is writable",
                 tool_name="read_research_chronicle",
                 output_format=response_format,
             )
 
-    _forbid_extra_tool_arguments(
-        mcp,
-        "build_research_chronicle",
-        "read_research_chronicle",
-    )
     logger.info("Registered 2 research chronicle tools")
 
 

@@ -167,30 +167,20 @@ class EntityCache:
             return key in self._store
 
 
-# ==================== Singleton Factory ====================
-
-_entity_cache: EntityCache | None = None
-_entity_cache_lock = threading.RLock()
-
-
 def get_entity_cache() -> EntityCache:
-    """
-    Get singleton entity cache.
+    """Return the entity cache owned by the active source runtime."""
+    from pubmed_search.infrastructure.sources.runtime import get_source_runtime
 
-    Returns:
-        Shared EntityCache instance
-    """
-    global _entity_cache
-    with _entity_cache_lock:
-        if _entity_cache is None:
-            _entity_cache = EntityCache(max_size=1000, ttl=3600)
-        return _entity_cache
+    return get_source_runtime().get_or_create_client(
+        ("entity_cache",),
+        lambda: EntityCache(max_size=1000, ttl=3600),
+    )
 
 
 def reset_entity_cache() -> None:
-    """Reset singleton cache (for testing)."""
-    global _entity_cache
-    with _entity_cache_lock:
-        if _entity_cache is not None:
-            _entity_cache.clear()
-        _entity_cache = None
+    """Clear and forget the active runtime's entity cache."""
+    from pubmed_search.infrastructure.sources.runtime import get_source_runtime
+
+    cache = get_source_runtime().discard_owned_value(("entity_cache",))
+    if isinstance(cache, EntityCache):
+        cache.clear()

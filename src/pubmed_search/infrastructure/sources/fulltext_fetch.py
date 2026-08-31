@@ -15,12 +15,22 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from html.parser import HTMLParser
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urljoin
 
 import httpx
 
+from pubmed_search.infrastructure.http.safe_outbound import (
+    AddressResolver,
+    OutboundResponseTooLargeError,
+    SafeFetchPolicy,
+    SafeOutboundError,
+    UnsafeOutboundURLError,
+    fetch_public_url,
+    resolve_host_addresses,
+)
 from pubmed_search.shared.async_utils import (
     RequestExecutionPolicy,
     RetryableOperationError,
@@ -130,6 +140,8 @@ class FulltextFetchPhase:
         chunk_size: int,
         retryable_status_codes: set[int],
         max_concurrent: int,
+        request_timeout: float,
+        address_resolver: AddressResolver = resolve_host_addresses,
     ) -> None:
         self._get_client = client_getter
         self._build_execution_policy = execution_policy_factory
@@ -138,6 +150,8 @@ class FulltextFetchPhase:
         self._chunk_size = chunk_size
         self._retryable_status_codes = retryable_status_codes
         self._max_concurrent = max_concurrent
+        self._request_timeout = min(max(float(request_timeout), 0.001), 120.0)
+        self._address_resolver = address_resolver
 
     @staticmethod
     def extract_status_code(error: str | None) -> int | None:
@@ -162,7 +176,7 @@ class FulltextFetchPhase:
         try:
             parser.feed(html_text)
         except Exception as exc:
-            logger.debug("Landing page parse failed for %s: %s", base_url, exc)
+            logger.debug("Landing page parse failed (%s)", type(exc).__name__)
 
         candidates = parser.get_candidates()
         regex_candidates = re.findall(r'["\']([^"\'#]+\.pdf(?:\?[^"\']*)?)["\']', html_text, flags=re.IGNORECASE)
@@ -193,8 +207,8 @@ class FulltextFetchPhase:
             return await self._transport_kernel.execute(perform_download, policy=policy)
         except httpx.TimeoutException:
             return DownloadResult(success=False, error="Max retries exceeded: Download timeout", url=url, source=source)
-        except Exception as exc:
-            return DownloadResult(success=False, error=f"Max retries exceeded: {exc}", url=url, source=source)
+        except Exception:
+            return DownloadResult(success=False, error="PDF download failed after retry budget", url=url, source=source)
 
     async def download_from_url_impl(
         self,
@@ -203,8 +217,21 @@ class FulltextFetchPhase:
         headers: dict | None = None,
         depth: int = 0,
         visited: frozenset[str] | None = None,
+        deadline: float | None = None,
     ) -> DownloadResult:
+        """Fetch a PDF candidate through the fail-closed outbound HTTP kernel.
+
+        The same absolute deadline is carried through HTML-discovered candidates,
+        preventing recursive landing-page resolution from multiplying the request
+        budget. HTTP redirects remain inside ``fetch_public_url``, where every hop
+        is independently resolved, pinned, and checked for a public destination.
+        """
         try:
+            effective_deadline = deadline or (time.monotonic() + self._request_timeout)
+            remaining = effective_deadline - time.monotonic()
+            if remaining <= 0:
+                return DownloadResult(success=False, error="Download timeout", url=url, source=source)
+
             visited_urls = set(visited or ())
             if url in visited_urls:
                 return DownloadResult(
@@ -217,99 +244,103 @@ class FulltextFetchPhase:
             if "ncbi.nlm.nih.gov" in url:
                 req_headers["Accept"] = "application/pdf"
 
-            async with client.stream("GET", url, headers=req_headers) as response:
-                if response.status_code != 200:
+            fetched = await fetch_public_url(
+                url,
+                policy=SafeFetchPolicy(
+                    max_bytes=self._max_pdf_size,
+                    total_timeout=min(remaining, 120.0),
+                ),
+                headers=req_headers,
+                resolver=self._address_resolver,
+                client=client,
+            )
+            response = fetched.response
+            resolved_url = str(response.url)
+            if response.status_code != 200:
+                return DownloadResult(
+                    success=False,
+                    error=f"HTTP {response.status_code}",
+                    url=resolved_url,
+                    source=source,
+                    retry_after=parse_retry_after(response.headers.get("Retry-After")),
+                )
+
+            content_type = response.headers.get("Content-Type", "")
+            content = response.content
+            if content[:4] == b"%PDF":
+                return DownloadResult(
+                    success=True,
+                    content=content,
+                    content_type=content_type,
+                    source=source,
+                    url=resolved_url,
+                    file_size=len(content),
+                )
+
+            if self.looks_like_html(content_type, content):
+                if depth >= 2:
                     return DownloadResult(
                         success=False,
-                        error=f"HTTP {response.status_code}",
-                        url=url,
-                        source=source,
-                        retry_after=parse_retry_after(response.headers.get("Retry-After")),
-                    )
-
-                content_type = response.headers.get("Content-Type", "")
-                content_length = response.headers.get("Content-Length")
-                if content_length:
-                    size = int(content_length)
-                    if size > self._max_pdf_size:
-                        return DownloadResult(
-                            success=False,
-                            error=f"PDF too large ({size / 1024 / 1024:.1f}MB)",
-                            url=url,
-                            source=source,
-                        )
-
-                chunks: list[bytes] = []
-                total_size = 0
-                async for chunk in response.aiter_bytes(self._chunk_size):
-                    total_size += len(chunk)
-                    if total_size > self._max_pdf_size:
-                        return DownloadResult(
-                            success=False,
-                            error=f"PDF too large (>{self._max_pdf_size / 1024 / 1024:.0f}MB)",
-                            url=url,
-                            source=source,
-                        )
-                    chunks.append(chunk)
-
-                content = b"".join(chunks)
-                if content[:4] == b"%PDF":
-                    return DownloadResult(
-                        success=True,
-                        content=content,
-                        content_type=content_type,
-                        source=source,
-                        url=url,
-                        file_size=len(content),
-                    )
-
-                if self.looks_like_html(content_type, content):
-                    if depth >= 2:
-                        return DownloadResult(
-                            success=False,
-                            error="Received HTML instead of PDF after resolver fallback",
-                            url=url,
-                            source=source,
-                            content_type="text/html",
-                        )
-
-                    html_text = content[:500000].decode("utf-8", errors="ignore")
-                    candidate_urls = self.extract_pdf_candidates_from_html(url, html_text)
-                    for candidate_url in candidate_urls:
-                        if candidate_url in visited_urls:
-                            continue
-                        candidate_result = await self.download_from_url_impl(
-                            candidate_url,
-                            source,
-                            headers=headers,
-                            depth=depth + 1,
-                            visited=frozenset(visited_urls),
-                        )
-                        if candidate_result.success and candidate_result.is_pdf:
-                            return candidate_result
-                        status_code = self.extract_status_code(candidate_result.error)
-                        if status_code in self._retryable_status_codes:
-                            return candidate_result
-
-                    return DownloadResult(
-                        success=False,
-                        error="Received HTML instead of PDF (landing page with no direct PDF link)",
-                        url=url,
+                        error="Received HTML instead of PDF after resolver fallback",
+                        url=resolved_url,
                         source=source,
                         content_type="text/html",
                     )
 
+                html_text = content[:500000].decode("utf-8", errors="ignore")
+                candidate_urls = self.extract_pdf_candidates_from_html(resolved_url, html_text)
+                unsafe_candidate_error: DownloadResult | None = None
+                for candidate_url in candidate_urls:
+                    if candidate_url in visited_urls:
+                        continue
+                    candidate_result = await self.download_from_url_impl(
+                        candidate_url,
+                        source,
+                        headers=headers,
+                        depth=depth + 1,
+                        visited=frozenset(visited_urls),
+                        deadline=effective_deadline,
+                    )
+                    if candidate_result.success and candidate_result.is_pdf:
+                        return candidate_result
+                    if candidate_result.error and candidate_result.error.startswith("Unsafe outbound URL"):
+                        unsafe_candidate_error = candidate_result
+                    status_code = self.extract_status_code(candidate_result.error)
+                    if status_code in self._retryable_status_codes:
+                        return candidate_result
+
+                if unsafe_candidate_error is not None:
+                    return unsafe_candidate_error
                 return DownloadResult(
                     success=False,
-                    error=f"Received non-PDF content ({content_type or 'unknown'})",
-                    url=url,
+                    error="Received HTML instead of PDF (landing page with no direct PDF link)",
+                    url=resolved_url,
                     source=source,
-                    content_type=content_type or None,
+                    content_type="text/html",
                 )
+
+            return DownloadResult(
+                success=False,
+                error=f"Received non-PDF content ({content_type or 'unknown'})",
+                url=resolved_url,
+                source=source,
+                content_type=content_type or None,
+            )
+        except UnsafeOutboundURLError:
+            return DownloadResult(success=False, error="Unsafe outbound URL rejected", url=url, source=source)
+        except OutboundResponseTooLargeError:
+            return DownloadResult(
+                success=False,
+                error=f"PDF too large (>{self._max_pdf_size / 1024 / 1024:.0f}MB)",
+                url=url,
+                source=source,
+            )
+        except SafeOutboundError:
+            return DownloadResult(success=False, error="Outbound PDF request was rejected", url=url, source=source)
         except httpx.TimeoutException:
             return DownloadResult(success=False, error="Download timeout", url=url, source=source)
-        except Exception as exc:
-            return DownloadResult(success=False, error=str(exc), url=url, source=source)
+        except Exception:
+            return DownloadResult(success=False, error="PDF download failed", url=url, source=source)
 
 
 __all__ = ["FulltextFetchPhase"]

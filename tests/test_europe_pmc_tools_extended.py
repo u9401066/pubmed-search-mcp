@@ -12,12 +12,19 @@ NOTE: search_europe_pmc, get_fulltext_xml, get_europe_pmc_citations are
 from __future__ import annotations
 
 import ipaddress
+import json
 import socket
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from pydantic import ValidationError
 
-from pubmed_search.infrastructure.sources.fulltext_download import FulltextResult
+from pubmed_search.infrastructure.sources.fulltext_download import FulltextResult, PDFLinkDiscoveryResult
+from pubmed_search.presentation.mcp_server.tools.article_source import (
+    DOISource,
+    PMCIDSource,
+    PMIDSource,
+)
 from pubmed_search.presentation.mcp_server.tools.europe_pmc import (
     register_europe_pmc_tools,
 )
@@ -33,6 +40,13 @@ def _capture_tools(mcp):
     )
     register_europe_pmc_tools(mcp)
     return tools
+
+
+def _empty_link_discovery() -> PDFLinkDiscoveryResult:
+    return PDFLinkDiscoveryResult(
+        attempted_sources=("test_source",),
+        completed_sources=("test_source",),
+    )
 
 
 @pytest.fixture
@@ -74,6 +88,7 @@ def hermetic_fulltext_fallbacks(monkeypatch):
 
     default_downloader = AsyncMock()
     default_downloader.get_fulltext.return_value = FulltextResult(
+        link_discovery=_empty_link_discovery(),
         error="No PDF links found for this article",
     )
     default_downloader.close = AsyncMock()
@@ -102,11 +117,17 @@ def hermetic_fulltext_fallbacks(monkeypatch):
 
 
 class TestGetFulltextIdentifiers:
-    """Test identifier auto-detection in get_fulltext."""
+    """Test explicit discriminated identifier routing in get_fulltext."""
 
     async def test_no_identifier(self, tools):
-        result = await tools["get_fulltext"]()
-        assert "error" in result.lower() or "no valid" in result.lower()
+        with pytest.raises(TypeError, match="source"):
+            await tools["get_fulltext"]()
+
+    async def test_source_models_reject_integer_and_doi_url_inputs(self):
+        with pytest.raises(ValidationError):
+            PMIDSource(kind="pmid", value=123)  # type: ignore[arg-type]
+        with pytest.raises(ValidationError):
+            DOISource(kind="doi", value="https://doi.org/10.1000/test?token=secret")
 
     async def test_pmc_id_detection(self, tools):
         mock_client = AsyncMock()
@@ -115,7 +136,7 @@ class TestGetFulltextIdentifiers:
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
             return_value=mock_client,
         ):
-            result = await tools["get_fulltext"](identifier="PMC7096777")
+            result = await tools["get_fulltext"](source=PMCIDSource(kind="pmcid", value="PMC7096777"))
         assert isinstance(result, str)
 
     async def test_doi_detection(self, tools):
@@ -137,7 +158,7 @@ class TestGetFulltextIdentifiers:
                 return_value=AsyncMock(search=AsyncMock(return_value=None)),
             ),
         ):
-            result = await tools["get_fulltext"](identifier="10.1001/jama.2024.1234")
+            result = await tools["get_fulltext"](source=DOISource(kind="doi", value="10.1001/jama.2024.1234"))
         assert isinstance(result, str)
 
     async def test_pmid_detection(self, tools):
@@ -147,41 +168,12 @@ class TestGetFulltextIdentifiers:
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
             return_value=mock_client,
         ):
-            result = await tools["get_fulltext"](identifier="12345678")
+            result = await tools["get_fulltext"](source=PMIDSource(kind="pmid", value="12345678"))
         assert isinstance(result, str)
 
-    async def test_doi_url_detection(self, tools):
-        mock_client = AsyncMock()
-        mock_unpaywall = AsyncMock()
-        mock_unpaywall.get_oa_status.return_value = None
-        mock_downloader = AsyncMock()
-        mock_downloader.get_fulltext.return_value = FulltextResult(
-            doi="10.1038/s41586-021-03819-2",
-            pdf_links=[],
-            text_content=None,
-            error="No PDF links found for this article",
-        )
-        mock_downloader.close = AsyncMock()
-        with (
-            patch(
-                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
-                return_value=mock_client,
-            ),
-            patch(
-                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_unpaywall_client",
-                return_value=mock_unpaywall,
-            ),
-            patch(
-                "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_core_client",
-                return_value=AsyncMock(search=AsyncMock(return_value=None)),
-            ),
-            patch(
-                "pubmed_search.infrastructure.sources.fulltext_download.FulltextDownloader",
-                return_value=mock_downloader,
-            ),
-        ):
-            result = await tools["get_fulltext"](identifier="https://doi.org/10.1038/s41586-021-03819-2")
-        assert isinstance(result, str)
+    async def test_doi_url_is_not_silently_normalized(self):
+        with pytest.raises(ValidationError):
+            DOISource(kind="doi", value="https://doi.org/10.1038/s41586-021-03819-2")
 
     async def test_short_pmid(self, tools):
         """Short digit-only identifier → treated as PMID."""
@@ -190,7 +182,7 @@ class TestGetFulltextIdentifiers:
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
             return_value=mock_client,
         ):
-            result = await tools["get_fulltext"](identifier="12345")
+            result = await tools["get_fulltext"](source=PMIDSource(kind="pmid", value="12345"))
         assert isinstance(result, str)
 
 
@@ -218,7 +210,7 @@ class TestGetFulltextEuropePMC:
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
             return_value=mock_client,
         ):
-            result = await tools["get_fulltext"](pmcid="PMC7096777")
+            result = await tools["get_fulltext"](source=PMCIDSource(kind="pmcid", value="PMC7096777"))
         assert "PMC Article" in result
         assert "Introduction" in result
         assert "Methods" in result
@@ -231,7 +223,7 @@ class TestGetFulltextEuropePMC:
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
             return_value=mock_client,
         ):
-            result = await tools["get_fulltext"](pmcid="PMC9999999")
+            result = await tools["get_fulltext"](source=PMCIDSource(kind="pmcid", value="PMC9999999"))
         assert isinstance(result, str)
 
     async def test_pmcid_exception(self, tools):
@@ -241,8 +233,29 @@ class TestGetFulltextEuropePMC:
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
             return_value=mock_client,
         ):
-            result = await tools["get_fulltext"](pmcid="PMC1234567")
+            result = await tools["get_fulltext"](source=PMCIDSource(kind="pmcid", value="PMC1234567"))
         assert isinstance(result, str)
+
+    async def test_source_outage_is_partial_coverage_not_no_results(self, tools):
+        mock_client = AsyncMock()
+        mock_client.get_fulltext_xml.side_effect = RuntimeError("api_key=super-secret")
+        with patch(
+            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
+            return_value=mock_client,
+        ):
+            markdown = await tools["get_fulltext"](source=PMCIDSource(kind="pmcid", value="PMC1234567"))
+            structured = json.loads(
+                await tools["get_fulltext"](source=PMCIDSource(kind="pmcid", value="PMC1234567"), output_format="json")
+            )
+
+        assert "Fulltext retrieval incomplete" in markdown
+        assert "No results found" not in markdown
+        assert "super-secret" not in markdown
+        assert structured["coverage_status"] == "partial"
+        assert structured["sources_tried"] == ["europe_pmc", "pdf_retrieval_fallback", "test_source"]
+        assert structured["sources_completed"] == ["test_source", "pdf_retrieval_fallback"]
+        assert structured["source_errors"][0]["source"] == "europe_pmc"
+        assert "super-secret" not in json.dumps(structured)
 
 
 # ============================================================
@@ -257,7 +270,7 @@ class TestGetFulltextUnpaywall:
         mock_downloader = AsyncMock()
         mock_downloader.get_fulltext.return_value = FulltextResult(
             doi="10.1001/test",
-            pdf_links=[],
+            link_discovery=_empty_link_discovery(),
             text_content=None,
             error="No PDF links found for this article",
         )
@@ -295,7 +308,7 @@ class TestGetFulltextUnpaywall:
                 return_value=mock_downloader,
             ),
         ):
-            result = await tools["get_fulltext"](doi="10.1001/test")
+            result = await tools["get_fulltext"](source=DOISource(kind="doi", value="10.1001/test"))
         assert "example.com/paper.pdf" in result
         assert "Gold OA" in result
 
@@ -305,7 +318,7 @@ class TestGetFulltextUnpaywall:
         mock_downloader = AsyncMock()
         mock_downloader.get_fulltext.return_value = FulltextResult(
             doi="10.1001/test2",
-            pdf_links=[],
+            link_discovery=_empty_link_discovery(),
             text_content=None,
             error="No PDF links found for this article",
         )
@@ -340,7 +353,7 @@ class TestGetFulltextUnpaywall:
                 return_value=mock_downloader,
             ),
         ):
-            result = await tools["get_fulltext"](doi="10.1001/test2")
+            result = await tools["get_fulltext"](source=DOISource(kind="doi", value="10.1001/test2"))
         assert "repo.example.com" in result
 
     async def test_unpaywall_with_alt_locations(self, tools):
@@ -349,7 +362,7 @@ class TestGetFulltextUnpaywall:
         mock_downloader = AsyncMock()
         mock_downloader.get_fulltext.return_value = FulltextResult(
             doi="10.1001/test3",
-            pdf_links=[],
+            link_discovery=_empty_link_discovery(),
             text_content=None,
             error="No PDF links found for this article",
         )
@@ -390,7 +403,7 @@ class TestGetFulltextUnpaywall:
                 return_value=mock_downloader,
             ),
         ):
-            result = await tools["get_fulltext"](doi="10.1001/test3")
+            result = await tools["get_fulltext"](source=DOISource(kind="doi", value="10.1001/test3"))
         assert "publisher.com" in result
         assert "repo.com" in result
 
@@ -400,7 +413,7 @@ class TestGetFulltextUnpaywall:
         mock_downloader = AsyncMock()
         mock_downloader.get_fulltext.return_value = FulltextResult(
             doi="10.1001/closed",
-            pdf_links=[],
+            link_discovery=_empty_link_discovery(),
             text_content=None,
             error="No PDF links found for this article",
         )
@@ -427,7 +440,7 @@ class TestGetFulltextUnpaywall:
                 return_value=mock_downloader,
             ),
         ):
-            result = await tools["get_fulltext"](doi="10.1001/closed")
+            result = await tools["get_fulltext"](source=DOISource(kind="doi", value="10.1001/closed"))
         assert isinstance(result, str)
 
     async def test_unpaywall_exception(self, tools):
@@ -436,7 +449,7 @@ class TestGetFulltextUnpaywall:
         mock_downloader = AsyncMock()
         mock_downloader.get_fulltext.return_value = FulltextResult(
             doi="10.1001/error",
-            pdf_links=[],
+            link_discovery=_empty_link_discovery(),
             text_content=None,
             error="No PDF links found for this article",
         )
@@ -460,7 +473,7 @@ class TestGetFulltextUnpaywall:
                 return_value=mock_downloader,
             ),
         ):
-            result = await tools["get_fulltext"](doi="10.1001/error")
+            result = await tools["get_fulltext"](source=DOISource(kind="doi", value="10.1001/error"))
         assert isinstance(result, str)
 
 
@@ -481,10 +494,10 @@ class TestGetFulltextCORE:
         mock_core.search.return_value = {
             "results": [
                 {
-                    "fullText": "Full text from CORE source",
-                    "downloadUrl": "https://core.ac.uk/pdf/123.pdf",
+                    "full_text": "Full text from CORE source",
+                    "download_url": "https://core.ac.uk/pdf/123.pdf",
                     "title": "CORE Article",
-                    "sourceFulltextUrls": [
+                    "source_fulltext_urls": [
                         "https://repo1.org/ft",
                         "https://repo2.org/ft",
                     ],
@@ -506,7 +519,7 @@ class TestGetFulltextCORE:
                 return_value=mock_core,
             ),
         ):
-            result = await tools["get_fulltext"](doi="10.1234/core-test")
+            result = await tools["get_fulltext"](source=DOISource(kind="doi", value="10.1234/core-test"))
         assert "CORE" in result or "core.ac.uk" in result
 
     async def test_core_no_fulltext(self, tools):
@@ -521,7 +534,7 @@ class TestGetFulltextCORE:
             "results": [
                 {
                     "title": "No FT Paper",
-                    "downloadUrl": "https://core.ac.uk/pdf/456.pdf",
+                    "download_url": "https://core.ac.uk/pdf/456.pdf",
                 }
             ]
         }
@@ -540,7 +553,7 @@ class TestGetFulltextCORE:
                 return_value=mock_core,
             ),
         ):
-            result = await tools["get_fulltext"](doi="10.1234/core-notext")
+            result = await tools["get_fulltext"](source=DOISource(kind="doi", value="10.1234/core-notext"))
         assert "core.ac.uk" in result
 
     async def test_core_exception(self, tools):
@@ -549,7 +562,7 @@ class TestGetFulltextCORE:
         mock_downloader = AsyncMock()
         mock_downloader.get_fulltext.return_value = FulltextResult(
             doi="10.1234/core-err",
-            pdf_links=[],
+            link_discovery=_empty_link_discovery(),
             text_content=None,
             error="No PDF links found for this article",
         )
@@ -576,7 +589,7 @@ class TestGetFulltextCORE:
                 return_value=mock_downloader,
             ),
         ):
-            result = await tools["get_fulltext"](doi="10.1234/core-err")
+            result = await tools["get_fulltext"](source=DOISource(kind="doi", value="10.1234/core-err"))
         assert isinstance(result, str)
 
 
@@ -604,7 +617,9 @@ class TestGetFulltextSections:
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
             return_value=mock_client,
         ):
-            result = await tools["get_fulltext"](pmcid="PMC123", sections="introduction,methods")
+            result = await tools["get_fulltext"](
+                source=PMCIDSource(kind="pmcid", value="PMC123"), sections="introduction,methods"
+            )
         assert "Introduction" in result or "Intro text" in result
         assert "Methods" in result or "Methods text" in result
         # Discussion should be filtered out
@@ -625,7 +640,7 @@ class TestGetFulltextSections:
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
             return_value=mock_client,
         ):
-            result = await tools["get_fulltext"](pmcid="PMC123")
+            result = await tools["get_fulltext"](source=PMCIDSource(kind="pmcid", value="PMC123"))
         assert "truncated" in result.lower()
 
     async def test_no_matching_sections_falls_back_abstract(self, tools):
@@ -644,7 +659,9 @@ class TestGetFulltextSections:
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
             return_value=mock_client,
         ):
-            result = await tools["get_fulltext"](pmcid="PMC123", sections="conclusion")
+            result = await tools["get_fulltext"](
+                source=PMCIDSource(kind="pmcid", value="PMC123"), sections="conclusion"
+            )
         assert "Abstract" in result or "abstract" in result.lower()
 
 
@@ -667,7 +684,7 @@ class TestGetFulltextNoResults:
         mock_downloader = AsyncMock()
         mock_downloader.get_fulltext.return_value = FulltextResult(
             doi="10.1234/nothing",
-            pdf_links=[],
+            link_discovery=_empty_link_discovery(),
             text_content=None,
             error="No PDF links found for this article",
         )
@@ -691,7 +708,7 @@ class TestGetFulltextNoResults:
                 return_value=mock_downloader,
             ),
         ):
-            result = await tools["get_fulltext"](doi="10.1234/nothing")
+            result = await tools["get_fulltext"](source=DOISource(kind="doi", value="10.1234/nothing"))
         assert "no results" in result.lower() or "not" in result.lower()
 
 
@@ -711,10 +728,32 @@ class TestGetTextMinedTerms:
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
             return_value=mock_client,
         ):
-            result = await tools["get_text_mined_terms"](pmid="12345678")
+            result = await tools["get_text_mined_terms"](source=PMIDSource(kind="pmid", value="12345678"))
         assert isinstance(result, str)
         assert "GENE_PROTEIN" in result or "CHEMICAL" in result
 
     async def test_no_identifier(self, tools):
-        result = await tools["get_text_mined_terms"]()
-        assert "error" in result.lower() or "no valid" in result.lower()
+        with pytest.raises(TypeError, match="source"):
+            await tools["get_text_mined_terms"]()
+
+    async def test_requires_strict_identifier_and_known_semantic_type(self, tools):
+        with pytest.raises(ValidationError):
+            PMIDSource(kind="pmid", value=123)  # type: ignore[arg-type]
+        invalid_type = await tools["get_text_mined_terms"](
+            source=PMIDSource(kind="pmid", value="123"), semantic_type="UNKNOWN"
+        )
+
+        assert "not a supported" in invalid_type
+
+    async def test_source_exception_is_sanitized_and_not_no_data(self, tools):
+        mock_client = AsyncMock()
+        mock_client.get_text_mined_terms.side_effect = RuntimeError("api_key=super-secret")
+        with patch(
+            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
+            return_value=mock_client,
+        ):
+            result = await tools["get_text_mined_terms"](source=PMIDSource(kind="pmid", value="123"))
+
+        assert "source unavailable" in result
+        assert "No results" not in result
+        assert "super-secret" not in result

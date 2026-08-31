@@ -106,43 +106,6 @@ class TestSessionBenchmarks:
 
 
 # ============================================================================
-# Benchmark: Profiling overhead
-# ============================================================================
-
-
-class TestProfilingBenchmarks:
-    """Benchmark the profiling instrumentation overhead."""
-
-    def test_tool_stats_record(self, benchmark: pytest.BenchmarkFixture) -> None:
-        """Recording a single ToolStats entry should be < 10 µs."""
-        from pubmed_search.shared.profiling import ToolStats
-
-        stats = ToolStats()
-
-        def _record() -> None:
-            stats.record(total_ms=150.0, http_ms=120.0)
-
-        benchmark(_record)
-
-    def test_format_metrics_report(self, benchmark: pytest.BenchmarkFixture) -> None:
-        """Formatting a metrics report with 20 tools should be < 5 ms."""
-        from pubmed_search.shared.profiling import ToolStats, _metrics, format_metrics_report
-
-        # Populate with realistic data
-        _metrics.clear()
-        for i in range(20):
-            stats = ToolStats()
-            for _ in range(50):
-                stats.record(total_ms=100.0 + i * 10, http_ms=80.0 + i * 5)
-            _metrics[f"tool_{i}"] = stats
-
-        try:
-            benchmark(format_metrics_report)
-        finally:
-            _metrics.clear()
-
-
-# ============================================================================
 # Benchmark: Query Analysis
 # ============================================================================
 

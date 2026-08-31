@@ -7,30 +7,21 @@ Provides various utility functions for Entrez operations including:
 - Database info
 - MeSH validation
 - Citation matching
-- Export functions
 """
 
 from __future__ import annotations
 
 import asyncio
-from typing import Any, cast
+from typing import Any
 
 from Bio import Entrez
 
-from .base import DEFAULT_ENTREZ_TOOL, execute_entrez_operation, run_entrez_callable
-
-
-def _egquery_compat(term: str, **keywds: Any) -> Any:
-    """Biopython removed ``Entrez.egquery``; keep the eGQuery endpoint reachable."""
-    cgi = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/egquery.fcgi"
-    variables = {"term": term}
-    variables.update(keywds)
-    entrez_any = cast("Any", Entrez)
-    return entrez_any._open(entrez_any._build_request(cgi, variables))
-
-
-if not hasattr(Entrez, "egquery"):
-    cast("Any", Entrez).egquery = _egquery_compat
+from .base import (
+    DEFAULT_ENTREZ_TOOL,
+    execute_entrez_operation,
+    raise_ncbi_infrastructure_error,
+    run_entrez_callable,
+)
 
 
 class UtilsMixin:
@@ -40,10 +31,8 @@ class UtilsMixin:
     Methods:
         quick_fetch_summary: Fast metadata fetch using ESummary
         spell_check_query: Check and correct query spelling
-        get_database_counts: Get result counts across databases
         validate_mesh_terms: Validate MeSH terms
         find_by_citation: Find article by citation details
-        export_citations: Export citations in various formats
         get_database_info: Get database statistics
     """
 
@@ -121,8 +110,8 @@ class UtilsMixin:
                     )
 
             return results
-        except Exception as e:
-            return [{"error": str(e)}]
+        except Exception as exc:
+            raise_ncbi_infrastructure_error("summary_fetch", exc)
 
     async def spell_check_query(self, query: str) -> str:
         """
@@ -156,46 +145,6 @@ class UtilsMixin:
             return corrected if corrected else query
         except Exception:
             return query
-
-    async def get_database_counts(self, query: str) -> dict[str, Any]:
-        """
-        Get result counts across multiple NCBI databases using EGQuery.
-
-        Args:
-            query: The search query.
-
-        Returns:
-            Dictionary mapping database names to result counts.
-        """
-        try:
-
-            async def _do_egquery() -> dict[str, Any]:
-                handle = await asyncio.to_thread(
-                    run_entrez_callable,
-                    Entrez,
-                    cast("Any", Entrez).egquery,
-                    term=query,
-                    **self._entrez_runtime_kwargs(),
-                )
-                try:
-                    return await asyncio.to_thread(Entrez.read, handle)
-                finally:
-                    handle.close()
-
-            result = await self._execute_entrez(_do_egquery, service_name="ncbi-utils:egquery")
-
-            counts = {}
-            for db_result in result["eGQueryResult"]:
-                db_name = db_result.get("DbName", "")
-                count = db_result.get("Count", "0")
-                try:
-                    counts[db_name] = int(count)
-                except ValueError:
-                    counts[db_name] = 0
-
-            return counts
-        except Exception as e:
-            return {"error": str(e)}
 
     async def validate_mesh_terms(self, terms: list[str]) -> dict[str, Any]:
         """
@@ -264,8 +213,8 @@ class UtilsMixin:
                 return {"valid_count": len(validated_terms), "terms": validated_terms}
 
             return {"valid_count": 0, "terms": []}
-        except Exception as e:
-            return {"error": str(e)}
+        except Exception as exc:
+            raise_ncbi_infrastructure_error("mesh_validation", exc)
 
     async def find_by_citation(
         self,
@@ -315,8 +264,8 @@ class UtilsMixin:
                     return parts[1]
 
             return None
-        except Exception:
-            return None
+        except Exception as exc:
+            raise_ncbi_infrastructure_error("citation_match", exc)
 
     async def verify_references(
         self,
@@ -357,52 +306,6 @@ class UtilsMixin:
             return {**citation, "pmid": pmid, "verified": pmid is not None}
 
         return list(await asyncio.gather(*[_verify_one(c) for c in citations]))
-
-    async def export_citations(self, id_list: list[str], fmt: str = "medline") -> str:
-        """
-        Export citations in various formats.
-
-        Args:
-            id_list: List of PubMed IDs.
-            fmt: Output format - "medline", "pubmed" (XML), "abstract".
-
-        Returns:
-            Formatted citation text.
-        """
-        if not id_list:
-            return ""
-
-        try:
-            valid_formats = {
-                "medline": ("medline", "text"),
-                "pubmed": ("pubmed", "xml"),
-                "abstract": ("abstract", "text"),
-            }
-
-            if fmt not in valid_formats:
-                fmt = "medline"
-
-            rettype, retmode = valid_formats[fmt]
-
-            async def _do_export() -> str:
-                handle = await asyncio.to_thread(
-                    run_entrez_callable,
-                    Entrez,
-                    Entrez.efetch,
-                    db="pubmed",
-                    id=id_list,
-                    rettype=rettype,
-                    retmode=retmode,
-                    **self._entrez_runtime_kwargs(),
-                )
-                try:
-                    return await asyncio.to_thread(handle.read)
-                finally:
-                    handle.close()
-
-            return await self._execute_entrez(_do_export, service_name="ncbi-utils:efetch", timeout=60.0)
-        except Exception as e:
-            return f"Error exporting citations: {e!s}"
 
     async def get_database_info(self, db: str = "pubmed") -> dict[str, Any]:
         """
@@ -450,5 +353,5 @@ class UtilsMixin:
                     for field in db_info.get("FieldList", [])
                 ],
             }
-        except Exception as e:
-            return {"error": str(e)}
+        except Exception as exc:
+            raise_ncbi_infrastructure_error("database_info", exc)

@@ -25,6 +25,11 @@ from typing import Any
 
 import httpx
 
+from pubmed_search.infrastructure.sources.base_client import (
+    APIRequestError,
+    raise_provider_schema_error,
+    raise_sanitized_retryable_error,
+)
 from pubmed_search.shared.async_utils import (
     CircuitBreakerPolicy,
     RequestExecutionPolicy,
@@ -34,6 +39,7 @@ from pubmed_search.shared.async_utils import (
     get_transport_kernel,
     parse_retry_after,
 )
+from pubmed_search.shared.markdown import escape_markdown_text, markdown_link
 
 logger = logging.getLogger(__name__)
 
@@ -142,19 +148,27 @@ class ClinicalTrialsClient:
             response.raise_for_status()
 
             data = response.json()
-            studies = data.get("studies", [])
+            if not isinstance(data, dict):
+                raise_provider_schema_error("ClinicalTrials.gov")
+            studies = data.get("studies")
+            if not isinstance(studies, list) or any(not isinstance(study, dict) for study in studies):
+                raise_provider_schema_error("ClinicalTrials.gov")
 
             return [self._normalize_study(s) for s in studies]
 
-        except httpx.TimeoutException:
-            logger.warning("ClinicalTrials.gov search timed out (query_length=%s)", len(query))
-            return []
+        except RetryableOperationError as exc:
+            raise_sanitized_retryable_error("ClinicalTrials.gov", exc)
         except httpx.HTTPStatusError as exc:
             logger.warning("ClinicalTrials.gov HTTP error (status=%s)", exc.response.status_code)
-            return []
+            raise APIRequestError("ClinicalTrials.gov", status_code=exc.response.status_code) from None
+        except httpx.RequestError as exc:
+            logger.warning("ClinicalTrials.gov search failed (%s)", type(exc).__name__)
+            raise APIRequestError("ClinicalTrials.gov") from None
+        except APIRequestError:
+            raise
         except Exception as exc:
             logger.warning("ClinicalTrials.gov search failed (%s)", type(exc).__name__)
-            return []
+            raise APIRequestError("ClinicalTrials.gov") from exc
 
     def _normalize_study(self, study: dict) -> dict[str, Any]:
         """Normalize API response to simplified format."""
@@ -225,11 +239,24 @@ class ClinicalTrialsClient:
                 return None
 
             response.raise_for_status()
-            return self._normalize_study(response.json())
+            data = response.json()
+            if not isinstance(data, dict):
+                raise_provider_schema_error("ClinicalTrials.gov")
+            return self._normalize_study(data)
 
+        except RetryableOperationError as exc:
+            raise_sanitized_retryable_error("ClinicalTrials.gov", exc)
+        except httpx.HTTPStatusError as exc:
+            logger.warning("ClinicalTrials.gov study lookup failed (status=%s)", exc.response.status_code)
+            raise APIRequestError("ClinicalTrials.gov", status_code=exc.response.status_code) from None
+        except httpx.RequestError as exc:
+            logger.warning("ClinicalTrials.gov study lookup failed (%s)", type(exc).__name__)
+            raise APIRequestError("ClinicalTrials.gov") from None
+        except APIRequestError:
+            raise
         except Exception as exc:
             logger.warning("ClinicalTrials.gov study lookup failed (%s)", type(exc).__name__)
-            return None
+            raise APIRequestError("ClinicalTrials.gov") from exc
 
     async def close(self):
         """Close HTTP client."""
@@ -273,15 +300,18 @@ def format_trials_section(trials: list[dict], max_display: int = 3) -> str:
     }
 
     for i, trial in enumerate(trials[:max_display]):
-        emoji = status_emoji.get(trial["status"], "⚪")
-        phase = trial["phase"] if trial["phase"] != "N/A" else ""
+        raw_status = str(trial.get("status") or "UNKNOWN")
+        emoji = status_emoji.get(raw_status, "⚪")
+        raw_phase = trial.get("phase")
+        phase = escape_markdown_text(raw_phase) if raw_phase and raw_phase != "N/A" else ""
         phase_str = f" ({phase})" if phase else ""
+        trial_link = markdown_link(trial.get("nct_id") or "Unknown trial", trial.get("url"))
 
-        lines.append(f"**{i + 1}. [{trial['nct_id']}]({trial['url']})**{phase_str} {emoji} {trial['status']}")
-        lines.append(f"   {trial['title']}")
+        lines.append(f"**{i + 1}. {trial_link}**{phase_str} {emoji} {escape_markdown_text(raw_status)}")
+        lines.append(f"   {escape_markdown_text(trial.get('title') or 'Untitled trial')}")
 
         if trial.get("enrollment"):
-            lines.append(f"   *Target enrollment: {trial['enrollment']}*")
+            lines.append(f"   *Target enrollment: {escape_markdown_text(trial['enrollment'])}*")
         lines.append("")
 
     if len(trials) > max_display:
@@ -294,16 +324,14 @@ def format_trials_section(trials: list[dict], max_display: int = 3) -> str:
     return "\n".join(lines)
 
 
-# Module-level singleton
-_client: ClinicalTrialsClient | None = None
-
-
 def get_clinical_trials_client() -> ClinicalTrialsClient:
-    """Get or create singleton client."""
-    global _client
-    if _client is None:
-        _client = ClinicalTrialsClient()
-    return _client
+    """Get the ClinicalTrials client owned by the current source runtime."""
+    from pubmed_search.infrastructure.sources.runtime import get_source_runtime
+
+    return get_source_runtime().get_or_create_client(
+        ("clinical_trials",),
+        ClinicalTrialsClient,
+    )
 
 
 async def search_related_trials(

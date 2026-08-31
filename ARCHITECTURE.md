@@ -4,13 +4,13 @@
 
 ## 系統總覽
 
-PubMed Search MCP 是一個以 Domain-Driven Design 為核心的 MCP 伺服器，提供 45 個 MCP tools、session 快取、pipeline 持久化與排程，以及 stdio 與 HTTP 兩種 transport。
+PubMed Search MCP 是一個以 Domain-Driven Design 為核心的 MCP 伺服器，提供 41 個 MCP tools、session 快取、pipeline 持久化與排程，以及 stdio 與 HTTP 兩種 transport。
 
 目前的公開入口已收斂為：
 
 - `unified_search`: 唯一的文字文獻搜尋入口
 - `get_fulltext`: 唯一的公開全文入口
-- `parse_pico`, `generate_search_queries`, `analyze_search_query`: query intelligence; `parse_pico` validates agent-provided P/I/C/O and returns a runnable PICO pipeline.
+- `validate_pico_plan`, `generate_search_queries`, `analyze_search_query`: query intelligence; `validate_pico_plan` validates agent-provided P/I/C/O and returns a runnable PICO pipeline.
 - `find_related_articles`, `find_citing_articles`, `get_article_references`, `build_citation_tree`: 探索層
 
 ## 產品視角
@@ -19,9 +19,9 @@ PubMed Search MCP 是一個以 Domain-Driven Design 為核心的 MCP 伺服器�
 
 | 使用者 / 情境 | 他想完成什麼 | 典型入口 |
 | --- | --- | --- |
-| 臨床工作者 | 快速回答臨床問題、比較治療、追研究證據 | Agent P/I/C/O -> `parse_pico` -> `unified_search(template:pico)` |
+| 臨床工作者 | 快速回答臨床問題、比較治療、追研究證據 | Agent P/I/C/O -> `validate_pico_plan` -> `unified_search(template:pico)` |
 | 研究者 / 學生 | 找代表性文獻、讀全文、追引用與主題發展脈絡、匯出引用 | `unified_search`, `get_fulltext`, `build_research_chronicle`, `prepare_export` |
-| AI agent / workflow builder | 把搜尋、判讀、匯出、排程串成可重跑流程 | `unified_search`, `read_session`, `manage_pipeline` |
+| AI agent / workflow builder | 把搜尋、判讀、匯出、排程串成可重跑流程 | `unified_search`, `read_session`, `save_pipeline` |
 
 這個文件後面會談 DDD 與 transport，但產品上真正交付的是一條研究工作流：
 
@@ -102,8 +102,9 @@ flowchart TB
 ```mermaid
 flowchart LR
   Client[Human / AI Client]
+  Transport[stdio or canonical HTTP CLI]
   MCP[MCP Server<br/>presentation/mcp_server]
-  API[Background HTTP API<br/>health / cache / exports]
+  API[HTTP CLI companion routes<br/>health / cache / exports]
   App[Application Layer<br/>search chronicle timeline pipeline export]
   Broker[Capability-aware Literature Broker<br/>one unified_search facade]
   Domain[Domain Layer<br/>article chronicle timeline pipeline entities]
@@ -111,9 +112,11 @@ flowchart LR
   DataPlane[Operator Data Plane<br/>release manifest / diff / snapshot checkpoint]
   Store[Session + Pipeline + Chronicle Store]
 
-  Client --> MCP
+  Client --> Transport
+  Transport --> MCP
+  Transport --> API
   MCP --> App
-  MCP --> API
+  API --> App
   App --> Broker
   Broker --> Domain
   Broker --> Infra
@@ -179,11 +182,12 @@ OpenAlex 只宣告官方 snapshot 路徑可供 operator 規劃，兩者都尚未
 index。ClinicalKey AI 則以獨立 governance policy 保持 default-off、
 entitlement/contract gated、metadata-only、zero-persistence，且不註冊為 source/tool。
 
-> **DDD 遷移註記**：上述 capability planning/execution 目前仍實作在
-> `presentation/mcp_server/tools/unified_planning.py` 與
-> `unified_execution.py`；`application/unified` 現階段只是 injected-runner
-> facade。這是已知技術債。目標是把不依賴 MCP progress/session/renderer 的純
-> planner 與 broker core 下移 application，presentation 僅保留 transport adapter。
+> **DDD 邊界**：capability planning、normal execution、ranking policy 與 use-case
+> orchestration 位於 `application/unified/`；`SourceBrokerPort`、
+> `SourceRegistryPort` 與 `EnrichmentPort` 由 `infrastructure/sources/` adapter
+> 實作。MCP presentation 只負責 composition、progress、format、session journal
+> 與 artifact publishing；Python SDK 直接呼叫 application use case，不會回頭載入
+> presentation，也不產生 MCP side effect。
 
 ## 全文擷取流程
 
@@ -233,8 +237,8 @@ src/pubmed_search/
 │   ├── pubtator/
 │   └── sources/
 ├── presentation/
-│   ├── api/
-│   └── mcp_server/
+│   ├── browser_fetch_broker.py
+│   └── mcp_server/  # stdio + canonical HTTP launcher
 └── shared/
 ```
 
@@ -245,9 +249,9 @@ Presentation
   ├─ mcp_server/server.py
   ├─ mcp_server/tool_registry.py
   ├─ mcp_server/tools/*.py
+  ├─ mcp_server/http_cli.py
   ├─ mcp_server/prompts.py
-  ├─ mcp_server/resources.py
-  └─ api/server.py
+  └─ mcp_server/resources.py
 
 Application
   ├─ chronicle/   immutable revision 組裝、lineage、projection、audit、diff、narration 與 Mermaid 修復
@@ -273,7 +277,7 @@ Infrastructure
 
 Shared
   ├─ settings.py  Pydantic Settings runtime configuration
-  └─ async / error / profiling helpers
+  └─ async / error helpers
 ```
 
 依賴方向維持由外向內：presentation → application → domain，infrastructure 實作外部整合並由上層組合使用。
@@ -316,14 +320,14 @@ flowchart TB
 
 ```text
 presentation/mcp_server/
-├── server.py          MCP server 建立、DI container、stdio 啟動、背景 HTTP API
-├── tool_registry.py   45 tools / 16 categories 的權威 registry
+├── server.py          MCP server 建立、DI container、runtime lifecycle 與 stdio 啟動
+├── http_cli.py        canonical Streamable HTTP/SSE launcher 與 tenant-guarded companion routes
+├── tool_registry.py   41 tools / 16 categories 的權威 registry
 ├── tools/             實際 MCP tool 實作
 ├── session_tools.py   session 相關 tools 與 resources
 ├── prompts.py         預設 prompt workflow
 ├── resources.py       filter / category / tool resources
 ├── instructions.py    server 指令與 agent 使用說明
-├── copilot_tools.py   Copilot Studio 簡化 schema 專用 tool surface
 └── http_compat.py     Copilot HTTP compatibility middleware
 ```
 
@@ -335,7 +339,6 @@ flowchart LR
   Session[session_tools.py]
   Prompts[prompts.py]
   Resources[resources.py]
-  Copilot[copilot_tools.py]
   Compat[http_compat.py]
 
   Server --> Registry
@@ -343,21 +346,20 @@ flowchart LR
   Server --> Session
   Server --> Prompts
   Server --> Resources
-  Server --> Copilot
   Server --> Compat
   Registry --> Tools
 ```
 
-這張圖比較接近維護者視角：`server.py` 是裝配中心，`tool_registry.py` 決定公開 surface，`tools/` 與 `session_tools.py` 提供實際能力，而 Copilot 相容層是額外分支，不是主架構本體。
+這張圖比較接近維護者視角：`server.py` 是裝配中心，`tool_registry.py` 決定唯一公開 surface，`tools/` 與 `session_tools.py` 提供實際能力；Copilot 只在 HTTP transport 套用協定 middleware，不再維護第二份工具實作。
 
 ## 工具分類
 
-目前 registry 定義 16 個 category、45 個公開 MCP tools：
+目前 registry 定義 16 個 category、41 個公開 MCP tools：
 
 | 類別 | 工具數 | 代表工具 |
 | --- | --- | --- |
 | 搜尋工具 | 1 | `unified_search` |
-| 查詢智能 | 3 | `parse_pico`, `generate_search_queries`, `analyze_search_query` |
+| 查詢智能 | 3 | `validate_pico_plan`, `generate_search_queries`, `analyze_search_query` |
 | 文章探索 | 5 | `fetch_article_details`, `find_related_articles`, `find_citing_articles` |
 | 引用驗證 | 1 | `verify_reference_list` |
 | 全文工具 | 2 | `get_fulltext`, `get_text_mined_terms` |
@@ -365,13 +367,13 @@ flowchart LR
 | NCBI 延伸 | 7 | `search_gene`, `search_compound`, `search_clinvar` |
 | 引用網絡 | 1 | `build_citation_tree` |
 | 匯出工具 | 2 | `prepare_export`, `save_literature_notes` |
-| Session 管理 | 5 | `read_session`, `get_session_pmids`, `get_cached_article`, `get_session_summary`, `get_session_log` |
+| Session 管理 | 1 | `read_session`（strict discriminated request） |
 | 機構訂閱 | 5 | `configure_institutional_access`, `get_institutional_link`, `diagnose_institutional_access` |
-| 視覺搜索 | 1 | `analyze_figure_for_search` |
+| 視覺搜索 | 1 | `prepare_figure_search` |
 | ICD 轉換 | 1 | `convert_icd_mesh` |
 | 研究編年史 | 2 | `build_research_chronicle`, `read_research_chronicle` |
 | 圖片搜尋 | 1 | `search_biomedical_images` |
-| Pipeline 管理 | 7 | `manage_pipeline`, `save_pipeline`, `list_pipelines`, `load_pipeline`, `delete_pipeline`, `get_pipeline_history`, `schedule_pipeline` |
+| Pipeline 管理 | 7 | `save_pipeline`, `list_pipelines`, `load_pipeline`, `delete_pipeline`, `get_pipeline_history`, `schedule_pipeline`, `unschedule_pipeline` |
 
 ## Runtime 與多 Agent 服務模型
 
@@ -379,7 +381,7 @@ flowchart LR
 
 | 合約 | 身分/狀態 | 網路邊界 |
 | --- | --- | --- |
-| 本機 stdio | 單一本機使用者與 local store | 無 MCP listening port；背景 auxiliary HTTP 預設關閉 |
+| 本機 stdio | 單一本機使用者與 local store | 無 MCP listening port，也不會啟動其他 HTTP API |
 | 本機 loopback HTTP | 可信單使用者；跨 request 共用 durable `default` tenant | 僅能 loopback；container bind 必須顯式 opt-in 且 host 只 publish loopback |
 | 多使用者 service | bearer token principal 與 principal-scoped store | 遠端 HTTPS；auth、resource URL、Host/Origin allowlist 全部 fail closed |
 
@@ -426,14 +428,11 @@ MCP transport session identifier 不是身分、不用於租戶授權，也不�
 上游速率限制刻意維持全域（NCBI 依 API key 計量），每租戶並行上限則負責公平性。
 實際設定與運維細節見 [DEPLOYMENT.md](DEPLOYMENT.md) 的「多 Agent 正式服務」章節。
 
-> `presentation/api/server.py` 的 FastAPI 輔助伺服器是單租戶的歷史元件，
-> 不在多 agent MCP 路徑上，也未被任何 launcher 掛載。
-
 ## Runtime 設定與來源治理
 目前 runtime config 已集中到 `shared/settings.py`，由 Pydantic Settings 解析環境變數，避免 presentation / infrastructure 各自直接讀取 `os.environ`。
 多來源搜尋也已改為 registry-driven：`infrastructure/sources/registry.py` 統一管理來源 metadata、`auto/all/-source` expression 解析、default-off 商業來源 gating，以及 `PUBMED_SEARCH_DISABLED_SOURCES` 全域停用機制。
 
-全文路徑也已開始同樣的抽層：`application/fulltext/registry.py` 定義 retrieval policy 與 source metadata，`application/fulltext/service.py` 承接 identifier-aware orchestration；`infrastructure/sources/fulltext_registry.py` 與 `fulltext_service.py` 只是歷史 import path 的 compatibility re-export。`get_fulltext` tool 只保留 normalization、progress/log bridge、factory wiring 與 response formatting。
+全文路徑採單一權威邊界：`application/fulltext/registry.py` 定義 retrieval policy 與 source metadata，`application/fulltext/service.py` 承接 identifier-aware orchestration；舊的 infrastructure re-export paths 已移除。`infrastructure/sources/fulltext_download.py` 只協調明確的 discovery、fetch、extract phases，`get_fulltext` tool 只保留 normalization、progress/log bridge、factory wiring 與 response formatting。
 
 ## 搜尋流程
 
@@ -545,30 +544,28 @@ flowchart TD
 flowchart LR
   StdIO[stdio client<br/>VS Code / Claude Desktop]
   HTTP[HTTP client<br/>Copilot Studio / remote MCP]
-  Server[PubMed Search MCP]
+  CLI[pubmed-search-mcp-http]
+  Server[Canonical MCP server]
   Session[Session Cache]
   API[HTTP API endpoints]
 
   StdIO --> Server
-  HTTP --> Server
+  HTTP --> CLI
+  CLI --> Server
+  CLI --> API
   Server --> Session
-  Session --> API
+  API --> Session
 ```
 
-stdio 模式預設**不會**啟動背景 HTTP API。只有本機整合明確設定
-`PUBMED_STDIO_AUX_HTTP=1` 時，才開啟 loopback auxiliary read-only API；主要
-external contract 仍是 stdio tool surface：
-
-- `/health`
-- `/api/cached_article/{pmid}`
-- `/api/cached_articles?pmids=...`
-- `/api/session/summary`
-
-HTTP 模式由 `pubmed-search-mcp-http` 建立額外 routes，並提供：
+stdio 模式不會開啟背景 HTTP listener。所有 HTTP 整合統一由
+`pubmed-search-mcp-http` 建立，並提供：
 
 - MCP endpoint: `/mcp`（streamable-http）或 `/sse` + `/messages`（legacy SSE）
 - `/health`
 - `/ready`
+- `/api/cached_article/{pmid}`
+- `/api/cached_articles?pmids=...`
+- `/api/session/summary`
 - `/download/{export_id}`
 - `/exports`
 - `/info`
@@ -582,15 +579,15 @@ Pipeline 系統已經不是純設計稿，而是可保存、驗證、排程、�
 
 ### 已實作
 
-- `manage_pipeline` facade 與 legacy wrappers
 - `save_pipeline`
 - `list_pipelines`
 - `load_pipeline`
 - `delete_pipeline`
 - `get_pipeline_history`
 - `schedule_pipeline`
+- `unschedule_pipeline`
 - 本機 workspace/global 雙層儲存；authenticated service 只使用 tenant-global root
-- Pydantic schema parsing + semantic auto-fix
+- Pydantic strict schema parsing + fail-closed semantic validation
 - APScheduler-backed persisted scheduling（local opt-in；service Compose 預設停用）
 - `StoredPipelineRunner` 執行已保存 pipeline 並寫回 run/report artifacts
 - built-in templates: `pico`, `comprehensive`, `exploration`, `gene_drug`
@@ -598,7 +595,6 @@ Pipeline 系統已經不是純設計稿，而是可保存、驗證、排程、�
 ### 尚待下一波重構
 
 - fulltext downloader 內部的 discovery / fetch / extract phase 還可再進一步拆清楚
-- pipeline facade 已落地，但 legacy wrappers 仍保留作為相容層
 
 ### 儲存模型
 
@@ -625,13 +621,14 @@ Service Compose 不啟動 scheduler；未來若啟用，必須有單一 leader �
 ```mermaid
 flowchart LR
   Draft[Pipeline config]
-  Validate[Validate / auto-fix]
-  Save[manage_pipeline save]
+  Validate[Strict validation]
+  Save[save_pipeline]
   List[list_pipelines]
   Load[load_pipeline]
   Execute[Use loaded plan to call tools]
   History[get_pipeline_history]
   Schedule[schedule_pipeline<br/>APScheduler-backed]
+  Unschedule[unschedule_pipeline]
 
   Draft --> Validate --> Save
   Save --> List
@@ -639,6 +636,7 @@ flowchart LR
   Load --> Execute
   Execute --> History
   Load --> Schedule
+  Schedule --> Unschedule
 ```
 
 ## Copilot Studio 相容層
@@ -647,8 +645,8 @@ flowchart LR
 
 | 路線 | 說明 | 適用情境 |
 | --- | --- | --- |
-| `pubmed-search-mcp-http --mode service --transport streamable-http --copilot-compatible` | 以 bearer principal 保護完整 45-tool surface，開啟 Copilot HTTP compatibility | 唯一可公開的 Copilot service 路線 |
-| `run_copilot.py` | 啟用簡化 schema 的 loopback-only 本機 smoke | 本機檢查 schema 相容性；禁止接公網 tunnel |
+| `pubmed-search-mcp-http --mode service --transport streamable-http --copilot-compatible` | 以 bearer principal 保護完整 41-tool canonical surface，開啟 Copilot HTTP compatibility | 唯一可公開的 Copilot service 路線 |
+| `run_copilot.py` | 以相同 41-tool strict registry 啟動 loopback-only 本機 smoke | 本機檢查 transport 相容性；禁止接公網 tunnel |
 
 `http_compat.py` 會把部分 HTTP 202 responses 正規化為 Copilot 可接受的 200 JSON responses。
 

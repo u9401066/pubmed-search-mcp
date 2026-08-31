@@ -41,8 +41,8 @@ The audit does not re-run upstream APIs by default, so it avoids quota cost and 
 Agents should use:
 
 ```text
-read_session(action="artifact", artifact_uri="artifact://...", artifact_file="audit.json")
-read_session(action="artifact", artifact_uri="artifact://...", artifact_file="results.json", offset=0, max_chars=200000)
+read_session(request={"action":"artifact","locator":{"kind":"artifact_uri","value":"artifact://..."},"artifact_file":"audit.json"})
+read_session(request={"action":"artifact","locator":{"kind":"artifact_uri","value":"artifact://..."},"artifact_file":"results.json","offset":0,"max_chars":200000})
 ```
 
 `list_artifacts` returns a compact locator with files and read hints. `artifact` reads return pagination metadata and redact local paths unless explicitly allowed by settings.

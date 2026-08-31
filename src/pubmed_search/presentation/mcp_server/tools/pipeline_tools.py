@@ -1,10 +1,7 @@
 """
 Pipeline Tools — MCP tools for pipeline persistence & management.
 
-Primary facade:
-- manage_pipeline: Unified facade for pipeline CRUD/history/scheduling
-
-Compatibility wrappers:
+Single-purpose tools:
 - save_pipeline: Save a pipeline configuration for reuse
 - list_pipelines: List all saved pipeline configurations
 - load_pipeline: Load a pipeline from name, file, or URL
@@ -17,9 +14,24 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import TYPE_CHECKING
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Annotated, Literal
 
-from pubmed_search.application.pipeline.validator import parse_and_validate_config
+from pydantic import Field
+
+from pubmed_search.application.pipeline.config_parser import (
+    MAX_PIPELINE_CONFIG_CHARS,
+    parse_pipeline_config_text,
+)
+from pubmed_search.application.pipeline.store import PipelineHistoryError
+from pubmed_search.application.pipeline.validator import (
+    MAX_PIPELINE_TAGS,
+    PIPELINE_NAME_PATTERN,
+    PIPELINE_TAG_PATTERN,
+    parse_and_validate_config,
+    validate_pipeline_name,
+    validate_pipeline_tags,
+)
 from pubmed_search.presentation.mcp_server.tenancy import durable_storage_denied
 from pubmed_search.presentation.mcp_server.tools._common import ResponseFormatter
 from pubmed_search.shared.tenancy import DEFAULT_TENANT_ID, current_tenant, current_tenant_id, tenant_data_dir
@@ -32,64 +44,50 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Module-level store reference (set by register function)
-_pipeline_store: PipelineStore | None = None
-_pipeline_scheduler: APSPipelineScheduler | None = None
+PipelineName = Annotated[str, Field(strict=True, min_length=1, max_length=64, pattern=PIPELINE_NAME_PATTERN)]
+PipelineTag = Annotated[str, Field(strict=True, min_length=1, max_length=64, pattern=PIPELINE_TAG_PATTERN)]
+PipelineTags = Annotated[list[PipelineTag], Field(max_length=MAX_PIPELINE_TAGS)]
+PipelineConfigText = Annotated[str, Field(min_length=1, max_length=MAX_PIPELINE_CONFIG_CHARS)]
+PipelineSource = Annotated[str, Field(min_length=1, max_length=4096)]
+SaveScope = Literal["auto", "workspace", "global"]
+ListScope = Literal["", "workspace", "global"]
+CronExpression = Annotated[str, Field(strict=True, min_length=1, max_length=200)]
 
-# Stores derived from ``_pipeline_store`` for non-default tenants.
-_tenant_stores: dict[str, PipelineStore] = {}
-_tenant_stores_lock = threading.Lock()
 
+@dataclass(slots=True)
+class PipelineToolRuntime:
+    """Server-scoped pipeline dependencies plus request-time tenant routing.
 
-def set_pipeline_store(store: PipelineStore | None) -> None:
-    """Set the base PipelineStore instance for tools.
-
-    The store registered here backs the default tenant. Other tenants get a
-    derived store rooted in their own data directory, so saved pipelines never
-    cross tenant boundaries.
+    Every MCP server owns one runtime.  Registered tool closures retain that
+    exact instance, so constructing another server in the same process cannot
+    replace its store, scheduler, or derived tenant-store cache.
     """
-    global _pipeline_store
-    with _tenant_stores_lock:
-        _pipeline_store = store
-        _tenant_stores.clear()
 
+    base_store: PipelineStore | None
+    scheduler: APSPipelineScheduler | None = None
+    _tenant_stores: dict[str, PipelineStore] = field(default_factory=dict, init=False, repr=False)
+    _tenant_stores_lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
 
-def get_pipeline_store() -> PipelineStore | None:
-    """Get the PipelineStore for the tenant of the current request.
+    def store_for_current_tenant(self) -> PipelineStore | None:
+        """Resolve this server's store for the tenant bound to the request."""
+        base = self.base_store
+        if base is None:
+            return None
 
-    Returns ``None`` for callers that cannot own durable storage, so an
-    ephemeral connection never creates a pipeline directory it could not
-    find again.
-    """
-    base = _pipeline_store
-    if base is None:
-        return None
+        tenant_id = current_tenant_id()
+        if tenant_id == DEFAULT_TENANT_ID:
+            return base
 
-    tenant_id = current_tenant_id()
-    if tenant_id == DEFAULT_TENANT_ID:
-        return base
+        root = tenant_data_dir(base.global_data_dir)
+        if root is None:
+            return None
 
-    root = tenant_data_dir(base.global_data_dir)
-    if root is None:
-        return None
-
-    with _tenant_stores_lock:
-        scoped = _tenant_stores.get(tenant_id)
-        if scoped is None:
-            scoped = base.rebased(root)
-            _tenant_stores[tenant_id] = scoped
-        return scoped
-
-
-def set_pipeline_scheduler(scheduler: APSPipelineScheduler | None) -> None:
-    """Set the shared pipeline scheduler instance for tools."""
-    global _pipeline_scheduler
-    _pipeline_scheduler = scheduler
-
-
-def get_pipeline_scheduler() -> APSPipelineScheduler | None:
-    """Get the shared pipeline scheduler instance."""
-    return _pipeline_scheduler
+        with self._tenant_stores_lock:
+            scoped = self._tenant_stores.get(tenant_id)
+            if scoped is None:
+                scoped = base.rebased(root)
+                self._tenant_stores[tenant_id] = scoped
+            return scoped
 
 
 def _store_unavailable(tool_name: str) -> str:
@@ -103,14 +101,15 @@ def _store_unavailable(tool_name: str) -> str:
 
 def _save_pipeline_impl(
     *,
+    runtime: PipelineToolRuntime,
     tool_name: str,
     name: str,
     config: str,
-    tags: str = "",
+    tags: list[str] | None = None,
     description: str = "",
     scope: str = "auto",
 ) -> str:
-    store = get_pipeline_store()
+    store = runtime.store_for_current_tenant()
     if not store:
         return _store_unavailable(tool_name)
 
@@ -119,34 +118,13 @@ def _save_pipeline_impl(
         return denied
 
     try:
-        import yaml
-
-        raw_data = yaml.safe_load(config)
-        if not isinstance(raw_data, dict):
-            expected = "mapping/object"
-            got = type(raw_data).__name__
-            suggestion = (
-                "For manage_pipeline(action='save'), pass config as a YAML/JSON mapping string, not a list/scalar. "
-                "If quoting is awkward in the client, call save_pipeline(name=..., config=...) with the same YAML."
-                if tool_name == "manage_pipeline"
-                else "Provide a valid pipeline config as a YAML/JSON mapping"
-            )
-            example = (
-                'manage_pipeline(action="save", name="my_search", '
-                'config="template: pico\\nparams:\\n  P: ICU patients\\n  I: remimazolam")'
-                if tool_name == "manage_pipeline"
-                else 'save_pipeline(name="my_search", config="template: comprehensive\\ntemplate_params:\\n  query: remimazolam")'
-            )
-            return ResponseFormatter.error(
-                f"Config must be a YAML or JSON {expected}; parsed as {got}",
-                suggestion=suggestion,
-                example=example,
-                tool_name=tool_name,
-            )
-    except yaml.YAMLError as exc:
+        canonical_name = validate_pipeline_name(name)
+        tag_list = validate_pipeline_tags(tags)
+        raw_data = parse_pipeline_config_text(config)
+    except (TypeError, ValueError) as exc:
         return ResponseFormatter.error(
-            f"Invalid YAML: {exc}",
-            suggestion="Check YAML syntax (indentation, colons, quotes)",
+            str(exc),
+            suggestion="Provide a bounded YAML/JSON mapping without aliases, unsafe tags, or credentials",
             tool_name=tool_name,
         )
 
@@ -154,19 +132,15 @@ def _save_pipeline_impl(
 
     if not result.valid:
         error_msg = "Pipeline config validation failed:\n" + "\n".join(f"  ❌ {e}" for e in result.errors)
-        if result.fixes:
-            error_msg += "\n\nAuto-fixes attempted:\n" + "\n".join(f"  🔧 {f.field}: {f.reason}" for f in result.fixes)
         return ResponseFormatter.error(error_msg, tool_name=tool_name)
 
     pipeline_config = result.config
     if pipeline_config is None:
         return ResponseFormatter.error("Failed to parse pipeline config", tool_name=tool_name)
 
-    tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
-
     try:
-        meta, validation = store.save(
-            name=name,
+        meta, _validation = store.save(
+            name=canonical_name,
             config=pipeline_config,
             tags=tag_list,
             description=description,
@@ -190,12 +164,6 @@ def _save_pipeline_impl(
         parts.append(f"  Steps: {meta.step_count} ({step_summary})")
     parts.append(f"  Config hash: {meta.config_hash}")
 
-    if validation.has_fixes:
-        parts.append("")
-        parts.append(f"🔧 Auto-fixed {len(validation.fixes)} issue(s):")
-        for fix in validation.fixes:
-            parts.append(f"  [{fix.severity.value}] {fix.field}: {fix.reason}")
-
     parts.append("")
     parts.append("💡 Usage:")
     parts.append(f'  • Execute: unified_search(pipeline="saved:{meta.name}")')
@@ -203,8 +171,14 @@ def _save_pipeline_impl(
     return "\n".join(parts)
 
 
-def _list_pipelines_impl(*, tool_name: str, tag: str = "", scope: str = "") -> str:
-    store = get_pipeline_store()
+def _list_pipelines_impl(
+    *,
+    runtime: PipelineToolRuntime,
+    tool_name: str,
+    tag: str = "",
+    scope: str = "",
+) -> str:
+    store = runtime.store_for_current_tenant()
     if not store:
         return _store_unavailable(tool_name)
 
@@ -249,7 +223,7 @@ def _list_pipelines_impl(*, tool_name: str, tag: str = "", scope: str = "") -> s
     return "\n".join(parts)
 
 
-def _load_pipeline_impl(*, tool_name: str, source: str) -> str:
+def _load_pipeline_impl(*, runtime: PipelineToolRuntime, tool_name: str, source: str) -> str:
     source = source.strip()
     if source.startswith("file:") and current_tenant().is_authenticated:
         return ResponseFormatter.error(
@@ -259,23 +233,27 @@ def _load_pipeline_impl(*, tool_name: str, source: str) -> str:
             tool_name=tool_name,
         )
 
-    store = get_pipeline_store()
+    store = runtime.store_for_current_tenant()
     if not store:
         return _store_unavailable(tool_name)
 
     try:
         if source.startswith("file:"):
             filepath = source[5:]
-            config, result = store.load_from_path(filepath)
+            config, _validation = store.load_from_path(filepath)
             source_type = "file"
             meta = None
         else:
             config, meta = store.load(source)
             source_type = "saved"
-            result = None
-    except FileNotFoundError as exc:
+    except FileNotFoundError:
+        message = (
+            "Pipeline file was not found or is not accessible"
+            if source.startswith("file:")
+            else "Saved pipeline was not found"
+        )
         return ResponseFormatter.error(
-            str(exc),
+            message,
             suggestion="Use list_pipelines() to see available pipelines",
             tool_name=tool_name,
         )
@@ -285,7 +263,7 @@ def _load_pipeline_impl(*, tool_name: str, source: str) -> str:
     import yaml
 
     config_dict = _config_to_display_dict(config)
-    yaml_str = yaml.dump(config_dict, allow_unicode=True, default_flow_style=False, sort_keys=False)
+    yaml_str = yaml.safe_dump(config_dict, allow_unicode=True, default_flow_style=False, sort_keys=False)
 
     parts: list[str] = []
     if meta:
@@ -303,12 +281,6 @@ def _load_pipeline_impl(*, tool_name: str, source: str) -> str:
     parts.append(yaml_str.rstrip())
     parts.append("---")
 
-    if result and result.has_fixes:
-        parts.append("")
-        parts.append(f"🔧 Auto-fixed {len(result.fixes)} issue(s):")
-        for fix in result.fixes:
-            parts.append(f"  [{fix.severity.value}] {fix.field}: {fix.reason}")
-
     parts.append("")
     if meta:
         parts.append(f'💡 Execute: unified_search(pipeline="saved:{meta.name}")')
@@ -320,15 +292,20 @@ def _load_pipeline_impl(*, tool_name: str, source: str) -> str:
     return "\n".join(parts)
 
 
-def _delete_pipeline_impl(*, tool_name: str, name: str) -> str:
-    store = get_pipeline_store()
+def _delete_pipeline_impl(*, runtime: PipelineToolRuntime, tool_name: str, name: str) -> str:
+    store = runtime.store_for_current_tenant()
     if not store:
         return _store_unavailable(tool_name)
 
+    scheduler = runtime.scheduler if current_tenant_id() == DEFAULT_TENANT_ID else None
+    scheduled_entry = None
+    if scheduler is not None:
+        try:
+            scheduled_entry = scheduler.get_schedule(name)
+        except Exception as exc:  # Schedule inspection must not block deletion.
+            logger.warning("Unable to inspect pipeline schedule before deletion (%s)", type(exc).__name__)
+
     try:
-        scheduler = get_pipeline_scheduler()
-        if scheduler is not None:
-            scheduler.unschedule(name)
         scope, run_count = store.delete(name)
     except FileNotFoundError:
         return ResponseFormatter.error(
@@ -336,16 +313,35 @@ def _delete_pipeline_impl(*, tool_name: str, name: str) -> str:
             suggestion="Use list_pipelines() to see available pipelines",
             tool_name=tool_name,
         )
+    except ValueError as exc:
+        return ResponseFormatter.error(str(exc), tool_name=tool_name)
+
+    schedule_cleanup_failed = False
+    if scheduler is not None:
+        try:
+            scheduler.unschedule(name)
+        except Exception as exc:  # The pipeline is already deleted; report partial cleanup truthfully.
+            schedule_cleanup_failed = True
+            logger.warning("Pipeline deleted but live schedule cleanup failed (%s)", type(exc).__name__)
 
     parts = [f'🗑️ Pipeline "{name}" deleted.']
-    parts.append(f"  - Configuration removed (from {scope.value} scope)")
-    if run_count:
-        parts.append(f"  - {run_count} execution history record(s) removed")
+    parts.append(f"  - Configuration permanently removed (from {scope.value} scope)")
+    parts.append(f"  - {run_count} execution history record(s) permanently removed")
+    if scheduled_entry is not None:
+        parts.append("  - Process schedule removed")
+    if schedule_cleanup_failed:
+        parts.append("  - ⚠️ Configuration was deleted, but live schedule cleanup failed; restart the scheduler")
     return "\n".join(parts)
 
 
-def _get_pipeline_history_impl(*, tool_name: str, name: str, limit: int = 5) -> str:
-    store = get_pipeline_store()
+def _get_pipeline_history_impl(
+    *,
+    runtime: PipelineToolRuntime,
+    tool_name: str,
+    name: str,
+    limit: int = 5,
+) -> str:
+    store = runtime.store_for_current_tenant()
     if not store:
         return _store_unavailable(tool_name)
 
@@ -356,7 +352,15 @@ def _get_pipeline_history_impl(*, tool_name: str, name: str, limit: int = 5) -> 
             tool_name=tool_name,
         )
 
-    runs = store.get_history(name, limit=limit)
+    try:
+        runs = store.get_history(name, limit=limit)
+    except PipelineHistoryError as exc:
+        logger.warning("Pipeline history read failed (%s)", type(exc).__name__)
+        return ResponseFormatter.error(
+            "Pipeline execution history is unavailable because a stored record is invalid",
+            suggestion="Repair or remove the invalid run record, then retry",
+            tool_name=tool_name,
+        )
 
     if not runs:
         return (
@@ -402,13 +406,14 @@ def _get_pipeline_history_impl(*, tool_name: str, name: str, limit: int = 5) -> 
 
 def _schedule_pipeline_impl(
     *,
+    runtime: PipelineToolRuntime,
     tool_name: str,
     name: str,
-    cron: str = "",
+    cron: str,
     diff_mode: bool = True,
     notify: bool = True,
 ) -> str:
-    scheduler = get_pipeline_scheduler()
+    scheduler = runtime.scheduler
     if not scheduler:
         return ResponseFormatter.error(
             "Pipeline scheduler not initialized",
@@ -424,197 +429,108 @@ def _schedule_pipeline_impl(
             tool_name=tool_name,
         )
 
-    pipeline_name = name.strip().lower()
+    try:
+        pipeline_name = validate_pipeline_name(name)
+    except ValueError as exc:
+        return ResponseFormatter.error(str(exc), tool_name=tool_name)
+    if not cron.strip():
+        return ResponseFormatter.error(
+            "cron is required when creating or updating a schedule",
+            suggestion=f'Use unschedule_pipeline(name="{pipeline_name}") to remove a schedule',
+            tool_name=tool_name,
+        )
 
     try:
-        if cron.strip():
-            entry = scheduler.schedule(
-                pipeline_name,
-                cron,
-                diff_mode=diff_mode,
-                notify=notify,
-            )
-            next_run = entry.next_run.isoformat() if entry.next_run else "pending scheduler startup"
-            return "\n".join(
-                [
-                    f'⏰ Schedule set for "{entry.pipeline_name}":',
-                    f"  Cron: {entry.cron}",
-                    f"  Timezone: {entry.timezone}",
-                    f"  Next run: {next_run}",
-                    f"  Diff mode: {'on' if entry.diff_mode else 'off'}",
-                    f"  Notify: {'on' if entry.notify else 'off'}",
-                    "",
-                    f'💡 Remove: schedule_pipeline(name="{entry.pipeline_name}", cron="")',
-                    f'💡 History: get_pipeline_history(name="{entry.pipeline_name}")',
-                ]
-            )
-
-        removed = scheduler.unschedule(pipeline_name)
-        if removed is None:
-            return ResponseFormatter.error(
-                f"No active schedule found for '{pipeline_name}'",
-                suggestion=f'Create one with schedule_pipeline(name="{pipeline_name}", cron="0 9 * * 1")',
-                tool_name=tool_name,
-            )
-
-        return "\n".join(
-            [
-                f'🗓️ Schedule removed for "{removed.pipeline_name}".',
-                f"  Previous cron: {removed.cron}",
-                f"  Last status: {removed.last_status}",
-            ]
-        )
-    except FileNotFoundError as exc:
-        return ResponseFormatter.error(str(exc), tool_name=tool_name)
-    except (RuntimeError, ValueError) as exc:
-        return ResponseFormatter.error(str(exc), tool_name=tool_name)
-
-
-def _manage_pipeline_dispatch(
-    *,
-    action: str,
-    tool_name: str,
-    name: str = "",
-    config: str = "",
-    source: str = "",
-    tag: str = "",
-    tags: str = "",
-    description: str = "",
-    scope: str = "",
-    limit: int = 5,
-    cron: str = "",
-    diff_mode: bool = True,
-    notify: bool = True,
-) -> str:
-    normalized_action = action.strip().lower().replace("-", "_")
-    if normalized_action == "save":
-        return _save_pipeline_impl(
-            tool_name=tool_name,
-            name=name,
-            config=config,
-            tags=tags,
-            description=description,
-            scope=scope or "auto",
-        )
-    if normalized_action == "list":
-        return _list_pipelines_impl(tool_name=tool_name, tag=tag, scope=scope)
-    if normalized_action == "load":
-        resolved_source = source or name
-        if not resolved_source:
-            return ResponseFormatter.error(
-                "Pipeline source is required for load action",
-                suggestion="Provide source='saved:name' or source='file:path/to/pipeline.yaml'",
-                tool_name=tool_name,
-            )
-        return _load_pipeline_impl(tool_name=tool_name, source=resolved_source)
-    if normalized_action in {"delete", "remove"}:
-        if not name:
-            return ResponseFormatter.error(
-                "Pipeline name is required for delete action",
-                suggestion="Provide name='<saved pipeline>'",
-                tool_name=tool_name,
-            )
-        return _delete_pipeline_impl(tool_name=tool_name, name=name)
-    if normalized_action in {"history", "get_history", "get_pipeline_history"}:
-        if not name:
-            return ResponseFormatter.error(
-                "Pipeline name is required for history action",
-                suggestion="Provide name='<saved pipeline>'",
-                tool_name=tool_name,
-            )
-        return _get_pipeline_history_impl(tool_name=tool_name, name=name, limit=limit)
-    if normalized_action == "schedule":
-        if not name:
-            return ResponseFormatter.error(
-                "Pipeline name is required for schedule action",
-                suggestion="Provide name='<saved pipeline>'",
-                tool_name=tool_name,
-            )
-        return _schedule_pipeline_impl(
-            tool_name=tool_name,
-            name=name,
-            cron=cron,
+        entry = scheduler.schedule(
+            pipeline_name,
+            cron,
             diff_mode=diff_mode,
             notify=notify,
         )
+        next_run = entry.next_run.isoformat() if entry.next_run else "pending scheduler startup"
+        return "\n".join(
+            [
+                f'⏰ Schedule set for "{entry.pipeline_name}":',
+                f"  Cron: {entry.cron}",
+                f"  Timezone: {entry.timezone}",
+                f"  Next run: {next_run}",
+                f"  Diff mode: {'on' if entry.diff_mode else 'off'}",
+                f"  Notify: {'on' if entry.notify else 'off'}",
+                "",
+                f'💡 Remove: unschedule_pipeline(name="{entry.pipeline_name}")',
+                f'💡 History: get_pipeline_history(name="{entry.pipeline_name}")',
+            ]
+        )
+    except FileNotFoundError:
+        return ResponseFormatter.error(
+            f"Saved pipeline '{pipeline_name}' was not found",
+            suggestion="Use list_pipelines() to see available pipelines",
+            tool_name=tool_name,
+        )
+    except ValueError as exc:
+        return ResponseFormatter.error(str(exc), tool_name=tool_name)
+    except RuntimeError:
+        return ResponseFormatter.error(
+            "Pipeline scheduler could not create or update the schedule",
+            tool_name=tool_name,
+        )
 
-    return ResponseFormatter.error(
-        f"Unknown pipeline action: {action}",
-        suggestion="Use one of: save, list, load, delete, history, schedule",
-        tool_name=tool_name,
+
+def _unschedule_pipeline_impl(*, runtime: PipelineToolRuntime, tool_name: str, name: str) -> str:
+    scheduler = runtime.scheduler
+    if not scheduler:
+        return ResponseFormatter.error(
+            "Pipeline scheduler not initialized",
+            suggestion="Server may not be fully started",
+            tool_name=tool_name,
+        )
+    if current_tenant_id() != DEFAULT_TENANT_ID:
+        return ResponseFormatter.error(
+            "Scheduling is not available for isolated tenants",
+            suggestion="Manage the schedule from the default local tenant or an external scheduler",
+            tool_name=tool_name,
+        )
+
+    try:
+        pipeline_name = validate_pipeline_name(name)
+    except ValueError as exc:
+        return ResponseFormatter.error(str(exc), tool_name=tool_name)
+    try:
+        removed = scheduler.unschedule(pipeline_name)
+    except ValueError as exc:
+        return ResponseFormatter.error(str(exc), tool_name=tool_name)
+    except RuntimeError:
+        return ResponseFormatter.error(
+            "Pipeline scheduler could not remove the schedule",
+            tool_name=tool_name,
+        )
+    if removed is None:
+        return ResponseFormatter.error(
+            f"No active schedule found for '{pipeline_name}'",
+            suggestion=f'Create one with schedule_pipeline(name="{pipeline_name}", cron="0 9 * * 1")',
+            tool_name=tool_name,
+        )
+    return "\n".join(
+        [
+            f'🗓️ Schedule removed for "{removed.pipeline_name}".',
+            f"  Previous cron: {removed.cron}",
+            f"  Last status: {removed.last_status}",
+        ]
     )
 
 
-def register_pipeline_tools(mcp: MCPServer) -> None:
-    """Register facade + compatibility pipeline management MCP tools."""
-
-    @mcp.tool()
-    def manage_pipeline(
-        action: str = "list",
-        name: str = "",
-        config: str = "",
-        source: str = "",
-        tag: str = "",
-        tags: str = "",
-        description: str = "",
-        scope: str = "",
-        limit: int = 5,
-        cron: str = "",
-        diff_mode: bool = True,
-        notify: bool = True,
-    ) -> str:
-        """Manage saved pipelines through a single facade.
-
-        Supported actions:
-        - save: save or update a named pipeline
-        - list: list saved pipelines, optionally filtered by tag/scope
-        - load: load pipeline YAML from saved name or file source
-        - delete: delete a saved pipeline and its history
-        - history: inspect execution history for one saved pipeline
-        - schedule: create, update, or remove an APScheduler-backed schedule
-
-        Args:
-            action: One of save, list, load, delete, history, schedule. Default: list.
-            name: Pipeline name for save/delete/history/schedule.
-            config: Pipeline YAML/JSON string for save.
-            source: Pipeline source for load, e.g. "saved:weekly_search" or "file:path/to/pipeline.yaml".
-            tag: Tag filter for list action.
-            tags: Comma-separated tags for save action.
-            description: Description for save action.
-            scope: Scope for save/list actions: workspace, global, auto.
-            limit: History entry limit for history action.
-            cron: 5-field cron expression for schedule action. Empty string removes the schedule.
-            diff_mode: Store diff-mode preference with the schedule.
-            notify: Store notify preference with the schedule.
-
-        Returns:
-            Same human-readable responses as the legacy pipeline management tools.
-        """
-        return _manage_pipeline_dispatch(
-            action=action,
-            tool_name="manage_pipeline",
-            name=name,
-            config=config,
-            source=source,
-            tag=tag,
-            tags=tags,
-            description=description,
-            scope=scope,
-            limit=limit,
-            cron=cron,
-            diff_mode=diff_mode,
-            notify=notify,
-        )
+def register_pipeline_tools(mcp: MCPServer, *, runtime: PipelineToolRuntime) -> None:
+    """Register pipeline tools bound to one server-scoped runtime."""
 
     # ── Tool 1: save_pipeline ────────────────────────────────────────────
 
     @mcp.tool()
     def save_pipeline(
-        name: str,
-        config: str,
-        tags: str = "",
-        description: str = "",
-        scope: str = "auto",
+        name: PipelineName,
+        config: PipelineConfigText,
+        tags: PipelineTags | None = None,
+        description: Annotated[str, Field(max_length=2000)] = "",
+        scope: SaveScope = "auto",
     ) -> str:
         """Save a pipeline configuration for later reuse.
 
@@ -626,7 +542,7 @@ def register_pipeline_tools(mcp: MCPServer) -> None:
             name: Unique identifier (alphanumeric + hyphens/underscores, max 64 chars).
                   Overwrites if name already exists (upsert semantics).
             config: Pipeline YAML/JSON string. Same format as unified_search pipeline param.
-            tags: Comma-separated tags for filtering (e.g., "anesthesia,sedation").
+            tags: Bounded array of canonical tags (e.g., ["anesthesia", "sedation"]).
             description: Human-readable description of the pipeline's purpose.
             scope: Storage scope - "workspace" (project-level, git-trackable),
                    "global" (user-level, cross-project), or "auto" (workspace if
@@ -635,8 +551,8 @@ def register_pipeline_tools(mcp: MCPServer) -> None:
         Returns:
             Confirmation with pipeline metadata.
         """
-        return _manage_pipeline_dispatch(
-            action="save",
+        return _save_pipeline_impl(
+            runtime=runtime,
             tool_name="save_pipeline",
             name=name,
             config=config,
@@ -649,8 +565,8 @@ def register_pipeline_tools(mcp: MCPServer) -> None:
 
     @mcp.tool()
     def list_pipelines(
-        tag: str = "",
-        scope: str = "",
+        tag: Annotated[str, Field(max_length=100)] = "",
+        scope: ListScope = "",
     ) -> str:
         """List all saved pipeline configurations.
 
@@ -661,8 +577,8 @@ def register_pipeline_tools(mcp: MCPServer) -> None:
         Returns:
             Table of saved pipelines with name, scope, description, tags.
         """
-        return _manage_pipeline_dispatch(
-            action="list",
+        return _list_pipelines_impl(
+            runtime=runtime,
             tool_name="list_pipelines",
             tag=tag,
             scope=scope,
@@ -672,7 +588,7 @@ def register_pipeline_tools(mcp: MCPServer) -> None:
 
     @mcp.tool()
     def load_pipeline(
-        source: str,
+        source: PipelineSource,
     ) -> str:
         """Load a pipeline configuration for review or editing.
 
@@ -690,8 +606,8 @@ def register_pipeline_tools(mcp: MCPServer) -> None:
         Returns:
             Full pipeline YAML content + metadata.
         """
-        return _manage_pipeline_dispatch(
-            action="load",
+        return _load_pipeline_impl(
+            runtime=runtime,
             tool_name="load_pipeline",
             source=source,
         )
@@ -699,8 +615,12 @@ def register_pipeline_tools(mcp: MCPServer) -> None:
     # ── Tool 4: delete_pipeline ──────────────────────────────────────────
 
     @mcp.tool()
-    def delete_pipeline(name: str) -> str:
-        """Delete a saved pipeline configuration and its execution history.
+    def delete_pipeline(name: PipelineName) -> str:
+        """Permanently delete a saved pipeline configuration and execution history.
+
+        For the default tenant, any process-level schedule is removed only
+        after the stored pipeline deletion succeeds. Isolated tenants never
+        mutate the shared process scheduler.
 
         Args:
             name: Name of the saved pipeline to delete.
@@ -708,8 +628,8 @@ def register_pipeline_tools(mcp: MCPServer) -> None:
         Returns:
             Confirmation of deletion.
         """
-        return _manage_pipeline_dispatch(
-            action="delete",
+        return _delete_pipeline_impl(
+            runtime=runtime,
             tool_name="delete_pipeline",
             name=name,
         )
@@ -718,8 +638,8 @@ def register_pipeline_tools(mcp: MCPServer) -> None:
 
     @mcp.tool()
     def get_pipeline_history(
-        name: str,
-        limit: int = 5,
+        name: PipelineName,
+        limit: Annotated[int, Field(ge=1, le=100)] = 5,
     ) -> str:
         """Get execution history for a saved pipeline.
 
@@ -733,8 +653,8 @@ def register_pipeline_tools(mcp: MCPServer) -> None:
         Returns:
             Execution history with date, article count, new/removed articles, status.
         """
-        return _manage_pipeline_dispatch(
-            action="history",
+        return _get_pipeline_history_impl(
+            runtime=runtime,
             tool_name="get_pipeline_history",
             name=name,
             limit=limit,
@@ -744,8 +664,8 @@ def register_pipeline_tools(mcp: MCPServer) -> None:
 
     @mcp.tool()
     def schedule_pipeline(
-        name: str,
-        cron: str = "",
+        name: PipelineName,
+        cron: CronExpression,
         diff_mode: bool = True,
         notify: bool = True,
     ) -> str:
@@ -753,22 +673,35 @@ def register_pipeline_tools(mcp: MCPServer) -> None:
 
         Args:
             name: Saved pipeline name.
-            cron: Cron expression (5-field). Examples: "0 9 * * 1" (Mon 9am).
-                  Empty string removes an existing schedule.
+            cron: Required 5-field cron expression. Example: "0 9 * * 1" (Mon 9am).
             diff_mode: When True, store diff-mode preference with the schedule.
             notify: When True, store notify preference with the schedule.
 
         Returns:
             Schedule confirmation or removal result.
         """
-        return _manage_pipeline_dispatch(
-            action="schedule",
+        return _schedule_pipeline_impl(
+            runtime=runtime,
             tool_name="schedule_pipeline",
             name=name,
             cron=cron,
             diff_mode=diff_mode,
             notify=notify,
         )
+
+    # ── Tool 7: unschedule_pipeline ──────────────────────────────────────
+
+    @mcp.tool()
+    def unschedule_pipeline(name: PipelineName) -> str:
+        """Remove the active schedule for a saved pipeline.
+
+        Args:
+            name: Saved pipeline name whose schedule will be removed.
+
+        Returns:
+            Removed schedule metadata, or a native MCP error when none exists.
+        """
+        return _unschedule_pipeline_impl(runtime=runtime, tool_name="unschedule_pipeline", name=name)
 
 
 def _config_to_display_dict(config) -> dict:
@@ -799,11 +732,11 @@ def _config_to_display_dict(config) -> dict:
     if getattr(config, "variables", None):
         data["variables"] = config.variables
 
-    execution = config.execution
+    output = config.output
     data["output"] = {
-        **({"format": execution.format} if execution.format != "markdown" else {}),
-        "limit": execution.limit,
-        "ranking": execution.ranking,
+        **({"format": output.format} if output.format != "markdown" else {}),
+        "limit": output.limit,
+        "ranking": output.ranking,
     }
 
     return data

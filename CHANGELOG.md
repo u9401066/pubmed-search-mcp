@@ -10,7 +10,205 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.6.5] - 2026-08-18
+## [0.7.0] - 2026-09-01
+
+### Added
+
+- Added a shared Mermaid validation and repair kernel with deterministic
+  rich → safe → minimal fallbacks, structured audit diagnostics, render-smoke
+  fixtures, and reusable protection for Chronicle and citation diagrams.
+- Added bilingual website pages that inventory every class/function reachable
+  from `unified_search`, map its DDD/runtime relationships with Mermaid, and
+  audit all 41 public tools for overlap, side effects, contracts, security, and
+  remaining improvement opportunities.
+- Added `validate_pico_plan`, `prepare_figure_search`, and a complete seven-tool
+  pipeline lifecycle including explicit `unschedule_pipeline`, while keeping
+  `unified_search` as the only generic literature-search entry point.
+- Added shared canonical identifier value objects, schema-exact pipeline action
+  contracts, bounded parser/step budgets, and strict source-result invariants.
+- Added aggregate pipeline run budgets: a wall-clock deadline and an external-
+  call quota now cover the complete DAG, including concurrently scheduled
+  steps, alternate providers, and saved runs.
+
+### Changed
+
+- **Breaking:** reduced the primary MCP surface to 41 tools in 16 registry
+  categories. Retired provider-search aliases, the `manage_pipeline` action
+  bag, `parse_pico`, duplicate merge/timeline facades, and the separate Copilot
+  tool implementation are no longer registered or retained as compatibility
+  wrappers.
+- **Breaking:** `read_session` and `read_research_chronicle` now require their
+  discriminated `request={...}` envelopes. Pipeline configuration accepts only
+  canonical `output` and `template_params`; retired `execution`/`params`
+  fields, fuzzy action/template names, contradictory discriminators, enum
+  typos, scalar/stringified arrays, and action-parameter type coercion fail
+  closed.
+- Research Chronicle now renders a horizontal year spine with evidence-derived
+  thematic branches. Nested branch papers retain both their chronological year
+  anchor and parent lineage, and all projections share precision-aware ordering
+  and auditable branch evidence.
+- Unified Search now uses one typed adapter catalog and strict
+  `SourceAdapterResult` validator across shallow, deep, fallback, and
+  auto-relax paths. Its architecture inventory documents every reachable
+  planner, broker, provider, mapper, ranking, pipeline, artifact, and journal
+  dependency.
+- Copilot local smoke and authenticated service launchers now expose the same
+  canonical strict registry; HTTP compatibility remains transport middleware,
+  not a second product surface.
+- Pipeline, tool, and source runtimes are server-scoped so multiple server
+  instances in one process cannot replace one another's sessions, strategies,
+  chronicles, exports, schedules, provider clients, contact identities,
+  semantic caches, or HTTP pools. Scheduled DAGs capture their owning runtime;
+  the Python SDK exposes the same lifecycle through `async with` and `aclose()`.
+- **Breaking:** persisted sessions now require the exact
+  `research-session/v1` / `research-session-index/v1` schemas and first-class
+  `search_runs`. Legacy history-to-run projection, cache warmup payloads, and
+  unknown nested fields are rejected rather than migrated at read time.
+- **Breaking:** source selection uses exact canonical registry keys, and
+  Semantic Scholar configuration uses only `SEMANTIC_SCHOLAR_API_KEY`.
+  Hyphen/case/abbreviation aliases and `S2_API_KEY` are not normalized.
+  Unified filter/option/source expressions also reject case variants,
+  whitespace around separators, empty or duplicate tokens, retired spellings,
+  and string-to-integer limit coercion.
+- Full-text orchestration now has one owner under `application/fulltext`; the
+  duplicate infrastructure registry/service facades and pass-through download
+  wrappers were deleted.
+- **Breaking:** provider clients no longer expose a `strict_errors` soft-fail
+  mode, module-local client getters, convenience search/link functions, or a
+  second ad-hoc rate limiter. Failures always cross the canonical typed source
+  boundary, and runtime-owned client factories live only in
+  `infrastructure.sources`.
+- **Breaking:** `PubMedSearchClient.unified_search()` now composes the
+  application use case directly and returns typed articles, source coverage,
+  errors, and filter counts. It no longer imports an MCP runner or returns a
+  serialized MCP/artifact facade; durable journals and artifacts remain MCP
+  adapter responsibilities.
+
+### Fixed
+
+- The local browser broker now requires an explicitly provisioned bearer token
+  of at least 32 characters and never generates or logs authentication secrets.
+  Missing, weak, or whitespace-bearing tokens fail before Uvicorn starts.
+- Reference-verification deadlines now catch `asyncio.TimeoutError` explicitly,
+  so Python 3.10 returns auditable `not_checked` rows instead of leaking the
+  timeout while newer Python versions happen to catch the built-in alias.
+- Auto-relaxation no longer rewrites a typed PubMed timeout/failure as a valid
+  zero-result response; incomplete coverage remains machine-readable through
+  source errors, metadata, artifacts, and output status.
+- Pipeline details no longer splits a scalar PMID into characters, and the
+  metrics action now consumes the canonical PMID-keyed iCite response instead
+  of silently skipping enrichment.
+- Source envelopes now enforce exact source/operation provenance, runtime
+  container types, `total_count >= len(items) >= 0`, coherent
+  status/items/errors, and nested error identity. Malformed adapters fail
+  closed.
+- PubMed and licensed Scopus/Web of Science searches now return one typed page
+  contract with explicit total, offset, continuation, and warnings. List-only
+  search facades, mutable metadata side channels, and article-shaped error
+  sentinel rows were removed.
+- Provider outages and malformed Europe PMC, CORE, OpenAlex, Semantic Scholar,
+  ClinicalTrials.gov, and preprint payloads now remain typed source failures;
+  they cannot silently become authoritative empty result sets.
+- PubMed EFetch and all seven NCBI Extended ESearch/ESummary/ELink paths now
+  validate exact provider envelopes, requested-row identity, and duplicate or
+  missing records. Only documented empty/not-found shapes remain successful;
+  malformed NCBI payloads become non-retryable sanitized schema failures.
+- Explicit `clinical_trials` adjunct requests now run for Markdown, JSON, and
+  TOON and publish one `clinical-trials-adjunct/v1` coverage object across
+  output, source errors, query strategy, results, metadata, summary, and audit.
+  Retrieval, empty, timeout, validation, and Markdown-format failures remain
+  distinct and never leak raw provider details.
+- Open-i image search now requires a strict provider page and returns typed
+  per-source coverage. Only `total=0` with an empty list is authoritative
+  emptiness; malformed envelopes/all-invalid rows fail, mixed valid/invalid
+  rows are partial, and failed sources never inflate `sources_used` or a known
+  total. Markdown exposes the same sanitized failed/partial truth.
+- Full-text discovery now treats only HTTP 204/404 or a successfully parsed
+  zero-link response as source absence. Transport/HTTP outages and malformed
+  payloads become sanitized source failures, producing `partial` coverage when
+  another source succeeds and `unavailable` when none does.
+- `generate_search_queries` now distinguishes successful unchanged spelling,
+  zero MeSH matches, and zero-result query analysis from provider failure.
+  Spelling, MeSH, and query-analysis stages publish explicit
+  `completed`/`partial`/`failed` coverage and generic warnings without upstream
+  error details.
+- Chronicle retrieval now separates requested from effective ranking and emits
+  `citation-metrics-coverage/v1`. iCite ordering is claimed only after a
+  validated citation count is applied; partial, empty, malformed, and outage
+  outcomes remain visible and sanitized, and the audit rejects contradictory
+  provenance.
+- Unified enrichment no longer mutates shared articles from concurrent tasks or
+  lets provider completion order affect results. Crossref, journal-metrics,
+  and Unpaywall return immutable typed patches, apply in deterministic order,
+  and preserve sanitized partial/failure diagnostics through output, artifacts,
+  and audit metadata.
+- A runtime-derived audit now enforces 41 unique tool owners, recursively closed
+  object schemas, bounded primitive fields, exact discriminated unions,
+  required/default coherence, and annotation/side-effect consistency. Runtime,
+  official-export, and figure failures no longer expose mutable downstream
+  error text; duplicate citation-export pass-through facades were deleted.
+- Full-text link discovery now returns one immutable typed coverage result.
+  Successful links/text retain sibling-source failures as sanitized
+  `partial` coverage through download, extraction, MCP output, and artifacts;
+  mutable list facades and raw downstream error strings were removed.
+- Institutional access now rejects resolver bases containing query parameters,
+  credentials, fragments, or non-default ports, and the non-OpenURL WorldCat
+  and PubMed-search presets were removed. PMID-to-DOI diagnosis distinguishes
+  a confirmed missing DOI from a PubMed outage or malformed response without
+  exposing provider details.
+- Authenticated literature-note exports return tenant-relative logical
+  locators instead of server filesystem paths. Corrupt pipeline run records
+  now fail history reads explicitly and safely instead of being skipped and
+  misreported as an empty history.
+- Preprint outcomes now disclose provider query/window, limit, unknown corpus
+  total, and exact local year-filter exclusions. Unknown-year records fail a
+  requested hard year range, while medRxiv/bioRxiv Boolean or grouped syntax is
+  rejected before I/O rather than misread as literal all-term text.
+- Pipeline validation no longer offers an auto-fix path. Invalid YAML aliases,
+  oversized trees, unknown actions, malformed parameters, and exhausted run
+  budgets fail before later steps can consume rewritten caller intent.
+- Ranking/export fields now name their semantics precisely: rank position uses
+  `rank_percentile`, heuristic preprint handling uses
+  `exclude_detected_preprints`, and overlap is reported as
+  `pairwise_overlap`; removed context-graph projections no longer compete with
+  Research Chronicle for chronology ownership.
+- Inline Markdown code examples and queries use code-span escaping rather than
+  text escaping, preventing visible stray backslashes while retaining backtick
+  safety.
+- Host progress, logging, and resource callbacks now enforce a hard deadline.
+  Cooperative work is cancelled and reaped immediately; cancellation-resistant
+  work is quarantined in a server-owned pool capped at 32 entries, keeping core
+  tools responsive without unbounded detached tasks.
+- Host callbacks and citation expansion now share one bounded task-supervisor
+  primitive while retaining independent server-owned capacities and shutdown
+  cleanup; this removes duplicate detached-task lifecycle implementations.
+- Removed the environment-dependent profiling monkeypatch and hidden
+  `get_performance_metrics` registration, plus the orphan standalone FastAPI
+  presentation app and stdio background-HTTP launcher. Supported HTTP traffic
+  now reaches the canonical MCP application and its explicit tenant-guarded
+  companion routes only.
+- Chronicle diffs no longer emit the retired `removed_from_view` compatibility
+  key; absence remains the observational `not_observed_in_revision` fact.
+- Tool counts, examples, recovery handoffs, READMEs, Copilot guidance, packaged
+  skills, website content, architecture figures, and release metadata now agree
+  with the canonical contracts.
+
+### Security
+
+- Full-text URL retrieval now uses the bounded public-outbound kernel for the
+  initial request, every redirect, and every HTML-discovered candidate. Private,
+  loopback, link-local, DNS-rebinding, oversized, and deadline-amplifying paths
+  fail before protected content is fetched.
+- External source calls share redirect validation, byte caps, deadlines,
+  sanitized diagnostics, and explicit typed boundaries; global MCP text output
+  is capped at 500k characters.
+- Public errors and logs no longer echo provider response bodies, request URLs,
+  local paths, queries, identifiers, tokens, or raw exception text; regression
+  tests exercise representative secret/path-bearing failures.
+
+## 0.6.5 (unpublished development snapshot) - 2026-08-18
+
+> Unpublished development snapshot; these changes are included in v0.7.0.
 
 ### Fixed
 
@@ -29,7 +227,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `build_research_chronicle` exposes `max_events` as optional. Omitting it
   inherits the continued revision's value, otherwise it falls back to 30.
 
-## [0.6.4] - 2026-08-18
+## 0.6.4 (unpublished development snapshot) - 2026-08-18
+
+> Unpublished development snapshot; these changes are included in v0.7.0.
 
 ### Changed
 
@@ -2583,9 +2783,8 @@ get_citation_metrics(pmids="last", min_rcr=1.5, min_percentile=75)
 - [PyPI Package](https://pypi.org/project/pubmed-search-mcp/)
 - [Smithery](https://smithery.ai/server/pubmed-search-mcp)
 
-[Unreleased]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.6.5...HEAD
-[0.6.5]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.6.4...v0.6.5
-[0.6.4]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.6.3...v0.6.4
+[Unreleased]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.6.3...v0.7.0
 [0.6.3]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/u9401066/pubmed-search-mcp/compare/v0.6.0...v0.6.1

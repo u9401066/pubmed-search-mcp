@@ -76,7 +76,6 @@ class SemanticScholarDatasetsClient(BaseAPIClient):
         super().__init__(
             timeout=timeout,
             min_interval=1.0,
-            strict_errors=True,
             headers={
                 "User-Agent": "pubmed-search-mcp/1.0",
                 "Accept": "application/json",

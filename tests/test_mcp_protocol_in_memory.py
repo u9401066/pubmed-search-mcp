@@ -8,12 +8,14 @@ import pytest
 from mcp.client import Client
 
 from pubmed_search.domain.entities.article import UnifiedArticle
+from pubmed_search.infrastructure.sources import unified_broker
 from pubmed_search.presentation.mcp_server import create_server
 from pubmed_search.presentation.mcp_server.server import build_asgi_app
 from pubmed_search.presentation.mcp_server.tenancy import build_tenancy_middleware
+from pubmed_search.presentation.mcp_server.tool_contracts import MAX_MCP_TEXT_RESPONSE_CHARS, PubMedMCPServer
 from pubmed_search.presentation.mcp_server.tool_registry import TOOL_CATEGORIES
 from pubmed_search.presentation.mcp_server.tools import chronicle as chronicle_tools
-from pubmed_search.presentation.mcp_server.tools import unified as unified_module
+from pubmed_search.presentation.mcp_server.tools import unified as unified_tools
 from pubmed_search.shared.source_contracts import SourceAdapterResult
 from pubmed_search.shared.tenancy import TenantIdentity, bind_tenant, current_tenant
 
@@ -77,7 +79,7 @@ async def test_unified_search_reports_progress_and_persists_session(monkeypatch)
             },
         )
 
-    monkeypatch.setattr(unified_module, "_search_pubmed_adapter", _fake_search_pubmed_adapter)
+    monkeypatch.setattr(unified_broker, "_search_pubmed_adapter", _fake_search_pubmed_adapter)
 
     progress_updates: list[tuple[float, float | None, str | None]] = []
 
@@ -118,6 +120,250 @@ async def test_every_tool_exposes_a_usable_contract():
 
     assert [tool.name for tool in tools if not tool.description] == []
     assert [tool.name for tool in tools if not tool.input_schema] == []
+    assert [tool.name for tool in tools if tool.annotations is None] == []
+    assert [tool.name for tool in tools if not tool.meta] == []
+    assert [tool.name for tool in tools if tool.output_schema is not None] == []
+
+    by_name = {tool.name: tool for tool in tools}
+    assert by_name["unified_search"].annotations.read_only_hint is False
+    assert by_name["unified_search"].annotations.open_world_hint is True
+    assert by_name["get_fulltext"].annotations.read_only_hint is False
+    assert by_name["analyze_search_query"].annotations.open_world_hint is False
+    assert by_name["validate_pico_plan"].annotations.open_world_hint is False
+    assert by_name["list_resolver_presets"].annotations.open_world_hint is False
+    assert by_name["schedule_pipeline"].annotations.open_world_hint is True
+    assert by_name["read_session"].annotations.open_world_hint is False
+    assert by_name["delete_pipeline"].annotations.destructive_hint is True
+    assert by_name["delete_pipeline"].annotations.read_only_hint is False
+    assert by_name["build_research_chronicle"].annotations.idempotent_hint is False
+    assert by_name["save_pipeline"].annotations.idempotent_hint is False
+    assert by_name["unified_search"].meta["pubmed-search"]["contractVersion"] == 3
+    assert [tool.name for tool in tools if tool.input_schema.get("additionalProperties") is not False] == []
+
+
+@pytest.mark.asyncio
+async def test_unknown_tool_arguments_fail_closed():
+    async with Client(create_server()) as client:
+        result = await client.call_tool("analyze_search_query", {"query": "abc", "TYPO": "ignored-before"})
+
+    assert result.is_error is True
+
+
+@pytest.mark.asyncio
+async def test_pipeline_identity_and_tags_are_strict_machine_readable_contracts():
+    async with Client(create_server()) as client:
+        tools = {tool.name: tool for tool in (await client.list_tools()).tools}
+        invalid_name = await client.call_tool(
+            "save_pipeline",
+            {"name": "My Pipeline", "config": "template: comprehensive", "tags": ["review"]},
+        )
+        csv_tags = await client.call_tool(
+            "save_pipeline",
+            {"name": "my_pipeline", "config": "template: comprehensive", "tags": "review,weekly"},
+        )
+
+    properties = tools["save_pipeline"].input_schema["properties"]
+    assert properties["name"]["pattern"] == r"^[a-z0-9](?:[a-z0-9_-]{0,63})$"
+    tag_array = next(branch for branch in properties["tags"]["anyOf"] if branch.get("type") == "array")
+    assert tag_array["maxItems"] == 20
+    assert tag_array["items"]["pattern"] == r"^[A-Za-z0-9](?:[A-Za-z0-9_.-]{0,63})$"
+    assert invalid_name.is_error is True
+    assert csv_tags.is_error is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("tool_name", "arguments", "secret_marker"),
+    [
+        (
+            "analyze_search_query",
+            {"query": "abc", "TYPO": "schema-extra-secret-marker"},
+            "schema-extra-secret-marker",
+        ),
+        (
+            "analyze_search_query",
+            {"query": ["wrong-scalar-secret-marker"]},
+            "wrong-scalar-secret-marker",
+        ),
+        (
+            "get_fulltext",
+            {"source": {"kind": "pmid", "value": {"nested": "wrong-nested-secret-marker"}}},
+            "wrong-nested-secret-marker",
+        ),
+    ],
+)
+async def test_argument_validation_does_not_expose_rejected_values(tool_name, arguments, secret_marker, caplog):
+    async with Client(create_server()) as client:
+        result = await client.call_tool(tool_name, arguments)
+
+    rendered = " ".join(block.text for block in result.content if hasattr(block, "text"))
+    assert result.is_error is True
+    assert rendered.startswith("Invalid tool arguments.")
+    assert "input_value" not in rendered
+    assert secret_marker not in rendered
+    assert secret_marker not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_formatted_service_failures_use_native_mcp_error_channel(monkeypatch):
+    class BrokenAnalyzer:
+        def analyze(self, _query):
+            raise RuntimeError("private-upstream-sentinel")
+
+    monkeypatch.setattr(unified_tools, "QueryAnalyzer", BrokenAnalyzer)
+    async with Client(create_server()) as client:
+        result = await client.call_tool("analyze_search_query", {"query": "abc"})
+
+    rendered = " ".join(block.text for block in result.content if hasattr(block, "text"))
+    assert result.is_error is True
+    assert "private-upstream-sentinel" not in rendered
+
+
+@pytest.mark.asyncio
+async def test_global_execution_boundary_redacts_unhandled_exception_details(caplog):
+    server = PubMedMCPServer("redaction-test")
+
+    @server.tool(name="analyze_search_query")
+    def unexpected_failure() -> str:
+        raise RuntimeError("token=secret https://user:pass@example.test/private/path")
+
+    async with Client(server) as client:
+        result = await client.call_tool("analyze_search_query", {})
+
+    rendered = " ".join(block.text for block in result.content if hasattr(block, "text"))
+    assert result.is_error is True
+    assert rendered == "Tool execution failed. Retry later or use a narrower request."
+    assert "secret" not in rendered
+    assert "example.test" not in rendered
+    assert "/private/path" not in rendered
+    assert "secret" not in caplog.text
+    assert "example.test" not in caplog.text
+    assert "/private/path" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_global_transport_budget_rejects_oversized_tool_text():
+    server = PubMedMCPServer("bounded-test")
+
+    @server.tool(name="analyze_search_query")
+    def oversized_result() -> str:
+        return "x" * (MAX_MCP_TEXT_RESPONSE_CHARS + 1)
+
+    async with Client(server) as client:
+        result = await client.call_tool("analyze_search_query", {})
+
+    rendered = " ".join(block.text for block in result.content if hasattr(block, "text"))
+    assert result.is_error is True
+    assert "transport budget" in rendered
+    assert len(rendered) < 500
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("tool_name", "arguments"),
+    [
+        ("unified_search", {"query": "abc", "limit": "10"}),
+        ("read_session", {"request": {"action": "summary", "include_history": "true"}}),
+        ("build_research_chronicle", {"topic": "abc", "max_events": "10"}),
+    ],
+)
+async def test_tool_arguments_do_not_coerce_schema_invalid_scalar_types(tool_name, arguments):
+    async with Client(create_server()) as client:
+        result = await client.call_tool(tool_name, arguments)
+
+    assert result.is_error is True
+
+
+@pytest.mark.asyncio
+async def test_read_session_exposes_one_strict_discriminated_request():
+    async with Client(create_server()) as client:
+        tool = next(tool for tool in (await client.list_tools()).tools if tool.name == "read_session")
+        unrelated_field = await client.call_tool(
+            "read_session",
+            {"request": {"action": "summary", "pmid": "12345"}},
+        )
+        missing_required_field = await client.call_tool(
+            "read_session",
+            {"request": {"action": "article"}},
+        )
+        flat_legacy_shape = await client.call_tool(
+            "read_session",
+            {"action": "summary"},
+        )
+
+    assert tool.input_schema.get("required") == ["request"]
+    assert set(tool.input_schema.get("properties", {})) == {"request"}
+    assert unrelated_field.is_error is True
+    assert missing_required_field.is_error is True
+    assert flat_legacy_shape.is_error is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("tool_name", "arguments"),
+    [
+        ("validate_pico_plan", {"description": "ICU sedation", "sources": '["pubmed"]'}),
+        (
+            "prepare_figure_search",
+            {"source": '{"kind":"base64","data":"YWJj"}'},
+        ),
+    ],
+)
+async def test_tool_arguments_do_not_decode_stringified_arrays_or_objects(tool_name, arguments):
+    async with Client(create_server()) as client:
+        result = await client.call_tool(tool_name, arguments)
+
+    assert result.is_error is True
+
+
+@pytest.mark.asyncio
+async def test_institutional_tools_require_exact_discriminated_sources():
+    async with Client(create_server()) as client:
+        tools = {tool.name: tool for tool in (await client.list_tools()).tools}
+        legacy_link = await client.call_tool("get_institutional_link", {"pmid": "12345"})
+        wrong_link_kind = await client.call_tool(
+            "get_institutional_link",
+            {"source": {"kind": "pmcid", "value": "PMC12345"}},
+        )
+        legacy_diagnosis = await client.call_tool(
+            "diagnose_institutional_access",
+            {"doi": "10.1000/example"},
+        )
+
+    link_schema = tools["get_institutional_link"].input_schema
+    diagnosis_schema = tools["diagnose_institutional_access"].input_schema
+    assert link_schema["required"] == ["source"]
+    assert diagnosis_schema["required"] == ["source"]
+    assert set(link_schema["properties"]) == {"source"}
+    assert set(diagnosis_schema["properties"]) == {"source", "try_direct", "try_ezproxy"}
+    assert set(link_schema["properties"]["source"]["discriminator"]["mapping"]) == {
+        "doi",
+        "metadata",
+        "pmid",
+    }
+    assert set(diagnosis_schema["properties"]["source"]["discriminator"]["mapping"]) == {
+        "doi",
+        "pmid",
+    }
+    assert legacy_link.is_error is True
+    assert wrong_link_kind.is_error is True
+    assert legacy_diagnosis.is_error is True
+
+
+@pytest.mark.asyncio
+async def test_unified_search_accepts_pipeline_without_query():
+    async with Client(create_server()) as client:
+        tools = {tool.name: tool for tool in (await client.list_tools()).tools}
+        result = await client.call_tool(
+            "unified_search",
+            {
+                "pipeline": "template: comprehensive\ntemplate_params:\n  query: CRISPR gene therapy\n",
+                "dry_run": True,
+            },
+        )
+
+    assert "query" not in tools["unified_search"].input_schema.get("required", [])
+    assert result.is_error is False
 
 
 @pytest.mark.asyncio
@@ -132,9 +378,46 @@ async def test_consolidated_timeline_tools_stay_removed():
 @pytest.mark.asyncio
 async def test_chronicle_read_is_reachable_over_the_protocol():
     async with Client(create_server()) as client:
-        result = await client.call_tool("read_research_chronicle", {"action": "list"})
+        result = await client.call_tool(
+            "read_research_chronicle",
+            {"request": {"action": "list"}},
+        )
 
     assert result.is_error is False
+
+
+@pytest.mark.asyncio
+async def test_chronicle_read_rejects_legacy_and_cross_action_arguments_over_protocol():
+    async with Client(create_server()) as client:
+        tool = next(tool for tool in (await client.list_tools()).tools if tool.name == "read_research_chronicle")
+        flat_legacy = await client.call_tool(
+            "read_research_chronicle",
+            {"action": "list"},
+        )
+        unrelated_field = await client.call_tool(
+            "read_research_chronicle",
+            {"request": {"action": "list", "chronicle_id": "not-valid-for-list"}},
+        )
+        missing_diff_revision = await client.call_tool(
+            "read_research_chronicle",
+            {"request": {"action": "diff", "chronicle_id": "chronicle-1"}},
+        )
+        scalar_compare_values = await client.call_tool(
+            "read_research_chronicle",
+            {
+                "request": {
+                    "action": "compare",
+                    "selection": {"kind": "topics", "values": "topic-a,topic-b"},
+                }
+            },
+        )
+
+    assert tool.input_schema["required"] == ["request"]
+    assert set(tool.input_schema["properties"]) == {"request"}
+    assert flat_legacy.is_error is True
+    assert unrelated_field.is_error is True
+    assert missing_diff_revision.is_error is True
+    assert scalar_compare_values.is_error is True
 
 
 @pytest.mark.asyncio
@@ -151,7 +434,10 @@ async def test_in_memory_caller_is_the_default_tenant_and_may_persist():
     try:
         async with Client(create_server()) as client:
             with bind_tenant(TenantIdentity.for_principal("sess-1", source="transport")):
-                result = await client.call_tool("read_research_chronicle", {"action": "list"})
+                result = await client.call_tool(
+                    "read_research_chronicle",
+                    {"request": {"action": "list"}},
+                )
     finally:
         chronicle_tools.durable_storage_denied = original
 
@@ -172,7 +458,7 @@ async def test_transport_session_caller_is_refused_through_the_middleware():
     refusal = await middleware(ctx, call_next)
 
     assert refusal is not None
-    assert "PUBMED_AUTH_TOKENS" in refusal
+    assert "PUBMED\\_AUTH\\_TOKENS" in refusal
 
 
 @pytest.mark.parametrize("transport", ["streamable-http", "sse"])

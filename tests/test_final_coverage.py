@@ -87,22 +87,21 @@ class TestSearchMixinAdvanced:
             patch("pubmed_search.infrastructure.ncbi.search.Entrez.read") as mock_read,
             patch.object(searcher, "fetch_details", return_value=[{"pmid": "123"}]),
         ):
-            mock_read.return_value = {"IdList": ["123"]}
+            mock_read.return_value = {"IdList": ["123"], "Count": "1"}
             mock_esearch.return_value = MagicMock()
 
-            results = await searcher.search(
+            page = await searcher.search_page(
                 query="cancer",
                 limit=5,
                 min_year=2020,
                 max_year=2024,
                 article_type="Review",
                 strategy="recent",
-                date_from="2024/01/01",
-                date_to="2024/12/31",
-                date_type="pdat",
             )
 
-            assert len(results) == 1
+            assert page.items == [{"pmid": "123"}]
+            assert page.total == 1
+            assert page.metadata["date_contract"] == "publication_year"
 
     async def test_detect_ambiguous_terms(self, searcher):
         """Test ambiguous term detection."""
@@ -440,7 +439,7 @@ class TestDiscoveryEdgeCases:
             ]
             mock_elink.return_value = MagicMock()
 
-            results = await searcher.find_citing_articles("12345", limit=5)
+            results = await searcher.get_citing_articles("12345", limit=5)
 
             assert len(results) <= 5
 

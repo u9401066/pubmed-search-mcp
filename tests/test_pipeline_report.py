@@ -7,7 +7,7 @@ from typing import Any
 
 from pubmed_search.application.pipeline import (
     PipelineConfig,
-    PipelineExecutionSettings,
+    PipelineOutput,
     PipelineStep,
     StepResult,
 )
@@ -128,7 +128,7 @@ def _make_config(
     return PipelineConfig(
         name=name,
         steps=steps,
-        execution=PipelineExecutionSettings(limit=limit, ranking=ranking),
+        output=PipelineOutput(limit=limit, ranking=ranking),
     )
 
 
@@ -731,7 +731,7 @@ class TestSectionMethodologyNotes:
         result = _section_methodology_notes([], step_results, config)
 
         assert "Next Steps" in result
-        assert "get_session_pmids" in result
+        assert 'read_session(request={"action":"pmids"})' in result
         assert "prepare_export" in result
         assert "save_literature_notes" in result
 

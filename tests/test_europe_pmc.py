@@ -6,6 +6,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from pubmed_search.infrastructure.sources.base_client import APIRequestError
+
 
 class TestEuropePMCClient:
     """Tests for EuropePMCClient class."""
@@ -83,11 +85,18 @@ class TestEuropePMCClient:
             assert len(result["results"]) == 0
 
     async def test_search_error_handling(self, client):
-        """Test search error handling."""
+        """Transport/schema failure must not masquerade as an empty search."""
         with patch.object(client, "_make_request", return_value=None):
-            result = await client.search("test")
-            assert result["hit_count"] == 0
-            assert result["results"] == []
+            with pytest.raises(APIRequestError):
+                await client.search("test")
+
+    async def test_similar_articles_expose_order_as_rank_percentile(self, client, mock_search_response):
+        with patch.object(client, "_make_request", return_value=mock_search_response):
+            articles = await client.get_similar_articles(pmid="12345678")
+
+        assert articles[0]["rank_percentile"] == 1.0
+        assert articles[0]["rank_percentile_source"] == "europe_pmc_similar_query_order"
+        assert "similarity_score" not in articles[0]
 
     async def test_get_fulltext_xml(self, client):
         """Test fulltext XML retrieval."""
@@ -239,6 +248,16 @@ class TestEuropePMCClient:
         assert len(parsed["references"]) == 1
         assert parsed["references"][0]["label"] == "1"
 
+    async def test_parse_fulltext_xml_raises_safe_typed_error(self, client):
+        """Malformed provider XML must not become an article-shaped error row."""
+        from pubmed_search.shared.exceptions import ParseError
+
+        with pytest.raises(ParseError) as error:
+            client.parse_fulltext_xml("<article><secret>token=hidden</article>")
+
+        assert "token=hidden" not in str(error.value)
+        assert str(error.value) == ("Parse error (Europe PMC): Europe PMC returned XML that could not be parsed")
+
 
 class TestEuropePMCMCPTools:
     """Tests for Europe PMC MCP Tools."""
@@ -276,6 +295,8 @@ class TestEuropePMCMCPTools:
         """Test get_fulltext tool parses XML correctly."""
         from unittest.mock import patch
 
+        from pubmed_search.presentation.mcp_server.tools.article_source import PMCIDSource
+
         mock_xml = """<?xml version="1.0"?>
         <article><front><article-meta>
         <title-group><article-title>Test Title</article-title></title-group>
@@ -295,7 +316,7 @@ class TestEuropePMCMCPTools:
             mock_client.parse_fulltext_xml.return_value = mock_parsed
 
             tool = mcp._tool_manager._tools["get_fulltext"]
-            result = await tool.fn(pmcid="PMC1234567")
+            result = await tool.fn(source=PMCIDSource(kind="pmcid", value="PMC1234567"))
 
             assert "Test Title" in result
             assert "Introduction" in result
@@ -304,11 +325,13 @@ class TestEuropePMCMCPTools:
         """Test get_fulltext handles missing fulltext."""
         from unittest.mock import patch
 
+        from pubmed_search.presentation.mcp_server.tools.article_source import PMCIDSource
+
         with patch("pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client") as mock:
             mock.return_value.get_fulltext_xml = AsyncMock(return_value=None)
 
             tool = mcp._tool_manager._tools["get_fulltext"]
-            result = await tool.fn(pmcid="PMC9999999")
+            result = await tool.fn(source=PMCIDSource(kind="pmcid", value="PMC9999999"))
 
             # Updated to match actual error message format
             assert "no results found" in result.lower() or "not available" in result.lower()
@@ -316,14 +339,8 @@ class TestEuropePMCMCPTools:
     async def test_get_text_mined_terms_requires_id(self, mcp):
         """Test get_text_mined_terms requires pmid or pmcid."""
         tool = mcp._tool_manager._tools["get_text_mined_terms"]
-        result = await tool.fn()
-        assert "provide" in result.lower()
-
-    # v0.1.21: get_europe_pmc_citations has been removed
-    @pytest.mark.skip(reason="v0.1.21: get_europe_pmc_citations tool removed")
-    async def test_get_europe_pmc_citations_tool(self, mcp):
-        """Test get_europe_pmc_citations tool."""
-        # This tool has been removed in v0.1.21
+        with pytest.raises(TypeError, match="source"):
+            await tool.fn()
 
 
 class TestEuropePMCIntegration:
@@ -371,21 +388,24 @@ class TestSourcesIntegration:
         client = get_europe_pmc_client()
         assert client is not None
 
-    async def test_search_source_enum(self):
-        """Test SearchSource enum includes europe_pmc."""
-        from pubmed_search.infrastructure.sources import SearchSource
+    async def test_source_registry_includes_europe_pmc(self):
+        """The source registry is the sole identity/capability catalog."""
+        from pubmed_search.infrastructure.sources import get_source_registry
 
-        assert SearchSource.EUROPE_PMC.value == "europe_pmc"
+        definition = get_source_registry().get("europe_pmc")
+        assert definition is not None
+        assert definition.key == "europe_pmc"
 
     async def test_search_alternate_source_europe_pmc(self):
-        """Test search_alternate_source with europe_pmc."""
+        """Test the typed alternate-source adapter with Europe PMC."""
         from unittest.mock import patch
 
-        from pubmed_search.infrastructure.sources import search_alternate_source
+        from pubmed_search.infrastructure.sources import search_alternate_source_adapter
 
         mock_result = {"results": [{"pmid": "123", "title": "Test"}], "hit_count": 1}
 
         with patch("pubmed_search.infrastructure.sources.get_europe_pmc_client") as mock_client:
             mock_client.return_value.search = AsyncMock(return_value=mock_result)
-            results = await search_alternate_source(query="test", source="europe_pmc", limit=5)
-            assert len(results) == 1
+            result = await search_alternate_source_adapter(query="test", source="europe_pmc", limit=5)
+            assert result.status == "ok"
+            assert len(result.items) == 1

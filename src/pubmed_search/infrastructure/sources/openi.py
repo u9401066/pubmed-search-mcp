@@ -43,6 +43,11 @@ import math
 import urllib.parse
 from typing import Any
 
+from pubmed_search.application.image_search.source_adapters import (
+    ImageProviderIssue,
+    ImageProviderResponseError,
+    ImageProviderSearchResult,
+)
 from pubmed_search.domain.entities.image import ImageResult, ImageSource
 from pubmed_search.infrastructure.sources.base_client import BaseAPIClient
 
@@ -53,6 +58,10 @@ OPENI_BASE_URL = "https://openi.nlm.nih.gov"
 OPENI_API_URL = f"{OPENI_BASE_URL}/api/search"
 
 
+class _OpenIResponseSchemaError(ValueError):
+    """Internal marker for a malformed Open-i payload without retaining it."""
+
+
 class OpenIClient(BaseAPIClient):
     """
     Open-i (NLM) biomedical image search client.
@@ -61,8 +70,8 @@ class OpenIClient(BaseAPIClient):
 
     Usage:
         client = OpenIClient()
-        images, total = client.search("chest pneumonia", image_type="xg")
-        images, total = client.search("surgery", sort_by="d", video_only=True)
+        outcome = client.search("chest pneumonia", image_type="xg")
+        outcome = client.search("surgery", sort_by="d", video_only=True)
     """
 
     # ═══════════════════════════════════════════════════════════════════════════
@@ -335,7 +344,7 @@ class OpenIClient(BaseAPIClient):
         search_fields: str | None = None,
         video_only: bool = False,
         hmp_type: str | None = None,
-    ) -> tuple[list[ImageResult], int]:
+    ) -> ImageProviderSearchResult:
         """
         Search for biomedical images with full API support.
 
@@ -374,7 +383,7 @@ class OpenIClient(BaseAPIClient):
                       Only effective with collection="hmd".
 
         Returns:
-            Tuple of (list of ImageResult, total_count)
+            Strict provider result with typed success, empty, or partial status.
 
         Note:
             Pagination stops when:
@@ -383,57 +392,56 @@ class OpenIClient(BaseAPIClient):
             3. Offset exceeds total count
         """
         if not query or not query.strip():
-            return [], 0
+            raise ValueError("Open-i query must not be empty")
+        if len(query.strip()) > 500:
+            raise ValueError("Open-i query exceeds 500 characters")
+        if isinstance(max_results, bool) or not isinstance(max_results, int) or not 1 <= max_results <= 50:
+            raise ValueError("Open-i max_results must be an integer from 1 to 50")
 
         # Validate image_type
         if image_type and image_type not in self.VALID_IMAGE_TYPES:
-            logger.warning(f"Invalid image_type '{image_type}', valid: {self.VALID_IMAGE_TYPES}. Ignoring filter.")
-            image_type = None
+            raise ValueError(f"Invalid Open-i image_type: {image_type}")
 
         # Validate collection
         if collection and collection not in self.VALID_COLLECTIONS:
-            logger.warning(f"Invalid collection '{collection}', valid: {self.VALID_COLLECTIONS}. Ignoring filter.")
-            collection = None
+            raise ValueError(f"Invalid Open-i collection: {collection}")
 
         # Validate sort_by
         if sort_by and sort_by not in self.VALID_SORT_BY:
-            logger.warning(f"Invalid sort_by '{sort_by}', valid: {self.VALID_SORT_BY}. Ignoring.")
-            sort_by = None
+            raise ValueError(f"Invalid Open-i sort_by: {sort_by}")
 
         # Validate article_type
         if article_type and article_type not in self.VALID_ARTICLE_TYPES:
-            logger.warning(f"Invalid article_type '{article_type}', valid: {self.VALID_ARTICLE_TYPES}. Ignoring.")
-            article_type = None
+            raise ValueError(f"Invalid Open-i article_type: {article_type}")
 
         # Validate specialty
         if specialty and specialty not in self.VALID_SPECIALTIES:
-            logger.warning(f"Invalid specialty '{specialty}', valid: {self.VALID_SPECIALTIES}. Ignoring.")
-            specialty = None
+            raise ValueError(f"Invalid Open-i specialty: {specialty}")
 
         # Validate license_type
         if license_type and license_type not in self.VALID_LICENSES:
-            logger.warning(f"Invalid license_type '{license_type}', valid: {self.VALID_LICENSES}. Ignoring.")
-            license_type = None
+            raise ValueError(f"Invalid Open-i license_type: {license_type}")
 
         # Validate subset
         if subset and subset not in self.VALID_SUBSETS:
-            logger.warning(f"Invalid subset '{subset}', valid: {self.VALID_SUBSETS}. Ignoring.")
-            subset = None
+            raise ValueError(f"Invalid Open-i subset: {subset}")
 
         # Validate search_fields
         if search_fields and search_fields not in self.VALID_SEARCH_FIELDS:
-            logger.warning(f"Invalid search_fields '{search_fields}', valid: {self.VALID_SEARCH_FIELDS}. Ignoring.")
-            search_fields = None
+            raise ValueError(f"Invalid Open-i search_fields: {search_fields}")
 
         # Validate hmp_type
         if hmp_type and hmp_type not in self.VALID_HMP_TYPES:
-            logger.warning(f"Invalid hmp_type '{hmp_type}', valid: {self.VALID_HMP_TYPES}. Ignoring.")
-            hmp_type = None
+            raise ValueError(f"Invalid Open-i hmp_type: {hmp_type}")
 
         # Calculate pages needed
         pages_needed = math.ceil(max_results / self.PAGE_SIZE)
         all_images: list[ImageResult] = []
-        total_count = 0
+        total_count: int | None = None
+        rows_received = 0
+        rejected_rows = 0
+        pages_fetched = 0
+        issues: list[ImageProviderIssue] = []
 
         for page in range(pages_needed):
             start_index = page * self.PAGE_SIZE + 1  # 1-based
@@ -470,29 +478,41 @@ class OpenIClient(BaseAPIClient):
                 params["hmp"] = hmp_type
 
             url = f"{OPENI_API_URL}?{urllib.parse.urlencode(params)}"
-            logger.debug(f"Open-i search: {url}")
+            logger.debug("Executing bounded Open-i search page %s", page + 1)
 
             data = await self._make_request(url)
-            if data is None or isinstance(data, str):
-                logger.warning(f"Open-i search failed at page {page + 1}")
-                break
+            try:
+                page_total, items = self._validate_search_page(data, expected_total=total_count)
+            except _OpenIResponseSchemaError:
+                logger.warning("Open-i returned a malformed response page")
+                if all_images:
+                    issues.append(ImageProviderIssue(kind="malformed_response"))
+                    break
+                raise ImageProviderResponseError("Open-i response validation failed") from None
 
-            # Extract total on first page
-            if page == 0:
-                total_count = data.get("total", 0)
+            pages_fetched += 1
+            if total_count is None:
+                total_count = page_total
                 if total_count == 0:
-                    return [], 0
+                    return ImageProviderSearchResult(
+                        images=[],
+                        total_count=0,
+                        status="empty",
+                        rows_received=0,
+                        pages_fetched=pages_fetched,
+                    )
 
             # Parse results
-            items = data.get("list", [])
             for item in items:
                 if len(all_images) >= max_results:
                     break
+                rows_received += 1
                 try:
                     image = self._map_to_image_result(item)
                     all_images.append(image)
-                except Exception as e:
-                    logger.warning(f"Failed to parse Open-i result: {e}")
+                except (TypeError, ValueError) as exc:
+                    rejected_rows += 1
+                    logger.warning("Failed to parse Open-i result (%s)", type(exc).__name__)
                     continue
 
             # Stop conditions
@@ -501,13 +521,52 @@ class OpenIClient(BaseAPIClient):
             if len(items) < self.PAGE_SIZE:
                 # Last page — no more results
                 break
-            if end_index >= total_count:
+            if end_index >= page_total:
                 break
 
-        return all_images, total_count
+        if total_count is None or not all_images:
+            raise ImageProviderResponseError("Open-i response validation failed") from None
+        if rejected_rows:
+            issues.append(
+                ImageProviderIssue(
+                    kind="malformed_rows",
+                    rejected_rows=rejected_rows,
+                )
+            )
+        return ImageProviderSearchResult(
+            images=all_images,
+            total_count=total_count,
+            status="partial" if issues else "ok",
+            rows_received=rows_received,
+            pages_fetched=pages_fetched,
+            issues=tuple(issues),
+        )
 
     @staticmethod
-    def _map_to_image_result(item: dict[str, Any]) -> ImageResult:
+    def _validate_search_page(
+        data: object,
+        *,
+        expected_total: int | None,
+    ) -> tuple[int, list[object]]:
+        """Validate one Open-i response page without preserving raw payloads."""
+
+        if not isinstance(data, dict) or "total" not in data or "list" not in data:
+            raise _OpenIResponseSchemaError
+
+        total = data["total"]
+        items = data["list"]
+        if isinstance(total, bool) or not isinstance(total, int) or total < 0:
+            raise _OpenIResponseSchemaError
+        if not isinstance(items, list):
+            raise _OpenIResponseSchemaError
+        if (total == 0 and items) or (total > 0 and not items) or len(items) > total:
+            raise _OpenIResponseSchemaError
+        if expected_total is not None and total != expected_total:
+            raise _OpenIResponseSchemaError
+        return total, items
+
+    @staticmethod
+    def _map_to_image_result(item: object) -> ImageResult:
         """
         Map Open-i API response item to Domain entity.
 
@@ -520,29 +579,35 @@ class OpenIClient(BaseAPIClient):
         Returns:
             ImageResult domain entity
         """
-        # Image URLs — relative paths need base URL prefix
-        img_large = item.get("imgLarge", "")
-        img_thumb = item.get("imgThumb", "")
+        if not isinstance(item, dict):
+            raise TypeError("Open-i result row must be an object")
+
+        source_id = OpenIClient._required_text(item, "uid")
+        image_url = OpenIClient._asset_url(OpenIClient._required_text(item, "imgLarge"), required=True)
+        thumbnail_value = OpenIClient._optional_text(item, "imgThumb")
+        thumbnail_url = OpenIClient._asset_url(thumbnail_value, required=False) if thumbnail_value else None
 
         # Caption from nested image object
-        image_obj = item.get("image", {})
-        caption = ""
-        if isinstance(image_obj, dict):
-            caption = image_obj.get("caption", "")
+        image_obj = item.get("image")
+        if image_obj is None:
+            image_obj = {}
+        if not isinstance(image_obj, dict):
+            raise TypeError("Open-i image metadata must be an object")
+        caption = OpenIClient._optional_text(image_obj, "caption") or ""
 
         return ImageResult(
-            image_url=(f"{OPENI_BASE_URL}{img_large}" if img_large else ""),
-            thumbnail_url=(f"{OPENI_BASE_URL}{img_thumb}" if img_thumb else None),
+            image_url=image_url,
+            thumbnail_url=thumbnail_url,
             caption=caption,
             label="",
             source=ImageSource.OPENI,
-            source_id=item.get("uid", ""),
-            pmid=item.get("pmid") or None,
-            pmcid=item.get("pmcid") or None,
+            source_id=source_id,
+            pmid=OpenIClient._optional_text(item, "pmid"),
+            pmcid=OpenIClient._optional_text(item, "pmcid"),
             doi=None,  # Open-i does not return DOI
-            article_title=item.get("title", ""),
-            journal=item.get("journal_title", ""),
-            authors=item.get("authors", ""),
+            article_title=OpenIClient._optional_text(item, "title") or "",
+            journal=OpenIClient._optional_text(item, "journal_title") or "",
+            authors=OpenIClient._optional_text(item, "authors") or "",
             pub_year=None,  # Open-i does not return year directly
             image_type=None,  # API does not include type in response
             mesh_terms=OpenIClient._extract_mesh(item),
@@ -563,13 +628,50 @@ class OpenIClient(BaseAPIClient):
         Returns:
             Flat list of MeSH terms (major + minor)
         """
-        mesh = item.get("MeSH", {})
-        if not isinstance(mesh, dict):
+        mesh = item.get("MeSH")
+        if mesh is None:
             return []
+        if not isinstance(mesh, dict):
+            raise TypeError("Open-i MeSH metadata must be an object")
         major = mesh.get("major", [])
         minor = mesh.get("minor", [])
-        if not isinstance(major, list):
-            major = []
-        if not isinstance(minor, list):
-            minor = []
+        if not isinstance(major, list) or not isinstance(minor, list):
+            raise TypeError("Open-i MeSH terms must be lists")
+        if any(not isinstance(term, str) or not term.strip() for term in [*major, *minor]):
+            raise TypeError("Open-i MeSH terms must be non-empty strings")
         return list(major) + list(minor)
+
+    @staticmethod
+    def _required_text(item: dict[str, Any], key: str) -> str:
+        """Read one required non-empty provider text field."""
+
+        value = item.get(key)
+        if not isinstance(value, str) or not value.strip():
+            raise TypeError("Open-i result row is missing required text")
+        return value
+
+    @staticmethod
+    def _optional_text(item: dict[str, Any], key: str) -> str | None:
+        """Read one optional provider text field without coercion."""
+
+        value = item.get(key)
+        if value is None or value == "":
+            return None
+        if not isinstance(value, str):
+            raise TypeError("Open-i result row contains invalid text")
+        return value
+
+    @staticmethod
+    def _asset_url(value: str, *, required: bool) -> str:
+        """Resolve an Open-i-owned image path while rejecting foreign URLs."""
+
+        if not value:
+            if required:
+                raise ValueError("Open-i result row is missing its image URL")
+            return ""
+        if value.startswith("/"):
+            return f"{OPENI_BASE_URL}{value}"
+        parsed = urllib.parse.urlsplit(value)
+        if parsed.scheme == "https" and parsed.netloc == "openi.nlm.nih.gov":
+            return value
+        raise ValueError("Open-i result row contains an invalid image URL")

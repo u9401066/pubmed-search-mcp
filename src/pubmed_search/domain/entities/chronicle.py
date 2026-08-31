@@ -763,7 +763,7 @@ class ChronicleSnapshot:
     def from_dict(cls, data: dict[str, Any]) -> ChronicleSnapshot:
         """Rebuild a snapshot from its serialized form."""
         raw_schema_version = data.get("schema_version")
-        if raw_schema_version is not None and str(raw_schema_version) != CHRONICLE_SCHEMA_VERSION:
+        if raw_schema_version != CHRONICLE_SCHEMA_VERSION:
             msg = (
                 f"Unsupported Chronicle schema version {raw_schema_version!r}; "
                 f"this runtime supports {CHRONICLE_SCHEMA_VERSION!r}."
@@ -783,7 +783,7 @@ class ChronicleSnapshot:
             created_at=str(data.get("created_at") or utc_now_iso()),
             updated_at=str(data.get("updated_at") or utc_now_iso()),
             metadata=_as_dict(data.get("metadata")),
-            schema_version=str(data.get("schema_version") or CHRONICLE_SCHEMA_VERSION),
+            schema_version=CHRONICLE_SCHEMA_VERSION,
         )
 
 

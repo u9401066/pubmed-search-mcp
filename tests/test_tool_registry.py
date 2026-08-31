@@ -44,6 +44,13 @@ class TestListRegisteredTools:
         for tools in result.values():
             assert isinstance(tools, list)
 
+    async def test_returned_lists_cannot_mutate_canonical_registry(self):
+        result = list_registered_tools()
+        result["search"].append("not_a_real_tool")
+
+        assert TOOL_CATEGORIES["search"]["tools"] == ["unified_search"]
+        assert "not_a_real_tool" not in get_tools_by_category("search")
+
     async def test_unified_search_in_search(self):
         result = list_registered_tools()
         assert "unified_search" in result["search"]
@@ -103,7 +110,7 @@ class TestGetToolInfo:
         assert get_tool_info("nonexistent_tool_xyz") is None
 
     async def test_returns_category_description(self):
-        info = get_tool_info("parse_pico")
+        info = get_tool_info("validate_pico_plan")
         assert isinstance(info["category_description"], str)
         assert len(info["category_description"]) > 0
 
@@ -163,7 +170,7 @@ class TestGenerateToolsIndexMarkdown:
     async def test_contains_tool_names(self):
         md = generate_tools_index_markdown()
         assert "`unified_search`" in md
-        assert "`parse_pico`" in md
+        assert "`validate_pico_plan`" in md
 
 
 # ============================================================
@@ -184,6 +191,22 @@ class TestValidateToolRegistry:
         assert result["valid"] is True
         assert result["missing"] == []
         assert result["extra"] == []
+        assert result["duplicate_definitions"] == []
+
+    async def test_duplicate_category_assignment_is_invalid(self, monkeypatch):
+        all_tools = {tool for category in TOOL_CATEGORIES.values() for tool in category["tools"]}
+        monkeypatch.setitem(
+            TOOL_CATEGORIES,
+            "duplicate_test",
+            {"name": "Duplicate", "description": "invalid test fixture", "tools": ["unified_search"]},
+        )
+        mcp = MagicMock()
+        mcp.list_tools.return_value = _fake_tools(all_tools)
+
+        result = validate_tool_registry(mcp)
+
+        assert result["valid"] is False
+        assert result["duplicate_definitions"] == ["unified_search"]
 
     async def test_missing_tools(self):
         mcp = MagicMock()
@@ -240,18 +263,37 @@ class TestValidateToolRegistry:
         from pubmed_search.infrastructure.ncbi import LiteratureSearcher
         from pubmed_search.presentation.mcp_server.session_tools import register_session_tools
         from pubmed_search.presentation.mcp_server.tools import register_all_tools
+        from pubmed_search.presentation.mcp_server.tools.pipeline_tools import PipelineToolRuntime
 
         mcp = MCPServer(name="registry-sync-test")
         searcher = LiteratureSearcher(email="test@example.com")
         session_manager = MagicMock()
 
-        register_all_tools(mcp, searcher)
+        register_all_tools(
+            mcp,
+            searcher,
+            image_search_service=MagicMock(),
+            pipeline_runtime=PipelineToolRuntime(base_store=None),
+        )
         register_session_tools(mcp, session_manager)
         result = validate_tool_registry(mcp)
 
         assert result["valid"] is True
         assert "merge_search_results" not in result["registered"]
         assert set(TOOL_CATEGORIES["search"]["tools"]) == {"unified_search"}
+
+    async def test_retired_profiling_env_cannot_expand_public_surface(self, monkeypatch, tmp_path):
+        from pubmed_search.presentation.mcp_server.server import create_server
+
+        monkeypatch.setenv("PUBMED_PROFILING", "1")
+        mcp = create_server(email="test@example.com", data_dir=str(tmp_path))
+
+        registered = {tool.name for tool in await mcp.list_tools()}
+        declared = {name for category in TOOL_CATEGORIES.values() for name in category["tools"]}
+
+        assert registered == declared
+        assert len(registered) == 41
+        assert "get_performance_metrics" not in registered
 
 
 # ============================================================
@@ -298,6 +340,11 @@ class TestRegisterAllMcpTools:
         sm = MagicMock()
         sg = MagicMock()
         session_registry = MagicMock()
+        pipeline_runtime = MagicMock()
+        image_search_service = MagicMock()
+        source_runtime = MagicMock()
+        registered_names = {tool for category in TOOL_CATEGORIES.values() for tool in category["tools"]}
+        mcp.list_tools.return_value = _fake_tools(registered_names)
 
         with patch.object(reg_mod, "__name__", reg_mod.__name__):  # Keep module identity
             with (
@@ -305,45 +352,103 @@ class TestRegisterAllMcpTools:
                 patch("pubmed_search.presentation.mcp_server.session_tools.register_session_resources") as _mock_sres,
                 patch("pubmed_search.presentation.mcp_server.session_tools.register_session_tools") as _mock_stools,
                 patch("pubmed_search.presentation.mcp_server.tools.register_all_tools") as mock_all,
-                patch("pubmed_search.presentation.mcp_server.tools.set_session_manager") as mock_set_sm,
-                patch("pubmed_search.presentation.mcp_server.tools.set_strategy_generator") as mock_set_sg,
                 patch("pubmed_search.presentation.mcp_server.prompts.register_prompts") as _mock_prompts,
-                patch("pubmed_search.application.pipeline.store.PipelineStore") as _mock_ps,
-                patch("pubmed_search.presentation.mcp_server.tools.pipeline_tools.set_pipeline_store") as _mock_sps,
+                patch.object(
+                    reg_mod,
+                    "_build_image_search_service",
+                    return_value=image_search_service,
+                ) as mock_build_image_search,
+                patch.object(
+                    reg_mod,
+                    "build_pipeline_runtime",
+                    return_value=pipeline_runtime,
+                ) as mock_build_runtime,
             ):
                 stats = register_all_mcp_tools(
                     mcp,
                     searcher,
                     sm,
-                    sg,
-                    workspace_dir="/tmp/ws",
+                    pipeline_runtime=pipeline_runtime,
+                    source_runtime=source_runtime,
+                    strategy_generator=sg,
                     session_registry=session_registry,
                 )
 
-            mock_set_sm.assert_called_once_with(sm)
-            mock_set_sg.assert_called_once_with(sg)
-            mock_all.assert_called_once_with(mcp, searcher)
+            installed_runtime = mcp.install_tool_session_runtime.call_args.args[0]
+            assert installed_runtime.session_manager is sm
+            assert installed_runtime.session_registry is session_registry
+            assert installed_runtime.strategy_generator is sg
+            assert installed_runtime.source_runtime is source_runtime
+            mock_build_image_search.assert_called_once_with(source_runtime=source_runtime)
+            mock_all.assert_called_once_with(
+                mcp,
+                searcher,
+                image_search_service=image_search_service,
+                pipeline_runtime=pipeline_runtime,
+            )
             _mock_stools.assert_called_once_with(mcp, sm, session_registry=session_registry)
             _mock_sres.assert_called_once_with(mcp, sm, session_registry=session_registry)
-            _mock_ps.assert_called_once_with(global_data_dir=str(sm.data_dir), workspace_dir="/tmp/ws")
-            assert isinstance(stats, dict)
+            mock_build_runtime.assert_not_called()
+            assert stats == {
+                **{category_id: len(category["tools"]) for category_id, category in TOOL_CATEGORIES.items()},
+                "total_tools": len(registered_names),
+            }
 
     async def test_no_strategy_generator(self):
         """Test that strategy_generator=None skips set_strategy_generator."""
         mcp = MagicMock()
         searcher = MagicMock()
         sm = MagicMock()
+        registered_names = {tool for category in TOOL_CATEGORIES.values() for tool in category["tools"]}
+        mcp.list_tools.return_value = _fake_tools(registered_names)
 
         with (
             patch("pubmed_search.presentation.mcp_server.resources.register_resources"),
             patch("pubmed_search.presentation.mcp_server.session_tools.register_session_resources"),
             patch("pubmed_search.presentation.mcp_server.session_tools.register_session_tools"),
             patch("pubmed_search.presentation.mcp_server.tools.register_all_tools"),
-            patch("pubmed_search.presentation.mcp_server.tools.set_session_manager"),
-            patch("pubmed_search.presentation.mcp_server.tools.set_strategy_generator") as mock_set_sg,
             patch("pubmed_search.presentation.mcp_server.prompts.register_prompts"),
-            patch("pubmed_search.application.pipeline.store.PipelineStore"),
-            patch("pubmed_search.presentation.mcp_server.tools.pipeline_tools.set_pipeline_store"),
+            patch(
+                "pubmed_search.presentation.mcp_server.tool_registry.build_pipeline_runtime",
+                return_value=MagicMock(),
+            ),
         ):
-            register_all_mcp_tools(mcp, searcher, sm, strategy_generator=None)
-            mock_set_sg.assert_not_called()
+            register_all_mcp_tools(
+                mcp,
+                searcher,
+                sm,
+                pipeline_runtime=MagicMock(),
+                source_runtime=MagicMock(),
+                strategy_generator=None,
+            )
+            installed_runtime = mcp.install_tool_session_runtime.call_args.args[0]
+            assert installed_runtime.session_manager is sm
+            assert installed_runtime.strategy_generator is None
+
+    async def test_registration_fails_closed_when_runtime_registry_drifts(self):
+        mcp = MagicMock()
+        mcp.list_tools.return_value = _fake_tools({"unified_search"})
+
+        with (
+            patch("pubmed_search.presentation.mcp_server.resources.register_resources"),
+            patch("pubmed_search.presentation.mcp_server.session_tools.register_session_resources"),
+            patch("pubmed_search.presentation.mcp_server.session_tools.register_session_tools"),
+            patch("pubmed_search.presentation.mcp_server.tools.register_all_tools"),
+            patch("pubmed_search.presentation.mcp_server.prompts.register_prompts"),
+            patch(
+                "pubmed_search.presentation.mcp_server.tool_registry.build_pipeline_runtime",
+                return_value=MagicMock(),
+            ),
+            pytest.raises(RuntimeError, match="Canonical MCP tool registry mismatch"),
+        ):
+            register_all_mcp_tools(
+                mcp,
+                MagicMock(),
+                MagicMock(),
+                pipeline_runtime=MagicMock(),
+                source_runtime=MagicMock(),
+            )
+
+    def test_registration_requires_explicit_runtime_dependencies(self):
+        with pytest.raises(TypeError, match="pipeline_runtime"):
+            register_all_mcp_tools(MagicMock(), MagicMock(), MagicMock())  # type: ignore[call-arg]

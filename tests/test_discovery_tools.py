@@ -1,5 +1,5 @@
 """
-Tests for Discovery Tools - search_literature, find_related, find_citing, etc.
+Tests for Discovery Tools - find_related, find_citing, etc.
 """
 
 from __future__ import annotations
@@ -9,99 +9,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 
-class TestAmbiguousTermDetection:
-    """Tests for ambiguous journal name detection."""
-
-    async def test_detect_ambiguous_journal_name(self):
-        """Test detection of journal names that could be topics."""
-        from pubmed_search.presentation.mcp_server.tools.discovery import (
-            _detect_ambiguous_terms,
-        )
-
-        # Single word that's a journal name
-        result = _detect_ambiguous_terms("anesthesiology")
-        assert len(result) > 0
-        assert result[0]["journal"] == "Anesthesiology"
-
-    async def test_detect_ambiguous_with_other_terms(self):
-        """Test that journal names with many other terms are not flagged."""
-        from pubmed_search.presentation.mcp_server.tools.discovery import (
-            _detect_ambiguous_terms,
-        )
-
-        # Many other terms = probably a topic search
-        result = _detect_ambiguous_terms("anesthesiology patient safety monitoring guidelines review")
-        # Should return empty or very few since there are many other terms
-        assert len(result) == 0
-
-    async def test_detect_multiple_ambiguous(self):
-        """Test detection of multiple ambiguous terms."""
-        from pubmed_search.presentation.mcp_server.tools.discovery import (
-            _detect_ambiguous_terms,
-        )
-
-        result = _detect_ambiguous_terms("lancet cell")
-        assert len(result) >= 1  # At least one should be detected
-
-    async def test_no_ambiguous_terms(self):
-        """Test query with no ambiguous terms."""
-        from pubmed_search.presentation.mcp_server.tools.discovery import (
-            _detect_ambiguous_terms,
-        )
-
-        result = _detect_ambiguous_terms("diabetes mellitus treatment")
-        assert len(result) == 0
-
-
-class TestAmbiguityHint:
-    """Tests for ambiguity hint formatting."""
-
-    async def test_format_ambiguity_hint_empty(self):
-        """Test formatting empty hint."""
-        from pubmed_search.presentation.mcp_server.tools.discovery import (
-            _format_ambiguity_hint,
-        )
-
-        result = _format_ambiguity_hint([], "test query")
-        assert result == ""
-
-    async def test_format_ambiguity_hint_single(self):
-        """Test formatting single ambiguous term hint."""
-        from pubmed_search.presentation.mcp_server.tools.discovery import (
-            _format_ambiguity_hint,
-        )
-
-        ambiguous = [
-            {
-                "term": "anesthesiology",
-                "journal": "Anesthesiology",
-                "hint": "journal[ta]",
-            }
-        ]
-        result = _format_ambiguity_hint(ambiguous, "anesthesiology")
-
-        assert "⚠️" in result
-        assert "Tip" in result
-        assert "Anesthesiology" in result
-
-    async def test_format_ambiguity_hint_max_two(self):
-        """Test that only 2 hints are shown max."""
-        from pubmed_search.presentation.mcp_server.tools.discovery import (
-            _format_ambiguity_hint,
-        )
-
-        ambiguous = [
-            {"term": "a", "journal": "A", "hint": "a"},
-            {"term": "b", "journal": "B", "hint": "b"},
-            {"term": "c", "journal": "C", "hint": "c"},
-        ]
-        result = _format_ambiguity_hint(ambiguous, "test")
-        # Should only show 2 hints
-        assert result.count("|") <= 1  # Only one separator for 2 items
-
-
-class TestSearchLiteratureTool:
-    """Tests for search_literature tool."""
+class TestDiscoveryRegistration:
+    """Tests for the registered discovery tool group."""
 
     @pytest.fixture
     def mock_mcp(self):
@@ -113,8 +22,8 @@ class TestSearchLiteratureTool:
     @pytest.fixture
     def mock_searcher(self, mock_article_data):
         """Create mock searcher."""
+        del mock_article_data
         searcher = AsyncMock()
-        searcher.search.return_value = [mock_article_data]
         return searcher
 
     async def test_discovery_tools_register(self, mock_mcp, mock_searcher):
@@ -177,7 +86,7 @@ class TestGetArticleReferencesTool:
         mcp.tool = lambda: lambda f: f
 
         searcher = AsyncMock()
-        searcher.get_article_references.return_value = [{"error": "API Error"}]
+        searcher.get_article_references.side_effect = RuntimeError("API unavailable")
 
         register_discovery_tools(mcp, searcher)
 

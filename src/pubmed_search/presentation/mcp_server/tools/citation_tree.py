@@ -8,9 +8,6 @@ tracing the research lineage of a scientific paper both forward
 Tool:
 - build_citation_tree: Build and visualize citation network (6 output formats)
 
-Removed in v0.3.1:
-- suggest_citation_tree → Agent can decide directly based on context
-
 Supports multiple output formats:
 - cytoscape: Cytoscape.js compatible JSON (academic standard)
 - g6: AntV G6 format (modern, high-performance)
@@ -24,9 +21,26 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import TYPE_CHECKING, Any, Union
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 
-from ._common import InputNormalizer, ResponseFormatter
+from pydantic import Field
+
+from pubmed_search.application.citation_network import (
+    CitationBuildError,
+    CitationNetworkConfig,
+    CitationNetworkResult,
+    CitationNetworkService,
+)
+from pubmed_search.application.visualization import (
+    MermaidGraphBuilder,
+    MermaidRenderResult,
+    render_mermaid_graph,
+    validate_mermaid_source,
+)
+from pubmed_search.domain.value_objects import IdentifierValidationError, normalize_pmid
+
+from ._common import ResponseFormatter
+from .tool_session import get_tool_session_runtime
 
 if TYPE_CHECKING:
     from mcp.server.mcpserver import MCPServer
@@ -39,53 +53,64 @@ logger = logging.getLogger(__name__)
 MAX_DEPTH = 3  # Maximum allowed depth to prevent API overload
 DEFAULT_LIMIT_PER_LEVEL = 5
 MAX_TOTAL_NODES = 100  # Safety limit
+MAX_CONCURRENT_FETCHES = 6
+CITATION_TREE_TIMEOUT_SECONDS = 45.0
 
 # Supported output formats
 SUPPORTED_FORMATS = ["cytoscape", "g6", "d3", "vis", "graphml", "mermaid"]
+CitationDirection = Literal["forward", "backward", "both"]
+CitationOutputFormat = Literal["cytoscape", "g6", "d3", "vis", "graphml", "mermaid"]
+CitationPMID = Annotated[str, Field(strict=True, min_length=1, max_length=512)]
+CitationDepth = Annotated[int, Field(strict=True, ge=1, le=MAX_DEPTH)]
+CitationLimit = Annotated[int, Field(strict=True, ge=1, le=20)]
+FORMAT_INFO = {
+    "cytoscape": {
+        "name": "Cytoscape.js",
+        "description": "Academic standard, bioinformatics",
+        "usage": "cy.add(result.graph)",
+    },
+    "g6": {
+        "name": "AntV G6",
+        "description": "Modern, high-performance, TypeScript",
+        "usage": "graph.data(result.graph); graph.render();",
+    },
+    "d3": {
+        "name": "D3.js Force Graph",
+        "description": "Most flexible, Observable notebooks",
+        "usage": "forceSimulation(result.graph.nodes)",
+    },
+    "vis": {
+        "name": "vis-network",
+        "description": "Simple, easy prototypes",
+        "usage": "new vis.Network(container, result.graph)",
+    },
+    "graphml": {
+        "name": "GraphML (XML)",
+        "description": "Gephi, VOSviewer, yEd, Pajek",
+        "usage": "Import XML file into desktop tool",
+    },
+    "mermaid": {
+        "name": "Mermaid Diagram",
+        "description": "VS Code Markdown preview, documentation",
+        "usage": "Paste into ```mermaid code block in Markdown",
+    },
+}
 
 
-def _make_node(article: dict[str, Any], level: int, direction: str) -> dict[str, Any]:
-    """
-    Create internal node representation from article data.
-
-    Args:
-        article: Article dict with pmid, title, authors, year, journal
-        level: Depth level (0=root, 1=first level, etc.)
-        direction: 'citing' (forward), 'reference' (backward), or 'root'
-
-    Returns:
-        Internal node format (converted to specific format later)
-    """
-    pmid = str(article.get("pmid", "unknown"))
-    title = article.get("title", "Unknown Title")
-    year = article.get("year", "?")
-    journal = article.get("journal", "Unknown Journal")
-    authors = article.get("authors", [])
-    first_author = authors[0] if authors else "Unknown"
-    doi = article.get("doi", "")
-
-    # Truncate title for label
-    short_title = title[:60] + "..." if len(title) > 60 else title
-
-    return {
-        "pmid": pmid,
-        "label": f"{first_author} ({year})",
-        "title": title,
-        "short_title": short_title,
-        "year": year,
-        "journal": journal,
-        "authors": authors[:3],
-        "first_author": first_author,
-        "doi": doi,
-        "level": level,
-        "direction": direction,
-        "node_type": "root" if level == 0 else direction,
-    }
-
-
-def _make_edge(source_pmid: str, target_pmid: str, edge_type: str) -> dict[str, Any]:
-    """Create internal edge representation."""
-    return {"source": source_pmid, "target": target_pmid, "edge_type": edge_type}
+def _validate_tree_identifiers_and_bounds(
+    pmid: object,
+    depth: object,
+    limit_per_level: object,
+) -> tuple[str, int, int]:
+    """Enforce the public citation-tree contract for direct callers too."""
+    if not isinstance(pmid, str):
+        raise IdentifierValidationError("PMID must be a string")
+    normalized_pmid = normalize_pmid(pmid)
+    if isinstance(depth, bool) or not isinstance(depth, int) or not 1 <= depth <= MAX_DEPTH:
+        raise ValueError(f"depth must be an integer between 1 and {MAX_DEPTH}")
+    if isinstance(limit_per_level, bool) or not isinstance(limit_per_level, int) or not 1 <= limit_per_level <= 20:
+        raise ValueError("limit_per_level must be an integer between 1 and 20")
+    return normalized_pmid, depth, limit_per_level
 
 
 # ============================================================================
@@ -260,18 +285,21 @@ def _to_graphml(nodes: list[dict], edges: list[dict], root_title: str) -> str:
     ]
 
     for node in nodes:
-        lines.append(f'    <node id="{node["pmid"]}">')
-        lines.append(f'      <data key="label">{_escape_xml(node["label"])}</data>')
-        lines.append(f'      <data key="title">{_escape_xml(node["title"][:200])}</data>')
-        lines.append(f'      <data key="year">{node["year"]}</data>')
-        lines.append(f'      <data key="journal">{_escape_xml(node["journal"])}</data>')
+        node_id = _escape_xml(str(node["pmid"]))
+        lines.append(f'    <node id="{node_id}">')
+        lines.append(f'      <data key="label">{_escape_xml(str(node["label"]))}</data>')
+        lines.append(f'      <data key="title">{_escape_xml(str(node["title"])[:200])}</data>')
+        lines.append(f'      <data key="year">{_escape_xml(str(node["year"]))}</data>')
+        lines.append(f'      <data key="journal">{_escape_xml(str(node["journal"]))}</data>')
         lines.append(f'      <data key="level">{node["level"]}</data>')
-        lines.append(f'      <data key="direction">{node["direction"]}</data>')
+        lines.append(f'      <data key="direction">{_escape_xml(str(node["direction"]))}</data>')
         lines.append("    </node>")
 
     for i, edge in enumerate(edges):
-        lines.append(f'    <edge id="e{i}" source="{edge["source"]}" target="{edge["target"]}">')
-        lines.append(f'      <data key="edge_type">{edge["edge_type"]}</data>')
+        source = _escape_xml(str(edge["source"]))
+        target = _escape_xml(str(edge["target"]))
+        lines.append(f'    <edge id="e{i}" source="{source}" target="{target}">')
+        lines.append(f'      <data key="edge_type">{_escape_xml(str(edge["edge_type"]))}</data>')
         lines.append("    </edge>")
 
     lines.append("  </graph>")
@@ -291,79 +319,135 @@ def _escape_xml(text: str) -> str:
     )
 
 
-def _to_mermaid(nodes: list[dict], edges: list[dict], root_title: str) -> str:
-    """
-    Convert to Mermaid diagram format.
-    Can be directly previewed in VS Code Markdown or rendered by Mermaid.js.
-
-    Returns: Mermaid diagram code string (ready for ```mermaid block)
-    """
-    lines = [
-        "graph TD",
-        f"    %% Citation Tree: {_escape_mermaid(root_title[:50])}...",
-        "",
-    ]
-
-    # Define nodes with styling
+def _to_mermaid(
+    nodes: list[dict[str, Any]],
+    edges: list[dict[str, Any]],
+    root_title: str,
+) -> MermaidRenderResult:
+    """Render a citation graph through the shared safe Mermaid kernel."""
+    builder = MermaidGraphBuilder()
+    node_id_by_pmid: dict[str, str] = {}
     for node in nodes:
-        pmid = node["pmid"]
-        # Create readable label: "Author (Year)<br/>Short Title"
-        label = f"{_escape_mermaid(node['first_author'])} ({node['year']})"
-        short_title = _escape_mermaid(node["short_title"][:40])
+        pmid = str(node.get("pmid") or "unknown")
+        direction = str(node.get("direction") or "reference")
+        role = "shared" if direction == "both" else direction
+        if role not in {"root", "citing", "reference", "shared"}:
+            role = "reference"
+        label = (
+            f"{node.get('first_author') or 'Unknown'} ({node.get('year') or '?'}) — "
+            f"{node.get('short_title') or node.get('title') or 'Unknown Title'} — PMID {pmid}"
+        )
+        node_id = builder.add_node("pmid", pmid, label, role, fallback=f"PMID {pmid}")
+        if node_id is not None:
+            node_id_by_pmid[pmid] = node_id
 
-        # Use different shapes based on direction
-        if node["direction"] == "root":
-            # Root: stadium shape (rounded rectangle)
-            lines.append(f'    pmid_{pmid}(["<b>{label}</b><br/>{short_title}..."])')
-        elif node["direction"] == "citing":
-            # Citing: rectangle
-            lines.append(f'    pmid_{pmid}["{label}<br/>{short_title}..."]')
-        else:  # reference
-            # Reference: rounded rectangle
-            lines.append(f'    pmid_{pmid}("{label}<br/>{short_title}...")')
-
-    lines.append("")
-
-    # Define edges
     for edge in edges:
-        source = f"pmid_{edge['source']}"
-        target = f"pmid_{edge['target']}"
-        if edge["edge_type"] == "cites":
-            # Citing article points to root (arrow direction: newer -> older)
-            lines.append(f"    {source} --> {target}")
-        else:  # cited_by / references
-            # Root points to reference
-            lines.append(f"    {source} --> {target}")
+        source_id = node_id_by_pmid.get(str(edge.get("source") or ""))
+        target_id = node_id_by_pmid.get(str(edge.get("target") or ""))
+        builder.add_edge(source_id, target_id)
 
-    lines.append("")
-
-    # Add styling
-    lines.append("    %% Styling")
-    for node in nodes:
-        pmid = node["pmid"]
-        if node["direction"] == "root":
-            lines.append(f"    style pmid_{pmid} fill:#ff6b6b,stroke:#c0392b,stroke-width:3px,color:#fff")
-        elif node["direction"] == "citing":
-            lines.append(f"    style pmid_{pmid} fill:#4ecdc4,stroke:#16a085,color:#fff")
-        else:  # reference
-            lines.append(f"    style pmid_{pmid} fill:#95e1d3,stroke:#27ae60")
-
-    return "\n".join(lines)
-
-
-def _escape_mermaid(text: str) -> str:
-    """Escape special Mermaid characters."""
-    return (
-        text.replace('"', "'")
-        .replace("[", "(")
-        .replace("]", ")")
-        .replace("{", "(")
-        .replace("}", ")")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace("#", "")
-        .replace("&", "and")
+    result = render_mermaid_graph(
+        builder.graph,
+        direction="TD",
+        style_roles=("root", "citing", "reference", "shared", "notice"),
+        repairs=builder.repairs,
+        omitted=builder.omitted,
+        fallback_title=root_title,
+        fallback_details="Citation visualization simplified; use the structured graph",
     )
+    if not validate_mermaid_source(result.source)[0]:  # construction invariant and final safety gate
+        raise ValueError("shared Mermaid renderer returned invalid source")
+    return result
+
+
+def _convert_graph(
+    output_format: str,
+    nodes: list[dict[str, Any]],
+    edges: list[dict[str, Any]],
+    root_title: str,
+) -> tuple[dict[str, Any] | str, dict[str, Any] | None]:
+    """Serialize one internal graph and return optional Mermaid diagnostics."""
+    if output_format == "cytoscape":
+        return _to_cytoscape(nodes, edges), None
+    if output_format == "g6":
+        return _to_g6(nodes, edges), None
+    if output_format == "d3":
+        return _to_d3(nodes, edges), None
+    if output_format == "vis":
+        return _to_vis(nodes, edges), None
+    if output_format == "graphml":
+        return _to_graphml(nodes, edges, root_title), None
+    mermaid_result = _to_mermaid(nodes, edges, root_title)
+    return mermaid_result.source, mermaid_result.to_dict()
+
+
+def _format_citation_response(
+    network: CitationNetworkResult,
+    *,
+    pmid: str,
+    depth: int,
+    direction: str,
+    limit_per_level: int,
+    output_format: str,
+) -> str:
+    nodes = network.nodes
+    edges = network.edges
+    root_article = network.root_article
+    root_title = nodes[0]["title"]
+    stats = network.statistics()
+    coverage = network.coverage()
+    graph_data, mermaid_validation = _convert_graph(output_format, nodes, edges, root_title)
+    result = {
+        "status": coverage["status"],
+        "format": output_format,
+        "format_info": FORMAT_INFO[output_format],
+        "graph": graph_data,
+        "metadata": {
+            "root_pmid": pmid,
+            "root_title": root_title,
+            "root_year": root_article.get("year", "?"),
+            "depth": depth,
+            "direction": direction,
+            "limit_per_level": limit_per_level,
+            "statistics": stats,
+            "coverage": coverage,
+            "execution_limits": {
+                "max_total_nodes": MAX_TOTAL_NODES,
+                "max_concurrency": MAX_CONCURRENT_FETCHES,
+                "timeout_seconds": CITATION_TREE_TIMEOUT_SECONDS,
+            },
+        },
+        "available_formats": list(FORMAT_INFO),
+    }
+    if mermaid_validation is not None:
+        result["mermaid_validation"] = mermaid_validation
+
+    summary_status = "Built with partial source coverage" if network.partial else "Built with complete source coverage"
+    summary = f"""🌳 **Citation Tree {summary_status}**
+
+📄 **Root Paper**: {root_title[:80]}...
+   PMID: {pmid} | Year: {root_article.get("year", "?")}
+
+📊 **Statistics**:
+   - Total Nodes: {stats["total_nodes"]}
+   - Total Edges: {stats["total_edges"]}
+   - Citing Articles (forward): {stats.get("citing_articles", 0)}
+   - Reference Articles (backward): {stats.get("reference_articles", 0)}
+   - Shared Articles: {stats.get("shared_articles", 0)}
+   - Depth: {depth} levels
+   - Completed Expansions: {coverage["completed_expansions"]}/{coverage["requested_expansions"]}
+   - Source Failures: {coverage["failed_expansions"]}
+   - Timed Out Expansions: {coverage["timed_out_expansions"]}
+
+🎨 **Output Format**: {FORMAT_INFO[output_format]["name"]}
+   {FORMAT_INFO[output_format]["description"]}
+
+📌 **Other Available Formats**: {", ".join(value for value in FORMAT_INFO if value != output_format)}
+
+---
+
+"""
+    return summary + json.dumps(result, indent=2, ensure_ascii=False)
 
 
 # ============================================================================
@@ -376,12 +460,11 @@ def register_citation_tree_tools(mcp: MCPServer, searcher: LiteratureSearcher):
 
     @mcp.tool()
     async def build_citation_tree(
-        pmid: Union[str, int],
-        depth: Union[int, str] = 2,
-        direction: str = "both",
-        limit_per_level: Union[int, str] = 5,
-        include_details: Union[bool, str] = True,
-        output_format: str = "cytoscape",
+        pmid: CitationPMID,
+        depth: CitationDepth = 2,
+        direction: CitationDirection = "both",
+        limit_per_level: CitationLimit = 5,
+        output_format: CitationOutputFormat = "cytoscape",
     ) -> str:
         """
         Build a citation tree (network) from a single article.
@@ -399,7 +482,7 @@ def register_citation_tree_tools(mcp: MCPServer, searcher: LiteratureSearcher):
         - "d3": D3.js force graph format (flexible, Observable)
         - "vis": vis-network format (simple, quick prototypes)
         - "graphml": GraphML XML (desktop tools: Gephi, yEd, VOSviewer)
-        - "mermaid": Mermaid diagram (VS Code preview, Markdown) ⭐NEW
+        - "mermaid": Mermaid diagram (VS Code preview, Markdown)
 
         Args:
             pmid: Single PubMed ID (e.g., "12345678").
@@ -413,7 +496,6 @@ def register_citation_tree_tools(mcp: MCPServer, searcher: LiteratureSearcher):
                    - "backward": Only references (what this cites)
                    - "both": Both directions (default, recommended)
             limit_per_level: Max articles to fetch per node per level (default 5)
-            include_details: Include full article details (default True)
             output_format: Graph format for visualization (default "cytoscape")
                    - "cytoscape": Cytoscape.js (academic standard, bioinformatics)
                    - "g6": AntV G6 (modern, TypeScript, great for large graphs)
@@ -436,274 +518,88 @@ def register_citation_tree_tools(mcp: MCPServer, searcher: LiteratureSearcher):
             # Export GraphML for Gephi analysis
             build_citation_tree(pmid="33475315", depth=2, output_format="graphml")
         """
-        logger.info(
-            f"Building citation tree for PMID: {pmid}, depth={depth}, direction={direction}, format={output_format}"
-        )
-
         try:
-            # Normalize inputs using InputNormalizer
-            normalized_pmid = InputNormalizer.normalize_pmid_single(pmid)
-            if not normalized_pmid:
-                return ResponseFormatter.error(
-                    "Invalid or missing PMID",
-                    suggestion="Provide a valid PubMed ID",
-                    example='build_citation_tree(pmid="33475315", depth=2)',
-                    tool_name="build_citation_tree",
-                )
-
-            normalized_depth = InputNormalizer.normalize_limit(depth, default=2, min_val=1, max_val=MAX_DEPTH)
-            normalized_limit = InputNormalizer.normalize_limit(limit_per_level, default=5, min_val=1, max_val=20)
+            normalized_pmid, normalized_depth, normalized_limit = _validate_tree_identifiers_and_bounds(
+                pmid,
+                depth,
+                limit_per_level,
+            )
 
             # Validate output format
-            valid_formats = ["cytoscape", "g6", "d3", "vis", "graphml", "mermaid"]
-            normalized_format = output_format.lower().strip() if output_format else "cytoscape"
-            if normalized_format not in valid_formats:
+            valid_formats = SUPPORTED_FORMATS
+            if output_format not in valid_formats:
                 return ResponseFormatter.error(
                     f"Invalid output format: '{output_format}'",
                     suggestion=f"Use one of: {', '.join(valid_formats)}",
                     example='build_citation_tree(pmid="12345678", output_format="mermaid")',
                     tool_name="build_citation_tree",
                 )
+            normalized_format = output_format
 
             # Validate direction
             valid_directions = ["forward", "backward", "both"]
-            normalized_direction = direction.lower().strip() if direction else "both"
-            if normalized_direction not in valid_directions:
+            if direction not in valid_directions:
                 return ResponseFormatter.error(
                     f"Invalid direction: '{direction}'",
                     suggestion=f"Use one of: {', '.join(valid_directions)}",
                     example='build_citation_tree(pmid="12345678", direction="both")',
                     tool_name="build_citation_tree",
                 )
+            normalized_direction = direction
 
-            # Initialize data structures
-            nodes: list[dict[str, Any]] = []
-            edges: list[dict[str, Any]] = []
-            seen_pmids: set[str] = set()
-            stats: dict[str, Any] = {
-                "total_nodes": 0,
-                "total_edges": 0,
-                "citing_articles": 0,
-                "reference_articles": 0,
-                "levels": {},
-            }
+            logger.info(
+                "Building citation tree for PMID %s at depth %s, direction %s, format %s",
+                normalized_pmid,
+                normalized_depth,
+                normalized_direction,
+                normalized_format,
+            )
 
-            # Fetch root article
-            root_articles = await searcher.fetch_details([normalized_pmid])
-            if not root_articles or "error" in root_articles[0]:
+            config = CitationNetworkConfig(
+                depth=normalized_depth,
+                direction=normalized_direction,
+                limit_per_level=normalized_limit,
+                max_total_nodes=MAX_TOTAL_NODES,
+                max_concurrency=MAX_CONCURRENT_FETCHES,
+                timeout_seconds=CITATION_TREE_TIMEOUT_SECONDS,
+            )
+            try:
+                network = await CitationNetworkService(
+                    searcher,
+                    task_supervisor=get_tool_session_runtime().citation_tasks,
+                ).build(normalized_pmid, config)
+            except CitationBuildError as exc:
+                reason = {
+                    "root_timeout": "The citation source timed out before the root paper was available",
+                    "runtime_saturated": "The citation source task capacity is temporarily exhausted",
+                    "root_source_unavailable": "The citation source is currently unavailable",
+                    "root_not_found": f"Could not fetch article with PMID: {normalized_pmid}",
+                }.get(exc.code, "Could not initialize the citation graph")
                 return ResponseFormatter.error(
-                    f"Could not fetch article with PMID: {normalized_pmid}",
-                    suggestion="Verify the PMID is correct",
+                    reason,
+                    suggestion="Verify the PMID and retry later or request a smaller graph",
                     example='fetch_article_details(pmids="33475315")',
                     tool_name="build_citation_tree",
                 )
+            return _format_citation_response(
+                network,
+                pmid=normalized_pmid,
+                depth=normalized_depth,
+                direction=normalized_direction,
+                limit_per_level=normalized_limit,
+                output_format=normalized_format,
+            )
 
-            root_article = root_articles[0]
-            root_node = _make_node(root_article, level=0, direction="root")
-            nodes.append(root_node)
-            seen_pmids.add(normalized_pmid)
-            stats["total_nodes"] = 1
-            stats["levels"]["0"] = 1
-
-            # BFS traversal for each direction
-            async def traverse(
-                start_pmids: list[str],
-                current_depth: int,
-                fetch_func,
-                edge_type: str,
-                direction_name: str,
-            ):
-                """
-                BFS traversal helper.
-
-                Args:
-                    start_pmids: PMIDs to expand
-                    current_depth: Current depth level
-                    fetch_func: Function to get related articles (citing or refs)
-                    edge_type: 'cites' or 'cited_by'
-                    direction_name: 'citing' or 'reference' for stats
-                """
-                if current_depth > normalized_depth:
-                    return
-
-                next_level_pmids = []
-                level_key = str(current_depth)
-
-                for parent_pmid in start_pmids:
-                    if stats["total_nodes"] >= MAX_TOTAL_NODES:
-                        logger.warning(f"Reached max nodes limit ({MAX_TOTAL_NODES})")
-                        break
-
-                    # Fetch related articles
-                    try:
-                        related = await fetch_func(parent_pmid, normalized_limit)
-                    except Exception as e:
-                        logger.warning(f"Error fetching for {parent_pmid}: {e}")
-                        continue
-
-                    if not related or (related and "error" in related[0]):
-                        continue
-
-                    for article in related:
-                        article_pmid = str(article.get("pmid", ""))
-                        if not article_pmid or article_pmid in seen_pmids:
-                            continue
-
-                        if stats["total_nodes"] >= MAX_TOTAL_NODES:
-                            break
-
-                        # Add node
-                        node = _make_node(article, level=current_depth, direction=direction_name)
-                        nodes.append(node)
-                        seen_pmids.add(article_pmid)
-                        stats["total_nodes"] += 1
-                        stats[f"{direction_name}_articles"] = stats.get(f"{direction_name}_articles", 0) + 1
-                        stats["levels"][level_key] = stats["levels"].get(level_key, 0) + 1
-
-                        # Add edge
-                        if edge_type == "cites":
-                            # citing article -> root (citing article cites root)
-                            edge = _make_edge(article_pmid, parent_pmid, edge_type)
-                        else:  # cited_by / references
-                            # root -> reference (root cites reference)
-                            edge = _make_edge(parent_pmid, article_pmid, edge_type)
-
-                        edges.append(edge)
-                        stats["total_edges"] += 1
-
-                        # Queue for next level
-                        next_level_pmids.append(article_pmid)
-
-                # Continue to next level
-                if next_level_pmids and current_depth < normalized_depth:
-                    await traverse(
-                        next_level_pmids,
-                        current_depth + 1,
-                        fetch_func,
-                        edge_type,
-                        direction_name,
-                    )
-
-            # Build forward tree (citing articles)
-            if normalized_direction in ["forward", "both"]:
-                await traverse(
-                    [normalized_pmid],
-                    1,
-                    searcher.get_citing_articles,
-                    "cites",
-                    "citing",
-                )
-
-            # Build backward tree (references)
-            if normalized_direction in ["backward", "both"]:
-                await traverse(
-                    [normalized_pmid],
-                    1,
-                    searcher.get_article_references,
-                    "cited_by",
-                    "reference",
-                )
-
-            # Convert to requested output format
-            root_title = root_article.get("title", "Unknown")
-
-            format_info = {
-                "cytoscape": {
-                    "name": "Cytoscape.js",
-                    "description": "Academic standard, bioinformatics",
-                    "usage": "cy.add(result.graph)",
-                },
-                "g6": {
-                    "name": "AntV G6",
-                    "description": "Modern, high-performance, TypeScript",
-                    "usage": "graph.data(result.graph); graph.render();",
-                },
-                "d3": {
-                    "name": "D3.js Force Graph",
-                    "description": "Most flexible, Observable notebooks",
-                    "usage": "forceSimulation(result.graph.nodes)",
-                },
-                "vis": {
-                    "name": "vis-network",
-                    "description": "Simple, easy prototypes",
-                    "usage": "new vis.Network(container, result.graph)",
-                },
-                "graphml": {
-                    "name": "GraphML (XML)",
-                    "description": "Gephi, VOSviewer, yEd, Pajek",
-                    "usage": "Import XML file into desktop tool",
-                },
-                "mermaid": {
-                    "name": "Mermaid Diagram",
-                    "description": "VS Code Markdown preview, documentation",
-                    "usage": "Paste into ```mermaid code block in Markdown",
-                },
-            }
-
-            # Convert internal format to requested output format
-            graph_data: Union[dict[str, Any], str]
-            if normalized_format == "cytoscape":
-                graph_data = _to_cytoscape(nodes, edges)
-            elif normalized_format == "g6":
-                graph_data = _to_g6(nodes, edges)
-            elif normalized_format == "d3":
-                graph_data = _to_d3(nodes, edges)
-            elif normalized_format == "vis":
-                graph_data = _to_vis(nodes, edges)
-            elif normalized_format == "graphml":
-                graph_data = _to_graphml(nodes, edges, root_title)
-            elif normalized_format == "mermaid":
-                graph_data = _to_mermaid(nodes, edges, root_title)
-            else:
-                # Default to cytoscape if format is not recognized (should not happen)
-                graph_data = _to_cytoscape(nodes, edges)
-
-            # Build result
-            result = {
-                "format": normalized_format,
-                "format_info": format_info[normalized_format],
-                "graph": graph_data,
-                "metadata": {
-                    "root_pmid": normalized_pmid,
-                    "root_title": root_title,
-                    "root_year": root_article.get("year", "?"),
-                    "depth": normalized_depth,
-                    "direction": normalized_direction,
-                    "limit_per_level": normalized_limit,
-                    "statistics": stats,
-                },
-                "available_formats": list(format_info.keys()),
-            }
-
-            # Add summary as human-readable output first
-            summary = f"""🌳 **Citation Tree Built Successfully**
-
-📄 **Root Paper**: {root_title[:80]}...
-   PMID: {normalized_pmid} | Year: {root_article.get("year", "?")}
-
-📊 **Statistics**:
-   - Total Nodes: {stats["total_nodes"]}
-   - Total Edges: {stats["total_edges"]}
-   - Citing Articles (forward): {stats.get("citing_articles", 0)}
-   - Reference Articles (backward): {stats.get("reference_articles", 0)}
-   - Depth: {normalized_depth} levels
-
-🎨 **Output Format**: {format_info[normalized_format]["name"]}
-   {format_info[normalized_format]["description"]}
-
-📌 **Other Available Formats**: {", ".join(f for f in format_info if f != normalized_format)}
-
----
-
-"""
-            return summary + json.dumps(result, indent=2, ensure_ascii=False)
-
-        except Exception as e:
-            logger.exception(f"Build citation tree failed: {e}")
+        except (IdentifierValidationError, ValueError) as exc:
             return ResponseFormatter.error(
-                e,
+                exc,
+                suggestion="Provide one PMID string, depth 1-3, and limit_per_level 1-20",
+                tool_name="build_citation_tree",
+            )
+        except Exception as exc:
+            logger.warning("Build citation tree failed (%s)", type(exc).__name__)
+            return ResponseFormatter.error(
+                "Citation tree construction failed",
                 suggestion="Check PMID and try again with smaller depth",
                 tool_name="build_citation_tree",
             )
-
-    # suggest_citation_tree removed in v0.3.1 - Agent can decide directly

@@ -6,7 +6,6 @@ import argparse
 import asyncio
 import base64
 import ipaddress
-import logging
 import os
 import secrets
 from contextlib import asynccontextmanager, suppress
@@ -22,9 +21,7 @@ DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8766
 DEFAULT_TIMEOUT_SECONDS = 45
 DEFAULT_MAX_BYTES = 50 * 1024 * 1024
-GENERATED_TOKEN_BYTES = 32
-
-logger = logging.getLogger(__name__)
+MIN_BROKER_TOKEN_CHARS = 32
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Awaitable, Callable
@@ -42,6 +39,10 @@ class BrokerConfig:
     download_dir: Path
     timeout_seconds: int
     max_bytes: int
+
+    def __post_init__(self) -> None:
+        """Reject missing, weak, or whitespace-bearing bearer tokens."""
+        _require_broker_token(self.token)
 
 
 def _env_bool(name: str, *, default: bool) -> bool:
@@ -105,11 +106,18 @@ def _is_loopback_origin(origin: str) -> bool:
     return _is_loopback_host(parsed.hostname or "")
 
 
-def _resolve_broker_token(explicit_token: str | None) -> tuple[str, bool]:
-    """Keep explicit tokens compatible, otherwise create a high-entropy token."""
-    if explicit_token is not None and explicit_token.strip():
-        return explicit_token, False
-    return secrets.token_urlsafe(GENERATED_TOKEN_BYTES), True
+def _require_broker_token(explicit_token: str | None) -> str:
+    """Return a caller-provisioned bearer token or fail closed."""
+    if explicit_token is None or not explicit_token:
+        msg = "browser broker token is required; set --token or BROWSER_FETCH_BROKER_TOKEN"
+        raise ValueError(msg)
+    if any(character.isspace() for character in explicit_token):
+        msg = "browser broker token must not contain whitespace"
+        raise ValueError(msg)
+    if len(explicit_token) < MIN_BROKER_TOKEN_CHARS:
+        msg = f"browser broker token must contain at least {MIN_BROKER_TOKEN_CHARS} characters"
+        raise ValueError(msg)
+    return explicit_token
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -121,7 +129,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--token",
         default=os.environ.get("BROWSER_FETCH_BROKER_TOKEN") or os.environ.get("BROWSER_FETCH_TOKEN") or None,
-        help="Bearer token required by MCP requests. A high-entropy runtime token is generated when omitted.",
+        help="Required bearer token shared with MCP requests (at least 32 characters).",
     )
     parser.add_argument(
         "--headless",
@@ -355,13 +363,10 @@ def main() -> None:
     args = parser.parse_args()
     if not _is_loopback_host(args.host):
         parser.error("browser fetch broker is local-only; --host must be a loopback address")
-    token, generated = _resolve_broker_token(args.token)
-    if generated:
-        logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-        logger.warning(
-            "No browser broker token was configured. Generated runtime token (copy it to BROWSER_FETCH_TOKEN): %s",
-            token,
-        )
+    try:
+        token = _require_broker_token(args.token)
+    except ValueError as exc:
+        parser.error(str(exc))
     harden_http_client_logging()
     config = BrokerConfig(
         host=args.host,

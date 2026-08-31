@@ -26,8 +26,6 @@ from pubmed_search.application.search.result_aggregator import (
     RankingDimension,
     ResultAggregator,
     UnionFind,
-    aggregate_results,
-    rank_results,
 )
 from pubmed_search.domain.entities.article import UnifiedArticle
 
@@ -1024,32 +1022,6 @@ class TestResultAggregator:
         # Should be ranked
         scores = [a.ranking_score for a in articles]
         assert scores == sorted(scores, reverse=True)
-
-
-class TestConvenienceFunctions:
-    """Tests for module-level convenience functions."""
-
-    async def test_aggregate_results(self, mock_article):
-        """Test aggregate_results function."""
-        source1 = [mock_article(pmid="111")]
-        source2 = [mock_article(pmid="222")]
-
-        articles, stats = aggregate_results([source1, source2])
-
-        assert len(articles) == 2
-        assert stats.total_input == 2
-
-    async def test_rank_results(self, mock_article):
-        """Test rank_results function."""
-        articles = [
-            mock_article(year=2024),
-            mock_article(year=2020),
-        ]
-
-        ranked = rank_results(articles)
-
-        assert len(ranked) == 2
-        assert ranked[0].ranking_score >= ranked[1].ranking_score
 
 
 # =============================================================================

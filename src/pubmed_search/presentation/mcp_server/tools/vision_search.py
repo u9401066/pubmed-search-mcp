@@ -4,10 +4,10 @@ Vision-based Literature Search Tools.
 Experimental feature: Use images to search for related scientific literature.
 
 Tool:
-- analyze_figure_for_search: Analyze figure and extract search terms (5 search types)
+- prepare_figure_search: Analyze figure and extract search terms (5 search types)
 
 Removed in v0.3.1:
-- reverse_image_search_pubmed → Merged into analyze_figure_for_search (use search_type)
+- reverse_image_search_pubmed → Merged into prepare_figure_search (use search_type)
 
 Workflow:
 1. User provides image (URL or base64)
@@ -27,17 +27,51 @@ Use cases:
 from __future__ import annotations
 
 import base64
+import binascii
+import ipaddress
 import logging
 import re
-from typing import Union
-from urllib.parse import urlparse
+from typing import Annotated, Literal
 
 import httpx
 from mcp.types import ImageContent, TextContent
+from pydantic import BaseModel, ConfigDict, Field
 
-from pubmed_search.shared.async_utils import get_shared_async_client
+from pubmed_search.infrastructure.http.safe_outbound import (
+    SafeFetchPolicy,
+    SafeOutboundError,
+    fetch_public_url,
+)
 
 logger = logging.getLogger(__name__)
+
+_MAX_IMAGE_BYTES = 10 * 1024 * 1024
+_MAX_BASE64_CHARS = ((_MAX_IMAGE_BYTES + 2) // 3) * 4
+_IMAGE_MIME_ALIASES = {"image/jpg": "image/jpeg"}
+_SUPPORTED_IMAGE_MIMES = frozenset({"image/gif", "image/jpeg", "image/png", "image/webp"})
+
+
+class InlineImageSource(BaseModel):
+    """A bounded inline image payload."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: Literal["base64"]
+    data: Annotated[str, Field(strict=True, min_length=1, max_length=_MAX_BASE64_CHARS + 64)]
+
+
+class URLImageSource(BaseModel):
+    """A bounded public image URL."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: Literal["url"]
+    url: Annotated[str, Field(strict=True, min_length=1, max_length=8192)]
+
+
+FigureSource = Annotated[InlineImageSource | URLImageSource, Field(discriminator="kind")]
+FigureContext = Annotated[str, Field(strict=True, max_length=4000)]
+FigureSearchType = Literal["comprehensive", "methodology", "results", "structure", "medical"]
 
 
 # ============================================================================
@@ -46,28 +80,75 @@ logger = logging.getLogger(__name__)
 
 
 def is_valid_url(url: str) -> bool:
-    """Check if string is a valid HTTP(S) URL."""
+    """Check basic URL syntax; network-address safety is checked asynchronously."""
     try:
-        result = urlparse(url)
-        return result.scheme in ("http", "https") and bool(result.netloc)
-    except Exception:
+        result = httpx.URL(url)
+        if result.scheme not in ("http", "https") or not result.host:
+            return False
+        if result.username or result.password or result.fragment:
+            return False
+        expected_port = 443 if result.scheme == "https" else 80
+        if result.port is not None and result.port != expected_port:
+            return False
+        try:
+            literal = ipaddress.ip_address(result.host)
+        except ValueError:
+            return True
+        return literal.is_global
+    except (TypeError, ValueError, httpx.InvalidURL):
         return False
 
 
+def _detect_image_mime(data: bytes) -> str | None:
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if data.startswith((b"GIF87a", b"GIF89a")):
+        return "image/gif"
+    if len(data) >= 12 and data.startswith(b"RIFF") and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+def _validate_image_bytes(data: bytes, declared_mime: str | None = None) -> str:
+    if not data:
+        raise ValueError("Image data is empty")
+    if len(data) > _MAX_IMAGE_BYTES:
+        raise ValueError(f"Image exceeds the {_MAX_IMAGE_BYTES}-byte limit")
+    detected = _detect_image_mime(data)
+    if detected is None:
+        raise ValueError("Image signature is not a supported PNG, JPEG, GIF, or WebP format")
+    if declared_mime:
+        normalized = _IMAGE_MIME_ALIASES.get(declared_mime.lower(), declared_mime.lower())
+        if normalized not in _SUPPORTED_IMAGE_MIMES:
+            raise ValueError("Image MIME type is not supported")
+        if normalized != detected:
+            raise ValueError("Image MIME type does not match its file signature")
+    return detected
+
+
+def _decode_base64_image(encoded: str, declared_mime: str | None = None) -> tuple[str, str]:
+    if len(encoded) > _MAX_BASE64_CHARS:
+        raise ValueError(f"Image exceeds the {_MAX_IMAGE_BYTES}-byte limit")
+    try:
+        decoded = base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise ValueError("Image contains invalid base64 data") from exc
+    detected = _validate_image_bytes(decoded, declared_mime)
+    return detected, base64.b64encode(decoded).decode("ascii")
+
+
 def is_base64_image(data: str) -> bool:
-    """Check if string appears to be base64-encoded image data."""
-    # Check for data URI format
-    if data.startswith("data:image/"):
-        return True
-    # Check for raw base64 (must be reasonably long and valid chars)
-    if len(data) > 100:
-        try:
-            # Try to decode first 100 chars
-            base64.b64decode(data[:100], validate=True)
-            return True
-        except Exception:
-            return False
-    return False
+    """Return whether input is a bounded image with a supported file signature."""
+    try:
+        if data.startswith("data:image/"):
+            parse_data_uri(data)
+        else:
+            _decode_base64_image(data)
+    except (TypeError, ValueError):
+        return False
+    return True
 
 
 def parse_data_uri(data_uri: str) -> tuple[str, str]:
@@ -79,10 +160,12 @@ def parse_data_uri(data_uri: str) -> tuple[str, str]:
     Returns:
         Tuple of (mime_type, base64_data)
     """
-    match = re.match(r"data:(image/[^;]+);base64,(.+)", data_uri)
-    if match:
-        return match.group(1), match.group(2)
-    raise ValueError("Invalid data URI format")
+    if len(data_uri) > _MAX_BASE64_CHARS + 64:
+        raise ValueError(f"Image exceeds the {_MAX_IMAGE_BYTES}-byte limit")
+    match = re.fullmatch(r"data:(image/[A-Za-z0-9.+-]+);base64,([A-Za-z0-9+/]*={0,2})", data_uri)
+    if match is None:
+        raise ValueError("Invalid data URI format")
+    return _decode_base64_image(match.group(2), match.group(1))
 
 
 async def fetch_image_as_base64(url: str, timeout: float = 30.0) -> tuple[str, str]:
@@ -100,25 +183,28 @@ async def fetch_image_as_base64(url: str, timeout: float = 30.0) -> tuple[str, s
         ValueError: If URL is invalid or image cannot be fetched
     """
     if not is_valid_url(url):
-        raise ValueError(f"Invalid URL: {url}")
+        raise ValueError("Invalid URL for image")
 
-    client = get_shared_async_client()
-    response = await client.get(url, timeout=timeout)
+    fetched = await fetch_public_url(
+        url,
+        policy=SafeFetchPolicy(
+            max_bytes=_MAX_IMAGE_BYTES,
+            total_timeout=timeout,
+            max_redirects=5,
+        ),
+        headers={"Accept": "image/png,image/jpeg,image/gif,image/webp"},
+    )
+    response = fetched.response
     response.raise_for_status()
 
-    # Determine mime type
-    content_type = response.headers.get("content-type", "image/jpeg")
+    content_type = response.headers.get("content-type", "")
     if ";" in content_type:
         content_type = content_type.split(";")[0].strip()
-
-    # Validate it's an image
-    if not content_type.startswith("image/"):
-        raise ValueError(f"URL does not point to an image: {content_type}")
-
-    # Encode to base64
-    image_data = base64.b64encode(response.content).decode("utf-8")
-
-    return content_type, image_data
+    if not content_type:
+        raise ValueError("Image response is missing its MIME type")
+    detected_mime = _validate_image_bytes(response.content, content_type)
+    image_data = base64.b64encode(response.content).decode("ascii")
+    return detected_mime, image_data
 
 
 # ============================================================================
@@ -130,12 +216,11 @@ def register_vision_tools(mcp):
     """Register vision-based search tools with the MCP server."""
 
     @mcp.tool()  # type: ignore[misc, untyped-decorator]
-    async def analyze_figure_for_search(
-        image: str | None = None,
-        url: str | None = None,
-        context: str | None = None,
-        search_type: str = "comprehensive",
-    ) -> list[Union[TextContent, ImageContent]]:
+    async def prepare_figure_search(
+        source: FigureSource,
+        context: FigureContext | None = None,
+        search_type: FigureSearchType = "comprehensive",
+    ) -> list[TextContent | ImageContent]:
         """
         Analyze a scientific figure or image for literature search.
 
@@ -186,8 +271,9 @@ def register_vision_tools(mcp):
         Use English medical terminology in all search queries.
 
         Args:
-            image: Base64-encoded image data OR data URI (data:image/png;base64,...)
-            url: URL of the image to analyze
+            source: Exactly one typed image source:
+                    {"kind": "base64", "data": "data:image/png;base64,..."}
+                    or {"kind": "url", "url": "https://example.org/figure.png"}.
             context: Optional context about what to look for in the image
             search_type: Type of analysis focus (comprehensive/methodology/results/structure/medical)
 
@@ -197,40 +283,25 @@ def register_vision_tools(mcp):
             - TextContent: Instructions for next steps
 
         Example:
-            analyze_figure_for_search(url="https://example.com/figure1.png")
-            analyze_figure_for_search(url="https://...", search_type="medical")
-            analyze_figure_for_search(image="data:image/png;base64,iVBORw0...")
+            prepare_figure_search(source={"kind": "url", "url": "https://example.com/figure1.png"})
+            prepare_figure_search(
+                source={"kind": "base64", "data": "data:image/png;base64,iVBORw0..."}
+            )
         """
-        results: list[Union[TextContent, ImageContent]] = []
-
-        # Validate input - need either image or url
-        if not image and not url:
-            return [
-                TextContent(
-                    type="text",
-                    text=(
-                        "❌ **Error**: Please provide either `image` (base64) or `url`\n\n"
-                        "📝 **Examples**:\n"
-                        '- `analyze_figure_for_search(url="https://example.com/figure.png")`\n'
-                        '- `analyze_figure_for_search(url="...", search_type="medical")`\n'
-                        '- `analyze_figure_for_search(image="data:image/png;base64,...")`'
-                    ),
-                )
-            ]
+        results: list[TextContent | ImageContent] = []
 
         try:
             # Get image data
-            if url:
-                logger.info(f"Fetching image from URL: {url}")
-                mime_type, image_data = await fetch_image_as_base64(url)
-            elif image:
+            if isinstance(source, URLImageSource):
+                logger.info("Fetching image from a validated remote URL")
+                mime_type, image_data = await fetch_image_as_base64(source.url)
+            else:
+                image = source.data
                 if image.startswith("data:image/"):
                     # Parse data URI
                     mime_type, image_data = parse_data_uri(image)
                 elif is_base64_image(image):
-                    # Raw base64 - assume JPEG
-                    mime_type = "image/jpeg"
-                    image_data = image
+                    mime_type, image_data = _decode_base64_image(image)
                 else:
                     return [
                         TextContent(
@@ -314,8 +385,7 @@ Suggest clinical search terms and relevant MeSH headings.
             }
 
             # Get appropriate prompt (default to comprehensive)
-            normalized_type = search_type.lower().strip()
-            prompt = prompts.get(normalized_type, prompts["comprehensive"])
+            prompt = prompts[search_type]
 
             # Build instruction text
             instruction_text = (
@@ -337,10 +407,13 @@ Suggest clinical search terms and relevant MeSH headings.
                     text=f"❌ **Error fetching image**: HTTP {e.response.status_code}\n\n💡 Check if the URL is accessible.",
                 )
             ]
-        except Exception as e:
-            logger.exception("Error in analyze_figure_for_search")
-            return [TextContent(type="text", text=f"❌ **Error**: {e!s}")]
+        except (SafeOutboundError, ValueError) as exc:
+            logger.warning("Figure source validation failed (%s)", type(exc).__name__)
+            return [TextContent(type="text", text="❌ **Error**: Image source is invalid or unavailable")]
+        except Exception as exc:
+            logger.warning("Figure analysis handoff failed (%s)", type(exc).__name__)
+            return [TextContent(type="text", text="❌ **Error**: Figure analysis handoff failed")]
 
-    # reverse_image_search_pubmed removed in v0.3.1 - merged into analyze_figure_for_search with search_type param
+    # reverse_image_search_pubmed removed in v0.3.1 - merged into prepare_figure_search with search_type param
 
-    logger.info("Registered 1 vision search tool: analyze_figure_for_search")
+    logger.info("Registered 1 vision search tool: prepare_figure_search")

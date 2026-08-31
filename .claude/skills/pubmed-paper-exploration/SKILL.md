@@ -154,13 +154,13 @@ build_research_chronicle(
 ### 全文
 
 ```python
-get_fulltext(pmid="30217674", extended_sources=True)
+get_fulltext(source={"kind":"pmid","value":"30217674"}, extended_sources=True)
 ```
 
 ### 圖表
 
 ```python
-get_article_figures(pmid="30217674")
+get_article_figures(source={"kind":"pmid","value":"30217674"})
 ```
 
 ---

@@ -25,7 +25,7 @@
       "unified_search"
     ],
     "query_intelligence": [
-      "parse_pico",
+      "validate_pico_plan",
       "generate_search_queries",
       "analyze_search_query"
     ],
@@ -63,11 +63,7 @@
       "save_literature_notes"
     ],
     "session": [
-      "read_session",
-      "get_session_pmids",
-      "get_cached_article",
-      "get_session_summary",
-      "get_session_log"
+      "read_session"
     ],
     "institutional": [
       "configure_institutional_access",
@@ -77,7 +73,7 @@
       "test_institutional_access"
     ],
     "vision": [
-      "analyze_figure_for_search"
+      "prepare_figure_search"
     ],
     "icd": [
       "convert_icd_mesh"
@@ -90,21 +86,21 @@
       "search_biomedical_images"
     ],
     "pipeline": [
-      "manage_pipeline",
       "save_pipeline",
       "list_pipelines",
       "load_pipeline",
       "delete_pipeline",
       "get_pipeline_history",
-      "schedule_pipeline"
+      "schedule_pipeline",
+      "unschedule_pipeline"
     ]
   },
   "workflowSteps": {
     "query_analysis": {
       "label": "Query Analysis",
-      "nextInstruction": "analyze_search_query / agent PICO handoff via parse_pico",
+      "nextInstruction": "analyze_search_query / agent PICO handoff via validate_pico_plan",
       "tools": [
-        "parse_pico",
+        "validate_pico_plan",
         "analyze_search_query"
       ]
     },
@@ -113,13 +109,13 @@
       "nextInstruction": "generate_search_queries",
       "tools": [
         "generate_search_queries",
-        "manage_pipeline",
         "save_pipeline",
         "list_pipelines",
         "load_pipeline",
         "delete_pipeline",
         "schedule_pipeline",
-        "analyze_figure_for_search",
+        "unschedule_pipeline",
+        "prepare_figure_search",
         "convert_icd_mesh",
         "configure_institutional_access",
         "list_resolver_presets",
@@ -144,14 +140,10 @@
     },
     "result_evaluation": {
       "label": "Result Evaluation",
-      "nextInstruction": "read_session artifact audit / get_citation_metrics / get_session_summary",
+      "nextInstruction": "read_session artifact audit / get_citation_metrics",
       "tools": [
         "get_citation_metrics",
         "read_session",
-        "get_session_pmids",
-        "get_cached_article",
-        "get_session_summary",
-        "get_session_log",
         "verify_reference_list",
         "get_gene_details",
         "get_compound_details",
@@ -201,10 +193,6 @@
       "prepare_export",
       "save_literature_notes",
       "read_session",
-      "get_session_pmids",
-      "get_cached_article",
-      "get_session_summary",
-      "get_session_log",
       "verify_reference_list",
       "get_institutional_link",
       "diagnose_institutional_access",
@@ -216,7 +204,7 @@
     ],
     "feedbackRemediation": [
       "unified_search",
-      "parse_pico",
+      "validate_pico_plan",
       "generate_search_queries",
       "analyze_search_query",
       "fetch_article_details",
@@ -237,26 +225,25 @@
       "build_citation_tree",
       "save_literature_notes",
       "read_session",
-      "get_session_pmids",
-      "get_cached_article",
-      "get_session_summary",
-      "get_session_log",
       "verify_reference_list",
       "diagnose_institutional_access",
-      "analyze_figure_for_search",
+      "prepare_figure_search",
       "convert_icd_mesh",
       "build_research_chronicle",
       "read_research_chronicle",
       "search_biomedical_images",
-      "manage_pipeline",
       "save_pipeline",
       "list_pipelines",
       "load_pipeline",
       "get_pipeline_history",
-      "schedule_pipeline"
+      "schedule_pipeline",
+      "unschedule_pipeline"
     ],
     "qualityEvaluation": [
       "unified_search",
+      "validate_pico_plan",
+      "generate_search_queries",
+      "analyze_search_query",
       "fetch_article_details",
       "find_related_articles",
       "find_citing_articles",
@@ -276,17 +263,24 @@
       "prepare_export",
       "save_literature_notes",
       "read_session",
-      "get_session_pmids",
-      "get_cached_article",
-      "get_session_summary",
-      "get_session_log",
       "verify_reference_list",
+      "configure_institutional_access",
       "get_institutional_link",
       "diagnose_institutional_access",
+      "list_resolver_presets",
+      "test_institutional_access",
+      "prepare_figure_search",
+      "convert_icd_mesh",
       "build_research_chronicle",
       "read_research_chronicle",
       "search_biomedical_images",
-      "get_pipeline_history"
+      "save_pipeline",
+      "list_pipelines",
+      "load_pipeline",
+      "delete_pipeline",
+      "get_pipeline_history",
+      "schedule_pipeline",
+      "unschedule_pipeline"
     ]
   }
 }

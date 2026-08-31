@@ -2,21 +2,15 @@
 """
 PubMed Search MCP Server - Copilot Studio Mode
 
-Simple launcher for Microsoft Copilot Studio integration.
-Includes middleware and simplified tool schemas for compatibility.
+Launcher for Microsoft Copilot Studio integration.
 
-⚠️ Copilot Studio Known Limitations (as of 2025):
-- Schema truncation with anyOf/oneOf (multi-type arrays)
-- exclusiveMinimum must be boolean, not integer
-- Reference types ($ref) not supported
-- Enum inputs interpreted as string
-
-This launcher uses a simplified tool set with single-type parameters.
+Copilot uses the same canonical strict tool registry as every other MCP client.
+Transport compatibility stays in the HTTP middleware so behavior, security
+fixes, schemas, and documentation cannot drift between duplicate tool sets.
 
 Usage:
     uv run python run_copilot.py
     uv run python run_copilot.py --port 8765
-    uv run python run_copilot.py --full-tools  # Use all tools (may have issues)
 """
 
 import argparse
@@ -26,7 +20,7 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any
 
 from mcp.server import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
@@ -36,12 +30,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 from pubmed_search.presentation.mcp_server.http_compat import wrap_copilot_compatibility
 from pubmed_search.shared.logging_utils import harden_http_client_logging
 from pubmed_search.shared.settings import DEFAULT_EMAIL
-
-if TYPE_CHECKING:
-    from collections.abc import Callable
-
-    from pubmed_search.application.session.manager import SessionManager
-    from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 harden_http_client_logging()
@@ -89,7 +77,6 @@ async def _count_registered_tools(server: MCPServer[Any]) -> int:
 def create_copilot_server(
     email: str,
     api_key: str | None = None,
-    use_full_tools: bool = False,
 ) -> MCPServer[Any]:
     """
     Create MCP server optimized for Copilot Studio.
@@ -97,53 +84,22 @@ def create_copilot_server(
     Args:
         email: NCBI email
         api_key: NCBI API key (optional)
-        use_full_tools: If True, use all tools (may have schema issues)
-                       If False, use simplified Copilot-compatible tools
-
     Returns:
         MCPServer instance
     """
-    from pubmed_search.container import ApplicationContainer
-    from pubmed_search.presentation.mcp_server.tools._common import (
-        set_session_manager,
-        set_strategy_generator,
-    )
+    from pubmed_search.presentation.mcp_server.server import create_server
 
     logger.info("Initializing PubMed Search MCP Server (Copilot Studio mode)...")
 
     # ── DI container ────────────────────────────────────────────────────
-    container = ApplicationContainer()
-    container.config.from_dict(
-        {
-            "email": email,
-            "api_key": api_key,
-            "data_dir": str(Path.home() / ".pubmed-search-mcp"),
-        }
-    )
-
-    searcher = cast("LiteratureSearcher", container.searcher())
-    strategy_generator = container.strategy_generator()
-    session_manager = cast("SessionManager", container.session_manager())
-
-    # Create MCP server with Copilot Studio settings
-    mcp = MCPServer(
-        "pubmed-search-copilot",
-        instructions="""PubMed Search MCP Server - Copilot Studio Edition
-
-Available tools:
-- unified_search: Single multi-source literature search entry point
-- read_session: Recover search runs, replay arguments, and persisted artifacts
-- get_article: Get article details by PMID
-- find_related: Find related articles
-- find_citations: Find articles that cite a paper
-- get_references: Get reference list of an article
-- analyze_clinical_question: Parse PICO elements
-- expand_search_terms: Get MeSH terms and synonyms
-- get_fulltext: Get full text from Europe PMC
-- export_citations: Export in RIS/BibTeX/CSV format
-- search_gene: Search NCBI Gene database
-- search_compound: Search PubChem compounds
-""",
+    mcp = create_server(
+        email=email,
+        api_key=api_key,
+        name="pubmed-search-copilot",
+        data_dir=str(Path.home() / ".pubmed-search-mcp"),
+        json_response=True,
+        stateless_http=True,
+        mode="local",
     )
 
     # Transport-level settings moved to the app factory in MCP SDK v2
@@ -157,30 +113,6 @@ Available tools:
         "stateless_http": True,  # Required for Copilot Studio
     }
 
-    # Set global references
-    cast("Callable[[SessionManager], None]", set_session_manager)(session_manager)
-    cast("Callable[[Any], None]", set_strategy_generator)(strategy_generator)
-
-    # Register tools
-    if use_full_tools:
-        logger.warning("Using FULL tool set - may have schema compatibility issues!")
-        from pubmed_search.presentation.mcp_server.session_tools import (
-            register_session_resources,
-            register_session_tools,
-        )
-        from pubmed_search.presentation.mcp_server.tools import register_all_tools
-
-        register_all_tools(mcp, searcher)
-        register_session_tools(mcp, session_manager)
-        register_session_resources(mcp, session_manager)
-    else:
-        logger.info("Using SIMPLIFIED Copilot-compatible tool set")
-        from pubmed_search.presentation.mcp_server.copilot_tools import (
-            register_copilot_compatible_tools,
-        )
-
-        register_copilot_compatible_tools(mcp, searcher)
-
     return mcp
 
 
@@ -190,12 +122,6 @@ def main() -> None:
     parser.add_argument("--host", default=os.environ.get("MCP_HOST", "127.0.0.1"))
     parser.add_argument("--email", default=os.environ.get("NCBI_EMAIL", DEFAULT_EMAIL))
     parser.add_argument("--api-key", default=os.environ.get("NCBI_API_KEY"))
-    parser.add_argument(
-        "--full-tools",
-        action="store_true",
-        default=False,
-        help="Use full tool set (may have schema issues with Copilot Studio)",
-    )
     args = parser.parse_args()
 
     if not _is_loopback_host(args.host):
@@ -207,8 +133,7 @@ def main() -> None:
 
     logger.info("Creating PubMed Search MCP Server for Copilot Studio...")
 
-    # Create server with appropriate tool set
-    server = create_copilot_server(email=args.email, api_key=args.api_key, use_full_tools=args.full_tools)
+    server = create_copilot_server(email=args.email, api_key=args.api_key)
 
     # Get the streamable-http app directly from MCPServer
     app: Any = server.streamable_http_app(**getattr(server, "copilot_transport_kwargs", {}))
@@ -218,7 +143,6 @@ def main() -> None:
 
     # Get tool count for display
     tool_count = asyncio.run(_count_registered_tools(server))
-    tool_mode = "FULL (may have issues)" if args.full_tools else "SIMPLIFIED (Copilot-compatible)"
 
     logger.info("")
     logger.info("═══════════════════════════════════════════════════════")
@@ -226,7 +150,7 @@ def main() -> None:
     logger.info("═══════════════════════════════════════════════════════")
     logger.info(f"  Local:  http://{args.host}:{args.port}/mcp")
     logger.info("  ngrok:  https://kmuh-ai.ngrok.dev/mcp")
-    logger.info(f"  Tools:  {tool_count} ({tool_mode})")
+    logger.info(f"  Tools:  {tool_count} (canonical strict registry)")
     logger.info("  Mode:   Stateless HTTP (json_response=True)")
     logger.info("  Middleware: 202→200 conversion enabled")
     logger.info("═══════════════════════════════════════════════════════")

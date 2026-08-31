@@ -29,8 +29,6 @@ from .projectors import (
     project_lineage_tree,
     project_timeline,
     render_chronicle_mermaid_result,
-    render_lineage_mindmap,
-    render_timeline_mermaid,
 )
 
 if TYPE_CHECKING:
@@ -452,7 +450,7 @@ class ChronicleService:
             snapshot: The revision to render.
             output_format: One of ``json``, ``chronicle_map``, ``timeline``,
                 ``tree``, ``graph``, ``evidence``, ``mermaid``,
-                ``timeline_mermaid``, ``mindmap``, or ``narrative``.
+                ``milestones``, or ``narrative``.
 
         Returns:
             A dict for JSON projections, or a string for text renderings.
@@ -469,8 +467,6 @@ class ChronicleService:
             "evidence": lambda: project_evidence(snapshot),
             "milestones": lambda: analyze_milestones(snapshot),
             "mermaid": lambda: render_chronicle_mermaid_result(snapshot).source,
-            "timeline_mermaid": lambda: render_timeline_mermaid(snapshot),
-            "mindmap": lambda: render_lineage_mindmap(snapshot),
             "narrative": lambda: narrate_chronicle(snapshot, mode="full"),
         }
         renderer = renderers.get(output_format)

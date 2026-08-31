@@ -7,16 +7,17 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
+from pubmed_search.infrastructure.sources.base_client import APIRequestError
 from pubmed_search.infrastructure.sources.openalex import (
     DEFAULT_EMAIL,
     OpenAlexClient,
 )
+from pubmed_search.shared.async_utils import RetryableOperationError
 
 
 @pytest.fixture
 def client():
     c = OpenAlexClient(email="test@example.com")
-    c._last_request_time = 0
     c._min_interval = 0
     return c
 
@@ -28,30 +29,22 @@ def client():
 
 class TestInit:
     async def test_defaults(self):
-        from pubmed_search.infrastructure.sources import configure_source_contact_email
+        from pubmed_search.infrastructure.sources.runtime import SourceRuntime, bind_source_runtime
 
-        configure_source_contact_email(None)
-
-        try:
+        with bind_source_runtime(SourceRuntime()):
             c = OpenAlexClient()
             assert c._email == DEFAULT_EMAIL
             assert c._api_key is None
             assert c._auth_params == {"mailto": DEFAULT_EMAIL}
-        finally:
-            configure_source_contact_email(None)
 
     async def test_default_uses_configured_source_contact_email(self):
-        from pubmed_search.infrastructure.sources import configure_source_contact_email
+        from pubmed_search.infrastructure.sources.runtime import SourceRuntime, bind_source_runtime
 
-        configure_source_contact_email("runtime@example.com")
-
-        try:
+        with bind_source_runtime(SourceRuntime(contact_email="runtime@example.com")):
             c = OpenAlexClient()
 
             assert c._email == "runtime@example.com"
             assert c._auth_params == {"mailto": "runtime@example.com"}
-        finally:
-            configure_source_contact_email(None)
 
     async def test_api_key_uses_bearer_and_keeps_contact_hint(self):
         c = OpenAlexClient(email="test@example.com", api_key="oa-key")
@@ -73,10 +66,10 @@ class TestMakeRequest:
     async def test_success(self, client):
         mock_response = MagicMock()
         mock_response.status_code = 200
+        mock_response.headers = {}
         mock_response.json.return_value = {"results": []}
         mock_response.raise_for_status = MagicMock()
-        client._client = AsyncMock()
-        client._client.get = AsyncMock(return_value=mock_response)
+        client._execute_request = AsyncMock(return_value=mock_response)
         result = await client._make_request("https://api.openalex.org/test")
         assert result == {"results": []}
 
@@ -87,22 +80,24 @@ class TestMakeRequest:
         mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
             "Server Error", request=MagicMock(), response=mock_response
         )
-        client._client = AsyncMock()
-        client._client.get = AsyncMock(return_value=mock_response)
-        assert await client._make_request("https://test.com") is None
+        client._MAX_RETRIES = 0
+        client._execute_request = AsyncMock(return_value=mock_response)
+        with pytest.raises(RetryableOperationError):
+            await client._make_request("https://test.com")
 
     async def test_url_error(self, client):
-        client._client = AsyncMock()
-        client._client.get = AsyncMock(side_effect=httpx.ConnectError("DNS failed", request=MagicMock()))
-        assert await client._make_request("https://test.com") is None
+        client._execute_request = AsyncMock(side_effect=httpx.ConnectError("DNS failed", request=MagicMock()))
+        client._MAX_RETRIES = 0
+        with pytest.raises(APIRequestError):
+            await client._make_request("https://test.com")
 
 
 # ============================================================
-# search
+# search_page
 # ============================================================
 
 
-class TestSearch:
+class TestSearchPage:
     @patch.object(OpenAlexClient, "_make_request")
     async def test_basic(self, mock_req, client):
         mock_req.return_value = {
@@ -122,38 +117,35 @@ class TestSearch:
                     "best_oa_location": {"pdf_url": "https://pdf.example.com"},
                     "primary_location": {"source": {"display_name": "Nature", "is_in_doaj": False}},
                 }
-            ]
+            ],
+            "meta": {"count": 1, "next_cursor": None},
         }
-        results = await client.search("deep learning")
-        assert len(results) == 1
-        assert results[0]["title"] == "Test Paper"
-        assert results[0]["doi"] == "10.1234/test"
-        assert results[0]["pmid"] == "12345"
-        assert results[0]["year"] == "2023"
-        assert results[0]["month"] == "06"
-        assert results[0]["day"] == "15"
-        assert results[0]["_source"] == "openalex"
+        page = await client.search_page("deep learning")
+        assert page.source == "openalex"
+        assert len(page.items) == 1
+        assert page.items[0]["display_name"] == "Test Paper"
+        assert page.items[0]["ids"]["doi"] == "https://doi.org/10.1234/test"
 
     @patch.object(OpenAlexClient, "_make_request")
     async def test_with_filters(self, mock_req, client):
-        mock_req.return_value = {"results": []}
-        await client.search("test", min_year=2020, max_year=2024, open_access_only=True, is_doaj=True)
+        mock_req.return_value = {"results": [], "meta": {"count": 0, "next_cursor": None}}
+        await client.search_page("test", min_year=2020, max_year=2024, open_access_only=True, is_doaj=True)
         url = mock_req.call_args[0][0]
         assert "is_oa%3Atrue" in url or "is_oa:true" in url
         assert "2020" in url
 
     @patch.object(OpenAlexClient, "_make_request")
     async def test_with_sort(self, mock_req, client):
-        mock_req.return_value = {"results": []}
-        await client.search("test", sort="cited_by_count:desc")
+        mock_req.return_value = {"results": [], "meta": {"count": 0, "next_cursor": None}}
+        await client.search_page("test", sort="cited_by_count:desc")
         url = mock_req.call_args[0][0]
         assert "sort=" in url
 
     @patch.object(OpenAlexClient, "_make_request")
     async def test_uses_api_key_when_configured(self, mock_req):
-        mock_req.return_value = {"results": []}
+        mock_req.return_value = {"results": [], "meta": {"count": 0, "next_cursor": None}}
         client = OpenAlexClient(email="test@example.com", api_key="oa-key")
-        await client.search("test")
+        await client.search_page("test")
         url = mock_req.call_args[0][0]
         assert "oa-key" not in url
         assert "mailto=" in url
@@ -161,20 +153,22 @@ class TestSearch:
 
     @patch.object(OpenAlexClient, "_make_request")
     async def test_limit_capped(self, mock_req, client):
-        mock_req.return_value = {"results": []}
-        await client.search("test", limit=500)
+        mock_req.return_value = {"results": [], "meta": {"count": 0, "next_cursor": None}}
+        await client.search_page("test", limit=500)
         url = mock_req.call_args[0][0]
         assert "per_page=100" in url
 
     @patch.object(OpenAlexClient, "_make_request")
-    async def test_returns_empty_on_none(self, mock_req, client):
+    async def test_none_response_raises_typed_failure(self, mock_req, client):
         mock_req.return_value = None
-        assert await client.search("test") == []
+        with pytest.raises(APIRequestError):
+            await client.search_page("test")
 
     @patch.object(OpenAlexClient, "_make_request")
-    async def test_exception(self, mock_req, client):
+    async def test_exception_raises_typed_failure(self, mock_req, client):
         mock_req.side_effect = Exception("fail")
-        assert await client.search("test") == []
+        with pytest.raises(APIRequestError):
+            await client.search_page("test")
 
 
 # ============================================================
@@ -212,7 +206,8 @@ class TestGetWork:
     @patch.object(OpenAlexClient, "_make_request")
     async def test_exception(self, mock_req, client):
         mock_req.side_effect = Exception("fail")
-        assert await client.get_work("W1") is None
+        with pytest.raises(APIRequestError):
+            await client.get_work("W1")
 
     @patch.object(OpenAlexClient, "_make_request")
     async def test_by_doi_uses_api_key_when_configured(self, mock_req):
@@ -243,13 +238,14 @@ class TestGetCitations:
 
     @patch.object(OpenAlexClient, "_make_request")
     async def test_empty(self, mock_req, client):
-        mock_req.return_value = None
+        mock_req.return_value = {"results": []}
         assert await client.get_citations("W123") == []
 
     @patch.object(OpenAlexClient, "_make_request")
     async def test_exception(self, mock_req, client):
         mock_req.side_effect = Exception("fail")
-        assert await client.get_citations("W123") == []
+        with pytest.raises(APIRequestError):
+            await client.get_citations("W123")
 
 
 # ============================================================
@@ -375,7 +371,8 @@ class TestAuthorMetadata:
     @patch.object(OpenAlexClient, "_make_request")
     async def test_search_authors_returns_empty_on_none(self, mock_req, client):
         mock_req.return_value = None
-        assert await client.search_authors("Nobody") == []
+        with pytest.raises(APIRequestError):
+            await client.search_authors("Nobody")
 
 
 # ============================================================

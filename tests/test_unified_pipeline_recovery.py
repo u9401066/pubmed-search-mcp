@@ -8,12 +8,10 @@ from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-import toons
 
 from pubmed_search.domain.entities.pipeline import PipelineConfig, PipelineStep, StepResult
 from pubmed_search.presentation.mcp_server.tools.unified_pipeline import (
     _auto_save_pipeline_report,
-    _execute_pipeline_mode,
     _execute_pipeline_mode_outcome,
 )
 
@@ -35,17 +33,31 @@ PIPELINE_JSON = PIPELINE_MARKDOWN.replace("format: markdown", "format: json")
 
 
 @pytest.mark.asyncio
-async def test_tool_toon_output_stays_parseable_for_markdown_pipeline() -> None:
-    response = await _execute_pipeline_mode(PIPELINE_MARKDOWN, "toon", MagicMock(), dry_run=True)
+async def test_toon_request_returns_typed_json_pipeline_outcome() -> None:
+    outcome = await _execute_pipeline_mode_outcome(
+        PIPELINE_MARKDOWN,
+        "toon",
+        MagicMock(),
+        pipeline_store=None,
+        dry_run=True,
+    )
 
-    payload = toons.loads(response)
+    assert outcome.status == "completed"
+    assert outcome.response_format == "json"
+    payload = json.loads(outcome.response)
     assert payload["type"] == "pipeline_result"
     assert payload["pipeline"]["dry_run"] is True
 
 
 @pytest.mark.asyncio
 async def test_pipeline_json_config_stays_json_when_tool_default_is_markdown() -> None:
-    outcome = await _execute_pipeline_mode_outcome(PIPELINE_JSON, "markdown", MagicMock(), dry_run=True)
+    outcome = await _execute_pipeline_mode_outcome(
+        PIPELINE_JSON,
+        "markdown",
+        MagicMock(),
+        pipeline_store=None,
+        dry_run=True,
+    )
 
     assert outcome.response_format == "json"
     payload = json.loads(outcome.response)
@@ -61,11 +73,13 @@ async def test_legacy_saved_pipeline_with_credential_is_rejected_without_echoing
     )
     fake_store = SimpleNamespace(load=lambda _name: (config, SimpleNamespace(name="legacy-secret")))
 
-    with patch(
-        "pubmed_search.presentation.mcp_server.tools.pipeline_tools.get_pipeline_store",
-        return_value=fake_store,
-    ):
-        outcome = await _execute_pipeline_mode_outcome("saved:legacy-secret", "json", MagicMock(), dry_run=True)
+    outcome = await _execute_pipeline_mode_outcome(
+        "saved:legacy-secret",
+        "json",
+        MagicMock(),
+        pipeline_store=fake_store,  # type: ignore[arg-type]
+        dry_run=True,
+    )
 
     assert outcome.status == "failed"
     assert sentinel not in outcome.response
@@ -79,11 +93,13 @@ async def test_saved_pipeline_load_error_never_echoes_legacy_secret() -> None:
         load=lambda _name: (_ for _ in ()).throw(ValueError(f"Unknown template S2_API_KEY={sentinel}"))
     )
 
-    with patch(
-        "pubmed_search.presentation.mcp_server.tools.pipeline_tools.get_pipeline_store",
-        return_value=fake_store,
-    ):
-        outcome = await _execute_pipeline_mode_outcome("saved:legacy-invalid", "json", MagicMock(), dry_run=True)
+    outcome = await _execute_pipeline_mode_outcome(
+        "saved:legacy-invalid",
+        "json",
+        MagicMock(),
+        pipeline_store=fake_store,  # type: ignore[arg-type]
+        dry_run=True,
+    )
 
     assert outcome.status == "failed"
     assert sentinel not in outcome.response
@@ -95,21 +111,46 @@ async def test_saved_pipeline_name_with_credential_is_rejected_before_lookup() -
     sentinel = "SAVED_NAME_TOPSECRET"
     fake_store = SimpleNamespace(load=MagicMock(side_effect=AssertionError("must not load")))
 
-    with patch(
-        "pubmed_search.presentation.mcp_server.tools.pipeline_tools.get_pipeline_store",
-        return_value=fake_store,
-    ):
-        outcome = await _execute_pipeline_mode_outcome(
-            f"saved:S2_API_KEY={sentinel}",
-            "json",
-            MagicMock(),
-            dry_run=True,
-        )
+    outcome = await _execute_pipeline_mode_outcome(
+        f"saved:S2_API_KEY={sentinel}",
+        "json",
+        MagicMock(),
+        pipeline_store=fake_store,  # type: ignore[arg-type]
+        dry_run=True,
+    )
 
     assert outcome.status == "failed"
     assert sentinel not in outcome.response
     assert "credential material" in outcome.response
     fake_store.load.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("failure", "public_message"),
+    [
+        (ValueError, "Pipeline validation failed"),
+        (RuntimeError, "Pipeline execution failed"),
+    ],
+)
+async def test_pipeline_execution_exception_detail_is_not_returned(
+    failure: type[Exception],
+    public_message: str,
+) -> None:
+    sentinel = "PRIVATE_PIPELINE_EXCEPTION_DETAIL"
+
+    with patch("pubmed_search.application.pipeline.executor.PipelineExecutor") as executor_cls:
+        executor_cls.return_value.execute = AsyncMock(side_effect=failure(sentinel))
+        outcome = await _execute_pipeline_mode_outcome(
+            PIPELINE_JSON,
+            "json",
+            MagicMock(),
+            pipeline_store=None,
+        )
+
+    assert outcome.status == "failed"
+    assert public_message in outcome.response
+    assert sentinel not in outcome.response
 
 
 @pytest.mark.asyncio
@@ -144,7 +185,12 @@ async def test_pipeline_outcome_distinguishes_all_failed_from_empty_plus_failed(
 ) -> None:
     with patch("pubmed_search.application.pipeline.executor.PipelineExecutor") as executor_cls:
         executor_cls.return_value.execute = AsyncMock(return_value=([], {"search": step_result}))
-        outcome = await _execute_pipeline_mode_outcome(PIPELINE_JSON, "json", MagicMock())
+        outcome = await _execute_pipeline_mode_outcome(
+            PIPELINE_JSON,
+            "json",
+            MagicMock(),
+            pipeline_store=None,
+        )
 
     assert outcome.status == expected_status
 
@@ -166,11 +212,13 @@ def test_pipeline_auto_save_persists_terminal_outcome(
         steps=[PipelineStep(id="search", action="search", params={"query": "remimazolam"})],
     )
 
-    with patch(
-        "pubmed_search.presentation.mcp_server.tools.pipeline_tools.get_pipeline_store",
-        return_value=store,
-    ):
-        _auto_save_pipeline_report(config, [], "report", status=status)
+    _auto_save_pipeline_report(
+        config,
+        [],
+        "report",
+        pipeline_store=store,
+        status=status,
+    )
 
     persisted_run = store.save_run.call_args.args[1]
     assert persisted_run.status == expected_run_status

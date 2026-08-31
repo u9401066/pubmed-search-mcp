@@ -13,7 +13,7 @@
 
 template: comprehensive
 
-params:
+template_params:
   query: "CRISPR gene therapy clinical trials"
 
 output:

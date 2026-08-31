@@ -1,15 +1,13 @@
-"""Tests for PipelineValidator — aggressive auto-fix validation.
+"""Tests for schema-exact, fail-closed pipeline validation.
 
 Coverage targets:
-- Action alias resolution + fuzzy matching
-- Template alias resolution + fuzzy matching
-- Step ID auto-generation + deduplication
-- Dependency repair (broken refs, cycle removal, fuzzy match)
-- on_error / output validation + auto-fix
+- Canonical action and template validation
+- Exact step and dependency identifiers
+- on_error/output enum and limit validation
 - parse_and_validate_config (raw dict → validated PipelineConfig)
 - config hash computation
 - Pipeline name validation
-- Edge cases and unfixable errors
+- Edge cases and invalid configurations
 """
 
 from __future__ import annotations
@@ -17,19 +15,17 @@ from __future__ import annotations
 import pytest
 
 from pubmed_search.application.pipeline import (
-    FixSeverity,
     PipelineConfig,
-    PipelineExecutionSettings,
     PipelineOutput,
     PipelineStep,
 )
 from pubmed_search.application.pipeline.validator import (
-    _fuzzy_match_action,
-    _fuzzy_match_template,
+    MAX_PIPELINE_TAGS,
     compute_config_hash,
     parse_and_validate_config,
-    validate_and_fix,
+    validate_pipeline_config,
     validate_pipeline_name,
+    validate_pipeline_tags,
 )
 
 # =========================================================================
@@ -41,150 +37,42 @@ class TestValidatePipelineName:
     """Tests for validate_pipeline_name()."""
 
     def test_simple_valid_name(self):
-        name, fixes = validate_pipeline_name("my_pipeline")
+        name = validate_pipeline_name("my_pipeline")
         assert name == "my_pipeline"
-        assert fixes == []
 
-    def test_uppercase_normalized(self):
-        name, fixes = validate_pipeline_name("My Pipeline")
-        assert name == "my_pipeline"
-        assert len(fixes) == 1
-        assert fixes[0].severity == FixSeverity.INFO
-
-    def test_special_chars_removed(self):
-        name, fixes = validate_pipeline_name("my.pipeline@v2!")
-        assert name == "my_pipelinev2"
-        assert len(fixes) == 1
-
-    def test_spaces_to_underscores(self):
-        name, fixes = validate_pipeline_name("my  cool  pipeline")
-        assert name == "my_cool_pipeline"
-
-    def test_max_length_64(self):
-        long_name = "a" * 100
-        name, fixes = validate_pipeline_name(long_name)
-        assert len(name) == 64
-        assert len(fixes) == 1
+    @pytest.mark.parametrize(
+        "value",
+        ["My Pipeline", "my.pipeline@v2!", "my  cool  pipeline", "a" * 65, "  hello  ", "a/b"],
+    )
+    def test_noncanonical_names_are_rejected_without_rewriting(self, value):
+        with pytest.raises(ValueError, match="must match"):
+            validate_pipeline_name(value)
 
     def test_empty_name_raises(self):
-        with pytest.raises(ValueError, match="cannot be empty"):
+        with pytest.raises(ValueError, match="must match"):
             validate_pipeline_name("")
 
     def test_all_invalid_chars_raises(self):
-        with pytest.raises(ValueError, match="no valid characters"):
+        with pytest.raises(ValueError, match="must match"):
             validate_pipeline_name("!@#$%")
 
     def test_hyphens_preserved(self):
-        name, fixes = validate_pipeline_name("my-pipeline")
+        name = validate_pipeline_name("my-pipeline")
         assert name == "my-pipeline"
-        assert fixes == []
 
-    def test_leading_trailing_whitespace_stripped(self):
-        name, fixes = validate_pipeline_name("  hello  ")
-        assert name == "hello"
+    def test_distinct_canonical_names_remain_distinct(self):
+        first = validate_pipeline_name("a_b")
+        second = validate_pipeline_name("a__b")
+        assert first != second
 
-    def test_multiple_consecutive_underscores_collapsed(self):
-        name, fixes = validate_pipeline_name("a___b")
-        assert name == "a_b"
-
-
-# =========================================================================
-# Action Fuzzy Matching
-# =========================================================================
-
-
-class TestFuzzyMatchAction:
-    """Tests for _fuzzy_match_action()."""
-
-    def test_direct_alias_find(self):
-        action, fix = _fuzzy_match_action("find")
-        assert action == "search"
-        assert fix is not None
-        assert fix.severity == FixSeverity.WARNING
-
-    def test_direct_alias_cite(self):
-        action, fix = _fuzzy_match_action("cite")
-        assert action == "citing"
-        assert fix is not None
-
-    def test_direct_alias_refs(self):
-        action, fix = _fuzzy_match_action("refs")
-        assert action == "references"
-
-    def test_direct_alias_get(self):
-        action, fix = _fuzzy_match_action("get")
-        assert action == "details"
-
-    def test_direct_alias_combine(self):
-        action, fix = _fuzzy_match_action("combine")
-        assert action == "merge"
-
-    def test_direct_alias_dedup(self):
-        action, fix = _fuzzy_match_action("dedup")
-        assert action == "filter"
-
-    def test_direct_alias_synonym(self):
-        action, fix = _fuzzy_match_action("synonym")
-        assert action == "expand"
-
-    def test_valid_action_no_match(self):
-        """Valid actions should still be returned if passed through fuzzy."""
-        # _fuzzy_match_action only handles INVALID actions
-        # Valid ones don't appear in aliases, so shouldn't match
-        action, fix = _fuzzy_match_action("totally_unknown_xyz")
-        assert fix is None  # no match found
-
-    def test_case_insensitive(self):
-        action, fix = _fuzzy_match_action("FIND")
-        assert action == "search"
-
-    def test_fuzzy_close_match(self):
-        """'searc' is close enough to 'search'."""
-        action, fix = _fuzzy_match_action("searc")
-        assert action == "search"
-        assert fix is not None
-        assert "fuzzy" in fix.reason.lower()
-
-    def test_no_match_returns_original(self):
-        action, fix = _fuzzy_match_action("zzzznotanaction")
-        assert action == "zzzznotanaction"
-        assert fix is None
-
-
-# =========================================================================
-# Template Fuzzy Matching
-# =========================================================================
-
-
-class TestFuzzyMatchTemplate:
-    """Tests for _fuzzy_match_template()."""
-
-    def test_direct_alias_clinical(self):
-        template, fix = _fuzzy_match_template("clinical")
-        assert template == "pico"
-        assert fix is not None
-
-    def test_direct_alias_systematic(self):
-        template, fix = _fuzzy_match_template("systematic")
-        assert template == "comprehensive"
-
-    def test_direct_alias_explore(self):
-        template, fix = _fuzzy_match_template("explore")
-        assert template == "exploration"
-
-    def test_direct_alias_drug(self):
-        template, fix = _fuzzy_match_template("drug")
-        assert template == "gene_drug"
-
-    def test_fuzzy_match_close(self):
-        """'comprehensiv' is close enough to 'comprehensive'."""
-        template, fix = _fuzzy_match_template("comprehensiv")
-        assert template == "comprehensive"
-
-    def test_no_match_returns_original(self):
-        template, fix = _fuzzy_match_template("zzzznotatemplate")
-        assert template == "zzzznotatemplate"
-        assert fix is None
+    def test_pipeline_tags_are_a_bounded_array(self):
+        assert validate_pipeline_tags(["anesthesia", "ICU-care"]) == ["anesthesia", "ICU-care"]
+        with pytest.raises(TypeError, match="JSON array"):
+            validate_pipeline_tags("anesthesia,ICU")
+        with pytest.raises(ValueError, match="at most"):
+            validate_pipeline_tags([f"tag-{index}" for index in range(MAX_PIPELINE_TAGS + 1)])
+        with pytest.raises(ValueError, match="Duplicate"):
+            validate_pipeline_tags(["ICU", "icu"])
 
 
 # =========================================================================
@@ -215,57 +103,57 @@ class TestComputeConfigHash:
 
 
 # =========================================================================
-# validate_and_fix — Template Path
+# validate_pipeline_config — Template Path
 # =========================================================================
 
 
 class TestValidateAndFixTemplate:
-    """Tests for validate_and_fix() with template-based configs."""
+    """Tests for validate_pipeline_config() with template-based configs."""
 
     def test_valid_template(self):
-        config = PipelineConfig(template="pico")
-        result = validate_and_fix(config)
+        config = PipelineConfig(template="pico", template_params={"P": "ICU", "I": "remimazolam"})
+        result = validate_pipeline_config(config)
         assert result.valid is True
-        assert not result.has_fixes
         assert not result.has_errors
 
-    def test_template_alias_auto_fixed(self):
+    def test_template_alias_is_rejected(self):
         config = PipelineConfig(template="clinical")
-        result = validate_and_fix(config)
-        assert result.valid is True
-        assert result.has_fixes
-        assert config.template == "pico"
+        result = validate_pipeline_config(config)
+        assert result.valid is False
+        assert "Unknown template" in result.errors[0]
 
     def test_unknown_template_error(self):
         config = PipelineConfig(template="zzz_unknown_template_zzz")
-        result = validate_and_fix(config)
+        result = validate_pipeline_config(config)
         assert result.valid is False
         assert result.has_errors
         assert "Unknown template" in result.errors[0]
 
-    def test_template_output_semantic_auto_fix(self):
+    def test_template_output_unknown_values_fail_closed(self):
         config = PipelineConfig(
             template="pico",
+            template_params={"P": "ICU", "I": "remimazolam"},
             output=PipelineOutput(format="xml", limit=0, ranking="impac"),
         )
 
-        result = validate_and_fix(config)
+        result = validate_pipeline_config(config)
 
-        assert result.valid is True
-        assert config.output.format == "markdown"
-        assert config.output.limit == 20
-        assert config.output.ranking == "impact"
-        fields = {fix.field for fix in result.fixes}
-        assert {"output.format", "output.limit", "output.ranking"} <= fields
+        assert result.valid is False
+        assert config.output.format == "xml"
+        assert config.output.limit == 0
+        assert config.output.ranking == "impac"
+        assert any("Unknown output format" in error for error in result.errors)
+        assert any("Unknown output ranking" in error for error in result.errors)
+        assert any("output limit" in error.lower() for error in result.errors)
 
 
 # =========================================================================
-# validate_and_fix — Step Path
+# validate_pipeline_config — Step Path
 # =========================================================================
 
 
 class TestValidateAndFixSteps:
-    """Tests for validate_and_fix() with step-based configs."""
+    """Tests for validate_pipeline_config() with step-based configs."""
 
     def test_valid_steps(self):
         config = PipelineConfig(
@@ -274,71 +162,76 @@ class TestValidateAndFixSteps:
                 PipelineStep(id="s2", action="details", inputs=["s1"]),
             ]
         )
-        result = validate_and_fix(config)
+        result = validate_pipeline_config(config)
         assert result.valid is True
 
     def test_empty_steps_error(self):
         config = PipelineConfig(steps=[])
-        result = validate_and_fix(config)
+        result = validate_pipeline_config(config)
         assert result.valid is False
         assert "at least one step" in result.errors[0]
 
     def test_too_many_steps_error(self):
         steps = [PipelineStep(id=f"s{i}", action="search") for i in range(25)]
         config = PipelineConfig(steps=steps)
-        result = validate_and_fix(config)
+        result = validate_pipeline_config(config)
         assert result.valid is False
         assert "maximum" in result.errors[0]
 
-    def test_auto_generate_missing_ids(self):
+    def test_missing_ids_fail_closed(self):
         config = PipelineConfig(
             steps=[
                 PipelineStep(id="", action="search"),
                 PipelineStep(id="", action="details"),
             ]
         )
-        result = validate_and_fix(config)
-        assert result.valid is True
-        assert config.steps[0].id == "step_1"
-        assert config.steps[1].id == "step_2"
-        assert len([f for f in result.fixes if "auto-generated" in f.reason.lower()]) == 2
+        result = validate_pipeline_config(config)
+        assert result.valid is False
+        assert config.steps[0].id == ""
+        assert config.steps[1].id == ""
+        assert any("non-empty id" in error for error in result.errors)
 
-    def test_deduplicate_step_ids(self):
+    def test_duplicate_step_ids_fail_closed(self):
         config = PipelineConfig(
             steps=[
                 PipelineStep(id="search", action="search"),
                 PipelineStep(id="search", action="details"),
             ]
         )
-        result = validate_and_fix(config)
-        assert result.valid is True
-        # Second one should be renamed
-        ids = [s.id for s in config.steps]
-        assert len(set(ids)) == 2
-        assert "search" in ids
-        assert "search_2" in ids
+        result = validate_pipeline_config(config)
+        assert result.valid is False
+        assert [step.id for step in config.steps] == ["search", "search"]
+        assert any("Duplicate step id" in error for error in result.errors)
 
-    def test_fuzzy_fix_action(self):
+    def test_action_alias_is_rejected(self):
         config = PipelineConfig(steps=[PipelineStep(id="s1", action="find")])
-        result = validate_and_fix(config)
-        assert result.valid is True
-        assert config.steps[0].action == "search"
-        assert result.has_fixes
+        result = validate_pipeline_config(config)
+        assert result.valid is False
+        assert config.steps[0].action == "find"
+        assert any("unknown action" in error.lower() for error in result.errors)
 
     def test_unknown_action_error(self):
         config = PipelineConfig(steps=[PipelineStep(id="s1", action="zzz_invalid_zzz")])
-        result = validate_and_fix(config)
+        result = validate_pipeline_config(config)
         assert result.valid is False
         assert any("unknown action" in e.lower() for e in result.errors)
 
+    def test_details_requires_a_real_pmid_array(self):
+        config = PipelineConfig(steps=[PipelineStep(id="details", action="details", params={"pmids": "33475315"})])
+
+        result = validate_pipeline_config(config)
+
+        assert result.valid is False
+        assert any("Invalid details params" in error and "valid list" in error for error in result.errors)
+
 
 # =========================================================================
-# validate_and_fix — Dependency Repair
+# validate_pipeline_config — Dependency Repair
 # =========================================================================
 
 
 class TestValidateAndFixDependencies:
-    """Tests for dependency validation and repair."""
+    """Tests for exact, fail-closed dependency validation."""
 
     def test_valid_dependencies(self):
         config = PipelineConfig(
@@ -347,116 +240,114 @@ class TestValidateAndFixDependencies:
                 PipelineStep(id="s2", action="details", inputs=["s1"]),
             ]
         )
-        result = validate_and_fix(config)
+        result = validate_pipeline_config(config)
         assert result.valid is True
         assert config.steps[1].inputs == ["s1"]
 
-    def test_remove_forward_reference(self):
-        """Step referencing a later step should be removed (cycle prevention)."""
+    def test_forward_reference_fails_closed(self):
         config = PipelineConfig(
             steps=[
                 PipelineStep(id="s1", action="search", inputs=["s2"]),
                 PipelineStep(id="s2", action="details"),
             ]
         )
-        result = validate_and_fix(config)
-        assert result.valid is True
-        assert config.steps[0].inputs == []  # s2 reference removed
-        assert any("cycle" in f.reason.lower() for f in result.fixes)
+        result = validate_pipeline_config(config)
+        assert result.valid is False
+        assert config.steps[0].inputs == ["s2"]
+        assert any("references later step" in error for error in result.errors)
 
-    def test_remove_unknown_reference(self):
+    def test_unknown_reference_fails_closed(self):
         config = PipelineConfig(
             steps=[
                 PipelineStep(id="s1", action="search"),
                 PipelineStep(id="s2", action="details", inputs=["nonexistent"]),
             ]
         )
-        result = validate_and_fix(config)
-        assert result.valid is True
-        assert config.steps[1].inputs == []
+        result = validate_pipeline_config(config)
+        assert result.valid is False
+        assert config.steps[1].inputs == ["nonexistent"]
+        assert any("references unknown step" in error for error in result.errors)
 
-    def test_fuzzy_match_dependency(self):
-        """'s_1' close enough to 's1' should be matched."""
+    def test_close_dependency_name_is_not_guessed(self):
         config = PipelineConfig(
             steps=[
                 PipelineStep(id="search_step", action="search"),
                 PipelineStep(id="details_step", action="details", inputs=["search_ste"]),
             ]
         )
-        result = validate_and_fix(config)
-        assert result.valid is True
-        # The fuzzy match should fix 'search_ste' → 'search_step'
-        assert config.steps[1].inputs == ["search_step"]
+        result = validate_pipeline_config(config)
+        assert result.valid is False
+        assert config.steps[1].inputs == ["search_ste"]
+        assert any("references unknown step" in error for error in result.errors)
 
 
 # =========================================================================
-# validate_and_fix — on_error / output
+# validate_pipeline_config — on_error / output
 # =========================================================================
 
 
 class TestValidateAndFixOutputOnError:
     """Tests for on_error and output validation."""
 
-    def test_invalid_on_error_fixed(self):
+    def test_invalid_on_error_fails_closed(self):
         config = PipelineConfig(steps=[PipelineStep(id="s1", action="search", on_error="continue")])
-        result = validate_and_fix(config)
-        assert result.valid is True
-        assert config.steps[0].on_error == "skip"
-        assert result.has_fixes
+        result = validate_pipeline_config(config)
+        assert result.valid is False
+        assert config.steps[0].on_error == "continue"
+        assert any("unknown on_error" in error for error in result.errors)
 
     def test_valid_on_error_abort(self):
         config = PipelineConfig(steps=[PipelineStep(id="s1", action="search", on_error="abort")])
-        result = validate_and_fix(config)
+        result = validate_pipeline_config(config)
         assert result.valid is True
         assert config.steps[0].on_error == "abort"
 
-    def test_legacy_output_format_is_ignored(self):
+    def test_unknown_output_format_is_rejected(self):
         result = parse_and_validate_config(
             {
                 "steps": [{"id": "s1", "action": "search"}],
                 "output": {"format": "xml"},
             }
         )
-        assert result.valid is True
-        assert result.config is not None
-        assert result.config.execution.limit == 20
-        assert any(fix.field == "output.format" for fix in result.fixes)
+        assert result.valid is False
+        assert result.config is None
+        assert any("output.format" in error for error in result.errors)
 
-    def test_invalid_ranking_fuzzy_fixed(self):
+    def test_close_ranking_is_not_guessed(self):
         config = PipelineConfig(
             steps=[PipelineStep(id="s1", action="search")],
-            execution=PipelineExecutionSettings(ranking="impac"),  # close to "impact"
+            output=PipelineOutput(ranking="impac"),  # close to "impact"
         )
-        result = validate_and_fix(config)
-        assert result.valid is True
-        assert config.execution.ranking == "impact"
+        result = validate_pipeline_config(config)
+        assert result.valid is False
+        assert config.output.ranking == "impac"
 
-    def test_invalid_ranking_defaults_to_balanced(self):
+    def test_unknown_ranking_fails_closed(self):
         config = PipelineConfig(
             steps=[PipelineStep(id="s1", action="search")],
-            execution=PipelineExecutionSettings(ranking="zzz_unknown"),
+            output=PipelineOutput(ranking="zzz_unknown"),
         )
-        result = validate_and_fix(config)
-        assert result.valid is True
-        assert config.execution.ranking == "balanced"
+        result = validate_pipeline_config(config)
+        assert result.valid is False
+        assert config.output.ranking == "zzz_unknown"
 
-    def test_negative_limit_fixed(self):
+    def test_nonpositive_limit_is_rejected_without_rewrite(self):
         config = PipelineConfig(
             steps=[PipelineStep(id="s1", action="search")],
-            execution=PipelineExecutionSettings(limit=0),
+            output=PipelineOutput(limit=0),
         )
-        result = validate_and_fix(config)
-        assert result.valid is True
-        assert config.execution.limit == 20
+        result = validate_pipeline_config(config)
+        assert result.valid is False
+        assert config.output.limit == 0
+        assert any("output limit" in error.lower() for error in result.errors)
 
     def test_valid_output_passes(self):
         config = PipelineConfig(
             steps=[PipelineStep(id="s1", action="search")],
-            execution=PipelineExecutionSettings(limit=50, ranking="recency"),
+            output=PipelineOutput(limit=50, ranking="recency"),
         )
-        result = validate_and_fix(config)
+        result = validate_pipeline_config(config)
         assert result.valid is True
-        assert not result.has_fixes
 
 
 # =========================================================================
@@ -468,11 +359,22 @@ class TestParseAndValidateConfig:
     """Tests for parse_and_validate_config() (dict → PipelineConfig)."""
 
     def test_simple_template(self):
-        raw = {"template": "pico", "template_params": {"query": "test"}}
+        raw = {"template": "pico", "template_params": {"P": "ICU", "I": "remimazolam"}}
         result = parse_and_validate_config(raw)
         assert result.valid is True
         assert result.config is not None
         assert result.config.template == "pico"
+
+    def test_noncanonical_config_name_is_rejected_without_rewriting(self):
+        raw = {
+            "name": "My Pipeline",
+            "steps": [{"id": "s1", "action": "search", "params": {"query": "test"}}],
+        }
+        result = parse_and_validate_config(raw)
+
+        assert result.valid is False
+        assert result.config is None
+        assert any("must match" in error for error in result.errors)
 
     def test_simple_steps(self):
         raw = {
@@ -486,8 +388,7 @@ class TestParseAndValidateConfig:
         assert result.config is not None
         assert len(result.config.steps) == 2
 
-    def test_inputs_string_wrapped(self):
-        """Single string input should be wrapped in a list."""
+    def test_inputs_string_rejected(self):
         raw = {
             "steps": [
                 {"id": "s1", "action": "search"},
@@ -495,20 +396,20 @@ class TestParseAndValidateConfig:
             ]
         }
         result = parse_and_validate_config(raw)
-        assert result.valid is True
-        assert result.config.steps[1].inputs == ["s1"]
-        assert any("wrapped" in f.reason.lower() for f in result.fixes)
+        assert result.valid is False
+        assert result.config is None
+        assert any("inputs" in error and "valid list" in error for error in result.errors)
 
-    def test_params_non_dict_fixed(self):
+    def test_params_non_dict_rejected(self):
         raw = {
             "steps": [
                 {"id": "s1", "action": "search", "params": "invalid"},
             ]
         }
         result = parse_and_validate_config(raw)
-        assert result.valid is True
-        assert result.config.steps[0].params == {}
-        assert any("params must be a dict" in f.reason.lower() for f in result.fixes)
+        assert result.valid is False
+        assert result.config is None
+        assert any("params" in error and "valid dictionary" in error for error in result.errors)
 
     def test_output_parsing(self):
         raw = {
@@ -517,17 +418,16 @@ class TestParseAndValidateConfig:
         }
         result = parse_and_validate_config(raw)
         assert result.valid is True
-        assert result.config.execution.format == "json"
-        assert result.config.execution.limit == 50
-        assert result.config.execution.ranking == "impact"
-        assert not any(fix.field == "output.format" for fix in result.fixes)
+        assert result.config.output.format == "json"
+        assert result.config.output.limit == 50
+        assert result.config.output.ranking == "impact"
 
     def test_output_defaults(self):
         raw = {"steps": [{"id": "s1", "action": "search"}]}
         result = parse_and_validate_config(raw)
         assert result.valid is True
-        assert result.config.execution.limit == 20
-        assert result.config.execution.ranking == "balanced"
+        assert result.config.output.limit == 20
+        assert result.config.output.ranking == "balanced"
 
     def test_step_not_dict_error(self):
         raw = {"steps": ["not_a_dict"]}
@@ -547,44 +447,45 @@ class TestParseAndValidateConfig:
             "steps": [{"id": "s1", "action": "search", "on_error": "retry"}],
         }
         result = parse_and_validate_config(raw)
-        assert result.valid is True
-        # 'retry' is normalized to 'skip' during parsing
-        assert result.config.steps[0].on_error == "skip"
+        assert result.valid is False
+        assert result.config is None
+        assert any("on_error" in error for error in result.errors)
 
-    def test_non_dict_output_ignored(self):
+    def test_non_dict_output_rejected(self):
         raw = {
             "steps": [{"id": "s1", "action": "search"}],
             "output": "not_a_dict",
         }
         result = parse_and_validate_config(raw)
-        assert result.valid is True
-        assert result.config.execution.limit == 20
+        assert result.valid is False
+        assert result.config is None
+        assert any("output" in error and "valid dictionary" in error for error in result.errors)
 
-    def test_execution_key_is_supported(self):
+    def test_retired_execution_key_is_rejected(self):
         raw = {
             "steps": [{"id": "s1", "action": "search"}],
             "execution": {"limit": 15, "ranking": "quality"},
         }
         result = parse_and_validate_config(raw)
-        assert result.valid is True
-        assert result.config.execution.limit == 15
-        assert result.config.execution.ranking == "quality"
+        assert result.valid is False
+        assert result.config is None
+        assert any("execution" in error and "Extra inputs" in error for error in result.errors)
 
-    def test_action_alias_auto_fix_through_parse(self):
-        """'find' alias should be resolved to 'search' through full parse path."""
+    def test_action_alias_fails_closed_through_parse(self):
         raw = {"steps": [{"id": "s1", "action": "find"}]}
         result = parse_and_validate_config(raw)
-        assert result.valid is True
-        assert result.config.steps[0].action == "search"
+        assert result.valid is False
+        assert result.config is None
+        assert any("unknown action" in error.lower() for error in result.errors)
 
-    def test_template_alias_auto_fix_through_parse(self):
-        """'clinical' alias should be resolved to 'pico'."""
+    def test_template_alias_fails_closed_through_parse(self):
         raw = {"template": "clinical"}
         result = parse_and_validate_config(raw)
-        assert result.valid is True
-        assert result.config.template == "pico"
+        assert result.valid is False
+        assert result.config is None
+        assert any("Unknown template" in error for error in result.errors)
 
-    def test_template_output_auto_fix_through_parse(self):
+    def test_template_unknown_values_fail_closed_through_parse(self):
         raw = {
             "template": "clinical",
             "output": {"format": "xml", "limit": 0, "ranking": "impac"},
@@ -592,17 +493,11 @@ class TestParseAndValidateConfig:
 
         result = parse_and_validate_config(raw)
 
-        assert result.valid is True
-        assert result.config is not None
-        assert result.config.template == "pico"
-        assert result.config.output.format == "markdown"
-        assert result.config.output.limit == 20
-        assert result.config.output.ranking == "impact"
-        fields = {fix.field for fix in result.fixes}
-        assert "template" in fields
-        assert {"output.format", "output.limit", "output.ranking"} <= fields
+        assert result.valid is False
+        assert result.config is None
+        assert any("template" in error.lower() or "output" in error.lower() for error in result.errors)
 
-    def test_schema_and_semantic_fixes_are_combined(self):
+    def test_schema_error_precedes_unknown_action_validation(self):
         raw = {
             "steps": [
                 {"id": "s1", "action": "find", "params": "invalid"},
@@ -610,13 +505,9 @@ class TestParseAndValidateConfig:
         }
         result = parse_and_validate_config(raw)
 
-        assert result.valid is True
-        assert result.config is not None
-        assert result.config.steps[0].action == "search"
-        assert result.config.steps[0].params == {}
-        reasons = [fix.reason.lower() for fix in result.fixes]
-        assert any("params must be a dict" in reason for reason in reasons)
-        assert any("alias" in reason or "fuzzy" in reason for reason in reasons)
+        assert result.valid is False
+        assert result.config is None
+        assert any("params" in error and "valid dictionary" in error for error in result.errors)
 
 
 # =========================================================================
@@ -627,25 +518,29 @@ class TestParseAndValidateConfig:
 class TestValidationResultSummary:
     """Tests for ValidationResult.summary() output."""
 
-    def test_valid_no_fixes(self):
-        config = PipelineConfig(template="pico")
-        result = validate_and_fix(config)
+    def test_valid_summary(self):
+        config = PipelineConfig(template="pico", template_params={"P": "ICU", "I": "drug"})
+        result = validate_pipeline_config(config)
         summary = result.summary()
         assert "valid" in summary.lower() or "✅" in summary
 
-    def test_with_fixes_shows_details(self):
-        config = PipelineConfig(template="clinical")
-        result = validate_and_fix(config)
+    def test_invalid_limit_summary_shows_validation_error(self):
+        config = PipelineConfig(
+            template="pico",
+            template_params={"P": "ICU", "I": "remimazolam"},
+            output=PipelineOutput(limit=0),
+        )
+        result = validate_pipeline_config(config)
         summary = result.summary()
-        assert "Auto-fixed" in summary
-        assert "clinical" in summary
+        assert "Validation error" in summary
+        assert "output limit" in summary.lower()
 
     def test_with_errors_shows_details(self):
         config = PipelineConfig(template="zzz_unknown_zzz")
-        result = validate_and_fix(config)
+        result = validate_pipeline_config(config)
         summary = result.summary()
         assert "❌" in summary
-        assert "Unfixable" in summary
+        assert "Validation" in summary
 
 
 # =========================================================================
@@ -656,38 +551,31 @@ class TestValidationResultSummary:
 class TestValidatorEdgeCases:
     """Edge cases and combined scenarios."""
 
-    def test_multiple_fixes_combined(self):
-        """Template alias + output fix combined."""
+    def test_unknown_template_is_not_masked_by_invalid_limit(self):
         config = PipelineConfig(
-            template="clinical",  # → pico
-            execution=PipelineExecutionSettings(limit=-5),  # → 20
+            template="clinical",
+            output=PipelineOutput(limit=-5),
         )
-        result = validate_and_fix(config)
-        assert result.valid is True
-        assert result.has_fixes
-        assert config.template == "pico"
-        assert config.output.limit == 20
-        fields = {fix.field for fix in result.fixes}
-        assert "template" in fields
-        assert "output.limit" in fields
+        result = validate_pipeline_config(config)
+        assert result.valid is False
+        assert config.template == "clinical"
 
-    def test_complex_step_pipeline(self):
-        """A realistic multi-step pipeline with some fixes needed."""
+    def test_complex_noncanonical_pipeline_fails_without_rewrite(self):
         config = PipelineConfig(
             steps=[
-                PipelineStep(id="", action="find", params={"query": "test"}),  # id + action fix
-                PipelineStep(id="merge1", action="combine", inputs=["step_1"]),  # action fix
+                PipelineStep(id="", action="find", params={"query": "test"}),
+                PipelineStep(id="merge1", action="combine", inputs=["step_1"]),
                 PipelineStep(id="output", action="filter", inputs=["merge1"]),
             ]
         )
-        result = validate_and_fix(config)
-        assert result.valid is True
-        assert config.steps[0].id == "step_1"
-        assert config.steps[0].action == "search"
-        assert config.steps[1].action == "merge"
+        result = validate_pipeline_config(config)
+        assert result.valid is False
+        assert config.steps[0].id == ""
+        assert config.steps[0].action == "find"
+        assert config.steps[1].action == "combine"
 
     def test_no_template_no_steps(self):
         """Config with neither template nor steps should fail."""
         config = PipelineConfig()
-        result = validate_and_fix(config)
+        result = validate_pipeline_config(config)
         assert result.valid is False

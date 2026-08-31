@@ -1,6 +1,6 @@
 # Python SDK And HTTP CLI Design
 
-Status: implemented as a compatibility-first application facade.
+Status: implemented as a schema-exact application facade.
 
 ## Problem
 
@@ -32,6 +32,13 @@ the Python SDK, and the Python SDK is not a replacement for MCP tool discovery.
 HTTP clients, settings, YAML, or source registries. The client creates
 runtime dependencies lazily when a method is called.
 
+Direct PubMed retrieval uses
+`PubMedSearchClient.search_pubmed_page(...) -> SourceSearchPage[dict]`.
+The facade deliberately has no list-returning `search_pubmed` alias: articles
+are in `page.items`, while total count and provider query provenance remain in
+the envelope. Provider failures raise instead of being converted into an empty
+list.
+
 `pubmed_search.application.unified` owns the stable request/service contract for
 unified search. It accepts an injected runner so application and SDK callers do
 not import MCP presentation modules at import time.
@@ -41,7 +48,7 @@ presentation layer because it still formats MCP-compatible strings, reports
 MCP SDK v2 progress, records request-scoped MCP session state, and persists
 tenant-owned session artifacts.
 The MCP tool wrapper injects its module-level dependencies into the runner so
-existing tests and private patch points remain compatible.
+tests can replace external I/O without importing infrastructure at module load.
 
 ## Deferred Work
 
@@ -53,7 +60,7 @@ That migration can be staged without breaking the SDK facade added here.
 
 ## Verification
 
-The compatibility contract is covered by:
+The SDK contract is covered by:
 
 - `tests/test_public_api_facade.py`
 - `tests/test_package_entrypoints.py`

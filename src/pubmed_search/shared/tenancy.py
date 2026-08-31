@@ -9,7 +9,7 @@ Identity precedence, strongest first:
 
 1. ``auth`` - an authenticated principal from a verified bearer token. This is
    the only source that is a real security boundary.
-2. ``transport`` - a legacy Streamable HTTP session id. It prevents accidental
+2. ``transport`` - a stateful Streamable HTTP session id. It prevents accidental
    crosstalk but is client-supplied and not an authorization decision.
 3. ``local_http`` - trusted loopback HTTP in explicit single-user local mode;
    it shares the durable default store but is distinct from stdio for responses.
@@ -211,8 +211,8 @@ def tenant_data_dir(root: str | Path | None, tenant_id: str | None = None) -> st
             to a path.
 
     Returns:
-        *root* itself for the default tenant, so existing single-user installs
-        keep their data; ``root/tenants/<tenant_id>`` otherwise. ``None`` when
+        *root* itself for the canonical local single-user tenant;
+        ``root/tenants/<tenant_id>`` otherwise. ``None`` when
         *root* is ``None`` or the current caller is not allowed to persist.
     """
     if root is None:

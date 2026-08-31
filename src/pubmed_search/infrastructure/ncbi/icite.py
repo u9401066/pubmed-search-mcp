@@ -17,6 +17,8 @@ from typing import TYPE_CHECKING, Any
 
 from cachetools import TTLCache
 
+from pubmed_search.shared.exceptions import ErrorContext, ServiceUnavailableError
+
 if TYPE_CHECKING:
     import httpx
 else:
@@ -34,6 +36,22 @@ logger = logging.getLogger(__name__)
 ICITE_API_BASE = "https://icite.od.nih.gov/api/pubs"
 MAX_PMIDS_PER_REQUEST = 200  # iCite API limit
 ICITE_CACHE_TTL = 1800  # 30 minutes cache for citation metrics
+
+
+def _parse_icite_payload(data: object) -> dict[str, dict[str, Any]]:
+    """Validate and map one iCite response envelope by PMID."""
+    if not isinstance(data, dict) or not isinstance(data.get("data"), list):
+        raise TypeError("invalid iCite response envelope")
+
+    results: dict[str, dict[str, Any]] = {}
+    for item in data["data"]:
+        if not isinstance(item, dict):
+            raise TypeError("invalid iCite metric row")
+        pmid_value = item.get("pmid")
+        if pmid_value in (None, ""):
+            raise ValueError("iCite metric row is missing PMID")
+        results[str(pmid_value)] = item
+    return results
 
 
 def get_shared_async_client() -> Any:
@@ -100,6 +118,8 @@ class ICiteMixin:
                 "animal",
                 "molecular_cellular",
             ]
+        elif "pmid" not in fields:
+            fields = ["pmid", *fields]
 
         # Check cache first
         cache = self._get_icite_cache()
@@ -139,31 +159,42 @@ class ICiteMixin:
         return cached, missing
 
     async def _fetch_icite_batch(self, pmids: list[str], fields: list[str]) -> dict[str, dict[str, Any]]:
-        """Fetch a single batch from iCite API."""
-        try:
-            params = {"pmids": ",".join(str(p) for p in pmids), "fl": ",".join(fields)}
+        """Fetch a single batch from iCite API.
 
+        A successful empty ``data`` list means that iCite has no rows for the
+        requested PMIDs. Transport and response-shape failures raise a
+        retryable ``ServiceUnavailableError`` so callers cannot confuse an
+        outage with legitimate absence from the index.
+        """
+        params = {"pmids": ",".join(str(p) for p in pmids), "fl": ",".join(fields)}
+        try:
             client = await self._get_icite_client()
             response = await client.get(ICITE_API_BASE, params=params)
             response.raise_for_status()
+        except Exception as exc:
+            logger.warning("iCite API request failed (%s)", type(exc).__name__)
+            raise ServiceUnavailableError(
+                "request failed",
+                service="NIH iCite",
+                context=ErrorContext(
+                    operation="get_citation_metrics",
+                    suggestion="Retry later; do not interpret this response as an unindexed article",
+                ),
+            ) from exc
 
+        try:
             data = response.json()
-
-            # Map by PMID for easy lookup
-            results = {}
-            for item in data.get("data", []):
-                pmid = str(item.get("pmid", ""))
-                if pmid:
-                    results[pmid] = item
-
-            return results
-
-        except httpx.HTTPError as e:
-            logger.exception(f"iCite API request failed: {e}")
-            return {}
-        except Exception as e:
-            logger.exception(f"iCite processing error: {e}")
-            return {}
+            return _parse_icite_payload(data)
+        except Exception as exc:
+            logger.warning("iCite response parsing failed (%s)", type(exc).__name__)
+            raise ServiceUnavailableError(
+                "returned an invalid response",
+                service="NIH iCite",
+                context=ErrorContext(
+                    operation="get_citation_metrics",
+                    suggestion="Retry later; do not interpret this response as an unindexed article",
+                ),
+            ) from exc
 
     async def enrich_with_citations(self, articles: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """

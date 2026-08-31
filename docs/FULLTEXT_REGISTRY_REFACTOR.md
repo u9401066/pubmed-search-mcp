@@ -8,21 +8,23 @@ The immediate objective is not to add more sources. The objective is to make the
 
 ## Current Status
 
-As of 2026-04-06, the first orchestration extraction has landed:
+As of 2026-08-31, the orchestration and phase split are complete:
 
 - `get_fulltext` keeps input normalization, progress/log bridging, and output formatting
-- `fulltext_service.py` owns identifier-aware source orchestration
-- `fulltext_registry.py` defines the initial policy/source metadata surface
+- `application/fulltext/service.py` owns identifier-aware source orchestration
+- `application/fulltext/registry.py` defines the policy/source metadata surface
+- `fulltext_download.py` coordinates separate discovery, fetch, and extract phase objects
+- historical infrastructure re-export modules and downloader pass-through methods are removed
 
-The next refactor target is now narrower: make `fulltext_download.py` more explicitly phase-oriented internally so discovery, fetch, and extract are cleanly separated below the service layer.
+New behavior must be added through those authoritative application or phase modules; there is no parallel compatibility surface.
 
 ## Problem Statement
 
 The current fulltext path already has meaningful source coverage, but the architecture is still uneven:
 
-1. Discovery and extraction responsibilities are still uneven below the service layer.
-   - `fulltext_service.py` now owns policy resolution and high-level orchestration.
-   - `fulltext_download.py` still mixes broad link discovery, fetch logic, and PDF text extraction in one infrastructure module.
+1. Application policy and infrastructure phases have explicit owners.
+   - `application/fulltext/service.py` owns policy resolution and high-level orchestration.
+   - `fulltext_discovery.py`, `fulltext_fetch.py`, and `fulltext_extract.py` own their respective phase behavior.
 
 2. Structured fulltext is still over-coupled to Europe PMC.
    - Structured XML is treated as a special-case branch in the tool instead of a pluggable structured source policy.
@@ -30,8 +32,7 @@ The current fulltext path already has meaningful source coverage, but the archit
 3. `extended_sources` is a transport flag, not a retrieval policy.
    - The current boolean mixes user intent, discovery breadth, and fallback behavior into one switch.
 
-4. Discovery, fetch, and extract are present but not explicit.
-   - The downloader already does all three, but they are not separated as replaceable strategies.
+4. `FulltextDownloader` composes discovery, fetch, and extract without duplicating their methods.
 
 ## Design Principles
 
@@ -49,8 +50,8 @@ The current fulltext path already has meaningful source coverage, but the archit
    - Fetch: retrieve XML, PDF, or HTML payloads.
    - Extract: turn payloads into structured sections or plain text.
 
-5. Preserve backward compatibility.
-   - The public `get_fulltext(..., extended_sources=...)` signature can remain for compatibility, but the boolean should become a legacy hint that upgrades policy selection rather than owning orchestration.
+5. Keep one contract per capability.
+   - Application contracts are imported from `application.fulltext`; phase behavior is called on its owning phase object. Removed historical paths are intentionally not aliased.
 
 ## Target Architecture
 
@@ -83,18 +84,18 @@ Non-responsibilities:
 
 ### Service Layer
 
-`src/pubmed_search/infrastructure/sources/fulltext_service.py`
+`src/pubmed_search/application/fulltext/service.py`
 
 Responsibilities:
 
-- resolve a retrieval policy from identifiers and compatibility hints
+- resolve a retrieval policy from identifiers and requested discovery breadth
 - execute structured-first or expanded discovery flows
 - coordinate discovery, fetch, and extract phases
 - return one normalized fulltext result object for the tool layer
 
 ### Registry Layer
 
-`src/pubmed_search/infrastructure/sources/fulltext_registry.py`
+`src/pubmed_search/application/fulltext/registry.py`
 
 Responsibilities:
 
@@ -106,11 +107,12 @@ Responsibilities:
 
 `src/pubmed_search/infrastructure/sources/fulltext_download.py`
 
-Responsibilities after refactor:
+Responsibilities:
 
-- discovery helpers for link candidates
-- fetch helpers for XML / PDF / landing pages
-- extract helpers for PDF text or structured content post-processing
+- compose candidate discovery through `FulltextDiscoveryPhase`
+- compose PDF / landing-page retrieval through `FulltextFetchPhase`
+- compose PDF and structured text extraction through `FulltextExtractPhase`
+- enforce end-to-end deadlines, candidate ordering, and client lifecycle
 
 The downloader should become phase-oriented infrastructure, not the place where tool policy is decided.
 
@@ -173,7 +175,7 @@ Behavior:
 
 - try structured fulltext first
 - then standard discovery
-- optionally upgrade discovery breadth if compatibility hint requests it
+- optionally upgrade discovery breadth when the request explicitly asks for it
 
 ### `standard_discovery`
 
@@ -198,7 +200,7 @@ Suggested policy resolution rules:
 1. If `pmcid` is present, use `structured_first`.
 2. Else if only `doi` is present, use `expanded_discovery`.
 3. Else use `standard_discovery`.
-4. If legacy `extended_sources=True` is provided, widen discovery scope without changing the public tool contract.
+4. If `extended_sources=True` is requested, widen discovery scope explicitly.
 
 ## Phase Split
 
@@ -277,10 +279,13 @@ This lets the tool format once, regardless of how the content was found.
 
 ## File Plan
 
-### New files
+### Authoritative files
 
-- `src/pubmed_search/infrastructure/sources/fulltext_registry.py`
-- `src/pubmed_search/infrastructure/sources/fulltext_service.py`
+- `src/pubmed_search/application/fulltext/registry.py`
+- `src/pubmed_search/application/fulltext/service.py`
+- `src/pubmed_search/infrastructure/sources/fulltext_discovery.py`
+- `src/pubmed_search/infrastructure/sources/fulltext_fetch.py`
+- `src/pubmed_search/infrastructure/sources/fulltext_extract.py`
 
 ### Existing files to slim down
 
@@ -301,12 +306,13 @@ This lets the tool format once, regardless of how the content was found.
 - keep tool output formatting intact
 - keep current public signature intact
 
-### Phase 3: Downloader split
+### Phase 3: Downloader split (complete)
 
-- expose explicit discovery helpers
-- expose explicit fetch helpers
-- expose explicit extract helpers
+- call explicit discovery phase methods
+- call explicit fetch phase methods
+- call explicit extract phase methods
 - stop letting the downloader decide policy
+- remove duplicate downloader pass-through methods and historical re-export modules
 
 ### Phase 4: Direct PMC structured fallback
 

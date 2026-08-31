@@ -16,7 +16,13 @@ import logging
 import urllib.parse
 from typing import Any
 
-from pubmed_search.infrastructure.sources.base_client import BaseAPIClient
+from pubmed_search.infrastructure.provider_payload import is_provider_error_envelope
+from pubmed_search.infrastructure.sources.base_client import (
+    APIRequestError,
+    BaseAPIClient,
+    raise_provider_schema_error,
+)
+from pubmed_search.shared.async_utils import RetryableOperationError
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +31,113 @@ ENTREZ_BASE = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
 
 # Default values
 DEFAULT_EMAIL = "pubmed-search-mcp@example.com"
+
+
+def _require_payload(payload: object) -> dict[str, Any]:
+    """Require one error-free NCBI JSON object."""
+    if not isinstance(payload, dict) or is_provider_error_envelope(payload):
+        raise_provider_schema_error("NCBI")
+    return payload
+
+
+def _normalize_provider_ids(value: object) -> list[str]:
+    """Validate and normalize one NCBI identifier array."""
+    if not isinstance(value, list):
+        raise_provider_schema_error("NCBI")
+
+    normalized: list[str] = []
+    for raw_id in value:
+        if isinstance(raw_id, bool) or not isinstance(raw_id, (str, int)):
+            raise_provider_schema_error("NCBI")
+        identifier = str(raw_id)
+        if not identifier.isascii() or not identifier.isdigit() or int(identifier) <= 0:
+            raise_provider_schema_error("NCBI")
+        normalized.append(identifier)
+    if len(normalized) != len(set(normalized)):
+        raise_provider_schema_error("NCBI")
+    return normalized
+
+
+def _require_esearch_ids(payload: object) -> list[str]:
+    """Return IDs from a structurally valid ESearch response."""
+    root = _require_payload(payload)
+    envelope = root.get("esearchresult")
+    if not isinstance(envelope, dict) or is_provider_error_envelope(envelope) or "idlist" not in envelope:
+        raise_provider_schema_error("NCBI")
+    return _normalize_provider_ids(envelope["idlist"])
+
+
+def _require_summary_result(payload: object) -> tuple[dict[str, Any], list[str]]:
+    """Return the ESummary result map and its explicit UID coverage."""
+    root = _require_payload(payload)
+    result = root.get("result")
+    if not isinstance(result, dict) or is_provider_error_envelope(result) or "uids" not in result:
+        raise_provider_schema_error("NCBI")
+    return result, _normalize_provider_ids(result["uids"])
+
+
+def _require_summary_rows(payload: object, requested_ids: list[str]) -> list[dict[str, Any]]:
+    """Require one valid ESummary row for every ID returned by ESearch."""
+    result, returned_ids = _require_summary_result(payload)
+    if len(returned_ids) != len(requested_ids) or set(returned_ids) != set(requested_ids):
+        raise_provider_schema_error("NCBI")
+
+    rows: list[dict[str, Any]] = []
+    for identifier in requested_ids:
+        row = result.get(identifier)
+        if not isinstance(row, dict) or is_provider_error_envelope(row) or str(row.get("uid", "")) != identifier:
+            raise_provider_schema_error("NCBI")
+        rows.append(row)
+    return rows
+
+
+def _require_summary_item(payload: object, requested_id: str) -> dict[str, Any] | None:
+    """Return a direct ESummary record, preserving only explicit not-found."""
+    result, returned_ids = _require_summary_result(payload)
+    if not returned_ids:
+        if set(result) != {"uids"}:
+            raise_provider_schema_error("NCBI")
+        return None
+    if returned_ids != [requested_id]:
+        raise_provider_schema_error("NCBI")
+    row = result.get(requested_id)
+    if not isinstance(row, dict) or str(row.get("uid", "")) != requested_id:
+        raise_provider_schema_error("NCBI")
+    if is_provider_error_envelope(row):
+        error = row.get("error", row.get("ERROR"))
+        if isinstance(error, str) and error.strip().casefold() == "cannot get document summary":
+            return None
+        raise_provider_schema_error("NCBI")
+    return row
+
+
+def _require_pubmed_links(payload: object, *, requested_id: str, source_db: str) -> list[str]:
+    """Parse a structurally valid ELink response into PubMed IDs."""
+    root = _require_payload(payload)
+    linksets = root.get("linksets")
+    if not isinstance(linksets, list):
+        raise_provider_schema_error("NCBI")
+
+    pmids: list[str] = []
+    for linkset in linksets:
+        if not isinstance(linkset, dict) or is_provider_error_envelope(linkset):
+            raise_provider_schema_error("NCBI")
+        if linkset.get("dbfrom") != source_db or _normalize_provider_ids(linkset.get("ids")) != [requested_id]:
+            raise_provider_schema_error("NCBI")
+        if "linksetdbs" not in linkset:
+            continue
+        linksetdbs = linkset["linksetdbs"]
+        if not isinstance(linksetdbs, list):
+            raise_provider_schema_error("NCBI")
+        for linksetdb in linksetdbs:
+            if not isinstance(linksetdb, dict) or is_provider_error_envelope(linksetdb):
+                raise_provider_schema_error("NCBI")
+            if linksetdb.get("dbto") != "pubmed":
+                continue
+            if "links" not in linksetdb:
+                raise_provider_schema_error("NCBI")
+            pmids.extend(_normalize_provider_ids(linksetdb["links"]))
+    return pmids
 
 
 class NCBIExtendedClient(BaseAPIClient):
@@ -125,10 +238,7 @@ class NCBIExtendedClient(BaseAPIClient):
             )
 
             search_result = await self._make_request(search_url, expect_json=True)
-            if not isinstance(search_result, dict):
-                return []
-
-            ids = search_result.get("esearchresult", {}).get("idlist", [])
+            ids = _require_esearch_ids(search_result)
             if not ids:
                 return []
 
@@ -137,22 +247,14 @@ class NCBIExtendedClient(BaseAPIClient):
             summary_url = f"{ENTREZ_BASE}/esummary.fcgi?db=gene&id={ids_str}&retmode=json"
 
             summary_result = await self._make_request(summary_url, expect_json=True)
-            if not isinstance(summary_result, dict):
-                return []
+            rows = _require_summary_rows(summary_result, ids)
+            return [self._normalize_gene(row) for row in rows]
 
-            # Parse results
-            genes = []
-            result_data = summary_result.get("result", {})
-            for gene_id in ids:
-                gene_data = result_data.get(gene_id, {})
-                if gene_data:
-                    genes.append(self._normalize_gene(gene_data))
-
-            return genes
-
-        except Exception as e:
-            logger.exception(f"Gene search failed: {e}")
-            return []
+        except (APIRequestError, RetryableOperationError):
+            raise
+        except Exception as exc:
+            logger.warning("Gene search failed (%s)", type(exc).__name__)
+            raise APIRequestError("NCBI") from None
 
     async def get_gene(self, gene_id: str | int) -> dict | None:
         """
@@ -167,19 +269,14 @@ class NCBIExtendedClient(BaseAPIClient):
         try:
             url = f"{ENTREZ_BASE}/esummary.fcgi?db=gene&id={gene_id}&retmode=json"
             result = await self._make_request(url, expect_json=True)
+            gene_data = _require_summary_item(result, str(gene_id))
+            return self._normalize_gene(gene_data) if gene_data is not None else None
 
-            if not isinstance(result, dict):
-                return None
-
-            gene_data = result.get("result", {}).get(str(gene_id), {})
-            if gene_data:
-                return self._normalize_gene(gene_data)
-
-            return None
-
-        except Exception as e:
-            logger.exception(f"Get gene failed: {e}")
-            return None
+        except (APIRequestError, RetryableOperationError):
+            raise
+        except Exception as exc:
+            logger.warning("Get gene failed (%s)", type(exc).__name__)
+            raise APIRequestError("NCBI") from None
 
     async def get_gene_pubmed_links(self, gene_id: str | int, limit: int = 20) -> list[str]:
         """
@@ -195,23 +292,13 @@ class NCBIExtendedClient(BaseAPIClient):
         try:
             url = f"{ENTREZ_BASE}/elink.fcgi?dbfrom=gene&db=pubmed&id={gene_id}&retmode=json"
             result = await self._make_request(url, expect_json=True)
+            return _require_pubmed_links(result, requested_id=str(gene_id), source_db="gene")[:limit]
 
-            if not isinstance(result, dict):
-                return []
-
-            linksets = result.get("linksets", [])
-            pmids = []
-
-            for linkset in linksets:
-                for linksetdb in linkset.get("linksetdbs", []):
-                    if linksetdb.get("dbto") == "pubmed":
-                        pmids.extend([str(x) for x in linksetdb.get("links", [])])
-
-            return pmids[:limit]
-
-        except Exception as e:
-            logger.exception(f"Get gene PubMed links failed: {e}")
-            return []
+        except (APIRequestError, RetryableOperationError):
+            raise
+        except Exception as exc:
+            logger.warning("Get gene PubMed links failed (%s)", type(exc).__name__)
+            raise APIRequestError("NCBI") from None
 
     def _normalize_gene(self, gene: dict) -> dict:
         """Normalize gene data to common format."""
@@ -255,10 +342,7 @@ class NCBIExtendedClient(BaseAPIClient):
             )
 
             search_result = await self._make_request(search_url, expect_json=True)
-            if not isinstance(search_result, dict):
-                return []
-
-            ids = search_result.get("esearchresult", {}).get("idlist", [])
+            ids = _require_esearch_ids(search_result)
             if not ids:
                 return []
 
@@ -267,22 +351,14 @@ class NCBIExtendedClient(BaseAPIClient):
             summary_url = f"{ENTREZ_BASE}/esummary.fcgi?db=pccompound&id={ids_str}&retmode=json"
 
             summary_result = await self._make_request(summary_url, expect_json=True)
-            if not isinstance(summary_result, dict):
-                return []
+            rows = _require_summary_rows(summary_result, ids)
+            return [self._normalize_compound(row) for row in rows]
 
-            # Parse results
-            compounds = []
-            result_data = summary_result.get("result", {})
-            for cid in ids:
-                compound_data = result_data.get(cid, {})
-                if compound_data:
-                    compounds.append(self._normalize_compound(compound_data))
-
-            return compounds
-
-        except Exception as e:
-            logger.exception(f"Compound search failed: {e}")
-            return []
+        except (APIRequestError, RetryableOperationError):
+            raise
+        except Exception as exc:
+            logger.warning("Compound search failed (%s)", type(exc).__name__)
+            raise APIRequestError("NCBI") from None
 
     async def get_compound(self, cid: str | int) -> dict | None:
         """
@@ -297,19 +373,14 @@ class NCBIExtendedClient(BaseAPIClient):
         try:
             url = f"{ENTREZ_BASE}/esummary.fcgi?db=pccompound&id={cid}&retmode=json"
             result = await self._make_request(url, expect_json=True)
+            compound_data = _require_summary_item(result, str(cid))
+            return self._normalize_compound(compound_data) if compound_data is not None else None
 
-            if not isinstance(result, dict):
-                return None
-
-            compound_data = result.get("result", {}).get(str(cid), {})
-            if compound_data:
-                return self._normalize_compound(compound_data)
-
-            return None
-
-        except Exception as e:
-            logger.exception(f"Get compound failed: {e}")
-            return None
+        except (APIRequestError, RetryableOperationError):
+            raise
+        except Exception as exc:
+            logger.warning("Get compound failed (%s)", type(exc).__name__)
+            raise APIRequestError("NCBI") from None
 
     async def get_compound_pubmed_links(self, cid: str | int, limit: int = 20) -> list[str]:
         """
@@ -325,23 +396,13 @@ class NCBIExtendedClient(BaseAPIClient):
         try:
             url = f"{ENTREZ_BASE}/elink.fcgi?dbfrom=pccompound&db=pubmed&id={cid}&retmode=json"
             result = await self._make_request(url, expect_json=True)
+            return _require_pubmed_links(result, requested_id=str(cid), source_db="pccompound")[:limit]
 
-            if not isinstance(result, dict):
-                return []
-
-            linksets = result.get("linksets", [])
-            pmids = []
-
-            for linkset in linksets:
-                for linksetdb in linkset.get("linksetdbs", []):
-                    if linksetdb.get("dbto") == "pubmed":
-                        pmids.extend([str(x) for x in linksetdb.get("links", [])])
-
-            return pmids[:limit]
-
-        except Exception as e:
-            logger.exception(f"Get compound PubMed links failed: {e}")
-            return []
+        except (APIRequestError, RetryableOperationError):
+            raise
+        except Exception as exc:
+            logger.warning("Get compound PubMed links failed (%s)", type(exc).__name__)
+            raise APIRequestError("NCBI") from None
 
     def _normalize_compound(self, compound: dict) -> dict:
         """Normalize compound data to common format."""
@@ -395,10 +456,7 @@ class NCBIExtendedClient(BaseAPIClient):
             )
 
             search_result = await self._make_request(search_url, expect_json=True)
-            if not isinstance(search_result, dict):
-                return []
-
-            ids = search_result.get("esearchresult", {}).get("idlist", [])
+            ids = _require_esearch_ids(search_result)
             if not ids:
                 return []
 
@@ -407,22 +465,14 @@ class NCBIExtendedClient(BaseAPIClient):
             summary_url = f"{ENTREZ_BASE}/esummary.fcgi?db=clinvar&id={ids_str}&retmode=json"
 
             summary_result = await self._make_request(summary_url, expect_json=True)
-            if not isinstance(summary_result, dict):
-                return []
+            rows = _require_summary_rows(summary_result, ids)
+            return [self._normalize_clinvar(row) for row in rows]
 
-            # Parse results
-            variants = []
-            result_data = summary_result.get("result", {})
-            for var_id in ids:
-                var_data = result_data.get(var_id, {})
-                if var_data:
-                    variants.append(self._normalize_clinvar(var_data))
-
-            return variants
-
-        except Exception as e:
-            logger.exception(f"ClinVar search failed: {e}")
-            return []
+        except (APIRequestError, RetryableOperationError):
+            raise
+        except Exception as exc:
+            logger.warning("ClinVar search failed (%s)", type(exc).__name__)
+            raise APIRequestError("NCBI") from None
 
     def _normalize_clinvar(self, variant: dict) -> dict:
         """Normalize ClinVar data to common format."""
@@ -451,20 +501,3 @@ class NCBIExtendedClient(BaseAPIClient):
             "conditions": [c.get("trait_name", "") for c in variant.get("trait_set", []) if isinstance(c, dict)],
             "_source": "clinvar",
         }
-
-
-# Singleton instance
-_ncbi_extended_client: NCBIExtendedClient | None = None
-
-
-def get_ncbi_extended_client(email: str | None = None, api_key: str | None = None) -> NCBIExtendedClient:
-    """Get or create NCBI extended client singleton."""
-    global _ncbi_extended_client
-    if _ncbi_extended_client is None:
-        import os
-
-        _ncbi_extended_client = NCBIExtendedClient(
-            email=email or os.environ.get("NCBI_EMAIL"),
-            api_key=api_key or os.environ.get("NCBI_API_KEY"),
-        )
-    return _ncbi_extended_client

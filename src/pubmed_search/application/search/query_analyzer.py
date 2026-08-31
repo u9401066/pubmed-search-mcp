@@ -684,7 +684,7 @@ class QueryAnalyzer:
         Detect PICO elements from query.
 
         This is heuristic metadata only. The agent is responsible for
-        clinical PICO extraction; parse_pico validates agent-provided
+        clinical PICO extraction; validate_pico_plan validates agent-provided
         structured P/I/C/O and hands off to the PICO pipeline.
         """
         query_lower = query.lower()
@@ -920,18 +920,3 @@ class QueryAnalyzer:
             confidence += 0.1
 
         return min(confidence, 1.0)
-
-
-# Convenience function
-def analyze_query(query: str) -> AnalyzedQuery:
-    """
-    Analyze a search query (convenience function).
-
-    Args:
-        query: User's search query
-
-    Returns:
-        AnalyzedQuery with analysis results
-    """
-    analyzer = QueryAnalyzer()
-    return analyzer.analyze(query)

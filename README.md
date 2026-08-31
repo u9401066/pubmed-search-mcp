@@ -14,17 +14,17 @@ A Domain-Driven Design (DDD) based MCP server that serves as an intelligent rese
 
 **✨ What's Included:**
 
-- 🔧 **45 MCP Tools** - Streamlined PubMed, Europe PMC, CORE, NCBI database access, and **Research Chronicle / Context Graph**
+- 🔧 **41 MCP Tools** - Streamlined PubMed, Europe PMC, CORE, NCBI database access, and the versioned **Research Chronicle**
 - 🛡️ **Multi-Agent Service Mode** - Deploy once and serve many agents: per-tenant sessions, caches, and artifacts, bearer-token auth, and per-tenant fair-share limits. See [DEPLOYMENT.md](DEPLOYMENT.md)
 - 🖼️ **OA Figure Extraction** - Pull figure captions, direct image URLs, and PDF links from PMC Open Access articles
-- 📘 **Docs Site** - Browse the complete language-switchable handbook: user workflows, architecture, 45-tool reference, pipeline tutorials, source/broker contracts, integrations and operations, security, and deployment at [u9401066.github.io/pubmed-search-mcp](https://u9401066.github.io/pubmed-search-mcp/)
+- 📘 **Docs Site** - Browse the complete language-switchable handbook: user workflows, architecture, 41-tool reference, pipeline tutorials, source/broker contracts, integrations and operations, security, and deployment at [u9401066.github.io/pubmed-search-mcp](https://u9401066.github.io/pubmed-search-mcp/)
 - 📖 **GitHub Wiki** - GitHub-native mirror of the same canonical documentation at [github.com/u9401066/pubmed-search-mcp/wiki](https://github.com/u9401066/pubmed-search-mcp/wiki)
 - 📚 **26 Claude Skills** - Ready-to-use workflow guides for AI agents (Claude Code-specific)
 - 📖 **Copilot Instructions** - VS Code GitHub Copilot integration guide
 
 **🌐 Language**: **English** | [繁體中文](README.zh-TW.md)
 
-**📘 Documentation Map**: README is the quick project entry point. Use the [Docs Site](https://u9401066.github.io/pubmed-search-mcp/) for the best reading experience, the [GitHub Wiki](https://github.com/u9401066/pubmed-search-mcp/wiki) for GitHub-native navigation, and source docs for edits: [User guide](docs/USER_GUIDE.md) | [Advanced workflows](docs/ADVANCED_RESEARCH_WORKFLOWS.md) | [Capability-first guide](docs/TOOLS_USAGE_GUIDE.md) | [Provider data planes](docs/SEMANTIC_SCHOLAR_API.md) | [BioMCP architecture analysis](docs/BIOMCP_ARCHITECTURE_ANALYSIS.md) | [Developer guide](docs/DEVELOPER_GUIDE.md) | [Complete index](src/pubmed_search/presentation/mcp_server/TOOLS_INDEX.md)
+**📘 Documentation Map**: README is the quick project entry point. Use the [Docs Site](https://u9401066.github.io/pubmed-search-mcp/) for the best reading experience, the [GitHub Wiki](https://github.com/u9401066/pubmed-search-mcp/wiki) for GitHub-native navigation, and source docs for edits: [User guide](docs/USER_GUIDE.md) | [Advanced workflows](docs/ADVANCED_RESEARCH_WORKFLOWS.md) | [Capability-first guide](docs/TOOLS_USAGE_GUIDE.md) | [Unified Search architecture](docs/UNIFIED_SEARCH_ARCHITECTURE.md) | [41-tool quality audit](docs/TOOL_QUALITY_AUDIT.md) | [Provider data planes](docs/SEMANTIC_SCHOLAR_API.md) | [BioMCP architecture analysis](docs/BIOMCP_ARCHITECTURE_ANALYSIS.md) | [Developer guide](docs/DEVELOPER_GUIDE.md) | [Complete index](src/pubmed_search/presentation/mcp_server/TOOLS_INDEX.md)
 
 ---
 
@@ -67,17 +67,24 @@ importing MCP tool modules:
 ```python
 from pubmed_search.api import PubMedSearchClient, PubMedSearchConfig
 
-client = PubMedSearchClient(PubMedSearchConfig(email="your@email.com"))
-result = await client.unified_search("remimazolam ICU sedation", limit=20)
+async with PubMedSearchClient(PubMedSearchConfig(email="your@email.com")) as client:
+    result = await client.unified_search("remimazolam ICU sedation", limit=20)
 
-print(result.articles)
-print(result.source_counts)
-print(result.artifact)  # artifact locator when persistence is enabled
+    print(result.articles)
+    print(result.source_counts)
+    print(result.source_errors)
+    print(result.result_filter_counts)
 ```
 
 Use `uvx pubmed-search-mcp` or `/mcp` for agent tool discovery. Use the SDK for
 Python package/notebook calls where a typed object is easier than parsing an MCP
 response string.
+The SDK executes the application use case directly and intentionally has no MCP
+session journal or artifact side effects; use the MCP tool when durable replay
+and artifact locators are required.
+The async context owns and closes every provider client and HTTP pool. If a
+long-lived application does not use `async with`, call `await client.aclose()`
+during shutdown.
 
 ### Choose a Runtime Contract
 
@@ -102,9 +109,10 @@ The protocol baseline is MCP SDK v2 (`mcp>=2.0,<3`). Modern 2026-07-28 clients
 send `tools/list` and `tools/call` directly, without an `initialize` handshake or
 `Mcp-Session-Id`. Local mode retains filesystem features. Authenticated service
 callers cannot load `file:` pipelines, select note `output_dir`/`template_file`,
-or inherit a process-wide pipeline workspace; the service Compose scheduler is
-disabled. See the [Integrations & Operations Guide](docs/INTEGRATIONS.md) for the
-capability matrix.
+or inherit a process-wide pipeline workspace. Note responses use tenant-relative
+logical locators and never reveal server filesystem paths. The service Compose scheduler is
+disabled. See the [Integrations & Operations Guide](docs/INTEGRATIONS.md)
+for the capability matrix.
 
 ---
 
@@ -159,8 +167,9 @@ uv run pubmed-browser-fetch-broker --token "<same-random-32-byte-token>"
 ```
 
 Copy the generated value into both commands/configurations; never reuse a
-published example token. If `--token` is omitted, the broker generates and
-prints a high-entropy runtime token. The broker launches a persistent browser
+published example token. `--token`, `BROWSER_FETCH_BROKER_TOKEN`, or the
+shared `BROWSER_FETCH_TOKEN` is required; the broker fails closed instead of
+generating or logging a secret. The broker launches a persistent browser
 profile with download interception enabled. Log in once inside that
 broker-controlled browser window, and subsequent PDF downloads will be captured
 automatically without a native "Save As" dialog.
@@ -281,7 +290,7 @@ openclaw plugins list  # Should show: mcp-adapter | loaded
       "args": ["pubmed-search-mcp"],
       "env": {
         "NCBI_EMAIL": "your@email.com",
-        "S2_API_KEY": "your_semantic_scholar_key",
+        "SEMANTIC_SCHOLAR_API_KEY": "your_semantic_scholar_key",
         "PUBMED_SEARCH_DISABLED_SOURCES": ""
       },
       "alwaysAllow": [],
@@ -320,21 +329,21 @@ Other tools give you raw API access. We give you **vocabulary translation + inte
 | --------- | ------------ |
 | Agent uses ICD codes, PubMed needs MeSH | ✅ **Auto ICD→MeSH conversion** |
 | Multiple databases, different APIs | ✅ **Unified Search** single entry point |
-| Clinical questions need structured search | ✅ **PICO handoff + pipeline** (`parse_pico` validates agent-provided P/I/C/O and returns a runnable `template: pico` pipeline) |
+| Clinical questions need structured search | ✅ **PICO handoff + pipeline** (`validate_pico_plan` validates agent-provided P/I/C/O and returns a runnable `template: pico` pipeline) |
 | Typos in medical terms | ✅ **ESpell auto-correction** |
 | Too many results from one source | ✅ **Parallel multi-source** with dedup |
 | Need to trace research evolution | ✅ **Research Chronicle & Tree** with landmark detection, diagnostics, sub-topic branching, and versioned revisions |
 | Citation context is unclear | ✅ **Citation Tree** forward/backward/network |
 | Can't access full text | ✅ **Multi-source fulltext** (Europe PMC XML, Unpaywall OA locations, institutional direct/EZproxy, CORE, and downloader fallbacks) |
 | Gene/drug info scattered across DBs | ✅ **NCBI Extended** (Gene, PubChem, ClinVar) |
-| Need cutting-edge preprints | ✅ **Preprint search** (arXiv, medRxiv, bioRxiv) with peer-review filtering |
+| Need cutting-edge preprints | ✅ **Preprint search** (arXiv, medRxiv, bioRxiv) with detected-preprint filtering; this does not verify peer-review status |
 | Export to reference managers | ✅ **One-click export** (official RIS/MEDLINE/CSL JSON; local RIS/BibTeX/CSV/MEDLINE/JSON) |
 
 ### Key Differentiators
 
 1. **Vocabulary Translation Layer** - Agent speaks naturally, we translate to each database's terminology (MeSH, ICD-10, text-mined entities)
 2. **Unified Search Gateway** - One `unified_search()` call, capability-aware dispatch across PubMed, Europe PMC, CORE, OpenAlex, Semantic Scholar, and enabled preprint/commercial sources
-3. **PICO Handoff + Pipeline** - the Agent extracts P/I/C/O, `parse_pico()` validates that structured handoff, and the backend `template: pico` pipeline executes O-aware precision/recall searches
+3. **PICO Handoff + Pipeline** - the Agent extracts P/I/C/O, `validate_pico_plan()` validates that structured handoff, and the backend `template: pico` pipeline executes O-aware precision/recall searches
 4. **Research Chronicle & Lineage Tree** - Detect milestones with policy-driven heuristics, identify landmark papers via multi-signal scoring, surface diagnostics, persist versioned revisions you can diff, and visualize research evolution as branching trees by sub-topic
 5. **Citation Network Analysis** - Build multi-level citation trees to map an entire research landscape from a single paper
 6. **Full Research Lifecycle** - From search → discovery → full text → analysis → export, all in one server
@@ -373,9 +382,13 @@ NCBI_API_KEY=your_ncbi_api_key     # Get from: https://www.ncbi.nlm.nih.gov/acco
 CORE_API_KEY=your_core_api_key     # Get from: https://core.ac.uk/services/api
 CROSSREF_EMAIL=your@email.com      # Optional override; defaults to server/NCBI email
 UNPAYWALL_EMAIL=your@email.com     # Optional override; defaults to server/NCBI email
-S2_API_KEY=your_s2_api_key         # Alias: SEMANTIC_SCHOLAR_API_KEY
+SEMANTIC_SCHOLAR_API_KEY=your_semantic_scholar_key # https://www.semanticscholar.org/product/api
 OPENALEX_API_KEY=your_openalex_key # Raises the OpenAlex credit budget; actual grant is response-driven
 PUBMED_SEARCH_DISABLED_SOURCES=    # Example: semantic_scholar
+
+# Optional - Pipeline run-wide safety budgets
+PUBMED_PIPELINE_RUN_TIMEOUT_SECONDS=120 # Shared end-to-end deadline (max 3600)
+PUBMED_PIPELINE_MAX_EXTERNAL_CALLS=40   # Shared across sequential/parallel steps (max 1000)
 
 # Optional - Network settings
 HTTP_PROXY=http://proxy:8080       # HTTP proxy for API requests
@@ -450,9 +463,9 @@ For LLM wiki compatibility, `wiki` and `foam` exports use stable link targets ba
 
 ## 🛠️ MCP Tools Overview
 
-If you want to understand the tool surface as a usable system, do not start by memorizing 45 tool names.
+If you want to understand the tool surface as a usable system, do not start by memorizing 41 tool names.
 
-Start with the [Tools Usage Guide](docs/TOOLS_USAGE_GUIDE.md): it compresses the current 45 tools into 8 capability families, explains the theoretical lower bound, and gives intent-based routing for both humans and agents.
+Start with the [Tools Usage Guide](docs/TOOLS_USAGE_GUIDE.md): it compresses the current 41 tools into 8 capability families, explains the theoretical lower bound, and gives intent-based routing for both humans and agents.
 
 ### 🔍 Search & Query Intelligence
 
@@ -478,7 +491,7 @@ Start with the [Tools Usage Guide](docs/TOOLS_USAGE_GUIDE.md): it compresses the
 │   QUERY INTELLIGENCE                                             │
 │                                                                  │
 │   generate_search_queries() → MeSH expansion + synonym discovery │
-│   parse_pico()              → Agent-provided PICO handoff        │
+│   validate_pico_plan()              → Agent-provided PICO handoff        │
 │   analyze_search_query()    → Query analysis without execution   │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
@@ -504,7 +517,7 @@ unified_search(
 # Deterministic/bounded retrieval: OpenAlex cursor and S2 bulk where selected
 unified_search(
     query="melanoma AND immunotherapy",
-    sources="pubmed,openalex,semantic_scholar",
+    sources="openalex,semantic_scholar",
     options="systematic",
 )
 ```
@@ -528,7 +541,7 @@ for every strategy. Strategy calls use bounded global/per-source concurrency
 and timeouts, and successful sources remain usable when another source times
 out, is rate-limited, or fails.
 
-Europe PMC, Scopus, and Web of Science remain keyword-only in this release;
+PubMed, Europe PMC, Scopus, and Web of Science remain keyword-only in this release;
 explicit systematic requests for those sources fail before I/O instead of
 mislabeling a single page as systematic coverage.
 
@@ -576,12 +589,19 @@ boundaries.
 | **Text Mining** | `get_text_mined_terms` → Extract genes, diseases, chemicals |
 | **Export** | `prepare_export` → official RIS/MEDLINE/CSL JSON or local RIS/BibTeX/CSV/MEDLINE/JSON; `save_literature_notes` → local wiki/Foam-compatible/Markdown/MedPaper-style notes plus collection-level CSL JSON |
 
+`get_fulltext` reports `coverage_status`, exact `sources_tried` /
+`sources_completed`, and sanitized `source_errors`. A usable article or link
+from one source plus a failure from another is therefore `partial`, not a
+misleading complete success or empty result. Extended PDF discovery carries the
+same immutable typed coverage envelope through discovery, download, extraction,
+tool output, and artifacts.
+
 ### 🖼️ OA Figure-First Exploration
 
 Use the PMC Open Access path when an agent needs evidence figures, not just article text:
 
-- `get_article_figures(identifier="PMC12086443")` → Figure labels, captions, image URLs, and PDF/article links
-- `get_fulltext(pmcid="PMC7096777", include_figures=True)` → Structured fulltext with figures inline
+- `get_article_figures(source={"kind":"pmcid","value":"PMC12086443"})` → Figure labels, captions, image URLs, and PDF/article links
+- `get_fulltext(source={"kind":"pmcid","value":"PMC7096777"}, include_figures=True)` → Structured fulltext with figures inline
 - Figure output preserves article context, so agents can connect each figure back to the sections where it is mentioned
 
 ### 🧬 NCBI Extended Databases
@@ -605,7 +625,7 @@ Use the PMC Open Access path when an agent needs evidence figures, not just arti
 
 | Tool | Description |
 | ---- | ----------- |
-| `build_research_chronicle` | Build a persisted, versioned chronicle with landmark detection. Output: summary, chronicle_map, timeline, tree, graph, evidence, milestones, mermaid, timeline_mermaid, mindmap, narrative, json |
+| `build_research_chronicle` | Build a persisted, versioned chronicle with landmark detection. Output: summary, chronicle_map, timeline, tree, graph, evidence, milestones, mermaid, narrative, json |
 | `read_research_chronicle` | Load, list, diff revisions, narrate with citations, analyze milestone distribution, or compare up to five topics |
 
 ```python
@@ -616,9 +636,9 @@ build_research_chronicle(topic="remimazolam intraoperative", output="mermaid", m
 build_research_chronicle(chronicle_id="remimazolam-intraoperative-08c229f3")
 
 # 3. Read revision diff, milestone analytics, or cross-topic comparison
-read_research_chronicle(action="diff", chronicle_id="remimazolam-intraoperative-08c229f3", from_revision=1)
-read_research_chronicle(action="milestones", chronicle_id="remimazolam-intraoperative-08c229f3")
-read_research_chronicle(action="compare", topics="remimazolam intraoperative,propofol intraoperative")
+read_research_chronicle(request={"action":"diff","chronicle_id":"remimazolam-intraoperative-08c229f3","from_revision":1})
+read_research_chronicle(request={"action":"milestones","chronicle_id":"remimazolam-intraoperative-08c229f3"})
+read_research_chronicle(request={"action":"compare","selection":{"kind":"topics","values":["remimazolam intraoperative","propofol intraoperative"]}})
 ```
 
 `mermaid` is the canonical combined view: a horizontal year spine (X-axis) with each
@@ -628,7 +648,7 @@ claim about the field's true first paper. Lineages prefer MeSH descriptors and
 author keywords shared by multiple papers; singleton-only or insufficient
 signals trigger a warned research-stage fallback. Same-year display order is
 stable, but does not assert precedence when publication precision cannot prove
-it. `timeline_mermaid` preserves the older flat timeline view. See
+it. See
 [Advanced Research Workflows (docs/ADVANCED_RESEARCH_WORKFLOWS.md)](docs/ADVANCED_RESEARCH_WORKFLOWS.md) and
 [docs/RESEARCH_CHRONICLE_REFACTOR_SPEC.md](docs/RESEARCH_CHRONICLE_REFACTOR_SPEC.md).
 
@@ -649,6 +669,12 @@ warns when availability is unknown or any retrieval/selection cap makes the
 view non-exhaustive. PubMed errors or a scope with no article evidence do not
 publish an empty revision.
 
+Retrieval provenance separates `ranking_requested` from the effective
+`ranking`. iCite ordering is claimed only when a validated citation count was
+actually applied. The versioned citation-metrics coverage records complete,
+partial, empty, error, and not-requested outcomes with safe counts and errors;
+the audit warns or fails rather than treating an outage as zero citations.
+
 Explicit PMID input is strict (`12345678` or `PMID:12345678`, positive ASCII
 digits, at most 20 digits); DOI or mixed text is rejected instead of being
 coerced. Records without a reliable publication date appear as `Undated` after
@@ -656,8 +682,8 @@ dated entries and are excluded from the displayed year span. Entry IDs follow PM
 identity across date or classifier corrections, and topic continuity uses one
 Unicode/case/whitespace canonical key. Multi-signal papers keep one primary
 branch plus explicit cross-links; overlap of 20% or more is audited as a
-warning. In revision diffs, absence means `not_observed_in_revision` /
-`removed_from_view`, never conclusive retirement.
+warning. In revision diffs, absence means `not_observed_in_revision`, never
+conclusive retirement.
 
 ### 🏥 Institutional Access & ICD Conversion
 
@@ -673,16 +699,17 @@ warning. In revision diffs, absence means `not_observed_in_revision` /
 | `convert_icd_mesh` | Convert between ICD codes and MeSH terms (bidirectional) |
 | `unified_search` | Auto-detect ICD codes in queries and expand them to MeSH |
 
+Resolver bases must be credential-free HTTP(S) URLs without a query or
+fragment. PMID diagnosis reports `resolved`, `not_found`, or `error` for the
+PubMed-to-DOI step, so an upstream outage is never described as a missing DOI.
+
 ### 💾 Session Management
 
 ![Session and pipeline workflow](docs/images/session-pipeline-workflow.svg)
 
 | Tool | Description |
 | ---- | ----------- |
-| `get_session_pmids` | Retrieve cached PMID lists |
-| `get_cached_article` | Get article from session cache (no API cost) |
-| `get_session_summary` | Session status overview |
-| `read_session` | Facade for PMIDs, cached articles, durable search runs, replay arguments, history, and persistent artifacts |
+| `read_session` | Strict action-discriminated reader for PMIDs, cached articles, summaries, logs, durable search runs, replay arguments, and persistent artifacts |
 
 Dynamic MCP resources are also available for agents that can read resources directly:
 
@@ -707,13 +734,13 @@ Remote clients that cannot read the server filesystem can retrieve the same
 content through the session facade:
 
 ```text
-read_session(action="list_artifacts")
-read_session(action="artifact", artifact_id="...")
-read_session(action="artifact", artifact_uri="artifact://...")
-read_session(action="artifact", artifact_uri="artifact://...", artifact_file="audit.json")
-read_session(action="artifact", artifact_uri="artifact://...", artifact_file="query_strategy.json")
-read_session(action="artifact", artifact_uri="artifact://...", artifact_file="results.json", offset=0, max_chars=200000)
-read_session(action="list_artifacts", include_local_paths=true)
+read_session(request={"action":"list_artifacts"})
+read_session(request={"action":"artifact","locator":{"kind":"artifact_id","value":"..."}})
+read_session(request={"action":"artifact","locator":{"kind":"artifact_uri","value":"artifact://..."}})
+read_session(request={"action":"artifact","locator":{"kind":"artifact_uri","value":"artifact://..."},"artifact_file":"audit.json"})
+read_session(request={"action":"artifact","locator":{"kind":"artifact_uri","value":"artifact://..."},"artifact_file":"query_strategy.json"})
+read_session(request={"action":"artifact","locator":{"kind":"artifact_uri","value":"artifact://..."},"artifact_file":"results.json","offset":0,"max_chars":200000})
+read_session(request={"action":"list_artifacts","include_local_paths":true})
 ```
 
 ### Recoverable search runs
@@ -751,10 +778,10 @@ credentials belong in server environment/configuration, never pipeline YAML or
 JSON.
 
 ```text
-read_session(action="search_runs")
-read_session(action="search_runs", run_status="partial")
-read_session(action="search_run", run_id="...")
-read_session(action="replay_search", run_id="...")
+read_session(request={"action":"search_runs"})
+read_session(request={"action":"search_runs","status":"partial"})
+read_session(request={"action":"search_run","run_id":"..."})
+read_session(request={"action":"replay_search","run_id":"..."})
 ```
 
 `replay_search` only returns the original credential-free `unified_search`
@@ -791,7 +818,7 @@ is available; use the artifact locator to retrieve the saved full content.
 
 When one source fails but the overall search can continue, JSON responses may
 include `source_errors`; markdown responses show a `Source warnings` line. For
-Semantic Scholar HTTP 429s, set `S2_API_KEY` / `SEMANTIC_SCHOLAR_API_KEY`, retry
+Semantic Scholar HTTP 429s, set `SEMANTIC_SCHOLAR_API_KEY`, retry
 later, or temporarily exclude it with `sources="auto,-semantic_scholar"` or
 `PUBMED_SEARCH_DISABLED_SOURCES=semantic_scholar`.
 
@@ -799,21 +826,25 @@ later, or temporarily exclude it with `sources="auto,-semantic_scholar"` or
 
 ![Session and pipeline workflow](docs/images/session-pipeline-workflow.svg)
 
-`manage_pipeline` is the primary facade for pipeline CRUD, history, and scheduling. The more specific pipeline tools remain available as compatibility wrappers.
+Pipeline management uses seven single-purpose, schema-exact tools. Each tool
+accepts only the fields relevant to that operation, so misspelled or unrelated
+arguments fail closed instead of being silently ignored.
 
 | Tool | Description |
 | ---- | ----------- |
-| `manage_pipeline` | Primary facade for save, list, load, delete, history, and schedule actions |
 | `save_pipeline` | Save a pipeline config for later reuse (YAML/JSON, auto-validated) |
 | `list_pipelines` | List saved pipelines (filter by tag/scope) |
 | `load_pipeline` | Load by saved name; trusted local callers may also load a file |
 | `delete_pipeline` | Delete pipeline and its execution history |
 | `get_pipeline_history` | View execution history with article diff analysis |
-| `schedule_pipeline` | Create, update, or remove recurring pipeline schedules |
+| `schedule_pipeline` | Create or update a recurring pipeline schedule |
+| `unschedule_pipeline` | Remove a recurring pipeline schedule |
 
 Authenticated service callers use named pipelines in their tenant-derived
 store; `workspace` and `file:` access are local-only. The service Compose
 profile does not execute schedules without a separately designed single leader.
+Pipeline history is fail-closed: one malformed persisted run produces a safe
+explicit error instead of a partial list or a false “no history” result.
 
 Step-by-step tutorials:
 
@@ -826,28 +857,43 @@ Step-by-step tutorials:
 
 | Tool | Description |
 | ---- | ----------- |
-| `analyze_figure_for_search` | Handoff an uploaded image, image URL, or data URI to agent vision for search-term extraction |
+| `prepare_figure_search` | Handoff an uploaded image, image URL, or data URI to agent vision for search-term extraction |
 | `search_biomedical_images` | Search biomedical images across Open-i (X-ray, microscopy, photos, diagrams) |
 
-Use `analyze_figure_for_search` when the user supplies an image and the agent
+Use `prepare_figure_search` when the user supplies an image and the agent
 must interpret its meaning first. The tool returns MCP `ImageContent` plus
 instructions for the LLM agent to extract English biomedical terms, then
 continue with `search_biomedical_images` for similar Open-i images or
 `unified_search` for related papers.
 
+Open-i results carry typed per-source coverage. A valid `total=0` and empty
+list means no matches; a malformed response or source outage is `failed`, and
+mixed valid/invalid rows are `partial`. Failed sources are excluded from
+`sources_used`, their total stays unknown, and Markdown shows the sanitized
+coverage instead of claiming “no images.”
+
 ### 📄 Preprint Search
 
 Search **arXiv**, **medRxiv**, and **bioRxiv** preprint servers via `unified_search` `options` flags:
 
+Source, filter, and option tokens use exact canonical spelling. Do not add
+whitespace around comma-separated tokens or repeat a token; aliases and case
+variants are rejected.
+
 - `preprints`: Search preprint servers and merge preprints into the main aggregated result set with `article_type=PREPRINT`.
-- `all_types`: Keep non-peer-reviewed content already returned by selected scholarly sources even without a preprint-server crawl.
+- `include_detected_preprints`: Keep records identified by the preprint heuristic in otherwise selected scholarly sources, without adding a preprint-server crawl.
+
+Preprint source metadata reports the provider query/window, result limit,
+unknown corpus total, and local year-filter counts. Unknown-year records are
+excluded when a hard year range is requested. medRxiv/bioRxiv use a bounded
+date feed with literal all-term filtering, so Boolean or grouped query syntax
+fails before network I/O instead of being silently reinterpreted.
 
 **Recommended combinations:**
 
-- Empty `options`: Peer-reviewed results only; preprint-like records are filtered.
+- Empty `options`: Records detected as preprints are filtered. This heuristic does not prove that every remaining record was peer reviewed.
 - `options="preprints"`: Searches arXiv, medRxiv, and bioRxiv, then ranks/dedupes those preprints with the main results.
-- `options="preprints, all_types"`: Same preprint-server crawl, plus other non-peer-reviewed records from selected sources are retained.
-- `options="all_types"`: No preprint-server crawl, but non-peer-reviewed items from searched sources are retained.
+- `options="include_detected_preprints"`: No preprint-server crawl; detected preprints already returned by selected sources are retained.
 
 **Preprint detection** — articles are identified as preprints by:
 
@@ -856,26 +902,22 @@ Search **arXiv**, **medRxiv**, and **bioRxiv** preprint servers via `unified_sea
 - Known preprint server source or journal name
 - DOI prefix matching preprint servers (e.g., `10.1101/` → bioRxiv/medRxiv, `10.48550/` → arXiv)
 
-### 🌳 Research Context Graph
-
-`unified_search` can append a lightweight research lineage view built from PMID-backed ranked results:
-
-| Option Flag | Description |
-| ----------- | ----------- |
-| `context_graph` | Append a lightweight Research Context Graph preview from the current PMID-backed ranked set to Markdown output and include `research_context` in JSON output |
-
-This is useful when an agent needs quick thematic branching without making a second `build_research_chronicle` call.
+For chronological research lineage, use `build_research_chronicle`; it is the
+only research-chronology capability and supplies the audited timeline,
+branching map, narrative, and revision history.
 
 ### 🧪 Clinical-Trial Registry Adjunct
 
-ClinicalTrials.gov is never queried implicitly. Add `options="trials"` to a
-Markdown search when a bounded registry adjunct is useful. It remains separate
-from the literature-source plan and source counts; the durable artifact records
-its truncated physical query and outcome under `adjunct_queries`. Structured
-JSON/TOON searches do not run this display-only adjunct.
+ClinicalTrials.gov is never queried implicitly. Add `options="clinical_trials"` to a
+search when a bounded registry adjunct is useful. It remains separate from the
+literature-source plan, article ranking, and source counts. Markdown renders up
+to three records; JSON/TOON returns the same requested adjunct as structured
+data. The versioned `clinical-trials-adjunct/v1` coverage records retrieval and
+format status, returned count, completeness, warnings, and sanitized failures
+consistently across the response and durable artifact.
 
 ```python
-unified_search(query="remimazolam ICU sedation", options="trials")
+unified_search(query="remimazolam ICU sedation", options="clinical_trials")
 ```
 
 ### 📊 Count-First Orientation
@@ -898,9 +940,10 @@ This mode is useful when the agent should decide whether to expand a source, ins
 
 When the MCP client provides a progress token, `unified_search`, `build_research_chronicle`, `get_fulltext`, and `get_text_mined_terms` emit progress updates for their major phases.
 This reduces the "black box" wait time for agents during longer searches.
-Progress callbacks are best-effort and are not cancelled by the server while a
-tool call is active, which avoids host-side `Canceled: Canceled` messages caused
-by progress-notification backpressure.
+Progress callbacks are best-effort and have a 100 ms hard deadline. A stalled
+callback is cancelled; if a broken host suppresses cancellation, its task is
+quarantined in a server-owned pool capped at 32 entries so core tools remain
+responsive without unbounded background work.
 
 ---
 
@@ -941,7 +984,7 @@ unified_search(query="Is remimazolam better than propofol for ICU sedation?")
                                   │
                                   ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                         parse_pico()                                     │
+│                         validate_pico_plan()                                     │
 │  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐                     │
 │  │    P    │  │    I    │  │    C    │  │    O    │                     │
 │  │  ICU    │  │remimaz- │  │propofol │  │sedation │                     │
@@ -977,7 +1020,7 @@ unified_search(query="Is remimazolam better than propofol for ICU sedation?")
 
 ```python
 # Step 1: Agent extracts P/I/C/O, then validates the structured handoff
-pico = parse_pico(
+pico = validate_pico_plan(
     description="Is remimazolam better than propofol for ICU sedation?",
     p="ICU patients requiring sedation",
     i="remimazolam",
@@ -1038,43 +1081,37 @@ save_literature_notes(pmids="last", note_format="medpaper", output_dir="./refere
 save_literature_notes(pmids="last", template_file="./reference-template.md")
 
 # Retrieve full text for a selected paper from the last search
-get_fulltext(pmid="12345678", extended_sources=True)
+get_fulltext(source={"kind":"pmid","value":"12345678"}, extended_sources=True)
 ```
 
 ### 6️⃣ Preprint Search
 
 ```python
-# Include preprints alongside peer-reviewed results
+# Search preprint sources alongside the regular scholarly-source set
 unified_search(query="COVID-19 vaccine efficacy", options="preprints")
 # → Main aggregated results include labelled arXiv, medRxiv, and bioRxiv preprints
 
-# Include preprints and retain non-peer-reviewed items in main results
-unified_search(query="CRISPR gene therapy", options="preprints, all_types")
-# → Preprint-server crawl + non-peer-reviewed items retained in main results
+# Retain preprints detected in otherwise selected sources without adding a crawl
+unified_search(query="CRISPR gene therapy", options="include_detected_preprints")
 
-# Only peer-reviewed (default behavior)
+# Default heuristic policy
 unified_search("diabetes treatment")
-# → Preprints from any source automatically filtered out
-
-# Add a research context graph preview to the same search response
-unified_search("remimazolam ICU sedation", options="context_graph")
+# → Detected preprints are filtered; remaining peer-review status is not proven
 ```
 
 ### 7️⃣ Pipeline (Reusable Search Plans)
 
 ```python
 # Save a template-based pipeline through the primary facade
-manage_pipeline(
-  action="save",
+save_pipeline(
     name="icu_sedation_weekly",
-    config="template: pico\nparams:\n  P: ICU patients\n  I: remimazolam\n  C: propofol\n  O: delirium",
-    tags="anesthesia,sedation",
+    config="template: pico\ntemplate_params:\n  P: ICU patients\n  I: remimazolam\n  C: propofol\n  O: delirium",
+    tags=["anesthesia","sedation"],
     description="Weekly ICU sedation monitoring"
 )
 
 # Save a custom DAG pipeline
-manage_pipeline(
-  action="save",
+save_pipeline(
     name="brca1_comprehensive",
     config="""
 steps:
@@ -1083,11 +1120,11 @@ steps:
     params: { topic: BRCA1 breast cancer }
   - id: pubmed
     action: search
-    params: { query: BRCA1, sources: pubmed, limit: 50 }
+    params: { query: BRCA1, sources: [pubmed], limit: 50 }
   - id: expanded
     action: search
     inputs: [expand]
-    params: { strategy: mesh, sources: pubmed,openalex, limit: 50 }
+    params: { strategy: mesh, sources: [pubmed, openalex], limit: 50 }
   - id: merged
     action: merge
     inputs: [pubmed, expanded]
@@ -1105,9 +1142,9 @@ output:
 unified_search(pipeline="saved:icu_sedation_weekly")
 
 # List & manage
-manage_pipeline(action="list", tag="anesthesia")
-manage_pipeline(action="load", source="brca1_comprehensive")  # Review YAML
-manage_pipeline(action="history", name="icu_sedation_weekly")  # View past runs
+list_pipelines(tag="anesthesia")
+load_pipeline(source="brca1_comprehensive")  # Review YAML
+get_pipeline_history(name="icu_sedation_weekly")  # View past runs
 ```
 
 ---
@@ -1126,7 +1163,7 @@ manage_pipeline(action="history", name="icu_sedation_weekly")  # View past runs
 │         │       → Quick, auto-routing to best sources                    │
 │         │                                                                │
 │         ├── Have a clinical question (A vs B)?                           │
-│         │   └── Agent P/I/C/O → parse_pico() handoff                  │
+│         │   └── Agent P/I/C/O → validate_pico_plan() handoff                  │
 │         │       → unified_search(template:pico) or expanded Boolean    │
 │         │                                                                │
 │         ├── Need comprehensive systematic coverage?                      │
@@ -1135,7 +1172,7 @@ manage_pipeline(action="history", name="icu_sedation_weekly")  # View past runs
 │         │                                                                │
 │         └── Exploring from a key paper?                                  │
 │             └── find_related/citing/references → build_citation_tree     │
-│                 → Citation network, research context                     │
+│                 → Forward/backward citation network                      │
 │                                                                          │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
@@ -1143,7 +1180,7 @@ manage_pipeline(action="history", name="icu_sedation_weekly")  # View past runs
 | Mode | Entry Point | Best For | Auto-Features |
 | ---- | ----------- | -------- | ------------- |
 | **Quick** | `unified_search()` | Fast topic search | ICD→MeSH, multi-source, dedup |
-| **PICO** | Agent P/I/C/O -> `parse_pico()` | Clinical questions | Validate handoff -> `template:pico` backend search |
+| **PICO** | Agent P/I/C/O -> `validate_pico_plan()` | Clinical questions | Validate handoff -> `template:pico` backend search |
 | **Systematic** | `generate_search_queries()` → `unified_search(options="systematic")` | Reproducible review seed | MeSH/synonyms plus bounded bulk/cursor execution; not an exhaustiveness claim |
 | **Native semantic** | `unified_search(options="native_semantic")` | Conceptual similarity in title/abstract space | Capability validation; OpenAlex semantic mode, max 50 |
 | **Exploration** | `find_*_articles()` | From key paper | Citation network, related |
@@ -1214,8 +1251,9 @@ src/pubmed_search/
 │   └── http/                   # HTTP clients
 ├── presentation/               # User interfaces
 │   ├── mcp_server/             # MCP tools, prompts, resources
-│   │   └── tools/              # discovery, strategy, pico, export...
-│   └── api/                    # Auxiliary HTTP API routes (not pubmed_search.api)
+│   │   ├── tools/              # discovery, strategy, pico, export...
+│   │   └── http_cli.py         # Canonical Streamable HTTP/SSE launcher
+│   └── browser_fetch_broker.py # Optional isolated browser-fetch service
 └── shared/                     # Cross-cutting concerns
     ├── exceptions.py           # Unified error handling
     └── async_utils.py          # Rate limiter, retry, circuit breaker
@@ -1379,7 +1417,7 @@ export NGROK_DOMAIN="your-assigned-domain.ngrok.dev"
 
 > 📖 **Full documentation**: [copilot-studio/README.md](copilot-studio/README.md)
 >
-> Use `pubmed-search-mcp-http --copilot-compatible` for packaged Copilot HTTP semantics. `run_server.py` remains a source-tree development wrapper; use `run_copilot.py` only for loopback-only 12-tool primitive-schema smoke tests. That simplified surface still calls the shared runner through `unified_search(query, limit, min_year, max_year, sources, options)` and exposes primitive-schema `read_session` for search-run, replay-argument, and artifact recovery; it does not expose a PubMed-only generic-search alias. The tunnel script requires an assigned `NGROK_DOMAIN`, refuses occupied backend ports, and publishes only after `--mode service` passes readiness and unauthenticated-rejection checks.
+> Use `pubmed-search-mcp-http --copilot-compatible` for packaged Copilot HTTP semantics. `run_server.py` remains a source-tree development wrapper; `run_copilot.py` is a loopback-only smoke launcher for the same canonical 41-tool strict registry, not a second compatibility surface. The tunnel script requires an assigned `NGROK_DOMAIN`, refuses occupied backend ports, and publishes only after `--mode service` passes readiness and unauthenticated-rejection checks.
 >
 > ⚠️ **Note**: SSE transport deprecated since Aug 2025. Use `streamable-http`.
 

@@ -1,20 +1,14 @@
-"""
-ICD Conversion Tools - ICD-9/ICD-10 與 MeSH 轉換
-
-Tools:
-- convert_icd_mesh: ICD ↔ MeSH 雙向轉換（v0.3.1 合併）
-
-Removed in v0.3.1:
-- convert_icd_to_mesh → merged into convert_icd_mesh
-- convert_mesh_to_icd → merged into convert_icd_mesh
-- search_by_icd → use unified_search(query="E11 ...") with automatic ICD detection
-"""
+"""MCP registration and JSON formatting for ICD/MeSH conversion."""
 
 from __future__ import annotations
 
 import json
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Annotated, Literal
+
+from pydantic import Field
+
+from pubmed_search.application.search import icd as _icd_service
 
 if TYPE_CHECKING:
     from mcp.server.mcpserver import MCPServer
@@ -22,378 +16,29 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-# ============================================================================
-# ICD to MeSH Mapping (Common codes)
-# Based on NLM UMLS mappings
-# ============================================================================
-
-# ICD-10-CM to MeSH mapping (selected common codes)
-ICD10_TO_MESH = {
-    # Diabetes
-    "E10": {
-        "mesh": "Diabetes Mellitus, Type 1",
-        "description": "Type 1 diabetes mellitus",
-    },
-    "E11": {
-        "mesh": "Diabetes Mellitus, Type 2",
-        "description": "Type 2 diabetes mellitus",
-    },
-    "E13": {
-        "mesh": "Diabetes Mellitus",
-        "description": "Other specified diabetes mellitus",
-    },
-    # Hypertension
-    "I10": {
-        "mesh": "Essential Hypertension",
-        "description": "Essential (primary) hypertension",
-    },
-    "I11": {
-        "mesh": "Hypertensive Heart Disease",
-        "description": "Hypertensive heart disease",
-    },
-    "I12": {
-        "mesh": "Hypertension, Renal",
-        "description": "Hypertensive chronic kidney disease",
-    },
-    # Heart diseases
-    "I20": {"mesh": "Angina Pectoris", "description": "Angina pectoris"},
-    "I21": {
-        "mesh": "Myocardial Infarction",
-        "description": "Acute myocardial infarction",
-    },
-    "I25": {
-        "mesh": "Coronary Artery Disease",
-        "description": "Chronic ischemic heart disease",
-    },
-    "I50": {"mesh": "Heart Failure", "description": "Heart failure"},
-    # Respiratory
-    "J18": {"mesh": "Pneumonia", "description": "Pneumonia, unspecified organism"},
-    "J44": {"mesh": "Pulmonary Disease, Chronic Obstructive", "description": "COPD"},
-    "J45": {"mesh": "Asthma", "description": "Asthma"},
-    # Cancer
-    "C34": {
-        "mesh": "Lung Neoplasms",
-        "description": "Malignant neoplasm of bronchus and lung",
-    },
-    "C50": {"mesh": "Breast Neoplasms", "description": "Malignant neoplasm of breast"},
-    "C61": {
-        "mesh": "Prostatic Neoplasms",
-        "description": "Malignant neoplasm of prostate",
-    },
-    "C18": {"mesh": "Colonic Neoplasms", "description": "Malignant neoplasm of colon"},
-    # Neurological
-    "G20": {"mesh": "Parkinson Disease", "description": "Parkinson's disease"},
-    "G30": {"mesh": "Alzheimer Disease", "description": "Alzheimer's disease"},
-    "G35": {"mesh": "Multiple Sclerosis", "description": "Multiple sclerosis"},
-    "G40": {"mesh": "Epilepsy", "description": "Epilepsy"},
-    # Mental disorders
-    "F32": {
-        "mesh": "Depressive Disorder, Major",
-        "description": "Major depressive episode",
-    },
-    "F33": {
-        "mesh": "Depressive Disorder, Major",
-        "description": "Major depressive disorder, recurrent",
-    },
-    "F41": {"mesh": "Anxiety Disorders", "description": "Other anxiety disorders"},
-    # Kidney
-    "N18": {
-        "mesh": "Renal Insufficiency, Chronic",
-        "description": "Chronic kidney disease",
-    },
-    # Liver
-    "K70": {
-        "mesh": "Liver Diseases, Alcoholic",
-        "description": "Alcoholic liver disease",
-    },
-    "K74": {
-        "mesh": "Liver Cirrhosis",
-        "description": "Fibrosis and cirrhosis of liver",
-    },
-    # Infectious
-    "B20": {"mesh": "HIV Infections", "description": "HIV disease"},
-    "A41": {"mesh": "Sepsis", "description": "Sepsis"},
-    # COVID-19
-    "U07.1": {"mesh": "COVID-19", "description": "COVID-19, virus identified"},
-    "U07.2": {"mesh": "COVID-19", "description": "COVID-19, virus not identified"},
-}
-
-# ICD-9-CM to MeSH mapping (legacy codes)
-ICD9_TO_MESH = {
-    # Diabetes
-    "250": {"mesh": "Diabetes Mellitus", "description": "Diabetes mellitus"},
-    "250.0": {
-        "mesh": "Diabetes Mellitus, Type 2",
-        "description": "DM without complication",
-    },
-    "250.01": {
-        "mesh": "Diabetes Mellitus, Type 1",
-        "description": "DM Type 1 without complication",
-    },
-    # Hypertension
-    "401": {"mesh": "Essential Hypertension", "description": "Essential hypertension"},
-    "402": {
-        "mesh": "Hypertensive Heart Disease",
-        "description": "Hypertensive heart disease",
-    },
-    # Heart
-    "410": {
-        "mesh": "Myocardial Infarction",
-        "description": "Acute myocardial infarction",
-    },
-    "411": {"mesh": "Angina, Unstable", "description": "Unstable angina"},
-    "414": {
-        "mesh": "Coronary Artery Disease",
-        "description": "Chronic ischemic heart disease",
-    },
-    "428": {"mesh": "Heart Failure", "description": "Heart failure"},
-    # Respiratory
-    "486": {"mesh": "Pneumonia", "description": "Pneumonia"},
-    "493": {"mesh": "Asthma", "description": "Asthma"},
-    "496": {"mesh": "Pulmonary Disease, Chronic Obstructive", "description": "COPD"},
-    # Cancer
-    "162": {"mesh": "Lung Neoplasms", "description": "Lung cancer"},
-    "174": {"mesh": "Breast Neoplasms", "description": "Breast cancer female"},
-    "185": {"mesh": "Prostatic Neoplasms", "description": "Prostate cancer"},
-    "153": {"mesh": "Colonic Neoplasms", "description": "Colon cancer"},
-    # Neurological
-    "332": {"mesh": "Parkinson Disease", "description": "Parkinson's disease"},
-    "331.0": {"mesh": "Alzheimer Disease", "description": "Alzheimer's disease"},
-    "340": {"mesh": "Multiple Sclerosis", "description": "Multiple sclerosis"},
-    "345": {"mesh": "Epilepsy", "description": "Epilepsy"},
-    # Mental
-    "296": {"mesh": "Depressive Disorder, Major", "description": "Major depression"},
-    "300": {"mesh": "Anxiety Disorders", "description": "Anxiety disorders"},
-    # Kidney
-    "585": {
-        "mesh": "Renal Insufficiency, Chronic",
-        "description": "Chronic kidney disease",
-    },
-    # Infectious
-    "042": {"mesh": "HIV Infections", "description": "HIV infection"},
-    "038": {"mesh": "Sepsis", "description": "Septicemia"},
-}
-
-
-# ============================================================================
-# ICD Helper Functions
-# ============================================================================
-
-
-def detect_icd_version(code: str) -> str | None:
-    """Detect ICD version from code format."""
-    code = code.strip().upper()
-
-    # ICD-10 patterns: letter followed by digits (e.g., E11, J45, C50.9)
-    if code and code[0].isalpha() and len(code) >= 2:
-        return "ICD-10"
-
-    # ICD-9 patterns: 3-5 digit codes (e.g., 250, 410.01)
-    if code.replace(".", "").isdigit():
-        return "ICD-9"
-
-    return None
-
-
-def lookup_icd_to_mesh(code: str) -> dict:
-    """
-    Convert ICD code to MeSH term.
-
-    Supports both ICD-9-CM and ICD-10-CM codes.
-    Returns MeSH term and search query suggestions.
-    """
-    code = code.strip().upper()
-    version = detect_icd_version(code)
-
-    if not version:
-        return {
-            "success": False,
-            "error": f"Cannot detect ICD version for code: {code}",
-            "hint": "ICD-10 codes start with a letter (e.g., E11), ICD-9 codes are numeric (e.g., 250)",
-        }
-
-    # Try exact match first, then prefix match
-    mapping = ICD10_TO_MESH if version == "ICD-10" else ICD9_TO_MESH
-
-    # Exact match
-    if code in mapping:
-        entry = mapping[code]
-        return {
-            "success": True,
-            "input_code": code,
-            "icd_version": version,
-            "mesh_term": entry["mesh"],
-            "description": entry["description"],
-            "pubmed_query": f'"{entry["mesh"]}"[MeSH]',
-            "search_suggestion": f"unified_search(query='\"{entry['mesh']}\"[MeSH Terms]')",
-        }
-
-    # Prefix match (e.g., E11.9 -> E11)
-    prefix = code.split(".")[0]
-    if prefix in mapping:
-        entry = mapping[prefix]
-        return {
-            "success": True,
-            "input_code": code,
-            "matched_prefix": prefix,
-            "icd_version": version,
-            "mesh_term": entry["mesh"],
-            "description": entry["description"],
-            "pubmed_query": f'"{entry["mesh"]}"[MeSH]',
-            "search_suggestion": f"unified_search(query='\"{entry['mesh']}\"[MeSH Terms]')",
-            "note": f"Matched via prefix {prefix}",
-        }
-
-    return {
-        "success": False,
-        "input_code": code,
-        "icd_version": version,
-        "error": f"No MeSH mapping found for {code}",
-        "hint": "Try using generate_search_queries() with the disease name instead",
-        "available_codes": list(mapping.keys())[:20],
-    }
-
-
-def lookup_mesh_to_icd(mesh_term: str) -> dict:
-    """
-    Reverse lookup: MeSH term to ICD codes.
-
-    Returns both ICD-9 and ICD-10 codes if available.
-    """
-    mesh_term_lower = mesh_term.lower().strip()
-
-    results: dict[str, Any] = {
-        "success": False,
-        "input_mesh": mesh_term,
-        "icd10_codes": [],
-        "icd9_codes": [],
-    }
-
-    # Search ICD-10
-    for code, entry in ICD10_TO_MESH.items():
-        if mesh_term_lower in entry["mesh"].lower():
-            results["icd10_codes"].append(
-                {
-                    "code": code,
-                    "description": entry["description"],
-                }
-            )
-
-    # Search ICD-9
-    for code, entry in ICD9_TO_MESH.items():
-        if mesh_term_lower in entry["mesh"].lower():
-            results["icd9_codes"].append(
-                {
-                    "code": code,
-                    "description": entry["description"],
-                }
-            )
-
-    if results["icd10_codes"] or results["icd9_codes"]:
-        results["success"] = True
-    else:
-        results["error"] = f"No ICD codes found for MeSH term: {mesh_term}"
-        results["hint"] = "Try a more specific or different MeSH term"
-
-    return results
-
-
-def get_icd_reference() -> dict:
-    """Get ICD mapping reference data."""
-    return {
-        "description": "ICD to MeSH bidirectional mapping",
-        "supported_icd10_codes": list(ICD10_TO_MESH.keys()),
-        "supported_icd9_codes": list(ICD9_TO_MESH.keys()),
-        "usage": {
-            "icd_to_mesh": 'convert_icd_mesh(code="E11")',
-            "mesh_to_icd": 'convert_icd_mesh(mesh_term="Diabetes Mellitus")',
-        },
-    }
-
-
-# ============================================================================
-# Tool Registration
-# ============================================================================
-
-
-def register_icd_tools(mcp: MCPServer):
+def register_icd_tools(mcp: MCPServer) -> None:
     """Register the ICD conversion tool."""
 
     @mcp.tool()
     def convert_icd_mesh(
-        code: str | None = None,
-        mesh_term: str | None = None,
+        direction: Literal["icd_to_mesh", "mesh_to_icd"],
+        value: Annotated[str, Field(min_length=1, max_length=500)],
     ) -> str:
+        """Query the curated ICD/MeSH crosswalk in one explicit direction.
+
+        Use ``icd_to_mesh`` with one complete ICD-9-CM or ICD-10-CM code, or
+        ``mesh_to_icd`` with a MeSH term. The returned mapping is a limited
+        convenience crosswalk, not a substitute for a current licensed UMLS
+        terminology service.
         """
-        Convert between ICD codes and MeSH terms (bidirectional).
-
-        ═══════════════════════════════════════════════════════════════
-        🔄 BIDIRECTIONAL CONVERSION
-        ═══════════════════════════════════════════════════════════════
-
-        ICD → MeSH (provide code):
-            convert_icd_mesh(code="E11")     → Diabetes Mellitus, Type 2
-            convert_icd_mesh(code="I21")     → Myocardial Infarction
-            convert_icd_mesh(code="250")     → Diabetes Mellitus (ICD-9)
-            convert_icd_mesh(code="U07.1")   → COVID-19
-
-        MeSH → ICD (provide mesh_term):
-            convert_icd_mesh(mesh_term="Diabetes Mellitus")
-            convert_icd_mesh(mesh_term="Heart Failure")
-
-        Automatically detects ICD version (ICD-9 vs ICD-10) from code format.
-
-        Args:
-            code: ICD-9 or ICD-10 code (e.g., "E11", "250", "I21.9")
-            mesh_term: MeSH term (e.g., "Diabetes Mellitus", "Heart Failure")
-
-        Returns:
-            JSON with conversion result and ready-to-use PubMed query
-
-        Note: Provide either 'code' OR 'mesh_term', not both.
-        """
-        if code and mesh_term:
-            return json.dumps(
-                {
-                    "success": False,
-                    "error": "Provide either 'code' OR 'mesh_term', not both",
-                },
-                indent=2,
-                ensure_ascii=False,
-            )
-
-        if code:
-            result = lookup_icd_to_mesh(code)
-        elif mesh_term:
-            result = lookup_mesh_to_icd(mesh_term)
-        else:
-            return json.dumps(
-                {
-                    "success": False,
-                    "error": "Must provide either 'code' or 'mesh_term'",
-                    "examples": {
-                        "icd_to_mesh": 'convert_icd_mesh(code="E11")',
-                        "mesh_to_icd": 'convert_icd_mesh(mesh_term="Diabetes Mellitus")',
-                    },
-                },
-                indent=2,
-                ensure_ascii=False,
-            )
-
+        result = (
+            _icd_service.lookup_icd_to_mesh(value)
+            if direction == "icd_to_mesh"
+            else _icd_service.lookup_mesh_to_icd(value)
+        )
         return json.dumps(result, indent=2, ensure_ascii=False)
-
-    # search_by_icd: Deprecated — unified_search 已支援 ICD 自動偵測
-    # Use unified_search(query="E11") instead, ICD codes are auto-detected and expanded to MeSH.
 
     logger.info("Registered ICD conversion tools (1 tool)")
 
 
-__all__ = [
-    "ICD9_TO_MESH",
-    "ICD10_TO_MESH",
-    "detect_icd_version",
-    "get_icd_reference",
-    "lookup_icd_to_mesh",
-    "lookup_mesh_to_icd",
-    "register_icd_tools",
-]
+__all__ = ["register_icd_tools"]

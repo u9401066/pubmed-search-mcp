@@ -19,7 +19,6 @@ from pubmed_search.presentation.mcp_server.server import (
     get_container,
     get_transport_options,
 )
-from pubmed_search.presentation.mcp_server.tools._common import get_session_registry
 from pubmed_search.shared.settings import load_settings
 
 if TYPE_CHECKING:
@@ -239,8 +238,16 @@ def _mount_auxiliary_routes(
                     session_manager.warm_article_cache(articles)
                     return JSONResponse({"source": "pubmed", "verified": True, "data": articles[0]})
             except Exception as exc:
-                logger.exception("[API] Failed to fetch PMID %s", pmid)
-                return JSONResponse({"detail": f"PubMed API error: {exc!s}"}, status_code=502)
+                logger.warning("[API] Failed to fetch one PMID (%s)", type(exc).__name__)
+                return JSONResponse(
+                    {
+                        "status": "error",
+                        "source_errors": [
+                            {"source": "pubmed", "operation": "fetch_details", "kind": "source_unavailable"}
+                        ],
+                    },
+                    status_code=502,
+                )
 
         return JSONResponse({"detail": f"Article PMID:{pmid} not found in cache"}, status_code=404)
 
@@ -256,6 +263,7 @@ def _mount_auxiliary_routes(
             return JSONResponse({"error": "No PMIDs provided"}, status_code=400)
 
         found, missing = session_manager.get_cached_article_map(pmid_list)
+        source_errors: list[dict[str, str]] = []
         if fetch_if_missing and missing:
             try:
                 articles = await searcher.fetch_details(missing)
@@ -267,15 +275,19 @@ def _mount_auxiliary_routes(
                             missing.remove(pmid)
                 session_manager.warm_article_cache(articles)
             except Exception as exc:
-                logger.warning("[API] Failed to fetch some articles: %s", exc)
+                logger.warning("[API] Failed to fetch some articles (%s)", type(exc).__name__)
+                source_errors.append({"source": "pubmed", "operation": "fetch_details", "kind": "source_unavailable"})
 
         return JSONResponse(
             {
+                "status": "partial" if source_errors else "completed",
                 "found": found,
                 "missing": missing,
                 "total_requested": len(pmid_list),
                 "total_found": len(found),
-            }
+                "source_errors": source_errors,
+            },
+            status_code=206 if source_errors and found else (502 if source_errors else 200),
         )
 
     async def api_session_summary(request: Any) -> Any:
@@ -331,14 +343,14 @@ def main() -> None:
     )
 
     app: Any = build_asgi_app(server, args.transport, host=host)
-    container = get_container()
+    container = get_container(server)
     token_verifier, _ = build_auth(settings)
     transport_security = get_transport_options(server).transport_security
     if transport_security is None:  # pragma: no cover - create_server always installs explicit settings
         msg = "Packaged HTTP server is missing transport security settings"
         raise RuntimeError(msg)
     registry_root = settings.data_dir  # tenant-ok: registry splits per tenant below
-    registry = get_session_registry() or SessionManagerRegistry(registry_root)
+    registry = server.get_tool_session_runtime().session_registry or SessionManagerRegistry(registry_root)
     _mount_auxiliary_routes(
         app,
         transport=args.transport,

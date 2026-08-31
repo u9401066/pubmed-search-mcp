@@ -14,21 +14,23 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from mcp.server.mcpserver import MCPServer
 
+from pubmed_search.application.search.source_models import SourceSearchPage
+from pubmed_search.infrastructure.sources.registry import get_source_registry
+from pubmed_search.presentation.mcp_server.tools.pipeline_tools import PipelineToolRuntime
+
 
 class TestUnifiedImports:
     """Test that unified module can be imported."""
 
     async def test_import_register_function(self):
         """Test importing register_unified_search_tools."""
-        from pubmed_search.presentation.mcp_server.tools.unified import (
-            register_unified_search_tools,
-        )
+        from pubmed_search.presentation.mcp_server.tools.unified import register_unified_search_tools
 
         assert callable(register_unified_search_tools)
 
     async def test_import_dispatch_strategy(self):
         """Test importing DispatchStrategy."""
-        from pubmed_search.presentation.mcp_server.tools.unified import DispatchStrategy
+        from pubmed_search.application.unified.helpers import DispatchStrategy
 
         assert DispatchStrategy is not None
 
@@ -45,29 +47,29 @@ class TestDispatchStrategy:
 
     async def test_simple_lookup_uses_pubmed_only(self, analyzer):
         """Simple PMID lookup should only use PubMed."""
-        from pubmed_search.presentation.mcp_server.tools.unified import DispatchStrategy
+        from pubmed_search.application.unified.helpers import DispatchStrategy
 
         analysis = analyzer.analyze("PMID:12345678")
-        sources = DispatchStrategy.get_sources(analysis)
+        sources = DispatchStrategy.get_sources(analysis, registry=get_source_registry())
 
         assert "pubmed" in sources
         assert len(sources) == 1  # PubMed only for direct lookup
 
     async def test_simple_query_uses_pubmed_only(self, analyzer):
         """Simple keyword search should use PubMed only."""
-        from pubmed_search.presentation.mcp_server.tools.unified import DispatchStrategy
+        from pubmed_search.application.unified.helpers import DispatchStrategy
 
         analysis = analyzer.analyze("diabetes treatment")
-        sources = DispatchStrategy.get_sources(analysis)
+        sources = DispatchStrategy.get_sources(analysis, registry=get_source_registry())
 
         assert "pubmed" in sources
 
     async def test_complex_comparison_uses_multiple_sources(self, analyzer):
         """Complex comparison queries should use multiple sources."""
-        from pubmed_search.presentation.mcp_server.tools.unified import DispatchStrategy
+        from pubmed_search.application.unified.helpers import DispatchStrategy
 
         analysis = analyzer.analyze("remimazolam vs propofol for ICU sedation")
-        sources = DispatchStrategy.get_sources(analysis)
+        sources = DispatchStrategy.get_sources(analysis, registry=get_source_registry())
 
         # Should include multiple sources for comparison
         assert "pubmed" in sources
@@ -75,18 +77,18 @@ class TestDispatchStrategy:
 
     async def test_moderate_query_uses_crossref(self, analyzer):
         """Moderate queries should use CrossRef for enrichment."""
-        from pubmed_search.presentation.mcp_server.tools.unified import DispatchStrategy
+        from pubmed_search.application.unified.helpers import DispatchStrategy
 
         # A moderate complexity query
         analysis = analyzer.analyze("machine learning anesthesia prediction models")
-        sources = DispatchStrategy.get_sources(analysis)
+        sources = DispatchStrategy.get_sources(analysis, registry=get_source_registry())
 
         assert "pubmed" in sources
 
     async def test_get_ranking_config_returns_config(self, analyzer):
         """get_ranking_config should return a RankingConfig."""
         from pubmed_search.application.search.result_aggregator import RankingConfig
-        from pubmed_search.presentation.mcp_server.tools.unified import DispatchStrategy
+        from pubmed_search.application.unified.helpers import DispatchStrategy
 
         analysis = analyzer.analyze("test query")
         config = DispatchStrategy.get_ranking_config(analysis)
@@ -95,7 +97,7 @@ class TestDispatchStrategy:
 
     async def test_comparison_query_uses_impact_ranking(self, analyzer):
         """Comparison queries should use impact-focused ranking."""
-        from pubmed_search.presentation.mcp_server.tools.unified import DispatchStrategy
+        from pubmed_search.application.unified.helpers import DispatchStrategy
 
         analysis = analyzer.analyze("drug A vs drug B effectiveness")
         config = DispatchStrategy.get_ranking_config(analysis)
@@ -109,42 +111,48 @@ class TestToolRegistration:
 
     async def test_registration_adds_unified_search(self):
         """register_unified_search_tools should add unified_search tool."""
-        from pubmed_search.presentation.mcp_server.tools.unified import (
-            register_unified_search_tools,
-        )
+        from pubmed_search.presentation.mcp_server.tools.unified import register_unified_search_tools
 
         mcp = MCPServer(name="test")
         mock_searcher = Mock()
 
-        register_unified_search_tools(mcp, mock_searcher)
+        register_unified_search_tools(
+            mcp,
+            mock_searcher,
+            pipeline_runtime=PipelineToolRuntime(base_store=None),
+        )
 
         tool_names = [t.name for t in mcp._tool_manager._tools.values()]
         assert "unified_search" in tool_names
 
     async def test_registration_adds_analyze_query(self):
         """register_unified_search_tools should add analyze_search_query tool."""
-        from pubmed_search.presentation.mcp_server.tools.unified import (
-            register_unified_search_tools,
-        )
+        from pubmed_search.presentation.mcp_server.tools.unified import register_unified_search_tools
 
         mcp = MCPServer(name="test")
         mock_searcher = Mock()
 
-        register_unified_search_tools(mcp, mock_searcher)
+        register_unified_search_tools(
+            mcp,
+            mock_searcher,
+            pipeline_runtime=PipelineToolRuntime(base_store=None),
+        )
 
         tool_names = [t.name for t in mcp._tool_manager._tools.values()]
         assert "analyze_search_query" in tool_names
 
     async def test_unified_search_tool_has_description(self):
         """unified_search tool should have a description."""
-        from pubmed_search.presentation.mcp_server.tools.unified import (
-            register_unified_search_tools,
-        )
+        from pubmed_search.presentation.mcp_server.tools.unified import register_unified_search_tools
 
         mcp = MCPServer(name="test")
         mock_searcher = Mock()
 
-        register_unified_search_tools(mcp, mock_searcher)
+        register_unified_search_tools(
+            mcp,
+            mock_searcher,
+            pipeline_runtime=PipelineToolRuntime(base_store=None),
+        )
 
         unified_tool = None
         for tool in mcp._tool_manager._tools.values():
@@ -185,42 +193,51 @@ class TestIntegrationWithServer:
 class TestSourceSearchFunctions:
     """Tests for internal source search functions."""
 
-    async def test_search_pubmed_with_mock(self):
-        """_search_pubmed should work with mock searcher."""
-        from pubmed_search.presentation.mcp_server.tools.unified import _search_pubmed
+    async def test_search_pubmed_adapter_with_mock(self):
+        """_search_pubmed_adapter should work with mock searcher."""
+        from pubmed_search.infrastructure.sources.unified_broker import _search_pubmed_adapter
 
         mock_searcher = AsyncMock()
-        mock_searcher.search.return_value = []
+        mock_searcher.search_page.return_value = SourceSearchPage(
+            source="pubmed",
+            items=[],
+            total=0,
+            query="test query",
+            metadata={"physical_query": "test query", "query_executed": True},
+        )
 
-        results = await _search_pubmed(
+        results = await _search_pubmed_adapter(
             searcher=mock_searcher,
             query="test query",
             limit=10,
             min_year=2020,
             max_year=2024,
+            advanced_filters={},
         )
 
-        # Returns tuple of (articles, total_count)
-        assert results == ([], None)
-        mock_searcher.search.assert_called_once()
+        assert results.status == "empty"
+        assert results.items == []
+        mock_searcher.search_page.assert_called_once()
 
-    async def test_search_pubmed_handles_exception(self):
-        """_search_pubmed should handle exceptions gracefully."""
-        from pubmed_search.presentation.mcp_server.tools.unified import _search_pubmed
+    async def test_search_pubmed_adapter_handles_exception(self):
+        """_search_pubmed_adapter should handle exceptions gracefully."""
+        from pubmed_search.infrastructure.sources.unified_broker import _search_pubmed_adapter
 
         mock_searcher = AsyncMock()
-        mock_searcher.search.side_effect = Exception("API error")
+        mock_searcher.search_page.side_effect = Exception("API error")
 
-        results = await _search_pubmed(
+        results = await _search_pubmed_adapter(
             searcher=mock_searcher,
             query="test query",
             limit=10,
             min_year=None,
             max_year=None,
+            advanced_filters={},
         )
 
-        # Should return empty tuple, not raise
-        assert results == ([], None)
+        assert results.status == "error"
+        assert results.items == []
+        assert results.errors
 
 
 class TestFormatFunctions:
@@ -232,7 +249,7 @@ class TestFormatFunctions:
 
         from pubmed_search.application.search import QueryAnalyzer
         from pubmed_search.application.search.result_aggregator import AggregationStats
-        from pubmed_search.presentation.mcp_server.tools.unified import _format_as_json
+        from pubmed_search.presentation.mcp_server.tools.unified_formatting import _format_as_json
 
         analyzer = QueryAnalyzer()
         analysis = analyzer.analyze("test query")

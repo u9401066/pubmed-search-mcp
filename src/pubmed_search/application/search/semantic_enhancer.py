@@ -16,10 +16,10 @@ Architecture:
                 AnalyzedQuery ??EnhancedQuery ??SearchStrategies
 
 Example:
-    >>> enhancer = SemanticEnhancer()
+    >>> enhancer = SemanticEnhancer(entity_resolver=resolver)
     >>> enhanced = await enhancer.enhance("propofol sedation ICU")
     >>> enhanced.entities
-    [PubTatorEntity(resolved_name="Propofol", entity_type="chemical", ...)]
+    [ResolvedEntity(resolved_name="Propofol", entity_type="chemical", ...)]
     >>> enhanced.expanded_terms
     ["Propofol"[MeSH], "2,6-Diisopropylphenol", ...]
 """
@@ -31,14 +31,8 @@ import hmac
 import logging
 import secrets
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Protocol
 
-from pubmed_search.infrastructure.cache import get_entity_cache
-from pubmed_search.infrastructure.pubtator import (
-    PubTatorClient,
-    PubTatorEntity,
-    get_pubtator_client,
-)
 from pubmed_search.shared.tenancy import current_tenant_id
 
 logger = logging.getLogger(__name__)
@@ -55,8 +49,45 @@ def _entity_cache_key(term: str) -> str:
 
 
 # =============================================================================
-# Data Classes
+# Ports and Data Classes
 # =============================================================================
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedEntity:
+    """Application-owned normalized biomedical entity."""
+
+    original_text: str
+    resolved_name: str
+    entity_type: str
+    entity_id: str
+    mesh_id: str | None = None
+    ncbi_id: str | None = None
+
+    def to_search_term(self) -> str:
+        """Generate the provider-neutral search expression for this entity."""
+        if self.mesh_id:
+            return f'"{self.resolved_name}"[MeSH Terms]'
+        if self.entity_type == "gene" and self.ncbi_id:
+            return f"{self.resolved_name}[Gene Name]"
+        return f'"{self.resolved_name}"'
+
+
+class EntityResolverPort(Protocol):
+    """Resolve one term through an outer biomedical terminology adapter."""
+
+    async def resolve_entity(self, text: str) -> ResolvedEntity | None:
+        """Return a normalized entity, or ``None`` when not resolved."""
+
+
+class EntityCachePort(Protocol):
+    """Minimal cache contract used by semantic enhancement."""
+
+    def get(self, key: str) -> Any | None:
+        """Return a cached entity if present."""
+
+    def set(self, key: str, value: Any) -> None:
+        """Store one resolved entity."""
 
 
 @dataclass
@@ -105,7 +136,7 @@ class EnhancedQuery:
     original_query: str
 
     # Resolved biomedical entities
-    entities: list[PubTatorEntity] = field(default_factory=list)
+    entities: list[ResolvedEntity] = field(default_factory=list)
 
     # Expanded search terms
     expanded_terms: list[ExpandedTerm] = field(default_factory=list)
@@ -115,9 +146,6 @@ class EnhancedQuery:
 
     # Detected PICO elements (enhanced)
     pico_elements: dict[str, list[str]] = field(default_factory=dict)
-
-    # Cross-database term counts (from egquery)
-    database_counts: dict[str, int] = field(default_factory=dict)
 
     # Spell corrections (from espell)
     spell_corrections: list[str] = field(default_factory=list)
@@ -172,7 +200,6 @@ class EnhancedQuery:
                 for s in self.strategies
             ],
             "pico_elements": self.pico_elements,
-            "database_counts": self.database_counts,
             "spell_corrections": self.spell_corrections,
         }
 
@@ -195,7 +222,7 @@ class SemanticEnhancer:
     The philosophy: "Every search is deep AND wide."
 
     Usage:
-        enhancer = SemanticEnhancer()
+        enhancer = SemanticEnhancer(entity_resolver=resolver)
         enhanced = await enhancer.enhance("propofol sedation ICU")
 
         for strategy in enhanced.strategies:
@@ -245,27 +272,21 @@ class SemanticEnhancer:
 
     def __init__(
         self,
-        pubtator_client: PubTatorClient | None = None,
-        use_cache: bool = True,
+        entity_resolver: EntityResolverPort,
+        entity_cache: EntityCachePort | None = None,
         timeout: float = 5.0,
     ):
         """
         Initialize SemanticEnhancer.
 
         Args:
-            pubtator_client: PubTator3 client (uses singleton if not provided)
-            use_cache: Whether to use entity cache
+            entity_resolver: Outer adapter for PubTator-style entity resolution
+            entity_cache: Optional tenant-safe entity cache adapter
             timeout: Maximum time for enhancement (seconds)
         """
-        self._client = pubtator_client
-        self._use_cache = use_cache
+        self._resolver = entity_resolver
+        self._cache = entity_cache
         self._timeout = timeout
-
-    async def _get_client(self) -> PubTatorClient:
-        """Get PubTator3 client."""
-        if self._client is None:
-            self._client = get_pubtator_client()
-        return self._client
 
     async def enhance(self, query: str) -> EnhancedQuery:
         """
@@ -318,19 +339,18 @@ class SemanticEnhancer:
     async def _resolve_and_expand(
         self,
         query: str,
-    ) -> tuple[list[PubTatorEntity], list[ExpandedTerm]]:
+    ) -> tuple[list[ResolvedEntity], list[ExpandedTerm]]:
         """
         Resolve entities and expand terms.
 
         Uses PubTator3 for entity resolution with optional caching.
         """
-        client = await self._get_client()
-        cache = get_entity_cache() if self._use_cache else None
+        cache = self._cache
 
         # Extract candidate terms from query
         candidates = self._extract_candidates(query)
 
-        entities: list[PubTatorEntity] = []
+        entities: list[ResolvedEntity] = []
         expanded_terms: list[ExpandedTerm] = []
 
         # Add original query terms
@@ -344,7 +364,7 @@ class SemanticEnhancer:
             )
 
         # Resolve entities in parallel
-        async def resolve_one(term: str) -> PubTatorEntity | None:
+        async def resolve_one(term: str) -> ResolvedEntity | None:
             # Check cache first
             cache_key = _entity_cache_key(term)
             if cache:
@@ -353,7 +373,7 @@ class SemanticEnhancer:
                     return cached  # type: ignore[no-any-return]
 
             # Resolve via PubTator3
-            entity = await client.resolve_entity(term)
+            entity = await self._resolver.resolve_entity(term)
 
             # Cache result
             if cache and entity:
@@ -366,7 +386,7 @@ class SemanticEnhancer:
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         for result in results:
-            if isinstance(result, PubTatorEntity):
+            if isinstance(result, ResolvedEntity):
                 entities.append(result)
 
                 # Add expanded term from entity
@@ -419,7 +439,7 @@ class SemanticEnhancer:
     def _generate_strategies(
         self,
         query: str,
-        entities: list[PubTatorEntity],
+        entities: list[ResolvedEntity],
         terms: list[ExpandedTerm],
     ) -> list[SearchPlan]:
         """
@@ -501,7 +521,7 @@ class SemanticEnhancer:
     def _build_mesh_query(
         self,
         original_query: str,
-        mesh_entities: list[PubTatorEntity],
+        mesh_entities: list[ResolvedEntity],
     ) -> str:
         """Build query with MeSH term expansion."""
         mesh_parts = []
@@ -529,7 +549,7 @@ class SemanticEnhancer:
             return f"({mesh_clause}) AND ({remaining})"
         return mesh_clause
 
-    def _build_entity_query(self, entities: list[PubTatorEntity]) -> str:
+    def _build_entity_query(self, entities: list[ResolvedEntity]) -> str:
         """Build query using resolved entity names."""
         parts = []
         for entity in entities:
@@ -589,32 +609,12 @@ class SemanticEnhancer:
         return enhanced
 
 
-# =============================================================================
-# Convenience Functions
-# =============================================================================
-
-_enhancer_instance: SemanticEnhancer | None = None
-
-
-def get_semantic_enhancer() -> SemanticEnhancer:
-    """Get singleton SemanticEnhancer instance."""
-    global _enhancer_instance
-    if _enhancer_instance is None:
-        _enhancer_instance = SemanticEnhancer()
-    return _enhancer_instance
-
-
-async def enhance_query(query: str) -> EnhancedQuery:
-    """
-    Enhance a query with semantic understanding.
-
-    Convenience function using singleton enhancer.
-
-    Args:
-        query: User's search query
-
-    Returns:
-        EnhancedQuery with entities, expanded terms, and strategies
-    """
-    enhancer = get_semantic_enhancer()
-    return await enhancer.enhance(query)
+__all__ = [
+    "EnhancedQuery",
+    "EntityCachePort",
+    "EntityResolverPort",
+    "ExpandedTerm",
+    "ResolvedEntity",
+    "SearchPlan",
+    "SemanticEnhancer",
+]

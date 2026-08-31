@@ -8,7 +8,7 @@ Persistence entities:
 - PipelineMeta: Metadata for a saved pipeline configuration
 - PipelineRun: Record of a single pipeline execution
 - ScheduleEntry: Persistent APScheduler-backed schedule metadata
-- ValidationResult / ValidationFix: Auto-fix validation results
+- ValidationResult: Fail-closed validation result
 """
 
 from __future__ import annotations
@@ -75,10 +75,7 @@ class PipelineOutput:
     ranking: Literal["balanced", "impact", "recency", "quality"] = "balanced"
 
 
-PipelineExecutionSettings = PipelineOutput
-
-
-@dataclass(init=False)
+@dataclass
 class PipelineConfig:
     """Complete pipeline configuration — either custom steps or template reference."""
 
@@ -91,36 +88,6 @@ class PipelineConfig:
     # Template-based creation (steps auto-generated from template)
     template: str | None = None
     template_params: dict[str, Any] = field(default_factory=dict)
-
-    def __init__(
-        self,
-        steps: list[PipelineStep] | None = None,
-        name: str = "",
-        output: PipelineOutput | None = None,
-        execution: PipelineOutput | None = None,
-        globals: dict[str, Any] | None = None,  # noqa: A002 - public pipeline schema field
-        variables: dict[str, Any] | None = None,
-        template: str | None = None,
-        template_params: dict[str, Any] | None = None,
-    ) -> None:
-        """Support both the newer output field and legacy execution alias."""
-        effective_output = execution if execution is not None else output
-        self.steps = list(steps or [])
-        self.name = name
-        self.output = effective_output or PipelineOutput()
-        self.globals = dict(globals or {})
-        self.variables = dict(variables or {})
-        self.template = template
-        self.template_params = dict(template_params or {})
-
-    @property
-    def execution(self) -> PipelineOutput:
-        """Backward-compatible alias used by older tests and presentation code."""
-        return self.output
-
-    @execution.setter
-    def execution(self, value: PipelineOutput) -> None:
-        self.output = value
 
 
 @dataclass
@@ -293,43 +260,13 @@ class ScheduleEntry:
         )
 
 
-# =========================================================================
-# Validation Entities (for auto-fix)
-# =========================================================================
-
-
-class FixSeverity(Enum):
-    """Severity level for a validation fix."""
-
-    INFO = "info"  # Cosmetic (e.g., whitespace)
-    WARNING = "warning"  # Auto-fixed semantic issue
-    ERROR = "error"  # Unfixable — needs human/agent intervention
-
-
-@dataclass
-class ValidationFix:
-    """A single correction applied during validation."""
-
-    field: str
-    original: Any
-    corrected: Any
-    reason: str
-    severity: FixSeverity = FixSeverity.WARNING
-
-
 @dataclass
 class ValidationResult:
-    """Result of pipeline config validation with auto-fix."""
+    """Fail-closed result of pipeline config validation."""
 
     valid: bool
-    fixes: list[ValidationFix] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     config: PipelineConfig | None = None
-
-    @property
-    def has_fixes(self) -> bool:
-        """Whether any auto-fixes were applied."""
-        return len(self.fixes) > 0
 
     @property
     def has_errors(self) -> bool:
@@ -339,13 +276,8 @@ class ValidationResult:
     def summary(self) -> str:
         """Human-readable summary of validation."""
         parts: list[str] = []
-        if self.fixes:
-            parts.append(f"Auto-fixed {len(self.fixes)} issue(s):")
-            for fix in self.fixes:
-                parts.append(f"  [{fix.severity.value}] {fix.field}: {fix.reason}")
-                parts.append(f"    {fix.original!r} → {fix.corrected!r}")
         if self.errors:
-            parts.append(f"Unfixable error(s) ({len(self.errors)}):")
+            parts.append(f"Validation error(s) ({len(self.errors)}):")
             for err in self.errors:
                 parts.append(f"  ❌ {err}")
         if not parts:

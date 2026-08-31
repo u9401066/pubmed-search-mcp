@@ -8,6 +8,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from pubmed_search.infrastructure.ncbi.base import NCBIInfrastructureError
+
 
 class TestUtilsMixin:
     """Tests for UtilsMixin methods."""
@@ -60,10 +62,8 @@ class TestUtilsMixin:
         with patch("pubmed_search.infrastructure.ncbi.utils.Entrez.esummary") as mock_esummary:
             mock_esummary.side_effect = Exception("API Error")
 
-            results = await utils_mixin.quick_fetch_summary(["12345"])
-
-            assert len(results) == 1
-            assert "error" in results[0]
+            with pytest.raises(NCBIInfrastructureError, match="NCBI summary_fetch failed"):
+                await utils_mixin.quick_fetch_summary(["12345"])
 
     async def test_spell_check_query_success(self, utils_mixin):
         """Test spell_check_query with correction."""
@@ -100,34 +100,6 @@ class TestUtilsMixin:
 
             # Should return original query on error
             assert result == "test"
-
-    async def test_get_database_counts_success(self, utils_mixin):
-        """Test get_database_counts with successful response."""
-        with (
-            patch("pubmed_search.infrastructure.ncbi.utils.Entrez.egquery") as mock_egquery,
-            patch("pubmed_search.infrastructure.ncbi.utils.Entrez.read") as mock_read,
-        ):
-            mock_read.return_value = {
-                "eGQueryResult": [
-                    {"DbName": "pubmed", "Count": "1234"},
-                    {"DbName": "pmc", "Count": "567"},
-                ]
-            }
-            mock_egquery.return_value = MagicMock()
-
-            result = await utils_mixin.get_database_counts("cancer")
-
-            assert result["pubmed"] == 1234
-            assert result["pmc"] == 567
-
-    async def test_get_database_counts_error(self, utils_mixin):
-        """Test get_database_counts with API error."""
-        with patch("pubmed_search.infrastructure.ncbi.utils.Entrez.egquery") as mock_egquery:
-            mock_egquery.side_effect = Exception("API Error")
-
-            result = await utils_mixin.get_database_counts("test")
-
-            assert "error" in result
 
     async def test_validate_mesh_terms_found(self, utils_mixin):
         """Test validate_mesh_terms when terms are found."""
@@ -197,37 +169,8 @@ class TestUtilsMixin:
         with patch("pubmed_search.infrastructure.ncbi.utils.Entrez.ecitmatch") as mock_ecitmatch:
             mock_ecitmatch.side_effect = Exception("API Error")
 
-            result = await utils_mixin.find_by_citation(journal="Test", year="2024")
-
-            assert result is None
-
-    async def test_export_citations_medline(self, utils_mixin):
-        """Test export_citations with MEDLINE format."""
-        with patch("pubmed_search.infrastructure.ncbi.utils.Entrez.efetch") as mock_efetch:
-            mock_handle = MagicMock()
-            mock_handle.read.return_value = "PMID- 12345\nTI  - Test Article"
-            mock_efetch.return_value = mock_handle
-
-            result = await utils_mixin.export_citations(["12345"], fmt="medline")
-
-            assert "PMID" in result or "12345" in result
-
-    async def test_export_citations_empty(self, utils_mixin):
-        """Test export_citations with empty list."""
-        result = await utils_mixin.export_citations([])
-        assert result == ""
-
-    async def test_export_citations_invalid_format(self, utils_mixin):
-        """Test export_citations with invalid format falls back to medline."""
-        with patch("pubmed_search.infrastructure.ncbi.utils.Entrez.efetch") as mock_efetch:
-            mock_handle = MagicMock()
-            mock_handle.read.return_value = "PMID- 12345"
-            mock_efetch.return_value = mock_handle
-
-            await utils_mixin.export_citations(["12345"], fmt="invalid")
-
-            # Should use medline as fallback
-            mock_efetch.assert_called()
+            with pytest.raises(NCBIInfrastructureError, match="NCBI citation_match failed"):
+                await utils_mixin.find_by_citation(journal="Test", year="2024")
 
     async def test_get_database_info_success(self, utils_mixin):
         """Test get_database_info with successful response."""
@@ -264,9 +207,8 @@ class TestUtilsMixin:
         with patch("pubmed_search.infrastructure.ncbi.utils.Entrez.einfo") as mock_einfo:
             mock_einfo.side_effect = Exception("API Error")
 
-            result = await utils_mixin.get_database_info("pubmed")
-
-            assert "error" in result
+            with pytest.raises(NCBIInfrastructureError, match="NCBI database_info failed"):
+                await utils_mixin.get_database_info("pubmed")
 
 
 class TestServerModule:

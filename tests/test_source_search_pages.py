@@ -13,9 +13,9 @@ from pubmed_search.infrastructure.sources.semantic_scholar import (
     SemanticScholarClient,
     compile_semantic_scholar_bulk_query,
 )
-from pubmed_search.presentation.mcp_server.tools.unified_source_search import (
-    _search_openalex,
-    _search_semantic_scholar,
+from pubmed_search.infrastructure.sources.unified_broker import (
+    _search_openalex_adapter,
+    _search_semantic_scholar_adapter,
 )
 
 
@@ -173,13 +173,13 @@ async def test_openalex_client_runner_mapper_seam_maps_once() -> None:
             "pubmed_search.infrastructure.sources.get_openalex_client",
             return_value=client,
         ):
-            articles, total = await _search_openalex("raw query", 10, None, None)
+            outcome = await _search_openalex_adapter("raw query", 10, None, None, {})
     finally:
         await client.close()
 
-    assert total == 1
-    assert len(articles) == 1
-    article = articles[0]
+    assert outcome.total_count == 1
+    assert len(outcome.items) == 1
+    article = outcome.items[0]
     assert article.openalex_id == "W123"
     assert article.doi == "10.1000/raw"
     assert article.pmid == "12345"
@@ -328,13 +328,13 @@ async def test_s2_client_runner_mapper_seam_maps_once() -> None:
             "pubmed_search.infrastructure.sources.get_semantic_scholar_client",
             return_value=client,
         ):
-            articles, total = await _search_semantic_scholar("plain text query", 10, None, None)
+            outcome = await _search_semantic_scholar_adapter("plain text query", 10, None, None, {})
     finally:
         await client.close()
 
-    assert total == 1
-    assert len(articles) == 1
-    article = articles[0]
+    assert outcome.total_count == 1
+    assert len(outcome.items) == 1
+    article = outcome.items[0]
     assert article.s2_id == "s2-paper-id"
     assert article.doi == "10.1000/s2"
     assert article.pmid == "54321"

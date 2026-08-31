@@ -13,8 +13,8 @@ from mcp.client import Client
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
 from pubmed_search.domain.entities.article import UnifiedArticle
+from pubmed_search.infrastructure.sources import unified_broker
 from pubmed_search.presentation.mcp_server import create_server
-from pubmed_search.presentation.mcp_server.tools import unified as unified_module
 from pubmed_search.shared.source_contracts import SourceAdapterError, SourceAdapterResult
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -33,7 +33,7 @@ steps:
     action: search
     params:
       query: offline pipeline
-      sources: pubmed
+      sources: [pubmed]
       limit: 2
 output:
   format: json
@@ -130,18 +130,18 @@ async def _assert_search_and_recovery(client: Client[Any]) -> None:
         "history_available": True,
         "inspect": {
             "tool": "read_session",
-            "arguments": {"action": "search_run", "run_id": run_id},
+            "arguments": {"request": {"action": "search_run", "run_id": run_id}},
         },
         "replay": {
             "tool": "read_session",
-            "arguments": {"action": "replay_search", "run_id": run_id},
+            "arguments": {"request": {"action": "replay_search", "run_id": run_id}},
         },
         "artifact_uri": summary["artifact_uri"],
     }
 
     run_result = await client.call_tool(
         "read_session",
-        {"action": "search_run", "run_id": run_id},
+        {"request": {"action": "search_run", "run_id": run_id}},
     )
     run_page = json.loads(_result_text(run_result))
     assert run_page["success"] is True
@@ -163,7 +163,7 @@ async def _assert_search_and_recovery(client: Client[Any]) -> None:
 
     replay_result = await client.call_tool(
         "read_session",
-        {"action": "replay_search", "run_id": run_id},
+        {"request": {"action": "replay_search", "run_id": run_id}},
     )
     replay_page = json.loads(_result_text(replay_result))
     assert replay_page["success"] is True
@@ -180,9 +180,11 @@ async def _assert_search_and_recovery(client: Client[Any]) -> None:
     audit_result = await client.call_tool(
         "read_session",
         {
-            "action": "artifact",
-            "artifact_uri": summary["artifact_uri"],
-            "artifact_file": "audit.json",
+            "request": {
+                "action": "artifact",
+                "locator": {"kind": "artifact_uri", "value": summary["artifact_uri"]},
+                "artifact_file": "audit.json",
+            },
         },
     )
     audit_page = json.loads(_result_text(audit_result))
@@ -192,9 +194,11 @@ async def _assert_search_and_recovery(client: Client[Any]) -> None:
     strategy_result = await client.call_tool(
         "read_session",
         {
-            "action": "artifact",
-            "artifact_uri": summary["artifact_uri"],
-            "artifact_file": "query_strategy.json",
+            "request": {
+                "action": "artifact",
+                "locator": {"kind": "artifact_uri", "value": summary["artifact_uri"]},
+                "artifact_file": "query_strategy.json",
+            },
         },
     )
     strategy_page = json.loads(_result_text(strategy_result))
@@ -222,7 +226,7 @@ async def _assert_planning_failure_is_recoverable(client: Client[Any]) -> None:
 
     runs_result = await client.call_tool(
         "read_session",
-        {"action": "search_runs", "run_status": "failed"},
+        {"request": {"action": "search_runs", "status": "failed"}},
     )
     runs_page = json.loads(_result_text(runs_result))
     assert runs_page["success"] is True
@@ -256,7 +260,7 @@ async def _assert_pipeline_dry_run_is_journaled(client: Client[Any]) -> None:
 
     replay_result = await client.call_tool(
         "read_session",
-        {"action": "replay_search", "run_id": run_id},
+        {"request": {"action": "replay_search", "run_id": run_id}},
     )
     replay_page = json.loads(_result_text(replay_result))
     assert replay_page["success"] is True
@@ -266,19 +270,25 @@ async def _assert_pipeline_dry_run_is_journaled(client: Client[Any]) -> None:
 
 
 async def _assert_credential_bearing_query_is_rejected(client: Client[Any]) -> None:
-    result = await client.call_tool(
-        "unified_search",
-        {
-            "query": f"cancer api_key={SECRET_SENTINEL}",
-            "output_format": "json",
-        },
+    credential_queries = (
+        f"cancer api_key={SECRET_SENTINEL}",
+        f"cancer --api-key {SECRET_SENTINEL}",
+        f"Authorization: Bearer {SECRET_SENTINEL}",
     )
-    assert result.is_error is False
-    response_text = _result_text(result)
-    assert SECRET_SENTINEL not in response_text
-    payload = json.loads(response_text)
-    assert payload["success"] is False
-    assert "credential material" in payload["error"]
+    for query in credential_queries:
+        result = await client.call_tool(
+            "unified_search",
+            {
+                "query": query,
+                "output_format": "json",
+            },
+        )
+        assert result.is_error is False
+        response_text = _result_text(result)
+        assert SECRET_SENTINEL not in response_text
+        payload = json.loads(response_text)
+        assert payload["success"] is False
+        assert "credential material" in payload["error"]
 
 
 @pytest.mark.asyncio
@@ -286,8 +296,8 @@ async def test_in_memory_unified_search_partial_failure_and_artifact_recovery(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setattr(unified_module, "_search_pubmed_adapter", _successful_pubmed)
-    monkeypatch.setattr(unified_module, "_search_semantic_scholar_adapter", _failed_semantic_scholar)
+    monkeypatch.setattr(unified_broker, "_search_pubmed_adapter", _successful_pubmed)
+    monkeypatch.setattr(unified_broker, "_search_semantic_scholar_adapter", _failed_semantic_scholar)
     data_dir = tmp_path / "in-memory-data"
     async with Client(create_server(data_dir=data_dir, mode="local")) as client:
         await _assert_search_and_recovery(client)

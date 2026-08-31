@@ -5,7 +5,7 @@ which tool handles it, and so the binding lives in the same context as the
 handler coroutine that later calls ``get_session_manager()``.
 
 Identity is taken from the verified access token when auth is configured. That
-is the only remote source that is a security boundary. Legacy HTTP session ids
+is the only remote source that is a security boundary. Stateful HTTP session ids
 are isolation-only, and modern/stateless anonymous service HTTP is request-scoped.
 Explicit local mode instead binds loopback HTTP to the durable default tenant.
 
@@ -64,7 +64,7 @@ def resolve_tenant(
 
     Args:
         ctx: The low-level server request context.
-        isolation_enabled: Whether legacy transport identifiers may isolate
+        isolation_enabled: Whether stateful transport identifiers may isolate
             otherwise anonymous remote callers.
         trusted_local_http: Map unauthenticated HTTP to the durable default
             tenant. This is safe only for the explicit local mode, whose

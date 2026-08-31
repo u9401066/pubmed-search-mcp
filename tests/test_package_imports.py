@@ -48,13 +48,21 @@ class TestPackageImports:
         assert EntrezBase is not None
         assert SearchStrategy is not None
 
-    async def test_http_client_imports(self):
-        """HTTP client classes should be importable from their dedicated module."""
-        from pubmed_search.infrastructure.http import PubMedClient
-        from pubmed_search.infrastructure.http.pubmed_client import SearchResult
+    async def test_legacy_http_client_module_is_removed(self):
+        """The retired wrapper must not remain importable from infrastructure."""
+        import importlib.util
 
-        assert PubMedClient is not None
-        assert SearchResult is not None
+        assert importlib.util.find_spec("pubmed_search.infrastructure.http.pubmed_client") is None
+
+    async def test_retired_fulltext_reexport_modules_are_removed(self):
+        """Application fulltext contracts must have one authoritative import path."""
+        import importlib.util
+
+        retired_modules = (
+            "pubmed_search.infrastructure.sources.fulltext_registry",
+            "pubmed_search.infrastructure.sources.fulltext_service",
+        )
+        assert all(importlib.util.find_spec(module_name) is None for module_name in retired_modules)
 
     async def test_root_package_excludes_legacy_http_exports_from_public_surface(self):
         """Deprecated HTTP wrapper should not remain in the declared root surface."""
@@ -107,13 +115,11 @@ class TestPackageImports:
         assert callable(get_crossref_client)
         assert callable(get_unpaywall_client)
 
-    async def test_search_source_enum(self):
-        """SearchSource enum should be importable."""
-        from pubmed_search import SearchSource
+    async def test_source_registry_is_not_duplicated_at_package_root(self):
+        """Source identity lives in the infrastructure registry only."""
+        import pubmed_search
 
-        assert hasattr(SearchSource, "PUBMED")
-        assert hasattr(SearchSource, "SEMANTIC_SCHOLAR")
-        assert hasattr(SearchSource, "OPENALEX")
+        assert "SearchSource" not in pubmed_search.__all__
 
     async def test_export_functions(self):
         """Export functions should be importable."""
@@ -211,6 +217,25 @@ class TestInfrastructureImports:
 
         assert COREClient is not None
 
+    async def test_provider_modules_do_not_duplicate_runtime_getters_or_scalar_facades(self):
+        """Provider modules expose clients; the package owns lifecycle and orchestration."""
+        from pubmed_search.infrastructure import sources
+        from pubmed_search.infrastructure.sources import core, crossref, europe_pmc, unpaywall
+
+        retired = {
+            core: {"get_core_client", "search_core", "search_core_fulltext"},
+            crossref: {"get_crossref_client", "get_doi_metadata", "search_crossref", "get_citation_count"},
+            europe_pmc: {"search_europe_pmc", "get_fulltext"},
+            unpaywall: {"get_unpaywall_client", "find_oa_link", "find_pdf_link", "is_open_access", "get_oa_status"},
+        }
+        for module, names in retired.items():
+            assert all(not hasattr(module, name) for name in names)
+
+        assert callable(sources.get_core_client)
+        assert callable(sources.get_crossref_client)
+        assert callable(sources.get_europe_pmc_client)
+        assert callable(sources.get_unpaywall_client)
+
     async def test_semantic_scholar_import(self):
         """Semantic Scholar client should be importable."""
         from pubmed_search.infrastructure.sources.semantic_scholar import (
@@ -262,6 +287,22 @@ class TestApplicationImports:
 
         assert callable(export_ris)
         assert callable(export_bibtex)
+
+    async def test_application_services_do_not_expose_one_line_class_facades(self):
+        """Callers use the state-owning service classes and canonical runtime getter."""
+        from pubmed_search.application.image_search import advisor
+        from pubmed_search.application.search import query_analyzer, result_aggregator, semantic_enhancer
+
+        assert not hasattr(query_analyzer, "analyze_query")
+        assert not hasattr(advisor, "advise_image_search")
+        assert not hasattr(semantic_enhancer, "enhance_query")
+        assert not hasattr(result_aggregator, "aggregate_results")
+        assert not hasattr(result_aggregator, "rank_results")
+        assert not hasattr(semantic_enhancer, "get_semantic_enhancer")
+
+        from pubmed_search.infrastructure.pubtator.semantic_adapter import get_semantic_enhancer
+
+        assert callable(get_semantic_enhancer)
 
 
 class TestNoCircularImports:

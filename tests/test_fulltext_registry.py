@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import pytest
 
-from pubmed_search.infrastructure.sources.fulltext_registry import FulltextRegistry, get_fulltext_registry
+from pubmed_search.application.fulltext import FulltextRegistry, get_fulltext_registry
 
 
 class TestFulltextRegistry:

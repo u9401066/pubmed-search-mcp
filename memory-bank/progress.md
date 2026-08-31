@@ -1,4 +1,135 @@
-# Progress (Updated: 2026-08-12)
+# Progress (Updated: 2026-09-01)
+
+## v0.7.0 Release Candidate
+
+- Consolidated the public surface to **41 tools / 16 categories** across stdio,
+  Streamable HTTP, Copilot, registry tests, and documentation. Removed public
+  aliases, compatibility wrappers, the reduced Copilot tool registry, and other
+  duplicate presentation paths instead of keeping silent fallbacks.
+- Made `read_session` and `read_research_chronicle` strict
+  action-discriminated request tools. Search-run replay now returns canonical
+  nested `{"request": {...}}` arguments.
+- Removed the pipeline `execution` compatibility shape and retired top-level
+  template `params`; template mode accepts only `template_params`. Pipeline
+  `kind` is inferred only when omitted and an explicit discriminator is never
+  overwritten. Action/template/dependency identifiers, enums, and all
+  action-specific parameters reject unknown fields, fuzzy aliases, scalar/CSV
+  repair, and type coercion; defaults apply only to omitted documented fields.
+- Unified source execution around validated `SourceAdapterCall`,
+  `SourceAdapterResult`, and `SourceAdapterError`. Source/operation identity,
+  runtime types, nested error provenance, status coherence, and
+  `total_count >= len(items) >= 0` are enforced across shallow, relaxed, deep,
+  full-text, preprint, and image paths.
+- Moved normal unified-search orchestration into the application-owned
+  `UnifiedSearchUseCase` with explicit planner, executor, source-broker,
+  source-registry, enrichment, progress, and observer ports. The MCP runner now
+  owns only preflight, SearchRun journal, host progress, formatting, artifact,
+  and recovery concerns around the typed application outcome.
+- Changed `PubMedSearchClient.unified_search()` to compose that use case
+  directly and return typed articles, source coverage/errors, and filter
+  counts. The SDK no longer imports the MCP runner or creates serialized MCP,
+  journal, session, or artifact side effects.
+- Replaced PubMed, Scopus, and Web of Science list/search-metadata dual APIs
+  with one typed page contract. Removed NCBI article-shaped failure rows and
+  changed Europe PMC, CORE, OpenAlex, Semantic Scholar, ClinicalTrials.gov, and
+  preprint clients so provider faults cannot silently report an empty result.
+- Removed provider soft-fail and convenience surfaces: `BaseAPIClient` no
+  longer has `strict_errors`, mutable last-error state, a duplicate rate
+  limiter, or raw upstream-reason logging; duplicate CORE/Europe PMC
+  search/getter and Crossref/Unpaywall lookup functions were deleted in favor
+  of the runtime-owned package boundary and typed failures.
+- Made session persistence exact-versioned (`research-session/v1` and
+  `research-session-index/v1`), removed article-cache warmup payloads and
+  history-to-run projection, and retained `search_history` only as an explicit
+  summary read model.
+- Consolidated full-text coordination under `application/fulltext`; deleted the
+  duplicate infrastructure service/registry facades and pass-through download
+  wrappers. Link discovery now has one immutable typed result and preserves
+  canonical attempted/completed sources plus sanitized partial failures through
+  download, extraction, MCP output, and artifacts. Only HTTP 204/404 or a valid
+  parsed zero-link response is absence; outage/parse failure produces
+  `partial`/`unavailable`. Source selection accepts only exact canonical keys,
+  and only `SEMANTIC_SCHOLAR_API_KEY` configures Semantic Scholar.
+- Made `generate_search_queries` publish separate
+  `completed`/`partial`/`failed` coverage for spelling, MeSH, and PubMed query
+  analysis. Unchanged spelling, completed no-match, and genuine zero results
+  remain successful; outages produce only sanitized generic warnings.
+- Hardened late-stage storage/access boundaries: authenticated note exports
+  expose tenant-relative locators instead of host paths, OpenURL bases reject
+  query credentials and non-resolver search presets, PMID-to-DOI diagnosis
+  separates missing metadata from outage, and corrupt pipeline history fails
+  closed instead of becoming a partial or empty report.
+- The browser broker now requires an explicitly provisioned bearer token of at
+  least 32 characters and never generates or logs authentication secrets.
+- Reference-verification timeout handling now uses the cross-version
+  `asyncio.TimeoutError` contract, keeping Python 3.10 behavior aligned with
+  Python 3.11–3.13 for both batch prefetch and single-reference deadlines.
+- Made PubMed EFetch and all seven NCBI Extended provider paths validate exact
+  envelopes and row identity. Added `clinical-trials-adjunct/v1` so explicit
+  Markdown/JSON/TOON adjunct requests preserve retrieval/format coverage and
+  sanitized failures consistently through every artifact projection.
+- Made Open-i return a strict provider page and typed per-source image coverage:
+  explicit zero is empty, mixed valid/invalid rows are partial, malformed/all-
+  invalid results fail, and Markdown cannot rewrite failure as no images.
+- Added one deadline and external-call quota across each complete pipeline DAG,
+  including parallel steps; validation no longer exposes an auto-fix contract.
+- Isolated mutable session, tenant, strategy, container, pipeline,
+  source-contact, source-client, and HTTP lifecycle state per MCP server.
+  Constructing or closing one server no longer replaces another server's
+  runtime. Scheduled pipeline DAGs rebind the creating server's runtime, while
+  `PubMedSearchClient` owns a separate lazy runtime closed by `async with` or
+  `aclose()`.
+- Added a server-owned `HostCallbackRuntime` with a hard `asyncio.wait`
+  deadline. A stalled progress/log/resource callback is cancelled and yielded
+  once; cancellation-resistant work is quarantined in a bounded 32-task
+  supervisor, new callbacks are rejected at capacity, and lifespan shutdown
+  invokes bounded cleanup. Host failure stays non-fatal and enclosing tool
+  cancellation still propagates.
+- Extracted the reusable `BoundedTaskSupervisor` so host callbacks and citation
+  expansion share one ownership/capacity/reaping implementation without sharing
+  state. `ToolSessionRuntime` owns the 32-task host supervisor and 128-task
+  citation supervisor, and server lifespan closes both.
+- Deleted the profiling monkeypatch and hidden `get_performance_metrics` tool,
+  the orphan standalone FastAPI presentation app, and the stdio background-HTTP
+  launcher. The supported HTTP launcher owns its tenant-guarded companion
+  routes; those routes are not a second MCP registry.
+- Routed full-text and other URL-following retrieval through shared safe
+  outbound handling with scheme/credential checks, DNS/IP policy, redirect-hop
+  revalidation, DNS-rebinding protection, response byte caps, and total
+  deadlines.
+- Extended the canonical Chronicle `flowchart LR`: the year spine preserves
+  sequence, thematic branches expose divergence, and nested branches link to
+  both their parent theme and their own chronological anchor.
+- Added `citation-metrics-coverage/v1` and separate requested/effective ranking
+  provenance. Chronicle uses iCite ordering only after applying a validated
+  citation count; partial, empty, malformed, and outage outcomes are audited
+  without raw provider details.
+- Consolidated Mermaid production around a shared structured graph kernel with
+  deterministic `rich -> safe -> minimal` repair, bounds, and visible audit
+  diagnostics.
+- Made optional Crossref, journal-metrics, and Unpaywall enrichment return
+  immutable typed patches and sanitized coverage outcomes. Stable candidate
+  ties, fixed provider/article application order, and final re-ranking remove
+  mutation and provider-completion-order bias.
+- Moved the curated ICD/MeSH crosswalk and lookup behavior into
+  `application/search/icd.py`; the MCP registrar now only dispatches and
+  formats. Image search now depends on `ImageSourceAdapter`/`OpenIClientPort`,
+  with the composition root injecting an Open-i factory owned by each server's
+  `SourceRuntime`.
+- Completed a runtime-derived schema audit: **41 unique tool owners / 16
+  categories**, **74 recursively closed object schemas**, **215 bounded
+  primitive/array nodes**, and **10 exact tagged unions**, with required/default
+  and annotation/side-effect coherence checked against the registered tools.
+- Added complete bilingual unified-search architecture/function inventory and
+  all-tool quality audit pages, including Mermaid architecture, relationship,
+  request-flow, and improvement diagrams; synchronized README and generated
+  website sources with the strict registry.
+- The definitive local gate passed: **4,470 tests / 53 intentional skips**,
+  Ruff, mypy across 411 files, DDD/async/security/dependency checks, all changed
+  pre-commit policies, **102 Mermaid diagrams rendered to SVG**, Playwright
+  desktop/mobile docs QA, sdist/wheel metadata checks, and an isolated Python
+  3.10 wheel install. The segmented release branch and duplicate push/PR CI
+  matrices passed before the annotated v0.7.0 release gate.
 
 ## Done
 
@@ -96,7 +227,7 @@
 
 ### 2026-08-03: v0.6.0 — SDK v2, Research Chronicle, Multi-Agent Service Mode
 - Migrated to MCP Python SDK v2 (`mcp>=2,<3`, protocol 2026-07-28); experimental tasks removed with the spec, transport keywords moved into `build_asgi_app()`.
-- Research Chronicle shipped as the single research-evolution entry point; `build_research_timeline` / `analyze_timeline_milestones` / `compare_timelines` retired into it (48 → 45 tools, 17 → 16 categories).
+- Research Chronicle shipped as the single research-evolution entry point; `build_research_timeline` / `analyze_timeline_milestones` / `compare_timelines` retired into it (48 → 45 tools, 17 → 16 categories). v0.7.0 later reduced the canonical surface to 41 tools.
 - Multi-agent service mode: per-tenant sessions/cache/artifacts, bearer-token auth, per-tenant fair-share concurrency, `/ready`.
 - Security model at the v0.6.0 boundary: legacy `mcp-session-id` was correlation only, never identity. The 2026-08-09 modern profile supersedes it with authenticated service principals and an explicit durable loopback-local tenant; other HTTP callers never touch disk.
 - Cross-tenant leaks closed in chronicle, pipeline, and literature-note storage; `tenant-scoped-storage` pre-commit hook added so the class of bug cannot recur.
@@ -107,7 +238,7 @@
 ### 2026-06-06: Research Chronicle Rebuild Spec Alignment
 - Rewrote `docs/RESEARCH_CHRONICLE_REFACTOR_SPEC.md` as the canonical pre-rebuild contract for timeline, lineage tree, context graph preview, citation graph, artifacts, and the planned persistent Research Chronicle.
 - Cross-checked implementation, documentation, and test gaps with multiple read-only subagents.
-- Terminology: `build_research_chronicle` is the single research-evolution entry point (timeline / lineage tree / milestones / comparison are all projections or actions of it); `unified_search(options="context_graph")` is a lightweight preview; `build_citation_tree` is the citation network tool.
+- Historical terminology: `build_research_chronicle` became the single research-evolution entry point (timeline / lineage tree / milestones / comparison are projections or actions of it). The former `unified_search(options="context_graph")` preview was retired in v0.7.0; `build_citation_tree` remains the citation-network tool.
 - Captured rebuild blockers: broken/untested `pmids="last"` timeline path, incomplete timeline format coverage, context graph boundary tests, citation tree response-contract tests, presentation-layer citation graph logic, and projection formatting in domain entities.
 
 ### 2026-06-05: Python SDK Facade + Packaged HTTP CLI
@@ -128,7 +259,7 @@
 ### 2026-05-14: v0.5.12 - LLM Wiki Compatibility + PICO Handoff
 - Stable LLM wiki export: `save_literature_notes` writes wiki/Foam notes with stable PMID/DOI/PMCID/fallback targets and reports `wiki_validation`.
 - Unified search handoff: PMID-backed `unified_search` results now suggest `save_literature_notes(pmids="last", note_format="wiki")`.
-- PICO handoff: `parse_pico` validates agent-provided P/I/C/O and returns a runnable `template: pico` backend pipeline.
+- PICO handoff: the then-public `parse_pico` validated agent-provided P/I/C/O and returned a runnable `template: pico` backend pipeline. v0.7.0 later replaced that public surface with `validate_pico_plan`.
 - Docs/site sync: README, usage/user guides, generated docs-site content, and agent harness guidance were aligned.
 - Quality gate: full pytest (`3379 passed, 31 skipped`), mypy, async-test checker, Ruff, and docs-site JavaScript syntax checks passed.
 
@@ -208,7 +339,7 @@
 ### 2026-02-10: v0.3.8 — QueryValidator + JournalMetrics + Preprint
 - ✅ **QueryValidator** — PubMed query 語法驗證 + 自動修正
 - ✅ **Journal Metrics** — OpenAlex h-index, impact tier
-- ✅ **Peer Review Filter** — 預設維持 peer-reviewed 結果，可用 `options="all_types"` 放寬
+- ✅ **Historical peer-review heuristic** — v0.3.8 曾使用 `options="all_types"`；v0.7.0 已移除這個不精確宣稱，改用明確的 `include_detected_preprints` retention policy 與 `preprints` source crawl policy
 - ✅ **Preprint Search** — arXiv/medRxiv/bioRxiv detection
 
 ### 2026-02-10: P2 Async-First 架構全面遷移 (v0.3.4)
@@ -227,14 +358,16 @@
 
 ## Doing
 
-- No v0.6.2 release-lifecycle work remains. Monitor published-package feedback
-  and preserve the released Chronicle evidence and rendering contracts.
+- Finish the v0.7.0 repository-wide deterministic/static/Mermaid gates, resolve
+  any remaining isolation or contract regression, rebuild generated docs, then
+  create segmented commits and verify remote publishing.
 
 ## Next
 
 | 優先級 | 項目 | 說明 |
 |:------:|------|------|
 | ⭐⭐⭐ | Distributed service state | 多 worker 前先導入 shared transactional store、distributed locks、object storage 與 scheduler leader election |
+| ⭐⭐ | Cross-feature source consolidation | 讓 pipeline/search/fulltext/image 最終都只經過同一 typed adapter execution policy，持續移除殘留 provider-specific orchestration |
 | ⭐⭐ | Provider admission | 只有具不同 corpus、identifier 或 access path 且有 rate/provenance contract 的來源才加入 broker |
 | ⭐⭐ | Session cache dedup cleanup | 評估 `ArticleCache` 與 `SessionManager.article_cache` 是否收斂成單一路徑 |
 | ⭐⭐ | Algorithm innovation | 評估 BM25/RRF/PRF 等排序功能，不把無驗證 heuristics 混入目前 broker |

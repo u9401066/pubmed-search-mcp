@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -12,23 +12,32 @@ from pubmed_search.application.search.query_analyzer import (
     QueryIntent,
 )
 from pubmed_search.application.search.source_models import SourceSearchPage
-from pubmed_search.infrastructure.sources.base_client import APIRequestError
-from pubmed_search.infrastructure.sources.registry import SourceSelectionError
-from pubmed_search.presentation.mcp_server.tools.unified_execution import _search_single_source
-from pubmed_search.presentation.mcp_server.tools.unified_helpers import detect_and_expand_icd_codes
-from pubmed_search.presentation.mcp_server.tools.unified_planning import build_unified_search_plan
-from pubmed_search.presentation.mcp_server.tools.unified_request import normalize_unified_search_request
-from pubmed_search.presentation.mcp_server.tools.unified_source_search import (
+from pubmed_search.application.unified.execution import _search_single_source
+from pubmed_search.application.unified.helpers import detect_and_expand_icd_codes
+from pubmed_search.application.unified.planning import build_unified_search_plan as _build_unified_search_plan
+from pubmed_search.application.unified.request import normalize_unified_search_request
+from pubmed_search.application.unified.use_case import SourceSelectionError
+from pubmed_search.infrastructure.pubtator.semantic_adapter import get_semantic_enhancer
+from pubmed_search.infrastructure.sources.registry import get_source_registry
+from pubmed_search.infrastructure.sources.unified_broker import (
     _search_europe_pmc_adapter,
     _search_openalex_adapter,
     _search_scopus_adapter,
     _search_semantic_scholar_adapter,
     _search_web_of_science_adapter,
 )
+from pubmed_search.shared.source_contracts import SourceAdapterError, SourceAdapterResult
 
 
 async def _ignore_progress(_current: float, _total: float, _message: str) -> None:
     return None
+
+
+async def build_unified_search_plan(*args, **kwargs):
+    """Compose the application planner with concrete adapters for integration tests."""
+    kwargs.setdefault("enhancer_factory", get_semantic_enhancer)
+    kwargs.setdefault("source_registry_factory", get_source_registry)
+    return await _build_unified_search_plan(*args, **kwargs)
 
 
 class _StaticAnalyzer:
@@ -51,7 +60,7 @@ def test_provider_native_options_are_exclusive_and_disable_expansion() -> None:
     with pytest.raises(ValueError, match="mutually exclusive"):
         normalize_unified_search_request(
             query="treatment resistance",
-            options="native_semantic, systematic",
+            options="native_semantic,systematic",
         )
 
 
@@ -123,6 +132,45 @@ async def test_europe_pmc_does_not_claim_unimplemented_systematic_traversal() ->
 
 
 @pytest.mark.asyncio
+async def test_pubmed_field_tags_fail_before_mixed_provider_dispatch() -> None:
+    query = "cancer[MeSH Terms] AND therapy[tiab]"
+    request = normalize_unified_search_request(query=query, sources="pubmed,openalex", options="shallow")
+    analysis = AnalyzedQuery(
+        original_query=query,
+        normalized_query=query,
+        complexity=QueryComplexity.SIMPLE,
+        intent=QueryIntent.EXPLORATION,
+    )
+
+    with pytest.raises(SourceSelectionError, match="PubMed field tags cannot be federated"):
+        await build_unified_search_plan(
+            request,
+            progress=_ignore_progress,
+            analyzer_factory=lambda: _StaticAnalyzer(analysis),
+        )
+
+
+@pytest.mark.asyncio
+async def test_pubmed_field_tags_remain_valid_for_pubmed_only() -> None:
+    query = "cancer[MeSH Terms] AND therapy[tiab]"
+    request = normalize_unified_search_request(query=query, sources="pubmed", options="shallow")
+    analysis = AnalyzedQuery(
+        original_query=query,
+        normalized_query=query,
+        complexity=QueryComplexity.SIMPLE,
+        intent=QueryIntent.EXPLORATION,
+    )
+
+    plan = await build_unified_search_plan(
+        request,
+        progress=_ignore_progress,
+        analyzer_factory=lambda: _StaticAnalyzer(analysis),
+    )
+
+    assert plan.dispatch_sources == ["pubmed"]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("source", "env"),
     [
@@ -150,17 +198,25 @@ async def test_licensed_single_page_connectors_do_not_claim_systematic_mode(
 
 @pytest.mark.asyncio
 async def test_europe_pmc_adapter_preserves_count_and_continuation() -> None:
-    client = AsyncMock()
-    client.search.return_value = {
-        "results": [{"pmid": "123", "title": "Registry-aware evidence", "authors": ["Ada A"]}],
-        "hit_count": 1_234,
-        "next_cursor": "opaque-next-cursor",
-    }
+    raw_result = SourceAdapterResult(
+        source="europe_pmc",
+        operation="search",
+        items=[{"pmid": "123", "title": "Registry-aware evidence", "authors": ["Ada A"]}],
+        total_count=1_234,
+        cursor="opaque-next-cursor",
+        metadata={"total_available": 1_234},
+        provenance={
+            "logical_query": "melanoma immunotherapy",
+            "physical_query": "melanoma immunotherapy",
+            "provider_mode": "keyword",
+            "query_executed": True,
+        },
+    )
 
     with patch(
-        "pubmed_search.presentation.mcp_server.tools.unified_source_search.get_europe_pmc_client",
-        return_value=client,
-    ):
+        "pubmed_search.infrastructure.sources.unified_broker.search_alternate_source_adapter",
+        new=AsyncMock(return_value=raw_result),
+    ) as adapter_search:
         result = await _search_europe_pmc_adapter(
             "melanoma immunotherapy",
             100,
@@ -173,24 +229,29 @@ async def test_europe_pmc_adapter_preserves_count_and_continuation() -> None:
     assert result.total_count == 1_234
     assert result.metadata["total_available"] == 1_234
     assert result.metadata["continuation_available"] is True
-    assert result.metadata["next_cursor"] == "opaque-next-cursor"
+    assert result.cursor == "opaque-next-cursor"
     assert result.metadata["provider_mode"] == "keyword"
+    adapter_search.assert_awaited_once_with(
+        query="melanoma immunotherapy",
+        source="europe_pmc",
+        limit=100,
+        min_year=2020,
+        max_year=2026,
+    )
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("source", "adapter", "getter", "physical_query"),
+    ("source", "adapter", "physical_query"),
     [
         (
             "scopus",
             _search_scopus_adapter,
-            "pubmed_search.presentation.mcp_server.tools.unified_source_search.get_scopus_client",
             "TITLE-ABS-KEY(melanoma immunotherapy) AND PUBYEAR > 2019 AND PUBYEAR < 2027",
         ),
         (
             "web_of_science",
             _search_web_of_science_adapter,
-            "pubmed_search.presentation.mcp_server.tools.unified_source_search.get_web_of_science_client",
             "TS=(melanoma immunotherapy) AND PY=(2020-2026)",
         ),
     ],
@@ -198,14 +259,20 @@ async def test_europe_pmc_adapter_preserves_count_and_continuation() -> None:
 async def test_licensed_keyword_adapters_preserve_compiled_physical_query(
     source: str,
     adapter,
-    getter: str,
     physical_query: str,
 ) -> None:
-    client = MagicMock()
-    client.compile_query.return_value = physical_query
-    client.search = AsyncMock(return_value=[])
+    raw_result = SourceAdapterResult.empty(source=source, operation="search")
+    raw_result.provenance = {
+        "logical_query": "melanoma immunotherapy",
+        "physical_query": physical_query,
+        "provider_mode": "keyword",
+        "query_executed": True,
+    }
 
-    with patch(getter, return_value=client):
+    with patch(
+        "pubmed_search.infrastructure.sources.unified_broker.search_alternate_source_adapter",
+        new=AsyncMock(return_value=raw_result),
+    ):
         result = await adapter(
             "melanoma immunotherapy",
             25,
@@ -219,23 +286,21 @@ async def test_licensed_keyword_adapters_preserve_compiled_physical_query(
     assert result.metadata["logical_query"] == "melanoma immunotherapy"
     assert result.metadata["physical_query"] == physical_query
     assert result.metadata["provider_mode"] == "keyword"
-    assert result.metadata["continuation_available"] is None
+    assert result.metadata["continuation_available"] is False
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("source", "adapter", "getter", "physical_query"),
+    ("source", "adapter", "physical_query"),
     [
         (
             "scopus",
             _search_scopus_adapter,
-            "pubmed_search.presentation.mcp_server.tools.unified_source_search.get_scopus_client",
             "TITLE-ABS-KEY(private oncology)",
         ),
         (
             "web_of_science",
             _search_web_of_science_adapter,
-            "pubmed_search.presentation.mcp_server.tools.unified_source_search.get_web_of_science_client",
             "TS=(private oncology)",
         ),
     ],
@@ -243,14 +308,29 @@ async def test_licensed_keyword_adapters_preserve_compiled_physical_query(
 async def test_failed_licensed_keyword_adapter_preserves_attempted_physical_query(
     source: str,
     adapter,
-    getter: str,
     physical_query: str,
 ) -> None:
-    client = MagicMock()
-    client.compile_query.return_value = physical_query
-    client.search = AsyncMock(side_effect=APIRequestError(source))
+    raw_result = SourceAdapterResult.failure(
+        source=source,
+        operation="search",
+        error=SourceAdapterError(
+            source=source,
+            operation="search",
+            message=f"{source} search failed safely",
+            kind="unexpected",
+        ),
+    )
+    raw_result.provenance = {
+        "logical_query": "private oncology",
+        "physical_query": physical_query,
+        "provider_mode": "keyword",
+        "query_executed": True,
+    }
 
-    with patch(getter, return_value=client):
+    with patch(
+        "pubmed_search.infrastructure.sources.unified_broker.search_alternate_source_adapter",
+        new=AsyncMock(return_value=raw_result),
+    ):
         result = await adapter(
             "private oncology",
             25,
@@ -274,7 +354,7 @@ async def test_icd_expansion_keeps_pubmed_syntax_out_of_provider_query() -> None
         options="systematic",
     )
     plan = await build_unified_search_plan(request, progress=_ignore_progress)
-    runner = AsyncMock(return_value=([], 0))
+    runner = AsyncMock(return_value=SourceAdapterResult.empty(source="semantic_scholar", operation="search"))
 
     await _search_single_source("semantic_scholar", plan, {"semantic_scholar": runner})
 
@@ -288,11 +368,11 @@ async def test_non_pubmed_filters_are_never_silently_discarded() -> None:
     request = normalize_unified_search_request(
         query="hypertension",
         sources="core",
-        filters="lang:english, sex:female",
+        filters="language:english,sex:female",
         options="shallow",
     )
     plan = await build_unified_search_plan(request, progress=_ignore_progress)
-    runner = AsyncMock(return_value=([], 0))
+    runner = AsyncMock(return_value=SourceAdapterResult.empty(source="core", operation="search"))
 
     result = await _search_single_source("core", plan, {"core": runner})
 
@@ -320,7 +400,7 @@ async def test_openalex_native_semantic_adapter_retains_mode_provenance() -> Non
     )
 
     with patch(
-        "pubmed_search.presentation.mcp_server.tools.unified_source_search.get_openalex_client",
+        "pubmed_search.infrastructure.sources.unified_broker.get_openalex_client",
         return_value=client,
     ):
         result = await _search_openalex_adapter(
@@ -361,7 +441,7 @@ async def test_semantic_scholar_systematic_adapter_uses_bounded_bulk() -> None:
     )
 
     with patch(
-        "pubmed_search.presentation.mcp_server.tools.unified_source_search.get_semantic_scholar_client",
+        "pubmed_search.infrastructure.sources.unified_broker.get_semantic_scholar_client",
         return_value=client,
     ):
         result = await _search_semantic_scholar_adapter(
@@ -393,7 +473,7 @@ async def test_semantic_scholar_systematic_adapter_uses_bounded_bulk() -> None:
 async def test_s2_systematic_field_tags_fail_closed_before_network() -> None:
     client = AsyncMock()
     with patch(
-        "pubmed_search.presentation.mcp_server.tools.unified_source_search.get_semantic_scholar_client",
+        "pubmed_search.infrastructure.sources.unified_broker.get_semantic_scholar_client",
         return_value=client,
     ):
         with pytest.raises(ValueError, match="field tags"):

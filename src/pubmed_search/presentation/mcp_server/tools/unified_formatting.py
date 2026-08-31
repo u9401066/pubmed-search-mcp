@@ -10,12 +10,20 @@ Extracted from unified.py to keep each module under 400 lines.
 from __future__ import annotations
 
 import logging
+import re
 from typing import TYPE_CHECKING, Any, Literal, cast
 
+from pubmed_search.application.unified.clinical_trials import (
+    ClinicalTrialsCoverage,
+    ClinicalTrialsFormatError,
+    clinical_trials_error_payload,
+)
 from pubmed_search.infrastructure.sources.openurl import (
     get_openurl_config,
     get_openurl_link,
 )
+from pubmed_search.shared.markdown import escape_markdown_text as _escape_markdown_text
+from pubmed_search.shared.markdown import safe_markdown_url as _safe_markdown_url
 
 from .agent_output import (
     OutputFormat,
@@ -36,14 +44,14 @@ if TYPE_CHECKING:
     from pubmed_search.application.search.ranking_algorithms import SourceDisagreement
     from pubmed_search.application.search.reproducibility import ReproducibilityScore
     from pubmed_search.application.search.result_aggregator import AggregationStats
+    from pubmed_search.application.unified.helpers import RelaxationResult, SearchDepthMetrics
     from pubmed_search.domain.entities.article import UnifiedArticle
-
-    from .unified_helpers import RelaxationResult, SearchDepthMetrics
 
 logger = logging.getLogger(__name__)
 DEFAULT_STRUCTURED_RESPONSE_MAX_CHARS = 500_000
 TINY_STRUCTURED_RESPONSE_CAP_CHARS = 100
 PRETRUNCATE_STRUCTURED_RESPONSE_CAP_CHARS = 1_000
+_TOOL_ARGUMENT_CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 
 def _serialize_source_counts(
@@ -70,29 +78,81 @@ def _format_source_warnings(source_errors: list[dict[str, Any]] | None) -> str |
 
     warning_parts = []
     for error in source_errors:
-        source = error.get("source", "unknown")
-        status = error.get("status") or error.get("kind") or "error"
+        source = _escape_markdown_text(error.get("source", "unknown"))
+        status = _escape_markdown_text(error.get("status") or error.get("kind") or "error")
         status_code = error.get("status_code")
         suggestion = error.get("suggestion")
         message = f"{source} {status}"
         if status_code:
             message += f" (HTTP {status_code})"
         if suggestion:
-            message += f": {suggestion}"
+            message += f": {_escape_markdown_text(suggestion)}"
         warning_parts.append(message)
     return f"**Source warnings**: {'; '.join(warning_parts)}"
 
 
+def _format_clinical_trials_coverage(coverage: ClinicalTrialsCoverage | None) -> str | None:
+    """Render a concise adjunct outcome that distinguishes empty from failure."""
+    if coverage is None or not coverage.requested:
+        return None
+    status = coverage.status
+    if status == "complete":
+        outcome = f"complete; {coverage.returned} related trial(s)"
+    elif status == "empty":
+        outcome = "complete; 0 related trials"
+    elif status == "timeout":
+        outcome = "incomplete; request timed out"
+    elif status == "format_error":
+        outcome = f"incomplete; {coverage.returned} trial(s) retrieved but rendering failed"
+    elif status == "pending":
+        outcome = "incomplete; request did not finish"
+    else:
+        outcome = "incomplete; request failed"
+    return f"**ClinicalTrials.gov adjunct**: {outcome}"
+
+
+def _prepare_clinical_trials_section(
+    *,
+    include_trials: bool,
+    prefetched_trials: list[dict[str, Any]] | None,
+    coverage: ClinicalTrialsCoverage | None,
+    source_errors: list[dict[str, Any]],
+) -> str:
+    """Render prevalidated trials and surface any formatting failure."""
+    if not include_trials or coverage is None or coverage.retrieval_status != "complete":
+        return ""
+
+    def _validated_section(value: object) -> str:
+        if not isinstance(value, str) or not value.strip():
+            raise ClinicalTrialsFormatError
+        return value
+
+    try:
+        from pubmed_search.infrastructure.sources.clinical_trials import format_trials_section
+
+        section = _validated_section(format_trials_section(list(prefetched_trials or []), max_display=3))
+        coverage.record_format_success()
+        return section
+    except Exception as exc:
+        coverage.record_format_failure(exc)
+        error_payload = clinical_trials_error_payload(coverage)
+        if error_payload is not None and error_payload not in source_errors:
+            source_errors.append(error_payload)
+        logger.debug("Clinical trials rendering failed (%s)", type(exc).__name__)
+        return ""
+
+
 def _escape_tool_argument(value: str) -> str:
     """Escape a value for display inside example MCP tool calls."""
-    return value.replace("\\", "\\\\").replace('"', '\\"')
+    normalized = _TOOL_ARGUMENT_CONTROL_RE.sub(" ", value).replace("\r\n", "\n").replace("\r", "\n")
+    escaped = normalized.replace("\\", "\\\\").replace('"', '\\"').replace("`", "\\u0060")
+    return escaped.replace("\n", "\\n")
 
 
 def _build_next_actions(
     articles: list[UnifiedArticle],
     analysis: AnalyzedQuery,
     source_rows: list[SourceCountRow],
-    research_context_preview: str | None,
     structured_output_format: Literal["json", "toon"] = "json",
 ) -> list[dict[str, str]]:
     """Infer pragmatic next-tool suggestions from current result shape."""
@@ -157,12 +217,18 @@ def _build_next_actions(
         add_action(
             "get_article_figures",
             "A PMC-backed result is available; extract figures first when the next decision depends on evidence visuals.",
-            f'get_article_figures(identifier="{lead_pmc}", output_format="{structured_output_format}")',
+            (
+                f'get_article_figures(source={{"kind":"pmcid","value":"{lead_pmc}"}}, '
+                f'output_format="{structured_output_format}")'
+            ),
         )
         add_action(
             "get_fulltext",
             "Retrieve structured fulltext with inline figures from the PMC-backed lead article.",
-            (f'get_fulltext(pmcid="{lead_pmc}", include_figures=True, output_format="{structured_output_format}")'),
+            (
+                f'get_fulltext(source={{"kind":"pmcid","value":"{lead_pmc}"}}, include_figures=True, '
+                f'output_format="{structured_output_format}")'
+            ),
         )
 
     if lead_article and getattr(lead_article, "pmid", None):
@@ -173,7 +239,7 @@ def _build_next_actions(
             f'find_related_articles(pmid="{lead_pmid}", limit=10)',
         )
 
-    if articles and not research_context_preview and any(getattr(article, "pmid", None) for article in articles):
+    if articles and any(getattr(article, "pmid", None) for article in articles):
         add_action(
             "build_research_chronicle",
             "You have PMID-backed results; build a persistent chronicle before moving to export or citation chasing.",
@@ -200,7 +266,6 @@ def _build_next_actions(
 def _build_unified_section_provenance(
     source_rows: list[SourceCountRow],
     *,
-    include_research_context: bool,
     include_deep_search: bool,
     include_relaxation: bool,
     include_source_disagreement: bool,
@@ -275,14 +340,6 @@ def _build_unified_section_provenance(
             note="Reproducibility grades are computed locally from query formality, coverage, and failure signals.",
             upstream_sources=upstream_sources,
         )
-    if include_research_context:
-        provenance["research_context"] = make_section_provenance(
-            surfacing_source="pubmed-search-mcp",
-            canonical_host="pubmed-search-mcp",
-            provenance="derived",
-            note="Research context is synthesized locally from PMID-backed timeline and tree builders.",
-        )
-
     return provenance
 
 
@@ -318,6 +375,38 @@ def _format_counts_first_section(
     return output_parts
 
 
+def _relaxation_step_status_text(step: Any) -> str:
+    """Render an attempt without treating provider failure as zero results."""
+    if step.status == "ok":
+        return f"✅ {step.result_count} results"
+    if step.status == "empty":
+        return "❌ 0 results"
+    if step.status == "error":
+        kind = getattr(step.error, "kind", "unexpected")
+        return f"⚠️ request failed ({_escape_markdown_text(kind)})"
+    return "⚠️ not completed"
+
+
+def _relaxation_step_payload(step: Any) -> dict[str, Any]:
+    """Serialize one relaxation attempt with bounded failure provenance."""
+    payload: dict[str, Any] = {
+        "level": step.level,
+        "action": step.action,
+        "description": step.description,
+        "query": step.query,
+        "result_count": step.result_count,
+        "status": step.status,
+    }
+    if step.error is not None:
+        payload["error"] = {
+            "kind": step.error.kind,
+            "message": step.error.message,
+            "retryable": step.error.retryable,
+            "status_code": step.error.status_code,
+        }
+    return payload
+
+
 # ============================================================================
 # Result Formatting
 # ============================================================================
@@ -331,19 +420,21 @@ async def _format_unified_results(
     pubmed_total_count: int | None = None,
     icd_matches: list | None = None,
     include_trials: bool = True,
-    include_similarity_scores: bool = True,
+    include_rank_scores: bool = True,
     original_query: str = "",
     enhanced_entities: list[str] | None = None,
     relaxation_result: RelaxationResult | None = None,
     deep_search_metrics: SearchDepthMetrics | None = None,
-    prefetched_trials: list | None = None,
+    prefetched_trials: list[dict[str, Any]] | None = None,
+    clinical_trials_coverage: ClinicalTrialsCoverage | None = None,
     source_api_counts: dict[str, tuple[int, int | None]] | None = None,
     source_disagreement: SourceDisagreement | None = None,
     reproducibility_score: ReproducibilityScore | None = None,
     source_errors: list[dict[str, Any]] | None = None,
     source_metadata: dict[str, dict[str, Any]] | None = None,
-    research_context_preview: str | None = None,
+    enrichment_metadata: dict[str, Any] | None = None,
     counts_first: bool = False,
+    result_filter_counts: Mapping[str, int] | None = None,
 ) -> str:
     """Format unified search results for MCP response.
 
@@ -353,26 +444,39 @@ async def _format_unified_results(
             - total_available: how many total matches the API reports (None if unknown)
     """
     output_parts: list[str] = []
+    mutable_source_errors = source_errors if source_errors is not None else []
+    clinical_trials_section = _prepare_clinical_trials_section(
+        include_trials=include_trials,
+        prefetched_trials=prefetched_trials,
+        coverage=clinical_trials_coverage,
+        source_errors=mutable_source_errors,
+    )
     source_rows = _serialize_source_counts(source_api_counts, stats)
-    next_actions = _build_next_actions(articles, analysis, source_rows, research_context_preview)
+    next_actions = _build_next_actions(articles, analysis, source_rows)
 
     # Header with analysis summary
     if include_analysis:
         output_parts.append("## 🔍 Unified Search Results\n")
-        output_parts.append(f"**Query**: {analysis.original_query}")
+        output_parts.append(f"**Query**: {_escape_markdown_text(analysis.original_query)}")
         output_parts.append(f"**Analysis**: {analysis.complexity.value} complexity, {analysis.intent.value} intent")
         if analysis.pico:
-            pico_str = ", ".join(f"{k}={v}" for k, v in analysis.pico.to_dict().items() if v)
+            pico_str = ", ".join(
+                f"{_escape_markdown_text(k)}={_escape_markdown_text(v)}"
+                for k, v in analysis.pico.to_dict().items()
+                if v
+            )
             output_parts.append(f"**PICO**: {pico_str}")
 
         # ICD code expansion info
         if icd_matches:
-            icd_info = ", ".join([f"{m['code']}→{m['mesh']}" for m in icd_matches])
+            icd_info = ", ".join(
+                f"{_escape_markdown_text(m['code'])}→{_escape_markdown_text(m['mesh'])}" for m in icd_matches
+            )
             output_parts.append(f"**ICD Expansion**: {icd_info}")
 
         # Phase 3: Show PubTator3 resolved entities
         if enhanced_entities:
-            entity_str = ", ".join(enhanced_entities[:5])  # Show max 5
+            entity_str = ", ".join(_escape_markdown_text(entity) for entity in enhanced_entities[:5])  # Show max 5
             if len(enhanced_entities) > 5:
                 entity_str += f" (+{len(enhanced_entities) - 5} more)"
             output_parts.append(f"**🧬 Entities**: {entity_str}")
@@ -383,7 +487,7 @@ async def _format_unified_results(
                 f"**🔬 深度搜索**: "
                 f"Depth Score {deep_search_metrics.depth_score:.0f}/100 | "
                 f"{deep_search_metrics.strategies_executed}/{deep_search_metrics.strategies_generated} 策略執行 | "
-                f"估計召回率 {deep_search_metrics.estimated_recall:.0%}"
+                f"啟發式召回代理 {deep_search_metrics.heuristic_recall_proxy:.0%}（非已驗證 recall）"
             )
 
         # Per-source result counts (critical for agent decision-making)
@@ -410,20 +514,41 @@ async def _format_unified_results(
             ]
             output_parts.append(f"**Retrieval modes**: {', '.join(modes)}")
 
+        if enrichment_metadata:
+            output_parts.append(
+                "**Enrichment**: "
+                f"{enrichment_metadata.get('status', 'not_requested')} | "
+                f"attempted {int(enrichment_metadata.get('attempted', 0) or 0)}, "
+                f"succeeded {int(enrichment_metadata.get('succeeded', 0) or 0)}, "
+                f"skipped {int(enrichment_metadata.get('skipped', 0) or 0)}, "
+                f"failed {int(enrichment_metadata.get('failed', 0) or 0)}"
+            )
+
         # Show total count info with PubMed total
-        results_str = f"{stats.unique_articles} unique ({stats.duplicates_removed} duplicates removed)"
-        if pubmed_total_count is not None and pubmed_total_count > stats.unique_articles:
-            results_str = f"📊 返回 **{stats.unique_articles}** 篇 (PubMed 總共 **{pubmed_total_count}** 篇符合) | {stats.duplicates_removed} 去重"
+        returned_count = int((result_filter_counts or {}).get("returned", len(articles)))
+        eligible_count = int((result_filter_counts or {}).get("eligible_unique", stats.unique_articles))
+        excluded_count = int((result_filter_counts or {}).get("excluded_detected_preprints", 0))
+        results_str = (
+            f"{returned_count} returned from {eligible_count} eligible unique "
+            f"({stats.duplicates_removed} duplicates removed)"
+        )
+        if pubmed_total_count is not None and pubmed_total_count > eligible_count:
+            results_str += f"; PubMed reports {pubmed_total_count} total matches"
+        if excluded_count:
+            results_str += (
+                f"; {excluded_count} detected preprints excluded by heuristic "
+                "(remaining records are not thereby proven peer reviewed)"
+            )
         output_parts.append(f"**Results**: {results_str}")
         output_parts.append("")
 
-    source_warning_text = _format_source_warnings(source_errors)
+    source_warning_text = _format_source_warnings(mutable_source_errors)
     if source_warning_text:
         output_parts.append(source_warning_text)
         output_parts.append("")
 
     capability_warnings = [
-        f"- **{source}**: {warning}"
+        f"- **{_escape_markdown_text(source)}**: {_escape_markdown_text(warning)}"
         for source, metadata in (source_metadata or {}).items()
         for warning in metadata.get("warnings", [])
         if isinstance(warning, str) and warning
@@ -431,6 +556,11 @@ async def _format_unified_results(
     if capability_warnings:
         output_parts.append("### ⚠️ Retrieval capability notes\n")
         output_parts.extend(capability_warnings)
+        output_parts.append("")
+
+    clinical_trials_coverage_text = _format_clinical_trials_coverage(clinical_trials_coverage)
+    if clinical_trials_coverage_text:
+        output_parts.append(clinical_trials_coverage_text)
         output_parts.append("")
 
     if counts_first and source_rows:
@@ -441,32 +571,46 @@ async def _format_unified_results(
         if relaxation_result.successful_step:
             step = relaxation_result.successful_step
             output_parts.append("### ⚠️ 搜尋自動放寬 (Auto-Relaxed)\n")
-            output_parts.append(f"原始查詢 `{relaxation_result.original_query}` 返回 **0** 筆結果。")
-            output_parts.append(f"已自動放寬至 **Level {step.level}**: {step.description}")
-            output_parts.append(f"放寬後查詢: `{relaxation_result.relaxed_query}`")
+            output_parts.append(
+                f"原始查詢：{_escape_markdown_text(relaxation_result.original_query)}；返回 **0** 筆結果。"
+            )
+            output_parts.append(f"已自動放寬至 **Level {step.level}**: {_escape_markdown_text(step.description)}")
+            output_parts.append(f"放寬後查詢：{_escape_markdown_text(relaxation_result.relaxed_query)}")
 
             # Show all attempted steps for transparency
             if len(relaxation_result.steps_tried) > 1:
                 output_parts.append("\n**放寬嘗試過程** (由窄到寬):")
                 for s in relaxation_result.steps_tried:
-                    status = "✅" if s == relaxation_result.successful_step else "❌ 0 results"
-                    output_parts.append(f"  - Level {s.level} ({s.action}): {s.description} → {status}")
+                    status = _relaxation_step_status_text(s)
+                    output_parts.append(
+                        f"  - Level {s.level} ({_escape_markdown_text(s.action)}): "
+                        f"{_escape_markdown_text(s.description)} → {status}"
+                    )
             output_parts.append("")
         else:
-            # All steps tried, still 0
-            output_parts.append("### ⚠️ 搜尋自動放寬失敗\n")
-            output_parts.append(f"原始查詢 `{relaxation_result.original_query}` 返回 **0** 筆結果。")
-            output_parts.append("已嘗試所有放寬策略，仍無結果。")
+            output_parts.append("### ⚠️ 搜尋自動放寬未取得結果\n")
+            output_parts.append(
+                f"原始查詢：{_escape_markdown_text(relaxation_result.original_query)}；返回 **0** 筆結果。"
+            )
+            if relaxation_result.incomplete:
+                output_parts.append("部分放寬請求失敗，因此無法宣稱所有較寬查詢皆為零結果；目前涵蓋範圍不完整。")
+            else:
+                output_parts.append("所有已規劃的放寬查詢均成功執行，且皆為零結果。")
             if relaxation_result.steps_tried:
                 output_parts.append("\n**已嘗試:**")
                 for s in relaxation_result.steps_tried:
-                    output_parts.append(f"  - Level {s.level}: {s.description} → ❌ 0 results")
+                    output_parts.append(
+                        f"  - Level {s.level}: {_escape_markdown_text(s.description)} → "
+                        f"{_relaxation_step_status_text(s)}"
+                    )
             output_parts.append("\n**建議:** 嘗試不同的搜尋詞，或使用 `generate_search_queries()` 取得 MeSH 同義詞。")
             output_parts.append("")
 
     # Articles
     if not articles:
         output_parts.append("No results found.")
+        if clinical_trials_section:
+            output_parts.append(clinical_trials_section)
         return "\n".join(output_parts)
 
     output_parts.append("---\n")
@@ -474,18 +618,18 @@ async def _format_unified_results(
     for i, article in enumerate(articles, 1):
         # Article header
         score_str = (
-            f" (score: {article.ranking_score:.2f})" if include_similarity_scores and article.ranking_score else ""
+            f" (ranking score: {article.ranking_score:.2f})" if include_rank_scores and article.ranking_score else ""
         )
-        output_parts.append(f"### {i}. {article.title}{score_str}")
+        output_parts.append(f"### {i}. {_escape_markdown_text(article.title)}{score_str}")
 
         # Identifiers
         ids = []
         if article.pmid:
-            ids.append(f"PMID: {article.pmid}")
+            ids.append(f"PMID: {_escape_markdown_text(article.pmid)}")
         if article.doi:
-            ids.append(f"DOI: {article.doi}")
+            ids.append(f"DOI: {_escape_markdown_text(article.doi)}")
         if article.pmc:
-            ids.append(f"PMC: {article.pmc}")
+            ids.append(f"PMC: {_escape_markdown_text(article.pmc)}")
         if ids:
             output_parts.append(" | ".join(ids))
 
@@ -506,7 +650,7 @@ async def _format_unified_results(
             output_parts.append(f"**Type**: {badge}")
 
         # Authors and journal
-        output_parts.append(f"**Authors**: {article.author_string}")
+        output_parts.append(f"**Authors**: {_escape_markdown_text(article.author_string)}")
         if article.journal:
             journal_str = article.journal
             if article.year:
@@ -517,15 +661,16 @@ async def _format_unified_results(
                     journal_str += f"({article.issue})"
             if article.pages:
                 journal_str += f": {article.pages}"
-            output_parts.append(f"**Journal**: {journal_str}")
+            output_parts.append(f"**Journal**: {_escape_markdown_text(journal_str)}")
 
         # Open Access status
         if article.has_open_access:
             oa_link = article.best_oa_link
-            if oa_link:
-                output_parts.append(f"**OA**: ✅ [{article.oa_status.value}]({oa_link.url})")
+            safe_oa_url = _safe_markdown_url(oa_link.url) if oa_link else None
+            if safe_oa_url:
+                output_parts.append(f"**OA**: ✅ [{_escape_markdown_text(article.oa_status.value)}]({safe_oa_url})")
             else:
-                output_parts.append(f"**OA**: ✅ {article.oa_status.value}")
+                output_parts.append(f"**OA**: ✅ {_escape_markdown_text(article.oa_status.value)}")
 
         # Institutional access link (OpenURL)
         openurl_config = get_openurl_config()
@@ -542,8 +687,9 @@ async def _format_unified_results(
                     "pages": article.pages,
                 }
             )
-            if openurl:
-                output_parts.append(f"**Library**: 🏛️ [Find via Library]({openurl})")
+            safe_openurl = _safe_markdown_url(openurl)
+            if safe_openurl:
+                output_parts.append(f"**Library**: 🏛️ [Find via Library]({safe_openurl})")
 
         # Citation metrics
         if article.citation_metrics:
@@ -581,22 +727,21 @@ async def _format_unified_results(
             if jm_parts:
                 output_parts.append(f"**Journal**: {', '.join(jm_parts)}")
 
-        # Similarity score
-        if include_similarity_scores and article.similarity_score is not None:
-            sim_str = f"**Relevance**: {article.similarity_score:.0%}"
-            if article.similarity_source:
-                sim_str += f" ({article.similarity_source})"
-            output_parts.append(sim_str)
+        if include_rank_scores and article.rank_percentile is not None:
+            percentile = f"**Rank percentile**: {article.rank_percentile:.0%}"
+            if article.rank_percentile_source:
+                percentile += f" ({_escape_markdown_text(article.rank_percentile_source)})"
+            output_parts.append(percentile)
 
         # Abstract (truncated)
         if article.abstract:
             abstract = article.abstract
             if len(abstract) > 300:
                 abstract = abstract[:300] + "..."
-            output_parts.append(f"\n{abstract}")
+            output_parts.append(f"\n&#8203;{_escape_markdown_text(abstract)}")
 
         # Sources
-        sources = [s.source for s in article.sources]
+        sources = [_escape_markdown_text(s.source) for s in article.sources]
         output_parts.append(f"\n*Sources: {', '.join(sources)}*")
         output_parts.append("")
 
@@ -616,8 +761,8 @@ async def _format_unified_results(
             unique_parts = [f"{src}: {cnt}" for src, cnt in source_disagreement.per_source_unique.items() if cnt > 0]
             if unique_parts:
                 output_parts.append(f"**Exclusive findings**: {', '.join(unique_parts)}")
-        if source_disagreement.rank_correlation:
-            corr_parts = [f"{pair}: {val:.2f}" for pair, val in source_disagreement.rank_correlation.items()]
+        if source_disagreement.pairwise_overlap:
+            corr_parts = [f"{pair}: {val:.2f}" for pair, val in source_disagreement.pairwise_overlap.items()]
             output_parts.append(f"**Pairwise overlap**: {', '.join(corr_parts)}")
         output_parts.append("")
 
@@ -641,36 +786,17 @@ async def _format_unified_results(
             output_parts.append(f"\n**⚠️ Failed sources**: {', '.join(rs.sources_failed)}")
         output_parts.append("")
 
-    # === Research Context Graph Preview ===
-    if research_context_preview:
-        output_parts.append("\n---")
-        output_parts.append("\n## 🌳 Research Context Graph\n")
-        output_parts.append(
-            "This preview is generated from PMID-backed results in the current ranked set. "
-            "It shows thematic branches rather than the full cross-source knowledge graph."
-        )
-        output_parts.append("")
-        output_parts.append(research_context_preview)
-        output_parts.append("")
-
     # === Related Clinical Trials (use pre-fetched results) ===
     # Preprints are now first-class UnifiedArticle entries in the main results
     # list (article_type=PREPRINT); no separate section needed.
 
-    if include_trials and prefetched_trials:
-        try:
-            from pubmed_search.infrastructure.sources.clinical_trials import (
-                format_trials_section,
-            )
-
-            output_parts.append(format_trials_section(prefetched_trials, max_display=3))
-        except Exception as exc:
-            logger.debug("Clinical trials search skipped (%s)", type(exc).__name__)
+    if clinical_trials_section:
+        output_parts.append(clinical_trials_section)
 
     return "\n".join(output_parts)
 
 
-def _compact_article_payload(article: UnifiedArticle, *, include_scores: bool = True) -> dict[str, Any]:
+def _compact_article_payload(article: UnifiedArticle, *, include_rank_scores: bool = True) -> dict[str, Any]:
     """Build a small article preview for agent-facing structured output."""
     best_oa_link = article.best_oa_link
     publication_date = article.publication_date.isoformat() if article.publication_date else None
@@ -688,11 +814,11 @@ def _compact_article_payload(article: UnifiedArticle, *, include_scores: bool = 
         "pdf_available": bool(best_oa_link and best_oa_link.is_pdf),
         "pdf_url": best_oa_link.url if best_oa_link and best_oa_link.is_pdf else None,
     }
-    if include_scores:
+    if include_rank_scores:
         if article.ranking_score is not None:
-            payload["score"] = round(article.ranking_score, 4)
-        elif article.similarity_score is not None:
-            payload["score"] = round(article.similarity_score, 4)
+            payload["ranking_score"] = round(article.ranking_score, 4)
+        if article.rank_percentile is not None:
+            payload["rank_percentile"] = round(article.rank_percentile, 4)
     return payload
 
 
@@ -700,15 +826,17 @@ def _article_payload(
     article: UnifiedArticle,
     *,
     compact_output: bool,
-    include_scores: bool,
+    include_rank_scores: bool,
 ) -> dict[str, Any]:
     if compact_output:
-        return _compact_article_payload(article, include_scores=include_scores)
+        return _compact_article_payload(article, include_rank_scores=include_rank_scores)
 
     payload = article.to_dict()
-    if not include_scores:
+    if not include_rank_scores:
         payload.pop("_ranking_score", None)
-        payload.pop("similarity", None)
+        payload.pop("rank_percentile", None)
+        payload.pop("rank_percentile_source", None)
+        payload.pop("rank_percentile_details", None)
     return payload
 
 
@@ -743,12 +871,15 @@ def _serialize_truncated_response_payload(
         "result_id": "last",
         "returned_articles": preview_count,
         "total_available": total_available,
-        "articles": [_compact_article_payload(article, include_scores=False) for article in articles[:preview_count]],
+        "articles": [
+            _compact_article_payload(article, include_rank_scores=False) for article in articles[:preview_count]
+        ],
         "source_counts": payload.get("source_counts", []),
     }
     if include_next_tools:
         truncated_payload["next"] = (
-            "Use get_session_pmids(search_index=-1) or get_cached_article(pmid=...) to retrieve cached details."
+            'Use read_session(request={"action":"pmids","search_index":-1}) or '
+            'read_session(request={"action":"article","pmid":"..."}) to retrieve cached details.'
         )
     if payload.get("artifact"):
         truncated_payload["artifact"] = payload["artifact"]
@@ -758,6 +889,10 @@ def _serialize_truncated_response_payload(
         truncated_payload["artifact_summary"] = payload["artifact_summary"]
     if payload.get("source_errors"):
         truncated_payload["source_errors"] = payload["source_errors"]
+    if payload.get("clinical_trials"):
+        truncated_payload["clinical_trials"] = payload["clinical_trials"]
+    if payload.get("enrichment"):
+        truncated_payload["enrichment"] = payload["enrichment"]
     if payload.get("search_status"):
         truncated_payload["search_status"] = payload["search_status"]
     if payload.get("search_run"):
@@ -768,7 +903,7 @@ def _serialize_truncated_response_payload(
         preview_count -= 1
         truncated_payload["returned_articles"] = preview_count
         truncated_payload["articles"] = [
-            _compact_article_payload(article, include_scores=False) for article in articles[:preview_count]
+            _compact_article_payload(article, include_rank_scores=False) for article in articles[:preview_count]
         ]
         capped = serialize_structured_payload(truncated_payload, output_format)
 
@@ -792,6 +927,12 @@ def _serialize_truncated_response_payload(
                 for error in payload["source_errors"]
                 if isinstance(error, dict)
             ]
+        if payload.get("clinical_trials"):
+            clinical_trials = payload["clinical_trials"]
+            if isinstance(clinical_trials, dict):
+                minimal_payload["clinical_trials"] = {
+                    "coverage": clinical_trials.get("coverage"),
+                }
         if payload.get("artifact"):
             artifact = payload["artifact"]
             candidate_artifacts = [
@@ -968,20 +1109,23 @@ def _format_as_json(
     source_api_counts: dict[str, tuple[int, int | None]] | None = None,
     source_disagreement: SourceDisagreement | None = None,
     reproducibility_score: ReproducibilityScore | None = None,
-    research_context: dict | None = None,
     source_errors: list[dict[str, Any]] | None = None,
     source_metadata: dict[str, dict[str, Any]] | None = None,
+    enrichment_metadata: dict[str, Any] | None = None,
     source_statuses: Mapping[str, str] | None = None,
     counts_first: bool = False,
     compact_output: bool = False,
     include_analysis: bool = True,
-    include_similarity_scores: bool = True,
+    include_rank_scores: bool = True,
     include_next_tools: bool = True,
     include_section_provenance: bool = True,
     max_response_chars: int | None = DEFAULT_STRUCTURED_RESPONSE_MAX_CHARS,
     output_format: OutputFormat = "json",
     artifact_manifest: dict[str, Any] | None = None,
     search_run_handoff: dict[str, Any] | None = None,
+    result_filter_counts: Mapping[str, int] | None = None,
+    clinical_trials_coverage: ClinicalTrialsCoverage | None = None,
+    prefetched_trials: list[dict[str, Any]] | None = None,
 ) -> str:
     """Format results as JSON or TOON for programmatic access."""
     source_rows = _serialize_source_counts(source_api_counts, stats)
@@ -993,6 +1137,14 @@ def _format_as_json(
         source_metadata=source_metadata,
         source_statuses=source_statuses,
     )
+    clinical_trials_payload = (
+        {
+            "coverage": clinical_trials_coverage.to_dict(),
+            "trials": list(prefetched_trials or []),
+        }
+        if clinical_trials_coverage is not None
+        else None
+    )
     if _should_pretruncate_structured_response(
         articles,
         max_response_chars=max_response_chars,
@@ -1002,11 +1154,16 @@ def _format_as_json(
             "tool": "unified_search",
             "source_counts": source_rows,
             "search_status": search_status,
+            "result_filter_counts": dict(result_filter_counts or {}),
         }
         if source_errors:
             cap_context["source_errors"] = source_errors
+        if clinical_trials_payload is not None:
+            cap_context["clinical_trials"] = clinical_trials_payload
         if source_metadata:
             cap_context["source_metadata"] = source_metadata
+        if enrichment_metadata:
+            cap_context["enrichment"] = enrichment_metadata
         if artifact_manifest:
             cap_context["artifact"] = artifact_manifest
         if artifact_summary:
@@ -1023,17 +1180,18 @@ def _format_as_json(
         )
 
     structured_output_format = preferred_structured_output_format(output_format)
-    next_actions = _build_next_actions(articles, analysis, source_rows, None, structured_output_format)
+    next_actions = _build_next_actions(articles, analysis, source_rows, structured_output_format)
     next_tools, next_commands = finalize_next_tools(next_actions)
     result = {
         "tool": "unified_search",
         "statistics": stats.to_dict(),
         "articles": [
-            _article_payload(a, compact_output=compact_output, include_scores=include_similarity_scores)
+            _article_payload(a, compact_output=compact_output, include_rank_scores=include_rank_scores)
             for a in articles
         ],
         "source_counts": source_rows,
         "search_status": search_status,
+        "result_filter_counts": dict(result_filter_counts or {}),
     }
     if include_analysis:
         result["analysis"] = analysis.to_dict()
@@ -1045,6 +1203,10 @@ def _format_as_json(
         result["source_errors"] = source_errors
     if source_metadata:
         result["source_metadata"] = source_metadata
+    if enrichment_metadata:
+        result["enrichment"] = enrichment_metadata
+    if clinical_trials_payload is not None:
+        result["clinical_trials"] = clinical_trials_payload
 
     if artifact_manifest:
         result["artifact"] = artifact_manifest
@@ -1064,8 +1226,9 @@ def _format_as_json(
             "strategies_generated": deep_search_metrics.strategies_generated,
             "strategies_executed": deep_search_metrics.strategies_executed,
             "strategies_with_results": deep_search_metrics.strategies_with_results,
-            "estimated_recall": deep_search_metrics.estimated_recall,
-            "estimated_precision": deep_search_metrics.estimated_precision,
+            "heuristic_recall_proxy": deep_search_metrics.heuristic_recall_proxy,
+            "heuristic_precision_proxy": deep_search_metrics.heuristic_precision_proxy,
+            "proxy_note": "Heuristic proxies only; not validated recall or precision estimates.",
             "strategy_results": [
                 {
                     "name": sr.strategy_name,
@@ -1082,37 +1245,25 @@ def _format_as_json(
         step = relaxation_result.successful_step
         result["relaxation"] = {
             "was_relaxed": True,
+            "outcome": "partial_success" if relaxation_result.incomplete else "success",
             "original_query": relaxation_result.original_query,
             "relaxed_query": relaxation_result.relaxed_query,
             "successful_level": step.level,
             "successful_action": step.action,
             "description": step.description,
-            "steps_tried": [
-                {
-                    "level": s.level,
-                    "action": s.action,
-                    "description": s.description,
-                    "query": s.query,
-                    "result_count": s.result_count,
-                }
-                for s in relaxation_result.steps_tried
-            ],
+            "steps_tried": [_relaxation_step_payload(s) for s in relaxation_result.steps_tried],
         }
     elif relaxation_result and not relaxation_result.successful_step:
         result["relaxation"] = {
             "was_relaxed": False,
             "original_query": relaxation_result.original_query,
-            "note": "All relaxation levels tried, still 0 results",
-            "steps_tried": [
-                {
-                    "level": s.level,
-                    "action": s.action,
-                    "description": s.description,
-                    "query": s.query,
-                    "result_count": s.result_count,
-                }
-                for s in relaxation_result.steps_tried
-            ],
+            "outcome": "incomplete" if relaxation_result.incomplete else "empty",
+            "note": (
+                "Some relaxation requests failed; broader-query completeness is unknown"
+                if relaxation_result.incomplete
+                else "All planned relaxation queries completed with 0 results"
+            ),
+            "steps_tried": [_relaxation_step_payload(s) for s in relaxation_result.steps_tried],
         }
 
     # Source disagreement analysis
@@ -1122,9 +1273,6 @@ def _format_as_json(
     # Reproducibility score
     if include_analysis and reproducibility_score:
         result["reproducibility"] = reproducibility_score.to_dict()
-
-    if research_context:
-        result["research_context"] = research_context
 
     if counts_first:
         orientation: dict[str, Any] = {
@@ -1142,7 +1290,6 @@ def _format_as_json(
     if include_section_provenance:
         result["section_provenance"] = _build_unified_section_provenance(
             source_rows,
-            include_research_context=research_context is not None,
             include_deep_search=include_analysis and deep_search_metrics is not None,
             include_relaxation=relaxation_result is not None,
             include_source_disagreement=include_analysis and source_disagreement is not None,

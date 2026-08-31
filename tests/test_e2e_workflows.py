@@ -11,6 +11,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from pubmed_search.application.search.source_models import SourceSearchPage
+
 # ============================================================
 # E2E Test Fixtures
 # ============================================================
@@ -51,11 +53,16 @@ def complete_article_data():
 
 @pytest.fixture
 def mock_client_full(complete_article_data):
-    """Fully mocked PubMedClient for E2E tests."""
+    """Fully mocked literature source for E2E tests."""
     client = AsyncMock()  # AsyncMock to support await calls
 
-    # Mock search
-    client.search.return_value = [complete_article_data]
+    # Mock the sole typed PubMed search contract.
+    client.search_page.return_value = SourceSearchPage(
+        source="pubmed",
+        items=[complete_article_data],
+        total=1,
+        query="mock query",
+    )
 
     # Mock fetch_details
     client.fetch_details.return_value = [complete_article_data]
@@ -90,7 +97,7 @@ class TestQuickSearchWorkflow:
         3. Reads titles and abstracts
         """
         # Step 1: Search
-        results = await mock_client_full.search("remimazolam sedation", limit=10)
+        results = (await mock_client_full.search_page("remimazolam sedation", limit=10)).items
 
         assert len(results) > 0
         assert results[0]["pmid"] is not None
@@ -125,7 +132,7 @@ class TestSystematicReviewWorkflow:
         """
         # Step 1: Comprehensive search with MeSH
         mesh_query = '("Remimazolam"[MeSH]) AND ("Conscious Sedation"[MeSH])'
-        results = await mock_client_full.search(mesh_query, limit=50)
+        results = (await mock_client_full.search_page(mesh_query, limit=50)).items
 
         assert len(results) > 0
 
@@ -232,7 +239,7 @@ class TestPICOWorkflow:
         optimized_query = f'("{pico["P"]}"[All Fields]) AND ("{pico["I"]}"[All Fields]) AND ("{pico["C"]}"[All Fields])'
 
         # Step 4: Search
-        results = await mock_client_full.search(optimized_query, limit=20)
+        results = (await mock_client_full.search_page(optimized_query, limit=20)).items
         assert len(results) > 0
 
         # Step 5: Filter for high-quality evidence
@@ -266,7 +273,7 @@ class TestDrugResearchWorkflow:
         drug_name = "remimazolam"
 
         # Step 1: Search PubMed
-        results = await mock_client_full.search(drug_name, limit=50)
+        results = (await mock_client_full.search_page(drug_name, limit=50)).items
         assert len(results) > 0
 
         # Step 2: Search PubChem (mock)
@@ -316,7 +323,7 @@ class TestFullTextAccessWorkflow:
         4. Get PDF links
         """
         # Step 1: Find articles
-        results = await mock_client_full.search("diabetes treatment", limit=10)
+        results = (await mock_client_full.search_page("diabetes treatment", limit=10)).items
         assert len(results) > 0
 
         # Step 2: Check OA availability
@@ -380,7 +387,7 @@ class TestSessionWorkflow:
         assert session["topic"] == "diabetes treatment"
 
         # Step 2: Save search results
-        results = await mock_client_full.search("diabetes", limit=10)
+        results = (await mock_client_full.search_page("diabetes", limit=10)).items
         session_mgr.cache_articles(session_id, results)
 
         # Step 3: Build reading list
@@ -411,11 +418,11 @@ class TestErrorRecoveryWorkflow:
         from pubmed_search.shared.exceptions import NetworkError
 
         mock_client = AsyncMock()
-        mock_client.search.side_effect = NetworkError("Network timeout")
+        mock_client.search_page.side_effect = NetworkError("Network timeout")
 
         # User should get meaningful error
         with pytest.raises(NetworkError) as exc_info:
-            await mock_client.search("diabetes")
+            await mock_client.search_page("diabetes")
 
         assert "Network timeout" in str(exc_info.value)
 
@@ -436,15 +443,20 @@ class TestErrorRecoveryWorkflow:
 
         # First call fails with rate limit
         # Second call succeeds
-        mock_client.search.side_effect = [
+        mock_client.search_page.side_effect = [
             Exception("Rate limit exceeded"),
-            [{"pmid": "12345678", "title": "Success"}],
+            SourceSearchPage(
+                source="pubmed",
+                items=[{"pmid": "12345678", "title": "Success"}],
+                total=1,
+                query="diabetes",
+            ),
         ]
 
         # Implementation should retry
         # For now, just verify exception is raised
         with pytest.raises(Exception):
-            await mock_client.search("diabetes")
+            await mock_client.search_page("diabetes")
 
 
 # ============================================================
@@ -468,7 +480,7 @@ class TestCompleteResearchProject:
         question = "What is the efficacy of remimazolam for procedural sedation?"
 
         # Step 2: Systematic search
-        results = await mock_client_full.search("remimazolam procedural sedation", limit=100)
+        results = (await mock_client_full.search_page("remimazolam procedural sedation", limit=100)).items
         assert len(results) > 0
 
         # Step 3: Screen articles (mock screening)

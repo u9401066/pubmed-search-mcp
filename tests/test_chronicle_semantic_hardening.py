@@ -11,6 +11,7 @@ from pubmed_search.application.chronicle import (
     audit_chronicle,
     build_chronicle_lineage,
 )
+from pubmed_search.application.search.source_models import SourceSearchPage
 from pubmed_search.application.timeline import build_research_tree
 from pubmed_search.application.timeline.milestone_detector import MilestoneDetector
 from pubmed_search.application.timeline.timeline_builder import TimelineBuilder
@@ -120,9 +121,9 @@ async def test_explicit_pmid_mode_preserves_non_milestone_articles_as_background
 @pytest.mark.asyncio
 async def test_landmark_candidate_cap_preserves_earliest_retrieved_article() -> None:
     class Searcher:
-        async def search(self, topic: str, limit: int) -> list[dict[str, Any]]:
+        async def search_page(self, topic: str, limit: int) -> SourceSearchPage[dict[str, Any]]:
             del topic, limit
-            return [
+            items = [
                 {"pmid": "1", "year": 2000, "title": "Earliest retrieved", "rank": 0.01},
                 *[
                     {
@@ -134,6 +135,7 @@ async def test_landmark_candidate_cap_preserves_earliest_retrieved_article() -> 
                     for index in range(2, 7)
                 ],
             ]
+            return SourceSearchPage(source="pubmed", items=items, total=len(items), query="topic")
 
         async def get_citation_metrics(self, pmids: list[str]) -> dict[str, Any]:
             del pmids

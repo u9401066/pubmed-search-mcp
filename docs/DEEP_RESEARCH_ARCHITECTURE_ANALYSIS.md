@@ -8,7 +8,7 @@
 >
 > **歷史 snapshot 說明 (2026-08-09)**: 下文的競品資料、40-tool 數字與
 > 比較結論保留 2026-02 當時語境，不代表當前 runtime。現行本 repo
-> 是 MCP SDK v2 `MCPServer`、45-tool primary surface、registry-backed
+> 是 MCP SDK v2 `MCPServer`、41-tool primary surface、registry-backed
 > multi-source broker，並已分開 local 與 authenticated service 合約。
 
 ---
@@ -698,7 +698,7 @@ User Query: "Is remimazolam better than propofol for ICU sedation?"
 │  │                                                      │ │
 │  └──────────────────────────────────────────────────────┘ │
 │                                                          │
-│  Validator: 21 auto-fix rules (self-healing configs)     │
+│  Validator: strict schema and semantic rejection         │
 │  Store: dual-scope persistence (workspace + global)      │
 └──────────────┬───────────────────────────────────────────┘
                ▼
@@ -898,7 +898,7 @@ Jina              ████████████████              
 | **Pipeline 定義** | ✅ YAML DAG (10 actions) | ❌ 固定 4 模組 | ❌ 固定流程 | ❌ 固定 loop | ❌ 固定 agent | ❌ 固定遞迴 |
 | **可自訂模板** | ✅ 4 內建 + 自訂 | ❌ | ❌ | ❌ | ❌ | ❌ |
 | **Pipeline 持久化** | ✅ 儲存/載入/排程 | ❌ | ❌ | ❌ | ❌ | ❌ |
-| **自動驗證修復** | ✅ 21 條 auto-fix | ❌ | ❌ | ❌ | ❌ | ❌ |
+| **嚴格驗證（不改寫輸入）** | ✅ schema + semantic fail-closed | ⚠️ | ⚠️ | ⚠️ | ⚠️ | ⚠️ |
 | **雙作用域存儲** | ✅ workspace + global | ❌ | ❌ | ❌ | ❌ | ❌ |
 | **執行歷史** | ✅ 完整追蹤 | ✅ LLM call history | ❌ | ❌ | ✅ LangSmith | ❌ |
 | **報告生成** | ✅ 7 區段結構化 | ✅ Wikipedia 文章 | ✅ 5-6 頁報告 | ⚠️ 精確答案 | ✅ 結構化報告 | ✅ report.md |

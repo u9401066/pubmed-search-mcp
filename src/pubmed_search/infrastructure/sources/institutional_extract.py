@@ -57,7 +57,7 @@ def _extract_via_trafilatura(html_text: str, base_url: str) -> tuple[str | None,
             title = None
         return extracted, title
     except Exception as exc:
-        logger.warning("trafilatura extraction failed: %s", exc)
+        logger.warning("trafilatura extraction failed (%s)", type(exc).__name__)
         return None, None
 
 
@@ -114,7 +114,7 @@ def _extract_via_stdlib(html_text: str) -> tuple[str | None, str | None]:
     try:
         parser.feed(html_text)
     except Exception as exc:
-        logger.warning("stdlib HTML parse failed: %s", exc)
+        logger.warning("stdlib HTML parse failed (%s)", type(exc).__name__)
         return None, None
     text = _NEWLINES_RE.sub("\n\n", _WS_RE.sub(" ", parser.text)).strip()
     if len(text) < _MIN_TEXT_LENGTH:

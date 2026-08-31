@@ -158,27 +158,6 @@ class ChronicleStore:
             self._save_locked(snapshot, self._serialize_snapshot(snapshot), chronicle_dir)
             return snapshot
 
-    def commit_next(
-        self,
-        chronicle_id: str,
-        build_snapshot: Callable[[int, str | None], ChronicleSnapshot],
-    ) -> ChronicleSnapshot:
-        """Compatibility wrapper for the pre-v0.6.2 revision callback.
-
-        New callers should use :meth:`append`, whose callback receives the
-        complete previous snapshot. Keeping this adapter avoids breaking
-        embedders that only need the original creation timestamp while still
-        using the same cross-process allocation and exclusive publication path.
-        """
-
-        return self.append(
-            chronicle_id,
-            lambda revision, previous: build_snapshot(
-                revision,
-                previous.created_at if previous is not None else None,
-            ),
-        )
-
     def load(self, chronicle_id: str, revision: int | None = None) -> ChronicleSnapshot | None:
         """Load one revision of a chronicle.
 
@@ -299,8 +278,8 @@ class ChronicleStore:
         records: list[dict[str, Any]] = []
         try:
             chronicle_dirs = sorted(path for path in self.root_dir.iterdir() if path.is_dir())
-        except OSError:
-            logger.warning("Unable to enumerate Chronicle revision directories", exc_info=True)
+        except OSError as exc:
+            logger.warning("Unable to enumerate Chronicle revision directories (%s)", type(exc).__name__)
             return records
 
         for chronicle_dir in chronicle_dirs:
@@ -309,11 +288,10 @@ class ChronicleStore:
             try:
                 with self._revision_lock(chronicle_dir):
                     record = self._refresh_index_cache_best_effort_locked(chronicle_dir)
-            except Exception:
+            except Exception as exc:
                 logger.warning(
-                    "Unable to reconstruct Chronicle index cache from %s",
-                    chronicle_dir,
-                    exc_info=True,
+                    "Unable to reconstruct Chronicle index cache (%s)",
+                    type(exc).__name__,
                 )
                 continue
             if record is not None:
@@ -328,11 +306,10 @@ class ChronicleStore:
         """
         try:
             record, snapshot = self._authoritative_index_record(chronicle_dir)
-        except Exception:
+        except Exception as exc:
             logger.warning(
-                "Unable to derive Chronicle index from revisions in %s",
-                chronicle_dir,
-                exc_info=True,
+                "Unable to derive Chronicle index from revisions (%s)",
+                type(exc).__name__,
             )
             return None
         if record is None or snapshot is None:
@@ -342,11 +319,10 @@ class ChronicleStore:
             cached = self._read_index_cache(chronicle_dir)
             if cached != record:
                 self._write_index_atomic(chronicle_dir, snapshot)
-        except Exception:
+        except Exception as exc:
             logger.warning(
-                "Chronicle revision is durable but index cache refresh failed for %s",
-                chronicle_dir,
-                exc_info=True,
+                "Chronicle revision is durable but index cache refresh failed (%s)",
+                type(exc).__name__,
             )
         return record
 

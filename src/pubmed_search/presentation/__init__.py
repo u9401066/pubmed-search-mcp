@@ -2,7 +2,7 @@
 Presentation layer entrypoints.
 
 This module keeps presentation imports lazy so importing the package does not
-initialize the MCP server or auxiliary HTTP dependencies.
+initialize MCP server or HTTP transport dependencies.
 """
 
 from __future__ import annotations

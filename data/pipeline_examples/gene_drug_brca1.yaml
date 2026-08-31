@@ -11,7 +11,7 @@
 
 template: gene_drug
 
-params:
+template_params:
   term: "BRCA1 targeted therapy PARP inhibitors"
 
 output:

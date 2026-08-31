@@ -6,9 +6,7 @@ Target remaining uncovered lines in key modules.
 from __future__ import annotations
 
 import tempfile
-from unittest.mock import MagicMock, Mock, patch
-
-import httpx
+from unittest.mock import AsyncMock, MagicMock, patch
 
 
 class TestClientRemainingMethods:
@@ -30,39 +28,35 @@ class TestClientRemainingMethods:
 class TestSearchRemainingPaths:
     """Test remaining search paths."""
 
-    async def test_search_with_all_date_types(self):
-        """Test search with different date types."""
+    async def test_search_uses_canonical_publication_year_contract(self):
+        """PubMed search exposes one publication-year contract."""
         from pubmed_search.infrastructure.ncbi.search import SearchMixin
 
         class TestSearcher(SearchMixin):
-            def fetch_details(self, pmids):
+            async def fetch_details(self, pmids):
                 return [{"pmid": p} for p in pmids]
 
         searcher = TestSearcher()
 
-        for date_type in ["edat", "pdat", "mdat"]:
-            with (
-                patch("pubmed_search.infrastructure.ncbi.search.Entrez.esearch") as mock_esearch,
-                patch("pubmed_search.infrastructure.ncbi.search.Entrez.read") as mock_read,
-            ):
-                mock_read.return_value = {"IdList": ["123"]}
-                mock_esearch.return_value = MagicMock()
+        with (
+            patch("pubmed_search.infrastructure.ncbi.search.Entrez.esearch") as mock_esearch,
+            patch("pubmed_search.infrastructure.ncbi.search.Entrez.read") as mock_read,
+        ):
+            mock_read.return_value = {"IdList": ["123"], "Count": "1"}
+            mock_esearch.return_value = MagicMock()
 
-                results = await searcher.search(
-                    "test",
-                    date_from="2024/01/01",
-                    date_to="2024/12/31",
-                    date_type=date_type,
-                )
+            page = await searcher.search_page("test", min_year=2024, max_year=2024)
 
-                assert isinstance(results, list)
+            assert page.items == [{"pmid": "123"}]
+            assert page.metadata["date_contract"] == "publication_year"
+            assert "2024/01/01:2024/12/31[dp]" in str(page.query)
 
     async def test_search_retry_exhausted(self):
         """Test search when all retries exhausted."""
         from pubmed_search.infrastructure.ncbi.search import SearchMixin
 
         class TestSearcher(SearchMixin):
-            def fetch_details(self, pmids):
+            async def fetch_details(self, pmids):
                 return [{"pmid": p} for p in pmids]
 
         searcher = TestSearcher()
@@ -75,7 +69,7 @@ class TestSearchRemainingPaths:
             mock_esearch.side_effect = Exception("Service unavailable")
 
             try:
-                await searcher._search_ids_with_retry("test", 10, "relevance")
+                await searcher._search_ids("test", 10, "relevance")
             except Exception as e:
                 assert "unavailable" in str(e)
 
@@ -208,7 +202,7 @@ class TestDiscoveryRemainingPaths:
             mock_read.return_value = [{"LinkSetDb": [{"LinkName": "pubmed_pubmed_citedin", "Link": [{"Id": "111"}]}]}]
             mock_elink.return_value = MagicMock()
 
-            results = await searcher.find_citing_articles("12345")
+            results = await searcher.get_citing_articles("12345")
 
             assert len(results) >= 0
 
@@ -271,27 +265,27 @@ class TestICiteRemainingPaths:
         searcher = TestSearcher()
         searcher._get_icite_cache().clear()
 
-        mock_response = httpx.Response(
-            200,
-            json={
-                "data": [
-                    {
-                        "pmid": "123",
-                        "citation_count": 10,
-                        "relative_citation_ratio": 1.5,
-                    }
-                ]
-            },
-        )
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {
+            "data": [
+                {
+                    "pmid": "123",
+                    "citation_count": 10,
+                    "relative_citation_ratio": 1.5,
+                }
+            ]
+        }
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=mock_response)
 
-        with patch("pubmed_search.infrastructure.ncbi.icite.httpx.AsyncClient") as mock_cls:
-            mock_client = MagicMock()
-            mock_client.get = MagicMock(return_value=mock_response)
-            mock_cls.return_value = mock_client
-
+        with patch(
+            "pubmed_search.infrastructure.ncbi.icite.get_shared_async_client",
+            return_value=mock_client,
+        ):
             results = await searcher.get_citation_metrics(["123"])
 
-            assert len(results) >= 0
+            assert results["123"]["citation_count"] == 10
 
 
 class TestPDFRemainingPaths:
@@ -316,25 +310,6 @@ class TestPDFRemainingPaths:
             url = await searcher.get_pmc_fulltext_url("12345")
 
             assert url is None or "pmc" in url.lower() if url else True
-
-
-class TestMergeRemainingPaths:
-    """Test remaining merge paths."""
-
-    async def test_merge_tools_register(self):
-        """Test merge tools registration."""
-        from pubmed_search import LiteratureSearcher
-        from pubmed_search.presentation.mcp_server.tools.merge import (
-            register_merge_tools,
-        )
-
-        mock_mcp = Mock()
-        mock_mcp.tool = Mock(return_value=lambda f: f)
-
-        searcher = LiteratureSearcher(email="test@example.com")
-
-        # Should not raise
-        register_merge_tools(mock_mcp, searcher)
 
 
 class TestServerRemainingPaths:

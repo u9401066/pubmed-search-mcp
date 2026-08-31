@@ -39,6 +39,34 @@ from pubmed_search.shared.settings import load_settings
 
 logger = logging.getLogger(__name__)
 
+_MAX_RESOLVER_URL_CHARS = 8_192
+
+
+def _validate_resolver_base(value: str) -> str:
+    """Validate an OpenURL resolver base before storing or rendering it."""
+    candidate = value.strip()
+    if not candidate or len(candidate) > _MAX_RESOLVER_URL_CHARS:
+        raise ValueError("OpenURL resolver URL is empty or too long")
+    if any(ord(char) < 0x20 or char == "\x7f" for char in candidate):
+        raise ValueError("OpenURL resolver URL contains control characters")
+    try:
+        parsed = urllib.parse.urlsplit(candidate)
+        port = parsed.port
+    except ValueError:
+        raise ValueError("OpenURL resolver URL is malformed") from None
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ValueError("OpenURL resolver URL must use HTTP or HTTPS with a hostname")
+    if parsed.username or parsed.password:
+        raise ValueError("OpenURL resolver URL must not contain credentials")
+    if parsed.query:
+        raise ValueError("OpenURL resolver URL must not contain a query")
+    if parsed.fragment:
+        raise ValueError("OpenURL resolver URL must not contain a fragment")
+    expected_port = 443 if parsed.scheme == "https" else 80
+    if port is not None and port != expected_port:
+        raise ValueError("OpenURL resolver URL must use the default HTTP(S) port")
+    return candidate
+
 
 # Common OpenURL resolver templates
 RESOLVER_PRESETS: dict[str, str] = {
@@ -59,10 +87,6 @@ RESOLVER_PRESETS: dict[str, str] = {
     "sfx": "{base}/sfx_local",
     "360link": "{base}/aresolver",
     "primo": "{base}/openurl",
-    # 免費/公開測試端點 (Free/Public test endpoints)
-    # WorldCat 是公開的，可以用於測試 OpenURL 格式是否正確
-    "worldcat": "https://worldcat.org/search?q=",  # 公開，但格式不同
-    "pubmed_linkout": "https://www.ncbi.nlm.nih.gov/pubmed/?term=",  # PubMed 原生搜尋
     # 以下是免費/開放的 Link Resolver 測試端點
     # 這些可能有速率限制，僅供測試
     "test_free": "https://resolver.ebscohost.com/openurl",  # EBSCO (有些機構免費)
@@ -107,6 +131,8 @@ class OpenURLBuilder:
         """Initialize with environment variable if not set."""
         if not self.resolver_base:
             self.resolver_base = load_settings().openurl_resolver
+        if self.resolver_base:
+            self.resolver_base = _validate_resolver_base(self.resolver_base)
 
     @classmethod
     def from_preset(cls, preset_name: str, base_url: str | None = None) -> OpenURLBuilder:
@@ -130,7 +156,7 @@ class OpenURLBuilder:
                 raise ValueError(f"Preset '{preset_name}' requires base_url parameter")
             preset = preset.replace("{base}", base_url.rstrip("/"))
 
-        return cls(resolver_base=preset)
+        return cls(resolver_base=_validate_resolver_base(preset))
 
     def build_from_article(self, article: dict[str, Any]) -> str | None:
         """
@@ -152,9 +178,7 @@ class OpenURLBuilder:
 
         query_string = urllib.parse.urlencode(params, safe=":/")
 
-        # Check if resolver_base already has query params
-        separator = "&" if "?" in self.resolver_base else "?"
-        return f"{self.resolver_base}{separator}{query_string}"
+        return f"{self.resolver_base}?{query_string}"
 
     def _build_params(self, article: dict[str, Any]) -> dict[str, str]:
         """Build OpenURL parameters from article metadata."""
@@ -284,25 +308,27 @@ class OpenURLConfig:
             try:
                 return OpenURLBuilder.from_preset(self.preset, self.resolver_base)
             except ValueError as e:
-                logger.warning(f"Invalid OpenURL preset: {e}")
-                # Fall through to try resolver_base
+                logger.warning("Invalid OpenURL preset configuration (%s)", type(e).__name__)
+                return None
 
         if self.resolver_base:
-            return OpenURLBuilder(resolver_base=self.resolver_base)
+            try:
+                return OpenURLBuilder(resolver_base=self.resolver_base)
+            except ValueError as e:
+                logger.warning("Invalid OpenURL resolver configuration (%s)", type(e).__name__)
+                return None
 
         return None
 
 
-# Singleton config
-_openurl_config: OpenURLConfig | None = None
+_OPENURL_CONFIG_KEY = ("openurl_config",)
 
 
 def get_openurl_config() -> OpenURLConfig:
-    """Get OpenURL configuration singleton."""
-    global _openurl_config
-    if _openurl_config is None:
-        _openurl_config = OpenURLConfig.from_env()
-    return _openurl_config
+    """Get OpenURL configuration owned by the current source runtime."""
+    from .runtime import get_source_runtime
+
+    return get_source_runtime().get_or_create_client(_OPENURL_CONFIG_KEY, OpenURLConfig.from_env)
 
 
 def configure_openurl(
@@ -330,12 +356,23 @@ def configure_openurl(
         # Disable
         configure_openurl(enabled=False)
     """
-    global _openurl_config
-    _openurl_config = OpenURLConfig(
-        resolver_base=resolver_base or "",
-        preset=preset or "",
-        enabled=enabled,
+    if enabled:
+        if preset:
+            OpenURLBuilder.from_preset(preset, resolver_base)
+        elif resolver_base:
+            _validate_resolver_base(resolver_base)
+    from .runtime import get_source_runtime
+
+    runtime = get_source_runtime()
+    runtime.set_owned_value(
+        _OPENURL_CONFIG_KEY,
+        OpenURLConfig(
+            resolver_base=resolver_base or "",
+            preset=preset or "",
+            enabled=enabled,
+        ),
     )
+    runtime.discard_namespace("openurl")
 
 
 def get_openurl_link(article: dict[str, Any]) -> str | None:
@@ -355,16 +392,6 @@ def get_openurl_link(article: dict[str, Any]) -> str | None:
     if builder:
         return builder.build_from_article(article)
     return None
-
-
-def get_openurl_from_pmid(pmid: str) -> str | None:
-    """Get OpenURL link from PMID."""
-    return get_openurl_link({"pmid": pmid})
-
-
-def get_openurl_from_doi(doi: str) -> str | None:
-    """Get OpenURL link from DOI."""
-    return get_openurl_link({"doi": doi})
 
 
 def list_presets() -> dict[str, str]:
@@ -450,8 +477,8 @@ def get_fulltext_link_with_fallback(
                         "access_mode": "needs_session_cookie",
                     }
                 )
-    except Exception:  # pragma: no cover - defensive: never break the fallback chain
-        logger.debug("EZproxy fallback enrichment skipped", exc_info=True)
+    except Exception as exc:  # pragma: no cover - defensive: never break the fallback chain
+        logger.debug("EZproxy fallback enrichment skipped (%s)", type(exc).__name__)
 
     # 3. DOI link (fallback)
     if doi and not result["url"]:

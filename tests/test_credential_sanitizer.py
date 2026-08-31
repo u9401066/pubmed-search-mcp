@@ -50,6 +50,42 @@ def test_saved_pipeline_prefix_does_not_hide_credential_assignment() -> None:
 
 
 @pytest.mark.parametrize(
+    "text",
+    [
+        "cancer --api-key TOPSECRET_SENTINEL",
+        "cancer --api-key=TOPSECRET_SENTINEL",
+        "cancer --ncbi-api-key TOPSECRET_SENTINEL",
+        "cancer NCBI_API_KEY TOPSECRET_SENTINEL",
+        "cancer X-API-Key TOPSECRET_SENTINEL",
+    ],
+)
+def test_space_and_cli_credential_forms_are_detected_and_redacted(text: str) -> None:
+    sentinel = "TOPSECRET_SENTINEL"
+
+    assert contains_credential_material(text)
+    assert sentinel in extract_credential_values(text)
+    assert sentinel not in redact_credential_assignments(text)
+    assert "[REDACTED]" in redact_credential_assignments(text)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Authorization: Bearer TOPSECRET_SENTINEL",
+        "Authorization: Basic TOPSECRET_SENTINEL",
+        '"Authorization": "Bearer TOPSECRET_SENTINEL"',
+        "Proxy-Authorization: Basic TOPSECRET_SENTINEL",
+    ],
+)
+def test_authorization_headers_redact_the_scheme_and_credential_together(text: str) -> None:
+    sentinel = "TOPSECRET_SENTINEL"
+
+    assert contains_credential_material(text)
+    assert sentinel not in redact_credential_assignments(text)
+    assert "[REDACTED]" in redact_credential_assignments(text)
+
+
+@pytest.mark.parametrize(
     "query",
     [
         "protein kinase key interactions",

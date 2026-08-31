@@ -1,19 +1,17 @@
-"""
-Strategy Tools - Generate and expand search queries.
+"""Strategy tool for generating bounded query intelligence.
 
 Tools:
 - generate_search_queries: Generate multiple search strategies with MeSH expansion
 
-Internal helper:
-- expand_search_queries: Expand search when results are insufficient
 """
 
 from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING, Annotated, Literal
+
+from pydantic import Field
 
 from ._common import InputNormalizer, ResponseFormatter, get_strategy_generator
 
@@ -24,16 +22,19 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+StrategyMode = Literal["comprehensive", "focused", "exploratory"]
+StrategyTopic = Annotated[str, Field(min_length=1, max_length=2_000)]
+
 
 def register_strategy_tools(mcp: MCPServer, searcher: LiteratureSearcher):
     """Register search strategy tools."""
 
     @mcp.tool()
     async def generate_search_queries(
-        topic: str,
-        strategy: str = "comprehensive",
-        check_spelling: Union[bool, str] = True,
-        include_suggestions: Union[bool, str] = True,
+        topic: StrategyTopic,
+        strategy: StrategyMode = "comprehensive",
+        check_spelling: bool = True,
+        include_suggestions: bool = True,
     ) -> str:
         """
         Gather search intelligence for a topic - returns RAW MATERIALS for Agent to decide.
@@ -61,7 +62,7 @@ def register_strategy_tools(mcp: MCPServer, searcher: LiteratureSearcher):
         User: "remimazolam 在 ICU 鎮靜比 propofol 好嗎？會減少 delirium 嗎？"
 
         Step 1: Agent extracts P/I/C/O from the clinical question, then calls
-                parse_pico(description=..., p=..., i=..., c=..., o=...) to
+                validate_pico_plan(description=..., p=..., i=..., c=..., o=...) to
                 validate the structured handoff and get a runnable PICO pipeline.
 
         Step 2: For EACH PICO element, call generate_search_queries() IN PARALLEL:
@@ -120,19 +121,24 @@ def register_strategy_tools(mcp: MCPServer, searcher: LiteratureSearcher):
                 example='generate_search_queries(topic="remimazolam sedation")',
                 tool_name="generate_search_queries",
             )
+        if len(topic) > 2_000:
+            return ResponseFormatter.error(
+                "Topic exceeds 2000 characters",
+                suggestion="Provide one bounded biomedical topic or PICO element",
+                tool_name="generate_search_queries",
+            )
 
-        check_spelling = InputNormalizer.normalize_bool(check_spelling, default=True)
-        include_suggestions = InputNormalizer.normalize_bool(include_suggestions, default=True)
+        if strategy not in {"comprehensive", "focused", "exploratory"}:
+            return ResponseFormatter.error(
+                f"Unsupported strategy: {strategy}",
+                suggestion="Use comprehensive, focused, or exploratory",
+                tool_name="generate_search_queries",
+            )
 
-        # Validate strategy
-        valid_strategies = ["comprehensive", "focused", "exploratory"]
-        strategy = strategy.lower().strip() if strategy else "comprehensive"
-        if strategy not in valid_strategies:
-            strategy = "comprehensive"  # Default fallback
-
-        logger.info(f"Generating search queries for topic: {topic}, strategy: {strategy}")
+        logger.info("Generating search queries: strategy=%s", strategy)
 
         _strategy_generator = get_strategy_generator()
+        fallback_reason = "strategy_generator_not_configured"
 
         # Use intelligent strategy generator if available
         if _strategy_generator:
@@ -156,8 +162,12 @@ def register_strategy_tools(mcp: MCPServer, searcher: LiteratureSearcher):
 
                 return json.dumps(result, indent=2, ensure_ascii=False)
 
-            except Exception as e:
-                logger.warning(f"Strategy generator failed, using fallback: {e}")
+            except Exception as exc:
+                fallback_reason = "strategy_generator_failed"
+                logger.warning(
+                    "Strategy generator failed; returning explicit basic fallback (%s)",
+                    type(exc).__name__,
+                )
 
         # Fallback: basic strategy generation
         words = topic.lower().split()
@@ -202,6 +212,9 @@ def register_strategy_tools(mcp: MCPServer, searcher: LiteratureSearcher):
         )
 
         result = {
+            "status": "partial",
+            "generation_mode": "basic_fallback",
+            "fallback_reason": fallback_reason,
             "topic": topic,
             "strategy": strategy,
             "spelling": None,
@@ -209,173 +222,10 @@ def register_strategy_tools(mcp: MCPServer, searcher: LiteratureSearcher):
             "queries_count": len(queries),
             "suggested_queries": queries,
             "instruction": "Build a final Boolean query, validate it with analyze_search_query, then execute unified_search",
-            "note": "Using fallback generator (MeSH lookup unavailable)",
-        }
-
-        return json.dumps(result, indent=2, ensure_ascii=False)
-
-    # ❌ REMOVED v0.1.20: Auto-executed by unified_search when results < 10
-    # @mcp.tool()
-    async def expand_search_queries(topic: str, existing_query_ids: str = "", expansion_type: str = "mesh") -> str:
-        """
-        Expand search when initial results are insufficient.
-
-        Uses NCBI MeSH database to find synonyms and related terms.
-
-        Args:
-            topic: Original search topic
-            existing_query_ids: Comma-separated IDs of already executed queries
-                              Example: "q1_title,q2_tiab,q3_and"
-            expansion_type: How to expand
-                - "mesh": Use MeSH synonyms (default, recommended)
-                - "broader": Relax constraints (OR instead of AND)
-                - "narrower": Add filters (RCT, recent years)
-
-        Returns:
-            New search queries for parallel execution
-        """
-        # Normalize inputs
-        topic = InputNormalizer.normalize_query(topic)
-        if not topic:
-            return ResponseFormatter.error(
-                "Empty topic",
-                suggestion="Provide the original search topic",
-                example='expand_search_queries(topic="remimazolam", expansion_type="mesh")',
-                tool_name="expand_search_queries",
-            )
-
-        # Validate expansion_type
-        valid_types = ["mesh", "synonyms", "broader", "narrower"]
-        expansion_type = expansion_type.lower().strip() if expansion_type else "mesh"
-        if expansion_type not in valid_types:
-            expansion_type = "mesh"  # Default fallback
-
-        logger.info(f"Expanding search for topic: {topic}, type: {expansion_type}")
-
-        _strategy_generator = get_strategy_generator()
-
-        existing = {x.strip() for x in existing_query_ids.split(",") if x.strip()}
-        queries = []
-        query_counter = len(existing) + 1
-
-        # Use intelligent MeSH-based expansion if available
-        if expansion_type == "mesh" and _strategy_generator:
-            try:
-                result = await _strategy_generator.expand_with_mesh(topic=topic, existing_queries=list(existing))
-
-                if result.get("queries"):
-                    result["instruction"] = (
-                        "Review these expansion ideas, update your Boolean query, "
-                        "validate with analyze_search_query, then rerun unified_search"
-                    )
-                    return json.dumps(result, indent=2, ensure_ascii=False)
-
-            except Exception as e:
-                logger.warning(f"MeSH expansion failed: {e}")
-
-        # Fallback expansion logic
-        words = topic.lower().split()
-
-        if expansion_type in ["mesh", "synonyms"]:
-            # Basic synonym map (fallback when MeSH unavailable)
-            synonym_map = {
-                "sedation": ["conscious sedation", "procedural sedation"],
-                "icu": ["intensive care unit", "critical care"],
-                "anesthesia": ["anaesthesia", "anesthetic"],
-                "ventilation": ["mechanical ventilation", "respiratory support"],
-            }
-
-            for word in words:
-                if word in synonym_map:
-                    for syn in synonym_map[word][:2]:
-                        new_topic = topic.replace(word, syn)
-                        qid = f"q{query_counter}_syn"
-                        if qid not in existing:
-                            queries.append(
-                                {
-                                    "id": qid,
-                                    "query": f"({new_topic})[Title/Abstract]",
-                                    "purpose": f"Synonym: {word} → {syn}",
-                                    "priority": 3,
-                                }
-                            )
-                            query_counter += 1
-
-        elif expansion_type == "broader":
-            if len(words) >= 2:
-                or_query = " OR ".join(words)
-                qid = f"q{query_counter}_broad"
-                if qid not in existing:
-                    queries.append(
-                        {
-                            "id": qid,
-                            "query": f"({or_query})[Title/Abstract]",
-                            "purpose": "Any keyword (broader)",
-                            "priority": 4,
-                        }
-                    )
-                    query_counter += 1
-
-            qid = f"q{query_counter}_allfields"
-            if qid not in existing:
-                queries.append(
-                    {
-                        "id": qid,
-                        "query": f"({topic})[All Fields]",
-                        "purpose": "Search all fields",
-                        "priority": 5,
-                    }
-                )
-                query_counter += 1
-
-        elif expansion_type == "narrower":
-            qid = f"q{query_counter}_rct"
-            if qid not in existing:
-                queries.append(
-                    {
-                        "id": qid,
-                        "query": f"({topic}) AND randomized controlled trial[pt]",
-                        "purpose": "RCT only - high evidence",
-                        "priority": 1,
-                    }
-                )
-                query_counter += 1
-
-            qid = f"q{query_counter}_meta"
-            if qid not in existing:
-                queries.append(
-                    {
-                        "id": qid,
-                        "query": f"({topic}) AND (meta-analysis[pt] OR systematic review[pt])",
-                        "purpose": "Meta-analysis/Systematic Review",
-                        "priority": 1,
-                    }
-                )
-                query_counter += 1
-
-            current_year = datetime.now(tz=timezone.utc).year
-            qid = f"q{query_counter}_recent"
-            if qid not in existing:
-                queries.append(
-                    {
-                        "id": qid,
-                        "query": f"({topic})[Title] AND {current_year - 2}:{current_year}[dp]",
-                        "purpose": "Last 2 years only",
-                        "priority": 2,
-                    }
-                )
-                query_counter += 1
-
-        result = {
-            "topic": topic,
-            "expansion_type": expansion_type,
-            "existing_queries": list(existing),
-            "queries_count": len(queries),
-            "suggested_queries": queries,
-            "instruction": (
-                "Use these expansions to revise your Boolean query, "
-                "validate with analyze_search_query, then rerun unified_search"
-            ),
+            "warnings": [
+                "MeSH lookup and PubMed translation analysis were not available; suggested queries are unverified."
+            ],
+            "note": "Using explicit fallback generator (MeSH lookup unavailable)",
         }
 
         return json.dumps(result, indent=2, ensure_ascii=False)

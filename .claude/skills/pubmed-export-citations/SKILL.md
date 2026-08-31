@@ -103,7 +103,7 @@ prepare_export(pmids="last", format="csv", source="local")
 ### 先確認上次搜尋結果有哪些 PMID
 
 ```python
-get_session_pmids()
+read_session(request={"action":"pmids"})
 ```
 
 ### 要先看文章細節再決定是否匯出

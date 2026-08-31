@@ -178,9 +178,7 @@ class TestExtractOpenAlexSourceId:
     """Test _extract_openalex_source_id helper function."""
 
     def test_from_normalized_field(self):
-        from pubmed_search.presentation.mcp_server.tools.unified import (
-            _extract_openalex_source_id,
-        )
+        from pubmed_search.infrastructure.sources.unified_enrichment import _extract_openalex_source_id
 
         article = UnifiedArticle(
             title="Test",
@@ -196,9 +194,7 @@ class TestExtractOpenAlexSourceId:
         assert result == "https://openalex.org/S62468778"
 
     def test_from_primary_location(self):
-        from pubmed_search.presentation.mcp_server.tools.unified import (
-            _extract_openalex_source_id,
-        )
+        from pubmed_search.infrastructure.sources.unified_enrichment import _extract_openalex_source_id
 
         article = UnifiedArticle(
             title="Test",
@@ -214,9 +210,7 @@ class TestExtractOpenAlexSourceId:
         assert result == "https://openalex.org/S12345"
 
     def test_no_openalex_source(self):
-        from pubmed_search.presentation.mcp_server.tools.unified import (
-            _extract_openalex_source_id,
-        )
+        from pubmed_search.infrastructure.sources.unified_enrichment import _extract_openalex_source_id
 
         article = UnifiedArticle(
             title="Test",
@@ -227,18 +221,14 @@ class TestExtractOpenAlexSourceId:
         assert result is None
 
     def test_empty_sources(self):
-        from pubmed_search.presentation.mcp_server.tools.unified import (
-            _extract_openalex_source_id,
-        )
+        from pubmed_search.infrastructure.sources.unified_enrichment import _extract_openalex_source_id
 
         article = UnifiedArticle(title="Test", primary_source="pubmed", sources=[])
         result = _extract_openalex_source_id(article)
         assert result is None
 
     def test_openalex_source_no_raw_data(self):
-        from pubmed_search.presentation.mcp_server.tools.unified import (
-            _extract_openalex_source_id,
-        )
+        from pubmed_search.infrastructure.sources.unified_enrichment import _extract_openalex_source_id
 
         article = UnifiedArticle(
             title="Test",
@@ -249,9 +239,7 @@ class TestExtractOpenAlexSourceId:
         assert result is None
 
     def test_openalex_source_empty_source_id(self):
-        from pubmed_search.presentation.mcp_server.tools.unified import (
-            _extract_openalex_source_id,
-        )
+        from pubmed_search.infrastructure.sources.unified_enrichment import _extract_openalex_source_id
 
         article = UnifiedArticle(
             title="Test",
@@ -262,9 +250,7 @@ class TestExtractOpenAlexSourceId:
         assert result is None
 
     def test_prefers_normalized_field_over_nested(self):
-        from pubmed_search.presentation.mcp_server.tools.unified import (
-            _extract_openalex_source_id,
-        )
+        from pubmed_search.infrastructure.sources.unified_enrichment import _extract_openalex_source_id
 
         article = UnifiedArticle(
             title="Test",
@@ -358,7 +344,8 @@ class TestEnrichWithJournalMetrics:
         ]
 
     async def test_enriches_openalex_articles(self, articles_with_openalex_source, mock_source_data):
-        from pubmed_search.presentation.mcp_server.tools.unified import (
+        from pubmed_search.infrastructure.sources.unified_enrichment import (
+            _apply_enrichment_outcomes,
             _enrich_with_journal_metrics,
         )
 
@@ -366,10 +353,13 @@ class TestEnrichWithJournalMetrics:
         mock_client.get_sources_batch = AsyncMock(return_value=mock_source_data)
 
         with patch(
-            "pubmed_search.presentation.mcp_server.tools.unified_enrichment.get_openalex_client",
+            "pubmed_search.infrastructure.sources.unified_enrichment.get_openalex_client",
             return_value=mock_client,
         ):
-            await _enrich_with_journal_metrics(articles_with_openalex_source)
+            outcome = await _enrich_with_journal_metrics(articles_with_openalex_source)
+
+        assert all(article.journal_metrics is None for article in articles_with_openalex_source)
+        _apply_enrichment_outcomes(articles_with_openalex_source, [outcome])
 
         # Article 1 should have NEJM metrics
         assert articles_with_openalex_source[0].journal_metrics is not None
@@ -385,9 +375,7 @@ class TestEnrichWithJournalMetrics:
         assert articles_with_openalex_source[2].journal_metrics is None
 
     async def test_skips_already_enriched(self, mock_source_data):
-        from pubmed_search.presentation.mcp_server.tools.unified import (
-            _enrich_with_journal_metrics,
-        )
+        from pubmed_search.infrastructure.sources.unified_enrichment import _enrich_with_journal_metrics
 
         existing_jm = JournalMetrics(h_index=999)
         articles = [
@@ -408,7 +396,7 @@ class TestEnrichWithJournalMetrics:
         mock_client.get_sources_batch = AsyncMock(return_value=mock_source_data)
 
         with patch(
-            "pubmed_search.presentation.mcp_server.tools.unified_enrichment.get_openalex_client",
+            "pubmed_search.infrastructure.sources.unified_enrichment.get_openalex_client",
             return_value=mock_client,
         ):
             await _enrich_with_journal_metrics(articles)
@@ -417,9 +405,7 @@ class TestEnrichWithJournalMetrics:
         assert articles[0].journal_metrics.h_index == 999
 
     async def test_no_openalex_articles(self):
-        from pubmed_search.presentation.mcp_server.tools.unified import (
-            _enrich_with_journal_metrics,
-        )
+        from pubmed_search.infrastructure.sources.unified_enrichment import _enrich_with_journal_metrics
 
         articles = [
             UnifiedArticle(
@@ -433,7 +419,7 @@ class TestEnrichWithJournalMetrics:
         mock_client.get_sources_batch = AsyncMock(return_value={})
 
         with patch(
-            "pubmed_search.presentation.mcp_server.tools.unified_enrichment.get_openalex_client",
+            "pubmed_search.infrastructure.sources.unified_enrichment.get_openalex_client",
             return_value=mock_client,
         ):
             await _enrich_with_journal_metrics(articles)
@@ -443,9 +429,7 @@ class TestEnrichWithJournalMetrics:
         assert articles[0].journal_metrics is None
 
     async def test_handles_api_failure_gracefully(self):
-        from pubmed_search.presentation.mcp_server.tools.unified import (
-            _enrich_with_journal_metrics,
-        )
+        from pubmed_search.infrastructure.sources.unified_enrichment import _enrich_with_journal_metrics
 
         articles = [
             UnifiedArticle(
@@ -464,16 +448,18 @@ class TestEnrichWithJournalMetrics:
         mock_client.get_sources_batch = AsyncMock(side_effect=Exception("API down"))
 
         with patch(
-            "pubmed_search.presentation.mcp_server.tools.unified_enrichment.get_openalex_client",
+            "pubmed_search.infrastructure.sources.unified_enrichment.get_openalex_client",
             return_value=mock_client,
         ):
-            # Should not raise
-            await _enrich_with_journal_metrics(articles)
+            outcome = await _enrich_with_journal_metrics(articles)
 
+        assert outcome.status == "failed"
+        assert outcome.failed == 1
         assert articles[0].journal_metrics is None
 
     async def test_same_journal_shared_across_articles(self, mock_source_data):
-        from pubmed_search.presentation.mcp_server.tools.unified import (
+        from pubmed_search.infrastructure.sources.unified_enrichment import (
+            _apply_enrichment_outcomes,
             _enrich_with_journal_metrics,
         )
 
@@ -495,10 +481,12 @@ class TestEnrichWithJournalMetrics:
         mock_client.get_sources_batch = AsyncMock(return_value=mock_source_data)
 
         with patch(
-            "pubmed_search.presentation.mcp_server.tools.unified_enrichment.get_openalex_client",
+            "pubmed_search.infrastructure.sources.unified_enrichment.get_openalex_client",
             return_value=mock_client,
         ):
-            await _enrich_with_journal_metrics(articles)
+            outcome = await _enrich_with_journal_metrics(articles)
+
+        _apply_enrichment_outcomes(articles, [outcome])
 
         # All should have the same metrics
         for a in articles:
@@ -509,23 +497,20 @@ class TestEnrichWithJournalMetrics:
         mock_client.get_sources_batch.assert_called_once()
 
     async def test_empty_article_list(self):
-        from pubmed_search.presentation.mcp_server.tools.unified import (
-            _enrich_with_journal_metrics,
-        )
+        from pubmed_search.infrastructure.sources.unified_enrichment import _enrich_with_journal_metrics
 
         mock_client = AsyncMock()
         with patch(
-            "pubmed_search.presentation.mcp_server.tools.unified_enrichment.get_openalex_client",
+            "pubmed_search.infrastructure.sources.unified_enrichment.get_openalex_client",
             return_value=mock_client,
         ):
-            await _enrich_with_journal_metrics([])
+            outcome = await _enrich_with_journal_metrics([])
 
+        assert outcome.status == "skipped"
         mock_client.get_sources_batch.assert_not_called()
 
     async def test_source_not_found_in_batch(self):
-        from pubmed_search.presentation.mcp_server.tools.unified import (
-            _enrich_with_journal_metrics,
-        )
+        from pubmed_search.infrastructure.sources.unified_enrichment import _enrich_with_journal_metrics
 
         articles = [
             UnifiedArticle(
@@ -545,11 +530,13 @@ class TestEnrichWithJournalMetrics:
         mock_client.get_sources_batch = AsyncMock(return_value={})
 
         with patch(
-            "pubmed_search.presentation.mcp_server.tools.unified_enrichment.get_openalex_client",
+            "pubmed_search.infrastructure.sources.unified_enrichment.get_openalex_client",
             return_value=mock_client,
         ):
-            await _enrich_with_journal_metrics(articles)
+            outcome = await _enrich_with_journal_metrics(articles)
 
+        assert outcome.status == "completed"
+        assert outcome.skipped == 1
         assert articles[0].journal_metrics is None
 
 
@@ -623,15 +610,15 @@ class TestOpenAlexSourceMethods:
         assert "openalex.org/S62468778" not in call_url.split("/sources/")[1].split("?")[0] or True
 
     async def test_get_source_returns_none_on_error(self):
+        from pubmed_search.infrastructure.sources.base_client import APIRequestError
         from pubmed_search.infrastructure.sources.openalex import OpenAlexClient
 
         client = OpenAlexClient(email="test@example.com")
 
         with patch.object(client, "_make_request", new_callable=AsyncMock) as mock_req:
             mock_req.side_effect = Exception("Not found")
-            result = await client.get_source("S99999")
-
-        assert result is None
+            with pytest.raises(APIRequestError, match="OpenAlex request failed"):
+                await client.get_source("S99999")
 
     async def test_get_sources_batch_returns_dict(self):
         from pubmed_search.infrastructure.sources.openalex import OpenAlexClient
@@ -671,15 +658,15 @@ class TestOpenAlexSourceMethods:
         assert result == {}
 
     async def test_get_sources_batch_handles_error(self):
+        from pubmed_search.infrastructure.sources.base_client import APIRequestError
         from pubmed_search.infrastructure.sources.openalex import OpenAlexClient
 
         client = OpenAlexClient(email="test@example.com")
 
         with patch.object(client, "_make_request", new_callable=AsyncMock) as mock_req:
             mock_req.side_effect = Exception("API error")
-            result = await client.get_sources_batch(["S12345"])
-
-        assert result == {}
+            with pytest.raises(APIRequestError, match="OpenAlex request failed"):
+                await client.get_sources_batch(["S12345"])
 
 
 # =============================================================================

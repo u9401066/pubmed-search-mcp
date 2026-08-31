@@ -47,7 +47,7 @@ class FulltextExtractPhase:
         except ImportError:
             logger.debug("PyMuPDF not available, trying pdfplumber")
         except Exception as exc:
-            logger.warning("PyMuPDF extraction failed: %s", exc)
+            logger.warning("PyMuPDF extraction failed (%s)", type(exc).__name__)
 
         try:
             import io
@@ -65,7 +65,7 @@ class FulltextExtractPhase:
         except ImportError:
             logger.warning("No PDF extraction library available (install PyMuPDF or pdfplumber)")
         except Exception as exc:
-            logger.warning("pdfplumber extraction failed: %s", exc)
+            logger.warning("pdfplumber extraction failed (%s)", type(exc).__name__)
 
         return None
 
@@ -107,7 +107,7 @@ class FulltextExtractPhase:
                 "references": parsed.get("references"),
             }
         except Exception as exc:
-            logger.debug("Structured fulltext failed: %s", exc)
+            logger.debug("Structured fulltext failed (%s)", type(exc).__name__)
             return None
 
 

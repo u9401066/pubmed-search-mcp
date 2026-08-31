@@ -24,7 +24,8 @@ import asyncio
 import logging
 import random
 import time
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
+from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
@@ -40,7 +41,7 @@ from .exceptions import (
 
 if TYPE_CHECKING:
     from asyncio import AbstractEventLoop
-    from collections.abc import AsyncIterator, Awaitable, Callable, MutableMapping, Sequence
+    from collections.abc import AsyncIterator, Awaitable, Callable, Iterator, MutableMapping, Sequence
 
 logger = logging.getLogger(__name__)
 
@@ -879,17 +880,73 @@ class CircuitBreaker:
 # Shared Async HTTP Client
 # =============================================================================
 
-_shared_async_client: Any | None = None
+
+@dataclass(slots=True)
+class SharedAsyncClientRuntime:
+    """Own the general-purpose HTTP pool for one application/server runtime."""
+
+    _client: Any | None = field(default=None, init=False, repr=False)
+
+    def get(self) -> Any:
+        """Return this runtime's reusable client, creating it lazily."""
+        if self._client is None or self._client.is_closed:
+            self._client = create_async_http_client(
+                timeout=30.0,
+                follow_redirects=True,
+                max_connections=20,
+                max_keepalive_connections=10,
+                keepalive_expiry=30.0,
+            )
+        return self._client
+
+    async def close(self) -> None:
+        """Close and forget this runtime's HTTP pool."""
+        client = self._client
+        self._client = None
+        if client is not None and not client.is_closed:
+            try:
+                await client.aclose()
+            except RuntimeError as exc:
+                if "Event loop is closed" not in str(exc):
+                    raise
+                logger.debug("Ignoring shared async client close after event loop shutdown")
+
+
+_ACTIVE_SHARED_HTTP_RUNTIME: ContextVar[SharedAsyncClientRuntime | None] = ContextVar(
+    "pubmed_shared_http_runtime",
+    default=None,
+)
+
+
+def get_shared_async_client_runtime() -> SharedAsyncClientRuntime:
+    """Return the bound runtime or create an ambient context-local owner."""
+    runtime = _ACTIVE_SHARED_HTTP_RUNTIME.get()
+    if runtime is None:
+        runtime = SharedAsyncClientRuntime()
+        _ACTIVE_SHARED_HTTP_RUNTIME.set(runtime)
+    return runtime
+
+
+@contextmanager
+def bind_shared_async_client_runtime(runtime: SharedAsyncClientRuntime) -> Iterator[None]:
+    """Bind one server's general-purpose HTTP pool to the current context."""
+    if not isinstance(runtime, SharedAsyncClientRuntime):
+        raise TypeError("runtime must be a SharedAsyncClientRuntime")
+    token: Token[SharedAsyncClientRuntime | None] = _ACTIVE_SHARED_HTTP_RUNTIME.set(runtime)
+    try:
+        yield
+    finally:
+        _ACTIVE_SHARED_HTTP_RUNTIME.reset(token)
 
 
 def get_shared_async_client() -> Any:
     """
-    Get a shared httpx.AsyncClient singleton for general-purpose HTTP requests.
+    Get the context-bound reusable httpx client for general-purpose requests.
 
     Replaces per-call ``httpx.AsyncClient(...)`` creation in tools like
-    vision_search, openurl, and pdf download.  A single long-lived client
-    reuses TCP connections, saving TLS-handshake and DNS-lookup overhead
-    on repeated calls.
+    vision_search, openurl, and PDF download. Each server owns one long-lived
+    pool, so repeated calls reuse connections while overlapping servers remain
+    lifecycle-isolated.
 
     The client is configured with:
     - follow_redirects=True (needed by most callers)
@@ -904,31 +961,12 @@ def get_shared_async_client() -> Any:
         client = get_shared_async_client()
         response = await client.get(url, timeout=10.0)
     """
-    global _shared_async_client
-
-    if _shared_async_client is None or _shared_async_client.is_closed:
-        _shared_async_client = create_async_http_client(
-            timeout=30.0,
-            follow_redirects=True,
-            max_connections=20,
-            max_keepalive_connections=10,
-            keepalive_expiry=30.0,
-        )
-    return _shared_async_client
+    return get_shared_async_client_runtime().get()
 
 
 async def close_shared_async_client() -> None:
-    """Close the shared async HTTP client (call on shutdown)."""
-    global _shared_async_client
-    client = _shared_async_client
-    _shared_async_client = None
-    if client is not None and not client.is_closed:
-        try:
-            await client.aclose()
-        except RuntimeError as exc:
-            if "Event loop is closed" not in str(exc):
-                raise
-            logger.debug("Ignoring shared async client close after event loop shutdown")
+    """Close the HTTP client owned by the currently bound runtime."""
+    await get_shared_async_client_runtime().close()
 
 
 # =============================================================================

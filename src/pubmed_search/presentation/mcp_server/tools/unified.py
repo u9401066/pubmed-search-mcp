@@ -19,88 +19,40 @@ Architecture (Phase 3 Enhanced):
          │
     ResultAggregator → UnifiedArticle[]
 
-This module is the thin orchestration layer.
-Implementation details are in:
-  - unified_helpers.py      — ICD detection, dispatch, parsers, dataclasses
-  - unified_source_search.py — source searches, deep search, auto-relax
-  - unified_enrichment.py   — CrossRef, journal metrics, Unpaywall, similarity
-  - unified_formatting.py   — Markdown & JSON output formatting
-  - unified_pipeline.py     — pipeline execution & report auto-save
+This module only registers the MCP transport adapter.  Provider-independent
+request, planning, execution, and policy code lives in ``application/unified``;
+``infrastructure/sources/unified_broker.py`` and ``unified_enrichment.py``
+implement its ports.  Presentation retains only composition, progress,
+formatting, pipeline handoff, journal, and artifact concerns.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Literal, Union
+from typing import TYPE_CHECKING, Annotated, Literal
 
 from mcp.server.mcpserver import Context  # noqa: TC002 - MCPServer needs runtime access for type annotation injection
+from pydantic import Field
 
 from pubmed_search.application.search.query_analyzer import (
     QueryAnalyzer,
 )
-from pubmed_search.application.search.semantic_enhancer import get_semantic_enhancer
-from pubmed_search.application.timeline import TimelineBuilder, build_research_tree
+from pubmed_search.application.unified.helpers import DispatchStrategy
+from pubmed_search.application.unified.request import (
+    MAX_UNIFIED_FILTERS_CHARS,
+    MAX_UNIFIED_OPTIONS_CHARS,
+    MAX_UNIFIED_PIPELINE_CHARS,
+    MAX_UNIFIED_QUERY_CHARS,
+    MAX_UNIFIED_SOURCES_CHARS,
+    MAX_UNIFIED_STOP_AT_CHARS,
+)
+from pubmed_search.infrastructure.pubtator.semantic_adapter import get_semantic_enhancer
 from pubmed_search.infrastructure.sources.registry import get_source_registry
 
 from .tool_input import InputNormalizer
 from .tool_response import ResponseFormatter
-from .unified_enrichment import (
-    _enrich_with_api_similarity,
-    _enrich_with_crossref,
-    _enrich_with_journal_metrics,
-    _enrich_with_similarity_scores,
-    _enrich_with_unpaywall,
-    _extract_openalex_source_id,
-    _is_preprint,
-)
-from .unified_formatting import _format_as_json, _format_unified_results
-from .unified_helpers import (
-    ICD9_PATTERN,
-    ICD10_PATTERN,
-    DispatchStrategy,
-    RelaxationResult,
-    RelaxationStep,
-    SearchDepthMetrics,
-    StrategyResult,
-    _generate_relaxation_steps,
-    _parse_filters,
-    _parse_options,
-    detect_and_expand_icd_codes,
-)
-from .unified_pipeline import (
-    _auto_save_pipeline_report,
-    _execute_pipeline_mode,
-    _parse_pipeline_config,
-)
-from .unified_runner import (
-    persist_unified_search_artifact as _persist_unified_search_artifact,
-)
 from .unified_runner import (
     run_unified_search,
-)
-from .unified_source_search import (
-    _auto_relax_search,
-    _execute_deep_search,
-    _search_arxiv,
-    _search_arxiv_adapter,
-    _search_biorxiv,
-    _search_biorxiv_adapter,
-    _search_core,
-    _search_core_adapter,
-    _search_europe_pmc,
-    _search_europe_pmc_adapter,
-    _search_medrxiv,
-    _search_medrxiv_adapter,
-    _search_openalex,
-    _search_openalex_adapter,
-    _search_pubmed,
-    _search_pubmed_adapter,
-    _search_scopus,
-    _search_scopus_adapter,
-    _search_semantic_scholar,
-    _search_semantic_scholar_adapter,
-    _search_web_of_science,
-    _search_web_of_science_adapter,
 )
 
 if TYPE_CHECKING:
@@ -108,77 +60,38 @@ if TYPE_CHECKING:
 
     from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 
+    from .pipeline_tools import PipelineToolRuntime
+
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Backward-compatible re-exports (used by tests and __init__.py)
-# ---------------------------------------------------------------------------
-__all__ = [
-    "register_unified_search_tools",
-    # helpers
-    "DispatchStrategy",
-    "ICD10_PATTERN",
-    "ICD9_PATTERN",
-    "detect_and_expand_icd_codes",
-    "_parse_filters",
-    "_parse_options",
-    "StrategyResult",
-    "SearchDepthMetrics",
-    "RelaxationStep",
-    "RelaxationResult",
-    "_generate_relaxation_steps",
-    # source search
-    "_auto_relax_search",
-    "_execute_deep_search",
-    "_search_pubmed",
-    "_search_openalex",
-    "_search_semantic_scholar",
-    "_search_core",
-    "_search_europe_pmc",
-    "_search_scopus",
-    "_search_web_of_science",
-    "_search_arxiv",
-    "_search_medrxiv",
-    "_search_biorxiv",
-    # enrichment
-    "_enrich_with_api_similarity",
-    "_enrich_with_crossref",
-    "_enrich_with_journal_metrics",
-    "_extract_openalex_source_id",
-    "_enrich_with_unpaywall",
-    "_is_preprint",
-    "_enrich_with_similarity_scores",
-    # formatting
-    "_format_unified_results",
-    "_format_as_json",
-    "_persist_unified_search_artifact",
-    # pipeline
-    "_execute_pipeline_mode",
-    "_parse_pipeline_config",
-    "_auto_save_pipeline_report",
-]
+__all__ = ["register_unified_search_tools"]
 
 
 # ============================================================================
-# MCP Tool Registration
+# MCP tool registration
 # ============================================================================
 
 
-def register_unified_search_tools(mcp: MCPServer, searcher: LiteratureSearcher):
-    """Register unified search MCP tools."""
+def register_unified_search_tools(
+    mcp: MCPServer,
+    searcher: LiteratureSearcher,
+    *,
+    pipeline_runtime: PipelineToolRuntime,
+):
+    """Register unified search tools bound to this server's pipeline runtime."""
 
     @mcp.tool()
     async def unified_search(
-        query: str,
-        limit: Union[int, str] = 10,
-        sources: Union[str, None] = None,
+        query: Annotated[str, Field(max_length=MAX_UNIFIED_QUERY_CHARS)] = "",
+        limit: Annotated[int, Field(ge=1, le=100)] = 10,
+        sources: Annotated[str, Field(max_length=MAX_UNIFIED_SOURCES_CHARS)] | None = None,
         ranking: Literal["balanced", "impact", "recency", "quality"] = "balanced",
         output_format: Literal["markdown", "json", "toon"] = "markdown",
-        filters: Union[str, None] = None,
-        options: Union[str, None] = None,
-        pipeline: Union[str, None] = None,
+        filters: Annotated[str, Field(max_length=MAX_UNIFIED_FILTERS_CHARS)] | None = None,
+        options: Annotated[str, Field(max_length=MAX_UNIFIED_OPTIONS_CHARS)] | None = None,
+        pipeline: Annotated[str, Field(max_length=MAX_UNIFIED_PIPELINE_CHARS)] | None = None,
         dry_run: bool = False,
-        stop_at: str = "",
+        stop_at: Annotated[str, Field(max_length=MAX_UNIFIED_STOP_AT_CHARS)] = "",
         ctx: Context | None = None,
     ) -> str:
         """
@@ -220,10 +133,10 @@ def register_unified_search_tools(mcp: MCPServer, searcher: LiteratureSearcher):
 
         Clinical filters:
             unified_search("diabetes treatment",
-                          filters="year:2020-2025, age:aged, clinical:therapy")
+                          filters="year:2020-2025,age_group:aged,clinical_query:therapy")
 
         Include preprints + shallow search:
-            unified_search("COVID-19 vaccine", options="preprints, shallow")
+            unified_search("COVID-19 vaccine", options="preprints,shallow")
 
         Provider-native semantic retrieval (OpenAlex capability):
             unified_search("mechanisms of treatment resistance",
@@ -231,22 +144,23 @@ def register_unified_search_tools(mcp: MCPServer, searcher: LiteratureSearcher):
 
         Reproducible systematic retrieval (bulk/cursor where supported):
             unified_search("melanoma AND immunotherapy",
-                          sources="pubmed,openalex,semantic_scholar",
+                          sources="openalex,semantic_scholar",
                           options="systematic")
 
         Full control:
             unified_search("propofol vs remimazolam",
                           sources="pubmed,semantic_scholar,europe_pmc",
                           ranking="impact",
-                          filters="year:2020-, sex:female, species:humans",
-                          options="preprints, no_relax")
+                          filters="year:2020-,sex:female,species:humans",
+                          options="preprints,no_relax")
 
         ICD Code Auto-Detection:
             unified_search("E11 complications")
             → Auto-expands E11 to "Diabetes Mellitus, Type 2"[MeSH]
 
         Args:
-            query: Your search query (natural language, ICD codes, or structured)
+            query: Search query (natural language, ICD codes, or structured).
+                   Required unless pipeline is provided.
             limit: Maximum results per source (default 10, max 100)
             sources: Comma-separated list of sources to search.
                      Available: "pubmed", "openalex", "semantic_scholar",
@@ -258,6 +172,8 @@ def register_unified_search_tools(mcp: MCPServer, searcher: LiteratureSearcher):
                      `WEB_OF_SCIENCE_API_KEY` are configured.
                      Default: auto-select based on query complexity.
                      Supports "auto" and "all" with exclusions.
+                     Source keys are exact and canonical; legacy hyphenated,
+                     spaced, abbreviated, or case-folded aliases are rejected.
                      Examples: "pubmed,openalex", "auto,-semantic_scholar",
                      or "all,-crossref"
                      Global disable env: `PUBMED_SEARCH_DISABLED_SOURCES`
@@ -274,28 +190,34 @@ def register_unified_search_tools(mcp: MCPServer, searcher: LiteratureSearcher):
                        year:2020-        → from 2020 onwards
                        year:-2025        → up to 2025
                        year:2024         → from 2024 onwards
-                       age:<value>       → age group filter (PubMed).
+                       age_group:<value> → age group filter (PubMed).
                                            Values: newborn, infant, preschool, child,
                                            adolescent, young_adult, adult, middle_aged,
                                            aged, aged_80
                        sex:<value>       → sex filter: male, female
                        species:<value>   → species filter: humans, animals
-                       lang:<value>      → language filter: english, chinese, etc.
-                       clinical:<value>  → clinical query filter (PubMed EBM).
+                       language:<value>  → language filter: english, chinese, etc.
+                       clinical_query:<value>
+                                        → clinical query filter (PubMed EBM).
                                            Values: therapy, therapy_narrow, diagnosis,
                                            diagnosis_narrow, prognosis, prognosis_narrow,
                                            etiology, etiology_narrow,
                                            clinical_prediction, clinical_prediction_narrow
-                     Example: "year:2020-2025, age:aged, sex:female, clinical:therapy"
+                     Tokens, keys, and values use exact canonical spelling with
+                     no surrounding whitespace.
+                     Example: "year:2020-2025,age_group:aged,sex:female,clinical_query:therapy"
             options: Comma-separated flags to toggle behaviors.
                      Supported flags:
                        preprints      → also search arXiv, medRxiv, bioRxiv
-                       trials         → add a bounded ClinicalTrials.gov adjunct
+                       include_detected_preprints
+                                      → retain records identified by the preprint
+                                        heuristic in otherwise selected sources;
+                                        this does not establish peer-review status
+                       clinical_trials → add a bounded ClinicalTrials.gov adjunct
                                         section to Markdown output (explicit opt-in)
-                       all_types      → include non-peer-reviewed articles
                        no_oa          → skip Unpaywall OA link enrichment
                        no_analysis    → hide query analysis section in output
-                       no_scores      → hide similarity/relevance scores
+                       no_scores      → hide ranking scores and rank percentiles
                        compact        → compact structured JSON/TOON output
                        no_next        → hide next-tool suggestions in structured output
                        no_provenance  → hide section provenance in structured output
@@ -306,8 +228,12 @@ def register_unified_search_tools(mcp: MCPServer, searcher: LiteratureSearcher):
                                          supported (for example S2 and OpenAlex)
                        shallow        → disable deep search (faster, keyword-only)
                      `native_semantic` and `systematic` are mutually exclusive
+                     Option tokens use exact canonical spelling with no
+                     surrounding whitespace.
                      and automatically disable multi-strategy query expansion.
-                     Example: "preprints, shallow" or "no_analysis, no_scores"
+                     Tokens use exact canonical spelling without surrounding
+                     whitespace or duplicates.
+                     Example: "preprints,shallow" or "no_analysis,no_scores"
             pipeline: YAML/JSON string defining a multi-step search pipeline.
                      When provided, other parameters (except output_format) are
                      ignored and the pipeline DAG is executed instead.
@@ -316,7 +242,7 @@ def register_unified_search_tools(mcp: MCPServer, searcher: LiteratureSearcher):
 
                      **Template mode — YAML** (shortcut for common workflows):
                        template: pico
-                       params:
+                       template_params:
                          P: ICU patients
                          I: remimazolam
                          C: propofol
@@ -324,15 +250,15 @@ def register_unified_search_tools(mcp: MCPServer, searcher: LiteratureSearcher):
 
                      Other templates:
                        template: comprehensive
-                       params:
+                       template_params:
                          query: CRISPR gene therapy
 
                        template: exploration
-                       params:
+                       template_params:
                          pmid: "12345678"
 
                        template: gene_drug
-                       params:
+                       template_params:
                          term: BRCA1
 
                      **Custom pipeline — YAML** (full DAG control, max 20 steps):
@@ -342,13 +268,13 @@ def register_unified_search_tools(mcp: MCPServer, searcher: LiteratureSearcher):
                            action: search
                            params:
                              query: remimazolam ICU
-                             sources: pubmed,europe_pmc
+                             sources: [pubmed, europe_pmc]
                              limit: 50
                          - id: s2
                            action: search
                            params:
                              query: propofol ICU
-                             sources: pubmed
+                             sources: [pubmed]
                              limit: 50
                          - id: merged
                            action: merge
@@ -364,15 +290,17 @@ def register_unified_search_tools(mcp: MCPServer, searcher: LiteratureSearcher):
                          ranking: impact
 
                      Shared params:
-                       globals: default params inherited by every step
-                       variables: values available as ${name} placeholders
+                       globals: default params inherited only by actions that
+                                declare the same canonical parameter key
+                       variables: typed values available as ${name} placeholders;
+                                  embedded replacements must be strings
 
                      Debugging controls:
                        dry_run: validate/preview the pipeline without searches
                        stop_at: execute through one step id, e.g. "merged"
 
                      **JSON also supported** (for programmatic use):
-                       {"template": "pico", "params": {"P": "ICU patients", "I": "remimazolam"}}
+                       {"template": "pico", "template_params": {"P": "ICU patients", "I": "remimazolam"}}
 
                      Available actions:
                        search      — literature search (params: query, sources, limit, min_year, max_year)
@@ -413,117 +341,13 @@ def register_unified_search_tools(mcp: MCPServer, searcher: LiteratureSearcher):
             analyzer_factory=QueryAnalyzer,
             enhancer_factory=get_semantic_enhancer,
             source_registry_factory=get_source_registry,
-            timeline_builder_cls=TimelineBuilder,
-            research_tree_builder=build_research_tree,
-            search_functions={
-                "pubmed": lambda search_query,
-                search_limit,
-                min_year,
-                max_year,
-                advanced_filters: _search_pubmed_adapter(
-                    searcher,
-                    search_query,
-                    search_limit,
-                    min_year,
-                    max_year,
-                    advanced_filters,
-                ),
-                "openalex": lambda search_query,
-                search_limit,
-                min_year,
-                max_year,
-                advanced_filters: _search_openalex_adapter(
-                    search_query,
-                    search_limit,
-                    min_year,
-                    max_year,
-                    advanced_filters,
-                ),
-                "europe_pmc": lambda search_query,
-                search_limit,
-                min_year,
-                max_year,
-                advanced_filters: _search_europe_pmc_adapter(
-                    search_query,
-                    search_limit,
-                    min_year,
-                    max_year,
-                    advanced_filters,
-                ),
-                "semantic_scholar": lambda search_query,
-                search_limit,
-                min_year,
-                max_year,
-                advanced_filters: _search_semantic_scholar_adapter(
-                    search_query,
-                    search_limit,
-                    min_year,
-                    max_year,
-                    advanced_filters,
-                ),
-                "core": lambda search_query, search_limit, min_year, max_year, advanced_filters: _search_core_adapter(
-                    search_query,
-                    search_limit,
-                    min_year,
-                    max_year,
-                    advanced_filters,
-                ),
-                "scopus": lambda search_query,
-                search_limit,
-                min_year,
-                max_year,
-                advanced_filters: _search_scopus_adapter(
-                    search_query,
-                    search_limit,
-                    min_year,
-                    max_year,
-                    advanced_filters,
-                ),
-                "web_of_science": lambda search_query,
-                search_limit,
-                min_year,
-                max_year,
-                advanced_filters: _search_web_of_science_adapter(
-                    search_query,
-                    search_limit,
-                    min_year,
-                    max_year,
-                    advanced_filters,
-                ),
-                "arxiv": lambda search_query, search_limit, min_year, max_year, advanced_filters: _search_arxiv_adapter(
-                    search_query,
-                    search_limit,
-                    min_year,
-                    max_year,
-                    advanced_filters,
-                ),
-                "medrxiv": lambda search_query,
-                search_limit,
-                min_year,
-                max_year,
-                advanced_filters: _search_medrxiv_adapter(
-                    search_query,
-                    search_limit,
-                    min_year,
-                    max_year,
-                    advanced_filters,
-                ),
-                "biorxiv": lambda search_query,
-                search_limit,
-                min_year,
-                max_year,
-                advanced_filters: _search_biorxiv_adapter(
-                    search_query,
-                    search_limit,
-                    min_year,
-                    max_year,
-                    advanced_filters,
-                ),
-            },
+            pipeline_runtime=pipeline_runtime,
         )
 
     @mcp.tool()
-    async def analyze_search_query(query: str) -> str:
+    async def analyze_search_query(
+        query: Annotated[str, Field(min_length=1, max_length=MAX_UNIFIED_QUERY_CHARS)],
+    ) -> str:
         """
         Analyze a search query without executing the search.
 
@@ -556,7 +380,7 @@ def register_unified_search_tools(mcp: MCPServer, searcher: LiteratureSearcher):
             analysis = analyzer.analyze(query)
 
             # Get dispatch strategy
-            sources = DispatchStrategy.get_sources(analysis)
+            sources = DispatchStrategy.get_sources(analysis, registry=get_source_registry())
             config = DispatchStrategy.get_ranking_config(analysis)
             enrich_oa = DispatchStrategy.should_enrich_with_unpaywall(analysis)
 
@@ -607,6 +431,10 @@ def register_unified_search_tools(mcp: MCPServer, searcher: LiteratureSearcher):
 
             return "\n".join(output)
 
-        except Exception as e:
-            logger.exception(f"Query analysis failed: {e}")
-            return f"Error: Query analysis failed - {e!s}"
+        except Exception as exc:
+            logger.warning("Query analysis failed (%s)", type(exc).__name__)
+            return ResponseFormatter.error(
+                "Query analysis failed",
+                suggestion="Check the bounded query and retry",
+                tool_name="analyze_search_query",
+            )

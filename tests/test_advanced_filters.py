@@ -24,15 +24,15 @@ async def test_advanced_filters():
 
     # Test 1: aged + therapy filter
     print("=== Test 1: diabetes + aged + therapy + humans ===")
-    results = await searcher.search(
+    page = await searcher.search_page(
         query="diabetes treatment",
         limit=3,
         age_group="aged",
         clinical_query="therapy",
         species="humans",
     )
-    print(f"Results: {len(results)}")
-    for r in results[:3]:
+    print(f"Results: {len(page.items)}")
+    for r in page.items[:3]:
         if r and "title" in r:
             print(f"  - {r['title'][:60]}...")
             print(f"    PMID: {r.get('pmid', 'N/A')}")
@@ -40,36 +40,36 @@ async def test_advanced_filters():
     # Test 2: sex filter
     print()
     print("=== Test 2: breast cancer + female + humans ===")
-    results2 = await searcher.search(query="breast cancer screening", limit=3, sex="female", species="humans")
-    print(f"Results: {len(results2)}")
-    for r in results2[:3]:
+    page2 = await searcher.search_page(query="breast cancer screening", limit=3, sex="female", species="humans")
+    print(f"Results: {len(page2.items)}")
+    for r in page2.items[:3]:
         if r and "title" in r:
             print(f"  - {r['title'][:60]}...")
 
     # Test 3: language filter (English only)
     print()
     print("=== Test 3: COVID + language=english ===")
-    results3 = await searcher.search(query="COVID-19 vaccine", limit=3, language="english")
-    print(f"Results: {len(results3)}")
-    for r in results3[:3]:
+    page3 = await searcher.search_page(query="COVID-19 vaccine", limit=3, language="english")
+    print(f"Results: {len(page3.items)}")
+    for r in page3.items[:3]:
         if r and "title" in r:
             print(f"  - {r['title'][:60]}...")
 
     # Test 4: clinical query - diagnosis
     print()
     print("=== Test 4: lung cancer + diagnosis filter ===")
-    results4 = await searcher.search(query="lung cancer", limit=3, clinical_query="diagnosis")
-    print(f"Results: {len(results4)}")
-    for r in results4[:3]:
+    page4 = await searcher.search_page(query="lung cancer", limit=3, clinical_query="diagnosis")
+    print(f"Results: {len(page4.items)}")
+    for r in page4.items[:3]:
         if r and "title" in r:
             print(f"  - {r['title'][:60]}...")
 
     # Test 5: pediatric (child age group)
     print()
     print("=== Test 5: asthma + child age group ===")
-    results5 = await searcher.search(query="asthma treatment", limit=3, age_group="child")
-    print(f"Results: {len(results5)}")
-    for r in results5[:3]:
+    page5 = await searcher.search_page(query="asthma treatment", limit=3, age_group="child")
+    print(f"Results: {len(page5.items)}")
+    for r in page5.items[:3]:
         if r and "title" in r:
             print(f"  - {r['title'][:60]}...")
 

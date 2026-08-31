@@ -1,20 +1,17 @@
-"""Backward-compatible re-exports for common MCP tool helpers.
+"""Internal re-exports for common MCP tool helpers.
 
 Design:
-    Older tool modules import shared helpers from this location. It now acts as
-    a compatibility barrel over the more focused tool_input, tool_response, and
-    tool_session modules.
+    Tool modules import shared helpers from this compact barrel over the focused
+    tool_input, tool_response, and tool_session modules.
 
 Maintenance:
     Keep this file limited to re-exports. New shared helper logic should be
-    implemented in the specialized modules and surfaced here only when a stable
-    compatibility alias is required.
+    implemented in the specialized modules.
 """
 
 from __future__ import annotations
 
-from . import tool_session as _tool_session
-from .tool_input import KEY_ALIASES, InputNormalizer, apply_key_aliases
+from .tool_input import InputNormalizer
 from .tool_response import ResponseFormatter, format_search_results
 from .tool_session import (
     _cache_results,
@@ -29,23 +26,11 @@ from .tool_session import (
     set_strategy_generator,
 )
 
-
-def __getattr__(name: str):
-    """Expose legacy module attributes backed by tool_session state."""
-    if name == "_session_manager":
-        return _tool_session.get_session_manager()
-    if name == "_strategy_generator":
-        return _tool_session.get_strategy_generator()
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
-
 __all__ = [
     "InputNormalizer",
-    "KEY_ALIASES",
     "ResponseFormatter",
     "_cache_results",
     "_record_search_only",
-    "apply_key_aliases",
     "check_cache",
     "format_search_results",
     "get_last_search_pmids",

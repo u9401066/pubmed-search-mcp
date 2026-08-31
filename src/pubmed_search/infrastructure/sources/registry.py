@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Literal
 
+from pubmed_search.application.unified.use_case import SourceSelectionError as _SourceSelectionError
 from pubmed_search.shared.settings import load_settings
 
 SourceCategory = Literal["search", "enrichment", "fulltext", "preprint", "image", "structured"]
@@ -37,11 +38,6 @@ SourceAutoDispatchProfile = Literal[
 ]
 
 _DISABLED_SOURCES_ENV = "PUBMED_SEARCH_DISABLED_SOURCES"
-
-
-def normalize_source_name(value: str) -> str:
-    """Normalize user-supplied source tokens to registry keys."""
-    return value.strip().lower().replace("-", "_").replace(" ", "_")
 
 
 @dataclass(frozen=True)
@@ -87,7 +83,6 @@ class SourceDefinition:
     supports_primary_search: bool = False
     enabled_by_default: bool = True
     implemented: bool = True
-    aliases: tuple[str, ...] = ()
     required_env_vars: tuple[str, ...] = ()
     enable_env_var: str | None = None
     alternate_search_runner: str | None = None
@@ -107,32 +102,15 @@ class SourceSelection:
     available_sources: tuple[str, ...] = ()
 
 
-@dataclass(eq=False)
-class SourceSelectionError(ValueError):
-    """Raised when a source expression references invalid or unavailable sources."""
-
-    message: str
-    invalid_sources: tuple[str, ...] = field(default_factory=tuple)
-    unavailable_sources: tuple[str, ...] = field(default_factory=tuple)
-    available_sources: tuple[str, ...] = field(default_factory=tuple)
-
-    def __post_init__(self) -> None:
-        super().__init__(self.message)
-
-
 class SourceRegistry:
     """Central registry for source metadata and source-expression parsing."""
 
     def __init__(self, definitions: tuple[SourceDefinition, ...]) -> None:
         self._definitions = {definition.key: definition for definition in definitions}
-        self._aliases: dict[str, str] = {}
-        for definition in definitions:
-            self._aliases[normalize_source_name(definition.key)] = definition.key
-            for alias in definition.aliases:
-                self._aliases[normalize_source_name(alias)] = definition.key
 
     def resolve_key(self, value: str) -> str | None:
-        return self._aliases.get(normalize_source_name(value))
+        """Resolve only an exact canonical registry key."""
+        return value if value in self._definitions else None
 
     def get(self, value: str) -> SourceDefinition | None:
         key = self.resolve_key(value)
@@ -141,7 +119,7 @@ class SourceRegistry:
         return self._definitions.get(key)
 
     def get_capabilities(self, value: str) -> SourceCapabilities | None:
-        """Return immutable capabilities for a source key or alias."""
+        """Return immutable capabilities for an exact canonical source key."""
         definition = self.get(value)
         return definition.capabilities if definition is not None else None
 
@@ -216,7 +194,27 @@ class SourceRegistry:
         auto_sources: list[str],
     ) -> SourceSelection:
         """Resolve a unified-search source expression into concrete source keys."""
-        tokens = [token.strip() for token in expression.split(",") if token.strip()]
+        tokens = expression.split(",")
+        empty_tokens = sum(not token for token in tokens)
+        whitespace_tokens = sum(token != token.strip() for token in tokens)
+        duplicate_tokens: list[str] = []
+        seen_tokens: set[str] = set()
+        for token in tokens:
+            if token in seen_tokens and token not in duplicate_tokens:
+                duplicate_tokens.append(token)
+            seen_tokens.add(token)
+        if empty_tokens or whitespace_tokens or duplicate_tokens:
+            problems: list[str] = []
+            if empty_tokens:
+                problems.append(f"{empty_tokens} empty token(s)")
+            if whitespace_tokens:
+                problems.append(f"{whitespace_tokens} token(s) with surrounding whitespace")
+            if duplicate_tokens:
+                problems.append(f"duplicate token(s): {', '.join(duplicate_tokens)}")
+            raise _SourceSelectionError(
+                "Invalid source expression: " + "; ".join(problems),
+                available_sources=tuple(self.list_unified_sources()),
+            )
         include_auto = False
         include_all = False
         include: list[str] = []
@@ -227,18 +225,16 @@ class SourceRegistry:
         for token in tokens:
             is_exclusion = token.startswith("-")
             raw_name = token[1:] if is_exclusion else token
-            normalized = normalize_source_name(raw_name)
-
-            if normalized in {"auto", "all"}:
+            if raw_name in {"auto", "all"}:
                 if is_exclusion:
                     invalid.append(token)
-                elif normalized == "auto":
+                elif raw_name == "auto":
                     include_auto = True
                 else:
                     include_all = True
                 continue
 
-            definition = self.get(normalized)
+            definition = self.get(raw_name)
             if definition is None or not definition.selectable_in_unified:
                 invalid.append(raw_name)
                 continue
@@ -260,7 +256,7 @@ class SourceRegistry:
                 message_parts.append(f"Invalid source(s): {', '.join(invalid)}")
             if unavailable:
                 message_parts.append(f"Unavailable source(s): {', '.join(unavailable)}")
-            raise SourceSelectionError(
+            raise _SourceSelectionError(
                 "; ".join(message_parts),
                 invalid_sources=tuple(invalid),
                 unavailable_sources=tuple(unavailable),
@@ -286,7 +282,7 @@ class SourceRegistry:
 
         resolved = [source for source in _dedupe(base) if source not in excluded]
         if not resolved:
-            raise SourceSelectionError(
+            raise _SourceSelectionError(
                 "No sources remain after applying exclusions",
                 available_sources=available_sources,
             )
@@ -297,7 +293,7 @@ class SourceRegistry:
             if (definition := self.get(source)) is not None and definition.supports_primary_search
         ]
         if not primary_sources:
-            raise SourceSelectionError(
+            raise _SourceSelectionError(
                 "At least one primary search source is required; enrichment-only sources cannot run a search",
                 available_sources=available_sources,
             )
@@ -381,7 +377,7 @@ def get_source_registry() -> SourceRegistry:
                 supports_primary_search=True,
                 auto_dispatch_profiles=_ALL_AUTO_DISPATCH_PROFILES,
                 capabilities=SourceCapabilities(
-                    search_modes=("keyword", "systematic"),
+                    search_modes=("keyword",),
                     pagination=("offset",),
                     max_page_size=500,
                     batch_limit=500,
@@ -413,7 +409,6 @@ def get_source_registry() -> SourceRegistry:
                 category="search",
                 selectable_in_unified=True,
                 supports_primary_search=True,
-                aliases=("semantic-scholar",),
                 alternate_search_runner="semantic_scholar",
                 auto_dispatch_profiles=_SEMANTIC_SCHOLAR_AUTO_DISPATCH_PROFILES,
                 capabilities=SourceCapabilities(
@@ -433,7 +428,6 @@ def get_source_registry() -> SourceRegistry:
                 category="search",
                 selectable_in_unified=True,
                 supports_primary_search=True,
-                aliases=("europe-pmc",),
                 alternate_search_runner="europe_pmc",
                 auto_dispatch_profiles=_EUROPE_PMC_AUTO_DISPATCH_PROFILES,
                 capabilities=SourceCapabilities(
@@ -472,7 +466,6 @@ def get_source_registry() -> SourceRegistry:
                 selectable_in_unified=True,
                 supports_primary_search=True,
                 enabled_by_default=False,
-                aliases=("elsevier_scopus",),
                 required_env_vars=("SCOPUS_API_KEY",),
                 enable_env_var="SCOPUS_ENABLED",
                 alternate_search_runner="scopus",
@@ -493,7 +486,6 @@ def get_source_registry() -> SourceRegistry:
                 selectable_in_unified=True,
                 supports_primary_search=True,
                 enabled_by_default=False,
-                aliases=("web-of-science", "wos", "clarivate_wos"),
                 required_env_vars=("WEB_OF_SCIENCE_API_KEY",),
                 enable_env_var="WEB_OF_SCIENCE_ENABLED",
                 alternate_search_runner="web_of_science",
@@ -540,7 +532,6 @@ def get_source_registry() -> SourceRegistry:
                 category="preprint",
                 selectable_in_unified=True,
                 supports_primary_search=True,
-                aliases=("med-rxiv", "med_rxiv"),
                 capabilities=SourceCapabilities(
                     search_modes=("keyword",),
                     max_page_size=100,
@@ -554,7 +545,6 @@ def get_source_registry() -> SourceRegistry:
                 category="preprint",
                 selectable_in_unified=True,
                 supports_primary_search=True,
-                aliases=("bio-rxiv", "bio_rxiv"),
                 capabilities=SourceCapabilities(
                     search_modes=("keyword",),
                     max_page_size=100,
@@ -580,7 +570,5 @@ __all__ = [
     "SourceRegistry",
     "SourceSearchMode",
     "SourceSelection",
-    "SourceSelectionError",
     "get_source_registry",
-    "normalize_source_name",
 ]

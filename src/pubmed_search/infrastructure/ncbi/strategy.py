@@ -15,24 +15,19 @@ from typing import Any
 
 from Bio import Entrez
 
-from .base import DEFAULT_ENTREZ_TOOL, execute_entrez_operation, run_entrez_callable
+from .base import (
+    DEFAULT_ENTREZ_TOOL,
+    NCBIInfrastructureError,
+    execute_entrez_operation,
+    raise_ncbi_infrastructure_error,
+    run_entrez_callable,
+)
 
 logger = logging.getLogger(__name__)
 
 # Retry settings for NCBI intermittent errors
 MAX_RETRIES = 3
 RETRY_DELAY = 1.0
-_RETRYABLE_MESSAGES = (
-    "database is not supported",
-    "backend failed",
-    "server error",
-)
-
-
-def _is_retryable(error: Exception) -> bool:
-    """Compatibility helper kept for existing tests and callers."""
-    error_str = str(error).lower()
-    return any(message in error_str for message in _RETRYABLE_MESSAGES)
 
 
 async def _read_entrez_handle(handle: Any) -> Any:
@@ -86,35 +81,37 @@ class SearchStrategyGenerator:
         Returns:
             Tuple of (corrected_query, was_corrected)
         """
+
+        async def _do_spell_check():
+            handle = await asyncio.to_thread(
+                run_entrez_callable,
+                Entrez,
+                Entrez.espell,
+                db="pubmed",
+                term=query,
+                email=self._email,
+                api_key=self._api_key,
+                tool=self._tool,
+            )
+            return await _read_entrez_handle(handle)
+
         try:
-
-            async def _do_spell_check():
-                handle = await asyncio.to_thread(
-                    run_entrez_callable,
-                    Entrez,
-                    Entrez.espell,
-                    db="pubmed",
-                    term=query,
-                    email=self._email,
-                    api_key=self._api_key,
-                    tool=self._tool,
-                )
-                return await _read_entrez_handle(handle)
-
             result = await self._execute_entrez(_do_spell_check, service_name="ncbi-strategy:espell")
+        except Exception as exc:
+            raise_ncbi_infrastructure_error("strategy_spell_check", exc)
 
+        try:
             corrected = result.get("CorrectedQuery", "")
-            if corrected and corrected != query:
-                logger.info(
-                    "NCBI spelling correction applied (input_length=%s, output_length=%s)",
-                    len(query),
-                    len(corrected),
-                )
-                return corrected, True
-            return query, False
-        except Exception as e:
-            logger.warning(f"ESpell failed: {e}")
-            return query, False
+        except (AttributeError, TypeError, ValueError) as exc:
+            raise_ncbi_infrastructure_error("strategy spelling response", exc)
+        if corrected and corrected != query:
+            logger.info(
+                "NCBI spelling correction applied (input_length=%s, output_length=%s)",
+                len(query),
+                len(corrected),
+            )
+            return corrected, True
+        return query, False
 
     async def get_mesh_info(self, term: str) -> dict[str, Any] | None:
         """
@@ -218,44 +215,59 @@ class SearchStrategyGenerator:
 
             return result
 
+        # Strategy 1: Try exact MeSH term search first.
         try:
-            # Strategy 1: Try exact MeSH term search first
-            result = await self._execute_entrez(_search_mesh_exact, service_name="ncbi-strategy:mesh-esearch")
+            result = await self._execute_entrez(
+                _search_mesh_exact,
+                service_name="ncbi-strategy:mesh-esearch",
+            )
+        except Exception as exc:
+            raise_ncbi_infrastructure_error("strategy_mesh_lookup", exc)
+        try:
             mesh_ids = result.get("IdList", [])
+        except (AttributeError, TypeError, ValueError) as exc:
+            raise_ncbi_infrastructure_error("strategy MeSH search response", exc)
 
-            # Strategy 2: Fall back to quoted search
-            if not mesh_ids:
-                result = await self._execute_entrez(_search_mesh_quoted, service_name="ncbi-strategy:mesh-esearch")
+        # Strategy 2: Fall back to quoted search. A provider failure raises;
+        # only a successful pair of empty searches means "no matching term".
+        if not mesh_ids:
+            try:
+                result = await self._execute_entrez(
+                    _search_mesh_quoted,
+                    service_name="ncbi-strategy:mesh-esearch",
+                )
+            except Exception as exc:
+                raise_ncbi_infrastructure_error("strategy_mesh_lookup", exc)
+            try:
                 mesh_ids = result.get("IdList", [])
+            except (AttributeError, TypeError, ValueError) as exc:
+                raise_ncbi_infrastructure_error("strategy MeSH search response", exc)
 
-            if not mesh_ids:
-                return None
+        if not mesh_ids:
+            return None
 
-            mesh_id = mesh_ids[0]
-
-            # Fetch MeSH record in text mode with retry
+        mesh_id = mesh_ids[0]
+        try:
             content = await self._execute_entrez(
                 lambda: _fetch_mesh_text(mesh_id),
                 service_name="ncbi-strategy:mesh-efetch",
                 timeout=60.0,
             )
-
-            if not content:
-                return None
-
-            # Parse the text content
-            parsed = _parse_mesh_text(content)
-
-            return {
-                "mesh_id": mesh_id,
-                "preferred_term": parsed["preferred_term"] or term,
-                "synonyms": parsed["synonyms"][:10],  # Limit to 10
-                "tree_numbers": parsed["tree_numbers"],
-            }
-
-        except Exception as e:
-            logger.warning(f"MeSH lookup failed for '{term}': {e}")
+        except Exception as exc:
+            raise_ncbi_infrastructure_error("strategy_mesh_lookup", exc)
+        if not content:
             return None
+
+        try:
+            parsed = _parse_mesh_text(content)
+        except (AttributeError, TypeError, ValueError) as exc:
+            raise_ncbi_infrastructure_error("strategy MeSH fetch response", exc)
+        return {
+            "mesh_id": mesh_id,
+            "preferred_term": parsed["preferred_term"] or term,
+            "synonyms": parsed["synonyms"][:10],
+            "tree_numbers": parsed["tree_numbers"],
+        }
 
     async def analyze_query(self, query: str) -> dict[str, Any]:
         """
@@ -282,7 +294,10 @@ class SearchStrategyGenerator:
 
         try:
             result = await self._execute_entrez(_do_esearch, service_name="ncbi-strategy:analyze-query")
+        except Exception as exc:
+            raise_ncbi_infrastructure_error("strategy_query_analysis", exc)
 
+        try:
             return {
                 "original": query,
                 "count": int(result.get("Count", 0)),
@@ -290,9 +305,8 @@ class SearchStrategyGenerator:
                 "translation_set": result.get("TranslationSet", []),
                 "translation_stack": result.get("TranslationStack", []),
             }
-        except Exception as e:
-            logger.warning(f"Query analysis failed: {e}")
-            return {"original": query, "count": 0}
+        except (AttributeError, TypeError, ValueError) as exc:
+            raise_ncbi_infrastructure_error("strategy query-analysis response", exc)
 
     async def generate_strategies(
         self,
@@ -340,20 +354,59 @@ class SearchStrategyGenerator:
             "all_synonyms": [],  # Flattened list of all synonyms
             # Optional: pre-built suggestions (Agent can ignore)
             "suggested_queries": [] if include_suggestions else None,
+            "coverage": {
+                "spelling": {
+                    "status": "pending" if check_spelling else "disabled",
+                    "attempted": 0,
+                    "completed": 0,
+                    "failed": 0,
+                },
+                "mesh": {
+                    "status": "pending" if use_mesh else "disabled",
+                    "attempted": 0,
+                    "completed": 0,
+                    "failed": 0,
+                    "matched": 0,
+                },
+                "query_analysis": {
+                    "status": "pending" if include_suggestions and analyze_queries else "disabled",
+                    "attempted": 0,
+                    "completed": 0,
+                    "failed": 0,
+                },
+            },
+            "warnings": [],
         }
 
         # Step 1: Spell check
         working_topic = topic
         if check_spelling:
-            corrected, was_corrected = await self.spell_check(topic)
-            result["spelling"] = {
-                "original": topic,
-                "corrected": corrected,
-                "was_corrected": was_corrected,
-            }
-            if was_corrected:
-                working_topic = corrected
-                result["corrected_topic"] = corrected
+            try:
+                corrected, was_corrected = await self.spell_check(topic)
+            except NCBIInfrastructureError:
+                result["coverage"]["spelling"] = {
+                    "status": "failed",
+                    "attempted": 1,
+                    "completed": 0,
+                    "failed": 1,
+                }
+                result["warnings"].append("NCBI spelling analysis was unavailable.")
+            else:
+                result["spelling"] = {
+                    "original": topic,
+                    "corrected": corrected,
+                    "was_corrected": was_corrected,
+                }
+                result["coverage"]["spelling"] = {
+                    "status": "completed",
+                    "attempted": 1,
+                    "completed": 1,
+                    "failed": 0,
+                    "corrected": was_corrected,
+                }
+                if was_corrected:
+                    working_topic = corrected
+                    result["corrected_topic"] = corrected
 
         # Step 2: Extract key terms and lookup MeSH
         words = working_topic.split()
@@ -373,8 +426,27 @@ class SearchStrategyGenerator:
         }
 
         if use_mesh:
+            mesh_lookups = 0
+            mesh_completed = 0
+            mesh_failures = 0
+            mesh_available = True
+
+            async def _lookup_mesh(term: str) -> dict[str, Any] | None:
+                nonlocal mesh_available, mesh_completed, mesh_failures, mesh_lookups
+                if not mesh_available:
+                    return None
+                mesh_lookups += 1
+                try:
+                    mesh_info = await self.get_mesh_info(term)
+                except NCBIInfrastructureError:
+                    mesh_failures += 1
+                    mesh_available = False
+                    return None
+                mesh_completed += 1
+                return mesh_info
+
             # Try full topic first
-            full_mesh = await self.get_mesh_info(working_topic)
+            full_mesh = await _lookup_mesh(working_topic)
             if full_mesh:
                 mesh_data[working_topic] = full_mesh
                 result["mesh_terms"].append(
@@ -390,7 +462,7 @@ class SearchStrategyGenerator:
             for i in range(len(words) - 1):
                 bigram = f"{words[i]} {words[i + 1]}"
                 if bigram.lower() not in stop_words:
-                    bigram_mesh = await self.get_mesh_info(bigram)
+                    bigram_mesh = await _lookup_mesh(bigram)
                     if bigram_mesh and bigram not in mesh_data:
                         mesh_data[bigram] = bigram_mesh
                         result["mesh_terms"].append(
@@ -408,7 +480,7 @@ class SearchStrategyGenerator:
 
             for word in words:
                 if len(word) > 3 and word.lower() not in stop_words and word.lower() not in covered_words:
-                    word_mesh = await self.get_mesh_info(word)
+                    word_mesh = await _lookup_mesh(word)
                     if word_mesh and word not in mesh_data:
                         mesh_data[word] = word_mesh
                         result["mesh_terms"].append(
@@ -418,6 +490,15 @@ class SearchStrategyGenerator:
                                 "synonyms": word_mesh["synonyms"][:3],
                             }
                         )
+            result["coverage"]["mesh"] = {
+                "status": ("completed" if not mesh_failures else "partial" if mesh_completed else "failed"),
+                "attempted": mesh_lookups,
+                "completed": mesh_completed,
+                "failed": mesh_failures,
+                "matched": len(mesh_data),
+            }
+            if mesh_failures:
+                result["warnings"].append("NCBI MeSH analysis was unavailable for one or more terms.")
 
         # Extract keywords for Agent to use
         result["keywords"] = [w for w in words if w.lower() not in stop_words and len(w) > 2]
@@ -539,15 +620,29 @@ class SearchStrategyGenerator:
 
         # Step 4: Analyze how PubMed interprets each query (optional but recommended)
         if analyze_queries:
+            completed_analyses = 0
+            failed_analyses = 0
             for q in queries:
                 try:
                     analysis = await self.analyze_query(str(q["query"]))
                     q["estimated_count"] = analysis.get("count", 0)
                     q["pubmed_translation"] = analysis.get("translated_query", q["query"])
-                except Exception as e:
-                    logger.warning(f"Query analysis failed for {q['id']}: {e}")
+                    completed_analyses += 1
+                except NCBIInfrastructureError as exc:
+                    logger.warning("Suggested-query analysis failed (%s)", type(exc).__name__)
                     q["estimated_count"] = None
                     q["pubmed_translation"] = None
+                    failed_analyses += 1
+            result["coverage"]["query_analysis"] = {
+                "status": "completed" if not failed_analyses else "partial" if completed_analyses else "failed",
+                "attempted": len(queries),
+                "completed": completed_analyses,
+                "failed": failed_analyses,
+            }
+            if failed_analyses:
+                result["warnings"].append(
+                    "PubMed translation analysis was unavailable for one or more suggested queries."
+                )
 
         result["suggested_queries"] = queries
 

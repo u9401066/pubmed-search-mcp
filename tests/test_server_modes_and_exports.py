@@ -3,10 +3,7 @@
 from __future__ import annotations
 
 import json
-import socket
 import sys
-import time
-from http.client import HTTPConnection
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -30,7 +27,6 @@ from pubmed_search.presentation.mcp_server.http_cli import _mount_auxiliary_rout
 from pubmed_search.presentation.mcp_server.http_security import AuxiliaryApiGuard
 from pubmed_search.presentation.mcp_server.server import build_asgi_app, create_server, get_transport_options
 from pubmed_search.presentation.mcp_server.tools._common import (
-    get_session_registry,
     set_session_manager,
     set_session_registry,
 )
@@ -171,18 +167,18 @@ class TestServerModes:
         from pubmed_search.presentation.mcp_server import server as server_module
 
         _clear_service_env(monkeypatch)
-        create_server(mode="local", data_dir=str(tmp_path))
+        server = create_server(mode="local", data_dir=str(tmp_path))
 
-        registry = get_session_registry()
+        registry = server.get_tool_session_runtime().session_registry
         assert registry is not None
-        assert registry.for_tenant(DEFAULT_TENANT_ID) is server_module.get_container().session_manager()
+        assert registry.for_tenant(DEFAULT_TENANT_ID) is server_module.get_container(server).session_manager()
 
     def test_disabling_caller_isolation_does_not_restore_anonymous_disk_state(self, monkeypatch, tmp_path):
         monkeypatch.setenv("PUBMED_TENANT_ISOLATION", "false")
 
-        create_server(mode="local", data_dir=str(tmp_path))
+        server = create_server(mode="local", data_dir=str(tmp_path))
 
-        registry = get_session_registry()
+        registry = server.get_tool_session_runtime().session_registry
         assert registry is not None
         with bind_tenant(ANONYMOUS_HTTP_TENANT), registry.bind_request(ANONYMOUS_HTTP_TENANT):
             assert registry.for_tenant().data_dir is None
@@ -442,9 +438,9 @@ def test_http_cli_passes_loaded_data_dir_to_server_and_auxiliary_routes(monkeypa
     monkeypatch.setattr(http_cli_module, "load_settings", lambda: settings)
     monkeypatch.setattr(http_cli_module, "create_server", create)
     monkeypatch.setattr(http_cli_module, "build_asgi_app", MagicMock(return_value=app))
-    monkeypatch.setattr(http_cli_module, "get_container", lambda: SimpleNamespace(searcher=lambda: AsyncMock()))
+    monkeypatch.setattr(http_cli_module, "get_container", lambda _server: SimpleNamespace(searcher=lambda: AsyncMock()))
     monkeypatch.setattr(http_cli_module, "build_auth", lambda _settings: (None, None))
-    monkeypatch.setattr(http_cli_module, "get_session_registry", lambda: None)
+    server.get_tool_session_runtime.return_value = SimpleNamespace(session_registry=None)
     monkeypatch.setattr(
         http_cli_module,
         "get_transport_options",
@@ -460,75 +456,7 @@ def test_http_cli_passes_loaded_data_dir_to_server_and_auxiliary_routes(monkeypa
     assert mount.call_args.kwargs["guard"].registry.data_dir == str(tmp_path)
 
 
-def test_stdio_auxiliary_http_enforces_host_origin_and_safe_cors(tmp_path):
-    from pubmed_search.presentation.mcp_server.server import start_http_api_background
-
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        port = int(probe.getsockname()[1])
-
-    session_manager = MagicMock(data_dir=str(tmp_path))
-    session_manager.get_session_summary.return_value = {"searches": 1}
-    start_http_api_background(session_manager, None, port=port)
-
-    def _request(host: str, origin: str | None = None):
-        # Keep each probe short so one slow connect cannot consume the entire
-        # startup budget on loaded macOS ARM runners.
-        connection = HTTPConnection("127.0.0.1", port, timeout=0.25)
-        connection.putrequest("GET", "/api/session/summary", skip_host=True)
-        connection.putheader("Host", host)
-        if origin is not None:
-            connection.putheader("Origin", origin)
-        connection.endheaders()
-        response = connection.getresponse()
-        response.read()
-        connection.close()
-        return response
-
-    deadline = time.monotonic() + 10
-    while True:
-        try:
-            allowed = _request(f"localhost:{port}", f"http://localhost:{port}")
-            break
-        except OSError:
-            if time.monotonic() >= deadline:
-                raise
-            time.sleep(0.01)
-
-    evil_host = _request("evil.example")
-    evil_origin = _request(f"localhost:{port}", "https://evil.example")
-
-    assert allowed.status == 200
-    assert allowed.headers["Access-Control-Allow-Origin"] == f"http://localhost:{port}"
-    assert allowed.headers["Access-Control-Allow-Origin"] != "*"
-    assert evil_host.status == 421
-    assert evil_origin.status == 403
-
-
-def test_stdio_main_does_not_start_auxiliary_http_by_default(monkeypatch, tmp_path):
-    from pubmed_search.presentation.mcp_server import server as server_module
-
-    settings = AppSettings.model_validate(
-        {
-            "PUBMED_DATA_DIR": str(tmp_path),
-            "PUBMED_STDIO_AUX_HTTP": False,
-            "NCBI_EMAIL": "test@example.com",
-        }
-    )
-    mcp = MagicMock()
-    monkeypatch.setattr(sys, "argv", ["pubmed-search-mcp"])
-    monkeypatch.setattr(server_module, "load_settings", lambda: settings)
-    monkeypatch.setattr(server_module, "create_server", MagicMock(return_value=mcp))
-    background = MagicMock()
-    monkeypatch.setattr(server_module, "start_http_api_background", background)
-
-    server_module.main()
-
-    background.assert_not_called()
-    mcp.run.assert_called_once_with()
-
-
-def test_stdio_main_auxiliary_http_reuses_installed_default_manager(monkeypatch, tmp_path):
+def test_stdio_main_has_no_auxiliary_http_bridge(monkeypatch, tmp_path):
     from pubmed_search.presentation.mcp_server import server as server_module
 
     settings = AppSettings.model_validate(
@@ -540,23 +468,13 @@ def test_stdio_main_auxiliary_http_reuses_installed_default_manager(monkeypatch,
         }
     )
     mcp = MagicMock()
-    installed_manager = MagicMock(name="installed-manager")
-    fallback_manager = MagicMock(name="container-manager")
-    searcher = MagicMock(name="searcher")
-    container = SimpleNamespace(session_manager=lambda: fallback_manager, searcher=lambda: searcher)
-    background = MagicMock()
-
     monkeypatch.setattr(sys, "argv", ["pubmed-search-mcp"])
     monkeypatch.setattr(server_module, "load_settings", lambda: settings)
     monkeypatch.setattr(server_module, "create_server", MagicMock(return_value=mcp))
-    monkeypatch.setattr(server_module, "get_container", lambda: container)
-    monkeypatch.setattr(server_module, "get_session_manager", lambda: installed_manager)
-    monkeypatch.setattr(server_module, "start_http_api_background", background)
 
     server_module.main()
 
-    background.assert_called_once_with(installed_manager, searcher, port=19001)
-    fallback_manager.assert_not_called()
+    assert not hasattr(server_module, "start_http_api_background")
     mcp.run.assert_called_once_with()
 
 

@@ -19,7 +19,6 @@ Architecture:
 
 from __future__ import annotations
 
-import asyncio
 import ipaddress
 import logging
 import os
@@ -28,7 +27,6 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, cast
 
-from mcp.server import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 
 from pubmed_search import __version__
@@ -37,26 +35,27 @@ from pubmed_search.container import ApplicationContainer
 from pubmed_search.shared.settings import DEFAULT_DATA_DIR, DEFAULT_EMAIL, load_settings
 
 from .auth import build_auth
-from .http_security import is_allowed_host, is_allowed_origin
 from .instructions import SERVER_INSTRUCTIONS
 from .tenancy import build_tenancy_middleware
-from .tool_registry import register_all_mcp_tools
-from .tools._common import get_session_manager, set_session_registry
+from .tool_contracts import PubMedMCPServer
+from .tool_registry import build_pipeline_runtime, register_all_mcp_tools
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable
 
+    from mcp.server import MCPServer
     from starlette.applications import Starlette
 
     from pubmed_search.application.session.manager import SessionManager
     from pubmed_search.infrastructure.ncbi import LiteratureSearcher
+    from pubmed_search.infrastructure.sources.runtime import SourceRuntime
+
+    from .tools.pipeline_tools import PipelineToolRuntime
 
 logger = logging.getLogger(__name__)
 
-# ── Module-level DI container ──────────────────────────────────────────────
-_container: ApplicationContainer | None = None
-
 _TRANSPORT_OPTIONS_ATTR = "_pubmed_transport_options"
+_APPLICATION_CONTAINER_ATTR = "_pubmed_application_container"
 
 ServerMode = Literal["local", "service"]
 
@@ -165,44 +164,51 @@ def build_asgi_app(server: MCPServer[Any], transport: str = "streamable-http", *
     raise ValueError(msg)
 
 
-def get_container() -> ApplicationContainer:
-    """Get the application DI container.
+def get_container(server: MCPServer[Any]) -> ApplicationContainer:
+    """Get the application DI container owned by *server*.
 
     Raises:
-        RuntimeError: If ``create_server()`` has not been called yet.
+        TypeError: If *server* was not created by :func:`create_server`.
     """
-    if _container is None:
-        msg = "Container not initialized. Call create_server() first."
-        raise RuntimeError(msg)
-    return _container
+    container = getattr(server, _APPLICATION_CONTAINER_ATTR, None)
+    if not isinstance(container, ApplicationContainer):
+        msg = "Server application container is unavailable. Use create_server()."
+        raise TypeError(msg)
+    return container
 
 
 def _make_lifespan(
     container: ApplicationContainer,
+    pipeline_runtime: PipelineToolRuntime,
+    source_runtime: SourceRuntime,
 ) -> Callable[[MCPServer[Any]], AbstractAsyncContextManager[ApplicationContainer]]:
     """Create an MCPServer lifespan handler bound to *container*."""
 
     @asynccontextmanager
     async def _lifespan(server: MCPServer[Any]) -> AsyncIterator[ApplicationContainer]:
         """Application lifecycle: startup → yield → shutdown."""
-        from pubmed_search.presentation.mcp_server.tools.pipeline_tools import get_pipeline_scheduler
-
-        scheduler = get_pipeline_scheduler()
+        scheduler = pipeline_runtime.scheduler
         if scheduler is not None:
             scheduler.start()
         logger.info("Lifecycle: startup - resources ready")
         try:
             yield container
         finally:
-            # Shutdown: close source-owned clients and the shared httpx client.
-            from pubmed_search.infrastructure.sources import close_source_clients
-            from pubmed_search.shared.async_utils import close_shared_async_client
-
             if scheduler is not None:
                 scheduler.shutdown()
-            await close_source_clients()
-            await close_shared_async_client()
-            logger.info("Lifecycle: shutdown - source and shared HTTP clients closed")
+            runtime_getter = getattr(server, "get_tool_session_runtime", None)
+            if callable(runtime_getter):
+                from .tools.tool_session import ToolSessionRuntime
+
+                tool_runtime = runtime_getter()
+                if isinstance(tool_runtime, ToolSessionRuntime):
+                    await tool_runtime.host_callbacks.aclose()
+                    await tool_runtime.citation_tasks.aclose()
+            await source_runtime.close_source_clients()
+            await source_runtime.shared_http.close()
+            logger.info(
+                "Lifecycle: shutdown - host callbacks, citation tasks, source clients, and shared HTTP clients closed"
+            )
 
     return _lifespan
 
@@ -218,7 +224,7 @@ def create_server(
     stateless_http: bool = False,
     mode: ServerMode | None = None,
     allow_container_bind: bool | None = None,
-) -> MCPServer[Any]:
+) -> PubMedMCPServer:
     """
     Create and configure the PubMed Search MCP server.
 
@@ -244,16 +250,15 @@ def create_server(
         Configured MCPServer instance. Transport-level options are recorded on the
         instance and replayed by :func:`build_asgi_app`.
     """
-    global _container
     logger.info("Initializing PubMed Search MCP Server...")
 
-    from pubmed_search.infrastructure.sources import configure_source_contact_email
+    from pubmed_search.infrastructure.sources.runtime import SourceRuntime
 
-    configure_source_contact_email(email)
+    source_runtime = SourceRuntime(contact_email=email)
 
     # ── DI container ────────────────────────────────────────────────────
-    _container = ApplicationContainer()
-    _container.config.from_dict(
+    container = ApplicationContainer()
+    container.config.from_dict(
         {
             "email": email,
             "api_key": api_key,
@@ -261,9 +266,9 @@ def create_server(
         }
     )
 
-    searcher = cast("LiteratureSearcher", _container.searcher())
-    strategy_generator = _container.strategy_generator()
-    session_manager = cast("SessionManager", _container.session_manager())
+    searcher = cast("LiteratureSearcher", container.searcher())
+    strategy_generator = container.strategy_generator()
+    session_manager = cast("SessionManager", container.session_manager())
 
     logger.info("Strategy generator initialized (ESpell + MeSH)")
     logger.info("Session data directory: %s", data_dir or DEFAULT_DATA_DIR)
@@ -321,13 +326,20 @@ def create_server(
         registry=tenant_registry,
         trusted_local_http=effective_mode == "local",
     )
+    pipeline_runtime = build_pipeline_runtime(
+        searcher=searcher,
+        session_manager=session_manager,
+        workspace_dir=workspace_dir,
+        settings=settings,
+        source_runtime=source_runtime,
+    )
 
     # ── Create MCP server with lifespan ─────────────────────────────────
-    mcp: MCPServer[Any] = MCPServer(
+    mcp = PubMedMCPServer(
         name,
         instructions=SERVER_INSTRUCTIONS,
         version=__version__,
-        lifespan=_make_lifespan(_container),
+        lifespan=_make_lifespan(container, pipeline_runtime, source_runtime),
         token_verifier=token_verifier,
         auth=auth_settings,
         middleware=[tenancy_middleware],
@@ -345,6 +357,7 @@ def create_server(
             ),
         ),
     )
+    setattr(mcp, _APPLICATION_CONTAINER_ATTR, container)
 
     # ── Register all tools via centralized registry ─────────────────────
     stats = register_all_mcp_tools(
@@ -352,16 +365,16 @@ def create_server(
         searcher=searcher,
         session_manager=session_manager,
         strategy_generator=strategy_generator,
-        workspace_dir=workspace_dir,
         session_registry=tenant_registry,
+        pipeline_runtime=pipeline_runtime,
+        source_runtime=source_runtime,
     )
     logger.info("Tool registration complete: %s", stats)
 
     # ── Per-tenant session isolation ────────────────────────────────────
-    # Installed after registration: register_all_mcp_tools() calls
-    # set_session_manager(), which intentionally clears any process accessor.
-    # Session closures already hold this registry through explicit injection.
-    set_session_registry(tenant_registry)
+    # Tool dependencies are installed on ``mcp`` before registration and
+    # context-bound for every invocation; constructing another server cannot
+    # replace this registry or strategy generator.
     if settings.tenant_isolation:
         logger.info("Tenant isolation enabled (max %d concurrent requests per tenant)", settings.tenant_max_concurrency)
         if token_verifier is None and effective_mode == "local":
@@ -372,163 +385,9 @@ def create_server(
     else:
         logger.info("Caller isolation disabled; local transports share the durable default tenant")
 
-    # ── Install performance profiling (optional) ────────────────────────
-    from pubmed_search.infrastructure.sources.profiling import install_http_profiling
-    from pubmed_search.shared.profiling import install_profiling
-
-    if install_profiling(mcp):
-        install_http_profiling()
-
     logger.info("PubMed Search MCP Server initialized successfully")
 
     return mcp
-
-
-def start_http_api_background(session_manager, searcher, port: int = 8765):
-    """
-    Start HTTP API server in background thread for MCP-to-MCP communication.
-
-    This allows other MCP servers (like mdpaper) to access cached articles
-    directly via HTTP, even when running in stdio mode.
-    """
-    import json
-    import threading
-    from http.server import BaseHTTPRequestHandler, HTTPServer
-
-    # Create a dedicated event loop for the background thread
-    _bg_loop = asyncio.new_event_loop()
-    background_transport_security = TransportSecuritySettings(
-        enable_dns_rebinding_protection=True,
-        allowed_hosts=list(_LOCAL_ALLOWED_HOSTS),
-        allowed_origins=list(_LOCAL_ALLOWED_ORIGINS),
-    )
-
-    background_searcher = searcher
-    try:
-        from pubmed_search.infrastructure.ncbi import LiteratureSearcher
-
-        if isinstance(searcher, LiteratureSearcher):
-            background_searcher = LiteratureSearcher(email=searcher.email, api_key=searcher.api_key)
-    except Exception:
-        background_searcher = searcher
-
-    class MCPAPIHandler(BaseHTTPRequestHandler):
-        """Simple HTTP handler for the public auxiliary HTTP API."""
-
-        def log_message(self, format, *args):
-            # Suppress HTTP access logs to avoid polluting stdio
-            pass
-
-        def _send_json(self, data: dict, status: int = 200):
-            self.send_response(status)
-            self.send_header("Content-Type", "application/json")
-            origin = self.headers.get("Origin")
-            if origin and is_allowed_origin(origin, background_transport_security):
-                self.send_header("Access-Control-Allow-Origin", origin)
-                self.send_header("Vary", "Origin")
-            self.end_headers()
-            self.wfile.write(json.dumps(data).encode())
-
-        def _reject_untrusted_request(self) -> bool:
-            if not is_allowed_host(self.headers.get("Host"), background_transport_security):
-                self._send_json({"detail": "Invalid Host header"}, 421)
-                return True
-            if not is_allowed_origin(self.headers.get("Origin"), background_transport_security):
-                self._send_json({"detail": "Invalid Origin header"}, 403)
-                return True
-            return False
-
-        def do_GET(self):
-            if self._reject_untrusted_request():
-                return
-            path = self.path
-
-            # Health check
-            if path == "/health":
-                self._send_json({"status": "ok", "service": "pubmed-search-mcp-api"})
-                return
-
-            # Get single cached article
-            if path.startswith("/api/cached_article/"):
-                pmid = path.split("/")[-1].split("?")[0]
-                cached_article = session_manager.get_cached_article(pmid)
-                if cached_article is not None:
-                    self._send_json(
-                        {
-                            "source": "pubmed",
-                            "verified": True,
-                            "data": cached_article,
-                        }
-                    )
-                    return
-
-                # Try to fetch if not in cache (async → sync bridge)
-                if background_searcher:
-                    try:
-                        articles = _bg_loop.run_until_complete(background_searcher.fetch_details([pmid]))
-                        if articles:
-                            self._send_json(
-                                {
-                                    "source": "pubmed",
-                                    "verified": True,
-                                    "data": articles[0],
-                                }
-                            )
-                            return
-                    except Exception as e:
-                        self._send_json({"detail": f"PubMed API error: {e!s}"}, 502)
-                        return
-
-                self._send_json({"detail": f"Article PMID:{pmid} not found"}, 404)
-                return
-
-            # Get session summary
-            if path == "/api/session/summary":
-                self._send_json(session_manager.get_session_summary())
-                return
-
-            # Root - API info
-            if path in {"/", ""}:
-                self._send_json(
-                    {
-                        "service": "pubmed-search-mcp HTTP API",
-                        "mode": "background (stdio MCP + public auxiliary HTTP API)",
-                        "endpoints": {
-                            "/health": "Health check",
-                            "/api/cached_article/{pmid}": "Read cached article",
-                            "/api/cached_articles?pmids=...": "Read multiple cached articles",
-                            "/api/session/summary": "Read current session summary",
-                        },
-                    }
-                )
-                return
-
-            self._send_json({"error": "Not found"}, 404)
-
-    def run_server():
-        try:
-            httpd = HTTPServer(("127.0.0.1", port), MCPAPIHandler)
-            logger.info(f"[HTTP API] Started on http://127.0.0.1:{port}")
-            httpd.serve_forever()
-        except OSError as e:
-            # Windows error codes:
-            # 10048 = WSAEADDRINUSE (port already in use)
-            # 10013 = WSAEACCES (permission denied / firewall blocking)
-            # Unix: 98 = EADDRINUSE, 13 = EACCES
-            if e.errno in (10048, 10013, 98, 13):
-                logger.warning(
-                    f"[HTTP API] Port {port} unavailable (errno={e.errno}), "
-                    "HTTP API disabled. MCP server will still work normally."
-                )
-            else:
-                logger.warning(f"[HTTP API] Failed to start: {e}")
-        except Exception as e:
-            logger.warning(f"[HTTP API] Failed to start: {e}")
-
-    # Start in daemon thread (won't block main process)
-    thread = threading.Thread(target=run_server, daemon=True)
-    thread.start()
-    return thread
 
 
 def _detect_git_email() -> str | None:
@@ -597,17 +456,6 @@ def main():
         workspace_dir=workspace_dir,
         mode="local",
     )
-
-    # The stdio contract is local-only by default. The legacy auxiliary HTTP
-    # bridge must be explicitly requested because it opens another API surface.
-    if settings.stdio_aux_http_enabled:
-        container = get_container()
-        installed_session_manager = get_session_manager() or container.session_manager()
-        start_http_api_background(
-            installed_session_manager,
-            container.searcher(),
-            port=settings.http_api_port,
-        )
 
     # Run stdio MCP server (blocks)
     server.run()

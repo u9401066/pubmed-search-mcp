@@ -1,5 +1,9 @@
 # Phase 4: Biomedical Image Search
 
+> **Historical implementation record:** 本文保留 Phase 4 當時的名稱與
+> 設計決策；若與 v0.7.0 的 41-tool registry 不同，以
+> [`TOOLS_INDEX.md`](../src/pubmed_search/presentation/mcp_server/TOOLS_INDEX.md) 為準。
+
 > **目標**: 整合 Open-i 和 Europe PMC 圖片搜尋，提供統一的生物醫學圖片搜尋 MCP 工具
 >
 > **狀態**: ✅ **已完成** (v0.3.0, 2026-02-09)
