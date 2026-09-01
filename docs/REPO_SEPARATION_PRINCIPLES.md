@@ -1,7 +1,7 @@
 # Repository Separation Principles
 
 > Status: repo-level design guide
-> Last updated: 2026-04-06
+> Last updated: 2026-08-31
 
 這份文件定義本 repo 後續重構與新功能設計時必須維持的三條主分離線。它的目的不是把大檔拆成小檔，而是讓系統在功能持續增加時，仍然能穩定演化。
 
@@ -36,7 +36,7 @@
 
 1. 可測性上升。policy、schema、semantic validator、service orchestration 可以各自獨立測。
 2. 演化成本下降。新增來源、改 ranking、換 heuristics，不需要反覆動 MCP tool surface。
-3. 相容性變好。presentation layer 可以保留 legacy wrappers，但內部服務與 policy 可以持續演進。
+3. 契約漂移降低。presentation layer 只公開 canonical strict contract；已退役 wrapper 直接刪除，內部服務與 policy 也不需維護雙路徑。
 
 ## Principle 1: Structural Correctness vs Semantic Correctness
 
@@ -47,8 +47,8 @@ Structural correctness 是「資料形狀正不正確」。
 它處理：
 
 - raw mapping 是否為 dict
-- type coercion
-- alias shape normalization
+- exact field types（不做 scalar/string/container coercion）
+- unknown/retired field rejection
 - default values
 - discriminated union / mode detection
 - 基本欄位存在性與長度限制
@@ -57,10 +57,10 @@ Semantic correctness 是「資料語意合不合理」。
 
 它處理：
 
-- fuzzy alias resolution
-- domain-specific auto-fix
-- dependency repair
-- ranking / template / strategy semantic correction
+- canonical enum/action/template validation
+- domain invariant validation
+- exact DAG dependency validation
+- bounded safety normalization（例如 hard output cap）
 - query planning intent correction
 - workflow-level consistency
 
@@ -83,7 +83,7 @@ raw input
 pipeline 已經是這個模式的第一個正式樣板：
 
 - [src/pubmed_search/application/pipeline/schema.py](../src/pubmed_search/application/pipeline/schema.py) 處理 structural parsing
-- [src/pubmed_search/application/pipeline/validator.py](../src/pubmed_search/application/pipeline/validator.py) 處理 semantic auto-fix
+- [src/pubmed_search/application/pipeline/validator.py](../src/pubmed_search/application/pipeline/validator.py) 處理 fail-closed semantic validation 與有界 safety normalization
 
 這個分離要被視為 repo pattern，不是 pipeline 特例。
 
@@ -97,7 +97,8 @@ pipeline 已經是這個模式的第一個正式樣板：
 
 - 在 schema parser 裡做 fuzzy semantic repair
 - 在 semantic validator 裡回頭處理 raw JSON shape 錯誤
-- 用單一函式同時做 parse、autofix、execute
+- 用 alias、fuzzy match 或 coercion 猜測呼叫者意圖
+- 用單一函式同時做 parse、repair、execute
 
 ## Principle 2: Policy Decision vs Runtime Side Effect
 
@@ -206,7 +207,7 @@ MCP tool
 
 - facade pattern:
   - [src/pubmed_search/presentation/mcp_server/session_tools.py](../src/pubmed_search/presentation/mcp_server/session_tools.py) 的 `read_session`
-  - [src/pubmed_search/presentation/mcp_server/tools/pipeline_tools.py](../src/pubmed_search/presentation/mcp_server/tools/pipeline_tools.py) 的 `manage_pipeline`
+  - [src/pubmed_search/presentation/mcp_server/tools/pipeline_tools.py](../src/pubmed_search/presentation/mcp_server/tools/pipeline_tools.py) 的 `save_pipeline`、`list_pipelines`、`load_pipeline`、`delete_pipeline`、`get_pipeline_history`、`schedule_pipeline` 與 `unschedule_pipeline`
 - application service direction:
   - [src/pubmed_search/application/pipeline/runner.py](../src/pubmed_search/application/pipeline/runner.py)
   - [src/pubmed_search/infrastructure/scheduling/pipeline_scheduler.py](../src/pubmed_search/infrastructure/scheduling/pipeline_scheduler.py)
@@ -284,13 +285,13 @@ fulltext 是下一個應該明確落實這條分離線的地方。
 3. runtime executor 是否只是消費 policy 結果，而不是重算 policy？
 4. MCP tool 是否只保留 surface 責任，而沒有成為 orchestration center？
 5. application service 是否可以在不經過 MCP tool 的情況下被直接呼叫？
-6. backward compatibility 是否留在 tool facade，而不是污染 service 核心？
+6. 已退休的 public facade 是否已從 registry、docs 與 tests 完整移除，而不是以 compatibility wrapper 污染 service 核心？
 
 如果以上任何一點回答是「否」，那通常代表這次變更還沒有真正完成架構分離。
 
 ## Related Documents
 
 - [ARCHITECTURE.md](../ARCHITECTURE.md): 目前系統分層與入口總覽
-- [docs/TOOL_CONSOLIDATION_DESIGN.md](TOOL_CONSOLIDATION_DESIGN.md): facade / wrapper 的 surface 設計原則
+- [docs/TOOL_QUALITY_AUDIT.md](TOOL_QUALITY_AUDIT.md): canonical tool surface、關係與品質審計
 - [docs/FULLTEXT_REGISTRY_REFACTOR.md](FULLTEXT_REGISTRY_REFACTOR.md): fulltext service / registry / policy 分離目標
 - [docs/COPILOT_HOOKS_PIPELINE_ENFORCEMENT.md](COPILOT_HOOKS_PIPELINE_ENFORCEMENT.md): hook runtime policy 與執行層的案例

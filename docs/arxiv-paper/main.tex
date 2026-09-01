@@ -117,7 +117,7 @@ No single platform covers the complete pipeline from query to timeline.
 We address these challenges through the following contributions:
 
 \begin{enumerate}
-    \item \textbf{Multi-source integration architecture:} An MCP SDK v2 system exposing 45 tools over registry-selected biomedical, scholarly-graph, open-access, preprint, and optional licensed sources through a Domain-Driven Design architecture (Section~\ref{sec:architecture}).
+    \item \textbf{Multi-source integration architecture:} An MCP SDK v2 system exposing 41 tools over registry-selected biomedical, scholarly-graph, open-access, preprint, and optional licensed sources through a Domain-Driven Design architecture (Section~\ref{sec:architecture}).
 
     \item \textbf{BM25$^{+}$ + RRF + MMR ranking pipeline:} A three-stage pipeline with field-boosted BM25 ($\beta_{\text{title}} = 2.0$, $\beta_{\text{MeSH}} = 1.5$), calibration-free RRF fusion across six dimensions, and MeSH-based MMR diversification (Sections~\ref{sec:bm25}--\ref{sec:mmr}).
 
@@ -195,7 +195,7 @@ Our system is among the first academic search tools built natively on MCP, enabl
                    MCP Protocol (JSON-RPC)
                           |
 +-----------------------------------------------------------+
-| Presentation Layer: 45 MCP Tools, 9 Prompts, Resources    |
+| Presentation Layer: 41 MCP Tools, 9 Prompts, Resources    |
 +-----------------------------------------------------------+
 | Application Layer                                         |
 | +-- QueryAnalyzer (MeSH expansion, PICO handoff validation) |
@@ -716,7 +716,7 @@ The codebase follows Domain-Driven Design with strict layer separation enforced 
 
 \subsection{MCP Tool Interface}
 
-The system exposes 45 MCP tools organized into 16 registry categories (Table~\ref{tab:tools}).
+The system exposes 41 MCP tools organized into 16 registry categories (Table~\ref{tab:tools}).
 
 \begin{table}[htbp]
 \centering
@@ -940,7 +940,7 @@ The Research Lineage Tree further transforms flat timelines into branching struc
 Pipeline Persistence with DAG-based orchestration makes complex multi-step workflows reproducible and schedulable.
 
 The system covers the systematic review pipeline from initial query through temporal analysis, landmark identification, lineage visualization, and export---a scope unmatched by existing tools.
-With 45 MCP tools, 3{,}700+ automated tests, and a registry-backed multi-source broker, \system{} demonstrates that the gap between literature \emph{search} and literature \emph{understanding} can be bridged through principled algorithms and thoughtful system design.
+With 41 MCP tools, 3{,}700+ automated tests, and a registry-backed multi-source broker, \system{} demonstrates that the gap between literature \emph{search} and literature \emph{understanding} can be bridged through principled algorithms and thoughtful system design.
 
 The system is open-source and available at \url{https://github.com/u9401066/pubmed-search-mcp}.
 

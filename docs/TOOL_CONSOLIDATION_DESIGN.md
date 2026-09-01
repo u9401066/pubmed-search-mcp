@@ -1,109 +1,233 @@
-# MCP Tool Consolidation Design
+# MCP Tool Surface Design — v0.7
 
-## Goal
+## 文件定位
 
-Reduce public MCP surface area where multiple tools are thin variations of the same resource access pattern, while preserving backward compatibility for existing agents and prompts.
+本文件記錄 v0.7 **現行且唯一**的公開 MCP tool surface。Runtime registry
+`src/pubmed_search/presentation/mcp_server/tool_registry.py` 是工具名稱、分類與數量的
+唯一真相來源；README、網站、agent instructions 與測試都必須由這份 registry
+校驗。公開契約目前是 **16 類、41 個工具**，`contractVersion` 為 `3`。
 
-Current state after this change:
+這次收斂採直接 breaking change：公開 registry、schema、文件與範例只描述 canonical
+契約。已移除的名稱、參數袋與 forwarding module 不構成相容層，也不能由 server
+猜測或轉換成新契約。
 
-- `manage_pipeline()` is the new facade for pipeline CRUD/history/scheduling.
-- `read_session()` is the new facade for session reads.
-- `build_research_chronicle()` is the single Chronicle build/update entry point;
-  `read_research_chronicle()` owns stored reads and analyses.
-- Session and pipeline legacy tools remain available as compatibility wrappers;
-  the removed pre-Chronicle timeline names do not.
+## 設計決策
 
-## Consolidation Principles
+1. 每種 capability 只有一個 owner；同一個 provider 或 helper 不應形成第二個公開
+   搜尋入口。
+2. MCP tool 只處理 strict transport schema、application service 呼叫與結果呈現；搜尋
+   規劃、pipeline 驗證、Chronicle 投影、Mermaid 修復與 persistence policy 留在
+   application layer。
+3. 只有「同一 aggregate 的唯讀投影」適合 discriminated request facade。因此
+   `read_session` 與 `read_research_chronicle` 使用 action-tagged union；各 variant
+   只接受自己的欄位。
+4. 會建立、取代、刪除或排程 state 的 pipeline operation 使用七個 schema-exact
+   單一用途工具。它們的 side effect、idempotency 與授權需求不同，不使用模糊的
+   action bag。
+5. `unified_search` 是唯一多來源文獻搜尋 orchestration gateway。其他工具提供規劃、
+   資料、視覺 handoff、持久化或分析，不重做 federation。
+6. 所有 provider boundary 回傳 canonical typed result；presentation layer 不接受 tuple、
+   list、`None` 或舊 payload shape 的猜測式 coercion。
 
-1. Good facade candidates share one backing aggregate.
-2. Good facade candidates differ mainly by `action`, not by payload shape or data source.
-3. Do not merge tools when the resulting action matrix becomes harder to understand than the current API.
-4. Keep read-heavy and write-heavy operations separate unless they operate on the same backing object and have the same mental model.
-5. Prefer facade-first internals plus thin legacy wrappers over duplicated tool logic.
+## 41 個 canonical tools
 
-## 適合收
+下表完整列出 registry 的 16 個 category。數量總和為 41；加入、刪除或改名時必須
+同步修改 registry-driven 測試及生成文件。
 
-| Tool family | Current tools | Proposed facade | Why it fits | Recommendation |
-| --- | --- | --- | --- | --- |
-| Session 管理 | `get_session_pmids`, `get_cached_article`, `get_session_summary` | `read_session(action=pmids\|article\|summary)` | Same backing object (`SessionManager`), same user mental model, all are read-only accessors into one active session | 已實作，保留 legacy wrappers |
-| Pipeline 管理 | `save_pipeline`, `list_pipelines`, `load_pipeline`, `delete_pipeline`, `get_pipeline_history`, `schedule_pipeline` | `manage_pipeline(action=save\|list\|load\|delete\|history\|schedule)` | Same backing object (`PipelineStore`), same resource type, clear CRUD/history lifecycle | 已實作，保留 legacy wrappers |
-| 研究編年史 | `build_research_timeline`, `analyze_timeline_milestones`, `compare_timelines` | `build_research_chronicle(...)` + `read_research_chronicle(action=milestones\|compare)` | Build/update is separated from read-only analysis while all projections share one immutable, evidence-backed Chronicle aggregate | v0.6.2 已實作；舊 timeline tools 已移除 |
-| 機構訂閱 | `configure_institutional_access`, `get_institutional_link`, `list_resolver_presets`, `test_institutional_access` | `manage_institutional_access(action=configure\|link\|list_presets\|test)` | Same configuration domain, one resolver profile lifecycle, current split mostly reflects implementation not API needs | 適合下一波收斂 |
+| # | Category | 數量 | Canonical tools |
+| ---: | --- | ---: | --- |
+| 1 | `search` | 1 | `unified_search` |
+| 2 | `query_intelligence` | 3 | `validate_pico_plan`, `generate_search_queries`, `analyze_search_query` |
+| 3 | `discovery` | 5 | `fetch_article_details`, `find_related_articles`, `find_citing_articles`, `get_article_references`, `get_citation_metrics` |
+| 4 | `reference_verification` | 1 | `verify_reference_list` |
+| 5 | `fulltext` | 2 | `get_fulltext`, `get_text_mined_terms` |
+| 6 | `figure` | 1 | `get_article_figures` |
+| 7 | `ncbi_extended` | 7 | `search_gene`, `get_gene_details`, `get_gene_literature`, `search_compound`, `get_compound_details`, `get_compound_literature`, `search_clinvar` |
+| 8 | `citation_network` | 1 | `build_citation_tree` |
+| 9 | `export` | 2 | `prepare_export`, `save_literature_notes` |
+| 10 | `session` | 1 | `read_session` |
+| 11 | `institutional` | 5 | `configure_institutional_access`, `get_institutional_link`, `list_resolver_presets`, `test_institutional_access`, `diagnose_institutional_access` |
+| 12 | `vision` | 1 | `prepare_figure_search` |
+| 13 | `icd` | 1 | `convert_icd_mesh` |
+| 14 | `chronicle` | 2 | `build_research_chronicle`, `read_research_chronicle` |
+| 15 | `image_search` | 1 | `search_biomedical_images` |
+| 16 | `pipeline` | 7 | `save_pipeline`, `list_pipelines`, `load_pipeline`, `delete_pipeline`, `get_pipeline_history`, `schedule_pipeline`, `unschedule_pipeline` |
+|  | **合計** | **41** |  |
 
-## 不適合收
+## 能力關係
 
-| Tool family | Current tools | Why not consolidate now |
+工具之間以 typed data handoff 組合，不由一個 presentation tool 私下呼叫另一個
+presentation tool。下圖中，箭頭表示輸入、輸出或 workflow 關係；application service
+與 store 才是實際共用點。
+
+```mermaid
+flowchart LR
+    client["MCP client or agent"]
+    pico["validate_pico_plan"]
+    query["Query intelligence"]
+    vision["prepare_figure_search"]
+    unified["unified_search"]
+    broker["Typed source broker"]
+    providers["Bounded providers"]
+    journal["Search run journal and artifacts"]
+    session["read_session"]
+    pipeline["Stored pipeline definition"]
+    chronicle["Research Chronicle services"]
+    mermaid["Shared Mermaid repair kernel"]
+    images["search_biomedical_images"]
+
+    client --> pico
+    client --> query
+    client --> vision
+    pico --> unified
+    query --> unified
+    vision --> unified
+    vision --> images
+    client --> unified
+    pipeline --> unified
+    unified --> broker
+    broker --> providers
+    unified --> journal
+    journal --> session
+    unified --> chronicle
+    chronicle --> mermaid
+```
+
+重要邊界如下：
+
+- `validate_pico_plan` 驗證 agent 已產生的 PICO 結構，輸出可供
+  `unified_search` 使用的 handoff；它不是另一套自然語言 PICO 推論引擎。
+- `generate_search_queries` 與 `analyze_search_query` 補充查詢規劃，但真正的多來源
+  capability negotiation、執行、去重、篩選與排名仍由 `unified_search` 擁有。
+- `prepare_figure_search` 只驗證 URL 或 base64 image、回傳 `ImageContent` 與聚焦指令。
+  Agent 根據影像內容產生 scientific terms 後，再明確交給 `unified_search` 或
+  `search_biomedical_images`；server 不假裝內建 vision inference。
+- `unified_search` 的 normal path 經 typed source broker；傳入 pipeline 時走 bounded
+  DAG executor。兩者共用輸入安全邊界、journal 與 output budget，但不可把兩條資料面
+  當成等價實作。
+- `read_session` 從 tenant-scoped session、artifact store 與 search-run journal 讀取
+  結果；`replay_search` 只回傳已移除 credential 的 canonical replay arguments，是否
+  再執行仍由 client 明確決定。
+- Chronicle build/read 共用 persisted evidence snapshot。`timeline`、`tree`、`graph`、
+  `milestones`、`narrative` 與 canonical `mermaid` 都是該 snapshot 的投影；citation
+  network 與 Chronicle 共用 Mermaid repair kernel，不各自重造 renderer sanitizer。
+
+## `read_session`：九種 schema-exact 讀取
+
+`read_session` 的唯一輸入是 `request` discriminated union。`request.action` 先決定
+variant，Pydantic strict schema 再拒絕拼錯、額外或屬於其他 action 的欄位。
+
+| `request.action` | 必要識別 | 用途 |
 | --- | --- | --- |
-| 搜尋入口 | `unified_search` | Already the facade. Wrapping it again would add naming noise without reducing complexity. |
-| 查詢智能 | `parse_pico`, `generate_search_queries`, `analyze_search_query` | These are distinct stages with distinct outputs: agent-provided PICO handoff, term expansion, query analysis. Merging would create a vague meta-tool. |
-| 文章探索 | `fetch_article_details`, `find_related_articles`, `find_citing_articles`, `get_article_references`, `get_citation_metrics` | Inputs are similar but semantics differ substantially: detail fetch, similarity, forward citation, backward citation, impact scoring. One `explore_article(action=...)` tool would be broader but less legible. |
-| 全文工具 | `get_fulltext`, `get_text_mined_terms` | Same article target, but one is content retrieval and the other is annotation extraction. Different payload contracts and usage cadence. |
-| 圖表擷取 | `get_article_figures` | Single focused capability; no adjacent tool family worth merging into today. |
-| NCBI 延伸 | `search_gene`, `get_gene_details`, `get_gene_literature`, `search_compound`, `get_compound_details`, `get_compound_literature`, `search_clinvar` | Domain objects differ materially: gene, compound, variant. A single `research_biomedical_entity` facade would hide important entity-specific constraints. |
-| 引用網絡 | `build_citation_tree` | Single focused capability. |
-| 匯出工具 | `prepare_export` | Single focused capability. |
-| 視覺搜索 | `analyze_figure_for_search` | Single focused capability with distinct multimodal input. |
-| ICD 轉換 | `convert_icd_mesh` | Single focused bidirectional converter; already compact. |
-| 研究編年史 | `build_research_chronicle`, `read_research_chronicle` | Already split at the write/read boundary. `read_research_chronicle` multiplexes only read-only actions (`load`, `list`, `diff`, `narrate`, `milestones`, `compare`) over the same stored aggregate. |
-| 圖片搜尋 | `search_biomedical_images` | Single focused capability. |
+| `pmids` | 無；可選 `search_index` | 讀取某次 session search 的 PMID |
+| `article` | `pmid` | 讀取一篇 cached article |
+| `summary` | 無 | 讀取 session 摘要與可選 history |
+| `log` | 無 | 讀取有界 activity log |
+| `list_artifacts` | 無；可選 session 與 filter | 列出 artifact manifests |
+| `artifact` | `locator` | 依 `artifact_id` 或 `artifact_uri` 分頁讀取 artifact |
+| `search_runs` | 無；可選 session 與 status | 列出 durable search-run envelopes |
+| `search_run` | `run_id` | 讀取指定 search run |
+| `replay_search` | `run_id` | 取得 credential-free replay arguments |
 
-## 已完成的 Timeline → Chronicle 遷移
+```json
+{
+  "request": {
+    "action": "artifact",
+    "locator": {
+      "kind": "artifact_id",
+      "value": "artifact-123",
+      "session_id": "session-456"
+    },
+    "offset": 0,
+    "max_chars": 50000
+  }
+}
+```
 
-The pre-Chronicle timeline tools are not compatibility wrappers. They were
-removed when the persisted Chronicle aggregate became the authoritative public
-surface:
+Artifact locator 本身也是 discriminated union：`kind="artifact_id"` 與
+`kind="artifact_uri"` 不能混用欄位。Local path 預設遮蔽；只有 request 與 server
+policy 同時允許時才可顯示。
 
-| Removed tool | Shipped mapping |
-| --- | --- |
-| `build_research_timeline(...)` | `build_research_chronicle(...)` |
-| `analyze_timeline_milestones(...)` | `read_research_chronicle(action="milestones", chronicle_id="...")` |
-| `compare_timelines(...)` | `read_research_chronicle(action="compare", topics="A,B")` or `chronicle_ids="id-a,id-b"` |
+## Research Chronicle：write/read 分界
 
-Chronicle comparison and milestone analysis read stored evidence; they do not
-silently rerun a search. The legacy-wrapper policy below applies to the session
-and pipeline facades, not to these removed timeline names.
+`build_research_chronicle` 負責從 topic 或 explicit PMID evidence 建立 durable
+Chronicle revision；`read_research_chronicle` 負責 persisted snapshot 的唯讀投影。
+這個分割保留 side-effect 邊界，又避免為每個 projection 建立一個薄 wrapper。
 
-## 應淘汰 legacy wrapper
+`read_research_chronicle` 同樣只接受 `request` discriminated union：
 
-These wrappers should stay in place for compatibility until prompts, docs, tests, and downstream agents have migrated to the facade names.
+| `request.action` | 主要欄位 | 結果 |
+| --- | --- | --- |
+| `load` | `chronicle_id`, optional `revision`, `output` | 讀取指定 revision 與 projection |
+| `list` | optional `topic`, `limit` | 列出 persisted chronicles |
+| `diff` | `chronicle_id`, `from_revision`, optional `to_revision` | 比較兩個 revision |
+| `narrate` | `chronicle_id`, optional `revision`, `mode` | 產生 evidence-backed narrative |
+| `milestones` | `chronicle_id`, optional `revision` | 讀取重要里程碑 |
+| `compare` | `selection` | 比較 2 到 5 個 topics 或 Chronicle IDs |
 
-| Legacy tool | Replaced by | Status | Retirement rule |
-| --- | --- | --- | --- |
-| `get_session_pmids` | `read_session(action="pmids")` | 保留中 | After two minor releases with no prompt/doc dependency |
-| `get_cached_article` | `read_session(action="article", pmid=...)` | 保留中 | Same as above |
-| `get_session_summary` | `read_session(action="summary")` | 保留中 | Same as above |
-| `save_pipeline` | `manage_pipeline(action="save", ...)` | 保留中 | After all saved examples and prompts switch to facade |
-| `list_pipelines` | `manage_pipeline(action="list", ...)` | 保留中 | Same as above |
-| `load_pipeline` | `manage_pipeline(action="load", ...)` | 保留中 | Same as above |
-| `delete_pipeline` | `manage_pipeline(action="delete", ...)` | 保留中 | Same as above |
-| `get_pipeline_history` | `manage_pipeline(action="history", ...)` | 保留中 | Same as above |
-| `schedule_pipeline` | `manage_pipeline(action="schedule", ...)` | 保留中 | Same as above |
-| `configure_institutional_access` | future `manage_institutional_access(action="configure", ...)` | 候選 | Only after facade exists and docs migrate |
-| `get_institutional_link` | future `manage_institutional_access(action="link", ...)` | 候選 | Same as above |
-| `list_resolver_presets` | future `manage_institutional_access(action="list_presets")` | 候選 | Same as above |
-| `test_institutional_access` | future `manage_institutional_access(action="test")` | 候選 | Same as above |
+Compare selection 再以 `selection.kind` 判別 `topics` 或 `chronicle_ids`，不接受兩者
+混合：
 
-## Migration Plan
+```json
+{
+  "request": {
+    "action": "compare",
+    "selection": {
+      "kind": "chronicle_ids",
+      "values": ["crispr-origin", "base-editing"]
+    }
+  }
+}
+```
 
-### Phase 1
+Chronicle 的 canonical Mermaid 是 `flowchart LR`：年份形成橫向時間主軸，主題從相應
+年份樹狀分岔，分支中的論文仍依發表先後排序。Rich graph 失敗時依序重建 safe 與
+minimal candidate；修復只改視覺 projection，不改 evidence snapshot。
 
-- Add facade tools.
-- Move implementation logic behind facade dispatch helpers.
-- Keep legacy tools as thin wrappers.
-- Update registry, instructions, and generated tool documentation.
+## Pipeline：七個單一用途工具
 
-### Phase 2
+Pipeline state mutation 不適合塞進同一個 action facade。v0.7 依 operation 的 schema
+與副作用公開七個工具：
 
-- Switch prompts, README examples, and tests to prefer facade names.
-- Mark legacy wrappers as compatibility aliases in docs.
+| Tool | 單一責任 | Side effect |
+| --- | --- | --- |
+| `save_pipeline` | 驗證並保存具名 definition，建立 version | 建立或取代 persisted head |
+| `list_pipelines` | 列出有界 pipeline summaries | 無，唯讀 |
+| `load_pipeline` | 讀取 current 或指定 version | 無，唯讀 |
+| `delete_pipeline` | 刪除 definition，並檢查 schedule consistency | 刪除 persisted state |
+| `get_pipeline_history` | 讀取 immutable version history | 無，唯讀 |
+| `schedule_pipeline` | 驗證 trigger 並建立或取代排程 | 改變 durable schedule |
+| `unschedule_pipeline` | 移除 trigger，不刪除 definition | 刪除 scheduling state |
 
-### Phase 3
+`load_pipeline` 取得的 definition 可作為 `unified_search` pipeline mode 輸入；inline、
+stored 與 file-backed config 必須經相同 bounded parser、schema validator 與
+`LimitBudget`。`schedule_pipeline` 與 `unschedule_pipeline` 對稱，避免只能建立而無法
+精確撤銷排程。
 
-- Emit deprecation warnings in wrapper docstrings or descriptions if MCP host UX allows it.
-- Remove wrappers only after release-window and usage review.
+## 為何其餘工具不再整併
 
-## Non-Goals
+- Article details、related、citing、references 與 metrics 雖共享 identifier 或 provider，
+  但其研究語意與 output schema 不同；名稱明確比廣泛 action router 更可發現。
+- Full text 與 text-mined terms 有不同 access、artifact 與 payload policy。
+- Gene、compound 與 ClinVar 是不同 domain object；共享 NCBI/PubChem transport 不代表
+  它們應有含糊的 entity facade。
+- Institutional tools 同時含 process-setting mutation、link construction、preset listing、
+  connectivity test 與 article diagnostics，side effect 差異足以維持明確入口。
+- Export、citation graph、image search 與 ICD conversion 已各自是單一聚焦 capability；
+  為降低數字而合併只會隱藏契約。
 
-- Do not collapse all search-related tools into one giant action router.
-- Do not merge tools that cross different domain aggregates only to reduce tool count.
-- Do not change output schemas of existing legacy tools during the compatibility phase.
+## 防漂移與完成標準
+
+Tool surface 的修改只有在以下項目全部同步後才算完成：
+
+1. Runtime registry 的 category、tool name、annotation 與 strict schema 一致。
+2. README、網站、agent instructions、skill references 與生成索引不含退役契約。
+3. Registry-driven 測試斷言 16 categories、41 tools，並逐一驗證 metadata。
+4. Session 與 Chronicle 的 discriminated variants 有正反例 schema tests。
+5. Pipeline 七工具具有 persistence、schedule、unschedule 與 multi-server isolation tests。
+6. `unified_search` normal/pipeline boundary、typed source result 與 output budget 有契約測試。
+7. 所有文件與 runtime fixtures 的 Mermaid 以 pinned Mermaid parser 實際渲染；不能只用
+   regular expression 判斷 code fence 存在。
+
+這些 guardrail 讓「41」不是手動維護的行銷數字，而是 runtime、文件與 release
+artifact 共同驗證的 public contract。

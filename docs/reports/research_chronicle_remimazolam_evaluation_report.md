@@ -1,5 +1,10 @@
 # Research Chronicle 功能測試與 Remimazolam 術中應用研究脈絡分析報告 (v0.6.4 更新版)
 
+> **歷史報告 / Superseded contract**：本文保留 v0.6.4 當時的評估結果，
+> 其 `mindmap`、`timeline_mermaid` 與舊 renderer 名稱不是 v0.7.0 現行 API。
+> 目前契約請以 [`RESEARCH_CHRONICLE_REFACTOR_SPEC.md`](../RESEARCH_CHRONICLE_REFACTOR_SPEC.md)
+> 與 `read_research_chronicle(request={...})` 為準。
+
 > **報告日期**：2026-08-18  
 > **軟體版本**：v0.6.4  
 > **評估工具**：PubMed Search MCP (`build_research_chronicle`, `read_research_chronicle`, `build_citation_tree`, `get_article_figures`, `unified_search`)  

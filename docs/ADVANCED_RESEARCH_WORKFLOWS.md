@@ -10,8 +10,8 @@ in PubMed Search MCP: **Research Chronicle (Evolution & Lineage Trees)**,
 | --- | --- | --- |
 | See how a topic evolved, branched, and settled over time | `build_research_chronicle` | `read_research_chronicle` |
 | Find biomedical images from text (X-ray, histology, CT) | `search_biomedical_images` | `get_article_figures`, `unified_search` |
-| Upload or pass an image and search by its visual meaning | `analyze_figure_for_search` | `search_biomedical_images`, `unified_search` |
-| Re-open large search/fulltext outputs without rerunning | `read_session(action="artifact")` | `read_session(action="list_artifacts")` |
+| Upload or pass an image and search by its visual meaning | `prepare_figure_search` | `search_biomedical_images`, `unified_search` |
+| Re-open large search/fulltext outputs without rerunning | `read_session(request={"action":"artifact","locator":{"kind":"artifact_id","value":"..."}})` | `read_session(request={"action":"list_artifacts"})` |
 
 ---
 
@@ -34,10 +34,10 @@ and *"What has changed since my last search?"*.
   automatically clustered from shared MeSH descriptors and author keywords,
   branching off from the year of their earliest observed paper.
 - **Single Source of Truth**: All projections (time spine, lineage tree,
-  mindmap, Mermaid diagrams, narrative Markdown, and JSON) originate from the
-  same `ChronicleSnapshot`, ensuring mutual consistency. For a lightweight preview
-  inside a normal search response, use `unified_search(options="context_graph")`
-  (which generates a preview from the current PMID-backed ranked set rather than a full persisted chronicle).
+  Mermaid diagrams, narrative Markdown, and JSON) originate from the
+  same `ChronicleSnapshot`, ensuring mutual consistency. Research Chronicle is
+  the only research-lineage capability; `unified_search` can suggest it as a
+  next step but does not generate a second context projection.
 - **Immutable Versioned Storage**: Each update or continuation atomically
   appends `Revision N+1`, enabling precise longitudinal diffing.
 - **Epistemic Rigor**: Missing papers in later revisions are classified as
@@ -68,21 +68,19 @@ build_research_chronicle(chronicle_id="remimazolam-intraoperative-08c229f3")
 
 | Action | Purpose | Example |
 | --- | --- | --- |
-| `load` | Load a stored revision in any format (defaults to latest) | `read_research_chronicle(chronicle_id="...", output="mermaid")` |
-| `list` | List all persisted chronicles with latest revision IDs | `read_research_chronicle(action="list")` |
-| `diff` | Compare two revisions (added, unobserved, role shifts, audit) | `read_research_chronicle(action="diff", chronicle_id="...", from_revision=1)` |
-| `milestones` | Diagnostic overview of milestone types, years, and landmark scores | `read_research_chronicle(action="milestones", chronicle_id="...")` |
-| `compare` | Compare 2–5 topics side-by-side with shared evidence analysis | `read_research_chronicle(action="compare", topics="remimazolam,propofol")` |
-| `narrate` | Render evidence-backed Markdown with citations for writing/reporting | `read_research_chronicle(action="narrate", chronicle_id="...", mode="full")` |
+| `load` | Load a stored revision in any format (defaults to latest) | `read_research_chronicle(request={"action":"load","chronicle_id":"...","output":"mermaid"})` |
+| `list` | List all persisted chronicles with latest revision IDs | `read_research_chronicle(request={"action":"list"})` |
+| `diff` | Compare two revisions (added, unobserved, role shifts, audit) | `read_research_chronicle(request={"action":"diff","chronicle_id":"...","from_revision":1})` |
+| `milestones` | Diagnostic overview of milestone types, years, and landmark scores | `read_research_chronicle(request={"action":"milestones","chronicle_id":"..."})` |
+| `compare` | Compare 2–5 topics side-by-side with shared evidence analysis | `read_research_chronicle(request={"action":"compare","selection":{"kind":"topics","values":["remimazolam","propofol"]}})` |
+| `narrate` | Render evidence-backed Markdown with citations for writing/reporting | `read_research_chronicle(request={"action":"narrate","chronicle_id":"...","mode":"full"})` |
 
-#### 🎨 12 Supported Output Formats (`output` parameter)
+#### 🎨 10 Supported Output Formats (`output` parameter)
 
 | Output Format | Type | Description |
 | --- | :---: | --- |
 | `summary` | Markdown | Default compact summary with chronological spine, research lines, and highlights. |
 | `mermaid` | Diagram | **Canonical X-Y lineage tree**. Horizontal year spine + branching research lines + article blocks. |
-| `mindmap` | Diagram | **Research lineage mindmap**. Radial Mermaid mindmap diagram. |
-| `timeline_mermaid` | Diagram | Flat legacy Mermaid timeline syntax. |
 | `chronicle_map` | JSON | Complete diagram coordinate contract for custom frontend renderers. |
 | `timeline` | JSON | Chronological projection JSON ordered strictly by publication date. |
 | `tree` | JSON | Thematic lineage tree JSON organized into branch and sub-branch hierarchies. |
@@ -183,33 +181,7 @@ flowchart LR
 
 ---
 
-#### Example 2: Research Lineage Mindmap (`output="mindmap"`)
-
-```mermaid
-mindmap
-  root["Remimazolam Intraoperative Lineage"]
-    branch_propofol["Propofol Comparator Line"]
-      entry_p1["2020 — Phase 2b/3 Landmark Trial (PMID: 32417976)"]
-      entry_p2["Hemodynamics: Significant hypotension reduction"]
-      entry_p3["Injection site pain virtually eliminated"]
-      entry_p4["2024-2025 Multicenter Meta-Analyses"]
-    branch_neuro["Depth of Sedation & Neurocognitive"]
-      entry_n1["EEG / BIS spectral index characteristics"]
-      entry_n2["Postoperative delirium incidence reduction"]
-      entry_n3["Perioperative neurocognitive disorder (PND) mitigation"]
-    branch_cardio["Cardiovascular & Complex Surgery"]
-      entry_c1["Transcatheter aortic valve implantation (TAVI)"]
-      entry_c2["Coronary artery bypass grafting (CABG)"]
-      entry_c3["High-risk critical illness general anesthesia"]
-    branch_antidote["Emergence & Flumazenil Reversal"]
-      entry_a1["Flumazenil specific rapid reversal capability"]
-      entry_a2["Emergence agitation evaluation"]
-      entry_a3["Tissue carboxylesterase-1 (CES-1) rapid hydrolysis"]
-```
-
----
-
-#### Example 3: Landmark Paper Bidirectional Citation Tree (`build_citation_tree`)
+#### Example 2: Landmark Paper Bidirectional Citation Tree (`build_citation_tree`)
 
 Grounded on the foundational 2020 trial by **Doi et al. (PMID: 32417976)**:
 
@@ -295,18 +267,21 @@ clinical photos, and teaching images; for article-native figures, use
 
 ## Uploaded Image To Literature Search
 
-`analyze_figure_for_search` is the handoff tool for images supplied by an MCP
+`prepare_figure_search` is the handoff tool for images supplied by an MCP
 client. It accepts an image URL or a base64/data-URI image and returns MCP
 `ImageContent` plus instructions for the LLM agent.
 
 ```python
-analyze_figure_for_search(image="data:image/png;base64,...", search_type="medical")
+prepare_figure_search(
+    source={"kind":"base64","data":"iVBORw0KGgo..."},
+    search_type="medical",
+)
 ```
 
 The server does not perform standalone visual diagnosis. The intended workflow
 is:
 
-1. The MCP client passes the uploaded image or image URL to `analyze_figure_for_search`.
+1. The MCP client passes the uploaded image or image URL to `prepare_figure_search`.
 2. The LLM agent uses its vision capability to describe the image and extract English biomedical search terms.
 3. The agent immediately continues with `search_biomedical_images` for similar biomedical images or `unified_search` for related papers.
 
@@ -319,11 +294,11 @@ When session persistence is configured, large `unified_search` and
 stay compact while the reusable payload remains available for later reads.
 
 ```python
-read_session(action="list_artifacts")
-read_session(action="artifact", artifact_id="...")
-read_session(action="artifact", artifact_uri="artifact://...")
-read_session(action="artifact", artifact_uri="artifact://...", artifact_file="audit.json")
-read_session(action="artifact", artifact_uri="artifact://...", artifact_file="results.json", offset=0, max_chars=200000)
+read_session(request={"action":"list_artifacts"})
+read_session(request={"action":"artifact","locator":{"kind":"artifact_id","value":"..."}})
+read_session(request={"action":"artifact","locator":{"kind":"artifact_uri","value":"artifact://..."}})
+read_session(request={"action":"artifact","locator":{"kind":"artifact_uri","value":"artifact://..."},"artifact_file":"audit.json"})
+read_session(request={"action":"artifact","locator":{"kind":"artifact_uri","value":"artifact://..."},"artifact_file":"results.json","offset":0,"max_chars":200000})
 ```
 
 Artifacts are query memory, not a second search. Reading them does not rerun
@@ -335,12 +310,12 @@ remote clients cannot read server-local paths. Set
 
 ## Verification Status
 
-The primary 45-tool MCP server directly exposes:
+The primary 41-tool MCP server directly exposes:
 
 - Research chronicle: `build_research_chronicle`, `read_research_chronicle`
 - Image search: `search_biomedical_images`
-- Uploaded image handoff: `analyze_figure_for_search`
-- Query memory: `read_session(action="artifact")`
+- Uploaded image handoff: `prepare_figure_search`
+- Query memory: `read_session(request={"action":"artifact","locator":{"kind":"artifact_id","value":"..."}})`
 
 These capabilities are guarded by docs alignment tests, tool registry tests,
 image-search tests, vision-search tests, timeline tests, and session artifact
@@ -358,12 +333,12 @@ remote artifact backends.
 
 ## Verification Status
 
-The current primary 45-tool MCP server exposes these tools directly:
+The current primary 41-tool MCP server exposes these tools directly:
 
 - Research chronicle: `build_research_chronicle`, `read_research_chronicle`
 - Image search: `search_biomedical_images`
-- Uploaded-image handoff: `analyze_figure_for_search`
-- Query memory: `read_session(action="artifact")`
+- Uploaded-image handoff: `prepare_figure_search`
+- Query memory: `read_session(request={"action":"artifact","locator":{"kind":"artifact_id","value":"..."}})`
 
 Coverage is guarded by docs alignment tests, tool registry tests, image-search
 tests, vision-search tests, timeline tests, and session artifact tests.

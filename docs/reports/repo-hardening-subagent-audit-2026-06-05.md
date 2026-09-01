@@ -18,12 +18,12 @@ left untouched.
 
 ### Session and MCP Surface
 
-- `read_session(action="artifact", max_chars=0)` could bypass inline response
+- An artifact request with `max_chars=0` could bypass inline response
   limits. The presentation layer now clamps non-positive values to
   `DEFAULT_ARTIFACT_READ_MAX_CHARS`.
 - Artifact local paths are returned only when both requested and enabled through
   `PUBMED_ARTIFACT_INCLUDE_LOCAL_PATHS`.
-- `read_session(action="log")` now separates event limit from history limit.
+- `read_session(request={"action":"log"})` now separates event limit from history limit.
 - `session://last-search/results` now inlines at most 20 cached payloads and
   returns `truncated`, `omitted_pmids`, and `resource_limit` metadata.
 - `merge_search_results` was confirmed as a legacy helper. It remains importable

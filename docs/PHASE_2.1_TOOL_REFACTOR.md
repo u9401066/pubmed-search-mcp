@@ -2,7 +2,7 @@
 
 > **歷史／非 runtime archive（2025-01-11）**：本文保存當時 34-tool
 > refactor 的決策與名稱，只供考古，不是目前 MCP surface、工具數或建議用法。
-> 目前 runtime 以 registry／`tools/list`、45-tool reference 與唯一 generic
+> 目前 runtime 以 registry／`tools/list`、41-tool reference 與唯一 generic
 > literature search `unified_search` 為準；本文出現的
 > `search_literature`、`search_core`、`search_europe_pmc`、
 > `merge_search_results` 等名稱不得視為已註冊工具。
@@ -47,7 +47,7 @@
 | **citation_tree** (2) | build_citation_tree, suggest_citation_tree | 引用網絡 | ✅ |
 | **unified** (2) | unified_search, analyze_search_query | 統一搜尋 | ✅ |
 | **strategy** (2) | generate_search_queries, expand_search_queries | 搜尋策略 | ✅ |
-| **pico** (1) | parse_pico | PICO 結構化 handoff | ✅ |
+| **pico** (1) | validate_pico_plan | PICO 結構化 handoff | ✅ |
 | **merge** (1) | merge_search_results | 結果合併 | ✅ |
 
 ---
@@ -281,7 +281,7 @@ STANDARD_PARAMS = {
 │  get_session_pmids     ← Session PMIDs                     │
 │  list_search_history   ← 搜尋歷史                           │
 │  generate_search_queries← 搜尋策略                          │
-│  parse_pico            ← PICO 結構化 handoff                          │
+│  validate_pico_plan    ← PICO 結構化 handoff                          │
 ├─────────────────────────────────────────────────────────────┤
 │  🔧 進階工具 (特定場景, 24 tools)                            │
 ├─────────────────────────────────────────────────────────────┤

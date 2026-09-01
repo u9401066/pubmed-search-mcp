@@ -4,8 +4,8 @@
 > **歷史／已取代的內部研究草稿。** 本文件反映 2026-02-15 的設計盤點；其中
 > timeline 模組路徑、待建工具與「第一篇」規則不是 v0.6.2 的現行契約。
 > 現行入口是 `build_research_chronicle(...)`，已儲存的里程碑與主題比較使用
-> `read_research_chronicle(action="milestones")`／
-> `read_research_chronicle(action="compare")`。Chronicle 的起點語意是
+> `read_research_chronicle(request={"action":"milestones","chronicle_id":"..."})`／
+> `read_research_chronicle(request={"action":"compare","selection":{"kind":"topics","values":["A","B"]}})`。Chronicle 的起點語意是
 > `earliest_observed_in_scope`，不證明整個領域的 first report。下文保留作
 > 演算法研究與產品決策沿革，不應當成目前工具參考。
 
@@ -1132,7 +1132,7 @@ def query_semantic_distance(query_a: str, query_b: str) -> float:
 | # | 任務 | 替換目標 | 預估行數 | 依賴 |
 |---|------|---------|:--------:|------|
 | A1 | BM25 排序 | `_calculate_relevance()` 的 term overlap | ~100 | `rank_bm25` |
-| A2 | Reciprocal Rank Fusion | `_enrich_with_similarity_scores()` | ~30 | 無 |
+| A2 | Reciprocal Rank Fusion | `_enrich_with_rank_percentiles()` | ~30 | 無 |
 | A3 | Pseudo-Relevance Feedback | SemanticEnhancer 策略生成 | ~150 | 無 |
 | A4 | MinHash 模糊去重 | Union-Find 第四通道 | ~80 | `datasketch` |
 

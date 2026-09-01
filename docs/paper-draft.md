@@ -5,8 +5,9 @@
 > 實作，包含尚未驗證的研究主張、TODO 與已移除的 timeline 工具名稱，不能當成
 > 現行產品規格或實驗結果引用。現行建立／更新使用
 > `build_research_chronicle(...)`；里程碑與主題比較分別使用
-> `read_research_chronicle(action="milestones")` 與
-> `read_research_chronicle(action="compare")`。下文舊規格保留作研究沿革。
+> `read_research_chronicle(request={"action":"milestones","chronicle_id":"..."})` 與
+> `read_research_chronicle(request={"action":"compare","selection":{"kind":"topics","values":["A","B"]}})`。
+> 下文舊規格保留作研究沿革。
 
 > **狀態**: 草稿 v0.2
 > **最後更新**: 2026-01-28
@@ -31,7 +32,7 @@ through Agent-Assisted Multi-Source Literature Retrieval
 
 **Objective**: We present PubMed-Search-MCP, an open-source Model Context Protocol (MCP) server that enables AI agents to perform multi-source biomedical literature searches with a versioned Research Chronicle. The system identifies research milestones, tracks knowledge evolution, and preserves evidence provenance across chronological and lineage projections.
 
-**Methods**: The system exposes 45 MCP tools across eight user-facing capability families and brokers PubMed, Europe PMC, CORE, OpenAlex, Semantic Scholar, Crossref, preprint servers, and optional commercial indexes under explicit source contracts. Key innovations include: (1) versioned Research Chronicle construction with milestone detection, (2) controversy identification through claim extraction and comparison, (3) knowledge evolution tracking across publication years, and (4) session-aware contextual retrieval with tenant-safe provenance. We evaluate the system using [benchmark dataset] and [user study/case studies].
+**Methods**: The system exposes 41 MCP tools across eight user-facing capability families and brokers PubMed, Europe PMC, CORE, OpenAlex, Semantic Scholar, Crossref, preprint servers, and optional commercial indexes under explicit source contracts. Key innovations include: (1) versioned Research Chronicle construction with milestone detection, (2) controversy identification through claim extraction and comparison, (3) knowledge evolution tracking across publication years, and (4) session-aware contextual retrieval with tenant-safe provenance. We evaluate the system using [benchmark dataset] and [user study/case studies].
 
 **Results**: [TODO: 需要驗證實驗]
 - Timeline accuracy metrics
@@ -111,7 +112,7 @@ This temporal dimension of research—the **research timeline**—is crucial for
 ┌─────────────────────────────────────────────────────────────────────┐
 │                         PubMed-Search-MCP Server                    │
 ├─────────────────────────────────────────────────────────────────────┤
-│  Presentation: 45 MCP Tools / 8 Capability Families                 │
+│  Presentation: 41 MCP Tools / 8 Capability Families                 │
 ├─────────────────────────────────────────────────────────────────────┤
 │  Application Layer                                                   │
 │  ├── TimelineBuilder ⭐ (NEW)                                       │

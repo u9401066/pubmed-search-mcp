@@ -4,18 +4,23 @@
 工作區：`D:\workspace260514_clinetest`  
 任務情境：搜尋 2026 年、麻醉領域、AI 影響醫療／臨床流程／決策支援、且可取回 PDF 的高品質期刊文章。
 
+> 這是保留問題證據的歷史 incident report，不是 v0.7.0 API 參考。
+> v0.7.0 只接受 canonical filter/option spelling、判別式 article source，並已加入
+> artifact handoff 與全域 500,000 字元 transport cap。下列「建議」若仍未實作，
+> 不應被解讀為可呼叫參數。
+
 ## 1. 摘要
 
 本次使用 PubMed Search MCP 執行文獻搜尋時，曾發生 OOM / 對話中斷。根據工具輸出與行為觀察，最可能原因不是 PubMed API 查詢本身錯誤，而是 **`unified_search` 在 JSON 模式下回傳 payload 過大**，導致 Cline / VS Code / LLM client 端上下文或記憶體壓力過高。
 
-同時也發現 `get_fulltext` 的 PDF 取得流程存在不一致：同一篇文章用 PMID 查不到直接 PDF，但改用 DOI 查詢即可透過 Unpaywall 找到 publisher PDF。這表示 `get_fulltext(pmid=...)` 需要更穩定地解析 DOI 並接續 DOI-based fulltext workflow。
+同時也發現 `get_fulltext` 的 PDF 取得流程存在不一致：同一篇文章用 PMID 查不到直接 PDF，但改用 DOI 查詢即可透過 Unpaywall 找到 publisher PDF。這表示 PMID source path 需要更穩定地解析 DOI 並接續 DOI-based fulltext workflow。
 
 主要問題：
 
 1. 大型 `unified_search(..., output_format="json")` 回傳過肥，包含大量 article metadata、abstract、authors、provenance、deep search、reproducibility 等區塊。
 2. `limit` 語意容易誤導：設定 `limit=50`，但 multi-source / deep-search 內部可能處理 100–150 筆以上資料。
 3. `no_analysis` 等減量 options 對 JSON 輸出不夠有效，仍可能回傳大型 metadata。
-4. `get_fulltext(pmid=...)` 沒有穩定執行 PMID → DOI → Unpaywall / CORE / CrossRef fallback。
+4. `get_fulltext` 的 PMID source path 沒有穩定執行 PMID → DOI → Unpaywall / CORE / CrossRef fallback。
 5. 缺乏 response-size guardrail：沒有在 payload 超過安全門檻時自動縮減、分頁或改回 session result ID。
 
 ---
@@ -33,8 +38,8 @@ unified_search(
   sources="pubmed,openalex,europe_pmc",
   ranking="impact",
   output_format="json",
-  filters="year:2026, lang:english",
-  options="all_types,no_analysis"
+  filters="year:2026,language:english",
+  options="include_detected_preprints,no_analysis"
 )
 ```
 
@@ -67,7 +72,7 @@ europe_pmc returned: 50
 本次曾使用：
 
 ```text
-options="all_types,no_analysis"
+options="include_detected_preprints,no_analysis"
 ```
 
 但 JSON 回應仍包含 `analysis`、`deep_search`、`section_provenance`、`source_disagreement`、`reproducibility` 等大型區塊。
@@ -90,7 +95,7 @@ DOI: 10.1001/jamanetworkopen.2026.1515
 用 PMID 查詢：
 
 ```text
-get_fulltext(pmid="41817525", extended_sources=true)
+get_fulltext(source={"kind":"pmid","value":"41817525"}, extended_sources=true)
 ```
 
 結果只找到 publisher landing page。
@@ -98,7 +103,7 @@ get_fulltext(pmid="41817525", extended_sources=true)
 用 DOI 查詢：
 
 ```text
-get_fulltext(doi="10.1001/jamanetworkopen.2026.1515", extended_sources=true)
+get_fulltext(source={"kind":"doi","value":"10.1001/jamanetworkopen.2026.1515"}, extended_sources=true)
 ```
 
 成功找到 Unpaywall publisher PDF：
@@ -109,7 +114,7 @@ https://jamanetwork.com/journals/jamanetworkopen/articlepdf/2846289/scharp_2026_
 
 判讀：
 
-- `get_fulltext(pmid=...)` 應先解析 PubMed metadata 的 DOI。
+- PMID source path 應先解析 PubMed metadata 的 DOI。
 - 若 DOI 存在，應自動接續 DOI-based Unpaywall / CORE / CrossRef / publisher link workflow。
 - PMID path 與 DOI path 應共用同一個 resolver pipeline。
 
@@ -175,7 +180,7 @@ DOI path → Unpaywall publisher PDF found
 
 ## 4. 改善建議
 
-### P0：新增 compact / minimal response mode
+### P0：新增 canonical compact response mode
 
 建議讓大型搜尋預設或可選回傳 compact fields：
 
@@ -205,7 +210,7 @@ DOI path → Unpaywall publisher PDF found
 
 ```text
 fetch_article_details(pmids="...")
-read_session(action="article", pmid="...")
+read_session(request={"action":"article","pmid":"..."})
 ```
 
 ### P0：加入 `fields` / `include` / `exclude` 參數
@@ -242,7 +247,7 @@ max_response_chars=50000
   "result_id": "search_20260514_xxx",
   "returned_articles": 20,
   "total_available": 142,
-  "next": "read_session(action='pmids') or unified_search(..., page=2)"
+  "next": "read_session(request={'action':'pmids'}) or unified_search(..., page=2)"
 }
 ```
 
@@ -258,7 +263,7 @@ no_next       → remove next_tools / next_commands
 no_provenance → remove section_provenance
 ```
 
-若為 backward compatibility，可新增：
+新增一個 canonical spelling（不提供 alias）：
 
 ```text
 options="compact"
@@ -330,8 +335,8 @@ detail_limit=10
 再用：
 
 ```text
-read_session(action="pmids", search_index=-1)
-read_session(action="article", pmid="...")
+read_session(request={"action":"pmids","search_index":-1})
+read_session(request={"action":"article","pmid":"..."})
 ```
 
 逐步取資料。
@@ -344,10 +349,10 @@ read_session(action="article", pmid="...")
 遠端 client 無法讀本機路徑時，可用：
 
 ```text
-read_session(action="list_artifacts")
-read_session(action="artifact", artifact_uri="artifact://...")
-read_session(action="artifact", artifact_id="...", artifact_file="payload.json", offset=0, max_chars=200000)
-read_session(action="list_artifacts", include_local_paths=true)
+read_session(request={"action":"list_artifacts"})
+read_session(request={"action":"artifact","locator":{"kind":"artifact_uri","value":"artifact://..."}})
+read_session(request={"action":"artifact","locator":{"kind":"artifact_id","value":"..."},"artifact_file":"payload.json","offset":0,"max_chars":200000})
+read_session(request={"action":"list_artifacts","include_local_paths":true})
 ```
 
 artifact 是由已完成的搜尋/全文結果序列化而來，不會重新呼叫 Semantic
@@ -368,7 +373,7 @@ retention policies.
 
 When one source fails but the overall search can continue, `unified_search`
 JSON returns `source_errors` and markdown responses show `Source warnings`.
-Semantic Scholar HTTP 429 warnings recommend setting `S2_API_KEY` /
+Semantic Scholar HTTP 429 warnings recommend setting
 `SEMANTIC_SCHOLAR_API_KEY`, retrying later, or excluding the source with
 `sources="auto,-semantic_scholar"` /
 `PUBMED_SEARCH_DISABLED_SOURCES=semantic_scholar`.
@@ -378,7 +383,7 @@ Semantic Scholar HTTP 429 warnings recommend setting `S2_API_KEY` /
 本次需求是「需要能取回 PDF 的文章才要」。目前流程是先搜尋，再逐篇 `get_fulltext`。建議支援：
 
 ```text
-filters="year:2026, lang:english, pdf:true"
+filters="year:2026,language:english"
 options="require_pdf"
 ```
 
@@ -398,9 +403,9 @@ unified_search(..., require_pdf=true)
 
 建議新增測試：
 
-1. `unified_search(limit=50, output_format=json, options=compact)` 回應大小不得超過門檻。
-2. `options=no_analysis` 時 JSON 不含 `analysis`、`deep_search`、`source_disagreement`、`reproducibility`。
-3. `get_fulltext(pmid=41817525)` 應能解析 DOI 並找到 JAMA PDF。
+1. `unified_search(limit=50, output_format="json", options="compact")` 回應大小不得超過門檻。
+2. `options="no_analysis"` 時 JSON 不含 `analysis`、`deep_search`、`source_disagreement`、`reproducibility`。
+3. PMID source 應能解析 DOI 並找到 JAMA PDF。
 4. `require_pdf=true` 時，不回傳無 PDF 文章。
 5. large author list / long abstract 應截斷或轉 detail endpoint。
 
@@ -413,7 +418,7 @@ unified_search(..., require_pdf=true)
 1. 新增 `options="compact"`。
 2. `no_analysis` 對 JSON 真正移除大型區塊。
 3. 預設限制 authors 顯示最多 3–5 位，abstract 預設不回或截斷。
-4. `get_fulltext(pmid=...)` 自動解析 DOI 並走 DOI resolver。
+4. `get_fulltext(source={"kind":"pmid","value":"..."})` 自動解析 DOI 並走 DOI resolver。
 
 ### 第二階段：穩定大型搜尋
 
@@ -458,7 +463,7 @@ unified_search(
   limit=15,
   ranking="impact",
   output_format="markdown",
-  filters="year:2026, lang:english",
+  filters="year:2026,language:english",
   options="shallow,no_analysis,no_scores"
 )
 ```
@@ -466,7 +471,7 @@ unified_search(
 然後針對候選 DOI：
 
 ```text
-get_fulltext(doi="...", extended_sources=true)
+get_fulltext(source={"kind":"doi","value":"..."}, extended_sources=true)
 ```
 
 ---
