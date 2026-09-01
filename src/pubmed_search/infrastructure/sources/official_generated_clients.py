@@ -106,16 +106,9 @@ SEMANTIC_SCHOLAR_RECOMMENDATIONS_OPERATION = OfficialSpecOperation(
 class ScopusSearchRequest(BaseModel):
     """Typed request model for the official Scopus Search operation."""
 
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(extra="forbid")
 
     query: str
-    # Elsevier's schema lists these as request parameters, but this repository
-    # authenticates with headers.  Keep compatibility inputs while preventing
-    # credentials from entering request URLs, model reprs, proxies, or logs.
-    api_key: str | None = Field(default=None, alias="apiKey", exclude=True, repr=False)
-    http_accept: str = Field(default="application/json", alias="httpAccept", exclude=True)
-    insttoken: str | None = Field(default=None, exclude=True, repr=False)
-    access_token: str | None = Field(default=None, exclude=True, repr=False)
     count: int = 10
     start: int = 0
     view: str = "COMPLETE"
@@ -142,9 +135,12 @@ class ScopusSearchEntry(BaseModel):
 class ScopusSearchResultsEnvelope(BaseModel):
     """Scopus search-results envelope."""
 
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
     entry: list[ScopusSearchEntry] = Field(default_factory=list)
+    total_results: int | None = Field(default=None, alias="opensearch:totalResults", ge=0)
+    start_index: int | None = Field(default=None, alias="opensearch:startIndex", ge=0)
+    items_per_page: int | None = Field(default=None, alias="opensearch:itemsPerPage", ge=0)
 
 
 class ScopusSearchResponse(BaseModel):
@@ -285,15 +281,15 @@ class WebOfScienceDocument(BaseModel):
 class WebOfScienceMetadata(BaseModel):
     """Pagination metadata from the official Web of Science spec."""
 
-    total: int = 0
-    page: int = 1
-    limit: int = 10
+    total: int = Field(ge=0)
+    page: int = Field(ge=1)
+    limit: int = Field(ge=1)
 
 
 class WebOfScienceDocumentsResponse(BaseModel):
     """Typed Web of Science documents response."""
 
-    metadata: WebOfScienceMetadata = Field(default_factory=WebOfScienceMetadata)
+    metadata: WebOfScienceMetadata
     hits: list[WebOfScienceDocument] = Field(default_factory=list)
 
 
@@ -394,7 +390,7 @@ class SemanticScholarSearchResponse(BaseModel):
     total: int | str | None = None
     offset: int = 0
     next: int | None = None
-    data: list[SemanticScholarPaperModel] = Field(default_factory=list)
+    data: list[SemanticScholarPaperModel]
 
 
 class SemanticScholarCitationEntry(BaseModel):
@@ -411,7 +407,7 @@ class SemanticScholarCitationsResponse(BaseModel):
 
     offset: int = 0
     next: int | None = None
-    data: list[SemanticScholarCitationEntry] = Field(default_factory=list)
+    data: list[SemanticScholarCitationEntry]
 
 
 class SemanticScholarReferenceEntry(BaseModel):
@@ -428,13 +424,13 @@ class SemanticScholarReferencesResponse(BaseModel):
 
     offset: int = 0
     next: int | None = None
-    data: list[SemanticScholarReferenceEntry] = Field(default_factory=list)
+    data: list[SemanticScholarReferenceEntry]
 
 
 class SemanticScholarRecommendationsResponse(BaseModel):
     """Typed recommendations response from the official recommendations spec."""
 
-    recommendedPapers: list[SemanticScholarPaperModel] = Field(default_factory=list)
+    recommendedPapers: list[SemanticScholarPaperModel]
 
 
 class OfficialSemanticScholarGeneratedClient:
@@ -466,8 +462,10 @@ class OfficialSemanticScholarGeneratedClient:
 
         url = self._build_url(self.search_operation.path, request.model_dump(exclude_none=True))
         payload = await self._owner._make_request(url, method=self.search_operation.method)
-        if not isinstance(payload, dict):
+        if payload is None:
             return None
+        if not isinstance(payload, dict):
+            raise TypeError("Semantic Scholar search response must be an object")
         return SemanticScholarSearchResponse.model_validate(payload)
 
     async def get_paper(self, paper_id: str, fields: str) -> SemanticScholarPaperModel | None:
@@ -477,8 +475,10 @@ class OfficialSemanticScholarGeneratedClient:
         path = self.paper_operation.path.format(paper_id=encoded_id)
         url = self._build_url(path, {"fields": fields})
         payload = await self._owner._make_request(url, method=self.paper_operation.method)
-        if not isinstance(payload, dict):
+        if payload is None:
             return None
+        if not isinstance(payload, dict):
+            raise TypeError("Semantic Scholar paper response must be an object")
         return SemanticScholarPaperModel.model_validate(payload)
 
     async def get_citations(
@@ -494,8 +494,10 @@ class OfficialSemanticScholarGeneratedClient:
         path = self.citations_operation.path.format(paper_id=encoded_id)
         url = self._build_url(path, {"limit": min(limit, 100), "fields": fields})
         payload = await self._owner._make_request(url, method=self.citations_operation.method)
-        if not isinstance(payload, dict):
+        if payload is None:
             return None
+        if not isinstance(payload, dict):
+            raise TypeError("Semantic Scholar citation response must be an object")
         return SemanticScholarCitationsResponse.model_validate(payload)
 
     async def get_references(
@@ -511,8 +513,10 @@ class OfficialSemanticScholarGeneratedClient:
         path = self.references_operation.path.format(paper_id=encoded_id)
         url = self._build_url(path, {"limit": min(limit, 100), "fields": fields})
         payload = await self._owner._make_request(url, method=self.references_operation.method)
-        if not isinstance(payload, dict):
+        if payload is None:
             return None
+        if not isinstance(payload, dict):
+            raise TypeError("Semantic Scholar reference response must be an object")
         return SemanticScholarReferencesResponse.model_validate(payload)
 
     async def get_recommendations(
@@ -528,8 +532,10 @@ class OfficialSemanticScholarGeneratedClient:
         path = self.recommendations_operation.path.format(paper_id=encoded_id)
         url = self._build_url(path, {"limit": min(limit, 500), "fields": fields})
         payload = await self._owner._make_request(url, method=self.recommendations_operation.method)
-        if not isinstance(payload, dict):
+        if payload is None:
             return None
+        if not isinstance(payload, dict):
+            raise TypeError("Semantic Scholar recommendation response must be an object")
         return SemanticScholarRecommendationsResponse.model_validate(payload)
 
 

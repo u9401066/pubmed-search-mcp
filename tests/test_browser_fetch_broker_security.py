@@ -15,7 +15,7 @@ from pubmed_search.presentation import browser_fetch_broker as broker
 if TYPE_CHECKING:
     from pathlib import Path
 
-_EXPLICIT_TEST_TOKEN = "explicit-compatible-token"
+_EXPLICIT_TEST_TOKEN = "explicit-test-token"
 
 
 def _config(tmp_path: Path, *, host: str = "127.0.0.1", token: str | None = None) -> broker.BrokerConfig:
@@ -63,7 +63,7 @@ def test_missing_token_is_generated_with_high_entropy(monkeypatch: pytest.Monkey
     assert requested_sizes == [broker.GENERATED_TOKEN_BYTES]
 
 
-def test_explicit_token_is_preserved_for_compatibility() -> None:
+def test_explicit_shared_token_is_preserved_exactly() -> None:
     token, generated = broker._resolve_broker_token("local-dev-token")
 
     assert token == "local-dev-token"
@@ -122,7 +122,7 @@ async def test_global_guard_rejects_dns_rebinding_host_before_browser_fetch(
     ) as client:
         response = await client.post(
             "/fetch",
-            headers={"Authorization": "Bearer explicit-compatible-token"},
+            headers={"Authorization": "Bearer explicit-test-token"},
             json={"mode": "pdf", "url": "https://publisher.example/private.pdf"},
         )
 
@@ -146,7 +146,7 @@ async def test_global_guard_rejects_remote_origin_on_loopback_host(
         response = await client.post(
             "/fetch",
             headers={
-                "Authorization": "Bearer explicit-compatible-token",
+                "Authorization": "Bearer explicit-test-token",
                 "Origin": "https://attacker.example",
             },
             json={"mode": "pdf", "url": "https://publisher.example/private.pdf"},
@@ -172,7 +172,7 @@ async def test_loopback_origin_and_explicit_token_reach_browser_fetch(
         response = await client.post(
             "/fetch",
             headers={
-                "Authorization": "Bearer explicit-compatible-token",
+                "Authorization": "Bearer explicit-test-token",
                 "Origin": "http://localhost:8766",
             },
             json={"mode": "pdf", "url": "https://publisher.example/private.pdf"},

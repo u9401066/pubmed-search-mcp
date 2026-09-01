@@ -6,16 +6,15 @@ a reusable base class with:
 - Automatic retry on 429 (rate limit) with Retry-After support
 - Rate limiting (configurable interval between requests)
 - Circuit breaker for fault tolerance
+- Bounded streaming across redirect chains
 - Consistent error handling and logging
 """
 
 from __future__ import annotations
 
-import asyncio
 import logging
-import time
 from contextvars import ContextVar
-from typing import Any
+from typing import Any, NoReturn
 
 import httpx
 from typing_extensions import Self
@@ -33,18 +32,49 @@ from pubmed_search.shared.source_contracts import SourceExecutionSettings, build
 
 logger = logging.getLogger(__name__)
 
-_ASYNCIO_COMPAT = asyncio
 _FALLBACK_RATE_LIMIT_COOLDOWN_SECONDS = 30.0
+MAX_API_RESPONSE_BYTES = 16 * 1024 * 1024
+_RESPONSE_STREAM_CHUNK_BYTES = 64 * 1024
+_MAX_REDIRECTS = 20
 
 
 class APIRequestError(RuntimeError):
-    """Sanitized strict-mode upstream failure without URL/body/credentials."""
+    """Sanitized upstream failure without URL, body, query, or credentials."""
 
     def __init__(self, service_name: str, *, status_code: int | None = None) -> None:
         suffix = f" with HTTP {status_code}" if status_code is not None else ""
         super().__init__(f"{service_name} request failed{suffix}")
         self.service_name = service_name
         self.status_code = status_code
+
+
+class ProviderSchemaError(APIRequestError):
+    """Typed, sanitized failure for an invalid upstream response payload."""
+
+
+class APIResponseTooLargeError(APIRequestError):
+    """Sanitized failure for an upstream response that exceeds the byte cap."""
+
+    def __init__(self, service_name: str, *, max_bytes: int) -> None:
+        super().__init__(service_name)
+        self.max_bytes = max_bytes
+        self.args = (f"{service_name} response exceeded the {max_bytes}-byte limit",)
+
+
+def raise_provider_schema_error(service_name: str) -> NoReturn:
+    """Raise a sanitized error when an upstream payload violates its schema."""
+
+    raise ProviderSchemaError(service_name) from None
+
+
+def raise_sanitized_retryable_error(service_name: str, error: RetryableOperationError) -> NoReturn:
+    """Preserve retry metadata without exposing an upstream exception message."""
+
+    raise RetryableOperationError(
+        f"{service_name} request failed",
+        retry_after=error.retry_after,
+        status_code=error.status_code,
+    ) from None
 
 
 class BaseAPIClient:
@@ -56,6 +86,7 @@ class BaseAPIClient:
     - Rate limiting with configurable interval
     - Retry on 429 with exponential backoff
     - Circuit breaker for fault tolerance
+    - Content-Length preflight and a decoded-response byte cap
     - Consistent error handling
 
     Subclasses should set `_service_name` and can override:
@@ -86,8 +117,8 @@ class BaseAPIClient:
         circuit_breaker: CircuitBreaker | None = None,
         concurrency_limit: int | None = None,
         concurrency_name: str | None = None,
-        strict_errors: bool = False,
         follow_redirects: bool = True,
+        max_response_bytes: int = MAX_API_RESPONSE_BYTES,
     ) -> None:
         """
         Initialize base client.
@@ -100,14 +131,21 @@ class BaseAPIClient:
             circuit_breaker: Optional circuit breaker for fault tolerance.
                              If None, a default one is created (threshold=10, recovery=60s).
             follow_redirects: Whether the transport may follow HTTP redirects.
+            max_response_bytes: Per-request byte budget across the complete
+                                redirect chain. Values may lower, but never
+                                exceed, the process-wide hard cap.
         """
+        if isinstance(max_response_bytes, bool) or not isinstance(max_response_bytes, int):
+            raise TypeError("max_response_bytes must be an integer")
+        if not 1 <= max_response_bytes <= MAX_API_RESPONSE_BYTES:
+            raise ValueError(f"max_response_bytes must be between 1 and {MAX_API_RESPONSE_BYTES}")
         self._base_url = base_url.rstrip("/")
         self._timeout = timeout
         self._min_interval = min_interval
         self._concurrency_limit = concurrency_limit
         self._concurrency_name = concurrency_name
-        self._strict_errors = strict_errors
-        self._last_request_time = 0.0
+        self._follow_redirects = follow_redirects
+        self._max_response_bytes = max_response_bytes
         # Keyed by upstream service, never by object identity: every client for
         # the same API must draw from one shared budget, otherwise a parallel
         # fan-out multiplies our real request rate by the number of instances.
@@ -125,43 +163,16 @@ class BaseAPIClient:
         # inside the upstream budget.
         self._circuit_breaker = circuit_breaker or CircuitBreaker(failure_threshold=10, recovery_timeout=60.0)
         self._transport_kernel = get_transport_kernel()
-        self._last_retryable_error: ContextVar[RetryableOperationError | None] = ContextVar(
-            f"{self._service_name.lower().replace(' ', '_')}_last_retryable_error_{id(self)}",
-            default=None,
-        )
         self._last_rate_limit_headers: ContextVar[dict[str, str] | None] = ContextVar(
             f"{self._service_name.lower().replace(' ', '_')}_last_rate_headers_{id(self)}",
             default=None,
         )
 
     @property
-    def last_retryable_error(self) -> RetryableOperationError | None:
-        """Return the most recent exhausted retryable error, if any."""
-        return self._last_retryable_error.get()
-
-    @property
     def last_rate_limit_headers(self) -> dict[str, str]:
         """Return task-local, allowlisted upstream budget headers."""
 
         return dict(self._last_rate_limit_headers.get() or {})
-
-    def _raise_strict_request_error(self) -> None:
-        """Raise a sanitized failure after a soft transport returned ``None``.
-
-        Legacy source clients default to soft-fail behavior for their public
-        Python APIs.  Unified search can opt into a strict adapter seam and use
-        this helper to distinguish an upstream outage from a successful empty
-        response without exposing request URLs, queries, or response bodies.
-        """
-
-        retryable = self.last_retryable_error
-        if retryable is not None:
-            raise RetryableOperationError(
-                f"{self._service_name} request failed",
-                retry_after=retryable.retry_after,
-                status_code=retryable.status_code,
-            ) from None
-        raise APIRequestError(self._service_name) from None
 
     def _build_execution_policy(self) -> RequestExecutionPolicy:
         return build_request_execution_policy(
@@ -176,21 +187,6 @@ class BaseAPIClient:
                 concurrency_name=self._concurrency_name,
             )
         )
-
-    async def _rate_limit(self) -> None:
-        """Compatibility wrapper around the shared rate limiter."""
-        if self._min_interval <= 0:
-            self._last_request_time = time.time()
-            return
-
-        limiter = get_rate_limiter(
-            self._rate_limiter_name,
-            rate=1.0,
-            per=self._min_interval,
-            conservative=True,
-        )
-        await limiter.acquire()
-        self._last_request_time = time.time()
 
     def _build_url(self, url: str) -> str:
         """Build full URL from path or full URL."""
@@ -219,7 +215,8 @@ class BaseAPIClient:
             expect_json: If True, parse response as JSON; otherwise return text
 
         Returns:
-            Parsed JSON dict, response text, or None on error
+            Parsed JSON, response text, or ``None`` only when a subclass
+            explicitly classifies a provider status as an expected absence.
         """
         full_url = self._build_url(url)
 
@@ -259,50 +256,42 @@ class BaseAPIClient:
             return self._parse_response(response, expect_json)
 
         try:
-            self._last_retryable_error.set(None)
             self._last_rate_limit_headers.set(None)
             return await self._transport_kernel.execute(perform_request, policy=policy)
         except RetryableOperationError as e:
-            self._last_retryable_error.set(e)
             await self._handle_exhausted_retryable_error(e, policy)
-            if self._strict_errors:
-                raise
-            return None
+            raise_sanitized_retryable_error(self._service_name, e)
         except httpx.HTTPStatusError as e:
             logger.warning(
-                "%s HTTP error %s: %s",
+                "%s HTTP error %s",
                 self._service_name,
                 e.response.status_code,
-                e.response.reason_phrase,
             )
-            if self._strict_errors:
-                raise APIRequestError(self._service_name, status_code=e.response.status_code) from None
-            return None
+            raise APIRequestError(self._service_name, status_code=e.response.status_code) from None
         except httpx.RequestError as e:
             # httpx exception strings commonly include the complete request
             # URL. Provider queries and contact emails are private request
             # data in a multi-tenant service, so log only the exception class.
             logger.warning("%s request failed (%s)", self._service_name, type(e).__name__)
-            if self._strict_errors:
-                raise APIRequestError(self._service_name) from None
-            return None
+            raise APIRequestError(self._service_name) from None
+        except APIResponseTooLargeError:
+            logger.warning(
+                "%s response exceeded the configured byte limit",
+                self._service_name,
+            )
+            raise
         except Exception as e:
             from pubmed_search.shared.exceptions import RateLimitError
 
             if isinstance(e, RateLimitError):
                 retryable_error = RetryableOperationError(
-                    str(e) or f"{self._service_name} rate limited",
+                    f"{self._service_name} request failed",
                     retry_after=getattr(getattr(e, "context", None), "retry_after", None),
                 )
-                self._last_retryable_error.set(retryable_error)
                 logger.warning("%s: Circuit breaker open or rate limited, skipping request", self._service_name)
-                if self._strict_errors:
-                    raise retryable_error from None
-                return None
+                raise retryable_error from None
             logger.warning("%s request failed (%s)", self._service_name, type(e).__name__)
-            if self._strict_errors:
-                raise APIRequestError(self._service_name) from None
-            return None
+            raise APIRequestError(self._service_name) from None
 
     async def _handle_exhausted_retryable_error(
         self,
@@ -314,16 +303,16 @@ class BaseAPIClient:
             cooldown = error.retry_after or _FALLBACK_RATE_LIMIT_COOLDOWN_SECONDS
             await self._apply_rate_limit_cooldown(policy, cooldown)
             logger.warning(
-                "%s rate limited by upstream API after retries; returning empty response and cooling down for %.0fs",
+                "%s rate limited by upstream API after retries; applying a %.0fs shared cooldown before failure",
                 self._service_name,
                 min(cooldown, policy.retry.retry_after_cap),
             )
             return
 
         logger.warning(
-            "%s transient request failed after retries: %s",
+            "%s transient request failed after retries (status=%s)",
             self._service_name,
-            error,
+            error.status_code,
         )
 
     @staticmethod
@@ -348,10 +337,115 @@ class BaseAPIClient:
         params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
     ) -> httpx.Response:
-        """Execute the actual HTTP request. Override for custom behavior."""
+        """Execute and buffer a request without ever reading an unbounded body.
+
+        The byte budget covers decoded bytes from every response in the
+        redirect chain.  This prevents both ordinary oversized payloads and
+        compressed responses from exhausting process memory before parsing.
+        """
         if method == "POST" and data:
-            return await self._client.post(url, json=data, params=params, headers=headers or {})
-        return await self._client.get(url, params=params, headers=headers or {})
+            request = self._client.build_request(
+                "POST",
+                url,
+                json=data,
+                params=params,
+                headers=headers or {},
+            )
+        else:
+            request = self._client.build_request(
+                "GET",
+                url,
+                params=params,
+                headers=headers or {},
+            )
+
+        history: list[httpx.Response] = []
+        bytes_read = 0
+        for _redirect_count in range(_MAX_REDIRECTS + 1):
+            streamed = await self._client.send(request, stream=True, follow_redirects=False)
+            try:
+                body = await self._read_response_body(
+                    streamed,
+                    remaining_bytes=self._max_response_bytes - bytes_read,
+                )
+                bytes_read += len(body)
+                response = self._buffered_response(streamed, body=body, history=history)
+                next_request = streamed.next_request
+            finally:
+                await streamed.aclose()
+
+            if not self._follow_redirects or next_request is None:
+                response.next_request = next_request
+                return response
+
+            history.append(response)
+            request = next_request
+
+        raise httpx.TooManyRedirects(
+            f"Exceeded maximum allowed redirects ({_MAX_REDIRECTS})",
+            request=request,
+        )
+
+    async def _read_response_body(
+        self,
+        response: httpx.Response,
+        *,
+        remaining_bytes: int,
+    ) -> bytes:
+        """Read one decoded response stream under the remaining hard budget."""
+        declared_length = self._declared_response_length(response)
+        if declared_length is not None and declared_length > remaining_bytes:
+            raise APIResponseTooLargeError(
+                self._service_name,
+                max_bytes=self._max_response_bytes,
+            )
+
+        body = bytearray()
+        chunk_size = min(_RESPONSE_STREAM_CHUNK_BYTES, max(1, remaining_bytes + 1))
+        async for chunk in response.aiter_bytes(chunk_size):
+            if len(body) + len(chunk) > remaining_bytes:
+                raise APIResponseTooLargeError(
+                    self._service_name,
+                    max_bytes=self._max_response_bytes,
+                )
+            body.extend(chunk)
+        return bytes(body)
+
+    @staticmethod
+    def _declared_response_length(response: httpx.Response) -> int | None:
+        """Return a valid declared length, otherwise defer to streaming checks."""
+        value = response.headers.get("content-length")
+        if value is None:
+            return None
+        try:
+            length = int(value)
+        except ValueError:
+            return None
+        return length if length >= 0 else None
+
+    @staticmethod
+    def _buffered_response(
+        response: httpx.Response,
+        *,
+        body: bytes,
+        history: list[httpx.Response],
+    ) -> httpx.Response:
+        """Build a normal in-memory response from already-decoded safe bytes."""
+        headers = httpx.Headers(response.headers)
+        # ``aiter_bytes`` has already decoded transfer/content encodings.  If
+        # these headers survived, the replacement Response would decode the
+        # buffered bytes a second time.
+        headers.pop("content-encoding", None)
+        headers.pop("transfer-encoding", None)
+        headers["content-length"] = str(len(body))
+        return httpx.Response(
+            response.status_code,
+            headers=headers,
+            content=body,
+            request=response.request,
+            extensions=response.extensions,
+            history=list(history),
+        )
 
     def _handle_expected_status(self, response: httpx.Response, url: str) -> dict[str, Any] | str | None:
         """

@@ -8,22 +8,45 @@ from unittest.mock import patch
 
 import pytest
 
+from pubmed_search.application.unified.use_case import SourceSelectionError
 from pubmed_search.infrastructure.sources.registry import (
     SourceCapabilities,
-    SourceSelectionError,
     get_source_registry,
 )
 
 
 class TestSourceRegistry:
-    def test_capabilities_are_immutable_and_alias_aware(self):
+    def test_capabilities_are_immutable_and_require_canonical_key(self):
         registry = get_source_registry()
-        capabilities = registry.get_capabilities("semantic-scholar")
+        capabilities = registry.get_capabilities("semantic_scholar")
 
-        assert capabilities == registry.get_capabilities("semantic_scholar")
         assert capabilities is not None
         with pytest.raises(FrozenInstanceError):
             capabilities.max_page_size = 1  # type: ignore[misc]
+
+    @pytest.mark.parametrize(
+        "retired_or_noncanonical",
+        [
+            "semantic-scholar",
+            "europe-pmc",
+            "web-of-science",
+            "wos",
+            "clarivate_wos",
+            "elsevier_scopus",
+            "med-rxiv",
+            "med_rxiv",
+            "bio-rxiv",
+            "bio_rxiv",
+            "Semantic_Scholar",
+            " semantic_scholar",
+            "semantic_scholar ",
+        ],
+    )
+    def test_retired_aliases_case_and_whitespace_do_not_resolve(self, retired_or_noncanonical):
+        registry = get_source_registry()
+
+        assert registry.resolve_key(retired_or_noncanonical) is None
+        assert registry.get(retired_or_noncanonical) is None
 
     def test_openalex_capabilities_cover_semantic_cursor_search(self):
         capabilities = get_source_registry().get_capabilities("openalex")
@@ -119,7 +142,7 @@ class TestSourceRegistry:
         ):
             available = registry.list_unified_sources()
             selection = registry.resolve_unified_sources(
-                "pubmed,openalex,semantic-scholar,crossref",
+                "pubmed,openalex,semantic_scholar,crossref",
                 auto_sources=["pubmed"],
             )
 
@@ -188,6 +211,27 @@ class TestSourceRegistry:
 
         assert "Invalid source(s): unknown_source" in str(exc_info.value)
 
+    @pytest.mark.parametrize(
+        ("expression", "message"),
+        [
+            ("", "empty token"),
+            (",pubmed", "empty token"),
+            ("pubmed,", "empty token"),
+            ("pubmed,,openalex", "empty token"),
+            (" pubmed", "surrounding whitespace"),
+            ("pubmed, openalex", "surrounding whitespace"),
+            ("pubmed ", "surrounding whitespace"),
+            ("pubmed,pubmed", "duplicate token"),
+            ("auto,auto", "duplicate token"),
+            ("auto,-openalex,-openalex", "duplicate token"),
+        ],
+    )
+    def test_source_expression_syntax_is_exact(self, expression: str, message: str):
+        registry = get_source_registry()
+
+        with pytest.raises(SourceSelectionError, match=message):
+            registry.resolve_unified_sources(expression, auto_sources=["pubmed", "openalex"])
+
     def test_enrichment_only_source_raises(self):
         registry = get_source_registry()
 
@@ -207,11 +251,11 @@ class TestSourceRegistry:
         assert "core" not in available
         assert selection.sources == ("pubmed", "openalex")
 
-    def test_env_disabled_source_aliases_are_filtered(self):
+    def test_env_disabled_sources_require_canonical_keys(self):
         registry = get_source_registry()
         with patch.dict(
             "os.environ",
-            {"PUBMED_SEARCH_DISABLED_SOURCES": "semantic-scholar, Europe PMC"},
+            {"PUBMED_SEARCH_DISABLED_SOURCES": "semantic_scholar, europe_pmc"},
             clear=False,
         ):
             available = registry.list_unified_sources()
@@ -223,6 +267,18 @@ class TestSourceRegistry:
         assert "semantic_scholar" not in available
         assert "europe_pmc" not in available
         assert selection.sources == ("pubmed", "openalex")
+
+    @pytest.mark.parametrize(
+        "retired_alias",
+        ["semantic-scholar", "europe-pmc", "web-of-science", "wos", "med-rxiv", "bio-rxiv"],
+    )
+    def test_retired_source_aliases_are_rejected(self, retired_alias):
+        registry = get_source_registry()
+
+        with pytest.raises(SourceSelectionError) as exc_info:
+            registry.resolve_unified_sources(retired_alias, auto_sources=["pubmed"])
+
+        assert exc_info.value.invalid_sources == (retired_alias,)
 
     def test_commercial_source_default_off(self):
         registry = get_source_registry()

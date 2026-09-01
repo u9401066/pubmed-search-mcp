@@ -112,7 +112,7 @@ def _load_json_config_from_env() -> dict[str, Any]:
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as exc:
-        logger.warning("Invalid BROWSER_FETCH_CONFIG JSON: %s", exc)
+        logger.warning("Invalid BROWSER_FETCH_CONFIG JSON (%s)", type(exc).__name__)
         return {}
 
     if not isinstance(data, dict):
@@ -284,7 +284,7 @@ class BrowserSessionFetcher:
             return BrowserFetchResult(success=False, error="Browser-session fetch is not configured")
 
         if not self.allows_target(url):
-            return BrowserFetchResult(success=False, error=f"Target host not allow-listed: {url}")
+            return BrowserFetchResult(success=False, error="Target host is not allow-listed")
 
         payload = {
             "url": url,
@@ -301,8 +301,8 @@ class BrowserSessionFetcher:
 
         try:
             response = await self._post_to_broker(payload, headers)
-        except Exception as exc:
-            return BrowserFetchResult(success=False, error=str(exc))
+        except Exception:
+            return BrowserFetchResult(success=False, error="Browser broker request failed")
 
         if response.status_code != 200:
             error_message = f"Broker HTTP {response.status_code}"
@@ -310,7 +310,6 @@ class BrowserSessionFetcher:
             with contextlib.suppress(Exception):
                 data = response.json()
                 if isinstance(data, dict):
-                    error_message = data.get("error") or error_message
                     final_url = data.get("final_url")
             return BrowserFetchResult(
                 success=False,
@@ -340,7 +339,7 @@ class BrowserSessionFetcher:
         if not data.get("success"):
             return BrowserFetchResult(
                 success=False,
-                error=data.get("error", "Broker reported failure"),
+                error="Browser broker reported failure",
                 final_url=data.get("final_url"),
                 status_code=response.status_code,
             )
@@ -351,8 +350,8 @@ class BrowserSessionFetcher:
 
         try:
             content = base64.b64decode(encoded)
-        except Exception as exc:
-            return BrowserFetchResult(success=False, error=f"Invalid broker base64 payload: {exc}")
+        except Exception:
+            return BrowserFetchResult(success=False, error="Browser broker returned invalid base64 content")
         if content[:4] != b"%PDF":
             return BrowserFetchResult(
                 success=False,
@@ -386,16 +385,15 @@ class BrowserSessionFetcher:
         return hostname == normalized
 
 
-_browser_session_config: BrowserSessionConfig | None = None
-_browser_session_fetcher: BrowserSessionFetcher | None = None
+_CONFIG_KEY = ("browser_session_config",)
+_FETCHER_KEY = ("browser_session_fetcher",)
 
 
 def get_browser_session_config() -> BrowserSessionConfig:
-    """Get the singleton browser-session configuration."""
-    global _browser_session_config
-    if _browser_session_config is None:
-        _browser_session_config = BrowserSessionConfig.from_env()
-    return _browser_session_config
+    """Get browser-session configuration from the current source runtime."""
+    from .runtime import get_source_runtime
+
+    return get_source_runtime().get_or_create_client(_CONFIG_KEY, BrowserSessionConfig.from_env)
 
 
 def configure_browser_session_fetch(
@@ -411,8 +409,9 @@ def configure_browser_session_fetch(
     verify_tls: bool = True,
 ) -> None:
     """Programmatically configure browser-session fetch for tests or embedding."""
-    global _browser_session_config, _browser_session_fetcher
-    _browser_session_config = BrowserSessionConfig(
+    from .runtime import get_source_runtime
+
+    config = BrowserSessionConfig(
         enabled=enabled,
         auto_enabled=auto_enabled,
         broker_url=broker_url,
@@ -423,12 +422,16 @@ def configure_browser_session_fetch(
         require_local_broker=require_local_broker,
         verify_tls=verify_tls,
     )
-    _browser_session_fetcher = BrowserSessionFetcher(_browser_session_config)
+    runtime = get_source_runtime()
+    runtime.set_owned_value(_CONFIG_KEY, config)
+    runtime.set_owned_value(_FETCHER_KEY, BrowserSessionFetcher(config))
 
 
 def get_browser_session_fetcher() -> BrowserSessionFetcher:
-    """Get the singleton browser-session fetcher."""
-    global _browser_session_fetcher
-    if _browser_session_fetcher is None:
-        _browser_session_fetcher = BrowserSessionFetcher(get_browser_session_config())
-    return _browser_session_fetcher
+    """Get the browser fetcher owned by the current source runtime."""
+    from .runtime import get_source_runtime
+
+    return get_source_runtime().get_or_create_client(
+        _FETCHER_KEY,
+        lambda: BrowserSessionFetcher(get_browser_session_config()),
+    )

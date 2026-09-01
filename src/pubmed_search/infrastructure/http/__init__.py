@@ -1,18 +1,9 @@
-"""HTTP client exports for infrastructure integrations.
+"""Shared HTTP infrastructure.
 
-Design:
-    This package-level export keeps the public HTTP client surface small and
-    stable for callers that only need the primary PubMed client.
-
-Maintenance:
-    Add new shared HTTP utilities here only when they are intended to be part
-    of the package surface. Internal helpers should stay in their own modules.
+Public in-process search callers use :mod:`pubmed_search.api`; source-specific
+transport helpers remain private to the infrastructure layer.
 """
 
 from __future__ import annotations
 
-from .pubmed_client import PubMedClient
-
-__all__ = [
-    "PubMedClient",
-]
+__all__: list[str] = []

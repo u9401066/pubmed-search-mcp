@@ -37,11 +37,11 @@ async def test_mcp_server(url: str = "http://localhost:8765/sse"):
             for tool in tools.tools:
                 print(f"  - {tool.name}: {tool.description[:60]}...")
 
-            # Test search_literature
-            print("\n?? Testing search_literature...")
+            # Test the canonical search entry point.
+            print("\n?? Testing unified_search...")
             result = await session.call_tool(
-                "search_literature",
-                arguments={"query": "COVID-19 vaccine efficacy", "limit": 3},
+                "unified_search",
+                arguments={"query": "COVID-19 vaccine efficacy", "max_results": 3},
             )
             print("Search results:")
             for content in result.content:

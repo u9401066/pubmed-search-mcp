@@ -106,7 +106,7 @@ def _is_loopback_origin(origin: str) -> bool:
 
 
 def _resolve_broker_token(explicit_token: str | None) -> tuple[str, bool]:
-    """Keep explicit tokens compatible, otherwise create a high-entropy token."""
+    """Use an explicitly shared token or create a high-entropy runtime token."""
     if explicit_token is not None and explicit_token.strip():
         return explicit_token, False
     return secrets.token_urlsafe(GENERATED_TOKEN_BYTES), True
