@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
-from pubmed_search.application.session.manager import SessionManager
+from pubmed_search.application.session.manager import ResearchSession, SessionManager
 from pubmed_search.application.session.registry import SessionManagerRegistry
 from pubmed_search.shared.tenancy import TenantIdentity, bind_tenant
 
@@ -306,13 +306,18 @@ def test_search_runs_remain_tenant_isolated_across_restart(tmp_path: Path):
     )
 
 
-def test_legacy_search_history_gets_stable_read_only_run_projection(tmp_path: Path):
-    session_id = "legacy-session"
+def test_legacy_session_payload_is_rejected_without_warming_article_cache(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+):
+    session_id = "retired-session"
+    secret = "PRIVATE-LEGACY-PAYLOAD"
     payload = {
         "session_id": session_id,
-        "topic": "legacy",
+        "topic": secret,
         "created_at": "2024-01-01T00:00:00+00:00",
         "updated_at": "2024-01-01T00:00:00+00:00",
+        "article_cache": {"123": {"pmid": "123", "title": secret}},
         "cached_pmids": [],
         "search_history": [
             {
@@ -331,15 +336,64 @@ def test_legacy_search_history_gets_stable_read_only_run_projection(tmp_path: Pa
     }
     (tmp_path / f"session_{session_id}.json").write_text(json.dumps(payload), encoding="utf-8")
 
-    first = SessionManager(data_dir=str(tmp_path))
-    first_run = first.list_search_runs(limit=10)[0]
-    second = SessionManager(data_dir=str(tmp_path))
-    second_run = second.list_search_runs(limit=10)[0]
+    manager = SessionManager(data_dir=str(tmp_path))
 
-    assert first_run["run_id"].startswith("legacy-")
-    assert second_run["run_id"] == first_run["run_id"]
-    assert second_run["request"] == {"query": "legacy query", "filters": {"year": "2020-2024"}}
-    assert second.get_search_run_replay(second_run["run_id"])["arguments"] == {
-        "query": "legacy query",
-        "filters": {"year": "2020-2024"},
-    }
+    assert manager.get_current_session() is None
+    assert manager.list_search_runs(limit=10) == []
+    assert manager.get_cached_article("123") is None
+    assert secret not in caplog.text
+    assert str(tmp_path) not in caplog.text
+
+
+def test_search_history_is_summary_only_and_never_projects_search_runs(tmp_path: Path):
+    session = ResearchSession(
+        session_id="summary-only",
+        topic="summary",
+        search_history=[
+            {
+                "query": "summary query",
+                "timestamp": "2026-01-01T00:00:00+00:00",
+                "result_count": 1,
+                "pmids": ["123"],
+                "filters": {},
+                "status": "completed",
+            }
+        ],
+    )
+    (tmp_path / f"session_{session.session_id}.json").write_text(
+        json.dumps(session.to_dict()),
+        encoding="utf-8",
+    )
+
+    manager = SessionManager(data_dir=str(tmp_path))
+
+    restored = manager.get_current_session()
+    assert restored is not None
+    assert restored.search_history[0]["query"] == "summary query"
+    assert manager.list_search_runs(limit=10) == []
+    assert manager.get_search_run_status_counts() == {}
+    assert manager.get_search_run("legacy-generated-id") is None
+    assert manager.get_session_summary()["search_runs"] == 0
+
+
+def test_session_with_old_nested_search_run_contract_is_rejected(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+):
+    secret_query = "PRIVATE-OLD-RUN"
+    manager = SessionManager(data_dir=str(tmp_path))
+    run = manager.start_search_run(secret_query, request={"query": secret_query})
+    session = manager.get_current_session()
+    assert session is not None
+    session_path = tmp_path / f"session_{session.session_id}.json"
+    payload = json.loads(session_path.read_text(encoding="utf-8"))
+    payload["search_runs"][0].pop("schema_version")
+    session_path.write_text(json.dumps(payload), encoding="utf-8")
+    caplog.clear()
+
+    reloaded = SessionManager(data_dir=str(tmp_path))
+
+    assert reloaded.get_current_session() is None
+    assert reloaded.get_search_run(str(run["run_id"])) is None
+    assert secret_query not in caplog.text
+    assert str(tmp_path) not in caplog.text

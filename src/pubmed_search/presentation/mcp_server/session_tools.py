@@ -4,24 +4,21 @@ Session Tools - PMID 持久化與 Session 管理
 提供 Agent 存取 session 暫存資料的工具，解決記憶滿載問題。
 
 Tools:
-- read_session: 統一 session 讀取 facade
-- get_session_pmids: 取得指定搜尋的 PMID 列表
-- get_cached_article: 從快取取得文章詳情
-- get_session_summary: Session 摘要 (可選包含完整歷史)
-- get_session_log: Session activity log for history review and debugging
-
-Removed in v0.3.1:
-- Legacy separate search-history tool → Merged into get_session_summary(include_history=True)
+- read_session: 唯一的 session 讀取入口，透過明確 action 取得 PMID、文章、
+  摘要、事件、artifact 與 durable search run。
 """
 
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import json
 import logging
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, TypeVar, cast
+from typing import TYPE_CHECKING, Annotated, Any, Literal, TypeVar, cast
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from pubmed_search.domain.value_objects import normalize_pmid
 
 if TYPE_CHECKING:
     from mcp.server.mcpserver import Context, MCPServer
@@ -40,6 +37,143 @@ DEFAULT_ARTIFACT_READ_MAX_CHARS = 200_000
 DEFAULT_SESSION_EVENT_LIMIT = 50
 DEFAULT_SESSION_HISTORY_LIMIT = 10
 LAST_SEARCH_RESOURCE_ARTICLE_LIMIT = 20
+MAX_SESSION_FILTER_CHARS = 500
+MAX_SESSION_EVENT_LIMIT = 500
+MAX_SESSION_HISTORY_LIMIT = 100
+MAX_SESSION_OFFSET = 2_000_000_000
+SearchRunStatus = Literal[
+    "started",
+    "planned",
+    "running",
+    "completed",
+    "partial",
+    "failed",
+    "cancelled",
+    "interrupted",
+]
+PMID = Annotated[str, Field(pattern=r"^[1-9][0-9]{0,19}$", max_length=20)]
+SafeIdentifier = Annotated[
+    str,
+    Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,511}$", min_length=1, max_length=512),
+]
+SessionIdentifier = Annotated[
+    str,
+    Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$", min_length=1, max_length=80),
+]
+SessionFilter = Annotated[str, Field(min_length=1, max_length=MAX_SESSION_FILTER_CHARS)]
+ArtifactUri = Annotated[
+    str,
+    Field(
+        pattern=r"^artifact://[A-Za-z0-9][A-Za-z0-9_.-]{0,79}/[A-Za-z0-9][A-Za-z0-9_.-]{0,511}$",
+        min_length=13,
+        max_length=605,
+    ),
+]
+ArtifactFile = Annotated[
+    str,
+    Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,511}$", min_length=1, max_length=512),
+]
+ArtifactReadSize = Annotated[int, Field(ge=1, le=DEFAULT_ARTIFACT_READ_MAX_CHARS)]
+ArtifactOffset = Annotated[int, Field(ge=0, le=MAX_SESSION_OFFSET)]
+SearchIndex = Annotated[int, Field(ge=-100_000, le=100_000)]
+HistoryLimit = Annotated[int, Field(ge=1, le=MAX_SESSION_HISTORY_LIMIT)]
+EventLimit = Annotated[int, Field(ge=1, le=MAX_SESSION_EVENT_LIMIT)]
+
+
+class _StrictSessionRequest(BaseModel):
+    """Base contract for one schema-exact session read operation."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+
+class SessionPmidsRequest(_StrictSessionRequest):
+    action: Literal["pmids"]
+    search_index: SearchIndex = -1
+    query_filter: SessionFilter | None = None
+
+
+class SessionArticleRequest(_StrictSessionRequest):
+    action: Literal["article"]
+    pmid: PMID
+
+
+class SessionSummaryRequest(_StrictSessionRequest):
+    action: Literal["summary"]
+    include_history: bool = False
+    history_limit: HistoryLimit = DEFAULT_SESSION_HISTORY_LIMIT
+
+
+class SessionLogRequest(_StrictSessionRequest):
+    action: Literal["log"]
+    event_limit: EventLimit = DEFAULT_SESSION_EVENT_LIMIT
+    kind: SessionFilter | None = None
+    include_history: bool = True
+    history_limit: HistoryLimit = DEFAULT_SESSION_HISTORY_LIMIT
+
+
+class SessionListArtifactsRequest(_StrictSessionRequest):
+    action: Literal["list_artifacts"]
+    session_id: SessionIdentifier | None = None
+    tool: SessionFilter | None = None
+    kind: SessionFilter | None = None
+    include_local_paths: bool = False
+    limit: HistoryLimit = DEFAULT_SESSION_HISTORY_LIMIT
+
+
+class ArtifactIdLocator(_StrictSessionRequest):
+    kind: Literal["artifact_id"]
+    value: SafeIdentifier
+    session_id: SessionIdentifier | None = None
+
+
+class ArtifactUriLocator(_StrictSessionRequest):
+    kind: Literal["artifact_uri"]
+    value: ArtifactUri
+
+
+ArtifactLocator = Annotated[ArtifactIdLocator | ArtifactUriLocator, Field(discriminator="kind")]
+
+
+class SessionArtifactRequest(_StrictSessionRequest):
+    action: Literal["artifact"]
+    locator: ArtifactLocator
+    artifact_file: ArtifactFile | None = None
+    include_local_paths: bool = False
+    max_chars: ArtifactReadSize = DEFAULT_ARTIFACT_READ_MAX_CHARS
+    offset: ArtifactOffset = 0
+
+
+class SessionSearchRunsRequest(_StrictSessionRequest):
+    action: Literal["search_runs"]
+    session_id: SessionIdentifier | None = None
+    status: SearchRunStatus | None = None
+    limit: HistoryLimit = DEFAULT_SESSION_HISTORY_LIMIT
+
+
+class SessionSearchRunRequest(_StrictSessionRequest):
+    action: Literal["search_run"]
+    run_id: SafeIdentifier
+    session_id: SessionIdentifier | None = None
+
+
+class SessionReplaySearchRequest(_StrictSessionRequest):
+    action: Literal["replay_search"]
+    run_id: SafeIdentifier
+    session_id: SessionIdentifier | None = None
+
+
+SessionReadRequest = Annotated[
+    SessionPmidsRequest
+    | SessionArticleRequest
+    | SessionSummaryRequest
+    | SessionLogRequest
+    | SessionListArtifactsRequest
+    | SessionArtifactRequest
+    | SessionSearchRunsRequest
+    | SessionSearchRunRequest
+    | SessionReplaySearchRequest,
+    Field(discriminator="action"),
+]
 ResourceFunc = TypeVar("ResourceFunc", bound=Callable[..., str])
 SESSION_RESOURCE_URIS = (
     "session://last-search",
@@ -87,11 +221,9 @@ def _session_resource_kwargs(*, name: str, title: str, description: str) -> dict
 
 
 def _session_resource_decorator(mcp: MCPServer, uri: str, **kwargs: object) -> Callable[[ResourceFunc], ResourceFunc]:
-    """Build a resource decorator that falls back for test doubles without keyword support."""
+    """Build one resource decorator against the canonical MCP SDK contract."""
     resource = cast("Any", mcp.resource)
-    with contextlib.suppress(TypeError):
-        return cast("Callable[[ResourceFunc], ResourceFunc]", resource(uri, **kwargs))
-    return cast("Callable[[ResourceFunc], ResourceFunc]", resource(uri))
+    return cast("Callable[[ResourceFunc], ResourceFunc]", resource(uri, **kwargs))
 
 
 async def notify_session_resources_updated(ctx: Context | None) -> None:
@@ -219,10 +351,8 @@ def _read_session_summary_impl(
         for search in session.search_history[-5:]
     ]
     recent_runs = session_manager.list_search_runs(limit=5)
-    run_statuses: dict[str, int] = {}
-    for run in session_manager.list_search_runs(limit=100_000):
-        status = str(run.get("status") or "unknown")
-        run_statuses[status] = run_statuses.get(status, 0) + 1
+    status_counts = session_manager.get_search_run_status_counts()
+    run_statuses = status_counts if isinstance(status_counts, dict) else {}
     cached_pmids = session_manager.get_session_cached_pmids(limit=100)
 
     result: dict[str, Any] = {
@@ -262,11 +392,11 @@ def _read_session_summary_impl(
         "cached_pmids_sample": cached_pmids[:20],
         "all_cached_pmids_csv": ",".join(cached_pmids[:100]),
         "hints": [
-            "Use get_session_pmids() to get PMIDs from a specific search",
-            "Use get_cached_article(pmid) to get article details from cache",
+            'Use read_session(request={"action":"pmids"}) to get PMIDs from a specific search',
+            'Use read_session(request={"action":"article","pmid":"..."}) to get article details from cache',
             "Use pmids='last' with prepare_export or get_citation_metrics",
-            "Use get_session_log() to review session activity and debug history",
-            "Use read_session(action='search_runs') to inspect recoverable unified_search runs",
+            'Use read_session(request={"action":"log"}) to review session activity and debug history',
+            'Use read_session(request={"action":"search_runs"}) to inspect recoverable unified_search runs',
         ],
     }
 
@@ -289,7 +419,7 @@ def _read_session_summary_impl(
                 }
             )
         result["search_history"] = formatted_history
-        result["hints"].append("Use get_session_pmids(index) to get PMIDs for a specific search")
+        result["hints"].append('Use read_session(request={"action":"pmids","search_index":index}) for one search')
 
     return json.dumps(result, ensure_ascii=False, indent=2)
 
@@ -353,7 +483,8 @@ def _read_session_artifacts_impl(
     try:
         session = session_manager.get_session(session_id) if session_id else session_manager.get_current_session()
     except ValueError as exc:
-        return _json_error(error=str(exc))
+        logger.info("Rejected invalid session identifier: %s", type(exc).__name__)
+        return _json_error(error="Unsafe or invalid session identifier")
     if not session:
         return _json_error(error="No active session", hint="Run a tool that creates artifacts first")
 
@@ -368,7 +499,10 @@ def _read_session_artifacts_impl(
             "artifacts": [
                 artifact_locator(artifact, include_local_paths=include_local_paths) for artifact in artifacts
             ],
-            "hint": "Use read_session(action='artifact', artifact_id='...') to read one artifact.",
+            "hint": (
+                'Use read_session(request={"action":"artifact","locator":'
+                '{"kind":"artifact_id","value":"artifact-123"}}) to read one artifact.'
+            ),
         },
         ensure_ascii=False,
         indent=2,
@@ -389,7 +523,7 @@ def _read_session_artifact_impl(
     if not artifact_id and not artifact_uri:
         return _json_error(
             error="artifact_id or artifact_uri is required for artifact action",
-            hint="Use read_session(action='list_artifacts') first.",
+            hint='Use read_session(request={"action":"list_artifacts"}) first.',
         )
     include_local_paths = _allow_local_paths(include_local_paths)
     max_chars = _positive_limit(max_chars, default=DEFAULT_ARTIFACT_READ_MAX_CHARS)
@@ -448,7 +582,7 @@ def _read_search_runs_impl(
                 }
                 for run in runs
             ],
-            "next_step": "Use read_session(action='search_run', run_id='...') for the full envelope.",
+            "next_step": ('Use read_session(request={"action":"search_run","run_id":"..."}) for the full envelope.'),
         },
         ensure_ascii=False,
         indent=2,
@@ -462,7 +596,10 @@ def _read_search_run_impl(
     session_id: str = "",
 ) -> str:
     if not run_id:
-        return _json_error(error="run_id is required", hint="Use read_session(action='search_runs') first")
+        return _json_error(
+            error="run_id is required",
+            hint='Use read_session(request={"action":"search_runs"}) first',
+        )
     session = session_manager.get_session(session_id) if session_id else session_manager.get_current_session()
     if session is None:
         return _json_error(error="No active session", hint="Run unified_search first")
@@ -476,7 +613,8 @@ def _read_search_run_impl(
             "run": run,
             "replay_available": bool(run.get("request")),
             "next_step": (
-                "Use read_session(action='replay_search', run_id='...') to obtain exact unified_search kwargs."
+                'Use read_session(request={"action":"replay_search","run_id":"..."}) '
+                "to obtain exact unified_search kwargs."
             ),
         },
         ensure_ascii=False,
@@ -492,7 +630,10 @@ def _read_search_replay_impl(
 ) -> str:
     """Return replay instructions; replay remains an explicit agent decision."""
     if not run_id:
-        return _json_error(error="run_id is required", hint="Use read_session(action='search_runs') first")
+        return _json_error(
+            error="run_id is required",
+            hint='Use read_session(request={"action":"search_runs"}) first',
+        )
     session = session_manager.get_session(session_id) if session_id else session_manager.get_current_session()
     if session is None:
         return _json_error(error="No active session", hint="Run unified_search first")
@@ -515,84 +656,73 @@ def _read_search_replay_impl(
 def _read_session_dispatch(
     session_manager: SessionManager,
     *,
-    action: str,
-    pmid: str = "",
-    artifact_id: str = "",
-    artifact_uri: str = "",
-    session_id: str = "",
-    artifact_file: str = "",
-    artifact_tool: str = "",
-    artifact_kind: str = "",
-    run_id: str = "",
-    run_status: str = "",
-    include_local_paths: bool = False,
-    max_chars: int = 200_000,
-    offset: int = 0,
-    search_index: int = -1,
-    query_filter: str | None = None,
-    include_history: bool = False,
-    history_limit: int = 10,
-    event_limit: int = DEFAULT_SESSION_EVENT_LIMIT,
+    request: SessionReadRequest,
 ) -> str:
-    normalized_action = action.strip().lower().replace("-", "_")
-    if normalized_action in {"pmids", "get_pmids", "search_pmids"}:
-        return _read_session_pmids_impl(session_manager, search_index=search_index, query_filter=query_filter)
-    if normalized_action in {"article", "cached_article", "cache"}:
-        if not pmid:
-            return _json_error(error="PMID is required for article action", hint="Provide pmid='<pmid>'")
-        return _read_cached_article_impl(session_manager, pmid=pmid)
-    if normalized_action in {"log", "logs", "activity", "events"}:
+    if isinstance(request, SessionPmidsRequest):
+        return _read_session_pmids_impl(
+            session_manager,
+            search_index=request.search_index,
+            query_filter=request.query_filter,
+        )
+    if isinstance(request, SessionArticleRequest):
+        return _read_cached_article_impl(session_manager, pmid=normalize_pmid(request.pmid))
+    if isinstance(request, SessionLogRequest):
         return _read_session_log_impl(
             session_manager,
-            event_limit=_positive_limit(event_limit, default=DEFAULT_SESSION_EVENT_LIMIT),
-            kind=query_filter,
-            include_history=include_history,
-            history_limit=history_limit,
+            event_limit=request.event_limit,
+            kind=request.kind,
+            include_history=request.include_history,
+            history_limit=request.history_limit,
         )
-    if normalized_action in {"list_artifacts", "artifacts"}:
+    if isinstance(request, SessionListArtifactsRequest):
         return _read_session_artifacts_impl(
             session_manager,
-            session_id=session_id,
-            tool=artifact_tool or query_filter,
-            kind=artifact_kind or None,
-            include_local_paths=include_local_paths,
-            limit=history_limit,
+            session_id=request.session_id or "",
+            tool=request.tool,
+            kind=request.kind,
+            include_local_paths=request.include_local_paths,
+            limit=request.limit,
         )
-    if normalized_action in {"artifact", "read_artifact"}:
+    if isinstance(request, SessionArtifactRequest):
+        artifact_id = request.locator.value if isinstance(request.locator, ArtifactIdLocator) else ""
+        artifact_uri = request.locator.value if isinstance(request.locator, ArtifactUriLocator) else ""
+        session_id = request.locator.session_id if isinstance(request.locator, ArtifactIdLocator) else None
         return _read_session_artifact_impl(
             session_manager,
             artifact_id=artifact_id,
             artifact_uri=artifact_uri,
-            session_id=session_id,
-            artifact_file=artifact_file,
-            include_local_paths=include_local_paths,
-            max_chars=max_chars,
-            offset=offset,
+            session_id=session_id or "",
+            artifact_file=request.artifact_file or "",
+            include_local_paths=request.include_local_paths,
+            max_chars=request.max_chars,
+            offset=request.offset,
         )
-    if normalized_action in {"search_runs", "runs", "search_history_runs"}:
+    if isinstance(request, SessionSearchRunsRequest):
         return _read_search_runs_impl(
             session_manager,
-            session_id=session_id,
-            status=run_status,
-            limit=history_limit,
+            session_id=request.session_id or "",
+            status=request.status or "",
+            limit=request.limit,
         )
-    if normalized_action in {"search_run", "run"}:
-        return _read_search_run_impl(session_manager, run_id=run_id, session_id=session_id)
-    if normalized_action in {"replay_search", "search_replay", "replay"}:
-        return _read_search_replay_impl(session_manager, run_id=run_id, session_id=session_id)
-    if normalized_action in {"summary", "context"}:
+    if isinstance(request, SessionSearchRunRequest):
+        return _read_search_run_impl(
+            session_manager,
+            run_id=request.run_id,
+            session_id=request.session_id or "",
+        )
+    if isinstance(request, SessionReplaySearchRequest):
+        return _read_search_replay_impl(
+            session_manager,
+            run_id=request.run_id,
+            session_id=request.session_id or "",
+        )
+    if isinstance(request, SessionSummaryRequest):
         return _read_session_summary_impl(
             session_manager,
-            include_history=include_history,
-            history_limit=_positive_limit(history_limit, default=DEFAULT_SESSION_HISTORY_LIMIT),
+            include_history=request.include_history,
+            history_limit=request.history_limit,
         )
-
-    return _json_error(
-        error=f"Unknown session action: {action}",
-        hint=(
-            "Use one of: pmids, article, summary, log, list_artifacts, artifact, search_runs, search_run, replay_search"
-        ),
-    )
+    raise AssertionError(f"Unhandled session request model: {type(request).__name__}")
 
 
 def register_session_tools(
@@ -610,27 +740,8 @@ def register_session_tools(
     session_manager = cast("SessionManager", _TenantScopedSessionManager(session_manager, session_registry))
 
     @mcp.tool()
-    def read_session(
-        action: str = "summary",
-        pmid: str = "",
-        artifact_id: str = "",
-        artifact_uri: str = "",
-        session_id: str = "",
-        artifact_file: str = "",
-        artifact_tool: str = "",
-        artifact_kind: str = "",
-        run_id: str = "",
-        run_status: str = "",
-        include_local_paths: bool = False,
-        max_chars: int = 200_000,
-        offset: int = 0,
-        search_index: int = -1,
-        query_filter: str | None = None,
-        include_history: bool = False,
-        history_limit: int = 10,
-        event_limit: int = DEFAULT_SESSION_EVENT_LIMIT,
-    ) -> str:
-        """Read session data through a single facade.
+    def read_session(request: SessionReadRequest) -> str:
+        """Read session data through one schema-exact discriminated request.
 
         Actions:
         - pmids: return PMIDs for one recorded search
@@ -642,157 +753,16 @@ def register_session_tools(
         - search_run: read one run by stable run_id
         - replay_search: return credential-free unified_search replay arguments
 
-        For remote artifact reads, use artifact_file plus offset/max_chars to page
-        through large files without rerunning upstream searches or fulltext calls.
-        Use artifact_tool/artifact_kind to filter list_artifacts. Local paths
-        are redacted unless include_local_paths=True.
+        Each action accepts only its own fields. For remote artifact reads, select
+        an artifact_id or artifact_uri locator and use artifact_file plus
+        offset/max_chars to page through large files. Local paths remain redacted
+        unless both include_local_paths and the server setting allow them.
         """
         try:
-            return _read_session_dispatch(
-                session_manager,
-                action=action,
-                pmid=pmid,
-                artifact_id=artifact_id,
-                artifact_uri=artifact_uri,
-                session_id=session_id,
-                artifact_file=artifact_file,
-                artifact_tool=artifact_tool,
-                artifact_kind=artifact_kind,
-                run_id=run_id,
-                run_status=run_status,
-                include_local_paths=include_local_paths,
-                max_chars=max_chars,
-                offset=offset,
-                search_index=search_index,
-                query_filter=query_filter,
-                include_history=include_history,
-                history_limit=history_limit,
-                event_limit=event_limit,
-            )
+            return _read_session_dispatch(session_manager, request=request)
         except Exception as exc:
-            logger.exception(f"read_session failed: {exc}")
-            return _json_error(error=str(exc))
-
-    @mcp.tool()
-    def get_session_pmids(search_index: int = -1, query_filter: str | None = None) -> str:
-        """
-        取得 session 中暫存的 PMID 列表。
-
-        解決 Agent 記憶滿載問題 - 不需要記住所有 PMID，
-        可以隨時從 session 取回。
-
-        Args:
-            search_index: 搜尋索引
-                - -1: 最近一次搜尋 (預設)
-                - -2: 前一次搜尋
-                - 0, 1, 2...: 第 N 次搜尋
-            query_filter: 可選，篩選包含此字串的搜尋
-
-        Returns:
-            JSON 格式的 PMID 列表和搜尋資訊
-
-        Example:
-            get_session_pmids()  # 最近一次搜尋的 PMIDs
-            get_session_pmids(-2)  # 前一次搜尋的 PMIDs
-            get_session_pmids(query_filter="BJA")  # 包含 "BJA" 的搜尋
-        """
-        try:
-            return _read_session_dispatch(
-                session_manager,
-                action="pmids",
-                search_index=search_index,
-                query_filter=query_filter,
-            )
-        except Exception as exc:
-            logger.exception(f"get_session_pmids failed: {exc}")
-            return _json_error(error=str(exc))
-
-    # Legacy separate history tool removed in v0.3.1 and merged into get_session_summary(include_history=True)
-
-    @mcp.tool()
-    def get_cached_article(pmid: str) -> str:
-        """
-        從 session 快取取得文章詳情。
-
-        比重新呼叫 fetch_article_details 更快，
-        且不消耗 NCBI API quota。
-
-        Args:
-            pmid: PubMed ID
-
-        Returns:
-            文章詳細資訊 (如果在快取中)
-        """
-        try:
-            return _read_session_dispatch(session_manager, action="article", pmid=pmid)
-        except Exception as exc:
-            logger.exception(f"get_cached_article failed: {exc}")
-            return _json_error(error=str(exc))
-
-    @mcp.tool()
-    def get_session_summary(include_history: bool = False, history_limit: int = 10) -> str:
-        """
-        取得當前 session 的摘要資訊。
-
-        顯示快取狀態、搜尋歷史摘要，幫助 Agent 了解
-        目前有哪些資料可用。
-
-        Args:
-            include_history: 是否包含完整搜尋歷史 (預設 False)
-            history_limit: 歷史筆數上限，僅當 include_history=True 時有效 (預設 10)
-
-        Returns:
-            Session 摘要，包含快取文章數、搜尋次數、最近搜尋等
-
-        Examples:
-            get_session_summary()  # 基本摘要
-            get_session_summary(include_history=True)  # 含完整搜尋歷史
-            get_session_summary(include_history=True, history_limit=20)  # 更多歷史
-        """
-        try:
-            return _read_session_dispatch(
-                session_manager,
-                action="summary",
-                include_history=include_history,
-                history_limit=history_limit,
-            )
-        except Exception as exc:
-            logger.exception(f"get_session_summary failed: {exc}")
-            return _json_error(error=str(exc))
-
-    @mcp.tool()
-    def get_session_log(
-        event_limit: int = 50,
-        kind: str | None = None,
-        include_history: bool = True,
-        history_limit: int = 10,
-    ) -> str:
-        """
-        取得當前 session 的 activity log 與搜尋歷史摘要。
-
-        適合讓 user 回顧最近做過哪些搜尋、cache/reading-list/exclusion
-        變化，以及作為 debug 時的 session-level 事件檢視。
-
-        Args:
-            event_limit: 回傳的 event 筆數上限 (預設 50)
-            kind: 可選，僅回傳特定 event kind
-            include_history: 是否一併包含搜尋歷史摘要 (預設 True)
-            history_limit: 搜尋歷史摘要筆數上限 (預設 10)
-
-        Returns:
-            Session activity log 與搜尋歷史摘要
-        """
-        try:
-            return _read_session_log_impl(
-                session_manager,
-                event_limit=event_limit,
-                kind=kind,
-                include_history=include_history,
-                history_limit=history_limit,
-            )
-        except Exception as exc:
-            logger.exception(f"get_session_log failed: {exc}")
-            return _json_error(error=str(exc))
+            logger.warning("read_session failed (%s)", type(exc).__name__)
+            return _json_error(error="Session read failed")
 
 
 def register_session_resources(
@@ -907,7 +877,10 @@ def register_session_resources(
                 "cached_count": len(cached_articles),
                 "missing_pmids": missing_pmids,
                 "omitted_pmids": omitted_pmids,
-                "next_step": "Use get_session_pmids() plus get_cached_article() or read_session(action='cached') for more results.",
+                "next_step": (
+                    'Use read_session(request={"action":"pmids"}) then '
+                    'read_session(request={"action":"article","pmid":"..."}) for more results.'
+                ),
             },
             ensure_ascii=False,
         )
@@ -962,8 +935,8 @@ def register_session_resources(
             ),
         ),
     )
-    def get_research_context() -> str:
-        """Internal: Current research context (for debugging)."""
+    def get_session_context() -> str:
+        """Internal: current session/cache context for debugging."""
         import json
 
         session = session_manager.get_current_session()

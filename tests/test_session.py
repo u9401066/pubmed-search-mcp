@@ -13,6 +13,8 @@ import pytest
 
 from pubmed_search.application.session import (
     MAX_SESSION_EVENT_LOG,
+    RESEARCH_SESSION_SCHEMA_VERSION,
+    SESSION_INDEX_SCHEMA_VERSION,
     ArticleCache,
     CachedArticle,
     ResearchSession,
@@ -98,7 +100,8 @@ class TestResearchSession:
 
         assert session.session_id == "test-001"
         assert session.topic == "diabetes research"
-        assert session.article_cache == {}
+        assert session.schema_version == RESEARCH_SESSION_SCHEMA_VERSION
+        assert not hasattr(session, "article_cache")
         assert session.search_history == []
         assert session.event_log == []
 
@@ -115,9 +118,30 @@ class TestResearchSession:
 
         assert session.updated_at != old_time
 
+    @pytest.mark.parametrize("schema_version", [None, "research-session/v0", "research-session/v999"])
+    def test_from_dict_rejects_missing_or_unknown_schema(self, schema_version: str | None):
+        payload = ResearchSession(session_id="strict-session").to_dict()
+        if schema_version is None:
+            payload.pop("schema_version")
+        else:
+            payload["schema_version"] = schema_version
+
+        with pytest.raises(ValueError, match=r"research session|schema version"):
+            ResearchSession.from_dict(payload)
+
+    def test_from_dict_rejects_unknown_state_fields(self):
+        payload = ResearchSession(session_id="strict-session").to_dict()
+        payload["article_cache"] = {"123": {"title": "retired snapshot"}}
+
+        with pytest.raises(ValueError, match="Invalid research session payload"):
+            ResearchSession.from_dict(payload)
+
 
 class TestArticleCache:
     """Tests for ArticleCache class."""
+
+    def test_retired_legacy_payload_warmup_is_not_exposed(self):
+        assert not hasattr(ArticleCache(), "warmup")
 
     async def test_memory_only_cache(self):
         """Test cache without persistence."""
@@ -167,8 +191,8 @@ class TestArticleCache:
         assert retrieved is not None
         assert retrieved.title == "Persistent Article"
 
-    async def test_cache_reads_legacy_unwrapped_article_payload_with_extra_fields(self, temp_dir):
-        """Legacy cache payloads can be raw article dicts with extra metadata fields."""
+    async def test_cache_rejects_retired_unwrapped_article_payload(self, temp_dir):
+        """Raw article dictionaries are not silently migrated into cache entries."""
         cache_file = temp_dir / "article_cache.json"
         cache_file.write_text(
             json.dumps(
@@ -189,13 +213,7 @@ class TestArticleCache:
         )
 
         cache = ArticleCache(cache_dir=str(temp_dir))
-        retrieved = cache.get("12345")
-
-        assert retrieved is not None
-        assert retrieved.title == "Legacy Article"
-        payload = retrieved.as_article_dict()
-        assert payload["journal_abbrev"] == "J"
-        assert payload["identifiers"]["doi"] == "10.1000/legacy"
+        assert cache.get("12345") is None
 
     async def test_cache_miss(self):
         """Test cache miss returns None."""
@@ -294,6 +312,9 @@ class TestSessionManager:
         index_payload = json.loads(index_file.read_text(encoding="utf-8"))
         assert isinstance(session_payload, dict)
         assert isinstance(index_payload, dict)
+        assert session_payload["schema_version"] == RESEARCH_SESSION_SCHEMA_VERSION
+        assert index_payload["schema_version"] == SESSION_INDEX_SCHEMA_VERSION
+        assert "article_cache" not in session_payload
         assert list(temp_dir.glob(".*.tmp")) == []
 
         current = manager.get_current_session()

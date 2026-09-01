@@ -93,10 +93,10 @@ async def test_journal_persists_plan_attempts_partial_result_and_exact_replay(tm
     handoff = compact_search_run_handoff(completed)
     assert handoff is not None
     assert handoff["run_id"] == run_id
-    assert handoff["replay"]["arguments"] == {"action": "replay_search", "run_id": run_id}
+    assert handoff["replay"]["arguments"] == {"request": {"action": "replay_search", "run_id": run_id}}
     note = search_run_markdown_note(completed)
     assert run_id in note
-    assert 'action="replay_search"' in note
+    assert 'request={"action":"replay_search"' in note
 
 
 @pytest.mark.asyncio

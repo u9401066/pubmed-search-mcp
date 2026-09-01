@@ -8,15 +8,62 @@ import time
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+from pydantic import TypeAdapter, ValidationError
+
 from pubmed_search.application.session.manager import SessionManager
 from pubmed_search.presentation.mcp_server.session_tools import (
     DEFAULT_ARTIFACT_READ_MAX_CHARS,
     LAST_SEARCH_RESOURCE_ARTICLE_LIMIT,
     SESSION_RESOURCE_URIS,
+    SessionReadRequest,
     notify_session_resources_updated,
     register_session_resources,
     register_session_tools,
 )
+
+_SESSION_REQUEST_ADAPTER = TypeAdapter(SessionReadRequest)
+
+
+def _read_request(action="summary", **kwargs):
+    """Build the same discriminated request object that MCP validation supplies."""
+    request = {"action": action, **kwargs}
+    if action == "artifact":
+        artifact_id = request.pop("artifact_id", None)
+        artifact_uri = request.pop("artifact_uri", None)
+        session_id = request.pop("session_id", None)
+        if artifact_id is not None:
+            request["locator"] = {
+                "kind": "artifact_id",
+                "value": artifact_id,
+                **({"session_id": session_id} if session_id is not None else {}),
+            }
+        elif artifact_uri is not None:
+            request["locator"] = {"kind": "artifact_uri", "value": artifact_uri}
+    elif action == "list_artifacts":
+        if "artifact_tool" in request:
+            request["tool"] = request.pop("artifact_tool")
+        if "artifact_kind" in request:
+            request["kind"] = request.pop("artifact_kind")
+        if "history_limit" in request:
+            request["limit"] = request.pop("history_limit")
+    elif action == "search_runs":
+        if "run_status" in request:
+            request["status"] = request.pop("run_status")
+        if "history_limit" in request:
+            request["limit"] = request.pop("history_limit")
+    elif action == "log" and "query_filter" in request:
+        request["kind"] = request.pop("query_filter")
+    return _SESSION_REQUEST_ADAPTER.validate_python(request, strict=True)
+
+
+def _read_session(fn, action="summary", **kwargs):
+    return fn(request=_read_request(action, **kwargs))
+
+
+def _capture_read_session(manager):
+    fn = _capture_tools(register_session_tools, manager)["read_session"]
+    return lambda action="summary", **kwargs: _read_session(fn, action, **kwargs)
 
 
 class _CapturedRegistrations(dict):
@@ -53,11 +100,10 @@ def _capture_tools(register_fn, *args):
     return tools
 
 
-def _make_session(search_history=None, article_cache=None):
+def _make_session(search_history=None):
     session = MagicMock()
     session.search_history = search_history or []
     session.event_log = []
-    session.article_cache = article_cache or {}
     session.session_id = "test-session-123"
     session.topic = "test topic"
     session.created_at = "2024-01-01T00:00:00"
@@ -90,13 +136,7 @@ class TestSessionToolRegistration:
     def test_registers_read_session_facade(self):
         sm = MagicMock()
         tools = _capture_tools(register_session_tools, sm)
-        assert {
-            "read_session",
-            "get_session_pmids",
-            "get_cached_article",
-            "get_session_summary",
-            "get_session_log",
-        } <= set(tools)
+        assert set(tools) == {"read_session"}
 
 
 # ============================================================
@@ -108,12 +148,12 @@ class TestReadSession:
     def setup_method(self):
         self.sm = MagicMock()
         self.tools = _capture_tools(register_session_tools, self.sm)
-        self.fn = self.tools["read_session"]
+        self.fn = lambda action="summary", **kwargs: _read_session(self.tools["read_session"], action, **kwargs)
 
     async def test_summary_action(self):
         history = [{"query": "test", "pmids": ["111"]}]
         cache = {"111": {"title": "A"}}
-        session = _make_session(search_history=history, article_cache=cache)
+        session = _make_session(search_history=history)
         self.sm.get_current_session.return_value = session
         _configure_manager_cache(self.sm, cache)
 
@@ -131,7 +171,7 @@ class TestReadSession:
 
     async def test_article_action(self):
         article = {"pmid": "12345", "title": "Test Article"}
-        session = _make_session(article_cache={"12345": article})
+        session = _make_session()
         self.sm.get_current_session.return_value = session
         _configure_manager_cache(self.sm, {"12345": article})
 
@@ -140,9 +180,37 @@ class TestReadSession:
         assert result["article"]["title"] == "Test Article"
 
     async def test_unknown_action(self):
-        result = json.loads(self.fn(action="unknown"))
-        assert result["success"] is False
-        assert "Unknown session action" in result["error"]
+        with pytest.raises(ValidationError):
+            self.fn(action="unknown")
+
+    async def test_action_aliases_and_case_coercion_are_rejected(self):
+        for action in ("PMIDS", "last_search", "cached_article"):
+            with pytest.raises(ValidationError):
+                self.fn(action=action)
+
+    async def test_each_action_forbids_fields_owned_by_other_actions(self):
+        with pytest.raises(ValidationError, match="extra_forbidden"):
+            _read_request("summary", pmid="12345")
+        with pytest.raises(ValidationError, match="extra_forbidden"):
+            _read_request("pmids", include_history=True)
+        with pytest.raises(ValidationError, match="extra_forbidden"):
+            _read_request("search_run", run_id="run-1", status="failed")
+
+    async def test_artifact_locator_is_exactly_one_typed_address(self):
+        with pytest.raises(ValidationError):
+            _read_request("artifact")
+        with pytest.raises(ValidationError):
+            _SESSION_REQUEST_ADAPTER.validate_python(
+                {
+                    "action": "artifact",
+                    "locator": {
+                        "kind": "artifact_uri",
+                        "value": "artifact://session/id",
+                        "session_id": "conflict",
+                    },
+                },
+                strict=True,
+            )
 
     async def test_log_action(self):
         session = _make_session(
@@ -173,7 +241,7 @@ class TestReadSession:
             files={"results.json": {"tool": "unified_search", "articles": []}, "notes.md": "abcdef"},
             primary_file="results.json",
         )
-        fn = _capture_tools(register_session_tools, manager)["read_session"]
+        fn = _capture_read_session(manager)
 
         result = json.loads(fn(action="artifact", artifact_id=manifest["artifact_id"]))
 
@@ -207,7 +275,7 @@ class TestReadSession:
         assert "local_path" in local_page["artifact"]
         assert "path" in local_page["file"]
 
-    async def test_artifact_action_clamps_non_positive_max_chars(self, tmp_path):
+    async def test_artifact_action_rejects_non_positive_max_chars(self, tmp_path):
         manager = SessionManager(data_dir=str(tmp_path))
         content = "a" * (DEFAULT_ARTIFACT_READ_MAX_CHARS + 10)
         manifest = manager.save_artifact(
@@ -216,17 +284,12 @@ class TestReadSession:
             files={"notes.md": content},
             primary_file="notes.md",
         )
-        fn = _capture_tools(register_session_tools, manager)["read_session"]
+        fn = _capture_read_session(manager)
 
-        zero = json.loads(fn(action="artifact", artifact_id=manifest["artifact_id"], max_chars=0))
-        negative = json.loads(fn(action="artifact", artifact_id=manifest["artifact_id"], max_chars=-1))
-
-        assert len(zero["content"]) == DEFAULT_ARTIFACT_READ_MAX_CHARS
-        assert zero["next_offset"] == DEFAULT_ARTIFACT_READ_MAX_CHARS
-        assert zero["truncated"] is True
-        assert len(negative["content"]) == DEFAULT_ARTIFACT_READ_MAX_CHARS
-        assert negative["next_offset"] == DEFAULT_ARTIFACT_READ_MAX_CHARS
-        assert negative["truncated"] is True
+        with pytest.raises(ValidationError):
+            fn(action="artifact", artifact_id=manifest["artifact_id"], max_chars=0)
+        with pytest.raises(ValidationError):
+            fn(action="artifact", artifact_id=manifest["artifact_id"], max_chars=-1)
 
     async def test_log_action_history_limit_does_not_limit_events(self):
         session = _make_session(
@@ -254,7 +317,7 @@ class TestReadSession:
             files={"fulltext.md": "Body"},
             primary_file="fulltext.md",
         )
-        fn = _capture_tools(register_session_tools, manager)["read_session"]
+        fn = _capture_read_session(manager)
 
         result = json.loads(fn(action="list_artifacts"))
 
@@ -280,23 +343,20 @@ class TestReadSession:
             primary_file="results.json",
         )
         Path(manifest["local_path"]).unlink()
-        fn = _capture_tools(register_session_tools, manager)["read_session"]
+        fn = _capture_read_session(manager)
 
         result = json.loads(fn(action="artifact", artifact_id=manifest["artifact_id"]))
 
         assert result["success"] is False
-        assert "local_path" not in result["artifact"]
-        assert "manifest_path" not in result["artifact"]
-        assert "root_path" not in result["artifact"]
+        assert result["error"] == "Artifact file could not be read"
+        assert "artifact" not in result
 
     async def test_list_artifacts_rejects_unsafe_session_id(self, tmp_path):
         manager = SessionManager(data_dir=str(tmp_path))
-        fn = _capture_tools(register_session_tools, manager)["read_session"]
+        fn = _capture_read_session(manager)
 
-        result = json.loads(fn(action="list_artifacts", session_id="../outside"))
-
-        assert result["success"] is False
-        assert "unsafe session id" in result["error"].lower()
+        with pytest.raises(ValidationError):
+            fn(action="list_artifacts", session_id="../outside")
 
     async def test_search_run_actions_expose_recovery_and_explicit_replay(self, tmp_path):
         manager = SessionManager(data_dir=str(tmp_path))
@@ -305,7 +365,8 @@ class TestReadSession:
             request={"query": "durable query", "limit": 30, "options": "systematic"},
         )
         manager.fail_search_run(str(run["run_id"]), "provider unavailable", stage="execution")
-        fn = _capture_tools(register_session_tools, manager)["read_session"]
+        assert manager.get_search_run_status_counts() == {"failed": 1}
+        fn = _capture_read_session(manager)
 
         listing = json.loads(fn(action="search_runs", run_status="failed"))
         detail = json.loads(fn(action="search_run", run_id=run["run_id"]))
@@ -326,27 +387,26 @@ class TestReadSession:
     async def test_search_run_actions_require_known_run_id(self, tmp_path):
         manager = SessionManager(data_dir=str(tmp_path))
         manager.get_or_create_session("empty")
-        fn = _capture_tools(register_session_tools, manager)["read_session"]
+        fn = _capture_read_session(manager)
 
-        missing = json.loads(fn(action="search_run"))
+        with pytest.raises(ValidationError):
+            fn(action="search_run")
         unknown = json.loads(fn(action="replay_search", run_id="unknown"))
 
-        assert missing["success"] is False
-        assert "run_id is required" in missing["error"]
         assert unknown["success"] is False
         assert "not found" in unknown["error"].lower()
 
 
 # ============================================================
-# get_session_pmids
+# read_session(action="pmids")
 # ============================================================
 
 
-class TestGetSessionPmids:
+class TestReadSessionPmids:
     def setup_method(self):
         self.sm = MagicMock()
         self.tools = _capture_tools(register_session_tools, self.sm)
-        self.fn = self.tools["get_session_pmids"]
+        self.fn = lambda **kwargs: _read_session(self.tools["read_session"], "pmids", **kwargs)
 
     async def test_no_session(self):
         self.sm.get_current_session.return_value = None
@@ -413,21 +473,19 @@ class TestGetSessionPmids:
         self.sm.get_current_session.side_effect = RuntimeError("DB error")
         result = json.loads(self.fn())
         assert result["success"] is False
-
-
-# TestListSearchHistory removed in v0.3.1 - merged into get_session_summary
+        assert "DB error" not in result["error"]
 
 
 # ============================================================
-# get_cached_article
+# read_session(action="article")
 # ============================================================
 
 
-class TestGetCachedArticle:
+class TestReadSessionArticle:
     def setup_method(self):
         self.sm = MagicMock()
         self.tools = _capture_tools(register_session_tools, self.sm)
-        self.fn = self.tools["get_cached_article"]
+        self.fn = lambda **kwargs: _read_session(self.tools["read_session"], "article", **kwargs)
 
     async def test_no_session(self):
         self.sm.get_current_session.return_value = None
@@ -435,7 +493,7 @@ class TestGetCachedArticle:
         assert result["success"] is False
 
     async def test_not_cached(self):
-        session = _make_session(article_cache={})
+        session = _make_session()
         self.sm.get_current_session.return_value = session
         _configure_manager_cache(self.sm, {})
         result = json.loads(self.fn(pmid="12345"))
@@ -444,7 +502,7 @@ class TestGetCachedArticle:
 
     async def test_found_in_cache(self):
         article = {"pmid": "12345", "title": "Test Article"}
-        session = _make_session(article_cache={"12345": article})
+        session = _make_session()
         self.sm.get_current_session.return_value = session
         _configure_manager_cache(self.sm, {"12345": article})
         result = json.loads(self.fn(pmid="12345"))
@@ -456,18 +514,19 @@ class TestGetCachedArticle:
         self.sm.get_current_session.side_effect = RuntimeError("fail")
         result = json.loads(self.fn(pmid="12345"))
         assert result["success"] is False
+        assert result["error"] == "Session read failed"
 
 
 # ============================================================
-# get_session_summary
+# read_session(action="summary")
 # ============================================================
 
 
-class TestGetSessionSummary:
+class TestReadSessionSummary:
     def setup_method(self):
         self.sm = MagicMock()
         self.tools = _capture_tools(register_session_tools, self.sm)
-        self.fn = self.tools["get_session_summary"]
+        self.fn = lambda **kwargs: _read_session(self.tools["read_session"], "summary", **kwargs)
 
     async def test_no_session(self):
         self.sm.get_current_session.return_value = None
@@ -478,7 +537,7 @@ class TestGetSessionSummary:
     async def test_with_session(self):
         history = [{"query": "test", "pmids": ["111", "222"]}]
         cache = {"111": {"title": "A"}, "222": {"title": "B"}}
-        session = _make_session(search_history=history, article_cache=cache)
+        session = _make_session(search_history=history)
         self.sm.get_current_session.return_value = session
         _configure_manager_cache(self.sm, cache)
         result = json.loads(self.fn())
@@ -491,7 +550,7 @@ class TestGetSessionSummary:
     async def test_includes_recent_events(self):
         history = [{"query": "test", "pmids": ["111"], "timestamp": "2024-01-01T00:00:00Z", "result_count": 1}]
         cache = {"111": {"title": "A"}}
-        session = _make_session(search_history=history, article_cache=cache)
+        session = _make_session(search_history=history)
         session.event_log = [
             {
                 "timestamp": "2024-01-01T00:00:00Z",
@@ -524,7 +583,7 @@ class TestGetSessionSummary:
             },
         ]
         cache = {"1": {}, "2": {}, "3": {}}
-        session = _make_session(search_history=history, article_cache=cache)
+        session = _make_session(search_history=history)
         self.sm.get_current_session.return_value = session
         _configure_manager_cache(self.sm, cache)
         result = json.loads(self.fn(include_history=True))
@@ -537,7 +596,7 @@ class TestGetSessionSummary:
     async def test_include_history_with_limit(self):
         """Test include_history with history_limit parameter."""
         history = [{"query": f"q{i}", "pmids": [], "timestamp": "", "result_count": 0} for i in range(20)]
-        session = _make_session(search_history=history, article_cache={})
+        session = _make_session(search_history=history)
         self.sm.get_current_session.return_value = session
         _configure_manager_cache(self.sm, {})
         result = json.loads(self.fn(include_history=True, history_limit=5))
@@ -567,7 +626,7 @@ class TestSessionResources:
 
     async def test_context_with_session(self):
         sm = MagicMock()
-        session = _make_session(article_cache={"111": {}})
+        session = _make_session()
         session.search_history = [{"q": "test"}]
         sm.get_current_session.return_value = session
         _configure_manager_cache(sm, {"111": {}})
@@ -589,7 +648,6 @@ class TestSessionResources:
         sm = MagicMock()
         session = _make_session(
             search_history=[{"query": "covid", "pmids": ["111", "222"], "timestamp": "2024-01-01", "result_count": 2}],
-            article_cache={"111": {"pmid": "111"}, "222": {"pmid": "222"}},
         )
         sm.get_current_session.return_value = session
         _configure_manager_cache(sm, {"111": {"pmid": "111"}, "222": {"pmid": "222"}})
@@ -612,7 +670,6 @@ class TestSessionResources:
         sm = MagicMock()
         session = _make_session(
             search_history=[{"query": "covid", "pmids": ["111", "999"], "result_count": 2}],
-            article_cache={"111": {"pmid": "111", "title": "Cached"}},
         )
         sm.get_current_session.return_value = session
         _configure_manager_cache(sm, {"111": {"pmid": "111", "title": "Cached"}})
@@ -645,7 +702,6 @@ class TestSessionResources:
         sm = MagicMock()
         session = _make_session(
             search_history=[{"query": "covid", "pmids": ["111", "222"], "timestamp": "2024-01-01", "result_count": 2}],
-            article_cache={"111": {"pmid": "111"}},
         )
         session.event_log = [
             {

@@ -14,6 +14,7 @@ from pubmed_search.application.session.artifact_envelope import (
     build_unified_search_artifact_envelope,
 )
 from pubmed_search.application.session.manager import SessionManager
+from pubmed_search.application.unified.clinical_trials import ClinicalTrialsCoverage
 from pubmed_search.domain.entities.article import UnifiedArticle
 from pubmed_search.presentation.mcp_server.tools.artifact_memory import artifact_locator, artifact_markdown_note
 
@@ -38,10 +39,10 @@ def _request() -> SimpleNamespace:
         counts_first=False,
         compact_output=False,
         show_analysis=True,
-        include_similarity_scores=True,
+        include_rank_scores=True,
         include_next_tools=True,
         include_section_provenance=True,
-        peer_reviewed_only=True,
+        exclude_detected_preprints=True,
         auto_relax=True,
         deep_search=True,
         include_clinical_trials=False,
@@ -249,7 +250,9 @@ def test_not_executed_query_is_not_misreported_as_physical_query() -> None:
         }
     }
     execution.clinical_trials_query = "remimazolam ICU sedation"
-    execution.clinical_trials_status = "empty"
+    execution.clinical_trials_coverage = ClinicalTrialsCoverage.requested_search(markdown_output=False)
+    execution.clinical_trials_coverage.record_retrieval(0)
+    execution.prefetched_trials = []
 
     envelope = build_unified_search_artifact_envelope(
         request=request,
@@ -266,8 +269,47 @@ def test_not_executed_query_is_not_misreported_as_physical_query() -> None:
     assert strategy["adjunct_queries"]["clinical_trials"] == {
         "logical_query": plan.provider_neutral_query,
         "physical_query": "remimazolam ICU sedation",
-        "status": "empty",
+        "coverage": execution.clinical_trials_coverage.to_dict(),
     }
+
+
+def test_clinical_trials_coverage_is_consistent_across_artifact_surfaces() -> None:
+    request = _request()
+    request.include_clinical_trials = True
+    plan = _plan(request)
+    execution = _execution()
+    coverage = ClinicalTrialsCoverage.requested_search(markdown_output=False)
+    coverage.record_retrieval(1)
+    execution.clinical_trials_query = "remimazolam ICU sedation"
+    execution.clinical_trials_coverage = coverage
+    execution.prefetched_trials = [{"nct_id": "NCT00000001"}]
+
+    envelope = build_unified_search_artifact_envelope(
+        request=request,
+        plan=plan,
+        execution=execution,
+        structured_payload=json.dumps(
+            {
+                "tool": "unified_search",
+                "clinical_trials": {
+                    "coverage": coverage.to_dict(),
+                    "trials": execution.prefetched_trials,
+                },
+            }
+        ),
+        primary_format="json",
+    )
+
+    expected = coverage.to_dict()
+    assert json.loads(envelope.files["results.json"])["clinical_trials"]["coverage"] == expected
+    assert envelope.files["query_strategy.json"]["adjunct_queries"]["clinical_trials"]["coverage"] == expected
+    adjunct_check = next(
+        check for check in envelope.files["audit.json"]["checks"] if check["check"] == "clinical_trials_adjunct"
+    )
+    assert adjunct_check["severity"] == "pass"
+    assert adjunct_check["details"]["coverage"] == expected
+    assert envelope.summary["clinical_trials"]["coverage"] == expected
+    assert envelope.metadata["clinical_trials"]["coverage"] == expected
 
 
 def test_query_strategy_preserves_exact_pubmed_query_and_preprint_local_filter() -> None:
@@ -339,6 +381,51 @@ def test_limited_search_does_not_warn_when_unique_articles_exceed_returned_limit
     assert any(check["check"] == "result_limit_applied" and check["severity"] == "info" for check in audit["checks"])
 
 
+def test_detected_preprint_filter_counts_do_not_create_a_false_artifact_warning() -> None:
+    request = _request()
+    plan = _plan(request)
+    execution = SimpleNamespace(
+        ranked=[_article("Published", pmid="1")],
+        stats=SimpleNamespace(total_input=2, unique_articles=2, duplicates_removed=0),
+        source_api_counts={"pubmed": (2, 2)},
+        source_errors=[],
+        deep_search_metrics=None,
+        relaxation_result=None,
+        result_filter_counts={
+            "retrieved_unique": 2,
+            "excluded_detected_preprints": 1,
+            "eligible_unique": 1,
+            "returned": 1,
+        },
+    )
+
+    audit = audit_unified_search_artifact(request=request, plan=plan, execution=execution)
+
+    consistency = next(check for check in audit["checks"] if check["check"] == "result_count_consistency")
+    assert consistency["severity"] == "pass"
+    assert audit["counts"]["result_filter_counts"]["excluded_detected_preprints"] == 1
+
+
+def test_query_artifact_renders_untrusted_query_as_inert_markdown() -> None:
+    request = _request()
+    request.query = "safe\n# injected\n![tracker](https://example.invalid/pixel)"
+    plan = _plan(request)
+    plan.analysis.original_query = request.query
+
+    envelope = build_unified_search_artifact_envelope(
+        request=request,
+        plan=plan,
+        execution=_execution(),
+        structured_payload='{"tool":"unified_search","articles":[]}',
+        primary_format="json",
+    )
+
+    query_markdown = envelope.files["query.md"]
+    assert "\n# injected" not in query_markdown
+    assert "\n![tracker]" not in query_markdown
+    assert "    # injected" in query_markdown
+
+
 def test_unknown_provider_total_keeps_has_more_unknown() -> None:
     request = _request()
     plan = _plan(request)
@@ -382,16 +469,18 @@ def test_artifact_locator_exposes_remote_safe_read_hints(tmp_path: Path):
     assert locator["schema_version"] == ARTIFACT_SCHEMA_VERSION
     assert locator["audit_status"] == "warn"
     assert locator["read_order"][:3] == ["audit.json", "query_strategy.json", "results.json"]
-    assert locator["read_files"]["audit.json"].startswith('read_session(action="artifact"')
+    assert locator["read_files"]["audit.json"].startswith(
+        'read_session(request={"action":"artifact","locator":{"kind":"artifact_id"'
+    )
     assert "artifact_uri" in locator["remote_retrieval"]
-    assert "artifact_uri=" in locator["read_files_by_uri"]["audit.json"]
-    assert "artifact_uri=" in locator["remote_retrieval"]["read_via"]
-    assert "artifact_uri=" in locator["read_via_uri"]
+    assert '"kind":"artifact_uri"' in locator["read_files_by_uri"]["audit.json"]
+    assert '"kind":"artifact_uri"' in locator["remote_retrieval"]["read_via"]
+    assert '"kind":"artifact_uri"' in locator["read_via_uri"]
     assert locator["remote_retrieval"]["supports_paging"] is True
 
     note = artifact_markdown_note(locator)
     assert "Start with URI" in note
-    assert "artifact_uri=" in note
+    assert '"kind":"artifact_uri"' in note
 
     page = manager.read_artifact(manifest["artifact_id"], file_name="audit.json", max_chars=120)
     assert page["success"] is True

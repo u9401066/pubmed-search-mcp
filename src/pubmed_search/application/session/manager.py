@@ -35,6 +35,8 @@ logger = logging.getLogger(__name__)
 MAX_SESSION_EVENT_LOG = 200
 _SAFE_SESSION_ID_RE = re.compile(r"^[A-Za-z0-9_.-]{1,80}$")
 SEARCH_RUN_SCHEMA_VERSION = "search-run/v1"
+RESEARCH_SESSION_SCHEMA_VERSION = "research-session/v1"
+SESSION_INDEX_SCHEMA_VERSION = "research-session-index/v1"
 SEARCH_RUN_ACTIVE_STATUSES = frozenset({"started", "planned", "running"})
 SEARCH_RUN_TERMINAL_STATUSES = frozenset({"completed", "partial", "failed", "cancelled", "interrupted"})
 SEARCH_RUN_STATUSES = SEARCH_RUN_ACTIVE_STATUSES | SEARCH_RUN_TERMINAL_STATUSES
@@ -70,6 +72,75 @@ _UNIFIED_REPLAY_KEYS = frozenset(
         "stop_at",
     }
 )
+
+_SEARCH_RUN_FIELDS = frozenset(
+    {
+        "run_id",
+        "query",
+        "status",
+        "request",
+        "created_at",
+        "updated_at",
+        "schema_version",
+        "plan",
+        "source_attempts",
+        "result",
+        "artifact",
+        "failure",
+        "warnings",
+        "replay_of",
+        "recoverable",
+    }
+)
+_RESEARCH_SESSION_FIELDS = frozenset(
+    {
+        "session_id",
+        "schema_version",
+        "topic",
+        "created_at",
+        "updated_at",
+        "cached_pmids",
+        "search_history",
+        "search_runs",
+        "event_log",
+        "reading_list",
+        "excluded_pmids",
+        "notes",
+        "artifacts",
+    }
+)
+_CACHED_ARTICLE_FIELDS = frozenset(
+    {
+        "pmid",
+        "title",
+        "authors",
+        "abstract",
+        "journal",
+        "year",
+        "doi",
+        "pmc_id",
+        "cached_at",
+        "full_data",
+    }
+)
+
+
+def _require_exact_fields(payload: dict[str, Any], expected: frozenset[str], *, kind: str) -> None:
+    """Reject incomplete or extended persisted contracts without echoing payload data."""
+    if set(payload) != expected:
+        raise ValueError(f"Invalid {kind} payload")
+
+
+def _require_dict_list(value: Any, *, kind: str) -> list[dict[str, Any]]:
+    if not isinstance(value, list) or any(not isinstance(item, dict) for item in value):
+        raise ValueError(f"Invalid {kind} payload")
+    return [copy.deepcopy(item) for item in value]
+
+
+def _require_string_list(value: Any, *, kind: str) -> list[str]:
+    if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+        raise ValueError(f"Invalid {kind} payload")
+    return list(value)
 
 
 def _utcnow_iso() -> str:
@@ -222,32 +293,61 @@ class SearchRun:
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> SearchRun:
-        """Read current or older run dictionaries without accepting unknown state."""
-        status = str(payload.get("status") or "interrupted")
+        """Validate and read exactly one current-schema run envelope."""
+        _require_exact_fields(payload, _SEARCH_RUN_FIELDS, kind="search run")
+        if payload.get("schema_version") != SEARCH_RUN_SCHEMA_VERSION:
+            raise ValueError("Unsupported search run schema version")
+
+        run_id = payload.get("run_id")
+        query = payload.get("query")
+        status = payload.get("status")
+        created_at = payload.get("created_at")
+        updated_at = payload.get("updated_at")
+        if not isinstance(run_id, str) or not _SAFE_SESSION_ID_RE.fullmatch(run_id):
+            raise ValueError("Invalid search run payload")
+        if not isinstance(query, str):
+            raise TypeError("Invalid search run payload")
+        if not isinstance(status, str):
+            raise TypeError("Invalid search run payload")
+        if not isinstance(created_at, str) or not isinstance(updated_at, str):
+            raise TypeError("Invalid search run payload")
         if status not in SEARCH_RUN_STATUSES:
-            status = "interrupted"
+            raise ValueError("Invalid search run status")
         raw_request = payload.get("request")
         raw_plan = payload.get("plan")
         raw_attempts = payload.get("source_attempts")
         raw_result = payload.get("result")
+        raw_artifact = payload.get("artifact")
+        raw_failure = payload.get("failure")
+        raw_replay_of = payload.get("replay_of")
+        if not isinstance(raw_request, dict) or not isinstance(raw_plan, dict) or not isinstance(raw_result, dict):
+            raise TypeError("Invalid search run payload")
+        source_attempts = _require_dict_list(raw_attempts, kind="search run")
+        warnings = _require_string_list(payload.get("warnings"), kind="search run")
+        if raw_artifact is not None and not isinstance(raw_artifact, dict):
+            raise ValueError("Invalid search run payload")
+        if raw_failure is not None and not isinstance(raw_failure, dict):
+            raise ValueError("Invalid search run payload")
+        if raw_replay_of is not None and not isinstance(raw_replay_of, str):
+            raise ValueError("Invalid search run payload")
+        if not isinstance(payload.get("recoverable"), bool):
+            raise TypeError("Invalid search run payload")
         return cls(
-            run_id=str(payload.get("run_id") or ""),
-            query=str(payload.get("query") or ""),
+            run_id=run_id,
+            query=query,
             status=status,
-            request=dict(raw_request) if isinstance(raw_request, dict) else {},
-            created_at=str(payload.get("created_at") or _utcnow_iso()),
-            updated_at=str(payload.get("updated_at") or payload.get("created_at") or _utcnow_iso()),
-            schema_version=str(payload.get("schema_version") or SEARCH_RUN_SCHEMA_VERSION),
-            plan=dict(raw_plan) if isinstance(raw_plan, dict) else {},
-            source_attempts=[dict(item) for item in raw_attempts if isinstance(item, dict)]
-            if isinstance(raw_attempts, list)
-            else [],
-            result=dict(raw_result) if isinstance(raw_result, dict) else {},
-            artifact=dict(payload["artifact"]) if isinstance(payload.get("artifact"), dict) else None,
-            failure=dict(payload["failure"]) if isinstance(payload.get("failure"), dict) else None,
-            warnings=[str(item) for item in list(payload.get("warnings") or [])],
-            replay_of=str(payload["replay_of"]) if payload.get("replay_of") else None,
-            recoverable=bool(payload.get("recoverable", True)),
+            request=copy.deepcopy(raw_request),
+            created_at=created_at,
+            updated_at=updated_at,
+            schema_version=SEARCH_RUN_SCHEMA_VERSION,
+            plan=copy.deepcopy(raw_plan),
+            source_attempts=source_attempts,
+            result=copy.deepcopy(raw_result),
+            artifact=copy.deepcopy(raw_artifact),
+            failure=copy.deepcopy(raw_failure),
+            warnings=warnings,
+            replay_of=raw_replay_of,
+            recoverable=payload["recoverable"],
         )
 
 
@@ -256,16 +356,15 @@ class ResearchSession:
     """Aggregate root for research workflow state."""
 
     session_id: str
+    schema_version: str = RESEARCH_SESSION_SCHEMA_VERSION
     topic: str = ""
     created_at: str = field(default_factory=_utcnow_iso)
     updated_at: str = field(default_factory=_utcnow_iso)
 
-    # Compatibility snapshot only. The authoritative cache lives in ArticleCache.
-    article_cache: dict[str, dict[str, Any]] = field(default_factory=dict, repr=False)
-
     # Session-owned references to cached articles. The payloads live in ArticleCache.
     cached_pmids: list[str] = field(default_factory=list)
 
+    # Compact user-facing summary rows; search_runs owns lifecycle and replay state.
     search_history: list[dict[str, Any]] = field(default_factory=list)
     search_runs: list[dict[str, Any]] = field(default_factory=list)
     event_log: list[dict[str, Any]] = field(default_factory=list)
@@ -280,27 +379,60 @@ class ResearchSession:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ResearchSession:
-        payload = dict(data)
-        payload.setdefault("article_cache", {})
-        payload.setdefault("event_log", [])
-        payload.setdefault("artifacts", [])
-        raw_search_runs = payload.get("search_runs")
-        payload["search_runs"] = (
-            [
-                SearchRun.from_dict(item).to_dict()
-                for item in raw_search_runs
-                if isinstance(item, dict) and _SAFE_SESSION_ID_RE.fullmatch(str(item.get("run_id") or ""))
-            ]
-            if isinstance(raw_search_runs, list)
-            else []
+        """Validate and read exactly one current-schema session aggregate."""
+        _require_exact_fields(data, _RESEARCH_SESSION_FIELDS, kind="research session")
+        if data.get("schema_version") != RESEARCH_SESSION_SCHEMA_VERSION:
+            raise ValueError("Unsupported research session schema version")
+
+        session_id = data.get("session_id")
+        topic = data.get("topic")
+        created_at = data.get("created_at")
+        updated_at = data.get("updated_at")
+        if not isinstance(session_id, str) or not _SAFE_SESSION_ID_RE.fullmatch(session_id):
+            raise ValueError("Invalid research session payload")
+        if not isinstance(topic, str):
+            raise TypeError("Invalid research session payload")
+        if not isinstance(created_at, str) or not isinstance(updated_at, str):
+            raise TypeError("Invalid research session payload")
+
+        cached_pmids = _require_string_list(data.get("cached_pmids"), kind="research session")
+        search_history = _require_dict_list(data.get("search_history"), kind="research session")
+        raw_search_runs = _require_dict_list(data.get("search_runs"), kind="research session")
+        search_runs = [SearchRun.from_dict(item).to_dict() for item in raw_search_runs]
+        event_log = _require_dict_list(data.get("event_log"), kind="research session")
+        excluded_pmids = _require_string_list(data.get("excluded_pmids"), kind="research session")
+        artifacts = _require_dict_list(data.get("artifacts"), kind="research session")
+
+        reading_list = data.get("reading_list")
+        notes = data.get("notes")
+        if not isinstance(reading_list, dict) or any(
+            not isinstance(key, str) or not isinstance(value, dict) for key, value in reading_list.items()
+        ):
+            raise ValueError("Invalid research session payload")
+        if not isinstance(notes, dict) or any(
+            not isinstance(key, str) or not isinstance(value, str) for key, value in notes.items()
+        ):
+            raise ValueError("Invalid research session payload")
+
+        return cls(
+            session_id=session_id,
+            schema_version=RESEARCH_SESSION_SCHEMA_VERSION,
+            topic=topic,
+            created_at=created_at,
+            updated_at=updated_at,
+            cached_pmids=cached_pmids,
+            search_history=search_history,
+            search_runs=search_runs,
+            event_log=event_log,
+            reading_list=copy.deepcopy(reading_list),
+            excluded_pmids=excluded_pmids,
+            notes=copy.deepcopy(notes),
+            artifacts=artifacts,
         )
-        return cls(**payload)
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize session state without persisting cache payloads."""
-        payload = asdict(self)
-        payload.pop("article_cache", None)
-        return payload
+        """Serialize the current session schema without article cache payloads."""
+        return asdict(self)
 
 
 class ArticleCache:
@@ -333,15 +465,30 @@ class ArticleCache:
 
     @staticmethod
     def _deserialize_cached_article(raw: Any) -> CachedArticle:
-        if isinstance(raw, CachedArticle):
-            return raw
-        if not isinstance(raw, dict):
-            raise TypeError("Article cache payload must be a dict")
-        try:
-            return CachedArticle(**raw)
-        except TypeError:
-            pmid = str(raw.get("pmid") or "")
-            return CachedArticle.from_article_data(pmid, raw)
+        """Read only the canonical serialized :class:`CachedArticle` shape."""
+        if not isinstance(raw, dict) or set(raw) != _CACHED_ARTICLE_FIELDS:
+            raise ValueError("Invalid cached article payload")
+        string_fields = ("pmid", "title", "abstract", "journal", "year", "doi", "pmc_id", "cached_at")
+        if any(not isinstance(raw.get(name), str) for name in string_fields):
+            raise TypeError("Invalid cached article payload")
+        authors = raw.get("authors")
+        full_data = raw.get("full_data")
+        if not isinstance(authors, list) or any(not isinstance(author, str) for author in authors):
+            raise TypeError("Invalid cached article payload")
+        if not isinstance(full_data, dict):
+            raise TypeError("Invalid cached article payload")
+        return CachedArticle(
+            pmid=raw["pmid"],
+            title=raw["title"],
+            authors=list(authors),
+            abstract=raw["abstract"],
+            journal=raw["journal"],
+            year=raw["year"],
+            doi=raw["doi"],
+            pmc_id=raw["pmc_id"],
+            cached_at=raw["cached_at"],
+            full_data=copy.deepcopy(full_data),
+        )
 
     def get(self, pmid: str) -> CachedArticle | None:
         return self._store.get(pmid)
@@ -360,17 +507,6 @@ class ArticleCache:
                 entries.append((pmid, CachedArticle.from_article_data(pmid, article)))
 
         return self._store.warmup(entries)
-
-    def warmup(self, articles: dict[str, dict[str, Any]] | list[dict[str, Any]]) -> int:
-        if isinstance(articles, dict):
-            payloads = []
-            for pmid, article in articles.items():
-                payload = dict(article)
-                payload.setdefault("pmid", pmid)
-                payloads.append(payload)
-            return self.put_many(payloads)
-
-        return self.put_many(articles)
 
     def invalidate(self, pmid: str) -> bool:
         return self._store.invalidate(pmid)
@@ -422,13 +558,13 @@ class SessionManager:
         if self.data_dir is None:
             raise RuntimeError("data_dir not configured")
         if not _SAFE_SESSION_ID_RE.fullmatch(session_id):
-            msg = f"Unsafe session id: {session_id}"
+            msg = "Unsafe session identifier"
             raise ValueError(msg)
         path = (self.data_dir / f"session_{session_id}.json").resolve()
         try:
             path.relative_to(self.data_dir.resolve())
         except ValueError as exc:
-            msg = f"Session path escapes data directory: {path}"
+            msg = "Session path is outside the configured data directory"
             raise ValueError(msg) from exc
         return path
 
@@ -440,12 +576,23 @@ class SessionManager:
             try:
                 with sessions_file.open(encoding="utf-8") as handle:
                     loaded_index = json.load(handle)
-                if isinstance(loaded_index, dict):
+                if (
+                    isinstance(loaded_index, dict)
+                    and set(loaded_index) == {"schema_version", "current_session_id", "sessions"}
+                    and loaded_index.get("schema_version") == SESSION_INDEX_SCHEMA_VERSION
+                    and (
+                        loaded_index.get("current_session_id") is None
+                        or isinstance(loaded_index.get("current_session_id"), str)
+                    )
+                    and isinstance(loaded_index.get("sessions"), list)
+                    and all(isinstance(item, str) for item in loaded_index["sessions"])
+                ):
                     index = loaded_index
                 else:
+                    logger.warning("Ignoring an incompatible or malformed sessions index")
                     index_needs_repair = True
             except Exception as exc:
-                logger.warning("Failed to load sessions index; scanning session files: %s", exc)
+                logger.warning("Failed to load sessions index; scanning session files (%s)", type(exc).__name__)
                 index_needs_repair = True
 
         candidate_ids: list[str] = []
@@ -481,7 +628,7 @@ class SessionManager:
         try:
             session_file = self._get_session_file(session_id)
         except ValueError as exc:
-            logger.warning("Skipping unsafe session id %s: %s", session_id, exc)
+            logger.warning("Skipping unsafe session identifier (%s)", type(exc).__name__)
             return False
         if not session_file.exists():
             return False
@@ -490,33 +637,24 @@ class SessionManager:
             with session_file.open(encoding="utf-8") as handle:
                 payload = json.load(handle)
         except Exception as exc:
-            logger.warning("Failed to load session %s: %s", session_id, exc)
+            logger.warning("Failed to load session (%s)", type(exc).__name__)
             return False
 
-        legacy_cache = payload.pop("article_cache", {}) if isinstance(payload, dict) else {}
         if not isinstance(payload, dict):
-            logger.warning("Skipping malformed session payload for %s", session_id)
+            logger.warning("Skipping malformed research session payload")
             return False
 
         try:
             session = ResearchSession.from_dict(payload)
         except (TypeError, ValueError) as exc:
-            logger.warning("Skipping malformed session payload for %s: %s", session_id, exc)
+            logger.warning("Skipping incompatible or malformed research session payload (%s)", type(exc).__name__)
             return False
         if session.session_id != session_id:
-            logger.warning("Skipping session payload whose id does not match its filename: %s", session_id)
+            logger.warning("Skipping research session whose identifier does not match its storage key")
             return False
         self._sessions[session_id] = session
 
-        changed = False
-        if isinstance(legacy_cache, dict) and legacy_cache:
-            self.article_cache.warmup(legacy_cache)
-            self._refresh_session_cache_view(session)
-            changed = True
-        else:
-            self._refresh_session_cache_view(session)
-
-        changed = self._recover_interrupted_search_runs(session) or changed
+        changed = self._recover_interrupted_search_runs(session)
         changed = self._reconcile_session_artifacts(session) or changed
         if changed:
             # Do not rewrite the sessions index inside the load loop: doing so
@@ -533,7 +671,7 @@ class SessionManager:
         try:
             atomic_write_json(session_file, session.to_dict())
         except Exception as exc:
-            logger.warning("Failed to save session: %s", exc)
+            logger.warning("Failed to save session (%s)", type(exc).__name__)
             raise
 
         self._save_sessions_index()
@@ -544,13 +682,14 @@ class SessionManager:
 
         sessions_file = self._get_sessions_file()
         index = {
+            "schema_version": SESSION_INDEX_SCHEMA_VERSION,
             "current_session_id": self._current_session_id,
             "sessions": list(self._sessions.keys()),
         }
         try:
             atomic_write_json(sessions_file, index)
         except Exception as exc:
-            logger.warning("Failed to save sessions index: %s", exc)
+            logger.warning("Failed to save sessions index (%s)", type(exc).__name__)
             raise
 
     @staticmethod
@@ -559,59 +698,6 @@ class SessionManager:
             if isinstance(run, dict) and run.get("run_id") == run_id:
                 return run
         return None
-
-    @staticmethod
-    def _legacy_run_id(session: ResearchSession, index: int, record: dict[str, Any]) -> str:
-        identity = json.dumps(
-            {
-                "session_id": session.session_id,
-                "index": index,
-                "query": record.get("query", ""),
-                "timestamp": record.get("timestamp", ""),
-            },
-            ensure_ascii=False,
-            sort_keys=True,
-        )
-        digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:24]
-        return f"legacy-{digest}"
-
-    def _legacy_search_runs(self, session: ResearchSession) -> list[dict[str, Any]]:
-        """Project pre-journal search history into stable read-only run envelopes."""
-        journal_ids = {
-            str(run.get("run_id")) for run in session.search_runs if isinstance(run, dict) and run.get("run_id")
-        }
-        runs: list[dict[str, Any]] = []
-        for index, record in enumerate(session.search_history):
-            if not isinstance(record, dict):
-                continue
-            # A run id means this history row already has a first-class
-            # journal record and must not be projected a second time.
-            if record.get("run_id") in journal_ids:
-                continue
-            timestamp = str(record.get("timestamp") or "")
-            query = str(record.get("query") or "")
-            filters = dict(record.get("filters") or {})
-            pmids = [str(item) for item in list(record.get("pmids") or []) if item]
-            legacy_run_id = str(record.get("run_id") or "")
-            if not _SAFE_SESSION_ID_RE.fullmatch(legacy_run_id):
-                legacy_run_id = self._legacy_run_id(session, index, record)
-            runs.append(
-                SearchRun(
-                    run_id=legacy_run_id,
-                    query=query,
-                    status="completed",
-                    request={"query": query, "filters": filters},
-                    created_at=timestamp or session.created_at,
-                    updated_at=timestamp or session.updated_at,
-                    result={
-                        "count": int(record.get("result_count", len(pmids)) or 0),
-                        "pmids": pmids,
-                        "references": [],
-                    },
-                    recoverable=True,
-                ).to_dict()
-            )
-        return runs
 
     def _recover_interrupted_search_runs(self, session: ResearchSession) -> bool:
         changed = False
@@ -747,11 +833,6 @@ class SessionManager:
 
         return ordered
 
-    def _refresh_session_cache_view(self, session: ResearchSession) -> ResearchSession:
-        cached_map, _ = self.get_cached_article_map(self._session_related_pmids(session))
-        session.article_cache = cached_map
-        return session
-
     @staticmethod
     def _append_session_event(
         session: ResearchSession,
@@ -799,7 +880,7 @@ class SessionManager:
         self._current_session_id = session_id
         self._save_session(session)
         logger.info("Created session %s: %s", session_id, topic)
-        return self._refresh_session_cache_view(session)
+        return session
 
     def _current_session(self) -> ResearchSession | None:
         if not self._current_session_id:
@@ -807,7 +888,7 @@ class SessionManager:
         session = self._sessions.get(self._current_session_id)
         if session is None:
             return None
-        return self._refresh_session_cache_view(session)
+        return session
 
     def _get_or_create_session(self, topic: str = "default") -> ResearchSession:
         session = self._current_session()
@@ -847,7 +928,6 @@ class SessionManager:
             details={"session_id": session_id},
         )
         session.touch()
-        self._refresh_session_cache_view(session)
         self._save_session(session)
         return self._snapshot_session(session)
 
@@ -882,7 +962,6 @@ class SessionManager:
                         "pmids": [article.get("pmid", "") for article in articles[:10] if article.get("pmid")],
                     },
                 )
-            self._refresh_session_cache_view(session)
             self._save_session(session)
         return warmed
 
@@ -903,10 +982,7 @@ class SessionManager:
                     },
                 )
         if session and not _skip_save:
-            self._refresh_session_cache_view(session)
             self._save_session(session)
-        elif session:
-            self._refresh_session_cache_view(session)
         return warmed
 
     @synchronized
@@ -1189,7 +1265,7 @@ class SessionManager:
         failure: str | BaseException | dict[str, Any] | None = None,
         retryable: bool = True,
     ) -> dict[str, Any]:
-        """Commit terminal result metadata and its legacy history projection."""
+        """Commit terminal result metadata and update the history summary."""
         normalized_status = status.strip().lower()
         if normalized_status not in {"completed", "partial", "failed", "cancelled"}:
             raise ValueError(f"Unsupported completion status: {status}")
@@ -1273,7 +1349,6 @@ class SessionManager:
             message="Search run reached a terminal result state",
             details={"run_id": run_id, "status": normalized_status, "result_count": run["result"]["count"]},
         )
-        self._refresh_session_cache_view(session)
         self._persist_run_change(session, before)
         return copy.deepcopy(run)
 
@@ -1317,12 +1392,11 @@ class SessionManager:
         status: str | None = None,
         limit: int = 20,
     ) -> list[dict[str, Any]]:
-        """List first-class and deterministic legacy search-run envelopes."""
+        """List first-class search-run envelopes."""
         session = self._get_session_for_artifact_lookup(session_id)
         if session is None or limit <= 0:
             return []
         runs = [copy.deepcopy(run) for run in session.search_runs if isinstance(run, dict)]
-        runs.extend(self._legacy_search_runs(session))
         if status:
             normalized = status.strip().lower()
             runs = [run for run in runs if str(run.get("status") or "").lower() == normalized]
@@ -1330,11 +1404,29 @@ class SessionManager:
         return runs[-limit:]
 
     @synchronized
+    def get_search_run_status_counts(self, *, session_id: str | None = None) -> dict[str, int]:
+        """Count first-class run statuses without a magic retrieval cap."""
+
+        session = self._get_session_for_artifact_lookup(session_id)
+        if session is None:
+            return {}
+        counts: dict[str, int] = {}
+        for run in session.search_runs:
+            if not isinstance(run, dict):
+                continue
+            status = str(run.get("status") or "unknown")
+            counts[status] = counts.get(status, 0) + 1
+        return counts
+
+    @synchronized
     def get_search_run(self, run_id: str, *, session_id: str | None = None) -> dict[str, Any] | None:
         """Return one detached run envelope by stable id."""
-        for run in self.list_search_runs(session_id=session_id, limit=100_000):
-            if run.get("run_id") == run_id:
-                return run
+        session = self._get_session_for_artifact_lookup(session_id)
+        if session is None:
+            return None
+        run = self._find_search_run(session, run_id)
+        if run is not None:
+            return copy.deepcopy(run)
         return None
 
     @synchronized
@@ -1394,7 +1486,6 @@ class SessionManager:
             },
         )
         session.touch()
-        self._refresh_session_cache_view(session)
         try:
             self._save_session(session)
         except BaseException:
@@ -1500,7 +1591,7 @@ class SessionManager:
         if not session_id:
             return self._current_session()
         if not _SAFE_SESSION_ID_RE.fullmatch(session_id):
-            msg = f"Unsafe session id: {session_id}"
+            msg = "Unsafe session identifier"
             raise ValueError(msg)
 
         session = self._sessions.get(session_id)
@@ -1511,7 +1602,7 @@ class SessionManager:
             session = self._sessions.get(session_id)
         if session is None:
             return None
-        return self._refresh_session_cache_view(session)
+        return session
 
     @staticmethod
     def _parse_artifact_uri(artifact_uri: str | None) -> tuple[str | None, str | None]:
@@ -1549,14 +1640,16 @@ class SessionManager:
                 session_id=session_id,
             )
         except Exception as exc:
-            return {"success": False, "error": str(exc)}
+            logger.warning("Artifact manifest lookup failed (%s)", type(exc).__name__)
+            return {"success": False, "error": "Artifact lookup failed"}
         if manifest is None:
-            return {"success": False, "error": f"Artifact not found: {artifact_uri or artifact_id}"}
+            return {"success": False, "error": "Artifact not found"}
 
         try:
             file_info, content = self.artifact_store.read_file(manifest, file_name=file_name)
         except Exception as exc:
-            return {"success": False, "error": str(exc), "artifact": manifest}
+            logger.warning("Artifact file read failed (%s)", type(exc).__name__)
+            return {"success": False, "error": "Artifact file could not be read"}
 
         truncated = False
         start = max(offset, 0)
@@ -1661,7 +1754,6 @@ class SessionManager:
             details={"pmid": pmid, "priority": priority},
         )
         session.touch()
-        self._refresh_session_cache_view(session)
         self._save_session(session)
 
     @synchronized
@@ -1676,7 +1768,6 @@ class SessionManager:
                 details={"pmid": pmid},
             )
             session.touch()
-            self._refresh_session_cache_view(session)
             self._save_session(session)
 
     @synchronized
@@ -1687,16 +1778,13 @@ class SessionManager:
 
         cached_pmids = self.get_session_cached_pmids(session=session, limit=20)
         recent_runs = self.list_search_runs(limit=5)
-        status_counts: dict[str, int] = {}
-        for run in self.list_search_runs(limit=100_000):
-            status = str(run.get("status") or "unknown")
-            status_counts[status] = status_counts.get(status, 0) + 1
+        status_counts = self.get_search_run_status_counts()
         return {
             "session_id": session.session_id,
             "topic": session.topic,
             "cached_articles": len(self.get_session_cached_pmids(session=session)),
             "searches_performed": len(session.search_history),
-            "search_runs": len(session.search_runs) + len(self._legacy_search_runs(session)),
+            "search_runs": len(session.search_runs),
             "search_run_statuses": status_counts,
             "event_entries": len(session.event_log),
             "reading_list_count": len(session.reading_list),

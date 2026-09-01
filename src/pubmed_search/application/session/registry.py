@@ -5,9 +5,8 @@
 each other's cached articles, search history, ``pmids="last"``, and artifacts.
 This registry gives every tenant its own manager and its own storage root.
 
-The default tenant deliberately keeps writing to ``data_dir`` itself so existing
-single-user installs keep their history after upgrading; additional tenants get
-``data_dir/tenants/<tenant_id>``.
+The local single-user tenant owns ``data_dir`` itself; authenticated remote
+tenants use ``data_dir/tenants/<tenant_id>``.
 """
 
 from __future__ import annotations
@@ -80,8 +79,8 @@ class SessionManagerRegistry:
             tenant_id: A normalized tenant id.
 
         Returns:
-            The default tenant keeps the shared root for backward compatibility;
-            every other tenant gets an isolated subdirectory. ``None`` when the
+            The local single-user tenant owns the configured root; every remote
+            tenant gets an isolated subdirectory. ``None`` when the
             registry runs without persistence.
         """
         return tenant_data_dir(self._data_dir, tenant_id)

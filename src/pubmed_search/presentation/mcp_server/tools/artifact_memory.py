@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from typing import Any, cast
@@ -65,12 +66,18 @@ def artifact_locator(
     def _read_command(file_name: str) -> str:
         if not artifact_id:
             return ""
-        return f'read_session(action="artifact", artifact_id="{artifact_id}", artifact_file="{file_name}")'
+        return (
+            'read_session(request={"action":"artifact","locator":'
+            f'{{"kind":"artifact_id","value":"{artifact_id}"}},"artifact_file":"{file_name}"}})'
+        )
 
     def _read_uri_command(file_name: str) -> str:
         if not artifact_uri:
             return ""
-        return f'read_session(action="artifact", artifact_uri="{artifact_uri}", artifact_file="{file_name}")'
+        return (
+            'read_session(request={"action":"artifact","locator":'
+            f'{{"kind":"artifact_uri","value":"{artifact_uri}"}},"artifact_file":"{file_name}"}})'
+        )
 
     read_files = {file_name: _read_command(file_name) for file_name in read_order if _read_command(file_name)}
     read_files_by_uri = {
@@ -102,7 +109,8 @@ def artifact_locator(
         },
         "read_via_uri": _read_uri_command(primary_file) if primary_file else "",
         "read_via": (
-            f'read_session(action="artifact", artifact_id="{artifact_id}", artifact_file="{primary_file}")'
+            'read_session(request={"action":"artifact","locator":'
+            f'{{"kind":"artifact_id","value":"{artifact_id}"}},"artifact_file":"{primary_file}"}})'
             if artifact_id and primary_file
             else ""
         ),
@@ -113,7 +121,7 @@ def artifact_locator(
     return {key: value for key, value in locator.items() if value not in (None, "", [])}
 
 
-def persist_tool_artifact(
+async def persist_tool_artifact(
     *,
     tool: str,
     kind: str,
@@ -122,13 +130,14 @@ def persist_tool_artifact(
     summary: dict[str, Any] | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
-    """Persist a tool artifact through the active session manager if available."""
+    """Persist a tool artifact without blocking the MCP event loop."""
     session_manager = get_session_manager()
     if session_manager is None:
         return None
 
     try:
-        manifest = session_manager.save_artifact(
+        manifest = await asyncio.to_thread(
+            session_manager.save_artifact,
             tool=tool,
             kind=kind,
             files=files,
@@ -136,7 +145,7 @@ def persist_tool_artifact(
             summary=summary,
             metadata=metadata,
         )
-        settings = load_settings()
+        settings = await asyncio.to_thread(load_settings)
         return artifact_locator(manifest, include_local_paths=settings.artifact_include_local_paths)
     except Exception as exc:
         logger.warning("Failed to persist %s artifact (%s)", tool, type(exc).__name__)
