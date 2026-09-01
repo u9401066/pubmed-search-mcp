@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import pytest
+from pydantic import ValidationError
+
 from pubmed_search.shared.settings import (
     DEFAULT_DATA_DIR,
     DEFAULT_EMAIL,
     DEFAULT_FULLTEXT_INLINE_MAX_CHARS,
-    DEFAULT_HTTP_API_PORT,
     get_settings,
     load_settings,
     reset_settings_cache,
@@ -18,15 +20,14 @@ class TestAppSettings:
         monkeypatch.delenv("NCBI_EMAIL", raising=False)
         monkeypatch.delenv("PUBMED_DATA_DIR", raising=False)
         monkeypatch.delenv("PUBMED_NOTES_DIR", raising=False)
-        monkeypatch.delenv("PUBMED_HTTP_API_PORT", raising=False)
         monkeypatch.delenv("SEMANTIC_SCHOLAR_API_KEY", raising=False)
+        monkeypatch.delenv("S2_API_KEY", raising=False)
 
         settings = load_settings()
 
         assert settings.ncbi_email == DEFAULT_EMAIL
         assert settings.data_dir == DEFAULT_DATA_DIR
         assert settings.notes_dir is None
-        assert settings.http_api_port == DEFAULT_HTTP_API_PORT
         assert settings.semantic_scholar_api_key is None
         assert settings.artifact_include_local_paths is False
         assert settings.fulltext_inline_max_chars == DEFAULT_FULLTEXT_INLINE_MAX_CHARS
@@ -40,8 +41,15 @@ class TestAppSettings:
         assert settings.artifact_include_local_paths is True
         assert settings.fulltext_inline_max_chars == 1234
 
-    def test_disabled_sources_are_normalized(self, monkeypatch):
-        monkeypatch.setenv("PUBMED_SEARCH_DISABLED_SOURCES", "semantic-scholar, core")
+    @pytest.mark.parametrize("value", ["0", "255", "200001"])
+    def test_fulltext_inline_limit_is_bounded(self, monkeypatch, value):
+        monkeypatch.setenv("PUBMED_FULLTEXT_INLINE_MAX_CHARS", value)
+
+        with pytest.raises(ValidationError):
+            load_settings()
+
+    def test_disabled_sources_preserve_canonical_keys(self, monkeypatch):
+        monkeypatch.setenv("PUBMED_SEARCH_DISABLED_SOURCES", "semantic_scholar, core")
 
         settings = load_settings()
 
@@ -79,13 +87,11 @@ class TestAppSettings:
         monkeypatch.setenv("NCBI_API_KEY", " ncbi-key ")
         assert load_settings().ncbi_api_key == "ncbi-key"
 
-    def test_semantic_scholar_api_key_accepts_s2_alias(self, monkeypatch):
+    def test_retired_s2_api_key_does_not_configure_semantic_scholar(self, monkeypatch):
         monkeypatch.delenv("SEMANTIC_SCHOLAR_API_KEY", raising=False)
         monkeypatch.setenv("S2_API_KEY", " alias-key ")
 
-        semantic_key = load_settings().semantic_scholar_api_key
-        assert semantic_key is not None
-        assert semantic_key.get_secret_value() == "alias-key"
+        assert load_settings().semantic_scholar_api_key is None
 
     def test_provider_keys_are_redacted_from_settings_repr(self, monkeypatch):
         monkeypatch.setenv("OPENALEX_API_KEY", "openalex-secret")

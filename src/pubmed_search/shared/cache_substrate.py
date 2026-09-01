@@ -34,6 +34,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
+_STORED_CACHE_ENTRY_FIELDS = frozenset({"value", "cached_at", "expires_at", "metadata"})
 
 
 def _utcnow() -> datetime:
@@ -123,24 +124,24 @@ class StoredCacheEntry:
 
     @classmethod
     def from_dict(cls, data: Any) -> StoredCacheEntry:
-        if not isinstance(data, dict):
-            return cls(value=data)
+        """Read exactly one current cache-entry envelope."""
+        if not isinstance(data, dict) or set(data) != _STORED_CACHE_ENTRY_FIELDS:
+            raise ValueError("Invalid cache entry payload")
 
-        if "value" not in data:
-            raw_cached_at = data.get("cached_at")
-            cached_at = raw_cached_at if isinstance(raw_cached_at, str) else _utcnow_iso()
-            return cls(value=data, cached_at=cached_at)
-
+        cached_at = data.get("cached_at")
+        expires_at = data.get("expires_at")
         metadata = data.get("metadata")
-        raw_cached_at = data.get("cached_at")
-        cached_at = raw_cached_at if isinstance(raw_cached_at, str) else _utcnow_iso()
-        raw_expires_at = data.get("expires_at")
-        expires_at = raw_expires_at if isinstance(raw_expires_at, str) else None
+        if not isinstance(cached_at, str) or not cached_at:
+            raise TypeError("Invalid cache entry payload")
+        if expires_at is not None and not isinstance(expires_at, str):
+            raise TypeError("Invalid cache entry payload")
+        if not isinstance(metadata, dict):
+            raise TypeError("Invalid cache entry payload")
         return cls(
             value=data.get("value"),
             cached_at=cached_at,
             expires_at=expires_at,
-            metadata=metadata if isinstance(metadata, dict) else {},
+            metadata=dict(metadata),
         )
 
 
@@ -254,15 +255,20 @@ class JsonFileCacheBackend(CacheBackend):
                 with self._file_path.open(encoding="utf-8") as handle:
                     raw = json.load(handle)
             except (OSError, ValueError, json.JSONDecodeError) as exc:
-                logger.warning("Failed to load cache backend %s: %s", self._file_path, exc)
+                logger.warning("Failed to load cache backend (%s)", type(exc).__name__)
                 return
 
             if not isinstance(raw, dict):
-                logger.warning("Cache backend %s contained unexpected payload type", self._file_path)
+                logger.warning("Cache backend contained an invalid top-level payload")
                 return
 
             for key, value in raw.items():
-                self._entries[str(key)] = StoredCacheEntry.from_dict(value)
+                try:
+                    entry = StoredCacheEntry.from_dict(value)
+                except (TypeError, ValueError) as exc:
+                    logger.warning("Skipping invalid cache entry (%s)", type(exc).__name__)
+                    continue
+                self._entries[str(key)] = entry
 
     def _save(self) -> None:
         payload = {key: entry.to_dict() for key, entry in self._entries.items()}
@@ -274,7 +280,7 @@ class JsonFileCacheBackend(CacheBackend):
         except (OSError, TypeError, ValueError) as exc:
             with contextlib.suppress(OSError):
                 tmp_path.unlink(missing_ok=True)
-            logger.warning("Failed to persist cache backend %s: %s", self._file_path, exc)
+            logger.warning("Failed to persist cache backend (%s)", type(exc).__name__)
 
     def get_entry(self, key: str) -> StoredCacheEntry | None:
         with self._lock:
@@ -402,8 +408,17 @@ class CacheStore(Generic[T]):
             self._stats.expirations += 1
             return None
 
+        try:
+            value = self._deserializer(entry.value)
+        except (TypeError, ValueError) as exc:
+            self._backend.delete(nkey)
+            self._stats.misses += 1
+            self._stats.invalidations += 1
+            logger.warning("Discarded invalid %s entry (%s)", self._name, type(exc).__name__)
+            return None
+
         self._stats.hits += 1
-        return self._deserializer(entry.value)
+        return value
 
     def get_many(self, keys: list[str]) -> tuple[dict[str, T], list[str]]:
         cached: dict[str, T] = {}
@@ -500,8 +515,8 @@ class CacheStore(Generic[T]):
 
             try:
                 fetched = await fetch_func()
-            except Exception:
-                logger.exception("Cache fetch failed for %s (%s)", key, self._name)
+            except Exception as exc:  # noqa: BLE001 - cache-aside failures are an intentional miss
+                logger.warning("Cache fetch failed (%s)", type(exc).__name__)
                 return None
 
             if fetched is not None:

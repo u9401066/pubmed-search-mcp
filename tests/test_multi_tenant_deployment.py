@@ -765,31 +765,24 @@ class TestChronicleStoreIsolation:
 class TestPipelineStoreIsolation:
     """Saved pipelines belong to the agent that created them."""
 
-    @pytest.fixture(autouse=True)
-    def _reset_store(self):
-        from pubmed_search.presentation.mcp_server.tools import pipeline_tools
-
-        yield
-        pipeline_tools.set_pipeline_store(None)
-
     def test_default_tenant_gets_the_registered_store(self, tmp_path):
         from pubmed_search.application.pipeline.store import PipelineStore
-        from pubmed_search.presentation.mcp_server.tools import pipeline_tools
+        from pubmed_search.presentation.mcp_server.tools.pipeline_tools import PipelineToolRuntime
 
         base = PipelineStore(global_data_dir=str(tmp_path))
-        pipeline_tools.set_pipeline_store(base)
+        runtime = PipelineToolRuntime(base_store=base)
 
-        assert pipeline_tools.get_pipeline_store() is base
+        assert runtime.store_for_current_tenant() is base
 
     def test_other_tenants_get_a_derived_store(self, tmp_path):
         from pubmed_search.application.pipeline.store import PipelineStore
-        from pubmed_search.presentation.mcp_server.tools import pipeline_tools
+        from pubmed_search.presentation.mcp_server.tools.pipeline_tools import PipelineToolRuntime
 
         base = PipelineStore(global_data_dir=str(tmp_path))
-        pipeline_tools.set_pipeline_store(base)
+        runtime = PipelineToolRuntime(base_store=base)
 
         with bind_tenant(TenantIdentity.for_principal("agent-a", source="auth")):
-            scoped = pipeline_tools.get_pipeline_store()
+            scoped = runtime.store_for_current_tenant()
 
         assert scoped is not base
         assert scoped is not None
@@ -798,26 +791,24 @@ class TestPipelineStoreIsolation:
 
     def test_the_derived_store_is_cached_per_tenant(self, tmp_path):
         from pubmed_search.application.pipeline.store import PipelineStore
-        from pubmed_search.presentation.mcp_server.tools import pipeline_tools
+        from pubmed_search.presentation.mcp_server.tools.pipeline_tools import PipelineToolRuntime
 
-        pipeline_tools.set_pipeline_store(PipelineStore(global_data_dir=str(tmp_path)))
+        runtime = PipelineToolRuntime(base_store=PipelineStore(global_data_dir=str(tmp_path)))
 
         with bind_tenant(TenantIdentity.for_principal("agent-a", source="auth")):
-            first = pipeline_tools.get_pipeline_store()
-            second = pipeline_tools.get_pipeline_store()
+            first = runtime.store_for_current_tenant()
+            second = runtime.store_for_current_tenant()
         assert first is second
 
-    def test_re_registering_a_store_drops_stale_tenant_stores(self, tmp_path):
+    def test_separate_server_runtimes_never_share_tenant_store_caches(self, tmp_path):
         from pubmed_search.application.pipeline.store import PipelineStore
-        from pubmed_search.presentation.mcp_server.tools import pipeline_tools
+        from pubmed_search.presentation.mcp_server.tools.pipeline_tools import PipelineToolRuntime
 
-        pipeline_tools.set_pipeline_store(PipelineStore(global_data_dir=str(tmp_path / "one")))
+        first_runtime = PipelineToolRuntime(base_store=PipelineStore(global_data_dir=str(tmp_path / "one")))
+        second_runtime = PipelineToolRuntime(base_store=PipelineStore(global_data_dir=str(tmp_path / "two")))
         with bind_tenant(TenantIdentity.for_principal("agent-a", source="auth")):
-            stale = pipeline_tools.get_pipeline_store()
-
-        pipeline_tools.set_pipeline_store(PipelineStore(global_data_dir=str(tmp_path / "two")))
-        with bind_tenant(TenantIdentity.for_principal("agent-a", source="auth")):
-            fresh = pipeline_tools.get_pipeline_store()
+            stale = first_runtime.store_for_current_tenant()
+            fresh = second_runtime.store_for_current_tenant()
 
         assert fresh is not stale
         assert stale is not None
@@ -825,11 +816,11 @@ class TestPipelineStoreIsolation:
         assert str(tmp_path / "two") in str(fresh.global_data_dir)
 
     def test_no_store_registered_returns_none(self):
-        from pubmed_search.presentation.mcp_server.tools import pipeline_tools
+        from pubmed_search.presentation.mcp_server.tools.pipeline_tools import PipelineToolRuntime
 
-        pipeline_tools.set_pipeline_store(None)
+        runtime = PipelineToolRuntime(base_store=None)
         with bind_tenant(TenantIdentity.for_principal("agent-a", source="auth")):
-            assert pipeline_tools.get_pipeline_store() is None
+            assert runtime.store_for_current_tenant() is None
 
 
 class TestDurableStorageGuard:
@@ -857,7 +848,7 @@ class TestDurableStorageGuard:
 
         assert message is not None
         assert "authenticated" in message.lower()
-        assert "PUBMED_AUTH_TOKENS" in message
+        assert "PUBMED\\_AUTH\\_TOKENS" in message
 
     def test_reported_in_diagnostics(self):
         payload = TenantIdentity.for_principal("sess-1", source="transport").to_dict()
@@ -897,14 +888,11 @@ class TestEphemeralTenantsNeverTouchDisk:
 
     def test_pipeline_store_is_withheld_from_ephemeral_callers(self, tmp_path):
         from pubmed_search.application.pipeline.store import PipelineStore
-        from pubmed_search.presentation.mcp_server.tools import pipeline_tools
+        from pubmed_search.presentation.mcp_server.tools.pipeline_tools import PipelineToolRuntime
 
-        pipeline_tools.set_pipeline_store(PipelineStore(global_data_dir=str(tmp_path)))
-        try:
-            with bind_tenant(TenantIdentity.for_principal("sess-a", source="transport")):
-                assert pipeline_tools.get_pipeline_store() is None
-        finally:
-            pipeline_tools.set_pipeline_store(None)
+        runtime = PipelineToolRuntime(base_store=PipelineStore(global_data_dir=str(tmp_path)))
+        with bind_tenant(TenantIdentity.for_principal("sess-a", source="transport")):
+            assert runtime.store_for_current_tenant() is None
 
 
 class TestTenantIdBoundaries:

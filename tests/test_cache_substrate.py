@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from concurrent.futures import ThreadPoolExecutor
 
+import pytest
+
 from pubmed_search.shared.cache_substrate import CacheStore, JsonFileCacheBackend, MemoryCacheBackend, StoredCacheEntry
 
 
@@ -39,6 +41,17 @@ class TestCacheStore:
         assert second == "resolved"
         assert calls == 1
 
+    async def test_cache_fetch_failure_does_not_log_key_or_exception_detail(self, caplog):
+        store = CacheStore[str](MemoryCacheBackend(max_entries=10), default_ttl=60.0)
+        secret = "PRIVATE_CACHE_KEY_AND_EXCEPTION_DETAIL"
+
+        async def fail_fetch():
+            raise RuntimeError(secret)
+
+        assert await store.get_or_fetch(secret, fail_fetch) is None
+        assert secret not in caplog.text
+        assert "RuntimeError" in caplog.text
+
     async def test_json_backend_persists_entries(self, tmp_path):
         file_path = tmp_path / "cache.json"
         store = CacheStore[str](JsonFileCacheBackend(file_path), default_ttl=60.0)
@@ -47,6 +60,35 @@ class TestCacheStore:
         reloaded = CacheStore[str](JsonFileCacheBackend(file_path), default_ttl=60.0)
 
         assert reloaded.get("paper:123") == "cached"
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            "raw-value",
+            {"value": "missing-envelope-fields"},
+            {"value": "x", "cached_at": 123, "expires_at": None, "metadata": {}},
+            {"value": "x", "cached_at": "2026-01-01T00:00:00Z", "expires_at": None, "metadata": []},
+        ],
+    )
+    def test_cache_entry_rejects_noncanonical_persisted_shapes(self, payload):
+        with pytest.raises((TypeError, ValueError), match="Invalid cache entry payload"):
+            StoredCacheEntry.from_dict(payload)
+
+    def test_json_backend_skips_invalid_entries_without_migrating_them(self, tmp_path):
+        file_path = tmp_path / "cache.json"
+        file_path.write_text(
+            json.dumps(
+                {
+                    "retired": {"raw": "payload"},
+                    "current": StoredCacheEntry(value="ok").to_dict(),
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        backend = JsonFileCacheBackend(file_path)
+
+        assert backend.keys() == ["current"]
 
     def test_json_backend_concurrent_mutations_keep_file_valid(self, tmp_path):
         file_path = tmp_path / "cache.json"

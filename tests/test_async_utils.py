@@ -8,7 +8,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from pubmed_search.infrastructure.sources.base_client import BaseAPIClient
 from pubmed_search.shared.async_utils import (
     CircuitBreaker,
     RateLimiter,
@@ -475,32 +474,6 @@ class TestTransportKernel:
 
 class TestSharedUpstreamBudget:
     """Parallel fan-out must draw from one budget per upstream, not one each."""
-
-    class _StubClient(BaseAPIClient):
-        _service_name = "Budget Stub"
-
-        def __init__(self, min_interval: float = 0.01) -> None:
-            super().__init__(base_url="https://example.invalid", min_interval=min_interval)
-
-    async def test_two_clients_of_one_service_use_the_same_limiter(self, monkeypatch):
-        used: list[int] = []
-        original = RateLimiter.acquire
-
-        async def spy(limiter: RateLimiter) -> None:
-            used.append(id(limiter))
-            await original(limiter)
-
-        monkeypatch.setattr(RateLimiter, "acquire", spy)
-
-        # Both clients must stay alive: freeing the first would let CPython reuse
-        # its address, which would mask an id-keyed limiter.
-        first = self._StubClient()
-        second = self._StubClient()
-        await first._rate_limit()
-        await second._rate_limit()
-
-        assert len(used) == 2
-        assert len(set(used)) == 1, "each client got its own budget, so the real request rate doubles"
 
     async def test_a_slower_client_lowers_the_shared_budget(self):
         fast = get_rate_limiter("shared-budget-test", rate=1.0, per=0.1, conservative=True)

@@ -14,24 +14,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
+import math
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar, cast
-from urllib.parse import urlsplit, urlunsplit
-
-from pubmed_search.shared.async_utils import (
-    CircuitBreaker,
-    CircuitBreakerPolicy,
-    RateLimitPolicy,
-    RequestExecutionPolicy,
-    RetryableOperationError,
-    RetryPolicy,
-)
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
     import httpx
+
+    from pubmed_search.shared.async_utils import CircuitBreaker, RequestExecutionPolicy
 else:
 
     class _HttpxProxy:
@@ -44,36 +36,11 @@ else:
 
 logger = logging.getLogger(__name__)
 
-_URL_IN_ERROR_RE = re.compile(r"https?://[^\s\])}>\"']+", re.IGNORECASE)
-_URL_SECRET_RE = re.compile(r"(?i)(\b(?:api[_-]?key|access[_-]?token|client[_-]?secret|key|token)=)[^&#\s,;]+")
-_BEARER_RE = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/-]+=*")
-
-
-def _safe_adapter_error_message(error: BaseException) -> str:
-    """Remove query strings and credentials from shared source diagnostics."""
-
-    def _strip_url(match: re.Match[str]) -> str:
-        candidate = match.group(0)
-        try:
-            parsed = urlsplit(candidate)
-        except ValueError:
-            return "[upstream-url]"
-        return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))
-
-    message = str(error) or type(error).__name__
-    message = _URL_IN_ERROR_RE.sub(_strip_url, message)
-    message = _URL_SECRET_RE.sub(r"\1[REDACTED]", message)
-    message = _BEARER_RE.sub("Bearer [REDACTED]", message)
-    return message[:1_000]
-
-
 AdapterItem = TypeVar("AdapterItem")
 SourceAdapterStatus = Literal["ok", "empty", "partial", "error"]
-SourceAdapterErrorKind = Literal["http", "timeout", "transport", "retryable", "unexpected"]
-TWO_ITEM_TUPLE_LEN = 2
-THREE_ITEM_TUPLE_LEN = 3
-TwoItemSourceAdapterOutcome = tuple[list[AdapterItem], dict[str, Any] | int | None]
-ThreeItemSourceAdapterOutcome = tuple[list[AdapterItem], int, dict[str, Any]]
+SourceAdapterErrorKind = Literal["http", "timeout", "transport", "retryable", "validation", "unexpected"]
+_SOURCE_ADAPTER_STATUSES = frozenset({"ok", "empty", "partial", "error"})
+_SOURCE_ADAPTER_ERROR_KINDS = frozenset({"http", "timeout", "transport", "retryable", "validation", "unexpected"})
 
 
 @dataclass(frozen=True)
@@ -99,6 +66,13 @@ class SourceExecutionSettings:
 
 def build_request_execution_policy(settings: SourceExecutionSettings) -> RequestExecutionPolicy:
     """Build a shared transport policy from declarative source settings."""
+    from pubmed_search.shared.async_utils import (
+        CircuitBreakerPolicy,
+        RateLimitPolicy,
+        RequestExecutionPolicy,
+        RetryPolicy,
+    )
+
     rate_limit = None
     if settings.min_interval and settings.min_interval > 0:
         rate_limit = RateLimitPolicy(
@@ -171,6 +145,10 @@ class SourceAdapterResult(Generic[AdapterItem]):
     status: SourceAdapterStatus = "ok"
     errors: list[SourceAdapterError] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
+    next_token: str | int | None = None
+    cursor: str | None = None
+    cost: float | None = None
+    provenance: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def empty(
@@ -221,17 +199,7 @@ class SourceAdapterCall(Generic[AdapterItem]):
 
     source: str
     operation: str
-    execute: Callable[
-        [],
-        Awaitable[
-            SourceAdapterResult[AdapterItem]
-            | TwoItemSourceAdapterOutcome
-            | ThreeItemSourceAdapterOutcome
-            | list[AdapterItem]
-            | AdapterItem
-            | None
-        ],
-    ]
+    execute: Callable[[], Awaitable[SourceAdapterResult[AdapterItem]]]
 
 
 def normalize_source_adapter_error(
@@ -240,11 +208,13 @@ def normalize_source_adapter_error(
     error: Exception,
 ) -> SourceAdapterError:
     """Map raw exceptions into a consistent adapter error contract."""
+    from pubmed_search.shared.async_utils import RetryableOperationError
+
     if isinstance(error, RetryableOperationError):
         return SourceAdapterError(
             source=source,
             operation=operation,
-            message=_safe_adapter_error_message(error),
+            message="Upstream request failed",
             kind="retryable",
             retryable=True,
             status_code=error.status_code,
@@ -255,7 +225,7 @@ def normalize_source_adapter_error(
         return SourceAdapterError(
             source=source,
             operation=operation,
-            message=f"HTTP {status_code}: {error.response.reason_phrase}",
+            message=f"Upstream returned HTTP {status_code}",
             kind="http",
             retryable=status_code in {408, 425, 429, 500, 502, 503, 504},
             status_code=status_code,
@@ -265,7 +235,7 @@ def normalize_source_adapter_error(
         return SourceAdapterError(
             source=source,
             operation=operation,
-            message=_safe_adapter_error_message(error) or "Request timed out",
+            message="Upstream request timed out",
             kind="timeout",
             retryable=True,
         )
@@ -274,7 +244,7 @@ def normalize_source_adapter_error(
         return SourceAdapterError(
             source=source,
             operation=operation,
-            message=_safe_adapter_error_message(error),
+            message="Upstream transport failed",
             kind="transport",
             retryable=True,
         )
@@ -282,7 +252,7 @@ def normalize_source_adapter_error(
     return SourceAdapterError(
         source=source,
         operation=operation,
-        message=_safe_adapter_error_message(error),
+        message="Source adapter failed",
         kind="unexpected",
         retryable=False,
     )
@@ -293,80 +263,156 @@ def format_source_adapter_error(error: SourceAdapterError) -> str:
     return f"{error.source}: {error.message}"
 
 
-def _coerce_source_adapter_outcome(
-    source: str,
-    operation: str,
-    outcome: (
-        SourceAdapterResult[AdapterItem]
-        | TwoItemSourceAdapterOutcome
-        | ThreeItemSourceAdapterOutcome
-        | list[AdapterItem]
-        | AdapterItem
-        | None
-    ),
-) -> SourceAdapterResult[AdapterItem]:
-    if isinstance(outcome, SourceAdapterResult):
-        if outcome.total_count == 0 and outcome.items:
-            outcome.total_count = len(outcome.items)
-        if not outcome.items and outcome.status == "ok":
-            outcome.status = "empty"
-        return outcome
+def validate_source_adapter_result(
+    outcome: object,
+    *,
+    expected_source: str,
+    expected_operation: str,
+) -> SourceAdapterResult[Any]:
+    """Validate one adapter result and its exact invocation provenance.
 
-    if outcome is None:
-        return SourceAdapterResult.empty(source=source, operation=operation)
+    Generic type parameters are erased at runtime, so this boundary validates
+    the envelope rather than attempting to guess an adapter's item class.  It
+    deliberately rejects malformed or contradictory envelopes instead of
+    coercing them into a plausible result.
+    """
+    if not isinstance(expected_source, str) or not expected_source.strip():
+        msg = "expected_source must be a non-empty string"
+        raise TypeError(msg)
+    if not isinstance(expected_operation, str) or not expected_operation.strip():
+        msg = "expected_operation must be a non-empty string"
+        raise TypeError(msg)
+    if not isinstance(outcome, SourceAdapterResult):
+        msg = "Source adapter execute() must return SourceAdapterResult"
+        raise TypeError(msg)
 
-    items: list[AdapterItem]
-    total_count: int | None = None
-    metadata: dict[str, Any] = {}
-
-    if isinstance(outcome, tuple):
-        if len(outcome) == TWO_ITEM_TUPLE_LEN:
-            two_item_outcome = cast("TwoItemSourceAdapterOutcome", outcome)
-            items = list(two_item_outcome[0])
-            second = two_item_outcome[1]
-            if isinstance(second, dict):
-                metadata = dict(second)
-            elif second is not None:
-                total_count = int(second)
-        elif len(outcome) == THREE_ITEM_TUPLE_LEN:
-            three_item_outcome = cast("ThreeItemSourceAdapterOutcome", outcome)
-            items = list(three_item_outcome[0])
-            second = three_item_outcome[1]
-            third = three_item_outcome[2]
-            total_count = int(second)
-            metadata = dict(third)
-        else:
-            msg = f"Unsupported adapter tuple outcome length: {len(outcome)}"
+    if not isinstance(outcome.source, str) or not outcome.source.strip():
+        msg = "SourceAdapterResult.source must be a non-empty string"
+        raise TypeError(msg)
+    if outcome.source != expected_source:
+        msg = f"SourceAdapterResult.source must match expected source '{expected_source}'"
+        raise TypeError(msg)
+    if not isinstance(outcome.operation, str) or not outcome.operation.strip():
+        msg = "SourceAdapterResult.operation must be a non-empty string"
+        raise TypeError(msg)
+    if outcome.operation != expected_operation:
+        msg = f"SourceAdapterResult.operation must match expected operation '{expected_operation}'"
+        raise TypeError(msg)
+    if not isinstance(outcome.items, list):
+        msg = "SourceAdapterResult.items must be a list"
+        raise TypeError(msg)
+    if not isinstance(outcome.total_count, int) or isinstance(outcome.total_count, bool):
+        msg = "SourceAdapterResult.total_count must be an integer"
+        raise TypeError(msg)
+    if outcome.total_count < 0:
+        msg = "SourceAdapterResult.total_count must be nonnegative"
+        raise ValueError(msg)
+    if outcome.total_count < len(outcome.items):
+        msg = "SourceAdapterResult.total_count must be at least the number of returned items"
+        raise ValueError(msg)
+    if not isinstance(outcome.status, str) or outcome.status not in _SOURCE_ADAPTER_STATUSES:
+        msg = "SourceAdapterResult.status must be one of: ok, empty, partial, error"
+        raise TypeError(msg)
+    if not isinstance(outcome.errors, list):
+        msg = "SourceAdapterResult.errors must be a list"
+        raise TypeError(msg)
+    if not isinstance(outcome.metadata, dict) or not all(isinstance(key, str) for key in outcome.metadata):
+        msg = "SourceAdapterResult.metadata must be a dictionary with string keys"
+        raise TypeError(msg)
+    if outcome.next_token is not None and (
+        isinstance(outcome.next_token, bool) or not isinstance(outcome.next_token, (str, int))
+    ):
+        msg = "SourceAdapterResult.next_token must be a string, integer, or None"
+        raise TypeError(msg)
+    if outcome.cursor is not None and (not isinstance(outcome.cursor, str) or not outcome.cursor):
+        msg = "SourceAdapterResult.cursor must be a non-empty string or None"
+        raise TypeError(msg)
+    if outcome.cost is not None:
+        if isinstance(outcome.cost, bool) or not isinstance(outcome.cost, (int, float)):
+            msg = "SourceAdapterResult.cost must be a finite nonnegative number or None"
+            raise TypeError(msg)
+        if not math.isfinite(outcome.cost) or outcome.cost < 0:
+            msg = "SourceAdapterResult.cost must be a finite nonnegative number or None"
             raise ValueError(msg)
-    elif isinstance(outcome, list):
-        items = list(outcome)
-    else:
-        items = [outcome]
+    if not isinstance(outcome.provenance, dict) or not all(isinstance(key, str) for key in outcome.provenance):
+        msg = "SourceAdapterResult.provenance must be a dictionary with string keys"
+        raise TypeError(msg)
 
-    resolved_total = total_count if total_count is not None else len(items)
-    status: SourceAdapterStatus = "ok" if items else "empty"
-    return SourceAdapterResult(
-        source=source,
-        operation=operation,
-        items=items,
-        total_count=resolved_total,
-        status=status,
-        metadata=metadata,
+    for error in outcome.errors:
+        if not isinstance(error, SourceAdapterError):
+            msg = "SourceAdapterResult.errors must contain only SourceAdapterError values"
+            raise TypeError(msg)
+        if not isinstance(error.source, str) or error.source != expected_source:
+            msg = "SourceAdapterError.source must match its parent result and expected source"
+            raise TypeError(msg)
+        if not isinstance(error.operation, str) or error.operation != expected_operation:
+            msg = "SourceAdapterError.operation must match its parent result and expected operation"
+            raise TypeError(msg)
+        if not isinstance(error.message, str) or not error.message.strip():
+            msg = "SourceAdapterError.message must be a non-empty string"
+            raise TypeError(msg)
+        if not isinstance(error.kind, str) or error.kind not in _SOURCE_ADAPTER_ERROR_KINDS:
+            msg = "SourceAdapterError.kind is invalid"
+            raise TypeError(msg)
+        if not isinstance(error.retryable, bool):
+            msg = "SourceAdapterError.retryable must be a boolean"
+            raise TypeError(msg)
+        if error.status_code is not None and (
+            not isinstance(error.status_code, int) or isinstance(error.status_code, bool)
+        ):
+            msg = "SourceAdapterError.status_code must be an integer or None"
+            raise TypeError(msg)
+
+    if outcome.status == "ok" and (not outcome.items or outcome.errors):
+        msg = "SourceAdapterResult with status 'ok' requires items and forbids errors"
+        raise ValueError(msg)
+    if outcome.status == "empty" and (outcome.items or outcome.errors):
+        msg = "SourceAdapterResult with status 'empty' forbids items and errors"
+        raise ValueError(msg)
+    if outcome.status == "partial" and (not outcome.items or not outcome.errors):
+        msg = "SourceAdapterResult with status 'partial' requires both items and errors"
+        raise ValueError(msg)
+    if outcome.status == "error" and (outcome.items or not outcome.errors):
+        msg = "SourceAdapterResult with status 'error' requires errors and forbids items"
+        raise ValueError(msg)
+
+    return outcome
+
+
+def validate_source_adapter_mapping_result(
+    outcome: object,
+    *,
+    expected_source: str,
+    expected_operation: str,
+) -> SourceAdapterResult[dict[str, Any]]:
+    """Validate an adapter envelope whose items must be provider DTO mappings."""
+    validated = validate_source_adapter_result(
+        outcome,
+        expected_source=expected_source,
+        expected_operation=expected_operation,
     )
+    if any(not isinstance(item, dict) for item in validated.items):
+        msg = "SourceAdapterResult.items must contain only provider DTO dictionaries"
+        raise TypeError(msg)
+    return cast("SourceAdapterResult[dict[str, Any]]", validated)
 
 
 async def execute_source_adapter_call(call: SourceAdapterCall[AdapterItem]) -> SourceAdapterResult[AdapterItem]:
-    """Execute a single adapter call and normalize success or failure."""
+    """Execute a typed adapter call and normalize failures at the boundary."""
     try:
         outcome = await call.execute()
-        return _coerce_source_adapter_outcome(call.source, call.operation, outcome)
+        return validate_source_adapter_result(
+            outcome,
+            expected_source=call.source,
+            expected_operation=call.operation,
+        )
     except Exception as error:  # noqa: BLE001 - adapter boundary intentionally normalizes arbitrary source failures
         normalized = normalize_source_adapter_error(call.source, call.operation, error)
         logger.warning(
             "Source adapter call failed: %s.%s (%s)",
             call.source,
             call.operation,
-            normalized.message,
+            normalized.kind,
         )
         return SourceAdapterResult.failure(
             source=call.source,

@@ -29,6 +29,8 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Any
 
+from pubmed_search.shared.markdown import escape_markdown_code, escape_markdown_text
+
 # ExceptionGroup is available in Python 3.11+
 if sys.version_info >= (3, 11):
     from builtins import ExceptionGroup
@@ -127,12 +129,12 @@ class PubMedSearchError(Exception):
 
     def to_agent_message(self) -> str:
         """Format for Agent consumption (Markdown)."""
-        parts = [f"❌ **Error**: {self}"]
+        parts = [f"❌ **Error**: {escape_markdown_text(self)}"]
 
         if self.context.suggestion:
-            parts.append(f"💡 **Suggestion**: {self.context.suggestion}")
+            parts.append(f"💡 **Suggestion**: {escape_markdown_text(self.context.suggestion)}")
         if self.context.example:
-            parts.append(f"📝 **Example**: `{self.context.example}`")
+            parts.append(f"📝 **Example**: `{escape_markdown_code(self.context.example)}`")
         if self.retryable:
             if self.context.retry_after:
                 parts.append(f"🔄 Retry after {self.context.retry_after:.1f} seconds")

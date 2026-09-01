@@ -6,8 +6,6 @@ import json
 from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock
 
-import pytest
-
 from pubmed_search.application.pipeline.executor import PipelineExecutor
 from pubmed_search.application.search.query_analyzer import AnalyzedQuery, QueryIntent
 from pubmed_search.application.search.result_aggregator import AggregationStats, RankingConfig, ResultAggregator
@@ -18,6 +16,8 @@ from pubmed_search.shared.cache_substrate import JsonFileCacheBackend
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    import pytest
 
 
 class CountingJsonFileCacheBackend(JsonFileCacheBackend):
@@ -107,14 +107,11 @@ def test_article_cache_put_many_persists_json_backend_once(tmp_path: Path) -> No
     assert cache.get("2").title == "Two"
 
 
-def test_pipeline_article_type_maps_are_cached_and_read_only() -> None:
-    first = PipelineExecutor._article_type_alias_map()
-    second = PipelineExecutor._article_type_alias_map()
-
-    assert first is second
-    assert first["rct"] == "randomized-controlled-trial"
-    with pytest.raises(TypeError):
-        first["new-type"] = "review"  # type: ignore[index]
+def test_pipeline_article_type_mapping_is_exact_without_alias_cache() -> None:
+    assert PipelineExecutor._canonical_article_type_value("randomized-controlled-trial") == (
+        "randomized-controlled-trial"
+    )
+    assert PipelineExecutor._canonical_article_type_value("rct") == "unknown"
 
 
 def test_merge_from_deduplicates_keywords_with_set_membership() -> None:
