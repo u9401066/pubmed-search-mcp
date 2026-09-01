@@ -11,10 +11,12 @@ import pytest
 
 sys.path.insert(0, "src")
 
+from pubmed_search.application.citation_network import (
+    make_citation_edge,
+    make_citation_node,
+)
 from pubmed_search.infrastructure.ncbi import LiteratureSearcher
 from pubmed_search.presentation.mcp_server.tools.citation_tree import (
-    _make_edge,
-    _make_node,
     _to_cytoscape,
     _to_d3,
     _to_g6,
@@ -78,21 +80,21 @@ async def test_format_converters():
 
     # Create nodes and edges
     nodes = [
-        _make_node(sample_article, level=0, direction="root"),
-        _make_node(
+        make_citation_node(sample_article, level=0, direction="root"),
+        make_citation_node(
             {**sample_article, "pmid": "87654321", "title": "Citing Paper"},
             level=1,
             direction="citing",
         ),
-        _make_node(
+        make_citation_node(
             {**sample_article, "pmid": "11111111", "title": "Reference Paper"},
             level=1,
             direction="reference",
         ),
     ]
     edges = [
-        _make_edge("87654321", "12345678", "cites"),
-        _make_edge("12345678", "11111111", "cited_by"),
+        make_citation_edge("87654321", "12345678"),
+        make_citation_edge("12345678", "11111111"),
     ]
 
     print(f"\n    Created {len(nodes)} nodes and {len(edges)} edges")
@@ -127,9 +129,9 @@ async def test_full_tree():
     print("Test 3: Full Citation Tree (depth=1)")
     print("=" * 60)
 
-    from pubmed_search.presentation.mcp_server.tools.citation_tree import (
-        _make_edge,
-        _make_node,
+    from pubmed_search.application.citation_network import (
+        make_citation_edge,
+        make_citation_node,
     )
 
     searcher = LiteratureSearcher()
@@ -143,7 +145,7 @@ async def test_full_tree():
     # Root
     details = await searcher.fetch_details([pmid])
     root = details[0]
-    nodes.append(_make_node(root, 0, "root"))
+    nodes.append(make_citation_node(root, 0, "root"))
     seen.add(pmid)
     print(f"\n    Root: {root.get('title', '?')[:50]}...")
 
@@ -152,8 +154,8 @@ async def test_full_tree():
     for c in citing:
         c_pmid = str(c.get("pmid", ""))
         if c_pmid and c_pmid not in seen:
-            nodes.append(_make_node(c, 1, "citing"))
-            edges.append(_make_edge(c_pmid, pmid, "cites"))
+            nodes.append(make_citation_node(c, 1, "citing"))
+            edges.append(make_citation_edge(c_pmid, pmid))
             seen.add(c_pmid)
     print(f"    Added {len(citing)} citing articles")
 
@@ -162,8 +164,8 @@ async def test_full_tree():
     for r in refs:
         r_pmid = str(r.get("pmid", ""))
         if r_pmid and r_pmid not in seen:
-            nodes.append(_make_node(r, 1, "reference"))
-            edges.append(_make_edge(pmid, r_pmid, "cited_by"))
+            nodes.append(make_citation_node(r, 1, "reference"))
+            edges.append(make_citation_edge(pmid, r_pmid))
             seen.add(r_pmid)
     print(f"    Added {len(refs)} reference articles")
 

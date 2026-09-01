@@ -8,9 +8,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 import toons
 
+from pubmed_search.infrastructure.ncbi.base import NCBIInfrastructureError
 from pubmed_search.presentation.mcp_server.tools.discovery import (
-    _detect_ambiguous_terms,
-    _format_ambiguity_hint,
     register_discovery_tools,
 )
 
@@ -20,37 +19,6 @@ def _capture_tools(mcp, searcher):
     mcp.tool = lambda: lambda func: (tools.__setitem__(func.__name__, func), func)[1]
     register_discovery_tools(mcp, searcher)
     return tools
-
-
-# ============================================================
-# Helper functions
-# ============================================================
-
-
-class TestDetectAmbiguousTerms:
-    async def test_no_ambiguity(self):
-        result = _detect_ambiguous_terms("diabetes treatment guidelines")
-        assert result == []
-
-    async def test_detects_journal(self):
-        result = _detect_ambiguous_terms("anesthesiology")
-        assert len(result) > 0
-        assert result[0]["journal"] == "Anesthesiology"
-
-    async def test_not_ambiguous_with_context(self):
-        result = _detect_ambiguous_terms("anesthesiology and intensive care management of critical patients")
-        assert result == []  # Too many other terms
-
-
-class TestFormatAmbiguityHint:
-    async def test_empty(self):
-        assert _format_ambiguity_hint([], "test") == ""
-
-    async def test_with_hints(self):
-        terms = [{"term": "lancet", "journal": "The Lancet", "hint": "lancet[ta]"}]
-        result = _format_ambiguity_hint(terms, "lancet")
-        assert "Tip" in result
-        assert "lancet[ta]" in result
 
 
 # ============================================================
@@ -78,11 +46,15 @@ class TestFindRelatedArticles:
         result = await tools["find_related_articles"](pmid="12345678")
         assert "no" in result.lower()
 
-    async def test_error_in_results(self, setup):
+    async def test_source_exception_is_not_reported_as_empty(self, setup):
         tools, searcher = setup
-        searcher.get_related_articles.return_value = [{"error": "Not found"}]
+        searcher.get_related_articles.side_effect = NCBIInfrastructureError(
+            "related_articles", upstream_type="RuntimeError", retryable=False
+        )
         result = await tools["find_related_articles"](pmid="12345678")
-        assert "error" in result.lower() or "Not found" in result
+        assert "error" in result.lower()
+        assert "PubMed related-article lookup failed" in result
+        assert "No results" not in result
 
     async def test_success(self, setup):
         tools, searcher = setup
@@ -92,9 +64,10 @@ class TestFindRelatedArticles:
 
     async def test_exception(self, setup):
         tools, searcher = setup
-        searcher.get_related_articles.side_effect = RuntimeError("fail")
+        searcher.get_related_articles.side_effect = RuntimeError("api_key=private-related")
         result = await tools["find_related_articles"](pmid="12345678")
-        assert "error" in result.lower()
+        assert "PubMed related-article lookup failed" in result
+        assert "private-related" not in result
 
 
 class TestFindCitingArticles:
@@ -109,11 +82,15 @@ class TestFindCitingArticles:
         result = await tools["find_citing_articles"](pmid="12345678")
         assert "no" in result.lower()
 
-    async def test_error_result(self, setup):
+    async def test_source_exception_is_not_reported_as_empty(self, setup):
         tools, searcher = setup
-        searcher.get_citing_articles.return_value = [{"error": "PMC not indexed"}]
+        searcher.get_citing_articles.side_effect = NCBIInfrastructureError(
+            "citing_articles", upstream_type="RuntimeError", retryable=False
+        )
         result = await tools["find_citing_articles"](pmid="12345678")
-        assert "error" in result.lower() or "PMC" in result
+        assert "error" in result.lower()
+        assert "PubMed citing-article lookup failed" in result
+        assert "No results" not in result
 
     async def test_success(self, setup):
         tools, searcher = setup
@@ -123,9 +100,10 @@ class TestFindCitingArticles:
 
     async def test_exception(self, setup):
         tools, searcher = setup
-        searcher.get_citing_articles.side_effect = RuntimeError("fail")
+        searcher.get_citing_articles.side_effect = RuntimeError("api_key=private-citing")
         result = await tools["find_citing_articles"](pmid="12345678")
-        assert "error" in result.lower()
+        assert "PubMed citing-article lookup failed" in result
+        assert "private-citing" not in result
 
 
 class TestGetArticleReferences:
@@ -149,9 +127,10 @@ class TestGetArticleReferences:
 
     async def test_exception(self, setup):
         tools, searcher = setup
-        searcher.get_article_references.side_effect = RuntimeError("fail")
+        searcher.get_article_references.side_effect = RuntimeError("api_key=private-references")
         result = await tools["get_article_references"](pmid="12345678")
-        assert "error" in result.lower()
+        assert "PubMed article-reference lookup failed" in result
+        assert "private-references" not in result
 
 
 class TestFetchArticleDetails:
@@ -166,11 +145,24 @@ class TestFetchArticleDetails:
         result = await tools["fetch_article_details"](pmids="12345678")
         assert "no" in result.lower()
 
-    async def test_error_result(self, setup):
+    async def test_source_exception_is_not_reported_as_empty(self, setup):
         tools, searcher = setup
-        searcher.fetch_details.return_value = [{"error": "Bad PMID"}]
+        searcher.fetch_details.side_effect = NCBIInfrastructureError(
+            "fetch_details", upstream_type="RuntimeError", retryable=False
+        )
         result = await tools["fetch_article_details"](pmids="12345678")
-        assert "error" in result.lower() or "Bad PMID" in result
+        assert "error" in result.lower()
+        assert "PubMed article-detail lookup failed" in result
+        assert "No results" not in result
+
+    async def test_generic_exception_is_sanitized(self, setup):
+        tools, searcher = setup
+        searcher.fetch_details.side_effect = RuntimeError("api_key=private-details")
+
+        result = await tools["fetch_article_details"](pmids="12345678")
+
+        assert "PubMed article-detail lookup failed" in result
+        assert "private-details" not in result
 
     async def test_success(self, setup):
         tools, searcher = setup
@@ -269,6 +261,53 @@ class TestGetCitationMetrics:
         searcher.get_citation_metrics.side_effect = RuntimeError("fail")
         result = await tools["get_citation_metrics"](pmids="12345678")
         assert "error" in result.lower()
+
+    @pytest.mark.parametrize(
+        ("kwargs", "expected"),
+        [
+            ({"sort_by": "unknown_metric"}, "sort"),
+            ({"min_citations": -1}, "citations"),
+            ({"min_citations": True}, "citations"),
+            ({"min_rcr": -0.1}, "rcr"),
+            ({"min_rcr": True}, "rcr"),
+            ({"min_percentile": 101}, "percentile"),
+            ({"min_percentile": True}, "percentile"),
+        ],
+    )
+    async def test_rejects_invalid_metric_controls_for_direct_callers(self, setup, kwargs, expected):
+        tools, searcher = setup
+
+        result = await tools["get_citation_metrics"](pmids="12345678", **kwargs)
+
+        assert "error" in result.lower()
+        assert expected in result.lower()
+        searcher.get_citation_metrics.assert_not_awaited()
+
+    async def test_rejects_pmid_batch_over_domain_limit(self, setup):
+        tools, searcher = setup
+        pmids = ",".join(str(index) for index in range(1, 1002))
+
+        result = await tools["get_citation_metrics"](pmids=pmids)
+
+        assert "error" in result.lower()
+        assert "1000" in result
+        searcher.get_citation_metrics.assert_not_awaited()
+
+    async def test_icite_unavailable_is_not_rendered_as_no_results(self, setup):
+        from pubmed_search.shared.exceptions import ServiceUnavailableError
+
+        tools, searcher = setup
+        searcher.get_citation_metrics.side_effect = ServiceUnavailableError(
+            "request failed",
+            service="NIH iCite",
+        )
+
+        result = await tools["get_citation_metrics"](pmids="12345678")
+
+        assert "NIH iCite" in result
+        assert "temporarily unavailable" in result
+        assert "No results" not in result
+        assert "Retryable" in result
 
     async def test_json_contract(self, setup):
         tools, searcher = setup
