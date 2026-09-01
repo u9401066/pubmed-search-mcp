@@ -53,6 +53,18 @@ PAGES: tuple[WikiPage, ...] = (
     WikiPage("Tools-Usage-Guide.zh-TW", "工具使用指南", DOCS_ROOT / "TOOLS_USAGE_GUIDE.zh-TW.md"),
     WikiPage("Pipeline-Tutorial", "Pipeline Tutorial", DOCS_ROOT / "PIPELINE_MODE_TUTORIAL.en.md"),
     WikiPage("Pipeline-Tutorial.zh-TW", "Pipeline 教學", DOCS_ROOT / "PIPELINE_MODE_TUTORIAL.md"),
+    WikiPage(
+        "Unified-Search-Architecture",
+        "Unified Search Architecture",
+        DOCS_ROOT / "UNIFIED_SEARCH_ARCHITECTURE.md",
+    ),
+    WikiPage(
+        "Unified-Search-Architecture.zh-TW",
+        "Unified Search 架構",
+        DOCS_ROOT / "UNIFIED_SEARCH_ARCHITECTURE.zh-TW.md",
+    ),
+    WikiPage("Tool-Quality-Audit", "Tool Quality Audit", DOCS_ROOT / "TOOL_QUALITY_AUDIT.md"),
+    WikiPage("Tool-Quality-Audit.zh-TW", "工具品質稽核", DOCS_ROOT / "TOOL_QUALITY_AUDIT.zh-TW.md"),
     WikiPage("Architecture", "Architecture", REPO_ROOT / "ARCHITECTURE.md"),
     WikiPage(
         "Quick-Reference", "Quick Reference", REPO_ROOT / "src/pubmed_search/presentation/mcp_server/TOOLS_INDEX.md"
@@ -155,6 +167,8 @@ interactive documentation site remains the preferred reading surface:
 
 - [Tools Usage Guide](Tools-Usage-Guide) / [工具使用指南](Tools-Usage-Guide.zh-TW)
 - [Pipeline Tutorial](Pipeline-Tutorial) / [Pipeline 教學](Pipeline-Tutorial.zh-TW)
+- [Unified Search Architecture](Unified-Search-Architecture) / [Unified Search 架構](Unified-Search-Architecture.zh-TW)
+- [Tool Quality Audit](Tool-Quality-Audit) / [工具品質稽核](Tool-Quality-Audit.zh-TW)
 - [Architecture](Architecture)
 - [Quick Reference](Quick-Reference)
 - [Source Contracts](Source-Contracts)
@@ -197,6 +211,10 @@ def _render_sidebar() -> str:
 
 - [Developer Guide](Developer-Guide)
 - [開發者指南](Developer-Guide.zh-TW)
+- [Unified Search Architecture](Unified-Search-Architecture)
+- [Unified Search 架構](Unified-Search-Architecture.zh-TW)
+- [Tool Quality Audit](Tool-Quality-Audit)
+- [工具品質稽核](Tool-Quality-Audit.zh-TW)
 - [Architecture](Architecture)
 - [Source Contracts](Source-Contracts)
 - [Semantic Scholar Data Plane](Semantic-Scholar-Data-Plane)

@@ -11,7 +11,7 @@
 > labels, not current public MCP search tools.
 
 > 本文件記錄**待實作**功能。已完成功能請參閱 [CHANGELOG.md](CHANGELOG.md)。
-> **最後更新**: 2026-08-12
+> **最後更新**: 2026-09-01
 
 > [!IMPORTANT]
 > **v0.6.2 現況補記**：Phase 13 的 timeline 規格是歷史提案，現已由持久化、
@@ -101,7 +101,7 @@
 | D | **Session 感知** | 利用歷史搜尋上下文 |
 | E | **Token 效率** | 輸出精簡，不浪費 context window |
 
-#### 🔍 當前工具合規檢查
+#### 🔍 2026-08-12 歷史工具合規快照
 
 | Tool Category | 數量 | 標準 1-7 | 加分 A-D | 狀態 |
 |---------------|:----:|:--------:|:--------:|:----:|
@@ -116,14 +116,16 @@
 | ICD/MeSH 轉換類 | 2 | ✅ | - | ✅ |
 | 機構存取類 | 4 | ✅ | - | ✅ |
 
-**結論**: 現有 42 個 MCP 工具均符合基本 Agent 友善標準 ✅
+**歷史結論**：當時盤點為 42 個工具；這個表不再代表 runtime。v0.7.0 的
+canonical 結果是 41 個工具／16 類，詳見
+[工具品質稽核](docs/TOOL_QUALITY_AUDIT.zh-TW.md)。
 
-### 近期已同步完成的基建工作
+### v0.7.0 已同步完成的基建工作
 
-- `read_session` facade 已落地，session 讀取整合為單一入口，legacy tools 保留相容 wrapper
-- `manage_pipeline` facade 已落地，pipeline CRUD / history / scheduling 共用同一套 dispatch
-- `schedule_pipeline` 已接上 APScheduler-backed persisted scheduling，不再是 Phase 4 placeholder
-- pipeline validation 已拆成 Pydantic schema parsing + semantic autofix 兩層
+- `read_session(request={...})` 是唯一 strict session 讀取入口；舊工具與 flat args 已刪除
+- pipeline CRUD / history / schedule / unschedule 是七個單一用途工具；`manage_pipeline` 已刪除
+- pipeline validation 使用 strict Pydantic schema 與 fail-closed semantic validation，不修復 caller input
+- `schedule_pipeline` 已接上 APScheduler-backed persisted scheduling，並有對稱的 `unschedule_pipeline`
 - runtime config 已集中到 Pydantic Settings，multi-source dispatch 已收斂到 source registry 與 source gating
 
 ---
@@ -566,34 +568,31 @@ smart_citation_search(
 }
 ```
 
-##### `unified_search` 擴展：相似度分數
+##### `unified_search` 擴展：排序 percentile metadata
 
-> **問題**: 目前 `unified_search` 不返回相似度分數
-> **解決**: 利用 Semantic Scholar 和 Europe PMC 的相似度 API
+> **語意**: Provider 回傳的順序不是已校驗的 semantic similarity。
+> **契約**: 只以 `rank_percentile` 表示有界結果內的位置。
 
 ```python
 unified_search(
     query="remimazolam sedation",
-    include_similarity_scores=True  # 新參數
+    options="no_scores"  # 可選：不輸出 ranking / rank-percentile metadata
 )
 
-# 輸出新增 similarity_score 欄位
+# 預設輸出 rank_percentile 欄位
 {
   "results": [
     {
       "pmid": "12345678",
       "title": "...",
-      "similarity_score": 0.87,  # 🔑 來自 API 的相似度
-      "similarity_source": "semantic_scholar"  # 來源
+      "rank_percentile": 0.87,
+      "rank_percentile_source": "final_result_order"
     }
   ]
 }
 ```
 
-**相似度來源優先順序**:
-1. Semantic Scholar (如有 S2 ID)
-2. Europe PMC (如有 PMID)
-3. 計算 (TF-IDF on title+abstract, 備用)
+`rank_percentile` 只反映本次有界結果的最終順序，不可解讀為相似度。
 
 #### 實作計劃
 
@@ -1940,7 +1939,7 @@ arxiv-mcp-server 目前只有 **1 個 Prompt**: `deep-paper-analysis`
 
 ### Phase A：快速勝利（無需 ML）
 - [ ] A1: BM25 排序取代 term overlap（`_calculate_relevance()`）
-- [ ] A2: Reciprocal Rank Fusion 取代位置線性轉換（`_enrich_with_similarity_scores()`）
+- [x] A2: Reciprocal Rank Fusion + 誠實的位置 metadata（`_enrich_with_rank_percentiles()`）
 - [ ] A3: Pseudo-Relevance Feedback 自動查詢擴展
 - [ ] A4: MinHash 模糊去重（Union-Find 第四通道）
 

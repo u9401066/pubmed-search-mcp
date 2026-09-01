@@ -23,11 +23,18 @@ ACTIVE_DOCS = (
     REPO_ROOT / "docs/REPO_SEPARATION_PRINCIPLES.md",
     REPO_ROOT / "docs/TOOLS_USAGE_GUIDE.md",
     REPO_ROOT / "docs/TOOLS_USAGE_GUIDE.zh-TW.md",
+    REPO_ROOT / "docs/UNIFIED_SEARCH_ARCHITECTURE.md",
+    REPO_ROOT / "docs/UNIFIED_SEARCH_ARCHITECTURE.zh-TW.md",
     REPO_ROOT / "copilot-studio/README.md",
 )
 MERMAID_DOCS = (
     REPO_ROOT / "ARCHITECTURE.md",
     REPO_ROOT / "DEPLOYMENT.md",
+    REPO_ROOT / "docs/ADVANCED_RESEARCH_WORKFLOWS.md",
+    REPO_ROOT / "docs/ADVANCED_RESEARCH_WORKFLOWS.zh-TW.md",
+    REPO_ROOT / "docs/RESEARCH_CHRONICLE_REFACTOR_SPEC.md",
+    REPO_ROOT / "docs/UNIFIED_SEARCH_ARCHITECTURE.md",
+    REPO_ROOT / "docs/UNIFIED_SEARCH_ARCHITECTURE.zh-TW.md",
     REPO_ROOT / "copilot-studio/README.md",
 )
 LINK_PATTERN = re.compile(r"!?(?:\[[^\]]*\])\(([^)]+)\)")
@@ -131,8 +138,21 @@ def test_release_and_tool_metadata_stay_synchronized() -> None:
         REPO_ROOT / "docs/images/integration-deployment-workflow.svg",
         REPO_ROOT / "docs/images/copilot-studio-deployment-flow.svg",
     )
-    stale_tool_count = re.compile(r"\b46(?: tools?|-tool)|46 \u500b")
-    assert [path for path in current_surfaces if stale_tool_count.search(path.read_text(encoding="utf-8"))] == []
+    from pubmed_search.presentation.mcp_server.tool_registry import list_registered_tools
+
+    canonical_tool_count = sum(len(tools) for tools in list_registered_tools().values())
+    tool_count_pattern = re.compile(
+        r"\b(?P<english>\d+)(?: MCP)? tools?\b|\b(?P<compound>\d+)-tool\b|"
+        r"(?P<zh>\d+)\s*\u500b(?:\s*MCP)?\s*(?:\u5de5\u5177|tools?)",
+        re.IGNORECASE,
+    )
+    stale_tool_counts: list[str] = []
+    for path in current_surfaces:
+        for match in tool_count_pattern.finditer(path.read_text(encoding="utf-8")):
+            rendered_count = next(int(value) for value in match.groupdict().values() if value is not None)
+            if rendered_count != canonical_tool_count:
+                stale_tool_counts.append(f"{path.relative_to(REPO_ROOT)}: {match.group(0)}")
+    assert stale_tool_counts == []
 
     skill_count = len(tuple((REPO_ROOT / ".claude/skills").glob("*/SKILL.md")))
     assert skill_count == 26
@@ -237,7 +257,7 @@ def test_runtime_docs_keep_local_http_durable_and_service_fail_closed() -> None:
 
     paper_draft = (REPO_ROOT / "docs/paper-draft.md").read_text(encoding="utf-8")
     assert "35+ MCP" not in paper_draft
-    assert "45 MCP tools" in paper_draft
+    assert "41 MCP tools" in paper_draft
 
 
 def test_runtime_docs_explain_mcp_v2_and_service_filesystem_boundaries() -> None:
@@ -284,12 +304,12 @@ def test_runtime_docs_explain_mcp_v2_and_service_filesystem_boundaries() -> None
     assert "FastMCP" not in sdk_design
 
     paper = (REPO_ROOT / "docs/arxiv-paper/main.tex").read_text(encoding="utf-8")
-    assert "45 MCP tools organized into 16 registry categories" in paper
+    assert "41 MCP tools organized into 16 registry categories" in paper
     assert "MCP SDK v2 \\texttt{MCPServer}" in paper
     assert "With 40 MCP tools" not in paper
 
 
-def test_public_copilot_docs_require_service_auth_and_keep_simplified_mode_local() -> None:
+def test_public_copilot_docs_require_service_auth_and_one_canonical_registry() -> None:
     readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
     readme_zh = (REPO_ROOT / "README.zh-TW.md").read_text(encoding="utf-8")
     integrations = (REPO_ROOT / "docs/INTEGRATIONS.md").read_text(encoding="utf-8")
@@ -305,16 +325,17 @@ def test_public_copilot_docs_require_service_auth_and_keep_simplified_mode_local
 
     assert "Both tunnel scripts converge on the same fail-closed `--mode service` launcher" in integrations
     assert "must not be tunneled" in integrations
-    assert "same unified runner" in integrations
+    assert "same strict registry" in integrations
     assert "temporary ngrok URL" not in integrations
     assert "禁止放到 ngrok" in copilot
-    assert "12 個 Copilot-friendly 工具" in copilot
-    assert "- `unified_search`（`query`" in copilot
-    assert "- `read_session`（`search_runs`、`search_run`、`replay_search`、`artifact`" in copilot
+    assert "同一套 41-tool strict registry" in copilot
+    assert "`validate_pico_plan`" in copilot
+    assert "`read_session(request={...})`" in copilot
+    assert "12 個 Copilot-friendly 工具" not in copilot
     assert "執行一次 `unified_search` 或 `search_pubmed`" not in copilot
-    assert "Simple --> Tunnel" not in copilot
-    assert "12 個 Copilot Studio 友善" in deployment
-    assert "primitive-schema `read_session`" in deployment
+    assert "LocalLauncher --> Tunnel" not in copilot
+    assert "41 個 strict tools" in deployment
+    assert "discriminated request schema" in deployment
     assert "--mode service" in architecture
     assert "loopback-only and is not a\n        valid deployment target" in openapi
     assert "ghcr.io/u9401066/pubmed-search-mcp" not in deployment

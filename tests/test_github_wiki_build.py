@@ -28,6 +28,10 @@ def test_build_github_wiki_outputs_expected_pages(tmp_path) -> None:
         "Research-Chronicle-Rebuild-Spec.md",
         "Pipeline-Tutorial.md",
         "Pipeline-Tutorial.zh-TW.md",
+        "Unified-Search-Architecture.md",
+        "Unified-Search-Architecture.zh-TW.md",
+        "Tool-Quality-Audit.md",
+        "Tool-Quality-Audit.zh-TW.md",
         "Architecture.md",
         "Quick-Reference.md",
         "Source-Contracts.md",
@@ -50,6 +54,10 @@ def test_build_github_wiki_outputs_expected_pages(tmp_path) -> None:
     assert "[Tools Usage Guide](Tools-Usage-Guide)" in user_guide
     assert "[進階研究工作流](Advanced-Research-Workflows.zh-TW)" in sidebar
     assert "[Developer Guide](Developer-Guide)" in sidebar
+    assert "[Unified Search Architecture](Unified-Search-Architecture)" in home
+    assert "[Unified Search 架構](Unified-Search-Architecture.zh-TW)" in sidebar
+    assert "[Tool Quality Audit](Tool-Quality-Audit)" in home
+    assert "[工具品質稽核](Tool-Quality-Audit.zh-TW)" in sidebar
     assert "[Semantic Scholar Data Plane](Semantic-Scholar-Data-Plane)" in sidebar
     assert "[BioMCP Architecture Analysis](BioMCP-Architecture-Analysis)" in home
 

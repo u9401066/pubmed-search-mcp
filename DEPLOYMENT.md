@@ -127,6 +127,8 @@ revision 仍有效，MCP 回應會明確回報 artifact warning。客戶端應�
 | `PUBMED_TRUSTED_PROXY_IPS` | 視拓撲 | 只列實際 TLS proxy IP；空值不信任 forwarded headers |
 | `PUBMED_TENANT_ISOLATION` | 強制 `true` | service 不允許關閉 tenant isolation |
 | `PUBMED_TENANT_MAX_CONCURRENCY` | 預設 `8` | 單一 tenant 同時在途的請求上限 |
+| `PUBMED_PIPELINE_RUN_TIMEOUT_SECONDS` | 預設 `120` | 單次 pipeline 的全程 deadline；須大於 0 且不超過 3600 秒 |
+| `PUBMED_PIPELINE_MAX_EXTERNAL_CALLS` | 預設 `40` | 單次 pipeline 所有平行步驟共用的外部呼叫總額；範圍 1–1000 |
 | `PUBMED_DATA_DIR` | persistent volume | tenant storage 根目錄 |
 
 Token 只以 digest 比對，不應出現在 log 或 object repr。正式環境應由
@@ -137,6 +139,8 @@ orchestrator secret store 注入，不要把 `.env` 或 token 寫進 image。
 - **上游速率限制是全域的**（每個外部 API 一組），因為 NCBI 等來源依
   API key 計量。
 - **每租戶並行上限**負責公平性，避免單一 agent 吃光全域預算。
+- **每次 pipeline deadline 與外部呼叫總額**由所有平行步驟共用，不能靠拆分
+  action 繞過限制。
 
 ### 0.5 健康檢查與 auxiliary routes
 
@@ -189,7 +193,7 @@ UNPAYWALL_EMAIL=your@email.com
 ## 2. 本機 stdio 模式
 
 給本機 MCP client 使用時，不需要額外部署 HTTP。stdio entrypoint 會強制
-local mode，而且預設不啟動 auxiliary HTTP port。
+local mode，並且絕不啟動 HTTP listener。
 
 ```bash
 uvx pubmed-search-mcp
@@ -201,8 +205,8 @@ uvx pubmed-search-mcp
 uv run python -m pubmed_search.presentation.mcp_server
 ```
 
-只有明確需要與本機其他 process 共用 read-only cache API 時，才設定
-`PUBMED_STDIO_AUX_HTTP=1`；該 API 仍只能綁定 loopback。
+若需要本機 HTTP connector 或 cache/session HTTP API，請另行啟動 canonical
+`pubmed-search-mcp-http --mode local`；stdio process 不提供 shadow HTTP bridge。
 
 ## 3. 本機 loopback HTTP
 
@@ -240,17 +244,17 @@ pubmed-search-mcp-http --mode local --transport streamable-http \
 
 這條路線的用途是：
 
-- 保留完整 45-tool primary MCP surface
+- 保留完整 41-tool primary MCP surface
 - 啟用 Copilot 所需的 JSON response/HTTP compatibility，不改變安全合約
-- 適合先嘗試完整面，再視 Copilot Studio schema 狀況回退到簡化模式
+- 與本機 Copilot smoke 共用同一套 strict tool schemas
 
 遠端 Copilot 不可使用上述 local 指令；請套用第 0 節的 service 環境，並改用
 `--mode service --copilot-compatible`。
 
-## 4. Copilot Studio 專用模式
+## 4. Copilot Studio 本機 smoke
 
-若 Copilot Studio 對完整 schema 仍有解析限制，可在本機使用簡化模式做
-schema compatibility 測試：
+需要重現 Copilot Studio schema 或 protocol 問題時，可在本機啟動同一套 canonical
+registry：
 
 ```bash
 uv run python run_copilot.py --port 8765 --email your@email.com
@@ -260,12 +264,11 @@ uv run python run_copilot.py --port 8765 --email your@email.com
 
 - 固定使用 streamable-http
 - 開啟 Copilot compatibility middleware
-- 暴露 12 個 Copilot Studio 友善、只用 primitive parameters 的精簡工具
-- 保持 generic literature search 名稱為 `unified_search`，並呼叫共用 unified runner；不是 PubMed-only 或第二套搜尋宇宙
-- 在精簡 schema 仍提供 string 型 `sources` 與 `options`，可使用相同的 source expression 與 broker retrieval flags
-- 提供 primitive-schema `read_session`，可回讀 search runs、取得不自動執行的 replay arguments，或讀取 persisted artifact
+- 暴露與 primary server 相同的 41 個 strict tools
+- 保持唯一 generic literature search 為 `unified_search`
+- 保持 `read_session(request={...})` 等 discriminated request schema，不提供 action-bag aliases
 
-`run_copilot.py` 是 source-tree compatibility wrapper，不取代 service-mode auth 合約。多使用者
+`run_copilot.py` 是 source-tree local smoke wrapper，不取代 service-mode auth 合約。多使用者
 部署優先使用 packaged `pubmed-search-mcp-http --mode service --copilot-compatible`。
 
 ## 5. HTTPS 部署
@@ -384,13 +387,13 @@ PUBMED_DATA_DIR=/var/lib/pubmed-search-mcp
 # reviewed source into your own Azure Container Registry first.
 az acr build \
   --registry myregistry \
-  --image pubmed-search-mcp:0.6.5 \
+  --image pubmed-search-mcp:0.7.0 \
   .
 
 az containerapp create \
   --name pubmed-mcp \
   --resource-group myRG \
-  --image myregistry.azurecr.io/pubmed-search-mcp:0.6.5 \
+  --image myregistry.azurecr.io/pubmed-search-mcp:0.7.0 \
   --target-port 8765 \
   --ingress external
 ```
@@ -437,7 +440,7 @@ uv run python scripts/build_docs_site.py
 3. Service 未帶 bearer 的 `POST /mcp`、`/api/*`、`/exports` 回傳 401/403
 4. 有效 bearer 可直接完成現代 MCP `tools/list` 與一次 `unified_search`；2026-07-28 transport 不再送 `initialize` 或 `Mcp-Session-Id`
 5. 不同 principal 無法互讀 session、artifact、export、chronicle 或 pipeline
-6. 若是 Copilot Studio，確認 45-tool primary surface 正確被發現
+6. 若是 Copilot Studio，確認 41-tool primary surface 正確被發現
 
 ## 相關文件
 

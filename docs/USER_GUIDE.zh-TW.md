@@ -55,19 +55,19 @@ PUBMED_NOTES_DIR=/path/to/references
 | 目標 | 從這裡開始 | 接著使用 |
 | --- | --- | --- |
 | 快速找文獻 | `unified_search` | `fetch_article_details`, `read_session` |
-| 臨床問題 | Agent 抽出 P/I/C/O 後呼叫 `parse_pico` | `generate_search_queries`, `unified_search` |
+| 臨床問題 | Agent 抽出 P/I/C/O 後呼叫 `validate_pico_plan` | `generate_search_queries`, `unified_search` |
 | 改善太吵或太窄的 query | `analyze_search_query` | `generate_search_queries`, `unified_search` |
 | 從重要文章往外探索 | `fetch_article_details` | `find_related_articles`, `find_citing_articles`, `get_article_references`, `build_citation_tree` |
 | 閱讀更深層證據 | `get_fulltext` | `get_text_mined_terms`, `get_article_figures` |
-| 從視覺證據搜尋 | `analyze_figure_for_search` | `search_biomedical_images`, `unified_search` |
+| 從視覺證據搜尋 | `prepare_figure_search` | `search_biomedical_images`, `unified_search` |
 | 建立研究編年史 / 脈絡樹 | `build_research_chronicle` | `read_research_chronicle` |
-| 重新讀取大型輸出 | `read_session(action="artifact")` | `read_session(action="list_artifacts")` |
+| 重新讀取大型輸出 | `read_session(request={"action":"artifact","locator":{"kind":"artifact_id","value":"..."}})` | `read_session(request={"action":"list_artifacts"})` |
 | 建立本機文獻庫 | `prepare_export` | `save_literature_notes` |
-| 重用工作流 | `manage_pipeline` | `save_pipeline`, `load_pipeline`, `schedule_pipeline` |
+| 重用工作流 | `save_pipeline` | `load_pipeline`, `schedule_pipeline`, `get_pipeline_history` |
 
 最重要的規則是：先看研究意圖，不要先看工具清單。
 
-`unified_search` 的參數刻意設計成 agent-friendly strings。`sources`、`filters` 與 `options` 請使用 comma-separated values，不要傳 JSON object。例如：`sources="auto"`、`sources="auto,-semantic_scholar"`、`filters="year:2020-, clinical:therapy"` 或 `options="counts_first,context_graph"`。
+`unified_search` 的參數刻意設計成 agent-friendly strings，但 token 必須使用精確 canonical spelling。`sources`、`filters` 與 `options` 請使用 comma-separated values，不要傳 JSON object。例如：`sources="auto"`、`sources="auto,-semantic_scholar"`、`filters="year:2020-,clinical_query:therapy"` 或 `options="counts_first,clinical_trials"`。大小寫、連字號、前後空白、重複 token、縮寫或替代拼法都會被拒絕。
 
 ## 日常工作流
 
@@ -83,21 +83,21 @@ Use PubMed Search MCP to search for recent literature on SGLT2 inhibitors and he
 
 Agent 通常應該從 `unified_search` 開始。好的結果會包含使用的 query、article identifiers、source provenance，以及足夠判斷是否要 fetch details 或 refine 的 metadata。
 
-後續處理請優先使用 `read_session` 或 `get_session_pmids`。不要要求模型在對話裡記住一長串 PMID。
+後續處理請優先使用 `read_session(request={"action":"pmids"})`。不要要求模型在對話裡記住一長串 PMID。
 
 ### 2. 臨床問題用 PICO
 
 臨床比較問題先做 PICO：
 
 ```text
-請先抽出 P/I/C/O，用 parse_pico 驗證 handoff，提出 PubMed 搜尋 query，然後執行最精準的一個：
+請先抽出 P/I/C/O，用 validate_pico_plan 驗證 handoff，提出 PubMed 搜尋 query，然後執行最精準的一個：
 在成人第二型糖尿病合併 CKD 病人中，SGLT2 inhibitors 相較 placebo 是否能降低 heart failure hospitalization？
 ```
 
 預期流程：
 
 1. Agent 從使用者的臨床問題抽出 P/I/C/O。
-2. `parse_pico(description=..., p=..., i=..., c=..., o=...)` 驗證 schema 並回傳 `template: pico` pipeline。
+2. `validate_pico_plan(description=..., p=..., i=..., c=..., o=...)` 驗證 schema 並回傳 `template: pico` pipeline。
 3. 可選：用 `generate_search_queries` 將 P/I/C/O 擴展成 MeSH/同義詞 fragments。
 4. `unified_search` 執行回傳的 PICO pipeline，或執行 agent 組好的 Boolean query。
 5. 如果第一個 query 太廣或太窄，可再用 `analyze_search_query`。
@@ -138,10 +138,10 @@ For PMID 12345678, fetch details, then find related papers, citing papers, and k
 圖片優先的任務請把視覺工具當成兩段式 agent workflow：
 
 ```text
-請用 analyze_figure_for_search 分析這張上傳的 microscopy image，抽出英文搜尋詞，接著搜尋相關論文與相似 biomedical images。
+請用 prepare_figure_search 分析這張上傳的 microscopy image，抽出英文搜尋詞，接著搜尋相關論文與相似 biomedical images。
 ```
 
-`analyze_figure_for_search` 可接受 MCP client 提供的 image URL 或 base64/data-URI image。它會回傳 MCP `ImageContent` 加上給 agent 的指令，讓 agent 用自己的 vision capability 解讀圖片、抽出英文 biomedical terms，然後接續呼叫 `search_biomedical_images` 或 `unified_search`。Server 本身不做深度視覺診斷；圖片語意判讀由 LLM agent 負責。
+`prepare_figure_search` 可接受 MCP client 提供的 image URL 或 base64/data-URI image。它會回傳 MCP `ImageContent` 加上給 agent 的指令，讓 agent 用自己的 vision capability 解讀圖片、抽出英文 biomedical terms，然後接續呼叫 `search_biomedical_images` 或 `unified_search`。Server 本身不做深度視覺診斷；圖片語意判讀由 LLM agent 負責。
 
 如果已經有文字化的視覺 finding，就直接用 `search_biomedical_images` 找 open biomedical image evidence：
 
@@ -194,17 +194,17 @@ build_research_chronicle(pmids="last", topic="Selected studies")
 build_research_chronicle(chronicle_id="remimazolam-intraoperative-08c229f3")
 
 # 4. 讀取里程碑分析或多主題比較
-read_research_chronicle(action="milestones", chronicle_id="remimazolam-intraoperative-08c229f3")
-read_research_chronicle(action="compare", topics="remimazolam intraoperative,propofol intraoperative")
+read_research_chronicle(request={"action":"milestones","chronicle_id":"remimazolam-intraoperative-08c229f3"})
+read_research_chronicle(request={"action":"compare","selection":{"kind":"topics","values":["remimazolam intraoperative","propofol intraoperative"]}})
 ```
 
-`build_research_chronicle` 可以依 topic 搜尋，也可以使用明確 PMID set。主軸是時序，分支 (lineage) 是同一組 entries 的次要投影。`output="mermaid"` 是標準圖：年份構成橫向主軸，各觀察研究線從本次檢索範圍內最早的有日期論文所在年份分岔；`output="chronicle_map"` 則回傳同一座標契約的 JSON。主題分支優先使用多篇論文共同出現的 MeSH descriptor 與作者 keyword；只有 singleton 或語意訊號不足時，audit 會明確標示為研究階段 fallback。`timeline_mermaid` 保留舊的平面圖。其他輸出包括 `summary`、`timeline`、`tree`、`graph`、`evidence`、`milestones`、`mindmap`、`narrative` 與 `json`。`unified_search(options="context_graph")` 只適合本次 PMID-backed ranked results 的輕量預覽。chronicle 本身已持久化且版本化，詳見 [進階研究工作流](ADVANCED_RESEARCH_WORKFLOWS.zh-TW.md) 與 [Research Chronicle Rebuild Spec](RESEARCH_CHRONICLE_REFACTOR_SPEC.md)。
+`build_research_chronicle` 可以依 topic 搜尋，也可以使用明確 PMID set。主軸是時序，分支 (lineage) 是同一組 entries 的次要投影。`output="mermaid"` 是標準圖：年份構成橫向主軸，各觀察研究線從本次檢索範圍內最早的有日期論文所在年份分岔；`output="chronicle_map"` 則回傳同一座標契約的 JSON。主題分支優先使用多篇論文共同出現的 MeSH descriptor 與作者 keyword；只有 singleton 或語意訊號不足時，audit 會明確標示為研究階段 fallback。其他輸出包括 `summary`、`timeline`、`tree`、`graph`、`evidence`、`milestones`、`narrative` 與 `json`。Research Chronicle 是唯一的持久研究 lineage 能力；`unified_search` 回傳搜尋證據，不再產生重複的 context projection。chronicle 本身已持久化且版本化，詳見 [進階研究工作流](ADVANCED_RESEARCH_WORKFLOWS.zh-TW.md) 與 [Research Chronicle Rebuild Spec](RESEARCH_CHRONICLE_REFACTOR_SPEC.md)。
 
 Lineage 是本次 retrieved snapshot 的可解釋分組，不是因果祖譜。`earliest_observed_in_scope` 不代表找到整個領域的首篇論文；query、PMID set、年份 filter、來源可用性與結果上限都會限制可觀察範圍。日期 precision 會保留：同年或日期區間重疊的項目可以固定顯示順序，但不會據此推論 `precedes` 或 `supersedes` 關係。
 
 Revision 不可變，並以原子操作追加。`action="compare"` 使用正規化後的完整 stored-topic 名稱；同名對應多個 Chronicle 時必須明確傳 `chronicle_ids`，重複目標會拒絕。Build input 有界限（`max_events` 1–200、明確 PMID 最多 500 個 unique values、topic 最多 500 字元），structured actions 的錯誤也維持結構化。啟用的 session artifact persistence 若在 revision 保存後失敗，回應會揭露失敗，不會回傳誤導性的 locator。
 
-Topic 年份 filter 會先由 PubMed 套用，再進行有界檢索。輸出上限會保留觀察到的首篇、末篇、明確 landmark 與時間分散度；audit 會區分 `returned` 和 `available`，並在 coverage 受限或總量未知時警告。PubMed error 或零篇 evidence 不會保存 revision。明確 PMID 字串只接受正 ASCII 數字且最多 20 位；PMID／DOI evidence identity 則讓 entry ID 在日期或分類修正後保持穩定。沒有可靠日期的記錄標示為 `Undated`、排列在 dated entries 之後，且不擴張顯示的年份範圍。diff 中缺席一律是 `not_observed_in_revision`／`removed_from_view`，不是已證實退場。多訊號論文保留一個 primary branch 加 cross-links，重疊達 20% 會警告；landmark ranking 不會把 detection confidence 當成科學重要性。Artifact preflight 檢查的是實際準備持久化的 payload。
+Topic 年份 filter 會先由 PubMed 套用，再進行有界檢索。輸出上限會保留觀察到的首篇、末篇、明確 landmark 與時間分散度；audit 會區分 `returned` 和 `available`，並在 coverage 受限或總量未知時警告。PubMed error 或零篇 evidence 不會保存 revision。明確 PMID 字串只接受正 ASCII 數字且最多 20 位；PMID／DOI evidence identity 則讓 entry ID 在日期或分類修正後保持穩定。沒有可靠日期的記錄標示為 `Undated`、排列在 dated entries 之後，且不擴張顯示的年份範圍。diff 中缺席一律是 `not_observed_in_revision`，不是已證實退場。多訊號論文保留一個 primary branch 加 cross-links，重疊達 20% 會警告；landmark ranking 不會把 detection confidence 當成科學重要性。Artifact preflight 檢查的是實際準備持久化的 payload。
 
 Mermaid label、ID、parent link、循環、重複項目與圖形大小都會做 deterministic 修正；rich syntax 被拒絕時，會依序降級為 safe 與 minimal。請從 `mermaid_validation.json` 查看 correction、fallback tier 與 omitted count；完整座標資料仍保存在 `chronicle_map.json`。
 
@@ -213,10 +213,10 @@ Mermaid label、ID、parent link、循環、重複項目與圖形大小都會做
 當透過 `PUBMED_DATA_DIR` 設定 session persistence 時，`unified_search` 與 `get_fulltext` 的大型可重用輸出會保存成 artifact。即時 tool response 只放精簡 locator，不強迫 agent 一次吃完整 token。
 
 ```python
-read_session(action="list_artifacts")
-read_session(action="artifact", artifact_id="...")
-read_session(action="artifact", artifact_uri="artifact://...")
-read_session(action="artifact", artifact_id="...", artifact_file="payload.json", offset=0, max_chars=200000)
+read_session(request={"action":"list_artifacts"})
+read_session(request={"action":"artifact","locator":{"kind":"artifact_id","value":"..."}})
+read_session(request={"action":"artifact","locator":{"kind":"artifact_uri","value":"artifact://..."}})
+read_session(request={"action":"artifact","locator":{"kind":"artifact_id","value":"..."},"artifact_file":"payload.json","offset":0,"max_chars":200000})
 ```
 
 Local paths 預設會被遮蔽，因為 remote clients 不能讀 MCP server host filesystem。只有本機 MCP client 真的需要 `local_path` 與 `manifest_path` 時，才設定 `PUBMED_ARTIFACT_INCLUDE_LOCAL_PATHS=true`。Artifact read 不會重跑搜尋；它只讀已保存的 query/fulltext memory。
@@ -274,7 +274,10 @@ arguments、選擇內建 `note_format`，由 server 寫入該 principal 隔離�
 - 比較不同 run 的 pipeline history
 - 排程 recurring literature watch
 
-Server 透過 `manage_pipeline` 暴露主要 pipeline operations，也保留 `save_pipeline`、`load_pipeline`、`list_pipelines`、`delete_pipeline`、`get_pipeline_history` 與 `schedule_pipeline` 等相容工具。
+Server 暴露七個單一職責 pipeline operations：`save_pipeline`、
+`list_pipelines`、`load_pipeline`、`delete_pipeline`、`get_pipeline_history`、
+`schedule_pipeline` 與 `unschedule_pipeline`。它們會拒絕不相關欄位，沒有 generic
+action façade。
 
 Saved pipelines 可以透過 `unified_search(pipeline="saved:<name>")` 重用。Pipeline `config` 應是 YAML 或 JSON string；scheduled pipeline 使用標準 five-field cron string。
 
@@ -288,13 +291,13 @@ run，或設計單一 external leader/lease。
 
 ![Client integration and deployment workflow](images/integration-deployment-workflow.svg)
 
-Copilot 有兩條路：
+Copilot 有兩個部署邊界，但共用同一份 registry：
 
 - 可公開的 primary MCP surface：透過 authenticated `pubmed-search-mcp-http --mode service --transport streamable-http --copilot-compatible`
-- 僅 loopback 的 schema smoke：透過 `run_copilot.py` 檢查較小的 12-tool schema，
-  其中 primitive-schema `read_session` 可回讀 search run、replay arguments 與 artifact
+- 僅 loopback 的 schema smoke：透過 `run_copilot.py` 檢查同一組 41 個 strict tools，
+  並使用 canonical `read_session(request={...})` 回讀 search run、replay arguments 與 artifact
 
-只有完整 authenticated service 可以公開。簡化工具面僅供本機檢查 Copilot Studio schema compatibility；任何 public endpoint 都必須回到 service launcher，禁止 tunnel `run_copilot.py`。
+只有 authenticated service 可以公開。本機 launcher 只供檢查同一份 Copilot Studio schema；任何 public endpoint 都必須回到 service launcher，禁止 tunnel `run_copilot.py`。
 
 ## 怎樣問 Agent 比較好
 
