@@ -4,7 +4,7 @@
 
 # PubMed Search MCP 工具使用指南
 
-這是一份能力導向指南，目標是讓 agent 和使用者不用死背 45 個 MCP tool，也能穩定選到正確流程。
+這是一份能力導向指南，目標是讓 agent 和使用者不用死背 41 個 MCP tool，也能穩定選到正確流程。
 
 **語言**: [English](#/tools-usage-guide) | **繁體中文**
 
@@ -22,12 +22,12 @@
 | 能力 | 主要工具 | 何時使用 |
 | --- | --- | --- |
 | 搜尋入口 | `unified_search` | 使用者要找論文、文章、或先對主題做第一輪搜尋。 |
-| 查詢智能 | `analyze_search_query`, `parse_pico`, `generate_search_queries` | 需要 MeSH、agent-provided PICO handoff、同義詞擴展、或搜尋策略。 |
+| 查詢智能 | `analyze_search_query`, `validate_pico_plan`, `generate_search_queries` | 需要 MeSH、agent-provided PICO handoff、同義詞擴展、或搜尋策略。 |
 | 論文探索 | `fetch_article_details`, `find_related_articles`, `find_citing_articles`, `get_article_references`, `build_citation_tree` | 已有 seed PMID，要查脈絡、相關研究、引用網路。 |
 | 全文與圖表 | `get_fulltext`, `get_text_mined_terms`, `get_article_figures` | 需要文章段落、證據區段、實體標註、caption 或 image URL。 |
 | 外部生醫資料 | `search_gene`, `get_gene_details`, `search_compound`, `get_compound_details`, `search_clinvar` | 問題從文獻延伸到 NCBI gene、compound、clinical variant。 |
 | 評估與研究演化 | `get_citation_metrics`, `build_research_chronicle`, `read_research_chronicle` | 使用者問哪些重要、領域如何演進、或多主題比較。 |
-| 持久化與 session | `read_session`, `get_session_pmids`, `get_cached_article`, `get_session_summary`, pipeline tools | 使用者要恢復、重跑、審計、排程、保存搜尋流程。 |
+| 持久化與 session | `read_session` 與七個 pipeline tools | 使用者要恢復、重跑、審計、排程、保存搜尋流程。 |
 | 匯出與本機筆記 | `prepare_export`, `save_literature_notes` | 使用者要 Zotero/EndNote/BibTeX，或本機 Markdown/wiki 筆記。 |
 
 ## 意圖路由
@@ -35,7 +35,7 @@
 | 使用者意圖 | 建議流程 |
 | --- | --- |
 | 快速搜尋文獻 | `unified_search(query=..., limit=...)` |
-| 臨床 A vs B 比較 | Agent P/I/C/O -> `parse_pico` -> `unified_search(pipeline="template: pico...")` |
+| 臨床 A vs B 比較 | Agent P/I/C/O -> `validate_pico_plan` -> `unified_search(pipeline="template: pico...")` |
 | 系統性回顧起手式 | `analyze_search_query` -> `generate_search_queries` -> `unified_search(options="systematic")` -> `save_pipeline` |
 | Provider-native 語意檢索 | `unified_search(sources="openalex", options="native_semantic")` |
 | 深挖重要論文 | `fetch_article_details` -> `find_related_articles` / `find_citing_articles` / `get_article_references` |
@@ -54,7 +54,7 @@ Zotero Keeper 應維持在外部整合邊界。PubMed Search MCP 負責產生 of
 
 ![搜尋與查詢智能流程](images/search-query-workflow.svg)
 
-這條路徑涵蓋 `unified_search`、`parse_pico`、`generate_search_queries`、`analyze_search_query` 與 ICD-aware search preparation。重點邊界是：agent 負責語意上的 PICO 抽取，`parse_pico` 驗證結構化 handoff 並回傳後端 `template: pico` pipeline。
+這條路徑涵蓋 `unified_search`、`validate_pico_plan`、`generate_search_queries`、`analyze_search_query` 與 ICD-aware search preparation。重點邊界是：agent 負責語意上的 PICO 抽取，`validate_pico_plan` 驗證結構化 handoff 並回傳後端 `template: pico` pipeline。
 
 通用文獻搜尋只有一個 tool。使用 `options` 選 retrieval policy，不要尋找
 provider-specific search tool：
@@ -63,7 +63,7 @@ provider-specific search tool：
 | --- | --- | --- |
 | 預設 | `unified_search(query="sepsis biomarkers")` | 在一般有能力的 source plan 中做 relevance/keyword 路由。 |
 | Native semantic | `unified_search(query="mechanisms of resistance", sources="openalex", options="native_semantic")` | OpenAlex title/abstract 語意檢索；provider 最多 50 筆。 |
-| Systematic | `unified_search(query="melanoma AND immunotherapy", sources="pubmed,openalex,semantic_scholar", options="systematic")` | 可稽核的有界 provider execution；選到時用 OpenAlex cursor 與 Semantic Scholar bulk。 |
+| Systematic | `unified_search(query="melanoma AND immunotherapy", sources="openalex,semantic_scholar", options="systematic")` | 可稽核的有界 provider execution：OpenAlex cursor 與 Semantic Scholar bulk。PubMed 是 keyword-only，此 mode 會拒絕它。 |
 
 `native_semantic` 與 `systematic` 互斥。兩者都會關閉多策略 deep-search
 expansion，保留可稽核的 provider-native plan。明確 source/mode 不相容時，系統在
@@ -74,6 +74,7 @@ systematic-review evidence 的證明。
 Input validation 會在 provider I/O 前嚴格執行。`limit` 必須是 `1..100` 的整數；
 filter token 必須使用支援的 `key:value`；year bounds 必須在 1000–2100 內且順序
 正確；未知 option、ranking mode 或 output format 會直接被拒絕，不會無聲忽略。
+Source identifier 必須是 `semantic_scholar`、`europe_pmc`、`web_of_science` 等完全相等的 canonical key；alias、大小寫變體、token 前後空白、空 token 與重複 token 均會被拒絕。Canonical filter keys 是 `year`、`age_group`、`sex`、`species`、`language` 與 `clinical_query`。
 一般 deep mode 中，公開 `limit` 是單一 source 所有 generated strategies 共用的
 **總額度**。Broker 會把額度分配到 strategies、裁切超額 adapter response，並套用
 有界的全域／每來源 concurrency 與 strategy deadline。
@@ -94,9 +95,10 @@ attempted/successful/failed/retryable sources、有 continuation 的 sources 與
 的 sources。
 
 ClinicalTrials.gov 是明確選擇的 adjunct，不是另一個 literature-search leg。
-只有需要 Markdown 回應附帶最多三筆相關 registry records 時才使用
-`options="trials"`。預設不會發出請求，不影響 article ranking/source
-counts，並在 search artifact 中獨立記錄。JSON/TOON 不執行這個僅用於顯示的 adjunct。
+只有需要相關 registry records 時才使用 `options="clinical_trials"`。預設不會
+發出請求，也不影響 article ranking 或 literature-source counts。Markdown 最多
+顯示三筆；JSON/TOON 保留 structured rows。Response 與 artifact 都會帶同一份版本化
+`clinical-trials-adjunct/v1` retrieval/format coverage 與 sanitized failure。
 
 ### 論文探索與引用脈絡
 
@@ -114,11 +116,15 @@ counts，並在 search artifact 中獨立記錄。JSON/TOON 不執行這個僅�
 
 ![全文、圖表與生醫圖片流程](images/visual-evidence-workflow.svg)
 
-這條路徑涵蓋 `get_fulltext`、`get_text_mined_terms`、`get_article_figures`、`analyze_figure_for_search` 與 `search_biomedical_images`。全文、figure metadata、image search 是不同證據通道，各自有不同可得性限制。
+這條路徑涵蓋 `get_fulltext`、`get_text_mined_terms`、`get_article_figures`、`prepare_figure_search` 與 `search_biomedical_images`。全文、figure metadata、image search 是不同證據通道，各自有不同可得性限制。
 
-當使用者提供 image URL 或上傳圖片 payload，且需要 agent 從視覺內容推論搜尋詞時，使用 `analyze_figure_for_search`。這個 tool 會回傳 MCP `ImageContent`；實際圖片語意解讀由 LLM agent 完成，agent 應接續呼叫 `search_biomedical_images` 或 `unified_search`。
+當使用者提供 image URL 或上傳圖片 payload，且需要 agent 從視覺內容推論搜尋詞時，使用 `prepare_figure_search`。這個 tool 會回傳 MCP `ImageContent`；實際圖片語意解讀由 LLM agent 完成，agent 應接續呼叫 `search_biomedical_images` 或 `unified_search`。
 
 當視覺問題已經文字化時，直接用 `search_biomedical_images`。目前主要來源是 Open-i，支援 `image_type`、`collection`、`article_type`、`specialty`、`license_type`、`search_fields` 等 filter，且需要英文醫學術語。
+
+解讀空畫面前要先看 typed source coverage。只有合法的 Open-i page 同時是
+`total=0` 且沒有 row 才是 empty；outage 或 malformed page 是 failed，有效/無效 row
+混合則是 partial。Markdown 會保留這個差別與 unknown total。
 
 ### 外部生醫資料
 
@@ -133,14 +139,14 @@ counts，並在 search artifact 中獨立記錄。JSON/TOON 不執行這個僅�
 
 使用者問「哪些重要」、「領域何時改變」、「不同主題如何分歧」時，使用 `get_citation_metrics`、`build_research_chronicle` 與 `read_research_chronicle`。
 
-`build_research_chronicle` 是唯一的研究演化工具。它接受 `topic=...`、明確的 comma-separated `pmids=...` 或既有的 `chronicle_id=...`，會偵測 milestone-like papers，並可回傳 `summary`、`chronicle_map`、`timeline`、`tree`、`graph`、`evidence`、`milestones`、`mermaid`、`timeline_mermaid`、`mindmap`、`narrative` 或 `json`。`mermaid` 把橫向年份主軸與 lineage 分支畫在同一張圖；`chronicle_map` 是同一座標契約的 JSON。`read_research_chronicle(action="milestones")` 用於里程碑分佈 diagnostics；`read_research_chronicle(action="compare", topics="a,b")` 用於最多五個 topic tracks 的比較。
+`build_research_chronicle` 是唯一的研究演化 builder。它接受 `topic=...`、明確的 comma-separated `pmids=...` 或既有的 `chronicle_id=...`，會偵測 milestone-like papers，並可回傳 `summary`、`chronicle_map`、`timeline`、`tree`、`graph`、`evidence`、`milestones`、`mermaid`、`narrative` 或 `json`。`mermaid` 是標準、經 audit 的圖：橫向年份主軸加 lineage 分支；`chronicle_map` 是同一座標契約的 JSON。已保存資料的 diagnostics 與比較一律使用 typed `read_research_chronicle(request={...})` actions。
 
 用詞請保持精準：
 
 - **Timeline**：按時間排序的 milestone projection。
 - **Lineage tree**：由 timeline events 產生、受檢索範圍限制的分支投影，不是因果祖譜。
 - **Chronicle map**：單一橫向時間主軸，各觀察研究線錨定在本次檢索範圍內最早的有日期論文；語意分支必須有多篇論文共同支持的訊號，只有 singleton 或 MeSH/keyword 訊號不足時會產生 audit warning 並退回研究階段分類。同年排列在日期 precision 不足時不代表先後。
-- **Context graph preview**：`unified_search(options="context_graph")`，只根據本次 PMID-backed ranked set 產生輕量預覽。
+- **研究 lineage**：使用 `build_research_chronicle`；它是唯一持久化時序與分支脈絡能力。
 - **Citation tree**：`build_citation_tree`，從單一 seed PMID 建立 forward/backward citation network。
 - **Research Chronicle**：`build_research_chronicle` / `read_research_chronicle`，持久化、版本化、有證據支撐的研究紀錄；詳見 [進階研究工作流](#/advanced-workflows-zh) 與 [Research Chronicle Rebuild Spec](#/research-chronicle-rebuild-spec)。
 
@@ -160,11 +166,11 @@ PMID input 只接受 ASCII digits、可選的 `PMID:` prefix 與明確分隔符�
 
 - `build_research_chronicle(topic=...)` 或 `build_research_chronicle(pmids="last")`：以原子操作建立 revision N+1。啟用 session artifact persistence 時也會寫入 `research-chronicle-artifact/v1` bundle；若寫入失敗，Markdown 或 structured output 的 `artifact.status="failed"` 會明確揭露，而 revision 仍已保存。
 - `build_research_chronicle(chronicle_id=...)`：只傳 `chronicle_id` 即可自動沿用前一版的 topic/PMID 與檢索條件再跑一次，產出乾淨反映研究進展的 Revision N+1。
-- `read_research_chronicle(action="list")`：列出已儲存的 chronicles。
-- `read_research_chronicle(chronicle_id=..., output="mermaid"|"mindmap"|"chronicle_map"|"tree"|"timeline"|"graph"|"evidence")`：讀取單一 revision 或合併圖。
-- `read_research_chronicle(action="diff", chronicle_id=..., from_revision=1)`：回報新增、更新與本次缺席的 entries，以及證據／分支變化。舊的 `retired` key 只是 `not_observed_in_revision`／`removed_from_view` 的相容 alias；缺席絕不等於已證實退場。
-- `read_research_chronicle(action="narrate", chronicle_id=..., mode="full")`：產出每句 claim 都附 entry ID 與文獻識別碼的敘述。
-- `read_research_chronicle(action="compare", topics="a,b")`：使用正規化後的完整 stored-topic 名稱。同名對應多個 Chronicle 時會回報 ambiguity，需改傳不同的 `chronicle_ids`；重複目標不構成有效比較。
+- `read_research_chronicle(request={"action":"list"})`：列出已儲存的 chronicles。
+- `read_research_chronicle(request={"action":"load","chronicle_id":"...","output":"mermaid"})`：讀取單一 revision 或合併圖。
+- `read_research_chronicle(request={"action":"diff","chronicle_id":"...","from_revision":1})`：回報新增、更新與本次未觀察到的 entries，以及證據／分支變化；缺席絕不等於已證實退場。
+- `read_research_chronicle(request={"action":"narrate","chronicle_id":"...","mode":"full"})`：產出每句 claim 都附 entry ID 與文獻識別碼的敘述。
+- `read_research_chronicle(request={"action":"compare","selection":{"kind":"topics","values":["a","b"]}})`：使用正規化後的完整 stored-topic 名稱。同名對應多個 Chronicle 時會回報 ambiguity，應改選不同 Chronicle IDs；重複目標無效。
 
 Public schema 與 runtime validation 都限制 Chronicle request：`max_events` 1–200、明確 set 最多 500 個 unique PMIDs、topic 最多 500 字元、list limit 1–100、compare 需 2–5 個不同 Chronicles。JSON projections 與 structured read actions 的 validation / not-found 錯誤也維持結構化。
 
@@ -174,12 +180,15 @@ Artifact preflight 會檢查實際 artifact payload builder 產出的檔名（�
 
 ![Session 與 Pipeline 流程](images/session-pipeline-workflow.svg)
 
-這條路徑涵蓋 `read_session`、`get_session_pmids`、`get_cached_article`、`get_session_summary`、`get_session_log`、`manage_pipeline`、`save_pipeline`、`list_pipelines`、`load_pipeline`、`delete_pipeline`、`get_pipeline_history` 與 `schedule_pipeline`。
+這條路徑涵蓋 `read_session`、`save_pipeline`、`list_pipelines`、`load_pipeline`、`delete_pipeline`、`get_pipeline_history`、`schedule_pipeline` 與 `unschedule_pipeline`。
 
 本機與 service 能力刻意不同。可信任的本機 caller 可使用 workspace scope、`file:`
 pipeline source 與 in-process scheduler。認證 service caller 只能讀取 tenant-derived store 中
 已保存的 pipeline；process-wide workspace/file reads 會被阻擋，service Compose 也停用
 scheduler，除非維運者另外提供單一 external leader/lease。
+
+History read 採 fail-closed。持久化 run record 只要有一筆無法解析，就回報
+sanitized error，不會跳過後產生誤導的部分清單或空歷史。
 
 ### 機構存取
 
@@ -187,22 +196,26 @@ scheduler，除非維運者另外提供單一 external leader/lease。
 
 這條路徑涵蓋 `configure_institutional_access`、`get_institutional_link`、`list_resolver_presets`、`test_institutional_access` 與 `diagnose_institutional_access`。OpenURL 是 browser handoff；direct DOI 與 EZproxy 只有在環境已設定、且使用者有權存取時才是 agent-fetchable。
 
+Resolver base 不得含 query parameter 或 embedded credential。PMID 診斷會獨立
+揭露 DOI-resolution state，保留「確定沒有 DOI」與「PubMed 呼叫失敗」的差別。
+
 ### 匯出與本機筆記
 
 ![匯出與本機筆記流程](images/export-notes-workflow.svg)
 
 這條路徑涵蓋 `prepare_export` 與 `save_literature_notes`。Citation exports 供 reference manager 使用；local notes 則是帶有 machine-readable metadata、可被人與 agent 後續編輯的 literature-review artifacts。
+認證 service 回應會把所有 host path 改為 tenant-relative logical locator。
 
 ## 大型輸出的持久化 Query Memory
 
 當 session persistence 已設定時，`unified_search` 與 `get_fulltext` 會把完整可重用輸出保存為 artifact，tool response 只回傳精簡 locator。請把 tool response 視為索引卡：它會有足夠的 counts、warnings 與 artifact hints 讓 agent 先回覆使用者；完整 evidence payload 則留在可重複讀取的 artifact files。Remote client 請透過 `read_session` facade 讀取；只有本機 MCP client 真的需要 server path 時，才設定 `PUBMED_ARTIFACT_INCLUDE_LOCAL_PATHS=true`：
 
 ```python
-read_session(action="list_artifacts")
-read_session(action="artifact", artifact_id="...")
-read_session(action="artifact", artifact_uri="artifact://...")
-read_session(action="artifact", artifact_uri="artifact://...", artifact_file="audit.json")
-read_session(action="artifact", artifact_uri="artifact://...", artifact_file="results.json", offset=0, max_chars=200000)
+read_session(request={"action":"list_artifacts"})
+read_session(request={"action":"artifact","locator":{"kind":"artifact_id","value":"..."}})
+read_session(request={"action":"artifact","locator":{"kind":"artifact_uri","value":"artifact://..."}})
+read_session(request={"action":"artifact","locator":{"kind":"artifact_uri","value":"artifact://..."},"artifact_file":"audit.json"})
+read_session(request={"action":"artifact","locator":{"kind":"artifact_uri","value":"artifact://..."},"artifact_file":"results.json","offset":0,"max_chars":200000})
 ```
 
 Session management 啟用時，每一次 `unified_search` invocation 都會帶有穩定的
@@ -220,10 +233,10 @@ Structured response 會附 handoff，Markdown 則加入精簡 run note。
 history；PipelineStore history 與 invocation journal 是互補關係。
 
 ```python
-read_session(action="search_runs")
-read_session(action="search_runs", run_status="partial", history_limit=20)
-read_session(action="search_run", run_id="...")
-read_session(action="replay_search", run_id="...")
+read_session(request={"action":"search_runs"})
+read_session(request={"action":"search_runs","status":"partial","limit":20})
+read_session(request={"action":"search_run","run_id":"..."})
+read_session(request={"action":"replay_search","run_id":"..."})
 ```
 
 `replay_search` 刻意保持 read-only。它回傳精確且不含 credential 的
@@ -365,7 +378,8 @@ save_literature_notes(
 
 可用 placeholder 包含 `{title}`, `{pmid}`, `{doi}`, `{pmc_id}`, `{journal}`, `{journal_abbrev}`, `{year}`, `{volume}`, `{issue}`, `{pages}`, `{authors}`, `{abstract}`, `{citation_key}`, `{reference_id}`, `{note_format}`, `{created}`, `{pubmed_url}`, `{doi_url}`, `{citation}`, `{keywords}`, `{mesh_terms}`, `{csl_json}`。
 
-認證 service 請改用內建 note format；server 會拒絕從 host filesystem 讀取任意 template。
+認證 service 請改用內建 note format；server 會拒絕從 host filesystem 讀取任意 template，
+並把 response 中所有 host path 改為 tenant-relative logical locator。
 
 ## Pipeline 與 Agent Bundle 參考文件
 

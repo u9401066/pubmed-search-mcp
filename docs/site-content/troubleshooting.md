@@ -76,8 +76,8 @@ and the repository's [deployment smoke checklist](#/deployment#10-%E9%A9%97%E8%A
 
 The client spawns the server as a subprocess and communicates via stdin/stdout.
 No networking configuration is needed. The stdio entry point always uses local
-mode and does not start an auxiliary HTTP listener unless
-`PUBMED_STDIO_AUX_HTTP=1` is explicitly set.
+mode and never starts an HTTP listener. Use the separate canonical
+`pubmed-search-mcp-http` entry point whenever an HTTP integration is required.
 
 ```bash
 uvx pubmed-search-mcp
@@ -92,14 +92,13 @@ For a local connector or protocol smoke test:
 pubmed-search-mcp-http --mode local --transport streamable-http \
   --host 127.0.0.1 --port 8765
 
-# Via run_copilot.py (12-tool primitive-schema smoke for Copilot Studio)
+# Via run_copilot.py (canonical 41-tool Copilot Studio smoke)
 uv run python run_copilot.py --port 8765
 ```
 
-The simplified inventory includes `unified_search` plus primitive-schema
-`read_session`, so a Copilot smoke can inspect durable search runs, obtain
-non-executing replay arguments, and read a persisted artifact without switching
-to the full schema.
+Both launchers expose the same strict registry. The Copilot smoke can therefore
+validate complete discovery, `unified_search`, and canonical
+`read_session(request={...})` recovery without maintaining a parallel tool set.
 
 The MCP endpoint is available at `http://localhost:8765/mcp`. Do not change only
 the bind address and treat this as a remote service. Explicit local mode is a
@@ -154,7 +153,7 @@ service callers:
 | Saved pipelines | `workspace`, `global`, or `auto`; caller may load `file:path.yaml` | Tenant-derived store only; `auto` resolves below that principal's data root and `file:` reads are rejected |
 | Literature notes | Caller may choose `output_dir` and `template_file` | Caller cannot choose host paths or read a template file; built-in formats write below `<tenant-root>/references/` |
 | Scheduler | May be enabled for a trusted local process | Disabled by `docker-compose.service.yml`; future scheduling needs one leader/lease, not one scheduler per request worker |
-| Institutional settings | Local user may configure process-owned access settings | Authenticated callers cannot mutate process-global institutional configuration |
+| Institutional settings | Local user may configure the current server's access settings | Authenticated callers cannot mutate the server-owned, deployment-wide institutional configuration |
 | Server-local paths | May be exposed explicitly to a trusted local client | Redacted by default; remote clients retrieve artifacts through `read_session` |
 
 The word `workspace` never means a shared team directory in service mode. A
@@ -205,17 +204,24 @@ tool modules or relying on auxiliary HTTP endpoints:
 ```python
 from pubmed_search.api import PubMedSearchClient, PubMedSearchConfig
 
-client = PubMedSearchClient(PubMedSearchConfig(email="your@email.com"))
-result = await client.unified_search("remimazolam ICU sedation", limit=20)
+async with PubMedSearchClient(PubMedSearchConfig(email="your@email.com")) as client:
+    result = await client.unified_search("remimazolam ICU sedation", limit=20)
 
-articles = result.articles
-source_counts = result.source_counts
-artifact = result.artifact
+    articles = result.articles
+    source_counts = result.source_counts
+    source_errors = result.source_errors
+    filter_counts = result.result_filter_counts
 ```
 
 Use `/mcp` for agent tool discovery and task-oriented MCP calls. Use
 `pubmed_search.api` for Python package, notebook, or application code that wants
 an in-process object contract.
+The SDK composes the application use case directly and does not create MCP
+session journals or artifacts. Use the MCP `unified_search` tool when durable
+replay records and artifact locators are part of the workflow.
+The async context closes the SDK-owned provider clients and HTTP pools; call
+`await client.aclose()` during application shutdown when using a long-lived
+client without `async with`.
 
 ### Persistent Artifact Retrieval
 
@@ -227,14 +233,14 @@ that should receive `local_path` and `manifest_path` directly. Remote clients
 should use the MCP session facade:
 
 ```text
-read_session(action="list_artifacts")
-read_session(action="artifact", artifact_id="...")
-read_session(action="artifact", artifact_uri="artifact://...")
-read_session(action="artifact", artifact_id="...", artifact_file="payload.json", offset=0, max_chars=200000)
-read_session(action="list_artifacts", include_local_paths=true)
+read_session(request={"action":"list_artifacts"})
+read_session(request={"action":"artifact","locator":{"kind":"artifact_id","value":"..."}})
+read_session(request={"action":"artifact","locator":{"kind":"artifact_uri","value":"artifact://..."}})
+read_session(request={"action":"artifact","locator":{"kind":"artifact_id","value":"..."},"artifact_file":"payload.json","offset":0,"max_chars":200000})
+read_session(request={"action":"list_artifacts","include_local_paths":true})
 ```
 
-`read_session(action="artifact")` reads existing artifact files only; it does
+`read_session(request={"action":"artifact",...})` reads existing artifact files only; it does
 not repeat upstream source calls. Use `offset` and `max_chars` to page through a
 large artifact from remote clients. `read_session` redacts local paths by
 default; pass `include_local_paths=true` for local-server workflows.
@@ -244,12 +250,12 @@ subscription, or institutionally accessed article text; keep redistribution and
 retention aligned with the applicable publisher, license, and institutional
 terms.
 Large `get_fulltext` responses are capped inline when an artifact is available;
-use `read_session(action="artifact", ...)` to retrieve the saved full content.
+use `read_session(request={"action":"artifact","locator":{...}})` to retrieve the saved full content.
 
 `unified_search` can also return partial source diagnostics without failing the
 whole query. JSON responses use `source_errors`; markdown responses include a
 `Source warnings` line. Semantic Scholar HTTP 429 warnings recommend setting
-`S2_API_KEY` / `SEMANTIC_SCHOLAR_API_KEY`, retrying later, or excluding the
+`SEMANTIC_SCHOLAR_API_KEY`, retrying later, or excluding the
 source with `sources="auto,-semantic_scholar"` /
 `PUBMED_SEARCH_DISABLED_SOURCES=semantic_scholar`.
 
@@ -257,7 +263,7 @@ source with `sources="auto,-semantic_scholar"` /
 
 ## Environment Variables
 
-Semantic Scholar accepts either `S2_API_KEY` or `SEMANTIC_SCHOLAR_API_KEY`.
+Semantic Scholar accepts the canonical `SEMANTIC_SCHOLAR_API_KEY` only.
 If repeated 429 responses appear in Cline or other MCP clients, set a key or
 temporarily disable the source with `PUBMED_SEARCH_DISABLED_SOURCES=semantic_scholar`.
 
@@ -278,7 +284,7 @@ unified_search(query="treatment resistance",
                options="native_semantic")
 
 unified_search(query="melanoma AND immunotherapy",
-               sources="pubmed,openalex,semantic_scholar",
+               sources="openalex,semantic_scholar",
                options="systematic")
 ```
 
@@ -294,7 +300,7 @@ warnings. This bounded mode is not an exhaustive systematic-review claim.
 | `NCBI_EMAIL` | **Yes** | Email for NCBI API policy compliance | `pubmed-search@example.com` |
 | `NCBI_API_KEY` | No | NCBI API key for higher rate limits (10 req/s vs 3 req/s) | — |
 | `CORE_API_KEY` | No | [CORE API](https://core.ac.uk/services/api) key for open access search | — |
-| `S2_API_KEY` / `SEMANTIC_SCHOLAR_API_KEY` | No | Semantic Scholar `x-api-key`; improves live quota stability and is required to obtain dataset partition/diff URLs | — |
+| `SEMANTIC_SCHOLAR_API_KEY` | No | Semantic Scholar `x-api-key`; improves live quota stability and is required to obtain dataset partition/diff URLs | — |
 | `OPENALEX_API_KEY` | No | OpenAlex API key for a higher credit budget; runtime decisions still use response rate/cost metadata | — |
 | `CLINICALKEY_AI_ENABLED` | No | Enables only the default-off ClinicalKey application/data-plane adapter; it never adds an MCP tool/source | `false` |
 | `CLINICALKEY_AI_ENTITLEMENT_CONFIRMED` | ClinicalKey adapter | Operator assertion that licensed API entitlement is active | `false` |
@@ -306,7 +312,6 @@ warnings. This bounded mode is not an exhaustive systematic-review claim.
 | `PUBMED_SEARCH_DISABLED_SOURCES` | No | Comma-separated source keys to globally disable in unified_search and cross-search | — |
 | `PUBMED_SERVER_MODE` | HTTP only | `local` for loopback development or `service` for fail-closed remote/team use | `local` |
 | `PUBMED_LOCAL_ALLOW_CONTAINER_BIND` | No | Explicit local-container exception permitting an internal `0.0.0.0` bind; the host port must still publish only to loopback | `false` |
-| `PUBMED_STDIO_AUX_HTTP` | No | Opt in to the stdio process's loopback auxiliary HTTP API | `false` |
 | `PUBMED_AUTH_TOKENS` | **Service: yes** | Comma-separated `principal:token` credentials; inject from a secret store | — |
 | `PUBMED_AUTH_RESOURCE_SERVER_URL` | **Service: yes** | Public HTTPS MCP resource-server URL, including `/mcp` | — |
 | `PUBMED_AUTH_ISSUER_URL` | No | Issuer advertised in auth metadata; defaults to the public resource URL origin | Resource URL origin |
@@ -318,9 +323,10 @@ warnings. This bounded mode is not an exhaustive systematic-review claim.
 | `PUBMED_NOTES_DIR` | No | Local wiki/Foam-compatible/Markdown/MedPaper-style note export directory used by `save_literature_notes` | `PUBMED_WORKSPACE_DIR/references`, `PUBMED_DATA_DIR/references`, then `~/.pubmed-search-mcp/references` |
 | `PUBMED_WORKSPACE_DIR` | No | Workspace root used for pipeline persistence and note export fallback | — |
 | `PUBMED_DATA_DIR` | No | User-level data root used for cache/persistence and note export fallback | `~/.pubmed-search-mcp` |
-| `PUBMED_PROFILING` | No | Enable runtime profiling diagnostics | `false` |
 | `PUBMED_ARTIFACT_INCLUDE_LOCAL_PATHS` | No | Include server-local artifact paths for trusted local clients | `false` |
 | `PUBMED_FULLTEXT_INLINE_MAX_CHARS` | No | Maximum inline full-text characters before artifact paging | `20000` |
+| `PUBMED_PIPELINE_RUN_TIMEOUT_SECONDS` | No | End-to-end deadline shared by every step in one pipeline run (greater than 0, at most 3600 seconds) | `120` |
+| `PUBMED_PIPELINE_MAX_EXTERNAL_CALLS` | No | Aggregate external-call quota shared by sequential and parallel steps in one pipeline run (1–1000) | `40` |
 | `PUBMED_SCHEDULER_ENABLED` | No | Enable the saved-pipeline scheduler for a trusted local process; the authenticated service Compose profile forces it off | `true` |
 | `PUBMED_SCHEDULER_TIMEZONE` | No | Scheduler timezone | `UTC` |
 | `PUBMED_SCHEDULER_MAX_INSTANCES` | No | Maximum scheduler instances per process; it does not provide distributed leader election | `1` |
@@ -347,7 +353,6 @@ warnings. This bounded mode is not an exhaustive systematic-review claim.
 | `BROWSER_FETCH_MAX_BYTES` | No | Maximum PDF payload accepted from the broker | `52428800` |
 | `BROWSER_FETCH_REQUIRE_LOCAL` | No | Require the configured broker URL to be localhost | `true` |
 | `BROWSER_FETCH_VERIFY_TLS` | No | Verify TLS when calling an HTTPS broker URL | `true` |
-| `PUBMED_HTTP_API_PORT` | No | Port for background HTTP API (stdio mode) | `8765` |
 | `HTTP_PROXY` / `HTTPS_PROXY` | No | Proxy settings for outbound requests | — |
 | `BROWSER_FETCH_BROKER_TOKEN` | No | Bearer token expected by the local broker server | Falls back to `BROWSER_FETCH_TOKEN`; otherwise a high-entropy runtime token is generated and printed |
 | `BROWSER_FETCH_BROKER_HOST` | No | Broker bind host | `127.0.0.1` |
@@ -442,7 +447,7 @@ Recommended practice for future commercial sources:
         "NCBI_EMAIL": "your@email.com",
         "NCBI_API_KEY": "your_api_key",
         "CORE_API_KEY": "your_core_key",
-        "S2_API_KEY": "your_semantic_scholar_key",
+        "SEMANTIC_SCHOLAR_API_KEY": "your_semantic_scholar_key",
         "OPENALEX_API_KEY": "your_openalex_key",
         "CROSSREF_EMAIL": "your@email.com",
         "UNPAYWALL_EMAIL": "your@email.com"
@@ -692,7 +697,7 @@ This split keeps shared behavior in one place while leaving Copilot-specific beh
       "args": ["pubmed-search-mcp"],
       "env": {
         "NCBI_EMAIL": "your@email.com",
-        "S2_API_KEY": "your_semantic_scholar_key",
+        "SEMANTIC_SCHOLAR_API_KEY": "your_semantic_scholar_key",
         "PUBMED_SEARCH_DISABLED_SOURCES": ""
       },
       "alwaysAllow": [],
@@ -702,7 +707,7 @@ This split keeps shared behavior in one place while leaving Copilot-specific beh
 }
 ```
 
-For repeated Semantic Scholar 429 responses, either provide `S2_API_KEY` /
+For repeated Semantic Scholar 429 responses, provide
 `SEMANTIC_SCHOLAR_API_KEY` or set `PUBMED_SEARCH_DISABLED_SOURCES` to
 `semantic_scholar`.
 
@@ -731,7 +736,7 @@ Copilot Studio ──HTTPS──▶ ngrok ──HTTP──▶ MCP Server (localh
 **Step 1**: Start the MCP server with HTTP transport
 
 ```bash
-# Option A: Full 45-tool primary MCP surface with an assigned ngrok dev/custom domain
+# Option A: Full 41-tool primary MCP surface with an assigned ngrok dev/custom domain
 export PUBMED_AUTH_TOKENS="copilot:$(openssl rand -hex 32)"
 export NGROK_DOMAIN="your-domain.ngrok.dev"
 ./scripts/start-copilot-studio.sh --with-ngrok
@@ -741,7 +746,7 @@ export PUBMED_AUTH_TOKENS="copilot:$(openssl rand -hex 32)"
 export NGROK_DOMAIN="your-domain.ngrok.dev"
 ./scripts/start-copilot-ngrok.sh
 
-# Option C: simplified 12-tool local schema smoke (never tunnel this mode)
+# Option C: canonical 41-tool local schema smoke (never tunnel this mode)
 uv run python run_copilot.py --port 8765
 
 # Option D: manual service when the public URL is already known
@@ -784,11 +789,10 @@ already occupied backend port, start the loopback service first, and verify
 resource URL and Host/Origin allowlists are derived from that known HTTPS
 domain. `run_copilot.py` remains loopback-only and must not be tunneled.
 
-The simplified surface still exposes the generic search as `unified_search`,
-not a PubMed-only alias. Its primitive schema accepts `query`, `limit`,
-`min_year`, `max_year`, `sources`, and `options`, then delegates to the
-same unified runner as the primary surface. This keeps the single-search
-contract while avoiding Copilot Studio `anyOf` / `$ref` schema problems.
+The local smoke exposes the same canonical registry as the service, including
+the sole generic search `unified_search` and typed `read_session(request={...})`.
+Schema issues must be fixed in that shared contract instead of hidden behind a
+second primitive compatibility surface.
 
 > See [copilot-studio/README.md](https://github.com/u9401066/pubmed-search-mcp/blob/master/copilot-studio/README.md) for the full OpenAPI schema and Copilot Studio setup walkthrough.
 
@@ -818,7 +822,7 @@ uv run python -m pubmed_search.presentation.mcp_server
 
 After configuring any client, verify the server is working:
 
-1. **Local stdio**: ask the AI to list PubMed tools; it should enumerate 45 tools in the primary MCP surface.
+1. **Local stdio**: ask the AI to list PubMed tools; it should enumerate 41 tools in the primary MCP surface.
 2. **HTTP probes**: confirm `/health`, `/ready`, and `/info`; a service-mode health probe must use an allowed `Host`.
 3. **Modern MCP call**: send authenticated `tools/list` directly, without `initialize` or `Mcp-Session-Id`.
 4. **Simple search**: ask for "CRISPR gene therapy" and confirm `unified_search` reports source counts or explicit source warnings.

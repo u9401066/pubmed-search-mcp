@@ -115,7 +115,7 @@ citation graph 時要保留：
 - 無 key 請求使用共享池，可能在低流量時仍收到 429；它不是可靠 SLA。
 - 新 API key 通常從跨 endpoints 合計約 1 request/second 起步，實際 grant 以
   帳號設定與 response 為準。
-- `S2_API_KEY` 與 `SEMANTIC_SCHOLAR_API_KEY` 都可設定；只以
+- 只接受 canonical `SEMANTIC_SCHOLAR_API_KEY`；只以
   `x-api-key` header 傳送，不可出現在 URL、log、artifact 或 error detail。
 - 所有 client instances 共用同一 upstream budget；429 尊重 `Retry-After`，
   exhausted retry 要進 cooldown，避免 parallel retry storm。

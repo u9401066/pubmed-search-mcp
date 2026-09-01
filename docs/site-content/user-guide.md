@@ -59,19 +59,19 @@ For client-specific setup, see the [Integration Guide](#/troubleshooting). For H
 | Goal | Start With | Then Use |
 | --- | --- | --- |
 | Quick search for papers | `unified_search` | `fetch_article_details`, `read_session` |
-| Clinical question | Agent extracts P/I/C/O, then `parse_pico` | `generate_search_queries`, `unified_search` |
+| Clinical question | Agent extracts P/I/C/O, then `validate_pico_plan` | `generate_search_queries`, `unified_search` |
 | Improve a noisy query | `analyze_search_query` | `generate_search_queries`, `unified_search` |
 | Explore one important article | `fetch_article_details` | `find_related_articles`, `find_citing_articles`, `get_article_references`, `build_citation_tree` |
 | Read deeper evidence | `get_fulltext` | `get_text_mined_terms`, `get_article_figures` |
-| Search from visual evidence | `analyze_figure_for_search` | `search_biomedical_images`, `unified_search` |
+| Search from visual evidence | `prepare_figure_search` | `search_biomedical_images`, `unified_search` |
 | Build a research chronicle / lineage tree | `build_research_chronicle` | `read_research_chronicle` |
-| Reopen large outputs | `read_session(action="artifact")` | `read_session(action="list_artifacts")` |
+| Reopen large outputs | `read_session(request={"action":"artifact","locator":{"kind":"artifact_id","value":"..."}})` | `read_session(request={"action":"list_artifacts"})` |
 | Build a local literature library | `prepare_export` | `save_literature_notes` |
-| Reuse a workflow | `manage_pipeline` | `save_pipeline`, `load_pipeline`, `schedule_pipeline` |
+| Reuse a workflow | `save_pipeline` | `load_pipeline`, `schedule_pipeline`, `get_pipeline_history` |
 
 The most important rule: start with the research intent, not the tool menu.
 
-`unified_search` parameters are intentionally agent-friendly strings. Use comma-separated values for `sources`, `filters`, and `options` instead of JSON objects. Examples: `sources="auto"`, `sources="auto,-semantic_scholar"`, `filters="year:2020-, clinical:therapy"`, or `options="counts_first,context_graph"`.
+`unified_search` parameters are intentionally agent-friendly strings with exact canonical tokens. Use comma-separated values for `sources`, `filters`, and `options` instead of JSON objects. Examples: `sources="auto"`, `sources="auto,-semantic_scholar"`, `filters="year:2020-,clinical_query:therapy"`, or `options="counts_first,clinical_trials"`. Case-folded, hyphenated, abbreviated, whitespace-padded, duplicate, or alternate spellings are rejected.
 
 ## Daily Workflow
 
@@ -87,21 +87,21 @@ Use PubMed Search MCP to search for recent literature on SGLT2 inhibitors and he
 
 The agent should normally begin with `unified_search`. A good result includes the query used, article identifiers, source provenance, and enough metadata to decide whether to fetch details or refine.
 
-Prefer `read_session` or `get_session_pmids` for follow-up work. Do not ask the model to remember a long PMID list in conversation.
+Prefer `read_session(request={"action":"pmids"})` for follow-up work. Do not ask the model to remember a long PMID list in conversation.
 
 ### 2. Use PICO For Clinical Questions
 
 For clinical comparisons, ask the agent to extract P/I/C/O first and validate that structured handoff:
 
 ```text
-Extract P/I/C/O, validate the handoff with parse_pico, propose PubMed search queries, then run the most specific one:
+Extract P/I/C/O, validate the handoff with validate_pico_plan, propose PubMed search queries, then run the most specific one:
 In adults with type 2 diabetes and CKD, do SGLT2 inhibitors reduce heart failure hospitalization compared with placebo?
 ```
 
 Expected flow:
 
 1. Agent extracts P/I/C/O from the user's clinical question.
-2. `parse_pico(description=..., p=..., i=..., c=..., o=...)` validates the schema and returns a `template: pico` pipeline.
+2. `validate_pico_plan(description=..., p=..., i=..., c=..., o=...)` validates the schema and returns a `template: pico` pipeline.
 3. Optional `generate_search_queries` calls expand P/I/C/O into MeSH/synonym fragments.
 4. `unified_search` runs either the returned PICO pipeline or the agent-built Boolean query.
 5. optional `analyze_search_query` if the first query is too broad or too narrow
@@ -142,10 +142,10 @@ Use `get_article_figures` for PMC Open Access articles when the task needs capti
 For image-first work, use the visual tools as a two-step agent workflow:
 
 ```text
-Analyze this uploaded microscopy image with analyze_figure_for_search, extract English search terms, then search related papers and similar biomedical images.
+Analyze this uploaded microscopy image with prepare_figure_search, extract English search terms, then search related papers and similar biomedical images.
 ```
 
-`analyze_figure_for_search` accepts either an image URL or a base64/data-URI image supplied by the MCP client. It returns MCP `ImageContent` plus instructions for the agent to use its own vision capability, extract English biomedical terms, and continue with `search_biomedical_images` or `unified_search`. The server does not perform deep visual diagnosis by itself; the LLM agent performs the image interpretation step.
+`prepare_figure_search` accepts either an image URL or a base64/data-URI image supplied by the MCP client. It returns MCP `ImageContent` plus instructions for the agent to use its own vision capability, extract English biomedical terms, and continue with `search_biomedical_images` or `unified_search`. The server does not perform deep visual diagnosis by itself; the LLM agent performs the image interpretation step.
 
 Use `search_biomedical_images` when the query is already textual and the goal is open biomedical image evidence:
 
@@ -199,17 +199,17 @@ build_research_chronicle(pmids="last", topic="Selected studies")
 build_research_chronicle(chronicle_id="remimazolam-intraoperative-08c229f3")
 
 # 4. Milestone analysis or cross-topic comparison
-read_research_chronicle(action="milestones", chronicle_id="remimazolam-intraoperative-08c229f3")
-read_research_chronicle(action="compare", topics="remimazolam intraoperative,propofol intraoperative")
+read_research_chronicle(request={"action":"milestones","chronicle_id":"remimazolam-intraoperative-08c229f3"})
+read_research_chronicle(request={"action":"compare","selection":{"kind":"topics","values":["remimazolam intraoperative","propofol intraoperative"]}})
 ```
 
-`build_research_chronicle` can search by topic or use an explicit PMID set. Its primary axis is chronological and research branches are a secondary projection of the same entries. Use `output="mermaid"` for the canonical horizontal year spine with observed research lines branching at their earliest dated papers in the retrieved scope, or `output="chronicle_map"` for the same coordinate contract as JSON. Topic branches prefer MeSH descriptors and author keywords shared by multiple papers; singleton-only or insufficient signals produce a warned research-stage fallback. `timeline_mermaid` keeps the flat legacy diagram. Other outputs are `summary`, `timeline`, `tree`, `graph`, `evidence`, `milestones`, `mindmap`, `narrative`, and `json`. Use `options="context_graph"` in `unified_search` only for a lightweight preview from the current ranked PMID-backed results. The chronicle is persistent and versioned; see [Advanced Research Workflows](#/advanced-workflows) and [Research Chronicle Rebuild Spec](#/research-chronicle-rebuild-spec).
+`build_research_chronicle` can search by topic or use an explicit PMID set. Its primary axis is chronological and research branches are a secondary projection of the same entries. Use `output="mermaid"` for the canonical horizontal year spine with observed research lines branching at their earliest dated papers in the retrieved scope, or `output="chronicle_map"` for the same coordinate contract as JSON. Topic branches prefer MeSH descriptors and author keywords shared by multiple papers; singleton-only or insufficient signals produce a warned research-stage fallback. Other outputs are `summary`, `timeline`, `tree`, `graph`, `evidence`, `milestones`, `narrative`, and `json`. Research Chronicle is the only persistent research-lineage capability; `unified_search` returns search evidence without a duplicate context projection. The chronicle is persistent and versioned; see [Advanced Research Workflows](#/advanced-workflows) and [Research Chronicle Rebuild Spec](#/research-chronicle-rebuild-spec).
 
 Lineage is an explainable grouping of the retrieved snapshot, not causal ancestry. `earliest_observed_in_scope` does not establish the first publication in the field, and the query, PMID set, year filters, source availability, and result cap all constrain what can be observed. Date precision is retained: same-year or overlapping date intervals can be displayed deterministically, but do not create an inferred `precedes` or `supersedes` relationship.
 
 Revisions are immutable and appended atomically. `action="compare"` resolves normalized exact stored-topic names; ambiguous same-name chronicles require explicit `chronicle_ids`, and duplicate targets are rejected. Build inputs are bounded (`max_events` 1–200, at most 500 unique explicit PMIDs, topic text up to 500 characters), and structured actions return structured errors. If enabled session artifact persistence fails after the Chronicle revision is saved, the response exposes the failure instead of returning a misleading locator.
 
-Topic year filters are applied by PubMed before bounded retrieval. The cap preserves the first and last observed papers, explicit landmarks, and temporal spread; audit output distinguishes `returned` from `available` and warns when coverage is capped or unknown. PubMed errors and zero-evidence results save no revision. Explicit PMID strings require positive ASCII digits (at most 20 digits), while PMID/DOI-based entry identity remains stable across date or classifier corrections. Records without a reliable date are labeled `Undated`, sort after dated entries, and do not expand the displayed year span. Diff absence is always `not_observed_in_revision` / `removed_from_view`, not proven retirement. Multi-signal papers retain one primary branch plus cross-links, with an overlap warning at 20%; landmark ranking never treats detection confidence as scientific importance. Artifact preflight checks the payload actually prepared for persistence.
+Topic year filters are applied by PubMed before bounded retrieval. The cap preserves the first and last observed papers, explicit landmarks, and temporal spread; audit output distinguishes `returned` from `available` and warns when coverage is capped or unknown. PubMed errors and zero-evidence results save no revision. Explicit PMID strings require positive ASCII digits (at most 20 digits), while PMID/DOI-based entry identity remains stable across date or classifier corrections. Records without a reliable date are labeled `Undated`, sort after dated entries, and do not expand the displayed year span. Diff absence is always `not_observed_in_revision`, not proven retirement. Multi-signal papers retain one primary branch plus cross-links, with an overlap warning at 20%; landmark ranking never treats detection confidence as scientific importance. Artifact preflight checks the payload actually prepared for persistence.
 
 Mermaid labels, IDs, parent links, cycles, duplicates, and visual size are repaired deterministically. If rich syntax is rejected, rendering falls back to safe and then minimal syntax. Inspect `mermaid_validation.json` for corrections, fallback tier, and omitted-item counts; the full coordinate data remains in `chronicle_map.json`.
 
@@ -218,10 +218,10 @@ Mermaid labels, IDs, parent links, cycles, duplicates, and visual size are repai
 When session persistence is configured through `PUBMED_DATA_DIR`, large reusable outputs from `unified_search` and `get_fulltext` are saved as artifacts. The immediate tool response includes a compact locator instead of forcing the agent to receive every token inline.
 
 ```python
-read_session(action="list_artifacts")
-read_session(action="artifact", artifact_id="...")
-read_session(action="artifact", artifact_uri="artifact://...")
-read_session(action="artifact", artifact_id="...", artifact_file="payload.json", offset=0, max_chars=200000)
+read_session(request={"action":"list_artifacts"})
+read_session(request={"action":"artifact","locator":{"kind":"artifact_id","value":"..."}})
+read_session(request={"action":"artifact","locator":{"kind":"artifact_uri","value":"artifact://..."}})
+read_session(request={"action":"artifact","locator":{"kind":"artifact_id","value":"..."},"artifact_file":"payload.json","offset":0,"max_chars":200000})
 ```
 
 Local paths are redacted by default because remote clients cannot read the server filesystem. Set `PUBMED_ARTIFACT_INCLUDE_LOCAL_PATHS=true` only for local MCP clients that should receive `local_path` and `manifest_path`. Artifact reads never rerun the search; they read the persisted query/fulltext memory.
@@ -280,7 +280,10 @@ Typical pipeline jobs:
 - compare pipeline history across runs
 - schedule a recurring literature watch
 
-The server exposes pipeline operations through `manage_pipeline` and compatibility tools such as `save_pipeline`, `load_pipeline`, `list_pipelines`, `delete_pipeline`, `get_pipeline_history`, and `schedule_pipeline`.
+The server exposes seven single-purpose pipeline operations: `save_pipeline`,
+`list_pipelines`, `load_pipeline`, `delete_pipeline`, `get_pipeline_history`,
+`schedule_pipeline`, and `unschedule_pipeline`. Their schemas reject unrelated
+fields; there is no generic action facade.
 
 Saved pipelines can be reused from search with `unified_search(pipeline="saved:<name>")`. Pipeline `config` values should be YAML or JSON strings, and scheduled pipelines use standard five-field cron strings.
 
@@ -295,14 +298,13 @@ or design a single external leader/lease before enabling recurring execution.
 
 ![Client integration and deployment workflow](images/integration-deployment-workflow.svg)
 
-There are two Copilot routes:
+There are two Copilot launch boundaries over one registry:
 
 - public primary MCP surface through authenticated `pubmed-search-mcp-http --mode service --transport streamable-http --copilot-compatible`
-- loopback-only schema smoke: a smaller 12-tool schema through `run_copilot.py`,
-  including primitive-schema `read_session` for search-run, replay-argument,
-  and artifact recovery
+- loopback-only schema smoke through `run_copilot.py`, using the same 41 strict
+  tools and canonical `read_session(request={...})` recovery contract
 
-Only the full authenticated service is publishable. Use the simplified surface locally to inspect Copilot Studio schema compatibility, then return to the service launcher for any public endpoint; never tunnel `run_copilot.py`.
+Only the authenticated service is publishable. Use the local launcher to inspect the same schemas, then return to the service launcher for any public endpoint; never tunnel `run_copilot.py`.
 
 ## Ask The Agent Well
 

@@ -38,11 +38,11 @@ Shared rules:
 | Authenticated service | `pubmed-search-mcp-http --mode service` | Fail-closed multi-user HTTP with principal-scoped state |
 | Full Copilot-compatible HTTP | `pubmed-search-mcp-http --mode service --transport streamable-http --copilot-compatible` | Authenticated remote primary MCP surface with Copilot-compatible HTTP semantics |
 | Python SDK facade | `from pubmed_search.api import PubMedSearchClient` | In-process Python package, notebook, and app integrations |
-| Simplified Copilot smoke | `uv run python run_copilot.py` | Loopback-only local schema/protocol validation; never a public tunnel |
+| Canonical Copilot smoke | `uv run python run_copilot.py` | Loopback-only validation of the same strict registry; never a public tunnel |
 | Browser fetch broker | `uv run pubmed-browser-fetch-broker --token ...` | Optional local Playwright broker for authenticated PDF download capture |
 | Static docs site | `docs/index.html` plus generated payload | GitHub Pages documentation surface |
 
-Do not treat these as separate products. MCP tools, the Python SDK facade, and the HTTP CLI are separate contracts over the same core capabilities. `run_server.py` is a source-tree development wrapper; installed packages should use `pubmed-search-mcp-http`. `run_copilot.py` intentionally exposes a simplified Copilot-specific surface, but it is loopback-only and must never be placed behind a public tunnel. Remote Copilot deployments use authenticated `--mode service`.
+Do not treat these as separate products. MCP tools, the Python SDK facade, and the HTTP CLI are separate contracts over the same core capabilities. `run_server.py` is a source-tree development wrapper; installed packages should use `pubmed-search-mcp-http`. `run_copilot.py` exposes the same canonical registry through loopback-only Copilot HTTP semantics and must never be placed behind a public tunnel. Remote Copilot deployments use authenticated `--mode service`.
 
 The MCP contract uses SDK v2. Current clients call `tools/list` and `tools/call`
 without `initialize` or `Mcp-Session-Id`; legacy compatibility must never be
@@ -56,16 +56,15 @@ src/pubmed_search/
 ├── domain/          # entities, value objects, domain services
 ├── application/     # orchestration for search, export, timeline, pipeline, session
 ├── infrastructure/  # NCBI, Europe PMC, CORE, OpenAlex, CrossRef, cache, HTTP, sources
-├── presentation/    # MCP server, HTTP API, browser broker entry point
-└── shared/          # settings, async helpers, errors, profiling
+├── presentation/    # MCP server, canonical HTTP CLI, browser broker entry point
+└── shared/          # settings, async helpers, errors
 ```
 
 Important presentation files:
 
-- `presentation/mcp_server/server.py`: server creation, DI container, stdio startup, background API
+- `presentation/mcp_server/server.py`: server creation, DI container, and stdio startup
 - `presentation/mcp_server/tool_registry.py`: authoritative primary tool registry
 - `presentation/mcp_server/tools/*.py`: MCP adapters
-- `presentation/mcp_server/copilot_tools.py`: simplified Copilot Studio surface
 - `presentation/mcp_server/http_compat.py`: Copilot HTTP compatibility middleware
 - `presentation/mcp_server/http_cli.py`: packaged Streamable HTTP/SSE launcher
 - `presentation/browser_fetch_broker.py`: local browser broker CLI
@@ -125,7 +124,7 @@ Do not silently add a provider to `source="all"` if it can fail without credenti
 
 ## Search And Session Behavior
 
-`unified_search` is the public text-literature search entry point. Query intelligence tools such as `parse_pico`, `generate_search_queries`, and `analyze_search_query` help the agent plan before execution. `parse_pico` is an agent-provided schema handoff: the agent extracts P/I/C/O, and the server validates that structure and returns a runnable PICO pipeline.
+`unified_search` is the public text-literature search entry point. Query intelligence tools such as `validate_pico_plan`, `generate_search_queries`, and `analyze_search_query` help the agent plan before execution. `validate_pico_plan` is an agent-provided schema handoff: the agent extracts P/I/C/O, and the server validates that structure and returns a runnable PICO pipeline.
 
 Session tools exist so follow-up actions can reuse the latest result set. User docs should encourage `pmids="last"` and session reads instead of conversational PMID memory. Code changes that affect session IDs, cached article shape, or follow-up semantics should include tests that cover multi-step workflows.
 
@@ -249,7 +248,7 @@ The live site is served from the `docs/` artifact by GitHub Pages. If the deploy
 | Describe a source as always available | Document keys, rate limits, rights, and default-off behavior |
 | Add browser fallback without host restrictions | Require tokens and `allowed_hosts` |
 | Change note output shape without docs | Update user docs, generated docs, templates, and tests |
-| Treat Copilot simplified tools as the primary surface | Keep primary behavior aligned with the primary tool registry |
+| Add a Copilot-only tool facade | Fix and validate the canonical primary tool registry |
 
 ## Release Hygiene
 

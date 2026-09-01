@@ -138,7 +138,7 @@ Research Chronicle          -> 持久且可版本比較的研究演進
 | `gene` | gettable | MyGene.info、UniProt、Reactome、QuickGO、STRING、GTEx、HPA、DGIdb、ClinGen、NIH Reporter、DisGeNET、GTR | `get gene BRAF pathways hpa` | 借鏡 section composition；不擴張 generic search surface |
 | `variant` | gettable | MyVariant.info、ClinVar、gnomAD v4、CIViC、CGI、OncoKB、cBioPortal、GWAS Catalog、AlphaGenome | `get variant "BRAF V600E" clinvar` | 精確 identity 與 source status 值得學；臨床解讀須保持證據邊界 |
 | `article` | gettable | PubMed、PubTator3、Europe PMC、PMC OA、NCBI ID Converter、Semantic Scholar | `search article -g BRAF` | 最接近 `unified_search`；採用 federation／provenance，不新增第二個 article search tool |
-| `trial` | gettable | ClinicalTrials.gov API v2、NCI CTS | `search trial -c melanoma` | 本 repo 只在 `options="trials"` 明確選擇時作關聯 evidence adjunct；不混充 peer-reviewed article |
+| `trial` | gettable | ClinicalTrials.gov API v2、NCI CTS | `search trial -c melanoma` | 本 repo 只在 `options="clinical_trials"` 明確選擇時作關聯 evidence adjunct；不混充 peer-reviewed article |
 | `diagnostic` | gettable | GTR local bulk、WHO IVD local CSV、optional OpenFDA device | `get diagnostic ... regulatory` | local snapshot + source version 很有價值；需權利與 freshness metadata |
 | `drug` | gettable | MyChem.info、DDInter、EMA、WHO PQ、ChEMBL、Open Targets、Drugs@FDA、OpenFDA、CIViC | `drug interactions warfarin` | section/provider outcomes 可借鏡；避免把 safety 缺資料解讀為安全 |
 | `disease` | gettable | MyDisease.info、Monarch、MONDO、Open Targets、Reactome、CIViC、SEER、NIH Reporter、DisGeNET、GTR/WHO IVD | `get disease "Lynch syndrome" genes` | ontology resolution 與 pivot 可透過 query intelligence／pipeline 表達 |
@@ -149,7 +149,7 @@ Research Chronicle          -> 持久且可版本比較的研究演進
 | `gwas` | search-only | GWAS Catalog | `search gwas --trait ...` | BioMCP 明確禁止虛構 `get`，這種 capability honesty 值得採用 |
 | `phenotype` | search-only | Monarch HPO semantic similarity | `search phenotype "HP:0001250"` | typed capability 比憑名稱猜工具更可靠 |
 
-BioMCP 的 entity breadth 適合 precision-medicine orientation；本專案的核心則是**文獻證據工作流**。評估新 entity 時，優先問它是否改善 query expansion、article verification、context graph、Chronicle 或 export，而不是能否再多列一個 MCP tool。
+BioMCP 的 entity breadth 適合 precision-medicine orientation；本專案的核心則是**文獻證據工作流**。評估新 entity 時，優先問它是否改善 query expansion、article verification、Research Chronicle 或 export，而不是能否再多列一個 MCP tool。
 
 ## 6. Article federation：最直接可借鏡的部分
 
@@ -369,6 +369,7 @@ flowchart LR
     Client[MCP / Python API / HTTP client]
     Presentation[Presentation\nunified_search schema\nfollow-up tools]
     Application[Application\nquery planner · broker policy\nmerge/rank · pipeline · Chronicle]
+    Ports[Application ports\nsource broker · registry · enrichment]
     Domain[Domain contracts\nSourceCapability · QueryPlan\nEvidenceSection · RightsProfile\nSourceOutcome · SnapshotRef]
     Infra[Infrastructure adapters\nPubMed · OpenAlex · S2 · Europe PMC\nCORE · commercial/institutional\nbulk snapshots · cache · rate broker]
     Tenant[Tenant-scoped stores\nsession · artifacts · export\nchronicle · pipeline]
@@ -376,8 +377,9 @@ flowchart LR
     Client --> Presentation
     Presentation --> Application
     Application --> Domain
-    Application --> Infra
-    Application --> Tenant
+    Application --> Ports
+    Infra -. implements .-> Ports
+    Tenant -. implements .-> Ports
     Infra --> Domain
 ```
 
@@ -388,10 +390,11 @@ flowchart LR
 - MCP response 以 typed envelope 回傳 plan summary、source outcomes、articles、counts、next actions、section provenance 與 artifact summary。
 - source-specific operator/bulk sync 若需要公開入口，優先做 CLI/admin API，不能偽裝成第二個文獻搜尋 MCP tool。
 
-### 13.2 Application（目標與現況差距）
+### 13.2 Application（已落地邊界與後續擴充）
 
-- Query planner 已能根據 query analysis、registered search capabilities 與 requested mode/depth 產生 legs，但實作目前仍在 presentation package；application service 只是 injected-runner facade。下一階段應先抽出不依賴 MCP Context/session formatting 的 planner/broker core，再由 presentation adapter 注入 progress、session 與 renderer callbacks。
-- Broker 已協調同 process provider limiter、parallel legs、retry/partial failure 與 bounded provider paging；它同樣仍有 presentation ownership 技術債，且跨 process global quota、tenant provider fairness 與通用 coalescing尚待完成。
+- `application/unified/` 的 planner、executor、policy 與 `UnifiedSearchUseCase` 會根據 query analysis、registered capabilities 與 requested mode/depth 產生並執行 legs；它不 import presentation 或 infrastructure。
+- `SourceBrokerPort`、`SourceRegistryPort` 與 `EnrichmentPort` 由 `infrastructure/sources/` adapter 實作。MCP presentation 只注入 progress/plan observer，並負責 session、formatting、journal 與 artifact；Python SDK 直接呼叫同一 application use case，不產生 MCP side effect。
+- Broker 協調同 process provider limiter、parallel legs、retry/partial failure 與 bounded provider paging；跨 process global quota、tenant provider fairness 與通用 coalescing仍屬後續 operator 能力。
 - Aggregator 負責 identity observations、dedup、source balancing、ranking、disagreement 與 reproducibility。
 - Pipeline 保存可重跑 DAG；Research Chronicle 保存版本化縱向證據；兩者不依賴 presentation transport。
 
