@@ -78,7 +78,7 @@ AND
 1. 主概念之間通常用 `AND`
 2. 同義詞與別名通常用 `OR`
 
-PubMed 的 `[Title/Abstract]`、`[MeSH Terms]` 等 field tags 不是 provider-neutral 語法。含這些 tags 的查詢只送 `sources="pubmed"`；跨來源 systematic leg 使用上面的無欄位標籤 Boolean 查詢，讓各 provider adapter 依自身契約編譯。
+PubMed 的 `[Title/Abstract]`、`[MeSH Terms]` 等 field tags 不是 provider-neutral 語法。含這些 tags 的查詢只送 `sources="pubmed"` 並使用預設 keyword mode；跨來源 systematic leg 使用上面的無欄位標籤 Boolean 查詢，讓各 provider adapter 依自身契約編譯。
 
 ---
 
@@ -101,7 +101,7 @@ analyze_search_query(query=query)
 ```python
 unified_search(
     query=query,
-    sources="pubmed,openalex,semantic_scholar",
+    sources="openalex,semantic_scholar",
     options="systematic",
     limit=100,
     ranking="quality",
@@ -110,7 +110,7 @@ unified_search(
 )
 ```
 
-`options="systematic"` 會關閉 deep expansion 與自動放寬，並在 I/O 前拒絕不支援此模式的 explicit source。現在的 bounded systematic sources 是 PubMed、OpenAlex 與 Semantic Scholar；Europe PMC、CORE、Scopus、Web of Science 與 preprint adapters 目前是 keyword-only，若要納入需另跑並標記為 supplemental search。
+`options="systematic"` 會關閉 deep expansion 與自動放寬，並在 I/O 前拒絕不支援此模式的 explicit source。現在的 bounded systematic sources 只有 OpenAlex 與 Semantic Scholar；PubMed、Europe PMC、CORE、Scopus、Web of Science 與 preprint adapters 目前是 keyword-only，若要納入需另跑並標記為 supplemental search。
 
 ### 常用調整方式
 
@@ -148,7 +148,7 @@ analyze_search_query(query=query)
 # Step 4: 再執行
 unified_search(
     query=query,
-    sources="pubmed,openalex,semantic_scholar",
+    sources="openalex,semantic_scholar",
     options="systematic",
     limit=100,
     ranking="quality",
@@ -173,7 +173,6 @@ AND
 unified_search(
     query=pubmed_fielded_query,
     sources="pubmed",
-    options="systematic",
     limit=100,
     filters="year:2020-2025",
     output_format="json"
@@ -189,14 +188,14 @@ unified_search(
 - 把 `strategy` 改成 `exploratory`
 - 移除部分限制條件
 - 減少 `AND`、增加同義詞 `OR`
-- 移除 `clinical` 或過窄的年齡/性別限制
+- 移除 `clinical_query` 或過窄的年齡/性別限制
 
 ### 結果太多
 
 - 把 `strategy` 改成 `focused`
 - 增加主題限定詞
-- 加上 `filters="year:..., clinical:..."`
-- 把 sources 收斂到支援 systematic 的必要來源；若使用 PubMed field tags，則只送 `pubmed`
+- 加上 `filters="year:...,clinical_query:..."`
+- systematic leg 只用 OpenAlex / Semantic Scholar；若使用 PubMed field tags，則另跑 `sources="pubmed"` 的 keyword leg
 
 ---
 
@@ -205,7 +204,7 @@ unified_search(
 當搜尋策略已經穩定，不要每次重組：
 
 ```python
-save_pipeline(name="icu_sedation_review", pipeline_config="...")
+save_pipeline(name="icu_sedation_review", config="...")
 ```
 
 之後可以：

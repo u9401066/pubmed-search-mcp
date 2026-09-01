@@ -22,15 +22,14 @@ description: "Full text access using get_fulltext, figure extraction, and instit
 ### 1. `get_fulltext`
 
 ```python
-get_fulltext(identifier="PMC7096777")
-get_fulltext(pmid="12345678")
-get_fulltext(doi="10.1038/s41586-021-03819-2")
+get_fulltext(source={"kind":"pmcid","value":"PMC7096777"})
+get_fulltext(source={"kind":"pmid","value":"12345678"})
+get_fulltext(source={"kind":"doi","value":"10.1038/s41586-021-03819-2"})
 ```
 
 ### 參數重點
 
-- `identifier`: 自動判斷 PMID、PMCID、DOI
-- `pmcid` / `pmid` / `doi`: 也可分開傳
+- `source`: 必填的 discriminated object；`kind` 明確指定 `pmid`、`pmcid` 或 `doi`，`value` 放對應識別碼
 - `sections`: 只抓特定段落，例如 `"introduction,methods,results"`
 - `include_pdf_links`: 是否回傳 PDF 連結
 - `include_figures`: 是否一起帶 figure metadata
@@ -43,14 +42,14 @@ get_fulltext(doi="10.1038/s41586-021-03819-2")
 ### 1. 直接抓 PMC 全文
 
 ```python
-get_fulltext(identifier="PMC7096777")
+get_fulltext(source={"kind":"pmcid","value":"PMC7096777"})
 ```
 
 ### 2. 只看方法與結果
 
 ```python
 get_fulltext(
-    pmid="12345678",
+    source={"kind":"pmid","value":"12345678"},
     sections="methods,results"
 )
 ```
@@ -59,7 +58,7 @@ get_fulltext(
 
 ```python
 get_fulltext(
-    doi="10.1038/s41586-021-03819-2",
+    source={"kind":"doi","value":"10.1038/s41586-021-03819-2"},
     extended_sources=True
 )
 ```
@@ -68,7 +67,7 @@ get_fulltext(
 
 ```python
 get_fulltext(
-    pmcid="PMC7096777",
+    source={"kind":"pmcid","value":"PMC7096777"},
     include_figures=True
 )
 ```
@@ -80,8 +79,8 @@ get_fulltext(
 ### 取得文章圖表
 
 ```python
-get_article_figures(identifier="PMC12086443")
-get_article_figures(pmid="40384072")
+get_article_figures(source={"kind":"pmcid","value":"PMC12086443"})
+get_article_figures(source={"kind":"pmid","value":"40384072"})
 ```
 
 適合用在：
@@ -97,8 +96,8 @@ get_article_figures(pmid="40384072")
 ### 取得 text-mined terms
 
 ```python
-get_text_mined_terms(pmcid="PMC7096777")
-get_text_mined_terms(pmid="12345678", semantic_type="CHEMICAL")
+get_text_mined_terms(source={"kind":"pmcid","value":"PMC7096777"})
+get_text_mined_terms(source={"kind":"pmid","value":"12345678"}, semantic_type="CHEMICAL")
 ```
 
 常用 `semantic_type`:
@@ -135,7 +134,7 @@ get_institutional_link(pmid="12345678")
 
 ```python
 fetch_article_details(pmids="12345678")
-get_fulltext(pmid="12345678", sections="abstract,results")
+get_fulltext(source={"kind":"pmid","value":"12345678"}, sections="abstract,results")
 ```
 
 ### 情境 2：搜尋後挑代表性文章讀全文
@@ -148,15 +147,15 @@ unified_search(
 )
 
 # 對選中的 PMID 再做全文抓取
-get_fulltext(pmid="12345678", extended_sources=True)
+get_fulltext(source={"kind":"pmid","value":"12345678"}, extended_sources=True)
 ```
 
 ### 情境 3：先抓全文，再抽圖表與實體
 
 ```python
-get_fulltext(pmcid="PMC7096777", include_figures=True)
-get_article_figures(pmcid="PMC7096777")
-get_text_mined_terms(pmcid="PMC7096777", semantic_type="CHEMICAL")
+get_fulltext(source={"kind":"pmcid","value":"PMC7096777"}, include_figures=True)
+get_article_figures(source={"kind":"pmcid","value":"PMC7096777"})
+get_text_mined_terms(source={"kind":"pmcid","value":"PMC7096777"}, semantic_type="CHEMICAL")
 ```
 
 ---

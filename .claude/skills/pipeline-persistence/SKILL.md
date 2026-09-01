@@ -10,7 +10,7 @@ description: "Pipeline persistence — save, load, and reuse structured search p
 - 從模板快速建立（PICO、comprehensive、exploration、gene_drug）
 - 自訂 DAG（有向無環圖）多步驟管道
 - 雙層儲存（workspace + global）
-- 自動驗證 + 激進式自動修正（21 條規則）
+- Schema-exact 驗證 + 有限度的安全 normalization
 
 ## 觸發條件
 - 「把這個搜尋存起來」、「建立搜尋計畫」
@@ -30,13 +30,13 @@ save_pipeline(
     name="icu_remimazolam_vs_propofol",
     config="""
 template: pico
-params:
+template_params:
   P: ICU patients requiring sedation
   I: remimazolam
   C: propofol
   O: delirium incidence, sedation quality
 """,
-    tags="anesthesia,sedation,ICU",
+    tags=["anesthesia", "sedation", "ICU"],
     description="Weekly monitoring: remimazolam vs propofol ICU sedation"
 )
 
@@ -59,14 +59,14 @@ steps:
     action: search
     params:
       query: BRCA1 breast cancer
-      sources: pubmed
+      sources: [pubmed]
       limit: 50
   - id: expanded
     action: search
     inputs: [expand]
     params:
       strategy: mesh
-      sources: pubmed,openalex
+      sources: [pubmed, openalex]
       limit: 50
   - id: merged
     action: merge
@@ -81,14 +81,14 @@ output:
   limit: 30
   ranking: quality
 """,
-    tags="genetics,oncology",
+    tags=["genetics", "oncology"],
     description="BRCA1 breast cancer comprehensive search with MeSH expansion"
 )
 ```
 
 ---
 
-## 6 個 MCP 工具
+## 7 個 MCP 工具
 
 ### save_pipeline — 保存管道
 
@@ -96,18 +96,17 @@ output:
 save_pipeline(
     name="weekly_remimazolam",     # 唯一名稱 (英數 + _ -, max 64)
     config="<YAML or JSON>",       # Pipeline 配置
-    tags="tag1,tag2",              # 逗號分隔標籤
+    tags=["tag1", "tag2"],        # 最多 20 個 canonical 字串標籤
     description="...",             # 人類可讀描述
     scope="auto"                   # "workspace" | "global" | "auto"
 )
 ```
 
-**自動修正範例：**
-- `action: "find"` → 自動修正為 `action: "search"`（別名解析）
-- `action: "serach"` → 自動修正為 `action: "search"`（模糊匹配）
-- 缺少 step ID → 自動生成 `step_1`, `step_2`...
-- 重複 step ID → 自動重命名 `s1` → `s1_2`
-- 循環依賴 → 自動移除問題引用
+**Fail-closed contract：**
+- action/template 只接受下列 canonical 值；alias 與拼字錯誤直接拒絕
+- template 參數只使用頂層 `template_params`；已退役的頂層 `params` 直接拒絕
+- step ID 必須明確且唯一；dependency ID 必須精確引用前面的 step
+- 未知 `on_error`、output format 或 ranking 不會被猜測或改寫
 
 ### list_pipelines — 列出管道
 
@@ -137,11 +136,16 @@ get_pipeline_history(name="weekly_remimazolam", limit=5)
 # 顯示：日期、文章數、新增/移除文章、狀態
 ```
 
-### schedule_pipeline — 排程（Phase 4 尚未實作）
+### schedule_pipeline — 建立或更新排程
 
 ```python
 schedule_pipeline(name="weekly_remimazolam", cron="0 9 * * 1")
-# ⚠️ 目前返回使用說明，建議手動執行或使用 OS 排程
+```
+
+### unschedule_pipeline — 移除排程
+
+```python
+unschedule_pipeline(name="weekly_remimazolam")
 ```
 
 ---
@@ -152,12 +156,12 @@ schedule_pipeline(name="weekly_remimazolam", cron="0 9 * * 1")
 
 ```yaml
 template: pico
-params:
+template_params:
   P: ICU patients requiring sedation
   I: remimazolam
   C: propofol
   O: delirium incidence
-  sources: pubmed        # 可選，預設 pubmed
+  sources: [pubmed]        # 可選，預設 pubmed
   limit: 20              # 可選
 ```
 
@@ -172,9 +176,9 @@ pico → search_p  ──┐
 
 ```yaml
 template: comprehensive
-params:
+template_params:
   query: CRISPR gene therapy safety
-  sources: pubmed,openalex,europe_pmc  # 可選
+  sources: [pubmed, openalex, europe_pmc]  # 可選
   limit: 30                             # 可選
   min_year: 2020                        # 可選
 ```
@@ -189,7 +193,7 @@ expand → search_expanded  ──┐
 
 ```yaml
 template: exploration
-params:
+template_params:
   pmid: "33475315"
   limit: 20        # 每個方向的限制
 ```
@@ -205,9 +209,9 @@ refs     ──┘
 
 ```yaml
 template: gene_drug
-params:
+template_params:
   term: BRCA1
-  sources: pubmed,openalex  # 可選
+  sources: [pubmed, openalex]  # 可選
   limit: 20                  # 可選
   min_year: 2020             # 可選
 ```
@@ -260,14 +264,14 @@ steps:
     action: search
     params:
       query: remimazolam
-      sources: pubmed,europe_pmc
+      sources: [pubmed, europe_pmc]
       limit: 50
       min_year: 2024
   - id: search_dex
     action: search
     params:
       query: dexmedetomidine ICU sedation
-      sources: pubmed
+      sources: [pubmed]
       limit: 50
       min_year: 2024
   - id: merged
@@ -280,7 +284,7 @@ steps:
     inputs: [merged]
     params:
       has_abstract: true
-      article_types: "Journal Article,Clinical Trial,Randomized Controlled Trial"
+      article_types: [journal-article, clinical-trial, randomized-controlled-trial]
   - id: enriched
     action: metrics
     inputs: [filtered]
@@ -298,7 +302,7 @@ steps:
   - id: seed_details
     action: details
     params:
-      pmids: "33475315"
+      pmids: ["33475315"]
   - id: related
     action: related
     params:
@@ -349,21 +353,21 @@ steps:
     inputs: [pico]
     params:
       element: P
-      sources: pubmed,europe_pmc
+      sources: [pubmed, europe_pmc]
       limit: 100
   - id: search_pico_i
     action: search
     inputs: [pico]
     params:
       element: I
-      sources: pubmed,europe_pmc
+      sources: [pubmed, europe_pmc]
       limit: 100
   - id: search_expanded
     action: search
     inputs: [mesh_expand]
     params:
       strategy: mesh
-      sources: pubmed,openalex
+      sources: [pubmed, openalex]
       limit: 100
   - id: merged
     action: merge
@@ -394,9 +398,9 @@ output:
 先讀 server-side durable state，不要依賴對話記憶或 `.github/hooks/_state`：
 
 ```python
-read_session(action="search_runs")
-read_session(action="search_run", run_id="<selected-run-id>")
-read_session(action="replay_search", run_id="<selected-run-id>")
+read_session(request={"action":"search_runs"})
+read_session(request={"action":"search_run","run_id":"<selected-run-id>"})
+read_session(request={"action":"replay_search","run_id":"<selected-run-id>"})
 ```
 
 `replay_search` 只回傳 credential-free `unified_search` arguments，不會自動執行或消耗
@@ -418,7 +422,7 @@ steps:
     action: search
     params:
       query: "<剛才的查詢>"
-      sources: pubmed,openalex
+      sources: [pubmed, openalex]
       limit: 50
   - id: enriched
     action: metrics

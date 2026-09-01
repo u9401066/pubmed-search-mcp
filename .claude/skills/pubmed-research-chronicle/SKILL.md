@@ -23,11 +23,11 @@ description: "Persistent, versioned research evolution with build_research_chron
 使用者問研究演化？
 ├── 「這個領域怎麼走到今天」 → build_research_chronicle(topic="...")
 ├── 「把我剛剛找的整理成脈絡」 → build_research_chronicle(pmids="last", topic="...")
-├── 「上次之後有什麼新的」 → read_research_chronicle(action="diff", chronicle_id="...", from_revision=N)
-├── 「哪些是里程碑 / 領域分佈」 → read_research_chronicle(action="milestones", chronicle_id="...")
-├── 「畫出主軸如何分岔」 → read_research_chronicle(chronicle_id="...", output="mermaid")
-├── 「A 和 B 兩個主題比較」 → read_research_chronicle(action="compare", topics="A,B")
-└── 「幫我寫成一段敘述」 → read_research_chronicle(action="narrate", chronicle_id="...", mode="full")
+├── 「上次之後有什麼新的」 → read_research_chronicle(request={"action":"diff","chronicle_id":"...","from_revision":N})
+├── 「哪些是里程碑 / 領域分佈」 → read_research_chronicle(request={"action":"milestones","chronicle_id":"..."})
+├── 「畫出主軸如何分岔」 → read_research_chronicle(request={"action":"load","chronicle_id":"...","output":"mermaid"})
+├── 「A 和 B 兩個主題比較」 → read_research_chronicle(request={"action":"compare","selection":{"kind":"topics","values":["A","B"]}})
+└── 「幫我寫成一段敘述」 → read_research_chronicle(request={"action":"narrate","chronicle_id":"...","mode":"full"})
 ```
 
 ---
@@ -65,8 +65,6 @@ Chronicle ID 會出現在 summary 裡，後續 `read_research_chronicle` 都要�
 | `evidence` | 去重後的證據表 |
 | `milestones` | 里程碑分佈與證據品質統計 |
 | `mermaid` | 標準合併圖：橫向年份 spine + 主題 lineage 分岔 |
-| `timeline_mermaid` | 舊式平面 Mermaid timeline |
-| `mindmap` | 只看 lineage 階層、不保留時間座標 |
 | `narrative` | 有證據支撐的敘述 |
 | `json` | 完整 snapshot |
 
@@ -78,7 +76,7 @@ Chronicle ID 會出現在 summary 裡，後續 `read_research_chronicle` 都要�
 - label 會清除控制／雙向文字字元、跳脫 Mermaid delimiter，node ID 使用不透明且不碰撞的穩定格式；孤兒 parent、循環、重複 ID 與過大圖也會先結構化修正。
 - renderer 依序嘗試 rich 圖、只含基本 node/edge 的 safe 圖，最後回傳一定可讀的 minimal notice；完整資料仍保存在 `chronicle_map.json`、`timeline.json` 與 `snapshot.json`。
 - 讀 `mermaid_validation.json` 可查看 `status`、`tier`、source digest、corrections、omitted counts 與 warnings。若有 fallback 或視覺項目被省略，回答時必須揭露；不可把摘要圖說成完整圖。
-- Runtime 使用 deterministic structural lint，不要求 Node。CI 另以固定版本 Mermaid 11.16.1 實際 parse 並 render SVG，涵蓋 rich / repaired / safe / minimal / timeline / mindmap。
+- Runtime 使用 deterministic structural lint，不要求 Node。CI 另以固定版本 Mermaid 11.16.1 實際 parse 並 render SVG，涵蓋 rich / repaired / safe / minimal tiers。
 
 ### Lineage 的依據
 
@@ -92,6 +90,8 @@ Chronicle ID 會出現在 summary 裡，後續 `read_research_chronicle` 都要�
 - `earliest_observed_in_scope` 只表示檢索候選集中最早的有日期文章，不證明它是整個領域的 first report；topic query、PMID set、年份限制與來源可用性都會改變可觀察範圍。
 - 排序會保留 year / month / day precision。兩筆記錄若只知道同一年，或日期區間重疊，畫面可有 deterministic display order，但 graph 不會據此建立 `precedes` / `supersedes`。沒有可靠日期者標示為 `Undated`、排在 dated entries 後面，且不計入 year span。
 - Topic mode 會把 `min_year`／`max_year` 送到 PubMed，再做 bounded retrieval；最後保留觀察到的首篇、末篇、landmark 與 temporal spread。audit 的 `source_counts.pubmed` 分開記錄 `returned`／`available`；總量未知、來源有 cap 或後續 selection 截斷時必須揭露 warning。
+- Topic mode 的 retrieval provenance 會分開保存 `ranking_requested` 與實際 `ranking`。只有至少一筆經驗證的 iCite `citation_count` 真正套用後，才可宣稱 `icite_citation_count_then_pubmed_relevance`；否則有效排序仍是 `pubmed_relevance`。
+- `citation_metrics` 使用 `citation-metrics-coverage/v1`，分辨 `complete`、`partial`、`empty`、`error` 與 `not_requested`，並列出 requested／returned／applied／sortable-count 數量。outage 或 malformed response 不是零引用，也不能寫成已完成 enrichment。
 - PubMed error 或完全沒有 article evidence 時不建立空 snapshot，也不發布 revision。明確 PMID 只接受正 ASCII digits（最多 20 位）或 `PMID:` prefix；不可把 DOI 或混合文字抽數字後當 PMID。
 - entry ID 依 PMID、其次 DOI 的 evidence identity 保持穩定；日期或 milestone reclassification 應出現在 `updated`，不應造成假的 remove/add。topic identity、exact lookup、compare 與 continuity 共用 Unicode normalization、case-folding、空白折疊後的 canonical key。
 
@@ -101,28 +101,28 @@ Chronicle ID 會出現在 summary 裡，後續 `read_research_chronicle` 都要�
 
 ```python
 # 列出已儲存的 chronicles
-read_research_chronicle(action="list")
+read_research_chronicle(request={"action":"list"})
 
 # 讀取某個版本（預設最新）
-read_research_chronicle(chronicle_id="remimazolam-9f2b1c4d", output="tree")
-read_research_chronicle(chronicle_id="remimazolam-9f2b1c4d", revision=2, output="timeline")
+read_research_chronicle(request={"action":"load","chronicle_id":"remimazolam-9f2b1c4d","output":"tree"})
+read_research_chronicle(request={"action":"load","chronicle_id":"remimazolam-9f2b1c4d","revision":2,"output":"timeline"})
 
 # 版本比對：新增/更新/本次未觀察到的 entries、證據與分支變化
-read_research_chronicle(action="diff", chronicle_id="remimazolam-9f2b1c4d", from_revision=1)
+read_research_chronicle(request={"action":"diff","chronicle_id":"remimazolam-9f2b1c4d","from_revision":1})
 
 # 里程碑分佈（讀已存證據，不重跑搜尋）
-read_research_chronicle(action="milestones", chronicle_id="remimazolam-9f2b1c4d")
+read_research_chronicle(request={"action":"milestones","chronicle_id":"remimazolam-9f2b1c4d"})
 
 # 主題比較（含共用證據分析，最多 5 個）
-read_research_chronicle(action="compare", topics="remimazolam,propofol,dexmedetomidine")
+read_research_chronicle(request={"action":"compare","selection":{"kind":"topics","values":["remimazolam","propofol","dexmedetomidine"]}})
 ```
 
 > `compare` 與 `milestones` 都只讀已儲存的 chronicle，**不會重跑搜尋**。
 > 若某個主題還沒建立過，會回傳明確的錯誤告訴你要先 build 哪一個。
 
-`compare(topics=...)` 使用 Unicode、大小寫與空白正規化後的**完整 topic 名稱比對**，不是模糊搜尋。同名 topic 對應多個 chronicle 時會回報 ambiguity，必須改傳 `chronicle_ids=...`；重複的 topic / ID 不算兩個可比較對象。
+`request={"action":"compare","selection":{"kind":"topics","values":[...]}}` 使用 Unicode、大小寫與空白正規化後的**完整 topic 名稱比對**，不是模糊搜尋。同名 topic 對應多個 chronicle 時會回報 ambiguity，必須改用 `selection={"kind":"chronicle_ids","values":[...]}`；重複的 topic / ID 不算兩個可比較對象。
 
-`diff` 的 `retired` 是向後相容 alias；請讀 `not_observed_in_revision`／`removed_from_view`。即使 input scope 未變，PubMed indexing、citation metrics 與 ranked/capped retrieval 仍可能改變，因此缺席永遠不能當成已證實的研究退場。
+`diff` 只使用 `not_observed_in_revision` 描述本次缺席。即使 input scope 未變，PubMed indexing、citation metrics 與 ranked/capped retrieval 仍可能改變，因此缺席永遠不能當成已證實的研究退場。
 
 ---
 
@@ -154,6 +154,7 @@ read_research_chronicle(action="compare", topics="remimazolam,propofol,dexmedeto
 - graph 完整性（invariant 違反）
 - 時序缺口（無法定年的 entry）
 - 各來源回傳量
+- iCite coverage 與 requested/effective ranking 是否一致；outage、partial、empty 會警告，無有效 citation count 卻宣稱 iCite ranking 會失敗
 - 實際 artifact payload builder 產出的 required file names（加上 store 產生的 manifest）；這是 preparation preflight，不等於 persistence 成功
 
 audit 狀態為 `pass` / `warn` / `fail`。**回答使用者時要一併說明 caveats**，不要把 `warn` 當成完整答案。
@@ -163,8 +164,8 @@ audit 狀態為 `pass` / `warn` / `fail`。**回答使用者時要一併說明 c
 ## 敘述輸出
 
 ```python
-read_research_chronicle(action="narrate", chronicle_id="...", mode="brief")  # 每分支挑最高信心
-read_research_chronicle(action="narrate", chronicle_id="...", mode="full")   # 全部 entry
+read_research_chronicle(request={"action":"narrate","chronicle_id":"...","mode":"brief"})  # 每分支挑最高信心
+read_research_chronicle(request={"action":"narrate","chronicle_id":"...","mode":"full"})   # 全部 entry
 ```
 
 輸出的**每一句 claim 都附 entry ID 與文獻識別碼**，可直接查證，適合寫作與報告。
@@ -177,11 +178,11 @@ read_research_chronicle(action="narrate", chronicle_id="...", mode="full")   # �
 | --- | --- |
 | 用 `build_research_timeline` | 已移除；改用 `build_research_chronicle` |
 | 用 `output_format=` | 參數名是 `output=` |
-| 直接 `action="compare"` 但沒先 build | 先對每個主題各 build 一次 |
+| 直接送 `request={"action":"compare",...}` 但沒先 build | 先對每個主題各 build 一次 |
 | 把同年排列解讀成先後關係 | 只在日期 precision 足以證明時宣稱先後 |
-| topic compare 回報 ambiguity | 先 `action="list"`，再傳兩個以上不同的 `chronicle_ids` |
+| topic compare 回報 ambiguity | 先送 `request={"action":"list"}`，再用 `selection.kind="chronicle_ids"` 傳兩個以上不同 ID |
 | 忽略 audit warnings | 回答時要說明覆蓋率限制 |
-| 每次都重新 build 來看里程碑 | 用 `action="milestones"` 讀已存的 |
+| 每次都重新 build 來看里程碑 | 用 `request={"action":"milestones","chronicle_id":"..."}` 讀已存的 |
 
 ---
 

@@ -15,8 +15,8 @@
 Pipeline mode 有 3 種最常用入口：
 
 1. 直接把 YAML/JSON 丟給 `unified_search(..., pipeline="...")`
-2. 先用 `manage_pipeline` 或 `save_pipeline` 保存，再用 `saved:<name>` 執行
-3. 保存後交給 `schedule_pipeline` 或 `manage_pipeline(action="schedule")` 定期跑
+2. 先用 `save_pipeline` 保存，再用 `saved:<name>` 執行
+3. 保存後交給 `schedule_pipeline` 定期跑
 
 > **先選擇 runtime。** 可信任的本機 stdio/loopback caller 可使用 project workspace
 > scope、`file:` source 與 in-process scheduler。認證 service caller 只使用當前
@@ -30,7 +30,7 @@ unified_search(
     query="",
     pipeline="""
 template: pico
-params:
+template_params:
   P: ICU patients requiring mechanical ventilation
   I: remimazolam
   C: propofol
@@ -52,12 +52,11 @@ output:
 ### 最短可用範例: 先保存再執行
 
 ```python
-manage_pipeline(
-    action="save",
+save_pipeline(
     name="icu_remi_vs_propofol",
     config="""
 template: pico
-params:
+template_params:
   P: ICU patients requiring mechanical ventilation
   I: remimazolam
   C: propofol
@@ -66,7 +65,7 @@ output:
   limit: 25
   ranking: quality
 """,
-    tags="icu,sedation,remimazolam",
+    tags=["icu", "sedation", "remimazolam"],
     description="ICU sedation comparison",
 )
 
@@ -77,7 +76,7 @@ unified_search(query="", pipeline="saved:icu_remi_vs_propofol")
 
 Pipeline Markdown report 會包含 filter diagnostics，也會在底部附上後續 handoff 建議：
 
-- `get_session_pmids()` 取回這次 run 的 PMID set
+- `read_session(request={"action":"pmids"})` 取回這次 run 的 PMID set
 - `prepare_export(pmids="last", format="ris")` 交給 Zotero/EndNote/Mendeley 類引用管理器
 - `save_literature_notes(pmids="last", note_format="wiki")` 存成本機 wiki/Foam-compatible Markdown 筆記
 
@@ -97,7 +96,7 @@ JSON 回應會包含 `summary`、`steps`、每個 step 的 `metadata`、以及 s
 | 情境 | 推薦入口 |
 | ---- | -------- |
 | 只想快速跑一次 | inline `unified_search(..., pipeline="...")` |
-| 想重複使用同一個搜尋策略 | `manage_pipeline(action="save")` |
+| 想重複使用同一個搜尋策略 | `save_pipeline(...)` |
 | 想看歷史 diff 或本機排程 | 先保存，再用 `saved:<name>` / `schedule_pipeline` |
 | 可信任的本機 caller 想從 YAML 檔載入 | `load_pipeline(source="file:path/to/pipeline.yaml")` |
 | 認證 service caller 要重用 | 存入 tenant store，再用 `saved:<name>` |
@@ -115,27 +114,22 @@ Template pipeline 適合 80% 的常見需求。它不是把 YAML 原封不動送
 | `exploration` | `pmid` | `limit` | 從一篇 seed paper 往外探索 |
 | `gene_drug` | `term` | `sources`, `limit`, `min_year`, `max_year` | 基因或藥物主題搜尋 |
 
-### `params` 與 `template_params`
+### Canonical `template_params`
 
-- inline YAML 最短寫法用 `params`
-- `save_pipeline` / `manage_pipeline(save)` / `load_pipeline` 也接受 `template_params`
-- 載入已保存 pipeline 時，系統通常會輸出成 `template_params`
-
-建議:
-
-- 手寫 inline pipeline 時用 `params`
-- 要長期保存或 review 的 YAML，用 `template_params` 可讀性比較穩定
+Template pipeline 只接受唯一的參數欄位 `template_params`。已退役的頂層
+`params` 會直接被拒絕，不會自動改寫；step-based DAG 內每個 step 仍使用
+`params`。
 
 ### `pico`
 
 ```yaml
 template: pico
-params:
+template_params:
   P: ICU patients requiring sedation
   I: remimazolam
   C: propofol
   O: delirium incidence, time to extubation
-  sources: pubmed,europe_pmc
+  sources: [pubmed, europe_pmc]
   limit: 30
 output:
   ranking: quality
@@ -156,7 +150,7 @@ pico -> search_p
 template: comprehensive
 template_params:
   query: CRISPR gene therapy clinical trials
-  sources: pubmed,openalex,europe_pmc
+  sources: [pubmed, openalex, europe_pmc]
   limit: 30
   min_year: 2020
 output:
@@ -171,7 +165,7 @@ output:
 
 ```yaml
 template: exploration
-params:
+template_params:
   pmid: "37076210"
   limit: 25
 output:
@@ -186,7 +180,7 @@ output:
 template: gene_drug
 template_params:
   term: BRCA1 targeted therapy PARP inhibitors
-  sources: pubmed,openalex
+  sources: [pubmed, openalex]
   limit: 20
   min_year: 2020
 output:
@@ -224,7 +218,7 @@ steps:
     action: search
     params:
       query: artificial intelligence anesthesiology
-      sources: pubmed,openalex
+      sources: [pubmed, openalex]
       limit: 60
       min_year: 2020
 
@@ -233,7 +227,7 @@ steps:
     inputs: [expand]
     params:
       strategy: mesh
-      sources: pubmed,europe_pmc
+      sources: [pubmed, europe_pmc]
       limit: 60
       min_year: 2020
 
@@ -264,7 +258,7 @@ output:
 
 | 欄位 | 必要性 | 說明 |
 | ---- | ------ | ---- |
-| `id` | 建議必填 | 不填也會 auto-fix，但最好自己取名 |
+| `id` | 必填 | 精確且唯一的 step ID；不會自動產生或修復 |
 | `action` | 必填 | 目前只接受固定 action 集合 |
 | `params` | 視 action 而定 | 各 action 需要的參數不同 |
 | `inputs` | 視 action 而定 | 只能引用前面已定義的 step |
@@ -292,7 +286,7 @@ output:
 ```yaml
 name: reusable_remi_pipeline
 globals:
-  sources: pubmed,europe_pmc
+  sources: [pubmed, europe_pmc]
   limit: ${per_step_limit}
   min_year: ${start_year}
 variables:
@@ -308,7 +302,7 @@ steps:
     action: filter
     inputs: [search_topic]
     params:
-      article_types: [RCT, systematic review]
+      article_types: [randomized-controlled-trial, systematic-review]
       has_abstract: true
 output:
   limit: 20
@@ -347,39 +341,39 @@ unified_search(query="", pipeline="<yaml>", stop_at="merged")
 
 - `data/pipeline_examples/ai_in_anesthesiology.yaml`
 
-## manage_pipeline 用法
+## 單一職責 Pipeline 工具
 
-`manage_pipeline` 是目前最推薦的 facade。舊工具仍保留，但新教學都以 facade 為主。
+Pipeline 管理刻意拆成七個 schema-exact tools。每個 operation 只暴露自己的合法
+arguments；拼錯或不相關的欄位會依 v3 MCP contract fail closed。
 
-### `action="list"`
+### 列表
 
 ```python
-manage_pipeline()
-manage_pipeline(action="list")
-manage_pipeline(action="list", tag="sedation")
-manage_pipeline(action="list", scope="workspace")
+list_pipelines()
+list_pipelines(tag="sedation")
+list_pipelines(scope="workspace")
 ```
 
-### `action="save"`
+### 保存
 
 ```python
-manage_pipeline(
-    action="save",
+save_pipeline(
     name="weekly_remimazolam",
     config="""
 template: comprehensive
 template_params:
   query: remimazolam ICU sedation
-  sources: pubmed,openalex,europe_pmc
+  sources: [pubmed, openalex, europe_pmc]
   limit: 30
 """,
-    tags="sedation,icu",
+    tags=["sedation", "icu"],
     description="Weekly remimazolam surveillance",
     scope="workspace",
 )
 ```
 
-`config` 必須 parse 成 YAML/JSON mapping，不能是 list 或 scalar。如果某個 client 很難正確 quote 多行 YAML 給 `manage_pipeline(action="save")`，可以改用 `save_pipeline(name=..., config=...)` 傳同一段 YAML；兩個工具共用同一套 validator。
+`config` 必須 parse 成 YAML/JSON mapping，不能是 list 或 scalar。`tags` 必須是
+最多 20 個 strict strings 的 JSON array；CSV text 會被拒絕。
 
 `scope` 行為:
 
@@ -389,15 +383,15 @@ template_params:
 - 認證 service：tenant-derived store 刻意沒有 process-wide workspace root；
   `auto` 會解析到該 principal 隔離的 data root，`workspace` 不可用
 
-### `action="load"`
+### 載入
 
 ```python
-manage_pipeline(action="load", source="weekly_remimazolam")
-manage_pipeline(action="load", source="saved:weekly_remimazolam")
-manage_pipeline(action="load", source="file:data/pipeline_examples/pico_remimazolam_vs_propofol.yaml")
+load_pipeline(source="weekly_remimazolam")
+load_pipeline(source="saved:weekly_remimazolam")
+load_pipeline(source="file:data/pipeline_examples/pico_remimazolam_vs_propofol.yaml")
 ```
 
-目前 `load_pipeline` / `manage_pipeline(load)` 支援:
+目前 `load_pipeline` 支援:
 
 - 已保存名稱
 - `saved:<name>`
@@ -406,23 +400,22 @@ manage_pipeline(action="load", source="file:data/pipeline_examples/pico_remimazo
 認證 service caller 不能從 server host 讀取 `file:` path；請先以名稱存入 YAML。
 目前不承諾直接從 URL 載入。
 
-### `action="delete"`
+### 刪除
 
 ```python
-manage_pipeline(action="delete", name="weekly_remimazolam")
+delete_pipeline(name="weekly_remimazolam")
 ```
 
-### `action="history"`
+### 歷史
 
 ```python
-manage_pipeline(action="history", name="weekly_remimazolam", limit=10)
+get_pipeline_history(name="weekly_remimazolam", limit=10)
 ```
 
-### `action="schedule"`
+### 排程
 
 ```python
-manage_pipeline(
-    action="schedule",
+schedule_pipeline(
     name="weekly_remimazolam",
     cron="0 9 * * 1",
     diff_mode=True,
@@ -430,16 +423,11 @@ manage_pipeline(
 )
 ```
 
-### 舊工具對照
+### 移除排程
 
-| Facade | 舊工具 |
-| ------ | ------ |
-| `manage_pipeline(action="save", ...)` | `save_pipeline(...)` |
-| `manage_pipeline(action="list", ...)` | `list_pipelines(...)` |
-| `manage_pipeline(action="load", ...)` | `load_pipeline(...)` |
-| `manage_pipeline(action="delete", ...)` | `delete_pipeline(...)` |
-| `manage_pipeline(action="history", ...)` | `get_pipeline_history(...)` |
-| `manage_pipeline(action="schedule", ...)` | `schedule_pipeline(...)` |
+```python
+unschedule_pipeline(name="weekly_remimazolam")
+```
 
 ## Schedule 與 History
 
@@ -447,8 +435,8 @@ manage_pipeline(
 
 1. 先保存 pipeline
 2. 手動執行用 `unified_search(query="", pipeline="saved:<name>")`
-3. 定期執行用 `schedule_pipeline(...)` 或 `manage_pipeline(action="schedule", ...)`
-4. 看歷史用 `get_pipeline_history(name="...")` 或 facade 的 `history`
+3. 定期執行用 `schedule_pipeline(...)`
+4. 看歷史用 `get_pipeline_history(name="...")`
 
 ### 排程
 
@@ -471,14 +459,13 @@ minute hour day month weekday
 移除排程:
 
 ```python
-schedule_pipeline(name="weekly_remimazolam", cron="")
+unschedule_pipeline(name="weekly_remimazolam")
 ```
 
 ### history
 
 ```python
 get_pipeline_history(name="weekly_remimazolam", limit=5)
-manage_pipeline(action="history", name="weekly_remimazolam", limit=5)
 ```
 
 history 會顯示:
@@ -495,37 +482,26 @@ history 會顯示:
 - 想要穩定追蹤 history / diff，請優先使用「已保存 pipeline」而不是臨時 inline pipeline
 - Service mode 保持單 process/單 replica，且其 Compose profile 不執行 scheduled pipelines
 
-## 常見錯誤與 Auto-fix 行為
+## 驗證與精確上限
 
-目前 auto-fix 主要發生在 schema parse 與 semantic validation。也就是說，系統會先修資料形狀，再修語意問題。
+Pipeline identifier、型別與 enum-like 值採 schema-exact contract。Validator 不會
+轉換 scalar 型別、裁切明確值，也不會依 alias、拼字相似度或鄰近 step ID 猜測
+caller 意圖；公開的安全上下限都是 validation constraint，不是 normalization rule。
 
-### 會自動修正的情況
+`output.format: json` 是 canonical 合法格式，會原樣保留。
 
-| 問題 | 輸入 | 修正結果 |
-| ---- | ---- | -------- |
-| action alias | `find` | `search` |
-| action typo | `searc` | `search` |
-| template alias | `clinical` | `pico` |
-| template typo | `comprehensiv` | `comprehensive` |
-| 單一字串 inputs | `inputs: s1` | `inputs: [s1]` |
-| 非 dict 的 params | `params: "oops"` | `params: {}` |
-| 缺少 step id | `id: ""` | 自動補 `step_1` 之類 |
-| 重複 step id | `search`, `search` | 第二個改成 `search_2` |
-| 引用不存在的 step | `inputs: [missing]` | 該引用移除 |
-| 引用未來 step | `inputs: [later_step]` | 該引用移除 |
-| `on_error` 非法 | `retry` | `skip` |
-| output format 非法 | `xml` | `markdown` |
-| output ranking typo | `impac` | `impact` |
-| output limit 非法 | `0` 或負數 | `20` |
-
-`output.format: json` 是合法格式，不會再被 auto-fix 成 Markdown。
-
-### 不會自動修正，會直接報錯的情況
+### 不修復、直接報錯的情況
 
 | 問題 | 原因 |
 | ---- | ---- |
-| template 名稱完全無法辨識 | 沒有 alias 或 fuzzy match 可套用 |
-| action 名稱完全無法辨識 | 沒有 alias 或 fuzzy match 可套用 |
+| 已退役的 template 頂層 `params` | 必須改用 canonical `template_params` |
+| 未知或拼錯的 template | 只接受四個 canonical template 名稱 |
+| 未知或拼錯的 action | 只接受十個 canonical action 名稱 |
+| 缺少或重複 step ID | 不會產生或改寫 step identity |
+| 未知或指向未來的 dependency ID | 不會猜測或移除 dependency reference |
+| 非法 `on_error`、output format 或 ranking | 不會替換 enum-like 值 |
+| output/action/template limit 低於或高於公開範圍 | 明確 limit 不會套 default 或被裁切 |
+| 錯誤型別或明確 `null` | 不轉成字串、list、mapping 或 integer |
 | template 缺少必要參數 | 例如 `pico` 沒有 `P` 或 `I` |
 | 沒有任何 steps 也沒有 template | 無法執行 |
 | steps 超過 20 | 超過系統上限 |
@@ -543,7 +519,7 @@ output:
   ranking: impac
 ```
 
-目前系統會自動把它修成等價於:
+這份 config 會被拒絕。請明確寫出預期的 canonical 值：
 
 ```yaml
 template: pico
@@ -558,7 +534,7 @@ output:
 
 ### 實務建議
 
-1. 想吃到 auto-fix、history、schedule，先保存再跑。
+1. 長 pipeline 在保存或排程前，先用 `dry_run=True` 驗證。
 2. Template pipeline 只在參數很簡單時 inline；要 review / 版本控管就存 YAML。
 3. 自訂 DAG 先從最小可跑版本開始，再逐步加 `merge`、`metrics`、`filter`。
 4. 本機模式需要在可信任 repo 共用時，用 `scope="workspace"`。
