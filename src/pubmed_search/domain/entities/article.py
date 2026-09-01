@@ -481,10 +481,10 @@ class UnifiedArticle:
     citation_metrics: CitationMetrics | None = None
     journal_metrics: JournalMetrics | None = None
 
-    # === Similarity Scores (from external APIs) ===
-    similarity_score: float | None = None  # 0.0-1.0, higher = more similar
-    similarity_source: str | None = None  # e.g., "semantic_scholar", "europe_pmc"
-    similarity_details: dict[str, float] | None = field(default=None, repr=False)  # Multiple sources
+    # === Rank position metadata ===
+    rank_percentile: float | None = None  # 0.0-1.0 percentile derived only from final result order
+    rank_percentile_source: str | None = None
+    rank_percentile_details: dict[str, float] | None = field(default=None, repr=False)
 
     # === Source Tracking ===
     sources: list[SourceMetadata] = field(default_factory=list)
@@ -958,14 +958,11 @@ class UnifiedArticle:
         if self.ranking_score is not None:
             result["_ranking_score"] = round(self.ranking_score, 4)
 
-        # Add similarity scores if available
-        if self.similarity_score is not None:
-            result["similarity"] = {
-                "score": self.similarity_score,
-                "source": self.similarity_source,
-            }
-            if self.similarity_details:
-                result["similarity"]["details"] = self.similarity_details
+        if self.rank_percentile is not None:
+            result["rank_percentile"] = self.rank_percentile
+            result["rank_percentile_source"] = self.rank_percentile_source
+            if self.rank_percentile_details:
+                result["rank_percentile_details"] = self.rank_percentile_details
 
         return result
 

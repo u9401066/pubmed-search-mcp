@@ -771,10 +771,16 @@ class TestToDict:
         d = a.to_dict()
         assert d["_ranking_score"] == 0.85
 
-    async def test_with_similarity(self):
-        a = UnifiedArticle(title="T", primary_source="p", similarity_score=0.95, similarity_source="s2")
+    async def test_with_rank_percentile(self):
+        a = UnifiedArticle(
+            title="T",
+            primary_source="p",
+            rank_percentile=0.95,
+            rank_percentile_source="final_result_order",
+        )
         d = a.to_dict()
-        assert d["similarity"]["score"] == 0.95
+        assert d["rank_percentile"] == 0.95
+        assert "similarity" not in d
 
 
 # ============================================================
