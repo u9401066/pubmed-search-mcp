@@ -207,6 +207,62 @@ uv run mypy src/ tests/
 uv run python scripts/check_async_tests.py
 ```
 
+### Complete MCP protocol acceptance
+
+The all-tool acceptance suite starts the real server and uses the official MCP
+client to perform `tools/list` and `tools/call`. It checks the exact 41-tool
+registry and exercises every public tool, including stateful session,
+Chronicle, artifact, note-export, pipeline, and scheduler workflows.
+
+```mermaid
+flowchart LR
+    C["Official MCP client"] --> T{"Real transport"}
+    T --> S["Source-tree stdio child process"]
+    T --> H["Streamable HTTP /mcp"]
+    T --> W["Freshly installed wheel over stdio"]
+    S --> R["Canonical 41-tool registry"]
+    H --> R
+    W --> R
+    R --> A["Real application services and durable stores"]
+    A --> I["Injected provider ports and outbound I/O boundary"]
+    P["Deterministic external-provider seam"] --> I
+```
+
+Run all three transport/package paths with:
+
+```bash
+uv run pytest -q tests/test_all_tools_mcp_acceptance.py
+```
+
+For the fast source-tree paths only:
+
+```bash
+uv run pytest -q tests/test_all_tools_mcp_acceptance.py -m "not slow"
+```
+
+External-provider boundaries are replaced inside the child server. MCP
+registration and schema validation, tool adapters, application services,
+session/artifact/Chronicle/pipeline persistence, note files, and scheduling are
+real. Each transport performs 60 semantic `tools/call` requests. Chronicle and
+citation Mermaid returned through MCP are hash/size checked; CI also renders
+those exact sources with pinned Mermaid 11.16.1. A socket/DNS
+guard blocks unexpected external access and leaves a sentinel that fails the
+test even if an application boundary catches the provider error. CI runs source
+stdio plus Streamable HTTP acceptance and fresh-wheel stdio acceptance as
+explicit PR CI and release gates; the cross-platform matrix also executes the
+non-slow paths.
+
+The source-stdio path also has a rejection pass for retired tool names, legacy
+flat action bags, wrong scalar types, and stringified arrays/objects. The wheel
+path runs an external deterministic bootstrap, but all imported server code is
+asserted to come from the otherwise blank wheel environment rather than the
+source tree.
+
+This deterministic suite verifies the MCP and package integration contract. It
+does not certify the availability or credentials of third-party providers;
+those remain in the explicit
+`PUBMED_RUN_LIVE_TESTS=1 uv run pytest -m integration` gate.
+
 Common focused checks:
 
 ```bash

@@ -1,5 +1,34 @@
 # Decision Log
 
+## [2026-09-01] Gate Every Public Tool Through Real MCP Transports
+
+### Decision
+
+Maintain an independent expected manifest for the canonical 41-tool registry
+and call every tool through the official MCP client. Exercise source-tree stdio,
+source-tree Streamable HTTP, and stdio from a fresh wheel installation. Replace
+external-provider boundaries inside the child server; keep the registry, strict
+schemas, presentation/application layers, persistence, artifacts, Chronicle,
+pipelines, and scheduler real. Fail on unexpected outbound network access.
+
+### Consequences
+
+- Direct-function tests and schema inventories remain useful narrow checks but
+  cannot substitute for protocol acceptance.
+- A renamed, missing, unregistered, schema-incompatible, state-disconnected, or
+  unpackaged tool fails CI through the same `tools/list`/`tools/call` boundary a
+  client uses.
+- Provider availability and credentials are not conflated with deterministic
+  product integration; live probes remain explicitly opt-in.
+- MCP surface changes must update the independent acceptance manifest and add a
+  semantic success assertion before the PR CI/release gate can pass.
+- Mermaid returned through MCP must match its declared digest/size and render
+  with the pinned engine; structural metadata alone is not a rendering gate.
+- Retired tools and legacy/coerced argument shapes are tested as real stdio
+  protocol rejections so no-compatibility refactors cannot silently regress.
+
+---
+
 ## [2026-09-01] Require Explicit Browser-Broker Secrets
 
 ### Decision

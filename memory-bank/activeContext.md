@@ -2,18 +2,43 @@
 
 ## Current Focus
 
-- The worktree targets the breaking v0.7.0 hardening release. The canonical MCP
-  surface is **41 tools in 16 registry categories**; removed public aliases,
-  legacy wrappers, and alternate Copilot tool registries are not compatibility
-  surfaces.
-- The definitive local release gate is complete: 4,470 tests passed with 53
-  intentional skips; Ruff, mypy (411 files), DDD/async/security/dependency
-  checks, 102 real Mermaid SVG renders, Playwright docs QA, and an isolated
-  Python 3.10 wheel install passed. The segmented release branch and duplicate
-  push/PR GitHub Actions matrices also passed before the v0.7.0 merge gate.
+- The worktree is adding a post-release protocol regression gate on top of the
+  published v0.7.0 boundary. The canonical MCP surface is **41 tools in 16
+  registry categories**; removed public aliases, legacy wrappers, and alternate
+  Copilot tool registries are not compatibility surfaces.
+- The current post-v0.7.0 worktree passes 4,475 tests with 53 intentional
+  skips, Ruff, format checking, mypy across 413 source files, the async-test
+  audit, and all three complete MCP acceptance paths. The published v0.7.0
+  release had separately passed its release, Mermaid-rendering, browser, and
+  isolated-wheel gates.
 - Preserve DDD boundaries: MCP tools adapt strict requests and delegate to
   application/domain services; source clients and outbound transport remain
   infrastructure concerns.
+
+## Complete MCP Protocol Acceptance Contract
+
+- Acceptance uses the official MCP client and real server processes. It must
+  execute `tools/list` plus `tools/call` for all 41 public tools instead of
+  importing or invoking tool functions directly.
+- Each deterministic run performs 60 protocol calls so discriminated
+  `read_session` and `read_research_chronicle` actions, repeat Chronicle
+  revisions, saved-pipeline execution, and both Chronicle/citation Mermaid
+  render paths are exercised in the same owning server process.
+- Required paths are source-tree stdio, source-tree Streamable HTTP on loopback,
+  and stdio from a freshly built and independently installed wheel.
+- External-provider boundaries are replaced in the child process. Registry/schema
+  validation, presentation adapters, application services, sessions, artifacts,
+  note files, Chronicle revisions, pipelines, and scheduling stay real. A
+  socket/DNS guard blocks and records any missed outbound dependency; the parent
+  test fails on the sentinel even if the application catches the provider error.
+- MCP-returned Mermaid source is checked against its declared digest and size.
+  CI passes those exact Chronicle and citation sources to pinned Mermaid 11.16.1
+  and requires successful SVG rendering.
+- A separate real-stdio rejection pass protects the intentional breaking
+  boundary: retired tool names, flat action bags, wrong scalar types, and
+  stringified arrays/objects must remain rejected by the protocol server.
+- Deterministic protocol acceptance is a PR CI/release gate; opt-in live-provider
+  probes remain a separate availability and credential check.
 
 ## v0.7.0 Breaking Contract
 
@@ -226,11 +251,13 @@
 
 ## Release Status
 
-- v0.7.0 implementation and documentation are present in the worktree.
-- Final repository-wide tests, static checks, Mermaid rendering, segmented
-  commits, remote push, annotated tag, and publication verification are not
-  recorded here until they actually complete.
+- v0.7.0 is merged at `459eb28`, tagged, and published from the canonical
+  `origin/master` history.
+- The post-release MCP acceptance branch has passed local transport, package,
+  static, documentation, and repository-wide gates. Segmented commits, remote
+  push, and hosted CI results remain pending until those actions actually
+  complete.
 
 ---
 
-*Last updated: 2026-09-01 — v0.7.0 breaking-hardening release candidate*
+*Last updated: 2026-09-01 — complete MCP protocol acceptance hardening*

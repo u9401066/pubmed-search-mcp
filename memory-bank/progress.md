@@ -1,5 +1,39 @@
 # Progress (Updated: 2026-09-01)
 
+## Post-v0.7.0 Complete MCP Protocol Acceptance
+
+- Added a deterministic child-server fixture that keeps the canonical MCP
+  registry, strict schemas, tool adapters, application services, durable stores,
+  artifacts, note exports, Chronicle revisions, pipeline execution, and
+  scheduling real while replacing external-provider boundaries.
+- Added an independent 41-tool manifest and semantic assertions for every public
+  tool. Stateful action coverage performs 60 real `tools/call` requests per run,
+  including all nine `read_session` actions, all six Chronicle read actions,
+  two Chronicle revisions, comparison, saved-pipeline execution, artifact reads,
+  and persisted note-file checks.
+- Actual Chronicle and citation Mermaid responses now require exact source
+  fences/JSON, matching SHA-256 and size metadata, structural validity, hostile
+  label repair, and successful SVG rendering with pinned Mermaid 11.16.1 in CI.
+- Added a real-stdio rejection pass for retired tool names, flat legacy action
+  shapes, invalid scalar types, and stringified arrays/objects; the no-compat
+  boundary is therefore checked across an actual child process as well as the
+  existing in-memory protocol tests.
+- Added three real protocol/package paths: source stdio, source Streamable HTTP,
+  and stdio from a freshly built wheel installed into a blank virtual
+  environment. Unexpected outbound DNS/socket access fails closed.
+- All three protocol paths pass. The acceptance file reports five passes: one
+  hermetic-environment contract, source stdio, real-stdio breaking-contract
+  rejection, source Streamable HTTP, and fresh-wheel stdio. The repository-wide
+  gate reports **4,475 passed, 53 skipped**; Ruff, format checking, mypy across
+  413 source files, and the async test audit also pass. All 105 repository and
+  generated smoke Mermaid diagrams render to SVG with pinned Mermaid 11.16.1.
+- The stateful pipeline call exposed a production regression that narrow tests
+  had missed: executing `saved:<name>` returned an empty pipeline identity.
+  Materialization now preserves the saved name, and both the MCP acceptance
+  assertion and a narrow regression test protect it.
+- CI now has explicit source stdio/HTTP and fresh-wheel complete acceptance
+  gates; the regular cross-platform matrix also runs the non-slow source paths.
+
 ## v0.7.0 Release Candidate
 
 - Consolidated the public surface to **41 tools / 16 categories** across stdio,
