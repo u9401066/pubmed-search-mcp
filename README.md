@@ -1231,6 +1231,28 @@ Pre-built workflow guides in `.claude/skills/`, divided into **Usage Skills** (f
 > Do not mirror or split repo skills into `.github/skills/`.
 > These repo skills are project-scoped and should remain version-controlled. Personal cross-project skills belong in a user directory such as `~/.copilot/skills/` or `~/.claude/skills/`, not in this repository.
 
+### Real MCP Regression Gate
+
+Every one of the 41 public tools is called through the MCP protocol over
+source-tree stdio, Streamable HTTP, and stdio from a freshly installed wheel.
+The wheel path imports server code exclusively from its blank virtual
+environment; the external fixture supplies only deterministic provider seams.
+The deterministic child server replaces external-provider boundaries; registry,
+schemas, application services, persistence, artifacts, Chronicle revisions,
+pipelines, and scheduling remain real.
+CI also renders the exact Chronicle and citation Mermaid sources returned over
+MCP with pinned Mermaid 11.16.1, so presentation-layer syntax damage fails the
+gate.
+An additional real-stdio rejection pass confirms that retired tool names,
+legacy flat request shapes, and scalar/stringified coercions remain rejected.
+
+```bash
+uv run pytest -q tests/test_all_tools_mcp_acceptance.py
+```
+
+See the [Developer Guide](docs/DEVELOPER_GUIDE.md#complete-mcp-protocol-acceptance)
+for the test architecture, CI gates, and live-provider boundary.
+
 ---
 
 ## 🏗️ Architecture (DDD)

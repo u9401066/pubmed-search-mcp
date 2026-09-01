@@ -163,6 +163,13 @@ def test_release_and_tool_metadata_stay_synchronized() -> None:
     assert "run_live_integrations" in ci_workflow
     assert 'PUBMED_RUN_LIVE_TESTS: "1"' in ci_workflow
     assert "pytest -q -m integration -rs" in ci_workflow
+    assert "MCP protocol acceptance (source stdio and Streamable HTTP)" in ci_workflow
+    assert "tests/test_all_tools_mcp_acceptance.py" in ci_workflow
+    assert (
+        "tests/test_all_tools_mcp_acceptance.py::test_all_tools_from_freshly_installed_wheel_through_stdio_mcp"
+    ) in ci_workflow
+    assert "Render Mermaid returned by the real MCP protocol" in ci_workflow
+    assert 'MCP_ACCEPTANCE_REQUIRE_MERMAID_RENDER: "1"' in ci_workflow
 
     publish_workflow = yaml.safe_load((REPO_ROOT / ".github/workflows/publish.yml").read_text(encoding="utf-8"))
     github_release = publish_workflow["jobs"]["github-release"]

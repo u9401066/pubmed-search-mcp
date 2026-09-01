@@ -1134,6 +1134,27 @@ get_pipeline_history(name="icu_sedation_weekly")  # 查看過去執行
 > 不要再另外鏡像或拆分到 `.github/skills/`。
 > 這些 repo skills 屬於 project-scoped 自訂內容，應納入版本控制。跨專案的個人 skills 則應放在 `~/.copilot/skills/` 或 `~/.claude/skills/` 之類的使用者目錄，不要提交到本 repository。
 
+### 真實 MCP 回歸門檻
+
+41 個公開 tool 都會透過 MCP protocol 被實際呼叫，涵蓋 source-tree
+stdio、Streamable HTTP，以及從全新安裝 wheel 啟動的 stdio。Wheel 路徑只從
+空白 virtual environment 匯入 server code；外部 fixture 僅提供 deterministic
+provider seams。Deterministic child server 只替換外部 provider boundaries；
+registry、schemas、application
+services、persistence、artifacts、Chronicle revisions、pipelines 與 scheduling
+都使用真實實作。
+CI 還會把 MCP 實際回傳的 Chronicle 與 citation Mermaid source 交給固定版
+Mermaid 11.16.1 render；presentation layer 的小語法破壞也會讓 gate 失敗。
+另一條 real-stdio rejection pass 會確認 retired tool names、legacy flat request
+shapes 與 scalar/stringified coercions 仍被拒絕。
+
+```bash
+uv run pytest -q tests/test_all_tools_mcp_acceptance.py
+```
+
+測試架構、CI gates 與 live-provider 邊界請見
+[開發者指南](docs/DEVELOPER_GUIDE.zh-TW.md#完整-mcp-protocol-acceptance)。
+
 ---
 
 ## 🏗️ 架構（DDD）

@@ -73,12 +73,12 @@ This project uses [UV](https://github.com/astral-sh/uv) for dependency managemen
 uv sync
 
 # Run commands through uv (ALWAYS use uv run prefix)
-uv run pytest              # Run tests (multi-core, auto -n auto --timeout=60)
+uv run pytest              # Run tests (--timeout=60 from project addopts)
 uv run ruff check .        # Lint
 uv run ruff check . --fix  # Lint auto-fix
 uv run ruff format .       # Format
 uv run mypy src/ tests/    # Type check (including tests)
-uv run pytest --cov        # Multi-core + coverage
+uv run pytest --cov        # Run with coverage
 ```
 
 > ⚠️ **NEVER** call `pytest`, `ruff`, or `mypy` directly. Always use the `uv run` prefix.
@@ -302,18 +302,38 @@ def get_citation_tree(
 ### Running Tests
 
 ```bash
-# Run all tests (multi-core by default via addopts)
+# Run all tests (single process by default)
 uv run pytest
 
-# Run with coverage (multi-core + coverage)
+# Run with coverage
 uv run pytest --cov=src/pubmed_search --cov-report=html
+
+# Opt into local parallel execution when appropriate
+uv run pytest -n auto
 
 # Run specific test file
 uv run pytest tests/test_client.py
 
 # Run tests matching pattern
 uv run pytest -k "test_search"
+
+# Call every public tool through real MCP stdio, Streamable HTTP, and a fresh wheel
+uv run pytest -q tests/test_all_tools_mcp_acceptance.py
 ```
+
+The complete MCP acceptance suite is a protocol-level regression gate: it uses
+an MCP client and real server processes rather than importing tool functions.
+It replaces external-provider boundaries with deterministic child-process
+doubles, while keeping registration, schemas, application services, durable
+stores, artifacts, note exports, Chronicle revisions, pipelines, and scheduling
+real.
+The Mermaid CI job additionally renders the exact Chronicle and citation graph
+sources returned by the MCP acceptance process with pinned Mermaid 11.16.1.
+A separate real-stdio rejection test protects the breaking no-compatibility
+boundary for retired tools, flat action bags, and scalar/stringified coercions.
+Use `-m "not slow"` to omit only the fresh-wheel path during a focused local
+iteration. Live provider probes remain separately opt-in with
+`PUBMED_RUN_LIVE_TESTS=1 uv run pytest -m integration`.
 
 ### Writing Tests
 
@@ -321,6 +341,9 @@ uv run pytest -k "test_search"
 - Name test files as `test_*.py`
 - Use `pytest` fixtures from `conftest.py`
 - Mock external API calls to avoid network dependencies
+- For MCP surface changes, test through `Client.call_tool`; patch provider
+  boundaries in the child server rather than bypassing the protocol or tool
+  adapter
 
 ```python
 import pytest
@@ -343,7 +366,9 @@ We aim for **>85% code coverage**. Run coverage report:
 uv run pytest --cov=src/pubmed_search --cov-report=term-missing
 ```
 
-> 💡 Coverage works seamlessly with multi-core (`-n auto` from addopts) via `pytest-cov` + `pytest-xdist` integration.
+> 💡 The project defaults to one pytest process for deterministic resource and
+> subprocess behavior. Local parallel execution is explicitly opt-in with
+> `-n auto`; `pytest-cov` and `pytest-xdist` remain compatible when selected.
 
 ## Pull Request Process
 

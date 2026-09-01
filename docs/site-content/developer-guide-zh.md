@@ -208,6 +208,58 @@ uv run mypy src/ tests/
 uv run python scripts/check_async_tests.py
 ```
 
+### 完整 MCP protocol acceptance
+
+全工具 acceptance suite 會啟動真正的 server，並用官方 MCP client 執行
+`tools/list` 與 `tools/call`。它會核對精確的 41-tool registry，逐一呼叫每個
+公開 tool，也會實際走過 session、Chronicle、artifact、note export、pipeline
+與 scheduler 的有狀態流程。
+
+```mermaid
+flowchart LR
+    C["官方 MCP client"] --> T{"真實 transport"}
+    T --> S["Source-tree stdio 子行程"]
+    T --> H["Streamable HTTP /mcp"]
+    T --> W["全新安裝 wheel 的 stdio"]
+    S --> R["Canonical 41-tool registry"]
+    H --> R
+    W --> R
+    R --> A["真實 application services 與 durable stores"]
+    A --> I["Injected provider ports 與 outbound I/O boundary"]
+    P["Deterministic 外部 provider seam"] --> I
+```
+
+一次執行三條 transport/package 路徑：
+
+```bash
+uv run pytest -q tests/test_all_tools_mcp_acceptance.py
+```
+
+只跑較快的 source-tree 路徑：
+
+```bash
+uv run pytest -q tests/test_all_tools_mcp_acceptance.py -m "not slow"
+```
+
+Child server 只替換 external-provider boundaries；MCP registration 與 schema
+validation、tool adapters、application services、session/artifact/Chronicle/
+pipeline persistence、note files 與 scheduling 都使用真實實作。每一種
+transport 都會執行 60 次具語意斷言的 `tools/call`。經 MCP 回傳的 Chronicle
+與 citation Mermaid 會核對 hash/size，CI 還會把這兩份實際 source 交給固定版
+Mermaid 11.16.1 render。Socket/DNS guard 會阻擋外連並留下 sentinel；即使
+application boundary 捕捉 provider error，測試仍會失敗。CI 明確以 source
+stdio、Streamable HTTP 與 fresh-wheel stdio acceptance 作為 PR CI 與 release
+gates；cross-platform matrix 也會執行 non-slow 路徑。
+
+Source-stdio 另有 rejection pass，會傳入 retired tool names、legacy flat action
+bags、錯誤 scalar types 與 stringified arrays/objects。Wheel 路徑使用外部
+deterministic bootstrap，但會明確斷言所有匯入的 server code 都來自空白 wheel
+environment，而非 source tree。
+
+這套 deterministic suite 驗證 MCP 與 package integration contract，不代表
+第三方 provider 當下可用或憑證有效；外部服務仍由明確 opt-in 的
+`PUBMED_RUN_LIVE_TESTS=1 uv run pytest -m integration` gate 負責。
+
 常見 focused checks：
 
 ```bash

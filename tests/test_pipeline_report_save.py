@@ -9,6 +9,7 @@ Coverage targets:
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -287,13 +288,14 @@ class TestAutoSavePipelineReport:
             mock_exec.execute = AsyncMock(return_value=([], {}))
             outcome = await _execute_pipeline_mode_outcome(
                 "saved:weekly_remi_template",
-                "markdown",
+                "json",
                 MagicMock(),
                 pipeline_store=workspace_store,
             )
 
         assert outcome.status == "completed"
         assert isinstance(outcome.response, str)
+        assert json.loads(outcome.response)["pipeline"]["name"] == "weekly_remi_template"
         assert mock_exec.execute.await_count == 1
         history = workspace_store.get_history("weekly_remi_template")
         assert len(history) == 1
