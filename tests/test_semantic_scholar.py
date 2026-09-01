@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
 
+from pubmed_search.infrastructure.sources.base_client import APIRequestError
 from pubmed_search.infrastructure.sources.semantic_scholar import (
     SemanticScholarClient,
 )
@@ -19,7 +19,6 @@ from pubmed_search.shared.exceptions import RateLimitError
 @pytest.fixture
 def client():
     c = SemanticScholarClient(timeout=5.0)
-    c._last_request_time = 0  # skip rate limiting in tests
     c._min_interval = 0
     return c
 
@@ -103,23 +102,26 @@ class TestMakeRequest:
     async def test_success(self, client):
         mock_response = MagicMock()
         mock_response.status_code = 200
+        mock_response.headers = {}
         mock_response.json.return_value = {"total": 1}
         mock_response.raise_for_status = MagicMock()
-        client._client = AsyncMock()
-        client._client.get = AsyncMock(return_value=mock_response)
+        client._execute_request = AsyncMock(return_value=mock_response)
         result = await client._make_request("https://api.semanticscholar.org/test")
         assert result == {"total": 1}
 
     async def test_with_api_key_header(self, client_with_key):
         mock_response = MagicMock()
         mock_response.status_code = 200
+        mock_response.headers = {}
         mock_response.json.return_value = {"ok": True}
         mock_response.raise_for_status = MagicMock()
-        client_with_key._client = AsyncMock()
-        client_with_key._client.get = AsyncMock(return_value=mock_response)
-
-        await client_with_key._make_request("https://api.semanticscholar.org/test")
-        call_kwargs = client_with_key._client.get.call_args[1]
+        with patch(
+            "pubmed_search.infrastructure.sources.base_client.BaseAPIClient._execute_request",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ) as execute_request:
+            await client_with_key._make_request("https://api.semanticscholar.org/test")
+        call_kwargs = execute_request.await_args.kwargs
         assert call_kwargs["headers"]["x-api-key"] == "test_key"
 
     async def test_http_error(self, client):
@@ -129,14 +131,16 @@ class TestMakeRequest:
         mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
             "Server Error", request=MagicMock(), response=mock_response
         )
-        client._client = AsyncMock()
-        client._client.get = AsyncMock(return_value=mock_response)
-        assert await client._make_request("https://test.com") is None
+        client._MAX_RETRIES = 0
+        client._execute_request = AsyncMock(return_value=mock_response)
+        with pytest.raises(RetryableOperationError):
+            await client._make_request("https://test.com")
 
     async def test_url_error(self, client):
-        client._client = AsyncMock()
-        client._client.get = AsyncMock(side_effect=httpx.ConnectError("DNS failed", request=MagicMock()))
-        assert await client._make_request("https://test.com") is None
+        client._execute_request = AsyncMock(side_effect=httpx.ConnectError("DNS failed", request=MagicMock()))
+        client._MAX_RETRIES = 0
+        with pytest.raises(APIRequestError):
+            await client._make_request("https://test.com")
 
     async def test_rate_limit_exhaustion_logs_warning_without_traceback(self, client, caplog):
         mock_response = MagicMock()
@@ -144,66 +148,24 @@ class TestMakeRequest:
         mock_response.headers = {}
 
         client._MAX_RETRIES = 0
-        client._client = AsyncMock()
-        client._client.get = AsyncMock(return_value=mock_response)
+        client._execute_request = AsyncMock(return_value=mock_response)
 
         caplog.set_level(logging.WARNING, logger="pubmed_search.infrastructure.sources.base_client")
 
-        result = await client._make_request("https://api.semanticscholar.org/test")
+        with pytest.raises(RetryableOperationError):
+            await client._make_request("https://api.semanticscholar.org/test")
 
-        assert result is None
         assert not [record for record in caplog.records if record.levelno >= logging.ERROR]
         assert any("rate limited" in record.getMessage().lower() for record in caplog.records)
         assert not any(record.exc_info for record in caplog.records)
 
-    async def test_retryable_error_is_task_local_between_concurrent_requests(self, client):
-        rate_limited = MagicMock()
-        rate_limited.status_code = 429
-        rate_limited.headers = {}
-
-        success = MagicMock()
-        success.status_code = 200
-        success.json.return_value = {"ok": True}
-        success.raise_for_status = MagicMock()
-
-        client._MAX_RETRIES = 0
-        fail_done = asyncio.Event()
-        ok_done = asyncio.Event()
-
-        async def fake_execute_request(url, **kwargs):
-            del kwargs
-            if "ok" in url:
-                await fail_done.wait()
-                return success
-            return rate_limited
-
-        client._execute_request = AsyncMock(side_effect=fake_execute_request)
-
-        async def fail_call():
-            result = await client._make_request("https://api.semanticscholar.org/fail")
-            fail_done.set()
-            await ok_done.wait()
-            return result, client.last_retryable_error
-
-        async def ok_call():
-            result = await client._make_request("https://api.semanticscholar.org/ok")
-            ok_done.set()
-            return result, client.last_retryable_error
-
-        fail_result, ok_result = await asyncio.gather(fail_call(), ok_call())
-
-        assert fail_result[0] is None
-        assert isinstance(fail_result[1], RetryableOperationError)
-        assert fail_result[1].status_code == 429
-        assert ok_result == ({"ok": True}, None)
-
 
 # ============================================================
-# search
+# search_page
 # ============================================================
 
 
-class TestSearch:
+class TestSearchPage:
     @patch.object(SemanticScholarClient, "_make_request")
     async def test_basic_search(self, mock_req, client):
         mock_req.return_value = {
@@ -225,53 +187,52 @@ class TestSearch:
             ]
         }
 
-        results = await client.search("deep learning")
-        assert len(results) == 1
-        assert results[0]["title"] == "Deep Learning"
-        assert results[0]["doi"] == "10.1234/test"
-        assert results[0]["pmid"] == "12345"
-        assert results[0]["_source"] == "semantic_scholar"
-        assert results[0]["pdf_url"] == "https://pdf.example.com/paper.pdf"
+        page = await client.search_page("deep learning")
+        assert page.source == "semantic_scholar"
+        assert len(page.items) == 1
+        assert page.items[0]["title"] == "Deep Learning"
+        assert page.items[0]["externalIds"] == {"DOI": "10.1234/test", "PubMed": "12345"}
 
     @patch.object(SemanticScholarClient, "_make_request")
     async def test_search_with_year_range(self, mock_req, client):
         mock_req.return_value = {"data": []}
-        await client.search("test", min_year=2020, max_year=2024)
+        await client.search_page("test", min_year=2020, max_year=2024)
         url = mock_req.call_args[0][0]
         assert "2020-2024" in url
 
     @patch.object(SemanticScholarClient, "_make_request")
     async def test_search_min_year_only(self, mock_req, client):
         mock_req.return_value = {"data": []}
-        await client.search("test", min_year=2020)
+        await client.search_page("test", min_year=2020)
         url = mock_req.call_args[0][0]
         assert "2020-" in url
 
     @patch.object(SemanticScholarClient, "_make_request")
     async def test_search_max_year_only(self, mock_req, client):
         mock_req.return_value = {"data": []}
-        await client.search("test", max_year=2024)
+        await client.search_page("test", max_year=2024)
         url = mock_req.call_args[0][0]
         assert "-2024" in url
 
     @patch.object(SemanticScholarClient, "_make_request")
     async def test_search_open_access(self, mock_req, client):
         mock_req.return_value = {"data": []}
-        await client.search("test", open_access_only=True)
+        await client.search_page("test", open_access_only=True)
         url = mock_req.call_args[0][0]
         assert "openAccessPdf" in url
 
     @patch.object(SemanticScholarClient, "_make_request")
     async def test_search_limit_capped(self, mock_req, client):
         mock_req.return_value = {"data": []}
-        await client.search("test", limit=500)
+        await client.search_page("test", limit=500)
         url = mock_req.call_args[0][0]
         assert "limit=100" in url
 
     @patch.object(SemanticScholarClient, "_make_request")
-    async def test_search_returns_empty_on_none(self, mock_req, client):
+    async def test_search_page_none_raises_typed_failure(self, mock_req, client):
         mock_req.return_value = None
-        assert await client.search("test") == []
+        with pytest.raises(APIRequestError):
+            await client.search_page("test")
 
     async def test_search_raises_retryable_when_transport_rate_limited(self, client):
         with patch.object(
@@ -280,15 +241,16 @@ class TestSearch:
             new=AsyncMock(side_effect=RateLimitError("circuit open", retry_after=7.0)),
         ):
             with pytest.raises(RetryableOperationError) as exc_info:
-                await client.search("test")
+                await client.search_page("test")
 
-        assert "circuit open" in str(exc_info.value)
+        assert "Semantic Scholar request failed" in str(exc_info.value)
         assert exc_info.value.retry_after == 7.0
 
     @patch.object(SemanticScholarClient, "_make_request")
-    async def test_search_exception(self, mock_req, client):
+    async def test_search_page_exception_raises_typed_failure(self, mock_req, client):
         mock_req.side_effect = Exception("fail")
-        assert await client.search("test") == []
+        with pytest.raises(APIRequestError):
+            await client.search_page("test")
 
 
 # ============================================================
@@ -318,7 +280,8 @@ class TestGetPaper:
     @patch.object(SemanticScholarClient, "_make_request")
     async def test_get_exception(self, mock_req, client):
         mock_req.side_effect = Exception("fail")
-        assert await client.get_paper("abc") is None
+        with pytest.raises(APIRequestError):
+            await client.get_paper("abc")
 
 
 # ============================================================
@@ -363,7 +326,8 @@ class TestCitationsRefs:
     @patch.object(SemanticScholarClient, "_make_request")
     async def test_get_citations_exception(self, mock_req, client):
         mock_req.side_effect = Exception("fail")
-        assert await client.get_citations("abc") == []
+        with pytest.raises(APIRequestError):
+            await client.get_citations("abc")
 
     @patch.object(SemanticScholarClient, "_make_request")
     async def test_get_references(self, mock_req, client):
@@ -391,7 +355,8 @@ class TestCitationsRefs:
     @patch.object(SemanticScholarClient, "_make_request")
     async def test_get_references_exception(self, mock_req, client):
         mock_req.side_effect = Exception("fail")
-        assert await client.get_references("abc") == []
+        with pytest.raises(APIRequestError):
+            await client.get_references("abc")
 
 
 # ============================================================
@@ -422,9 +387,10 @@ class TestRecommendations:
         }
         results = await client.get_recommendations("abc123", limit=10)
         assert len(results) == 2
-        assert results[0]["similarity_score"] == 1.0
-        assert results[1]["similarity_score"] == 0.5
-        assert results[0]["similarity_source"] == "semantic_scholar"
+        assert results[0]["rank_percentile"] == 1.0
+        assert results[1]["rank_percentile"] == 0.5
+        assert results[0]["rank_percentile_source"] == "semantic_scholar_recommendation_order"
+        assert "similarity_score" not in results[0]
 
     @patch.object(SemanticScholarClient, "_make_request")
     async def test_empty(self, mock_req, client):
@@ -434,7 +400,8 @@ class TestRecommendations:
     @patch.object(SemanticScholarClient, "_make_request")
     async def test_exception(self, mock_req, client):
         mock_req.side_effect = Exception("fail")
-        assert await client.get_recommendations("abc") == []
+        with pytest.raises(APIRequestError):
+            await client.get_recommendations("abc")
 
     @patch.object(SemanticScholarClient, "_make_request")
     async def test_limit_capped(self, mock_req, client):
@@ -479,7 +446,8 @@ class TestAuthors:
     @patch.object(SemanticScholarClient, "_make_request")
     async def test_search_authors_empty(self, mock_req, client):
         mock_req.return_value = None
-        assert await client.search_authors("Nobody") == []
+        with pytest.raises(APIRequestError):
+            await client.search_authors("Nobody")
 
     @patch.object(SemanticScholarClient, "_make_request")
     async def test_get_author_success(self, mock_req, client):
@@ -509,33 +477,33 @@ class TestAuthors:
 
 
 # ============================================================
-# get_paper_embedding_similarity
+# get_recommendation_rank_percentile
 # ============================================================
 
 
-class TestEmbeddingSimilarity:
+class TestRecommendationRankPercentile:
     @patch.object(SemanticScholarClient, "get_recommendations")
     async def test_found_by_pmid(self, mock_recs, client):
         mock_recs.return_value = [
-            {"_s2_id": "", "pmid": "12345", "doi": "", "similarity_score": 0.8},
+            {"_s2_id": "", "pmid": "12345", "doi": "", "rank_percentile": 0.8},
         ]
-        score = await client.get_paper_embedding_similarity("abc", "PMID:12345")
+        score = await client.get_recommendation_rank_percentile("abc", "PMID:12345")
         assert score == 0.8
 
     @patch.object(SemanticScholarClient, "get_recommendations")
     async def test_found_by_doi(self, mock_recs, client):
         mock_recs.return_value = [
-            {"_s2_id": "", "pmid": "", "doi": "10.1234/test", "similarity_score": 0.9},
+            {"_s2_id": "", "pmid": "", "doi": "10.1234/test", "rank_percentile": 0.9},
         ]
-        score = await client.get_paper_embedding_similarity("abc", "DOI:10.1234/test")
+        score = await client.get_recommendation_rank_percentile("abc", "DOI:10.1234/test")
         assert score == 0.9
 
     @patch.object(SemanticScholarClient, "get_recommendations")
     async def test_found_by_s2_id(self, mock_recs, client):
         mock_recs.return_value = [
-            {"_s2_id": "target123", "pmid": "", "doi": "", "similarity_score": 0.7},
+            {"_s2_id": "target123", "pmid": "", "doi": "", "rank_percentile": 0.7},
         ]
-        score = await client.get_paper_embedding_similarity("abc", "target123")
+        score = await client.get_recommendation_rank_percentile("abc", "target123")
         assert score == 0.7
 
     @patch.object(SemanticScholarClient, "get_recommendations")
@@ -545,16 +513,17 @@ class TestEmbeddingSimilarity:
                 "_s2_id": "other",
                 "pmid": "999",
                 "doi": "10.xxx",
-                "similarity_score": 0.5,
+                "rank_percentile": 0.5,
             },
         ]
-        score = await client.get_paper_embedding_similarity("abc", "xyz")
-        assert score == 0.1
+        score = await client.get_recommendation_rank_percentile("abc", "xyz")
+        assert score is None
 
     @patch.object(SemanticScholarClient, "get_recommendations")
     async def test_exception(self, mock_recs, client):
         mock_recs.side_effect = Exception("fail")
-        assert await client.get_paper_embedding_similarity("abc", "xyz") is None
+        with pytest.raises(APIRequestError):
+            await client.get_recommendation_rank_percentile("abc", "xyz")
 
 
 # ============================================================

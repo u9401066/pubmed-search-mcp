@@ -18,10 +18,16 @@ from __future__ import annotations
 import logging
 import re
 import urllib.parse
-from typing import Any, NoReturn
+from typing import TYPE_CHECKING, Any
 
 from pubmed_search.application.search.source_models import SourceSearchPage, coerce_optional_total
-from pubmed_search.infrastructure.sources.base_client import APIRequestError, BaseAPIClient
+from pubmed_search.infrastructure.sources.base_client import (
+    _CONTINUE,
+    APIRequestError,
+    BaseAPIClient,
+    raise_provider_schema_error,
+    raise_sanitized_retryable_error,
+)
 from pubmed_search.infrastructure.sources.official_generated_clients import (
     OfficialSemanticScholarGeneratedClient,
     SemanticScholarSearchRequest,
@@ -29,6 +35,9 @@ from pubmed_search.infrastructure.sources.official_generated_clients import (
 from pubmed_search.shared.async_utils import RetryableOperationError
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    import httpx
 
 # Semantic Scholar API endpoints
 S2_API_BASE = "https://api.semanticscholar.org/graph/v1"
@@ -74,16 +83,6 @@ DEFAULT_AUTHOR_FIELDS = [
 ]
 
 
-def _raise_retryable_error(error: RetryableOperationError | None) -> None:
-    if error is not None:
-        raise error
-
-
-def _raise_api_request_error(service_name: str) -> NoReturn:
-    """Raise outside request parsing blocks so the public error stays sanitized."""
-    raise APIRequestError(service_name)
-
-
 def _require_result_list(value: object) -> list[object]:
     """Validate provider collection shape without accepting false-empty drift."""
     if not isinstance(value, list):
@@ -120,7 +119,7 @@ class SemanticScholarClient(BaseAPIClient):
 
     Usage:
         client = SemanticScholarClient()
-        results = client.search("deep learning medical imaging", limit=10)
+        page = await client.search_page("deep learning medical imaging", limit=10)
     """
 
     _service_name = "Semantic Scholar"
@@ -148,6 +147,13 @@ class SemanticScholarClient(BaseAPIClient):
         )
         self._official_client = OfficialSemanticScholarGeneratedClient(self)
 
+    def _handle_expected_status(self, response: httpx.Response, url: str) -> Any:
+        """Treat only a real provider 404 as an absent Semantic Scholar entity."""
+
+        if response.status_code == 404:
+            return None
+        return _CONTINUE
+
     async def _execute_request(
         self,
         url: str,
@@ -162,47 +168,6 @@ class SemanticScholarClient(BaseAPIClient):
         if self._api_key:
             req_headers["x-api-key"] = self._api_key
         return await super()._execute_request(url, method=method, data=data, params=params, headers=req_headers)
-
-    async def search(
-        self,
-        query: str,
-        limit: int = 10,
-        min_year: int | None = None,
-        max_year: int | None = None,
-        open_access_only: bool = False,
-        fields: list[str] | None = None,
-        offset: int = 0,
-    ) -> list[dict[str, Any]]:
-        """Search Semantic Scholar using the legacy normalized-list contract.
-
-        Unified search consumes :meth:`search_page`, whose items remain raw
-        Semantic Scholar DTOs until the single domain-mapping boundary.
-
-        Args:
-            query: Search query
-            limit: Maximum results (max 100 per request)
-            min_year: Filter by minimum publication year
-            max_year: Filter by maximum publication year
-            open_access_only: Only return open access papers
-            fields: Fields to retrieve (default: DEFAULT_FIELDS)
-
-        Returns:
-            List of paper dictionaries in normalized format
-        """
-        try:
-            page = await self.search_page(
-                query,
-                limit=limit,
-                min_year=min_year,
-                max_year=max_year,
-                open_access_only=open_access_only,
-                fields=fields,
-                offset=offset,
-            )
-        except APIRequestError as exc:
-            logger.warning("Semantic Scholar legacy search returned no items (%s)", type(exc).__name__)
-            return []
-        return [self._normalize_paper(paper) for paper in page.items]
 
     async def search_page(
         self,
@@ -231,8 +196,7 @@ class SemanticScholarClient(BaseAPIClient):
             request = SemanticScholarSearchRequest.model_validate(params)
             response = await self._official_client.search_papers(request)
             if response is None:
-                _raise_retryable_error(self.last_retryable_error)
-                _raise_api_request_error(self._service_name)
+                raise_provider_schema_error(self._service_name)
 
             total, warnings = coerce_optional_total(response.total)
             return SourceSearchPage(
@@ -245,8 +209,8 @@ class SemanticScholarClient(BaseAPIClient):
                 mode="relevance",
                 metadata={"offset": response.offset},
             )
-        except RetryableOperationError:
-            raise
+        except RetryableOperationError as exc:
+            raise_sanitized_retryable_error(self._service_name, exc)
         except APIRequestError:
             raise
         except Exception as exc:
@@ -288,8 +252,7 @@ class SemanticScholarClient(BaseAPIClient):
             url = f"{S2_BULK_SEARCH_URL}?{urllib.parse.urlencode(params)}"
             payload = await self._make_request(url)
             if not isinstance(payload, dict):
-                _raise_retryable_error(self.last_retryable_error)
-                _raise_api_request_error(self._service_name)
+                raise_provider_schema_error(self._service_name)
 
             raw_data = payload.get("data")
             if raw_data is None:
@@ -310,8 +273,8 @@ class SemanticScholarClient(BaseAPIClient):
                 mode="bulk",
                 metadata={"sort": sort},
             )
-        except RetryableOperationError:
-            raise
+        except RetryableOperationError as exc:
+            raise_sanitized_retryable_error(self._service_name, exc)
         except APIRequestError:
             raise
         except Exception as exc:
@@ -401,7 +364,8 @@ class SemanticScholarClient(BaseAPIClient):
         # this official endpoint is the intentional array-root exception.
         payload: Any = await self._make_request(url, method="POST", data={"ids": paper_ids})
         if not isinstance(payload, list):
-            _raise_retryable_error(self.last_retryable_error)
+            raise_provider_schema_error(self._service_name)
+        if any(paper is not None and not isinstance(paper, dict) for paper in payload):
             raise APIRequestError(self._service_name)
         return [paper if isinstance(paper, dict) else None for paper in payload]
 
@@ -436,9 +400,13 @@ class SemanticScholarClient(BaseAPIClient):
 
             return self._normalize_paper(response.model_dump(exclude_none=True))
 
-        except Exception as e:
-            logger.exception(f"Failed to get paper {paper_id}: {e}")
-            return None
+        except APIRequestError:
+            raise
+        except RetryableOperationError as exc:
+            raise_sanitized_retryable_error(self._service_name, exc)
+        except Exception as exc:
+            logger.warning("Semantic Scholar paper lookup failed (%s)", type(exc).__name__)
+            raise APIRequestError(self._service_name) from exc
 
     async def get_citations(self, paper_id: str, limit: int = 10) -> list[dict[str, Any]]:
         """
@@ -463,9 +431,13 @@ class SemanticScholarClient(BaseAPIClient):
             papers = [item.citingPaper.model_dump(exclude_none=True) for item in response.data if item.citingPaper]
             return [self._normalize_paper(paper) for paper in papers]
 
-        except Exception as e:
-            logger.exception(f"Failed to get citations for {paper_id}: {e}")
-            return []
+        except APIRequestError:
+            raise
+        except RetryableOperationError as exc:
+            raise_sanitized_retryable_error(self._service_name, exc)
+        except Exception as exc:
+            logger.warning("Semantic Scholar citation lookup failed (%s)", type(exc).__name__)
+            raise APIRequestError(self._service_name) from exc
 
     async def get_references(self, paper_id: str, limit: int = 10) -> list[dict[str, Any]]:
         """
@@ -490,9 +462,13 @@ class SemanticScholarClient(BaseAPIClient):
             papers = [item.citedPaper.model_dump(exclude_none=True) for item in response.data if item.citedPaper]
             return [self._normalize_paper(paper) for paper in papers]
 
-        except Exception as e:
-            logger.exception(f"Failed to get references for {paper_id}: {e}")
-            return []
+        except APIRequestError:
+            raise
+        except RetryableOperationError as exc:
+            raise_sanitized_retryable_error(self._service_name, exc)
+        except Exception as exc:
+            logger.warning("Semantic Scholar reference lookup failed (%s)", type(exc).__name__)
+            raise APIRequestError(self._service_name) from exc
 
     async def get_recommendations(
         self,
@@ -503,9 +479,9 @@ class SemanticScholarClient(BaseAPIClient):
         """
         Get paper recommendations based on a seed paper.
 
-        Uses Semantic Scholar's recommendation API which returns papers
-        similar to the seed paper, with implicit similarity scores based
-        on their ranking in the response.
+        Uses Semantic Scholar's recommendation API. The upstream response is
+        ordered; this client exposes that order only as a rank percentile and
+        does not claim a semantic-similarity measurement.
 
         Args:
             paper_id: Paper identifier (S2 ID, DOI:xxx, or PMID:xxx)
@@ -513,7 +489,7 @@ class SemanticScholarClient(BaseAPIClient):
             fields: Fields to retrieve
 
         Returns:
-            List of recommended papers with similarity_score (0.0-1.0)
+            Recommended papers with ``rank_percentile`` metadata (0.0-1.0)
         """
         try:
             response = await self._official_client.get_recommendations(
@@ -528,17 +504,19 @@ class SemanticScholarClient(BaseAPIClient):
             results = []
             for i, paper in enumerate(papers):
                 normalized = self._normalize_paper(paper.model_dump(exclude_none=True))
-                # Calculate similarity score based on ranking position
-                # First result = 1.0, linearly decreasing
-                normalized["similarity_score"] = max(0.0, 1.0 - (i / max(len(papers), 1)))
-                normalized["similarity_source"] = "semantic_scholar"
+                normalized["rank_percentile"] = (len(papers) - i) / len(papers)
+                normalized["rank_percentile_source"] = "semantic_scholar_recommendation_order"
                 results.append(normalized)
 
             return results
 
-        except Exception as e:
-            logger.exception(f"Failed to get recommendations for {paper_id}: {e}")
-            return []
+        except APIRequestError:
+            raise
+        except RetryableOperationError as exc:
+            raise_sanitized_retryable_error(self._service_name, exc)
+        except Exception as exc:
+            logger.warning("Semantic Scholar recommendation lookup failed (%s)", type(exc).__name__)
+            raise APIRequestError(self._service_name) from exc
 
     async def search_authors(
         self,
@@ -566,12 +544,20 @@ class SemanticScholarClient(BaseAPIClient):
             url = f"{S2_AUTHOR_URL}/search?{urllib.parse.urlencode(params)}"
             data = await self._make_request(url)
             if not isinstance(data, dict):
-                return []
+                raise_provider_schema_error(self._service_name)
 
-            return [self._normalize_author(author) for author in data.get("data", [])]
+            authors = data.get("data")
+            if not isinstance(authors, list) or any(not isinstance(author, dict) for author in authors):
+                raise_provider_schema_error(self._service_name)
+
+            return [self._normalize_author(author) for author in authors]
+        except APIRequestError:
+            raise
+        except RetryableOperationError as exc:
+            raise_sanitized_retryable_error(self._service_name, exc)
         except Exception as exc:
             logger.warning("Semantic Scholar author search failed (%s)", type(exc).__name__)
-            return []
+            raise APIRequestError(self._service_name) from exc
 
     async def get_author(self, author_id: str, fields: list[str] | None = None) -> dict[str, Any] | None:
         """
@@ -590,31 +576,38 @@ class SemanticScholarClient(BaseAPIClient):
             url = f"{S2_AUTHOR_URL}/{encoded_id}?{urllib.parse.urlencode(params)}"
 
             data = await self._make_request(url)
-            if not isinstance(data, dict):
+            if data is None:
                 return None
+            if not isinstance(data, dict):
+                raise_provider_schema_error(self._service_name)
 
             return self._normalize_author(data)
-        except Exception as e:
-            logger.exception(f"Failed to get author {author_id}: {e}")
-            return None
+        except APIRequestError:
+            raise
+        except RetryableOperationError as exc:
+            raise_sanitized_retryable_error(self._service_name, exc)
+        except Exception as exc:
+            logger.warning("Semantic Scholar author lookup failed (%s)", type(exc).__name__)
+            raise APIRequestError(self._service_name) from exc
 
-    async def get_paper_embedding_similarity(
+    async def get_recommendation_rank_percentile(
         self,
         paper_id1: str,
         paper_id2: str,
     ) -> float | None:
         """
-        Calculate embedding similarity between two papers.
+        Return a target paper's percentile within a bounded recommendation list.
 
-        Note: S2 doesn't expose raw embeddings, but we can approximate
-        by checking if paper2 appears in paper1's recommendations.
+        Semantic Scholar does not expose an embedding score here. Absence from
+        the first 100 recommendations yields ``None`` rather than an invented
+        low-similarity value.
 
         Args:
             paper_id1: First paper identifier
             paper_id2: Second paper identifier
 
         Returns:
-            Similarity score 0.0-1.0, or None if not calculable
+            Rank percentile 0.0-1.0, or ``None`` if not observed/calculable
         """
         try:
             recommendations = await self.get_recommendations(paper_id1, limit=100)
@@ -631,14 +624,20 @@ class SemanticScholarClient(BaseAPIClient):
                     or (rec_pmid and rec_pmid == paper_id2_clean)
                     or (rec_doi and rec_doi.lower() == paper_id2_clean.lower())
                 ):
-                    return rec.get("similarity_score", 0.5)
+                    rank_percentile = rec.get("rank_percentile")
+                    if isinstance(rank_percentile, bool) or not isinstance(rank_percentile, int | float):
+                        return None
+                    return float(rank_percentile)
 
-            # Not found in recommendations = low similarity
-            return 0.1
-
-        except Exception as e:
-            logger.exception(f"Failed to calculate similarity: {e}")
             return None
+
+        except APIRequestError:
+            raise
+        except RetryableOperationError as exc:
+            raise_sanitized_retryable_error(self._service_name, exc)
+        except Exception as exc:
+            logger.warning("Semantic Scholar recommendation-rank lookup failed (%s)", type(exc).__name__)
+            raise APIRequestError(self._service_name) from exc
 
     def _normalize_paper(self, paper: dict[str, Any]) -> dict[str, Any]:
         """

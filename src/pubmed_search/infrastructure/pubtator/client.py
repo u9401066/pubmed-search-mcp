@@ -4,7 +4,7 @@ PubTator3 API Client
 Async HTTP client for PubTator3 API with:
 - Built-in rate limiting (3 requests/second)
 - Automatic retry with exponential backoff
-- Graceful error handling
+- Sanitized typed failures with explicit autocomplete-404 degradation
 - Connection pooling via httpx
 
 API Documentation:
@@ -18,9 +18,9 @@ from typing import Any, Literal
 
 import httpx
 
+from pubmed_search.application.search.semantic_enhancer import ResolvedEntity
 from pubmed_search.infrastructure.pubtator.models import (
     EntityMatch,
-    PubTatorEntity,
     RelationMatch,
 )
 from pubmed_search.infrastructure.sources.base_client import BaseAPIClient
@@ -139,7 +139,8 @@ class PubTatorClient(BaseAPIClient):
             params: Query parameters
 
         Returns:
-            JSON response or None on failure.
+            JSON response, or ``None`` only for an explicitly handled optional
+            endpoint response. Other failures raise sanitized typed errors.
         """
         data = await self._make_request(endpoint, data=params or {}, expect_json=True)
         return data if isinstance(data, dict) else None
@@ -222,7 +223,7 @@ class PubTatorClient(BaseAPIClient):
         self,
         text: str,
         preferred_type: Literal["gene", "disease", "chemical", "species", "variant"] | None = None,
-    ) -> PubTatorEntity | None:
+    ) -> ResolvedEntity | None:
         """
         Resolve text to standardized entity.
 
@@ -241,7 +242,7 @@ class PubTatorClient(BaseAPIClient):
             return None
 
         match = matches[0]
-        return PubTatorEntity(
+        return ResolvedEntity(
             original_text=text,
             resolved_name=match.name,
             entity_type=match.type,
@@ -348,27 +349,17 @@ class PubTatorClient(BaseAPIClient):
         return annotations
 
 
-# ==================== Singleton Factory ====================
-
-_client_instance: PubTatorClient | None = None
-
-
 def get_pubtator_client() -> PubTatorClient:
-    """
-    Get singleton PubTator3 client.
+    """Get the PubTator client owned by the current source runtime."""
+    from pubmed_search.infrastructure.sources.runtime import get_source_runtime
 
-    Returns:
-        Shared PubTatorClient instance
-    """
-    global _client_instance
-    if _client_instance is None:
-        _client_instance = PubTatorClient()
-    return _client_instance
+    return get_source_runtime().get_or_create_client(("pubtator",), PubTatorClient)
 
 
 async def close_pubtator_client():
-    """Close singleton client (for cleanup)."""
-    global _client_instance
-    if _client_instance is not None:
-        await _client_instance.close()
-        _client_instance = None
+    """Close the PubTator client owned by the current runtime."""
+    from pubmed_search.infrastructure.sources.runtime import get_source_runtime
+
+    client = get_source_runtime().discard_owned_value(("pubtator",))
+    if isinstance(client, PubTatorClient):
+        await client.close()

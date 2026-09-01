@@ -24,10 +24,10 @@ from pubmed_search.application.search.result_aggregator import (
 from pubmed_search.application.search.semantic_enhancer import (
     EnhancedQuery,
     ExpandedTerm,
+    ResolvedEntity,
     SearchPlan,
     SemanticEnhancer,
     _entity_cache_key,
-    enhance_query,
 )
 from pubmed_search.infrastructure.cache.entity_cache import (
     EntityCache,
@@ -36,7 +36,6 @@ from pubmed_search.infrastructure.cache.entity_cache import (
 )
 from pubmed_search.infrastructure.pubtator.models import (
     EntityMatch,
-    PubTatorEntity,
     RelationMatch,
 )
 from pubmed_search.shared.tenancy import TenantIdentity, bind_tenant
@@ -52,7 +51,9 @@ class TestSemanticEnhancer:
     @pytest.fixture
     def enhancer(self):
         """Create enhancer with mocked client."""
-        return SemanticEnhancer(use_cache=False, timeout=5.0)
+        resolver = AsyncMock()
+        resolver.resolve_entity = AsyncMock(return_value=None)
+        return SemanticEnhancer(entity_resolver=resolver, timeout=5.0)
 
     async def test_extract_candidates_basic(self, enhancer):
         """Test candidate term extraction."""
@@ -93,7 +94,7 @@ class TestSemanticEnhancer:
     async def test_generate_strategies(self, enhancer):
         """Test strategy generation."""
         entities = [
-            PubTatorEntity(
+            ResolvedEntity(
                 original_text="propofol",
                 resolved_name="Propofol",
                 entity_type="chemical",
@@ -119,7 +120,7 @@ class TestSemanticEnhancer:
     async def test_build_mesh_query(self, enhancer):
         """Test MeSH query building."""
         entities = [
-            PubTatorEntity(
+            ResolvedEntity(
                 original_text="propofol",
                 resolved_name="Propofol",
                 entity_type="chemical",
@@ -144,7 +145,7 @@ class TestSemanticEnhancerAsync:
         """Create mocked PubTator3 client."""
         client = AsyncMock()
         client.resolve_entity = AsyncMock(
-            return_value=PubTatorEntity(
+            return_value=ResolvedEntity(
                 original_text="propofol",
                 resolved_name="Propofol",
                 entity_type="chemical",
@@ -158,8 +159,7 @@ class TestSemanticEnhancerAsync:
     async def test_enhance_with_entities(self, mock_pubtator_client):
         """Test enhancement with mocked entity resolution."""
         enhancer = SemanticEnhancer(
-            pubtator_client=mock_pubtator_client,
-            use_cache=False,
+            entity_resolver=mock_pubtator_client,
             timeout=5.0,
         )
 
@@ -184,8 +184,7 @@ class TestSemanticEnhancerAsync:
         client.resolve_entity = slow_resolve
 
         enhancer = SemanticEnhancer(
-            pubtator_client=client,
-            use_cache=False,
+            entity_resolver=client,
             timeout=0.1,  # Very short timeout
         )
 
@@ -339,14 +338,19 @@ class TestEntityCache:
         assert cache.stats.writes == 800
         assert len(cache) <= 64
 
-    def test_singleton_factory_is_consistent_across_threads(self):
-        reset_entity_cache()
-        try:
-            with ThreadPoolExecutor(max_workers=16) as executor:
-                caches = list(executor.map(lambda _index: get_entity_cache(), range(64)))
-            assert all(cache is caches[0] for cache in caches)
-        finally:
-            reset_entity_cache()
+    def test_runtime_factory_is_consistent_across_threads(self):
+        from pubmed_search.infrastructure.sources.runtime import SourceRuntime, bind_source_runtime
+
+        runtime = SourceRuntime()
+
+        def _resolve(_index: int):
+            with bind_source_runtime(runtime):
+                return get_entity_cache()
+
+        with ThreadPoolExecutor(max_workers=16) as executor:
+            caches = list(executor.map(_resolve, range(64)))
+
+        assert all(cache is caches[0] for cache in caches)
 
 
 # =============================================================================
@@ -428,7 +432,7 @@ class TestResultAggregatorEntityMatch:
 
 
 # =============================================================================
-# PubTatorEntity Model Tests
+# ResolvedEntity Model Tests
 # =============================================================================
 
 
@@ -473,8 +477,8 @@ class TestPubTatorModels:
         assert query == '"Propofol"[MeSH Terms]'
 
     async def test_pubtator_entity_to_search_term(self):
-        """Test search term generation from PubTatorEntity."""
-        entity = PubTatorEntity(
+        """Test search term generation from ResolvedEntity."""
+        entity = ResolvedEntity(
             original_text="propofol",
             resolved_name="Propofol",
             entity_type="chemical",
@@ -487,7 +491,7 @@ class TestPubTatorModels:
 
     async def test_pubtator_entity_gene_search_term(self):
         """Test gene search term generation."""
-        entity = PubTatorEntity(
+        entity = ResolvedEntity(
             original_text="BRCA1",
             resolved_name="BRCA1",
             entity_type="gene",
@@ -536,7 +540,7 @@ class TestPhase3Integration:
         enhanced = EnhancedQuery(
             original_query="propofol sedation",
             entities=[
-                PubTatorEntity(
+                ResolvedEntity(
                     original_text="propofol",
                     resolved_name="Propofol",
                     entity_type="chemical",
@@ -559,7 +563,7 @@ class TestPhase3Integration:
         enhanced = EnhancedQuery(
             original_query="propofol sedation",
             entities=[
-                PubTatorEntity(
+                ResolvedEntity(
                     original_text="propofol",
                     resolved_name="Propofol",
                     entity_type="chemical",
@@ -587,15 +591,6 @@ class TestPhase3Integration:
         best = enhanced.get_best_strategy()
         assert best.name == "mesh_expanded"  # Higher priority
         assert best.priority == 2
-
-    @pytest.mark.asyncio
-    async def test_convenience_function(self):
-        """Test enhance_query convenience function."""
-        # This will use fallback since no real PubTator3 connection
-        enhanced = await enhance_query("test query")
-
-        assert isinstance(enhanced, EnhancedQuery)
-        assert enhanced.original_query == "test query"
 
 
 if __name__ == "__main__":
