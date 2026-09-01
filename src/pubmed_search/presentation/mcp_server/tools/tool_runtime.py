@@ -2,31 +2,45 @@
 
 Design:
     Progress, logging, and resource update callbacks should never block core
-    tool execution. These helpers hand callbacks to the event loop and swallow
-    host-side issues so external backpressure does not turn into apparent tool
-    hangs. They intentionally do not cancel in-flight host callbacks because
-    cancelling MCP progress/resource notification coroutines can surface to
-    clients as spurious "Canceled" tool output.
+    tool execution. Each callback receives a short, hard deadline. A callback
+    that cooperates with cancellation is reaped immediately; a broken callback
+    that suppresses cancellation is quarantined in a server-owned, bounded
+    supervisor so it cannot stall a tool or accumulate without limit.
 """
 
 from __future__ import annotations
 
 import asyncio
-import contextlib
-import weakref
 from typing import TYPE_CHECKING, Any, Literal
+
+from pubmed_search.shared.bounded_tasks import BoundedTaskSupervisor
 
 if TYPE_CHECKING:
     from mcp.server.mcpserver import Context
 
 HOST_CALLBACK_TIMEOUT_SECONDS = 0.1
-_BACKGROUND_HOST_CALLBACKS: weakref.WeakSet[asyncio.Task[Any]] = weakref.WeakSet()
+MAX_PENDING_HOST_CALLBACKS = 32
 
 
-def _finalize_background_task(task: asyncio.Task[Any]) -> None:
-    """Consume task results so best-effort host callbacks never leak warnings."""
-    with contextlib.suppress(asyncio.CancelledError, Exception):
-        task.result()
+class HostCallbackRuntime(BoundedTaskSupervisor):
+    """Own and bound cancellation-resistant callbacks for one MCP server."""
+
+    __slots__ = ()
+
+    def __init__(self, *, max_pending: int = MAX_PENDING_HOST_CALLBACKS) -> None:
+        super().__init__(max_pending=max_pending)
+
+    async def aclose(self, *, grace_seconds: float = HOST_CALLBACK_TIMEOUT_SECONDS) -> None:
+        """Cancel owned callbacks and give cooperative callbacks time to exit."""
+        await super().aclose(grace_seconds=grace_seconds)
+
+
+def _get_host_callback_runtime() -> HostCallbackRuntime:
+    # Lazy import avoids a module cycle: ToolSessionRuntime owns this runtime,
+    # while this low-level helper is used by the tool/session wrappers.
+    from .tool_session import get_tool_session_runtime
+
+    return get_tool_session_runtime().host_callbacks
 
 
 async def best_effort_host_callback(
@@ -34,18 +48,25 @@ async def best_effort_host_callback(
     *,
     timeout: float = HOST_CALLBACK_TIMEOUT_SECONDS,
 ) -> None:
-    """Schedule a host callback without pinning the main tool path.
-
-    The callback is scheduled as a background task and given one event-loop tick
-    to start. ``timeout`` is kept for API compatibility with older callers; it
-    is no longer used as a cancellation deadline.
-    """
-    del timeout
-    task = asyncio.create_task(awaitable)
-    _BACKGROUND_HOST_CALLBACKS.add(task)
-    task.add_done_callback(_finalize_background_task)
-
-    await asyncio.sleep(0)
+    """Run a host callback under a hard deadline and swallow host failures."""
+    runtime = _get_host_callback_runtime()
+    task = runtime.schedule(awaitable)
+    if task is None:
+        return
+    try:
+        done, _ = await asyncio.wait({task}, timeout=max(0.0, timeout))
+        if done:
+            return
+        task.cancel()
+        # Deliver cancellation once without waiting for a callback that chooses
+        # to suppress it. The server-owned runtime retains and bounds such work.
+        await asyncio.sleep(0)
+    except asyncio.CancelledError:
+        task.cancel()
+        await asyncio.sleep(0)
+        raise
+    except Exception:
+        return
 
 
 async def safe_report_progress(

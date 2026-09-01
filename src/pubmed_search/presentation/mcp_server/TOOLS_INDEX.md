@@ -1,6 +1,6 @@
 # PubMed Search MCP - Tools Index
 
-Quick reference for all 45 available MCP tools. Auto-generated from `tool_registry.py`.
+Quick reference for all 41 available MCP tools. Auto-generated from `tool_registry.py`.
 
 Use `docs/TOOLS_USAGE_GUIDE.md` for the capability-first usage manual, not just the raw inventory.
 
@@ -8,7 +8,7 @@ Use `docs/TOOLS_USAGE_GUIDE.md` for the capability-first usage manual, not just 
 
 ## Capability Compression
 
-The current surface is 45 tools, but the practical comprehension model is 8 capability families.
+The current surface is 41 tools, but the practical comprehension model is 8 capability families.
 
 - Theoretical lower bound without removing capability: 6 multiplexed meta-tools
 - Practical minimum for human/agent understanding: 8 capability families
@@ -28,7 +28,7 @@ MeSH expansion, agent-provided PICO handoff, and query analysis
 
 | Tool | Description |
 | --- | --- |
-| `parse_pico` | Validate agent-provided PICO elements and return a runnable search plan. |
+| `validate_pico_plan` | Validate agent-provided P/I/C/O and return a runnable PICO pipeline. |
 | `generate_search_queries` | Gather search intelligence for a topic - returns RAW MATERIALS for Agent to decide. |
 | `analyze_search_query` | Analyze a search query without executing the search. |
 
@@ -90,11 +90,7 @@ PMID 暫存與歷史
 
 | Tool | Description |
 | --- | --- |
-| `read_session` | Read session data through a single facade. |
-| `get_session_pmids` | 取得 session 中暫存的 PMID 列表。 |
-| `get_cached_article` | 從 session 快取取得文章詳情。 |
-| `get_session_summary` | 取得當前 session 的摘要資訊。 |
-| `get_session_log` | 取得當前 session 的 activity log 與搜尋歷史摘要。 |
+| `read_session` | Read session data through one schema-exact discriminated request. |
 
 ## 機構訂閱
 
@@ -114,7 +110,7 @@ OpenURL Link Resolver
 
 | Tool | Description |
 | --- | --- |
-| `analyze_figure_for_search` | Analyze a scientific figure or image for literature search. |
+| `prepare_figure_search` | Analyze a scientific figure or image for literature search. |
 
 ## ICD 轉換
 
@@ -122,7 +118,7 @@ ICD-10 與 MeSH 轉換
 
 | Tool | Description |
 | --- | --- |
-| `convert_icd_mesh` | Convert between ICD codes and MeSH terms (bidirectional). |
+| `convert_icd_mesh` | Query the curated ICD/MeSH crosswalk in one explicit direction. |
 
 ## 引用驗證
 
@@ -155,7 +151,7 @@ Reference list verification with PubMed evidence
 
 | Tool | Description |
 | --- | --- |
-| `search_biomedical_images` | Search biomedical images across Open-i and Europe PMC. |
+| `search_biomedical_images` | Search biomedical images from NLM Open-i. |
 
 ## Pipeline 管理
 
@@ -163,13 +159,13 @@ Pipeline 持久化、載入、排程
 
 | Tool | Description |
 | --- | --- |
-| `manage_pipeline` | Manage saved pipelines through a single facade. |
 | `save_pipeline` | Save a pipeline configuration for later reuse. |
 | `list_pipelines` | List all saved pipeline configurations. |
 | `load_pipeline` | Load a pipeline configuration for review or editing. |
-| `delete_pipeline` | Delete a saved pipeline configuration and its execution history. |
+| `delete_pipeline` | Permanently delete a saved pipeline configuration and execution history. |
 | `get_pipeline_history` | Get execution history for a saved pipeline. |
 | `schedule_pipeline` | Schedule a saved pipeline for periodic execution. |
+| `unschedule_pipeline` | Remove the active schedule for a saved pipeline. |
 
 ---
 
@@ -177,31 +173,54 @@ Pipeline 持久化、載入、排程
 
 ```text
 mcp_server/
-├── server.py           # Server 創建與配置
-├── instructions.py     # AI Agent 使用說明
-├── tool_registry.py    # 工具註冊中心
-├── session_tools.py    # Session 管理工具
-├── resources.py        # MCP Resources
-├── prompts.py          # MCP Prompts
-├── TOOLS_INDEX.md      # 本檔案 (工具索引)
-└── tools/              # 工具實作
-    ├── __init__.py     # 統一入口
-    ├── _common.py      # 共用工具函數
-    ├── unified.py      # unified_search
-    ├── discovery.py    # 搜尋與探索
-    ├── strategy.py     # MeSH/查詢策略
-    ├── pico.py         # Agent-provided PICO handoff
-    ├── export.py       # 匯出工具
-    ├── europe_pmc.py   # Europe PMC 全文
-    ├── core.py         # CORE 開放取用
-    ├── ncbi_extended.py # Gene/PubChem/ClinVar
-    ├── citation_tree.py # 引用網路
-    ├── openurl.py      # 機構訂閱
-    ├── vision_search.py # 視覺搜索
-    └── icd.py          # ICD 轉換工具
+├── TOOLS_INDEX.md
+├── __init__.py
+├── __main__.py
+├── auth.py
+├── http_cli.py
+├── http_compat.py
+├── http_security.py
+├── instructions.py
+├── prompts.py
+├── resources.py
+├── server.py
+├── session_tools.py
+├── tenancy.py
+├── tool_contracts.py
+├── tool_registry.py
+└── tools/
+    ├── __init__.py
+    ├── _common.py
+    ├── agent_output.py
+    ├── article_source.py
+    ├── artifact_memory.py
+    ├── chronicle.py
+    ├── citation_tree.py
+    ├── discovery.py
+    ├── europe_pmc.py
+    ├── export.py
+    ├── figure_tools.py
+    ├── icd.py
+    ├── image_search.py
+    ├── ncbi_extended.py
+    ├── openurl.py
+    ├── pico.py
+    ├── pipeline_tools.py
+    ├── reference_verification.py
+    ├── search_run_journal.py
+    ├── strategy.py
+    ├── tool_input.py
+    ├── tool_response.py
+    ├── tool_runtime.py
+    ├── tool_session.py
+    ├── unified.py
+    ├── unified_formatting.py
+    ├── unified_pipeline.py
+    ├── unified_runner.py
+    └── vision_search.py
 ```
 
 ---
 
-*Total: 45 tools in 16 categories*
+*Total: 41 tools in 16 categories*
 *Auto-generated by `scripts/count_mcp_tools.py --update-docs`*

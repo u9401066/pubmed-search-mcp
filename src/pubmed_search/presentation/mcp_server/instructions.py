@@ -52,7 +52,7 @@ unified_search(query='"Artificial Intelligence"[MeSH] AND "Anesthesiology"[MeSH]
 
 方法 A — Agent 提供 PICO handoff (推薦):
 ```
-pico = parse_pico(
+pico = validate_pico_plan(
   description="remimazolam vs propofol ICU sedation",
   p="ICU patients requiring sedation",
   i="remimazolam",
@@ -61,15 +61,15 @@ pico = parse_pico(
 )
 unified_search(
   query="remimazolam vs propofol ICU sedation",
-  pipeline="<pipeline field from parse_pico response>"
+  pipeline="<pipeline field from validate_pico_plan response>"
 )
 ```
 
 方法 B — 手動 inline PICO pipeline:
 1. Agent 先從臨床問題抽出 P/I/C/O；不確定時先詢問使用者
-2. parse_pico(description, p, i, c, o) → 驗證 agent-provided PICO 並產生 pipeline
+2. validate_pico_plan(description, p, i, c, o) → 驗證 agent-provided PICO 並產生 pipeline
 3. 可選：對每個 PICO 元素並行呼叫 generate_search_queries() 取得 MeSH/同義詞
-4. unified_search(query=原問題, pipeline=parse_pico 回傳的 template:pico pipeline)
+4. unified_search(query=原問題, pipeline=validate_pico_plan 回傳的 template:pico pipeline)
 
 ## 情境 4️⃣: 深入探索 (用戶找到一篇重要論文，想看相關的)
 ───────────────────────────────────────────────────────────────────────────────
@@ -89,36 +89,22 @@ get_article_references(pmid="12345678") # 這篇文章的參考文獻 (backward)
 
 unified_search 支援透過 options 參數控制預印本行為：
 - options="preprints": 額外搜尋 arXiv、medRxiv、bioRxiv 預印本伺服器
-- options="all_types": 包含非同行審查的文章（預印本、社論等）
+- options="include_detected_preprints": 保留啟發式規則偵測為預印本的項目；
+  此規則只能辨認已知預印本，不能證明其他項目已經同儕審查
 
 範例:
 ```
 # 包含預印本搜尋（預設不包含）
 unified_search(query="CRISPR base editing", options="preprints")
 
-# 預印本 + 包含非同行審查文章
-unified_search(query="CRISPR gene therapy", options="preprints, all_types")
+# 不額外搜尋預印本來源，但保留其他來源中偵測到的預印本
+unified_search(query="CRISPR gene therapy", options="include_detected_preprints")
 
 # 指定來源 + 預印本
 unified_search(query="remimazolam sedation", sources="pubmed,europe_pmc", options="preprints")
 ```
 
 注意：預印本**未經同行審查**，引用時應特別標註。
-
-## 情境 5.5️⃣: 同一回應附帶研究脈絡圖
-───────────────────────────────────────────────────────────────────────────────
-觸發條件: "研究脈絡", "context graph", "分支", "研究樹", "先給我整體脈絡"
-
-`unified_search` 支援透過 options 參數附帶輕量級研究脈絡圖：
-- options="context_graph": 從本次 PMID-backed 結果附帶 Research Context Graph
-
-範例:
-```
-unified_search(query="remimazolam ICU sedation", options="context_graph")
-unified_search(query="propofol delirium ICU", options="context_graph, preprints")
-```
-
-注意：這是輕量預覽；若需要完整時間軸/樹/mermaid，改用 `build_research_chronicle`。
 
 ## 情境 6️⃣: 指定搜尋來源
 ───────────────────────────────────────────────────────────────────────────────
@@ -182,18 +168,18 @@ build_research_chronicle(pmids="last", topic="My Reading List")
 build_research_chronicle(chronicle_id="remimazolam-9f2b1c4d")
 
 # 讀取
-read_research_chronicle(action="list")
-read_research_chronicle(chronicle_id="remimazolam-9f2b1c4d", output="tree")
+read_research_chronicle(request={"action":"list"})
+read_research_chronicle(request={"action":"load","chronicle_id":"remimazolam-9f2b1c4d","output":"tree"})
 
 # 版本比對：上次之後新增/未觀察到/更新了什麼
-read_research_chronicle(action="diff", chronicle_id="remimazolam-9f2b1c4d", from_revision=1)
+read_research_chronicle(request={"action":"diff","chronicle_id":"remimazolam-9f2b1c4d","from_revision":1})
 
 # 有證據支撐的敘事（每句 claim 都附 entry ID 與 PMID/DOI）
-read_research_chronicle(action="narrate", chronicle_id="remimazolam-9f2b1c4d", mode="full")
+read_research_chronicle(request={"action":"narrate","chronicle_id":"remimazolam-9f2b1c4d","mode":"full"})
 ```
 
 output 可選: summary（預設）, json, chronicle_map, timeline, tree, graph,
-evidence, milestones, mermaid, timeline_mermaid, mindmap, narrative。啟用 durable
+evidence, milestones, mermaid, narrative。啟用 durable
 artifact 且寫入成功時，會保存完整 snapshot、投影、證據表與 audit；artifact 失敗
 不會回滾已提交的 Chronicle revision，回應會明確警告。
 
@@ -215,8 +201,6 @@ artifact 且寫入成功時，會保存完整 snapshot、投影、證據表與 a
 | milestones | 里程碑分佈與證據品質統計 | 領域診斷 |
 | chronicle_map | 橫向時間主軸與研究分支座標 JSON | 完整可稽核視覺資料 |
 | mermaid | 橫向年份主軸與觀察到的主題分支 | 標準嵌入圖 |
-| timeline_mermaid | 舊式平面 Mermaid timeline | 相容舊閱讀方式 |
-| mindmap | 🧠 Mermaid 心智圖 | VS Code / GitHub 預覽 |
 | narrative | 有證據支撐的敘事 | 寫作 / 報告 |
 | json | 完整 snapshot | API 整合 |
 
@@ -231,8 +215,8 @@ artifact 且寫入成功時，會保存完整 snapshot、投影、證據表與 a
 # 產生研究脈絡樹
 build_research_chronicle(topic="pembrolizumab", output="tree")
 
-# 心智圖（適合 VS Code 預覽）
-build_research_chronicle(topic="CRISPR", output="mindmap")
+# 橫向時間主軸與主題分支圖（經結構驗證與自動降階修正）
+build_research_chronicle(topic="CRISPR", output="mermaid")
 ```
 
 ### Landmark Detection
@@ -242,10 +226,10 @@ confidence 只描述分類信心，不會被當成科學重要性。
 
 ```
 # 里程碑分佈統計（讀已儲存的 chronicle，不重跑搜尋）
-read_research_chronicle(action="milestones", chronicle_id="remimazolam-9f2b1c4d")
+read_research_chronicle(request={"action":"milestones","chronicle_id":"remimazolam-9f2b1c4d"})
 
 # 比較多個主題（含共用證據分析）
-read_research_chronicle(action="compare", topics="remimazolam,propofol,dexmedetomidine")
+read_research_chronicle(request={"action":"compare","selection":{"kind":"topics","values":["remimazolam","propofol","dexmedetomidine"]}})
 ```
 
 ═══════════════════════════════════════════════════════════════════════════════
@@ -280,19 +264,19 @@ build_citation_tree(pmid="12345678", depth=2, direction="both")
 ═══════════════════════════════════════════════════════════════════════════════
 
 ### 全文取得
-- get_fulltext(pmid/pmcid/doi): 📄 取得解析後的全文 (分段顯示；Europe PMC XML, Unpaywall OA locations, institutional direct/EZproxy, CORE, extended fallback)
+- get_fulltext(source={kind,value}): 📄 以明確 PMID/PMCID/DOI 來源物件取得解析後的全文 (分段顯示；Europe PMC XML, Unpaywall OA locations, institutional direct/EZproxy, CORE, extended fallback)
 
 ### 文本挖掘
-- get_text_mined_terms(pmid/pmcid): 🔬 取得標註 (基因、疾病、藥物，來自 Europe PMC)
+- get_text_mined_terms(source={kind,value}): 🔬 以明確 PMID/PMCID 來源物件取得標註 (基因、疾病、藥物，來自 Europe PMC)
 
 ### 使用範例
 ```
 # 搜尋後，對感興趣的文章取得全文
 unified_search(query="CRISPR gene therapy", sources="europe_pmc")
-get_fulltext(pmcid="PMC7096777", sections="introduction,results")
+get_fulltext(source={"kind":"pmcid","value":"PMC7096777"}, sections="introduction,results")
 
 # 找出文章提到的所有基因
-get_text_mined_terms(pmid="12345678", semantic_type="GENE_PROTEIN")
+get_text_mined_terms(source={"kind":"pmid","value":"12345678"}, semantic_type="GENE_PROTEIN")
 ```
 
 ═══════════════════════════════════════════════════════════════════════════════
@@ -324,11 +308,13 @@ search_clinvar("BRCA1", limit=10)
 💾 Session 管理工具 (解決記憶滿載問題)
 ═══════════════════════════════════════════════════════════════════════════════
 
-搜尋結果會自動暫存在 session 中，不需要記住所有 PMID！
+搜尋結果會自動暫存在 session 中，不需要記住所有 PMID！所有讀取都走唯一的
+`read_session(request={...})`，每個 action 只接受自己的欄位：
 
-- get_session_pmids(search_index=-1): 取得指定搜尋的 PMID 列表
-- get_cached_article(pmid): 從快取取得文章詳情 (不消耗 API)
-- get_session_summary(): 查看 session 狀態和可用資料
+- `read_session(request={"action":"pmids","search_index":-1})`: 取得指定搜尋的 PMID 列表
+- `read_session(request={"action":"article","pmid":"12345678"})`: 從快取取得文章詳情 (不消耗 API)
+- `read_session(request={"action":"summary"})`: 查看 session 狀態和可用資料
+- `read_session(request={"action":"log"})`: 查看 activity log 與搜尋歷史摘要
 
 ### Research Artifact Envelope
 - `unified_search` returns a compact answer plus `artifact_summary` / `artifact`
@@ -337,8 +323,8 @@ search_clinvar("BRCA1", limit=10)
 - The artifact locator includes `artifact_id`, `artifact_uri`,
   `primary_file`, `read_order`, audit status, file inventory, and
   `read_session(...)` retrieval hints.
-- Use `read_session(action="artifact", artifact_uri=...)` or
-  `read_session(action="artifact", artifact_id=...)` to page through complete
+- Use `read_session(request={"action":"artifact","locator":{"kind":"artifact_uri","value":"artifact://session-123/artifact-123"}})` or
+  `read_session(request={"action":"artifact","locator":{"kind":"artifact_id","value":"artifact-123"}})` to page through complete
   evidence without filling the MCP response token budget.
 - For `unified_search`, read `audit.json` first to check source-count and
   completeness warnings, then `query_strategy.json`, then `results.json` or
@@ -353,7 +339,7 @@ search_clinvar("BRCA1", limit=10)
 
 ### 快捷用法
 - `pmids="last"` - 在 prepare_export, get_citation_metrics 等工具中使用
-- `get_session_pmids()` 回傳 `pmids_csv` 可直接複製使用
+- `read_session(request={"action":"pmids"})` 回傳 `pmids_csv` 可直接複製使用
 
 ═══════════════════════════════════════════════════════════════════════════════
 🔧 所有可用工具
@@ -363,7 +349,7 @@ search_clinvar("BRCA1", limit=10)
 - unified_search: Unified Search - Single entry point for multi-source academic search.
 
 ### 查詢智能
-- parse_pico: Validate agent-provided PICO elements and return a runnable search plan.
+- validate_pico_plan: Validate agent-provided P/I/C/O and return a runnable PICO pipeline.
 - generate_search_queries: Gather search intelligence for a topic - returns RAW MATERIALS for Agent to decide.
 - analyze_search_query: Analyze a search query without executing the search.
 
@@ -395,11 +381,7 @@ search_clinvar("BRCA1", limit=10)
 - save_literature_notes: Save searched articles as guided local wiki/Foam/Markdown notes.
 
 ### Session 管理
-- read_session: Read session data through a single facade.
-- get_session_pmids: 取得 session 中暫存的 PMID 列表。
-- get_cached_article: 從 session 快取取得文章詳情。
-- get_session_summary: 取得當前 session 的摘要資訊。
-- get_session_log: 取得當前 session 的 activity log 與搜尋歷史摘要。
+- read_session: Read session data through one schema-exact discriminated request.
 
 ### 機構訂閱
 - configure_institutional_access: Configure your institution's link resolver for full-text access.
@@ -409,10 +391,10 @@ search_clinvar("BRCA1", limit=10)
 - diagnose_institutional_access: Diagnose why institutional fulltext access succeeds or fails for an article.
 
 ### 視覺搜索
-- analyze_figure_for_search: Analyze a scientific figure or image for literature search.
+- prepare_figure_search: Analyze a scientific figure or image for literature search.
 
 ### ICD 轉換
-- convert_icd_mesh: Convert between ICD codes and MeSH terms (bidirectional).
+- convert_icd_mesh: Query the curated ICD/MeSH crosswalk in one explicit direction.
 
 ### 引用驗證
 - verify_reference_list: Verify a plain-text reference list against PubMed evidence.
@@ -425,16 +407,16 @@ search_clinvar("BRCA1", limit=10)
 - read_research_chronicle: Read stored Research Chronicles: load, list, diff, narrate, analyze, compare.
 
 ### 圖片搜尋
-- search_biomedical_images: Search biomedical images across Open-i and Europe PMC.
+- search_biomedical_images: Search biomedical images from NLM Open-i.
 
 ### Pipeline 管理
-- manage_pipeline: Manage saved pipelines through a single facade.
 - save_pipeline: Save a pipeline configuration for later reuse.
 - list_pipelines: List all saved pipeline configurations.
 - load_pipeline: Load a pipeline configuration for review or editing.
-- delete_pipeline: Delete a saved pipeline configuration and its execution history.
+- delete_pipeline: Permanently delete a saved pipeline configuration and execution history.
 - get_pipeline_history: Get execution history for a saved pipeline.
 - schedule_pipeline: Schedule a saved pipeline for periodic execution.
+- unschedule_pipeline: Remove the active schedule for a saved pipeline.
 
 NOTE: 搜尋結果自動暫存，使用 session 工具可隨時取回，不需依賴 Agent 記憶。
 
@@ -454,8 +436,8 @@ NOTE: 每次搜尋結果會顯示各來源的 API 回傳量（如 **Sources**: p
 3. **Research Lineage Tree 適合**：藥物開發歷程、技術演化追蹤、
    文獻回顧的結構化整理。
 
-4. **Mermaid 預覽**：tree/mindmap/mermaid 格式可直接在 VS Code 或
-   GitHub Markdown 中預覽，無需額外工具。
+4. **Mermaid 預覽**：`output="mermaid"` 會產生橫向時序主軸與研究分支，並經
+   結構驗證、自動修正與安全降階，可直接在 VS Code 或 GitHub Markdown 中預覽。
 """
 
 __all__ = ["SERVER_INSTRUCTIONS"]

@@ -19,14 +19,14 @@ class TestCommonTools:
         result = format_search_results([])
         assert "No results found" in result
 
-    async def test_format_search_results_with_error(self):
-        """Test formatting results with error."""
+    async def test_format_search_results_does_not_surface_unknown_mapping_values(self):
+        """Malformed mappings are rejected before the article formatter boundary."""
         from pubmed_search.presentation.mcp_server.tools._common import (
             format_search_results,
         )
 
-        result = format_search_results([{"error": "API failed"}])
-        assert "Error" in result
+        result = format_search_results([{"unexpected_payload": "API failed"}])
+        assert "API failed" not in result
 
     async def test_format_search_results_success(self, mock_article_data):
         """Test formatting successful results."""
@@ -43,16 +43,14 @@ class TestCommonTools:
     async def test_set_session_manager(self):
         """Test setting session manager."""
         from pubmed_search.presentation.mcp_server.tools._common import (
+            get_session_manager,
             set_session_manager,
         )
 
         mock_manager = Mock()
         set_session_manager(mock_manager)
 
-        # Import again to check
-        from pubmed_search.presentation.mcp_server.tools import _common
-
-        assert _common._session_manager == mock_manager
+        assert get_session_manager() is mock_manager
 
     async def test_set_strategy_generator(self):
         """Test setting strategy generator."""
@@ -98,10 +96,10 @@ class TestPicoTools:
 
 
 class TestMergeTools:
-    """Tests for merge/dedup tools."""
+    """Tests for the retired presentation-level merge facade."""
 
-    async def test_merge_module_exists(self):
-        """Test that merge module can be imported."""
-        from pubmed_search.presentation.mcp_server.tools import merge
+    async def test_merge_module_is_not_public(self):
+        """Deduplication belongs to unified search, not a parallel tool module."""
+        from pubmed_search.presentation.mcp_server import tools
 
-        assert merge is not None
+        assert not hasattr(tools, "merge")

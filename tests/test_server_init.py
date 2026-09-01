@@ -76,6 +76,7 @@ class TestToolRegistration:
             register_strategy_tools,
             register_unified_search_tools,
         )
+        from pubmed_search.presentation.mcp_server.tools.pipeline_tools import PipelineToolRuntime
 
         mcp = MagicMock()
         mcp.tool = lambda: lambda f: f
@@ -87,12 +88,17 @@ class TestToolRegistration:
         register_strategy_tools(mcp, searcher)
         register_pico_tools(mcp)
         register_export_tools(mcp, searcher)
-        register_unified_search_tools(mcp, searcher)
+        register_unified_search_tools(
+            mcp,
+            searcher,
+            pipeline_runtime=PipelineToolRuntime(base_store=None),
+        )
         register_europe_pmc_tools(mcp)
 
     async def test_register_all_tools_function(self):
         """Test register_all_tools aggregator function."""
         from pubmed_search.presentation.mcp_server.tools import register_all_tools
+        from pubmed_search.presentation.mcp_server.tools.pipeline_tools import PipelineToolRuntime
 
         mcp = MagicMock()
         mcp.tool = lambda: lambda f: f
@@ -100,7 +106,12 @@ class TestToolRegistration:
         searcher = MagicMock()
 
         # Should run without error
-        register_all_tools(mcp, searcher)
+        register_all_tools(
+            mcp,
+            searcher,
+            image_search_service=MagicMock(),
+            pipeline_runtime=PipelineToolRuntime(base_store=None),
+        )
 
 
 class TestServerHTTPMode:
@@ -143,8 +154,8 @@ class TestToolsInit:
         from pubmed_search.presentation.mcp_server import tools
 
         assert hasattr(tools, "register_all_tools")
-        assert hasattr(tools, "set_session_manager")
-        assert hasattr(tools, "set_strategy_generator")
+        assert not hasattr(tools, "set_session_manager")
+        assert not hasattr(tools, "set_strategy_generator")
 
 
 class TestEntrezInit:

@@ -7,7 +7,14 @@ Usage:
     from .tool_registry import register_all_mcp_tools, list_registered_tools
 
     # 註冊所有工具
-    register_all_mcp_tools(mcp, searcher, session_manager, strategy_generator)
+    register_all_mcp_tools(
+        mcp,
+        searcher,
+        session_manager,
+        pipeline_runtime=pipeline_runtime,
+        source_runtime=source_runtime,
+        strategy_generator=strategy_generator,
+    )
 
     # 查詢已註冊工具
     tools = list_registered_tools()
@@ -19,6 +26,7 @@ import asyncio
 import inspect
 import logging
 import threading
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
 from pubmed_search.shared.settings import load_settings
@@ -28,9 +36,14 @@ if TYPE_CHECKING:
 
     from mcp.server import MCPServer
 
+    from pubmed_search.application.image_search import ImageSearchService
     from pubmed_search.application.session.manager import SessionManager
     from pubmed_search.application.session.registry import SessionManagerRegistry
     from pubmed_search.infrastructure.ncbi import LiteratureSearcher
+    from pubmed_search.infrastructure.sources.runtime import SourceRuntime
+    from pubmed_search.shared.settings import AppSettings
+
+    from .tools.pipeline_tools import PipelineToolRuntime
 
 logger = logging.getLogger(__name__)
 
@@ -102,15 +115,12 @@ TOOL_CATEGORIES: dict[str, dict[str, Any]] = {
     "search": {
         "name": "搜尋工具",
         "description": "Unified multi-source literature search gateway",
-        "tools": [
-            "unified_search",
-            # Note: search_literature, search_europe_pmc, search_core 已整合到 unified_search
-        ],
+        "tools": ["unified_search"],
     },
     "query_intelligence": {
         "name": "查詢智能",
         "description": "MeSH expansion, agent-provided PICO handoff, and query analysis",
-        "tools": ["parse_pico", "generate_search_queries", "analyze_search_query"],
+        "tools": ["validate_pico_plan", "generate_search_queries", "analyze_search_query"],
     },
     "discovery": {
         "name": "文章探索",
@@ -164,13 +174,7 @@ TOOL_CATEGORIES: dict[str, dict[str, Any]] = {
     "session": {
         "name": "Session 管理",
         "description": "PMID 暫存與歷史",
-        "tools": [
-            "read_session",
-            "get_session_pmids",
-            "get_cached_article",
-            "get_session_summary",
-            "get_session_log",
-        ],
+        "tools": ["read_session"],
     },
     "institutional": {
         "name": "機構訂閱",
@@ -186,13 +190,12 @@ TOOL_CATEGORIES: dict[str, dict[str, Any]] = {
     "vision": {
         "name": "視覺搜索",
         "description": "圖片分析與搜索 (實驗性)",
-        "tools": ["analyze_figure_for_search"],
+        "tools": ["prepare_figure_search"],
     },
     "icd": {
         "name": "ICD 轉換",
         "description": "ICD-10 與 MeSH 轉換",
         "tools": ["convert_icd_mesh"],
-        # Note: search_by_icd 已廢棄 → unified_search 支援 ICD 自動偵測
     },
     "chronicle": {
         "name": "研究編年史",
@@ -211,13 +214,13 @@ TOOL_CATEGORIES: dict[str, dict[str, Any]] = {
         "name": "Pipeline 管理",
         "description": "Pipeline 持久化、載入、排程",
         "tools": [
-            "manage_pipeline",
             "save_pipeline",
             "list_pipelines",
             "load_pipeline",
             "delete_pipeline",
             "get_pipeline_history",
             "schedule_pipeline",
+            "unschedule_pipeline",
         ],
     },
 }
@@ -228,12 +231,98 @@ TOOL_CATEGORIES: dict[str, dict[str, Any]] = {
 # ============================================================================
 
 
+def build_pipeline_runtime(
+    *,
+    searcher: LiteratureSearcher,
+    session_manager: SessionManager,
+    source_runtime: SourceRuntime,
+    workspace_dir: str | None = None,
+    settings: AppSettings | None = None,
+) -> PipelineToolRuntime:
+    """Build one isolated pipeline runtime for one MCP server instance."""
+    from pathlib import Path
+
+    from pubmed_search.application.pipeline.budgets import PipelineExecutionPolicy
+    from pubmed_search.application.pipeline.runner import StoredPipelineRunner
+    from pubmed_search.application.pipeline.store import PipelineStore
+    from pubmed_search.infrastructure.pubtator.semantic_adapter import get_semantic_enhancer
+    from pubmed_search.infrastructure.scheduling import APSPipelineScheduler
+    from pubmed_search.infrastructure.sources import search_alternate_source_adapter
+    from pubmed_search.infrastructure.sources.runtime import bind_source_runtime
+    from pubmed_search.shared.async_utils import bind_shared_async_client_runtime
+
+    from .tools.pipeline_tools import PipelineToolRuntime
+
+    data_dir = str(session_manager.data_dir) if session_manager.data_dir else str(Path.home() / ".pubmed-search-mcp")
+    resolved_settings = settings or load_settings()
+    configured_workspace_dir = getattr(resolved_settings, "workspace_dir", None)
+    effective_workspace_dir = workspace_dir or (
+        str(configured_workspace_dir).strip() if configured_workspace_dir else None
+    )
+
+    pipeline_store = PipelineStore(
+        global_data_dir=data_dir,
+        workspace_dir=effective_workspace_dir,
+    )
+
+    async def _runtime_bound_source_search(*args: Any, **kwargs: Any) -> Any:
+        with (
+            bind_source_runtime(source_runtime),
+            bind_shared_async_client_runtime(source_runtime.shared_http),
+        ):
+            return await search_alternate_source_adapter(*args, **kwargs)
+
+    @contextmanager
+    def _bind_pipeline_execution_runtime():
+        with (
+            bind_source_runtime(source_runtime),
+            bind_shared_async_client_runtime(source_runtime.shared_http),
+        ):
+            yield
+
+    pipeline_runner = StoredPipelineRunner(
+        store=pipeline_store,
+        searcher=searcher,
+        alternate_search_adapter=_runtime_bound_source_search,
+        semantic_enhancer_factory=get_semantic_enhancer,
+        execution_policy=PipelineExecutionPolicy(
+            run_timeout_seconds=resolved_settings.pipeline_run_timeout_seconds,
+            max_external_calls=resolved_settings.pipeline_max_external_calls,
+        ),
+        execution_context=_bind_pipeline_execution_runtime,
+    )
+    pipeline_scheduler = APSPipelineScheduler(
+        store=pipeline_store,
+        runner=pipeline_runner,
+        settings=resolved_settings,
+    )
+    return PipelineToolRuntime(base_store=pipeline_store, scheduler=pipeline_scheduler)
+
+
+def _build_image_search_service(*, source_runtime: SourceRuntime) -> ImageSearchService:
+    """Compose image search with one server-owned Open-i client factory."""
+    from pubmed_search.application.image_search import ImageSearchService
+    from pubmed_search.application.image_search.source_adapters import build_image_source_registry
+    from pubmed_search.infrastructure.sources.openi import OpenIClient
+
+    def _openi_client_factory() -> OpenIClient:
+        return source_runtime.get_or_create_client(("openi",), OpenIClient)
+
+    return ImageSearchService(
+        adapters=build_image_source_registry(
+            openi_client_factory=_openi_client_factory,
+        )
+    )
+
+
 def register_all_mcp_tools(
     mcp: MCPServer,
     searcher: LiteratureSearcher,
     session_manager: SessionManager,
+    *,
+    pipeline_runtime: PipelineToolRuntime,
+    source_runtime: SourceRuntime,
     strategy_generator: Any | None = None,
-    workspace_dir: str | None = None,
     session_registry: SessionManagerRegistry | None = None,
 ) -> dict[str, int]:
     """
@@ -243,8 +332,9 @@ def register_all_mcp_tools(
         mcp: MCPServer instance
         searcher: LiteratureSearcher instance
         session_manager: SessionManager instance
+        pipeline_runtime: Explicit server-scoped pipeline dependencies.
+        source_runtime: Explicit server-scoped provider dependencies.
         strategy_generator: Optional strategy generator
-        workspace_dir: Explicit workspace root for workspace-scoped pipeline persistence.
         session_registry: Optional request-time tenant router for session tools and resources.
 
     Returns:
@@ -252,67 +342,35 @@ def register_all_mcp_tools(
     """
     from .resources import register_resources
     from .session_tools import register_session_resources, register_session_tools
-    from .tools import register_all_tools, set_session_manager, set_strategy_generator
+    from .tools import register_all_tools
+    from .tools.tool_session import ToolSessionRuntime
 
-    # Set global references
-    set_session_manager(session_manager)
-    if strategy_generator:
-        set_strategy_generator(strategy_generator)
-
-    # Initialize PipelineStore
-    from pubmed_search.application.pipeline.runner import StoredPipelineRunner
-    from pubmed_search.application.pipeline.store import PipelineStore
-    from pubmed_search.infrastructure.scheduling import APSPipelineScheduler
-
-    from .tools.pipeline_tools import set_pipeline_scheduler, set_pipeline_store
-
-    data_dir = (
-        str(session_manager.data_dir)  # tenant-ok: base root; get_pipeline_store() derives per tenant
-        if session_manager.data_dir  # tenant-ok: see above
-        else str(__import__("pathlib").Path.home() / ".pubmed-search-mcp")
+    install_runtime = getattr(mcp, "install_tool_session_runtime", None)
+    if not callable(install_runtime):
+        msg = "register_all_mcp_tools requires PubMedMCPServer runtime isolation"
+        raise TypeError(msg)
+    install_runtime(
+        ToolSessionRuntime(
+            session_manager=session_manager,
+            session_registry=session_registry,
+            strategy_generator=strategy_generator,
+            source_runtime=source_runtime,
+        )
     )
-
-    settings = load_settings()
-    configured_workspace_dir = getattr(settings, "workspace_dir", None)
-    effective_workspace_dir = workspace_dir or (
-        str(configured_workspace_dir).strip() if configured_workspace_dir else None
-    )
-
-    pipeline_store = PipelineStore(
-        global_data_dir=data_dir,
-        workspace_dir=effective_workspace_dir,
-    )
-    set_pipeline_store(pipeline_store)
-
-    from pubmed_search.infrastructure.sources import get_source_registry, search_alternate_source_page
-
-    pipeline_runner = StoredPipelineRunner(
-        store=pipeline_store,
-        searcher=searcher,
-        alternate_search_page_fn=search_alternate_source_page,
-        source_key_resolver=get_source_registry().resolve_key,
-    )
-    pipeline_scheduler = APSPipelineScheduler(
-        store=pipeline_store,
-        runner=pipeline_runner,
-        settings=settings,
-    )
-    set_pipeline_scheduler(pipeline_scheduler)
-
-    stats = {}
 
     # 1. Core search tools (from tools/__init__.py)
     logger.info("Registering search tools...")
-    register_all_tools(mcp, searcher)
-    core_tool_count = len(_extract_registered_tool_names(mcp))
-    stats["search_and_discovery"] = core_tool_count
+    register_all_tools(
+        mcp,
+        searcher,
+        image_search_service=_build_image_search_service(source_runtime=source_runtime),
+        pipeline_runtime=pipeline_runtime,
+    )
 
     # 2. Session tools
     logger.info("Registering session tools...")
     register_session_tools(mcp, session_manager, session_registry=session_registry)
-    session_tool_count = len(_extract_registered_tool_names(mcp)) - core_tool_count
     register_session_resources(mcp, session_manager, session_registry=session_registry)
-    stats["session"] = session_tool_count
 
     # 3. Resources (filter docs, etc.)
     logger.info("Registering resources...")
@@ -324,10 +382,23 @@ def register_all_mcp_tools(
     from .prompts import register_prompts
 
     register_prompts(mcp)
-    stats["prompts"] = 9  # Approximate
 
-    total = sum(stats.values())
-    logger.info(f"Total registered: {total} tools/prompts/resources")
+    registered_names = _extract_registered_tool_names(mcp)
+    registry_validation = validate_tool_registry(mcp)
+    if not registry_validation["valid"]:
+        msg = (
+            "Canonical MCP tool registry mismatch: "
+            f"missing={registry_validation['missing']}, "
+            f"extra={registry_validation['extra']}, "
+            f"duplicate_definitions={registry_validation['duplicate_definitions']}"
+        )
+        raise RuntimeError(msg)
+    stats = {
+        category_id: len(registered_names.intersection(category["tools"]))
+        for category_id, category in TOOL_CATEGORIES.items()
+    }
+    stats["total_tools"] = len(registered_names)
+    logger.info("Registered %d tools across %d categories", len(registered_names), len(TOOL_CATEGORIES))
 
     return stats
 
@@ -339,7 +410,7 @@ def list_registered_tools() -> dict[str, list[str]]:
     Returns:
         Dict with category names as keys and tool lists as values
     """
-    return {cat_id: cat_info["tools"] for cat_id, cat_info in TOOL_CATEGORIES.items()}
+    return {cat_id: list(cat_info["tools"]) for cat_id, cat_info in TOOL_CATEGORIES.items()}
 
 
 def get_tool_info(tool_name: str) -> dict[str, str] | None:
@@ -374,7 +445,7 @@ def get_tools_by_category(category_id: str) -> list[str]:
         List of tool names, or empty list if category not found
     """
     if category_id in TOOL_CATEGORIES:
-        return TOOL_CATEGORIES[category_id]["tools"]
+        return list(TOOL_CATEGORIES[category_id]["tools"])
     return []
 
 
@@ -439,20 +510,28 @@ def validate_tool_registry(mcp: MCPServer) -> dict[str, Any]:
     """
     # Get defined tools from TOOL_CATEGORIES
     defined_tools: set[str] = set()
+    duplicate_definitions: set[str] = set()
     for cat_info in TOOL_CATEGORIES.values():
-        defined_tools.update(cat_info["tools"])
+        for tool_name in cat_info["tools"]:
+            if tool_name in defined_tools:
+                duplicate_definitions.add(tool_name)
+            defined_tools.add(tool_name)
 
     try:
         registered_tools = _extract_registered_tool_names(mcp)
     except (AttributeError, TypeError) as exc:
-        logger.warning("Cannot access registered tools through MCPServer.list_tools(): %s", exc)
+        logger.warning(
+            "Cannot access registered tools through MCPServer.list_tools() (%s)",
+            type(exc).__name__,
+        )
         return {
             "defined": list(defined_tools),
             "registered": [],
             "missing": [],
             "extra": [],
+            "duplicate_definitions": sorted(duplicate_definitions),
             "valid": False,
-            "error": str(exc),
+            "error": "MCPServer.list_tools() public API could not be inspected",
         }
 
     # Calculate differences
@@ -464,13 +543,16 @@ def validate_tool_registry(mcp: MCPServer) -> dict[str, Any]:
         "registered": sorted(registered_tools),
         "missing": sorted(missing),
         "extra": sorted(extra),
-        "valid": len(missing) == 0 and len(extra) == 0,
+        "duplicate_definitions": sorted(duplicate_definitions),
+        "valid": not missing and not extra and not duplicate_definitions,
     }
 
     if missing:
         logger.warning(f"Tools defined but not registered: {missing}")
     if extra:
         logger.info(f"Tools registered but not in TOOL_CATEGORIES: {extra}")
+    if duplicate_definitions:
+        logger.warning("Tools assigned to more than one category: %s", duplicate_definitions)
 
     return result
 
