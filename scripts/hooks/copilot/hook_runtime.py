@@ -32,6 +32,10 @@ MAX_AUDIT_ENTRIES = 500
 MAX_SAFE_NAME_CHARS = 80
 SAFE_NAME_RE = re.compile(r"[^a-zA-Z0-9_.:-]+")
 JSON_FENCE_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.IGNORECASE | re.DOTALL)
+RENDERED_ERROR_RE = re.compile(
+    r"^\s*(?:\u274c|error\b|invalid\b|failed\b|failure\b)",
+    re.IGNORECASE,
+)
 SOURCE_NAMES = {
     "arxiv",
     "biorxiv",
@@ -605,13 +609,14 @@ def _feedback_reason(evaluation: Mapping[str, Any]) -> str:
     if artifact_uri:
         parts.append(
             "Recover the complete audit first with "
-            f'read_session(action="artifact", artifact_uri="{artifact_uri}", artifact_file="audit.json").'
+            f'read_session(request={{"action":"artifact","locator":{{"kind":"artifact_uri",'
+            f'"value":"{artifact_uri}"}},"artifact_file":"audit.json"}}).'
         )
     if run_id:
         parts.append(
             "Inspect or replay the durable run with "
-            f'read_session(action="search_run", run_id="{run_id}") and '
-            f'read_session(action="replay_search", run_id="{run_id}").'
+            f'read_session(request={{"action":"search_run","run_id":"{run_id}"}}) and '
+            f'read_session(request={{"action":"replay_search","run_id":"{run_id}"}}).'
         )
     if failed:
         parts.append(f"Partial provider failures: {', '.join(_safe_name(source) for source in failed)}.")
@@ -706,21 +711,43 @@ def _decode_json_text(value: object) -> dict[str, Any] | None:
 def _structured_tool_payload(tool_result: object) -> dict[str, Any] | None:
     if not isinstance(tool_result, Mapping):
         return None
-    for key in ("structuredContent", "structured_content", "json", "data"):
-        value = tool_result.get(key)
+
+    def unwrap(value: object, *, depth: int = 0) -> dict[str, Any] | None:
+        if depth > 3:
+            return None
         if isinstance(value, Mapping):
-            return dict(value)
+            mapped = dict(value)
+            # MCP v2 wraps the declared scalar output schema as
+            # structuredContent={"result": "..."}.  The inner string is the
+            # actual tool contract and must be decoded before quality routing.
+            if set(mapped) == {"result"}:
+                return unwrap(mapped["result"], depth=depth + 1)
+            return mapped
         decoded = _decode_json_text(value)
         if decoded is not None:
-            return decoded
+            return unwrap(decoded, depth=depth + 1)
+        if isinstance(value, str):
+            # Do not retain rendered text in hook state.  Preserve only the
+            # explicit failure signal needed by the outcome classifier.
+            plain = re.sub(r"[*_`#]+", "", value).strip()
+            if RENDERED_ERROR_RE.match(plain):
+                return {"success": False, "status": "failed"}
+            return {"success": True, "status": "completed", "unstructured": True}
+        return None
+
+    for key in ("structuredContent", "structured_content", "json", "data"):
+        value = tool_result.get(key)
+        structured = unwrap(value)
+        if structured is not None:
+            return structured
     content = tool_result.get("content")
     if isinstance(content, list):
         for block in content:
             if isinstance(block, Mapping):
-                decoded = _decode_json_text(block.get("text"))
-                if decoded is not None:
-                    return decoded
-    return _decode_json_text(tool_result.get("textResultForLlm"))
+                structured = unwrap(block.get("text"))
+                if structured is not None:
+                    return structured
+    return unwrap(tool_result.get("textResultForLlm"))
 
 
 def _non_negative_int(value: object) -> int | None:
@@ -877,11 +904,11 @@ def _search_run_status(structured: Mapping[str, Any] | None) -> dict[str, Any] |
         "recoverable": bool(raw.get("recoverable")),
         "inspect": {
             "tool": "read_session",
-            "arguments": {"action": "search_run", "run_id": run_id},
+            "arguments": {"request": {"action": "search_run", "run_id": run_id}},
         },
         "replay": {
             "tool": "read_session",
-            "arguments": {"action": "replay_search", "run_id": run_id},
+            "arguments": {"request": {"action": "replay_search", "run_id": run_id}},
         },
     }
     artifact_uri = _safe_artifact_uri(raw.get("artifact_uri"))
@@ -918,6 +945,21 @@ def _outcome(
 ) -> str:
     if result_type.lower() in {"failure", "error"}:
         return "failed"
+    if structured is not None:
+        if structured.get("success") is False or structured.get("ok") is False:
+            return "failed"
+        status = _safe_name(
+            structured.get("search_status") or structured.get("status"),
+            default="",
+        ).lower()
+        if status in {"error", "failed", "failure"}:
+            return "failed"
+        if status in {"partial", "completed_with_warnings"}:
+            return "partial"
+        if status in {"empty", "no_results"}:
+            return "empty"
+        if structured.get("error") and structured.get("success") is not True and structured.get("ok") is not True:
+            return "failed"
     if failed:
         if count in {None, 0} and attempted and set(attempted) <= set(failed):
             return "failed"
@@ -942,7 +984,13 @@ def _recovery_payload(
         if uri:
             recovery["artifact_handoff"] = {
                 "tool": "read_session",
-                "arguments": {"action": "artifact", "artifact_uri": uri, "artifact_file": "audit.json"},
+                "arguments": {
+                    "request": {
+                        "action": "artifact",
+                        "locator": {"kind": "artifact_uri", "value": uri},
+                        "artifact_file": "audit.json",
+                    }
+                },
             }
     if search_run:
         recovery["search_run"] = {
@@ -970,7 +1018,10 @@ def _evaluate_results(payload: Mapping[str, Any]) -> None:
     tool_result = payload.get("toolResult")
     result_type = "unknown"
     if isinstance(tool_result, Mapping):
-        result_type = _safe_name(tool_result.get("resultType"), default="unknown")
+        if tool_result.get("isError") is True or tool_result.get("is_error") is True:
+            result_type = "error"
+        else:
+            result_type = _safe_name(tool_result.get("resultType"), default="unknown")
     structured = _structured_tool_payload(tool_result)
     count = _result_count(structured)
     rows, failures, failed_sources, attempted_sources = _source_status(structured)

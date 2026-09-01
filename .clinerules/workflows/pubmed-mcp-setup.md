@@ -14,7 +14,7 @@ If this fails, fix the Python environment first.
 
 - Set `NCBI_EMAIL` for NCBI policy compliance.
 - Add `NCBI_API_KEY` when higher NCBI rate limits are needed.
-- Add `OPENALEX_API_KEY`, `S2_API_KEY`, or `CORE_API_KEY` only when the user has provided them.
+- Add `OPENALEX_API_KEY`, `SEMANTIC_SCHOLAR_API_KEY`, or `CORE_API_KEY` only when the user has provided them.
 - Set `PUBMED_WORKSPACE_DIR` when pipeline/session files should be rooted in a workspace.
 
 ## VS Code Extension Path

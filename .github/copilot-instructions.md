@@ -394,7 +394,7 @@ from ...infrastructure.ncbi import LiteratureSearcher
 ## 🎯 Project Overview
 
 PubMed Search MCP is a **professional literature research assistant** that provides:
-- **45 MCP Tools** for literature search and analysis
+- **41 MCP Tools** for literature search and analysis
 - **Multi-source search**: PubMed, Europe PMC (33M+), CORE (200M+)
 - **NCBI databases**: Gene, PubChem, ClinVar
 - **Full text access**: Direct XML/text retrieval
@@ -411,9 +411,9 @@ PubMed Search MCP is a **professional literature research assistant** that provi
 unified_search(query="<topic>", limit=10)
 ```
 
-When an agent needs a lightweight topic overview in the same response, prefer:
+When an agent needs a persistent topic lineage, use Research Chronicle:
 ```python
-unified_search(query="<topic>", options="context_graph")
+build_research_chronicle(topic="<topic>", output="mermaid")
 ```
 
 ### Systematic Search
@@ -434,7 +434,7 @@ unified_search(query="<combined_boolean_query>")
 **Trigger**: "Is A better than B?", "Does X reduce Y?", comparative questions
 ```python
 # Step 1: Agent extracts P/I/C/O, then validates the structured handoff
-parse_pico(
+validate_pico_plan(
     description="<clinical question>",
     p="<Population>",
     i="<Intervention/exposure>",
@@ -473,7 +473,7 @@ unified_search(query="<combined_boolean_query>")
 
 | Tool | Purpose |
 |------|---------|
-| `parse_pico` | Validate agent-provided PICO elements and return a runnable search plan. |
+| `validate_pico_plan` | Validate agent-provided P/I/C/O and return a runnable PICO pipeline. |
 | `generate_search_queries` | Gather search intelligence for a topic - returns RAW MATERIALS for Agent to decide. |
 | `analyze_search_query` | Analyze a search query without executing the search. |
 
@@ -535,11 +535,7 @@ unified_search(query="<combined_boolean_query>")
 
 | Tool | Purpose |
 |------|---------|
-| `read_session` | Read session data through a single facade. |
-| `get_session_pmids` | 取得 session 中暫存的 PMID 列表。 |
-| `get_cached_article` | 從 session 快取取得文章詳情。 |
-| `get_session_summary` | 取得當前 session 的摘要資訊。 |
-| `get_session_log` | 取得當前 session 的 activity log 與搜尋歷史摘要。 |
+| `read_session` | Read session data through one schema-exact discriminated request. |
 
 
 ### 機構訂閱
@@ -559,7 +555,7 @@ unified_search(query="<combined_boolean_query>")
 
 | Tool | Purpose |
 |------|---------|
-| `analyze_figure_for_search` | Analyze a scientific figure or image for literature search. |
+| `prepare_figure_search` | Analyze a scientific figure or image for literature search. |
 
 
 ### ICD 轉換
@@ -567,7 +563,7 @@ unified_search(query="<combined_boolean_query>")
 
 | Tool | Purpose |
 |------|---------|
-| `convert_icd_mesh` | Convert between ICD codes and MeSH terms (bidirectional). |
+| `convert_icd_mesh` | Query the curated ICD/MeSH crosswalk in one explicit direction. |
 
 
 ### 引用驗證
@@ -600,7 +596,7 @@ unified_search(query="<combined_boolean_query>")
 
 | Tool | Purpose |
 |------|---------|
-| `search_biomedical_images` | Search biomedical images across Open-i and Europe PMC. |
+| `search_biomedical_images` | Search biomedical images from NLM Open-i. |
 
 
 ### Pipeline 管理
@@ -608,13 +604,13 @@ unified_search(query="<combined_boolean_query>")
 
 | Tool | Purpose |
 |------|---------|
-| `manage_pipeline` | Manage saved pipelines through a single facade. |
 | `save_pipeline` | Save a pipeline configuration for later reuse. |
 | `list_pipelines` | List all saved pipeline configurations. |
 | `load_pipeline` | Load a pipeline configuration for review or editing. |
-| `delete_pipeline` | Delete a saved pipeline configuration and its execution history. |
+| `delete_pipeline` | Permanently delete a saved pipeline configuration and execution history. |
 | `get_pipeline_history` | Get execution history for a saved pipeline. |
 | `schedule_pipeline` | Schedule a saved pipeline for periodic execution. |
+| `unschedule_pipeline` | Remove the active schedule for a saved pipeline. |
 
 ---
 
@@ -636,10 +632,10 @@ get_article_references(pmid="12345678")  # What did it cite?
 ### 3. Get Full Text
 ```python
 # Structured full text from PMC / Europe PMC
-get_fulltext(pmcid="PMC7096777", sections="introduction,results")
+get_fulltext(source={"kind":"pmcid","value":"PMC7096777"}, sections="introduction,results")
 
 # DOI or PMID-based retrieval with broader source fallback
-get_fulltext(doi="10.1038/s41586-021-03819-2", extended_sources=True)
+get_fulltext(source={"kind":"doi","value":"10.1038/s41586-021-03819-2"}, extended_sources=True)
 ```
 
 ### 4. Research a Gene
@@ -660,7 +656,7 @@ get_compound_literature(cid="4943", limit=20)
 ```python
 prepare_export(pmids="last", format="ris")  # Last search
 save_literature_notes(pmids="last")  # Default wiki note + Foam-compatible wikilinks + CSL JSON
-get_fulltext(pmid="12345678", extended_sources=True)  # Retrieve selected paper full text
+get_fulltext(source={"kind":"pmid","value":"12345678"}, extended_sources=True)  # Retrieve selected paper full text
 ```
 
 ---
@@ -697,7 +693,7 @@ uv run python scripts/count_mcp_tools.py --update-docs
 
 1. **Tool Progress**: `unified_search`, `build_research_chronicle`, and Europe PMC fulltext/text-mining tools can emit MCP progress updates when the client provides a progress token.
 
-2. **Session Resources and Artifacts**: Agents that support MCP resources can read `session://last-search`, `session://last-search/pmids`, and `session://last-search/results` instead of reconstructing recent search state from chat context. When `unified_search` returns an `artifact_summary`, use its `artifact_uri` with `read_session(action="artifact", artifact_uri=...)`; inspect `audit.json`, `query_strategy.json`, and `results.json` or `results.toon` for complete evidence.
+2. **Session Resources and Artifacts**: Agents that support MCP resources can read `session://last-search`, `session://last-search/pmids`, and `session://last-search/results` instead of reconstructing recent search state from chat context. When `unified_search` returns an `artifact_summary`, use its `artifact_uri` with `read_session(request={"action":"artifact","locator":{"kind":"artifact_uri","value":"artifact://..."},"artifact_file":"audit.json"})`; inspect `query_strategy.json` and `results.json` or `results.toon` for complete evidence.
 
 3. **Parallel Execution**: When generating search strategies or PICO elements, call `generate_search_queries()` in parallel for efficiency.
 
@@ -717,7 +713,7 @@ uv run python scripts/count_mcp_tools.py --update-docs
 
 The server provides pre-defined prompts for common workflows:
 - `quick_search` - Fast topic search
-- `systematic_search` - Comprehensive MeSH-expanded search
+- `systematic_search` prompt - Plans a comprehensive MeSH-expanded workflow executed through `unified_search`
 - `pico_search` - Clinical question decomposition
 - `explore_paper` - Deep exploration from a key paper
 - `gene_drug_research` - Gene or drug focused research

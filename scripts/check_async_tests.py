@@ -30,18 +30,9 @@ from pathlib import Path
 
 # method_name → class_or_module (for reporting)
 KNOWN_ASYNC_METHODS: dict[str, str] = {
-    # PubMedClient
-    "search": "PubMedClient/LiteratureSearcher",
-    "search_raw": "PubMedClient",
-    "fetch_by_pmid": "PubMedClient",
-    "fetch_by_pmids": "PubMedClient",
-    "fetch_by_pmids_raw": "PubMedClient",
-    "fetch_details": "PubMedClient/LiteratureSearcher",
-    "find_related": "PubMedClient",
-    "find_citing": "PubMedClient",
-    "download_pdf": "PubMedClient",
-    "get_pmc_url": "PubMedClient",
     # LiteratureSearcher
+    "search": "LiteratureSearcher",
+    "fetch_details": "LiteratureSearcher",
     "find_related_articles": "LiteratureSearcher",
     "find_citing_articles": "LiteratureSearcher",
     "get_citation_metrics": "LiteratureSearcher",

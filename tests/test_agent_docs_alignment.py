@@ -35,7 +35,7 @@ def test_agent_pico_guidance_preserves_structured_handoff_boundary() -> None:
     for path in paths:
         content = _read(path)
         assert "P/I/C/O" in content, path
-        assert "parse_pico" in content, path
+        assert "validate_pico_plan" in content, path
 
     skill = _read(".claude/skills/pubmed-pico-search/SKILL.md")
     assert "The MCP server does not" in skill
@@ -70,7 +70,8 @@ def test_bundled_search_skills_preserve_bounded_provider_aware_contract() -> Non
     multi_source = _read(".claude/skills/pubmed-multi-source-search/SKILL.md")
 
     assert 'unified_search(options="systematic")' in systematic
-    assert 'sources="pubmed,openalex,semantic_scholar"' in systematic
+    assert 'sources="openalex,semantic_scholar"' in systematic
+    assert "bounded systematic sources 只有 OpenAlex 與 Semantic Scholar" in systematic
     assert "每個來源最多取回 100 筆" in systematic
     assert "不代表 exhaustive systematic-review coverage" in systematic
     assert 'sources="pubmed,europe_pmc,openalex"' not in systematic
@@ -83,6 +84,7 @@ def test_bundled_search_skills_preserve_bounded_provider_aware_contract() -> Non
     for example in fielded_search_examples:
         assert 'sources="pubmed"' in example
         assert 'sources="pubmed,' not in example
+        assert 'options="systematic"' not in example
 
     assert "唯一的 generic literature search 入口是 `unified_search`" in multi_source
     assert "bounded coverage expansion" in multi_source
@@ -100,10 +102,10 @@ def test_user_docs_cover_timeline_image_search_upload_and_artifact_memory() -> N
         "Research Chronicle Rebuild Spec",
         "search_biomedical_images",
         "Open-i",
-        "analyze_figure_for_search",
+        "prepare_figure_search",
         "ImageContent",
         "base64/data-URI",
-        'read_session(action="artifact"',
+        'read_session(request={"action":"artifact"',
         "PUBMED_ARTIFACT_INCLUDE_LOCAL_PATHS",
         "persistent query memory",
     ]
@@ -119,13 +121,51 @@ def test_user_docs_cover_timeline_image_search_upload_and_artifact_memory() -> N
         "Research Chronicle Rebuild Spec",
         "search_biomedical_images",
         "Open-i",
-        "analyze_figure_for_search",
+        "prepare_figure_search",
         "ImageContent",
         "base64/data-URI",
-        'read_session(action="artifact"',
+        'read_session(request={"action":"artifact"',
         "PUBMED_ARTIFACT_INCLUDE_LOCAL_PATHS",
         "持久化 query memory",
     ]
     zh_docs = _read("docs/USER_GUIDE.zh-TW.md") + "\n" + _read("docs/TOOLS_USAGE_GUIDE.zh-TW.md")
     for term in zh_required:
         assert term in zh_docs
+
+
+def test_live_agent_assets_use_only_canonical_handoff_contracts() -> None:
+    live_assets = [
+        *sorted((REPO_ROOT / ".claude/skills").glob("*/SKILL.md")),
+        *sorted((REPO_ROOT / ".github").glob("*.md")),
+        *sorted((REPO_ROOT / ".github/agents").glob("*.md")),
+        *sorted((REPO_ROOT / ".clinerules").rglob("*.md")),
+        REPO_ROOT / "src/pubmed_search/presentation/mcp_server/instructions.py",
+        REPO_ROOT / "src/pubmed_search/presentation/mcp_server/prompts.py",
+    ]
+    retired_public_names = (
+        "timeline_mermaid",
+        "mindmap",
+        "manage_pipeline",
+        "parse_pico",
+        "analyze_figure_for_search",
+        "get_session_pmids",
+        "get_cached_article",
+        "get_session_summary",
+        "get_session_log",
+    )
+
+    for path in live_assets:
+        content = path.read_text(encoding="utf-8")
+        flat_chronicle_calls = re.findall(
+            r"read_research_chronicle\((?!\s*request=)",
+            content,
+        )
+        assert flat_chronicle_calls == [], path
+        for retired_name in retired_public_names:
+            assert retired_name not in content, f"{path} still names retired tool {retired_name}"
+
+    source_contracts = _read("docs/SOURCE_CONTRACTS.md")
+    assert "read_session(action=" not in source_contracts
+    assert 'read_session(request={"action":"search_runs","status":"partial"})' in source_contracts
+    assert 'read_session(request={"action":"search_run","run_id":"..."})' in source_contracts
+    assert 'read_session(request={"action":"replay_search","run_id":"..."})' in source_contracts

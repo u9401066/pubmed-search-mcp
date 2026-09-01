@@ -123,7 +123,7 @@ def main() -> int:
         print("   The docstring becomes the tool description shown to AI agents.")
         print()
         print("   @mcp.tool()")
-        print("   async def search_literature(query: str) -> str:")
+        print("   async def unified_search(query: str) -> str:")
         print('       """Search PubMed for articles matching the query."""')
         print()
         print("💡 Agent reminder: Every @tool function MUST have a docstring ≥10 chars.")

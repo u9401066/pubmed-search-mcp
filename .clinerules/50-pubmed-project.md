@@ -39,5 +39,5 @@ These rules are meant for Cline usage in the PubMed Search MCP repository.
 
 - Reuse source adapters and registry abstractions instead of adding one-off HTTP calls.
 - Keep MCP tools small and delegate behavior to application services.
-- Keep backward-compatible aliases where agents already consume fields.
+- Keep public inputs schema-exact. For an intentional breaking release, remove retired aliases and migrate all agent consumers in the same change.
 - Update tool docs and user-facing skills when tool contracts change.
