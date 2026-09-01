@@ -14,10 +14,36 @@ from pubmed_search.application.search.query_analyzer import (
 )
 from pubmed_search.application.search.reproducibility import calculate_reproducibility
 from pubmed_search.application.search.semantic_enhancer import EnhancedQuery, SearchPlan
-from pubmed_search.infrastructure.sources.registry import get_source_registry
-from pubmed_search.presentation.mcp_server.tools.unified_helpers import SearchDepthMetrics
+from pubmed_search.application.search.source_models import SourceSearchPage
+from pubmed_search.application.unified.helpers import (
+    RelaxationResult,
+    RelaxationStep,
+    SearchDepthMetrics,
+)
+from pubmed_search.application.unified.planning import (
+    build_unified_search_plan as _build_unified_search_plan,
+)
+from pubmed_search.application.unified.request import normalize_unified_search_request
+from pubmed_search.application.unified.use_case import SourceSelectionError
+from pubmed_search.infrastructure.pubtator.semantic_adapter import get_semantic_enhancer
+from pubmed_search.infrastructure.sources.registry import (
+    SourceCapabilities,
+    SourceDefinition,
+    SourceRegistry,
+    get_source_registry,
+)
+from pubmed_search.infrastructure.sources.unified_broker import (
+    _execute_deep_search,
+    build_default_search_functions,
+)
 from pubmed_search.presentation.mcp_server.tools.unified_runner import run_unified_search
-from pubmed_search.presentation.mcp_server.tools.unified_source_search import _execute_deep_search
+from pubmed_search.shared.source_contracts import SourceAdapterError, SourceAdapterResult
+
+
+async def build_unified_search_plan(*args, **kwargs):
+    """Compose the application planner with the concrete semantic adapter."""
+    kwargs.setdefault("enhancer_factory", get_semantic_enhancer)
+    return await _build_unified_search_plan(*args, **kwargs)
 
 
 class _StaticAnalyzer:
@@ -59,7 +85,80 @@ def _enhanced(query: str) -> EnhancedQuery:
 
 
 async def _empty_search(*_args, **_kwargs):
-    return [], 0
+    return SourceAdapterResult.empty(source="pubmed", operation="search")
+
+
+async def _empty_openalex_search(*_args, **_kwargs):
+    return SourceAdapterResult.empty(source="openalex", operation="search")
+
+
+def test_default_runner_map_covers_every_registered_primary_source() -> None:
+    registry = get_source_registry()
+    expected = {
+        key
+        for key, definition in registry.capability_manifest().items()
+        if definition["selectable_in_unified"] and definition["supports_primary_search"]
+    }
+
+    runners = build_default_search_functions(AsyncMock())
+
+    assert set(runners) == expected
+    assert all(callable(runner) for runner in runners.values())
+
+
+@pytest.mark.asyncio
+async def test_auto_dispatch_uses_the_planner_injected_registry() -> None:
+    query = "precision medicine"
+    registry = SourceRegistry(
+        (
+            SourceDefinition(
+                key="openalex",
+                label="OpenAlex",
+                category="search",
+                selectable_in_unified=True,
+                supports_primary_search=True,
+                auto_dispatch_profiles=("simple",),
+                capabilities=SourceCapabilities(search_modes=("keyword",)),
+            ),
+        )
+    )
+    request = normalize_unified_search_request(query=query, options="shallow")
+
+    plan = await build_unified_search_plan(
+        request,
+        progress=AsyncMock(),
+        analyzer_factory=lambda: _StaticAnalyzer(_analysis(query)),
+        source_registry_factory=lambda: registry,
+    )
+
+    assert plan.dispatch_sources == ["openalex"]
+
+
+@pytest.mark.asyncio
+async def test_auto_dispatch_rejects_an_enrichment_only_registry() -> None:
+    query = "precision medicine"
+    registry = SourceRegistry(
+        (
+            SourceDefinition(
+                key="crossref",
+                label="Crossref",
+                category="enrichment",
+                selectable_in_unified=True,
+                supports_primary_search=False,
+                auto_dispatch_profiles=("simple",),
+                capabilities=SourceCapabilities(search_modes=("enrichment",)),
+            ),
+        )
+    )
+    request = normalize_unified_search_request(query=query, options="shallow")
+
+    with pytest.raises(SourceSelectionError, match="No enabled primary search source"):
+        await build_unified_search_plan(
+            request,
+            progress=AsyncMock(),
+            analyzer_factory=lambda: _StaticAnalyzer(_analysis(query)),
+            source_registry_factory=lambda: registry,
+        )
 
 
 @pytest.mark.asyncio
@@ -84,7 +183,7 @@ async def test_deep_plan_preserves_every_requested_primary_source(
 
     with (
         patch(
-            "pubmed_search.presentation.mcp_server.tools.unified_execution._execute_deep_search",
+            "pubmed_search.infrastructure.sources.unified_broker._execute_deep_search",
             new_callable=AsyncMock,
             return_value=deep_result,
         ) as execute_deep,
@@ -120,7 +219,7 @@ async def test_deep_all_preserves_all_enabled_primary_sources() -> None:
 
     with (
         patch(
-            "pubmed_search.presentation.mcp_server.tools.unified_execution._execute_deep_search",
+            "pubmed_search.infrastructure.sources.unified_broker._execute_deep_search",
             new_callable=AsyncMock,
             return_value=([], SearchDepthMetrics(), None, {}, []),
         ) as execute_deep,
@@ -152,8 +251,11 @@ async def test_deep_metrics_count_injected_source_baselines() -> None:
         SearchPlan(name="source_baseline_openalex", query=query, source="openalex"),
     ]
 
-    async def _empty_adapter(*_args, **_kwargs):
-        return [], 0
+    def _empty_adapter(source: str):
+        async def _run(*_args, **_kwargs):
+            return SourceAdapterResult.empty(source=source, operation="search")
+
+        return _run
 
     _results, metrics, _pubmed_total, counts, errors = await _execute_deep_search(
         AsyncMock(),
@@ -163,7 +265,7 @@ async def test_deep_metrics_count_injected_source_baselines() -> None:
         max_year=None,
         advanced_filters={},
         strategies=strategies,
-        search_functions={"pubmed": _empty_adapter, "openalex": _empty_adapter},
+        search_functions={"pubmed": _empty_adapter("pubmed"), "openalex": _empty_adapter("openalex")},
     )
 
     assert metrics.strategies_generated == len(strategies)
@@ -179,7 +281,7 @@ async def test_shallow_execution_calls_exactly_the_requested_primary_sources() -
     def _runner(source: str):
         async def _search(*_args, **_kwargs):
             calls.append(source)
-            return [], 0
+            return SourceAdapterResult.empty(source=source, operation="search")
 
         return _search
 
@@ -204,7 +306,28 @@ async def test_shallow_execution_calls_exactly_the_requested_primary_sources() -
 
 
 @pytest.mark.asyncio
-async def test_clinical_trials_prefetch_requires_explicit_markdown_opt_in() -> None:
+async def test_explicit_empty_runner_map_never_falls_back_to_network() -> None:
+    query = "precision medicine"
+    searcher = AsyncMock()
+
+    result = await run_unified_search(
+        searcher=searcher,
+        query=query,
+        sources="pubmed",
+        output_format="json",
+        options="shallow,no_relax,no_analysis,no_scores",
+        analyzer_factory=lambda: _StaticAnalyzer(_analysis(query)),
+        search_functions={},
+    )
+
+    searcher.search_page.assert_not_awaited()
+    payload = json.loads(result)
+    assert payload["source_errors"][0]["source"] == "pubmed"
+    assert payload["source_errors"][0]["message"] == "Source adapter failed"
+
+
+@pytest.mark.asyncio
+async def test_clinical_trials_prefetch_requires_explicit_opt_in_for_every_output() -> None:
     clinical_trials = AsyncMock(return_value=[{"nct_id": "NCT00000001"}])
     query = "diabetes"
 
@@ -228,7 +351,7 @@ async def test_clinical_trials_prefetch_requires_explicit_markdown_opt_in() -> N
             query=query,
             sources="pubmed",
             output_format="markdown",
-            options="trials,shallow,no_relax,no_analysis,no_scores",
+            options="clinical_trials,shallow,no_relax,no_analysis,no_scores",
             analyzer_factory=lambda: _StaticAnalyzer(_analysis(query)),
             search_functions={"pubmed": _empty_search},
         )
@@ -238,12 +361,12 @@ async def test_clinical_trials_prefetch_requires_explicit_markdown_opt_in() -> N
             query=query,
             sources="pubmed",
             output_format="json",
-            options="trials,shallow,no_relax,no_analysis,no_scores",
+            options="clinical_trials,shallow,no_relax,no_analysis,no_scores",
             analyzer_factory=lambda: _StaticAnalyzer(_analysis(query)),
             search_functions={"pubmed": _empty_search},
         )
 
-    assert clinical_trials.await_count == 1
+    assert clinical_trials.await_count == 2
     assert {call.args[0] for call in clinical_trials.await_args_list} == {query}
 
 
@@ -251,9 +374,14 @@ async def test_clinical_trials_prefetch_requires_explicit_markdown_opt_in() -> N
 async def test_auto_relax_reuses_the_successful_pubmed_result() -> None:
     query = "diabetes AND therapy"
     searcher = AsyncMock()
-    searcher.search.side_effect = [
-        [],
-        [{"pmid": "12345", "title": "Relaxed Article", "authors": ["A B"]}],
+    searcher.search_page.side_effect = [
+        SourceSearchPage(source="pubmed", items=[], total=0, query=query),
+        SourceSearchPage(
+            source="pubmed",
+            items=[{"pmid": "12345", "title": "Relaxed Article", "authors": ["A B"]}],
+            total=1,
+            query="diabetes therapy",
+        ),
     ]
 
     with patch(
@@ -269,8 +397,63 @@ async def test_auto_relax_reuses_the_successful_pubmed_result() -> None:
             analyzer_factory=lambda: _StaticAnalyzer(_analysis(query)),
         )
 
-    assert searcher.search.await_count == 2
+    assert searcher.search_page.await_count == 2
     assert "Relaxed Article" in result
+
+
+@pytest.mark.asyncio
+async def test_failed_relaxation_is_reported_as_partial_unknown_coverage() -> None:
+    query = "diabetes AND therapy"
+    failed_step = RelaxationStep(
+        level=1,
+        action="remove_year_filter",
+        description="Remove year constraints",
+        query="diabetes therapy",
+        status="error",
+        error=SourceAdapterError(
+            source="pubmed",
+            operation="auto_relax",
+            message="Request timed out",
+            kind="timeout",
+            retryable=True,
+        ),
+    )
+    failed_relaxation = RelaxationResult(
+        original_query=query,
+        relaxed_query=query,
+        steps_tried=[failed_step],
+        successful_step=None,
+        total_results=0,
+    )
+
+    with (
+        patch(
+            "pubmed_search.infrastructure.sources.clinical_trials.search_related_trials",
+            new_callable=AsyncMock,
+            return_value=[],
+        ),
+        patch(
+            "pubmed_search.infrastructure.sources.unified_broker._auto_relax_search",
+            new_callable=AsyncMock,
+            return_value=failed_relaxation,
+        ),
+    ):
+        result = await run_unified_search(
+            searcher=AsyncMock(),
+            query=query,
+            sources="pubmed",
+            output_format="json",
+            options="shallow,no_analysis,no_scores",
+            analyzer_factory=lambda: _StaticAnalyzer(_analysis(query)),
+            search_functions={"pubmed": _empty_search},
+        )
+
+    payload = json.loads(result)
+    assert payload["search_status"]["state"] == "partial"
+    assert payload["source_errors"][0]["operation"] == "auto_relax"
+    assert payload["source_errors"][0]["kind"] == "timeout"
+    assert payload["source_metadata"]["pubmed"]["relaxation_incomplete"] is True
+    assert payload["relaxation"]["outcome"] == "incomplete"
 
 
 @pytest.mark.asyncio
@@ -285,10 +468,10 @@ async def test_non_pubmed_source_does_not_trigger_pubmed_auto_relax() -> None:
         output_format="json",
         options="shallow,no_analysis,no_scores",
         analyzer_factory=lambda: _StaticAnalyzer(_analysis(query)),
-        search_functions={"openalex": _empty_search},
+        search_functions={"openalex": _empty_openalex_search},
     )
 
-    searcher.search.assert_not_awaited()
+    searcher.search_page.assert_not_awaited()
     assert json.loads(result)["articles"] == []
 
 
@@ -305,7 +488,7 @@ async def test_preprint_option_respects_source_registry_kill_switch() -> None:
     def _runner(source: str):
         async def _search(*_args, **_kwargs):
             calls.append(source)
-            return [], 0
+            return SourceAdapterResult.empty(source=source, operation="search")
 
         return _search
 
@@ -388,5 +571,5 @@ async def test_failed_systematic_leg_keeps_attempted_physical_query() -> None:
     payload = json.loads(result)
     metadata = payload["source_metadata"]["semantic_scholar"]
     assert metadata["logical_query"] == query
-    assert metadata["physical_query"] == "melanoma + immunotherapy"
+    assert metadata["physical_query"] == query
     assert metadata["provider_mode"] == "bulk"

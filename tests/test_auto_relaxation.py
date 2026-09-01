@@ -6,16 +6,22 @@ broadens search criteria when 0 results are returned.
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+import json
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from pubmed_search.presentation.mcp_server.tools.unified import (
+from pubmed_search.application.unified.helpers import (
     RelaxationResult,
     RelaxationStep,
-    _auto_relax_search,
     _generate_relaxation_steps,
 )
+from pubmed_search.infrastructure.sources.unified_broker import _auto_relax_search
+from pubmed_search.presentation.mcp_server.tools.unified_formatting import (
+    _format_as_json,
+    _format_unified_results,
+)
+from pubmed_search.shared.source_contracts import SourceAdapterError, SourceAdapterResult
 
 # ============================================================================
 # _generate_relaxation_steps tests
@@ -206,16 +212,30 @@ class TestAutoRelaxSearch:
 
         call_count = 0
 
-        async def mock_search(searcher, query, limit, min_year=None, max_year=None, **kwargs):
+        async def mock_search(
+            searcher,
+            query,
+            limit,
+            min_year=None,
+            max_year=None,
+            advanced_filters=None,
+            **kwargs,
+        ):
             nonlocal call_count
             call_count += 1
             if call_count <= 1:
-                return ([], None)  # First step: still 0 results
+                return SourceAdapterResult.empty(source="pubmed", operation="search")
             # Second step: has results
-            return ([UnifiedArticle(title="Test", primary_source="pubmed")], 1)
+            return SourceAdapterResult(
+                source="pubmed",
+                operation="search",
+                items=[UnifiedArticle(title="Test", primary_source="pubmed")],
+                total_count=1,
+                metadata={"total_available": 1},
+            )
 
         with patch(
-            "pubmed_search.presentation.mcp_server.tools.unified_source_search._search_pubmed",
+            "pubmed_search.infrastructure.sources.unified_broker._search_pubmed_adapter",
             side_effect=mock_search,
         ):
             result = await _auto_relax_search(
@@ -235,9 +255,9 @@ class TestAutoRelaxSearch:
     async def test_returns_result_with_all_steps_failed(self, mock_searcher):
         """Should return result with no successful step when all fail."""
         with patch(
-            "pubmed_search.presentation.mcp_server.tools.unified_source_search._search_pubmed",
+            "pubmed_search.infrastructure.sources.unified_broker._search_pubmed_adapter",
             new_callable=AsyncMock,
-            return_value=([], None),
+            return_value=SourceAdapterResult.empty(source="pubmed", operation="search"),
         ):
             result = await _auto_relax_search(
                 mock_searcher,
@@ -257,11 +277,14 @@ class TestAutoRelaxSearch:
         from pubmed_search.domain.entities.article import UnifiedArticle
 
         with patch(
-            "pubmed_search.presentation.mcp_server.tools.unified_source_search._search_pubmed",
+            "pubmed_search.infrastructure.sources.unified_broker._search_pubmed_adapter",
             new_callable=AsyncMock,
-            return_value=(
-                [UnifiedArticle(title="Test", primary_source="pubmed")],
-                1,
+            return_value=SourceAdapterResult(
+                source="pubmed",
+                operation="search",
+                items=[UnifiedArticle(title="Test", primary_source="pubmed")],
+                total_count=1,
+                metadata={"total_available": 1},
             ),
         ):
             result = await _auto_relax_search(
@@ -281,7 +304,7 @@ class TestAutoRelaxSearch:
     async def test_handles_search_exception(self, mock_searcher):
         """Should handle exceptions during relaxed search gracefully."""
         with patch(
-            "pubmed_search.presentation.mcp_server.tools.unified_source_search._search_pubmed",
+            "pubmed_search.infrastructure.sources.unified_broker._search_pubmed_adapter",
             new_callable=AsyncMock,
             side_effect=Exception("API error"),
         ):
@@ -297,6 +320,32 @@ class TestAutoRelaxSearch:
         # Should not raise, should return result with all steps failed
         assert result is not None
         assert result.successful_step is None
+        assert result.incomplete is True
+        assert result.errors
+        assert all(step.status == "error" for step in result.steps_tried)
+        assert all(step.result_count == 0 for step in result.steps_tried)
+
+    async def test_typed_pubmed_timeout_is_not_reported_as_empty(self, mock_searcher):
+        """A real adapter failure must remain unknown coverage, not zero hits."""
+        mock_searcher.search_page.side_effect = TimeoutError
+
+        result = await _auto_relax_search(
+            mock_searcher,
+            "alpha AND beta",
+            10,
+            None,
+            None,
+            {},
+        )
+
+        assert result is not None
+        assert result.successful_step is None
+        assert result.incomplete is True
+        assert result.steps_tried
+        assert all(step.status == "error" for step in result.steps_tried)
+        assert all(step.error is not None for step in result.steps_tried)
+        assert all(step.error.kind == "timeout" for step in result.steps_tried if step.error)
+        assert all(step.error.operation == "search" for step in result.steps_tried if step.error)
 
 
 # ============================================================================
@@ -358,3 +407,69 @@ class TestRelaxationOutput:
         )
         assert result.successful_step is None
         assert result.total_results == 0
+
+    @staticmethod
+    def _failed_result() -> RelaxationResult:
+        error = SourceAdapterError(
+            source="pubmed",
+            operation="auto_relax",
+            message="Request timed out",
+            kind="timeout",
+            retryable=True,
+        )
+        step = RelaxationStep(
+            level=1,
+            action="remove_year_filter",
+            description="Remove year constraints",
+            query="cancer",
+            status="error",
+            error=error,
+        )
+        return RelaxationResult(
+            original_query="cancer AND therapy",
+            relaxed_query="cancer AND therapy",
+            steps_tried=[step],
+            successful_step=None,
+            total_results=0,
+        )
+
+    @staticmethod
+    def _format_context():
+        analysis = MagicMock()
+        analysis.original_query = "cancer AND therapy"
+        analysis.complexity.value = "simple"
+        analysis.intent.value = "exploration"
+        analysis.pico = None
+        analysis.to_dict.return_value = {"query": analysis.original_query}
+        stats = MagicMock()
+        stats.by_source = {"pubmed": 0}
+        stats.unique_articles = 0
+        stats.duplicates_removed = 0
+        stats.to_dict.return_value = {"unique_articles": 0}
+        return analysis, stats
+
+    def test_structured_failure_is_incomplete_not_confirmed_empty(self):
+        analysis, stats = self._format_context()
+
+        payload = json.loads(_format_as_json([], analysis, stats, relaxation_result=self._failed_result()))
+
+        assert payload["relaxation"]["outcome"] == "incomplete"
+        assert payload["relaxation"]["steps_tried"][0]["status"] == "error"
+        assert payload["relaxation"]["steps_tried"][0]["error"]["kind"] == "timeout"
+        assert "still 0 results" not in payload["relaxation"]["note"]
+
+    async def test_markdown_failure_does_not_claim_every_broader_query_was_empty(self):
+        analysis, stats = self._format_context()
+
+        rendered = await _format_unified_results(
+            [],
+            analysis,
+            stats,
+            include_analysis=False,
+            include_trials=False,
+            relaxation_result=self._failed_result(),
+        )
+
+        assert "無法宣稱所有較寬查詢皆為零結果" in rendered
+        assert "request failed (timeout)" in rendered
+        assert "仍無結果" not in rendered

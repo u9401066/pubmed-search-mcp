@@ -1,16 +1,41 @@
-"""Reusable unified-search application service contracts.
-
-This package keeps the Python SDK and MCP adapter on the same request shape
-without making application code import MCP presentation modules. Runtime source
-execution is injected by adapters.
-"""
+"""Application-owned unified-search request, use case, and ports."""
 
 from __future__ import annotations
 
-from .service import (
-    UnifiedSearchRunner,
-    UnifiedSearchRunRequest,
-    UnifiedSearchService,
+from .clinical_trials import ClinicalTrialsCoverage
+from .request import (
+    UnifiedSearchRequest,
+    normalize_unified_search_request,
+    validate_unified_search_input_envelope,
+)
+from .use_case import (
+    EnrichmentPort,
+    EnrichmentReportPort,
+    PlanObserverPort,
+    ProgressPort,
+    SourceBrokerPort,
+    SourceRegistryPort,
+    SourceSelectionError,
+    UnifiedSearchExecutorPort,
+    UnifiedSearchOutcome,
+    UnifiedSearchPlannerPort,
+    UnifiedSearchUseCase,
 )
 
-__all__ = ["UnifiedSearchRunRequest", "UnifiedSearchRunner", "UnifiedSearchService"]
+__all__ = [
+    "ProgressPort",
+    "ClinicalTrialsCoverage",
+    "EnrichmentPort",
+    "EnrichmentReportPort",
+    "PlanObserverPort",
+    "SourceBrokerPort",
+    "SourceRegistryPort",
+    "SourceSelectionError",
+    "UnifiedSearchExecutorPort",
+    "UnifiedSearchOutcome",
+    "UnifiedSearchPlannerPort",
+    "UnifiedSearchRequest",
+    "UnifiedSearchUseCase",
+    "normalize_unified_search_request",
+    "validate_unified_search_input_envelope",
+]
