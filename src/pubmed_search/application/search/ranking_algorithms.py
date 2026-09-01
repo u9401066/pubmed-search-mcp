@@ -465,8 +465,8 @@ class SourceDisagreement:
     """
     Analysis of how different sources rank the same query results.
 
-    Quantifies cross-source ranking consistency as a novel quality signal.
-    High agreement → well-established topic. Low agreement → emerging/controversial.
+    Quantifies cross-source result-set overlap as a diagnostic signal.
+    It does not compare provider rank positions or establish topic maturity.
     """
 
     source_agreement_score: float  # 0-1, higher = more agreement
@@ -474,7 +474,7 @@ class SourceDisagreement:
     cross_source_articles: int  # Articles found by 2+ sources
     single_source_articles: int  # Articles found by only 1 source
     per_source_unique: dict[str, int]  # source → count of exclusively unique articles
-    rank_correlation: dict[str, float]  # source_pair → Kendall tau correlation
+    pairwise_overlap: dict[str, float]  # source_pair → overlap coefficient
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to JSON-serializable dict."""
@@ -484,7 +484,7 @@ class SourceDisagreement:
             "cross_source_articles": self.cross_source_articles,
             "single_source_articles": self.single_source_articles,
             "per_source_unique": self.per_source_unique,
-            "rank_correlation": {k: round(v, 3) for k, v in self.rank_correlation.items()},
+            "pairwise_overlap": {k: round(v, 3) for k, v in self.pairwise_overlap.items()},
         }
 
 
@@ -495,22 +495,16 @@ def analyze_source_disagreement(
     """
     Analyze disagreement between different academic data sources.
 
-    This is a novel contribution: no existing system quantifies how different
-    sources rank the same literature. Disagreement signals:
-    - Emerging research (sources haven't converged)
-    - Interdisciplinary topics (different sources prioritize differently)
-    - Controversial findings (conflicting evidence)
-
     Calculates:
-    1. Source Agreement Score (SAS): Based on rank correlation across sources
+    1. Source Agreement Score (SAS): Mean pairwise overlap coefficient
     2. Source Complementarity: Fraction of articles unique to one source
     3. Per-source unique counts
-    4. Pairwise rank correlation (Kendall tau simplified)
+    4. Pairwise overlap coefficient: |A ∩ B| / min(|A|, |B|)
 
     Args:
         articles: Deduplicated articles with source tracking
-        source_rankings: Optional pre-computed {source: [article_keys]} rankings.
-            If not provided, inferred from article.sources metadata.
+        _source_rankings: Reserved input; source membership is inferred from
+            article source metadata.
 
     Returns:
         SourceDisagreement with all metrics
@@ -548,7 +542,7 @@ def analyze_source_disagreement(
             cross_source_articles=0,
             single_source_articles=0,
             per_source_unique={},
-            rank_correlation={},
+            pairwise_overlap={},
         )
 
     # Count cross-source vs single-source
@@ -565,7 +559,7 @@ def analyze_source_disagreement(
     complementarity = single_source / total if total > 0 else 0.0
 
     # Source Agreement Score: based on overlap between all source pairs
-    rank_correlation: dict[str, float] = {}
+    pairwise_overlap: dict[str, float] = {}
     all_sas_values: list[float] = []
 
     source_names = sorted(source_to_articles.keys())
@@ -582,7 +576,7 @@ def analyze_source_disagreement(
             overlap = intersection / max(min_size, 1)
 
             pair_key = f"{src_a}↔{src_b}"
-            rank_correlation[pair_key] = overlap
+            pairwise_overlap[pair_key] = overlap
             all_sas_values.append(overlap)
 
     # Overall SAS: average of all pairwise overlaps
@@ -599,7 +593,7 @@ def analyze_source_disagreement(
         cross_source_articles=cross_source,
         single_source_articles=single_source,
         per_source_unique=per_source_unique,
-        rank_correlation=rank_correlation,
+        pairwise_overlap=pairwise_overlap,
     )
 
 

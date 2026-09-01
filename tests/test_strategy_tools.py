@@ -66,15 +66,14 @@ class TestGenerateSearchQueries:
         assert len(parsed["suggested_queries"]) >= 3
 
     @pytest.mark.asyncio
-    async def test_invalid_strategy_defaults(self, setup):
+    async def test_invalid_strategy_is_rejected(self, setup):
         tools, _ = setup
         with patch(
             "pubmed_search.presentation.mcp_server.tools.strategy.get_strategy_generator",
             return_value=None,
         ):
             result = await tools["generate_search_queries"](topic="test", strategy="invalid_strategy")
-        parsed = json.loads(result)
-        assert parsed["strategy"] == "comprehensive"
+        assert "Unsupported strategy" in result
 
     @pytest.mark.asyncio
     async def test_generator_exception_falls_back(self, setup):
@@ -87,9 +86,18 @@ class TestGenerateSearchQueries:
         ):
             result = await tools["generate_search_queries"](topic="test")
         parsed = json.loads(result)
-        # Should fall back to basic
+        # The basic fallback is explicit and never masquerades as full MeSH analysis.
         assert "suggested_queries" in parsed
         assert "fallback" in parsed.get("note", "").lower()
+        assert parsed["status"] == "partial"
+        assert parsed["fallback_reason"] == "strategy_generator_failed"
+        assert parsed["warnings"]
+
+    @pytest.mark.asyncio
+    async def test_overlong_topic_is_rejected(self, setup):
+        tools, _ = setup
+        result = await tools["generate_search_queries"](topic="x" * 2001)
+        assert "exceeds 2000" in result
 
     @pytest.mark.asyncio
     async def test_single_word_topic(self, setup):

@@ -22,8 +22,6 @@ _LAZY_EXPORTS: dict[str, tuple[str, str]] = {
     "EnhancedQuery": ("pubmed_search.application.search.semantic_enhancer", "EnhancedQuery"),
     "ExpandedTerm": ("pubmed_search.application.search.semantic_enhancer", "ExpandedTerm"),
     "SearchPlan": ("pubmed_search.application.search.semantic_enhancer", "SearchPlan"),
-    "enhance_query": ("pubmed_search.application.search.semantic_enhancer", "enhance_query"),
-    "get_semantic_enhancer": ("pubmed_search.application.search.semantic_enhancer", "get_semantic_enhancer"),
     # Query validation
     "QueryValidator": ("pubmed_search.application.search.query_validator", "QueryValidator"),
     "QueryValidationResult": ("pubmed_search.application.search.query_validator", "QueryValidationResult"),

@@ -1,177 +1,271 @@
-"""Tests for composite parameter parsers (_parse_filters, _parse_options)."""
+"""Tests for the canonical diagnostic-preserving composite parsers."""
 
 from __future__ import annotations
 
 import pytest
 
-from pubmed_search.presentation.mcp_server.tools.unified import (
-    _parse_filters,
-    _parse_options,
+from pubmed_search.application.unified.helpers import (
+    _parse_filters_detailed,
+    _parse_options_detailed,
 )
 
 
+def _filters(value: str | None) -> dict:
+    parsed, _diagnostics = _parse_filters_detailed(value)
+    return parsed
+
+
+def _options(value: str | None) -> dict[str, bool]:
+    parsed, _diagnostics = _parse_options_detailed(value)
+    return parsed
+
+
 class TestParseFilters:
-    """Test _parse_filters composite parameter parser."""
+    """Test the diagnostic-preserving filter parser."""
 
     def test_none_returns_empty(self):
-        assert _parse_filters(None) == {}
+        assert _filters(None) == {}
 
-    def test_empty_string_returns_empty(self):
-        assert _parse_filters("") == {}
+    def test_empty_string_is_rejected(self):
+        result, diagnostics = _parse_filters_detailed("")
+
+        assert result == {}
+        assert diagnostics == ("filter list contains an empty token",)
 
     def test_year_range(self):
-        result = _parse_filters("year:2020-2025")
+        result = _filters("year:2020-2025")
         assert result["min_year"] == 2020
         assert result["max_year"] == 2025
 
     def test_year_from_only(self):
-        result = _parse_filters("year:2020-")
+        result = _filters("year:2020-")
         assert result["min_year"] == 2020
         assert "max_year" not in result
 
     def test_year_to_only(self):
-        result = _parse_filters("year:-2025")
+        result = _filters("year:-2025")
         assert result["max_year"] == 2025
         assert "min_year" not in result
 
     def test_year_single(self):
-        result = _parse_filters("year:2024")
+        result = _filters("year:2024")
         assert result["min_year"] == 2024
         assert "max_year" not in result
 
     def test_age_group(self):
-        assert _parse_filters("age:aged")["age_group"] == "aged"
-        assert _parse_filters("age_group:child")["age_group"] == "child"
+        assert _filters("age_group:child")["age_group"] == "child"
 
     def test_sex(self):
-        assert _parse_filters("sex:female")["sex"] == "female"
+        assert _filters("sex:female")["sex"] == "female"
 
     def test_species(self):
-        assert _parse_filters("species:humans")["species"] == "humans"
+        assert _filters("species:humans")["species"] == "humans"
 
     def test_language(self):
-        assert _parse_filters("lang:english")["language"] == "english"
-        assert _parse_filters("language:chinese")["language"] == "chinese"
+        assert _filters("language:chinese")["language"] == "chinese"
 
     def test_clinical_query(self):
-        assert _parse_filters("clinical:therapy")["clinical_query"] == "therapy"
-        assert _parse_filters("clinical_query:diagnosis_narrow")["clinical_query"] == "diagnosis_narrow"
+        assert _filters("clinical_query:diagnosis_narrow")["clinical_query"] == "diagnosis_narrow"
 
     def test_multiple_filters(self):
-        result = _parse_filters("year:2020-2025, age:aged, sex:female, clinical:therapy")
+        result = _filters("year:2020-2025,age_group:aged,sex:female,clinical_query:therapy")
         assert result["min_year"] == 2020
         assert result["max_year"] == 2025
         assert result["age_group"] == "aged"
         assert result["sex"] == "female"
         assert result["clinical_query"] == "therapy"
 
-    def test_whitespace_handling(self):
-        result = _parse_filters("  year : 2020 - 2025 , age : aged  ")
-        assert result["min_year"] == 2020
-        assert result["max_year"] == 2025
-        assert result["age_group"] == "aged"
+    def test_whitespace_variants_are_rejected(self):
+        result, diagnostics = _parse_filters_detailed(" year:2020-2025,age_group:aged ")
+
+        assert result == {}
+        assert len(diagnostics) == 2
+
+    def test_separator_whitespace_is_rejected(self):
+        result, diagnostics = _parse_filters_detailed("year:2020, age_group:adult")
+
+        assert result == {"min_year": 2020}
+        assert diagnostics == ("filter ' age_group:adult' contains surrounding whitespace",)
+
+    def test_empty_interior_and_trailing_tokens_are_rejected(self):
+        result, diagnostics = _parse_filters_detailed("year:2020,,sex:female,")
+
+        assert result == {"min_year": 2020, "sex": "female"}
+        assert diagnostics == (
+            "filter list contains an empty token",
+            "filter list contains an empty token",
+        )
 
     def test_invalid_year_ignored(self):
-        result = _parse_filters("year:abc")
+        result = _filters("year:abc")
         assert "min_year" not in result
         assert "max_year" not in result
 
     def test_empty_value_ignored(self):
-        result = _parse_filters("age:, sex:female")
+        result = _filters("age_group:,sex:female")
         assert "age_group" not in result
         assert result["sex"] == "female"
 
     def test_no_colon_ignored(self):
-        result = _parse_filters("something_weird, sex:male")
+        result = _filters("something_weird,sex:male")
         assert result == {"sex": "male"}
+
+    def test_invalid_tokens_are_reported(self):
+        result, diagnostics = _parse_filters_detailed("year:abc,age_group:,unknown:value")
+        assert result == {}
+        assert len(diagnostics) == 3
+
+    @pytest.mark.parametrize("retired", ["age:aged", "lang:english", "clinical:therapy"])
+    def test_retired_filter_aliases_are_rejected(self, retired: str):
+        result, diagnostics = _parse_filters_detailed(retired)
+
+        assert result == {}
+        assert diagnostics == (f"unknown filter key '{retired.split(':', 1)[0]}'",)
+
+    @pytest.mark.parametrize(
+        "variant",
+        ["Age_group:aged", "age_group:AGED", "age_group:middle-aged", "clinical_query:therapy-narrow"],
+    )
+    def test_case_and_hyphen_variants_are_rejected(self, variant: str):
+        result, diagnostics = _parse_filters_detailed(variant)
+
+        assert result == {}
+        assert diagnostics
+
+    def test_duplicate_filter_is_rejected(self):
+        result, diagnostics = _parse_filters_detailed("sex:female,sex:male")
+
+        assert result == {"sex": "female"}
+        assert diagnostics == ("filter 'sex' is duplicated",)
 
 
 class TestParseOptions:
-    """Test _parse_options composite parameter parser."""
+    """Test the diagnostic-preserving option parser."""
 
     def test_none_returns_empty(self):
-        assert _parse_options(None) == {}
+        assert _options(None) == {}
 
-    def test_empty_string_returns_empty(self):
-        assert _parse_options("") == {}
+    def test_empty_string_is_rejected(self):
+        result, diagnostics = _parse_options_detailed("")
+
+        assert result == {}
+        assert diagnostics == ("option list contains an empty token",)
 
     def test_preprints(self):
-        result = _parse_options("preprints")
+        result = _options("preprints")
         assert result["include_preprints"] is True
 
     def test_shallow(self):
-        result = _parse_options("shallow")
+        result = _options("shallow")
         assert result["deep_search"] is False
 
-    def test_all_types(self):
-        result = _parse_options("all_types")
-        assert result["peer_reviewed_only"] is False
-
-    def test_no_peer_review_alias(self):
-        result = _parse_options("no_peer_review")
-        assert result["peer_reviewed_only"] is False
+    def test_include_detected_preprints(self):
+        result = _options("include_detected_preprints")
+        assert result["include_detected_preprints"] is True
 
     def test_no_oa(self):
-        result = _parse_options("no_oa")
+        result = _options("no_oa")
         assert result["include_oa_links"] is False
 
     def test_no_analysis(self):
-        result = _parse_options("no_analysis")
+        result = _options("no_analysis")
         assert result["show_analysis"] is False
 
     def test_no_scores(self):
-        result = _parse_options("no_scores")
-        assert result["include_similarity_scores"] is False
+        result = _options("no_scores")
+        assert result["include_rank_scores"] is False
 
     def test_no_next(self):
-        result = _parse_options("no_next")
+        result = _options("no_next")
         assert result["include_next_tools"] is False
 
     def test_no_provenance(self):
-        result = _parse_options("no_provenance")
+        result = _options("no_provenance")
         assert result["include_section_provenance"] is False
 
     def test_compact_expands_to_safe_structured_defaults(self):
-        result = _parse_options("compact")
+        result = _options("compact")
         assert result["compact_output"] is True
         assert result["show_analysis"] is False
-        assert result["include_similarity_scores"] is False
+        assert result["include_rank_scores"] is False
         assert result["include_next_tools"] is False
         assert result["include_section_provenance"] is False
         assert result["deep_search"] is False
 
     def test_no_relax(self):
-        result = _parse_options("no_relax")
+        result = _options("no_relax")
         assert result["auto_relax"] is False
 
     def test_multiple_options(self):
-        result = _parse_options("preprints, shallow, no_oa")
+        result = _options("preprints,shallow,no_oa")
         assert result["include_preprints"] is True
         assert result["deep_search"] is False
         assert result["include_oa_links"] is False
 
-    def test_case_insensitive(self):
-        result = _parse_options("PREPRINTS, Shallow")
-        assert result["include_preprints"] is True
-        assert result["deep_search"] is False
+    def test_case_variants_are_rejected(self):
+        result, diagnostics = _parse_options_detailed("PREPRINTS,Shallow")
 
-    def test_whitespace_handling(self):
-        result = _parse_options("  preprints , shallow  ,  no_oa  ")
-        assert result["include_preprints"] is True
-        assert result["deep_search"] is False
-        assert result["include_oa_links"] is False
+        assert result == {}
+        assert diagnostics == ("unknown option 'PREPRINTS'", "unknown option 'Shallow'")
 
-    @pytest.mark.filterwarnings("ignore::pytest.PytestUnraisableExceptionWarning")
-    def test_unknown_flag_logged(self, caplog):
-        """Unknown flags are logged as warnings but don't crash."""
-        result = _parse_options("preprints, unknown_flag")
+    def test_whitespace_variants_are_rejected(self):
+        result, diagnostics = _parse_options_detailed(" preprints,shallow ")
+
+        assert result == {}
+        assert len(diagnostics) == 2
+
+    def test_separator_whitespace_is_rejected(self):
+        result, diagnostics = _parse_options_detailed("preprints, shallow")
+
+        assert result == {"include_preprints": True}
+        assert diagnostics == ("option ' shallow' contains surrounding whitespace",)
+
+    def test_empty_interior_and_trailing_tokens_are_rejected(self):
+        result, diagnostics = _parse_options_detailed("preprints,,shallow,")
+
+        assert result == {"include_preprints": True, "deep_search": False}
+        assert diagnostics == (
+            "option list contains an empty token",
+            "option list contains an empty token",
+        )
+
+    def test_unknown_flag_is_reported(self):
+        result, diagnostics = _parse_options_detailed("preprints,unknown_flag")
         assert result["include_preprints"] is True
-        # Unknown flag should not appear in result
         assert "unknown_flag" not in result
+        assert diagnostics == ("unknown option 'unknown_flag'",)
+
+    @pytest.mark.parametrize("retired", ["all_types", "no_peer_review", "context_graph"])
+    def test_retired_options_are_rejected(self, retired):
+        result, diagnostics = _parse_options_detailed(retired)
+
+        assert result == {}
+        assert diagnostics == (f"unknown option '{retired}'",)
+
+    @pytest.mark.parametrize("retired", ["trials", "counts-first", "native-semantic", "minimal"])
+    def test_retired_option_aliases_are_rejected(self, retired: str):
+        result, diagnostics = _parse_options_detailed(retired)
+
+        assert result == {}
+        assert diagnostics == (f"unknown option '{retired}'",)
+
+    def test_canonical_strict_options_are_accepted(self):
+        result = _options("clinical_trials,counts_first,native_semantic,compact")
+
+        assert result["include_clinical_trials"] is True
+        assert result["counts_first"] is True
+        assert result["native_semantic"] is True
+        assert result["compact_output"] is True
+
+    def test_duplicate_option_is_rejected(self):
+        result, diagnostics = _parse_options_detailed("preprints,preprints")
+
+        assert result == {"include_preprints": True}
+        assert diagnostics == ("option 'preprints' is duplicated",)
 
     def test_defaults_not_set(self):
         """Options not mentioned should not appear in result (caller uses defaults)."""
-        result = _parse_options("preprints")
+        result = _options("preprints")
         assert "include_oa_links" not in result
         assert "show_analysis" not in result
         assert "deep_search" not in result

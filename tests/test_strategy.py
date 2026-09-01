@@ -8,6 +8,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from pubmed_search.infrastructure.ncbi.base import NCBIInfrastructureError
+
+
+def _ncbi_failure(operation: str = "strategy test") -> NCBIInfrastructureError:
+    return NCBIInfrastructureError(operation, upstream_type="RuntimeError", retryable=False)
+
 
 class TestSearchStrategyGenerator:
     """Tests for SearchStrategyGenerator class."""
@@ -52,28 +58,31 @@ class TestSearchStrategyGenerator:
             assert was_corrected is True
 
     async def test_spell_check_error(self, strategy_generator):
-        """Test spell check handles errors gracefully."""
-        with patch("pubmed_search.infrastructure.ncbi.strategy.Entrez.espell") as mock_espell:
+        """Provider failure is not represented as an unchanged spelling result."""
+        with (
+            patch("pubmed_search.infrastructure.ncbi.strategy.MAX_RETRIES", 1),
+            patch("pubmed_search.infrastructure.ncbi.strategy.Entrez.espell") as mock_espell,
+        ):
             mock_espell.side_effect = Exception("API Error")
 
-            corrected, was_corrected = await strategy_generator.spell_check("test")
-
-            assert corrected == "test"
-            assert was_corrected is False
+            with pytest.raises(NCBIInfrastructureError) as exc_info:
+                await strategy_generator.spell_check("test")
+            assert "API Error" not in str(exc_info.value)
 
     async def test_spell_check_closes_handle_when_read_fails(self, strategy_generator):
         """Spell check should close the Entrez handle even when parsing fails."""
         mock_handle = MagicMock()
 
         with (
+            patch("pubmed_search.infrastructure.ncbi.strategy.MAX_RETRIES", 1),
             patch("pubmed_search.infrastructure.ncbi.strategy.Entrez.espell", return_value=mock_handle),
             patch("pubmed_search.infrastructure.ncbi.strategy.Entrez.read", side_effect=ValueError("bad xml")),
         ):
-            corrected, was_corrected = await strategy_generator.spell_check("test")
+            with pytest.raises(NCBIInfrastructureError) as exc_info:
+                await strategy_generator.spell_check("test")
 
         mock_handle.close.assert_called_once()
-        assert corrected == "test"
-        assert was_corrected is False
+        assert "bad xml" not in str(exc_info.value)
 
     async def test_get_mesh_info_found(self, strategy_generator):
         """Test getting MeSH info when term is found."""
@@ -114,13 +123,16 @@ Tree Number(s): C18.452.394.750"""
             assert result is None
 
     async def test_get_mesh_info_error(self, strategy_generator):
-        """Test getting MeSH info handles errors gracefully."""
-        with patch("pubmed_search.infrastructure.ncbi.strategy.Entrez.esearch") as mock_esearch:
+        """Provider failure is distinct from a successful no-match response."""
+        with (
+            patch("pubmed_search.infrastructure.ncbi.strategy.MAX_RETRIES", 1),
+            patch("pubmed_search.infrastructure.ncbi.strategy.Entrez.esearch") as mock_esearch,
+        ):
             mock_esearch.side_effect = Exception("API Error")
 
-            result = await strategy_generator.get_mesh_info("test")
-
-            assert result is None
+            with pytest.raises(NCBIInfrastructureError) as exc_info:
+                await strategy_generator.get_mesh_info("test")
+            assert "API Error" not in str(exc_info.value)
 
     async def test_analyze_query(self, strategy_generator):
         """Test query analysis."""
@@ -143,14 +155,16 @@ Tree Number(s): C18.452.394.750"""
             assert "MeSH Terms" in result["translated_query"]
 
     async def test_analyze_query_error(self, strategy_generator):
-        """Test query analysis handles errors."""
-        with patch("pubmed_search.infrastructure.ncbi.strategy.Entrez.esearch") as mock_esearch:
+        """Provider failure is distinct from a real zero-result query."""
+        with (
+            patch("pubmed_search.infrastructure.ncbi.strategy.MAX_RETRIES", 1),
+            patch("pubmed_search.infrastructure.ncbi.strategy.Entrez.esearch") as mock_esearch,
+        ):
             mock_esearch.side_effect = Exception("API Error")
 
-            result = await strategy_generator.analyze_query("test")
-
-            assert result["original"] == "test"
-            assert result["count"] == 0
+            with pytest.raises(NCBIInfrastructureError) as exc_info:
+                await strategy_generator.analyze_query("test")
+            assert "API Error" not in str(exc_info.value)
 
     async def test_generate_strategies_basic(self, strategy_generator):
         """Test generating search strategies."""
@@ -169,6 +183,8 @@ Tree Number(s): C18.452.394.750"""
             assert "topic" in result
             assert "corrected_topic" in result
             assert "suggested_queries" in result
+            assert result["coverage"]["spelling"]["status"] == "completed"
+            assert result["coverage"]["query_analysis"]["status"] == "completed"
 
     async def test_generate_strategies_with_mesh(self, strategy_generator):
         """Test generating strategies with MeSH lookup."""
@@ -189,35 +205,61 @@ Tree Number(s): C18.452.394.750"""
             )
 
             assert len(result.get("mesh_terms", [])) > 0 or result.get("mesh_terms") is not None
+            assert result["coverage"]["mesh"]["status"] == "completed"
+            assert result["coverage"]["mesh"]["failed"] == 0
 
+    async def test_generate_strategies_reports_optional_source_outages(self, strategy_generator):
+        """Optional enrichments retain usable queries with explicit, sanitized coverage."""
+        secret = "token=private-strategy-secret"
+        with (
+            patch.object(strategy_generator, "spell_check", side_effect=_ncbi_failure("spelling")),
+            patch.object(strategy_generator, "get_mesh_info", side_effect=_ncbi_failure("mesh")),
+            patch.object(strategy_generator, "analyze_query", side_effect=_ncbi_failure("query")),
+        ):
+            result = await strategy_generator.generate_strategies(topic="diabetes treatment")
 
-class TestRetryLogic:
-    """Tests for retry logic in strategy module."""
+        assert result["suggested_queries"]
+        assert result["coverage"]["spelling"]["status"] == "failed"
+        assert result["coverage"]["mesh"] == {
+            "status": "failed",
+            "attempted": 1,
+            "completed": 0,
+            "failed": 1,
+            "matched": 0,
+        }
+        analysis = result["coverage"]["query_analysis"]
+        assert analysis["status"] == "failed"
+        assert analysis["attempted"] == analysis["failed"] > 0
+        assert analysis["completed"] == 0
+        assert all(query["estimated_count"] is None for query in result["suggested_queries"])
+        assert len(result["warnings"]) == 3
+        assert secret not in str(result)
 
-    async def test_is_retryable_true(self):
-        """Test identifying retryable errors."""
-        from pubmed_search.infrastructure.ncbi.strategy import _is_retryable
+    async def test_generate_strategies_reports_partial_query_analysis(self, strategy_generator):
+        """Successful and failed query translations are counted independently."""
+        with (
+            patch.object(strategy_generator, "spell_check", return_value=("diabetes", False)),
+            patch.object(strategy_generator, "get_mesh_info", return_value=None),
+            patch.object(
+                strategy_generator,
+                "analyze_query",
+                side_effect=[
+                    {"count": 12, "translated_query": "translated"},
+                    _ncbi_failure(),
+                    {"count": 3, "translated_query": "translated rct"},
+                ],
+            ),
+        ):
+            result = await strategy_generator.generate_strategies(
+                topic="diabetes",
+                use_mesh=False,
+                strategy="focused",
+            )
 
-        assert _is_retryable(Exception("Database is not supported")) is True
-        assert _is_retryable(Exception("Backend failed")) is True
-        assert _is_retryable(Exception("Server Error")) is True
-
-    async def test_is_retryable_false(self):
-        """Test identifying non-retryable errors."""
-        from pubmed_search.infrastructure.ncbi.strategy import _is_retryable
-
-        assert _is_retryable(Exception("Invalid API key")) is False
-        assert _is_retryable(Exception("Rate limit exceeded")) is False
-
-
-# v0.1.21: expand_search_queries has been internalized (no longer a public MCP tool)
-# These tests are kept for reference but skipped
-@pytest.mark.skip(reason="v0.1.21: expand_search_queries internalized, not a public MCP tool")
-class TestExpandSearchQueries:
-    """Tests for expand_search_queries tool - SKIPPED in v0.1.21."""
-
-    async def test_expand_mesh_fallback(self):
-        pass
+        analysis = result["coverage"]["query_analysis"]
+        assert analysis == {"status": "partial", "attempted": 3, "completed": 2, "failed": 1}
+        assert result["suggested_queries"][0]["estimated_count"] == 12
+        assert result["suggested_queries"][1]["estimated_count"] is None
 
     async def test_expand_broader(self):
         pass
