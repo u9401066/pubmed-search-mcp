@@ -17,14 +17,23 @@ from __future__ import annotations
 
 import logging
 import urllib.parse
-from typing import Any, NoReturn
+from typing import TYPE_CHECKING, Any
 
 from pubmed_search.application.search.source_models import SourceSearchPage, coerce_optional_total
-from pubmed_search.infrastructure.sources.base_client import APIRequestError, BaseAPIClient
-from pubmed_search.infrastructure.sources.contact import first_contact_email, get_configured_source_contact_email
+from pubmed_search.infrastructure.sources.base_client import (
+    _CONTINUE,
+    APIRequestError,
+    BaseAPIClient,
+    raise_provider_schema_error,
+    raise_sanitized_retryable_error,
+)
+from pubmed_search.infrastructure.sources.contact import first_contact_email, get_source_contact_email
 from pubmed_search.shared.async_utils import RetryableOperationError, get_rate_limiter
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    import httpx
 
 # OpenAlex API endpoints
 OA_API_BASE = "https://api.openalex.org"
@@ -58,20 +67,6 @@ OPENALEX_CURSOR_MAX_RESULTS = 100_000
 OPENALEX_CURSOR_MAX_PAGES = 1_000
 
 
-def _raise_retryable_error(error: RetryableOperationError | None) -> None:
-    if error is not None:
-        raise RetryableOperationError(
-            str(error),
-            retry_after=error.retry_after,
-            status_code=error.status_code,
-        )
-
-
-def _raise_api_request_error(service_name: str) -> NoReturn:
-    """Raise outside request parsing blocks so the public error stays sanitized."""
-    raise APIRequestError(service_name)
-
-
 def _require_result_list(value: object) -> list[object]:
     """Validate the provider collection shape without accepting false-empty drift."""
     if not isinstance(value, list):
@@ -85,7 +80,7 @@ class OpenAlexClient(BaseAPIClient):
 
     Usage:
         client = OpenAlexClient(email="your@email.com")
-        results = client.search("CRISPR gene editing", limit=10, open_access_only=True)
+        page = await client.search_page("CRISPR gene editing", limit=10, open_access_only=True)
     """
 
     _service_name = "OpenAlex"
@@ -99,7 +94,7 @@ class OpenAlexClient(BaseAPIClient):
             api_key: Optional OpenAlex API key for a larger daily credit budget.
             timeout: Request timeout in seconds
         """
-        self._email = first_contact_email(email, get_configured_source_contact_email(), DEFAULT_EMAIL) or DEFAULT_EMAIL
+        self._email = first_contact_email(email, get_source_contact_email(), DEFAULT_EMAIL) or DEFAULT_EMAIL
         self._api_key = api_key.strip() if isinstance(api_key, str) and api_key.strip() else None
         # Keep credentials out of URLs: exceptions and reverse-proxy access
         # logs commonly include the complete query string. OpenAlex supports a
@@ -118,51 +113,12 @@ class OpenAlexClient(BaseAPIClient):
             follow_redirects=False,
         )
 
-    async def search(
-        self,
-        query: str,
-        limit: int = 10,
-        min_year: int | None = None,
-        max_year: int | None = None,
-        open_access_only: bool = False,
-        is_doaj: bool = False,
-        sort: str | None = None,
-    ) -> list[dict[str, Any]]:
-        """Search OpenAlex and return the legacy normalized list contract.
+    def _handle_expected_status(self, response: httpx.Response, url: str) -> Any:
+        """Treat only a real provider 404 as an absent OpenAlex entity."""
 
-        Unified search uses :meth:`search_page` instead so raw OpenAlex DTOs
-        cross the domain mapper exactly once.
-
-        Args:
-            query: Search query (searches title, abstract, fulltext)
-            limit: Maximum results (max 100 per page)
-            min_year: Filter by minimum publication year
-            max_year: Filter by maximum publication year
-            open_access_only: Only return open access works
-            is_doaj: Only return works from DOAJ journals
-            sort: Sort order. Options:
-                  - None (default): Use OpenAlex default (relevance when searching)
-                  - "cited_by_count:desc": Most cited first
-                  - "publication_date:desc": Most recent first
-                  Note: "relevance_score" only works when search is active
-
-        Returns:
-            List of work dictionaries in normalized format
-        """
-        try:
-            page = await self.search_page(
-                query,
-                limit=limit,
-                min_year=min_year,
-                max_year=max_year,
-                open_access_only=open_access_only,
-                is_doaj=is_doaj,
-                sort=sort,
-            )
-        except APIRequestError as exc:
-            logger.warning("OpenAlex legacy search returned no items (%s)", type(exc).__name__)
-            return []
-        return [self._normalize_work(work) for work in page.items]
+        if response.status_code == 404:
+            return None
+        return _CONTINUE
 
     async def search_page(
         self,
@@ -335,16 +291,16 @@ class OpenAlexClient(BaseAPIClient):
             url = f"{OA_WORKS_URL}?{urllib.parse.urlencode(params)}"
             data = await self._make_request(url)
             if not isinstance(data, dict):
-                retryable = self.last_retryable_error
-                _raise_retryable_error(retryable)
-                _raise_api_request_error(self._service_name)
+                raise_provider_schema_error(self._service_name)
 
             raw_results = data.get("results")
-            if raw_results is None:
-                raw_results = []
             raw_results = _require_result_list(raw_results)
+            if any(not isinstance(work, dict) for work in raw_results):
+                raise_provider_schema_error(self._service_name)
             works = [work for work in raw_results if isinstance(work, dict)]
-            meta = data.get("meta") or {}
+            meta = data.get("meta")
+            if not isinstance(meta, dict):
+                raise_provider_schema_error(self._service_name)
             total, warnings = coerce_optional_total(meta.get("count"))
             raw_x_query = meta.get("x_query")
             if isinstance(raw_x_query, str):
@@ -379,8 +335,8 @@ class OpenAlexClient(BaseAPIClient):
                     "rate_limit": rate_limit,
                 },
             )
-        except RetryableOperationError:
-            raise
+        except RetryableOperationError as exc:
+            raise_sanitized_retryable_error(self._service_name, exc)
         except APIRequestError:
             raise
         except Exception as exc:
@@ -464,14 +420,20 @@ class OpenAlexClient(BaseAPIClient):
             url = f"{OA_WORKS_URL}/{encoded_id}?{urllib.parse.urlencode(params)}"
 
             data = await self._make_request(url)
-            if not isinstance(data, dict):
+            if data is None:
                 return None
+            if not isinstance(data, dict):
+                raise_provider_schema_error(self._service_name)
 
             return self._normalize_work(data)
 
+        except APIRequestError:
+            raise
+        except RetryableOperationError as exc:
+            raise_sanitized_retryable_error(self._service_name, exc)
         except Exception as exc:
             logger.warning("OpenAlex work lookup failed (%s)", type(exc).__name__)
-            return None
+            raise APIRequestError(self._service_name) from exc
 
     async def get_citations(self, work_id: str, limit: int = 10) -> list[dict[str, Any]]:
         """
@@ -497,13 +459,20 @@ class OpenAlexClient(BaseAPIClient):
             data = await self._make_request(url)
 
             if not isinstance(data, dict):
-                return []
+                raise_provider_schema_error(self._service_name)
+            raw_results = data.get("results")
+            if not isinstance(raw_results, list) or any(not isinstance(work, dict) for work in raw_results):
+                raise_provider_schema_error(self._service_name)
 
-            return [self._normalize_work(w) for w in data.get("results", [])]
+            return [self._normalize_work(work) for work in raw_results]
 
+        except APIRequestError:
+            raise
+        except RetryableOperationError as exc:
+            raise_sanitized_retryable_error(self._service_name, exc)
         except Exception as exc:
             logger.warning("OpenAlex citation lookup failed (%s)", type(exc).__name__)
-            return []
+            raise APIRequestError(self._service_name) from exc
 
     async def get_source(self, source_id: str) -> dict[str, Any] | None:
         """
@@ -530,14 +499,20 @@ class OpenAlexClient(BaseAPIClient):
             url = f"{OA_API_BASE}/sources/{source_id}?{urllib.parse.urlencode(params)}"
 
             data = await self._make_request(url)
-            if not isinstance(data, dict):
+            if data is None:
                 return None
+            if not isinstance(data, dict):
+                raise_provider_schema_error(self._service_name)
 
             return self._normalize_source(data)
 
+        except APIRequestError:
+            raise
+        except RetryableOperationError as exc:
+            raise_sanitized_retryable_error(self._service_name, exc)
         except Exception as exc:
             logger.debug("OpenAlex source lookup failed (%s)", type(exc).__name__)
-            return None
+            raise APIRequestError(self._service_name) from exc
 
     async def get_sources_batch(self, source_ids: list[str]) -> dict[str, dict[str, Any]]:
         """
@@ -573,19 +548,26 @@ class OpenAlexClient(BaseAPIClient):
             data = await self._make_request(url)
 
             if not isinstance(data, dict):
-                return {}
+                raise_provider_schema_error(self._service_name)
+            raw_results = data.get("results")
+            if not isinstance(raw_results, list) or any(not isinstance(source, dict) for source in raw_results):
+                raise_provider_schema_error(self._service_name)
 
             result = {}
-            for source in data.get("results", []):
+            for source in raw_results:
                 oa_id = source.get("id", "").replace("https://openalex.org/", "")
                 if oa_id:
                     result[oa_id] = self._normalize_source(source)
 
             return result
 
+        except APIRequestError:
+            raise
+        except RetryableOperationError as exc:
+            raise_sanitized_retryable_error(self._service_name, exc)
         except Exception as exc:
             logger.debug("OpenAlex source batch lookup failed (%s)", type(exc).__name__)
-            return {}
+            raise APIRequestError(self._service_name) from exc
 
     async def get_author(self, author_id: str) -> dict[str, Any] | None:
         """
@@ -614,13 +596,19 @@ class OpenAlexClient(BaseAPIClient):
             url = f"{OA_AUTHORS_URL}/{encoded_id}?{urllib.parse.urlencode(params)}"
 
             data = await self._make_request(url)
-            if not isinstance(data, dict):
+            if data is None:
                 return None
+            if not isinstance(data, dict):
+                raise_provider_schema_error(self._service_name)
 
             return self._normalize_author(data)
+        except APIRequestError:
+            raise
+        except RetryableOperationError as exc:
+            raise_sanitized_retryable_error(self._service_name, exc)
         except Exception as exc:
             logger.debug("OpenAlex author lookup failed (%s)", type(exc).__name__)
-            return None
+            raise APIRequestError(self._service_name) from exc
 
     async def search_authors(self, query: str, limit: int = 10) -> list[dict[str, Any]]:
         """
@@ -643,12 +631,19 @@ class OpenAlexClient(BaseAPIClient):
             data = await self._make_request(url)
 
             if not isinstance(data, dict):
-                return []
+                raise_provider_schema_error(self._service_name)
+            raw_results = data.get("results")
+            if not isinstance(raw_results, list) or any(not isinstance(author, dict) for author in raw_results):
+                raise_provider_schema_error(self._service_name)
 
-            return [self._normalize_author(author) for author in data.get("results", [])]
+            return [self._normalize_author(author) for author in raw_results]
+        except APIRequestError:
+            raise
+        except RetryableOperationError as exc:
+            raise_sanitized_retryable_error(self._service_name, exc)
         except Exception as exc:
             logger.debug("OpenAlex author search failed (%s)", type(exc).__name__)
-            return []
+            raise APIRequestError(self._service_name) from exc
 
     @staticmethod
     def _normalize_source(source: dict[str, Any]) -> dict[str, Any]:

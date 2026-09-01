@@ -29,8 +29,12 @@ import logging
 import urllib.parse
 from typing import TYPE_CHECKING, Any
 
-from pubmed_search.infrastructure.sources.base_client import _CONTINUE, BaseAPIClient
-from pubmed_search.infrastructure.sources.contact import first_contact_email, get_configured_source_contact_email
+from pubmed_search.infrastructure.sources.base_client import (
+    _CONTINUE,
+    BaseAPIClient,
+    raise_provider_schema_error,
+)
+from pubmed_search.infrastructure.sources.contact import first_contact_email, get_source_contact_email
 
 if TYPE_CHECKING:
     import httpx
@@ -79,7 +83,7 @@ class CrossRefClient(BaseAPIClient):
             email: Contact email for polite pool access (strongly recommended)
             timeout: Request timeout in seconds
         """
-        self._email = first_contact_email(email, get_configured_source_contact_email(), DEFAULT_EMAIL) or DEFAULT_EMAIL
+        self._email = first_contact_email(email, get_source_contact_email(), DEFAULT_EMAIL) or DEFAULT_EMAIL
         super().__init__(
             timeout=timeout,
             min_interval=0.05,
@@ -140,7 +144,11 @@ class CrossRefClient(BaseAPIClient):
 
         url = f"{CROSSREF_API_BASE}/works/{urllib.parse.quote(doi, safe='')}"
         result = await self._make_request(url)
-        return result if isinstance(result, dict) else None
+        if result is None:
+            return None
+        if not isinstance(result, dict):
+            raise_provider_schema_error(self._service_name)
+        return result
 
     async def search(
         self,
@@ -186,8 +194,10 @@ class CrossRefClient(BaseAPIClient):
         url = f"{CROSSREF_API_BASE}/works?{urllib.parse.urlencode(params)}"
         data = await self._make_request(url)
 
-        if not isinstance(data, dict):
+        if data is None:
             return {"total_results": 0, "items": []}
+        if not isinstance(data, dict):
+            raise_provider_schema_error(self._service_name)
 
         return {
             "total_results": data.get("total-results", 0),
@@ -220,8 +230,10 @@ class CrossRefClient(BaseAPIClient):
         url = f"{CROSSREF_API_BASE}/works?{urllib.parse.urlencode(params)}"
         data = await self._make_request(url)
 
-        if not isinstance(data, dict):
+        if data is None:
             return []
+        if not isinstance(data, dict):
+            raise_provider_schema_error(self._service_name)
 
         return data.get("items", [])
 
@@ -287,8 +299,10 @@ class CrossRefClient(BaseAPIClient):
         url = f"{CROSSREF_API_BASE}/works?{urllib.parse.urlencode(params)}"
         data = await self._make_request(url)
 
-        if not isinstance(data, dict):
+        if data is None:
             return {"citation_count": citation_count, "items": []}
+        if not isinstance(data, dict):
+            raise_provider_schema_error(self._service_name)
 
         return {
             "citation_count": citation_count,
@@ -307,7 +321,11 @@ class CrossRefClient(BaseAPIClient):
         """
         url = f"{CROSSREF_API_BASE}/journals/{issn}"
         result = await self._make_request(url)
-        return result if isinstance(result, dict) else None
+        if result is None:
+            return None
+        if not isinstance(result, dict):
+            raise_provider_schema_error(self._service_name)
+        return result
 
     async def get_funder(self, funder_id: str) -> dict[str, Any] | None:
         """
@@ -323,7 +341,11 @@ class CrossRefClient(BaseAPIClient):
         normalized_funder_id = self._normalize_funder_id(funder_id)
         url = f"{CROSSREF_API_BASE}/funders/{urllib.parse.quote(normalized_funder_id, safe='')}"
         result = await self._make_request(url)
-        return result if isinstance(result, dict) else None
+        if result is None:
+            return None
+        if not isinstance(result, dict):
+            raise_provider_schema_error(self._service_name)
+        return result
 
     async def search_funders(self, query: str, limit: int = 10) -> list[dict[str, Any]]:
         """
@@ -342,8 +364,10 @@ class CrossRefClient(BaseAPIClient):
         }
         url = f"{CROSSREF_API_BASE}/funders?{urllib.parse.urlencode(params)}"
         data = await self._make_request(url)
-        if not isinstance(data, dict):
+        if data is None:
             return []
+        if not isinstance(data, dict):
+            raise_provider_schema_error(self._service_name)
         return data.get("items", [])
 
     async def resolve_doi_batch(
@@ -461,51 +485,3 @@ class CrossRefClient(BaseAPIClient):
                     return (year, month, day)
 
         return (None, None, None)
-
-
-# Singleton instance
-_crossref_client: CrossRefClient | None = None
-
-
-def get_crossref_client(email: str | None = None) -> CrossRefClient:
-    """Get or create CrossRef client singleton."""
-    global _crossref_client
-    if _crossref_client is None:
-        import os
-
-        _crossref_client = CrossRefClient(
-            email=first_contact_email(
-                email,
-                os.environ.get("CROSSREF_EMAIL"),
-                os.environ.get("NCBI_EMAIL"),
-                get_configured_source_contact_email(),
-            )
-        )
-    return _crossref_client
-
-
-# Convenience functions
-async def get_doi_metadata(doi: str) -> dict[str, Any] | None:
-    """Get metadata for a DOI."""
-    client = get_crossref_client()
-    return await client.get_work(doi)
-
-
-async def search_crossref(
-    query: str,
-    limit: int = 10,
-    sort: str = "relevance",
-) -> list[dict[str, Any]]:
-    """Search CrossRef for works."""
-    client = get_crossref_client()
-    result = await client.search(query=query, limit=limit, sort=sort)
-    return result.get("items", [])
-
-
-async def get_citation_count(doi: str) -> int:
-    """Get citation count for a DOI."""
-    client = get_crossref_client()
-    work = await client.get_work(doi)
-    if work:
-        return work.get("is-referenced-by-count", 0)
-    return 0

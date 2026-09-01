@@ -13,7 +13,12 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from pubmed_search.infrastructure.sources.base_client import APIRequestError, BaseAPIClient
+from pubmed_search.application.search.source_models import SourceSearchPage
+from pubmed_search.infrastructure.sources.base_client import (
+    APIRequestError,
+    BaseAPIClient,
+    raise_provider_schema_error,
+)
 from pubmed_search.infrastructure.sources.official_generated_clients import (
     OfficialScopusGeneratedClient,
     ScopusSearchRequest,
@@ -69,16 +74,22 @@ class ScopusClient(BaseAPIClient):
             request_headers.setdefault("X-ELS-Insttoken", self._insttoken)
         return await super()._execute_request(url, method=method, data=data, params=params, headers=request_headers)
 
-    async def search(
+    async def search_page(
         self,
         query: str,
         limit: int = 10,
         min_year: int | None = None,
         max_year: int | None = None,
         open_access_only: bool = False,
-        strict: bool = False,
-    ) -> list[dict[str, Any]]:
-        """Search Scopus and normalize the response into article-like dicts."""
+        *,
+        offset: int = 0,
+    ) -> SourceSearchPage[dict[str, Any]]:
+        """Return one normalized Scopus page with its official pagination metadata."""
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 25:
+            raise ValueError("Scopus page limit must be between 1 and 25")
+        if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
+            raise ValueError("Scopus offset must be a non-negative integer")
+
         try:
             scopus_query = self.compile_query(
                 query,
@@ -88,26 +99,70 @@ class ScopusClient(BaseAPIClient):
             )
             request = ScopusSearchRequest(
                 query=scopus_query,
-                count=min(limit, 25),
+                count=limit,
+                start=offset,
             )
 
             response = await self._official_client.search_documents(request)
             if response is None:
-                if strict:
-                    self._raise_strict_request_error()
-                return []
+                raise_provider_schema_error(self._service_name)
 
-            results: list[dict[str, Any]] = []
-            for entry in response.entries():
-                results.append(self._normalize_entry(entry.model_dump(by_alias=True, exclude_none=True)))
-            return results
+            items = [
+                self._normalize_entry(entry.model_dump(by_alias=True, exclude_none=True))
+                for entry in response.entries()
+            ]
+            pagination = response.search_results
+            total = pagination.total_results
+            start_index = pagination.start_index if pagination.start_index is not None else offset
+            items_per_page = pagination.items_per_page
+            warnings: list[str] = []
+            if pagination.start_index is None:
+                warnings.append("Scopus response omitted opensearch:startIndex; requested offset was used")
+            elif pagination.start_index != offset:
+                warnings.append("Scopus response start index differs from the requested offset")
+            if items_per_page is None:
+                warnings.append("Scopus response omitted opensearch:itemsPerPage")
+            elif items_per_page != limit:
+                warnings.append("Scopus response page size differs from the requested limit")
+            if total is None:
+                warnings.append("Scopus response omitted opensearch:totalResults")
+            else:
+                self._validate_pagination(total=total, start_index=start_index, returned=len(items))
+
+            next_offset: int | None = None
+            if total is not None and items_per_page is not None and items_per_page > 0:
+                candidate = start_index + items_per_page
+                if candidate < total:
+                    next_offset = candidate
+
+            return SourceSearchPage(
+                source="scopus",
+                items=items,
+                total=total,
+                next_token=next_offset,
+                query=scopus_query,
+                warnings=warnings,
+                mode="keyword",
+                metadata={
+                    "offset": start_index,
+                    "requested_offset": offset,
+                    "items_per_page": items_per_page,
+                    "requested_limit": limit,
+                    "returned": len(items),
+                    "next_offset": next_offset,
+                },
+            )
         except (APIRequestError, RetryableOperationError):
             raise
         except Exception as exc:
-            if strict:
-                raise APIRequestError(self._service_name) from None
             logger.warning("Scopus search failed (%s)", type(exc).__name__)
-            raise
+            raise APIRequestError(self._service_name) from None
+
+    @staticmethod
+    def _validate_pagination(*, total: int, start_index: int, returned: int) -> None:
+        """Reject an official envelope whose count cannot contain its page."""
+        if total < start_index + returned:
+            raise ValueError("Scopus returned inconsistent pagination metadata")
 
     def compile_query(
         self,
@@ -125,23 +180,6 @@ class ScopusClient(BaseAPIClient):
         if open_access_only:
             terms.append("OPENACCESS(1)")
         return " AND ".join(terms)
-
-    def _build_query(
-        self,
-        query: str,
-        *,
-        min_year: int | None,
-        max_year: int | None,
-        open_access_only: bool,
-    ) -> str:
-        """Compatibility wrapper for callers using the former private helper."""
-
-        return self.compile_query(
-            query,
-            min_year=min_year,
-            max_year=max_year,
-            open_access_only=open_access_only,
-        )
 
     def _normalize_entry(self, entry: dict[str, Any]) -> dict[str, Any]:
         cover_date = str(entry.get("prism:coverDate", ""))

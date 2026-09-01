@@ -19,7 +19,13 @@ import logging
 import urllib.parse
 from typing import TYPE_CHECKING, Any
 
-from pubmed_search.infrastructure.sources.base_client import _CONTINUE, APIRequestError, BaseAPIClient
+from pubmed_search.infrastructure.sources.base_client import (
+    _CONTINUE,
+    APIRequestError,
+    BaseAPIClient,
+    raise_provider_schema_error,
+    raise_sanitized_retryable_error,
+)
 from pubmed_search.shared.async_utils import RetryableOperationError
 
 if TYPE_CHECKING:
@@ -92,9 +98,8 @@ class COREClient(BaseAPIClient):
         return await super()._execute_request(url, method=method, data=data, params=params, headers=req_headers)
 
     def _handle_expected_status(self, response: httpx.Response, url: str) -> Any:
-        """Handle 401 (unauthorized - bad API key)."""
-        if response.status_code == 401:
-            logger.error("CORE API: Unauthorized - check your API key")
+        """Treat only a real provider 404 as an absent CORE record."""
+        if response.status_code == 404:
             return None
         return _CONTINUE
 
@@ -127,7 +132,6 @@ class COREClient(BaseAPIClient):
         year_to: int | None = None,
         has_fulltext: bool = False,
         sort: str | None = None,
-        strict: bool = False,
     ) -> dict[str, Any]:
         """
         Search CORE for research outputs.
@@ -166,15 +170,14 @@ class COREClient(BaseAPIClient):
             data = await self._make_request(url)
 
             if not isinstance(data, dict):
-                if strict:
-                    self._raise_strict_request_error()
-                return {"total_hits": 0, "results": []}
+                raise_provider_schema_error(self._service_name)
 
             raw_results = data.get("results")
-            if not isinstance(raw_results, list):
-                if strict:
-                    self._raise_strict_request_error()
-                return {"total_hits": 0, "results": []}
+            if not isinstance(raw_results, list) or any(not isinstance(item, dict) for item in raw_results):
+                raise_provider_schema_error(self._service_name)
+            total_hits = data.get("totalHits")
+            if isinstance(total_hits, bool) or not isinstance(total_hits, int) or total_hits < len(raw_results):
+                raise_provider_schema_error(self._service_name)
 
             # Normalize results
             results = []
@@ -182,7 +185,7 @@ class COREClient(BaseAPIClient):
                 results.append(self._normalize_work(item))
 
             result = {
-                "total_hits": data.get("totalHits", len(results)),
+                "total_hits": total_hits,
                 "results": results,
                 "offset": offset,
                 "limit": limit,
@@ -193,16 +196,13 @@ class COREClient(BaseAPIClient):
 
             return result
 
-        except (APIRequestError, RetryableOperationError):
-            if strict:
-                raise
-            logger.warning("CORE search failed (upstream request error)")
-            return {"total_hits": 0, "results": []}
+        except APIRequestError:
+            raise
+        except RetryableOperationError as exc:
+            raise_sanitized_retryable_error(self._service_name, exc)
         except Exception as exc:
             logger.warning("CORE search failed (%s)", type(exc).__name__)
-            if strict:
-                raise APIRequestError(self._service_name) from None
-            return {"total_hits": 0, "results": []}
+            raise APIRequestError(self._service_name) from exc
 
     async def search_fulltext(
         self,
@@ -234,7 +234,7 @@ class COREClient(BaseAPIClient):
             has_fulltext=True,
         )
 
-    async def get_work(self, work_id: int | str) -> dict | None:
+    async def get_work(self, work_id: int | str) -> dict[str, Any] | None:
         """
         Get a specific work by ID.
 
@@ -248,16 +248,22 @@ class COREClient(BaseAPIClient):
             url = f"{CORE_API_BASE}/works/{work_id}"
             data = await self._make_request(url)
 
-            if not data or isinstance(data, str):
+            if data is None:
                 return None
+            if not isinstance(data, dict):
+                raise_provider_schema_error(self._service_name)
 
             return self._normalize_work(data)
 
-        except Exception as e:
-            logger.exception(f"Get CORE work failed: {e}")
-            return None
+        except APIRequestError:
+            raise
+        except RetryableOperationError as exc:
+            raise_sanitized_retryable_error(self._service_name, exc)
+        except Exception as exc:
+            logger.warning("CORE work lookup failed (%s)", type(exc).__name__)
+            raise APIRequestError(self._service_name) from exc
 
-    async def get_output(self, output_id: int | str) -> dict | None:
+    async def get_output(self, output_id: int | str) -> dict[str, Any] | None:
         """
         Get a specific output by ID.
 
@@ -273,14 +279,20 @@ class COREClient(BaseAPIClient):
             url = f"{CORE_API_BASE}/outputs/{output_id}"
             data = await self._make_request(url)
 
-            if not data or isinstance(data, str):
+            if data is None:
                 return None
+            if not isinstance(data, dict):
+                raise_provider_schema_error(self._service_name)
 
             return self._normalize_output(data)
 
-        except Exception as e:
-            logger.exception(f"Get CORE output failed: {e}")
-            return None
+        except APIRequestError:
+            raise
+        except RetryableOperationError as exc:
+            raise_sanitized_retryable_error(self._service_name, exc)
+        except Exception as exc:
+            logger.warning("CORE output lookup failed (%s)", type(exc).__name__)
+            raise APIRequestError(self._service_name) from exc
 
     async def get_fulltext(self, output_id: int | str) -> str | None:
         """
@@ -297,7 +309,7 @@ class COREClient(BaseAPIClient):
             return output.get("full_text")
         return None
 
-    async def search_by_doi(self, doi: str) -> dict | None:
+    async def search_by_doi(self, doi: str) -> dict[str, Any] | None:
         """
         Find a work by DOI.
 
@@ -312,7 +324,7 @@ class COREClient(BaseAPIClient):
             return result["results"][0]
         return None
 
-    async def search_by_pmid(self, pmid: str) -> dict | None:
+    async def search_by_pmid(self, pmid: str) -> dict[str, Any] | None:
         """
         Find a work by PubMed ID.
 
@@ -399,7 +411,9 @@ class COREClient(BaseAPIClient):
             "document_type": work.get("documentType", []),
             "has_fulltext": bool(work.get("fullText")),
             "fulltext_available": "_exists_:fullText" in str(work) or work.get("downloadUrl") is not None,
+            "full_text": work.get("fullText"),
             "download_url": download_url,
+            "source_fulltext_urls": work.get("sourceFulltextUrls", []),
             "pdf_url": pdf_url,
             "reader_url": reader_url,
             "citation_count": work.get("citationCount"),
@@ -428,48 +442,3 @@ class COREClient(BaseAPIClient):
             normalized["repository_url"] = first_repo.get("urlHomepage")
 
         return normalized
-
-
-# Singleton instance
-_core_client: COREClient | None = None
-
-
-def get_core_client(api_key: str | None = None) -> COREClient:
-    """Get or create CORE client singleton."""
-    global _core_client
-    if _core_client is None:
-        import os
-
-        key = api_key or os.environ.get("CORE_API_KEY")
-        _core_client = COREClient(api_key=key)
-    return _core_client
-
-
-# Convenience functions
-async def search_core(
-    query: str,
-    limit: int = 10,
-    year_from: int | None = None,
-    year_to: int | None = None,
-    has_fulltext: bool = False,
-) -> list[dict]:
-    """Search CORE for research outputs."""
-    client = get_core_client()
-    result = await client.search(
-        query=query,
-        limit=limit,
-        year_from=year_from,
-        year_to=year_to,
-        has_fulltext=has_fulltext,
-    )
-    return result.get("results", [])
-
-
-async def search_core_fulltext(
-    query: str,
-    limit: int = 10,
-) -> list[dict]:
-    """Search within full text content in CORE."""
-    client = get_core_client()
-    result = await client.search_fulltext(query=query, limit=limit)
-    return result.get("results", [])

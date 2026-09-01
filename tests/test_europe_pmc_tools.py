@@ -14,9 +14,15 @@ from pubmed_search.application.session.manager import SessionManager
 from pubmed_search.infrastructure.sources.fulltext_download import (
     FulltextResult,
     PDFLink,
+    PDFLinkDiscoveryResult,
     PDFSource,
 )
 from pubmed_search.presentation.mcp_server.tools._common import set_session_manager
+from pubmed_search.presentation.mcp_server.tools.article_source import (
+    DOISource,
+    PMCIDSource,
+    PMIDSource,
+)
 from pubmed_search.presentation.mcp_server.tools.europe_pmc import (
     register_europe_pmc_tools,
 )
@@ -29,6 +35,14 @@ def _capture_tools(mcp):
     return tools
 
 
+def _link_discovery(*links: PDFLink) -> PDFLinkDiscoveryResult:
+    return PDFLinkDiscoveryResult(
+        links=links,
+        attempted_sources=("test_source",),
+        completed_sources=("test_source",),
+    )
+
+
 @pytest.fixture
 def tools():
     return _capture_tools(MagicMock())
@@ -39,6 +53,7 @@ def empty_fulltext_downloader():
     """Keep tool fallback tests hermetic while proving the downloader branch runs."""
     downloader = AsyncMock()
     downloader.get_fulltext.return_value = FulltextResult(
+        link_discovery=_link_discovery(),
         error="No PDF links found for this article",
     )
     downloader.close = AsyncMock()
@@ -63,8 +78,8 @@ def _disable_live_institutional_fetch(monkeypatch):
 class TestGetFulltext:
     @pytest.mark.asyncio
     async def test_no_identifier(self, tools):
-        result = await tools["get_fulltext"]()
-        assert "error" in result.lower() or "no valid" in result.lower()
+        with pytest.raises(TypeError, match="source"):
+            await tools["get_fulltext"]()
 
     @pytest.mark.asyncio
     async def test_pmcid_success(self, tools):
@@ -81,7 +96,7 @@ class TestGetFulltext:
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
             return_value=mock_client,
         ):
-            result = await tools["get_fulltext"](pmcid="PMC7096777")
+            result = await tools["get_fulltext"](source=PMCIDSource(kind="pmcid", value="PMC7096777"))
         assert "Test Article" in result
         assert "Introduction" in result
 
@@ -93,7 +108,7 @@ class TestGetFulltext:
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
             return_value=mock_client,
         ):
-            result = await tools["get_fulltext"](pmcid="PMC9999999")
+            result = await tools["get_fulltext"](source=PMCIDSource(kind="pmcid", value="PMC9999999"))
         empty_fulltext_downloader.get_fulltext.assert_awaited_once()
         # Should still succeed if unpaywall / core have nothing either
         assert isinstance(result, str)
@@ -118,7 +133,7 @@ class TestGetFulltext:
         mock_downloader = AsyncMock()
         mock_downloader.get_fulltext.return_value = FulltextResult(
             doi="10.1234/test",
-            pdf_links=[],
+            link_discovery=_link_discovery(),
             text_content=None,
             error="No PDF links found for this article",
         )
@@ -138,7 +153,7 @@ class TestGetFulltext:
                 return_value=mock_downloader,
             ),
         ):
-            result = await tools["get_fulltext"](doi="10.1234/test")
+            result = await tools["get_fulltext"](source=DOISource(kind="doi", value="10.1234/test"))
         assert "example.com/paper.pdf" in result
 
     @pytest.mark.asyncio
@@ -151,8 +166,8 @@ class TestGetFulltext:
             "results": [
                 {
                     "title": "CORE Paper",
-                    "fullText": "Full text content here",
-                    "downloadUrl": "https://core.ac.uk/download/pdf/123.pdf",
+                    "full_text": "Full text content here",
+                    "download_url": "https://core.ac.uk/download/pdf/123.pdf",
                 }
             ]
         }
@@ -166,17 +181,18 @@ class TestGetFulltext:
                 return_value=mock_core,
             ),
         ):
-            result = await tools["get_fulltext"](doi="10.1234/test")
+            result = await tools["get_fulltext"](source=DOISource(kind="doi", value="10.1234/test"))
         assert "Full text content" in result or "core.ac.uk" in result
 
     @pytest.mark.asyncio
-    async def test_pmid_identifier_auto_detect(self, tools):
-        """Test auto-detection of PMID from identifier string."""
+    async def test_explicit_pmid_source(self, tools):
+        """The discriminated source sends a PMID down the PMID path."""
         mock_client = AsyncMock()
         mock_client.get_article.return_value = None
         mock_downloader = AsyncMock()
         mock_downloader.get_fulltext.return_value = FulltextResult(
             pmid="12345678",
+            link_discovery=_link_discovery(),
             error="No PDF links found for this article",
         )
         mock_downloader.close = AsyncMock()
@@ -191,7 +207,7 @@ class TestGetFulltext:
                 return_value=mock_downloader,
             ),
         ):
-            result = await tools["get_fulltext"](identifier="12345678")
+            result = await tools["get_fulltext"](source=PMIDSource(kind="pmid", value="12345678"))
 
         mock_client.get_article.assert_awaited_once_with("MED", "12345678", result_type="core")
         mock_downloader.get_fulltext.assert_awaited_once()
@@ -199,8 +215,8 @@ class TestGetFulltext:
         assert isinstance(result, str)
 
     @pytest.mark.asyncio
-    async def test_doi_identifier_auto_detect(self, tools, empty_fulltext_downloader):
-        """Test auto-detection of DOI from identifier string."""
+    async def test_explicit_doi_source(self, tools, empty_fulltext_downloader):
+        """The discriminated source sends a DOI down the DOI path."""
         mock_unpaywall = AsyncMock()
         mock_unpaywall.get_oa_status.return_value = {"is_oa": False}
         with (
@@ -213,20 +229,20 @@ class TestGetFulltext:
                 return_value=MagicMock(search=AsyncMock(return_value={"results": []})),
             ),
         ):
-            result = await tools["get_fulltext"](identifier="10.1038/s41586-021-03819-2")
+            result = await tools["get_fulltext"](source=DOISource(kind="doi", value="10.1038/s41586-021-03819-2"))
         empty_fulltext_downloader.get_fulltext.assert_awaited_once()
         assert isinstance(result, str)
 
     @pytest.mark.asyncio
-    async def test_pmc_identifier_auto_detect(self, tools, empty_fulltext_downloader):
-        """Test auto-detection of PMC ID from identifier string."""
+    async def test_explicit_pmcid_source(self, tools, empty_fulltext_downloader):
+        """The discriminated source sends a PMCID down the PMC path."""
         mock_client = AsyncMock()
         mock_client.get_fulltext_xml.return_value = None
         with patch(
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
             return_value=mock_client,
         ):
-            result = await tools["get_fulltext"](identifier="PMC7096777")
+            result = await tools["get_fulltext"](source=PMCIDSource(kind="pmcid", value="PMC7096777"))
         empty_fulltext_downloader.get_fulltext.assert_awaited_once()
         assert isinstance(result, str)
 
@@ -248,7 +264,9 @@ class TestGetFulltext:
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
             return_value=mock_client,
         ):
-            result = await tools["get_fulltext"](pmcid="PMC7096777", sections="introduction,results")
+            result = await tools["get_fulltext"](
+                source=PMCIDSource(kind="pmcid", value="PMC7096777"), sections="introduction,results"
+            )
         assert "Intro text" in result or "Results text" in result
 
     @pytest.mark.asyncio
@@ -260,7 +278,7 @@ class TestGetFulltext:
             return_value=mock_client,
         ):
             # Should not crash, just log and continue to other sources
-            result = await tools["get_fulltext"](pmcid="PMC7096777")
+            result = await tools["get_fulltext"](source=PMCIDSource(kind="pmcid", value="PMC7096777"))
         empty_fulltext_downloader.get_fulltext.assert_awaited_once()
         assert isinstance(result, str)
 
@@ -273,7 +291,7 @@ class TestGetFulltext:
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
             return_value=mock_client,
         ):
-            result = await tools["get_fulltext"](pmid="99999999")
+            result = await tools["get_fulltext"](source=PMIDSource(kind="pmid", value="99999999"))
         mock_client.get_article.assert_awaited_once()
         empty_fulltext_downloader.get_fulltext.assert_awaited_once()
         assert "no" in result.lower() or "not" in result.lower()
@@ -296,7 +314,7 @@ class TestGetFulltext:
         mock_downloader = AsyncMock()
         mock_downloader.get_fulltext.return_value = FulltextResult(
             doi="10.1234/test",
-            pdf_links=[],
+            link_discovery=_link_discovery(),
             text_content=None,
             error="No PDF links found for this article",
         )
@@ -316,7 +334,7 @@ class TestGetFulltext:
                 return_value=mock_downloader,
             ),
         ):
-            result = await tools["get_fulltext"](doi="10.1234/test")
+            result = await tools["get_fulltext"](source=DOISource(kind="doi", value="10.1234/test"))
         assert "example.com/article" in result
 
     @pytest.mark.asyncio
@@ -334,7 +352,7 @@ class TestGetFulltext:
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
             return_value=mock_client,
         ):
-            result = await tools["get_fulltext"](pmcid="PMC7096777", ctx=ctx)
+            result = await tools["get_fulltext"](source=PMCIDSource(kind="pmcid", value="PMC7096777"), ctx=ctx)
         assert "Test Article" in result
         assert ctx.report_progress.await_count >= 3
         assert ctx.log.await_count >= 1
@@ -361,7 +379,9 @@ class TestGetFulltext:
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
             return_value=mock_client,
         ):
-            result = await asyncio.wait_for(tools["get_fulltext"](pmcid="PMC7096777", ctx=ctx), timeout=1.0)
+            result = await asyncio.wait_for(
+                tools["get_fulltext"](source=PMCIDSource(kind="pmcid", value="PMC7096777"), ctx=ctx), timeout=1.0
+            )
 
         assert "Test Article" in result
 
@@ -401,7 +421,7 @@ class TestGetFulltext:
                 return_value=mock_client,
             ):
                 result = await asyncio.wait_for(
-                    tools["get_fulltext"](pmcid="PMC7096777", ctx=ctx),
+                    tools["get_fulltext"](source=PMCIDSource(kind="pmcid", value="PMC7096777"), ctx=ctx),
                     timeout=2.0,
                 )
 
@@ -429,12 +449,16 @@ class TestGetFulltext:
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
             return_value=mock_client,
         ):
-            result = await tools["get_fulltext"](pmcid="PMC7096777", output_format="json")
+            result = await tools["get_fulltext"](
+                source=PMCIDSource(kind="pmcid", value="PMC7096777"), output_format="json"
+            )
 
         parsed = json.loads(result)
         assert parsed["tool"] == "get_fulltext"
         assert parsed["fulltext_available"] is True
         assert parsed["content_sections"][0]["title"] == "Introduction"
+        assert parsed["sources_tried"] == ["europe_pmc"]
+        assert parsed["sources_completed"] == ["europe_pmc"]
         assert parsed["source_counts"]
         assert parsed["next_tools"]
         assert parsed["next_commands"]
@@ -458,7 +482,9 @@ class TestGetFulltext:
                 "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
                 return_value=mock_client,
             ):
-                result = await tools["get_fulltext"](pmcid="PMC7096777", output_format="json")
+                result = await tools["get_fulltext"](
+                    source=PMCIDSource(kind="pmcid", value="PMC7096777"), output_format="json"
+                )
         finally:
             set_session_manager(None)
 
@@ -491,7 +517,9 @@ class TestGetFulltext:
                 "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
                 return_value=mock_client,
             ):
-                result = await tools["get_fulltext"](pmcid="PMC7096777", output_format="json")
+                result = await tools["get_fulltext"](
+                    source=PMCIDSource(kind="pmcid", value="PMC7096777"), output_format="json"
+                )
         finally:
             set_session_manager(None)
 
@@ -525,7 +553,7 @@ class TestGetFulltext:
         mock_downloader = AsyncMock()
         mock_downloader.get_fulltext.return_value = FulltextResult(
             doi="10.1001/jamanetworkopen.2026.1515",
-            pdf_links=[],
+            link_discovery=_link_discovery(),
             text_content=None,
             error="No extra PDF links found",
         )
@@ -549,7 +577,7 @@ class TestGetFulltext:
                 return_value=mock_downloader,
             ),
         ):
-            result = await tools["get_fulltext"](pmid="41817525", output_format="json")
+            result = await tools["get_fulltext"](source=PMIDSource(kind="pmid", value="41817525"), output_format="json")
 
         parsed = json.loads(result)
         assert parsed["identifiers"]["pmid"] == "41817525"
@@ -571,7 +599,7 @@ class TestGetFulltext:
         mock_downloader.get_fulltext = AsyncMock(
             return_value=FulltextResult(
                 text_content="Institutional PDF text",
-                pdf_links=[
+                link_discovery=_link_discovery(
                     PDFLink(
                         url="https://resolver.example.edu/openurl?id=1",
                         source=PDFSource.INSTITUTIONAL_RESOLVER,
@@ -584,7 +612,7 @@ class TestGetFulltext:
                         access_type="subscription",
                         is_direct_pdf=True,
                     ),
-                ],
+                ),
                 source_used=PDFSource.INSTITUTIONAL_RESOLVER,
                 content_type="pdf",
             )
@@ -609,7 +637,9 @@ class TestGetFulltext:
                 return_value=mock_downloader,
             ),
         ):
-            result = await tools["get_fulltext"](doi="10.1234/test", extended_sources=True)
+            result = await tools["get_fulltext"](
+                source=DOISource(kind="doi", value="10.1234/test"), extended_sources=True
+            )
 
         mock_downloader.get_fulltext.assert_awaited_once_with(
             pmid=None,
@@ -637,14 +667,14 @@ class TestGetFulltext:
         mock_downloader.get_fulltext = AsyncMock(
             return_value=FulltextResult(
                 text_content=None,
-                pdf_links=[
+                link_discovery=_link_discovery(
                     PDFLink(
                         url="https://publisher.example.edu/paper.pdf",
                         source=PDFSource.INSTITUTIONAL_RESOLVER,
                         access_type="subscription",
                         is_direct_pdf=True,
                     )
-                ],
+                ),
                 source_used=PDFSource.INSTITUTIONAL_RESOLVER,
             )
         )
@@ -669,7 +699,7 @@ class TestGetFulltext:
             ),
         ):
             result = await tools["get_fulltext"](
-                doi="10.1234/test",
+                source=DOISource(kind="doi", value="10.1234/test"),
                 extended_sources=True,
                 allow_browser_session=True,
             )
@@ -690,14 +720,14 @@ class TestGetFulltext:
             text_content="Institutional PDF extracted text",
             source_used=PDFSource.BROWSER_SESSION,
             retrieved_url="https://publisher.example/download.pdf",
-            pdf_links=[
+            link_discovery=_link_discovery(
                 PDFLink(
                     url="https://resolver.library.edu/openurl?doi=10.1234/test",
                     source=PDFSource.OPENURL,
                     access_type="institutional",
                     is_direct_pdf=False,
                 )
-            ],
+            ),
         )
         mock_downloader = AsyncMock()
         mock_downloader.get_fulltext.return_value = mock_fulltext
@@ -727,7 +757,9 @@ class TestGetFulltext:
                 return_value=mock_fetcher,
             ),
         ):
-            result = await tools["get_fulltext"](doi="10.1234/test", allow_browser_session=True)
+            result = await tools["get_fulltext"](
+                source=DOISource(kind="doi", value="10.1234/test"), allow_browser_session=True
+            )
 
         assert "Browser-session broker fetched PDF" in result
         assert "Institutional PDF extracted text" in result
@@ -739,14 +771,14 @@ class TestGetFulltext:
             text_content="Institutional PDF extracted text",
             source_used=PDFSource.BROWSER_SESSION,
             retrieved_url="https://publisher.example/download.pdf",
-            pdf_links=[
+            link_discovery=_link_discovery(
                 PDFLink(
                     url="https://resolver.library.edu/openurl?doi=10.1234/test",
                     source=PDFSource.OPENURL,
                     access_type="institutional",
                     is_direct_pdf=False,
                 )
-            ],
+            ),
         )
         mock_downloader = AsyncMock()
         mock_downloader.get_fulltext.return_value = mock_fulltext
@@ -776,7 +808,7 @@ class TestGetFulltext:
                 return_value=mock_fetcher,
             ),
         ):
-            result = await tools["get_fulltext"](doi="10.1234/test")
+            result = await tools["get_fulltext"](source=DOISource(kind="doi", value="10.1234/test"))
 
         assert "Browser-session broker fetched PDF" in result
         assert "Institutional PDF extracted text" in result
@@ -795,12 +827,12 @@ class TestGetFulltext:
             text_content="Recovered from publisher PDF",
             source_used=PDFSource.CROSSREF,
             retrieved_url="https://publisher.example/paper.pdf",
-            pdf_links=[
+            link_discovery=_link_discovery(
                 PDFLink(
                     url="https://publisher.example/paper.pdf",
                     source=PDFSource.CROSSREF,
                 )
-            ],
+            ),
         )
         mock_downloader.close = AsyncMock()
         mock_fetcher = MagicMock()
@@ -824,7 +856,7 @@ class TestGetFulltext:
                 return_value=mock_fetcher,
             ),
         ):
-            result = await tools["get_fulltext"](doi="10.1234/test")
+            result = await tools["get_fulltext"](source=DOISource(kind="doi", value="10.1234/test"))
 
         assert "Recovered from publisher PDF" in result
         assert "PDF retrieval fallback extracted text via CrossRef" in result
@@ -845,7 +877,9 @@ class TestGetFulltext:
             text_content=raw_text,
             source_used=PDFSource.CROSSREF,
             retrieved_url="https://publisher.example/paper.pdf",
-            pdf_links=[PDFLink(url="https://publisher.example/paper.pdf", source=PDFSource.CROSSREF)],
+            link_discovery=_link_discovery(
+                PDFLink(url="https://publisher.example/paper.pdf", source=PDFSource.CROSSREF)
+            ),
         )
         mock_downloader.close = AsyncMock()
 
@@ -864,7 +898,7 @@ class TestGetFulltext:
                     return_value=mock_downloader,
                 ),
             ):
-                result = await tools["get_fulltext"](doi="10.1234/test")
+                result = await tools["get_fulltext"](source=DOISource(kind="doi", value="10.1234/test"))
         finally:
             set_session_manager(None)
 
@@ -893,7 +927,9 @@ class TestGetFulltext:
                 "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
                 return_value=mock_client,
             ):
-                result = await tools["get_fulltext"](pmcid="PMC7096777", output_format="json")
+                result = await tools["get_fulltext"](
+                    source=PMCIDSource(kind="pmcid", value="PMC7096777"), output_format="json"
+                )
         finally:
             set_session_manager(None)
 
@@ -924,7 +960,7 @@ class TestGetFulltext:
                 "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
                 return_value=mock_client,
             ):
-                result = await tools["get_fulltext"](pmcid="PMC7096777")
+                result = await tools["get_fulltext"](source=PMCIDSource(kind="pmcid", value="PMC7096777"))
         finally:
             set_session_manager(None)
 
@@ -933,6 +969,59 @@ class TestGetFulltext:
         artifact = manager.list_artifacts(tool="get_fulltext")[0]
         stored = manager.read_artifact(artifact["artifact_id"], max_chars=0)
         assert long_content[:1000] in stored["content"]
+
+    @pytest.mark.asyncio
+    async def test_large_fulltext_is_capped_even_without_artifact_store(self, tools, monkeypatch):
+        monkeypatch.setenv("PUBMED_FULLTEXT_INLINE_MAX_CHARS", "500")
+        set_session_manager(None)
+        tail_sentinel = "TAIL_MUST_NOT_ESCAPE_INLINE_CAP"
+        long_content = ("No artifact body " * 500) + tail_sentinel
+        mock_client = AsyncMock()
+        mock_client.get_fulltext_xml.return_value = "<xml/>"
+        mock_client.parse_fulltext_xml = MagicMock(
+            return_value={
+                "title": "Bounded Without Artifact",
+                "sections": [{"title": "Results", "content": long_content}],
+            }
+        )
+
+        with patch(
+            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
+            return_value=mock_client,
+        ):
+            result = await tools["get_fulltext"](source=PMCIDSource(kind="pmcid", value="PMC7096777"))
+
+        assert tail_sentinel not in result
+        assert "omitted from inline response" in result
+        assert "not persisted" in result
+
+    @pytest.mark.asyncio
+    async def test_large_structured_fulltext_is_capped_without_artifact_store(self, tools, monkeypatch):
+        monkeypatch.setenv("PUBMED_FULLTEXT_INLINE_MAX_CHARS", "500")
+        set_session_manager(None)
+        tail_sentinel = "STRUCTURED_TAIL_MUST_NOT_ESCAPE"
+        long_content = ("Structured body " * 500) + tail_sentinel
+        mock_client = AsyncMock()
+        mock_client.get_fulltext_xml.return_value = "<xml/>"
+        mock_client.parse_fulltext_xml = MagicMock(
+            return_value={
+                "title": "Bounded Structured",
+                "sections": [{"title": "Results", "content": long_content}],
+            }
+        )
+
+        with patch(
+            "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
+            return_value=mock_client,
+        ):
+            result = await tools["get_fulltext"](
+                source=PMCIDSource(kind="pmcid", value="PMC7096777"), output_format="json"
+            )
+
+        parsed = json.loads(result)
+        assert tail_sentinel not in parsed["content"]
+        assert "omitted from inline response" in parsed["content"]
+        assert parsed.get("artifact") is None
 
     @pytest.mark.asyncio
     async def test_markdown_artifact_default_read_contains_untruncated_section_payload(self, tools, tmp_path):
@@ -954,7 +1043,7 @@ class TestGetFulltext:
                 "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
                 return_value=mock_client,
             ):
-                result = await tools["get_fulltext"](pmcid="PMC7096777")
+                result = await tools["get_fulltext"](source=PMCIDSource(kind="pmcid", value="PMC7096777"))
         finally:
             set_session_manager(None)
 
@@ -988,7 +1077,7 @@ class TestGetFulltext:
                     side_effect=TypeError("artifact formatter failed"),
                 ),
             ):
-                result = await tools["get_fulltext"](pmcid="PMC7096777")
+                result = await tools["get_fulltext"](source=PMCIDSource(kind="pmcid", value="PMC7096777"))
         finally:
             set_session_manager(None)
 
@@ -1008,12 +1097,12 @@ class TestGetFulltext:
             source_used=PDFSource.CROSSREF,
             retrieved_url="https://publisher.example/paper.pdf",
             error="PDF downloaded successfully, but text extraction failed across all candidate sources",
-            pdf_links=[
+            link_discovery=_link_discovery(
                 PDFLink(
                     url="https://publisher.example/paper.pdf",
                     source=PDFSource.CROSSREF,
                 )
-            ],
+            ),
         )
         mock_downloader.close = AsyncMock()
 
@@ -1031,7 +1120,7 @@ class TestGetFulltext:
                 return_value=mock_downloader,
             ),
         ):
-            result = await tools["get_fulltext"](doi="10.1234/test")
+            result = await tools["get_fulltext"](source=DOISource(kind="doi", value="10.1234/test"))
 
         assert "retrieved PDF via CrossRef" in result
         assert "extracted text via CrossRef" not in result
@@ -1050,7 +1139,9 @@ class TestGetFulltext:
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
             return_value=mock_client,
         ):
-            result = await tools["get_fulltext"](pmcid="PMC7096777", output_format="toon")
+            result = await tools["get_fulltext"](
+                source=PMCIDSource(kind="pmcid", value="PMC7096777"), output_format="toon"
+            )
 
         parsed = toons.loads(result)
         assert parsed["tool"] == "get_fulltext"
@@ -1067,8 +1158,8 @@ class TestGetFulltext:
 class TestGetTextMinedTerms:
     @pytest.mark.asyncio
     async def test_no_ids(self, tools):
-        result = await tools["get_text_mined_terms"]()
-        assert "error" in result.lower() or "required" in result.lower()
+        with pytest.raises(TypeError, match="source"):
+            await tools["get_text_mined_terms"]()
 
     @pytest.mark.asyncio
     async def test_pmid_success(self, tools):
@@ -1083,7 +1174,7 @@ class TestGetTextMinedTerms:
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
             return_value=mock_client,
         ):
-            result = await tools["get_text_mined_terms"](pmid="12345678")
+            result = await tools["get_text_mined_terms"](source=PMIDSource(kind="pmid", value="12345678"))
         assert "BRCA1" in result
         assert "Breast Cancer" in result
         assert "×2" in result  # BRCA1 appears twice
@@ -1098,7 +1189,7 @@ class TestGetTextMinedTerms:
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
             return_value=mock_client,
         ):
-            result = await tools["get_text_mined_terms"](pmcid="PMC7096777")
+            result = await tools["get_text_mined_terms"](source=PMCIDSource(kind="pmcid", value="PMC7096777"))
         assert "Homo sapiens" in result
 
     @pytest.mark.asyncio
@@ -1111,7 +1202,9 @@ class TestGetTextMinedTerms:
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
             return_value=mock_client,
         ):
-            result = await tools["get_text_mined_terms"](pmid="12345678", semantic_type="CHEMICAL")
+            result = await tools["get_text_mined_terms"](
+                source=PMIDSource(kind="pmid", value="12345678"), semantic_type="CHEMICAL"
+            )
         assert "Propofol" in result
 
     @pytest.mark.asyncio
@@ -1122,7 +1215,7 @@ class TestGetTextMinedTerms:
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
             return_value=mock_client,
         ):
-            result = await tools["get_text_mined_terms"](pmid="12345678")
+            result = await tools["get_text_mined_terms"](source=PMIDSource(kind="pmid", value="12345678"))
         assert "no" in result.lower()
 
     @pytest.mark.asyncio
@@ -1133,7 +1226,7 @@ class TestGetTextMinedTerms:
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
             return_value=mock_client,
         ):
-            result = await tools["get_text_mined_terms"](pmid="12345678")
+            result = await tools["get_text_mined_terms"](source=PMIDSource(kind="pmid", value="12345678"))
         assert "error" in result.lower()
 
     @pytest.mark.asyncio
@@ -1147,7 +1240,7 @@ class TestGetTextMinedTerms:
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
             return_value=mock_client,
         ):
-            result = await tools["get_text_mined_terms"](pmid="12345678", ctx=ctx)
+            result = await tools["get_text_mined_terms"](source=PMIDSource(kind="pmid", value="12345678"), ctx=ctx)
         assert "BRCA1" in result
         assert ctx.report_progress.await_count >= 2
 
@@ -1163,7 +1256,9 @@ class TestGetTextMinedTerms:
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
             return_value=mock_client,
         ):
-            result = await tools["get_text_mined_terms"](pmid="12345678", output_format="json")
+            result = await tools["get_text_mined_terms"](
+                source=PMIDSource(kind="pmid", value="12345678"), output_format="json"
+            )
 
         parsed = json.loads(result)
         assert parsed["tool"] == "get_text_mined_terms"
@@ -1182,7 +1277,9 @@ class TestGetTextMinedTerms:
             "pubmed_search.presentation.mcp_server.tools.europe_pmc.get_europe_pmc_client",
             return_value=mock_client,
         ):
-            result = await tools["get_text_mined_terms"](pmid="12345678", output_format="toon")
+            result = await tools["get_text_mined_terms"](
+                source=PMIDSource(kind="pmid", value="12345678"), output_format="toon"
+            )
 
         parsed = toons.loads(result)
         assert parsed["tool"] == "get_text_mined_terms"

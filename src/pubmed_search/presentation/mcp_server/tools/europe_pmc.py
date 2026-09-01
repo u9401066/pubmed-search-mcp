@@ -27,17 +27,18 @@ Phase 3 Updates (v0.2.8):
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Literal, Union
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 from mcp.server.mcpserver import Context  # noqa: TC002 - MCPServer needs runtime access for tool context injection
+from pydantic import Field
 
 from pubmed_search.application.fulltext import FulltextRequest, FulltextService
-from pubmed_search.infrastructure.sources import get_europe_pmc_client
-from pubmed_search.infrastructure.sources.core import get_core_client
-from pubmed_search.infrastructure.sources.unpaywall import get_unpaywall_client
+from pubmed_search.domain.value_objects.article_identifiers import IdentifierValidationError
+from pubmed_search.infrastructure.sources import get_core_client, get_europe_pmc_client, get_unpaywall_client
+from pubmed_search.shared.markdown import escape_markdown_block, escape_markdown_text, markdown_link
 from pubmed_search.shared.settings import load_settings
 
-from ._common import InputNormalizer, ResponseFormatter
+from ._common import ResponseFormatter
 from .agent_output import (
     OutputFormat,
     finalize_next_tools,
@@ -50,6 +51,7 @@ from .agent_output import (
     serialize_structured_payload,
     sort_source_count_rows,
 )
+from .article_source import ArticleSource, PubmedSource, normalize_article_source
 from .artifact_memory import artifact_markdown_note, artifact_persistence_enabled, persist_tool_artifact
 from .tool_runtime import safe_log, safe_report_progress
 
@@ -57,6 +59,16 @@ if TYPE_CHECKING:
     from mcp.server.mcpserver import MCPServer
 
 logger = logging.getLogger(__name__)
+
+SectionFilter = Annotated[str, Field(strict=True, min_length=1, max_length=500)]
+StrictBool = Annotated[bool, Field(strict=True)]
+SemanticType = Literal["GENE_PROTEIN", "DISEASE", "CHEMICAL", "ORGANISM", "GO_TERM", "EFO"]
+_SEMANTIC_TYPES: frozenset[str] = frozenset({"GENE_PROTEIN", "DISEASE", "CHEMICAL", "ORGANISM", "GO_TERM", "EFO"})
+
+
+def _validate_semantic_type(semantic_type: str | None) -> None:
+    if semantic_type is not None and semantic_type not in _SEMANTIC_TYPES:
+        raise IdentifierValidationError("semantic_type is not a supported Europe PMC entity type")
 
 
 def _build_fulltext_next_tools(
@@ -82,7 +94,7 @@ def _build_fulltext_next_tools(
             make_next_tool(
                 "get_text_mined_terms",
                 "Use Europe PMC annotations to extract entities from this article after confirming access.",
-                f'get_text_mined_terms(pmid="{pmid}")',
+                f'get_text_mined_terms(source={{"kind":"pmid","value":"{pmid}"}})',
             )
         )
 
@@ -91,7 +103,7 @@ def _build_fulltext_next_tools(
             make_next_tool(
                 "get_article_figures",
                 "A PMCID is available, so you can pivot into structured figure extraction next.",
-                f'get_article_figures(identifier="{pmcid}")',
+                f'get_article_figures(source={{"kind":"pmcid","value":"{pmcid}"}})',
             )
         )
     elif pmcid:
@@ -99,7 +111,7 @@ def _build_fulltext_next_tools(
             make_next_tool(
                 "get_text_mined_terms",
                 "You already have PMC-backed access; annotate the same article for entities and concepts.",
-                f'get_text_mined_terms(pmcid="{pmcid}")',
+                f'get_text_mined_terms(source={{"kind":"pmcid","value":"{pmcid}"}})',
             )
         )
 
@@ -124,9 +136,9 @@ def _build_fulltext_source_counts(
         artifact_counts[source_name] = artifact_counts.get(source_name, 0) + 1
 
     if figures_count > 0:
-        artifact_counts["PMC Open Access / FigureClient"] = (
+        artifact_counts["pmc_figures"] = (
             artifact_counts.get(
-                "PMC Open Access / FigureClient",
+                "pmc_figures",
                 0,
             )
             + figures_count
@@ -142,7 +154,7 @@ def _build_fulltext_source_counts(
 
 def _format_get_fulltext_json(
     *,
-    identifier: str | None,
+    requested_source: dict[str, str],
     pmcid: str | None,
     pmid: str | None,
     doi: str | None,
@@ -151,6 +163,9 @@ def _format_get_fulltext_json(
     content_sections: list[dict[str, Any]],
     pdf_links: list[dict[str, Any]],
     sources_tried: list[str],
+    sources_completed: list[str],
+    source_errors: list[dict[str, str]],
+    coverage_status: Literal["complete", "partial", "unavailable"],
     source_counts: list[dict[str, Any]],
     next_tools: list[dict[str, str]],
     next_commands: list[str],
@@ -177,6 +192,13 @@ def _format_get_fulltext_json(
             provenance="derived",
             note="Next-tool suggestions are inferred locally from resolved identifiers and access path shape.",
         ),
+        "coverage": make_section_provenance(
+            surfacing_source="pubmed-search-mcp",
+            canonical_host=None,
+            provenance="derived",
+            note="Coverage distinguishes completed upstream checks from sanitized source failures.",
+            upstream_sources=sources_tried,
+        ),
     }
 
     if fulltext_source and fulltext_provenance:
@@ -199,7 +221,7 @@ def _format_get_fulltext_json(
 
     if figures:
         section_provenance["figures"] = make_section_provenance(
-            surfacing_source="PMC Open Access / FigureClient",
+            surfacing_source="pmc_figures",
             canonical_host="PubMed Central",
             provenance="mixed",
             note="Figure metadata is extracted through the PMC-focused figure client and remains article-license scoped.",
@@ -208,7 +230,7 @@ def _format_get_fulltext_json(
     payload = {
         "tool": "get_fulltext",
         "identifiers": {
-            "identifier": identifier,
+            "requested": requested_source,
             "pmcid": pmcid,
             "pmid": pmid,
             "doi": doi,
@@ -219,6 +241,9 @@ def _format_get_fulltext_json(
         "content_sections": content_sections,
         "pdf_links": pdf_links,
         "sources_tried": sources_tried,
+        "sources_completed": sources_completed,
+        "source_errors": source_errors,
+        "coverage_status": coverage_status,
         "source_counts": source_counts,
         "next_tools": next_tools,
         "next_commands": next_commands,
@@ -233,9 +258,13 @@ def _format_get_fulltext_json(
 
 def _artifact_read_hint(artifact: dict[str, Any] | None) -> str:
     if not artifact:
-        return 'read_session(action="artifact", artifact_id="...")'
+        return 'read_session(request={"action":"artifact","locator":{"kind":"artifact_id","value":"artifact-123"}})'
     return str(
-        artifact.get("read_via") or f'read_session(action="artifact", artifact_id="{artifact.get("artifact_id", "")}")'
+        artifact.get("read_via")
+        or (
+            'read_session(request={"action":"artifact","locator":'
+            f'{{"kind":"artifact_id","value":"{artifact.get("artifact_id", "")}"}}}})'
+        )
     )
 
 
@@ -244,12 +273,35 @@ def _truncate_inline_fulltext(text: str, max_chars: int, artifact: dict[str, Any
         return text
     omitted = len(text) - max_chars
     artifact_id = str((artifact or {}).get("artifact_id") or "")
-    artifact_note = f" Artifact: `{artifact_id}`." if artifact_id else ""
-    return (
-        text[:max_chars]
-        + f"\n\n_... {omitted} characters omitted from inline response.{artifact_note} "
-        + f"Use `{_artifact_read_hint(artifact)}` for the saved full content._"
-    )
+    if artifact_id:
+        recovery = f"Artifact: `{artifact_id}`. Use `{_artifact_read_hint(artifact)}` for the saved full content."
+    else:
+        recovery = "The full response was not persisted; request narrower sections to retrieve omitted text."
+    return text[:max_chars] + f"\n\n_... {omitted} characters omitted from inline response. {recovery}_"
+
+
+def _format_source_coverage_markdown(
+    *,
+    coverage_status: Literal["complete", "partial", "unavailable"],
+    sources_completed: list[str],
+    source_errors: list[dict[str, str]],
+) -> str:
+    """Render sanitized upstream coverage without exposing exception details."""
+    if coverage_status == "complete":
+        return ""
+    lines = [f"## ⚠️ Source coverage: {escape_markdown_text(coverage_status)}"]
+    if sources_completed:
+        completed = ", ".join(escape_markdown_text(source) for source in sources_completed)
+        lines.append(f"Completed checks: {completed}")
+    if source_errors:
+        lines.append("Unavailable checks:")
+        lines.extend(
+            f"- {escape_markdown_text(issue.get('source', 'unknown'))}: "
+            f"{escape_markdown_text(issue.get('message', 'source unavailable'))}"
+            for issue in source_errors
+        )
+    lines.append("_Absence of fulltext cannot be concluded from unavailable sources._")
+    return "\n\n".join(lines) + "\n\n"
 
 
 def _render_fulltext_content_for_artifact(
@@ -262,11 +314,11 @@ def _render_fulltext_content_for_artifact(
         content = str(section.get("content") or "")
         if not content:
             continue
-        title = str(section.get("title") or "Untitled Section")
-        rendered_sections.append(f"### {title}\n\n{content}")
+        title = escape_markdown_text(section.get("title") or "Untitled Section")
+        rendered_sections.append(f"### {title}\n\n{escape_markdown_block(content)}")
     if rendered_sections:
         return "\n\n".join(rendered_sections)
-    return fallback
+    return escape_markdown_block(fallback) if fallback else fallback
 
 
 def _limit_fulltext_payload_for_response(
@@ -275,7 +327,7 @@ def _limit_fulltext_payload_for_response(
     artifact: dict[str, Any] | None,
     max_chars: int,
 ) -> dict[str, Any]:
-    if not artifact or max_chars <= 0:
+    if max_chars <= 0:
         return payload_kwargs
 
     content = str(payload_kwargs.get("fulltext_content") or "")
@@ -301,16 +353,9 @@ def _limit_fulltext_markdown_for_response(
     artifact: dict[str, Any] | None,
     max_chars: int,
 ) -> str:
-    if not artifact or max_chars <= 0 or len(output) <= max_chars:
+    if max_chars <= 0 or len(output) <= max_chars:
         return output
-    omitted = len(output) - max_chars
-    artifact_id = str(artifact.get("artifact_id") or "")
-    artifact_note = f" Artifact: `{artifact_id}`." if artifact_id else ""
-    return (
-        output[:max_chars]
-        + f"\n\n_... {omitted} characters omitted from inline response.{artifact_note} "
-        + f"Use `{_artifact_read_hint(artifact)}` for the saved full content._\n"
-    )
+    return _truncate_inline_fulltext(output, max_chars, artifact) + "\n"
 
 
 def _format_text_mined_terms_structured(
@@ -361,7 +406,10 @@ def _format_text_mined_terms_structured(
             make_next_tool(
                 "get_fulltext",
                 "Inspect the article text alongside its extracted entities and concepts.",
-                (f'get_fulltext(pmid="{pmid}", extended_sources=True, output_format="{structured_output_format}")'),
+                (
+                    f'get_fulltext(source={{"kind":"pmid","value":"{pmid}"}}, '
+                    f'extended_sources=True, output_format="{structured_output_format}")'
+                ),
             )
         )
     if pmcid:
@@ -369,7 +417,10 @@ def _format_text_mined_terms_structured(
             make_next_tool(
                 "get_article_figures",
                 "PMC-backed annotations can be paired with figure evidence from the same open-access article.",
-                f'get_article_figures(identifier="{pmcid}", output_format="{structured_output_format}")',
+                (
+                    f'get_article_figures(source={{"kind":"pmcid","value":"{pmcid}"}}, '
+                    f'output_format="{structured_output_format}")'
+                ),
             )
         )
 
@@ -431,182 +482,15 @@ def register_europe_pmc_tools(mcp: MCPServer):
     - get_text_mined_terms: Get text-mined annotations
     """
 
-    # NOTE: search_europe_pmc is NOT registered as a tool.
-    # Use unified_search(sources=["europe_pmc"]) instead.
-    # Keeping the function for internal use by unified_search.
-    # @mcp.tool()  # REMOVED - integrated into unified_search
-    async def search_europe_pmc(
-        query: str,
-        limit: int = 10,
-        min_year: int | None = None,
-        max_year: int | None = None,
-        open_access_only: bool = False,
-        has_fulltext: bool = False,
-        sort: str = "relevance",
-    ) -> str:
-        """
-        Search Europe PMC for scientific literature.
-
-        Europe PMC indexes 33M+ publications with 6.5M open access fulltext.
-        Best for: finding open access papers, getting fulltext, European research.
-
-        Args:
-            query: Search query (supports standard boolean operators AND, OR, NOT).
-            limit: Maximum number of results (1-100, default: 10).
-            min_year: Filter by minimum publication year (e.g., 2020).
-            max_year: Filter by maximum publication year (e.g., 2024).
-            open_access_only: Only return open access papers.
-            has_fulltext: Only return papers with fulltext available in Europe PMC.
-            sort: Sort order - "relevance" (default), "date" (newest first), or "cited" (most cited).
-
-        Returns:
-            Search results with titles, abstracts, and fulltext availability.
-        """
-        # Phase 2.1: Input normalization
-        normalized_query = InputNormalizer.normalize_query(query)
-        if not normalized_query:
-            return ResponseFormatter.error(
-                error="Query is required",
-                suggestion="Provide a search query",
-                example='search_europe_pmc(query="COVID-19 treatment")',
-                tool_name="search_europe_pmc",
-            )
-
-        normalized_limit = InputNormalizer.normalize_limit(limit, default=10, min_val=1, max_val=100)
-        normalized_min_year = InputNormalizer.normalize_year(min_year)
-        normalized_max_year = InputNormalizer.normalize_year(max_year)
-        normalized_oa_only = InputNormalizer.normalize_bool(open_access_only, default=False)
-        normalized_fulltext = InputNormalizer.normalize_bool(has_fulltext, default=False)
-
-        logger.info(
-            "Searching Europe PMC (query_length=%s, limit=%s)",
-            len(normalized_query),
-            normalized_limit,
-        )
-
-        try:
-            client = get_europe_pmc_client()
-
-            # Map sort_by to Europe PMC sort syntax
-            sort_map = {
-                "relevance": None,  # Default sorting
-                "date": "P_PDATE_D desc",
-                "cited": "CITED desc",
-            }
-            sort_param = sort_map.get(sort)
-
-            result = await client.search(
-                query=normalized_query,
-                limit=normalized_limit,
-                min_year=normalized_min_year,
-                max_year=normalized_max_year,
-                open_access_only=normalized_oa_only,
-                has_fulltext=normalized_fulltext,
-                sort=sort_param,
-            )
-
-            if not result.get("results"):
-                return ResponseFormatter.no_results(
-                    query=normalized_query,
-                    suggestions=[
-                        "Try broader search terms",
-                        "Remove year filters",
-                        "Disable open_access_only filter",
-                        "Try unified_search for PubMed or multi-source discovery instead",
-                    ],
-                )
-
-            total = result.get("hit_count", len(result["results"]))
-            articles = result["results"]
-
-            # Format header
-            output = "📚 **Europe PMC Search Results**\n"
-            output += f"Found **{len(articles)}** results"
-            if total > len(articles):
-                output += f" (of {total:,} total)"
-
-            filters = []
-            if normalized_oa_only:
-                filters.append("Open Access")
-            if normalized_fulltext:
-                filters.append("Fulltext available")
-            if normalized_min_year or normalized_max_year:
-                year_range = f"{normalized_min_year or '...'}-{normalized_max_year or '...'}"
-                filters.append(year_range)
-            if filters:
-                output += f" | Filters: {', '.join(filters)}"
-            output += "\n\n"
-
-            # Format results
-            for i, article in enumerate(articles, 1):
-                pmid = article.get("pmid", "N/A")
-                pmc_id = article.get("pmc_id", "")
-                title = article.get("title", "No title")
-                authors = article.get("authors", [])
-                year = article.get("year", "")
-                journal = article.get("journal", "")
-
-                # Format author string
-                if authors:
-                    author_str = f"{authors[0]} et al." if len(authors) > 3 else ", ".join(authors)
-                else:
-                    author_str = article.get("author_string", "Unknown authors")
-
-                # Status indicators
-                indicators = []
-                if article.get("is_open_access"):
-                    indicators.append("🔓 OA")
-                if article.get("has_fulltext"):
-                    indicators.append("📄 Fulltext")
-                if article.get("citation_count"):
-                    indicators.append(f"📊 {article['citation_count']} cites")
-
-                output += f"**{i}. [{pmid}]** {title}\n"
-                output += f"   👤 {author_str} | 📅 {year} | 📰 {journal}\n"
-                if pmc_id:
-                    output += f"   🆔 PMC: {pmc_id}"
-                if indicators:
-                    output += f" | {' | '.join(indicators)}"
-                output += "\n"
-
-                # Abstract preview
-                abstract = article.get("abstract", "")
-                if abstract:
-                    preview = abstract[:200] + "..." if len(abstract) > 200 else abstract
-                    output += f"   📝 {preview}\n"
-
-                output += "\n"
-
-            # Add fulltext hint
-            fulltext_available = [a for a in articles if a.get("has_fulltext") or a.get("pmc_id")]
-            if fulltext_available:
-                pmc_ids = [a.get("pmc_id") for a in fulltext_available[:3] if a.get("pmc_id")]
-                if pmc_ids:
-                    output += "---\n"
-                    output += f"💡 **Tip**: Use `get_fulltext(pmcid='{pmc_ids[0]}')` to read the full paper\n"
-
-            return output
-
-        except Exception as e:
-            logger.warning("Europe PMC search failed (%s)", type(e).__name__)
-            return ResponseFormatter.error(
-                error=e,
-                suggestion="Check query syntax and try again",
-                tool_name="search_europe_pmc",
-            )
-
     @mcp.tool()
     async def get_fulltext(
-        identifier: str | None = None,
-        pmcid: Union[str, int] | None = None,
-        pmid: Union[str, int] | None = None,
-        doi: str | None = None,
-        sections: str | None = None,
-        include_pdf_links: bool = True,
-        include_figures: bool = False,
-        extended_sources: bool = False,
+        source: ArticleSource,
+        sections: SectionFilter | None = None,
+        include_pdf_links: StrictBool = True,
+        include_figures: StrictBool = False,
+        extended_sources: StrictBool = False,
         output_format: Literal["markdown", "json", "toon"] = "markdown",
-        allow_browser_session: bool | None = None,
+        allow_browser_session: StrictBool | None = None,
         ctx: Context | None = None,
     ) -> str:
         """
@@ -625,18 +509,13 @@ def register_europe_pmc_tools(mcp: MCPServer):
         8. PubMed LinkOut (external providers)
         9. Semantic Scholar, OpenAlex, arXiv, bioRxiv, medRxiv
 
-        Accepts flexible input - provide ANY ONE of:
-        - identifier: Auto-detects PMID, PMC ID, or DOI
-        - pmcid: Direct PMC ID
-        - pmid: PubMed ID (will lookup PMC ID)
-        - doi: DOI (will search Unpaywall/CORE)
+        ``source`` is a discriminated identifier object, so the schema itself
+        requires exactly one explicit PMID, PMCID, or DOI kind.
 
         Args:
-            identifier: Auto-detect format - PMID, PMC ID, or DOI
-                       Examples: "PMC7096777", "12345678", "10.1001/jama.2024.1234"
-            pmcid: PubMed Central ID (e.g., "PMC7096777", "7096777")
-            pmid: PubMed ID (e.g., "12345678")
-            doi: DOI (e.g., "10.1001/jama.2024.1234")
+            source: One object such as {"kind":"pmid","value":"12345678"},
+                    {"kind":"pmcid","value":"PMC7096777"}, or
+                    {"kind":"doi","value":"10.1001/jama.2024.1234"}.
             sections: Filter sections (e.g., "introduction,methods,results")
             include_pdf_links: Include PDF download links (default: True)
             include_figures: Include figure metadata with image URLs (default: False)
@@ -651,9 +530,8 @@ def register_europe_pmc_tools(mcp: MCPServer):
             Fulltext content with PDF links from all available sources.
 
         Example:
-            get_fulltext(identifier="PMC7096777")
-            get_fulltext(doi="10.1038/s41586-021-03819-2")
-            get_fulltext(pmid="12345678", extended_sources=True)
+            get_fulltext(source={"kind":"pmcid","value":"PMC7096777"})
+            get_fulltext(source={"kind":"doi","value":"10.1038/s41586-021-03819-2"})
         """
 
         async def _progress(progress: float, total: float, message: str) -> None:
@@ -666,51 +544,32 @@ def register_europe_pmc_tools(mcp: MCPServer):
         normalized_output_format = normalize_output_format(output_format)
         settings = load_settings()
 
-        # Phase 2.2: Smart identifier detection
-        detected_pmcid = pmcid
-        detected_doi = doi
-        detected_pmid = pmid
-
-        if identifier:
-            identifier = str(identifier).strip()
-            # Detect format
-            if identifier.upper().startswith("PMC") or (identifier.isdigit() and len(identifier) > 6):
-                if identifier.upper().startswith("PMC"):
-                    detected_pmcid = identifier
-                # Could be PMID or PMC number - assume PMID if < 8 digits
-                elif len(identifier) <= 8:
-                    detected_pmid = identifier
-                else:
-                    detected_pmcid = f"PMC{identifier}"
-            elif identifier.startswith("10.") or "doi.org" in identifier:
-                # DOI format
-                detected_doi = identifier.replace("https://doi.org/", "").replace("http://doi.org/", "")
-            elif identifier.isdigit():
-                detected_pmid = identifier
-            else:
-                # Try as PMID
-                detected_pmid = identifier
-
-        # Normalize inputs
-        if detected_pmcid:
-            detected_pmcid = InputNormalizer.normalize_pmcid(str(detected_pmcid))
-        if detected_pmid:
-            detected_pmid = InputNormalizer.normalize_pmid_single(detected_pmid)
-
-        if not any([detected_pmcid, detected_pmid, detected_doi]):
-            return ResponseFormatter.error(
-                error="No valid identifier provided",
-                suggestion="Provide pmcid, pmid, doi, or auto-detect identifier",
-                example='get_fulltext(identifier="PMC7096777") or get_fulltext(doi="10.1038/...")',
-                tool_name="get_fulltext",
-                output_format=normalized_output_format,
+        normalized_source = normalize_article_source(source)
+        requested_source = {"kind": normalized_source.kind, "value": normalized_source.value}
+        if normalized_source.kind == "pmid":
+            request = FulltextRequest(
+                pmid=normalized_source.value,
+                sections=sections,
+                include_figures=include_figures,
+                extended_sources=extended_sources,
+                allow_browser_session=allow_browser_session,
             )
-
-        logger.info(f"Getting fulltext: pmcid={detected_pmcid}, pmid={detected_pmid}, doi={detected_doi}")
-        await _log(
-            "info",
-            f"get_fulltext start pmcid={detected_pmcid} pmid={detected_pmid} doi={'yes' if detected_doi else 'no'}",
-        )
+        elif normalized_source.kind == "pmcid":
+            request = FulltextRequest(
+                pmcid=normalized_source.value,
+                sections=sections,
+                include_figures=include_figures,
+                extended_sources=extended_sources,
+                allow_browser_session=allow_browser_session,
+            )
+        else:
+            request = FulltextRequest(
+                doi=normalized_source.value,
+                sections=sections,
+                include_figures=include_figures,
+                extended_sources=extended_sources,
+                allow_browser_session=allow_browser_session,
+            )
 
         browser_session_note = None
 
@@ -730,34 +589,48 @@ def register_europe_pmc_tools(mcp: MCPServer):
             figure_client_factory=get_figure_client if include_figures else None,
             institutional_client_factory=_institutional_factory,
         )
-        retrieval = await service.retrieve(
-            FulltextRequest(
-                identifier=identifier,
-                pmcid=str(detected_pmcid) if detected_pmcid else None,
-                pmid=str(detected_pmid) if detected_pmid else None,
-                doi=str(detected_doi) if detected_doi else None,
-                sections=sections,
-                include_figures=include_figures,
-                extended_sources=extended_sources,
-                allow_browser_session=allow_browser_session,
+        try:
+            retrieval = await service.retrieve(request, progress=_progress, log=_log)
+        except IdentifierValidationError as exc:
+            return ResponseFormatter.error(
+                error=exc,
+                suggestion="Provide exactly one strict PMID, PMC-prefixed PMCID, or DOI.",
+                example='get_fulltext(source={"kind":"pmcid","value":"PMC7096777"})',
+                tool_name="get_fulltext",
+                output_format=normalized_output_format,
+            )
+        except Exception as exc:
+            logger.warning("Fulltext orchestration failed (%s)", type(exc).__name__)
+            return ResponseFormatter.error(
+                error="Fulltext retrieval could not be completed because an upstream service was unavailable.",
+                suggestion="Retry later or use unified_search to confirm the article identifiers.",
+                tool_name="get_fulltext",
+                output_format=normalized_output_format,
+            )
+
+        resolved_pmcid = retrieval.pmcid
+        resolved_pmid = retrieval.pmid
+        resolved_doi = retrieval.doi
+        await _log(
+            "info",
+            (
+                "get_fulltext identifiers resolved "
+                f"pmcid={'yes' if resolved_pmcid else 'no'} "
+                f"pmid={'yes' if resolved_pmid else 'no'} "
+                f"doi={'yes' if resolved_doi else 'no'}"
             ),
-            progress=_progress,
-            log=_log,
         )
-        resolved_pmcid = retrieval.pmcid or (str(detected_pmcid) if detected_pmcid else None)
-        resolved_pmid = retrieval.pmid or (str(detected_pmid) if detected_pmid else None)
-        resolved_doi = retrieval.doi or (str(detected_doi) if detected_doi else None)
 
         # Keep the main service as the primary path, then fall back to
         # multi-source PDF retrieval only when the service has not already
         # attempted the extended downloader path.
         if (
             not retrieval.fulltext_content
-            and any([detected_pmid, detected_pmcid, detected_doi])
+            and any([resolved_pmid, resolved_pmcid, resolved_doi])
             and not retrieval.extended_sources_attempted
         ):
             await _progress(5.5, 6, "Trying multi-source PDF retrieval fallback...")
-            retrieval.sources_tried.append("PDF Retrieval Fallback")
+            retrieval.record_source_attempted("pdf_retrieval_fallback")
             try:
                 from pubmed_search.infrastructure.sources.fulltext_download import (
                     FulltextDownloader,
@@ -776,8 +649,16 @@ def register_europe_pmc_tools(mcp: MCPServer):
                 finally:
                     await downloader.close()
 
+                link_discovery = assisted.require_link_discovery()
+                for attempted_source in link_discovery.attempted_sources:
+                    retrieval.record_source_attempted(attempted_source)
+                for completed_source in link_discovery.completed_sources:
+                    retrieval.record_source_completed(completed_source)
+                for source_error in link_discovery.source_errors:
+                    retrieval.record_source_error(source_error.source)
+
                 seen_urls = {str(link.get("url") or "") for link in retrieval.pdf_links}
-                for ext_link in assisted.pdf_links:
+                for ext_link in link_discovery.links:
                     if not ext_link.url or ext_link.url in seen_urls:
                         continue
                     seen_urls.add(ext_link.url)
@@ -814,29 +695,36 @@ def register_europe_pmc_tools(mcp: MCPServer):
                 if assisted.source_used == PDFSource.BROWSER_SESSION:
                     if assisted.text_content:
                         note_parts.append(
-                            f"🔐 Browser-session broker fetched PDF and extracted text from {assisted.retrieved_url or 'institutional access'}"
+                            "🔐 Browser-session broker fetched PDF and extracted text from "
+                            f"{escape_markdown_text(assisted.retrieved_url or 'institutional access')}"
                         )
                     else:
                         note_parts.append(
-                            f"🔐 Browser-session broker fetched PDF from {assisted.retrieved_url or 'institutional access'}"
+                            "🔐 Browser-session broker fetched PDF from "
+                            f"{escape_markdown_text(assisted.retrieved_url or 'institutional access')}"
                         )
                 elif assisted.source_used:
                     if assisted.text_content:
                         note_parts.append(
-                            f"📄 PDF retrieval fallback extracted text via {assisted.source_used.display_name}"
+                            "📄 PDF retrieval fallback extracted text via "
+                            f"{escape_markdown_text(assisted.source_used.display_name)}"
                         )
                     else:
                         note_parts.append(
-                            f"📄 PDF retrieval fallback retrieved PDF via {assisted.source_used.display_name}"
+                            "📄 PDF retrieval fallback retrieved PDF via "
+                            f"{escape_markdown_text(assisted.source_used.display_name)}"
                         )
                 if assisted.error:
-                    note_parts.append(f"⚠️ PDF retrieval fallback did not succeed: {assisted.error}")
+                    note_parts.append("⚠️ PDF retrieval fallback completed without usable fulltext.")
 
                 if note_parts:
                     browser_session_note = "\n".join(note_parts)
+                if link_discovery.coverage_status != "unavailable" or assisted.text_content:
+                    retrieval.record_source_completed("pdf_retrieval_fallback")
             except Exception as e:
                 logger.warning("PDF retrieval fallback failed (%s)", type(e).__name__)
-                await _log("warning", f"PDF retrieval fallback failed: {e!s}")
+                retrieval.record_source_error("pdf_retrieval_fallback")
+                await _log("warning", "PDF retrieval fallback source unavailable")
 
         next_tools, next_commands = _build_fulltext_next_tools(
             pmcid=resolved_pmcid,
@@ -852,7 +740,7 @@ def register_europe_pmc_tools(mcp: MCPServer):
             figures_count=len(retrieval.figures),
         )
         fulltext_payload_kwargs: dict[str, Any] = {
-            "identifier": identifier,
+            "requested_source": requested_source,
             "pmcid": resolved_pmcid,
             "pmid": resolved_pmid,
             "doi": resolved_doi,
@@ -861,6 +749,9 @@ def register_europe_pmc_tools(mcp: MCPServer):
             "content_sections": retrieval.content_sections,
             "pdf_links": exposed_pdf_links,
             "sources_tried": retrieval.sources_tried,
+            "sources_completed": retrieval.sources_completed,
+            "source_errors": [issue.to_dict() for issue in retrieval.source_errors],
+            "coverage_status": retrieval.coverage_status,
             "source_counts": source_counts,
             "next_tools": next_tools,
             "next_commands": next_commands,
@@ -871,10 +762,12 @@ def register_europe_pmc_tools(mcp: MCPServer):
             "figures": retrieval.figures,
         }
         raw_fulltext_content = getattr(retrieval, "raw_fulltext_content", None)
-        artifact_fulltext_content = (
-            raw_fulltext_content
-            if raw_fulltext_content and raw_fulltext_content != retrieval.fulltext_content
-            else _render_fulltext_content_for_artifact(retrieval.content_sections, retrieval.fulltext_content)
+        artifact_sections = retrieval.content_sections
+        if raw_fulltext_content and raw_fulltext_content != retrieval.fulltext_content:
+            artifact_sections = [{"title": "Full Text", "content": raw_fulltext_content}]
+        artifact_fulltext_content = _render_fulltext_content_for_artifact(
+            artifact_sections,
+            raw_fulltext_content or retrieval.fulltext_content,
         )
         artifact_content_sections = retrieval.content_sections
         if raw_fulltext_content and raw_fulltext_content != retrieval.fulltext_content:
@@ -900,7 +793,7 @@ def register_europe_pmc_tools(mcp: MCPServer):
                         **artifact_payload_kwargs,
                         output_format=normalized_output_format,
                     )
-                    artifact = persist_tool_artifact(
+                    artifact = await persist_tool_artifact(
                         tool="get_fulltext",
                         kind="fulltext",
                         files={
@@ -908,12 +801,15 @@ def register_europe_pmc_tools(mcp: MCPServer):
                             "links.json": exposed_pdf_links,
                             "provenance.json": {
                                 "identifiers": {
-                                    "identifier": identifier,
+                                    "requested": requested_source,
                                     "pmcid": resolved_pmcid,
                                     "pmid": resolved_pmid,
                                     "doi": resolved_doi,
                                 },
                                 "sources_tried": retrieval.sources_tried,
+                                "sources_completed": retrieval.sources_completed,
+                                "source_errors": [issue.to_dict() for issue in retrieval.source_errors],
+                                "coverage_status": retrieval.coverage_status,
                                 "source_counts": source_counts,
                                 "fulltext_source": retrieval.fulltext_source_name,
                                 "fulltext_canonical_host": retrieval.fulltext_canonical_host,
@@ -954,32 +850,44 @@ def register_europe_pmc_tools(mcp: MCPServer):
             )
 
         if not retrieval.fulltext_content and not retrieval.pdf_links:
-            no_results_response = ResponseFormatter.no_results(
-                query=f"pmcid={detected_pmcid}, pmid={detected_pmid}, doi={detected_doi}",
-                suggestions=[
-                    "Article may not be open access",
-                    "Try searching with DOI for Unpaywall lookup",
-                    "Check if article is available in PubMed Central",
-                    f"Sources tried: {', '.join(retrieval.sources_tried)}",
-                ],
-                output_format=normalized_output_format,
-                tool_name="get_fulltext",
-            )
+            if retrieval.source_errors:
+                no_results_response = "⚠️ **Fulltext retrieval incomplete**\n\n"
+                no_results_response += _format_source_coverage_markdown(
+                    coverage_status=retrieval.coverage_status,
+                    sources_completed=retrieval.sources_completed,
+                    source_errors=[issue.to_dict() for issue in retrieval.source_errors],
+                )
+                no_results_response += "Retry later before treating this article as unavailable."
+            else:
+                no_results_response = ResponseFormatter.no_results(
+                    query=f"pmcid={resolved_pmcid}, pmid={resolved_pmid}, doi={resolved_doi}",
+                    suggestions=[
+                        "Article may not be open access",
+                        "Try searching with DOI for Unpaywall lookup",
+                        "Check if article is available in PubMed Central",
+                        f"Sources tried: {', '.join(retrieval.sources_tried)}",
+                    ],
+                    output_format=normalized_output_format,
+                    tool_name="get_fulltext",
+                )
             artifact = None
             if artifact_persistence_enabled():
-                artifact = persist_tool_artifact(
+                artifact = await persist_tool_artifact(
                     tool="get_fulltext",
                     kind="fulltext",
                     files={
                         "response.md": no_results_response,
                         "provenance.json": {
                             "identifiers": {
-                                "identifier": identifier,
+                                "requested": requested_source,
                                 "pmcid": resolved_pmcid,
                                 "pmid": resolved_pmid,
                                 "doi": resolved_doi,
                             },
                             "sources_tried": retrieval.sources_tried,
+                            "sources_completed": retrieval.sources_completed,
+                            "source_errors": [issue.to_dict() for issue in retrieval.source_errors],
+                            "coverage_status": retrieval.coverage_status,
                             "source_counts": source_counts,
                         },
                     },
@@ -997,8 +905,14 @@ def register_europe_pmc_tools(mcp: MCPServer):
 
         # Format output
         await _progress(6, 6, "Formatting fulltext response...")
-        output = f"📖 **{retrieval.title or 'Fulltext Retrieved'}**\n"
-        output += f"🔍 Sources checked: {', '.join(retrieval.sources_tried)}\n\n"
+        output = f"📖 **{escape_markdown_text(retrieval.title or 'Fulltext Retrieved')}**\n"
+        checked_sources = ", ".join(escape_markdown_text(source) for source in retrieval.sources_tried)
+        output += f"🔍 Sources checked: {checked_sources}\n\n"
+        output += _format_source_coverage_markdown(
+            coverage_status=retrieval.coverage_status,
+            sources_completed=retrieval.sources_completed,
+            source_errors=[issue.to_dict() for issue in retrieval.source_errors],
+        )
 
         if browser_session_note:
             output += browser_session_note + "\n\n"
@@ -1018,18 +932,24 @@ def register_europe_pmc_tools(mcp: MCPServer):
                     "subscription": "🏛️ Institutional",
                 }.get(link.get("access", ""), "")
 
-                output += f"- {icon} **{link['source']}** {access_badge}\n"
-                output += f"  {link['url']}\n"
+                output += f"- {icon} **{markdown_link(link.get('source', 'Open fulltext'), link.get('url'))}** "
+                output += f"{access_badge}\n"
                 if link.get("version"):
-                    output += f"  _Version: {link['version']}_\n"
+                    output += f"  _Version: {escape_markdown_text(link['version'])}_\n"
                 if link.get("license"):
-                    output += f"  _License: {link['license']}_\n"
+                    output += f"  _License: {escape_markdown_text(link['license'])}_\n"
             output += "\n"
 
         # Fulltext content
         if retrieval.fulltext_content:
             output += "## 📝 Content\n\n"
-            output += retrieval.fulltext_content
+            output += (
+                _render_fulltext_content_for_artifact(
+                    [],
+                    retrieval.fulltext_content,
+                )
+                or ""
+            )
         elif retrieval.pdf_links:
             output += "_Structured fulltext not available. Use the PDF links above to access the article._\n"
             if any(link.get("access") == "subscription" for link in retrieval.pdf_links):
@@ -1039,13 +959,14 @@ def register_europe_pmc_tools(mcp: MCPServer):
             output += "\n---\n"
             output += f"## 🖼️ Figures ({len(retrieval.figures)})\n\n"
             for fig in retrieval.figures:
-                output += f"#### {fig.get('label') or fig.get('figure_id', 'Figure')}\n"
+                label = escape_markdown_text(fig.get("label") or fig.get("figure_id", "Figure"))
+                output += f"#### {label}\n"
                 if fig.get("caption_title"):
-                    output += f"**{fig['caption_title']}**\n\n"
+                    output += f"**{escape_markdown_text(fig['caption_title'])}**\n\n"
                 if fig.get("caption_text"):
-                    output += f"{fig['caption_text']}\n\n"
+                    output += f"{escape_markdown_block(fig['caption_text'])}\n\n"
                 if fig.get("image_url"):
-                    output += f"**Image URL:** {fig['image_url']}\n\n"
+                    output += f"**Image URL:** {markdown_link('Open image', fig['image_url'])}\n\n"
 
         artifact = None
         if artifact_persistence_enabled():
@@ -1054,7 +975,7 @@ def register_europe_pmc_tools(mcp: MCPServer):
                     **artifact_payload_kwargs,
                     output_format="json",
                 )
-                artifact = persist_tool_artifact(
+                artifact = await persist_tool_artifact(
                     tool="get_fulltext",
                     kind="fulltext",
                     files={
@@ -1063,12 +984,15 @@ def register_europe_pmc_tools(mcp: MCPServer):
                         "links.json": exposed_pdf_links,
                         "provenance.json": {
                             "identifiers": {
-                                "identifier": identifier,
+                                "requested": requested_source,
                                 "pmcid": resolved_pmcid,
                                 "pmid": resolved_pmid,
                                 "doi": resolved_doi,
                             },
                             "sources_tried": retrieval.sources_tried,
+                            "sources_completed": retrieval.sources_completed,
+                            "source_errors": [issue.to_dict() for issue in retrieval.source_errors],
+                            "coverage_status": retrieval.coverage_status,
                             "source_counts": source_counts,
                             "fulltext_source": retrieval.fulltext_source_name,
                             "fulltext_canonical_host": retrieval.fulltext_canonical_host,
@@ -1104,72 +1028,10 @@ def register_europe_pmc_tools(mcp: MCPServer):
         )
         return response_output + artifact_markdown_note(artifact)
 
-    # NOTE: get_fulltext_xml is NOT registered as a tool.
-    # Use get_fulltext instead - it provides better parsed output.
-    # @mcp.tool()  # REMOVED - use get_fulltext instead
-    async def get_fulltext_xml(pmcid: Union[str, int]) -> str:
-        """
-        Get raw JATS XML fulltext from Europe PMC.
-
-        Returns the complete XML document in JATS format. Use this if you need
-        the raw XML structure for custom parsing or analysis.
-
-        Args:
-            pmcid: PubMed Central ID (accepts: "PMC7096777", "7096777", 7096777).
-
-        Returns:
-            JATS XML document as string, or error message.
-        """
-        # Phase 2.1: Input normalization
-        pmcid_normalized = InputNormalizer.normalize_pmcid(str(pmcid) if pmcid else None)
-        if not pmcid_normalized:
-            return ResponseFormatter.error(
-                error="Invalid PMC ID format",
-                suggestion="Provide a valid PMC ID number",
-                example='get_fulltext_xml(pmcid="PMC7096777")',
-                tool_name="get_fulltext_xml",
-            )
-
-        logger.info(f"Getting fulltext XML for: {pmcid_normalized}")
-
-        try:
-            client = get_europe_pmc_client()
-
-            xml = await client.get_fulltext_xml(pmcid_normalized)
-            if not xml:
-                return ResponseFormatter.no_results(
-                    query=pmcid_normalized,
-                    suggestions=[
-                        "Article may not be in PMC",
-                        "Article may not be open access",
-                    ],
-                )
-
-            # Return with size info
-            output = f"<!-- JATS XML for {pmcid_normalized} ({len(xml):,} bytes) -->\n\n"
-
-            # Truncate if very large
-            if len(xml) > 50000:
-                output += xml[:50000]
-                output += f"\n\n<!-- ... {len(xml) - 50000:,} bytes truncated -->"
-            else:
-                output += xml
-
-            return output
-
-        except Exception as e:
-            logger.warning("Full-text XML lookup failed (%s)", type(e).__name__)
-            return ResponseFormatter.error(
-                error=e,
-                suggestion="Check if the PMC ID is correct",
-                tool_name="get_fulltext_xml",
-            )
-
     @mcp.tool()
     async def get_text_mined_terms(
-        pmid: Union[str, int] | None = None,
-        pmcid: Union[str, int] | None = None,
-        semantic_type: str | None = None,
+        source: PubmedSource,
+        semantic_type: SemanticType | None = None,
         output_format: Literal["markdown", "json", "toon"] = "markdown",
         ctx: Context | None = None,
     ) -> str:
@@ -1177,11 +1039,11 @@ def register_europe_pmc_tools(mcp: MCPServer):
         Get text-mined annotations from Europe PMC.
 
         Returns entities extracted from the article text including genes, diseases,
-        chemicals, organisms, and more. Useful for identifying key concepts.
+        chemicals, organisms, and more. ``source`` is exactly one PMID or PMCID.
 
         Args:
-            pmid: PubMed ID of the article (accepts: "12345678", 12345678).
-            pmcid: PMC ID (alternative to PMID, accepts: "PMC7096777", "7096777").
+            source: {"kind":"pmid","value":"12345678"} or
+                    {"kind":"pmcid","value":"PMC7096777"}.
             semantic_type: Filter by entity type. Options:
                 - "GENE_PROTEIN": Genes and proteins
                 - "DISEASE": Diseases and conditions
@@ -1197,32 +1059,33 @@ def register_europe_pmc_tools(mcp: MCPServer):
         async def _progress(progress: float, total: float, message: str) -> None:
             await safe_report_progress(ctx, progress, total, message)
 
-        # Phase 2.1: Input normalization
-        normalized_pmid = InputNormalizer.normalize_pmid_single(pmid) if pmid else None
-        normalized_pmcid = InputNormalizer.normalize_pmcid(str(pmcid)) if pmcid else None
         normalized_output_format = normalize_output_format(output_format)
-
-        logger.info(f"Getting text-mined terms for PMID={normalized_pmid}, PMCID={normalized_pmcid}")
 
         try:
             await _progress(1, 3, "Resolving article identifier...")
-            if not normalized_pmid and not normalized_pmcid:
-                return ResponseFormatter.error(
-                    error="Either pmid or pmcid is required",
-                    suggestion="Provide a PMID or PMC ID",
-                    example='get_text_mined_terms(pmid="12345678")',
-                    tool_name="get_text_mined_terms",
-                    output_format=normalized_output_format,
-                )
+            normalized_source = normalize_article_source(source)
+            if normalized_source.kind == "pmid":
+                request = FulltextRequest(pmid=normalized_source.value).normalized()
+            else:
+                request = FulltextRequest(pmcid=normalized_source.value).normalized()
+            normalized_pmid = request.pmid
+            normalized_pmcid = request.pmcid
+            _validate_semantic_type(semantic_type)
+
+            logger.info(
+                "Getting text-mined terms for PMID=%s, PMCID=%s",
+                normalized_pmid,
+                normalized_pmcid,
+            )
 
             client = get_europe_pmc_client()
 
             # Determine source and ID
             if normalized_pmid:
-                source = "MED"
+                source_db = "MED"
                 article_id = normalized_pmid
             else:
-                source = "PMC"
+                source_db = "PMC"
                 # Extract digits from normalized PMCID (PMC7096777 -> 7096777)
                 if normalized_pmcid and normalized_pmcid.startswith("PMC"):
                     article_id = normalized_pmcid[3:]
@@ -1230,7 +1093,7 @@ def register_europe_pmc_tools(mcp: MCPServer):
                     article_id = normalized_pmcid or ""
 
             await _progress(2, 3, "Fetching Europe PMC text-mined annotations...")
-            terms = await client.get_text_mined_terms(source, str(article_id), semantic_type)
+            terms = await client.get_text_mined_terms(source_db, str(article_id), semantic_type)
 
             if not terms:
                 id_str = f"PMID:{normalized_pmid}" if normalized_pmid else f"PMC:{normalized_pmcid}"
@@ -1263,7 +1126,7 @@ def register_europe_pmc_tools(mcp: MCPServer):
                 by_type[term_type].append(term)
 
             # Format output
-            id_str = f"PMID:{pmid}" if pmid else f"PMC:{pmcid}"
+            id_str = f"PMID:{normalized_pmid}" if normalized_pmid else f"PMC:{normalized_pmcid}"
             output = f"🔬 **Text-Mined Terms for {id_str}**\n\n"
             output += f"Total: {len(terms)} annotations\n\n"
 
@@ -1305,132 +1168,19 @@ def register_europe_pmc_tools(mcp: MCPServer):
             await _progress(3, 3, "Text-mined terms ready")
             return output
 
-        except Exception as e:
-            logger.warning("Text-mined term lookup failed (%s)", type(e).__name__)
+        except IdentifierValidationError as exc:
             return ResponseFormatter.error(
-                error=e,
-                suggestion="Check the ID and try again",
+                error=exc,
+                suggestion="Provide one schema-valid PMID or PMCID source object.",
+                example='get_text_mined_terms(source={"kind":"pmid","value":"12345678"})',
                 tool_name="get_text_mined_terms",
                 output_format=normalized_output_format,
             )
-
-    # NOTE: get_europe_pmc_citations is NOT registered as a tool.
-    # Use find_citing_articles or get_article_references instead.
-    # @mcp.tool()  # REMOVED - use find_citing_articles instead
-    async def get_europe_pmc_citations(
-        pmid: Union[str, int] | None = None,
-        pmcid: Union[str, int] | None = None,
-        direction: str = "citing",
-        limit: int = 20,
-    ) -> str:
-        """
-        Get citation network from Europe PMC.
-
-        Can retrieve either articles that cite this paper (forward) or
-        references this paper cites (backward).
-
-        Args:
-            pmid: PubMed ID of the source article (accepts: "12345678", 12345678).
-            pmcid: PMC ID (alternative to PMID, accepts: "PMC7096777", "7096777").
-            direction: Citation direction:
-                - "citing": Papers that cite this article (forward in time, default)
-                - "references": Papers this article cites (backward, its bibliography)
-            limit: Maximum number of results (1-100, default: 20).
-
-        Returns:
-            List of citing or referenced articles.
-        """
-        # Phase 2.1: Input normalization
-        normalized_pmid = InputNormalizer.normalize_pmid_single(pmid) if pmid else None
-        normalized_pmcid = InputNormalizer.normalize_pmcid(str(pmcid)) if pmcid else None
-        normalized_limit = InputNormalizer.normalize_limit(limit, default=20, min_val=1, max_val=100)
-
-        logger.info(f"Getting {direction} for PMID={normalized_pmid}, PMCID={normalized_pmcid}")
-
-        try:
-            if not normalized_pmid and not normalized_pmcid:
-                return ResponseFormatter.error(
-                    error="Either pmid or pmcid is required",
-                    suggestion="Provide a PMID or PMC ID",
-                    example='get_europe_pmc_citations(pmid="12345678")',
-                    tool_name="get_europe_pmc_citations",
-                )
-
-            client = get_europe_pmc_client()
-
-            # Determine source and ID
-            if normalized_pmid:
-                source = "MED"
-                article_id = normalized_pmid
-            else:
-                source = "PMC"
-                if normalized_pmcid and normalized_pmcid.startswith("PMC"):
-                    article_id = normalized_pmcid[3:]
-                else:
-                    article_id = normalized_pmcid or ""
-
-            # Get citations or references
-            if direction == "references":
-                results = await client.get_references(source, str(article_id), limit=normalized_limit)
-                direction_label = "References (Bibliography)"
-                direction_desc = "papers cited BY this article"
-            else:
-                results = await client.get_citations(source, str(article_id), limit=normalized_limit)
-                direction_label = "Citing Articles"
-                direction_desc = "papers that cite this article"
-
-            if not results:
-                id_str = f"PMID:{normalized_pmid}" if normalized_pmid else f"PMC:{normalized_pmcid}"
-                return ResponseFormatter.no_results(
-                    query=id_str,
-                    suggestions=[
-                        f"Article may have no {direction}",
-                        "Try find_citing_articles or get_article_references for PubMed data",
-                    ],
-                )
-
-            # Format output
-            id_str = f"PMID:{pmid}" if pmid else f"PMC:{pmcid}"
-            output = f"📖 **{direction_label} for {id_str}**\n"
-            output += f"Found **{len(results)}** {direction_desc}\n\n"
-
-            # Format results
-            for i, article in enumerate(results, 1):
-                title = article.get("title", "No title")
-                authors = article.get("authors", [])
-                year = article.get("year", article.get("pub_year", ""))
-                journal = article.get("journal", "")
-                ref_pmid = article.get("pmid", "")
-                doi = article.get("doi", "")
-
-                # Author string
-                if authors:
-                    author_str = f"{authors[0]} et al." if len(authors) > 2 else ", ".join(authors)
-                else:
-                    author_str = article.get("author_string", "Unknown")
-
-                output += f"**{i}.** {title}\n"
-                output += f"   👤 {author_str} | 📅 {year}"
-                if journal:
-                    output += f" | 📰 {journal}"
-                output += "\n"
-
-                ids = []
-                if ref_pmid:
-                    ids.append(f"PMID:{ref_pmid}")
-                if doi:
-                    ids.append(f"DOI:{doi}")
-                if ids:
-                    output += f"   🔗 {' | '.join(ids)}\n"
-
-                output += "\n"
-
-            return output
-
         except Exception as e:
-            logger.warning("Europe PMC citation lookup failed (%s)", type(e).__name__)
+            logger.warning("Text-mined term lookup failed (%s)", type(e).__name__)
             return ResponseFormatter.error(
-                error=e,
-                suggestion="Check the ID and direction parameter",
-                tool_name="get_europe_pmc_citations",
+                error="Europe PMC text-mining source unavailable.",
+                suggestion="Retry later after confirming the article identifier.",
+                tool_name="get_text_mined_terms",
+                output_format=normalized_output_format,
             )

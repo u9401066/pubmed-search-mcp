@@ -6,15 +6,15 @@ Target: crossref.py coverage from 0% to 90%+
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
+import pytest
+
+from pubmed_search.infrastructure.sources.base_client import APIRequestError
 from pubmed_search.infrastructure.sources.crossref import (
     CrossRefClient,
-    get_citation_count,
-    get_crossref_client,
-    get_doi_metadata,
-    search_crossref,
 )
+from pubmed_search.shared.async_utils import RetryableOperationError
 
 # =============================================================================
 # CrossRefClient - Basic Tests
@@ -99,19 +99,21 @@ class TestCrossRefClientGetWork:
         """Test rate limit error (429)."""
         client = CrossRefClient()
         client._min_interval = 0
-        client._make_request = AsyncMock(return_value=None)
+        client._make_request = AsyncMock(
+            side_effect=RetryableOperationError("CrossRef request failed", status_code=429)
+        )
 
-        result = await client.get_work("10.1000/test")
-        assert result is None
+        with pytest.raises(RetryableOperationError):
+            await client.get_work("10.1000/test")
 
     async def test_get_work_url_error(self):
         """Test URL error."""
         client = CrossRefClient()
         client._min_interval = 0
-        client._make_request = AsyncMock(return_value=None)
+        client._make_request = AsyncMock(side_effect=APIRequestError("CrossRef"))
 
-        result = await client.get_work("10.1000/test")
-        assert result is None
+        with pytest.raises(APIRequestError):
+            await client.get_work("10.1000/test")
 
 
 # =============================================================================
@@ -153,7 +155,7 @@ class TestCrossRefClientSearch:
         """Test search with no results."""
         client = CrossRefClient()
         client._min_interval = 0
-        client._make_request = AsyncMock(return_value=None)
+        client._make_request = AsyncMock(return_value={"total-results": 0, "items": []})
 
         result = await client.search("nonexistent query xyz")
         assert result["total_results"] == 0
@@ -181,7 +183,7 @@ class TestCrossRefClientSearchByTitle:
     async def test_search_by_title_empty(self):
         """Test title search with no results."""
         client = CrossRefClient()
-        client._make_request = AsyncMock(return_value=None)
+        client._make_request = AsyncMock(return_value={"items": []})
 
         results = await client.search_by_title("Nonexistent Title")
         assert results == []
@@ -253,7 +255,7 @@ class TestCrossRefClientGetCitations:
         client = CrossRefClient()
         client._min_interval = 0
         client.get_work = AsyncMock(return_value=None)
-        client._make_request = AsyncMock(return_value=None)
+        client._make_request = AsyncMock(return_value={"items": []})
 
         result = await client.get_citations("10.1/notfound")
         assert result["citation_count"] == 0
@@ -324,7 +326,7 @@ class TestCrossRefClientFunders:
     async def test_search_funders_empty(self):
         """Test funder search with no matches."""
         client = CrossRefClient()
-        client._make_request = AsyncMock(return_value=None)
+        client._make_request = AsyncMock(return_value={"items": []})
 
         assert await client.search_funders("nonexistent") == []
 
@@ -439,68 +441,3 @@ class TestCrossRefClientDate:
         """Test funder DOI normalization from URL form."""
         result = CrossRefClient._normalize_funder_id("https://doi.org/10.13039/100000001")
         assert result == "10.13039/100000001"
-
-
-# =============================================================================
-# Module Level Functions Tests
-# =============================================================================
-
-
-class TestModuleFunctions:
-    """Tests for module-level convenience functions."""
-
-    async def test_get_crossref_client_singleton(self):
-        """Test client singleton creation."""
-        client1 = get_crossref_client()
-        client2 = get_crossref_client()
-        # Should return same instance
-        assert client1 is client2
-
-    async def test_get_doi_metadata(self):
-        """Test get_doi_metadata function."""
-        with patch.object(CrossRefClient, "get_work") as mock_get:
-            mock_get.return_value = {"DOI": "10.1/test"}
-            _result = await get_doi_metadata("10.1/test")
-            # Note: Will use singleton, so result depends on mock
-
-    async def test_search_crossref(self):
-        """Test search_crossref function."""
-        with patch.object(CrossRefClient, "search") as mock_search:
-            mock_search.return_value = {
-                "items": [{"DOI": "10.1/a"}],
-                "total_results": 1,
-            }
-            results = await search_crossref("test query", limit=5)
-            assert isinstance(results, list)
-
-    async def test_get_citation_count(self):
-        """Test get_citation_count function."""
-        with patch.object(CrossRefClient, "get_work") as mock_get:
-            mock_get.return_value = {"is-referenced-by-count": 42}
-            # Will use singleton
-            _count = await get_citation_count("10.1/test")
-            # Result depends on singleton state
-
-
-# =============================================================================
-# Rate Limiting Tests
-# =============================================================================
-
-
-class TestRateLimiting:
-    """Tests for rate limiting functionality."""
-
-    async def test_rate_limit_timing(self):
-        """Test rate limiting applies timing."""
-        client = CrossRefClient()
-        client._min_interval = 0.01  # Very small for test speed
-
-        import time
-
-        start = time.time()
-        await client._rate_limit()
-        await client._rate_limit()
-        elapsed = time.time() - start
-
-        # Should have waited at least min_interval once
-        assert elapsed >= 0.009  # Allow small margin

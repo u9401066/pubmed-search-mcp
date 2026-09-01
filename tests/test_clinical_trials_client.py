@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from pubmed_search.infrastructure.sources.base_client import APIRequestError
 from pubmed_search.infrastructure.sources.clinical_trials import (
     BASE_URL,
     DEFAULT_TIMEOUT,
@@ -160,11 +161,11 @@ class TestClinicalTrialsClientSearch:
 
         sensitive_query = "private cohort diabetes treatment"
         with caplog.at_level("WARNING"):
-            results = await client.search(sensitive_query)
+            with pytest.raises(APIRequestError) as exc_info:
+                await client.search(sensitive_query)
 
-        assert results == []
         assert sensitive_query not in caplog.text
-        assert f"query_length={len(sensitive_query)}" in caplog.text
+        assert sensitive_query not in str(exc_info.value)
 
     async def test_search_http_error(self):
         """Test search handles HTTP errors gracefully."""
@@ -182,9 +183,8 @@ class TestClinicalTrialsClientSearch:
         client = ClinicalTrialsClient()
         client._client = mock_async_client
 
-        results = await client.search("diabetes treatment")
-
-        assert results == []
+        with pytest.raises(APIRequestError):
+            await client.search("diabetes treatment")
 
     async def test_search_generic_error(self):
         """Test search handles generic errors gracefully."""
@@ -195,9 +195,8 @@ class TestClinicalTrialsClientSearch:
         client = ClinicalTrialsClient()
         client._client = mock_async_client
 
-        results = await client.search("diabetes treatment")
-
-        assert results == []
+        with pytest.raises(APIRequestError):
+            await client.search("diabetes treatment")
 
     async def test_search_limit_capped(self, mock_response_data):
         """Test that limit is capped at 20."""
