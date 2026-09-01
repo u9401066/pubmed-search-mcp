@@ -109,7 +109,8 @@ class TestAPSPipelineScheduler:
         scheduler_settings: AppSettings,
     ):
         runner = AsyncMock()
-        runner.execute_saved_pipeline = AsyncMock(side_effect=RuntimeError("boom"))
+        private_detail = "/srv/private/pipelines/weekly_remi.yaml?token=scheduler-secret"
+        runner.execute_saved_pipeline = AsyncMock(side_effect=RuntimeError(private_detail))
         scheduler = APSPipelineScheduler(store=pipeline_store, runner=runner, settings=scheduler_settings)
         scheduler.schedule("weekly_remi", "0 9 * * 1")
 
@@ -118,7 +119,8 @@ class TestAPSPipelineScheduler:
         entry = pipeline_store.get_schedule("weekly_remi")
         assert entry is not None
         assert entry.last_status == "error"
-        assert entry.last_error == "boom"
+        assert entry.last_error == "Scheduled pipeline execution failed"
+        assert private_detail not in entry.last_error
 
     async def test_execute_job_preserves_partial_runner_status(
         self,
@@ -133,7 +135,7 @@ class TestAPSPipelineScheduler:
                 started=datetime.now(timezone.utc),
                 finished=datetime.now(timezone.utc),
                 status="partial",
-                error_message="Pipeline execution completed with source warnings or failed steps",
+                error_message="partial at /srv/private/pipeline.yaml token=scheduler-secret",
             )
         )
         scheduler = APSPipelineScheduler(store=pipeline_store, runner=runner, settings=scheduler_settings)
@@ -144,7 +146,35 @@ class TestAPSPipelineScheduler:
         entry = pipeline_store.get_schedule("weekly_remi")
         assert entry is not None
         assert entry.last_status == "partial"
-        assert entry.last_error == "Pipeline execution completed with source warnings or failed steps"
+        assert entry.last_error == "Pipeline execution completed partially"
+        assert "private" not in entry.last_error
+        assert "secret" not in entry.last_error
+
+    async def test_execute_job_does_not_persist_failed_run_diagnostics(
+        self,
+        pipeline_store: PipelineStore,
+        scheduler_settings: AppSettings,
+    ):
+        runner = AsyncMock()
+        runner.execute_saved_pipeline = AsyncMock(
+            return_value=PipelineRun(
+                run_id="run_error",
+                pipeline_name="weekly_remi",
+                started=datetime.now(timezone.utc),
+                finished=datetime.now(timezone.utc),
+                status="error",
+                error_message="failed at /srv/private/pipeline.yaml?token=scheduler-secret",
+            )
+        )
+        scheduler = APSPipelineScheduler(store=pipeline_store, runner=runner, settings=scheduler_settings)
+        scheduler.schedule("weekly_remi", "0 9 * * 1")
+
+        await scheduler._execute_job("weekly_remi")
+
+        entry = pipeline_store.get_schedule("weekly_remi")
+        assert entry is not None
+        assert entry.last_status == "error"
+        assert entry.last_error == "Pipeline execution failed"
 
     def test_invalid_cron_raises(
         self,

@@ -5,9 +5,9 @@ Coverage targets:
 - Dual-scope resolution (workspace → global)
 - Index management (JSON metadata)
 - Run history (save, get, prune)
-- Name normalization on load
+- Strict canonical-name validation on every persistence path
 - File not found errors
-- Auto-fix on load (validation re-applied)
+- Fail-closed validation on load
 - Workspace fallback when not configured
 """
 
@@ -22,10 +22,10 @@ import yaml
 
 from pubmed_search.application.pipeline import (
     PipelineConfig,
-    PipelineExecutionSettings,
+    PipelineOutput,
     PipelineStep,
 )
-from pubmed_search.application.pipeline.store import PipelineStore, _config_to_dict
+from pubmed_search.application.pipeline.store import PipelineHistoryError, PipelineStore, _config_to_dict
 from pubmed_search.domain.entities.pipeline import (
     PipelineRun,
     PipelineScope,
@@ -84,7 +84,7 @@ def template_config() -> PipelineConfig:
     """A template-based pipeline config."""
     return PipelineConfig(
         template="pico",
-        template_params={"query": "remimazolam vs propofol"},
+        template_params={"P": "ICU patients", "I": "remimazolam"},
     )
 
 
@@ -117,7 +117,7 @@ class TestConfigToDict:
     def test_output_included_when_non_default(self):
         config = PipelineConfig(
             steps=[PipelineStep(id="s1", action="search")],
-            execution=PipelineExecutionSettings(limit=10, ranking="quality"),
+            output=PipelineOutput(limit=10, ranking="quality"),
         )
         d = _config_to_dict(config)
         assert "output" in d
@@ -139,12 +139,12 @@ class TestConfigToDict:
 
     def test_globals_and_variables_included(self):
         config = PipelineConfig(
-            globals={"sources": "pubmed", "limit": "${limit}"},
+            globals={"sources": ["pubmed"], "limit": "${limit}"},
             variables={"limit": 25, "topic": "remimazolam"},
             steps=[PipelineStep(id="s1", action="search", params={"query": "${topic}"})],
         )
         d = _config_to_dict(config)
-        assert d["globals"] == {"sources": "pubmed", "limit": "${limit}"}
+        assert d["globals"] == {"sources": ["pubmed"], "limit": "${limit}"}
         assert d["variables"] == {"limit": 25, "topic": "remimazolam"}
 
 
@@ -240,7 +240,7 @@ class TestStoreSave:
 
     def test_save_load_preserves_globals_and_variables(self, store_dual: PipelineStore):
         config = PipelineConfig(
-            globals={"sources": "pubmed", "limit": "${limit}"},
+            globals={"sources": ["pubmed"], "limit": "${limit}"},
             variables={"limit": 25, "topic": "remimazolam"},
             steps=[PipelineStep(id="s1", action="search", params={"query": "${topic}"})],
         )
@@ -248,7 +248,7 @@ class TestStoreSave:
         store_dual.save("with_globals", config)
         loaded, _meta = store_dual.load("with_globals")
 
-        assert loaded.globals == {"sources": "pubmed", "limit": "${limit}"}
+        assert loaded.globals == {"sources": ["pubmed"], "limit": "${limit}"}
         assert loaded.variables == {"limit": 25, "topic": "remimazolam"}
 
     def test_save_global_scope(self, store_dual: PipelineStore, simple_config: PipelineConfig, global_dir: Path):
@@ -265,10 +265,21 @@ class TestStoreSave:
         meta, _ = store_global_only.save("auto_pipe", simple_config, scope="auto")
         assert meta.scope == PipelineScope.GLOBAL
 
-    def test_save_normalizes_name(self, store_dual: PipelineStore, simple_config: PipelineConfig):
-        meta, result = store_dual.save("My Pipeline!!", simple_config)
-        assert meta.name == "my_pipeline"
-        assert result.has_fixes
+    def test_save_rejects_a_name_that_would_previously_collide(
+        self, store_dual: PipelineStore, simple_config: PipelineConfig
+    ):
+        store_dual.save("my_pipeline", simple_config)
+
+        with pytest.raises(ValueError, match="must match"):
+            store_dual.save("My Pipeline!!", simple_config)
+
+        assert store_dual.exists("my_pipeline") is True
+
+    def test_save_rejects_csv_and_duplicate_tags(self, store_dual: PipelineStore, simple_config: PipelineConfig):
+        with pytest.raises(TypeError, match="JSON array"):
+            store_dual.save("csv_tags", simple_config, tags="a,b")  # type: ignore[arg-type]
+        with pytest.raises(ValueError, match="Duplicate"):
+            store_dual.save("duplicate_tags", simple_config, tags=["ICU", "icu"])
 
     def test_save_upsert_preserves_created(self, store_dual: PipelineStore, simple_config: PipelineConfig):
         meta1, _ = store_dual.save("upsert", simple_config)
@@ -287,14 +298,13 @@ class TestStoreSave:
         assert meta.step_count == 0  # template, no explicit steps
         assert result.valid
 
-    def test_save_with_validation_fixes(self, store_dual: PipelineStore):
-        """Config with fixable issues should be saved with fixes applied."""
+    def test_save_rejects_invalid_output_budget(self, store_dual: PipelineStore):
         config = PipelineConfig(
-            steps=[PipelineStep(id="", action="find")]  # auto-gen id + alias fix
+            steps=[PipelineStep(id="search", action="search")],
+            output=PipelineOutput(limit=0),
         )
-        meta, result = store_dual.save("fixable", config)
-        assert result.valid is True
-        assert result.has_fixes
+        with pytest.raises(ValueError, match="output limit"):
+            store_dual.save("invalid_budget", config)
 
 
 # =========================================================================
@@ -316,10 +326,10 @@ class TestStoreLoad:
         config, meta = store_dual.load("saved:prefixed")
         assert meta.name == "prefixed"
 
-    def test_load_case_insensitive(self, store_dual: PipelineStore, simple_config: PipelineConfig):
-        store_dual.save("MyPipe", simple_config)
-        config, meta = store_dual.load("mypipe")
-        assert config is not None
+    def test_load_rejects_noncanonical_case(self, store_dual: PipelineStore, simple_config: PipelineConfig):
+        store_dual.save("mypipe", simple_config)
+        with pytest.raises(ValueError, match="must match"):
+            store_dual.load("MyPipe")
 
     def test_load_workspace_priority(
         self, store_dual: PipelineStore, simple_config: PipelineConfig, global_dir: Path, workspace_dir: Path
@@ -342,19 +352,18 @@ class TestStoreLoad:
         with pytest.raises(FileNotFoundError, match="not found"):
             store_dual.load("nonexistent")
 
-    def test_load_auto_fixes_saved_back(self, store_dual: PipelineStore, workspace_dir: Path):
-        """If loaded file has fixable issues, fixes are saved back."""
-        # Write a YAML with a fixable action alias
+    def test_load_rejects_retired_action_alias_without_rewriting(self, store_dual: PipelineStore, workspace_dir: Path):
         yaml_path = workspace_dir / ".pubmed-search" / "pipelines" / "fixable.yaml"
         yaml_path.write_text(
             yaml.dump({"steps": [{"id": "s1", "action": "find"}]}),
             encoding="utf-8",
         )
-        config, meta = store_dual.load("fixable")
-        assert config.steps[0].action == "search"  # auto-fixed
-        # Check that fix was saved back
+
+        with pytest.raises(ValueError, match="unknown action"):
+            store_dual.load("fixable")
+
         reloaded = yaml.safe_load(yaml_path.read_text(encoding="utf-8"))
-        assert reloaded["steps"][0]["action"] == "search"
+        assert reloaded["steps"][0]["action"] == "find"
 
 
 # =========================================================================
@@ -487,9 +496,10 @@ class TestStoreExists:
     def test_exists_false(self, store_dual: PipelineStore):
         assert store_dual.exists("nonexistent") is False
 
-    def test_exists_case_insensitive(self, store_dual: PipelineStore, simple_config: PipelineConfig):
-        store_dual.save("CamelCase", simple_config)
-        assert store_dual.exists("camelcase") is True
+    def test_exists_rejects_noncanonical_case(self, store_dual: PipelineStore, simple_config: PipelineConfig):
+        store_dual.save("camelcase", simple_config)
+        with pytest.raises(ValueError, match="must match"):
+            store_dual.exists("CamelCase")
 
 
 # =========================================================================
@@ -574,6 +584,23 @@ class TestStoreRunHistory:
         store_dual.save("no_runs", simple_config)
         history = store_dual.get_history("no_runs")
         assert history == []
+
+    def test_history_fails_closed_on_corrupt_record_without_logging_path(
+        self,
+        store_dual: PipelineStore,
+        simple_config: PipelineConfig,
+        caplog: pytest.LogCaptureFixture,
+    ):
+        store_dual.save("corrupt", simple_config)
+        runs_dir = store_dual._runs_dir_for(PipelineScope.WORKSPACE) / "corrupt"
+        runs_dir.mkdir(parents=True, exist_ok=True)
+        (runs_dir / "private-token.json").write_text('{"invalid":', encoding="utf-8")
+
+        with pytest.raises(PipelineHistoryError, match="stored record is invalid"):
+            store_dual.get_history("corrupt")
+
+        assert "private-token" not in caplog.text
+        assert str(runs_dir) not in caplog.text
 
 
 # =========================================================================

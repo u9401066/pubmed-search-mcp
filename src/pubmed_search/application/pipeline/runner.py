@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
@@ -17,10 +18,12 @@ from pubmed_search.application.pipeline.templates import materialize_pipeline_co
 from pubmed_search.domain.entities.pipeline import PipelineRun
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+    from contextlib import AbstractContextManager
+
+    from pubmed_search.application.pipeline.budgets import PipelineExecutionPolicy
     from pubmed_search.application.pipeline.executor import (
-        AlternateSearchFn,
-        AlternateSearchPageFn,
-        SourceKeyResolver,
+        AlternateSearchAdapterFn,
     )
     from pubmed_search.application.pipeline.store import PipelineStore
     from pubmed_search.domain.entities.article import UnifiedArticle
@@ -36,27 +39,28 @@ class StoredPipelineRunner:
         *,
         store: PipelineStore,
         searcher: Any,
-        alternate_search_fn: AlternateSearchFn | None = None,
-        source_key_resolver: SourceKeyResolver | None = None,
-        alternate_search_page_fn: AlternateSearchPageFn | None = None,
+        alternate_search_adapter: AlternateSearchAdapterFn | None = None,
+        semantic_enhancer_factory: Callable[[], Any] | None = None,
+        execution_policy: PipelineExecutionPolicy | None = None,
+        execution_context: Callable[[], AbstractContextManager[None]] | None = None,
     ) -> None:
         self._store = store
         self._searcher = searcher
-        self._alternate_search_fn = alternate_search_fn
-        self._alternate_search_page_fn = alternate_search_page_fn
-        self._source_key_resolver = source_key_resolver
+        self._alternate_search_adapter = alternate_search_adapter
+        self._semantic_enhancer_factory = semantic_enhancer_factory
+        self._execution_policy = execution_policy
+        self._execution_context = execution_context or nullcontext
 
     async def execute_saved_pipeline(self, name: str) -> PipelineRun:
         """Execute one saved pipeline and persist report + run history."""
-        pipeline_name = name.strip().lower()
-        config, meta = self._store.load(pipeline_name)
+        config, meta = self._store.load(name)
         config = materialize_pipeline_config(config, default_name=meta.name)
 
         executor = PipelineExecutor(
             searcher=self._searcher,
-            alternate_search_fn=self._alternate_search_fn,
-            source_key_resolver=self._source_key_resolver,
-            alternate_search_page_fn=self._alternate_search_page_fn,
+            alternate_search_adapter=self._alternate_search_adapter,
+            semantic_enhancer_factory=self._semantic_enhancer_factory,
+            execution_policy=self._execution_policy,
         )
 
         started = datetime.now(timezone.utc)
@@ -65,7 +69,8 @@ class StoredPipelineRunner:
         previous_pmids = set(previous_run.pmids) if previous_run else set()
 
         try:
-            articles, step_results = await executor.execute(config)
+            with self._execution_context():
+                articles, step_results = await executor.execute(config)
             finished = datetime.now(timezone.utc)
             report = generate_pipeline_report(articles, step_results, config)
             pmids = self._extract_pmids(articles)

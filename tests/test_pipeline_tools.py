@@ -1,13 +1,12 @@
 """Tests for pipeline MCP tools.
 
 Coverage targets:
-- manage_pipeline: unified facade over all pipeline actions
 - save_pipeline: YAML parsing, validation, store integration
 - list_pipelines: empty, with data, tag/scope filtering
 - load_pipeline: saved name, "saved:" prefix, "file:" prefix, not found
 - delete_pipeline: success, not found
 - get_pipeline_history: success, empty, not found
-- schedule_pipeline: real scheduler-backed set/remove flow
+- schedule_pipeline / unschedule_pipeline: scheduler-backed create/update/remove flow
 - Error cases: store not initialized, invalid YAML, unfixable configs
 """
 
@@ -21,20 +20,17 @@ import pytest
 
 from pubmed_search.application.pipeline import (
     PipelineConfig,
-    PipelineExecutionSettings,
+    PipelineOutput,
     PipelineStep,
     ScheduleEntry,
-    ValidationFix,
     ValidationResult,
 )
+from pubmed_search.application.pipeline.store import PipelineHistoryError
 from pubmed_search.domain.entities.pipeline import PipelineMeta, PipelineRun, PipelineScope
 from pubmed_search.presentation.mcp_server.tools.pipeline_tools import (
+    PipelineToolRuntime,
     _config_to_display_dict,
-    get_pipeline_scheduler,
-    get_pipeline_store,
     register_pipeline_tools,
-    set_pipeline_scheduler,
-    set_pipeline_store,
 )
 from pubmed_search.shared.tenancy import TenantIdentity, bind_tenant
 
@@ -46,34 +42,30 @@ if TYPE_CHECKING:
 # =========================================================================
 
 
-@pytest.fixture(autouse=True)
-def _reset_store():
-    """Reset shared module state before/after each test."""
-    set_pipeline_store(None)
-    set_pipeline_scheduler(None)
-    yield
-    set_pipeline_store(None)
-    set_pipeline_scheduler(None)
+@pytest.fixture()
+def runtime():
+    """A fresh server-scoped dependency container for every test."""
+    return PipelineToolRuntime(base_store=None)
 
 
 @pytest.fixture()
-def mock_store():
+def mock_store(runtime):
     """A MagicMock PipelineStore."""
     store = MagicMock()
-    set_pipeline_store(store)
+    runtime.base_store = store
     return store
 
 
 @pytest.fixture()
-def mock_scheduler():
-    """A MagicMock scheduler shared through pipeline_tools globals."""
+def mock_scheduler(runtime):
+    """A scheduler bound to the test server runtime."""
     scheduler = MagicMock()
-    set_pipeline_scheduler(scheduler)
+    runtime.scheduler = scheduler
     return scheduler
 
 
 @pytest.fixture()
-def real_store(tmp_path: Path):
+def real_store(tmp_path: Path, runtime):
     """A real PipelineStore with tmp dirs."""
     from pubmed_search.application.pipeline.store import PipelineStore
 
@@ -82,12 +74,12 @@ def real_store(tmp_path: Path):
     workspace_dir = tmp_path / "workspace"
     workspace_dir.mkdir()
     store = PipelineStore(global_data_dir=global_dir, workspace_dir=workspace_dir)
-    set_pipeline_store(store)
+    runtime.base_store = store
     return store
 
 
 @pytest.fixture()
-def mcp():
+def mcp(runtime):
     """A mock MCP server to capture registered tools."""
     mock_mcp = MagicMock()
     registered_tools = {}
@@ -100,7 +92,7 @@ def mcp():
         return decorator
 
     mock_mcp.tool = mock_tool_decorator
-    register_pipeline_tools(mock_mcp)
+    register_pipeline_tools(mock_mcp, runtime=runtime)
     return registered_tools
 
 
@@ -110,74 +102,51 @@ def mcp():
 
 
 class TestToolRegistration:
-    """Tests that facade + legacy tools are registered."""
+    """Tests that only single-purpose pipeline tools are registered."""
 
     def test_all_tools_registered(self, mcp):
         expected = {
-            "manage_pipeline",
             "save_pipeline",
             "list_pipelines",
             "load_pipeline",
             "delete_pipeline",
             "get_pipeline_history",
             "schedule_pipeline",
+            "unschedule_pipeline",
         }
         assert set(mcp.keys()) == expected
 
 
 # =========================================================================
-# manage_pipeline
+# Server-scoped runtime
 # =========================================================================
 
 
-class TestManagePipeline:
-    """Tests for manage_pipeline facade."""
+class TestPipelineRuntime:
+    """Tests for explicit server-scoped dependencies."""
 
-    def test_manage_list_uses_list_action(self, mcp, mock_store):
-        mock_store.list_pipelines.return_value = []
-        output = mcp["manage_pipeline"](action="list", tag="sedation")
-        assert "No saved pipelines" in output
-        mock_store.list_pipelines.assert_called_once_with(tag="sedation", scope="")
+    def test_process_global_dependency_accessors_are_not_exposed(self):
+        from pubmed_search.presentation.mcp_server.tools import pipeline_tools
 
-    def test_manage_load_accepts_name_alias(self, mcp, mock_store):
-        config = PipelineConfig(template="pico")
-        meta = PipelineMeta(name="loaded", scope=PipelineScope.WORKSPACE)
-        mock_store.load.return_value = (config, meta)
+        removed_api = (
+            "get_pipeline_store",
+            "set_pipeline_store",
+            "get_pipeline_scheduler",
+            "set_pipeline_scheduler",
+        )
+        assert all(not hasattr(pipeline_tools, name) for name in removed_api)
 
-        output = mcp["manage_pipeline"](action="load", name="loaded")
-        assert "loaded" in output
-        mock_store.load.assert_called_once_with("loaded")
+    def test_dependencies_are_empty_initially(self, runtime):
+        assert runtime.store_for_current_tenant() is None
+        assert runtime.scheduler is None
 
-    def test_manage_invalid_action(self, mcp):
-        output = mcp["manage_pipeline"](action="unknown")
-        assert "Unknown pipeline action" in output
-
-    def test_manage_save_non_dict_yaml_has_facade_specific_hint(self, mcp, mock_store):
-        output = mcp["manage_pipeline"](action="save", name="x", config="- just\n- a\n- list")
-        assert "mapping/object" in output
-        assert "manage_pipeline(action='save')" in output
-        assert "save_pipeline" in output
-
-
-# =========================================================================
-# set/get pipeline store
-# =========================================================================
-
-
-class TestStoreAccessors:
-    """Tests for shared pipeline store / scheduler accessors."""
-
-    def test_get_returns_none_initially(self):
-        assert get_pipeline_store() is None
-        assert get_pipeline_scheduler() is None
-
-    def test_set_and_get(self):
+    def test_dependencies_are_owned_by_runtime(self, runtime):
         store = MagicMock()
         scheduler = MagicMock()
-        set_pipeline_store(store)
-        set_pipeline_scheduler(scheduler)
-        assert get_pipeline_store() is store
-        assert get_pipeline_scheduler() is scheduler
+        runtime.base_store = store
+        runtime.scheduler = scheduler
+        assert runtime.store_for_current_tenant() is store
+        assert runtime.scheduler is scheduler
 
 
 # =========================================================================
@@ -236,27 +205,35 @@ class TestSavePipeline:
             tags=["a", "b"],
             config_hash="x",
         )
-        result = ValidationResult(valid=True, config=PipelineConfig(template="pico"))
+        result = ValidationResult(
+            valid=True,
+            config=PipelineConfig(template="pico", template_params={"P": "ICU", "I": "remimazolam"}),
+        )
         mock_store.save.return_value = (meta, result)
 
+        output = mcp["save_pipeline"](
+            name="tagged",
+            config="template: pico\ntemplate_params:\n  P: ICU\n  I: remimazolam",
+            tags=["a", "b"],
+        )
+        assert "tagged" in output
+        mock_store.save.assert_called_once_with(
+            name="tagged",
+            config=result.config,
+            tags=["a", "b"],
+            description="",
+            scope="auto",
+        )
+
+    def test_save_rejects_csv_tags_without_coercion(self, mcp, mock_store):
         output = mcp["save_pipeline"](
             name="tagged",
             config="template: pico",
             tags="a,b",
         )
-        assert "tagged" in output
 
-    def test_save_shows_auto_fixes(self, mcp, mock_store):
-        meta = PipelineMeta(name="fixed", scope=PipelineScope.WORKSPACE, config_hash="x")
-        result = ValidationResult(
-            valid=True,
-            fixes=[ValidationFix(field="step.action", original="find", corrected="search", reason="alias")],
-            config=PipelineConfig(steps=[PipelineStep(id="s1", action="search")]),
-        )
-        mock_store.save.return_value = (meta, result)
-
-        output = mcp["save_pipeline"](name="fixed", config="steps:\n  - id: s1\n    action: search")
-        assert "Auto-fixed" in output or "🔧" in output
+        assert "JSON array" in output
+        mock_store.save.assert_not_called()
 
     def test_save_store_value_error(self, mcp, mock_store):
         mock_store.save.side_effect = ValueError("bad config")
@@ -330,7 +307,7 @@ class TestLoadPipeline:
     def test_load_by_name(self, mcp, mock_store):
         config = PipelineConfig(
             steps=[PipelineStep(id="s1", action="search", params={"query": "test"})],
-            execution=PipelineExecutionSettings(limit=20, ranking="balanced"),
+            output=PipelineOutput(limit=20, ranking="balanced"),
         )
         meta = PipelineMeta(
             name="loaded",
@@ -374,9 +351,20 @@ class TestLoadPipeline:
         mock_store.load_from_path.assert_not_called()
 
     def test_load_not_found(self, mcp, mock_store):
-        mock_store.load.side_effect = FileNotFoundError("not found")
+        private_path = "/srv/private/tenant-a/pipelines/nonexistent.yaml"
+        mock_store.load.side_effect = FileNotFoundError(private_path)
         output = mcp["load_pipeline"](source="nonexistent")
-        assert "not found" in output.lower() or "Error" in output
+        assert "saved pipeline was not found" in output.lower()
+        assert private_path not in output
+
+    def test_missing_file_does_not_expose_host_path(self, mcp, mock_store):
+        private_path = "/srv/private/tenant-a/pipelines/secret.yaml"
+        mock_store.load_from_path.side_effect = FileNotFoundError(private_path)
+
+        output = mcp["load_pipeline"](source="file:requested.yaml")
+
+        assert "pipeline file was not found or is not accessible" in output.lower()
+        assert private_path not in output
 
     def test_load_no_store(self, mcp):
         output = mcp["load_pipeline"](source="x")
@@ -456,6 +444,20 @@ class TestGetPipelineHistory:
         output = mcp["get_pipeline_history"](name="empty")
         assert "no execution history" in output.lower()
 
+    def test_corrupt_history_is_not_reported_as_empty(self, mcp, mock_store):
+        mock_store.exists.return_value = True
+        mock_store.get_history.side_effect = PipelineHistoryError(
+            "private-token at /srv/private/pipeline_runs/bad.json"
+        )
+
+        output = mcp["get_pipeline_history"](name="corrupt")
+
+        assert "stored record is invalid" in output
+        assert "no execution history" not in output.lower()
+        assert "private-token" not in output
+        assert "/srv/private" not in output
+        mock_store.count_history.assert_not_called()
+
     def test_history_not_found(self, mcp, mock_store):
         mock_store.exists.return_value = False
         output = mcp["get_pipeline_history"](name="nonexistent")
@@ -494,7 +496,7 @@ class TestSchedulePipeline:
             last_status="success",
         )
 
-        output = mcp["schedule_pipeline"](name="my_pipe", cron="")
+        output = mcp["unschedule_pipeline"](name="my_pipe")
 
         assert "Schedule removed" in output
         mock_scheduler.unschedule.assert_called_once_with("my_pipe")
@@ -502,6 +504,30 @@ class TestSchedulePipeline:
     def test_no_scheduler(self, mcp):
         output = mcp["schedule_pipeline"](name="test", cron="0 9 * * 1")
         assert "not initialized" in output.lower()
+
+    def test_missing_saved_pipeline_does_not_expose_store_path(self, mcp, mock_scheduler):
+        private_path = "/srv/private/pipelines/test.yaml"
+        mock_scheduler.schedule.side_effect = FileNotFoundError(private_path)
+
+        output = mcp["schedule_pipeline"](name="test", cron="0 9 * * 1")
+
+        assert "saved pipeline 'test' was not found" in output.lower()
+        assert private_path not in output
+
+    def test_scheduler_runtime_failures_are_query_safe(self, mcp, mock_scheduler):
+        secret = "token=private-scheduler-token"
+        mock_scheduler.schedule.side_effect = RuntimeError(secret)
+
+        schedule_output = mcp["schedule_pipeline"](name="test", cron="0 9 * * 1")
+
+        assert "could not create or update" in schedule_output.lower()
+        assert secret not in schedule_output
+
+        mock_scheduler.unschedule.side_effect = RuntimeError(secret)
+        unschedule_output = mcp["unschedule_pipeline"](name="test")
+
+        assert "could not remove" in unschedule_output.lower()
+        assert secret not in unschedule_output
 
 
 # =========================================================================
@@ -515,7 +541,7 @@ class TestConfigToDisplayDict:
     def test_step_config_display(self):
         config = PipelineConfig(
             steps=[PipelineStep(id="s1", action="search", params={"query": "test"})],
-            execution=PipelineExecutionSettings(limit=10, ranking="impact"),
+            output=PipelineOutput(limit=10, ranking="impact"),
         )
         d = _config_to_display_dict(config)
         assert "steps" in d
@@ -541,13 +567,13 @@ class TestConfigToDisplayDict:
     def test_display_includes_json_format_globals_and_variables(self):
         config = PipelineConfig(
             steps=[PipelineStep(id="s1", action="search")],
-            execution=PipelineExecutionSettings(format="json", limit=10, ranking="impact"),
-            globals={"sources": "pubmed"},
+            output=PipelineOutput(format="json", limit=10, ranking="impact"),
+            globals={"sources": ["pubmed"]},
             variables={"topic": "remimazolam"},
         )
         d = _config_to_display_dict(config)
         assert d["output"] == {"format": "json", "limit": 10, "ranking": "impact"}
-        assert d["globals"] == {"sources": "pubmed"}
+        assert d["globals"] == {"sources": ["pubmed"]}
         assert d["variables"] == {"topic": "remimazolam"}
 
 
@@ -569,7 +595,7 @@ class TestToolsIntegration:
         assert "roundtrip" in load_output
 
     def test_save_list_delete_cycle(self, mcp, real_store):
-        config_yaml = "template: pico\ntemplate_params:\n  query: test"
+        config_yaml = "template: pico\ntemplate_params:\n  P: ICU\n  I: remimazolam"
         mcp["save_pipeline"](name="cycle_test", config=config_yaml)
 
         list_output = mcp["list_pipelines"]()
@@ -581,12 +607,9 @@ class TestToolsIntegration:
         list_output2 = mcp["list_pipelines"]()
         assert "No saved pipelines" in list_output2
 
-    def test_save_with_auto_fix(self, mcp, real_store):
-        """Pipeline with 'find' action should be auto-fixed to 'search'."""
+    def test_save_rejects_retired_action_alias(self, mcp, real_store):
         config_yaml = "steps:\n  - id: s1\n    action: find\n    params:\n      query: test"
-        output = mcp["save_pipeline"](name="autofixed", config=config_yaml)
-        assert "✅" in output
-        # The tool internally parses+validates before store.save,
-        # so auto-fix applies at parse time. The save should still succeed.
-        assert "autofixed" in output
-        assert "search" in output  # action was fixed from 'find' to 'search'
+        output = mcp["save_pipeline"](name="rejected", config=config_yaml)
+
+        assert "unknown action" in output.lower()
+        assert "find" in output
