@@ -307,6 +307,21 @@ class TestReferenceVerificationService:
         assert report["summary"]["unresolved"] == 0
 
     @pytest.mark.asyncio
+    async def test_single_reference_timeout_returns_not_checked(self, monkeypatch: pytest.MonkeyPatch):
+        async def slow_verify(_parsed: object) -> dict[str, object]:
+            await asyncio.sleep(1)
+            return {}
+
+        service = ReferenceVerificationService(self.searcher, total_timeout_seconds=0.01)
+        monkeypatch.setattr(service, "_verify_parsed_reference", slow_verify)
+
+        result = await service.verify_reference("PMID:12345", index=1)
+
+        assert result["status"] == "not_checked"
+        assert result["review_required"] is True
+        assert "time budget" in result["notes"][0]
+
+    @pytest.mark.asyncio
     async def test_reference_workers_respect_concurrency_cap(self):
         active = 0
         max_active = 0

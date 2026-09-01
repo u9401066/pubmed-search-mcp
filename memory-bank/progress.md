@@ -61,6 +61,9 @@
   closed instead of becoming a partial or empty report.
 - The browser broker now requires an explicitly provisioned bearer token of at
   least 32 characters and never generates or logs authentication secrets.
+- Reference-verification timeout handling now uses the cross-version
+  `asyncio.TimeoutError` contract, keeping Python 3.10 behavior aligned with
+  Python 3.11–3.13 for both batch prefetch and single-reference deadlines.
 - Made PubMed EFetch and all seven NCBI Extended provider paths validate exact
   envelopes and row identity. Added `clinical-trials-adjunct/v1` so explicit
   Markdown/JSON/TOON adjunct requests preserve retrieval/format coverage and

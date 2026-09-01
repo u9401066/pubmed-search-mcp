@@ -295,7 +295,7 @@ class ReferenceVerificationService:
                 ),
                 timeout=self._remaining_seconds(deadline),
             )
-        except TimeoutError:
+        except asyncio.TimeoutError:
             prefetched_citation_pmids = {}
             prefetched_articles = {}
             timed_out = True
@@ -417,7 +417,7 @@ class ReferenceVerificationService:
                 self._verify_parsed_reference(parsed),
                 timeout=self._total_timeout_seconds,
             )
-        except TimeoutError:
+        except asyncio.TimeoutError:
             return self._not_checked_row(
                 parsed,
                 reason="The reference verification time budget was exhausted",
