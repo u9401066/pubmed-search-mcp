@@ -106,4 +106,4 @@ class InstitutionalFulltextClient:
     def _extract_if_html(probe: ProbeResult) -> dict[str, str] | None:
         if not _success_with_body(probe) or probe.body is None or probe.final_url is None:
             return None
-        return extract_fulltext(probe.body, probe.final_url)
+        return extract_fulltext(probe.body, probe.resolved_url or probe.final_url)

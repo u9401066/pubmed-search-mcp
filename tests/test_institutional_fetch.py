@@ -257,6 +257,15 @@ class TestProbeDirect:
         assert "Timeout" in (result.error or "")
         assert result.advice  # has remediation hint
 
+    async def test_doi_url_with_redirect_query_is_rejected_before_fetch(self):
+        malicious = "https://doi.org/10.1000/test?url=http%3A%2F%2F127.0.0.1%2Finternal"
+        with patch.object(ifetch, "_probe_url", AsyncMock()) as probe:
+            result = await probe_direct(malicious)
+
+        assert result.success is False
+        assert result.error == "invalid DOI"
+        probe.assert_not_awaited()
+
 
 # ---------------------------------------------------------------------------
 # probe_ezproxy
@@ -412,12 +421,12 @@ class TestSafeUrlPreview:
         assert safe_url_preview("") == ""
 
     def test_strips_control_chars(self):
-        assert safe_url_preview("https://x.com/\x00\x07/y") == "https://x.com//y"
+        assert safe_url_preview("https://x.com/\x00\x07/y?token=secret") == "[invalid URL]"
 
     def test_truncates(self):
         long = "https://x.com/" + "a" * 200
         out = safe_url_preview(long, max_len=50)
-        assert len(out) == 50
+        assert out == "https://x.com/…"
         assert out.endswith("…")
 
 
@@ -466,7 +475,7 @@ class TestFetchDirect:
             return fake_resp, [url], None
 
         with patch.object(ifetch, "_probe_url", side_effect=fake_probe):
-            result = await ifetch.fetch_direct("10.1/x")
+            result = await ifetch.fetch_direct("10.1000/x")
 
         assert result.success is True
         assert result.body == body
@@ -480,7 +489,7 @@ class TestFetchDirect:
             return fake_resp, [url], None
 
         with patch.object(ifetch, "_probe_url", side_effect=fake_probe):
-            result = await probe_direct("10.1/x")
+            result = await probe_direct("10.1000/x")
 
         # Diagnostic probe must never carry the body field
         assert result.body is None
@@ -493,10 +502,11 @@ class TestFetchDirect:
             return fake_resp, [url], None
 
         with patch.object(ifetch, "_probe_url", side_effect=fake_probe):
-            result = await ifetch.fetch_direct("10.1/x")
+            result = await ifetch.fetch_direct("10.1000/x")
 
         as_dict = result.to_dict()
         assert "body" not in as_dict
+        assert "resolved_url" not in as_dict
 
 
 class TestFetchEzproxy:
@@ -517,7 +527,7 @@ class TestFetchEzproxy:
             return fake_resp, [url], None
 
         with patch.object(ifetch, "_probe_url", side_effect=fake_probe):
-            result = await ifetch.fetch_ezproxy("10.1/x", config=cfg)
+            result = await ifetch.fetch_ezproxy("10.1000/x", config=cfg)
 
         assert result.success is True
         assert result.body == body
@@ -551,7 +561,7 @@ class TestInstitutionalFulltextClient:
             AsyncMock(return_value=probe),
         ):
             client = InstitutionalFulltextClient(config=EZProxyConfig(proxy_host="", cookie_file="", cookie_string=""))
-            outcome = await client.get_fulltext_by_doi("10.1/x")
+            outcome = await client.get_fulltext_by_doi("10.1000/x")
 
         assert outcome.success is True
         assert outcome.source_used == "direct"
@@ -574,7 +584,7 @@ class TestInstitutionalFulltextClient:
             AsyncMock(return_value=probe),
         ):
             client = InstitutionalFulltextClient(config=EZProxyConfig(proxy_host="", cookie_file="", cookie_string=""))
-            outcome = await client.get_fulltext_by_doi("10.1/x")
+            outcome = await client.get_fulltext_by_doi("10.1000/x")
 
         assert outcome.success is False
 
@@ -598,7 +608,7 @@ class TestInstitutionalFulltextClient:
             AsyncMock(return_value=probe),
         ):
             client = InstitutionalFulltextClient(config=EZProxyConfig(proxy_host="", cookie_file="", cookie_string=""))
-            outcome = await client.get_fulltext_by_doi("10.1/x")
+            outcome = await client.get_fulltext_by_doi("10.1000/x")
 
         assert outcome.success is True
         assert outcome.content_class == "pdf"
@@ -655,7 +665,7 @@ class TestInstitutionalFulltextClient:
             ),
         ):
             client = InstitutionalFulltextClient(config=cfg)
-            outcome = await client.get_fulltext_by_doi("10.1/x")
+            outcome = await client.get_fulltext_by_doi("10.1000/x")
 
         assert outcome.success is True
         assert outcome.source_used == "ezproxy"

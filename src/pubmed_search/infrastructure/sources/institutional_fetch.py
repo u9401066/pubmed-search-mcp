@@ -24,8 +24,11 @@ Security model:
       ``EZPROXY_HOST``, and user-supplied cookies.
     - Cookies are read from a file path the user controls and never stored
       in repository state.
-    - Only http(s) URLs are followed, redirect chain depth is bounded, and
-      the response classification never echoes back raw cookie values.
+    - Every outbound hop must resolve exclusively to public IP addresses.
+    - Only default HTTP(S) ports are allowed; redirects and response bytes are
+      bounded under one total deadline.
+    - Redirect diagnostics expose origins only, and EZproxy cookies are scoped
+      to the initial origin instead of being forwarded across hosts.
 """
 
 from __future__ import annotations
@@ -41,6 +44,13 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 import httpx
 
+from pubmed_search.domain.value_objects import IdentifierValidationError, normalize_doi
+from pubmed_search.infrastructure.http.safe_outbound import (
+    SafeFetchPolicy,
+    SafeOutboundError,
+    fetch_public_url,
+    redact_url_for_log,
+)
 from pubmed_search.shared.settings import load_settings
 
 logger = logging.getLogger(__name__)
@@ -48,6 +58,7 @@ logger = logging.getLogger(__name__)
 _MAX_REDIRECTS = 8
 _DEFAULT_TIMEOUT = 15.0
 _PROBE_BYTES = 96 * 1024  # only sniff first 96KB for content classification
+_MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 _USER_AGENT = (
     "Mozilla/5.0 (compatible; PubMed-Search-MCP/institutional-fetch; +https://github.com/u9401066/pubmed-search-mcp)"
 )
@@ -158,11 +169,31 @@ def rewrite_to_ezproxy(publisher_url: str, proxy_host: str) -> str | None:
     """
     if not proxy_host:
         return None
-    parsed = urlparse(publisher_url)
-    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+    proxy_clean = proxy_host.strip().lower().lstrip(".").rstrip("/")
+    if not re.fullmatch(
+        r"(?=.{1,253}\Z)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+"
+        r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?",
+        proxy_clean,
+    ):
         return None
-    rewritten_host = parsed.netloc.replace(".", "-")
-    proxy_clean = proxy_host.strip().lstrip(".").rstrip("/")
+    try:
+        parsed = urlparse(publisher_url)
+        publisher_host = (parsed.hostname or "").lower()
+        publisher_port = parsed.port
+    except ValueError:
+        return None
+    if (
+        parsed.scheme not in ("http", "https")
+        or not publisher_host
+        or parsed.username
+        or parsed.password
+        or ":" in publisher_host
+    ):
+        return None
+    expected_port = 443 if parsed.scheme == "https" else 80
+    if publisher_port is not None and publisher_port != expected_port:
+        return None
+    rewritten_host = publisher_host.replace(".", "-")
     new_netloc = f"{rewritten_host}.{proxy_clean}"
     return parsed._replace(netloc=new_netloc).geturl()
 
@@ -207,7 +238,7 @@ def load_cookies(cookie_file: str = "", cookie_string: str = "") -> dict[str, st
                 data = json.loads(path.read_text(encoding="utf-8"))
                 cookies.update(_normalize_cookies(data))
             except (OSError, json.JSONDecodeError) as exc:
-                logger.warning("Failed to load EZproxy cookies from %s: %s", path, exc)
+                logger.warning("Failed to load EZproxy cookies (%s)", type(exc).__name__)
     if cookie_string:
         for raw_piece in cookie_string.split(";"):
             piece = raw_piece.strip()
@@ -277,6 +308,7 @@ class ProbeResult:
     advice: str | None = None
     body: bytes | None = None
     content_type: str | None = None
+    resolved_url: str | None = field(default=None, repr=False)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -373,54 +405,40 @@ async def _probe_url(
     cookies: dict[str, str] | None = None,
     timeout: float = _DEFAULT_TIMEOUT,
 ) -> tuple[httpx.Response | None, list[str], str | None]:
-    """Issue a GET, follow up to ``_MAX_REDIRECTS`` redirects (HTTP + soft)."""
-    chain: list[str] = []
+    """Issue one bounded, public-network-only GET including soft redirects."""
     headers = {
         "User-Agent": _USER_AGENT,
         "Accept": "text/html,application/xhtml+xml,application/pdf;q=0.9,*/*;q=0.5",
     }
-    try:
-        async with httpx.AsyncClient(
-            follow_redirects=False,
-            timeout=timeout,
-            cookies=cookies or None,
-        ) as client:
-            current = url
-            for _ in range(_MAX_REDIRECTS):
-                chain.append(current)
-                response = await client.get(current, headers=headers)
-                if response.is_redirect:
-                    location = response.headers.get("location")
-                    if not location:
-                        return response, chain, None
-                    current = str(httpx.URL(current).join(location))
-                    continue
-                # Detect JS / meta-refresh redirects on small HTML responses,
-                # or known interstitial hosts that embed the real URL as a
-                # query param (Elsevier's articleSelectPrefsPerm, etc.).
-                soft: str | None = None
-                host = (httpx.URL(current).host or "").lower()
-                if host in _INTERSTITIAL_HOSTS:
-                    soft = _extract_redirect_from_query(current)
+
+    def _institutional_redirect(current: str, response: httpx.Response) -> str | None:
+        soft: str | None = None
+        host = (httpx.URL(current).host or "").lower()
+        if host in _INTERSTITIAL_HOSTS:
+            soft = _extract_redirect_from_query(current)
+        if soft is None:
+            content_type = response.headers.get("content-type", "").lower()
+            if "html" in content_type and len(response.content) < 16 * 1024:
+                soft = _extract_soft_redirect(response.content)
                 if soft is None:
-                    ct = response.headers.get("content-type", "").lower()
-                    if "html" in ct and len(response.content) < 16 * 1024:
-                        soft = _extract_soft_redirect(response.content)
-                        if soft is None:
-                            # Last-resort: maybe the URL query has the target
-                            # even on hosts we did not pre-classify.
-                            soft = _extract_redirect_from_query(current)
-                if soft:
-                    joined = str(httpx.URL(current).join(soft))
-                    if joined != current and joined not in chain:
-                        current = joined
-                        continue
-                return response, chain, None
-            return None, chain, f"Exceeded {_MAX_REDIRECTS} redirects"
-    except httpx.HTTPError as exc:
-        return None, chain, f"{type(exc).__name__}: {exc}"
-    except Exception as exc:  # defensive: never propagate to MCP tool layer
-        return None, chain, f"unexpected: {exc}"
+                    soft = _extract_redirect_from_query(current)
+        return soft
+
+    try:
+        fetched = await fetch_public_url(
+            url,
+            policy=SafeFetchPolicy(
+                max_bytes=_MAX_RESPONSE_BYTES,
+                total_timeout=timeout,
+                max_redirects=_MAX_REDIRECTS,
+            ),
+            headers=headers,
+            cookies=cookies or None,
+            redirect_extractor=_institutional_redirect,
+        )
+        return fetched.response, list(fetched.redirect_chain), None
+    except SafeOutboundError as exc:
+        return None, list(exc.redirect_chain), str(exc)
 
 
 async def probe_direct(
@@ -442,9 +460,14 @@ async def probe_direct(
     if not doi:
         result.error = "no DOI"
         return result
+    try:
+        canonical_doi = normalize_doi(doi)
+    except IdentifierValidationError:
+        result.error = "invalid DOI"
+        return result
 
     start = time.monotonic()
-    response, chain, error = await _probe_url(f"https://doi.org/{doi.strip()}", timeout=timeout)
+    response, chain, error = await _probe_url(f"https://doi.org/{canonical_doi}", timeout=timeout)
     result.duration_ms = int((time.monotonic() - start) * 1000)
     result.redirect_chain = chain
 
@@ -460,11 +483,12 @@ async def probe_direct(
     sniff = response.content[:_PROBE_BYTES] if response.content else b""
     content_type = response.headers.get("content-type", "")
     content_class = classify_content(content_type, sniff)
-    result.final_url = str(response.url)
+    result.resolved_url = str(response.url)
+    result.final_url = redact_url_for_log(response.url)
     result.status_code = response.status_code
     result.content_class = content_class
     result.content_type = content_type
-    result.content_length = int(response.headers.get("content-length") or len(response.content) or 0)
+    result.content_length = len(response.content)
     result.success = response.status_code < 400 and content_class in _SUCCESS_CLASSES
     if return_body:
         result.body = response.content
@@ -518,10 +542,16 @@ async def probe_ezproxy(
         result.attempted = True
         result.error = "no DOI"
         return result
+    try:
+        canonical_doi = normalize_doi(doi)
+    except IdentifierValidationError:
+        result.attempted = True
+        result.error = "invalid DOI"
+        return result
 
     # Resolve DOI to publisher URL first so we know which host to rewrite.
     start = time.monotonic()
-    base_response, base_chain, base_error = await _probe_url(f"https://doi.org/{doi.strip()}", timeout=timeout)
+    base_response, base_chain, base_error = await _probe_url(f"https://doi.org/{canonical_doi}", timeout=timeout)
     if base_error or base_response is None or not base_response.url:
         result.attempted = True
         result.error = f"DOI resolution failed: {base_error or 'no response'}"
@@ -533,7 +563,7 @@ async def probe_ezproxy(
     proxy_url = rewrite_to_ezproxy(publisher_url, cfg.proxy_host)
     if not proxy_url:
         result.attempted = True
-        result.error = f"Could not rewrite {publisher_url} for EZproxy"
+        result.error = "Could not safely rewrite the publisher URL for EZproxy"
         return result
 
     result.attempted = True
@@ -558,11 +588,12 @@ async def probe_ezproxy(
     sniff = response.content[:_PROBE_BYTES] if response.content else b""
     content_type = response.headers.get("content-type", "")
     content_class = classify_content(content_type, sniff)
-    result.final_url = str(response.url)
+    result.resolved_url = str(response.url)
+    result.final_url = redact_url_for_log(response.url)
     result.status_code = response.status_code
     result.content_class = content_class
     result.content_type = content_type
-    result.content_length = int(response.headers.get("content-length") or len(response.content) or 0)
+    result.content_length = len(response.content)
     result.success = response.status_code < 400 and content_class in _SUCCESS_CLASSES
     if return_body:
         result.body = response.content
@@ -686,12 +717,6 @@ async def diagnose_access(
     return diag
 
 
-_SAFE_PREVIEW_PATTERN = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
-
-
 def safe_url_preview(url: str | None, *, max_len: int = 120) -> str:
-    """Sanitize a URL for logging/display (strip control chars, truncate)."""
-    if not url:
-        return ""
-    cleaned = _SAFE_PREVIEW_PATTERN.sub("", url)
-    return cleaned if len(cleaned) <= max_len else cleaned[: max_len - 1] + "…"
+    """Return a bounded origin-only URL safe for logs and diagnostics."""
+    return redact_url_for_log(url, max_len=max_len)

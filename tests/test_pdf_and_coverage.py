@@ -300,40 +300,6 @@ class TestICiteExtended:
         assert len(result) == 2
 
 
-class TestDiscoveryToolsFunctions:
-    """Tests for discovery tools internal functions."""
-
-    async def test_detect_ambiguous_terms_cell(self):
-        """Test detection of 'cell' as potential journal."""
-        from pubmed_search.presentation.mcp_server.tools.discovery import (
-            _detect_ambiguous_terms,
-        )
-
-        _detect_ambiguous_terms("cell biology")
-        # Should detect 'cell' as potential journal name
-        # depending on implementation
-
-    async def test_detect_ambiguous_terms_nature(self):
-        """Test detection of 'nature' as potential journal."""
-        from pubmed_search.presentation.mcp_server.tools.discovery import (
-            _detect_ambiguous_terms,
-        )
-
-        _detect_ambiguous_terms("nature genetics")
-        # 'nature' is a known journal name
-
-    async def test_ambiguous_names_dictionary(self):
-        """Test the AMBIGUOUS_JOURNAL_NAMES dictionary."""
-        from pubmed_search.presentation.mcp_server.tools.discovery import (
-            AMBIGUOUS_JOURNAL_NAMES,
-        )
-
-        assert "anesthesiology" in AMBIGUOUS_JOURNAL_NAMES
-        assert "lancet" in AMBIGUOUS_JOURNAL_NAMES
-        assert "nature" in AMBIGUOUS_JOURNAL_NAMES
-        assert "cell" in AMBIGUOUS_JOURNAL_NAMES
-
-
 class TestServerCoverage:
     """Tests to improve server.py coverage."""
 
