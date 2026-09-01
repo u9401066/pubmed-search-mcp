@@ -28,7 +28,7 @@
 
 **🌐 語言**: [English](#/overview) | **繁體中文**
 
-**📘 文件地圖**：README 是專案入口與快速導覽；[Docs Site](https://u9401066.github.io/pubmed-search-mcp/) 提供最佳閱讀體驗；[GitHub Wiki](https://github.com/u9401066/pubmed-search-mcp/wiki) 提供 GitHub 內建導覽；實際編修以 source docs 為準：[使用者指南](#/user-guide-zh) | [進階研究工作流](#/advanced-workflows-zh) | [能力導向使用指南](#/tools-usage-guide-zh) | [Unified Search 架構](#/unified-search-architecture-zh) | [41 工具品質稽核](#/tool-quality-audit-zh) | [Provider 資料平面](#/semantic-scholar-api) | [BioMCP 架構分析](#/biomcp-analysis) | [開發者指南](#/developer-guide-zh) | [完整工具索引](#/quick-reference)
+**📘 文件地圖**：README 是專案入口與快速導覽；[Docs Site](https://u9401066.github.io/pubmed-search-mcp/) 提供最佳閱讀體驗；[GitHub Wiki](https://github.com/u9401066/pubmed-search-mcp/wiki) 提供 GitHub 內建導覽；實際編修以 source docs 為準：[使用者指南](#/user-guide-zh) | [進階研究工作流](#/advanced-workflows-zh) | [能力導向使用指南](#/tools-usage-guide-zh) | [Unified Search 架構](#/unified-search-architecture-zh) | [41 工具品質稽核](#/tool-quality-audit-zh) | [60 個學術檢索參考 Repo](reference-repositories/README.md) | [Provider 資料平面](#/semantic-scholar-api) | [BioMCP 架構分析](#/biomcp-analysis) | [開發者指南](#/developer-guide-zh) | [完整工具索引](#/quick-reference)
 
 ---
 
