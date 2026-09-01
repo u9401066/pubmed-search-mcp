@@ -1,6 +1,6 @@
 # Progress (Updated: 2026-09-01)
 
-## Post-v0.7.0 Complete MCP Protocol Acceptance
+## v0.7.1 Complete MCP Protocol Acceptance and Release
 
 - Added a deterministic child-server fixture that keeps the canonical MCP
   registry, strict schemas, tool adapters, application services, durable stores,
@@ -33,6 +33,18 @@
   assertion and a narrow regression test protect it.
 - CI now has explicit source stdio/HTTP and fresh-wheel complete acceptance
   gates; the regular cross-platform matrix also runs the non-slow source paths.
+- Segmented commits were merged through PR #11 at `4237ed0` and tagged as
+  `v0.7.1`. Both duplicate push/PR check suites completed successfully; the
+  release workflow (`33483446706`) then rebuilt and verified the distributions,
+  installed the wheel, smoke-tested the container, published through PyPI
+  Trusted Publishing, and created the GitHub Release.
+- Public verification confirms
+  `https://pypi.org/project/pubmed-search-mcp/0.7.1/` exposes the 0.7.1 wheel and
+  source distribution, while
+  `https://github.com/u9401066/pubmed-search-mcp/releases/tag/v0.7.1` exposes the
+  same two release assets. Ordinary CI deliberately skips credentialed live API
+  probes; the release claim is deterministic full MCP integration, not universal
+  third-party availability.
 
 ## v0.7.0 Release Candidate
 
@@ -392,9 +404,9 @@
 
 ## Doing
 
-- Finish the v0.7.0 repository-wide deterministic/static/Mermaid gates, resolve
-  any remaining isolation or contract regression, rebuild generated docs, then
-  create segmented commits and verify remote publishing.
+- No release work remains for v0.7.1. Preserve the 41-tool official-client MCP
+  acceptance suite as a required gate for future registry, transport, packaging,
+  Chronicle, pipeline, and Mermaid changes.
 
 ## Next
 
