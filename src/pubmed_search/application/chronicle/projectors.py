@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 from pubmed_search.domain.entities.chronicle import resolve_chronicle_membership
 
-from .mermaid import MermaidRenderResult, mermaid_label, render_chronicle_mermaid_projection
+from .mermaid import MermaidRenderResult, render_chronicle_mermaid_projection
 from .ordering import chronology_key
 
 if TYPE_CHECKING:
@@ -20,13 +20,6 @@ if TYPE_CHECKING:
 
 _MAX_LINEAGE_TREE_DEPTH = 128
 _MAX_LINEAGE_TREE_BRANCHES = 10_000
-_LEGACY_MERMAID_MAX_BYTES = 48_000
-_LEGACY_MERMAID_NOTICE_RESERVE_BYTES = 512
-_LEGACY_TIMELINE_MAX_EVENTS = 240
-_LEGACY_MINDMAP_MAX_BRANCHES = 64
-_LEGACY_MINDMAP_MAX_EVENTS = 96
-_LEGACY_MINDMAP_MAX_NODES = 160
-_LEGACY_MINDMAP_MAX_DEPTH = 12
 
 
 @dataclass(frozen=True)
@@ -503,44 +496,6 @@ def project_evidence(snapshot: ChronicleSnapshot) -> dict[str, Any]:
     }
 
 
-def render_timeline_mermaid(snapshot: ChronicleSnapshot) -> str:
-    """Render a bounded, delimiter-safe Mermaid ``timeline`` diagram."""
-    lines = [
-        "timeline",
-        f"    title {mermaid_label(snapshot.topic, fallback='Research topic', limit=96)} Research Chronicle",
-    ]
-    dated_entries = sorted(
-        (entry for entry in snapshot.entries if entry.year is not None),
-        key=chronology_key,
-    )
-    rendered = 0
-    previous_year: int | None = None
-    for entry in dated_entries:
-        if rendered >= _LEGACY_TIMELINE_MAX_EVENTS:
-            break
-        year = entry.year
-        if year is None:  # narrowed above; retain a defensive boundary
-            continue
-        period = str(year) if year != previous_year else ""
-        label = mermaid_label(entry.title, fallback="Research event", limit=96)
-        candidate = f"    {period:4} : {label}"
-        if not _legacy_line_fits(lines, candidate, reserve=_LEGACY_MERMAID_NOTICE_RESERVE_BYTES):
-            break
-        lines.append(candidate)
-        rendered += 1
-        previous_year = year
-
-    omitted = len(snapshot.entries) - rendered
-    if omitted:
-        notice = mermaid_label(
-            f"{omitted} events omitted — see chronicle_map.json",
-            fallback="Events omitted",
-            limit=96,
-        )
-        _append_legacy_notice(lines, f"    Summary : {notice}")
-    return "\n".join(lines)
-
-
 def render_chronicle_mermaid(snapshot: ChronicleSnapshot) -> str:
     """Render a repaired horizontal time spine with branching research lines."""
     return render_chronicle_mermaid_result(snapshot).source
@@ -553,145 +508,6 @@ def render_chronicle_mermaid_result(snapshot: ChronicleSnapshot) -> MermaidRende
     # the renderer from also counting them as hidden/unassigned content.
     projection["unassigned_entry_ids"] = []
     return render_chronicle_mermaid_projection(projection)
-
-
-def render_lineage_mindmap(snapshot: ChronicleSnapshot) -> str:
-    """Render a bounded, cycle-safe Mermaid ``mindmap`` diagram."""
-    tree = project_lineage_tree(snapshot)
-    lines = [
-        "mindmap",
-        f'  root["{mermaid_label(snapshot.topic, fallback="Research topic", limit=96)}"]',
-    ]
-    counter = 0
-    rendered_branches = 0
-    rendered_entries = 0
-    seen_nodes: set[int] = set()
-    seen_entry_ids: set[str] = set()
-    roots = tree.get("branches")
-    pending: list[tuple[dict[str, Any], int]] = [
-        (node, 1) for node in reversed(roots if isinstance(roots, list) else []) if isinstance(node, dict)
-    ]
-    size_exhausted = False
-
-    while pending:
-        node, depth = pending.pop()
-        identity = id(node)
-        if identity in seen_nodes or depth > _LEGACY_MINDMAP_MAX_DEPTH:
-            continue
-        seen_nodes.add(identity)
-        if (
-            rendered_branches >= _LEGACY_MINDMAP_MAX_BRANCHES
-            or rendered_branches + rendered_entries >= _LEGACY_MINDMAP_MAX_NODES
-        ):
-            break
-
-        counter += 1
-        indent = "  " * (depth + 1)
-        branch_label = mermaid_label(node.get("name"), fallback="Research line", limit=96)
-        branch_line = f'{indent}branch_{counter}["{branch_label}"]'
-        if not _legacy_line_fits(lines, branch_line, reserve=_LEGACY_MERMAID_NOTICE_RESERVE_BYTES):
-            size_exhausted = True
-            break
-        lines.append(branch_line)
-        rendered_branches += 1
-
-        entries = node.get("entries")
-        for entry in entries if isinstance(entries, list) else []:
-            if not isinstance(entry, dict):
-                continue
-            entry_key = str(entry.get("entry_id") or f"anonymous-{id(entry)}")
-            if entry_key in seen_entry_ids:
-                continue
-            if (
-                rendered_entries >= _LEGACY_MINDMAP_MAX_EVENTS
-                or rendered_branches + rendered_entries >= _LEGACY_MINDMAP_MAX_NODES
-            ):
-                break
-            year = entry.get("year") or "Undated"
-            label = mermaid_label(
-                f"{year} — {entry.get('title') or 'Research event'}",
-                fallback="Research event",
-                limit=96,
-            )
-            counter += 1
-            entry_line = f'{indent}  entry_{counter}["{label}"]'
-            if not _legacy_line_fits(lines, entry_line, reserve=_LEGACY_MERMAID_NOTICE_RESERVE_BYTES):
-                size_exhausted = True
-                break
-            lines.append(entry_line)
-            seen_entry_ids.add(entry_key)
-            rendered_entries += 1
-        if size_exhausted:
-            break
-
-        children = node.get("children")
-        if isinstance(children, list):
-            pending.extend((child, depth + 1) for child in reversed(children) if isinstance(child, dict))
-
-    raw_unassigned = tree.get("unassigned_entries")
-    unassigned = raw_unassigned if isinstance(raw_unassigned, list) else []
-    if unassigned and rendered_branches + rendered_entries < _LEGACY_MINDMAP_MAX_NODES:
-        counter += 1
-        repair_line = f'    branch_{counter}["Unassigned / Repaired"]'
-        if _legacy_line_fits(lines, repair_line, reserve=_LEGACY_MERMAID_NOTICE_RESERVE_BYTES):
-            lines.append(repair_line)
-            for entry in unassigned:
-                if not isinstance(entry, dict) or rendered_entries >= _LEGACY_MINDMAP_MAX_EVENTS:
-                    continue
-                entry_key = str(entry.get("entry_id") or f"anonymous-{id(entry)}")
-                if entry_key in seen_entry_ids:
-                    continue
-                counter += 1
-                label = mermaid_label(
-                    f"{entry.get('time_start') or 'Undated'} — {entry.get('title') or 'Research event'}",
-                    fallback="Research event",
-                    limit=96,
-                )
-                entry_line = f'      entry_{counter}["{label}"]'
-                if not _legacy_line_fits(lines, entry_line, reserve=_LEGACY_MERMAID_NOTICE_RESERVE_BYTES):
-                    size_exhausted = True
-                    break
-                lines.append(entry_line)
-                seen_entry_ids.add(entry_key)
-                rendered_entries += 1
-
-    omitted = max(0, len(snapshot.branches) - rendered_branches) + max(0, len(snapshot.entries) - rendered_entries)
-    projection_diagnostics = tree.get("projection_diagnostics")
-    diagnostics = projection_diagnostics if isinstance(projection_diagnostics, dict) else {}
-    repaired_structure = any(
-        diagnostics.get(key)
-        for key in (
-            "duplicate_branch_ids",
-            "ambiguous_parent_references",
-            "orphan_parent_references",
-            "cycles_broken",
-            "truncated",
-        )
-    )
-    if omitted or repaired_structure:
-        if omitted and repaired_structure:
-            message = f"{omitted} visual items omitted; branch structure repaired — see chronicle_map.json"
-        elif omitted:
-            message = f"{omitted} visual items omitted — see chronicle_map.json"
-        else:
-            message = "Branch structure repaired — see chronicle_map.json"
-        counter += 1
-        notice = mermaid_label(message, fallback="Visualization simplified", limit=112)
-        _append_legacy_notice(lines, f'    summary_{counter}["{notice}"]')
-    return "\n".join(lines)
-
-
-def _legacy_line_fits(lines: list[str], candidate: str, *, reserve: int = 0) -> bool:
-    """Return whether appending one line stays below the Mermaid runtime limit."""
-    current_bytes = len("\n".join(lines).encode("utf-8"))
-    candidate_bytes = len(candidate.encode("utf-8")) + 1
-    return current_bytes + candidate_bytes + reserve < _LEGACY_MERMAID_MAX_BYTES
-
-
-def _append_legacy_notice(lines: list[str], notice: str) -> None:
-    """Append a short visible notice while preserving the hard byte bound."""
-    if _legacy_line_fits(lines, notice):
-        lines.append(notice)
 
 
 def _tag_value(tags: list[str], prefix: str) -> str | None:
@@ -732,6 +548,4 @@ __all__ = [
     "project_timeline",
     "render_chronicle_mermaid",
     "render_chronicle_mermaid_result",
-    "render_lineage_mindmap",
-    "render_timeline_mermaid",
 ]

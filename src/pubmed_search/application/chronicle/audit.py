@@ -72,6 +72,7 @@ def audit_chronicle(snapshot: ChronicleSnapshot, *, artifact_files: list[str] | 
         _audit_chronology(snapshot),
         _audit_narrative_citations(snapshot),
         _audit_source_coverage(snapshot),
+        _audit_citation_metrics_coverage(snapshot),
     ]
     if artifact_files is not None:
         findings.append(_audit_artifacts(artifact_files))
@@ -645,14 +646,9 @@ def _audit_source_coverage(snapshot: ChronicleSnapshot) -> ChronicleAuditFinding
     for source, raw_counts in counts.items():
         returned: int | None
         available: int | None
-        if isinstance(raw_counts, int) and not isinstance(raw_counts, bool) and raw_counts >= 0:
-            # Compatibility with research-chronicle/v1 snapshots that stored
-            # only one count. Do not retroactively fail their audits.
-            returned = raw_counts
-            available = raw_counts
-        elif isinstance(raw_counts, dict):
+        if isinstance(raw_counts, dict):
             raw_returned = raw_counts.get("returned")
-            raw_available = raw_counts.get("available", raw_counts.get("total_available"))
+            raw_available = raw_counts.get("available")
             returned = (
                 raw_returned
                 if isinstance(raw_returned, int) and not isinstance(raw_returned, bool) and raw_returned >= 0
@@ -708,6 +704,240 @@ def _audit_source_coverage(snapshot: ChronicleSnapshot) -> ChronicleAuditFinding
         message=f"Source coverage recorded for {len(counts)} sources.",
         details=details,
     )
+
+
+def _audit_citation_metrics_coverage(snapshot: ChronicleSnapshot) -> ChronicleAuditFinding:
+    """Audit iCite enrichment coverage and its effective-ranking claim."""
+    raw_timeline_metadata = snapshot.metadata.get("timeline_metadata")
+    timeline_metadata = raw_timeline_metadata if isinstance(raw_timeline_metadata, dict) else {}
+    raw_retrieval = timeline_metadata.get("retrieval")
+    retrieval = raw_retrieval if isinstance(raw_retrieval, dict) else {}
+    supported_modes = {"topic_search", "explicit_pmids"}
+    supported_rankings = {"pubmed_relevance", "icite_citation_count_then_pubmed_relevance"}
+    raw_retrieval_mode = retrieval.get("mode")
+    raw_ranking = retrieval.get("ranking")
+    raw_ranking_requested = retrieval.get("ranking_requested")
+    retrieval_mode = (
+        raw_retrieval_mode if isinstance(raw_retrieval_mode, str) and raw_retrieval_mode in supported_modes else None
+    )
+    ranking = raw_ranking if isinstance(raw_ranking, str) and raw_ranking in supported_rankings else None
+    ranking_requested = (
+        raw_ranking_requested
+        if isinstance(raw_ranking_requested, str) and raw_ranking_requested in supported_rankings
+        else None
+    )
+    base_details: dict[str, Any] = {
+        "retrieval_mode": retrieval_mode,
+        "ranking_requested": ranking_requested,
+        "effective_ranking": ranking,
+    }
+    if retrieval_mode != "topic_search":
+        return ChronicleAuditFinding(
+            check="citation_metrics_coverage",
+            status="pass",
+            message="Citation-metric enrichment is not applicable to this retrieval mode.",
+            details={**base_details, "status": "not_applicable"},
+        )
+
+    raw_coverage = retrieval.get("citation_metrics")
+    if not isinstance(raw_coverage, dict):
+        return ChronicleAuditFinding(
+            check="citation_metrics_coverage",
+            status="warn",
+            message="Topic retrieval did not record typed iCite coverage; citation-based ranking is not auditable.",
+            details={**base_details, "status": "unknown"},
+        )
+
+    expected_statuses = {"not_requested", "complete", "partial", "empty", "error"}
+    raw_status = raw_coverage.get("status")
+    status = raw_status if isinstance(raw_status, str) and raw_status in expected_statuses else None
+    requested = _strict_nonnegative_count(raw_coverage.get("requested"))
+    returned = _strict_nonnegative_count(raw_coverage.get("returned"))
+    applied = _strict_nonnegative_count(raw_coverage.get("applied"))
+    citation_counts_applied = _strict_nonnegative_count(raw_coverage.get("citation_counts_applied"))
+    complete = raw_coverage.get("complete") if isinstance(raw_coverage.get("complete"), bool) else None
+    raw_error = raw_coverage.get("error")
+    safe_error = _safe_citation_metrics_error(raw_error)
+    details = {
+        **base_details,
+        "schema_version": (
+            "citation-metrics-coverage/v1"
+            if raw_coverage.get("schema_version") == "citation-metrics-coverage/v1"
+            else None
+        ),
+        "source": "nih_icite" if raw_coverage.get("source") == "nih_icite" else None,
+        "status": status,
+        "requested": requested,
+        "returned": returned,
+        "applied": applied,
+        "citation_counts_applied": citation_counts_applied,
+        "complete": complete,
+        "error": safe_error,
+    }
+    counts = (requested, returned, applied, citation_counts_applied)
+    structurally_valid = (
+        raw_coverage.get("schema_version") == "citation-metrics-coverage/v1"
+        and raw_coverage.get("source") == "nih_icite"
+        and ranking is not None
+        and ranking_requested is not None
+        and status in expected_statuses
+        and all(count is not None for count in counts)
+        and complete is not None
+    )
+    if (
+        structurally_valid
+        and requested is not None
+        and returned is not None
+        and applied is not None
+        and citation_counts_applied is not None
+    ):
+        structurally_valid = (
+            applied <= requested
+            and applied <= returned
+            and citation_counts_applied <= applied
+            and (
+                (status == "not_requested" and counts == (0, 0, 0, 0) and complete is False and raw_error is None)
+                or (
+                    status == "complete"
+                    and requested > 0
+                    and applied == requested
+                    and complete is True
+                    and raw_error is None
+                )
+                or (status == "partial" and 0 < applied < requested and complete is False and raw_error is None)
+                or (
+                    status == "empty"
+                    and requested > 0
+                    and applied == 0
+                    and citation_counts_applied == 0
+                    and complete is False
+                    and raw_error is None
+                )
+                or (
+                    status == "error"
+                    and requested > 0
+                    and applied == 0
+                    and citation_counts_applied == 0
+                    and complete is False
+                    and safe_error is not None
+                )
+            )
+        )
+    else:
+        structurally_valid = False
+
+    claims_icite_ranking = ranking == "icite_citation_count_then_pubmed_relevance"
+    requested_icite_ranking = ranking_requested == "icite_citation_count_then_pubmed_relevance"
+    has_sortable_metrics = (
+        structurally_valid
+        and status in {"complete", "partial"}
+        and citation_counts_applied is not None
+        and citation_counts_applied > 0
+    )
+    if claims_icite_ranking and not has_sortable_metrics:
+        return ChronicleAuditFinding(
+            check="citation_metrics_coverage",
+            status="fail",
+            message="The Chronicle claims iCite ranking without any validated citation counts.",
+            details=details,
+        )
+    if claims_icite_ranking and not requested_icite_ranking:
+        return ChronicleAuditFinding(
+            check="citation_metrics_coverage",
+            status="fail",
+            message="The Chronicle applied iCite ranking even though PubMed relevance was requested.",
+            details=details,
+        )
+    if requested_icite_ranking and has_sortable_metrics and not claims_icite_ranking:
+        return ChronicleAuditFinding(
+            check="citation_metrics_coverage",
+            status="fail",
+            message="Validated citation counts were available, but the requested iCite ranking was not applied.",
+            details=details,
+        )
+    if not structurally_valid:
+        return ChronicleAuditFinding(
+            check="citation_metrics_coverage",
+            status="warn",
+            message="iCite coverage metadata is malformed; citation enrichment completeness is unknown.",
+            details=details,
+        )
+    if status == "error":
+        return ChronicleAuditFinding(
+            check="citation_metrics_coverage",
+            status="warn",
+            message="iCite enrichment failed; effective ranking fell back to PubMed relevance.",
+            details=details,
+        )
+    if status == "partial":
+        return ChronicleAuditFinding(
+            check="citation_metrics_coverage",
+            status="warn",
+            message=f"iCite metrics covered {applied} of {requested} requested articles.",
+            details=details,
+        )
+    if status == "empty":
+        return ChronicleAuditFinding(
+            check="citation_metrics_coverage",
+            status="warn",
+            message="iCite returned no metrics for the requested articles; effective ranking remained PubMed relevance.",
+            details=details,
+        )
+    if status == "not_requested":
+        return ChronicleAuditFinding(
+            check="citation_metrics_coverage",
+            status="pass",
+            message="No articles required citation-metric enrichment.",
+            details=details,
+        )
+    if requested_icite_ranking and not has_sortable_metrics:
+        return ChronicleAuditFinding(
+            check="citation_metrics_coverage",
+            status="warn",
+            message="iCite ranking was requested, but no valid citation counts were available to apply it.",
+            details=details,
+        )
+    return ChronicleAuditFinding(
+        check="citation_metrics_coverage",
+        status="pass",
+        message=f"iCite metrics covered all {requested} requested articles.",
+        details=details,
+    )
+
+
+def _strict_nonnegative_count(value: object) -> int | None:
+    """Validate a persisted provenance count without coercing malformed values."""
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return value
+    return None
+
+
+def _safe_citation_metrics_error(value: object) -> dict[str, Any] | None:
+    """Copy only bounded, query-safe fields from persisted iCite errors."""
+    if not isinstance(value, dict):
+        return None
+    kind = value.get("kind")
+    retryable = value.get("retryable")
+    status_code = value.get("status_code")
+    exception_type = value.get("exception_type")
+    if kind not in {"http", "timeout", "transport", "retryable", "validation", "unexpected"}:
+        return None
+    if not isinstance(retryable, bool):
+        return None
+    if status_code is not None and (
+        not isinstance(status_code, int) or isinstance(status_code, bool) or not 100 <= status_code <= 599
+    ):
+        return None
+    if not isinstance(exception_type, str) or len(exception_type) > 100 or not exception_type.isidentifier():
+        return None
+    return {
+        "source": "nih_icite",
+        "operation": "citation_metrics",
+        "kind": kind,
+        "retryable": retryable,
+        "status_code": status_code,
+        "exception_type": exception_type,
+    }
 
 
 def _audit_artifacts(artifact_files: list[str]) -> ChronicleAuditFinding:
@@ -805,10 +1035,10 @@ def _graph_chronology_violations(snapshot: ChronicleSnapshot) -> list[str]:
 
 def _audit_narrative_citations(snapshot: ChronicleSnapshot) -> ChronicleAuditFinding:
     """Ensure the full narrative retains every occurrence and its evidence IDs."""
-    from .narrator import narrate_chronicle, narrative_citation
+    from .narrator import narrate_chronicle, narrative_claim
 
     narrative = narrate_chronicle(snapshot, mode="full")
-    expected_lines = Counter(f"- {entry.summary_claim} {narrative_citation(entry)}" for entry in snapshot.entries)
+    expected_lines = Counter(narrative_claim(entry) for entry in snapshot.entries)
     actual_lines = Counter(line for line in narrative.splitlines() if line.startswith("- "))
     missing: list[dict[str, object]] = []
     missing_total = 0

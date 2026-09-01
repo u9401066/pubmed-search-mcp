@@ -270,34 +270,3 @@ class ResearchTree:
                     lines.append(f"{child_prefix}{ev_prefix}{event.year}: {title_short} (PMID: {event.pmid}){stars}")
 
         return "\n".join(lines)
-
-    def to_mermaid_mindmap(self) -> str:
-        """
-        Generate Mermaid mindmap syntax for tree visualization.
-
-        Renders as a radial mindmap in Mermaid-compatible renderers.
-        """
-        lines = ["mindmap", f"  root(({self.topic}))"]
-
-        for branch in self.active_branches:
-            yr = branch.year_range
-            yr_str = f" {yr[0]}-{yr[1]}" if yr else ""
-            lines.append(f"    {branch.icon} {branch.label}{yr_str}")
-
-            if branch.sub_branches:
-                for sub in branch.sub_branches:
-                    if sub.is_empty:
-                        continue
-                    sub_yr = sub.year_range
-                    sub_yr_str = f" {sub_yr[0]}-{sub_yr[1]}" if sub_yr else ""
-                    lines.append(f"      {sub.label}{sub_yr_str}")
-
-                    for event in sub.events[:3]:  # Limit for readability
-                        label = event.milestone_label.replace("(", "").replace(")", "")
-                        lines.append(f"        {event.year}: {label}")
-            else:
-                for event in branch.events[:5]:  # Limit for readability
-                    label = event.milestone_label.replace("(", "").replace(")", "")
-                    lines.append(f"      {event.year}: {label}")
-
-        return "\n".join(lines)

@@ -75,7 +75,7 @@ class EmptyEvidenceProvider:
         return ResearchTimeline(
             topic=topic,
             events=[_event("1")],
-            metadata={"source_counts": {"pubmed": 1}},
+            metadata={"source_counts": {"pubmed": {"returned": 1, "available": 1}}},
         )
 
     async def build_timeline_from_pmids(
@@ -90,7 +90,7 @@ class EmptyEvidenceProvider:
         return ResearchTimeline(
             topic=topic,
             events=[_event(pmid) for pmid in pmids],
-            metadata={"source_counts": {"pubmed": len(pmids)}},
+            metadata={"source_counts": {"pubmed": {"returned": len(pmids), "available": len(pmids)}}},
         )
 
 
@@ -116,28 +116,6 @@ def test_save_never_overwrites_an_immutable_revision(tmp_path: Path) -> None:
     restored = store.load(chronicle_id, 1)
     assert restored is not None
     assert restored.topic == "Original topic"
-
-
-def test_commit_next_compatibility_callback_keeps_original_created_at(tmp_path: Path) -> None:
-    store = ChronicleStore(tmp_path / "chronicles")
-    chronicle_id = "topic-alpha-commit-next"
-    received_created_at: list[str | None] = []
-
-    def build_snapshot(revision: int, created_at: str | None) -> ChronicleSnapshot:
-        received_created_at.append(created_at)
-        snapshot = _snapshot(chronicle_id, revision)
-        if created_at is not None:
-            snapshot.created_at = created_at
-        return snapshot
-
-    first = store.commit_next(chronicle_id, build_snapshot)
-    second = store.commit_next(chronicle_id, build_snapshot)
-
-    assert first.revision == 1
-    assert second.revision == 2
-    assert received_created_at == [None, first.created_at]
-    assert second.created_at == first.created_at
-    assert store.list_revisions(chronicle_id) == [1, 2]
 
 
 def test_nonfinite_snapshot_values_are_rejected_before_revision_publication(tmp_path: Path) -> None:
@@ -369,7 +347,11 @@ async def test_explicit_id_without_topic_continues_its_stored_topic(tmp_path: Pa
 async def test_service_does_not_publish_an_empty_evidence_revision(tmp_path: Path) -> None:
     class NoEvidenceProvider(EmptyEvidenceProvider):
         async def build_timeline(self, topic: str, **_kwargs: Any) -> ResearchTimeline:
-            return ResearchTimeline(topic=topic, events=[], metadata={"source_counts": {"pubmed": 0}})
+            return ResearchTimeline(
+                topic=topic,
+                events=[],
+                metadata={"source_counts": {"pubmed": {"returned": 0, "available": 0}}},
+            )
 
     store = ChronicleStore(tmp_path / "chronicles")
     service = ChronicleService(NoEvidenceProvider(), store)
@@ -421,11 +403,11 @@ def test_entry_identity_survives_year_and_classifier_correction() -> None:
     assert before.entries[0].entry_id == after.entries[0].entry_id
     delta = diff_chronicles(before, after)
     assert delta["entries"]["added"] == []
-    assert delta["entries"]["retired"] == []
+    assert delta["entries"]["not_observed_in_revision"] == []
     assert delta["entries"]["updated"][0]["entry_id"] == before.entries[0].entry_id
 
 
-def test_missing_entry_is_never_declared_conclusively_retired() -> None:
+def test_missing_entry_is_never_declared_conclusively_absent() -> None:
     entry = ChronicleEntry(
         entry_id="entry-observed",
         entry_type=ChronicleEntryType.BACKGROUND,
@@ -438,10 +420,10 @@ def test_missing_entry_is_never_declared_conclusively_retired() -> None:
 
     delta = diff_chronicles(before, after)
 
-    assert delta["interpretation"]["retired_entries_are_conclusive"] is False
+    assert delta["interpretation"]["absence_is_conclusive"] is False
     assert delta["interpretation"]["absence_semantics"] == "not_observed_in_revision"
-    assert delta["entries"]["removed_from_view"] == delta["entries"]["retired"]
-    assert delta["entries"]["not_observed_in_revision"] == delta["entries"]["retired"]
+    assert "removed_from_view" not in delta["entries"]
+    assert len(delta["entries"]["not_observed_in_revision"]) == 1
 
 
 def test_diff_reports_scope_entry_evidence_role_and_branch_changes() -> None:

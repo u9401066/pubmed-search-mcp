@@ -226,9 +226,9 @@ def diff_chronicles(before: ChronicleSnapshot, after: ChronicleSnapshot) -> dict
     before_index = before.entry_index
     after_index = after.entry_index
     added_ids = after_index.keys() - before_index.keys()
-    retired_ids = before_index.keys() - after_index.keys()
+    absent_ids = before_index.keys() - after_index.keys()
     added = [_entry_summary(after_index[key]) for key in added_ids]
-    retired = [_entry_summary(before_index[key]) for key in retired_ids]
+    not_observed = [_entry_summary(before_index[key]) for key in absent_ids]
 
     updated: list[dict[str, Any]] = []
     for key in before_index.keys() & after_index.keys():
@@ -237,7 +237,7 @@ def diff_chronicles(before: ChronicleSnapshot, after: ChronicleSnapshot) -> dict
             updated.append({"entry_id": key, "title": after_index[key].title, "changes": changes})
 
     added.sort(key=lambda item: chronology_key(item["time_start"]))
-    retired.sort(key=lambda item: chronology_key(item["time_start"]))
+    not_observed.sort(key=lambda item: chronology_key(item["time_start"]))
     updated.sort(key=lambda item: item["entry_id"])
 
     before_branches = {branch.branch_id: branch for branch in before.branches}
@@ -284,17 +284,13 @@ def diff_chronicles(before: ChronicleSnapshot, after: ChronicleSnapshot) -> dict
         },
         "interpretation": {
             "scope_changed": scope_changed,
-            "retired_entries_are_conclusive": False,
+            "absence_is_conclusive": False,
             "absence_semantics": "not_observed_in_revision",
             "note": scope_note,
         },
         "entries": {
             "added": added,
-            # Kept for backward compatibility. Consult scope_changed before
-            # interpreting absence as true retirement from the research line.
-            "retired": retired,
-            "removed_from_view": retired,
-            "not_observed_in_revision": retired,
+            "not_observed_in_revision": not_observed,
             "updated": updated,
             "unchanged": len(before_index.keys() & after_index.keys()) - len(updated),
         },

@@ -70,7 +70,9 @@ def _snapshot(entries: list[ChronicleEntry], branches: list[ChronicleBranch]) ->
         topic="Cross-projection integrity",
         entries=entries,
         branches=branches,
-        input_scope=ChronicleInputScope(source_counts={"pubmed": len(entries)}),
+        input_scope=ChronicleInputScope(
+            source_counts={"pubmed": {"returned": len(entries), "available": len(entries)}}
+        ),
         metadata={
             "lineage_diagnostics": {
                 "basis": "topic_signals",
@@ -196,7 +198,7 @@ def test_duplicate_entry_ids_and_stale_graph_are_audit_failures() -> None:
         entries=entries,
         branches=[ChronicleBranch(branch_id="main", name="Main", entry_ids=["duplicate"])],
         graph=ChronicleGraph(),
-        input_scope=ChronicleInputScope(source_counts={"pubmed": 2}),
+        input_scope=ChronicleInputScope(source_counts={"pubmed": {"returned": 2, "available": 2}}),
     )
 
     identity = _finding(snapshot, "snapshot_identity")
@@ -300,13 +302,14 @@ def test_branch_confidence_zero_round_trips_without_becoming_one() -> None:
     assert ChronicleBranch.from_dict(branch.to_dict()).confidence == 0.0
 
 
-def test_snapshot_rejects_unknown_schema_but_accepts_missing_legacy_field() -> None:
+def test_snapshot_requires_the_exact_current_schema() -> None:
     current = ChronicleSnapshot(chronicle_id="schema", topic="Schema").to_dict()
     assert ChronicleSnapshot.from_dict(current).schema_version == CHRONICLE_SCHEMA_VERSION
 
-    legacy = dict(current)
-    legacy.pop("schema_version")
-    assert ChronicleSnapshot.from_dict(legacy).schema_version == CHRONICLE_SCHEMA_VERSION
+    missing = dict(current)
+    missing.pop("schema_version")
+    with pytest.raises(ValueError, match="Unsupported Chronicle schema version"):
+        ChronicleSnapshot.from_dict(missing)
 
     future = {**current, "schema_version": "research-chronicle/v999"}
     with pytest.raises(ValueError, match="Unsupported Chronicle schema version"):

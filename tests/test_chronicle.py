@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import pytest
+from pydantic import TypeAdapter, ValidationError
 
 from pubmed_search.application.chronicle import (
     ChronicleService,
@@ -26,10 +27,10 @@ from pubmed_search.application.chronicle import (
     project_lineage_tree,
     project_timeline,
     render_chronicle_mermaid,
-    render_lineage_mindmap,
-    render_timeline_mermaid,
 )
+from pubmed_search.application.chronicle.mermaid import render_chronicle_mermaid_projection
 from pubmed_search.application.timeline import build_research_tree
+from pubmed_search.application.visualization import stable_mermaid_node_id
 from pubmed_search.domain.entities.chronicle import (
     CHRONICLE_SCHEMA_VERSION,
     ChronicleEdgeType,
@@ -49,6 +50,20 @@ from pubmed_search.domain.entities.timeline import (
     ResearchTimeline,
     TimelineEvent,
 )
+from pubmed_search.presentation.mcp_server.tools.chronicle import ChronicleReadRequest
+
+_CHRONICLE_READ_ADAPTER = TypeAdapter(ChronicleReadRequest)
+
+
+def _chronicle_read_request(action: str = "load", **kwargs: Any) -> ChronicleReadRequest:
+    return _CHRONICLE_READ_ADAPTER.validate_python({"action": action, **kwargs}, strict=True)
+
+
+async def _read_chronicle(tools: dict[str, Any], action: str = "load", **kwargs: Any) -> str:
+    return await tools["read_research_chronicle"](
+        request=_chronicle_read_request(action, **kwargs),
+    )
+
 
 # ── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -94,9 +109,9 @@ EXTENDED_EVENTS = [
 class FakeEvidenceProvider:
     """In-memory stand-in for the timeline builder retrieval port."""
 
-    def __init__(self, events: list[TimelineEvent], source_counts: dict[str, int] | None = None) -> None:
+    def __init__(self, events: list[TimelineEvent], source_counts: dict[str, dict[str, int]] | None = None) -> None:
         self.events = events
-        self.source_counts = source_counts or {"pubmed": len(events)}
+        self.source_counts = source_counts or {"pubmed": {"returned": len(events), "available": len(events)}}
         self.topic_calls: list[str] = []
         self.topic_call_kwargs: list[dict[str, Any]] = []
         self.pmid_calls: list[list[str]] = []
@@ -126,12 +141,13 @@ class FakeEvidenceProvider:
 
 def build_snapshot(events: list[TimelineEvent], topic: str = "drug X") -> ChronicleSnapshot:
     """Assemble and audit a snapshot directly from timeline events."""
-    timeline = ResearchTimeline(topic=topic, events=list(events), metadata={"source_counts": {"pubmed": len(events)}})
+    source_counts = {"pubmed": {"returned": len(events), "available": len(events)}}
+    timeline = ResearchTimeline(topic=topic, events=list(events), metadata={"source_counts": source_counts})
     snapshot = assemble_chronicle(
         topic=topic,
         timeline=timeline,
         tree=build_chronicle_lineage(timeline),
-        scope=ChronicleInputScope(mode="topic", query=topic, source_counts={"pubmed": len(events)}),
+        scope=ChronicleInputScope(mode="topic", query=topic, source_counts=source_counts),
     )
     snapshot.audit = audit_chronicle(snapshot)
     return snapshot
@@ -157,6 +173,23 @@ class TestChronicleEntities:
         assert restored.schema_version == CHRONICLE_SCHEMA_VERSION
         assert len(restored.entries) == len(snapshot.entries)
         assert len(restored.graph.nodes) == len(snapshot.graph.nodes)
+
+    def test_summary_neutralizes_untrusted_markdown_metadata(self):
+        from pubmed_search.presentation.mcp_server.tools.chronicle import _format_summary
+
+        snapshot = build_snapshot(BASE_EVENTS, topic="Topic\n# injected")
+        snapshot.entries[0].title = "[click](https://attacker.invalid)"
+        snapshot.entries[0].summary_claim = "claim\n```mermaid\ngraph TD"
+        snapshot.branches[0].name = "branch\n## injected"
+        snapshot.audit.warnings.append("warning\n![image](https://attacker.invalid/x)")
+
+        rendered = _format_summary(snapshot)
+
+        assert "\n# injected" not in rendered
+        assert "\n## injected" not in rendered
+        assert "\n```mermaid" not in rendered
+        assert "![image](" not in rendered
+        assert "\\[click\\]\\(https://attacker.invalid\\)" in rendered
 
     def test_evidence_article_identifier_precedence(self):
         assert EvidenceArticle(title="t", pmid="1", doi="10.1/x").evidence_id == "pmid:1"
@@ -364,6 +397,19 @@ class TestChronicleAudit:
         assert finding.details["incomplete_sources"] == ["pubmed"]
         assert "observed, ranked sample" in finding.message
 
+    @pytest.mark.parametrize(
+        "retired_counts",
+        [3, {"returned": 3, "total_available": 3}],
+    )
+    def test_retired_source_count_shapes_are_not_reinterpreted(self, retired_counts):
+        snapshot = build_snapshot(BASE_EVENTS)
+        snapshot.input_scope.source_counts = {"pubmed": retired_counts}
+
+        finding = next(f for f in audit_chronicle(snapshot).findings if f.check == "source_coverage")
+
+        assert finding.status == "warn"
+        assert finding.details["normalized_counts"]["pubmed"] != {"returned": 3, "available": 3}
+
     def test_output_selection_cap_is_a_source_coverage_caveat(self):
         snapshot = build_snapshot(BASE_EVENTS)
         snapshot.metadata["timeline_metadata"] = {
@@ -378,6 +424,113 @@ class TestChronicleAudit:
         assert finding.status == "warn"
         assert finding.details["selection_limited"] is True
         assert finding.details["selection_counts"]["events_emitted"] == len(BASE_EVENTS)
+
+    def test_icite_outage_is_visible_without_leaking_raw_error(self):
+        snapshot = build_snapshot(BASE_EVENTS)
+        snapshot.metadata["timeline_metadata"]["retrieval"] = {
+            "mode": "topic_search",
+            "ranking_requested": "icite_citation_count_then_pubmed_relevance",
+            "ranking": "pubmed_relevance",
+            "citation_metrics": {
+                "schema_version": "citation-metrics-coverage/v1",
+                "source": "nih_icite",
+                "status": "error",
+                "requested": 3,
+                "returned": 0,
+                "applied": 0,
+                "citation_counts_applied": 0,
+                "complete": False,
+                "error": {
+                    "source": "nih_icite",
+                    "operation": "citation_metrics",
+                    "kind": "unexpected",
+                    "message": "private-token=must-not-escape",
+                    "retryable": False,
+                    "status_code": None,
+                    "exception_type": "RuntimeError",
+                },
+            },
+        }
+
+        finding = next(f for f in audit_chronicle(snapshot).findings if f.check == "citation_metrics_coverage")
+
+        assert finding.status == "warn"
+        assert finding.details["status"] == "error"
+        assert finding.details["effective_ranking"] == "pubmed_relevance"
+        assert finding.details["error"]["exception_type"] == "RuntimeError"
+        assert "private-token" not in str(finding.to_dict())
+
+    def test_icite_ranking_without_validated_counts_fails_audit(self):
+        snapshot = build_snapshot(BASE_EVENTS)
+        snapshot.metadata["timeline_metadata"]["retrieval"] = {
+            "mode": "topic_search",
+            "ranking_requested": "icite_citation_count_then_pubmed_relevance",
+            "ranking": "icite_citation_count_then_pubmed_relevance",
+            "citation_metrics": {
+                "schema_version": "citation-metrics-coverage/v1",
+                "source": "nih_icite",
+                "status": "empty",
+                "requested": 3,
+                "returned": 0,
+                "applied": 0,
+                "citation_counts_applied": 0,
+                "complete": False,
+                "error": None,
+            },
+        }
+
+        finding = next(f for f in audit_chronicle(snapshot).findings if f.check == "citation_metrics_coverage")
+
+        assert finding.status == "fail"
+        assert "without any validated citation counts" in finding.message
+
+    def test_requested_icite_ranking_without_citation_counts_warns(self):
+        snapshot = build_snapshot(BASE_EVENTS)
+        snapshot.metadata["timeline_metadata"]["retrieval"] = {
+            "mode": "topic_search",
+            "ranking_requested": "icite_citation_count_then_pubmed_relevance",
+            "ranking": "pubmed_relevance",
+            "citation_metrics": {
+                "schema_version": "citation-metrics-coverage/v1",
+                "source": "nih_icite",
+                "status": "complete",
+                "requested": 3,
+                "returned": 3,
+                "applied": 3,
+                "citation_counts_applied": 0,
+                "complete": True,
+                "error": None,
+            },
+        }
+
+        finding = next(f for f in audit_chronicle(snapshot).findings if f.check == "citation_metrics_coverage")
+
+        assert finding.status == "warn"
+        assert "no valid citation counts" in finding.message
+
+    def test_available_counts_without_requested_effective_ranking_fails(self):
+        snapshot = build_snapshot(BASE_EVENTS)
+        snapshot.metadata["timeline_metadata"]["retrieval"] = {
+            "mode": "topic_search",
+            "ranking_requested": "icite_citation_count_then_pubmed_relevance",
+            "ranking": "pubmed_relevance",
+            "citation_metrics": {
+                "schema_version": "citation-metrics-coverage/v1",
+                "source": "nih_icite",
+                "status": "complete",
+                "requested": 3,
+                "returned": 3,
+                "applied": 3,
+                "citation_counts_applied": 3,
+                "complete": True,
+                "error": None,
+            },
+        }
+
+        finding = next(f for f in audit_chronicle(snapshot).findings if f.check == "citation_metrics_coverage")
+
+        assert finding.status == "fail"
+        assert "was not applied" in finding.message
 
     def test_explicit_pmid_audit_compares_identifier_sets(self):
         timeline = ResearchTimeline(topic="custom", events=[BASE_EVENTS[0]])
@@ -490,17 +643,6 @@ class TestChronicleProjections:
                 assert branch["branch_point"]["year"] == branch["entries"][0]["year"]
                 assert branch["entries"][0]["paper_title"].startswith("Study")
 
-    def test_mermaid_and_mindmap_render(self):
-        snapshot = build_snapshot(EXTENDED_EVENTS)
-
-        mermaid = render_timeline_mermaid(snapshot)
-        assert mermaid.startswith("timeline")
-        assert "2015 : First report" in mermaid
-
-        mindmap = render_lineage_mindmap(snapshot)
-        assert mindmap.startswith("mindmap")
-        assert "drug X" in mindmap
-
     def test_chronicle_mermaid_has_horizontal_spine_and_year_anchored_branches(self):
         snapshot = build_snapshot(EXTENDED_EVENTS)
 
@@ -511,6 +653,51 @@ class TestChronicleProjections:
         assert "-.->" in mermaid
         assert "pmid#58;2" in mermaid
         assert "classDef spine fill:#dbeafe" in mermaid
+
+    def test_nested_branch_keeps_its_year_anchor_and_parent_lineage(self):
+        projection = {
+            "topic": "Clinical development",
+            "spine": {"year_anchors": [{"year": 2012}, {"year": 2020}]},
+            "branches": [
+                {
+                    "branch_id": "clinical",
+                    "name": "Clinical",
+                    "branch_point": {"year": 2012},
+                    "entries": [],
+                },
+                {
+                    "branch_id": "clinical-late",
+                    "name": "Late phase",
+                    "parent_branch_id": "clinical",
+                    "branch_point": {"year": 2020},
+                    "entries": [],
+                },
+            ],
+        }
+
+        source = render_chronicle_mermaid_projection(projection).source
+        parent = stable_mermaid_node_id("branch", "clinical")
+        child = stable_mermaid_node_id("branch", "clinical-late")
+        year_2020 = stable_mermaid_node_id("year", "2020")
+
+        assert f"{parent} --> {child}" in source
+        assert f"{year_2020} -.-> {child}" in source
+
+    def test_omission_notice_has_one_edge_without_false_duplicate_repair(self):
+        result = render_chronicle_mermaid_projection(
+            {
+                "topic": "Clinical development",
+                "spine": {"year_anchors": []},
+                "branches": [],
+                "unassigned_entry_ids": ["entry-1"],
+            }
+        )
+        topic = stable_mermaid_node_id("topic", "Clinical development")
+        notice = stable_mermaid_node_id("notice", "omitted")
+        correction_codes = {item["code"] for item in result.corrections}
+
+        assert result.source.count(f"{topic} --> {notice}") == 1
+        assert "duplicate_edge" not in correction_codes
 
     def test_projections_share_entry_ids(self):
         snapshot = build_snapshot(EXTENDED_EVENTS)
@@ -634,16 +821,17 @@ class TestChronicleDiff:
 
         delta = diff_chronicles(before, after)
         assert len(delta["entries"]["added"]) == 2
-        assert delta["entries"]["retired"] == []
+        assert delta["entries"]["not_observed_in_revision"] == []
         assert delta["evidence"]["total_after"] == 5
 
-    def test_retired_entries_are_detected(self):
+    def test_entries_not_observed_in_later_revision_are_detected(self):
         before = build_snapshot(EXTENDED_EVENTS)
         after = build_snapshot(BASE_EVENTS)
         after.revision = 2
 
         delta = diff_chronicles(before, after)
-        assert len(delta["entries"]["retired"]) == 2
+        assert len(delta["entries"]["not_observed_in_revision"]) == 2
+        assert "removed_from_view" not in delta["entries"]
         assert delta["entries"]["added"] == []
 
     def test_status_change_is_reported_as_update(self):
@@ -911,7 +1099,7 @@ class TestChronicleService:
 
         for output_format in ("json", "chronicle_map", "timeline", "tree", "graph", "evidence"):
             assert isinstance(ChronicleService.render(snapshot, output_format), dict)
-        for output_format in ("mermaid", "timeline_mermaid", "mindmap", "narrative"):
+        for output_format in ("mermaid", "narrative"):
             assert isinstance(ChronicleService.render(snapshot, output_format), str)
 
     async def test_render_rejects_unknown_format(self, store):
@@ -921,10 +1109,19 @@ class TestChronicleService:
             ChronicleService.render(snapshot, "svg")
 
     async def test_source_counts_flow_into_scope(self, store):
-        provider = FakeEvidenceProvider(BASE_EVENTS, source_counts={"pubmed": 3, "europe_pmc": 2})
+        provider = FakeEvidenceProvider(
+            BASE_EVENTS,
+            source_counts={
+                "pubmed": {"returned": 3, "available": 3},
+                "europe_pmc": {"returned": 2, "available": 2},
+            },
+        )
         snapshot = await ChronicleService(provider, store).build(topic="drug X")
 
-        assert snapshot.input_scope.source_counts == {"pubmed": 3, "europe_pmc": 2}
+        assert snapshot.input_scope.source_counts == {
+            "pubmed": {"returned": 3, "available": 3},
+            "europe_pmc": {"returned": 2, "available": 2},
+        }
 
 
 # ── MCP tools ───────────────────────────────────────────────────────────────
@@ -941,8 +1138,7 @@ class TestChronicleTools:
         *,
         persistence_enabled: bool = False,
     ):
-        from mcp.server.mcpserver import MCPServer
-
+        from pubmed_search.presentation.mcp_server.tool_contracts import PubMedMCPServer
         from pubmed_search.presentation.mcp_server.tools import chronicle as chronicle_tools
 
         monkeypatch.setattr(
@@ -955,23 +1151,26 @@ class TestChronicleTools:
             "TimelineBuilder",
             lambda *args, **kwargs: FakeEvidenceProvider(events),
         )
-        monkeypatch.setattr(chronicle_tools, "persist_tool_artifact", lambda **kwargs: None)
+
+        async def discard_artifact(**_kwargs: Any) -> None:
+            return None
+
+        monkeypatch.setattr(chronicle_tools, "persist_tool_artifact", discard_artifact)
         monkeypatch.setattr(chronicle_tools, "artifact_persistence_enabled", lambda: persistence_enabled)
 
-        mcp = MCPServer(name="chronicle-test")
+        mcp = PubMedMCPServer(name="chronicle-test")
         chronicle_tools.register_chronicle_tools(mcp, object())
-        return {name: tool.fn for name, tool in mcp._tool_manager._tools.items()}
+        return {name: getattr(tool.fn, "__wrapped__", tool.fn) for name, tool in mcp._tool_manager._tools.items()}
 
     async def test_tool_schema_bounds_modes_and_identifiers(self, monkeypatch, tmp_path):
-        from mcp.server.mcpserver import MCPServer
-
+        from pubmed_search.presentation.mcp_server.tool_contracts import PubMedMCPServer
         from pubmed_search.presentation.mcp_server.tools import chronicle as chronicle_tools
 
         monkeypatch.setattr(chronicle_tools, "_chronicle_store", lambda: ChronicleStore(tmp_path / "chronicles"))
         monkeypatch.setattr(
             chronicle_tools, "TimelineBuilder", lambda *args, **kwargs: FakeEvidenceProvider(BASE_EVENTS)
         )
-        mcp = MCPServer(name="chronicle-schema-test")
+        mcp = PubMedMCPServer(name="chronicle-schema-test")
         chronicle_tools.register_chronicle_tools(mcp, object())
 
         build_schema = mcp._tool_manager._tools["build_research_chronicle"].parameters
@@ -981,11 +1180,22 @@ class TestChronicleTools:
         assert max_events_schema["maximum"] == 200
         assert build_schema["properties"]["max_events"]["default"] is None
         assert "mermaid" in build_schema["properties"]["output"]["enum"]
-        assert read_schema["properties"]["mode"]["enum"] == ["brief", "full"]
-        chronicle_id_schema = read_schema["properties"]["chronicle_id"]["anyOf"][0]
+        read_request = read_schema["properties"]["request"]
+        assert read_request["discriminator"]["propertyName"] == "action"
+        assert set(read_request["discriminator"]["mapping"]) == set(chronicle_tools.READ_ACTIONS)
+        assert read_schema["$defs"]["ChronicleNarrateRequest"]["properties"]["mode"]["enum"] == [
+            "brief",
+            "full",
+        ]
+        chronicle_id_schema = read_schema["$defs"]["ChronicleLoadRequest"]["properties"]["chronicle_id"]
         assert chronicle_id_schema["pattern"] == r"^[A-Za-z0-9][A-Za-z0-9_.-]*$"
+        compare_values = read_schema["$defs"]["ChronicleTopicsSelection"]["properties"]["values"]
+        assert compare_values["minItems"] == 2
+        assert compare_values["maxItems"] == 5
+        assert read_schema["required"] == ["request"]
         assert build_schema["additionalProperties"] is False
         assert read_schema["additionalProperties"] is False
+        assert all(definition.get("additionalProperties") is False for definition in read_schema["$defs"].values())
 
         for tool_name in ("build_research_chronicle", "read_research_chronicle"):
             argument_model = mcp._tool_manager._tools[tool_name].fn_metadata.arg_model
@@ -1066,7 +1276,7 @@ class TestChronicleTools:
 
         assert payload["success"] is False
         assert "ASCII digits" in payload["error"]
-        listed = json.loads(await tools["read_research_chronicle"](action="list"))
+        listed = json.loads(await _read_chronicle(tools, action="list"))
         assert listed == {"total": 0, "chronicles": []}
 
     @pytest.mark.parametrize(
@@ -1124,7 +1334,7 @@ class TestChronicleTools:
 
         result = await tools["build_research_chronicle"](topic="drug X", min_year=2025, max_year=2020)
 
-        assert "min_year cannot be later" in result
+        assert "min\\_year cannot be later" in result
 
     async def test_artifact_failure_is_visible_without_losing_saved_revision(self, monkeypatch, tmp_path):
         tools = self._register(monkeypatch, tmp_path, BASE_EVENTS, persistence_enabled=True)
@@ -1134,7 +1344,7 @@ class TestChronicleTools:
 
         assert payload["revision"] == 1
         assert payload["artifact"]["status"] == "failed"
-        listed = json.loads(await tools["read_research_chronicle"](action="list"))
+        listed = json.loads(await _read_chronicle(tools, action="list"))
         assert listed["chronicles"][0]["latest_revision"] == 1
 
     async def test_build_mermaid_keeps_artifact_note_outside_source(self, monkeypatch, tmp_path):
@@ -1143,7 +1353,7 @@ class TestChronicleTools:
         tools = self._register(monkeypatch, tmp_path, BASE_EVENTS)
         persisted: dict[str, Any] = {}
 
-        def capture_artifact(**kwargs: Any) -> dict[str, Any]:
+        async def capture_artifact(**kwargs: Any) -> dict[str, Any]:
             persisted.update(kwargs)
             return {
                 "artifact_id": "artifact-1",
@@ -1169,7 +1379,7 @@ class TestChronicleTools:
         summary = await tools["build_research_chronicle"](topic="drug X")
         chronicle_id = summary.split("Chronicle ID: `")[1].split("`")[0]
 
-        result = await tools["read_research_chronicle"](chronicle_id=chronicle_id, output="mermaid")
+        result = await _read_chronicle(tools, chronicle_id=chronicle_id, output="mermaid")
 
         assert result.startswith("```mermaid\nflowchart LR")
         assert result.endswith("\n```")
@@ -1178,15 +1388,19 @@ class TestChronicleTools:
         from pubmed_search.presentation.mcp_server.tools import chronicle as chronicle_tools
 
         tools = self._register(monkeypatch, tmp_path, BASE_EVENTS)
-        monkeypatch.setattr(
-            chronicle_tools,
-            "persist_tool_artifact",
-            lambda **_kwargs: {
+
+        async def persist_artifact(**_kwargs: Any) -> dict[str, Any]:
+            return {
                 "artifact_id": "artifact-1",
                 "artifact_uri": "artifact://artifact-1",
                 "audit_status": "pass",
                 "read_order": ["audit.json"],
-            },
+            }
+
+        monkeypatch.setattr(
+            chronicle_tools,
+            "persist_tool_artifact",
+            persist_artifact,
         )
 
         result = await tools["build_research_chronicle"](topic="drug X", output="json")
@@ -1200,11 +1414,11 @@ class TestChronicleTools:
         tools = self._register(monkeypatch, tmp_path, BASE_EVENTS)
         await tools["build_research_chronicle"](topic="drug X")
 
-        listed = json.loads(await tools["read_research_chronicle"](action="list"))
+        listed = json.loads(await _read_chronicle(tools, action="list"))
         assert listed["total"] == 1
         chronicle_id = listed["chronicles"][0]["chronicle_id"]
 
-        loaded = await tools["read_research_chronicle"](chronicle_id=chronicle_id, output="timeline")
+        loaded = await _read_chronicle(tools, chronicle_id=chronicle_id, output="timeline")
         assert json.loads(loaded)["projection"] == "timeline"
 
         extended = self._register(monkeypatch, tmp_path, EXTENDED_EVENTS)
@@ -1213,99 +1427,127 @@ class TestChronicleTools:
         assert "Revision: 2" in revision_2
         assert f"Chronicle ID: `{chronicle_id}`" in revision_2
 
-        delta = json.loads(
-            await extended["read_research_chronicle"](action="diff", chronicle_id=chronicle_id, from_revision=1)
-        )
+        delta = json.loads(await _read_chronicle(extended, action="diff", chronicle_id=chronicle_id, from_revision=1))
         assert len(delta["entries"]["added"]) == 2
 
     async def test_build_with_unknown_chronicle_id_without_topic_fails(self, monkeypatch, tmp_path):
         tools = self._register(monkeypatch, tmp_path, BASE_EVENTS)
         result = await tools["build_research_chronicle"](chronicle_id="nonexistent-chronicle-id")
-        assert "not found" in result.lower()
+        assert "Research Chronicle request could not be completed" in result
+        assert "nonexistent-chronicle-id" not in result
 
-    async def test_read_diff_reports_stored_revisions_for_unknown_revision(self, monkeypatch, tmp_path):
+    async def test_read_diff_unknown_revision_returns_safe_request_error(self, monkeypatch, tmp_path):
         tools = self._register(monkeypatch, tmp_path, BASE_EVENTS)
         summary = await tools["build_research_chronicle"](topic="drug X")
         chronicle_id = summary.split("Chronicle ID: `")[1].split("`")[0]
 
-        result = await tools["read_research_chronicle"](action="diff", chronicle_id=chronicle_id, from_revision=99)
+        result = await _read_chronicle(
+            tools,
+            action="diff",
+            chronicle_id=chronicle_id,
+            from_revision=99,
+        )
 
-        assert "Stored revisions: [1]" in result
+        assert "Research Chronicle read request could not be completed" in result
+        assert "Stored revisions" not in result
+
+    async def test_build_generic_failure_does_not_expose_upstream_value(self, monkeypatch, tmp_path):
+        tools = self._register(monkeypatch, tmp_path, BASE_EVENTS)
+
+        async def fail_build(*args: Any, **kwargs: Any) -> ChronicleSnapshot:
+            raise RuntimeError("api_key=private-build")
+
+        monkeypatch.setattr(ChronicleService, "build", fail_build)
+
+        result = await tools["build_research_chronicle"](topic="drug X")
+
+        assert "Research Chronicle evidence retrieval or persistence failed" in result
+        assert "private-build" not in result
+
+    async def test_read_generic_failure_does_not_expose_upstream_value(self, monkeypatch, tmp_path):
+        tools = self._register(monkeypatch, tmp_path, BASE_EVENTS)
+
+        def fail_list(*args: Any, **kwargs: Any) -> list[dict[str, Any]]:
+            raise RuntimeError("api_key=private-read")
+
+        monkeypatch.setattr(ChronicleService, "list_chronicles", fail_list)
+
+        result = await _read_chronicle(tools, action="list")
+
+        assert "Research Chronicle storage read failed" in result
+        assert "private-read" not in result
 
     async def test_read_narrate_returns_cited_markdown(self, monkeypatch, tmp_path):
         tools = self._register(monkeypatch, tmp_path, EXTENDED_EVENTS)
         summary = await tools["build_research_chronicle"](topic="drug X")
         chronicle_id = summary.split("Chronicle ID: `")[1].split("`")[0]
 
-        narrative = await tools["read_research_chronicle"](action="narrate", chronicle_id=chronicle_id, mode="full")
+        narrative = await _read_chronicle(
+            tools,
+            action="narrate",
+            chronicle_id=chronicle_id,
+            mode="full",
+        )
         assert "[entry-" in narrative
         assert "pmid:" in narrative
 
     async def test_read_rejects_unknown_action(self, monkeypatch, tmp_path):
-        tools = self._register(monkeypatch, tmp_path, BASE_EVENTS)
+        self._register(monkeypatch, tmp_path, BASE_EVENTS)
 
-        result = await tools["read_research_chronicle"](action="explode")
-        assert "Unsupported action" in result
+        with pytest.raises(ValidationError):
+            _chronicle_read_request(action="explode")
 
     @pytest.mark.parametrize(
-        ("kwargs", "field"),
+        "invalid_payload",
         [
-            ({"action": "load", "chronicle_id": 123}, "chronicle_id"),
-            ({"action": "list", "topic": ["drug X"]}, "topic"),
-            ({"action": "compare", "topics": ["a", "b"]}, "topics"),
-            ({"action": "compare", "chronicle_ids": {"a", "b"}}, "chronicle_ids"),
-            ({"action": "narrate", "mode": ["full"]}, "mode"),
+            {"action": "load", "chronicle_id": 123},
+            {"action": "list", "topic": ["drug X"]},
+            {
+                "action": "compare",
+                "selection": {"kind": "topics", "values": "a,b"},
+            },
+            {
+                "action": "compare",
+                "selection": {"kind": "chronicle_ids", "values": {"a", "b"}},
+            },
+            {"action": "narrate", "chronicle_id": "drug-x", "mode": ["full"]},
         ],
     )
-    async def test_read_direct_call_non_string_inputs_return_structured_errors(
-        self,
-        monkeypatch,
-        tmp_path,
-        kwargs,
-        field,
-    ):
-        tools = self._register(monkeypatch, tmp_path, BASE_EVENTS)
+    async def test_read_request_rejects_wrong_field_types(self, invalid_payload):
+        with pytest.raises(ValidationError):
+            _CHRONICLE_READ_ADAPTER.validate_python(invalid_payload, strict=True)
 
-        payload = json.loads(await tools["read_research_chronicle"](**kwargs, output="json"))
-
-        assert payload["success"] is False
-        assert f"{field} must be a string" in payload["error"]
-
-    async def test_read_direct_call_non_string_action_and_output_do_not_raise(self, monkeypatch, tmp_path):
-        tools = self._register(monkeypatch, tmp_path, BASE_EVENTS)
-
-        action_payload = json.loads(await tools["read_research_chronicle"](action=["load"], output="json"))
-        output_result = await tools["read_research_chronicle"](action="load", output=["json"])
-
-        assert action_payload["success"] is False
-        assert "action must be a string" in action_payload["error"]
-        assert "output must be a string" in output_result
+    async def test_read_request_rejects_wrong_action_and_output_types(self):
+        with pytest.raises(ValidationError):
+            _CHRONICLE_READ_ADAPTER.validate_python({"action": ["load"]}, strict=True)
+        with pytest.raises(ValidationError):
+            _chronicle_read_request(chronicle_id="drug-x", output=["json"])
 
     async def test_read_requires_chronicle_id(self, monkeypatch, tmp_path):
-        tools = self._register(monkeypatch, tmp_path, BASE_EVENTS)
+        self._register(monkeypatch, tmp_path, BASE_EVENTS)
 
-        result = await tools["read_research_chronicle"](action="load")
-        assert "chronicle_id is required" in result
+        with pytest.raises(ValidationError):
+            _chronicle_read_request(action="load")
 
     async def test_read_missing_revision_reports_available(self, monkeypatch, tmp_path):
         tools = self._register(monkeypatch, tmp_path, BASE_EVENTS)
         summary = await tools["build_research_chronicle"](topic="drug X")
         chronicle_id = summary.split("Chronicle ID: `")[1].split("`")[0]
 
-        result = await tools["read_research_chronicle"](chronicle_id=chronicle_id, revision=42)
+        result = await _read_chronicle(tools, chronicle_id=chronicle_id, revision=42)
         assert "Chronicle revision not found" in result
-        assert "[1]" in result
+        assert "\\[1\\]" in result
 
     async def test_diff_requires_from_revision(self, monkeypatch, tmp_path):
-        tools = self._register(monkeypatch, tmp_path, BASE_EVENTS)
+        self._register(monkeypatch, tmp_path, BASE_EVENTS)
 
-        result = await tools["read_research_chronicle"](action="diff", chronicle_id="drug-x-00000000")
-        assert "from_revision is required" in result
+        with pytest.raises(ValidationError):
+            _chronicle_read_request(action="diff", chronicle_id="drug-x-00000000")
 
     async def test_list_with_no_chronicles_reports_no_results(self, monkeypatch, tmp_path):
         tools = self._register(monkeypatch, tmp_path, BASE_EVENTS)
 
-        result = json.loads(await tools["read_research_chronicle"](action="list"))
+        result = json.loads(await _read_chronicle(tools, action="list"))
         assert result == {"total": 0, "chronicles": []}
 
     async def test_milestones_action_returns_analysis(self, monkeypatch, tmp_path):
@@ -1313,7 +1555,7 @@ class TestChronicleTools:
         summary = await tools["build_research_chronicle"](topic="drug X")
         chronicle_id = summary.split("Chronicle ID: `")[1].split("`")[0]
 
-        payload = json.loads(await tools["read_research_chronicle"](action="milestones", chronicle_id=chronicle_id))
+        payload = json.loads(await _read_chronicle(tools, action="milestones", chronicle_id=chronicle_id))
         assert payload["projection"] == "milestones"
         assert payload["total_entries"] == 5
 
@@ -1322,22 +1564,37 @@ class TestChronicleTools:
         await tools["build_research_chronicle"](topic="drug X")
         await tools["build_research_chronicle"](topic="drug Y")
 
-        payload = json.loads(await tools["read_research_chronicle"](action="compare", topics="drug X,drug Y"))
+        payload = json.loads(
+            await _read_chronicle(
+                tools,
+                action="compare",
+                selection={"kind": "topics", "values": ["drug X", "drug Y"]},
+            )
+        )
         assert payload["projection"] == "comparison"
         assert len(payload["chronicles"]) == 2
         assert payload["summary"]["shared_evidence_count"] == 5
 
     async def test_compare_requires_two_chronicles(self, monkeypatch, tmp_path):
-        tools = self._register(monkeypatch, tmp_path, BASE_EVENTS)
+        self._register(monkeypatch, tmp_path, BASE_EVENTS)
 
-        result = await tools["read_research_chronicle"](action="compare", topics="drug X")
-        assert "Need at least 2 chronicles" in result
+        with pytest.raises(ValidationError):
+            _chronicle_read_request(
+                action="compare",
+                selection={"kind": "topics", "values": ["drug X"]},
+            )
 
     async def test_compare_rejects_duplicate_target(self, monkeypatch, tmp_path):
         tools = self._register(monkeypatch, tmp_path, BASE_EVENTS)
         await tools["build_research_chronicle"](topic="drug X")
 
-        payload = json.loads(await tools["read_research_chronicle"](action="compare", topics="drug X,drug X"))
+        payload = json.loads(
+            await _read_chronicle(
+                tools,
+                action="compare",
+                selection={"kind": "topics", "values": ["drug X", "drug X"]},
+            )
+        )
 
         assert payload["success"] is False
         assert "distinct" in payload["error"]
@@ -1347,18 +1604,31 @@ class TestChronicleTools:
         await tools["build_research_chronicle"](topic="drug X", chronicle_id="custom-x")
         await tools["build_research_chronicle"](topic="drug Y", chronicle_id="custom-y")
 
-        payload = json.loads(await tools["read_research_chronicle"](action="compare", topics="drug x,drug y"))
+        payload = json.loads(
+            await _read_chronicle(
+                tools,
+                action="compare",
+                selection={"kind": "topics", "values": ["drug x", "drug y"]},
+            )
+        )
 
         assert {row["chronicle_id"] for row in payload["chronicles"]} == {"custom-x", "custom-y"}
 
     async def test_compare_rejects_too_many_chronicles(self, monkeypatch, tmp_path):
-        tools = self._register(monkeypatch, tmp_path, BASE_EVENTS)
+        self._register(monkeypatch, tmp_path, BASE_EVENTS)
 
-        result = await tools["read_research_chronicle"](action="compare", topics="a,b,c,d,e,f")
-        assert "Maximum 5 chronicles" in result
+        with pytest.raises(ValidationError):
+            _chronicle_read_request(
+                action="compare",
+                selection={"kind": "topics", "values": ["a", "b", "c", "d", "e", "f"]},
+            )
 
     async def test_compare_reports_unbuilt_topics(self, monkeypatch, tmp_path):
         tools = self._register(monkeypatch, tmp_path, BASE_EVENTS)
 
-        result = await tools["read_research_chronicle"](action="compare", topics="ghost A,ghost B")
+        result = await _read_chronicle(
+            tools,
+            action="compare",
+            selection={"kind": "topics", "values": ["ghost A", "ghost B"]},
+        )
         assert "No stored chronicle for" in result

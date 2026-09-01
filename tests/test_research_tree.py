@@ -3,7 +3,7 @@ Tests for Research Tree — domain entities and branch detection.
 
 Covers:
     - ResearchBranch: properties, serialization, sub-branches
-    - ResearchTree: aggregation, text tree, mermaid mindmap
+    - ResearchTree: aggregation and text-tree projection
     - build_research_tree: milestone-type-based branching, clinical sub-branches
 """
 
@@ -259,24 +259,6 @@ class TestResearchTree:
         assert "2015" in text
         assert "2020" in text
 
-    def test_to_mermaid_mindmap(self):
-        tree = ResearchTree(
-            topic="TopicX",
-            branches=[
-                ResearchBranch(
-                    branch_id="a",
-                    label="Branch A",
-                    icon="\U0001f52c",
-                    events=[_event("1", 2020, MilestoneType.FIRST_REPORT, label="First")],
-                ),
-            ],
-        )
-        mm = tree.to_mermaid_mindmap()
-        assert "mindmap" in mm
-        assert "root((TopicX))" in mm
-        assert "Branch A" in mm
-        assert "2020" in mm
-
     def test_to_dict_serializable(self):
         """Ensure to_dict output is JSON-serializable."""
         tree = ResearchTree(
@@ -477,19 +459,6 @@ class TestBuildResearchTree:
         assert "2010" in text
         assert "2020" in text
         assert "PMID: 3" in text
-
-    def test_to_mermaid_mindmap_output(self):
-        """build_research_tree → to_mermaid_mindmap produces valid syntax."""
-        events = [
-            _event("1", 2010, MilestoneType.FIRST_REPORT, label="First Report"),
-            _event("2", 2020, MilestoneType.META_ANALYSIS, label="Meta-Analysis"),
-        ]
-        tree = build_research_tree(_make_timeline(events, topic="TopicY"))
-        mm = tree.to_mermaid_mindmap()
-        assert "mindmap" in mm
-        assert "root((TopicY))" in mm
-        assert "Discovery" in mm
-        assert "Evidence Synthesis" in mm
 
     def test_to_json_tree_serializable(self):
         """build_research_tree → to_dict → JSON round-trip."""
