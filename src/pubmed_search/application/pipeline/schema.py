@@ -1,60 +1,37 @@
 """Pydantic schema parsing for pipeline configs.
 
-This module owns structural parsing concerns only:
+This module owns strict structural parsing concerns only:
 - raw mapping validation
-- type coercion
-- shape normalization
 - mode discrimination (template vs step pipeline)
 - default values
 
-Semantic repair remains in validator.py.
+Semantic validation remains in validator.py.
 
 Maintenance:
-    Keep schema-level coercion and defaulting here, but move semantic recovery
-    or execution behavior into validator.py and executor modules. This boundary
-    is important because tools rely on deterministic parse-time fixes.
+    Keep defaults for omitted fields here, but reject explicit nulls, wrong
+    types, retired aliases, and unknown fields without rewriting caller input.
 """
 
 from __future__ import annotations
 
 from typing import Annotated, Any, Literal, cast
 
-from pydantic import (
-    AliasChoices,
-    BaseModel,
-    ConfigDict,
-    Field,
-    TypeAdapter,
-    ValidationError,
-    ValidationInfo,
-    field_validator,
-)
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
+from pubmed_search.application.pipeline.budgets import PIPELINE_OUTPUT_LIMIT
 from pubmed_search.domain.entities.pipeline import (
     MAX_PIPELINE_STEPS,
-    FixSeverity,
     PipelineConfig,
     PipelineOutput,
     PipelineStep,
-    ValidationFix,
     ValidationResult,
 )
-
-
-def _record_fix(info: ValidationInfo, fix: ValidationFix) -> None:
-    """Append schema-level coercion fixes to the validation context when present."""
-    context = info.context
-    if not isinstance(context, dict):
-        return
-    fixes = context.get("fixes")
-    if isinstance(fixes, list):
-        fixes.append(fix)
 
 
 class _PipelineSchemaModel(BaseModel):
     """Shared Pydantic settings for pipeline schema models."""
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="forbid", strict=True)
 
 
 class PipelineStepSchema(_PipelineSchemaModel):
@@ -64,75 +41,7 @@ class PipelineStepSchema(_PipelineSchemaModel):
     action: str = ""
     params: dict[str, Any] = Field(default_factory=dict)
     inputs: list[str] = Field(default_factory=list)
-    on_error: str = "skip"
-
-    @field_validator("id", "action", mode="before")
-    @classmethod
-    def _coerce_text_fields(cls, value: Any) -> str:
-        if value is None:
-            return ""
-        return str(value)
-
-    @field_validator("params", mode="before")
-    @classmethod
-    def _coerce_params(cls, value: Any, info: ValidationInfo) -> dict[str, Any]:
-        if value is None:
-            return {}
-        if isinstance(value, dict):
-            return value
-        _record_fix(
-            info,
-            ValidationFix(
-                field="steps.params",
-                original=value,
-                corrected={},
-                reason="params must be a dict, replaced with empty dict",
-                severity=FixSeverity.WARNING,
-            ),
-        )
-        return {}
-
-    @field_validator("inputs", mode="before")
-    @classmethod
-    def _coerce_inputs(cls, value: Any, info: ValidationInfo) -> list[str]:
-        if value is None:
-            return []
-        if isinstance(value, str):
-            wrapped = [value]
-            _record_fix(
-                info,
-                ValidationFix(
-                    field="steps.inputs",
-                    original=value,
-                    corrected=wrapped,
-                    reason="inputs should be a list, wrapped single string",
-                    severity=FixSeverity.INFO,
-                ),
-            )
-            return wrapped
-        if not isinstance(value, list):
-            return []
-        return [str(item) for item in value]
-
-    @field_validator("on_error", mode="before")
-    @classmethod
-    def _coerce_on_error(cls, value: Any, info: ValidationInfo) -> str:
-        if value is None:
-            return "skip"
-        normalized = str(value)
-        if normalized not in {"skip", "abort"}:
-            _record_fix(
-                info,
-                ValidationFix(
-                    field="steps.on_error",
-                    original=normalized,
-                    corrected="skip",
-                    reason=f"Invalid on_error value '{normalized}', defaulting to 'skip'",
-                    severity=FixSeverity.INFO,
-                ),
-            )
-            return "skip"
-        return normalized
+    on_error: Literal["skip", "abort"] = "skip"
 
     def to_domain(self) -> PipelineStep:
         """Convert schema model into the existing domain dataclass."""
@@ -148,25 +57,13 @@ class PipelineStepSchema(_PipelineSchemaModel):
 class PipelineOutputSchema(_PipelineSchemaModel):
     """Schema model for pipeline output settings."""
 
-    format: str = "markdown"
-    limit: int = 20
-    ranking: str = "balanced"
-
-    @field_validator("format", "ranking", mode="before")
-    @classmethod
-    def _coerce_output_text(cls, value: Any, info: ValidationInfo) -> str:
-        del info
-        if value is None:
-            return ""
-        return str(value).strip().lower()
-
-    @field_validator("limit", mode="before")
-    @classmethod
-    def _coerce_limit(cls, value: Any, info: ValidationInfo) -> int:
-        del info
-        if value is None or value == "":
-            return 20
-        return int(value)
+    format: Literal["markdown", "json"] = "markdown"
+    limit: int = Field(
+        default=PIPELINE_OUTPUT_LIMIT.default,
+        ge=PIPELINE_OUTPUT_LIMIT.minimum,
+        le=PIPELINE_OUTPUT_LIMIT.maximum,
+    )
+    ranking: Literal["balanced", "impact", "recency", "quality"] = "balanced"
 
     def to_domain(self) -> PipelineOutput:
         """Convert schema model into the existing domain dataclass."""
@@ -183,43 +80,7 @@ class _PipelineConfigBaseSchema(_PipelineSchemaModel):
     name: str = ""
     globals: dict[str, Any] = Field(default_factory=dict)
     variables: dict[str, Any] = Field(default_factory=dict)
-    output: PipelineOutputSchema = Field(
-        default_factory=PipelineOutputSchema,
-        validation_alias=AliasChoices("output", "execution"),
-    )
-
-    @field_validator("name", mode="before")
-    @classmethod
-    def _coerce_name(cls, value: Any) -> str:
-        if value is None:
-            return ""
-        return str(value)
-
-    @field_validator("output", mode="before")
-    @classmethod
-    def _coerce_output(cls, value: Any) -> dict[str, Any]:
-        if value is None or not isinstance(value, dict):
-            return {}
-        return cast("dict[str, Any]", value)
-
-    @field_validator("globals", "variables", mode="before")
-    @classmethod
-    def _coerce_mapping_fields(cls, value: Any, info: ValidationInfo) -> dict[str, Any]:
-        if value is None:
-            return {}
-        if isinstance(value, dict):
-            return value
-        _record_fix(
-            info,
-            ValidationFix(
-                field=str(info.field_name),
-                original=value,
-                corrected={},
-                reason=f"{info.field_name} must be a dict, replaced with empty dict",
-                severity=FixSeverity.WARNING,
-            ),
-        )
-        return {}
+    output: PipelineOutputSchema = Field(default_factory=PipelineOutputSchema)
 
 
 class StepPipelineConfigSchema(_PipelineConfigBaseSchema):
@@ -244,35 +105,7 @@ class TemplatePipelineConfigSchema(_PipelineConfigBaseSchema):
 
     kind: Literal["template"] = "template"
     template: str
-    template_params: dict[str, Any] = Field(
-        default_factory=dict, validation_alias=AliasChoices("template_params", "params")
-    )
-
-    @field_validator("template", mode="before")
-    @classmethod
-    def _coerce_template(cls, value: Any) -> str:
-        if value is None:
-            return ""
-        return str(value)
-
-    @field_validator("template_params", mode="before")
-    @classmethod
-    def _coerce_template_params(cls, value: Any, info: ValidationInfo) -> dict[str, Any]:
-        if value is None:
-            return {}
-        if isinstance(value, dict):
-            return value
-        _record_fix(
-            info,
-            ValidationFix(
-                field="template_params",
-                original=value,
-                corrected={},
-                reason="template_params must be a dict, replaced with empty dict",
-                severity=FixSeverity.WARNING,
-            ),
-        )
-        return {}
+    template_params: dict[str, Any] = Field(default_factory=dict)
 
     def to_domain(self) -> PipelineConfig:
         """Convert schema model into the existing domain dataclass."""
@@ -295,10 +128,17 @@ _PIPELINE_CONFIG_ADAPTER: TypeAdapter[PipelineConfigSchema] = TypeAdapter(Pipeli
 
 
 def _inject_pipeline_kind(raw: dict[str, Any]) -> dict[str, Any]:
-    """Infer the config variant for the discriminated union without changing public schema."""
+    """Infer the config variant only when the discriminator is omitted.
+
+    An explicitly supplied ``kind`` is caller intent and must reach Pydantic's
+    strict discriminated-union validation unchanged. Overwriting it would let
+    malformed or contradictory configurations bypass the canonical schema.
+    """
     normalized = dict(raw)
+    if "kind" in normalized:
+        return normalized
     template = normalized.get("template")
-    if template is not None and str(template).strip():
+    if isinstance(template, str) and template:
         normalized["kind"] = "template"
     else:
         normalized["kind"] = "steps"
@@ -327,19 +167,18 @@ def _format_validation_errors(exc: ValidationError) -> list[str]:
 def parse_pipeline_schema(raw: dict[str, Any]) -> ValidationResult:
     """Parse raw pipeline input via Pydantic before semantic validation.
 
-    Returns a ValidationResult carrying only schema-level fixes/errors and the
+    Returns a ValidationResult carrying only schema-level errors and the
     converted domain PipelineConfig.
     """
-    fixes: list[ValidationFix] = []
     if not isinstance(raw, dict):
         return ValidationResult(valid=False, errors=["Pipeline config must be a YAML or JSON object (dict)"])
 
     try:
-        model = _PIPELINE_CONFIG_ADAPTER.validate_python(_inject_pipeline_kind(raw), context={"fixes": fixes})
+        model = _PIPELINE_CONFIG_ADAPTER.validate_python(_inject_pipeline_kind(raw))
     except ValidationError as exc:
-        return ValidationResult(valid=False, fixes=fixes, errors=_format_validation_errors(exc))
+        return ValidationResult(valid=False, errors=_format_validation_errors(exc))
 
-    return ValidationResult(valid=True, fixes=fixes, config=model.to_domain())
+    return ValidationResult(valid=True, config=model.to_domain())
 
 
 __all__ = [

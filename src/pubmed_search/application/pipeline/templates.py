@@ -20,6 +20,11 @@ from __future__ import annotations
 
 from typing import Any
 
+from pubmed_search.application.pipeline.budgets import (
+    PIPELINE_TEMPLATE_LIMITS,
+    validate_pipeline_budgets,
+)
+from pubmed_search.application.pipeline.template_contracts import validate_pipeline_template_params
 from pubmed_search.domain.entities.pipeline import (
     VALID_TEMPLATES,
     PipelineConfig,
@@ -35,14 +40,6 @@ from pubmed_search.domain.entities.pipeline import (
 PICO_PROFILES = {"precision", "balanced", "recall"}
 
 
-def _normalize_template_limit(value: Any, *, default: int = 20, min_value: int = 1, max_value: int = 100) -> int:
-    try:
-        limit = int(value)
-    except (TypeError, ValueError):
-        limit = default
-    return max(min_value, min(limit, max_value))
-
-
 def build_pico_pipeline(params: dict[str, Any]) -> PipelineConfig:
     """Agent-provided PICO clinical question search pipeline.
 
@@ -56,27 +53,21 @@ def build_pico_pipeline(params: dict[str, Any]) -> PipelineConfig:
             instead of the human-readable labels
         question_type: therapy/diagnosis/prognosis/etiology clinical filter
         profile: precision/balanced/recall (default: balanced)
-        sources: comma-separated sources (default: "pubmed")
+        sources: canonical source array (default: ["pubmed"])
         limit: result limit (default: 20)
     """
-    p = params.get("P", "")
-    i = params.get("I", "")
-    c = params.get("C", "")
-    o = params.get("O", "")
-    profile = str(params.get("profile", "balanced")).strip().lower()
-    if profile not in PICO_PROFILES:
-        msg = "PICO template profile must be one of: precision, balanced, recall"
-        raise ValueError(msg)
-    question_type = str(params.get("question_type", "")).strip()
-    sources = str(params.get("sources", "pubmed")).strip() or "pubmed"
-    limit = _normalize_template_limit(params.get("limit", 20))
+    validate_pipeline_template_params("pico", params)
+    p = params["P"]
+    i = params["I"]
+    c = params.get("C")
+    o = params.get("O")
+    profile = params.get("profile", "balanced")
+    question_type = params.get("question_type")
+    sources = params.get("sources", ["pubmed"])
+    limit = params.get("limit", PIPELINE_TEMPLATE_LIMITS["pico"].default)
 
-    if not p or not i:
-        msg = "PICO template requires at least 'P' (Population) and 'I' (Intervention)"
-        raise ValueError(msg)
-
-    pico_params: dict[str, Any] = {"P": p, "I": i, "C": c, "O": o}
-    for key in ("P_query", "I_query", "C_query", "O_query"):
+    pico_params: dict[str, Any] = {"P": p, "I": i}
+    for key in ("C", "O", "P_query", "I_query", "C_query", "O_query"):
         if params.get(key):
             pico_params[key] = params[key]
 
@@ -105,7 +96,10 @@ def build_pico_pipeline(params: dict[str, Any]) -> PipelineConfig:
                 id="search_precision",
                 action="search",
                 inputs=["pico"],
-                params=search_params(use_combined="precision", step_limit=limit * 3),
+                params=search_params(
+                    use_combined="precision",
+                    step_limit=limit * 3,
+                ),
             )
         )
         merge_inputs.append("search_precision")
@@ -116,7 +110,10 @@ def build_pico_pipeline(params: dict[str, Any]) -> PipelineConfig:
                 id="search_recall",
                 action="search",
                 inputs=["pico"],
-                params=search_params(use_combined="recall", step_limit=limit * 3),
+                params=search_params(
+                    use_combined="recall",
+                    step_limit=limit * 3,
+                ),
             )
         )
         merge_inputs.append("search_recall")
@@ -127,7 +124,10 @@ def build_pico_pipeline(params: dict[str, Any]) -> PipelineConfig:
                 id="search_intervention_outcome",
                 action="search",
                 inputs=["pico"],
-                params=search_params(use_combined="intervention_outcome", step_limit=limit * 2),
+                params=search_params(
+                    use_combined="intervention_outcome",
+                    step_limit=limit * 2,
+                ),
             )
         )
         merge_inputs.append("search_intervention_outcome")
@@ -138,7 +138,10 @@ def build_pico_pipeline(params: dict[str, Any]) -> PipelineConfig:
                 id="search_comparison_outcome",
                 action="search",
                 inputs=["pico"],
-                params=search_params(use_combined="comparison_outcome", step_limit=limit * 2),
+                params=search_params(
+                    use_combined="comparison_outcome",
+                    step_limit=limit * 2,
+                ),
             )
         )
         merge_inputs.append("search_comparison_outcome")
@@ -166,22 +169,19 @@ def build_comprehensive_pipeline(params: dict[str, Any]) -> PipelineConfig:
     Required params:
         query: search topic
     Optional params:
-        sources: comma-separated sources (default: "pubmed,openalex,europe_pmc")
+        sources: canonical source array (default: ["pubmed", "openalex", "europe_pmc"])
         limit: result limit (default: 30)
         min_year / max_year: year filter
     """
-    query = params.get("query", "")
-    if not query:
-        msg = "Comprehensive template requires 'query'"
-        raise ValueError(msg)
-
-    sources = params.get("sources", "pubmed,openalex,europe_pmc")
-    limit = int(params.get("limit", 30))
+    validate_pipeline_template_params("comprehensive", params)
+    query = params["query"]
+    sources = params.get("sources", ["pubmed", "openalex", "europe_pmc"])
+    limit = params.get("limit", PIPELINE_TEMPLATE_LIMITS["comprehensive"].default)
     year_params: dict[str, Any] = {}
-    if params.get("min_year"):
-        year_params["min_year"] = int(params["min_year"])
-    if params.get("max_year"):
-        year_params["max_year"] = int(params["max_year"])
+    if "min_year" in params:
+        year_params["min_year"] = params["min_year"]
+    if "max_year" in params:
+        year_params["max_year"] = params["max_year"]
 
     return PipelineConfig(
         name=f"Comprehensive: {query[:50]}",
@@ -190,13 +190,23 @@ def build_comprehensive_pipeline(params: dict[str, Any]) -> PipelineConfig:
             PipelineStep(
                 id="search_original",
                 action="search",
-                params={"query": query, "sources": sources, "limit": limit * 2, **year_params},
+                params={
+                    "query": query,
+                    "sources": sources,
+                    "limit": limit * 2,
+                    **year_params,
+                },
             ),
             PipelineStep(
                 id="search_expanded",
                 action="search",
                 inputs=["expand"],
-                params={"strategy": "mesh", "sources": sources, "limit": limit * 2, **year_params},
+                params={
+                    "strategy": "mesh",
+                    "sources": sources,
+                    "limit": limit * 2,
+                    **year_params,
+                },
             ),
             PipelineStep(
                 id="merged",
@@ -218,12 +228,9 @@ def build_exploration_pipeline(params: dict[str, Any]) -> PipelineConfig:
     Optional params:
         limit: result limit per direction (default: 20)
     """
-    pmid = str(params.get("pmid", ""))
-    if not pmid:
-        msg = "Exploration template requires 'pmid'"
-        raise ValueError(msg)
-
-    limit = int(params.get("limit", 20))
+    validate_pipeline_template_params("exploration", params)
+    pmid = params["pmid"]
+    limit = params.get("limit", PIPELINE_TEMPLATE_LIMITS["exploration"].default)
 
     return PipelineConfig(
         name=f"Exploration: PMID {pmid}",
@@ -261,22 +268,19 @@ def build_gene_drug_pipeline(params: dict[str, Any]) -> PipelineConfig:
     Required params:
         term: gene or drug name
     Optional params:
-        sources: comma-separated (default: "pubmed,openalex")
+        sources: canonical source array (default: ["pubmed", "openalex"])
         limit: result limit (default: 20)
         min_year / max_year: year filter
     """
-    term = params.get("term", "")
-    if not term:
-        msg = "Gene/Drug template requires 'term'"
-        raise ValueError(msg)
-
-    sources = params.get("sources", "pubmed,openalex")
-    limit = int(params.get("limit", 20))
+    validate_pipeline_template_params("gene_drug", params)
+    term = params["term"]
+    sources = params.get("sources", ["pubmed", "openalex"])
+    limit = params.get("limit", PIPELINE_TEMPLATE_LIMITS["gene_drug"].default)
     year_params: dict[str, Any] = {}
-    if params.get("min_year"):
-        year_params["min_year"] = int(params["min_year"])
-    if params.get("max_year"):
-        year_params["max_year"] = int(params["max_year"])
+    if "min_year" in params:
+        year_params["min_year"] = params["min_year"]
+    if "max_year" in params:
+        year_params["max_year"] = params["max_year"]
 
     return PipelineConfig(
         name=f"Gene/Drug: {term[:50]}",
@@ -285,13 +289,23 @@ def build_gene_drug_pipeline(params: dict[str, Any]) -> PipelineConfig:
             PipelineStep(
                 id="search_direct",
                 action="search",
-                params={"query": term, "sources": sources, "limit": limit * 2, **year_params},
+                params={
+                    "query": term,
+                    "sources": sources,
+                    "limit": limit * 2,
+                    **year_params,
+                },
             ),
             PipelineStep(
                 id="search_expanded",
                 action="search",
                 inputs=["expand"],
-                params={"strategy": "mesh", "sources": sources, "limit": limit * 2, **year_params},
+                params={
+                    "strategy": "mesh",
+                    "sources": sources,
+                    "limit": limit * 2,
+                    **year_params,
+                },
             ),
             PipelineStep(
                 id="merged",
@@ -314,7 +328,18 @@ PIPELINE_TEMPLATES: dict[str, dict[str, Any]] = {
         "builder": build_pico_pipeline,
         "description": "PICO clinical question → parallel element searches → RRF merge",
         "required_params": ["P", "I"],
-        "optional_params": ["C", "O", "sources", "limit"],
+        "optional_params": [
+            "C",
+            "O",
+            "P_query",
+            "I_query",
+            "C_query",
+            "O_query",
+            "question_type",
+            "profile",
+            "sources",
+            "limit",
+        ],
     },
     "comprehensive": {
         "builder": build_comprehensive_pipeline,
@@ -349,6 +374,7 @@ def build_pipeline_from_template(template_name: str, params: dict[str, Any]) -> 
         raise ValueError(msg)
     builder = entry["builder"]
     result: PipelineConfig = builder(params)
+    validate_pipeline_budgets(result)
     return result
 
 
@@ -368,7 +394,7 @@ def materialize_pipeline_config(
             config.name = default_name
         return config
 
-    materialized = build_pipeline_from_template(str(config.template), config.template_params)
+    materialized = build_pipeline_from_template(config.template, config.template_params)
     materialized.name = config.name or default_name or materialized.name
     materialized.output = PipelineOutput(
         format=config.output.format,
@@ -379,4 +405,5 @@ def materialize_pipeline_config(
     materialized.variables = dict(config.variables)
     materialized.template = config.template
     materialized.template_params = dict(config.template_params)
+    validate_pipeline_budgets(materialized)
     return materialized
