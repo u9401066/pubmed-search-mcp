@@ -24,7 +24,7 @@
 
 **🌐 語言**: [English](README.md) | **繁體中文**
 
-**📘 文件地圖**：README 是專案入口與快速導覽；[Docs Site](https://u9401066.github.io/pubmed-search-mcp/) 提供最佳閱讀體驗；[GitHub Wiki](https://github.com/u9401066/pubmed-search-mcp/wiki) 提供 GitHub 內建導覽；實際編修以 source docs 為準：[使用者指南](docs/USER_GUIDE.zh-TW.md) | [進階研究工作流](docs/ADVANCED_RESEARCH_WORKFLOWS.zh-TW.md) | [能力導向使用指南](docs/TOOLS_USAGE_GUIDE.zh-TW.md) | [Unified Search 架構](docs/UNIFIED_SEARCH_ARCHITECTURE.zh-TW.md) | [41 工具品質稽核](docs/TOOL_QUALITY_AUDIT.zh-TW.md) | [Provider 資料平面](docs/SEMANTIC_SCHOLAR_API.md) | [BioMCP 架構分析](docs/BIOMCP_ARCHITECTURE_ANALYSIS.md) | [開發者指南](docs/DEVELOPER_GUIDE.zh-TW.md) | [完整工具索引](src/pubmed_search/presentation/mcp_server/TOOLS_INDEX.md)
+**📘 文件地圖**：README 是專案入口與快速導覽；[Docs Site](https://u9401066.github.io/pubmed-search-mcp/) 提供最佳閱讀體驗；[GitHub Wiki](https://github.com/u9401066/pubmed-search-mcp/wiki) 提供 GitHub 內建導覽；實際編修以 source docs 為準：[使用者指南](docs/USER_GUIDE.zh-TW.md) | [進階研究工作流](docs/ADVANCED_RESEARCH_WORKFLOWS.zh-TW.md) | [能力導向使用指南](docs/TOOLS_USAGE_GUIDE.zh-TW.md) | [Unified Search 架構](docs/UNIFIED_SEARCH_ARCHITECTURE.zh-TW.md) | [41 工具品質稽核](docs/TOOL_QUALITY_AUDIT.zh-TW.md) | [60 個學術檢索參考 Repo](docs/reference-repositories/README.md) | [Provider 資料平面](docs/SEMANTIC_SCHOLAR_API.md) | [BioMCP 架構分析](docs/BIOMCP_ARCHITECTURE_ANALYSIS.md) | [開發者指南](docs/DEVELOPER_GUIDE.zh-TW.md) | [完整工具索引](src/pubmed_search/presentation/mcp_server/TOOLS_INDEX.md)
 
 ---
 

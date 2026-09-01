@@ -28,7 +28,7 @@ A Domain-Driven Design (DDD) based MCP server that serves as an intelligent rese
 
 **🌐 Language**: **English** | [繁體中文](#/overview-zh)
 
-**📘 Documentation Map**: README is the quick project entry point. Use the [Docs Site](https://u9401066.github.io/pubmed-search-mcp/) for the best reading experience, the [GitHub Wiki](https://github.com/u9401066/pubmed-search-mcp/wiki) for GitHub-native navigation, and source docs for edits: [User guide](#/user-guide) | [Advanced workflows](#/advanced-workflows) | [Capability-first guide](#/tools-usage-guide) | [Unified Search architecture](#/unified-search-architecture) | [41-tool quality audit](#/tool-quality-audit) | [Provider data planes](#/semantic-scholar-api) | [BioMCP architecture analysis](#/biomcp-analysis) | [Developer guide](#/developer-guide) | [Complete index](#/quick-reference)
+**📘 Documentation Map**: README is the quick project entry point. Use the [Docs Site](https://u9401066.github.io/pubmed-search-mcp/) for the best reading experience, the [GitHub Wiki](https://github.com/u9401066/pubmed-search-mcp/wiki) for GitHub-native navigation, and source docs for edits: [User guide](#/user-guide) | [Advanced workflows](#/advanced-workflows) | [Capability-first guide](#/tools-usage-guide) | [Unified Search architecture](#/unified-search-architecture) | [41-tool quality audit](#/tool-quality-audit) | [60-repository academic retrieval landscape](reference-repositories/README.md) | [Provider data planes](#/semantic-scholar-api) | [BioMCP architecture analysis](#/biomcp-analysis) | [Developer guide](#/developer-guide) | [Complete index](#/quick-reference)
 
 ---
 
